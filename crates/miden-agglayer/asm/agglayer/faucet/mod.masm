@@ -129,7 +129,7 @@ end
 #! to U256 format, and returns the result along with origin token address and network.
 #!
 #! Inputs:  [amount, pad(15)]
-#! Outputs: [AMOUNT_U256[0], AMOUNT_U256[1], addr0, addr1, addr2, addr3, addr4, origin_network, pad(2)]
+#! Outputs: [AMOUNT_U256_LO, AMOUNT_U256_HI, addr0, addr1, addr2, addr3, addr4, origin_network, pad(2)]
 #!
 #! Where:
 #! - amount: The native Miden asset amount

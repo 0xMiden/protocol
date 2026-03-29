@@ -1,0 +1,6 @@
+# TYPE ALIASES
+# =================================================================================================
+
+pub type AccountId = struct { prefix: felt, suffix: felt }
+pub type DoubleWord = struct { word_lo: word, word_hi: word }
+pub type MemoryAddress = u32

@@ -1,11 +1,6 @@
 use miden::core::crypto::hashes::keccak256
-
-# TYPE ALIASES
-# =================================================================================================
-
-type BeWord = struct @bigendian { a: felt, b: felt, c: felt, d: felt }
-type DoubleWord = struct { word_lo: BeWord, word_hi: BeWord }
-type MemoryAddress = u32
+use miden::protocol::types::DoubleWord
+use miden::protocol::types::MemoryAddress
 
 # CONSTANTS
 # =================================================================================================
@@ -32,6 +27,7 @@ const PACKED_DATA_NUM_ELEMENTS = 29
 pub proc compute_leaf_value(leaf_data_start_ptr: MemoryAddress) -> DoubleWord
     dup
     # => [leaf_data_start_ptr, leaf_data_start_ptr]
+    
     exec.pack_leaf_data
     # => [leaf_data_start_ptr]
 

@@ -16,8 +16,8 @@ use miden_protocol::utils::hex_to_bytes;
 use miden_protocol::utils::sync::LazyLock;
 use serde::Deserialize;
 
-use crate::claim_note::{Keccak256Output, ProofData, SmtNode};
-use crate::{EthAddress, EthAmount, ExitRoot, GlobalIndex, LeafData, MetadataHash};
+use crate::claim_note::{ProofData, SmtNode};
+use crate::{CgiChainHash, EthAddress, EthAmount, ExitRoot, GlobalIndex, LeafData, MetadataHash};
 
 // EMBEDDED TEST VECTOR JSON FILES
 // ================================================================================================
@@ -164,10 +164,10 @@ impl ProofValueVector {
             smt_proof_rollup_exit_root: smt_proof_rollup,
             global_index: GlobalIndex::from_hex(&self.global_index)
                 .expect("valid global index hex"),
-            mainnet_exit_root: Keccak256Output::new(
+            mainnet_exit_root: ExitRoot::new(
                 hex_to_bytes(&self.mainnet_exit_root).expect("valid mainnet exit root hex"),
             ),
-            rollup_exit_root: Keccak256Output::new(
+            rollup_exit_root: ExitRoot::new(
                 hex_to_bytes(&self.rollup_exit_root).expect("valid rollup exit root hex"),
             ),
         }
@@ -278,8 +278,8 @@ pub enum ClaimDataSource {
 }
 
 impl ClaimDataSource {
-    /// Returns the `(ProofData, LeafData, ExitRoot, Keccak256Output)` tuple for this data source.
-    pub fn get_data(self) -> (ProofData, LeafData, ExitRoot, Keccak256Output) {
+    /// Returns the `(ProofData, LeafData, ExitRoot, CgiChainHash)` tuple for this data source.
+    pub fn get_data(self) -> (ProofData, LeafData, ExitRoot, CgiChainHash) {
         let vector = match self {
             ClaimDataSource::RealL1ToMiden => &*CLAIM_ASSET_VECTOR,
             ClaimDataSource::SimulatedL1ToMiden => &*CLAIM_ASSET_VECTOR_LOCAL,
@@ -288,7 +288,7 @@ impl ClaimDataSource {
         let ger = ExitRoot::new(
             hex_to_bytes(&vector.proof.global_exit_root).expect("valid global exit root hex"),
         );
-        let cgi_chain_hash = Keccak256Output::new(
+        let cgi_chain_hash = CgiChainHash::new(
             hex_to_bytes(&vector.proof.claimed_global_index_hash_chain)
                 .expect("invalid CGI chain hash"),
         );

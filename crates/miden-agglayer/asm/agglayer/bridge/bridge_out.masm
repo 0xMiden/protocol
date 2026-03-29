@@ -8,6 +8,7 @@ use miden::standards::data_structures::double_word_array
 use miden::standards::attachments::network_account_target
 use miden::standards::note_tag::DEFAULT_TAG
 use miden::standards::note::execution_hint::ALWAYS
+use miden::protocol::types::MemoryAddress
 use miden::protocol::output_note
 use miden::core::crypto::hashes::keccak256
 use miden::core::crypto::hashes::poseidon2
@@ -17,13 +18,7 @@ use agglayer::faucet -> agglayer_faucet
 use agglayer::bridge::bridge_config
 use agglayer::bridge::leaf_utils
 use agglayer::bridge::merkle_tree_frontier
-
-
-# TYPE ALIASES
-# =================================================================================================
-
-type EthereumAddressFormat = struct @bigendian { a: felt, b: felt, c: felt, d: felt, e: felt }
-type MemoryAddress = u32
+use agglayer::common::utils::EthereumAddressFormat
 
 # CONSTANTS
 # =================================================================================================
@@ -181,7 +176,7 @@ pub proc bridge_out
     exec.asset::load
     swapw dropw
     # => [ASSET_KEY, PROC_MAST_ROOT, pad(16)]
-    # ASSET layout: [0, 0, faucet_id_suffix, faucet_id_prefix]
+    # ASSET_KEY layout: [0, 0, faucet_id_suffix, faucet_id_prefix]
 
     # Extract faucet ID, drop padding and amount
     drop drop
@@ -193,6 +188,7 @@ pub proc bridge_out
     push.LEAF_DATA_START_PTR push.METADATA_HASH_OFFSET add
     movdn.8
     # => [METADATA_HASH_LO, METADATA_HASH_HI, metadata_hash_ptr, pad(8)]
+
     exec.utils::mem_store_double_word_unaligned
     # => [pad(16)]
 
@@ -220,6 +216,7 @@ pub proc bridge_out
     locaddr.BRIDGE_OUT_BURN_ASSET_LOC
     exec.asset::load
     # => [ASSET_KEY, ASSET_VALUE, pad(16)]
+    
     exec.create_burn_note
     # => [pad(16)]
 end
@@ -232,7 +229,7 @@ end
 #! amount, origin token address, and origin network.
 #!
 #! Inputs:  [ASSET_KEY, ASSET_VALUE]
-#! Outputs: [AMOUNT_U256[0](4), AMOUNT_U256[1](4), origin_addr(5), origin_network]
+#! Outputs: [AMOUNT_U256_LO, AMOUNT_U256_HI, origin_addr(5), origin_network]
 #!
 #! Where:
 #! - ASSET_KEY is the vault key of the asset to be bridged out.
@@ -275,13 +272,13 @@ proc convert_asset
     # => [faucet_id_suffix, faucet_id_prefix, PROC_MAST_ROOT, amount, pad(15), pad(1)]
 
     exec.tx::execute_foreign_procedure
-    # => [AMOUNT_U256[0](4), AMOUNT_U256[1](4), origin_addr(5), origin_network, pad(2), pad(1)]
+    # => [AMOUNT_U256_LO, AMOUNT_U256_HI, origin_addr(5), origin_network, pad(2), pad(1)]
 
     # drop the 3 trailing padding elements
     repeat.3
         movup.14 drop
     end
-    # => [AMOUNT_U256[0](4), AMOUNT_U256[1](4), origin_addr(5), origin_network]
+    # => [AMOUNT_U256_LO, AMOUNT_U256_HI, origin_addr(5), origin_network]
 end
 
 #! Computes the leaf value from the leaf data in memory and appends it to the Local Exit Tree.
@@ -460,6 +457,7 @@ proc write_address_to_memory(mem_ptr: MemoryAddress, address: EthereumAddressFor
     # => [mem_ptr+4, address(1)]
 
     mem_store
+    # => []
 end
 
 #! Computes the SERIAL_NUM of the outputted BURN note.
