@@ -101,11 +101,11 @@ pub proc pack_leaf_data(leaf_data_start_ptr: MemoryAddress)
 
         # compute source address for next element (counter + 1)
         dup.2 loc_load.PACKING_START_PTR_LOCAL add add.1
-        # => [next_src_addr, curr_lsb, curr_elem, counter]
+        # => [next_src_addr, curr_msb, curr_elem, counter]
 
         # load next element
         mem_load
-        # => [next_elem, curr_lsb, curr_elem, counter]
+        # => [next_elem, curr_msb, curr_elem, counter]
 
         # keep curr_msb on top for combination
         swap
