@@ -16,7 +16,7 @@ use agglayer::faucet -> agglayer_faucet
 use agglayer::bridge::bridge_config
 use agglayer::bridge::leaf_utils
 use agglayer::bridge::merkle_tree_frontier
-use agglayer::common::utils::EthereumAddressFormat
+use agglayer::common::eth_address::EthereumAddressFormat
 
 # CONSTANTS
 # =================================================================================================

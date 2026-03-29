@@ -3,11 +3,6 @@
 use miden::protocol::types::DoubleWord
 use miden::protocol::types::MemoryAddress
 
-# TYPE ALIASES
-# =================================================================================================
-
-pub type EthereumAddressFormat = struct { a: felt, b: felt, c: felt, d: felt, e: felt }
-
 # BYTE MANIPULATION
 # =================================================================================================
 
