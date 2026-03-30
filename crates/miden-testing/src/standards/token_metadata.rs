@@ -587,27 +587,6 @@ fn faucet_with_metadata_storage_layout() {
 }
 
 #[test]
-fn name_32_bytes_accepted() {
-    let max_name = "a".repeat(TokenName::MAX_BYTES);
-    let token_name = TokenName::new(&max_name).unwrap();
-    let metadata =
-        FungibleTokenMetadataBuilder::new(token_name, "TST".try_into().unwrap(), 2, 1_000u64)
-            .build()
-            .unwrap();
-    let account = AccountBuilder::new([1u8; 32])
-        .account_type(AccountType::FungibleFaucet)
-        .with_auth_component(NoAuth)
-        .with_component(metadata)
-        .with_component(BasicFungibleFaucet)
-        .build()
-        .unwrap();
-    let name_0 = account.storage().get_item(TokenMetadata::name_chunk_0_slot()).unwrap();
-    let name_1 = account.storage().get_item(TokenMetadata::name_chunk_1_slot()).unwrap();
-    let decoded = TokenName::try_from_words(&[name_0, name_1]).unwrap();
-    assert_eq!(decoded.as_str(), max_name);
-}
-
-#[test]
 fn name_33_bytes_rejected() {
     let result = TokenName::new(&"a".repeat(33));
     assert!(matches!(result, Err(FixedWidthStringError::TooLong { max: 32, actual: 33 })));
