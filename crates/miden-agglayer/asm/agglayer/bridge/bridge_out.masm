@@ -275,7 +275,7 @@ proc convert_asset
     # => [AMOUNT_U256_LO, AMOUNT_U256_HI, origin_addr(5), origin_network, pad(2), pad(1)]
 
     # drop the 2 trailing padding elements
-    repeat.2
+    repeat.3
         movup.14 drop
     end
     # => [AMOUNT_U256_LO, AMOUNT_U256_HI, origin_addr(5), origin_network]
