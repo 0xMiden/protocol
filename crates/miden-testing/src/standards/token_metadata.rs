@@ -703,7 +703,6 @@ async fn test_field_setter_owner_succeeds(
 
     let tx_context = mock_chain
         .build_tx_context(faucet.id(), &[], &[note])?
-        .add_note_script(note_script)
         .extend_advice_map([(hash, field_advice_map_value(&new_data))])
         .with_source_manager(source_manager)
         .build()?;
@@ -727,7 +726,6 @@ async fn test_field_setter_non_owner_fails(
     let mut builder = MockChain::builder();
     let owner = owner_account_id();
     let non_owner = non_owner_account_id();
-    let new_data = new_field_data();
 
     let metadata = network_faucet_metadata(
         "FLD",
@@ -741,27 +739,18 @@ async fn test_field_setter_non_owner_fails(
     let faucet = builder.add_existing_network_faucet_with_metadata(owner, metadata)?;
     let mock_chain = builder.build()?;
 
-    let hash = compute_field_hash(&new_data);
-    let hash_elems = hash.as_elements();
-
+    // Auth check fires before data is touched, so no hash push is needed.
     let note_script_code = format!(
         r#"
     begin
-        dropw push.{e3} push.{e2} push.{e1} push.{e0}
         call.::miden::standards::metadata::fungible_faucet::{proc_name}
         dropw
     end
 "#,
-        e0 = hash_elems[0],
-        e1 = hash_elems[1],
-        e2 = hash_elems[2],
-        e3 = hash_elems[3],
         proc_name = proc_name,
     );
 
     let source_manager = Arc::new(DefaultSourceManager::default());
-    let note_script = CodeBuilder::with_source_manager(source_manager.clone())
-        .compile_note_script(&note_script_code)?;
 
     let mut rng = RandomCoin::new([Felt::from(99u32); 4].into());
     let note = NoteBuilder::new(non_owner, &mut rng)
@@ -773,8 +762,6 @@ async fn test_field_setter_non_owner_fails(
 
     let tx_context = mock_chain
         .build_tx_context(faucet.id(), &[], &[note])?
-        .add_note_script(note_script)
-        .extend_advice_map([(hash, field_advice_map_value(&new_data))])
         .with_source_manager(source_manager)
         .build()?;
 
