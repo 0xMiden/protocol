@@ -142,9 +142,10 @@ fn build_faucet_metadata() -> FungibleTokenMetadata {
 }
 
 /// Build a standard POL faucet metadata (used by scalar getter tests).
+/// Uses "Polygon Token" (13 bytes) so both name word chunks are non-zero.
 fn build_pol_faucet_metadata() -> FungibleTokenMetadata {
     FungibleTokenMetadataBuilder::new(
-        TokenName::new("POL").unwrap(),
+        TokenName::new("Polygon Token").unwrap(),
         TokenSymbol::new("POL").unwrap(),
         8,
         1_000_000u64,
