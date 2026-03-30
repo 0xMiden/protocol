@@ -586,39 +586,6 @@ fn faucet_with_metadata_storage_layout() {
     assert_eq!(restored.description().map(|d| d.as_str()), Some(desc_text));
 }
 
-#[test]
-fn name_33_bytes_rejected() {
-    let result = TokenName::new(&"a".repeat(33));
-    assert!(matches!(result, Err(FixedWidthStringError::TooLong { max: 32, actual: 33 })));
-}
-
-#[test]
-fn description_7_words_full_capacity() {
-    let desc_text = "a".repeat(Description::MAX_BYTES);
-    let description = Description::new(&desc_text).unwrap();
-    let desc_words = description.to_words();
-    let metadata = FungibleTokenMetadataBuilder::new(
-        TokenName::new("T").unwrap(),
-        "TST".try_into().unwrap(),
-        2,
-        1_000u64,
-    )
-    .description(description)
-    .build()
-    .unwrap();
-    let account = AccountBuilder::new([1u8; 32])
-        .account_type(AccountType::FungibleFaucet)
-        .with_auth_component(NoAuth)
-        .with_component(metadata)
-        .with_component(BasicFungibleFaucet)
-        .build()
-        .unwrap();
-    for (i, expected) in desc_words.iter().enumerate() {
-        let chunk = account.storage().get_item(TokenMetadata::description_slot(i)).unwrap();
-        assert_eq!(chunk, *expected);
-    }
-}
-
 // =================================================================================================
 // FAUCET INITIALIZATION – basic + network with max name/description
 // =================================================================================================

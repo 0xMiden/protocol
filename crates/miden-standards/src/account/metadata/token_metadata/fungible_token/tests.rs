@@ -491,6 +491,29 @@ fn description_max_bytes_accepted() {
 }
 
 #[test]
+fn description_7_words_full_capacity() {
+    let desc_text = "a".repeat(Description::MAX_BYTES);
+    let description = Description::new(&desc_text).unwrap();
+    let expected_words = description.to_words();
+
+    let metadata = FungibleTokenMetadataBuilder::new(
+        TokenName::new("T").unwrap(),
+        TokenSymbol::new("TST").unwrap(),
+        2,
+        1_000u64,
+    )
+    .description(description)
+    .build()
+    .unwrap();
+
+    let slots = metadata.into_storage_slots();
+    // Description slots start at index 4: [0]=metadata, [1]=name_0, [2]=name_1, [3]=config
+    for (i, expected) in expected_words.iter().enumerate() {
+        assert_eq!(slots[4 + i].value(), *expected, "description word {i}");
+    }
+}
+
+#[test]
 fn token_supply_exceeds_max_supply() {
     let symbol = TokenSymbol::new("TST").unwrap();
     let name = TokenName::new("T").unwrap();
