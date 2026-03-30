@@ -1,40 +1,79 @@
 {
   "consume single P2ID note": {
-    "prologue": 3487,
-    "notes_processing": 1831,
+    "prologue": 3501,
+    "notes_processing": 1761,
     "note_execution": {
-      "0x1421e92d0f84f11b3e6f84e4e1d193e648eb820666ffb8c50ea818c25a32990c": 1791
+      "0x62e6fe0d5f649b395b5c3f63736fd7b469fd1e0e867c441696d1a70324d3f9a2": 1721
     },
     "tx_script_processing": 42,
     "epilogue": {
-      "total": 71195,
-      "auth_procedure": 69694,
-      "after_tx_cycles_obtained": 608
+      "total": 72351,
+      "auth_procedure": 70846,
+      "after_tx_cycles_obtained": 612
     }
   },
   "consume two P2ID notes": {
-    "prologue": 4509,
-    "notes_processing": 3668,
+    "prologue": 4537,
+    "notes_processing": 3600,
     "note_execution": {
-      "0x702c078c74683d33b507e16d9fc67f0be0cc943cd94c1f652e3a60e0f4164d9f": 1791,
-      "0x92cc0c8c208e3b8bad970c23b2c4b4c24cc8d42626b3f56363ce1a6bbf4c7ac2": 1828
+      "0x51e09a95d1aa86daa64a59ce960c7a6baba576decf870aa4500e9847c3740bf9": 1721,
+      "0xf11434d602ac1f69b171c08d5b3352c59c57ecec02e191c61b2a6599269a12c3": 1830
     },
     "tx_script_processing": 42,
     "epilogue": {
-      "total": 71143,
-      "auth_procedure": 69668,
-      "after_tx_cycles_obtained": 608
+      "total": 72299,
+      "auth_procedure": 70820,
+      "after_tx_cycles_obtained": 612
     }
   },
   "create single P2ID note": {
     "prologue": 1766,
     "notes_processing": 32,
     "note_execution": {},
-    "tx_script_processing": 1682,
+    "tx_script_processing": 1667,
     "epilogue": {
-      "total": 72099,
-      "auth_procedure": 69906,
-      "after_tx_cycles_obtained": 608
+      "total": 73243,
+      "auth_procedure": 71058,
+      "after_tx_cycles_obtained": 612
+    }
+  },
+  "consume CLAIM note (L1 to Miden)": {
+    "prologue": 2897,
+    "notes_processing": 28536,
+    "note_execution": {
+      "0xdbc80122500b117ed9c951e4f1362424ef081cbda9f7d4af3a6a30d1f029d376": 28496
+    },
+    "tx_script_processing": 42,
+    "epilogue": {
+      "total": 4093,
+      "auth_procedure": 880,
+      "after_tx_cycles_obtained": 612
+    }
+  },
+  "consume CLAIM note (L2 to Miden)": {
+    "prologue": 2897,
+    "notes_processing": 40786,
+    "note_execution": {
+      "0x1f04a3e738aad3c25b4148a9a1be0c4dfe8cc9ec69171909a730630045dced97": 40746
+    },
+    "tx_script_processing": 42,
+    "epilogue": {
+      "total": 4093,
+      "auth_procedure": 880,
+      "after_tx_cycles_obtained": 612
+    }
+  },
+  "consume B2AGG note (bridge-out)": {
+    "prologue": 3718,
+    "notes_processing": 145590,
+    "note_execution": {
+      "0xa0e31e2fec803d6cb21681b36ea6312d366d9bae97eea9255e43f3fb95e46524": 145550
+    },
+    "tx_script_processing": 42,
+    "epilogue": {
+      "total": 13756,
+      "auth_procedure": 880,
+      "after_tx_cycles_obtained": 612
     }
   }
 }
