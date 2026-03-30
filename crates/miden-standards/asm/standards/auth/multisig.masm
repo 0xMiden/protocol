@@ -101,7 +101,7 @@ const ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS = "procedure threshold exceeds ne
 #! Panics if:
 #! - init_num_of_approvers is not a u32 value.
 #! - new_num_of_approvers is not a u32 value.
-proc cleanup_pubkey_and_scheme_id_mapping(init_num_of_approvers: u32, new_num_of_approvers: u32)
+pub proc cleanup_pubkey_and_scheme_id_mapping(init_num_of_approvers: u32, new_num_of_approvers: u32)
     dup.1 dup.1
     u32assert2.err=ERR_APPROVER_COUNTS_NOT_U32
     u32lt
@@ -157,7 +157,7 @@ end
 #!
 #! Inputs: [key_index]
 #! Outputs: [APPROVER_MAP_KEY]
-proc create_approver_map_key
+pub proc create_approver_map_key
     push.0.0.0 movup.3
     # => [[key_index, 0, 0, 0]]
     # => [APPROVER_MAP_KEY]
@@ -209,35 +209,23 @@ proc assert_proc_thresholds_lte_num_approvers(num_approvers: u32)
     # => []
 end
 
-#! Update threshold config, add & remove approvers, and update the approver scheme ids
-#! 
+#! Loads multisig config from advice and performs basic validity checks.
+#!
 #! Inputs:
 #!   Operand stack: [MULTISIG_CONFIG_HASH, pad(12)]
-#!   Advice map: {
-#!     MULTISIG_CONFIG_HASH => 
-#!     [ 
-#!       CONFIG, 
-#!       PUB_KEY_N, PUB_KEY_N-1, ..., PUB_KEY_0, 
-#!       SCHEME_ID_N, SCHEME_ID_N-1, ..., SCHEME_ID_0 
-#!     ]
-#!   }
+#!   Advice map: same layout as [`update_signers_and_threshold`].
 #! Outputs:
-#!   Operand stack: []
-#!
-#! Where:
-#! - MULTISIG_CONFIG_HASH is the hash of the threshold, 
-#!   new public key vector, and the corresponding scheme identifiers
-#! - MULTISIG_CONFIG is [threshold, num_approvers, 0, 0]
-#! - PUB_KEY_i is the public key of the i-th signer
-#! - SCHEME_ID_i is the signature scheme id of the i-th signer
+#!   Operand stack: [num_approvers, MULTISIG_CONFIG, pad(12)]
 #!
 #! Locals:
-#! 0: new_num_of_approvers
-#! 1: init_num_of_approvers
+#! - 0: new_num_of_approvers (also used by [`complete_signers_and_threshold_update`])
 #!
-#! Invocation: call
+#! Invocation: exec
+#!
+#! Low-level building block for signer updates. Prefer [`update_signers_and_threshold`] unless
+#! composing with a custom per-procedure validation step (e.g. smart multisig policies).
 @locals(2)
-pub proc update_signers_and_threshold(multisig_config_hash: word)
+pub proc load_signers_and_thresholds_config(multisig_config_hash: word)
     adv.push_mapval
     # => [MULTISIG_CONFIG_HASH, pad(12)]
 
@@ -266,9 +254,27 @@ pub proc update_signers_and_threshold(multisig_config_hash: word)
 
     loc_load.NEW_NUM_OF_APPROVERS_LOC
     # => [num_approvers, MULTISIG_CONFIG, pad(12)]
+end
 
-    # make sure that all existing procedure threshold overrides remain reachable
-    exec.assert_proc_thresholds_lte_num_approvers
+#! Writes threshold config, approver maps, and clears stale signer entries.
+#!
+#! Inputs:
+#!   Operand stack: [MULTISIG_CONFIG, pad(12)]
+#!   Advice map: unchanged; supplies public keys and scheme id words for the new signer set.
+#! Outputs:
+#!   Operand stack: []
+#!
+#! Locals:
+#! - 0: new_num_of_approvers (restored from MULTISIG_CONFIG at entry)
+#! - 1: init_num_of_approvers (from the previous threshold config word)
+#!
+#! Invocation: exec
+#!
+#! Preconditions: per-procedure validation has already succeeded (procedure thresholds or smart
+#! procedure policies). Low-level helper; use [`update_signers_and_threshold`] for the full flow.
+@locals(2)
+pub proc complete_signers_and_threshold_update
+    dup.1 loc_store.NEW_NUM_OF_APPROVERS_LOC
     # => [MULTISIG_CONFIG, pad(12)]
 
     push.THRESHOLD_CONFIG_SLOT[0..2]
@@ -304,11 +310,9 @@ pub proc update_signers_and_threshold(multisig_config_hash: word)
         exec.native_account::set_map_item
         # => [OLD_VALUE, i-1, pad(12)]
 
-        # override OLD_VALUE with SCHEME_ID_WORD
         adv_loadw
         # => [SCHEME_ID_WORD, i-1, pad(12)]
 
-        # validate the scheme id word is in a correct form
         exec.auth::signature::assert_supported_scheme_word
         # => [SCHEME_ID_WORD, i-1, pad(12)]
 
@@ -332,14 +336,50 @@ pub proc update_signers_and_threshold(multisig_config_hash: word)
     drop
     # => [pad(12)]
 
-    # compare initial vs current multisig config
-
-    # load init_num_of_approvers & new_num_of_approvers
     loc_load.NEW_NUM_OF_APPROVERS_LOC loc_load.INIT_NUM_OF_APPROVERS_LOC
     # => [init_num_of_approvers, new_num_of_approvers, pad(12)]
 
     exec.cleanup_pubkey_and_scheme_id_mapping
     # => [pad(12)]
+end
+
+#! Update threshold config, add & remove approvers, and update the approver scheme ids
+#! 
+#! Inputs:
+#!   Operand stack: [MULTISIG_CONFIG_HASH, pad(12)]
+#!   Advice map: {
+#!     MULTISIG_CONFIG_HASH => 
+#!     [ 
+#!       CONFIG, 
+#!       PUB_KEY_N, PUB_KEY_N-1, ..., PUB_KEY_0, 
+#!       SCHEME_ID_N, SCHEME_ID_N-1, ..., SCHEME_ID_0 
+#!     ]
+#!   }
+#! Outputs:
+#!   Operand stack: []
+#!
+#! Where:
+#! - MULTISIG_CONFIG_HASH is the hash of the threshold, 
+#!   new public key vector, and the corresponding scheme identifiers
+#! - MULTISIG_CONFIG is [threshold, num_approvers, 0, 0]
+#! - PUB_KEY_i is the public key of the i-th signer
+#! - SCHEME_ID_i is the signature scheme id of the i-th signer
+#!
+#! Locals:
+#! 0: new_num_of_approvers
+#! 1: init_num_of_approvers
+#!
+#! Invocation: call
+@locals(2)
+pub proc update_signers_and_threshold(multisig_config_hash: word)
+    exec.load_signers_and_thresholds_config
+    # => [num_approvers, MULTISIG_CONFIG, pad(12)]
+
+    exec.assert_proc_thresholds_lte_num_approvers
+    # => [MULTISIG_CONFIG, pad(12)]
+
+    exec.complete_signers_and_threshold_update
+    # => []
 end
 
 #! Computes the effective transaction threshold based on called procedures and per-procedure
