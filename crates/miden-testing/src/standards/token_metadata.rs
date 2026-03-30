@@ -433,124 +433,38 @@ async fn get_mutability_config() -> anyhow::Result<()> {
 }
 
 /// Tests all `is_*_mutable` procedures with flag=0 and flag=1.
+#[rstest::rstest]
+#[case("is_max_supply_mutable",    build_faucet_metadata().with_max_supply_mutable(true),    1)]
+#[case("is_description_mutable",   build_faucet_metadata().with_description_mutable(true),   1)]
+#[case("is_description_mutable",   build_faucet_metadata().with_description_mutable(false),  0)]
+#[case("is_logo_uri_mutable",      build_faucet_metadata().with_logo_uri_mutable(true),      1)]
+#[case("is_logo_uri_mutable",      build_faucet_metadata().with_logo_uri_mutable(false),     0)]
+#[case("is_external_link_mutable", build_faucet_metadata().with_external_link_mutable(true), 1)]
+#[case("is_external_link_mutable", build_faucet_metadata().with_external_link_mutable(false),0)]
 #[tokio::test]
-async fn is_field_mutable_checks() -> anyhow::Result<()> {
-    let desc = Description::new("test").unwrap();
-    let logo = LogoURI::new("https://example.com/logo").unwrap();
-    let link = ExternalLink::new("https://example.com").unwrap();
+async fn is_field_mutable_checks(
+    #[case] proc_name: &str,
+    #[case] metadata: FungibleTokenMetadata,
+    #[case] expected: u8,
+) -> anyhow::Result<()> {
+    let account = AccountBuilder::new([1u8; 32])
+        .account_type(AccountType::FungibleFaucet)
+        .with_auth_component(NoAuth)
+        .with_component(metadata)
+        .with_component(BasicFungibleFaucet)
+        .build()?;
 
-    // (metadata_builder, proc_name, expected_value)
-    let cases: Vec<(FungibleTokenMetadata, &str, u8)> = vec![
-        (
-            build_faucet_metadata().with_max_supply_mutable(true),
-            "is_max_supply_mutable",
-            1,
+    execute_tx_script(
+        account,
+        format!(
+            "begin
+                call.::miden::standards::metadata::fungible_faucet::{proc_name}
+                push.{expected}
+                assert_eq.err=\"{proc_name} returned unexpected value\"
+            end"
         ),
-        (
-            FungibleTokenMetadataBuilder::new(
-                TokenName::new("T").unwrap(),
-                "TST".try_into().unwrap(),
-                2,
-                1_000u64,
-            )
-            .description(desc.clone())
-            .is_description_mutable(true)
-            .build()
-            .unwrap(),
-            "is_description_mutable",
-            1,
-        ),
-        (
-            FungibleTokenMetadataBuilder::new(
-                TokenName::new("T").unwrap(),
-                "TST".try_into().unwrap(),
-                2,
-                1_000u64,
-            )
-            .description(desc)
-            .build()
-            .unwrap(),
-            "is_description_mutable",
-            0,
-        ),
-        (
-            FungibleTokenMetadataBuilder::new(
-                TokenName::new("T").unwrap(),
-                "TST".try_into().unwrap(),
-                2,
-                1_000u64,
-            )
-            .logo_uri(logo.clone())
-            .is_logo_uri_mutable(true)
-            .build()
-            .unwrap(),
-            "is_logo_uri_mutable",
-            1,
-        ),
-        (
-            FungibleTokenMetadataBuilder::new(
-                TokenName::new("T").unwrap(),
-                "TST".try_into().unwrap(),
-                2,
-                1_000u64,
-            )
-            .logo_uri(logo)
-            .build()
-            .unwrap(),
-            "is_logo_uri_mutable",
-            0,
-        ),
-        (
-            FungibleTokenMetadataBuilder::new(
-                TokenName::new("T").unwrap(),
-                "TST".try_into().unwrap(),
-                2,
-                1_000u64,
-            )
-            .external_link(link.clone())
-            .is_external_link_mutable(true)
-            .build()
-            .unwrap(),
-            "is_external_link_mutable",
-            1,
-        ),
-        (
-            FungibleTokenMetadataBuilder::new(
-                TokenName::new("T").unwrap(),
-                "TST".try_into().unwrap(),
-                2,
-                1_000u64,
-            )
-            .external_link(link)
-            .build()
-            .unwrap(),
-            "is_external_link_mutable",
-            0,
-        ),
-    ];
-
-    for (metadata, proc_name, expected) in cases {
-        let account = AccountBuilder::new([1u8; 32])
-            .account_type(AccountType::FungibleFaucet)
-            .with_auth_component(NoAuth)
-            .with_component(metadata)
-            .with_component(BasicFungibleFaucet)
-            .build()?;
-
-        execute_tx_script(
-            account,
-            format!(
-                "begin
-                    call.::miden::standards::metadata::fungible_faucet::{proc_name}
-                    push.{expected}
-                    assert_eq.err=\"{proc_name} returned unexpected value\"
-                end"
-            ),
-        )
-        .await?;
-    }
-
-    Ok(())
+    )
+    .await
 }
 
 // =================================================================================================
