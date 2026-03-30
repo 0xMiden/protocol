@@ -308,8 +308,7 @@ impl From<NoteMetadataHeader> for Word {
     fn from(header: NoteMetadataHeader) -> Self {
         let mut metadata = Word::empty();
 
-        metadata[0] =
-            merge_sender_suffix_and_note_metadata(header.sender.suffix(), header.note_type);
+        metadata[0] = merge_sender_suffix_and_note_type(header.sender.suffix(), header.note_type);
         metadata[1] = header.sender.prefix().as_felt();
         metadata[2] = Felt::from(header.tag);
         metadata[3] =
@@ -324,7 +323,7 @@ impl TryFrom<Word> for NoteMetadataHeader {
 
     /// Decodes a [`NoteMetadataHeader`] from a [`Word`].
     fn try_from(word: Word) -> Result<Self, Self::Error> {
-        let (sender_suffix, note_type) = unmerge_sender_suffix_and_note_metadata(word[0])?;
+        let (sender_suffix, note_type) = unmerge_sender_suffix_and_note_type(word[0])?;
         let sender_prefix = word[1];
         let tag = u32::try_from(word[2].as_canonical_u64()).map(NoteTag::new).map_err(|_| {
             NoteError::other("failed to convert note tag from metadata header to u32")
@@ -364,7 +363,7 @@ impl TryFrom<Word> for NoteMetadataHeader {
 /// validity.
 ///
 /// The `sender_id_suffix` is the suffix of the sender's account ID.
-fn merge_sender_suffix_and_note_metadata(sender_id_suffix: Felt, note_type: NoteType) -> Felt {
+fn merge_sender_suffix_and_note_type(sender_id_suffix: Felt, note_type: NoteType) -> Felt {
     let mut merged = sender_id_suffix.as_canonical_u64();
 
     let note_type_byte = note_type as u8;
@@ -379,7 +378,10 @@ fn merge_sender_suffix_and_note_metadata(sender_id_suffix: Felt, note_type: Note
 }
 
 /// Unmerges the sender ID suffix and note metadata (note type and version).
-fn unmerge_sender_suffix_and_note_metadata(element: Felt) -> Result<(Felt, NoteType), NoteError> {
+fn unmerge_sender_suffix_and_note_type(element: Felt) -> Result<(Felt, NoteType), NoteError> {
+    // The mask that clears out the lower 8 bits to recover the sender suffix.
+    const SENDER_SUFFIX_MASK: u64 = 0xffff_ffff_ffff_ff00;
+
     let raw = element.as_canonical_u64();
     let version = (raw & 0b1111) as u8;
     let note_type_bit = ((raw >> NOTE_TYPE_SHIFT) & 0b1) as u8;
@@ -400,10 +402,9 @@ fn unmerge_sender_suffix_and_note_metadata(element: Felt) -> Result<(Felt, NoteT
         NoteError::other_with_source("failed to decode note type from metadata header", source)
     })?;
 
-    // Clear the lower 8 bits to recover the sender suffix.
     // No bits were set so felt should still be valid.
     let sender_suffix =
-        Felt::try_from(raw & 0xffff_ffff_ffff_ff00).expect("felt should still be valid");
+        Felt::try_from(raw & SENDER_SUFFIX_MASK).expect("felt should still be valid");
 
     Ok((sender_suffix, note_type))
 }
