@@ -33,6 +33,8 @@ The crate `miden-agglayer` implements the AggLayer bridging protocol on the Mide
 
 ### 2.1 Bridge-out (Miden to AggLayer)
 
+![Bridge-out flow](diagrams/bridge-out.png)
+
 A user initiates a bridge-out by creating a [`B2AGG`](#41-b2agg) note containing a single fungible
 asset and the destination network/address. The bridge account consumes this note:
 
@@ -50,12 +52,11 @@ The leaf appended to the LET can later be included in a Merkle proof on any
 AggLayer-connected chain to claim the bridged asset.
 
 TODO: The bridge currently has no emergency pause mechanism to halt operations
-([001-no-emergency-pause.md](audit/001-no-emergency-pause.md)).
-
-TODO: No local balance tree tracks per-token bridged amounts to prevent over-bridging
-([004-no-local-balance-tree.md](audit/004-no-local-balance-tree.md)).
+([#2696](https://github.com/0xMiden/protocol/issues/2696)).
 
 ### 2.2 Bridge-in (AggLayer to Miden)
+
+![Bridge-in flow](diagrams/bridge-in.png)
 
 When a new deposit into Miden is made on an AggLayer-connected chain (by monitoring updates to the AggLayer contract on Ethereum L1), Miden needs to be "informed" of the updated AggLayer state by having a new Global Exit Root (GER) injected - see [Section 2.3](#23-ger-injection).
 
@@ -79,15 +80,17 @@ The faucet consumes the `MINT` note, mints the specified amount, and creates a [
 that delivers the minted assets to the recipient's Miden account.
 
 TODO: Destination network from the leaf data is not validated against Miden's own network
-ID ([010-destination-network-not-validated.md](audit/010-destination-network-not-validated.md)).
+ID ([#2698](https://github.com/0xMiden/protocol/issues/2698)).
 
 TODO: The leaf type field is not validated to be `LEAF_TYPE_ASSET` (0)
-([011-leaf-type-not-validated.md](audit/011-leaf-type-not-validated.md)).
+([#2699](https://github.com/0xMiden/protocol/issues/2699)).
 
 TODO: Claims cannot be reversed once the nullifier is set
-([003-no-claim-unsetting.md](audit/003-no-claim-unsetting.md)).
+([#2703](https://github.com/0xMiden/protocol/issues/2703)).
 
 ### 2.3 GER Injection
+
+![GER injection flow](diagrams/ger-injection.png)
 
 Global Exit Roots represent a snapshot of exit tree roots across all AggLayer-connected
 chains. A GER Manager observes L1 GER updates and creates [`UPDATE_GER`](#44-update_ger) notes
@@ -101,15 +104,17 @@ Subsequent CLAIM notes reference a GER that must be present in this map for the 
 to be valid.
 
 TODO: GERs cannot be removed once inserted
-([002-no-ger-removal.md](audit/002-no-ger-removal.md)).
+([#2702](https://github.com/0xMiden/protocol/issues/2702)).
 
 TODO: No hash chain tracks GER insertions for proof generation
-([009-no-ger-insertion-hash-chain.md](audit/009-no-ger-insertion-hash-chain.md)).
+([#2707](https://github.com/0xMiden/protocol/issues/2707)).
 
 TODO: Duplicate GER insertions are silently accepted
-([012-ger-duplicate-silent.md](audit/012-ger-duplicate-silent.md)).
+([#2708](https://github.com/0xMiden/protocol/issues/2708)).
 
 ### 2.4 Faucet Registration
+
+![Faucet registration flow](diagrams/faucet-registration.png)
 
 Each bridged token requires a dedicated AggLayer faucet on Miden. The Bridge Operator
 creates [`CONFIG_AGG_BRIDGE`](#43-config_agg_bridge) notes to register faucets. The bridge consumes these notes,
@@ -118,11 +123,11 @@ registry and the token registry. For a detailed description of the faucet and to
 registries, see [Section 7](#7-faucet-registry).
 
 TODO: Faucet registrations are permanent; no remapping or deregistration is supported
-([006-no-token-remapping.md](audit/006-no-token-remapping.md),
-[007-no-faucet-deregistration.md](audit/007-no-faucet-deregistration.md)).
+([#2704](https://github.com/0xMiden/protocol/issues/2704),
+[#2705](https://github.com/0xMiden/protocol/issues/2705)).
 
 TODO: Faucet existence and code commitment are not validated during registration
-([014-faucet-existence-not-validated.md](audit/014-faucet-existence-not-validated.md)).
+([#2709](https://github.com/0xMiden/protocol/issues/2709)).
 
 ### 2.5 Administration
 
@@ -136,10 +141,10 @@ The bridge has two administrative roles set at account creation time:
 Both roles are verified by checking the note sender against the stored account ID.
 
 TODO: Administrative roles cannot be transferred after account creation
-([008-no-role-transfer.md](audit/008-no-role-transfer.md)).
+([#2706](https://github.com/0xMiden/protocol/issues/2706)).
 
 TODO: No emergency pause mechanism exists
-([001-no-emergency-pause.md](audit/001-no-emergency-pause.md)).
+([#2696](https://github.com/0xMiden/protocol/issues/2696)).
 
 ---
 
