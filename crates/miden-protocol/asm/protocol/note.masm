@@ -4,6 +4,8 @@ use miden::core::mem
 
 # Re-export the max inputs per note constant.
 pub use miden::protocol::util::note::MAX_NOTE_STORAGE_ITEMS
+pub use miden::protocol::util::note::NOTE_TYPE_PUBLIC
+pub use miden::protocol::util::note::NOTE_TYPE_PRIVATE
 
 # ERRORS
 # =================================================================================================
@@ -184,11 +186,11 @@ end
 #! - sender_{suffix,prefix} are the suffix and prefix felts of the sender ID of the note which
 #!   metadata was provided.
 pub proc extract_sender_from_metadata
-    # => [sender_id_suffix_and_note_type, sender_id_prefix, tag, attachment_kind_scheme]
+    # => [sender_id_suffix_type_version, sender_id_prefix, tag, attachment_kind_scheme]
 
     # drop tag and attachment_kind_scheme
     movup.3 drop movup.2 drop
-    # => [sender_id_suffix_and_note_type, sender_id_prefix]
+    # => [sender_id_suffix_type_version, sender_id_prefix]
 
     # extract suffix of sender from merged layout, which means clearing the least significant byte
     exec.account_id::shape_suffix
@@ -207,7 +209,7 @@ end
 #!
 #! Invocation: exec
 pub proc extract_attachment_info_from_metadata
-    # => [sender_id_suffix_and_note_type, sender_id_prefix, tag, attachment_kind_scheme]
+    # => [sender_id_suffix_type_version, sender_id_prefix, tag, attachment_kind_scheme]
     drop drop drop
     # => [attachment_kind_scheme]
 
