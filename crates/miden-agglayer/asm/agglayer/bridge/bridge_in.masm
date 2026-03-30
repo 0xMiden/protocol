@@ -808,11 +808,11 @@ end
 proc build_mint_output_note
     # Step 1: Write all 18 MINT note storage items to global memory
     exec.write_mint_note_storage
-    # => [faucet_id_prefix, faucet_id_suffix]
+    # => [faucet_id_suffix, faucet_id_prefix]
 
     # Step 2: Build the MINT note recipient digest
     exec.build_mint_recipient
-    # => [MINT_RECIPIENT, faucet_id_prefix, faucet_id_suffix]
+    # => [MINT_RECIPIENT, faucet_id_suffix, faucet_id_prefix]
 
     # Step 3: Create the output note and set the faucet attachment
     exec.create_mint_note_with_attachment
@@ -930,33 +930,33 @@ end
 #! Creates a public output note with no assets, and sets the attachment so only the target faucet
 #! can consume the note.
 #!
-#! Inputs:  [MINT_RECIPIENT, faucet_id_prefix, faucet_id_suffix]
+#! Inputs:  [MINT_RECIPIENT, faucet_id_suffix, faucet_id_prefix]
 #! Outputs: []
 #!
 #! Invocation: exec
 proc create_mint_note_with_attachment
     # Create the MINT output note targeting the faucet
     push.OUTPUT_NOTE_TYPE_PUBLIC
-    # => [note_type, MINT_RECIPIENT, faucet_id_prefix, faucet_id_suffix]
+    # => [note_type, MINT_RECIPIENT, faucet_id_suffix, faucet_id_prefix]
 
     # Set tag to DEFAULT
     push.DEFAULT_TAG
-    # => [note_type, MINT_RECIPIENT, faucet_id_prefix, faucet_id_suffix]
+    # => [tag, note_type, MINT_RECIPIENT, faucet_id_suffix, faucet_id_prefix]
 
     # Create the output note (no assets - MINT notes carry no assets)
     exec.output_note::create
-    # => [note_idx, faucet_id_prefix, faucet_id_suffix]
+    # => [note_idx, faucet_id_suffix, faucet_id_prefix]
     
     movdn.2
-    # => [faucet_id_prefix, faucet_id_suffix, note_idx]
+    # => [faucet_id_suffix, faucet_id_prefix, note_idx]
 
     # Set the attachment on the MINT note to target the faucet account
     # NetworkAccountTarget attachment: targets the faucet so only it can consume the note
-    # network_account_target::new expects [prefix, suffix, exec_hint]
+    # network_account_target::new expects [suffix, prefix, exec_hint]
     # and returns [attachment_scheme, attachment_kind, ATTACHMENT]
     push.ALWAYS # exec_hint = ALWAYS
     movdn.2
-    # => [faucet_id_prefix, faucet_id_suffix, exec_hint, note_idx]
+    # => [faucet_id_suffix, faucet_id_prefix, exec_hint, note_idx]
 
     exec.network_account_target::new
     # => [attachment_scheme, attachment_kind, ATTACHMENT, note_idx]
