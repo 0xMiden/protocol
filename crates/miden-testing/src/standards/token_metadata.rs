@@ -942,21 +942,17 @@ async fn set_max_supply_mutable_non_owner_fails() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let owner = owner_account_id();
     let non_owner = non_owner_account_id();
-    let new_max_supply: u64 = 2000;
 
     let metadata = network_faucet_metadata("MSM", 1000, Some(0), true, None, None, None)?;
     let faucet = builder.add_existing_network_faucet_with_metadata(owner, metadata)?;
     let mock_chain = builder.build()?;
 
-    let note_script_code = format!(
-        r#"
+    // Auth check fires before data is touched, so no arguments needed.
+    let note_script_code = "
         begin
-            push.{new_max_supply}
-            swap drop
             call.::miden::standards::metadata::fungible_faucet::set_max_supply
         end
-    "#
-    );
+    ";
 
     let source_manager = Arc::new(DefaultSourceManager::default());
 
@@ -965,7 +961,7 @@ async fn set_max_supply_mutable_non_owner_fails() -> anyhow::Result<()> {
         .note_type(NoteType::Private)
         .tag(NoteTag::default().into())
         .serial_number(Word::from([30, 31, 32, 33u32]))
-        .code(&note_script_code)
+        .code(note_script_code)
         .build()?;
 
     let tx_context = mock_chain
