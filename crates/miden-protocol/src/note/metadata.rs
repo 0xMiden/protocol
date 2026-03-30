@@ -14,6 +14,12 @@ use crate::Hasher;
 use crate::errors::NoteError;
 use crate::note::{NoteAttachment, NoteAttachmentKind, NoteAttachmentScheme};
 
+// CONSTANTS
+// ================================================================================================
+
+/// The number of bits by which the note type is offset in the first felt of the note metadata.
+const NOTE_TYPE_SHIFT: u64 = 4;
+
 // NOTE METADATA
 // ================================================================================================
 
@@ -34,7 +40,7 @@ use crate::note::{NoteAttachment, NoteAttachmentKind, NoteAttachmentScheme};
 /// The header word has the following layout:
 ///
 /// ```text
-/// 0th felt: [sender_id_suffix (56 bits) | 6 zero bits | note_type (2 bit)]
+/// 0th felt: [sender_id_suffix (56 bits) | reserved (3 bits) | note_type (1 bit) | version (4 bits)]
 /// 1st felt: [sender_id_prefix (64 bits)]
 /// 2nd felt: [32 zero bits | note_tag (32 bits)]
 /// 3rd felt: [30 zero bits | attachment_kind (2 bits) | attachment_scheme (32 bits)]
@@ -44,10 +50,12 @@ use crate::note::{NoteAttachment, NoteAttachmentKind, NoteAttachmentScheme};
 /// - 1st felt: The lower 8 bits of the account ID suffix are `0` by construction, so that they can
 ///   be overwritten with other data. The suffix' most significant bit must be zero such that the
 ///   entire felt retains its validity even if all of its lower 8 bits are set to `1`. So the note
-///   type can be comfortably encoded.
+///   type and version can be comfortably encoded.
 /// - 2nd felt: Is equivalent to the prefix of the account ID so it inherits its validity.
 /// - 3rd felt: The upper 32 bits are always zero.
 /// - 4th felt: The upper 30 bits are always zero.
+///
+/// The version is hardcoded to 0 and is reserved to make it easier to introduce another version.
 ///
 /// The value of the attachment word depends on the
 /// [`NoteAttachmentKind`](crate::note::NoteAttachmentKind):
@@ -73,6 +81,12 @@ pub struct NoteMetadata {
 }
 
 impl NoteMetadata {
+    /// Version 0 of the note metadata encoding.
+    ///
+    /// If we make this public, we may want to instead consider introducing a `NoteMetadataVersion`
+    /// struct, similar to `AccountIdVersion`.
+    const VERSION_0: u8 = 0;
+
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
@@ -337,12 +351,12 @@ impl TryFrom<Word> for NoteMetadataHeader {
 // HELPER FUNCTIONS
 // ================================================================================================
 
-/// Merges the suffix of an [`AccountId`] and the [`NoteType`] into a single [`Felt`].
+/// Merges the suffix of an [`AccountId`] and note metadata into a single [`Felt`].
 ///
 /// The layout is as follows:
 ///
 /// ```text
-/// [sender_id_suffix (56 bits) | 6 zero bits | note_type (2 bits)]
+/// [sender_id_suffix (56 bits) | reserved (3 bits) | note_type (1 bit) | version (4 bits)]
 /// ```
 ///
 /// The most significant bit of the suffix is guaranteed to be zero, so the felt retains its
@@ -353,28 +367,44 @@ fn merge_sender_suffix_and_note_type(sender_id_suffix: Felt, note_type: NoteType
     let mut merged = sender_id_suffix.as_canonical_u64();
 
     let note_type_byte = note_type as u8;
-    debug_assert!(note_type_byte < 4, "note type must not contain values >= 4");
-    merged |= note_type_byte as u64;
+    debug_assert!(note_type_byte < 2, "note type must not contain values >= 2");
+    // note_type at bit 4, version at bits 0..=3 (hardcoded to NoteMetadata::VERSION_0_NUMBER)
+    merged |= (note_type_byte as u64) << NOTE_TYPE_SHIFT;
+    merged |= NoteMetadata::VERSION_0 as u64;
 
     // SAFETY: The most significant bit of the suffix is zero by construction so the u64 will be a
     // valid felt.
     Felt::try_from(merged).expect("encoded value should be a valid felt")
 }
 
-/// Unmerges the sender ID suffix and note type.
+/// Unmerges the sender ID suffix and note metadata (note type and version).
 fn unmerge_sender_suffix_and_note_type(element: Felt) -> Result<(Felt, NoteType), NoteError> {
-    const NOTE_TYPE_MASK: u8 = 0b11;
-    // Inverts the note type mask.
-    const SENDER_SUFFIX_MASK: u64 = !(NOTE_TYPE_MASK as u64);
+    // The mask that clears out the lower 8 bits to recover the sender suffix.
+    const SENDER_SUFFIX_MASK: u64 = 0xffff_ffff_ffff_ff00;
 
-    let note_type_byte = element.as_canonical_u64() as u8 & NOTE_TYPE_MASK;
-    let note_type = NoteType::try_from(note_type_byte).map_err(|source| {
+    let raw = element.as_canonical_u64();
+    let version = (raw & 0b1111) as u8;
+    let note_type_bit = ((raw >> NOTE_TYPE_SHIFT) & 0b1) as u8;
+    let reserved = ((raw >> 5) & 0b111) as u8;
+
+    if reserved != 0 {
+        return Err(NoteError::other("reserved bits in note metadata header must be zero"));
+    }
+
+    if version != NoteMetadata::VERSION_0 {
+        return Err(NoteError::other(format!(
+            "unsupported note metadata version {version}, expected {}",
+            NoteMetadata::VERSION_0
+        )));
+    }
+
+    let note_type = NoteType::try_from(note_type_bit).map_err(|source| {
         NoteError::other_with_source("failed to decode note type from metadata header", source)
     })?;
 
     // No bits were set so felt should still be valid.
-    let sender_suffix = Felt::try_from(element.as_canonical_u64() & SENDER_SUFFIX_MASK)
-        .expect("felt should still be valid");
+    let sender_suffix =
+        Felt::try_from(raw & SENDER_SUFFIX_MASK).expect("felt should still be valid");
 
     Ok((sender_suffix, note_type))
 }
