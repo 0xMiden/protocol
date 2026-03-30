@@ -914,8 +914,6 @@ async fn set_max_supply_mutable_owner_succeeds() -> anyhow::Result<()> {
     );
 
     let source_manager = Arc::new(DefaultSourceManager::default());
-    let note_script = CodeBuilder::with_source_manager(source_manager.clone())
-        .compile_note_script(&note_script_code)?;
 
     let mut rng = RandomCoin::new([Felt::from(42u32); 4].into());
     let note = NoteBuilder::new(owner, &mut rng)
@@ -927,7 +925,6 @@ async fn set_max_supply_mutable_owner_succeeds() -> anyhow::Result<()> {
 
     let tx_context = mock_chain
         .build_tx_context(faucet.id(), &[], &[note])?
-        .add_note_script(note_script)
         .with_source_manager(source_manager)
         .build()?;
 
@@ -968,8 +965,6 @@ async fn set_max_supply_mutable_non_owner_fails() -> anyhow::Result<()> {
     );
 
     let source_manager = Arc::new(DefaultSourceManager::default());
-    let note_script = CodeBuilder::with_source_manager(source_manager.clone())
-        .compile_note_script(&note_script_code)?;
 
     let mut rng = RandomCoin::new([Felt::from(99u32); 4].into());
     let note = NoteBuilder::new(non_owner, &mut rng)
@@ -981,7 +976,6 @@ async fn set_max_supply_mutable_non_owner_fails() -> anyhow::Result<()> {
 
     let tx_context = mock_chain
         .build_tx_context(faucet.id(), &[], &[note])?
-        .add_note_script(note_script)
         .with_source_manager(source_manager)
         .build()?;
 
