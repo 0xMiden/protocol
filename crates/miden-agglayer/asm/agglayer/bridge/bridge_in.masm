@@ -43,7 +43,7 @@ const IS_CLAIMED_FLAG = [1, 0, 0, 0]
 # -------------------------------------------------------------------------------------------------
 
 # The slot in this component's storage layout where claim nullifiers are stored.
-# Map entries: RPO(leaf_index, source_bridge_network) => [1, 0, 0, 0]
+# Map entries: Poseidon2(leaf_index, source_bridge_network) => [1, 0, 0, 0]
 const CLAIM_NULLIFIERS_SLOT = word("agglayer::bridge::claim_nullifiers")
 
 # Storage slot constants for the CGI (claimed global index) chain hash. 
@@ -58,10 +58,16 @@ const CGI_CHAIN_HASH_HI_SLOT_NAME = word("agglayer::bridge::cgi_chain_hash_hi")
 const CLAIM_PROOF_DATA_WORD_LEN = 134
 const CLAIM_LEAF_DATA_WORD_LEN = 8
 
-# MINT note storage layout (public mode, 18 items):
-# [0]: tag, [1]: amount, [2]: attachment_kind, [3]: attachment_scheme,
-# [4-7]: ATTACHMENT, [8-11]: P2ID_SCRIPT_ROOT, [12-15]: SERIAL_NUM,
-# [16]: account_id_suffix, [17]: account_id_prefix
+# MINT note storage layout (public mode, 18 felts total):
+# - tag               [0]      : 1 felt
+# - amount            [1]      : 1 felt
+# - attachment_kind   [2]      : 1 felt
+# - attachment_scheme [3]      : 1 felt
+# - ATTACHMENT        [4..7]   : 4 felts
+# - P2ID_SCRIPT_ROOT  [8..11]  : 4 felts
+# - SERIAL_NUM        [12..15] : 4 felts
+# - account_id_suffix [16]     : 1 felt
+# - account_id_prefix [17]     : 1 felt
 const MINT_NOTE_NUM_STORAGE_ITEMS = 18
 
 # P2ID output note constants
@@ -153,11 +159,11 @@ const CLAIM_DEST_ID_SUFFIX_LOCAL = 1
 # PUBLIC INTERFACE
 # =================================================================================================
 
-#! Validates a claim against the AggLayer bridge and creates a MINT note for the aggfaucet.
+#! Validates a claim against the AggLayer bridge and creates a MINT note for the AggLayer faucet.
 #!
 #! This procedure is called by the CLAIM note script. It validates the Merkle proof and then
 #! looks up the faucet account ID from the token registry using the origin token address from
-#! the leaf data, and creates a MINT note targeting the aggfaucet.
+#! the leaf data, and creates a MINT note targeting the AggLayer Faucet.
 #!
 #! The MINT note uses the standard MINT note pattern (public mode) with 18 storage items.
 #! See `write_mint_note_storage` for the full storage layout.
@@ -229,7 +235,7 @@ pub proc claim
     exec.verify_claim_amount
     # => [faucet_id_suffix, faucet_id_prefix, pad(16)]
     
-    # Build MINT output note targeting the aggfaucet
+    # Build MINT output note targeting the AggLayer faucet
     loc_load.CLAIM_DEST_ID_PREFIX_LOCAL loc_load.CLAIM_DEST_ID_SUFFIX_LOCAL
     # => [destination_id_suffix, destination_id_prefix, faucet_id_suffix, faucet_id_prefix, pad(16)]
 
@@ -350,12 +356,13 @@ pub proc process_global_index_rollup
     repeat.5 
         assertz.err=ERR_LEADING_BITS_NON_ZERO
     end
+    # => [mainnet_flag_le, rollup_index_le, leaf_index_le]
 
     # the next element is the mainnet flag (LE-packed u32)
     # for a rollup deposit it must be exactly 0; zero is byte-order-independent,
     # so no swap is needed before asserting
-    # => [mainnet_flag_le, rollup_index_le, leaf_index_le]
     assertz.err=ERR_BRIDGE_NOT_ROLLUP
+    # => [rollup_index_le, leaf_index_le]
 
     # byte-swap rollup_index from LE to BE
     exec.utils::swap_u32_bytes
@@ -368,8 +375,8 @@ end
 
 #! Computes the Global Exit Tree (GET) root from the mainnet and rollup exit roots.
 #!
-#! The mainnet exit root is expected at `exit_roots_ptr` and
-#! the rollup exit root is expected at `exit_roots_ptr + 8`.
+#! The mainnet exit root is expected at `exit_roots_ptr` and the rollup exit root is expected at 
+#! `exit_roots_ptr + 8`.
 #!
 #! Inputs: [exit_roots_ptr]
 #! Outputs: [GER_ROOT[8]]
@@ -378,6 +385,7 @@ end
 pub proc compute_ger(exit_roots_ptr: MemoryAddress) -> DoubleWord
     push.64 swap
     # => [exit_roots_ptr, len_bytes]
+
     exec.keccak256::hash_bytes
     # => [GER_ROOT[8]]
 end
@@ -419,14 +427,15 @@ pub proc verify_merkle_proof(
     movdn.8 exec.word::eq and
     # => [verification_flag]
 end
-#! Verifies that the faucet_mint_amount matches the raw U256 amount from the leaf data,
-#! scaled down by the faucet's scale factor.
+
+#! Verifies that the faucet_mint_amount matches the raw U256 amount from the leaf data, scaled down
+#! by the faucet's scale factor.
 #!
 #! This procedure:
 #! 1. Performs an FPI call to the faucet's `get_scale` procedure to retrieve the scale factor.
 #! 2. Loads the raw U256 amount from the leaf data in memory.
-#! 3. Calls `verify_u256_to_native_amount_conversion` to assert that:
-#!        faucet_mint_amount == floor(raw_amount / 10^scale)
+#! 3. Calls `verify_u256_to_native_amount_conversion` to assert that
+#!    `faucet_mint_amount == floor(raw_amount / 10^scale)`.
 #!
 #! Inputs:  [faucet_id_suffix, faucet_id_prefix]
 #! Outputs: []
@@ -522,16 +531,20 @@ end
 #! Invocation: exec
 proc verify_leaf
     movupw.2
+    # => [PROOF_DATA_KEY, LEAF_VALUE[8]]
+
     # load proof data from the advice map into memory
     adv.push_mapval
     # => [PROOF_DATA_KEY, LEAF_VALUE[8]]
 
     push.SMT_PROOF_LOCAL_EXIT_ROOT_PTR push.CLAIM_PROOF_DATA_WORD_LEN
     exec.mem::pipe_preimage_to_memory drop
+    # => [LEAF_VALUE[8]]
 
     # 1. compute GER from mainnet + rollup exit roots
     push.EXIT_ROOTS_PTR
     # => [exit_roots_ptr, LEAF_VALUE[8]]
+    
     exec.compute_ger
     # => [GER[8], LEAF_VALUE[8]]
 
@@ -548,8 +561,8 @@ proc verify_leaf
     # [gi0, gi1, gi2, gi3, gi4, mainnet_flag_le, rollup_index_le, leaf_index_le]
     # gi0 is on top (position 0). The mainnet flag is at stack position 5.
 
-    # Duplicate the mainnet flag element, byte-swap from LE to BE,
-    # assert it is a valid boolean (0 or 1), then use it to branch.
+    # Duplicate the mainnet flag element, byte-swap from LE to BE, assert it is a valid boolean 
+    # (0 or 1), then use it to branch.
     dup.5 exec.utils::swap_u32_bytes dup
     # => [mainnet_flag, mainnet_flag, GLOBAL_INDEX[8], LEAF_VALUE[8]]
 
@@ -558,6 +571,7 @@ proc verify_leaf
 
     if.true
         # ==================== MAINNET DEPOSIT ====================
+
         exec.process_global_index_mainnet
         # => [leaf_index, LEAF_VALUE[8]]
 
@@ -585,8 +599,9 @@ proc verify_leaf
         # => []
     else
         # ==================== ROLLUP DEPOSIT ====================
-        # mainnet_flag = 0; extract rollup_index and leaf_index via helper,
-        # then do two-level verification
+
+        # mainnet_flag = 0; extract rollup_index and leaf_index via helper, then do two-level
+        # verification
         exec.process_global_index_rollup
         # => [leaf_index, rollup_index, LEAF_VALUE[8]]
 
@@ -616,7 +631,6 @@ proc verify_leaf
         # => [LOCAL_EXIT_ROOT_LO, LOCAL_EXIT_ROOT_HI, rollup_index, rollup_exit_root_ptr]
         
         push.SMT_PROOF_ROLLUP_EXIT_ROOT_PTR movdn.8
-
         # => [LOCAL_EXIT_ROOT[8], smt_proof_rollup_ptr, rollup_index, rollup_exit_root_ptr]
 
         exec.verify_merkle_proof
@@ -644,8 +658,8 @@ proc verify_leaf
     # => []
 end
 
-#! Computes the claim nullifier as RPO(leaf_index, source_bridge_network), then checks
-#! that the claim has not been spent and marks it as spent.
+#! Computes the claim nullifier as Poseidon2(leaf_index, source_bridge_network), then checks that
+#! the claim has not been spent and marks it as spent.
 #!
 #! This mimics the Solidity `_setAndCheckClaimed(leafIndex, sourceBridgeNetwork)` function.
 #! See: https://github.com/agglayer/agglayer-contracts/blob/60d06fc3224792ce55dc2690d66b6719a73398e7/contracts/v2/PolygonZkEVMBridgeV2.sol#L987
@@ -676,10 +690,10 @@ proc set_and_check_claimed
     # => []
 end
 
-#! Checks that the CLAIM note has not already been spent, and marks it as spent
-#! by storing [1, 0, 0, 0] in the CLAIM_NULLIFIERS_SLOT map.
+#! Checks that the CLAIM note has not already been spent, and marks it as spent by storing
+#! [1, 0, 0, 0] in the CLAIM_NULLIFIERS_SLOT map.
 #!
-#! The nullifier is computed as RPO(leaf_index, source_bridge_network), which uniquely
+#! The nullifier is computed as Poseidon2(leaf_index, source_bridge_network), which uniquely
 #! identifies a claim in the Global Exit Root (GER) as per the AggLayer protocol.
 #!
 #! Inputs:  [NULLIFIER]
@@ -713,10 +727,11 @@ proc claim_batch_pipe_double_words
     # 1) Verify PROOF_DATA_KEY
     mem_storew_be.CLAIM_PROOF_DATA_KEY_MEM_ADDR
     adv.push_mapval
-    # => [PROOF_DATA_KEY]
+    # => [PROOF_DATA_KEY, LEAF_DATA_KEY]
 
     push.CLAIM_PROOF_DATA_START_PTR push.CLAIM_PROOF_DATA_WORD_LEN
     exec.mem::pipe_double_words_preimage_to_memory drop
+    # => [LEAF_DATA_KEY]
 
     # 2) Verify LEAF_DATA_KEY
     mem_storew_be.CLAIM_LEAF_DATA_KEY_MEM_ADDR
@@ -725,6 +740,7 @@ proc claim_batch_pipe_double_words
 
     push.CLAIM_LEAF_DATA_START_PTR push.CLAIM_LEAF_DATA_WORD_LEN
     exec.mem::pipe_double_words_preimage_to_memory drop
+    # => []
 end
 
 #! Extracts the destination account ID as address[5] from memory.
@@ -744,8 +760,12 @@ proc load_destination_address
     # => [address[5]]
 end
 
-# Inputs: []
-# Outputs: [U256[0], U256[1]]
+#! Loads the claim note asset amount onto the stack from memory.
+#!
+#! Inputs:  []
+#! Outputs: [U256_LO, U256_HI]
+#!
+#! Invocation: exec
 proc load_raw_claim_amount
     mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_7
     mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_6
@@ -755,6 +775,7 @@ proc load_raw_claim_amount
     mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_2
     mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_1
     mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_0
+    # => [U256_LO, U256_HI]
 end
 
 #! Reads the origin token address (5 felts) from the leaf data in memory.
@@ -772,10 +793,10 @@ proc load_origin_token_address
     # => [origin_token_addr(5)]
 end
 
-#! Builds a PUBLIC MINT output note targeting the aggfaucet.
+#! Builds a PUBLIC MINT output note targeting the AggLayer Faucet.
 #!
-#! The MINT note uses public mode (18 storage items) so the AggFaucet creates
-#! a PUBLIC P2ID note on consumption. This procedure orchestrates three steps:
+#! The MINT note uses public mode (18 storage items) so the AggLayer Faucet creates a PUBLIC P2ID
+#! note on consumption. This procedure orchestrates three steps:
 #! 1. Write all 18 MINT note storage items to global memory.
 #! 2. Build the MINT note recipient digest from the storage.
 #! 3. Create the output note, and set the attachment.
@@ -787,11 +808,11 @@ end
 proc build_mint_output_note
     # Step 1: Write all 18 MINT note storage items to global memory
     exec.write_mint_note_storage
-    # => [faucet_id_prefix, faucet_id_suffix]
+    # => [faucet_id_suffix, faucet_id_prefix]
 
     # Step 2: Build the MINT note recipient digest
     exec.build_mint_recipient
-    # => [MINT_RECIPIENT, faucet_id_prefix, faucet_id_suffix]
+    # => [MINT_RECIPIENT, faucet_id_suffix, faucet_id_prefix]
 
     # Step 3: Create the output note and set the faucet attachment
     exec.create_mint_note_with_attachment
@@ -904,40 +925,38 @@ proc build_mint_recipient
     # => [MINT_RECIPIENT]
 end
 
-
-
 #! Creates the MINT output note and sets the NetworkAccountTarget attachment on it.
 #!
-#! Creates a public output note with no assets, and sets the attachment so only the
-#! target faucet can consume the note.
+#! Creates a public output note with no assets, and sets the attachment so only the target faucet
+#! can consume the note.
 #!
-#! Inputs:  [MINT_RECIPIENT, faucet_id_prefix, faucet_id_suffix]
+#! Inputs:  [MINT_RECIPIENT, faucet_id_suffix, faucet_id_prefix]
 #! Outputs: []
 #!
 #! Invocation: exec
 proc create_mint_note_with_attachment
     # Create the MINT output note targeting the faucet
     push.OUTPUT_NOTE_TYPE_PUBLIC
-    # => [note_type, MINT_RECIPIENT, faucet_id_prefix, faucet_id_suffix]
+    # => [note_type, MINT_RECIPIENT, faucet_id_suffix, faucet_id_prefix]
 
     # Set tag to DEFAULT
     push.DEFAULT_TAG
-    # => [note_type, MINT_RECIPIENT, faucet_id_prefix, faucet_id_suffix]
+    # => [tag, note_type, MINT_RECIPIENT, faucet_id_suffix, faucet_id_prefix]
 
     # Create the output note (no assets - MINT notes carry no assets)
     exec.output_note::create
-    # => [note_idx, faucet_id_prefix, faucet_id_suffix]
+    # => [note_idx, faucet_id_suffix, faucet_id_prefix]
     
     movdn.2
-    # => [faucet_id_prefix, faucet_id_suffix, note_idx]
+    # => [faucet_id_suffix, faucet_id_prefix, note_idx]
 
     # Set the attachment on the MINT note to target the faucet account
     # NetworkAccountTarget attachment: targets the faucet so only it can consume the note
-    # network_account_target::new expects [prefix, suffix, exec_hint]
+    # network_account_target::new expects [suffix, prefix, exec_hint]
     # and returns [attachment_scheme, attachment_kind, ATTACHMENT]
     push.ALWAYS # exec_hint = ALWAYS
     movdn.2
-    # => [faucet_id_prefix, faucet_id_suffix, exec_hint, note_idx]
+    # => [faucet_id_suffix, faucet_id_prefix, exec_hint, note_idx]
 
     exec.network_account_target::new
     # => [attachment_scheme, attachment_kind, ATTACHMENT, note_idx]
@@ -1093,4 +1112,4 @@ proc store_cgi_chain_hash
     push.CGI_CHAIN_HASH_HI_SLOT_NAME[0..2]
     exec.native_account::set_item dropw
     # => []
-end 
+end

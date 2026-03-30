@@ -10,15 +10,13 @@ use miden::standards::note_tag::DEFAULT_TAG
 use miden::standards::note::execution_hint::ALWAYS
 use miden::protocol::types::MemoryAddress
 use miden::protocol::output_note
-use miden::core::crypto::hashes::keccak256
 use miden::core::crypto::hashes::poseidon2
-use miden::core::word
 use agglayer::common::utils
 use agglayer::faucet -> agglayer_faucet
 use agglayer::bridge::bridge_config
 use agglayer::bridge::leaf_utils
 use agglayer::bridge::merkle_tree_frontier
-use agglayer::common::utils::EthereumAddressFormat
+use agglayer::common::eth_address::EthereumAddressFormat
 
 # CONSTANTS
 # =================================================================================================
@@ -176,7 +174,7 @@ pub proc bridge_out
     exec.asset::load
     swapw dropw
     # => [ASSET_KEY, PROC_MAST_ROOT, pad(16)]
-    # ASSET layout: [0, 0, faucet_id_suffix, faucet_id_prefix]
+    # ASSET_KEY layout: [0, 0, faucet_id_suffix, faucet_id_prefix]
 
     # Extract faucet ID, drop padding and amount
     drop drop
@@ -188,6 +186,7 @@ pub proc bridge_out
     push.LEAF_DATA_START_PTR push.METADATA_HASH_OFFSET add
     movdn.8
     # => [METADATA_HASH_LO, METADATA_HASH_HI, metadata_hash_ptr, pad(8)]
+
     exec.utils::mem_store_double_word_unaligned
     # => [pad(16)]
 
@@ -215,6 +214,7 @@ pub proc bridge_out
     locaddr.BRIDGE_OUT_BURN_ASSET_LOC
     exec.asset::load
     # => [ASSET_KEY, ASSET_VALUE, pad(16)]
+    
     exec.create_burn_note
     # => [pad(16)]
 end
@@ -222,19 +222,19 @@ end
 # HELPER PROCEDURES
 # =================================================================================================
 
-#! Validates that a faucet is registered in the bridge's faucet registry, then performs
-#! an FPI call to the faucet's `asset_to_origin_asset` procedure to obtain the scaled
-#! amount, origin token address, and origin network.
+#! Validates that a faucet is registered in the bridge's faucet registry, then performs an FPI call
+#! to the faucet's `asset_to_origin_asset` procedure to obtain the scaled amount, origin token
+#! address, and origin network.
 #!
 #! Inputs:  [ASSET_KEY, ASSET_VALUE]
-#! Outputs: [AMOUNT_U256[0](4), AMOUNT_U256[1](4), origin_addr(5), origin_network]
+#! Outputs: [AMOUNT_U256_LO, AMOUNT_U256_HI, origin_addr(5), origin_network]
 #!
 #! Where:
 #! - ASSET_KEY is the vault key of the asset to be bridged out.
 #! - ASSET_VALUE is the value of the asset to be bridged out.
-#! - AMOUNT_U256: scaled amount as 8 u32 limbs (little-endian)
-#! - origin_addr: origin token address (5 u32 felts)
-#! - origin_network: origin network identifier
+#! - AMOUNT_U256: scaled amount as 8 u32 limbs (little-endian).
+#! - origin_addr: origin token address (5 u32 felts).
+#! - origin_network: origin network identifier.
 #!
 #! Panics if:
 #! - The faucet is not registered in the faucet registry.
@@ -248,9 +248,8 @@ proc convert_asset
         padw padw swapdw
     end
     # => [ASSET_KEY, ASSET_VALUE, pad(16)]
-    swapw
-    exec.asset::fungible_value_into_amount
-    movdn.4
+
+    swapw exec.asset::fungible_value_into_amount movdn.4
     # => [ASSET_KEY, amount, pad(16)]
 
     exec.asset::key_into_faucet_id
@@ -270,13 +269,13 @@ proc convert_asset
     # => [faucet_id_suffix, faucet_id_prefix, PROC_MAST_ROOT, amount, pad(15), pad(1)]
 
     exec.tx::execute_foreign_procedure
-    # => [AMOUNT_U256[0](4), AMOUNT_U256[1](4), origin_addr(5), origin_network, pad(2), pad(1)]
+    # => [AMOUNT_U256_LO, AMOUNT_U256_HI, origin_addr(5), origin_network, pad(2), pad(1)]
 
     # drop the 3 trailing padding elements
     repeat.3
         movup.14 drop
     end
-    # => [AMOUNT_U256[0](4), AMOUNT_U256[1](4), origin_addr(5), origin_network]
+    # => [AMOUNT_U256_LO, AMOUNT_U256_HI, origin_addr(5), origin_network]
 end
 
 #! Computes the leaf value from the leaf data in memory and appends it to the Local Exit Tree.
@@ -324,8 +323,8 @@ end
 
 #! Loads the LET (Local Exit Tree) frontier from account storage into memory.
 #!
-#! The num_leaves is read from its dedicated value slot, and the 32 frontier entries are read
-#! from the LET map slot (double-word array, indices 0..31). The data is placed into memory at
+#! The num_leaves is read from its dedicated value slot, and the 32 frontier entries are read from
+#! the LET map slot (double-word array, indices 0..31). The data is placed into memory at
 #! LET_FRONTIER_MEM_PTR, matching the layout expected by append_and_update_frontier:
 #! [num_leaves, 0, 0, 0, [[FRONTIER_NODE_LO, FRONTIER_NODE_HI]; 32]]
 #!
@@ -394,6 +393,7 @@ proc save_let_root_and_num_leaves
     # 3. Save new_leaf_count to its value slot as [new_leaf_count, 0, 0, 0]
     push.0.0.0 movup.3
     # => [new_leaf_count, 0, 0, 0]
+
     push.LET_NUM_LEAVES_SLOT[0..2]
     exec.native_account::set_item
     dropw
@@ -455,6 +455,7 @@ proc write_address_to_memory(mem_ptr: MemoryAddress, address: EthereumAddressFor
     # => [mem_ptr+4, address(1)]
 
     mem_store
+    # => []
 end
 
 #! Computes the SERIAL_NUM of the outputted BURN note.
@@ -539,8 +540,7 @@ proc create_burn_note
     # => [note_idx, pad(15)]
 
     # duplicate note_idx: one for set_attachment, one for add_asset
-    dup
-    swapw loc_loadw_le.ATTACHMENT_LOC
+    dup swapw loc_loadw_le.ATTACHMENT_LOC
     # => [NOTE_ATTACHMENT, note_idx, note_idx, pad(11)]
 
     loc_load.ATTACHMENT_KIND_LOC
