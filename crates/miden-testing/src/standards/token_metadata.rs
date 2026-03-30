@@ -562,7 +562,6 @@ fn faucet_with_metadata_storage_layout() {
     let token_name = TokenName::new("test faucet name").unwrap();
     let desc_text = "faucet description text for testing";
     let description = Description::new(desc_text).unwrap();
-    let desc_words = description.to_words();
 
     let metadata =
         FungibleTokenMetadataBuilder::new(token_name, "TST".try_into().unwrap(), 8, 1_000_000u64)
@@ -579,18 +578,12 @@ fn faucet_with_metadata_storage_layout() {
         .build()
         .unwrap();
 
-    // Verify faucet metadata
-    let faucet_metadata =
-        account.storage().get_item(FungibleTokenMetadata::metadata_slot()).unwrap();
-    assert_eq!(faucet_metadata[0], Felt::new(0));
-    assert_eq!(faucet_metadata[1], Felt::new(1_000_000));
-    assert_eq!(faucet_metadata[2], Felt::new(8));
-
-    // Verify description
-    for (i, expected) in desc_words.iter().enumerate() {
-        let chunk = account.storage().get_item(TokenMetadata::description_slot(i)).unwrap();
-        assert_eq!(chunk, *expected);
-    }
+    // Verify roundtrip via try_from
+    let restored = FungibleTokenMetadata::try_from(account.storage()).unwrap();
+    assert_eq!(restored.token_supply(), Felt::ZERO);
+    assert_eq!(restored.max_supply().as_canonical_u64(), 1_000_000);
+    assert_eq!(restored.decimals(), 8);
+    assert_eq!(restored.description().map(|d| d.as_str()), Some(desc_text));
 }
 
 #[test]
@@ -661,7 +654,6 @@ fn verify_faucet_with_max_name_and_description(
     let max_name = "a".repeat(TokenName::MAX_BYTES);
     let desc_text = "a".repeat(Description::MAX_BYTES);
     let description = Description::new(&desc_text).unwrap();
-    let desc_words = description.to_words();
 
     let faucet_metadata = FungibleTokenMetadataBuilder::new(
         TokenName::new(&max_name).unwrap(),
@@ -685,18 +677,11 @@ fn verify_faucet_with_max_name_and_description(
 
     let account = builder.build().unwrap();
 
-    let name_words = TokenName::new(&max_name).unwrap().to_words();
-    let name_0 = account.storage().get_item(TokenMetadata::name_chunk_0_slot()).unwrap();
-    let name_1 = account.storage().get_item(TokenMetadata::name_chunk_1_slot()).unwrap();
-    assert_eq!(name_0, name_words[0]);
-    assert_eq!(name_1, name_words[1]);
-    for (i, expected) in desc_words.iter().enumerate() {
-        let chunk = account.storage().get_item(TokenMetadata::description_slot(i)).unwrap();
-        assert_eq!(chunk, *expected);
-    }
-    let faucet_metadata_val =
-        account.storage().get_item(FungibleTokenMetadata::metadata_slot()).unwrap();
-    assert_eq!(faucet_metadata_val[1], Felt::new(max_supply));
+    // Verify roundtrip via try_from
+    let restored = FungibleTokenMetadata::try_from(account.storage()).unwrap();
+    assert_eq!(restored.name().as_str(), max_name);
+    assert_eq!(restored.description().map(|d| d.as_str()), Some(desc_text.as_str()));
+    assert_eq!(restored.max_supply().as_canonical_u64(), max_supply);
 }
 
 #[test]
@@ -1188,9 +1173,13 @@ async fn set_max_supply_mutable_owner_succeeds() -> anyhow::Result<()> {
     let mut updated_faucet = faucet.clone();
     updated_faucet.apply_delta(executed.account_delta())?;
 
-    let metadata_word = updated_faucet.storage().get_item(FungibleTokenMetadata::metadata_slot())?;
-    assert_eq!(metadata_word[1], Felt::new(new_max_supply), "max_supply should be updated");
-    assert_eq!(metadata_word[0], Felt::new(0), "token_supply should remain unchanged");
+    let restored = FungibleTokenMetadata::try_from(updated_faucet.storage())?;
+    assert_eq!(
+        restored.max_supply().as_canonical_u64(),
+        new_max_supply,
+        "max_supply should be updated"
+    );
+    assert_eq!(restored.token_supply(), Felt::ZERO, "token_supply should remain unchanged");
 
     Ok(())
 }
