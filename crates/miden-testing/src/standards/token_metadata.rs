@@ -62,8 +62,7 @@ fn network_faucet_metadata(
     external_link: Option<([Word; 7], bool)>,
 ) -> anyhow::Result<FungibleTokenMetadata> {
     let token_supply = token_supply.unwrap_or(0);
-    let name = TokenName::new(token_symbol)
-        .unwrap_or_else(|_| TokenName::new("").expect("empty string is a valid token name"));
+    let name = TokenName::new(token_symbol)?;
     let token_symbol = TokenSymbol::new(token_symbol)?;
 
     let mut builder = FungibleTokenMetadataBuilder::new(name, token_symbol, 10, max_supply)
