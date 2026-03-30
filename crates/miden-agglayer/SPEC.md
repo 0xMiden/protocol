@@ -25,16 +25,8 @@ implementation are called out inline with `TODO (Future)` markers.
 | **Integration Service** (offchain) | Observes L1 events (deposits, GER updates) and creates UPDATE_GER and CLAIM notes on Miden. Trusted to provide correct proofs and data. | Not an onchain entity; creates notes targeting bridge/faucet |
 | **Bridge Operator** (offchain) | Deploys bridge and faucet accounts. Creates CONFIG_AGG_BRIDGE notes to register faucets. Must use the bridge admin account. | Not an onchain entity; creates config notes |
 
-### Current permissions
-
-| Note type | Issuer (sender check) | Consumer (consuming-account check) |
-|-----------|----------------------|-----------------------------------|
-| B2AGG (bridge-out) | Any user -- not restricted | Bridge account -- **enforced** via `NetworkAccountTarget` attachment |
-| B2AGG (reclaim) | Any user -- not restricted | Original sender only -- **enforced**: script checks `sender == consuming account` |
-| CONFIG_AGG_BRIDGE | Bridge admin only -- **enforced** by `bridge_config::register_faucet` procedure | Bridge account -- **enforced** via `NetworkAccountTarget` attachment |
-| UPDATE_GER | GER manager only -- **enforced** by `bridge_config::update_ger` procedure | Bridge account -- **enforced** via `NetworkAccountTarget` attachment |
-| CLAIM | Anyone -- not restricted | Bridge account -- **enforced** via `NetworkAccountTarget` attachment |
-| MINT | Bridge account only -- **enforced** by faucet's `owner_only` mint policy via `Ownable2Step` (asserts note sender is the faucet's owner, i.e. the bridge) | Target faucet only -- **enforced** via `NetworkAccountTarget` attachment |
+Per-note-type permissions are documented inline in each note type section
+(see [Section 3](#3-note-types-and-storage-layouts)).
 
 ---
 
@@ -309,6 +301,22 @@ Keccak preimage format directly — the felt value does **not** equal the numeri
 - **Reclaim:** Consuming account is the original sender -> assets are added back to the
   account via `basic_wallet::add_assets_to_account`. No output notes.
 
+#### Permissions
+
+**Bridge-out:**
+
+| Role | Enforcement |
+|------|------------|
+| **Issuer** | Any user -- not restricted |
+| **Consumer** | Bridge account -- **enforced** via `NetworkAccountTarget` attachment |
+
+**Reclaim:**
+
+| Role | Enforcement |
+|------|------------|
+| **Issuer** | Any user -- not restricted |
+| **Consumer** | Original sender only -- **enforced**: script checks `sender == consuming account` |
+
 ### 3.2 CLAIM
 
 **Purpose:** Claim assets, which were deposited on any AggLayer-connected rollup, on Miden.
@@ -373,6 +381,13 @@ The storage is divided into three logical regions: proof data (felts 0-535), lea
    faucet via the token registry, verifies the amount conversion, then builds a MINT
    output note targeting the faucet.
 
+#### Permissions
+
+| Role | Enforcement |
+|------|------------|
+| **Issuer** | Anyone -- not restricted |
+| **Consumer** | Bridge account -- **enforced** via `NetworkAccountTarget` attachment |
+
 ### 3.3 CONFIG_AGG_BRIDGE
 
 **Purpose:** Registers a faucet in the bridge's faucet registry.
@@ -411,6 +426,13 @@ The storage is divided into three logical regions: proof data (felts 0-535), lea
 **Consumption:** Script validates attachment target, loads storage, and calls
 `bridge_config::register_faucet` (which asserts sender is bridge admin and performs
 two-step registration into `faucet_registry_map` and `token_registry_map`).
+
+#### Permissions
+
+| Role | Enforcement |
+|------|------------|
+| **Issuer** | Bridge admin only -- **enforced** by `bridge_config::register_faucet` procedure |
+| **Consumer** | Bridge account -- **enforced** via `NetworkAccountTarget` attachment |
 
 ### 3.4 UPDATE_GER
 
@@ -451,6 +473,13 @@ CLAIM notes can be verified against it.
 `bridge_config::update_ger` (which asserts sender is GER manager), which computes
 `poseidon2::merge(GER_LOWER, GER_UPPER)` and stores the result in the GER map.
 
+#### Permissions
+
+| Role | Enforcement |
+|------|------------|
+| **Issuer** | GER manager only -- **enforced** by `bridge_config::update_ger` procedure |
+| **Consumer** | Bridge account -- **enforced** via `NetworkAccountTarget` attachment |
+
 ### 3.5 BURN (generated)
 
 **Purpose:** Created by `bridge_out::bridge_out` to burn the bridged asset on the faucet.
@@ -487,6 +516,13 @@ No fields -- this is a standard burn note with no custom data.
 The standard BURN script calls `faucets::burn` on the consuming faucet account. This
 validates that the note contains exactly one fungible asset issued by that faucet and
 decreases the faucet's total token supply by the burned amount.
+
+#### Permissions
+
+| Role | Enforcement |
+|------|------------|
+| **Issuer** | Bridge account (created by `bridge_out::bridge_out`) |
+| **Consumer** | Target faucet only -- **enforced** via `NetworkAccountTarget` attachment |
 
 ### 3.6 P2ID (generated)
 
@@ -528,6 +564,13 @@ deliver minted assets to the recipient.
 Consuming account must match `target_account_id` from note storage (enforced by the P2ID
 script). All note assets are added to the consuming account via
 `basic_wallet::add_assets_to_account`.
+
+#### Permissions
+
+| Role | Enforcement |
+|------|------------|
+| **Issuer** | Faucet account (created by `mint_and_send`) |
+| **Consumer** | Destination account only -- **enforced** by P2ID script (checks `target_account_id`) |
 
 ### 3.7 MINT (generated)
 
@@ -586,6 +629,13 @@ the bridge can trigger minting on the faucet.
 After the policy check passes, `mint_and_send` mints the specified amount and creates a
 P2ID output note for the recipient using the storage items (script root, serial number,
 destination account ID, tag).
+
+#### Permissions
+
+| Role | Enforcement |
+|------|------------|
+| **Issuer** | Bridge account only -- **enforced** by faucet's `owner_only` mint policy via `Ownable2Step` (asserts note sender is the faucet's owner, i.e. the bridge) |
+| **Consumer** | Target faucet only -- **enforced** via `NetworkAccountTarget` attachment |
 
 ---
 
