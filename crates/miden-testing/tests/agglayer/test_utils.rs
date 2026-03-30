@@ -8,7 +8,7 @@ pub use miden_agglayer::testing::{
     LEAF_VALUE_VECTORS_JSON,
     LeafValueVector,
     MerkleProofVerificationFile,
-    MmrFrontierVectorsFile,
+    MtfVectorsFile,
     SOLIDITY_CANONICAL_ZEROS,
     SOLIDITY_MERKLE_PROOF_VECTORS,
 };
@@ -38,7 +38,7 @@ pub const MTF_VECTORS_JSON: &str = include_str!(
 // ================================================================================================
 
 /// Lazily parsed Merkle Tree frontier (MTF) vectors from the JSON file.
-pub static SOLIDITY_MTF_VECTORS: LazyLock<MmrFrontierVectorsFile> = LazyLock::new(|| {
+pub static SOLIDITY_MTF_VECTORS: LazyLock<MtfVectorsFile> = LazyLock::new(|| {
     serde_json::from_str(MTF_VECTORS_JSON).expect("failed to parse MTF vectors JSON")
 });
 

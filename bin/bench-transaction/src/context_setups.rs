@@ -299,9 +299,10 @@ pub async fn tx_consume_claim_note(data_source: ClaimDataSource) -> Result<Trans
 /// the faucet in the bridge. Only the returned B2AGG transaction context is benchmarked — the
 /// prerequisite CONFIG_AGG_BRIDGE transaction is not included in cycle/time measurements.
 ///
-/// The setup uses the first entry from the MMR frontier test vectors for destination data.
+/// The setup uses the first entry from the MTF (Merkle Tree Frontier) test vectors for destination
+/// data.
 pub async fn tx_consume_b2agg_note() -> Result<TransactionContext> {
-    let vectors = &*miden_agglayer::testing::SOLIDITY_MMR_FRONTIER_VECTORS;
+    let vectors = &*miden_agglayer::testing::SOLIDITY_MTF_VECTORS;
 
     let mut builder = MockChain::builder();
 
