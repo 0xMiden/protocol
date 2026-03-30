@@ -380,10 +380,8 @@ async fn faucet_get_decimals_symbol_and_max_supply() -> anyhow::Result<()> {
             begin
                 call.::miden::standards::metadata::fungible_faucet::get_decimals
                 push.{expected_decimals} assert_eq.err="decimals does not match"
-                push.0
                 call.::miden::standards::metadata::fungible_faucet::get_token_symbol
                 push.{expected_symbol} assert_eq.err="token_symbol does not match"
-                push.0
                 call.::miden::standards::metadata::fungible_faucet::get_max_supply
                 push.{expected_max_supply} assert_eq.err="max_supply does not match"
             end
