@@ -668,23 +668,17 @@ async fn test_field_setter_owner_succeeds(
     let mock_chain = builder.build()?;
 
     let hash = compute_field_hash(&new_data);
-    let hash_elems = hash.as_elements();
 
-    // Push hash as 4 Felts so advice map key matches; dropw after call so stack depth is 16
+    // Push hash as a word so advice map key matches; dropw after call so stack depth is 16
     // (setter leaves 20). Use `debug.stack` in the script and run with --nocapture to trace.
     let note_script_code = format!(
         r#"
     begin
-        dropw push.{e3} push.{e2} push.{e1} push.{e0}
+        dropw push.{hash}
         call.::miden::standards::metadata::fungible_faucet::{proc_name}
         dropw
     end
 "#,
-        e0 = hash_elems[0],
-        e1 = hash_elems[1],
-        e2 = hash_elems[2],
-        e3 = hash_elems[3],
-        proc_name = proc_name,
     );
 
     let source_manager = Arc::new(DefaultSourceManager::default());
