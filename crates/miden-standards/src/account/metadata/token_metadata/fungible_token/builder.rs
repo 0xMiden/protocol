@@ -1,5 +1,4 @@
-use miden_protocol::Felt;
-use miden_protocol::asset::{FungibleAsset, TokenSymbol};
+use miden_protocol::asset::TokenSymbol;
 
 use super::super::{TokenMetadata, TokenName};
 use super::{Description, ExternalLink, FungibleTokenMetadata, LogoURI};
@@ -13,7 +12,6 @@ use crate::account::faucets::FungibleFaucetError;
 /// # Example
 ///
 /// ```
-/// # use miden_protocol::Felt;
 /// # use miden_protocol::asset::TokenSymbol;
 /// # use miden_standards::account::metadata::{
 /// #     Description, FungibleTokenMetadataBuilder, LogoURI, TokenName,
@@ -22,7 +20,7 @@ use crate::account::faucets::FungibleFaucetError;
 /// let name = TokenName::new("My Token")?;
 /// let symbol = TokenSymbol::new("MTK")?;
 /// let metadata = FungibleTokenMetadataBuilder::new(name, symbol, 8, 1_000_000)
-///     .token_supply(Felt::from(100u32))
+///     .token_supply(100)
 ///     .description(Description::new("A test token")?)
 ///     .logo_uri(LogoURI::new("https://example.com/logo.png")?)
 ///     .build()?;
@@ -35,7 +33,7 @@ pub struct FungibleTokenMetadataBuilder {
     symbol: TokenSymbol,
     decimals: u8,
     max_supply: u64,
-    token_supply: Felt,
+    token_supply: u64,
     description: Option<Description>,
     logo_uri: Option<LogoURI>,
     external_link: Option<ExternalLink>,
@@ -54,15 +52,15 @@ impl FungibleTokenMetadataBuilder {
     /// - `symbol`: token symbol.
     /// - `decimals`: decimal precision; must be in the range `0..=12`.
     /// - `max_supply`: maximum number of tokens that can ever be minted; must be in the range
-    ///   `0..=FungibleAsset::MAX_AMOUNT` (≤ 2^63 − 1). Expressed as a `u64` rather than a [`Felt`]
-    ///   to avoid accidental out-of-range values.
+    ///   `0..=FungibleAsset::MAX_AMOUNT` (≤ 2^63 − 1). Expressed as a `u64` rather than a `Felt` to
+    ///   avoid accidental out-of-range values.
     pub fn new(name: TokenName, symbol: TokenSymbol, decimals: u8, max_supply: u64) -> Self {
         Self {
             name,
             symbol,
             decimals,
             max_supply,
-            token_supply: Felt::ZERO,
+            token_supply: 0,
             description: None,
             logo_uri: None,
             external_link: None,
@@ -74,7 +72,7 @@ impl FungibleTokenMetadataBuilder {
     }
 
     /// Sets the initial token supply (default is zero).
-    pub fn token_supply(mut self, token_supply: Felt) -> Self {
+    pub fn token_supply(mut self, token_supply: u64) -> Self {
         self.token_supply = token_supply;
         self
     }
@@ -123,16 +121,6 @@ impl FungibleTokenMetadataBuilder {
 
     /// Builds [`FungibleTokenMetadata`].
     pub fn build(self) -> Result<FungibleTokenMetadata, FungibleFaucetError> {
-        if self.max_supply > FungibleAsset::MAX_AMOUNT {
-            return Err(FungibleFaucetError::MaxSupplyTooLarge {
-                actual: self.max_supply,
-                max: FungibleAsset::MAX_AMOUNT,
-            });
-        }
-        // SAFETY: max_supply is validated above to be <= MAX_AMOUNT (2^63 - 1),
-        // which is well below the Goldilocks prime, so Felt::new will not wrap.
-        let max_supply = Felt::new(self.max_supply);
-
         let mut token_metadata = TokenMetadata::new(self.name);
         if let Some(desc) = self.description {
             token_metadata = token_metadata.with_description(desc, self.is_description_mutable);
@@ -155,7 +143,7 @@ impl FungibleTokenMetadataBuilder {
         FungibleTokenMetadata::new_validated(
             self.symbol,
             self.decimals,
-            max_supply,
+            self.max_supply,
             self.token_supply,
             token_metadata,
         )

@@ -46,7 +46,7 @@ use miden_protocol::note::{Note, NoteAttachment, NoteDetails, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_NATIVE_ASSET_FAUCET;
 use miden_protocol::testing::random_secret_key::random_secret_key;
 use miden_protocol::transaction::{OrderedTransactionHeaders, RawOutputNote, TransactionKernel};
-use miden_protocol::{Felt, MAX_OUTPUT_NOTES_PER_BATCH, Word};
+use miden_protocol::{MAX_OUTPUT_NOTES_PER_BATCH, Word};
 use miden_standards::account::access::Ownable2Step;
 use miden_standards::account::faucets::{BasicFungibleFaucet, NetworkFungibleFaucet};
 use miden_standards::account::metadata::{
@@ -366,7 +366,7 @@ impl MockChainBuilder {
         max_supply: u64,
         token_supply: Option<u64>,
     ) -> anyhow::Result<Account> {
-        let token_supply = Felt::try_from(token_supply.unwrap_or(0))?;
+        let token_supply = token_supply.unwrap_or(0);
         let name = TokenName::new(token_symbol)?;
         let token_symbol =
             TokenSymbol::new(token_symbol).context("failed to create token symbol")?;
@@ -401,7 +401,7 @@ impl MockChainBuilder {
         token_supply: Option<u64>,
         mint_policy: OwnerControlledInitConfig,
     ) -> anyhow::Result<Account> {
-        let token_supply = Felt::try_from(token_supply.unwrap_or(0))?;
+        let token_supply = token_supply.unwrap_or(0);
         let name = TokenName::new(token_symbol)?;
         let token_symbol =
             TokenSymbol::new(token_symbol).context("failed to create token symbol")?;

@@ -31,7 +31,7 @@ fn token_metadata_with_supply() {
     let symbol = TokenSymbol::new("TEST").unwrap();
     let decimals = 8u8;
     let max_supply = 1_000_000u64;
-    let token_supply = Felt::new(500_000);
+    let token_supply = 500_000u64;
     let name = TokenName::new("TEST").unwrap();
 
     let metadata = FungibleTokenMetadataBuilder::new(name, symbol.clone(), decimals, max_supply)
@@ -42,7 +42,7 @@ fn token_metadata_with_supply() {
     assert_eq!(metadata.symbol(), &symbol);
     assert_eq!(metadata.decimals(), decimals);
     assert_eq!(metadata.max_supply(), Felt::new(max_supply));
-    assert_eq!(metadata.token_supply(), token_supply);
+    assert_eq!(metadata.token_supply(), Felt::new(token_supply));
 }
 
 #[test]
@@ -54,7 +54,7 @@ fn token_metadata_builder_with_optionals() {
     let external_link = ExternalLink::new("https://example.com").unwrap();
 
     let metadata = FungibleTokenMetadataBuilder::new(name.clone(), symbol.clone(), 8, 1_000_000u64)
-        .token_supply(Felt::new(100))
+        .token_supply(100)
         .description(description.clone())
         .logo_uri(logo_uri.clone())
         .external_link(external_link.clone())
@@ -63,7 +63,7 @@ fn token_metadata_builder_with_optionals() {
         .build()
         .unwrap();
 
-    assert_eq!(metadata.token_supply(), Felt::new(100));
+    assert_eq!(metadata.token_supply(), Felt::new(100u64));
     assert_eq!(metadata.description(), Some(&description));
     assert_eq!(metadata.logo_uri(), Some(&logo_uri));
     assert_eq!(metadata.external_link(), Some(&external_link));
@@ -248,7 +248,7 @@ fn token_metadata_roundtrip_with_supply() {
     let symbol = TokenSymbol::new("POL").unwrap();
     let decimals = 2u8;
     let max_supply = 1000u64;
-    let token_supply = Felt::new(500);
+    let token_supply = 500u64;
     let name = TokenName::new("POL").unwrap();
 
     let original = FungibleTokenMetadataBuilder::new(name, symbol.clone(), decimals, max_supply)
@@ -269,7 +269,7 @@ fn token_metadata_roundtrip_with_supply() {
     assert_eq!(restored.symbol(), &symbol);
     assert_eq!(restored.decimals(), decimals);
     assert_eq!(restored.max_supply(), Felt::new(max_supply));
-    assert_eq!(restored.token_supply(), token_supply);
+    assert_eq!(restored.token_supply(), Felt::new(token_supply));
 }
 
 #[test]
@@ -424,7 +424,7 @@ fn roundtrip_via_storage_matches_original() {
     let external_link = ExternalLink::new("https://example.com").unwrap();
 
     let original = FungibleTokenMetadataBuilder::new(name.clone(), symbol.clone(), 6, 2_000_000u64)
-        .token_supply(Felt::new(100_000))
+        .token_supply(100_000)
         .description(description.clone())
         .logo_uri(logo_uri.clone())
         .external_link(external_link.clone())
@@ -495,7 +495,7 @@ fn token_supply_exceeds_max_supply() {
     let symbol = TokenSymbol::new("TST").unwrap();
     let name = TokenName::new("T").unwrap();
     let max_supply = 100u64;
-    let token_supply = Felt::new(101);
+    let token_supply = 101u64;
 
     let result = FungibleTokenMetadataBuilder::new(name, symbol, 2, max_supply)
         .token_supply(token_supply)

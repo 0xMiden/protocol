@@ -216,8 +216,8 @@ impl FungibleTokenMetadata {
     pub(crate) fn new_validated(
         symbol: TokenSymbol,
         decimals: u8,
-        max_supply: Felt,
-        token_supply: Felt,
+        max_supply: u64,
+        token_supply: u64,
         metadata: TokenMetadata,
     ) -> Result<Self, FungibleFaucetError> {
         if decimals > Self::MAX_DECIMALS {
@@ -227,23 +227,25 @@ impl FungibleTokenMetadata {
             });
         }
 
-        if max_supply.as_canonical_u64() > FungibleAsset::MAX_AMOUNT {
+        if max_supply > FungibleAsset::MAX_AMOUNT {
             return Err(FungibleFaucetError::MaxSupplyTooLarge {
-                actual: max_supply.as_canonical_u64(),
+                actual: max_supply,
                 max: FungibleAsset::MAX_AMOUNT,
             });
         }
 
-        if token_supply.as_canonical_u64() > max_supply.as_canonical_u64() {
+        if token_supply > max_supply {
             return Err(FungibleFaucetError::TokenSupplyExceedsMaxSupply {
-                token_supply: token_supply.as_canonical_u64(),
-                max_supply: max_supply.as_canonical_u64(),
+                token_supply,
+                max_supply,
             });
         }
 
+        // SAFETY: max_supply and token_supply are validated above to be <= MAX_AMOUNT (2^63 - 1),
+        // which is well below the Goldilocks prime, so Felt::new will not wrap.
         Ok(Self {
-            token_supply,
-            max_supply,
+            token_supply: Felt::new(token_supply),
+            max_supply: Felt::new(max_supply),
             decimals,
             symbol,
             metadata,
@@ -404,7 +406,13 @@ impl FungibleTokenMetadata {
             }
         })?;
 
-        Self::new_validated(symbol, decimals, max_supply, token_supply, metadata)
+        Self::new_validated(
+            symbol,
+            decimals,
+            max_supply.as_canonical_u64(),
+            token_supply.as_canonical_u64(),
+            metadata,
+        )
     }
 }
 

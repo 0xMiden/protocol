@@ -61,7 +61,7 @@ fn network_faucet_metadata(
     logo_uri: Option<([Word; 7], bool)>,
     external_link: Option<([Word; 7], bool)>,
 ) -> anyhow::Result<FungibleTokenMetadata> {
-    let token_supply = Felt::try_from(token_supply.unwrap_or(0))?;
+    let token_supply = token_supply.unwrap_or(0);
     let name = TokenName::new(token_symbol)
         .unwrap_or_else(|_| TokenName::new("").expect("empty string is a valid token name"));
     let token_symbol = TokenSymbol::new(token_symbol)?;
