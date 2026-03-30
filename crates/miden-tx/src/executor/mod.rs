@@ -425,9 +425,9 @@ fn build_executed_transaction<STORE: DataStore + Sync, AUTH: TransactionAuthenti
             .map_err(TransactionExecutorError::TransactionOutputConstructionFailed)?;
 
     let pre_fee_delta_commitment = pre_fee_account_delta.to_commitment();
-    if tx_outputs.account_delta_commitment != pre_fee_delta_commitment {
+    if tx_outputs.account_delta_commitment() != pre_fee_delta_commitment {
         return Err(TransactionExecutorError::InconsistentAccountDeltaCommitment {
-            in_kernel_commitment: tx_outputs.account_delta_commitment,
+            in_kernel_commitment: tx_outputs.account_delta_commitment(),
             host_commitment: pre_fee_delta_commitment,
         });
     }
@@ -436,11 +436,11 @@ fn build_executed_transaction<STORE: DataStore + Sync, AUTH: TransactionAuthenti
     let mut post_fee_account_delta = pre_fee_account_delta;
     post_fee_account_delta
         .vault_mut()
-        .remove_asset(Asset::from(tx_outputs.fee))
+        .remove_asset(Asset::from(tx_outputs.fee()))
         .map_err(TransactionExecutorError::RemoveFeeAssetFromDelta)?;
 
     let initial_account = tx_inputs.account();
-    let final_account = &tx_outputs.account;
+    let final_account = tx_outputs.account();
 
     if initial_account.id() != final_account.id() {
         return Err(TransactionExecutorError::InconsistentAccountId {

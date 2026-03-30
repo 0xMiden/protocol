@@ -583,9 +583,9 @@ pub enum NoteError {
     private = NoteType::Private,
     )]
     UnknownNoteType(Box<str>),
-    #[error("note location index {node_index_in_block} is out of bounds 0..={highest_index}")]
-    NoteLocationIndexOutOfBounds {
-        node_index_in_block: u16,
+    #[error("block note tree index {block_note_tree_index} is out of bounds 0..={highest_index}")]
+    BlockNoteTreeIndexOutOfBounds {
+        block_note_tree_index: u16,
         highest_index: usize,
     },
     #[error("note network execution requires a public note but note is of type {0}")]
