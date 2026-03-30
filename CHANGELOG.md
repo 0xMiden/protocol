@@ -5,6 +5,7 @@
 ### Changes
 
 - [BREAKING] Renamed `ProvenBatch::new` to `new_unchecked` ([#2687](https://github.com/0xMiden/miden-base/issues/2687)).
+- [BREAKING] Changed `NoteType` encoding from 2 bits to 1 and makes `NoteType::Private` the default ([#2691](https://github.com/0xMiden/miden-base/issues/2691)).
 
 ## 0.14.0 (2026-03-23)
 
