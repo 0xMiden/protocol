@@ -58,9 +58,9 @@ TODO: The bridge currently has no emergency pause mechanism to halt operations
 
 ![Bridge-in flow](diagrams/bridge-in.png)
 
-When a new deposit into Miden is made on an AggLayer-connected chain (by monitoring updates to the AggLayer contract on Ethereum L1), Miden needs to be "informed" of the updated AggLayer state by having a new Global Exit Root (GER) injected - see [Section 2.3](#23-ger-injection).
+When a new deposit into Miden is made on an AggLayer-connected chain, Miden needs to be "informed" of the updated AggLayer state by having a new Global Exit Root (GER) injected - see [Section 2.3](#23-ger-injection).
 
-Once the GER is injected, any user can initiate the claim process by creating a [`CLAIM`](#42-claim) note on Miden containing Merkle proofs and leaf data. This will typically be done by a claim manager service for convenience, but is permissionless and open to any user.
+Once the GER is injected, any user can initiate the claim process by creating a [`CLAIM`](#42-claim) note on Miden containing Merkle proofs and leaf data (by monitoring updates to the AggLayer contract on Ethereum L1). This will typically be done by a claim manager service for convenience, but is permissionless and open to any user.
 The `CLAIM` note is consumed by the bridge account:
 
 1. Validates the Global Exit Root (GER) is known in the bridge's `ger_map`.
