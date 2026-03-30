@@ -78,7 +78,7 @@ const ATTACHMENT_KIND_LOC=13
 # -------------------------------------------------------------------------------------------------
 
 const LEAF_TYPE_ASSET=0
-const PUBLIC_NOTE=1
+use miden::protocol::note::NOTE_TYPE_PUBLIC
 const BURN_NOTE_NUM_STORAGE_ITEMS=0
 
 # PUBLIC INTERFACE
@@ -527,7 +527,7 @@ proc create_burn_note
     exec.note::build_recipient
     # => [RECIPIENT]
 
-    push.PUBLIC_NOTE
+    push.NOTE_TYPE_PUBLIC
     push.DEFAULT_TAG
     # => [tag, note_type, RECIPIENT]
 
