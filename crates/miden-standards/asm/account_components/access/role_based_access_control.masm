@@ -1,0 +1,22 @@
+# The MASM code of the RoleBasedAccessControl Account Component.
+#
+# See the `RoleBasedAccessControl` Rust type's documentation for more details.
+
+pub use ::miden::standards::access::role_based_access_control::assert_sender_is_admin
+pub use ::miden::standards::access::role_based_access_control::assert_sender_has_role
+pub use ::miden::standards::access::role_based_access_control::get_admin
+pub use ::miden::standards::access::role_based_access_control::get_nominated_admin
+pub use ::miden::standards::access::role_based_access_control::transfer_admin
+pub use ::miden::standards::access::role_based_access_control::accept_admin
+pub use ::miden::standards::access::role_based_access_control::renounce_admin
+pub use ::miden::standards::access::role_based_access_control::role_exists
+pub use ::miden::standards::access::role_based_access_control::get_role_admin
+pub use ::miden::standards::access::role_based_access_control::get_role_member_count
+pub use ::miden::standards::access::role_based_access_control::has_role
+pub use ::miden::standards::access::role_based_access_control::get_role_member
+pub use ::miden::standards::access::role_based_access_control::get_active_role_count
+pub use ::miden::standards::access::role_based_access_control::get_active_role
+pub use ::miden::standards::access::role_based_access_control::set_role_admin
+pub use ::miden::standards::access::role_based_access_control::grant_role
+pub use ::miden::standards::access::role_based_access_control::revoke_role
+pub use ::miden::standards::access::role_based_access_control::renounce_role

@@ -3,5 +3,6 @@ mod fee;
 mod ownable2step;
 mod p2id;
 mod p2ide;
+mod role_based_access_control;
 mod send_note;
 mod swap;
