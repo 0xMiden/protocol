@@ -47,6 +47,12 @@ static ROLE_MEMBER_INDEX_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(||
     StorageSlotName::new("miden::standards::access::role_based_access_control::role_member_index")
         .expect("storage slot name should be valid")
 });
+static PENDING_ROLE_TRANSFERS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new(
+        "miden::standards::access::role_based_access_control::pending_role_transfers",
+    )
+    .expect("storage slot name should be valid")
+});
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RoleInit {
@@ -117,6 +123,10 @@ impl RoleBasedAccessControl {
 
     pub fn role_member_index_slot() -> &'static StorageSlotName {
         &ROLE_MEMBER_INDEX_SLOT_NAME
+    }
+
+    pub fn pending_role_transfers_slot() -> &'static StorageSlotName {
+        &PENDING_ROLE_TRANSFERS_SLOT_NAME
     }
 
     pub fn admin_config_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
@@ -193,6 +203,17 @@ impl RoleBasedAccessControl {
         )
     }
 
+    pub fn pending_role_transfers_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+        (
+            Self::pending_role_transfers_slot().clone(),
+            StorageSlotSchema::map(
+                "Pending role transfers keyed by role symbol and current holder",
+                SchemaType::native_word(),
+                SchemaType::native_word(),
+            ),
+        )
+    }
+
     pub fn component_metadata() -> AccountComponentMetadata {
         let storage_schema = StorageSchema::new(vec![
             Self::admin_config_slot_schema(),
@@ -201,6 +222,7 @@ impl RoleBasedAccessControl {
             Self::role_configs_slot_schema(),
             Self::role_members_slot_schema(),
             Self::role_member_index_slot_schema(),
+            Self::pending_role_transfers_slot_schema(),
         ])
         .expect("storage schema should be valid");
 
@@ -321,6 +343,10 @@ impl From<RoleBasedAccessControl> for AccountComponent {
             StorageMap::with_entries(role_member_index_entries.into_iter())
                 .expect("role member index entries should be unique"),
         );
+        let pending_role_transfers_slot = StorageSlot::with_map(
+            RoleBasedAccessControl::pending_role_transfers_slot().clone(),
+            StorageMap::default(),
+        );
 
         AccountComponent::new(
             role_based_access_control_library(),
@@ -331,6 +357,7 @@ impl From<RoleBasedAccessControl> for AccountComponent {
                 role_configs_slot,
                 role_members_slot,
                 role_member_index_slot,
+                pending_role_transfers_slot,
             ],
             RoleBasedAccessControl::component_metadata(),
         )

@@ -20,3 +20,6 @@ pub use ::miden::standards::access::role_based_access_control::set_role_admin
 pub use ::miden::standards::access::role_based_access_control::grant_role
 pub use ::miden::standards::access::role_based_access_control::revoke_role
 pub use ::miden::standards::access::role_based_access_control::renounce_role
+pub use ::miden::standards::access::role_based_access_control::transfer_role
+pub use ::miden::standards::access::role_based_access_control::accept_role
+pub use ::miden::standards::access::role_based_access_control::get_pending_role_transfer
