@@ -63,7 +63,7 @@ impl ProcedurePolicy {
     /// Creates an explicit procedure policy from an execution mode and note restriction pair.
     ///
     /// Common multisig cases should generally prefer the `with_*_threshold...` helpers and
-    /// configure note restrictions afterwards via [`ProcedurePolicy::with_note_restrictions`].
+    /// configure note restrictions afterwards via [`ProcedurePolicy::with_note_restriction`].
     pub fn new(
         execution_mode: ProcedurePolicyExecutionMode,
         note_restrictions: ProcedurePolicyNoteRestriction,
@@ -96,7 +96,7 @@ impl ProcedurePolicy {
         )
     }
 
-    pub const fn with_note_restrictions(
+    pub const fn with_note_restriction(
         mut self,
         note_restrictions: ProcedurePolicyNoteRestriction,
     ) -> Self {
@@ -194,7 +194,7 @@ mod tests {
     fn procedure_policy_word_encoding_matches_storage_layout() {
         let policy = ProcedurePolicy::with_immediate_and_delay_thresholds(4, 3)
             .unwrap()
-            .with_note_restrictions(ProcedurePolicyNoteRestriction::NoInputOrOutputNotes);
+            .with_note_restriction(ProcedurePolicyNoteRestriction::NoInputOrOutputNotes);
 
         assert_eq!(policy.to_word(), [4u32, 3, 3, 0].into());
     }
@@ -235,7 +235,7 @@ mod tests {
     fn procedure_policy_note_restrictions_are_exposed_with_getters() {
         let procedure_policy = ProcedurePolicy::with_immediate_threshold(2)
             .unwrap()
-            .with_note_restrictions(ProcedurePolicyNoteRestriction::NoInputNotes);
+            .with_note_restriction(ProcedurePolicyNoteRestriction::NoInputNotes);
 
         assert_eq!(ProcedurePolicyNoteRestriction::default(), ProcedurePolicyNoteRestriction::None);
         assert_eq!(

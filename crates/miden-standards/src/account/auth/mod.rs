@@ -7,7 +7,7 @@ pub use singlesig::AuthSingleSig;
 mod singlesig_acl;
 pub use singlesig_acl::{AuthSingleSigAcl, AuthSingleSigAclConfig};
 
-pub mod multisig;
+mod multisig;
 pub use multisig::{AuthMultisig, AuthMultisigConfig};
 
 mod multisig_psm;
