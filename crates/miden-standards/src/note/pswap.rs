@@ -5,19 +5,11 @@ use miden_protocol::assembly::Path;
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
-    Note,
-    NoteAssets,
-    NoteAttachment,
-    NoteAttachmentScheme,
-    NoteMetadata,
-    NoteRecipient,
-    NoteScript,
-    NoteStorage,
-    NoteTag,
-    NoteType,
+    Note, NoteAssets, NoteAttachment, NoteAttachmentScheme, NoteMetadata, NoteRecipient,
+    NoteScript, NoteStorage, NoteTag, NoteType,
 };
 use miden_protocol::utils::sync::LazyLock;
-use miden_protocol::{Felt, Hasher, Word, ZERO};
+use miden_protocol::{Felt, Hasher, ONE, Word, ZERO};
 
 use crate::StandardsLib;
 use crate::note::P2idNoteStorage;
@@ -55,8 +47,7 @@ static PSWAP_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 /// | `[16-17]` | Creator account ID (prefix, suffix) |
 #[derive(Debug, Clone, PartialEq, Eq, bon::Builder)]
 pub struct PswapNoteStorage {
-    requested_asset_key: Word,
-    requested_asset_value: Word,
+    requested_asset: FungibleAsset,
 
     #[builder(default)]
     pswap_tag: NoteTag,
@@ -89,18 +80,19 @@ impl PswapNoteStorage {
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
-    pub fn requested_asset_key(&self) -> Word {
-        self.requested_asset_key
+    /// Returns a reference to the requested [`FungibleAsset`].
+    pub fn requested_asset(&self) -> &FungibleAsset {
+        &self.requested_asset
     }
 
-    pub fn requested_asset_value(&self) -> Word {
-        self.requested_asset_value
-    }
-
+    /// Returns the PSWAP note tag. This may be the default (zero) tag until the note
+    /// is converted into a [`Note`], at which point the tag is derived from the
+    /// offered/requested asset pair.
     pub fn pswap_tag(&self) -> NoteTag {
         self.pswap_tag
     }
 
+    /// Returns the payback note routing tag, derived from the creator's account ID.
     pub fn payback_note_tag(&self) -> NoteTag {
         NoteTag::with_account_target(self.creator_account_id)
     }
@@ -110,49 +102,40 @@ impl PswapNoteStorage {
         self.swap_count
     }
 
+    /// Returns the account ID of the note creator.
     pub fn creator_account_id(&self) -> AccountId {
         self.creator_account_id
     }
 
-    /// Reconstructs the requested [`Asset`] from the stored key and value words.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the faucet ID or amount stored in the key/value words is invalid.
-    pub fn requested_asset(&self) -> Result<Asset, NoteError> {
-        let faucet_id = self.requested_faucet_id()?;
-        let amount = self.requested_asset_amount();
-        Ok(Asset::Fungible(FungibleAsset::new(faucet_id, amount).map_err(|e| {
-            NoteError::other_with_source("failed to create requested asset", e)
-        })?))
+    /// Returns the faucet ID of the requested asset.
+    pub fn requested_faucet_id(&self) -> AccountId {
+        self.requested_asset.faucet_id()
     }
 
-    /// Extracts the faucet ID of the requested asset from the key word.
-    pub fn requested_faucet_id(&self) -> Result<AccountId, NoteError> {
-        AccountId::try_from_elements(self.requested_asset_key[2], self.requested_asset_key[3])
-            .map_err(|e| NoteError::other_with_source("failed to parse faucet ID from key", e))
-    }
-
-    /// Extracts the requested token amount from the value word.
+    /// Returns the requested token amount.
     pub fn requested_asset_amount(&self) -> u64 {
-        self.requested_asset_value[0].as_canonical_u64()
+        self.requested_asset.amount()
     }
 }
 
 /// Serializes [`PswapNoteStorage`] into an 18-element [`NoteStorage`].
 impl From<PswapNoteStorage> for NoteStorage {
     fn from(storage: PswapNoteStorage) -> Self {
+        let asset = Asset::Fungible(storage.requested_asset);
+        let key_word = asset.to_key_word();
+        let value_word = asset.to_value_word();
+
         let storage_items = vec![
             // ASSET_KEY [0-3]
-            storage.requested_asset_key[0],
-            storage.requested_asset_key[1],
-            storage.requested_asset_key[2],
-            storage.requested_asset_key[3],
+            key_word[0],
+            key_word[1],
+            key_word[2],
+            key_word[3],
             // ASSET_VALUE [4-7]
-            storage.requested_asset_value[0],
-            storage.requested_asset_value[1],
-            storage.requested_asset_value[2],
-            storage.requested_asset_value[3],
+            value_word[0],
+            value_word[1],
+            value_word[2],
+            value_word[3],
             // Tags [8-9]
             Felt::from(storage.pswap_tag),
             Felt::from(storage.payback_note_tag()),
@@ -189,7 +172,16 @@ impl TryFrom<&[Felt]> for PswapNoteStorage {
             Word::from([note_storage[0], note_storage[1], note_storage[2], note_storage[3]]);
         let requested_asset_value =
             Word::from([note_storage[4], note_storage[5], note_storage[6], note_storage[7]]);
-        let pswap_tag = NoteTag::new(note_storage[8].as_canonical_u64() as u32);
+        let requested_asset =
+            FungibleAsset::from_key_value_words(requested_asset_key, requested_asset_value)
+                .map_err(|e| {
+                    NoteError::other_with_source("failed to parse requested asset from storage", e)
+                })?;
+
+        let pswap_tag = NoteTag::new(
+            u32::try_from(note_storage[8].as_canonical_u64())
+                .map_err(|_| NoteError::other("pswap_tag exceeds u32"))?,
+        );
         let swap_count: u16 = note_storage[12]
             .as_canonical_u64()
             .try_into()
@@ -201,8 +193,7 @@ impl TryFrom<&[Felt]> for PswapNoteStorage {
         })?;
 
         Ok(Self {
-            requested_asset_key,
-            requested_asset_value,
+            requested_asset,
             pswap_tag,
             swap_count,
             creator_account_id,
@@ -219,6 +210,12 @@ impl TryFrom<&[Felt]> for PswapNoteStorage {
 /// Unlike a regular SWAP note, consumers may fill it partially — the unfilled portion
 /// is re-created as a remainder note with an incremented swap count, while the creator
 /// receives the filled portion via a payback note.
+///
+/// The note can be consumed both in local transactions (where the consumer provides
+/// fill amounts via note_args) and in network transactions (where note_args default to
+/// `[0, 0, 0, 0]`, triggering a full fill). To route a PSWAP note to a network account,
+/// set the `attachment` to a [`NetworkAccountTarget`](crate::note::NetworkAccountTarget)
+/// via the builder.
 #[derive(Debug, Clone, bon::Builder)]
 #[builder(finish_fn(vis = "", name = build_internal))]
 pub struct PswapNote {
@@ -229,7 +226,7 @@ pub struct PswapNote {
     #[builder(default = NoteType::Private)]
     note_type: NoteType,
 
-    assets: NoteAssets,
+    offered_asset: FungibleAsset,
 
     #[builder(default)]
     attachment: NoteAttachment,
@@ -239,16 +236,15 @@ impl<S: pswap_note_builder::State> PswapNoteBuilder<S>
 where
     S: pswap_note_builder::IsComplete,
 {
+    /// Validates and builds the [`PswapNote`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the offered and requested assets have the same faucet ID.
     pub fn build(self) -> Result<PswapNote, NoteError> {
         let note = self.build_internal();
 
-        if note.assets.num_assets() != 1 {
-            return Err(NoteError::other("Swap note must have exactly 1 offered asset"));
-        }
-
-        let offered_asset = note.assets.iter().next().unwrap();
-        let requested_asset = note.storage.requested_asset()?;
-        if offered_asset.faucet_id() == requested_asset.faucet_id() {
+        if note.offered_asset.faucet_id() == note.storage.requested_faucet_id() {
             return Err(NoteError::other(
                 "offered and requested assets must have different faucets",
             ));
@@ -259,12 +255,6 @@ where
 }
 
 impl PswapNote {
-    // CONSTANTS
-    // --------------------------------------------------------------------------------------------
-
-    /// Expected number of storage items for the PSWAP note.
-    pub const NUM_STORAGE_ITEMS: usize = PswapNoteStorage::NUM_STORAGE_ITEMS;
-
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
@@ -278,26 +268,36 @@ impl PswapNote {
         PSWAP_SCRIPT.root()
     }
 
+    /// Returns the account ID of the note sender.
     pub fn sender(&self) -> AccountId {
         self.sender
     }
 
+    /// Returns a reference to the PSWAP note storage.
     pub fn storage(&self) -> &PswapNoteStorage {
         &self.storage
     }
 
+    /// Returns the serial number of this note.
     pub fn serial_number(&self) -> Word {
         self.serial_number
     }
 
+    /// Returns the note type (public or private).
     pub fn note_type(&self) -> NoteType {
         self.note_type
     }
 
-    pub fn assets(&self) -> &NoteAssets {
-        &self.assets
+    /// Returns a reference to the offered [`FungibleAsset`].
+    pub fn offered_asset(&self) -> &FungibleAsset {
+        &self.offered_asset
     }
 
+    /// Returns a reference to the note attachment.
+    ///
+    /// For notes targeting a network account, this may contain a
+    /// [`NetworkAccountTarget`](crate::note::NetworkAccountTarget) with scheme = 1.
+    /// For local-only notes, this is typically `NoteAttachmentScheme::none()`.
     pub fn attachment(&self) -> &NoteAttachment {
         &self.attachment
     }
@@ -305,33 +305,71 @@ impl PswapNote {
     // INSTANCE METHODS
     // --------------------------------------------------------------------------------------------
 
+    /// Executes the swap as a full fill, intended for network transactions.
+    ///
+    /// In network transactions, note_args are unavailable (the kernel defaults them to
+    /// `[0, 0, 0, 0]`), so the MASM script fills the entire requested amount. This method
+    /// mirrors that behavior. Returns only the payback note — no remainder is produced.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the swap count overflows `u16::MAX`.
+    pub fn execute_full_fill_network(
+        &self,
+        network_account_id: AccountId,
+    ) -> Result<Note, NoteError> {
+        let requested_faucet_id = self.storage.requested_faucet_id();
+        let total_requested_amount = self.storage.requested_asset_amount();
+
+        let fill_asset = FungibleAsset::new(requested_faucet_id, total_requested_amount)
+            .map_err(|e| NoteError::other_with_source("failed to create full fill asset", e))?;
+
+        self.create_payback_note(network_account_id, fill_asset, total_requested_amount)
+    }
+
     /// Executes the swap, producing the output notes for a given fill.
     ///
-    /// `input_amount` is debited from the consumer's vault; `inflight_amount` arrives
-    /// from another note in the same transaction (cross-swap). Their sum is the total fill.
+    /// `input_asset` is debited from the consumer's vault; `inflight_asset` arrives
+    /// from another note in the same transaction (cross-swap). At least one must be
+    /// provided.
     ///
     /// Returns `(payback_note, Option<remainder_pswap_note>)`. The remainder is
     /// `None` when the fill equals the total requested amount (full fill).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Both assets are `None`.
+    /// - The fill amount is zero.
+    /// - The fill amount exceeds the total requested amount.
+    /// - The swap count overflows `u16::MAX`.
     pub fn execute(
         &self,
         consumer_account_id: AccountId,
-        input_amount: u64,
-        inflight_amount: u64,
+        input_asset: Option<FungibleAsset>,
+        inflight_asset: Option<FungibleAsset>,
     ) -> Result<(Note, Option<PswapNote>), NoteError> {
-        let fill_amount = input_amount + inflight_amount;
-
-        let requested_faucet_id = self.storage.requested_faucet_id()?;
-        let total_requested_amount = self.storage.requested_asset_amount();
-
-        // Ensure offered asset exists and is fungible
-        if self.assets.num_assets() != 1 {
-            return Err(NoteError::other("Swap note must have exactly 1 offered asset"));
+        if input_asset.is_none() && inflight_asset.is_none() {
+            return Err(NoteError::other(
+                "at least one of input_asset or inflight_asset must be provided",
+            ));
         }
-        let total_offered_amount = self.offered_asset_amount()?;
-        let offered_faucet_id = match self.assets.iter().next().unwrap() {
-            Asset::Fungible(fa) => fa.faucet_id(),
-            _ => unreachable!(),
+
+        // Combine input and inflight into a single payback asset
+        let input_amount = input_asset.as_ref().map_or(0, |a| a.amount());
+        let inflight_amount = inflight_asset.as_ref().map_or(0, |a| a.amount());
+        let payback_asset = match (input_asset, inflight_asset) {
+            (Some(input), Some(inflight)) => input.add(inflight).map_err(|e| {
+                NoteError::other_with_source("failed to combine input and inflight assets", e)
+            })?,
+            (Some(asset), None) | (None, Some(asset)) => asset,
+            (None, None) => unreachable!("validated above"),
         };
+        let fill_amount = payback_asset.amount();
+
+        let total_offered_amount = self.offered_asset.amount();
+        let requested_faucet_id = self.storage.requested_faucet_id();
+        let total_requested_amount = self.storage.requested_asset_amount();
 
         // Validate fill amount
         if fill_amount == 0 {
@@ -346,7 +384,9 @@ impl PswapNote {
         }
 
         // Calculate offered amounts separately for input and inflight, matching the MASM
-        // which calls calculate_tokens_offered_for_requested twice.
+        // which calls calculate_tokens_offered_for_requested twice. This is necessary
+        // because the input portion goes to the consumer's vault while the total determines
+        // the remainder note's offered amount.
         let offered_for_input = Self::calculate_output_amount(
             total_offered_amount,
             total_requested_amount,
@@ -359,12 +399,6 @@ impl PswapNote {
         );
         let offered_amount_for_fill = offered_for_input + offered_for_inflight;
 
-        // Build the payback note
-        let payback_asset = Asset::Fungible(
-            FungibleAsset::new(requested_faucet_id, fill_amount)
-                .map_err(|e| NoteError::other_with_source("failed to create payback asset", e))?,
-        );
-
         let payback_note =
             self.create_payback_note(consumer_account_id, payback_asset, fill_amount)?;
 
@@ -374,14 +408,19 @@ impl PswapNote {
             let remaining_requested = total_requested_amount - fill_amount;
 
             let remaining_offered_asset =
-                Asset::Fungible(FungibleAsset::new(offered_faucet_id, remaining_offered).map_err(
+                FungibleAsset::new(self.offered_asset.faucet_id(), remaining_offered).map_err(
                     |e| NoteError::other_with_source("failed to create remainder asset", e),
-                )?);
+                )?;
+
+            let remaining_requested_asset =
+                FungibleAsset::new(requested_faucet_id, remaining_requested).map_err(|e| {
+                    NoteError::other_with_source("failed to create remaining requested asset", e)
+                })?;
 
             Some(self.create_remainder_pswap_note(
                 consumer_account_id,
                 remaining_offered_asset,
-                remaining_requested,
+                remaining_requested_asset,
                 offered_amount_for_fill,
             )?)
         } else {
@@ -391,26 +430,13 @@ impl PswapNote {
         Ok((payback_note, remainder))
     }
 
-    /// Returns the amount of the offered fungible asset in this note.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the note has no assets or the asset is non-fungible.
-    pub fn offered_asset_amount(&self) -> Result<u64, NoteError> {
-        let asset = self.assets.iter().next().ok_or(NoteError::other("No offered asset found"))?;
-        match asset {
-            Asset::Fungible(fa) => Ok(fa.amount()),
-            _ => Err(NoteError::other("Non-fungible offered asset not supported")),
-        }
-    }
-
     /// Returns how many offered tokens a consumer receives for `input_amount` of the
     /// requested asset, based on this note's current offered/requested ratio.
-    pub fn calculate_offered_for_requested(&self, input_amount: u64) -> Result<u64, NoteError> {
+    pub fn calculate_offered_for_requested(&self, input_amount: u64) -> u64 {
         let total_requested = self.storage.requested_asset_amount();
-        let total_offered = self.offered_asset_amount()?;
+        let total_offered = self.offered_asset.amount();
 
-        Ok(Self::calculate_output_amount(total_offered, total_requested, input_amount))
+        Self::calculate_output_amount(total_offered, total_requested, input_amount)
     }
 
     // ASSOCIATED FUNCTIONS
@@ -426,8 +452,8 @@ impl PswapNote {
     /// ```
     pub fn create_tag(
         note_type: NoteType,
-        offered_asset: &Asset,
-        requested_asset: &Asset,
+        offered_asset: &FungibleAsset,
+        requested_asset: &FungibleAsset,
     ) -> NoteTag {
         let pswap_root_bytes = Self::script().root().as_bytes();
 
@@ -455,11 +481,14 @@ impl PswapNote {
     /// Computes `offered_total * input_amount / requested_total` using fixed-point
     /// u64 arithmetic with a precision factor of 10^5, matching the on-chain MASM
     /// calculation. Returns the full `offered_total` when `input_amount == requested_total`.
-    pub fn calculate_output_amount(
-        offered_total: u64,
-        requested_total: u64,
-        input_amount: u64,
-    ) -> u64 {
+    ///
+    /// The formula is implemented in two branches to maximize precision:
+    /// - When `offered > requested`: the ratio `offered/requested` is >= 1, so we compute
+    ///   `(offered * FACTOR / requested) * input / FACTOR` to avoid losing the fractional part.
+    /// - When `requested >= offered`: the ratio `offered/requested` is < 1, so computing it
+    ///   directly would truncate to zero. Instead we compute the inverse ratio
+    ///   `(requested * FACTOR / offered)` and divide: `(input * FACTOR) / inverse_ratio`.
+    fn calculate_output_amount(offered_total: u64, requested_total: u64, input_amount: u64) -> u64 {
         const PRECISION_FACTOR: u64 = 100_000;
 
         if requested_total == input_amount {
@@ -475,31 +504,42 @@ impl PswapNote {
         }
     }
 
-    /// Builds a payback note that delivers the filled assets to the swap creator.
+    /// Builds a payback note (P2ID) that delivers the filled assets to the swap creator.
     ///
     /// The note inherits its type (public/private) from this PSWAP note and derives a
     /// deterministic serial number via `hmerge(swap_count + 1, serial_num)`.
+    ///
+    /// The attachment carries the fill amount as auxiliary data with
+    /// `NoteAttachmentScheme::none()`, matching the on-chain MASM behavior.
     fn create_payback_note(
         &self,
         consumer_account_id: AccountId,
-        payback_asset: Asset,
+        payback_asset: FungibleAsset,
         fill_amount: u64,
     ) -> Result<Note, NoteError> {
         let payback_note_tag = self.storage.payback_note_tag();
         // Derive P2ID serial matching PSWAP.masm
-        let swap_count_word =
-            Word::from([Felt::from(self.storage.swap_count + 1), ZERO, ZERO, ZERO]);
-        let p2id_serial_digest = Hasher::merge(&[swap_count_word, self.serial_number]);
-        let p2id_serial_num: Word = p2id_serial_digest;
+        let next_swap_count = self
+            .storage
+            .swap_count
+            .checked_add(1)
+            .ok_or_else(|| NoteError::other("swap count overflow"))?;
+        let swap_count_word = Word::from([Felt::from(next_swap_count), ZERO, ZERO, ZERO]);
+        let p2id_serial_num = Hasher::merge(&[swap_count_word, self.serial_number]);
 
         // P2ID recipient targets the creator
         let recipient =
             P2idNoteStorage::new(self.storage.creator_account_id).into_recipient(p2id_serial_num);
 
-        let attachment_word = Word::from([Felt::new(fill_amount), ZERO, ZERO, ZERO]);
+        let attachment_word = Word::from([
+            Felt::try_from(fill_amount).expect("fill amount should fit in a felt"),
+            ZERO,
+            ZERO,
+            ZERO,
+        ]);
         let attachment = NoteAttachment::new_word(NoteAttachmentScheme::none(), attachment_word);
 
-        let p2id_assets = NoteAssets::new(vec![payback_asset])?;
+        let p2id_assets = NoteAssets::new(vec![Asset::Fungible(payback_asset)])?;
         let p2id_metadata = NoteMetadata::new(consumer_account_id, self.note_type)
             .with_tag(payback_note_tag)
             .with_attachment(attachment);
@@ -511,50 +551,51 @@ impl PswapNote {
     ///
     /// The remainder inherits the original creator, tags, and note type, but has an
     /// incremented swap count and an updated serial number (`serial[0] + 1`).
+    ///
+    /// The attachment carries the total offered amount for the fill as auxiliary data
+    /// with `NoteAttachmentScheme::none()`, matching the on-chain MASM behavior.
     fn create_remainder_pswap_note(
         &self,
         consumer_account_id: AccountId,
-        remaining_offered_asset: Asset,
-        remaining_requested_amount: u64,
+        remaining_offered_asset: FungibleAsset,
+        remaining_requested_asset: FungibleAsset,
         offered_amount_for_fill: u64,
     ) -> Result<PswapNote, NoteError> {
-        let requested_faucet_id = self.storage.requested_faucet_id()?;
-        let remaining_requested_asset = Asset::Fungible(
-            FungibleAsset::new(requested_faucet_id, remaining_requested_amount).map_err(|e| {
-                NoteError::other_with_source("failed to create remaining requested asset", e)
-            })?,
-        );
-
-        let key_word = remaining_requested_asset.to_key_word();
-        let value_word = remaining_requested_asset.to_value_word();
-
+        let next_swap_count = self
+            .storage
+            .swap_count
+            .checked_add(1)
+            .ok_or_else(|| NoteError::other("swap count overflow"))?;
         let new_storage = PswapNoteStorage::builder()
-            .requested_asset_key(key_word)
-            .requested_asset_value(value_word)
+            .requested_asset(remaining_requested_asset)
             .pswap_tag(self.storage.pswap_tag)
-            .swap_count(self.storage.swap_count + 1)
+            .swap_count(next_swap_count)
             .creator_account_id(self.storage.creator_account_id)
             .build();
 
         // Remainder serial: increment top element (matching MASM add.1 on Word[0])
         let remainder_serial_num = Word::from([
-            Felt::new(self.serial_number[0].as_canonical_u64() + 1),
+            self.serial_number[0] + ONE,
             self.serial_number[1],
             self.serial_number[2],
             self.serial_number[3],
         ]);
 
-        let attachment_word = Word::from([Felt::new(offered_amount_for_fill), ZERO, ZERO, ZERO]);
+        let attachment_word = Word::from([
+            Felt::try_from(offered_amount_for_fill)
+                .expect("offered amount for fill should fit in a felt"),
+            ZERO,
+            ZERO,
+            ZERO,
+        ]);
         let attachment = NoteAttachment::new_word(NoteAttachmentScheme::none(), attachment_word);
-
-        let assets = NoteAssets::new(vec![remaining_offered_asset])?;
 
         Ok(PswapNote {
             sender: consumer_account_id,
             storage: new_storage,
             serial_number: remainder_serial_num,
             note_type: self.note_type,
-            assets,
+            offered_asset: remaining_offered_asset,
             attachment,
         })
     }
@@ -566,28 +607,23 @@ impl PswapNote {
 /// Converts a [`PswapNote`] into a protocol [`Note`], computing the final PSWAP tag.
 impl From<PswapNote> for Note {
     fn from(pswap: PswapNote) -> Self {
-        let offered_asset =
-            pswap.assets.iter().next().expect("PswapNote must have an offered asset");
-        let requested_asset = pswap
-            .storage
-            .requested_asset()
-            .expect("PswapNote must have a valid requested asset");
-        let tag = PswapNote::create_tag(pswap.note_type, offered_asset, &requested_asset);
+        let tag = PswapNote::create_tag(
+            pswap.note_type,
+            &pswap.offered_asset,
+            pswap.storage.requested_asset(),
+        );
 
         let storage = pswap.storage.with_pswap_tag(tag);
         let recipient = storage.into_recipient(pswap.serial_number);
+
+        let assets = NoteAssets::new(vec![Asset::Fungible(pswap.offered_asset)])
+            .expect("single fungible asset should be valid");
 
         let metadata = NoteMetadata::new(pswap.sender, pswap.note_type)
             .with_tag(tag)
             .with_attachment(pswap.attachment);
 
-        Note::new(pswap.assets, metadata, recipient)
-    }
-}
-
-impl From<&PswapNote> for Note {
-    fn from(pswap: &PswapNote) -> Self {
-        Note::from(pswap.clone())
+        Note::new(assets, metadata, recipient)
     }
 }
 
@@ -596,14 +632,28 @@ impl TryFrom<&Note> for PswapNote {
     type Error = NoteError;
 
     fn try_from(note: &Note) -> Result<Self, Self::Error> {
+        if note.recipient().script().root() != PswapNote::script_root() {
+            return Err(NoteError::other("note script root does not match PSWAP script root"));
+        }
+
         let storage = PswapNoteStorage::try_from(note.recipient().storage().items())?;
+
+        if note.assets().num_assets() != 1 {
+            return Err(NoteError::other("PSWAP note must have exactly one asset"));
+        }
+        let offered_asset = match note.assets().iter().next().unwrap() {
+            Asset::Fungible(fa) => *fa,
+            Asset::NonFungible(_) => {
+                return Err(NoteError::other("PSWAP note asset must be fungible"));
+            },
+        };
 
         Ok(Self {
             sender: note.metadata().sender(),
             storage,
             serial_number: note.recipient().serial_num(),
             note_type: note.metadata().note_type(),
-            assets: note.assets().clone(),
+            offered_asset,
             attachment: note.metadata().attachment().clone(),
         })
     }
@@ -616,6 +666,7 @@ impl TryFrom<&Note> for PswapNote {
 mod tests {
     use miden_protocol::account::{AccountId, AccountIdVersion, AccountStorageMode, AccountType};
     use miden_protocol::asset::FungibleAsset;
+    use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
 
     use super::*;
 
@@ -648,19 +699,16 @@ mod tests {
             AccountStorageMode::Public,
         );
 
-        let offered_asset = Asset::Fungible(FungibleAsset::new(offered_faucet_id, 1000).unwrap());
-        let requested_asset =
-            Asset::Fungible(FungibleAsset::new(requested_faucet_id, 500).unwrap());
+        let offered_asset = FungibleAsset::new(offered_faucet_id, 1000).unwrap();
+        let requested_asset = FungibleAsset::new(requested_faucet_id, 500).unwrap();
 
-        use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
         let mut rng = RandomCoin::new(Word::default());
 
         let script = PswapNote::script();
         assert!(script.root() != Word::default(), "Script root should not be zero");
 
         let storage = PswapNoteStorage::builder()
-            .requested_asset_key(requested_asset.to_key_word())
-            .requested_asset_value(requested_asset.to_value_word())
+            .requested_asset(requested_asset)
             .creator_account_id(creator_id)
             .build();
         let pswap = PswapNote::builder()
@@ -668,7 +716,7 @@ mod tests {
             .storage(storage)
             .serial_number(rng.draw_word())
             .note_type(NoteType::Public)
-            .assets(NoteAssets::new(vec![offered_asset]).unwrap())
+            .offered_asset(offered_asset)
             .build()
             .unwrap();
 
@@ -680,7 +728,10 @@ mod tests {
         assert_eq!(note.recipient().script().root(), script.root());
 
         // Verify storage has 18 items
-        assert_eq!(note.recipient().storage().num_items(), PswapNote::NUM_STORAGE_ITEMS as u16,);
+        assert_eq!(
+            note.recipient().storage().num_items(),
+            PswapNoteStorage::NUM_STORAGE_ITEMS as u16,
+        );
     }
 
     #[test]
@@ -712,16 +763,13 @@ mod tests {
             AccountStorageMode::Public,
         );
 
-        let offered_asset = Asset::Fungible(FungibleAsset::new(offered_faucet_id, 1000).unwrap());
-        let requested_asset =
-            Asset::Fungible(FungibleAsset::new(requested_faucet_id, 500).unwrap());
+        let offered_asset = FungibleAsset::new(offered_faucet_id, 1000).unwrap();
+        let requested_asset = FungibleAsset::new(requested_faucet_id, 500).unwrap();
 
-        use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
         let mut rng = RandomCoin::new(Word::default());
 
         let storage = PswapNoteStorage::builder()
-            .requested_asset_key(requested_asset.to_key_word())
-            .requested_asset_value(requested_asset.to_value_word())
+            .requested_asset(requested_asset)
             .creator_account_id(creator_id)
             .build();
         let pswap = PswapNote::builder()
@@ -729,20 +777,22 @@ mod tests {
             .storage(storage)
             .serial_number(rng.draw_word())
             .note_type(NoteType::Public)
-            .assets(NoteAssets::new(vec![offered_asset]).unwrap())
+            .offered_asset(offered_asset)
             .build()
             .unwrap();
 
         assert_eq!(pswap.sender(), creator_id);
         assert_eq!(pswap.note_type(), NoteType::Public);
-        assert_eq!(pswap.assets().num_assets(), 1);
 
         // Convert to Note
         let note: Note = pswap.into();
         assert_eq!(note.metadata().sender(), creator_id);
         assert_eq!(note.metadata().note_type(), NoteType::Public);
         assert_eq!(note.assets().num_assets(), 1);
-        assert_eq!(note.recipient().storage().num_items(), PswapNote::NUM_STORAGE_ITEMS as u16,);
+        assert_eq!(
+            note.recipient().storage().num_items(),
+            PswapNoteStorage::NUM_STORAGE_ITEMS as u16,
+        );
     }
 
     #[test]
@@ -755,30 +805,26 @@ mod tests {
         requested_faucet_bytes[0] = 0xab;
         requested_faucet_bytes[1] = 0xec;
 
-        let offered_asset = Asset::Fungible(
-            FungibleAsset::new(
-                AccountId::dummy(
-                    offered_faucet_bytes,
-                    AccountIdVersion::Version0,
-                    AccountType::FungibleFaucet,
-                    AccountStorageMode::Public,
-                ),
-                100,
-            )
-            .unwrap(),
-        );
-        let requested_asset = Asset::Fungible(
-            FungibleAsset::new(
-                AccountId::dummy(
-                    requested_faucet_bytes,
-                    AccountIdVersion::Version0,
-                    AccountType::FungibleFaucet,
-                    AccountStorageMode::Public,
-                ),
-                200,
-            )
-            .unwrap(),
-        );
+        let offered_asset = FungibleAsset::new(
+            AccountId::dummy(
+                offered_faucet_bytes,
+                AccountIdVersion::Version0,
+                AccountType::FungibleFaucet,
+                AccountStorageMode::Public,
+            ),
+            100,
+        )
+        .unwrap();
+        let requested_asset = FungibleAsset::new(
+            AccountId::dummy(
+                requested_faucet_bytes,
+                AccountIdVersion::Version0,
+                AccountType::FungibleFaucet,
+                AccountStorageMode::Public,
+            ),
+            200,
+        )
+        .unwrap();
 
         let tag = PswapNote::create_tag(NoteType::Public, &offered_asset, &requested_asset);
         let tag_u32 = u32::from(tag);
@@ -848,10 +894,6 @@ mod tests {
         let parsed = PswapNoteStorage::try_from(storage_items.as_slice()).unwrap();
         assert_eq!(parsed.swap_count(), 3);
         assert_eq!(parsed.creator_account_id(), creator_id);
-        assert_eq!(
-            parsed.requested_asset_key(),
-            Word::from([key_word[0], key_word[1], key_word[2], key_word[3]])
-        );
         assert_eq!(parsed.requested_asset_amount(), 500);
     }
 
@@ -871,10 +913,9 @@ mod tests {
             AccountStorageMode::Public,
         );
 
-        let requested_asset = Asset::Fungible(FungibleAsset::new(faucet_id, 500).unwrap());
+        let requested_asset = FungibleAsset::new(faucet_id, 500).unwrap();
         let storage = PswapNoteStorage::builder()
-            .requested_asset_key(requested_asset.to_key_word())
-            .requested_asset_value(requested_asset.to_value_word())
+            .requested_asset(requested_asset)
             .creator_account_id(creator_id)
             .build();
 

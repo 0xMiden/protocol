@@ -25,15 +25,15 @@ const MAX_U32=0x0000000100000000
 # - Full Word (word-aligned): addresses 0x0018 - 0x001F
 
 # PSWAP Note Storage (18 items loaded at address 0)
-# REQUESTED_ASSET_WORD_INPUT is the base address of an 8-cell block:
+# REQUESTED_ASSET_WORD_ITEM is the base address of an 8-cell block:
 #   addresses 0x0000-0x0003 = ASSET_KEY, 0x0004-0x0007 = ASSET_VALUE
-const REQUESTED_ASSET_WORD_INPUT = 0x0000
-const REQUESTED_ASSET_VALUE_INPUT = 0x0004
-const SWAPP_TAG_INPUT = 0x0008
-const P2ID_TAG_INPUT = 0x0009
-const SWAPP_COUNT_INPUT = 0x000C
-const SWAPP_CREATOR_PREFIX_INPUT = 0x0010
-const SWAPP_CREATOR_SUFFIX_INPUT = 0x0011
+const REQUESTED_ASSET_WORD_ITEM = 0x0000
+const REQUESTED_ASSET_VALUE_ITEM = 0x0004
+const PSWAP_TAG_ITEM = 0x0008
+const P2ID_TAG_ITEM = 0x0009
+const PSWAP_COUNT_ITEM = 0x000C
+const PSWAP_CREATOR_PREFIX_ITEM = 0x0010
+const PSWAP_CREATOR_SUFFIX_ITEM = 0x0011
 
 # Memory Addresses for Price Calculation Procedure
 const AMT_OFFERED = 0x0028
@@ -58,7 +58,7 @@ const OFFERED_ASSET_WORD = 0x0018
 
 # Note indices and type
 const P2ID_NOTE_IDX = 0x007C
-const SWAPP_NOTE_IDX = 0x0080
+const PSWAP_NOTE_IDX = 0x0080
 const NOTE_TYPE = 0x0084
 
 # P2ID recipient storage (creator account ID written here for build_recipient)
@@ -70,10 +70,13 @@ const P2ID_RECIPIENT_PREFIX = 0x0FA1
 # =================================================================================================
 
 # PSWAP script expects exactly 18 note storage items
-const ERR_PSWAP_WRONG_NUMBER_OF_INPUTS="PSWAP wrong number of inputs"
+const ERR_PSWAP_WRONG_NUMBER_OF_INPUTS="PSWAP script expects exactly 18 note storage items"
 
 # PSWAP script requires exactly one note asset
-const ERR_PSWAP_WRONG_NUMBER_OF_ASSETS="PSWAP wrong number of assets"
+const ERR_PSWAP_WRONG_NUMBER_OF_ASSETS="PSWAP script requires exactly one note asset"
+
+# PSWAP fill amount (input + inflight) exceeds the total requested amount
+const ERR_PSWAP_FILL_EXCEEDS_REQUESTED="PSWAP fill amount exceeds requested amount"
 
 # PRICE CALCULATION
 # =================================================================================================
@@ -229,7 +232,7 @@ end
 
 #! Builds the P2ID recipient hash for the swap creator.
 #!
-#! Loads the creator's account ID from note storage (SWAPP_CREATOR_SUFFIX/PREFIX_INPUT),
+#! Loads the creator's account ID from note storage (PSWAP_CREATOR_SUFFIX/PREFIX_ITEM),
 #! stores it as P2ID note storage [suffix, prefix] at a temp address, and calls
 #! note::build_recipient to compute the recipient commitment.
 #!
@@ -238,8 +241,8 @@ end
 #!
 proc build_p2id_recipient_hash
     # Store creator [suffix, prefix] for P2ID recipient hashing
-    mem_load.SWAPP_CREATOR_SUFFIX_INPUT mem_store.P2ID_RECIPIENT_SUFFIX
-    mem_load.SWAPP_CREATOR_PREFIX_INPUT mem_store.P2ID_RECIPIENT_PREFIX
+    mem_load.PSWAP_CREATOR_SUFFIX_ITEM mem_store.P2ID_RECIPIENT_SUFFIX
+    mem_load.PSWAP_CREATOR_PREFIX_ITEM mem_store.P2ID_RECIPIENT_PREFIX
     # => [SERIAL_NUM, SCRIPT_ROOT]
 
     # note::build_recipient: [storage_ptr, num_storage_items, SERIAL_NUM, SCRIPT_ROOT] => [RECIPIENT]
@@ -268,11 +271,11 @@ proc create_p2id_note
     # => [P2ID_SCRIPT_ROOT]
 
     # Increment swap count (ensures unique serial per P2ID note in chained fills)
-    mem_load.SWAPP_COUNT_INPUT add.1 mem_store.SWAPP_COUNT_INPUT
+    mem_load.PSWAP_COUNT_ITEM add.1 mem_store.PSWAP_COUNT_ITEM
     # => [P2ID_SCRIPT_ROOT]
 
     # Load swap count word from memory
-    padw mem_loadw_le.SWAPP_COUNT_INPUT
+    padw mem_loadw_le.PSWAP_COUNT_ITEM
     # => [SWAP_COUNT_WORD, P2ID_SCRIPT_ROOT]
 
     # Get serial number from active note
@@ -293,7 +296,7 @@ proc create_p2id_note
     mem_load.NOTE_TYPE
     # => [note_type, P2ID_RECIPIENT]
 
-    mem_load.P2ID_TAG_INPUT
+    mem_load.P2ID_TAG_ITEM
     # => [tag, note_type, RECIPIENT]
 
     exec.output_note::create
@@ -384,7 +387,7 @@ end
 #!
 proc create_remainder_note
     # Update note storage with new requested amount
-    mem_store.REQUESTED_ASSET_VALUE_INPUT
+    mem_store.REQUESTED_ASSET_VALUE_ITEM
     # => []
 
     # Build PSWAP remainder recipient using the same script as the active note
@@ -403,19 +406,19 @@ proc create_remainder_note
     # => [RECIPIENT_SWAPP]
 
     mem_load.NOTE_TYPE
-    mem_load.SWAPP_TAG_INPUT
+    mem_load.PSWAP_TAG_ITEM
 
     exec.output_note::create
     # => [note_idx]
 
-    mem_store.SWAPP_NOTE_IDX
+    mem_store.PSWAP_NOTE_IDX
     # => []
 
     # Set attachment: aux = total offered_out amount
     mem_load.AMT_OFFERED_OUT push.0.0.0
     # => [0, 0, 0, aux]
 
-    push.0 mem_load.SWAPP_NOTE_IDX
+    push.0 mem_load.PSWAP_NOTE_IDX
     # => [note_idx, attachment_scheme, ATTACHMENT]
 
     exec.output_note::set_word_attachment
@@ -423,7 +426,7 @@ proc create_remainder_note
 
     # Add remaining offered asset to remainder note
     # remainder_amount = total_offered - offered_out
-    mem_load.SWAPP_NOTE_IDX
+    mem_load.PSWAP_NOTE_IDX
     # => [note_idx]
 
     # Build ASSET_VALUE = [amount, 0, 0, 0] (amount on top)
@@ -451,7 +454,7 @@ proc is_consumer_creator
     exec.active_account::get_id
     # => [acct_id_suffix, acct_id_prefix]
 
-    mem_load.SWAPP_CREATOR_SUFFIX_INPUT mem_load.SWAPP_CREATOR_PREFIX_INPUT
+    mem_load.PSWAP_CREATOR_SUFFIX_ITEM mem_load.PSWAP_CREATOR_PREFIX_ITEM
     # => [creator_prefix, creator_suffix, acct_id_suffix, acct_id_prefix]
 
     movup.3 eq
@@ -536,7 +539,7 @@ proc execute_pswap
     # => []
 
     # Load requested asset from note storage (ASSET_KEY + ASSET_VALUE, 8 cells)
-    push.REQUESTED_ASSET_WORD_INPUT exec.asset::load
+    push.REQUESTED_ASSET_WORD_ITEM exec.asset::load
     # => [ASSET_KEY, ASSET_VALUE]
 
     # Extract requested amount
@@ -552,12 +555,27 @@ proc execute_pswap
     dropw
     # => []
 
-    # If both input and inflight are 0, default to full fill (input = requested)
+    # If both input and inflight are 0, default to a full fill (input = requested).
+    # This enables consumption by network accounts, which execute without note_args
+    # (the kernel defaults note_args to [0, 0, 0, 0] when none are provided).
     mem_load.AMT_REQUESTED_IN mem_load.AMT_REQUESTED_INFLIGHT add push.0 eq
     if.true
         mem_load.AMT_REQUESTED mem_store.AMT_REQUESTED_IN
     end
 
+    # Validate: fill amount (input + inflight) must not exceed total requested
+    mem_load.AMT_REQUESTED_IN mem_load.AMT_REQUESTED_INFLIGHT add
+    mem_load.AMT_REQUESTED
+    # => [requested, fill_amount]
+    # lte pops [b=requested, a=fill_amount] and pushes (fill_amount <= requested)
+    lte assert.err=ERR_PSWAP_FILL_EXCEEDS_REQUESTED
+    # => []
+
+    # Calculate offered_out for input and inflight amounts separately rather than
+    # summing them first, because the input portion (offered_out_input) must be sent
+    # to the consumer's vault individually, while the total (input + inflight) is
+    # needed to determine the remainder note's offered amount.
+    #
     # Calculate offered_out for input_amount
     mem_load.AMT_REQUESTED_IN
     mem_load.AMT_REQUESTED
@@ -628,6 +646,9 @@ pub proc main
     # => [NOTE_ARGS]
     # Stack (top to bottom): [input_amount, inflight_amount, 0, 0]
     # (Word[0] on top after mem_loadw_le in kernel prologue)
+    #
+    # In network transactions, note_args are not provided by the executor and default
+    # to [0, 0, 0, 0]. The script handles this by defaulting to a full fill.
 
     mem_store.AMT_REQUESTED_IN
     # => [inflight_amount, 0, 0]
