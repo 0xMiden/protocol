@@ -176,7 +176,7 @@ impl ProcedurePolicy {
         Ok(())
     }
 
-    pub fn to_word(&self) -> Word {
+    pub fn to_word(self) -> Word {
         let immediate_threshold = self.immediate_threshold().unwrap_or(0);
         let delay_threshold = self.delay_threshold().unwrap_or(0);
 
