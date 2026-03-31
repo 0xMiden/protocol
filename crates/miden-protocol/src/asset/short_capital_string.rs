@@ -18,7 +18,7 @@ pub struct ShortCapitalString(String);
 
 impl ShortCapitalString {
     /// Maximum allowed string length.
-    pub const MAX_SYMBOL_LENGTH: usize = 12;
+    pub const MAX_LENGTH: usize = 12;
 
     /// Constructs a value from up to 12 uppercase ASCII Latin letters (`A`–`Z`).
     ///
@@ -28,7 +28,7 @@ impl ShortCapitalString {
     /// - The string contains a character that is not uppercase ASCII.
     pub fn from_ascii_uppercase(s: &str) -> Result<Self, ShortCapitalStringError> {
         let len = s.len();
-        if len == 0 || len > Self::MAX_SYMBOL_LENGTH {
+        if len == 0 || len > Self::MAX_LENGTH {
             return Err(ShortCapitalStringError::InvalidLength(len));
         }
         for byte in s.as_bytes() {
@@ -47,7 +47,7 @@ impl ShortCapitalString {
     /// - The string contains a character outside `A`–`Z` and `_`.
     pub fn from_ascii_uppercase_and_underscore(s: &str) -> Result<Self, ShortCapitalStringError> {
         let len = s.len();
-        if len == 0 || len > Self::MAX_SYMBOL_LENGTH {
+        if len == 0 || len > Self::MAX_LENGTH {
             return Err(ShortCapitalStringError::InvalidLength(len));
         }
         for byte in s.as_bytes() {
@@ -116,14 +116,14 @@ impl ShortCapitalString {
 
         let alphabet_len = alphabet.len() as u64;
         let mut remaining_value = encoded_value;
-        let symbol_len = (remaining_value % alphabet_len) as usize;
-        if symbol_len == 0 || symbol_len > Self::MAX_SYMBOL_LENGTH {
-            return Err(ShortCapitalStringError::InvalidLength(symbol_len));
+        let string_len = (remaining_value % alphabet_len) as usize;
+        if string_len == 0 || string_len > Self::MAX_LENGTH {
+            return Err(ShortCapitalStringError::InvalidLength(string_len));
         }
         remaining_value /= alphabet_len;
 
         let mut decoded = String::new();
-        for _ in 0..symbol_len {
+        for _ in 0..string_len {
             let digit = (remaining_value % alphabet_len) as usize;
             let char = *alphabet.get(digit).ok_or(ShortCapitalStringError::InvalidCharacter)?;
             decoded.insert(0, char as char);
