@@ -9,7 +9,6 @@ use miden::core::crypto::hashes::poseidon2
 use miden::core::mem
 use miden::core::word
 use miden::protocol::note
-use miden::protocol::note::NOTE_TYPE_PUBLIC
 use miden::protocol::output_note
 use miden::protocol::output_note::ATTACHMENT_KIND_NONE
 use miden::protocol::active_account
@@ -70,6 +69,9 @@ const CLAIM_LEAF_DATA_WORD_LEN = 8
 # - account_id_suffix [16]     : 1 felt
 # - account_id_prefix [17]     : 1 felt
 const MINT_NOTE_NUM_STORAGE_ITEMS = 18
+
+# P2ID output note constants
+const OUTPUT_NOTE_TYPE_PUBLIC = 1
 
 # P2ID attachment constants (the P2ID note created by the faucet has no attachment)
 const P2ID_ATTACHMENT_SCHEME_NONE = 0
@@ -934,8 +936,8 @@ end
 #! Invocation: exec
 proc create_mint_note_with_attachment
     # Create the MINT output note targeting the faucet
-    push.NOTE_TYPE_PUBLIC
-    # => [note_type, MINT_RECIPIENT, faucet_id_prefix, faucet_id_suffix]
+    push.OUTPUT_NOTE_TYPE_PUBLIC
+    # => [note_type, MINT_RECIPIENT, faucet_id_suffix, faucet_id_prefix]
 
     # Set tag to DEFAULT
     push.DEFAULT_TAG

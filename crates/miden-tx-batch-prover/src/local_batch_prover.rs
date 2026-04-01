@@ -74,7 +74,7 @@ impl LocalBatchProver {
             batch_expiration_block_num,
         ) = proposed_batch.into_parts();
 
-        ProvenBatch::new_unchecked(
+        ProvenBatch::new(
             id,
             block_header.commitment(),
             block_header.block_num(),
