@@ -176,29 +176,7 @@ impl ProcedurePolicy {
         Ok(())
     }
 
-    pub fn assert_valid_for_num_approvers(&self, num_approvers: u32) -> Result<(), AccountError> {
-        Self::validate_execution_mode(self.execution_mode)?;
-
-        if let Some(immediate_threshold) = self.immediate_threshold()
-            && immediate_threshold > num_approvers
-        {
-            return Err(AccountError::other(
-                "procedure policy immediate threshold cannot exceed number of approvers",
-            ));
-        }
-
-        if let Some(delay_threshold) = self.delay_threshold()
-            && delay_threshold > num_approvers
-        {
-            return Err(AccountError::other(
-                "procedure policy delay threshold cannot exceed number of approvers",
-            ));
-        }
-
-        Ok(())
-    }
-
-    pub fn to_word(&self) -> Word {
+    pub fn to_word(self) -> Word {
         let immediate_threshold = self.immediate_threshold().unwrap_or(0);
         let delay_threshold = self.delay_threshold().unwrap_or(0);
 
@@ -242,18 +220,6 @@ mod tests {
                 .unwrap_err()
                 .to_string()
                 .contains("delay threshold cannot exceed immediate threshold")
-        );
-    }
-
-    #[test]
-    fn procedure_policy_rejects_thresholds_above_num_approvers() {
-        assert!(
-            ProcedurePolicy::with_delay_threshold(3)
-                .unwrap()
-                .assert_valid_for_num_approvers(2)
-                .unwrap_err()
-                .to_string()
-                .contains("procedure policy delay threshold cannot exceed number of approvers")
         );
     }
 

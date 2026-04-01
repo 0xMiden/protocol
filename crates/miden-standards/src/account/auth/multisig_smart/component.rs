@@ -314,7 +314,20 @@ fn validate_proc_policies(
     proc_policies: &[(Word, ProcedurePolicy)],
 ) -> Result<(), AccountError> {
     for (_, policy) in proc_policies {
-        policy.assert_valid_for_num_approvers(num_approvers)?;
+        if let Some(immediate_threshold) = policy.immediate_threshold()
+            && immediate_threshold > num_approvers
+        {
+            return Err(AccountError::other(
+                "procedure policy immediate threshold cannot exceed number of approvers",
+            ));
+        }
+        if let Some(delay_threshold) = policy.delay_threshold()
+            && delay_threshold > num_approvers
+        {
+            return Err(AccountError::other(
+                "procedure policy delay threshold cannot exceed number of approvers",
+            ));
+        }
     }
 
     Ok(())
