@@ -6,8 +6,8 @@ use super::{Felt, ShortCapitalString, TokenSymbolError};
 ///
 /// Token Symbols can consist of up to 12 capital Latin characters, e.g. "C", "ETH", "MIDEN".
 ///
-/// The label is stored as a [`ShortCapitalString`] and can be converted to a [`Felt`] encoding via
-/// [`as_element()`](Self::as_element).
+/// The label is stored internally as a validated short uppercase string and can be converted to a
+/// [`Felt`] encoding via [`as_element()`](Self::as_element).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TokenSymbol(ShortCapitalString);
 

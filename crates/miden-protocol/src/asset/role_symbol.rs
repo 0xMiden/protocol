@@ -7,8 +7,8 @@ use super::{Felt, RoleSymbolError, ShortCapitalString};
 /// Role symbols can consist of up to 12 uppercase Latin characters and underscores, e.g.
 /// "MINTER", "BURNER", "MINTER_ADMIN".
 ///
-/// The label is stored as a [`ShortCapitalString`] and can be converted to a [`Felt`] encoding via
-/// [`as_element()`](Self::as_element).
+/// The label is stored internally as a validated short string (`A`–`Z` and `_`) and can be
+/// converted to a [`Felt`] encoding via [`as_element()`](Self::as_element).
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct RoleSymbol(ShortCapitalString);
 
