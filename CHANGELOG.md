@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.14.2 (2026-03-31)
+
+### Changes
+
+- Changed felt-to-word layout in the type registry from `[0, 0, 0, felt]` to `[felt, 0, 0, 0]` to match the actual MASM storage layout ([#2711](https://github.com/0xMiden/protocol/pull/2711)).
+
+## 0.14.1 (2026-03-30)
+
+### Changes
+
+- Integrated various AggLayer-related cleanups ([#2695](https://github.com/0xMiden/protocol/pull/2695)).
+
 ## 0.14.0 (2026-03-23)
 
 ### Features
