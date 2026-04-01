@@ -217,9 +217,9 @@ end
 #!
 #! Panics if:
 #! - `MULTISIG_CONFIG_HASH` is missing from the advice map, or the stored layout is invalid.
-#! - `num_approvers` or `threshold` fail `u32assert2` (`ERR_MALFORMED_MULTISIG_CONFIG`).
-#! - `threshold > num_approvers` (`ERR_MALFORMED_MULTISIG_CONFIG`).
-#! - `num_approvers == 0` or `threshold == 0` (`ERR_ZERO_IN_MULTISIG_CONFIG`).
+#! - `num_approvers` or `threshold` is not a valid `u32`.
+#! - `threshold` is greater than `num_approvers`.
+#! - `num_approvers` or `threshold` is zero.
 #!
 #! Invocation: exec
 @locals(1)
