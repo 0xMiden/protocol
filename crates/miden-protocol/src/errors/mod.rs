@@ -518,8 +518,7 @@ impl From<ShortCapitalStringError> for TokenSymbolError {
             ShortCapitalStringError::ValueTooLarge(v) => Self::ValueTooLarge(v),
             ShortCapitalStringError::ValueTooSmall(v) => Self::ValueTooSmall(v),
             ShortCapitalStringError::InvalidLength(v) => Self::InvalidLength(v),
-            ShortCapitalStringError::InvalidCharacter
-            | ShortCapitalStringError::InvalidRoleCharacter => Self::InvalidCharacter,
+            ShortCapitalStringError::InvalidCharacter => Self::InvalidCharacter,
             ShortCapitalStringError::DataNotFullyDecoded => Self::DataNotFullyDecoded,
         }
     }
@@ -548,8 +547,7 @@ impl From<ShortCapitalStringError> for RoleSymbolError {
             ShortCapitalStringError::ValueTooLarge(v) => Self::ValueTooLarge(v),
             ShortCapitalStringError::ValueTooSmall(v) => Self::ValueTooSmall(v),
             ShortCapitalStringError::InvalidLength(v) => Self::InvalidLength(v),
-            ShortCapitalStringError::InvalidCharacter
-            | ShortCapitalStringError::InvalidRoleCharacter => Self::InvalidCharacter,
+            ShortCapitalStringError::InvalidCharacter => Self::InvalidCharacter,
             ShortCapitalStringError::DataNotFullyDecoded => Self::DataNotFullyDecoded,
         }
     }
@@ -570,8 +568,6 @@ pub enum ShortCapitalStringError {
     InvalidLength(usize),
     #[error("short capital string contains an invalid character")]
     InvalidCharacter,
-    #[error("short capital string contains a character that is not uppercase ASCII or underscore")]
-    InvalidRoleCharacter,
     #[error("short capital string data left after decoding the specified number of characters")]
     DataNotFullyDecoded,
 }

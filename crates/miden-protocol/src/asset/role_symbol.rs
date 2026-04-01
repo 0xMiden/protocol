@@ -14,7 +14,7 @@ pub struct RoleSymbol(ShortCapitalString);
 
 impl RoleSymbol {
     /// Alphabet used for role symbols (`A-Z` and `_`).
-    pub const ALPHABET: &'static [u8; 27] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ_";
+    pub const ALPHABET: &'static str = "ABCDEFGHIJKLMNOPQRSTUVWXYZ_";
 
     /// The length of the set of characters that can be used in a role symbol.
     pub const ALPHABET_LENGTH: u64 = 27;

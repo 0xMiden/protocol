@@ -12,7 +12,8 @@ use super::{Felt, ShortCapitalString, TokenSymbolError};
 pub struct TokenSymbol(ShortCapitalString);
 
 impl TokenSymbol {
-    pub const ALPHABET: &'static [u8; 26] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    /// Alphabet used for token symbols (`A`–`Z`).
+    pub const ALPHABET: &'static str = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
     /// Maximum allowed length of the token string.
     pub const MAX_SYMBOL_LENGTH: usize = 12;

@@ -24,38 +24,44 @@ impl ShortCapitalString {
     ///
     /// # Errors
     /// Returns an error if:
-    /// - The length of the provided string is less than 1 or greater than 12.
+    /// - The number of characters is less than 1 or greater than 12.
     /// - The string contains a character that is not uppercase ASCII.
-    pub fn from_ascii_uppercase(s: &str) -> Result<Self, ShortCapitalStringError> {
-        let len = s.len();
-        if len == 0 || len > Self::MAX_LENGTH {
-            return Err(ShortCapitalStringError::InvalidLength(len));
+    pub fn from_ascii_uppercase(
+        string: impl Into<String>,
+    ) -> Result<Self, ShortCapitalStringError> {
+        let string = string.into();
+        let char_count = string.chars().count();
+        if char_count == 0 || char_count > Self::MAX_LENGTH {
+            return Err(ShortCapitalStringError::InvalidLength(char_count));
         }
-        for byte in s.as_bytes() {
-            if !byte.is_ascii_uppercase() {
+        for character in string.chars() {
+            if !character.is_ascii_uppercase() {
                 return Err(ShortCapitalStringError::InvalidCharacter);
             }
         }
-        Ok(Self(String::from(s)))
+        Ok(Self(string))
     }
 
     /// Constructs a value from up to 12 characters from `A`–`Z` and `_`.
     ///
     /// # Errors
     /// Returns an error if:
-    /// - The length of the provided string is less than 1 or greater than 12.
+    /// - The number of characters is less than 1 or greater than 12.
     /// - The string contains a character outside `A`–`Z` and `_`.
-    pub fn from_ascii_uppercase_and_underscore(s: &str) -> Result<Self, ShortCapitalStringError> {
-        let len = s.len();
-        if len == 0 || len > Self::MAX_LENGTH {
-            return Err(ShortCapitalStringError::InvalidLength(len));
+    pub fn from_ascii_uppercase_and_underscore(
+        string: impl Into<String>,
+    ) -> Result<Self, ShortCapitalStringError> {
+        let string = string.into();
+        let char_count = string.chars().count();
+        if char_count == 0 || char_count > Self::MAX_LENGTH {
+            return Err(ShortCapitalStringError::InvalidLength(char_count));
         }
-        for byte in s.as_bytes() {
-            if !byte.is_ascii_uppercase() && *byte != b'_' {
-                return Err(ShortCapitalStringError::InvalidRoleCharacter);
+        for character in string.chars() {
+            if !character.is_ascii_uppercase() && character != '_' {
+                return Err(ShortCapitalStringError::InvalidCharacter);
             }
         }
-        Ok(Self(String::from(s)))
+        Ok(Self(string))
     }
 
     /// Returns the [`Felt`] encoding of this string.
@@ -64,19 +70,19 @@ impl ShortCapitalString {
     ///
     /// The encoding is performed by multiplying the intermediate encoded value by the length of
     /// the used alphabet and adding the relative index of each character. At the end of the
-    /// encoding process, the length of the initial string is added to the encoded value.
+    /// encoding process, the character length of the initial string is added to the encoded value.
     ///
     /// # Errors
     /// Returns an error if:
     /// - The string contains a character that is not part of the provided alphabet.
-    pub fn as_element(&self, alphabet: &[u8]) -> Result<Felt, ShortCapitalStringError> {
-        let alphabet_len = alphabet.len() as u64;
+    pub fn as_element(&self, alphabet: &str) -> Result<Felt, ShortCapitalStringError> {
+        let alphabet_len = alphabet.chars().count() as u64;
         let mut encoded_value: u64 = 0;
 
-        for byte in self.0.as_bytes() {
+        for character in self.0.chars() {
             let digit = alphabet
-                .iter()
-                .position(|ch| ch == byte)
+                .chars()
+                .position(|c| c == character)
                 .map(|pos| pos as u64)
                 .ok_or(ShortCapitalStringError::InvalidCharacter)?;
 
@@ -84,11 +90,15 @@ impl ShortCapitalString {
         }
 
         // Append the original length so decoding is unambiguous.
-        encoded_value = encoded_value * alphabet_len + self.0.len() as u64;
+        let char_len = self.0.chars().count() as u64;
+        encoded_value = encoded_value * alphabet_len + char_len;
         Ok(Felt::new(encoded_value))
     }
 
     /// Decodes an encoded [`Felt`] value into a [`ShortCapitalString`].
+    ///
+    /// `encoded_string` is the field element that carries the short-string encoding (as produced by
+    /// [`as_element`](Self::as_element)).
     ///
     /// The alphabet used in the decoding process is provided by the `alphabet` argument.
     ///
@@ -101,12 +111,12 @@ impl ShortCapitalString {
     /// - The decoded length is not between 1 and 12.
     /// - Decoding leaves non-zero trailing data.
     pub fn try_from_encoded_felt(
-        felt: Felt,
-        alphabet: &[u8],
+        encoded_string: Felt,
+        alphabet: &str,
         min_encoded_value: u64,
         max_encoded_value: u64,
     ) -> Result<Self, ShortCapitalStringError> {
-        let encoded_value = felt.as_canonical_u64();
+        let encoded_value = encoded_string.as_canonical_u64();
         if encoded_value < min_encoded_value {
             return Err(ShortCapitalStringError::ValueTooSmall(encoded_value));
         }
@@ -114,7 +124,7 @@ impl ShortCapitalString {
             return Err(ShortCapitalStringError::ValueTooLarge(encoded_value));
         }
 
-        let alphabet_len = alphabet.len() as u64;
+        let alphabet_len = alphabet.chars().count() as u64;
         let mut remaining_value = encoded_value;
         let string_len = (remaining_value % alphabet_len) as usize;
         if string_len == 0 || string_len > Self::MAX_LENGTH {
@@ -122,11 +132,12 @@ impl ShortCapitalString {
         }
         remaining_value /= alphabet_len;
 
-        let mut decoded = String::new();
+        let mut decoded = String::with_capacity(string_len);
         for _ in 0..string_len {
             let digit = (remaining_value % alphabet_len) as usize;
-            let char = *alphabet.get(digit).ok_or(ShortCapitalStringError::InvalidCharacter)?;
-            decoded.insert(0, char as char);
+            let character =
+                alphabet.chars().nth(digit).ok_or(ShortCapitalStringError::InvalidCharacter)?;
+            decoded.insert(0, character);
             remaining_value /= alphabet_len;
         }
 
@@ -146,7 +157,7 @@ impl fmt::Display for ShortCapitalString {
 
 #[cfg(test)]
 mod tests {
-    use alloc::string::ToString;
+    use alloc::string::{String, ToString};
 
     use assert_matches::assert_matches;
 
@@ -154,16 +165,20 @@ mod tests {
 
     #[test]
     fn short_capital_string_encode_decode_roundtrip() {
-        let s = ShortCapitalString::from_ascii_uppercase("MIDEN").unwrap();
-        let encoded = s.as_element(b"ABCDEFGHIJKLMNOPQRSTUVWXYZ").unwrap();
+        let short_string = ShortCapitalString::from_ascii_uppercase("MIDEN").unwrap();
+        let encoded = short_string.as_element("ABCDEFGHIJKLMNOPQRSTUVWXYZ").unwrap();
         let decoded = ShortCapitalString::try_from_encoded_felt(
             encoded,
-            b"ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
             1,
             2481152873203736562,
         )
         .unwrap();
         assert_eq!(decoded.to_string(), "MIDEN");
+
+        let name = String::from("MIDEN");
+        let from_name = ShortCapitalString::from_ascii_uppercase(name).unwrap();
+        assert_eq!(from_name.to_string(), "MIDEN");
     }
 
     #[test]
@@ -183,12 +198,12 @@ mod tests {
 
         assert_matches!(
             ShortCapitalString::from_ascii_uppercase_and_underscore("MINTER-ADMIN").unwrap_err(),
-            ShortCapitalStringError::InvalidRoleCharacter
+            ShortCapitalStringError::InvalidCharacter
         );
 
         let err = ShortCapitalString::try_from_encoded_felt(
             Felt::ZERO,
-            b"ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
             1,
             2481152873203736562,
         )
