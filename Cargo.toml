@@ -21,7 +21,7 @@ homepage     = "https://miden.xyz"
 license      = "MIT"
 repository   = "https://github.com/0xMiden/protocol"
 rust-version = "1.90"
-version      = "0.14.1"
+version      = "0.14.2"
 
 [profile.release]
 codegen-units = 1
