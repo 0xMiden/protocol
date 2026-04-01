@@ -4,6 +4,9 @@ use $kernel::asset::ASSET_SIZE
 use $kernel::constants::NOTE_MEM_SIZE
 use $kernel::memory
 
+pub use $kernel::util::note::NOTE_TYPE_PUBLIC
+pub use $kernel::util::note::NOTE_TYPE_PRIVATE
+
 # ERRORS
 # =================================================================================================
 

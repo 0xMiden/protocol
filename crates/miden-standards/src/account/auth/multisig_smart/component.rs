@@ -769,7 +769,7 @@ mod tests {
         AmountLimits,
         OracleId,
         OracleReaderConfig,
-        ProcedurePolicyNoteRestrictions,
+        ProcedurePolicyNoteRestriction,
         SpendingPolicyConfig,
         TierThresholds,
         TimelockControllerConfig,
@@ -890,7 +890,7 @@ mod tests {
 
         let result = AuthMultisigSmartConfig::new(approvers, 2).and_then(|cfg| {
             let policy = ProcedurePolicy::with_immediate_threshold(0)?
-                .with_note_restrictions(ProcedurePolicyNoteRestrictions::NoInputNotes);
+                .with_note_restriction(ProcedurePolicyNoteRestriction::NoInputNotes);
             cfg.with_proc_policies(vec![(Word::from([4u32, 3, 2, 1]), policy)])
         });
         assert!(

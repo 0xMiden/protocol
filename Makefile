@@ -189,3 +189,16 @@ install-tools: ## Installs development tools required by the Makefile (mdbook, t
 	cargo install taplo-cli --locked
 	cargo install cargo-machete --locked
 	@echo "Development tools installation complete!"
+
+# -- documentation ---------------------------------------------------------------------------------
+
+AGGLAYER_DIAGRAMS_DIR := crates/miden-agglayer/diagrams
+EXCALIDRAW_SOURCES := $(wildcard $(AGGLAYER_DIAGRAMS_DIR)/*.excalidraw)
+EXCALIDRAW_PNGS := $(EXCALIDRAW_SOURCES:.excalidraw=.png)
+
+.PHONY: agglayer-spec
+agglayer-spec: $(EXCALIDRAW_PNGS) ## Exports AggLayer spec diagrams from .excalidraw to .png
+
+$(AGGLAYER_DIAGRAMS_DIR)/%.png: $(AGGLAYER_DIAGRAMS_DIR)/%.excalidraw
+	@command -v npx >/dev/null 2>&1 || { echo "npx not found. Install Node.js first."; exit 1; }
+	npx excalidraw-brute-export-cli -i $< --format png -o $@ --scale 2

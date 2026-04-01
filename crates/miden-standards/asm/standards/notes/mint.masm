@@ -9,8 +9,8 @@ use miden::standards::faucets::network_fungible->network_faucet
 const MINT_NOTE_NUM_STORAGE_ITEMS_PRIVATE=12
 const MINT_NOTE_MIN_NUM_STORAGE_ITEMS_PUBLIC=16
 
-const OUTPUT_NOTE_TYPE_PUBLIC=1
-const OUTPUT_NOTE_TYPE_PRIVATE=2
+use miden::protocol::note::NOTE_TYPE_PUBLIC
+use miden::protocol::note::NOTE_TYPE_PRIVATE
 
 # Memory Addresses of MINT note storage
 # The attachment is at the same memory address for both private and public storage.
@@ -98,7 +98,7 @@ pub proc main
         # => [RECIPIENT, pad(12)]
 
         # push note_type, and load tag and amount
-        push.OUTPUT_NOTE_TYPE_PUBLIC
+        push.NOTE_TYPE_PUBLIC
         mem_load.0 mem_load.1
         # => [amount, tag, note_type, RECIPIENT, pad(12)]
     else
@@ -114,7 +114,7 @@ pub proc main
         # => [RECIPIENT, pad(12)]
 
         # push note_type, and load tag and amount
-        push.OUTPUT_NOTE_TYPE_PRIVATE
+        push.NOTE_TYPE_PRIVATE
         mem_load.0 mem_load.1
         # => [amount, tag, note_type, RECIPIENT, pad(12)]
     end

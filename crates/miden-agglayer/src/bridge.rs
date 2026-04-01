@@ -116,7 +116,7 @@ static LET_NUM_LEAVES_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// - `update_ger`, which injects a new GER into the storage map.
 /// - `bridge_out`, which bridges an asset out of Miden to the destination network.
 /// - `claim`, which validates a claim against the AggLayer bridge and creates a MINT note for the
-///   AggFaucet.
+///   AggLayer Faucet.
 ///
 /// ## Storage Layout
 ///

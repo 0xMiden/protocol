@@ -6,7 +6,6 @@ use miden::protocol::active_note
 
 # CONSTANTS
 # =================================================================================================
-const PUBLIC_NOTE=1
 
 #! Adds the provided asset to the active account.
 #!

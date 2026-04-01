@@ -72,12 +72,12 @@ end
 #! returns the result as 8 u32 limbs in little-endian order (U256 format).
 #!
 #! Inputs:  [amount, target_scale]
-#! Outputs: [[RESULT_U256[0], RESULT_U256[1]]]
+#! Outputs: [[RESULT_U256_LO, RESULT_U256_HI]]
 #!
 #! Where:
 #! - amount: The asset amount to be converted (range: 0 to 2^63 - 2^31)
 #! - target_scale: Exponent for scaling factor (10^target_scale)
-#! - [RESULT_U256[0], RESULT_U256[1]]: U256 value as 8 u32 limbs in little-endian order
+#! - [RESULT_U256_LO, RESULT_U256_HI]: U256 value as 8 u32 limbs in little-endian order
 #!   (least significant limb at the top of the stack, each limb stored in little-endian format)
 #!
 #! Examples:
@@ -106,7 +106,7 @@ pub proc scale_native_amount_to_u256
 
     # convert to U256 & little endian
     padw swapw
-    # => [RESULT_U256[0], RESULT_U256[1]]
+    # => [RESULT_U256_LO, RESULT_U256_HI]
 end
 
 #! Reverse the limbs and change the byte endianness of the result.
@@ -123,7 +123,7 @@ pub proc reverse_limbs_and_change_byte_endianness
         movdn.7
     end
 
-    # => [RESULT_U256[0], RESULT_U256[1]]
+    # => [RESULT_U256_LO, RESULT_U256_HI]
 end
 
 #! Subtract two 128-bit integers (little-endian u32 limbs) and assert no underflow.

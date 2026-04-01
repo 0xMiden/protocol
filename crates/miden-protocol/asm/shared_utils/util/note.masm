@@ -10,3 +10,12 @@ pub const ATTACHMENT_KIND_NONE=0
 pub const ATTACHMENT_KIND_WORD=1
 #! A note attachment consisting of the commitment to a set of felts.
 pub const ATTACHMENT_KIND_ARRAY=2
+
+# Note type constants. These encode the note type in the lower byte of the metadata header.
+# See NoteType in the Rust protocol crate for details.
+
+#! The note type of private notes.
+pub const NOTE_TYPE_PRIVATE=0
+
+#! The note type of public notes.
+pub const NOTE_TYPE_PUBLIC=1

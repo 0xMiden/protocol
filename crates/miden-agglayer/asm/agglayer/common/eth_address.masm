@@ -2,6 +2,11 @@ use agglayer::common::utils
 use miden::core::crypto::hashes::keccak256
 use miden::core::word
 
+# TYPE ALIASES
+# =================================================================================================
+
+pub type EthereumAddressFormat = struct { a: felt, b: felt, c: felt, d: felt, e: felt }
+
 # ERRORS
 # =================================================================================================
 

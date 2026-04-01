@@ -26,7 +26,7 @@ use miden_protocol::{Felt, Hasher, Word};
 use miden_standards::account::auth::multisig_smart::{
     AmountLimits,
     ProcedurePolicy,
-    ProcedurePolicyNoteRestrictions,
+    ProcedurePolicyNoteRestriction,
     SpendingPolicyConfig,
     TierThresholds,
     TimelockControllerConfig,
@@ -1524,7 +1524,7 @@ async fn test_multisig_smart_proc_policy_no_notes_constraint_is_enforced(
         vec![(
             BasicWallet::receive_asset_digest(),
             ProcedurePolicy::with_immediate_threshold(1)?
-                .with_note_restrictions(ProcedurePolicyNoteRestrictions::NoInputOutputNotes),
+                .with_note_restriction(ProcedurePolicyNoteRestriction::NoInputOrOutputNotes),
         )],
     )?;
 

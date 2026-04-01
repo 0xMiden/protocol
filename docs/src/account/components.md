@@ -98,7 +98,7 @@ In TOML, these are declared using dotted array keys:
 
 **Value-slot** entries describe their schema via `WordSchema`. A value type can be either:
 
-- **Simple**: defined through the `type = "<identifier>"` field, indicating the expected `SchemaType` for the entire word. The value is supplied at instantiation time via `InitStorageData`. Felt types are stored as full words in the following layout: `[0, 0, 0, <felt>]`.
+- **Simple**: defined through the `type = "<identifier>"` field, indicating the expected `SchemaType` for the entire word. The value is supplied at instantiation time via `InitStorageData`. Felt types are stored as full words in the following layout: `[<felt>, 0, 0, 0]`.
 - **Composite**: provided through `type = [ ... ]`, which contains exactly four `FeltSchema` descriptors. Each element is either a named typed field (optionally with `default-value`) or a `void` element for reserved/padding zeros.
 
 Composite schema entries reuse the existing TOML structure for four-element words, while simple schemas rely on `type`. In our example, the `token_metadata` slot uses a composite schema (`type = [...]`) mixing typed fields (`max_supply`, `decimals`) with defaults (`symbol`) and a reserved/padding `void` element.

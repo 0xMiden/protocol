@@ -1,9 +1,6 @@
 use agglayer::bridge::bridge_in -> bridge
 use miden::protocol::active_note
-use miden::protocol::note
-use miden::core::crypto::hashes::keccak256
 use miden::core::crypto::hashes::poseidon2
-use miden::core::mem
 use miden::standards::attachments::network_account_target
 
 # CONSTANTS
@@ -13,7 +10,8 @@ const PROOF_DATA_SIZE = 536
 const LEAF_DATA_SIZE = 32
 const OUTPUT_NOTE_SIZE = 8
 
-const PROOF_DATA_START_PTR = 0
+const CLAIM_NOTE_STORAGE_PTR = 0
+const PROOF_DATA_START_PTR = CLAIM_NOTE_STORAGE_PTR
 const LEAF_DATA_START_PTR = 536
 const FAUCET_MINT_AMOUNT = 568
 
@@ -21,6 +19,96 @@ const FAUCET_MINT_AMOUNT = 568
 # =================================================================================================
 
 const ERR_CLAIM_TARGET_ACCT_MISMATCH = "CLAIM note attachment target account does not match consuming account"
+
+# NOTE SCRIPT
+# =================================================================================================
+
+#! Agglayer Bridge CLAIM script: claims assets by calling the bridge's claim function.
+#!
+#! This note is consumed by the agglayer bridge account whose ID is provided
+#! in the note attachment (NetworkAccountTarget). Upon consumption, the bridge validates
+#! the Merkle proof, looks up the faucet from the token registry, and creates a MINT note
+#! targeting the Agglayer Faucet.
+#!
+#! Requires that the account exposes:
+#! - agglayer::bridge::bridge_in::claim procedure.
+#!
+#! Inputs:  [ARGS, pad(12)]
+#! Outputs: [pad(16)]
+#!
+#! NoteStorage layout (569 felts total):
+#! - smtProofLocalExitRoot  [0..255]   : 256 felts
+#! - smtProofRollupExitRoot [256..511] : 256 felts
+#! - globalIndex            [512..519] : 8 felts
+#! - mainnetExitRoot        [520..527] : 8 felts
+#! - rollupExitRoot         [528..535] : 8 felts
+#! - leafType               [536]      : 1 felt
+#! - originNetwork          [537]      : 1 felt
+#! - originTokenAddress     [538..542] : 5 felts
+#! - destinationNetwork     [543]      : 1 felt
+#! - destinationAddress     [544..548] : 5 felts
+#! - amount                 [549..556] : 8 felts
+#! - metadata               [557..564] : 8 felts
+#! - padding                [565..567] : 3 felts
+#! - miden_claim_amount     [568]      : 1 felt
+#!
+#! Where:
+#! - smtProofLocalExitRoot: SMT proof for local exit root (bytes32[_DEPOSIT_CONTRACT_TREE_DEPTH])
+#! - smtProofRollupExitRoot: SMT proof for rollup exit root (bytes32[_DEPOSIT_CONTRACT_TREE_DEPTH])
+#! - globalIndex: Global index (uint256 as 8 u32 felts). This is a packed "locator" for the leaf being claimed:
+#!   - mainnetFlag (1 bit): 1 = leaf came from L1 (Mainnet Exit Tree), 0 = leaf came from an L2 rollup
+#!   - rollupIndex (32 bits): which rollup (only used when mainnetFlag=0)
+#!   - localRootIndex (32 bits): leaf index / depositCount in the origin chain's Local Exit Tree
+#!   - Top 191 bits are ignored (not required to be zero), so indexers must decode it exactly like the contract does
+#! - mainnetExitRoot: Mainnet exit root hash (bytes32 as 8 u32 felts)
+#! - rollupExitRoot: Rollup exit root hash (bytes32 as 8 u32 felts)
+#! - leafType: Leaf type (uint32): [0] transfer Ether / ERC20 tokens, [1] message
+#! - originNetwork: Origin network identifier (uint32)
+#! - originTokenAddress: Origin token address (address as 5 u32 felts)
+#! - destinationNetwork: Destination network identifier (uint32)
+#! - destinationAddress: 20-byte Ethereum address decodable into a Miden AccountId (5 u32 felts)
+#! - amount: Amount of tokens (uint256 as 8 u32 felts)
+#! - metadata: ABI encoded metadata (fixed size)
+#! - miden_claim_amount: Scaled-down Miden token amount (Felt). This is the Y value computed from
+#!   scaling down the Ethereum amount (X) by the scale exponent: Y = floor(X / 10^scale_exp)
+#!
+#! Panics if:
+#! - account does not expose claim procedure.
+#! - note attachment target account does not match the consuming account.
+begin
+    dropw
+    # => [pad(16)]
+
+    # Ensure note attachment targets the consuming bridge account.
+    exec.network_account_target::active_account_matches_target_account
+    assert.err=ERR_CLAIM_TARGET_ACCT_MISMATCH
+    # => [pad(16)]
+
+    # Load CLAIM note storage into memory, starting at address 0
+    push.CLAIM_NOTE_STORAGE_PTR exec.active_note::get_storage drop drop
+    # => [pad(16)]
+
+    exec.write_claim_data_into_advice_map_by_key
+    # => [PROOF_DATA_KEY, LEAF_DATA_KEY, pad(16)]
+
+    mem_load.FAUCET_MINT_AMOUNT
+    # => [faucet_mint_amount, PROOF_DATA_KEY, LEAF_DATA_KEY, pad(16)]
+
+    movdn.8
+    # => [PROOF_DATA_KEY, LEAF_DATA_KEY, faucet_mint_amount, pad(16)]
+
+    # call the Bridge Claim procedure
+    call.bridge::claim
+    # => [pad(16), pad(9)]
+
+    # a call invocation consumes and returns 16 elements, but we had trailing padding
+    dropw dropw drop 
+
+    # => [pad(16)]
+end
+
+# HELPER PROCEDURES
+# =================================================================================================
 
 #! Reads claim data from memory and inserts it into the advice map under two separate keys.
 #!
@@ -82,88 +170,4 @@ proc write_claim_data_into_advice_map_by_key
 
     movup.4 drop movup.4 drop
     # => [PROOF_DATA_KEY, LEAF_DATA_KEY]
-end
-
-#! Agglayer Bridge CLAIM script: claims assets by calling the bridge's claim function.
-#!
-#! This note is consumed by the agglayer bridge account whose ID is provided
-#! in the note attachment (NetworkAccountTarget). Upon consumption, the bridge validates
-#! the Merkle proof, looks up the faucet from the token registry, and creates a MINT note
-#! targeting the aggfaucet.
-#!
-#! Requires that the account exposes:
-#! - agglayer::bridge::bridge_in::claim procedure.
-#!
-#! Inputs:  [ARGS, pad(12)]
-#! Outputs: [pad(16)]
-#!
-#! NoteStorage layout (569 felts total):
-#! - smtProofLocalExitRoot      [0..255]  : 256 felts
-#! - smtProofRollupExitRoot     [256..511]: 256 felts
-#! - globalIndex                [512..519]: 8 felts
-#! - mainnetExitRoot            [520..527]: 8 felts
-#! - rollupExitRoot             [528..535]: 8 felts
-#! - leafType                   [536]     : 1 felt
-#! - originNetwork              [537]     : 1 felt
-#! - originTokenAddress         [538..542]: 5 felts
-#! - destinationNetwork         [543]     : 1 felt
-#! - destinationAddress         [544..548]: 5 felts
-#! - amount                     [549..556]: 8 felts
-#! - metadata                   [557..564]: 8 felts
-#! - padding                    [565..567]: 3 felts
-#! - miden_claim_amount         [568]     : 1 felt
-#!
-#! Where:
-#! - smtProofLocalExitRoot: SMT proof for local exit root (bytes32[_DEPOSIT_CONTRACT_TREE_DEPTH])
-#! - smtProofRollupExitRoot: SMT proof for rollup exit root (bytes32[_DEPOSIT_CONTRACT_TREE_DEPTH])
-#! - globalIndex: Global index (uint256 as 8 u32 felts). This is a packed "locator" for the leaf being claimed:
-#!   - mainnetFlag (1 bit): 1 = leaf came from L1 (Mainnet Exit Tree), 0 = leaf came from an L2 rollup
-#!   - rollupIndex (32 bits): which rollup (only used when mainnetFlag=0)
-#!   - localRootIndex (32 bits): leaf index / depositCount in the origin chain's Local Exit Tree
-#!   - Top 191 bits are ignored (not required to be zero), so indexers must decode it exactly like the contract does
-#! - mainnetExitRoot: Mainnet exit root hash (bytes32 as 8 u32 felts)
-#! - rollupExitRoot: Rollup exit root hash (bytes32 as 8 u32 felts)
-#! - leafType: Leaf type (uint32): [0] transfer Ether / ERC20 tokens, [1] message
-#! - originNetwork: Origin network identifier (uint32)
-#! - originTokenAddress: Origin token address (address as 5 u32 felts)
-#! - destinationNetwork: Destination network identifier (uint32)
-#! - destinationAddress: 20-byte Ethereum address decodable into a Miden AccountId (5 u32 felts)
-#! - amount: Amount of tokens (uint256 as 8 u32 felts)
-#! - metadata: ABI encoded metadata (fixed size)
-#! - miden_claim_amount: Scaled-down Miden token amount (Felt). This is the Y value computed from
-#!   scaling down the Ethereum amount (X) by the scale exponent: Y = floor(X / 10^scale_exp)
-#!
-#! Panics if:
-#! - account does not expose claim procedure.
-#! - note attachment target account does not match the consuming account.
-begin
-    dropw
-    # => [pad(16)]
-
-    # Ensure note attachment targets the consuming bridge account.
-    exec.network_account_target::active_account_matches_target_account
-    assert.err=ERR_CLAIM_TARGET_ACCT_MISMATCH
-    # => [pad(16)]
-
-    # Load CLAIM note storage into memory, starting at address 0
-    push.0 exec.active_note::get_storage drop drop
-    # => [pad(16)]
-
-    exec.write_claim_data_into_advice_map_by_key
-    # => [PROOF_DATA_KEY, LEAF_DATA_KEY, pad(16)]
-
-    mem_load.FAUCET_MINT_AMOUNT
-    # => [faucet_mint_amount, PROOF_DATA_KEY, LEAF_DATA_KEY, pad(16)]
-
-    movdn.8
-    # => [PROOF_DATA_KEY, LEAF_DATA_KEY, faucet_mint_amount, pad(16)]
-
-    # call the Bridge Claim procedure
-    call.bridge::claim
-    # => [pad(16), pad(9)]
-
-    # a call invocation consumes and returns 16 elements, but we had trailing padding
-    dropw dropw drop 
-
-    # => [pad(16)]
 end

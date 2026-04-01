@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 
 use miden_protocol::Word;
 
-use super::{AuthMultisigSmart, ProcedurePolicy, ProcedurePolicyNoteRestrictions};
+use super::{AuthMultisigSmart, ProcedurePolicy, ProcedurePolicyNoteRestriction};
 use crate::account::components::multisig_smart_library;
 use crate::procedure_digest;
 
@@ -51,7 +51,7 @@ impl AuthMultisigSmartPresets {
                 Self::update_signers_and_threshold(),
                 ProcedurePolicy::with_delay_threshold(1)
                     .expect("preset policy should be valid")
-                    .with_note_restrictions(ProcedurePolicyNoteRestrictions::NoInputOutputNotes),
+                    .with_note_restriction(ProcedurePolicyNoteRestriction::NoInputOrOutputNotes),
             ),
             (
                 Self::update_threshold_config(),
@@ -82,7 +82,7 @@ impl AuthMultisigSmartPresets {
                 Self::update_signers_and_threshold(),
                 ProcedurePolicy::with_delay_threshold(3)
                     .expect("preset policy should be valid")
-                    .with_note_restrictions(ProcedurePolicyNoteRestrictions::NoInputOutputNotes),
+                    .with_note_restriction(ProcedurePolicyNoteRestriction::NoInputOrOutputNotes),
             ),
             (
                 Self::update_threshold_config(),

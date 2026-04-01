@@ -4,6 +4,7 @@ use $kernel::callbacks
 use $kernel::fungible_asset
 use $kernel::memory
 use $kernel::note
+use $kernel::note::NOTE_TYPE_PUBLIC
 use $kernel::constants::MAX_OUTPUT_NOTES_PER_TX
 use $kernel::util::note::ATTACHMENT_KIND_NONE
 use $kernel::util::note::ATTACHMENT_KIND_ARRAY
@@ -13,10 +14,6 @@ use miden::core::word
 
 # CONSTANTS
 # =================================================================================================
-
-# Constants for different note types
-const PUBLIC_NOTE=1     # 0b01
-const PRIVATE_NOTE=2    # 0b10
 
 # The default value of the felt at index 3 in the note metadata header when a new note is created.
 # All zeros sets the attachment kind to None and the user-defined attachment scheme to "none".
@@ -318,10 +315,12 @@ end
 #!   or off-chain).
 #! - NOTE_METADATA_HEADER is the metadata associated with a note.
 pub proc build_metadata_header
-    # Validate that note type is private or public.
+    # Validate that note type is private (0) or public (1).
     # --------------------------------------------------------------------------------------------
 
-    dup.1 eq.PRIVATE_NOTE dup.2 eq.PUBLIC_NOTE or assert.err=ERR_NOTE_INVALID_TYPE
+    dup.1
+    u32assert.err=ERR_NOTE_INVALID_TYPE u32lte.NOTE_TYPE_PUBLIC
+    assert.err=ERR_NOTE_INVALID_TYPE
     # => [tag, note_type]
 
     # Validate the note tag fits into a u32.
@@ -330,22 +329,23 @@ pub proc build_metadata_header
     u32assert.err=ERR_NOTE_TAG_MUST_BE_U32
     # => [tag, note_type]
 
-    # Merge note type and sender ID suffix.
+    # Merge note type, version, and sender ID suffix.
     # --------------------------------------------------------------------------------------------
 
     exec.account::get_id
     # => [sender_id_suffix, sender_id_prefix, tag, note_type]
 
-    # the lower bits of an account ID suffix are guaranteed to be zero, so we can safely use that
-    # space to encode the note type
-    movup.3 add
-    # => [sender_id_suffix_and_note_type, sender_id_prefix, tag]
+    # The lower 8 bits of the account ID suffix are guaranteed to be zero by construction.
+    # Encode note_type at bit 4, leaving version at 0 (in bits 0..=3).
+    # Shifting note_type left by 4 is equivalent to multiplying by 16.
+    movup.3 mul.16 add
+    # => [sender_id_suffix_type_version, sender_id_prefix, tag]
 
     # Build metadata header.
     # --------------------------------------------------------------------------------------------
 
     push.ATTACHMENT_DEFAULT_KIND_AND_SCHEME movdn.3
-    # => [sender_id_suffix_and_note_type, sender_id_prefix, tag, attachment_kind_scheme]
+    # => [sender_id_suffix_type_version, sender_id_prefix, tag, attachment_kind_scheme]
     # => [NOTE_METADATA_HEADER]
 end
 

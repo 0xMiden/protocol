@@ -1,8 +1,10 @@
 # The MASM code of the AggLayer Faucet Account Component.
 #
-# This is a thin wrapper that re-exports faucet-related procedures from the
-# agglayer library. The faucet exposes:
-# - `mint_and_send` from the network fungible faucet (for MINT note consumption, with owner verification)
+# This is a thin wrapper that re-exports faucet-related procedures from the agglayer library.
+#
+# The faucet exposes:
+# - `mint_and_send` from the network fungible faucet (for MINT note consumption, with owner
+#   verification)
 # - `asset_to_origin_asset` for bridge-out FPI
 # - `get_metadata_hash` for bridge-out FPI (metadata hash retrieval)
 # - `get_scale` for bridge-in FPI (amount verification)

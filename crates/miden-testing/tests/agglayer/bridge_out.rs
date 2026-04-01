@@ -16,7 +16,7 @@ use miden_protocol::Felt;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{AccountId, AccountIdVersion, AccountStorageMode, AccountType};
 use miden_protocol::asset::{Asset, FungibleAsset};
-use miden_protocol::note::{NoteAssets, NoteScript, NoteType};
+use miden_protocol::note::{NoteAssets, NoteType};
 use miden_protocol::transaction::RawOutputNote;
 use miden_standards::account::faucets::TokenMetadata;
 use miden_standards::account::mint_policies::OwnerControlledInitConfig;
@@ -156,7 +156,6 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
 
     // STEP 2: CONSUME 32 B2AGG NOTES AND VERIFY FRONTIER EVOLUTION
     // --------------------------------------------------------------------------------------------
-    let burn_note_script: NoteScript = StandardNote::BURN.script();
     let mut burn_note_ids = Vec::with_capacity(note_count);
 
     for (i, note) in notes.iter().enumerate() {
@@ -164,7 +163,6 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
 
         let executed_tx = mock_chain
             .build_tx_context(bridge_account.clone(), &[note.id()], &[])?
-            .add_note_script(burn_note_script.clone())
             .foreign_accounts(vec![foreign_account_inputs])
             .build()?
             .execute()

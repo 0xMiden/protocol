@@ -47,9 +47,9 @@ impl From<&str> for WordValue {
 }
 
 impl From<Felt> for WordValue {
-    /// Converts a [`Felt`] to a [`WordValue`] as a Word in the form `[0, 0, 0, felt]`.
+    /// Converts a [`Felt`] to a [`WordValue`] as a Word in the form `[felt, 0, 0, 0]`.
     fn from(value: Felt) -> Self {
-        WordValue::FullyTyped(Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, value]))
+        WordValue::FullyTyped(Word::from([value, Felt::ZERO, Felt::ZERO, Felt::ZERO]))
     }
 }
 

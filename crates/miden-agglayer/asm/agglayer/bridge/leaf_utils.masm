@@ -20,13 +20,14 @@ const PACKED_DATA_NUM_ELEMENTS = 29
 #! Given a memory address where the unpacked leaf data starts, packs the leaf data in-place, and
 #! computes the leaf value by hashing the packed bytes.
 #!
-#! Inputs:  [LEAF_DATA_START_PTR]
+#! Inputs:  [leaf_data_start_ptr]
 #! Outputs: [LEAF_VALUE[8]]
 #!
 #! Invocation: exec
 pub proc compute_leaf_value(leaf_data_start_ptr: MemoryAddress) -> DoubleWord
     dup
     # => [leaf_data_start_ptr, leaf_data_start_ptr]
+    
     exec.pack_leaf_data
     # => [leaf_data_start_ptr]
 
@@ -39,17 +40,17 @@ end
 
 #! Packs the raw leaf data by shifting left 3 bytes to match Solidity's abi.encodePacked format.
 #!
-#! The raw data has leafType occupying 4 bytes (as a u32 felt) but Solidity's abi.encodePacked
-#! only uses 1 byte for uint8 leafType. This procedure shifts all data left by 3 bytes so that:
+#! The raw data has leafType occupying 4 bytes (as a u32 felt) but Solidity's abi.encodePacked only
+#! uses 1 byte for uint8 leafType. This procedure shifts all data left by 3 bytes so that:
 #! - Byte 0: leafType (1 byte)
 #! - Bytes 1-4: originNetwork (4 bytes)
 #! - etc.
 #!
 #! The Keccak precompile expects u32 values packed in little-endian byte order.
-#! For each packed element, we drop the leading 3 bytes and rebuild the u32 so that
-#! bytes [b0, b1, b2, b3] map to u32::from_le_bytes([b0, b1, b2, b3]).
-#! With little-endian input limbs, the first byte comes from the MSB of `curr` and
-#! the next three bytes come from the LSBs of `next`:
+#! For each packed element, we drop the leading 3 bytes and rebuild the u32 so that bytes
+#! [b0, b1, b2, b3] map to u32::from_le_bytes([b0, b1, b2, b3]).
+#! With little-endian input limbs, the first byte comes from the MSB of `curr` and the next three
+#! bytes come from the LSBs of `next`:
 #!   packed = ((curr >> 24) & 0xFF)
 #!          | (next & 0xFF) << 8
 #!          | ((next >> 8) & 0xFF) << 16
@@ -57,6 +58,7 @@ end
 #!
 #! To help visualize the packing process, consider that each field element represents a 4-byte
 #! value [u8; 4] (LE).
+#!
 #! Memory before is:
 #!   ptr+0:       1 felt: [a, b, c, d]
 #!   ptr+1:       1 felt: [e, f, g, h]
@@ -100,11 +102,11 @@ pub proc pack_leaf_data(leaf_data_start_ptr: MemoryAddress)
 
         # compute source address for next element (counter + 1)
         dup.2 loc_load.PACKING_START_PTR_LOCAL add add.1
-        # => [next_src_addr, curr_lsb, curr_elem, counter]
+        # => [next_src_addr, curr_msb, curr_elem, counter]
 
         # load next element
         mem_load
-        # => [next_elem, curr_lsb, curr_elem, counter]
+        # => [next_elem, curr_msb, curr_elem, counter]
 
         # keep curr_msb on top for combination
         swap

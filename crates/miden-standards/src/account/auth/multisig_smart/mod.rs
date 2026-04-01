@@ -11,5 +11,5 @@ pub use types::{AmountLimits, OracleId, TierThresholds};
 pub use super::multisig::procedure_policies::{
     ProcedurePolicy,
     ProcedurePolicyExecutionMode,
-    ProcedurePolicyNoteRestrictions,
+    ProcedurePolicyNoteRestriction,
 };

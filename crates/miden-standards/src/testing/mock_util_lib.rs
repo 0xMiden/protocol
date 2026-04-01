@@ -7,13 +7,14 @@ use crate::StandardsLib;
 
 const MOCK_UTIL_LIBRARY_CODE: &str = "
     use miden::protocol::output_note
+    use miden::protocol::note::NOTE_TYPE_PRIVATE
     use miden::standards::wallets::basic->wallet
 
     #! Inputs:  []
     #! Outputs: [note_idx]
     pub proc create_default_note
         push.1.2.3.4           # = RECIPIENT
-        push.2                 # = NoteType::Private
+        push.NOTE_TYPE_PRIVATE # = NoteType::Private
         push.0                 # = NoteTag
         # => [tag, note_type, RECIPIENT]
 

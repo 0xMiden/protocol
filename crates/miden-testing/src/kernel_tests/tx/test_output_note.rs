@@ -78,7 +78,7 @@ async fn test_create_note() -> anyhow::Result<()> {
             exec.prologue::prepare_transaction
 
             push.{recipient}
-            push.{PUBLIC_NOTE}
+            push.{NOTE_TYPE_PUBLIC}
             push.{tag}
 
             exec.output_note::create
@@ -88,7 +88,7 @@ async fn test_create_note() -> anyhow::Result<()> {
         end
         ",
         recipient = recipient,
-        PUBLIC_NOTE = NoteType::Public as u8,
+        NOTE_TYPE_PUBLIC = NoteType::Public as u8,
         tag = tag,
     );
 
@@ -157,7 +157,7 @@ fn note_creation_script(tag: Felt) -> String {
                 exec.prologue::prepare_transaction
 
                 push.{recipient}
-                push.{PUBLIC_NOTE}
+                push.{NOTE_TYPE_PUBLIC}
                 push.{tag}
 
                 exec.output_note::create
@@ -167,7 +167,7 @@ fn note_creation_script(tag: Felt) -> String {
             end
             ",
         recipient = Word::from([0, 1, 2, 3u32]),
-        PUBLIC_NOTE = NoteType::Public as u8,
+        NOTE_TYPE_PUBLIC = NoteType::Public as u8,
     )
 }
 
@@ -188,7 +188,7 @@ async fn test_create_note_too_many_notes() -> anyhow::Result<()> {
             exec.prologue::prepare_transaction
 
             push.{recipient}
-            push.{PUBLIC_NOTE}
+            push.{NOTE_TYPE_PUBLIC}
             push.{tag}
 
             exec.output_note::create
@@ -196,7 +196,7 @@ async fn test_create_note_too_many_notes() -> anyhow::Result<()> {
         ",
         tag = NoteTag::new(1234 << 16 | 5678),
         recipient = Word::from([0, 1, 2, 3u32]),
-        PUBLIC_NOTE = NoteType::Public as u8,
+        NOTE_TYPE_PUBLIC = NoteType::Public as u8,
     );
 
     let exec_output = tx_context.execute_code(&code).await;
@@ -264,7 +264,7 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
 
             # create output note 1
             push.{recipient_1}
-            push.{PUBLIC_NOTE}
+            push.{NOTE_TYPE_PUBLIC}
             push.{tag_1}
             exec.output_note::create
             # => [note_idx]
@@ -276,7 +276,7 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
 
             # create output note 2
             push.{recipient_2}
-            push.{PUBLIC_NOTE}
+            push.{NOTE_TYPE_PUBLIC}
             push.{tag_2}
             exec.output_note::create
             # => [note_idx]
@@ -303,7 +303,7 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
             # => [OUTPUT_NOTES_COMMITMENT]
         end
         ",
-        PUBLIC_NOTE = NoteType::Public as u8,
+        NOTE_TYPE_PUBLIC = NoteType::Public as u8,
         recipient_1 = output_note_1.recipient().digest(),
         tag_1 = output_note_1.metadata().tag(),
         ASSET_1_KEY = asset_1.to_key_word(),
@@ -373,7 +373,7 @@ async fn test_create_note_and_add_asset() -> anyhow::Result<()> {
             exec.prologue::prepare_transaction
 
             push.{recipient}
-            push.{PUBLIC_NOTE}
+            push.{NOTE_TYPE_PUBLIC}
             push.{tag}
 
             exec.output_note::create
@@ -395,7 +395,7 @@ async fn test_create_note_and_add_asset() -> anyhow::Result<()> {
         end
         ",
         recipient = recipient,
-        PUBLIC_NOTE = NoteType::Public as u8,
+        NOTE_TYPE_PUBLIC = NoteType::Public as u8,
         tag = tag,
         ASSET_KEY = asset.to_key_word(),
         ASSET_VALUE = asset.to_value_word(),
@@ -443,7 +443,7 @@ async fn test_create_note_and_add_multiple_assets() -> anyhow::Result<()> {
             exec.prologue::prepare_transaction
 
             push.{recipient}
-            push.{PUBLIC_NOTE}
+            push.{NOTE_TYPE_PUBLIC}
             push.{tag}
             exec.output_note::create
             # => [note_idx]
@@ -480,7 +480,7 @@ async fn test_create_note_and_add_multiple_assets() -> anyhow::Result<()> {
         end
         ",
         recipient = recipient,
-        PUBLIC_NOTE = NoteType::Public as u8,
+        NOTE_TYPE_PUBLIC = NoteType::Public as u8,
         tag = tag,
         ASSET_KEY = asset.to_key_word(),
         ASSET_VALUE = asset.to_value_word(),
@@ -572,7 +572,7 @@ async fn test_create_note_and_add_same_nft_twice() -> anyhow::Result<()> {
             # => []
 
             push.{recipient}
-            push.{PUBLIC_NOTE}
+            push.{NOTE_TYPE_PUBLIC}
             push.{tag}
             exec.output_note::create
             # => [note_idx]
@@ -592,7 +592,7 @@ async fn test_create_note_and_add_same_nft_twice() -> anyhow::Result<()> {
         end
         ",
         recipient = recipient,
-        PUBLIC_NOTE = NoteType::Public as u8,
+        NOTE_TYPE_PUBLIC = NoteType::Public as u8,
         tag = tag,
         ASSET_KEY = non_fungible_asset.to_key_word(),
         ASSET_VALUE = non_fungible_asset.to_value_word(),
@@ -672,7 +672,7 @@ async fn test_build_recipient_hash() -> anyhow::Result<()> {
             exec.note::build_recipient_hash
             # => [RECIPIENT, pad(12)]
 
-            push.{PUBLIC_NOTE}
+            push.{NOTE_TYPE_PUBLIC}
             push.{tag}
             # => [tag, note_type, RECIPIENT]
 
@@ -685,7 +685,7 @@ async fn test_build_recipient_hash() -> anyhow::Result<()> {
         ",
         script_root = input_note_1.script().clone().root(),
         output_serial_no = output_serial_no,
-        PUBLIC_NOTE = NoteType::Public as u8,
+        NOTE_TYPE_PUBLIC = NoteType::Public as u8,
         tag = tag,
     );
 
