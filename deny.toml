@@ -45,6 +45,7 @@ highlight = "all"
 multiple-versions = "deny"
 skip = [
   #{ name = "ansi_term", version = "=0.11.0" },
+  { name = "cpufeatures" },
   # Allow duplicate rand versions - miden-field uses 0.10, miden-vm uses 0.9
   { name = "rand" },
   { name = "rand_core" },
