@@ -228,7 +228,7 @@ where
             FungibleAsset::new(fee_asset.faucet_id(), self.initial_fee_asset_balance)
                 .expect("fungible asset created from fee asset should be valid");
 
-        // Compute the current balance of the native asset in the account based on the initial value
+        // Compute the current balance of the fee asset in the account based on the initial value
         // and the delta.
         let current_fee_asset = {
             let fee_asset_amount_delta = self
@@ -239,7 +239,7 @@ where
                 .amount(&initial_fee_asset.vault_key())
                 .unwrap_or(0);
 
-            // SAFETY: Initial native asset faucet ID should be a fungible faucet and amount should
+            // SAFETY: Initial fee faucet ID should be a fungible faucet and amount should
             // be less than MAX_AMOUNT as checked by the account delta.
             let fee_asset_delta = FungibleAsset::new(
                 initial_fee_asset.faucet_id(),
