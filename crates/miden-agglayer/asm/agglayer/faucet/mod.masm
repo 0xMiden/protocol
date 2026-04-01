@@ -1,11 +1,7 @@
 use miden::core::sys
 use agglayer::common::utils
 use agglayer::common::asset_conversion
-use agglayer::common::eth_address
 use miden::protocol::active_account
-use miden::protocol::active_note
-use miden::standards::faucets
-use miden::standards::faucets::network_fungible
 
 # CONSTANTS
 # =================================================================================================
@@ -26,8 +22,7 @@ const METADATA_HASH_HI_SLOT = word("agglayer::faucet::metadata_hash_hi")
 
 #! Returns the origin token address (5 felts) from faucet conversion storage.
 #!
-#! Reads conversion_info_1 (first 4 felts of address) and conversion_info_2 (5th felt)
-#! from storage.
+#! Reads conversion_info_1 (first 4 felts of address) and conversion_info_2 (5th felt) from storage.
 #!
 #! Inputs:  []
 #! Outputs: [addr0, addr1, addr2, addr3, addr4]
@@ -80,8 +75,8 @@ end
 
 #! Returns the pre-computed metadata hash (8 u32 felts) from faucet storage.
 #!
-#! The metadata hash is `keccak256(abi.encode(name, symbol, decimals))` and is stored
-#! across two value slots (lo and hi, 4 felts each).
+#! The metadata hash is `keccak256(abi.encode(name, symbol, decimals))` and is stored across two 
+#! value slots (lo and hi, 4 felts each).
 #!
 #! Inputs:  [pad(16)]
 #! Outputs: [METADATA_HASH_LO(4), METADATA_HASH_HI(4), pad(8)]
@@ -121,15 +116,15 @@ pub proc get_scale
     # => [scale, pad(15)]
 end
 
-#! Converts a native Miden asset amount to origin asset data using the stored
-#! conversion metadata (origin_token_address, origin_network, and scale).
+#! Converts a native Miden asset amount to origin asset data using the stored conversion metadata 
+#! (origin_token_address, origin_network, and scale).
 #!
 #! This procedure is intended to be called via FPI from the bridge account.
-#! It reads the faucet's conversion metadata from storage, scales the native amount
-#! to U256 format, and returns the result along with origin token address and network.
+#! It reads the faucet's conversion metadata from storage, scales the native amount to U256 format,
+#! and returns the result along with origin token address and network.
 #!
 #! Inputs:  [amount, pad(15)]
-#! Outputs: [AMOUNT_U256[0], AMOUNT_U256[1], addr0, addr1, addr2, addr3, addr4, origin_network, pad(2)]
+#! Outputs: [AMOUNT_U256_LO, AMOUNT_U256_HI, addr0, addr1, addr2, addr3, addr4, origin_network, pad(2)]
 #!
 #! Where:
 #! - amount: The native Miden asset amount
@@ -142,9 +137,7 @@ pub proc asset_to_origin_asset
     # => [amount, pad(15)]
 
     # Step 1: Get scale from storage
-    exec.get_scale_inner
-    # => [scale, amount, pad(15)]
-    swap
+    exec.get_scale_inner swap
     # => [amount, scale, pad(15)]
 
     # Step 2: Scale amount to U256
@@ -170,6 +163,7 @@ pub proc asset_to_origin_asset
     # => [U256_LO, U256_HI, addr0, addr1, addr2, addr3, addr4, origin_network, pad(15)]
 
     exec.sys::truncate_stack
+    # => [U256_LO, U256_HI, addr0, addr1, addr2, addr3, addr4, origin_network, pad(2)]
 end
 
 #! Burns the fungible asset from the active note.
@@ -190,7 +184,7 @@ end
 #! Invocation: call
 pub use ::miden::standards::faucets::basic_fungible::burn
 
-#! Re-export the network fungible faucet's mint_and_send procedure.
+#! Re-export the network fungible faucet's `mint_and_send` procedure.
 #!
 #! See `miden::standards::faucets::network_fungible::mint_and_send` for more details.
 #!
