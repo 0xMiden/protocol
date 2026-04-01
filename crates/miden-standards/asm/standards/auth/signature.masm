@@ -322,6 +322,5 @@ end
 #! Outputs: [APPROVER_MAP_KEY]
 pub proc create_approver_map_key
     push.0.0.0 movup.3
-    # => [[key_index, 0, 0, 0]]
     # => [APPROVER_MAP_KEY]
 end
