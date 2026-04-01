@@ -752,7 +752,7 @@ fn extensive_schema_metadata_and_init_toml_example() {
     };
     assert_eq!(
         protocol_version_word,
-        &Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::from(7u8)])
+        &Word::from([Felt::from(7u8), Felt::ZERO, Felt::ZERO, Felt::ZERO])
     );
 
     let static_word_name = StorageSlotName::new("demo::static_word").unwrap();
@@ -831,7 +831,7 @@ fn extensive_schema_metadata_and_init_toml_example() {
 
     assert_eq!(
         typed_map_new_contents.get(&StorageMapKey::from_array([1, 2, 0, 0])),
-        Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::new(16)])
+        Word::from([Felt::new(16), Felt::ZERO, Felt::ZERO, Felt::ZERO])
     );
 
     let token_metadata_slot =
@@ -941,6 +941,6 @@ fn typed_map_supports_non_numeric_value_types() {
 
     let key = Word::parse("0x1").unwrap();
     let symbol_felt: Felt = TokenSymbol::new("BTC").unwrap().into();
-    let expected_value = Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, symbol_felt]);
+    let expected_value = Word::from([symbol_felt, Felt::ZERO, Felt::ZERO, Felt::ZERO]);
     assert_eq!(map.get(&StorageMapKey::from_raw(key)), expected_value);
 }
