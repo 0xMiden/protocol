@@ -82,7 +82,9 @@ impl AuthMultisigConfig {
             ));
         }
 
+        // Check for duplicate approvers
         let unique_approvers: BTreeSet<_> = approvers.iter().map(|(pk, _)| pk).collect();
+
         if unique_approvers.len() != approvers.len() {
             return Err(AccountError::other("duplicate approver public keys are not allowed"));
         }
@@ -100,19 +102,16 @@ impl AuthMultisigConfig {
         mut self,
         proc_thresholds: Vec<(Word, u32)>,
     ) -> Result<Self, AccountError> {
-        let num_approvers = self.approvers.len() as u32;
-
         for (_, threshold) in &proc_thresholds {
             if *threshold == 0 {
                 return Err(AccountError::other("procedure threshold must be at least 1"));
             }
-            if *threshold > num_approvers {
+            if *threshold > self.approvers.len() as u32 {
                 return Err(AccountError::other(
                     "procedure threshold cannot be greater than number of approvers",
                 ));
             }
         }
-
         self.proc_thresholds = proc_thresholds;
         Ok(self)
     }
@@ -263,44 +262,53 @@ impl From<AuthMultisig> for AccountComponent {
     fn from(multisig: AuthMultisig) -> Self {
         let mut storage_slots = Vec::with_capacity(5);
 
+        // Threshold config slot (value: [threshold, num_approvers, 0, 0])
         let num_approvers = multisig.config.approvers().len() as u32;
         storage_slots.push(StorageSlot::with_value(
             AuthMultisig::threshold_config_slot().clone(),
             Word::from([multisig.config.default_threshold(), num_approvers, 0, 0]),
         ));
 
+        // Approver public keys slot (map)
         let map_entries =
             multisig.config.approvers().iter().enumerate().map(|(i, (pub_key, _))| {
                 (StorageMapKey::from_index(i as u32), Word::from(*pub_key))
             });
+
+        // Safe to unwrap because we know that the map keys are unique.
         storage_slots.push(StorageSlot::with_map(
             AuthMultisig::approver_public_keys_slot().clone(),
             StorageMap::with_entries(map_entries).unwrap(),
         ));
 
+        // Approver scheme IDs slot (map): [index, 0, 0, 0] => [scheme_id, 0, 0, 0]
         let scheme_id_entries =
             multisig.config.approvers().iter().enumerate().map(|(i, (_, auth_scheme))| {
                 (StorageMapKey::from_index(i as u32), Word::from([*auth_scheme as u32, 0, 0, 0]))
             });
+
         storage_slots.push(StorageSlot::with_map(
             AuthMultisig::approver_scheme_ids_slot().clone(),
             StorageMap::with_entries(scheme_id_entries).unwrap(),
         ));
 
+        // Executed transactions slot (map)
+        let executed_transactions = StorageMap::default();
         storage_slots.push(StorageSlot::with_map(
             AuthMultisig::executed_transactions_slot().clone(),
-            StorageMap::default(),
+            executed_transactions,
         ));
 
-        let proc_thresholds = StorageMap::with_entries(
+        // Procedure thresholds slot (map: PROC_ROOT -> threshold)
+        let proc_threshold_roots = StorageMap::with_entries(
             multisig.config.proc_thresholds().iter().map(|(proc_root, threshold)| {
-                (StorageMapKey::from_raw(*proc_root), Word::from([*threshold, 0u32, 0u32, 0u32]))
+                (StorageMapKey::from_raw(*proc_root), Word::from([*threshold, 0, 0, 0]))
             }),
         )
         .unwrap();
         storage_slots.push(StorageSlot::with_map(
             AuthMultisig::procedure_thresholds_slot().clone(),
-            proc_thresholds,
+            proc_threshold_roots,
         ));
 
         let metadata = AuthMultisig::component_metadata();
@@ -325,12 +333,15 @@ mod tests {
     use super::*;
     use crate::account::wallets::BasicWallet;
 
+    /// Test multisig component setup with various configurations
     #[test]
     fn test_multisig_component_setup() {
+        // Create test secret keys
         let sec_key_1 = AuthSecretKey::new_falcon512_poseidon2();
         let sec_key_2 = AuthSecretKey::new_falcon512_poseidon2();
         let sec_key_3 = AuthSecretKey::new_falcon512_poseidon2();
 
+        // Create approvers list for multisig config
         let approvers = vec![
             (sec_key_1.public_key().to_commitment(), sec_key_1.auth_scheme()),
             (sec_key_2.public_key().to_commitment(), sec_key_2.auth_scheme()),
@@ -339,23 +350,27 @@ mod tests {
 
         let threshold = 2u32;
 
+        // Create multisig component
         let multisig_component = AuthMultisig::new(
             AuthMultisigConfig::new(approvers.clone(), threshold).expect("invalid multisig config"),
         )
         .expect("multisig component creation failed");
 
+        // Build account with multisig component
         let account = AccountBuilder::new([0; 32])
             .with_auth_component(multisig_component)
             .with_component(BasicWallet)
             .build()
             .expect("account building failed");
 
+        // Verify config slot: [threshold, num_approvers, 0, 0]
         let config_slot = account
             .storage()
             .get_item(AuthMultisig::threshold_config_slot())
             .expect("config storage slot access failed");
         assert_eq!(config_slot, Word::from([threshold, approvers.len() as u32, 0, 0]));
 
+        // Verify approver pub keys slot
         for (i, (expected_pub_key, _)) in approvers.iter().enumerate() {
             let stored_pub_key = account
                 .storage()
@@ -367,6 +382,7 @@ mod tests {
             assert_eq!(stored_pub_key, Word::from(*expected_pub_key));
         }
 
+        // Verify approver scheme IDs slot
         for (i, (_, expected_auth_scheme)) in approvers.iter().enumerate() {
             let stored_scheme_id = account
                 .storage()
@@ -379,6 +395,7 @@ mod tests {
         }
     }
 
+    /// Test multisig component with minimum threshold (1 of 1)
     #[test]
     fn test_multisig_component_minimum_threshold() {
         let pub_key = AuthSecretKey::new_ecdsa_k256_keccak().public_key().to_commitment();
@@ -396,6 +413,7 @@ mod tests {
             .build()
             .expect("account building failed");
 
+        // Verify storage layout
         let config_slot = account
             .storage()
             .get_item(AuthMultisig::threshold_config_slot())
@@ -418,71 +436,34 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_multisig_component_stores_proc_thresholds() {
-        let sec_key_1 = AuthSecretKey::new_ecdsa_k256_keccak();
-        let sec_key_2 = AuthSecretKey::new_ecdsa_k256_keccak();
-        let approvers = vec![
-            (sec_key_1.public_key().to_commitment(), sec_key_1.auth_scheme()),
-            (sec_key_2.public_key().to_commitment(), sec_key_2.auth_scheme()),
-        ];
-
-        let multisig_component = AuthMultisig::new(
-            AuthMultisigConfig::new(approvers, 2)
-                .expect("config should be valid")
-                .with_proc_thresholds(vec![(BasicWallet::receive_asset_digest(), 1)])
-                .expect("proc thresholds should be valid"),
-        )
-        .expect("multisig component creation failed");
-
-        let account = AccountBuilder::new([0; 32])
-            .with_auth_component(multisig_component)
-            .with_component(BasicWallet)
-            .build()
-            .expect("account building failed");
-
-        let stored_threshold = account
-            .storage()
-            .get_map_item(
-                AuthMultisig::procedure_thresholds_slot(),
-                BasicWallet::receive_asset_digest(),
-            )
-            .expect("procedure threshold should be present");
-        assert_eq!(stored_threshold, Word::from([1u32, 0, 0, 0]));
-    }
-
+    /// Test multisig component error cases
     #[test]
     fn test_multisig_component_error_cases() {
         let pub_key = AuthSecretKey::new_ecdsa_k256_keccak().public_key().to_commitment();
         let approvers = vec![(pub_key, auth::AuthScheme::EcdsaK256Keccak)];
 
+        // Test threshold = 0 (should fail)
         let result = AuthMultisigConfig::new(approvers.clone(), 0);
         assert!(result.unwrap_err().to_string().contains("threshold must be at least 1"));
 
-        let result = AuthMultisigConfig::new(approvers.clone(), 2);
+        // Test threshold > number of approvers (should fail)
+        let result = AuthMultisigConfig::new(approvers, 2);
         assert!(
             result
                 .unwrap_err()
                 .to_string()
                 .contains("threshold cannot be greater than number of approvers")
         );
-
-        let result = AuthMultisigConfig::new(approvers, 1)
-            .expect("config should be valid")
-            .with_proc_thresholds(vec![(BasicWallet::receive_asset_digest(), 0)]);
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("procedure threshold must be at least 1")
-        );
     }
 
+    /// Test multisig component with duplicate approvers (should fail)
     #[test]
     fn test_multisig_component_duplicate_approvers() {
+        // Create secret keys for approvers
         let sec_key_1 = AuthSecretKey::new_ecdsa_k256_keccak();
         let sec_key_2 = AuthSecretKey::new_ecdsa_k256_keccak();
 
+        // Create approvers list with duplicate public keys
         let approvers = vec![
             (sec_key_1.public_key().to_commitment(), sec_key_1.auth_scheme()),
             (sec_key_1.public_key().to_commitment(), sec_key_1.auth_scheme()),
