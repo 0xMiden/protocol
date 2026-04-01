@@ -1,7 +1,8 @@
 use alloc::fmt;
 use alloc::string::String;
 
-use super::{Felt, ShortCapitalStringError};
+use super::Felt;
+use crate::errors::ShortCapitalStringError;
 
 /// A short string of uppercase ASCII (and optionally underscores) encoded into a [`Felt`] with a
 /// configurable alphabet.
@@ -14,7 +15,7 @@ use super::{Felt, ShortCapitalStringError};
 /// [`as_element()`](Self::as_element), and decoded back via
 /// [`try_from_encoded_felt()`](Self::try_from_encoded_felt).
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct ShortCapitalString(String);
+pub(crate) struct ShortCapitalString(String);
 
 impl ShortCapitalString {
     /// Maximum allowed string length.

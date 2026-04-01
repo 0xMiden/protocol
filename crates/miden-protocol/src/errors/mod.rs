@@ -557,7 +557,7 @@ impl From<ShortCapitalStringError> for RoleSymbolError {
 // ================================================================================================
 
 #[derive(Debug, Error)]
-pub enum ShortCapitalStringError {
+pub(crate) enum ShortCapitalStringError {
     #[error("short capital string value {0} is too large")]
     ValueTooLarge(u64),
     #[error("short capital string value {0} is too small")]
