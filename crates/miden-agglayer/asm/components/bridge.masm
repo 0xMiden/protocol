@@ -1,7 +1,12 @@
 # The MASM code of the AggLayer Bridge Account Component.
 #
-# This is a thin wrapper that re-exports bridge-related procedures from the
-# agglayer library.
+# This is a thin wrapper that re-exports bridge-related procedures from the agglayer library.
+#
+# The bridge exposes:
+# - `register_faucet` from the bridge_config module
+# - `update_ger` from the bridge_config module
+# - `claim` for bridge-in
+# - `bridge_out` for bridge-out
 
 pub use ::agglayer::bridge::bridge_config::register_faucet
 pub use ::agglayer::bridge::bridge_config::update_ger
