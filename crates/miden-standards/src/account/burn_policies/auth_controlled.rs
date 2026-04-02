@@ -1,8 +1,6 @@
 use miden_protocol::Word;
 use miden_protocol::account::component::{
     AccountComponentMetadata,
-    FeltSchema,
-    SchemaType,
     StorageSchema,
     StorageSlotSchema,
 };
@@ -94,30 +92,12 @@ impl BurnAuthControlled {
 
     /// Returns the storage slot schema for the active burn policy root.
     pub fn active_policy_proc_root_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::active_policy_proc_root_slot().clone(),
-            StorageSlotSchema::value(
-                "The procedure root of the active burn policy in the burn policy auth controlled component",
-                [
-                    FeltSchema::felt("proc_root_0"),
-                    FeltSchema::felt("proc_root_1"),
-                    FeltSchema::felt("proc_root_2"),
-                    FeltSchema::felt("proc_root_3"),
-                ],
-            ),
-        )
+        super::active_policy_proc_root_slot_schema()
     }
 
     /// Returns the storage slot schema for the allowed policy roots map.
     pub fn allowed_policy_proc_roots_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::allowed_policy_proc_roots_slot().clone(),
-            StorageSlotSchema::map(
-                "The set of allowed burn policy procedure roots in the burn policy auth controlled component",
-                SchemaType::native_word(),
-                SchemaType::native_word(),
-            ),
-        )
+        super::allowed_policy_proc_roots_slot_schema()
     }
 
     /// Returns the [`StorageSlotName`] containing policy authority mode.
@@ -127,18 +107,7 @@ impl BurnAuthControlled {
 
     /// Returns the storage slot schema for policy authority mode.
     pub fn policy_authority_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::policy_authority_slot().clone(),
-            StorageSlotSchema::value(
-                "Policy authority mode (AuthControlled = tx auth, OwnerControlled = external owner)",
-                [
-                    FeltSchema::u8("policy_authority"),
-                    FeltSchema::new_void(),
-                    FeltSchema::new_void(),
-                    FeltSchema::new_void(),
-                ],
-            ),
-        )
+        super::policy_authority_slot_schema()
     }
 
     /// Policy authority slot with this component's fixed mode

@@ -1,4 +1,5 @@
 use miden_protocol::Word;
+use miden_protocol::account::component::{FeltSchema, SchemaType, StorageSlotSchema};
 use miden_protocol::account::{StorageSlot, StorageSlotName};
 use miden_protocol::utils::sync::LazyLock;
 
@@ -31,6 +32,48 @@ fn active_policy_proc_root_slot_name() -> &'static StorageSlotName {
 
 fn allowed_policy_proc_roots_slot_name() -> &'static StorageSlotName {
     &ALLOWED_POLICY_PROC_ROOTS_SLOT_NAME
+}
+
+/// Shared storage layout for mint policy manager slots (auth- and owner-controlled components).
+pub(super) fn active_policy_proc_root_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+    (
+        ACTIVE_POLICY_PROC_ROOT_SLOT_NAME.clone(),
+        StorageSlotSchema::value(
+            "Active mint policy procedure root",
+            [
+                FeltSchema::felt("proc_root_0"),
+                FeltSchema::felt("proc_root_1"),
+                FeltSchema::felt("proc_root_2"),
+                FeltSchema::felt("proc_root_3"),
+            ],
+        ),
+    )
+}
+
+pub(super) fn allowed_policy_proc_roots_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+    (
+        ALLOWED_POLICY_PROC_ROOTS_SLOT_NAME.clone(),
+        StorageSlotSchema::map(
+            "Allowed mint policy procedure roots",
+            SchemaType::native_word(),
+            SchemaType::native_word(),
+        ),
+    )
+}
+
+pub(super) fn policy_authority_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+    (
+        POLICY_AUTHORITY_SLOT_NAME.clone(),
+        StorageSlotSchema::value(
+            "Mint policy authority",
+            [
+                FeltSchema::u8("mint_policy_authority"),
+                FeltSchema::new_void(),
+                FeltSchema::new_void(),
+                FeltSchema::new_void(),
+            ],
+        ),
+    )
 }
 
 /// Identifies which authority is allowed to manage the active mint policy for a faucet.
