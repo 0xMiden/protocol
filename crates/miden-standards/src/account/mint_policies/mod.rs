@@ -13,6 +13,26 @@ static POLICY_AUTHORITY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| 
         .expect("storage slot name should be valid")
 });
 
+static ACTIVE_POLICY_PROC_ROOT_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::mint_policy_manager::active_policy_proc_root")
+        .expect("storage slot name should be valid")
+});
+
+static ALLOWED_POLICY_PROC_ROOTS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::mint_policy_manager::allowed_policy_proc_roots")
+        .expect("storage slot name should be valid")
+});
+
+/// Active / allowed policy root slot names shared by auth-controlled and owner-controlled
+/// components
+fn active_policy_proc_root_slot_name() -> &'static StorageSlotName {
+    &ACTIVE_POLICY_PROC_ROOT_SLOT_NAME
+}
+
+fn allowed_policy_proc_roots_slot_name() -> &'static StorageSlotName {
+    &ALLOWED_POLICY_PROC_ROOTS_SLOT_NAME
+}
+
 /// Identifies which authority is allowed to manage the active mint policy for a faucet.
 ///
 /// This value is stored in the policy authority slot so the account can distinguish whether mint
@@ -35,7 +55,7 @@ impl MintPolicyAuthority {
 
 impl From<MintPolicyAuthority> for Word {
     fn from(value: MintPolicyAuthority) -> Self {
-        Word::from([value as u32, 0, 0, 0])
+        Word::from([value as u8, 0, 0, 0])
     }
 }
 

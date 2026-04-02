@@ -112,6 +112,11 @@ end
 
 #! Authorizes policy update based on policy authority mode.
 #!
+#! `OwnerControlled` uses Ownable2Step directly rather than delegating
+#! authorization to the active burn policy through dynexec. Delegating to the active
+#! policy would allow a permissive policy (e.g. allow-all) to let any caller change
+#! which burn policy root is active.
+#!
 #! Inputs:  [NEW_POLICY_ROOT]
 #! Outputs: [NEW_POLICY_ROOT]
 #!

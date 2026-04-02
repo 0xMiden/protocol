@@ -1,3 +1,5 @@
+use alloc::vec::Vec;
+
 use miden_protocol::Word;
 use miden_protocol::account::component::{
     AccountComponentMetadata,
@@ -6,8 +8,14 @@ use miden_protocol::account::component::{
     StorageSchema,
     StorageSlotSchema,
 };
-use miden_protocol::account::{AccountComponent, AccountType, StorageSlot, StorageSlotName};
-use miden_protocol::utils::sync::LazyLock;
+use miden_protocol::account::{
+    AccountComponent,
+    AccountType,
+    StorageMap,
+    StorageMapKey,
+    StorageSlot,
+    StorageSlotName,
+};
 
 use super::MintPolicyAuthority;
 use crate::account::components::owner_controlled_library;
@@ -25,15 +33,6 @@ procedure_digest!(
     MintOwnerControlled::OWNER_ONLY_PROC_NAME,
     owner_controlled_library
 );
-
-static ACTIVE_MINT_POLICY_PROC_ROOT_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::mint_policy_manager::active_policy_proc_root")
-        .expect("storage slot name should be valid")
-});
-static ALLOWED_MINT_POLICY_PROC_ROOTS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::mint_policy_manager::allowed_policy_proc_roots")
-        .expect("storage slot name should be valid")
-});
 
 /// Initial policy configuration for the [`MintOwnerControlled`] component.
 #[derive(Debug, Clone, Copy, Default)]
@@ -92,12 +91,12 @@ impl MintOwnerControlled {
 
     /// Returns the [`StorageSlotName`] where the active mint policy procedure root is stored.
     pub fn active_policy_proc_root_slot() -> &'static StorageSlotName {
-        &ACTIVE_MINT_POLICY_PROC_ROOT_SLOT_NAME
+        super::active_policy_proc_root_slot_name()
     }
 
     /// Returns the [`StorageSlotName`] where allowed policy roots are stored.
     pub fn allowed_policy_proc_roots_slot() -> &'static StorageSlotName {
-        &ALLOWED_MINT_POLICY_PROC_ROOTS_SLOT_NAME
+        super::allowed_policy_proc_roots_slot_name()
     }
 
     /// Returns the storage slot schema for the active mint policy root.
@@ -155,7 +154,7 @@ impl MintOwnerControlled {
         StorageSlot::from(MintPolicyAuthority::OwnerControlled)
     }
 
-    /// Returns the default owner-only policy root.
+    /// Returns the default `owner_only` policy procedure root (MAST digest).
     pub fn owner_only_policy_root() -> Word {
         *OWNER_ONLY_POLICY_ROOT
     }
@@ -178,6 +177,34 @@ impl MintOwnerControlled {
             .with_description("Mint policy owner controlled component for network fungible faucets")
             .with_storage_schema(storage_schema)
     }
+
+    fn initial_storage_slots(&self) -> Vec<StorageSlot> {
+        let initial_policy_root = self.0.initial_policy_root;
+        let owner_only_procedure_root = Self::owner_only_policy_root();
+        let allowed_policy_flag = Word::from([1u32, 0, 0, 0]);
+        let mut allowed_policy_entries =
+            vec![(StorageMapKey::from_raw(owner_only_procedure_root), allowed_policy_flag)];
+
+        if initial_policy_root != owner_only_procedure_root {
+            allowed_policy_entries
+                .push((StorageMapKey::from_raw(initial_policy_root), allowed_policy_flag));
+        }
+
+        let allowed_policy_proc_roots = StorageMap::with_entries(allowed_policy_entries)
+            .expect("allowed mint policy roots should have unique keys");
+
+        vec![
+            StorageSlot::with_value(
+                Self::active_policy_proc_root_slot().clone(),
+                initial_policy_root,
+            ),
+            StorageSlot::with_map(
+                Self::allowed_policy_proc_roots_slot().clone(),
+                allowed_policy_proc_roots,
+            ),
+            Self::policy_authority_value_slot(),
+        ]
+    }
 }
 
 impl Default for MintOwnerControlled {
@@ -188,12 +215,7 @@ impl Default for MintOwnerControlled {
 
 impl From<MintOwnerControlled> for AccountComponent {
     fn from(mint_owner_controlled: MintOwnerControlled) -> Self {
-        let slots = mint_owner_controlled.0.mint_initial_storage_slots(
-            MintOwnerControlled::active_policy_proc_root_slot(),
-            MintOwnerControlled::allowed_policy_proc_roots_slot(),
-            MintOwnerControlled::policy_authority_value_slot(),
-            MintOwnerControlled::owner_only_policy_root(),
-        );
+        let slots = mint_owner_controlled.initial_storage_slots();
 
         let metadata = MintOwnerControlled::component_metadata();
 

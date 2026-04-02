@@ -157,10 +157,10 @@ async fn execute_faucet_note_script(
 fn create_set_burn_policy_note_script(policy_root: Word) -> String {
     format!(
         r#"
-        use miden::standards::burn_policies::policy_manager->policy_manager
+        use miden::standards::burn_policies::policy_manager
 
         begin
-            repeat.12 push.0 end
+            padw padw padw
             push.{policy_root}
             call.policy_manager::set_burn_policy
             dropw dropw dropw dropw

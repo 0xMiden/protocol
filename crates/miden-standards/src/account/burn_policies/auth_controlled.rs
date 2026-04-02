@@ -7,11 +7,10 @@ use miden_protocol::account::component::{
     StorageSlotSchema,
 };
 use miden_protocol::account::{AccountComponent, AccountType, StorageSlot, StorageSlotName};
-use miden_protocol::utils::sync::LazyLock;
 
 use super::BurnPolicyAuthority;
 use crate::account::components::burn_auth_controlled_library;
-use crate::account::policy_manager::AuthControlled;
+use crate::account::policy_manager::auth_controlled_initial_storage_slots;
 use crate::procedure_digest;
 
 // BURN POLICY AUTH CONTROLLED
@@ -25,15 +24,6 @@ procedure_digest!(
     BurnAuthControlled::ALLOW_ALL_PROC_NAME,
     burn_auth_controlled_library
 );
-
-static ACTIVE_BURN_POLICY_PROC_ROOT_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::burn_policy_manager::active_policy_proc_root")
-        .expect("storage slot name should be valid")
-});
-static ALLOWED_BURN_POLICY_PROC_ROOTS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::burn_policy_manager::allowed_policy_proc_roots")
-        .expect("storage slot name should be valid")
-});
 
 /// Initial policy configuration for the [`BurnAuthControlled`] component.
 #[derive(Debug, Clone, Copy, Default)]
@@ -61,7 +51,9 @@ pub enum BurnAuthControlledConfig {
 ///   ([`BurnPolicyAuthority::AuthControlled`] = tx auth, [`BurnPolicyAuthority::OwnerControlled`] =
 ///   external owner).
 #[derive(Debug, Clone, Copy)]
-pub struct BurnAuthControlled(AuthControlled);
+pub struct BurnAuthControlled {
+    pub(crate) initial_policy_root: Word,
+}
 
 impl BurnAuthControlled {
     // CONSTANTS
@@ -82,22 +74,22 @@ impl BurnAuthControlled {
             BurnAuthControlledConfig::CustomInitialRoot(root) => root,
         };
 
-        Self(AuthControlled { initial_policy_root })
+        Self { initial_policy_root }
     }
 
-    /// Creates a new [`BurnAuthControlled`] component with `allow_all` policy as default.
+    /// Creates a new [`BurnAuthControlled`] component with `allow_all` policy.
     pub fn allow_all() -> Self {
         Self::new(BurnAuthControlledConfig::AllowAll)
     }
 
     /// Returns the [`StorageSlotName`] where the active burn policy procedure root is stored.
     pub fn active_policy_proc_root_slot() -> &'static StorageSlotName {
-        &ACTIVE_BURN_POLICY_PROC_ROOT_SLOT_NAME
+        super::active_policy_proc_root_slot_name()
     }
 
     /// Returns the [`StorageSlotName`] where allowed policy roots are stored.
     pub fn allowed_policy_proc_roots_slot() -> &'static StorageSlotName {
-        &ALLOWED_BURN_POLICY_PROC_ROOTS_SLOT_NAME
+        super::allowed_policy_proc_roots_slot_name()
     }
 
     /// Returns the storage slot schema for the active burn policy root.
@@ -155,7 +147,7 @@ impl BurnAuthControlled {
         StorageSlot::from(BurnPolicyAuthority::AuthControlled)
     }
 
-    /// Returns the default `allow_all` policy root.
+    /// Returns the default `allow_all` policy procedure root (MAST digest).
     pub fn allow_all_policy_root() -> Word {
         *ALLOW_ALL_POLICY_ROOT
     }
@@ -174,7 +166,8 @@ impl Default for BurnAuthControlled {
 
 impl From<BurnAuthControlled> for AccountComponent {
     fn from(auth_controlled: BurnAuthControlled) -> Self {
-        let slots = auth_controlled.0.initial_storage_slots(
+        let slots = auth_controlled_initial_storage_slots(
+            auth_controlled.initial_policy_root,
             BurnAuthControlled::active_policy_proc_root_slot(),
             BurnAuthControlled::allowed_policy_proc_roots_slot(),
             BurnAuthControlled::policy_authority_value_slot(),

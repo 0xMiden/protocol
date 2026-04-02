@@ -7,11 +7,10 @@ use miden_protocol::account::component::{
     StorageSlotSchema,
 };
 use miden_protocol::account::{AccountComponent, AccountType, StorageSlot, StorageSlotName};
-use miden_protocol::utils::sync::LazyLock;
 
 use super::MintPolicyAuthority;
 use crate::account::components::auth_controlled_library;
-use crate::account::policy_manager::AuthControlled;
+use crate::account::policy_manager::auth_controlled_initial_storage_slots;
 use crate::procedure_digest;
 
 // MINT POLICY AUTH CONTROLLED
@@ -25,15 +24,6 @@ procedure_digest!(
     MintAuthControlled::ALLOW_ALL_PROC_NAME,
     auth_controlled_library
 );
-
-static ACTIVE_MINT_POLICY_PROC_ROOT_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::mint_policy_manager::active_policy_proc_root")
-        .expect("storage slot name should be valid")
-});
-static ALLOWED_MINT_POLICY_PROC_ROOTS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::mint_policy_manager::allowed_policy_proc_roots")
-        .expect("storage slot name should be valid")
-});
 
 /// Initial policy configuration for the [`MintAuthControlled`] component.
 #[derive(Debug, Clone, Copy, Default)]
@@ -61,7 +51,9 @@ pub enum MintAuthControlledConfig {
 ///   ([`MintPolicyAuthority::AuthControlled`] = tx auth, [`MintPolicyAuthority::OwnerControlled`] =
 ///   external owner).
 #[derive(Debug, Clone, Copy)]
-pub struct MintAuthControlled(AuthControlled);
+pub struct MintAuthControlled {
+    pub(crate) initial_policy_root: Word,
+}
 
 impl MintAuthControlled {
     // CONSTANTS
@@ -82,7 +74,7 @@ impl MintAuthControlled {
             MintAuthControlledConfig::CustomInitialRoot(root) => root,
         };
 
-        Self(AuthControlled { initial_policy_root })
+        Self { initial_policy_root }
     }
 
     /// Creates a new [`MintAuthControlled`] component with `allow_all` policy as
@@ -93,12 +85,12 @@ impl MintAuthControlled {
 
     /// Returns the [`StorageSlotName`] where the active mint policy procedure root is stored.
     pub fn active_policy_proc_root_slot() -> &'static StorageSlotName {
-        &ACTIVE_MINT_POLICY_PROC_ROOT_SLOT_NAME
+        super::active_policy_proc_root_slot_name()
     }
 
     /// Returns the [`StorageSlotName`] where allowed policy roots are stored.
     pub fn allowed_policy_proc_roots_slot() -> &'static StorageSlotName {
-        &ALLOWED_MINT_POLICY_PROC_ROOTS_SLOT_NAME
+        super::allowed_policy_proc_roots_slot_name()
     }
 
     /// Returns the storage slot schema for the active mint policy root.
@@ -156,7 +148,7 @@ impl MintAuthControlled {
         StorageSlot::from(MintPolicyAuthority::AuthControlled)
     }
 
-    /// Returns the default `allow_all` policy root.
+    /// Returns the default `allow_all` policy procedure root (MAST digest).
     pub fn allow_all_policy_root() -> Word {
         *ALLOW_ALL_POLICY_ROOT
     }
@@ -175,7 +167,8 @@ impl Default for MintAuthControlled {
 
 impl From<MintAuthControlled> for AccountComponent {
     fn from(auth_controlled: MintAuthControlled) -> Self {
-        let slots = auth_controlled.0.initial_storage_slots(
+        let slots = auth_controlled_initial_storage_slots(
+            auth_controlled.initial_policy_root,
             MintAuthControlled::active_policy_proc_root_slot(),
             MintAuthControlled::allowed_policy_proc_roots_slot(),
             MintAuthControlled::policy_authority_value_slot(),

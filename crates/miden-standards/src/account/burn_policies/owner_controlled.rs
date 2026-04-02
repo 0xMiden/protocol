@@ -1,3 +1,5 @@
+use alloc::vec::Vec;
+
 use miden_protocol::Word;
 use miden_protocol::account::component::{
     AccountComponentMetadata,
@@ -6,8 +8,14 @@ use miden_protocol::account::component::{
     StorageSchema,
     StorageSlotSchema,
 };
-use miden_protocol::account::{AccountComponent, AccountType, StorageSlot, StorageSlotName};
-use miden_protocol::utils::sync::LazyLock;
+use miden_protocol::account::{
+    AccountComponent,
+    AccountType,
+    StorageMap,
+    StorageMapKey,
+    StorageSlot,
+    StorageSlotName,
+};
 
 use super::{BurnAuthControlled, BurnPolicyAuthority};
 use crate::account::components::burn_owner_controlled_library;
@@ -25,15 +33,6 @@ procedure_digest!(
     BurnOwnerControlled::OWNER_ONLY_PROC_NAME,
     burn_owner_controlled_library
 );
-
-static ACTIVE_BURN_POLICY_PROC_ROOT_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::burn_policy_manager::active_policy_proc_root")
-        .expect("storage slot name should be valid")
-});
-static ALLOWED_BURN_POLICY_PROC_ROOTS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::burn_policy_manager::allowed_policy_proc_roots")
-        .expect("storage slot name should be valid")
-});
 
 /// Initial policy configuration for the [`BurnOwnerControlled`] component.
 #[derive(Debug, Clone, Copy, Default)]
@@ -101,12 +100,12 @@ impl BurnOwnerControlled {
 
     /// Returns the [`StorageSlotName`] where the active burn policy procedure root is stored.
     pub fn active_policy_proc_root_slot() -> &'static StorageSlotName {
-        &ACTIVE_BURN_POLICY_PROC_ROOT_SLOT_NAME
+        super::active_policy_proc_root_slot_name()
     }
 
     /// Returns the [`StorageSlotName`] where allowed policy roots are stored.
     pub fn allowed_policy_proc_roots_slot() -> &'static StorageSlotName {
-        &ALLOWED_BURN_POLICY_PROC_ROOTS_SLOT_NAME
+        super::allowed_policy_proc_roots_slot_name()
     }
 
     /// Returns the storage slot schema for the active burn policy root.
@@ -164,12 +163,12 @@ impl BurnOwnerControlled {
         StorageSlot::from(BurnPolicyAuthority::OwnerControlled)
     }
 
-    /// Returns the default allow-all policy root.
+    /// Returns the default `allow_all` policy procedure root (MAST digest).
     pub fn allow_all_policy_root() -> Word {
         BurnAuthControlled::allow_all_policy_root()
     }
 
-    /// Returns the default owner-only policy root.
+    /// Returns the default `owner_only` policy procedure root (MAST digest).
     pub fn owner_only_policy_root() -> Word {
         *OWNER_ONLY_POLICY_ROOT
     }
@@ -192,6 +191,39 @@ impl BurnOwnerControlled {
             .with_description("Burn policy owner controlled component for fungible faucets")
             .with_storage_schema(storage_schema)
     }
+
+    fn initial_storage_slots(&self) -> Vec<StorageSlot> {
+        let initial_policy_root = self.0.initial_policy_root;
+        let allow_all_procedure_root = Self::allow_all_policy_root();
+        let owner_only_procedure_root = Self::owner_only_policy_root();
+        let allowed_policy_flag = Word::from([1u32, 0, 0, 0]);
+        let mut allowed_policy_entries = vec![
+            (StorageMapKey::from_raw(allow_all_procedure_root), allowed_policy_flag),
+            (StorageMapKey::from_raw(owner_only_procedure_root), allowed_policy_flag),
+        ];
+
+        if initial_policy_root != allow_all_procedure_root
+            && initial_policy_root != owner_only_procedure_root
+        {
+            allowed_policy_entries
+                .push((StorageMapKey::from_raw(initial_policy_root), allowed_policy_flag));
+        }
+
+        let allowed_policy_proc_roots = StorageMap::with_entries(allowed_policy_entries)
+            .expect("allowed burn policy roots should have unique keys");
+
+        vec![
+            StorageSlot::with_value(
+                Self::active_policy_proc_root_slot().clone(),
+                initial_policy_root,
+            ),
+            StorageSlot::with_map(
+                Self::allowed_policy_proc_roots_slot().clone(),
+                allowed_policy_proc_roots,
+            ),
+            Self::policy_authority_value_slot(),
+        ]
+    }
 }
 
 impl Default for BurnOwnerControlled {
@@ -202,13 +234,7 @@ impl Default for BurnOwnerControlled {
 
 impl From<BurnOwnerControlled> for AccountComponent {
     fn from(burn_owner_controlled: BurnOwnerControlled) -> Self {
-        let slots = burn_owner_controlled.0.burn_initial_storage_slots(
-            BurnOwnerControlled::active_policy_proc_root_slot(),
-            BurnOwnerControlled::allowed_policy_proc_roots_slot(),
-            BurnOwnerControlled::policy_authority_value_slot(),
-            BurnOwnerControlled::allow_all_policy_root(),
-            BurnOwnerControlled::owner_only_policy_root(),
-        );
+        let slots = burn_owner_controlled.initial_storage_slots();
 
         let metadata = BurnOwnerControlled::component_metadata();
 
