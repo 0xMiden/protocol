@@ -280,17 +280,17 @@ where
 
     fn parse_str(input: &str) -> Result<Word, SchemaTypeError> {
         let felt = <T as FeltType>::parse_str(input)?;
-        Ok(Word::from([Felt::new(0), Felt::new(0), Felt::new(0), felt]))
+        Ok(Word::from([felt, Felt::new(0), Felt::new(0), Felt::new(0)]))
     }
 
     fn display_word(value: Word) -> Result<String, SchemaTypeError> {
-        if value[0] != Felt::new(0) || value[1] != Felt::new(0) || value[2] != Felt::new(0) {
+        if value[1] != Felt::new(0) || value[2] != Felt::new(0) || value[3] != Felt::new(0) {
             return Err(SchemaTypeError::ConversionError(format!(
-                "expected a word of the form [0, 0, 0, <felt>] for type `{}`",
+                "expected a word of the form [<felt>, 0, 0, 0] for type `{}`",
                 Self::type_name()
             )));
         }
-        <T as FeltType>::display_felt(value[3])
+        <T as FeltType>::display_felt(value[0])
     }
 }
 
@@ -676,13 +676,13 @@ impl SchemaTypeRegistry {
         match self.type_kind(type_name) {
             TypeKind::Word => Ok(()),
             TypeKind::Felt => {
-                // Felt types stored as words must have the form [0, 0, 0, <felt>]
-                if word[0] != Felt::ZERO || word[1] != Felt::ZERO || word[2] != Felt::ZERO {
+                // Felt types stored as words must have the form [<felt>, 0, 0, 0]
+                if word[1] != Felt::ZERO || word[2] != Felt::ZERO || word[3] != Felt::ZERO {
                     return Err(SchemaTypeError::ConversionError(format!(
-                        "expected a word of the form [0, 0, 0, <felt>] for type `{type_name}`"
+                        "expected a word of the form [<felt>, 0, 0, 0] for type `{type_name}`"
                     )));
                 }
-                self.validate_felt_value(type_name, word[3])
+                self.validate_felt_value(type_name, word[0])
             },
         }
     }
@@ -707,7 +707,7 @@ impl SchemaTypeRegistry {
 
         // Treat any registered felt type as a word type by zero-padding the remaining felts.
         if self.contains_felt_type(type_name) {
-            let value = self.display_felt(type_name, word[3]);
+            let value = self.display_felt(type_name, word[0]);
             return WordDisplay::Felt(value);
         }
 
@@ -737,7 +737,7 @@ impl SchemaTypeRegistry {
         // Treat any registered felt type as a word type by zero-padding the remaining felts.
         if let Some(converter) = self.felt.get(type_name) {
             let felt = converter(value)?;
-            return Ok(Word::from([Felt::new(0), Felt::new(0), Felt::new(0), felt]));
+            return Ok(Word::from([felt, Felt::new(0), Felt::new(0), Felt::new(0)]));
         }
 
         Err(SchemaTypeError::WordTypeNotFound(type_name.clone()))
@@ -776,12 +776,12 @@ mod tests {
         let numeric_word = SCHEMA_TYPE_REGISTRY
             .try_parse_word(&auth_scheme_type, "2")
             .expect("numeric auth scheme id should parse");
-        assert_eq!(numeric_word, Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::from(2u8)]));
+        assert_eq!(numeric_word, Word::from([Felt::from(2u8), Felt::ZERO, Felt::ZERO, Felt::ZERO]));
 
         let named_word = SCHEMA_TYPE_REGISTRY
             .try_parse_word(&auth_scheme_type, "EcdsaK256Keccak")
             .expect("named auth scheme should parse");
-        assert_eq!(named_word, Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::from(1u8)]));
+        assert_eq!(named_word, Word::from([Felt::from(1u8), Felt::ZERO, Felt::ZERO, Felt::ZERO]));
 
         let displayed = SCHEMA_TYPE_REGISTRY.display_word(&auth_scheme_type, numeric_word);
         assert!(
@@ -798,7 +798,7 @@ mod tests {
         assert!(SCHEMA_TYPE_REGISTRY.try_parse_word(&auth_scheme_type, "9").is_err());
         assert!(SCHEMA_TYPE_REGISTRY.try_parse_word(&auth_scheme_type, "invalid").is_err());
 
-        let invalid_word = Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::from(9u8)]);
+        let invalid_word = Word::from([Felt::from(9u8), Felt::ZERO, Felt::ZERO, Felt::ZERO]);
         assert!(
             SCHEMA_TYPE_REGISTRY
                 .validate_word_value(&auth_scheme_type, invalid_word)

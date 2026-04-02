@@ -97,7 +97,7 @@ fn value_slot_schema_accepts_felt_typed_word_init_value() {
     init_data.set_value("demo::u8_word", 6u8).unwrap();
 
     let built = slot.try_build_word(&init_data, &slot_name).unwrap();
-    assert_eq!(built, Word::from([Felt::new(0), Felt::new(0), Felt::new(0), Felt::new(6)]));
+    assert_eq!(built, Word::from([Felt::new(6), Felt::new(0), Felt::new(0), Felt::new(0)]));
 }
 
 #[test]
