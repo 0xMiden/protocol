@@ -69,6 +69,10 @@ impl ShortCapitalString {
     ///
     /// The alphabet used in the encoding process is provided by the `alphabet` argument.
     ///
+    /// **Contract:** `alphabet` must contain **ASCII characters only**. Then each character
+    /// occupies one UTF-8 byte, so the radix is [`str::len`] and matches the number of Unicode
+    /// scalars.
+    ///
     /// The encoding is performed by multiplying the intermediate encoded value by the length of
     /// the used alphabet and adding the relative index of each character. At the end of the
     /// encoding process, the character length of the initial string is added to the encoded value.
@@ -77,7 +81,11 @@ impl ShortCapitalString {
     /// Returns an error if:
     /// - The string contains a character that is not part of the provided alphabet.
     pub fn as_element(&self, alphabet: &str) -> Result<Felt, ShortCapitalStringError> {
-        let alphabet_len = alphabet.chars().count() as u64;
+        debug_assert!(
+            alphabet.is_ascii(),
+            "ShortCapitalString::as_element: alphabet must be ASCII-only"
+        );
+        let alphabet_len = alphabet.len() as u64;
         let mut encoded_value: u64 = 0;
 
         for character in self.0.chars() {
@@ -101,7 +109,8 @@ impl ShortCapitalString {
     /// `encoded_string` is the field element that carries the short-string encoding (as produced by
     /// [`as_element`](Self::as_element)).
     ///
-    /// The alphabet used in the decoding process is provided by the `alphabet` argument.
+    /// The alphabet used in the decoding process is provided by the `alphabet` argument. The same
+    /// **ASCII-only** contract as [`as_element`](Self::as_element) applies; radix is [`str::len`].
     ///
     /// The decoding is performed by reading the encoded length from the least-significant digit,
     /// then repeatedly taking modulus by alphabet length to recover each character index.
@@ -125,7 +134,11 @@ impl ShortCapitalString {
             return Err(ShortCapitalStringError::ValueTooLarge(encoded_value));
         }
 
-        let alphabet_len = alphabet.chars().count() as u64;
+        debug_assert!(
+            alphabet.is_ascii(),
+            "ShortCapitalString::try_from_encoded_felt: alphabet must be ASCII-only"
+        );
+        let alphabet_len = alphabet.len() as u64;
         let mut remaining_value = encoded_value;
         let string_len = (remaining_value % alphabet_len) as usize;
         if string_len == 0 || string_len > Self::MAX_LENGTH {

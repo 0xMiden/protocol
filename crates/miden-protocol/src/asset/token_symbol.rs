@@ -18,9 +18,6 @@ impl TokenSymbol {
     /// Maximum allowed length of the token string.
     pub const MAX_SYMBOL_LENGTH: usize = 12;
 
-    /// The length of the set of characters that can be used in a token's name.
-    pub const ALPHABET_LENGTH: u64 = 26;
-
     /// The minimum integer value of an encoded [`TokenSymbol`].
     ///
     /// This value encodes the "A" token symbol.
