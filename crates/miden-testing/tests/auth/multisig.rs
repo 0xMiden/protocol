@@ -81,6 +81,31 @@ fn setup_keys_and_authenticators_with_scheme(
     Ok((secret_keys, auth_schemes, public_keys, authenticators))
 }
 
+fn build_update_signers_config_vector(
+    threshold: u64,
+    num_of_approvers: u64,
+    public_keys: &[PublicKey],
+    auth_scheme: AuthScheme,
+) -> Vec<Felt> {
+    let mut config_and_pubkeys_vector = Vec::new();
+    config_and_pubkeys_vector.extend_from_slice(&[
+        Felt::new(threshold),
+        Felt::new(num_of_approvers),
+        Felt::new(0),
+        Felt::new(0),
+    ]);
+
+    let scheme_word = [Felt::new(auth_scheme as u64), Felt::new(0), Felt::new(0), Felt::new(0)];
+
+    for public_key in public_keys.iter().rev() {
+        let key_word: Word = public_key.to_commitment().into();
+        config_and_pubkeys_vector.extend_from_slice(key_word.as_elements());
+        config_and_pubkeys_vector.extend_from_slice(&scheme_word);
+    }
+
+    config_and_pubkeys_vector
+}
+
 /// Creates a multisig account with the specified configuration
 fn create_multisig_account(
     threshold: u32,
@@ -862,6 +887,228 @@ async fn test_multisig_update_signers_remove_owner(
     assert_eq!(
         non_empty_count, 2,
         "Should have exactly 2 non-empty keys after removing 3 owners"
+    );
+
+    Ok(())
+}
+
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[tokio::test]
+async fn test_multisig_update_signers_shrinks_and_re_expands_with_scheme_map_integrity(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (_initial_secret_keys, initial_schemes, initial_public_keys, initial_authenticators) =
+        setup_keys_and_authenticators_with_scheme(5, 5, auth_scheme)?;
+
+    let initial_approvers = initial_public_keys
+        .iter()
+        .zip(initial_schemes.iter())
+        .map(|(pk, scheme)| (pk.clone(), *scheme))
+        .collect::<Vec<_>>();
+
+    let mut multisig_account = create_multisig_account(4, &initial_approvers, 10, vec![])?;
+    let mut mock_chain =
+        MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
+
+    let update_signers_script = CodeBuilder::default()
+        .with_dynamically_linked_library(multisig_library())?
+        .compile_tx_script(
+            "
+            begin
+                call.::miden::standards::components::auth::multisig::update_signers_and_threshold
+            end
+            ",
+        )?;
+
+    let shrink_threshold = 2u64;
+    let shrink_num_approvers = 2u64;
+    let shrink_keys = &initial_public_keys[0..2];
+    let shrink_data = build_update_signers_config_vector(
+        shrink_threshold,
+        shrink_num_approvers,
+        shrink_keys,
+        auth_scheme,
+    );
+    let shrink_hash = Hasher::hash_elements(&shrink_data);
+    let mut shrink_advice_map = AdviceMap::default();
+    shrink_advice_map.insert(shrink_hash, shrink_data);
+    let shrink_advice_inputs = AdviceInputs { map: shrink_advice_map, ..Default::default() };
+
+    let shrink_tx_context_init = mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .tx_script(update_signers_script.clone())
+        .tx_script_args(shrink_hash)
+        .extend_advice_inputs(shrink_advice_inputs.clone())
+        .auth_args(Word::from([Felt::new(601); 4]))
+        .build()?;
+
+    let shrink_tx_summary = match shrink_tx_context_init.execute().await.unwrap_err() {
+        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
+        error => panic!("expected abort with tx effects: {error:?}"),
+    };
+
+    let shrink_msg = shrink_tx_summary.as_ref().to_commitment();
+    let shrink_tx_summary = SigningInputs::TransactionSummary(shrink_tx_summary);
+    let shrink_sig_0 = initial_authenticators[0]
+        .get_signature(initial_public_keys[0].to_commitment(), &shrink_tx_summary)
+        .await?;
+    let shrink_sig_1 = initial_authenticators[1]
+        .get_signature(initial_public_keys[1].to_commitment(), &shrink_tx_summary)
+        .await?;
+    let shrink_sig_2 = initial_authenticators[2]
+        .get_signature(initial_public_keys[2].to_commitment(), &shrink_tx_summary)
+        .await?;
+    let shrink_sig_3 = initial_authenticators[3]
+        .get_signature(initial_public_keys[3].to_commitment(), &shrink_tx_summary)
+        .await?;
+
+    let shrink_tx = mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .tx_script(update_signers_script.clone())
+        .tx_script_args(shrink_hash)
+        .extend_advice_inputs(shrink_advice_inputs)
+        .auth_args(Word::from([Felt::new(601); 4]))
+        .add_signature(initial_public_keys[0].to_commitment(), shrink_msg, shrink_sig_0)
+        .add_signature(initial_public_keys[1].to_commitment(), shrink_msg, shrink_sig_1)
+        .add_signature(initial_public_keys[2].to_commitment(), shrink_msg, shrink_sig_2)
+        .add_signature(initial_public_keys[3].to_commitment(), shrink_msg, shrink_sig_3)
+        .build()?
+        .execute()
+        .await?;
+
+    multisig_account.apply_delta(shrink_tx.account_delta())?;
+    mock_chain.add_pending_executed_transaction(&shrink_tx)?;
+    mock_chain.prove_next_block()?;
+
+    let initial_scheme_word =
+        Word::from([Felt::new(auth_scheme as u64), Felt::new(0), Felt::new(0), Felt::new(0)]);
+    for (idx, expected_key) in shrink_keys.iter().enumerate() {
+        let storage_key = [Felt::new(idx as u64), Felt::new(0), Felt::new(0), Felt::new(0)].into();
+        let expected_key_word: Word = expected_key.to_commitment().into();
+        assert_eq!(
+            multisig_account
+                .storage()
+                .get_map_item(AuthMultisig::approver_public_keys_slot(), storage_key)?,
+            expected_key_word
+        );
+        assert_eq!(
+            multisig_account
+                .storage()
+                .get_map_item(AuthMultisig::approver_scheme_ids_slot(), storage_key)?,
+            initial_scheme_word
+        );
+    }
+
+    for idx in 2..5 {
+        let storage_key = [Felt::new(idx), Felt::new(0), Felt::new(0), Felt::new(0)].into();
+        assert_eq!(
+            multisig_account
+                .storage()
+                .get_map_item(AuthMultisig::approver_public_keys_slot(), storage_key)?,
+            Word::empty(),
+            "public key slot {idx} should be cleared after shrink"
+        );
+        assert_eq!(
+            multisig_account
+                .storage()
+                .get_map_item(AuthMultisig::approver_scheme_ids_slot(), storage_key)?,
+            Word::empty(),
+            "scheme slot {idx} should be cleared after shrink"
+        );
+    }
+
+    let new_scheme = match auth_scheme {
+        AuthScheme::EcdsaK256Keccak => AuthScheme::Falcon512Poseidon2,
+        AuthScheme::Falcon512Poseidon2 => AuthScheme::EcdsaK256Keccak,
+        _ => anyhow::bail!("unsupported auth scheme for this test: {auth_scheme:?}"),
+    };
+
+    let (_new_secret_keys, _new_schemes, expanded_public_keys, _new_authenticators) =
+        setup_keys_and_authenticators_with_scheme(4, 0, new_scheme)?;
+    let expand_threshold = 3u64;
+    let expand_num_approvers = 4u64;
+    let expand_data = build_update_signers_config_vector(
+        expand_threshold,
+        expand_num_approvers,
+        &expanded_public_keys,
+        new_scheme,
+    );
+    let expand_hash = Hasher::hash_elements(&expand_data);
+    let mut expand_advice_map = AdviceMap::default();
+    expand_advice_map.insert(expand_hash, expand_data);
+    let expand_advice_inputs = AdviceInputs { map: expand_advice_map, ..Default::default() };
+
+    let expand_tx_context_init = mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .tx_script(update_signers_script.clone())
+        .tx_script_args(expand_hash)
+        .extend_advice_inputs(expand_advice_inputs.clone())
+        .auth_args(Word::from([Felt::new(602); 4]))
+        .build()?;
+
+    let expand_tx_summary = match expand_tx_context_init.execute().await.unwrap_err() {
+        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
+        error => panic!("expected abort with tx effects: {error:?}"),
+    };
+
+    let expand_msg = expand_tx_summary.as_ref().to_commitment();
+    let expand_tx_summary = SigningInputs::TransactionSummary(expand_tx_summary);
+    let expand_sig_0 = initial_authenticators[0]
+        .get_signature(initial_public_keys[0].to_commitment(), &expand_tx_summary)
+        .await?;
+    let expand_sig_1 = initial_authenticators[1]
+        .get_signature(initial_public_keys[1].to_commitment(), &expand_tx_summary)
+        .await?;
+
+    let expand_tx = mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .tx_script(update_signers_script)
+        .tx_script_args(expand_hash)
+        .extend_advice_inputs(expand_advice_inputs)
+        .auth_args(Word::from([Felt::new(602); 4]))
+        .add_signature(initial_public_keys[0].to_commitment(), expand_msg, expand_sig_0)
+        .add_signature(initial_public_keys[1].to_commitment(), expand_msg, expand_sig_1)
+        .build()?
+        .execute()
+        .await?;
+
+    multisig_account.apply_delta(expand_tx.account_delta())?;
+
+    let expanded_scheme_word =
+        Word::from([Felt::new(new_scheme as u64), Felt::new(0), Felt::new(0), Felt::new(0)]);
+    for (idx, expected_key) in expanded_public_keys.iter().enumerate() {
+        let storage_key = [Felt::new(idx as u64), Felt::new(0), Felt::new(0), Felt::new(0)].into();
+        let expected_key_word: Word = expected_key.to_commitment().into();
+        assert_eq!(
+            multisig_account
+                .storage()
+                .get_map_item(AuthMultisig::approver_public_keys_slot(), storage_key)?,
+            expected_key_word
+        );
+        assert_eq!(
+            multisig_account
+                .storage()
+                .get_map_item(AuthMultisig::approver_scheme_ids_slot(), storage_key)?,
+            expanded_scheme_word
+        );
+    }
+
+    let stale_index_key = [Felt::new(4), Felt::new(0), Felt::new(0), Felt::new(0)].into();
+    assert_eq!(
+        multisig_account
+            .storage()
+            .get_map_item(AuthMultisig::approver_public_keys_slot(), stale_index_key)?,
+        Word::empty(),
+        "old stale key index should remain empty after re-expansion"
+    );
+    assert_eq!(
+        multisig_account
+            .storage()
+            .get_map_item(AuthMultisig::approver_scheme_ids_slot(), stale_index_key)?,
+        Word::empty(),
+        "old stale scheme index should remain empty after re-expansion"
     );
 
     Ok(())

@@ -3,9 +3,9 @@ use miden::protocol::asset
 use miden::protocol::native_account
 use miden::protocol::output_note
 use miden::protocol::account_id
+use miden::core::word
 use miden::protocol::tx
 use miden::standards::auth::multisig
-use miden::standards::auth::multisig_smart::common
 use miden::standards::auth::multisig_smart::oracle
 
 # CONSTANTS
@@ -224,7 +224,7 @@ end
 #! Inputs:  []
 #! Outputs: [current_window_start_timestamp]
 proc get_current_window_start_timestamp
-    exec.common::get_current_timestamp
+    exec.tx::get_block_timestamp
     # => [current_timestamp]
 
     dup
@@ -305,7 +305,7 @@ proc within_spending_window
     exec.get_spending_tracker
     # => [amount_spent_in_window, window_start_timestamp, 0, 0]
 
-    exec.common::is_empty_word
+    exec.word::eqz
     # => [is_empty_tracker]
 
     if.true

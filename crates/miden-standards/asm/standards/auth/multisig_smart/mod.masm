@@ -3,7 +3,6 @@ use miden::protocol::native_account
 use miden::protocol::auth::AUTH_UNAUTHORIZED_EVENT
 use miden::standards::auth
 use miden::standards::auth::multisig
-use miden::standards::auth::multisig_smart::common
 use miden::standards::auth::multisig_smart::spending_limits
 use miden::standards::auth::multisig_smart::timelock_controller
 use miden::standards::auth::tx_policy
@@ -40,6 +39,43 @@ const ERR_NOTE_RESTRICTIONS_REQUIRE_THRESHOLD = "procedure policy note restricti
 const ERR_NUM_APPROVERS_OR_PROC_THRESHOLD_NOT_U32 = "number of approvers and procedure threshold must be u32"
 
 const ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS = "procedure threshold exceeds new number of approvers"
+
+const ERR_INVALID_NOTE_RESTRICTIONS = "procedure policy note restrictions must be between 0 and 3"
+
+#! Gets the procedure policy entry for PROC_ROOT from the account's initial state.
+#!
+#! Inputs:  [PROC_ROOT]
+#! Outputs: [immediate_threshold, delayed_threshold, note_restrictions, 0]
+#!
+#! Where:
+#! - PROC_ROOT is the root of the account procedure whose smart policy is being read.
+#!
+#! Invocation: exec
+pub proc get_procedure_policy
+    push.PROCEDURE_POLICIES_SLOT[0..2]
+    exec.active_account::get_initial_map_item
+end
+
+#! Validates that note_restrictions is within the supported 0..=3 range.
+#!
+#! Inputs:  [note_restrictions]
+#! Outputs: []
+proc assert_valid_note_restrictions
+    dup
+    # => [note_restrictions, note_restrictions]
+
+    u32assert.err=ERR_INVALID_NOTE_RESTRICTIONS
+    # => [note_restrictions]
+
+    dup u32lte.3
+    # => [is_valid_note_restrictions, note_restrictions]
+
+    assert.err=ERR_INVALID_NOTE_RESTRICTIONS
+    # => [note_restrictions]
+
+    drop
+    # => []
+end
 
 # HELPER PROCEDURES
 # =================================================================================================
@@ -146,7 +182,7 @@ proc compute_called_proc_policy(is_execute_path: u32)
         # => [was_called, PROC_ROOT, proc_index]
 
         if.true
-            exec.common::get_procedure_policy
+            exec.get_procedure_policy
             # => [immediate_threshold, delayed_threshold, note_restrictions, 0, proc_index]
 
             loc_store.4
@@ -348,7 +384,11 @@ pub proc assert_proc_policies_lte_num_approvers
         exec.active_account::get_procedure_root
         # => [PROC_ROOT, proc_index, num_approvers]
 
-        exec.common::get_procedure_policy
+        push.PROCEDURE_POLICIES_SLOT[0..2]
+        # => [procedure_policies_slot_suffix, procedure_policies_slot_prefix, PROC_ROOT,
+        #     proc_index, num_approvers]
+
+        exec.active_account::get_map_item
         # => [immediate_threshold, delayed_threshold, note_restrictions, 0, proc_index, num_approvers]
 
         loc_store.0
@@ -382,7 +422,7 @@ pub proc assert_proc_policies_lte_num_approvers
         # => [proc_index, num_approvers]
 
         loc_load.2
-        exec.common::assert_valid_note_restrictions
+        exec.assert_valid_note_restrictions
         # => [proc_index, num_approvers]
 
         loc_load.0 eq.0
@@ -486,7 +526,7 @@ pub proc set_procedure_policy
     # => [PROC_ROOT]
 
     loc_load.2
-    exec.common::assert_valid_note_restrictions
+    exec.assert_valid_note_restrictions
     # => [PROC_ROOT]
 
     loc_load.0 eq.0
@@ -563,12 +603,25 @@ end
 #! - any provided scheme identifier word is malformed.
 #!
 #! Invocation: call
-@locals(2)
+@locals(5)
 pub proc update_signers_and_threshold(multisig_config_hash: word)
     exec.multisig::load_signers_and_thresholds_config
     # => [num_approvers, MULTISIG_CONFIG, pad(12)]
 
+    loc_store.4
+    # => [MULTISIG_CONFIG, pad(12)]
+
+    loc_storew_le.0
+    dropw
+    # => [pad(12)]
+
+    loc_load.4
+    # => [num_approvers, pad(12)]
+
     exec.assert_proc_policies_lte_num_approvers
+    # => [pad(12)]
+
+    loc_loadw_le.0
     # => [MULTISIG_CONFIG, pad(12)]
 
     exec.multisig::complete_signers_and_threshold_update

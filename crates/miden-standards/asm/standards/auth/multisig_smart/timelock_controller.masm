@@ -1,6 +1,7 @@
+use miden::core::word
 use miden::protocol::active_account
 use miden::protocol::native_account
-use miden::standards::auth::multisig_smart::common
+use miden::protocol::tx
 
 # CONSTANTS
 # =================================================================================================
@@ -29,6 +30,10 @@ const ERR_PENDING_ALREADY_SET = "pending action already set"
 const ERR_PROPOSE_ZERO_SIGNATURES = "num_verified_signatures cannot be zero"
 const ERR_CANCEL_INSUFFICIENT_SIGNATURES = "insufficient signatures for cancel"
 const ERR_EXECUTE_PATH_MISMATCH = "execute path must match delay requirement"
+
+const ERR_EXPIRATION_DELTA_ZERO = "expiration_delta must be non-zero"
+
+const ERR_TX_EXPIRATION_DELTA_NOT_SET = "tx expiration delta must be set"
 
 #! High-impact action.
 #!
@@ -90,7 +95,7 @@ end
 pub proc is_execute_path
     push.PENDING_EXECUTE_SLOT[0..2]
     exec.active_account::get_item
-    exec.common::is_empty_word
+    exec.word::eqz
     eq.0
 end
 
@@ -133,13 +138,37 @@ proc get_propose_expiration_delta
     # => [propose_expiration_delta]
 end
 
+#! Applies an expiration delta to the current transaction and verifies it was set.
+#!
+#! Inputs:  [expiration_delta]
+#! Outputs: []
+pub proc apply_expiration_delta
+    u32assert.err=ERR_U32
+    # => [expiration_delta]
+
+    dup eq.0 assertz.err=ERR_EXPIRATION_DELTA_ZERO
+    # => [expiration_delta]
+
+    exec.tx::update_expiration_block_delta
+    # => []
+
+    exec.tx::get_expiration_block_delta
+    # => [tx_expiration_delta]
+
+    dup eq.0 assertz.err=ERR_TX_EXPIRATION_DELTA_NOT_SET
+    # => [tx_expiration_delta]
+
+    drop
+    # => []
+end
+
 #! Inputs:  []
 #! Outputs: []
 proc apply_propose_expiration_delta
     exec.get_propose_expiration_delta
     # => [propose_expiration_delta]
 
-    exec.common::apply_expiration_delta
+    exec.apply_expiration_delta
     # => []
 end
 
@@ -166,7 +195,7 @@ proc is_tx_proposed(tx_summary_hash: word) -> u32
     exec.get_tx_proposal
     # => [unlock_timestamp, proposal_timestamp, min_cancel_sigs, is_set]
 
-    exec.common::is_empty_word
+    exec.word::eqz
     # => [is_empty_proposal]
 
     eq.0
@@ -240,7 +269,7 @@ end
 #! Inputs:  []
 #! Outputs: [unlock_timestamp, proposal_timestamp]
 proc compute_unlock_timestamp
-    exec.common::get_current_timestamp
+    exec.tx::get_block_timestamp
     # => [proposal_timestamp]
 
     dup
@@ -306,7 +335,7 @@ proc enforce_tx_timelock
     dropw
     # => []
 
-    exec.common::get_current_timestamp
+    exec.tx::get_block_timestamp
     # => [current_timestamp]
 
     loc_load.0
@@ -359,7 +388,7 @@ end
 #! Inputs:  [WORD]
 #! Outputs: []
 proc assert_pending_empty
-    exec.common::is_empty_word
+    exec.word::eqz
     # => [is_pending_empty]
 
     assert.err=ERR_PENDING_ALREADY_SET
@@ -603,7 +632,7 @@ pub proc finalize_timelock_proposals
     exec.get_pending_execute
     # => [pending_execute_word, TX_HASH]
 
-    exec.common::is_empty_word
+    exec.word::eqz
     # => [is_pending_execute_empty, TX_HASH]
 
     if.false
@@ -637,7 +666,7 @@ pub proc finalize_timelock_proposals
     exec.get_pending_cancel
     # => [pending_cancel_word, TX_HASH]
 
-    exec.common::is_empty_word
+    exec.word::eqz
     # => [is_pending_cancel_empty, TX_HASH]
 
     if.false
@@ -688,7 +717,7 @@ pub proc finalize_timelock_proposals
     exec.get_pending_propose
     # => [pending_propose_hash, TX_HASH]
 
-    exec.common::is_empty_word
+    exec.word::eqz
     # => [is_pending_propose_empty, TX_HASH]
 
     if.false
