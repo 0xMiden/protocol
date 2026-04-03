@@ -856,16 +856,7 @@ proc finalize_pending_cancel
         dup.3 eq.1 assert.err=ERR_TX_NOT_PROPOSED
         # => [unlock_timestamp, proposal_timestamp, min_cancel_sigs, is_set, PENDING_CANCEL_HASH, TX_HASH]
 
-        drop
-        # => [proposal_timestamp, min_cancel_sigs, is_set, PENDING_CANCEL_HASH, TX_HASH]
-
-        drop
-        # => [min_cancel_sigs, is_set, PENDING_CANCEL_HASH, TX_HASH]
-
-        swap
-        # => [is_set, min_cancel_sigs, PENDING_CANCEL_HASH, TX_HASH]
-
-        drop
+        drop drop swap drop
         # => [min_cancel_sigs, PENDING_CANCEL_HASH, TX_HASH]
 
         loc_load.0
