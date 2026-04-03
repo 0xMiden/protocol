@@ -25,6 +25,8 @@ use miden_protocol::vm::AdviceMap;
 use miden_protocol::{Felt, Hasher, Word};
 use miden_standards::account::auth::multisig_smart::{
     AmountLimits,
+    OracleId,
+    OracleReaderConfig,
     ProcedurePolicy,
     ProcedurePolicyNoteRestriction,
     SpendingPolicyConfig,
@@ -238,10 +240,11 @@ fn create_multisig_smart_account_with_assets_and_optional_oracle(
         ))
         .with_timelock_controller_config(TimelockControllerConfig::new(30, 2));
 
-    if let Some((oracle_id, get_price_proc_root)) = oracle_config {
-        config = config
-            .with_oracle_config(oracle_id)
-            .with_get_price_proc_root(get_price_proc_root);
+    if let Some(([prefix, suffix], get_price_proc_root)) = oracle_config {
+        config = config.with_oracle_reader(OracleReaderConfig::new(
+            OracleId::new(prefix, suffix),
+            get_price_proc_root,
+        ));
     }
 
     let multisig_account = AccountBuilder::new([0; 32])

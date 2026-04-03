@@ -183,60 +183,6 @@ impl AuthMultisigSmartConfig {
         self
     }
 
-    pub fn with_spending_window(mut self, spending_window: u32) -> Self {
-        self.spending_policy = SpendingPolicyConfig::new(
-            spending_window,
-            self.spending_policy.amount_limits(),
-            self.spending_policy.tier_thresholds(),
-        );
-        self
-    }
-
-    pub fn with_timelock_controller(
-        mut self,
-        min_delay: u32,
-        propose_expiration_delta: u16,
-    ) -> Self {
-        self.timelock_controller =
-            TimelockControllerConfig::new(min_delay, propose_expiration_delta);
-        self
-    }
-
-    pub fn with_amount_limits(
-        mut self,
-        [limit_0, limit_1, limit_2, delay_trigger_amount]: [u64; 4],
-    ) -> Self {
-        self.spending_policy = SpendingPolicyConfig::new(
-            self.spending_policy.spending_window(),
-            AmountLimits::new(limit_0, limit_1, limit_2, delay_trigger_amount),
-            self.spending_policy.tier_thresholds(),
-        );
-        self
-    }
-
-    pub fn with_tier_thresholds(mut self, [tier_0, tier_1, tier_2, tier_3]: [u32; 4]) -> Self {
-        self.spending_policy = SpendingPolicyConfig::new(
-            self.spending_policy.spending_window(),
-            self.spending_policy.amount_limits(),
-            TierThresholds::new(tier_0, tier_1, tier_2, tier_3),
-        );
-        self
-    }
-
-    pub fn with_oracle_config(mut self, [prefix, suffix]: [Felt; 2]) -> Self {
-        self.oracle_reader = OracleReaderConfig::new(
-            OracleId::new(prefix, suffix),
-            self.oracle_reader.get_price_proc_root(),
-        );
-        self
-    }
-
-    pub fn with_get_price_proc_root(mut self, get_price_proc_root: Word) -> Self {
-        self.oracle_reader =
-            OracleReaderConfig::new(self.oracle_reader.oracle_id(), get_price_proc_root);
-        self
-    }
-
     pub fn approvers(&self) -> &[(PublicKeyCommitment, AuthScheme)] {
         &self.approvers
     }
@@ -878,9 +824,12 @@ mod tests {
 
         let config = AuthMultisigSmartConfig::new(approvers, 1)
             .expect("config should be valid")
-            .with_spending_window(100)
-            .with_timelock_controller(30, 3)
-            .with_amount_limits([u32::MAX as u64 + 1, 0, 0, 0]);
+            .with_spending(SpendingPolicyConfig::new(
+                100,
+                AmountLimits::new(u32::MAX as u64 + 1, 0, 0, 0),
+                TierThresholds::new(1, 2, 2, 2),
+            ))
+            .with_timelock_controller_config(TimelockControllerConfig::new(30, 3));
         let result = AuthMultisigSmart::new(config);
         assert!(result.unwrap_err().to_string().contains("amount limits must fit into u32"));
 
@@ -926,30 +875,36 @@ mod tests {
         let result = AuthMultisigSmart::new(
             AuthMultisigSmartConfig::new(approvers.clone(), 2)
                 .expect("config should be valid")
-                .with_spending_window(100)
-                .with_timelock_controller(30, 3)
-                .with_amount_limits([500, 1000, 2000, 1500])
-                .with_tier_thresholds([0, 2, 2, 2]),
+                .with_spending(SpendingPolicyConfig::new(
+                    100,
+                    AmountLimits::new(500, 1000, 2000, 1500),
+                    TierThresholds::new(0, 2, 2, 2),
+                ))
+                .with_timelock_controller_config(TimelockControllerConfig::new(30, 3)),
         );
         assert!(result.unwrap_err().to_string().contains("tier_0 must be > 0"));
 
         let result = AuthMultisigSmart::new(
             AuthMultisigSmartConfig::new(approvers.clone(), 2)
                 .expect("config should be valid")
-                .with_spending_window(100)
-                .with_timelock_controller(30, 3)
-                .with_amount_limits([500, 1000, 2000, 1500])
-                .with_tier_thresholds([1, 2, 1, 2]),
+                .with_spending(SpendingPolicyConfig::new(
+                    100,
+                    AmountLimits::new(500, 1000, 2000, 1500),
+                    TierThresholds::new(1, 2, 1, 2),
+                ))
+                .with_timelock_controller_config(TimelockControllerConfig::new(30, 3)),
         );
         assert!(result.unwrap_err().to_string().contains("tier config is invalid"));
 
         let result = AuthMultisigSmart::new(
             AuthMultisigSmartConfig::new(approvers, 2)
                 .expect("config should be valid")
-                .with_spending_window(100)
-                .with_timelock_controller(30, 3)
-                .with_amount_limits([500, 1000, 2000, 1500])
-                .with_tier_thresholds([1, 2, 2, 3]),
+                .with_spending(SpendingPolicyConfig::new(
+                    100,
+                    AmountLimits::new(500, 1000, 2000, 1500),
+                    TierThresholds::new(1, 2, 2, 3),
+                ))
+                .with_timelock_controller_config(TimelockControllerConfig::new(30, 3)),
         );
         assert!(result.unwrap_err().to_string().contains("tier_3 must be <= num_approvers"));
     }

@@ -6,7 +6,9 @@ use miden_protocol::Word;
 use miden_protocol::account::AccountComponent;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, PublicKeyCommitment};
 use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
-use miden_standards::account::auth::multisig_smart::ProcedurePolicy;
+use miden_standards::account::auth::multisig_smart::{
+    OracleReaderConfig, ProcedurePolicy, SpendingPolicyConfig, TimelockControllerConfig,
+};
 use miden_standards::account::auth::{
     AuthMultisig,
     AuthMultisigConfig,
@@ -54,13 +56,9 @@ pub enum Auth {
         threshold: u32,
         approvers: Vec<(PublicKeyCommitment, AuthScheme)>,
         proc_policy_map: Vec<(Word, ProcedurePolicy)>,
-        spending_window: u32,
-        min_delay: u32,
-        propose_expiration_delta: u16,
-        amount_limits: [u64; 4],
-        tier_thresholds: [u32; 4],
-        oracle_id: [miden_protocol::Felt; 2],
-        get_price_proc_root: Word,
+        spending_policy: SpendingPolicyConfig,
+        timelock: TimelockControllerConfig,
+        oracle_reader: OracleReaderConfig,
     },
 
     /// Creates a secret key for the account, and creates a [BasicAuthenticator] used to
@@ -132,23 +130,16 @@ impl Auth {
                 threshold,
                 approvers,
                 proc_policy_map,
-                spending_window,
-                min_delay,
-                propose_expiration_delta,
-                amount_limits,
-                tier_thresholds,
-                oracle_id,
-                get_price_proc_root,
+                spending_policy,
+                timelock,
+                oracle_reader,
             } => {
                 let config = AuthMultisigSmartConfig::new(approvers.clone(), *threshold)
                     .and_then(|cfg| cfg.with_proc_policies(proc_policy_map.clone()))
                     .expect("invalid multisig smart config")
-                    .with_spending_window(*spending_window)
-                    .with_timelock_controller(*min_delay, *propose_expiration_delta)
-                    .with_amount_limits(*amount_limits)
-                    .with_tier_thresholds(*tier_thresholds)
-                    .with_oracle_config(*oracle_id)
-                    .with_get_price_proc_root(*get_price_proc_root);
+                    .with_spending(*spending_policy)
+                    .with_timelock_controller_config(*timelock)
+                    .with_oracle_reader(*oracle_reader);
 
                 let component = AuthMultisigSmart::new(config)
                     .expect("multisig smart component creation failed")
