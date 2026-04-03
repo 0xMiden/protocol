@@ -3,6 +3,7 @@ use miden::protocol::native_account
 use miden::protocol::auth::AUTH_UNAUTHORIZED_EVENT
 use miden::standards::auth
 use miden::standards::auth::multisig
+use miden::standards::auth::signature
 use miden::standards::auth::multisig_smart::spending_limits
 use miden::standards::auth::multisig_smart::timelock_controller
 use miden::standards::auth::tx_policy
@@ -29,6 +30,10 @@ const PROCEDURE_POLICIES_SLOT = word("miden::standards::auth::multisig_smart::pr
 
 # ERRORS
 # =================================================================================================
+
+const ERR_MALFORMED_MULTISIG_CONFIG = "number of approvers must be equal to or greater than threshold"
+
+const ERR_ZERO_IN_MULTISIG_CONFIG = "number of approvers or threshold must not be zero"
 
 const ERR_PROC_POLICY_INVALID_LANE = "called procedures do not support the selected execution lane"
 
@@ -602,30 +607,105 @@ end
 #! - any existing smart procedure policy becomes unreachable under the new number of approvers.
 #! - any provided scheme identifier word is malformed.
 #!
+#! Locals:
+#! 0: new_num_of_approvers
+#! 1: init_num_of_approvers
+#!
 #! Invocation: call
-@locals(5)
+@locals(2)
 pub proc update_signers_and_threshold(multisig_config_hash: word)
-    exec.multisig::load_signers_and_thresholds_config
+    adv.push_mapval
+    # => [MULTISIG_CONFIG_HASH, pad(12)]
+
+    adv_loadw
+    # => [MULTISIG_CONFIG, pad(12)]
+
+    dup.1 loc_store.0
+    # => [MULTISIG_CONFIG, pad(12)]
+
+    dup dup.2
+    # => [num_approvers, threshold, MULTISIG_CONFIG, pad(12)]
+
+    u32assert2.err=ERR_MALFORMED_MULTISIG_CONFIG
+    u32gt assertz.err=ERR_MALFORMED_MULTISIG_CONFIG
+    # => [MULTISIG_CONFIG, pad(12)]
+
+    dup dup.2
+    # => [num_approvers, threshold, MULTISIG_CONFIG, pad(12)]
+
+    eq.0 assertz.err=ERR_ZERO_IN_MULTISIG_CONFIG
+    eq.0 assertz.err=ERR_ZERO_IN_MULTISIG_CONFIG
+    # => [MULTISIG_CONFIG, pad(12)]
+
+    loc_load.0
     # => [num_approvers, MULTISIG_CONFIG, pad(12)]
 
-    loc_store.4
-    # => [MULTISIG_CONFIG, pad(12)]
-
-    loc_storew_le.0
-    dropw
-    # => [pad(12)]
-
-    loc_load.4
-    # => [num_approvers, pad(12)]
-
     exec.assert_proc_policies_lte_num_approvers
-    # => [pad(12)]
-
-    loc_loadw_le.0
     # => [MULTISIG_CONFIG, pad(12)]
 
-    exec.multisig::complete_signers_and_threshold_update
-    # => []
+    push.THRESHOLD_CONFIG_SLOT[0..2]
+    # => [config_slot_suffix, config_slot_prefix, MULTISIG_CONFIG, pad(12)]
+
+    exec.native_account::set_item
+    # => [OLD_THRESHOLD_CONFIG, pad(12)]
+
+    drop loc_store.1 drop drop
+    # => [pad(12)]
+
+    loc_load.0
+    # => [num_approvers]
+
+    dup neq.0
+    while.true
+        sub.1
+        # => [i-1, pad(12)]
+
+        dup exec.signature::create_approver_map_key
+        # => [APPROVER_MAP_KEY, i-1, pad(12)]
+
+        padw adv_loadw
+        # => [PUB_KEY, APPROVER_MAP_KEY, i-1, pad(12)]
+
+        swapw
+        # => [APPROVER_MAP_KEY, PUB_KEY, i-1, pad(12)]
+
+        push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
+        # => [pub_key_slot_suffix, pub_key_slot_prefix, APPROVER_MAP_KEY, PUB_KEY, i-1, pad(12)]
+
+        exec.native_account::set_map_item
+        # => [OLD_VALUE, i-1, pad(12)]
+
+        adv_loadw
+        # => [SCHEME_ID_WORD, i-1, pad(12)]
+
+        exec.auth::signature::assert_supported_scheme_word
+        # => [SCHEME_ID_WORD, i-1, pad(12)]
+
+        dup.4 exec.signature::create_approver_map_key
+        # => [APPROVER_MAP_KEY, SCHEME_ID_WORD, i-1, pad(12)]
+
+        push.APPROVER_SCHEME_ID_SLOT[0..2]
+        # => [scheme_id_slot_id_suffix, scheme_id_slot_id_prefix, APPROVER_MAP_KEY, SCHEME_ID_WORD, i-1, pad(12)]
+
+        exec.native_account::set_map_item
+        # => [OLD_VALUE, i-1, pad(12)]
+
+        dropw
+        # => [i-1, pad(12)]
+
+        dup neq.0
+        # => [is_non_zero, i-1, pad(12)]
+    end
+    # => [pad(13)]
+
+    drop
+    # => [pad(12)]
+
+    loc_load.0 loc_load.1
+    # => [init_num_of_approvers, new_num_of_approvers, pad(12)]
+
+    exec.multisig::cleanup_pubkey_and_scheme_id_mapping
+    # => [pad(12)]
 end
 
 #! Authenticate a transaction using multisig smart-policy rules.
