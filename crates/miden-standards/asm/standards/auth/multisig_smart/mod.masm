@@ -37,6 +37,8 @@ const ERR_ZERO_IN_MULTISIG_CONFIG = "number of approvers or threshold must not b
 
 const ERR_PROC_POLICY_INVALID_LANE = "called procedures do not support the selected execution lane"
 
+const ERR_EXECUTE_PATH_MISMATCH = "execute path must match delay requirement"
+
 const ERR_DELAYED_THRESHOLD_EXCEEDS_IMMEDIATE = "delayed threshold cannot exceed immediate threshold"
 
 const ERR_NOTE_RESTRICTIONS_REQUIRE_THRESHOLD = "procedure policy note restrictions require an immediate or delayed threshold"
@@ -814,7 +816,13 @@ pub proc auth_tx(salt: word)
     loc_load.3
     # => [policy_requires_delay, is_execute_path, TX_SUMMARY_COMMITMENT]
 
-    exec.timelock_controller::assert_execute_path_for_delay
+    not
+    # => [policy_has_immediate_lane, is_execute_path, TX_SUMMARY_COMMITMENT]
+
+    or
+    # => [is_valid_execute_path, TX_SUMMARY_COMMITMENT]
+
+    assert.err=ERR_EXECUTE_PATH_MISMATCH
     # => [TX_SUMMARY_COMMITMENT]
 
     # ------ Finalize Tx Proposals ------

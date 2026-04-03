@@ -341,21 +341,6 @@ proc assert_unlock_reached
     u32lt assertz.err=ERR_TX_STILL_TIMELOCKED
     # => []
 end
-
-
-
-#! Asserts that delayed-only procedure policies are executed exclusively via the execute lane.
-#!
-#! Inputs:  [policy_requires_delay, is_execute_path]
-#! Outputs: []
-pub proc assert_execute_path_for_delay(policy_requires_delay: u32, is_execute_path: u32)
-    if.true
-        assert.err=ERR_EXECUTE_PATH_MISMATCH
-    else
-        drop
-    end
-end
-
 #! Enforces that `TX_HASH` is proposed and that its unlock timestamp has been reached.
 #!
 #! Inputs:  [TX_HASH]
