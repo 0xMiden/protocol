@@ -7,7 +7,10 @@ use miden_protocol::account::AccountComponent;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, PublicKeyCommitment};
 use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
 use miden_standards::account::auth::multisig_smart::{
-    OracleReaderConfig, ProcedurePolicy, SpendingPolicyConfig, TimelockControllerConfig,
+    OracleReaderConfig,
+    ProcedurePolicy,
+    SpendingPolicyConfig,
+    TimelockControllerConfig,
 };
 use miden_standards::account::auth::{
     AuthMultisig,
