@@ -21,7 +21,9 @@ const PENDING_EXECUTE_SLOT = word("miden::standards::auth::multisig_smart::pendi
 # =================================================================================================
 
 const ERR_U32 = "value is not a u32"
+const ERR_MIN_DELAY_NOT_U32 = "min_delay must be u32"
 const ERR_MIN_DELAY_ZERO = "min_delay must be non-zero"
+const ERR_PROPOSE_EXPIRATION_DELTA_NOT_U32 = "propose_expiration_delta must be u32"
 const ERR_PROPOSE_EXPIRATION_DELTA_ZERO = "propose_expiration_delta must be non-zero"
 const ERR_TX_ALREADY_PROPOSED = "tx already proposed"
 const ERR_TX_NOT_PROPOSED = "tx not proposed"
@@ -30,9 +32,7 @@ const ERR_PENDING_ALREADY_SET = "pending action already set"
 const ERR_PROPOSE_ZERO_SIGNATURES = "num_verified_signatures cannot be zero"
 const ERR_CANCEL_INSUFFICIENT_SIGNATURES = "insufficient signatures for cancel"
 const ERR_EXECUTE_PATH_MISMATCH = "execute path must match delay requirement"
-
 const ERR_EXPIRATION_DELTA_ZERO = "expiration_delta must be non-zero"
-
 const ERR_TX_EXPIRATION_DELTA_NOT_SET = "tx expiration delta must be set"
 
 #! High-impact action.
@@ -43,23 +43,26 @@ const ERR_TX_EXPIRATION_DELTA_NOT_SET = "tx expiration delta must be set"
 #! Outputs: []
 #!
 #! Side effects:
-#!   - Writes TIMELOCK_CONTROLLER_SLOT.
-#! 0: min_delay
-#! 1: propose_expiration_delta
-@locals(2)
+#!   - Writes TIMELOCK_CONTROLLER_SLOT with word
+#!     `[min_delay, propose_expiration_delta, 0, 0]` (see `get_timelock_controller`).
+#!
+#! Panics if:
+#! - `min_delay` is not a valid `u32` field element (`ERR_MIN_DELAY_NOT_U32`).
+#! - `propose_expiration_delta` is not a valid `u32` field element
+#!   (`ERR_PROPOSE_EXPIRATION_DELTA_NOT_U32`).
+#! - `min_delay` is zero (`ERR_MIN_DELAY_ZERO`).
+#! - `propose_expiration_delta` is zero (`ERR_PROPOSE_EXPIRATION_DELTA_ZERO`).
+#!
+#! Invocation: exec
 pub proc update_timelock_controller
-    u32assert.err=ERR_U32
+    u32assert.err=ERR_MIN_DELAY_NOT_U32
     dup eq.0 assertz.err=ERR_MIN_DELAY_ZERO
-    loc_store.0
-    # => [propose_expiration_delta]
+    # => [min_delay, propose_expiration_delta]
 
-    u32assert.err=ERR_U32
+    swap u32assert.err=ERR_PROPOSE_EXPIRATION_DELTA_NOT_U32
     dup eq.0 assertz.err=ERR_PROPOSE_EXPIRATION_DELTA_ZERO
-    loc_store.1
-    # => []
+    # => [propose_expiration_delta, min_delay]
 
-    loc_load.0
-    loc_load.1
     push.0 push.0
     # => [0, 0, propose_expiration_delta, min_delay]
 
@@ -72,9 +75,6 @@ pub proc update_timelock_controller
     dropw
     # => []
 end
-
-# TIMELOCK CONTROLLER HELPERS
-# =================================================================================================
 
 #! Loads the timelock controller configuration.
 #!
@@ -99,42 +99,34 @@ pub proc is_execute_path
     eq.0
 end
 
+#! Returns `min_delay` from [`TIMELOCK_CONTROLLER_SLOT`]
+#!
 #! Inputs:  []
 #! Outputs: [min_delay]
+#!
+#! Invocation: exec
 proc get_min_delay
     exec.get_timelock_controller
     # => [min_delay, propose_expiration_delta, 0, 0]
 
-    movdn.3
-    # => [propose_expiration_delta, 0, 0, min_delay]
-
-    drop drop drop
-    # => [min_delay]
-
-    dup eq.0 assertz.err=ERR_MIN_DELAY_ZERO
+    movdn.3 drop drop drop
     # => [min_delay]
 end
 
+#! Returns `propose_expiration_delta` from [`TIMELOCK_CONTROLLER_SLOT`]
+#!
+#! Proposal transactions must carry a non-zero expiration delta. This helper is used
+#! when applying that delta to the current transaction (`apply_propose_expiration_delta`).
+#!
 #! Inputs:  []
 #! Outputs: [propose_expiration_delta]
-@locals(2)
+#!
+#! Invocation: exec
 proc get_propose_expiration_delta
     exec.get_timelock_controller
     # => [min_delay, propose_expiration_delta, 0, 0]
 
-    loc_store.0
-    # => [propose_expiration_delta, 0, 0]
-
-    loc_store.1
-    # => [0, 0]
-
-    drop drop
-    # => []
-
-    loc_load.1
-    # => [propose_expiration_delta]
-
-    dup eq.0 assertz.err=ERR_PROPOSE_EXPIRATION_DELTA_ZERO
+    drop movdn.2 drop drop
     # => [propose_expiration_delta]
 end
 
