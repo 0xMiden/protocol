@@ -1,0 +1,189 @@
+# miden::standards::utils::pausable
+#
+# Minimal pause flag storage and helpers. Pause/unpause procedures do not perform authorization.
+# Compose with ownable2step or role-based access control in a higher layer.
+#
+# Asset callbacks enforce "not paused" when the issuing faucet has callbacks enabled on the asset.
+
+use miden::core::word
+use miden::protocol::active_account
+use miden::protocol::native_account
+
+# CONSTANTS
+# ================================================================================================
+
+# The slot where the paused flag is stored as a single word.
+# Unpaused: [0, 0, 0, 0]. Paused: [1, 0, 0, 0].
+const IS_PAUSED_CONFIG_SLOT = word("miden::standards::utils::pausable::is_paused_config")
+
+const PAUSED_WORD = [1, 0, 0, 0]
+
+const UNPAUSED_WORD = [0, 0, 0, 0]
+
+# ERRORS
+# ================================================================================================
+
+const ERR_PAUSABLE_ENFORCED_PAUSE = "the contract is paused"
+
+const ERR_PAUSABLE_EXPECTED_PAUSE = "the contract is not paused"
+
+# PUBLIC INTERFACE
+# ================================================================================================
+
+#! Sets the paused flag. Fails if already paused.
+#!
+#! This procedure does not verify the caller. Wrap with access control in the account component
+#! composition if only privileged accounts should pause.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [pad(16)]
+#!
+#! Invocation: call
+pub proc pause
+    exec.assert_not_paused
+    # => [pad(16)]
+
+    push.PAUSED_WORD
+    # => [1, 0, 0, 0, pad(16)]
+
+    push.IS_PAUSED_CONFIG_SLOT[0..2]
+    # => [slot_suffix, slot_prefix, 1, 0, 0, 0, pad(16)]
+
+    exec.native_account::set_item
+    # => [OLD_WORD, pad(16)]
+
+    dropw
+    # => [pad(16)]
+end
+
+#! Clears the paused flag. Fails if not paused.
+#!
+#! This procedure does not verify the caller.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [pad(16)]
+#!
+#! Invocation: call
+pub proc unpause
+    exec.assert_paused
+    # => [pad(16)]
+
+    push.UNPAUSED_WORD
+    # => [0, 0, 0, 0, pad(16)]
+
+    push.IS_PAUSED_CONFIG_SLOT[0..2]
+    # => [slot_suffix, slot_prefix, 0, 0, 0, 0, pad(16)]
+
+    exec.native_account::set_item
+    # => [OLD_WORD, pad(16)]
+
+    dropw
+    # => [pad(16)]
+end
+
+#! Requires the contract to be unpaused (storage word is the zero word).
+#!
+#! Reads [`IS_PAUSED_CONFIG_SLOT`] on the active account via [`load_is_paused_word`], then uses
+#! [`word::eqz`]. If the stored word is non-zero (paused), panics with
+#! [`ERR_PAUSABLE_ENFORCED_PAUSE`].
+#!
+#! Use from other modules or transaction scripts to guard logic that must not run while paused.
+#! In asset callback foreign context, the active account is the issuing faucet.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Panics if:
+#! - the paused-state word is not the zero word.
+#!
+#! Invocation: exec
+pub proc assert_not_paused
+    exec.load_is_paused_word
+    # => [w0, w1, w2, w3]
+
+    exec.word::eqz
+    # => [is_unpaused]
+
+    assert.err=ERR_PAUSABLE_ENFORCED_PAUSE
+    # => []
+end
+
+#! Requires the contract to be paused (storage word is not the zero word).
+#!
+#! Reads [`IS_PAUSED_CONFIG_SLOT`] on the active account, then [`word::eqz`] and inverts. If the
+#! stored word is zero (unpaused), panics with [`ERR_PAUSABLE_EXPECTED_PAUSE`].
+#!
+#! Typical use: guard `unpause` so clearing the flag only happens from a paused state.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Panics if:
+#! - the paused-state word is the zero word.
+#!
+#! Invocation: exec
+pub proc assert_paused
+    exec.load_is_paused_word
+    # => [w0, w1, w2, w3]
+
+    exec.word::eqz not
+    # => [is_paused]
+
+    assert.err=ERR_PAUSABLE_EXPECTED_PAUSE
+    # => []
+end
+
+# CALLBACKS
+# ================================================================================================
+
+#! Callback when a callbacks-enabled asset is added to an account vault.
+#!
+#! Panics if this faucet account is paused (reads `IS_PAUSED_CONFIG_SLOT` on the active account,
+#! which is the issuing faucet in the callback foreign context).
+#!
+#! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
+#! Outputs: [ASSET_VALUE, pad(12)]
+#!
+#! Invocation: call
+pub proc on_before_asset_added_to_account
+    exec.assert_not_paused
+    # => [ASSET_KEY, ASSET_VALUE, pad(8)]
+
+    dropw
+    # => [ASSET_VALUE, pad(12)]
+end
+
+#! Callback when a callbacks-enabled asset is added to an output note.
+#!
+#! Panics if this faucet account is paused.
+#!
+#! Inputs:  [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
+#! Outputs: [ASSET_VALUE, pad(12)]
+#!
+#! Invocation: call
+pub proc on_before_asset_added_to_note
+    exec.assert_not_paused
+    # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
+
+    dropw
+    # => [ASSET_VALUE, note_idx, pad(7)]
+end
+
+# HELPER PROCEDURES
+# ================================================================================================
+
+#! Loads the paused-state word from storage.
+#!
+#! Inputs:  []
+#! Outputs: [w0, w1, w2, w3]
+#!
+#! Where:
+#! - w0..w3 are the four felts of the value stored at [`IS_PAUSED_CONFIG_SLOT`] on the active
+#!   account.
+#!
+#! Invocation: exec
+proc load_is_paused_word
+    push.IS_PAUSED_CONFIG_SLOT[0..2]
+    exec.active_account::get_item
+    # => [w0, w1, w2, w3]
+end

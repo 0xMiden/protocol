@@ -97,6 +97,15 @@ static NETWORK_FUNGIBLE_FAUCET_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     Library::read_from_bytes(bytes).expect("Shipped Network Fungible Faucet library is well-formed")
 });
 
+// Initialize the Pausable library only once.
+static PAUSABLE_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+    let bytes = include_bytes!(concat!(
+        env!("OUT_DIR"),
+        "/assets/account_components/utils/pausable.masl"
+    ));
+    Library::read_from_bytes(bytes).expect("Shipped Pausable library is well-formed")
+});
+
 // Initialize the Mint Policy Owner Controlled library only once.
 static MINT_POLICY_OWNER_CONTROLLED_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     let bytes = include_bytes!(concat!(
@@ -138,6 +147,11 @@ pub fn basic_fungible_faucet_library() -> Library {
 /// Returns the Network Fungible Faucet Library.
 pub fn network_fungible_faucet_library() -> Library {
     NETWORK_FUNGIBLE_FAUCET_LIBRARY.clone()
+}
+
+/// Returns the Pausable component library.
+pub fn pausable_library() -> Library {
+    PAUSABLE_LIBRARY.clone()
 }
 
 /// Returns the Mint Policy Owner Controlled Library.

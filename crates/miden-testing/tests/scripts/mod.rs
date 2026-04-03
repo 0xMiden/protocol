@@ -1,6 +1,7 @@
 mod faucet;
 mod fee;
 mod ownable2step;
+mod pausable;
 mod p2id;
 mod p2ide;
 mod send_note;
