@@ -231,8 +231,7 @@ impl AccountCode {
 
 impl PartialEq for AccountCode {
     fn eq(&self, other: &Self) -> bool {
-        // TODO: consider checking equality based only on the set of procedures
-        self.mast == other.mast && self.procedures == other.procedures
+        self.commitment == other.commitment && self.procedures == other.procedures
     }
 }
 
