@@ -157,8 +157,7 @@ impl NonFungibleAsset {
 
 impl fmt::Display for NonFungibleAsset {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // TODO: Replace with hex representation?
-        write!(f, "{self:?}")
+        write!(f, "NonFungibleAsset {{ issuer: {}, value: {} }}", self.faucet_id, self.value)
     }
 }
 

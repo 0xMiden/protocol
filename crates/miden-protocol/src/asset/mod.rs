@@ -214,6 +214,15 @@ impl Asset {
     }
 }
 
+impl core::fmt::Display for Asset {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Asset::Fungible(asset) => asset.fmt(f),
+            Asset::NonFungible(asset) => asset.fmt(f),
+        }
+    }
+}
+
 // SERIALIZATION
 // ================================================================================================
 
