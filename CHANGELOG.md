@@ -43,7 +43,7 @@
 - Added `DEFAULT_TAG` constant to `miden::standards::note_tag` MASM module ([#2482](https://github.com/0xMiden/miden-base/pull/2482)).
 - Added `NoteExecutionHint` variant constants (`NONE`, `ALWAYS`, `AFTER_BLOCK`, `ON_BLOCK_SLOT`) to `miden::standards::note::execution_hint` MASM module ([#2493](https://github.com/0xMiden/miden-base/pull/2493)).
 - Added `Package` support in `MockChainBuilder` & `NoteScript` ([#2502](https://github.com/0xMiden/protocol/pull/2502)).
-- Added PSM authentication procedures and integrated them into `AuthMultisig` ([#2527](https://github.com/0xMiden/protocol/pull/2527)).
+- Added Guardian authentication procedures and integrated them into `AuthMultisig` ([#2527](https://github.com/0xMiden/protocol/pull/2527)).
 - Added `CodeBuilder::with_warnings_as_errors()` to promote assembler warning diagnostics to errors ([#2558](https://github.com/0xMiden/protocol/pull/2558)).
 - Added `MintPolicyConfig` for flexible minting policy enforcement ([#2559](https://github.com/0xMiden/protocol/pull/2559))
 - Added `MockChain::add_pending_batch()` to allow submitting user batches directly ([#2565](https://github.com/0xMiden/protocol/pull/2565)).

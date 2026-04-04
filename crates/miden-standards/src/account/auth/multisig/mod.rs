@@ -133,7 +133,7 @@ impl AuthMultisigConfig {
 ///
 /// It enforces a threshold of approver signatures for every transaction, with optional
 /// per-procedure threshold overrides. Non-uniform thresholds (especially a threshold of one)
-/// should be used with caution for private multisig accounts, without Private State Manager (PSM),
+/// should be used with caution for private multisig accounts, without Guardian,
 /// a single approver may advance state and withhold updates from other approvers, effectively
 /// locking them out.
 ///
