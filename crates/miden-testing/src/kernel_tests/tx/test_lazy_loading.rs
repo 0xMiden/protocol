@@ -5,7 +5,7 @@
 use miden_protocol::account::{AccountId, AccountStorage, StorageMapKey, StorageSlotDelta};
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::testing::account_id::{
-    ACCOUNT_ID_NATIVE_ASSET_FAUCET,
+    ACCOUNT_ID_PUBLIC_NATIVE_ASSET_FAUCET,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2,
 };
@@ -162,7 +162,7 @@ async fn removing_fungible_assets_with_lazy_loading_succeeds() -> anyhow::Result
 #[tokio::test]
 async fn loading_fee_asset_succeeds() -> anyhow::Result<()> {
     let mut builder =
-        MockChain::builder().native_asset_id(ACCOUNT_ID_NATIVE_ASSET_FAUCET.try_into()?);
+        MockChain::builder().native_asset_id(ACCOUNT_ID_PUBLIC_NATIVE_ASSET_FAUCET.try_into()?);
     let account = builder.add_existing_mock_account_with_assets(
         Auth::IncrNonce,
         [

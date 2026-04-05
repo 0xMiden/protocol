@@ -43,7 +43,7 @@ use miden_protocol::block::{
 use miden_protocol::crypto::merkle::smt::Smt;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{Note, NoteAttachment, NoteDetails, NoteType};
-use miden_protocol::testing::account_id::ACCOUNT_ID_NATIVE_ASSET_FAUCET;
+use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_NATIVE_ASSET_FAUCET;
 use miden_protocol::testing::random_secret_key::random_secret_key;
 use miden_protocol::transaction::{OrderedTransactionHeaders, RawOutputNote, TransactionKernel};
 use miden_protocol::{Felt, MAX_OUTPUT_NOTES_PER_BATCH, Word};
@@ -123,13 +123,13 @@ impl MockChainBuilder {
 
     /// Initializes a new mock chain builder with an empty state.
     ///
-    /// By default, the `native_asset_id` is set to [`ACCOUNT_ID_NATIVE_ASSET_FAUCET`] and can be
+    /// By default, the `native_asset_id` is set to [`ACCOUNT_ID_PUBLIC_NATIVE_ASSET_FAUCET`] and can be
     /// overwritten using [`Self::native_asset_id`].
     ///
     /// The `verification_base_fee` is initialized to 0 which means no fees are required by default.
     pub fn new() -> Self {
         let native_asset_id =
-            ACCOUNT_ID_NATIVE_ASSET_FAUCET.try_into().expect("account ID should be valid");
+            ACCOUNT_ID_PUBLIC_NATIVE_ASSET_FAUCET.try_into().expect("account ID should be valid");
 
         Self {
             accounts: BTreeMap::new(),
@@ -654,7 +654,7 @@ impl MockChainBuilder {
     /// Creates a new P2ID note with the provided amount of the native fee asset of the chain.
     ///
     /// The native asset ID of the asset can be set using [`Self::native_asset_id`]. By default it
-    /// is [`ACCOUNT_ID_NATIVE_ASSET_FAUCET`].
+    /// is [`ACCOUNT_ID_PUBLIC_NATIVE_ASSET_FAUCET`].
     ///
     /// In the created [`MockChain`], the note will be immediately spendable by `target_account_id`.
     pub fn add_p2id_note_with_fee(

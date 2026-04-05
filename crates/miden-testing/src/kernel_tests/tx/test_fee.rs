@@ -4,7 +4,7 @@ use miden_crypto::rand::test_utils::rand_value;
 use miden_protocol::account::{AccountId, StorageMap, StorageMapKey, StorageSlot, StorageSlotName};
 use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset};
 use miden_protocol::note::NoteType;
-use miden_protocol::testing::account_id::ACCOUNT_ID_NATIVE_ASSET_FAUCET;
+use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_NATIVE_ASSET_FAUCET;
 use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote};
 use miden_protocol::{self, Felt, Word};
 use miden_tx::TransactionExecutorError;
@@ -57,7 +57,7 @@ async fn create_account_with_fees() -> anyhow::Result<()> {
 async fn tx_host_aborts_if_account_balance_does_not_cover_fee() -> anyhow::Result<()> {
     let account_amount = 100;
     let note_amount = 100;
-    let native_asset_id = AccountId::try_from(ACCOUNT_ID_NATIVE_ASSET_FAUCET)?;
+    let native_asset_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_NATIVE_ASSET_FAUCET)?;
 
     let mut builder =
         MockChain::builder().native_asset_id(native_asset_id).verification_base_fee(50);
@@ -125,7 +125,7 @@ async fn create_account_no_storage_no_fees() -> anyhow::Result<ExecutedTransacti
 
 /// Returns a transaction that mutates an account with storage and consumes a note.
 async fn mutate_account_with_storage() -> anyhow::Result<ExecutedTransaction> {
-    let native_asset_id = AccountId::try_from(ACCOUNT_ID_NATIVE_ASSET_FAUCET)?;
+    let native_asset_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_NATIVE_ASSET_FAUCET)?;
     let native_asset = FungibleAsset::new(native_asset_id, 10_000)?;
     let mut builder =
         MockChain::builder().native_asset_id(native_asset_id).verification_base_fee(100);
@@ -157,7 +157,7 @@ async fn mutate_account_with_storage() -> anyhow::Result<ExecutedTransaction> {
 
 /// Returns a transaction that consumes two notes and creates two notes.
 async fn create_output_notes() -> anyhow::Result<ExecutedTransaction> {
-    let native_asset_id = AccountId::try_from(ACCOUNT_ID_NATIVE_ASSET_FAUCET)?;
+    let native_asset_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_NATIVE_ASSET_FAUCET)?;
     let native_asset = FungibleAsset::new(native_asset_id, 10_000)?;
     let mut builder =
         MockChain::builder().native_asset_id(native_asset_id).verification_base_fee(20);

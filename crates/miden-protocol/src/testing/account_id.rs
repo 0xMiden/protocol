@@ -59,7 +59,7 @@ pub const ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET: u128 =
     account_id(AccountType::FungibleFaucet, AccountStorageMode::Private, 0xfabb_cddd);
 // FUNGIBLE TOKENS - PUBLIC
 /// A native asset faucet ID for use in testing scenarios.
-pub const ACCOUNT_ID_NATIVE_ASSET_FAUCET: u128 =
+pub const ACCOUNT_ID_PUBLIC_NATIVE_ASSET_FAUCET: u128 =
     account_id(AccountType::FungibleFaucet, AccountStorageMode::Public, 0xabcd_acde);
 pub const ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET: u128 =
     account_id(AccountType::FungibleFaucet, AccountStorageMode::Public, 0xaabc_bcde);
