@@ -73,6 +73,7 @@ const MINT_NOTE_NUM_STORAGE_ITEMS = 18
 
 # P2ID attachment constants (the P2ID note created by the faucet has no attachment)
 const P2ID_ATTACHMENT_SCHEME_NONE = 0
+const LEAF_TYPE_ASSET_TRANSFER = 0
 
 # Global memory pointers
 # -------------------------------------------------------------------------------------------------
@@ -112,6 +113,7 @@ const CLAIM_LEAF_INDEX_MEM_ADDR = 900
 const CLAIM_SOURCE_BRIDGE_NETWORK_MEM_ADDR = 901
 
 # Memory addresses for leaf data fields (derived from leaf data layout at CLAIM_LEAF_DATA_START_PTR=536)
+const LEAF_TYPE_ADDRESS = 536
 const ORIGIN_TOKEN_ADDRESS_0 = 538
 const ORIGIN_TOKEN_ADDRESS_1 = 539
 const ORIGIN_TOKEN_ADDRESS_2 = 540
@@ -214,6 +216,9 @@ pub proc claim
     # => [PROOF_DATA_KEY, pad(12)]
 
     swapw mem_loadw_be.CLAIM_LEAF_DATA_KEY_MEM_ADDR
+
+    # Validate that this is an asset claim (leafType == 0)
+    exec.validate_leaf_type
     # => [LEAF_DATA_KEY, PROOF_DATA_KEY, pad(8)]
 
     exec.verify_leaf_bridge
@@ -242,6 +247,19 @@ pub proc claim
 end
 
 # HELPER PROCEDURES
+# =================================================================================================
+
+#! Validates that the leaf type is 0 (asset claim, not message).
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Panics if leafType != 0
+#! Invocation: exec
+proc validate_leaf_type
+    mem_load.LEAF_TYPE_ADDRESS
+    assert.eq.LEAF_TYPE_ASSET_TRANSFER
+end
 # =================================================================================================
 
 #! Computes the leaf value and verifies it against the AggLayer bridge state.

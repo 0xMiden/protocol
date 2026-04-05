@@ -3,6 +3,7 @@
 ## v0.15.0 (TBD)
 
 ### Changes
+- Added validation of leaf type on CLAIM note processing to prevent message leaves from being processed as asset claims ([#2699](https://github.com/0xMiden/protocol/pull/2699)).
 
 - [BREAKING] Renamed `ProvenBatch::new` to `new_unchecked` ([#2687](https://github.com/0xMiden/miden-base/issues/2687)).
 - Added shared `ProcedurePolicy` for AuthMultisig ([#2670](https://github.com/0xMiden/protocol/pull/2670)).
