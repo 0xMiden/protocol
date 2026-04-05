@@ -38,6 +38,10 @@ runs:
     - name: Install Rust toolchain
       uses: dtolnay/rust-toolchain@stable
 
+    - name: Install Rust 1.91 for cargo-msrv
+      shell: bash
+      run: rustup toolchain install 1.91
+
     - name: Cache cargo registry and git index
       uses: actions/cache@v4
       with:
@@ -60,12 +64,15 @@ runs:
 
     - name: Install cargo-msrv
       shell: bash
+      env:
+        RUSTUP_TOOLCHAIN: "1.91"
       run: cargo binstall --no-confirm --force cargo-msrv
 
-    # Keep your existing MSRV check
     # PATH export required for check-msrv.sh subprocess (see PR #2234)
     - name: Check MSRV
       shell: bash
+      env:
+        RUSTUP_TOOLCHAIN: "1.91"
       run: |
         export PATH="$HOME/.cargo/bin:$PATH"
         chmod +x scripts/check-msrv.sh
