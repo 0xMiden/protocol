@@ -1,4 +1,5 @@
 use alloc::string::String;
+use alloc::vec::Vec;
 
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountId};
@@ -6,6 +7,7 @@ use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset};
 use miden_protocol::crypto::rand::RandomCoin;
 use miden_protocol::errors::tx_kernel::{
     ERR_NON_FUNGIBLE_ASSET_ALREADY_EXISTS,
+    ERR_NOTE_NUM_OF_ASSETS_EXCEED_LIMIT,
     ERR_TX_NUMBER_OF_OUTPUT_NOTES_EXCEEDS_LIMIT,
 };
 use miden_protocol::note::{
@@ -601,6 +603,67 @@ async fn test_create_note_and_add_same_nft_twice() -> anyhow::Result<()> {
     let exec_output = tx_context.execute_code(&code).await;
 
     assert_execution_error!(exec_output, ERR_NON_FUNGIBLE_ASSET_ALREADY_EXISTS);
+    Ok(())
+}
+
+/// Tests that adding more than `MAX_ASSETS_PER_NOTE` assets to an output note fails with
+/// `ERR_NOTE_NUM_OF_ASSETS_EXCEED_LIMIT`.
+#[tokio::test]
+async fn test_add_assets_exceeding_max_per_note_fails() -> anyhow::Result<()> {
+    use miden_protocol::MAX_ASSETS_PER_NOTE;
+
+    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+
+    let recipient = Word::from([0, 1, 2, 3u32]);
+    let tag = NoteTag::new(999 << 16 | 777);
+
+    // Create MAX_ASSETS_PER_NOTE + 1 unique non-fungible assets.
+    let num_assets = MAX_ASSETS_PER_NOTE + 1;
+    let assets: Vec<Asset> = (0..num_assets)
+        .map(|i| NonFungibleAsset::mock(&(i as u32).to_le_bytes()))
+        .collect();
+
+    // Build the MASM code: create a note, then add all assets one by one.
+    let mut add_assets_code = String::new();
+    for (i, asset) in assets.iter().enumerate() {
+        let is_last = i == num_assets - 1;
+        // For all but the last asset, duplicate note_idx so it remains on the stack.
+        if !is_last {
+            add_assets_code.push_str("dup\n");
+        }
+        add_assets_code.push_str(&format!(
+            "push.{ASSET_VALUE}\npush.{ASSET_KEY}\nexec.output_note::add_asset\n",
+            ASSET_KEY = asset.to_key_word(),
+            ASSET_VALUE = asset.to_value_word(),
+        ));
+    }
+
+    let code = format!(
+        "
+        use $kernel::prologue
+        use miden::protocol::output_note
+
+        begin
+            exec.prologue::prepare_transaction
+
+            push.{recipient}
+            push.{NOTE_TYPE_PUBLIC}
+            push.{tag}
+            exec.output_note::create
+            # => [note_idx]
+
+            {add_assets_code}
+        end
+        ",
+        recipient = recipient,
+        NOTE_TYPE_PUBLIC = NoteType::Public as u8,
+        tag = tag,
+        add_assets_code = add_assets_code,
+    );
+
+    let exec_output = tx_context.execute_code(&code).await;
+
+    assert_execution_error!(exec_output, ERR_NOTE_NUM_OF_ASSETS_EXCEED_LIMIT);
     Ok(())
 }
 
