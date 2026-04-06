@@ -4,6 +4,7 @@ use miden::protocol::note
 use miden::standards::wallets::basic->wallet
 use miden::core::sys
 use miden::protocol::active_account
+use miden::protocol::account_id
 use miden::core::math::u64
 use miden::protocol::asset
 use miden::standards::notes::p2id
@@ -444,29 +445,14 @@ end
 
 #! Checks if the currently consuming account is the creator of the note.
 #!
-#! Compares the active account's ID against the creator ID stored in note storage.
-#! Note storage must already be loaded to memory by the caller.
-#!
-#! Inputs: []
+#! Inputs: [creator_id_suffix, creator_id_prefix]
 #! Outputs: [is_creator]
 #!
 proc is_consumer_creator
     exec.active_account::get_id
-    # => [acct_id_suffix, acct_id_prefix]
+    # => [acct_id_suffix, acct_id_prefix, creator_id_suffix, creator_id_prefix]
 
-    mem_load.PSWAP_CREATOR_SUFFIX_ITEM mem_load.PSWAP_CREATOR_PREFIX_ITEM
-    # => [creator_prefix, creator_suffix, acct_id_suffix, acct_id_prefix]
-
-    movup.3 eq
-    # => [prefix_eq, creator_suffix, acct_id_suffix]
-
-    movdn.2
-    # => [creator_suffix, acct_id_suffix, prefix_eq]
-
-    eq
-    # => [suffix_eq, prefix_eq]
-
-    and
+    exec.account_id::is_equal
     # => [is_creator]
 end
 
@@ -671,6 +657,9 @@ pub proc main
     # Extract and store note_type from active note metadata
     exec.extract_note_type
     # => []
+
+    mem_load.PSWAP_CREATOR_SUFFIX_ITEM mem_load.PSWAP_CREATOR_PREFIX_ITEM swap
+    # => [creator_id_suffix, creator_id_prefix]
 
     exec.is_consumer_creator
     # => [is_creator]
