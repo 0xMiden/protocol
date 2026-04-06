@@ -79,6 +79,14 @@ const LEAF_TYPE_ASSET=0
 use miden::protocol::note::NOTE_TYPE_PUBLIC
 const BURN_NOTE_NUM_STORAGE_ITEMS=0
 
+# Miden network ID for detecting native tokens
+# TODO: Update to actual Miden network ID once assigned by AggLayer
+const MIDEN_NETWORK_ID=0
+
+# Bridge vault storage slot for locked native assets
+# Maps: asset_key => amount (for tracking locked assets)
+const NATIVE_ASSET_VAULT_SLOT=word("agglayer::bridge::native_asset_vault")
+
 # PUBLIC INTERFACE
 # =================================================================================================
 
@@ -562,4 +570,32 @@ proc create_burn_note
 
     dropw dropw drop drop drop
     # => []
+end
+
+#! Locks a native Miden token in the bridge vault.
+#!
+#! This procedure transfers the given asset from the consuming note's vault
+#! into the bridge account's vault for native tokens. This is the lock operation
+#! for Miden-native tokens during bridge-out.
+#!
+#! Inputs:  [ASSET_KEY, ASSET_VALUE]
+#! Outputs: []
+#!
+#! Where:
+#! - ASSET_KEY is the vault key of the native asset to be locked.
+#! - ASSET_VALUE is the value of the native asset to be locked.
+#!
+#! Panics if:
+#! - The asset transfer fails.
+#!
+#! Invocation: exec
+proc lock_asset
+    # TODO: Implement native asset locking in bridge vault
+    # This should:
+    # 1. Store ASSET_KEY and ASSET_VALUE locally
+    # 2. Move the asset from the current note to the bridge account's vault
+    # 3. Record the locked asset in NATIVE_ASSET_VAULT_SLOT for tracking
+    
+    # Placeholder: Drop inputs for now (will be implemented in next iteration)
+    dropw dropw
 end
