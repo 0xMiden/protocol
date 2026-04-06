@@ -74,6 +74,15 @@ const MINT_NOTE_NUM_STORAGE_ITEMS = 18
 # P2ID attachment constants (the P2ID note created by the faucet has no attachment)
 const P2ID_ATTACHMENT_SCHEME_NONE = 0
 
+
+# Native token handling constants
+# Miden network ID for detecting native tokens
+# TODO: Update to actual Miden network ID once assigned by AggLayer
+const MIDEN_NETWORK_ID = 0
+
+# Bridge vault storage slot for locked native assets
+# Maps: asset_key => amount (for tracking locked assets)
+const NATIVE_ASSET_VAULT_SLOT = word("agglayer::bridge::native_asset_vault")
 # Global memory pointers
 # -------------------------------------------------------------------------------------------------
 
@@ -1110,4 +1119,39 @@ proc store_cgi_chain_hash
     push.CGI_CHAIN_HASH_HI_SLOT_NAME[0..2]
     exec.native_account::set_item dropw
     # => []
+end
+
+
+#! Unlocks a native Miden token from the bridge vault and creates a P2ID note.
+#!
+#! This procedure handles the unlock operation for Miden-native tokens during bridge-in.
+#! Instead of minting new tokens (like the MINT note path), this transfers the locked
+#! asset from the bridge vault directly to the recipient via a P2ID note.
+#!
+#! This is used when the claim originates from the Miden network itself
+#! (originNetwork == MIDEN_NETWORK_ID).
+#!
+#! Inputs:  [destination_id_suffix, destination_id_prefix, native_amount]
+#! Outputs: []
+#!
+#! Where:
+#! - destination_id_suffix is the account suffix for the recipient
+#! - destination_id_prefix is the account prefix for the recipient
+#! - native_amount is the amount of native tokens to unlock
+#!
+#! Panics if:
+#! - The asset cannot be transferred from the bridge vault
+#!
+#! Invocation: exec
+proc unlock_asset
+    # Stack: [destination_id_suffix, destination_id_prefix, native_amount]
+    
+    # TODO: Implement full unlock procedure following the build_mint_output_note pattern:
+    # 1. Call write_unlock_note_storage to write P2ID note storage items
+    # 2. Call build_unlock_recipient to build the P2ID note recipient digest
+    # 3. Call create_unlock_note_with_attachment to create the output note with asset
+    # 4. The note will carry the native asset from the bridge vault to the recipient
+    #
+    # This is a placeholder for the next iteration
+    dropw dropw drop
 end
