@@ -242,15 +242,19 @@ pub proc claim
     exec.verify_claim_amount
     # => [faucet_id_suffix, faucet_id_prefix, pad(16)]
     
-    # Build MINT output note targeting the AggLayer faucet
+    # Load origin_network from leaf data for branching decision
+    push.CLAIM_LEAF_DATA_START_PTR push.ORIGIN_NETWORK_OFFSET add
+    mem_load
+    # => [origin_network, faucet_id_suffix, faucet_id_prefix, pad(16)]
+    
+    # Load destination IDs
     loc_load.CLAIM_DEST_ID_PREFIX_LOCAL loc_load.CLAIM_DEST_ID_SUFFIX_LOCAL
-    # => [destination_id_suffix, destination_id_prefix, faucet_id_suffix, faucet_id_prefix, pad(16)]
-
-    exec.build_mint_output_note
+    # => [destination_id_suffix, destination_id_prefix, origin_network, faucet_id_suffix, faucet_id_prefix, pad(16)]
+    
+    # Branch between native token (unlock) and wrapped token (mint) paths
+    exec.process_claim_by_network
     # => [pad(16)]
-end
-
-# HELPER PROCEDURES
+end# HELPER PROCEDURES
 # =================================================================================================
 
 #! Computes the leaf value and verifies it against the AggLayer bridge state.
@@ -292,6 +296,59 @@ end
 #! - the Merkle proof for the provided leaf-index tuple against the computed GER is invalid.
 #!
 #! Invocation: exec
+#! Processes a claim based on its origin network.
+#!
+#! This procedure branches between two paths:
+#! - Native Miden tokens: Unlocked from bridge vault via unlock_asset
+#! - Wrapped tokens: Minted via MINT note (existing flow)
+#!
+#! Inputs:  [destination_id_suffix, destination_id_prefix, origin_network, faucet_id_suffix, faucet_id_prefix, pad(16)]
+#! Outputs: []
+#!
+#! Invocation: exec
+proc process_claim_by_network
+    # Stack: [destination_id_suffix, destination_id_prefix, origin_network, faucet_id_suffix, faucet_id_prefix, pad(16)]
+    
+    # Check if native Miden token
+    dup.2  # Duplicate origin_network from position 2
+    push.MIDEN_NETWORK_ID
+    u32eq
+    # => [is_native, destination_id_suffix, destination_id_prefix, origin_network, faucet_id_suffix, faucet_id_prefix, pad(16)]
+    
+    if.true
+        # Native Miden token: unlock from vault
+        # Drop faucet IDs and origin_network, keep destination IDs and amount
+        
+        # Load the faucet_mint_amount (native amount to unlock)
+        mem_load.CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT
+        # => [native_amount, destination_id_suffix, destination_id_prefix, origin_network, faucet_id_suffix, faucet_id_prefix, pad(16)]
+        
+        # Drop everything except native_amount, destination_id_suffix, destination_id_prefix
+        # Current: [native_amount, dest_suff, dest_pref, origin_net, faucet_suff, faucet_pref, pad(16)]
+        movdn.5  # Move native_amount down, keeping dest IDs accessible
+        # => [dest_suff, dest_pref, origin_net, faucet_suff, faucet_pref, native_amount, pad(16)]
+        
+        # Drop faucet IDs and origin_network and padding
+        drop drop drop dropw dropw drop drop
+        # => [dest_suff, dest_pref, native_amount]
+        
+        # Rearrange for unlock_asset: [destination_id_suffix, destination_id_prefix, native_amount]
+        exec.unlock_asset
+        # => []
+    else
+        # Wrapped token: mint (existing path)
+        # Stack: [destination_id_suffix, destination_id_prefix, origin_network, faucet_id_suffix, faucet_id_prefix, pad(16)]
+        
+        # Drop origin_network and padding, keep faucet IDs and destination IDs
+        movdn.2 drop movup.2 dropw dropw drop
+        # => [destination_id_suffix, destination_id_prefix, faucet_id_suffix, faucet_id_prefix]
+        
+        exec.build_mint_output_note
+        # => []
+    end
+end
+
+
 proc verify_leaf_bridge
     # get the leaf value. We have all the necessary leaf data in the advice map
     exec.get_leaf_value
