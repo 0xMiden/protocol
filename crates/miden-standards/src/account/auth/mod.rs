@@ -10,5 +10,5 @@ pub use singlesig_acl::{AuthSingleSigAcl, AuthSingleSigAclConfig};
 mod multisig;
 pub use multisig::{AuthMultisig, AuthMultisigConfig};
 
-mod multisig_psm;
-pub use multisig_psm::{AuthMultisigPsm, AuthMultisigPsmConfig, PsmConfig};
+mod guarded_multisig;
+pub use guarded_multisig::{AuthGuardedMultisig, AuthGuardedMultisigConfig, GuardianConfig};
