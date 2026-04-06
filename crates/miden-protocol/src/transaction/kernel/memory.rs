@@ -344,7 +344,7 @@ pub const NATIVE_ACCT_STORAGE_SLOTS_SECTION_PTR: MemoryAddress =
 // ================================================================================================
 
 /// The size of the memory segment allocated to each note.
-pub const NOTE_MEM_SIZE: MemoryAddress = 3072;
+pub const NOTE_MEM_SIZE: MemoryAddress = 1024;
 
 #[allow(clippy::empty_line_after_outer_attr)]
 #[rustfmt::skip]
@@ -358,11 +358,11 @@ pub const NOTE_MEM_SIZE: MemoryAddress = 3072;
 // │    NUM   │  NOTE 0   │  NOTE 1   │ ... │     NOTE n     │ PADDING │  NOTE 0  │ NOTE 1 │  ...  │ NOTE n │
 // │   NOTES  │ NULLIFIER │ NULLIFIER │     │    NULLIFIER   │         │   DATA   │  DATA  │       │  DATA  │
 // ├──────────┼───────────┼───────────┼─────┼────────────────┼─────────┼──────────┼────────┼───────┼────────┤
-// 4_194_304  4_194_308   4_194_312         4_194_304+4(n+1)           4_259_840  +3072    +6144   +3072n
+// 4_194_304  4_194_308   4_194_312         4_194_304+4(n+1)           4_259_840  +1024    +2048   +1024n
 //
 // Here `n` represents number of input notes.
 //
-// Each nullifier occupies a single word. A data section for each note consists of exactly 3072
+// Each nullifier occupies a single word. A data section for each note consists of exactly 1024
 // elements and is laid out like so:
 //
 // ┌──────┬────────┬────────┬─────────┬────────────┬───────────┬──────────┬────────────┬───────┬
@@ -420,12 +420,12 @@ pub const INPUT_NOTE_ASSETS_OFFSET: MemoryOffset = 44;
 // OUTPUT NOTES DATA
 // ------------------------------------------------------------------------------------------------
 // Output notes section contains data of all notes produced by a transaction. The section starts at
-// memory offset 16_777_216 with each note data laid out one after another in 512 word increments.
+// memory offset 16_777_216 with each note data laid out one after another in 256 word increments.
 //
 //     ┌─────────────┬─────────────┬───────────────┬─────────────┐
 //     │ NOTE 0 DATA │ NOTE 1 DATA │      ...      │ NOTE n DATA │
 //     └─────────────┴─────────────┴───────────────┴─────────────┘
-// 16_777_216      +3072         +6144           +3072n
+// 16_777_216      +1024         +2048           +1024n
 //
 // The total number of output notes for a transaction is stored in the bookkeeping section of the
 // memory. Data section of each note is laid out like so:

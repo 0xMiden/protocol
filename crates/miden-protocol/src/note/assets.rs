@@ -18,7 +18,7 @@ use crate::{Felt, Hasher, MAX_ASSETS_PER_NOTE, WORD_SIZE, Word};
 
 /// An asset container for a note.
 ///
-/// A note can contain between 0 and 255 assets. No duplicates are allowed, but the order of assets
+/// A note can contain between 0 and 64 assets. No duplicates are allowed, but the order of assets
 /// is unspecified.
 ///
 /// All the assets in a note can be reduced to a single commitment which is computed by
@@ -44,7 +44,7 @@ impl NoteAssets {
     ///
     /// # Errors
     /// Returns an error if:
-    /// - The list contains more than 256 assets.
+    /// - The list contains more than 64 assets.
     /// - There are duplicate assets in the list.
     pub fn new(assets: Vec<Asset>) -> Result<Self, NoteError> {
         if assets.len() > Self::MAX_NUM_ASSETS {

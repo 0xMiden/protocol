@@ -189,7 +189,7 @@ end
 #! - the asset key or value are malformed (e.g., invalid faucet ID).
 #! - the max amount of fungible assets is exceeded.
 #! - the non-fungible asset already exists in the note.
-#! - the total number of ASSETs exceeds the maximum of 256.
+#! - the total number of ASSETs exceeds the maximum of 64.
 pub proc add_asset
     # check if the note exists, it must be within [0, num_of_notes]
     dup.8 exec.memory::get_num_output_notes lte assert.err=ERR_NOTE_INVALID_INDEX

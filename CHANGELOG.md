@@ -4,12 +4,15 @@
 
 ### Changes
 
+- [BREAKING] Reduced `MAX_ASSETS_PER_NOTE` from 255 to 64 and `NOTE_MEM_SIZE` from 3072 to 1024 ([#2514](https://github.com/0xMiden/miden-base/issues/2514)).
 - [BREAKING] Renamed `ProvenBatch::new` to `new_unchecked` ([#2687](https://github.com/0xMiden/miden-base/issues/2687)).
 - [BREAKING] Renamed the multisig PSM auth component, procedures, storage paths, and related APIs from `psm` to `guardian`.
 - [BREAKING] Renamed the guarded multisig component-facing APIs from `multisig_guardian` / `AuthMultisigGuardian` to `guarded_multisig` / `AuthGuardedMultisig`, while retaining the `guardian` auth namespace and guardian-specific procedures.
 - Added shared `ProcedurePolicy` for AuthMultisig ([#2670](https://github.com/0xMiden/protocol/pull/2670)).
 - [BREAKING] Changed `NoteType` encoding from 2 bits to 1 and makes `NoteType::Private` the default ([#2691](https://github.com/0xMiden/miden-base/issues/2691)).
 - Added `BlockNumber::saturating_sub()` ([#2660](https://github.com/0xMiden/protocol/issues/2660)).
+
+## 0.14.2 (2026-03-31)
 
 ## 0.14.3 (2026-04-07)
 
