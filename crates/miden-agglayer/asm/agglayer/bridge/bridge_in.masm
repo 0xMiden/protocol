@@ -1146,12 +1146,187 @@ end
 proc unlock_asset
     # Stack: [destination_id_suffix, destination_id_prefix, native_amount]
     
-    # TODO: Implement full unlock procedure following the build_mint_output_note pattern:
-    # 1. Call write_unlock_note_storage to write P2ID note storage items
-    # 2. Call build_unlock_recipient to build the P2ID note recipient digest
-    # 3. Call create_unlock_note_with_attachment to create the output note with asset
-    # 4. The note will carry the native asset from the bridge vault to the recipient
-    #
-    # This is a placeholder for the next iteration
-    dropw dropw drop
+    # Store inputs locally for use in helper procedures
+    # Local memory layout (following MINT note pattern):
+    # [0]: native_amount (for the P2ID note)
+    # [1]: destination_id_suffix
+    # [2]: destination_id_prefix
+    
+    dup.2 mem_store.0  # Store native_amount
+    dup.1 mem_store.1  # Store destination_id_suffix
+    mem_store.2        # Store destination_id_prefix
+    # => []
+    
+    # Write the P2ID note storage items (asset transfer note)
+    exec.write_unlock_note_storage
+    # => []
+    
+    # Build the P2ID note recipient digest
+    exec.build_unlock_recipient
+    # => [P2ID_RECIPIENT]
+    
+    # Get stored destination account IDs for creating the note
+    mem_load.1  # destination_id_suffix
+    mem_load.2  # destination_id_prefix
+    # => [P2ID_RECIPIENT, destination_id_suffix, destination_id_prefix]
+    
+    # Create the P2ID output note with asset attachment
+    exec.create_unlock_note_with_attachment
+    # => []
+end
+
+#! Writes all P2ID note storage items to global memory for the unlock operation.
+#!
+#! This follows the same storage layout as MINT notes:
+#! - [0]: tag (note tag for the P2ID output note, targeting the destination account)
+#! - [1]: amount (the amount of native tokens to transfer)
+#! - [2]: attachment_kind (0 = no attachment)
+#! - [3]: attachment_scheme (0 = no attachment)
+#! - [4-7]: ATTACHMENT ([0, 0, 0, 0])
+#! - [8-11]: P2ID_SCRIPT_ROOT (script root of the P2ID note)
+#! - [12-15]: SERIAL_NUM (serial number for the P2ID note, derived from PROOF_DATA_KEY)
+#! - [16]: account_id_suffix (destination account suffix)
+#! - [17]: account_id_prefix (destination account prefix)
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Invocation: exec
+proc write_unlock_note_storage
+    # Get stored values from local memory
+    mem_load.1  # destination_id_suffix
+    mem_load.2  # destination_id_prefix
+    mem_load.0  # native_amount
+    # => [destination_id_suffix, destination_id_prefix, native_amount]
+    
+    # Write destination account IDs [16..17]
+    # Write destination_id_suffix [16]
+    dup mem_store.MINT_NOTE_STORAGE_OUTPUT_NOTE_SUFFIX
+    # => [destination_id_suffix, destination_id_prefix, native_amount]
+    
+    # Write destination_id_prefix [17]
+    dup.1 mem_store.MINT_NOTE_STORAGE_OUTPUT_NOTE_PREFIX
+    # => [destination_id_suffix, destination_id_prefix, native_amount]
+    
+    drop
+    # => [destination_id_prefix, native_amount]
+    
+    # Compute and write the note tag for the destination account [0]
+    swap
+    # => [destination_id_prefix, native_amount]
+    
+    exec.note_tag::create_account_target
+    # => [dest_tag, native_amount]
+    
+    # Write tag to P2ID note storage [0]
+    mem_store.MINT_NOTE_STORAGE_DEST_TAG
+    # => [native_amount]
+    
+    # Write amount to P2ID note storage [1]
+    mem_store.MINT_NOTE_STORAGE_NATIVE_AMOUNT
+    # => []
+    
+    # Write P2ID attachment fields (the P2ID note has no attachment)
+    # attachment_kind = NONE [2]
+    push.ATTACHMENT_KIND_NONE mem_store.MINT_NOTE_STORAGE_ATTACHMENT_KIND
+    # => []
+    
+    # attachment_scheme = NONE [3]
+    push.P2ID_ATTACHMENT_SCHEME_NONE mem_store.MINT_NOTE_STORAGE_ATTACHMENT_SCHEME
+    # => []
+    
+    # ATTACHMENT = empty word [4..7]
+    padw mem_storew_le.MINT_NOTE_STORAGE_ATTACHMENT dropw
+    # => []
+    
+    # Write P2ID_SCRIPT_ROOT to P2ID note storage [8..11]
+    procref.::miden::standards::notes::p2id::main
+    # => [P2ID_SCRIPT_ROOT]
+    
+    mem_storew_le.MINT_NOTE_STORAGE_OUTPUT_SCRIPT_ROOT dropw
+    # => []
+    
+    # Write SERIAL_NUM (PROOF_DATA_KEY) to P2ID note storage [12..15]
+    mem_loadw_be.CLAIM_PROOF_DATA_KEY_MEM_ADDR
+    # => [SERIAL_NUM]
+    
+    mem_storew_le.MINT_NOTE_STORAGE_OUTPUT_SERIAL_NUM dropw
+    # => []
+end
+
+#! Builds the P2ID note recipient digest from the storage items already written.
+#!
+#! Uses the P2ID note script root and PROOF_DATA_KEY as serial number, then calls
+#! `note::build_recipient` with the storage pointer and item count.
+#!
+#! Inputs:  []
+#! Outputs: [P2ID_RECIPIENT]
+#!
+#! Invocation: exec
+proc build_unlock_recipient
+    # Get the P2ID note script root
+    procref.::miden::standards::notes::p2id::main
+    # => [P2ID_SCRIPT_ROOT]
+    
+    # Generate a serial number for the P2ID note (use PROOF_DATA_KEY)
+    padw mem_loadw_be.CLAIM_PROOF_DATA_KEY_MEM_ADDR
+    # => [P2ID_SERIAL_NUM, P2ID_SCRIPT_ROOT]
+    
+    # Build the P2ID note recipient
+    push.MINT_NOTE_NUM_STORAGE_ITEMS
+    # => [num_storage_items, P2ID_SERIAL_NUM, P2ID_SCRIPT_ROOT]
+    
+    push.MINT_NOTE_STORAGE_MEM_ADDR_0
+    # => [storage_ptr, num_storage_items, P2ID_SERIAL_NUM, P2ID_SCRIPT_ROOT]
+    
+    exec.note::build_recipient
+    # => [P2ID_RECIPIENT]
+end
+
+#! Creates the P2ID output note with the native asset attached.
+#!
+#! Creates a public output note with the native asset to transfer, and sets
+#! the attachment so only the target account can consume the note.
+#!
+#! Inputs:  [P2ID_RECIPIENT, destination_id_suffix, destination_id_prefix]
+#! Outputs: []
+#!
+#! Invocation: exec
+proc create_unlock_note_with_attachment
+    # Stack: [P2ID_RECIPIENT, destination_id_suffix, destination_id_prefix]
+    
+    # Create the P2ID output note (will add asset below)
+    push.NOTE_TYPE_PUBLIC
+    # => [note_type, P2ID_RECIPIENT, destination_id_suffix, destination_id_prefix]
+    
+    # Set tag to DEFAULT
+    push.DEFAULT_TAG
+    # => [tag, note_type, P2ID_RECIPIENT, destination_id_suffix, destination_id_prefix]
+    
+    # Create the output note
+    exec.output_note::create
+    # => [note_idx, destination_id_suffix, destination_id_prefix]
+    
+    movdn.2
+    # => [destination_id_suffix, destination_id_prefix, note_idx]
+    
+    # Set the attachment on the P2ID note to target the recipient account
+    # NetworkAccountTarget attachment: targets the recipient so only they can consume
+    push.ALWAYS # exec_hint = ALWAYS
+    movdn.2
+    # => [destination_id_suffix, destination_id_prefix, exec_hint, note_idx]
+    
+    exec.network_account_target::new
+    # => [attachment_scheme, attachment_kind, ATTACHMENT, note_idx]
+    
+    # Rearrange for set_attachment: [note_idx, attachment_scheme, attachment_kind, ATTACHMENT]
+    movup.6
+    # => [note_idx, attachment_scheme, attachment_kind, ATTACHMENT]
+    
+    exec.output_note::set_attachment
+    # => []
+    
+    # TODO: Add the native asset to the P2ID note
+    # This requires loading the asset from the bridge vault and attaching it
+    # The asset transfer will be the payload of the P2ID note
 end
