@@ -502,7 +502,7 @@ end
 #! - ASSET_VALUE is the value of the asset to be burnt.
 #!
 #! Invocation: exec
-@locals(14)
+
 #! Processes a bridged asset based on its origin network.
 #!
 #! This procedure branches between two paths:
@@ -521,7 +521,7 @@ proc process_bridged_asset
     # Check if native Miden token
     dup.10  # Duplicate origin_network from stack position 10
     push.MIDEN_NETWORK_ID
-    u32eq
+    eq
     # => [is_native, ASSET_KEY, ASSET_VALUE, origin_network, pad(16)]
     
     if.true
@@ -555,6 +555,7 @@ proc process_bridged_asset
     end
 end
 
+@locals(14)
 proc create_burn_note
     swapw dupw.1
     # => [ASSET_KEY, ASSET_VALUE, ASSET_KEY]

@@ -74,6 +74,17 @@ const MINT_NOTE_NUM_STORAGE_ITEMS = 18
 # P2ID attachment constants (the P2ID note created by the faucet has no attachment)
 const P2ID_ATTACHMENT_SCHEME_NONE = 0
 
+# Leaf data field offsets (relative to leaf data start pointer)
+# These match the layout used in bridge_out
+const LEAF_TYPE_OFFSET = 0
+const ORIGIN_NETWORK_OFFSET = 1
+const ORIGIN_TOKEN_ADDRESS_OFFSET = 2
+const DESTINATION_NETWORK_OFFSET = 7
+const DESTINATION_ADDRESS_OFFSET = 8
+const AMOUNT_OFFSET = 13
+const METADATA_HASH_OFFSET = 21
+const PADDING_OFFSET = 29
+
 
 # Native token handling constants
 # Miden network ID for detecting native tokens
@@ -312,7 +323,7 @@ proc process_claim_by_network
     # Check if native Miden token
     dup.2  # Duplicate origin_network from position 2
     push.MIDEN_NETWORK_ID
-    u32eq
+    eq
     # => [is_native, destination_id_suffix, destination_id_prefix, origin_network, faucet_id_suffix, faucet_id_prefix, pad(16)]
     
     if.true
