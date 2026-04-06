@@ -54,7 +54,7 @@ end
 #!     ASSETS_COMMITMENT: [[ASSETS_DATA]]
 #!   }
 #! Outputs:
-#!   Operand stack: [num_assets, dest_ptr]
+#!   Operand stack: []
 pub proc write_assets_to_memory
     # load the asset data from the advice map to the advice stack
     adv.push_mapval
@@ -75,6 +75,10 @@ pub proc write_assets_to_memory
     exec.mem::pipe_double_words_preimage_to_memory drop
     # OS => [num_assets, dest_ptr]
     # AS => []
+
+    # drop num_assets and dest_ptr as these are identical to the inputs
+    drop drop
+    # OS => []
 end
 
 #! Builds the recipient hash from note storage, script root, and serial number.
