@@ -61,10 +61,6 @@ async fn test_mint_fungible_asset_succeeds() -> anyhow::Result<()> {
             push.{FUNGIBLE_ASSET_KEY}
             call.mock_faucet::mint
 
-            # assert the correct asset is returned
-            push.{FUNGIBLE_ASSET_VALUE}
-            assert_eqw.err="minted asset does not match expected asset"
-
             # assert the input vault has been updated
             exec.memory::get_input_vault_root_ptr
             push.{FUNGIBLE_ASSET_KEY}
@@ -252,10 +248,6 @@ async fn test_mint_non_fungible_asset_succeeds() -> anyhow::Result<()> {
             push.{NON_FUNGIBLE_ASSET_VALUE}
             push.{NON_FUNGIBLE_ASSET_KEY}
             call.mock_faucet::mint
-
-            # assert the correct asset is returned
-            push.{NON_FUNGIBLE_ASSET_VALUE}
-            assert_eqw.err="minted asset does not match expected asset"
 
             # assert the input vault has been updated.
             exec.memory::get_input_vault_root_ptr

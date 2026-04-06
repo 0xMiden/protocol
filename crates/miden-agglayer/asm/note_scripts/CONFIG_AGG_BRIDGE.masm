@@ -58,10 +58,10 @@ begin
 
     # Load note storage to memory
     push.STORAGE_START_PTR exec.active_note::get_storage
-    # => [num_storage_items, dest_ptr, pad(16)]
+    # => [num_storage_items, pad(16)]
 
     # Validate the number of storage items
-    push.CONFIG_AGG_BRIDGE_NUM_STORAGE_ITEMS assert_eq.err=ERR_CONFIG_AGG_BRIDGE_UNEXPECTED_STORAGE_ITEMS drop
+    push.CONFIG_AGG_BRIDGE_NUM_STORAGE_ITEMS assert_eq.err=ERR_CONFIG_AGG_BRIDGE_UNEXPECTED_STORAGE_ITEMS
     # => [pad(16)]
 
     # Load origin_token_addr(5) and faucet_id from memory

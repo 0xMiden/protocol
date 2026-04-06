@@ -247,8 +247,8 @@ async fn test_active_note_get_assets() -> anyhow::Result<()> {
             # assert the number of assets is correct
             eq.{note_0_num_assets} assert.err="unexpected num assets for note 0"
 
-            # assert the pointer is returned
-            dup eq.{DEST_POINTER_NOTE_0} assert.err="unexpected dest ptr for note 0"
+            # push the dest pointer for asset assertions
+            push.{DEST_POINTER_NOTE_0}
 
             # asset memory assertions
             {NOTE_0_ASSET_ASSERTIONS}
@@ -270,8 +270,8 @@ async fn test_active_note_get_assets() -> anyhow::Result<()> {
             # assert the number of assets is correct
             eq.{note_1_num_assets} assert.err="unexpected num assets for note 1"
 
-            # assert the pointer is returned
-            dup eq.{DEST_POINTER_NOTE_1} assert.err="unexpected dest ptr for note 1"
+            # push the dest pointer for asset assertions
+            push.{DEST_POINTER_NOTE_1}
 
             # asset memory assertions
             {NOTE_1_ASSET_ASSERTIONS}
@@ -377,12 +377,13 @@ async fn test_active_note_get_storage() -> anyhow::Result<()> {
             # => []
 
             push.{NOTE_0_PTR} exec.active_note::get_storage
-            # => [num_storage_items, dest_ptr]
+            # => [num_storage_items]
 
             eq.{num_storage_items} assert.err="unexpected num_storage_items"
-            # => [dest_ptr]
+            # => []
 
-            dup eq.{NOTE_0_PTR} assert.err="unexpected dest ptr"
+            # push the dest pointer for storage assertions
+            push.{NOTE_0_PTR}
             # => [dest_ptr]
 
             # apply note 1 storage assertions
