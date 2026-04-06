@@ -291,3 +291,85 @@ async fn test_acl_with_disallow_unauthorized_input_notes(
 
     Ok(())
 }
+
+/// Tests that the singlesig ACL auth procedure reads the initial (pre-rotation) public key
+/// when verifying signatures. The transaction script overwrites the public key slot with
+/// a bogus value via `set_item` (which also triggers authentication); the test verifies
+/// that authentication still succeeds because the auth procedure uses `get_initial_item`
+/// to retrieve the original key, rather than `get_item` which would return the
+/// overwritten (bogus) value.
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[tokio::test]
+async fn test_acl_auth_uses_initial_public_key(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (account, mock_chain, note) = setup_acl_test(false, true, auth_scheme)?;
+
+    // Build the authenticator separately (same seed as Auth::Acl uses)
+    let component: AccountComponent =
+        MockAccountComponent::with_slots(AccountStorage::mock_storage_slots()).into();
+
+    let get_item_proc_root = component
+        .get_procedure_root_by_path("mock::account::get_item")
+        .expect("get_item procedure should exist");
+    let set_item_proc_root = component
+        .get_procedure_root_by_path("mock::account::set_item")
+        .expect("set_item procedure should exist");
+    let auth_trigger_procedures = vec![get_item_proc_root, set_item_proc_root];
+
+    let (_, authenticator) = Auth::Acl {
+        auth_trigger_procedures,
+        allow_unauthorized_output_notes: false,
+        allow_unauthorized_input_notes: true,
+        auth_scheme,
+    }
+    .build_component();
+
+    // Get the singlesig_acl public key slot name
+    let pub_key_slot = AuthSingleSigAcl::public_key_slot();
+
+    // This tx script calls set_item (a trigger procedure) to overwrite the public key slot
+    // with a bogus value. This both:
+    // 1. Triggers authentication (because set_item is a trigger procedure)
+    // 2. Rotates the public key to a bogus value
+    //
+    // Because the auth procedure uses `get_initial_item`, it reads the original key and
+    // signature verification succeeds. If it used `get_item`, it would read the bogus
+    // key and fail.
+    let tx_script_rotate_key = format!(
+        r#"
+        use mock::account
+
+        const PUB_KEY_SLOT = word("{pub_key_slot}")
+
+        begin
+            # Overwrite the public key slot with a bogus value via set_item (trigger procedure)
+            push.99.98.97.96
+            push.PUB_KEY_SLOT[0..2]
+            call.account::set_item
+            dropw dropw
+        end
+        "#,
+    );
+
+    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script_rotate_key)?;
+
+    let tx_context = mock_chain
+        .build_tx_context(account.id(), &[], slice::from_ref(&note))?
+        .authenticator(authenticator)
+        .tx_script(tx_script)
+        .build()?;
+
+    // This should succeed because the auth procedure reads the INITIAL public key,
+    // not the rotated one.
+    let executed_tx = tx_context
+        .execute()
+        .await
+        .expect("singlesig_acl auth should use initial public key, not the rotated one");
+
+    prove_and_verify_transaction(executed_tx).await?;
+
+    Ok(())
+}
