@@ -317,6 +317,7 @@ end# HELPER PROCEDURES
 #! Outputs: []
 #!
 #! Invocation: exec
+@locals(2)
 proc process_claim_by_network
     # Stack: [destination_id_suffix, destination_id_prefix, origin_network, faucet_id_suffix, faucet_id_prefix, pad(16)]
     
@@ -350,9 +351,17 @@ proc process_claim_by_network
         # Wrapped token: mint (existing path)
         # Stack: [destination_id_suffix, destination_id_prefix, origin_network, faucet_id_suffix, faucet_id_prefix, pad(16)]
         
-        # Drop origin_network and padding, keep faucet IDs and destination IDs
-        movdn.2 drop movup.2 dropw dropw drop
-        # => [destination_id_suffix, destination_id_prefix, faucet_id_suffix, faucet_id_prefix]
+        # Save destination IDs and drop unwanted values
+        loc_store.0 loc_store.1  # Store dest_id_suffix, dest_id_prefix locally
+        # => [origin_network, faucet_id_suffix, faucet_id_prefix, pad(16)]
+        
+        # Drop all unwanted values
+        dropw dropw dropw drop drop drop
+        # => []
+        
+        # Restore destination IDs
+        loc_load.1 loc_load.0
+        # => [destination_id_suffix, destination_id_prefix]
         
         exec.build_mint_output_note
         # => []

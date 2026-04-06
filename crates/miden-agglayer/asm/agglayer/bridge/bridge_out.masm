@@ -519,7 +519,7 @@ proc process_bridged_asset
     # Stack: [ASSET_KEY, ASSET_VALUE, origin_network, pad(16)]
     
     # Check if native Miden token
-    dup.10  # Duplicate origin_network from stack position 10
+    dup.8  # Duplicate origin_network from stack position 8
     push.MIDEN_NETWORK_ID
     eq
     # => [is_native, ASSET_KEY, ASSET_VALUE, origin_network, pad(16)]
