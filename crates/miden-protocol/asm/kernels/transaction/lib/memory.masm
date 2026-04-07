@@ -9,7 +9,7 @@ pub type AccountId = struct { prefix: felt, suffix: felt }
 # ERRORS
 # =================================================================================================
 
-const ERR_NOTE_NUM_OF_ASSETS_EXCEED_LIMIT="number of assets in a note exceed 64"
+const ERR_NOTE_NUM_OF_ASSETS_EXCEED_LIMIT="number of assets in a note exceeds 64"
 
 const ERR_ACCOUNT_IS_NOT_NATIVE="the active account is not native"
 
