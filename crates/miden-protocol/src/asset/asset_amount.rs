@@ -25,7 +25,7 @@ impl AssetAmount {
     ///
     /// Equal to 2^63 - 2^31. This was chosen so that the amount fits as both a positive and
     /// negative value in a field element.
-    pub const MAX: Self = Self(2u64.pow(63) - 2u64.pow(31));
+    pub const MAX: u64 = 2u64.pow(63) - 2u64.pow(31);
 
     /// Returns a new `AssetAmount` if `amount` does not exceed [`Self::MAX`].
     ///
@@ -33,7 +33,7 @@ impl AssetAmount {
     ///
     /// Returns an error if `amount` is greater than [`Self::MAX`].
     pub fn new(amount: u64) -> Result<Self, AssetError> {
-        if amount > Self::MAX.0 {
+        if amount > Self::MAX {
             return Err(AssetError::FungibleAssetAmountTooBig(amount));
         }
         Ok(Self(amount))
@@ -142,34 +142,34 @@ mod tests {
 
     #[test]
     fn valid_amounts() {
-        assert_eq!(u64::from(AssetAmount::new(0).unwrap()), 0);
-        assert_eq!(u64::from(AssetAmount::new(1000).unwrap()), 1000);
-        assert_eq!(AssetAmount::new(u64::from(AssetAmount::MAX)).unwrap(), AssetAmount::MAX);
+        assert_eq!(AssetAmount::new(0).unwrap().into(), 0u64);
+        assert_eq!(AssetAmount::new(1000).unwrap().into(), 1000u64);
+        assert_eq!(AssetAmount::new(AssetAmount::MAX).unwrap().into(), AssetAmount::MAX);
     }
 
     #[test]
     fn exceeds_max() {
-        assert!(AssetAmount::new(u64::from(AssetAmount::MAX) + 1).is_err());
+        assert!(AssetAmount::new(AssetAmount::MAX + 1).is_err());
         assert!(AssetAmount::new(u64::MAX).is_err());
     }
 
     #[test]
     fn from_small_types() {
         let a: AssetAmount = 42u8.into();
-        assert_eq!(u64::from(a), 42);
+        assert_eq!(a.into(), 42u64);
 
         let b: AssetAmount = 1000u16.into();
-        assert_eq!(u64::from(b), 1000);
+        assert_eq!(b.into(), 1000u64);
 
         let c: AssetAmount = 100_000u32.into();
-        assert_eq!(u64::from(c), 100_000);
+        assert_eq!(c.into(), 100_000u64);
     }
 
     #[test]
     fn try_from_u64() {
         assert!(AssetAmount::try_from(0u64).is_ok());
-        assert!(AssetAmount::try_from(u64::from(AssetAmount::MAX)).is_ok());
-        assert!(AssetAmount::try_from(u64::from(AssetAmount::MAX) + 1).is_err());
+        assert!(AssetAmount::try_from(AssetAmount::MAX).is_ok());
+        assert!(AssetAmount::try_from(AssetAmount::MAX + 1).is_err());
     }
 
     #[test]
@@ -188,12 +188,12 @@ mod tests {
     fn add_amounts() {
         let a = AssetAmount::new(100).unwrap();
         let b = AssetAmount::new(200).unwrap();
-        assert_eq!(u64::from(a.add(b).unwrap()), 300);
+        assert_eq!(a.add(b).unwrap().into(), 300u64);
     }
 
     #[test]
     fn add_overflow() {
-        let max = AssetAmount::MAX;
+        let max = AssetAmount::new(AssetAmount::MAX).unwrap();
         let one = AssetAmount::new(1).unwrap();
         assert!(max.add(one).is_err());
     }
@@ -202,7 +202,7 @@ mod tests {
     fn sub_amounts() {
         let a = AssetAmount::new(300).unwrap();
         let b = AssetAmount::new(100).unwrap();
-        assert_eq!(u64::from(a.sub(b).unwrap()), 200);
+        assert_eq!(a.sub(b).unwrap().into(), 200u64);
     }
 
     #[test]

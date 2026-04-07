@@ -37,7 +37,7 @@ impl FungibleAsset {
     ///
     /// This number was chosen so that it can be represented as a positive and negative number in a
     /// field element. See `account_delta.masm` for more details on how this number was chosen.
-    pub const MAX_AMOUNT: u64 = 2u64.pow(63) - 2u64.pow(31);
+    pub const MAX_AMOUNT: u64 = AssetAmount::MAX;
 
     /// The serialized size of a [`FungibleAsset`] in bytes.
     ///
