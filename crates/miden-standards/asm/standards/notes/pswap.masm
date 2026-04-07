@@ -51,16 +51,17 @@ const AMT_REQUESTED_INFLIGHT = 0x0033
 const AMT_OFFERED_OUT_INPUT = 0x0034
 const AMT_OFFERED_OUT_INFLIGHT = 0x0036
 
-# Asset Key Memory Addresses (word-aligned, 4 cells each)
-# ASSET_KEY = [asset_id_suffix, asset_id_prefix, faucet_id_suffix_and_metadata, faucet_id_prefix]
-const OFFERED_ASSET_KEY = 0x0038
+# Offered asset faucet info (extracted from ASSET_KEY)
+const OFFERED_ENABLE_CB = 0x0040
+const OFFERED_FAUCET_SUFFIX = 0x0041
+const OFFERED_FAUCET_PREFIX = 0x0042
+
 
 # Full Word Memory Addresses
 # Asset storage (8 cells each, word-aligned)
 const OFFERED_ASSET_WORD = 0x0018
 
 # Note indices and type
-const PSWAP_NOTE_IDX = 0x0080
 const NOTE_TYPE = 0x0084
 
 
@@ -318,65 +319,82 @@ end
 #!
 #! Updates the requested amount in note storage, builds a new remainder recipient
 #! (using the active note's script root and a serial derived by incrementing the
-#! top element of the active note's serial number), creates the output note,
-#! sets the attachment, and adds the remaining offered asset.
+#! most significant element of the active note's serial number), creates the output
+#! note, sets the attachment, and adds the remaining offered asset.
 #!
-#! Inputs:  [remaining_requested]
+#! Inputs:  [offered_faucet_prefix, offered_faucet_suffix, offered_enable_cb,
+#!           amt_offered_out, amt_offered,
+#!           remaining_requested, note_type, tag]
 #! Outputs: []
 #!
+@locals(6)
+# loc.0 = note_idx
+# loc.1 = offered_faucet_prefix
+# loc.2 = offered_faucet_suffix
+# loc.3 = offered_enable_cb
+# loc.4 = amt_offered_out
+# loc.5 = amt_offered
 proc create_remainder_note
-    # Update note storage with new requested amount
-    mem_store.REQUESTED_AMOUNT_ITEM
-    # => []
+    # => [offered_faucet_prefix, offered_faucet_suffix, offered_enable_cb,
+    #     amt_offered_out, amt_offered,
+    #     remaining_requested, note_type, tag]
+
+    # Store offered asset info to locals (top element stored first)
+    loc_store.1 loc_store.2 loc_store.3 loc_store.4 loc_store.5
+    # => [remaining_requested, note_type, tag]
+
+    # Update note storage with new requested amount (needed by build_recipient)
+    movdn.2
+    # => [note_type, tag, remaining_requested]
+    movup.2 mem_store.REQUESTED_AMOUNT_ITEM
+    # => [note_type, tag]
 
     # Build PSWAP remainder recipient using the same script as the active note
     exec.active_note::get_script_root
-    # => [SCRIPT_ROOT]
+    # => [SCRIPT_ROOT, note_type, tag]
 
-    # Derive remainder serial: increment most significant element of active note's serial
+    # Derive remainder serial: increment most significant element
     exec.active_note::get_serial_number
-    # => [s0, s1, s2, s3, SCRIPT_ROOT]
+    # => [s0, s1, s2, s3, SCRIPT_ROOT, note_type, tag]
     movup.3 add.1 movdn.3
-    # => [s0, s1, s2, s3+1, SCRIPT_ROOT]
+    # => [s0, s1, s2, s3+1, SCRIPT_ROOT, note_type, tag]
 
     # Build recipient from all note storage items (now with updated requested amount)
     push.NUM_STORAGE_ITEMS.0
-    # => [storage_ptr=0, num_storage_items, SERIAL_NUM', SCRIPT_ROOT]
+    # => [storage_ptr=0, num_storage_items, SERIAL_NUM', SCRIPT_ROOT, note_type, tag]
 
     exec.note::build_recipient
-    # => [RECIPIENT_SWAPP]
+    # => [RECIPIENT, note_type, tag]
 
-    mem_load.NOTE_TYPE
-    mem_load.PSWAP_TAG_ITEM
+    movup.4 movup.5
+    # => [tag, note_type, RECIPIENT]
 
     exec.output_note::create
     # => [note_idx]
 
-    mem_store.PSWAP_NOTE_IDX
+    loc_store.0
     # => []
 
-    # Set attachment: aux = total offered_out amount
-    mem_load.AMT_OFFERED_OUT push.0.0.0
-    # => [0, 0, 0, aux]
-
-    push.0 mem_load.PSWAP_NOTE_IDX
-    # => [note_idx, attachment_scheme, ATTACHMENT]
+    # Set attachment: aux = amt_offered_out
+    loc_load.4 push.0.0.0
+    # => [0, 0, 0, amt_offered_out]
+    push.0 loc_load.0
+    # => [note_idx, attachment_scheme=0, ATTACHMENT]
 
     exec.output_note::set_word_attachment
     # => []
 
-    # Add remaining offered asset to remainder note
-    # remainder_amount = total_offered - offered_out
-    mem_load.PSWAP_NOTE_IDX
+    # Add remaining offered asset: remainder_amount = amt_offered - amt_offered_out
+    loc_load.0
     # => [note_idx]
 
-    # Build ASSET_VALUE = [amount, 0, 0, 0] (amount on top)
-    push.0.0.0
-    mem_load.AMT_OFFERED mem_load.AMT_OFFERED_OUT sub
-    # => [remainder_amount, 0, 0, 0, note_idx]
+    loc_load.5 loc_load.4 sub
+    # => [remainder_amount, note_idx]
 
-    # Load stored ASSET_KEY
-    padw mem_loadw_le.OFFERED_ASSET_KEY
+    loc_load.1 loc_load.2 loc_load.3
+    # => [offered_enable_cb, offered_faucet_suffix, offered_faucet_prefix, remainder_amount, note_idx]
+
+    exec.asset::create_fungible_asset
     # => [ASSET_KEY, ASSET_VALUE, note_idx]
 
     exec.output_note::add_asset
@@ -454,8 +472,12 @@ proc execute_pswap
     mem_store.AMT_OFFERED
     # => [ASSET_KEY, ASSET_VALUE]
 
-    # Store offered ASSET_KEY (preserves faucet ID + callback metadata)
-    mem_storew_le.OFFERED_ASSET_KEY dropw
+    # Extract and store offered faucet info from ASSET_KEY
+    exec.asset::key_to_callbacks_enabled mem_store.OFFERED_ENABLE_CB
+    # => [ASSET_KEY, ASSET_VALUE]
+    exec.asset::key_into_faucet_id
+    # => [faucet_id_suffix, faucet_id_prefix, ASSET_VALUE]
+    mem_store.OFFERED_FAUCET_SUFFIX mem_store.OFFERED_FAUCET_PREFIX
     # => [ASSET_VALUE]
     dropw
     # => []
@@ -534,15 +556,19 @@ proc execute_pswap
 
     # Consumer receives only input_offered_out into vault (not inflight portion)
     padw padw
-    push.OFFERED_ASSET_WORD exec.asset::load
-    # => [ASSET_KEY, ASSET_VALUE, pad(8)]
-    # Replace amount (ASSET_VALUE[0]) with input_offered_out
-    movup.4
-    drop
+    # => [pad(8)]
+
     mem_load.AMT_OFFERED_OUT_INPUT
-    movdn.4
-    # => [ASSET_KEY, ASSET_VALUE', pad(8)]
+    mem_load.OFFERED_FAUCET_PREFIX
+    mem_load.OFFERED_FAUCET_SUFFIX
+    mem_load.OFFERED_ENABLE_CB
+    # => [enable_cb, faucet_suffix, faucet_prefix, amt_offered_out_input, pad(8)]
+
+    exec.asset::create_fungible_asset
+    # => [ASSET_KEY, ASSET_VALUE, pad(8)]
+
     call.wallet::receive_asset
+    # => [pad(16)]
     dropw dropw dropw dropw
     # => []
 
@@ -555,6 +581,22 @@ proc execute_pswap
         # remaining_requested = total_requested - total_in
         swap sub
         # => [remaining_requested]
+
+        mem_load.PSWAP_TAG_ITEM
+        mem_load.NOTE_TYPE
+        # => [note_type, tag, remaining_requested]
+
+        movup.2
+        # => [remaining_requested, note_type, tag]
+
+        mem_load.AMT_OFFERED
+        mem_load.AMT_OFFERED_OUT
+        mem_load.OFFERED_ENABLE_CB
+        mem_load.OFFERED_FAUCET_SUFFIX
+        mem_load.OFFERED_FAUCET_PREFIX
+        # => [offered_faucet_prefix, offered_faucet_suffix, offered_enable_cb,
+        #     amt_offered_out, amt_offered,
+        #     remaining_requested, note_type, tag]
 
         exec.create_remainder_note
     else
