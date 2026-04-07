@@ -142,9 +142,12 @@ mod tests {
 
     #[test]
     fn valid_amounts() {
-        assert_eq!(AssetAmount::new(0).unwrap().into(), 0u64);
-        assert_eq!(AssetAmount::new(1000).unwrap().into(), 1000u64);
-        assert_eq!(AssetAmount::new(AssetAmount::MAX).unwrap().into(), AssetAmount::MAX);
+        let val: u64 = AssetAmount::new(0).unwrap().into();
+        assert_eq!(val, 0);
+        let val: u64 = AssetAmount::new(1000).unwrap().into();
+        assert_eq!(val, 1000);
+        let val: u64 = AssetAmount::new(AssetAmount::MAX).unwrap().into();
+        assert_eq!(val, AssetAmount::MAX);
     }
 
     #[test]
@@ -156,13 +159,16 @@ mod tests {
     #[test]
     fn from_small_types() {
         let a: AssetAmount = 42u8.into();
-        assert_eq!(a.into(), 42u64);
+        let val: u64 = a.into();
+        assert_eq!(val, 42);
 
         let b: AssetAmount = 1000u16.into();
-        assert_eq!(b.into(), 1000u64);
+        let val: u64 = b.into();
+        assert_eq!(val, 1000);
 
         let c: AssetAmount = 100_000u32.into();
-        assert_eq!(c.into(), 100_000u64);
+        let val: u64 = c.into();
+        assert_eq!(val, 100_000);
     }
 
     #[test]
@@ -188,7 +194,8 @@ mod tests {
     fn add_amounts() {
         let a = AssetAmount::new(100).unwrap();
         let b = AssetAmount::new(200).unwrap();
-        assert_eq!(a.add(b).unwrap().into(), 300u64);
+        let val: u64 = a.add(b).unwrap().into();
+        assert_eq!(val, 300);
     }
 
     #[test]
@@ -202,7 +209,8 @@ mod tests {
     fn sub_amounts() {
         let a = AssetAmount::new(300).unwrap();
         let b = AssetAmount::new(100).unwrap();
-        assert_eq!(a.sub(b).unwrap().into(), 200u64);
+        let val: u64 = a.sub(b).unwrap().into();
+        assert_eq!(val, 200);
     }
 
     #[test]
