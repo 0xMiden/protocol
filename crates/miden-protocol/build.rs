@@ -168,7 +168,7 @@ fn compile_tx_kernel(source_dir: &Path, target_dir: &Path, build_dir: &str) -> R
 
         let masb_file_path =
             target_dir.join("kernel_library").with_extension(Library::LIBRARY_EXTENSION);
-        test_lib.write_to_file(masb_file_path).into_diagnostic()?;
+        (*test_lib).write_to_file(masb_file_path).into_diagnostic()?;
     }
 
     Ok(assembler)
@@ -284,7 +284,7 @@ fn compile_protocol_lib(
     let output_file = target_dir.join("protocol").with_extension(Library::LIBRARY_EXTENSION);
     protocol_lib.write_to_file(output_file).into_diagnostic()?;
 
-    Ok(protocol_lib)
+    Ok(Arc::unwrap_or_clone(protocol_lib))
 }
 
 // HELPER FUNCTIONS
