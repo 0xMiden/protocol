@@ -85,7 +85,6 @@ const AMOUNT_OFFSET = 13
 const METADATA_HASH_OFFSET = 21
 const PADDING_OFFSET = 29
 
-
 # Native token handling constants
 # Miden network ID for detecting native tokens
 # TODO: Update to actual Miden network ID once assigned by AggLayer
@@ -340,7 +339,7 @@ proc process_claim_by_network
         movdn.5  # Move native_amount down, keeping dest IDs accessible
         # => [dest_suff, dest_pref, origin_net, faucet_suff, faucet_pref, native_amount, pad(16)]
         
-        # Drop faucet IDs and origin_network and padding
+        # Drop faucet IDs (2 felts) + origin_network (1 felt) + padding (16 felts) = 19 total
         drop drop drop dropw dropw drop drop
         # => [dest_suff, dest_pref, native_amount]
         
@@ -1271,9 +1270,13 @@ end
 #! Invocation: exec
 proc write_unlock_note_storage
     # Get stored values from local memory
-    mem_load.1  # destination_id_suffix
-    mem_load.2  # destination_id_prefix
-    mem_load.0  # native_amount
+    # Local indices set by process_claim_by_network (for native token path):
+    # - Local 0: native_amount (loaded from CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT)
+    # - Local 1: destination_id_suffix (stored early in procedure)
+    # - Local 2: destination_id_prefix (stored early in procedure)
+    mem_load.1  # destination_id_suffix from local memory
+    mem_load.2  # destination_id_prefix from local memory
+    mem_load.0  # native_amount from local memory
     # => [destination_id_suffix, destination_id_prefix, native_amount]
     
     # Write destination account IDs [16..17]
