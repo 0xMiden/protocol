@@ -168,61 +168,18 @@ async fn test_active_note_get_sender() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[rstest::rstest]
+#[case(NoteType::Public)]
+#[case(NoteType::Private)]
 #[tokio::test]
-async fn test_active_note_get_note_type_public() -> anyhow::Result<()> {
-    let tx_context = {
-        let account =
-            Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
-        let input_note = create_public_p2any_note(
-            ACCOUNT_ID_SENDER.try_into().unwrap(),
-            [FungibleAsset::mock(100)],
-        );
-        TransactionContextBuilder::new(account)
-            .extend_input_notes(vec![input_note])
-            .build()?
-    };
-
-    let code = "
-        use $kernel::prologue
-        use $kernel::note->note_internal
-        use miden::protocol::active_note
-        use miden::protocol::note
-
-        begin
-            exec.prologue::prepare_transaction
-            exec.note_internal::prepare_note
-            dropw dropw dropw dropw
-
-            exec.active_note::get_metadata
-            # => [NOTE_ATTACHMENT, METADATA_HEADER]
-            dropw
-            # => [METADATA_HEADER]
-
-            exec.note::metadata_into_note_type
-            # => [note_type]
-
-            # truncate the stack
-            swapw dropw
-        end
-        ";
-
-    let exec_output = tx_context.execute_code(code).await?;
-
-    // Public note type should be 1
-    assert_eq!(exec_output.get_stack_element(0), Felt::from(NoteType::Public));
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_active_note_get_note_type_private() -> anyhow::Result<()> {
+async fn test_active_note_get_note_type(#[case] note_type: NoteType) -> anyhow::Result<()> {
     let tx_context = {
         let account =
             Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
         let mut rng = miden_protocol::crypto::rand::RandomCoin::new(Word::default());
         let input_note = crate::utils::create_p2any_note(
             ACCOUNT_ID_SENDER.try_into().unwrap(),
-            NoteType::Private,
+            note_type,
             [FungibleAsset::mock(100)],
             &mut rng,
         );
@@ -257,8 +214,7 @@ async fn test_active_note_get_note_type_private() -> anyhow::Result<()> {
 
     let exec_output = tx_context.execute_code(code).await?;
 
-    // Private note type should be 0
-    assert_eq!(exec_output.get_stack_element(0), Felt::from(NoteType::Private));
+    assert_eq!(exec_output.get_stack_element(0), Felt::from(note_type));
 
     Ok(())
 }

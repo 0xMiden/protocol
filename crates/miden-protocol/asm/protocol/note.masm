@@ -229,12 +229,12 @@ end
 #! Outputs: [note_type]
 #!
 #! Where:
-#! - METADATA_HEADER is the metadata of a note.
+#! - METADATA_HEADER is the metadata of a note, laid out as
+#!   [sender_id_suffix_type_version, sender_id_prefix, tag, attachment_kind_scheme].
 #! - note_type is the type of the note (0 for private, 1 for public).
 #!
 #! Invocation: exec
 pub proc metadata_into_note_type
-    # => [sender_id_suffix_type_version, sender_id_prefix, tag, attachment_kind_scheme]
 
     movdn.3 drop drop drop
     # => [sender_id_suffix_type_version]
