@@ -214,7 +214,9 @@ async fn test_active_note_get_note_type(#[case] note_type: NoteType) -> anyhow::
 
     let exec_output = tx_context.execute_code(code).await?;
 
-    assert_eq!(exec_output.get_stack_element(0), Felt::from(note_type));
+    let actual_note_type = NoteType::try_from(exec_output.get_stack_element(0))
+        .expect("stack element should be a valid note type");
+    assert_eq!(actual_note_type, note_type);
 
     Ok(())
 }
