@@ -552,23 +552,27 @@ proc execute_pswap
     exec.create_p2id_note
     # => []
 
-    # Consumer receives only acct_fill_offered_out into vault (not the inflight portion)
-    padw padw
-    # => [pad(8)]
+    # Consumer receives only acct_fill_offered_out into vault (not the inflight portion, if > 0)
+    mem_load.AMT_OFFERED_OUT_ACCT_FILL push.0 gt
+    # => [amt > 0]
+    if.true
+        padw padw
+        # => [pad(8)]
 
-    mem_load.AMT_OFFERED_OUT_ACCT_FILL
-    mem_load.OFFERED_FAUCET_PREFIX
-    mem_load.OFFERED_FAUCET_SUFFIX
-    mem_load.OFFERED_ENABLE_CB
-    # => [enable_cb, faucet_suffix, faucet_prefix, amt_offered_out_input, pad(8)]
+        mem_load.AMT_OFFERED_OUT_ACCT_FILL
+        mem_load.OFFERED_FAUCET_PREFIX
+        mem_load.OFFERED_FAUCET_SUFFIX
+        mem_load.OFFERED_ENABLE_CB
+        # => [enable_cb, faucet_suffix, faucet_prefix, amt_offered_out_input, pad(8)]
 
-    exec.asset::create_fungible_asset
-    # => [ASSET_KEY, ASSET_VALUE, pad(8)]
+        exec.asset::create_fungible_asset
+        # => [ASSET_KEY, ASSET_VALUE, pad(8)]
 
-    call.wallet::receive_asset
-    # => [pad(16)]
-    dropw dropw dropw dropw
-    # => []
+        call.wallet::receive_asset
+        # => [pad(16)]
+        dropw dropw dropw dropw
+        # => []
+    end
 
     # Check if partial fill: total_in < total_requested
     mem_load.AMT_REQUESTED_ACCT_FILL mem_load.AMT_REQUESTED_INFLIGHT add

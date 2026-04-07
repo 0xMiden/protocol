@@ -261,6 +261,12 @@ where
 }
 
 impl PswapNote {
+    // CONSTANTS
+    // --------------------------------------------------------------------------------------------
+
+    /// Expected number of storage items for the PSWAP note.
+    pub const NUM_STORAGE_ITEMS: usize = PswapNoteStorage::NUM_STORAGE_ITEMS;
+
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
