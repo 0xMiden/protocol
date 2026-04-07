@@ -9,7 +9,7 @@ use miden_protocol::note::{
     NoteScript, NoteStorage, NoteTag, NoteType,
 };
 use miden_protocol::utils::sync::LazyLock;
-use miden_protocol::{Felt, Hasher, ONE, Word, ZERO};
+use miden_protocol::{Felt, ONE, Word, ZERO};
 
 use crate::StandardsLib;
 use crate::note::P2idNoteStorage;
@@ -513,7 +513,8 @@ impl PswapNote {
     /// Builds a payback note (P2ID) that delivers the filled assets to the swap creator.
     ///
     /// The note inherits its type (public/private) from this PSWAP note and derives a
-    /// deterministic serial number via `hmerge(swap_count + 1, serial_num)`.
+    /// deterministic serial number by incrementing the least significant element of the
+    /// serial number (`serial[0] + 1`).
     ///
     /// The attachment carries the fill amount as auxiliary data with
     /// `NoteAttachmentScheme::none()`, matching the on-chain MASM behavior.
@@ -524,14 +525,13 @@ impl PswapNote {
         fill_amount: u64,
     ) -> Result<Note, NoteError> {
         let payback_note_tag = self.storage.payback_note_tag();
-        // Derive P2ID serial matching PSWAP.masm
-        let next_swap_count = self
-            .storage
-            .swap_count
-            .checked_add(1)
-            .ok_or_else(|| NoteError::other("swap count overflow"))?;
-        let swap_count_word = Word::from([Felt::from(next_swap_count), ZERO, ZERO, ZERO]);
-        let p2id_serial_num = Hasher::merge(&[swap_count_word, self.serial_number]);
+        // Derive P2ID serial: increment least significant element (matching MASM add.1)
+        let p2id_serial_num = Word::from([
+            self.serial_number[0] + ONE,
+            self.serial_number[1],
+            self.serial_number[2],
+            self.serial_number[3],
+        ]);
 
         // P2ID recipient targets the creator
         let recipient =
@@ -556,7 +556,7 @@ impl PswapNote {
     /// Builds a remainder PSWAP note carrying the unfilled portion of the swap.
     ///
     /// The remainder inherits the original creator, tags, and note type, but has an
-    /// incremented swap count and an updated serial number (`serial[0] + 1`).
+    /// incremented swap count and an updated serial number (`serial[3] + 1`).
     ///
     /// The attachment carries the total offered amount for the fill as auxiliary data
     /// with `NoteAttachmentScheme::none()`, matching the on-chain MASM behavior.
@@ -579,12 +579,12 @@ impl PswapNote {
             .creator_account_id(self.storage.creator_account_id)
             .build();
 
-        // Remainder serial: increment top element (matching MASM add.1 on Word[0])
+        // Remainder serial: increment most significant element (matching MASM movup.3 add.1 movdn.3)
         let remainder_serial_num = Word::from([
-            self.serial_number[0] + ONE,
+            self.serial_number[0],
             self.serial_number[1],
             self.serial_number[2],
-            self.serial_number[3],
+            self.serial_number[3] + ONE,
         ]);
 
         let attachment_word = Word::from([

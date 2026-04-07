@@ -60,14 +60,9 @@ const OFFERED_ASSET_KEY = 0x0038
 const OFFERED_ASSET_WORD = 0x0018
 
 # Note indices and type
-const P2ID_NOTE_IDX = 0x007C
 const PSWAP_NOTE_IDX = 0x0080
 const NOTE_TYPE = 0x0084
 
-# P2ID recipient storage (creator account ID written here for build_recipient)
-# Layout matches P2ID note storage: [suffix, prefix]
-const P2ID_RECIPIENT_SUFFIX = 0x0FA0
-const P2ID_RECIPIENT_PREFIX = 0x0FA1
 
 # ERRORS
 # =================================================================================================
@@ -230,116 +225,64 @@ proc extract_note_type
     # => []
 end
 
-# HASHING PROCEDURES
-# =================================================================================================
-
-#! Builds the P2ID recipient hash for the swap creator.
-#!
-#! Loads the creator's account ID from note storage (PSWAP_CREATOR_SUFFIX/PREFIX_ITEM),
-#! stores it as P2ID note storage [suffix, prefix] at a temp address, and calls
-#! note::build_recipient to compute the recipient commitment.
-#!
-#! Inputs: [SERIAL_NUM, SCRIPT_ROOT]
-#! Outputs: [P2ID_RECIPIENT]
-#!
-proc build_p2id_recipient_hash
-    # Store creator [suffix, prefix] for P2ID recipient hashing
-    mem_load.PSWAP_CREATOR_SUFFIX_ITEM mem_store.P2ID_RECIPIENT_SUFFIX
-    mem_load.PSWAP_CREATOR_PREFIX_ITEM mem_store.P2ID_RECIPIENT_PREFIX
-    # => [SERIAL_NUM, SCRIPT_ROOT]
-
-    # note::build_recipient: [storage_ptr, num_storage_items, SERIAL_NUM, SCRIPT_ROOT] => [RECIPIENT]
-    push.2.P2ID_RECIPIENT_SUFFIX
-    # => [storage_ptr, num_storage_items=2, SERIAL_NUM, SCRIPT_ROOT]
-
-    exec.note::build_recipient
-    # => [P2ID_RECIPIENT]
-end
-
 # P2ID NOTE CREATION PROCEDURE
 # =================================================================================================
 
 #! Creates a P2ID output note for the swap creator.
 #!
-#! Derives a unique serial number from the swap count and the active note's serial,
-#! computes the P2ID recipient, creates the output note, sets the attachment,
-#! and adds the requested assets (from vault and/or inflight).
+#! Derives a unique serial number by incrementing the least significant element
+#! of the provided serial, creates the output note using p2id::new, sets the
+#! attachment, and adds the requested assets (from vault and/or inflight).
 #!
-#! Inputs: []
+#! Inputs: [creator_suffix, creator_prefix, tag, note_type, SERIAL_NUM,
+#!          enable_callbacks, faucet_suffix, faucet_prefix, amt_in, amt_inflight]
 #! Outputs: []
 #!
+@locals(6)
+# loc.0 = note_idx
+# loc.1 = enable_callbacks
+# loc.2 = faucet_suffix
+# loc.3 = faucet_prefix
+# loc.4 = amt_in
+# loc.5 = amt_inflight
 proc create_p2id_note
-    # Get P2ID script root at compile time via procref
-    procref.p2id::main
-    # => [P2ID_SCRIPT_ROOT]
+    # Derive P2ID serial: increment least significant element
+    movup.4 add.1 movdn.4
+    # => [creator_suffix, creator_prefix, tag, note_type, P2ID_SERIAL_NUM,
+    #     enable_callbacks, faucet_suffix, faucet_prefix, amt_in, amt_inflight]
 
-    # Increment swap count (ensures unique serial per P2ID note in chained fills)
-    mem_load.PSWAP_COUNT_ITEM add.1 mem_store.PSWAP_COUNT_ITEM
-    # => [P2ID_SCRIPT_ROOT]
+    exec.p2id::new
+    # => [note_idx, enable_callbacks, faucet_suffix, faucet_prefix, amt_in, amt_inflight]
 
-    # Load swap count word from memory
-    padw mem_loadw_le.PSWAP_COUNT_ITEM
-    # => [SWAP_COUNT_WORD, P2ID_SCRIPT_ROOT]
-
-    # Get serial number from active note
-    exec.active_note::get_serial_number
-    # => [SERIAL_NUM, SWAP_COUNT_WORD, P2ID_SCRIPT_ROOT]
-
-    # Derive P2ID serial: hmerge(SWAP_COUNT_WORD, SERIAL_NUM)
-    swapw
-    # => [SWAP_COUNT_WORD, SERIAL_NUM, P2ID_SCRIPT_ROOT]
-    hmerge
-    # => [P2ID_SERIAL_NUM, P2ID_SCRIPT_ROOT]
-
-    # Build P2ID recipient
-    exec.build_p2id_recipient_hash
-    # => [P2ID_RECIPIENT]
-
-    # Create output note (note_type inherited from active note metadata)
-    mem_load.NOTE_TYPE
-    # => [note_type, P2ID_RECIPIENT]
-
-    mem_load.P2ID_TAG_ITEM
-    # => [tag, note_type, RECIPIENT]
-
-    exec.output_note::create
-    # => [note_idx]
-
-    mem_store.P2ID_NOTE_IDX
+    loc_store.0 loc_store.1 loc_store.2 loc_store.3 loc_store.4 loc_store.5
     # => []
 
-    # Set attachment: aux = input_amount + inflight_amount (total fill)
+    # Set attachment: aux = amt_in + amt_inflight
     # attachment_scheme = 0 (NoteAttachmentScheme::none)
-    # See: output_note::set_word_attachment in miden-protocol/asm/protocol/output_note.masm
-    mem_load.AMT_REQUESTED_IN mem_load.AMT_REQUESTED_INFLIGHT add
+    loc_load.4 loc_load.5 add
+    # => [total_fill]
     push.0.0.0
-    # => [0, 0, 0, aux]
-
-    push.0 mem_load.P2ID_NOTE_IDX
-    # => [note_idx, attachment_scheme=0, ATTACHMENT]
+    # => [0, 0, 0, total_fill]
+    push.0 loc_load.0
+    # => [note_idx, attachment_scheme=0, 0, 0, 0, total_fill]
 
     exec.output_note::set_word_attachment
     # => []
 
     # Move input_amount from consumer's vault to P2ID note (if > 0)
-    mem_load.AMT_REQUESTED_IN dup push.0 neq
-    # => [amt != 0, amt]
+    loc_load.4 push.0 gt
+    # => [amt > 0]
     if.true
-        drop
-
         # Build 16-element call frame: [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
-        padw push.0.0.0
-        # => [pad(7)]
-
-        mem_load.P2ID_NOTE_IDX
+        padw push.0.0.0 loc_load.0
         # => [note_idx, pad(7)]
 
-        # Create requested asset with input amount using create_fungible_asset
-        # Stack order: [enable_callbacks, faucet_id_suffix, faucet_id_prefix, amount]
-        mem_load.AMT_REQUESTED_IN
-        mem_load.REQUESTED_FAUCET_PREFIX_ITEM
-        mem_load.REQUESTED_FAUCET_SUFFIX_ITEM
-        mem_load.REQUESTED_ENABLE_CALLBACKS_ITEM
+        push.0.0.0 loc_load.4
+        # => [amt_in, 0, 0, 0, note_idx, pad(7)]
+
+        loc_load.3 loc_load.2 loc_load.1
+        # => [enable_cb, faucet_suffix, faucet_prefix, amt_in, 0, 0, 0, note_idx, pad(7)]
+
         exec.asset::create_fungible_asset
         # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
 
@@ -348,32 +291,23 @@ proc create_p2id_note
 
         dropw dropw dropw dropw
         # => []
-    else
-        drop
     end
 
     # Add inflight_amount directly to P2ID note (no vault debit, if > 0)
-    mem_load.AMT_REQUESTED_INFLIGHT dup push.0 neq
-    # => [amt != 0, amt]
+    loc_load.5 push.0 gt
+    # => [amt > 0]
     if.true
-        drop
-
-        mem_load.P2ID_NOTE_IDX
+        loc_load.0
         # => [note_idx]
 
-        # Create requested asset with inflight amount using create_fungible_asset
-        # Stack order: [enable_callbacks, faucet_id_suffix, faucet_id_prefix, amount]
-        mem_load.AMT_REQUESTED_INFLIGHT
-        mem_load.REQUESTED_FAUCET_PREFIX_ITEM
-        mem_load.REQUESTED_FAUCET_SUFFIX_ITEM
-        mem_load.REQUESTED_ENABLE_CALLBACKS_ITEM
+        loc_load.5 loc_load.3 loc_load.2 loc_load.1
+        # => [enable_cb, faucet_suffix, faucet_prefix, amt_inflight, note_idx]
+
         exec.asset::create_fungible_asset
         # => [ASSET_KEY, ASSET_VALUE, note_idx]
 
         exec.output_note::add_asset
         # => []
-    else
-        drop
     end
 end
 
@@ -399,9 +333,11 @@ proc create_remainder_note
     exec.active_note::get_script_root
     # => [SCRIPT_ROOT]
 
-    # Derive remainder serial: increment top element of active note's serial number
-    exec.active_note::get_serial_number add.1
-    # => [SERIAL_NUM', SCRIPT_ROOT]
+    # Derive remainder serial: increment most significant element of active note's serial
+    exec.active_note::get_serial_number
+    # => [s0, s1, s2, s3, SCRIPT_ROOT]
+    movup.3 add.1 movdn.3
+    # => [s0, s1, s2, s3+1, SCRIPT_ROOT]
 
     # Build recipient from all note storage items (now with updated requested amount)
     push.NUM_STORAGE_ITEMS.0
@@ -580,6 +516,19 @@ proc execute_pswap
     # => []
 
     # Create P2ID note for creator
+    mem_load.AMT_REQUESTED_INFLIGHT
+    mem_load.AMT_REQUESTED_IN
+    mem_load.REQUESTED_FAUCET_PREFIX_ITEM
+    mem_load.REQUESTED_FAUCET_SUFFIX_ITEM
+    mem_load.REQUESTED_ENABLE_CALLBACKS_ITEM
+    exec.active_note::get_serial_number
+    mem_load.NOTE_TYPE
+    mem_load.P2ID_TAG_ITEM
+    mem_load.PSWAP_CREATOR_PREFIX_ITEM
+    mem_load.PSWAP_CREATOR_SUFFIX_ITEM
+    # => [creator_suffix, creator_prefix, tag, note_type, SERIAL_NUM,
+    #     enable_callbacks, faucet_suffix, faucet_prefix, amt_in, amt_inflight]
+
     exec.create_p2id_note
     # => []
 
