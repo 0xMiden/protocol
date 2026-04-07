@@ -38,7 +38,7 @@ impl FungibleAsset {
     ///
     /// This number was chosen so that it can be represented as a positive and negative number in a
     /// field element. See `account_delta.masm` for more details on how this number was chosen.
-    pub const MAX_AMOUNT: u64 = AssetAmount::MAX.as_u64();
+    pub const MAX_AMOUNT: u64 = 2u64.pow(63) - 2u64.pow(31);
 
     /// The serialized size of a [`FungibleAsset`] in bytes.
     ///
@@ -126,7 +126,7 @@ impl FungibleAsset {
 
     /// Returns the amount of this asset.
     pub fn amount(&self) -> u64 {
-        self.amount.as_u64()
+        self.amount.into()
     }
 
     /// Returns true if this and the other asset were issued from the same faucet.
@@ -153,7 +153,7 @@ impl FungibleAsset {
     /// Returns the asset's value encoded to a [`Word`].
     pub fn to_value_word(&self) -> Word {
         Word::new([
-            Felt::try_from(self.amount.as_u64())
+            Felt::try_from(u64::from(self.amount))
                 .expect("fungible asset should only allow amounts that fit into a felt"),
             Felt::ZERO,
             Felt::ZERO,
@@ -179,12 +179,7 @@ impl FungibleAsset {
             });
         }
 
-        let raw = self
-            .amount
-            .as_u64()
-            .checked_add(other.amount.as_u64())
-            .expect("even MAX_AMOUNT + MAX_AMOUNT should not overflow u64");
-        let amount = AssetAmount::new(raw)?;
+        let amount = self.amount.add(other.amount)?;
 
         Ok(Self {
             faucet_id: self.faucet_id,
@@ -208,14 +203,7 @@ impl FungibleAsset {
             });
         }
 
-        let raw = self.amount.as_u64().checked_sub(other.amount.as_u64()).ok_or(
-            AssetError::FungibleAssetAmountNotSufficient {
-                minuend: self.amount.as_u64(),
-                subtrahend: other.amount.as_u64(),
-            },
-        )?;
-        let amount = AssetAmount::new(raw)
-            .expect("subtraction of valid amounts should produce a valid amount");
+        let amount = self.amount.sub(other.amount)?;
 
         Ok(FungibleAsset {
             faucet_id: self.faucet_id,
@@ -246,13 +234,13 @@ impl Serializable for FungibleAsset {
         // All assets should serialize their faucet ID at the first position to allow them to be
         // distinguishable during deserialization.
         target.write(self.faucet_id);
-        target.write(self.amount.as_u64());
+        target.write(u64::from(self.amount));
         target.write(self.callbacks);
     }
 
     fn get_size_hint(&self) -> usize {
         self.faucet_id.get_size_hint()
-            + self.amount.as_u64().get_size_hint()
+            + u64::from(self.amount).get_size_hint()
             + self.callbacks.get_size_hint()
     }
 }
