@@ -676,43 +676,35 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn pswap_note_creation_and_script() {
-        let mut offered_faucet_bytes = [0; 15];
-        offered_faucet_bytes[0] = 0xaa;
+    // TEST HELPERS
+    // --------------------------------------------------------------------------------------------
 
-        let mut requested_faucet_bytes = [0; 15];
-        requested_faucet_bytes[0] = 0xbb;
-
-        let offered_faucet_id = AccountId::dummy(
-            offered_faucet_bytes,
+    fn dummy_faucet_id(byte: u8) -> AccountId {
+        let mut bytes = [0; 15];
+        bytes[0] = byte;
+        AccountId::dummy(
+            bytes,
             AccountIdVersion::Version0,
             AccountType::FungibleFaucet,
             AccountStorageMode::Public,
-        );
+        )
+    }
 
-        let requested_faucet_id = AccountId::dummy(
-            requested_faucet_bytes,
-            AccountIdVersion::Version0,
-            AccountType::FungibleFaucet,
-            AccountStorageMode::Public,
-        );
-
-        let creator_id = AccountId::dummy(
+    fn dummy_creator_id() -> AccountId {
+        AccountId::dummy(
             [1; 15],
             AccountIdVersion::Version0,
             AccountType::RegularAccountImmutableCode,
             AccountStorageMode::Public,
-        );
+        )
+    }
 
-        let offered_asset = FungibleAsset::new(offered_faucet_id, 1000).unwrap();
-        let requested_asset = FungibleAsset::new(requested_faucet_id, 500).unwrap();
-
+    fn build_pswap_note(
+        offered_asset: FungibleAsset,
+        requested_asset: FungibleAsset,
+        creator_id: AccountId,
+    ) -> (PswapNote, Note) {
         let mut rng = RandomCoin::new(Word::default());
-
-        let script = PswapNote::script();
-        assert!(script.root() != Word::default(), "Script root should not be zero");
-
         let storage = PswapNoteStorage::builder()
             .requested_asset(requested_asset)
             .creator_account_id(creator_id)
@@ -725,15 +717,30 @@ mod tests {
             .offered_asset(offered_asset)
             .build()
             .unwrap();
+        let note: Note = pswap.clone().into();
+        (pswap, note)
+    }
 
-        let note: Note = pswap.into();
+    // TESTS
+    // --------------------------------------------------------------------------------------------
 
+    #[test]
+    fn pswap_note_creation_and_script() {
+        let creator_id = dummy_creator_id();
+        let offered_asset = FungibleAsset::new(dummy_faucet_id(0xaa), 1000).unwrap();
+        let requested_asset = FungibleAsset::new(dummy_faucet_id(0xbb), 500).unwrap();
+
+        let (pswap, note) = build_pswap_note(offered_asset, requested_asset, creator_id);
+
+        assert_eq!(pswap.sender(), creator_id);
+        assert_eq!(pswap.note_type(), NoteType::Public);
+
+        let script = PswapNote::script();
+        assert!(script.root() != Word::default(), "Script root should not be zero");
         assert_eq!(note.metadata().sender(), creator_id);
         assert_eq!(note.metadata().note_type(), NoteType::Public);
         assert_eq!(note.assets().num_assets(), 1);
         assert_eq!(note.recipient().script().root(), script.root());
-
-        // Verify storage has 18 items
         assert_eq!(
             note.recipient().storage().num_items(),
             PswapNoteStorage::NUM_STORAGE_ITEMS as u16,
@@ -742,56 +749,14 @@ mod tests {
 
     #[test]
     fn pswap_note_builder() {
-        let mut offered_faucet_bytes = [0; 15];
-        offered_faucet_bytes[0] = 0xaa;
+        let creator_id = dummy_creator_id();
+        let offered_asset = FungibleAsset::new(dummy_faucet_id(0xaa), 1000).unwrap();
+        let requested_asset = FungibleAsset::new(dummy_faucet_id(0xbb), 500).unwrap();
 
-        let mut requested_faucet_bytes = [0; 15];
-        requested_faucet_bytes[0] = 0xbb;
-
-        let offered_faucet_id = AccountId::dummy(
-            offered_faucet_bytes,
-            AccountIdVersion::Version0,
-            AccountType::FungibleFaucet,
-            AccountStorageMode::Public,
-        );
-
-        let requested_faucet_id = AccountId::dummy(
-            requested_faucet_bytes,
-            AccountIdVersion::Version0,
-            AccountType::FungibleFaucet,
-            AccountStorageMode::Public,
-        );
-
-        let creator_id = AccountId::dummy(
-            [1; 15],
-            AccountIdVersion::Version0,
-            AccountType::RegularAccountImmutableCode,
-            AccountStorageMode::Public,
-        );
-
-        let offered_asset = FungibleAsset::new(offered_faucet_id, 1000).unwrap();
-        let requested_asset = FungibleAsset::new(requested_faucet_id, 500).unwrap();
-
-        let mut rng = RandomCoin::new(Word::default());
-
-        let storage = PswapNoteStorage::builder()
-            .requested_asset(requested_asset)
-            .creator_account_id(creator_id)
-            .build();
-        let pswap = PswapNote::builder()
-            .sender(creator_id)
-            .storage(storage)
-            .serial_number(rng.draw_word())
-            .note_type(NoteType::Public)
-            .offered_asset(offered_asset)
-            .build()
-            .unwrap();
+        let (pswap, note) = build_pswap_note(offered_asset, requested_asset, creator_id);
 
         assert_eq!(pswap.sender(), creator_id);
         assert_eq!(pswap.note_type(), NoteType::Public);
-
-        // Convert to Note
-        let note: Note = pswap.into();
         assert_eq!(note.metadata().sender(), creator_id);
         assert_eq!(note.metadata().note_type(), NoteType::Public);
         assert_eq!(note.assets().num_assets(), 1);
@@ -842,14 +807,9 @@ mod tests {
 
     #[test]
     fn calculate_output_amount() {
-        // Equal ratio
-        assert_eq!(PswapNote::calculate_output_amount(100, 100, 50), 50);
-
-        // 2:1 ratio
-        assert_eq!(PswapNote::calculate_output_amount(200, 100, 50), 100);
-
-        // 1:2 ratio
-        assert_eq!(PswapNote::calculate_output_amount(100, 200, 50), 25);
+        assert_eq!(PswapNote::calculate_output_amount(100, 100, 50), 50); // Equal ratio
+        assert_eq!(PswapNote::calculate_output_amount(200, 100, 50), 100); // 2:1 ratio
+        assert_eq!(PswapNote::calculate_output_amount(100, 200, 50), 25); // 1:2 ratio
 
         // Non-integer ratio (100/73)
         let result = PswapNote::calculate_output_amount(100, 73, 7);
@@ -858,29 +818,16 @@ mod tests {
 
     #[test]
     fn pswap_note_storage_try_from() {
-        let creator_id = AccountId::dummy(
-            [1; 15],
-            AccountIdVersion::Version0,
-            AccountType::RegularAccountImmutableCode,
-            AccountStorageMode::Public,
-        );
-
-        let faucet_id = AccountId::dummy(
-            [0xaa; 15],
-            AccountIdVersion::Version0,
-            AccountType::FungibleFaucet,
-            AccountStorageMode::Public,
-        );
-
-        let requested_asset = FungibleAsset::new(faucet_id, 500).unwrap();
+        let creator_id = dummy_creator_id();
+        let requested_asset = FungibleAsset::new(dummy_faucet_id(0xaa), 500).unwrap();
 
         let storage_items = vec![
-            Felt::from(requested_asset.callbacks().as_u8()), // enable_callbacks
-            requested_asset.faucet_id().suffix(),            // faucet_id_suffix
-            requested_asset.faucet_id().prefix().as_felt(),  // faucet_id_prefix
-            Felt::try_from(requested_asset.amount()).unwrap(), // amount
-            Felt::from(0xc0000000u32),                       // pswap_tag
-            Felt::from(0x80000001u32),                       // payback_note_tag
+            Felt::from(requested_asset.callbacks().as_u8()),
+            requested_asset.faucet_id().suffix(),
+            requested_asset.faucet_id().prefix().as_felt(),
+            Felt::try_from(requested_asset.amount()).unwrap(),
+            Felt::from(0xc0000000u32), // pswap_tag
+            Felt::from(0x80000001u32), // payback_note_tag
             ZERO,
             ZERO,
             Felt::from(3u16), // swap_count
@@ -899,27 +846,14 @@ mod tests {
 
     #[test]
     fn pswap_note_storage_roundtrip() {
-        let creator_id = AccountId::dummy(
-            [1; 15],
-            AccountIdVersion::Version0,
-            AccountType::RegularAccountImmutableCode,
-            AccountStorageMode::Public,
-        );
+        let creator_id = dummy_creator_id();
+        let requested_asset = FungibleAsset::new(dummy_faucet_id(0xaa), 500).unwrap();
 
-        let faucet_id = AccountId::dummy(
-            [0xaa; 15],
-            AccountIdVersion::Version0,
-            AccountType::FungibleFaucet,
-            AccountStorageMode::Public,
-        );
-
-        let requested_asset = FungibleAsset::new(faucet_id, 500).unwrap();
         let storage = PswapNoteStorage::builder()
             .requested_asset(requested_asset)
             .creator_account_id(creator_id)
             .build();
 
-        // Convert to NoteStorage and back
         let note_storage = NoteStorage::from(storage.clone());
         let parsed = PswapNoteStorage::try_from(note_storage.items()).unwrap();
 
