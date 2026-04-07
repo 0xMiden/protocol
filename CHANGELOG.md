@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.14.3 (unreleased)
+
+### Changes
+
+- Updated for compatibility with miden-vm v0.22.1 (`Arc<Library>` return types, `MastArtifact`/`PackageKind` removal) ([#2742](https://github.com/0xMiden/protocol/pull/2742)).
+
 ## 0.14.2 (2026-03-31)
 
 ### Changes
