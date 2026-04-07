@@ -4,6 +4,7 @@
 
 ### Changes
 
+- Added `AssetAmount` wrapper type for validated fungible asset amounts with `add`/`sub` arithmetic ([#2721](https://github.com/0xMiden/protocol/pull/2721)).
 - [BREAKING] Renamed `ProvenBatch::new` to `new_unchecked` ([#2687](https://github.com/0xMiden/miden-base/issues/2687)).
 - [BREAKING] Renamed the multisig PSM auth component, procedures, storage paths, and related APIs from `psm` to `guardian`.
 - [BREAKING] Renamed the guarded multisig component-facing APIs from `multisig_guardian` / `AuthMultisigGuardian` to `guarded_multisig` / `AuthGuardedMultisig`, while retaining the `guardian` auth namespace and guardian-specific procedures.
