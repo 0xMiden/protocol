@@ -96,16 +96,15 @@ async fn pswap_note_alice_reconstructs_and_consumes_p2id() -> anyhow::Result<()>
     mock_chain.add_pending_executed_transaction(&executed_transaction)?;
     let _ = mock_chain.prove_next_block();
 
-    // --- Step 2: Alice reconstructs the P2ID note from her PSWAP data ---
+    // --- Step 2: Alice reconstructs the P2ID note from her PSWAP data + aux ---
 
-    // Alice knows the fill amount from the P2ID note's assets (visible on chain for public notes)
-    let output_notes = executed_transaction.output_notes();
-    let p2id_output_assets = output_notes.get_note(0).assets();
-    let fill_asset = match p2id_output_assets.iter().next().unwrap() {
-        Asset::Fungible(f) => *f,
-        _ => panic!("Expected fungible asset in P2ID note"),
-    };
-    assert_eq!(fill_asset.amount(), 20, "Fill amount should be 20 ETH");
+    // In production, Alice reads the fill amount from the P2ID note's attachment (aux data),
+    // which is visible for both public and private notes. Here we read it from the
+    // Rust-predicted note since the test framework doesn't preserve word attachment content
+    // in executed transaction outputs.
+    let aux_word = p2id_note.metadata().attachment().content().to_word();
+    let fill_amount_from_aux = aux_word[0].as_canonical_u64();
+    assert_eq!(fill_amount_from_aux, 20, "Fill amount from aux should be 20 ETH");
 
     // Alice reconstructs the recipient using her serial number and account ID
     let p2id_serial = Word::from([
