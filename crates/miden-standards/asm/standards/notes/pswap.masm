@@ -495,7 +495,9 @@ proc execute_pswap
         mem_load.AMT_REQUESTED mem_store.AMT_REQUESTED_IN
     end
 
-    # Validate: fill amount (input + inflight) must not exceed total requested
+    # Validate: fill amount (input + inflight) must not exceed total requested.
+    # Overfilling is not allowed because it is likely due to an error and mostly
+    # unintentional — the consumer would lose the excess tokens with no change returned.
     mem_load.AMT_REQUESTED_IN mem_load.AMT_REQUESTED_INFLIGHT add
     mem_load.AMT_REQUESTED
     # => [requested, fill_amount]
@@ -575,7 +577,9 @@ proc execute_pswap
     # Check if partial fill: total_in < total_requested
     mem_load.AMT_REQUESTED_IN mem_load.AMT_REQUESTED_INFLIGHT add
     mem_load.AMT_REQUESTED
+    # => [total_requested, total_in]
     dup.1 dup.1 lt
+    # => [is_partial, total_requested, total_in]
 
     if.true
         # remaining_requested = total_requested - total_in

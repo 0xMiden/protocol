@@ -21,6 +21,130 @@ const BASIC_AUTH: Auth = Auth::BasicAuth {
 // TESTS
 // ================================================================================================
 
+/// Verifies that Alice can independently reconstruct and consume the P2ID payback note
+/// using only her original PSWAP note data and the aux data from Bob's transaction output.
+///
+/// Flow:
+/// 1. Alice creates a PSWAP note (50 USDC for 25 ETH)
+/// 2. Bob partially fills it (20 ETH) → produces P2ID payback + remainder
+/// 3. Alice reconstructs the P2ID note from her PSWAP data + fill amount from aux
+/// 4. Alice consumes the reconstructed P2ID note and receives 20 ETH
+#[tokio::test]
+async fn pswap_note_alice_reconstructs_and_consumes_p2id() -> anyhow::Result<()> {
+    use miden_standards::note::P2idNoteStorage;
+
+    let mut builder = MockChain::builder();
+
+    let usdc_faucet = builder.add_existing_basic_faucet(BASIC_AUTH, "USDC", 1000, Some(150))?;
+    let eth_faucet = builder.add_existing_basic_faucet(BASIC_AUTH, "ETH", 1000, Some(50))?;
+
+    let alice = builder.add_existing_wallet_with_assets(
+        BASIC_AUTH,
+        [FungibleAsset::new(usdc_faucet.id(), 50)?.into()],
+    )?;
+    let bob = builder.add_existing_wallet_with_assets(
+        BASIC_AUTH,
+        [FungibleAsset::new(eth_faucet.id(), 20)?.into()],
+    )?;
+
+    let offered_asset = FungibleAsset::new(usdc_faucet.id(), 50)?;
+    let requested_asset = FungibleAsset::new(eth_faucet.id(), 25)?;
+
+    let mut rng = RandomCoin::new(Word::default());
+    let serial_number = rng.draw_word();
+    let storage = PswapNoteStorage::builder()
+        .requested_asset(requested_asset)
+        .creator_account_id(alice.id())
+        .build();
+    let pswap_note: Note = PswapNote::builder()
+        .sender(alice.id())
+        .storage(storage)
+        .serial_number(serial_number)
+        .note_type(NoteType::Public)
+        .offered_asset(offered_asset)
+        .build()?
+        .into();
+    builder.add_output_note(RawOutputNote::Full(pswap_note.clone()));
+
+    let mut mock_chain = builder.build()?;
+
+    // --- Step 1: Bob partially fills the PSWAP note (20 out of 25 ETH) ---
+
+    let fill_amount = 20u32;
+    let mut note_args_map = BTreeMap::new();
+    note_args_map.insert(
+        pswap_note.id(),
+        Word::from([Felt::from(fill_amount), Felt::from(0u32), ZERO, ZERO]),
+    );
+
+    let pswap = PswapNote::try_from(&pswap_note)?;
+    let (p2id_note, remainder_pswap) =
+        pswap.execute(bob.id(), Some(FungibleAsset::new(eth_faucet.id(), 20)?), None)?;
+    let remainder_note =
+        Note::from(remainder_pswap.expect("partial fill should produce remainder"));
+
+    let tx_context = mock_chain
+        .build_tx_context(bob.id(), &[pswap_note.id()], &[])?
+        .extend_note_args(note_args_map)
+        .extend_expected_output_notes(vec![
+            RawOutputNote::Full(p2id_note.clone()),
+            RawOutputNote::Full(remainder_note),
+        ])
+        .build()?;
+
+    let executed_transaction = tx_context.execute().await?;
+    mock_chain.add_pending_executed_transaction(&executed_transaction)?;
+    let _ = mock_chain.prove_next_block();
+
+    // --- Step 2: Alice reconstructs the P2ID note from her PSWAP data ---
+
+    // Alice knows the fill amount from the P2ID note's assets (visible on chain for public notes)
+    let output_notes = executed_transaction.output_notes();
+    let p2id_output_assets = output_notes.get_note(0).assets();
+    let fill_asset = match p2id_output_assets.iter().next().unwrap() {
+        Asset::Fungible(f) => *f,
+        _ => panic!("Expected fungible asset in P2ID note"),
+    };
+    assert_eq!(fill_asset.amount(), 20, "Fill amount should be 20 ETH");
+
+    // Alice reconstructs the recipient using her serial number and account ID
+    let p2id_serial = Word::from([
+        serial_number[0] + ONE,
+        serial_number[1],
+        serial_number[2],
+        serial_number[3],
+    ]);
+    let reconstructed_recipient = P2idNoteStorage::new(alice.id()).into_recipient(p2id_serial);
+
+    // Verify the reconstructed recipient matches the actual output
+    assert_eq!(
+        reconstructed_recipient.digest(),
+        p2id_note.recipient().digest(),
+        "Alice's reconstructed P2ID recipient does not match the actual output"
+    );
+
+    // --- Step 3: Alice consumes the P2ID payback note ---
+
+    let tx_context = mock_chain
+        .build_tx_context(alice.id(), &[p2id_note.id()], &[])?
+        .build()?;
+
+    let executed_transaction = tx_context.execute().await?;
+
+    // Verify Alice received 20 ETH
+    let vault_delta = executed_transaction.account_delta().vault();
+    let added: Vec<Asset> = vault_delta.added_assets().collect();
+    assert_eq!(added.len(), 1);
+    if let Asset::Fungible(f) = &added[0] {
+        assert_eq!(f.faucet_id(), eth_faucet.id());
+        assert_eq!(f.amount(), 20);
+    } else {
+        panic!("Expected fungible asset in Alice's vault");
+    }
+
+    Ok(())
+}
+
 #[tokio::test]
 async fn pswap_note_full_fill_test() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
