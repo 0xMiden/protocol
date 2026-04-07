@@ -3,7 +3,11 @@ use core::fmt;
 
 use super::super::errors::AssetError;
 use super::super::utils::serde::{
-    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
 };
 
 // ASSET AMOUNT
@@ -40,6 +44,7 @@ impl AssetAmount {
     /// # Errors
     ///
     /// Returns an error if the sum exceeds [`Self::MAX`].
+    #[allow(clippy::should_implement_trait)]
     pub fn add(self, other: Self) -> Result<Self, AssetError> {
         let raw = u64::from(self)
             .checked_add(u64::from(other))
@@ -52,6 +57,7 @@ impl AssetAmount {
     /// # Errors
     ///
     /// Returns an error if `other` is greater than `self`.
+    #[allow(clippy::should_implement_trait)]
     pub fn sub(self, other: Self) -> Result<Self, AssetError> {
         let raw = u64::from(self).checked_sub(u64::from(other)).ok_or(
             AssetError::FungibleAssetAmountNotSufficient {
@@ -138,10 +144,7 @@ mod tests {
     fn valid_amounts() {
         assert_eq!(u64::from(AssetAmount::new(0).unwrap()), 0);
         assert_eq!(u64::from(AssetAmount::new(1000).unwrap()), 1000);
-        assert_eq!(
-            AssetAmount::new(u64::from(AssetAmount::MAX)).unwrap(),
-            AssetAmount::MAX
-        );
+        assert_eq!(AssetAmount::new(u64::from(AssetAmount::MAX)).unwrap(), AssetAmount::MAX);
     }
 
     #[test]

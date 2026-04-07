@@ -1,9 +1,8 @@
 use alloc::string::ToString;
 use core::fmt;
 
-use super::AssetAmount;
 use super::vault::AssetVaultKey;
-use super::{AccountType, Asset, AssetCallbackFlag, AssetError, Word};
+use super::{AccountType, Asset, AssetAmount, AssetCallbackFlag, AssetError, Word};
 use crate::Felt;
 use crate::account::AccountId;
 use crate::asset::AssetId;
