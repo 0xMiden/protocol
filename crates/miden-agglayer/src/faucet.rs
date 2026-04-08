@@ -455,7 +455,11 @@ fn agglayer_faucet_conversion_slots(
     let slot1 = Word::new([addr_elements[0], addr_elements[1], addr_elements[2], addr_elements[3]]);
 
     let origin_network_packed = bytes_to_packed_u32_elements(&origin_network.to_be_bytes());
-    assert_eq!(origin_network_packed.len(), 1, "origin_network should pack into exactly one Felt");
+    assert_eq!(
+        origin_network_packed.len(),
+        1,
+        "origin_network should pack into exactly one Felt"
+    );
     let slot2 =
         Word::new([addr_elements[4], origin_network_packed[0], Felt::from(scale), Felt::ZERO]);
 
