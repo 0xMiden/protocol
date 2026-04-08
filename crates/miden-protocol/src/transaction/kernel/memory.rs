@@ -21,9 +21,9 @@ pub type StorageSlot = u8;
 // | Kernel data        | 1_600         | 140              | 34 procedures in total, 4 elements each    |
 // | Accounts data      | 8_192         | 524_288          | 64 accounts max, 8192 elements each        |
 // | Account delta      | 532_480       | 263              |                                            |
-// | Input notes        | 4_194_304     | 3_211_264        | nullifiers data segment (2^16 elements)    |
-// |                    |               |                  | + 1024 input notes max, 3072 elements each |
-// | Output notes       | 16_777_216    | 3_145_728        | 1024 output notes max, 3072 elements each  |
+// | Input notes        | 4_194_304     | 1_114_112        | nullifiers data segment (2^16 elements)    |
+// |                    |               |                  | + 1024 input notes max, 1024 elements each |
+// | Output notes       | 16_777_216    | 1_048_576        | 1024 output notes max, 1024 elements each  |
 // | Link Map Memory    | 33_554_432    | 33_554_432       | Enough for 2_097_151 key-value pairs       |
 
 // Relative layout of one account
