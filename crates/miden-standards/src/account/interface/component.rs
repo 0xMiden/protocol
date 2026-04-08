@@ -8,8 +8,8 @@ use miden_protocol::{Felt, Word};
 
 use crate::AuthMethod;
 use crate::account::auth::{
-    AuthMultisig,
     AuthGuardedMultisig,
+    AuthMultisig,
     AuthMultisigSmart,
     AuthSingleSig,
     AuthSingleSigAcl,

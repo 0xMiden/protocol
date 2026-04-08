@@ -54,7 +54,8 @@ pub enum Auth {
         proc_threshold_map: Vec<(Word, u32)>,
     },
 
-    /// Multisig with additional smart-policy configuration.    MultisigSmart {
+    /// Multisig with additional smart-policy configuration.    
+    MultisigSmart {
         threshold: u32,
         approvers: Vec<(PublicKeyCommitment, AuthScheme)>,
         proc_policy_map: Vec<(Word, ProcedurePolicy)>,
