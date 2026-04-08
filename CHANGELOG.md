@@ -12,8 +12,6 @@
 - [BREAKING] Changed `NoteType` encoding from 2 bits to 1 and makes `NoteType::Private` the default ([#2691](https://github.com/0xMiden/miden-base/issues/2691)).
 - Added `BlockNumber::saturating_sub()` ([#2660](https://github.com/0xMiden/protocol/issues/2660)).
 
-## 0.14.2 (2026-03-31)
-
 ## 0.14.3 (2026-04-07)
 
 - [BREAKING] Updated for compatibility with miden-vm v0.22.1 (`Arc<Library>` return types, `MastArtifact`/`PackageKind` removal) ([#2742](https://github.com/0xMiden/protocol/pull/2742)).
