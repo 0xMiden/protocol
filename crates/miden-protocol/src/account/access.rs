@@ -1,6 +1,8 @@
 use alloc::fmt;
 
-use super::{Felt, RoleSymbolError, ShortCapitalString};
+use crate::errors::RoleSymbolError;
+use crate::utils::ShortCapitalString;
+use crate::Felt;
 
 /// Represents a role symbol for role-based access control.
 ///
@@ -103,7 +105,8 @@ mod tests {
 
     use assert_matches::assert_matches;
 
-    use super::{Felt, RoleSymbol, RoleSymbolError};
+    use super::{Felt, RoleSymbol};
+    use crate::errors::RoleSymbolError;
 
     #[test]
     fn test_role_symbol_roundtrip_and_validation() {

@@ -1,5 +1,5 @@
 use super::account::AccountType;
-use super::errors::{AssetError, RoleSymbolError, TokenSymbolError};
+use super::errors::{AssetError, TokenSymbolError};
 use super::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -20,10 +20,6 @@ pub use nonfungible::{NonFungibleAsset, NonFungibleAssetDetails};
 
 mod token_symbol;
 pub use token_symbol::TokenSymbol;
-mod short_capital_string;
-pub(crate) use short_capital_string::ShortCapitalString;
-mod role_symbol;
-pub use role_symbol::RoleSymbol;
 
 mod asset_callbacks;
 pub use asset_callbacks::AssetCallbacks;

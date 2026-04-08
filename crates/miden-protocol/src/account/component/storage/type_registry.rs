@@ -9,7 +9,8 @@ use miden_core::{Felt, Word};
 use thiserror::Error;
 
 use crate::account::auth::{AuthScheme, PublicKey};
-use crate::asset::{RoleSymbol, TokenSymbol};
+use crate::account::RoleSymbol;
+use crate::asset::TokenSymbol;
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,

@@ -1,6 +1,7 @@
 use alloc::fmt;
 
-use super::{Felt, ShortCapitalString, TokenSymbolError};
+use super::{Felt, TokenSymbolError};
+use crate::utils::ShortCapitalString;
 
 /// Represents a token symbol (e.g. "POL", "ETH").
 ///

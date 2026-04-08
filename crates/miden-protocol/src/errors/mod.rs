@@ -12,8 +12,8 @@ use miden_crypto::merkle::smt::{SmtLeafError, SmtProofError};
 use miden_crypto::utils::HexParseError;
 use thiserror::Error;
 
-use super::account::AccountId;
-use super::asset::{AssetVaultKey, FungibleAsset, NonFungibleAsset, RoleSymbol, TokenSymbol};
+use super::account::{AccountId, RoleSymbol};
+use super::asset::{AssetVaultKey, FungibleAsset, NonFungibleAsset, TokenSymbol};
 use super::crypto::merkle::MerkleError;
 use super::note::NoteId;
 use super::{MAX_BATCHES_PER_BLOCK, MAX_OUTPUT_NOTES_PER_BATCH, Word};

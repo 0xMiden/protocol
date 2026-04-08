@@ -1,7 +1,7 @@
 use alloc::fmt;
 use alloc::string::String;
 
-use super::Felt;
+use crate::Felt;
 use crate::errors::ShortCapitalStringError;
 
 /// A short string of uppercase ASCII (and optionally underscores) encoded into a [`Felt`] with a
@@ -9,7 +9,7 @@ use crate::errors::ShortCapitalStringError;
 ///
 /// Use [`Self::from_ascii_uppercase`] or [`Self::from_ascii_uppercase_and_underscore`] to construct
 /// a validated value (same rules as [`crate::asset::TokenSymbol`] and
-/// [`crate::asset::RoleSymbol`]).
+/// [`crate::account::RoleSymbol`]).
 ///
 /// The text is stored as a [`String`] and can be converted to a [`Felt`] encoding via
 /// [`as_element()`](Self::as_element), and decoded back via
@@ -175,7 +175,8 @@ mod tests {
 
     use assert_matches::assert_matches;
 
-    use super::{Felt, ShortCapitalString, ShortCapitalStringError};
+    use super::{Felt, ShortCapitalString};
+    use crate::errors::ShortCapitalStringError;
 
     #[test]
     fn short_capital_string_encode_decode_roundtrip() {
