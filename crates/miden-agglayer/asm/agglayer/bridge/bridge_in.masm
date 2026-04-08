@@ -250,19 +250,19 @@ end
 # HELPER PROCEDURES
 # =================================================================================================
 
-#! Validates that the leaf type is 0 (asset claim, not message).
+#! Validates that the leaf type is an asset claim (leafType == 0), not a message.
 #!
 #! Inputs:  []
 #! Outputs: []
 #!
-#! Validates that the loaded leaf data has leafType == 0 (asset claim).
-#! Returns an error if leafType != 0.
+#! Panics if:
+#! - the leaf type is not 0 (not an asset claim).
+#!
 #! Invocation: exec
 proc validate_leaf_type
     mem_load.LEAF_TYPE_ADDRESS
     assertz.err=ERR_INVALID_LEAF_TYPE
 end
-# =================================================================================================
 
 #! Computes the leaf value and verifies it against the AggLayer bridge state.
 #!
