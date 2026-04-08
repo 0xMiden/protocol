@@ -32,8 +32,7 @@ const TMP_ASSETS_PTR = 1024
 
 const ERR_U32 = "value is not a u32"
 const ERR_SPENDING_WINDOW_ZERO = "spending_window must be non-zero"
-const ERR_LAST_WINDOW_START_GT_CURRENT =
-    "window_start_timestamp is greater than current_timestamp"
+const ERR_LAST_WINDOW_START_GT_CURRENT = "window_start_timestamp is greater than current_timestamp"
 const ERR_INVALID_TIER_INDEX = "invalid tier index (must be 0..3)"
 const ERR_TIER0_MUST_BE_POSITIVE = "tier_0 must be > 0"
 const ERR_TIER3_TOO_HIGH = "tier_3 must be <= num_approvers"
@@ -77,72 +76,45 @@ end
 #!
 #! Side effects:
 #!   - Writes TIER_THRESHOLD_CONFIG_SLOT.
-#!
-#! Locals:
-#!
-#! 0: tier_0
-#! 1: tier_1
-#! 2: tier_2
-#! 3: tier_3
-@locals(4)
 pub proc update_threshold_config
-    # ------ Check inputs are u32 ------
-    u32assert.err=ERR_U32
-    loc_store.0
-    # => [tier_1, tier_2, tier_3]
-
-    u32assert.err=ERR_U32
-    loc_store.1
-    # => [tier_2, tier_3]
-
-    u32assert.err=ERR_U32
-    loc_store.2
-    # => [tier_3]
-
-    u32assert.err=ERR_U32
-    loc_store.3
-    # => []
+    u32assert2 movup.3 movup.3
+    # => [tier_2, tier_3, tier_0, tier_1]
+    
+    u32assert2 movdn.3 movdn.3
+    # => [tier_0, tier_1, tier_2, tier_3]
 
     # tier_0 must be > 0
-    loc_load.0
-    eq.0
-    assertz.err=ERR_TIER0_MUST_BE_POSITIVE
-    # => []
 
-    # ------ Monotonic check tier_0 <= tier_1 <= tier_2 <= tier_3 ------
-    # the stack is [tier_1, tier_0] and `u32gt assertz` enforces `tier_0 <= tier_1`.
-    loc_load.0 loc_load.1 u32assert2.err=ERR_U32 u32gt assertz.err=ERR_INVALID_TIER_CONFIG
-    loc_load.1 loc_load.2 u32assert2.err=ERR_U32 u32gt assertz.err=ERR_INVALID_TIER_CONFIG
-    loc_load.2 loc_load.3 u32assert2.err=ERR_U32 u32gt assertz.err=ERR_INVALID_TIER_CONFIG
-    # => []
+    dup eq.0 assertz.err=ERR_TIER0_MUST_BE_POSITIVE
+    # => [tier_0, tier_1, tier_2, tier_3]
 
-    # ------ Check the threshold <= num_approvers
+    # Monotonic tier_0 <= tier_1 <= tier_2 <= tier_3
+
+    dup dup.2 u32gt assertz.err=ERR_INVALID_TIER_CONFIG
+    dup.1 dup.3 u32gt assertz.err=ERR_INVALID_TIER_CONFIG
+    dup.2 dup.4 u32gt assertz.err=ERR_INVALID_TIER_CONFIG
+    # => [tier_0, tier_1, tier_2, tier_3]
+
+    # Tier 3 is less than num_approvers
+
     exec.multisig::get_threshold_and_num_approvers
-    # => [default_threshold, num_approvers]
-
+    # => [default_threshold, num_approvers, tier_0, tier_1, tier_2, tier_3]
+    
     drop
-    # => [num_approvers]
+    # => [num_approvers, tier_0, tier_1, tier_2, tier_3]
+    
+    dup.4 u32gte assert.err=ERR_TIER3_TOO_HIGH
+    # => [tier_0, tier_1, tier_2, tier_3]
 
-    loc_load.3
-    # => [tier_3, num_approvers]
-
-    u32gte
-    assert.err=ERR_TIER3_TOO_HIGH
-    # => []
-
-    # ------ Prepare data for storage ------
-    loc_load.0
-    loc_load.1
-    loc_load.2
-    loc_load.3
+    swap movup.2 movup.3
     # => [tier_3, tier_2, tier_1, tier_0]
-
+    
     push.TIER_THRESHOLD_CONFIG_SLOT[0..2]
     # => [slot_prefix, slot_suffix, tier_3, tier_2, tier_1, tier_0]
-
+    
     exec.native_account::set_item
     # => [OLD_WORD]
-
+    
     dropw
     # => []
 end
@@ -157,53 +129,42 @@ end
 #!
 #! Side effects:
 #!   - Writes AMOUNT_LIMITS_SLOT.
-#!
-#! Locals:
-#!
-#! 0: amount_limit0
-#! 1: amount_limit1
-#! 2: amount_limit2
-#! 3: delay_trigger_amount
-@locals(4)
 pub proc update_spending_limits
-    u32assert.err=ERR_U32
-    loc_store.0
-    # => [amount_limit1, amount_limit2, delay_trigger_amount]
+    u32assert2 movup.3 movup.3
+    # => [amount_limit2, delay_trigger_amount, amount_limit0, amount_limit1]
+    
+    u32assert2 movdn.3 movdn.3
+    # => [amount_limit0, amount_limit1, amount_limit2, delay_trigger_amount]
 
-    u32assert.err=ERR_U32
-    loc_store.1
-    # => [amount_limit2, delay_trigger_amount]
+    # Monotonic amount_limit0 < amount_limit1 < amount_limit2
 
-    u32assert.err=ERR_U32
-    loc_store.2
-    # => [delay_trigger_amount]
+    dup dup.2 u32gte assertz.err=ERR_INVALID_AMOUNT_LIMITS
+    dup.1 dup.3 u32gte assertz.err=ERR_INVALID_AMOUNT_LIMITS
+    # => [amount_limit0, amount_limit1, amount_limit2, delay_trigger_amount]
 
-    u32assert.err=ERR_U32
-    loc_store.3
-    # => []
-
-    loc_load.0 loc_load.1 u32assert2.err=ERR_U32 u32gte assertz.err=ERR_INVALID_AMOUNT_LIMITS
-    loc_load.1 loc_load.2 u32assert2.err=ERR_U32 u32gte assertz.err=ERR_INVALID_AMOUNT_LIMITS
-    # => []
-
-    loc_load.0
-    loc_load.1
-    loc_load.2
-    loc_load.3
-    # => [delay_trigger_amount, limit2, limit1, limit0]
-
+    swap movup.2 movup.3
+    # => [delay_trigger_amount, amount_limit2, amount_limit1, amount_limit0]
+    
     push.AMOUNT_LIMITS_SLOT[0..2]
-    # => [slot_prefix, slot_suffix, delay_trigger_amount, limit2, limit1, limit0]
-
+    # => [slot_prefix, slot_suffix, delay_trigger_amount, amount_limit2, amount_limit1, amount_limit0]
+    
     exec.native_account::set_item
     # => [OLD_WORD]
-
+    
     dropw
     # => []
 end
 
+#! Returns the spending window duration stored in `SPENDING_WINDOW_SLOT`.
+#!
 #! Inputs:  []
 #! Outputs: [spending_window]
+#!
+#! Where:
+#! - spending_window is the duration of a single spending window, in seconds.
+#!   For example, 3600 represents an hourly window, 86400 a daily window.
+#!
+#! Invocation: exec
 pub proc get_spending_window
     push.SPENDING_WINDOW_SLOT[0..2]
     # => [slot_prefix, slot_suffix]
@@ -211,13 +172,7 @@ pub proc get_spending_window
     exec.active_account::get_initial_item
     # => [spending_window, 0, 0, 0]
 
-    movdn.3
-    # => [0, 0, 0, spending_window]
-
-    drop drop drop
-    # => [spending_window]
-
-    dup eq.0 assertz.err=ERR_SPENDING_WINDOW_ZERO
+    movdn.3 drop drop drop
     # => [spending_window]
 end
 
@@ -259,35 +214,41 @@ proc get_spending_tracker
     # => [amount_spent_in_window, window_start_timestamp, 0, 0]
 end
 
-#! Reads amount_spent_in_window from SPENDING_TRACKER_SLOT.
+#! Reads the amount spent in the last recorded spending window from `SPENDING_TRACKER_SLOT`.
 #!
+#! Inputs:  []
 #! Outputs: [amount_spent_in_window]
+#!
+#! Where:
+#! - amount_spent_in_window is the total USD value spent during the last recorded spending window.
+#!
+#! Invocation: exec
 proc get_amount_spent_in_window
     exec.get_spending_tracker
     # => [amount_spent_in_window, window_start_timestamp, 0, 0]
 
-    movdn.3
-    # => [window_start_timestamp, 0, 0, amount_spent_in_window]
-
-    drop drop drop
+    movdn.3 drop drop drop
     # => [amount_spent_in_window]
 end
 
-#! Reads the start timestamp of the current spending window.
+#! Reads the start timestamp of the last recorded spending window from `SPENDING_TRACKER_SLOT`.
+#!
+#! This is the window start at the time spending was last committed. Compare with
+#! `get_current_window_start_timestamp` to determine whether the tracker is still active.
 #!
 #! Inputs:  []
 #! Outputs: [window_start_timestamp]
+#!
+#! Where:
+#! - window_start_timestamp is the start of the window in which spending was last recorded,
+#!   or 0 if no spending has been tracked yet.
+#!
+#! Invocation: exec
 proc get_window_start_timestamp
     exec.get_spending_tracker
     # => [amount_spent_in_window, window_start_timestamp, 0, 0]
 
-    drop
-    # => [window_start_timestamp, 0, 0]
-
-    movdn.2
-    # => [0, 0, window_start_timestamp]
-
-    drop drop
+    drop movdn.2 drop drop
     # => [window_start_timestamp]
 end
 
@@ -498,76 +459,82 @@ end
 #! Inputs:  [tier_index]
 #! Outputs: [tier_threshold]
 #!
-#! Locals:
-#! 0: tier_index
-#! 1: selected tier_threshold
-@locals(2)
+#! Where:
+#! - tier_index is the spending tier computed from the transaction amount (0..3).
+#! - tier_threshold is the minimum number of approvals required for that tier.
+#!
+#! Panics if:
+#! - tier_index is outside 0..3 (ERR_INVALID_TIER_INDEX).
+#!
+#! Invocation: exec
 proc get_tier_threshold_for_index
-    loc_store.0
-    # => []
-
     push.TIER_THRESHOLD_CONFIG_SLOT[0..2]
     exec.active_account::get_initial_item
-    # => [tier_0, tier_1, tier_2, tier_3]
+    # => [tier_0, tier_1, tier_2, tier_3, tier_index]
 
-    loc_load.0
-    u32assert.err=ERR_U32
-    # => [idx, tier_0, tier_1, tier_2, tier_3]
+    movup.4
+    # => [tier_index, tier_0, tier_1, tier_2, tier_3]
 
     dup eq.0
-    # => [idx_eq_0, idx, tier_0, tier_1, tier_2, tier_3]
-
     if.true
-        dup.1 loc_store.1
-        # => [idx, tier_0, tier_1, tier_2, tier_3]
+        drop
+        # => [tier_0, tier_1, tier_2, tier_3]
+
+        movdn.3 drop drop drop
+        # => [tier_0]
     else
         dup eq.1
-        # => [idx_eq_1, idx, tier_0, tier_1, tier_2, tier_3]
-
         if.true
-            dup.2 loc_store.1
-            # => [idx, tier_0, tier_1, tier_2, tier_3]
+            drop
+            # => [tier_0, tier_1, tier_2, tier_3]
+
+            drop movdn.2 drop drop
+            # => [tier_1]
         else
             dup eq.2
-            # => [idx_eq_2, idx, tier_0, tier_1, tier_2, tier_3]
-
             if.true
-                dup.3 loc_store.1
-                # => [idx, tier_0, tier_1, tier_2, tier_3]
-            else
-                dup eq.3
-                # => [idx_eq_3, idx, tier_0, tier_1, tier_2, tier_3]
+                drop
+                # => [tier_0, tier_1, tier_2, tier_3]
 
-                assert.err=ERR_INVALID_TIER_INDEX
-                dup.4 loc_store.1
-                # => [idx, tier_0, tier_1, tier_2, tier_3]
+                drop drop swap drop
+                # => [tier_2]
+            else
+                eq.3 assert.err=ERR_INVALID_TIER_INDEX
+                # => [tier_0, tier_1, tier_2, tier_3]
+                
+                drop drop drop
+                # => [tier_3]
             end
         end
     end
-
-    drop
-    dropw
-    # => []
-
-    loc_load.1
     # => [tier_threshold]
 end
 
-#! Updates SPENDING_TRACKER_SLOT using the current spending window start and the computed total.
+
+#! Writes the spending tracker to `SPENDING_TRACKER_SLOT`.
+#!
+#! Uses the current block timestamp to derive the active window start via
+#! `get_current_window_start_timestamp`. The caller is responsible for passing
+#! the correct `total_spent_amount`: if within an existing window, it should
+#! include the previously accumulated amount; if a new window has started,
+#! it should contain only the current transaction's amount.
 #!
 #! Inputs:  [total_spent_amount]
 #! Outputs: []
+#!
+#! Where:
+#! - total_spent_amount is the cumulative USD value spent in the active window.
+#!
+#! Side effects:
+#!   - Writes SPENDING_TRACKER_SLOT with
+#!     [total_spent_amount, current_window_start_timestamp, 0, 0].
+#!
+#! Invocation: exec
 proc set_spending_tracker
     exec.get_current_window_start_timestamp
     # => [current_window_start_timestamp, total_spent_amount]
 
-    push.0 push.0
-    # => [0, 0, current_window_start_timestamp, total_spent_amount]
-
-    movup.3
-    # => [total_spent_amount, 0, 0, current_window_start_timestamp]
-
-    movup.3
+    push.0 push.0 movup.3 movup.3
     # => [current_window_start_timestamp, total_spent_amount, 0, 0]
 
     swap
