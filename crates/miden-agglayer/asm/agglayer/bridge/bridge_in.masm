@@ -33,6 +33,7 @@ const ERR_ROLLUP_INDEX_NON_ZERO = "rollup index must be zero for a mainnet depos
 const ERR_SMT_ROOT_VERIFICATION_FAILED = "merkle proof verification failed: provided SMT root does not match the computed root"
 const ERR_CLAIM_ALREADY_SPENT = "claim note has already been spent"
 const ERR_SOURCE_BRIDGE_NETWORK_OVERFLOW = "source bridge network overflowed u32"
+const ERR_INVALID_LEAF_TYPE = "invalid leaf type: only asset claims (leafType=0) are supported"
 
 # CONSTANTS
 # =================================================================================================
@@ -254,11 +255,12 @@ end
 #! Inputs:  []
 #! Outputs: []
 #!
-#! Panics if leafType != 0
+#! Validates that the loaded leaf data has leafType == 0 (asset claim).
+#! Returns an error if leafType != 0.
 #! Invocation: exec
 proc validate_leaf_type
     mem_load.LEAF_TYPE_ADDRESS
-    assert.eq.LEAF_TYPE_ASSET_TRANSFER
+    assertz.err=ERR_INVALID_LEAF_TYPE
 end
 # =================================================================================================
 
