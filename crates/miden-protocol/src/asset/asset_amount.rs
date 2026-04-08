@@ -1,5 +1,6 @@
 use alloc::string::ToString;
 use core::fmt;
+use core::ops::{Add, Sub};
 
 use super::super::errors::AssetError;
 use super::super::utils::serde::{
@@ -38,27 +39,23 @@ impl AssetAmount {
         }
         Ok(Self(amount))
     }
+}
 
-    /// Adds two asset amounts and returns the result.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the sum exceeds [`Self::MAX`].
-    #[allow(clippy::should_implement_trait)]
-    pub fn add(self, other: Self) -> Result<Self, AssetError> {
+impl Add for AssetAmount {
+    type Output = Result<Self, AssetError>;
+
+    fn add(self, other: Self) -> Self::Output {
         let raw = u64::from(self)
             .checked_add(u64::from(other))
             .expect("even MAX + MAX should not overflow u64");
         Self::new(raw)
     }
+}
 
-    /// Subtracts another asset amount from this one and returns the result.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if `other` is greater than `self`.
-    #[allow(clippy::should_implement_trait)]
-    pub fn sub(self, other: Self) -> Result<Self, AssetError> {
+impl Sub for AssetAmount {
+    type Output = Result<Self, AssetError>;
+
+    fn sub(self, other: Self) -> Self::Output {
         let raw = u64::from(self).checked_sub(u64::from(other)).ok_or(
             AssetError::FungibleAssetAmountNotSufficient {
                 minuend: u64::from(self),
@@ -194,7 +191,7 @@ mod tests {
     fn add_amounts() {
         let a = AssetAmount::new(100).unwrap();
         let b = AssetAmount::new(200).unwrap();
-        let val: u64 = a.add(b).unwrap().into();
+        let val: u64 = (a + b).unwrap().into();
         assert_eq!(val, 300);
     }
 
@@ -202,14 +199,14 @@ mod tests {
     fn add_overflow() {
         let max = AssetAmount::new(AssetAmount::MAX).unwrap();
         let one = AssetAmount::new(1).unwrap();
-        assert!(max.add(one).is_err());
+        assert!((max + one).is_err());
     }
 
     #[test]
     fn sub_amounts() {
         let a = AssetAmount::new(300).unwrap();
         let b = AssetAmount::new(100).unwrap();
-        let val: u64 = a.sub(b).unwrap().into();
+        let val: u64 = (a - b).unwrap().into();
         assert_eq!(val, 200);
     }
 
@@ -217,6 +214,6 @@ mod tests {
     fn sub_underflow() {
         let a = AssetAmount::new(50).unwrap();
         let b = AssetAmount::new(100).unwrap();
-        assert!(a.sub(b).is_err());
+        assert!((a - b).is_err());
     }
 }

@@ -178,7 +178,7 @@ impl FungibleAsset {
             });
         }
 
-        let amount = self.amount.add(other.amount)?;
+        let amount = (self.amount + other.amount)?;
 
         Ok(Self {
             faucet_id: self.faucet_id,
@@ -202,7 +202,7 @@ impl FungibleAsset {
             });
         }
 
-        let amount = self.amount.sub(other.amount)?;
+        let amount = (self.amount - other.amount)?;
 
         Ok(FungibleAsset {
             faucet_id: self.faucet_id,
