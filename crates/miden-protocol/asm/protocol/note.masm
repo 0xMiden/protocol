@@ -84,9 +84,6 @@ end
 #!
 #! Inputs:
 #!   Operand stack: [storage_ptr, num_storage_items, SERIAL_NUM, SCRIPT_ROOT]
-#!   Advice map: {
-#!      STORAGE_COMMITMENT: [INPUTS],
-#!   }
 #! Outputs:
 #!   Operand stack: [RECIPIENT]
 #!   Advice map: {
