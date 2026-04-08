@@ -1,8 +1,8 @@
 use alloc::fmt;
 
+use crate::Felt;
 use crate::errors::RoleSymbolError;
 use crate::utils::ShortCapitalString;
-use crate::Felt;
 
 /// Represents a role symbol for role-based access control.
 ///

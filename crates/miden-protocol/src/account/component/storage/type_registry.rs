@@ -8,8 +8,8 @@ use core::str::FromStr;
 use miden_core::{Felt, Word};
 use thiserror::Error;
 
-use crate::account::auth::{AuthScheme, PublicKey};
 use crate::account::RoleSymbol;
+use crate::account::auth::{AuthScheme, PublicKey};
 use crate::asset::TokenSymbol;
 use crate::utils::serde::{
     ByteReader,
