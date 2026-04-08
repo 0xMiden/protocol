@@ -84,14 +84,13 @@ pub mod vm {
     pub use miden_core::events::{EventId, EventName, SystemEvent};
     pub use miden_core::program::{Program, ProgramInfo};
     pub use miden_mast_package::{
-        MastArtifact,
         Package,
         PackageExport,
-        PackageKind,
         PackageManifest,
         ProcedureExport,
         Section,
         SectionId,
+        TargetType,
     };
     pub use miden_processor::trace::RowIndex;
     pub use miden_processor::{FutureMaybeSend, StackInputs, StackOutputs};

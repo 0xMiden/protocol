@@ -549,6 +549,7 @@ fn validate_components_support_account_type(
 
 #[cfg(test)]
 mod tests {
+    use alloc::sync::Arc;
     use alloc::vec::Vec;
 
     use assert_matches::assert_matches;
@@ -800,7 +801,8 @@ mod tests {
     #[test]
     fn test_account_unsupported_component_type() {
         let code1 = "pub proc foo add end";
-        let library1 = Assembler::default().assemble_library([code1]).unwrap();
+        let library1 =
+            Arc::unwrap_or_clone(Assembler::default().assemble_library([code1]).unwrap());
 
         // This component support all account types except the regular account with updatable code.
         let metadata = AccountComponentMetadata::new(

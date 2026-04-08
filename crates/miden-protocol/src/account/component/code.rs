@@ -84,6 +84,8 @@ impl From<AccountComponentCode> for Library {
 
 #[cfg(test)]
 mod tests {
+    use alloc::sync::Arc;
+
     use miden_core::{Felt, Word};
 
     use super::*;
@@ -92,9 +94,11 @@ mod tests {
     #[test]
     fn test_account_component_code_with_advice_map() {
         let assembler = Assembler::default();
-        let library = assembler
-            .assemble_library(["pub proc test nop end"])
-            .expect("failed to assemble library");
+        let library = Arc::unwrap_or_clone(
+            assembler
+                .assemble_library(["pub proc test nop end"])
+                .expect("failed to assemble library"),
+        );
         let component_code = AccountComponentCode::from(library);
 
         assert!(component_code.mast_forest().advice_map().is_empty());
