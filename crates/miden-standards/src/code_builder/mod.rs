@@ -353,7 +353,8 @@ impl CodeBuilder {
         })?;
 
         Ok(AccountComponentCode::from(Self::apply_advice_map_to_library(
-            advice_map, library,
+            advice_map,
+            Arc::unwrap_or_clone(library),
         )))
     }
 

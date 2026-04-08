@@ -72,6 +72,12 @@ impl BlockNumber {
     pub fn checked_sub(&self, rhs: u32) -> Option<Self> {
         self.0.checked_sub(rhs).map(Self)
     }
+
+    /// Saturating integer subtraction. Computes `self - rhs`, saturating at
+    /// [`BlockNumber::GENESIS`] instead of underflowing.
+    pub fn saturating_sub(&self, rhs: u32) -> Self {
+        Self(self.0.saturating_sub(rhs))
+    }
 }
 
 impl Add<u32> for BlockNumber {

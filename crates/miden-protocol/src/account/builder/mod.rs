@@ -289,7 +289,7 @@ impl AccountBuilder {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::LazyLock;
+    use std::sync::{Arc, LazyLock};
 
     use assert_matches::assert_matches;
     use miden_assembly::{Assembler, Library};
@@ -312,14 +312,18 @@ mod tests {
           ";
 
     static CUSTOM_LIBRARY1: LazyLock<Library> = LazyLock::new(|| {
-        Assembler::default()
-            .assemble_library([CUSTOM_CODE1])
-            .expect("code should be valid")
+        Arc::unwrap_or_clone(
+            Assembler::default()
+                .assemble_library([CUSTOM_CODE1])
+                .expect("code should be valid"),
+        )
     });
     static CUSTOM_LIBRARY2: LazyLock<Library> = LazyLock::new(|| {
-        Assembler::default()
-            .assemble_library([CUSTOM_CODE2])
-            .expect("code should be valid")
+        Arc::unwrap_or_clone(
+            Assembler::default()
+                .assemble_library([CUSTOM_CODE2])
+                .expect("code should be valid"),
+        )
     });
 
     static CUSTOM_COMPONENT1_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {

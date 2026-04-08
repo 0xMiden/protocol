@@ -1,5 +1,6 @@
 use std::env;
 use std::path::Path;
+use std::sync::Arc;
 
 use fs_err as fs;
 use miden_assembly::diagnostics::{IntoDiagnostic, NamedSource, Result, WrapErr};
@@ -80,7 +81,7 @@ fn compile_standards_lib(
     let output_file = target_dir.join("standards").with_extension(Library::LIBRARY_EXTENSION);
     standards_lib.write_to_file(output_file).into_diagnostic()?;
 
-    Ok(standards_lib)
+    Ok(Arc::unwrap_or_clone(standards_lib))
 }
 
 // COMPILE ACCOUNT COMPONENTS

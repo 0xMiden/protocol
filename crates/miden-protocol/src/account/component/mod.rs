@@ -1,7 +1,7 @@
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
-use miden_mast_package::{MastArtifact, Package};
+use miden_mast_package::Package;
 use miden_processor::mast::MastNodeExt;
 
 mod metadata;
@@ -104,14 +104,7 @@ impl AccountComponent {
         init_storage_data: &InitStorageData,
     ) -> Result<Self, AccountError> {
         let metadata = AccountComponentMetadata::try_from(package)?;
-        let library = match &package.mast {
-            MastArtifact::Library(library) => library.as_ref().clone(),
-            MastArtifact::Executable(_) => {
-                return Err(AccountError::other(
-                    "expected Package to contain a library, but got an executable",
-                ));
-            },
-        };
+        let library = package.mast.as_ref().clone();
 
         let component_code = AccountComponentCode::from(library);
         Self::from_library(&component_code, &metadata, init_storage_data)
@@ -235,14 +228,7 @@ mod tests {
     use alloc::sync::Arc;
 
     use miden_assembly::Assembler;
-    use miden_mast_package::{
-        MastArtifact,
-        Package,
-        PackageKind,
-        PackageManifest,
-        Section,
-        SectionId,
-    };
+    use miden_mast_package::{Package, PackageManifest, Section, SectionId, TargetType};
     use semver::Version;
 
     use super::*;
@@ -264,15 +250,15 @@ mod tests {
 
         let metadata_bytes = metadata.to_bytes();
         let package_with_metadata = Package {
-            name: "test_package".to_string(),
-            mast: MastArtifact::Library(Arc::new(library.clone())),
-            manifest: PackageManifest::new(None),
-            kind: PackageKind::AccountComponent,
+            name: "test_package".into(),
+            mast: library.clone(),
+            manifest: PackageManifest::new(core::iter::empty()).unwrap(),
+            kind: TargetType::AccountComponent,
             sections: vec![Section::new(
                 SectionId::ACCOUNT_COMPONENT_METADATA,
                 metadata_bytes.clone(),
             )],
-            version: Default::default(),
+            version: Version::new(0, 0, 0),
             description: None,
         };
 
@@ -287,12 +273,12 @@ mod tests {
 
         // Test without metadata - should fail
         let package_without_metadata = Package {
-            name: "test_package_no_metadata".to_string(),
-            mast: MastArtifact::Library(Arc::new(library)),
-            manifest: PackageManifest::new(None),
-            kind: PackageKind::AccountComponent,
+            name: "test_package_no_metadata".into(),
+            mast: library,
+            manifest: PackageManifest::new(core::iter::empty()).unwrap(),
+            kind: TargetType::AccountComponent,
             sections: vec![], // No metadata section
-            version: Default::default(),
+            version: Version::new(0, 0, 0),
             description: None,
         };
 
@@ -306,7 +292,7 @@ mod tests {
     fn test_from_library_with_init_data() {
         // Create a simple library for testing
         let library = Assembler::default().assemble_library([CODE]).unwrap();
-        let component_code = AccountComponentCode::from(library.clone());
+        let component_code = AccountComponentCode::from(Arc::unwrap_or_clone(library.clone()));
 
         // Create metadata for the component
         let metadata = AccountComponentMetadata::new("test_component", AccountType::regular())
@@ -327,12 +313,12 @@ mod tests {
 
         // Test without metadata - should fail
         let package_without_metadata = Package {
-            name: "test_package_no_metadata".to_string(),
-            mast: MastArtifact::Library(Arc::new(library)),
-            kind: PackageKind::AccountComponent,
-            manifest: PackageManifest::new(None),
+            name: "test_package_no_metadata".into(),
+            mast: library,
+            kind: TargetType::AccountComponent,
+            manifest: PackageManifest::new(core::iter::empty()).unwrap(),
             sections: vec![], // No metadata section
-            version: Default::default(),
+            version: Version::new(0, 0, 0),
             description: None,
         };
 
