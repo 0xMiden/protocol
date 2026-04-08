@@ -402,7 +402,7 @@ Keccak preimage format directly — the felt value does **not** equal the numeri
 | Field | Value |
 |-------|-------|
 | `serial_num` | Random (`rng.draw_word()`) |
-| `script` | `b2agg.masb` |
+| `script` | `b2agg.masm` |
 | `storage` | 6 felts -- see layout below |
 
 **Storage layout (6 felts):**
@@ -461,7 +461,7 @@ token registry, and creates a MINT note targeting the faucet.
 | Field | Value |
 |-------|-------|
 | `serial_num` | Random (`rng.draw_word()`) |
-| `script` | `claim.masb` |
+| `script` | `claim.masm` |
 | `storage` | 569 felts -- see layout below |
 
 **Storage layout (569 felts):**
@@ -530,7 +530,7 @@ The storage is divided into three logical regions: proof data (felts 0-535), lea
 | Field | Value |
 |-------|-------|
 | `serial_num` | Random (`rng.draw_word()`) |
-| `script` | `config_agg_bridge.masb` |
+| `script` | `config_agg_bridge.masm` |
 | `storage` | 7 felts -- see layout below |
 
 **Storage layout (7 felts):**
@@ -577,7 +577,7 @@ CLAIM notes can be verified against it.
 | Field | Value |
 |-------|-------|
 | `serial_num` | Random (`rng.draw_word()`) |
-| `script` | `update_ger.masb` |
+| `script` | `update_ger.masm` |
 | `storage` | 8 felts -- see layout below |
 
 **Storage layout (8 felts):**
