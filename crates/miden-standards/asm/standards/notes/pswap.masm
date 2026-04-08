@@ -20,11 +20,13 @@ const MAX_U32=0x0000000100000000
 # Memory Addresses
 # =================================================================================================
 
-# Memory Address Layout:
+# Global Memory Address Layout:
 # - PSWAP Note Storage: addresses 0x0000 - 0x000D (loaded from note storage)
-# - Price Calculation: addresses 0x0028 - 0x0036
-# - Asset Keys: addresses 0x0038 - 0x003B (word-aligned)
-# - Full Word (word-aligned): addresses 0x0018 - 0x001F
+# - NOTE_TYPE: 0x0084 (set by extract_note_type)
+#
+# Procedure-local values use @locals instead of global memory:
+# - execute_pswap: @locals(8) for offered asset info and calculation intermediates
+# - calculate_tokens_offered_for_requested: @locals(1) for input amount
 
 # PSWAP Note Storage (14 items loaded at address 0)
 # Requested asset is stored as individual felts (fungible assets only):
@@ -39,25 +41,7 @@ const PSWAP_COUNT_ITEM = 0x0008
 const PSWAP_CREATOR_PREFIX_ITEM = 0x000C
 const PSWAP_CREATOR_SUFFIX_ITEM = 0x000D
 
-# Memory Addresses for Price Calculation Procedure
-const AMT_OFFERED = 0x0028
-const AMT_REQUESTED = 0x0029
-const AMT_REQUESTED_ACCT_FILL = 0x002A
-const AMT_OFFERED_OUT = 0x002B
-const CALC_AMT_IN = 0x0031
-
-# Inflight and split calculation addresses
-const AMT_REQUESTED_INFLIGHT = 0x0033
-const AMT_OFFERED_OUT_ACCT_FILL = 0x0034
-const AMT_OFFERED_OUT_INFLIGHT = 0x0036
-
-# Offered asset faucet info (extracted from ASSET_KEY)
-const OFFERED_ENABLE_CB = 0x0040
-const OFFERED_FAUCET_SUFFIX = 0x0041
-const OFFERED_FAUCET_PREFIX = 0x0042
-
-
-# Note indices and type
+# Global Memory Address (shared across procedures)
 const NOTE_TYPE = 0x0084
 
 
@@ -89,6 +73,8 @@ const ERR_PSWAP_FILL_EXCEEDS_REQUESTED="PSWAP fill amount exceeds requested amou
 #! Inputs: [offered, requested, input] (offered on top)
 #! Outputs: [offered_out]
 #!
+@locals(1)
+# loc.0 = input amount
 proc calculate_tokens_offered_for_requested
     # u64 convention: lo is on TOP after u32split
     # u32split(a)          => [lo (top), hi]
@@ -96,12 +82,12 @@ proc calculate_tokens_offered_for_requested
     # u64::div:            [b_lo, b_hi, a_lo, a_hi] => [q_lo, q_hi]   q = a/b
     # combine [lo, hi] => single Felt: swap push.MAX_U32 mul add
 
-    movup.2 mem_store.CALC_AMT_IN
+    movup.2 loc_store.0
     # => [offered, requested]
 
     # Early return: if input == requested (full fill), return offered directly.
     # This avoids precision loss from integer division with the FACTOR.
-    dup.1 mem_load.CALC_AMT_IN eq
+    dup.1 loc_load.0 eq
     # => [requested == input, offered, requested]
 
     if.true
@@ -137,7 +123,7 @@ proc calculate_tokens_offered_for_requested
             exec.u64::div
             # => [ratio_lo, ratio_hi]
 
-            mem_load.CALC_AMT_IN u32split push.FACTOR u32split
+            loc_load.0 u32split push.FACTOR u32split
             # => [F_lo, F_hi, in_lo, in_hi, ratio_lo, ratio_hi]
 
             exec.u64::wrapping_mul
@@ -168,7 +154,7 @@ proc calculate_tokens_offered_for_requested
             exec.u64::div
             # => [ratio_lo, ratio_hi]
 
-            mem_load.CALC_AMT_IN u32split
+            loc_load.0 u32split
             # => [in_lo, in_hi, ratio_lo, ratio_hi]
 
             exec.u64::wrapping_mul
@@ -454,10 +440,24 @@ end
 #! Sends offered tokens to consumer, requested tokens to creator via P2ID,
 #! and creates a remainder note if partially filled.
 #!
-#! Inputs: []
+#! Inputs: [acct_fill_amount, inflight_amount]
 #! Outputs: []
 #!
+@locals(10)
+# loc.0 = amt_offered
+# loc.1 = amt_requested
+# loc.2 = amt_offered_out (total)
+# loc.3 = amt_offered_out_acct_fill
+# loc.4 = amt_offered_out_inflight
+# loc.5 = offered_enable_cb
+# loc.6 = offered_faucet_suffix
+# loc.7 = offered_faucet_prefix
+# loc.8 = amt_requested_acct_fill
+# loc.9 = amt_requested_inflight
 proc execute_pswap
+    loc_store.8 loc_store.9
+    # => []
+
     exec.load_offered_asset
     # => [ASSET_KEY, ASSET_VALUE]
 
@@ -465,37 +465,29 @@ proc execute_pswap
     exec.asset::fungible_to_amount
     # => [amount, ASSET_KEY, ASSET_VALUE]
 
-    mem_store.AMT_OFFERED
+    loc_store.0
     # => [ASSET_KEY, ASSET_VALUE]
 
     # Extract and store offered faucet info from ASSET_KEY
-    exec.asset::key_to_callbacks_enabled mem_store.OFFERED_ENABLE_CB
+    exec.asset::key_to_callbacks_enabled loc_store.5
     # => [ASSET_KEY, ASSET_VALUE]
     exec.asset::key_into_faucet_id
     # => [faucet_id_suffix, faucet_id_prefix, ASSET_VALUE]
-    mem_store.OFFERED_FAUCET_SUFFIX mem_store.OFFERED_FAUCET_PREFIX
+    loc_store.6 loc_store.7
     # => [ASSET_VALUE]
     dropw
     # => []
 
     # Read requested amount directly from note storage
     mem_load.REQUESTED_AMOUNT_ITEM
-    mem_store.AMT_REQUESTED
+    loc_store.1
     # => []
-
-    # If both account fill and inflight are 0, default to a full fill (account fill = requested).
-    # This enables consumption by network accounts, which execute without note_args
-    # (the kernel defaults note_args to [0, 0, 0, 0] when none are provided).
-    mem_load.AMT_REQUESTED_ACCT_FILL mem_load.AMT_REQUESTED_INFLIGHT add push.0 eq
-    if.true
-        mem_load.AMT_REQUESTED mem_store.AMT_REQUESTED_ACCT_FILL
-    end
 
     # Validate: fill amount (account fill + inflight) must not exceed total requested.
     # Overfilling is not allowed because it is likely due to an error and mostly
     # unintentional — the consumer would lose the excess tokens with no change returned.
-    mem_load.AMT_REQUESTED_ACCT_FILL mem_load.AMT_REQUESTED_INFLIGHT add
-    mem_load.AMT_REQUESTED
+    loc_load.8 loc_load.9 add
+    loc_load.1
     # => [requested, fill_amount]
     # lte pops [b=requested, a=fill_amount] and pushes (fill_amount <= requested)
     lte assert.err=ERR_PSWAP_FILL_EXCEEDS_REQUESTED
@@ -507,37 +499,37 @@ proc execute_pswap
     # needed to determine the remainder note's offered amount.
     #
     # Calculate offered_out for acct_fill_amount
-    mem_load.AMT_REQUESTED_ACCT_FILL
-    mem_load.AMT_REQUESTED
-    mem_load.AMT_OFFERED
+    loc_load.8
+    loc_load.1
+    loc_load.0
     # => [offered, requested, acct_fill_amount]
     exec.calculate_tokens_offered_for_requested
     # => [acct_fill_offered_out]
 
-    mem_store.AMT_OFFERED_OUT_ACCT_FILL
+    loc_store.3
     # => []
 
     # Calculate offered_out for inflight_amount
-    mem_load.AMT_REQUESTED_INFLIGHT
-    mem_load.AMT_REQUESTED
-    mem_load.AMT_OFFERED
+    loc_load.9
+    loc_load.1
+    loc_load.0
     # => [offered, requested, inflight_amount]
 
     exec.calculate_tokens_offered_for_requested
     # => [inflight_offered_out]
-    mem_store.AMT_OFFERED_OUT_INFLIGHT
+    loc_store.4
     # => []
 
     # total_offered_out = acct_fill_offered_out + inflight_offered_out
-    mem_load.AMT_OFFERED_OUT_ACCT_FILL mem_load.AMT_OFFERED_OUT_INFLIGHT add
+    loc_load.3 loc_load.4 add
     # => [total_offered_out]
 
-    mem_store.AMT_OFFERED_OUT
+    loc_store.2
     # => []
 
     # Create P2ID note for creator
-    mem_load.AMT_REQUESTED_INFLIGHT
-    mem_load.AMT_REQUESTED_ACCT_FILL
+    loc_load.9
+    loc_load.8
     mem_load.REQUESTED_FAUCET_PREFIX_ITEM
     mem_load.REQUESTED_FAUCET_SUFFIX_ITEM
     mem_load.REQUESTED_ENABLE_CALLBACKS_ITEM
@@ -553,17 +545,17 @@ proc execute_pswap
     # => []
 
     # Consumer receives only acct_fill_offered_out into vault (not the inflight portion, if > 0)
-    mem_load.AMT_OFFERED_OUT_ACCT_FILL push.0 gt
+    loc_load.3 push.0 gt
     # => [amt > 0]
     if.true
         padw padw
         # => [pad(8)]
 
-        mem_load.AMT_OFFERED_OUT_ACCT_FILL
-        mem_load.OFFERED_FAUCET_PREFIX
-        mem_load.OFFERED_FAUCET_SUFFIX
-        mem_load.OFFERED_ENABLE_CB
-        # => [enable_cb, faucet_suffix, faucet_prefix, amt_offered_out_input, pad(8)]
+        loc_load.3
+        loc_load.7
+        loc_load.6
+        loc_load.5
+        # => [enable_cb, faucet_suffix, faucet_prefix, amt_offered_out_acct_fill, pad(8)]
 
         exec.asset::create_fungible_asset
         # => [ASSET_KEY, ASSET_VALUE, pad(8)]
@@ -575,8 +567,8 @@ proc execute_pswap
     end
 
     # Check if partial fill: total_in < total_requested
-    mem_load.AMT_REQUESTED_ACCT_FILL mem_load.AMT_REQUESTED_INFLIGHT add
-    mem_load.AMT_REQUESTED
+    loc_load.8 loc_load.9 add
+    loc_load.1
     # => [total_requested, total_in]
     dup.1 dup.1 lt
     # => [is_partial, total_requested, total_in]
@@ -593,11 +585,11 @@ proc execute_pswap
         movup.2
         # => [remaining_requested, note_type, tag]
 
-        mem_load.AMT_OFFERED
-        mem_load.AMT_OFFERED_OUT
-        mem_load.OFFERED_ENABLE_CB
-        mem_load.OFFERED_FAUCET_SUFFIX
-        mem_load.OFFERED_FAUCET_PREFIX
+        loc_load.0
+        loc_load.2
+        loc_load.5
+        loc_load.6
+        loc_load.7
         # => [offered_faucet_prefix, offered_faucet_suffix, offered_enable_cb,
         #     amt_offered_out, amt_offered,
         #     remaining_requested, note_type, tag]
@@ -621,35 +613,42 @@ pub proc main
     # In network transactions, note_args are not provided by the executor and default
     # to [0, 0, 0, 0]. The script handles this by defaulting to a full fill.
 
-    mem_store.AMT_REQUESTED_ACCT_FILL
-    # => [inflight_amount, 0, 0]
-
-    mem_store.AMT_REQUESTED_INFLIGHT
-    # => [0, 0]
-    drop drop
-    # => []
+    # => [acct_fill_amount, inflight_amount, 0, 0]
+    movdn.3 movdn.3 drop drop
+    # => [acct_fill_amount, inflight_amount]
 
     # Load all note storage items to memory starting at address 0
     push.0 exec.active_note::get_storage
-    # => [num_storage_items, storage_ptr]
+    # => [num_storage_items, storage_ptr, acct_fill_amount, inflight_amount]
 
     eq.NUM_STORAGE_ITEMS assert.err=ERR_PSWAP_WRONG_NUMBER_OF_STORAGE_ITEMS
-    # => [storage_ptr]
+    # => [storage_ptr, acct_fill_amount, inflight_amount]
 
     drop
-    # => []
+    # => [acct_fill_amount, inflight_amount]
+
+    # If both account fill and inflight are 0, default to a full fill (account fill = requested).
+    # This enables consumption by network accounts, which execute without note_args
+    # (the kernel defaults note_args to [0, 0, 0, 0] when none are provided).
+    dup.1 dup.1 add push.0 eq
+    # => [both_zero, acct_fill_amount, inflight_amount]
+    if.true
+        drop mem_load.REQUESTED_AMOUNT_ITEM
+        # => [acct_fill_amount=requested, inflight_amount=0]
+    end
 
     # Extract and store note_type from active note metadata
     exec.extract_note_type
-    # => []
+    # => [acct_fill_amount, inflight_amount]
 
-    mem_load.PSWAP_CREATOR_SUFFIX_ITEM mem_load.PSWAP_CREATOR_PREFIX_ITEM swap
-    # => [creator_id_suffix, creator_id_prefix]
+    mem_load.PSWAP_CREATOR_PREFIX_ITEM mem_load.PSWAP_CREATOR_SUFFIX_ITEM
+    # => [creator_id_suffix, creator_id_prefix, acct_fill_amount, inflight_amount]
 
     exec.is_consumer_creator
-    # => [is_creator]
+    # => [is_creator, acct_fill_amount, inflight_amount]
 
     if.true
+        drop drop
         exec.handle_reclaim
     else
         exec.execute_pswap
