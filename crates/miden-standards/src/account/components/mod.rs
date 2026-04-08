@@ -216,6 +216,7 @@ impl StandardAccountComponent {
             Self::AuthSingleSig => SINGLESIG_LIBRARY.as_ref(),
             Self::AuthSingleSigAcl => SINGLESIG_ACL_LIBRARY.as_ref(),
 
+            Self::AuthMultisig => MULTISIG_LIBRARY.as_ref(),
             Self::AuthMultisigSmart => MULTISIG_SMART_LIBRARY.as_ref(),
             Self::AuthGuardedMultisig => GUARDED_MULTISIG_LIBRARY.as_ref(),
             Self::AuthNoAuth => NO_AUTH_LIBRARY.as_ref(),

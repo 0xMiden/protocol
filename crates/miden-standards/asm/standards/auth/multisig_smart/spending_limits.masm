@@ -31,6 +31,7 @@ const TMP_ASSETS_PTR = 1024
 # =================================================================================================
 
 const ERR_U32 = "value is not a u32"
+const ERR_SPENDING_WINDOW_NOT_U32 = "spending_window must be a valid u32"
 const ERR_SPENDING_WINDOW_ZERO = "spending_window must be non-zero"
 const ERR_LAST_WINDOW_START_GT_CURRENT = "window_start_timestamp is greater than current_timestamp"
 const ERR_INVALID_TIER_INDEX = "invalid tier index (must be 0..3)"
@@ -49,7 +50,7 @@ const ERR_INVALID_AMOUNT_LIMITS = "invalid amount limits (must satisfy limit0 <=
 #! Side effects:
 #!   - Writes SPENDING_WINDOW_SLOT.
 pub proc update_spending_window_policy
-    u32assert.err=ERR_U32
+    u32assert.err=ERR_SPENDING_WINDOW_NOT_U32
     dup eq.0 assertz.err=ERR_SPENDING_WINDOW_ZERO
     # => [spending_window]
 
@@ -555,111 +556,89 @@ end
 #! Inputs:  [currently_spending_amount]
 #! Outputs: [total_spent_amount_in_window, threshold_tier, requires_delay]
 #!
-#! Locals:
-#! 0: requires_delay
-#! 1: total_amount
-#! 2: amount_limit0
-#! 3: amount_limit1
-#! 4: amount_limit2
-#! 5: delay_trigger_amount
-@locals(6)
+#! Where:
+#! - currently_spending_amount is the USD value of this transaction.
+#! - total_spent_amount_in_window is the cumulative USD value spent in the active window
+#!   (including this transaction).
+#! - threshold_tier is the minimum number of approvals required.
+#! - requires_delay is 1 if a timelock delay is required, 0 otherwise.
+#!
+#! Invocation: exec
 proc get_num_required_signatures
-    u32assert.err=ERR_U32
-    # => [currently_spending_amount]
-
+    # [currently_spending_amount]
     exec.within_spending_window
     # => [is_within_spending_window, currently_spending_amount]
 
     if.true
         exec.get_amount_spent_in_window
         # => [amount_spent_in_window, currently_spending_amount]
-
-        u32assert2.err=ERR_U32
         add
         # => [total_amount]
-    else
-        # => [currently_spending_amount]
     end
     # => [total_amount]
 
-    loc_store.1
-    # => []
-
     push.AMOUNT_LIMITS_SLOT[0..2]
     exec.active_account::get_initial_item
-    # => [amount_limit0, amount_limit1, amount_limit2, delay_trigger_amount]
+    # => [l0, l1, l2, dt, total]
 
-    loc_store.2
-    loc_store.3
-    loc_store.4
-    loc_store.5
-    # => []
+    movup.4
+    # => [total, l0, l1, l2, dt]
 
-    loc_load.1
-    loc_load.5
-    # => [delay_trigger_amount, total_amount]
-
-    u32assert2.err=ERR_U32
+    # ------ requires_delay = total > delay_trigger_amount ------
+    # depths: 0=total, 1=l0, 2=l1, 3=l2, 4=dt
+    dup dup.5
+    # dup:   [total, total, l0, l1, l2, dt]        (dt is now at depth 5)
+    # dup.5: [dt, total, total, l0, l1, l2, dt]
     u32gt
-    # => [requires_delay]
+    # u32gt [dt, total] = total > dt
+    # => [requires_delay, total, l0, l1, l2, dt]
+    swap
+    # => [total, requires_delay, l0, l1, l2, dt]
 
-    loc_store.0
-    # => []
-
-    loc_load.1
-    loc_load.2
-    # => [amount_limit0, total_amount]
-
-    u32assert2.err=ERR_U32
-    u32lt
-    # => [total_lt_limit0]
-
+    # ------ tier_index ------
+    # depths: 0=total, 1=requires_delay, 2=l0, 3=l1, 4=l2, 5=dt
+    dup dup.3 u32lt
+    # dup:   [total, total, requires_delay, l0, l1, l2, dt]   (depth 3 = l0)
+    # dup.3: [l0, total, total, requires_delay, l0, l1, l2, dt]
+    # u32lt [l0, total] = total < l0
+    # => [total_lt_l0, total, requires_delay, l0, l1, l2, dt]
     if.true
         push.0
-        # => [tier_index=0]
     else
-        loc_load.1
-        loc_load.3
-        # => [amount_limit1, total_amount]
-
-        u32assert2.err=ERR_U32
-        u32lt
-        # => [total_lt_limit1]
-
+        dup dup.4 u32lt
+        # dup:   [total, total, requires_delay, l0, l1, l2, dt]   (depth 4 = l1)
+        # dup.4: [l1, total, total, requires_delay, l0, l1, l2, dt]
+        # u32lt [l1, total] = total < l1
+        # => [total_lt_l1, total, requires_delay, l0, l1, l2, dt]
         if.true
             push.1
-            # => [tier_index=1]
         else
-            loc_load.1
-            loc_load.4
-            # => [amount_limit2, total_amount]
-
-            u32assert2.err=ERR_U32
-            u32lt
-            # => [total_lt_limit2]
-
+            dup dup.5 u32lt
+            # dup:   [total, total, requires_delay, l0, l1, l2, dt]   (depth 5 = l2)
+            # dup.5: [l2, total, total, requires_delay, l0, l1, l2, dt]
+            # u32lt [l2, total] = total < l2
+            # => [total_lt_l2, total, requires_delay, l0, l1, l2, dt]
             if.true
                 push.2
-                # => [tier_index=2]
             else
                 push.3
-                # => [tier_index=3]
             end
         end
     end
-    # => [tier_index]
+    # => [tier_index, total, requires_delay, l0, l1, l2, dt]
 
     exec.get_tier_threshold_for_index
-    # => [threshold_tier]
-
-    loc_load.0
-    # => [requires_delay, threshold_tier]
+    # => [tier_threshold, total, requires_delay, l0, l1, l2, dt]
 
     swap
-    # => [threshold_tier, requires_delay]
+    # => [total, tier_threshold, requires_delay, l0, l1, l2, dt]
 
-    loc_load.1
-    # => [total_spent_amount_in_window, threshold_tier, requires_delay]
+    movup.3 drop
+    movup.3 drop
+    movup.3 drop
+    movup.3 drop
+    # drop l0, l1, l2, dt from depth 3 one by one
+    # => [total, tier_threshold, requires_delay]
 end
 
 #! Computes spending policy for this tx and updates tracker (if spending > 0).
