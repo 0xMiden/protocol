@@ -23,7 +23,7 @@ const ASM_AGGLAYER_DIR: &str = "agglayer";
 const ASM_AGGLAYER_BRIDGE_DIR: &str = "agglayer/bridge";
 const ASM_COMPONENTS_DIR: &str = "components";
 
-const AGGLAYER_ERRORS_FILE: &str = "src/errors/agglayer.rs";
+const AGGLAYER_ERRORS_RS_FILE: &str = "agglayer_errors.rs";
 const AGGLAYER_ERRORS_ARRAY_NAME: &str = "AGGLAYER_ERRORS";
 
 // PRE-PROCESSING
@@ -72,7 +72,7 @@ fn main() -> Result<()> {
         assembler.clone(),
     )?;
 
-    generate_error_constants(&source_dir)?;
+    generate_error_constants(&source_dir, &build_dir)?;
 
     Ok(())
 }
@@ -214,14 +214,7 @@ fn compile_account_components(
 /// The function ensures that a constant is not defined twice, except if their error message is the
 /// same. This can happen across multiple files.
 ///
-/// Because the error files will be written to ./src/errors, this should be a no-op if ./src is
-/// read-only. To enable writing to ./src, set the `BUILD_GENERATED_FILES_IN_SRC` environment
-/// variable.
-fn generate_error_constants(asm_source_dir: &Path) -> Result<()> {
-    if !BUILD_GENERATED_FILES_IN_SRC {
-        return Ok(());
-    }
-
+fn generate_error_constants(asm_source_dir: &Path, build_dir: &str) -> Result<()> {
     // Miden agglayer errors
     // ------------------------------------------
 
@@ -229,7 +222,7 @@ fn generate_error_constants(asm_source_dir: &Path) -> Result<()> {
         .context("failed to extract all masm errors")?;
     shared::generate_error_file(
         shared::ErrorModule {
-            file_name: AGGLAYER_ERRORS_FILE,
+            file_path: Path::new(build_dir).join(AGGLAYER_ERRORS_RS_FILE),
             array_name: AGGLAYER_ERRORS_ARRAY_NAME,
             is_crate_local: false,
         },
@@ -502,7 +495,7 @@ mod shared {
             .into_diagnostic()?;
         }
 
-        write_if_changed(module.file_name, output)?;
+        fs::write(module.file_path, output).into_diagnostic()?;
 
         Ok(())
     }
@@ -535,9 +528,9 @@ mod shared {
         pub message: String,
     }
 
-    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+    #[derive(Debug, Clone)]
     pub struct ErrorModule {
-        pub file_name: &'static str,
+        pub file_path: PathBuf,
         pub array_name: &'static str,
         pub is_crate_local: bool,
     }
