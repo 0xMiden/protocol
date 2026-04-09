@@ -3,6 +3,7 @@
 ## v0.15.0 (TBD)
 
 ### Changes
+- Added validation of leaf type on CLAIM note processing to prevent message leaves from being processed as asset claims ([#2730](https://github.com/0xMiden/protocol/pull/2730)).
 
 - Added `AssetAmount` wrapper type for validated fungible asset amounts ([#2721](https://github.com/0xMiden/protocol/pull/2721)).
 - [BREAKING] Renamed `ProvenBatch::new` to `new_unchecked` ([#2687](https://github.com/0xMiden/miden-base/issues/2687)).
