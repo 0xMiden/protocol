@@ -12,8 +12,8 @@ use miden_protocol::account::{
     AccountIdVersion,
     AccountStorageMode,
     AccountType,
+    RoleSymbol,
 };
-use miden_protocol::asset::RoleSymbol;
 use miden_protocol::errors::AccountIdError;
 use miden_protocol::note::{Note, NoteType};
 use miden_protocol::{Felt, Word};

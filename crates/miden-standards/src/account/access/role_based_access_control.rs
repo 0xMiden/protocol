@@ -12,12 +12,12 @@ use miden_protocol::account::{
     AccountComponent,
     AccountId,
     AccountType,
+    RoleSymbol,
     StorageMap,
     StorageMapKey,
     StorageSlot,
     StorageSlotName,
 };
-use miden_protocol::asset::RoleSymbol;
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
@@ -325,22 +325,22 @@ impl From<RoleBasedAccessControl> for AccountComponent {
         );
         let active_roles_slot = StorageSlot::with_map(
             RoleBasedAccessControl::active_roles_slot().clone(),
-            StorageMap::with_entries(active_role_entries.into_iter())
+            StorageMap::with_entries(active_role_entries)
                 .expect("active role entries should be unique"),
         );
         let role_configs_slot = StorageSlot::with_map(
             RoleBasedAccessControl::role_configs_slot().clone(),
-            StorageMap::with_entries(role_config_entries.into_iter())
+            StorageMap::with_entries(role_config_entries)
                 .expect("role config entries should be unique"),
         );
         let role_members_slot = StorageSlot::with_map(
             RoleBasedAccessControl::role_members_slot().clone(),
-            StorageMap::with_entries(role_member_entries.into_iter())
+            StorageMap::with_entries(role_member_entries)
                 .expect("role member entries should be unique"),
         );
         let role_member_index_slot = StorageSlot::with_map(
             RoleBasedAccessControl::role_member_index_slot().clone(),
-            StorageMap::with_entries(role_member_index_entries.into_iter())
+            StorageMap::with_entries(role_member_index_entries)
                 .expect("role member index entries should be unique"),
         );
         let pending_role_transfers_slot = StorageSlot::with_map(
