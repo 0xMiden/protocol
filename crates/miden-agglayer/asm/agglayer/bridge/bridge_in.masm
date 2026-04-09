@@ -889,7 +889,7 @@ proc write_mint_note_storage
     # => []
 
     # Write SERIAL_NUM (PROOF_DATA_KEY) to MINT note storage [12..15]
-    mem_loadw_be.CLAIM_PROOF_DATA_KEY_MEM_ADDR
+    padw mem_loadw_be.CLAIM_PROOF_DATA_KEY_MEM_ADDR
     # => [SERIAL_NUM]
 
     mem_storew_le.MINT_NOTE_STORAGE_OUTPUT_SERIAL_NUM dropw
