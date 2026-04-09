@@ -11,11 +11,6 @@ use miden_protocol::transaction::TransactionKernel;
 // CONSTANTS
 // ================================================================================================
 
-/// Defines whether the build script should generate files in `/src`.
-/// The docs.rs build pipeline has a read-only filesystem, so we have to avoid writing to `src`,
-/// otherwise the docs will fail to build there. Note that writing to `OUT_DIR` is fine.
-const BUILD_GENERATED_FILES_IN_SRC: bool = option_env!("BUILD_GENERATED_FILES_IN_SRC").is_some();
-
 const ASSETS_DIR: &str = "assets";
 const ASM_DIR: &str = "asm";
 const ASM_NOTE_SCRIPTS_DIR: &str = "note_scripts";
@@ -36,7 +31,7 @@ const AGGLAYER_ERRORS_ARRAY_NAME: &str = "AGGLAYER_ERRORS";
 fn main() -> Result<()> {
     // re-build when the MASM code changes
     println!("cargo::rerun-if-changed={ASM_DIR}/");
-    println!("cargo::rerun-if-env-changed=BUILD_GENERATED_FILES_IN_SRC");
+    println!("cargo::rerun-if-env-changed=REGENERATE_CANONICAL_ZEROS");
 
     let crate_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
     let build_dir = env::var("OUT_DIR").unwrap();
