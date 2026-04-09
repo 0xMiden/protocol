@@ -3,11 +3,6 @@
 use miden::protocol::types::DoubleWord
 use miden::protocol::types::MemoryAddress
 
-# TYPE ALIASES
-# =================================================================================================
-
-pub type EthereumAddressFormat = struct { a: felt, b: felt, c: felt, d: felt, e: felt }
-
 # BYTE MANIPULATION
 # =================================================================================================
 
@@ -15,7 +10,7 @@ pub type EthereumAddressFormat = struct { a: felt, b: felt, c: felt, d: felt, e:
 #!
 #! Inputs:  [value]
 #! Outputs: [swapped]
-pub proc swap_u32_bytes
+proc swap_u32_bytes
     # part0 = (value & 0xFF) << 24
     dup u32and.0xFF u32shl.24
     # => [part0, value]
@@ -43,7 +38,9 @@ end
 #!
 #! Inputs:  [WORD_1, WORD_2, ptr]
 #! Outputs: [WORD_1, WORD_2, ptr]
-pub proc mem_store_double_word(
+#!
+#! Total cycles: 28
+proc mem_store_double_word(
     double_word_to_store: DoubleWord,
     mem_ptr: MemoryAddress
 ) -> (DoubleWord, MemoryAddress)
@@ -58,7 +55,7 @@ end
 #!
 #! Inputs:  [WORD_1, WORD_2, ptr]
 #! Outputs: []
-pub proc mem_store_double_word_unaligned(
+proc mem_store_double_word_unaligned(
     double_word_to_store: DoubleWord,
     mem_ptr: MemoryAddress
 )
@@ -86,7 +83,7 @@ end
 #!
 #! Inputs:  [ptr]
 #! Outputs: [WORD_1, WORD_2]
-pub proc mem_load_double_word(mem_ptr: MemoryAddress) -> DoubleWord
+proc mem_load_double_word(mem_ptr: MemoryAddress) -> DoubleWord
     padw dup.4 add.4 mem_loadw_le
     # => [WORD_2, ptr]
 

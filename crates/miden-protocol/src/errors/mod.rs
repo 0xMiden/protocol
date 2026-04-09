@@ -12,8 +12,8 @@ use miden_crypto::merkle::smt::{SmtLeafError, SmtProofError};
 use miden_crypto::utils::HexParseError;
 use thiserror::Error;
 
-use super::account::AccountId;
-use super::asset::{AssetVaultKey, FungibleAsset, NonFungibleAsset, RoleSymbol, TokenSymbol};
+use super::account::{AccountId, RoleSymbol};
+use super::asset::{AssetVaultKey, FungibleAsset, NonFungibleAsset, TokenSymbol};
 use super::crypto::merkle::MerkleError;
 use super::note::NoteId;
 use super::{MAX_BATCHES_PER_BLOCK, MAX_OUTPUT_NOTES_PER_BATCH, Word};
@@ -518,8 +518,7 @@ impl From<ShortCapitalStringError> for TokenSymbolError {
             ShortCapitalStringError::ValueTooLarge(v) => Self::ValueTooLarge(v),
             ShortCapitalStringError::ValueTooSmall(v) => Self::ValueTooSmall(v),
             ShortCapitalStringError::InvalidLength(v) => Self::InvalidLength(v),
-            ShortCapitalStringError::InvalidCharacter
-            | ShortCapitalStringError::InvalidRoleCharacter => Self::InvalidCharacter,
+            ShortCapitalStringError::InvalidCharacter => Self::InvalidCharacter,
             ShortCapitalStringError::DataNotFullyDecoded => Self::DataNotFullyDecoded,
         }
     }
@@ -548,8 +547,7 @@ impl From<ShortCapitalStringError> for RoleSymbolError {
             ShortCapitalStringError::ValueTooLarge(v) => Self::ValueTooLarge(v),
             ShortCapitalStringError::ValueTooSmall(v) => Self::ValueTooSmall(v),
             ShortCapitalStringError::InvalidLength(v) => Self::InvalidLength(v),
-            ShortCapitalStringError::InvalidCharacter
-            | ShortCapitalStringError::InvalidRoleCharacter => Self::InvalidCharacter,
+            ShortCapitalStringError::InvalidCharacter => Self::InvalidCharacter,
             ShortCapitalStringError::DataNotFullyDecoded => Self::DataNotFullyDecoded,
         }
     }
@@ -559,7 +557,7 @@ impl From<ShortCapitalStringError> for RoleSymbolError {
 // ================================================================================================
 
 #[derive(Debug, Error)]
-pub enum ShortCapitalStringError {
+pub(crate) enum ShortCapitalStringError {
     #[error("short capital string value {0} is too large")]
     ValueTooLarge(u64),
     #[error("short capital string value {0} is too small")]
@@ -570,8 +568,6 @@ pub enum ShortCapitalStringError {
     InvalidLength(usize),
     #[error("short capital string contains an invalid character")]
     InvalidCharacter,
-    #[error("short capital string contains a character that is not uppercase ASCII or underscore")]
-    InvalidRoleCharacter,
     #[error("short capital string data left after decoding the specified number of characters")]
     DataNotFullyDecoded,
 }

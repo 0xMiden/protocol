@@ -1,17 +1,14 @@
 use agglayer::bridge::bridge_config
 use miden::protocol::active_note
-use miden::protocol::active_account
-use miden::protocol::account_id
 use miden::standards::attachments::network_account_target
 
 # CONSTANTS
 # =================================================================================================
 
-const STORAGE_START_PTR = 0
 const CONFIG_AGG_BRIDGE_NUM_STORAGE_ITEMS = 7
 
-const FAUCET_ID_SUFFIX = 5
-const FAUCET_ID_PREFIX = 6
+const STORAGE_START_PTR = 0
+const ORIGIN_TOKEN_ADDR_0 = STORAGE_START_PTR
 const ORIGIN_TOKEN_ADDR_4 = 4
 
 # ERRORS
@@ -20,7 +17,8 @@ const ORIGIN_TOKEN_ADDR_4 = 4
 const ERR_CONFIG_AGG_BRIDGE_UNEXPECTED_STORAGE_ITEMS = "CONFIG_AGG_BRIDGE expects exactly 7 note storage items"
 const ERR_CONFIG_AGG_BRIDGE_TARGET_ACCOUNT_MISMATCH = "CONFIG_AGG_BRIDGE note attachment target account does not match consuming account"
 
-#! Registers a faucet in the bridge's faucet registry and token registry.
+#! Agglayer Bridge CONFIG_AGG_BRIDGE script: registers a faucet in the bridge's faucet registry and
+#! token registry.
 #!
 #! This note can only be consumed by the Agglayer Bridge account that is targeted by the note
 #! attachment, and only if the note was sent by the bridge admin.
@@ -33,14 +31,13 @@ const ERR_CONFIG_AGG_BRIDGE_TARGET_ACCOUNT_MISMATCH = "CONFIG_AGG_BRIDGE note at
 #! Outputs: [pad(16)]
 #!
 #! NoteStorage layout (7 felts total):
-#! - origin_token_addr_0 [0]: 1 felt
-#! - origin_token_addr_1 [1]: 1 felt
-#! - origin_token_addr_2 [2]: 1 felt
-#! - origin_token_addr_3 [3]: 1 felt
-#! - origin_token_addr_4 [4]: 1 felt
-#! - faucet_id_suffix    [5]: 1 felt
-#! - faucet_id_prefix    [6]: 1 felt
-
+#! - origin_token_addr_0 [0] : 1 felt
+#! - origin_token_addr_1 [1] : 1 felt
+#! - origin_token_addr_2 [2] : 1 felt
+#! - origin_token_addr_3 [3] : 1 felt
+#! - origin_token_addr_4 [4] : 1 felt
+#! - faucet_id_suffix    [5] : 1 felt
+#! - faucet_id_prefix    [6] : 1 felt
 #!
 #! Where:
 #! - faucet_id_suffix: Suffix felt of the faucet account ID to register.
@@ -63,24 +60,30 @@ begin
     push.STORAGE_START_PTR exec.active_note::get_storage
     # => [num_storage_items, dest_ptr, pad(16)]
 
+    # Validate the number of storage items
     push.CONFIG_AGG_BRIDGE_NUM_STORAGE_ITEMS assert_eq.err=ERR_CONFIG_AGG_BRIDGE_UNEXPECTED_STORAGE_ITEMS drop
     # => [pad(16)]
 
     # Load origin_token_addr(5) and faucet_id from memory
     # register_faucet expects: [origin_token_addr(5), faucet_id_suffix, faucet_id_prefix, pad(9)]
 
-    # Load all 7 values individually in the correct order
-    mem_load.FAUCET_ID_PREFIX mem_load.FAUCET_ID_SUFFIX mem_load.ORIGIN_TOKEN_ADDR_4
-    # => [addr4, faucet_id_suffix, faucet_id_prefix, pad(16)]
+    # Load origin_token_addr_4, faucet_id_suffix, and faucet_id_prefix onto the sack. Notice that we
+    # can use `mem_loadw_le` here: that allows us to reuse the existing zeros on the stack, and
+    # since note memory was not initialized, fourth element on the stack will be equal ZERO, which
+    # is what we want.
+    mem_loadw_le.ORIGIN_TOKEN_ADDR_4
+    # => [addr4, faucet_id_suffix, faucet_id_prefix, pad(13)]
 
-    padw mem_loadw_le.STORAGE_START_PTR
-    # => [addr4, addr3, addr2, addr1, addr0, faucet_id_suffix, faucet_id_prefix, pad(16)]
+    # Load remaining origin_token_addr_[0..3] onto the stack
+    padw mem_loadw_le.ORIGIN_TOKEN_ADDR_0
+    # => [addr0, addr1, addr2, addr3, addr4, faucet_id_suffix, faucet_id_prefix, pad(13)]
 
     # Register the faucet in the bridge
-    # => [addr4, addr3, addr2, addr1, addr0, faucet_id_suffix, faucet_id_prefix, pad(9), pad(7)]
+    # => [addr0, addr1, addr2, addr3, addr4, faucet_id_suffix, faucet_id_prefix, pad(9), pad(4)]
+    
     call.bridge_config::register_faucet
-    # => [pad(16), pad(7)]
+    # => [pad(16), pad(4)]
 
-    dropw drop drop drop
+    dropw
     # => [pad(16)]
 end

@@ -1,24 +1,23 @@
 use alloc::fmt;
 
-use super::{Felt, ShortCapitalString, TokenSymbolError};
+use super::{Felt, TokenSymbolError};
+use crate::utils::ShortCapitalString;
 
 /// Represents a token symbol (e.g. "POL", "ETH").
 ///
 /// Token Symbols can consist of up to 12 capital Latin characters, e.g. "C", "ETH", "MIDEN".
 ///
-/// The label is stored as a [`ShortCapitalString`] and can be converted to a [`Felt`] encoding via
-/// [`as_element()`](Self::as_element).
+/// The label is stored internally as a validated short uppercase string and can be converted to a
+/// [`Felt`] encoding via [`as_element()`](Self::as_element).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TokenSymbol(ShortCapitalString);
 
 impl TokenSymbol {
-    pub const ALPHABET: &'static [u8; 26] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    /// Alphabet used for token symbols (`A`–`Z`).
+    pub const ALPHABET: &'static str = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
     /// Maximum allowed length of the token string.
     pub const MAX_SYMBOL_LENGTH: usize = 12;
-
-    /// The length of the set of characters that can be used in a token's name.
-    pub const ALPHABET_LENGTH: u64 = 26;
 
     /// The minimum integer value of an encoded [`TokenSymbol`].
     ///
