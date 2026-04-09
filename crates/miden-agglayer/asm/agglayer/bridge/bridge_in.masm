@@ -74,7 +74,6 @@ const MINT_NOTE_NUM_STORAGE_ITEMS = 18
 
 # P2ID attachment constants (the P2ID note created by the faucet has no attachment)
 const P2ID_ATTACHMENT_SCHEME_NONE = 0
-const LEAF_TYPE_ASSET_TRANSFER = 0
 
 # Global memory pointers
 # -------------------------------------------------------------------------------------------------
