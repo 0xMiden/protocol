@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.14.4 (2026-04-09)
+
+- Fixed AggLayer `write_mint_note_storage` stack padding before loading the mint serial number ([#2749](https://github.com/0xMiden/protocol/pull/2749)).
+
 ## 0.14.3 (2026-04-07)
 
 - [BREAKING] Updated for compatibility with miden-vm v0.22.1 (`Arc<Library>` return types, `MastArtifact`/`PackageKind` removal) ([#2742](https://github.com/0xMiden/protocol/pull/2742)).
