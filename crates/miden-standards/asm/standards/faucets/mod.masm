@@ -4,13 +4,12 @@ use miden::protocol::faucet
 use miden::protocol::native_account
 use miden::protocol::output_note
 use miden::protocol::asset
-use ::miden::protocol::asset::FUNGIBLE_ASSET_MAX_AMOUNT
+use miden::protocol::asset::FUNGIBLE_ASSET_MAX_AMOUNT
 
 # CONSTANTS
 # =================================================================================================
 
 const ASSET_PTR=0
-const PRIVATE_NOTE=2
 
 # ERRORS
 # =================================================================================================
@@ -198,7 +197,7 @@ pub proc burn
     # burn the asset
     # this ensures we only burn assets that were issued by this faucet (which implies they are
     # fungible)
-    exec.faucet::burn dropw
+    exec.faucet::burn
     # => [amount, pad(16)]
 
     # Subtract burnt amount from current token_supply in storage.

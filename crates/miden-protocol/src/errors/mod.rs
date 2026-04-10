@@ -12,7 +12,7 @@ use miden_crypto::merkle::smt::{SmtLeafError, SmtProofError};
 use miden_crypto::utils::HexParseError;
 use thiserror::Error;
 
-use super::account::AccountId;
+use super::account::{AccountId, RoleSymbol};
 use super::asset::{AssetVaultKey, FungibleAsset, NonFungibleAsset, TokenSymbol};
 use super::crypto::merkle::MerkleError;
 use super::note::NoteId;
@@ -40,7 +40,7 @@ use crate::note::{
     NoteType,
     Nullifier,
 };
-use crate::transaction::{TransactionEventId, TransactionId};
+use crate::transaction::TransactionId;
 use crate::utils::serde::DeserializationError;
 use crate::vm::EventId;
 use crate::{
@@ -512,6 +512,66 @@ pub enum TokenSymbolError {
     DataNotFullyDecoded,
 }
 
+impl From<ShortCapitalStringError> for TokenSymbolError {
+    fn from(value: ShortCapitalStringError) -> Self {
+        match value {
+            ShortCapitalStringError::ValueTooLarge(v) => Self::ValueTooLarge(v),
+            ShortCapitalStringError::ValueTooSmall(v) => Self::ValueTooSmall(v),
+            ShortCapitalStringError::InvalidLength(v) => Self::InvalidLength(v),
+            ShortCapitalStringError::InvalidCharacter => Self::InvalidCharacter,
+            ShortCapitalStringError::DataNotFullyDecoded => Self::DataNotFullyDecoded,
+        }
+    }
+}
+
+// ROLE ERROR
+// ================================================================================================
+
+#[derive(Debug, Error)]
+pub enum RoleSymbolError {
+    #[error("role symbol value {0} cannot exceed {max}", max = RoleSymbol::MAX_ENCODED_VALUE)]
+    ValueTooLarge(u64),
+    #[error("role symbol value {0} cannot be less than {min}", min = RoleSymbol::MIN_ENCODED_VALUE)]
+    ValueTooSmall(u64),
+    #[error("role symbol should have length between 1 and 12 characters, but {0} was provided")]
+    InvalidLength(usize),
+    #[error("role symbol contains a character that is not uppercase ASCII or underscore")]
+    InvalidCharacter,
+    #[error("role symbol data left after decoding the specified number of characters")]
+    DataNotFullyDecoded,
+}
+
+impl From<ShortCapitalStringError> for RoleSymbolError {
+    fn from(value: ShortCapitalStringError) -> Self {
+        match value {
+            ShortCapitalStringError::ValueTooLarge(v) => Self::ValueTooLarge(v),
+            ShortCapitalStringError::ValueTooSmall(v) => Self::ValueTooSmall(v),
+            ShortCapitalStringError::InvalidLength(v) => Self::InvalidLength(v),
+            ShortCapitalStringError::InvalidCharacter => Self::InvalidCharacter,
+            ShortCapitalStringError::DataNotFullyDecoded => Self::DataNotFullyDecoded,
+        }
+    }
+}
+
+// SHORT CAPITAL STRING ERROR
+// ================================================================================================
+
+#[derive(Debug, Error)]
+pub(crate) enum ShortCapitalStringError {
+    #[error("short capital string value {0} is too large")]
+    ValueTooLarge(u64),
+    #[error("short capital string value {0} is too small")]
+    ValueTooSmall(u64),
+    #[error(
+        "short capital string should have length between 1 and 12 characters, but {0} was provided"
+    )]
+    InvalidLength(usize),
+    #[error("short capital string contains an invalid character")]
+    InvalidCharacter,
+    #[error("short capital string data left after decoding the specified number of characters")]
+    DataNotFullyDecoded,
+}
+
 // ASSET VAULT ERROR
 // ================================================================================================
 
@@ -583,9 +643,9 @@ pub enum NoteError {
     private = NoteType::Private,
     )]
     UnknownNoteType(Box<str>),
-    #[error("note location index {node_index_in_block} is out of bounds 0..={highest_index}")]
-    NoteLocationIndexOutOfBounds {
-        node_index_in_block: u16,
+    #[error("block note tree index {block_note_tree_index} is out of bounds 0..={highest_index}")]
+    BlockNoteTreeIndexOutOfBounds {
+        block_note_tree_index: u16,
         highest_index: usize,
     },
     #[error("note network execution requires a public note but note is of type {0}")]
@@ -818,11 +878,7 @@ pub enum OutputNoteError {
 #[derive(Debug, Error)]
 pub enum TransactionEventError {
     #[error("event id {0} is not a valid transaction event")]
-    InvalidTransactionEvent(EventId, Option<&'static str>),
-    #[error("event id {0} is not a transaction kernel event")]
-    NotTransactionEvent(EventId, Option<&'static str>),
-    #[error("event id {0} can only be emitted from the root context")]
-    NotRootContext(TransactionEventId),
+    InvalidTransactionEvent(EventId),
 }
 
 // TRANSACTION TRACE PARSING ERROR

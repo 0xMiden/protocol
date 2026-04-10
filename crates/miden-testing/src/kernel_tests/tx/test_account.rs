@@ -1,3 +1,4 @@
+use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use std::collections::BTreeMap;
@@ -6,7 +7,6 @@ use anyhow::Context;
 use assert_matches::assert_matches;
 use miden_crypto::rand::test_utils::rand_value;
 use miden_processor::{ExecutionError, Word};
-use miden_protocol::LexicographicWord;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::delta::AccountUpdateDetails;
@@ -939,11 +939,7 @@ async fn prove_account_creation_with_non_empty_storage() -> anyhow::Result<()> {
     assert_matches!(
         tx.account_delta().storage().get(&slot_name2).unwrap(),
         StorageSlotDelta::Map(map_delta) => {
-            let expected = &BTreeMap::from_iter(
-            map_entries
-                .into_iter()
-                .map(|(key, value)| { (LexicographicWord::new(key), value) })
-            );
+            let expected = &BTreeMap::from_iter(map_entries);
             assert_eq!(expected, map_delta.entries())
         }
     );
@@ -1548,8 +1544,9 @@ async fn transaction_executor_account_code_using_custom_library() -> anyhow::Res
 
     let account_component_source =
         NamedSource::new("account_component::account_module", ACCOUNT_COMPONENT_CODE);
-    let account_component_lib =
-        assembler.clone().assemble_library([account_component_source]).unwrap();
+    let account_component_lib = Arc::unwrap_or_clone(
+        assembler.clone().assemble_library([account_component_source]).unwrap(),
+    );
 
     let tx_script_src = "\
           use account_component::account_module
@@ -1869,6 +1866,86 @@ async fn test_get_initial_map_item() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Tests that `get_initial_item` returns the original slot values and `get_item` returns updated
+/// values after modification, for all possible storage slot indices.
+#[tokio::test]
+async fn test_get_item_and_get_initial_item_for_all_slots() -> anyhow::Result<()> {
+    // Build storage slots for all valid indices.
+    let slots: Vec<StorageSlot> = (0..AccountStorage::MAX_NUM_STORAGE_SLOTS as u32)
+        .map(|index| {
+            StorageSlot::with_value(
+                StorageSlotName::mock(index as usize),
+                Word::from([0, 0, 0, index]),
+            )
+        })
+        .collect();
+
+    let account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
+        .with_auth_component(Auth::IncrNonce)
+        .with_component(MockAccountComponent::with_slots(slots.clone()))
+        .build_existing()
+        .unwrap();
+
+    let tx_context = TransactionContextBuilder::new(account).build().unwrap();
+
+    // Build MASM code that, for each slot:
+    // 1. Sets a new value [index, 0, 0, 0]
+    // 2. Asserts get_initial_item returns the original value [0, 0, 0, index]
+    // 3. Asserts get_item returns the new value [index, 0, 0, 0]
+    let mut slot_constants = String::new();
+    let mut slot_operations = String::new();
+
+    for (index, slot) in slots.iter().enumerate() {
+        let slot_name = slot.name();
+        let initial_value = slot.value();
+        // Use a different format than the initial value (index at word position 0).
+        let new_value = Word::from([index as u32, 0, 0, 0]);
+        let const_name = format!("SLOT_{index}");
+
+        slot_constants.push_str(&format!("const {const_name} = word(\"{slot_name}\")\n"));
+
+        slot_operations.push_str(&format!(
+            r#"
+                # slot {index}: set new value
+                push.{new_value}
+                push.{const_name}[0..2]
+                call.mock_account::set_item dropw drop drop
+
+                # slot {index}: assert get_initial_item returns original value
+                push.{const_name}[0..2]
+                exec.account::get_initial_item
+                push.{initial_value}
+                assert_eqw.err="slot {index}: initial value mismatch"
+
+                # slot {index}: assert get_item returns the new value
+                push.{const_name}[0..2]
+                exec.account::get_item
+                push.{new_value}
+                assert_eqw.err="slot {index}: current value mismatch"
+            "#,
+        ));
+    }
+
+    let code = format!(
+        r#"
+        use $kernel::account
+        use $kernel::prologue
+        use mock::account->mock_account
+
+        {slot_constants}
+
+        begin
+            exec.prologue::prepare_transaction
+            {slot_operations}
+        end
+        "#,
+    );
+
+    tx_context.execute_code(&code).await?;
+
+    Ok(())
+}
+
 /// Tests that incrementing the account nonce fails if it would overflow the field.
 #[tokio::test]
 async fn incrementing_nonce_overflow_fails() -> anyhow::Result<()> {
@@ -1915,9 +1992,11 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
         );
 
         let source = NamedSource::new("component1::interface", code);
-        TransactionKernel::assembler()
-            .assemble_library([source])
-            .expect("mock account code should be valid")
+        Arc::unwrap_or_clone(
+            TransactionKernel::assembler()
+                .assemble_library([source])
+                .expect("mock account code should be valid"),
+        )
     });
 
     static COMPONENT_2_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
@@ -1945,9 +2024,11 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
         );
 
         let source = NamedSource::new("component2::interface", code);
-        TransactionKernel::assembler()
-            .assemble_library([source])
-            .expect("mock account code should be valid")
+        Arc::unwrap_or_clone(
+            TransactionKernel::assembler()
+                .assemble_library([source])
+                .expect("mock account code should be valid"),
+        )
     });
 
     struct CustomComponent1 {

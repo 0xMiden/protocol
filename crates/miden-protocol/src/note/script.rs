@@ -5,6 +5,7 @@ use core::fmt::Display;
 use core::num::TryFromIntError;
 
 use miden_core::mast::MastNodeExt;
+use miden_mast_package::Package;
 
 use super::Felt;
 use crate::assembly::mast::{ExternalNodeBuilder, MastForest, MastForestContributor, MastNodeId};
@@ -137,6 +138,19 @@ impl NoteScript {
         let (mast, entrypoint) = create_external_node_forest(digest);
 
         Ok(Self { mast: Arc::new(mast), entrypoint })
+    }
+
+    /// Creates an [`NoteScript`] from a [`Package`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The package contains a library which does not contain a procedure with the `@note_script`
+    ///   attribute.
+    /// - The package contains a library which contains multiple procedures with the `@note_script`
+    ///   attribute.
+    pub fn from_package(package: &Package) -> Result<Self, NoteError> {
+        Ok(NoteScript::from_library(&package.mast))?
     }
 
     // PUBLIC ACCESSORS

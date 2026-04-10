@@ -5,23 +5,18 @@ use miden_agglayer::{
     AggLayerBridge,
     B2AggNote,
     ConfigAggBridgeNote,
-    EthAddressFormat,
+    EthAddress,
     ExitRoot,
+    MetadataHash,
     create_existing_agglayer_faucet,
     create_existing_bridge_account,
 };
 use miden_crypto::rand::FeltRng;
 use miden_protocol::Felt;
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::account::{
-    Account,
-    AccountId,
-    AccountIdVersion,
-    AccountStorageMode,
-    AccountType,
-};
+use miden_protocol::account::{AccountId, AccountIdVersion, AccountStorageMode, AccountType};
 use miden_protocol::asset::{Asset, FungibleAsset};
-use miden_protocol::note::{NoteAssets, NoteScript, NoteType};
+use miden_protocol::note::{NoteAssets, NoteType};
 use miden_protocol::transaction::RawOutputNote;
 use miden_standards::account::faucets::TokenMetadata;
 use miden_standards::account::mint_policies::OwnerControlledInitConfig;
@@ -29,47 +24,9 @@ use miden_standards::note::StandardNote;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 use miden_tx::utils::hex_to_bytes;
 
-use super::test_utils::SOLIDITY_MMR_FRONTIER_VECTORS;
+use super::test_utils::SOLIDITY_MTF_VECTORS;
 
-/// Reads the Local Exit Root (double-word) from the bridge account's storage.
-///
-/// The Local Exit Root is stored in two dedicated value slots:
-/// - [`AggLayerBridge::ler_lo_slot_name`] — low word of the root
-/// - [`AggLayerBridge::ler_hi_slot_name`] — high word of the root
-///
-/// Returns the 256-bit root as 8 `Felt`s: first the 4 elements of `root_lo` (in
-/// reverse of their storage order), followed by the 4 elements of `root_hi` (also in
-/// reverse of their storage order). For an empty/uninitialized tree, all elements are
-/// zeros.
-fn read_local_exit_root(account: &Account) -> Vec<Felt> {
-    let root_lo_slot = AggLayerBridge::ler_lo_slot_name();
-    let root_hi_slot = AggLayerBridge::ler_hi_slot_name();
-
-    let root_lo = account
-        .storage()
-        .get_item(root_lo_slot)
-        .expect("should be able to read LET root lo");
-    let root_hi = account
-        .storage()
-        .get_item(root_hi_slot)
-        .expect("should be able to read LET root hi");
-
-    let mut root = Vec::with_capacity(8);
-    root.extend(root_lo.to_vec());
-    root.extend(root_hi.to_vec());
-    root
-}
-
-fn read_let_num_leaves(account: &Account) -> u64 {
-    let num_leaves_slot = AggLayerBridge::let_num_leaves_slot_name();
-    let value = account
-        .storage()
-        .get_item(num_leaves_slot)
-        .expect("should be able to read LET num leaves");
-    value.to_vec()[0].as_canonical_u64()
-}
-
-/// Tests that 32 sequential B2AGG note consumptions match all 32 Solidity MMR roots.
+/// Tests that 32 sequential B2AGG note consumptions match all 32 Solidity MTF roots.
 ///
 /// This test exercises the complete bridge-out lifecycle:
 /// 1. Creates a bridge account (empty faucet registry) and an agglayer faucet with conversion
@@ -80,13 +37,13 @@ fn read_let_num_leaves(account: &Account) -> u64 {
 ///    - Validates the faucet is registered via `convert_asset`
 ///    - Calls the faucet's `asset_to_origin_asset` via FPI to get the scaled amount, origin token
 ///      address, and origin network
-///    - Writes the leaf data and computes the Keccak hash for the MMR
+///    - Writes the leaf data and computes the Keccak hash for the Merkle Tree Faucet
 ///    - Creates a BURN note addressed to the faucet
 /// 5. Verifies the BURN note was created with the correct asset, tag, and script
 /// 6. Consumes the BURN note with the faucet to burn the tokens
 #[tokio::test]
 async fn bridge_out_consecutive() -> anyhow::Result<()> {
-    let vectors = &*SOLIDITY_MMR_FRONTIER_VECTORS;
+    let vectors = &*SOLIDITY_MTF_VECTORS;
     let note_count = 32usize;
     assert_eq!(vectors.amounts.len(), note_count, "amount vectors should contain 32 entries");
     assert_eq!(vectors.roots.len(), note_count, "root vectors should contain 32 entries");
@@ -129,26 +86,33 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
 
     // CREATE AGGLAYER FAUCET ACCOUNT (with conversion metadata for FPI)
     // --------------------------------------------------------------------------------------------
-    let origin_token_address = EthAddressFormat::from_hex(&vectors.origin_token_address)
+    let origin_token_address = EthAddress::from_hex(&vectors.origin_token_address)
         .expect("valid shared origin token address");
     let origin_network = 64u32;
     let scale = 0u8;
+    let metadata_hash = MetadataHash::from_token_info(
+        &vectors.token_name,
+        &vectors.token_symbol,
+        vectors.token_decimals,
+    );
     let faucet = create_existing_agglayer_faucet(
         builder.rng_mut().draw_word(),
-        "AGG",
-        8,
+        &vectors.token_symbol,
+        vectors.token_decimals,
         Felt::new(FungibleAsset::MAX_AMOUNT),
         Felt::new(total_burned),
         bridge_account.id(),
         &origin_token_address,
         origin_network,
         scale,
+        metadata_hash,
     );
     builder.add_account(faucet.clone())?;
 
     // CONFIG_AGG_BRIDGE note to register the faucet in the bridge (sent by bridge admin)
     let config_note = ConfigAggBridgeNote::create(
         faucet.id(),
+        &origin_token_address,
         bridge_admin.id(),
         bridge_account.id(),
         builder.rng_mut(),
@@ -160,7 +124,7 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
     let mut notes = Vec::with_capacity(note_count);
     for (i, &amount) in expected_amounts.iter().enumerate().take(note_count) {
         let destination_network = vectors.destination_networks[i];
-        let eth_address = EthAddressFormat::from_hex(&vectors.destination_addresses[i])
+        let eth_address = EthAddress::from_hex(&vectors.destination_addresses[i])
             .expect("valid destination address");
 
         let bridge_asset: Asset = FungibleAsset::new(faucet.id(), amount).unwrap().into();
@@ -192,7 +156,6 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
 
     // STEP 2: CONSUME 32 B2AGG NOTES AND VERIFY FRONTIER EVOLUTION
     // --------------------------------------------------------------------------------------------
-    let burn_note_script: NoteScript = StandardNote::BURN.script();
     let mut burn_note_ids = Vec::with_capacity(note_count);
 
     for (i, note) in notes.iter().enumerate() {
@@ -200,7 +163,6 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
 
         let executed_tx = mock_chain
             .build_tx_context(bridge_account.clone(), &[note.id()], &[])?
-            .add_note_script(burn_note_script.clone())
             .foreign_accounts(vec![foreign_account_inputs])
             .build()?
             .execute()
@@ -245,7 +207,7 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
 
         bridge_account.apply_delta(executed_tx.account_delta())?;
         assert_eq!(
-            read_let_num_leaves(&bridge_account),
+            AggLayerBridge::read_let_num_leaves(&bridge_account),
             (i + 1) as u64,
             "LET leaf count should match consumed notes"
         );
@@ -253,7 +215,7 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
         let expected_ler =
             ExitRoot::new(hex_to_bytes(&vectors.roots[i]).expect("valid root hex")).to_elements();
         assert_eq!(
-            read_local_exit_root(&bridge_account),
+            AggLayerBridge::read_local_exit_root(&bridge_account)?,
             expected_ler,
             "Local Exit Root after {} leaves should match the Solidity-generated root",
             i + 1
@@ -332,17 +294,24 @@ async fn test_bridge_out_fails_with_unregistered_faucet() -> anyhow::Result<()> 
 
     // CREATE AGGLAYER FAUCET ACCOUNT (NOT registered in the bridge)
     // --------------------------------------------------------------------------------------------
-    let origin_token_address = EthAddressFormat::new([0u8; 20]);
+    let vectors = &*SOLIDITY_MTF_VECTORS;
+    let origin_token_address = EthAddress::new([0u8; 20]);
+    let metadata_hash = MetadataHash::from_token_info(
+        &vectors.token_name,
+        &vectors.token_symbol,
+        vectors.token_decimals,
+    );
     let faucet = create_existing_agglayer_faucet(
         builder.rng_mut().draw_word(),
-        "AGG",
-        8,
+        &vectors.token_symbol,
+        vectors.token_decimals,
         Felt::new(FungibleAsset::MAX_AMOUNT),
         Felt::new(100),
         bridge_account.id(),
         &origin_token_address,
         0, // origin_network
         0, // scale
+        metadata_hash,
     );
     builder.add_account(faucet.clone())?;
 
@@ -353,9 +322,7 @@ async fn test_bridge_out_fails_with_unregistered_faucet() -> anyhow::Result<()> 
         FungibleAsset::new(faucet.id(), amount.as_canonical_u64()).unwrap().into();
 
     let destination_address = "0x1234567890abcdef1122334455667788990011aa";
-    let eth_address =
-        EthAddressFormat::from_hex(destination_address).expect("valid Ethereum address");
-
+    let eth_address = EthAddress::from_hex(destination_address).expect("valid Ethereum address");
     let b2agg_note = B2AggNote::create(
         1u32, // destination_network
         eth_address,
@@ -448,9 +415,7 @@ async fn b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
 
     let destination_network = 1u32;
     let destination_address = "0x1234567890abcdef1122334455667788990011aa";
-    let eth_address =
-        EthAddressFormat::from_hex(destination_address).expect("valid Ethereum address");
-
+    let eth_address = EthAddress::from_hex(destination_address).expect("valid Ethereum address");
     let assets = NoteAssets::new(vec![bridge_asset])?;
 
     // Create the B2AGG note with the USER ACCOUNT as the sender.
@@ -576,9 +541,7 @@ async fn b2agg_note_non_target_account_cannot_consume() -> anyhow::Result<()> {
 
     let destination_network = 1u32;
     let destination_address = "0x1234567890abcdef1122334455667788990011aa";
-    let eth_address =
-        EthAddressFormat::from_hex(destination_address).expect("valid Ethereum address");
-
+    let eth_address = EthAddress::from_hex(destination_address).expect("valid Ethereum address");
     let assets = NoteAssets::new(vec![bridge_asset])?;
 
     // Create the B2AGG note targeting the real bridge account

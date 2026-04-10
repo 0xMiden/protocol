@@ -459,6 +459,26 @@ impl ProposedBlock {
     ///
     /// The returned block header contains the same validator public key as the previous block, as
     /// provided by the proposed block.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any of the following conditions are met.
+    ///
+    /// ## Account Tree
+    ///
+    /// - An account witness cannot be used to reconstruct the partial account tree (e.g. it points
+    ///   to a leaf where multiple account IDs share the same prefix).
+    /// - The account root in the previous block header does not match the root of the reconstructed
+    ///   partial account tree (stale account tree root).
+    /// - An account ID's prefix already exists in the tree when inserting the new state commitments
+    ///   (duplicate account ID prefix).
+    ///
+    /// ## Nullifier Tree
+    ///
+    /// - The nullifier witnesses cannot be used to reconstruct the partial nullifier tree (root
+    ///   mismatch between witnesses).
+    /// - The nullifier root in the previous block header does not match the root of the
+    ///   reconstructed partial nullifier tree (stale nullifier tree root).
     pub fn into_header_and_body(self) -> Result<(BlockHeader, BlockBody), ProposedBlockError> {
         // Get fields from the proposed block before it is consumed.
         let block_num = self.block_num();

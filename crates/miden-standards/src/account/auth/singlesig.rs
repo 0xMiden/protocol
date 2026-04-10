@@ -1,5 +1,5 @@
 use miden_protocol::Word;
-use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
+use miden_protocol::account::auth::{AuthScheme, PublicKey, PublicKeyCommitment};
 use miden_protocol::account::component::{
     AccountComponentMetadata,
     SchemaType,
@@ -7,6 +7,7 @@ use miden_protocol::account::component::{
     StorageSlotSchema,
 };
 use miden_protocol::account::{AccountComponent, AccountType, StorageSlot, StorageSlotName};
+use miden_protocol::crypto::dsa::{ecdsa_k256_keccak, falcon512_poseidon2};
 use miden_protocol::utils::sync::LazyLock;
 
 use crate::account::components::singlesig_library;
@@ -50,6 +51,36 @@ impl AuthSingleSig {
     /// Creates a new [`AuthSingleSig`] component with the given `public_key`.
     pub fn new(pub_key: PublicKeyCommitment, auth_scheme: AuthScheme) -> Self {
         Self { pub_key, auth_scheme }
+    }
+
+    /// Creates a new [`AuthSingleSig`] component using the Falcon512Poseidon2 signature scheme.
+    ///
+    /// The public key commitment is derived from the provided Falcon512 public key.
+    pub fn falcon512_poseidon2(pub_key: falcon512_poseidon2::PublicKey) -> Self {
+        Self {
+            pub_key: pub_key.into(),
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        }
+    }
+
+    /// Creates a new [`AuthSingleSig`] component using the EcdsaK256Keccak signature scheme.
+    ///
+    /// The public key commitment is derived from the provided ECDSA K256 public key.
+    pub fn ecdsa_k256_keccak(pub_key: ecdsa_k256_keccak::PublicKey) -> Self {
+        Self {
+            pub_key: pub_key.into(),
+            auth_scheme: AuthScheme::EcdsaK256Keccak,
+        }
+    }
+
+    /// Creates a new [`AuthSingleSig`] component from a [`PublicKey`].
+    ///
+    /// The authentication scheme and public key commitment are derived from the provided key.
+    pub fn from_public_key(pub_key: PublicKey) -> Self {
+        Self {
+            auth_scheme: pub_key.auth_scheme(),
+            pub_key: pub_key.to_commitment(),
+        }
     }
 
     /// Returns the [`StorageSlotName`] where the public key is stored.

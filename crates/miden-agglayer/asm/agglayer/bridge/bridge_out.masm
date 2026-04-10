@@ -8,40 +8,41 @@ use miden::standards::data_structures::double_word_array
 use miden::standards::attachments::network_account_target
 use miden::standards::note_tag::DEFAULT_TAG
 use miden::standards::note::execution_hint::ALWAYS
+use miden::protocol::types::MemoryAddress
 use miden::protocol::output_note
-use miden::core::crypto::hashes::keccak256
 use miden::core::crypto::hashes::poseidon2
-use miden::core::word
-use miden::agglayer::common::utils
-use miden::agglayer::faucet -> agglayer_faucet
-use miden::agglayer::bridge::bridge_config
-use miden::agglayer::bridge::leaf_utils
-use miden::agglayer::bridge::mmr_frontier32_keccak
-
-
-# TYPE ALIASES
-# =================================================================================================
-
-type EthereumAddressFormat = struct @bigendian { a: felt, b: felt, c: felt, d: felt, e: felt }
-type MemoryAddress = u32
+use agglayer::common::utils
+use agglayer::faucet -> agglayer_faucet
+use agglayer::bridge::bridge_config
+use agglayer::bridge::leaf_utils
+use agglayer::bridge::merkle_tree_frontier
+use agglayer::common::eth_address::EthereumAddressFormat
 
 # CONSTANTS
 # =================================================================================================
 
+# Storage slots
+# -------------------------------------------------------------------------------------------------
+
 # Storage slot constants for the LET (Local Exit Tree).
 # The frontier is stored as a double-word array in a map slot.
 # The root and num_leaves are stored in separate value slots.
-const LOCAL_EXIT_TREE_SLOT=word("miden::agglayer::let")
-const LET_ROOT_LO_SLOT=word("miden::agglayer::let::root_lo")
-const LET_ROOT_HI_SLOT=word("miden::agglayer::let::root_hi")
-const LET_NUM_LEAVES_SLOT=word("miden::agglayer::let::num_leaves")
+const LET_FRONTIER_SLOT=word("agglayer::bridge::let_frontier")
+const LET_ROOT_LO_SLOT=word("agglayer::bridge::let_root_lo")
+const LET_ROOT_HI_SLOT=word("agglayer::bridge::let_root_hi")
+const LET_NUM_LEAVES_SLOT=word("agglayer::bridge::let_num_leaves")
 
-# Memory pointers
+# Global memory pointers
+# -------------------------------------------------------------------------------------------------
+
 const LEAF_DATA_START_PTR=44
 # Memory pointer for loading the LET (Local Exit Tree) frontier into memory.
 # The memory layout at this address matches what append_and_update_frontier expects:
 # [num_leaves, 0, 0, 0, [[FRONTIER_NODE_LO, FRONTIER_NODE_HI]; 32]]
 const LET_FRONTIER_MEM_PTR=100
+
+# Field offsets
+# -------------------------------------------------------------------------------------------------
 
 # Leaf data field offsets (relative to LEAF_DATA_START_PTR)
 const LEAF_TYPE_OFFSET=0
@@ -52,6 +53,9 @@ const DESTINATION_ADDRESS_OFFSET=8
 const AMOUNT_OFFSET=13
 const METADATA_HASH_OFFSET=21
 const PADDING_OFFSET=29
+
+# Local memory offsets
+# -------------------------------------------------------------------------------------------------
 
 # bridge_out memory locals
 const BRIDGE_OUT_BURN_ASSET_LOC=0
@@ -69,8 +73,10 @@ const ATTACHMENT_SCHEME_LOC=12
 const ATTACHMENT_KIND_LOC=13
 
 # Other constants
+# -------------------------------------------------------------------------------------------------
+
 const LEAF_TYPE_ASSET=0
-const PUBLIC_NOTE=1
+use miden::protocol::note::NOTE_TYPE_PUBLIC
 const BURN_NOTE_NUM_STORAGE_ITEMS=0
 
 # PUBLIC INTERFACE
@@ -82,7 +88,7 @@ const BURN_NOTE_NUM_STORAGE_ITEMS=0
 #! 1. Validates the asset's faucet is registered in the bridge's faucet registry
 #! 2. Queries the faucet for origin asset conversion data via FPI
 #! 3. Builds the leaf data (origin token, destination, amount, metadata)
-#! 4. Computes Keccak hash and adds it to the MMR frontier
+#! 4. Computes Keccak hash of the leaf data and appends it to the Local Exit Tree
 #! 5. Creates a BURN note with the bridged out asset
 #!
 #! Inputs:  [ASSET_KEY, ASSET_VALUE, dest_network_id, dest_address(5), pad(2)]
@@ -120,21 +126,26 @@ pub proc bridge_out
     exec.convert_asset
     # => [AMOUNT_U256(8), origin_addr(5), origin_network, pad(16)]
 
-    # --- 2. Write all leaf data fields to memory ---
-
+    # --- 2. Write all leaf data fields to memory (except metadata hash) ---
     # Store scaled AMOUNT (8 felts)
     push.LEAF_DATA_START_PTR push.AMOUNT_OFFSET add
     movdn.8
     exec.utils::mem_store_double_word_unaligned
     # => [origin_addr(5), origin_network, pad(16)]
 
-    # Store origin_token_address (5 felts)
+    # Store origin_token_address and origin_network
     push.LEAF_DATA_START_PTR push.ORIGIN_TOKEN_ADDRESS_OFFSET add
     exec.write_address_to_memory
     # => [origin_network, pad(16)]
 
-    # Store origin_network
     push.LEAF_DATA_START_PTR push.ORIGIN_NETWORK_OFFSET add
+    mem_store
+    # => [pad(16)]
+
+    # Store leaf type
+    push.LEAF_TYPE_ASSET
+    exec.utils::swap_u32_bytes
+    push.LEAF_DATA_START_PTR push.LEAF_TYPE_OFFSET add
     mem_store
     # => [pad(16)]
 
@@ -154,13 +165,30 @@ pub proc bridge_out
     exec.write_address_to_memory
     # => [pad(16)]
 
-    # TODO construct metadata hash
-    padw padw
-    # => [METADATA_HASH(8), pad(16)]
+    # --- 3. Fetch metadata hash from the faucet via FPI and write to memory ---
+    procref.agglayer_faucet::get_metadata_hash
+    # => [PROC_MAST_ROOT, pad(16)]
+
+    # Reload asset to extract faucet ID for the FPI call
+    locaddr.BRIDGE_OUT_BURN_ASSET_LOC
+    exec.asset::load
+    swapw dropw
+    # => [ASSET_KEY, PROC_MAST_ROOT, pad(16)]
+    # ASSET_KEY layout: [0, 0, faucet_id_suffix, faucet_id_prefix]
+
+    # Extract faucet ID, drop padding and amount
+    drop drop
+    # => [faucet_id_suffix, faucet_id_prefix, PROC_MAST_ROOT, pad(16)]
+
+    exec.tx::execute_foreign_procedure
+    # => [METADATA_HASH_LO, METADATA_HASH_HI, pad(8)]
+
     push.LEAF_DATA_START_PTR push.METADATA_HASH_OFFSET add
     movdn.8
-    # => [METADATA_HASH(8), metadata_hash_ptr, pad(16)]
+    # => [METADATA_HASH_LO, METADATA_HASH_HI, metadata_hash_ptr, pad(8)]
+
     exec.utils::mem_store_double_word_unaligned
+    # => [pad(16)]
 
     # Explicitly zero the 3 padding felts after METADATA_HASH for
     # leaf_utils::pack_leaf_data
@@ -177,14 +205,7 @@ pub proc bridge_out
     mem_store
     # => [pad(16)]
 
-    # Leaf type
-    push.LEAF_TYPE_ASSET
-    exec.utils::swap_u32_bytes
-    push.LEAF_DATA_START_PTR push.LEAF_TYPE_OFFSET add
-    # => [leaf_type_ptr, leaf_type, pad(16)]
-    mem_store
-
-    # --- 3. Compute leaf value and add to MMR frontier ---
+    # --- 4. Compute leaf value and append it to the Local Exit Tree ---
     push.LEAF_DATA_START_PTR
     exec.add_leaf_bridge
     # => [pad(16)]
@@ -193,6 +214,7 @@ pub proc bridge_out
     locaddr.BRIDGE_OUT_BURN_ASSET_LOC
     exec.asset::load
     # => [ASSET_KEY, ASSET_VALUE, pad(16)]
+    
     exec.create_burn_note
     # => [pad(16)]
 end
@@ -200,19 +222,19 @@ end
 # HELPER PROCEDURES
 # =================================================================================================
 
-#! Validates that a faucet is registered in the bridge's faucet registry, then performs
-#! an FPI call to the faucet's `asset_to_origin_asset` procedure to obtain the scaled
-#! amount, origin token address, and origin network.
+#! Validates that a faucet is registered in the bridge's faucet registry, then performs an FPI call
+#! to the faucet's `asset_to_origin_asset` procedure to obtain the scaled amount, origin token
+#! address, and origin network.
 #!
 #! Inputs:  [ASSET_KEY, ASSET_VALUE]
-#! Outputs: [AMOUNT_U256[0](4), AMOUNT_U256[1](4), origin_addr(5), origin_network]
+#! Outputs: [AMOUNT_U256_LO, AMOUNT_U256_HI, origin_addr(5), origin_network]
 #!
 #! Where:
 #! - ASSET_KEY is the vault key of the asset to be bridged out.
 #! - ASSET_VALUE is the value of the asset to be bridged out.
-#! - AMOUNT_U256: scaled amount as 8 u32 limbs (little-endian)
-#! - origin_addr: origin token address (5 u32 felts)
-#! - origin_network: origin network identifier
+#! - AMOUNT_U256: scaled amount as 8 u32 limbs (little-endian).
+#! - origin_addr: origin token address (5 u32 felts).
+#! - origin_network: origin network identifier.
 #!
 #! Panics if:
 #! - The faucet is not registered in the faucet registry.
@@ -221,36 +243,42 @@ end
 #! Invocation: exec
 proc convert_asset
     # --- Step 1: Assert faucet is registered ---
-    swapw
-    exec.asset::fungible_value_into_amount
-    movdn.4
-    # => [ASSET_KEY, amount]
+    # pad in preparation for FPI call
+    repeat.2
+        padw padw swapdw
+    end
+    # => [ASSET_KEY, ASSET_VALUE, pad(16)]
+
+    swapw exec.asset::fungible_value_into_amount movdn.4
+    # => [ASSET_KEY, amount, pad(16)]
 
     exec.asset::key_into_faucet_id
-    # => [faucet_id_suffix, faucet_id_prefix, amount]
+    # => [faucet_id_suffix, faucet_id_prefix, amount, pad(16)]
 
     dup.1 dup.1
     exec.bridge_config::assert_faucet_registered
-    # => [faucet_id_suffix, faucet_id_prefix, amount]
+    # => [faucet_id_suffix, faucet_id_prefix, amount, pad(16)]
 
     # --- Step 2: FPI to faucet's asset_to_origin_asset ---
 
     procref.agglayer_faucet::asset_to_origin_asset
-    # => [PROC_MAST_ROOT, faucet_id_suffix, faucet_id_prefix, amount]
+    # => [PROC_MAST_ROOT, faucet_id_suffix, faucet_id_prefix, amount, pad(16)]
 
     # Move faucet_id above PROC_MAST_ROOT
     movup.5 movup.5
-    # => [faucet_id_prefix, faucet_id_suffix, PROC_MAST_ROOT, amount]
+    # => [faucet_id_suffix, faucet_id_prefix, PROC_MAST_ROOT, amount, pad(15), pad(1)]
 
     exec.tx::execute_foreign_procedure
-    # => [AMOUNT_U256[0](4), AMOUNT_U256[1](4), origin_addr(5), origin_network, pad(2)]
+    # => [AMOUNT_U256_LO, AMOUNT_U256_HI, origin_addr(5), origin_network, pad(2), pad(1)]
 
-    # drop the 2 trailing padding elements
-    movup.15 drop movup.14 drop
-    # => [AMOUNT_U256[0](4), AMOUNT_U256[1](4), origin_addr(5), origin_network]
+    # drop the 3 trailing padding elements
+    repeat.3
+        movup.14 drop
+    end
+    # => [AMOUNT_U256_LO, AMOUNT_U256_HI, origin_addr(5), origin_network]
 end
 
-#! Computes the leaf value from the leaf data in memory and adds it to the MMR frontier.
+#! Computes the leaf value from the leaf data in memory and appends it to the Local Exit Tree.
 #!
 #! Inputs:  [leaf_data_start_ptr]
 #! Outputs: []
@@ -281,7 +309,7 @@ proc add_leaf_bridge(leaf_data_start_ptr: MemoryAddress)
     # => [LEAF_VALUE_LO, LEAF_VALUE_HI, let_frontier_ptr]
 
     # Append the leaf to the frontier and compute the new root
-    exec.mmr_frontier32_keccak::append_and_update_frontier
+    exec.merkle_tree_frontier::append_and_update_frontier
     # => [NEW_ROOT_LO, NEW_ROOT_HI, new_leaf_count]
 
     # Save the root and num_leaves to their value slots
@@ -295,8 +323,8 @@ end
 
 #! Loads the LET (Local Exit Tree) frontier from account storage into memory.
 #!
-#! The num_leaves is read from its dedicated value slot, and the 32 frontier entries are read
-#! from the LET map slot (double-word array, indices 0..31). The data is placed into memory at
+#! The num_leaves is read from its dedicated value slot, and the 32 frontier entries are read from
+#! the LET map slot (double-word array, indices 0..31). The data is placed into memory at
 #! LET_FRONTIER_MEM_PTR, matching the layout expected by append_and_update_frontier:
 #! [num_leaves, 0, 0, 0, [[FRONTIER_NODE_LO, FRONTIER_NODE_HI]; 32]]
 #!
@@ -324,7 +352,7 @@ proc load_let_frontier_to_memory
         # => [h]
 
         # Read frontier[h] as a double word from the map
-        dup push.LOCAL_EXIT_TREE_SLOT[0..2]
+        dup push.LET_FRONTIER_SLOT[0..2]
         exec.double_word_array::get
         # => [VALUE_0, VALUE_1, h]
 
@@ -365,6 +393,7 @@ proc save_let_root_and_num_leaves
     # 3. Save new_leaf_count to its value slot as [new_leaf_count, 0, 0, 0]
     push.0.0.0 movup.3
     # => [new_leaf_count, 0, 0, 0]
+
     push.LET_NUM_LEAVES_SLOT[0..2]
     exec.native_account::set_item
     dropw
@@ -393,7 +422,7 @@ proc save_let_frontier_to_storage
         # => [VALUE_0, VALUE_1, h]
 
         # Write it back to the map at index h
-        dup.8 push.LOCAL_EXIT_TREE_SLOT[0..2]
+        dup.8 push.LET_FRONTIER_SLOT[0..2]
         exec.double_word_array::set
         dropw dropw
         # => [h]
@@ -426,6 +455,7 @@ proc write_address_to_memory(mem_ptr: MemoryAddress, address: EthereumAddressFor
     # => [mem_ptr+4, address(1)]
 
     mem_store
+    # => []
 end
 
 #! Computes the SERIAL_NUM of the outputted BURN note.
@@ -498,7 +528,7 @@ proc create_burn_note
     exec.note::build_recipient
     # => [RECIPIENT]
 
-    push.PUBLIC_NOTE
+    push.NOTE_TYPE_PUBLIC
     push.DEFAULT_TAG
     # => [tag, note_type, RECIPIENT]
 
@@ -510,8 +540,7 @@ proc create_burn_note
     # => [note_idx, pad(15)]
 
     # duplicate note_idx: one for set_attachment, one for add_asset
-    dup
-    swapw loc_loadw_le.ATTACHMENT_LOC
+    dup swapw loc_loadw_le.ATTACHMENT_LOC
     # => [NOTE_ATTACHMENT, note_idx, note_idx, pad(11)]
 
     loc_load.ATTACHMENT_KIND_LOC

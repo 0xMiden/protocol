@@ -3,7 +3,7 @@ use alloc::string::String;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountId};
 use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset};
-use miden_protocol::crypto::rand::RpoRandomCoin;
+use miden_protocol::crypto::rand::RandomCoin;
 use miden_protocol::errors::tx_kernel::{
     ERR_NON_FUNGIBLE_ASSET_ALREADY_EXISTS,
     ERR_TX_NUMBER_OF_OUTPUT_NOTES_EXCEEDS_LIMIT,
@@ -78,7 +78,7 @@ async fn test_create_note() -> anyhow::Result<()> {
             exec.prologue::prepare_transaction
 
             push.{recipient}
-            push.{PUBLIC_NOTE}
+            push.{NOTE_TYPE_PUBLIC}
             push.{tag}
 
             exec.output_note::create
@@ -88,7 +88,7 @@ async fn test_create_note() -> anyhow::Result<()> {
         end
         ",
         recipient = recipient,
-        PUBLIC_NOTE = NoteType::Public as u8,
+        NOTE_TYPE_PUBLIC = NoteType::Public as u8,
         tag = tag,
     );
 
@@ -157,7 +157,7 @@ fn note_creation_script(tag: Felt) -> String {
                 exec.prologue::prepare_transaction
 
                 push.{recipient}
-                push.{PUBLIC_NOTE}
+                push.{NOTE_TYPE_PUBLIC}
                 push.{tag}
 
                 exec.output_note::create
@@ -167,7 +167,7 @@ fn note_creation_script(tag: Felt) -> String {
             end
             ",
         recipient = Word::from([0, 1, 2, 3u32]),
-        PUBLIC_NOTE = NoteType::Public as u8,
+        NOTE_TYPE_PUBLIC = NoteType::Public as u8,
     )
 }
 
@@ -188,7 +188,7 @@ async fn test_create_note_too_many_notes() -> anyhow::Result<()> {
             exec.prologue::prepare_transaction
 
             push.{recipient}
-            push.{PUBLIC_NOTE}
+            push.{NOTE_TYPE_PUBLIC}
             push.{tag}
 
             exec.output_note::create
@@ -196,7 +196,7 @@ async fn test_create_note_too_many_notes() -> anyhow::Result<()> {
         ",
         tag = NoteTag::new(1234 << 16 | 5678),
         recipient = Word::from([0, 1, 2, 3u32]),
-        PUBLIC_NOTE = NoteType::Public as u8,
+        NOTE_TYPE_PUBLIC = NoteType::Public as u8,
     );
 
     let exec_output = tx_context.execute_code(&code).await;
@@ -207,7 +207,7 @@ async fn test_create_note_too_many_notes() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
-    let mut rng = RpoRandomCoin::new(Word::from([1, 2, 3, 4u32]));
+    let mut rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
     let account = Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
 
     let asset_1 = FungibleAsset::mock(100);
@@ -264,7 +264,7 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
 
             # create output note 1
             push.{recipient_1}
-            push.{PUBLIC_NOTE}
+            push.{NOTE_TYPE_PUBLIC}
             push.{tag_1}
             exec.output_note::create
             # => [note_idx]
@@ -276,7 +276,7 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
 
             # create output note 2
             push.{recipient_2}
-            push.{PUBLIC_NOTE}
+            push.{NOTE_TYPE_PUBLIC}
             push.{tag_2}
             exec.output_note::create
             # => [note_idx]
@@ -303,7 +303,7 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
             # => [OUTPUT_NOTES_COMMITMENT]
         end
         ",
-        PUBLIC_NOTE = NoteType::Public as u8,
+        NOTE_TYPE_PUBLIC = NoteType::Public as u8,
         recipient_1 = output_note_1.recipient().digest(),
         tag_1 = output_note_1.metadata().tag(),
         ASSET_1_KEY = asset_1.to_key_word(),
@@ -373,7 +373,7 @@ async fn test_create_note_and_add_asset() -> anyhow::Result<()> {
             exec.prologue::prepare_transaction
 
             push.{recipient}
-            push.{PUBLIC_NOTE}
+            push.{NOTE_TYPE_PUBLIC}
             push.{tag}
 
             exec.output_note::create
@@ -395,7 +395,7 @@ async fn test_create_note_and_add_asset() -> anyhow::Result<()> {
         end
         ",
         recipient = recipient,
-        PUBLIC_NOTE = NoteType::Public as u8,
+        NOTE_TYPE_PUBLIC = NoteType::Public as u8,
         tag = tag,
         ASSET_KEY = asset.to_key_word(),
         ASSET_VALUE = asset.to_value_word(),
@@ -443,7 +443,7 @@ async fn test_create_note_and_add_multiple_assets() -> anyhow::Result<()> {
             exec.prologue::prepare_transaction
 
             push.{recipient}
-            push.{PUBLIC_NOTE}
+            push.{NOTE_TYPE_PUBLIC}
             push.{tag}
             exec.output_note::create
             # => [note_idx]
@@ -480,7 +480,7 @@ async fn test_create_note_and_add_multiple_assets() -> anyhow::Result<()> {
         end
         ",
         recipient = recipient,
-        PUBLIC_NOTE = NoteType::Public as u8,
+        NOTE_TYPE_PUBLIC = NoteType::Public as u8,
         tag = tag,
         ASSET_KEY = asset.to_key_word(),
         ASSET_VALUE = asset.to_value_word(),
@@ -572,7 +572,7 @@ async fn test_create_note_and_add_same_nft_twice() -> anyhow::Result<()> {
             # => []
 
             push.{recipient}
-            push.{PUBLIC_NOTE}
+            push.{NOTE_TYPE_PUBLIC}
             push.{tag}
             exec.output_note::create
             # => [note_idx]
@@ -592,7 +592,7 @@ async fn test_create_note_and_add_same_nft_twice() -> anyhow::Result<()> {
         end
         ",
         recipient = recipient,
-        PUBLIC_NOTE = NoteType::Public as u8,
+        NOTE_TYPE_PUBLIC = NoteType::Public as u8,
         tag = tag,
         ASSET_KEY = non_fungible_asset.to_key_word(),
         ASSET_VALUE = non_fungible_asset.to_value_word(),
@@ -672,7 +672,7 @@ async fn test_build_recipient_hash() -> anyhow::Result<()> {
             exec.note::build_recipient_hash
             # => [RECIPIENT, pad(12)]
 
-            push.{PUBLIC_NOTE}
+            push.{NOTE_TYPE_PUBLIC}
             push.{tag}
             # => [tag, note_type, RECIPIENT]
 
@@ -685,7 +685,7 @@ async fn test_build_recipient_hash() -> anyhow::Result<()> {
         ",
         script_root = input_note_1.script().clone().root(),
         output_serial_no = output_serial_no,
-        PUBLIC_NOTE = NoteType::Public as u8,
+        NOTE_TYPE_PUBLIC = NoteType::Public as u8,
         tag = tag,
     );
 
@@ -752,7 +752,7 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
         vec![fungible_asset_0],
         NoteType::Public,
         NoteAttachment::default(),
-        &mut RpoRandomCoin::new(Word::from([1, 2, 3, 4u32])),
+        &mut RandomCoin::new(Word::from([1, 2, 3, 4u32])),
     )?;
 
     let output_note_1 = P2idNote::create(
@@ -761,7 +761,7 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
         vec![fungible_asset_0, fungible_asset_1],
         NoteType::Public,
         NoteAttachment::default(),
-        &mut RpoRandomCoin::new(Word::from([4, 3, 2, 1u32])),
+        &mut RandomCoin::new(Word::from([4, 3, 2, 1u32])),
     )?;
 
     let tx_script_src = &format!(
@@ -882,7 +882,7 @@ async fn test_get_recipient_and_metadata() -> anyhow::Result<()> {
         vec![FungibleAsset::mock(5)],
         NoteType::Public,
         NoteAttachment::default(),
-        &mut RpoRandomCoin::new(Word::from([1, 2, 3, 4u32])),
+        &mut RandomCoin::new(Word::from([1, 2, 3, 4u32])),
     )?;
 
     let tx_script_src = &format!(
@@ -1062,7 +1062,7 @@ async fn test_get_assets() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_set_none_attachment() -> anyhow::Result<()> {
     let account = Account::mock(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET, Auth::IncrNonce);
-    let rng = RpoRandomCoin::new(Word::from([1, 2, 3, 4u32]));
+    let rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
     let attachment = NoteAttachment::default();
     let output_note =
         RawOutputNote::Full(NoteBuilder::new(account.id(), rng).attachment(attachment).build()?);
@@ -1117,7 +1117,7 @@ async fn test_set_none_attachment() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_set_word_attachment() -> anyhow::Result<()> {
     let account = Account::mock(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET, Auth::IncrNonce);
-    let rng = RpoRandomCoin::new(Word::from([1, 2, 3, 4u32]));
+    let rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
     let attachment =
         NoteAttachment::new_word(NoteAttachmentScheme::new(u32::MAX), Word::from([3, 4, 5, 6u32]));
     let output_note =
@@ -1171,7 +1171,7 @@ async fn test_set_word_attachment() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_set_array_attachment() -> anyhow::Result<()> {
     let account = Account::mock(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET, Auth::IncrNonce);
-    let rng = RpoRandomCoin::new(Word::from([1, 2, 3, 4u32]));
+    let rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
     let elements = [3, 4, 5, 6, 7, 8, 9u32].map(Felt::from).to_vec();
     let attachment = NoteAttachment::new_array(NoteAttachmentScheme::new(42), elements.clone())?;
     let output_note =
@@ -1227,7 +1227,7 @@ async fn test_set_array_attachment() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_set_network_target_account_attachment() -> anyhow::Result<()> {
     let account = Account::mock(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET, Auth::IncrNonce);
-    let rng = RpoRandomCoin::new(Word::from([1, 2, 3, 4u32]));
+    let rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
     let attachment = NetworkAccountTarget::new(
         ACCOUNT_ID_NETWORK_NON_FUNGIBLE_FAUCET.try_into()?,
         NoteExecutionHint::on_block_slot(5, 32, 3),
@@ -1258,7 +1258,7 @@ async fn test_set_network_target_account_attachment() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_network_note() -> anyhow::Result<()> {
     let sender = Account::mock(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET, Auth::IncrNonce);
-    let mut rng = RpoRandomCoin::new(Word::from([9, 8, 7, 6u32]));
+    let mut rng = RandomCoin::new(Word::from([9, 8, 7, 6u32]));
 
     // --- Valid network note ---
     let target_id = AccountId::try_from(ACCOUNT_ID_NETWORK_NON_FUNGIBLE_FAUCET)?;

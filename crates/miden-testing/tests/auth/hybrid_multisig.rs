@@ -1,5 +1,5 @@
 use miden_processor::advice::AdviceInputs;
-use miden_processor::crypto::random::RpoRandomCoin;
+use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, PublicKey};
 use miden_protocol::account::{
     Account,
@@ -505,7 +505,7 @@ async fn test_multisig_update_signers() -> anyhow::Result<()> {
         vec![output_note_asset],
         NoteType::Public,
         Default::default(),
-        &mut RpoRandomCoin::new(Word::empty()),
+        &mut RandomCoin::new(Word::empty()),
     )?;
 
     // Create a new spawn note for the second transaction

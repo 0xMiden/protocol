@@ -3,8 +3,7 @@ extern crate alloc;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use miden_agglayer::agglayer_library;
-use miden_agglayer::claim_note::Keccak256Output;
+use miden_agglayer::{LeafValue, agglayer_library};
 use miden_assembly::{Assembler, DefaultSourceManager};
 use miden_core_lib::CoreLibrary;
 use miden_crypto::SequentialCommit;
@@ -103,16 +102,16 @@ async fn pack_leaf_data() -> anyhow::Result<()> {
     let source = format!(
         r#"
             use miden::core::mem
-            use miden::agglayer::bridge::leaf_utils
+            use agglayer::bridge::leaf_utils
 
             const LEAF_DATA_START_PTR = 0
-            const LEAF_DATA_NUM_WORDS = 8
+            const CLAIM_LEAF_DATA_WORD_LEN = 8
 
             begin
                 push.{key}
 
                 adv.push_mapval
-                push.LEAF_DATA_START_PTR push.LEAF_DATA_NUM_WORDS
+                push.LEAF_DATA_START_PTR push.CLAIM_LEAF_DATA_WORD_LEN
                 exec.mem::pipe_preimage_to_memory drop
 
                 exec.leaf_utils::pack_leaf_data
@@ -168,7 +167,7 @@ async fn get_leaf_value() -> anyhow::Result<()> {
     let source = format!(
         r#"
             use miden::core::sys
-            use miden::agglayer::bridge::bridge_in
+            use agglayer::bridge::bridge_in
 
             begin
                 push.{key}
@@ -191,8 +190,7 @@ async fn get_leaf_value() -> anyhow::Result<()> {
     let computed_leaf_value: Vec<Felt> = exec_output.stack[0..8].to_vec();
     let expected_leaf_value_bytes: [u8; 32] =
         hex_to_bytes(&vector.leaf_value).expect("valid leaf value hex");
-    let expected_leaf_value: Vec<Felt> =
-        Keccak256Output::from(expected_leaf_value_bytes).to_elements();
+    let expected_leaf_value: Vec<Felt> = LeafValue::from(expected_leaf_value_bytes).to_elements();
 
     assert_eq!(computed_leaf_value, expected_leaf_value);
     Ok(())
