@@ -6,10 +6,10 @@ use assert_matches::assert_matches;
 use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountId, AccountStorageMode};
 use miden_protocol::batch::ProposedBatch;
-use miden_protocol::block::BlockNumber;
+use miden_protocol::block::{BlockInputs, BlockNumber, ProposedBlock};
 use miden_protocol::crypto::merkle::MerkleError;
 use miden_protocol::errors::{BatchAccountUpdateError, ProposedBatchError};
-use miden_protocol::note::{Note, NoteType};
+use miden_protocol::note::{Note, NoteAttachment, NoteMetadata, NoteTag, NoteType};
 use miden_protocol::testing::account_id::AccountIdBuilder;
 use miden_protocol::transaction::{
     InputNote,
@@ -18,6 +18,7 @@ use miden_protocol::transaction::{
     PartialBlockchain,
     RawOutputNote,
 };
+use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::note::NoteBuilder;
 use rand::rngs::SmallRng;
@@ -826,6 +827,66 @@ fn noop_tx_after_state_updating_tx_against_same_account() -> anyhow::Result<()> 
     let update = batch.account_updates().get(&account1.id()).unwrap();
     assert_eq!(update.initial_state_commitment(), account1.to_commitment());
     assert_eq!(update.final_state_commitment(), random_final_state_commitment);
+
+    Ok(())
+}
+
+/// Tests that a network note (with NetworkAccountTarget attachment) created and consumed in the
+/// same batch is erased, making it invisible in the batch output notes.
+///
+/// This replicates a real-world issue: when the ntx-builder reacts to a mempool event and submits
+/// the consuming transaction before the next batch is built, both transactions end up in the same
+/// batch. Note erasure removes the output note and its nullifier, so clients cannot detect the
+/// note's creation or consumption through sync_notes or sync_nullifiers.
+/// Tests that when a note is created by one transaction and consumed (as an unauthenticated
+/// input) by another transaction in the same batch, note erasure removes the note from the
+/// batch's output notes and nullifiers.
+///
+/// This replicates a real-world issue with network transactions: the ntx-builder reacts to
+/// a mempool event and submits a consuming transaction before the next batch is built, so
+/// both the creating and consuming transactions end up in the same batch. After erasure,
+/// neither the note nor its nullifier appear in the block body, making it impossible for
+/// clients to detect the note's lifecycle through sync_notes or sync_nullifiers.
+#[test]
+fn note_erasure_removes_output_note_and_nullifier_from_batch() -> anyhow::Result<()> {
+    let TestSetup { mut chain, account1, account2, .. } = setup_chain();
+    let block1 = chain.block_header(1);
+    let block2 = chain.prove_next_block()?;
+
+    let note = mock_note(42);
+
+    // Tx1: account1 creates the note as output
+    let tx1 =
+        MockProvenTxBuilder::with_account(account1.id(), Word::empty(), account1.to_commitment())
+            .ref_block_commitment(block1.commitment())
+            .output_notes(vec![RawOutputNote::Full(note.clone()).into_output_note().unwrap()])
+            .build()?;
+
+    // Tx2: account2 consumes the note as unauthenticated input (simulating a network tx
+    // that consumes the note in the same batch it was created)
+    let tx2 =
+        MockProvenTxBuilder::with_account(account2.id(), Word::empty(), account2.to_commitment())
+            .ref_block_commitment(block1.commitment())
+            .unauthenticated_notes(vec![note.clone()])
+            .build()?;
+
+    // Verify the individual transactions have the expected notes
+    assert_eq!(tx1.output_notes().num_notes(), 1, "tx1 should have 1 output note");
+    assert_eq!(tx2.input_notes().num_notes(), 1, "tx2 should have 1 input note");
+
+    // Both transactions in the same batch triggers note erasure
+    let batch = ProposedBatch::new(
+        [tx1, tx2].into_iter().map(Arc::new).collect(),
+        block2.header().clone(),
+        chain.latest_partial_blockchain(),
+        BTreeMap::default(),
+    )?;
+
+    // After erasure, the note is gone from both inputs and outputs.
+    // This means: no entry in the block body's output notes, no nullifier created,
+    // and clients have no way to detect this note existed.
+    assert_eq!(batch.input_notes().num_notes(), 0, "erased note should not appear as input");
+    assert_eq!(batch.output_notes().len(), 0, "erased note should not appear as output");
 
     Ok(())
 }
