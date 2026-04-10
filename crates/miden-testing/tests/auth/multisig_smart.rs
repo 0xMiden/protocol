@@ -917,7 +917,7 @@ async fn test_multisig_smart_oracle_untracked_assets_do_not_raise_spending_tier(
 ) -> anyhow::Result<()> {
     let oracle_fixture = build_test_oracle_fixture(TestOracleMode::Untracked)?;
     let (_secret_keys, _auth_schemes, public_keys, authenticators) =
-        setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
+        setup_keys_and_authenticators_with_scheme(4, 2, auth_scheme)?;
 
     let assets = vec![FungibleAsset::new(
         AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)?,
@@ -1407,7 +1407,7 @@ async fn test_multisig_smart_delayed_only_proc_rejects_signed_direct_path(
     #[case] auth_scheme: AuthScheme,
 ) -> anyhow::Result<()> {
     let (_secret_keys, _auth_schemes, public_keys, authenticators) =
-        setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
+        setup_keys_and_authenticators_with_scheme(4, 2, auth_scheme)?;
     let multisig_account = create_multisig_account(
         2,
         &public_keys,
@@ -1835,6 +1835,134 @@ async fn test_multisig_smart_spending_window_boundary_resets_spending_tracker(
         spending_tracker[0],
         Felt::new(700),
         "amount_spent_in_window should restart from the transaction amount after a window reset"
+    );
+
+    Ok(())
+}
+
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[tokio::test]
+async fn test_multisig_smart_update_spending_window_policy_resets_tracker(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let oracle_fixture = build_test_oracle_fixture(TestOracleMode::OneToOneTracked)?;
+    let (_secret_keys, _auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(4, 2, auth_scheme)?;
+    let mut multisig_account = create_multisig_smart_with_fixed_test_configuration_and_oracle(
+        2,
+        &public_keys,
+        auth_scheme,
+        vec![],
+        &oracle_fixture,
+    )?;
+
+    let mut mock_chain =
+        MockChainBuilder::with_accounts([multisig_account.clone(), oracle_fixture.account.clone()])
+            .unwrap()
+            .build()?;
+
+    // Seed spending tracker with a successful transfer.
+    let output_note = P2idNote::create(
+        multisig_account.id(),
+        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap(),
+        vec![
+            FungibleAsset::new(AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)?, 700)?
+                .into(),
+        ],
+        NoteType::Public,
+        Default::default(),
+        &mut RandomCoin::new(Word::from([Felt::new(111); 4])),
+    )?;
+    let send_script = AccountInterface::from_account(&multisig_account)
+        .build_send_notes_script(&[output_note.clone().into()], None)?;
+
+    let send_salt = Word::from([Felt::new(211); 4]);
+    let send_tx_summary = match mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .foreign_accounts(test_oracle_foreign_account_inputs(&mock_chain, &oracle_fixture)?)
+        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note.clone())])
+        .tx_script(send_script.clone())
+        .auth_args(send_salt)
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+    {
+        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
+        error => panic!("expected abort with tx effects: {error:?}"),
+    };
+    let send_msg = send_tx_summary.as_ref().to_commitment();
+    let send_tx_summary = SigningInputs::TransactionSummary(send_tx_summary);
+    let send_sig_0 = authenticators[0]
+        .get_signature(public_keys[0].to_commitment(), &send_tx_summary)
+        .await?;
+    let send_sig_1 = authenticators[1]
+        .get_signature(public_keys[1].to_commitment(), &send_tx_summary)
+        .await?;
+
+    let send_tx = mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .foreign_accounts(test_oracle_foreign_account_inputs(&mock_chain, &oracle_fixture)?)
+        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note)])
+        .tx_script(send_script)
+        .auth_args(send_salt)
+        .add_signature(public_keys[0].to_commitment(), send_msg, send_sig_0)
+        .add_signature(public_keys[1].to_commitment(), send_msg, send_sig_1)
+        .build()?
+        .execute()
+        .await?;
+    multisig_account.apply_delta(send_tx.account_delta())?;
+    mock_chain.add_pending_executed_transaction(&send_tx)?;
+    mock_chain.prove_next_block()?;
+
+    let spending_tracker_before = multisig_account
+        .storage()
+        .get_item(AuthMultisigSmart::spending_tracker_slot())?;
+    assert_eq!(
+        spending_tracker_before[0],
+        Felt::new(700),
+        "seed transfer should update tracker before policy update",
+    );
+
+    let update_window_script = compile_multisig_smart_tx_script(
+        "
+        begin
+            push.60
+            call.::miden::standards::components::auth::multisig_smart::update_spending_window_policy
+            dropw dropw dropw dropw dropw
+        end
+        ",
+    )?;
+
+    let update_tx = execute_script_with_signers(
+        &mock_chain,
+        multisig_account.id(),
+        update_window_script,
+        Word::from([Felt::new(212); 4]),
+        &[0, 1],
+        &public_keys,
+        &authenticators,
+        None,
+        None,
+        None,
+    )
+    .await?
+    .expect("window update should succeed");
+    multisig_account.apply_delta(update_tx.account_delta())?;
+
+    let spending_window =
+        multisig_account.storage().get_item(AuthMultisigSmart::spending_window_slot())?;
+    assert_eq!(spending_window, Word::from([60u32, 0, 0, 0]));
+
+    let spending_tracker_after = multisig_account
+        .storage()
+        .get_item(AuthMultisigSmart::spending_tracker_slot())?;
+    assert_eq!(
+        spending_tracker_after,
+        Word::empty(),
+        "spending tracker must be reset when spending window policy changes",
     );
 
     Ok(())

@@ -30,7 +30,6 @@ const TMP_ASSETS_PTR = 1024
 # ERRORS
 # =================================================================================================
 
-const ERR_U32 = "value is not a u32"
 const ERR_SPENDING_WINDOW_NOT_U32 = "spending_window must be a valid u32"
 const ERR_SPENDING_WINDOW_ZERO = "spending_window must be non-zero"
 const ERR_LAST_WINDOW_START_GT_CURRENT = "window_start_timestamp is greater than current_timestamp"
@@ -49,16 +48,30 @@ const ERR_INVALID_AMOUNT_LIMITS = "invalid amount limits (must satisfy limit0 <=
 #!
 #! Side effects:
 #!   - Writes SPENDING_WINDOW_SLOT.
+#!   - Resets SPENDING_TRACKER_SLOT to EMPTY_WORD.
 pub proc update_spending_window_policy
     u32assert.err=ERR_SPENDING_WINDOW_NOT_U32
     dup eq.0 assertz.err=ERR_SPENDING_WINDOW_ZERO
     # => [spending_window]
 
-    push.0 push.0 push.0
-    # => [0, 0, 0, spending_window]
+    push.0.0.0
+    movup.3
+    # => [spending_window, 0, 0, 0]
 
     push.SPENDING_WINDOW_SLOT[0..2]
-    # => [slot_prefix, slot_suffix, 0, 0, 0, spending_window]
+    # => [slot_prefix, slot_suffix, spending_window, 0, 0, 0]
+
+    exec.native_account::set_item
+    # => [OLD_WORD]
+
+    dropw
+    # => []
+
+    push.0.0.0.0
+    # => [EMPTY_WORD]
+
+    push.SPENDING_TRACKER_SLOT[0..2]
+    # => [slot_prefix, slot_suffix, EMPTY_WORD]
 
     exec.native_account::set_item
     # => [OLD_WORD]
@@ -177,8 +190,26 @@ pub proc get_spending_window
     # => [spending_window]
 end
 
+#! Computes the start timestamp of the currently active spending window.
+#!
+#! Uses integer window bucketing:
+#! `current_window_start_timestamp = floor(current_timestamp / spending_window) * spending_window`.
+#!
 #! Inputs:  []
 #! Outputs: [current_window_start_timestamp]
+#!
+#! Where:
+#! - current_timestamp is the current block timestamp.
+#! - spending_window is the configured window duration from `SPENDING_WINDOW_SLOT`.
+#! - current_window_start_timestamp is the start boundary of the window containing
+#!   `current_timestamp`.
+#!
+#! Panics if:
+#! - `tx::get_block_timestamp` does not return a valid `u32` timestamp.
+#! - `spending_window` is zero (division by zero in `u32div`).
+#! - `spending_window` is not a valid `u32` value for `u32div`.
+#!
+#! Invocation: exec
 proc get_current_window_start_timestamp
     exec.tx::get_block_timestamp
     # => [current_timestamp]
@@ -189,12 +220,15 @@ proc get_current_window_start_timestamp
     exec.get_spending_window
     # => [spending_window, current_timestamp, current_timestamp]
 
+    # floor(current_timestamp / spending_window) -> current window index
     u32div
     # => [current_window_index, current_timestamp]
 
+    # u32div consumes spending_window, so reload it for index * spending_window
     exec.get_spending_window
     # => [spending_window, current_window_index, current_timestamp]
 
+    # map index back to concrete window boundary timestamp
     mul
     # => [current_window_start_timestamp, current_timestamp]
 
@@ -433,8 +467,7 @@ proc compute_spending_amount
                     # => [remaining, note_index_keep]
                 end
             else
-                dropw
-                dropw
+                dropw dropw
                 # => [remaining, note_index_keep]
             end
             # => [remaining, note_index_keep]
@@ -572,51 +605,37 @@ proc get_num_required_signatures
     if.true
         exec.get_amount_spent_in_window
         # => [amount_spent_in_window, currently_spending_amount]
+        
         add
         # => [total_amount]
     end
     # => [total_amount]
 
-    push.AMOUNT_LIMITS_SLOT[0..2]
-    exec.active_account::get_initial_item
+    push.AMOUNT_LIMITS_SLOT[0..2] exec.active_account::get_initial_item
     # => [l0, l1, l2, dt, total]
 
     movup.4
     # => [total, l0, l1, l2, dt]
 
     # ------ requires_delay = total > delay_trigger_amount ------
-    # depths: 0=total, 1=l0, 2=l1, 3=l2, 4=dt
-    dup dup.5
-    # dup:   [total, total, l0, l1, l2, dt]        (dt is now at depth 5)
-    # dup.5: [dt, total, total, l0, l1, l2, dt]
-    u32gt
-    # u32gt [dt, total] = total > dt
+    dup dup.5 u32gt
     # => [requires_delay, total, l0, l1, l2, dt]
+    
     swap
     # => [total, requires_delay, l0, l1, l2, dt]
 
     # ------ tier_index ------
-    # depths: 0=total, 1=requires_delay, 2=l0, 3=l1, 4=l2, 5=dt
     dup dup.3 u32lt
-    # dup:   [total, total, requires_delay, l0, l1, l2, dt]   (depth 3 = l0)
-    # dup.3: [l0, total, total, requires_delay, l0, l1, l2, dt]
-    # u32lt [l0, total] = total < l0
     # => [total_lt_l0, total, requires_delay, l0, l1, l2, dt]
     if.true
         push.0
     else
         dup dup.4 u32lt
-        # dup:   [total, total, requires_delay, l0, l1, l2, dt]   (depth 4 = l1)
-        # dup.4: [l1, total, total, requires_delay, l0, l1, l2, dt]
-        # u32lt [l1, total] = total < l1
         # => [total_lt_l1, total, requires_delay, l0, l1, l2, dt]
         if.true
             push.1
         else
             dup dup.5 u32lt
-            # dup:   [total, total, requires_delay, l0, l1, l2, dt]   (depth 5 = l2)
-            # dup.5: [l2, total, total, requires_delay, l0, l1, l2, dt]
-            # u32lt [l2, total] = total < l2
             # => [total_lt_l2, total, requires_delay, l0, l1, l2, dt]
             if.true
                 push.2
@@ -633,11 +652,7 @@ proc get_num_required_signatures
     swap
     # => [total, tier_threshold, requires_delay, l0, l1, l2, dt]
 
-    movup.3 drop
-    movup.3 drop
-    movup.3 drop
-    movup.3 drop
-    # drop l0, l1, l2, dt from depth 3 one by one
+    movup.3 drop movup.3 drop movup.3 drop movup.3 drop
     # => [total, tier_threshold, requires_delay]
 end
 
