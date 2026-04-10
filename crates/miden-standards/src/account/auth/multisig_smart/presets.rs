@@ -35,6 +35,13 @@ procedure_digest!(
 );
 
 procedure_digest!(
+    MULTISIG_SMART_UPDATE_GET_PRICE_UNTRACKED_POLICY,
+    AuthMultisigSmart::NAME,
+    "update_get_price_untracked_policy",
+    multisig_smart_library
+);
+
+procedure_digest!(
     MULTISIG_SMART_UPDATE_TIMELOCK_CONTROLLER,
     AuthMultisigSmart::NAME,
     "update_timelock_controller",
@@ -65,6 +72,11 @@ impl AuthMultisigSmartPresets {
             ),
             (
                 Self::update_oracle_config_and_proc_root(),
+                ProcedurePolicy::with_immediate_and_delay_thresholds(2, 1)
+                    .expect("preset policy should be valid"),
+            ),
+            (
+                Self::update_get_price_untracked_policy(),
                 ProcedurePolicy::with_immediate_and_delay_thresholds(2, 1)
                     .expect("preset policy should be valid"),
             ),
@@ -100,6 +112,11 @@ impl AuthMultisigSmartPresets {
                     .expect("preset policy should be valid"),
             ),
             (
+                Self::update_get_price_untracked_policy(),
+                ProcedurePolicy::with_immediate_and_delay_thresholds(4, 3)
+                    .expect("preset policy should be valid"),
+            ),
+            (
                 Self::update_timelock_controller(),
                 ProcedurePolicy::with_immediate_and_delay_thresholds(5, 4)
                     .expect("preset policy should be valid"),
@@ -121,6 +138,10 @@ impl AuthMultisigSmartPresets {
 
     pub fn update_oracle_config_and_proc_root() -> Word {
         *MULTISIG_SMART_UPDATE_ORACLE_CONFIG
+    }
+
+    pub fn update_get_price_untracked_policy() -> Word {
+        *MULTISIG_SMART_UPDATE_GET_PRICE_UNTRACKED_POLICY
     }
 
     pub fn update_timelock_controller() -> Word {

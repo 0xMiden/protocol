@@ -21,6 +21,7 @@ pub use timelock_controller::execute_proposed_transaction
 pub use spending_limits::update_spending_window_policy
 pub use spending_limits::update_spending_limits
 pub use spending_limits::update_threshold_config
+pub use oracle::update_get_price_untracked_policy
 pub use oracle::update_oracle_config_and_proc_root
 
 

@@ -67,19 +67,33 @@ impl TimelockControllerConfig {
     }
 }
 
+/// When `get_price` returns `is_tracked = 0`, `compute_spending_amount` uses this policy (stored
+/// in the `get_price_untracked_policy` storage slot).
+pub const GET_PRICE_UNTRACKED_OMIT: u32 = 0;
+/// Reject authentication if any fungible output note is untracked by the oracle reader.
+pub const GET_PRICE_UNTRACKED_REJECT: u32 = 1;
+
 /// Configures the oracle reader used to normalize asset values during spending-policy checks.
 ///
 /// `oracle_id` selects the logical oracle feed, and `get_price_proc_root` identifies the foreign
 /// procedure that should be invoked to fetch a price for a tracked asset.
+///
+/// `untracked_price_policy` controls behavior when that procedure returns `is_tracked = 0` for a
+/// fungible output (see [`GET_PRICE_UNTRACKED_OMIT`] and [`GET_PRICE_UNTRACKED_REJECT`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OracleReaderConfig {
     oracle_id: OracleId,
     get_price_proc_root: Word,
+    untracked_price_policy: u32,
 }
 
 impl OracleReaderConfig {
     pub const fn new(oracle_id: OracleId, get_price_proc_root: Word) -> Self {
-        Self { oracle_id, get_price_proc_root }
+        Self {
+            oracle_id,
+            get_price_proc_root,
+            untracked_price_policy: GET_PRICE_UNTRACKED_OMIT,
+        }
     }
 
     pub const fn oracle_id(&self) -> OracleId {
@@ -88,6 +102,15 @@ impl OracleReaderConfig {
 
     pub const fn get_price_proc_root(&self) -> Word {
         self.get_price_proc_root
+    }
+
+    pub const fn untracked_price_policy(&self) -> u32 {
+        self.untracked_price_policy
+    }
+
+    pub fn with_untracked_price_policy(mut self, untracked_price_policy: u32) -> Self {
+        self.untracked_price_policy = untracked_price_policy;
+        self
     }
 }
 

@@ -88,6 +88,11 @@ static GET_PRICE_PROC_ROOT_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(
         .expect("storage slot name should be valid")
 });
 
+static GET_PRICE_UNTRACKED_POLICY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::auth::multisig_smart::get_price_untracked_policy")
+        .expect("storage slot name should be valid")
+});
+
 static TX_PROPOSALS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::auth::multisig_smart::tx_proposals")
         .expect("storage slot name should be valid")
@@ -309,6 +314,11 @@ impl AuthMultisigSmart {
         if config.timelock_controller().propose_expiration_delta() == 0 {
             return Err(AccountError::other("propose expiration delta must be non-zero"));
         }
+        if config.oracle_reader().untracked_price_policy() > 1 {
+            return Err(AccountError::other(
+                "oracle untracked price policy must be 0 (omit) or 1 (reject)",
+            ));
+        }
         validate_tier_thresholds(
             config.approvers().len() as u32,
             config.spending_policy().tier_thresholds(),
@@ -363,6 +373,10 @@ impl AuthMultisigSmart {
 
     pub fn get_price_proc_root_slot() -> &'static StorageSlotName {
         &GET_PRICE_PROC_ROOT_SLOT_NAME
+    }
+
+    pub fn get_price_untracked_policy_slot() -> &'static StorageSlotName {
+        &GET_PRICE_UNTRACKED_POLICY_SLOT_NAME
     }
 
     pub fn tx_proposals_slot() -> &'static StorageSlotName {
@@ -537,6 +551,21 @@ impl AuthMultisigSmart {
         )
     }
 
+    pub fn get_price_untracked_policy_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+        (
+            Self::get_price_untracked_policy_slot().clone(),
+            StorageSlotSchema::value(
+                "get_price untracked policy",
+                [
+                    FeltSchema::u32("policy_mode"),
+                    FeltSchema::new_void(),
+                    FeltSchema::new_void(),
+                    FeltSchema::new_void(),
+                ],
+            ),
+        )
+    }
+
     pub fn tx_proposals_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
         (
             Self::tx_proposals_slot().clone(),
@@ -669,6 +698,10 @@ impl From<AuthMultisigSmart> for AccountComponent {
             AuthMultisigSmart::get_price_proc_root_slot().clone(),
             oracle_reader.get_price_proc_root(),
         ));
+        storage_slots.push(StorageSlot::with_value(
+            AuthMultisigSmart::get_price_untracked_policy_slot().clone(),
+            Word::from([oracle_reader.untracked_price_policy(), 0u32, 0u32, 0u32]),
+        ));
         storage_slots.push(StorageSlot::with_map(
             AuthMultisigSmart::tx_proposals_slot().clone(),
             StorageMap::default(),
@@ -699,6 +732,7 @@ impl From<AuthMultisigSmart> for AccountComponent {
             AuthMultisigSmart::tier_threshold_config_slot_schema(),
             AuthMultisigSmart::oracle_config_slot_schema(),
             AuthMultisigSmart::get_price_proc_root_slot_schema(),
+            AuthMultisigSmart::get_price_untracked_policy_slot_schema(),
             AuthMultisigSmart::tx_proposals_slot_schema(),
             AuthMultisigSmart::pending_propose_slot_schema(),
             AuthMultisigSmart::pending_cancel_slot_schema(),
@@ -804,6 +838,12 @@ mod tests {
             )
             .expect("receive_asset policy should be present");
         assert_eq!(receive_asset_policy, Word::from([1u32, 0u32, 0u32, 0u32]));
+
+        let untracked_policy = account
+            .storage()
+            .get_item(AuthMultisigSmart::get_price_untracked_policy_slot())
+            .expect("get_price untracked policy slot should be present");
+        assert_eq!(untracked_policy, Word::from([0u32, 0u32, 0u32, 0u32]));
     }
 
     #[test]

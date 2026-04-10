@@ -402,11 +402,16 @@ end
 #! - for each note: output_note::get_assets(dest_ptr, note_index) writes assets into memory
 #! - iterates loaded assets as [ASSET_KEY, ASSET_VALUE]
 #! - if the asset is from a fungible faucet, extracts [faucet_id_suffix, faucet_id_prefix, amount]
-#! - calls a get_price-style reader and adds tracked values
-#! 
+#! - calls a get_price-style reader (`oracle::get_price`) and folds USD into a running sum
+#!
+#! `is_tracked` (oracle / foreign reader output):
+#! - When `is_tracked` is non-zero, `amount_in_usd` is added to the running total.
+#! - When `is_tracked` is zero, `oracle::apply_get_price_untracked_policy` runs (see `oracle.masm`):
+#!   mode **0** omits USD; mode **1** rejects the transaction.
+#!
 #! Inputs:  []
 #! Outputs: [amount_in_usd]
-#! 
+#!
 #! Assumes get_price-style interface:
 #!   Inputs:  [faucet_id_suffix, faucet_id_prefix, amount]
 #!   Outputs: [is_tracked, amount_in_usd]
@@ -509,7 +514,7 @@ proc compute_spending_amount
                     loc_load.0 add loc_store.0
                     # => [remaining, note_index_keep]
                 else
-                    drop
+                    exec.oracle::apply_get_price_untracked_policy
                     # => [remaining, note_index_keep]
                 end
             else
