@@ -36,7 +36,7 @@ use crate::EthAddress;
 // Initialize the CONFIG_AGG_BRIDGE note script only once
 static CONFIG_AGG_BRIDGE_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
     let bytes =
-        include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/CONFIG_AGG_BRIDGE.masb"));
+        include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/config_agg_bridge.masb"));
     let program =
         Program::read_from_bytes(bytes).expect("shipped CONFIG_AGG_BRIDGE script is well-formed");
     NoteScript::new(program)

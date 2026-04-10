@@ -64,7 +64,7 @@ pub use utils::Keccak256Output;
 
 // Initialize the CLAIM note script only once
 static CLAIM_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/CLAIM.masb"));
+    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/claim.masb"));
     let program = Program::read_from_bytes(bytes).expect("shipped CLAIM script is well-formed");
     NoteScript::new(program)
 });

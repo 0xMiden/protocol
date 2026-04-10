@@ -1,6 +1,7 @@
 use std::env;
 use std::fmt::Write;
 use std::path::Path;
+use std::sync::Arc;
 
 use fs_err as fs;
 use miden_assembly::diagnostics::{IntoDiagnostic, NamedSource, Result, WrapErr};
@@ -117,7 +118,7 @@ fn compile_agglayer_lib(
     let output_file = target_dir.join("agglayer").with_extension(Library::LIBRARY_EXTENSION);
     agglayer_lib.write_to_file(output_file).into_diagnostic()?;
 
-    Ok(agglayer_lib)
+    Ok(Arc::unwrap_or_clone(agglayer_lib))
 }
 
 // COMPILE EXECUTABLE MODULES
@@ -206,7 +207,7 @@ fn compile_account_components(
             target_dir.join(&component_name).with_extension(Library::LIBRARY_EXTENSION);
         component_library.write_to_file(&component_file_path).into_diagnostic()?;
 
-        component_libraries.push((component_name, component_library));
+        component_libraries.push((component_name, Arc::unwrap_or_clone(component_library)));
     }
 
     Ok(component_libraries)
