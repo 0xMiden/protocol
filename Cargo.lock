@@ -1659,7 +1659,7 @@ dependencies = [
 [[package]]
 name = "miden-crypto"
 version = "0.23.0"
-source = "git+https://github.com/0xmiden/crypto?branch=sergerad-clone#71e667f6383751586c078f8723d79e59489a2e66"
+source = "git+https://github.com/0xmiden/crypto?branch=sergerad-clone#17e071c17b6343b5ca8c4a6c803f23c429fbab8e"
 dependencies = [
  "blake3",
  "cc",
@@ -1701,7 +1701,7 @@ dependencies = [
 [[package]]
 name = "miden-crypto-derive"
 version = "0.23.0"
-source = "git+https://github.com/0xmiden/crypto?branch=sergerad-clone#71e667f6383751586c078f8723d79e59489a2e66"
+source = "git+https://github.com/0xmiden/crypto?branch=sergerad-clone#17e071c17b6343b5ca8c4a6c803f23c429fbab8e"
 dependencies = [
  "quote",
  "syn 2.0.117",
@@ -1728,7 +1728,7 @@ dependencies = [
 [[package]]
 name = "miden-field"
 version = "0.23.0"
-source = "git+https://github.com/0xmiden/crypto?branch=sergerad-clone#71e667f6383751586c078f8723d79e59489a2e66"
+source = "git+https://github.com/0xmiden/crypto?branch=sergerad-clone#17e071c17b6343b5ca8c4a6c803f23c429fbab8e"
 dependencies = [
  "miden-serde-utils",
  "num-bigint",
@@ -1918,7 +1918,7 @@ dependencies = [
 [[package]]
 name = "miden-serde-utils"
 version = "0.23.0"
-source = "git+https://github.com/0xmiden/crypto?branch=sergerad-clone#71e667f6383751586c078f8723d79e59489a2e66"
+source = "git+https://github.com/0xmiden/crypto?branch=sergerad-clone#17e071c17b6343b5ca8c4a6c803f23c429fbab8e"
 dependencies = [
  "p3-field",
  "p3-goldilocks",
