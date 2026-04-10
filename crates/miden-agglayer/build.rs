@@ -208,7 +208,6 @@ fn compile_account_components(
 ///
 /// The function ensures that a constant is not defined twice, except if their error message is the
 /// same. This can happen across multiple files.
-///
 fn generate_error_constants(asm_source_dir: &Path, build_dir: &str) -> Result<()> {
     // Miden agglayer errors
     // ------------------------------------------
