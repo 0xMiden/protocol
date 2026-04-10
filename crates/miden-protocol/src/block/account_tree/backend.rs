@@ -5,7 +5,7 @@ use super::{AccountId, AccountIdKey, AccountIdPrefix, AccountTree, AccountTreeEr
 use crate::Word;
 use crate::crypto::merkle::MerkleError;
 #[cfg(feature = "std")]
-use crate::crypto::merkle::smt::{LargeSmt, LargeSmtError, SmtStorageWriter};
+use crate::crypto::merkle::smt::{LargeSmt, LargeSmtError, SmtStorageReader, SmtStorageWriter};
 use crate::crypto::merkle::smt::{LeafIndex, MutationSet, SMT_DEPTH, Smt, SmtLeaf, SmtProof};
 
 // ACCOUNT TREE BACKEND
@@ -32,12 +32,6 @@ pub trait AccountTreeBackend: Sized {
     /// Opens the leaf at the given key, returning a Merkle proof.
     fn open(&self, key: &Word) -> SmtProof;
 
-    /// Computes the mutation set required to apply the given updates to the SMT.
-    fn compute_mutations(
-        &self,
-        updates: Vec<(Word, Word)>,
-    ) -> Result<MutationSet<SMT_DEPTH, Word, Word>, Self::Error>;
-
     /// Returns the value associated with the given key.
     fn get_value(&self, key: &Word) -> Word;
 
@@ -50,6 +44,12 @@ pub trait AccountTreeBackend: Sized {
 
 /// Extension trait for [`AccountTreeBackend`] that provides write methods.
 pub trait AccountTreeBackendWriter: AccountTreeBackend {
+    /// Computes the mutation set required to apply the given updates to the SMT.
+    fn compute_mutations(
+        &self,
+        updates: Vec<(Word, Word)>,
+    ) -> Result<MutationSet<SMT_DEPTH, Word, Word>, Self::Error>;
+
     /// Applies the given mutation set to the SMT.
     fn apply_mutations(
         &mut self,
@@ -86,13 +86,6 @@ impl AccountTreeBackend for Smt {
         Smt::open(self, key)
     }
 
-    fn compute_mutations(
-        &self,
-        updates: Vec<(Word, Word)>,
-    ) -> Result<MutationSet<SMT_DEPTH, Word, Word>, Self::Error> {
-        Smt::compute_mutations(self, updates)
-    }
-
     fn get_value(&self, key: &Word) -> Word {
         Smt::get_value(self, key)
     }
@@ -107,6 +100,13 @@ impl AccountTreeBackend for Smt {
 }
 
 impl AccountTreeBackendWriter for Smt {
+    fn compute_mutations(
+        &self,
+        updates: Vec<(Word, Word)>,
+    ) -> Result<MutationSet<SMT_DEPTH, Word, Word>, Self::Error> {
+        Smt::compute_mutations(self, updates)
+    }
+
     fn apply_mutations(
         &mut self,
         set: MutationSet<SMT_DEPTH, Word, Word>,
@@ -132,7 +132,7 @@ impl AccountTreeBackendWriter for Smt {
 #[cfg(feature = "std")]
 impl<Backend> AccountTreeBackend for LargeSmt<Backend>
 where
-    Backend: SmtStorageWriter,
+    Backend: SmtStorageReader,
 {
     type Error = MerkleError;
 
@@ -146,13 +146,6 @@ where
 
     fn open(&self, key: &Word) -> SmtProof {
         LargeSmt::open(self, key)
-    }
-
-    fn compute_mutations(
-        &self,
-        updates: Vec<(Word, Word)>,
-    ) -> Result<MutationSet<SMT_DEPTH, Word, Word>, Self::Error> {
-        LargeSmt::compute_mutations(self, updates).map_err(large_smt_error_to_merkle_error)
     }
 
     fn get_value(&self, key: &Word) -> Word {
@@ -173,6 +166,13 @@ impl<Backend> AccountTreeBackendWriter for LargeSmt<Backend>
 where
     Backend: SmtStorageWriter,
 {
+    fn compute_mutations(
+        &self,
+        updates: Vec<(Word, Word)>,
+    ) -> Result<MutationSet<SMT_DEPTH, Word, Word>, Self::Error> {
+        LargeSmt::compute_mutations(self, updates).map_err(large_smt_error_to_merkle_error)
+    }
+
     fn apply_mutations(
         &mut self,
         set: MutationSet<SMT_DEPTH, Word, Word>,
