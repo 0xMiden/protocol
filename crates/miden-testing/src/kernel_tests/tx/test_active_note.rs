@@ -201,6 +201,7 @@ async fn test_active_note_get_note_type(#[case] note_type: NoteType) -> anyhow::
 
             exec.active_note::get_metadata
             # => [NOTE_ATTACHMENT, METADATA_HEADER]
+            
             dropw
             # => [METADATA_HEADER]
 
