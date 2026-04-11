@@ -239,15 +239,25 @@ pub proc metadata_into_note_type
     drop drop drop
     # => [sender_id_suffix_type_version (64-bit felt)]
 
-    # Extract as u32 and right-shift by 4 bits
-    u32split drop
+    # Extract the note type from bit 4 of the metadata
+    # Metadata layout: [sender_id_suffix (56 bits) | reserved (3 bits) | note_type (1 bit) | version (4 bits)]
+    # note_type is encoded at bit 4: 0 for private, 1 for public
+    
+    # Convert felt to u32 (lower 32 bits)
+    u32cast
     # => [lo_32]
-
-    # right shift by 4 bits to move bit 4 to bit 0
-    u32shr.4
-    # => [shifted]
-
-    # mask to get just bit 0
-    push.1 u32and
+    
+    # Divide by 16 (2^4) to shift right by 4 bits
+    push.16
+    u32div
+    # => [quotient, remainder]
+    
+    # Keep quotient, discard remainder
+    swap drop
+    # => [quotient = original >> 4]
+    
+    # Mask to extract only bit 0 (which was bit 4 in the original)
+    push.1
+    u32and
     # => [note_type]
 end
