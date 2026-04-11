@@ -1,3 +1,5 @@
+use alloc::sync::Arc;
+
 use miden_protocol::assembly::Library;
 use miden_protocol::assembly::diagnostics::NamedSource;
 use miden_protocol::transaction::TransactionKernel;
@@ -7,13 +9,14 @@ use crate::StandardsLib;
 
 const MOCK_UTIL_LIBRARY_CODE: &str = "
     use miden::protocol::output_note
+    use miden::protocol::note::NOTE_TYPE_PRIVATE
     use miden::standards::wallets::basic->wallet
 
     #! Inputs:  []
     #! Outputs: [note_idx]
     pub proc create_default_note
         push.1.2.3.4           # = RECIPIENT
-        push.2                 # = NoteType::Private
+        push.NOTE_TYPE_PRIVATE # = NoteType::Private
         push.0                 # = NoteTag
         # => [tag, note_type, RECIPIENT]
 
@@ -60,11 +63,13 @@ const MOCK_UTIL_LIBRARY_CODE: &str = "
 ";
 
 static MOCK_UTIL_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
-    TransactionKernel::assembler()
-        .with_dynamic_library(StandardsLib::default())
-        .expect("dynamically linking standards library should work")
-        .assemble_library([NamedSource::new("mock::util", MOCK_UTIL_LIBRARY_CODE)])
-        .expect("mock util library should be valid")
+    Arc::unwrap_or_clone(
+        TransactionKernel::assembler()
+            .with_dynamic_library(StandardsLib::default())
+            .expect("dynamically linking standards library should work")
+            .assemble_library([NamedSource::new("mock::util", MOCK_UTIL_LIBRARY_CODE)])
+            .expect("mock util library should be valid"),
+    )
 });
 
 /// Returns the mock test [`Library`] under the `mock::util` namespace.

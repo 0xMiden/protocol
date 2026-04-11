@@ -14,8 +14,12 @@ use miden_protocol::testing::account_id::{
 };
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
-use miden_standards::account::auth::{AuthMultisigPsm, AuthMultisigPsmConfig, PsmConfig};
-use miden_standards::account::components::multisig_psm_library;
+use miden_standards::account::auth::{
+    AuthGuardedMultisig,
+    AuthGuardedMultisigConfig,
+    GuardianConfig,
+};
+use miden_standards::account::components::guarded_multisig_library;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
@@ -74,11 +78,11 @@ fn setup_keys_and_authenticators_with_scheme(
     Ok((secret_keys, auth_schemes, public_keys, authenticators))
 }
 
-/// Creates a multisig account configured with a private state manager signer.
-fn create_multisig_account_with_psm(
+/// Creates a guarded multisig account configured with a guardian signer.
+fn create_guarded_multisig_account(
     threshold: u32,
     approvers: &[(PublicKey, AuthScheme)],
-    psm: PsmConfig,
+    guardian: GuardianConfig,
     asset_amount: u64,
     proc_threshold_map: Vec<(Word, u32)>,
 ) -> anyhow::Result<Account> {
@@ -87,11 +91,11 @@ fn create_multisig_account_with_psm(
         .map(|(pub_key, auth_scheme)| (pub_key.to_commitment(), *auth_scheme))
         .collect();
 
-    let config = AuthMultisigPsmConfig::new(approvers, threshold, psm)?
+    let config = AuthGuardedMultisigConfig::new(approvers, threshold, guardian)?
         .with_proc_thresholds(proc_threshold_map)?;
 
     let multisig_account = AccountBuilder::new([0; 32])
-        .with_auth_component(AuthMultisigPsm::new(config)?)
+        .with_auth_component(AuthGuardedMultisig::new(config)?)
         .with_component(BasicWallet)
         .account_type(AccountType::RegularAccountUpdatableCode)
         .storage_mode(AccountStorageMode::Public)
@@ -105,13 +109,13 @@ fn create_multisig_account_with_psm(
 // TESTS
 // ================================================================================================
 
-/// Tests that multisig authentication requires an additional PSM signature when
+/// Tests that guarded multisig authentication requires an additional guardian signature when
 /// configured.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
-async fn test_multisig_psm_signature_required(
+async fn test_guarded_multisig_signature_required(
     #[case] auth_scheme: AuthScheme,
 ) -> anyhow::Result<()> {
     let (_secret_keys, auth_schemes, public_keys, authenticators) =
@@ -122,14 +126,15 @@ async fn test_multisig_psm_signature_required(
         .map(|(pk, scheme)| (pk.clone(), *scheme))
         .collect::<Vec<_>>();
 
-    let psm_secret_key = AuthSecretKey::new_ecdsa_k256_keccak();
-    let psm_public_key = psm_secret_key.public_key();
-    let psm_authenticator = BasicAuthenticator::new(core::slice::from_ref(&psm_secret_key));
+    let guardian_secret_key = AuthSecretKey::new_ecdsa_k256_keccak();
+    let guardian_public_key = guardian_secret_key.public_key();
+    let guardian_authenticator =
+        BasicAuthenticator::new(core::slice::from_ref(&guardian_secret_key));
 
-    let mut multisig_account = create_multisig_account_with_psm(
+    let mut multisig_account = create_guarded_multisig_account(
         2,
         &approvers,
-        PsmConfig::new(psm_public_key.to_commitment(), AuthScheme::EcdsaK256Keccak),
+        GuardianConfig::new(guardian_public_key.to_commitment(), AuthScheme::EcdsaK256Keccak),
         10,
         vec![],
     )?;
@@ -168,8 +173,8 @@ async fn test_multisig_psm_signature_required(
         .get_signature(public_keys[1].to_commitment(), &tx_summary_signing)
         .await?;
 
-    // Missing PSM signature must fail.
-    let without_psm_result = mock_chain
+    // Missing guardian signature must fail.
+    let without_guardian_result = mock_chain
         .build_tx_context(multisig_account.id(), &[input_note.id()], &[])?
         .extend_expected_output_notes(vec![RawOutputNote::Full(output_note.clone())])
         .add_signature(public_keys[0].to_commitment(), msg, sig_1.clone())
@@ -178,19 +183,22 @@ async fn test_multisig_psm_signature_required(
         .build()?
         .execute()
         .await;
-    assert!(matches!(without_psm_result, Err(TransactionExecutorError::Unauthorized(_))));
+    assert!(matches!(
+        without_guardian_result,
+        Err(TransactionExecutorError::Unauthorized(_))
+    ));
 
-    let psm_signature = psm_authenticator
-        .get_signature(psm_public_key.to_commitment(), &tx_summary_signing)
+    let guardian_signature = guardian_authenticator
+        .get_signature(guardian_public_key.to_commitment(), &tx_summary_signing)
         .await?;
 
-    // With PSM signature the transaction should succeed.
+    // With guardian signature the transaction should succeed.
     let tx_context_execute = mock_chain
         .build_tx_context(multisig_account.id(), &[input_note.id()], &[])?
         .extend_expected_output_notes(vec![RawOutputNote::Full(output_note)])
         .add_signature(public_keys[0].to_commitment(), msg, sig_1)
         .add_signature(public_keys[1].to_commitment(), msg, sig_2)
-        .add_signature(psm_public_key.to_commitment(), msg, psm_signature)
+        .add_signature(guardian_public_key.to_commitment(), msg, guardian_signature)
         .auth_args(salt)
         .build()?
         .execute()
@@ -211,12 +219,12 @@ async fn test_multisig_psm_signature_required(
     Ok(())
 }
 
-/// Tests that the PSM public key can be updated and then enforced.
+/// Tests that the guardian public key can be updated and then enforced for guarded multisig.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
-async fn test_multisig_update_psm_public_key(
+async fn test_guarded_multisig_update_guardian_public_key(
     #[case] auth_scheme: AuthScheme,
 ) -> anyhow::Result<()> {
     let (_secret_keys, auth_schemes, public_keys, authenticators) =
@@ -227,19 +235,21 @@ async fn test_multisig_update_psm_public_key(
         .map(|(pk, scheme)| (pk.clone(), *scheme))
         .collect::<Vec<_>>();
 
-    let old_psm_secret_key = AuthSecretKey::new_ecdsa_k256_keccak();
-    let old_psm_public_key = old_psm_secret_key.public_key();
-    let old_psm_authenticator = BasicAuthenticator::new(core::slice::from_ref(&old_psm_secret_key));
+    let old_guardian_secret_key = AuthSecretKey::new_ecdsa_k256_keccak();
+    let old_guardian_public_key = old_guardian_secret_key.public_key();
+    let old_guardian_authenticator =
+        BasicAuthenticator::new(core::slice::from_ref(&old_guardian_secret_key));
 
-    let new_psm_secret_key = AuthSecretKey::new_falcon512_poseidon2();
-    let new_psm_public_key = new_psm_secret_key.public_key();
-    let new_psm_auth_scheme = new_psm_secret_key.auth_scheme();
-    let new_psm_authenticator = BasicAuthenticator::new(core::slice::from_ref(&new_psm_secret_key));
+    let new_guardian_secret_key = AuthSecretKey::new_falcon512_poseidon2();
+    let new_guardian_public_key = new_guardian_secret_key.public_key();
+    let new_guardian_auth_scheme = new_guardian_secret_key.auth_scheme();
+    let new_guardian_authenticator =
+        BasicAuthenticator::new(core::slice::from_ref(&new_guardian_secret_key));
 
-    let multisig_account = create_multisig_account_with_psm(
+    let multisig_account = create_guarded_multisig_account(
         2,
         &approvers,
-        PsmConfig::new(old_psm_public_key.to_commitment(), AuthScheme::EcdsaK256Keccak),
+        GuardianConfig::new(old_guardian_public_key.to_commitment(), AuthScheme::EcdsaK256Keccak),
         10,
         vec![],
     )?;
@@ -249,18 +259,18 @@ async fn test_multisig_update_psm_public_key(
         .build()
         .unwrap();
 
-    let new_psm_key_word: Word = new_psm_public_key.to_commitment().into();
-    let new_psm_scheme_id = new_psm_auth_scheme as u32;
-    let update_psm_script = CodeBuilder::new()
-        .with_dynamically_linked_library(multisig_psm_library())?
+    let new_guardian_key_word: Word = new_guardian_public_key.to_commitment().into();
+    let new_guardian_scheme_id = new_guardian_auth_scheme as u32;
+    let update_guardian_script = CodeBuilder::new()
+        .with_dynamically_linked_library(guarded_multisig_library())?
         .compile_tx_script(format!(
-            "begin\n    push.{new_psm_key_word}\n    push.{new_psm_scheme_id}\n    call.::miden::standards::components::auth::multisig_psm::update_psm_public_key\n    drop\n    dropw\nend"
+            "begin\n    push.{new_guardian_key_word}\n    push.{new_guardian_scheme_id}\n    call.::miden::standards::components::auth::guarded_multisig::update_guardian_public_key\n    drop\n    dropw\nend"
         ))?;
 
     let update_salt = Word::from([Felt::new(991); 4]);
     let tx_context_init = mock_chain
         .build_tx_context(multisig_account.id(), &[], &[])?
-        .tx_script(update_psm_script.clone())
+        .tx_script(update_guardian_script.clone())
         .auth_args(update_salt)
         .build()?;
 
@@ -278,10 +288,10 @@ async fn test_multisig_update_psm_public_key(
         .get_signature(public_keys[1].to_commitment(), &tx_summary_signing)
         .await?;
 
-    // PSM key rotation intentionally skips PSM signature for this update tx.
-    let update_psm_tx = mock_chain
+    // Guardian key rotation intentionally skips guardian signature for this update tx.
+    let update_guardian_tx = mock_chain
         .build_tx_context(multisig_account.id(), &[], &[])?
-        .tx_script(update_psm_script)
+        .tx_script(update_guardian_script)
         .add_signature(public_keys[0].to_commitment(), update_msg, sig_1)
         .add_signature(public_keys[1].to_commitment(), update_msg, sig_2)
         .auth_args(update_salt)
@@ -290,24 +300,25 @@ async fn test_multisig_update_psm_public_key(
         .await?;
 
     let mut updated_multisig_account = multisig_account.clone();
-    updated_multisig_account.apply_delta(update_psm_tx.account_delta())?;
-    let updated_psm_public_key = updated_multisig_account
+    updated_multisig_account.apply_delta(update_guardian_tx.account_delta())?;
+    let updated_guardian_public_key = updated_multisig_account
         .storage()
-        .get_map_item(AuthMultisigPsm::psm_public_key_slot(), Word::empty())?;
-    assert_eq!(updated_psm_public_key, Word::from(new_psm_public_key.to_commitment()));
-    let updated_psm_scheme_id = updated_multisig_account
-        .storage()
-        .get_map_item(AuthMultisigPsm::psm_scheme_id_slot(), Word::from([0u32, 0, 0, 0]))?;
+        .get_map_item(AuthGuardedMultisig::guardian_public_key_slot(), Word::empty())?;
+    assert_eq!(updated_guardian_public_key, Word::from(new_guardian_public_key.to_commitment()));
+    let updated_guardian_scheme_id = updated_multisig_account.storage().get_map_item(
+        AuthGuardedMultisig::guardian_scheme_id_slot(),
+        Word::from([0u32, 0, 0, 0]),
+    )?;
     assert_eq!(
-        updated_psm_scheme_id,
-        Word::from([new_psm_auth_scheme as u32, 0u32, 0u32, 0u32])
+        updated_guardian_scheme_id,
+        Word::from([new_guardian_auth_scheme as u32, 0u32, 0u32, 0u32])
     );
 
-    mock_chain.add_pending_executed_transaction(&update_psm_tx)?;
+    mock_chain.add_pending_executed_transaction(&update_guardian_tx)?;
     mock_chain.prove_next_block()?;
 
-    // Build one tx summary after key update. Old PSM must fail and new PSM must pass on this same
-    // transaction.
+    // Build one tx summary after key update. Old GUARDIAN must fail and new GUARDIAN must pass on
+    // this same transaction.
     let next_salt = Word::from([Felt::new(992); 4]);
     let tx_context_init_next = mock_chain
         .build_tx_context(updated_multisig_account.id(), &[], &[])?
@@ -327,31 +338,34 @@ async fn test_multisig_update_psm_public_key(
     let next_sig_2 = authenticators[1]
         .get_signature(public_keys[1].to_commitment(), &tx_summary_next_signing)
         .await?;
-    let old_psm_sig_next = old_psm_authenticator
-        .get_signature(old_psm_public_key.to_commitment(), &tx_summary_next_signing)
+    let old_guardian_sig_next = old_guardian_authenticator
+        .get_signature(old_guardian_public_key.to_commitment(), &tx_summary_next_signing)
         .await?;
-    let new_psm_sig_next = new_psm_authenticator
-        .get_signature(new_psm_public_key.to_commitment(), &tx_summary_next_signing)
+    let new_guardian_sig_next = new_guardian_authenticator
+        .get_signature(new_guardian_public_key.to_commitment(), &tx_summary_next_signing)
         .await?;
 
-    // Old PSM signature must fail after key update.
-    let with_old_psm_result = mock_chain
+    // Old guardian signature must fail after key update.
+    let with_old_guardian_result = mock_chain
         .build_tx_context(updated_multisig_account.id(), &[], &[])?
         .add_signature(public_keys[0].to_commitment(), next_msg, next_sig_1.clone())
         .add_signature(public_keys[1].to_commitment(), next_msg, next_sig_2.clone())
-        .add_signature(old_psm_public_key.to_commitment(), next_msg, old_psm_sig_next)
+        .add_signature(old_guardian_public_key.to_commitment(), next_msg, old_guardian_sig_next)
         .auth_args(next_salt)
         .build()?
         .execute()
         .await;
-    assert!(matches!(with_old_psm_result, Err(TransactionExecutorError::Unauthorized(_))));
+    assert!(matches!(
+        with_old_guardian_result,
+        Err(TransactionExecutorError::Unauthorized(_))
+    ));
 
-    // New PSM signature must pass.
+    // New guardian signature must pass.
     mock_chain
         .build_tx_context(updated_multisig_account.id(), &[], &[])?
         .add_signature(public_keys[0].to_commitment(), next_msg, next_sig_1)
         .add_signature(public_keys[1].to_commitment(), next_msg, next_sig_2)
-        .add_signature(new_psm_public_key.to_commitment(), next_msg, new_psm_sig_next)
+        .add_signature(new_guardian_public_key.to_commitment(), next_msg, new_guardian_sig_next)
         .auth_args(next_salt)
         .build()?
         .execute()
@@ -360,12 +374,12 @@ async fn test_multisig_update_psm_public_key(
     Ok(())
 }
 
-/// Tests that `update_psm_public_key` must be the only account action in the transaction.
+/// Tests that `update_guardian_public_key` must be the only account action in the transaction.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
-async fn test_multisig_update_psm_public_key_must_be_called_alone(
+async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
     #[case] auth_scheme: AuthScheme,
 ) -> anyhow::Result<()> {
     let (_secret_keys, auth_schemes, public_keys, authenticators) =
@@ -376,28 +390,29 @@ async fn test_multisig_update_psm_public_key_must_be_called_alone(
         .map(|(pk, scheme)| (pk.clone(), *scheme))
         .collect::<Vec<_>>();
 
-    let old_psm_secret_key = AuthSecretKey::new_ecdsa_k256_keccak();
-    let old_psm_public_key = old_psm_secret_key.public_key();
-    let old_psm_authenticator = BasicAuthenticator::new(core::slice::from_ref(&old_psm_secret_key));
+    let old_guardian_secret_key = AuthSecretKey::new_ecdsa_k256_keccak();
+    let old_guardian_public_key = old_guardian_secret_key.public_key();
+    let old_guardian_authenticator =
+        BasicAuthenticator::new(core::slice::from_ref(&old_guardian_secret_key));
 
-    let new_psm_secret_key = AuthSecretKey::new_falcon512_poseidon2();
-    let new_psm_public_key = new_psm_secret_key.public_key();
-    let new_psm_auth_scheme = new_psm_secret_key.auth_scheme();
+    let new_guardian_secret_key = AuthSecretKey::new_falcon512_poseidon2();
+    let new_guardian_public_key = new_guardian_secret_key.public_key();
+    let new_guardian_auth_scheme = new_guardian_secret_key.auth_scheme();
 
-    let multisig_account = create_multisig_account_with_psm(
+    let multisig_account = create_guarded_multisig_account(
         2,
         &approvers,
-        PsmConfig::new(old_psm_public_key.to_commitment(), AuthScheme::EcdsaK256Keccak),
+        GuardianConfig::new(old_guardian_public_key.to_commitment(), AuthScheme::EcdsaK256Keccak),
         10,
         vec![],
     )?;
 
-    let new_psm_key_word: Word = new_psm_public_key.to_commitment().into();
-    let new_psm_scheme_id = new_psm_auth_scheme as u32;
-    let update_psm_script = CodeBuilder::new()
-        .with_dynamically_linked_library(multisig_psm_library())?
+    let new_guardian_key_word: Word = new_guardian_public_key.to_commitment().into();
+    let new_guardian_scheme_id = new_guardian_auth_scheme as u32;
+    let update_guardian_script = CodeBuilder::new()
+        .with_dynamically_linked_library(guarded_multisig_library())?
         .compile_tx_script(format!(
-            "begin\n    push.{new_psm_key_word}\n    push.{new_psm_scheme_id}\n    call.::miden::standards::components::auth::multisig_psm::update_psm_public_key\n    drop\n    dropw\nend"
+            "begin\n    push.{new_guardian_key_word}\n    push.{new_guardian_scheme_id}\n    call.::miden::standards::components::auth::guarded_multisig::update_guardian_public_key\n    drop\n    dropw\nend"
         ))?;
 
     let mut mock_chain_builder =
@@ -413,7 +428,7 @@ async fn test_multisig_update_psm_public_key_must_be_called_alone(
     let salt = Word::from([Felt::new(993); 4]);
     let tx_context_init = mock_chain
         .build_tx_context(multisig_account.id(), &[receive_asset_note.id()], &[])?
-        .tx_script(update_psm_script.clone())
+        .tx_script(update_guardian_script.clone())
         .auth_args(salt)
         .build()?;
 
@@ -431,33 +446,39 @@ async fn test_multisig_update_psm_public_key_must_be_called_alone(
         .get_signature(public_keys[1].to_commitment(), &tx_summary_signing)
         .await?;
 
-    let without_psm_result = mock_chain
+    let without_guardian_result = mock_chain
         .build_tx_context(multisig_account.id(), &[receive_asset_note.id()], &[])?
-        .tx_script(update_psm_script.clone())
+        .tx_script(update_guardian_script.clone())
         .add_signature(public_keys[0].to_commitment(), msg, sig_1.clone())
         .add_signature(public_keys[1].to_commitment(), msg, sig_2.clone())
         .auth_args(salt)
         .build()?
         .execute()
         .await;
-    assert_transaction_executor_error!(without_psm_result, ERR_AUTH_PROCEDURE_MUST_BE_CALLED_ALONE);
+    assert_transaction_executor_error!(
+        without_guardian_result,
+        ERR_AUTH_PROCEDURE_MUST_BE_CALLED_ALONE
+    );
 
-    let old_psm_signature = old_psm_authenticator
-        .get_signature(old_psm_public_key.to_commitment(), &tx_summary_signing)
+    let old_guardian_signature = old_guardian_authenticator
+        .get_signature(old_guardian_public_key.to_commitment(), &tx_summary_signing)
         .await?;
 
-    let with_psm_result = mock_chain
+    let with_guardian_result = mock_chain
         .build_tx_context(multisig_account.id(), &[receive_asset_note.id()], &[])?
-        .tx_script(update_psm_script)
+        .tx_script(update_guardian_script)
         .add_signature(public_keys[0].to_commitment(), msg, sig_1)
         .add_signature(public_keys[1].to_commitment(), msg, sig_2)
-        .add_signature(old_psm_public_key.to_commitment(), msg, old_psm_signature)
+        .add_signature(old_guardian_public_key.to_commitment(), msg, old_guardian_signature)
         .auth_args(salt)
         .build()?
         .execute()
         .await;
 
-    assert_transaction_executor_error!(with_psm_result, ERR_AUTH_PROCEDURE_MUST_BE_CALLED_ALONE);
+    assert_transaction_executor_error!(
+        with_guardian_result,
+        ERR_AUTH_PROCEDURE_MUST_BE_CALLED_ALONE
+    );
 
     // Also reject rotation transactions that touch notes even when no other account procedure is
     // called.
@@ -471,12 +492,12 @@ async fn test_multisig_update_psm_public_key_must_be_called_alone(
         note_recipient,
     );
 
-    let new_psm_key_word: Word = new_psm_public_key.to_commitment().into();
-    let new_psm_scheme_id = new_psm_auth_scheme as u32;
-    let update_psm_with_output_script = CodeBuilder::new()
-        .with_dynamically_linked_library(multisig_psm_library())?
+    let new_guardian_key_word: Word = new_guardian_public_key.to_commitment().into();
+    let new_guardian_scheme_id = new_guardian_auth_scheme as u32;
+    let update_guardian_with_output_script = CodeBuilder::new()
+        .with_dynamically_linked_library(guarded_multisig_library())?
         .compile_tx_script(format!(
-            "use miden::protocol::output_note\nbegin\n    push.{recipient}\n    push.{note_type}\n    push.{tag}\n    exec.output_note::create\n    swapdw\n    dropw\n    dropw\n    push.{new_psm_key_word}\n    push.{new_psm_scheme_id}\n    call.::miden::standards::components::auth::multisig_psm::update_psm_public_key\n    drop\n    dropw\nend",
+            "use miden::protocol::output_note\nbegin\n    push.{recipient}\n    push.{note_type}\n    push.{tag}\n    exec.output_note::create\n    swapdw\n    dropw\n    dropw\n    push.{new_guardian_key_word}\n    push.{new_guardian_scheme_id}\n    call.::miden::standards::components::auth::guarded_multisig::update_guardian_public_key\n    drop\n    dropw\nend",
             recipient = output_note.recipient().digest(),
             note_type = NoteType::Public as u8,
             tag = Felt::from(output_note.metadata().tag()),
@@ -490,7 +511,7 @@ async fn test_multisig_update_psm_public_key_must_be_called_alone(
     let salt = Word::from([Felt::new(994); 4]);
     let tx_context_init = mock_chain
         .build_tx_context(multisig_account.id(), &[], &[])?
-        .tx_script(update_psm_with_output_script.clone())
+        .tx_script(update_guardian_with_output_script.clone())
         .add_note_script(note_script.clone())
         .extend_expected_output_notes(vec![RawOutputNote::Full(output_note.clone())])
         .auth_args(salt)
@@ -512,7 +533,7 @@ async fn test_multisig_update_psm_public_key_must_be_called_alone(
 
     let result = mock_chain
         .build_tx_context(multisig_account.id(), &[], &[])?
-        .tx_script(update_psm_with_output_script)
+        .tx_script(update_guardian_with_output_script)
         .add_note_script(note_script)
         .extend_expected_output_notes(vec![RawOutputNote::Full(output_note)])
         .add_signature(public_keys[0].to_commitment(), msg, sig_1)

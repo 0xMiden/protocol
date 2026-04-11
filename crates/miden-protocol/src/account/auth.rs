@@ -240,6 +240,12 @@ impl From<falcon512_poseidon2::PublicKey> for PublicKeyCommitment {
     }
 }
 
+impl From<ecdsa_k256_keccak::PublicKey> for PublicKeyCommitment {
+    fn from(value: ecdsa_k256_keccak::PublicKey) -> Self {
+        Self(value.to_commitment())
+    }
+}
+
 impl From<PublicKeyCommitment> for Word {
     fn from(value: PublicKeyCommitment) -> Self {
         value.0

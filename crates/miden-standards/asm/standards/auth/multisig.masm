@@ -727,6 +727,6 @@ pub proc auth_tx(salt: word)
     end
 
     # TX_SUMMARY_COMMITMENT is returned so wrappers can run optional checks
-    # (e.g. PSM) before replay-protection finalization.
+    # (e.g. guardian verification) before replay-protection finalization.
     # => [TX_SUMMARY_COMMITMENT]
 end
