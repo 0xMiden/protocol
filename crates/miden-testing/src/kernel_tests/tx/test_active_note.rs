@@ -557,3 +557,99 @@ async fn test_active_note_get_script_root() -> anyhow::Result<()> {
     assert_eq!(exec_output.get_stack_word(0), script_root);
     Ok(())
 }
+
+#[tokio::test]
+async fn test_active_note_get_note_type_public() -> anyhow::Result<()> {
+    let tx_context = {
+        let account =
+            Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
+        let input_note = create_public_p2any_note(
+            ACCOUNT_ID_SENDER.try_into().unwrap(),
+            [FungibleAsset::mock(100)],
+        );
+        TransactionContextBuilder::new(account)
+            .extend_input_notes(vec![input_note])
+            .build()?
+    };
+
+    // calling get_note_type should return note type of the active note
+    let code = "
+        use $kernel::prologue
+        use $kernel::note->note_internal
+        use miden::protocol::active_note
+
+        begin
+            exec.prologue::prepare_transaction
+            exec.note_internal::prepare_note
+            dropw dropw dropw dropw
+            exec.active_note::get_note_type
+
+            # truncate the stack
+            swapw dropw
+        end
+        ";
+
+    let exec_output = tx_context.execute_code(code).await?;
+
+    // verify the result is on the stack (NOTE_TYPE_PUBLIC = 1)
+    assert_eq!(exec_output.get_stack_element(0), Felt::new(1));
+
+    let note_type = tx_context.input_notes().get_note(0).note().metadata().note_type();
+    assert_eq!(note_type, NoteType::Public);
+
+    let note_type = tx_context.input_notes().get_note(0).note().metadata().note_type();
+    assert_eq!(note_type, NoteType::Public);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_active_note_get_note_type_private() -> anyhow::Result<()> {
+    let tx_context = {
+        let mut builder = MockChain::builder();
+        let account = builder.add_existing_wallet(Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        })?;
+        let private_note = builder.add_p2id_note(
+            ACCOUNT_ID_SENDER.try_into().unwrap(),
+            account.id(),
+            &[FungibleAsset::mock(150)],
+            NoteType::Private,
+        )?;
+        let mock_chain = builder.build()?;
+
+        mock_chain
+            .build_tx_context(TxContextInput::AccountId(account.id()), &[], &[private_note])?
+            .build()?
+    };
+
+    // calling get_note_type should return note type of the active note
+    let code = "
+        use $kernel::prologue
+        use $kernel::note->note_internal
+        use miden::protocol::active_note
+
+        begin
+            exec.prologue::prepare_transaction
+            exec.note_internal::prepare_note
+            dropw dropw dropw dropw
+            exec.active_note::get_note_type
+
+            # truncate the stack
+            swapw dropw
+        end
+        ";
+
+    let exec_output = tx_context.execute_code(code).await?;
+
+    // verify the result is on the stack (NOTE_TYPE_PRIVATE = 0)
+    assert_eq!(exec_output.get_stack_element(0), Felt::new(0));
+
+    let note_type = tx_context.input_notes().get_note(0).note().metadata().note_type();
+    assert_eq!(note_type, NoteType::Private);
+
+    let note_type = tx_context.input_notes().get_note(0).note().metadata().note_type();
+    assert_eq!(note_type, NoteType::Private);
+
+    Ok(())
+}

@@ -336,3 +336,25 @@ proc write_storage_to_memory
     assert_eqw.err=ERR_NOTE_DATA_DOES_NOT_MATCH_COMMITMENT
     # => [num_storage_items, dest_ptr]
 end
+
+#! Returns the note type of the active note.
+#!
+#! Inputs:  []
+#! Outputs: [note_type]
+#!
+#! Where:
+#! - note_type is the type of the active note (NOTE_TYPE_PRIVATE = 0 or NOTE_TYPE_PUBLIC = 1).
+#!
+#! Panics if:
+#! - no note is currently active.
+#!
+#! Invocation: exec
+pub proc get_note_type
+    # get metadata and drop attachment
+    exec.get_metadata dropw
+    # => [METADATA_HEADER]
+
+    # extract the note type from the metadata header
+    exec.note::metadata_into_note_type
+    # => [note_type]
+end
