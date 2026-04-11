@@ -3,6 +3,7 @@
 ## v0.15.0 (TBD)
 
 ### Changes
+- Added `metadata_into_note_type` procedure to extract note type from note metadata headers, and `get_note_type` accessor to `active_note` module ([#2737](https://github.com/0xMiden/protocol/issues/2737)).
 - Added validation of leaf type on CLAIM note processing to prevent message leaves from being processed as asset claims ([#2730](https://github.com/0xMiden/protocol/pull/2730)).
 
 - Added `AssetAmount` wrapper type for validated fungible asset amounts ([#2721](https://github.com/0xMiden/protocol/pull/2721)).
