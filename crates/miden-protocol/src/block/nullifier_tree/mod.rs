@@ -16,7 +16,7 @@ use crate::utils::serde::{
 use crate::{Felt, Word};
 
 mod backend;
-pub use backend::{NullifierTreeBackend, NullifierTreeBackendWriter};
+pub use backend::{NullifierTreeBackend, NullifierTreeBackendReader};
 
 mod witness;
 pub use witness::NullifierWitness;
@@ -51,7 +51,7 @@ where
 
 impl<Backend> NullifierTree<Backend>
 where
-    Backend: NullifierTreeBackend<Error = MerkleError>,
+    Backend: NullifierTreeBackendReader<Error = MerkleError>,
 {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
@@ -120,7 +120,7 @@ where
 
 impl<Backend> NullifierTree<Backend>
 where
-    Backend: NullifierTreeBackendWriter<Error = MerkleError>,
+    Backend: NullifierTreeBackend<Error = MerkleError>,
 {
     // PUBLIC MUTATORS
     // --------------------------------------------------------------------------------------------

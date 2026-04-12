@@ -1659,7 +1659,8 @@ dependencies = [
 [[package]]
 name = "miden-crypto"
 version = "0.23.0"
-source = "git+https://github.com/0xmiden/crypto?branch=sergerad-clone#17e071c17b6343b5ca8c4a6c803f23c429fbab8e"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0ed0a034a460e27723dcfdf25effffab84331c3b46b13e7a1bd674197cc71bfe"
 dependencies = [
  "blake3",
  "cc",
@@ -1701,7 +1702,8 @@ dependencies = [
 [[package]]
 name = "miden-crypto-derive"
 version = "0.23.0"
-source = "git+https://github.com/0xmiden/crypto?branch=sergerad-clone#17e071c17b6343b5ca8c4a6c803f23c429fbab8e"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e8bf6ebde028e79bcc61a3632d2f375a5cc64caa17d014459f75015238cb1e08"
 dependencies = [
  "quote",
  "syn 2.0.117",
@@ -1728,7 +1730,8 @@ dependencies = [
 [[package]]
 name = "miden-field"
 version = "0.23.0"
-source = "git+https://github.com/0xmiden/crypto?branch=sergerad-clone#17e071c17b6343b5ca8c4a6c803f23c429fbab8e"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "38011348f4fb4c9e5ce1f471203d024721c00e3b60a91aa91aaefe6738d8b5ea"
 dependencies = [
  "miden-serde-utils",
  "num-bigint",
@@ -1918,7 +1921,8 @@ dependencies = [
 [[package]]
 name = "miden-serde-utils"
 version = "0.23.0"
-source = "git+https://github.com/0xmiden/crypto?branch=sergerad-clone#17e071c17b6343b5ca8c4a6c803f23c429fbab8e"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ff78082e9b4ca89863e68da01b35f8a4029ee6fd912e39fa41fde4273a7debab"
 dependencies = [
  "p3-field",
  "p3-goldilocks",
@@ -4219,3 +4223,13 @@ name = "zmij"
 version = "1.0.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b8848ee67ecc8aedbaf3e4122217aff892639231befc6a1b58d29fff4c2cabaa"
+
+[[patch.unused]]
+name = "miden-crypto"
+version = "0.24.0"
+source = "git+https://github.com/0xmiden/crypto?branch=sergerad-clone#5de66e4ffc5f36bead4508245c2050b2e76a1843"
+
+[[patch.unused]]
+name = "miden-serde-utils"
+version = "0.24.0"
+source = "git+https://github.com/0xmiden/crypto?branch=sergerad-clone#5de66e4ffc5f36bead4508245c2050b2e76a1843"

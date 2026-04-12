@@ -5,22 +5,22 @@ use super::{AccountId, AccountIdKey, AccountIdPrefix, AccountTree, AccountTreeEr
 use crate::Word;
 use crate::crypto::merkle::MerkleError;
 #[cfg(feature = "std")]
-use crate::crypto::merkle::smt::{LargeSmt, LargeSmtError, SmtStorageReader, SmtStorageWriter};
+use crate::crypto::merkle::smt::{LargeSmt, LargeSmtError, SmtStorage};
 use crate::crypto::merkle::smt::{LeafIndex, MutationSet, SMT_DEPTH, Smt, SmtLeaf, SmtProof};
 
-// ACCOUNT TREE BACKEND
+// ACCOUNT TREE BACKEND READER
 // ================================================================================================
 
 /// This trait abstracts over different SMT backends (e.g., `Smt` and `LargeSmt`) to allow
 /// the `AccountTree` to work with either implementation transparently.
 ///
 /// This trait contains only read-only methods. For write methods, see
-/// [`AccountTreeBackendWriter`].
+/// [`AccountTreeBackend`].
 ///
 /// Implementors must provide `Default` for creating empty instances. Users should
 /// instantiate the backend directly (potentially with entries) and then pass it to
 /// [`AccountTree::new`].
-pub trait AccountTreeBackend: Sized {
+pub trait AccountTreeBackendReader: Sized {
     type Error: core::error::Error + Send + 'static;
 
     /// Returns the number of leaves in the SMT.
@@ -42,8 +42,11 @@ pub trait AccountTreeBackend: Sized {
     fn root(&self) -> Word;
 }
 
-/// Extension trait for [`AccountTreeBackend`] that provides write methods.
-pub trait AccountTreeBackendWriter: AccountTreeBackend {
+// ACCOUNT TREE BACKEND
+// ================================================================================================
+
+/// Extension trait for [`AccountTreeBackendReader`] that provides write methods.
+pub trait AccountTreeBackend: AccountTreeBackendReader {
     /// Computes the mutation set required to apply the given updates to the SMT.
     fn compute_mutations(
         &self,
@@ -68,10 +71,10 @@ pub trait AccountTreeBackendWriter: AccountTreeBackend {
     fn insert(&mut self, key: Word, value: Word) -> Result<Word, Self::Error>;
 }
 
-// BACKEND IMPLEMENTATION FOR SMT
+// BACKEND READER IMPLEMENTATION FOR SMT
 // ================================================================================================
 
-impl AccountTreeBackend for Smt {
+impl AccountTreeBackendReader for Smt {
     type Error = MerkleError;
 
     fn num_leaves(&self) -> usize {
@@ -99,7 +102,10 @@ impl AccountTreeBackend for Smt {
     }
 }
 
-impl AccountTreeBackendWriter for Smt {
+// BACKEND IMPLEMENTATION FOR SMT
+// ================================================================================================
+
+impl AccountTreeBackend for Smt {
     fn compute_mutations(
         &self,
         updates: Vec<(Word, Word)>,
@@ -126,13 +132,13 @@ impl AccountTreeBackendWriter for Smt {
     }
 }
 
-// BACKEND IMPLEMENTATION FOR LARGE SMT
+// BACKEND READER IMPLEMENTATION FOR LARGE SMT
 // ================================================================================================
 
 #[cfg(feature = "std")]
-impl<Backend> AccountTreeBackend for LargeSmt<Backend>
+impl<Backend> AccountTreeBackendReader for LargeSmt<Backend>
 where
-    Backend: SmtStorageReader,
+    Backend: SmtStorage,
 {
     type Error = MerkleError;
 
@@ -161,10 +167,13 @@ where
     }
 }
 
+// BACKEND IMPLEMENTATION FOR LARGE SMT
+// ================================================================================================
+
 #[cfg(feature = "std")]
-impl<Backend> AccountTreeBackendWriter for LargeSmt<Backend>
+impl<Backend> AccountTreeBackend for LargeSmt<Backend>
 where
-    Backend: SmtStorageWriter,
+    Backend: SmtStorage,
 {
     fn compute_mutations(
         &self,

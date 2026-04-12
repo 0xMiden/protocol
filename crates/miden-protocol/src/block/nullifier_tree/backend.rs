@@ -4,14 +4,17 @@ use super::{BlockNumber, Nullifier, NullifierBlock, NullifierTree, NullifierTree
 use crate::Word;
 use crate::crypto::merkle::MerkleError;
 #[cfg(feature = "std")]
-use crate::crypto::merkle::smt::{LargeSmt, LargeSmtError, SmtStorageReader, SmtStorageWriter};
+use crate::crypto::merkle::smt::{LargeSmt, LargeSmtError, SmtStorage};
 use crate::crypto::merkle::smt::{MutationSet, SMT_DEPTH, Smt, SmtProof};
 
-// NULLIFIER TREE BACKEND
+// NULLIFIER TREE BACKEND READER
 // ================================================================================================
 
 /// This trait abstracts over different SMT backends (e.g., `Smt` and `LargeSmt`) to allow
 /// the `NullifierTree` to work with either implementation transparently.
+///
+/// This trait contains only read-only methods. For write methods, see
+/// [`NullifierTreeBackend`].
 ///
 /// Users should instantiate the backend directly (potentially with entries) and then
 /// pass it to [`NullifierTree::new_unchecked`].
@@ -21,7 +24,7 @@ use crate::crypto::merkle::smt::{MutationSet, SMT_DEPTH, Smt, SmtProof};
 /// Assumes the provided SMT upholds the guarantees of the [`NullifierTree`]. Specifically:
 /// - Nullifiers are only spent once and their block numbers do not change.
 /// - Nullifier leaf values must be valid according to [`NullifierBlock`].
-pub trait NullifierTreeBackend: Sized {
+pub trait NullifierTreeBackendReader: Sized {
     type Error: core::error::Error + Send + 'static;
 
     /// Returns the number of entries in the SMT.
@@ -40,8 +43,11 @@ pub trait NullifierTreeBackend: Sized {
     fn root(&self) -> Word;
 }
 
-/// Extension trait for [`NullifierTreeBackend`] that provides write methods.
-pub trait NullifierTreeBackendWriter: NullifierTreeBackend {
+// NULLIFIER TREE BACKEND
+// ================================================================================================
+
+/// Extension trait for [`NullifierTreeBackendReader`] that provides write methods.
+pub trait NullifierTreeBackend: NullifierTreeBackendReader {
     /// Computes the mutation set required to apply the given updates to the SMT.
     fn compute_mutations(
         &self,
@@ -58,10 +64,10 @@ pub trait NullifierTreeBackendWriter: NullifierTreeBackend {
     fn insert(&mut self, key: Word, value: NullifierBlock) -> Result<NullifierBlock, Self::Error>;
 }
 
-// BACKEND IMPLEMENTATION FOR SMT
+// BACKEND READER IMPLEMENTATION FOR SMT
 // ================================================================================================
 
-impl NullifierTreeBackend for Smt {
+impl NullifierTreeBackendReader for Smt {
     type Error = MerkleError;
 
     fn num_entries(&self) -> usize {
@@ -86,7 +92,10 @@ impl NullifierTreeBackend for Smt {
     }
 }
 
-impl NullifierTreeBackendWriter for Smt {
+// BACKEND IMPLEMENTATION FOR SMT
+// ================================================================================================
+
+impl NullifierTreeBackend for Smt {
     fn compute_mutations(
         &self,
         updates: impl IntoIterator<Item = (Word, Word)>,
@@ -108,13 +117,13 @@ impl NullifierTreeBackendWriter for Smt {
     }
 }
 
-// NULLIFIER TREE BACKEND FOR LARGE SMT
+// BACKEND READER IMPLEMENTATION FOR LARGE SMT
 // ================================================================================================
 
 #[cfg(feature = "std")]
-impl<Backend> NullifierTreeBackend for LargeSmt<Backend>
+impl<Backend> NullifierTreeBackendReader for LargeSmt<Backend>
 where
-    Backend: SmtStorageReader,
+    Backend: SmtStorage,
 {
     type Error = MerkleError;
 
@@ -143,10 +152,13 @@ where
     }
 }
 
+// BACKEND IMPLEMENTATION FOR LARGE SMT
+// ================================================================================================
+
 #[cfg(feature = "std")]
-impl<Backend> NullifierTreeBackendWriter for LargeSmt<Backend>
+impl<Backend> NullifierTreeBackend for LargeSmt<Backend>
 where
-    Backend: SmtStorageWriter,
+    Backend: SmtStorage,
 {
     fn compute_mutations(
         &self,
@@ -199,7 +211,7 @@ impl NullifierTree<Smt> {
 #[cfg(feature = "std")]
 impl<Backend> NullifierTree<LargeSmt<Backend>>
 where
-    Backend: SmtStorageWriter,
+    Backend: SmtStorage,
 {
     /// Creates a new nullifier tree from the provided entries using the given storage backend
     ///

@@ -21,7 +21,7 @@ mod witness;
 pub use witness::AccountWitness;
 
 mod backend;
-pub use backend::{AccountTreeBackend, AccountTreeBackendWriter};
+pub use backend::{AccountTreeBackend, AccountTreeBackendReader};
 
 mod account_id_key;
 pub use account_id_key::AccountIdKey;
@@ -53,7 +53,7 @@ where
 
 impl<S> AccountTree<S>
 where
-    S: AccountTreeBackend<Error = MerkleError>,
+    S: AccountTreeBackendReader<Error = MerkleError>,
 {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
@@ -204,7 +204,7 @@ where
 
 impl<S> AccountTree<S>
 where
-    S: AccountTreeBackendWriter<Error = MerkleError>,
+    S: AccountTreeBackend<Error = MerkleError>,
 {
     // PUBLIC MUTATORS
     // --------------------------------------------------------------------------------------------
