@@ -9,6 +9,7 @@ use miden::core::crypto::hashes::poseidon2
 use miden::core::mem
 use miden::core::word
 use miden::protocol::note
+use miden::protocol::note::NOTE_TYPE_PUBLIC
 use miden::protocol::output_note
 use miden::protocol::output_note::ATTACHMENT_KIND_NONE
 use miden::protocol::active_account
@@ -32,6 +33,7 @@ const ERR_ROLLUP_INDEX_NON_ZERO = "rollup index must be zero for a mainnet depos
 const ERR_SMT_ROOT_VERIFICATION_FAILED = "merkle proof verification failed: provided SMT root does not match the computed root"
 const ERR_CLAIM_ALREADY_SPENT = "claim note has already been spent"
 const ERR_SOURCE_BRIDGE_NETWORK_OVERFLOW = "source bridge network overflowed u32"
+const ERR_INVALID_LEAF_TYPE = "invalid leaf type: only asset claims (leafType=0) are supported"
 
 # CONSTANTS
 # =================================================================================================
@@ -69,9 +71,6 @@ const CLAIM_LEAF_DATA_WORD_LEN = 8
 # - account_id_suffix [16]     : 1 felt
 # - account_id_prefix [17]     : 1 felt
 const MINT_NOTE_NUM_STORAGE_ITEMS = 18
-
-# P2ID output note constants
-const OUTPUT_NOTE_TYPE_PUBLIC = 1
 
 # P2ID attachment constants (the P2ID note created by the faucet has no attachment)
 const P2ID_ATTACHMENT_SCHEME_NONE = 0
@@ -114,6 +113,7 @@ const CLAIM_LEAF_INDEX_MEM_ADDR = 900
 const CLAIM_SOURCE_BRIDGE_NETWORK_MEM_ADDR = 901
 
 # Memory addresses for leaf data fields (derived from leaf data layout at CLAIM_LEAF_DATA_START_PTR=536)
+const LEAF_TYPE_ADDRESS = 536
 const ORIGIN_TOKEN_ADDRESS_0 = 538
 const ORIGIN_TOKEN_ADDRESS_1 = 539
 const ORIGIN_TOKEN_ADDRESS_2 = 540
@@ -192,6 +192,7 @@ const CLAIM_DEST_ID_SUFFIX_LOCAL = 1
 #! }
 #!
 #! Panics if:
+#! - the leaf type is not 0 (not an asset claim).
 #! - the Merkle proof validation fails.
 #! - the origin token address is not registered in the bridge's token registry.
 #!
@@ -216,6 +217,9 @@ pub proc claim
     # => [PROOF_DATA_KEY, pad(12)]
 
     swapw mem_loadw_be.CLAIM_LEAF_DATA_KEY_MEM_ADDR
+
+    # Validate that this is an asset claim (leafType == 0)
+    exec.validate_leaf_type
     # => [LEAF_DATA_KEY, PROOF_DATA_KEY, pad(8)]
 
     exec.verify_leaf_bridge
@@ -245,6 +249,20 @@ end
 
 # HELPER PROCEDURES
 # =================================================================================================
+
+#! Validates that the leaf type is an asset claim (leafType == 0), not a message.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Panics if:
+#! - the leaf type is not 0 (not an asset claim).
+#!
+#! Invocation: exec
+proc validate_leaf_type
+    mem_load.LEAF_TYPE_ADDRESS
+    assertz.err=ERR_INVALID_LEAF_TYPE
+end
 
 #! Computes the leaf value and verifies it against the AggLayer bridge state.
 #!
@@ -936,7 +954,7 @@ end
 #! Invocation: exec
 proc create_mint_note_with_attachment
     # Create the MINT output note targeting the faucet
-    push.OUTPUT_NOTE_TYPE_PUBLIC
+    push.NOTE_TYPE_PUBLIC
     # => [note_type, MINT_RECIPIENT, faucet_id_suffix, faucet_id_prefix]
 
     # Set tag to DEFAULT

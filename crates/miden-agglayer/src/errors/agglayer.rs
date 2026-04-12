@@ -40,6 +40,9 @@ pub const ERR_FELT_OUT_OF_FIELD: MasmError = MasmError::from_static_str("combine
 /// Error Message: "GER not found in storage"
 pub const ERR_GER_NOT_FOUND: MasmError = MasmError::from_static_str("GER not found in storage");
 
+/// Error Message: "invalid leaf type: only asset claims (leafType=0) are supported"
+pub const ERR_INVALID_LEAF_TYPE: MasmError = MasmError::from_static_str("invalid leaf type: only asset claims (leafType=0) are supported");
+
 /// Error Message: "leading bits of global index must be zero"
 pub const ERR_LEADING_BITS_NON_ZERO: MasmError = MasmError::from_static_str("leading bits of global index must be zero");
 
