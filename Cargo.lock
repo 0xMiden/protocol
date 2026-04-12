@@ -4227,9 +4227,9 @@ checksum = "b8848ee67ecc8aedbaf3e4122217aff892639231befc6a1b58d29fff4c2cabaa"
 [[patch.unused]]
 name = "miden-crypto"
 version = "0.24.0"
-source = "git+https://github.com/0xmiden/crypto?branch=sergerad-clone#5de66e4ffc5f36bead4508245c2050b2e76a1843"
+source = "git+https://github.com/0xmiden/crypto?branch=sergerad-clone#7da2e0352154e5969d79ca55cf9b015dd70cc2d6"
 
 [[patch.unused]]
 name = "miden-serde-utils"
 version = "0.24.0"
-source = "git+https://github.com/0xmiden/crypto?branch=sergerad-clone#5de66e4ffc5f36bead4508245c2050b2e76a1843"
+source = "git+https://github.com/0xmiden/crypto?branch=sergerad-clone#7da2e0352154e5969d79ca55cf9b015dd70cc2d6"
