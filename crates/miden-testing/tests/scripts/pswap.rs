@@ -417,7 +417,7 @@ async fn pswap_note_partial_fill_test() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn pswap_note_inflight_cross_swap_test() -> anyhow::Result<()> {
+async fn pswap_note_note_fill_cross_swap_test() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     let usdc_faucet = builder.add_existing_basic_faucet(BASIC_AUTH, "USDC", 1000, Some(150))?;
@@ -469,7 +469,7 @@ async fn pswap_note_inflight_cross_swap_test() -> anyhow::Result<()> {
 
     let mock_chain = builder.build()?;
 
-    // Note args: pure inflight (input=0, inflight=full amount)
+    // Note args: pure note fill (account_fill = 0, note_fill = full amount)
     let mut note_args_map = BTreeMap::new();
     note_args_map
         .insert(alice_pswap_note.id(), Word::from([Felt::from(0u32), Felt::from(25u32), ZERO, ZERO]));
@@ -1274,7 +1274,7 @@ async fn pswap_note_network_account_full_fill_test() -> anyhow::Result<()> {
     let mut mock_chain = builder.build()?;
 
     // No note_args — simulates a network transaction where args default to [0, 0, 0, 0].
-    // The PSWAP script defaults to a full fill when both input and inflight are 0.
+    // The PSWAP script defaults to a full fill when both account_fill and note_fill are 0.
     let pswap = PswapNote::try_from(&pswap_note)?;
     let p2id_note = pswap.execute_full_fill_network(network_consumer.id())?;
 
