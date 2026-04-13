@@ -3,9 +3,12 @@
 ## v0.15.0 (TBD)
 
 ### Changes
+- Added validation of leaf type on CLAIM note processing to prevent message leaves from being processed as asset claims ([#2730](https://github.com/0xMiden/protocol/pull/2730)).
 
+- Added `metadata_into_note_type` procedure to `note.masm` for extracting note type from metadata header ([#2738](https://github.com/0xMiden/protocol/pull/2738)).
+- Added `AssetAmount` wrapper type for validated fungible asset amounts ([#2721](https://github.com/0xMiden/protocol/pull/2721)).
 - [BREAKING] Renamed `ProvenBatch::new` to `new_unchecked` ([#2687](https://github.com/0xMiden/miden-base/issues/2687)).
-- [BREAKING] Renamed the multisig PSM auth component, procedures, storage paths, and related APIs from `psm` to `guardian`.
+- Added `ShortCapitalString` type and related `TokenSymbol` and `RoleSymbol` types ([#2690](https://github.com/0xMiden/protocol/pull/2690)).
 - [BREAKING] Renamed the guarded multisig component-facing APIs from `multisig_guardian` / `AuthMultisigGuardian` to `guarded_multisig` / `AuthGuardedMultisig`, while retaining the `guardian` auth namespace and guardian-specific procedures.
 - Added shared `ProcedurePolicy` for AuthMultisig ([#2670](https://github.com/0xMiden/protocol/pull/2670)).
 - [BREAKING] Changed `NoteType` encoding from 2 bits to 1 and makes `NoteType::Private` the default ([#2691](https://github.com/0xMiden/miden-base/issues/2691)).
@@ -17,13 +20,15 @@
 
 ## 0.14.2 (2026-03-31)
 
-### Changes
+## 0.14.3 (2026-04-07)
+
+- [BREAKING] Updated for compatibility with miden-vm v0.22.1 (`Arc<Library>` return types, `MastArtifact`/`PackageKind` removal) ([#2742](https://github.com/0xMiden/protocol/pull/2742)).
+
+## 0.14.2 (2026-03-31)
 
 - Changed felt-to-word layout in the type registry from `[0, 0, 0, felt]` to `[felt, 0, 0, 0]` to match the actual MASM storage layout ([#2711](https://github.com/0xMiden/protocol/pull/2711)).
 
 ## 0.14.1 (2026-03-30)
-
-### Changes
 
 - Integrated various AggLayer-related cleanups ([#2695](https://github.com/0xMiden/protocol/pull/2695)).
 
