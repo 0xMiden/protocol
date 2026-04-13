@@ -631,7 +631,9 @@ async fn test_add_assets_at_max_per_note_succeeds() -> anyhow::Result<()> {
             add_assets_code.push_str("dup\n");
         }
         add_assets_code.push_str(&format!(
-            "push.{ASSET_VALUE}\npush.{ASSET_KEY}\nexec.output_note::add_asset\n",
+            "push.{ASSET_VALUE}
+            push.{ASSET_KEY}
+            exec.output_note::add_asset\n",
             ASSET_KEY = asset.to_key_word(),
             ASSET_VALUE = asset.to_value_word(),
         ));
