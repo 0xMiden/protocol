@@ -62,6 +62,11 @@ impl PartialNote {
     pub fn header(&self) -> &NoteHeader {
         &self.header
     }
+
+    /// Consumes self and returns the non-Copy parts of this note.
+    pub fn into_parts(self) -> (NoteAssets, NoteHeader) {
+        (self.assets, self.header)
+    }
 }
 
 // SERIALIZATION

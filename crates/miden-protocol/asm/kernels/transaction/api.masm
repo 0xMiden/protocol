@@ -7,11 +7,14 @@ use $kernel::input_note
 use $kernel::memory
 use $kernel::output_note
 use $kernel::tx
+# use $kernel::types::AccountId
 
 use $kernel::memory::UPCOMING_FOREIGN_PROCEDURE_PTR
 use $kernel::memory::UPCOMING_FOREIGN_PROC_INPUT_VALUE_15_PTR
 
 use miden::core::word
+
+pub type AccountId = struct { prefix: felt, suffix: felt }
 
 # NOTE
 # =================================================================================================
@@ -21,11 +24,6 @@ use miden::core::word
 # All other procedures must be invoked using a `dynexec` instruction by their hashes stored in    #
 # the memory.                                                                                     #
 # =================================================================================================
-
-# TYPE ALIASES
-# =================================================================================================
-
-type AccountID = struct { prefix: felt, suffix: felt }
 
 # ERRORS
 # =================================================================================================
@@ -1419,7 +1417,7 @@ end
 #! - the provided foreign account ID is invalid.
 #!
 #! Invocation: dynexec
-pub proc tx_prepare_fpi(foreign_account_id: AccountID, foreign_proc_root: word, foreign_procedure_input_15: felt)
+pub proc tx_prepare_fpi(foreign_account_id: AccountId, foreign_proc_root: word, foreign_procedure_input_15: felt)
     # validate the provided foreign account ID
     dup.1 dup.1 exec.account_id::validate
     # => [foreign_account_id_suffix, foreign_account_id_prefix, FOREIGN_PROC_ROOT, foreign_proc_input_value_15, pad(9)]
