@@ -4,7 +4,7 @@ use super::{BlockNumber, Nullifier, NullifierBlock, NullifierTree, NullifierTree
 use crate::Word;
 use crate::crypto::merkle::MerkleError;
 #[cfg(feature = "std")]
-use crate::crypto::merkle::smt::{LargeSmt, LargeSmtError, SmtStorage};
+use crate::crypto::merkle::smt::{LargeSmt, LargeSmtError, SmtStorage, SmtStorageReader};
 use crate::crypto::merkle::smt::{MutationSet, SMT_DEPTH, Smt, SmtProof};
 
 // NULLIFIER TREE BACKEND READER
@@ -123,7 +123,7 @@ impl NullifierTreeBackend for Smt {
 #[cfg(feature = "std")]
 impl<Backend> NullifierTreeBackendReader for LargeSmt<Backend>
 where
-    Backend: SmtStorage,
+    Backend: SmtStorageReader,
 {
     type Error = MerkleError;
 

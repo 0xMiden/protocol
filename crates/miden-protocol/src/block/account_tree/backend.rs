@@ -5,7 +5,7 @@ use super::{AccountId, AccountIdKey, AccountIdPrefix, AccountTree, AccountTreeEr
 use crate::Word;
 use crate::crypto::merkle::MerkleError;
 #[cfg(feature = "std")]
-use crate::crypto::merkle::smt::{LargeSmt, LargeSmtError, SmtStorage};
+use crate::crypto::merkle::smt::{LargeSmt, LargeSmtError, SmtStorage, SmtStorageReader};
 use crate::crypto::merkle::smt::{LeafIndex, MutationSet, SMT_DEPTH, Smt, SmtLeaf, SmtProof};
 
 // ACCOUNT TREE BACKEND READER
@@ -138,7 +138,7 @@ impl AccountTreeBackend for Smt {
 #[cfg(feature = "std")]
 impl<Backend> AccountTreeBackendReader for LargeSmt<Backend>
 where
-    Backend: SmtStorage,
+    Backend: SmtStorageReader,
 {
     type Error = MerkleError;
 
