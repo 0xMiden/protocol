@@ -12,7 +12,7 @@ use miden::standards::notes::p2id
 # CONSTANTS
 # =================================================================================================
 
-const NUM_STORAGE_ITEMS=14
+const NUM_STORAGE_ITEMS=10
 const NOTE_TYPE_MASK=0x03
 const FACTOR=0x000186A0 # 1e5
 const MAX_U32=0x0000000100000000
@@ -28,7 +28,7 @@ const MAX_U32=0x0000000100000000
 # - execute_pswap: @locals(8) for offered asset info and calculation intermediates
 # - calculate_tokens_offered_for_requested: @locals(1) for input amount
 
-# PSWAP Note Storage (14 items loaded at address 0)
+# PSWAP Note Storage (10 items loaded at address 0)
 # Requested asset is stored as individual felts (fungible assets only):
 #   [enable_callbacks, faucet_id_suffix, faucet_id_prefix, requested_amount]
 const REQUESTED_ENABLE_CALLBACKS_ITEM = 0x0000
@@ -38,9 +38,9 @@ const REQUESTED_AMOUNT_ITEM = 0x0003
 const PSWAP_TAG_ITEM = 0x0004
 const P2ID_TAG_ITEM = 0x0005
 const PAYBACK_NOTE_TYPE_ITEM = 0x0006
-const PSWAP_COUNT_ITEM = 0x0008
-const PSWAP_CREATOR_PREFIX_ITEM = 0x000C
-const PSWAP_CREATOR_SUFFIX_ITEM = 0x000D
+const PSWAP_COUNT_ITEM = 0x0007
+const PSWAP_CREATOR_PREFIX_ITEM = 0x0008
+const PSWAP_CREATOR_SUFFIX_ITEM = 0x0009
 
 # Global Memory Address (shared across procedures)
 const NOTE_TYPE = 0x0084
@@ -49,8 +49,8 @@ const NOTE_TYPE = 0x0084
 # ERRORS
 # =================================================================================================
 
-# PSWAP script expects exactly 14 note storage items
-const ERR_PSWAP_WRONG_NUMBER_OF_STORAGE_ITEMS="PSWAP script expects exactly 14 note storage items"
+# PSWAP script expects exactly 10 note storage items
+const ERR_PSWAP_WRONG_NUMBER_OF_STORAGE_ITEMS="PSWAP script expects exactly 10 note storage items"
 
 # PSWAP script requires exactly one note asset
 const ERR_PSWAP_WRONG_NUMBER_OF_ASSETS="PSWAP script requires exactly one note asset"
