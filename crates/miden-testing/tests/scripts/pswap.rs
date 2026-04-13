@@ -55,6 +55,7 @@ async fn pswap_note_alice_reconstructs_and_consumes_p2id() -> anyhow::Result<()>
     let storage = PswapNoteStorage::builder()
         .requested_asset(requested_asset)
         .creator_account_id(alice.id())
+        .payback_note_type(NoteType::Public)
         .build();
     let pswap_note: Note = PswapNote::builder()
         .sender(alice.id())

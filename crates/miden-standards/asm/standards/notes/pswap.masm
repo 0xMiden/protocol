@@ -13,7 +13,6 @@ use miden::standards::notes::p2id
 # =================================================================================================
 
 const NUM_STORAGE_ITEMS=10
-const NOTE_TYPE_MASK=0x03
 const FACTOR=0x000186A0 # 1e5
 const MAX_U32=0x0000000100000000
 
@@ -21,11 +20,10 @@ const MAX_U32=0x0000000100000000
 # =================================================================================================
 
 # Global Memory Address Layout:
-# - PSWAP Note Storage: addresses 0x0000 - 0x000D (loaded from note storage)
-# - NOTE_TYPE: 0x0084 (set by extract_note_type)
+# - PSWAP Note Storage: addresses 0x0000 - 0x0009 (loaded from note storage)
 #
 # Procedure-local values use @locals instead of global memory:
-# - execute_pswap: @locals(8) for offered asset info and calculation intermediates
+# - execute_pswap: @locals(10) for offered asset info and calculation intermediates
 # - calculate_tokens_offered_for_requested: @locals(1) for fill amount
 
 # PSWAP Note Storage (10 items loaded at address 0)
@@ -41,10 +39,6 @@ const PAYBACK_NOTE_TYPE_ITEM = 0x0006
 const PSWAP_COUNT_ITEM = 0x0007
 const PSWAP_CREATOR_PREFIX_ITEM = 0x0008
 const PSWAP_CREATOR_SUFFIX_ITEM = 0x0009
-
-# Global Memory Address (shared across procedures)
-const NOTE_TYPE = 0x0084
-
 
 # ERRORS
 # =================================================================================================
@@ -167,40 +161,6 @@ proc calculate_tokens_offered_for_requested
         end
 
     end
-end
-
-# METADATA PROCEDURES
-# =================================================================================================
-
-#! Extracts the note_type from the active note's metadata and stores it at NOTE_TYPE.
-#!
-#! get_metadata returns [NOTE_ATTACHMENT(4), METADATA_HEADER(4)].
-#! METADATA_HEADER word layout (see NoteMetadataHeader in miden-protocol/src/note/metadata.rs):
-#!   word[0] = sender_suffix_and_note_type (note_type in bits 0-1)
-#!   word[1] = sender_id_prefix
-#!   word[2] = tag
-#!   word[3] = attachment_kind_scheme
-#!
-#! After dropw and mem_loadw_le ordering, word[0] is on top of the stack.
-#!
-#! Inputs: []
-#! Outputs: []
-#!
-proc extract_note_type
-    exec.active_note::get_metadata
-    # => [NOTE_ATTACHMENT(4), METADATA_HEADER(4)]
-    dropw
-    # => [word[0]=sender_suffix_and_note_type, word[1]=prefix, word[2]=tag, word[3]=attachment]
-    # Keep word[0] (top), move it to bottom and drop the rest
-    movdn.3 drop drop drop
-    # => [sender_suffix_and_note_type]
-    u32split
-    # => [lo32, hi32]  (note_type in bits 0-1 of lo32, lo32 on top)
-    push.NOTE_TYPE_MASK u32and
-    # => [note_type, hi32]
-    mem_store.NOTE_TYPE
-    drop
-    # => []
 end
 
 # P2ID NOTE CREATION PROCEDURE
@@ -575,7 +535,14 @@ proc execute_pswap
         # => [remaining_requested]
 
         mem_load.PSWAP_TAG_ITEM
-        mem_load.NOTE_TYPE
+        # => [tag, remaining_requested]
+
+        # Fetch the active note's type to inherit it for the remainder pswap note.
+        exec.active_note::get_metadata
+        # => [NOTE_ATTACHMENT(4), METADATA_HEADER(4), tag, remaining_requested]
+        dropw
+        # => [METADATA_HEADER(4), tag, remaining_requested]
+        exec.note::metadata_into_note_type
         # => [note_type, tag, remaining_requested]
 
         movup.2
@@ -632,9 +599,6 @@ pub proc main
         drop mem_load.REQUESTED_AMOUNT_ITEM
         # => [account_fill_amount=requested, note_fill_amount=0]
     end
-
-    # Extract and store note_type from active note metadata
-    exec.extract_note_type
     # => [account_fill_amount, note_fill_amount]
 
     mem_load.PSWAP_CREATOR_PREFIX_ITEM mem_load.PSWAP_CREATOR_SUFFIX_ITEM
