@@ -1,6 +1,7 @@
 use core::slice;
 
-use miden_protocol::account::auth::AuthScheme;
+use miden_protocol::Word;
+use miden_protocol::account::auth::{AuthScheme, AuthSecretKey};
 use miden_protocol::account::{
     Account,
     AccountBuilder,
@@ -16,6 +17,9 @@ use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain};
+use miden_tx::auth::BasicAuthenticator;
+use rand::SeedableRng;
+use rand_chacha::ChaCha20Rng;
 use rstest::rstest;
 
 use crate::prove_and_verify_transaction;
@@ -109,6 +113,73 @@ async fn test_singlesig_auth_uses_initial_public_key(
         .expect("singlesig auth should use initial public key, not the rotated one");
 
     prove_and_verify_transaction(executed_tx).await?;
+
+    Ok(())
+}
+
+/// Tests the negative scenario: the transaction script rotates the public key to a new
+/// *valid* key, and the authenticator signs with that new key. The auth procedure should
+/// reject the signature because it reads the *initial* public key (key A), not the rotated
+/// one (key B). This proves that even with a valid signature from the new key, the auth
+/// procedure correctly uses the initial storage state.
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[tokio::test]
+async fn test_singlesig_auth_rejects_rotated_key_signature(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (account, mock_chain, note) = setup_singlesig_with_mock_component(auth_scheme)?;
+
+    // Generate a second valid key pair (key B) using a different seed.
+    // The account was built with key A (seed = [0; 32] via Auth::BasicAuth).
+    let mut rng_b = ChaCha20Rng::from_seed([1u8; 32]);
+    let sec_key_b = AuthSecretKey::with_scheme_and_rng(auth_scheme, &mut rng_b)
+        .expect("failed to create second secret key");
+    let pub_key_b_commitment: Word = sec_key_b.public_key().to_commitment().into();
+
+    // Create an authenticator that only knows key B (the new key).
+    let authenticator_b = BasicAuthenticator::new(&[sec_key_b]);
+
+    // Get the singlesig public key slot name
+    let pub_key_slot = AuthSingleSig::public_key_slot();
+
+    // This tx script rotates the public key to key B's valid commitment.
+    // The authenticator will sign with key B, but the auth procedure reads the
+    // initial key (key A) via `get_initial_item`, so verification should fail.
+    let tx_script_rotate_key = format!(
+        r#"
+        use mock::account
+
+        const PUB_KEY_SLOT = word("{pub_key_slot}")
+        const NEW_PUB_KEY = word("{new_pub_key}")
+
+        begin
+            # Overwrite the public key slot with key B's valid public key commitment
+            push.NEW_PUB_KEY
+            push.PUB_KEY_SLOT[0..2]
+            call.account::set_item
+            dropw dropw
+        end
+        "#,
+        new_pub_key = pub_key_b_commitment,
+    );
+
+    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script_rotate_key)?;
+
+    let tx_context = mock_chain
+        .build_tx_context(account.id(), &[], slice::from_ref(&note))?
+        .authenticator(Some(authenticator_b))
+        .tx_script(tx_script)
+        .build()?;
+
+    // This should FAIL because the auth procedure reads the initial key (A) but the
+    // authenticator signs with key B. The signature verification will not match.
+    let result = tx_context.execute().await;
+    assert!(
+        result.is_err(),
+        "transaction should fail when signed with the rotated key instead of the initial key"
+    );
 
     Ok(())
 }
