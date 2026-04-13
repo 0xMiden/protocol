@@ -21,7 +21,7 @@ mod witness;
 pub use witness::AccountWitness;
 
 mod backend;
-pub use backend::AccountTreeBackend;
+pub use backend::{AccountTreeBackend, AccountTreeBackendReader};
 
 mod account_id_key;
 pub use account_id_key::AccountIdKey;
@@ -53,7 +53,7 @@ where
 
 impl<S> AccountTree<S>
 where
-    S: AccountTreeBackend<Error = MerkleError>,
+    S: AccountTreeBackendReader<Error = MerkleError>,
 {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
@@ -188,6 +188,27 @@ where
         })
     }
 
+    // HELPERS
+    // --------------------------------------------------------------------------------------------
+
+    /// Returns the SMT key of the given account ID prefix.
+    fn id_prefix_to_smt_key(account_id: AccountIdPrefix) -> Word {
+        // We construct this in such a way that we're forced to use the constants, so that when
+        // they're updated, the other usages of the constants are also updated.
+        let mut key = Word::empty();
+        key[Self::KEY_PREFIX_IDX] = account_id.as_felt();
+
+        key
+    }
+}
+
+impl<S> AccountTree<S>
+where
+    S: AccountTreeBackend<Error = MerkleError>,
+{
+    // PUBLIC MUTATORS
+    // --------------------------------------------------------------------------------------------
+
     /// Computes the necessary changes to insert the specified (account ID, state commitment) pairs
     /// into this tree, allowing for validation before applying those changes.
     ///
@@ -244,9 +265,6 @@ where
 
         Ok(AccountMutationSet::new(mutation_set))
     }
-
-    // PUBLIC MUTATORS
-    // --------------------------------------------------------------------------------------------
 
     /// Inserts the state commitment for the given account ID, returning the previous state
     /// commitment associated with that ID.
@@ -313,19 +331,6 @@ where
             .apply_mutations_with_reversion(mutations.into_mutation_set())
             .map_err(AccountTreeError::ApplyMutations)?;
         Ok(AccountMutationSet::new(reversion))
-    }
-
-    // HELPERS
-    // --------------------------------------------------------------------------------------------
-
-    /// Returns the SMT key of the given account ID prefix.
-    fn id_prefix_to_smt_key(account_id: AccountIdPrefix) -> Word {
-        // We construct this in such a way that we're forced to use the constants, so that when
-        // they're updated, the other usages of the constants are also updated.
-        let mut key = Word::empty();
-        key[Self::KEY_PREFIX_IDX] = account_id.as_felt();
-
-        key
     }
 }
 

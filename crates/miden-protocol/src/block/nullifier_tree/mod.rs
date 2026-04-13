@@ -16,7 +16,7 @@ use crate::utils::serde::{
 use crate::{Felt, Word};
 
 mod backend;
-pub use backend::NullifierTreeBackend;
+pub use backend::{NullifierTreeBackend, NullifierTreeBackendReader};
 
 mod witness;
 pub use witness::NullifierWitness;
@@ -51,7 +51,7 @@ where
 
 impl<Backend> NullifierTree<Backend>
 where
-    Backend: NullifierTreeBackend<Error = MerkleError>,
+    Backend: NullifierTreeBackendReader<Error = MerkleError>,
 {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
@@ -116,6 +116,14 @@ where
 
         Some(nullifier_block.into())
     }
+}
+
+impl<Backend> NullifierTree<Backend>
+where
+    Backend: NullifierTreeBackend<Error = MerkleError>,
+{
+    // PUBLIC MUTATORS
+    // --------------------------------------------------------------------------------------------
 
     /// Computes a mutation set resulting from inserting the provided nullifiers into this nullifier
     /// tree.
@@ -152,9 +160,6 @@ where
 
         Ok(NullifierMutationSet::new(mutation_set))
     }
-
-    // PUBLIC MUTATORS
-    // --------------------------------------------------------------------------------------------
 
     /// Marks the given nullifier as spent at the given block number.
     ///

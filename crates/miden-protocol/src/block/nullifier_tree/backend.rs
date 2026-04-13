@@ -4,14 +4,17 @@ use super::{BlockNumber, Nullifier, NullifierBlock, NullifierTree, NullifierTree
 use crate::Word;
 use crate::crypto::merkle::MerkleError;
 #[cfg(feature = "std")]
-use crate::crypto::merkle::smt::{LargeSmt, LargeSmtError, SmtStorage};
+use crate::crypto::merkle::smt::{LargeSmt, LargeSmtError, SmtStorage, SmtStorageReader};
 use crate::crypto::merkle::smt::{MutationSet, SMT_DEPTH, Smt, SmtProof};
 
-// NULLIFIER TREE BACKEND
+// NULLIFIER TREE BACKEND READER
 // ================================================================================================
 
 /// This trait abstracts over different SMT backends (e.g., `Smt` and `LargeSmt`) to allow
 /// the `NullifierTree` to work with either implementation transparently.
+///
+/// This trait contains only read-only methods. For write methods, see
+/// [`NullifierTreeBackend`].
 ///
 /// Users should instantiate the backend directly (potentially with entries) and then
 /// pass it to [`NullifierTree::new_unchecked`].
@@ -21,7 +24,7 @@ use crate::crypto::merkle::smt::{MutationSet, SMT_DEPTH, Smt, SmtProof};
 /// Assumes the provided SMT upholds the guarantees of the [`NullifierTree`]. Specifically:
 /// - Nullifiers are only spent once and their block numbers do not change.
 /// - Nullifier leaf values must be valid according to [`NullifierBlock`].
-pub trait NullifierTreeBackend: Sized {
+pub trait NullifierTreeBackendReader: Sized {
     type Error: core::error::Error + Send + 'static;
 
     /// Returns the number of entries in the SMT.
@@ -33,21 +36,6 @@ pub trait NullifierTreeBackend: Sized {
     /// Opens the leaf at the given key, returning a Merkle proof.
     fn open(&self, key: &Word) -> SmtProof;
 
-    /// Applies the given mutation set to the SMT.
-    fn apply_mutations(
-        &mut self,
-        set: MutationSet<SMT_DEPTH, Word, Word>,
-    ) -> Result<(), Self::Error>;
-
-    /// Computes the mutation set required to apply the given updates to the SMT.
-    fn compute_mutations(
-        &self,
-        updates: impl IntoIterator<Item = (Word, Word)>,
-    ) -> Result<MutationSet<SMT_DEPTH, Word, Word>, Self::Error>;
-
-    /// Inserts a key-value pair into the SMT, returning the previous value at that key.
-    fn insert(&mut self, key: Word, value: NullifierBlock) -> Result<NullifierBlock, Self::Error>;
-
     /// Returns the value associated with the given key.
     fn get_value(&self, key: &Word) -> NullifierBlock;
 
@@ -55,10 +43,31 @@ pub trait NullifierTreeBackend: Sized {
     fn root(&self) -> Word;
 }
 
-// BACKEND IMPLEMENTATION FOR SMT
+// NULLIFIER TREE BACKEND
 // ================================================================================================
 
-impl NullifierTreeBackend for Smt {
+/// Extension trait for [`NullifierTreeBackendReader`] that provides write methods.
+pub trait NullifierTreeBackend: NullifierTreeBackendReader {
+    /// Computes the mutation set required to apply the given updates to the SMT.
+    fn compute_mutations(
+        &self,
+        updates: impl IntoIterator<Item = (Word, Word)>,
+    ) -> Result<MutationSet<SMT_DEPTH, Word, Word>, Self::Error>;
+
+    /// Applies the given mutation set to the SMT.
+    fn apply_mutations(
+        &mut self,
+        set: MutationSet<SMT_DEPTH, Word, Word>,
+    ) -> Result<(), Self::Error>;
+
+    /// Inserts a key-value pair into the SMT, returning the previous value at that key.
+    fn insert(&mut self, key: Word, value: NullifierBlock) -> Result<NullifierBlock, Self::Error>;
+}
+
+// BACKEND READER IMPLEMENTATION FOR SMT
+// ================================================================================================
+
+impl NullifierTreeBackendReader for Smt {
     type Error = MerkleError;
 
     fn num_entries(&self) -> usize {
@@ -73,26 +82,6 @@ impl NullifierTreeBackend for Smt {
         Smt::open(self, key)
     }
 
-    fn apply_mutations(
-        &mut self,
-        set: MutationSet<SMT_DEPTH, Word, Word>,
-    ) -> Result<(), Self::Error> {
-        Smt::apply_mutations(self, set)
-    }
-
-    fn compute_mutations(
-        &self,
-        updates: impl IntoIterator<Item = (Word, Word)>,
-    ) -> Result<MutationSet<SMT_DEPTH, Word, Word>, Self::Error> {
-        Smt::compute_mutations(self, updates)
-    }
-
-    fn insert(&mut self, key: Word, value: NullifierBlock) -> Result<NullifierBlock, Self::Error> {
-        Smt::insert(self, key, value.into()).map(|word| {
-            NullifierBlock::try_from(word).expect("SMT should only store valid NullifierBlocks")
-        })
-    }
-
     fn get_value(&self, key: &Word) -> NullifierBlock {
         NullifierBlock::new(Smt::get_value(self, key))
             .expect("SMT should only store valid NullifierBlocks")
@@ -103,13 +92,38 @@ impl NullifierTreeBackend for Smt {
     }
 }
 
-// NULLIFIER TREE BACKEND FOR LARGE SMT
+// BACKEND IMPLEMENTATION FOR SMT
+// ================================================================================================
+
+impl NullifierTreeBackend for Smt {
+    fn compute_mutations(
+        &self,
+        updates: impl IntoIterator<Item = (Word, Word)>,
+    ) -> Result<MutationSet<SMT_DEPTH, Word, Word>, Self::Error> {
+        Smt::compute_mutations(self, updates)
+    }
+
+    fn apply_mutations(
+        &mut self,
+        set: MutationSet<SMT_DEPTH, Word, Word>,
+    ) -> Result<(), Self::Error> {
+        Smt::apply_mutations(self, set)
+    }
+
+    fn insert(&mut self, key: Word, value: NullifierBlock) -> Result<NullifierBlock, Self::Error> {
+        Smt::insert(self, key, value.into()).map(|word| {
+            NullifierBlock::try_from(word).expect("SMT should only store valid NullifierBlocks")
+        })
+    }
+}
+
+// BACKEND READER IMPLEMENTATION FOR LARGE SMT
 // ================================================================================================
 
 #[cfg(feature = "std")]
-impl<Backend> NullifierTreeBackend for LargeSmt<Backend>
+impl<Backend> NullifierTreeBackendReader for LargeSmt<Backend>
 where
-    Backend: SmtStorage,
+    Backend: SmtStorageReader,
 {
     type Error = MerkleError;
 
@@ -127,26 +141,6 @@ where
         LargeSmt::open(self, key)
     }
 
-    fn apply_mutations(
-        &mut self,
-        set: MutationSet<SMT_DEPTH, Word, Word>,
-    ) -> Result<(), Self::Error> {
-        LargeSmt::apply_mutations(self, set).map_err(large_smt_error_to_merkle_error)
-    }
-
-    fn compute_mutations(
-        &self,
-        updates: impl IntoIterator<Item = (Word, Word)>,
-    ) -> Result<MutationSet<SMT_DEPTH, Word, Word>, Self::Error> {
-        LargeSmt::compute_mutations(self, updates).map_err(large_smt_error_to_merkle_error)
-    }
-
-    fn insert(&mut self, key: Word, value: NullifierBlock) -> Result<NullifierBlock, Self::Error> {
-        LargeSmt::insert(self, key, value.into()).map(|word| {
-            NullifierBlock::try_from(word).expect("SMT should only store valid NullifierBlocks")
-        })
-    }
-
     fn get_value(&self, key: &Word) -> NullifierBlock {
         LargeSmt::get_value(self, key)
             .try_into()
@@ -155,6 +149,35 @@ where
 
     fn root(&self) -> Word {
         LargeSmt::root(self)
+    }
+}
+
+// BACKEND IMPLEMENTATION FOR LARGE SMT
+// ================================================================================================
+
+#[cfg(feature = "std")]
+impl<Backend> NullifierTreeBackend for LargeSmt<Backend>
+where
+    Backend: SmtStorage,
+{
+    fn compute_mutations(
+        &self,
+        updates: impl IntoIterator<Item = (Word, Word)>,
+    ) -> Result<MutationSet<SMT_DEPTH, Word, Word>, Self::Error> {
+        LargeSmt::compute_mutations(self, updates).map_err(large_smt_error_to_merkle_error)
+    }
+
+    fn apply_mutations(
+        &mut self,
+        set: MutationSet<SMT_DEPTH, Word, Word>,
+    ) -> Result<(), Self::Error> {
+        LargeSmt::apply_mutations(self, set).map_err(large_smt_error_to_merkle_error)
+    }
+
+    fn insert(&mut self, key: Word, value: NullifierBlock) -> Result<NullifierBlock, Self::Error> {
+        LargeSmt::insert(self, key, value.into()).map(|word| {
+            NullifierBlock::try_from(word).expect("SMT should only store valid NullifierBlocks")
+        })
     }
 }
 

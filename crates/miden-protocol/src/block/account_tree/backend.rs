@@ -5,19 +5,22 @@ use super::{AccountId, AccountIdKey, AccountIdPrefix, AccountTree, AccountTreeEr
 use crate::Word;
 use crate::crypto::merkle::MerkleError;
 #[cfg(feature = "std")]
-use crate::crypto::merkle::smt::{LargeSmt, LargeSmtError, SmtStorage};
+use crate::crypto::merkle::smt::{LargeSmt, LargeSmtError, SmtStorage, SmtStorageReader};
 use crate::crypto::merkle::smt::{LeafIndex, MutationSet, SMT_DEPTH, Smt, SmtLeaf, SmtProof};
 
-// ACCOUNT TREE BACKEND
+// ACCOUNT TREE BACKEND READER
 // ================================================================================================
 
 /// This trait abstracts over different SMT backends (e.g., `Smt` and `LargeSmt`) to allow
 /// the `AccountTree` to work with either implementation transparently.
 ///
+/// This trait contains only read-only methods. For write methods, see
+/// [`AccountTreeBackend`].
+///
 /// Implementors must provide `Default` for creating empty instances. Users should
 /// instantiate the backend directly (potentially with entries) and then pass it to
 /// [`AccountTree::new`].
-pub trait AccountTreeBackend: Sized {
+pub trait AccountTreeBackendReader: Sized {
     type Error: core::error::Error + Send + 'static;
 
     /// Returns the number of leaves in the SMT.
@@ -28,6 +31,27 @@ pub trait AccountTreeBackend: Sized {
 
     /// Opens the leaf at the given key, returning a Merkle proof.
     fn open(&self, key: &Word) -> SmtProof;
+
+    /// Returns the value associated with the given key.
+    fn get_value(&self, key: &Word) -> Word;
+
+    /// Returns the leaf at the given key.
+    fn get_leaf(&self, key: &Word) -> SmtLeaf;
+
+    /// Returns the root of the SMT.
+    fn root(&self) -> Word;
+}
+
+// ACCOUNT TREE BACKEND
+// ================================================================================================
+
+/// Extension trait for [`AccountTreeBackendReader`] that provides write methods.
+pub trait AccountTreeBackend: AccountTreeBackendReader {
+    /// Computes the mutation set required to apply the given updates to the SMT.
+    fn compute_mutations(
+        &self,
+        updates: Vec<(Word, Word)>,
+    ) -> Result<MutationSet<SMT_DEPTH, Word, Word>, Self::Error>;
 
     /// Applies the given mutation set to the SMT.
     fn apply_mutations(
@@ -43,29 +67,14 @@ pub trait AccountTreeBackend: Sized {
         set: MutationSet<SMT_DEPTH, Word, Word>,
     ) -> Result<MutationSet<SMT_DEPTH, Word, Word>, Self::Error>;
 
-    /// Computes the mutation set required to apply the given updates to the SMT.
-    fn compute_mutations(
-        &self,
-        updates: Vec<(Word, Word)>,
-    ) -> Result<MutationSet<SMT_DEPTH, Word, Word>, Self::Error>;
-
     /// Inserts a key-value pair into the SMT, returning the previous value at that key.
     fn insert(&mut self, key: Word, value: Word) -> Result<Word, Self::Error>;
-
-    /// Returns the value associated with the given key.
-    fn get_value(&self, key: &Word) -> Word;
-
-    /// Returns the leaf at the given key.
-    fn get_leaf(&self, key: &Word) -> SmtLeaf;
-
-    /// Returns the root of the SMT.
-    fn root(&self) -> Word;
 }
 
-// BACKEND IMPLEMENTATION FOR SMT
+// BACKEND READER IMPLEMENTATION FOR SMT
 // ================================================================================================
 
-impl AccountTreeBackend for Smt {
+impl AccountTreeBackendReader for Smt {
     type Error = MerkleError;
 
     fn num_leaves(&self) -> usize {
@@ -78,6 +87,30 @@ impl AccountTreeBackend for Smt {
 
     fn open(&self, key: &Word) -> SmtProof {
         Smt::open(self, key)
+    }
+
+    fn get_value(&self, key: &Word) -> Word {
+        Smt::get_value(self, key)
+    }
+
+    fn get_leaf(&self, key: &Word) -> SmtLeaf {
+        Smt::get_leaf(self, key)
+    }
+
+    fn root(&self) -> Word {
+        Smt::root(self)
+    }
+}
+
+// BACKEND IMPLEMENTATION FOR SMT
+// ================================================================================================
+
+impl AccountTreeBackend for Smt {
+    fn compute_mutations(
+        &self,
+        updates: Vec<(Word, Word)>,
+    ) -> Result<MutationSet<SMT_DEPTH, Word, Word>, Self::Error> {
+        Smt::compute_mutations(self, updates)
     }
 
     fn apply_mutations(
@@ -94,37 +127,18 @@ impl AccountTreeBackend for Smt {
         Smt::apply_mutations_with_reversion(self, set)
     }
 
-    fn compute_mutations(
-        &self,
-        updates: Vec<(Word, Word)>,
-    ) -> Result<MutationSet<SMT_DEPTH, Word, Word>, Self::Error> {
-        Smt::compute_mutations(self, updates)
-    }
-
     fn insert(&mut self, key: Word, value: Word) -> Result<Word, Self::Error> {
         Smt::insert(self, key, value)
     }
-
-    fn get_value(&self, key: &Word) -> Word {
-        Smt::get_value(self, key)
-    }
-
-    fn get_leaf(&self, key: &Word) -> SmtLeaf {
-        Smt::get_leaf(self, key)
-    }
-
-    fn root(&self) -> Word {
-        Smt::root(self)
-    }
 }
 
-// BACKEND IMPLEMENTATION FOR LARGE SMT
+// BACKEND READER IMPLEMENTATION FOR LARGE SMT
 // ================================================================================================
 
 #[cfg(feature = "std")]
-impl<Backend> AccountTreeBackend for LargeSmt<Backend>
+impl<Backend> AccountTreeBackendReader for LargeSmt<Backend>
 where
-    Backend: SmtStorage,
+    Backend: SmtStorageReader,
 {
     type Error = MerkleError;
 
@@ -138,6 +152,34 @@ where
 
     fn open(&self, key: &Word) -> SmtProof {
         LargeSmt::open(self, key)
+    }
+
+    fn get_value(&self, key: &Word) -> Word {
+        LargeSmt::get_value(self, key)
+    }
+
+    fn get_leaf(&self, key: &Word) -> SmtLeaf {
+        LargeSmt::get_leaf(self, key)
+    }
+
+    fn root(&self) -> Word {
+        LargeSmt::root(self)
+    }
+}
+
+// BACKEND IMPLEMENTATION FOR LARGE SMT
+// ================================================================================================
+
+#[cfg(feature = "std")]
+impl<Backend> AccountTreeBackend for LargeSmt<Backend>
+where
+    Backend: SmtStorage,
+{
+    fn compute_mutations(
+        &self,
+        updates: Vec<(Word, Word)>,
+    ) -> Result<MutationSet<SMT_DEPTH, Word, Word>, Self::Error> {
+        LargeSmt::compute_mutations(self, updates).map_err(large_smt_error_to_merkle_error)
     }
 
     fn apply_mutations(
@@ -154,27 +196,8 @@ where
         LargeSmt::apply_mutations_with_reversion(self, set).map_err(large_smt_error_to_merkle_error)
     }
 
-    fn compute_mutations(
-        &self,
-        updates: Vec<(Word, Word)>,
-    ) -> Result<MutationSet<SMT_DEPTH, Word, Word>, Self::Error> {
-        LargeSmt::compute_mutations(self, updates).map_err(large_smt_error_to_merkle_error)
-    }
-
     fn insert(&mut self, key: Word, value: Word) -> Result<Word, Self::Error> {
         LargeSmt::insert(self, key, value)
-    }
-
-    fn get_value(&self, key: &Word) -> Word {
-        LargeSmt::get_value(self, key)
-    }
-
-    fn get_leaf(&self, key: &Word) -> SmtLeaf {
-        LargeSmt::get_leaf(self, key)
-    }
-
-    fn root(&self) -> Word {
-        LargeSmt::root(self)
     }
 }
 
