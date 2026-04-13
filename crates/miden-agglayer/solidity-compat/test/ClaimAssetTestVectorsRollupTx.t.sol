@@ -66,7 +66,7 @@ contract ClaimAssetTestVectorsRollupTx is Test, DepositContractV2, DepositContra
         uint8 leafType = 0;
         uint32 originNetwork = 3; // rollup network ID
         address originTokenAddress = 0x2DC70fb75b88d2eB4715bc06E1595E6D97c34DFF;
-        uint32 destinationNetwork = 20;
+        uint32 destinationNetwork = 77;
         // Destination address with zero MSB (embeds a Miden AccountId)
         address destinationAddress = 0x00000000AA0000000000bb000000cc000000Dd00;
         uint256 amount = 100000000000000000000;

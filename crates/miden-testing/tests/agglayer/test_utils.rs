@@ -34,12 +34,6 @@ use serde::Deserialize;
 // EMBEDDED TEST VECTOR JSON FILES
 // ================================================================================================
 
-/// Claim asset test vectors JSON — contains both LeafData and ProofData from a real claimAsset
-/// transaction.
-const CLAIM_ASSET_VECTORS_JSON: &str = include_str!(
-    "../../../miden-agglayer/solidity-compat/test-vectors/claim_asset_vectors_real_tx.json"
-);
-
 /// Bridge asset test vectors JSON — contains test data for an L1 bridgeAsset transaction.
 const BRIDGE_ASSET_VECTORS_JSON: &str = include_str!(
     "../../../miden-agglayer/solidity-compat/test-vectors/claim_asset_vectors_local_tx.json"
@@ -244,12 +238,6 @@ pub struct MTFVectorsFile {
 // LAZY-PARSED TEST VECTORS
 // ================================================================================================
 
-/// Lazily parsed claim asset test vector from the JSON file.
-pub static CLAIM_ASSET_VECTOR: LazyLock<ClaimAssetVector> = LazyLock::new(|| {
-    serde_json::from_str(CLAIM_ASSET_VECTORS_JSON)
-        .expect("failed to parse claim asset vectors JSON")
-});
-
 /// Lazily parsed bridge asset test vector from the JSON file (locally simulated L1 transaction).
 pub static CLAIM_ASSET_VECTOR_LOCAL: LazyLock<ClaimAssetVector> = LazyLock::new(|| {
     serde_json::from_str(BRIDGE_ASSET_VECTORS_JSON)
@@ -285,8 +273,6 @@ pub static SOLIDITY_MTF_VECTORS: LazyLock<MTFVectorsFile> = LazyLock::new(|| {
 /// Identifies the source of claim data used in bridge-in tests.
 #[derive(Debug, Clone, Copy)]
 pub enum ClaimDataSource {
-    /// Real on-chain claimAsset data from claim_asset_vectors_real_tx.json.
-    Real,
     /// Locally simulated bridgeAsset data from claim_asset_vectors_local_tx.json.
     Simulated,
     /// Rollup deposit data from claim_asset_vectors_rollup_tx.json.
@@ -297,7 +283,6 @@ impl ClaimDataSource {
     /// Returns the `(ProofData, LeafData, ExitRoot, CgiChainHash)` tuple for this data source.
     pub fn get_data(self) -> (ProofData, LeafData, ExitRoot, CgiChainHash) {
         let vector = match self {
-            ClaimDataSource::Real => &*CLAIM_ASSET_VECTOR,
             ClaimDataSource::Simulated => &*CLAIM_ASSET_VECTOR_LOCAL,
             ClaimDataSource::Rollup => &*CLAIM_ASSET_VECTOR_ROLLUP,
         };
