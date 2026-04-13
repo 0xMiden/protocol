@@ -9,7 +9,7 @@ pub type AccountId = struct { prefix: felt, suffix: felt }
 # ERRORS
 # =================================================================================================
 
-const ERR_NOTE_NUM_OF_ASSETS_EXCEED_LIMIT="number of assets in a note exceed 255"
+const ERR_NOTE_NUM_OF_ASSETS_EXCEED_LIMIT="number of assets in a note exceeds 64"
 
 const ERR_ACCOUNT_IS_NOT_NATIVE="the active account is not native"
 
@@ -2012,7 +2012,7 @@ pub proc set_output_note_num_assets
     # => [note_ptr + offset, num_assets]
 
     # check note number of assets limit
-    dup.1 push.MAX_ASSETS_PER_NOTE lt assert.err=ERR_NOTE_NUM_OF_ASSETS_EXCEED_LIMIT
+    dup.1 lte.MAX_ASSETS_PER_NOTE assert.err=ERR_NOTE_NUM_OF_ASSETS_EXCEED_LIMIT
 
     mem_store
 end

@@ -5,6 +5,7 @@
 ### Changes
 - Added validation of leaf type on CLAIM note processing to prevent message leaves from being processed as asset claims ([#2730](https://github.com/0xMiden/protocol/pull/2730)).
 
+- [BREAKING] Reduced `MAX_ASSETS_PER_NOTE` from 255 to 64 and `NOTE_MEM_SIZE` from 3072 to 1024 ([#2741](https://github.com/0xMiden/protocol/issues/2741)).
 - Added `metadata_into_note_type` procedure to `note.masm` for extracting note type from metadata header ([#2738](https://github.com/0xMiden/protocol/pull/2738)).
 - Added `AssetAmount` wrapper type for validated fungible asset amounts ([#2721](https://github.com/0xMiden/protocol/pull/2721)).
 - [BREAKING] Renamed `ProvenBatch::new` to `new_unchecked` ([#2687](https://github.com/0xMiden/miden-base/issues/2687)).
