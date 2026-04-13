@@ -357,7 +357,7 @@ impl PswapNote {
 
     /// Executes the swap, producing the output notes for a given fill.
     ///
-    /// `input_asset` is debited from the consumer's vault; `inflight_asset` arrives
+    /// `account_fill_asset` is debited from the consumer's vault; `note_fill_asset` arrives
     /// from another note in the same transaction (cross-swap). At least one must be
     /// provided.
     ///
@@ -374,20 +374,23 @@ impl PswapNote {
     pub fn execute(
         &self,
         consumer_account_id: AccountId,
-        input_asset: Option<FungibleAsset>,
-        inflight_asset: Option<FungibleAsset>,
+        account_fill_asset: Option<FungibleAsset>,
+        note_fill_asset: Option<FungibleAsset>,
     ) -> Result<(Note, Option<PswapNote>), NoteError> {
-        // Combine input and inflight into a single payback asset
-        let input_amount = input_asset.as_ref().map_or(0, |a| a.amount());
-        let inflight_amount = inflight_asset.as_ref().map_or(0, |a| a.amount());
-        let payback_asset = match (input_asset, inflight_asset) {
-            (Some(input), Some(inflight)) => input.add(inflight).map_err(|e| {
-                NoteError::other_with_source("failed to combine input and inflight assets", e)
-            })?,
+        // Combine account fill and note fill into a single payback asset.
+        let payback_asset = match (account_fill_asset, note_fill_asset) {
+            (Some(account_fill), Some(note_fill)) => {
+                account_fill.add(note_fill).map_err(|e| {
+                    NoteError::other_with_source(
+                        "failed to combine account fill and note fill assets",
+                        e,
+                    )
+                })?
+            },
             (Some(asset), None) | (None, Some(asset)) => asset,
             (None, None) => {
                 return Err(NoteError::other(
-                    "at least one of input_asset or inflight_asset must be provided",
+                    "at least one of account_fill_asset or note_fill_asset must be provided",
                 ));
             },
         };
@@ -409,21 +412,23 @@ impl PswapNote {
             )));
         }
 
-        // Calculate offered amounts separately for input and inflight, matching the MASM
-        // which calls calculate_tokens_offered_for_requested twice. This is necessary
-        // because the input portion goes to the consumer's vault while the total determines
-        // the remainder note's offered amount.
-        let offered_for_input = Self::calculate_output_amount(
+        // Calculate payout amounts separately for account fill and note fill, matching the
+        // MASM which calls calculate_tokens_offered_for_requested twice. This is necessary
+        // because the account fill portion goes to the consumer's vault while the total
+        // determines the remainder note's offered amount.
+        let account_fill_amount = account_fill_asset.as_ref().map_or(0, |a| a.amount());
+        let note_fill_amount = note_fill_asset.as_ref().map_or(0, |a| a.amount());
+        let payout_for_account_fill = Self::calculate_output_amount(
             total_offered_amount,
             total_requested_amount,
-            input_amount,
+            account_fill_amount,
         );
-        let offered_for_inflight = Self::calculate_output_amount(
+        let payout_for_note_fill = Self::calculate_output_amount(
             total_offered_amount,
             total_requested_amount,
-            inflight_amount,
+            note_fill_amount,
         );
-        let offered_amount_for_fill = offered_for_input + offered_for_inflight;
+        let offered_amount_for_fill = payout_for_account_fill + payout_for_note_fill;
 
         let payback_note =
             self.create_payback_note(consumer_account_id, payback_asset, fill_amount)?;
@@ -456,13 +461,13 @@ impl PswapNote {
         Ok((payback_note, remainder))
     }
 
-    /// Returns how many offered tokens a consumer receives for `input_amount` of the
+    /// Returns how many offered tokens a consumer receives for `fill_amount` of the
     /// requested asset, based on this note's current offered/requested ratio.
-    pub fn calculate_offered_for_requested(&self, input_amount: u64) -> u64 {
+    pub fn calculate_offered_for_requested(&self, fill_amount: u64) -> u64 {
         let total_requested = self.storage.requested_asset_amount();
         let total_offered = self.offered_asset.amount();
 
-        Self::calculate_output_amount(total_offered, total_requested, input_amount)
+        Self::calculate_output_amount(total_offered, total_requested, fill_amount)
     }
 
     // ASSOCIATED FUNCTIONS
@@ -504,29 +509,29 @@ impl PswapNote {
         NoteTag::new(tag)
     }
 
-    /// Computes `offered_total * input_amount / requested_total` using fixed-point
+    /// Computes `offered_total * fill_amount / requested_total` using fixed-point
     /// u64 arithmetic with a precision factor of 10^5, matching the on-chain MASM
-    /// calculation. Returns the full `offered_total` when `input_amount == requested_total`.
+    /// calculation. Returns the full `offered_total` when `fill_amount == requested_total`.
     ///
     /// The formula is implemented in two branches to maximize precision:
     /// - When `offered > requested`: the ratio `offered/requested` is >= 1, so we compute
-    ///   `(offered * FACTOR / requested) * input / FACTOR` to avoid losing the fractional part.
+    ///   `(offered * FACTOR / requested) * fill_amount / FACTOR` to avoid losing the fractional part.
     /// - When `requested >= offered`: the ratio `offered/requested` is < 1, so computing it
     ///   directly would truncate to zero. Instead we compute the inverse ratio
-    ///   `(requested * FACTOR / offered)` and divide: `(input * FACTOR) / inverse_ratio`.
-    fn calculate_output_amount(offered_total: u64, requested_total: u64, input_amount: u64) -> u64 {
+    ///   `(requested * FACTOR / offered)` and divide: `(fill_amount * FACTOR) / inverse_ratio`.
+    fn calculate_output_amount(offered_total: u64, requested_total: u64, fill_amount: u64) -> u64 {
         const PRECISION_FACTOR: u64 = 100_000;
 
-        if requested_total == input_amount {
+        if requested_total == fill_amount {
             return offered_total;
         }
 
         if offered_total > requested_total {
             let ratio = (offered_total * PRECISION_FACTOR) / requested_total;
-            (input_amount * ratio) / PRECISION_FACTOR
+            (fill_amount * ratio) / PRECISION_FACTOR
         } else {
             let ratio = (requested_total * PRECISION_FACTOR) / offered_total;
-            (input_amount * PRECISION_FACTOR) / ratio
+            (fill_amount * PRECISION_FACTOR) / ratio
         }
     }
 
@@ -889,12 +894,12 @@ mod tests {
         assert_eq!(parsed.requested_asset_amount(), 500);
     }
 
-    /// Consumer supplies both an account fill and an inflight fill, and the sum is below
+    /// Consumer supplies both an account fill and a note fill, and the sum is below
     /// the requested amount → `execute` must combine them into a single payback note
-    /// carrying input+inflight of the requested asset and emit a remainder pswap note
-    /// for the unfilled portion.
+    /// carrying account_fill+note_fill of the requested asset and emit a remainder
+    /// pswap note for the unfilled portion.
     #[test]
-    fn pswap_execute_combined_input_and_inflight_partial_fill() {
+    fn pswap_execute_combined_account_fill_and_note_fill_partial_fill() {
         let creator_id = dummy_creator_id();
         let consumer_id = dummy_consumer_id();
         let offered_faucet = dummy_faucet_id(0xaa);
@@ -905,11 +910,12 @@ mod tests {
         let requested_asset = FungibleAsset::new(requested_faucet, 50).unwrap();
         let (pswap, _) = build_pswap_note(offered_asset, requested_asset, creator_id);
 
-        // Account fill = 10, inflight = 20 → total fill = 30 (< 50, so partial).
-        let input = FungibleAsset::new(requested_faucet, 10).unwrap();
-        let inflight = FungibleAsset::new(requested_faucet, 20).unwrap();
+        // Account fill = 10, note fill = 20 → total fill = 30 (< 50, so partial).
+        let account_fill = FungibleAsset::new(requested_faucet, 10).unwrap();
+        let note_fill = FungibleAsset::new(requested_faucet, 20).unwrap();
 
-        let (payback, remainder) = pswap.execute(consumer_id, Some(input), Some(inflight)).unwrap();
+        let (payback, remainder) =
+            pswap.execute(consumer_id, Some(account_fill), Some(note_fill)).unwrap();
 
         // Payback note must carry the combined 30 of requested asset.
         assert_eq!(payback.assets().num_assets(), 1);
@@ -929,11 +935,11 @@ mod tests {
         assert_eq!(remainder.storage().creator_account_id(), creator_id);
     }
 
-    /// Consumer supplies both an account fill and an inflight fill, and the sum exactly
+    /// Consumer supplies both an account fill and a note fill, and the sum exactly
     /// matches the requested amount → `execute` must produce a single payback note for
     /// the full amount and no remainder.
     #[test]
-    fn pswap_execute_combined_input_and_inflight_full_fill() {
+    fn pswap_execute_combined_account_fill_and_note_fill_full_fill() {
         let creator_id = dummy_creator_id();
         let consumer_id = dummy_consumer_id();
         let offered_faucet = dummy_faucet_id(0xaa);
@@ -943,11 +949,12 @@ mod tests {
         let requested_asset = FungibleAsset::new(requested_faucet, 50).unwrap();
         let (pswap, _) = build_pswap_note(offered_asset, requested_asset, creator_id);
 
-        // Account fill = 30, inflight = 20 → total fill = 50 (exactly requested).
-        let input = FungibleAsset::new(requested_faucet, 30).unwrap();
-        let inflight = FungibleAsset::new(requested_faucet, 20).unwrap();
+        // Account fill = 30, note fill = 20 → total fill = 50 (exactly requested).
+        let account_fill = FungibleAsset::new(requested_faucet, 30).unwrap();
+        let note_fill = FungibleAsset::new(requested_faucet, 20).unwrap();
 
-        let (payback, remainder) = pswap.execute(consumer_id, Some(input), Some(inflight)).unwrap();
+        let (payback, remainder) =
+            pswap.execute(consumer_id, Some(account_fill), Some(note_fill)).unwrap();
 
         // Payback note must carry the full 50 of requested asset.
         assert_eq!(payback.assets().num_assets(), 1);
