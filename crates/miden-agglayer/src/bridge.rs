@@ -154,9 +154,8 @@ impl AggLayerBridge {
 
     /// AggLayer-assigned network ID for this Miden chain.
     ///
-    /// The bridge account stores this using the same `u32` → felt encoding as
-    /// [`LeafData`](crate::LeafData) for `destination_network`
-    /// (`Felt::from(u32::from_le_bytes(n.to_be_bytes()))`).
+    /// The bridge account stores this using the same `u32` → felt encoding as [`LeafData`] for
+    /// `destination_network` (`Felt::from(u32::from_le_bytes(n.to_be_bytes()))`).
     pub const MIDEN_NETWORK_ID: u32 = 77;
 
     const REGISTERED_GER_MAP_VALUE: Word = Word::new([ONE, ZERO, ZERO, ZERO]);
