@@ -566,18 +566,47 @@ proc execute_pswap
     exec.sys::truncate_stack
 end
 
+#! Partially-fillable swap note script: exchanges a portion of the offered asset for a
+#! proportional amount of the requested asset, producing a P2ID payback note for the creator
+#! and, on partial fills, a remainder PSWAP note carrying the unfilled balance.
+#!
+#! The consumer specifies two fill amounts via `NOTE_ARGS`:
+#! - `account_fill_amount`: portion of the requested asset debited from the consumer's vault.
+#! - `note_fill_amount`:    portion of the requested asset sourced from another note in the
+#!                          same transaction (cross-swap / net-zero flow, no vault debit).
+#!
+#! At least one of the two must be non-zero. If both are zero — which is the default in
+#! network transactions where the executor does not provide note_args — the script falls back
+#! to a full fill (`account_fill_amount = requested`). If the consuming account is the note's
+#! creator, the script reclaims the offered asset back to the creator's vault instead.
+#!
+#! Requires that the account exposes:
+#! - `miden::standards::wallets::basic::receive_asset` procedure.
+#! - `miden::standards::wallets::basic::move_asset_to_note` procedure.
+#!
+#! Inputs:  [NOTE_ARGS]
+#! Outputs: []
+#!
+#! Where NOTE_ARGS = [account_fill_amount, note_fill_amount, 0, 0] (top of stack first).
+#!
+#! Note storage is assumed to be as follows (10 items at STORAGE_PTR):
+#! - [0]    requested_asset enable_callbacks flag
+#! - [1-2]  requested_asset faucet ID (suffix, prefix)
+#! - [3]    requested_asset amount
+#! - [4]    PSWAP note tag
+#! - [5]    payback note routing tag (targets the creator)
+#! - [6]    payback note type (0 = private, 1 = public)
+#! - [7]    swap count (incremented on each partial fill)
+#! - [8-9]  creator account ID (prefix, suffix)
+#!
+#! Panics if:
+#! - the number of note storage items is not `NUM_STORAGE_ITEMS`.
+#! - the note does not carry exactly one offered asset.
+#! - the total fill amount (account fill + note fill) exceeds the requested amount.
+#! - the account does not expose `receive_asset` / `move_asset_to_note`.
 @note_script
 pub proc main
-    # => [NOTE_ARGS]
-    # Stack (top to bottom): [account_fill_amount, note_fill_amount, 0, 0]
-    # account_fill_amount: debited from consumer's account vault
-    # note_fill_amount: added directly from another note in the same transaction (no vault debit)
-    # (Word[0] on top after mem_loadw_le in kernel prologue)
-    #
-    # In network transactions, note_args are not provided by the executor and default
-    # to [0, 0, 0, 0]. The script handles this by defaulting to a full fill.
-
-    # => [account_fill_amount, note_fill_amount, 0, 0]
+    # => [NOTE_ARGS = [account_fill_amount, note_fill_amount, 0, 0]]
     movdn.3 movdn.3 drop drop
     # => [account_fill_amount, note_fill_amount]
 
