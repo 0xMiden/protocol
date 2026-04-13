@@ -216,3 +216,34 @@ pub proc extract_attachment_info_from_metadata
     u32split swap
     # => [attachment_kind, attachment_scheme]
 end
+
+#! Extracts the note type from the provided metadata header.
+#!
+#! The note type is encoded as a single bit at the 4th position from the right side (LSB) of the
+#! first felt of the metadata header, where 0 = Private and 1 = Public.
+#!
+#! Inputs:  [METADATA_HEADER]
+#! Outputs: [note_type]
+#!
+#! Where:
+#! - METADATA_HEADER is the metadata of a note, laid out on the stack as
+#!   [sender_id_suffix_type_version, sender_id_prefix, tag, attachment_kind_scheme].
+#!   The first felt (sender_id_suffix_type_version) has the following bit layout:
+#!   [sender_id_suffix (56 bits) | reserved (3 bits) | note_type (1 bit) | version (4 bits)]
+#! - note_type is the type of the note (0 for private, 1 for public).
+#!
+#! Invocation: exec
+pub proc metadata_into_note_type
+
+    movdn.3 drop drop drop
+    # => [sender_id_suffix_type_version]
+
+    u32split swap drop
+    # => [lo32]
+
+    u32shr.4
+    # => [shifted]
+
+    u32and.1
+    # => [note_type]
+end
