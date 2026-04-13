@@ -420,7 +420,7 @@ pub const INPUT_NOTE_ASSETS_OFFSET: MemoryOffset = 44;
 // OUTPUT NOTES DATA
 // ------------------------------------------------------------------------------------------------
 // Output notes section contains data of all notes produced by a transaction. The section starts at
-// memory offset 16_777_216 with each note data laid out one after another in 256 word increments.
+// memory offset 16_777_216 with each note data laid out one after another in 1024 elements chunks.
 //
 //     ┌─────────────┬─────────────┬───────────────┬─────────────┐
 //     │ NOTE 0 DATA │ NOTE 1 DATA │      ...      │ NOTE n DATA │
