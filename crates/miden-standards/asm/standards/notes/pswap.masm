@@ -76,12 +76,6 @@ const ERR_PSWAP_FILL_EXCEEDS_REQUESTED="PSWAP fill amount exceeds requested amou
 @locals(1)
 # loc.0 = input amount
 proc calculate_tokens_offered_for_requested
-    # u64 convention: lo is on TOP after u32split
-    # u32split(a)          => [lo (top), hi]
-    # u64::wrapping_mul:   [b_lo, b_hi, a_lo, a_hi] => [c_lo, c_hi]   c = a*b
-    # u64::div:            [b_lo, b_hi, a_lo, a_hi] => [q_lo, q_hi]   q = a/b
-    # combine [lo, hi] => single Felt: swap push.MAX_U32 mul add
-
     movup.2 loc_store.0
     # => [offered, requested]
 
@@ -135,7 +129,7 @@ proc calculate_tokens_offered_for_requested
             exec.u64::div
             # => [result_lo, result_hi]
 
-            swap push.MAX_U32 mul add
+            swap mul.MAX_U32 add
             # => [result]
 
         else
@@ -166,7 +160,7 @@ proc calculate_tokens_offered_for_requested
             exec.u64::div
             # => [result_lo, result_hi]
 
-            swap push.MAX_U32 mul add
+            swap mul.MAX_U32 add
             # => [result]
 
         end

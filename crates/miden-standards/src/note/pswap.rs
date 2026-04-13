@@ -361,12 +361,6 @@ impl PswapNote {
         input_asset: Option<FungibleAsset>,
         inflight_asset: Option<FungibleAsset>,
     ) -> Result<(Note, Option<PswapNote>), NoteError> {
-        if input_asset.is_none() && inflight_asset.is_none() {
-            return Err(NoteError::other(
-                "at least one of input_asset or inflight_asset must be provided",
-            ));
-        }
-
         // Combine input and inflight into a single payback asset
         let input_amount = input_asset.as_ref().map_or(0, |a| a.amount());
         let inflight_amount = inflight_asset.as_ref().map_or(0, |a| a.amount());
@@ -375,7 +369,11 @@ impl PswapNote {
                 NoteError::other_with_source("failed to combine input and inflight assets", e)
             })?,
             (Some(asset), None) | (None, Some(asset)) => asset,
-            (None, None) => unreachable!("validated above"),
+            (None, None) => {
+                return Err(NoteError::other(
+                    "at least one of input_asset or inflight_asset must be provided",
+                ));
+            },
         };
         let fill_amount = payback_asset.amount();
 
