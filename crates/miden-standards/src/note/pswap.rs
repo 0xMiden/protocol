@@ -721,6 +721,15 @@ mod tests {
         )
     }
 
+    fn dummy_consumer_id() -> AccountId {
+        AccountId::dummy(
+            [2; 15],
+            AccountIdVersion::Version0,
+            AccountType::RegularAccountImmutableCode,
+            AccountStorageMode::Public,
+        )
+    }
+
     fn build_pswap_note(
         offered_asset: FungibleAsset,
         requested_asset: FungibleAsset,
@@ -878,5 +887,78 @@ mod tests {
         assert_eq!(parsed.creator_account_id(), creator_id);
         assert_eq!(parsed.swap_count(), 0);
         assert_eq!(parsed.requested_asset_amount(), 500);
+    }
+
+    /// Consumer supplies both an account fill and an inflight fill, and the sum is below
+    /// the requested amount → `execute` must combine them into a single payback note
+    /// carrying input+inflight of the requested asset and emit a remainder pswap note
+    /// for the unfilled portion.
+    #[test]
+    fn pswap_execute_combined_input_and_inflight_partial_fill() {
+        let creator_id = dummy_creator_id();
+        let consumer_id = dummy_consumer_id();
+        let offered_faucet = dummy_faucet_id(0xaa);
+        let requested_faucet = dummy_faucet_id(0xbb);
+
+        // Offer 100 offered, request 50 requested → 2:1 ratio.
+        let offered_asset = FungibleAsset::new(offered_faucet, 100).unwrap();
+        let requested_asset = FungibleAsset::new(requested_faucet, 50).unwrap();
+        let (pswap, _) = build_pswap_note(offered_asset, requested_asset, creator_id);
+
+        // Account fill = 10, inflight = 20 → total fill = 30 (< 50, so partial).
+        let input = FungibleAsset::new(requested_faucet, 10).unwrap();
+        let inflight = FungibleAsset::new(requested_faucet, 20).unwrap();
+
+        let (payback, remainder) = pswap.execute(consumer_id, Some(input), Some(inflight)).unwrap();
+
+        // Payback note must carry the combined 30 of requested asset.
+        assert_eq!(payback.assets().num_assets(), 1);
+        let payback_asset = payback.assets().iter().next().unwrap();
+        let Asset::Fungible(fa) = payback_asset else {
+            panic!("expected fungible payback asset");
+        };
+        assert_eq!(fa.faucet_id(), requested_faucet);
+        assert_eq!(fa.amount(), 30);
+
+        // Remainder must exist with the unfilled 50 - 30 = 20 of requested, and the
+        // offered amount reduced proportionally (100 - 30*2 = 40).
+        let remainder = remainder.expect("partial fill should produce remainder");
+        assert_eq!(remainder.storage().requested_asset_amount(), 20);
+        assert_eq!(remainder.offered_asset().amount(), 40);
+        assert_eq!(remainder.storage().swap_count(), 1);
+        assert_eq!(remainder.storage().creator_account_id(), creator_id);
+    }
+
+    /// Consumer supplies both an account fill and an inflight fill, and the sum exactly
+    /// matches the requested amount → `execute` must produce a single payback note for
+    /// the full amount and no remainder.
+    #[test]
+    fn pswap_execute_combined_input_and_inflight_full_fill() {
+        let creator_id = dummy_creator_id();
+        let consumer_id = dummy_consumer_id();
+        let offered_faucet = dummy_faucet_id(0xaa);
+        let requested_faucet = dummy_faucet_id(0xbb);
+
+        let offered_asset = FungibleAsset::new(offered_faucet, 100).unwrap();
+        let requested_asset = FungibleAsset::new(requested_faucet, 50).unwrap();
+        let (pswap, _) = build_pswap_note(offered_asset, requested_asset, creator_id);
+
+        // Account fill = 30, inflight = 20 → total fill = 50 (exactly requested).
+        let input = FungibleAsset::new(requested_faucet, 30).unwrap();
+        let inflight = FungibleAsset::new(requested_faucet, 20).unwrap();
+
+        let (payback, remainder) = pswap.execute(consumer_id, Some(input), Some(inflight)).unwrap();
+
+        // Payback note must carry the full 50 of requested asset.
+        assert_eq!(payback.assets().num_assets(), 1);
+        let payback_asset = payback.assets().iter().next().unwrap();
+        let Asset::Fungible(fa) = payback_asset else {
+            panic!("expected fungible payback asset");
+        };
+        assert_eq!(fa.faucet_id(), requested_faucet);
+        assert_eq!(fa.amount(), 50);
+
+        // Full fill → no remainder note.
+        assert!(remainder.is_none(), "full fill must not produce a remainder");
     }
 }
