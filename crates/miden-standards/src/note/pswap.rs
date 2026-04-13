@@ -43,7 +43,8 @@ static PSWAP_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 /// | `[3]` | Requested asset amount |
 /// | `[4]` | PSWAP note tag |
 /// | `[5]` | Payback note routing tag (targets the creator) |
-/// | `[6-7]` | Reserved (zero) |
+/// | `[6]` | Payback note type (0 = private, 1 = public) |
+/// | `[7]` | Reserved (zero) |
 /// | `[8]` | Swap count (incremented on each partial fill) |
 /// | `[9-11]` | Reserved (zero) |
 /// | `[12-13]` | Creator account ID (prefix, suffix) |
@@ -58,6 +59,14 @@ pub struct PswapNoteStorage {
     swap_count: u16,
 
     creator_account_id: AccountId,
+
+    /// Note type of the payback note produced when the pswap is filled. Defaults to
+    /// [`NoteType::Private`] because the payback carries the fill asset and is typically
+    /// consumed directly by the creator — a private note is cheaper in fees and bandwidth
+    /// and offers the same information (the fill amount is already recorded in the
+    /// executed transaction's output).
+    #[builder(default = NoteType::Private)]
+    payback_note_type: NoteType,
 }
 
 impl PswapNoteStorage {
@@ -109,6 +118,11 @@ impl PswapNoteStorage {
         self.creator_account_id
     }
 
+    /// Returns the [`NoteType`] used when creating the payback note.
+    pub fn payback_note_type(&self) -> NoteType {
+        self.payback_note_type
+    }
+
     /// Returns the faucet ID of the requested asset.
     pub fn requested_faucet_id(&self) -> AccountId {
         self.requested_asset.faucet_id()
@@ -133,8 +147,8 @@ impl From<PswapNoteStorage> for NoteStorage {
             // Tags [4-5]
             Felt::from(storage.pswap_tag),
             Felt::from(storage.payback_note_tag()),
-            // Padding [6-7]
-            ZERO,
+            // Payback note type [6] + reserved [7]
+            Felt::from(storage.payback_note_type.as_u8()),
             ZERO,
             // Swap count [8-11]
             Felt::from(storage.swap_count),
@@ -188,6 +202,13 @@ impl TryFrom<&[Felt]> for PswapNoteStorage {
             u32::try_from(note_storage[4].as_canonical_u64())
                 .map_err(|_| NoteError::other("pswap_tag exceeds u32"))?,
         );
+
+        let payback_note_type = NoteType::try_from(
+            u8::try_from(note_storage[6].as_canonical_u64())
+                .map_err(|_| NoteError::other("payback_note_type exceeds u8"))?,
+        )
+        .map_err(|e| NoteError::other_with_source("failed to parse payback note type", e))?;
+
         let swap_count: u16 = note_storage[8]
             .as_canonical_u64()
             .try_into()
@@ -203,6 +224,7 @@ impl TryFrom<&[Felt]> for PswapNoteStorage {
             pswap_tag,
             swap_count,
             creator_account_id,
+            payback_note_type,
         })
     }
 }
@@ -550,9 +572,10 @@ impl PswapNote {
         let attachment = NoteAttachment::new_word(NoteAttachmentScheme::none(), attachment_word);
 
         let p2id_assets = NoteAssets::new(vec![Asset::Fungible(payback_asset)])?;
-        let p2id_metadata = NoteMetadata::new(consumer_account_id, self.note_type)
-            .with_tag(payback_note_tag)
-            .with_attachment(attachment);
+        let p2id_metadata =
+            NoteMetadata::new(consumer_account_id, self.storage.payback_note_type)
+                .with_tag(payback_note_tag)
+                .with_attachment(attachment);
 
         Ok(Note::new(p2id_assets, p2id_metadata, recipient))
     }
@@ -581,6 +604,7 @@ impl PswapNote {
             .pswap_tag(self.storage.pswap_tag)
             .swap_count(next_swap_count)
             .creator_account_id(self.storage.creator_account_id)
+            .payback_note_type(self.storage.payback_note_type)
             .build();
 
         // Remainder serial: increment most significant element (matching MASM movup.3 add.1 movdn.3)
@@ -832,7 +856,7 @@ mod tests {
             Felt::try_from(requested_asset.amount()).unwrap(),
             Felt::from(0xc0000000u32), // pswap_tag
             Felt::from(0x80000001u32), // payback_note_tag
-            ZERO,
+            Felt::from(NoteType::Private.as_u8()), // payback_note_type
             ZERO,
             Felt::from(3u16), // swap_count
             ZERO,

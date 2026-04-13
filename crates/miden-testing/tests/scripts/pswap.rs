@@ -1124,6 +1124,7 @@ fn compare_pswap_create_output_notes_vs_test_helper() {
     let storage = PswapNoteStorage::builder()
         .requested_asset(requested_asset)
         .creator_account_id(alice.id())
+        .payback_note_type(NoteType::Public)
         .build();
     let pswap_note: Note = PswapNote::builder()
         .sender(alice.id())
