@@ -5,8 +5,16 @@ use miden_protocol::assembly::Path;
 use miden_protocol::asset::{Asset, AssetCallbackFlag, FungibleAsset};
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
-    Note, NoteAssets, NoteAttachment, NoteAttachmentScheme, NoteMetadata, NoteRecipient,
-    NoteScript, NoteStorage, NoteTag, NoteType,
+    Note,
+    NoteAssets,
+    NoteAttachment,
+    NoteAttachmentScheme,
+    NoteMetadata,
+    NoteRecipient,
+    NoteScript,
+    NoteStorage,
+    NoteTag,
+    NoteType,
 };
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, ONE, Word, ZERO};
@@ -176,20 +184,14 @@ impl TryFrom<&[Felt]> for PswapNoteStorage {
             u8::try_from(note_storage[0].as_canonical_u64())
                 .map_err(|_| NoteError::other("enable_callbacks exceeds u8"))?,
         )
-        .map_err(|e| {
-            NoteError::other_with_source("failed to parse asset callback flag", e)
-        })?;
+        .map_err(|e| NoteError::other_with_source("failed to parse asset callback flag", e))?;
 
-        let faucet_id =
-            AccountId::try_from_elements(note_storage[1], note_storage[2]).map_err(|e| {
-                NoteError::other_with_source("failed to parse requested faucet ID", e)
-            })?;
+        let faucet_id = AccountId::try_from_elements(note_storage[1], note_storage[2])
+            .map_err(|e| NoteError::other_with_source("failed to parse requested faucet ID", e))?;
 
         let amount = note_storage[3].as_canonical_u64();
         let requested_asset = FungibleAsset::new(faucet_id, amount)
-            .map_err(|e| {
-                NoteError::other_with_source("failed to create requested asset", e)
-            })?
+            .map_err(|e| NoteError::other_with_source("failed to create requested asset", e))?
             .with_callbacks(callbacks);
 
         let pswap_tag = NoteTag::new(
@@ -209,9 +211,7 @@ impl TryFrom<&[Felt]> for PswapNoteStorage {
             .map_err(|_| NoteError::other("swap_count exceeds u16"))?;
 
         let creator_account_id = AccountId::try_from_elements(note_storage[9], note_storage[8])
-            .map_err(|e| {
-            NoteError::other_with_source("failed to parse creator account ID", e)
-        })?;
+            .map_err(|e| NoteError::other_with_source("failed to parse creator account ID", e))?;
 
         Ok(Self {
             requested_asset,
@@ -379,14 +379,12 @@ impl PswapNote {
     ) -> Result<(Note, Option<PswapNote>), NoteError> {
         // Combine account fill and note fill into a single payback asset.
         let payback_asset = match (account_fill_asset, note_fill_asset) {
-            (Some(account_fill), Some(note_fill)) => {
-                account_fill.add(note_fill).map_err(|e| {
-                    NoteError::other_with_source(
-                        "failed to combine account fill and note fill assets",
-                        e,
-                    )
-                })?
-            },
+            (Some(account_fill), Some(note_fill)) => account_fill.add(note_fill).map_err(|e| {
+                NoteError::other_with_source(
+                    "failed to combine account fill and note fill assets",
+                    e,
+                )
+            })?,
             (Some(asset), None) | (None, Some(asset)) => asset,
             (None, None) => {
                 return Err(NoteError::other(
@@ -514,11 +512,11 @@ impl PswapNote {
     /// calculation. Returns the full `offered_total` when `fill_amount == requested_total`.
     ///
     /// The formula is implemented in two branches to maximize precision:
-    /// - When `offered > requested`: the ratio `offered/requested` is >= 1, so we compute
-    ///   `(offered * FACTOR / requested) * fill_amount / FACTOR` to avoid losing the fractional part.
+    /// - When `offered > requested`: the ratio `offered/requested` is >= 1, so we compute `(offered
+    ///   * FACTOR / requested) * fill_amount / FACTOR` to avoid losing the fractional part.
     /// - When `requested >= offered`: the ratio `offered/requested` is < 1, so computing it
-    ///   directly would truncate to zero. Instead we compute the inverse ratio
-    ///   `(requested * FACTOR / offered)` and divide: `(fill_amount * FACTOR) / inverse_ratio`.
+    ///   directly would truncate to zero. Instead we compute the inverse ratio `(requested * FACTOR
+    ///   / offered)` and divide: `(fill_amount * FACTOR) / inverse_ratio`.
     fn calculate_output_amount(offered_total: u64, requested_total: u64, fill_amount: u64) -> u64 {
         const PRECISION_FACTOR: u64 = 100_000;
 
@@ -571,10 +569,9 @@ impl PswapNote {
         let attachment = NoteAttachment::new_word(NoteAttachmentScheme::none(), attachment_word);
 
         let p2id_assets = NoteAssets::new(vec![Asset::Fungible(payback_asset)])?;
-        let p2id_metadata =
-            NoteMetadata::new(consumer_account_id, self.storage.payback_note_type)
-                .with_tag(payback_note_tag)
-                .with_attachment(attachment);
+        let p2id_metadata = NoteMetadata::new(consumer_account_id, self.storage.payback_note_type)
+            .with_tag(payback_note_tag)
+            .with_attachment(attachment);
 
         Ok(Note::new(p2id_assets, p2id_metadata, recipient))
     }
@@ -606,7 +603,8 @@ impl PswapNote {
             .payback_note_type(self.storage.payback_note_type)
             .build();
 
-        // Remainder serial: increment most significant element (matching MASM movup.3 add.1 movdn.3)
+        // Remainder serial: increment most significant element (matching MASM movup.3 add.1
+        // movdn.3)
         let remainder_serial_num = Word::from([
             self.serial_number[0],
             self.serial_number[1],
@@ -862,10 +860,10 @@ mod tests {
             requested_asset.faucet_id().suffix(),
             requested_asset.faucet_id().prefix().as_felt(),
             Felt::try_from(requested_asset.amount()).unwrap(),
-            Felt::from(0xc0000000u32), // pswap_tag
-            Felt::from(0x80000001u32), // payback_note_tag
+            Felt::from(0xc0000000u32),             // pswap_tag
+            Felt::from(0x80000001u32),             // payback_note_tag
             Felt::from(NoteType::Private.as_u8()), // payback_note_type
-            Felt::from(3u16), // swap_count
+            Felt::from(3u16),                      // swap_count
             creator_id.prefix().as_felt(),
             creator_id.suffix(),
         ];

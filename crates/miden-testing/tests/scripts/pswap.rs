@@ -212,7 +212,8 @@ async fn pswap_note_alice_reconstructs_and_consumes_p2id() -> anyhow::Result<()>
 /// Parameterized fill test covering:
 /// - full public fill
 /// - full private fill
-/// - partial public fill (offered=50 USDC / requested=25 ETH / fill=20 ETH → payout=40 USDC, remainder=10 USDC)
+/// - partial public fill (offered=50 USDC / requested=25 ETH / fill=20 ETH → payout=40 USDC,
+///   remainder=10 USDC)
 /// - full fill via a network account (no note_args → script defaults to full fill)
 #[rstest]
 #[case::full_public(25, NoteType::Public, false)]
