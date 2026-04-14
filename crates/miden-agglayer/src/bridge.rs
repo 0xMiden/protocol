@@ -70,6 +70,10 @@ static TOKEN_REGISTRY_MAP_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|
     StorageSlotName::new("agglayer::bridge::token_registry_map")
         .expect("token registry map storage slot name should be valid")
 });
+static PAUSED_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("agglayer::bridge::paused")
+        .expect("paused storage slot name should be valid")
+});
 
 // bridge in
 // ------------------------------------------------------------------------------------------------
@@ -113,6 +117,7 @@ static LET_NUM_LEAVES_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// component, the `agglayer` library must be available to the assembler.
 /// The procedures of this component are:
 /// - `register_faucet`, which registers a faucet in the bridge.
+/// - `set_emergency_paused`, which sets or clears the emergency pause flag.
 /// - `update_ger`, which injects a new GER into the storage map.
 /// - `bridge_out`, which bridges an asset out of Miden to the destination network.
 /// - `claim`, which validates a claim against the AggLayer bridge and creates a MINT note for the
@@ -133,6 +138,7 @@ static LET_NUM_LEAVES_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// - [`Self::let_root_lo_slot_name`]: Stores the lower 32 bits of the LET root.
 /// - [`Self::let_root_hi_slot_name`]: Stores the upper 32 bits of the LET root.
 /// - [`Self::let_num_leaves_slot_name`]: Stores the number of leaves in the LET frontier.
+/// - [`Self::paused_slot_name`]: Stores the emergency pause flag (0 = active, 1 = paused).
 ///
 /// The bridge starts with an empty faucet registry; faucets are registered at runtime via
 /// CONFIG_AGG_BRIDGE notes.
@@ -184,6 +190,11 @@ impl AggLayerBridge {
     /// Storage slot name for the token registry map.
     pub fn token_registry_map_slot_name() -> &'static StorageSlotName {
         &TOKEN_REGISTRY_MAP_SLOT_NAME
+    }
+
+    /// Storage slot name for the emergency pause flag.
+    pub fn paused_slot_name() -> &'static StorageSlotName {
+        &PAUSED_SLOT_NAME
     }
 
     // --- bridge in --------
@@ -304,6 +315,21 @@ impl AggLayerBridge {
         value.to_vec()[0].as_canonical_u64()
     }
 
+    /// Returns whether the bridge is currently paused.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - the provided account is not an [`AggLayerBridge`] account.
+    pub fn is_paused(bridge_account: &Account) -> Result<bool, AgglayerBridgeError> {
+        Self::assert_bridge_account(bridge_account)?;
+        let value = bridge_account
+            .storage()
+            .get_item(AggLayerBridge::paused_slot_name())
+            .expect("should be able to read paused slot");
+        Ok(value.to_vec()[0] != ZERO)
+    }
+
     /// Returns the claimed global index (CGI) chain hash from the corresponding storage slot.
     ///
     /// # Errors
@@ -417,6 +443,7 @@ impl AggLayerBridge {
             &*CGI_CHAIN_HASH_LO_SLOT_NAME,
             &*CGI_CHAIN_HASH_HI_SLOT_NAME,
             &*CLAIM_NULLIFIERS_SLOT_NAME,
+            &*PAUSED_SLOT_NAME,
         ]
     }
 }
@@ -439,6 +466,7 @@ impl From<AggLayerBridge> for AccountComponent {
             StorageSlot::with_value(CGI_CHAIN_HASH_LO_SLOT_NAME.clone(), Word::empty()),
             StorageSlot::with_value(CGI_CHAIN_HASH_HI_SLOT_NAME.clone(), Word::empty()),
             StorageSlot::with_empty_map(CLAIM_NULLIFIERS_SLOT_NAME.clone()),
+            StorageSlot::with_value(PAUSED_SLOT_NAME.clone(), Word::empty()),
         ];
         bridge_component(bridge_storage_slots)
     }
