@@ -245,7 +245,7 @@ fn parse_numeric_constants_from_constants_masm(masm_path: &Path) -> Result<Vec<(
     for caps in re.captures_iter(&contents) {
         let name = caps.get(1).expect("group 1").as_str();
 
-        // Require each identifier at most once so generated `AGGLAYER_*` Rust names are unique.
+        // Require each identifier at most once so generated Rust names are unique.
         if !seen.insert(name.to_string()) {
             return Err(Report::msg(format!(
                 "duplicate `const {name}` in {}",
