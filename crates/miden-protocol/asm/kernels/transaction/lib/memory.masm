@@ -190,6 +190,7 @@ const MAX_FOREIGN_ACCOUNT_PTR=524288
 const NATIVE_ACCOUNT_DATA_PTR=8192
 const NATIVE_ACCOUNT_ID_SUFFIX_PTR = NATIVE_ACCOUNT_DATA_PTR + ACCT_ID_SUFFIX_OFFSET
 const NATIVE_ACCOUNT_ID_PREFIX_PTR = NATIVE_ACCOUNT_DATA_PTR + ACCT_ID_PREFIX_OFFSET
+const NATIVE_ACCOUNT_NUM_STORAGE_SLOTS_PTR = NATIVE_ACCOUNT_DATA_PTR + ACCT_NUM_STORAGE_SLOTS_OFFSET
 
 # The length of the memory interval that the account data occupies.
 const ACCOUNT_DATA_LENGTH=8192
@@ -1421,6 +1422,17 @@ end
 pub proc get_num_storage_slots
     exec.get_active_account_data_ptr add.ACCT_NUM_STORAGE_SLOTS_OFFSET
     mem_load
+end
+
+#! Returns the number of storage slots contained in the native account's storage.
+#!
+#! Inputs:  []
+#! Outputs: [num_storage_slots]
+#!
+#! Where:
+#! - num_storage_slots is the number of storage slots contained in the native account's storage.
+pub proc get_native_num_storage_slots
+    mem_load.NATIVE_ACCOUNT_NUM_STORAGE_SLOTS_PTR
 end
 
 #! Sets the number of storage slots contained in the account storage.

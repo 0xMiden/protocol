@@ -103,7 +103,7 @@ end
 #! Inputs:  [RATE0, RATE1, CAPACITY]
 #! Outputs: [RATE0, RATE1, CAPACITY]
 proc update_storage_delta
-    exec.memory::get_num_storage_slots movdn.12
+    exec.memory::get_native_num_storage_slots movdn.12
     # => [RATE0, RATE1, CAPACITY, num_storage_slots]
 
     push.0 movdn.12
