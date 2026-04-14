@@ -1,34 +1,57 @@
-use miden::protocol::active_note
-use miden::protocol::output_note
-use miden::protocol::note
-use miden::standards::wallets::basic->wallet
-use miden::core::sys
-use miden::protocol::active_account
-use miden::protocol::account_id
 use miden::core::math::u64
+use miden::core::sys
+use miden::protocol::account_id
+use miden::protocol::active_account
+use miden::protocol::active_note
 use miden::protocol::asset
+use miden::protocol::note
+use miden::protocol::output_note
 use miden::standards::notes::p2id
+use miden::standards::wallets::basic->wallet
 
 # CONSTANTS
 # =================================================================================================
 
 const NUM_STORAGE_ITEMS=10
-const FACTOR=0x000186A0 # 1e5
+
+# Fixed-point scaling factor (1e5) used by calculate_tokens_offered_for_requested
+# to approximate the offered/requested ratio with u64 integer math.
+#
+# Precision: ~5 decimal digits on the ratio; rounding is always toward zero
+# (integer division), so a filler never receives more than proportional.
+#
+# Overflow headroom: the hottest intermediate is `offered * FACTOR` (and
+# symmetrically `requested * FACTOR`, `fill_amount * FACTOR`), which must fit
+# in u64. With FACTOR = 100000 that caps each side at ~1.8e14 (2^64 / 1e5),
+# well above any realistic fungible-asset amount.
+const FACTOR=100000 
 const MAX_U32=0x0000000100000000
 
-# Memory Addresses
-# =================================================================================================
-
-# Global Memory Address Layout:
-# - PSWAP Note Storage: addresses 0x0000 - 0x0009 (loaded from note storage)
+# Note storage layout (10 felts, loaded at STORAGE_PTR by get_storage):
+# - requested_enable_callbacks [0]  : 1 felt
+# - requested_faucet_suffix    [1]  : 1 felt
+# - requested_faucet_prefix    [2]  : 1 felt
+# - requested_amount           [3]  : 1 felt
+# - pswap_tag                  [4]  : 1 felt
+# - p2id_tag                   [5]  : 1 felt
+# - payback_note_type          [6]  : 1 felt
+# - pswap_count                [7]  : 1 felt
+# - creator_id_prefix          [8]  : 1 felt
+# - creator_id_suffix          [9]  : 1 felt
 #
-# Procedure-local values use @locals instead of global memory:
-# - execute_pswap: @locals(10) for offered asset info and calculation intermediates
-# - calculate_tokens_offered_for_requested: @locals(1) for fill amount
-
-# PSWAP Note Storage (10 items loaded at STORAGE_PTR)
-# Requested asset is stored as individual felts (fungible assets only):
-#   [enable_callbacks, faucet_id_suffix, faucet_id_prefix, requested_amount]
+# Where:
+# - requested_enable_callbacks: Callback-enabled flag for the requested fungible asset
+#   (FungibleAsset::callbacks() as u8)
+# - requested_faucet_suffix: Suffix of the requested asset's faucet AccountId (Felt)
+# - requested_faucet_prefix: Prefix of the requested asset's faucet AccountId
+#   (AccountIdPrefix as Felt)
+# - requested_amount: Amount of the requested fungible asset (Felt)
+# - pswap_tag: The NoteTag for remainder PSWAP notes, derived from the offered/requested asset pair
+# - p2id_tag: The NoteTag for P2ID payback notes, derived from the creator's account ID
+# - payback_note_type: The NoteType propagated to the P2ID payback and remainder PSWAP notes
+# - pswap_count: Number of times this note has been partially filled and re-created
+# - creator_id_prefix: The prefix of the creator's AccountId (AccountIdPrefix as Felt)
+# - creator_id_suffix: The suffix of the creator's AccountId (Felt)
 const STORAGE_PTR = 0
 const REQUESTED_ENABLE_CALLBACKS_ITEM = STORAGE_PTR
 const REQUESTED_FAUCET_SUFFIX_ITEM = STORAGE_PTR + 1
@@ -41,16 +64,45 @@ const PSWAP_COUNT_ITEM = STORAGE_PTR + 7
 const PSWAP_CREATOR_PREFIX_ITEM = STORAGE_PTR + 8
 const PSWAP_CREATOR_SUFFIX_ITEM = STORAGE_PTR + 9
 
+# Local memory offsets
+# -------------------------------------------------------------------------------------------------
+
+# calculate_tokens_offered_for_requested locals
+const CALC_FILL_AMOUNT = 0
+
+# create_p2id_note locals
+const P2ID_NOTE_IDX = 0
+const P2ID_REQUESTED_ENABLE_CB = 1
+const P2ID_REQUESTED_FAUCET_SUFFIX = 2
+const P2ID_REQUESTED_FAUCET_PREFIX = 3
+const P2ID_AMT_ACCOUNT_FILL = 4
+const P2ID_AMT_NOTE_FILL = 5
+
+# create_remainder_note locals
+const REMAINDER_NOTE_IDX = 0
+const REMAINDER_OFFERED_FAUCET_PREFIX = 1
+const REMAINDER_OFFERED_FAUCET_SUFFIX = 2
+const REMAINDER_OFFERED_ENABLE_CB = 3
+const REMAINDER_AMT_PAYOUT = 4
+const REMAINDER_AMT_OFFERED = 5
+
+# execute_pswap locals
+const EXEC_AMT_OFFERED = 0
+const EXEC_AMT_REQUESTED = 1
+const EXEC_AMT_PAYOUT_TOTAL = 2
+const EXEC_AMT_PAYOUT_ACCOUNT_FILL = 3
+const EXEC_AMT_PAYOUT_NOTE_FILL = 4
+const EXEC_OFFERED_ENABLE_CB = 5
+const EXEC_OFFERED_FAUCET_SUFFIX = 6
+const EXEC_OFFERED_FAUCET_PREFIX = 7
+const EXEC_AMT_REQUESTED_ACCOUNT_FILL = 8
+const EXEC_AMT_REQUESTED_NOTE_FILL = 9
+
 # ERRORS
 # =================================================================================================
 
-# PSWAP script expects exactly 10 note storage items
 const ERR_PSWAP_WRONG_NUMBER_OF_STORAGE_ITEMS="PSWAP script expects exactly 10 note storage items"
-
-# PSWAP script requires exactly one note asset
 const ERR_PSWAP_WRONG_NUMBER_OF_ASSETS="PSWAP script requires exactly one note asset"
-
-# PSWAP fill amount (account fill + note fill) exceeds the total requested amount
 const ERR_PSWAP_FILL_EXCEEDS_REQUESTED="PSWAP fill amount exceeds requested amount"
 
 # PRICE CALCULATION
@@ -70,15 +122,15 @@ const ERR_PSWAP_FILL_EXCEEDS_REQUESTED="PSWAP fill amount exceeds requested amou
 #! Outputs: [payout_amount]
 #!
 @locals(1)
-# loc.0 = fill amount
+# CALC_FILL_AMOUNT: fill amount
 proc calculate_tokens_offered_for_requested
-    movup.2 loc_store.0
+    movup.2 loc_store.CALC_FILL_AMOUNT
     # => [offered, requested]
 
     # Early return: if fill_amount == requested (full fill), return offered directly.
     # This avoids precision loss from integer division with the FACTOR.
-    dup.1 loc_load.0 eq
-    # => [requested == fill_amount, offered, requested]
+    dup.1 loc_load.CALC_FILL_AMOUNT eq
+    # => [is_full_fill, offered, requested]
 
     if.true
         # Full fill: consumer provides all requested, gets all offered
@@ -90,8 +142,7 @@ proc calculate_tokens_offered_for_requested
         # => [offered, requested, offered, requested]
 
         gt
-        # gt pops [b=offered, a=requested], pushes (a > b) i.e. (requested > offered)
-        # => [requested > offered, offered, requested]
+        # => [requested_exceeds_offered, offered, requested]
 
         if.true
             # Case: requested > offered
@@ -113,7 +164,7 @@ proc calculate_tokens_offered_for_requested
             exec.u64::div
             # => [ratio_lo, ratio_hi]
 
-            loc_load.0 u32split push.FACTOR u32split
+            loc_load.CALC_FILL_AMOUNT u32split push.FACTOR u32split
             # => [F_lo, F_hi, in_lo, in_hi, ratio_lo, ratio_hi]
 
             exec.u64::wrapping_mul
@@ -144,7 +195,7 @@ proc calculate_tokens_offered_for_requested
             exec.u64::div
             # => [ratio_lo, ratio_hi]
 
-            loc_load.0 u32split
+            loc_load.CALC_FILL_AMOUNT u32split
             # => [in_lo, in_hi, ratio_lo, ratio_hi]
 
             exec.u64::wrapping_mul
@@ -158,10 +209,10 @@ proc calculate_tokens_offered_for_requested
 
             swap mul.MAX_U32 add
             # => [result]
-
         end
-
+        # => [result]
     end
+    # => [payout_amount]
 end
 
 # P2ID NOTE CREATION PROCEDURE
@@ -179,12 +230,12 @@ end
 #! Outputs: []
 #!
 @locals(6)
-# loc.0 = note_idx
-# loc.1 = enable_callbacks
-# loc.2 = faucet_suffix
-# loc.3 = faucet_prefix
-# loc.4 = amt_account_fill
-# loc.5 = amt_note_fill
+# P2ID_NOTE_IDX              : note_idx
+# P2ID_REQUESTED_ENABLE_CB   : enable_callbacks
+# P2ID_REQUESTED_FAUCET_SUFFIX : faucet_suffix
+# P2ID_REQUESTED_FAUCET_PREFIX : faucet_prefix
+# P2ID_AMT_ACCOUNT_FILL      : amt_account_fill
+# P2ID_AMT_NOTE_FILL         : amt_note_fill
 proc create_p2id_note
     # Derive P2ID serial: increment least significant element
     movup.4 add.1 movdn.4
@@ -194,33 +245,40 @@ proc create_p2id_note
     exec.p2id::new
     # => [note_idx, enable_callbacks, faucet_suffix, faucet_prefix, amt_account_fill, amt_note_fill]
 
-    loc_store.0 loc_store.1 loc_store.2 loc_store.3 loc_store.4 loc_store.5
+    loc_store.P2ID_NOTE_IDX
+    loc_store.P2ID_REQUESTED_ENABLE_CB
+    loc_store.P2ID_REQUESTED_FAUCET_SUFFIX
+    loc_store.P2ID_REQUESTED_FAUCET_PREFIX
+    loc_store.P2ID_AMT_ACCOUNT_FILL
+    loc_store.P2ID_AMT_NOTE_FILL
     # => []
 
     # Set attachment: aux = amt_account_fill + amt_note_fill
     # attachment_scheme = 0 (NoteAttachmentScheme::none)
-    loc_load.4 loc_load.5 add
+    loc_load.P2ID_AMT_ACCOUNT_FILL loc_load.P2ID_AMT_NOTE_FILL add
     # => [total_fill]
     push.0.0.0
     # => [0, 0, 0, total_fill]
-    push.0 loc_load.0
+    push.0 loc_load.P2ID_NOTE_IDX
     # => [note_idx, attachment_scheme=0, 0, 0, 0, total_fill]
 
     exec.output_note::set_word_attachment
     # => []
 
     # Move account_fill_amount from consumer's vault to P2ID note (if > 0)
-    loc_load.4 push.0 gt
-    # => [amt > 0]
+    loc_load.P2ID_AMT_ACCOUNT_FILL push.0 gt
+    # => [has_account_fill]
     if.true
         # Build 16-element call frame: [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
-        padw push.0.0.0 loc_load.0
+        padw push.0.0.0 loc_load.P2ID_NOTE_IDX
         # => [note_idx, pad(7)]
 
-        push.0.0.0 loc_load.4
+        push.0.0.0 loc_load.P2ID_AMT_ACCOUNT_FILL
         # => [amt_account_fill, 0, 0, 0, note_idx, pad(7)]
 
-        loc_load.3 loc_load.2 loc_load.1
+        loc_load.P2ID_REQUESTED_FAUCET_PREFIX
+        loc_load.P2ID_REQUESTED_FAUCET_SUFFIX
+        loc_load.P2ID_REQUESTED_ENABLE_CB
         # => [enable_cb, faucet_suffix, faucet_prefix, amt_account_fill, 0, 0, 0, note_idx, pad(7)]
 
         exec.asset::create_fungible_asset
@@ -232,15 +290,19 @@ proc create_p2id_note
         dropw dropw dropw dropw
         # => []
     end
+    # => []
 
     # Add note_fill_amount directly to P2ID note (no vault debit, if > 0)
-    loc_load.5 push.0 gt
-    # => [amt > 0]
+    loc_load.P2ID_AMT_NOTE_FILL push.0 gt
+    # => [has_note_fill]
     if.true
-        loc_load.0
+        loc_load.P2ID_NOTE_IDX
         # => [note_idx]
 
-        loc_load.5 loc_load.3 loc_load.2 loc_load.1
+        loc_load.P2ID_AMT_NOTE_FILL
+        loc_load.P2ID_REQUESTED_FAUCET_PREFIX
+        loc_load.P2ID_REQUESTED_FAUCET_SUFFIX
+        loc_load.P2ID_REQUESTED_ENABLE_CB
         # => [enable_cb, faucet_suffix, faucet_prefix, amt_note_fill, note_idx]
 
         exec.asset::create_fungible_asset
@@ -249,6 +311,7 @@ proc create_p2id_note
         exec.output_note::add_asset
         # => []
     end
+    # => []
 end
 
 # REMAINDER NOTE CREATION PROCEDURE
@@ -267,19 +330,19 @@ end
 #! Outputs: []
 #!
 @locals(6)
-# loc.0 = note_idx
-# loc.1 = offered_faucet_prefix
-# loc.2 = offered_faucet_suffix
-# loc.3 = offered_enable_cb
-# loc.4 = amt_payout
-# loc.5 = amt_offered
+# REMAINDER_NOTE_IDX              : note_idx
+# REMAINDER_OFFERED_FAUCET_PREFIX : offered_faucet_prefix
+# REMAINDER_OFFERED_FAUCET_SUFFIX : offered_faucet_suffix
+# REMAINDER_OFFERED_ENABLE_CB     : offered_enable_cb
+# REMAINDER_AMT_PAYOUT            : amt_payout
+# REMAINDER_AMT_OFFERED           : amt_offered
 proc create_remainder_note
-    # => [offered_faucet_prefix, offered_faucet_suffix, offered_enable_cb,
-    #     amt_payout, amt_offered,
-    #     remaining_requested, note_type, tag]
-
     # Store offered asset info to locals (top element stored first)
-    loc_store.1 loc_store.2 loc_store.3 loc_store.4 loc_store.5
+    loc_store.REMAINDER_OFFERED_FAUCET_PREFIX
+    loc_store.REMAINDER_OFFERED_FAUCET_SUFFIX
+    loc_store.REMAINDER_OFFERED_ENABLE_CB
+    loc_store.REMAINDER_AMT_PAYOUT
+    loc_store.REMAINDER_AMT_OFFERED
     # => [remaining_requested, note_type, tag]
 
     # Update note storage with new requested amount (needed by build_recipient)
@@ -299,8 +362,8 @@ proc create_remainder_note
     # => [s0, s1, s2, s3+1, SCRIPT_ROOT, note_type, tag]
 
     # Build recipient from all note storage items (now with updated requested amount)
-    push.NUM_STORAGE_ITEMS.0
-    # => [storage_ptr=0, num_storage_items, SERIAL_NUM', SCRIPT_ROOT, note_type, tag]
+    push.NUM_STORAGE_ITEMS push.STORAGE_PTR
+    # => [storage_ptr, num_storage_items, SERIAL_NUM', SCRIPT_ROOT, note_type, tag]
 
     exec.note::build_recipient
     # => [RECIPIENT, note_type, tag]
@@ -311,26 +374,28 @@ proc create_remainder_note
     exec.output_note::create
     # => [note_idx]
 
-    loc_store.0
+    loc_store.REMAINDER_NOTE_IDX
     # => []
 
     # Set attachment: aux = amt_payout
-    loc_load.4 push.0.0.0
+    loc_load.REMAINDER_AMT_PAYOUT push.0.0.0
     # => [0, 0, 0, amt_payout]
-    push.0 loc_load.0
+    push.0 loc_load.REMAINDER_NOTE_IDX
     # => [note_idx, attachment_scheme=0, ATTACHMENT]
 
     exec.output_note::set_word_attachment
     # => []
 
     # Add remaining offered asset: remainder_amount = amt_offered - amt_payout
-    loc_load.0
+    loc_load.REMAINDER_NOTE_IDX
     # => [note_idx]
 
-    loc_load.5 loc_load.4 sub
+    loc_load.REMAINDER_AMT_OFFERED loc_load.REMAINDER_AMT_PAYOUT sub
     # => [remainder_amount, note_idx]
 
-    loc_load.1 loc_load.2 loc_load.3
+    loc_load.REMAINDER_OFFERED_FAUCET_PREFIX
+    loc_load.REMAINDER_OFFERED_FAUCET_SUFFIX
+    loc_load.REMAINDER_OFFERED_ENABLE_CB
     # => [offered_enable_cb, offered_faucet_suffix, offered_faucet_prefix, remainder_amount, note_idx]
 
     exec.asset::create_fungible_asset
@@ -397,22 +462,31 @@ end
 #! Sends offered tokens to consumer, requested tokens to creator via P2ID,
 #! and creates a remainder note if partially filled.
 #!
+#! The total fill (account fill + note fill) must not exceed the requested amount:
+#! overfilling is disallowed because the consumer would lose the excess tokens with
+#! no change returned, and it is almost always unintentional.
+#!
+#! Account fill and note fill payouts are computed separately (rather than summing
+#! first) because the account fill portion must be credited to the consumer's vault
+#! on its own, while the combined total is needed to size the remainder note.
+#!
 #! Inputs: [account_fill_amount, note_fill_amount]
 #! Outputs: []
 #!
 @locals(10)
-# loc.0 = amt_offered
-# loc.1 = amt_requested
-# loc.2 = amt_payout (total)
-# loc.3 = amt_payout_account_fill
-# loc.4 = amt_payout_note_fill
-# loc.5 = offered_enable_cb
-# loc.6 = offered_faucet_suffix
-# loc.7 = offered_faucet_prefix
-# loc.8 = amt_requested_account_fill
-# loc.9 = amt_requested_note_fill
+# EXEC_AMT_OFFERED                : amt_offered
+# EXEC_AMT_REQUESTED              : amt_requested
+# EXEC_AMT_PAYOUT_TOTAL           : amt_payout (total)
+# EXEC_AMT_PAYOUT_ACCOUNT_FILL    : amt_payout_account_fill
+# EXEC_AMT_PAYOUT_NOTE_FILL       : amt_payout_note_fill
+# EXEC_OFFERED_ENABLE_CB          : offered_enable_cb
+# EXEC_OFFERED_FAUCET_SUFFIX      : offered_faucet_suffix
+# EXEC_OFFERED_FAUCET_PREFIX      : offered_faucet_prefix
+# EXEC_AMT_REQUESTED_ACCOUNT_FILL : amt_requested_account_fill
+# EXEC_AMT_REQUESTED_NOTE_FILL    : amt_requested_note_fill
 proc execute_pswap
-    loc_store.8 loc_store.9
+    loc_store.EXEC_AMT_REQUESTED_ACCOUNT_FILL
+    loc_store.EXEC_AMT_REQUESTED_NOTE_FILL
     # => []
 
     exec.load_offered_asset
@@ -422,71 +496,63 @@ proc execute_pswap
     exec.asset::fungible_to_amount
     # => [amount, ASSET_KEY, ASSET_VALUE]
 
-    loc_store.0
+    loc_store.EXEC_AMT_OFFERED
     # => [ASSET_KEY, ASSET_VALUE]
 
     # Extract and store offered faucet info from ASSET_KEY
-    exec.asset::key_to_callbacks_enabled loc_store.5
+    exec.asset::key_to_callbacks_enabled loc_store.EXEC_OFFERED_ENABLE_CB
     # => [ASSET_KEY, ASSET_VALUE]
     exec.asset::key_into_faucet_id
     # => [faucet_id_suffix, faucet_id_prefix, ASSET_VALUE]
-    loc_store.6 loc_store.7
+    loc_store.EXEC_OFFERED_FAUCET_SUFFIX loc_store.EXEC_OFFERED_FAUCET_PREFIX
     # => [ASSET_VALUE]
     dropw
     # => []
 
     # Read requested amount directly from note storage
     mem_load.REQUESTED_AMOUNT_ITEM
-    loc_store.1
+    loc_store.EXEC_AMT_REQUESTED
     # => []
 
-    # Validate: fill amount (account fill + note fill) must not exceed total requested.
-    # Overfilling is not allowed because it is likely due to an error and mostly
-    # unintentional — the consumer would lose the excess tokens with no change returned.
-    loc_load.8 loc_load.9 add
-    loc_load.1
+    # Assert (account_fill + note_fill) <= requested
+    loc_load.EXEC_AMT_REQUESTED_ACCOUNT_FILL loc_load.EXEC_AMT_REQUESTED_NOTE_FILL add
+    loc_load.EXEC_AMT_REQUESTED
     # => [requested, fill_amount]
-    # lte pops [b=requested, a=fill_amount] and pushes (fill_amount <= requested)
     lte assert.err=ERR_PSWAP_FILL_EXCEEDS_REQUESTED
     # => []
 
-    # Calculate payout_amount for account fill and note fill amounts separately rather than
-    # summing them first, because the account fill portion must be sent
-    # to the consumer's vault individually, while the total (account fill + note fill) is
-    # needed to determine the remainder note's offered amount.
-    #
-    # Calculate payout_amount for account_fill_amount
-    loc_load.8
-    loc_load.1
-    loc_load.0
+    # Payout for account_fill_amount
+    loc_load.EXEC_AMT_REQUESTED_ACCOUNT_FILL
+    loc_load.EXEC_AMT_REQUESTED
+    loc_load.EXEC_AMT_OFFERED
     # => [offered, requested, account_fill_amount]
     exec.calculate_tokens_offered_for_requested
     # => [account_fill_payout]
 
-    loc_store.3
+    loc_store.EXEC_AMT_PAYOUT_ACCOUNT_FILL
     # => []
 
-    # Calculate payout_amount for note_fill_amount
-    loc_load.9
-    loc_load.1
-    loc_load.0
+    # Payout for note_fill_amount
+    loc_load.EXEC_AMT_REQUESTED_NOTE_FILL
+    loc_load.EXEC_AMT_REQUESTED
+    loc_load.EXEC_AMT_OFFERED
     # => [offered, requested, note_fill_amount]
 
     exec.calculate_tokens_offered_for_requested
     # => [note_fill_payout]
-    loc_store.4
+    loc_store.EXEC_AMT_PAYOUT_NOTE_FILL
     # => []
 
     # total_payout = account_fill_payout + note_fill_payout
-    loc_load.3 loc_load.4 add
+    loc_load.EXEC_AMT_PAYOUT_ACCOUNT_FILL loc_load.EXEC_AMT_PAYOUT_NOTE_FILL add
     # => [total_payout]
 
-    loc_store.2
+    loc_store.EXEC_AMT_PAYOUT_TOTAL
     # => []
 
     # Create P2ID note for creator
-    loc_load.9
-    loc_load.8
+    loc_load.EXEC_AMT_REQUESTED_NOTE_FILL
+    loc_load.EXEC_AMT_REQUESTED_ACCOUNT_FILL
     mem_load.REQUESTED_FAUCET_PREFIX_ITEM
     mem_load.REQUESTED_FAUCET_SUFFIX_ITEM
     mem_load.REQUESTED_ENABLE_CALLBACKS_ITEM
@@ -502,16 +568,16 @@ proc execute_pswap
     # => []
 
     # Consumer receives only account_fill_payout into vault (not the note_fill portion, if > 0)
-    loc_load.3 push.0 gt
-    # => [amt > 0]
+    loc_load.EXEC_AMT_PAYOUT_ACCOUNT_FILL push.0 gt
+    # => [has_account_fill_payout]
     if.true
         padw padw
         # => [pad(8)]
 
-        loc_load.3
-        loc_load.7
-        loc_load.6
-        loc_load.5
+        loc_load.EXEC_AMT_PAYOUT_ACCOUNT_FILL
+        loc_load.EXEC_OFFERED_FAUCET_PREFIX
+        loc_load.EXEC_OFFERED_FAUCET_SUFFIX
+        loc_load.EXEC_OFFERED_ENABLE_CB
         # => [enable_cb, faucet_suffix, faucet_prefix, amt_payout_account_fill, pad(8)]
 
         exec.asset::create_fungible_asset
@@ -522,10 +588,11 @@ proc execute_pswap
         dropw dropw dropw dropw
         # => []
     end
+    # => []
 
     # Check if partial fill: total_in < total_requested
-    loc_load.8 loc_load.9 add
-    loc_load.1
+    loc_load.EXEC_AMT_REQUESTED_ACCOUNT_FILL loc_load.EXEC_AMT_REQUESTED_NOTE_FILL add
+    loc_load.EXEC_AMT_REQUESTED
     # => [total_requested, total_in]
     dup.1 dup.1 lt
     # => [is_partial, total_requested, total_in]
@@ -549,21 +616,25 @@ proc execute_pswap
         movup.2
         # => [remaining_requested, note_type, tag]
 
-        loc_load.0
-        loc_load.2
-        loc_load.5
-        loc_load.6
-        loc_load.7
+        loc_load.EXEC_AMT_OFFERED
+        loc_load.EXEC_AMT_PAYOUT_TOTAL
+        loc_load.EXEC_OFFERED_ENABLE_CB
+        loc_load.EXEC_OFFERED_FAUCET_SUFFIX
+        loc_load.EXEC_OFFERED_FAUCET_PREFIX
         # => [offered_faucet_prefix, offered_faucet_suffix, offered_enable_cb,
         #     amt_payout, amt_offered,
         #     remaining_requested, note_type, tag]
 
         exec.create_remainder_note
+        # => []
     else
         drop drop
+        # => []
     end
+    # => []
 
     exec.sys::truncate_stack
+    # => []
 end
 
 #! Partially-fillable swap note script: exchanges a portion of the offered asset for a
@@ -589,15 +660,8 @@ end
 #!
 #! Where NOTE_ARGS = [account_fill_amount, note_fill_amount, 0, 0] (top of stack first).
 #!
-#! Note storage is assumed to be as follows (10 items at STORAGE_PTR):
-#! - [0]    requested_asset enable_callbacks flag
-#! - [1-2]  requested_asset faucet ID (suffix, prefix)
-#! - [3]    requested_asset amount
-#! - [4]    PSWAP note tag
-#! - [5]    payback note routing tag (targets the creator)
-#! - [6]    payback note type (0 = private, 1 = public)
-#! - [7]    swap count (incremented on each partial fill)
-#! - [8-9]  creator account ID (prefix, suffix)
+#! See the `# Note storage layout` block near the top of this file for the full
+#! storage layout consumed by this script.
 #!
 #! Panics if:
 #! - the number of note storage items is not `NUM_STORAGE_ITEMS`.
@@ -606,7 +670,6 @@ end
 #! - the account does not expose `receive_asset` / `move_asset_to_note`.
 @note_script
 pub proc main
-    # => [NOTE_ARGS = [account_fill_amount, note_fill_amount, 0, 0]]
     movdn.3 movdn.3 drop drop
     # => [account_fill_amount, note_fill_amount]
 
@@ -620,14 +683,11 @@ pub proc main
     drop
     # => [account_fill_amount, note_fill_amount]
 
-    # If both account fill and note fill are 0, default to a full fill (account fill = requested).
-    # This enables consumption by network accounts, which execute without note_args
-    # (the kernel defaults note_args to [0, 0, 0, 0] when none are provided).
     dup.1 dup.1 add push.0 eq
     # => [both_zero, account_fill_amount, note_fill_amount]
     if.true
         drop mem_load.REQUESTED_AMOUNT_ITEM
-        # => [account_fill_amount=requested, note_fill_amount=0]
+        # => [account_fill_amount, note_fill_amount]
     end
     # => [account_fill_amount, note_fill_amount]
 
@@ -640,7 +700,10 @@ pub proc main
     if.true
         drop drop
         exec.handle_reclaim
+        # => []
     else
         exec.execute_pswap
+        # => []
     end
+    # => []
 end
