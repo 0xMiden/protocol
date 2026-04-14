@@ -186,6 +186,13 @@ pub struct MockChain {
     /// NoteID |-> MockChainNote mapping to simplify note retrieval.
     committed_notes: BTreeMap<NoteId, MockChainNote>,
 
+    /// Full note details extracted from executed transactions before proving.
+    ///
+    /// During proving, private notes are shrunk to headers and lose their full details. We
+    /// capture the full [`Note`] here so that [`Self::apply_block`] can always construct a
+    /// [`MockChainNote`] with complete note data.
+    known_notes: BTreeMap<NoteId, Note>,
+
     /// AccountId |-> Account mapping to simplify transaction creation. Latest known account
     /// state is maintained for each account here.
     ///
@@ -240,6 +247,7 @@ impl MockChain {
             account_tree,
             pending_transactions: Vec::new(),
             committed_notes: BTreeMap::new(),
+            known_notes: BTreeMap::new(),
             committed_accounts: BTreeMap::new(),
             account_authenticators,
             validator_secret_key: secret_key,
@@ -431,11 +439,11 @@ impl MockChain {
         &self.committed_notes
     }
 
-    /// Returns an [`InputNote`] for the given note ID. If the note does not exist or is not
-    /// public, `None` is returned.
-    pub fn get_public_note(&self, note_id: &NoteId) -> Option<InputNote> {
+    /// Returns an [`InputNote`] for the given note ID. Returns `None` if the note does not
+    /// exist.
+    pub fn get_note(&self, note_id: &NoteId) -> Option<InputNote> {
         let note = self.committed_notes.get(note_id)?;
-        note.clone().try_into().ok()
+        Some(note.clone().into())
     }
 
     /// Returns a reference to the account identified by the given account ID.
@@ -833,6 +841,13 @@ impl MockChain {
         &mut self,
         transaction: &ExecutedTransaction,
     ) -> anyhow::Result<()> {
+        // Extract full output notes before proving, as proving shrinks private notes to headers.
+        for output_note in transaction.output_notes().iter() {
+            if let OutputNote::Full(note) = output_note {
+                self.known_notes.insert(note.id(), note.clone());
+            }
+        }
+
         // Transform the executed tx into a proven tx with a dummy proof.
         let proven_tx = LocalTransactionProver::default()
             .prove_dummy(transaction.clone())
@@ -913,19 +928,19 @@ impl MockChain {
             )
             .context("failed to create inclusion proof for output note")?;
 
-            if let OutputNote::Full(note) = created_note {
-                self.committed_notes
-                    .insert(note.id(), MockChainNote::Public(note.clone(), note_inclusion_proof));
-            } else {
-                self.committed_notes.insert(
-                    created_note.id(),
-                    MockChainNote::Private(
-                        created_note.id(),
-                        created_note.metadata().clone(),
-                        note_inclusion_proof,
-                    ),
-                );
-            }
+            let note = match created_note {
+                OutputNote::Full(note) => {
+                    self.known_notes.remove(&note.id());
+                    note.clone()
+                },
+                _ => self
+                    .known_notes
+                    .remove(&created_note.id())
+                    .context("full note details not available for non-Full output note")?,
+            };
+
+            self.committed_notes
+                .insert(note.id(), MockChainNote::new(note, note_inclusion_proof));
         }
 
         debug_assert_eq!(
@@ -1028,6 +1043,7 @@ impl Serializable for MockChain {
         self.pending_transactions.write_into(target);
         self.committed_accounts.write_into(target);
         self.committed_notes.write_into(target);
+        self.known_notes.write_into(target);
         self.account_authenticators.write_into(target);
         self.validator_secret_key.write_into(target);
     }
@@ -1042,6 +1058,7 @@ impl Deserializable for MockChain {
         let pending_transactions = Vec::<ProvenTransaction>::read_from(source)?;
         let committed_accounts = BTreeMap::<AccountId, Account>::read_from(source)?;
         let committed_notes = BTreeMap::<NoteId, MockChainNote>::read_from(source)?;
+        let known_notes = BTreeMap::<NoteId, Note>::read_from(source)?;
         let account_authenticators =
             BTreeMap::<AccountId, AccountAuthenticator>::read_from(source)?;
         let secret_key = SecretKey::read_from(source)?;
@@ -1053,6 +1070,7 @@ impl Deserializable for MockChain {
             account_tree,
             pending_transactions,
             committed_notes,
+            known_notes,
             committed_accounts,
             account_authenticators,
             validator_secret_key: secret_key,

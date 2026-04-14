@@ -321,10 +321,10 @@ async fn unauthenticated_note_converted_to_authenticated() -> anyhow::Result<()>
             .unauthenticated_notes(vec![note2.clone()])
             .build()?;
 
-    let input_note1 = chain.get_public_note(&note1.id()).expect("note not found");
+    let input_note1 = chain.get_note(&note1.id()).expect("note not found");
     let note_inclusion_proof1 = input_note1.proof().expect("note should be of type authenticated");
 
-    let input_note2 = chain.get_public_note(&note2.id()).expect("note not found");
+    let input_note2 = chain.get_note(&note2.id()).expect("note not found");
     let note_inclusion_proof2 = input_note2.proof().expect("note should be of type authenticated");
 
     // The partial blockchain will contain all blocks in the mock chain, in particular block2 which
