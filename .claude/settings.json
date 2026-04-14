@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "if": "Bash(git commit *)",
+            "if": "Bash(git *commit *)",
             "command": ".claude/hooks/pre-commit-lint.sh"
           },
           {
