@@ -3,7 +3,8 @@
 # Both must pass for the push to proceed.
 # Exit 0 = allow, Exit 2 = block (reason on stderr).
 
-DIFF=$(git diff @{upstream}...HEAD 2>/dev/null || git diff main...HEAD 2>/dev/null)
+BASE=$(git merge-base HEAD @{u} 2>/dev/null || git merge-base HEAD next)
+DIFF=$(git diff "${BASE}...HEAD" 2>/dev/null)
 
 if [ -z "$DIFF" ]; then
   exit 0

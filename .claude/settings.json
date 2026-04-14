@@ -17,7 +17,7 @@
           {
             "type": "agent",
             "if": "Bash(gh pr create *)",
-            "prompt": "Analyze the commit history on this branch compared to the base branch (use `git log --oneline next..HEAD` or similar). Look for: (1) debug/WIP/fixup commits that should be squashed or dropped (2) commits with unhelpful messages like 'fix', 'wip', 'tmp'. If cleanup is needed, perform an interactive-style rebase using `git rebase` to squash, drop, or reword commits. Use `git -c user.name='Claude (Opus)' -c user.email='noreply@anthropic.com' -c commit.gpgsign=false` for any new commits. If the history already looks clean, do nothing.",
+            "prompt": "Analyze the commit history on this branch since it diverged from its base. Find the fork point with: `BASE=$(git merge-base HEAD @{u} 2>/dev/null || git merge-base HEAD next)`, then `git log --oneline $BASE..HEAD`. Look for: (1) debug/WIP/fixup commits that should be squashed or dropped (2) commits with unhelpful messages like 'fix', 'wip', 'tmp'. If cleanup is needed, perform an interactive-style rebase using `git rebase` to squash, drop, or reword commits. Use `git -c user.name='Claude (Opus)' -c user.email='noreply@anthropic.com' -c commit.gpgsign=false` for any new commits. If the history already looks clean, do nothing.",
             "model": "sonnet"
           }
         ]
