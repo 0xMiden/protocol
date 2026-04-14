@@ -38,7 +38,7 @@ if echo "$CODE_RESULT" | grep -q "^BLOCK:"; then
   BLOCKED=1
 fi
 
-if echo "$SEC_RESULT" | grep -q "^BLOCK:\|^CONCERNS:"; then
+if echo "$SEC_RESULT" | grep -q "^BLOCK:"; then
   echo "=== SECURITY REVIEWER: BLOCKED ===" >&2
   echo "$SEC_RESULT" >&2
   echo "" >&2

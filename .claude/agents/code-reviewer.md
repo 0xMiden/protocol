@@ -104,5 +104,7 @@ Categorize every finding:
 6. Be direct. "This will panic when the vec is empty" not "this might possibly be a concern"
 7. New code without tests is always a finding
 
-If you find any Critical or Important issues or Nits, start your final response with `BLOCK:` followed by the review.
-If the changes pass review (only clean), start your final response with `APPROVE:` followed by the review.
+**Every finding - including Nits - blocks the merge.** Minor improvements must be addressed before merging, not left as tech debt.
+
+If you find any issues at any severity level, start your final response with `BLOCK:` followed by the review.
+If the changes pass review with zero findings, start your final response with `APPROVE:` followed by the review.
