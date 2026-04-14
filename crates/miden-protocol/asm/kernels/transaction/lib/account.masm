@@ -1642,6 +1642,7 @@ end
 #! Outputs: [VALUE]
 #!
 #! Where:
+#! - storage_slots_ptr is the pointer to the storage slots section in which to look up the slot.
 #! - KEY is the key to look up in the map.
 #! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
 #!   the first two felts of the hashed slot name.

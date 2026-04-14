@@ -317,6 +317,10 @@ end
 #!
 #! Inputs:  [RATE0, RATE1, CAPACITY]
 #! Outputs: [RATE0, RATE1, CAPACITY]
+#!
+#! Locals:
+#! - 0: has_next
+#! - 1: iter
 @locals(2)
 proc update_fungible_asset_delta
     push.ACCOUNT_DELTA_FUNGIBLE_ASSET_PTR
@@ -394,6 +398,10 @@ end
 #!
 #! Inputs:  [RATE0, RATE1, CAPACITY]
 #! Outputs: [RATE0, RATE1, CAPACITY]
+#!
+#! Locals:
+#! - 0: has_next
+#! - 1: iter
 @locals(2)
 proc update_non_fungible_asset_delta
     push.ACCOUNT_DELTA_NON_FUNGIBLE_ASSET_PTR
