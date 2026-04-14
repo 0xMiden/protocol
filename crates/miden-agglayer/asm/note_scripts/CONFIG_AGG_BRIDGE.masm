@@ -5,24 +5,26 @@ use miden::standards::attachments::network_account_target
 # CONSTANTS
 # =================================================================================================
 
-const CONFIG_AGG_BRIDGE_NUM_STORAGE_ITEMS = 7
+const CONFIG_AGG_BRIDGE_NUM_STORAGE_ITEMS = 8
 
 const STORAGE_START_PTR = 0
 const ORIGIN_TOKEN_ADDR_0 = STORAGE_START_PTR
 const ORIGIN_TOKEN_ADDR_4 = 4
+const SCALE_ADDR = 7
 
 # ERRORS
 # =================================================================================================
 
-const ERR_CONFIG_AGG_BRIDGE_UNEXPECTED_STORAGE_ITEMS = "CONFIG_AGG_BRIDGE expects exactly 7 note storage items"
+const ERR_CONFIG_AGG_BRIDGE_UNEXPECTED_STORAGE_ITEMS = "CONFIG_AGG_BRIDGE expects exactly 8 note storage items"
 const ERR_CONFIG_AGG_BRIDGE_TARGET_ACCOUNT_MISMATCH = "CONFIG_AGG_BRIDGE note attachment target account does not match consuming account"
 
-#! Agglayer Bridge CONFIG_AGG_BRIDGE script: registers a faucet in the bridge's faucet registry and
-#! token registry.
+#! Agglayer Bridge CONFIG_AGG_BRIDGE script: registers a faucet in the bridge's faucet registry,
+#! token registry, and faucet metadata map.
 #!
 #! This note can only be consumed by the Agglayer Bridge account that is targeted by the note
 #! attachment, and only if the note was sent by the bridge admin.
-#! Upon consumption, it registers the faucet ID and origin token address mapping in the bridge.
+#! Upon consumption, it registers the faucet ID, origin token address mapping, and scale factor
+#! in the bridge.
 #!
 #! Requires that the account exposes:
 #! - agglayer::bridge_config::register_faucet procedure.
@@ -30,7 +32,7 @@ const ERR_CONFIG_AGG_BRIDGE_TARGET_ACCOUNT_MISMATCH = "CONFIG_AGG_BRIDGE note at
 #! Inputs:  [ARGS, pad(12)]
 #! Outputs: [pad(16)]
 #!
-#! NoteStorage layout (7 felts total):
+#! NoteStorage layout (8 felts total):
 #! - origin_token_addr_0 [0] : 1 felt
 #! - origin_token_addr_1 [1] : 1 felt
 #! - origin_token_addr_2 [2] : 1 felt
@@ -38,14 +40,16 @@ const ERR_CONFIG_AGG_BRIDGE_TARGET_ACCOUNT_MISMATCH = "CONFIG_AGG_BRIDGE note at
 #! - origin_token_addr_4 [4] : 1 felt
 #! - faucet_id_suffix    [5] : 1 felt
 #! - faucet_id_prefix    [6] : 1 felt
+#! - scale               [7] : 1 felt
 #!
 #! Where:
 #! - faucet_id_suffix: Suffix felt of the faucet account ID to register.
 #! - faucet_id_prefix: Prefix felt of the faucet account ID to register.
+#! - scale: Decimal scaling factor for amount conversion (e.g. 0 for USDC, 8 for ETH).
 #!
 #! Panics if:
 #! - The note attachment target account does not match the consuming bridge account.
-#! - The note does not contain exactly 7 storage items.
+#! - The note does not contain exactly 8 storage items.
 #! - The account does not expose the register_faucet procedure.
 begin
     dropw
@@ -64,22 +68,29 @@ begin
     push.CONFIG_AGG_BRIDGE_NUM_STORAGE_ITEMS assert_eq.err=ERR_CONFIG_AGG_BRIDGE_UNEXPECTED_STORAGE_ITEMS drop
     # => [pad(16)]
 
-    # Load origin_token_addr(5) and faucet_id from memory
-    # register_faucet expects: [origin_token_addr(5), faucet_id_suffix, faucet_id_prefix, pad(9)]
+    # Load origin_token_addr(5), faucet_id, and scale from memory
+    # register_faucet expects: [origin_token_addr(5), faucet_id_suffix, faucet_id_prefix, scale, pad(8)]
 
-    # Load origin_token_addr_4, faucet_id_suffix, and faucet_id_prefix onto the sack. Notice that we
-    # can use `mem_loadw_le` here: that allows us to reuse the existing zeros on the stack, and
-    # since note memory was not initialized, fourth element on the stack will be equal ZERO, which
-    # is what we want.
-    mem_loadw_le.ORIGIN_TOKEN_ADDR_4
-    # => [addr4, faucet_id_suffix, faucet_id_prefix, pad(13)]
+    # Load scale from memory
+    mem_load.SCALE_ADDR
+    # => [scale, pad(16)]
+
+    # Load origin_token_addr_4, faucet_id_suffix, and faucet_id_prefix onto the stack.
+    # Note: mem_loadw_le loads 4 felts; the 4th element at ORIGIN_TOKEN_ADDR_4+3 = addr 7 = scale,
+    # but we already loaded scale above, so we use the word load and drop the extra element.
+    padw mem_loadw_le.ORIGIN_TOKEN_ADDR_4
+    # => [addr4, faucet_id_suffix, faucet_id_prefix, scale_dup, scale, pad(12)]
+
+    # Drop the duplicate scale value from the word load
+    movup.3 drop
+    # => [addr4, faucet_id_suffix, faucet_id_prefix, scale, pad(12)]
 
     # Load remaining origin_token_addr_[0..3] onto the stack
     padw mem_loadw_le.ORIGIN_TOKEN_ADDR_0
-    # => [addr0, addr1, addr2, addr3, addr4, faucet_id_suffix, faucet_id_prefix, pad(13)]
+    # => [addr0, addr1, addr2, addr3, addr4, faucet_id_suffix, faucet_id_prefix, scale, pad(12)]
 
     # Register the faucet in the bridge
-    # => [addr0, addr1, addr2, addr3, addr4, faucet_id_suffix, faucet_id_prefix, pad(9), pad(4)]
+    # => [addr0, addr1, addr2, addr3, addr4, faucet_id_suffix, faucet_id_prefix, scale, pad(8), pad(4)]
     
     call.bridge_config::register_faucet
     # => [pad(16), pad(4)]

@@ -56,8 +56,8 @@ impl ConfigAggBridgeNote {
     // --------------------------------------------------------------------------------------------
 
     /// Expected number of storage items for a CONFIG_AGG_BRIDGE note.
-    /// Layout: [origin_token_addr(5), faucet_id_suffix, faucet_id_prefix]
-    pub const NUM_STORAGE_ITEMS: usize = 7;
+    /// Layout: [origin_token_addr(5), faucet_id_suffix, faucet_id_prefix, scale]
+    pub const NUM_STORAGE_ITEMS: usize = 8;
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
@@ -77,14 +77,16 @@ impl ConfigAggBridgeNote {
 
     /// Creates a CONFIG_AGG_BRIDGE note to register a faucet in the bridge's registry.
     ///
-    /// The note storage contains 7 felts:
+    /// The note storage contains 8 felts:
     /// - `origin_token_addr[0..5]`: The 5 u32 felts of the origin EVM token address
     /// - `faucet_id_suffix`: The suffix of the faucet account ID
     /// - `faucet_id_prefix`: The prefix of the faucet account ID
+    /// - `scale`: The decimal scaling factor for amount conversion
     ///
     /// # Parameters
     /// - `faucet_account_id`: The account ID of the faucet to register
     /// - `origin_token_address`: The origin EVM token address for the token registry
+    /// - `scale`: The decimal scaling factor (e.g. 0 for USDC, 8 for ETH)
     /// - `sender_account_id`: The account ID of the note creator
     /// - `target_account_id`: The bridge account ID that will consume this note
     /// - `rng`: Random number generator for creating the note serial number
@@ -94,16 +96,18 @@ impl ConfigAggBridgeNote {
     pub fn create<R: FeltRng>(
         faucet_account_id: AccountId,
         origin_token_address: &EthAddress,
+        scale: u8,
         sender_account_id: AccountId,
         target_account_id: AccountId,
         rng: &mut R,
     ) -> Result<Note, NoteError> {
-        // Create note storage with 7 felts: [origin_token_addr(5), faucet_id_suffix,
-        // faucet_id_prefix]
+        // Create note storage with 8 felts: [origin_token_addr(5), faucet_id_suffix,
+        // faucet_id_prefix, scale]
         let addr_elements = origin_token_address.to_elements();
         let mut storage_values: Vec<Felt> = addr_elements;
         storage_values.push(faucet_account_id.suffix());
         storage_values.push(faucet_account_id.prefix().as_felt());
+        storage_values.push(Felt::from(scale));
 
         let note_storage = NoteStorage::new(storage_values)?;
 

@@ -70,6 +70,10 @@ static TOKEN_REGISTRY_MAP_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|
     StorageSlotName::new("agglayer::bridge::token_registry_map")
         .expect("token registry map storage slot name should be valid")
 });
+static FAUCET_METADATA_MAP_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("agglayer::bridge::faucet_metadata_map")
+        .expect("faucet metadata map storage slot name should be valid")
+});
 
 // bridge in
 // ------------------------------------------------------------------------------------------------
@@ -125,6 +129,9 @@ static LET_NUM_LEAVES_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// - [`Self::ger_map_slot_name`]: Stores the GERs.
 /// - [`Self::faucet_registry_map_slot_name`]: Stores the faucet registry map.
 /// - [`Self::token_registry_map_slot_name`]: Stores the token address → faucet ID map.
+/// - [`Self::faucet_metadata_map_slot_name`]: Stores conversion metadata (origin address, origin
+///   network, scale, metadata hash) for all registered faucets, keyed by sub-key scheme based on
+///   faucet ID.
 /// - [`Self::claim_nullifiers_slot_name`]: Stores the CLAIM note nullifiers map (RPO(leaf_index,
 ///   source_bridge_network) → \[1, 0, 0, 0\]).
 /// - [`Self::cgi_chain_hash_lo_slot_name`]: Stores the lower 128 bits of the CGI chain hash.
@@ -184,6 +191,14 @@ impl AggLayerBridge {
     /// Storage slot name for the token registry map.
     pub fn token_registry_map_slot_name() -> &'static StorageSlotName {
         &TOKEN_REGISTRY_MAP_SLOT_NAME
+    }
+
+    /// Storage slot name for the faucet metadata map.
+    ///
+    /// This map stores conversion metadata (origin address, origin network, scale, metadata hash)
+    /// for all registered faucets, keyed by sub-key scheme based on faucet ID.
+    pub fn faucet_metadata_map_slot_name() -> &'static StorageSlotName {
+        &FAUCET_METADATA_MAP_SLOT_NAME
     }
 
     // --- bridge in --------
@@ -412,6 +427,7 @@ impl AggLayerBridge {
             &*LET_NUM_LEAVES_SLOT_NAME,
             &*FAUCET_REGISTRY_MAP_SLOT_NAME,
             &*TOKEN_REGISTRY_MAP_SLOT_NAME,
+            &*FAUCET_METADATA_MAP_SLOT_NAME,
             &*BRIDGE_ADMIN_ID_SLOT_NAME,
             &*GER_MANAGER_ID_SLOT_NAME,
             &*CGI_CHAIN_HASH_LO_SLOT_NAME,
@@ -434,6 +450,7 @@ impl From<AggLayerBridge> for AccountComponent {
             StorageSlot::with_value(LET_NUM_LEAVES_SLOT_NAME.clone(), Word::empty()),
             StorageSlot::with_empty_map(FAUCET_REGISTRY_MAP_SLOT_NAME.clone()),
             StorageSlot::with_empty_map(TOKEN_REGISTRY_MAP_SLOT_NAME.clone()),
+            StorageSlot::with_empty_map(FAUCET_METADATA_MAP_SLOT_NAME.clone()),
             StorageSlot::with_value(BRIDGE_ADMIN_ID_SLOT_NAME.clone(), bridge_admin_word),
             StorageSlot::with_value(GER_MANAGER_ID_SLOT_NAME.clone(), ger_manager_word),
             StorageSlot::with_value(CGI_CHAIN_HASH_LO_SLOT_NAME.clone(), Word::empty()),

@@ -3,7 +3,6 @@ use agglayer::bridge::leaf_utils
 use agglayer::common::utils
 use agglayer::common::asset_conversion
 use agglayer::common::eth_address
-use agglayer::faucet -> agglayer_faucet
 use miden::core::crypto::hashes::keccak256
 use miden::core::crypto::hashes::poseidon2
 use miden::core::mem
@@ -13,7 +12,6 @@ use miden::protocol::output_note
 use miden::protocol::output_note::ATTACHMENT_KIND_NONE
 use miden::protocol::active_account
 use miden::protocol::native_account
-use miden::protocol::tx
 use miden::standards::note_tag
 use miden::standards::note_tag::DEFAULT_TAG
 use miden::standards::attachments::network_account_target
@@ -432,7 +430,7 @@ end
 #! by the faucet's scale factor.
 #!
 #! This procedure:
-#! 1. Performs an FPI call to the faucet's `get_scale` procedure to retrieve the scale factor.
+#! 1. Reads the scale factor from the bridge's faucet_metadata_map.
 #! 2. Loads the raw U256 amount from the leaf data in memory.
 #! 3. Calls `verify_u256_to_native_amount_conversion` to assert that
 #!    `faucet_mint_amount == floor(raw_amount / 10^scale)`.
@@ -441,44 +439,26 @@ end
 #! Outputs: []
 #!
 #! Panics if:
-#! - the FPI call to the faucet's get_scale fails.
 #! - the faucet_mint_amount does not match the expected scaled-down value.
 #!
 #! Invocation: exec
 proc verify_claim_amount
-    # Step 1: Pad the stack explicitly for FPI call (get_scale takes no inputs)
-    padw padw
-    movup.9 movup.9
-    padw padw
-    movup.9 movup.9
-    # => [faucet_id_suffix, faucet_id_prefix, pad(16)]
-
-    # Step 2: FPI call to faucet's get_scale procedure
-    procref.agglayer_faucet::get_scale
-    # => [PROC_MAST_ROOT(4), faucet_id_suffix, faucet_id_prefix, pad(16)]
-
-    movup.5 movup.5
-    # => [faucet_id_suffix, faucet_id_prefix, PROC_MAST_ROOT(4), pad(16)]
-
-    exec.tx::execute_foreign_procedure
-    # => [scale, pad(15)]
-
-    # Clean up FPI output padding, keeping only scale
-    movdn.15 dropw dropw dropw drop drop drop
+    # Step 1: Read scale from bridge's faucet_metadata_map
+    exec.bridge_config::get_faucet_scale
     # => [scale]
 
-    # Step 3: Load the raw U256 amount from leaf data memory
+    # Step 2: Load the raw U256 amount from leaf data memory
     exec.load_raw_claim_amount
     # => [x7, x6, x5, x4, x3, x2, x1, x0, scale]
 
-    # Step 4: Load faucet_mint_amount (y) and position it for verification
+    # Step 3: Load faucet_mint_amount (y) and position it for verification
     mem_load.CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT
     # => [y, x7, x6, x5, x4, x3, x2, x1, x0, scale]
 
     movdn.9
     # => [x7, x6, x5, x4, x3, x2, x1, x0, scale, y]
 
-    # Step 5: Verify that y = floor(x / 10^scale)
+    # Step 4: Verify that y = floor(x / 10^scale)
     exec.asset_conversion::verify_u256_to_native_amount_conversion
     # => []
 end

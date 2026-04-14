@@ -248,6 +248,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     let config_note = ConfigAggBridgeNote::create(
         agglayer_faucet.id(),
         &origin_token_address,
+        scale,
         bridge_admin.id(),
         bridge_account.id(),
         builder.rng_mut(),
@@ -515,6 +516,7 @@ async fn test_duplicate_claim_note_rejected() -> anyhow::Result<()> {
     let config_note = ConfigAggBridgeNote::create(
         agglayer_faucet.id(),
         &origin_token_address,
+        scale,
         bridge_admin.id(),
         bridge_account.id(),
         builder.rng_mut(),
