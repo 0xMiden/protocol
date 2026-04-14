@@ -95,7 +95,7 @@ async fn check_note_consumability_standard_notes_success() -> anyhow::Result<()>
 
         // we asserted that `successful` and `notes` vectors have the same length, so it's safe to
         // check their equality that way
-        successful.iter().for_each(|successful_note| assert!(notes.contains(successful_note)));
+        successful.iter().for_each(|s| assert!(notes.contains(&s.note)));
 
         assert!(failed.is_empty());
     });
@@ -231,7 +231,8 @@ async fn check_note_consumability_partial_success() -> anyhow::Result<()> {
                     FailedNote {
                         note,
                         error: TransactionExecutorError::TransactionProgramExecutionFailed(
-                            ExecutionError::OperationError { err: miden_processor::operation::OperationError::DivideByZero, .. })
+                            ExecutionError::OperationError { err: miden_processor::operation::OperationError::DivideByZero, .. }),
+                        ..
                     } => {
                         assert_eq!(
                             note.id(),
@@ -245,7 +246,8 @@ async fn check_note_consumability_partial_success() -> anyhow::Result<()> {
                     FailedNote {
                         note,
                         error: TransactionExecutorError::TransactionProgramExecutionFailed(
-                            ExecutionError::OperationError { err: miden_processor::operation::OperationError::DivideByZero, .. })
+                            ExecutionError::OperationError { err: miden_processor::operation::OperationError::DivideByZero, .. }),
+                        ..
                     } => {
                         assert_eq!(
                             note.id(),
@@ -255,7 +257,7 @@ async fn check_note_consumability_partial_success() -> anyhow::Result<()> {
                 );
                 // Successful notes.
                 assert_eq!(
-                    [successful[0].id(), successful[1].id(), successful[2].id()],
+                    [successful[0].note.id(), successful[1].note.id(), successful[2].note.id()],
                     [successful_note_2.id(), successful_note_1.id(), successful_note_3.id()],
                 );
             }
@@ -395,7 +397,8 @@ async fn check_note_consumability_epilogue_failure_with_new_combination() -> any
                     FailedNote {
                         note,
                         error: TransactionExecutorError::TransactionProgramExecutionFailed(
-                            ExecutionError::OperationError { err: miden_processor::operation::OperationError::DivideByZero, .. })
+                            ExecutionError::OperationError { err: miden_processor::operation::OperationError::DivideByZero, .. }),
+                        ..
                     } => {
                         assert_eq!(
                             note.id(),
@@ -409,7 +412,8 @@ async fn check_note_consumability_epilogue_failure_with_new_combination() -> any
                     FailedNote {
                         note,
                         error: TransactionExecutorError::TransactionProgramExecutionFailed(
-                            ExecutionError::OperationError { err: miden_processor::operation::OperationError::FailedAssertion { .. }, .. })
+                            ExecutionError::OperationError { err: miden_processor::operation::OperationError::FailedAssertion { .. }, .. }),
+                        ..
                     } => {
                         assert_eq!(
                             note.id(),
@@ -419,7 +423,7 @@ async fn check_note_consumability_epilogue_failure_with_new_combination() -> any
                 );
                 // Successful notes.
                 assert_eq!(
-                    [successful[0].id(), successful[1].id(), successful[2].id()],
+                    [successful[0].note.id(), successful[1].note.id(), successful[2].note.id()],
                     [successful_note_1.id(), successful_note_2.id(), successful_note_3.id()],
                 );
             }
