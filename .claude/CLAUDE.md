@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-> Per-project lessons: ~/.claude/projects/protocol/lessons.md
+> Per-project lessons: ~/.claude/projects/miden-base/lessons.md
 
 ## Workflow Orchestration
 
