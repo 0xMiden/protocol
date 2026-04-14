@@ -1659,7 +1659,7 @@ dependencies = [
 [[package]]
 name = "miden-crypto"
 version = "0.23.0"
-source = "git+https://github.com/0xmiden/crypto?branch=sergerad-clone#bcb1daae09b0d821739e89c06d31f50cdc092ae7"
+source = "git+https://github.com/0xmiden/crypto?branch=sergerad-largesmt-reader-trait#22c1b78f47be84f42a189651c589fe02c8cec8ab"
 dependencies = [
  "blake3",
  "cc",
@@ -1701,7 +1701,7 @@ dependencies = [
 [[package]]
 name = "miden-crypto-derive"
 version = "0.23.0"
-source = "git+https://github.com/0xmiden/crypto?branch=sergerad-clone#bcb1daae09b0d821739e89c06d31f50cdc092ae7"
+source = "git+https://github.com/0xmiden/crypto?branch=sergerad-largesmt-reader-trait#22c1b78f47be84f42a189651c589fe02c8cec8ab"
 dependencies = [
  "quote",
  "syn 2.0.117",
@@ -1728,7 +1728,7 @@ dependencies = [
 [[package]]
 name = "miden-field"
 version = "0.23.0"
-source = "git+https://github.com/0xmiden/crypto?branch=sergerad-clone#bcb1daae09b0d821739e89c06d31f50cdc092ae7"
+source = "git+https://github.com/0xmiden/crypto?branch=sergerad-largesmt-reader-trait#22c1b78f47be84f42a189651c589fe02c8cec8ab"
 dependencies = [
  "miden-serde-utils",
  "num-bigint",
@@ -1918,7 +1918,7 @@ dependencies = [
 [[package]]
 name = "miden-serde-utils"
 version = "0.23.0"
-source = "git+https://github.com/0xmiden/crypto?branch=sergerad-clone#bcb1daae09b0d821739e89c06d31f50cdc092ae7"
+source = "git+https://github.com/0xmiden/crypto?branch=sergerad-largesmt-reader-trait#22c1b78f47be84f42a189651c589fe02c8cec8ab"
 dependencies = [
  "p3-field",
  "p3-goldilocks",
