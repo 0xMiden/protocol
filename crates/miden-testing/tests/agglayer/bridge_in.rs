@@ -144,11 +144,6 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
         create_existing_bridge_account(bridge_seed, bridge_admin.id(), ger_manager.id());
     builder.add_account(bridge_account.clone())?;
 
-    assert_eq!(
-        AggLayerBridge::read_miden_network_id(&bridge_account)?,
-        AggLayerBridge::MIDEN_NETWORK_ID
-    );
-
     // GET CLAIM DATA FROM JSON (source depends on the test case)
     // --------------------------------------------------------------------------------------------
     let (proof_data, leaf_data, ger, cgi_chain_hash) = data_source.get_data();
@@ -419,8 +414,9 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     Ok(())
 }
 
-/// CLAIM must reject a leaf whose `destination_network` does not match the bridge's
-/// `miden_network_id` slot (Miden AggLayer ID), even when the rest of the proof data is unchanged.
+/// CLAIM must reject a leaf whose `destination_network` does not match the global Miden
+/// AggLayer network ID (`MIDEN_NETWORK_ID` in `constants.masm`), even when the rest of the proof
+/// data is unchanged.
 #[tokio::test]
 async fn test_claim_rejects_wrong_destination_network() -> anyhow::Result<()> {
     let data_source = ClaimDataSource::Simulated;

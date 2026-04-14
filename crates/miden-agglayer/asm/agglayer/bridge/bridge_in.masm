@@ -1,5 +1,6 @@
 use agglayer::bridge::bridge_config
 use agglayer::bridge::leaf_utils
+use agglayer::common::constants::MIDEN_NETWORK_ID
 use agglayer::common::utils
 use agglayer::common::asset_conversion
 use agglayer::common::eth_address
@@ -48,7 +49,6 @@ const IS_CLAIMED_FLAG = [1, 0, 0, 0]
 # The slot in this component's storage layout where claim nullifiers are stored.
 # Map entries: Poseidon2(leaf_index, source_bridge_network) => [1, 0, 0, 0]
 const CLAIM_NULLIFIERS_SLOT = word("agglayer::bridge::claim_nullifiers")
-const MIDEN_NETWORK_ID_SLOT = word("agglayer::bridge::miden_network_id")
 
 # Storage slot constants for the CGI (claimed global index) chain hash. 
 # It is stored in two separate value slots.
@@ -200,7 +200,7 @@ const CLAIM_DEST_ID_SUFFIX_LOCAL = 1
 #!
 #! Panics if:
 #! - the leaf type is not 0 (not an asset claim).
-#! - the leaf destination network does not match Miden's AggLayer network ID stored on the bridge.
+#! - the leaf destination network does not match the global `MIDEN_NETWORK_ID` constant.
 #! - the Merkle proof validation fails.
 #! - the origin token address is not registered in the bridge's token registry.
 #!
@@ -1144,29 +1144,30 @@ proc store_cgi_chain_hash
     # => []
 end
 
-#! Asserts the claim leaf's `destination_network` equals Miden's AggLayer ID stored on the bridge.
+#! Asserts the claim leaf's `destination_network` matches the global `MIDEN_NETWORK_ID`.
 #!
-#! Compares `mem[DESTINATION_NETWORK_ID_MEM_ADDR]` to the first felt of `MIDEN_NETWORK_ID_SLOT`
-#! (see `AggLayerBridge::MIDEN_NETWORK_ID` and `LeafData` encoding in Rust).
+#! `claim_batch_pipe_double_words` stores leaf felts as LE-packed u32 limbs. `swap_u32_bytes`
+#! converts the loaded limb to the canonical u32 value so it can be compared to `MIDEN_NETWORK_ID`
+#! from `agglayer::common::constants`.
 #!
 #! Inputs:  []
 #! Outputs: []
 #!
 #! Panics if:
-#! - the leaf destination network does not match the stored Miden network ID.
+#! - the leaf destination network does not match the Miden AggLayer network ID constant.
 #!
 #! Invocation: exec
 proc assert_claim_leaf_destination_network
+    # load the destination network ID onto the stack
     mem_load.DESTINATION_NETWORK_ID_MEM_ADDR
-    # => [leaf_destination_network]
+    # => [destination_network_id_le]
 
-    push.MIDEN_NETWORK_ID_SLOT[0..2]
-    exec.active_account::get_item
-    # => [miden_network_id, 0, 0, 0, leaf_destination_network]
+    # change the endianness to BE to compare it with the Miden network ID
+    exec.utils::swap_u32_bytes
+    # => [destination_network_id_be]
 
-    movup.4 assert_eq.err=ERR_CLAIM_LEAF_DESTINATION_NETWORK_MISMATCH
-    # => [0, 0, 0]
-
-    drop drop drop
+    # assert that the destination network ID matches the Miden network ID
+    push.MIDEN_NETWORK_ID
+    assert_eq.err=ERR_CLAIM_LEAF_DESTINATION_NETWORK_MISMATCH
     # => []
 end

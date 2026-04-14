@@ -70,10 +70,6 @@ static TOKEN_REGISTRY_MAP_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|
     StorageSlotName::new("agglayer::bridge::token_registry_map")
         .expect("token registry map storage slot name should be valid")
 });
-static MIDEN_NETWORK_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("agglayer::bridge::miden_network_id")
-        .expect("Miden network ID storage slot name should be valid")
-});
 
 // bridge in
 // ------------------------------------------------------------------------------------------------
@@ -126,8 +122,6 @@ static LET_NUM_LEAVES_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 ///
 /// - [`Self::bridge_admin_id_slot_name`]: Stores the bridge admin account ID.
 /// - [`Self::ger_manager_id_slot_name`]: Stores the GER manager account ID.
-/// - [`Self::miden_network_id_slot_name`]: Stores Miden's AggLayer network ID
-///   ([`Self::MIDEN_NETWORK_ID`]).
 /// - [`Self::ger_map_slot_name`]: Stores the GERs.
 /// - [`Self::faucet_registry_map_slot_name`]: Stores the faucet registry map.
 /// - [`Self::token_registry_map_slot_name`]: Stores the token address → faucet ID map.
@@ -142,6 +136,10 @@ static LET_NUM_LEAVES_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 ///
 /// The bridge starts with an empty faucet registry; faucets are registered at runtime via
 /// CONFIG_AGG_BRIDGE notes.
+///
+/// Claim validation compares the leaf's `destination_network` to the global MASM constant
+/// `agglayer::common::constants::MIDEN_NETWORK_ID`. Rust exposes the same value as
+/// [`Self::MIDEN_NETWORK_ID`] from generated `agglayer_constants.rs` file.
 #[derive(Debug, Clone)]
 pub struct AggLayerBridge {
     bridge_admin_id: AccountId,
@@ -154,9 +152,8 @@ impl AggLayerBridge {
 
     /// AggLayer-assigned network ID for this Miden chain.
     ///
-    /// The bridge account stores this using the same `u32` → felt encoding as [`LeafData`] for
-    /// `destination_network` (`Felt::from(u32::from_le_bytes(n.to_be_bytes()))`).
-    pub const MIDEN_NETWORK_ID: u32 = 77;
+    /// Matches `const MIDEN_NETWORK_ID` in `asm/agglayer/common/constants.masm`.
+    pub const MIDEN_NETWORK_ID: u32 = MIDEN_NETWORK_ID;
 
     const REGISTERED_GER_MAP_VALUE: Word = Word::new([ONE, ZERO, ZERO, ZERO]);
 
@@ -196,11 +193,6 @@ impl AggLayerBridge {
     /// Storage slot name for the token registry map.
     pub fn token_registry_map_slot_name() -> &'static StorageSlotName {
         &TOKEN_REGISTRY_MAP_SLOT_NAME
-    }
-
-    /// Storage slot name for Miden's AggLayer network ID (used on CLAIM to validate leaf data).
-    pub fn miden_network_id_slot_name() -> &'static StorageSlotName {
-        &MIDEN_NETWORK_ID_SLOT_NAME
     }
 
     // --- bridge in --------
@@ -321,26 +313,6 @@ impl AggLayerBridge {
         value.to_vec()[0].as_canonical_u64()
     }
 
-    /// Returns Miden's AggLayer network ID stored on the bridge account.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the provided account is not an [`AggLayerBridge`] account.
-    pub fn read_miden_network_id(account: &Account) -> Result<u32, AgglayerBridgeError> {
-        // check that the provided account is a bridge account
-        Self::assert_bridge_account(account)?;
-
-        let storage_word = account
-            .storage()
-            .get_item(Self::miden_network_id_slot_name())
-            .expect("should be able to read Miden network ID slot");
-        let encoded = u32::try_from(storage_word[0].as_canonical_u64())
-            .map_err(|_| AgglayerBridgeError::MidenNetworkIdOutOfRange)?;
-
-        // Inverse of `u32::from_le_bytes(n.to_be_bytes())` used when writing the slot.
-        Ok(u32::from_be_bytes(encoded.to_le_bytes()))
-    }
-
     /// Returns the claimed global index (CGI) chain hash from the corresponding storage slot.
     ///
     /// # Errors
@@ -451,7 +423,6 @@ impl AggLayerBridge {
             &*TOKEN_REGISTRY_MAP_SLOT_NAME,
             &*BRIDGE_ADMIN_ID_SLOT_NAME,
             &*GER_MANAGER_ID_SLOT_NAME,
-            &*MIDEN_NETWORK_ID_SLOT_NAME,
             &*CGI_CHAIN_HASH_LO_SLOT_NAME,
             &*CGI_CHAIN_HASH_HI_SLOT_NAME,
             &*CLAIM_NULLIFIERS_SLOT_NAME,
@@ -464,10 +435,6 @@ impl From<AggLayerBridge> for AccountComponent {
         let bridge_admin_word = AccountIdKey::new(bridge.bridge_admin_id).as_word();
         let ger_manager_word = AccountIdKey::new(bridge.ger_manager_id).as_word();
 
-        // Same encoding as `LeafData::to_elements` / CLAIM note storage for `destination_network`.
-        let miden_network_felt = u32::from_le_bytes(AggLayerBridge::MIDEN_NETWORK_ID.to_be_bytes());
-        let miden_network_word = Word::new([Felt::from(miden_network_felt), ZERO, ZERO, ZERO]);
-
         let bridge_storage_slots = vec![
             StorageSlot::with_empty_map(GER_MAP_SLOT_NAME.clone()),
             StorageSlot::with_empty_map(LET_FRONTIER_SLOT_NAME.clone()),
@@ -478,7 +445,6 @@ impl From<AggLayerBridge> for AccountComponent {
             StorageSlot::with_empty_map(TOKEN_REGISTRY_MAP_SLOT_NAME.clone()),
             StorageSlot::with_value(BRIDGE_ADMIN_ID_SLOT_NAME.clone(), bridge_admin_word),
             StorageSlot::with_value(GER_MANAGER_ID_SLOT_NAME.clone(), ger_manager_word),
-            StorageSlot::with_value(MIDEN_NETWORK_ID_SLOT_NAME.clone(), miden_network_word),
             StorageSlot::with_value(CGI_CHAIN_HASH_LO_SLOT_NAME.clone(), Word::empty()),
             StorageSlot::with_value(CGI_CHAIN_HASH_HI_SLOT_NAME.clone(), Word::empty()),
             StorageSlot::with_empty_map(CLAIM_NULLIFIERS_SLOT_NAME.clone()),
@@ -501,8 +467,6 @@ pub enum AgglayerBridgeError {
         "the code commitment of the provided account does not match the code commitment of the AggLayer Bridge account"
     )]
     CodeCommitmentMismatch,
-    #[error("stored Miden network ID does not fit in u32")]
-    MidenNetworkIdOutOfRange,
 }
 
 // HELPER FUNCTIONS
