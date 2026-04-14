@@ -3,6 +3,7 @@ use $kernel::account_id
 use $kernel::asset
 use $kernel::asset_vault
 use $kernel::memory
+use $kernel::memory::INPUT_VAULT_ROOT_PTR
 use $kernel::util::asset::FUNGIBLE_ASSET_MAX_AMOUNT
 
 # ERRORS
@@ -34,7 +35,7 @@ pub proc mint_fungible_asset
     exec.asset::validate_fungible_asset_origin
     # => [ASSET]
 
-    exec.memory::get_input_vault_root_ptr
+    push.INPUT_VAULT_ROOT_PTR
     movdn.4
     # => [ASSET, input_vault_root_ptr]
 
@@ -64,7 +65,7 @@ proc burn_fungible_asset
     exec.asset::validate_fungible_asset_origin
     # => [ASSET]
 
-    exec.memory::get_input_vault_root_ptr
+    push.INPUT_VAULT_ROOT_PTR
     movdn.4
     # => [ASSET, input_vault_root_ptr]
 
@@ -99,7 +100,7 @@ proc mint_non_fungible_asset
     exec.asset::validate_non_fungible_asset_origin
     # => [ASSET]
 
-    exec.memory::get_input_vault_root_ptr
+    push.INPUT_VAULT_ROOT_PTR
     movdn.4
     # => [ASSET, input_vault_root_ptr]
 
@@ -132,7 +133,7 @@ proc burn_non_fungible_asset
     # => [ASSET]
 
     # remove the non-fungible asset from the input vault for asset preservation
-    exec.memory::get_input_vault_root_ptr
+    push.INPUT_VAULT_ROOT_PTR
     movdn.4
     # => [ASSET, input_vault_root_ptr]
 
