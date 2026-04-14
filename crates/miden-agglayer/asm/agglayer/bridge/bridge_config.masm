@@ -12,6 +12,7 @@ const ERR_FAUCET_NOT_REGISTERED = "faucet is not registered in the bridge's fauc
 const ERR_TOKEN_NOT_REGISTERED = "token address is not registered in the bridge's token registry"
 const ERR_SENDER_NOT_BRIDGE_ADMIN = "note sender is not the bridge admin"
 const ERR_SENDER_NOT_GER_MANAGER = "note sender is not the global exit root manager"
+const ERR_BRIDGE_IS_PAUSED = "bridge is currently paused"
 
 # CONSTANTS
 # =================================================================================================
@@ -22,6 +23,7 @@ const GER_MANAGER_SLOT = word("agglayer::bridge::ger_manager_account_id")
 const GER_MAP_STORAGE_SLOT = word("agglayer::bridge::ger_map")
 const FAUCET_REGISTRY_MAP_SLOT = word("agglayer::bridge::faucet_registry_map")
 const TOKEN_REGISTRY_MAP_SLOT = word("agglayer::bridge::token_registry_map")
+const PAUSED_SLOT = word("agglayer::bridge::paused")
 
 # Flags
 const GER_KNOWN_FLAG = 1
@@ -46,6 +48,10 @@ const TOKEN_ADDR_HASH_PTR = 0
 #!
 #! Invocation: call
 pub proc update_ger
+    # assert the bridge is not paused.
+    exec.assert_not_paused
+    # => [GER_LOWER[4], GER_UPPER[4], pad(8)]
+
     # assert the note sender is the global exit root manager.
     exec.assert_sender_is_ger_manager
     # => [GER_LOWER[4], GER_UPPER[4], pad(8)]
@@ -117,6 +123,10 @@ end
 #!
 #! Invocation: call
 pub proc register_faucet
+    # assert the bridge is not paused.
+    exec.assert_not_paused
+    # => [origin_token_addr(5), faucet_id_suffix, faucet_id_prefix, pad(9)]
+
     # assert the note sender is the bridge admin.
     exec.assert_sender_is_bridge_admin
     # => [origin_token_addr(5), faucet_id_suffix, faucet_id_prefix, pad(9)]
@@ -164,6 +174,37 @@ pub proc register_faucet
 
     push.TOKEN_REGISTRY_MAP_SLOT[0..2]
     exec.native_account::set_map_item
+    # => [OLD_VALUE, pad(12)]
+
+    dropw
+    # => [pad(16)]
+end
+
+#! Sets or clears the emergency paused flag in the bridge account storage.
+#!
+#! The caller must be the bridge admin. This procedure is NOT guarded by the pause check,
+#! so the admin can unpause the bridge even when it is paused.
+#!
+#! Inputs:  [paused_flag, pad(15)]
+#! Outputs: [pad(16)]
+#!
+#! Where:
+#! - paused_flag is 1 to pause, 0 to unpause.
+#!
+#! Panics if:
+#! - the note sender is not the bridge admin.
+#!
+#! Invocation: call
+pub proc set_emergency_paused
+    # assert the note sender is the bridge admin.
+    exec.assert_sender_is_bridge_admin
+    # => [paused_flag, 0, 0, 0, pad(12)]
+
+    # The top 4 elements already form the value word [paused_flag, 0, 0, 0].
+    push.PAUSED_SLOT[0..2]
+    # => [slot_id_prefix, slot_id_suffix, paused_flag, 0, 0, 0, pad(12)]
+
+    exec.native_account::set_item
     # => [OLD_VALUE, pad(12)]
 
     dropw
@@ -230,6 +271,27 @@ end
 
 # HELPER PROCEDURES
 # =================================================================================================
+
+#! Asserts that the bridge is not paused.
+#!
+#! Reads the paused flag from the PAUSED_SLOT and asserts it is zero.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the bridge is currently paused.
+#!
+#! Invocation: exec
+proc assert_not_paused
+    push.PAUSED_SLOT[0..2]
+    exec.active_account::get_item
+    # => [paused_flag, 0, 0, 0, pad(16)]
+
+    assertz.err=ERR_BRIDGE_IS_PAUSED
+    drop drop drop
+    # => [pad(16)]
+end
 
 #! Hashes a 5-felt origin token address using Poseidon2.
 #!

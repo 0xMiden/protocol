@@ -105,6 +105,10 @@ const BURN_NOTE_NUM_STORAGE_ITEMS=0
 pub proc bridge_out
     # => [ASSET_KEY, ASSET_VALUE, dest_network_id, dest_address(5), pad(2)]
 
+    # assert the bridge is not paused.
+    exec.bridge_config::assert_not_paused
+    # => [ASSET_KEY, ASSET_VALUE, dest_network_id, dest_address(5), pad(2)]
+
     # Save ASSET to local memory for later BURN note creation
     locaddr.BRIDGE_OUT_BURN_ASSET_LOC
     exec.asset::store

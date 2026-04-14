@@ -70,6 +70,10 @@ static TOKEN_REGISTRY_MAP_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|
     StorageSlotName::new("agglayer::bridge::token_registry_map")
         .expect("token registry map storage slot name should be valid")
 });
+static PAUSED_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("agglayer::bridge::paused")
+        .expect("paused storage slot name should be valid")
+});
 
 // bridge in
 // ------------------------------------------------------------------------------------------------
@@ -133,6 +137,7 @@ static LET_NUM_LEAVES_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// - [`Self::let_root_lo_slot_name`]: Stores the lower 32 bits of the LET root.
 /// - [`Self::let_root_hi_slot_name`]: Stores the upper 32 bits of the LET root.
 /// - [`Self::let_num_leaves_slot_name`]: Stores the number of leaves in the LET frontier.
+/// - [`Self::paused_slot_name`]: Stores the emergency paused flag (0 = active, 1 = paused).
 ///
 /// The bridge starts with an empty faucet registry; faucets are registered at runtime via
 /// CONFIG_AGG_BRIDGE notes.
@@ -184,6 +189,11 @@ impl AggLayerBridge {
     /// Storage slot name for the token registry map.
     pub fn token_registry_map_slot_name() -> &'static StorageSlotName {
         &TOKEN_REGISTRY_MAP_SLOT_NAME
+    }
+
+    /// Storage slot name for the emergency paused flag.
+    pub fn paused_slot_name() -> &'static StorageSlotName {
+        &PAUSED_SLOT_NAME
     }
 
     // --- bridge in --------
@@ -256,6 +266,23 @@ impl AggLayerBridge {
         } else {
             Ok(false)
         }
+    }
+
+    /// Returns whether the bridge is currently paused.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - the provided account is not an [`AggLayerBridge`] account.
+    pub fn is_paused(bridge_account: &Account) -> Result<bool, AgglayerBridgeError> {
+        Self::assert_bridge_account(bridge_account)?;
+
+        let paused_value = bridge_account
+            .storage()
+            .get_item(AggLayerBridge::paused_slot_name())
+            .expect("provided account should have AggLayer Bridge specific storage slots");
+
+        Ok(paused_value[0] != ZERO)
     }
 
     /// Reads the Local Exit Root (double-word) from the bridge account's storage.
@@ -417,6 +444,7 @@ impl AggLayerBridge {
             &*CGI_CHAIN_HASH_LO_SLOT_NAME,
             &*CGI_CHAIN_HASH_HI_SLOT_NAME,
             &*CLAIM_NULLIFIERS_SLOT_NAME,
+            &*PAUSED_SLOT_NAME,
         ]
     }
 }
@@ -439,6 +467,7 @@ impl From<AggLayerBridge> for AccountComponent {
             StorageSlot::with_value(CGI_CHAIN_HASH_LO_SLOT_NAME.clone(), Word::empty()),
             StorageSlot::with_value(CGI_CHAIN_HASH_HI_SLOT_NAME.clone(), Word::empty()),
             StorageSlot::with_empty_map(CLAIM_NULLIFIERS_SLOT_NAME.clone()),
+            StorageSlot::with_value(PAUSED_SLOT_NAME.clone(), Word::empty()),
         ];
         bridge_component(bridge_storage_slots)
     }
