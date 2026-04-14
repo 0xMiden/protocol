@@ -961,7 +961,7 @@ end
 pub proc set_active_account_data_ptr_to_native_account
     # store the native account data pointer into the first account stack element.
     push.NATIVE_ACCOUNT_DATA_PTR mem_store.MIN_ACCOUNT_STACK_PTR
-    # => [native_acct_stack_ptr, account_stack_top_ptr]
+    # => []
 
     # store the pointer to the first account stack element into the account stack top pointer.
     push.MIN_ACCOUNT_STACK_PTR mem_store.ACCOUNT_STACK_TOP_PTR

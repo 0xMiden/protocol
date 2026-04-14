@@ -899,8 +899,15 @@ end
 #! 2. Assert the two least significant elements of the digest are equal to the account ID of the
 #!    account the transaction is being executed against.
 #!
-#! Inputs:  []
-#! Outputs: []
+#! Inputs:
+#!   Operand stack: []
+#!   Advice map: { ACCOUNT_ID_KEY: [SEED] }
+#! Outputs:
+#!   Operand stack: []
+#!
+#! Where:
+#! - ACCOUNT_ID_KEY is the map key constructed from the native account ID.
+#! - SEED is the account seed used to derive the account ID.
 pub proc validate_seed
     # Compute the hash of (SEED, CODE_COMMITMENT, STORAGE_COMMITMENT, EMPTY_WORD).
     # ---------------------------------------------------------------------------------------------
