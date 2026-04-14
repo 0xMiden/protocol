@@ -27,7 +27,10 @@ fi
 
 LOG_FILE="/tmp/ci-monitor-pr-${PR_NUMBER}.log"
 
-nohup bash -c "cd $CWD && claude --agent ci-monitor -p 'Wait 20 minutes (sleep 1200), then check CI status for PR #${PR_NUMBER} (${PR_URL}). If any checks failed, diagnose and fix them. If all checks pass, just confirm and exit.'" > "$LOG_FILE" 2>&1 &
+export CI_MON_CWD="$CWD"
+export CI_MON_PR="$PR_NUMBER"
+export CI_MON_URL="$PR_URL"
+nohup bash -c 'cd "$CI_MON_CWD" && claude --agent ci-monitor --allowedTools "Bash Read Grep Glob Edit Write" -p "Wait 20 minutes (sleep 1200), then check CI status for PR #$CI_MON_PR ($CI_MON_URL). If any checks failed, diagnose and fix them. If all checks pass, just confirm and exit."' > "$LOG_FILE" 2>&1 &
 
 echo "CI monitor spawned for PR #${PR_NUMBER} (PID: $!, will check in ~20min, log: ${LOG_FILE})"
 exit 0

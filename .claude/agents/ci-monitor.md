@@ -2,7 +2,7 @@
 name: ci-monitor
 description: Waits for CI to run, then checks status, diagnoses failures, and pushes fixes. Spawned in background after PR creation.
 model: haiku
-effort: low
+effort: medium
 tools: Read, Grep, Glob, Bash, Edit, Write
 maxTurns: 30
 ---
@@ -47,7 +47,7 @@ If the failure is fixable:
 5. Commit and push:
    ```bash
    git add <files>
-   git -c user.name="Claude (Opus)" -c user.email="noreply@anthropic.com" commit -m "fix: <description of CI fix>"
+   git -c user.name="Claude (Opus)" -c user.email="noreply@anthropic.com" -c commit.gpgsign=false commit -m "fix: <description of CI fix>"
    git push
    ```
 
