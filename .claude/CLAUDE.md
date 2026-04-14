@@ -1,5 +1,7 @@
 # CLAUDE.md
 
+> Per-project lessons: ~/.claude/projects/protocol/lessons.md
+
 ## Workflow Orchestration
 
 ### 1. Plan Mode Default

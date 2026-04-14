@@ -47,7 +47,7 @@ If the failure is fixable:
 5. Commit and push:
    ```bash
    git add <files>
-   git -c user.name="Claude (Opus)" -c user.email="noreply@anthropic.com" commit -m "fix: <description of CI fix>"
+   git -c user.name="Claude (Opus)" -c user.email="noreply@anthropic.com" -c commit.gpgsign=false commit -m "fix: <description of CI fix>"
    git push
    ```
 

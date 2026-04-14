@@ -15,12 +15,6 @@
             "command": ".claude/hooks/pre-push-test.sh"
           },
           {
-            "type": "agent",
-            "if": "Bash(*git push*)",
-            "prompt": "Analyze the commit history on this branch since it diverged from its base. Find the fork point with: `BASE=$(git merge-base HEAD @{u} 2>/dev/null || git merge-base HEAD next)`, then `git log --oneline $BASE..HEAD`. Look for: (1) debug/WIP/fixup commits that should be squashed or dropped (2) commits with unhelpful messages like 'fix', 'wip', 'tmp'. If cleanup is needed, perform an interactive-style rebase using `git rebase` to squash, drop, or reword commits. Use `git -c user.name='Claude (Opus)' -c user.email='noreply@anthropic.com' -c commit.gpgsign=false` for any new commits. If the history already looks clean, do nothing.",
-            "model": "sonnet"
-          },
-          {
             "type": "command",
             "if": "Bash(*git push*)",
             "command": ".claude/hooks/pre-push-review.sh"
@@ -40,13 +34,22 @@
         ]
       }
     ],
+    "TaskCreated": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/task-created-debug.sh"
+          }
+        ]
+      }
+    ],
     "TaskCompleted": [
       {
         "hooks": [
           {
-            "type": "agent",
-            "prompt": "If there are uncommitted changes: review the diff. If all files belong, stage them by name and commit with a descriptive message using: git -c user.name='Claude (Opus)' -c user.email='noreply@anthropic.com' -c commit.gpgsign=false commit -m 'message'. If any files look out of place (build artifacts, generated files, unrelated changes), abort and explain which files are problematic.",
-            "model": "haiku"
+            "type": "command",
+            "command": ".claude/hooks/task-completed-debug.sh"
           }
         ]
       }

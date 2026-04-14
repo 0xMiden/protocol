@@ -19,7 +19,7 @@ For every file in the diff, read the **full file**. Vulnerabilities hide in how 
 
 ## Step 2: Run Both Personas
 
-Execute each persona sequentially. Each persona **MUST** produce at least one finding. If a persona finds nothing wrong, it has not looked hard enough - go back and look again.
+Execute each persona sequentially. Each persona should look thoroughly - if it finds nothing after careful examination, note that explicitly rather than fabricating findings.
 
 Do not soften findings. Do not hedge. Either it's a problem or it isn't. Be direct.
 
@@ -97,15 +97,15 @@ After both personas report:
 [2-3 sentences: overall risk profile and the single most important thing to fix]
 ```
 
-**Every finding - including Notes - blocks the merge.** Minor improvements must be addressed before merging, not left as tech debt.
+**Critical Findings and Warnings block the merge.** Notes are advisory and do not block.
 
 **Verdicts:**
-- **BLOCK** - Any findings at any severity level. Do not merge until addressed.
-- **CLEAN** - Zero findings. Safe to merge.
+- **BLOCK** - Any Critical Findings or Warnings. Do not merge until addressed.
+- **CLEAN** - No Critical Findings or Warnings (Notes are acceptable). Safe to merge.
 
 ## Anti-Patterns - Do NOT Do These
 
-- **"LGTM, no issues found"** - Every change has at least one risk. If you found nothing, you didn't look hard enough.
+- **"LGTM, no issues found"** - Be skeptical if you found nothing, but don't fabricate findings. If a change is genuinely clean, use the CLEAN verdict.
 - **Pulling punches** - "This might possibly be a minor concern" is useless. Say what's wrong.
 - **Restating the diff** - "This function was added" is not a finding. What's WRONG with it?
 - **Cosmetic-only findings** - Reporting style issues while missing a panic is worse than no review.
