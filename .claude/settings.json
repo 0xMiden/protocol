@@ -28,6 +28,17 @@
           }
         ]
       }
+    ],
+    "TaskCompleted": [
+      {
+        "hooks": [
+          {
+            "type": "agent",
+            "prompt": "If there are uncommitted changes: review the diff. If all files belong, stage them by name and commit with a descriptive message using: git -c user.name='Claude (Opus)' -c user.email='noreply@anthropic.com' -c commit.gpgsign=false commit -m 'message'. If any files look out of place (build artifacts, generated files, unrelated changes), abort and explain which files are problematic.",
+            "model": "haiku"
+          }
+        ]
+      }
     ]
   }
 }
