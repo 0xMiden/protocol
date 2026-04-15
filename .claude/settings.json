@@ -18,6 +18,10 @@
             "type": "command",
             "if": "Bash(*git push*)",
             "command": ".claude/hooks/pre-push-review.sh"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/pre-pr-draft.sh"
           }
         ]
       }
