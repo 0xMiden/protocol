@@ -182,7 +182,7 @@ end
 #! - METADATA_HEADER is the metadata of a note.
 #! - sender_{suffix,prefix} are the suffix and prefix felts of the sender ID of the note which
 #!   metadata was provided.
-pub proc extract_sender_from_metadata
+pub proc metadata_into_sender
     # => [sender_id_suffix_type_version, sender_id_prefix, tag, attachment_kind_scheme]
 
     # drop tag and attachment_kind_scheme
@@ -205,7 +205,7 @@ end
 #! - attachment_scheme is the attachment scheme of the note.
 #!
 #! Invocation: exec
-pub proc extract_attachment_info_from_metadata
+pub proc metadata_into_attachment_info
     # => [sender_id_suffix_type_version, sender_id_prefix, tag, attachment_kind_scheme]
     drop drop drop
     # => [attachment_kind_scheme]
@@ -234,7 +234,6 @@ end
 #!
 #! Invocation: exec
 pub proc metadata_into_note_type
-
     movdn.3 drop drop drop
     # => [sender_id_suffix_type_version]
 
