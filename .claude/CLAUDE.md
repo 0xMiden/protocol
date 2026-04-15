@@ -39,6 +39,7 @@
 - **Worktrees:** Always work in a git worktree when possible (use `EnterWorktree` with a descriptive name for the feature). This allows parallel agents to work in the same repo without conflicts. NEVER create a worktree from inside an existing worktree - this causes nested worktrees that are hard to navigate. If you are already in a worktree, just work there directly.
 - **Worktree visibility:** Always tell the user which worktree (full path) you will work in as part of the plan. When finished, state where the changes live (worktree path and branch name).
 - **Commit authorship:** Always commit as Claude, not as the user. Use: `git -c user.name="Claude (Opus)" -c user.email="noreply@anthropic.com" -c commit.gpgsign=false commit -m "message"`
+- **Commit frequency:** Always commit at the end of each task. Avoid single commits that span multiple unrelated changes.
 
 ## Output Formatting
 
