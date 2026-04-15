@@ -532,6 +532,7 @@ proc execute_pswap
     # Consumer receives only account_fill_payout into vault (not the note_fill portion, if > 0)
     loc_load.EXEC_AMT_PAYOUT_ACCOUNT_FILL neq.0
     # => [has_account_fill_payout]
+    
     if.true
         padw padw
         # => [pad(8)]
