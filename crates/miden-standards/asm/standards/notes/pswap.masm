@@ -234,6 +234,7 @@ proc create_p2id_note
     # Add note_fill_amount directly to P2ID note (no vault debit, if > 0)
     loc_load.P2ID_AMT_NOTE_FILL neq.0
     # => [has_note_fill]
+    
     if.true
         loc_load.P2ID_NOTE_IDX
         # => [note_idx]
