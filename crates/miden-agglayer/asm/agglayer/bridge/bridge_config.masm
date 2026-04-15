@@ -161,7 +161,7 @@ pub proc register_faucet
     # VALUE = [0, 0, scale, 0]
 
     # Save faucet ID copies for step 3
-    dup.6 dup.6
+    dup.7 dup.7
     # => [faucet_id_suffix, faucet_id_prefix, scale, origin_token_addr(5),
     #     faucet_id_suffix, faucet_id_prefix, pad(8)]
 
