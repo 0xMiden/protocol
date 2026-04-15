@@ -478,7 +478,8 @@ proc execute_pswap
 
     loc_load.EXEC_AMT_REQUESTED
     # => [requested, fill_amount]
-
+    # => [requested, fill_amount]
+    
     lte assert.err=ERR_PSWAP_FILL_EXCEEDS_REQUESTED
     # => []
 
