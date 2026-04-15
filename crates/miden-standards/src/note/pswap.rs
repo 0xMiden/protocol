@@ -41,7 +41,7 @@ static PSWAP_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 
 /// Canonical storage representation for a PSWAP note.
 ///
-/// Maps to the 9-element [`NoteStorage`] layout consumed by the on-chain MASM script:
+/// Maps to the 8-element [`NoteStorage`] layout consumed by the on-chain MASM script:
 ///
 /// | Slot | Field |
 /// |---------|-------|
@@ -51,8 +51,7 @@ static PSWAP_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 /// | `[3]` | Requested asset amount |
 /// | `[4]` | Payback note routing tag (targets the creator) |
 /// | `[5]` | Payback note type (0 = private, 1 = public) |
-/// | `[6]` | Swap count (incremented on each partial fill) |
-/// | `[7-8]` | Creator account ID (prefix, suffix) |
+/// | `[6-7]` | Creator account ID (prefix, suffix) |
 ///
 /// The PSWAP note's own tag is not stored: it lives in the note's metadata and
 /// is lifted from there by the on-chain script when a remainder note is created
@@ -60,9 +59,6 @@ static PSWAP_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 #[derive(Debug, Clone, PartialEq, Eq, bon::Builder)]
 pub struct PswapNoteStorage {
     requested_asset: FungibleAsset,
-
-    #[builder(default)]
-    swap_count: u16,
 
     creator_account_id: AccountId,
 
@@ -80,7 +76,7 @@ impl PswapNoteStorage {
     // --------------------------------------------------------------------------------------------
 
     /// Expected number of storage items for the PSWAP note.
-    pub const NUM_STORAGE_ITEMS: usize = 9;
+    pub const NUM_STORAGE_ITEMS: usize = 8;
 
     /// Consumes the storage and returns a PSWAP [`NoteRecipient`] with the provided serial number.
     pub fn into_recipient(self, serial_num: Word) -> NoteRecipient {
@@ -98,11 +94,6 @@ impl PswapNoteStorage {
     /// Returns the payback note routing tag, derived from the creator's account ID.
     pub fn payback_note_tag(&self) -> NoteTag {
         NoteTag::with_account_target(self.creator_account_id)
-    }
-
-    /// Number of times this note has been partially filled and re-created.
-    pub fn swap_count(&self) -> u16 {
-        self.swap_count
     }
 
     /// Returns the account ID of the note creator.
@@ -126,7 +117,7 @@ impl PswapNoteStorage {
     }
 }
 
-/// Serializes [`PswapNoteStorage`] into a 9-element [`NoteStorage`].
+/// Serializes [`PswapNoteStorage`] into an 8-element [`NoteStorage`].
 impl From<PswapNoteStorage> for NoteStorage {
     fn from(storage: PswapNoteStorage) -> Self {
         let storage_items = vec![
@@ -140,9 +131,7 @@ impl From<PswapNoteStorage> for NoteStorage {
             Felt::from(storage.payback_note_tag()),
             // Payback note type [5]
             Felt::from(storage.payback_note_type.as_u8()),
-            // Swap count [6]
-            Felt::from(storage.swap_count),
-            // Creator ID [7-8]
+            // Creator ID [6-7]
             storage.creator_account_id.prefix().as_felt(),
             storage.creator_account_id.suffix(),
         ];
@@ -151,7 +140,7 @@ impl From<PswapNoteStorage> for NoteStorage {
     }
 }
 
-/// Deserializes [`PswapNoteStorage`] from a slice of exactly 9 [`Felt`]s.
+/// Deserializes [`PswapNoteStorage`] from a slice of exactly 8 [`Felt`]s.
 impl TryFrom<&[Felt]> for PswapNoteStorage {
     type Error = NoteError;
 
@@ -187,17 +176,11 @@ impl TryFrom<&[Felt]> for PswapNoteStorage {
         )
         .map_err(|e| NoteError::other_with_source("failed to parse payback note type", e))?;
 
-        let swap_count: u16 = note_storage[6]
-            .as_canonical_u64()
-            .try_into()
-            .map_err(|_| NoteError::other("swap_count exceeds u16"))?;
-
-        let creator_account_id = AccountId::try_from_elements(note_storage[8], note_storage[7])
+        let creator_account_id = AccountId::try_from_elements(note_storage[7], note_storage[6])
             .map_err(|e| NoteError::other_with_source("failed to parse creator account ID", e))?;
 
         Ok(Self {
             requested_asset,
-            swap_count,
             creator_account_id,
             payback_note_type,
         })
@@ -571,14 +554,8 @@ impl PswapNote {
         remaining_requested_asset: FungibleAsset,
         offered_amount_for_fill: u64,
     ) -> Result<PswapNote, NoteError> {
-        let next_swap_count = self
-            .storage
-            .swap_count
-            .checked_add(1)
-            .ok_or_else(|| NoteError::other("swap count overflow"))?;
         let new_storage = PswapNoteStorage::builder()
             .requested_asset(remaining_requested_asset)
-            .swap_count(next_swap_count)
             .creator_account_id(self.storage.creator_account_id)
             .payback_note_type(self.storage.payback_note_type)
             .build();
@@ -841,13 +818,11 @@ mod tests {
             Felt::try_from(requested_asset.amount()).unwrap(),
             Felt::from(0x80000001u32),             // payback_note_tag
             Felt::from(NoteType::Private.as_u8()), // payback_note_type
-            Felt::from(3u16),                      // swap_count
             creator_id.prefix().as_felt(),
             creator_id.suffix(),
         ];
 
         let parsed = PswapNoteStorage::try_from(storage_items.as_slice()).unwrap();
-        assert_eq!(parsed.swap_count(), 3);
         assert_eq!(parsed.creator_account_id(), creator_id);
         assert_eq!(parsed.requested_asset_amount(), 500);
     }
@@ -866,7 +841,6 @@ mod tests {
         let parsed = PswapNoteStorage::try_from(note_storage.items()).unwrap();
 
         assert_eq!(parsed.creator_account_id(), creator_id);
-        assert_eq!(parsed.swap_count(), 0);
         assert_eq!(parsed.requested_asset_amount(), 500);
     }
 
@@ -907,7 +881,6 @@ mod tests {
         let remainder = remainder.expect("partial fill should produce remainder");
         assert_eq!(remainder.storage().requested_asset_amount(), 20);
         assert_eq!(remainder.offered_asset().amount(), 40);
-        assert_eq!(remainder.storage().swap_count(), 1);
         assert_eq!(remainder.storage().creator_account_id(), creator_id);
     }
 
