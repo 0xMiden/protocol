@@ -2,7 +2,7 @@
 name: ci-monitor
 description: Waits for CI to run, then checks status, diagnoses failures, and pushes fixes. Spawned in background after PR creation.
 model: haiku
-effort: low
+effort: medium
 tools: Read, Grep, Glob, Bash, Edit, Write
 maxTurns: 30
 ---
