@@ -6,6 +6,7 @@ use crate::asset::FungibleAsset;
 use crate::note::{
     Note,
     NoteAssets,
+    NoteAttachments,
     NoteMetadata,
     NoteRecipient,
     NoteScript,
@@ -29,7 +30,7 @@ impl Note {
         let inputs = NoteStorage::new(Vec::new()).unwrap();
         let recipient = NoteRecipient::new(serial_num, note_script, inputs);
 
-        Note::new(assets, metadata, recipient)
+        Note::new(assets, metadata, recipient, NoteAttachments::default())
     }
 }
 

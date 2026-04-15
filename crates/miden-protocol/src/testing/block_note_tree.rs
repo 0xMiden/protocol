@@ -19,7 +19,7 @@ impl BlockNoteTree {
                 // SAFETY: This is only called from test code. Reconsider if this changes.
                 let block_note_index = BlockNoteIndex::new(batch_idx, *note_idx_in_batch)
                     .expect("output note batch indices should fit into a block");
-                (block_note_index, note.id(), note.metadata())
+                (block_note_index, note.id(), note.metadata_header())
             })
         });
 
