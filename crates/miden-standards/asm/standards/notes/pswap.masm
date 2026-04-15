@@ -12,7 +12,7 @@ use miden::standards::wallets::basic->wallet
 # CONSTANTS
 # =================================================================================================
 
-const NUM_STORAGE_ITEMS=10
+const NUM_STORAGE_ITEMS=9
 
 # Fixed-point scaling factor (1e5) used by calculate_tokens_offered_for_requested
 # to approximate the offered/requested ratio with u64 integer math.
@@ -27,17 +27,16 @@ const NUM_STORAGE_ITEMS=10
 const FACTOR=100000
 const MAX_U32=0x0000000100000000
 
-# Note storage layout (10 felts, loaded at STORAGE_PTR by get_storage):
+# Note storage layout (9 felts, loaded at STORAGE_PTR by get_storage):
 # - requested_enable_callbacks [0]  : 1 felt
 # - requested_faucet_suffix    [1]  : 1 felt
 # - requested_faucet_prefix    [2]  : 1 felt
 # - requested_amount           [3]  : 1 felt
-# - pswap_tag                  [4]  : 1 felt
-# - p2id_tag                   [5]  : 1 felt
-# - payback_note_type          [6]  : 1 felt
-# - pswap_count                [7]  : 1 felt
-# - creator_id_prefix          [8]  : 1 felt
-# - creator_id_suffix          [9]  : 1 felt
+# - p2id_tag                   [4]  : 1 felt
+# - payback_note_type          [5]  : 1 felt
+# - pswap_count                [6]  : 1 felt
+# - creator_id_prefix          [7]  : 1 felt
+# - creator_id_suffix          [8]  : 1 felt
 #
 # Where:
 # - requested_enable_callbacks: Callback-enabled flag for the requested fungible asset
@@ -46,23 +45,25 @@ const MAX_U32=0x0000000100000000
 # - requested_faucet_prefix: Prefix of the requested asset's faucet AccountId
 #   (AccountIdPrefix as Felt)
 # - requested_amount: Amount of the requested fungible asset (Felt)
-# - pswap_tag: The NoteTag for remainder PSWAP notes, derived from the offered/requested asset pair
 # - p2id_tag: The NoteTag for P2ID payback notes, derived from the creator's account ID
-# - payback_note_type: The NoteType propagated to the P2ID payback and remainder PSWAP notes
+# - payback_note_type: The NoteType used for the P2ID payback note
 # - pswap_count: Number of times this note has been partially filled and re-created
 # - creator_id_prefix: The prefix of the creator's AccountId (AccountIdPrefix as Felt)
 # - creator_id_suffix: The suffix of the creator's AccountId (Felt)
+#
+# The remainder PSWAP note's own tag is not stored — it is lifted from the
+# active note's metadata at remainder-creation time (same asset pair => same
+# tag), saving one storage slot.
 const STORAGE_PTR = 0
 const REQUESTED_ENABLE_CALLBACKS_ITEM = STORAGE_PTR
 const REQUESTED_FAUCET_SUFFIX_ITEM = STORAGE_PTR + 1
 const REQUESTED_FAUCET_PREFIX_ITEM = STORAGE_PTR + 2
 const REQUESTED_AMOUNT_ITEM = STORAGE_PTR + 3
-const PSWAP_TAG_ITEM = STORAGE_PTR + 4
-const P2ID_TAG_ITEM = STORAGE_PTR + 5
-const PAYBACK_NOTE_TYPE_ITEM = STORAGE_PTR + 6
-const PSWAP_COUNT_ITEM = STORAGE_PTR + 7
-const PSWAP_CREATOR_PREFIX_ITEM = STORAGE_PTR + 8
-const PSWAP_CREATOR_SUFFIX_ITEM = STORAGE_PTR + 9
+const P2ID_TAG_ITEM = STORAGE_PTR + 4
+const PAYBACK_NOTE_TYPE_ITEM = STORAGE_PTR + 5
+const PSWAP_COUNT_ITEM = STORAGE_PTR + 6
+const PSWAP_CREATOR_PREFIX_ITEM = STORAGE_PTR + 7
+const PSWAP_CREATOR_SUFFIX_ITEM = STORAGE_PTR + 8
 
 # Local memory offsets
 # -------------------------------------------------------------------------------------------------
@@ -101,7 +102,7 @@ const EXEC_AMT_REQUESTED_NOTE_FILL = 9
 # ERRORS
 # =================================================================================================
 
-const ERR_PSWAP_WRONG_NUMBER_OF_STORAGE_ITEMS="PSWAP script expects exactly 10 note storage items"
+const ERR_PSWAP_WRONG_NUMBER_OF_STORAGE_ITEMS="PSWAP script expects exactly 9 note storage items"
 const ERR_PSWAP_WRONG_NUMBER_OF_ASSETS="PSWAP script requires exactly one note asset"
 const ERR_PSWAP_FILL_EXCEEDS_REQUESTED="PSWAP fill amount exceeds requested amount"
 const ERR_PSWAP_FILL_SUM_OVERFLOW="PSWAP account_fill + note_fill overflows u64"
@@ -278,13 +279,11 @@ proc create_p2id_note
         padw push.0.0.0 loc_load.P2ID_NOTE_IDX
         # => [note_idx, pad(7)]
 
-        push.0.0.0 loc_load.P2ID_AMT_ACCOUNT_FILL
-        # => [amt_account_fill, 0, 0, 0, note_idx, pad(7)]
-
+        loc_load.P2ID_AMT_ACCOUNT_FILL
         loc_load.P2ID_REQUESTED_FAUCET_PREFIX
         loc_load.P2ID_REQUESTED_FAUCET_SUFFIX
         loc_load.P2ID_REQUESTED_ENABLE_CB
-        # => [enable_cb, faucet_suffix, faucet_prefix, amt_account_fill, 0, 0, 0, note_idx, pad(7)]
+        # => [enable_cb, faucet_suffix, faucet_prefix, amt_account_fill, note_idx, pad(7)]
 
         exec.asset::create_fungible_asset
         # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
@@ -356,7 +355,7 @@ proc create_remainder_note
     movup.2 mem_store.REQUESTED_AMOUNT_ITEM
     # => [note_type, tag]
 
-    # Build PSWAP remainder recipient using the same script as the active note
+    # Build PSWAP remainder recipient using the same script as the active note.
     exec.active_note::get_script_root
     # => [SCRIPT_ROOT, note_type, tag]
 
@@ -430,7 +429,7 @@ end
 #! Inputs: []
 #! Outputs: [ASSET_KEY, ASSET_VALUE]
 #!
-@locals(2)
+@locals(8)
 proc load_offered_asset
     locaddr.0 exec.active_note::get_assets
     # => [num_assets, dest_ptr]
@@ -566,7 +565,9 @@ proc execute_pswap
     loc_store.EXEC_AMT_PAYOUT_TOTAL
     # => []
 
-    # Create P2ID note for creator
+    # Create P2ID note for creator. Content is keyed off the fill amounts
+    # (`account_fill + note_fill` of the requested asset), not `total_payout`,
+    # and fills are guaranteed > 0 by the `both_zero` fallback in `main`.
     loc_load.EXEC_AMT_REQUESTED_NOTE_FILL
     loc_load.EXEC_AMT_REQUESTED_ACCOUNT_FILL
     mem_load.REQUESTED_FAUCET_PREFIX_ITEM
@@ -618,14 +619,22 @@ proc execute_pswap
         swap sub
         # => [remaining_requested]
 
-        mem_load.PSWAP_TAG_ITEM
-        # => [tag, remaining_requested]
-
-        # Fetch the active note's type to inherit it for the remainder pswap note.
+        # Fetch active note metadata: the remainder note inherits both the
+        # note type and the pswap tag from it. The asset pair is unchanged,
+        # so the tag derived in Rust at creation time still applies, and we
+        # avoid spending a storage slot on `pswap_tag`.
         exec.active_note::get_metadata
-        # => [NOTE_ATTACHMENT(4), METADATA_HEADER(4), tag, remaining_requested]
+        # => [NOTE_ATTACHMENT(4), METADATA_HEADER(4), remaining_requested]
+        # where METADATA_HEADER = [sid_suf_ver, sid_pre, tag, att_ks]
         dropw
-        # => [METADATA_HEADER(4), tag, remaining_requested]
+        # => [sid_suf_ver, sid_pre, tag, att_ks, remaining_requested]
+
+        # Dup the tag out of METADATA_HEADER (at depth 2) and park it just
+        # below the header so `metadata_into_note_type` can consume the
+        # header intact.
+        dup.2 movdn.4
+        # => [sid_suf_ver, sid_pre, tag, att_ks, tag, remaining_requested]
+
         exec.note::metadata_into_note_type
         # => [note_type, tag, remaining_requested]
 

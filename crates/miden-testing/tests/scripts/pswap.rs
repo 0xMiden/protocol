@@ -9,7 +9,10 @@ use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, ONE, Word, ZERO};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::note::{PswapNote, PswapNoteStorage};
+use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain, MockChainBuilder};
+use rand::SeedableRng;
+use rand::rngs::SmallRng;
 use rstest::rstest;
 
 // CONSTANTS
@@ -176,12 +179,15 @@ async fn pswap_note_alice_reconstructs_and_consumes_p2id() -> anyhow::Result<()>
 
     // --- Step 2: Alice reconstructs the P2ID note from her PSWAP data + aux ---
 
-    // In production, Alice reads the fill amount from the P2ID note's attachment (aux data),
-    // which is visible for both public and private notes. Here we read it from the
-    // Rust-predicted note since the test framework doesn't preserve word attachment content
-    // in executed transaction outputs.
-    let aux_word = p2id_note.metadata().attachment().content().to_word();
-    let fill_amount_from_aux = aux_word[0].as_canonical_u64();
+    //let aux_word = p2id_note.metadata().attachment().content().to_word();
+    let aux_word = executed_transaction
+        .output_notes()
+        .get_note(0)
+        .metadata()
+        .attachment()
+        .content()
+        .to_word();
+    let fill_amount_from_aux = aux_word[3].as_canonical_u64();
     assert_eq!(fill_amount_from_aux, 20, "Fill amount from aux should be 20 ETH");
 
     // Alice reconstructs the recipient using her serial number and account ID
@@ -520,6 +526,101 @@ async fn pswap_note_invalid_input_test() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Regression test for the `note_idx` stack-layout bug in `create_p2id_note`'s
+/// `has_account_fill` branch.
+///
+/// The buggy frame setup left three stray zeros between `ASSET_VALUE` and the
+/// real `note_idx` on the stack, so `move_asset_to_note` read a pad zero as the
+/// note index. Every existing pswap test masked this because the PSWAP note
+/// was always the only output-note emitter in the transaction, so `note_idx`
+/// was 0 and happened to match one of the pad zeros by coincidence.
+///
+/// This test consumes a SPAWN note *first*, which emits an (empty) dummy note
+/// at `note_idx == 0`. The subsequent PSWAP note therefore creates its P2ID at
+/// `note_idx == 1`. If the bug is reintroduced, bob's 25 ETH will be routed to
+/// the dummy at idx 0 instead of the P2ID at idx 1, and the asset assertions
+/// below will fail.
+#[tokio::test]
+async fn pswap_note_idx_nonzero_regression_test() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let usdc_faucet = builder.add_existing_basic_faucet(BASIC_AUTH, "USDC", 1000, Some(50))?;
+    let eth_faucet = builder.add_existing_basic_faucet(BASIC_AUTH, "ETH", 1000, Some(25))?;
+
+    let alice = builder.add_existing_wallet_with_assets(
+        BASIC_AUTH,
+        [FungibleAsset::new(usdc_faucet.id(), 50)?.into()],
+    )?;
+    let bob = builder.add_existing_wallet_with_assets(
+        BASIC_AUTH,
+        [FungibleAsset::new(eth_faucet.id(), 25)?.into()],
+    )?;
+
+    let mut rng = RandomCoin::new(Word::default());
+    let pswap_note = build_pswap_note(
+        &mut builder,
+        alice.id(),
+        FungibleAsset::new(usdc_faucet.id(), 50)?,
+        FungibleAsset::new(eth_faucet.id(), 25)?,
+        NoteType::Public,
+        &mut rng,
+    )?;
+
+    // Dummy output note to be emitted by the SPAWN note. Sender must equal
+    // the transaction's native account (bob) per `create_spawn_note`'s check.
+    // No assets — keeps the spawn script trivial.
+    let dummy_note = NoteBuilder::new(bob.id(), SmallRng::seed_from_u64(7777)).build()?;
+    let spawn_note = builder.add_spawn_note([&dummy_note])?;
+
+    let mock_chain = builder.build()?;
+
+    // Full account-fill: 25 ETH out of bob's vault. Exercises the
+    // `has_account_fill` branch where the `note_idx` bug lives.
+    let mut note_args_map = BTreeMap::new();
+    note_args_map.insert(pswap_note.id(), note_args(25, 0));
+
+    let pswap = PswapNote::try_from(&pswap_note)?;
+    let (expected_p2id, _) =
+        pswap.execute(bob.id(), Some(FungibleAsset::new(eth_faucet.id(), 25)?), None)?;
+
+    // Consume spawn first so the PSWAP-created P2ID gets note_idx == 1.
+    let tx_context = mock_chain
+        .build_tx_context(bob.id(), &[spawn_note.id(), pswap_note.id()], &[])?
+        .extend_note_args(note_args_map)
+        .extend_expected_output_notes(vec![
+            RawOutputNote::Full(dummy_note.clone()),
+            RawOutputNote::Full(expected_p2id),
+        ])
+        .build()?;
+
+    let executed = tx_context.execute().await?;
+
+    // Exactly 2 output notes: dummy (from spawn) at idx 0, P2ID (from pswap) at idx 1.
+    let output_notes = executed.output_notes();
+    assert_eq!(output_notes.num_notes(), 2, "expected dummy + p2id");
+
+    // Dummy at idx 0 must be empty. If the note_idx bug is reintroduced,
+    // bob's 25 ETH would land here instead of on the P2ID.
+    let dummy_out = output_notes.get_note(0);
+    assert_eq!(
+        dummy_out.assets().num_assets(),
+        0,
+        "SPAWN dummy should be empty; non-empty means `create_p2id_note` \
+         wrote its asset to the wrong output note_idx",
+    );
+
+    // P2ID at idx 1 must carry the full 25 ETH.
+    let p2id_out = output_notes.get_note(1);
+    assert_eq!(p2id_out.assets().num_assets(), 1, "P2ID must have 1 asset");
+    assert_fungible_asset(p2id_out.assets().iter().next().unwrap(), eth_faucet.id(), 25);
+
+    // Bob's vault: +50 USDC payout, -25 ETH fill.
+    let vault_delta = executed.account_delta().vault();
+    assert_vault_added_removed(vault_delta, (usdc_faucet.id(), 50), (eth_faucet.id(), 25));
+
+    Ok(())
+}
+
 #[rstest]
 #[case(5)]
 #[case(7)]
@@ -802,7 +903,6 @@ async fn pswap_chained_partial_fills_test(
 
         let storage = PswapNoteStorage::builder()
             .requested_asset(requested_fungible)
-            .pswap_tag(pswap_tag)
             .swap_count(current_swap_count as u16)
             .creator_account_id(alice.id())
             .build();
