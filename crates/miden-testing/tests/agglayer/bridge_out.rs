@@ -1,6 +1,10 @@
 extern crate alloc;
 
-use miden_agglayer::errors::{ERR_B2AGG_TARGET_ACCOUNT_MISMATCH, ERR_FAUCET_NOT_REGISTERED};
+use miden_agglayer::errors::{
+    ERR_B2AGG_DESTINATION_NETWORK_IS_MIDEN,
+    ERR_B2AGG_TARGET_ACCOUNT_MISMATCH,
+    ERR_FAUCET_NOT_REGISTERED,
+};
 use miden_agglayer::{
     AggLayerBridge,
     B2AggNote,
@@ -348,6 +352,100 @@ async fn test_bridge_out_fails_with_unregistered_faucet() -> anyhow::Result<()> 
         .await;
 
     assert_transaction_executor_error!(result, ERR_FAUCET_NOT_REGISTERED);
+
+    Ok(())
+}
+
+/// Bridge-out must fail if the B2AGG note's destination network ID equals the Miden network ID.
+#[tokio::test]
+async fn test_bridge_out_fails_when_destination_is_miden_network() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    let mut bridge_account = create_existing_bridge_account(
+        builder.rng_mut().draw_word(),
+        bridge_admin.id(),
+        ger_manager.id(),
+    );
+    builder.add_account(bridge_account.clone())?;
+
+    let vectors = &*SOLIDITY_MTF_VECTORS;
+    let origin_token_address =
+        EthAddress::from_hex(&vectors.origin_token_address).expect("valid origin token address");
+    let metadata_hash = MetadataHash::from_token_info(
+        &vectors.token_name,
+        &vectors.token_symbol,
+        vectors.token_decimals,
+    );
+    let faucet = create_existing_agglayer_faucet(
+        builder.rng_mut().draw_word(),
+        &vectors.token_symbol,
+        vectors.token_decimals,
+        Felt::new(FungibleAsset::MAX_AMOUNT),
+        Felt::new(100),
+        bridge_account.id(),
+        &origin_token_address,
+        64u32,
+        0u8,
+        metadata_hash,
+    );
+    builder.add_account(faucet.clone())?;
+
+    let config_note = ConfigAggBridgeNote::create(
+        faucet.id(),
+        &origin_token_address,
+        bridge_admin.id(),
+        bridge_account.id(),
+        builder.rng_mut(),
+    )?;
+    builder.add_output_note(RawOutputNote::Full(config_note.clone()));
+
+    let amount = Felt::new(100);
+    let bridge_asset: Asset =
+        FungibleAsset::new(faucet.id(), amount.as_canonical_u64()).unwrap().into();
+    let eth_address =
+        EthAddress::from_hex(&vectors.destination_addresses[0]).expect("valid destination address");
+
+    let b2agg_note = B2AggNote::create(
+        AggLayerBridge::MIDEN_NETWORK_ID,
+        eth_address,
+        NoteAssets::new(vec![bridge_asset])?,
+        bridge_account.id(),
+        faucet.id(),
+        builder.rng_mut(),
+    )?;
+
+    builder.add_output_note(RawOutputNote::Full(b2agg_note.clone()));
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let config_executed = mock_chain
+        .build_tx_context(bridge_account.id(), &[config_note.id()], &[])?
+        .build()?
+        .execute()
+        .await?;
+    bridge_account.apply_delta(config_executed.account_delta())?;
+    mock_chain.add_pending_executed_transaction(&config_executed)?;
+    mock_chain.prove_next_block()?;
+
+    let foreign_account_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
+
+    let result = mock_chain
+        .build_tx_context(bridge_account.id(), &[b2agg_note.id()], &[])?
+        .foreign_accounts(vec![foreign_account_inputs])
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_B2AGG_DESTINATION_NETWORK_IS_MIDEN);
 
     Ok(())
 }
