@@ -260,6 +260,36 @@ impl PswapNote {
         PSWAP_SCRIPT.root()
     }
 
+    /// Builds the `NOTE_ARGS` word that the PSWAP script expects when a
+    /// consumer wants to fill part of the swap:
+    ///
+    /// `[account_fill, note_fill, 0, 0]`
+    ///
+    /// - `account_fill` is the portion of the requested asset the consumer pays out of their own
+    ///   vault.
+    /// - `note_fill` is the portion sourced from another note in the same transaction (cross-swap /
+    ///   net-zero flow).
+    ///
+    /// Both values are in the requested asset's base units. In a network
+    /// transaction the kernel defaults `NOTE_ARGS` to `[0, 0, 0, 0]` and the
+    /// script falls back to a full fill, so this helper is only needed for
+    /// local transactions where the consumer is choosing the fill split.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if either value exceeds the Goldilocks field size
+    /// (i.e. cannot be represented as a [`Felt`]). In practice this cannot
+    /// happen for any amount that fits in a [`FungibleAsset`] —
+    /// `FungibleAsset::MAX_AMOUNT` is comfortably below `2^63` — but the
+    /// conversion is surfaced explicitly rather than hidden behind a panic.
+    pub fn create_args(account_fill: u64, note_fill: u64) -> Result<Word, NoteError> {
+        let account_fill = Felt::try_from(account_fill)
+            .map_err(|e| NoteError::other_with_source("account_fill is not a valid felt", e))?;
+        let note_fill = Felt::try_from(note_fill)
+            .map_err(|e| NoteError::other_with_source("note_fill is not a valid felt", e))?;
+        Ok(Word::from([account_fill, note_fill, ZERO, ZERO]))
+    }
+
     /// Returns the account ID of the note sender.
     pub fn sender(&self) -> AccountId {
         self.sender

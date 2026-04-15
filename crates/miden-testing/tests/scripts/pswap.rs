@@ -63,16 +63,6 @@ fn build_pswap_note(
     Ok((pswap, note))
 }
 
-/// PSWAP note args Word `[account_fill, note_fill, 0, 0]`.
-fn pswap_args(account_fill: u64, note_fill: u64) -> Word {
-    Word::from([
-        Felt::try_from(account_fill).expect("account_fill fits in a felt"),
-        Felt::try_from(note_fill).expect("note_fill fits in a felt"),
-        ZERO,
-        ZERO,
-    ])
-}
-
 #[track_caller]
 fn assert_fungible_asset_eq(asset: &Asset, expected: FungibleAsset) {
     match asset {
@@ -166,7 +156,7 @@ async fn pswap_note_alice_reconstructs_and_consumes_p2id() -> anyhow::Result<()>
 
     let fill_amount = 20u64;
     let mut note_args_map = BTreeMap::new();
-    note_args_map.insert(pswap_note.id(), pswap_args(fill_amount, 0));
+    note_args_map.insert(pswap_note.id(), PswapNote::create_args(fill_amount, 0)?);
 
     let (p2id_note, remainder_pswap) =
         pswap.execute(bob.id(), Some(FungibleAsset::new(eth_faucet.id(), 20)?), None)?;
@@ -338,7 +328,7 @@ async fn pswap_attachment_layout_matches_masm_test() -> anyhow::Result<()> {
     let expected_payout = 40u64; // floor(50 * 20 / 25)
 
     let mut note_args_map = BTreeMap::new();
-    note_args_map.insert(pswap_note.id(), pswap_args(fill_amount, 0));
+    note_args_map.insert(pswap_note.id(), PswapNote::create_args(fill_amount, 0)?);
 
     let (p2id_note, remainder_pswap) = pswap.execute(bob.id(), Some(eth_20), None)?;
     let remainder_note =
@@ -494,7 +484,7 @@ async fn pswap_fill_test(
 
     if !use_network_account {
         let mut note_args_map = BTreeMap::new();
-        note_args_map.insert(pswap_note.id(), pswap_args(fill_amount, 0));
+        note_args_map.insert(pswap_note.id(), PswapNote::create_args(fill_amount, 0)?);
         tx_builder = tx_builder.extend_note_args(note_args_map);
     }
 
@@ -575,8 +565,8 @@ async fn pswap_note_note_fill_cross_swap_test() -> anyhow::Result<()> {
 
     // Note args: pure note fill (account_fill = 0, note_fill = full amount)
     let mut note_args_map = BTreeMap::new();
-    note_args_map.insert(alice_pswap_note.id(), pswap_args(0, 25));
-    note_args_map.insert(bob_pswap_note.id(), pswap_args(0, 50));
+    note_args_map.insert(alice_pswap_note.id(), PswapNote::create_args(0, 25)?);
+    note_args_map.insert(bob_pswap_note.id(), PswapNote::create_args(0, 50)?);
 
     // Expected P2ID notes
     let (alice_p2id_note, _) = alice_pswap.execute(charlie.id(), None, Some(eth_25))?;
@@ -677,8 +667,8 @@ async fn pswap_note_combined_account_fill_and_note_fill_test() -> anyhow::Result
 
     // Alice's pswap uses a combined fill; Bob's pswap uses pure note_fill.
     let mut note_args_map = BTreeMap::new();
-    note_args_map.insert(alice_pswap_note.id(), pswap_args(20, 30));
-    note_args_map.insert(bob_pswap_note.id(), pswap_args(0, 60));
+    note_args_map.insert(alice_pswap_note.id(), PswapNote::create_args(20, 30)?);
+    note_args_map.insert(bob_pswap_note.id(), PswapNote::create_args(0, 60)?);
 
     let (alice_p2id_note, alice_remainder) =
         alice_pswap.execute(charlie.id(), Some(account_fill_eth), Some(note_fill_eth))?;
@@ -790,7 +780,7 @@ async fn pswap_note_invalid_input_test() -> anyhow::Result<()> {
 
     // Try to fill with 30 ETH when only 25 is requested - should fail
     let mut note_args_map = BTreeMap::new();
-    note_args_map.insert(pswap_note.id(), pswap_args(30, 0));
+    note_args_map.insert(pswap_note.id(), PswapNote::create_args(30, 0)?);
 
     let tx_context = mock_chain
         .build_tx_context(bob.id(), &[pswap_note.id()], &[])?
@@ -852,7 +842,7 @@ async fn pswap_note_idx_nonzero_regression_test() -> anyhow::Result<()> {
     // Full account-fill: 25 ETH out of bob's vault. Exercises the
     // `has_account_fill` branch where the `note_idx` bug lives.
     let mut note_args_map = BTreeMap::new();
-    note_args_map.insert(pswap_note.id(), pswap_args(25, 0));
+    note_args_map.insert(pswap_note.id(), PswapNote::create_args(25, 0)?);
 
     let (expected_p2id, _) =
         pswap.execute(bob.id(), Some(FungibleAsset::new(eth_faucet.id(), 25)?), None)?;
@@ -939,7 +929,7 @@ async fn pswap_multiple_partial_fills_test(#[case] fill_amount: u64) -> anyhow::
     let mock_chain = builder.build()?;
 
     let mut note_args_map = BTreeMap::new();
-    note_args_map.insert(pswap_note.id(), pswap_args(fill_amount, 0));
+    note_args_map.insert(pswap_note.id(), PswapNote::create_args(fill_amount, 0)?);
 
     let payout_amount = pswap.calculate_offered_for_requested(fill_amount);
     let (p2id_note, remainder_pswap) =
@@ -1008,7 +998,7 @@ async fn run_partial_fill_ratio_case(
     let mock_chain = builder.build()?;
 
     let mut note_args_map = BTreeMap::new();
-    note_args_map.insert(pswap_note.id(), pswap_args(fill_eth, 0));
+    note_args_map.insert(pswap_note.id(), PswapNote::create_args(fill_eth, 0)?);
 
     let payout_amount = pswap.calculate_offered_for_requested(fill_eth);
     let remaining_offered = offered_usdc - payout_amount;
@@ -1191,7 +1181,7 @@ async fn pswap_chained_partial_fills_test(
         let mock_chain = builder.build()?;
 
         let mut note_args_map = BTreeMap::new();
-        note_args_map.insert(pswap_note.id(), pswap_args(*fill_amount, 0));
+        note_args_map.insert(pswap_note.id(), PswapNote::create_args(*fill_amount, 0)?);
 
         let payout_amount = pswap.calculate_offered_for_requested(*fill_amount);
         let remaining_offered = current_offered - payout_amount;
