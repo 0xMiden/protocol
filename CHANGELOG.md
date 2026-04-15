@@ -25,6 +25,8 @@
 ### Fixes
 
 - Made deserialization of `AccountCode` more robust ([#2788](https://github.com/0xMiden/protocol/pull/2788)).
+- Added `TransactionScript::from_package()` method to create `TransactionScript` from `miden-mast-package::Package` ([#2779](https://github.com/0xMiden/protocol/pull/2779)).
+
 
 ## 0.14.3 (2026-04-07)
 
