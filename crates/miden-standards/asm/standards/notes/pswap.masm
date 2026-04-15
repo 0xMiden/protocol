@@ -104,7 +104,7 @@ const ERR_PSWAP_PAYOUT_OVERFLOW="PSWAP payout quotient does not fit in u64"
 #! The intermediate product `offered * fill_amount` is computed as a full
 #! u128 via `u64::widening_mul`, then divided by `requested` (extended to
 #! u128) via `u128::div`. This gives exact integer precision with one floor
-#! division at the end and no FACTOR/scaling tradeoffs: each input is safe
+#! division at the end, each input is safe
 #! up to `FungibleAsset::MAX ≈ 2^63`, and the resulting quotient
 #! `payout ≤ offered` always fits back in u64 (asserted via the upper-half
 #! limb check below).
@@ -514,9 +514,8 @@ proc execute_pswap
     loc_store.EXEC_AMT_PAYOUT_TOTAL
     # => []
 
-    # Create P2ID note for creator. Content is keyed off the fill amounts
-    # (`account_fill + note_fill` of the requested asset), not `total_payout`,
-    # and fills are guaranteed > 0 by the `both_zero` fallback in `main`.
+    # Create P2ID note for creator. 
+    # fills are guaranteed > 0 by the `both_zero` fallback in `main`.
     loc_load.EXEC_AMT_REQUESTED_NOTE_FILL
     loc_load.EXEC_AMT_REQUESTED_ACCOUNT_FILL
     mem_load.REQUESTED_FAUCET_PREFIX_ITEM
@@ -571,19 +570,12 @@ proc execute_pswap
         swap sub
         # => [remaining_requested]
 
-        # Fetch active note metadata: the remainder note inherits both the
-        # note type and the pswap tag from it. The asset pair is unchanged,
-        # so the tag derived in Rust at creation time still applies, and we
-        # avoid spending a storage slot on `pswap_tag`.
         exec.active_note::get_metadata
         # => [NOTE_ATTACHMENT, METADATA_HEADER, remaining_requested]
         # where METADATA_HEADER = [sid_suf_ver, sid_pre, tag, att_ks]
         dropw
         # => [sid_suf_ver, sid_pre, tag, att_ks, remaining_requested]
 
-        # Dup the tag out of METADATA_HEADER (at depth 2) and park it just
-        # below the header so `metadata_into_note_type` can consume the
-        # header intact.
         dup.2 movdn.4
         # => [sid_suf_ver, sid_pre, tag, att_ks, tag, remaining_requested]
 
