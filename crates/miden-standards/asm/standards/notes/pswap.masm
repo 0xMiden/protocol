@@ -209,6 +209,7 @@ proc create_p2id_note
     # Move account_fill_amount from consumer's vault to P2ID note (if > 0)
     loc_load.P2ID_AMT_ACCOUNT_FILL neq.0
     # => [has_account_fill]
+    
     if.true
         # Build 16-element call frame: [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
         padw push.0.0.0 loc_load.P2ID_NOTE_IDX
