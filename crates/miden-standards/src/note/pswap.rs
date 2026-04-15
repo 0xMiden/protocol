@@ -465,8 +465,9 @@ impl PswapNote {
         NoteTag::new(tag)
     }
 
-    /// Computes `(offered_total * fill_amount) / requested_total)`.
-
+    /// Computes `floor((offered_total * fill_amount) / requested_total)` via a
+    /// u128 intermediate, mirroring `u64::widening_mul` + `u128::div` on the
+    /// MASM side.
     fn calculate_output_amount(offered_total: u64, requested_total: u64, fill_amount: u64) -> u64 {
         let product = (offered_total as u128) * (fill_amount as u128);
         let quotient = product / (requested_total as u128);

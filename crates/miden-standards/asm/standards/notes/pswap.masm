@@ -143,9 +143,11 @@ proc calculate_tokens_offered_for_requested
     # assert whether the output fits in u64
     movup.3 eq.0 assert.err=ERR_PSWAP_PAYOUT_OVERFLOW
     # => [q0, q1, q2]
+
     movup.2 eq.0 assert.err=ERR_PSWAP_PAYOUT_OVERFLOW
     # => [q0, q1]
 
+    # Reconstruct the u64 quotient as a single felt: `q0 + q1 * 2^32`.
     swap mul.MAX_U32 add
     # => [payout_amount]
 end
@@ -197,6 +199,7 @@ proc create_p2id_note
     push.0.0.0
     loc_load.P2ID_AMT_ACCOUNT_FILL loc_load.P2ID_AMT_NOTE_FILL add
     # => [total_fill, 0, 0, 0]
+
     push.0 loc_load.P2ID_NOTE_IDX
     # => [note_idx, attachment_scheme=0, total_fill, 0, 0, 0]
 
@@ -292,6 +295,7 @@ proc create_remainder_note
     # Derive remainder serial: increment most significant element
     exec.active_note::get_serial_number
     # => [s0, s1, s2, s3, SCRIPT_ROOT, note_type, tag]
+
     movup.3 add.1 movdn.3
     # => [s0, s1, s2, s3+1, SCRIPT_ROOT, note_type, tag]
 
@@ -314,6 +318,7 @@ proc create_remainder_note
     # Set attachment: aux = amt_payout at Word[0]
     push.0.0.0 loc_load.REMAINDER_AMT_PAYOUT
     # => [amt_payout, 0, 0, 0]
+
     push.0 loc_load.REMAINDER_NOTE_IDX
     # => [note_idx, attachment_scheme=0, amt_payout, 0, 0, 0]
 
@@ -438,10 +443,13 @@ proc execute_pswap
     # Extract and store offered faucet info from ASSET_KEY
     exec.asset::key_to_callbacks_enabled loc_store.EXEC_OFFERED_ENABLE_CB
     # => [ASSET_KEY, ASSET_VALUE]
+
     exec.asset::key_into_faucet_id
     # => [faucet_id_suffix, faucet_id_prefix, ASSET_VALUE]
+
     loc_store.EXEC_OFFERED_FAUCET_SUFFIX loc_store.EXEC_OFFERED_FAUCET_PREFIX
     # => [ASSET_VALUE]
+
     dropw
     # => []
 
@@ -455,14 +463,19 @@ proc execute_pswap
     loc_load.EXEC_AMT_REQUESTED_ACCOUNT_FILL u32split
     loc_load.EXEC_AMT_REQUESTED_NOTE_FILL u32split
     # => [nf_lo, nf_hi, af_lo, af_hi]
+
     exec.u64::overflowing_add
     # => [overflow, sum_lo, sum_hi]
+
     eq.0 assert.err=ERR_PSWAP_FILL_SUM_OVERFLOW
     # => [sum_lo, sum_hi]
+
     swap mul.MAX_U32 add
     # => [fill_amount]
+
     loc_load.EXEC_AMT_REQUESTED
     # => [requested, fill_amount]
+
     lte assert.err=ERR_PSWAP_FILL_EXCEEDS_REQUESTED
     # => []
 
@@ -471,6 +484,7 @@ proc execute_pswap
     loc_load.EXEC_AMT_REQUESTED
     loc_load.EXEC_AMT_OFFERED
     # => [offered, requested, account_fill_amount]
+
     exec.calculate_tokens_offered_for_requested
     # => [account_fill_payout]
 
@@ -485,6 +499,7 @@ proc execute_pswap
 
     exec.calculate_tokens_offered_for_requested
     # => [note_fill_payout]
+
     loc_store.EXEC_AMT_PAYOUT_NOTE_FILL
     # => []
 
@@ -532,17 +547,17 @@ proc execute_pswap
 
         call.wallet::receive_asset
         # => [pad(16)]
+
         dropw dropw dropw dropw
         # => []
     end
     # => []
 
-    # Check if partial fill. `execute_pswap` has already asserted
-    # `total_in <= total_requested`, so `is_partial` is equivalent to
-    # `total_in != total_requested` (cheaper than `lt`).
+    # Check if partial fill.
     loc_load.EXEC_AMT_REQUESTED_ACCOUNT_FILL loc_load.EXEC_AMT_REQUESTED_NOTE_FILL add
     loc_load.EXEC_AMT_REQUESTED
     # => [total_requested, total_in]
+
     dup.1 dup.1 neq
     # => [is_partial, total_requested, total_in]
 
