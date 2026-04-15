@@ -227,6 +227,7 @@ pub async fn tx_consume_claim_note(data_source: ClaimDataSource) -> Result<Trans
         .scale_to_token_amount(scale as u32)
         .expect("amount should scale successfully");
 
+    let config_metadata_hash = leaf_data.metadata_hash;
     let claim_inputs = ClaimNoteStorage {
         proof_data,
         leaf_data,
@@ -247,6 +248,9 @@ pub async fn tx_consume_claim_note(data_source: ClaimDataSource) -> Result<Trans
         agglayer_faucet.id(),
         &origin_token_address,
         scale,
+        origin_network,
+        false,
+        &config_metadata_hash,
         bridge_admin.id(),
         bridge_account.id(),
         builder.rng_mut(),
@@ -347,10 +351,14 @@ pub async fn tx_consume_b2agg_note() -> Result<TransactionContext> {
     builder.add_account(faucet.clone())?;
 
     // CREATE CONFIG_AGG_BRIDGE NOTE (registers faucet + token address in bridge)
+    let metadata_hash = MetadataHash::from_token_info("AGG", "AGG", 8);
     let config_note = ConfigAggBridgeNote::create(
         faucet.id(),
         &origin_token_address,
         scale,
+        origin_network,
+        false,
+        &metadata_hash,
         bridge_admin.id(),
         bridge_account.id(),
         builder.rng_mut(),

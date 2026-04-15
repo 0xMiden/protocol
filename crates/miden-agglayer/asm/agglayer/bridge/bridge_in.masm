@@ -232,7 +232,7 @@ pub proc claim
     # Verify faucet_mint_amount matches the leaf data amount
     exec.verify_claim_amount
     # => [faucet_id_suffix, faucet_id_prefix, pad(16)]
-    
+
     # Build MINT output note targeting the AggLayer faucet
     loc_load.CLAIM_DEST_ID_PREFIX_LOCAL loc_load.CLAIM_DEST_ID_SUFFIX_LOCAL
     # => [destination_id_suffix, destination_id_prefix, faucet_id_suffix, faucet_id_prefix, pad(16)]

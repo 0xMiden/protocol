@@ -28,7 +28,7 @@ use miden_protocol::vm::Program;
 use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 use miden_utils_sync::LazyLock;
 
-use crate::EthAddress;
+use crate::{EthAddress, MetadataHash};
 
 // NOTE SCRIPT
 // ================================================================================================
@@ -47,8 +47,9 @@ static CONFIG_AGG_BRIDGE_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 
 /// CONFIG_AGG_BRIDGE note.
 ///
-/// This note is used to register a faucet in the bridge's faucet and token registries.
-/// It carries the origin token address and faucet account ID, and is always public.
+/// This note is used to register a faucet in the bridge's faucet and token registries,
+/// and to store full conversion metadata (origin address, origin network, scale, metadata hash)
+/// in the bridge's faucet metadata map.
 pub struct ConfigAggBridgeNote;
 
 impl ConfigAggBridgeNote {
@@ -56,8 +57,17 @@ impl ConfigAggBridgeNote {
     // --------------------------------------------------------------------------------------------
 
     /// Expected number of storage items for a CONFIG_AGG_BRIDGE note.
-    /// Layout: [origin_token_addr(5), faucet_id_suffix, faucet_id_prefix, scale]
-    pub const NUM_STORAGE_ITEMS: usize = 8;
+    ///
+    /// Layout (18 felts):
+    /// - `[0..4]`   origin_token_addr (5 felts)
+    /// - `[5]`      faucet_id_suffix
+    /// - `[6]`      faucet_id_prefix
+    /// - `[7]`      scale
+    /// - `[8]`      origin_network
+    /// - `[9]`      is_native (0 or 1)
+    /// - `[10..13]` METADATA_HASH_LO (4 felts)
+    /// - `[14..17]` METADATA_HASH_HI (4 felts)
+    pub const NUM_STORAGE_ITEMS: usize = 18;
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
@@ -77,37 +87,56 @@ impl ConfigAggBridgeNote {
 
     /// Creates a CONFIG_AGG_BRIDGE note to register a faucet in the bridge's registry.
     ///
-    /// The note storage contains 8 felts:
-    /// - `origin_token_addr[0..5]`: The 5 u32 felts of the origin EVM token address
-    /// - `faucet_id_suffix`: The suffix of the faucet account ID
-    /// - `faucet_id_prefix`: The prefix of the faucet account ID
-    /// - `scale`: The decimal scaling factor for amount conversion
+    /// The note storage contains 18 felts carrying all the data needed for faucet registration:
+    /// - Origin token address (5 felts)
+    /// - Faucet account ID (2 felts)
+    /// - Scale factor (1 felt)
+    /// - Origin network (1 felt)
+    /// - Is-native flag (1 felt)
+    /// - Metadata hash (8 felts)
     ///
     /// # Parameters
     /// - `faucet_account_id`: The account ID of the faucet to register
     /// - `origin_token_address`: The origin EVM token address for the token registry
     /// - `scale`: The decimal scaling factor (e.g. 0 for USDC, 8 for ETH)
+    /// - `origin_network`: The origin network/chain ID
+    /// - `is_native`: Whether this is a Miden-native faucet (lock/unlock) vs bridge-owned
+    ///   (burn/mint)
+    /// - `metadata_hash`: The keccak256 hash of ABI-encoded token metadata
     /// - `sender_account_id`: The account ID of the note creator
     /// - `target_account_id`: The bridge account ID that will consume this note
     /// - `rng`: Random number generator for creating the note serial number
     ///
     /// # Errors
     /// Returns an error if note creation fails.
+    #[allow(clippy::too_many_arguments)]
     pub fn create<R: FeltRng>(
         faucet_account_id: AccountId,
         origin_token_address: &EthAddress,
         scale: u8,
+        origin_network: u32,
+        is_native: bool,
+        metadata_hash: &MetadataHash,
         sender_account_id: AccountId,
         target_account_id: AccountId,
         rng: &mut R,
     ) -> Result<Note, NoteError> {
-        // Create note storage with 8 felts: [origin_token_addr(5), faucet_id_suffix,
-        // faucet_id_prefix, scale]
+        // Create note storage with 18 felts
         let addr_elements = origin_token_address.to_elements();
         let mut storage_values: Vec<Felt> = addr_elements;
         storage_values.push(faucet_account_id.suffix());
         storage_values.push(faucet_account_id.prefix().as_felt());
         storage_values.push(Felt::from(scale));
+        storage_values.push(Felt::from(origin_network));
+        storage_values.push(Felt::from(u8::from(is_native)));
+        storage_values.extend(metadata_hash.to_elements());
+
+        debug_assert_eq!(
+            storage_values.len(),
+            Self::NUM_STORAGE_ITEMS,
+            "CONFIG_AGG_BRIDGE storage must have exactly {} felts",
+            Self::NUM_STORAGE_ITEMS
+        );
 
         let note_storage = NoteStorage::new(storage_values)?;
 

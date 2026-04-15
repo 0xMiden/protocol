@@ -5,16 +5,47 @@ use miden::standards::attachments::network_account_target
 # CONSTANTS
 # =================================================================================================
 
-const CONFIG_AGG_BRIDGE_NUM_STORAGE_ITEMS = 8
+const CONFIG_AGG_BRIDGE_NUM_STORAGE_ITEMS = 18
 
 const STORAGE_START_PTR = 0
+
+# Memory layout after get_storage (18 felts):
+# [0]      origin_token_addr_0
+# [1]      origin_token_addr_1
+# [2]      origin_token_addr_2
+# [3]      origin_token_addr_3
+# [4]      origin_token_addr_4
+# [5]      faucet_id_suffix
+# [6]      faucet_id_prefix
+# [7]      scale
+# [8]      origin_network
+# [9]      is_native
+# [10..13] METADATA_HASH_LO_0..3 (4 felts)
+# [14..17] METADATA_HASH_HI_0..3 (4 felts)
+
 const ORIGIN_TOKEN_ADDR_0 = STORAGE_START_PTR
+const ORIGIN_TOKEN_ADDR_1 = STORAGE_START_PTR + 1
+const ORIGIN_TOKEN_ADDR_2 = STORAGE_START_PTR + 2
+const ORIGIN_TOKEN_ADDR_3 = STORAGE_START_PTR + 3
 const ORIGIN_TOKEN_ADDR_4 = 4
+const FAUCET_ID_SUFFIX = 5
+const FAUCET_ID_PREFIX = 6
+const SCALE = 7
+const ORIGIN_NETWORK = 8
+const IS_NATIVE = 9
+const METADATA_HASH_LO_0 = 10
+const METADATA_HASH_LO_1 = 11
+const METADATA_HASH_LO_2 = 12
+const METADATA_HASH_LO_3 = 13
+const METADATA_HASH_HI_0 = 14
+const METADATA_HASH_HI_1 = 15
+const METADATA_HASH_HI_2 = 16
+const METADATA_HASH_HI_3 = 17
 
 # ERRORS
 # =================================================================================================
 
-const ERR_CONFIG_AGG_BRIDGE_UNEXPECTED_STORAGE_ITEMS = "CONFIG_AGG_BRIDGE expects exactly 8 note storage items"
+const ERR_CONFIG_AGG_BRIDGE_UNEXPECTED_STORAGE_ITEMS = "CONFIG_AGG_BRIDGE expects exactly 18 note storage items"
 const ERR_CONFIG_AGG_BRIDGE_TARGET_ACCOUNT_MISMATCH = "CONFIG_AGG_BRIDGE note attachment target account does not match consuming account"
 
 #! Agglayer Bridge CONFIG_AGG_BRIDGE script: registers a faucet in the bridge's faucet registry,
@@ -22,64 +53,122 @@ const ERR_CONFIG_AGG_BRIDGE_TARGET_ACCOUNT_MISMATCH = "CONFIG_AGG_BRIDGE note at
 #!
 #! This note can only be consumed by the Agglayer Bridge account that is targeted by the note
 #! attachment, and only if the note was sent by the bridge admin.
-#! Upon consumption, it registers the faucet ID, origin token address mapping, and scale factor
-#! in the bridge.
+#! Upon consumption, it registers the faucet ID, origin token address mapping, scale factor,
+#! origin network, is_native flag, and metadata hash in the bridge.
+#!
+#! The registration is split into two calls due to the 16-element stack limit:
+#! 1. register_faucet: stores address, scale, origin_network, is_native, and registry entries
+#! 2. store_faucet_metadata_hash: stores the metadata hash
 #!
 #! Requires that the account exposes:
 #! - agglayer::bridge_config::register_faucet procedure.
+#! - agglayer::bridge_config::store_faucet_metadata_hash procedure.
 #!
 #! Inputs:  [ARGS, pad(12)]
 #! Outputs: [pad(16)]
 #!
-#! NoteStorage layout (8 felts total):
-#! - origin_token_addr_0 [0] : 1 felt
-#! - origin_token_addr_1 [1] : 1 felt
-#! - origin_token_addr_2 [2] : 1 felt
-#! - origin_token_addr_3 [3] : 1 felt
-#! - origin_token_addr_4 [4] : 1 felt
-#! - faucet_id_suffix    [5] : 1 felt
-#! - faucet_id_prefix    [6] : 1 felt
-#! - scale               [7] : 1 felt
-#!
-#! Where:
-#! - faucet_id_suffix: Suffix felt of the faucet account ID to register.
-#! - faucet_id_prefix: Prefix felt of the faucet account ID to register.
-#! - scale: Decimal scaling factor for amount conversion (e.g. 0 for USDC, 8 for ETH).
+#! NoteStorage layout (18 felts total):
+#! - origin_token_addr_0 [0]  : 1 felt
+#! - origin_token_addr_1 [1]  : 1 felt
+#! - origin_token_addr_2 [2]  : 1 felt
+#! - origin_token_addr_3 [3]  : 1 felt
+#! - origin_token_addr_4 [4]  : 1 felt
+#! - faucet_id_suffix    [5]  : 1 felt
+#! - faucet_id_prefix    [6]  : 1 felt
+#! - scale               [7]  : 1 felt
+#! - origin_network      [8]  : 1 felt
+#! - is_native           [9]  : 1 felt (0 or 1)
+#! - metadata_hash_lo    [10] : 4 felts
+#! - metadata_hash_hi    [14] : 4 felts
 #!
 #! Panics if:
 #! - The note attachment target account does not match the consuming bridge account.
-#! - The note does not contain exactly 8 storage items.
-#! - The account does not expose the register_faucet procedure.
+#! - The note does not contain exactly 18 storage items.
+#! - The account does not expose the register_faucet or store_faucet_metadata_hash procedures.
 begin
     dropw
-    # => [pad(16)]
+    # => [pad(12)]
 
     # Ensure note attachment targets the consuming bridge account.
     exec.network_account_target::active_account_matches_target_account
     assert.err=ERR_CONFIG_AGG_BRIDGE_TARGET_ACCOUNT_MISMATCH
-    # => [pad(16)]
+    # => [pad(12)]
 
     # Load note storage to memory
     push.STORAGE_START_PTR exec.active_note::get_storage
-    # => [num_storage_items, dest_ptr, pad(16)]
+    # => [num_storage_items, dest_ptr, pad(12)]
 
     # Validate the number of storage items
     push.CONFIG_AGG_BRIDGE_NUM_STORAGE_ITEMS assert_eq.err=ERR_CONFIG_AGG_BRIDGE_UNEXPECTED_STORAGE_ITEMS drop
-    # => [pad(16)]
+    # => [pad(12)]
 
-    # Load origin_token_addr(5), faucet_id, and scale from memory
-    # register_faucet expects: [origin_token_addr(5), faucet_id_suffix, faucet_id_prefix, scale, pad(8)]
+    # Drop the remaining pad to start fresh
+    dropw dropw dropw
+    # => []
 
-    # Load origin_token_addr_4, faucet_id_suffix, faucet_id_prefix, and scale as a word.
-    # Memory layout at addr 4: [addr4, faucet_id_suffix, faucet_id_prefix, scale]
-    mem_loadw_le.ORIGIN_TOKEN_ADDR_4
-    # => [addr4, faucet_id_suffix, faucet_id_prefix, scale, pad(12)]
+    # --- Call 1: register_faucet ---
+    # Expects: [addr0, addr1, addr2, addr3, addr4, fid_s, fid_p, scale, origin_network, is_native, pad(6)]
 
-    # Load remaining origin_token_addr_[0..3] onto the stack, replacing 4 pad elements
-    swapw mem_loadw_le.ORIGIN_TOKEN_ADDR_0
-    # => [addr0, addr1, addr2, addr3, addr4, faucet_id_suffix, faucet_id_prefix, scale, pad(8)]
+    # Build the stack bottom-up: load deepest elements first, then push shallower ones on top.
+    # This avoids complex rearrangement since each mem_load pushes onto the top.
+    mem_load.IS_NATIVE
+    mem_load.ORIGIN_NETWORK
+    mem_load.SCALE
+    mem_load.FAUCET_ID_PREFIX
+    mem_load.FAUCET_ID_SUFFIX
+    mem_load.ORIGIN_TOKEN_ADDR_4
+    # => [addr4, fid_s, fid_p, scale, origin_network, is_native]
 
-    # Register the faucet in the bridge (stack is exactly 16)
+    # Load addr0..addr3 on top in reverse order so addr0 ends up on top
+    mem_load.ORIGIN_TOKEN_ADDR_3
+    mem_load.ORIGIN_TOKEN_ADDR_2
+    mem_load.ORIGIN_TOKEN_ADDR_1
+    mem_load.ORIGIN_TOKEN_ADDR_0
+    # => [addr0, addr1, addr2, addr3, addr4, fid_s, fid_p, scale, origin_network, is_native]
+
+    # Pad to 16 (need 6 more zeros)
+    padw push.0.0
+    # => [0, 0, 0, 0, 0, 0, addr0, addr1, addr2, addr3, addr4, fid_s, fid_p, scale, origin_network, is_native]
+
+    # Move 6 pad zeros to the end
+    movdn.15 movdn.15 movdn.15 movdn.15 movdn.15 movdn.15
+    # => [addr0, addr1, addr2, addr3, addr4, fid_s, fid_p, scale, origin_network, is_native, pad(6)]
+
     call.bridge_config::register_faucet
     # => [pad(16)]
+
+    # --- Call 2: store_faucet_metadata_hash ---
+    # Expects: [fid_s, fid_p, MH_LO(4), MH_HI(4), pad(6)]
+
+    # Drop all 16 pad elements and rebuild the stack
+    dropw dropw dropw dropw
+    # => []
+
+    # Load MH_HI from memory addresses 14..17 (individual loads — not word-aligned)
+    mem_load.METADATA_HASH_HI_3 mem_load.METADATA_HASH_HI_2
+    mem_load.METADATA_HASH_HI_1 mem_load.METADATA_HASH_HI_0
+    # => [mh_hi0, mh_hi1, mh_hi2, mh_hi3]
+
+    # Load MH_LO from memory addresses 10..13 (individual loads — not word-aligned)
+    mem_load.METADATA_HASH_LO_3 mem_load.METADATA_HASH_LO_2
+    mem_load.METADATA_HASH_LO_1 mem_load.METADATA_HASH_LO_0
+    # => [mh_lo0, mh_lo1, mh_lo2, mh_lo3, mh_hi0, mh_hi1, mh_hi2, mh_hi3]
+
+    # Load fid_p, fid_s
+    mem_load.FAUCET_ID_PREFIX
+    mem_load.FAUCET_ID_SUFFIX
+    # => [fid_s, fid_p, MH_LO(4), MH_HI(4)]
+
+    # Pad to 16 (need 6 more)
+    padw push.0.0
+    # => [0, 0, 0, 0, 0, 0, fid_s, fid_p, MH_LO(4), MH_HI(4)]
+
+    # Move pad to end
+    movdn.15 movdn.15 movdn.15 movdn.15 movdn.15 movdn.15
+    # => [fid_s, fid_p, MH_LO(4), MH_HI(4), pad(6)]
+
+    call.bridge_config::store_faucet_metadata_hash
+    # => [pad(16)]
+
+    dropw dropw dropw dropw
 end

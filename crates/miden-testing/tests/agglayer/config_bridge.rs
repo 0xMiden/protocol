@@ -4,6 +4,7 @@ use miden_agglayer::{
     AggLayerBridge,
     ConfigAggBridgeNote,
     EthAddress,
+    MetadataHash,
     create_existing_bridge_account,
 };
 use miden_protocol::Felt;
@@ -66,10 +67,15 @@ async fn test_config_agg_bridge_registers_faucet() -> anyhow::Result<()> {
     let origin_token_address =
         EthAddress::from_hex("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48").unwrap();
     let scale = 0u8;
+    let origin_network = 0u32;
+    let metadata_hash = MetadataHash::from_token_info("USD Coin", "USDC", 6);
     let config_note = ConfigAggBridgeNote::create(
         faucet_to_register,
         &origin_token_address,
         scale,
+        origin_network,
+        false,
+        &metadata_hash,
         bridge_admin.id(),
         bridge_account.id(),
         builder.rng_mut(),
@@ -79,9 +85,8 @@ async fn test_config_agg_bridge_registers_faucet() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
 
     // CONSUME THE CONFIG_AGG_BRIDGE NOTE WITH THE BRIDGE ACCOUNT
-    let tx_context = mock_chain
-        .build_tx_context(bridge_account.id(), &[config_note.id()], &[])?
-        .build()?;
+    let tx_context =
+        mock_chain.build_tx_context(bridge_account.id(), &[], &[config_note])?.build()?;
     let executed_transaction = tx_context.execute().await?;
 
     // VERIFY FAUCET IS NOW REGISTERED

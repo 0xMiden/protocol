@@ -97,6 +97,8 @@ begin
     movdn.8
     # => [PROOF_DATA_KEY, LEAF_DATA_KEY, faucet_mint_amount, pad(16)]
 
+    debug.stack
+
     # call the Bridge Claim procedure
     call.bridge::claim
     # => [pad(16), pad(9)]

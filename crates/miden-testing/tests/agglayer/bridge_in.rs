@@ -227,6 +227,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
         .scale_to_token_amount(scale as u32)
         .expect("amount should scale successfully");
 
+    let metadata_hash = leaf_data.metadata_hash;
     let claim_inputs = ClaimNoteStorage {
         proof_data,
         leaf_data,
@@ -249,6 +250,9 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
         agglayer_faucet.id(),
         &origin_token_address,
         scale,
+        origin_network,
+        false,
+        &metadata_hash,
         bridge_admin.id(),
         bridge_account.id(),
         builder.rng_mut(),
@@ -517,6 +521,9 @@ async fn test_duplicate_claim_note_rejected() -> anyhow::Result<()> {
         agglayer_faucet.id(),
         &origin_token_address,
         scale,
+        origin_network,
+        false,
+        &leaf_data.metadata_hash,
         bridge_admin.id(),
         bridge_account.id(),
         builder.rng_mut(),
