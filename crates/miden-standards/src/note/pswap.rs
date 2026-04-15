@@ -194,7 +194,7 @@ impl TryFrom<&[Felt]> for PswapNoteStorage {
 ///
 /// A PSWAP note allows a creator to offer one fungible asset in exchange for another.
 /// Unlike a regular SWAP note, consumers may fill it partially — the unfilled portion
-/// is re-created as a remainder note with an incremented swap count, while the creator
+/// is re-created as a remainder note with an updated serial number, while the creator
 /// receives the filled portion via a payback note.
 ///
 /// The note can be consumed both in local transactions (where the consumer provides
@@ -297,26 +297,21 @@ impl PswapNote {
     // INSTANCE METHODS
     // --------------------------------------------------------------------------------------------
 
-    /// Executes the swap as a full fill, intended for network transactions.
+    /// Executes the swap as a full fill, producing only the payback note (no remainder).
     ///
-    /// In network transactions, note_args are unavailable (the kernel defaults them to
-    /// `[0, 0, 0, 0]`), so the MASM script fills the entire requested amount. This method
-    /// mirrors that behavior. Returns only the payback note — no remainder is produced.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the swap count overflows `u16::MAX`.
-    pub fn execute_full_fill_network(
-        &self,
-        network_account_id: AccountId,
-    ) -> Result<Note, NoteError> {
+    /// Equivalent to calling [`Self::execute`] with `account_fill_asset` set to the full
+    /// requested amount and `note_fill_asset = None`. It also matches the on-chain
+    /// behavior when a note is consumed without explicit `note_args` (e.g. in a network
+    /// transaction, where the kernel defaults `note_args` to `[0, 0, 0, 0]` and the MASM
+    /// script falls back to a full fill).
+    pub fn execute_full_fill(&self, consumer_account_id: AccountId) -> Result<Note, NoteError> {
         let requested_faucet_id = self.storage.requested_faucet_id();
         let total_requested_amount = self.storage.requested_asset_amount();
 
         let fill_asset = FungibleAsset::new(requested_faucet_id, total_requested_amount)
             .map_err(|e| NoteError::other_with_source("failed to create full fill asset", e))?;
 
-        self.create_payback_note(network_account_id, fill_asset, total_requested_amount)
+        self.create_payback_note(consumer_account_id, fill_asset, total_requested_amount)
     }
 
     /// Executes the swap, producing the output notes for a given fill.
@@ -334,7 +329,6 @@ impl PswapNote {
     /// - Both assets are `None`.
     /// - The fill amount is zero.
     /// - The fill amount exceeds the total requested amount.
-    /// - The swap count overflows `u16::MAX`.
     pub fn execute(
         &self,
         consumer_account_id: AccountId,
@@ -542,8 +536,8 @@ impl PswapNote {
 
     /// Builds a remainder PSWAP note carrying the unfilled portion of the swap.
     ///
-    /// The remainder inherits the original creator, tags, and note type, but has an
-    /// incremented swap count and an updated serial number (`serial[3] + 1`).
+    /// The remainder inherits the original creator, tags, and note type, with an updated
+    /// serial number (`serial[3] + 1`) matching the MASM-side derivation.
     ///
     /// The attachment carries the total offered amount for the fill as auxiliary data
     /// with `NoteAttachmentScheme::none()`, matching the on-chain MASM behavior.
