@@ -1,0 +1,63 @@
+use agglayer::bridge::bridge_config
+use miden::protocol::active_note
+use miden::standards::attachments::network_account_target
+
+# CONSTANTS
+# =================================================================================================
+
+const EMERGENCY_PAUSE_NOTE_NUM_STORAGE_ITEMS = 1
+const STORAGE_PTR = 0
+
+# ERRORS
+# =================================================================================================
+
+const ERR_EMERGENCY_PAUSE_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "EMERGENCY_PAUSE script expects exactly 1 note storage item"
+const ERR_EMERGENCY_PAUSE_TARGET_ACCOUNT_MISMATCH = "EMERGENCY_PAUSE note attachment target account does not match consuming account"
+
+# NOTE SCRIPT
+# =================================================================================================
+
+#! Agglayer Bridge EMERGENCY_PAUSE script: sets or clears the emergency paused flag by calling
+#! bridge_config::set_emergency_paused.
+#!
+#! This note can only be consumed by the specific agglayer bridge account whose ID is provided
+#! in the note attachment (target_account_id), and only if the note was sent by the bridge admin.
+#!
+#! Requires that the account exposes:
+#! - agglayer::bridge_config::set_emergency_paused procedure.
+#!
+#! Inputs:  [ARGS, pad(12)]
+#! Outputs: [pad(16)]
+#!
+#! NoteStorage layout (1 felt total):
+#! - paused_flag [0] : 1 felt (1 = pause, 0 = unpause)
+#!
+#! Panics if:
+#! - account does not expose set_emergency_paused procedure.
+#! - target account ID does not match the consuming account ID.
+#! - number of note storage items is not exactly 1.
+#! - the note sender is not the bridge admin.
+begin
+    dropw
+    # => [pad(16)]
+
+    # Ensure note attachment targets the consuming bridge account.
+    exec.network_account_target::active_account_matches_target_account
+    assert.err=ERR_EMERGENCY_PAUSE_TARGET_ACCOUNT_MISMATCH
+    # => [pad(16)]
+
+    # Load note storage to memory
+    push.STORAGE_PTR exec.active_note::get_storage
+    # => [num_storage_items, dest_ptr, pad(16)]
+
+    # Validate the number of storage items
+    push.EMERGENCY_PAUSE_NOTE_NUM_STORAGE_ITEMS assert_eq.err=ERR_EMERGENCY_PAUSE_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS drop
+    # => [pad(16)]
+
+    # Load paused_flag word from note storage (replaces top 4, depth-neutral)
+    mem_loadw_le.STORAGE_PTR
+    # => [paused_flag, 0, 0, 0, pad(12)]
+
+    call.bridge_config::set_emergency_paused
+    # => [pad(16)]
+end

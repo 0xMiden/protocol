@@ -25,6 +25,7 @@ pub mod b2agg_note;
 pub mod bridge;
 pub mod claim_note;
 pub mod config_note;
+pub mod emergency_pause_note;
 pub mod errors;
 pub mod eth_types;
 pub mod faucet;
@@ -44,6 +45,7 @@ pub use claim_note::{
     create_claim_note,
 };
 pub use config_note::ConfigAggBridgeNote;
+pub use emergency_pause_note::EmergencyPauseNote;
 #[cfg(any(test, feature = "testing"))]
 pub use eth_types::GlobalIndexExt;
 pub use eth_types::{

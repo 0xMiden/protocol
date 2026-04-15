@@ -12,3 +12,4 @@ pub use ::agglayer::bridge::bridge_config::register_faucet
 pub use ::agglayer::bridge::bridge_config::update_ger
 pub use ::agglayer::bridge::bridge_in::claim
 pub use ::agglayer::bridge::bridge_out::bridge_out
+pub use ::agglayer::bridge::bridge_config::set_emergency_paused
