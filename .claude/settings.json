@@ -27,9 +27,10 @@
         "matcher": "Bash",
         "hooks": [
           {
-            "type": "command",
+            "type": "agent",
             "if": "Bash(*gh pr create*)",
-            "command": ".claude/hooks/post-pr-create-ci-monitor.sh"
+            "prompt": "You are a CI monitor. Wait 20 minutes for CI to run, then check CI status for the PR that was just created. Use `gh pr checks` to check status. If all checks pass, confirm and exit. If checks are still running, wait a few more minutes and retry (up to 3 times). If any checks failed, get the logs with `gh run view <RUN_ID> --log-failed`, diagnose the root cause, and if it's a code issue you can fix: make the fix, run `make lint`, then commit with `git -c user.name='Claude (Opus)' -c user.email='noreply@anthropic.com' -c commit.gpgsign=false commit -m 'fix: <description>'` and push. If it's infra/flaky, just log the diagnosis. Never force push. If unsure, skip the fix.",
+            "model": "haiku"
           }
         ]
       }
