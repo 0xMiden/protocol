@@ -1,4 +1,5 @@
 use miden::core::math::u64
+use miden::core::math::u128
 use miden::protocol::account_id
 use miden::protocol::active_account
 use miden::protocol::active_note
@@ -12,18 +13,6 @@ use miden::standards::wallets::basic->wallet
 # =================================================================================================
 
 const NUM_STORAGE_ITEMS=8
-
-# Fixed-point scaling factor (1e5) used by calculate_tokens_offered_for_requested
-# to approximate the offered/requested ratio with u64 integer math.
-#
-# Precision: ~5 decimal digits on the ratio; rounding is always toward zero
-# (integer division), so a filler never receives more than proportional.
-#
-# Overflow headroom: the hottest intermediate is `offered * FACTOR` (and
-# symmetrically `requested * FACTOR`, `fill_amount * FACTOR`), which must fit
-# in u64. With FACTOR = 100000 that caps each side at ~1.8e14 (2^64 / 1e5),
-# well above any realistic fungible-asset amount.
-const FACTOR=100000
 const MAX_U32=0x0000000100000000
 
 # Note storage layout (8 felts, loaded at STORAGE_PTR by get_storage):
@@ -66,6 +55,7 @@ const PSWAP_CREATOR_SUFFIX_ITEM = STORAGE_PTR + 7
 
 # calculate_tokens_offered_for_requested locals
 const CALC_FILL_AMOUNT = 0
+const CALC_REQUESTED = 1
 
 # create_p2id_note locals
 const P2ID_NOTE_IDX = 0
@@ -102,114 +92,61 @@ const ERR_PSWAP_WRONG_NUMBER_OF_STORAGE_ITEMS="PSWAP script expects exactly 8 no
 const ERR_PSWAP_WRONG_NUMBER_OF_ASSETS="PSWAP script requires exactly one note asset"
 const ERR_PSWAP_FILL_EXCEEDS_REQUESTED="PSWAP fill amount exceeds requested amount"
 const ERR_PSWAP_FILL_SUM_OVERFLOW="PSWAP account_fill + note_fill overflows u64"
+const ERR_PSWAP_PAYOUT_OVERFLOW="PSWAP payout quotient does not fit in u64"
 
 # PRICE CALCULATION
 # =================================================================================================
 
 #! Computes the proportional amount of offered tokens for a given fill amount.
 #!
-#! Uses u64 integer arithmetic with a precision factor of 1e5 to handle
-#! non-integer ratios without floating point.
+#! Formula: `payout = floor((offered * fill_amount) / requested)`.
 #!
-#! Formula:
-#!   if fill_amount == requested: result = offered  (full fill, avoids precision loss)
-#!   if offered >= requested: result = (offered * FACTOR / requested) * fill_amount / FACTOR
-#!   if requested > offered:  result = (fill_amount * FACTOR) / (requested * FACTOR / offered)
+#! The intermediate product `offered * fill_amount` is computed as a full
+#! u128 via `u64::widening_mul`, then divided by `requested` (extended to
+#! u128) via `u128::div`. This gives exact integer precision with one floor
+#! division at the end and no FACTOR/scaling tradeoffs: each input is safe
+#! up to `FungibleAsset::MAX ≈ 2^63`, and the resulting quotient
+#! `payout ≤ offered` always fits back in u64 (asserted via the upper-half
+#! limb check below).
 #!
 #! Inputs: [offered, requested, fill_amount] (offered on top)
 #! Outputs: [payout_amount]
 #!
-@locals(1)
+@locals(2)
 # CALC_FILL_AMOUNT: fill amount
+# CALC_REQUESTED:   requested amount
 proc calculate_tokens_offered_for_requested
     movup.2 loc_store.CALC_FILL_AMOUNT
     # => [offered, requested]
 
-    # Early return: if fill_amount == requested (full fill), return offered directly.
-    # This avoids precision loss from integer division with the FACTOR.
-    dup.1 loc_load.CALC_FILL_AMOUNT eq
-    # => [is_full_fill, offered, requested]
+    swap loc_store.CALC_REQUESTED
+    # => [offered]
 
-    if.true
-        # Full fill: consumer provides all requested, gets all offered
-        swap drop
-        # => [offered]
-    else
+    u32split
+    # => [off_lo, off_hi]
 
-        dup.1 dup.1
-        # => [offered, requested, offered, requested]
+    loc_load.CALC_FILL_AMOUNT u32split
+    # => [fill_lo, fill_hi, off_lo, off_hi]
 
-        gt
-        # => [requested_exceeds_offered, offered, requested]
+    exec.u64::widening_mul
+    # => [p0, p1, p2, p3]
 
-        if.true
-            # Case: requested > offered
-            # ratio  = (requested * FACTOR) / offered
-            # result = (fill_amount * FACTOR) / ratio
+    loc_load.CALC_REQUESTED u32split
+    # => [req_lo, req_hi, p0, p1, p2, p3]
 
-            swap
-            # => [requested, offered]
+    push.0 movdn.2 push.0 movdn.3
+    # => [req_lo, req_hi, 0, 0, p0, p1, p2, p3]
 
-            u32split push.FACTOR u32split
-            # => [F_lo, F_hi, req_lo, req_hi, offered]
+    exec.u128::div
+    # => [q0, q1, q2, q3]  (quotient, little-endian limbs)
 
-            exec.u64::wrapping_mul
-            # => [(req*F)_lo, (req*F)_hi, offered]
+    # assert whether the output fits in u64
+    movup.3 eq.0 assert.err=ERR_PSWAP_PAYOUT_OVERFLOW
+    # => [q0, q1, q2]
+    movup.2 eq.0 assert.err=ERR_PSWAP_PAYOUT_OVERFLOW
+    # => [q0, q1]
 
-            movup.2 u32split
-            # => [off_lo, off_hi, (req*F)_lo, (req*F)_hi]
-
-            exec.u64::div
-            # => [ratio_lo, ratio_hi]
-
-            loc_load.CALC_FILL_AMOUNT u32split push.FACTOR u32split
-            # => [F_lo, F_hi, in_lo, in_hi, ratio_lo, ratio_hi]
-
-            exec.u64::wrapping_mul
-            # => [(in*F)_lo, (in*F)_hi, ratio_lo, ratio_hi]
-
-            movup.3 movup.3
-            # => [ratio_lo, ratio_hi, (in*F)_lo, (in*F)_hi]
-
-            exec.u64::div
-            # => [result_lo, result_hi]
-
-            swap mul.MAX_U32 add
-            # => [result]
-
-        else
-            # Case: offered >= requested
-            # result = ((offered * FACTOR) / requested) * fill_amount / FACTOR
-
-            u32split push.FACTOR u32split
-            # => [F_lo, F_hi, off_lo, off_hi, requested]
-
-            exec.u64::wrapping_mul
-            # => [(off*F)_lo, (off*F)_hi, requested]
-
-            movup.2 u32split
-            # => [req_lo, req_hi, (off*F)_lo, (off*F)_hi]
-
-            exec.u64::div
-            # => [ratio_lo, ratio_hi]
-
-            loc_load.CALC_FILL_AMOUNT u32split
-            # => [in_lo, in_hi, ratio_lo, ratio_hi]
-
-            exec.u64::wrapping_mul
-            # => [(rat*in)_lo, (rat*in)_hi]
-
-            push.FACTOR u32split
-            # => [F_lo, F_hi, (rat*in)_lo, (rat*in)_hi]
-
-            exec.u64::div
-            # => [result_lo, result_hi]
-
-            swap mul.MAX_U32 add
-            # => [result]
-        end
-        # => [result]
-    end
+    swap mul.MAX_U32 add
     # => [payout_amount]
 end
 

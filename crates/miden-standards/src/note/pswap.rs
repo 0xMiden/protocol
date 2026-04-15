@@ -465,30 +465,12 @@ impl PswapNote {
         NoteTag::new(tag)
     }
 
-    /// Computes `offered_total * fill_amount / requested_total` using fixed-point
-    /// u64 arithmetic with a precision factor of 10^5, matching the on-chain MASM
-    /// calculation. Returns the full `offered_total` when `fill_amount == requested_total`.
-    ///
-    /// The formula is implemented in two branches to maximize precision:
-    /// - When `offered > requested`: the ratio `offered/requested` is >= 1, so we compute `(offered
-    ///   * FACTOR / requested) * fill_amount / FACTOR` to avoid losing the fractional part.
-    /// - When `requested >= offered`: the ratio `offered/requested` is < 1, so computing it
-    ///   directly would truncate to zero. Instead we compute the inverse ratio `(requested * FACTOR
-    ///   / offered)` and divide: `(fill_amount * FACTOR) / inverse_ratio`.
+    /// Computes `(offered_total * fill_amount) / requested_total)`.
+
     fn calculate_output_amount(offered_total: u64, requested_total: u64, fill_amount: u64) -> u64 {
-        const PRECISION_FACTOR: u64 = 100_000;
-
-        if requested_total == fill_amount {
-            return offered_total;
-        }
-
-        if offered_total > requested_total {
-            let ratio = (offered_total * PRECISION_FACTOR) / requested_total;
-            (fill_amount * ratio) / PRECISION_FACTOR
-        } else {
-            let ratio = (requested_total * PRECISION_FACTOR) / offered_total;
-            (fill_amount * PRECISION_FACTOR) / ratio
-        }
+        let product = (offered_total as u128) * (fill_amount as u128);
+        let quotient = product / (requested_total as u128);
+        u64::try_from(quotient).expect("payout quotient does not fit in u64")
     }
 
     /// Builds a payback note (P2ID) that delivers the filled assets to the swap creator.
