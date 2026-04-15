@@ -1,5 +1,4 @@
 use miden::core::math::u64
-use miden::core::sys
 use miden::protocol::account_id
 use miden::protocol::active_account
 use miden::protocol::active_note
@@ -268,7 +267,7 @@ proc create_p2id_note
     # => []
 
     # Move account_fill_amount from consumer's vault to P2ID note (if > 0)
-    loc_load.P2ID_AMT_ACCOUNT_FILL push.0 gt
+    loc_load.P2ID_AMT_ACCOUNT_FILL neq.0
     # => [has_account_fill]
     if.true
         # Build 16-element call frame: [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
@@ -293,7 +292,7 @@ proc create_p2id_note
     # => []
 
     # Add note_fill_amount directly to P2ID note (no vault debit, if > 0)
-    loc_load.P2ID_AMT_NOTE_FILL push.0 gt
+    loc_load.P2ID_AMT_NOTE_FILL neq.0
     # => [has_note_fill]
     if.true
         loc_load.P2ID_NOTE_IDX
@@ -324,31 +323,29 @@ end
 #! most significant element of the active note's serial number), creates the output
 #! note, sets the attachment, and adds the remaining offered asset.
 #!
-#! Inputs:  [offered_faucet_prefix, offered_faucet_suffix, offered_enable_cb,
+#! Inputs:  [offered_faucet_suffix, offered_faucet_prefix, offered_enable_cb,
 #!           amt_payout, amt_offered,
 #!           remaining_requested, note_type, tag]
 #! Outputs: []
 #!
 @locals(6)
 # REMAINDER_NOTE_IDX              : note_idx
-# REMAINDER_OFFERED_FAUCET_PREFIX : offered_faucet_prefix
 # REMAINDER_OFFERED_FAUCET_SUFFIX : offered_faucet_suffix
+# REMAINDER_OFFERED_FAUCET_PREFIX : offered_faucet_prefix
 # REMAINDER_OFFERED_ENABLE_CB     : offered_enable_cb
 # REMAINDER_AMT_PAYOUT            : amt_payout
 # REMAINDER_AMT_OFFERED           : amt_offered
 proc create_remainder_note
     # Store offered asset info to locals (top element stored first)
-    loc_store.REMAINDER_OFFERED_FAUCET_PREFIX
     loc_store.REMAINDER_OFFERED_FAUCET_SUFFIX
+    loc_store.REMAINDER_OFFERED_FAUCET_PREFIX
     loc_store.REMAINDER_OFFERED_ENABLE_CB
     loc_store.REMAINDER_AMT_PAYOUT
     loc_store.REMAINDER_AMT_OFFERED
     # => [remaining_requested, note_type, tag]
 
     # Update note storage with new requested amount (needed by build_recipient)
-    movdn.2
-    # => [note_type, tag, remaining_requested]
-    movup.2 mem_store.REQUESTED_AMOUNT_ITEM
+    mem_store.REQUESTED_AMOUNT_ITEM
     # => [note_type, tag]
 
     # Build PSWAP remainder recipient using the same script as the active note.
@@ -581,7 +578,7 @@ proc execute_pswap
     # => []
 
     # Consumer receives only account_fill_payout into vault (not the note_fill portion, if > 0)
-    loc_load.EXEC_AMT_PAYOUT_ACCOUNT_FILL push.0 gt
+    loc_load.EXEC_AMT_PAYOUT_ACCOUNT_FILL neq.0
     # => [has_account_fill_payout]
     if.true
         padw padw
@@ -603,11 +600,13 @@ proc execute_pswap
     end
     # => []
 
-    # Check if partial fill: total_in < total_requested
+    # Check if partial fill. `execute_pswap` has already asserted
+    # `total_in <= total_requested`, so `is_partial` is equivalent to
+    # `total_in != total_requested` (cheaper than `lt`).
     loc_load.EXEC_AMT_REQUESTED_ACCOUNT_FILL loc_load.EXEC_AMT_REQUESTED_NOTE_FILL add
     loc_load.EXEC_AMT_REQUESTED
     # => [total_requested, total_in]
-    dup.1 dup.1 lt
+    dup.1 dup.1 neq
     # => [is_partial, total_requested, total_in]
 
     if.true
@@ -620,7 +619,7 @@ proc execute_pswap
         # so the tag derived in Rust at creation time still applies, and we
         # avoid spending a storage slot on `pswap_tag`.
         exec.active_note::get_metadata
-        # => [NOTE_ATTACHMENT(4), METADATA_HEADER(4), remaining_requested]
+        # => [NOTE_ATTACHMENT, METADATA_HEADER, remaining_requested]
         # where METADATA_HEADER = [sid_suf_ver, sid_pre, tag, att_ks]
         dropw
         # => [sid_suf_ver, sid_pre, tag, att_ks, remaining_requested]
@@ -640,9 +639,9 @@ proc execute_pswap
         loc_load.EXEC_AMT_OFFERED
         loc_load.EXEC_AMT_PAYOUT_TOTAL
         loc_load.EXEC_OFFERED_ENABLE_CB
-        loc_load.EXEC_OFFERED_FAUCET_SUFFIX
         loc_load.EXEC_OFFERED_FAUCET_PREFIX
-        # => [offered_faucet_prefix, offered_faucet_suffix, offered_enable_cb,
+        loc_load.EXEC_OFFERED_FAUCET_SUFFIX
+        # => [offered_faucet_suffix, offered_faucet_prefix, offered_enable_cb,
         #     amt_payout, amt_offered,
         #     remaining_requested, note_type, tag]
 
@@ -654,8 +653,6 @@ proc execute_pswap
     end
     # => []
 
-    exec.sys::truncate_stack
-    # => []
 end
 
 #! Partially-fillable swap note script: exchanges a portion of the offered asset for a
