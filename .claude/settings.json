@@ -21,18 +21,6 @@
           }
         ]
       }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "if": "Bash(*gh pr create*)",
-            "command": ".claude/hooks/post-pr-create-ci-monitor.sh"
-          }
-        ]
-      }
     ]
   }
 }
