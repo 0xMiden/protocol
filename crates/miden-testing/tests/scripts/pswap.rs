@@ -358,8 +358,7 @@ async fn pswap_attachment_layout_matches_masm_test() -> anyhow::Result<()> {
     assert_eq!(output_notes.num_notes(), 2, "expected P2ID + remainder");
 
     let p2id_attachment = output_notes.get_note(0).metadata().attachment().content().to_word();
-    let remainder_attachment =
-        output_notes.get_note(1).metadata().attachment().content().to_word();
+    let remainder_attachment = output_notes.get_note(1).metadata().attachment().content().to_word();
 
     // P2ID payback attachment: `[fill_amount, 0, 0, 0]` — fill_amount at Word[0].
     let expected_p2id_attachment = Word::from([
@@ -435,18 +434,10 @@ async fn pswap_fill_test(
 
     let mut builder = MockChain::builder();
 
-    let usdc_faucet = builder.add_existing_basic_faucet(
-        BASIC_AUTH,
-        "USDC",
-        max_supply,
-        Some(offered_total),
-    )?;
-    let eth_faucet = builder.add_existing_basic_faucet(
-        BASIC_AUTH,
-        "ETH",
-        max_supply,
-        Some(requested_total),
-    )?;
+    let usdc_faucet =
+        builder.add_existing_basic_faucet(BASIC_AUTH, "USDC", max_supply, Some(offered_total))?;
+    let eth_faucet =
+        builder.add_existing_basic_faucet(BASIC_AUTH, "ETH", max_supply, Some(requested_total))?;
 
     let alice = builder.add_existing_wallet_with_assets(
         BASIC_AUTH,
