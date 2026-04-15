@@ -24,7 +24,7 @@ const NUM_STORAGE_ITEMS=10
 # symmetrically `requested * FACTOR`, `fill_amount * FACTOR`), which must fit
 # in u64. With FACTOR = 100000 that caps each side at ~1.8e14 (2^64 / 1e5),
 # well above any realistic fungible-asset amount.
-const FACTOR=100000 
+const FACTOR=100000
 const MAX_U32=0x0000000100000000
 
 # Note storage layout (10 felts, loaded at STORAGE_PTR by get_storage):
@@ -104,6 +104,7 @@ const EXEC_AMT_REQUESTED_NOTE_FILL = 9
 const ERR_PSWAP_WRONG_NUMBER_OF_STORAGE_ITEMS="PSWAP script expects exactly 10 note storage items"
 const ERR_PSWAP_WRONG_NUMBER_OF_ASSETS="PSWAP script requires exactly one note asset"
 const ERR_PSWAP_FILL_EXCEEDS_REQUESTED="PSWAP fill amount exceeds requested amount"
+const ERR_PSWAP_FILL_SUM_OVERFLOW="PSWAP account_fill + note_fill overflows u64"
 
 # PRICE CALCULATION
 # =================================================================================================
@@ -253,8 +254,12 @@ proc create_p2id_note
     loc_store.P2ID_AMT_NOTE_FILL
     # => []
 
-    # Set attachment: aux = amt_account_fill + amt_note_fill
-    # attachment_scheme = 0 (NoteAttachmentScheme::none)
+    # Set attachment: aux = amt_account_fill + amt_note_fill.
+    # attachment_scheme = 0 (NoteAttachmentScheme::none).
+    #
+    # The add cannot overflow: `execute_pswap` asserts
+    # `amt_account_fill + amt_note_fill <= requested_amount` before calling
+    # this procedure, and `requested_amount` itself fits in a felt.
     loc_load.P2ID_AMT_ACCOUNT_FILL loc_load.P2ID_AMT_NOTE_FILL add
     # => [total_fill]
     push.0.0.0
@@ -386,7 +391,9 @@ proc create_remainder_note
     exec.output_note::set_word_attachment
     # => []
 
-    # Add remaining offered asset: remainder_amount = amt_offered - amt_payout
+    # Add remaining offered asset: remainder_amount = amt_offered - amt_payout.
+    # Sub cannot underflow: amt_payout <= amt_offered by construction in
+    # `calculate_tokens_offered_for_requested`.
     loc_load.REMAINDER_NOTE_IDX
     # => [note_idx]
 
@@ -514,8 +521,17 @@ proc execute_pswap
     loc_store.EXEC_AMT_REQUESTED
     # => []
 
-    # Assert (account_fill + note_fill) <= requested
-    loc_load.EXEC_AMT_REQUESTED_ACCOUNT_FILL loc_load.EXEC_AMT_REQUESTED_NOTE_FILL add
+    # Assert (account_fill + note_fill) <= requested.
+    # account_fill and note_fill are user-provided, so use overflow-checked add.
+    loc_load.EXEC_AMT_REQUESTED_ACCOUNT_FILL u32split
+    loc_load.EXEC_AMT_REQUESTED_NOTE_FILL u32split
+    # => [nf_lo, nf_hi, af_lo, af_hi]
+    exec.u64::overflowing_add
+    # => [overflow, sum_lo, sum_hi]
+    eq.0 assert.err=ERR_PSWAP_FILL_SUM_OVERFLOW
+    # => [sum_lo, sum_hi]
+    swap mul.MAX_U32 add
+    # => [fill_amount]
     loc_load.EXEC_AMT_REQUESTED
     # => [requested, fill_amount]
     lte assert.err=ERR_PSWAP_FILL_EXCEEDS_REQUESTED
@@ -683,7 +699,7 @@ pub proc main
     drop
     # => [account_fill_amount, note_fill_amount]
 
-    dup.1 dup.1 add push.0 eq
+    dup.1 eq.0 dup.1 eq.0 and
     # => [both_zero, account_fill_amount, note_fill_amount]
     if.true
         drop mem_load.REQUESTED_AMOUNT_ITEM
