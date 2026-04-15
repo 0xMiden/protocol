@@ -486,7 +486,8 @@ proc execute_pswap
     loc_load.EXEC_AMT_REQUESTED
     loc_load.EXEC_AMT_OFFERED
     # => [offered, requested, account_fill_amount]
-
+    # => [offered, requested, account_fill_amount]
+    
     exec.calculate_tokens_offered_for_requested
     # => [account_fill_payout]
 
