@@ -4,16 +4,7 @@ use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountId, AccountStorageMode, AccountVaultDelta};
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
-use miden_protocol::note::{
-    Note,
-    NoteAssets,
-    NoteAttachment,
-    NoteAttachmentScheme,
-    NoteMetadata,
-    NoteRecipient,
-    NoteStorage,
-    NoteType,
-};
+use miden_protocol::note::{Note, NoteAttachment, NoteAttachmentScheme, NoteType};
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, ONE, Word, ZERO};
 use miden_standards::account::wallets::BasicWallet;
