@@ -16,6 +16,8 @@ pub const ERR_B2AGG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS: MasmError = MasmError::f
 /// Error Message: "B2AGG script requires exactly 1 note asset"
 pub const ERR_B2AGG_WRONG_NUMBER_OF_ASSETS: MasmError = MasmError::from_static_str("B2AGG script requires exactly 1 note asset");
 
+/// Error Message: "bridge is currently paused"
+pub const ERR_BRIDGE_IS_PAUSED: MasmError = MasmError::from_static_str("bridge is currently paused");
 /// Error Message: "mainnet flag must be 1 for a mainnet deposit"
 pub const ERR_BRIDGE_NOT_MAINNET: MasmError = MasmError::from_static_str("mainnet flag must be 1 for a mainnet deposit");
 /// Error Message: "mainnet flag must be 0 for a rollup deposit"
@@ -31,6 +33,11 @@ pub const ERR_CONFIG_AGG_BRIDGE_TARGET_ACCOUNT_MISMATCH: MasmError = MasmError::
 /// Error Message: "CONFIG_AGG_BRIDGE expects exactly 7 note storage items"
 pub const ERR_CONFIG_AGG_BRIDGE_UNEXPECTED_STORAGE_ITEMS: MasmError = MasmError::from_static_str("CONFIG_AGG_BRIDGE expects exactly 7 note storage items");
 
+/// Error Message: "EMERGENCY_PAUSE note attachment target account does not match consuming account"
+pub const ERR_EMERGENCY_PAUSE_TARGET_ACCOUNT_MISMATCH: MasmError = MasmError::from_static_str("EMERGENCY_PAUSE note attachment target account does not match consuming account");
+/// Error Message: "EMERGENCY_PAUSE script expects exactly 1 note storage item"
+pub const ERR_EMERGENCY_PAUSE_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS: MasmError = MasmError::from_static_str("EMERGENCY_PAUSE script expects exactly 1 note storage item");
+
 /// Error Message: "faucet is not registered in the bridge's faucet registry"
 pub const ERR_FAUCET_NOT_REGISTERED: MasmError = MasmError::from_static_str("faucet is not registered in the bridge's faucet registry");
 
@@ -42,6 +49,8 @@ pub const ERR_GER_NOT_FOUND: MasmError = MasmError::from_static_str("GER not fou
 
 /// Error Message: "invalid leaf type: only asset claims (leafType=0) are supported"
 pub const ERR_INVALID_LEAF_TYPE: MasmError = MasmError::from_static_str("invalid leaf type: only asset claims (leafType=0) are supported");
+/// Error Message: "paused flag must be 0 or 1"
+pub const ERR_INVALID_PAUSE_FLAG: MasmError = MasmError::from_static_str("paused flag must be 0 or 1");
 
 /// Error Message: "leading bits of global index must be zero"
 pub const ERR_LEADING_BITS_NON_ZERO: MasmError = MasmError::from_static_str("leading bits of global index must be zero");

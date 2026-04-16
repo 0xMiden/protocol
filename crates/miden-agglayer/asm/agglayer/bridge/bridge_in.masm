@@ -192,6 +192,7 @@ const CLAIM_DEST_ID_SUFFIX_LOCAL = 1
 #! }
 #!
 #! Panics if:
+#! - the bridge is currently paused.
 #! - the leaf type is not 0 (not an asset claim).
 #! - the Merkle proof validation fails.
 #! - the origin token address is not registered in the bridge's token registry.
@@ -199,6 +200,9 @@ const CLAIM_DEST_ID_SUFFIX_LOCAL = 1
 #! Invocation: call
 @locals(2) # 0: dest_prefix, 1: dest_suffix
 pub proc claim
+    # assert the bridge is not paused.
+    exec.bridge_config::assert_not_paused
+
     # Write output note faucet amount to memory
     movup.8 mem_store.CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT
     # => [PROOF_DATA_KEY, LEAF_DATA_KEY, pad(8)]

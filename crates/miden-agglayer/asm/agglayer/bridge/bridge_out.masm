@@ -100,10 +100,16 @@ const BURN_NOTE_NUM_STORAGE_ITEMS=0
 #! - dest_network_id is the u32 destination network/chain ID.
 #! - dest_address(5) are 5 u32 values representing a 20-byte Ethereum address.
 #!
+#! Panics if:
+#! - the bridge is currently paused.
+#!
 #! Invocation: call
 @locals(14)
 pub proc bridge_out
     # => [ASSET_KEY, ASSET_VALUE, dest_network_id, dest_address(5), pad(2)]
+
+    # assert the bridge is not paused.
+    exec.bridge_config::assert_not_paused
 
     # Save ASSET to local memory for later BURN note creation
     locaddr.BRIDGE_OUT_BURN_ASSET_LOC
