@@ -2,6 +2,9 @@
 
 ## v0.15.0 (TBD)
 
+### Features
+- Added emergency pause mechanism to the AggLayer bridge, including an `emergency_paused` flag in bridge storage checked at all entry points and a bridge-admin-gated `set_emergency_paused` procedure ([#2785](https://github.com/0xMiden/protocol/pull/2785)).
+
 ### Changes
 - Added validation of leaf type on CLAIM note processing to prevent message leaves from being processed as asset claims ([#2730](https://github.com/0xMiden/protocol/pull/2730)).
 
