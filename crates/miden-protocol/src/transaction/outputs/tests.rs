@@ -11,6 +11,7 @@ use crate::errors::{OutputNoteError, TransactionOutputError};
 use crate::note::{
     Note,
     NoteAssets,
+    NoteAttachments,
     NoteMetadata,
     NoteRecipient,
     NoteScript,
@@ -67,7 +68,7 @@ fn output_note_size_hint_matches_serialized_length() -> anyhow::Result<()> {
     let script = NoteScript::mock();
     let recipient = NoteRecipient::new(serial_num, script, storage);
 
-    let note = Note::new(assets, metadata, recipient);
+    let note = Note::new(assets, metadata, recipient, NoteAttachments::default());
     let output_note = RawOutputNote::Full(note);
 
     let bytes = output_note.to_bytes();
@@ -112,7 +113,7 @@ fn oversized_public_note_triggers_size_limit_error() -> anyhow::Result<()> {
         .with_tag(NoteTag::with_account_target(sender_id));
 
     let recipient = NoteRecipient::new(serial_num, script, storage);
-    let oversized_note = Note::new(assets, metadata, recipient);
+    let oversized_note = Note::new(assets, metadata, recipient, NoteAttachments::default());
 
     // Sanity-check that our constructed note is indeed larger than the configured
     // maximum.

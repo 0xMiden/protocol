@@ -8,12 +8,13 @@ use crate::errors::{OutputNoteError, TransactionOutputError};
 use crate::note::{
     Note,
     NoteAssets,
+    NoteAttachments,
     NoteHeader,
     NoteId,
     NoteMetadata,
+    NoteMetadataHeader,
     NoteRecipient,
     PartialNote,
-    compute_note_commitment,
 };
 use crate::utils::serde::{
     ByteReader,
@@ -76,8 +77,8 @@ where
 
     /// Returns the commitment to the output notes.
     ///
-    /// The commitment is computed as a sequential hash of (note ID, metadata) tuples for the notes
-    /// created in a transaction.
+    /// The commitment is computed as a sequential hash of (note ID, metadata commitment) tuples
+    /// for the notes created in a transaction.
     pub fn commitment(&self) -> Word {
         self.commitment
     }
@@ -113,7 +114,7 @@ where
     /// - For an empty list, [`Word::empty`] is returned.
     /// - For a non-empty list of notes, this is a sequential hash of (note_id, metadata_commitment)
     ///   tuples for the notes created in a transaction, where `metadata_commitment` is the return
-    ///   value of [`NoteMetadata::to_commitment`].
+    ///   value of [`NoteMetadataHeader::to_commitment`].
     pub(crate) fn compute_commitment<'header>(
         notes: impl ExactSizeIterator<Item = &'header NoteHeader>,
     ) -> Word {
@@ -124,7 +125,7 @@ where
         let mut elements: Vec<Felt> = Vec::with_capacity(notes.len() * 8);
         for note_header in notes {
             elements.extend_from_slice(note_header.id().as_elements());
-            elements.extend_from_slice(note_header.metadata().to_commitment().as_elements());
+            elements.extend_from_slice(note_header.metadata_header().to_commitment().as_elements());
         }
 
         Hasher::hash_elements(&elements)
@@ -255,14 +256,15 @@ impl RawOutputNote {
         match self {
             Self::Full(note) if note.metadata().is_private() => {
                 let note_id = note.id();
-                let (_, metadata, _) = note.into_parts();
-                let note_header = NoteHeader::new(note_id, metadata);
-                Ok(OutputNote::Private(PrivateNoteHeader::new(note_header)?))
+                let (_, metadata, _, attachments) = note.into_parts();
+                let metadata_header = NoteMetadataHeader::new(metadata, &attachments);
+                let note_header = NoteHeader::new(note_id, metadata_header);
+                Ok(OutputNote::Private(PrivateOutputNote::new(note_header, attachments)?))
             },
             Self::Full(note) => Ok(OutputNote::Public(PublicOutputNote::new(note)?)),
             Self::Partial(note) => {
-                let (_, header) = note.into_parts();
-                Ok(OutputNote::Private(PrivateNoteHeader::new(header)?))
+                let (_, header, attachments) = note.into_parts();
+                Ok(OutputNote::Private(PrivateOutputNote::new(header, attachments)?))
             },
         }
     }
@@ -275,11 +277,19 @@ impl RawOutputNote {
         }
     }
 
+    /// Returns a reference to the note's attachments.
+    pub fn attachments(&self) -> &NoteAttachments {
+        match self {
+            Self::Full(note) => note.attachments(),
+            Self::Partial(note) => note.attachments(),
+        }
+    }
+
     /// Returns a commitment to the note and its metadata.
     ///
     /// > hash(NOTE_ID || NOTE_METADATA_COMMITMENT)
     pub fn commitment(&self) -> Word {
-        compute_note_commitment(self.id(), self.metadata())
+        self.header().to_commitment()
     }
 }
 
@@ -351,8 +361,8 @@ pub type OutputNotes = OutputNoteCollection<OutputNote>;
 pub enum OutputNote {
     /// A public note with full details, size-validated.
     Public(PublicOutputNote),
-    /// A note private header (for private notes).
-    Private(PrivateNoteHeader),
+    /// A private note header (for private notes).
+    Private(PrivateOutputNote),
 }
 
 impl OutputNote {
@@ -387,11 +397,16 @@ impl OutputNote {
         }
     }
 
+    /// Returns the note's metadata header.
+    pub fn metadata_header(&self) -> &NoteMetadataHeader {
+        <&NoteHeader>::from(self).metadata_header()
+    }
+
     /// Returns a commitment to the note and its metadata.
     ///
     /// > hash(NOTE_ID || NOTE_METADATA_COMMITMENT)
     pub fn to_commitment(&self) -> Word {
-        compute_note_commitment(self.id(), self.metadata())
+        <&NoteHeader>::from(self).to_commitment()
     }
 
     /// Returns the recipient of the public note, if this is a public note.
@@ -407,17 +422,17 @@ impl OutputNote {
 // ------------------------------------------------------------------------------------------------
 
 impl<'note> From<&'note OutputNote> for &'note NoteHeader {
-    fn from(value: &'note OutputNote) -> Self {
-        match value {
-            OutputNote::Public(note) => note.header(),
-            OutputNote::Private(header) => &header.0,
+    fn from(note: &'note OutputNote) -> Self {
+        match note {
+            OutputNote::Public(public_note) => public_note.header(),
+            OutputNote::Private(private_note) => private_note.as_header(),
         }
     }
 }
 
 impl From<&OutputNote> for NoteId {
-    fn from(value: &OutputNote) -> Self {
-        value.id()
+    fn from(note: &OutputNote) -> Self {
+        note.id()
     }
 }
 
@@ -451,7 +466,7 @@ impl Deserializable for OutputNote {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         match source.read_u8()? {
             Self::PUBLIC => Ok(Self::Public(PublicOutputNote::read_from(source)?)),
-            Self::PRIVATE => Ok(Self::Private(PrivateNoteHeader::read_from(source)?)),
+            Self::PRIVATE => Ok(Self::Private(PrivateOutputNote::read_from(source)?)),
             v => Err(DeserializationError::InvalidValue(format!(
                 "invalid proven output note type: {v}"
             ))),
@@ -554,39 +569,47 @@ impl Deserializable for PublicOutputNote {
 // PRIVATE NOTE HEADER
 // ================================================================================================
 
-/// A [NoteHeader] of a private note.
+/// A [`NoteHeader`] of a private note, along with its public attachments.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PrivateNoteHeader(NoteHeader);
+pub struct PrivateOutputNote {
+    header: NoteHeader,
+    attachments: NoteAttachments,
+}
 
-impl PrivateNoteHeader {
-    /// Creates a new [`PrivateNoteHeader`] from the given note header.
+impl PrivateOutputNote {
+    /// Creates a new [`PrivateOutputNote`] from the given note header and attachments.
     ///
     /// # Errors
     /// Returns an error if:
     /// - The provided header is for a public note.
-    pub fn new(header: NoteHeader) -> Result<Self, OutputNoteError> {
+    pub fn new(header: NoteHeader, attachments: NoteAttachments) -> Result<Self, OutputNoteError> {
         if !header.metadata().is_private() {
             return Err(OutputNoteError::NoteIsPublic(header.id()));
         }
 
-        Ok(Self(header))
+        Ok(Self { header, attachments })
     }
 
     /// Returns the note's identifier.
     ///
     /// The [NoteId] value is both an unique identifier and a commitment to the note.
     pub fn id(&self) -> NoteId {
-        self.0.id()
+        self.header.id()
     }
 
     /// Returns the note's metadata.
     pub fn metadata(&self) -> &NoteMetadata {
-        self.0.metadata()
+        self.header.metadata()
+    }
+
+    /// Returns the note's attachments.
+    pub fn attachments(&self) -> &NoteAttachments {
+        &self.attachments
     }
 
     /// Consumes self and returns the note header's metadata.
     pub fn into_metadata(self) -> NoteMetadata {
-        self.0.into_metadata()
+        self.header.into_metadata()
     }
 
     /// Returns a commitment to the note and its metadata.
@@ -596,33 +619,36 @@ impl PrivateNoteHeader {
     /// This value is used primarily for authenticating notes consumed when they are consumed
     /// in a transaction.
     pub fn commitment(&self) -> Word {
-        self.0.to_commitment()
+        self.header.to_commitment()
     }
 
     /// Returns a reference to the underlying note header.
     pub fn as_header(&self) -> &NoteHeader {
-        &self.0
+        &self.header
     }
 
     /// Consumes this wrapper and returns the underlying note header.
     pub fn into_header(self) -> NoteHeader {
-        self.0
+        self.header
     }
 }
 
-impl Serializable for PrivateNoteHeader {
+impl Serializable for PrivateOutputNote {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.0.write_into(target);
+        self.header.write_into(target);
+        self.attachments.write_into(target);
     }
 
     fn get_size_hint(&self) -> usize {
-        self.0.get_size_hint()
+        self.header.get_size_hint() + self.attachments.get_size_hint()
     }
 }
 
-impl Deserializable for PrivateNoteHeader {
+impl Deserializable for PrivateOutputNote {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let header = NoteHeader::read_from(source)?;
-        Self::new(header).map_err(|err| DeserializationError::InvalidValue(err.to_string()))
+        let attachments = NoteAttachments::read_from(source)?;
+        Self::new(header, attachments)
+            .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
     }
 }
