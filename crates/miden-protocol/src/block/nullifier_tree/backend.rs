@@ -237,6 +237,15 @@ where
 
         Ok(Self::new_unchecked(smt))
     }
+
+    /// Returns a read-only nullifier tree backed by a reader view of this tree's storage.
+    ///
+    /// The returned tree shares the same root and entries as `self`, but its storage is a
+    /// read-only snapshot produced by [`SmtStorage::reader`]. The returned tree cannot be
+    /// mutated.
+    pub fn reader(&self) -> NullifierTree<LargeSmt<Backend::Reader>> {
+        NullifierTree::new_unchecked(self.smt.reader())
+    }
 }
 
 // HELPER FUNCTIONS

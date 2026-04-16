@@ -246,6 +246,17 @@ impl AccountTree<Smt> {
     }
 }
 
+#[cfg(feature = "std")]
+impl<Backend> AccountTree<LargeSmt<Backend>>
+where
+    Backend: SmtStorage,
+{
+    /// Returns a read-only account tree backed by a reader view of this tree's storage.
+    pub fn reader(&self) -> AccountTree<LargeSmt<Backend::Reader>> {
+        AccountTree::new_unchecked(self.smt.reader())
+    }
+}
+
 // HELPER FUNCTIONS
 // ================================================================================================
 
