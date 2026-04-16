@@ -2,9 +2,10 @@ use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
+use miden_assembly::Report;
 use miden_core::mast::MastNodeExt;
 use miden_crypto::merkle::InnerNodeInfo;
-use miden_mast_package::Package;
+use miden_mast_package::{Package, TargetType};
 
 use super::{Felt, Hasher, Word};
 use crate::account::auth::{PublicKeyCommitment, Signature};
@@ -313,14 +314,22 @@ impl TransactionScript {
     /// Creates a [TransactionScript] from a [`Package`].
     ///
     /// The package must be an executable (i.e., its target type must be
-    /// [`TargetType::Executable`](miden_mast_package::TargetType::Executable)).
+    /// [`TargetType::TransactionScript`](miden_mast_package::TargetType::TransactionScript)).
     ///
     /// # Errors
     /// Returns an error if the package cannot be converted to an executable program.
     pub fn from_package(package: &Package) -> Result<Self, TransactionScriptError> {
-        let program = package
-            .try_into_program()
-            .map_err(TransactionScriptError::PackageNotProgram)?;
+        let package_kind = package.kind;
+        if !matches!(package_kind, TargetType::TransactionScript) {
+            let err_report = Report::msg(format!(
+                "package's kind is {}, expected TransactionScript",
+                package_kind
+            ));
+            return Err(TransactionScriptError::PackageNotTransactionScript(err_report));
+        };
+
+        let program =
+            package.try_into_program().map_err(TransactionScriptError::PackageNotProgram)?;
 
         Ok(TransactionScript::new(program))
     }
