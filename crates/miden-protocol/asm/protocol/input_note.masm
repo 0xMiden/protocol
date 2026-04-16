@@ -182,7 +182,7 @@ pub proc get_sender
     # => [METADATA_HEADER]
 
     # extract the sender ID from the metadata header
-    exec.note::extract_sender_from_metadata
+    exec.note::metadata_into_sender
     # => [sender_id_suffix, sender_id_prefix]
 end
 
