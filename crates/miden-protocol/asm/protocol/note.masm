@@ -6,6 +6,8 @@ use miden::core::mem
 pub use miden::protocol::util::note::MAX_NOTE_STORAGE_ITEMS
 pub use miden::protocol::util::note::NOTE_TYPE_PUBLIC
 pub use miden::protocol::util::note::NOTE_TYPE_PRIVATE
+pub use miden::protocol::util::note::MAX_ATTACHMENT_SCHEME
+pub use miden::protocol::util::note::MAX_ATTACHMENT_WORD_SIZE
 
 # ERRORS
 # =================================================================================================
@@ -194,27 +196,40 @@ pub proc metadata_into_sender
     # => [sender_id_suffix, sender_id_prefix]
 end
 
-#! Extracts the attachment kind and scheme from the provided metadata header.
+#! Extracts the first attachment's size and scheme from the provided metadata header.
+#!
+#! TODO(multi_attachments): This API temporarily maintains compatibility with the previous approach
+#! that supported just one attachment per note.
 #!
 #! Inputs:  [METADATA_HEADER]
-#! Outputs: [attachment_kind, attachment_scheme]
+#! Outputs: [attachment0_size, attachment0_scheme]
 #!
 #! Where:
-#! - METADATA_HEADER is the metadata of a note.
-#! - attachment_kind is the attachment kind of the note.
-#! - attachment_scheme is the attachment scheme of the note.
+#! - METADATA_HEADER is the metadata word of a note.
+#! - attachment0_size is the word size of the first attachment (0 if absent).
+#! - attachment0_scheme is the scheme of the first attachment.
 #!
 #! Invocation: exec
-pub proc metadata_into_attachment_info
-    # => [sender_id_suffix_type_version, sender_id_prefix, tag, attachment_kind_scheme]
-    drop drop drop
-    # => [attachment_kind_scheme]
+pub proc metadata_into_attachment_header
+    # => [sender_id_suffix_type_version, sender_id_prefix, tag_and_sizes, schemes]
 
-    # deconstruct the attachment_kind_scheme to extract the attachment_scheme
-    # attachment_kind_scheme = [30 zero bits | attachment_kind (2 bits) | attachment_scheme (32 bits)]
-    # u32split splits into [lo, hi] where lo is attachment_scheme
-    u32split swap
-    # => [attachment_kind, attachment_scheme]
+    drop drop
+    # => [tag_and_sizes, schemes]
+
+    # extract att_0_size from tag_and_sizes:
+    # u32split converts into sizes_packed (upper 32 bits) and tag (lower 32 bits)
+    u32split swap drop
+    # => [sizes_packed, schemes]
+    # => [attachment3_size (8 bits) | attachment2_size (8 bits) |
+    #     attachment1_size (8 bits) | attachment0_size (8 bits)]
+
+    # extract attachment 0 size by taking only the lower 8 bits
+    u32and.0xff
+    # [attachment0_size, schemes]
+
+    # extract attachment 0 scheme by taking only the lower 16 bits
+    swap u32and.0xffff swap
+    # [attachment0_size, attachment0_scheme]
 end
 
 #! Extracts the note type from the provided metadata header.

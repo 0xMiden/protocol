@@ -1,18 +1,10 @@
 use miden::protocol::kernel_proc_offsets::OUTPUT_NOTE_CREATE_OFFSET
 use miden::protocol::kernel_proc_offsets::OUTPUT_NOTE_GET_ASSETS_INFO_OFFSET
 use miden::protocol::kernel_proc_offsets::OUTPUT_NOTE_ADD_ASSET_OFFSET
-use miden::protocol::kernel_proc_offsets::OUTPUT_NOTE_SET_ATTACHMENT_OFFSET
+use miden::protocol::kernel_proc_offsets::OUTPUT_NOTE_ADD_ATTACHMENT_OFFSET
 use miden::protocol::kernel_proc_offsets::OUTPUT_NOTE_GET_RECIPIENT_OFFSET
 use miden::protocol::kernel_proc_offsets::OUTPUT_NOTE_GET_METADATA_OFFSET
 use miden::protocol::note
-
-# CONSTANTS
-# =================================================================================================
-
-# Re-export constants for note attachment kinds
-pub use miden::protocol::util::note::ATTACHMENT_KIND_NONE
-pub use miden::protocol::util::note::ATTACHMENT_KIND_WORD
-pub use miden::protocol::util::note::ATTACHMENT_KIND_ARRAY
 
 # PROCEDURES
 # =================================================================================================
@@ -153,9 +145,9 @@ pub proc add_asset
     # => []
 end
 
-#! Sets the attachment of the note specified by the index.
+#! Adds an attachment to the note specified by the note index.
 #!
-#! If attachment_kind == Array, there must be an advice map entry for ATTACHMENT (see below).
+#! If attachment_word_size > 1, there must be an advice map entry for ATTACHMENT.
 #!
 #! Inputs:
 #!   Operand Stack: [attachment_scheme, attachment_word_size, ATTACHMENT, note_idx]
@@ -165,27 +157,28 @@ end
 #! Outputs: []
 #!
 #! Where:
-#! - note_idx is the index of the note on which the attachment is set.
 #! - attachment_scheme is the user-defined scheme of the attachment.
-#! - attachment_kind is the kind of the attachment content.
-#! - ATTACHMENT is the attachment to be set.
+#! - attachment_word_size is the number of words that make up the attachment.
+#! - ATTACHMENT is the attachment word to store or the commitment to an array of attachment
+#!   elements.
+#! - note_idx is the index of the note to which the attachment is added.
 #! - ATTACHMENT_ELEMENTS are the elements for which ATTACHMENT is the sequential commitment (only
-#!   needed if attachment_kind == Array).
+#!   needed if attachment_word_size > 1).
 #!
 #! Panics if:
 #! - the procedure is called when the active account is not the native one.
 #! - the note index points to a non-existent output note.
-#! - the attachment kind or scheme does not fit into a u32.
-#! - the attachment kind is an unknown variant.
+#! - the attachment scheme exceeds 65534.
+#! - the note already has 4 attachments.
 #!
 #! Invocation: exec
-pub proc set_attachment
-    push.OUTPUT_NOTE_SET_ATTACHMENT_OFFSET
-    # => [offset, note_idx, attachment_scheme, attachment_kind, ATTACHMENT]
+pub proc add_attachment
+    push.OUTPUT_NOTE_ADD_ATTACHMENT_OFFSET
+    # => [offset, attachment_scheme, attachment_word_size, ATTACHMENT, note_idx]
 
     # pad the stack before the syscall
     padw padw swapdw
-    # => [offset, note_idx, attachment_scheme, attachment_kind, ATTACHMENT, pad(8)]
+    # => [offset, attachment_scheme, attachment_word_size, ATTACHMENT, note_idx, pad(8)]
 
     syscall.exec_kernel_proc
     # => [pad(16)]
@@ -195,61 +188,59 @@ pub proc set_attachment
     # => []
 end
 
-#! Sets the attachment of the note specified by the note index to the provided word.
+#! Adds a single-word attachment to the note specified by the note index.
 #!
-#! This overwrites any previously set attachment.
-#!
-#! Inputs:  [note_idx, attachment_scheme, ATTACHMENT]
+#! Inputs:  [attachment_scheme, ATTACHMENT, note_idx]
 #! Outputs: []
 #!
 #! Where:
-#! - note_idx is the index of the note on which the attachment is set.
-#! - attachment_scheme is the user-defined scheme of the attachment.
-#! - ATTACHMENT is the raw attachment to set.
+#! - attachment_scheme is the user-defined scheme of the attachment (u16, max 65534).
+#! - ATTACHMENT is the raw attachment word to store.
+#! - note_idx is the index of the note to which the attachment is added.
 #!
 #! Panics if:
 #! - the procedure is called when the active account is not the native one.
 #! - the note index points to a non-existent output note.
-#! - the attachment_scheme does not fit into a u32.
+#! - the attachment scheme does not fit into a u16.
+#! - the note already has 4 attachments.
 #!
 #! Invocation: exec
-pub proc set_word_attachment
-    push.ATTACHMENT_KIND_WORD movdn.2
-    # => [note_idx, attachment_scheme, attachment_kind, ATTACHMENT]
+pub proc add_word_attachment
+    # insert attachment_word_size = 1 after attachment_scheme
+    push.1 swap
+    # => [attachment_scheme, 1, ATTACHMENT, note_idx]
 
-    exec.set_attachment
+    exec.add_attachment
     # => []
 end
 
-#! Sets the attachment of the note specified by the note index to the provided ATTACHMENT which
-#! commits to an array of felts.
-#!
-#! This overwrites any previously set attachment.
+#! Adds an array attachment to the note specified by the note index. The ATTACHMENT is the
+#! commitment to a set of elements.
 #!
 #! Inputs:
-#!   Operand Stack: [note_idx, attachment_scheme, ATTACHMENT]
+#!   Operand Stack: [attachment_scheme, attachment_word_size, ATTACHMENT, note_idx]
 #!   Advice map: {
 #!     ATTACHMENT: [[ATTACHMENT_ELEMENTS]],
 #!   }
 #! Outputs: []
 #!
 #! Where:
-#! - note_idx is the index of the note on which the attachment is set.
 #! - attachment_scheme is the user-defined scheme of the attachment.
+#! - attachment_word_size is the size of the attachment in words.
 #! - ATTACHMENT is the commitment of the set of elements that form the note attachment.
+#! - note_idx is the index of the note to which the attachment is added.
 #! - ATTACHMENT_ELEMENTS are the elements for which ATTACHMENT is the sequential commitment.
 #!
 #! Panics if:
 #! - the procedure is called when the active account is not the native one.
 #! - the note index points to a non-existent output note.
-#! - the attachment_scheme does not fit into a u32.
+#! - the attachment scheme does not fit into a u16.
+#! - the note already has 4 attachments.
+#! - the word_size of the attachment is not at least 2.
 #!
 #! Invocation: exec
-pub proc set_array_attachment
-    push.ATTACHMENT_KIND_ARRAY movdn.2
-    # => [note_idx, attachment_scheme, attachment_kind, ATTACHMENT]
-
-    exec.set_attachment
+pub proc add_array_attachment
+    exec.add_attachment
     # => []
 end
 
@@ -286,7 +277,7 @@ pub proc get_recipient
     # => [RECIPIENT]
 end
 
-#! Returns the metadata of the output note with the specified index.
+#! Returns the metadata and first attachment of the output note with the specified index.
 #!
 #! Inputs:  [note_index]
 #! Outputs: [NOTE_ATTACHMENT, METADATA_HEADER]
@@ -294,7 +285,7 @@ end
 #! Where:
 #! - note_index is the index of the output note whose metadata should be returned.
 #! - METADATA_HEADER is the metadata header of the specified output note.
-#! - NOTE_ATTACHMENT is the attachment of the specified output note.
+#! - NOTE_ATTACHMENT is the first attachment of the specified output note.
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of output notes.
