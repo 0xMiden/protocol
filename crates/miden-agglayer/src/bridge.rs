@@ -196,7 +196,7 @@ impl AggLayerBridge {
         &TOKEN_REGISTRY_MAP_SLOT_NAME
     }
 
-    // --- emergency pause --
+    // --- emergency pause -
 
     /// Storage slot name for the emergency paused flag.
     pub fn paused_slot_name() -> &'static StorageSlotName {

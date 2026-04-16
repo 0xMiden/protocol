@@ -3,12 +3,21 @@ extern crate alloc;
 use miden_agglayer::errors::{ERR_BRIDGE_IS_PAUSED, ERR_SENDER_NOT_BRIDGE_ADMIN};
 use miden_agglayer::{
     AggLayerBridge,
+    ConfigAggBridgeNote,
     EmergencyPauseNote,
+    EthAddress,
     ExitRoot,
     UpdateGerNote,
     create_existing_bridge_account,
 };
 use miden_protocol::account::auth::AuthScheme;
+use miden_protocol::account::{
+    Account,
+    AccountId,
+    AccountIdVersion,
+    AccountStorageMode,
+    AccountType,
+};
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::transaction::RawOutputNote;
 use miden_testing::{Auth, MockChain};
@@ -220,6 +229,87 @@ async fn test_non_admin_cannot_pause() -> anyhow::Result<()> {
     assert!(
         error_msg.contains(&expected_err_code),
         "expected error code {expected_err_code} for 'note sender is not the bridge admin', got: {error_msg}"
+    );
+
+    Ok(())
+}
+
+/// Helper: creates admin, GER manager, bridge, pauses the bridge, and returns the paused bridge
+/// along with admin and GER manager accounts.
+async fn create_paused_bridge() -> anyhow::Result<(Account, Account, Account)> {
+    let mut builder = MockChain::builder();
+
+    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    let bridge_seed = builder.rng_mut().draw_word();
+    let bridge_account =
+        create_existing_bridge_account(bridge_seed, bridge_admin.id(), ger_manager.id());
+    builder.add_account(bridge_account.clone())?;
+
+    let pause_note = EmergencyPauseNote::create(
+        true,
+        bridge_admin.id(),
+        bridge_account.id(),
+        builder.rng_mut(),
+    )?;
+    builder.add_output_note(RawOutputNote::Full(pause_note.clone()));
+    let mock_chain = builder.build()?;
+
+    let tx_context = mock_chain
+        .build_tx_context(bridge_account.id(), &[pause_note.id()], &[])?
+        .build()?;
+    let executed_transaction = tx_context.execute().await?;
+
+    let mut paused_bridge = bridge_account;
+    paused_bridge.apply_delta(executed_transaction.account_delta())?;
+    assert!(AggLayerBridge::is_paused(&paused_bridge)?);
+
+    Ok((bridge_admin, ger_manager, paused_bridge))
+}
+
+/// Tests that pausing the bridge blocks register_faucet.
+#[tokio::test]
+async fn test_pause_blocks_register_faucet() -> anyhow::Result<()> {
+    let (bridge_admin, _ger_manager, paused_bridge) = create_paused_bridge().await?;
+
+    let mut builder2 = MockChain::builder();
+    builder2.add_account(bridge_admin.clone())?;
+    builder2.add_account(paused_bridge.clone())?;
+
+    let faucet_to_register = AccountId::dummy(
+        [42; 15],
+        AccountIdVersion::Version0,
+        AccountType::FungibleFaucet,
+        AccountStorageMode::Network,
+    );
+    let origin_token_address =
+        EthAddress::from_hex("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48").unwrap();
+    let config_note = ConfigAggBridgeNote::create(
+        faucet_to_register,
+        &origin_token_address,
+        bridge_admin.id(),
+        paused_bridge.id(),
+        builder2.rng_mut(),
+    )?;
+    builder2.add_output_note(RawOutputNote::Full(config_note.clone()));
+    let mock_chain2 = builder2.build()?;
+
+    let tx_context2 = mock_chain2
+        .build_tx_context(paused_bridge.id(), &[config_note.id()], &[])?
+        .build()?;
+    let result = tx_context2.execute().await;
+    assert!(result.is_err(), "register_faucet should fail when bridge is paused");
+    let error_msg = result.unwrap_err().to_string();
+    let expected_err_code = ERR_BRIDGE_IS_PAUSED.code().to_string();
+    assert!(
+        error_msg.contains(&expected_err_code),
+        "expected error code {expected_err_code} for 'bridge is currently paused', got: {error_msg}"
     );
 
     Ok(())
