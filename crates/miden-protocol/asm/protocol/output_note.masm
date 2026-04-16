@@ -158,7 +158,7 @@ end
 #! If attachment_kind == Array, there must be an advice map entry for ATTACHMENT (see below).
 #!
 #! Inputs:
-#!   Operand Stack: [note_idx, attachment_scheme, attachment_kind, ATTACHMENT]
+#!   Operand Stack: [attachment_scheme, attachment_word_size, ATTACHMENT, note_idx]
 #!   Advice map: {
 #!     ATTACHMENT?: [[ATTACHMENT_ELEMENTS]],
 #!   }

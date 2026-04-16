@@ -430,17 +430,17 @@ pub const INPUT_NOTE_ASSETS_OFFSET: MemoryOffset = 44;
 // The total number of output notes for a transaction is stored in the bookkeeping section of the
 // memory. Data section of each note is laid out like so:
 //
-// ┌──────┬──────────┬──────────┬──────────┬──────────┬──────────┬───────────┬────────────┬────────┬
-// │ NOTE │ METADATA │ ATTACH 0 │ ATTACH 1 │ ATTACH 2 │ ATTACH 3 │ RECIPIENT │   ASSETS   │  NUM   │
-// │  ID  │  HEADER  │          │          │          │          │           │ COMMITMENT │ ASSETS │
-// ├──────┼──────────┼──────────┼──────────┼──────────┼──────────┼───────────┼────────────┼────────┼
-// 0      4          8          12         16         20         24          28           32
+// ┌──────┬──────────┬──────────────┬────────────┬────────────┬────────────┬────────────┬───────────┬────────────┬────────┬
+// │ NOTE │ METADATA │     NUM      │ ATTACHMENT │ ATTACHMENT │ ATTACHMENT │ ATTACHMENT │ RECIPIENT │   ASSETS   │  NUM   │
+// │  ID  │  HEADER  │ ATTACHMENTS  │      0     │      1     │      2     │      3     │           │ COMMITMENT │ ASSETS │
+// ├──────┼──────────┼──────────────┼────────────┼────────────┼────────────┼────────────┼───────────┼────────────┼────────┼
+// 0      4          8              12           16           20           24           28          32           36
 //
-// ┬───────┬────────┬───────┬─────────┬─────┬────────┬─────────┬─────────┐
-// │ DIRTY │  NUM   │ ASSET │  ASSET  │ ... │ ASSET  │  ASSET  │ PADDING │
-// │ FLAG  │ ATTACH │ KEY 0 │ VALUE 0 │     │ KEY n  │ VALUE n │         │
-// ┼───────┼────────┼───────┼─────────┼─────┼────────┼─────────┼─────────┘
-// 33      34       36      40              36 + 8n  40 + 8n
+// ┬───────┬───────┬─────────┬─────┬────────┬─────────┬─────────┐
+// │ DIRTY │ ASSET │  ASSET  │ ... │ ASSET  │  ASSET  │ PADDING │
+// │ FLAG  │ KEY 0 │ VALUE 0 │     │ KEY n  │ VALUE n │         │
+// ┼───────┼───────┼─────────┼─────┼────────┼─────────┼─────────┘
+// 37      40      44              40 + 8n  44 + 8n
 //
 // The DIRTY_FLAG is the binary flag which specifies whether the assets commitment stored in this
 // note is outdated. It holds 1 if some changes were made to the note assets since the last
@@ -455,16 +455,16 @@ pub const OUTPUT_NOTE_SECTION_OFFSET: MemoryOffset = 16_777_216;
 /// The offsets at which data of an output note is stored relative to the start of its data segment.
 pub const OUTPUT_NOTE_ID_OFFSET: MemoryOffset = 0;
 pub const OUTPUT_NOTE_METADATA_HEADER_OFFSET: MemoryOffset = 4;
-pub const OUTPUT_NOTE_ATTACHMENT_0_OFFSET: MemoryOffset = 8;
-pub const OUTPUT_NOTE_ATTACHMENT_1_OFFSET: MemoryOffset = 12;
-pub const OUTPUT_NOTE_ATTACHMENT_2_OFFSET: MemoryOffset = 16;
-pub const OUTPUT_NOTE_ATTACHMENT_3_OFFSET: MemoryOffset = 20;
-pub const OUTPUT_NOTE_RECIPIENT_OFFSET: MemoryOffset = 24;
-pub const OUTPUT_NOTE_ASSET_COMMITMENT_OFFSET: MemoryOffset = 28;
-pub const OUTPUT_NOTE_NUM_ASSETS_OFFSET: MemoryOffset = 32;
-pub const OUTPUT_NOTE_DIRTY_FLAG_OFFSET: MemoryOffset = 33;
-pub const OUTPUT_NOTE_NUM_ATTACHMENTS_OFFSET: MemoryOffset = 34;
-pub const OUTPUT_NOTE_ASSETS_OFFSET: MemoryOffset = 36;
+pub const OUTPUT_NOTE_NUM_ATTACHMENTS_OFFSET: MemoryOffset = 8;
+pub const OUTPUT_NOTE_ATTACHMENT_0_OFFSET: MemoryOffset = 12;
+pub const OUTPUT_NOTE_ATTACHMENT_1_OFFSET: MemoryOffset = 16;
+pub const OUTPUT_NOTE_ATTACHMENT_2_OFFSET: MemoryOffset = 20;
+pub const OUTPUT_NOTE_ATTACHMENT_3_OFFSET: MemoryOffset = 24;
+pub const OUTPUT_NOTE_RECIPIENT_OFFSET: MemoryOffset = 28;
+pub const OUTPUT_NOTE_ASSET_COMMITMENT_OFFSET: MemoryOffset = 32;
+pub const OUTPUT_NOTE_NUM_ASSETS_OFFSET: MemoryOffset = 36;
+pub const OUTPUT_NOTE_DIRTY_FLAG_OFFSET: MemoryOffset = 37;
+pub const OUTPUT_NOTE_ASSETS_OFFSET: MemoryOffset = 40;
 
 // ASSETS
 // ------------------------------------------------------------------------------------------------

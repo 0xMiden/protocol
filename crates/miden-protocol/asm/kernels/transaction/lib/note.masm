@@ -2,10 +2,13 @@ use miden::core::crypto::hashes::poseidon2
 
 use $kernel::asset::ASSET_SIZE
 use $kernel::constants::NOTE_MEM_SIZE
+use $kernel::constants::WORD_SIZE
 use $kernel::memory
 
 pub use $kernel::util::note::NOTE_TYPE_PUBLIC
 pub use $kernel::util::note::NOTE_TYPE_PRIVATE
+pub use $kernel::util::note::MAX_ATTACHMENT_SCHEME
+pub use $kernel::util::note::MAX_ATTACHMENT_WORD_SIZE
 
 # ERRORS
 # =================================================================================================
@@ -80,6 +83,43 @@ end
 
 # OUTPUT NOTE PROCEDURES
 # =================================================================================================
+
+#! Computes the commitment to the output note's attachments.
+#!
+#! The commitment is defined as:
+#! - 0 attachments: EMPTY_WORD
+#! - 1+ attachments: sequential hash over all flattened attachment elements
+#!
+#! Inputs:  [note_ptr]
+#! Outputs: [ATTACHMENTS_COMMITMENT]
+#!
+#! Where:
+#! - note_ptr is a pointer to the data section of the output note.
+#! - ATTACHMENTS_COMMITMENT is the commitment of the note's attachments.
+proc compute_attachments_commitment
+    dup exec.memory::get_output_note_num_attachments
+    # => [num_attachments, note_ptr]
+
+    # TODO(multi_attachments): We probably don't need the if-else branching here. If not, we can
+    # optimize the MASM a bit.
+    dup eq.0
+    if.true
+        # 0 attachments: return EMPTY_WORD
+        drop drop padw
+        # => [EMPTY_WORD]
+    else
+        # 1+ attachments: compute hash via hash_words
+        # compute end_ptr = attachment_data_ptr + num_attachments * 4
+        swap exec.memory::get_output_note_attachment_data_ptr
+        # => [start_ptr, num_attachments]
+
+        swap mul.WORD_SIZE dup.1 add swap
+        # => [start_ptr, end_ptr]
+
+        exec.poseidon2::hash_words
+        # => [ATTACHMENTS_COMMITMENT]
+    end
+end
 
 #! Computes the assets commitment of the output note located at the specified memory address.
 #!
@@ -199,13 +239,14 @@ pub proc compute_output_notes_commitment
         dup exec.compute_output_note_id
         # => [NOTE_ID, current_note_ptr, RATE0, RATE1, CAPACITY, current_index, num_notes]
 
-        dup.4 exec.memory::get_output_note_attachment
-        # => [NOTE_ATTACHMENT, NOTE_ID, current_note_ptr, RATE0, RATE1, CAPACITY, current_index, num_notes]
+        # compute attachments commitment
+        dup.4 exec.compute_attachments_commitment
+        # => [ATTACHMENTS_COMMITMENT, NOTE_ID, current_note_ptr, RATE0, RATE1, CAPACITY, current_index, num_notes]
 
         movup.8 exec.memory::get_output_note_metadata_header
-        # => [NOTE_METADATA_HEADER, NOTE_ATTACHMENT, NOTE_ID, RATE0, RATE1, CAPACITY, current_index, num_notes]
+        # => [NOTE_METADATA_HEADER, ATTACHMENTS_COMMITMENT, NOTE_ID, RATE0, RATE1, CAPACITY, current_index, num_notes]
 
-        # compute hash(NOTE_METADATA_HEADER || NOTE_ATTACHMENT)
+        # compute hash(NOTE_METADATA_HEADER || ATTACHMENTS_COMMITMENT)
         exec.poseidon2::merge
         # => [NOTE_METADATA_COMMITMENT, NOTE_ID, RATE0, RATE1, CAPACITY, current_index, num_notes]
 

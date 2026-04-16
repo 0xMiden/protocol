@@ -1,6 +1,7 @@
 use $kernel::constants::ACCOUNT_PROCEDURE_DATA_LENGTH
 use $kernel::constants::MAX_ASSETS_PER_NOTE
 use $kernel::constants::NOTE_MEM_SIZE
+use $kernel::constants::WORD_SIZE
 # use $kernel::types::AccountId
 use miden::core::mem
 
@@ -268,13 +269,16 @@ const OUTPUT_NOTE_SECTION_OFFSET=16777216
 # The offsets at which data of an output note is stored relative to the start of its data segment.
 const OUTPUT_NOTE_ID_OFFSET=0
 const OUTPUT_NOTE_METADATA_HEADER_OFFSET=4
-const OUTPUT_NOTE_METADATA_ATTACHMENT_KIND_SCHEME_OFFSET=OUTPUT_NOTE_METADATA_HEADER_OFFSET + 3
-const OUTPUT_NOTE_ATTACHMENT_OFFSET=8
-const OUTPUT_NOTE_RECIPIENT_OFFSET=12
-const OUTPUT_NOTE_ASSETS_COMMITMENT_OFFSET=16
-const OUTPUT_NOTE_NUM_ASSETS_OFFSET=20
-const OUTPUT_NOTE_DIRTY_FLAG_OFFSET=21
-const OUTPUT_NOTE_ASSETS_OFFSET=24
+const OUTPUT_NOTE_NUM_ATTACHMENTS_OFFSET=8
+const OUTPUT_NOTE_ATTACHMENT_0_OFFSET=12
+const OUTPUT_NOTE_ATTACHMENT_1_OFFSET=16
+const OUTPUT_NOTE_ATTACHMENT_2_OFFSET=20
+const OUTPUT_NOTE_ATTACHMENT_3_OFFSET=24
+const OUTPUT_NOTE_RECIPIENT_OFFSET=28
+const OUTPUT_NOTE_ASSETS_COMMITMENT_OFFSET=32
+const OUTPUT_NOTE_NUM_ASSETS_OFFSET=36
+const OUTPUT_NOTE_DIRTY_FLAG_OFFSET=37
+const OUTPUT_NOTE_ASSETS_OFFSET=40
 
 # LINK MAP MEMORY
 # -------------------------------------------------------------------------------------------------
@@ -1942,46 +1946,82 @@ pub proc set_output_note_metadata_header
     mem_storew_le
 end
 
-#! Sets the output note's attachment kind and scheme in the metadata header.
+#! Returns the output note's attachment at the given attachment index.
 #!
-#! Inputs:  [note_ptr, attachment_kind_scheme]
-#! Outputs: []
+#! WARNING: Assumes the attachment_idx is within bounds: 0..4.
 #!
-#! Where:
-#! - attachment_kind_scheme is the type information of the attachment that will be overwritten.
-#! - note_ptr is the memory address at which the output note data begins.
-pub proc set_output_note_attachment_kind_scheme
-    add.OUTPUT_NOTE_METADATA_ATTACHMENT_KIND_SCHEME_OFFSET
-    mem_store
-end
-
-#! Returns the output note's attachment.
-#!
-#! Inputs:  [note_ptr]
+#! Inputs:  [note_ptr, attachment_idx]
 #! Outputs: [ATTACHMENT]
 #!
 #! Where:
-#! - ATTACHMENT is the note attachment.
 #! - note_ptr is the memory address at which the output note data begins.
+#! - attachment_idx is the index of the attachment slot.
+#! - ATTACHMENT is the note attachment word.
 pub proc get_output_note_attachment
-    padw
-    movup.4 add.OUTPUT_NOTE_ATTACHMENT_OFFSET
-    mem_loadw_le
+    add.OUTPUT_NOTE_ATTACHMENT_0_OFFSET
+    # => [note_ptr + attachment_0_offset, attachment_idx]
+
+    swap mul.WORD_SIZE add
+    # => [attachment_ptr]
+
+    padw movup.4 mem_loadw_le
     # => [ATTACHMENT]
 end
 
-#! Sets the output note's attachment.
+#! Returns a pointer to the start of the attachment data region for the output note.
 #!
-#! Inputs:  [note_ptr, ATTACHMENT]
+#! Inputs:  [note_ptr]
+#! Outputs: [attachment_data_ptr]
+#!
+#! Where:
+#! - note_ptr is the memory address at which the output note data begins.
+#! - attachment_data_ptr is the memory address of the first attachment slot.
+pub proc get_output_note_attachment_data_ptr
+    add.OUTPUT_NOTE_ATTACHMENT_0_OFFSET
+end
+
+#! Sets the output note's attachment at the given slot index.
+#!
+#! Inputs:  [note_ptr, attachment_idx, ATTACHMENT]
 #! Outputs: []
 #!
 #! Where:
-#! - ATTACHMENT is the note attachment.
 #! - note_ptr is the memory address at which the output note data begins.
+#! - attachment_idx is the index of the attachment slot (0..3).
+#! - ATTACHMENT is the note attachment word.
 pub proc set_output_note_attachment
-    add.OUTPUT_NOTE_ATTACHMENT_OFFSET
-    mem_storew_le
-    dropw
+    add.OUTPUT_NOTE_ATTACHMENT_0_OFFSET
+    # => [note_ptr + base_offset, attachment_idx, ATTACHMENT]
+
+    swap mul.WORD_SIZE add
+    # => [attachment_ptr, ATTACHMENT]
+
+    mem_storew_le dropw
+    # => []
+end
+
+#! Returns the number of attachments for the output note.
+#!
+#! Inputs:  [note_ptr]
+#! Outputs: [num_attachments]
+#!
+#! Where:
+#! - note_ptr is the memory address at which the output note data begins.
+#! - num_attachments is the number of attachments in the output note.
+pub proc get_output_note_num_attachments
+    add.OUTPUT_NOTE_NUM_ATTACHMENTS_OFFSET mem_load
+end
+
+#! Sets the number of attachments for the output note.
+#!
+#! Inputs:  [note_ptr, num_attachments]
+#! Outputs: []
+#!
+#! Where:
+#! - note_ptr is the memory address at which the output note data begins.
+#! - num_attachments is the number of attachments in the output note.
+pub proc set_output_note_num_attachments
+    add.OUTPUT_NOTE_NUM_ATTACHMENTS_OFFSET mem_store
 end
 
 #! Returns the number of assets in the output note.
