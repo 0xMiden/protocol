@@ -97,11 +97,11 @@ After both personas report:
 [2-3 sentences: overall risk profile and the single most important thing to fix]
 ```
 
-**Critical Findings and Warnings block the merge.** Notes are advisory and do not block.
+**All findings (Critical, Warning, and Note) block the merge.** Every issue must be addressed before pushing.
 
 **Verdicts:**
-- **BLOCK** - Any Critical Findings or Warnings. Do not merge until addressed.
-- **CLEAN** - No Critical Findings or Warnings (Notes are acceptable). Safe to merge.
+- **BLOCK** - Any findings at any severity level. Do not merge until addressed.
+- **CLEAN** - Zero findings. Safe to merge.
 
 ## Anti-Patterns - Do NOT Do These
 
