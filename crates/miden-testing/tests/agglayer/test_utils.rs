@@ -34,9 +34,10 @@ use serde::Deserialize;
 // EMBEDDED TEST VECTOR JSON FILES
 // ================================================================================================
 
-/// Bridge asset test vectors JSON — contains test data for an L1 bridgeAsset transaction.
-const BRIDGE_ASSET_VECTORS_JSON: &str = include_str!(
-    "../../../miden-agglayer/solidity-compat/test-vectors/claim_asset_vectors_local_tx.json"
+/// Mainnet-side claim asset test vectors JSON — contains test data for an L1 `bridgeAsset` leaf and
+/// proof.
+const MAINNET_CLAIM_ASSET_VECTORS_JSON: &str = include_str!(
+    "../../../miden-agglayer/solidity-compat/test-vectors/claim_asset_vectors_mainnet_tx.json"
 );
 
 /// Rollup deposit test vectors JSON — contains test data for a rollup deposit with two-level
@@ -238,10 +239,10 @@ pub struct MTFVectorsFile {
 // LAZY-PARSED TEST VECTORS
 // ================================================================================================
 
-/// Lazily parsed bridge asset test vector from the JSON file (locally simulated L1 transaction).
-pub static CLAIM_ASSET_VECTOR_LOCAL: LazyLock<ClaimAssetVector> = LazyLock::new(|| {
-    serde_json::from_str(BRIDGE_ASSET_VECTORS_JSON)
-        .expect("failed to parse bridge asset vectors JSON")
+/// Lazily parsed mainnet-side bridge asset test vector (`claim_asset_vectors_mainnet_tx.json`).
+pub static CLAIM_ASSET_VECTOR_MAINNET: LazyLock<ClaimAssetVector> = LazyLock::new(|| {
+    serde_json::from_str(MAINNET_CLAIM_ASSET_VECTORS_JSON)
+        .expect("failed to parse mainnet claim asset vectors JSON")
 });
 
 /// Lazily parsed rollup deposit test vector from the JSON file.
@@ -270,12 +271,12 @@ pub static SOLIDITY_MTF_VECTORS: LazyLock<MTFVectorsFile> = LazyLock::new(|| {
 // HELPER FUNCTIONS
 // ================================================================================================
 
-/// Identifies the source of claim data used in bridge-in tests.
+/// Identifies the source of simulated claim data used in bridge-in tests.
 #[derive(Debug, Clone, Copy)]
 pub enum ClaimDataSource {
-    /// Locally simulated bridgeAsset data from claim_asset_vectors_local_tx.json.
-    Simulated,
-    /// Rollup deposit data from claim_asset_vectors_rollup_tx.json.
+    /// Mainnet `bridgeAsset` data from `claim_asset_vectors_mainnet_tx.json`.
+    Mainnet,
+    /// Rollup deposit data from `claim_asset_vectors_rollup_tx.json`.
     Rollup,
 }
 
@@ -283,7 +284,7 @@ impl ClaimDataSource {
     /// Returns the `(ProofData, LeafData, ExitRoot, CgiChainHash)` tuple for this data source.
     pub fn get_data(self) -> (ProofData, LeafData, ExitRoot, CgiChainHash) {
         let vector = match self {
-            ClaimDataSource::Simulated => &*CLAIM_ASSET_VECTOR_LOCAL,
+            ClaimDataSource::Mainnet => &*CLAIM_ASSET_VECTOR_MAINNET,
             ClaimDataSource::Rollup => &*CLAIM_ASSET_VECTOR_ROLLUP,
         };
         let ger = ExitRoot::new(

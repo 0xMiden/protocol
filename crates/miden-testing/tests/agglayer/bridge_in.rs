@@ -110,16 +110,16 @@ fn merkle_proof_verification_code(
 /// TX1: UPDATE_GER → bridge (stores GER)
 /// TX2: CLAIM → bridge (validates proof, creates MINT note)
 /// TX3: MINT → aggfaucet (mints asset, creates P2ID note)
-/// TX4: P2ID → destination (simulated case only)
+/// TX4: P2ID → destination (runs for both `Mainnet` and `Rollup` simulated cases)
 ///
 /// Parameterized over two claim data sources:
-/// - [`ClaimDataSource::Simulated`]: uses locally generated [`ProofData`] and [`LeafData`] from
-///   `claim_asset_vectors_local_tx.json`, produced by simulating a `bridgeAsset()` call.
+/// - [`ClaimDataSource::Mainnet`]: uses locally generated [`ProofData`] and [`LeafData`] from
+///   `claim_asset_vectors_mainnet_tx.json`, produced by simulating a `bridgeAsset()` call.
 /// - [`ClaimDataSource::Rollup`]: uses locally generated [`ProofData`] and [`LeafData`] from
 ///   `claim_asset_vectors_rollup_tx.json`, produced by simulating the rollup exit tree from
 ///   PolygonRollupManager.
 #[rstest::rstest]
-#[case::simulated(ClaimDataSource::Simulated)]
+#[case::mainnet(ClaimDataSource::Mainnet)]
 #[case::rollup(ClaimDataSource::Rollup)]
 #[tokio::test]
 async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> anyhow::Result<()> {
@@ -186,10 +186,11 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
         .expect("destination address is not an embedded Miden AccountId")
         .into_account_id();
 
-    // For the simulated/rollup case, create the destination account so we can consume the P2ID note
+    // For mainnet and rollup fixtures, create the destination account so we can consume the P2ID
+    // note.
     let destination_account = if matches!(
         data_source,
-        ClaimDataSource::Simulated | ClaimDataSource::Rollup
+        ClaimDataSource::Mainnet | ClaimDataSource::Rollup
     ) {
         let dest =
             Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE, IncrNonceAuthComponent);
@@ -380,9 +381,9 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
 
     assert_eq!(RawOutputNote::Full(expected_output_p2id_note.clone()), *output_note);
 
-    // TX4: CONSUME THE P2ID NOTE WITH THE DESTINATION ACCOUNT (simulated case only)
+    // TX4: CONSUME THE P2ID NOTE WITH THE DESTINATION ACCOUNT (mainnet and rollup fixtures)
     // --------------------------------------------------------------------------------------------
-    // For the simulated case, we control the destination account and can verify the full
+    // The harness owns the destination account from the JSON vectors, so we can verify the full
     // end-to-end flow including P2ID consumption and balance updates.
     if let Some(destination_account) = destination_account {
         // Add the faucet transaction to the chain and prove the next block so the P2ID note is
@@ -419,7 +420,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
 /// data is unchanged.
 #[tokio::test]
 async fn test_claim_rejects_wrong_destination_network() -> anyhow::Result<()> {
-    let data_source = ClaimDataSource::Simulated;
+    let data_source = ClaimDataSource::Mainnet;
     let mut builder = MockChain::builder();
 
     // CREATE BRIDGE ADMIN ACCOUNT (sends CONFIG_AGG_BRIDGE notes)
@@ -556,7 +557,7 @@ async fn test_claim_rejects_wrong_destination_network() -> anyhow::Result<()> {
 ///    been spent"
 #[tokio::test]
 async fn test_duplicate_claim_note_rejected() -> anyhow::Result<()> {
-    let data_source = ClaimDataSource::Simulated;
+    let data_source = ClaimDataSource::Mainnet;
     let mut builder = MockChain::builder();
 
     // CREATE BRIDGE ADMIN ACCOUNT
