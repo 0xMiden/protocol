@@ -1,5 +1,6 @@
 extern crate alloc;
 
+use miden_agglayer::errors::{ERR_BRIDGE_IS_PAUSED, ERR_SENDER_NOT_BRIDGE_ADMIN};
 use miden_agglayer::{
     AggLayerBridge,
     EmergencyPauseNote,
@@ -72,6 +73,12 @@ async fn test_pause_blocks_update_ger() -> anyhow::Result<()> {
         .build()?;
     let result = tx_context2.execute().await;
     assert!(result.is_err(), "update_ger should fail when bridge is paused");
+    let error_msg = result.unwrap_err().to_string();
+    let expected_err_code = ERR_BRIDGE_IS_PAUSED.code().to_string();
+    assert!(
+        error_msg.contains(&expected_err_code),
+        "expected error code {expected_err_code} for 'bridge is currently paused', got: {error_msg}"
+    );
 
     Ok(())
 }
@@ -208,6 +215,12 @@ async fn test_non_admin_cannot_pause() -> anyhow::Result<()> {
         .build()?;
     let result = tx_context.execute().await;
     assert!(result.is_err(), "non-admin should not be able to pause the bridge");
+    let error_msg = result.unwrap_err().to_string();
+    let expected_err_code = ERR_SENDER_NOT_BRIDGE_ADMIN.code().to_string();
+    assert!(
+        error_msg.contains(&expected_err_code),
+        "expected error code {expected_err_code} for 'note sender is not the bridge admin', got: {error_msg}"
+    );
 
     Ok(())
 }
