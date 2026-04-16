@@ -225,7 +225,7 @@ impl ProvenTransaction {
             AccountUpdateDetails::Delta(post_fee_account_delta) => {
                 // Add the removed fee to the post fee delta to get the pre-fee delta, against which
                 // the delta commitment needs to be validated.
-                post_fee_account_delta.vault_mut().add_asset(self.fee.into()).map_err(|err| {
+                post_fee_account_delta.vault_mut().add_asset(self.fee).map_err(|err| {
                     ProvenTransactionError::AccountDeltaCommitmentMismatch(Box::from(err))
                 })?;
 
@@ -240,9 +240,9 @@ impl ProvenTransaction {
                 }
 
                 // Remove the added fee again to recreate the post fee delta.
-                post_fee_account_delta.vault_mut().remove_asset(self.fee.into()).map_err(
-                    |err| ProvenTransactionError::AccountDeltaCommitmentMismatch(Box::from(err)),
-                )?;
+                post_fee_account_delta.vault_mut().remove_asset(self.fee).map_err(|err| {
+                    ProvenTransactionError::AccountDeltaCommitmentMismatch(Box::from(err))
+                })?;
             },
         }
 
