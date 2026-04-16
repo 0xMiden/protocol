@@ -7,6 +7,7 @@ use miden::core::crypto::hashes::keccak256
 use miden::core::crypto::hashes::poseidon2
 use miden::core::mem
 use miden::core::word
+use miden::protocol::asset
 use miden::protocol::note
 use miden::protocol::output_note
 use miden::protocol::output_note::ATTACHMENT_KIND_NONE
@@ -14,6 +15,7 @@ use miden::protocol::active_account
 use miden::protocol::native_account
 use miden::standards::note_tag
 use miden::standards::note_tag::DEFAULT_TAG
+use miden::standards::notes::p2id
 use miden::standards::attachments::network_account_target
 use miden::standards::note::execution_hint::ALWAYS
 use miden::protocol::types::DoubleWord
@@ -233,12 +235,24 @@ pub proc claim
     exec.verify_claim_amount
     # => [faucet_id_suffix, faucet_id_prefix, pad(16)]
 
-    # Build MINT output note targeting the AggLayer faucet
-    loc_load.CLAIM_DEST_ID_PREFIX_LOCAL loc_load.CLAIM_DEST_ID_SUFFIX_LOCAL
-    # => [destination_id_suffix, destination_id_prefix, faucet_id_suffix, faucet_id_prefix, pad(16)]
+    # Branch on is_native: native faucets unlock from the bridge vault and emit a P2ID note
+    # directly to the recipient; non-native faucets go through the standard MINT path.
+    dup.1 dup.1 exec.bridge_config::is_faucet_native
+    # => [is_native, faucet_id_suffix, faucet_id_prefix, pad(16)]
 
-    exec.build_mint_output_note
-    # => [pad(16)]
+    if.true
+        loc_load.CLAIM_DEST_ID_PREFIX_LOCAL loc_load.CLAIM_DEST_ID_SUFFIX_LOCAL
+        # => [destination_id_suffix, destination_id_prefix, faucet_id_suffix, faucet_id_prefix, pad(16)]
+
+        exec.unlock_and_send
+        # => [pad(16)]
+    else
+        loc_load.CLAIM_DEST_ID_PREFIX_LOCAL loc_load.CLAIM_DEST_ID_SUFFIX_LOCAL
+        # => [destination_id_suffix, destination_id_prefix, faucet_id_suffix, faucet_id_prefix, pad(16)]
+
+        exec.build_mint_output_note
+        # => [pad(16)]
+    end
 end
 
 # HELPER PROCEDURES
@@ -946,6 +960,93 @@ proc create_mint_note_with_attachment
     # => [note_idx, attachment_scheme, attachment_kind, ATTACHMENT(4)]
 
     exec.output_note::set_attachment
+    # => []
+end
+
+#! Local memory layout inside `unlock_and_send`:
+#! - [0..3]: ASSET_KEY
+#! - [4..7]: ASSET_VALUE
+#! - [8]:    destination_id_suffix
+#! - [9]:    destination_id_prefix
+const UNLOCK_ASSET_KEY_LOC = 0
+const UNLOCK_ASSET_VALUE_LOC = 4
+const UNLOCK_DEST_SUFFIX_LOC = 8
+const UNLOCK_DEST_PREFIX_LOC = 9
+
+#! Removes the fungible asset for the claim from the bridge's vault and creates a PUBLIC P2ID
+#! output note targeted at the destination account.
+#!
+#! Used on the bridge-in claim path for Miden-native faucets (ones whose mint authority the bridge
+#! does not hold). Instead of creating a MINT note for the faucet, the asset is removed from the
+#! bridge's own vault (where it was placed by a prior `lock_asset` on the bridge-out side) and
+#! attached to a new P2ID note. The P2ID serial number is derived from `CLAIM_PROOF_DATA_KEY`
+#! (matching the MINT path's serial-number choice) so the resulting note commitment is
+#! deterministic across runs.
+#!
+#! Inputs:  [destination_id_suffix, destination_id_prefix, faucet_id_suffix, faucet_id_prefix]
+#! Outputs: []
+#!
+#! Invocation: exec
+@locals(10)
+proc unlock_and_send
+    # Stash destination to locals (claim's CLAIM_DEST_ID_*_LOCAL is in a different frame and is
+    # not visible here — `exec` invocations get their own local frame).
+    loc_store.UNLOCK_DEST_SUFFIX_LOC loc_store.UNLOCK_DEST_PREFIX_LOC
+    # => [faucet_id_suffix, faucet_id_prefix]
+
+    # Build the fungible asset (ASSET_KEY, ASSET_VALUE) from the faucet id and the pre-computed
+    # Miden claim amount. `asset::create_fungible_asset` is pure MASM (no FPI).
+    mem_load.CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT movdn.2
+    # => [faucet_id_suffix, faucet_id_prefix, amount]
+
+    push.0 # enable_callbacks = 0
+    # => [0, faucet_id_suffix, faucet_id_prefix, amount]
+
+    exec.asset::create_fungible_asset
+    # => [ASSET_KEY, ASSET_VALUE]
+
+    # Stash the asset to locals so we can re-use it for `output_note::add_asset` after
+    # `native_account::remove_asset` consumes its stack copy.
+    dupw.1 loc_storew_le.UNLOCK_ASSET_VALUE_LOC dropw
+    dupw    loc_storew_le.UNLOCK_ASSET_KEY_LOC   dropw
+    # => [ASSET_KEY, ASSET_VALUE]
+
+    # Remove the asset from the bridge's vault. Panics if the vault does not contain enough of
+    # the asset, which is the desired failure mode for an invalid / double-spent claim.
+    exec.native_account::remove_asset
+    # => [REMAINING_ASSET_VALUE]
+
+    dropw
+    # => []
+
+    # Build p2id::new's input [dest_suffix, dest_prefix, tag, note_type, SERIAL_NUM] from the
+    # bottom up.
+    padw mem_loadw_be.CLAIM_PROOF_DATA_KEY_MEM_ADDR
+    # => [SERIAL_NUM]
+
+    push.OUTPUT_NOTE_TYPE_PUBLIC
+    # => [note_type, SERIAL_NUM]
+
+    loc_load.UNLOCK_DEST_PREFIX_LOC
+    # => [dest_prefix, note_type, SERIAL_NUM]
+
+    exec.note_tag::create_account_target
+    # => [dest_tag, note_type, SERIAL_NUM]
+
+    loc_load.UNLOCK_DEST_PREFIX_LOC loc_load.UNLOCK_DEST_SUFFIX_LOC
+    # => [dest_suffix, dest_prefix, dest_tag, note_type, SERIAL_NUM]
+
+    exec.p2id::new
+    # => [note_idx]
+
+    # Reload the asset from locals and attach it to the newly created P2ID note.
+    padw loc_loadw_le.UNLOCK_ASSET_VALUE_LOC
+    # => [ASSET_VALUE, note_idx]
+
+    padw loc_loadw_le.UNLOCK_ASSET_KEY_LOC
+    # => [ASSET_KEY, ASSET_VALUE, note_idx]
+
+    exec.output_note::add_asset
     # => []
 end
 

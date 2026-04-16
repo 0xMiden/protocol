@@ -6,8 +6,10 @@ use alloc::string::String;
 use anyhow::Context;
 use miden_agglayer::errors::ERR_CLAIM_ALREADY_SPENT;
 use miden_agglayer::{
+    B2AggNote,
     ClaimNoteStorage,
     ConfigAggBridgeNote,
+    EthAddress,
     EthEmbeddedAccountId,
     ExitRoot,
     LeafValue,
@@ -19,14 +21,21 @@ use miden_agglayer::{
     create_existing_bridge_account,
 };
 use miden_protocol::Felt;
-use miden_protocol::account::Account;
 use miden_protocol::account::auth::AuthScheme;
+use miden_protocol::account::{
+    Account,
+    AccountId,
+    AccountIdVersion,
+    AccountStorageMode,
+    AccountType,
+};
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::crypto::SequentialCommit;
 use miden_protocol::crypto::rand::FeltRng;
-use miden_protocol::note::NoteType;
+use miden_protocol::note::{NoteAssets, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
 use miden_protocol::transaction::RawOutputNote;
+use miden_standards::account::mint_policies::OwnerControlledInitConfig;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::P2idNote;
@@ -580,6 +589,275 @@ async fn test_duplicate_claim_note_rejected() -> anyhow::Result<()> {
     assert!(
         error_msg.contains(&expected_err_code),
         "expected error code {expected_err_code} for 'claim note has already been spent', got: {error_msg}"
+    );
+
+    Ok(())
+}
+
+/// Tests the bridge-in unlock path for Miden-native faucets.
+///
+/// When a faucet is registered with `is_native = true`, a valid CLAIM note does NOT go through
+/// the MINT→faucet→P2ID flow. Instead, the bridge removes the asset from its own vault and
+/// emits a P2ID note directly to the recipient.
+///
+/// Flow:
+/// 1. Register a native (non-bridge-owned) faucet with `is_native = true` using the
+///    origin_token_address and metadata_hash from a simulated L1→Miden claim vector.
+/// 2. Seed the bridge vault by running one lock transaction (bridge-out of a B2AGG note carrying
+///    `miden_claim_amount` of the native asset).
+/// 3. Store a GER that covers the claim's Merkle proof.
+/// 4. Execute the CLAIM against the bridge — the `claim` proc dispatches into `unlock_and_send`
+///    because the faucet is registered with `is_native = true`.
+/// 5. Assert that exactly one output P2ID note is produced, its asset matches what was locked, the
+///    bridge vault is drained to 0, and the destination can consume the P2ID.
+#[tokio::test]
+async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
+    let data_source = ClaimDataSource::SimulatedL1ToMiden;
+    let mut builder = MockChain::builder();
+
+    // Bridge admin / GER manager / bridge account.
+    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    let bridge_seed = builder.rng_mut().draw_word();
+    let mut bridge_account =
+        create_existing_bridge_account(bridge_seed, bridge_admin.id(), ger_manager.id());
+    builder.add_account(bridge_account.clone())?;
+
+    // Claim data: leaf data's origin_token_address + metadata_hash must match the registration
+    // below so the bridge's token-registry lookup resolves to the native faucet.
+    let (proof_data, leaf_data, ger, _cgi_chain_hash) = data_source.get_data();
+    let origin_token_address = leaf_data.origin_token_address;
+    let origin_network = leaf_data.origin_network;
+    let metadata_hash = leaf_data.metadata_hash;
+    let scale = 10u8;
+
+    // The amount the claim will attempt to unlock: scaled from the leaf's U256 amount.
+    let miden_claim_amount = leaf_data
+        .amount
+        .scale_to_token_amount(scale as u32)
+        .expect("amount should scale successfully");
+    let miden_claim_amount_u64 = miden_claim_amount.as_canonical_u64();
+
+    // Native faucet: use the network-faucet pattern (bridge is not the owner).
+    let faucet_owner_account_id = AccountId::dummy(
+        [3; 15],
+        AccountIdVersion::Version0,
+        AccountType::RegularAccountImmutableCode,
+        AccountStorageMode::Private,
+    );
+    let native_faucet = builder.add_existing_network_faucet(
+        "NATIVE",
+        miden_claim_amount_u64.saturating_mul(4),
+        faucet_owner_account_id,
+        // Seed enough native supply for the lock step's sender to bundle into the B2AGG note.
+        Some(miden_claim_amount_u64.saturating_mul(2)),
+        OwnerControlledInitConfig::OwnerOnly,
+    )?;
+
+    // Destination of the claim (derived from leaf data's destination_address).
+    let destination_account_id = EthEmbeddedAccountId::try_from(leaf_data.destination_address)
+        .expect("destination address is not an embedded Miden AccountId")
+        .into_account_id();
+    let destination_account =
+        Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE, IncrNonceAuthComponent);
+    assert_eq!(
+        destination_account.id(),
+        destination_account_id,
+        "mock destination account ID must match the destination_account_id from the claim data"
+    );
+    builder.add_account(destination_account.clone())?;
+
+    // Sender of the CLAIM note (any wallet — just a note creator).
+    let claim_sender = {
+        let account_builder =
+            Account::builder(builder.rng_mut().random()).with_component(BasicWallet);
+        builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)?
+    };
+
+    // Sender of the B2AGG note used to seed the bridge vault with the native asset.
+    let lock_sender = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    // Register the native faucet with is_native = true.
+    let config_note = ConfigAggBridgeNote::create(
+        native_faucet.id(),
+        &origin_token_address,
+        scale,
+        origin_network,
+        true, // is_native
+        &metadata_hash,
+        bridge_admin.id(),
+        bridge_account.id(),
+        builder.rng_mut(),
+    )?;
+    builder.add_output_note(RawOutputNote::Full(config_note.clone()));
+
+    // B2AGG note that will seed the bridge's vault with `miden_claim_amount_u64` of native asset.
+    let bridge_asset: Asset =
+        FungibleAsset::new(native_faucet.id(), miden_claim_amount_u64).unwrap().into();
+    let b2agg_destination_address =
+        EthAddress::from_hex("0x1234567890abcdef1122334455667788990011aa")
+            .expect("valid destination address");
+    let b2agg_note = B2AggNote::create(
+        1u32,
+        b2agg_destination_address,
+        NoteAssets::new(vec![bridge_asset])?,
+        bridge_account.id(),
+        lock_sender.id(),
+        builder.rng_mut(),
+    )?;
+    builder.add_output_note(RawOutputNote::Full(b2agg_note.clone()));
+
+    // CLAIM note targeting the bridge.
+    let serial_num = proof_data.to_commitment();
+    let claim_inputs = ClaimNoteStorage {
+        proof_data,
+        leaf_data,
+        miden_claim_amount,
+    };
+    let claim_note =
+        create_claim_note(claim_inputs, bridge_account.id(), claim_sender.id(), builder.rng_mut())?;
+    builder.add_output_note(RawOutputNote::Full(claim_note.clone()));
+
+    // GER for the claim's Merkle proof.
+    let update_ger_note =
+        UpdateGerNote::create(ger, ger_manager.id(), bridge_account.id(), builder.rng_mut())?;
+    builder.add_output_note(RawOutputNote::Full(update_ger_note.clone()));
+
+    let mut mock_chain = builder.clone().build()?;
+
+    // TX0: CONFIG — registers native faucet with is_native = true.
+    let config_executed = mock_chain
+        .build_tx_context(bridge_account.id(), &[config_note.id()], &[])?
+        .build()?
+        .execute()
+        .await?;
+    bridge_account.apply_delta(config_executed.account_delta())?;
+    mock_chain.add_pending_executed_transaction(&config_executed)?;
+    mock_chain.prove_next_block()?;
+
+    // TX1: LOCK — bridge consumes the B2AGG note, asset goes into bridge vault.
+    let lock_executed = mock_chain
+        .build_tx_context(bridge_account.clone(), &[b2agg_note.id()], &[])?
+        .build()?
+        .execute()
+        .await?;
+    assert_eq!(
+        lock_executed.output_notes().num_notes(),
+        0,
+        "Lock transaction should not emit any output note"
+    );
+    bridge_account.apply_delta(lock_executed.account_delta())?;
+    assert_eq!(
+        bridge_account.vault().get_balance(native_faucet.id())?,
+        miden_claim_amount_u64,
+        "Bridge vault should hold the locked native asset before the claim"
+    );
+    mock_chain.add_pending_executed_transaction(&lock_executed)?;
+    mock_chain.prove_next_block()?;
+
+    // TX2: UPDATE_GER.
+    let update_ger_executed = mock_chain
+        .build_tx_context(bridge_account.id(), &[update_ger_note.id()], &[])?
+        .build()?
+        .execute()
+        .await?;
+    bridge_account.apply_delta(update_ger_executed.account_delta())?;
+    mock_chain.add_pending_executed_transaction(&update_ger_executed)?;
+    mock_chain.prove_next_block()?;
+
+    // TX3: CLAIM — bridge validates the proof, hits the is_native branch, unlocks and emits P2ID.
+    let claim_executed = mock_chain
+        .build_tx_context(bridge_account.clone(), &[], &[claim_note])?
+        .build()?
+        .execute()
+        .await
+        .context("CLAIM execution against bridge failed")?;
+
+    // Exactly one output note — a PUBLIC P2ID carrying the native asset, sent by the bridge.
+    assert_eq!(
+        claim_executed.output_notes().num_notes(),
+        1,
+        "Unlock path should emit exactly one P2ID output note"
+    );
+    let output_note = match claim_executed.output_notes().get_note(0) {
+        RawOutputNote::Full(note) => note.clone(),
+        other => panic!("expected Full output note, got {other:?}"),
+    };
+
+    let expected_asset: Asset =
+        FungibleAsset::new(native_faucet.id(), miden_claim_amount_u64).unwrap().into();
+
+    assert_eq!(output_note.metadata().sender(), bridge_account.id());
+    assert_eq!(output_note.metadata().note_type(), NoteType::Public);
+    assert_eq!(
+        output_note.recipient().script().root(),
+        P2idNote::script().root(),
+        "Output note should use the P2ID script"
+    );
+    assert_eq!(output_note.recipient().serial_num(), serial_num);
+
+    let mut assets_iter = output_note.assets().iter_fungible();
+    let unlocked_asset = assets_iter
+        .next()
+        .expect("P2ID output note should carry exactly one fungible asset");
+    assert!(assets_iter.next().is_none(), "P2ID output note should carry only one asset");
+    assert_eq!(Felt::new(unlocked_asset.amount()), miden_claim_amount);
+    assert_eq!(unlocked_asset.faucet_id(), native_faucet.id());
+
+    // Cross-check storage directly: it should encode the destination account ID the same way
+    // `P2idNoteStorage::from` does ([suffix, prefix]).
+    let expected_p2id_note = create_p2id_note_exact(
+        bridge_account.id(),
+        destination_account_id,
+        vec![expected_asset],
+        NoteType::Public,
+        serial_num,
+    )
+    .unwrap();
+    let actual_storage = output_note.recipient().storage();
+    let expected_storage = expected_p2id_note.recipient().storage();
+    assert_eq!(
+        actual_storage, expected_storage,
+        "P2ID note storage items (encoding the target account ID) should match \
+         the standard P2idNoteStorage encoding for destination_account_id={destination_account_id:?}"
+    );
+    assert_eq!(
+        output_note.recipient().digest(),
+        expected_p2id_note.recipient().digest(),
+        "Recipient digest should match an independently constructed P2ID to the destination"
+    );
+
+    // Bridge vault is drained after the unlock.
+    bridge_account.apply_delta(claim_executed.account_delta())?;
+    assert_eq!(
+        bridge_account.vault().get_balance(native_faucet.id())?,
+        0,
+        "Bridge vault should be empty after the unlock"
+    );
+
+    mock_chain.add_pending_executed_transaction(&claim_executed)?;
+    mock_chain.prove_next_block()?;
+
+    // TX4: destination consumes the P2ID note and receives the unlocked asset.
+    let consume_executed = mock_chain
+        .build_tx_context(destination_account.id(), &[], slice::from_ref(&expected_p2id_note))?
+        .build()?
+        .execute()
+        .await?;
+
+    let mut destination_account = destination_account;
+    destination_account.apply_delta(consume_executed.account_delta())?;
+    assert_eq!(
+        destination_account.vault().get_balance(native_faucet.id())?,
+        miden_claim_amount_u64,
+        "Destination account should receive the unlocked asset from the P2ID"
     );
 
     Ok(())
