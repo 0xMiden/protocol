@@ -251,7 +251,9 @@ pub proc store_faucet_metadata_hash
     push.0.2
     # => [2, 0, fid_s, fid_p, fid_s, fid_p, MH_LO(4), MH_HI(4), pad(6)]
 
-    movup.7 movup.7 movup.7 movup.7
+    # Bring MH_LO(4) to the top. The key prefix `[2, 0]` plus both the duplicated and original
+    # `[fid_s, fid_p]` pairs sit beneath MH_LO, so MH_LO_3 is at idx 9 (not idx 7).
+    movup.9 movup.9 movup.9 movup.9
     # => [mh_lo0, mh_lo1, mh_lo2, mh_lo3, 2, 0, fid_s, fid_p, fid_s, fid_p, MH_HI(4), pad(6)]
 
     swapw
@@ -351,8 +353,8 @@ proc get_faucet_conversion_info
     exec.active_account::get_map_item
     # => [addr4, origin_network, scale, 0, fid_s, fid_p]
 
-    # Drop the trailing 0
-    drop
+    # Drop the trailing 0 (sits at idx 3, not at the top of the stack).
+    movup.3 drop
     # => [addr4, origin_network, scale, fid_s, fid_p]
 
     # Save scale, origin_network, addr4 temporarily by moving them below fid

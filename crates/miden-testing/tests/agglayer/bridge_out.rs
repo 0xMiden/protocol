@@ -163,11 +163,8 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
     let mut burn_note_ids = Vec::with_capacity(note_count);
 
     for (i, note) in notes.iter().enumerate() {
-        let foreign_account_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
-
         let executed_tx = mock_chain
             .build_tx_context(bridge_account.clone(), &[note.id()], &[])?
-            .foreign_accounts(vec![foreign_account_inputs])
             .build()?
             .execute()
             .await?;
@@ -342,11 +339,8 @@ async fn test_bridge_out_fails_with_unregistered_faucet() -> anyhow::Result<()> 
 
     // ATTEMPT TO BRIDGE OUT WITHOUT REGISTERING THE FAUCET (SHOULD FAIL)
     // --------------------------------------------------------------------------------------------
-    let foreign_account_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
-
     let result = mock_chain
         .build_tx_context(bridge_account.id(), &[b2agg_note.id()], &[])?
-        .foreign_accounts(vec![foreign_account_inputs])
         .build()?
         .execute()
         .await;
