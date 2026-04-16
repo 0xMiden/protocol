@@ -369,14 +369,14 @@ proc load_let_frontier_selective
             # Compute memory address: LET_FRONTIER_MEM_PTR + 4 + h * 8
             dup.8 mul.8 add.LET_FRONTIER_MEM_PTR add.4 movdn.8
             # => [VALUE_0, VALUE_1, mem_addr, h, num_leaves_shifted]
+
             exec.utils::mem_store_double_word
             dropw dropw drop
             # => [h, num_leaves_shifted]
         end
 
         # Shift num_leaves right by 1, increment h
-        swap u32shr.1 swap
-        add.1
+        swap u32shr.1 swap add.1
         # => [h+1, num_leaves_shifted>>1]
     end
 
@@ -439,8 +439,8 @@ proc save_let_frontier_selective
         # => [h, old_num_leaves_shifted]
 
         # Check if bit h is clear (this entry was written and needs saving)
-        dup.1 u32and.1 eq.0
-        if.true
+        dup.1 u32and.1
+        if.false
             # Load frontier[h] double word from memory
             dup mul.8 add.LET_FRONTIER_MEM_PTR add.4
             exec.utils::mem_load_double_word
@@ -449,13 +449,14 @@ proc save_let_frontier_selective
             # Write it back to the map at index h
             dup.8 push.LET_FRONTIER_SLOT[0..2]
             exec.double_word_array::set
+            # => [OLD_VALUE_0, OLD_VALUE_1, h, old_num_leaves_shifted]
+
             dropw dropw
             # => [h, old_num_leaves_shifted]
         end
 
         # Shift old_num_leaves right by 1, increment h
-        swap u32shr.1 swap
-        add.1
+        swap u32shr.1 swap add.1
         # => [h+1, old_num_leaves_shifted>>1]
     end
 
