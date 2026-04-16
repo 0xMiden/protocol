@@ -206,7 +206,7 @@ async fn pswap_note_alice_reconstructs_and_consumes_p2id() -> anyhow::Result<()>
     let remainder_aux = output_remainder.metadata().attachment().content().to_word();
     let amt_payout_from_aux = remainder_aux[0].as_canonical_u64();
 
-    let expected_payout = pswap.calculate_offered_for_requested(fill_amount_from_aux);
+    let expected_payout = pswap.calculate_offered_for_requested(fill_amount_from_aux)?;
     assert_eq!(
         amt_payout_from_aux, expected_payout,
         "remainder aux should carry amt_payout matching the Rust-side calc",
@@ -462,7 +462,7 @@ async fn pswap_fill_test(
     };
 
     let is_partial = fill_amount < requested_total;
-    let payout_amount = pswap.calculate_offered_for_requested(fill_amount);
+    let payout_amount = pswap.calculate_offered_for_requested(fill_amount)?;
 
     let mut expected_notes = vec![RawOutputNote::Full(p2id_note.clone())];
     if let Some(remainder) = remainder_pswap {
@@ -922,7 +922,7 @@ async fn pswap_multiple_partial_fills_test(#[case] fill_amount: u64) -> anyhow::
     let mut note_args_map = BTreeMap::new();
     note_args_map.insert(pswap_note.id(), PswapNote::create_args(fill_amount, 0)?);
 
-    let payout_amount = pswap.calculate_offered_for_requested(fill_amount);
+    let payout_amount = pswap.calculate_offered_for_requested(fill_amount)?;
     let (p2id_note, remainder_pswap) =
         pswap.execute(bob.id(), Some(FungibleAsset::new(eth_faucet.id(), fill_amount)?), None)?;
 
@@ -991,7 +991,7 @@ async fn run_partial_fill_ratio_case(
     let mut note_args_map = BTreeMap::new();
     note_args_map.insert(pswap_note.id(), PswapNote::create_args(fill_eth, 0)?);
 
-    let payout_amount = pswap.calculate_offered_for_requested(fill_eth);
+    let payout_amount = pswap.calculate_offered_for_requested(fill_eth)?;
     let remaining_offered = offered_usdc - payout_amount;
 
     assert!(payout_amount > 0, "payout_amount must be > 0");
@@ -1174,7 +1174,7 @@ async fn pswap_chained_partial_fills_test(
         let mut note_args_map = BTreeMap::new();
         note_args_map.insert(pswap_note.id(), PswapNote::create_args(*fill_amount, 0)?);
 
-        let payout_amount = pswap.calculate_offered_for_requested(*fill_amount);
+        let payout_amount = pswap.calculate_offered_for_requested(*fill_amount)?;
         let remaining_offered = current_offered - payout_amount;
         let (p2id_note, remainder_pswap) = pswap.execute(
             bob.id(),

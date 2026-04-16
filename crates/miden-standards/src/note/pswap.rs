@@ -2,19 +2,11 @@ use alloc::vec;
 
 use miden_protocol::account::AccountId;
 use miden_protocol::assembly::Path;
-use miden_protocol::asset::{Asset, AssetCallbackFlag, FungibleAsset};
+use miden_protocol::asset::{Asset, AssetAmount, AssetCallbackFlag, FungibleAsset};
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
-    Note,
-    NoteAssets,
-    NoteAttachment,
-    NoteAttachmentScheme,
-    NoteMetadata,
-    NoteRecipient,
-    NoteScript,
-    NoteStorage,
-    NoteTag,
-    NoteType,
+    Note, NoteAssets, NoteAttachment, NoteAttachmentScheme, NoteMetadata, NoteRecipient,
+    NoteScript, NoteStorage, NoteTag, NoteType,
 };
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, ONE, Word, ZERO};
@@ -41,7 +33,7 @@ static PSWAP_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 
 /// Canonical storage representation for a PSWAP note.
 ///
-/// Maps to the 8-element [`NoteStorage`] layout consumed by the on-chain MASM script:
+/// Maps to the 7-element [`NoteStorage`] layout consumed by the on-chain MASM script:
 ///
 /// | Slot | Field |
 /// |---------|-------|
@@ -49,9 +41,11 @@ static PSWAP_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 /// | `[1]` | Requested asset faucet ID suffix |
 /// | `[2]` | Requested asset faucet ID prefix |
 /// | `[3]` | Requested asset amount |
-/// | `[4]` | Payback note routing tag (targets the creator) |
-/// | `[5]` | Payback note type (0 = private, 1 = public) |
-/// | `[6-7]` | Creator account ID (prefix, suffix) |
+/// | `[4]` | Payback note type (0 = private, 1 = public) |
+/// | `[5-6]` | Creator account ID (prefix, suffix) |
+///
+/// The payback note tag is derived at runtime from the creator account ID
+/// (via `note_tag::create_account_target` in MASM) rather than stored.
 ///
 /// The PSWAP note's own tag is not stored: it lives in the note's metadata and
 /// is lifted from there by the on-chain script when a remainder note is created
@@ -76,7 +70,7 @@ impl PswapNoteStorage {
     // --------------------------------------------------------------------------------------------
 
     /// Expected number of storage items for the PSWAP note.
-    pub const NUM_STORAGE_ITEMS: usize = 8;
+    pub const NUM_STORAGE_ITEMS: usize = 7;
 
     /// Consumes the storage and returns a PSWAP [`NoteRecipient`] with the provided serial number.
     pub fn into_recipient(self, serial_num: Word) -> NoteRecipient {
@@ -117,7 +111,7 @@ impl PswapNoteStorage {
     }
 }
 
-/// Serializes [`PswapNoteStorage`] into an 8-element [`NoteStorage`].
+/// Serializes [`PswapNoteStorage`] into a 7-element [`NoteStorage`].
 impl From<PswapNoteStorage> for NoteStorage {
     fn from(storage: PswapNoteStorage) -> Self {
         let storage_items = vec![
@@ -127,11 +121,9 @@ impl From<PswapNoteStorage> for NoteStorage {
             storage.requested_asset.faucet_id().prefix().as_felt(),
             Felt::try_from(storage.requested_asset.amount())
                 .expect("asset amount should fit in a felt"),
-            // Payback tag [4]
-            Felt::from(storage.payback_note_tag()),
-            // Payback note type [5]
+            // Payback note type [4]
             Felt::from(storage.payback_note_type.as_u8()),
-            // Creator ID [6-7]
+            // Creator ID [5-6]
             storage.creator_account_id.prefix().as_felt(),
             storage.creator_account_id.suffix(),
         ];
@@ -140,7 +132,7 @@ impl From<PswapNoteStorage> for NoteStorage {
     }
 }
 
-/// Deserializes [`PswapNoteStorage`] from a slice of exactly 8 [`Felt`]s.
+/// Deserializes [`PswapNoteStorage`] from a slice of exactly 7 [`Felt`]s.
 impl TryFrom<&[Felt]> for PswapNoteStorage {
     type Error = NoteError;
 
@@ -168,15 +160,15 @@ impl TryFrom<&[Felt]> for PswapNoteStorage {
             .map_err(|e| NoteError::other_with_source("failed to create requested asset", e))?
             .with_callbacks(callbacks);
 
-        // [4] is the payback_note_tag, which is derived from the creator ID at
-        // serialization time and not re-parsed here.
+        // [4] = payback_note_type
         let payback_note_type = NoteType::try_from(
-            u8::try_from(note_storage[5].as_canonical_u64())
+            u8::try_from(note_storage[4].as_canonical_u64())
                 .map_err(|_| NoteError::other("payback_note_type exceeds u8"))?,
         )
         .map_err(|e| NoteError::other_with_source("failed to parse payback note type", e))?;
 
-        let creator_account_id = AccountId::try_from_elements(note_storage[7], note_storage[6])
+        // [5-6] = creator account ID (prefix, suffix)
+        let creator_account_id = AccountId::try_from_elements(note_storage[6], note_storage[5])
             .map_err(|e| NoteError::other_with_source("failed to parse creator account ID", e))?;
 
         Ok(Self {
@@ -408,12 +400,12 @@ impl PswapNote {
             total_offered_amount,
             total_requested_amount,
             account_fill_amount,
-        );
+        )?;
         let payout_for_note_fill = Self::calculate_output_amount(
             total_offered_amount,
             total_requested_amount,
             note_fill_amount,
-        );
+        )?;
         let offered_amount_for_fill = payout_for_account_fill + payout_for_note_fill;
 
         let payback_note =
@@ -449,7 +441,11 @@ impl PswapNote {
 
     /// Returns how many offered tokens a consumer receives for `fill_amount` of the
     /// requested asset, based on this note's current offered/requested ratio.
-    pub fn calculate_offered_for_requested(&self, fill_amount: u64) -> u64 {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the calculated payout is not a valid asset amount.
+    pub fn calculate_offered_for_requested(&self, fill_amount: u64) -> Result<u64, NoteError> {
         let total_requested = self.storage.requested_asset_amount();
         let total_offered = self.offered_asset.amount();
 
@@ -498,10 +494,56 @@ impl PswapNote {
     /// Computes `floor((offered_total * fill_amount) / requested_total)` via a
     /// u128 intermediate, mirroring `u64::widening_mul` + `u128::div` on the
     /// MASM side.
-    fn calculate_output_amount(offered_total: u64, requested_total: u64, fill_amount: u64) -> u64 {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the result does not fit in a valid [`AssetAmount`].
+    fn calculate_output_amount(
+        offered_total: u64,
+        requested_total: u64,
+        fill_amount: u64,
+    ) -> Result<u64, NoteError> {
         let product = (offered_total as u128) * (fill_amount as u128);
         let quotient = product / (requested_total as u128);
-        u64::try_from(quotient).expect("payout quotient does not fit in u64")
+        let amount = u64::try_from(quotient)
+            .map_err(|_| NoteError::other("payout quotient does not fit in u64"))?;
+        // Validate the result is a valid fungible asset amount.
+        AssetAmount::new(amount).map_err(|e| {
+            NoteError::other_with_source("payout amount exceeds max fungible asset amount", e)
+        })?;
+        Ok(amount)
+    }
+
+    /// Creates a [`NoteAttachment`] for a payback P2ID note.
+    ///
+    /// The attachment carries the fill amount as auxiliary data with
+    /// `NoteAttachmentScheme::none()`, matching the on-chain MASM behavior.
+    fn payback_attachment(fill_amount: u64) -> Result<NoteAttachment, NoteError> {
+        let word = Word::from([
+            Felt::try_from(fill_amount).map_err(|e| {
+                NoteError::other_with_source("fill amount does not fit in a felt", e)
+            })?,
+            ZERO,
+            ZERO,
+            ZERO,
+        ]);
+        Ok(NoteAttachment::new_word(NoteAttachmentScheme::none(), word))
+    }
+
+    /// Creates a [`NoteAttachment`] for a remainder PSWAP note.
+    ///
+    /// The attachment carries the total offered amount for the fill as auxiliary data
+    /// with `NoteAttachmentScheme::none()`, matching the on-chain MASM behavior.
+    fn remainder_attachment(offered_amount_for_fill: u64) -> Result<NoteAttachment, NoteError> {
+        let word = Word::from([
+            Felt::try_from(offered_amount_for_fill).map_err(|e| {
+                NoteError::other_with_source("offered amount for fill does not fit in a felt", e)
+            })?,
+            ZERO,
+            ZERO,
+            ZERO,
+        ]);
+        Ok(NoteAttachment::new_word(NoteAttachmentScheme::none(), word))
     }
 
     /// Builds a payback note (P2ID) that delivers the filled assets to the swap creator.
@@ -531,13 +573,7 @@ impl PswapNote {
         let recipient =
             P2idNoteStorage::new(self.storage.creator_account_id).into_recipient(p2id_serial_num);
 
-        let attachment_word = Word::from([
-            Felt::try_from(fill_amount).expect("fill amount should fit in a felt"),
-            ZERO,
-            ZERO,
-            ZERO,
-        ]);
-        let attachment = NoteAttachment::new_word(NoteAttachmentScheme::none(), attachment_word);
+        let attachment = Self::payback_attachment(fill_amount)?;
 
         let p2id_assets = NoteAssets::new(vec![Asset::Fungible(payback_asset)])?;
         let p2id_metadata = NoteMetadata::new(consumer_account_id, self.storage.payback_note_type)
@@ -576,14 +612,7 @@ impl PswapNote {
             self.serial_number[3] + ONE,
         ]);
 
-        let attachment_word = Word::from([
-            Felt::try_from(offered_amount_for_fill)
-                .expect("offered amount for fill should fit in a felt"),
-            ZERO,
-            ZERO,
-            ZERO,
-        ]);
-        let attachment = NoteAttachment::new_word(NoteAttachmentScheme::none(), attachment_word);
+        let attachment = Self::remainder_attachment(offered_amount_for_fill)?;
 
         Ok(PswapNote {
             sender: consumer_account_id,
@@ -804,12 +833,12 @@ mod tests {
 
     #[test]
     fn calculate_output_amount() {
-        assert_eq!(PswapNote::calculate_output_amount(100, 100, 50), 50); // Equal ratio
-        assert_eq!(PswapNote::calculate_output_amount(200, 100, 50), 100); // 2:1 ratio
-        assert_eq!(PswapNote::calculate_output_amount(100, 200, 50), 25); // 1:2 ratio
+        assert_eq!(PswapNote::calculate_output_amount(100, 100, 50).unwrap(), 50); // Equal ratio
+        assert_eq!(PswapNote::calculate_output_amount(200, 100, 50).unwrap(), 100); // 2:1 ratio
+        assert_eq!(PswapNote::calculate_output_amount(100, 200, 50).unwrap(), 25); // 1:2 ratio
 
         // Non-integer ratio (100/73)
-        let result = PswapNote::calculate_output_amount(100, 73, 7);
+        let result = PswapNote::calculate_output_amount(100, 73, 7).unwrap();
         assert!(result > 0, "Should produce non-zero output");
     }
 
@@ -823,7 +852,6 @@ mod tests {
             requested_asset.faucet_id().suffix(),
             requested_asset.faucet_id().prefix().as_felt(),
             Felt::try_from(requested_asset.amount()).unwrap(),
-            Felt::from(0x80000001u32),             // payback_note_tag
             Felt::from(NoteType::Private.as_u8()), // payback_note_type
             creator_id.prefix().as_felt(),
             creator_id.suffix(),

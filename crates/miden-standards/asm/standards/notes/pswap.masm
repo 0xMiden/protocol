@@ -6,24 +6,25 @@ use miden::protocol::active_note
 use miden::protocol::asset
 use miden::protocol::note
 use miden::protocol::output_note
+use miden::protocol::asset::FUNGIBLE_ASSET_MAX_AMOUNT
+use miden::standards::note_tag
 use miden::standards::notes::p2id
 use miden::standards::wallets::basic->wallet
 
 # CONSTANTS
 # =================================================================================================
 
-const NUM_STORAGE_ITEMS=8
+const NUM_STORAGE_ITEMS=7
 const MAX_U32=0x0000000100000000
 
-# Note storage layout (8 felts, loaded at STORAGE_PTR by get_storage):
+# Note storage layout (7 felts, loaded at STORAGE_PTR by get_storage):
 # - requested_enable_callbacks [0]  : 1 felt
 # - requested_faucet_suffix    [1]  : 1 felt
 # - requested_faucet_prefix    [2]  : 1 felt
 # - requested_amount           [3]  : 1 felt
-# - p2id_tag                   [4]  : 1 felt
-# - payback_note_type          [5]  : 1 felt
-# - creator_id_prefix          [6]  : 1 felt
-# - creator_id_suffix          [7]  : 1 felt
+# - payback_note_type          [4]  : 1 felt
+# - creator_id_prefix          [5]  : 1 felt
+# - creator_id_suffix          [6]  : 1 felt
 #
 # Where:
 # - requested_enable_callbacks: Callback-enabled flag for the requested fungible asset
@@ -32,10 +33,12 @@ const MAX_U32=0x0000000100000000
 # - requested_faucet_prefix: Prefix of the requested asset's faucet AccountId
 #   (AccountIdPrefix as Felt)
 # - requested_amount: Amount of the requested fungible asset (Felt)
-# - p2id_tag: The NoteTag for P2ID payback notes, derived from the creator's account ID
 # - payback_note_type: The NoteType used for the P2ID payback note
 # - creator_id_prefix: The prefix of the creator's AccountId (AccountIdPrefix as Felt)
 # - creator_id_suffix: The suffix of the creator's AccountId (Felt)
+#
+# The payback note tag is derived at runtime from the creator's account ID
+# (via note_tag::create_account_target) rather than stored.
 #
 # The remainder PSWAP note's own tag is not stored — it is lifted from the
 # active note's metadata at remainder-creation time (same asset pair => same
@@ -45,10 +48,9 @@ const REQUESTED_ENABLE_CALLBACKS_ITEM = STORAGE_PTR
 const REQUESTED_FAUCET_SUFFIX_ITEM = STORAGE_PTR + 1
 const REQUESTED_FAUCET_PREFIX_ITEM = STORAGE_PTR + 2
 const REQUESTED_AMOUNT_ITEM = STORAGE_PTR + 3
-const P2ID_TAG_ITEM = STORAGE_PTR + 4
-const PAYBACK_NOTE_TYPE_ITEM = STORAGE_PTR + 5
-const PSWAP_CREATOR_PREFIX_ITEM = STORAGE_PTR + 6
-const PSWAP_CREATOR_SUFFIX_ITEM = STORAGE_PTR + 7
+const PAYBACK_NOTE_TYPE_ITEM = STORAGE_PTR + 4
+const PSWAP_CREATOR_PREFIX_ITEM = STORAGE_PTR + 5
+const PSWAP_CREATOR_SUFFIX_ITEM = STORAGE_PTR + 6
 
 # Local memory offsets
 # -------------------------------------------------------------------------------------------------
@@ -88,11 +90,50 @@ const EXEC_AMT_REQUESTED_NOTE_FILL = 9
 # ERRORS
 # =================================================================================================
 
-const ERR_PSWAP_WRONG_NUMBER_OF_STORAGE_ITEMS="PSWAP script expects exactly 8 note storage items"
+const ERR_PSWAP_WRONG_NUMBER_OF_STORAGE_ITEMS="PSWAP script expects exactly 7 note storage items"
 const ERR_PSWAP_WRONG_NUMBER_OF_ASSETS="PSWAP script requires exactly one note asset"
 const ERR_PSWAP_FILL_EXCEEDS_REQUESTED="PSWAP fill amount exceeds requested amount"
 const ERR_PSWAP_FILL_SUM_OVERFLOW="PSWAP account_fill + note_fill overflows u64"
+const ERR_PSWAP_NOT_VALID_ASSET_AMOUNT="PSWAP computed amount exceeds max fungible asset amount"
 const ERR_PSWAP_PAYOUT_OVERFLOW="PSWAP payout quotient does not fit in u64"
+
+# U64 VALIDATION
+# =================================================================================================
+
+#! Asserts that the u64 value represented by [lo, hi] on the stack is a valid fungible asset
+#! amount, i.e. <= FUNGIBLE_ASSET_MAX_AMOUNT (2^63 - 2^31).
+#!
+#! Inputs:  [lo, hi]
+#! Outputs: [lo, hi]
+#!
+#! Panics if the value exceeds FUNGIBLE_ASSET_MAX_AMOUNT.
+proc assert_valid_asset_amount
+    dup.1 dup.1
+    # => [lo, hi, lo, hi]
+
+    push.FUNGIBLE_ASSET_MAX_AMOUNT u32split
+    # => [max_hi, max_lo, lo, hi, lo, hi]
+
+    movup.3
+    # => [hi, max_hi, max_lo, lo, lo, hi]
+
+    # If hi > max_hi => fail.
+    dup dup.2 u32gt assertz.err=ERR_PSWAP_NOT_VALID_ASSET_AMOUNT
+    # => [hi, max_hi, max_lo, lo, lo, hi]
+
+    # Check if hi == max_hi; if so, also need lo <= max_lo.
+    eq
+    # => [is_equal, max_lo, lo, lo, hi]
+
+    if.true
+        u32lte assert.err=ERR_PSWAP_NOT_VALID_ASSET_AMOUNT
+        # => [lo, hi]
+    else
+        drop drop
+        # => [lo, hi]
+    end
+    # => [lo, hi]
+end
 
 # PRICE CALCULATION
 # =================================================================================================
@@ -147,6 +188,9 @@ proc calculate_tokens_offered_for_requested
     movup.2 eq.0 assert.err=ERR_PSWAP_PAYOUT_OVERFLOW
     # => [q0, q1]
 
+    exec.assert_valid_asset_amount
+    # => [q0, q1]
+
     # Reconstruct the u64 quotient as a single felt: `q0 + q1 * 2^32`.
     swap mul.MAX_U32 add
     # => [payout_amount]
@@ -162,7 +206,7 @@ end
 #! attachment, and adds the requested assets (from the consumer's account vault
 #! and/or from another note in the same transaction).
 #!
-#! Inputs: [creator_suffix, creator_prefix, tag, note_type, SERIAL_NUM,
+#! Inputs: [creator_suffix, creator_prefix, note_type, SERIAL_NUM,
 #!          enable_callbacks, faucet_suffix, faucet_prefix, amt_account_fill, amt_note_fill]
 #! Outputs: []
 #!
@@ -175,9 +219,17 @@ end
 # P2ID_AMT_NOTE_FILL         : amt_note_fill
 proc create_p2id_note
     # Derive P2ID serial: increment least significant element
-    movup.4 add.1 movdn.4
-    # => [creator_suffix, creator_prefix, tag, note_type, P2ID_SERIAL_NUM,
+    movup.3 add.1 movdn.3
+    # => [creator_suffix, creator_prefix, note_type, P2ID_SERIAL_NUM,
     #     enable_callbacks, faucet_suffix, faucet_prefix, amt_account_fill, amt_note_fill]
+
+    # Derive the payback tag from the creator's account ID prefix
+    swap dup
+    # => [creator_prefix, creator_prefix, creator_suffix, note_type, P2ID_SERIAL_NUM, ...]
+    exec.note_tag::create_account_target
+    # => [tag, creator_prefix, creator_suffix, note_type, P2ID_SERIAL_NUM, ...]
+    swap movup.2
+    # => [creator_suffix, creator_prefix, tag, note_type, P2ID_SERIAL_NUM, ...]
 
     exec.p2id::new
     # => [note_idx, enable_callbacks, faucet_suffix, faucet_prefix, amt_account_fill, amt_note_fill]
@@ -473,6 +525,9 @@ proc execute_pswap
     eq.0 assert.err=ERR_PSWAP_FILL_SUM_OVERFLOW
     # => [sum_lo, sum_hi]
 
+    exec.assert_valid_asset_amount
+    # => [sum_lo, sum_hi]
+
     swap mul.MAX_U32 add
     # => [fill_amount]
 
@@ -514,8 +569,10 @@ proc execute_pswap
     loc_store.EXEC_AMT_PAYOUT_TOTAL
     # => []
 
-    # Create P2ID note for creator. 
-    # fills are guaranteed > 0 by the `both_zero` fallback in `main`.
+    # Create P2ID note carrying the requested asset to the creator. The note's
+    # assets are derived from the requested fill amounts (`account_fill +
+    # note_fill`), not from `total_payout` (which is the offered asset owed to
+    # the consumer). Fills are guaranteed > 0 by the `both_zero` guard in `main`.
     loc_load.EXEC_AMT_REQUESTED_NOTE_FILL
     loc_load.EXEC_AMT_REQUESTED_ACCOUNT_FILL
     mem_load.REQUESTED_FAUCET_PREFIX_ITEM
@@ -523,10 +580,9 @@ proc execute_pswap
     mem_load.REQUESTED_ENABLE_CALLBACKS_ITEM
     exec.active_note::get_serial_number
     mem_load.PAYBACK_NOTE_TYPE_ITEM
-    mem_load.P2ID_TAG_ITEM
     mem_load.PSWAP_CREATOR_PREFIX_ITEM
     mem_load.PSWAP_CREATOR_SUFFIX_ITEM
-    # => [creator_suffix, creator_prefix, tag, note_type, SERIAL_NUM,
+    # => [creator_suffix, creator_prefix, note_type, SERIAL_NUM,
     #     enable_callbacks, faucet_suffix, faucet_prefix, amt_account_fill, amt_note_fill]
 
     exec.create_p2id_note
