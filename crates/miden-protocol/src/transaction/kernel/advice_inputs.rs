@@ -339,14 +339,19 @@ impl TransactionAdviceInputs {
             self.add_map_entry(recipient.storage().commitment(), recipient.storage().to_elements());
             // assets commitments
             self.add_map_entry(assets.commitment(), assets.to_elements());
-            // array attachments
-            if let NoteAttachmentContent::Array(array_attachment) =
-                note.metadata().attachment().content()
-            {
-                self.add_map_entry(
-                    array_attachment.commitment(),
-                    array_attachment.as_slice().to_vec(),
-                );
+
+            // ATTACHMENTS_COMMITMENTS |-> [ATTACHMENT_ELEMENTS]
+            self.add_map_entry(note.attachments().commitment(), note.attachments().to_elements());
+
+            // elements of each array attachment
+            for attachment in note.attachments().iter() {
+                // ARRAY_ATTACHMENT_COMMITMENT |-> [ARRAY_ATTACHMENT_ELEMENTS]
+                if let NoteAttachmentContent::Array(array_attachment) = attachment.content() {
+                    self.add_map_entry(
+                        array_attachment.commitment(),
+                        array_attachment.as_slice().to_vec(),
+                    );
+                }
             }
 
             // note details / metadata
@@ -355,8 +360,8 @@ impl TransactionAdviceInputs {
             note_data.extend(*recipient.storage().commitment());
             note_data.extend(*assets.commitment());
             note_data.extend(*note_arg);
-            note_data.extend(note.metadata().to_attachment_word());
-            note_data.extend(note.metadata().to_header_word());
+            note_data.extend(note.attachments().to_commitment());
+            note_data.extend(note.metadata_header().to_metadata_word());
             note_data.push(Felt::from(recipient.storage().num_items()));
             note_data.push(Felt::from(assets.num_assets() as u32));
             note_data.extend(assets.to_elements());

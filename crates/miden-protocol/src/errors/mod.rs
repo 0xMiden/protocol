@@ -32,7 +32,17 @@ use crate::asset::AssetId;
 use crate::batch::BatchId;
 use crate::block::BlockNumber;
 use crate::note::{
+<<<<<<< HEAD
     NoteAssets, NoteAttachmentArray, NoteAttachmentKind, NoteAttachmentScheme, NoteAttachments, NoteTag, NoteType, Nullifier
+=======
+    NoteAssets,
+    NoteAttachmentArray,
+    NoteAttachmentScheme,
+    NoteAttachments,
+    NoteTag,
+    NoteType,
+    Nullifier,
+>>>>>>> 3b6219c1 (chore: update note kernel memory layout)
 };
 use crate::transaction::TransactionId;
 use crate::utils::serde::DeserializationError;
@@ -659,17 +669,8 @@ pub enum NoteError {
         NoteAttachmentArray::MAX_NUM_ELEMENTS
     )]
     NoteAttachmentArraySizeExceeded(usize),
-    #[error("unknown note attachment kind {0}")]
-    UnknownNoteAttachmentKind(u8),
-    #[error("note attachment of kind None must have attachment scheme None")]
-    AttachmentKindNoneMustHaveAttachmentSchemeNone,
     #[error("{0} attachments were provided but maximum is {max}", max = NoteAttachments::MAX_COUNT)]
     TooManyAttachments(usize),
-    #[error(
-        "total attachment elements {0} exceeds maximum of {max}",
-        max = NoteAttachments::MAX_NUM_WORDS
-    )]
-    TooManyAttachmentElements(usize),
     #[error("attachment scheme {0} exceeds maximum value of {max}", max = NoteAttachmentScheme::MAX)]
     NoteAttachmentSchemeExceeded(u32),
     #[error("{error_msg}")]
@@ -846,7 +847,7 @@ pub enum TransactionOutputError {
 
 /// Errors that can occur when creating a
 /// [`PublicOutputNote`](crate::transaction::PublicOutputNote) or
-/// [`PrivateNoteHeader`](crate::transaction::PrivateNoteHeader).
+/// [`PrivateOutputNote`](crate::transaction::PrivateOutputNote).
 #[derive(Debug, Error)]
 pub enum OutputNoteError {
     #[error("note with id {0} is private but expected a public note")]
