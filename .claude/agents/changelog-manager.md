@@ -80,7 +80,7 @@ Follow the exact style from CHANGELOG.md:
 - Past-tense verb: "Added", "Fixed", "Changed", "Removed"
 - Prefix `[BREAKING] ` if the change breaks public API
 - Use backticks for code identifiers (types, functions, modules)
-- One sentence, concise
+- One short sentence - be succinct, not descriptive
 - End with PR link: `([#N](https://github.com/0xMiden/protocol/pull/N))`
 - End with a period after the closing parenthesis
 
