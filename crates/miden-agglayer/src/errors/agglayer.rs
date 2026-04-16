@@ -49,6 +49,8 @@ pub const ERR_GER_NOT_FOUND: MasmError = MasmError::from_static_str("GER not fou
 
 /// Error Message: "invalid leaf type: only asset claims (leafType=0) are supported"
 pub const ERR_INVALID_LEAF_TYPE: MasmError = MasmError::from_static_str("invalid leaf type: only asset claims (leafType=0) are supported");
+/// Error Message: "paused flag must be 0 or 1"
+pub const ERR_INVALID_PAUSE_FLAG: MasmError = MasmError::from_static_str("paused flag must be 0 or 1");
 
 /// Error Message: "leading bits of global index must be zero"
 pub const ERR_LEADING_BITS_NON_ZERO: MasmError = MasmError::from_static_str("leading bits of global index must be zero");

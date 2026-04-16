@@ -100,6 +100,9 @@ const BURN_NOTE_NUM_STORAGE_ITEMS=0
 #! - dest_network_id is the u32 destination network/chain ID.
 #! - dest_address(5) are 5 u32 values representing a 20-byte Ethereum address.
 #!
+#! Panics if:
+#! - the bridge is currently paused.
+#!
 #! Invocation: call
 @locals(14)
 pub proc bridge_out

@@ -192,6 +192,7 @@ const CLAIM_DEST_ID_SUFFIX_LOCAL = 1
 #! }
 #!
 #! Panics if:
+#! - the bridge is currently paused.
 #! - the leaf type is not 0 (not an asset claim).
 #! - the Merkle proof validation fails.
 #! - the origin token address is not registered in the bridge's token registry.

@@ -5,6 +5,7 @@
 # The bridge exposes:
 # - `register_faucet` from the bridge_config module
 # - `update_ger` from the bridge_config module
+# - `set_emergency_paused` from the bridge_config module
 # - `claim` for bridge-in
 # - `bridge_out` for bridge-out
 

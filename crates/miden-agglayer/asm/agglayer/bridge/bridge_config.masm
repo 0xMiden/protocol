@@ -13,6 +13,7 @@ const ERR_TOKEN_NOT_REGISTERED = "token address is not registered in the bridge'
 const ERR_SENDER_NOT_BRIDGE_ADMIN = "note sender is not the bridge admin"
 const ERR_SENDER_NOT_GER_MANAGER = "note sender is not the global exit root manager"
 const ERR_BRIDGE_IS_PAUSED = "bridge is currently paused"
+const ERR_INVALID_PAUSE_FLAG = "paused flag must be 0 or 1"
 
 # CONSTANTS
 # =================================================================================================
@@ -44,6 +45,7 @@ const TOKEN_ADDR_HASH_PTR = 0
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
+#! - the bridge is currently paused.
 #! - the note sender is not the global exit root manager.
 #!
 #! Invocation: call
@@ -118,6 +120,7 @@ end
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
+#! - the bridge is currently paused.
 #! - the note sender is not the bridge admin.
 #!
 #! Invocation: call
@@ -249,11 +252,16 @@ end
 #!
 #! Panics if:
 #! - the note sender is not the bridge admin.
+#! - paused_flag is not 0 or 1.
 #!
 #! Invocation: call
 pub proc set_emergency_paused
     # assert the note sender is the bridge admin.
     exec.assert_sender_is_bridge_admin
+    # => [paused_flag, pad(15)]
+
+    # validate paused_flag is 0 or 1
+    dup u32lt.2 assert.err=ERR_INVALID_PAUSE_FLAG
     # => [paused_flag, pad(15)]
 
     # The top 4 elements are already [paused_flag, 0, 0, 0] - the VALUE word to store.
