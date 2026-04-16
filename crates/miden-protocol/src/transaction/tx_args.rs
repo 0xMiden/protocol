@@ -39,6 +39,9 @@ use crate::{EMPTY_WORD, MastForest, MastNodeId};
 ///   this argument is not specified, the [`EMPTY_WORD`] would be used as a default value. If the
 ///   [AdviceInputs] are propagated with some user defined map entries, this argument could be used
 ///   as a key to access the corresponding value.
+/// - Fee arguments: data put onto the stack right before fee procedure execution. Used to configure
+///   how the account pays for transaction fees (e.g., which asset to use, exchange rate). If not
+///   specified, [`EMPTY_WORD`] is used. Can also be used as a key into the advice map.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TransactionArgs {
     tx_script: Option<TransactionScript>,
@@ -46,6 +49,7 @@ pub struct TransactionArgs {
     note_args: BTreeMap<NoteId, Word>,
     advice_inputs: AdviceInputs,
     auth_args: Word,
+    fee_args: Word,
 }
 
 impl TransactionArgs {
@@ -63,6 +67,7 @@ impl TransactionArgs {
             note_args: Default::default(),
             advice_inputs,
             auth_args: EMPTY_WORD,
+            fee_args: EMPTY_WORD,
         }
     }
 
@@ -109,6 +114,16 @@ impl TransactionArgs {
         self
     }
 
+    /// Returns new [TransactionArgs] instantiated with the provided fee arguments.
+    ///
+    /// Fee arguments are passed to the account's fee procedure, which uses them to determine
+    /// which asset to pay fees in and at what rate.
+    #[must_use]
+    pub fn with_fee_args(mut self, fee_args: Word) -> Self {
+        self.fee_args = fee_args;
+        self
+    }
+
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
@@ -147,6 +162,11 @@ impl TransactionArgs {
     /// [`TransactionArgs::extend_advice_map`] method.
     pub fn auth_args(&self) -> Word {
         self.auth_args
+    }
+
+    /// Returns the fee procedure argument, or [`EMPTY_WORD`] if not specified.
+    pub fn fee_args(&self) -> Word {
+        self.fee_args
     }
 
     // STATE MUTATORS
@@ -252,6 +272,7 @@ impl Serializable for TransactionArgs {
         self.note_args.write_into(target);
         self.advice_inputs.write_into(target);
         self.auth_args.write_into(target);
+        self.fee_args.write_into(target);
     }
 }
 
@@ -262,6 +283,7 @@ impl Deserializable for TransactionArgs {
         let note_args = BTreeMap::<NoteId, Word>::read_from(source)?;
         let advice_inputs = AdviceInputs::read_from(source)?;
         let auth_args = Word::read_from(source)?;
+        let fee_args = Word::read_from(source)?;
 
         Ok(Self {
             tx_script,
@@ -269,6 +291,7 @@ impl Deserializable for TransactionArgs {
             note_args,
             advice_inputs,
             auth_args,
+            fee_args,
         })
     }
 }

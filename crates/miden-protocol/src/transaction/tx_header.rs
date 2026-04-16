@@ -1,7 +1,7 @@
 use alloc::vec::Vec;
 
 use crate::Word;
-use crate::asset::FungibleAsset;
+use crate::asset::Asset;
 use crate::note::NoteHeader;
 use crate::transaction::{
     AccountId,
@@ -36,7 +36,7 @@ pub struct TransactionHeader {
     final_state_commitment: Word,
     input_notes: InputNotes<InputNoteCommitment>,
     output_notes: Vec<NoteHeader>,
-    fee: FungibleAsset,
+    fee: Asset,
 }
 
 impl TransactionHeader {
@@ -59,7 +59,7 @@ impl TransactionHeader {
         final_state_commitment: Word,
         input_notes: InputNotes<InputNoteCommitment>,
         output_notes: Vec<NoteHeader>,
-        fee: FungibleAsset,
+        fee: Asset,
     ) -> Self {
         let input_notes_commitment = input_notes.commitment();
         let output_notes_commitment = RawOutputNotes::compute_commitment(output_notes.iter());
@@ -96,7 +96,7 @@ impl TransactionHeader {
         final_state_commitment: Word,
         input_notes: InputNotes<InputNoteCommitment>,
         output_notes: Vec<NoteHeader>,
-        fee: FungibleAsset,
+        fee: Asset,
     ) -> Self {
         Self {
             id,
@@ -157,7 +157,7 @@ impl TransactionHeader {
     }
 
     /// Returns the fee paid by this transaction.
-    pub fn fee(&self) -> FungibleAsset {
+    pub fn fee(&self) -> Asset {
         self.fee
     }
 }
@@ -225,7 +225,7 @@ impl Deserializable for TransactionHeader {
         let final_state_commitment = <Word>::read_from(source)?;
         let input_notes = <InputNotes<InputNoteCommitment>>::read_from(source)?;
         let output_notes = <Vec<NoteHeader>>::read_from(source)?;
-        let fee = FungibleAsset::read_from(source)?;
+        let fee = Asset::read_from(source)?;
 
         let tx_header = Self::new(
             account_id,

@@ -1064,6 +1064,25 @@ proc process_auth_procedure_data
     # => []
 end
 
+#! Saves the fee procedure args to memory.
+#!
+#! Inputs:
+#!   Operand stack: []
+#!   Advice stack: [FEE_ARGS]
+#! Outputs:
+#!   Operand stack: []
+#!   Advice stack: []
+#!
+#! Where:
+#! - FEE_ARGS is the argument passed to the fee procedure.
+proc process_fee_procedure_data
+    padw adv_loadw
+    # => [FEE_ARGS]
+
+    exec.memory::set_fee_args dropw
+    # => []
+end
+
 # TRANSACTION PROLOGUE
 # =================================================================================================
 
@@ -1101,6 +1120,7 @@ end
 #!     TX_SCRIPT_ROOT,
 #!     TX_SCRIPT_ARGS,
 #!     AUTH_ARGS,
+#!     FEE_ARGS,
 #!   ]
 #!   Advice map: {
 #!      PARTIAL_BLOCKCHAIN_COMMITMENT: [MMR_PEAKS],
@@ -1162,6 +1182,7 @@ pub proc prepare_transaction
     exec.process_input_notes_data
     exec.process_tx_script_data
     exec.process_auth_procedure_data
+    exec.process_fee_procedure_data
     # => []
 
     push.MAX_BLOCK_NUM exec.memory::set_expiration_block_num

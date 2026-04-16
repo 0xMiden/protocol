@@ -203,6 +203,9 @@ impl TransactionAdviceInputs {
 
         // --- auth procedure args --------------------------------------------
         self.extend_stack(tx_args.auth_args());
+
+        // --- fee procedure args ---------------------------------------------
+        self.extend_stack(tx_args.fee_args());
     }
 
     // BLOCKCHAIN INJECTIONS

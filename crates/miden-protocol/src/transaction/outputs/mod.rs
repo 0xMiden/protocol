@@ -2,7 +2,7 @@ use core::fmt::Debug;
 
 use crate::Word;
 use crate::account::AccountHeader;
-use crate::asset::FungibleAsset;
+use crate::asset::Asset;
 use crate::block::BlockNumber;
 use crate::utils::serde::{
     ByteReader,
@@ -38,8 +38,8 @@ pub struct TransactionOutputs {
     account_delta_commitment: Word,
     /// Set of output notes created by the transaction.
     output_notes: RawOutputNotes,
-    /// The fee of the transaction.
-    fee: FungibleAsset,
+    /// The fee asset removed from the account vault to pay for the transaction.
+    fee: Asset,
     /// Defines up to which block the transaction is considered valid.
     expiration_block_num: BlockNumber,
 }
@@ -56,11 +56,11 @@ impl TransactionOutputs {
     /// output stack.
     pub const ACCOUNT_UPDATE_COMMITMENT_WORD_IDX: usize = 4;
 
-    /// The index of the element at which the ID suffix of the faucet that issues the native asset
+    /// The index of the element at which the ID suffix of the faucet that issues the fee asset
     /// is stored on the output stack.
     pub const NATIVE_ASSET_ID_SUFFIX_ELEMENT_IDX: usize = 8;
 
-    /// The index of the element at which the ID prefix of the faucet that issues the native asset
+    /// The index of the element at which the ID prefix of the faucet that issues the fee asset
     /// is stored on the output stack.
     pub const NATIVE_ASSET_ID_PREFIX_ELEMENT_IDX: usize = 9;
 
@@ -78,7 +78,7 @@ impl TransactionOutputs {
         account: AccountHeader,
         account_delta_commitment: Word,
         output_notes: RawOutputNotes,
-        fee: FungibleAsset,
+        fee: Asset,
         expiration_block_num: BlockNumber,
     ) -> Self {
         Self {
@@ -108,8 +108,8 @@ impl TransactionOutputs {
         &self.output_notes
     }
 
-    /// Returns the fee of the transaction.
-    pub fn fee(&self) -> FungibleAsset {
+    /// Returns the fee asset of the transaction.
+    pub fn fee(&self) -> Asset {
         self.fee
     }
 
@@ -142,7 +142,7 @@ impl Deserializable for TransactionOutputs {
         let account = AccountHeader::read_from(source)?;
         let account_delta_commitment = Word::read_from(source)?;
         let output_notes = RawOutputNotes::read_from(source)?;
-        let fee = FungibleAsset::read_from(source)?;
+        let fee = Asset::read_from(source)?;
         let expiration_block_num = BlockNumber::read_from(source)?;
 
         Ok(Self {

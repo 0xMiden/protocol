@@ -19,7 +19,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::assembly::debuginfo::Location;
 use miden_protocol::assembly::{SourceFile, SourceManagerSync, SourceSpan};
-use miden_protocol::asset::{AssetVaultKey, AssetWitness, FungibleAsset};
+use miden_protocol::asset::{Asset, AssetVaultKey, AssetWitness, FungibleAsset};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::merkle::smt::SmtProof;
 use miden_protocol::note::{NoteMetadata, NoteRecipient, NoteScript, NoteStorage};
@@ -219,56 +219,63 @@ where
 
     /// Handles the [`TransactionEvent::EpilogueBeforeTxFeeRemovedFromAccount`] and returns an error
     /// if the account cannot pay the fee.
+    ///
+    /// The fee procedure can return any asset type. For now we only support fungible fee assets;
+    /// non-fungible fee assets are rejected. The node uses this check as the accept/reject point
+    /// for the fee asset: if the asset type or amount is unacceptable, the transaction is aborted.
     async fn on_before_tx_fee_removed_from_account(
         &self,
-        fee_asset: FungibleAsset,
+        fee_asset: Asset,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
-        // Construct initial fee asset.
-        let initial_fee_asset =
-            FungibleAsset::new(fee_asset.faucet_id(), self.initial_fee_asset_balance)
-                .expect("fungible asset created from fee asset should be valid");
+        match fee_asset {
+            Asset::Fungible(fee_asset) => {
+                // Construct initial fee asset.
+                let initial_fee_asset =
+                    FungibleAsset::new(fee_asset.faucet_id(), self.initial_fee_asset_balance)
+                        .expect("fungible asset created from fee asset should be valid");
 
-        // Compute the current balance of the native asset in the account based on the initial value
-        // and the delta.
-        let current_fee_asset = {
-            let fee_asset_amount_delta = self
-                .base_host
-                .account_delta_tracker()
-                .vault_delta()
-                .fungible()
-                .amount(&initial_fee_asset.vault_key())
-                .unwrap_or(0);
+                // Compute the current balance of the fee asset based on the initial value and
+                // delta.
+                let current_fee_asset = {
+                    let fee_asset_amount_delta = self
+                        .base_host
+                        .account_delta_tracker()
+                        .vault_delta()
+                        .fungible()
+                        .amount(&initial_fee_asset.vault_key())
+                        .unwrap_or(0);
 
-            // SAFETY: Initial native asset faucet ID should be a fungible faucet and amount should
-            // be less than MAX_AMOUNT as checked by the account delta.
-            let fee_asset_delta = FungibleAsset::new(
-                initial_fee_asset.faucet_id(),
-                fee_asset_amount_delta.unsigned_abs(),
-            )
-            .expect("faucet ID and amount should be valid");
+                    let fee_asset_delta = FungibleAsset::new(
+                        initial_fee_asset.faucet_id(),
+                        fee_asset_amount_delta.unsigned_abs(),
+                    )
+                    .expect("faucet ID and amount should be valid");
 
-            // SAFETY: These computations are essentially the same as the ones executed by the
-            // transaction kernel, which should have aborted if they weren't valid.
-            if fee_asset_amount_delta > 0 {
-                initial_fee_asset
-                    .add(fee_asset_delta)
-                    .expect("transaction kernel should ensure amounts do not exceed MAX_AMOUNT")
-            } else {
-                initial_fee_asset
-                    .sub(fee_asset_delta)
-                    .expect("transaction kernel should ensure amount is not negative")
-            }
-        };
+                    if fee_asset_amount_delta > 0 {
+                        initial_fee_asset.add(fee_asset_delta).expect(
+                            "transaction kernel should ensure amounts do not exceed MAX_AMOUNT",
+                        )
+                    } else {
+                        initial_fee_asset
+                            .sub(fee_asset_delta)
+                            .expect("transaction kernel should ensure amount is not negative")
+                    }
+                };
 
-        // Return an error if the balance in the account does not cover the fee.
-        if current_fee_asset.amount() < fee_asset.amount() {
-            return Err(TransactionKernelError::InsufficientFee {
-                account_balance: current_fee_asset.amount(),
-                tx_fee: fee_asset.amount(),
-            });
+                if current_fee_asset.amount() < fee_asset.amount() {
+                    return Err(TransactionKernelError::InsufficientFee {
+                        account_balance: current_fee_asset.amount(),
+                        tx_fee: fee_asset.amount(),
+                    });
+                }
+
+                Ok(Vec::new())
+            },
+            Asset::NonFungible(_) => {
+                // Non-fungible fee assets are not supported in v1.
+                Err(TransactionKernelError::NonFungibleFeeAssetNotSupported)
+            },
         }
-
-        Ok(Vec::new())
     }
 
     /// Handles a request for a storage map witness by querying the data store for a merkle path.

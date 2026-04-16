@@ -124,6 +124,12 @@ pub enum AccountError {
     AccountComponentMastForestMergeError(#[source] MastForestError),
     #[error("account component contains multiple authentication procedures")]
     AccountComponentMultipleAuthProcedures,
+    #[error("account component contains multiple fee procedures")]
+    AccountComponentMultipleFeeProcedures,
+    #[error("account code does not contain a fee component")]
+    AccountCodeNoFeeComponent,
+    #[error("account code contains multiple fee components")]
+    AccountCodeMultipleFeeComponents,
     #[error("failed to update asset vault")]
     AssetVaultUpdateError(#[source] AssetVaultError),
     #[error("account build error: {0}")]

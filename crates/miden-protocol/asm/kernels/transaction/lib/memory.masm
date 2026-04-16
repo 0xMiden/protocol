@@ -112,6 +112,9 @@ const TX_SCRIPT_ARGS_PTR=432
 # The memory address at which the auth procedure arguments are stored.
 const AUTH_ARGS_PTR=436
 
+# The memory address at which the fee procedure arguments are stored.
+const FEE_ARGS_PTR=440
+
 # GLOBAL BLOCK DATA
 # -------------------------------------------------------------------------------------------------
 
@@ -704,6 +707,28 @@ end
 #! - AUTH_ARGS is the argument passed to the auth procedure.
 pub proc set_auth_args
     mem_storew_le.AUTH_ARGS_PTR
+end
+
+#! Returns the fee procedure arguments.
+#!
+#! Inputs:  []
+#! Outputs: [FEE_ARGS]
+#!
+#! Where:
+#! - FEE_ARGS is the argument passed to the fee procedure.
+pub proc get_fee_args
+    padw mem_loadw_le.FEE_ARGS_PTR
+end
+
+#! Sets the fee procedure arguments.
+#!
+#! Inputs:  [FEE_ARGS]
+#! Outputs: [FEE_ARGS]
+#!
+#! Where:
+#! - FEE_ARGS is the argument passed to the fee procedure.
+pub proc set_fee_args
+    mem_storew_le.FEE_ARGS_PTR
 end
 
 # BLOCK DATA

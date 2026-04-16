@@ -4,6 +4,7 @@ pub mod access;
 pub mod auth;
 pub mod components;
 pub mod faucets;
+pub mod fees;
 pub mod interface;
 pub mod metadata;
 pub mod mint_policies;

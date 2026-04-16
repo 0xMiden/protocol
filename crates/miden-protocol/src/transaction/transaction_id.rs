@@ -4,7 +4,7 @@ use core::fmt::{Debug, Display};
 use miden_protocol_macros::WordWrapper;
 
 use super::{Felt, Hasher, ProvenTransaction, WORD_SIZE, Word, ZERO};
-use crate::asset::{Asset, FungibleAsset};
+use crate::asset::Asset;
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -41,14 +41,14 @@ impl TransactionId {
         final_account_commitment: Word,
         input_notes_commitment: Word,
         output_notes_commitment: Word,
-        fee_asset: FungibleAsset,
+        fee_asset: Asset,
     ) -> Self {
         let mut elements = [ZERO; 6 * WORD_SIZE];
         elements[..4].copy_from_slice(init_account_commitment.as_elements());
         elements[4..8].copy_from_slice(final_account_commitment.as_elements());
         elements[8..12].copy_from_slice(input_notes_commitment.as_elements());
         elements[12..16].copy_from_slice(output_notes_commitment.as_elements());
-        elements[16..].copy_from_slice(&Asset::from(fee_asset).as_elements());
+        elements[16..].copy_from_slice(&fee_asset.as_elements());
         Self(Hasher::hash_elements(&elements))
     }
 }

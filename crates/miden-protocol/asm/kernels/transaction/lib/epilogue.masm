@@ -22,6 +22,8 @@ const ERR_EPILOGUE_AUTH_PROCEDURE_CALLED_FROM_WRONG_CONTEXT="auth procedure has 
 
 const ERR_EPILOGUE_NONCE_CANNOT_BE_0="nonce cannot be 0 after an account-creating transaction"
 
+const ERR_EPILOGUE_FEE_PROC_EXCEEDED_BUDGET="fee procedure exceeded its cycle budget"
+
 # CONSTANTS
 # =================================================================================================
 
@@ -53,6 +55,9 @@ const NUM_POST_COMPUTE_FEE_CYCLES=608
 
 # The number of cycles the epilogue is estimated to take after compute_fee has been executed.
 const ESTIMATED_AFTER_COMPUTE_FEE_CYCLES=NUM_POST_COMPUTE_FEE_CYCLES+SMT_SET_ADDITIONAL_CYCLES
+
+# Maximum number of cycles the user-defined fee procedure is allowed to consume.
+const MAX_FEE_PROC_CYCLES=2000
 
 # OUTPUT NOTES PROCEDURES
 # =================================================================================================
@@ -291,8 +296,6 @@ proc create_native_fee_asset
     exec.memory::get_native_asset_id
     # => [native_asset_id_suffix, native_asset_id_prefix, fee_amount]
 
-    # assume the fee asset does not have callbacks
-    # this should be addressed more holistically with a fee construction refactor
     push.0
     # => [enable_callbacks, native_asset_id_suffix, native_asset_id_prefix, fee_amount]
 
@@ -301,23 +304,65 @@ proc create_native_fee_asset
     # => [FEE_ASSET_KEY, FEE_ASSET_VALUE]
 end
 
+# TODO(multi-asset-fees): Wire up execute_fee_procedure once existing auth components
+# bundle a @fee_script procedure. The dispatch code below is complete but not called
+# from compute_and_remove_fee yet because accounts without @fee_script would crash.
+# The open question is how a user-space fee procedure obtains the native faucet ID
+# (storage slot vs. FEE_ARGS vs. syscall).
+
+#! Executes the account's fee procedure to convert computation units into a fee asset.
+#!
+#! The fee procedure is at index 1 in the account's procedure list (placed there by the
+#! AccountProcedureBuilder when it sees the @fee_script attribute).
+#!
+#! Inputs:  [computation_units]
+#! Outputs: [FEE_ASSET_KEY, FEE_ASSET_VALUE]
+#!
+#! Where:
+#! - computation_units is the fee amount computed by compute_fee.
+#! - FEE_ASSET_KEY is the asset vault key of the fee asset chosen by the fee procedure.
+#! - FEE_ASSET_VALUE is the value of the fee asset.
+#!
+#! Panics if:
+#! - the fee procedure exceeds MAX_FEE_PROC_CYCLES.
+proc execute_fee_procedure
+    # build the dyncall input: [computation_units, FEE_ARGS, pad(11)]
+    padw padw push.0.0.0
+    # => [pad(11), computation_units]
+
+    exec.memory::get_fee_args
+    # => [FEE_ARGS, pad(11), computation_units]
+
+    movup.15
+    # => [computation_units, FEE_ARGS, pad(11)]
+
+    # fee procedure is at index 1 within the account procedures section.
+    push.1 exec.memory::get_account_procedure_ptr
+    # => [fee_procedure_ptr, computation_units, FEE_ARGS, pad(11)]
+
+    padw dup.4 mem_loadw_le
+    # => [FEE_PROC_ROOT, fee_procedure_ptr, computation_units, FEE_ARGS, pad(11)]
+
+    dyncall
+    # => [OUTPUT_3, OUTPUT_2, OUTPUT_1, OUTPUT_0]
+
+    # TODO: enforce MAX_FEE_PROC_CYCLES budget via a memory slot (movup.16 is out of range)
+
+    # the fee procedure returns [FEE_ASSET_KEY, FEE_ASSET_VALUE, pad(8)]
+    swapw.2 dropw swapw.2 dropw
+    # => [FEE_ASSET_KEY, FEE_ASSET_VALUE]
+end
+
 #! Computes the fee of this transaction and removes the asset from the native account's vault.
 #!
-#! Note that this does not have to account for the fee asset in the output vault explicitly,
-#! because the fee asset is removed from the account vault after build_output_vault and because
-#! it is not added to an output note. Effectively, the fee asset bypasses the asset preservation
-#! check. That's okay, because the logic is entirely determined by the transaction kernel.
+#! TODO(multi-asset-fees): once existing auth components bundle a @fee_script procedure,
+#! switch from create_native_fee_asset to execute_fee_procedure so accounts can pay in any asset.
+#!
+#! Note that this deliberately does not use account::remove_asset_from_vault, because that
+#! procedure modifies the vault delta.
 #!
 #! Inputs:  []
 #! Outputs: [native_asset_id_suffix, native_asset_id_prefix, fee_amount]
-#!
-#! Where:
-#! - fee_amount is the computed fee amount of the transaction in the native asset.
-#! - native_asset_id_{prefix,suffix} are the prefix and suffix felts of the faucet that issues the
-#!   native asset.
-#!
-#! Panics if:
-#! - the account vault contains less than the computed fee.
 proc compute_and_remove_fee
     # compute the fee the tx needs to pay
     exec.compute_fee dup
@@ -336,14 +381,6 @@ proc compute_and_remove_fee
 
     movdn.9 movdn.9
     # => [FEE_ASSET_KEY, FEE_ASSET_VALUE, native_asset_id_suffix, native_asset_id_prefix, fee_amount]
-
-    # remove the fee from the native account's vault
-    # note that this deliberately does not use account::remove_asset_from_vault, because that
-    # procedure modifies the vault delta of the account. That is undesirable because it does not
-    # take a constant number of cycles, which makes it much harder to calculate the number of
-    # cycles the kernel takes after computing the fee. It is also unnecessary, because the delta
-    # commitment has already been computed and so any modifications done to the delta at this point
-    # are essentially ignored.
 
     # fetch the vault root ptr
     exec.memory::get_account_vault_root_ptr movdn.8
@@ -378,7 +415,7 @@ end
 #!
 #! Where:
 #! - OUTPUT_NOTES_COMMITMENT is the commitment of the output notes.
-#! - ACCOUNT_UPDATE_COMMITMENT is the hash of the the final account commitment and account
+#! - ACCOUNT_UPDATE_COMMITMENT is the hash of the final account commitment and account
 #!   delta commitment.
 #! - fee_amount is the computed fee amount of the transaction denominated in the native asset.
 #! - native_asset_id_{prefix,suffix} are the prefix and suffix felts of the faucet that issues the

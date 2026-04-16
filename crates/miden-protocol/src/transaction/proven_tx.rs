@@ -5,7 +5,7 @@ use alloc::vec::Vec;
 use super::{InputNote, ToInputNoteCommitments};
 use crate::account::Account;
 use crate::account::delta::AccountUpdateDetails;
-use crate::asset::FungibleAsset;
+use crate::asset::Asset;
 use crate::block::BlockNumber;
 use crate::errors::ProvenTransactionError;
 use crate::note::NoteHeader;
@@ -61,7 +61,7 @@ pub struct ProvenTransaction {
     ref_block_commitment: Word,
 
     /// The fee of the transaction.
-    fee: FungibleAsset,
+    fee: Asset,
 
     /// The block number by which the transaction will expire, as defined by the executed scripts.
     expiration_block_num: BlockNumber,
@@ -95,7 +95,7 @@ impl ProvenTransaction {
         output_notes: impl IntoIterator<Item = impl Into<OutputNote>>,
         ref_block_num: BlockNumber,
         ref_block_commitment: Word,
-        fee: FungibleAsset,
+        fee: Asset,
         expiration_block_num: BlockNumber,
         proof: ExecutionProof,
     ) -> Result<Self, ProvenTransactionError> {
@@ -175,7 +175,7 @@ impl ProvenTransaction {
     }
 
     /// Returns the fee of the transaction.
-    pub fn fee(&self) -> FungibleAsset {
+    pub fn fee(&self) -> Asset {
         self.fee
     }
 
@@ -272,7 +272,7 @@ impl Deserializable for ProvenTransaction {
 
         let ref_block_num = BlockNumber::read_from(source)?;
         let ref_block_commitment = Word::read_from(source)?;
-        let fee = FungibleAsset::read_from(source)?;
+        let fee = Asset::read_from(source)?;
         let expiration_block_num = BlockNumber::read_from(source)?;
         let proof = ExecutionProof::read_from(source)?;
 
@@ -614,7 +614,7 @@ mod tests {
         StorageMapKey,
         StorageSlotName,
     };
-    use crate::asset::FungibleAsset;
+    use crate::asset::{Asset, FungibleAsset};
     use crate::block::BlockNumber;
     use crate::errors::ProvenTransactionError;
     use crate::testing::account_id::{
@@ -737,7 +737,7 @@ mod tests {
             Vec::<OutputNote>::new(),
             ref_block_num,
             ref_block_commitment,
-            FungibleAsset::mock(42).unwrap_fungible(),
+            Asset::from(FungibleAsset::mock(42).unwrap_fungible()),
             expiration_block_num,
             proof,
         )

@@ -324,7 +324,7 @@ impl PrettyPrint for AccountCode {
 
 /// A helper type for building the set of account procedures from account components.
 ///
-/// In particular, this ensures that the auth procedure ends up at index 0.
+/// Ensures the auth procedure ends up at index 0 and the fee procedure at index 1.
 struct AccountProcedureBuilder {
     procedures: Vec<AccountProcedureRoot>,
 }
@@ -334,17 +334,26 @@ impl AccountProcedureBuilder {
         Self { procedures: Vec::new() }
     }
 
-    /// This method must be called before add_component is called.
+    /// Adds the first (auth + fee) component. Must be called before `add_component`.
+    ///
+    /// The component must contain exactly one `@auth_script` procedure and exactly one
+    /// `@fee_script` procedure. The auth procedure is placed at index 0 and the fee procedure
+    /// at index 1.
     fn add_auth_component(&mut self, component: &AccountComponent) -> Result<(), AccountError> {
         let mut auth_proc_count = 0;
+        let mut fee_proc_count = 0;
 
-        for (proc_root, is_auth) in component.procedures() {
+        for (proc_root, is_auth, is_fee) in component.procedures() {
             self.add_procedure(proc_root);
 
             if is_auth {
                 let auth_proc_idx = self.procedures.len() - 1;
                 self.procedures.swap(0, auth_proc_idx);
                 auth_proc_count += 1;
+            }
+
+            if is_fee {
+                fee_proc_count += 1;
             }
         }
 
@@ -354,13 +363,37 @@ impl AccountProcedureBuilder {
             return Err(AccountError::AccountComponentMultipleAuthProcedures);
         }
 
+        if fee_proc_count > 1 {
+            return Err(AccountError::AccountComponentMultipleFeeProcedures);
+        }
+
+        // Place the fee procedure at index 1 if one exists. We need a second pass since the
+        // auth swap may have moved things around.
+        if fee_proc_count == 1 {
+            let mut fee_proc_idx = None;
+            for (idx, proc_root) in self.procedures.iter().enumerate() {
+                for (comp_root, _, is_fee) in component.procedures() {
+                    if is_fee && proc_root == &comp_root {
+                        fee_proc_idx = Some(idx);
+                    }
+                }
+            }
+
+            if let Some(idx) = fee_proc_idx {
+                self.procedures.swap(1, idx);
+            }
+        }
+
         Ok(())
     }
 
     fn add_component(&mut self, component: &AccountComponent) -> Result<(), AccountError> {
-        for (proc_root, is_auth) in component.procedures() {
+        for (proc_root, is_auth, is_fee) in component.procedures() {
             if is_auth {
                 return Err(AccountError::AccountCodeMultipleAuthComponents);
+            }
+            if is_fee {
+                return Err(AccountError::AccountCodeMultipleFeeComponents);
             }
             self.add_procedure(proc_root);
         }

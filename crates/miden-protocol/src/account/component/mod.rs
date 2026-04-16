@@ -21,6 +21,9 @@ use crate::{MastForest, Word};
 /// The attribute name used to mark the authentication procedure in an account component.
 const AUTH_SCRIPT_ATTRIBUTE: &str = "auth_script";
 
+/// The attribute name used to mark the fee procedure in an account component.
+const FEE_SCRIPT_ATTRIBUTE: &str = "fee_script";
+
 // ACCOUNT COMPONENT
 // ================================================================================================
 
@@ -189,12 +192,12 @@ impl AccountComponent {
         self.metadata.supported_types().contains(&account_type)
     }
 
-    /// Returns an iterator over ([`AccountProcedureRoot`], is_auth) for all procedures in this
-    /// component.
+    /// Returns an iterator over ([`AccountProcedureRoot`], is_auth, is_fee) for all procedures in
+    /// this component.
     ///
     /// A procedure is considered an authentication procedure if it has the `@auth_script`
-    /// attribute.
-    pub fn procedures(&self) -> impl Iterator<Item = (AccountProcedureRoot, bool)> + '_ {
+    /// attribute, and a fee procedure if it has the `@fee_script` attribute.
+    pub fn procedures(&self) -> impl Iterator<Item = (AccountProcedureRoot, bool, bool)> + '_ {
         let library = self.code.as_library();
         library.exports().filter_map(|export| {
             export.as_procedure().map(|proc_export| {
@@ -204,7 +207,8 @@ impl AccountComponent {
                     .expect("export node not in the forest")
                     .digest();
                 let is_auth = proc_export.attributes.has(AUTH_SCRIPT_ATTRIBUTE);
-                (AccountProcedureRoot::from_raw(digest), is_auth)
+                let is_fee = proc_export.attributes.has(FEE_SCRIPT_ATTRIBUTE);
+                (AccountProcedureRoot::from_raw(digest), is_auth, is_fee)
             })
         })
     }
