@@ -950,19 +950,15 @@ proc create_mint_note_with_attachment
     # Set the attachment on the MINT note to target the faucet account
     # NetworkAccountTarget attachment: targets the faucet so only it can consume the note
     # network_account_target::new expects [suffix, prefix, exec_hint]
-    # and returns [attachment_scheme, attachment_kind, ATTACHMENT]
+    # and returns [attachment_scheme, ATTACHMENT]
     push.ALWAYS # exec_hint = ALWAYS
     movdn.2
     # => [faucet_id_suffix, faucet_id_prefix, exec_hint, note_idx]
 
     exec.network_account_target::new
-    # => [attachment_scheme, attachment_kind, ATTACHMENT, note_idx]
+    # => [attachment_scheme, ATTACHMENT, note_idx]
 
-    # Rearrange for set_attachment: [note_idx, attachment_scheme, attachment_kind, ATTACHMENT]
-    movup.6
-    # => [note_idx, attachment_scheme, attachment_kind, ATTACHMENT(4)]
-
-    exec.output_note::set_attachment
+    exec.output_note::add_word_attachment
     # => []
 end
 
