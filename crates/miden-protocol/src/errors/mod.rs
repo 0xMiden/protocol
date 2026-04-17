@@ -31,18 +31,14 @@ use crate::asset::AssetId;
 use crate::batch::BatchId;
 use crate::block::BlockNumber;
 use crate::note::{
-<<<<<<< HEAD
-    NoteAssets, NoteAttachmentArray, NoteAttachmentKind, NoteAttachmentScheme, NoteAttachments, NoteTag, NoteType, Nullifier
-=======
     NoteAssets,
+    NoteAttachment,
     NoteAttachmentArray,
-    NoteAttachmentHeader,
     NoteAttachmentScheme,
     NoteAttachments,
     NoteTag,
     NoteType,
     Nullifier,
->>>>>>> 3b6219c1 (chore: update note kernel memory layout)
 };
 use crate::transaction::TransactionId;
 use crate::utils::serde::DeserializationError;
@@ -672,12 +668,12 @@ pub enum NoteError {
     NoteAttachmentArrayTooFewWords(usize),
     #[error(
         "note attachment array contains {0} words, but the maximum is {max} words",
-        max = NoteAttachmentHeader::MAX_NUM_WORDS
+        max = NoteAttachment::MAX_NUM_WORDS
     )]
     NoteAttachmentArrayTooManyWords(usize),
     #[error(
         "attachment size {0} exceeds maximum {max}",
-        max = NoteAttachmentHeader::MAX_NUM_WORDS
+        max = NoteAttachment::MAX_NUM_WORDS
     )]
     NoteAttachmentHeaderSizeExceeded(u8),
     #[error("{0} attachments were provided but maximum is {max}", max = NoteAttachments::MAX_COUNT)]

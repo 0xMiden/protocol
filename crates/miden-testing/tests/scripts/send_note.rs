@@ -1,6 +1,7 @@
 use core::slice;
 use std::collections::BTreeMap;
 
+use miden_protocol::Word;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset};
 use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
@@ -18,7 +19,6 @@ use miden_protocol::note::{
     PartialNote,
 };
 use miden_protocol::transaction::RawOutputNote;
-use miden_protocol::{Felt, Word};
 use miden_standards::account::interface::{AccountInterface, AccountInterfaceExt};
 use miden_standards::code_builder::CodeBuilder;
 use miden_testing::utils::create_p2any_note;

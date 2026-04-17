@@ -423,7 +423,7 @@ mod tests {
       )?,
       NoteAttachment::new_array(
         NoteAttachmentScheme::MAX,
-        vec![Word::from([10, 10, 10, 10u32]); NoteAttachmentHeader::MAX_NUM_WORDS as usize],
+        vec![Word::from([10, 10, 10, 10u32]); NoteAttachment::MAX_NUM_WORDS as usize],
       )?,
     ])]
     #[test]

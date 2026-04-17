@@ -166,10 +166,10 @@ impl AccountInterface {
         // and the array elements as value.
         let mut code_builder = CodeBuilder::new();
         for note in output_notes {
-            if let Some(attachment) = note.attachments().iter().next() {
-                if let NoteAttachmentContent::Array(array) = attachment.content() {
-                    code_builder.add_advice_map_entry(array.commitment(), array.to_elements());
-                }
+            if let Some(attachment) = note.attachments().iter().next()
+                && let NoteAttachmentContent::Array(array) = attachment.content()
+            {
+                code_builder.add_advice_map_entry(array.commitment(), array.to_elements());
             }
         }
 

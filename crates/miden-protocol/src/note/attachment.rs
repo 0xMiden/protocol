@@ -49,6 +49,15 @@ pub struct NoteAttachment {
 }
 
 impl NoteAttachment {
+    // CONSTANTS
+    // --------------------------------------------------------------------------------------------
+
+    /// The maximum number of words in an attachment.
+    ///
+    /// Limited to 254 to ensure the value fits into a u8 and the felt encoding remains valid
+    /// when four num_words values are packed into a single felt in the note metadata.
+    pub const MAX_NUM_WORDS: u8 = 254;
+
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
@@ -73,7 +82,7 @@ impl NoteAttachment {
     ///
     /// Returns an error if:
     /// - The number of words is less than [`NoteAttachmentArray::MIN_NUM_WORDS`].
-    /// - The number of words exceeds [`NoteAttachmentHeader::MAX_NUM_WORDS`].
+    /// - The number of words exceeds [`NoteAttachment::MAX_NUM_WORDS`].
     pub fn new_array(
         attachment_scheme: NoteAttachmentScheme,
         words: Vec<Word>,
@@ -162,7 +171,7 @@ impl NoteAttachmentContent {
     ///
     /// Returns an error if:
     /// - The number of words is less than [`NoteAttachmentArray::MIN_NUM_WORDS`].
-    /// - The number of words exceeds [`NoteAttachmentHeader::MAX_NUM_WORDS`].
+    /// - The number of words exceeds [`NoteAttachment::MAX_NUM_WORDS`].
     pub fn new_array(words: Vec<Word>) -> Result<Self, NoteError> {
         NoteAttachmentArray::new(words).map(Self::from)
     }
@@ -280,13 +289,13 @@ impl NoteAttachmentArray {
     ///
     /// Returns an error if:
     /// - The number of words is less than [`Self::MIN_NUM_WORDS`].
-    /// - The number of words exceeds [`NoteAttachmentHeader::MAX_NUM_WORDS`].
+    /// - The number of words exceeds [`NoteAttachment::MAX_NUM_WORDS`].
     pub fn new(words: Vec<Word>) -> Result<Self, NoteError> {
         if words.len() < Self::MIN_NUM_WORDS as usize {
             return Err(NoteError::NoteAttachmentArrayTooFewWords(words.len()));
         }
 
-        if words.len() > NoteAttachmentHeader::MAX_NUM_WORDS as usize {
+        if words.len() > NoteAttachment::MAX_NUM_WORDS as usize {
             return Err(NoteError::NoteAttachmentArrayTooManyWords(words.len()));
         }
 
@@ -470,15 +479,6 @@ pub struct NoteAttachmentHeader {
 }
 
 impl NoteAttachmentHeader {
-    // CONSTANTS
-    // --------------------------------------------------------------------------------------------
-
-    /// The maximum number of words in an attachment.
-    ///
-    /// Limited to 254 to ensure the value fits into a u8 and the felt encoding remains valid
-    /// when four num_words values are packed into a single felt in the note metadata.
-    pub const MAX_NUM_WORDS: u8 = 254;
-
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
@@ -486,9 +486,9 @@ impl NoteAttachmentHeader {
     ///
     /// # Errors
     ///
-    /// Returns an error if `num_words` exceeds [`Self::MAX_NUM_WORDS`].
+    /// Returns an error if `num_words` exceeds [`NoteAttachment::MAX_NUM_WORDS`].
     pub fn new(scheme: NoteAttachmentScheme, num_words: u8) -> Result<Self, NoteError> {
-        if num_words > Self::MAX_NUM_WORDS {
+        if num_words > NoteAttachment::MAX_NUM_WORDS {
             return Err(NoteError::NoteAttachmentHeaderSizeExceeded(num_words));
         }
         Ok(Self { scheme, num_words })
@@ -604,7 +604,7 @@ impl NoteAttachments {
             .sum::<usize>();
 
         if total_num_words > Self::MAX_NUM_WORDS as usize {
-            return Err(NoteError::TooManyAttachmentElements(total_num_words));
+            return Err(NoteError::NoteAttachmentArrayTooManyWords(total_num_words));
         }
 
         let commitment = compute_commitment(&attachments);
@@ -648,11 +648,9 @@ impl NoteAttachments {
     pub fn to_headers(&self) -> [NoteAttachmentHeader; Self::MAX_COUNT] {
         let mut headers = [NoteAttachmentHeader::absent(); Self::MAX_COUNT];
         for (i, attachment) in self.attachments.iter().enumerate() {
-            headers[i] = NoteAttachmentHeader::new(
-                attachment.attachment_scheme(),
-                attachment.num_words(),
-            )
-            .expect("attachment num_words should not exceed NoteAttachmentHeader::MAX_NUM_WORDS");
+            headers[i] =
+                NoteAttachmentHeader::new(attachment.attachment_scheme(), attachment.num_words())
+                    .expect("attachment num_words should not exceed NoteAttachment::MAX_NUM_WORDS");
         }
         headers
     }
@@ -772,7 +770,7 @@ mod tests {
 
     #[test]
     fn note_attachment_array_fails_on_too_many_words() -> anyhow::Result<()> {
-        let too_many_words = NoteAttachmentHeader::MAX_NUM_WORDS as usize + 1;
+        let too_many_words = NoteAttachment::MAX_NUM_WORDS as usize + 1;
         let words = vec![Word::from([1, 1, 1, 1u32]); too_many_words];
         let err = NoteAttachmentArray::new(words).unwrap_err();
 
