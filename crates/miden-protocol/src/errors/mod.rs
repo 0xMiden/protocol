@@ -56,7 +56,6 @@ use crate::{
     MAX_NOTE_STORAGE_ITEMS,
     MAX_OUTPUT_NOTES_PER_TX,
     NOTE_MAX_SIZE,
-    WORD_SIZE,
 };
 
 #[cfg(any(feature = "testing", test))]
@@ -666,18 +665,16 @@ pub enum NoteError {
     InvalidNoteStorageLength { expected: usize, actual: usize },
     #[error("note tag requires a public note but the note is of type {0}")]
     PublicNoteRequired(NoteType),
-    #[error("note attachment array length {0} is not divisible by {WORD_SIZE}")]
-    NoteAttachmentArrayNotWordAligned(usize),
     #[error(
-        "note attachment array must have at least {min} elements, got {0}",
-        min = NoteAttachmentArray::MIN_NUM_ELEMENTS
+        "note attachment array must have at least {min} words, got {0}",
+        min = NoteAttachmentArray::MIN_NUM_WORDS
     )]
-    NoteAttachmentArrayTooFewElements(usize),
+    NoteAttachmentArrayTooFewWords(usize),
     #[error(
-        "note attachment array contains {0} elements, but the maximum is {max} elements",
-        max = NoteAttachmentArray::MAX_NUM_ELEMENTS
+        "note attachment array contains {0} words, but the maximum is {max} words",
+        max = NoteAttachmentHeader::MAX_NUM_WORDS
     )]
-    NoteAttachmentArraySizeExceeded(usize),
+    NoteAttachmentArrayTooManyWords(usize),
     #[error(
         "attachment size {0} exceeds maximum {max}",
         max = NoteAttachmentHeader::MAX_NUM_WORDS

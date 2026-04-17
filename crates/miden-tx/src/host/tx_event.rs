@@ -27,7 +27,7 @@ use miden_protocol::note::{
 use miden_protocol::transaction::memory::{NOTE_MEM_SIZE, OUTPUT_NOTE_SECTION_OFFSET};
 use miden_protocol::transaction::{TransactionEventId, TransactionSummary};
 use miden_protocol::vm::EventId;
-use miden_protocol::{Felt, Hasher, Word};
+use miden_protocol::{Felt, Hasher, WORD_SIZE, Word};
 
 use crate::host::{TransactionBaseHost, TransactionKernelProcess};
 use crate::{LinkMap, TransactionKernelError};
@@ -770,13 +770,16 @@ fn extract_note_attachment(
                 )
             })?;
 
-            let array_attachment =
-                NoteAttachmentArray::new(elements.to_vec()).map_err(|source| {
-                    TransactionKernelError::other_with_source(
-                        "failed to construct note attachment array",
-                        source,
-                    )
-                })?;
+            let words: Vec<Word> = elements
+                .chunks_exact(WORD_SIZE)
+                .map(|chunk| Word::from([chunk[0], chunk[1], chunk[2], chunk[3]]))
+                .collect();
+            let array_attachment = NoteAttachmentArray::new(words).map_err(|source| {
+                TransactionKernelError::other_with_source(
+                    "failed to construct note attachment array",
+                    source,
+                )
+            })?;
 
             if array_attachment.commitment() != attachment {
                 return Err(TransactionKernelError::NoteAttachmentArrayMismatch {

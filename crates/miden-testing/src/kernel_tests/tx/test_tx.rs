@@ -221,7 +221,7 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
         NoteAttachment::new_word(NoteAttachmentScheme::new(28)?, Word::from([2, 3, 4, 5u32]));
     let attachment3 = NoteAttachment::new_array(
         NoteAttachmentScheme::new(29)?,
-        [6, 7, 8, 9, 10, 11, 12, 13u32].map(Felt::from).to_vec(),
+        vec![Word::from([6, 7, 8, 9u32]), Word::from([10, 11, 12, 13u32])],
     )?;
 
     let note_type1 = NoteType::Private;
@@ -358,7 +358,7 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
 
     let tx_context = TransactionContextBuilder::new(executor_account)
         .tx_script(tx_script)
-        .extend_advice_map(vec![(attachment3.content().to_word(), array.as_slice().to_vec())])
+        .extend_advice_map(vec![(attachment3.content().to_word(), array.to_elements())])
         .extend_expected_output_notes(vec![
             RawOutputNote::Full(expected_output_note_2.clone()),
             RawOutputNote::Full(expected_output_note_3.clone()),

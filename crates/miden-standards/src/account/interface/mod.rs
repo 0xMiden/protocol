@@ -168,8 +168,7 @@ impl AccountInterface {
         for note in output_notes {
             if let Some(attachment) = note.attachments().iter().next() {
                 if let NoteAttachmentContent::Array(array) = attachment.content() {
-                    code_builder
-                        .add_advice_map_entry(array.commitment(), array.as_slice().to_vec());
+                    code_builder.add_advice_map_entry(array.commitment(), array.to_elements());
                 }
             }
         }

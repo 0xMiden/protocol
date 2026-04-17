@@ -62,8 +62,8 @@ async fn test_send_note_script_basic_wallet() -> anyhow::Result<()> {
     let sender_account_interface = AccountInterface::from_account(&sender_basic_wallet_account);
 
     let tag = NoteTag::with_account_target(sender_basic_wallet_account.id());
-    let elements = [9, 8, 7, 6, 5, 4, 3, 2u32].map(Felt::from).to_vec();
-    let attachment = NoteAttachment::new_array(NoteAttachmentScheme::new(42)?, elements.clone())?;
+    let words = vec![Word::from([9, 8, 7, 6u32]), Word::from([5, 4, 3, 2u32])];
+    let attachment = NoteAttachment::new_array(NoteAttachmentScheme::new(42)?, words.clone())?;
     let metadata =
         NoteMetadata::new(sender_basic_wallet_account.id(), NoteType::Public).with_tag(tag);
     let assets = NoteAssets::new(vec![sent_asset0, sent_asset1]).unwrap();

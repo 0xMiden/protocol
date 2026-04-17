@@ -238,7 +238,7 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
         .add_assets([asset_2])
         .attachment(NoteAttachment::new_array(
             NoteAttachmentScheme::new(5u16)?,
-            [42, 43, 44, 45, 46, 47, 48, 49u32].map(Felt::from).to_vec(),
+            vec![Word::from([42, 43, 44, 45u32]), Word::from([46, 47, 48, 49u32])],
         )?)
         .build()?;
 
@@ -1236,13 +1236,14 @@ async fn test_add_word_attachment() -> anyhow::Result<()> {
 async fn test_set_array_attachment() -> anyhow::Result<()> {
     let account = Account::mock(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET, Auth::IncrNonce);
     let rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
-    let elements = [3, 4, 5, 6, 7, 8, 9, 10u32].map(Felt::from).to_vec();
-    let attachment = NoteAttachment::new_array(NoteAttachmentScheme::new(42)?, elements.clone())?;
+    let words = vec![Word::from([3, 4, 5, 6u32]), Word::from([7, 8, 9, 10u32])];
+    let attachment = NoteAttachment::new_array(NoteAttachmentScheme::new(42)?, words.clone())?;
     let output_note =
         RawOutputNote::Full(NoteBuilder::new(account.id(), rng).attachment(attachment).build()?);
 
     let attachment_content_word = output_note.attachments().get(0).unwrap().content().to_word();
     let attachment_num_words = output_note.attachments().get(0).unwrap().num_words();
+    let elements: Vec<Felt> = words.iter().flat_map(Word::as_elements).copied().collect();
     let tx_script = format!(
         "
         use miden::protocol::output_note

@@ -349,7 +349,7 @@ impl TransactionAdviceInputs {
                 if let NoteAttachmentContent::Array(array_attachment) = attachment.content() {
                     self.add_map_entry(
                         array_attachment.commitment(),
-                        array_attachment.as_slice().to_vec(),
+                        array_attachment.to_elements(),
                     );
                 }
             }

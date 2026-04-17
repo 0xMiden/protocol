@@ -268,7 +268,7 @@ fn note_script_that_creates_notes<'note>(
 
             // For array attachments, add the elements to the advice map keyed by the commitment.
             if let NoteAttachmentContent::Array(array) = attachment.content() {
-                advice_map.insert(array.commitment(), array.as_slice().to_vec());
+                advice_map.insert(array.commitment(), array.to_elements());
             }
         }
 

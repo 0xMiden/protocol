@@ -240,15 +240,25 @@ impl NoteMetadataHeader {
 impl Serializable for NoteMetadataHeader {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         self.metadata.write_into(target);
-        target.write_many(self.attachment_headers);
+
+        let present_headers_iter =
+            self.attachment_headers.iter().filter(|header| !header.is_absent());
+
+        let num_headers_present = u8::try_from(present_headers_iter.clone().count())
+            .expect("num attachments is validated to be at most 4");
+        num_headers_present.write_into(target);
+        target.write_many(present_headers_iter);
+
         self.attachments_commitment.write_into(target);
     }
 
     fn get_size_hint(&self) -> usize {
         self.metadata.get_size_hint()
+            + core::mem::size_of::<u8>()
             + self
                 .attachment_headers
                 .iter()
+                .filter(|header| !header.is_absent())
                 .map(NoteAttachmentHeader::get_size_hint)
                 .sum::<usize>()
             + self.attachments_commitment.get_size_hint()
@@ -258,12 +268,20 @@ impl Serializable for NoteMetadataHeader {
 impl Deserializable for NoteMetadataHeader {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let metadata = NoteMetadata::read_from(source)?;
-        let attachment_headers = [
-            NoteAttachmentHeader::read_from(source)?,
-            NoteAttachmentHeader::read_from(source)?,
-            NoteAttachmentHeader::read_from(source)?,
-            NoteAttachmentHeader::read_from(source)?,
-        ];
+
+        let num_headers_present = u8::read_from(source)? as usize;
+        if num_headers_present > NoteAttachments::MAX_COUNT {
+            return Err(DeserializationError::InvalidValue(format!(
+                "number of attachment headers ({num_headers_present}) exceeds maximum ({})",
+                NoteAttachments::MAX_COUNT
+            )));
+        }
+
+        let mut attachment_headers = [NoteAttachmentHeader::absent(); NoteAttachments::MAX_COUNT];
+        for header in attachment_headers.iter_mut().take(num_headers_present) {
+            *header = NoteAttachmentHeader::read_from(source)?;
+        }
+
         let attachment_commitment = Word::read_from(source)?;
 
         Ok(Self::from_parts(metadata, attachment_headers, attachment_commitment))
@@ -401,11 +419,11 @@ mod tests {
       NoteAttachment::new_word(NoteAttachmentScheme::none(), Word::from([3, 4, 5, 6u32])),
       NoteAttachment::new_array(
         NoteAttachmentScheme::MAX,
-        [Felt::from_u8(5); NoteAttachmentArray::MIN_NUM_ELEMENTS as usize].to_vec(),
+        vec![Word::from([5, 5, 5, 5u32]); NoteAttachmentArray::MIN_NUM_WORDS as usize],
       )?,
       NoteAttachment::new_array(
         NoteAttachmentScheme::MAX,
-        [Felt::from_u8(10); NoteAttachmentArray::MAX_NUM_ELEMENTS as usize].to_vec(),
+        vec![Word::from([10, 10, 10, 10u32]); NoteAttachmentHeader::MAX_NUM_WORDS as usize],
       )?,
     ])]
     #[test]
