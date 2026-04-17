@@ -50,12 +50,23 @@ pub(crate) enum TransactionCheckerError {
     TransactionPreparation(#[source] TransactionExecutorError),
     #[error("transaction execution prologue failed: {0}")]
     PrologueExecution(#[source] TransactionExecutorError),
-    #[error("transaction execution epilogue failed: {0}")]
-    EpilogueExecution(#[source] TransactionExecutorError),
+    #[error("transaction execution epilogue failed: {error}")]
+    EpilogueExecution {
+        error: TransactionExecutorError,
+        /// Cycle counts for notes that executed successfully before the epilogue failed.
+        successful_notes_cycle_counts: Vec<usize>,
+    },
     #[error("transaction note execution failed on note index {failed_note_index}: {error}")]
     NoteExecution {
         failed_note_index: usize,
         error: TransactionExecutorError,
+        /// Cycle counts for notes that executed successfully before the failed note.
+        successful_notes_cycle_counts: Vec<usize>,
+        /// The number of cycles consumed by the failed note before it errored.
+        ///
+        /// This is `Some` when the failure was due to exceeding the cycle limit, and `None`
+        /// for other error types where the cycle count is not meaningful.
+        failed_note_cycle_count: Option<usize>,
     },
 }
 
@@ -64,7 +75,7 @@ impl From<TransactionCheckerError> for TransactionExecutorError {
         match error {
             TransactionCheckerError::TransactionPreparation(error) => error,
             TransactionCheckerError::PrologueExecution(error) => error,
-            TransactionCheckerError::EpilogueExecution(error) => error,
+            TransactionCheckerError::EpilogueExecution { error, .. } => error,
             TransactionCheckerError::NoteExecution { error, .. } => error,
         }
     }
