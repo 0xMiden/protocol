@@ -3,8 +3,8 @@
 ## v0.15.0 (TBD)
 
 ### Changes
-- Added validation of leaf type on CLAIM note processing to prevent message leaves from being processed as asset claims ([#2730](https://github.com/0xMiden/protocol/pull/2730)).
 
+- Added validation of leaf type on CLAIM note processing to prevent message leaves from being processed as asset claims ([#2730](https://github.com/0xMiden/protocol/pull/2730)).
 - [BREAKING] Reduced `MAX_ASSETS_PER_NOTE` from 255 to 64 and `NOTE_MEM_SIZE` from 3072 to 1024 ([#2741](https://github.com/0xMiden/protocol/issues/2741)).
 - Added `metadata_into_note_type` procedure to `note.masm` for extracting note type from metadata header ([#2738](https://github.com/0xMiden/protocol/pull/2738)).
 - [BREAKING] Renamed `extract_sender_from_metadata` to `metadata_into_sender` and `extract_attachment_info_from_metadata` to `metadata_into_attachment_info` in `note.masm` ([#2758](https://github.com/0xMiden/protocol/pull/2758)).
@@ -17,6 +17,10 @@
 - [BREAKING] Changed `NoteType` encoding from 2 bits to 1 and makes `NoteType::Private` the default ([#2691](https://github.com/0xMiden/miden-base/issues/2691)).
 - Added `BlockNumber::saturating_sub()` ([#2660](https://github.com/0xMiden/protocol/issues/2660)).
 - [BREAKING] Added cycle counts to notes returned by `NoteConsumptionInfo` and removed public fields from related types ([#2772](https://github.com/0xMiden/miden-base/issues/2772)).
+
+### Fixes
+
+- Made deserialization of `AccountCode` more robust ([#2788](https://github.com/0xMiden/protocol/pull/2788)).
 
 ## 0.14.3 (2026-04-07)
 
