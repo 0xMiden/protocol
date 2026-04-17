@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.15.0 (TBD)
+
+### Features
+
+- Added lock/unlock path for Miden-native tokens in the AggLayer bridge: `is_native` flag in `faucet_registry_map`, bridge-local `faucet_metadata_map` (replacing FPI to faucets for conversion data), and `lock_asset` / `unlock_and_send` procedures so the bridge holds native assets in its own vault instead of burn/mint via a faucet ([#2771](https://github.com/0xMiden/protocol/pull/2771)).
+
 ## 0.14.0 (2026-03-23)
 
 ### Features
