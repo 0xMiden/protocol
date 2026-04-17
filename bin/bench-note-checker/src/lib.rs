@@ -137,14 +137,14 @@ pub async fn run_mixed_notes_check(setup: &MixedNotesSetup) -> anyhow::Result<()
     // Validate that we got the expected number of successful notes.
     assert_eq!(
         setup.expected_successful_count,
-        result.successful.len(),
+        result.successful().len(),
         "Expected {} successful notes, got {}",
         setup.expected_successful_count,
-        result.successful.len()
+        result.successful().len()
     );
 
     // Validate that we have some failed notes (all the failing ones).
-    assert!(!result.failed.is_empty(), "Expected some failed notes");
+    assert!(!result.failed().is_empty(), "Expected some failed notes");
 
     Ok(())
 }
