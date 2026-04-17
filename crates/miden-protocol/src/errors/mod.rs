@@ -5,7 +5,6 @@ use core::error::Error;
 
 use miden_assembly::Report;
 use miden_assembly::diagnostics::reporting::PrintDiagnostic;
-use miden_core::Felt;
 use miden_core::mast::MastForestError;
 use miden_crypto::merkle::mmr::MmrError;
 use miden_crypto::merkle::smt::{SmtLeafError, SmtProofError};
@@ -37,6 +36,7 @@ use crate::note::{
 =======
     NoteAssets,
     NoteAttachmentArray,
+    NoteAttachmentHeader,
     NoteAttachmentScheme,
     NoteAttachments,
     NoteTag,
@@ -49,12 +49,14 @@ use crate::utils::serde::DeserializationError;
 use crate::vm::EventId;
 use crate::{
     ACCOUNT_UPDATE_MAX_SIZE,
+    Felt,
     MAX_ACCOUNTS_PER_BATCH,
     MAX_INPUT_NOTES_PER_BATCH,
     MAX_INPUT_NOTES_PER_TX,
     MAX_NOTE_STORAGE_ITEMS,
     MAX_OUTPUT_NOTES_PER_TX,
     NOTE_MAX_SIZE,
+    WORD_SIZE,
 };
 
 #[cfg(any(feature = "testing", test))]
@@ -664,11 +666,23 @@ pub enum NoteError {
     InvalidNoteStorageLength { expected: usize, actual: usize },
     #[error("note tag requires a public note but the note is of type {0}")]
     PublicNoteRequired(NoteType),
+    #[error("note attachment array length {0} is not divisible by {WORD_SIZE}")]
+    NoteAttachmentArrayNotWordAligned(usize),
     #[error(
-        "note attachment cannot commit to more than {} elements",
-        NoteAttachmentArray::MAX_NUM_ELEMENTS
+        "note attachment array must have at least {min} elements, got {0}",
+        min = NoteAttachmentArray::MIN_NUM_ELEMENTS
+    )]
+    NoteAttachmentArrayTooFewElements(usize),
+    #[error(
+        "note attachment array contains {0} elements, but the maximum is {max} elements",
+        max = NoteAttachmentArray::MAX_NUM_ELEMENTS
     )]
     NoteAttachmentArraySizeExceeded(usize),
+    #[error(
+        "attachment size {0} exceeds maximum {max}",
+        max = NoteAttachmentHeader::MAX_SIZE
+    )]
+    NoteAttachmentHeaderSizeExceeded(u8),
     #[error("{0} attachments were provided but maximum is {max}", max = NoteAttachments::MAX_COUNT)]
     TooManyAttachments(usize),
     #[error("attachment scheme {0} exceeds maximum value of {max}", max = NoteAttachmentScheme::MAX)]

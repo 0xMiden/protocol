@@ -300,18 +300,11 @@ impl NoteAttachmentArray {
     /// - The number of elements exceeds [`Self::MAX_NUM_ELEMENTS`].
     pub fn new(elements: Vec<Felt>) -> Result<Self, NoteError> {
         if !elements.len().is_multiple_of(WORD_SIZE) {
-            return Err(NoteError::other(format!(
-                "note attachment array length must be divisible by 4, got {}",
-                elements.len()
-            )));
+            return Err(NoteError::NoteAttachmentArrayNotWordAligned(elements.len()));
         }
 
         if elements.len() < Self::MIN_NUM_ELEMENTS as usize {
-            return Err(NoteError::other(format!(
-                "note attachment array must have at least {} elements, got {}",
-                Self::MIN_NUM_ELEMENTS,
-                elements.len()
-            )));
+            return Err(NoteError::NoteAttachmentArrayTooFewElements(elements.len()));
         }
 
         if elements.len() > Self::MAX_NUM_ELEMENTS as usize {
@@ -504,10 +497,7 @@ impl NoteAttachmentHeader {
     /// Returns an error if `size` exceeds [`Self::MAX_SIZE`].
     pub fn new(scheme: NoteAttachmentScheme, word_size: u8) -> Result<Self, NoteError> {
         if word_size > Self::MAX_SIZE {
-            return Err(NoteError::other(alloc::format!(
-                "attachment size {word_size} exceeds maximum {}",
-                Self::MAX_SIZE
-            )));
+            return Err(NoteError::NoteAttachmentHeaderSizeExceeded(word_size));
         }
         Ok(Self { scheme, word_size })
     }
@@ -806,14 +796,14 @@ mod tests {
         let elements = vec![Felt::from(1u32); 4];
         let err = NoteAttachmentArray::new(elements).unwrap_err();
         // Arrays must have at least MIN_NUM_ELEMENTS (8) to distinguish from word attachments.
-        assert!(err.to_string().contains("at least"));
+        assert_matches!(err, NoteError::NoteAttachmentArrayTooFewElements(4));
     }
 
     #[test]
     fn note_attachment_array_fails_on_non_word_aligned_length() {
         let elements = vec![Felt::from(1u32); 9];
         let err = NoteAttachmentArray::new(elements).unwrap_err();
-        assert!(err.to_string().contains("divisible by 4"));
+        assert_matches!(err, NoteError::NoteAttachmentArrayNotWordAligned(9));
     }
 
     #[test]
