@@ -376,7 +376,8 @@ where
     /// This method executes the full transaction pipeline including prologue, note execution,
     /// and epilogue phases. It returns `Ok(cycle_counts)` if all notes are successfully consumed
     /// (where `cycle_counts` contains the number of cycles for each note), or a specific
-    /// [`TransactionCheckerError`] indicating where and why the execution failed.
+    /// [`TransactionCheckerError`] indicating where and why the execution failed. The order of the
+    /// returned `cycle_counts` is guaranteed to match the order of the input notes.
     async fn try_execute_notes(
         &self,
         tx_inputs: &mut TransactionInputs,
