@@ -335,7 +335,6 @@ proc create_remainder_note
     # Derive remainder serial: increment most significant element
     exec.active_note::get_serial_number
     # => [s0, s1, s2, s3, SCRIPT_ROOT, note_type, tag]
-    # => [s0, s1, s2, s3, SCRIPT_ROOT, note_type, tag]
     
     movup.3 add.1 movdn.3
     # => [s0, s1, s2, s3+1, SCRIPT_ROOT, note_type, tag]
