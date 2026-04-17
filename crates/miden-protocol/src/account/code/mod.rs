@@ -79,14 +79,6 @@ impl AccountCode {
         }
     }
 
-    /// Returns a new [AccountCode] deserialized from the provided bytes.
-    ///
-    /// # Errors
-    /// Returns an error if account code deserialization fails.
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, AccountError> {
-        Self::read_from_bytes(bytes).map_err(AccountError::AccountCodeDeserializationError)
-    }
-
     /// Creates a new [`AccountCode`] from the provided components' libraries.
     ///
     /// For testing use only.
