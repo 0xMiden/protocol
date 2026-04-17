@@ -416,7 +416,7 @@ fn account_data_memory_assertions(exec_output: &ExecutionOutput, inputs: &Transa
     for (i, elements) in inputs
         .account()
         .code()
-        .as_elements()
+        .to_elements()
         .chunks(AccountProcedureRoot::NUM_ELEMENTS)
         .enumerate()
     {
