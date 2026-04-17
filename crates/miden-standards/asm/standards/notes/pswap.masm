@@ -53,7 +53,7 @@ const PSWAP_CREATOR_PREFIX_ITEM = STORAGE_PTR + 5
 const PSWAP_CREATOR_SUFFIX_ITEM = STORAGE_PTR + 6
 
 # Local memory offsets
-# -------------------------------------------------------------------------------------------------
+# =================================================================================================
 
 # calculate_output_amount locals
 const CALC_FILL_AMOUNT = 0
