@@ -31,7 +31,7 @@ async fn network_account_target_get_id() -> anyhow::Result<()> {
         begin
             push.{attachment_word}
             push.{metadata_header}
-            exec.note::extract_attachment_info_from_metadata
+            exec.note::metadata_into_attachment_info
             # => [attachment_kind, attachment_scheme, NOTE_ATTACHMENT]
             swap
             # => [attachment_scheme, attachment_kind, NOTE_ATTACHMENT]

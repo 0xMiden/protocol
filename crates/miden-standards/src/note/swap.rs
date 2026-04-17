@@ -126,7 +126,7 @@ impl SwapNote {
     ///
     /// ```text
     /// [
-    ///   note_type (2 bits) | script_root (14 bits)
+    ///   note_type (1 bit) | script_root (15 bits)
     ///   | offered_asset_faucet_id (8 bits) | requested_asset_faucet_id (8 bits)
     /// ]
     /// ```
@@ -138,10 +138,10 @@ impl SwapNote {
         requested_asset: &Asset,
     ) -> NoteTag {
         let swap_root_bytes = Self::script().root().as_bytes();
-        // Construct the swap use case ID from the 14 most significant bits of the script root. This
-        // leaves the two most significant bits zero.
-        let mut swap_use_case_id = (swap_root_bytes[0] as u16) << 6;
-        swap_use_case_id |= (swap_root_bytes[1] >> 2) as u16;
+        // Construct the swap use case ID from the 15 most significant bits of the script root. This
+        // leaves the most significant bit zero.
+        let mut swap_use_case_id = (swap_root_bytes[0] as u16) << 7;
+        swap_use_case_id |= (swap_root_bytes[1] >> 1) as u16;
 
         // Get bits 0..8 from the faucet IDs of both assets which will form the tag payload.
         let offered_asset_id: u64 = offered_asset.faucet_id().prefix().into();
@@ -152,7 +152,7 @@ impl SwapNote {
 
         let asset_pair = ((offered_asset_tag as u16) << 8) | (requested_asset_tag as u16);
 
-        let tag = ((note_type as u8 as u32) << 30)
+        let tag = ((note_type as u8 as u32) << 31)
             | ((swap_use_case_id as u32) << 16)
             | asset_pair as u32;
 
@@ -419,18 +419,18 @@ mod tests {
         let actual_tag = SwapNote::build_tag(note_type, &offered_asset, &requested_asset);
 
         assert_eq!(actual_tag.as_u32() as u16, expected_asset_pair, "asset pair should match");
-        assert_eq!((actual_tag.as_u32() >> 30) as u8, note_type as u8, "note type should match");
+        assert_eq!((actual_tag.as_u32() >> 31) as u8, note_type as u8, "note type should match");
         // Check the 8 bits of the first script root byte.
         assert_eq!(
-            (actual_tag.as_u32() >> 22) as u8,
+            (actual_tag.as_u32() >> 23) as u8,
             SwapNote::script_root().as_bytes()[0],
             "swap script root byte 0 should match"
         );
-        // Extract the 6 bits of the second script root byte and shift for comparison.
+        // Extract the 7 bits of the second script root byte and shift for comparison.
         assert_eq!(
-            ((actual_tag.as_u32() & 0b00000000_00111111_00000000_00000000) >> 16) as u8,
-            SwapNote::script_root().as_bytes()[1] >> 2,
-            "swap script root byte 1 should match with the lower two bits set to zero"
+            ((actual_tag.as_u32() & 0b00000000_01111111_00000000_00000000) >> 16) as u8,
+            SwapNote::script_root().as_bytes()[1] >> 1,
+            "swap script root byte 1 should match with the highest bit set to zero"
         );
     }
 }
