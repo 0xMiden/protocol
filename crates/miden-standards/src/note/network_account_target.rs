@@ -126,7 +126,7 @@ impl TryFrom<&NoteAttachment> for NetworkAccountTarget {
                 NetworkAccountTarget::new(target_id, exec_hint)
             },
             _ => Err(NetworkAccountTargetError::AttachmentContentNotWord(
-                attachment.content().word_size(),
+                attachment.content().num_words(),
             )),
         }
     }
@@ -146,7 +146,7 @@ pub enum NetworkAccountTargetError {
         expected = NetworkAccountTarget::ATTACHMENT_SCHEME
     )]
     AttachmentSchemeMismatch(NoteAttachmentScheme),
-    #[error("attachment content is not a Word (word_size={0}, expected 1)")]
+    #[error("attachment content is not a Word (num_words={0}, expected 1)")]
     AttachmentContentNotWord(u8),
     #[error("failed to decode target account ID")]
     DecodeTargetId(#[source] AccountIdError),

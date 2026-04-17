@@ -263,14 +263,14 @@ impl AccountComponentInterface {
                 Some(attachment) => {
                     let attachment_word = attachment.content().to_word();
                     let attachment_scheme = attachment.attachment_scheme().as_u16() as u32;
-                    let word_size = attachment.content().word_size();
+                    let num_words = attachment.content().num_words();
 
                     body.push_str(&format!(
                         "
                 push.{attachment_word}
-                push.{word_size}
+                push.{num_words}
                 push.{attachment_scheme}
-                # => [attachment_scheme, word_size, ATTACHMENT, note_idx, pad(16)]
+                # => [attachment_scheme, num_words, ATTACHMENT, note_idx, pad(16)]
                 exec.::miden::protocol::output_note::add_attachment
                 # => [pad(16)]
             ",

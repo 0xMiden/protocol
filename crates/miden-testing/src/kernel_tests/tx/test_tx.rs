@@ -319,9 +319,9 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
             # => [note_idx = 2]
 
             push.{ATTACHMENT3}
-            push.{attachment3_word_size}
+            push.{attachment3_num_words}
             push.{attachment_scheme3}
-            # => [attachment_scheme, attachment_word_size, ATTACHMENT, note_idx]
+            # => [attachment_scheme, attachment_num_words, ATTACHMENT, note_idx]
             exec.output_note::add_array_attachment
             # => []
         end
@@ -342,7 +342,7 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
         attachment_scheme2 = attachment2.attachment_scheme().as_u16(),
         ATTACHMENT2 = attachment2.content().to_word(),
         attachment_scheme3 = attachment3.attachment_scheme().as_u16(),
-        attachment3_word_size = attachment3.word_size(),
+        attachment3_num_words = attachment3.num_words(),
         ATTACHMENT3 = attachment3.content().to_word(),
     );
 

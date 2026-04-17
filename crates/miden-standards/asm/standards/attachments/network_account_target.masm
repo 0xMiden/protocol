@@ -97,11 +97,11 @@ pub proc active_account_matches_target_account
     # => [METADATA_HEADER, NOTE_ATTACHMENT]
 
     exec.note::metadata_into_attachment_header
-    # => [attachment0_size, attachment0_scheme, NOTE_ATTACHMENT]
+    # => [attachment_0_num_words, attachment_0_scheme, NOTE_ATTACHMENT]
 
-    # make sure the word size of the attachment is 1
+    # make sure the num_words of the attachment is 1
     eq.1 assert.err=ERR_NOT_NETWORK_ACCOUNT_TARGET
-    # => [attachment0_scheme, NOTE_ATTACHMENT]
+    # => [attachment_0_scheme, NOTE_ATTACHMENT]
 
     # ensure the attachment is a network account target
     exec.is_network_account_target assert.err=ERR_NOT_NETWORK_ACCOUNT_TARGET

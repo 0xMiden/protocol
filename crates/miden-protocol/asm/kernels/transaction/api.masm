@@ -1131,12 +1131,12 @@ end
 
 #! Adds an attachment to the note specified by the index.
 #!
-#! Inputs:  [attachment_scheme, attachment_word_size, ATTACHMENT, note_idx, pad(9)]
+#! Inputs:  [attachment_scheme, attachment_num_words, ATTACHMENT, note_idx, pad(9)]
 #! Outputs: [pad(16)]
 #!
 #! Where:
 #! - attachment_scheme is the user-defined scheme of the attachment.
-#! - attachment_word_size is the size of the attachment in words.
+#! - attachment_num_words is the number of words of the attachment.
 #! - ATTACHMENT is the attachment word to store.
 #! - note_idx is the index of the note to which the attachment is added.
 #!
@@ -1144,18 +1144,18 @@ end
 #! - the procedure is called when the active account is not the native one.
 #! - the note index points to a non-existent output note.
 #! - the attachment scheme exceeds 65534.
-#! - the attachment word size exceeds 254 or is zero.
+#! - the attachment num_words exceeds 254 or is zero.
 #! - the note already has 4 attachments.
 #!
 #! Invocation: dynexec
 pub proc output_note_add_attachment
     # assert that the provided note index is less than the total number of output notes
     dup.6 exec.output_note::assert_note_index_in_bounds drop
-    # => [attachment_scheme, attachment_word_size, ATTACHMENT, note_idx, pad(9)]
+    # => [attachment_scheme, attachment_num_words, ATTACHMENT, note_idx, pad(9)]
 
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
-    # => [attachment_scheme, attachment_word_size, ATTACHMENT, note_idx, pad(9)]
+    # => [attachment_scheme, attachment_num_words, ATTACHMENT, note_idx, pad(9)]
 
     exec.output_note::add_attachment
     # => [pad(16)]

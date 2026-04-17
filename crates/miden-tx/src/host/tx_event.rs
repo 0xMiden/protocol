@@ -427,17 +427,17 @@ impl TransactionEvent {
             TransactionEventId::NoteBeforeAddAttachment => {
                 // Expected stack state: [
                 //     event, num_attachments, note_ptr, attachment_scheme,
-                //     attachment_word_size, ATTACHMENT, note_idx
+                //     attachment_num_words, ATTACHMENT, note_idx
                 // ]
 
                 let note_ptr = process.get_stack_item(2);
                 let attachment_scheme = process.get_stack_item(3);
-                let attachment_word_size = process.get_stack_item(4);
+                let attachment_num_words = process.get_stack_item(4);
                 let attachment = process.get_stack_word(5);
 
                 let (note_idx, attachment) = extract_note_attachment(
                     attachment_scheme,
-                    attachment_word_size,
+                    attachment_num_words,
                     attachment,
                     note_ptr,
                     process.advice_provider(),
@@ -736,15 +736,15 @@ fn build_note_metadata(
 
 fn extract_note_attachment(
     attachment_scheme: Felt,
-    attachment_word_size: Felt,
+    attachment_num_words: Felt,
     attachment: Word,
     note_ptr: Felt,
     advice_provider: &AdviceProvider,
 ) -> Result<(usize, NoteAttachment), TransactionKernelError> {
     let note_idx = note_ptr_to_idx(note_ptr)?;
 
-    let word_size = u8::try_from(attachment_word_size.as_canonical_u64()).map_err(|_| {
-        TransactionKernelError::other("failed to convert attachment word size to u8")
+    let num_words = u8::try_from(attachment_num_words.as_canonical_u64()).map_err(|_| {
+        TransactionKernelError::other("failed to convert attachment num_words to u8")
     })?;
 
     let attachment_scheme = u16::try_from(attachment_scheme.as_canonical_u64())
@@ -758,9 +758,9 @@ fn extract_note_attachment(
             })
         })?;
 
-    let attachment_content = match word_size {
+    let attachment_content = match num_words {
         0 => {
-            return Err(TransactionKernelError::other("attachment word_size must be > 0"));
+            return Err(TransactionKernelError::other("attachment num_words must be > 0"));
         },
         1 => NoteAttachmentContent::Word(attachment),
         _ => {
@@ -785,11 +785,11 @@ fn extract_note_attachment(
                 });
             }
 
-            if array_attachment.word_size() != word_size {
+            if array_attachment.num_words() != num_words {
                 return Err(TransactionKernelError::other(format!(
-                    "array attachment word_size {} does not match declared word size {}",
-                    array_attachment.word_size(),
-                    word_size
+                    "array attachment num_words {} does not match declared num_words {}",
+                    array_attachment.num_words(),
+                    num_words
                 )));
             }
 

@@ -196,40 +196,40 @@ pub proc metadata_into_sender
     # => [sender_id_suffix, sender_id_prefix]
 end
 
-#! Extracts the first attachment's size and scheme from the provided metadata header.
+#! Extracts the first attachment's num_words and scheme from the provided metadata header.
 #!
 #! TODO(multi_attachments): This API temporarily maintains compatibility with the previous approach
 #! that supported just one attachment per note.
 #!
 #! Inputs:  [METADATA_HEADER]
-#! Outputs: [attachment0_size, attachment0_scheme]
+#! Outputs: [attachment_0_num_words, attachment_0_scheme]
 #!
 #! Where:
 #! - METADATA_HEADER is the metadata word of a note.
-#! - attachment0_size is the word size of the first attachment (0 if absent).
-#! - attachment0_scheme is the scheme of the first attachment.
+#! - attachment_0_num_words is the number of words of the first attachment (0 if absent).
+#! - attachment_0_scheme is the scheme of the first attachment.
 #!
 #! Invocation: exec
 pub proc metadata_into_attachment_header
-    # => [sender_id_suffix_type_version, sender_id_prefix, tag_and_sizes, schemes]
+    # => [sender_id_suffix_type_version, sender_id_prefix, tag_and_num_words, schemes]
 
     drop drop
-    # => [tag_and_sizes, schemes]
+    # => [tag_and_num_words, schemes]
 
-    # extract att_0_size from tag_and_sizes:
-    # u32split converts into sizes_packed (upper 32 bits) and tag (lower 32 bits)
+    # extract attachment_0_num_words from tag_and_num_words:
+    # u32split converts into num_words_packed (upper 32 bits) and tag (lower 32 bits)
     u32split swap drop
-    # => [sizes_packed, schemes]
-    # => [attachment3_size (8 bits) | attachment2_size (8 bits) |
-    #     attachment1_size (8 bits) | attachment0_size (8 bits)]
+    # => [num_words_packed, schemes]
+    # => [attachment_3_num_words (8 bits) | attachment_2_num_words (8 bits) |
+    #     attachment_1_num_words (8 bits) | attachment_0_num_words (8 bits)]
 
-    # extract attachment 0 size by taking only the lower 8 bits
+    # extract attachment 0 num_words by taking only the lower 8 bits
     u32and.0xff
-    # [attachment0_size, schemes]
+    # [attachment_0_num_words, schemes]
 
     # extract attachment 0 scheme by taking only the lower 16 bits
     swap u32and.0xffff swap
-    # [attachment0_size, attachment0_scheme]
+    # [attachment_0_num_words, attachment_0_scheme]
 end
 
 #! Extracts the note type from the provided metadata header.

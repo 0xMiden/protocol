@@ -185,10 +185,10 @@ impl NoteAttachmentContent {
     ///
     /// - `1` for [`NoteAttachmentContent::Word`].
     /// - `> 1` for [`NoteAttachmentContent::Array`].
-    pub fn word_size(&self) -> u8 {
+    pub fn num_words(&self) -> u8 {
         match self {
             NoteAttachmentContent::Word(_) => 1,
-            NoteAttachmentContent::Array(array) => array.word_size(),
+            NoteAttachmentContent::Array(array) => array.num_words(),
         }
     }
 
@@ -207,8 +207,8 @@ impl NoteAttachmentContent {
 
 impl Serializable for NoteAttachmentContent {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        // Write word_size as discriminant: 1 = Word, >1 = Array.
-        self.word_size().write_into(target);
+        // Write num_words as discriminant: 1 = Word, >1 = Array.
+        self.num_words().write_into(target);
 
         match self {
             NoteAttachmentContent::Word(word) => {
@@ -236,11 +236,11 @@ impl Serializable for NoteAttachmentContent {
 
 impl Deserializable for NoteAttachmentContent {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let word_size = u8::read_from(source)?;
+        let num_words = u8::read_from(source)?;
 
-        match word_size {
+        match num_words {
             0 => Err(DeserializationError::InvalidValue(
-                "attachment content word_size must be > 0".into(),
+                "attachment content num_words must be > 0".into(),
             )),
             1 => {
                 let word = Word::read_from(source)?;
@@ -283,9 +283,10 @@ impl NoteAttachmentArray {
 
     /// The maximum number of elements in a note attachment array.
     ///
-    /// Each attachment can be at most [`NoteAttachmentHeader::MAX_SIZE`] words (254), and each
+    /// Each attachment can be at most [`NoteAttachmentHeader::MAX_NUM_WORDS`] words (254), and each
     /// word holds 4 elements, so the maximum number of elements is 254 * 4 = 1016.
-    pub const MAX_NUM_ELEMENTS: u16 = NoteAttachmentHeader::MAX_SIZE as u16 * (WORD_SIZE as u16);
+    pub const MAX_NUM_ELEMENTS: u16 =
+        NoteAttachmentHeader::MAX_NUM_WORDS as u16 * (WORD_SIZE as u16);
 
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
@@ -328,13 +329,13 @@ impl NoteAttachmentArray {
         u16::try_from(self.elements.len()).expect("type should enforce that size fits in u16")
     }
 
-    /// Returns the number of elements this note attachment commits to.
-    pub fn word_size(&self) -> u8 {
+    /// Returns the number of words this note attachment commits to.
+    pub fn num_words(&self) -> u8 {
         // SAFETY:
         // - num elements is at most 1016 and 1016/4 = 254, so it fits in a u8
         // - constructor checks that num elements is a multiple of WORD_SIZE, so we don't need to
         //   check the remainder
-        u8::try_from(self.elements.len() / WORD_SIZE).expect("word size shoult fit in u8")
+        u8::try_from(self.elements.len() / WORD_SIZE).expect("num words should fit in u8")
     }
 
     /// Returns the commitment over the contained field elements.
@@ -476,26 +477,26 @@ impl Deserializable for NoteAttachmentScheme {
 
 /// The header metadata for a single note attachment.
 ///
-/// Contains the scheme and word size of an attachment, without the actual content data.
-/// The kind of attachment is inferred from the size:
-/// - `size == 0`: absent (no attachment)
-/// - `size == 1`: word attachment (a single [`Word`])
-/// - `size > 1`: array attachment (a commitment to a set of felts)
+/// Contains the scheme and number of words of an attachment, without the actual content data.
+/// The kind of attachment is inferred from the number of words:
+/// - `num_words == 0`: absent (no attachment)
+/// - `num_words == 1`: word attachment (a single [`Word`])
+/// - `num_words > 1`: array attachment (a commitment to a set of felts)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NoteAttachmentHeader {
     scheme: NoteAttachmentScheme,
-    word_size: u8,
+    num_words: u8,
 }
 
 impl NoteAttachmentHeader {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
 
-    /// The maximum attachment size in words.
+    /// The maximum number of words in an attachment.
     ///
-    /// Limited to 254 to ensure the size fits into a u8 and the felt encoding remains valid
-    /// when four sizes are packed into a single felt in the note metadata.
-    pub const MAX_SIZE: u8 = 254;
+    /// Limited to 254 to ensure the value fits into a u8 and the felt encoding remains valid
+    /// when four num_words values are packed into a single felt in the note metadata.
+    pub const MAX_NUM_WORDS: u8 = 254;
 
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
@@ -504,19 +505,19 @@ impl NoteAttachmentHeader {
     ///
     /// # Errors
     ///
-    /// Returns an error if `size` exceeds [`Self::MAX_SIZE`].
-    pub fn new(scheme: NoteAttachmentScheme, word_size: u8) -> Result<Self, NoteError> {
-        if word_size > Self::MAX_SIZE {
-            return Err(NoteError::NoteAttachmentHeaderSizeExceeded(word_size));
+    /// Returns an error if `num_words` exceeds [`Self::MAX_NUM_WORDS`].
+    pub fn new(scheme: NoteAttachmentScheme, num_words: u8) -> Result<Self, NoteError> {
+        if num_words > Self::MAX_NUM_WORDS {
+            return Err(NoteError::NoteAttachmentHeaderSizeExceeded(num_words));
         }
-        Ok(Self { scheme, word_size })
+        Ok(Self { scheme, num_words })
     }
 
     /// Returns a header representing the absence of an attachment.
     pub const fn absent() -> Self {
         Self {
             scheme: NoteAttachmentScheme::none(),
-            word_size: 0,
+            num_words: 0,
         }
     }
 
@@ -528,14 +529,14 @@ impl NoteAttachmentHeader {
         self.scheme
     }
 
-    /// Returns the attachment size in words.
-    pub const fn word_size(&self) -> u8 {
-        self.word_size
+    /// Returns the number of words in the attachment.
+    pub const fn num_words(&self) -> u8 {
+        self.num_words
     }
 
     /// Returns `true` if this header represents an absent attachment, `false` otherwise.
     pub const fn is_absent(&self) -> bool {
-        self.word_size == 0 && self.scheme.is_none()
+        self.num_words == 0 && self.scheme.is_none()
     }
 }
 
@@ -548,7 +549,7 @@ impl Default for NoteAttachmentHeader {
 impl Serializable for NoteAttachmentHeader {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         self.scheme.write_into(target);
-        self.word_size.write_into(target);
+        self.num_words.write_into(target);
     }
 
     fn get_size_hint(&self) -> usize {
@@ -618,7 +619,7 @@ impl NoteAttachments {
 
         let total_num_words = attachments
             .iter()
-            .map(|attachment| attachment.word_size() as usize)
+            .map(|attachment| attachment.num_words() as usize)
             .sum::<usize>();
 
         if total_num_words > Self::MAX_NUM_WORDS as usize {
@@ -666,11 +667,11 @@ impl NoteAttachments {
     pub fn to_headers(&self) -> [NoteAttachmentHeader; Self::MAX_COUNT] {
         let mut headers = [NoteAttachmentHeader::absent(); Self::MAX_COUNT];
         for (i, attachment) in self.attachments.iter().enumerate() {
-            headers[i] =
-                NoteAttachmentHeader::new(attachment.attachment_scheme(), attachment.word_size())
-                    .expect(
-                        "attachment word_size should not exceed NoteAttachmentHeader::MAX_SIZE",
-                    );
+            headers[i] = NoteAttachmentHeader::new(
+                attachment.attachment_scheme(),
+                attachment.num_words(),
+            )
+            .expect("attachment num_words should not exceed NoteAttachmentHeader::MAX_NUM_WORDS");
         }
         headers
     }
@@ -840,7 +841,7 @@ mod tests {
     fn note_attachment_header_absent() {
         let header = NoteAttachmentHeader::absent();
         assert!(header.is_absent());
-        assert_eq!(header.word_size(), 0);
+        assert_eq!(header.num_words(), 0);
         assert!(header.scheme().is_none());
     }
 
@@ -904,9 +905,9 @@ mod tests {
 
         let headers = attachments.to_headers();
         assert_eq!(headers[0].scheme(), NoteAttachmentScheme::new(42)?);
-        assert_eq!(headers[0].word_size(), 1);
+        assert_eq!(headers[0].num_words(), 1);
         assert_eq!(headers[1].scheme(), NoteAttachmentScheme::new(100)?);
-        assert_eq!(headers[1].word_size(), 2); // 8 felts = 2 words
+        assert_eq!(headers[1].num_words(), 2); // 8 felts = 2 words
         assert!(headers[2].is_absent());
         assert!(headers[3].is_absent());
 
@@ -925,17 +926,17 @@ mod tests {
     }
 
     #[test]
-    fn note_attachment_word_size() {
+    fn note_attachment_num_words() {
         // Word => 1
         let word = NoteAttachmentContent::new_word(Word::from([1, 2, 3, 4u32]));
-        assert_eq!(word.word_size(), 1);
+        assert_eq!(word.num_words(), 1);
 
         // Array with 8 elements => 8/4 = 2
         let array = NoteAttachmentContent::new_array(vec![Felt::new(1); 8]).unwrap();
-        assert_eq!(array.word_size(), 2);
+        assert_eq!(array.num_words(), 2);
 
         // Array with 12 elements => 12/4 = 3
         let array = NoteAttachmentContent::new_array(vec![Felt::new(1); 12]).unwrap();
-        assert_eq!(array.word_size(), 3);
+        assert_eq!(array.num_words(), 3);
     }
 }

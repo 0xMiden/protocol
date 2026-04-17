@@ -128,16 +128,19 @@ impl Deserializable for NoteMetadata {
 /// ```text
 /// 0th felt: [sender_id_suffix (56 bits) | reserved (3 bits) | note_type (1 bit) | version (4 bits)]
 /// 1st felt: [sender_id_prefix (64 bits)]
-/// 2nd felt: [att_3_size (8b) | att_2_size (8b) | att_1_size (8b) | att_0_size (8b) | note_tag (32b)]
-/// 3rd felt: [att_3_scheme (16b) | att_2_scheme (16b) | att_1_scheme (16b) | att_0_scheme (16b)]
+/// 2nd felt: [attachment_3_num_words (8 bits) | attachment_2_num_words (8 bits) |
+///            attachment_1_num_words (8 bits) | attachment_0_num_words (8 bits) |
+///            note_tag (32 bits)]
+/// 3rd felt: [attachment_3_scheme (16 bits) | attachment_2_scheme (16 bits) |
+///            attachment_1_scheme (16 bits) | attachment_0_scheme (16 bits)]
 /// ```
 ///
 /// Felt validity is guaranteed:
 /// - 0th felt: The lower 8 bits of the account ID suffix are `0` by construction, so they can be
 ///   overwritten. The suffix's MSB is zero so the felt stays valid when lower bits are set.
 /// - 1st felt: Equivalent to the account ID prefix, so it inherits its validity.
-/// - 2nd felt: Max value is `0xFEFEFEFE_FFFFFFFF` (sizes capped at 254, tag at u32::MAX), which is
-///   less than the Goldilocks prime `p = 2^64 - 2^32 + 1`.
+/// - 2nd felt: Max value is `0xFEFEFEFE_FFFFFFFF` (num_words capped at 254, tag at u32::MAX), which
+///   is less than the Goldilocks prime `p = 2^64 - 2^32 + 1`.
 /// - 3rd felt: Max value is `0xFFFEFFFE_FFFEFFFE` (schemes capped at 65534), which is less than
 ///   `p`.
 ///
@@ -206,7 +209,7 @@ impl NoteMetadataHeader {
     ///
     /// See [`NoteMetadataHeader`] docs for the layout.
     pub fn to_metadata_word(&self) -> Word {
-        let (sizes, schemes) = extract_sizes_and_schemes(&self.attachment_headers);
+        let (num_words, schemes) = extract_num_words_and_schemes(&self.attachment_headers);
 
         let mut word = Word::empty();
         word[0] = merge_sender_suffix_and_note_type(
@@ -214,7 +217,7 @@ impl NoteMetadataHeader {
             self.metadata.note_type,
         );
         word[1] = self.metadata.sender.prefix().as_felt();
-        word[2] = merge_tag_and_sizes(self.metadata.tag, sizes);
+        word[2] = merge_tag_and_num_words(self.metadata.tag, num_words);
         word[3] = merge_schemes(schemes);
         word
     }
@@ -270,20 +273,20 @@ impl Deserializable for NoteMetadataHeader {
 // HELPER FUNCTIONS
 // ================================================================================================
 
-/// Extracts the sizes and schemes arrays from the attachment headers.
-fn extract_sizes_and_schemes(
+/// Extracts the num_words and schemes arrays from the attachment headers.
+fn extract_num_words_and_schemes(
     headers: &[NoteAttachmentHeader; NoteAttachments::MAX_COUNT],
 ) -> (
     [u8; NoteAttachments::MAX_COUNT],
     [NoteAttachmentScheme; NoteAttachments::MAX_COUNT],
 ) {
-    let mut word_sizes = [0u8; NoteAttachments::MAX_COUNT];
+    let mut num_words = [0u8; NoteAttachments::MAX_COUNT];
     let mut schemes = [NoteAttachmentScheme::none(); NoteAttachments::MAX_COUNT];
     for (i, header) in headers.iter().enumerate() {
-        word_sizes[i] = header.word_size();
+        num_words[i] = header.num_words();
         schemes[i] = header.scheme();
     }
-    (word_sizes, schemes)
+    (num_words, schemes)
 }
 
 /// Merges the suffix of an [`AccountId`] and note metadata into a single [`Felt`].
@@ -312,23 +315,23 @@ fn merge_sender_suffix_and_note_type(sender_id_suffix: Felt, note_type: NoteType
     Felt::try_from(merged).expect("encoded value should be a valid felt")
 }
 
-/// Merges the note tag and four attachment sizes into a single [`Felt`].
+/// Merges the note tag and four attachment num_words into a single [`Felt`].
 ///
 /// The layout is as follows:
 ///
 /// ```text
-/// [att_3_size (8b) | att_2_size (8b) | att_1_size (8b) | att_0_size (8b) | note_tag (32b)]
+/// [attachment_3_num_words (8 bits) | attachment_2_num_words (8 bits) |
+///  attachment_1_num_words (8 bits) | attachment_0_num_words (8 bits) |
+///  note_tag (32 bits)]
 /// ```
-///
-/// Max value: `0xFEFEFEFE_FFFFFFFF` < p (Goldilocks prime). Sizes are capped at 254.
-fn merge_tag_and_sizes(tag: NoteTag, sizes: [u8; 4]) -> Felt {
+fn merge_tag_and_num_words(tag: NoteTag, num_words: [u8; 4]) -> Felt {
     let mut merged: u64 = u32::from(tag) as u64;
-    merged |= (sizes[0] as u64) << 32;
-    merged |= (sizes[1] as u64) << 40;
-    merged |= (sizes[2] as u64) << 48;
-    merged |= (sizes[3] as u64) << 56;
+    merged |= (num_words[0] as u64) << 32;
+    merged |= (num_words[1] as u64) << 40;
+    merged |= (num_words[2] as u64) << 48;
+    merged |= (num_words[3] as u64) << 56;
 
-    Felt::try_from(merged).expect("encoded value should be a valid felt (sizes <= 254)")
+    Felt::try_from(merged).expect("encoded value should be a valid felt (num_words <= 254)")
 }
 
 /// Merges four attachment schemes into a single [`Felt`].
@@ -336,7 +339,7 @@ fn merge_tag_and_sizes(tag: NoteTag, sizes: [u8; 4]) -> Felt {
 /// The layout is as follows:
 ///
 /// ```text
-/// [att_3_scheme (16b) | att_2_scheme (16b) | att_1_scheme (16b) | att_0_scheme (16b)]
+/// [attachment_3_scheme (16 bits) | attachment_2_scheme (16 bits) | attachment_1_scheme (16 bits) | attachment_0_scheme (16 bits)]
 /// ```
 ///
 /// Max value: `0xFFFEFFFE_FFFEFFFE` < p. Schemes are capped at 65534.

@@ -296,9 +296,9 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
             # => [note_idx]
 
             push.{ATTACHMENT2}
-            push.{attachment2_word_size}
+            push.{attachment2_num_words}
             push.{attachment_scheme2}
-            # => [attachment_scheme, attachment_word_size, ATTACHMENT, note_idx]
+            # => [attachment_scheme, attachment_num_words, ATTACHMENT, note_idx]
             exec.output_note::add_array_attachment
             # => []
 
@@ -321,7 +321,7 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
         ASSET_2_KEY = asset_2.to_key_word(),
         ASSET_2_VALUE = asset_2.to_value_word(),
         ATTACHMENT2 = output_note_2.attachments().get(0).unwrap().content().to_word(),
-        attachment2_word_size = output_note_2.attachments().get(0).unwrap().word_size(),
+        attachment2_num_words = output_note_2.attachments().get(0).unwrap().num_words(),
         attachment_scheme2 =
             output_note_2.attachments().get(0).unwrap().attachment_scheme().as_u16(),
     );
@@ -1144,7 +1144,7 @@ async fn test_get_assets() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn test_add_attachment_with_zero_word_size_fails() -> anyhow::Result<()> {
+async fn test_add_attachment_with_zero_num_words_fails() -> anyhow::Result<()> {
     let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
 
     let code = format!(
@@ -1162,9 +1162,9 @@ async fn test_add_attachment_with_zero_word_size_fails() -> anyhow::Result<()> {
             exec.output_note::create
             # => [note_idx]
 
-            # try to add an attachment with word_size = 0
+            # try to add an attachment with num_words = 0
             padw push.0 push.0
-            # => [attachment_scheme, attachment_word_size, ATTACHMENT, note_idx]
+            # => [attachment_scheme, attachment_num_words, ATTACHMENT, note_idx]
             exec.output_note::add_array_attachment
             # => []
         end
@@ -1242,7 +1242,7 @@ async fn test_set_array_attachment() -> anyhow::Result<()> {
         RawOutputNote::Full(NoteBuilder::new(account.id(), rng).attachment(attachment).build()?);
 
     let attachment_content_word = output_note.attachments().get(0).unwrap().content().to_word();
-    let attachment_word_size = output_note.attachments().get(0).unwrap().word_size();
+    let attachment_num_words = output_note.attachments().get(0).unwrap().num_words();
     let tx_script = format!(
         "
         use miden::protocol::output_note
@@ -1255,9 +1255,9 @@ async fn test_set_array_attachment() -> anyhow::Result<()> {
             # => [note_idx]
 
             push.{ATTACHMENT}
-            push.{attachment_word_size}
+            push.{attachment_num_words}
             push.{attachment_scheme}
-            # => [attachment_scheme, attachment_word_size, ATTACHMENT, note_idx]
+            # => [attachment_scheme, attachment_num_words, ATTACHMENT, note_idx]
             exec.output_note::add_array_attachment
             # => []
 
@@ -1269,7 +1269,7 @@ async fn test_set_array_attachment() -> anyhow::Result<()> {
         note_type = output_note.metadata().note_type() as u8,
         tag = output_note.metadata().tag().as_u32(),
         attachment_scheme = output_note.attachments().get(0).unwrap().attachment_scheme().as_u16(),
-        attachment_word_size = attachment_word_size,
+        attachment_num_words = attachment_num_words,
         ATTACHMENT = attachment_content_word,
     );
 

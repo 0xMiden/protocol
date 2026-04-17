@@ -680,7 +680,7 @@ pub enum NoteError {
     NoteAttachmentArraySizeExceeded(usize),
     #[error(
         "attachment size {0} exceeds maximum {max}",
-        max = NoteAttachmentHeader::MAX_SIZE
+        max = NoteAttachmentHeader::MAX_NUM_WORDS
     )]
     NoteAttachmentHeaderSizeExceeded(u8),
     #[error("{0} attachments were provided but maximum is {max}", max = NoteAttachments::MAX_COUNT)]

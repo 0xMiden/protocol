@@ -33,9 +33,9 @@ const ERR_OUTPUT_NOTE_INDEX_OUT_OF_BOUNDS="requested output note index should be
 
 const ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_MAX_EXCEEDED="attachment scheme must not exceed 65534"
 
-const ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_MAX_EXCEEDED="attachment word size must not exceed 254"
+const ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_MAX_EXCEEDED="attachment num_words must not exceed 254"
 
-const ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_CANNOT_BE_ZERO="attachment word size cannot be zero"
+const ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_CANNOT_BE_ZERO="attachment num_words cannot be zero"
 
 const ERR_OUTPUT_NOTE_TOO_MANY_ATTACHMENTS="number of attachments per note cannot exceed 4"
 
@@ -231,73 +231,73 @@ end
 
 #! Adds an attachment to the note specified by the index. Attachments are append-only.
 #!
-#! Inputs:  [attachment_scheme, attachment_word_size, ATTACHMENT, note_idx]
+#! Inputs:  [attachment_scheme, attachment_num_words, ATTACHMENT, note_idx]
 #! Outputs: []
 #!
 #! Where:
 #! - attachment_scheme is the user-defined scheme of the attachment.
-#! - attachment_word_size is the size of the attachment in words.
+#! - attachment_num_words is the number of words of the attachment.
 #! - ATTACHMENT is the attachment word to store.
 #! - note_idx is the index of the note to which the attachment is added.
 #!
 #! Panics if:
 #! - the attachment scheme exceeds 65534.
-#! - the attachment word size exceeds 254 or is zero.
+#! - the attachment num_words exceeds 254 or is zero.
 #! - the note already has 4 attachments.
 pub proc add_attachment
     # validate attachment_scheme does not exceed max
     dup u32assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_MAX_EXCEEDED
     u32lte.MAX_ATTACHMENT_SCHEME assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_MAX_EXCEEDED
-    # => [attachment_scheme, attachment_word_size, ATTACHMENT, note_idx]
+    # => [attachment_scheme, attachment_num_words, ATTACHMENT, note_idx]
 
-    # validate 0 < attachment_word_size <= 254
+    # validate 0 < attachment_num_words <= 254
     dup.1 neq.0 assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_CANNOT_BE_ZERO
     dup.1 u32assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_MAX_EXCEEDED
     u32lte.MAX_ATTACHMENT_WORD_SIZE assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_MAX_EXCEEDED
-    # => [attachment_scheme, attachment_word_size, ATTACHMENT, note_idx]
+    # => [attachment_scheme, attachment_num_words, ATTACHMENT, note_idx]
 
     # get note_ptr from note_idx
     movup.6 exec.memory::get_output_note_ptr
-    # => [note_ptr, attachment_scheme, attachment_word_size, ATTACHMENT]
+    # => [note_ptr, attachment_scheme, attachment_num_words, ATTACHMENT]
 
     # validate current number of attachments < 4 which means we can add one more to stay below the
     # limit
     dup exec.memory::get_output_note_num_attachments
-    # => [num_attachments, note_ptr, attachment_scheme, attachment_word_size, ATTACHMENT]
+    # => [num_attachments, note_ptr, attachment_scheme, attachment_num_words, ATTACHMENT]
 
     dup lt.MAX_ATTACHMENTS_PER_NOTE assert.err=ERR_OUTPUT_NOTE_TOO_MANY_ATTACHMENTS
-    # => [num_attachments, note_ptr, attachment_scheme, attachment_word_size, ATTACHMENT]
+    # => [num_attachments, note_ptr, attachment_scheme, attachment_num_words, ATTACHMENT]
 
     # emit event
     emit.NOTE_BEFORE_ADD_ATTACHMENT_EVENT
-    # => [num_attachments, note_ptr, attachment_scheme, attachment_word_size, ATTACHMENT]
+    # => [num_attachments, note_ptr, attachment_scheme, attachment_num_words, ATTACHMENT]
 
     swapw
-    # => [ATTACHMENT, num_attachments, note_ptr, attachment_scheme, attachment_word_size]
+    # => [ATTACHMENT, num_attachments, note_ptr, attachment_scheme, attachment_num_words]
 
-    # TODO(multi_attachments): Validate attachment + word size against advice data.
+    # TODO(multi_attachments): Validate attachment + num_words against advice data.
 
     # use attachment_idx = num_attachments
     dup.4 dup.6
-    # => [note_ptr, attachment_idx, ATTACHMENT, num_attachments, note_ptr, attachment_scheme, attachment_word_size]
+    # => [note_ptr, attachment_idx, ATTACHMENT, num_attachments, note_ptr, attachment_scheme, attachment_num_words]
 
     exec.memory::set_output_note_attachment
-    # => [num_attachments, note_ptr, attachment_scheme, attachment_word_size]
+    # => [num_attachments, note_ptr, attachment_scheme, attachment_num_words]
 
     # compute new number of attachments
     # we have previously validated num_attachments to be < 4, so the new number is guaranteed to be
     # at most 4
     dup add.1
-    # => [new_num_attachments, num_attachments, note_ptr, attachment_scheme, attachment_word_size]
+    # => [new_num_attachments, num_attachments, note_ptr, attachment_scheme, attachment_num_words]
 
     # set new number of attachments in memory
     dup.2 exec.memory::set_output_note_num_attachments
-    # => [num_attachments, note_ptr, attachment_scheme, attachment_word_size]
+    # => [num_attachments, note_ptr, attachment_scheme, attachment_num_words]
 
-    # update attachment size and scheme in the note metadata
+    # update attachment num_words and scheme in the note metadata
     # note that this needs to take the previous number of attachments, so passing num_attachments
     # is correct
-    exec.set_attachment_size_and_scheme
+    exec.set_attachment_num_words_and_scheme
     # => []
 end
 
@@ -321,7 +321,7 @@ end
 #! Builds the provided inputs into the NOTE_METADATA_HEADER word.
 #!
 #! - The sender ID is set to the native account's ID.
-#! - Attachment sizes and schemes are initialized to 0 (no attachments).
+#! - Attachment num_words and schemes are initialized to 0 (no attachments).
 #!
 #! Inputs:  [tag, note_type]
 #! Outputs: [NOTE_METADATA_HEADER]
@@ -343,93 +343,93 @@ pub proc build_metadata_header
     # Validate the note tag fits into a u32.
     # --------------------------------------------------------------------------------------------
 
-    # this implies the upper 32 bits are zero, which initializes the attachment sizes to 0
+    # this implies the upper 32 bits are zero, which initializes the attachment num_words to 0
     u32assert.err=ERR_NOTE_TAG_MUST_BE_U32
-    # => [attachment_size_and_tag, note_type]
+    # => [attachment_num_words_and_tag, note_type]
 
     # Merge note type, version, and sender ID suffix.
     # --------------------------------------------------------------------------------------------
 
     exec.account::get_id
-    # => [sender_id_suffix, sender_id_prefix, attachment_size_and_tag, note_type]
+    # => [sender_id_suffix, sender_id_prefix, attachment_num_words_and_tag, note_type]
 
     # The lower 8 bits of the account ID suffix are guaranteed to be zero by construction.
     # Encode note_type at bit 4, leaving version at 0 (in bits 0..=3).
     # Shifting note_type left by 4 is equivalent to multiplying by 16.
     movup.3 mul.16 add
-    # => [sender_id_suffix_type_version, sender_id_prefix, attachment_size_and_tag]
+    # => [sender_id_suffix_type_version, sender_id_prefix, attachment_num_words_and_tag]
 
     # Build metadata header.
     # --------------------------------------------------------------------------------------------
 
     # push default absent attachment schemes (all zeros)
     push.ATTACHMENT_DEFAULT_SCHEMES movdn.3
-    # => [sender_id_suffix_type_version, sender_id_prefix, attachment_size_and_tag, attachment_schemes]
+    # => [sender_id_suffix_type_version, sender_id_prefix, attachment_num_words_and_tag, attachment_schemes]
     # => [NOTE_METADATA_HEADER]
 end
 
-#! Sets an output note's attachment word size and scheme in the note metadata header.
+#! Sets an output note's attachment num_words and scheme in the note metadata header.
 #!
-#! WARNING: The attachment size and scheme must be valid.
+#! WARNING: The attachment num_words and scheme must be valid.
 #!
-#! Inputs:  [num_attachments, note_ptr, attachment_scheme, attachment_word_size]
+#! Inputs:  [num_attachments, note_ptr, attachment_scheme, attachment_num_words]
 #! Outputs: []
 #!
 #! Where:
 #! - num_attachments is the number of attachments the note had before this attachment was added.
 #! - attachment_scheme is the user-defined type of the attachment.
-#! - attachment_word_size is the size in words of the attachment content.
+#! - attachment_num_words is the number of words of the attachment content.
 #! - note_ptr is the memory address at which the output note data begins.
-proc set_attachment_size_and_scheme
+proc set_attachment_num_words_and_scheme
     # the size and schemes are stored as follows in the second and third felt:
     # 2nd felt: [
-    #   att_3_size (8 bits) | att_2_size (8 bits) | att_1_size (8 bits) |
-    #   att_0_size (8 bits) | note_tag (32 bits)
+    #   attachment_3_num_words (8 bits) | attachment_2_num_words (8 bits) | attachment_1_num_words (8 bits) |
+    #   attachment_0_num_words (8 bits) | note_tag (32 bits)
     # ]
     # 3rd felt: [
-    #   att_3_scheme (16 bits) | att_2_scheme (16 bits) |
-    #   att_1_scheme (16 bits) | att_0_scheme (16 bits)
+    #   attachment_3_scheme (16 bits) | attachment_2_scheme (16 bits) |
+    #   attachment_1_scheme (16 bits) | attachment_0_scheme (16 bits)
     # ]
-    # -> the word_size needs to be shifted left by 32 + (num_attachments * 8)
+    # -> the num_words needs to be shifted left by 32 + (num_attachments * 8)
     # -> the scheme needs to be shifted left by num_attachments * 16
 
-    # Prepare scheme and word size.
+    # Prepare scheme and num_words.
     # --------------------------------------------------------------------------------------------
 
     # shift the scheme left by num_attachments * 16 bits using felt multiplication
     # u32shl cannot be used because the shift may be >= 32
     # left shift is done with multiplication by 2^(num_attachments * 16)
     movup.2 dup.1
-    # => [num_attachments, attachment_scheme, num_attachments, note_ptr, attachment_word_size]
+    # => [num_attachments, attachment_scheme, num_attachments, note_ptr, attachment_num_words]
 
     mul.16 pow2 mul
-    # => [attachment_scheme_shifted, num_attachments, note_ptr, attachment_word_size]
+    # => [attachment_scheme_shifted, num_attachments, note_ptr, attachment_num_words]
 
-    # shift the word size left by num_attachments * 8 + 32 bits
+    # shift the num_words left by num_attachments * 8 + 32 bits
     # split into a u32shl (by num_attachments * 8, max 24) and a multiplication by 2^32
     movup.3 movup.2 mul.8
-    # => [num_attachments * 8, attachment_word_size, attachment_scheme_shifted, note_ptr]
+    # => [num_attachments * 8, attachment_num_words, attachment_scheme_shifted, note_ptr]
 
     u32shl mul.0x100000000
-    # => [attachment_word_size_shifted, attachment_scheme_shifted, note_ptr]
+    # => [attachment_num_words_shifted, attachment_scheme_shifted, note_ptr]
 
     # Fetch and update metadata header.
     # --------------------------------------------------------------------------------------------
 
     dup.2 exec.memory::get_output_note_metadata_header
-    # => [METADATA_HEADER, attachment_word_size_shifted, attachment_scheme_shifted, note_ptr]
+    # => [METADATA_HEADER, attachment_num_words_shifted, attachment_scheme_shifted, note_ptr]
     # => [
-    #   [sender_id_suffix_type_version, sender_id_prefix, attachment_size_and_tag, attachment_schemes],
-    #   attachment_word_size_shifted, attachment_scheme_shifted, note_ptr
+    #   [sender_id_suffix_type_version, sender_id_prefix, attachment_num_words_and_tag, attachment_schemes],
+    #   attachment_num_words_shifted, attachment_scheme_shifted, note_ptr
     # ]
 
-    # merge word size into existing sizes and tag
+    # merge num_words into existing sizes and tag
     # (using add instead of u32or because the shifted values exceed u32; this is safe because the
     # bit ranges of the tag, existing sizes, and the new size do not overlap)
     movup.2 movup.4
     add movdn.2
     # => [
-    #   [sender_id_suffix_type_version, sender_id_prefix, new_attachment_size_and_tag, attachment_schemes],
+    #   [sender_id_suffix_type_version, sender_id_prefix, new_attachment_num_words_and_tag, attachment_schemes],
     #   attachment_scheme_shifted, note_ptr
     # ]
 
@@ -438,7 +438,7 @@ proc set_attachment_size_and_scheme
     movup.3 movup.4
     add movdn.3
     # => [
-    #   [sender_id_suffix_type_version, sender_id_prefix, new_attachment_size_and_tag, new_attachment_schemes],
+    #   [sender_id_suffix_type_version, sender_id_prefix, new_attachment_num_words_and_tag, new_attachment_schemes],
     #   note_ptr
     # ]
     # => [METADATA_HEADER, note_ptr]

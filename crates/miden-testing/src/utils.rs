@@ -250,15 +250,15 @@ fn note_script_that_creates_notes<'note>(
         ));
 
         for attachment in note.attachments().iter() {
-            let word_size = attachment.word_size();
+            let num_words = attachment.num_words();
 
             out.push_str(&format!(
                 "
               dup
               push.{ATTACHMENT}
-              push.{word_size}
+              push.{num_words}
               push.{attachment_scheme}
-              # => [attachment_scheme, word_size, ATTACHMENT, note_idx, note_idx]
+              # => [attachment_scheme, num_words, ATTACHMENT, note_idx, note_idx]
               exec.output_note::add_attachment
               # => [note_idx]
             ",

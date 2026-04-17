@@ -40,7 +40,7 @@ async fn network_account_target_get_id() -> anyhow::Result<()> {
             push.{attachment_word}
             push.{metadata_word}
             exec.note::metadata_into_attachment_header
-            # => [attachment_0_size, attachment_0_scheme, NOTE_ATTACHMENT]
+            # => [attachment_0_num_words, attachment_0_scheme, NOTE_ATTACHMENT]
             drop
             # => [attachment_0_scheme, NOTE_ATTACHMENT]
             exec.network_account_target::is_network_account_target
