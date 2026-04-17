@@ -403,6 +403,16 @@ impl NoteAttachmentScheme {
         Ok(Self(attachment_scheme))
     }
 
+    /// Creates a new [`NoteAttachmentScheme`] from a `u16`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `attachment_scheme` exceeds [`Self::MAX`].
+    pub const fn new_const(attachment_scheme: u16) -> Self {
+        assert!(attachment_scheme <= Self::MAX.as_u16(), "attachment scheme exceeds maximum");
+        Self(attachment_scheme)
+    }
+
     /// Returns the [`NoteAttachmentScheme`] that signals the absence of an attachment scheme.
     pub const fn none() -> Self {
         Self(Self::NONE)

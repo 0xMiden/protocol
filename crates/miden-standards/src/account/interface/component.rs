@@ -253,21 +253,38 @@ impl AccountComponentInterface {
                 },
             }
 
-            body.push_str(&format!(
-                "
-                push.{ATTACHMENT}
-                push.{attachment_kind}
+            let attachments = partial_note.attachments();
+            // Only support one attachment per note to keep it simple.
+            if attachments.num_attachments() > 1 {
+                return Err(AccountInterfaceError::MultipleAttachmentsUnsupported);
+            }
+
+            match attachments.iter().next() {
+                Some(attachment) => {
+                    let attachment_word = attachment.content().to_word();
+                    let attachment_scheme = attachment.attachment_scheme().as_u16() as u32;
+                    let word_size = attachment.content().word_size();
+
+                    body.push_str(&format!(
+                        "
+                push.{attachment_word}
+                push.{word_size}
                 push.{attachment_scheme}
-                movup.6
-                # => [note_idx, attachment_scheme, attachment_kind, ATTACHMENT, pad(16)]
-                exec.::miden::protocol::output_note::set_attachment
+                # => [attachment_scheme, word_size, ATTACHMENT, note_idx, pad(16)]
+                exec.::miden::protocol::output_note::add_attachment
                 # => [pad(16)]
             ",
-                ATTACHMENT = partial_note.metadata().to_attachment_word(),
-                attachment_scheme =
-                    partial_note.metadata().attachment().attachment_scheme().as_u32(),
-                attachment_kind = partial_note.metadata().attachment().attachment_kind().as_u8(),
-            ));
+                    ));
+                },
+                None => {
+                    body.push_str(
+                        "
+                drop
+                # => [pad(16)]
+            ",
+                    );
+                },
+            }
         }
 
         Ok(body)

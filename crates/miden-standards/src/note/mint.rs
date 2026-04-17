@@ -7,7 +7,7 @@ use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
     Note,
     NoteAssets,
-    NoteAttachment,
+    NoteAttachments,
     NoteMetadata,
     NoteRecipient,
     NoteScript,
@@ -90,7 +90,7 @@ impl MintNote {
         faucet_id: AccountId,
         sender: AccountId,
         mint_storage: MintNoteStorage,
-        attachment: NoteAttachment,
+        attachments: NoteAttachments,
         rng: &mut R,
     ) -> Result<Note, NoteError> {
         let note_script = Self::script();
@@ -104,12 +104,11 @@ impl MintNote {
 
         let tag = NoteTag::with_account_target(faucet_id);
 
-        let metadata =
-            NoteMetadata::new(sender, note_type).with_tag(tag).with_attachment(attachment);
+        let metadata = NoteMetadata::new(sender, note_type).with_tag(tag);
         let assets = NoteAssets::new(vec![])?; // MINT notes have no assets
         let recipient = NoteRecipient::new(serial_num, note_script, storage);
 
-        Ok(Note::new(assets, metadata, recipient))
+        Ok(Note::with_attachments(assets, metadata, recipient, attachments))
     }
 }
 

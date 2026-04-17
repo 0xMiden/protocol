@@ -4,8 +4,8 @@ use miden_protocol::errors::{AccountIdError, NoteError};
 use miden_protocol::note::{
     NoteAttachment,
     NoteAttachmentContent,
-    NoteAttachmentKind,
     NoteAttachmentScheme,
+    NoteAttachments,
     NoteType,
 };
 
@@ -85,6 +85,22 @@ impl From<NetworkAccountTarget> for NoteAttachment {
     }
 }
 
+impl TryFrom<&NoteAttachments> for NetworkAccountTarget {
+    type Error = NetworkAccountTargetError;
+
+    fn try_from(attachments: &NoteAttachments) -> Result<Self, Self::Error> {
+        // Find the first matching attachment. In case of multiple network account target
+        // attachments, we pick the first one as the canonical one.
+        let attachment = attachments
+            .iter()
+            .find(|attachment| {
+                attachment.attachment_scheme() == NetworkAccountTarget::ATTACHMENT_SCHEME
+            })
+            .ok_or_else(|| NetworkAccountTargetError::MissingAttachmentScheme)?;
+
+        Self::try_from(attachment)
+    }
+}
 impl TryFrom<&NoteAttachment> for NetworkAccountTarget {
     type Error = NetworkAccountTargetError;
 
@@ -109,8 +125,8 @@ impl TryFrom<&NoteAttachment> for NetworkAccountTarget {
 
                 NetworkAccountTarget::new(target_id, exec_hint)
             },
-            _ => Err(NetworkAccountTargetError::AttachmentKindMismatch(
-                attachment.content().attachment_kind(),
+            _ => Err(NetworkAccountTargetError::AttachmentContentNotWord(
+                attachment.content().word_size(),
             )),
         }
     }
@@ -123,16 +139,15 @@ impl TryFrom<&NoteAttachment> for NetworkAccountTarget {
 pub enum NetworkAccountTargetError {
     #[error("target account ID must be of type network account")]
     TargetNotNetwork(AccountId),
+    #[error("note attachments do not contain a network account target scheme")]
+    MissingAttachmentScheme,
     #[error(
         "attachment scheme {0} did not match expected type {expected}",
         expected = NetworkAccountTarget::ATTACHMENT_SCHEME
     )]
     AttachmentSchemeMismatch(NoteAttachmentScheme),
-    #[error(
-        "attachment kind {0} did not match expected type {expected}",
-        expected = NoteAttachmentKind::Word
-    )]
-    AttachmentKindMismatch(NoteAttachmentKind),
+    #[error("attachment content is not a Word (word_size={0}, expected 1)")]
+    AttachmentContentNotWord(u8),
     #[error("failed to decode target account ID")]
     DecodeTargetId(#[source] AccountIdError),
     #[error("failed to decode execution hint")]

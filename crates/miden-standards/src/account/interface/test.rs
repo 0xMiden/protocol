@@ -8,7 +8,7 @@ use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
     Note,
     NoteAssets,
-    NoteAttachment,
+    NoteAttachments,
     NoteMetadata,
     NoteRecipient,
     NoteStorage,
@@ -98,7 +98,7 @@ fn test_basic_wallet_default_notes() {
         offered_asset,
         requested_asset,
         NoteType::Public,
-        NoteAttachment::default(),
+        NoteAttachments::default(),
         NoteType::Public,
         &mut RandomCoin::new(Word::from([1, 2, 3, 4u32])),
     )
@@ -192,7 +192,7 @@ fn test_custom_account_default_note() {
         offered_asset,
         requested_asset,
         NoteType::Public,
-        NoteAttachment::default(),
+        NoteAttachments::default(),
         NoteType::Public,
         &mut RandomCoin::new(Word::from([1, 2, 3, 4u32])),
     )
@@ -224,7 +224,7 @@ fn test_required_asset_same_as_offered() {
         offered_asset,
         requested_asset,
         NoteType::Public,
-        NoteAttachment::default(),
+        NoteAttachments::default(),
         NoteType::Public,
         &mut RandomCoin::new(Word::from([1, 2, 3, 4u32])),
     );

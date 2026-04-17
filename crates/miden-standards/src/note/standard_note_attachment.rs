@@ -12,7 +12,7 @@ impl StandardNoteAttachment {
     /// Returns the [`NoteAttachmentScheme`] of the standard attachment.
     pub const fn attachment_scheme(&self) -> NoteAttachmentScheme {
         match self {
-            StandardNoteAttachment::NetworkAccountTarget => NoteAttachmentScheme::new(1u32),
+            StandardNoteAttachment::NetworkAccountTarget => NoteAttachmentScheme::new_const(1u16),
         }
     }
 }

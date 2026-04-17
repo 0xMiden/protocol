@@ -11,6 +11,7 @@ use miden_protocol::note::{
     Note,
     NoteAssets,
     NoteAttachment,
+    NoteAttachments,
     NoteMetadata,
     NoteRecipient,
     NoteScript,
@@ -46,7 +47,7 @@ pub struct NoteBuilder {
     serial_num: Word,
     tag: NoteTag,
     code: String,
-    attachment: NoteAttachment,
+    attachments: NoteAttachments,
     source_code: SourceCodeOrigin,
 }
 
@@ -68,7 +69,7 @@ impl NoteBuilder {
             // The note tag is not under test, so we choose a value that is always valid.
             tag: NoteTag::with_account_target(sender),
             code: DEFAULT_NOTE_CODE.to_string(),
-            attachment: NoteAttachment::default(),
+            attachments: NoteAttachments::default(),
             source_code: SourceCodeOrigin::Masm {
                 dyn_libraries: Vec::new(),
                 source_manager: Arc::new(DefaultSourceManager::default()),
@@ -114,9 +115,12 @@ impl NoteBuilder {
         self
     }
 
-    /// Overwrites the attachment.
+    /// Appends an attachment to the existing attachments.
     pub fn attachment(mut self, attachment: impl Into<NoteAttachment>) -> Self {
-        self.attachment = attachment.into();
+        let mut attachments = core::mem::take(&mut self.attachments).into_vec();
+        attachments.push(attachment.into());
+        self.attachments =
+            NoteAttachments::new(attachments).expect("number of attachments exceeds maximum");
         self
     }
 
@@ -187,12 +191,10 @@ impl NoteBuilder {
         };
 
         let vault = NoteAssets::new(self.assets)?;
-        let metadata = NoteMetadata::new(self.sender, self.note_type)
-            .with_tag(self.tag)
-            .with_attachment(self.attachment);
+        let metadata = NoteMetadata::new(self.sender, self.note_type).with_tag(self.tag);
         let storage = NoteStorage::new(self.storage)?;
         let recipient = NoteRecipient::new(self.serial_num, note_script, storage);
 
-        Ok(Note::new(vault, metadata, recipient))
+        Ok(Note::with_attachments(vault, metadata, recipient, self.attachments))
     }
 }

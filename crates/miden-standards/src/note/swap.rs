@@ -9,7 +9,7 @@ use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
     Note,
     NoteAssets,
-    NoteAttachment,
+    NoteAttachments,
     NoteDetails,
     NoteMetadata,
     NoteRecipient,
@@ -80,7 +80,7 @@ impl SwapNote {
         offered_asset: Asset,
         requested_asset: Asset,
         swap_note_type: NoteType,
-        swap_note_attachment: NoteAttachment,
+        swap_note_attachments: NoteAttachments,
         payback_note_type: NoteType,
         rng: &mut R,
     ) -> Result<(Note, NoteDetails), NoteError> {
@@ -100,11 +100,9 @@ impl SwapNote {
         let tag = Self::build_tag(swap_note_type, &offered_asset, &requested_asset);
 
         // build the outgoing note
-        let metadata = NoteMetadata::new(sender, swap_note_type)
-            .with_tag(tag)
-            .with_attachment(swap_note_attachment);
+        let metadata = NoteMetadata::new(sender, swap_note_type).with_tag(tag);
         let assets = NoteAssets::new(vec![offered_asset])?;
-        let note = Note::new(assets, metadata, recipient);
+        let note = Note::with_attachments(assets, metadata, recipient, swap_note_attachments);
 
         // build the payback note details
         let payback_recipient = P2idNoteStorage::new(sender).into_recipient(payback_serial_num);

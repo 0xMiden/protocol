@@ -14,29 +14,19 @@ use miden::protocol::note
 #! This is a valid u32 that can be compared against an extracted attachment scheme.
 pub const NETWORK_ACCOUNT_TARGET_ATTACHMENT_SCHEME = 1
 
-#! The attachment kind for NetworkAccountTarget attachments (Word = 1).
-#! This is a valid u32 that can be compared against an extracted attachment kind.
-pub const NETWORK_ACCOUNT_TARGET_ATTACHMENT_KIND = 1
-
 # ERRORS
 # ================================================================================================
 const ERR_NOT_NETWORK_ACCOUNT_TARGET = "attachment is not a valid network account target"
 
-#! Returns a boolean indicating whether the attachment scheme and kind match the expected
-#! values for a NetworkAccountTarget attachment.
+#! Returns a boolean indicating whether the attachment scheme matches the expected
+#! scheme for a NetworkAccountTarget attachment.
 #!
-#! Inputs:  [attachment_scheme, attachment_kind]
+#! Inputs:  [attachment_scheme]
 #! Outputs: [is_network_account_target]
 #!
 #! Invocation: exec
 pub proc is_network_account_target
     eq.NETWORK_ACCOUNT_TARGET_ATTACHMENT_SCHEME
-    # => [is_scheme_valid, attachment_kind]
-
-    swap eq.NETWORK_ACCOUNT_TARGET_ATTACHMENT_KIND
-    # => [is_kind_valid, is_scheme_valid]
-
-    and
     # => [is_network_account_target]
 end
 
@@ -45,8 +35,8 @@ end
 #! The attachment is expected to have the following layout:
 #! [account_id_suffix, account_id_prefix, exec_hint_tag, 0]
 #!
-#! WARNING: This procedure does not validate the attachment scheme or kind. The caller
-#! should validate these using `is_network_account_target` before calling this procedure.
+#! WARNING: This procedure does not validate the attachment scheme. The caller
+#! should validate it using `is_network_account_target` before calling this procedure.
 #!
 #! WARNING: This procedure does not validate that the returned account ID is well-formed.
 #! The caller should validate the account ID if needed using `account_id::validate`.
@@ -69,28 +59,26 @@ end
 #! [account_id_suffix, account_id_prefix, exec_hint_tag, 0]
 #!
 #! Inputs:  [account_id_suffix, account_id_prefix, exec_hint_tag]
-#! Outputs: [attachment_scheme, attachment_kind, NOTE_ATTACHMENT]
+#! Outputs: [attachment_scheme, NOTE_ATTACHMENT]
 #!
 #! Where:
 #! - account_id_{suffix,prefix} are the suffix and prefix felts of an account ID.
 #! - exec_hint_tag is the encoded execution hint for the note with its tag.
-#! - attachment_kind is the attachment kind (Word = 1) for use with `output_note::set_attachment`.
-#! - attachment_scheme is the attachment scheme (1) for use with `output_note::set_attachment`.
+#! - attachment_scheme is the attachment scheme (1) for use with `output_note::add_word_attachment`.
 #!
 #! Invocation: exec
 pub proc new
     # => [account_id_suffix, account_id_prefix, exec_hint_tag]
     push.0 movdn.3
     # => [NOTE_ATTACHMENT] = [account_id_suffix, account_id_prefix, exec_hint_tag, 0]
-    push.NETWORK_ACCOUNT_TARGET_ATTACHMENT_KIND
     push.NETWORK_ACCOUNT_TARGET_ATTACHMENT_SCHEME
-    # => [attachment_scheme, attachment_kind, NOTE_ATTACHMENT]
+    # => [attachment_scheme, NOTE_ATTACHMENT]
 end
 
 #! Returns a boolean indicating whether the active account matches the target account
 #! encoded in the active note's attachment.
 #!
-#! Inputs: []
+#! Inputs:  []
 #! Outputs: [is_equal]
 #!
 #! Where:
@@ -108,11 +96,12 @@ pub proc active_account_matches_target_account
     swapw
     # => [METADATA_HEADER, NOTE_ATTACHMENT]
 
-    exec.note::metadata_into_attachment_info
-    # => [attachment_kind, attachment_scheme, NOTE_ATTACHMENT]
+    exec.note::metadata_into_attachment_header
+    # => [attachment0_size, attachment0_scheme, NOTE_ATTACHMENT]
 
-    swap
-    # => [attachment_scheme, attachment_kind, NOTE_ATTACHMENT]
+    # make sure the word size of the attachment is 1
+    eq.1 assert.err=ERR_NOT_NETWORK_ACCOUNT_TARGET
+    # => [attachment0_scheme, NOTE_ATTACHMENT]
 
     # ensure the attachment is a network account target
     exec.is_network_account_target assert.err=ERR_NOT_NETWORK_ACCOUNT_TARGET
