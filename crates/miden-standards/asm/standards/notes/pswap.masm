@@ -55,7 +55,7 @@ const PSWAP_CREATOR_SUFFIX_ITEM = STORAGE_PTR + 6
 # Local memory offsets
 # -------------------------------------------------------------------------------------------------
 
-# calculate_tokens_offered_for_requested locals
+# calculate_output_amount locals
 const CALC_FILL_AMOUNT = 0
 const CALC_REQUESTED = 1
 
@@ -112,26 +112,12 @@ proc assert_valid_asset_amount
     # => [lo, hi, lo, hi]
 
     push.FUNGIBLE_ASSET_MAX_AMOUNT u32split
-    # => [max_hi, max_lo, lo, hi, lo, hi]
+    # => [max_lo, max_hi, lo, hi, lo, hi]
 
-    movup.3
-    # => [hi, max_hi, max_lo, lo, lo, hi]
+    exec.u64::lte
+    # => [is_lte, lo, hi]
 
-    # If hi > max_hi => fail.
-    dup dup.2 u32gt assertz.err=ERR_PSWAP_NOT_VALID_ASSET_AMOUNT
-    # => [hi, max_hi, max_lo, lo, lo, hi]
-
-    # Check if hi == max_hi; if so, also need lo <= max_lo.
-    eq
-    # => [is_equal, max_lo, lo, lo, hi]
-
-    if.true
-        u32lte assert.err=ERR_PSWAP_NOT_VALID_ASSET_AMOUNT
-        # => [lo, hi]
-    else
-        drop drop
-        # => [lo, hi]
-    end
+    assert.err=ERR_PSWAP_NOT_VALID_ASSET_AMOUNT
     # => [lo, hi]
 end
 
@@ -156,7 +142,7 @@ end
 @locals(2)
 # CALC_FILL_AMOUNT: fill amount
 # CALC_REQUESTED:   requested amount
-proc calculate_tokens_offered_for_requested
+proc calculate_output_amount
     movup.2 loc_store.CALC_FILL_AMOUNT
     # => [offered, requested]
 
@@ -224,11 +210,11 @@ proc create_p2id_note
     #     enable_callbacks, faucet_suffix, faucet_prefix, amt_account_fill, amt_note_fill]
 
     # Derive the payback tag from the creator's account ID prefix
-    swap dup
-    # => [creator_prefix, creator_prefix, creator_suffix, note_type, P2ID_SERIAL_NUM, ...]
+    dup.1
+    # => [creator_prefix, creator_suffix, creator_prefix, note_type, P2ID_SERIAL_NUM, ...]
     exec.note_tag::create_account_target
-    # => [tag, creator_prefix, creator_suffix, note_type, P2ID_SERIAL_NUM, ...]
-    swap movup.2
+    # => [tag, creator_suffix, creator_prefix, note_type, P2ID_SERIAL_NUM, ...]
+    movdn.2
     # => [creator_suffix, creator_prefix, tag, note_type, P2ID_SERIAL_NUM, ...]
 
     exec.p2id::new
@@ -382,7 +368,7 @@ proc create_remainder_note
 
     # Add remaining offered asset: remainder_amount = amt_offered - amt_payout.
     # Sub cannot underflow: amt_payout <= amt_offered by construction in
-    # `calculate_tokens_offered_for_requested`.
+    # `calculate_output_amount`.
     loc_load.REMAINDER_NOTE_IDX
     # => [note_idx]
 
@@ -544,7 +530,7 @@ proc execute_pswap
     loc_load.EXEC_AMT_OFFERED
     # => [offered, requested, account_fill_amount]
 
-    exec.calculate_tokens_offered_for_requested
+    exec.calculate_output_amount
     # => [account_fill_payout]
 
     loc_store.EXEC_AMT_PAYOUT_ACCOUNT_FILL
@@ -556,7 +542,7 @@ proc execute_pswap
     loc_load.EXEC_AMT_OFFERED
     # => [offered, requested, note_fill_amount]
 
-    exec.calculate_tokens_offered_for_requested
+    exec.calculate_output_amount
     # => [note_fill_payout]
 
     loc_store.EXEC_AMT_PAYOUT_NOTE_FILL
