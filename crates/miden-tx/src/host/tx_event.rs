@@ -15,7 +15,6 @@ use miden_protocol::note::{
     NoteAttachment,
     NoteAttachmentArray,
     NoteAttachmentContent,
-    NoteAttachmentKind,
     NoteAttachmentScheme,
     NoteId,
     NoteMetadata,
@@ -135,10 +134,10 @@ pub(crate) enum TransactionEvent {
         asset: Asset,
     },
 
-    NoteBeforeSetAttachment {
-        /// The note index on which the attachment is set.
+    NoteBeforeAddAttachment {
+        /// The note index to which the attachment is appended.
         note_idx: usize,
-        /// The attachment that is set.
+        /// The attachment that is appended to the output note.
         attachment: NoteAttachment,
     },
 
@@ -425,26 +424,26 @@ impl TransactionEvent {
 
             TransactionEventId::NoteAfterAddAsset => None,
 
-            TransactionEventId::NoteBeforeSetAttachment => {
+            TransactionEventId::NoteBeforeAddAttachment => {
                 // Expected stack state: [
-                //     event, attachment_scheme, attachment_kind,
-                //     note_ptr, note_ptr, ATTACHMENT
+                //     event, num_attachments, note_ptr, attachment_scheme,
+                //     attachment_word_size, ATTACHMENT, note_idx
                 // ]
 
-                let attachment_scheme = process.get_stack_item(1);
-                let attachment_kind = process.get_stack_item(2);
-                let note_ptr = process.get_stack_item(3);
+                let note_ptr = process.get_stack_item(2);
+                let attachment_scheme = process.get_stack_item(3);
+                let attachment_word_size = process.get_stack_item(4);
                 let attachment = process.get_stack_word(5);
 
                 let (note_idx, attachment) = extract_note_attachment(
                     attachment_scheme,
-                    attachment_kind,
+                    attachment_word_size,
                     attachment,
                     note_ptr,
                     process.advice_provider(),
                 )?;
 
-                Some(TransactionEvent::NoteBeforeSetAttachment { note_idx, attachment })
+                Some(TransactionEvent::NoteBeforeAddAttachment { note_idx, attachment })
             },
 
             TransactionEventId::AuthRequest => {
@@ -737,66 +736,68 @@ fn build_note_metadata(
 
 fn extract_note_attachment(
     attachment_scheme: Felt,
-    attachment_kind: Felt,
+    attachment_word_size: Felt,
     attachment: Word,
     note_ptr: Felt,
     advice_provider: &AdviceProvider,
 ) -> Result<(usize, NoteAttachment), TransactionKernelError> {
     let note_idx = note_ptr_to_idx(note_ptr)?;
 
-    let attachment_kind = u8::try_from(attachment_kind.as_canonical_u64())
-        .map_err(|_| TransactionKernelError::other("failed to convert attachment kind to u8"))
-        .and_then(|attachment_kind| {
-            NoteAttachmentKind::try_from(attachment_kind).map_err(|source| {
+    let word_size = u8::try_from(attachment_word_size.as_canonical_u64()).map_err(|_| {
+        TransactionKernelError::other("failed to convert attachment word size to u8")
+    })?;
+
+    let attachment_scheme = u16::try_from(attachment_scheme.as_canonical_u64())
+        .map_err(|_| TransactionKernelError::other("failed to convert attachment scheme to u16"))
+        .and_then(|scheme| {
+            NoteAttachmentScheme::try_from(scheme).map_err(|source| {
                 TransactionKernelError::other_with_source(
-                    "failed to convert u8 to attachment kind",
+                    "failed to convert u16 to attachment scheme",
                     source,
                 )
             })
         })?;
 
-    let attachment_scheme = u32::try_from(attachment_scheme.as_canonical_u64())
-        .map_err(|_| TransactionKernelError::other("failed to convert attachment scheme to u32"))
-        .map(NoteAttachmentScheme::new)?;
-
-    let attachment_content = match attachment_kind {
-        NoteAttachmentKind::None => {
-            if !attachment.is_empty() {
-                return Err(TransactionKernelError::NoteAttachmentNoneIsNotEmpty);
-            }
-            NoteAttachmentContent::None
+    let attachment_content = match word_size {
+        0 => {
+            return Err(TransactionKernelError::other("attachment word_size must be > 0"));
         },
-        NoteAttachmentKind::Word => NoteAttachmentContent::Word(attachment),
-        NoteAttachmentKind::Array => {
+        1 => NoteAttachmentContent::Word(attachment),
+        _ => {
             let elements = advice_provider.get_mapped_values(&attachment).ok_or_else(|| {
-              TransactionKernelError::other(
-                  "elements of a note attachment commitment must be present in the advice provider",
-              )
+                TransactionKernelError::other(
+                    "elements of a note attachment commitment must be present in the advice provider",
+                )
             })?;
 
-            let commitment_attachment =
+            let array_attachment =
                 NoteAttachmentArray::new(elements.to_vec()).map_err(|source| {
                     TransactionKernelError::other_with_source(
-                        "failed to construct note attachment commitment",
+                        "failed to construct note attachment array",
                         source,
                     )
                 })?;
 
-            if commitment_attachment.commitment() != attachment {
+            if array_attachment.commitment() != attachment {
                 return Err(TransactionKernelError::NoteAttachmentArrayMismatch {
-                    actual: commitment_attachment.commitment(),
+                    actual: array_attachment.commitment(),
                     provided: attachment,
                 });
             }
 
-            NoteAttachmentContent::Array(commitment_attachment)
+            if array_attachment.word_size() != word_size {
+                return Err(TransactionKernelError::other(format!(
+                    "array attachment word_size {} does not match declared word size {}",
+                    array_attachment.word_size(),
+                    word_size
+                )));
+            }
+
+            NoteAttachmentContent::Array(array_attachment)
         },
     };
 
-    let attachment =
-        NoteAttachment::new(attachment_scheme, attachment_content).map_err(|source| {
-            TransactionKernelError::other_with_source("failed to extract note attachment", source)
-        })?;
+    let attachment = NoteAttachment::new(attachment_scheme, attachment_content);
 
     Ok((note_idx as usize, attachment))
 }

@@ -6,6 +6,7 @@ use miden_protocol::note::{
     Note,
     NoteAssets,
     NoteAttachment,
+    NoteAttachments,
     NoteMetadata,
     NoteRecipient,
     PartialNote,
@@ -26,6 +27,7 @@ use crate::errors::TransactionKernelError;
 pub struct OutputNoteBuilder {
     metadata: NoteMetadata,
     assets: Vec<Asset>,
+    attachments: Vec<NoteAttachment>,
     recipient_digest: Word,
     recipient: Option<NoteRecipient>,
 }
@@ -58,6 +60,7 @@ impl OutputNoteBuilder {
             recipient_digest,
             recipient: None,
             assets: Vec::new(),
+            attachments: Vec::default(),
         })
     }
 
@@ -68,6 +71,7 @@ impl OutputNoteBuilder {
             recipient_digest: recipient.digest(),
             recipient: Some(recipient),
             assets: Vec::new(),
+            attachments: Vec::default(),
         }
     }
 
@@ -116,9 +120,24 @@ impl OutputNoteBuilder {
         Ok(())
     }
 
-    /// Overwrites the attachment in the note's metadata.
-    pub fn set_attachment(&mut self, attachment: NoteAttachment) {
-        self.metadata.set_attachment(attachment);
+    /// Appends an attachment to the note.
+    ///
+    /// # Errors
+    /// Returns an error if the note already has the maximum number of attachments.
+    pub fn add_attachment(
+        &mut self,
+        attachment: NoteAttachment,
+    ) -> Result<(), TransactionKernelError> {
+        if self.attachments.len() >= NoteAttachments::MAX_COUNT {
+            return Err(TransactionKernelError::other(format!(
+                "number of attachments exceeded max {}",
+                NoteAttachments::MAX_COUNT
+            )));
+        }
+
+        self.attachments.push(attachment);
+
+        Ok(())
     }
 
     /// Converts this builder to an [OutputNote].
@@ -128,14 +147,17 @@ impl OutputNoteBuilder {
     pub fn build(self) -> RawOutputNote {
         let assets = NoteAssets::new(self.assets)
             .expect("assets should be valid since add_asset validates them");
+        let attachments = NoteAttachments::new(self.attachments)
+            .expect("attachments should be valid since add_attachment validates them");
 
         match self.recipient {
             Some(recipient) => {
-                let note = Note::new(assets, self.metadata, recipient);
+                let note = Note::with_attachments(assets, self.metadata, recipient, attachments);
                 RawOutputNote::Full(note)
             },
             None => {
-                let note = PartialNote::new(self.metadata, self.recipient_digest, assets);
+                let note =
+                    PartialNote::new(self.metadata, self.recipient_digest, assets, attachments);
                 RawOutputNote::Partial(note)
             },
         }

@@ -311,8 +311,8 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         Ok(Vec::new())
     }
 
-    /// Sets the attachment on the output note identified by the note index.
-    pub fn on_note_before_set_attachment(
+    /// Appends an attachment to the output note identified by the note index.
+    pub fn on_note_before_add_attachment(
         &mut self,
         note_idx: usize,
         attachment: NoteAttachment,
@@ -321,7 +321,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
             TransactionKernelError::other(format!("failed to find output note {note_idx}"))
         })?;
 
-        note_builder.set_attachment(attachment);
+        note_builder.add_attachment(attachment)?;
 
         Ok(Vec::new())
     }
