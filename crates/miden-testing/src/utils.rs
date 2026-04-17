@@ -7,7 +7,15 @@ use miden_protocol::account::AccountId;
 use miden_protocol::asset::Asset;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
-use miden_protocol::note::{Note, NoteAssets, NoteMetadata, NoteTag, NoteType};
+use miden_protocol::note::{
+    Note,
+    NoteAssets,
+    NoteAttachmentContent,
+    NoteMetadata,
+    NoteTag,
+    NoteType,
+};
+use miden_protocol::vm::AdviceMap;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::P2idNoteStorage;
 use miden_standards::testing::note::NoteBuilder;
@@ -186,22 +194,25 @@ where
         .metadata()
         .sender();
 
-    let note_code = note_script_that_creates_notes(sender_id, output_notes)?;
+    let (note_code, advice_map) = note_script_that_creates_notes(sender_id, output_notes)?;
 
     let note = NoteBuilder::new(sender_id, SmallRng::from_os_rng())
         .code(note_code)
+        .advice_map(advice_map)
         .dynamically_linked_libraries(CodeBuilder::mock_libraries())
         .build()?;
 
     Ok(note)
 }
 
-/// Returns the code for a note that creates all notes in `output_notes`
+/// Returns the code for a note that creates all notes in `output_notes`, along with an
+/// advice map containing the elements for any array attachments keyed by their commitment.
 fn note_script_that_creates_notes<'note>(
     sender_id: AccountId,
     output_notes: impl Iterator<Item = &'note Note>,
-) -> anyhow::Result<String> {
+) -> anyhow::Result<(String, AdviceMap)> {
     let mut out = String::from("use miden::protocol::output_note\n\nbegin\n");
+    let mut advice_map = AdviceMap::default();
 
     for (idx, note) in output_notes.into_iter().enumerate() {
         anyhow::ensure!(
@@ -238,20 +249,28 @@ fn note_script_that_creates_notes<'note>(
             tag = note.metadata().tag(),
         ));
 
-        out.push_str(&format!(
-            "
-          push.{ATTACHMENT}
-          push.{attachment_scheme}
-          push.{attachment_kind}
-          dup.6
-          # => [note_idx, attachment_kind, attachment_scheme, ATTACHMENT, note_idx]
-          exec.output_note::set_attachment
-          # => [note_idx]
-        ",
-            ATTACHMENT = note.metadata().to_attachment_word(),
-            attachment_scheme = note.metadata().attachment().attachment_scheme().as_u32(),
-            attachment_kind = note.metadata().attachment().content().attachment_kind().as_u8(),
-        ));
+        for attachment in note.attachments().iter() {
+            let word_size = attachment.word_size();
+
+            out.push_str(&format!(
+                "
+              dup
+              push.{ATTACHMENT}
+              push.{word_size}
+              push.{attachment_scheme}
+              # => [attachment_scheme, word_size, ATTACHMENT, note_idx, note_idx]
+              exec.output_note::add_attachment
+              # => [note_idx]
+            ",
+                ATTACHMENT = attachment.content().to_word(),
+                attachment_scheme = attachment.attachment_scheme().as_u16(),
+            ));
+
+            // For array attachments, add the elements to the advice map keyed by the commitment.
+            if let NoteAttachmentContent::Array(array) = attachment.content() {
+                advice_map.insert(array.commitment(), array.as_slice().to_vec());
+            }
+        }
 
         for asset in note.assets().iter() {
             out.push_str(&format!(
@@ -270,7 +289,7 @@ fn note_script_that_creates_notes<'note>(
 
     out.push_str("repeat.5 dropw end\nend");
 
-    Ok(out)
+    Ok((out, advice_map))
 }
 
 /// Generates a P2ID note - Pay-to-ID note with an exact serial number

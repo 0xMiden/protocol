@@ -9,6 +9,7 @@ use miden_protocol::note::{
     NoteAssets,
     NoteAttachment,
     NoteAttachmentScheme,
+    NoteAttachments,
     NoteMetadata,
     NoteRecipient,
     NoteStorage,
@@ -61,17 +62,17 @@ async fn test_send_note_script_basic_wallet() -> anyhow::Result<()> {
     let sender_account_interface = AccountInterface::from_account(&sender_basic_wallet_account);
 
     let tag = NoteTag::with_account_target(sender_basic_wallet_account.id());
-    let elements = [9, 8, 7, 6, 5u32].map(Felt::from).to_vec();
-    let attachment = NoteAttachment::new_array(NoteAttachmentScheme::new(42), elements.clone())?;
-    let metadata = NoteMetadata::new(sender_basic_wallet_account.id(), NoteType::Public)
-        .with_tag(tag)
-        .with_attachment(attachment.clone());
+    let elements = [9, 8, 7, 6, 5, 4, 3, 2u32].map(Felt::from).to_vec();
+    let attachment = NoteAttachment::new_array(NoteAttachmentScheme::new(42)?, elements.clone())?;
+    let metadata =
+        NoteMetadata::new(sender_basic_wallet_account.id(), NoteType::Public).with_tag(tag);
     let assets = NoteAssets::new(vec![sent_asset0, sent_asset1]).unwrap();
     let note_script = CodeBuilder::default().compile_note_script("begin nop end").unwrap();
     let serial_num = RandomCoin::new(Word::from([1, 2, 3, 4u32])).draw_word();
     let recipient = NoteRecipient::new(serial_num, note_script, NoteStorage::default());
+    let attachments = NoteAttachments::from(attachment.clone());
 
-    let note = Note::new(assets.clone(), metadata, recipient);
+    let note = Note::with_attachments(assets.clone(), metadata, recipient, attachments);
     let partial_note: PartialNote = note.clone().into();
 
     let expiration_delta = 10u16;
@@ -135,18 +136,18 @@ async fn test_send_note_script_basic_fungible_faucet() -> anyhow::Result<()> {
         AccountInterface::from_account(&sender_basic_fungible_faucet_account);
 
     let tag = NoteTag::with_account_target(sender_basic_fungible_faucet_account.id());
-    let attachment = NoteAttachment::new_word(NoteAttachmentScheme::new(100), Word::empty());
+    let attachment = NoteAttachment::new_word(NoteAttachmentScheme::new(100)?, Word::empty());
     let metadata = NoteMetadata::new(sender_basic_fungible_faucet_account.id(), NoteType::Public)
-        .with_tag(tag)
-        .with_attachment(attachment);
+        .with_tag(tag);
     let assets = NoteAssets::new(vec![Asset::Fungible(
         FungibleAsset::new(sender_basic_fungible_faucet_account.id(), 10).unwrap(),
     )])?;
     let note_script = CodeBuilder::default().compile_note_script("begin nop end").unwrap();
     let serial_num = RandomCoin::new(Word::from([1, 2, 3, 4u32])).draw_word();
     let recipient = NoteRecipient::new(serial_num, note_script, NoteStorage::default());
+    let attachments = NoteAttachments::from(attachment);
 
-    let note = Note::new(assets.clone(), metadata, recipient);
+    let note = Note::with_attachments(assets.clone(), metadata, recipient, attachments);
     let partial_note: PartialNote = note.clone().into();
 
     let expiration_delta = 10u16;

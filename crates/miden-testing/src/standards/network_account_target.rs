@@ -2,7 +2,14 @@
 
 use miden_protocol::Felt;
 use miden_protocol::account::AccountStorageMode;
-use miden_protocol::note::{NoteAttachment, NoteMetadata, NoteTag, NoteType};
+use miden_protocol::note::{
+    NoteAttachment,
+    NoteAttachments,
+    NoteMetadata,
+    NoteMetadataHeader,
+    NoteTag,
+    NoteType,
+};
 use miden_protocol::testing::account_id::AccountIdBuilder;
 use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 
@@ -16,10 +23,11 @@ async fn network_account_target_get_id() -> anyhow::Result<()> {
     let exec_hint = NoteExecutionHint::Always;
 
     let attachment = NoteAttachment::from(NetworkAccountTarget::new(target_id, exec_hint)?);
+    let attachments = NoteAttachments::from(attachment.clone());
     let metadata = NoteMetadata::new(target_id, NoteType::Public)
-        .with_tag(NoteTag::with_account_target(target_id))
-        .with_attachment(attachment.clone());
-    let metadata_header = metadata.to_header_word();
+        .with_tag(NoteTag::with_account_target(target_id));
+    let metadata_header = NoteMetadataHeader::new(metadata, &attachments);
+    let metadata_word = metadata_header.to_metadata_word();
 
     let source = format!(
         r#"
@@ -30,11 +38,11 @@ async fn network_account_target_get_id() -> anyhow::Result<()> {
 
         begin
             push.{attachment_word}
-            push.{metadata_header}
-            exec.note::metadata_into_attachment_info
-            # => [attachment_kind, attachment_scheme, NOTE_ATTACHMENT]
-            swap
-            # => [attachment_scheme, attachment_kind, NOTE_ATTACHMENT]
+            push.{metadata_word}
+            exec.note::metadata_into_attachment_header
+            # => [attachment_0_size, attachment_0_scheme, NOTE_ATTACHMENT]
+            drop
+            # => [attachment_0_scheme, NOTE_ATTACHMENT]
             exec.network_account_target::is_network_account_target
             # => [is_valid, NOTE_ATTACHMENT]
             assert.err=ERR_NOT_NETWORK_ACCOUNT_TARGET
@@ -45,7 +53,7 @@ async fn network_account_target_get_id() -> anyhow::Result<()> {
             movup.2 drop movup.2 drop
         end
         "#,
-        metadata_header = metadata_header,
+        metadata_word = metadata_word,
         attachment_word = attachment.content().to_word(),
     );
 
@@ -66,7 +74,6 @@ async fn network_account_target_new_attachment() -> anyhow::Result<()> {
 
     let attachment = NoteAttachment::from(NetworkAccountTarget::new(target_id, exec_hint)?);
     let attachment_word = attachment.content().to_word();
-    let expected_attachment_kind = Felt::from(attachment.attachment_kind().as_u8());
 
     let source = format!(
         r#"
@@ -78,7 +85,7 @@ async fn network_account_target_new_attachment() -> anyhow::Result<()> {
             push.{target_id_suffix}
             # => [target_id_suffix, target_id_prefix, exec_hint]
             exec.network_account_target::new
-            # => [attachment_scheme, attachment_kind, ATTACHMENT, pad(16)]
+            # => [attachment_scheme, NOTE_ATTACHMENT, pad(16)]
 
             # cleanup stack
             swapdw dropw dropw
@@ -91,13 +98,12 @@ async fn network_account_target_new_attachment() -> anyhow::Result<()> {
 
     let exec_output = CodeExecutor::with_default_host().run(&source).await?;
 
-    assert_eq!(exec_output.stack[0], expected_attachment_kind);
     assert_eq!(
-        exec_output.stack[1],
-        Felt::from(NetworkAccountTarget::ATTACHMENT_SCHEME.as_u32())
+        exec_output.stack[0],
+        Felt::from(NetworkAccountTarget::ATTACHMENT_SCHEME.as_u16())
     );
 
-    let word = exec_output.stack.get_word(2).unwrap();
+    let word = exec_output.stack.get_word(1).unwrap();
     assert_eq!(word, attachment_word);
 
     Ok(())
@@ -122,11 +128,11 @@ async fn network_account_target_attachment_round_trip() -> anyhow::Result<()> {
             push.{target_id_suffix}
             # => [target_id_suffix, target_id_prefix, exec_hint]
             exec.network_account_target::new
-            # => [attachment_scheme, attachment_kind, ATTACHMENT]
+            # => [attachment_scheme, NOTE_ATTACHMENT]
             exec.network_account_target::is_network_account_target
-            # => [is_valid, ATTACHMENT]
+            # => [is_valid, NOTE_ATTACHMENT]
             assert.err=ERR_NOT_NETWORK_ACCOUNT_TARGET
-            # => [ATTACHMENT]
+            # => [NOTE_ATTACHMENT]
             exec.network_account_target::get_id
             # => [target_id_suffix, target_id_prefix]
             # cleanup stack

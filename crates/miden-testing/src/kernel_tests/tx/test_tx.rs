@@ -26,7 +26,7 @@ use miden_protocol::note::{
     NoteAttachment,
     NoteAttachmentContent,
     NoteAttachmentScheme,
-    NoteHeader,
+    NoteAttachments,
     NoteId,
     NoteMetadata,
     NoteRecipient,
@@ -218,10 +218,10 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
     let tag3 = NoteTag::default();
 
     let attachment2 =
-        NoteAttachment::new_word(NoteAttachmentScheme::new(28), Word::from([2, 3, 4, 5u32]));
+        NoteAttachment::new_word(NoteAttachmentScheme::new(28)?, Word::from([2, 3, 4, 5u32]));
     let attachment3 = NoteAttachment::new_array(
-        NoteAttachmentScheme::new(29),
-        [6, 7, 8, 9u32].map(Felt::from).to_vec(),
+        NoteAttachmentScheme::new(29)?,
+        [6, 7, 8, 9, 10, 11, 12, 13u32].map(Felt::from).to_vec(),
     )?;
 
     let note_type1 = NoteType::Private;
@@ -237,23 +237,23 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
     let serial_num_2 = Word::from([1, 2, 3, 4u32]);
     let note_script_2 = CodeBuilder::default().compile_note_script(DEFAULT_NOTE_CODE)?;
     let inputs_2 = NoteStorage::new(vec![ONE])?;
-    let metadata_2 = NoteMetadata::new(account_id, note_type2)
-        .with_tag(tag2)
-        .with_attachment(attachment2.clone());
+    let metadata_2 = NoteMetadata::new(account_id, note_type2).with_tag(tag2);
     let vault_2 = NoteAssets::new(vec![removed_asset_3, removed_asset_4])?;
     let recipient_2 = NoteRecipient::new(serial_num_2, note_script_2, inputs_2);
-    let expected_output_note_2 = Note::new(vault_2, metadata_2, recipient_2);
+    let attachments_2 = NoteAttachments::from(attachment2.clone());
+    let expected_output_note_2 =
+        Note::with_attachments(vault_2, metadata_2, recipient_2, attachments_2);
 
     // Create the expected output note for Note 3 which is public
     let serial_num_3 = Word::from([Felt::new(5), Felt::new(6), Felt::new(7), Felt::new(8)]);
     let note_script_3 = CodeBuilder::default().compile_note_script(DEFAULT_NOTE_CODE)?;
     let inputs_3 = NoteStorage::new(vec![ONE, Felt::new(2)])?;
-    let metadata_3 = NoteMetadata::new(account_id, note_type3)
-        .with_tag(tag3)
-        .with_attachment(attachment3.clone());
+    let metadata_3 = NoteMetadata::new(account_id, note_type3).with_tag(tag3);
     let vault_3 = NoteAssets::new(vec![])?;
     let recipient_3 = NoteRecipient::new(serial_num_3, note_script_3, inputs_3);
-    let expected_output_note_3 = Note::new(vault_3, metadata_3, recipient_3);
+    let attachments_3 = NoteAttachments::from(attachment3.clone());
+    let expected_output_note_3 =
+        Note::with_attachments(vault_3, metadata_3, recipient_3, attachments_3);
 
     let tx_script_src = format!(
         "\
@@ -307,8 +307,8 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
 
             push.{ATTACHMENT2}
             push.{attachment_scheme2}
-            movup.5
-            exec.output_note::set_word_attachment
+            # => [attachment_scheme, ATTACHMENT, note_idx]
+            exec.output_note::add_word_attachment
             # => []
 
             # create a public note without assets
@@ -319,9 +319,10 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
             # => [note_idx = 2]
 
             push.{ATTACHMENT3}
+            push.{attachment3_word_size}
             push.{attachment_scheme3}
-            movup.5
-            exec.output_note::set_array_attachment
+            # => [attachment_scheme, attachment_word_size, ATTACHMENT, note_idx]
+            exec.output_note::add_array_attachment
             # => []
         end
     ",
@@ -338,9 +339,10 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
         NOTETYPE1 = note_type1 as u8,
         NOTETYPE2 = note_type2 as u8,
         NOTETYPE3 = note_type3 as u8,
-        attachment_scheme2 = attachment2.attachment_scheme().as_u32(),
+        attachment_scheme2 = attachment2.attachment_scheme().as_u16(),
         ATTACHMENT2 = attachment2.content().to_word(),
-        attachment_scheme3 = attachment3.attachment_scheme().as_u32(),
+        attachment_scheme3 = attachment3.attachment_scheme().as_u16(),
+        attachment3_word_size = attachment3.word_size(),
         ATTACHMENT3 = attachment3.content().to_word(),
     );
 
@@ -382,12 +384,7 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
     // assert that the expected output note 2 is present
     let resulting_output_note_2 = executed_transaction.output_notes().get_note(1);
 
-    let expected_note_id_2 = expected_output_note_2.id();
-    let expected_note_metadata_2 = expected_output_note_2.metadata().clone();
-    assert_eq!(
-        *resulting_output_note_2.header(),
-        NoteHeader::new(expected_note_id_2, expected_note_metadata_2)
-    );
+    assert_eq!(*resulting_output_note_2.header(), *expected_output_note_2.header());
 
     // assert that the expected output note 3 is present and has no assets
     let resulting_output_note_3 = executed_transaction.output_notes().get_note(2);
@@ -472,7 +469,7 @@ async fn user_code_can_abort_transaction_with_summary() -> anyhow::Result<()> {
         account.id(),
         vec![],
         NoteType::Private,
-        NoteAttachment::default(),
+        NoteAttachments::default(),
         &mut rng,
     )?;
     let input_note = create_spawn_note(vec![&output_note])?;
@@ -517,7 +514,7 @@ async fn tx_summary_commitment_is_signed_by_falcon_auth() -> anyhow::Result<()> 
         account.id(),
         vec![],
         NoteType::Private,
-        NoteAttachment::default(),
+        NoteAttachments::default(),
         &mut rng,
     )?;
     let spawn_note = builder.add_spawn_note([&p2id_note])?;
@@ -576,7 +573,7 @@ async fn tx_summary_commitment_is_signed_by_ecdsa_auth() -> anyhow::Result<()> {
         account.id(),
         vec![],
         NoteType::Private,
-        NoteAttachment::default(),
+        NoteAttachments::default(),
         &mut rng,
     )?;
     let spawn_note = builder.add_spawn_note([&p2id_note])?;

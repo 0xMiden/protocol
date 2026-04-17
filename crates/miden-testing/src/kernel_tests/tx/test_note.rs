@@ -13,7 +13,9 @@ use miden_protocol::errors::MasmError;
 use miden_protocol::note::{
     Note,
     NoteAssets,
+    NoteAttachments,
     NoteMetadata,
+    NoteMetadataHeader,
     NoteRecipient,
     NoteStorage,
     NoteTag,
@@ -398,7 +400,8 @@ async fn test_build_metadata_header() -> anyhow::Result<()> {
         let metadata_word = exec_output.get_stack_word(0);
 
         assert_eq!(
-            test_metadata.to_header_word(),
+            NoteMetadataHeader::new(test_metadata.clone(), &NoteAttachments::default())
+                .to_metadata_word(),
             metadata_word,
             "failed in iteration {iteration}"
         );

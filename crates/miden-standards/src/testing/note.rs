@@ -20,7 +20,7 @@ use miden_protocol::note::{
     NoteType,
 };
 use miden_protocol::testing::note::DEFAULT_NOTE_CODE;
-use miden_protocol::vm::Package;
+use miden_protocol::vm::{AdviceMap, Package};
 use miden_protocol::{Felt, Word};
 use rand::Rng;
 
@@ -48,6 +48,7 @@ pub struct NoteBuilder {
     tag: NoteTag,
     code: String,
     attachments: NoteAttachments,
+    advice_map: AdviceMap,
     source_code: SourceCodeOrigin,
 }
 
@@ -70,6 +71,7 @@ impl NoteBuilder {
             tag: NoteTag::with_account_target(sender),
             code: DEFAULT_NOTE_CODE.to_string(),
             attachments: NoteAttachments::default(),
+            advice_map: AdviceMap::default(),
             source_code: SourceCodeOrigin::Masm {
                 dyn_libraries: Vec::new(),
                 source_manager: Arc::new(DefaultSourceManager::default()),
@@ -121,6 +123,12 @@ impl NoteBuilder {
         attachments.push(attachment.into());
         self.attachments =
             NoteAttachments::new(attachments).expect("number of attachments exceeds maximum");
+        self
+    }
+
+    /// Sets the advice map entries that will be added to the compiled note script.
+    pub fn advice_map(mut self, advice_map: AdviceMap) -> Self {
+        self.advice_map = advice_map;
         self
     }
 
@@ -189,6 +197,8 @@ impl NoteBuilder {
             },
             SourceCodeOrigin::Package(package) => NoteScript::from_package(&package)?,
         };
+
+        let note_script = note_script.with_advice_map(self.advice_map);
 
         let vault = NoteAssets::new(self.assets)?;
         let metadata = NoteMetadata::new(self.sender, self.note_type).with_tag(self.tag);

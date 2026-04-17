@@ -8,7 +8,7 @@ use miden_protocol::batch::BatchNoteTree;
 use miden_protocol::block::account_tree::AccountTree;
 use miden_protocol::block::{BlockInputs, BlockNoteIndex, BlockNoteTree, ProposedBlock};
 use miden_protocol::crypto::merkle::smt::Smt;
-use miden_protocol::note::{NoteAttachment, NoteType};
+use miden_protocol::note::{NoteAttachments, NoteType};
 use miden_protocol::transaction::InputNoteCommitment;
 use miden_standards::note::P2idNote;
 
@@ -37,7 +37,7 @@ async fn proven_block_success() -> anyhow::Result<()> {
         account0.id(),
         vec![asset],
         NoteType::Private,
-        NoteAttachment::default(),
+        NoteAttachments::default(),
         builder.rng_mut(),
     )?;
     let output_note1 = P2idNote::create(
@@ -45,7 +45,7 @@ async fn proven_block_success() -> anyhow::Result<()> {
         account1.id(),
         vec![asset],
         NoteType::Private,
-        NoteAttachment::default(),
+        NoteAttachments::default(),
         builder.rng_mut(),
     )?;
     let output_note2 = P2idNote::create(
@@ -53,7 +53,7 @@ async fn proven_block_success() -> anyhow::Result<()> {
         account2.id(),
         vec![asset],
         NoteType::Private,
-        NoteAttachment::default(),
+        NoteAttachments::default(),
         builder.rng_mut(),
     )?;
     let output_note3 = P2idNote::create(
@@ -61,7 +61,7 @@ async fn proven_block_success() -> anyhow::Result<()> {
         account3.id(),
         vec![asset],
         NoteType::Private,
-        NoteAttachment::default(),
+        NoteAttachments::default(),
         builder.rng_mut(),
     )?;
 
@@ -115,7 +115,7 @@ async fn proven_block_success() -> anyhow::Result<()> {
             (
                 BlockNoteIndex::new(batch_idx, note_idx_in_batch).unwrap(),
                 note.id(),
-                note.metadata(),
+                note.metadata_header(),
             )
         },
     ))
@@ -343,7 +343,7 @@ async fn proven_block_erasing_unauthenticated_notes() -> anyhow::Result<()> {
 
     // Remove the erased note to get the expected batch note tree.
     let mut batch_tree = BatchNoteTree::with_contiguous_leaves(
-        batch0.output_notes().iter().map(|note| (note.id(), note.metadata())),
+        batch0.output_notes().iter().map(|note| (note.id(), note.metadata_header())),
     )
     .unwrap();
     batch_tree.remove(erased_note_idx as u64).unwrap();

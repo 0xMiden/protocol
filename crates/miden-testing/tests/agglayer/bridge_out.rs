@@ -191,7 +191,10 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
             NoteType::Public,
             "BURN note should be public"
         );
-        let attachment = burn_note.metadata().attachment();
+        let attachment = burn_note
+            .attachments()
+            .get(0)
+            .expect("BURN note should have at least one attachment");
         let network_target = miden_standards::note::NetworkAccountTarget::try_from(attachment)
             .expect("BURN note attachment should be a valid NetworkAccountTarget");
         assert_eq!(
