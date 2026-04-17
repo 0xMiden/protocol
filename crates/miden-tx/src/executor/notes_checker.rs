@@ -35,8 +35,8 @@ pub const MAX_NUM_CHECKER_NOTES: usize = 20;
 /// Represents a successfully consumed note along with the number of cycles it took to execute.
 #[derive(Debug)]
 pub struct SuccessfulNote {
-    pub note: Note,
-    pub num_cycles: usize,
+    note: Note,
+    num_cycles: usize,
 }
 
 impl SuccessfulNote {
@@ -44,18 +44,28 @@ impl SuccessfulNote {
     pub fn new(note: Note, num_cycles: usize) -> Self {
         Self { note, num_cycles }
     }
+
+    /// Returns a reference to the note.
+    pub fn note(&self) -> &Note {
+        &self.note
+    }
+
+    /// Returns the number of cycles consumed during execution.
+    pub fn num_cycles(&self) -> usize {
+        self.num_cycles
+    }
 }
 
 /// Represents a failed note consumption.
 #[derive(Debug)]
 pub struct FailedNote {
-    pub note: Note,
-    pub error: TransactionExecutorError,
+    note: Note,
+    error: TransactionExecutorError,
     /// The number of cycles consumed by the note before it failed.
     ///
     /// This is `Some` when the failure was due to exceeding the cycle limit, and `None`
     /// for other error types where the cycle count is not meaningful.
-    pub num_cycles: Option<usize>,
+    num_cycles: Option<usize>,
 }
 
 impl FailedNote {
@@ -63,13 +73,31 @@ impl FailedNote {
     pub fn new(note: Note, error: TransactionExecutorError, num_cycles: Option<usize>) -> Self {
         Self { note, error, num_cycles }
     }
+
+    /// Returns a reference to the note.
+    pub fn note(&self) -> &Note {
+        &self.note
+    }
+
+    /// Returns a reference to the error.
+    pub fn error(&self) -> &TransactionExecutorError {
+        &self.error
+    }
+
+    /// Returns the number of cycles consumed before failure, if available.
+    ///
+    /// This is `Some` when the failure was due to exceeding the cycle limit, and `None`
+    /// for other error types where the cycle count is not meaningful.
+    pub fn num_cycles(&self) -> Option<usize> {
+        self.num_cycles
+    }
 }
 
 /// Contains information about the successful and failed consumption of notes.
 #[derive(Default, Debug)]
 pub struct NoteConsumptionInfo {
-    pub successful: Vec<SuccessfulNote>,
-    pub failed: Vec<FailedNote>,
+    successful: Vec<SuccessfulNote>,
+    failed: Vec<FailedNote>,
 }
 
 impl NoteConsumptionInfo {
@@ -81,6 +109,21 @@ impl NoteConsumptionInfo {
     /// Creates a new [`NoteConsumptionInfo`] instance with the given successful and failed notes.
     pub fn new(successful: Vec<SuccessfulNote>, failed: Vec<FailedNote>) -> Self {
         Self { successful, failed }
+    }
+
+    /// Returns a reference to the successfully consumed notes.
+    pub fn successful(&self) -> &[SuccessfulNote] {
+        &self.successful
+    }
+
+    /// Returns a reference to the failed notes.
+    pub fn failed(&self) -> &[FailedNote] {
+        &self.failed
+    }
+
+    /// Consumes the struct and returns the successful and failed notes.
+    pub fn into_parts(self) -> (Vec<SuccessfulNote>, Vec<FailedNote>) {
+        (self.successful, self.failed)
     }
 }
 
