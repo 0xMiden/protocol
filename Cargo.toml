@@ -5,7 +5,6 @@ members = [
   "crates/miden-agglayer",
   "crates/miden-block-prover",
   "crates/miden-protocol",
-  "crates/miden-protocol-macros",
   "crates/miden-standards",
   "crates/miden-testing",
   "crates/miden-tx",
@@ -40,7 +39,6 @@ lto           = true
 miden-agglayer        = { default-features = false, path = "crates/miden-agglayer", version = "0.15" }
 miden-block-prover    = { default-features = false, path = "crates/miden-block-prover", version = "0.15" }
 miden-protocol        = { default-features = false, path = "crates/miden-protocol", version = "0.15" }
-miden-protocol-macros = { default-features = false, path = "crates/miden-protocol-macros", version = "0.15" }
 miden-standards       = { default-features = false, path = "crates/miden-standards", version = "0.15" }
 miden-testing         = { default-features = false, path = "crates/miden-testing", version = "0.15" }
 miden-tx              = { default-features = false, path = "crates/miden-tx", version = "0.15" }
@@ -52,6 +50,7 @@ miden-assembly-syntax = { default-features = false, version = "0.22" }
 miden-core            = { default-features = false, version = "0.22" }
 miden-core-lib        = { default-features = false, version = "0.22" }
 miden-crypto          = { default-features = false, version = "0.23" }
+miden-crypto-derive   = { default-features = false, version = "0.23" }
 miden-mast-package    = { default-features = false, version = "0.22" }
 miden-processor       = { default-features = false, version = "0.22" }
 miden-prover          = { default-features = false, version = "0.22" }
