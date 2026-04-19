@@ -340,8 +340,16 @@ impl TransactionAdviceInputs {
             // assets commitments
             self.add_map_entry(assets.commitment(), assets.to_elements());
 
-            // ATTACHMENTS_COMMITMENTS |-> [ATTACHMENT_ELEMENTS]
-            self.add_map_entry(note.attachments().commitment(), note.attachments().to_elements());
+            // ATTACHMENTS_COMMITMENTS |-> [[ATTACHMENT_WORDS]]
+            self.add_map_entry(
+                note.attachments().commitment(),
+                note.attachments()
+                    .attachment_words()
+                    .iter()
+                    .flat_map(Word::as_elements)
+                    .copied()
+                    .collect(),
+            );
 
             // elements of each array attachment
             for attachment in note.attachments().iter() {

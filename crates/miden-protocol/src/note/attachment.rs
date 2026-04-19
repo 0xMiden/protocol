@@ -636,6 +636,14 @@ impl NoteAttachments {
     }
 
     /// Returns the cached commitment over the contained attachments.
+    pub fn attachment_words(&self) -> Vec<Word> {
+        self.attachments
+            .iter()
+            .map(|attachment| attachment.content().to_word())
+            .collect()
+    }
+
+    /// Returns the cached commitment over the contained attachments.
     pub fn commitment(&self) -> Word {
         self.commitment
     }

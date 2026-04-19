@@ -254,7 +254,7 @@ const INPUT_NOTE_STORAGE_COMMITMENT_OFFSET=12
 const INPUT_NOTE_ASSETS_COMMITMENT_OFFSET=16
 const INPUT_NOTE_RECIPIENT_OFFSET=20
 const INPUT_NOTE_METADATA_HEADER_OFFSET=24
-const INPUT_NOTE_ATTACHMENT_OFFSET=28
+const INPUT_NOTE_ATTACHMENTS_COMMITMENT_OFFSET=28
 const INPUT_NOTE_ARGS_OFFSET=32
 const INPUT_NOTE_NUM_STORAGE_ITEMS_OFFSET=36
 const INPUT_NOTE_NUM_ASSETS_OFFSET=40
@@ -1691,27 +1691,27 @@ end
 #! Returns the attachment of an input note located at the specified memory address.
 #!
 #! Inputs:  [note_ptr]
-#! Outputs: [NOTE_ATTACHMENT]
+#! Outputs: [NOTE_ATTACHMENTS_COMMITMENT]
 #!
 #! Where:
 #! - note_ptr is the memory address at which the input note data begins.
-#! - NOTE_ATTACHMENT is the attachment of the input note.
-pub proc get_input_note_attachment
+#! - NOTE_ATTACHMENTS_COMMITMENT is the commitment to all attachments of the input note.
+pub proc get_input_note_attachments_commitment
     padw
-    movup.4 add.INPUT_NOTE_ATTACHMENT_OFFSET
+    movup.4 add.INPUT_NOTE_ATTACHMENTS_COMMITMENT_OFFSET
     mem_loadw_le
 end
 
 #! Sets the attachment for an input note located at the specified memory address.
 #!
-#! Inputs:  [note_ptr, NOTE_ATTACHMENT]
-#! Outputs: [NOTE_ATTACHMENT]
+#! Inputs:  [note_ptr, NOTE_ATTACHMENTS_COMMITMENT]
+#! Outputs: [NOTE_ATTACHMENTS_COMMITMENT]
 #!
 #! Where:
 #! - note_ptr is the memory address at which the input note data begins.
-#! - NOTE_ATTACHMENT is the attachment of the input note.
-pub proc set_input_note_attachment
-    add.INPUT_NOTE_ATTACHMENT_OFFSET
+#! - NOTE_ATTACHMENTS_COMMITMENT is the commitment to all attachments of the input note.
+pub proc set_input_note_attachments_commitment
+    add.INPUT_NOTE_ATTACHMENTS_COMMITMENT_OFFSET
     mem_storew_le
 end
 

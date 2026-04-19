@@ -577,25 +577,25 @@ end
 #!
 #! Inputs:
 #!   Operand stack: [note_ptr]
-#!   Advice stack: [NOTE_ARGS, NOTE_ATTACHMENT, NOTE_METADATA_HEADER]
+#!   Advice stack: [NOTE_ARGS, NOTE_ATTACHMENTS_COMMITMENT, NOTE_METADATA_HEADER]
 #! Outputs:
-#!   Operand stack: [NOTE_METADATA_HEADER, NOTE_ATTACHMENT]
+#!   Operand stack: [NOTE_METADATA_HEADER, NOTE_ATTACHMENTS_COMMITMENT]
 #!   Advice stack: []
 #!
 #! Where:
 #! - note_ptr is the memory location for the input note.
 #! - NOTE_ARGS are the user arguments passed to the note.
 #! - NOTE_METADATA_HEADER is the note's metadata header.
-#! - NOTE_ATTACHMENT is the note's attachment.
+#! - NOTE_ATTACHMENTS_COMMITMENT is the note's attachments commitment.
 proc process_note_args_and_metadata
     padw adv_loadw dup.4 exec.memory::set_input_note_args dropw
     # => [note_ptr]
 
-    padw adv_loadw dup.4 exec.memory::set_input_note_attachment
-    # => [NOTE_ATTACHMENT]
+    padw adv_loadw dup.4 exec.memory::set_input_note_attachments_commitment
+    # => [NOTE_ATTACHMENTS_COMMITMENT]
 
     padw adv_loadw movup.8 exec.memory::set_input_note_metadata_header
-    # => [NOTE_METADATA_HEADER, NOTE_ATTACHMENT, note_ptr]
+    # => [NOTE_METADATA_HEADER, NOTE_ATTACHMENTS_COMMITMENT, note_ptr]
 end
 
 #! Checks that the number of note storage is within limit and stores it to memory.
@@ -839,9 +839,9 @@ proc process_input_note
     # => [note_ptr, NULLIFIER, CAPACITY]
 
     dup exec.process_note_args_and_metadata
-    # => [NOTE_METADATA_HEADER, NOTE_ATTACHMENT, note_ptr, NULLIFIER, CAPACITY]
+    # => [NOTE_METADATA_HEADER, NOTE_ATTACHMENTS_COMMITMENT, note_ptr, NULLIFIER, CAPACITY]
 
-    # compute hash(NOTE_METADATA_HEADER || NOTE_ATTACHMENT)
+    # compute hash(NOTE_METADATA_HEADER || NOTE_ATTACHMENTS_COMMITMENT)
     exec.poseidon2::merge
     # => [NOTE_METADATA_COMMITMENT, note_ptr, NULLIFIER, CAPACITY]
 

@@ -949,7 +949,7 @@ pub proc input_note_get_metadata
     # => [METADATA_HEADER, input_note_ptr, pad(16)]
 
     # get the attachment
-    movup.4 exec.memory::get_input_note_attachment
+    movup.4 exec.memory::get_input_note_attachments_commitment
     # => [NOTE_ATTACHMENT, METADATA_HEADER, pad(16)]
 
     # truncate the stack
