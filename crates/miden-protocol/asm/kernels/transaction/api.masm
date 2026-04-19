@@ -1176,11 +1176,15 @@ end
 #!
 #! Panics if:
 #! - the procedure is called when the active account is not the native one.
+#! - the note index points to a non-existent output note.
 #!
 #! Invocation: dynexec
 pub proc output_note_add_asset
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
+    # => [note_idx, ASSET, pad(11)]
+
+    exec.output_note::assert_note_index_in_bounds
     # => [note_idx, ASSET, pad(11)]
 
     exec.output_note::add_asset
@@ -1208,6 +1212,9 @@ end
 pub proc output_note_set_attachment
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
+    # => [note_idx, attachment_scheme, attachment_kind, ATTACHMENT, pad(9)]
+
+    exec.output_note::assert_note_index_in_bounds
     # => [note_idx, attachment_scheme, attachment_kind, ATTACHMENT, pad(9)]
 
     exec.output_note::set_attachment

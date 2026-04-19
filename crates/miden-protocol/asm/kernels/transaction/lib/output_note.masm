@@ -43,8 +43,6 @@ const ERR_OUTPUT_NOTE_ATTACHMENT_KIND_NONE_MUST_HAVE_ATTACHMENT_SCHEME_NONE="att
 
 const ERR_OUTPUT_NOTE_ATTACHMENT_KIND_NONE_MUST_BE_EMPTY_WORD="attachment kind None requires ATTACHMENT to be set to an empty word"
 
-const ERR_NOTE_INVALID_INDEX="failed to find note at the given index; index must be within [0, num_of_notes]"
-
 const ERR_NOTE_FUNGIBLE_MAX_AMOUNT_EXCEEDED="adding a fungible asset to a note cannot exceed the max_amount of 9223372036854775807"
 
 const ERR_NON_FUNGIBLE_ASSET_ALREADY_EXISTS="non-fungible asset that already exists in the note cannot be added again"
@@ -190,16 +188,11 @@ end
 #! - ASSET can be a fungible or non-fungible asset.
 #!
 #! Panics if:
-#! - the note index points to a non-existent output note.
 #! - the ASSET is malformed (e.g., invalid faucet ID).
 #! - the max amount of fungible assets is exceeded.
 #! - the non-fungible asset already exists in the note.
 #! - the total number of ASSETs exceeds the maximum of 256.
 pub proc add_asset
-    # check if the note exists, it must be within [0, num_of_notes]
-    dup exec.memory::get_num_output_notes lte assert.err=ERR_NOTE_INVALID_INDEX
-    # => [note_idx, ASSET]
-
     # get a pointer to the memory address of the note at which the asset will be stored
     dup movdn.5 exec.memory::get_output_note_ptr
     # => [note_ptr, ASSET, note_idx]
@@ -257,13 +250,9 @@ end
 #! - ATTACHMENT is the attachment to be set.
 #!
 #! Panics if:
-#! - the note index points to a non-existent output note.
 #! - the attachment kind or scheme does not fit into a u32.
 #! - the attachment kind is an unknown variant.
 pub proc set_attachment
-    dup exec.memory::get_num_output_notes lte assert.err=ERR_NOTE_INVALID_INDEX
-    # => [note_idx, attachment_scheme, attachment_kind, ATTACHMENT]
-
     exec.memory::get_output_note_ptr dup
     # => [note_ptr, note_ptr, attachment_scheme, attachment_kind, ATTACHMENT]
 
