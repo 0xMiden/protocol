@@ -4,11 +4,16 @@ use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountId, AccountStorageMode, AccountVaultDelta};
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
+use miden_protocol::errors::MasmError;
 use miden_protocol::note::{Note, NoteAttachment, NoteAttachmentScheme, NoteType};
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, ONE, Word, ZERO};
 use miden_standards::account::wallets::BasicWallet;
-use miden_standards::errors::standards::ERR_PSWAP_FILL_EXCEEDS_REQUESTED;
+use miden_standards::errors::standards::{
+    ERR_PSWAP_FILL_EXCEEDS_REQUESTED,
+    ERR_PSWAP_FILL_SUM_OVERFLOW,
+    ERR_PSWAP_NOT_VALID_ASSET_AMOUNT,
+};
 use miden_standards::note::{PswapNote, PswapNoteStorage};
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain, MockChainBuilder, assert_transaction_executor_error};
@@ -744,8 +749,27 @@ async fn pswap_note_creator_reclaim_test() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// The fill sum overflow case uses `1u64 << 63` for each fill: both are valid
+/// Felt values (< field modulus), but their sum `2^64` exceeds `u64::MAX`, so
+/// the `overflowing_add` check fires before `assert_valid_asset_amount`.
+///
+/// The max-asset-amount case uses `FungibleAsset::MAX_AMOUNT` for each fill:
+/// the sum `2 * MAX_AMOUNT` fits in u64 but exceeds `MAX_AMOUNT`, so
+/// `assert_valid_asset_amount` fires instead.
+#[rstest]
+#[case::fill_exceeds_requested(30, 0, ERR_PSWAP_FILL_EXCEEDS_REQUESTED)]
+#[case::fill_sum_u64_overflow(1u64 << 63, 1u64 << 63, ERR_PSWAP_FILL_SUM_OVERFLOW)]
+#[case::fill_sum_exceeds_max_asset_amount(
+    FungibleAsset::MAX_AMOUNT,
+    FungibleAsset::MAX_AMOUNT,
+    ERR_PSWAP_NOT_VALID_ASSET_AMOUNT
+)]
 #[tokio::test]
-async fn pswap_note_invalid_input_test() -> anyhow::Result<()> {
+async fn pswap_note_invalid_input_test(
+    #[case] account_fill: u64,
+    #[case] note_fill: u64,
+    #[case] expected_err: MasmError,
+) -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     let usdc_faucet = builder.add_existing_basic_faucet(BASIC_AUTH, "USDC", 1000, Some(50))?;
@@ -769,9 +793,8 @@ async fn pswap_note_invalid_input_test() -> anyhow::Result<()> {
     )?;
     let mock_chain = builder.build()?;
 
-    // Try to fill with 30 ETH when only 25 is requested - should fail
     let mut note_args_map = BTreeMap::new();
-    note_args_map.insert(pswap_note.id(), PswapNote::create_args(30, 0)?);
+    note_args_map.insert(pswap_note.id(), PswapNote::create_args(account_fill, note_fill)?);
 
     let tx_context = mock_chain
         .build_tx_context(bob.id(), &[pswap_note.id()], &[])?
@@ -779,7 +802,7 @@ async fn pswap_note_invalid_input_test() -> anyhow::Result<()> {
         .build()?;
 
     let result = tx_context.execute().await;
-    assert_transaction_executor_error!(result, ERR_PSWAP_FILL_EXCEEDS_REQUESTED);
+    assert_transaction_executor_error!(result, expected_err);
 
     Ok(())
 }
