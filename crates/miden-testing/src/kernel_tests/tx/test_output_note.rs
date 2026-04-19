@@ -49,7 +49,7 @@ use miden_protocol::transaction::memory::{
     OUTPUT_NOTE_SECTION_OFFSET,
 };
 use miden_protocol::transaction::{RawOutputNote, RawOutputNotes};
-use miden_protocol::{Felt, Word, ZERO};
+use miden_protocol::{Felt, WORD_SIZE, Word, ZERO};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::{
     AccountTargetNetworkNote,
@@ -339,12 +339,17 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
         output_note_1.metadata_header().to_metadata_word(),
         "Validate the output note 1 metadata header",
     );
-    assert_eq!(
-        exec_output
-            .get_kernel_mem_word(OUTPUT_NOTE_SECTION_OFFSET + OUTPUT_NOTE_ATTACHMENT_0_OFFSET),
-        output_note_1.attachments().to_commitment(),
-        "Validate the output note 1 attachment",
-    );
+    for attachment_idx in 0..4u32 {
+        assert_eq!(
+            exec_output.get_kernel_mem_word(
+                OUTPUT_NOTE_SECTION_OFFSET
+                    + OUTPUT_NOTE_ATTACHMENT_0_OFFSET
+                    + attachment_idx * WORD_SIZE as u32
+            ),
+            Word::empty(),
+            "Validate output note 1 attachment {attachment_idx} is empty",
+        );
+    }
 
     assert_eq!(
         exec_output.get_kernel_mem_word(
@@ -357,11 +362,23 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
         exec_output.get_kernel_mem_word(
             OUTPUT_NOTE_SECTION_OFFSET + OUTPUT_NOTE_ATTACHMENT_0_OFFSET + NOTE_MEM_SIZE
         ),
-        output_note_2.attachments().to_commitment(),
+        output_note_2.attachments().get(0).unwrap().content().to_word(),
         "Validate the output note 2 attachment",
     );
+    for attachment_idx in 1..4u32 {
+        assert_eq!(
+            exec_output.get_kernel_mem_word(
+                OUTPUT_NOTE_SECTION_OFFSET
+                    + OUTPUT_NOTE_ATTACHMENT_0_OFFSET
+                    + attachment_idx * WORD_SIZE as u32
+            ),
+            Word::empty(),
+            "Validate output note 2 attachment {attachment_idx} is empty",
+        );
+    }
 
     assert_eq!(exec_output.get_stack_word(0), expected_output_notes_commitment);
+
     Ok(())
 }
 

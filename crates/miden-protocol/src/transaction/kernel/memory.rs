@@ -365,10 +365,10 @@ pub const NOTE_MEM_SIZE: MemoryAddress = 1024;
 // Each nullifier occupies a single word. A data section for each note consists of exactly 1024
 // elements and is laid out like so:
 //
-// ┌──────┬────────┬────────┬─────────┬────────────┬───────────┬──────────┬────────────┬───────┬
-// │ NOTE │ SERIAL │ SCRIPT │ STORAGE │   ASSETS   │ RECIPIENT │ METADATA │ ATTACHMENT │ NOTE  │
-// │  ID  │  NUM   │  ROOT  │  COMM   │ COMMITMENT │           │  HEADER  │            │ ARGS  │
-// ├──────┼────────┼────────┼─────────┼────────────┼───────────┼──────────┼────────────┼───────┼
+// ┌──────┬────────┬────────┬─────────┬────────────┬───────────┬──────────┬─────────────┬───────┬
+// │ NOTE │ SERIAL │ SCRIPT │ STORAGE │   ASSETS   │ RECIPIENT │ METADATA │ ATTACHMENTS │ NOTE  │
+// │  ID  │  NUM   │  ROOT  │  COMM   │ COMMITMENT │           │  HEADER  │ COMMITMENT  │ ARGS  │
+// ├──────┼────────┼────────┼─────────┼────────────┼───────────┼──────────┼─────────────┼───────┼
 // 0      4        8        12        16           20          24         28           32
 //
 // ┬─────────┬────────┬───────┬─────────┬─────┬────────┬─────────┬─────────┐
@@ -430,17 +430,17 @@ pub const INPUT_NOTE_ASSETS_OFFSET: MemoryOffset = 44;
 // The total number of output notes for a transaction is stored in the bookkeeping section of the
 // memory. Data section of each note is laid out like so:
 //
-// ┌──────┬──────────┬──────────────┬────────────┬────────────┬────────────┬────────────┬───────────┬────────────┬────────┬
-// │ NOTE │ METADATA │     NUM      │ ATTACHMENT │ ATTACHMENT │ ATTACHMENT │ ATTACHMENT │ RECIPIENT │   ASSETS   │  NUM   │
-// │  ID  │  HEADER  │ ATTACHMENTS  │      0     │      1     │      2     │      3     │           │ COMMITMENT │ ASSETS │
-// ├──────┼──────────┼──────────────┼────────────┼────────────┼────────────┼────────────┼───────────┼────────────┼────────┼
-// 0      4          8              12           16           20           24           28          32           36
+// ┌──────┬──────────┬──────────────┬────────────┬────────────┬────────────┬────────────┬
+// │ NOTE │ METADATA │     NUM      │ ATTACHMENT │ ATTACHMENT │ ATTACHMENT │ ATTACHMENT │
+// │  ID  │  HEADER  │ ATTACHMENTS  │      0     │      1     │      2     │      3     │
+// ├──────┼──────────┼──────────────┼────────────┼────────────┼────────────┼────────────┼
+// 0      4          8              12           16           20           24
 //
-// ┬───────┬───────┬─────────┬─────┬────────┬─────────┬─────────┐
-// │ DIRTY │ ASSET │  ASSET  │ ... │ ASSET  │  ASSET  │ PADDING │
-// │ FLAG  │ KEY 0 │ VALUE 0 │     │ KEY n  │ VALUE n │         │
-// ┼───────┼───────┼─────────┼─────┼────────┼─────────┼─────────┘
-// 37      40      44              40 + 8n  44 + 8n
+// ┬───────────┬────────────┬────────┬───────┬───────┬─────────┬─────┬────────┬─────────┬─────────┐
+// │ RECIPIENT │   ASSETS   │  NUM   │ DIRTY │ ASSET │  ASSET  │ ... │ ASSET  │  ASSET  │ PADDING │
+// │           │ COMMITMENT │ ASSETS │ FLAG  │ KEY 0 │ VALUE 0 │     │ KEY n  │ VALUE n │         │
+// ┼───────────┼────────────┼────────┼───────┼───────┼─────────┼─────┼────────┼─────────┼─────────┘
+// 8          32           36       37     40      44              40 + 8n  44 + 8n
 //
 // The DIRTY_FLAG is the binary flag which specifies whether the assets commitment stored in this
 // note is outdated. It holds 1 if some changes were made to the note assets since the last

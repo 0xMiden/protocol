@@ -1,8 +1,6 @@
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
-use miden_core::WORD_SIZE;
-
 use crate::crypto::SequentialCommit;
 use crate::errors::NoteError;
 use crate::utils::serde::{
@@ -555,7 +553,8 @@ impl Deserializable for NoteAttachmentHeader {
 ///
 /// The commitment to the attachments is defined as:
 /// - 0 attachments: `EMPTY_WORD`
-/// - 1+ attachments: sequential hash over all attachment words
+/// - 1+ attachments: `hash(ATTACHMENT_0_COMMITMENT || ... || ATTACHMENT_N_COMMITMENT)`, i.e., the
+///   sequential hash over the individual attachment commitments.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NoteAttachments {
     attachments: Vec<NoteAttachment>,
@@ -685,37 +684,24 @@ impl SequentialCommit for NoteAttachments {
 /// Collects all attachment data into a flat vector of field elements.
 fn attachments_to_elements(attachments: &[NoteAttachment]) -> Vec<Felt> {
     let mut elements = Vec::new();
-    for attachment in attachments {
-        match attachment.content() {
-            NoteAttachmentContent::Word(word) => {
-                elements.extend_from_slice(word.as_elements());
-            },
-            NoteAttachmentContent::Array(array) => {
-                elements.extend(array.as_elements());
-            },
-        }
-    }
-    elements
-}
-
-/// Collects all attachment words into a flat vector of field elements.
-///
-/// Each attachment contributes exactly one word (4 felts): the raw content for word attachments,
-/// or the commitment for array attachments.
-fn attachments_to_words(attachments: &[NoteAttachment]) -> Vec<Felt> {
-    let mut elements = Vec::with_capacity(attachments.len() * WORD_SIZE);
-    for attachment in attachments {
-        elements.extend_from_slice(attachment.content().to_word().as_elements());
+    for attachment_commitment in attachments.iter().map(|attachment| attachment.content().to_word())
+    {
+        elements.extend_from_slice(attachment_commitment.as_elements());
     }
     elements
 }
 
 /// Computes the commitment over a slice of attachments.
+///
+/// The commitment is defined as `hash(ATTACHMENT_0_COMMITMENT || ... || ATTACHMENT_N_COMMITMENT)`,
+/// i.e., the sequential hash over the individual attachment commitments. Returns `EMPTY_WORD` if
+/// no attachments are present.
 fn compute_commitment(attachments: &[NoteAttachment]) -> Word {
     if attachments.is_empty() {
         Word::empty()
     } else {
-        Hasher::hash_elements(&attachments_to_words(attachments))
+        let elements = attachments_to_elements(attachments);
+        Hasher::hash_elements(&elements)
     }
 }
 
@@ -864,7 +850,7 @@ mod tests {
             NoteAttachmentScheme::new(1)?,
             word,
         )])?;
-        // Single word attachment: commitment is the hash of the word.
+        // Single word attachment: commitment is hash of the word.
         assert_eq!(attachments.commitment(), Hasher::hash_elements(word.as_elements()));
 
         Ok(())

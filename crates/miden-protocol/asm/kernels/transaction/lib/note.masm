@@ -88,7 +88,8 @@ end
 #!
 #! The commitment is defined as:
 #! - 0 attachments: EMPTY_WORD
-#! - 1+ attachments: sequential hash over all flattened attachment elements
+#! - 1+ attachments: hash(ATTACHMENT_0_COMMITMENT || ... || ATTACHMENT_N_COMMITMENT)
+#!   i.e., the sequential hash over the individual attachment commitments.
 #!
 #! Inputs:  [note_ptr]
 #! Outputs: [ATTACHMENTS_COMMITMENT]
@@ -108,8 +109,8 @@ proc compute_attachments_commitment
         drop drop padw
         # => [EMPTY_WORD]
     else
-        # 1+ attachments: compute hash via hash_words
-        # compute end_ptr = attachment_data_ptr + num_attachments * 4
+        # 1+ attachments: hash the present attachment commitment words
+        # end_ptr = attachment_data_ptr + num_attachments * WORD_SIZE
         swap exec.memory::get_output_note_attachment_data_ptr
         # => [start_ptr, num_attachments]
 
