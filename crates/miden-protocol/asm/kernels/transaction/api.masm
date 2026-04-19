@@ -913,7 +913,7 @@ end
 #! Returns the metadata of the specified input note.
 #!
 #! Inputs:  [is_active_note, note_index, pad(14)]
-#! Outputs: [NOTE_ATTACHMENT, METADATA_HEADER, pad(8)]
+#! Outputs: [NOTE_ATTACHMENT_0, METADATA_HEADER, pad(8)]
 #!
 #! Where:
 #! - is_active_note is the boolean flag indicating whether we should return the metadata from
@@ -921,7 +921,7 @@ end
 #! - note_index is the index of the input note whose metadata should be returned. Notice that if
 #!   is_active_note is 1, note_index is ignored.
 #! - METADATA_HEADER is the metadata header of the specified input note.
-#! - NOTE_ATTACHMENT is the attachment of the specified input note.
+#! - NOTE_ATTACHMENT_0 is the first attachment of the specified input note.
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of input notes.
@@ -930,7 +930,7 @@ end
 #!
 #! Invocation: dynexec
 pub proc input_note_get_metadata
-    # get the input note pointer depending on whether the requested note is current or it was 
+    # get the input note pointer depending on whether the requested note is current or it was
     # requested by index.
     exec.get_requested_note_ptr
     # => [input_note_ptr, pad(15)]
@@ -950,11 +950,28 @@ pub proc input_note_get_metadata
 
     # get the attachment
     movup.4 exec.memory::get_input_note_attachments_commitment
-    # => [NOTE_ATTACHMENT, METADATA_HEADER, pad(16)]
+    # => [NOTE_ATTACHMENTS_COMMITMENT, METADATA_HEADER, pad(16)]
 
     # truncate the stack
     swapdw dropw dropw
-    # => [NOTE_ATTACHMENT, METADATA_HEADER, pad(8)]
+    # => [NOTE_ATTACHMENTS_COMMITMENT, METADATA_HEADER, pad(8)]
+
+    # TODO(multi_attachments): Maintain temporary compatibility with the previous API by returning
+    # the first attachment. This will be refactored in a follow-up PR.
+    exec.word::testz not
+    # => [!is_attachments_commitment_empty, NOTE_ATTACHMENTS_COMMITMENT, METADATA_HEADER, pad(8)]
+
+    # if the attachments commitment is the empty word, the first attachment is also the empty word,
+    # so we leave the empty word on the stack
+    #
+    # otherwise:
+    if.true
+        # fetch the first attachment from the advice stack and overwrite the attachments commitment
+        adv.push_mapval
+        adv_loadw
+        # => [ATTACHMENT_0, METADATA_HEADER, pad(8)]
+    end
+    # => [ATTACHMENT_0, METADATA_HEADER, pad(8)]
 end
 
 #! Returns the serial number of the specified input note.

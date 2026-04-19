@@ -211,14 +211,14 @@ end
 #!
 #! Invocation: exec
 pub proc metadata_into_attachment_header
-    # => [sender_id_suffix_type_version, sender_id_prefix, tag_and_num_words, schemes]
+    # => [sender_id_suffix_type_version, sender_id_prefix, attachment_num_words_and_tag, schemes]
 
     drop drop
-    # => [tag_and_num_words, schemes]
+    # => [attachment_num_words_and_tag, schemes]
 
-    # extract attachment_0_num_words from tag_and_num_words:
+    # extract attachment_0_num_words from attachment_num_words_and_tag:
     # u32split converts into num_words_packed (upper 32 bits) and tag (lower 32 bits)
-    u32split swap drop
+    u32split drop
     # => [num_words_packed, schemes]
     # => [attachment_3_num_words (8 bits) | attachment_2_num_words (8 bits) |
     #     attachment_1_num_words (8 bits) | attachment_0_num_words (8 bits)]
