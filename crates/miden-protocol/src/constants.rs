@@ -10,7 +10,7 @@ pub const ACCOUNT_UPDATE_MAX_SIZE: u32 = 2u32.pow(18);
 pub const NOTE_MAX_SIZE: u32 = 2u32.pow(18);
 
 /// The maximum number of assets that can be stored in a single note.
-pub const MAX_ASSETS_PER_NOTE: usize = 255;
+pub const MAX_ASSETS_PER_NOTE: usize = 64;
 
 /// The maximum number of storage items that can accompany a single note.
 ///

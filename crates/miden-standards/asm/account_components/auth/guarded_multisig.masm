@@ -1,9 +1,9 @@
-# The MASM code of the Multi-Signature Authentication Component with Private State Manager.
+# The MASM code of the Multi-Signature Authentication component integrated with a state guardian.
 #
-# See the `AuthMultisigPsm` Rust type's documentation for more details.
+# See the `AuthGuardedMultisig` Rust type's documentation for more details.
 
 use miden::standards::auth::multisig
-use miden::standards::auth::psm
+use miden::standards::auth::guardian
 
 pub use multisig::update_signers_and_threshold
 pub use multisig::get_threshold_and_num_approvers
@@ -11,9 +11,9 @@ pub use multisig::set_procedure_threshold
 pub use multisig::get_signer_at
 pub use multisig::is_signer
 
-pub use psm::update_psm_public_key
+pub use guardian::update_guardian_public_key
 
-#! Authenticate a transaction with multi-signature support and optional PSM verification.
+#! Authenticate a transaction with multi-signature support and optional guardian verification.
 #!
 #! Inputs:
 #!   Operand stack: [SALT]
@@ -22,14 +22,14 @@ pub use psm::update_psm_public_key
 #!
 #! Invocation: call
 @auth_script
-pub proc auth_tx_multisig_psm(salt: word)
+pub proc auth_tx_guarded_multisig(salt: word)
     exec.multisig::auth_tx
     # => [TX_SUMMARY_COMMITMENT]
 
     dupw
     # => [TX_SUMMARY_COMMITMENT, TX_SUMMARY_COMMITMENT]
     
-    exec.psm::verify_signature
+    exec.guardian::verify_signature
     # => [TX_SUMMARY_COMMITMENT]
 
     exec.multisig::assert_new_tx

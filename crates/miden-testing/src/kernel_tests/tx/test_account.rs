@@ -1544,8 +1544,9 @@ async fn transaction_executor_account_code_using_custom_library() -> anyhow::Res
 
     let account_component_source =
         NamedSource::new("account_component::account_module", ACCOUNT_COMPONENT_CODE);
-    let account_component_lib =
-        assembler.clone().assemble_library([account_component_source]).unwrap();
+    let account_component_lib = Arc::unwrap_or_clone(
+        assembler.clone().assemble_library([account_component_source]).unwrap(),
+    );
 
     let tx_script_src = "\
           use account_component::account_module
@@ -1991,9 +1992,11 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
         );
 
         let source = NamedSource::new("component1::interface", code);
-        TransactionKernel::assembler()
-            .assemble_library([source])
-            .expect("mock account code should be valid")
+        Arc::unwrap_or_clone(
+            TransactionKernel::assembler()
+                .assemble_library([source])
+                .expect("mock account code should be valid"),
+        )
     });
 
     static COMPONENT_2_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
@@ -2021,9 +2024,11 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
         );
 
         let source = NamedSource::new("component2::interface", code);
-        TransactionKernel::assembler()
-            .assemble_library([source])
-            .expect("mock account code should be valid")
+        Arc::unwrap_or_clone(
+            TransactionKernel::assembler()
+                .assemble_library([source])
+                .expect("mock account code should be valid"),
+        )
     });
 
     struct CustomComponent1 {
