@@ -78,7 +78,7 @@ impl BurnNote {
     /// - `sender`: The account ID of the note creator
     /// - `faucet_id`: The account ID of the faucet that will burn the assets
     /// - `fungible_asset`: The fungible asset to be burned
-    /// - `attachment`: The [`NoteAttachment`] of the BURN note
+    /// - `attachment`: The [`NoteAttachments`] of the BURN note
     /// - `rng`: Random number generator for creating the serial number
     ///
     /// # Errors

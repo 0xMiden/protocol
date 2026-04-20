@@ -81,7 +81,7 @@ impl MintNote {
     /// - `faucet_id`: The account ID of the network faucet that will mint the assets
     /// - `sender`: The account ID of the note creator (must be the faucet owner)
     /// - `mint_storage`: The storage configuration specifying private or public output mode
-    /// - `attachment`: The [`NoteAttachment`] of the MINT note
+    /// - `attachment`: The [`NoteAttachments`] of the MINT note
     /// - `rng`: Random number generator for creating the serial number
     ///
     /// # Errors

@@ -63,7 +63,7 @@ impl AccountTargetNetworkNote {
         self.target().execution_hint()
     }
 
-    /// Returns the raw [`NoteAttachment`] from the note's attachments.
+    /// Returns the raw [`NoteAttachments`] from the note's attachments.
     pub fn attachments(&self) -> &NoteAttachments {
         self.note.attachments()
     }
