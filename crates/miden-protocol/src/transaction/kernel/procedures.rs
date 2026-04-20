@@ -88,9 +88,9 @@ pub const KERNEL_PROCEDURES: [Word; 53] = [
     // output_note_get_recipient
     word!("0x1ce137f0c5be72832970e6c818968a789f65b97db34515bfebb767705f28db67"),
     // output_note_add_asset
-    word!("0xaf22383e4390f4f15a429768f79aa445f8a535bb21b0807172b9ef2de063d9d1"),
+    word!("0xfaadf08ba29f58af077b81eb7a0376b60c73650f1a7a0aa6d14684f40438f18f"),
     // output_note_set_attachment
-    word!("0x800ab6457b20be22a721d61770ab493334004d2b5d01a6bbd245e49554c31a2c"),
+    word!("0xfa92885c13374dcceff7382739b15f29de94d9b919878754b6337881d77669f5"),
     // tx_get_num_input_notes
     word!("0xfcc186d4b65c584f3126dda1460b01eef977efd76f9e36f972554af28e33c685"),
     // tx_get_input_notes_commitment
