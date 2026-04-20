@@ -17,7 +17,6 @@ use miden_protocol::account::{
 
 use super::MintPolicyAuthority;
 use crate::account::components::owner_controlled_library;
-use crate::account::policy_manager::OwnerControlled;
 use crate::procedure_digest;
 
 // MINT POLICY OWNER CONTROLLED
@@ -58,7 +57,9 @@ pub enum MintOwnerControlledConfig {
 ///   ([`MintPolicyAuthority::AuthControlled`] = tx auth, [`MintPolicyAuthority::OwnerControlled`] =
 ///   external owner).
 #[derive(Debug, Clone, Copy)]
-pub struct MintOwnerControlled(OwnerControlled);
+pub struct MintOwnerControlled {
+    initial_policy_root: Word,
+}
 
 impl MintOwnerControlled {
     // CONSTANTS
@@ -79,7 +80,7 @@ impl MintOwnerControlled {
             MintOwnerControlledConfig::CustomInitialRoot(root) => root,
         };
 
-        Self(OwnerControlled { initial_policy_root })
+        Self { initial_policy_root }
     }
 
     /// Creates a new [`MintOwnerControlled`] component with owner-only policy as default.
@@ -148,7 +149,7 @@ impl MintOwnerControlled {
     }
 
     fn initial_storage_slots(&self) -> Vec<StorageSlot> {
-        let initial_policy_root = self.0.initial_policy_root;
+        let initial_policy_root = self.initial_policy_root;
         let owner_only_procedure_root = Self::owner_only_policy_root();
         let allowed_policy_flag = Word::from([1u32, 0, 0, 0]);
         let mut allowed_policy_entries =

@@ -35,12 +35,3 @@ pub(crate) fn auth_controlled_initial_storage_slots(
         authority_slot,
     ]
 }
-
-/// Initial active policy root for owner-controlled mint/burn policy manager newtypes.
-///
-/// Mint and burn components wrap this field, each builds its own initial storage layout (the two
-/// layouts differ).
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct OwnerControlled {
-    pub(crate) initial_policy_root: Word,
-}

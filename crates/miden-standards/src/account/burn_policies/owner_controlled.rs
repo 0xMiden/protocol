@@ -17,7 +17,6 @@ use miden_protocol::account::{
 
 use super::{BurnAuthControlled, BurnPolicyAuthority};
 use crate::account::components::burn_owner_controlled_library;
-use crate::account::policy_manager::OwnerControlled;
 use crate::procedure_digest;
 
 // BURN POLICY OWNER CONTROLLED
@@ -61,7 +60,9 @@ pub enum BurnOwnerControlledConfig {
 ///   ([`BurnPolicyAuthority::AuthControlled`] = tx auth, [`BurnPolicyAuthority::OwnerControlled`] =
 ///   external owner).
 #[derive(Debug, Clone, Copy)]
-pub struct BurnOwnerControlled(OwnerControlled);
+pub struct BurnOwnerControlled {
+    initial_policy_root: Word,
+}
 
 impl BurnOwnerControlled {
     // CONSTANTS
@@ -83,7 +84,7 @@ impl BurnOwnerControlled {
             BurnOwnerControlledConfig::CustomInitialRoot(root) => root,
         };
 
-        Self(OwnerControlled { initial_policy_root })
+        Self { initial_policy_root }
     }
 
     /// Creates a new [`BurnOwnerControlled`] component with `allow_all` policy as default.
@@ -162,7 +163,7 @@ impl BurnOwnerControlled {
     }
 
     fn initial_storage_slots(&self) -> Vec<StorageSlot> {
-        let initial_policy_root = self.0.initial_policy_root;
+        let initial_policy_root = self.initial_policy_root;
         let allow_all_procedure_root = Self::allow_all_policy_root();
         let owner_only_procedure_root = Self::owner_only_policy_root();
         let allowed_policy_flag = Word::from([1u32, 0, 0, 0]);
