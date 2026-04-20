@@ -1,3 +1,3 @@
 // Include generated error constants
 #[cfg(any(feature = "testing", test))]
-include!("agglayer.rs");
+include!(concat!(env!("OUT_DIR"), "/agglayer_errors.rs"));

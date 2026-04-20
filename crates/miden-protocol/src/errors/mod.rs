@@ -108,8 +108,6 @@ pub enum ComponentMetadataError {
 
 #[derive(Debug, Error)]
 pub enum AccountError {
-    #[error("failed to deserialize account code")]
-    AccountCodeDeserializationError(#[source] DeserializationError),
     #[error("account code does not contain an auth component")]
     AccountCodeNoAuthComponent,
     #[error("account code contains multiple auth components")]

@@ -61,6 +61,24 @@ impl AccountCode {
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
+    /// Returns a new [`AccountCode`] instantiated from the provided [`MastForest`] and a list of
+    /// [`AccountProcedureRoot`]s.
+    ///
+    /// # Panics
+    ///
+    /// Panics if:
+    /// - The number of procedures is smaller than 2 or greater than 256.
+    pub fn from_parts(mast: Arc<MastForest>, procedures: Vec<AccountProcedureRoot>) -> Self {
+        assert!(procedures.len() >= Self::MIN_NUM_PROCEDURES, "not enough account procedures");
+        assert!(procedures.len() <= Self::MAX_NUM_PROCEDURES, "too many account procedures");
+
+        Self {
+            commitment: build_procedure_commitment(&procedures),
+            procedures,
+            mast,
+        }
+    }
+
     /// Creates a new [`AccountCode`] from the provided components' libraries.
     ///
     /// For testing use only.
@@ -117,32 +135,6 @@ impl AccountCode {
         })
     }
 
-    /// Returns a new [AccountCode] deserialized from the provided bytes.
-    ///
-    /// # Errors
-    /// Returns an error if account code deserialization fails.
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, AccountError> {
-        Self::read_from_bytes(bytes).map_err(AccountError::AccountCodeDeserializationError)
-    }
-
-    /// Returns a new [`AccountCode`] instantiated from the provided [`MastForest`] and a list of
-    /// [`AccountProcedureRoot`]s.
-    ///
-    /// # Panics
-    ///
-    /// Panics if:
-    /// - The number of procedures is smaller than 2 or greater than 256.
-    pub fn from_parts(mast: Arc<MastForest>, procedures: Vec<AccountProcedureRoot>) -> Self {
-        assert!(procedures.len() >= Self::MIN_NUM_PROCEDURES, "not enough account procedures");
-        assert!(procedures.len() <= Self::MAX_NUM_PROCEDURES, "too many account procedures");
-
-        Self {
-            commitment: build_procedure_commitment(&procedures),
-            procedures,
-            mast,
-        }
-    }
-
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
@@ -190,7 +182,7 @@ impl AccountCode {
     /// ```
     ///
     /// And then concatenating the resulting elements into a single vector.
-    pub fn as_elements(&self) -> Vec<Felt> {
+    pub fn to_elements(&self) -> Vec<Felt> {
         procedures_as_elements(self.procedures())
     }
 
@@ -281,13 +273,33 @@ impl Serializable for AccountCode {
 
 impl Deserializable for AccountCode {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let module = Arc::new(MastForest::read_from(source)?);
+        let mast = Arc::new(MastForest::read_from(source)?);
         let num_procedures = (source.read_u8()? as usize) + 1;
+
+        // make sure the number of procedures is valid; we only check the minimum because
+        // u8::MAX + 1 is guaranteed to be less than or equal to 256
+        if num_procedures < Self::MIN_NUM_PROCEDURES {
+            return Err(DeserializationError::InvalidValue(format!(
+                "account code must contain at least {} procedures, but has only {num_procedures} procedures",
+                Self::MIN_NUM_PROCEDURES
+            )));
+        }
+
         let procedures = source
             .read_many_iter(num_procedures)?
             .collect::<Result<Vec<AccountProcedureRoot>, _>>()?;
 
-        Ok(Self::from_parts(module, procedures))
+        // make sure that all account procedures are in the MAST forest
+        for procedure in procedures.iter() {
+            if mast.find_procedure_root(procedure.as_word()).is_none() {
+                return Err(DeserializationError::InvalidValue(format!(
+                    "procedure with root {} is missing from account code's MAST forest",
+                    procedure.as_word()
+                )));
+            }
+        }
+
+        Ok(Self::from_parts(mast, procedures))
     }
 }
 
@@ -391,13 +403,13 @@ impl AccountProcedureBuilder {
 // ================================================================================================
 
 /// Computes the commitment to the given procedures
-pub(crate) fn build_procedure_commitment(procedures: &[AccountProcedureRoot]) -> Word {
+fn build_procedure_commitment(procedures: &[AccountProcedureRoot]) -> Word {
     let elements = procedures_as_elements(procedures);
     Hasher::hash_elements(&elements)
 }
 
 /// Converts given procedures into field elements
-pub(crate) fn procedures_as_elements(procedures: &[AccountProcedureRoot]) -> Vec<Felt> {
+fn procedures_as_elements(procedures: &[AccountProcedureRoot]) -> Vec<Felt> {
     procedures.iter().flat_map(AccountProcedureRoot::as_elements).copied().collect()
 }
 
