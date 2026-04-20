@@ -13,8 +13,8 @@ use crate::account::components::{
     StandardAccountComponent,
     basic_fungible_faucet_library,
     basic_wallet_library,
+    guarded_multisig_library,
     multisig_library,
-    multisig_psm_library,
     network_fungible_faucet_library,
     no_auth_library,
     singlesig_acl_library,
@@ -113,9 +113,9 @@ impl AccountInterfaceExt for AccountInterface {
                     component_proc_digests
                         .extend(multisig_library().mast_forest().procedure_digests());
                 },
-                AccountComponentInterface::AuthMultisigPsm => {
+                AccountComponentInterface::AuthGuardedMultisig => {
                     component_proc_digests
-                        .extend(multisig_psm_library().mast_forest().procedure_digests());
+                        .extend(guarded_multisig_library().mast_forest().procedure_digests());
                 },
                 AccountComponentInterface::AuthNoAuth => {
                     component_proc_digests

@@ -10,6 +10,9 @@ use super::utils::serde::{
 use super::{Felt, Word};
 use crate::account::AccountId;
 
+mod asset_amount;
+pub use asset_amount::AssetAmount;
+
 mod fungible;
 
 pub use fungible::FungibleAsset;
