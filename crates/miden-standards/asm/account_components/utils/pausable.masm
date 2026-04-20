@@ -1,8 +1,9 @@
 # The MASM code of the Pausable account component.
 #
-# Re-exports pause/unpause and asset callbacks from `miden::standards::utils::pausable`.
-# Authorization for pause/unpause must be enforced by composing with access-control components.
+# NOTE: This is a temporary no-auth variant of the component for testing purposes. 
+# It is intended to be replaced by dedicated owner and role-based access control wrappers.
 
+pub use ::miden::standards::utils::pausable::is_paused
 pub use ::miden::standards::utils::pausable::pause
 pub use ::miden::standards::utils::pausable::unpause
 pub use ::miden::standards::utils::pausable::on_before_asset_added_to_account

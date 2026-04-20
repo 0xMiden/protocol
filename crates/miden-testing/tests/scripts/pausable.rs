@@ -1,13 +1,23 @@
-//! Tests for [`miden_standards::account::pausable::Pausable`] asset callbacks and pause/unpause scripts.
+//! Tests for [`miden_standards::account::pausable::Pausable`] asset callbacks and pause/unpause
+//! scripts.
 
 extern crate alloc;
 
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{
-    Account, AccountBuilder, AccountComponent, AccountId, AccountStorageMode, AccountType,
+    Account,
+    AccountBuilder,
+    AccountComponent,
+    AccountId,
+    AccountStorageMode,
+    AccountType,
 };
 use miden_protocol::asset::{
-    Asset, AssetCallbackFlag, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails,
+    Asset,
+    AssetCallbackFlag,
+    FungibleAsset,
+    NonFungibleAsset,
+    NonFungibleAssetDetails,
 };
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::{NoteTag, NoteType};
@@ -16,11 +26,18 @@ use miden_standards::account::faucets::BasicFungibleFaucet;
 use miden_standards::account::pausable::Pausable;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::MockFaucetComponent;
-use miden_testing::{AccountState, Auth, MockChain, MockChainBuilder, assert_transaction_executor_error};
+use miden_testing::{
+    AccountState,
+    Auth,
+    MockChain,
+    MockChainBuilder,
+    assert_transaction_executor_error,
+};
 
 const ERR_PAUSABLE_ENFORCED_PAUSE: MasmError = MasmError::from_static_str("the contract is paused");
 
-const ERR_PAUSABLE_EXPECTED_PAUSE: MasmError = MasmError::from_static_str("the contract is not paused");
+const ERR_PAUSABLE_EXPECTED_PAUSE: MasmError =
+    MasmError::from_static_str("the contract is not paused");
 
 fn add_faucet_with_pausable(builder: &mut MockChainBuilder) -> anyhow::Result<Account> {
     let basic_faucet = BasicFungibleFaucet::new("SYM".try_into()?, 8, Felt::new(1_000_000))?;
@@ -49,8 +66,9 @@ fn add_faucet_with_pausable_for_account_type(
     }
 
     let faucet_component: AccountComponent = match account_type {
-        AccountType::FungibleFaucet => BasicFungibleFaucet::new("SYM".try_into()?, 8, Felt::new(1_000_000))?
-            .into(),
+        AccountType::FungibleFaucet => {
+            BasicFungibleFaucet::new("SYM".try_into()?, 8, Felt::new(1_000_000))?.into()
+        },
         AccountType::NonFungibleFaucet => MockFaucetComponent.into(),
         _ => anyhow::bail!("pausable tests only use fungible or non-fungible faucet account types"),
     };
@@ -70,7 +88,10 @@ fn add_faucet_with_pausable_for_account_type(
     )
 }
 
-async fn execute_faucet_pause(mock_chain: &mut MockChain, faucet_id: AccountId) -> anyhow::Result<()> {
+async fn execute_faucet_pause(
+    mock_chain: &mut MockChain,
+    faucet_id: AccountId,
+) -> anyhow::Result<()> {
     let pause_script = r#"
         begin
             padw padw push.0

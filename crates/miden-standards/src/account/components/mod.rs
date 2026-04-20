@@ -99,10 +99,8 @@ static NETWORK_FUNGIBLE_FAUCET_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
 
 // Initialize the Pausable library only once.
 static PAUSABLE_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(
-        env!("OUT_DIR"),
-        "/assets/account_components/utils/pausable.masl"
-    ));
+    let bytes =
+        include_bytes!(concat!(env!("OUT_DIR"), "/assets/account_components/utils/pausable.masl"));
     Library::read_from_bytes(bytes).expect("Shipped Pausable library is well-formed")
 });
 

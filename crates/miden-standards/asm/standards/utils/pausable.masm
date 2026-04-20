@@ -14,7 +14,7 @@ use miden::protocol::native_account
 
 # The slot where the paused flag is stored as a single word.
 # Unpaused: [0, 0, 0, 0]. Paused: [1, 0, 0, 0].
-const IS_PAUSED_CONFIG_SLOT = word("miden::standards::utils::pausable::is_paused_config")
+const IS_PAUSED_SLOT = word("miden::standards::utils::pausable::is_paused")
 
 const PAUSED_WORD = [1, 0, 0, 0]
 
@@ -29,6 +29,26 @@ const ERR_PAUSABLE_EXPECTED_PAUSE = "the contract is not paused"
 
 # PUBLIC INTERFACE
 # ================================================================================================
+
+#! Returns whether the account is currently paused.
+#!
+#! Reads [`IS_PAUSED_SLOT`] on the active account and returns `1` if the stored word is non-zero
+#! (paused) or `0` if it is the zero word (unpaused).
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [is_paused, pad(15)]
+#!
+#! Invocation: call
+pub proc is_paused
+    exec.load_is_paused_word
+    # => [is_paused, 0, 0, 0, pad(16)]
+
+    exec.word::eqz not
+    # => [is_paused, pad(16)]
+
+    swap drop
+    # => [is_paused, pad(15)]
+end
 
 #! Sets the paused flag. Fails if already paused.
 #!
@@ -46,7 +66,7 @@ pub proc pause
     push.PAUSED_WORD
     # => [1, 0, 0, 0, pad(16)]
 
-    push.IS_PAUSED_CONFIG_SLOT[0..2]
+    push.IS_PAUSED_SLOT[0..2]
     # => [slot_suffix, slot_prefix, 1, 0, 0, 0, pad(16)]
 
     exec.native_account::set_item
@@ -71,7 +91,7 @@ pub proc unpause
     push.UNPAUSED_WORD
     # => [0, 0, 0, 0, pad(16)]
 
-    push.IS_PAUSED_CONFIG_SLOT[0..2]
+    push.IS_PAUSED_SLOT[0..2]
     # => [slot_suffix, slot_prefix, 0, 0, 0, 0, pad(16)]
 
     exec.native_account::set_item
@@ -83,7 +103,7 @@ end
 
 #! Requires the contract to be unpaused (storage word is the zero word).
 #!
-#! Reads [`IS_PAUSED_CONFIG_SLOT`] on the active account via [`load_is_paused_word`], then uses
+#! Reads [`IS_PAUSED_SLOT`] on the active account via [`load_is_paused_word`], then uses
 #! [`word::eqz`]. If the stored word is non-zero (paused), panics with
 #! [`ERR_PAUSABLE_ENFORCED_PAUSE`].
 #!
@@ -99,7 +119,7 @@ end
 #! Invocation: exec
 pub proc assert_not_paused
     exec.load_is_paused_word
-    # => [w0, w1, w2, w3]
+    # => [is_paused, 0, 0, 0]
 
     exec.word::eqz
     # => [is_unpaused]
@@ -110,7 +130,7 @@ end
 
 #! Requires the contract to be paused (storage word is not the zero word).
 #!
-#! Reads [`IS_PAUSED_CONFIG_SLOT`] on the active account, then [`word::eqz`] and inverts. If the
+#! Reads [`IS_PAUSED_SLOT`] on the active account, then [`word::eqz`] and inverts. If the
 #! stored word is zero (unpaused), panics with [`ERR_PAUSABLE_EXPECTED_PAUSE`].
 #!
 #! Typical use: guard `unpause` so clearing the flag only happens from a paused state.
@@ -124,7 +144,7 @@ end
 #! Invocation: exec
 pub proc assert_paused
     exec.load_is_paused_word
-    # => [w0, w1, w2, w3]
+    # => [is_paused, 0, 0, 0]
 
     exec.word::eqz not
     # => [is_paused]
@@ -138,7 +158,7 @@ end
 
 #! Callback when a callbacks-enabled asset is added to an account vault.
 #!
-#! Panics if this faucet account is paused (reads `IS_PAUSED_CONFIG_SLOT` on the active account,
+#! Panics if this faucet account is paused (reads `IS_PAUSED_SLOT` on the active account,
 #! which is the issuing faucet in the callback foreign context).
 #!
 #! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
@@ -172,18 +192,20 @@ end
 # HELPER PROCEDURES
 # ================================================================================================
 
-#! Loads the paused-state word from storage.
+#! Loads the paused state word from storage.
 #!
 #! Inputs:  []
-#! Outputs: [w0, w1, w2, w3]
+#! Outputs: [is_paused, 0, 0, 0]
 #!
 #! Where:
-#! - w0..w3 are the four felts of the value stored at [`IS_PAUSED_CONFIG_SLOT`] on the active
-#!   account.
+#! - is_paused is the flag felt at the top of [`IS_PAUSED_SLOT`] (`1` when paused, `0` when
+#!   unpaused).
+#! - The remaining three felts of the word are always zero by construction (see [`PAUSED_WORD`]
+#!   and [`UNPAUSED_WORD`]).
 #!
 #! Invocation: exec
 proc load_is_paused_word
-    push.IS_PAUSED_CONFIG_SLOT[0..2]
+    push.IS_PAUSED_SLOT[0..2]
     exec.active_account::get_item
-    # => [w0, w1, w2, w3]
+    # => [is_paused, 0, 0, 0]
 end
