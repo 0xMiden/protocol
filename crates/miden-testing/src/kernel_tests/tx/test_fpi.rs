@@ -2038,7 +2038,7 @@ fn foreign_account_data_memory_assertions(
 
     for (i, elements) in foreign_account
         .code()
-        .as_elements()
+        .to_elements()
         .chunks(AccountProcedureRoot::NUM_ELEMENTS)
         .enumerate()
     {

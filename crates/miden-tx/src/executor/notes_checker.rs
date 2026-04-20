@@ -1,6 +1,7 @@
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
+use miden_processor::ExecutionError;
 use miden_processor::advice::AdviceInputs;
 use miden_protocol::account::AccountId;
 use miden_protocol::block::BlockNumber;
@@ -31,36 +32,98 @@ pub const MAX_NUM_CHECKER_NOTES: usize = 20;
 // NOTE CONSUMPTION INFO
 // ================================================================================================
 
+/// Represents a successfully consumed note along with the number of cycles it took to execute.
+#[derive(Debug)]
+pub struct SuccessfulNote {
+    note: Note,
+    num_cycles: usize,
+}
+
+impl SuccessfulNote {
+    /// Constructs a new `SuccessfulNote`.
+    pub fn new(note: Note, num_cycles: usize) -> Self {
+        Self { note, num_cycles }
+    }
+
+    /// Returns a reference to the note.
+    pub fn note(&self) -> &Note {
+        &self.note
+    }
+
+    /// Returns the number of cycles consumed during execution.
+    pub fn num_cycles(&self) -> usize {
+        self.num_cycles
+    }
+}
+
 /// Represents a failed note consumption.
 #[derive(Debug)]
 pub struct FailedNote {
-    pub note: Note,
-    pub error: TransactionExecutorError,
+    note: Note,
+    error: TransactionExecutorError,
+    /// The number of cycles consumed by the note before it failed.
+    ///
+    /// This is `Some` when the failure was due to exceeding the cycle limit, and `None`
+    /// for other error types where the cycle count is not meaningful.
+    num_cycles: Option<usize>,
 }
 
 impl FailedNote {
     /// Constructs a new `FailedNote`.
-    pub fn new(note: Note, error: TransactionExecutorError) -> Self {
-        Self { note, error }
+    pub fn new(note: Note, error: TransactionExecutorError, num_cycles: Option<usize>) -> Self {
+        Self { note, error, num_cycles }
+    }
+
+    /// Returns a reference to the note.
+    pub fn note(&self) -> &Note {
+        &self.note
+    }
+
+    /// Returns a reference to the error.
+    pub fn error(&self) -> &TransactionExecutorError {
+        &self.error
+    }
+
+    /// Returns the number of cycles consumed before failure, if available.
+    ///
+    /// This is `Some` when the failure was due to exceeding the cycle limit, and `None`
+    /// for other error types where the cycle count is not meaningful.
+    pub fn num_cycles(&self) -> Option<usize> {
+        self.num_cycles
     }
 }
 
 /// Contains information about the successful and failed consumption of notes.
 #[derive(Default, Debug)]
 pub struct NoteConsumptionInfo {
-    pub successful: Vec<Note>,
-    pub failed: Vec<FailedNote>,
+    successful: Vec<SuccessfulNote>,
+    failed: Vec<FailedNote>,
 }
 
 impl NoteConsumptionInfo {
     /// Creates a new [`NoteConsumptionInfo`] instance with the given successful notes.
-    pub fn new_successful(successful: Vec<Note>) -> Self {
+    pub fn new_successful(successful: Vec<SuccessfulNote>) -> Self {
         Self { successful, ..Default::default() }
     }
 
     /// Creates a new [`NoteConsumptionInfo`] instance with the given successful and failed notes.
-    pub fn new(successful: Vec<Note>, failed: Vec<FailedNote>) -> Self {
+    pub fn new(successful: Vec<SuccessfulNote>, failed: Vec<FailedNote>) -> Self {
         Self { successful, failed }
+    }
+
+    /// Returns a reference to the successfully consumed notes.
+    pub fn successful(&self) -> &[SuccessfulNote] {
+        &self.successful
+    }
+
+    /// Returns a reference to the failed notes.
+    pub fn failed(&self) -> &[FailedNote] {
+        &self.failed
+    }
+
+    /// Consumes the struct and returns the successful and failed notes.
+    pub fn into_parts(self) -> (Vec<SuccessfulNote>, Vec<FailedNote>) {
+        (self.successful, self.failed)
     }
 }
 
@@ -179,7 +242,7 @@ where
         // try to consume the provided note
         match self.try_execute_notes(&mut tx_inputs).await {
             // execution succeeded
-            Ok(()) => Ok(NoteConsumptionStatus::Consumable),
+            Ok(_cycle_counts) => Ok(NoteConsumptionStatus::Consumable),
             Err(tx_checker_error) => {
                 match tx_checker_error {
                     // execution failed on the preparation stage, before we actually executed the tx
@@ -195,9 +258,9 @@ where
                         Ok(NoteConsumptionStatus::UnconsumableConditions)
                     },
                     // execution failed during the epilogue
-                    TransactionCheckerError::EpilogueExecution(epilogue_error) => {
-                        Ok(handle_epilogue_error(epilogue_error))
-                    },
+                    TransactionCheckerError::EpilogueExecution {
+                        error: epilogue_error, ..
+                    } => Ok(handle_epilogue_error(epilogue_error)),
                 }
             },
         }
@@ -228,15 +291,24 @@ where
             // Execute the candidate notes.
             tx_inputs.set_input_notes(candidate_notes.clone());
             match self.try_execute_notes(&mut tx_inputs).await {
-                Ok(()) => {
+                Ok(cycle_counts) => {
                     // A full set of successful notes has been found.
-                    let successful = candidate_notes;
+                    let successful = candidate_notes
+                        .into_iter()
+                        .zip(cycle_counts)
+                        .map(|(note, num_cycles)| SuccessfulNote::new(note, num_cycles))
+                        .collect();
                     return Ok(NoteConsumptionInfo::new(successful, failed_notes));
                 },
-                Err(TransactionCheckerError::NoteExecution { failed_note_index, error }) => {
+                Err(TransactionCheckerError::NoteExecution {
+                    failed_note_index,
+                    error,
+                    failed_note_cycle_count,
+                    ..
+                }) => {
                     // SAFETY: Failed note index is in bounds of the candidate notes.
                     let failed_note = candidate_notes.remove(failed_note_index);
-                    failed_notes.push(FailedNote::new(failed_note, error));
+                    failed_notes.push(FailedNote::new(failed_note, error, failed_note_cycle_count));
 
                     // All possible candidate combinations have been attempted.
                     if candidate_notes.is_empty() {
@@ -244,7 +316,7 @@ where
                     }
                     // Continue and process the next set of candidates.
                 },
-                Err(TransactionCheckerError::EpilogueExecution(_)) => {
+                Err(TransactionCheckerError::EpilogueExecution { .. }) => {
                     let consumption_info = self
                         .find_largest_executable_combination(
                             candidate_notes,
@@ -277,6 +349,7 @@ where
         mut tx_inputs: TransactionInputs,
     ) -> NoteConsumptionInfo {
         let mut successful_notes = Vec::new();
+        let mut successful_cycle_counts = Vec::new();
         let mut failed_note_index = BTreeMap::new();
 
         // Iterate by note count: try 1 note, then 2, then 3, etc.
@@ -292,10 +365,12 @@ where
 
                 tx_inputs.set_input_notes(successful_notes.clone());
                 match self.try_execute_notes(&mut tx_inputs).await {
-                    Ok(()) => {
+                    Ok(cycle_counts) => {
                         // The successfully added note might have failed earlier. Remove it from the
                         // failed list.
                         failed_note_index.remove(&note.id());
+                        // Store the cycle counts from the latest successful execution.
+                        successful_cycle_counts = cycle_counts;
                         // This combination succeeded; remove the most recently added note from
                         // the remaining set.
                         remaining_notes.remove(idx);
@@ -306,31 +381,52 @@ where
                         // continue to next note.
                         let failed_note =
                             successful_notes.pop().expect("successful notes should not be empty");
+
+                        // Extract the failed note's cycle count if available.
+                        let num_cycles = match &error {
+                            TransactionCheckerError::NoteExecution {
+                                failed_note_cycle_count,
+                                ..
+                            } => *failed_note_cycle_count,
+                            _ => None,
+                        };
+
                         // Record the failed note (overwrite previous failures for the relevant
                         // note).
-                        failed_note_index
-                            .insert(failed_note.id(), FailedNote::new(failed_note, error.into()));
+                        failed_note_index.insert(
+                            failed_note.id(),
+                            FailedNote::new(failed_note, error.into(), num_cycles),
+                        );
                     },
                 }
             }
         }
 
+        // Pair successful notes with their cycle counts from the last successful execution.
+        let successful = successful_notes
+            .into_iter()
+            .zip(successful_cycle_counts)
+            .map(|(note, num_cycles)| SuccessfulNote::new(note, num_cycles))
+            .collect();
+
         // Append failed notes to the list of failed notes provided as input.
         failed_notes.extend(failed_note_index.into_values());
-        NoteConsumptionInfo::new(successful_notes, failed_notes)
+        NoteConsumptionInfo::new(successful, failed_notes)
     }
 
     /// Attempts to execute a transaction with the provided input notes.
     ///
     /// This method executes the full transaction pipeline including prologue, note execution,
-    /// and epilogue phases. It returns `Ok(())` if all notes are successfully consumed,
-    /// or a specific [`NoteExecutionError`] indicating where and why the execution failed.
+    /// and epilogue phases. It returns `Ok(cycle_counts)` if all notes are successfully consumed
+    /// (where `cycle_counts` contains the number of cycles for each note), or a specific
+    /// [`TransactionCheckerError`] indicating where and why the execution failed. The order of the
+    /// returned `cycle_counts` is guaranteed to match the order of the input notes.
     async fn try_execute_notes(
         &self,
         tx_inputs: &mut TransactionInputs,
-    ) -> Result<(), TransactionCheckerError> {
+    ) -> Result<Vec<usize>, TransactionCheckerError> {
         if tx_inputs.input_notes().is_empty() {
-            return Ok(());
+            return Ok(Vec::new());
         }
 
         let (mut host, stack_inputs, advice_inputs) =
@@ -347,6 +443,13 @@ where
 
         match result {
             Ok(execution_output) => {
+                let cycle_counts = host
+                    .tx_progress()
+                    .note_execution()
+                    .iter()
+                    .map(|(_, interval)| interval.len())
+                    .collect();
+
                 // Set the advice inputs from the successful execution as advice inputs for
                 // reexecution. This avoids calls to the data store (to load data lazily) that have
                 // already been done as part of this execution.
@@ -357,7 +460,7 @@ where
                     ..Default::default()
                 };
                 tx_inputs.set_advice_inputs(advice_inputs);
-                Ok(())
+                Ok(cycle_counts)
             },
             Err(error) => {
                 let notes = host.tx_progress().note_execution();
@@ -372,13 +475,38 @@ where
                     notes.split_last().expect("notes vector is not empty because of earlier check");
 
                 // If the interval end of the last note is specified, then an error occurred after
-                // notes processing.
+                // notes processing. All notes executed successfully in this case.
                 if last_note_interval.end().is_some() {
-                    Err(TransactionCheckerError::EpilogueExecution(error))
+                    let successful_notes_cycle_counts =
+                        notes.iter().map(|(_, interval)| interval.len()).collect();
+                    Err(TransactionCheckerError::EpilogueExecution {
+                        error,
+                        successful_notes_cycle_counts,
+                    })
                 } else {
                     // Return the index of the failed note.
                     let failed_note_index = success_notes.len();
-                    Err(TransactionCheckerError::NoteExecution { failed_note_index, error })
+                    let successful_notes_cycle_counts =
+                        success_notes.iter().map(|(_, interval)| interval.len()).collect();
+
+                    // Compute the failed note's cycle count when the failure was due to
+                    // exceeding the cycle limit. In this case, the note's interval has a
+                    // start but no end, and the total cycles consumed equals the max allowed.
+                    let failed_note_cycle_count = match &error {
+                        TransactionExecutorError::TransactionProgramExecutionFailed(
+                            ExecutionError::CycleLimitExceeded(max_cycles),
+                        ) => last_note_interval
+                            .start()
+                            .map(|start| *max_cycles as usize - usize::from(start)),
+                        _ => None,
+                    };
+
+                    Err(TransactionCheckerError::NoteExecution {
+                        failed_note_index,
+                        error,
+                        successful_notes_cycle_counts,
+                        failed_note_cycle_count,
+                    })
                 }
             },
         }

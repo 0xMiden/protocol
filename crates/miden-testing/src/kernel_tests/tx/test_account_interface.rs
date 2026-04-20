@@ -36,13 +36,7 @@ use miden_standards::note::{
 use miden_standards::testing::mock_account::MockAccountExt;
 use miden_standards::testing::note::NoteBuilder;
 use miden_tx::auth::UnreachableAuth;
-use miden_tx::{
-    FailedNote,
-    NoteConsumptionChecker,
-    NoteConsumptionInfo,
-    TransactionExecutor,
-    TransactionExecutorError,
-};
+use miden_tx::{NoteConsumptionChecker, TransactionExecutor, TransactionExecutorError};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
@@ -90,15 +84,16 @@ async fn check_note_consumability_standard_notes_success() -> anyhow::Result<()>
         .check_notes_consumability(target_account_id, block_ref, notes.clone(), tx_args)
         .await?;
 
-    assert_matches!(consumption_info, NoteConsumptionInfo { successful, failed, .. } => {
-        assert_eq!(successful.len(), notes.len());
+    let successful = consumption_info.successful();
+    let failed = consumption_info.failed();
 
-        // we asserted that `successful` and `notes` vectors have the same length, so it's safe to
-        // check their equality that way
-        successful.iter().for_each(|successful_note| assert!(notes.contains(successful_note)));
+    assert_eq!(successful.len(), notes.len());
 
-        assert!(failed.is_empty());
-    });
+    // we asserted that `successful` and `notes` vectors have the same length, so it's safe to
+    // check their equality that way
+    successful.iter().for_each(|s| assert!(notes.contains(s.note())));
+
+    assert!(failed.is_empty());
 
     Ok(())
 }
@@ -137,14 +132,15 @@ async fn check_note_consumability_custom_notes_success(
         .check_notes_consumability(account_id, block_ref, notes.clone(), tx_args)
         .await?;
 
-    assert_matches!(consumption_info, NoteConsumptionInfo { successful, failed, .. }=> {
-        if notes.is_empty() {
-            assert!(successful.is_empty());
-            assert!(failed.is_empty());
-        } else {
-            assert_eq!(successful.len(), notes.len());
-        }
-    });
+    let successful = consumption_info.successful();
+    let failed = consumption_info.failed();
+
+    if notes.is_empty() {
+        assert!(successful.is_empty());
+        assert!(failed.is_empty());
+    } else {
+        assert_eq!(successful.len(), notes.len());
+    }
     Ok(())
 }
 
@@ -216,49 +212,41 @@ async fn check_note_consumability_partial_success() -> anyhow::Result<()> {
         .check_notes_consumability(account_id, block_ref, notes, tx_args)
         .await?;
 
-    assert_matches!(
-        consumption_info,
-        NoteConsumptionInfo {
-            successful,
-            failed
-        } => {
-                assert_eq!(failed.len(), 2);
-                assert_eq!(successful.len(), 3);
+    let successful = consumption_info.successful();
+    let failed = consumption_info.failed();
 
-                // First failing note.
-                assert_matches!(
-                    failed.first().expect("first failed notes should exist"),
-                    FailedNote {
-                        note,
-                        error: TransactionExecutorError::TransactionProgramExecutionFailed(
-                            ExecutionError::OperationError { err: miden_processor::operation::OperationError::DivideByZero, .. })
-                    } => {
-                        assert_eq!(
-                            note.id(),
-                            failing_note_2.id(),
-                        );
-                    }
-                );
-                // Second failing note.
-                assert_matches!(
-                    failed.get(1).expect("second failed note should exist"),
-                    FailedNote {
-                        note,
-                        error: TransactionExecutorError::TransactionProgramExecutionFailed(
-                            ExecutionError::OperationError { err: miden_processor::operation::OperationError::DivideByZero, .. })
-                    } => {
-                        assert_eq!(
-                            note.id(),
-                            failing_note_1.id(),
-                        );
-                    }
-                );
-                // Successful notes.
-                assert_eq!(
-                    [successful[0].id(), successful[1].id(), successful[2].id()],
-                    [successful_note_2.id(), successful_note_1.id(), successful_note_3.id()],
-                );
+    assert_eq!(failed.len(), 2);
+    assert_eq!(successful.len(), 3);
+
+    // First failing note.
+    let first_failed = failed.first().expect("first failed notes should exist");
+    assert_matches!(
+        first_failed.error(),
+        TransactionExecutorError::TransactionProgramExecutionFailed(
+            ExecutionError::OperationError {
+                err: miden_processor::operation::OperationError::DivideByZero,
+                ..
             }
+        )
+    );
+    assert_eq!(first_failed.note().id(), failing_note_2.id());
+
+    // Second failing note.
+    let second_failed = failed.get(1).expect("second failed note should exist");
+    assert_matches!(
+        second_failed.error(),
+        TransactionExecutorError::TransactionProgramExecutionFailed(
+            ExecutionError::OperationError {
+                err: miden_processor::operation::OperationError::DivideByZero,
+                ..
+            }
+        )
+    );
+    assert_eq!(second_failed.note().id(), failing_note_1.id());
+    // Successful notes.
+    assert_eq!(
+        [successful[0].note().id(), successful[1].note().id(), successful[2].note().id()],
+        [successful_note_2.id(), successful_note_1.id(), successful_note_3.id()],
     );
     Ok(())
 }
@@ -298,16 +286,11 @@ async fn check_note_consumability_epilogue_failure() -> anyhow::Result<()> {
         .check_notes_consumability(account_id, block_ref, notes, tx_args)
         .await?;
 
-    assert_matches!(
-       consumption_info,
-       NoteConsumptionInfo {
-           successful,
-           failed
-       } => {
-           assert!(successful.is_empty());
-           assert_eq!(failed.len(), 1);
-       }
-    );
+    let successful = consumption_info.successful();
+    let failed = consumption_info.failed();
+
+    assert!(successful.is_empty());
+    assert_eq!(failed.len(), 1);
     Ok(())
 }
 
@@ -380,49 +363,42 @@ async fn check_note_consumability_epilogue_failure_with_new_combination() -> any
         .check_notes_consumability(account_id, block_ref, notes, tx_args)
         .await?;
 
-    assert_matches!(
-        consumption_info,
-        NoteConsumptionInfo {
-            successful,
-            failed
-        } => {
-                assert_eq!(failed.len(), 2);
-                assert_eq!(successful.len(), 3);
+    let successful = consumption_info.successful();
+    let failed = consumption_info.failed();
 
-                // First failing note should be the note that does not cause epilogue failure.
-                assert_matches!(
-                    failed.first().expect("first failed notes should exist"),
-                    FailedNote {
-                        note,
-                        error: TransactionExecutorError::TransactionProgramExecutionFailed(
-                            ExecutionError::OperationError { err: miden_processor::operation::OperationError::DivideByZero, .. })
-                    } => {
-                        assert_eq!(
-                            note.id(),
-                            failing_note_1.id(),
-                        );
-                    }
-                );
-                // Second failing note should be the note that causes epilogue failure.
-                assert_matches!(
-                    failed.get(1).expect("second failed note should exist"),
-                    FailedNote {
-                        note,
-                        error: TransactionExecutorError::TransactionProgramExecutionFailed(
-                            ExecutionError::OperationError { err: miden_processor::operation::OperationError::FailedAssertion { .. }, .. })
-                    } => {
-                        assert_eq!(
-                            note.id(),
-                            fail_epilogue_note.id(),
-                        );
-                    }
-                );
-                // Successful notes.
-                assert_eq!(
-                    [successful[0].id(), successful[1].id(), successful[2].id()],
-                    [successful_note_1.id(), successful_note_2.id(), successful_note_3.id()],
-                );
+    assert_eq!(failed.len(), 2);
+    assert_eq!(successful.len(), 3);
+
+    // First failing note should be the note that does not cause epilogue failure.
+    let first_failed = failed.first().expect("first failed notes should exist");
+    assert_matches!(
+        first_failed.error(),
+        TransactionExecutorError::TransactionProgramExecutionFailed(
+            ExecutionError::OperationError {
+                err: miden_processor::operation::OperationError::DivideByZero,
+                ..
             }
+        )
+    );
+    assert_eq!(first_failed.note().id(), failing_note_1.id());
+
+    // Second failing note should be the note that causes epilogue failure.
+    let second_failed = failed.get(1).expect("second failed note should exist");
+    assert_matches!(
+        second_failed.error(),
+        TransactionExecutorError::TransactionProgramExecutionFailed(
+            ExecutionError::OperationError {
+                err: miden_processor::operation::OperationError::FailedAssertion { .. },
+                ..
+            }
+        )
+    );
+    assert_eq!(second_failed.note().id(), fail_epilogue_note.id());
+
+    // Successful notes.
+    assert_eq!(
+        [successful[0].note().id(), successful[1].note().id(), successful[2].note().id()],
+        [successful_note_1.id(), successful_note_2.id(), successful_note_3.id()],
     );
     Ok(())
 }
