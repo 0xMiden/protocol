@@ -138,7 +138,7 @@ begin
     # => [pad(16)]
 
     # --- Call 2: store_faucet_metadata_hash ---
-    # Expects: [fid_s, fid_p, MH_LO(4), MH_HI(4), pad(6)]
+    # Expects: [fid_s, fid_p, MH_LO, MH_HI, pad(6)]
 
     # Drop all 16 pad elements and rebuild the stack
     dropw dropw dropw dropw
@@ -157,15 +157,15 @@ begin
     # Load fid_p, fid_s
     mem_load.FAUCET_ID_PREFIX
     mem_load.FAUCET_ID_SUFFIX
-    # => [fid_s, fid_p, MH_LO(4), MH_HI(4)]
+    # => [fid_s, fid_p, MH_LO, MH_HI]
 
     # Pad to 16 (need 6 more)
     padw push.0.0
-    # => [0, 0, 0, 0, 0, 0, fid_s, fid_p, MH_LO(4), MH_HI(4)]
+    # => [0, 0, 0, 0, 0, 0, fid_s, fid_p, MH_LO, MH_HI]
 
     # Move pad to end
     movdn.15 movdn.15 movdn.15 movdn.15 movdn.15 movdn.15
-    # => [fid_s, fid_p, MH_LO(4), MH_HI(4), pad(6)]
+    # => [fid_s, fid_p, MH_LO, MH_HI, pad(6)]
 
     call.bridge_config::store_faucet_metadata_hash
     # => [pad(16)]

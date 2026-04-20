@@ -957,7 +957,7 @@ proc create_mint_note_with_attachment
 
     # Rearrange for set_attachment: [note_idx, attachment_scheme, attachment_kind, ATTACHMENT]
     movup.6
-    # => [note_idx, attachment_scheme, attachment_kind, ATTACHMENT(4)]
+    # => [note_idx, attachment_scheme, attachment_kind, ATTACHMENT]
 
     exec.output_note::set_attachment
     # => []
@@ -1008,7 +1008,7 @@ proc unlock_and_send
     # Stash the asset to locals so we can re-use it for `output_note::add_asset` after
     # `native_account::remove_asset` consumes its stack copy.
     dupw.1 loc_storew_le.UNLOCK_ASSET_VALUE_LOC dropw
-    dupw    loc_storew_le.UNLOCK_ASSET_KEY_LOC   dropw
+    dupw loc_storew_le.UNLOCK_ASSET_KEY_LOC dropw
     # => [ASSET_KEY, ASSET_VALUE]
 
     # Remove the asset from the bridge's vault. Panics if the vault does not contain enough of

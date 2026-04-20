@@ -173,20 +173,14 @@ pub proc bridge_out
     exec.asset::key_into_faucet_id
     # => [faucet_id_suffix, faucet_id_prefix, pad(16)]
 
-
-
     # Stash the is_native flag for the lock/burn branch later in this procedure.
     dup.1 dup.1
     exec.bridge_config::is_faucet_native
     loc_store.BRIDGE_OUT_IS_NATIVE_LOC
     # => [faucet_id_suffix, faucet_id_prefix, pad(16)]
 
-
-
     exec.bridge_config::get_faucet_metadata_hash
     # => [METADATA_HASH_LO, METADATA_HASH_HI, pad(16)]
-
-
 
     push.LEAF_DATA_START_PTR push.METADATA_HASH_OFFSET add
     movdn.8
@@ -254,8 +248,6 @@ end
 #!
 #! Invocation: exec
 proc convert_asset
-
-
     swapw exec.asset::fungible_value_into_amount movdn.4
     # => [ASSET_KEY, amount]
 
@@ -273,25 +265,19 @@ proc convert_asset
     # Bring [amount, scale] to the top for scale_native_amount_to_u256.
     movup.6
     # => [scale, addr0, addr1, addr2, addr3, addr4, origin_network, amount]
-    
+
     movup.7
     # => [amount, scale, addr0, addr1, addr2, addr3, addr4, origin_network]
 
-
-
     exec.asset_conversion::scale_native_amount_to_u256
     exec.asset_conversion::reverse_limbs_and_change_byte_endianness
-    # => [U256_LO(4), U256_HI(4), addr0, addr1, addr2, addr3, addr4, origin_network]
-
-
+    # => [U256_LO, U256_HI, addr0, addr1, addr2, addr3, addr4, origin_network]
 
     # Byte-swap origin_network to match the EVM-side big-endian encoding used in the leaf layout.
     movup.13
     exec.utils::swap_u32_bytes
     movdn.13
     # => [AMOUNT_U256_LO, AMOUNT_U256_HI, origin_addr(5), origin_network]
-
-
 end
 
 #! Computes the leaf value from the leaf data in memory and appends it to the Local Exit Tree.
@@ -593,6 +579,7 @@ end
 proc lock_asset
     exec.native_account::add_asset
     # => [ASSET_VALUE']
+
     dropw
     # => []
 end

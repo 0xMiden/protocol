@@ -146,7 +146,7 @@ pub proc register_faucet
     # => [addr0, addr1, addr2, addr3, addr4, addr0, addr1, addr2, addr3, addr4, pad(6)]
 
     exec.hash_token_address
-    # => [TOKEN_ADDR_HASH(4), addr0, addr1, addr2, addr3, addr4, pad(6)]
+    # => [TOKEN_ADDR_HASH, addr0, addr1, addr2, addr3, addr4, pad(6)]
 
     loc_storew_le.REG_TOKEN_HASH_LOC dropw
     # => [addr0, addr1, addr2, addr3, addr4, pad(11)]
@@ -174,11 +174,10 @@ pub proc register_faucet
     # --- Step 2: Store origin address part 2 + origin_network + scale ---
     # KEY = [1, 0, fid_s, fid_p], VALUE = [addr4, origin_network, scale, 0]
 
-    loc_load.REG_ORIGIN_NETWORK_LOC
-    swap
+    push.0
     loc_load.REG_SCALE_LOC
-    movdn.2
-    push.0 movdn.3
+    loc_load.REG_ORIGIN_NETWORK_LOC
+    movup.3
     # => [addr4, origin_network, scale, 0, pad(11)]
 
     loc_load.REG_FID_P_LOC loc_load.REG_FID_S_LOC
@@ -218,7 +217,7 @@ pub proc register_faucet
     # => [0, 0, fid_s, fid_p, pad(11)]
 
     padw loc_loadw_le.REG_TOKEN_HASH_LOC
-    # => [TOKEN_ADDR_HASH(4), 0, 0, fid_s, fid_p, pad(7)]
+    # => [TOKEN_ADDR_HASH, 0, 0, fid_s, fid_p, pad(7)]
 
     push.TOKEN_REGISTRY_MAP_SLOT[0..2]
     exec.native_account::set_map_item
@@ -233,7 +232,7 @@ end
 #! - KEY [2, 0, fid_s, fid_p] -> METADATA_HASH_LO
 #! - KEY [3, 0, fid_s, fid_p] -> METADATA_HASH_HI
 #!
-#! Inputs:  [fid_s, fid_p, METADATA_HASH_LO(4), METADATA_HASH_HI(4), pad(6)]
+#! Inputs:  [fid_s, fid_p, METADATA_HASH_LO, METADATA_HASH_HI, pad(6)]
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
@@ -246,33 +245,33 @@ pub proc store_faucet_metadata_hash
 
     # --- Store METADATA_HASH_LO at key [2, 0, fid_s, fid_p] ---
     dup.1 dup.1
-    # => [fid_s, fid_p, fid_s, fid_p, MH_LO(4), MH_HI(4), pad(6)]
+    # => [fid_s, fid_p, fid_s, fid_p, MH_LO, MH_HI, pad(6)]
 
     push.0.2
-    # => [2, 0, fid_s, fid_p, fid_s, fid_p, MH_LO(4), MH_HI(4), pad(6)]
+    # => [2, 0, fid_s, fid_p, fid_s, fid_p, MH_LO, MH_HI, pad(6)]
 
-    # Bring MH_LO(4) to the top. The key prefix `[2, 0]` plus both the duplicated and original
+    # Bring MH_LO to the top. The key prefix `[2, 0]` plus both the duplicated and original
     # `[fid_s, fid_p]` pairs sit beneath MH_LO, so MH_LO_3 is at idx 9 (not idx 7).
     movup.9 movup.9 movup.9 movup.9
-    # => [mh_lo0, mh_lo1, mh_lo2, mh_lo3, 2, 0, fid_s, fid_p, fid_s, fid_p, MH_HI(4), pad(6)]
+    # => [mh_lo0, mh_lo1, mh_lo2, mh_lo3, 2, 0, fid_s, fid_p, fid_s, fid_p, MH_HI, pad(6)]
 
     swapw
-    # => [2, 0, fid_s, fid_p, MH_LO(4), fid_s, fid_p, MH_HI(4), pad(6)]
+    # => [2, 0, fid_s, fid_p, MH_LO, fid_s, fid_p, MH_HI, pad(6)]
 
     push.FAUCET_METADATA_MAP_SLOT[0..2]
     exec.native_account::set_map_item
     dropw
-    # => [fid_s, fid_p, MH_HI(4), pad(6)]
+    # => [fid_s, fid_p, MH_HI, pad(6)]
 
     # --- Store METADATA_HASH_HI at key [3, 0, fid_s, fid_p] ---
     push.0.3
-    # => [3, 0, fid_s, fid_p, MH_HI(4), pad(6)]
+    # => [3, 0, fid_s, fid_p, MH_HI, pad(6)]
 
     movup.7 movup.7 movup.7 movup.7
     # => [mh_hi0, mh_hi1, mh_hi2, mh_hi3, 3, 0, fid_s, fid_p, pad(6)]
 
     swapw
-    # => [3, 0, fid_s, fid_p, MH_HI(4), pad(6)]
+    # => [3, 0, fid_s, fid_p, MH_HI, pad(6)]
 
     push.FAUCET_METADATA_MAP_SLOT[0..2]
     exec.native_account::set_map_item
@@ -374,8 +373,10 @@ end
 #! metadata map.
 #!
 #! Reads sub-keys 2 and 3 from faucet_metadata_map:
-#! - Key [2, 0, fid_s, fid_p] -> METADATA_HASH_LO (4 felts)
-#! - Key [3, 0, fid_s, fid_p] -> METADATA_HASH_HI (4 felts)
+#! - Key [2, 0, fid_s, fid_p] -> METADATA_HASH_LO
+#! - Key [3, 0, fid_s, fid_p] -> METADATA_HASH_HI
+#!
+#! Sub-key 3 (HI) is read first so the final stack has MH_LO on top without a swapw.
 #!
 #! Inputs:  [faucet_id_suffix, faucet_id_prefix]
 #! Outputs: [METADATA_HASH_LO, METADATA_HASH_HI]
@@ -386,29 +387,25 @@ proc get_faucet_metadata_hash
     dup.1 dup.1
     # => [fid_s, fid_p, fid_s, fid_p]
 
+    # Read sub-key 3 (MH_HI) first so MH_LO ends up on top after the second read.
+    push.0.3
+    # => [3, 0, fid_s, fid_p, fid_s, fid_p]
+
+    push.FAUCET_METADATA_MAP_SLOT[0..2]
+    exec.active_account::get_map_item
+    # => [MH_HI, fid_s, fid_p]
+
+    # Move fid below MH_HI
+    movup.5 movup.5
+    # => [fid_s, fid_p, MH_HI]
+
     # Read sub-key 2: METADATA_HASH_LO
     push.0.2
-    # => [2, 0, fid_s, fid_p, fid_s, fid_p]
+    # => [2, 0, fid_s, fid_p, MH_HI]
 
     push.FAUCET_METADATA_MAP_SLOT[0..2]
     exec.active_account::get_map_item
-    # => [MH_LO(4), fid_s, fid_p]
-
-    # Move fid below MH_LO
-    movup.5 movup.5
-    # => [fid_s, fid_p, MH_LO(4)]
-
-    # Read sub-key 3: METADATA_HASH_HI
-    push.0.3
-    # => [3, 0, fid_s, fid_p, MH_LO(4)]
-
-    push.FAUCET_METADATA_MAP_SLOT[0..2]
-    exec.active_account::get_map_item
-    # => [MH_HI(4), MH_LO(4)]
-
-    # Rearrange: MH_LO should be on top
-    swapw
-    # => [MH_LO(4), MH_HI(4)]
+    # => [MH_LO, MH_HI]
 end
 
 #! Returns whether a faucet is native (not owned by the bridge).
@@ -428,8 +425,8 @@ proc is_faucet_native
     exec.active_account::get_map_item
     # => [1, is_native, 0, 0]
 
-    # Drop element 0 (registration flag), keep is_native, drop rest
-    drop swap drop swap drop
+    # Drop element 0 (registration flag), sink is_native below the trailing zeros, drop them.
+    drop movdn.2 drop drop
     # => [is_native]
 end
 
