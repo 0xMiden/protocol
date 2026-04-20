@@ -17,6 +17,8 @@ path    = "src/time_counting_benchmarks/prove.rs"
 
 [dependencies]
 # Workspace dependencies
+miden-core      = { workspace = true }
+miden-processor = { features = ["concurrent"], workspace = true }
 miden-protocol  = { features = ["testing"], workspace = true }
 miden-standards = { workspace = true }
 miden-testing   = { workspace = true }

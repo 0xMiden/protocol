@@ -62,6 +62,38 @@ cargo run --bin bench-transaction --features concurrent
 cargo bench --bin bench-transaction --bench time_counting_benchmarks --features concurrent
 ```
 
+## Generating trace snapshots for miden-vm's synthetic benchmark
+
+A separate bin target, `tx-trace-snapshot`, executes the same representative transaction contexts through the VM in order to build a real `ExecutionTrace`, then it reads per-component trace lengths from `TraceLenSummary`, and writes JSON snapshots consumed by miden-vm's `miden-synthetic-tx-kernel` bench.
+
+```bash
+cargo run --release -p bench-transaction --bin tx-trace-snapshot
+```
+
+Output: one JSON per scenario under `bin/bench-transaction/snapshots/`:
+
+- `consume-single-p2id.json`
+- `consume-two-p2id.json`
+
+These files are captured against whichever miden-processor version this workspace currently pins. To feed them into `miden-vm`, copy over the same-named files in the consumer's snapshot directory:
+
+```bash
+cp bin/bench-transaction/snapshots/*.json \
+   ../miden-vm/benches/synthetic-tx-kernel/snapshots/
+```
+
+then:
+
+```bash
+cargo bench -p miden-synthetic-tx-kernel
+```
+
+The snapshot contract is documented in
+`miden-vm/benches/synthetic-tx-kernel/README.md` and
+`miden-vm/benches/synthetic-tx-kernel/src/snapshot.rs` (two tiers: `trace.*` hard-target totals, `shape.*` advisory per-chiplet breakdown).
+
+The schema is maintained manually; there is no shared schema crate. The `schema_version` field is cross-checked at load time, and the consumer's loader rejects unknown versions. When changing the schema, bump both sides together.
+
 ## License
 
 This project is [MIT licensed](../../LICENSE).
