@@ -23,7 +23,7 @@ use miden_protocol::{Felt, Word};
 
 use crate::account::components::role_based_access_control_library;
 
-static ADMIN_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+static ROOT_ADMIN_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::access::role_based_access_control::admin_config")
         .expect("storage slot name should be valid")
 });
@@ -56,7 +56,7 @@ pub struct RoleInit {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RoleBasedAccessControl {
-    admin: AccountId,
+    root_admin: AccountId,
     roles: BTreeMap<RoleSymbol, RoleInit>,
 }
 
@@ -64,12 +64,12 @@ impl RoleBasedAccessControl {
     pub const NAME: &'static str =
         "miden::standards::components::access::role_based_access_control";
 
-    pub fn new(admin: AccountId) -> Self {
-        Self { admin, roles: BTreeMap::new() }
+    pub fn new(root_admin: AccountId) -> Self {
+        Self { root_admin, roles: BTreeMap::new() }
     }
 
-    pub fn admin(&self) -> AccountId {
-        self.admin
+    pub fn root_admin(&self) -> AccountId {
+        self.root_admin
     }
 
     pub fn roles(&self) -> &BTreeMap<RoleSymbol, RoleInit> {
@@ -95,8 +95,8 @@ impl RoleBasedAccessControl {
         self
     }
 
-    pub fn admin_config_slot() -> &'static StorageSlotName {
-        &ADMIN_CONFIG_SLOT_NAME
+    pub fn root_admin_config_slot() -> &'static StorageSlotName {
+        &ROOT_ADMIN_CONFIG_SLOT_NAME
     }
 
     pub fn state_slot() -> &'static StorageSlotName {
@@ -119,16 +119,16 @@ impl RoleBasedAccessControl {
         &ROLE_MEMBER_INDEX_SLOT_NAME
     }
 
-    pub fn admin_config_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+    pub fn root_admin_config_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
         (
-            Self::admin_config_slot().clone(),
+            Self::root_admin_config_slot().clone(),
             StorageSlotSchema::value(
-                "RBAC root admin and nominated admin",
+                "RBAC root admin and nominated root admin",
                 [
-                    FeltSchema::felt("admin_suffix"),
-                    FeltSchema::felt("admin_prefix"),
-                    FeltSchema::felt("nominated_admin_suffix"),
-                    FeltSchema::felt("nominated_admin_prefix"),
+                    FeltSchema::felt("root_admin_suffix"),
+                    FeltSchema::felt("root_admin_prefix"),
+                    FeltSchema::felt("nominated_root_admin_suffix"),
+                    FeltSchema::felt("nominated_root_admin_prefix"),
                 ],
             ),
         )
@@ -195,7 +195,7 @@ impl RoleBasedAccessControl {
 
     pub fn component_metadata() -> AccountComponentMetadata {
         let storage_schema = StorageSchema::new(vec![
-            Self::admin_config_slot_schema(),
+            Self::root_admin_config_slot_schema(),
             Self::state_slot_schema(),
             Self::active_roles_slot_schema(),
             Self::role_configs_slot_schema(),
@@ -212,11 +212,11 @@ impl RoleBasedAccessControl {
 
 impl From<RoleBasedAccessControl> for AccountComponent {
     fn from(rbac: RoleBasedAccessControl) -> Self {
-        let admin_config_slot = StorageSlot::with_value(
-            RoleBasedAccessControl::admin_config_slot().clone(),
+        let root_admin_config_slot = StorageSlot::with_value(
+            RoleBasedAccessControl::root_admin_config_slot().clone(),
             Word::from([
-                rbac.admin.suffix(),
-                rbac.admin.prefix().as_felt(),
+                rbac.root_admin.suffix(),
+                rbac.root_admin.prefix().as_felt(),
                 Felt::ZERO,
                 Felt::ZERO,
             ]),
@@ -325,7 +325,7 @@ impl From<RoleBasedAccessControl> for AccountComponent {
         AccountComponent::new(
             role_based_access_control_library(),
             vec![
-                admin_config_slot,
+                root_admin_config_slot,
                 state_slot,
                 active_roles_slot,
                 role_configs_slot,

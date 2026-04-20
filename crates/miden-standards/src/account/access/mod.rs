@@ -9,15 +9,15 @@ pub enum AccessControl {
     /// Uses two-step ownership transfer with the provided initial owner.
     Ownable2Step { owner: AccountId },
     /// Uses role-based access control with the provided initial root admin.
-    RoleBasedAccessControl { admin: AccountId },
+    RoleBasedAccessControl { root_admin: AccountId },
 }
 
 impl From<AccessControl> for AccountComponent {
     fn from(access_control: AccessControl) -> Self {
         match access_control {
             AccessControl::Ownable2Step { owner } => Ownable2Step::new(owner).into(),
-            AccessControl::RoleBasedAccessControl { admin } => {
-                RoleBasedAccessControl::new(admin).into()
+            AccessControl::RoleBasedAccessControl { root_admin } => {
+                RoleBasedAccessControl::new(root_admin).into()
             },
         }
     }
