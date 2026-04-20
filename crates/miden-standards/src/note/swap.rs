@@ -255,9 +255,6 @@ impl From<SwapNoteStorage> for NoteStorage {
     }
 }
 
-// NOTE: TryFrom<&[Felt]> for SwapNoteStorage is not implemented because
-// array attachment content cannot be reconstructed from storage alone. See https://github.com/0xMiden/protocol/issues/2555
-
 // TESTS
 // ================================================================================================
 
