@@ -108,7 +108,7 @@ pub proc active_account_matches_target_account
     swapw
     # => [METADATA_HEADER, NOTE_ATTACHMENT]
 
-    exec.note::extract_attachment_info_from_metadata
+    exec.note::metadata_into_attachment_info
     # => [attachment_kind, attachment_scheme, NOTE_ATTACHMENT]
 
     swap
