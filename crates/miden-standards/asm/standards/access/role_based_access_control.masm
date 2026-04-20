@@ -32,7 +32,7 @@ const ROLE_CONFIGS_SLOT = word("miden::standards::access::role_based_access_cont
 const ROLE_MEMBERS_SLOT = word("miden::standards::access::role_based_access_control::role_members")
 
 # Per-role reverse member index map slot.
-# Map entries: [0, role_symbol, account_suffix, account_prefix] -> [member_index_plus_one, 0, 0, 0]
+# Map entries: [0, role_symbol, account_suffix, account_prefix] -> [is_member, member_index, 0, 0]
 const ROLE_MEMBER_INDEX_SLOT = word("miden::standards::access::role_based_access_control::role_member_index")
 
 # TRANSFER_ROOT_ADMIN LOCALS
@@ -841,18 +841,19 @@ proc role_exists_internal
     # => [role_exists]
 end
 
-#! Returns the stored member index plus one for a role pair.
+#! Returns the stored membership entry for a role pair.
 #!
 #! Inputs:  [role_symbol, account_suffix, account_prefix]
-#! Outputs: [member_index_plus_one]
+#! Outputs: [is_member, member_index]
 #!
 #! Where:
 #! - role_symbol is the encoded role symbol.
 #! - account_{suffix,prefix} are the suffix and prefix felts of the account ID.
-#! - member_index_plus_one is the member index plus one, or 0 if the account is not in the role.
+#! - is_member is 1 if the account holds the role, otherwise 0.
+#! - member_index is the stored member index when is_member is 1; unspecified otherwise.
 #!
 #! Invocation: exec
-proc get_role_member_index
+proc get_role_member_entry
     push.0
     # => [0, role_symbol, account_suffix, account_prefix]
 
@@ -860,10 +861,10 @@ proc get_role_member_index
     # => [slot_suffix, slot_prefix, 0, role_symbol, account_suffix, account_prefix]
 
     exec.active_account::get_map_item
-    # => [member_index_plus_one, 0, 0, 0]
+    # => [is_member, member_index, 0, 0]
 
-    movdn.3 drop drop drop
-    # => [member_index_plus_one]
+    movup.3 drop movup.2 drop
+    # => [is_member, member_index]
 end
 
 
@@ -879,11 +880,11 @@ end
 #!
 #! Invocation: exec
 proc has_role_internal
-    exec.get_role_member_index
-    # => [member_index_plus_one]
+    exec.get_role_member_entry
+    # => [is_member, member_index]
 
-    neq.0
-    # => [has_role]
+    swap drop
+    # => [is_member]
 end
 
 
@@ -1260,12 +1261,12 @@ proc add_to_role_enumeration
     dup loc_store.MEMBER_COUNT_LOC
     # => [member_count, admin_role_symbol, active_role_index_plus_one, exists_flag]
 
-    # write ROLE_MEMBER_INDEX_SLOT[(role_symbol, account_id)] = member_index_plus_one
-    loc_load.MEMBER_COUNT_LOC add.1 push.0.0.0 movup.3
-    # => [member_index_plus_one, 0, 0, 0, member_count, admin_role_symbol, active_role_index_plus_one, exists_flag]
+    # write ROLE_MEMBER_INDEX_SLOT[(role_symbol, account_id)] = [1, member_index, 0, 0]
+    push.0.0 loc_load.MEMBER_COUNT_LOC push.1
+    # => [1, member_index, 0, 0, member_count, admin_role_symbol, active_role_index_plus_one, exists_flag]
 
     loc_load.ACCOUNT_PREFIX_LOC loc_load.ACCOUNT_SUFFIX_LOC loc_load.ROLE_SYMBOL_LOC push.0
-    # => [0, role_symbol, account_suffix, account_prefix, member_index_plus_one, 0, 0, 0,
+    # => [0, role_symbol, account_suffix, account_prefix, 1, member_index, 0, 0,
     #     member_count, admin_role_symbol, active_role_index_plus_one, exists_flag]
 
     push.ROLE_MEMBER_INDEX_SLOT[0..2] exec.native_account::set_map_item
@@ -1389,14 +1390,16 @@ proc remove_from_role_enumeration
     loc_load.ROLE_SYMBOL_LOC
     # => [role_symbol, account_suffix, account_prefix]
 
-    exec.get_role_member_index
-    # => [member_index_plus_one]
+    exec.get_role_member_entry
+    # => [is_member, member_index]
 
     dup eq.0
     assertz.err=ERR_ACCOUNT_NOT_IN_ROLE
-    # => [member_index_plus_one]
+    # => [is_member, member_index]
 
-    sub.1
+    drop
+    # => [member_index]
+
     loc_store.REMOVE_INDEX_LOC
     # => []
 
@@ -1453,9 +1456,8 @@ proc remove_from_role_enumeration
         loc_load.ROLE_SYMBOL_LOC push.0
         # => [0, role_symbol, moved_account_suffix, moved_account_prefix]
 
-        loc_load.REMOVE_INDEX_LOC
-        add.1 push.0.0.0 movup.3 swapw
-        # => [0, role_symbol, moved_account_suffix, moved_account_prefix, member_index_plus_one, 0, 0, 0]
+        push.0.0 loc_load.REMOVE_INDEX_LOC push.1 swapw
+        # => [0, role_symbol, moved_account_suffix, moved_account_prefix, 1, member_index, 0, 0]
 
         push.ROLE_MEMBER_INDEX_SLOT[0..2]
         exec.native_account::set_map_item

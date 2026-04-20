@@ -288,8 +288,8 @@ impl From<RoleBasedAccessControl> for AccountComponent {
                         member.prefix().as_felt(),
                     ])),
                     Word::from([
-                        Felt::new(member_index as u64 + 1),
-                        Felt::ZERO,
+                        Felt::new(1),
+                        Felt::new(member_index as u64),
                         Felt::ZERO,
                         Felt::ZERO,
                     ]),
