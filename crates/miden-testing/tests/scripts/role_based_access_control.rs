@@ -583,8 +583,8 @@ async fn test_rbac_root_admin_role_management_and_lookup() -> anyhow::Result<()>
     assert_eq!(minter_config[0], Felt::ZERO);
     assert_eq!(minter_config[1], Felt::from(&minter_admin));
     assert_eq!(minter_config[2], Felt::ZERO);
-    assert_eq!(minter_config[3], Felt::new(1));
-    assert_eq!(minter_admin_config[3], Felt::new(1));
+    assert_eq!(minter_config[3], Felt::ZERO);
+    assert_eq!(minter_admin_config[3], Felt::ZERO);
     assert_eq!(get_active_role_count(&updated)?, 0);
 
     let grant_role_note = build_note(admin, grant_role_script(&minter, member), 202)?;
@@ -616,7 +616,7 @@ async fn test_rbac_root_admin_role_management_and_lookup() -> anyhow::Result<()>
     let minter_config = get_role_config(&revoked, &minter)?;
     assert_eq!(minter_config[0], Felt::ZERO);
     assert_eq!(minter_config[2], Felt::ZERO);
-    assert_eq!(minter_config[3], Felt::new(1));
+    assert_eq!(minter_config[3], Felt::ZERO);
     assert_eq!(get_active_role_count(&revoked)?, 0);
     assert_eq!(get_role_member_index(&revoked, &minter, member)?, None);
 
@@ -1323,8 +1323,7 @@ async fn test_rbac_set_role_admin_rejects_zero_role_symbol() -> anyhow::Result<(
 }
 
 #[tokio::test]
-async fn test_rbac_set_role_admin_creates_missing_role_configs_without_activating_roles()
--> anyhow::Result<()> {
+async fn test_rbac_set_role_admin_stores_admin_without_activating_roles() -> anyhow::Result<()> {
     let admin = test_account_id(93);
     let user_role = role("USER");
     let manager_role = role("MANAGER");
@@ -1334,10 +1333,10 @@ async fn test_rbac_set_role_admin_creates_missing_role_configs_without_activatin
     let note = build_note(admin, set_role_admin_script(&user_role, Some(&manager_role)), 658)?;
     let updated = execute_note_and_apply(&mock_chain, &account, &note).await?;
 
+    // set_role_admin stores the admin relationship but does not activate any role.
     assert_eq!(get_active_role_count(&updated)?, 0);
-    assert_eq!(get_role_config(&updated, &user_role)?[3], Felt::new(1));
-    assert_eq!(get_role_config(&updated, &manager_role)?[3], Felt::new(1));
     assert_eq!(get_role_config(&updated, &user_role)?[0], Felt::ZERO);
+    assert_eq!(get_role_config(&updated, &user_role)?[1], Felt::from(&manager_role));
     assert_eq!(get_role_config(&updated, &manager_role)?[0], Felt::ZERO);
 
     Ok(())

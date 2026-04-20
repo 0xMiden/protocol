@@ -261,7 +261,7 @@ impl From<RoleBasedAccessControl> for AccountComponent {
                     Felt::new(member_count),
                     admin_role_felt,
                     active_role_index,
-                    Felt::new(1),
+                    Felt::ZERO,
                 ]),
             ));
 
