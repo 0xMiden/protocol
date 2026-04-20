@@ -242,7 +242,7 @@ fn create_agglayer_faucet_builder(
         .with_component(agglayer_component)
         .with_component(Ownable2Step::new(bridge_account_id))
         .with_component(MintOwnerControlled::owner_only())
-        .with_component(BurnOwnerControlled::allow_all())
+        .with_component(BurnOwnerControlled::owner_only())
 }
 
 /// Creates a new agglayer faucet account with the specified configuration.
