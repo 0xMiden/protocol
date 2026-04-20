@@ -1,6 +1,7 @@
 use core::slice;
 
 use assert_matches::assert_matches;
+use miden_processor::ExecutionError;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey};
 use miden_protocol::account::{
     Account,
@@ -19,8 +20,8 @@ use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain};
-use miden_tx::TransactionExecutorError;
 use miden_tx::auth::BasicAuthenticator;
+use miden_tx::{AuthenticationError, TransactionExecutorError, TransactionKernelError};
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 use rstest::rstest;
@@ -434,12 +435,30 @@ async fn test_acl_auth_rejects_rotated_key_signature(
         .tx_script(tx_script)
         .build()?;
 
-    // This should FAIL because the auth procedure reads the initial key (A) but the
-    // authenticator signs with key B. The signature verification will not match.
-    let result = tx_context.execute().await;
-    assert!(
-        result.is_err(),
-        "transaction should fail when signed with the rotated key instead of the initial key"
+    // This should FAIL because the auth procedure asks the authenticator for a signature
+    // against the INITIAL public key (key A), but the authenticator only has key B. The
+    // authenticator returns `UnknownPublicKey`, which surfaces as a signature generation
+    // failure in the kernel's auth event handler. If the bug were reintroduced, the auth
+    // procedure would read the rotated key (key B), the authenticator would happily sign
+    // with it, and the transaction would succeed.
+    let err = tx_context
+        .execute()
+        .await
+        .expect_err("transaction must fail when auth reads initial key but signer has rotated key");
+
+    let inner_err = match &err {
+        TransactionExecutorError::TransactionProgramExecutionFailed(
+            ExecutionError::EventError { error, .. },
+        ) => error,
+        other => panic!("expected EventError from signature generation, got: {other}"),
+    };
+
+    let kernel_err = inner_err
+        .downcast_ref::<TransactionKernelError>()
+        .expect("event error should wrap a TransactionKernelError");
+    assert_matches!(
+        kernel_err,
+        TransactionKernelError::SignatureGenerationFailed(AuthenticationError::UnknownPublicKey(_))
     );
 
     Ok(())

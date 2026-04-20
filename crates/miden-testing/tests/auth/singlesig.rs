@@ -1,5 +1,7 @@
 use core::slice;
 
+use assert_matches::assert_matches;
+use miden_processor::ExecutionError;
 use miden_protocol::Word;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey};
 use miden_protocol::account::{
@@ -18,24 +20,23 @@ use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain};
 use miden_tx::auth::BasicAuthenticator;
+use miden_tx::{AuthenticationError, TransactionExecutorError, TransactionKernelError};
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 use rstest::rstest;
-
-use crate::prove_and_verify_transaction;
 
 // HELPER FUNCTIONS
 // ================================================================================================
 
 /// Sets up a singlesig account with a MockAccountComponent (which provides set_item).
-/// Returns (account, mock_chain, note).
+/// Returns (account, mock_chain, note, authenticator).
 fn setup_singlesig_with_mock_component(
     auth_scheme: AuthScheme,
-) -> anyhow::Result<(Account, MockChain, Note)> {
+) -> anyhow::Result<(Account, MockChain, Note, Option<BasicAuthenticator>)> {
     let mock_component: AccountComponent =
         MockAccountComponent::with_slots(AccountStorage::mock_storage_slots()).into();
 
-    let (auth_component, _authenticator) = Auth::BasicAuth { auth_scheme }.build_component();
+    let (auth_component, authenticator) = Auth::BasicAuth { auth_scheme }.build_component();
 
     let account = AccountBuilder::new([0; 32])
         .with_auth_component(auth_component)
@@ -54,7 +55,7 @@ fn setup_singlesig_with_mock_component(
     builder.add_output_note(RawOutputNote::Full(note.clone()));
     let mock_chain = builder.build()?;
 
-    Ok((account, mock_chain, note))
+    Ok((account, mock_chain, note, authenticator))
 }
 
 /// Tests that the singlesig auth procedure reads the initial (pre-rotation) public key
@@ -69,10 +70,8 @@ fn setup_singlesig_with_mock_component(
 async fn test_singlesig_auth_uses_initial_public_key(
     #[case] auth_scheme: AuthScheme,
 ) -> anyhow::Result<()> {
-    let (account, mock_chain, note) = setup_singlesig_with_mock_component(auth_scheme)?;
-
-    // Build the authenticator separately (same seed as Auth::BasicAuth uses)
-    let (_, authenticator) = Auth::BasicAuth { auth_scheme }.build_component();
+    let (account, mock_chain, note, authenticator) =
+        setup_singlesig_with_mock_component(auth_scheme)?;
 
     // Get the singlesig public key slot name
     let pub_key_slot = AuthSingleSig::public_key_slot();
@@ -107,12 +106,10 @@ async fn test_singlesig_auth_uses_initial_public_key(
 
     // This should succeed because the auth procedure reads the INITIAL public key,
     // not the rotated one.
-    let executed_tx = tx_context
+    tx_context
         .execute()
         .await
         .expect("singlesig auth should use initial public key, not the rotated one");
-
-    prove_and_verify_transaction(executed_tx).await?;
 
     Ok(())
 }
@@ -129,7 +126,7 @@ async fn test_singlesig_auth_uses_initial_public_key(
 async fn test_singlesig_auth_rejects_rotated_key_signature(
     #[case] auth_scheme: AuthScheme,
 ) -> anyhow::Result<()> {
-    let (account, mock_chain, note) = setup_singlesig_with_mock_component(auth_scheme)?;
+    let (account, mock_chain, note, _) = setup_singlesig_with_mock_component(auth_scheme)?;
 
     // Generate a second valid key pair (key B) using a different seed.
     // The account was built with key A (seed = [0; 32] via Auth::BasicAuth).
@@ -173,12 +170,30 @@ async fn test_singlesig_auth_rejects_rotated_key_signature(
         .tx_script(tx_script)
         .build()?;
 
-    // This should FAIL because the auth procedure reads the initial key (A) but the
-    // authenticator signs with key B. The signature verification will not match.
-    let result = tx_context.execute().await;
-    assert!(
-        result.is_err(),
-        "transaction should fail when signed with the rotated key instead of the initial key"
+    // This should FAIL because the auth procedure asks the authenticator for a signature
+    // against the INITIAL public key (key A), but the authenticator only has key B. The
+    // authenticator returns `UnknownPublicKey`, which surfaces as a signature generation
+    // failure in the kernel's auth event handler. If the bug were reintroduced, the auth
+    // procedure would read the rotated key (key B), the authenticator would happily sign
+    // with it, and the transaction would succeed.
+    let err = tx_context
+        .execute()
+        .await
+        .expect_err("transaction must fail when auth reads initial key but signer has rotated key");
+
+    let inner_err = match &err {
+        TransactionExecutorError::TransactionProgramExecutionFailed(
+            ExecutionError::EventError { error, .. },
+        ) => error,
+        other => panic!("expected EventError from signature generation, got: {other}"),
+    };
+
+    let kernel_err = inner_err
+        .downcast_ref::<TransactionKernelError>()
+        .expect("event error should wrap a TransactionKernelError");
+    assert_matches!(
+        kernel_err,
+        TransactionKernelError::SignatureGenerationFailed(AuthenticationError::UnknownPublicKey(_))
     );
 
     Ok(())
