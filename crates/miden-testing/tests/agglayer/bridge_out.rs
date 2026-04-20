@@ -84,7 +84,7 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
         .collect::<Vec<_>>();
     let total_burned: u64 = expected_amounts.iter().sum();
 
-    // CREATE AGGLAYER FAUCET ACCOUNT (with conversion metadata for FPI)
+    // CREATE AGGLAYER FAUCET ACCOUNT
     // --------------------------------------------------------------------------------------------
     let origin_token_address = EthAddress::from_hex(&vectors.origin_token_address)
         .expect("valid shared origin token address");
@@ -102,10 +102,6 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
         Felt::new(FungibleAsset::MAX_AMOUNT),
         Felt::new(total_burned),
         bridge_account.id(),
-        &origin_token_address,
-        origin_network,
-        scale,
-        metadata_hash,
     );
     builder.add_account(faucet.clone())?;
 
@@ -296,12 +292,6 @@ async fn test_bridge_out_fails_with_unregistered_faucet() -> anyhow::Result<()> 
     // CREATE AGGLAYER FAUCET ACCOUNT (NOT registered in the bridge)
     // --------------------------------------------------------------------------------------------
     let vectors = &*SOLIDITY_MTF_VECTORS;
-    let origin_token_address = EthAddress::new([0u8; 20]);
-    let metadata_hash = MetadataHash::from_token_info(
-        &vectors.token_name,
-        &vectors.token_symbol,
-        vectors.token_decimals,
-    );
     let faucet = create_existing_agglayer_faucet(
         builder.rng_mut().draw_word(),
         &vectors.token_symbol,
@@ -309,10 +299,6 @@ async fn test_bridge_out_fails_with_unregistered_faucet() -> anyhow::Result<()> 
         Felt::new(FungibleAsset::MAX_AMOUNT),
         Felt::new(100),
         bridge_account.id(),
-        &origin_token_address,
-        0, // origin_network
-        0, // scale
-        metadata_hash,
     );
     builder.add_account(faucet.clone())?;
 

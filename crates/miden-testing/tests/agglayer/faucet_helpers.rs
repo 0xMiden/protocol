@@ -1,12 +1,6 @@
 extern crate alloc;
 
-use miden_agglayer::{
-    AggLayerFaucet,
-    EthAddress,
-    MetadataHash,
-    create_existing_agglayer_faucet,
-    create_existing_bridge_account,
-};
+use miden_agglayer::{AggLayerFaucet, create_existing_agglayer_faucet, create_existing_bridge_account};
 use miden_protocol::Felt;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::asset::FungibleAsset;
@@ -36,13 +30,6 @@ fn test_faucet_helper_methods() -> anyhow::Result<()> {
     let max_supply = Felt::new(FungibleAsset::MAX_AMOUNT);
     let token_supply = Felt::new(123_456);
 
-    let origin_token_address = EthAddress::from_hex("0x0102030405060708090a0b0c0d0e0f1011121314")
-        .expect("invalid token address");
-    let origin_network = 42u32;
-    let scale = 6u8;
-
-    let metadata_hash = MetadataHash::from_token_info(token_symbol, token_symbol, decimals);
-
     let faucet = create_existing_agglayer_faucet(
         builder.rng_mut().draw_word(),
         token_symbol,
@@ -50,16 +37,9 @@ fn test_faucet_helper_methods() -> anyhow::Result<()> {
         max_supply,
         token_supply,
         bridge_account.id(),
-        &origin_token_address,
-        origin_network,
-        scale,
-        metadata_hash,
     );
 
     assert_eq!(AggLayerFaucet::owner_account_id(&faucet)?, bridge_account.id());
-    assert_eq!(AggLayerFaucet::origin_token_address(&faucet)?, origin_token_address);
-    assert_eq!(AggLayerFaucet::origin_network(&faucet)?, origin_network);
-    assert_eq!(AggLayerFaucet::scale(&faucet)?, scale);
 
     Ok(())
 }

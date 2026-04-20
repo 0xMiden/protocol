@@ -204,10 +204,6 @@ pub async fn tx_consume_claim_note(data_source: ClaimDataSource) -> Result<Trans
         max_supply,
         Felt::ZERO,
         bridge_account.id(),
-        &origin_token_address,
-        origin_network,
-        scale,
-        leaf_data.metadata_hash,
     );
     builder.add_account(agglayer_faucet.clone())?;
 
@@ -343,10 +339,6 @@ pub async fn tx_consume_b2agg_note() -> Result<TransactionContext> {
         Felt::new(FungibleAsset::MAX_AMOUNT),
         Felt::new(bridge_amount),
         bridge_account.id(),
-        &origin_token_address,
-        origin_network,
-        scale,
-        MetadataHash::from_token_info("AGG", "AGG", 8),
     );
     builder.add_account(faucet.clone())?;
 
