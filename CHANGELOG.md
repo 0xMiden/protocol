@@ -18,6 +18,7 @@
 - Added `BlockNumber::saturating_sub()` ([#2660](https://github.com/0xMiden/protocol/issues/2660)).
 - [BREAKING] Added cycle counts to notes returned by `NoteConsumptionInfo` and removed public fields from related types ([#2772](https://github.com/0xMiden/miden-base/issues/2772)).
 - Automatically enable `concurrent` feature in `miden-tx` for `std` context ([#2791](https://github.com/0xMiden/protocol/pull/2791)).
+- Added `Pausable` standard component with `pause`, `unpause`, `is_paused` procedures and `on_before_asset_added_to_account`, `on_before_asset_added_to_note` callbacks ([#2793](https://github.com/0xMiden/protocol/pull/2793)).
 
 ### Fixes
 
