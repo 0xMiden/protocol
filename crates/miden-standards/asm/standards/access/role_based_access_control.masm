@@ -35,35 +35,11 @@ const ROLE_MEMBERS_SLOT = word("miden::standards::access::role_based_access_cont
 # Map entries: [0, role_symbol, account_suffix, account_prefix] -> [member_index_plus_one, 0, 0, 0]
 const ROLE_MEMBER_INDEX_SLOT = word("miden::standards::access::role_based_access_control::role_member_index")
 
-# Pending role transfer map slot.
-# Map entries: [0, role_symbol, current_holder_suffix, current_holder_prefix] ->
-#   [pending_holder_suffix, pending_holder_prefix, 0, 0]
-const PENDING_ROLE_TRANSFERS_SLOT = word("miden::standards::access::role_based_access_control::pending_role_transfers")
-
 # TRANSFER_ADMIN LOCALS
 const NEW_ADMIN_SUFFIX_LOC = 0
 const NEW_ADMIN_PREFIX_LOC = 1
 const CURRENT_ADMIN_SUFFIX_LOC = 2
 const CURRENT_ADMIN_PREFIX_LOC = 3
-
-# TRANSFER_ROLE LOCALS
-const TRANSFERRED_ROLE_SYMBOL_LOC = 0
-const NEW_HOLDER_SUFFIX_LOC = 1
-const NEW_HOLDER_PREFIX_LOC = 2
-const CURRENT_HOLDER_SUFFIX_LOC = 3
-const CURRENT_HOLDER_PREFIX_LOC = 4
-
-# ACCEPT_ROLE LOCALS
-const TRANSFER_ROLE_SYMBOL_LOC = 0
-const ROLE_HOLDER_SUFFIX_LOC = 1
-const ROLE_HOLDER_PREFIX_LOC = 2
-
-# SAVE_PENDING_ROLE_TRANSFER LOCALS
-const PENDING_TRANSFER_ROLE_LOC = 0
-const PENDING_TRANSFER_SOURCE_SUFFIX_LOC = 1
-const PENDING_TRANSFER_SOURCE_PREFIX_LOC = 2
-const PENDING_TRANSFER_TARGET_SUFFIX_LOC = 3
-const PENDING_TRANSFER_TARGET_PREFIX_LOC = 4
 
 # GRANT_ROLE_INTERNAL & REVOKE_ROLE_INTERNAL LOCALS
 const ROLE_SYMBOL_LOC = 0
@@ -94,9 +70,6 @@ const ERR_ROLE_MEMBER_OUT_OF_BOUNDS = "role member index is out of bounds"
 const ERR_ACTIVE_ROLE_OUT_OF_BOUNDS = "active role index is out of bounds"
 const ERR_ACCOUNT_NOT_IN_ROLE = "account does not hold the role"
 const ERR_ROLE_SYMBOL_ZERO = "role symbol is zero"
-const ERR_NO_PENDING_ROLE_TRANSFER = "no pending role transfer exists"
-const ERR_SENDER_NOT_NOMINATED_ROLE_HOLDER = "note sender is not the nominated role holder"
-const ERR_TRANSFER_TARGET_ALREADY_IN_ROLE = "transfer target already holds the role"
 
 # PUBLIC INTERFACE
 # =================================================================================================
@@ -454,27 +427,6 @@ pub proc get_role_member
     # => [account_suffix, account_prefix, pad(14)]
 end
 
-#! Returns the pending role transfer target for a role holder.
-#!
-#! Inputs:  [role_symbol, current_holder_suffix, current_holder_prefix, pad(13)]
-#! Outputs: [pending_holder_suffix, pending_holder_prefix, pad(14)]
-#!
-#! Where:
-#! - role_symbol is the encoded role symbol.
-#! - current_holder_{suffix,prefix} are the suffix and prefix felts of the current role holder.
-#! - pending_holder_{suffix,prefix} are the suffix and prefix felts of the nominated role holder.
-#!   Both are zero if no pending transfer exists.
-#!
-#! Invocation: call
-pub proc get_pending_role_transfer
-    exec.load_pending_role_transfer
-    # => [pending_holder_suffix, pending_holder_prefix, 0, 0, pad(13)]
-
-    movup.2 drop
-    # => [pending_holder_suffix, pending_holder_prefix, pad(14)]
-end
-
-
 #! Returns the number of currently active roles.
 #!
 #! Inputs:  [pad(16)]
@@ -648,262 +600,6 @@ pub proc renounce_role
     # => [pad(16)]
 end
 
-#! Initiates a two-step role transfer.
-#!
-#! The current role holder remains in the role until the nominated holder calls
-#! `accept_role`.
-#!
-#! If the nominated holder is the current holder, any pending transfer for that
-#! role is cancelled.
-#!
-#! Inputs:  [role_symbol, new_holder_suffix, new_holder_prefix, pad(13)]
-#! Outputs: [pad(16)]
-#!
-#! Where:
-#! - role_symbol is the encoded role symbol to transfer.
-#! - new_holder_{suffix,prefix} are the suffix and prefix felts of the nominated role holder.
-#!
-#! Panics if:
-#! - role_symbol is zero.
-#! - the note sender does not hold the role.
-#! - the nominated role holder account ID is invalid.
-#! - the nominated role holder already holds the role.
-#!
-#! Locals:
-#! 0: role_symbol (`TRANSFERRED_ROLE_SYMBOL_LOC`)
-#! 1: new_holder_suffix (`NEW_HOLDER_SUFFIX_LOC`)
-#! 2: new_holder_prefix (`NEW_HOLDER_PREFIX_LOC`)
-#! 3: current_holder_suffix (`CURRENT_HOLDER_SUFFIX_LOC`)
-#! 4: current_holder_prefix (`CURRENT_HOLDER_PREFIX_LOC`)
-#!
-#! Invocation: call
-@locals(5)
-pub proc transfer_role
-    exec.assert_role_symbol_non_zero
-    # => [role_symbol, new_holder_suffix, new_holder_prefix, pad(13)]
-
-    dup.2 dup.2 exec.account_id::validate
-    # => [role_symbol, new_holder_suffix, new_holder_prefix, pad(13)]
-
-    loc_store.TRANSFERRED_ROLE_SYMBOL_LOC
-    # => [new_holder_suffix, new_holder_prefix, pad(13)]
-
-    loc_store.NEW_HOLDER_SUFFIX_LOC
-    # => [new_holder_prefix, pad(13)]
-
-    loc_store.NEW_HOLDER_PREFIX_LOC
-    # => [pad(13)]
-
-    exec.active_note::get_sender
-    # => [current_holder_suffix, current_holder_prefix, pad(13)]
-
-    loc_store.CURRENT_HOLDER_SUFFIX_LOC
-    # => [current_holder_prefix, pad(13)]
-
-    loc_store.CURRENT_HOLDER_PREFIX_LOC
-    # => [pad(13)]
-
-    # ensure the current note sender holds the transferred role
-    loc_load.CURRENT_HOLDER_PREFIX_LOC
-    loc_load.CURRENT_HOLDER_SUFFIX_LOC
-    loc_load.TRANSFERRED_ROLE_SYMBOL_LOC
-    # => [role_symbol, current_holder_suffix, current_holder_prefix, pad(13)]
-
-    exec.has_role_internal
-    # => [sender_has_role, pad(13)]
-
-    assert.err=ERR_SENDER_LACKS_ROLE
-    # => [pad(13)]
-
-    # cancel when the nominated holder is the current holder
-    loc_load.NEW_HOLDER_PREFIX_LOC
-    loc_load.NEW_HOLDER_SUFFIX_LOC
-    # => [new_holder_suffix, new_holder_prefix, pad(13)]
-
-    loc_load.CURRENT_HOLDER_PREFIX_LOC
-    loc_load.CURRENT_HOLDER_SUFFIX_LOC
-    # => [current_holder_suffix, current_holder_prefix, new_holder_suffix, new_holder_prefix, pad(13)]
-
-    exec.account_id::is_equal
-    # => [is_self_transfer, pad(13)]
-
-    if.true
-        push.0.0
-        # => [0, 0, pad(13)]
-
-        loc_load.CURRENT_HOLDER_PREFIX_LOC
-        loc_load.CURRENT_HOLDER_SUFFIX_LOC
-        loc_load.TRANSFERRED_ROLE_SYMBOL_LOC
-        # => [role_symbol, current_holder_suffix, current_holder_prefix, 0, 0, pad(13)]
-    else
-        # reject transfers to accounts that already hold the role
-        loc_load.NEW_HOLDER_PREFIX_LOC
-        loc_load.NEW_HOLDER_SUFFIX_LOC
-        loc_load.TRANSFERRED_ROLE_SYMBOL_LOC
-        # => [role_symbol, new_holder_suffix, new_holder_prefix, pad(13)]
-
-        exec.has_role_internal
-        # => [new_holder_has_role, pad(13)]
-
-        assertz.err=ERR_TRANSFER_TARGET_ALREADY_IN_ROLE
-        # => [pad(13)]
-
-        loc_load.NEW_HOLDER_PREFIX_LOC
-        loc_load.NEW_HOLDER_SUFFIX_LOC
-        # => [new_holder_suffix, new_holder_prefix, pad(13)]
-
-        loc_load.CURRENT_HOLDER_PREFIX_LOC
-        loc_load.CURRENT_HOLDER_SUFFIX_LOC
-        loc_load.TRANSFERRED_ROLE_SYMBOL_LOC
-        # => [role_symbol, current_holder_suffix, current_holder_prefix,
-        #     new_holder_suffix, new_holder_prefix, pad(13)]
-    end
-
-    exec.save_pending_role_transfer
-    # => [pad(16)]
-end
-
-#! Accepts a pending role transfer.
-#!
-#! The note sender must match the nominated role holder stored for the given
-#! role and current holder pair.
-#!
-#! Inputs:  [role_symbol, current_holder_suffix, current_holder_prefix, pad(13)]
-#! Outputs: [pad(16)]
-#!
-#! Where:
-#! - role_symbol is the encoded role symbol being transferred.
-#! - current_holder_{suffix,prefix} are the suffix and prefix felts of the current role holder.
-#!
-#! Panics if:
-#! - role_symbol is zero.
-#! - the current holder account ID is invalid.
-#! - there is no pending role transfer for the given role and current holder.
-#! - the note sender is not the nominated role holder.
-#! - the current holder no longer holds the role.
-#! - the note sender already holds the role.
-#!
-#! Locals:
-#! 0: role_symbol (`TRANSFER_ROLE_SYMBOL_LOC`)
-#! 1: current_holder_suffix (`ROLE_HOLDER_SUFFIX_LOC`)
-#! 2: current_holder_prefix (`ROLE_HOLDER_PREFIX_LOC`)
-#!
-#! Invocation: call
-@locals(3)
-pub proc accept_role
-    exec.assert_role_symbol_non_zero
-    # => [role_symbol, current_holder_suffix, current_holder_prefix, pad(13)]
-
-    dup.2 dup.2 exec.account_id::validate
-    # => [role_symbol, current_holder_suffix, current_holder_prefix, pad(13)]
-
-    loc_store.TRANSFER_ROLE_SYMBOL_LOC
-    # => [current_holder_suffix, current_holder_prefix, pad(13)]
-
-    loc_store.ROLE_HOLDER_SUFFIX_LOC
-    # => [current_holder_prefix, pad(13)]
-
-    loc_store.ROLE_HOLDER_PREFIX_LOC
-    # => [pad(13)]
-
-    loc_load.ROLE_HOLDER_PREFIX_LOC
-    loc_load.ROLE_HOLDER_SUFFIX_LOC
-    loc_load.TRANSFER_ROLE_SYMBOL_LOC
-    # => [role_symbol, current_holder_suffix, current_holder_prefix, pad(13)]
-
-    exec.load_pending_role_transfer
-    # => [pending_holder_suffix, pending_holder_prefix, 0, 0, pad(13)]
-
-    dup.1 eq.0
-    # => [is_zero_suffix, pending_holder_suffix, pending_holder_prefix, 0, 0, pad(13)]
-
-    dup.1 eq.0
-    # => [is_zero_prefix, is_zero_suffix, pending_holder_suffix, pending_holder_prefix, 0, 0, pad(13)]
-
-    and
-    # => [is_no_pending_transfer, pending_holder_suffix, pending_holder_prefix, 0, 0, pad(13)]
-
-    assertz.err=ERR_NO_PENDING_ROLE_TRANSFER
-    # => [pending_holder_suffix, pending_holder_prefix, 0, 0, pad(13)]
-
-    movup.2 drop
-    movup.2 drop
-    # => [pending_holder_suffix, pending_holder_prefix, pad(13)]
-
-    exec.active_note::get_sender
-    # => [sender_suffix, sender_prefix, pending_holder_suffix, pending_holder_prefix, pad(13)]
-
-    dup.3 dup.3
-    # => [pending_holder_suffix, pending_holder_prefix, sender_suffix, sender_prefix,
-    #     pending_holder_suffix, pending_holder_prefix, pad(13)]
-
-    exec.account_id::is_equal
-    # => [is_nominated_role_holder, pending_holder_suffix, pending_holder_prefix, pad(13)]
-
-    assert.err=ERR_SENDER_NOT_NOMINATED_ROLE_HOLDER
-    # => [pending_holder_suffix, pending_holder_prefix, pad(13)]
-
-    drop drop
-    # => [pad(13)]
-
-    # ensure the current holder still holds the role
-    loc_load.ROLE_HOLDER_PREFIX_LOC
-    loc_load.ROLE_HOLDER_SUFFIX_LOC
-    loc_load.TRANSFER_ROLE_SYMBOL_LOC
-    # => [role_symbol, current_holder_suffix, current_holder_prefix, pad(13)]
-
-    exec.has_role_internal
-    # => [current_holder_has_role, pad(13)]
-
-    assert.err=ERR_ACCOUNT_NOT_IN_ROLE
-    # => [pad(13)]
-
-    # reject acceptance when the nominated holder already has the role
-    exec.active_note::get_sender
-    # => [sender_suffix, sender_prefix, pad(13)]
-
-    loc_load.TRANSFER_ROLE_SYMBOL_LOC
-    # => [role_symbol, sender_suffix, sender_prefix, pad(13)]
-
-    exec.has_role_internal
-    # => [sender_has_role, pad(13)]
-
-    assertz.err=ERR_TRANSFER_TARGET_ALREADY_IN_ROLE
-    # => [pad(13)]
-
-    # clear the pending transfer before changing the role holders
-    push.0.0
-    # => [0, 0, pad(13)]
-
-    loc_load.ROLE_HOLDER_PREFIX_LOC
-    loc_load.ROLE_HOLDER_SUFFIX_LOC
-    loc_load.TRANSFER_ROLE_SYMBOL_LOC
-    # => [role_symbol, current_holder_suffix, current_holder_prefix, 0, 0, pad(13)]
-
-    exec.save_pending_role_transfer
-    # => [pad(16)]
-
-    # grant the role to the accepting holder
-    exec.active_note::get_sender
-    # => [sender_suffix, sender_prefix, pad(16)]
-
-    loc_load.TRANSFER_ROLE_SYMBOL_LOC
-    # => [role_symbol, sender_suffix, sender_prefix, pad(16)]
-
-    exec.grant_role_internal
-    # => [pad(16)]
-
-    # remove the role from the previous holder
-    loc_load.ROLE_HOLDER_PREFIX_LOC
-    loc_load.ROLE_HOLDER_SUFFIX_LOC
-    loc_load.TRANSFER_ROLE_SYMBOL_LOC
-    # => [role_symbol, current_holder_suffix, current_holder_prefix, pad(16)]
-
-    exec.revoke_role_internal
-    # => [pad(16)]
-end
-
-
 # HELPER PROCEDURES
 # =================================================================================================
 
@@ -991,117 +687,6 @@ proc get_nominated_admin_internal
     drop drop
     # => [nominated_admin_suffix, nominated_admin_prefix]
 end
-
-#! Loads the pending role transfer word for a role holder pair.
-#!
-#! Inputs:  [role_symbol, current_holder_suffix, current_holder_prefix]
-#! Outputs: [pending_holder_suffix, pending_holder_prefix, 0, 0]
-#!
-#! Where:
-#! - role_symbol is the encoded role symbol.
-#! - current_holder_{suffix,prefix} are the suffix and prefix felts of the current role holder.
-#! - pending_holder_{suffix,prefix} are the suffix and prefix felts of the nominated role holder.
-#!   Both are zero if no pending transfer exists.
-#!
-#! Invocation: exec
-proc load_pending_role_transfer
-    push.0
-    # => [0, role_symbol, current_holder_suffix, current_holder_prefix]
-
-    push.PENDING_ROLE_TRANSFERS_SLOT[0..2]
-    # => [slot_suffix, slot_prefix, 0, role_symbol, current_holder_suffix, current_holder_prefix]
-
-    exec.active_account::get_map_item
-    # => [pending_holder_suffix, pending_holder_prefix, 0, 0]
-end
-
-#! Stores the pending role transfer word for a role holder pair.
-#!
-#! Inputs:  [role_symbol, current_holder_suffix, current_holder_prefix, pending_holder_suffix, pending_holder_prefix]
-#! Outputs: []
-#!
-#! Where:
-#! - role_symbol is the encoded role symbol.
-#! - current_holder_{suffix,prefix} are the suffix and prefix felts of the current role holder.
-#! - pending_holder_{suffix,prefix} are the suffix and prefix felts of the nominated role holder.
-#!   Both can be zero to clear the pending transfer.
-#!
-#! Invocation: exec
-@locals(5)
-proc save_pending_role_transfer
-    loc_store.PENDING_TRANSFER_ROLE_LOC
-    # => [current_holder_suffix, current_holder_prefix, pending_holder_suffix, pending_holder_prefix]
-
-    loc_store.PENDING_TRANSFER_SOURCE_SUFFIX_LOC
-    # => [current_holder_prefix, pending_holder_suffix, pending_holder_prefix]
-
-    loc_store.PENDING_TRANSFER_SOURCE_PREFIX_LOC
-    # => [pending_holder_suffix, pending_holder_prefix]
-
-    loc_store.PENDING_TRANSFER_TARGET_SUFFIX_LOC
-    # => [pending_holder_prefix]
-
-    loc_store.PENDING_TRANSFER_TARGET_PREFIX_LOC
-    # => []
-
-    loc_load.PENDING_TRANSFER_TARGET_PREFIX_LOC
-    loc_load.PENDING_TRANSFER_TARGET_SUFFIX_LOC
-    push.0.0
-    movup.3
-    movup.3
-    # => [pending_holder_suffix, pending_holder_prefix, 0, 0]
-
-    loc_load.PENDING_TRANSFER_SOURCE_PREFIX_LOC
-    loc_load.PENDING_TRANSFER_SOURCE_SUFFIX_LOC
-    loc_load.PENDING_TRANSFER_ROLE_LOC
-    push.0
-    # => [0, role_symbol, current_holder_suffix, current_holder_prefix,
-    #     pending_holder_suffix, pending_holder_prefix, 0, 0]
-
-    push.PENDING_ROLE_TRANSFERS_SLOT[0..2]
-    # => [slot_suffix, slot_prefix, 0, role_symbol, current_holder_suffix, current_holder_prefix,
-    #     pending_holder_suffix, pending_holder_prefix, 0, 0]
-
-    exec.native_account::set_map_item
-    # => [OLD_PENDING_TRANSFER_WORD]
-
-    dropw
-    # => []
-end
-
-#! Clears the pending role transfer for a role holder pair.
-#!
-#! Inputs:  [role_symbol, current_holder_suffix, current_holder_prefix]
-#! Outputs: []
-#!
-#! Where:
-#! - role_symbol is the encoded role symbol.
-#! - current_holder_{suffix,prefix} are the suffix and prefix felts of the current role holder.
-#!
-#! Invocation: exec
-@locals(3)
-proc clear_pending_role_transfer
-    loc_store.PENDING_TRANSFER_ROLE_LOC
-    # => [current_holder_suffix, current_holder_prefix]
-
-    loc_store.PENDING_TRANSFER_SOURCE_SUFFIX_LOC
-    # => [current_holder_prefix]
-
-    loc_store.PENDING_TRANSFER_SOURCE_PREFIX_LOC
-    # => []
-
-    push.0.0
-    # => [0, 0]
-
-    loc_load.PENDING_TRANSFER_SOURCE_PREFIX_LOC
-    loc_load.PENDING_TRANSFER_SOURCE_SUFFIX_LOC
-    loc_load.PENDING_TRANSFER_ROLE_LOC
-    # => [role_symbol, current_holder_suffix, current_holder_prefix, 0, 0]
-
-    exec.save_pending_role_transfer
-    # => []
-end
-
 
 #! Returns whether the note sender is the current root admin.
 #!
@@ -1938,12 +1523,6 @@ end
 #! Invocation: exec
 proc revoke_role_internal
     dup.2 dup.2 exec.account_id::validate
-    # => [role_symbol, account_suffix, account_prefix]
-
-    dup.2 dup.2 dup.2
-    # => [role_symbol, account_suffix, account_prefix, role_symbol, account_suffix, account_prefix]
-
-    exec.clear_pending_role_transfer
     # => [role_symbol, account_suffix, account_prefix]
 
     exec.remove_from_role_enumeration

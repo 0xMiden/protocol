@@ -22,15 +22,11 @@ use miden_standards::errors::standards::{
     ERR_ACCOUNT_NOT_IN_ROLE,
     ERR_ACTIVE_ROLE_OUT_OF_BOUNDS,
     ERR_ADMIN_TRANSFER_IN_PROGRESS,
-    ERR_NO_PENDING_ROLE_TRANSFER,
     ERR_ROLE_MEMBER_OUT_OF_BOUNDS,
     ERR_ROLE_SYMBOL_ZERO,
-    ERR_SENDER_LACKS_ROLE,
     ERR_SENDER_NOT_ADMIN,
     ERR_SENDER_NOT_ADMIN_OR_ROLE_ADMIN,
     ERR_SENDER_NOT_NOMINATED_ADMIN,
-    ERR_SENDER_NOT_NOMINATED_ROLE_HOLDER,
-    ERR_TRANSFER_TARGET_ALREADY_IN_ROLE,
 };
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
@@ -82,10 +78,6 @@ fn role_member_key(role: &RoleSymbol, index: u64) -> Word {
 }
 
 fn role_member_index_key(role: &RoleSymbol, account_id: AccountId) -> Word {
-    Word::from([Felt::ZERO, Felt::from(role), account_id.suffix(), account_id.prefix().as_felt()])
-}
-
-fn pending_role_transfer_key(role: &RoleSymbol, account_id: AccountId) -> Word {
     Word::from([Felt::ZERO, Felt::from(role), account_id.suffix(), account_id.prefix().as_felt()])
 }
 
@@ -143,19 +135,6 @@ fn get_role_member_index(
         role_member_index_key(role, account_id),
     )?[0]
         .as_canonical_u64())
-}
-
-fn get_pending_role_transfer_storage(
-    account: &Account,
-    role: &RoleSymbol,
-    current_holder: AccountId,
-) -> anyhow::Result<Option<AccountId>> {
-    let word = account.storage().get_map_item(
-        RoleBasedAccessControl::pending_role_transfers_slot(),
-        pending_role_transfer_key(role, current_holder),
-    )?;
-
-    Ok(account_id_from_felt_pair(word[0], word[1])?)
 }
 
 fn build_note(sender: AccountId, code: impl Into<String>, rng_seed: u32) -> anyhow::Result<Note> {
@@ -277,46 +256,6 @@ fn revoke_role_script(role: &RoleSymbol, account_id: AccountId) -> String {
             push.{account_suffix}
             push.{role}
             call.role_based_access_control::revoke_role
-            dropw dropw dropw dropw
-        end
-        "#,
-        account_prefix = account_id.prefix().as_felt(),
-        account_suffix = Felt::new(account_id.suffix().as_canonical_u64()),
-        role = Felt::from(role),
-    )
-}
-
-fn transfer_role_script(role: &RoleSymbol, account_id: AccountId) -> String {
-    format!(
-        r#"
-        use miden::standards::access::role_based_access_control
-
-        begin
-            repeat.13 push.0 end
-            push.{account_prefix}
-            push.{account_suffix}
-            push.{role}
-            call.role_based_access_control::transfer_role
-            dropw dropw dropw dropw
-        end
-        "#,
-        account_prefix = account_id.prefix().as_felt(),
-        account_suffix = Felt::new(account_id.suffix().as_canonical_u64()),
-        role = Felt::from(role),
-    )
-}
-
-fn accept_role_script(role: &RoleSymbol, account_id: AccountId) -> String {
-    format!(
-        r#"
-        use miden::standards::access::role_based_access_control
-
-        begin
-            repeat.13 push.0 end
-            push.{account_prefix}
-            push.{account_suffix}
-            push.{role}
-            call.role_based_access_control::accept_role
             dropw dropw dropw dropw
         end
         "#,
@@ -479,41 +418,6 @@ fn assert_nominated_admin_script(expected_admin: Option<AccountId>) -> String {
         "#,
         expected_prefix = expected_prefix,
         expected_suffix = expected_suffix,
-    )
-}
-
-fn assert_pending_role_transfer_script(
-    role: &RoleSymbol,
-    current_holder: AccountId,
-    expected_pending_holder: Option<AccountId>,
-) -> String {
-    let (expected_suffix, expected_prefix) = expected_pending_holder
-        .map(|account_id| {
-            (Felt::new(account_id.suffix().as_canonical_u64()), account_id.prefix().as_felt())
-        })
-        .unwrap_or((Felt::ZERO, Felt::ZERO));
-
-    format!(
-        r#"
-        use miden::standards::access::role_based_access_control
-
-        begin
-            repeat.13 push.0 end
-            push.{current_holder_prefix}
-            push.{current_holder_suffix}
-            push.{role}
-            call.role_based_access_control::get_pending_role_transfer
-            eq.{expected_suffix} assert
-            eq.{expected_prefix} assert
-            dropw dropw dropw
-            drop drop
-        end
-        "#,
-        current_holder_prefix = current_holder.prefix().as_felt(),
-        current_holder_suffix = Felt::new(current_holder.suffix().as_canonical_u64()),
-        expected_prefix = expected_prefix,
-        expected_suffix = expected_suffix,
-        role = Felt::from(role),
     )
 }
 
@@ -1513,232 +1417,6 @@ async fn test_rbac_revoke_non_last_active_role_moves_last_active_role_into_freed
     assert_eq!(get_active_role(&updated, 1)?, pauser);
     assert_eq!(get_role_config(&updated, &pauser)?[2], Felt::new(2));
     assert_eq!(get_role_config(&updated, &burner)?[2], Felt::ZERO);
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_rbac_role_membership_transfer_and_accept_works() -> anyhow::Result<()> {
-    let admin = test_account_id(102);
-    let alice = test_account_id(103);
-    let bob = test_account_id(104);
-    let minter = role("MINTER");
-
-    let (account, mock_chain) = create_rbac_chain(admin)?;
-
-    let grant_note = build_note(admin, grant_role_script(&minter, alice), 701)?;
-    let updated = execute_note_and_apply(&mock_chain, &account, &grant_note)
-        .await
-        .context("grant role to alice failed")?;
-
-    let transfer_note = build_note(alice, transfer_role_script(&minter, bob), 702)?;
-    let updated = execute_note_and_apply(&mock_chain, &updated, &transfer_note)
-        .await
-        .context("start role membership transfer failed")?;
-
-    let query_note =
-        build_note(alice, assert_pending_role_transfer_script(&minter, alice, Some(bob)), 703)?;
-    let _ = execute_note_and_apply(&mock_chain, &updated, &query_note)
-        .await
-        .context("query pending role transfer after initiation failed")?;
-    assert_eq!(get_pending_role_transfer_storage(&updated, &minter, alice)?, Some(bob));
-
-    let accept_note = build_note(bob, accept_role_script(&minter, alice), 704)?;
-    let updated = execute_note_and_apply(&mock_chain, &updated, &accept_note)
-        .await
-        .context("accept role membership transfer failed")?;
-
-    let cleared_note =
-        build_note(bob, assert_pending_role_transfer_script(&minter, alice, None), 705)?;
-    let _ = execute_note_and_apply(&mock_chain, &updated, &cleared_note)
-        .await
-        .context("query pending role transfer after acceptance failed")?;
-
-    assert_eq!(get_pending_role_transfer_storage(&updated, &minter, alice)?, None);
-    assert_eq!(get_role_member_index(&updated, &minter, alice)?, 0);
-    assert_eq!(get_role_member_index(&updated, &minter, bob)?, 1);
-    assert_eq!(get_role_member(&updated, &minter, 0)?, bob);
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_rbac_role_membership_transfer_cancel_works() -> anyhow::Result<()> {
-    let admin = test_account_id(105);
-    let alice = test_account_id(106);
-    let bob = test_account_id(107);
-    let pauser = role("PAUSER");
-
-    let (account, mock_chain) = create_rbac_chain(admin)?;
-
-    let grant_note = build_note(admin, grant_role_script(&pauser, alice), 706)?;
-    let updated = execute_note_and_apply(&mock_chain, &account, &grant_note).await?;
-
-    let transfer_note = build_note(alice, transfer_role_script(&pauser, bob), 707)?;
-    let updated = execute_note_and_apply(&mock_chain, &updated, &transfer_note).await?;
-
-    let cancel_note = build_note(alice, transfer_role_script(&pauser, alice), 708)?;
-    let updated = execute_note_and_apply(&mock_chain, &updated, &cancel_note).await?;
-
-    let query_note =
-        build_note(alice, assert_pending_role_transfer_script(&pauser, alice, None), 709)?;
-    let _ = execute_note_and_apply(&mock_chain, &updated, &query_note).await?;
-
-    assert_eq!(get_pending_role_transfer_storage(&updated, &pauser, alice)?, None);
-    assert_eq!(get_role_member_index(&updated, &pauser, alice)?, 1);
-    assert_eq!(get_role_member_index(&updated, &pauser, bob)?, 0);
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_rbac_accept_role_with_no_pending_transfer_fails() -> anyhow::Result<()> {
-    let admin = test_account_id(108);
-    let alice = test_account_id(109);
-    let bob = test_account_id(110);
-    let burner = role("BURNER");
-
-    let (account, mock_chain) = create_rbac_chain(admin)?;
-
-    let grant_note = build_note(admin, grant_role_script(&burner, alice), 710)?;
-    let updated = execute_note_and_apply(&mock_chain, &account, &grant_note).await?;
-
-    let accept_note = build_note(bob, accept_role_script(&burner, alice), 711)?;
-    let tx = mock_chain
-        .build_tx_context(updated.clone(), &[], slice::from_ref(&accept_note))?
-        .build()?;
-    let result = tx.execute().await;
-    assert_transaction_executor_error!(result, ERR_NO_PENDING_ROLE_TRANSFER);
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_rbac_accept_role_requires_nominated_sender() -> anyhow::Result<()> {
-    let admin = test_account_id(111);
-    let alice = test_account_id(112);
-    let bob = test_account_id(113);
-    let outsider = test_account_id(114);
-    let minter = role("MINTER");
-
-    let (account, mock_chain) = create_rbac_chain(admin)?;
-
-    let grant_note = build_note(admin, grant_role_script(&minter, alice), 712)?;
-    let updated = execute_note_and_apply(&mock_chain, &account, &grant_note).await?;
-
-    let transfer_note = build_note(alice, transfer_role_script(&minter, bob), 713)?;
-    let updated = execute_note_and_apply(&mock_chain, &updated, &transfer_note).await?;
-
-    let accept_note = build_note(outsider, accept_role_script(&minter, alice), 714)?;
-    let tx = mock_chain
-        .build_tx_context(updated, &[], slice::from_ref(&accept_note))?
-        .build()?;
-    let result = tx.execute().await;
-    assert_transaction_executor_error!(result, ERR_SENDER_NOT_NOMINATED_ROLE_HOLDER);
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_rbac_transfer_role_rejects_existing_role_holder_target() -> anyhow::Result<()> {
-    let admin = test_account_id(115);
-    let alice = test_account_id(116);
-    let bob = test_account_id(117);
-    let manager = role("MANAGER");
-
-    let (account, mock_chain) = create_rbac_chain(admin)?;
-
-    let grant_alice = build_note(admin, grant_role_script(&manager, alice), 715)?;
-    let updated = execute_note_and_apply(&mock_chain, &account, &grant_alice).await?;
-
-    let grant_bob = build_note(admin, grant_role_script(&manager, bob), 716)?;
-    let updated = execute_note_and_apply(&mock_chain, &updated, &grant_bob).await?;
-
-    let transfer_note = build_note(alice, transfer_role_script(&manager, bob), 717)?;
-    let tx = mock_chain
-        .build_tx_context(updated, &[], slice::from_ref(&transfer_note))?
-        .build()?;
-    let result = tx.execute().await;
-    assert_transaction_executor_error!(result, ERR_TRANSFER_TARGET_ALREADY_IN_ROLE);
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_rbac_transfer_role_requires_sender_in_role() -> anyhow::Result<()> {
-    let admin = test_account_id(118);
-    let alice = test_account_id(119);
-    let outsider = test_account_id(120);
-    let bob = test_account_id(121);
-    let pauser = role("PAUSER");
-
-    let (account, mock_chain) = create_rbac_chain(admin)?;
-
-    let grant_note = build_note(admin, grant_role_script(&pauser, alice), 718)?;
-    let updated = execute_note_and_apply(&mock_chain, &account, &grant_note).await?;
-
-    let transfer_note = build_note(outsider, transfer_role_script(&pauser, bob), 719)?;
-    let tx = mock_chain
-        .build_tx_context(updated, &[], slice::from_ref(&transfer_note))?
-        .build()?;
-    let result = tx.execute().await;
-    assert_transaction_executor_error!(result, ERR_SENDER_LACKS_ROLE);
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_rbac_revoke_role_clears_pending_role_transfer() -> anyhow::Result<()> {
-    let admin = test_account_id(122);
-    let alice = test_account_id(123);
-    let bob = test_account_id(124);
-    let burner = role("BURNER");
-
-    let (account, mock_chain) = create_rbac_chain(admin)?;
-
-    let grant_note = build_note(admin, grant_role_script(&burner, alice), 720)?;
-    let updated = execute_note_and_apply(&mock_chain, &account, &grant_note).await?;
-
-    let transfer_note = build_note(alice, transfer_role_script(&burner, bob), 721)?;
-    let updated = execute_note_and_apply(&mock_chain, &updated, &transfer_note).await?;
-    assert_eq!(get_pending_role_transfer_storage(&updated, &burner, alice)?, Some(bob));
-
-    let revoke_note = build_note(admin, revoke_role_script(&burner, alice), 722)?;
-    let updated = execute_note_and_apply(&mock_chain, &updated, &revoke_note).await?;
-
-    let query_note =
-        build_note(admin, assert_pending_role_transfer_script(&burner, alice, None), 723)?;
-    let _ = execute_note_and_apply(&mock_chain, &updated, &query_note).await?;
-
-    assert_eq!(get_pending_role_transfer_storage(&updated, &burner, alice)?, None);
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_rbac_renounce_role_clears_pending_role_transfer() -> anyhow::Result<()> {
-    let admin = test_account_id(125);
-    let alice = test_account_id(126);
-    let bob = test_account_id(127);
-    let user = role("USER");
-
-    let (account, mock_chain) = create_rbac_chain(admin)?;
-
-    let grant_note = build_note(admin, grant_role_script(&user, alice), 724)?;
-    let updated = execute_note_and_apply(&mock_chain, &account, &grant_note).await?;
-
-    let transfer_note = build_note(alice, transfer_role_script(&user, bob), 725)?;
-    let updated = execute_note_and_apply(&mock_chain, &updated, &transfer_note).await?;
-    assert_eq!(get_pending_role_transfer_storage(&updated, &user, alice)?, Some(bob));
-
-    let renounce_note = build_note(alice, renounce_role_script(&user), 726)?;
-    let updated = execute_note_and_apply(&mock_chain, &updated, &renounce_note).await?;
-
-    let query_note =
-        build_note(alice, assert_pending_role_transfer_script(&user, alice, None), 727)?;
-    let _ = execute_note_and_apply(&mock_chain, &updated, &query_note).await?;
-
-    assert_eq!(get_pending_role_transfer_storage(&updated, &user, alice)?, None);
 
     Ok(())
 }
