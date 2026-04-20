@@ -630,6 +630,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "critical-section"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "790eea4361631c5e7d22598ecd5723ff611904e3344ce8720784c93e3d83d40b"
+
+[[package]]
 name = "crossbeam-deque"
 version = "0.8.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1542,7 +1548,7 @@ dependencies = [
  "miden-assembly",
  "miden-core",
  "miden-core-lib",
- "miden-crypto",
+ "miden-crypto 0.24.0",
  "miden-protocol",
  "miden-standards",
  "miden-utils-sync",
@@ -1561,7 +1567,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d15646ebc95906b2a7cb66711d1e184f53fd6edc2605730bbcf0c2a129f792cf"
 dependencies = [
  "miden-core",
- "miden-crypto",
+ "miden-crypto 0.23.0",
  "miden-utils-indexing",
  "thiserror",
  "tracing",
@@ -1625,7 +1631,7 @@ checksum = "fdec54a321cdf3d23e9ef615e91cb858038c6b4d4202507bdec048fc6d7763e4"
 dependencies = [
  "derive_more",
  "itertools 0.14.0",
- "miden-crypto",
+ "miden-crypto 0.23.0",
  "miden-debug-types",
  "miden-formatting",
  "miden-utils-core-derive",
@@ -1649,7 +1655,7 @@ dependencies = [
  "fs-err",
  "miden-assembly",
  "miden-core",
- "miden-crypto",
+ "miden-crypto 0.23.0",
  "miden-package-registry",
  "miden-processor",
  "miden-utils-sync",
@@ -1659,7 +1665,8 @@ dependencies = [
 [[package]]
 name = "miden-crypto"
 version = "0.23.0"
-source = "git+https://github.com/0xmiden/crypto?branch=sergerad-largesmt-reader-trait#652f6c0b7d459ed6a4de84eb7a872a994a81e3af"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0ed0a034a460e27723dcfdf25effffab84331c3b46b13e7a1bd674197cc71bfe"
 dependencies = [
  "blake3",
  "cc",
@@ -1670,9 +1677,9 @@ dependencies = [
  "glob",
  "hkdf",
  "k256",
- "miden-crypto-derive",
- "miden-field",
- "miden-serde-utils",
+ "miden-crypto-derive 0.23.0",
+ "miden-field 0.23.0",
+ "miden-serde-utils 0.23.0",
  "num",
  "num-complex",
  "p3-blake3",
@@ -1699,9 +1706,61 @@ dependencies = [
 ]
 
 [[package]]
+name = "miden-crypto"
+version = "0.24.0"
+source = "git+https://github.com/0xmiden/crypto?branch=sergerad-largesmt-reader-trait#c1c4ab31a7051c3cc439cc2bed32a79df09982c0"
+dependencies = [
+ "blake3",
+ "cc",
+ "chacha20poly1305",
+ "curve25519-dalek",
+ "ed25519-dalek",
+ "flume",
+ "hkdf",
+ "k256",
+ "miden-crypto-derive 0.24.0",
+ "miden-field 0.24.0",
+ "miden-lifted-stark",
+ "miden-serde-utils 0.24.0",
+ "num",
+ "num-complex",
+ "once_cell",
+ "p3-blake3",
+ "p3-challenger",
+ "p3-dft",
+ "p3-goldilocks",
+ "p3-keccak",
+ "p3-matrix",
+ "p3-maybe-rayon",
+ "p3-symmetric",
+ "p3-util",
+ "rand 0.9.2",
+ "rand_chacha",
+ "rand_core 0.9.5",
+ "rand_hc",
+ "rayon",
+ "serde",
+ "sha2",
+ "sha3",
+ "subtle",
+ "thiserror",
+ "x25519-dalek",
+]
+
+[[package]]
 name = "miden-crypto-derive"
 version = "0.23.0"
-source = "git+https://github.com/0xmiden/crypto?branch=sergerad-largesmt-reader-trait#652f6c0b7d459ed6a4de84eb7a872a994a81e3af"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e8bf6ebde028e79bcc61a3632d2f375a5cc64caa17d014459f75015238cb1e08"
+dependencies = [
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
+name = "miden-crypto-derive"
+version = "0.24.0"
+source = "git+https://github.com/0xmiden/crypto?branch=sergerad-largesmt-reader-trait#c1c4ab31a7051c3cc439cc2bed32a79df09982c0"
 dependencies = [
  "quote",
  "syn 2.0.117",
@@ -1714,7 +1773,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6e50274d11c80b901cf6c90362de8c98c8c8ad6030c80624d683b63d899a0fb"
 dependencies = [
  "memchr",
- "miden-crypto",
+ "miden-crypto 0.23.0",
  "miden-formatting",
  "miden-miette",
  "miden-utils-indexing",
@@ -1728,13 +1787,32 @@ dependencies = [
 [[package]]
 name = "miden-field"
 version = "0.23.0"
-source = "git+https://github.com/0xmiden/crypto?branch=sergerad-largesmt-reader-trait#652f6c0b7d459ed6a4de84eb7a872a994a81e3af"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "38011348f4fb4c9e5ce1f471203d024721c00e3b60a91aa91aaefe6738d8b5ea"
 dependencies = [
- "miden-serde-utils",
+ "miden-serde-utils 0.23.0",
  "num-bigint",
  "p3-challenger",
  "p3-field",
  "p3-goldilocks",
+ "paste",
+ "rand 0.10.0",
+ "serde",
+ "subtle",
+ "thiserror",
+]
+
+[[package]]
+name = "miden-field"
+version = "0.24.0"
+source = "git+https://github.com/0xmiden/crypto?branch=sergerad-largesmt-reader-trait#c1c4ab31a7051c3cc439cc2bed32a79df09982c0"
+dependencies = [
+ "miden-serde-utils 0.24.0",
+ "num-bigint",
+ "p3-challenger",
+ "p3-field",
+ "p3-goldilocks",
+ "p3-util",
  "paste",
  "rand 0.10.0",
  "serde",
@@ -1749,6 +1827,40 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7e392e0a8c34b32671012b439de35fa8987bf14f0f8aac279b97f8b8cc6e263b"
 dependencies = [
  "unicode-width 0.1.14",
+]
+
+[[package]]
+name = "miden-lifted-air"
+version = "0.24.0"
+source = "git+https://github.com/0xmiden/crypto?branch=sergerad-largesmt-reader-trait#c1c4ab31a7051c3cc439cc2bed32a79df09982c0"
+dependencies = [
+ "p3-air",
+ "p3-field",
+ "p3-matrix",
+ "p3-util",
+ "thiserror",
+]
+
+[[package]]
+name = "miden-lifted-stark"
+version = "0.24.0"
+source = "git+https://github.com/0xmiden/crypto?branch=sergerad-largesmt-reader-trait#c1c4ab31a7051c3cc439cc2bed32a79df09982c0"
+dependencies = [
+ "miden-lifted-air",
+ "miden-stark-transcript",
+ "miden-stateful-hasher",
+ "p3-challenger",
+ "p3-dft",
+ "p3-field",
+ "p3-goldilocks",
+ "p3-matrix",
+ "p3-maybe-rayon",
+ "p3-symmetric",
+ "p3-util",
+ "rand 0.10.0",
+ "serde",
+ "thiserror",
+ "tracing",
 ]
 
 [[package]]
@@ -1866,7 +1978,7 @@ dependencies = [
  "miden-assembly-syntax",
  "miden-core",
  "miden-core-lib",
- "miden-crypto",
+ "miden-crypto 0.24.0",
  "miden-mast-package",
  "miden-processor",
  "miden-protocol",
@@ -1906,7 +2018,7 @@ dependencies = [
  "bincode",
  "miden-air",
  "miden-core",
- "miden-crypto",
+ "miden-crypto 0.23.0",
  "miden-debug-types",
  "miden-processor",
  "serde",
@@ -1918,7 +2030,17 @@ dependencies = [
 [[package]]
 name = "miden-serde-utils"
 version = "0.23.0"
-source = "git+https://github.com/0xmiden/crypto?branch=sergerad-largesmt-reader-trait#652f6c0b7d459ed6a4de84eb7a872a994a81e3af"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ff78082e9b4ca89863e68da01b35f8a4029ee6fd912e39fa41fde4273a7debab"
+dependencies = [
+ "p3-field",
+ "p3-goldilocks",
+]
+
+[[package]]
+name = "miden-serde-utils"
+version = "0.24.0"
+source = "git+https://github.com/0xmiden/crypto?branch=sergerad-largesmt-reader-trait#c1c4ab31a7051c3cc439cc2bed32a79df09982c0"
 dependencies = [
  "p3-field",
  "p3-goldilocks",
@@ -1944,6 +2066,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "miden-stark-transcript"
+version = "0.24.0"
+source = "git+https://github.com/0xmiden/crypto?branch=sergerad-largesmt-reader-trait#c1c4ab31a7051c3cc439cc2bed32a79df09982c0"
+dependencies = [
+ "p3-challenger",
+ "p3-field",
+ "serde",
+ "thiserror",
+]
+
+[[package]]
+name = "miden-stateful-hasher"
+version = "0.24.0"
+source = "git+https://github.com/0xmiden/crypto?branch=sergerad-largesmt-reader-trait#c1c4ab31a7051c3cc439cc2bed32a79df09982c0"
+dependencies = [
+ "p3-field",
+ "p3-symmetric",
+]
+
+[[package]]
 name = "miden-testing"
 version = "0.15.0"
 dependencies = [
@@ -1955,7 +2097,7 @@ dependencies = [
  "miden-assembly",
  "miden-block-prover",
  "miden-core-lib",
- "miden-crypto",
+ "miden-crypto 0.24.0",
  "miden-processor",
  "miden-protocol",
  "miden-standards",
@@ -2013,7 +2155,7 @@ version = "0.22.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "397f5d1e8679cf17cf7713ffd9654840791a6ed5818b025bbc2fbfdce846579a"
 dependencies = [
- "miden-crypto",
+ "miden-crypto 0.23.0",
  "miden-debug-types",
  "miden-miette",
  "paste",
@@ -2026,7 +2168,7 @@ version = "0.22.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c8834e76299686bcce3de1685158aa4cff49b7fa5e0e00a6cc811e8f2cf5775f"
 dependencies = [
- "miden-crypto",
+ "miden-crypto 0.23.0",
  "serde",
  "thiserror",
 ]
@@ -2052,7 +2194,7 @@ dependencies = [
  "bincode",
  "miden-air",
  "miden-core",
- "miden-crypto",
+ "miden-crypto 0.23.0",
  "serde",
  "thiserror",
  "tracing",
@@ -2065,7 +2207,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2eb29d7c049fb69373c7e775e3d4411e63e4ee608bc43826282ba62c6ec9f891"
 dependencies = [
  "miden-formatting",
- "miden-serde-utils",
+ "miden-serde-utils 0.23.0",
  "serde",
  "serde_repr",
  "smallvec",
@@ -2225,6 +2367,10 @@ name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
+dependencies = [
+ "critical-section",
+ "portable-atomic",
+]
 
 [[package]]
 name = "once_cell_polyfill"

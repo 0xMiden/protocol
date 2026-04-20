@@ -51,7 +51,7 @@ miden-assembly        = { default-features = false, version = "0.22" }
 miden-assembly-syntax = { default-features = false, version = "0.22" }
 miden-core            = { default-features = false, version = "0.22" }
 miden-core-lib        = { default-features = false, version = "0.22" }
-miden-crypto          = { default-features = false, version = "0.23" }
+miden-crypto          = { default-features = false, version = "0.24" }
 miden-mast-package    = { default-features = false, version = "0.22" }
 miden-processor       = { default-features = false, version = "0.22" }
 miden-prover          = { default-features = false, version = "0.22" }
