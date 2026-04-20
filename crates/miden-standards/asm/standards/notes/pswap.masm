@@ -234,14 +234,15 @@ proc create_p2id_note
     # The add cannot overflow: `execute_pswap` asserts
     # `amt_account_fill + amt_note_fill <= requested_amount` before calling
     # this procedure, and `requested_amount` itself fits in a felt.
+    loc_load.P2ID_NOTE_IDX
     push.0.0.0
     loc_load.P2ID_AMT_ACCOUNT_FILL loc_load.P2ID_AMT_NOTE_FILL add
-    # => [total_fill, 0, 0, 0]
+    # => [[total_fill, 0, 0, 0], note_idx]
 
-    push.0 loc_load.P2ID_NOTE_IDX
-    # => [note_idx, attachment_scheme=0, total_fill, 0, 0, 0]
+    push.0
+    # => [attachment_scheme=0, [total_fill, 0, 0, 0], note_idx]
 
-    exec.output_note::set_word_attachment
+    exec.output_note::add_word_attachment
     # => []
 
     # Move account_fill_amount from consumer's vault to P2ID note (if > 0)
@@ -356,13 +357,14 @@ proc create_remainder_note
     # => []
 
     # Set attachment: aux = amt_payout at Word[0]
+    loc_load.REMAINDER_NOTE_IDX
     push.0.0.0 loc_load.REMAINDER_AMT_PAYOUT
-    # => [amt_payout, 0, 0, 0]
+    # => [[amt_payout, 0, 0, 0], note_idx]
 
-    push.0 loc_load.REMAINDER_NOTE_IDX
-    # => [note_idx, attachment_scheme=0, amt_payout, 0, 0, 0]
+    push.0
+    # => [attachment_scheme=0, [amt_payout, 0, 0, 0], note_idx]
 
-    exec.output_note::set_word_attachment
+    exec.output_note::add_word_attachment
     # => []
 
     # Add remaining offered asset: remainder_amount = amt_offered - amt_payout.

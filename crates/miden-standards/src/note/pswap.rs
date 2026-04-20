@@ -9,6 +9,7 @@ use miden_protocol::note::{
     NoteAssets,
     NoteAttachment,
     NoteAttachmentScheme,
+    NoteAttachments,
     NoteMetadata,
     NoteRecipient,
     NoteScript,
@@ -214,8 +215,7 @@ pub struct PswapNote {
 
     offered_asset: FungibleAsset,
 
-    #[builder(default)]
-    attachment: NoteAttachment,
+    attachment: Option<NoteAttachment>,
 }
 
 impl<S: pswap_note_builder::State> PswapNoteBuilder<S>
@@ -315,13 +315,13 @@ impl PswapNote {
         &self.offered_asset
     }
 
-    /// Returns a reference to the note attachment.
+    /// Returns a reference to the note attachments.
     ///
     /// For notes targeting a network account, this may contain a
     /// [`NetworkAccountTarget`](crate::note::NetworkAccountTarget) with scheme = 1.
-    /// For local-only notes, this is typically `NoteAttachmentScheme::none()`.
-    pub fn attachment(&self) -> &NoteAttachment {
-        &self.attachment
+    /// For local-only notes, this is typically empty.
+    pub fn attachments(&self) -> Option<&NoteAttachment> {
+        self.attachment.as_ref()
     }
 
     // INSTANCE METHODS
@@ -585,10 +585,14 @@ impl PswapNote {
 
         let p2id_assets = NoteAssets::new(vec![Asset::Fungible(payback_asset)])?;
         let p2id_metadata = NoteMetadata::new(consumer_account_id, self.storage.payback_note_type)
-            .with_tag(payback_note_tag)
-            .with_attachment(attachment);
+            .with_tag(payback_note_tag);
 
-        Ok(Note::new(p2id_assets, p2id_metadata, recipient))
+        Ok(Note::with_attachments(
+            p2id_assets,
+            p2id_metadata,
+            recipient,
+            NoteAttachments::from(attachment),
+        ))
     }
 
     /// Builds a remainder PSWAP note carrying the unfilled portion of the swap.
@@ -622,14 +626,14 @@ impl PswapNote {
 
         let attachment = Self::remainder_attachment(offered_amount_for_fill)?;
 
-        Ok(PswapNote {
-            sender: consumer_account_id,
-            storage: new_storage,
-            serial_number: remainder_serial_num,
-            note_type: self.note_type,
-            offered_asset: remaining_offered_asset,
-            attachment,
-        })
+        PswapNote::builder()
+            .sender(consumer_account_id)
+            .storage(new_storage)
+            .serial_number(remainder_serial_num)
+            .note_type(self.note_type)
+            .offered_asset(remaining_offered_asset)
+            .attachment(attachment)
+            .build()
     }
 }
 
@@ -650,11 +654,14 @@ impl From<PswapNote> for Note {
         let assets = NoteAssets::new(vec![Asset::Fungible(pswap.offered_asset)])
             .expect("single fungible asset should be valid");
 
-        let metadata = NoteMetadata::new(pswap.sender, pswap.note_type)
-            .with_tag(tag)
-            .with_attachment(pswap.attachment);
+        let metadata = NoteMetadata::new(pswap.sender, pswap.note_type).with_tag(tag);
 
-        Note::new(assets, metadata, recipient)
+        let attachments = pswap
+            .attachment
+            .map(NoteAttachments::from)
+            .expect("PswapNote attachments should be valid");
+
+        Note::with_attachments(assets, metadata, recipient, attachments)
     }
 }
 
@@ -679,14 +686,22 @@ impl TryFrom<&Note> for PswapNote {
             },
         };
 
-        Ok(Self {
-            sender: note.metadata().sender(),
-            storage,
-            serial_number: note.recipient().serial_num(),
-            note_type: note.metadata().note_type(),
-            offered_asset,
-            attachment: note.metadata().attachment().clone(),
-        })
+        let attachment = match note.attachments().num_attachments() {
+            0 => None,
+            1 => {
+                Some(note.attachments().get(0).expect("length should have been validated").clone())
+            },
+            _ => return Err(NoteError::other("pswap note supports only one attachment")),
+        };
+
+        PswapNote::builder()
+            .sender(note.metadata().sender())
+            .storage(storage)
+            .serial_number(note.recipient().serial_num())
+            .note_type(note.metadata().note_type())
+            .offered_asset(offered_asset)
+            .maybe_attachment(attachment)
+            .build()
     }
 }
 
