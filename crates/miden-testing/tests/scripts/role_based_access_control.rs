@@ -129,12 +129,16 @@ fn get_role_member_index(
     account: &Account,
     role: &RoleSymbol,
     account_id: AccountId,
-) -> anyhow::Result<u64> {
-    Ok(account.storage().get_map_item(
+) -> anyhow::Result<Option<u64>> {
+    let word = account.storage().get_map_item(
         RoleBasedAccessControl::role_member_index_slot(),
         role_member_index_key(role, account_id),
-    )?[0]
-        .as_canonical_u64())
+    )?;
+    if word[0].as_canonical_u64() == 0 {
+        Ok(None)
+    } else {
+        Ok(Some(word[1].as_canonical_u64()))
+    }
 }
 
 fn build_note(sender: AccountId, code: impl Into<String>, rng_seed: u32) -> anyhow::Result<Note> {
@@ -598,7 +602,7 @@ async fn test_rbac_root_admin_role_management_and_lookup() -> anyhow::Result<()>
     assert_eq!(get_active_role_count(&granted)?, 1);
     assert_eq!(get_active_role(&granted, 0)?, minter);
     assert_eq!(get_role_member(&granted, &minter, 0)?, member);
-    assert_eq!(get_role_member_index(&granted, &minter, member)?, 1);
+    assert_eq!(get_role_member_index(&granted, &minter, member)?, Some(0));
 
     let revoke_role_note = build_note(admin, revoke_role_script(&minter, member), 203)?;
     let tx = mock_chain
@@ -614,7 +618,7 @@ async fn test_rbac_root_admin_role_management_and_lookup() -> anyhow::Result<()>
     assert_eq!(minter_config[2], Felt::ZERO);
     assert_eq!(minter_config[3], Felt::new(1));
     assert_eq!(get_active_role_count(&revoked)?, 0);
-    assert_eq!(get_role_member_index(&revoked, &minter, member)?, 0);
+    assert_eq!(get_role_member_index(&revoked, &minter, member)?, None);
 
     Ok(())
 }
@@ -652,7 +656,7 @@ async fn test_rbac_delegated_admin_and_swap_remove() -> anyhow::Result<()> {
     let executed = tx.execute().await.context("grant MINTER_ADMIN to delegate failed")?;
     updated.apply_delta(executed.account_delta())?;
 
-    assert_eq!(get_role_member_index(&updated, &minter_admin, delegate)?, 1);
+    assert_eq!(get_role_member_index(&updated, &minter_admin, delegate)?, Some(0));
 
     let delegated_role_check_note =
         build_note(delegate, assert_sender_has_role_script(&minter_admin), 307)?;
@@ -677,7 +681,7 @@ async fn test_rbac_delegated_admin_and_swap_remove() -> anyhow::Result<()> {
         updated.apply_delta(executed.account_delta())?;
         if seed == 308 {
             assert_eq!(get_role_config(&updated, &minter)?[1], Felt::from(&minter_admin));
-            assert_eq!(get_role_member_index(&updated, &minter_admin, delegate)?, 1);
+            assert_eq!(get_role_member_index(&updated, &minter_admin, delegate)?, Some(0));
         }
     }
 
@@ -703,8 +707,8 @@ async fn test_rbac_delegated_admin_and_swap_remove() -> anyhow::Result<()> {
     updated.apply_delta(executed.account_delta())?;
 
     assert_eq!(get_role_member(&updated, &minter, 0)?, bob);
-    assert_eq!(get_role_member_index(&updated, &minter, alice)?, 0);
-    assert_eq!(get_role_member_index(&updated, &minter, bob)?, 1);
+    assert_eq!(get_role_member_index(&updated, &minter, alice)?, None);
+    assert_eq!(get_role_member_index(&updated, &minter, bob)?, Some(0));
 
     let revoke_bob_note = build_note(delegate, revoke_role_script(&minter, bob), 312)?;
     let tx = mock_chain
@@ -760,7 +764,7 @@ async fn test_rbac_renounce_role_and_permission_checks() -> anyhow::Result<()> {
     let mut renounced = updated.clone();
     renounced.apply_delta(executed.account_delta())?;
     assert_eq!(get_active_role_count(&renounced)?, 0);
-    assert_eq!(get_role_member_index(&renounced, &pauser, member)?, 0);
+    assert_eq!(get_role_member_index(&renounced, &pauser, member)?, None);
 
     let bad_revoke_note = build_note(admin, revoke_role_script(&pauser, member), 404)?;
     let tx = mock_chain
@@ -791,7 +795,7 @@ async fn test_rbac_grant_role_appends_member_and_sets_reverse_index() -> anyhow:
     let granted = execute_note_and_apply(&mock_chain, &account, &grant_note).await?;
 
     assert_eq!(get_role_member(&granted, &minter, 0)?, member);
-    assert_eq!(get_role_member_index(&granted, &minter, member)?, 1);
+    assert_eq!(get_role_member_index(&granted, &minter, member)?, Some(0));
 
     Ok(())
 }
@@ -961,7 +965,7 @@ async fn test_rbac_revoke_role_clears_removed_account_reverse_index() -> anyhow:
     let revoke_note = build_note(admin, revoke_role_script(&burner, member), 615)?;
     let revoked = execute_note_and_apply(&mock_chain, &granted, &revoke_note).await?;
 
-    assert_eq!(get_role_member_index(&revoked, &burner, member)?, 0);
+    assert_eq!(get_role_member_index(&revoked, &burner, member)?, None);
 
     Ok(())
 }
@@ -986,8 +990,8 @@ async fn test_rbac_revoke_non_last_member_moves_last_member_into_removed_index()
     let updated = execute_note_and_apply(&mock_chain, &updated, &revoke_alice).await?;
 
     assert_eq!(get_role_member(&updated, &minter, 0)?, bob);
-    assert_eq!(get_role_member_index(&updated, &minter, alice)?, 0);
-    assert_eq!(get_role_member_index(&updated, &minter, bob)?, 1);
+    assert_eq!(get_role_member_index(&updated, &minter, alice)?, None);
+    assert_eq!(get_role_member_index(&updated, &minter, bob)?, Some(0));
 
     Ok(())
 }
@@ -1014,7 +1018,7 @@ async fn test_rbac_revoke_last_member_keeps_remaining_enumeration_consistent() -
     let burner_config = get_role_config(&updated, &burner)?;
     assert_eq!(burner_config[0], Felt::new(1));
     assert_eq!(get_role_member(&updated, &burner, 0)?, alice);
-    assert_eq!(get_role_member_index(&updated, &burner, alice)?, 1);
+    assert_eq!(get_role_member_index(&updated, &burner, alice)?, Some(0));
 
     Ok(())
 }
@@ -1063,7 +1067,7 @@ async fn test_rbac_regrant_role_reactivates_role_after_becoming_empty() -> anyho
     assert_eq!(user_config[2], Felt::new(1));
     assert_eq!(get_active_role_count(&updated)?, 1);
     assert_eq!(get_active_role(&updated, 0)?, user);
-    assert_eq!(get_role_member_index(&updated, &user, member)?, 1);
+    assert_eq!(get_role_member_index(&updated, &user, member)?, Some(0));
 
     Ok(())
 }
@@ -1223,11 +1227,11 @@ async fn test_rbac_role_admin_can_manage_role_without_root_admin() -> anyhow::Re
 
     let grant_user_note = build_note(manager, grant_role_script(&user_role, user), 645)?;
     let updated = execute_note_and_apply(&mock_chain, &updated, &grant_user_note).await?;
-    assert_eq!(get_role_member_index(&updated, &user_role, user)?, 1);
+    assert_eq!(get_role_member_index(&updated, &user_role, user)?, Some(0));
 
     let revoke_user_note = build_note(manager, revoke_role_script(&user_role, user), 646)?;
     let updated = execute_note_and_apply(&mock_chain, &updated, &revoke_user_note).await?;
-    assert_eq!(get_role_member_index(&updated, &user_role, user)?, 0);
+    assert_eq!(get_role_member_index(&updated, &user_role, user)?, None);
 
     Ok(())
 }
