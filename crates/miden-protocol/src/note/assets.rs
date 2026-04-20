@@ -18,7 +18,7 @@ use crate::{Felt, Hasher, MAX_ASSETS_PER_NOTE, WORD_SIZE, Word};
 
 /// An asset container for a note.
 ///
-/// A note can contain between 0 and 255 assets. No duplicates are allowed, but the order of assets
+/// A note can contain between 0 and 64 assets. No duplicates are allowed, but the order of assets
 /// is unspecified.
 ///
 /// All the assets in a note can be reduced to a single commitment which is computed by
@@ -44,7 +44,7 @@ impl NoteAssets {
     ///
     /// # Errors
     /// Returns an error if:
-    /// - The list contains more than 256 assets.
+    /// - The list contains more than 64 assets.
     /// - There are duplicate assets in the list.
     pub fn new(assets: Vec<Asset>) -> Result<Self, NoteError> {
         if assets.len() > Self::MAX_NUM_ASSETS {
@@ -184,14 +184,33 @@ impl Deserializable for NoteAssets {
 
 #[cfg(test)]
 mod tests {
+    use alloc::vec;
+    use alloc::vec::Vec;
+
+    use assert_matches::assert_matches;
+
     use super::NoteAssets;
     use crate::account::AccountId;
     use crate::asset::{Asset, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
+    use crate::errors::NoteError;
     use crate::testing::account_id::{
         ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
         ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET,
         ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     };
+
+    /// Helper to create `n` unique non-fungible assets.
+    fn make_non_fungible_assets(n: usize) -> Vec<Asset> {
+        let faucet_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET).unwrap();
+        (0..n)
+            .map(|i| {
+                // Use the index bytes to create unique asset data.
+                let data = (i as u64).to_le_bytes().to_vec();
+                let details = NonFungibleAssetDetails::new(faucet_id, data).unwrap();
+                Asset::NonFungible(NonFungibleAsset::new(&details).unwrap())
+            })
+            .collect()
+    }
 
     #[test]
     fn iter_fungible_asset() {
@@ -211,5 +230,23 @@ mod tests {
         assert_eq!(fungible_assets.next().unwrap(), asset1.unwrap_fungible());
         assert_eq!(fungible_assets.next().unwrap(), asset2.unwrap_fungible());
         assert_eq!(fungible_assets.next(), None);
+    }
+
+    #[test]
+    fn note_assets_at_max_succeeds() {
+        let assets = make_non_fungible_assets(NoteAssets::MAX_NUM_ASSETS);
+        assert_eq!(assets.len(), NoteAssets::MAX_NUM_ASSETS);
+
+        let note_assets = NoteAssets::new(assets).unwrap();
+        assert_eq!(note_assets.num_assets(), NoteAssets::MAX_NUM_ASSETS);
+    }
+
+    #[test]
+    fn note_assets_exceeding_max_fails() {
+        let assets = make_non_fungible_assets(NoteAssets::MAX_NUM_ASSETS + 1);
+        assert_eq!(assets.len(), NoteAssets::MAX_NUM_ASSETS + 1);
+
+        let result = NoteAssets::new(assets);
+        assert_matches!(result, Err(NoteError::TooManyAssets(n)) if n == NoteAssets::MAX_NUM_ASSETS + 1);
     }
 }
