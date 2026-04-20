@@ -12,15 +12,16 @@ use miden_protocol::account::{
     AccountStorageMode,
     AccountType,
 };
+use miden_protocol::errors::MasmError;
 use miden_protocol::note::Note;
 use miden_protocol::transaction::RawOutputNote;
 use miden_standards::account::auth::AuthSingleSig;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::note::NoteBuilder;
-use miden_testing::{Auth, MockChain};
+use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
+use miden_tx::TransactionExecutorError;
 use miden_tx::auth::BasicAuthenticator;
-use miden_tx::{AuthenticationError, TransactionExecutorError, TransactionKernelError};
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 use rstest::rstest;
@@ -73,21 +74,14 @@ async fn test_singlesig_auth_uses_initial_public_key(
     let (account, mock_chain, note, authenticator) =
         setup_singlesig_with_mock_component(auth_scheme)?;
 
-    // Get the singlesig public key slot name
     let pub_key_slot = AuthSingleSig::public_key_slot();
-
-    // This tx script rotates the public key to a bogus value during the transaction.
-    // The auth procedure runs AFTER this script, so if it used `get_item` it would read
-    // the bogus key and fail. Because it uses `get_initial_item`, it reads the original
-    // key and signature verification succeeds.
-    let tx_script_rotate_key = format!(
+    let tx_script_src = format!(
         r#"
         use mock::account
 
         const PUB_KEY_SLOT = word("{pub_key_slot}")
 
         begin
-            # Overwrite the public key slot with a bogus value
             push.99.98.97.96
             push.PUB_KEY_SLOT[0..2]
             call.account::set_item
@@ -96,16 +90,13 @@ async fn test_singlesig_auth_uses_initial_public_key(
         "#,
     );
 
-    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script_rotate_key)?;
-
+    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script_src)?;
     let tx_context = mock_chain
         .build_tx_context(account.id(), &[], slice::from_ref(&note))?
         .authenticator(authenticator)
         .tx_script(tx_script)
         .build()?;
 
-    // This should succeed because the auth procedure reads the INITIAL public key,
-    // not the rotated one.
     tx_context
         .execute()
         .await
@@ -114,11 +105,9 @@ async fn test_singlesig_auth_uses_initial_public_key(
     Ok(())
 }
 
-/// Tests the negative scenario: the transaction script rotates the public key to a new
-/// *valid* key, and the authenticator signs with that new key. The auth procedure should
-/// reject the signature because it reads the *initial* public key (key A), not the rotated
-/// one (key B). This proves that even with a valid signature from the new key, the auth
-/// procedure correctly uses the initial storage state.
+/// Rotated-key negative: tx rotates the pub-key slot to key B and the authenticator is set
+/// up to sign with sec_b under key A's commitment. Auth reads the initial key (A) via
+/// `get_initial_item`, so MASM verify must reject the bogus signature.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[case::falcon(AuthScheme::Falcon512Poseidon2)]
@@ -128,23 +117,23 @@ async fn test_singlesig_auth_rejects_rotated_key_signature(
 ) -> anyhow::Result<()> {
     let (account, mock_chain, note, _) = setup_singlesig_with_mock_component(auth_scheme)?;
 
-    // Generate a second valid key pair (key B) using a different seed.
-    // The account was built with key A (seed = [0; 32] via Auth::BasicAuth).
+    // Re-derive key A from the seed Auth::BasicAuth uses.
+    let mut rng_a = ChaCha20Rng::from_seed(Default::default());
+    let pub_key_a = AuthSecretKey::with_scheme_and_rng(auth_scheme, &mut rng_a)
+        .expect("failed to derive original public key")
+        .public_key();
+
     let mut rng_b = ChaCha20Rng::from_seed([1u8; 32]);
     let sec_key_b = AuthSecretKey::with_scheme_and_rng(auth_scheme, &mut rng_b)
         .expect("failed to create second secret key");
     let pub_key_b_commitment: Word = sec_key_b.public_key().to_commitment().into();
 
-    // Create an authenticator that only knows key B (the new key).
-    let authenticator_b = BasicAuthenticator::new(&[sec_key_b]);
+    // Bind sec_b to key A's commitment so MASM actually receives a signature and runs
+    // verify against pub A, which must reject it.
+    let authenticator = BasicAuthenticator::from_key_pairs(&[(sec_key_b, pub_key_a)]);
 
-    // Get the singlesig public key slot name
     let pub_key_slot = AuthSingleSig::public_key_slot();
-
-    // This tx script rotates the public key to key B's valid commitment.
-    // The authenticator will sign with key B, but the auth procedure reads the
-    // initial key (key A) via `get_initial_item`, so verification should fail.
-    let tx_script_rotate_key = format!(
+    let tx_script_src = format!(
         r#"
         use mock::account
 
@@ -152,7 +141,6 @@ async fn test_singlesig_auth_rejects_rotated_key_signature(
         const NEW_PUB_KEY = word("{new_pub_key}")
 
         begin
-            # Overwrite the public key slot with key B's valid public key commitment
             push.NEW_PUB_KEY
             push.PUB_KEY_SLOT[0..2]
             call.account::set_item
@@ -162,39 +150,37 @@ async fn test_singlesig_auth_rejects_rotated_key_signature(
         new_pub_key = pub_key_b_commitment,
     );
 
-    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script_rotate_key)?;
-
+    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script_src)?;
     let tx_context = mock_chain
         .build_tx_context(account.id(), &[], slice::from_ref(&note))?
-        .authenticator(Some(authenticator_b))
+        .authenticator(Some(authenticator))
         .tx_script(tx_script)
         .build()?;
 
-    // This should FAIL because the auth procedure asks the authenticator for a signature
-    // against the INITIAL public key (key A), but the authenticator only has key B. The
-    // authenticator returns `UnknownPublicKey`, which surfaces as a signature generation
-    // failure in the kernel's auth event handler. If the bug were reintroduced, the auth
-    // procedure would read the rotated key (key B), the authenticator would happily sign
-    // with it, and the transaction would succeed.
-    let err = tx_context
-        .execute()
-        .await
-        .expect_err("transaction must fail when auth reads initial key but signer has rotated key");
+    let result = tx_context.execute().await;
 
-    let inner_err = match &err {
-        TransactionExecutorError::TransactionProgramExecutionFailed(
-            ExecutionError::EventError { error, .. },
-        ) => error,
-        other => panic!("expected EventError from signature generation, got: {other}"),
-    };
-
-    let kernel_err = inner_err
-        .downcast_ref::<TransactionKernelError>()
-        .expect("event error should wrap a TransactionKernelError");
-    assert_matches!(
-        kernel_err,
-        TransactionKernelError::SignatureGenerationFailed(AuthenticationError::UnknownPublicKey(_))
-    );
+    match auth_scheme {
+        AuthScheme::EcdsaK256Keccak => {
+            assert_transaction_executor_error!(
+                result,
+                MasmError::from_static_str("invalid public key commitment")
+            );
+        },
+        AuthScheme::Falcon512Poseidon2 => {
+            // Falcon's h-vs-PK check in `load_h_s2_and_product` is a bare `assert_eqw`
+            // without a named err, so we can only assert the failed-assertion shape.
+            assert_matches!(
+                result,
+                Err(TransactionExecutorError::TransactionProgramExecutionFailed(
+                    ExecutionError::OperationError {
+                        err: miden_processor::operation::OperationError::FailedAssertion { .. },
+                        ..
+                    }
+                ))
+            );
+        },
+        _ => unreachable!("only the two rstest cases are parameterized"),
+    }
 
     Ok(())
 }
