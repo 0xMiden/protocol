@@ -26,6 +26,9 @@ pub use p2id::{P2idNote, P2idNoteStorage};
 mod p2ide;
 pub use p2ide::{P2ideNote, P2ideNoteStorage};
 
+mod pswap;
+pub use pswap::{PswapNote, PswapNoteStorage};
+
 mod swap;
 pub use swap::{SwapNote, SwapNoteStorage};
 
@@ -46,6 +49,7 @@ pub enum StandardNote {
     P2ID,
     P2IDE,
     SWAP,
+    PSWAP,
     MINT,
     BURN,
 }
@@ -72,6 +76,9 @@ impl StandardNote {
         if root == SwapNote::script_root() {
             return Some(Self::SWAP);
         }
+        if root == PswapNote::script_root() {
+            return Some(Self::PSWAP);
+        }
         if root == MintNote::script_root() {
             return Some(Self::MINT);
         }
@@ -91,6 +98,7 @@ impl StandardNote {
             Self::P2ID => "P2ID",
             Self::P2IDE => "P2IDE",
             Self::SWAP => "SWAP",
+            Self::PSWAP => "PSWAP",
             Self::MINT => "MINT",
             Self::BURN => "BURN",
         }
@@ -102,6 +110,7 @@ impl StandardNote {
             Self::P2ID => P2idNote::NUM_STORAGE_ITEMS,
             Self::P2IDE => P2ideNote::NUM_STORAGE_ITEMS,
             Self::SWAP => SwapNote::NUM_STORAGE_ITEMS,
+            Self::PSWAP => PswapNote::NUM_STORAGE_ITEMS,
             Self::MINT => MintNote::NUM_STORAGE_ITEMS_PRIVATE,
             Self::BURN => BurnNote::NUM_STORAGE_ITEMS,
         }
@@ -113,6 +122,7 @@ impl StandardNote {
             Self::P2ID => P2idNote::script(),
             Self::P2IDE => P2ideNote::script(),
             Self::SWAP => SwapNote::script(),
+            Self::PSWAP => PswapNote::script(),
             Self::MINT => MintNote::script(),
             Self::BURN => BurnNote::script(),
         }
@@ -124,6 +134,7 @@ impl StandardNote {
             Self::P2ID => P2idNote::script_root(),
             Self::P2IDE => P2ideNote::script_root(),
             Self::SWAP => SwapNote::script_root(),
+            Self::PSWAP => PswapNote::script_root(),
             Self::MINT => MintNote::script_root(),
             Self::BURN => BurnNote::script_root(),
         }
@@ -143,9 +154,9 @@ impl StandardNote {
                 // the provided account interface.
                 interface_proc_digests.contains(&BasicWallet::receive_asset_digest())
             },
-            Self::SWAP => {
-                // To consume SWAP note, the `receive_asset` and `move_asset_to_note` procedures
-                // must be present in the provided account interface.
+            Self::SWAP | Self::PSWAP => {
+                // To consume SWAP/PSWAP notes, the `receive_asset` and `move_asset_to_note`
+                // procedures must be present in the provided account interface.
                 interface_proc_digests.contains(&BasicWallet::receive_asset_digest())
                     && interface_proc_digests.contains(&BasicWallet::move_asset_to_note_digest())
             },
