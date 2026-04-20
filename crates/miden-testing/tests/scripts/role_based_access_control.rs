@@ -598,7 +598,7 @@ async fn test_rbac_root_admin_role_management_and_lookup() -> anyhow::Result<()>
 
     let minter_config = get_role_config(&granted, &minter)?;
     assert_eq!(minter_config[0], Felt::new(1));
-    assert_eq!(minter_config[2], Felt::new(1));
+    assert_eq!(minter_config[2], Felt::ZERO);
     assert_eq!(get_active_role_count(&granted)?, 1);
     assert_eq!(get_active_role(&granted, 0)?, minter);
     assert_eq!(get_role_member(&granted, &minter, 0)?, member);
@@ -813,7 +813,7 @@ async fn test_rbac_first_member_activates_role() -> anyhow::Result<()> {
 
     let burner_config = get_role_config(&granted, &burner)?;
     assert_eq!(burner_config[0], Felt::new(1));
-    assert_eq!(burner_config[2], Felt::new(1));
+    assert_eq!(burner_config[2], Felt::ZERO);
     assert_eq!(get_active_role_count(&granted)?, 1);
     assert_eq!(get_active_role(&granted, 0)?, burner);
 
@@ -1064,7 +1064,7 @@ async fn test_rbac_regrant_role_reactivates_role_after_becoming_empty() -> anyho
 
     let user_config = get_role_config(&updated, &user)?;
     assert_eq!(user_config[0], Felt::new(1));
-    assert_eq!(user_config[2], Felt::new(1));
+    assert_eq!(user_config[2], Felt::ZERO);
     assert_eq!(get_active_role_count(&updated)?, 1);
     assert_eq!(get_active_role(&updated, 0)?, user);
     assert_eq!(get_role_member_index(&updated, &user, member)?, Some(0));
@@ -1095,7 +1095,7 @@ async fn test_rbac_active_role_slot_is_reused_after_role_deactivation() -> anyho
 
     assert_eq!(get_active_role_count(&updated)?, 1);
     assert_eq!(get_active_role(&updated, 0)?, burner);
-    assert_eq!(get_role_config(&updated, &burner)?[2], Felt::new(1));
+    assert_eq!(get_role_config(&updated, &burner)?[2], Felt::ZERO);
 
     let grant_pauser = build_note(admin, grant_role_script(&pauser, carol), 630)?;
     let updated = execute_note_and_apply(&mock_chain, &updated, &grant_pauser).await?;
@@ -1103,7 +1103,7 @@ async fn test_rbac_active_role_slot_is_reused_after_role_deactivation() -> anyho
     assert_eq!(get_active_role_count(&updated)?, 2);
     assert_eq!(get_active_role(&updated, 0)?, burner);
     assert_eq!(get_active_role(&updated, 1)?, pauser);
-    assert_eq!(get_role_config(&updated, &pauser)?[2], Felt::new(2));
+    assert_eq!(get_role_config(&updated, &pauser)?[2], Felt::new(1));
 
     Ok(())
 }
@@ -1419,7 +1419,7 @@ async fn test_rbac_revoke_non_last_active_role_moves_last_active_role_into_freed
     assert_eq!(get_active_role_count(&updated)?, 2);
     assert_eq!(get_active_role(&updated, 0)?, minter);
     assert_eq!(get_active_role(&updated, 1)?, pauser);
-    assert_eq!(get_role_config(&updated, &pauser)?[2], Felt::new(2));
+    assert_eq!(get_role_config(&updated, &pauser)?[2], Felt::new(1));
     assert_eq!(get_role_config(&updated, &burner)?[2], Felt::ZERO);
 
     Ok(())

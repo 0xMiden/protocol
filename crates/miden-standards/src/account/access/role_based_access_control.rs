@@ -233,7 +233,7 @@ impl From<RoleBasedAccessControl> for AccountComponent {
             let admin_role_felt =
                 role_init.admin_role.as_ref().map(Felt::from).unwrap_or(Felt::ZERO);
             let member_count = role_init.members.len() as u64;
-            let active_role_index_plus_one = if member_count > 0 {
+            let active_role_index = if member_count > 0 {
                 let active_index = active_role_count;
                 active_role_entries.push((
                     StorageMapKey::from_raw(Word::from([
@@ -245,7 +245,7 @@ impl From<RoleBasedAccessControl> for AccountComponent {
                     Word::from([role_symbol_felt, Felt::ZERO, Felt::ZERO, Felt::ZERO]),
                 ));
                 active_role_count += 1;
-                Felt::new(active_index + 1)
+                Felt::new(active_index)
             } else {
                 Felt::ZERO
             };
@@ -260,7 +260,7 @@ impl From<RoleBasedAccessControl> for AccountComponent {
                 Word::from([
                     Felt::new(member_count),
                     admin_role_felt,
-                    active_role_index_plus_one,
+                    active_role_index,
                     Felt::new(1),
                 ]),
             ));

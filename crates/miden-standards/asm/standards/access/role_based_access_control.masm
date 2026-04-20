@@ -24,7 +24,7 @@ const ACTIVE_ROLES_SLOT = word("miden::standards::access::role_based_access_cont
 
 # Per-role config map slot.
 # Map entries: [0, 0, 0, role_symbol] ->
-#   [member_count, admin_role_symbol, active_role_index_plus_one, exists_flag]
+#   [member_count, admin_role_symbol, active_role_index, exists_flag]
 const ROLE_CONFIGS_SLOT = word("miden::standards::access::role_based_access_control::role_config")
 
 # Per-role member enumeration map slot.
@@ -54,7 +54,7 @@ const REMOVE_INDEX_LOC = 3
 const LAST_INDEX_LOC = 4
 
 # Default config for a newly created role.
-# Layout: [member_count, admin_role_symbol, active_role_index_plus_one, exists_flag]
+# Layout: [member_count, admin_role_symbol, active_role_index, exists_flag]
 const DEFAULT_ROLE_CONFIG = [0, 0, 0, 1]
 
 # ERRORS
@@ -339,7 +339,7 @@ end
 #! Invocation: call
 pub proc get_role_admin
     exec.get_role_config
-    # => [member_count, admin_role_symbol, active_role_index_plus_one, exists_flag, pad(12)]
+    # => [member_count, admin_role_symbol, active_role_index, exists_flag, pad(12)]
 
     drop movdn.2 drop drop
     # => [admin_role_symbol, pad(15)]
@@ -357,7 +357,7 @@ end
 #! Invocation: call
 pub proc get_role_member_count
     exec.get_role_config
-    # => [member_count, admin_role_symbol, active_role_index_plus_one, exists_flag, pad(12)]
+    # => [member_count, admin_role_symbol, active_role_index, exists_flag, pad(12)]
 
     movdn.3 drop drop drop
     # => [member_count, pad(15)]
@@ -396,7 +396,7 @@ end
 pub proc get_role_member
     dup
     exec.get_role_config
-    # => [member_count, admin_role_symbol, active_role_index_plus_one, exists_flag,
+    # => [member_count, admin_role_symbol, active_role_index, exists_flag,
     #     role_symbol, member_index, pad(14)]
 
     movdn.3 drop drop drop
@@ -508,13 +508,13 @@ pub proc set_role_admin
     # => [role_symbol, admin_role_symbol, pad(14)]
 
     dup exec.get_role_config
-    # => [member_count, stored_admin_role_symbol, active_role_index_plus_one, exists_flag, role_symbol, admin_role_symbol, pad(14)]
+    # => [member_count, stored_admin_role_symbol, active_role_index, exists_flag, role_symbol, admin_role_symbol, pad(14)]
 
     movdn.2 drop swap
-    # => [member_count, active_role_index_plus_one, exists_flag, role_symbol, admin_role_symbol, pad(14)]
+    # => [member_count, active_role_index, exists_flag, role_symbol, admin_role_symbol, pad(14)]
 
     movup.3 movup.4 movdn.2
-    # => [role_symbol, member_count, admin_role_symbol, active_role_index_plus_one, exists_flag, pad(14)]
+    # => [role_symbol, member_count, admin_role_symbol, active_role_index, exists_flag, pad(14)]
 
     exec.set_role_config
     # => [pad(16)]
@@ -770,13 +770,13 @@ end
 #! Returns the config word for a role.
 #!
 #! Inputs:  [role_symbol]
-#! Outputs: [member_count, admin_role_symbol, active_role_index_plus_one, exists_flag]
+#! Outputs: [member_count, admin_role_symbol, active_role_index, exists_flag]
 #!
 #! Where:
 #! - role_symbol is the encoded role symbol.
 #! - member_count is the number of current role members.
 #! - admin_role_symbol is the delegated admin role symbol, or 0 for root-admin-managed roles.
-#! - active_role_index_plus_one is the stored active role index plus one, or 0 if inactive.
+#! - active_role_index is the role's index in the active roles map; meaningful only when member_count > 0.
 #! - exists_flag is 1 if the role exists, otherwise 0.
 #!
 #! Invocation: exec
@@ -788,29 +788,29 @@ proc get_role_config
     # => [slot_suffix, slot_prefix, 0, 0, 0, role_symbol]
 
     exec.active_account::get_map_item
-    # => [member_count, admin_role_symbol, active_role_index_plus_one, exists_flag]
+    # => [member_count, admin_role_symbol, active_role_index, exists_flag]
 end
 
 
 #! Writes the config word for a role.
 #!
-#! Inputs:  [role_symbol, member_count, admin_role_symbol, active_role_index_plus_one, exists_flag]
+#! Inputs:  [role_symbol, member_count, admin_role_symbol, active_role_index, exists_flag]
 #! Outputs: []
 #!
 #! Where:
 #! - role_symbol is the encoded role symbol.
 #! - member_count is the number of current role members.
 #! - admin_role_symbol is the delegated admin role symbol, or 0 for root-admin-managed roles.
-#! - active_role_index_plus_one is the stored active role index plus one, or 0 if inactive.
+#! - active_role_index is the role's index in the active roles map; meaningful only when member_count > 0.
 #! - exists_flag is 1 if the role exists, otherwise 0.
 #!
 #! Invocation: exec
 proc set_role_config
     push.0.0.0
-    # => [0, 0, 0, role_symbol, member_count, admin_role_symbol, active_role_index_plus_one, exists_flag]
+    # => [0, 0, 0, role_symbol, member_count, admin_role_symbol, active_role_index, exists_flag]
 
     push.ROLE_CONFIGS_SLOT[0..2]
-    # => [slot_suffix, slot_prefix, 0, 0, 0, role_symbol, member_count, admin_role_symbol, active_role_index_plus_one, exists_flag]
+    # => [slot_suffix, slot_prefix, 0, 0, 0, role_symbol, member_count, admin_role_symbol, active_role_index, exists_flag]
 
     exec.native_account::set_map_item
     # => [OLD_ROLE_CONFIG]
@@ -832,7 +832,7 @@ end
 #! Invocation: exec
 proc role_exists_internal
     exec.get_role_config
-    # => [member_count, admin_role_symbol, active_role_index_plus_one, exists_flag]
+    # => [member_count, admin_role_symbol, active_role_index, exists_flag]
 
     drop drop drop
     # => [exists_flag]
@@ -930,7 +930,7 @@ proc assert_sender_is_root_or_role_admin
         # => []
     else
         exec.get_role_config
-        # => [member_count, admin_role_symbol, active_role_index_plus_one, exists_flag]
+        # => [member_count, admin_role_symbol, active_role_index, exists_flag]
 
         drop movdn.2 drop drop
         # => [admin_role_symbol]
@@ -948,7 +948,7 @@ end
 #! Ensures a non-zero role exists.
 #!
 #! If the role does not already exist, it is initialized with the default config
-#! [member_count=0, admin_role_symbol=0, active_role_index_plus_one=0, exists_flag=1].
+#! [member_count=0, admin_role_symbol=0, active_role_index=0, exists_flag=1].
 #!
 #! Inputs:  [role_symbol]
 #! Outputs: []
@@ -973,10 +973,10 @@ proc ensure_role_exists
             # => []
         else
             push.DEFAULT_ROLE_CONFIG
-            # => [member_count=0, admin_role_symbol=0, active_role_index_plus_one=0, exists_flag=1, role_symbol]
+            # => [member_count=0, admin_role_symbol=0, active_role_index=0, exists_flag=1, role_symbol]
 
             movup.4
-            # => [role_symbol, member_count=0, admin_role_symbol=0, active_role_index_plus_one=0, exists_flag=1]
+            # => [role_symbol, member_count=0, admin_role_symbol=0, active_role_index=0, exists_flag=1]
 
             exec.set_role_config
             # => []
@@ -996,17 +996,17 @@ end
 #! Invocation: exec
 proc add_role_to_active_set
     dup exec.get_role_config
-    # => [member_count, admin_role_symbol, active_role_index_plus_one, exists_flag, role_symbol]
+    # => [member_count, admin_role_symbol, active_role_index, exists_flag, role_symbol]
 
-    dup.2 neq.0
-    # => [is_active, member_count, admin_role_symbol, active_role_index_plus_one, exists_flag, role_symbol]
+    dup neq.0
+    # => [is_active, member_count, admin_role_symbol, active_role_index, exists_flag, role_symbol]
 
     if.true
         dropw drop
         # => []
     else
         dup eq.0
-        # => [is_empty, member_count, admin_role_symbol, active_role_index_plus_one, exists_flag, role_symbol]
+        # => [is_empty, member_count, admin_role_symbol, active_role_index, exists_flag, role_symbol]
 
         if.true
             dropw drop
@@ -1057,13 +1057,10 @@ proc activate_role
     # => [active_role_count_plus_one, active_role_count, role_symbol, member_count, admin_role_symbol, exists_flag]
 
     exec.set_active_role_count_internal
-    # => [active_role_count, role_symbol, member_count, admin_role_symbol, exists_flag]
-
-    add.1
-    # => [active_role_index_plus_one, role_symbol, member_count, admin_role_symbol, exists_flag]
+    # => [active_role_index, role_symbol, member_count, admin_role_symbol, exists_flag]
 
     movdn.3
-    # => [role_symbol, member_count, admin_role_symbol, active_role_index_plus_one, exists_flag]
+    # => [role_symbol, member_count, admin_role_symbol, active_role_index, exists_flag]
 
     exec.set_role_config
     # => []
@@ -1081,24 +1078,16 @@ end
 #! Invocation: exec
 proc remove_role_from_active_set
     dup exec.get_role_config
-    # => [member_count, admin_role_symbol, active_role_index_plus_one, exists_flag, role_symbol]
+    # => [member_count, admin_role_symbol, active_role_index, exists_flag, role_symbol]
 
-    dup.2 eq.0
-    # => [is_inactive, member_count, admin_role_symbol, active_role_index_plus_one, exists_flag, role_symbol]
+    movup.2 movup.4
+    # => [role_symbol, active_role_index, member_count, admin_role_symbol, exists_flag]
 
-    if.true
-        dropw drop
-        # => []
-    else
-        movup.2 sub.1 movup.4
-        # => [role_symbol, active_role_index, member_count, admin_role_symbol, exists_flag]
+    movup.4 drop movup.3 drop movup.2 drop
+    # => [role_symbol, active_role_index]
 
-        movup.4 drop movup.3 drop movup.2 drop
-        # => [role_symbol, active_role_index]
-
-        exec.deactivate_role
-        # => []
-    end
+    exec.deactivate_role
+    # => []
 end
 
 
@@ -1156,7 +1145,7 @@ proc deactivate_role
     # => [role_symbol]
 
     dup exec.get_role_config
-    # => [member_count, admin_role_symbol, active_role_index_plus_one, exists_flag, role_symbol]
+    # => [member_count, admin_role_symbol, active_role_index, exists_flag, role_symbol]
 
     movup.2 drop
     # => [member_count, admin_role_symbol, exists_flag, role_symbol]
@@ -1203,16 +1192,16 @@ proc move_last_active_role
     # => [moved_role_symbol, source_index, target_index]
 
     dup exec.get_role_config
-    # => [moved_member_count, moved_admin_role_symbol, moved_active_role_index_plus_one, moved_exists_flag, moved_role_symbol, source_index, target_index]
+    # => [moved_member_count, moved_admin_role_symbol, moved_active_role_index, moved_exists_flag, moved_role_symbol, source_index, target_index]
 
     movup.2 drop
     # => [moved_member_count, moved_admin_role_symbol, moved_exists_flag, moved_role_symbol, source_index, target_index]
 
-    dup.5 add.1
-    # => [moved_active_role_index_plus_one, moved_member_count, moved_admin_role_symbol, moved_exists_flag, moved_role_symbol, source_index, target_index]
+    dup.5
+    # => [moved_active_role_index, moved_member_count, moved_admin_role_symbol, moved_exists_flag, moved_role_symbol, source_index, target_index]
 
     movup.4 swap movdn.3
-    # => [moved_role_symbol, moved_member_count, moved_admin_role_symbol, moved_active_role_index_plus_one, moved_exists_flag, source_index, target_index]
+    # => [moved_role_symbol, moved_member_count, moved_admin_role_symbol, moved_active_role_index, moved_exists_flag, source_index, target_index]
 
     exec.set_role_config
     # => [source_index, target_index]
@@ -1256,41 +1245,41 @@ proc add_to_role_enumeration
 
     loc_load.ROLE_SYMBOL_LOC 
     exec.get_role_config
-    # => [member_count, admin_role_symbol, active_role_index_plus_one, exists_flag]
+    # => [member_count, admin_role_symbol, active_role_index, exists_flag]
 
     dup loc_store.MEMBER_COUNT_LOC
-    # => [member_count, admin_role_symbol, active_role_index_plus_one, exists_flag]
+    # => [member_count, admin_role_symbol, active_role_index, exists_flag]
 
     # write ROLE_MEMBER_INDEX_SLOT[(role_symbol, account_id)] = [1, member_index, 0, 0]
     push.0.0 loc_load.MEMBER_COUNT_LOC push.1
-    # => [1, member_index, 0, 0, member_count, admin_role_symbol, active_role_index_plus_one, exists_flag]
+    # => [1, member_index, 0, 0, member_count, admin_role_symbol, active_role_index, exists_flag]
 
     loc_load.ACCOUNT_PREFIX_LOC loc_load.ACCOUNT_SUFFIX_LOC loc_load.ROLE_SYMBOL_LOC push.0
     # => [0, role_symbol, account_suffix, account_prefix, 1, member_index, 0, 0,
-    #     member_count, admin_role_symbol, active_role_index_plus_one, exists_flag]
+    #     member_count, admin_role_symbol, active_role_index, exists_flag]
 
     push.ROLE_MEMBER_INDEX_SLOT[0..2] exec.native_account::set_map_item
-    # => [OLD_MEMBER_INDEX_WORD, member_count, admin_role_symbol, active_role_index_plus_one, exists_flag]
+    # => [OLD_MEMBER_INDEX_WORD, member_count, admin_role_symbol, active_role_index, exists_flag]
 
     dropw
-    # => [member_count, admin_role_symbol, active_role_index_plus_one, exists_flag]
+    # => [member_count, admin_role_symbol, active_role_index, exists_flag]
 
     # write ROLE_MEMBERS_SLOT[(role_symbol, member_index)] = account_id
     loc_load.ACCOUNT_PREFIX_LOC loc_load.ACCOUNT_SUFFIX_LOC push.0.0 movup.3 movup.3
-    # => [account_suffix, account_prefix, 0, 0, member_count, admin_role_symbol, active_role_index_plus_one, exists_flag]
+    # => [account_suffix, account_prefix, 0, 0, member_count, admin_role_symbol, active_role_index, exists_flag]
 
     loc_load.MEMBER_COUNT_LOC loc_load.ROLE_SYMBOL_LOC push.0.0
     # => [0, 0, role_symbol, member_index, account_suffix, account_prefix, 0, 0,
-    #     member_count, admin_role_symbol, active_role_index_plus_one, exists_flag]
+    #     member_count, admin_role_symbol, active_role_index, exists_flag]
 
     push.ROLE_MEMBERS_SLOT[0..2] exec.native_account::set_map_item
-    # => [OLD_MEMBER_WORD, member_count, admin_role_symbol, active_role_index_plus_one, exists_flag]
+    # => [OLD_MEMBER_WORD, member_count, admin_role_symbol, active_role_index, exists_flag]
 
     dropw
-    # => [member_count, admin_role_symbol, active_role_index_plus_one, exists_flag]
+    # => [member_count, admin_role_symbol, active_role_index, exists_flag]
 
     dup eq.0
-    # => [is_first_member, member_count, admin_role_symbol, active_role_index_plus_one, exists_flag]
+    # => [is_first_member, member_count, admin_role_symbol, active_role_index, exists_flag]
 
     if.true
         movup.2 drop drop
@@ -1303,10 +1292,10 @@ proc add_to_role_enumeration
         # => []
     else
         add.1
-        # => [member_count_plus_one, admin_role_symbol, active_role_index_plus_one, exists_flag]
+        # => [member_count_plus_one, admin_role_symbol, active_role_index, exists_flag]
 
         loc_load.ROLE_SYMBOL_LOC
-        # => [role_symbol, member_count_plus_one, admin_role_symbol, active_role_index_plus_one, exists_flag]
+        # => [role_symbol, member_count_plus_one, admin_role_symbol, active_role_index, exists_flag]
 
         exec.set_role_config
         # => []
@@ -1405,11 +1394,11 @@ proc remove_from_role_enumeration
 
     loc_load.ROLE_SYMBOL_LOC
     exec.get_role_config
-    # => [member_count, admin_role_symbol, active_role_index_plus_one, exists_flag]
+    # => [member_count, admin_role_symbol, active_role_index, exists_flag]
 
     sub.1
     loc_store.LAST_INDEX_LOC
-    # => [admin_role_symbol, active_role_index_plus_one, exists_flag]
+    # => [admin_role_symbol, active_role_index, exists_flag]
 
     drop drop drop
     # => []
@@ -1487,13 +1476,13 @@ proc remove_from_role_enumeration
 
     loc_load.ROLE_SYMBOL_LOC
     exec.get_role_config
-    # => [member_count, admin_role_symbol, active_role_index_plus_one, exists_flag]
+    # => [member_count, admin_role_symbol, active_role_index, exists_flag]
 
     dup sub.1 swap drop
-    # => [member_count_minus_one, admin_role_symbol, active_role_index_plus_one, exists_flag]
+    # => [member_count_minus_one, admin_role_symbol, active_role_index, exists_flag]
 
     loc_load.ROLE_SYMBOL_LOC
-    # => [role_symbol, member_count_minus_one, admin_role_symbol, active_role_index_plus_one, exists_flag]
+    # => [role_symbol, member_count_minus_one, admin_role_symbol, active_role_index, exists_flag]
 
     exec.set_role_config
     # => []
