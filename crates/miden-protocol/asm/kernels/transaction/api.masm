@@ -7,7 +7,7 @@ use $kernel::input_note
 use $kernel::memory
 use $kernel::output_note
 use $kernel::tx
-# use $kernel::types::AccountId
+use $kernel::constants::WORD_SIZE
 
 use $kernel::memory::UPCOMING_FOREIGN_PROCEDURE_PTR
 use $kernel::memory::UPCOMING_FOREIGN_PROC_INPUT_VALUE_15_PTR
@@ -969,6 +969,11 @@ pub proc input_note_get_metadata
         # fetch the first attachment from the advice stack and overwrite the attachments commitment
         adv.push_mapval
         adv_loadw
+        # => [ATTACHMENT_COMMITMENT_0, METADATA_HEADER, pad(8)]
+
+        adv.push_mapvaln
+        adv_push.1 eq.WORD_SIZE assert.err="retrieved attachments must be temporarily word-sized"
+        adv_loadw
         # => [ATTACHMENT_0, METADATA_HEADER, pad(8)]
     end
     # => [ATTACHMENT_0, METADATA_HEADER, pad(8)]
@@ -1148,12 +1153,11 @@ end
 
 #! Adds an attachment to the note specified by the index.
 #!
-#! Inputs:  [attachment_scheme, attachment_num_words, ATTACHMENT, note_idx, pad(9)]
+#! Inputs:  [attachment_scheme, ATTACHMENT, note_idx, pad(9)]
 #! Outputs: [pad(16)]
 #!
 #! Where:
 #! - attachment_scheme is the user-defined scheme of the attachment.
-#! - attachment_num_words is the number of words of the attachment.
 #! - ATTACHMENT is the attachment word to store.
 #! - note_idx is the index of the note to which the attachment is added.
 #!
@@ -1168,11 +1172,11 @@ end
 pub proc output_note_add_attachment
     # assert that the provided note index is less than the total number of output notes
     dup.6 exec.output_note::assert_note_index_in_bounds drop
-    # => [attachment_scheme, attachment_num_words, ATTACHMENT, note_idx, pad(9)]
+    # => [attachment_scheme, ATTACHMENT, note_idx, pad(9)]
 
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
-    # => [attachment_scheme, attachment_num_words, ATTACHMENT, note_idx, pad(9)]
+    # => [attachment_scheme, ATTACHMENT, note_idx, pad(9)]
 
     exec.output_note::add_attachment
     # => [pad(16)]

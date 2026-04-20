@@ -3,14 +3,17 @@ use $kernel::asset
 use $kernel::callbacks
 use $kernel::fungible_asset
 use $kernel::memory
+use $kernel::memory::KERNEL_SCRATCH_PTR
 use $kernel::note
 use $kernel::note::NOTE_TYPE_PUBLIC
 use $kernel::note::MAX_ATTACHMENT_SCHEME
 use $kernel::note::MAX_ATTACHMENT_WORD_SIZE
 use $kernel::constants::MAX_OUTPUT_NOTES_PER_TX
+use $kernel::constants::WORD_SIZE
 use $kernel::asset::ASSET_SIZE
 use $kernel::asset::ASSET_VALUE_MEMORY_OFFSET
 use miden::core::word
+use miden::core::mem
 
 # CONSTANTS
 # =================================================================================================
@@ -35,11 +38,15 @@ const ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_MAX_EXCEEDED="attachment scheme must not
 
 const ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_MAX_EXCEEDED="attachment num_words must not exceed 254"
 
+const ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_MUST_BE_MULTIPLE_OF_WORD_SIZE="number of elements in an attachment must be a multiple of 4"
+
 const ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_CANNOT_BE_ZERO="attachment num_words cannot be zero"
 
 const ERR_OUTPUT_NOTE_TOO_MANY_ATTACHMENTS="number of attachments per note cannot exceed 4"
 
 const ERR_NOTE_INVALID_INDEX="failed to find note at the given index; index must be within [0, num_of_notes]"
+
+const ERR_OUTPUT_NOTE_ATTACHMENT_COMMITMENT_MISMATCH="the computed hash of fetched attachment elements does not match the provided commitment"
 
 const ERR_NON_FUNGIBLE_ASSET_ALREADY_EXISTS="non-fungible asset that already exists in the note cannot be added again"
 
@@ -231,72 +238,81 @@ end
 
 #! Adds an attachment to the note specified by the index. Attachments are append-only.
 #!
-#! Inputs:  [attachment_scheme, attachment_num_words, ATTACHMENT, note_idx]
+#! The attachment elements are fetched from the advice map using ATTACHMENT_COMMITMENT as the key.
+#! The number of words (num_words) is derived from the element count and the commitment is verified
+#! by hashing the fetched elements.
+#!
+#! Inputs:
+#!   Operand Stack: [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx]
+#!   Advice map: {
+#!     ATTACHMENT_COMMITMENT: [[ATTACHMENT_ELEMENTS]],
+#!   }
 #! Outputs: []
 #!
 #! Where:
 #! - attachment_scheme is the user-defined scheme of the attachment.
-#! - attachment_num_words is the number of words of the attachment.
-#! - ATTACHMENT is the attachment word to store.
+#! - ATTACHMENT_COMMITMENT is the hash commitment to the attachment elements.
 #! - note_idx is the index of the note to which the attachment is added.
 #!
 #! Panics if:
 #! - the attachment scheme exceeds 65534.
-#! - the attachment num_words exceeds 254 or is zero.
+#! - the number of elements is not a multiple of 4, or num_words is zero or exceeds 254.
+#! - the computed hash of fetched attachment elements does not match ATTACHMENT_COMMITMENT.
 #! - the note already has 4 attachments.
 pub proc add_attachment
     # validate attachment_scheme does not exceed max
     dup u32assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_MAX_EXCEEDED
     u32lte.MAX_ATTACHMENT_SCHEME assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_MAX_EXCEEDED
-    # => [attachment_scheme, attachment_num_words, ATTACHMENT, note_idx]
+    # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx]
 
-    # validate 0 < attachment_num_words <= 254
-    dup.1 neq.0 assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_CANNOT_BE_ZERO
-    dup.1 u32assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_MAX_EXCEEDED
-    u32lte.MAX_ATTACHMENT_WORD_SIZE assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_MAX_EXCEEDED
-    # => [attachment_scheme, attachment_num_words, ATTACHMENT, note_idx]
+    movdn.4
+    # => [ATTACHMENT_COMMITMENT, attachment_scheme, note_idx]
+
+    # validate commitment against advice data and derive num_words
+    dupw exec.validate_attachment
+    # => [num_words, ATTACHMENT_COMMITMENT, note_idx]
+
+    movup.5 swap
+    # => [num_words, attachment_scheme, ATTACHMENT_COMMITMENT, note_idx]
 
     # get note_ptr from note_idx
     movup.6 exec.memory::get_output_note_ptr
-    # => [note_ptr, attachment_scheme, attachment_num_words, ATTACHMENT]
+    # => [note_ptr, num_words, attachment_scheme, ATTACHMENT_COMMITMENT]
 
-    # validate current number of attachments < 4 which means we can add one more to stay below the
-    # limit
+    # validate current number of attachments < 4
     dup exec.memory::get_output_note_num_attachments
-    # => [num_attachments, note_ptr, attachment_scheme, attachment_num_words, ATTACHMENT]
+    # => [num_attachments, note_ptr, num_words, attachment_scheme, ATTACHMENT_COMMITMENT]
 
     dup lt.MAX_ATTACHMENTS_PER_NOTE assert.err=ERR_OUTPUT_NOTE_TOO_MANY_ATTACHMENTS
-    # => [num_attachments, note_ptr, attachment_scheme, attachment_num_words, ATTACHMENT]
+    # => [num_attachments, note_ptr, num_words, attachment_scheme, ATTACHMENT_COMMITMENT]
 
     # emit event
     emit.NOTE_BEFORE_ADD_ATTACHMENT_EVENT
-    # => [num_attachments, note_ptr, attachment_scheme, attachment_num_words, ATTACHMENT]
+    # => [num_attachments, note_ptr, num_words, attachment_scheme, ATTACHMENT_COMMITMENT]
+
+    # --- Update attachment into in output note memory ---
 
     swapw
-    # => [ATTACHMENT, num_attachments, note_ptr, attachment_scheme, attachment_num_words]
-
-    # TODO(multi_attachments): Validate attachment + num_words against advice data.
+    # => [ATTACHMENT_COMMITMENT, num_attachments, note_ptr, num_words, attachment_scheme]
 
     # use attachment_idx = num_attachments
     dup.4 dup.6
-    # => [note_ptr, attachment_idx, ATTACHMENT, num_attachments, note_ptr, attachment_scheme, attachment_num_words]
+    # => [note_ptr, attachment_idx, ATTACHMENT_COMMITMENT, num_attachments, note_ptr, num_words, attachment_scheme]
 
+    # store commitment in note memory
     exec.memory::set_output_note_attachment
-    # => [num_attachments, note_ptr, attachment_scheme, attachment_num_words]
+    # => [num_attachments, note_ptr, num_words, attachment_scheme]
 
-    # compute new number of attachments
-    # we have previously validated num_attachments to be < 4, so the new number is guaranteed to be
-    # at most 4
+    # increment number of attachments
     dup add.1
-    # => [new_num_attachments, num_attachments, note_ptr, attachment_scheme, attachment_num_words]
+    # => [new_num_attachments, num_attachments, note_ptr, num_words, attachment_scheme]
 
-    # set new number of attachments in memory
     dup.2 exec.memory::set_output_note_num_attachments
-    # => [num_attachments, note_ptr, attachment_scheme, attachment_num_words]
+    # => [num_attachments, note_ptr, num_words, attachment_scheme]
 
-    # update attachment num_words and scheme in the note metadata
-    # note that this needs to take the previous number of attachments, so passing num_attachments
-    # is correct
+    movup.3 movdn.2
+    # => [num_attachments, note_ptr, attachment_scheme, num_words]
+
     exec.set_attachment_num_words_and_scheme
     # => []
 end
@@ -317,6 +333,62 @@ end
 
 # HELPER PROCEDURES
 # =================================================================================================
+
+#! Validates the attachment commitment against the advice data.
+#!
+#! Fetches the attachment elements from the advice map using ATTACHMENT_COMMITMENT as the key,
+#! derives num_words from the element count, pipes the elements to scratch memory to compute the
+#! commitment, and asserts the computed commitment matches the provided commitment.
+#!
+#! Inputs:
+#!   Operand Stack: [ATTACHMENT_COMMITMENT]
+#!   Advice map: {
+#!     ATTACHMENT_COMMITMENT: [[ATTACHMENT_ELEMENTS]],
+#!   }
+#! Outputs: [num_words]
+#!
+#! Panics if:
+#! - the number of elements is not a multiple of 4, or num_words is zero or exceeds 254.
+#! - the computed hash of fetched elements does not match ATTACHMENT_COMMITMENT.
+@locals(1)
+proc validate_attachment
+    # push the attachment elements from the advice map onto the advice stack
+    adv.push_mapvaln
+    # OS => [ATTACHMENT_COMMITMENT]
+    # AS => [num_elements, [ATTACHMENT_ELEMENTS]]
+
+    # derive num_words from num_elements
+    adv_push.1 u32assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_MAX_EXCEEDED
+    u32divmod.WORD_SIZE
+    # OS => [remainder, num_words, ATTACHMENT_COMMITMENT]
+    # AS => [[ATTACHMENT_ELEMENTS]]
+
+    # assert the number of elements is a multiple of WORD_SIZE
+    eq.0 assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_MUST_BE_MULTIPLE_OF_WORD_SIZE
+    # OS => [num_words, ATTACHMENT_COMMITMENT]
+    # AS => [[ATTACHMENT_ELEMENTS]]
+
+    # validate 0 < num_words <= 254
+    dup neq.0 assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_CANNOT_BE_ZERO
+    dup u32lte.MAX_ATTACHMENT_WORD_SIZE assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_MAX_EXCEEDED
+    # OS => [num_words, ATTACHMENT_COMMITMENT]
+
+    # save num_words for later
+    dup movdn.5
+    # OS => [num_words, ATTACHMENT_COMMITMENT, num_words]
+
+    # --- Pipe elements from advice stack to scratch memory while hashing ---
+
+    # we use scratch memory because pipe_preimage_to_memory needs to write to memory, but we only
+    # need to assert that the preimage is available, the exact content itself is unimportant
+    push.KERNEL_SCRATCH_PTR swap
+    # OS => [num_words, scratch_ptr, ATTACHMENT_COMMITMENT, num_words]
+    # AS => [[ATTACHMENT_ELEMENTS]]
+
+    # validate the sequential hash over the attachment elements is ATTACHMENT_COMMITMENT
+    exec.mem::pipe_preimage_to_memory drop
+    # OS => [num_words]
+end
 
 #! Builds the provided inputs into the NOTE_METADATA_HEADER word.
 #!

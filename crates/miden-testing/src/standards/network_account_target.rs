@@ -4,6 +4,7 @@ use miden_protocol::Felt;
 use miden_protocol::account::AccountStorageMode;
 use miden_protocol::note::{
     NoteAttachment,
+    NoteAttachmentContent,
     NoteAttachments,
     NoteMetadata,
     NoteMetadataHeader,
@@ -37,7 +38,7 @@ async fn network_account_target_get_id() -> anyhow::Result<()> {
         const ERR_NOT_NETWORK_ACCOUNT_TARGET = "attachment is not a valid network account target"
 
         begin
-            push.{attachment_word}
+            push.{attachment_commitment}
             push.{metadata_word}
             exec.note::metadata_into_attachment_header
             # => [attachment_0_num_words, attachment_0_scheme, NOTE_ATTACHMENT]
@@ -54,7 +55,10 @@ async fn network_account_target_get_id() -> anyhow::Result<()> {
         end
         "#,
         metadata_word = metadata_word,
-        attachment_word = attachment.content().to_word(),
+        attachment_commitment = match attachment.content() {
+            NoteAttachmentContent::Word(word) => *word,
+            _ => unreachable!("expected word attachment"),
+        },
     );
 
     let exec_output = CodeExecutor::with_default_host().run(&source).await?;
@@ -73,7 +77,10 @@ async fn network_account_target_new_attachment() -> anyhow::Result<()> {
     let exec_hint = NoteExecutionHint::Always;
 
     let attachment = NoteAttachment::from(NetworkAccountTarget::new(target_id, exec_hint)?);
-    let attachment_word = attachment.content().to_word();
+    let raw_attachment_word = match attachment.content() {
+        NoteAttachmentContent::Word(word) => *word,
+        _ => unreachable!("expected word attachment"),
+    };
 
     let source = format!(
         r#"
@@ -104,7 +111,7 @@ async fn network_account_target_new_attachment() -> anyhow::Result<()> {
     );
 
     let word = exec_output.stack.get_word(1).unwrap();
-    assert_eq!(word, attachment_word);
+    assert_eq!(word, raw_attachment_word);
 
     Ok(())
 }

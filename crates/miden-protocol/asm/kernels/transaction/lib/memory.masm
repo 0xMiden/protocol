@@ -302,6 +302,16 @@ const LINK_MAP_USED_MEMORY_SIZE=33554432
 # The size of each map entry, i.e. four words.
 const LINK_MAP_ENTRY_SIZE=16
 
+# KERNEL SCRATCH MEMORY
+# -------------------------------------------------------------------------------------------------
+
+# A scratch memory region for temporary use like computing commitments over a number of elements.
+#
+# WARNING: This memory region should be assumed to contain garbage rather than zeros initially.
+#
+# At most 1024 elements should be written to this region, though this number can be increased.
+pub const KERNEL_SCRATCH_PTR=67108864
+
 # MEMORY PROCEDURES
 # =================================================================================================
 

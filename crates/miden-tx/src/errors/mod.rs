@@ -259,7 +259,11 @@ pub enum TransactionKernelError {
     )]
     PublicNoteMissingDetails(NoteMetadata, Word),
     #[error(
-        "commitment of note attachment {actual} does not match attachment {provided} provided to add_attachment"
+        "commitment of note word attachment {actual} does not match attachment {provided} provided to add_attachment"
+    )]
+    NoteAttachmentWordMismatch { actual: Word, provided: Word },
+    #[error(
+        "commitment of note array attachment {actual} does not match attachment {provided} provided to add_attachment"
     )]
     NoteAttachmentArrayMismatch { actual: Word, provided: Word },
     #[error(

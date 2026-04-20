@@ -242,12 +242,18 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
         )?)
         .build()?;
 
+    // Build the advice map entry for the array attachment's elements
+    let attachment = output_note_2.attachments().get(0).unwrap();
+    let attachment_commitment = attachment.content().to_commitment();
+    let attachment_elements = attachment.content().to_elements();
+
     let tx_context = TransactionContextBuilder::new(account)
         .extend_input_notes(vec![input_note_1.clone(), input_note_2.clone()])
         .extend_expected_output_notes(vec![
             RawOutputNote::Full(output_note_1.clone()),
             RawOutputNote::Full(output_note_2.clone()),
         ])
+        .extend_advice_map(vec![(attachment_commitment, attachment_elements)])
         .build()?;
 
     // compute expected output notes commitment
@@ -296,9 +302,8 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
             # => [note_idx]
 
             push.{ATTACHMENT2}
-            push.{attachment2_num_words}
             push.{attachment_scheme2}
-            # => [attachment_scheme, attachment_num_words, ATTACHMENT, note_idx]
+            # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx]
             exec.output_note::add_array_attachment
             # => []
 
@@ -320,8 +325,7 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
         tag_2 = output_note_2.metadata().tag(),
         ASSET_2_KEY = asset_2.to_key_word(),
         ASSET_2_VALUE = asset_2.to_value_word(),
-        ATTACHMENT2 = output_note_2.attachments().get(0).unwrap().content().to_word(),
-        attachment2_num_words = output_note_2.attachments().get(0).unwrap().num_words(),
+        ATTACHMENT2 = output_note_2.attachments().get(0).unwrap().content().to_commitment(),
         attachment_scheme2 =
             output_note_2.attachments().get(0).unwrap().attachment_scheme().as_u16(),
     );
@@ -362,7 +366,7 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
         exec_output.get_kernel_mem_word(
             OUTPUT_NOTE_SECTION_OFFSET + OUTPUT_NOTE_ATTACHMENT_0_OFFSET + NOTE_MEM_SIZE
         ),
-        output_note_2.attachments().get(0).unwrap().content().to_word(),
+        output_note_2.attachments().get(0).unwrap().content().to_commitment(),
         "Validate the output note 2 attachment",
     );
     for attachment_idx in 1..4u32 {
@@ -1161,7 +1165,7 @@ async fn test_get_assets() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn test_add_attachment_with_zero_num_words_fails() -> anyhow::Result<()> {
+async fn test_add_attachment_with_missing_advice_map_entry_fails() -> anyhow::Result<()> {
     let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
 
     let code = format!(
@@ -1179,14 +1183,57 @@ async fn test_add_attachment_with_zero_num_words_fails() -> anyhow::Result<()> {
             exec.output_note::create
             # => [note_idx]
 
-            # try to add an attachment with num_words = 0
-            padw push.0 push.0
-            # => [attachment_scheme, attachment_num_words, ATTACHMENT, note_idx]
+            # try to add an attachment with a commitment that is not in the advice map
+            padw push.0
+            # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx]
             exec.output_note::add_array_attachment
             # => []
         end
         ",
         NOTE_TYPE_PUBLIC = NoteType::Public as u8,
+    );
+
+    let exec_output = tx_context.execute_code(&code).await;
+
+    // The adv.push_mapvaln instruction will fail when the commitment is not in the advice map
+    assert!(exec_output.is_err());
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_add_attachment_with_zero_num_words_fails() -> anyhow::Result<()> {
+    // Insert an empty entry in the advice map so that adv.push_mapvaln succeeds but
+    // the kernel rejects the attachment because num_felts / 4 == 0.
+    let commitment = Word::from([42, 43, 44, 45u32]);
+    let tx_context = TransactionContextBuilder::with_existing_mock_account()
+        .extend_advice_map(vec![(commitment, vec![])])
+        .build()?;
+
+    let code = format!(
+        "
+        use miden::protocol::output_note
+        use miden::standards::note_tag::DEFAULT_TAG
+        use $kernel::prologue
+
+        begin
+            exec.prologue::prepare_transaction
+
+            push.1.2.3.4
+            push.{NOTE_TYPE_PUBLIC}
+            push.DEFAULT_TAG
+            exec.output_note::create
+            # => [note_idx]
+
+            push.{COMMITMENT}
+            push.0
+            # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx]
+            exec.output_note::add_array_attachment
+            # => []
+        end
+        ",
+        NOTE_TYPE_PUBLIC = NoteType::Public as u8,
+        COMMITMENT = commitment,
     );
 
     let exec_output = tx_context.execute_code(&code).await;
@@ -1230,7 +1277,7 @@ async fn test_add_word_attachment() -> anyhow::Result<()> {
         note_type = output_note.metadata().note_type() as u8,
         tag = output_note.metadata().tag().as_u32(),
         attachment_scheme = output_note.attachments().get(0).unwrap().attachment_scheme().as_u16(),
-        ATTACHMENT = output_note.attachments().get(0).unwrap().content().to_word(),
+        ATTACHMENT = Word::from([3, 4, 5, 6u32]),
     );
 
     let tx_script = CodeBuilder::new().compile_tx_script(tx_script)?;
@@ -1258,8 +1305,7 @@ async fn test_set_array_attachment() -> anyhow::Result<()> {
     let output_note =
         RawOutputNote::Full(NoteBuilder::new(account.id(), rng).attachment(attachment).build()?);
 
-    let attachment_content_word = output_note.attachments().get(0).unwrap().content().to_word();
-    let attachment_num_words = output_note.attachments().get(0).unwrap().num_words();
+    let attachment_commitment = output_note.attachments().get(0).unwrap().content().to_commitment();
     let elements: Vec<Felt> = words.iter().flat_map(Word::as_elements).copied().collect();
     let tx_script = format!(
         "
@@ -1273,9 +1319,8 @@ async fn test_set_array_attachment() -> anyhow::Result<()> {
             # => [note_idx]
 
             push.{ATTACHMENT}
-            push.{attachment_num_words}
             push.{attachment_scheme}
-            # => [attachment_scheme, attachment_num_words, ATTACHMENT, note_idx]
+            # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx]
             exec.output_note::add_array_attachment
             # => []
 
@@ -1287,8 +1332,7 @@ async fn test_set_array_attachment() -> anyhow::Result<()> {
         note_type = output_note.metadata().note_type() as u8,
         tag = output_note.metadata().tag().as_u32(),
         attachment_scheme = output_note.attachments().get(0).unwrap().attachment_scheme().as_u16(),
-        attachment_num_words = attachment_num_words,
-        ATTACHMENT = attachment_content_word,
+        ATTACHMENT = attachment_commitment,
     );
 
     let tx_script = CodeBuilder::new().compile_tx_script(tx_script)?;
@@ -1296,7 +1340,7 @@ async fn test_set_array_attachment() -> anyhow::Result<()> {
     let tx = TransactionContextBuilder::new(account)
         .extend_expected_output_notes(vec![output_note.clone()])
         .tx_script(tx_script)
-        .extend_advice_map(vec![(attachment_content_word, elements)])
+        .extend_advice_map(vec![(attachment_commitment, elements)])
         .build()?
         .execute()
         .await?;

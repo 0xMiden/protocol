@@ -2,7 +2,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use miden_protocol::account::{AccountId, AccountType};
-use miden_protocol::note::{NoteAttachmentContent, PartialNote};
+use miden_protocol::note::PartialNote;
 use miden_protocol::transaction::TransactionScript;
 use thiserror::Error;
 
@@ -166,10 +166,11 @@ impl AccountInterface {
         // and the array elements as value.
         let mut code_builder = CodeBuilder::new();
         for note in output_notes {
-            if let Some(attachment) = note.attachments().iter().next()
-                && let NoteAttachmentContent::Array(array) = attachment.content()
-            {
-                code_builder.add_advice_map_entry(array.commitment(), array.to_elements());
+            if let Some(attachment) = note.attachments().iter().next() {
+                code_builder.add_advice_map_entry(
+                    attachment.content().to_commitment(),
+                    attachment.content().to_elements(),
+                );
             }
         }
 

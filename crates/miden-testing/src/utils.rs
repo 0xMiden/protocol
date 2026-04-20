@@ -7,14 +7,7 @@ use miden_protocol::account::AccountId;
 use miden_protocol::asset::Asset;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
-use miden_protocol::note::{
-    Note,
-    NoteAssets,
-    NoteAttachmentContent,
-    NoteMetadata,
-    NoteTag,
-    NoteType,
-};
+use miden_protocol::note::{Note, NoteAssets, NoteMetadata, NoteTag, NoteType};
 use miden_protocol::vm::AdviceMap;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::P2idNoteStorage;
@@ -250,26 +243,22 @@ fn note_script_that_creates_notes<'note>(
         ));
 
         for attachment in note.attachments().iter() {
-            let num_words = attachment.num_words();
+            let attachment_scheme = attachment.attachment_scheme().as_u16();
+            let commitment = attachment.content().to_commitment();
 
             out.push_str(&format!(
                 "
-              dup
-              push.{ATTACHMENT}
-              push.{num_words}
-              push.{attachment_scheme}
-              # => [attachment_scheme, num_words, ATTACHMENT, note_idx, note_idx]
-              exec.output_note::add_attachment
-              # => [note_idx]
-            ",
-                ATTACHMENT = attachment.content().to_word(),
-                attachment_scheme = attachment.attachment_scheme().as_u16(),
+                      dup
+                      push.{commitment}
+                      push.{attachment_scheme}
+                      # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx, note_idx]
+                      exec.output_note::add_attachment
+                      # => [note_idx]
+                    ",
             ));
 
-            // For array attachments, add the elements to the advice map keyed by the commitment.
-            if let NoteAttachmentContent::Array(array) = attachment.content() {
-                advice_map.insert(array.commitment(), array.to_elements());
-            }
+            // Add the elements to the advice map keyed by the commitment.
+            advice_map.insert(commitment, attachment.content().to_elements());
         }
 
         for asset in note.assets().iter() {

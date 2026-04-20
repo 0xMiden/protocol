@@ -6,7 +6,6 @@ use crate::account::{AccountHeader, PartialAccount};
 use crate::block::account_tree::{AccountIdKey, AccountWitness};
 use crate::crypto::SequentialCommit;
 use crate::crypto::merkle::InnerNodeInfo;
-use crate::note::NoteAttachmentContent;
 use crate::transaction::{
     AccountInputs,
     InputNote,
@@ -340,26 +339,22 @@ impl TransactionAdviceInputs {
             // assets commitments
             self.add_map_entry(assets.commitment(), assets.to_elements());
 
-            // ATTACHMENTS_COMMITMENTS |-> [[ATTACHMENT_WORDS]]
+            // ATTACHMENTS_COMMITMENT |-> [[ATTACHMENT_COMMITMENTS]]
             self.add_map_entry(
                 note.attachments().commitment(),
                 note.attachments()
-                    .attachment_words()
+                    .commitments()
                     .iter()
                     .flat_map(Word::as_elements)
                     .copied()
                     .collect(),
             );
 
-            // elements of each array attachment
+            // ATTACHMENT_COMMITMENT |-> [ATTACHMENT_ELEMENTS] for each attachment
             for attachment in note.attachments().iter() {
-                // ARRAY_ATTACHMENT_COMMITMENT |-> [ARRAY_ATTACHMENT_ELEMENTS]
-                if let NoteAttachmentContent::Array(array_attachment) = attachment.content() {
-                    self.add_map_entry(
-                        array_attachment.commitment(),
-                        array_attachment.to_elements(),
-                    );
-                }
+                let commitment = attachment.content().to_commitment();
+                let elements = attachment.content().to_elements();
+                self.add_map_entry(commitment, elements);
             }
 
             // note details / metadata

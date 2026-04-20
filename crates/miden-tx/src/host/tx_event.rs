@@ -426,19 +426,19 @@ impl TransactionEvent {
 
             TransactionEventId::NoteBeforeAddAttachment => {
                 // Expected stack state: [
-                //     event, num_attachments, note_ptr, attachment_scheme,
-                //     attachment_num_words, ATTACHMENT, note_idx
+                //     event, num_attachments, note_ptr, num_words, attachment_scheme,
+                //     ATTACHMENT_COMMITMENT
                 // ]
 
                 let note_ptr = process.get_stack_item(2);
-                let attachment_scheme = process.get_stack_item(3);
-                let attachment_num_words = process.get_stack_item(4);
-                let attachment = process.get_stack_word(5);
+                let num_words = process.get_stack_item(3);
+                let attachment_scheme = process.get_stack_item(4);
+                let attachment_commitment = process.get_stack_word(5);
 
                 let (note_idx, attachment) = extract_note_attachment(
                     attachment_scheme,
-                    attachment_num_words,
-                    attachment,
+                    num_words,
+                    attachment_commitment,
                     note_ptr,
                     process.advice_provider(),
                 )?;
@@ -737,7 +737,7 @@ fn build_note_metadata(
 fn extract_note_attachment(
     attachment_scheme: Felt,
     attachment_num_words: Felt,
-    attachment: Word,
+    attachment_commitment: Word,
     note_ptr: Felt,
     advice_provider: &AdviceProvider,
 ) -> Result<(usize, NoteAttachment), TransactionKernelError> {
@@ -758,22 +758,54 @@ fn extract_note_attachment(
             })
         })?;
 
+    // Fetch the raw elements from the advice provider.
+    let elements = advice_provider.get_mapped_values(&attachment_commitment).ok_or_else(|| {
+        TransactionKernelError::other(
+            "elements of a note attachment commitment must be present in the advice provider",
+        )
+    })?;
+
+    if elements.is_empty() {
+        return Err(TransactionKernelError::other(
+            "num elements in attachment advice map value must not be empty",
+        ));
+    }
+
+    if !elements.len().is_multiple_of(WORD_SIZE) {
+        return Err(TransactionKernelError::other(
+            "num elements in attachment advice map value must be multiple of word size",
+        ));
+    }
+
+    let words: Vec<Word> = elements
+        .chunks_exact(WORD_SIZE)
+        .map(|chunk| Word::from([chunk[0], chunk[1], chunk[2], chunk[3]]))
+        .collect();
+
     let attachment_content = match num_words {
         0 => {
             return Err(TransactionKernelError::other("attachment num_words must be > 0"));
         },
-        1 => NoteAttachmentContent::Word(attachment),
-        _ => {
-            let elements = advice_provider.get_mapped_values(&attachment).ok_or_else(|| {
-                TransactionKernelError::other(
-                    "elements of a note attachment commitment must be present in the advice provider",
-                )
-            })?;
+        1 => {
+            if words.len() != 1 {
+                return Err(TransactionKernelError::other(format!(
+                    "word attachment expected 1 word from advice provider, got {}",
+                    words.len()
+                )));
+            }
 
-            let words: Vec<Word> = elements
-                .chunks_exact(WORD_SIZE)
-                .map(|chunk| Word::from([chunk[0], chunk[1], chunk[2], chunk[3]]))
-                .collect();
+            // Verify the commitment matches hash(word)
+            let computed_commitment = Hasher::hash_elements(elements);
+            if computed_commitment != attachment_commitment {
+                return Err(TransactionKernelError::NoteAttachmentWordMismatch {
+                    actual: computed_commitment,
+                    provided: attachment_commitment,
+                });
+            }
+
+            NoteAttachmentContent::Word(words[0])
+        },
+        _ => {
             let array_attachment = NoteAttachmentArray::new(words).map_err(|source| {
                 TransactionKernelError::other_with_source(
                     "failed to construct note attachment array",
@@ -781,10 +813,10 @@ fn extract_note_attachment(
                 )
             })?;
 
-            if array_attachment.commitment() != attachment {
+            if array_attachment.commitment() != attachment_commitment {
                 return Err(TransactionKernelError::NoteAttachmentArrayMismatch {
                     actual: array_attachment.commitment(),
-                    provided: attachment,
+                    provided: attachment_commitment,
                 });
             }
 

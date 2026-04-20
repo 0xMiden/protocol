@@ -5,6 +5,7 @@ use miden::protocol::kernel_proc_offsets::OUTPUT_NOTE_ADD_ATTACHMENT_OFFSET
 use miden::protocol::kernel_proc_offsets::OUTPUT_NOTE_GET_RECIPIENT_OFFSET
 use miden::protocol::kernel_proc_offsets::OUTPUT_NOTE_GET_METADATA_OFFSET
 use miden::protocol::note
+use miden::core::crypto::hashes::poseidon2
 
 # PROCEDURES
 # =================================================================================================
@@ -147,23 +148,22 @@ end
 
 #! Adds an attachment to the note specified by the note index.
 #!
-#! If attachment_num_words > 1, there must be an advice map entry for ATTACHMENT.
+#! There must be an advice map entry for ATTACHMENT_COMMITMENT that maps to the raw attachment
+#! elements.
 #!
 #! Inputs:
-#!   Operand Stack: [attachment_scheme, attachment_num_words, ATTACHMENT, note_idx]
+#!   Operand Stack: [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx]
 #!   Advice map: {
-#!     ATTACHMENT?: [[ATTACHMENT_ELEMENTS]],
+#!     ATTACHMENT_COMMITMENT: [[ATTACHMENT_ELEMENTS]],
 #!   }
 #! Outputs: []
 #!
 #! Where:
 #! - attachment_scheme is the user-defined scheme of the attachment.
-#! - attachment_num_words is the number of words that make up the attachment.
-#! - ATTACHMENT is the attachment word to store or the commitment to an array of attachment
-#!   elements.
+#! - ATTACHMENT_COMMITMENT is the hash commitment to the attachment elements.
 #! - note_idx is the index of the note to which the attachment is added.
-#! - ATTACHMENT_ELEMENTS are the elements for which ATTACHMENT is the sequential commitment (only
-#!   needed if attachment_num_words > 1).
+#! - ATTACHMENT_ELEMENTS are the elements for which ATTACHMENT_COMMITMENT is the sequential
+#!   commitment.
 #!
 #! Panics if:
 #! - the procedure is called when the active account is not the native one.
@@ -174,11 +174,11 @@ end
 #! Invocation: exec
 pub proc add_attachment
     push.OUTPUT_NOTE_ADD_ATTACHMENT_OFFSET
-    # => [offset, attachment_scheme, attachment_num_words, ATTACHMENT, note_idx]
+    # => [offset, attachment_scheme, ATTACHMENT_COMMITMENT, note_idx]
 
     # pad the stack before the syscall
-    padw padw swapdw
-    # => [offset, attachment_scheme, attachment_num_words, ATTACHMENT, note_idx, pad(8)]
+    push.0 movdn.8 padw padw swapdw
+    # => [offset, attachment_scheme, ATTACHMENT_COMMITMENT, note_idx, pad(9)]
 
     syscall.exec_kernel_proc
     # => [pad(16)]
@@ -190,12 +190,15 @@ end
 
 #! Adds a single-word attachment to the note specified by the note index.
 #!
+#! Hashes the raw attachment word to produce the commitment, inserts the raw elements into the
+#! advice map keyed by that commitment, then delegates to `add_attachment`.
+#!
 #! Inputs:  [attachment_scheme, ATTACHMENT, note_idx]
 #! Outputs: []
 #!
 #! Where:
 #! - attachment_scheme is the user-defined scheme of the attachment (u16, max 65534).
-#! - ATTACHMENT is the raw attachment word to store.
+#! - ATTACHMENT is the raw attachment word.
 #! - note_idx is the index of the note to which the attachment is added.
 #!
 #! Panics if:
@@ -205,31 +208,64 @@ end
 #! - the note already has 4 attachments.
 #!
 #! Invocation: exec
+@locals(4)
 pub proc add_word_attachment
-    # insert attachment_num_words = 1 after attachment_scheme
-    push.1 swap
-    # => [attachment_scheme, 1, ATTACHMENT, note_idx]
+    # => [attachment_scheme, ATTACHMENT, note_idx]
+
+    # Store ATTACHMENT to local memory for hashing and advice map insertion
+    movdn.4
+    # => [ATTACHMENT, attachment_scheme, note_idx]
+
+    loc_storew_le.0
+    # => [ATTACHMENT, attachment_scheme, note_idx]
+
+    exec.poseidon2::hash
+    # => [ATTACHMENT_COMMITMENT, attachment_scheme, note_idx]
+
+    # Hash the attachment word
+    # push.4 locaddr.0
+    # => [local_ptr, 4, attachment_scheme, note_idx]
+
+    # exec.poseidon2::hash_elements
+    # => [ATTACHMENT_COMMITMENT, attachment_scheme, note_idx]
+
+    locaddr.0 dup add.4
+    # => [end_ptr, start_ptr, ATTACHMENT_COMMITMENT, attachment_scheme, note_idx]
+
+    movdn.5 movdn.4
+    # => [ATTACHMENT_COMMITMENT, start_ptr, end_ptr, attachment_scheme, note_idx]
+
+    # Insert the raw attachment elements into the advice map keyed by the commitment.
+    adv.insert_mem
+    # => [ATTACHMENT_COMMITMENT, start_ptr, end_ptr, attachment_scheme, note_idx]
+
+    # Clean up and arrange stack for add_attachment
+    movup.4 drop movup.4 drop
+    # => [ATTACHMENT_COMMITMENT, attachment_scheme, note_idx]
+
+    movup.4
+    # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx]
 
     exec.add_attachment
     # => []
 end
 
-#! Adds an array attachment to the note specified by the note index. The ATTACHMENT is the
-#! commitment to a set of elements.
+#! Adds an array attachment to the note specified by the note index. The ATTACHMENT_COMMITMENT is
+#! the hash commitment to a set of elements.
 #!
 #! Inputs:
-#!   Operand Stack: [attachment_scheme, attachment_num_words, ATTACHMENT, note_idx]
+#!   Operand Stack: [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx]
 #!   Advice map: {
-#!     ATTACHMENT: [[ATTACHMENT_ELEMENTS]],
+#!     ATTACHMENT_COMMITMENT: [[ATTACHMENT_ELEMENTS]],
 #!   }
 #! Outputs: []
 #!
 #! Where:
 #! - attachment_scheme is the user-defined scheme of the attachment.
-#! - attachment_num_words is the number of words of the attachment.
-#! - ATTACHMENT is the commitment of the set of elements that form the note attachment.
+#! - ATTACHMENT_COMMITMENT is the hash commitment to the attachment elements.
 #! - note_idx is the index of the note to which the attachment is added.
-#! - ATTACHMENT_ELEMENTS are the elements for which ATTACHMENT is the sequential commitment.
+#! - ATTACHMENT_ELEMENTS are the elements for which ATTACHMENT_COMMITMENT is the sequential
+#!   commitment.
 #!
 #! Panics if:
 #! - the procedure is called when the active account is not the native one.

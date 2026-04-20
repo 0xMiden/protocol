@@ -319,9 +319,8 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
             # => [note_idx = 2]
 
             push.{ATTACHMENT3}
-            push.{attachment3_num_words}
             push.{attachment_scheme3}
-            # => [attachment_scheme, attachment_num_words, ATTACHMENT, note_idx]
+            # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx]
             exec.output_note::add_array_attachment
             # => []
         end
@@ -340,10 +339,9 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
         NOTETYPE2 = note_type2 as u8,
         NOTETYPE3 = note_type3 as u8,
         attachment_scheme2 = attachment2.attachment_scheme().as_u16(),
-        ATTACHMENT2 = attachment2.content().to_word(),
+        ATTACHMENT2 = Word::from([2, 3, 4, 5u32]),
         attachment_scheme3 = attachment3.attachment_scheme().as_u16(),
-        attachment3_num_words = attachment3.num_words(),
-        ATTACHMENT3 = attachment3.content().to_word(),
+        ATTACHMENT3 = attachment3.content().to_commitment(),
     );
 
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script_src)?;
@@ -358,7 +356,7 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
 
     let tx_context = TransactionContextBuilder::new(executor_account)
         .tx_script(tx_script)
-        .extend_advice_map(vec![(attachment3.content().to_word(), array.to_elements())])
+        .extend_advice_map(vec![(attachment3.content().to_commitment(), array.to_elements())])
         .extend_expected_output_notes(vec![
             RawOutputNote::Full(expected_output_note_2.clone()),
             RawOutputNote::Full(expected_output_note_3.clone()),

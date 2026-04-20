@@ -425,7 +425,7 @@ impl<'note> From<&'note OutputNote> for &'note NoteHeader {
     fn from(note: &'note OutputNote) -> Self {
         match note {
             OutputNote::Public(public_note) => public_note.header(),
-            OutputNote::Private(private_note) => private_note.as_header(),
+            OutputNote::Private(private_note) => private_note.header(),
         }
     }
 }
@@ -623,7 +623,7 @@ impl PrivateOutputNote {
     }
 
     /// Returns a reference to the underlying note header.
-    pub fn as_header(&self) -> &NoteHeader {
+    pub fn header(&self) -> &NoteHeader {
         &self.header
     }
 

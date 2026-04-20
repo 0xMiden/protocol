@@ -101,25 +101,15 @@ proc compute_attachments_commitment
     dup exec.memory::get_output_note_num_attachments
     # => [num_attachments, note_ptr]
 
-    # TODO(multi_attachments): We probably don't need the if-else branching here. If not, we can
-    # optimize the MASM a bit.
-    dup eq.0
-    if.true
-        # 0 attachments: return EMPTY_WORD
-        drop drop padw
-        # => [EMPTY_WORD]
-    else
-        # 1+ attachments: hash the present attachment commitment words
-        # end_ptr = attachment_data_ptr + num_attachments * WORD_SIZE
-        swap exec.memory::get_output_note_attachment_data_ptr
-        # => [start_ptr, num_attachments]
+    # end_ptr = attachment_data_ptr + num_attachments * WORD_SIZE
+    swap exec.memory::get_output_note_attachment_data_ptr
+    # => [start_ptr, num_attachments]
 
-        swap mul.WORD_SIZE dup.1 add swap
-        # => [start_ptr, end_ptr]
+    swap mul.WORD_SIZE dup.1 add swap
+    # => [start_ptr, end_ptr]
 
-        exec.poseidon2::hash_words
-        # => [ATTACHMENTS_COMMITMENT]
-    end
+    exec.poseidon2::hash_words
+    # => [ATTACHMENTS_COMMITMENT]
 end
 
 #! Computes the assets commitment of the output note located at the specified memory address.

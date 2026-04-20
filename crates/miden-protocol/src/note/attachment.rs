@@ -198,16 +198,14 @@ impl NoteAttachmentContent {
         }
     }
 
-    /// Returns the [`NoteAttachmentContent`] encoded to a [`Word`].
-    ///
-    /// See the type-level documentation for more details.
-    pub fn to_word(&self) -> Word {
-        match self {
-            NoteAttachmentContent::Word(word) => *word,
-            NoteAttachmentContent::Array(attachment_commitment) => {
-                attachment_commitment.commitment()
-            },
-        }
+    /// Returns the raw elements of this attachment content.
+    pub fn to_elements(&self) -> Vec<Felt> {
+        <Self as SequentialCommit>::to_elements(self)
+    }
+
+    /// Returns the sequential commitment over the content's elements.
+    pub fn to_commitment(&self) -> Word {
+        <Self as SequentialCommit>::to_commitment(self)
     }
 }
 
@@ -255,6 +253,24 @@ impl Deserializable for NoteAttachmentContent {
                 Self::new_array(words)
                     .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
             },
+        }
+    }
+}
+
+impl SequentialCommit for NoteAttachmentContent {
+    type Commitment = Word;
+
+    fn to_elements(&self) -> Vec<Felt> {
+        match self {
+            NoteAttachmentContent::Word(word) => word.as_elements().to_vec(),
+            NoteAttachmentContent::Array(array) => array.to_elements(),
+        }
+    }
+
+    fn to_commitment(&self) -> Self::Commitment {
+        match self {
+            NoteAttachmentContent::Word(word) => Hasher::hash_elements(word.as_elements()),
+            NoteAttachmentContent::Array(array) => array.commitment(),
         }
     }
 }
@@ -635,11 +651,11 @@ impl NoteAttachments {
         self.attachments.iter()
     }
 
-    /// Returns the cached commitment over the contained attachments.
-    pub fn attachment_words(&self) -> Vec<Word> {
+    /// Returns the individual commitment of each contained attachment.
+    pub fn commitments(&self) -> Vec<Word> {
         self.attachments
             .iter()
-            .map(|attachment| attachment.content().to_word())
+            .map(|attachment| attachment.content().to_commitment())
             .collect()
     }
 
@@ -689,12 +705,11 @@ impl SequentialCommit for NoteAttachments {
     }
 }
 
-/// Collects all attachment data into a flat vector of field elements.
+/// Collects all attachment commitments into a flat vector of field elements.
 fn attachments_to_elements(attachments: &[NoteAttachment]) -> Vec<Felt> {
     let mut elements = Vec::new();
-    for attachment_commitment in attachments.iter().map(|attachment| attachment.content().to_word())
-    {
-        elements.extend_from_slice(attachment_commitment.as_elements());
+    for commitment in attachments.iter().map(|attachment| attachment.content().to_commitment()) {
+        elements.extend_from_slice(commitment.as_elements());
     }
     elements
 }
@@ -858,8 +873,10 @@ mod tests {
             NoteAttachmentScheme::new(1)?,
             word,
         )])?;
-        // Single word attachment: commitment is hash of the word.
-        assert_eq!(attachments.commitment(), Hasher::hash_elements(word.as_elements()));
+        // Single word attachment: the attachment commitment is hash(word), so the overall
+        // attachments commitment is hash(hash(word)).
+        let word_commitment = Hasher::hash_elements(word.as_elements());
+        assert_eq!(attachments.commitment(), Hasher::hash_elements(word_commitment.as_elements()));
 
         Ok(())
     }
