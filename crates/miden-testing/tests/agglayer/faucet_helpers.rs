@@ -1,6 +1,10 @@
 extern crate alloc;
 
-use miden_agglayer::{AggLayerFaucet, create_existing_agglayer_faucet, create_existing_bridge_account};
+use miden_agglayer::{
+    AggLayerFaucet,
+    create_existing_agglayer_faucet,
+    create_existing_bridge_account,
+};
 use miden_protocol::Felt;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::asset::FungibleAsset;
