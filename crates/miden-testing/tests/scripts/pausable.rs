@@ -46,7 +46,7 @@ fn add_faucet_with_pausable(builder: &mut MockChainBuilder) -> anyhow::Result<Ac
         .storage_mode(AccountStorageMode::Public)
         .account_type(AccountType::FungibleFaucet)
         .with_component(basic_faucet)
-        .with_component(Pausable);
+        .with_component(Pausable::default());
 
     builder.add_account_from_builder(
         Auth::BasicAuth {
@@ -77,7 +77,7 @@ fn add_faucet_with_pausable_for_account_type(
         .storage_mode(AccountStorageMode::Public)
         .account_type(account_type)
         .with_component(faucet_component)
-        .with_component(Pausable);
+        .with_component(Pausable::default());
 
     builder.add_account_from_builder(
         Auth::BasicAuth {

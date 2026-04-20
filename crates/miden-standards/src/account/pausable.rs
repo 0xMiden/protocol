@@ -51,10 +51,8 @@ procedure_digest!(
 /// while paused.
 ///
 /// `pause` and `unpause` do not authenticate the caller — this is an intentional choice:
-/// the core mechanism is kept without access control so that auth wrappers (e.g.
-/// `PausableOwnerControlled` backed by [`Ownable2Step`] or `PausableRoleControlled` backed by
-/// role-based access control) can be implemented on top without duplicating the pause/unpause
-/// bodies. Compose this component with access control components.
+/// the core mechanism is kept without access control so that owner and role-based access control   
+/// can be implemented on top without duplicating the pause/unpause.
 ///
 /// ## Storage
 ///
@@ -62,7 +60,9 @@ procedure_digest!(
 ///   (see MASM `miden::standards::utils::pausable`).
 /// - Protocol callback slots from [`AssetCallbacks`] registered by every constructor.
 #[derive(Debug, Clone, Copy, Default)]
-pub struct Pausable;
+pub struct Pausable {
+    initial_state: bool,
+}
 
 impl Pausable {
     /// Component library path (merged account module name).
@@ -75,41 +75,25 @@ impl Pausable {
         "on_before_asset_added_to_account";
     const ON_BEFORE_ASSET_ADDED_TO_NOTE_PROC_NAME: &'static str = "on_before_asset_added_to_note";
 
-    /// Builds a Pausable [`AccountComponent`] with the initial paused state or unpaused state.
-    pub fn new(is_paused: bool) -> AccountComponent {
-        let initial_word = if is_paused {
-            Word::from([1u32, 0, 0, 0])
-        } else {
-            Word::default()
-        };
-
-        let is_paused_slot = StorageSlot::with_value(Self::is_paused_slot().clone(), initial_word);
-        let callback_slots = AssetCallbacks::new()
-            .on_before_asset_added_to_account(Self::on_before_asset_added_to_account_digest())
-            .on_before_asset_added_to_note(Self::on_before_asset_added_to_note_digest())
-            .into_storage_slots();
-
-        let mut storage_slots = Vec::with_capacity(1 + callback_slots.len());
-        storage_slots.push(is_paused_slot);
-        storage_slots.extend(callback_slots);
-
-        let metadata = Self::component_metadata();
-
-        AccountComponent::new(pausable_library(), storage_slots, metadata).expect(
-            "pausable component should satisfy the requirements of a valid account component",
-        )
+    /// Creates a new [`Pausable`] with the given initial paused state.
+    ///
+    /// Use this constructor when the flag comes from configuration, CLI input, a registry, etc.
+    /// For literal values prefer [`Self::paused`] / [`Self::unpaused`] (or [`Self::default`] for
+    /// the unpaused default).
+    pub const fn new(initial_state: bool) -> Self {
+        Self { initial_state }
     }
 
-    /// Builds a Pausable [`AccountComponent`] that starts in the paused state.
-    pub fn paused() -> AccountComponent {
+    /// Creates a new [`Pausable`] that starts in the paused state.
+    pub const fn paused() -> Self {
         Self::new(true)
     }
 
-    /// Builds a Pausable [`AccountComponent`] that starts in the unpaused state.
+    /// Creates a new [`Pausable`] that starts in the unpaused state.
     ///
-    /// Equivalent to `AccountComponent::from(Pausable)`; provided as an explicit literal form
-    /// for call sites that prefer spelling out the initial state.
-    pub fn unpaused() -> AccountComponent {
+    /// Equivalent to [`Self::default`]; provided as an explicit literal form for call sites that
+    /// prefer spelling out the initial state.
+    pub const fn unpaused() -> Self {
         Self::new(false)
     }
 
@@ -172,7 +156,28 @@ impl Pausable {
 }
 
 impl From<Pausable> for AccountComponent {
-    fn from(_: Pausable) -> Self {
-        Pausable::new(false)
+    fn from(pausable: Pausable) -> Self {
+        let initial_word = if pausable.initial_state {
+            Word::from([1u32, 0, 0, 0])
+        } else {
+            Word::default()
+        };
+
+        let is_paused_slot =
+            StorageSlot::with_value(Pausable::is_paused_slot().clone(), initial_word);
+        let callback_slots = AssetCallbacks::new()
+            .on_before_asset_added_to_account(Pausable::on_before_asset_added_to_account_digest())
+            .on_before_asset_added_to_note(Pausable::on_before_asset_added_to_note_digest())
+            .into_storage_slots();
+
+        let mut storage_slots = Vec::with_capacity(1 + callback_slots.len());
+        storage_slots.push(is_paused_slot);
+        storage_slots.extend(callback_slots);
+
+        let metadata = Pausable::component_metadata();
+
+        AccountComponent::new(pausable_library(), storage_slots, metadata).expect(
+            "pausable component should satisfy the requirements of a valid account component",
+        )
     }
 }
