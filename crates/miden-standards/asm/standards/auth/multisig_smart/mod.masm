@@ -129,6 +129,11 @@ end
 #! - transaction_threshold is the effective minimum number of signatures required.
 #!
 #! Invocation: exec
+#!
+#! NOTE: This procedure is a temporary form. Once the Spending Limits and
+#! Amount-Based Thresholds features land, it will accept an additional `spending_threshold`
+#! parameter and pick max(policy_threshold, spending_threshold) before falling back to
+#! default_threshold when both are zero.
 proc compute_tx_threshold_smart(policy_threshold: u32, default_threshold: u32) -> u32
     swap
     # => [default_threshold, policy_threshold]
@@ -167,162 +172,152 @@ end
 
 #! Computes the effective per-procedure policy for all called procedures.
 #!
-#! Iterates over all account procedures and accumulates the highest required threshold and
-#! most restrictive note restrictions across all procedures that were called in this transaction.
+#! Iterates over all account procedures, and for those that were called in this transaction
+#! accumulates:
+#! - the highest required threshold (max),
+#! - the union of their note restrictions (so if one proc forbids input notes and another forbids
+#!   output notes, the transaction ends up forbidding both),
+#! - whether any called procedure requires the delayed execution mode.
 #!
 #! Inputs:  [is_execute_path]
 #! Outputs: [policy_threshold, policy_requires_delay, note_restrictions]
 #!
 #! Where:
-#! - is_execute_path is 1 when the transaction uses the delayed execution (execute) path.
+#! - is_execute_path is 1 when the transaction uses the delayed execution mode.
 #! - policy_threshold is the highest threshold required by any called procedure policy.
-#! - policy_requires_delay is 1 when any called procedure requires the delayed execution path.
-#! - note_restrictions is the combined note restriction enum across all called procedures.
+#! - policy_requires_delay is 1 when any called procedure requires the delayed execution mode.
+#! - note_restrictions is the combined (union) note restriction enum across all called procedures.
 #!
 #! Panics if:
 #! - any called procedure's policy does not support the active execution lane.
+#!
+#! Example scenarios (account has policies configured for `receive_asset` and
+#! `move_asset_to_note`, immediate execution mode):
+#!
+#!   receive_asset → ProcedurePolicy { immediate=1, delayed=0, restrictions=NoInputNotes  (1) }
+#!   move_asset_to_note → ProcedurePolicy { immediate=3, delayed=0, restrictions=NoOutputNotes (2) }
+#!
+#! A. Only `receive_asset` is called in the transaction:
+#!    - threshold_acc = max(0, 1) = 1
+#!    - restrictions_acc = 0 | 1 = 1 (NoInputNotes)
+#!    - Result: 1 signature required; transaction must not consume input notes.
+#!
+#! B. Only `move_asset_to_note` is called:
+#!    - threshold_acc = max(0, 3) = 3
+#!    - restrictions_acc = 0 | 2 = 2 (NoOutputNotes)
+#!    - Result: 3 signatures required; transaction must not create output notes.
+#!
+#! C. Both `receive_asset` and `move_asset_to_note` are called in the same transaction:
+#!    - after receive_asset: threshold=1, restrictions=0|1 = 1
+#!    - after move_asset_to_note: threshold=max(1,3)=3, restrictions=1|2 = 3 (NoInputOrOutputNotes)
+#!    - Result: 3 signatures required; transaction must not consume input notes *and* must
+#!      not create output notes (both constraints apply simultaneously).
 #!
 #! Invocation: exec
 #!
 #! Locals:
 #! 0: is_execute_path
-#! 1: policy_threshold (accumulated)
-#! 2: policy_requires_delay (accumulated)
-#! 3: note_restrictions (accumulated)
-#! 4: immediate_threshold of the current procedure
-#! 5: delayed_threshold of the current procedure
-#! 6: note_restrictions of the current procedure
-@locals(7)
+@locals(1)
 proc compute_called_proc_policy(is_execute_path: u32)
     loc_store.0
     # => []
 
-    push.0 loc_store.1
-    push.0 loc_store.2
-    push.0 loc_store.3
-    # => []
+    # [proc_index, threshold_acc, requires_delay_acc, restrictions_acc]
+    # proc_index starts at num_procedures and counts down to 0 in the loop.
+    push.0 push.0 push.0
+    # => [0, 0, 0]
 
     exec.active_account::get_num_procedures
-    # => [num_procedures]
+    # => [proc_index, threshold_acc, requires_delay_acc, restrictions_acc]
 
     dup neq.0
-    # => [should_continue, num_procedures]
+    # => [should_continue, proc_index, threshold_acc, requires_delay_acc, restrictions_acc]
     while.true
-        sub.1 dup
-        # => [proc_index, proc_index]
+        sub.1
+        # => [proc_index, threshold_acc, requires_delay_acc, restrictions_acc]
 
-        exec.active_account::get_procedure_root dupw
-        # => [PROC_ROOT, PROC_ROOT, proc_index]
+        dup exec.active_account::get_procedure_root
+        # => [PROC_ROOT, proc_index, threshold_acc, requires_delay_acc, restrictions_acc]
 
-        exec.native_account::was_procedure_called
-        # => [was_called, PROC_ROOT, proc_index]
+        dupw exec.native_account::was_procedure_called
+        # => [was_called, PROC_ROOT, proc_index, threshold_acc, requires_delay_acc, restrictions_acc]
 
         if.true
+            # => [PROC_ROOT, proc_index, threshold_acc, requires_delay_acc, restrictions_acc]
+
             exec.get_procedure_policy
-            # => [immediate_threshold, delayed_threshold, note_restrictions, 0, proc_index]
+            # => [immediate, delayed, restr_proc, 0, proc_index, threshold_acc, requires_delay_acc, restrictions_acc]
 
-            loc_store.4
-            loc_store.5
-            loc_store.6
-            drop
-            # => [proc_index]
+            movup.3 drop
+            # => [immediate, delayed, restr_proc, proc_index, threshold_acc, requires_delay_acc, restrictions_acc]
 
-            # combine this procedure's note_restrictions with the accumulated value
-            loc_load.6
+            # Fold per-proc note_restrictions into the accumulator via OR.
+            # ProcedurePolicyNoteRestriction is bit-encoded (0=None, 1=NoIn, 2=NoOut, 3=Both),
+            # so bitwise OR is the union of constraints: e.g. NoIn (0b01) ∪ NoOut (0b10) = Both (0b11).
+            movup.6 movup.3 u32or movdn.5
+            # => [immediate, delayed, proc_index, threshold_acc, requires_delay_acc, new_restrictions]
+
+            dup.1 dup.1 swap
+            # => [delayed, immediate, immediate, delayed, proc_index, threshold_acc, requires_delay_acc, new_restrictions]
+
+            loc_load.0
+            # => [is_execute_path, delayed, immediate, immediate, delayed, proc_index, threshold_acc, requires_delay_acc, new_restrictions]
+
+            cdrop
+            # delayed execution mode (c=1) → keeps delayed; immediate execution mode (c=0) → keeps immediate.
+            # => [selected, immediate, delayed, proc_index, threshold_acc, requires_delay_acc, new_restrictions]
+
             dup eq.0
+            # => [is_selected_zero, selected, immediate, delayed, proc_index, threshold_acc, requires_delay_acc, new_restrictions]
+
             if.true
-                # note_restrictions is none (0) — no change to accumulated value
+                # Selected threshold is zero — the procedure has no policy for this execution mode.
+                # The "other" threshold must also be zero. Otherwise the procedure would require
+                # an execution mode different from the one currently active, which is a misuse
+                # error.
                 drop
-                # => [proc_index]
+                # => [immediate, delayed, proc_index, threshold_acc, requires_delay_acc, new_restrictions]
+
+                # Pick the "other" threshold
+                loc_load.0
+                # => [is_execute_path, immediate, delayed, proc_index, threshold_acc, requires_delay_acc, new_restrictions]
+
+                cdrop
+                # => [other, proc_index, threshold_acc, requires_delay_acc, new_restrictions]
+
+                eq.0 assert.err=ERR_PROC_POLICY_INVALID_LANE
+                # => [proc_index, threshold_acc, requires_delay_acc, new_restrictions]
             else
-                drop
-                # => [proc_index]
+                # Selected threshold is non-zero.
+                # => [selected, immediate, delayed, proc_index, threshold_acc, requires_delay_acc, new_restrictions]
 
-                loc_load.3 eq.3
-                if.true
-                    # accumulated restriction is already maximally restrictive (3) — skip
-                    # => [proc_index]
-                else
-                    loc_load.6
-                    loc_load.3
-                    eq
-                    if.true
-                        # restrictions match — no change needed
-                        # => [proc_index]
-                    else
-                        loc_load.3 eq.0
-                        if.true
-                            # accumulated restriction is none — adopt this procedure's restriction
-                            loc_load.6
-                            loc_store.3
-                            # => [proc_index]
-                        else
-                            # restrictions differ — use most restrictive value (3)
-                            push.3
-                            loc_store.3
-                            # => [proc_index]
-                        end
-                    end
-                end
-            end
+                movdn.2 drop drop
+                # => [selected, proc_index, threshold_acc, requires_delay_acc, new_restrictions]
 
-            # check execution-path compatibility and accumulate threshold
-            loc_load.0 eq.1
-            if.true
-                # on execute path: select delayed_threshold; immediate must also be non-zero
-                loc_load.5
-                dup eq.0
-                if.true
-                    # delayed_threshold is zero — procedure does not support execute path
-                    drop
-                    loc_load.4 eq.0 assert.err=ERR_PROC_POLICY_INVALID_LANE
-                    # => [proc_index]
-                else
-                    drop
-                    loc_load.1
-                    loc_load.5
-                    exec.max_threshold_pair
-                    loc_store.1
-                    # => [proc_index]
+                movup.2 exec.max_threshold_pair
+                # => [new_threshold, proc_index, requires_delay_acc, new_restrictions]
 
-                    push.1
-                    loc_store.2
-                    # => [proc_index]
-                end
-            else
-                # on immediate path: select immediate_threshold; delayed must be zero if not
-                loc_load.4
-                dup eq.0
+                swap
+                # => [proc_index, new_threshold, requires_delay_acc, new_restrictions]
+
+                # On the delayed execution mode, mark requires_delay_acc = 1 (replace position 2).
+                loc_load.0
                 if.true
-                    # immediate_threshold is zero — procedure does not support immediate path
-                    drop
-                    loc_load.5 eq.0 assert.err=ERR_PROC_POLICY_INVALID_LANE
-                    # => [proc_index]
-                else
-                    drop
-                    loc_load.1
-                    loc_load.4
-                    exec.max_threshold_pair
-                    loc_store.1
-                    # => [proc_index]
+                    movup.2 drop push.1 movdn.2
+                    # => [proc_index, new_threshold, 1, new_restrictions]
                 end
             end
         else
             dropw
-            # => [proc_index]
+            # => [proc_index, threshold_acc, requires_delay_acc, restrictions_acc]
         end
 
         dup neq.0
-        # => [should_continue, proc_index]
+        # => [should_continue, proc_index, threshold_acc, requires_delay_acc, restrictions_acc]
     end
 
     drop
-    # => []
-
-    loc_load.3
-    loc_load.2
-    loc_load.1
-    # => [policy_threshold, policy_requires_delay, note_restrictions]
+    # => [threshold_acc, requires_delay_acc, restrictions_acc]
 end
 
 #! Enforces note_restrictions against the current transaction.
@@ -391,6 +386,11 @@ end
 #! - note_restrictions is the combined note restriction enum value.
 #!
 #! Invocation: exec
+#!
+#! NOTE: This procedure is a temporary form. Once the TimelockedAccount feature
+#! lands, the hardcoded `push.0` will be replaced with `exec.timelock_controller::is_execute_path`
+#! so the caller can distinguish immediate vs. delayed execution paths, and the output stack
+#! will also include `policy_requires_delay` and `is_execute_path` for downstream enforcement.
 proc compute_procedure_policy_context(tx_summary_commitment: word)
     push.0
     # => [is_execute_path=0, TX_SUMMARY_COMMITMENT]
@@ -773,6 +773,18 @@ end
 #! 0: policy_threshold
 #!
 #! Invocation: call
+#!
+#! NOTE: This procedure is a temporary form covering signer verification and
+#! per-procedure policy enforcement. The following sections will be added:
+#! - Spending Limits + Amount-Based Thresholds: a prologue that calls
+#!   `exec.spending_limits::compute_spending_policy` to derive a spending-derived threshold and
+#!   `spending_requires_delay` flag, and passes the spending threshold into
+#!   `compute_tx_threshold_smart`.
+#! - TimelockedAccount: after signature verification, assert the execute-path vs.
+#!   `policy_requires_delay`/`spending_requires_delay` consistency (restoring
+#!   `ERR_EXECUTE_PATH_MISMATCH`), then call
+#!   `exec.timelock_controller::finalize_timelock_proposals` to advance any pending
+#!   propose/cancel/execute state.
 @locals(1)
 pub proc auth_tx(salt: word)
     exec.native_account::incr_nonce drop
