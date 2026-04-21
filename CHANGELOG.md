@@ -2,6 +2,9 @@
 
 ## v0.15.0 (TBD)
 
+### Features
+
+- Added PSWAP (partial swap) note for decentralized partial-fill asset exchange with remainder note re-creation ([#2636](https://github.com/0xMiden/protocol/pull/2636)).
 ### Changes
 
 - Added validation of leaf type on CLAIM note processing to prevent message leaves from being processed as asset claims ([#2730](https://github.com/0xMiden/protocol/pull/2730)).
@@ -17,6 +20,7 @@
 - [BREAKING] Changed `NoteType` encoding from 2 bits to 1 and makes `NoteType::Private` the default ([#2691](https://github.com/0xMiden/miden-base/issues/2691)).
 - Added `BlockNumber::saturating_sub()` ([#2660](https://github.com/0xMiden/protocol/issues/2660)).
 - [BREAKING] Added cycle counts to notes returned by `NoteConsumptionInfo` and removed public fields from related types ([#2772](https://github.com/0xMiden/miden-base/issues/2772)).
+- [BREAKING] Removed unused `payback_attachment` from `SwapNoteStorage` and `attachment` from `MintNoteStorage` ([#2789](https://github.com/0xMiden/protocol/pull/2789)).
 - Automatically enable `concurrent` feature in `miden-tx` for `std` context ([#2791](https://github.com/0xMiden/protocol/pull/2791)).
 
 ### Fixes
