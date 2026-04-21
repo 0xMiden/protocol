@@ -1,10 +1,5 @@
-use miden_protocol::account::component::{
-    AccountComponentMetadata,
-    FeltSchema,
-    SchemaType,
-    StorageSchema,
-    StorageSlotSchema,
-};
+use miden_protocol::Word;
+use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
     Account,
     AccountBuilder,
@@ -12,20 +7,15 @@ use miden_protocol::account::{
     AccountStorage,
     AccountStorageMode,
     AccountType,
-    StorageSlotName,
 };
-use miden_protocol::asset::TokenSymbol;
-use miden_protocol::{Felt, Word};
 
-use super::{FungibleFaucetError, TokenMetadata};
+use super::FungibleFaucetError;
 use crate::account::AuthMethod;
 use crate::account::auth::{AuthSingleSigAcl, AuthSingleSigAclConfig};
 use crate::account::components::basic_fungible_faucet_library;
-use crate::account::mint_policies::AuthControlled;
-
-/// The schema type for token symbols.
-const TOKEN_SYMBOL_TYPE: &str = "miden::standards::fungible_faucets::metadata::token_symbol";
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
+use crate::account::metadata::FungibleTokenMetadata;
+use crate::account::mint_policies::AuthControlled;
 use crate::procedure_digest;
 
 // BASIC FUNGIBLE FAUCET ACCOUNT COMPONENT
@@ -63,14 +53,11 @@ procedure_digest!(
 ///
 /// This component supports accounts of type [`AccountType::FungibleFaucet`].
 ///
-/// ## Storage Layout
-///
-/// - [`Self::metadata_slot`]: Stores [`TokenMetadata`].
+/// This component depends on [`FungibleTokenMetadata`] being present in the account for storage
+/// of token metadata. It has no storage slots of its own.
 ///
 /// [builder]: crate::code_builder::CodeBuilder
-pub struct BasicFungibleFaucet {
-    metadata: TokenMetadata,
-}
+pub struct BasicFungibleFaucet;
 
 impl BasicFungibleFaucet {
     // CONSTANTS
@@ -79,122 +66,11 @@ impl BasicFungibleFaucet {
     /// The name of the component.
     pub const NAME: &'static str = "miden::standards::components::faucets::basic_fungible_faucet";
 
-    /// The maximum number of decimals supported by the component.
-    pub const MAX_DECIMALS: u8 = TokenMetadata::MAX_DECIMALS;
-
     const MINT_PROC_NAME: &str = "mint_and_send";
     const BURN_PROC_NAME: &str = "burn";
 
-    // CONSTRUCTORS
-    // --------------------------------------------------------------------------------------------
-
-    /// Creates a new [`BasicFungibleFaucet`] component from the given pieces of metadata and with
-    /// an initial token supply of zero.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - the decimals parameter exceeds maximum value of [`Self::MAX_DECIMALS`].
-    /// - the max supply parameter exceeds maximum possible amount for a fungible asset
-    ///   ([`miden_protocol::asset::FungibleAsset::MAX_AMOUNT`])
-    pub fn new(
-        symbol: TokenSymbol,
-        decimals: u8,
-        max_supply: Felt,
-    ) -> Result<Self, FungibleFaucetError> {
-        let metadata = TokenMetadata::new(symbol, decimals, max_supply)?;
-        Ok(Self { metadata })
-    }
-
-    /// Creates a new [`BasicFungibleFaucet`] component from the given [`TokenMetadata`].
-    ///
-    /// This is a convenience constructor that allows creating a faucet from pre-validated
-    /// metadata.
-    pub fn from_metadata(metadata: TokenMetadata) -> Self {
-        Self { metadata }
-    }
-
-    /// Attempts to create a new [`BasicFungibleFaucet`] component from the associated account
-    /// interface and storage.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - the provided [`AccountInterface`] does not contain a
-    ///   [`AccountComponentInterface::BasicFungibleFaucet`] component.
-    /// - the decimals parameter exceeds maximum value of [`Self::MAX_DECIMALS`].
-    /// - the max supply value exceeds maximum possible amount for a fungible asset of
-    ///   [`miden_protocol::asset::FungibleAsset::MAX_AMOUNT`].
-    /// - the token supply exceeds the max supply.
-    /// - the token symbol encoded value exceeds the maximum value of
-    ///   [`TokenSymbol::MAX_ENCODED_VALUE`].
-    fn try_from_interface(
-        interface: AccountInterface,
-        storage: &AccountStorage,
-    ) -> Result<Self, FungibleFaucetError> {
-        // Check that the procedures of the basic fungible faucet exist in the account.
-        if !interface.components().contains(&AccountComponentInterface::BasicFungibleFaucet) {
-            return Err(FungibleFaucetError::MissingBasicFungibleFaucetInterface);
-        }
-
-        let metadata = TokenMetadata::try_from(storage)?;
-        Ok(Self { metadata })
-    }
-
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
-
-    /// Returns the [`StorageSlotName`] where the [`BasicFungibleFaucet`]'s metadata is stored.
-    pub fn metadata_slot() -> &'static StorageSlotName {
-        TokenMetadata::metadata_slot()
-    }
-
-    /// Returns the storage slot schema for the metadata slot.
-    pub fn metadata_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        let token_symbol_type = SchemaType::new(TOKEN_SYMBOL_TYPE).expect("valid type");
-        (
-            Self::metadata_slot().clone(),
-            StorageSlotSchema::value(
-                "Token metadata",
-                [
-                    FeltSchema::felt("token_supply").with_default(Felt::new(0)),
-                    FeltSchema::felt("max_supply"),
-                    FeltSchema::u8("decimals"),
-                    FeltSchema::new_typed(token_symbol_type, "symbol"),
-                ],
-            ),
-        )
-    }
-
-    /// Returns the token metadata.
-    pub fn metadata(&self) -> &TokenMetadata {
-        &self.metadata
-    }
-
-    /// Returns the symbol of the faucet.
-    pub fn symbol(&self) -> &TokenSymbol {
-        self.metadata.symbol()
-    }
-
-    /// Returns the decimals of the faucet.
-    pub fn decimals(&self) -> u8 {
-        self.metadata.decimals()
-    }
-
-    /// Returns the max supply (in base units) of the faucet.
-    ///
-    /// This is the highest amount of tokens that can be minted from this faucet.
-    pub fn max_supply(&self) -> Felt {
-        self.metadata.max_supply()
-    }
-
-    /// Returns the token supply (in base units) of the faucet.
-    ///
-    /// This is the amount of tokens that were minted from the faucet so far. Its value can never
-    /// exceed [`Self::max_supply`].
-    pub fn token_supply(&self) -> Felt {
-        self.metadata.token_supply()
-    }
 
     /// Returns the digest of the `mint_and_send` account procedure.
     pub fn mint_and_send_digest() -> Word {
@@ -208,35 +84,28 @@ impl BasicFungibleFaucet {
 
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        let storage_schema = StorageSchema::new([Self::metadata_slot_schema()])
-            .expect("storage schema should be valid");
-
         AccountComponentMetadata::new(Self::NAME, [AccountType::FungibleFaucet])
             .with_description("Basic fungible faucet component for minting and burning tokens")
-            .with_storage_schema(storage_schema)
     }
 
-    // MUTATORS
-    // --------------------------------------------------------------------------------------------
+    /// Checks that the account contains the basic fungible faucet interface.
+    fn try_from_interface(
+        interface: AccountInterface,
+        _storage: &AccountStorage,
+    ) -> Result<Self, FungibleFaucetError> {
+        if !interface.components().contains(&AccountComponentInterface::BasicFungibleFaucet) {
+            return Err(FungibleFaucetError::MissingBasicFungibleFaucetInterface);
+        }
 
-    /// Sets the token_supply (in base units) of the basic fungible faucet.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - the token supply exceeds the max supply.
-    pub fn with_token_supply(mut self, token_supply: Felt) -> Result<Self, FungibleFaucetError> {
-        self.metadata = self.metadata.with_token_supply(token_supply)?;
-        Ok(self)
+        Ok(BasicFungibleFaucet)
     }
 }
 
 impl From<BasicFungibleFaucet> for AccountComponent {
-    fn from(faucet: BasicFungibleFaucet) -> Self {
-        let storage_slot = faucet.metadata.into();
+    fn from(_faucet: BasicFungibleFaucet) -> Self {
         let metadata = BasicFungibleFaucet::component_metadata();
 
-        AccountComponent::new(basic_fungible_faucet_library(), vec![storage_slot], metadata)
+        AccountComponent::new(basic_fungible_faucet_library(), vec![], metadata)
             .expect("basic fungible faucet component should satisfy the requirements of a valid account component")
     }
 }
@@ -262,8 +131,7 @@ impl TryFrom<&Account> for BasicFungibleFaucet {
 }
 
 /// Creates a new faucet account with basic fungible faucet interface,
-/// account storage type, specified authentication scheme, and provided meta data (token symbol,
-/// decimals, max supply).
+/// account storage type, specified authentication scheme, and provided metadata.
 ///
 /// The basic faucet interface exposes two procedures:
 /// - `mint_and_send`, which mints an assets and create a note for the provided recipient.
@@ -275,14 +143,13 @@ impl TryFrom<&Account> for BasicFungibleFaucet {
 ///
 /// The storage layout of the faucet account is defined by the combination of the following
 /// components (see their docs for details):
-/// - [`BasicFungibleFaucet`]
+/// - [`FungibleTokenMetadata`] (token metadata, name, description, etc.)
+/// - [`BasicFungibleFaucet`] (mint_and_send and burn procedures)
 /// - [`AuthSingleSigAcl`]
 /// - [`AuthControlled`]
 pub fn create_basic_fungible_faucet(
     init_seed: [u8; 32],
-    symbol: TokenSymbol,
-    decimals: u8,
-    max_supply: Felt,
+    metadata: FungibleTokenMetadata,
     account_storage_mode: AccountStorageMode,
     auth_method: AuthMethod,
 ) -> Result<Account, FungibleFaucetError> {
@@ -320,7 +187,8 @@ pub fn create_basic_fungible_faucet(
         .account_type(AccountType::FungibleFaucet)
         .storage_mode(account_storage_mode)
         .with_auth_component(auth_component)
-        .with_component(BasicFungibleFaucet::new(symbol, decimals, max_supply)?)
+        .with_component(metadata)
+        .with_component(BasicFungibleFaucet)
         .with_component(AuthControlled::allow_all())
         .build()
         .map_err(FungibleFaucetError::AccountError)?;
@@ -334,8 +202,9 @@ pub fn create_basic_fungible_faucet(
 #[cfg(test)]
 mod tests {
     use assert_matches::assert_matches;
-    use miden_protocol::Word;
     use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
+    use miden_protocol::asset::TokenSymbol;
+    use miden_protocol::{Felt, Word};
 
     use super::{
         AccountBuilder,
@@ -343,12 +212,17 @@ mod tests {
         AccountType,
         AuthMethod,
         BasicFungibleFaucet,
-        Felt,
         FungibleFaucetError,
-        TokenSymbol,
+        FungibleTokenMetadata,
         create_basic_fungible_faucet,
     };
     use crate::account::auth::{AuthSingleSig, AuthSingleSigAcl};
+    use crate::account::metadata::{
+        Description,
+        FungibleTokenMetadataBuilder,
+        TokenMetadata,
+        TokenName,
+    };
     use crate::account::wallets::BasicWallet;
 
     #[test]
@@ -364,22 +238,27 @@ mod tests {
             183, 204, 149, 90, 166, 68, 100, 73, 106, 168, 125, 237, 138, 16,
         ];
 
-        let max_supply = Felt::new(123);
+        let max_supply = 123u64;
         let token_symbol_string = "POL";
         let token_symbol = TokenSymbol::try_from(token_symbol_string).unwrap();
+        let token_name_string = "polygon";
+        let description_string = "A polygon token";
         let decimals = 2u8;
         let storage_mode = AccountStorageMode::Private;
 
-        let token_symbol_felt = token_symbol.as_element();
-        let faucet_account = create_basic_fungible_faucet(
-            init_seed,
+        let token_name = TokenName::new(token_name_string).unwrap();
+        let description = Description::new(description_string).unwrap();
+        let metadata = FungibleTokenMetadataBuilder::new(
+            token_name,
             token_symbol.clone(),
             decimals,
             max_supply,
-            storage_mode,
-            auth_method,
         )
+        .description(description)
+        .build()
         .unwrap();
+        let faucet_account =
+            create_basic_fungible_faucet(init_seed, metadata, storage_mode, auth_method).unwrap();
 
         // The falcon auth component's public key should be present.
         assert_eq!(
@@ -413,20 +292,31 @@ mod tests {
         // Check that faucet metadata was initialized to the given values.
         // Storage layout: [token_supply, max_supply, decimals, symbol]
         assert_eq!(
-            faucet_account.storage().get_item(BasicFungibleFaucet::metadata_slot()).unwrap(),
-            [Felt::ZERO, Felt::new(123), Felt::new(2), token_symbol_felt].into()
+            faucet_account
+                .storage()
+                .get_item(FungibleTokenMetadata::metadata_slot())
+                .unwrap(),
+            [Felt::ZERO, Felt::new(123), Felt::new(2), token_symbol.into()].into()
         );
+
+        // Check that name was stored
+        let name_0 = faucet_account.storage().get_item(TokenMetadata::name_chunk_0_slot()).unwrap();
+        let name_1 = faucet_account.storage().get_item(TokenMetadata::name_chunk_1_slot()).unwrap();
+        let decoded_name = TokenName::try_from_words(&[name_0, name_1]).unwrap();
+        assert_eq!(decoded_name.as_str(), token_name_string);
+        let expected_desc_words = Description::new(description_string).unwrap().to_words();
+        for (i, expected) in expected_desc_words.iter().enumerate() {
+            let chunk =
+                faucet_account.storage().get_item(TokenMetadata::description_slot(i)).unwrap();
+            assert_eq!(chunk, *expected);
+        }
 
         assert!(faucet_account.is_faucet());
 
         assert_eq!(faucet_account.account_type(), AccountType::FungibleFaucet);
 
-        // Verify the faucet can be extracted and has correct metadata
-        let faucet_component = BasicFungibleFaucet::try_from(faucet_account.clone()).unwrap();
-        assert_eq!(faucet_component.symbol(), &token_symbol);
-        assert_eq!(faucet_component.decimals(), decimals);
-        assert_eq!(faucet_component.max_supply(), max_supply);
-        assert_eq!(faucet_component.token_supply(), Felt::ZERO);
+        // Verify the faucet component can be extracted
+        let _faucet_component = BasicFungibleFaucet::try_from(faucet_account.clone()).unwrap();
     }
 
     #[test]
@@ -438,12 +328,19 @@ mod tests {
 
         // valid account
         let token_symbol = TokenSymbol::new("POL").expect("invalid token symbol");
+        let metadata = FungibleTokenMetadataBuilder::new(
+            TokenName::new("POL").unwrap(),
+            token_symbol,
+            10,
+            100u64,
+        )
+        .build()
+        .expect("failed to create token metadata");
+
         let faucet_account = AccountBuilder::new(mock_seed)
             .account_type(AccountType::FungibleFaucet)
-            .with_component(
-                BasicFungibleFaucet::new(token_symbol.clone(), 10, Felt::new(100))
-                    .expect("failed to create a fungible faucet component"),
-            )
+            .with_component(metadata)
+            .with_component(BasicFungibleFaucet)
             .with_auth_component(AuthSingleSig::new(
                 mock_public_key,
                 AuthScheme::Falcon512Poseidon2,
@@ -451,17 +348,16 @@ mod tests {
             .build_existing()
             .expect("failed to create wallet account");
 
-        let basic_ff = BasicFungibleFaucet::try_from(faucet_account)
+        let _basic_ff = BasicFungibleFaucet::try_from(faucet_account)
             .expect("basic fungible faucet creation failed");
-        assert_eq!(basic_ff.symbol(), &token_symbol);
-        assert_eq!(basic_ff.decimals(), 10);
-        assert_eq!(basic_ff.max_supply(), Felt::new(100));
-        assert_eq!(basic_ff.token_supply(), Felt::ZERO);
 
         // invalid account: basic fungible faucet component is missing
         let invalid_faucet_account = AccountBuilder::new(mock_seed)
             .account_type(AccountType::FungibleFaucet)
-            .with_auth_component(AuthSingleSig::new(mock_public_key, AuthScheme::Falcon512Poseidon2))
+            .with_auth_component(AuthSingleSig::new(
+                mock_public_key,
+                AuthScheme::Falcon512Poseidon2,
+            ))
             // we need to add some other component so the builder doesn't fail
             .with_component(BasicWallet)
             .build_existing()
