@@ -38,15 +38,7 @@ fn allowed_policy_proc_roots_slot_name() -> &'static StorageSlotName {
 pub(super) fn active_policy_proc_root_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
     (
         ACTIVE_POLICY_PROC_ROOT_SLOT_NAME.clone(),
-        StorageSlotSchema::value(
-            "Active mint policy procedure root",
-            [
-                FeltSchema::felt("proc_root_0"),
-                FeltSchema::felt("proc_root_1"),
-                FeltSchema::felt("proc_root_2"),
-                FeltSchema::felt("proc_root_3"),
-            ],
-        ),
+        StorageSlotSchema::value("Active mint policy procedure root", SchemaType::native_word()),
     )
 }
 
