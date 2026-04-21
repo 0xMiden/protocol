@@ -1,4 +1,3 @@
-use miden_protocol::Word;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, PublicKey};
 use miden_protocol::account::{
     Account,
@@ -10,7 +9,7 @@ use miden_protocol::account::{
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::note::NoteType;
 use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
-use miden_protocol::{Felt};
+use miden_protocol::{Felt, Word};
 use miden_standards::account::auth::multisig_smart::{
     ProcedurePolicy,
     ProcedurePolicyNoteRestriction,
@@ -79,11 +78,13 @@ fn create_multisig_smart_account(
 ) -> anyhow::Result<Account> {
     let approvers: Vec<_> =
         public_keys.iter().map(|pk| (pk.to_commitment(), auth_scheme)).collect();
-    let config = AuthMultisigSmartConfig::new(approvers, threshold)?
-        .with_proc_policies(proc_policy_map)?;
+    let config =
+        AuthMultisigSmartConfig::new(approvers, threshold)?.with_proc_policies(proc_policy_map)?;
 
-    let asset =
-        FungibleAsset::new(AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?, starting_balance)?;
+    let asset = FungibleAsset::new(
+        AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?,
+        starting_balance,
+    )?;
 
     let multisig_account = AccountBuilder::new([0; 32])
         .with_auth_component(AuthMultisigSmart::new(config)?)
