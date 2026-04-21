@@ -660,7 +660,6 @@ impl MockChainBuilder {
             NoteType::Public,
             NoteAttachment::default(),
             payback_note_type,
-            NoteAttachment::default(),
             &mut self.rng,
         )?;
 

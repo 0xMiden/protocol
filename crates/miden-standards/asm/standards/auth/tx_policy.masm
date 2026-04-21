@@ -3,6 +3,8 @@ use miden::protocol::native_account
 use miden::protocol::tx
 
 const ERR_AUTH_PROCEDURE_MUST_BE_CALLED_ALONE = "procedure must be called alone"
+const ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_INPUT_NOTES = "transaction must not include input notes"
+const ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_OUTPUT_NOTES = "transaction must not include output notes"
 const ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_INPUT_OR_OUTPUT_NOTES = "transaction must not include input or output notes"
 
 #! Asserts that exactly one non-auth account procedure was called in the current transaction.
@@ -56,6 +58,34 @@ pub proc assert_only_one_non_auth_procedure_called
 
     loc_load.0 eq.1
     assert.err=ERR_AUTH_PROCEDURE_MUST_BE_CALLED_ALONE
+    # => []
+end
+
+#! Asserts that the current transaction does not consume input notes.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Invocation: exec
+pub proc assert_no_input_notes
+    exec.tx::get_num_input_notes
+    # => [num_input_notes]
+
+    assertz.err=ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_INPUT_NOTES
+    # => []
+end
+
+#! Asserts that the current transaction does not create output notes.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Invocation: exec
+pub proc assert_no_output_notes
+    exec.tx::get_num_output_notes
+    # => [num_output_notes]
+
+    assertz.err=ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_OUTPUT_NOTES
     # => []
 end
 

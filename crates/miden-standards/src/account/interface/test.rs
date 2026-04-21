@@ -104,7 +104,6 @@ fn test_basic_wallet_default_notes() {
         NoteType::Public,
         NoteAttachment::default(),
         NoteType::Public,
-        NoteAttachment::default(),
         &mut RandomCoin::new(Word::from([1, 2, 3, 4u32])),
     )
     .unwrap();
@@ -199,7 +198,6 @@ fn test_custom_account_default_note() {
         NoteType::Public,
         NoteAttachment::default(),
         NoteType::Public,
-        NoteAttachment::default(),
         &mut RandomCoin::new(Word::from([1, 2, 3, 4u32])),
     )
     .unwrap();
@@ -232,7 +230,6 @@ fn test_required_asset_same_as_offered() {
         NoteType::Public,
         NoteAttachment::default(),
         NoteType::Public,
-        NoteAttachment::default(),
         &mut RandomCoin::new(Word::from([1, 2, 3, 4u32])),
     );
 
