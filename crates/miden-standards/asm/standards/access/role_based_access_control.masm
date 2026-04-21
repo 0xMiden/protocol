@@ -6,13 +6,13 @@ use miden::protocol::native_account
 # CONSTANTS
 # =================================================================================================
 
-# Root-admin config after renounce.
+# Admin config after renounce.
 # Layout: [0, 0, 0, 0]
-const RENOUNCED_ROOT_ADMIN_CONFIG = [0, 0, 0, 0]
+const RENOUNCED_ADMIN_CONFIG = [0, 0, 0, 0]
 
-# Root admin config slot.
-# Layout: [root_admin_suffix, root_admin_prefix, nominated_root_admin_suffix, nominated_root_admin_prefix]
-const ROOT_ADMIN_CONFIG_SLOT = word("miden::standards::access::role_based_access_control::admin_config")
+# Admin config slot.
+# Layout: [admin_suffix, admin_prefix, nominated_admin_suffix, nominated_admin_prefix]
+const ADMIN_CONFIG_SLOT = word("miden::standards::access::role_based_access_control::admin_config")
 
 # Global RBAC state slot.
 # Layout: [active_role_count, 0, 0, 0]
@@ -35,11 +35,11 @@ const ROLE_MEMBERS_SLOT = word("miden::standards::access::role_based_access_cont
 # Map entries: [0, role_symbol, account_suffix, account_prefix] -> [is_member, member_index, 0, 0]
 const ROLE_MEMBER_INDEX_SLOT = word("miden::standards::access::role_based_access_control::role_member_index")
 
-# TRANSFER_ROOT_ADMIN LOCALS
-const NEW_ROOT_ADMIN_SUFFIX_LOC = 0
-const NEW_ROOT_ADMIN_PREFIX_LOC = 1
-const CURRENT_ROOT_ADMIN_SUFFIX_LOC = 2
-const CURRENT_ROOT_ADMIN_PREFIX_LOC = 3
+# TRANSFER_ADMIN LOCALS
+const NEW_ADMIN_SUFFIX_LOC = 0
+const NEW_ADMIN_PREFIX_LOC = 1
+const CURRENT_ADMIN_SUFFIX_LOC = 2
+const CURRENT_ADMIN_PREFIX_LOC = 3
 
 # GRANT_ROLE_INTERNAL & REVOKE_ROLE_INTERNAL LOCALS
 const ROLE_SYMBOL_LOC = 0
@@ -56,12 +56,12 @@ const LAST_INDEX_LOC = 4
 # ERRORS
 # =================================================================================================
 
-const ERR_SENDER_NOT_ROOT_ADMIN = "note sender is not the root admin"
-const ERR_SENDER_NOT_NOMINATED_ROOT_ADMIN = "note sender is not the nominated root admin"
-const ERR_NO_NOMINATED_ROOT_ADMIN = "no nominated root admin transfer exists"
-const ERR_ROOT_ADMIN_TRANSFER_IN_PROGRESS = "root admin transfer is in progress"
+const ERR_SENDER_NOT_ADMIN = "note sender is not the admin"
+const ERR_SENDER_NOT_NOMINATED_ADMIN = "note sender is not the nominated admin"
+const ERR_NO_NOMINATED_ADMIN = "no nominated admin transfer exists"
+const ERR_ADMIN_TRANSFER_IN_PROGRESS = "admin transfer is in progress"
 const ERR_SENDER_LACKS_ROLE = "note sender does not hold the required role"
-const ERR_SENDER_NOT_ROOT_OR_ROLE_ADMIN = "note sender is not the root admin or a role admin"
+const ERR_SENDER_NOT_ADMIN_OR_ROLE_ADMIN = "note sender is not the admin or a role admin"
 const ERR_ROLE_MEMBER_OUT_OF_BOUNDS = "role member index is out of bounds"
 const ERR_ACTIVE_ROLE_OUT_OF_BOUNDS = "active role index is out of bounds"
 const ERR_ACCOUNT_NOT_IN_ROLE = "account does not hold the role"
@@ -70,17 +70,17 @@ const ERR_ROLE_SYMBOL_ZERO = "role symbol is zero"
 # PUBLIC INTERFACE
 # =================================================================================================
 
-#! Checks that the note sender is the current root admin.
+#! Checks that the note sender is the current admin.
 #!
 #! Inputs:  [pad(16)]
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
-#! - the note sender is not the current root admin.
+#! - the note sender is not the current admin.
 #!
 #! Invocation: call
-pub proc assert_sender_is_root_admin
-    exec.assert_sender_is_root_admin_internal
+pub proc assert_sender_is_admin
+    exec.assert_sender_is_admin_internal
     # => [pad(16)]
 end
 
@@ -108,201 +108,201 @@ pub proc assert_sender_has_role
     # => [pad(16)]
 end
 
-#! Returns the current root admin.
+#! Returns the current admin.
 #!
 #! Inputs:  [pad(16)]
-#! Outputs: [root_admin_suffix, root_admin_prefix, pad(14)]
+#! Outputs: [admin_suffix, admin_prefix, pad(14)]
 #!
 #! Where:
-#! - root_admin_{suffix,prefix} are the suffix and prefix felts of the current root admin account ID.
+#! - admin_{suffix,prefix} are the suffix and prefix felts of the current admin account ID.
 #!
 #! Invocation: call
-pub proc get_root_admin
-    exec.get_root_admin_internal
-    # => [root_admin_suffix, root_admin_prefix, pad(14)]
+pub proc get_admin
+    exec.get_admin_internal
+    # => [admin_suffix, admin_prefix, pad(14)]
 
     movup.2 drop movup.2 drop
-    # => [root_admin_suffix, root_admin_prefix, pad(14)]
+    # => [admin_suffix, admin_prefix, pad(14)]
 end
 
-#! Returns the nominated root admin.
+#! Returns the nominated admin.
 #!
 #! Inputs:  [pad(16)]
-#! Outputs: [nominated_root_admin_suffix, nominated_root_admin_prefix, pad(14)]
+#! Outputs: [nominated_admin_suffix, nominated_admin_prefix, pad(14)]
 #!
 #! Where:
-#! - nominated_root_admin_{suffix,prefix} are the suffix and prefix felts of the nominated root admin
+#! - nominated_admin_{suffix,prefix} are the suffix and prefix felts of the nominated admin
 #!   account ID.
 #!
 #! Invocation: call
-pub proc get_nominated_root_admin
-    exec.get_nominated_root_admin_internal
-    # => [nominated_root_admin_suffix, nominated_root_admin_prefix, pad(14)]
+pub proc get_nominated_admin
+    exec.get_nominated_admin_internal
+    # => [nominated_admin_suffix, nominated_admin_prefix, pad(14)]
 
     movup.2 drop movup.2 drop
-    # => [nominated_root_admin_suffix, nominated_root_admin_prefix, pad(14)]
+    # => [nominated_admin_suffix, nominated_admin_prefix, pad(14)]
 end
 
-#! Initiates a two-step root admin transfer by setting the nominated root admin.
+#! Initiates a two-step admin transfer by setting the nominated admin.
 #!
-#! Inputs:  [new_root_admin_suffix, new_root_admin_prefix, pad(14)]
+#! Inputs:  [new_admin_suffix, new_admin_prefix, pad(14)]
 #! Outputs: [pad(16)]
 #!
 #! Where:
-#! - new_root_admin_{suffix,prefix} are the suffix and prefix felts of the new root admin account ID.
+#! - new_admin_{suffix,prefix} are the suffix and prefix felts of the new admin account ID.
 #!
 #! Panics if:
-#! - the note sender is not the current root admin.
-#! - the new root admin account ID is invalid.
+#! - the note sender is not the current admin.
+#! - the new admin account ID is invalid.
 #!
 #! Locals:
-#! 0: new_root_admin_suffix
-#! 1: new_root_admin_prefix
-#! 2: current_root_admin_suffix
-#! 3: current_root_admin_prefix
+#! 0: new_admin_suffix
+#! 1: new_admin_prefix
+#! 2: current_admin_suffix
+#! 3: current_admin_prefix
 #!
 #! Invocation: call
 @locals(4)
-pub proc transfer_root_admin
-    exec.assert_sender_is_root_admin_internal
-    # => [new_root_admin_suffix, new_root_admin_prefix, pad(14)]
+pub proc transfer_admin
+    exec.assert_sender_is_admin_internal
+    # => [new_admin_suffix, new_admin_prefix, pad(14)]
 
     dup.1 dup.1 exec.account_id::validate
-    # => [new_root_admin_suffix, new_root_admin_prefix, pad(14)]
+    # => [new_admin_suffix, new_admin_prefix, pad(14)]
 
-    loc_store.NEW_ROOT_ADMIN_SUFFIX_LOC
-    # => [new_root_admin_prefix, pad(14)]
+    loc_store.NEW_ADMIN_SUFFIX_LOC
+    # => [new_admin_prefix, pad(14)]
 
-    loc_store.NEW_ROOT_ADMIN_PREFIX_LOC
+    loc_store.NEW_ADMIN_PREFIX_LOC
     # => [pad(14)]
 
-    exec.get_root_admin_internal
-    # => [current_root_admin_suffix, current_root_admin_prefix, pad(14)]
+    exec.get_admin_internal
+    # => [current_admin_suffix, current_admin_prefix, pad(14)]
 
-    loc_store.CURRENT_ROOT_ADMIN_SUFFIX_LOC
-    # => [current_root_admin_prefix, pad(13)]
+    loc_store.CURRENT_ADMIN_SUFFIX_LOC
+    # => [current_admin_prefix, pad(13)]
 
-    loc_store.CURRENT_ROOT_ADMIN_PREFIX_LOC
+    loc_store.CURRENT_ADMIN_PREFIX_LOC
     # => [pad(12)]
 
     # Check if new_admin == current_admin (cancel case).
-    loc_load.NEW_ROOT_ADMIN_PREFIX_LOC loc_load.NEW_ROOT_ADMIN_SUFFIX_LOC
-    # => [new_root_admin_suffix, new_root_admin_prefix, pad(12)]
+    loc_load.NEW_ADMIN_PREFIX_LOC loc_load.NEW_ADMIN_SUFFIX_LOC
+    # => [new_admin_suffix, new_admin_prefix, pad(12)]
 
-    loc_load.CURRENT_ROOT_ADMIN_PREFIX_LOC loc_load.CURRENT_ROOT_ADMIN_SUFFIX_LOC
-    # => [current_root_admin_suffix, current_root_admin_prefix, new_root_admin_suffix, new_root_admin_prefix, pad(12)]
+    loc_load.CURRENT_ADMIN_PREFIX_LOC loc_load.CURRENT_ADMIN_SUFFIX_LOC
+    # => [current_admin_suffix, current_admin_prefix, new_admin_suffix, new_admin_prefix, pad(12)]
 
     exec.account_id::is_equal
     # => [is_self_transfer, pad(12)]
 
     if.true
-        # Cancel root admin transfer and clear the nominated root admin.
-        # Stack for save: [current_root_admin_suffix, current_root_admin_prefix, 0, 0]
-        loc_load.CURRENT_ROOT_ADMIN_PREFIX_LOC loc_load.CURRENT_ROOT_ADMIN_SUFFIX_LOC
-        # => [current_root_admin_suffix, current_root_admin_prefix, pad(12)]
+        # Cancel admin transfer and clear the nominated admin.
+        # Stack for save: [current_admin_suffix, current_admin_prefix, 0, 0]
+        loc_load.CURRENT_ADMIN_PREFIX_LOC loc_load.CURRENT_ADMIN_SUFFIX_LOC
+        # => [current_admin_suffix, current_admin_prefix, pad(12)]
 
         push.0.0 movup.3 movup.3
-        # => [current_root_admin_suffix, current_root_admin_prefix, 0, 0, pad(12)]
+        # => [current_admin_suffix, current_admin_prefix, 0, 0, pad(12)]
     else
-        # Transfer root admin by setting nominated = new_root_admin.
-        # Stack for save: [current_root_admin_suffix, current_root_admin_prefix, new_root_admin_suffix, new_root_admin_prefix]
-        loc_load.NEW_ROOT_ADMIN_PREFIX_LOC loc_load.NEW_ROOT_ADMIN_SUFFIX_LOC
-        # => [new_root_admin_suffix, new_root_admin_prefix, pad(12)]
+        # Transfer admin by setting nominated = new_admin.
+        # Stack for save: [current_admin_suffix, current_admin_prefix, new_admin_suffix, new_admin_prefix]
+        loc_load.NEW_ADMIN_PREFIX_LOC loc_load.NEW_ADMIN_SUFFIX_LOC
+        # => [new_admin_suffix, new_admin_prefix, pad(12)]
 
-        loc_load.CURRENT_ROOT_ADMIN_PREFIX_LOC loc_load.CURRENT_ROOT_ADMIN_SUFFIX_LOC
-        # => [current_root_admin_suffix, current_root_admin_prefix, new_root_admin_suffix, new_root_admin_prefix, pad(12)]
+        loc_load.CURRENT_ADMIN_PREFIX_LOC loc_load.CURRENT_ADMIN_SUFFIX_LOC
+        # => [current_admin_suffix, current_admin_prefix, new_admin_suffix, new_admin_prefix, pad(12)]
     end
 
-    exec.set_root_admin_config
+    exec.set_admin_config
     # => [pad(16)]
 end
 
 
-#! Accepts the pending root admin transfer.
+#! Accepts the pending admin transfer.
 #!
 #! Inputs:  [pad(16)]
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
-#! - there is no nominated root admin.
-#! - the note sender is not the nominated root admin.
+#! - there is no nominated admin.
+#! - the note sender is not the nominated admin.
 #!
 #! Invocation: call
-pub proc accept_root_admin
-    exec.get_nominated_root_admin_internal
-    # => [nominated_root_admin_suffix, nominated_root_admin_prefix, pad(14)]
+pub proc accept_admin
+    exec.get_nominated_admin_internal
+    # => [nominated_admin_suffix, nominated_admin_prefix, pad(14)]
 
     dup.1 eq.0
-    # => [is_zero_suffix, nominated_root_admin_suffix, nominated_root_admin_prefix, pad(14)]
+    # => [is_zero_suffix, nominated_admin_suffix, nominated_admin_prefix, pad(14)]
 
     dup.1 eq.0
-    # => [is_zero_prefix, is_zero_suffix, nominated_root_admin_suffix, nominated_root_admin_prefix, pad(14)]
+    # => [is_zero_prefix, is_zero_suffix, nominated_admin_suffix, nominated_admin_prefix, pad(14)]
 
     and
-    # => [is_zero_nominated_admin, nominated_root_admin_suffix, nominated_root_admin_prefix, pad(14)]
+    # => [is_zero_nominated_admin, nominated_admin_suffix, nominated_admin_prefix, pad(14)]
 
-    assertz.err=ERR_NO_NOMINATED_ROOT_ADMIN
-    # => [nominated_root_admin_suffix, nominated_root_admin_prefix, pad(14)]
+    assertz.err=ERR_NO_NOMINATED_ADMIN
+    # => [nominated_admin_suffix, nominated_admin_prefix, pad(14)]
 
     exec.active_note::get_sender
-    # => [sender_suffix, sender_prefix, nominated_root_admin_suffix, nominated_root_admin_prefix, pad(12)]
+    # => [sender_suffix, sender_prefix, nominated_admin_suffix, nominated_admin_prefix, pad(12)]
 
     dup.3 dup.3
-    # => [nominated_root_admin_suffix, nominated_root_admin_prefix, sender_suffix, sender_prefix, nominated_root_admin_suffix, nominated_root_admin_prefix, pad(12)]
+    # => [nominated_admin_suffix, nominated_admin_prefix, sender_suffix, sender_prefix, nominated_admin_suffix, nominated_admin_prefix, pad(12)]
 
     exec.account_id::is_equal
-    # => [is_nominated_admin, nominated_root_admin_suffix, nominated_root_admin_prefix, pad(12)]
+    # => [is_nominated_admin, nominated_admin_suffix, nominated_admin_prefix, pad(12)]
 
-    assert.err=ERR_SENDER_NOT_NOMINATED_ROOT_ADMIN
-    # => [nominated_root_admin_suffix, nominated_root_admin_prefix, pad(14)]
+    assert.err=ERR_SENDER_NOT_NOMINATED_ADMIN
+    # => [nominated_admin_suffix, nominated_admin_prefix, pad(14)]
 
     push.0.0
-    # => [0, 0, nominated_root_admin_suffix, nominated_root_admin_prefix, pad(12)]
+    # => [0, 0, nominated_admin_suffix, nominated_admin_prefix, pad(12)]
 
     movup.3 movup.3
-    # => [nominated_root_admin_suffix, nominated_root_admin_prefix, 0, 0, pad(12)]
+    # => [nominated_admin_suffix, nominated_admin_prefix, 0, 0, pad(12)]
 
-    exec.set_root_admin_config
+    exec.set_admin_config
     # => [pad(16)]
 end
 
 
-#! Renounces the root admin role permanently.
+#! Renounces the admin role permanently.
 #!
 #! Inputs:  [pad(16)]
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
-#! - the note sender is not the current root admin.
-#! - a root admin transfer is currently in progress.
+#! - the note sender is not the current admin.
+#! - a admin transfer is currently in progress.
 #!
 #! Invocation: call
-pub proc renounce_root_admin
-    exec.assert_sender_is_root_admin_internal
+pub proc renounce_admin
+    exec.assert_sender_is_admin_internal
     # => [pad(16)]
 
-    exec.get_nominated_root_admin_internal
-    # => [nominated_root_admin_suffix, nominated_root_admin_prefix, pad(14)]
+    exec.get_nominated_admin_internal
+    # => [nominated_admin_suffix, nominated_admin_prefix, pad(14)]
 
     dup.1 eq.0
-    # => [is_zero_suffix, nominated_root_admin_suffix, nominated_root_admin_prefix, pad(14)]
+    # => [is_zero_suffix, nominated_admin_suffix, nominated_admin_prefix, pad(14)]
 
     dup.1 eq.0
-    # => [is_zero_prefix, is_zero_suffix, nominated_root_admin_suffix, nominated_root_admin_prefix, pad(14)]
+    # => [is_zero_prefix, is_zero_suffix, nominated_admin_suffix, nominated_admin_prefix, pad(14)]
 
     and
-    # => [is_no_pending_admin, nominated_root_admin_suffix, nominated_root_admin_prefix, pad(14)]
+    # => [is_no_pending_admin, nominated_admin_suffix, nominated_admin_prefix, pad(14)]
 
-    assert.err=ERR_ROOT_ADMIN_TRANSFER_IN_PROGRESS
-    # => [nominated_root_admin_suffix, nominated_root_admin_prefix, pad(14)]
+    assert.err=ERR_ADMIN_TRANSFER_IN_PROGRESS
+    # => [nominated_admin_suffix, nominated_admin_prefix, pad(14)]
 
     drop drop
     # => [pad(16)]
 
-    push.RENOUNCED_ROOT_ADMIN_CONFIG
+    push.RENOUNCED_ADMIN_CONFIG
     # => [0, 0, 0, 0, pad(12)]
 
-    exec.set_root_admin_config
+    exec.set_admin_config
     # => [pad(16)]
 end
 
@@ -330,7 +330,7 @@ end
 #!
 #! Where:
 #! - role_symbol is the encoded role symbol.
-#! - admin_role_symbol is the encoded admin role symbol, or 0 if the role is root-admin-managed.
+#! - admin_role_symbol is the encoded admin role symbol, or 0 if the role is managed by an admin
 #!
 #! Invocation: call
 pub proc get_role_admin
@@ -485,15 +485,15 @@ end
 #!
 #! Where:
 #! - role_symbol is the encoded role symbol to configure.
-#! - admin_role_symbol is the encoded delegated admin role symbol, or 0 for root-admin-only.
+#! - admin_role_symbol is the encoded delegated admin role symbol, or 0 for admin-only.
 #!
 #! Panics if:
-#! - the note sender is not the current root admin.
+#! - the note sender is not the current admin.
 #! - role_symbol is zero.
 #!
 #! Invocation: call
 pub proc set_role_admin
-    exec.assert_sender_is_root_admin_internal
+    exec.assert_sender_is_admin_internal
     exec.assert_role_symbol_non_zero
     # => [role_symbol, admin_role_symbol, pad(14)]
 
@@ -522,14 +522,14 @@ end
 #!
 #! Panics if:
 #! - role_symbol is zero.
-#! - the note sender is neither the current root admin nor a holder of the role's admin role.
+#! - the note sender is neither the current admin nor a holder of the role's admin role.
 #!
 #! Invocation: call
 pub proc grant_role
     exec.assert_role_symbol_non_zero
     # => [role_symbol, account_suffix, account_prefix, pad(13)]
 
-    dup exec.assert_sender_is_root_or_role_admin
+    dup exec.assert_sender_is_admin_or_role_admin
     # => [role_symbol, account_suffix, account_prefix, pad(13)]
 
     exec.grant_role_internal
@@ -547,7 +547,7 @@ end
 #!
 #! Panics if:
 #! - role_symbol is zero.
-#! - the note sender is neither the current root admin nor a holder of the role's admin role.
+#! - the note sender is neither the current admin nor a holder of the role's admin role.
 #! - the account does not hold the role.
 #!
 #! Invocation: call
@@ -555,7 +555,7 @@ pub proc revoke_role
     exec.assert_role_symbol_non_zero
     # => [role_symbol, account_suffix, account_prefix, pad(13)]
 
-    dup exec.assert_sender_is_root_or_role_admin
+    dup exec.assert_sender_is_admin_or_role_admin
     # => [role_symbol, account_suffix, account_prefix, pad(13)]
 
     exec.revoke_role_internal
@@ -611,107 +611,107 @@ proc assert_role_symbol_non_zero
     # => [role_symbol]
 end
 
-#! Loads the root admin config word from storage.
+#! Loads the admin config word from storage.
 #!
 #! Inputs:  []
-#! Outputs: [root_admin_suffix, root_admin_prefix, nominated_root_admin_suffix, nominated_root_admin_prefix]
+#! Outputs: [admin_suffix, admin_prefix, nominated_admin_suffix, nominated_admin_prefix]
 #!
 #! Where:
-#! - root_admin_{suffix,prefix} are the suffix and prefix felts of the current root admin account ID.
-#! - nominated_root_admin_{suffix,prefix} are the suffix and prefix felts of the pending root admin account ID.
+#! - admin_{suffix,prefix} are the suffix and prefix felts of the current admin account ID.
+#! - nominated_admin_{suffix,prefix} are the suffix and prefix felts of the pending admin account ID.
 #!
 #! Invocation: exec
-proc get_root_admin_config
-    push.ROOT_ADMIN_CONFIG_SLOT[0..2] exec.active_account::get_item
-    # => [root_admin_suffix, root_admin_prefix, nominated_root_admin_suffix, nominated_root_admin_prefix]
+proc get_admin_config
+    push.ADMIN_CONFIG_SLOT[0..2] exec.active_account::get_item
+    # => [admin_suffix, admin_prefix, nominated_admin_suffix, nominated_admin_prefix]
 end
 
-#! Stores the root admin config word to storage.
+#! Stores the admin config word to storage.
 #!
-#! Inputs:  [root_admin_suffix, root_admin_prefix, nominated_root_admin_suffix, nominated_root_admin_prefix]
+#! Inputs:  [admin_suffix, admin_prefix, nominated_admin_suffix, nominated_admin_prefix]
 #! Outputs: []
 #!
 #! Where:
-#! - root_admin_{suffix,prefix} are the suffix and prefix felts of the current root admin account ID.
-#! - nominated_root_admin_{suffix,prefix} are the suffix and prefix felts of the pending root admin account ID.
+#! - admin_{suffix,prefix} are the suffix and prefix felts of the current admin account ID.
+#! - nominated_admin_{suffix,prefix} are the suffix and prefix felts of the pending admin account ID.
 #!
 #! Invocation: exec
-proc set_root_admin_config
-    push.ROOT_ADMIN_CONFIG_SLOT[0..2] exec.native_account::set_item
+proc set_admin_config
+    push.ADMIN_CONFIG_SLOT[0..2] exec.native_account::set_item
     # => [OLD_ADMIN_CONFIG_WORD]
 
     dropw
     # => []
 end
 
-#! Returns the current root admin account ID.
+#! Returns the current admin account ID.
 #!
 #! Inputs:  []
-#! Outputs: [root_admin_suffix, root_admin_prefix]
+#! Outputs: [admin_suffix, admin_prefix]
 #!
 #! Where:
-#! - root_admin_{suffix,prefix} are the suffix and prefix felts of the current root admin account ID.
+#! - admin_{suffix,prefix} are the suffix and prefix felts of the current admin account ID.
 #!
 #! Invocation: exec
-proc get_root_admin_internal
-    exec.get_root_admin_config
-    # => [root_admin_suffix, root_admin_prefix, nominated_root_admin_suffix, nominated_root_admin_prefix]
+proc get_admin_internal
+    exec.get_admin_config
+    # => [admin_suffix, admin_prefix, nominated_admin_suffix, nominated_admin_prefix]
 
     movup.2 drop movup.2 drop
-    # => [root_admin_suffix, root_admin_prefix]
+    # => [admin_suffix, admin_prefix]
 end
 
-#! Returns the nominated root admin account ID.
+#! Returns the nominated admin account ID.
 #!
 #! Inputs:  []
-#! Outputs: [nominated_root_admin_suffix, nominated_root_admin_prefix]
+#! Outputs: [nominated_admin_suffix, nominated_admin_prefix]
 #!
 #! Where:
-#! - nominated_root_admin_{suffix,prefix} are the suffix and prefix felts of the pending root admin account ID.
+#! - nominated_admin_{suffix,prefix} are the suffix and prefix felts of the pending admin account ID.
 #!
 #! Invocation: exec
-proc get_nominated_root_admin_internal
-    exec.get_root_admin_config
-    # => [root_admin_suffix, root_admin_prefix, nominated_root_admin_suffix, nominated_root_admin_prefix]
+proc get_nominated_admin_internal
+    exec.get_admin_config
+    # => [admin_suffix, admin_prefix, nominated_admin_suffix, nominated_admin_prefix]
 
     drop drop
-    # => [nominated_root_admin_suffix, nominated_root_admin_prefix]
+    # => [nominated_admin_suffix, nominated_admin_prefix]
 end
 
-#! Returns whether the note sender is the current root admin.
+#! Returns whether the note sender is the current admin.
 #!
 #! Inputs:  []
-#! Outputs: [is_root_admin]
+#! Outputs: [is_admin]
 #!
 #! Where:
-#! - is_root_admin is 1 if the note sender is the current root admin, otherwise 0.
+#! - is_admin is 1 if the note sender is the current admin, otherwise 0.
 #!
 #! Invocation: exec
-proc is_sender_root_admin
+proc is_sender_admin
     exec.active_note::get_sender
     # => [sender_suffix, sender_prefix]
 
-    exec.get_root_admin_internal
-    # => [root_admin_suffix, root_admin_prefix, sender_suffix, sender_prefix]
+    exec.get_admin_internal
+    # => [admin_suffix, admin_prefix, sender_suffix, sender_prefix]
 
     exec.account_id::is_equal
-    # => [is_root_admin]
+    # => [is_admin]
 end
 
-#! Asserts that the note sender is the current root admin.
+#! Asserts that the note sender is the current admin.
 #!
 #! Inputs:  []
 #! Outputs: []
 #!
 #! Panics if:
-#! - the note sender is not the current root admin.
+#! - the note sender is not the current admin.
 #!
 #! Invocation: exec
-proc assert_sender_is_root_admin_internal
-    exec.is_sender_root_admin
-    # => [is_root_admin]
+proc assert_sender_is_admin_internal
+    exec.is_sender_admin
+    # => [is_admin]
 
-    assert.err=ERR_SENDER_NOT_ROOT_ADMIN
+    assert.err=ERR_SENDER_NOT_ADMIN
     # => []
 end
 
@@ -765,7 +765,7 @@ end
 #! Where:
 #! - role_symbol is the encoded role symbol.
 #! - member_count is the number of current role members.
-#! - admin_role_symbol is the delegated admin role symbol, or 0 for root-admin-managed roles.
+#! - admin_role_symbol is the delegated admin role symbol, or 0 for admin-managed roles.
 #! - active_role_index is the role's index in the active roles map; meaningful only when member_count > 0.
 #!
 #! Invocation: exec
@@ -789,7 +789,7 @@ end
 #! Where:
 #! - role_symbol is the encoded role symbol.
 #! - member_count is the number of current role members.
-#! - admin_role_symbol is the delegated admin role symbol, or 0 for root-admin-managed roles.
+#! - admin_role_symbol is the delegated admin role symbol, or 0 for admin-managed roles.
 #! - active_role_index is the role's index in the active roles map; meaningful only when member_count > 0.
 #!
 #! Invocation: exec
@@ -900,7 +900,7 @@ proc is_sender_in_role
 end
 
 
-#! Asserts that the note sender is the root admin or a member of the role's delegated admin role.
+#! Asserts that the note sender is the admin or a member of the role's delegated admin role.
 #!
 #! Inputs:  [role_symbol]
 #! Outputs: []
@@ -909,12 +909,12 @@ end
 #! - role_symbol is the encoded role symbol whose admin authority is being checked.
 #!
 #! Panics if:
-#! - the note sender is neither the current root admin nor a holder of the role's delegated admin role.
+#! - the note sender is neither the current admin nor a holder of the role's delegated admin role.
 #!
 #! Invocation: exec
-proc assert_sender_is_root_or_role_admin
-    exec.is_sender_root_admin
-    # => [is_root_admin, role_symbol]
+proc assert_sender_is_admin_or_role_admin
+    exec.is_sender_admin
+    # => [is_admin, role_symbol]
     if.true
         drop
         # => []
@@ -926,12 +926,12 @@ proc assert_sender_is_root_or_role_admin
         # => [admin_role_symbol]
 
         dup eq.0
-        assertz.err=ERR_SENDER_NOT_ROOT_OR_ROLE_ADMIN
+        assertz.err=ERR_SENDER_NOT_ADMIN_OR_ROLE_ADMIN
 
         exec.is_sender_in_role
         # => [has_admin_role]
 
-        assert.err=ERR_SENDER_NOT_ROOT_OR_ROLE_ADMIN
+        assert.err=ERR_SENDER_NOT_ADMIN_OR_ROLE_ADMIN
     end
 end
 

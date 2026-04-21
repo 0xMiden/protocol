@@ -23,10 +23,10 @@ use miden_standards::errors::standards::{
     ERR_ACTIVE_ROLE_OUT_OF_BOUNDS,
     ERR_ROLE_MEMBER_OUT_OF_BOUNDS,
     ERR_ROLE_SYMBOL_ZERO,
-    ERR_ROOT_ADMIN_TRANSFER_IN_PROGRESS,
-    ERR_SENDER_NOT_NOMINATED_ROOT_ADMIN,
-    ERR_SENDER_NOT_ROOT_ADMIN,
-    ERR_SENDER_NOT_ROOT_OR_ROLE_ADMIN,
+    ERR_ADMIN_TRANSFER_IN_PROGRESS,
+    ERR_SENDER_NOT_NOMINATED_ADMIN,
+    ERR_SENDER_NOT_ADMIN,
+    ERR_SENDER_NOT_ADMIN_OR_ROLE_ADMIN,
 };
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
@@ -92,8 +92,8 @@ fn account_id_from_felt_pair(
     }
 }
 
-fn get_root_admins(account: &Account) -> anyhow::Result<(Option<AccountId>, Option<AccountId>)> {
-    let word = account.storage().get_item(RoleBasedAccessControl::root_admin_config_slot())?;
+fn get_admins(account: &Account) -> anyhow::Result<(Option<AccountId>, Option<AccountId>)> {
+    let word = account.storage().get_item(RoleBasedAccessControl::admin_config_slot())?;
 
     Ok((
         account_id_from_felt_pair(word[0], word[1])?,
@@ -168,7 +168,7 @@ async fn execute_note_and_apply(
 // SCRIPTS
 // ================================================================================================
 
-fn transfer_root_admin_script(new_admin: AccountId) -> String {
+fn transfer_admin_script(new_admin: AccountId) -> String {
     format!(
         r#"
         use miden::standards::access::role_based_access_control
@@ -177,7 +177,7 @@ fn transfer_root_admin_script(new_admin: AccountId) -> String {
             repeat.14 push.0 end
             push.{new_admin_prefix}
             push.{new_admin_suffix}
-            call.role_based_access_control::transfer_root_admin
+            call.role_based_access_control::transfer_admin
             dropw dropw dropw dropw
         end
         "#,
@@ -186,25 +186,25 @@ fn transfer_root_admin_script(new_admin: AccountId) -> String {
     )
 }
 
-fn accept_root_admin_script() -> &'static str {
+fn accept_admin_script() -> &'static str {
     r#"
         use miden::standards::access::role_based_access_control
 
         begin
             repeat.16 push.0 end
-            call.role_based_access_control::accept_root_admin
+            call.role_based_access_control::accept_admin
             dropw dropw dropw dropw
         end
     "#
 }
 
-fn renounce_root_admin_script() -> &'static str {
+fn renounce_admin_script() -> &'static str {
     r#"
         use miden::standards::access::role_based_access_control
 
         begin
             repeat.16 push.0 end
-            call.role_based_access_control::renounce_root_admin
+            call.role_based_access_control::renounce_admin
             dropw dropw dropw dropw
         end
     "#
@@ -375,7 +375,7 @@ fn assert_has_role_script(
     )
 }
 
-fn assert_root_admin_script(expected_admin: Option<AccountId>) -> String {
+fn assert_admin_script(expected_admin: Option<AccountId>) -> String {
     let (expected_suffix, expected_prefix) = expected_admin
         .map(|account_id| {
             (Felt::new(account_id.suffix().as_canonical_u64()), account_id.prefix().as_felt())
@@ -388,7 +388,7 @@ fn assert_root_admin_script(expected_admin: Option<AccountId>) -> String {
 
         begin
             repeat.16 push.0 end
-            call.role_based_access_control::get_root_admin
+            call.role_based_access_control::get_admin
             eq.{expected_suffix} assert
             eq.{expected_prefix} assert
             dropw dropw dropw
@@ -400,7 +400,7 @@ fn assert_root_admin_script(expected_admin: Option<AccountId>) -> String {
     )
 }
 
-fn assert_nominated_root_admin_script(expected_admin: Option<AccountId>) -> String {
+fn assert_nominated_admin_script(expected_admin: Option<AccountId>) -> String {
     let (expected_suffix, expected_prefix) = expected_admin
         .map(|account_id| {
             (Felt::new(account_id.suffix().as_canonical_u64()), account_id.prefix().as_felt())
@@ -413,7 +413,7 @@ fn assert_nominated_root_admin_script(expected_admin: Option<AccountId>) -> Stri
 
         begin
             repeat.16 push.0 end
-            call.role_based_access_control::get_nominated_root_admin
+            call.role_based_access_control::get_nominated_admin
             eq.{expected_suffix} assert
             eq.{expected_prefix} assert
             dropw dropw dropw
@@ -497,7 +497,7 @@ fn assert_sender_has_role_script(role: &RoleSymbol) -> String {
 // ================================================================================================
 
 #[tokio::test]
-async fn test_rbac_root_admin_transfer_accept_and_renounce() -> anyhow::Result<()> {
+async fn test_rbac_admin_transfer_accept_and_renounce() -> anyhow::Result<()> {
     let admin = test_account_id(1);
     let new_admin = test_account_id(2);
     let outsider = test_account_id(3);
@@ -507,7 +507,7 @@ async fn test_rbac_root_admin_transfer_accept_and_renounce() -> anyhow::Result<(
     builder.add_account(account.clone())?;
     let mock_chain = builder.build()?;
 
-    let transfer_note = build_note(admin, transfer_root_admin_script(new_admin), 101)?;
+    let transfer_note = build_note(admin, transfer_admin_script(new_admin), 101)?;
     let tx = mock_chain
         .build_tx_context(account.clone(), &[], slice::from_ref(&transfer_note))?
         .build()?;
@@ -516,18 +516,18 @@ async fn test_rbac_root_admin_transfer_accept_and_renounce() -> anyhow::Result<(
     let mut updated = account.clone();
     updated.apply_delta(executed.account_delta())?;
 
-    let (current_admin, nominated_admin) = get_root_admins(&updated)?;
+    let (current_admin, nominated_admin) = get_admins(&updated)?;
     assert_eq!(current_admin, Some(admin));
     assert_eq!(nominated_admin, Some(new_admin));
 
-    let wrong_accept_note = build_note(outsider, accept_root_admin_script(), 102)?;
+    let wrong_accept_note = build_note(outsider, accept_admin_script(), 102)?;
     let tx = mock_chain
         .build_tx_context(updated.clone(), &[], slice::from_ref(&wrong_accept_note))?
         .build()?;
     let result = tx.execute().await;
-    assert_transaction_executor_error!(result, ERR_SENDER_NOT_NOMINATED_ROOT_ADMIN);
+    assert_transaction_executor_error!(result, ERR_SENDER_NOT_NOMINATED_ADMIN);
 
-    let accept_note = build_note(new_admin, accept_root_admin_script(), 103)?;
+    let accept_note = build_note(new_admin, accept_admin_script(), 103)?;
     let tx = mock_chain
         .build_tx_context(updated.clone(), &[], slice::from_ref(&accept_note))?
         .build()?;
@@ -536,11 +536,11 @@ async fn test_rbac_root_admin_transfer_accept_and_renounce() -> anyhow::Result<(
     let mut accepted = updated.clone();
     accepted.apply_delta(executed.account_delta())?;
 
-    let (current_admin, nominated_admin) = get_root_admins(&accepted)?;
+    let (current_admin, nominated_admin) = get_admins(&accepted)?;
     assert_eq!(current_admin, Some(new_admin));
     assert_eq!(nominated_admin, None);
 
-    let renounce_note = build_note(new_admin, renounce_root_admin_script(), 104)?;
+    let renounce_note = build_note(new_admin, renounce_admin_script(), 104)?;
     let tx = mock_chain
         .build_tx_context(accepted.clone(), &[], slice::from_ref(&renounce_note))?
         .build()?;
@@ -549,7 +549,7 @@ async fn test_rbac_root_admin_transfer_accept_and_renounce() -> anyhow::Result<(
     let mut renounced = accepted.clone();
     renounced.apply_delta(executed.account_delta())?;
 
-    let (current_admin, nominated_admin) = get_root_admins(&renounced)?;
+    let (current_admin, nominated_admin) = get_admins(&renounced)?;
     assert_eq!(current_admin, None);
     assert_eq!(nominated_admin, None);
 
@@ -557,7 +557,7 @@ async fn test_rbac_root_admin_transfer_accept_and_renounce() -> anyhow::Result<(
 }
 
 #[tokio::test]
-async fn test_rbac_root_admin_role_management_and_lookup() -> anyhow::Result<()> {
+async fn test_rbac_admin_role_management_and_lookup() -> anyhow::Result<()> {
     let admin = test_account_id(11);
     let member = test_account_id(12);
     let minter = role("MINTER");
@@ -743,7 +743,7 @@ async fn test_rbac_renounce_role_and_permission_checks() -> anyhow::Result<()> {
         .build_tx_context(account.clone(), &[], slice::from_ref(&non_admin_grant_note))?
         .build()?;
     let result = tx.execute().await;
-    assert_transaction_executor_error!(result, ERR_SENDER_NOT_ROOT_OR_ROLE_ADMIN);
+    assert_transaction_executor_error!(result, ERR_SENDER_NOT_ADMIN_OR_ROLE_ADMIN);
 
     let admin_grant_note = build_note(admin, grant_role_script(&pauser, member), 402)?;
     let tx = mock_chain
@@ -773,12 +773,12 @@ async fn test_rbac_renounce_role_and_permission_checks() -> anyhow::Result<()> {
     let result = tx.execute().await;
     assert_transaction_executor_error!(result, ERR_ACCOUNT_NOT_IN_ROLE);
 
-    let bad_transfer_note = build_note(outsider, transfer_root_admin_script(member), 405)?;
+    let bad_transfer_note = build_note(outsider, transfer_admin_script(member), 405)?;
     let tx = mock_chain
         .build_tx_context(renounced, &[], slice::from_ref(&bad_transfer_note))?
         .build()?;
     let result = tx.execute().await;
-    assert_transaction_executor_error!(result, ERR_SENDER_NOT_ROOT_ADMIN);
+    assert_transaction_executor_error!(result, ERR_SENDER_NOT_ADMIN);
 
     Ok(())
 }
@@ -928,7 +928,7 @@ async fn test_rbac_non_admin_cannot_revoke_role() -> anyhow::Result<()> {
         .build_tx_context(granted, &[], slice::from_ref(&revoke_note))?
         .build()?;
     let result = tx.execute().await;
-    assert_transaction_executor_error!(result, ERR_SENDER_NOT_ROOT_OR_ROLE_ADMIN);
+    assert_transaction_executor_error!(result, ERR_SENDER_NOT_ADMIN_OR_ROLE_ADMIN);
 
     Ok(())
 }
@@ -1134,16 +1134,16 @@ async fn test_rbac_transfer_admin_to_self_cancels_pending_transfer() -> anyhow::
 
     let (account, mock_chain) = create_rbac_chain(admin)?;
 
-    let transfer_note = build_note(admin, transfer_root_admin_script(new_admin), 633)?;
+    let transfer_note = build_note(admin, transfer_admin_script(new_admin), 633)?;
     let updated = execute_note_and_apply(&mock_chain, &account, &transfer_note).await?;
 
-    let cancel_note = build_note(admin, transfer_root_admin_script(admin), 634)?;
+    let cancel_note = build_note(admin, transfer_admin_script(admin), 634)?;
     let cancelled = execute_note_and_apply(&mock_chain, &updated, &cancel_note).await?;
 
-    let query_note = build_note(admin, assert_nominated_root_admin_script(None), 635)?;
+    let query_note = build_note(admin, assert_nominated_admin_script(None), 635)?;
     let _ = execute_note_and_apply(&mock_chain, &cancelled, &query_note).await?;
 
-    let (current_admin, nominated_admin) = get_root_admins(&cancelled)?;
+    let (current_admin, nominated_admin) = get_admins(&cancelled)?;
     assert_eq!(current_admin, Some(admin));
     assert_eq!(nominated_admin, None);
 
@@ -1156,10 +1156,10 @@ async fn test_rbac_get_admin_returns_zero_when_admin_is_unset() -> anyhow::Resul
 
     let (account, mock_chain) = create_rbac_chain(admin)?;
 
-    let renounce_note = build_note(admin, renounce_root_admin_script(), 636)?;
+    let renounce_note = build_note(admin, renounce_admin_script(), 636)?;
     let renounced = execute_note_and_apply(&mock_chain, &account, &renounce_note).await?;
 
-    let query_note = build_note(admin, assert_root_admin_script(None), 637)?;
+    let query_note = build_note(admin, assert_admin_script(None), 637)?;
     let _ = execute_note_and_apply(&mock_chain, &renounced, &query_note).await?;
 
     Ok(())
@@ -1172,15 +1172,15 @@ async fn test_rbac_transfer_admin_fails_when_admin_is_unset() -> anyhow::Result<
 
     let (account, mock_chain) = create_rbac_chain(admin)?;
 
-    let renounce_note = build_note(admin, renounce_root_admin_script(), 638)?;
+    let renounce_note = build_note(admin, renounce_admin_script(), 638)?;
     let renounced = execute_note_and_apply(&mock_chain, &account, &renounce_note).await?;
 
-    let transfer_note = build_note(admin, transfer_root_admin_script(new_admin), 639)?;
+    let transfer_note = build_note(admin, transfer_admin_script(new_admin), 639)?;
     let tx = mock_chain
         .build_tx_context(renounced, &[], slice::from_ref(&transfer_note))?
         .build()?;
     let result = tx.execute().await;
-    assert_transaction_executor_error!(result, ERR_SENDER_NOT_ROOT_ADMIN);
+    assert_transaction_executor_error!(result, ERR_SENDER_NOT_ADMIN);
 
     Ok(())
 }
@@ -1192,21 +1192,21 @@ async fn test_rbac_renounce_admin_fails_while_transfer_is_pending() -> anyhow::R
 
     let (account, mock_chain) = create_rbac_chain(admin)?;
 
-    let transfer_note = build_note(admin, transfer_root_admin_script(new_admin), 640)?;
+    let transfer_note = build_note(admin, transfer_admin_script(new_admin), 640)?;
     let updated = execute_note_and_apply(&mock_chain, &account, &transfer_note).await?;
 
-    let renounce_note = build_note(admin, renounce_root_admin_script(), 641)?;
+    let renounce_note = build_note(admin, renounce_admin_script(), 641)?;
     let tx = mock_chain
         .build_tx_context(updated, &[], slice::from_ref(&renounce_note))?
         .build()?;
     let result = tx.execute().await;
-    assert_transaction_executor_error!(result, ERR_ROOT_ADMIN_TRANSFER_IN_PROGRESS);
+    assert_transaction_executor_error!(result, ERR_ADMIN_TRANSFER_IN_PROGRESS);
 
     Ok(())
 }
 
 #[tokio::test]
-async fn test_rbac_role_admin_can_manage_role_without_root_admin() -> anyhow::Result<()> {
+async fn test_rbac_role_admin_can_manage_role_without_admin() -> anyhow::Result<()> {
     let admin = test_account_id(83);
     let manager = test_account_id(84);
     let user = test_account_id(85);
@@ -1222,7 +1222,7 @@ async fn test_rbac_role_admin_can_manage_role_without_root_admin() -> anyhow::Re
     let grant_manager_note = build_note(admin, grant_role_script(&manager_role, manager), 643)?;
     let updated = execute_note_and_apply(&mock_chain, &updated, &grant_manager_note).await?;
 
-    let renounce_admin_note = build_note(admin, renounce_root_admin_script(), 644)?;
+    let renounce_admin_note = build_note(admin, renounce_admin_script(), 644)?;
     let updated = execute_note_and_apply(&mock_chain, &updated, &renounce_admin_note).await?;
 
     let grant_user_note = build_note(manager, grant_role_script(&user_role, user), 645)?;
@@ -1280,13 +1280,13 @@ async fn test_rbac_non_admin_cannot_set_role_admin() -> anyhow::Result<()> {
     let note = build_note(outsider, set_role_admin_script(&user_role, Some(&manager_role)), 653)?;
     let tx = mock_chain.build_tx_context(account, &[], slice::from_ref(&note))?.build()?;
     let result = tx.execute().await;
-    assert_transaction_executor_error!(result, ERR_SENDER_NOT_ROOT_ADMIN);
+    assert_transaction_executor_error!(result, ERR_SENDER_NOT_ADMIN);
 
     Ok(())
 }
 
 #[tokio::test]
-async fn test_rbac_set_role_admin_can_clear_delegated_admin_to_root_admin() -> anyhow::Result<()> {
+async fn test_rbac_set_role_admin_can_clear_delegated_admin_to_admin() -> anyhow::Result<()> {
     let admin = test_account_id(91);
     let user_role = role("USER");
     let manager_role = role("MANAGER");
@@ -1349,13 +1349,13 @@ async fn test_rbac_accept_admin_clears_nominated_admin() -> anyhow::Result<()> {
 
     let (account, mock_chain) = create_rbac_chain(admin)?;
 
-    let transfer_note = build_note(admin, transfer_root_admin_script(new_admin), 659)?;
+    let transfer_note = build_note(admin, transfer_admin_script(new_admin), 659)?;
     let updated = execute_note_and_apply(&mock_chain, &account, &transfer_note).await?;
 
-    let accept_note = build_note(new_admin, accept_root_admin_script(), 660)?;
+    let accept_note = build_note(new_admin, accept_admin_script(), 660)?;
     let accepted = execute_note_and_apply(&mock_chain, &updated, &accept_note).await?;
 
-    let query_note = build_note(new_admin, assert_nominated_root_admin_script(None), 661)?;
+    let query_note = build_note(new_admin, assert_nominated_admin_script(None), 661)?;
     let _ = execute_note_and_apply(&mock_chain, &accepted, &query_note).await?;
 
     Ok(())
