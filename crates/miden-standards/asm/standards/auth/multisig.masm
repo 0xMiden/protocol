@@ -6,6 +6,7 @@ use miden::protocol::active_account
 use miden::protocol::auth::AUTH_UNAUTHORIZED_EVENT
 use miden::protocol::native_account
 use miden::standards::auth
+use miden::standards::auth::signature
 use miden::core::word
 
 # Local Memory Addresses
@@ -114,7 +115,7 @@ proc cleanup_pubkey_and_scheme_id_mapping(init_num_of_approvers: u32, new_num_of
         # => [i-1, new_num_of_approvers]
 
         # clear scheme id at APPROVER_MAP_KEY(i-1)
-        dup exec.create_approver_map_key
+        dup exec.signature::create_approver_map_key
         # => [APPROVER_MAP_KEY, i-1, new_num_of_approvers]
 
         padw swapw
@@ -130,7 +131,7 @@ proc cleanup_pubkey_and_scheme_id_mapping(init_num_of_approvers: u32, new_num_of
         # => [i-1, new_num_of_approvers]
 
         # clear public key at APPROVER_MAP_KEY(i-1)
-        dup exec.create_approver_map_key
+        dup exec.signature::create_approver_map_key
         # => [APPROVER_MAP_KEY, i-1, new_num_of_approvers]
 
         padw swapw
@@ -153,18 +154,8 @@ proc cleanup_pubkey_and_scheme_id_mapping(init_num_of_approvers: u32, new_num_of
     drop drop
 end
 
-#! Builds the storage map key for a signer index.
-#!
-#! Inputs: [key_index]
-#! Outputs: [APPROVER_MAP_KEY]
-proc create_approver_map_key
-    push.0.0.0 movup.3
-    # => [[key_index, 0, 0, 0]]
-    # => [APPROVER_MAP_KEY]
-end
-
-#! Asserts that all configured per-procedure threshold overrides are less than or equal to 
-#! number of approvers 
+#! Asserts that all configured per-procedure threshold overrides are less than or equal to
+#! number of approvers.
 #!
 #! Inputs:  [num_approvers]
 #! Outputs: []
@@ -289,7 +280,7 @@ pub proc update_signers_and_threshold(multisig_config_hash: word)
         sub.1
         # => [i-1, pad(12)]
 
-        dup exec.create_approver_map_key
+        dup exec.signature::create_approver_map_key
         # => [APPROVER_MAP_KEY, i-1, pad(12)]
 
         padw adv_loadw
@@ -312,7 +303,7 @@ pub proc update_signers_and_threshold(multisig_config_hash: word)
         exec.auth::signature::assert_supported_scheme_word
         # => [SCHEME_ID_WORD, i-1, pad(12)]
 
-        dup.4 exec.create_approver_map_key
+        dup.4 exec.signature::create_approver_map_key
         # => [APPROVER_MAP_KEY, SCHEME_ID_WORD, i-1, pad(12)]
 
         push.APPROVER_SCHEME_ID_SLOT[0..2]
@@ -511,7 +502,7 @@ pub proc get_signer_at
     dup
     # => [index, index]
 
-    exec.create_approver_map_key
+    exec.signature::create_approver_map_key
     # => [APPROVER_MAP_KEY, index]
 
     push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
@@ -523,7 +514,7 @@ pub proc get_signer_at
     movup.4
     # => [index, PUB_KEY]
 
-    exec.create_approver_map_key
+    exec.signature::create_approver_map_key
     # => [APPROVER_MAP_KEY, PUB_KEY]
 
     push.APPROVER_SCHEME_ID_SLOT[0..2]
@@ -574,7 +565,7 @@ pub proc is_signer(pub_key: word) -> felt
         dup loc_store.CURRENT_SIGNER_INDEX_LOC
         # => [i-1, PUB_KEY]
 
-        exec.create_approver_map_key
+        exec.signature::create_approver_map_key
         # => [APPROVER_MAP_KEY, PUB_KEY]
 
         push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
