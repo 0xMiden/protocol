@@ -21,12 +21,12 @@ use miden_standards::account::access::RoleBasedAccessControl;
 use miden_standards::errors::standards::{
     ERR_ACCOUNT_NOT_IN_ROLE,
     ERR_ACTIVE_ROLE_OUT_OF_BOUNDS,
+    ERR_ADMIN_TRANSFER_IN_PROGRESS,
     ERR_ROLE_MEMBER_OUT_OF_BOUNDS,
     ERR_ROLE_SYMBOL_ZERO,
-    ERR_ADMIN_TRANSFER_IN_PROGRESS,
-    ERR_SENDER_NOT_NOMINATED_ADMIN,
     ERR_SENDER_NOT_ADMIN,
     ERR_SENDER_NOT_ADMIN_OR_ROLE_ADMIN,
+    ERR_SENDER_NOT_NOMINATED_ADMIN,
 };
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};

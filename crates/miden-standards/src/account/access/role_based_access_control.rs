@@ -54,6 +54,79 @@ pub struct RoleInit {
     pub members: BTreeSet<AccountId>,
 }
 
+/// Role-based access control (RBAC) for account components.
+///
+/// RBAC provides fine-grained access control than the single owner model in `Ownable2Step`.
+/// Instead of having one account holding every privilege, privileges are split into named roles
+/// (for example `MINTER`, `BURNER`, `PAUSER`), and each procedure is guarded against the
+/// caller's role membership. It Allows role assignment with domain isolation to minimize the scope
+/// of damage from a compromised role.
+///
+/// Admin management.
+///
+/// The admin can grant and revoke any role, configure the delegated admin of any role via
+/// `set_role_admin`, and transfer or renounce its own position.
+///
+/// Admin transfers follow a two-step protocol: the current admin nominates a successor via
+/// `transfer_admin`, and the nominee must explicitly call `accept_admin` before the transfer
+/// takes effect. The current admin retains full authority until acceptance and may cancel a
+/// pending transfer by calling `transfer_admin` with its own account. This prevents
+/// accidental transfers to the wrong account.
+///
+/// The admin may also call `renounce_admin` to permanently remove the admin position. After
+/// renouncement, no account holds admin authority and role management falls entirely to the
+/// per-role admin roles. Renouncement is rejected while a pending transfer is in progress.
+///
+/// Role hierarchy.
+///
+/// Every role may optionally have a delegated admin role. Accounts holding a role's admin
+/// role are authorized to grant and revoke that role without going through the top-level
+/// admin. For example, accounts holding `MINTER_ADMIN` can manage the `MINTER` role but have
+/// no authority over `BURNER` or `PAUSER`. This lets responsibilities be distributed so that
+/// compromise of one domain does not spill into the others.
+///
+/// Combined with admin renouncement, this supports a fully decentralized configuration: once
+/// every role has its own admin role populated, the top-level admin can renounce and the
+/// system continues to operate with each role managed only by its designated admin role.
+///
+/// The delegated admin of a role can itself be any role, including one that it admins.
+/// Circular relationships are possible but should be designed with care, since each role can
+/// then revoke the other.
+///
+/// Role semantics.
+///
+/// A role is considered to exist when it has at least one member. Granting the first member
+/// creates the role; revoking the last member removes it. As a consequence,
+/// `set_role_admin(A, B)` stores the admin relationship in storage but does not make role
+/// `A` exist until a member is granted. Once the last member of `A` is revoked,
+/// `role_exists(A)` returns `false`, though the admin configuration is retained and will
+/// apply the next time a member is granted.
+///
+/// Role enumeration.
+///
+/// Three distinct lookup paths are maintained. `has_role(role, account)` check
+/// used as the primary guard by procedures that assert the caller's role membership.
+/// `get_role_member(role, index)` iterates over all accounts currently holding a role and
+/// serves on-chain consumers that need to walk a role's membership without relying on an
+/// off-chain indexer. `get_active_role(index)` iterates over all roles that currently have
+/// at least one member.
+///
+/// Role symbol format.
+///
+/// A role symbol is a `RoleSymbol`, which encodes up to 12 uppercase ASCII characters with
+/// underscores into a single field element using the same packing as the token symbol type.
+/// Examples: `MINTER`, `MINTER_ADMIN`, `PAUSER`. The zero field element is reserved and
+/// cannot be used as a role symbol; attempting to do so panics with `ERR_ROLE_SYMBOL_ZERO`.
+///
+/// Guarding a procedure in MASM so that only members of `MINTER` can call it:
+///
+/// ```text
+/// pub proc mint
+///     push.MINTER_ROLE_SYMBOL
+///     exec.::miden::standards::access::role_based_access_control::assert_sender_has_role
+///     # add mint logic
+/// end
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RoleBasedAccessControl {
     admin: AccountId,
