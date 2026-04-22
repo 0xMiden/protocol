@@ -4,6 +4,7 @@ use miden_agglayer::{
     B2AggNote,
     ClaimNoteStorage,
     ConfigAggBridgeNote,
+    ConversionMetadata,
     EthAddress,
     MetadataHash,
     UpdateGerNote,
@@ -241,12 +242,14 @@ pub async fn tx_consume_claim_note(data_source: ClaimDataSource) -> Result<Trans
 
     // CREATE CONFIG_AGG_BRIDGE NOTE
     let config_note = ConfigAggBridgeNote::create(
-        agglayer_faucet.id(),
-        &origin_token_address,
-        scale,
-        origin_network,
-        false,
-        &config_metadata_hash,
+        ConversionMetadata {
+            faucet_account_id: agglayer_faucet.id(),
+            origin_token_address,
+            scale,
+            origin_network,
+            is_native: false,
+            metadata_hash: config_metadata_hash,
+        },
         bridge_admin.id(),
         bridge_account.id(),
         builder.rng_mut(),
@@ -345,12 +348,14 @@ pub async fn tx_consume_b2agg_note() -> Result<TransactionContext> {
     // CREATE CONFIG_AGG_BRIDGE NOTE (registers faucet + token address in bridge)
     let metadata_hash = MetadataHash::from_token_info("AGG", "AGG", 8);
     let config_note = ConfigAggBridgeNote::create(
-        faucet.id(),
-        &origin_token_address,
-        scale,
-        origin_network,
-        false,
-        &metadata_hash,
+        ConversionMetadata {
+            faucet_account_id: faucet.id(),
+            origin_token_address,
+            scale,
+            origin_network,
+            is_native: false,
+            metadata_hash,
+        },
         bridge_admin.id(),
         bridge_account.id(),
         builder.rng_mut(),

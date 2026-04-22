@@ -5,6 +5,7 @@ use miden_agglayer::{
     AggLayerBridge,
     B2AggNote,
     ConfigAggBridgeNote,
+    ConversionMetadata,
     EthAddress,
     ExitRoot,
     MetadataHash,
@@ -107,12 +108,14 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
 
     // CONFIG_AGG_BRIDGE note to register the faucet in the bridge (sent by bridge admin)
     let config_note = ConfigAggBridgeNote::create(
-        faucet.id(),
-        &origin_token_address,
-        scale,
-        origin_network,
-        false,
-        &metadata_hash,
+        ConversionMetadata {
+            faucet_account_id: faucet.id(),
+            origin_token_address,
+            scale,
+            origin_network,
+            is_native: false,
+            metadata_hash,
+        },
         bridge_admin.id(),
         bridge_account.id(),
         builder.rng_mut(),
@@ -609,12 +612,14 @@ async fn bridge_out_lock_native_token() -> anyhow::Result<()> {
     let metadata_hash = MetadataHash::from_token_info("Native Token", "NATIVE", 8);
 
     let config_note = ConfigAggBridgeNote::create(
-        native_faucet.id(),
-        &origin_token_address,
-        scale,
-        origin_network,
-        true, // is_native
-        &metadata_hash,
+        ConversionMetadata {
+            faucet_account_id: native_faucet.id(),
+            origin_token_address,
+            scale,
+            origin_network,
+            is_native: true,
+            metadata_hash,
+        },
         bridge_admin.id(),
         bridge_account.id(),
         builder.rng_mut(),

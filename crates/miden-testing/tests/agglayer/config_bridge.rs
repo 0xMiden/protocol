@@ -3,6 +3,7 @@ extern crate alloc;
 use miden_agglayer::{
     AggLayerBridge,
     ConfigAggBridgeNote,
+    ConversionMetadata,
     EthAddress,
     MetadataHash,
     create_existing_bridge_account,
@@ -70,12 +71,14 @@ async fn test_config_agg_bridge_registers_faucet() -> anyhow::Result<()> {
     let origin_network = 0u32;
     let metadata_hash = MetadataHash::from_token_info("USD Coin", "USDC", 6);
     let config_note = ConfigAggBridgeNote::create(
-        faucet_to_register,
-        &origin_token_address,
-        scale,
-        origin_network,
-        false,
-        &metadata_hash,
+        ConversionMetadata {
+            faucet_account_id: faucet_to_register,
+            origin_token_address,
+            scale,
+            origin_network,
+            is_native: false,
+            metadata_hash,
+        },
         bridge_admin.id(),
         bridge_account.id(),
         builder.rng_mut(),

@@ -9,6 +9,7 @@ use miden_agglayer::{
     B2AggNote,
     ClaimNoteStorage,
     ConfigAggBridgeNote,
+    ConversionMetadata,
     EthAddress,
     EthEmbeddedAccountId,
     ExitRoot,
@@ -252,12 +253,14 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     // CREATE CONFIG_AGG_BRIDGE NOTE (registers faucet + token address in bridge)
     // --------------------------------------------------------------------------------------------
     let config_note = ConfigAggBridgeNote::create(
-        agglayer_faucet.id(),
-        &origin_token_address,
-        scale,
-        origin_network,
-        false,
-        &metadata_hash,
+        ConversionMetadata {
+            faucet_account_id: agglayer_faucet.id(),
+            origin_token_address,
+            scale,
+            origin_network,
+            is_native: false,
+            metadata_hash,
+        },
         bridge_admin.id(),
         bridge_account.id(),
         builder.rng_mut(),
@@ -519,12 +522,14 @@ async fn test_duplicate_claim_note_rejected() -> anyhow::Result<()> {
 
     // CREATE CONFIG_AGG_BRIDGE NOTE
     let config_note = ConfigAggBridgeNote::create(
-        agglayer_faucet.id(),
-        &origin_token_address,
-        scale,
-        origin_network,
-        false,
-        &leaf_data.metadata_hash,
+        ConversionMetadata {
+            faucet_account_id: agglayer_faucet.id(),
+            origin_token_address,
+            scale,
+            origin_network,
+            is_native: false,
+            metadata_hash: leaf_data.metadata_hash,
+        },
         bridge_admin.id(),
         bridge_account.id(),
         builder.rng_mut(),
@@ -678,12 +683,14 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
 
     // Register the native faucet with is_native = true.
     let config_note = ConfigAggBridgeNote::create(
-        native_faucet.id(),
-        &origin_token_address,
-        scale,
-        origin_network,
-        true, // is_native
-        &metadata_hash,
+        ConversionMetadata {
+            faucet_account_id: native_faucet.id(),
+            origin_token_address,
+            scale,
+            origin_network,
+            is_native: true,
+            metadata_hash,
+        },
         bridge_admin.id(),
         bridge_account.id(),
         builder.rng_mut(),

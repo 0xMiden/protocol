@@ -45,7 +45,7 @@ pub use claim_note::{
     SmtNode,
     create_claim_note,
 };
-pub use config_note::ConfigAggBridgeNote;
+pub use config_note::{ConfigAggBridgeNote, ConversionMetadata};
 #[cfg(any(test, feature = "testing"))]
 pub use eth_types::GlobalIndexExt;
 pub use eth_types::{
