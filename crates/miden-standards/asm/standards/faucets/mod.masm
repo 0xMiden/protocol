@@ -5,13 +5,14 @@ use miden::protocol::native_account
 use miden::protocol::output_note
 use miden::protocol::asset
 use miden::protocol::asset::FUNGIBLE_ASSET_MAX_AMOUNT
+use miden::standards::metadata::fungible_faucet::TOKEN_METADATA_SLOT
 
-# CONSTANTS
+# CONSTANTS
 # =================================================================================================
 
 const ASSET_PTR=0
 
-# ERRORS
+# ERRORS
 # =================================================================================================
 
 const ERR_FUNGIBLE_ASSET_TOKEN_SUPPLY_EXCEEDS_MAX_SUPPLY="token supply exceeds max supply"
@@ -30,9 +31,6 @@ const ERR_BASIC_FUNGIBLE_BURN_WRONG_NUMBER_OF_ASSETS="burn requires exactly 1 no
 # The local memory address at which the metadata slot content is stored.
 const METADATA_SLOT_LOCAL=0
 
-# The standard slot where fungible faucet metadata like token symbol or decimals are stored.
-# Layout: [token_supply, max_supply, decimals, token_symbol]
-const METADATA_SLOT=word("miden::standards::fungible_faucets::metadata")
 
 #! Mints fungible assets to the provided recipient by creating a note.
 #!
@@ -59,7 +57,7 @@ pub proc mint_and_send
     # Get the configured max supply and the token supply (= current supply).
     # ---------------------------------------------------------------------------------------------
 
-    push.METADATA_SLOT[0..2] exec.active_account::get_item
+    push.TOKEN_METADATA_SLOT[0..2] exec.active_account::get_item
     # => [token_supply, max_supply, decimals, token_symbol, amount, tag, note_type, RECIPIENT]
 
     # store a copy of the current slot content for the token_supply update later
@@ -119,7 +117,7 @@ pub proc mint_and_send
     # => [[new_token_supply, max_supply, decimals, token_symbol], amount, tag, note_type, RECIPIENT]
 
     # update the metadata slot with the new supply
-    push.METADATA_SLOT[0..2] exec.native_account::set_item dropw
+    push.TOKEN_METADATA_SLOT[0..2] exec.native_account::set_item dropw
     # => [amount, tag, note_type, RECIPIENT]
 
     # Create a new note.
@@ -203,7 +201,7 @@ pub proc burn
     # Subtract burnt amount from current token_supply in storage.
     # ---------------------------------------------------------------------------------------------
 
-    push.METADATA_SLOT[0..2] exec.active_account::get_item
+    push.TOKEN_METADATA_SLOT[0..2] exec.active_account::get_item
     # => [token_supply, max_supply, decimals, token_symbol, amount, pad(16)]
 
     dup.4 dup.1
@@ -221,6 +219,6 @@ pub proc burn
     # => [new_token_supply, max_supply, decimals, token_symbol, pad(16)]
 
     # update the metadata slot with the new supply
-    push.METADATA_SLOT[0..2] exec.native_account::set_item dropw
+    push.TOKEN_METADATA_SLOT[0..2] exec.native_account::set_item dropw
     # => [pad(16)]
 end
