@@ -764,8 +764,6 @@ pub enum TransactionScriptError {
     AssemblyError(Report),
     #[error("failed to convert package to transaction script:\n{}", PrintDiagnostic::new(.0))]
     PackageNotProgram(Report),
-    #[error("failed to convert package to transaction script:\n{}", PrintDiagnostic::new(.0))]
-    PackageNotTransactionScript(Report),
 }
 
 // TRANSACTION INPUT ERROR
