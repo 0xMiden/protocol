@@ -3,6 +3,7 @@
 
 extern crate alloc;
 
+use miden_protocol::Word;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{
     Account,
@@ -21,8 +22,8 @@ use miden_protocol::asset::{
 };
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::{NoteTag, NoteType};
-use miden_protocol::{Felt, Word};
 use miden_standards::account::faucets::BasicFungibleFaucet;
+use miden_standards::account::metadata::{FungibleTokenMetadataBuilder, TokenName};
 use miden_standards::account::pausable::Pausable;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::MockFaucetComponent;
@@ -40,12 +41,19 @@ const ERR_PAUSABLE_EXPECTED_PAUSE: MasmError =
     MasmError::from_static_str("the contract is not paused");
 
 fn add_faucet_with_pausable(builder: &mut MockChainBuilder) -> anyhow::Result<Account> {
-    let basic_faucet = BasicFungibleFaucet::new("SYM".try_into()?, 8, Felt::new(1_000_000))?;
+    let faucet_metadata = FungibleTokenMetadataBuilder::new(
+        TokenName::new("SYM")?,
+        "SYM".try_into()?,
+        8,
+        1_000_000u64,
+    )
+    .build()?;
 
     let account_builder = AccountBuilder::new([43u8; 32])
         .storage_mode(AccountStorageMode::Public)
         .account_type(AccountType::FungibleFaucet)
-        .with_component(basic_faucet)
+        .with_component(faucet_metadata)
+        .with_component(BasicFungibleFaucet)
         .with_component(Pausable::default());
 
     builder.add_account_from_builder(
@@ -65,19 +73,28 @@ fn add_faucet_with_pausable_for_account_type(
         anyhow::bail!("account type must be a faucet");
     }
 
-    let faucet_component: AccountComponent = match account_type {
+    let faucet_components: Vec<AccountComponent> = match account_type {
         AccountType::FungibleFaucet => {
-            BasicFungibleFaucet::new("SYM".try_into()?, 8, Felt::new(1_000_000))?.into()
+            let faucet_metadata = FungibleTokenMetadataBuilder::new(
+                TokenName::new("SYM")?,
+                "SYM".try_into()?,
+                8,
+                1_000_000u64,
+            )
+            .build()?;
+            vec![faucet_metadata.into(), BasicFungibleFaucet.into()]
         },
-        AccountType::NonFungibleFaucet => MockFaucetComponent.into(),
+        AccountType::NonFungibleFaucet => vec![MockFaucetComponent.into()],
         _ => anyhow::bail!("pausable tests only use fungible or non-fungible faucet account types"),
     };
 
-    let account_builder = AccountBuilder::new([43u8; 32])
+    let mut account_builder = AccountBuilder::new([43u8; 32])
         .storage_mode(AccountStorageMode::Public)
-        .account_type(account_type)
-        .with_component(faucet_component)
-        .with_component(Pausable::default());
+        .account_type(account_type);
+    for component in faucet_components {
+        account_builder = account_builder.with_component(component);
+    }
+    account_builder = account_builder.with_component(Pausable::default());
 
     builder.add_account_from_builder(
         Auth::BasicAuth {
