@@ -1,12 +1,7 @@
 use core::slice;
 
 use miden_protocol::Word;
-use miden_protocol::account::{
-    Account,
-    AccountBuilder,
-    AccountStorageMode,
-    AccountType,
-};
+use miden_protocol::account::{Account, AccountBuilder, AccountStorageMode, AccountType};
 use miden_protocol::transaction::RawOutputNote;
 use miden_standards::account::auth::NetworkAccount;
 use miden_standards::account::wallets::BasicWallet;

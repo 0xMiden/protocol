@@ -1,5 +1,6 @@
 use alloc::vec::Vec;
 
+use miden_protocol::Word;
 use miden_protocol::account::component::{
     AccountComponentMetadata,
     SchemaType,
@@ -15,7 +16,6 @@ use miden_protocol::account::{
     StorageSlotName,
 };
 use miden_protocol::utils::sync::LazyLock;
-use miden_protocol::{Word};
 
 use crate::account::components::network_account_library;
 
@@ -156,8 +156,7 @@ mod tests {
         let root_a = Word::from([1u32, 2, 3, 4]);
         let root_b = Word::from([5u32, 6, 7, 8]);
 
-        let component: AccountComponent =
-            NetworkAccount::new(vec![root_a, root_b]).into();
+        let component: AccountComponent = NetworkAccount::new(vec![root_a, root_b]).into();
 
         let storage_slots = component.storage_slots();
         assert_eq!(storage_slots.len(), 1);
