@@ -22,6 +22,7 @@
 - [BREAKING] Removed unused `payback_attachment` from `SwapNoteStorage` and `attachment` from `MintNoteStorage` ([#2789](https://github.com/0xMiden/protocol/pull/2789)).
 - Automatically enable `concurrent` feature in `miden-tx` for `std` context ([#2791](https://github.com/0xMiden/protocol/pull/2791)).
 - Added `tx::get_script_root` kernel procedure returning the root of the executed transaction script (zero word if no script was executed) ([#2816](https://github.com/0xMiden/protocol/pull/2816)).
+- Added `NetworkAccount` auth component that rejects transactions which execute a tx script or consume input notes outside of a fixed whitelist of note script roots ([#2817](https://github.com/0xMiden/protocol/pull/2817)).
 
 ### Fixes
 
