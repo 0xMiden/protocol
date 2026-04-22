@@ -14,12 +14,9 @@ use crate::account::AuthMethod;
 use crate::account::auth::{AuthSingleSigAcl, AuthSingleSigAclConfig};
 use crate::account::burn_policies::BurnAuthControlled;
 use crate::account::components::basic_fungible_faucet_library;
-use crate::account::mint_policies::MintAuthControlled;
-
-/// The schema type for token symbols.
-const TOKEN_SYMBOL_TYPE: &str = "miden::standards::fungible_faucets::metadata::token_symbol";
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
 use crate::account::metadata::FungibleTokenMetadata;
+use crate::account::mint_policies::MintAuthControlled;
 use crate::procedure_digest;
 
 // BASIC FUNGIBLE FAUCET ACCOUNT COMPONENT
