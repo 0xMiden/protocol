@@ -97,6 +97,15 @@ static NETWORK_FUNGIBLE_FAUCET_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     Library::read_from_bytes(bytes).expect("Shipped Network Fungible Faucet library is well-formed")
 });
 
+// Initialize the Fungible Token Metadata library only once.
+static FUNGIBLE_TOKEN_METADATA_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+    let bytes = include_bytes!(concat!(
+        env!("OUT_DIR"),
+        "/assets/account_components/faucets/fungible_token_metadata.masl"
+    ));
+    Library::read_from_bytes(bytes).expect("Shipped Fungible Token Metadata library is well-formed")
+});
+
 // Initialize the Mint Policy Owner Controlled library only once.
 static MINT_POLICY_OWNER_CONTROLLED_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     let bytes = include_bytes!(concat!(
@@ -160,6 +169,11 @@ pub fn network_fungible_faucet_library() -> Library {
     NETWORK_FUNGIBLE_FAUCET_LIBRARY.clone()
 }
 
+/// Returns the Fungible Token Metadata Library.
+pub fn fungible_token_metadata_library() -> Library {
+    FUNGIBLE_TOKEN_METADATA_LIBRARY.clone()
+}
+
 /// Returns the Mint Policy Owner Controlled Library.
 pub fn owner_controlled_library() -> Library {
     MINT_POLICY_OWNER_CONTROLLED_LIBRARY.clone()
@@ -212,6 +226,7 @@ pub fn no_auth_library() -> Library {
 /// crate.
 pub enum StandardAccountComponent {
     BasicWallet,
+    FungibleTokenMetadata,
     BasicFungibleFaucet,
     NetworkFungibleFaucet,
     AuthSingleSig,
@@ -226,6 +241,7 @@ impl StandardAccountComponent {
     pub fn procedure_digests(&self) -> impl Iterator<Item = Word> {
         let library = match self {
             Self::BasicWallet => BASIC_WALLET_LIBRARY.as_ref(),
+            Self::FungibleTokenMetadata => FUNGIBLE_TOKEN_METADATA_LIBRARY.as_ref(),
             Self::BasicFungibleFaucet => BASIC_FUNGIBLE_FAUCET_LIBRARY.as_ref(),
             Self::NetworkFungibleFaucet => NETWORK_FUNGIBLE_FAUCET_LIBRARY.as_ref(),
             Self::AuthSingleSig => SINGLESIG_LIBRARY.as_ref(),
@@ -269,6 +285,9 @@ impl StandardAccountComponent {
                 Self::BasicWallet => {
                     component_interface_vec.push(AccountComponentInterface::BasicWallet)
                 },
+                Self::FungibleTokenMetadata => {
+                    component_interface_vec.push(AccountComponentInterface::FungibleTokenMetadata)
+                },
                 Self::BasicFungibleFaucet => {
                     component_interface_vec.push(AccountComponentInterface::BasicFungibleFaucet)
                 },
@@ -301,6 +320,7 @@ impl StandardAccountComponent {
         component_interface_vec: &mut Vec<AccountComponentInterface>,
     ) {
         Self::BasicWallet.extract_component(procedures_set, component_interface_vec);
+        Self::FungibleTokenMetadata.extract_component(procedures_set, component_interface_vec);
         Self::BasicFungibleFaucet.extract_component(procedures_set, component_interface_vec);
         Self::NetworkFungibleFaucet.extract_component(procedures_set, component_interface_vec);
         Self::AuthSingleSig.extract_component(procedures_set, component_interface_vec);
