@@ -318,9 +318,8 @@ impl TransactionScript {
     /// # Errors
     /// Returns an error if the package cannot be converted to an executable program.
     pub fn from_package(package: &Package) -> Result<Self, TransactionScriptError> {
-        let program = package
-            .try_into_program()
-            .map_err(TransactionScriptError::PackageNotProgram)?;
+        let program =
+            package.try_into_program().map_err(TransactionScriptError::PackageNotProgram)?;
 
         Ok(TransactionScript::new(program))
     }
