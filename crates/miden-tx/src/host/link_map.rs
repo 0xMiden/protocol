@@ -95,10 +95,9 @@ impl<'process> LinkMap<'process> {
             if head_ptr == ZERO {
                 None
             } else {
-                Some(
-                    u32::try_from(head_ptr.as_canonical_u64())
-                        .expect("head ptr should be a valid ptr"),
-                )
+                // Be tolerant to potential malformed pointers: return None instead of panicking
+                // if the value cannot fit into a u32.
+                u32::try_from(head_ptr.as_canonical_u64()).ok()
             }
         })
     }
