@@ -38,9 +38,10 @@ impl BlockNumber {
         self.checked_sub(1)
     }
 
-    /// Returns the next block number
+    /// Returns the next block number.
+    /// If the current number is the maximum representable value, we saturate at MAX to avoid overflow.
     pub fn child(self) -> BlockNumber {
-        self + 1
+        BlockNumber(self.0.saturating_add(1))
     }
 
     /// Creates the [`BlockNumber`] corresponding to the epoch block for the provided `epoch`.
