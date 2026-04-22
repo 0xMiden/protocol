@@ -23,10 +23,10 @@ const STORAGE_START_PTR = 0
 # [10..13] METADATA_HASH_LO_0..3 (4 felts)
 # [14..17] METADATA_HASH_HI_0..3 (4 felts)
 
-const ORIGIN_TOKEN_ADDR_0 = STORAGE_START_PTR
-const ORIGIN_TOKEN_ADDR_1 = STORAGE_START_PTR + 1
-const ORIGIN_TOKEN_ADDR_2 = STORAGE_START_PTR + 2
-const ORIGIN_TOKEN_ADDR_3 = STORAGE_START_PTR + 3
+const ORIGIN_TOKEN_ADDR_0 = 0
+const ORIGIN_TOKEN_ADDR_1 = 1
+const ORIGIN_TOKEN_ADDR_2 = 2
+const ORIGIN_TOKEN_ADDR_3 = 3
 const ORIGIN_TOKEN_ADDR_4 = 4
 const FAUCET_ID_SUFFIX = 5
 const FAUCET_ID_PREFIX = 6
@@ -77,7 +77,7 @@ const ERR_CONFIG_AGG_BRIDGE_TARGET_ACCOUNT_MISMATCH = "CONFIG_AGG_BRIDGE note at
 #! - faucet_id_prefix    [6]  : 1 felt
 #! - scale               [7]  : 1 felt
 #! - origin_network      [8]  : 1 felt
-#! - is_native           [9]  : 1 felt (0 or 1)
+#! - is_native           [9]  : 1 felt
 #! - metadata_hash_lo    [10] : 4 felts
 #! - metadata_hash_hi    [14] : 4 felts
 #!
@@ -107,7 +107,7 @@ begin
     # => []
 
     # --- Call 1: register_faucet ---
-    # Expects: [addr0, addr1, addr2, addr3, addr4, fid_s, fid_p, scale, origin_network, is_native, pad(6)]
+    # Expects: [addr0, addr1, addr2, addr3, addr4, faucet_id_suffix, faucet_id_prefix, scale, origin_network, is_native, pad(6)]
 
     # Build the stack bottom-up: load deepest elements first, then push shallower ones on top.
     # This avoids complex rearrangement since each mem_load pushes onto the top.
@@ -117,28 +117,28 @@ begin
     mem_load.FAUCET_ID_PREFIX
     mem_load.FAUCET_ID_SUFFIX
     mem_load.ORIGIN_TOKEN_ADDR_4
-    # => [addr4, fid_s, fid_p, scale, origin_network, is_native]
+    # => [addr4, faucet_id_suffix, faucet_id_prefix, scale, origin_network, is_native]
 
     # Load addr0..addr3 on top in reverse order so addr0 ends up on top
     mem_load.ORIGIN_TOKEN_ADDR_3
     mem_load.ORIGIN_TOKEN_ADDR_2
     mem_load.ORIGIN_TOKEN_ADDR_1
     mem_load.ORIGIN_TOKEN_ADDR_0
-    # => [addr0, addr1, addr2, addr3, addr4, fid_s, fid_p, scale, origin_network, is_native]
+    # => [addr0, addr1, addr2, addr3, addr4, faucet_id_suffix, faucet_id_prefix, scale, origin_network, is_native]
 
     # Pad to 16 (need 6 more zeros)
     padw push.0.0
-    # => [0, 0, 0, 0, 0, 0, addr0, addr1, addr2, addr3, addr4, fid_s, fid_p, scale, origin_network, is_native]
+    # => [0, 0, 0, 0, 0, 0, addr0, addr1, addr2, addr3, addr4, faucet_id_suffix, faucet_id_prefix, scale, origin_network, is_native]
 
     # Move 6 pad zeros to the end
     movdn.15 movdn.15 movdn.15 movdn.15 movdn.15 movdn.15
-    # => [addr0, addr1, addr2, addr3, addr4, fid_s, fid_p, scale, origin_network, is_native, pad(6)]
+    # => [addr0, addr1, addr2, addr3, addr4, faucet_id_suffix, faucet_id_prefix, scale, origin_network, is_native, pad(6)]
 
     call.bridge_config::register_faucet
     # => [pad(16)]
 
     # --- Call 2: store_faucet_metadata_hash ---
-    # Expects: [fid_s, fid_p, MH_LO, MH_HI, pad(6)]
+    # Expects: [faucet_id_suffix, faucet_id_prefix, MH_LO, MH_HI, pad(6)]
 
     # Drop all 16 pad elements and rebuild the stack
     dropw dropw dropw dropw
@@ -147,25 +147,25 @@ begin
     # Load MH_HI from memory addresses 14..17 (individual loads — not word-aligned)
     mem_load.METADATA_HASH_HI_3 mem_load.METADATA_HASH_HI_2
     mem_load.METADATA_HASH_HI_1 mem_load.METADATA_HASH_HI_0
-    # => [mh_hi0, mh_hi1, mh_hi2, mh_hi3]
+    # => [MH_HI]
 
     # Load MH_LO from memory addresses 10..13 (individual loads — not word-aligned)
     mem_load.METADATA_HASH_LO_3 mem_load.METADATA_HASH_LO_2
     mem_load.METADATA_HASH_LO_1 mem_load.METADATA_HASH_LO_0
-    # => [mh_lo0, mh_lo1, mh_lo2, mh_lo3, mh_hi0, mh_hi1, mh_hi2, mh_hi3]
+    # => [MH_LO, MH_HI]
 
-    # Load fid_p, fid_s
+    # Load faucet_id_prefix, faucet_id_suffix
     mem_load.FAUCET_ID_PREFIX
     mem_load.FAUCET_ID_SUFFIX
-    # => [fid_s, fid_p, MH_LO, MH_HI]
+    # => [faucet_id_suffix, faucet_id_prefix, MH_LO, MH_HI]
 
     # Pad to 16 (need 6 more)
     padw push.0.0
-    # => [0, 0, 0, 0, 0, 0, fid_s, fid_p, MH_LO, MH_HI]
+    # => [0, 0, 0, 0, 0, 0, faucet_id_suffix, faucet_id_prefix, MH_LO, MH_HI]
 
     # Move pad to end
     movdn.15 movdn.15 movdn.15 movdn.15 movdn.15 movdn.15
-    # => [fid_s, fid_p, MH_LO, MH_HI, pad(6)]
+    # => [faucet_id_suffix, faucet_id_prefix, MH_LO, MH_HI, pad(6)]
 
     call.bridge_config::store_faucet_metadata_hash
     # => [pad(16)]
