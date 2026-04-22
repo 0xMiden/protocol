@@ -26,7 +26,7 @@ use miden_standards::errors::standards::{
     ERR_ROLE_SYMBOL_ZERO,
     ERR_SENDER_NOT_ADMIN,
     ERR_SENDER_NOT_ADMIN_OR_ROLE_ADMIN,
-    ERR_SENDER_NOT_NOMINATED_ADMIN,
+    ERR_SENDER_NOT_NOMINATED,
 };
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
@@ -525,7 +525,7 @@ async fn test_rbac_admin_transfer_accept_and_renounce() -> anyhow::Result<()> {
         .build_tx_context(updated.clone(), &[], slice::from_ref(&wrong_accept_note))?
         .build()?;
     let result = tx.execute().await;
-    assert_transaction_executor_error!(result, ERR_SENDER_NOT_NOMINATED_ADMIN);
+    assert_transaction_executor_error!(result, ERR_SENDER_NOT_NOMINATED);
 
     let accept_note = build_note(new_admin, accept_admin_script(), 103)?;
     let tx = mock_chain

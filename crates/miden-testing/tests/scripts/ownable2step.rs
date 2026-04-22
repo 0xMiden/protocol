@@ -22,8 +22,8 @@ use miden_protocol::transaction::RawOutputNote;
 use miden_standards::account::access::Ownable2Step;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
-    ERR_NO_NOMINATED_OWNER,
-    ERR_SENDER_NOT_NOMINATED_OWNER,
+    ERR_NO_NOMINATED_TRANSFER,
+    ERR_SENDER_NOT_NOMINATED,
     ERR_SENDER_NOT_OWNER,
 };
 use miden_standards::testing::note::NoteBuilder;
@@ -274,7 +274,7 @@ async fn test_accept_ownership_only_nominated_owner() -> anyhow::Result<()> {
         .build()?;
     let result = tx2.execute().await;
 
-    assert_transaction_executor_error!(result, ERR_SENDER_NOT_NOMINATED_OWNER);
+    assert_transaction_executor_error!(result, ERR_SENDER_NOT_NOMINATED);
     Ok(())
 }
 
@@ -300,7 +300,7 @@ async fn test_accept_ownership_no_nominated() -> anyhow::Result<()> {
         .build()?;
     let result = tx.execute().await;
 
-    assert_transaction_executor_error!(result, ERR_NO_NOMINATED_OWNER);
+    assert_transaction_executor_error!(result, ERR_NO_NOMINATED_TRANSFER);
     Ok(())
 }
 
@@ -390,11 +390,45 @@ async fn test_transfer_to_self_no_nominated() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_renounce_ownership() -> anyhow::Result<()> {
     let owner = AccountIdBuilder::new().build_with_seed([1; 32]);
+
+    let account = create_ownable_account(owner, vec![])?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+
+    let source_manager: Arc<dyn SourceManagerSync> = Arc::new(DefaultSourceManager::default());
+    let mut rng = RandomCoin::new([Felt::from(200u32); 4].into());
+    let renounce_note = create_renounce_note(owner, &mut rng, Arc::clone(&source_manager))?;
+
+    builder.add_output_note(RawOutputNote::Full(renounce_note.clone()));
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let tx = mock_chain
+        .build_tx_context(account.id(), &[renounce_note.id()], &[])?
+        .with_source_manager(source_manager)
+        .build()?;
+    let executed = tx.execute().await?;
+
+    let mut final_account = account.clone();
+    final_account.apply_delta(executed.account_delta())?;
+
+    assert_eq!(get_owner_from_storage(&final_account)?, None);
+    assert_eq!(get_nominated_owner_from_storage(&final_account)?, None);
+    Ok(())
+}
+
+/// Tests that renounce_ownership is rejected while a nominated transfer is in progress.
+#[tokio::test]
+async fn test_renounce_ownership_fails_with_pending_transfer() -> anyhow::Result<()> {
+    use miden_standards::errors::standards::ERR_OWNERSHIP_TRANSFER_IN_PROGRESS;
+
+    let owner = AccountIdBuilder::new().build_with_seed([1; 32]);
     let new_owner = AccountIdBuilder::new().build_with_seed([2; 32]);
 
     let account = create_ownable_account(owner, vec![])?;
 
-    // Step 1: transfer (to have nominated)
+    // Step 1: nominate a new owner (pending transfer).
     let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
 
@@ -416,11 +450,11 @@ async fn test_renounce_ownership() -> anyhow::Result<()> {
     let mut updated = account.clone();
     updated.apply_delta(executed.account_delta())?;
 
-    // Commit step 1 to the chain
+    // Commit step 1 to the chain.
     mock_chain.add_pending_executed_transaction(&executed)?;
     mock_chain.prove_next_block()?;
 
-    // Step 2: renounce
+    // Step 2: try to renounce while a transfer is pending — must fail.
     let mut rng2 = RandomCoin::new([Felt::from(200u32); 4].into());
     let renounce_note = create_renounce_note(owner, &mut rng2, Arc::clone(&source_manager))?;
 
@@ -428,13 +462,9 @@ async fn test_renounce_ownership() -> anyhow::Result<()> {
         .build_tx_context(updated.clone(), &[], std::slice::from_ref(&renounce_note))?
         .with_source_manager(source_manager)
         .build()?;
-    let executed2 = tx2.execute().await?;
+    let result = tx2.execute().await;
 
-    let mut final_account = updated.clone();
-    final_account.apply_delta(executed2.account_delta())?;
-
-    assert_eq!(get_owner_from_storage(&final_account)?, None);
-    assert_eq!(get_nominated_owner_from_storage(&final_account)?, None);
+    assert_transaction_executor_error!(result, ERR_OWNERSHIP_TRANSFER_IN_PROGRESS);
     Ok(())
 }
 
