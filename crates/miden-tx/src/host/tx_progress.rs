@@ -201,13 +201,10 @@ impl CycleInterval {
 
     /// Calculate the length of the interval
     pub fn len(&self) -> usize {
-        if let Some(start) = self.start
-            && let Some(end) = self.end
-            && end >= start
-        {
-            return end - start;
+        // Safe, straightforward computation without relying on unstable syntax
+        match (self.start, self.end) {
+            (Some(start), Some(end)) if end >= start => end - start,
+            _ => 0,
         }
-
-        0
     }
 }
