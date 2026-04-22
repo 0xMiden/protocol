@@ -1090,7 +1090,7 @@ behavior on both directions:
 | Direction    | `is_native = false` (wrapped / foreign)                                      | `is_native = true` (Miden-native)                                                        |
 | ------------ | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
 | Bridge-out   | `bridge_out::create_burn_note` — emits a BURN note consumed by the faucet.   | `bridge_out::lock_asset` — `native_account::add_asset` locks the asset in the bridge vault. No BURN note is emitted. |
-| Bridge-in    | `bridge_in::build_mint_output_note` — emits a MINT note consumed by the faucet. | `bridge_in::unlock_and_send` — `native_account::remove_asset` unlocks from the vault, then emits a P2ID note directly to the recipient. No MINT note is emitted. |
+| Bridge-in    | `bridge_in_output::build_mint_output_note` — emits a MINT note consumed by the faucet. | `bridge_in_output::unlock_and_send` — `native_account::remove_asset` unlocks from the vault, then emits a P2ID note directly to the recipient. No MINT note is emitted. |
 
 The LET leaf is constructed identically in both bridge-out branches. The native branch
 does not require the bridge to be the faucet's owner, and `ownable2step::assert_sender_is_owner`

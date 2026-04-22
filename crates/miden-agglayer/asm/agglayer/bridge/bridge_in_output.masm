@@ -1,0 +1,314 @@
+use miden::protocol::asset
+use miden::protocol::native_account
+use miden::protocol::note
+use miden::protocol::output_note
+use miden::protocol::output_note::ATTACHMENT_KIND_NONE
+use miden::standards::note_tag
+use miden::standards::note_tag::DEFAULT_TAG
+use miden::standards::notes::p2id
+use miden::standards::attachments::network_account_target
+use miden::standards::note::execution_hint::ALWAYS
+
+# CONSTANTS
+# =================================================================================================
+
+# MINT note storage layout (public mode, 18 felts total):
+# - tag               [0]      : 1 felt
+# - amount            [1]      : 1 felt
+# - attachment_kind   [2]      : 1 felt
+# - attachment_scheme [3]      : 1 felt
+# - ATTACHMENT        [4..7]   : 4 felts
+# - P2ID_SCRIPT_ROOT  [8..11]  : 4 felts
+# - SERIAL_NUM        [12..15] : 4 felts
+# - account_id_suffix [16]     : 1 felt
+# - account_id_prefix [17]     : 1 felt
+const MINT_NOTE_NUM_STORAGE_ITEMS = 18
+
+# P2ID output note constants
+const OUTPUT_NOTE_TYPE_PUBLIC = 1
+
+# P2ID attachment constants (the P2ID note created by the faucet has no attachment)
+const P2ID_ATTACHMENT_SCHEME_NONE = 0
+
+# Shared memory addresses — mirrored from bridge_in.masm; must stay in sync with the
+# values defined there. These are global offsets into the claim's working memory that
+# both `claim` (in bridge_in.masm) and the emission procs below read from.
+const CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT = 568
+const CLAIM_PROOF_DATA_KEY_MEM_ADDR = 700
+
+# Memory addresses for MINT note output construction
+const MINT_NOTE_STORAGE_MEM_ADDR_0 = 800
+const MINT_NOTE_STORAGE_DEST_TAG = 800
+const MINT_NOTE_STORAGE_NATIVE_AMOUNT = 801
+const MINT_NOTE_STORAGE_ATTACHMENT_KIND = 802
+const MINT_NOTE_STORAGE_ATTACHMENT_SCHEME = 803
+const MINT_NOTE_STORAGE_ATTACHMENT = 804
+const MINT_NOTE_STORAGE_OUTPUT_SCRIPT_ROOT = 808
+const MINT_NOTE_STORAGE_OUTPUT_SERIAL_NUM = 812
+const MINT_NOTE_STORAGE_OUTPUT_NOTE_SUFFIX = 816
+const MINT_NOTE_STORAGE_OUTPUT_NOTE_PREFIX = 817
+
+# Offsets in the local memory of the `unlock_and_send` procedure
+const UNLOCK_ASSET_KEY_LOC = 0
+const UNLOCK_ASSET_VALUE_LOC = 4
+const UNLOCK_DEST_SUFFIX_LOC = 8
+const UNLOCK_DEST_PREFIX_LOC = 9
+
+# PUBLIC INTERFACE
+# =================================================================================================
+
+#! Builds a PUBLIC MINT output note targeting the AggLayer Faucet.
+#!
+#! The MINT note uses public mode (18 storage items) so the AggLayer Faucet creates a PUBLIC P2ID
+#! note on consumption. This procedure orchestrates three steps:
+#! 1. Write all 18 MINT note storage items to global memory.
+#! 2. Build the MINT note recipient digest from the storage.
+#! 3. Create the output note, and set the attachment.
+#!
+#! Inputs:  [destination_id_suffix, destination_id_prefix, faucet_id_suffix, faucet_id_prefix]
+#! Outputs: []
+#!
+#! Invocation: exec
+pub proc build_mint_output_note
+    # Step 1: Write all 18 MINT note storage items to global memory
+    exec.write_mint_note_storage
+    # => [faucet_id_suffix, faucet_id_prefix]
+
+    # Step 2: Build the MINT note recipient digest
+    exec.build_mint_recipient
+    # => [MINT_RECIPIENT, faucet_id_suffix, faucet_id_prefix]
+
+    # Step 3: Create the output note and set the faucet attachment
+    exec.create_mint_note_with_attachment
+    # => []
+end
+
+#! Removes the fungible asset for the claim from the bridge's vault and creates a PUBLIC P2ID
+#! output note targeted at the destination account.
+#!
+#! Used on the bridge-in claim path for Miden-native faucets (ones whose mint authority the bridge
+#! does not hold). Instead of creating a MINT note for the faucet, the asset is removed from the
+#! bridge's own vault (where it was placed by a prior `lock_asset` on the bridge-out side) and
+#! attached to a new P2ID note. The P2ID serial number is derived from `CLAIM_PROOF_DATA_KEY`
+#! (matching the MINT path's serial-number choice) so the resulting note commitment is
+#! deterministic across runs.
+#!
+#! Inputs:  [destination_id_suffix, destination_id_prefix, faucet_id_suffix, faucet_id_prefix]
+#! Outputs: []
+#!
+#! Invocation: exec
+@locals(10)
+pub proc unlock_and_send
+    # Stash destination to locals (claim's CLAIM_DEST_ID_*_LOCAL is in a different frame and is
+    # not visible here — `exec` invocations get their own local frame).
+    loc_store.UNLOCK_DEST_SUFFIX_LOC loc_store.UNLOCK_DEST_PREFIX_LOC
+    # => [faucet_id_suffix, faucet_id_prefix]
+
+    # Build the fungible asset (ASSET_KEY, ASSET_VALUE) from the faucet id and the pre-computed
+    # Miden claim amount. `asset::create_fungible_asset` is pure MASM (no FPI).
+    mem_load.CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT movdn.2
+    # => [faucet_id_suffix, faucet_id_prefix, amount]
+
+    push.0 # enable_callbacks = 0
+    # => [0, faucet_id_suffix, faucet_id_prefix, amount]
+
+    exec.asset::create_fungible_asset
+    # => [ASSET_KEY, ASSET_VALUE]
+
+    # Stash the asset to locals so we can re-use it for `output_note::add_asset` after
+    # `native_account::remove_asset` consumes its stack copy.
+    dupw.1 loc_storew_le.UNLOCK_ASSET_VALUE_LOC dropw
+    dupw loc_storew_le.UNLOCK_ASSET_KEY_LOC dropw
+    # => [ASSET_KEY, ASSET_VALUE]
+
+    # Remove the asset from the bridge's vault. Panics if the vault does not contain enough of
+    # the asset, which is the desired failure mode for an invalid / double-spent claim.
+    exec.native_account::remove_asset
+    # => [REMAINING_ASSET_VALUE]
+
+    dropw
+    # => []
+
+    # Build p2id::new's input [dest_suffix, dest_prefix, tag, note_type, SERIAL_NUM] from the
+    # bottom up.
+    padw mem_loadw_be.CLAIM_PROOF_DATA_KEY_MEM_ADDR
+    # => [SERIAL_NUM]
+
+    push.OUTPUT_NOTE_TYPE_PUBLIC
+    # => [note_type, SERIAL_NUM]
+
+    loc_load.UNLOCK_DEST_PREFIX_LOC
+    # => [dest_prefix, note_type, SERIAL_NUM]
+
+    exec.note_tag::create_account_target
+    # => [dest_tag, note_type, SERIAL_NUM]
+
+    loc_load.UNLOCK_DEST_PREFIX_LOC loc_load.UNLOCK_DEST_SUFFIX_LOC
+    # => [dest_suffix, dest_prefix, dest_tag, note_type, SERIAL_NUM]
+
+    exec.p2id::new
+    # => [note_idx]
+
+    # Reload the asset from locals and attach it to the newly created P2ID note.
+    padw loc_loadw_le.UNLOCK_ASSET_VALUE_LOC
+    # => [ASSET_VALUE, note_idx]
+
+    padw loc_loadw_le.UNLOCK_ASSET_KEY_LOC
+    # => [ASSET_KEY, ASSET_VALUE, note_idx]
+
+    exec.output_note::add_asset
+    # => []
+end
+
+# MINT-PATH HELPERS (used only by build_mint_output_note)
+# =================================================================================================
+
+#! Writes all 18 MINT note storage items to global memory.
+#!
+#! Storage layout:
+#! - [0]: tag (note tag for the P2ID output note, targeting the destination account)
+#! - [1]: amount (the scaled-down Miden amount to mint)
+#! - [2]: attachment_kind (0 = no attachment)
+#! - [3]: attachment_scheme (0 = no attachment)
+#! - [4-7]: ATTACHMENT ([0, 0, 0, 0])
+#! - [8-11]: P2ID_SCRIPT_ROOT (script root of the P2ID note)
+#! - [12-15]: SERIAL_NUM (serial number for the P2ID note, derived from PROOF_DATA_KEY)
+#! - [16]: account_id_suffix (destination account suffix)
+#! - [17]: account_id_prefix (destination account prefix)
+#!
+#! Inputs:  [destination_id_suffix, destination_id_prefix]
+#! Outputs: []
+#!
+#! Invocation: exec
+proc write_mint_note_storage
+    # Write P2ID storage items first (before prefix is consumed): [16..17]
+    # Write destination_id_suffix [16]
+    dup mem_store.MINT_NOTE_STORAGE_OUTPUT_NOTE_SUFFIX
+    # => [destination_id_suffix, destination_id_prefix]
+
+    # Write destination_id_prefix [17]
+    dup.1 mem_store.MINT_NOTE_STORAGE_OUTPUT_NOTE_PREFIX
+    # => [destination_id_suffix, destination_id_prefix]
+
+    drop
+    # => [destination_id_prefix]
+
+    # Get the native amount from the pre-computed miden_claim_amount
+    mem_load.CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT
+    # => [native_amount, destination_id_prefix]
+
+    # Compute the note tag for the destination account (consumes prefix)
+    swap
+    # => [destination_id_prefix, native_amount]
+
+    exec.note_tag::create_account_target
+    # => [dest_tag, native_amount]
+
+    # Write tag to MINT note storage [0]
+    mem_store.MINT_NOTE_STORAGE_DEST_TAG
+    # => [native_amount]
+
+    # Write amount to MINT note storage [1]
+    mem_store.MINT_NOTE_STORAGE_NATIVE_AMOUNT
+    # => []
+
+    # Write P2ID attachment fields (the P2ID note has no attachment)
+    # attachment_kind = NONE [2]
+    push.ATTACHMENT_KIND_NONE mem_store.MINT_NOTE_STORAGE_ATTACHMENT_KIND
+    # => []
+
+    # attachment_scheme = NONE [3]
+    push.P2ID_ATTACHMENT_SCHEME_NONE mem_store.MINT_NOTE_STORAGE_ATTACHMENT_SCHEME
+    # => []
+
+    # ATTACHMENT = empty word [4..7]
+    padw mem_storew_le.MINT_NOTE_STORAGE_ATTACHMENT dropw
+    # => []
+
+    # Write P2ID_SCRIPT_ROOT to MINT note storage [8..11]
+    procref.::miden::standards::notes::p2id::main
+    # => [P2ID_SCRIPT_ROOT]
+
+    mem_storew_le.MINT_NOTE_STORAGE_OUTPUT_SCRIPT_ROOT dropw
+    # => []
+
+    # Write SERIAL_NUM (PROOF_DATA_KEY) to MINT note storage [12..15]
+    mem_loadw_be.CLAIM_PROOF_DATA_KEY_MEM_ADDR
+    # => [SERIAL_NUM]
+
+    mem_storew_le.MINT_NOTE_STORAGE_OUTPUT_SERIAL_NUM dropw
+    # => []
+end
+
+#! Builds the MINT note recipient digest from the storage items already written to global memory.
+#!
+#! Uses the MINT note script root and PROOF_DATA_KEY as serial number, then calls
+#! `note::build_recipient` with the storage pointer and item count.
+#!
+#! Inputs:  []
+#! Outputs: [MINT_RECIPIENT]
+#!
+#! Invocation: exec
+proc build_mint_recipient
+    # Get the MINT note script root
+    procref.::miden::standards::notes::mint::main
+    # => [MINT_SCRIPT_ROOT]
+
+    # Generate a serial number for the MINT note (use PROOF_DATA_KEY)
+    padw mem_loadw_be.CLAIM_PROOF_DATA_KEY_MEM_ADDR
+    # => [MINT_SERIAL_NUM, MINT_SCRIPT_ROOT]
+
+    # Build the MINT note recipient
+    push.MINT_NOTE_NUM_STORAGE_ITEMS
+    # => [num_storage_items, MINT_SERIAL_NUM, MINT_SCRIPT_ROOT]
+
+    push.MINT_NOTE_STORAGE_MEM_ADDR_0
+    # => [storage_ptr, num_storage_items, MINT_SERIAL_NUM, MINT_SCRIPT_ROOT]
+
+    exec.note::build_recipient
+    # => [MINT_RECIPIENT]
+end
+
+#! Creates the MINT output note and sets the NetworkAccountTarget attachment on it.
+#!
+#! Creates a public output note with no assets, and sets the attachment so only the target faucet
+#! can consume the note.
+#!
+#! Inputs:  [MINT_RECIPIENT, faucet_id_suffix, faucet_id_prefix]
+#! Outputs: []
+#!
+#! Invocation: exec
+proc create_mint_note_with_attachment
+    # Create the MINT output note targeting the faucet
+    push.OUTPUT_NOTE_TYPE_PUBLIC
+    # => [note_type, MINT_RECIPIENT, faucet_id_suffix, faucet_id_prefix]
+
+    # Set tag to DEFAULT
+    push.DEFAULT_TAG
+    # => [tag, note_type, MINT_RECIPIENT, faucet_id_suffix, faucet_id_prefix]
+
+    # Create the output note (no assets - MINT notes carry no assets)
+    exec.output_note::create
+    # => [note_idx, faucet_id_suffix, faucet_id_prefix]
+
+    movdn.2
+    # => [faucet_id_suffix, faucet_id_prefix, note_idx]
+
+    # Set the attachment on the MINT note to target the faucet account
+    # NetworkAccountTarget attachment: targets the faucet so only it can consume the note
+    # network_account_target::new expects [suffix, prefix, exec_hint]
+    # and returns [attachment_scheme, attachment_kind, ATTACHMENT]
+    push.ALWAYS # exec_hint = ALWAYS
+    movdn.2
+    # => [faucet_id_suffix, faucet_id_prefix, exec_hint, note_idx]
+
+    exec.network_account_target::new
+    # => [attachment_scheme, attachment_kind, ATTACHMENT, note_idx]
+
+    # Rearrange for set_attachment: [note_idx, attachment_scheme, attachment_kind, ATTACHMENT]
+    movup.6
+    # => [note_idx, attachment_scheme, attachment_kind, ATTACHMENT]
+
+    exec.output_note::set_attachment
+    # => []
+end
