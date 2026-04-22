@@ -85,6 +85,16 @@ pub use memory::get_num_input_notes
 #! - num_output_notes is the number of output notes created in this transaction so far.
 pub use memory::get_num_output_notes
 
+#! Returns the transaction script root.
+#!
+#! Inputs:  []
+#! Outputs: [TX_SCRIPT_ROOT]
+#!
+#! Where:
+#! - TX_SCRIPT_ROOT is the transaction script root, or the zero word if no transaction script was
+#!   executed.
+pub use memory::get_tx_script_root->get_script_root
+
 #! Updates the transaction expiration block delta.
 #!
 #! The input block_height_delta is added to the block reference number in order to output an upper

@@ -752,6 +752,61 @@ async fn test_tx_script_args() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Tests that `tx::get_script_root` returns the root of the executed transaction script.
+#[tokio::test]
+async fn test_get_script_root_with_script() -> anyhow::Result<()> {
+    let tx_script = CodeBuilder::default().compile_tx_script("begin nop end")?;
+    let expected_root = tx_script.root();
+
+    let code = format!(
+        r#"
+        use miden::protocol::tx
+        use $kernel::prologue
+
+        begin
+            exec.prologue::prepare_transaction
+
+            exec.tx::get_script_root
+            # => [TX_SCRIPT_ROOT]
+
+            push.{expected_root} assert_eqw.err="tx script root mismatch"
+        end
+        "#
+    );
+
+    let tx_context = TransactionContextBuilder::with_existing_mock_account()
+        .tx_script(tx_script)
+        .build()?;
+
+    tx_context.execute_code(&code).await?;
+
+    Ok(())
+}
+
+/// Tests that `tx::get_script_root` returns the zero word when no transaction script is executed.
+#[tokio::test]
+async fn test_get_script_root_without_script() -> anyhow::Result<()> {
+    let code = r#"
+        use miden::protocol::tx
+        use $kernel::prologue
+
+        begin
+            exec.prologue::prepare_transaction
+
+            exec.tx::get_script_root
+            # => [TX_SCRIPT_ROOT]
+
+            padw assert_eqw.err="tx script root must be zero when no script is executed"
+        end
+        "#;
+
+    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+
+    tx_context.execute_code(code).await?;
+
+    Ok(())
+}
+
 // Tests that advice map from the account code and transaction script gets correctly passed as
 // part of the transaction advice inputs
 #[tokio::test]
