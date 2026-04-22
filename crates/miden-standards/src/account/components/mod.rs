@@ -126,6 +126,29 @@ static MINT_POLICY_AUTH_CONTROLLED_LIBRARY: LazyLock<Library> = LazyLock::new(||
         .expect("Shipped Mint Policy Auth Controlled library is well-formed")
 });
 
+// Initialize the Burn Policy Owner Controlled library only once.
+static BURN_POLICY_OWNER_CONTROLLED_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+    let bytes = include_bytes!(concat!(
+        env!("OUT_DIR"),
+        "/assets/account_components/burn_policies/owner_controlled.masl"
+    ));
+    Library::read_from_bytes(bytes)
+        .expect("Shipped Burn Policy Owner Controlled library is well-formed")
+});
+
+// Initialize the Burn Policy Auth Controlled library only once.
+static BURN_POLICY_AUTH_CONTROLLED_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+    let bytes = include_bytes!(concat!(
+        env!("OUT_DIR"),
+        "/assets/account_components/burn_policies/auth_controlled.masl"
+    ));
+    Library::read_from_bytes(bytes)
+        .expect("Shipped Burn Policy Auth Controlled library is well-formed")
+});
+
+// METADATA LIBRARIES
+// ================================================================================================
+
 /// Returns the Basic Wallet Library.
 pub fn basic_wallet_library() -> Library {
     BASIC_WALLET_LIBRARY.clone()
@@ -159,6 +182,16 @@ pub fn owner_controlled_library() -> Library {
 /// Returns the Mint Policy Auth Controlled Library.
 pub fn auth_controlled_library() -> Library {
     MINT_POLICY_AUTH_CONTROLLED_LIBRARY.clone()
+}
+
+/// Returns the Burn Policy Owner Controlled Library.
+pub fn burn_owner_controlled_library() -> Library {
+    BURN_POLICY_OWNER_CONTROLLED_LIBRARY.clone()
+}
+
+/// Returns the Burn Policy Auth Controlled Library.
+pub fn burn_auth_controlled_library() -> Library {
+    BURN_POLICY_AUTH_CONTROLLED_LIBRARY.clone()
 }
 
 /// Returns the Singlesig Library.

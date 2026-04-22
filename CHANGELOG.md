@@ -70,6 +70,8 @@
 - Added `ProgramExecutor` hooks to support DAP and other custom transaction program executors ([#2574](https://github.com/0xMiden/protocol/pull/2574)).
 - Added `create_fungible_key` for construction of fungible asset keys ([#2575](https://github.com/0xMiden/protocol/pull/2575)).
 - Added metadata hash storage to AggLayer faucet and FPI retrieval during bridge-out leaf construction ([#2583](https://github.com/0xMiden/protocol/pull/2583)).
+- Added `BurnPolicyConfig` for flexible burning policy execution ([#2664](https://github.com/0xMiden/protocol/pull/2664))
+
 - Added `SwapNoteStorage` for typed serialization/deserialization of SWAP note storage ([#2585](https://github.com/0xMiden/protocol/pull/2585)).
 - Added `InputNoteCommitment::from_parts()` for construction of input note commitments from a nullifier and optional note header ([#2588](https://github.com/0xMiden/protocol/pull/2588)).
 - Added `bool` schema type to the type registry and updated ACL auth component to use it for boolean config fields ([#2591](https://github.com/0xMiden/protocol/pull/2591)).
