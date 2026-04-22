@@ -15,8 +15,8 @@ use crate::account::auth::NoAuth;
 use crate::account::burn_policies::BurnOwnerControlled;
 use crate::account::components::network_fungible_faucet_library;
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
-use crate::account::mint_policies::MintOwnerControlled;
 use crate::account::metadata::FungibleTokenMetadata;
+use crate::account::mint_policies::MintOwnerControlled;
 use crate::procedure_digest;
 
 // NETWORK FUNGIBLE FAUCET ACCOUNT COMPONENT

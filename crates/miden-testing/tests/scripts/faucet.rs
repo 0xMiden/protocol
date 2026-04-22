@@ -30,9 +30,9 @@ use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote};
 use miden_protocol::{Felt, Word};
 use miden_standards::account::access::Ownable2Step;
 use miden_standards::account::burn_policies::BurnOwnerControlled;
-use miden_standards::account::mint_policies::MintOwnerControlledConfig;
 use miden_standards::account::faucets::{BasicFungibleFaucet, NetworkFungibleFaucet};
 use miden_standards::account::metadata::FungibleTokenMetadata;
+use miden_standards::account::mint_policies::MintOwnerControlledConfig;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_BURN_POLICY_ROOT_NOT_ALLOWED,

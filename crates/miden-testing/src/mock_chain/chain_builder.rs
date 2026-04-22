@@ -349,18 +349,10 @@ impl MockChainBuilder {
         let account_builder = AccountBuilder::new(self.rng.random())
             .storage_mode(AccountStorageMode::Public)
             .account_type(AccountType::FungibleFaucet)
-<<<<<<< HEAD
-            .with_component(basic_faucet)
             .with_component(MintAuthControlled::allow_all())
-            .with_component(BurnAuthControlled::allow_all());
-||||||| c5ef32c7
-            .with_component(basic_faucet)
-            .with_component(AuthControlled::allow_all());
-=======
+            .with_component(BurnAuthControlled::allow_all())
             .with_component(metadata)
-            .with_component(BasicFungibleFaucet)
-            .with_component(AuthControlled::allow_all());
->>>>>>> upstream/next
+            .with_component(BasicFungibleFaucet);
 
         self.add_account_from_builder(auth_method, account_builder, AccountState::New)
     }
@@ -453,7 +445,8 @@ impl MockChainBuilder {
             .with_component(metadata)
             .with_component(NetworkFungibleFaucet)
             .with_component(Ownable2Step::new(owner_account_id))
-            .with_component(OwnerControlled::new(OwnerControlledInitConfig::OwnerOnly))
+            .with_component(MintOwnerControlled::new(MintOwnerControlledConfig::OwnerOnly))
+            .with_component(BurnOwnerControlled::allow_all())
             .account_type(AccountType::FungibleFaucet);
 
         self.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
