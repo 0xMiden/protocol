@@ -7,7 +7,13 @@ use miden_protocol::note::PartialNote;
 use miden_protocol::{Felt, Word};
 
 use crate::AuthMethod;
-use crate::account::auth::{AuthGuardedMultisig, AuthMultisig, AuthSingleSig, AuthSingleSigAcl};
+use crate::account::auth::{
+    AuthGuardedMultisig,
+    AuthMultisig,
+    AuthMultisigSmart,
+    AuthSingleSig,
+    AuthSingleSigAcl,
+};
 use crate::account::interface::AccountInterfaceError;
 
 // ACCOUNT COMPONENT INTERFACE
@@ -36,6 +42,9 @@ pub enum AccountComponentInterface {
     /// Exposes procedures from the
     /// [`AuthMultisig`][crate::account::auth::AuthMultisig] module.
     AuthMultisig,
+    /// Exposes procedures from the
+    /// [`AuthMultisigSmart`][crate::account::auth::AuthMultisigSmart] module.
+    AuthMultisigSmart,
     /// Exposes procedures from the
     /// [`AuthGuardedMultisig`][crate::account::auth::AuthGuardedMultisig] module.
     AuthGuardedMultisig,
@@ -70,6 +79,7 @@ impl AccountComponentInterface {
             AccountComponentInterface::AuthSingleSig => "SingleSig".to_string(),
             AccountComponentInterface::AuthSingleSigAcl => "SingleSig ACL".to_string(),
             AccountComponentInterface::AuthMultisig => "Multisig".to_string(),
+            AccountComponentInterface::AuthMultisigSmart => "Multisig Smart".to_string(),
             AccountComponentInterface::AuthGuardedMultisig => "Guarded Multisig".to_string(),
             AccountComponentInterface::AuthNoAuth => "No Auth".to_string(),
             AccountComponentInterface::Custom(proc_root_vec) => {
@@ -92,6 +102,7 @@ impl AccountComponentInterface {
             AccountComponentInterface::AuthSingleSig
                 | AccountComponentInterface::AuthSingleSigAcl
                 | AccountComponentInterface::AuthMultisig
+                | AccountComponentInterface::AuthMultisigSmart
                 | AccountComponentInterface::AuthGuardedMultisig
                 | AccountComponentInterface::AuthNoAuth
         )
@@ -124,6 +135,14 @@ impl AccountComponentInterface {
                     AuthGuardedMultisig::threshold_config_slot(),
                     AuthGuardedMultisig::approver_public_keys_slot(),
                     AuthGuardedMultisig::approver_scheme_ids_slot(),
+                )]
+            },
+            AccountComponentInterface::AuthMultisigSmart => {
+                vec![extract_multisig_auth_method(
+                    storage,
+                    AuthMultisigSmart::threshold_config_slot(),
+                    AuthMultisigSmart::approver_public_keys_slot(),
+                    AuthMultisigSmart::approver_scheme_ids_slot(),
                 )]
             },
             AccountComponentInterface::AuthNoAuth => vec![AuthMethod::NoAuth],

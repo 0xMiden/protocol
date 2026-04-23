@@ -69,6 +69,15 @@ static GUARDED_MULTISIG_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     Library::read_from_bytes(bytes).expect("Shipped Guarded Multisig library is well-formed")
 });
 
+/// Initialize the Multisig Smart library only once.
+static MULTISIG_SMART_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+    let bytes = include_bytes!(concat!(
+        env!("OUT_DIR"),
+        "/assets/account_components/auth/multisig_smart.masl"
+    ));
+    Library::read_from_bytes(bytes).expect("Shipped Multisig Smart library is well-formed")
+});
+
 // Initialize the NoAuth library only once.
 static NO_AUTH_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     let bytes =
@@ -214,6 +223,11 @@ pub fn guarded_multisig_library() -> Library {
     GUARDED_MULTISIG_LIBRARY.clone()
 }
 
+/// Returns the Multisig Smart Library.
+pub fn multisig_smart_library() -> Library {
+    MULTISIG_SMART_LIBRARY.clone()
+}
+
 /// Returns the NoAuth Library.
 pub fn no_auth_library() -> Library {
     NO_AUTH_LIBRARY.clone()
@@ -232,6 +246,7 @@ pub enum StandardAccountComponent {
     AuthSingleSig,
     AuthSingleSigAcl,
     AuthMultisig,
+    AuthMultisigSmart,
     AuthGuardedMultisig,
     AuthNoAuth,
 }
@@ -246,7 +261,9 @@ impl StandardAccountComponent {
             Self::NetworkFungibleFaucet => NETWORK_FUNGIBLE_FAUCET_LIBRARY.as_ref(),
             Self::AuthSingleSig => SINGLESIG_LIBRARY.as_ref(),
             Self::AuthSingleSigAcl => SINGLESIG_ACL_LIBRARY.as_ref(),
+
             Self::AuthMultisig => MULTISIG_LIBRARY.as_ref(),
+            Self::AuthMultisigSmart => MULTISIG_SMART_LIBRARY.as_ref(),
             Self::AuthGuardedMultisig => GUARDED_MULTISIG_LIBRARY.as_ref(),
             Self::AuthNoAuth => NO_AUTH_LIBRARY.as_ref(),
         };
@@ -306,6 +323,9 @@ impl StandardAccountComponent {
                 Self::AuthGuardedMultisig => {
                     component_interface_vec.push(AccountComponentInterface::AuthGuardedMultisig)
                 },
+                Self::AuthMultisigSmart => {
+                    component_interface_vec.push(AccountComponentInterface::AuthMultisigSmart)
+                },
                 Self::AuthNoAuth => {
                     component_interface_vec.push(AccountComponentInterface::AuthNoAuth)
                 },
@@ -325,6 +345,7 @@ impl StandardAccountComponent {
         Self::NetworkFungibleFaucet.extract_component(procedures_set, component_interface_vec);
         Self::AuthSingleSig.extract_component(procedures_set, component_interface_vec);
         Self::AuthSingleSigAcl.extract_component(procedures_set, component_interface_vec);
+        Self::AuthMultisigSmart.extract_component(procedures_set, component_interface_vec);
         Self::AuthGuardedMultisig.extract_component(procedures_set, component_interface_vec);
         Self::AuthMultisig.extract_component(procedures_set, component_interface_vec);
         Self::AuthNoAuth.extract_component(procedures_set, component_interface_vec);
