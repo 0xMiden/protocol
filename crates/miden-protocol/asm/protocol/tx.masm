@@ -9,7 +9,7 @@ use miden::protocol::kernel_proc_offsets::TX_PREPARE_FPI_OFFSET
 use miden::protocol::kernel_proc_offsets::TX_EXEC_FOREIGN_PROC_OFFSET
 use miden::protocol::kernel_proc_offsets::TX_UPDATE_EXPIRATION_BLOCK_DELTA_OFFSET
 use miden::protocol::kernel_proc_offsets::TX_GET_EXPIRATION_DELTA_OFFSET
-use miden::protocol::kernel_proc_offsets::TX_GET_SCRIPT_ROOT_OFFSET
+use miden::protocol::kernel_proc_offsets::TX_GET_TX_SCRIPT_ROOT_OFFSET
 
 #! Returns the block number of the transaction reference block.
 #!
@@ -331,12 +331,12 @@ end
 #!   word if no transaction script was executed.
 #!
 #! Invocation: exec
-pub proc get_script_root
+pub proc get_tx_script_root
     # pad the stack
     padw padw padw push.0.0.0
     # => [pad(15)]
 
-    push.TX_GET_SCRIPT_ROOT_OFFSET
+    push.TX_GET_TX_SCRIPT_ROOT_OFFSET
     # => [offset, pad(15)]
 
     syscall.exec_kernel_proc
