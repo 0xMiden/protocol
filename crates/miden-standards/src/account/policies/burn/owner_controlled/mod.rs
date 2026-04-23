@@ -1,8 +1,8 @@
 //! Owner-controlled burn policies.
 //!
 //! Each policy under this family is intended to be paired with a
-//! [`crate::account::policies::manager::BurnPolicyManager`] configured with
-//! [`crate::account::policies::manager::BurnPolicyAuthority::OwnerControlled`].
+//! [`crate::account::policies::burn::PolicyManager`] configured with
+//! [`crate::account::policies::burn::PolicyAuthority::OwnerControlled`].
 
 mod owner_only;
 
@@ -15,9 +15,9 @@ use crate::account::policies::burn::AllowAll;
 // ================================================================================================
 
 /// Initial configuration for an owner-controlled
-/// [`crate::account::policies::manager::BurnPolicyManager`].
+/// [`crate::account::policies::burn::PolicyManager`].
 ///
-/// Passed to [`crate::account::policies::manager::BurnPolicyManager::owner_controlled`] to select
+/// Passed to [`crate::account::policies::burn::PolicyManager::owner_controlled`] to select
 /// which policy is active when the faucet is first created.
 ///
 /// Note: burn managers in the owner-controlled family register BOTH `owner_only` and `allow_all`

@@ -4,6 +4,6 @@
 # allowed_policy_proc_roots) and exposes the management procedures. Pair with any
 # burn policy component whose procedure root is registered in the allowed-policies map.
 
-pub use ::miden::standards::burn_policies::policy_manager::set_burn_policy
-pub use ::miden::standards::burn_policies::policy_manager::get_burn_policy
-pub use ::miden::standards::burn_policies::policy_manager::execute_burn_policy
+pub use ::miden::standards::policies::burn::policy_manager::set_burn_policy
+pub use ::miden::standards::policies::burn::policy_manager::get_burn_policy
+pub use ::miden::standards::policies::burn::policy_manager::execute_burn_policy

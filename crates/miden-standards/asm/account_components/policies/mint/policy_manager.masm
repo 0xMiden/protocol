@@ -4,6 +4,6 @@
 # allowed_policy_proc_roots) and exposes the management procedures. Pair with any
 # mint policy component whose procedure root is registered in the allowed-policies map.
 
-pub use ::miden::standards::mint_policies::policy_manager::set_mint_policy
-pub use ::miden::standards::mint_policies::policy_manager::get_mint_policy
-pub use ::miden::standards::mint_policies::policy_manager::execute_mint_policy
+pub use ::miden::standards::policies::mint::policy_manager::set_mint_policy
+pub use ::miden::standards::policies::mint::policy_manager::get_mint_policy
+pub use ::miden::standards::policies::mint::policy_manager::execute_mint_policy

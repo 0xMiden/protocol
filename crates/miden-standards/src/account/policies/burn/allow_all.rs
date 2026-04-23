@@ -17,7 +17,7 @@ procedure_digest!(
 
 /// The storage-free `allow_all` burn policy account component.
 ///
-/// Pair with a [`crate::account::policies::manager::BurnPolicyManager`] whose allowed-policies
+/// Pair with a [`crate::account::policies::burn::PolicyManager`] whose allowed-policies
 /// map includes [`AllowAll::root`]. `allow_all` makes burning permissionless (no additional
 /// authorization beyond the manager's authority gate).
 #[derive(Debug, Clone, Copy, Default)]
@@ -25,7 +25,7 @@ pub struct AllowAll;
 
 impl AllowAll {
     /// The name of the component.
-    pub const NAME: &'static str = "miden::standards::components::burn_policies::mod";
+    pub const NAME: &'static str = "miden::standards::components::policies::burn::mod";
 
     const PROC_NAME: &str = "allow_all";
 

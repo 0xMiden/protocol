@@ -15,7 +15,6 @@ use crate::account::auth::{AuthSingleSigAcl, AuthSingleSigAclConfig};
 use crate::account::components::basic_fungible_faucet_library;
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
 use crate::account::metadata::FungibleTokenMetadata;
-use crate::account::policies::manager::{BurnPolicyManager, MintPolicyManager};
 use crate::account::policies::{burn, mint};
 use crate::procedure_digest;
 
@@ -147,8 +146,8 @@ impl TryFrom<&Account> for BasicFungibleFaucet {
 /// - [`FungibleTokenMetadata`] (token metadata, name, description, etc.)
 /// - [`BasicFungibleFaucet`] (mint_and_send and burn procedures)
 /// - [`AuthSingleSigAcl`]
-/// - [`MintPolicyManager`] + [`mint::AllowAll`] (auth-controlled, allow-all mint policy)
-/// - [`BurnPolicyManager`] + [`burn::AllowAll`] (auth-controlled, allow-all burn policy)
+/// - [`mint::PolicyManager`] + [`mint::AllowAll`] (auth-controlled, allow-all mint policy)
+/// - [`burn::PolicyManager`] + [`burn::AllowAll`] (auth-controlled, allow-all burn policy)
 pub fn create_basic_fungible_faucet(
     init_seed: [u8; 32],
     metadata: FungibleTokenMetadata,
@@ -191,9 +190,9 @@ pub fn create_basic_fungible_faucet(
         .with_auth_component(auth_component)
         .with_component(metadata)
         .with_component(BasicFungibleFaucet)
-        .with_component(MintPolicyManager::auth_controlled())
+        .with_component(mint::PolicyManager::auth_controlled())
         .with_component(mint::AllowAll)
-        .with_component(BurnPolicyManager::auth_controlled())
+        .with_component(burn::PolicyManager::auth_controlled())
         .with_component(burn::AllowAll)
         .build()
         .map_err(FungibleFaucetError::AccountError)?;

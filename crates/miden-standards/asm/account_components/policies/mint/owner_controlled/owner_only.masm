@@ -3,4 +3,4 @@
 # Exposes the `owner_only` procedure so its MAST root can be registered as the active
 # (or allowed) policy on a `MintPolicyManager`. Storage-free.
 
-pub use ::miden::standards::mint_policies::owner_controlled::owner_only
+pub use ::miden::standards::policies::mint::owner_controlled::owner_only

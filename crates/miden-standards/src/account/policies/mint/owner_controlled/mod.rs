@@ -1,8 +1,8 @@
 //! Owner-controlled mint policies.
 //!
 //! Each policy under this family is intended to be paired with a
-//! [`crate::account::policies::manager::MintPolicyManager`] configured with
-//! [`crate::account::policies::manager::MintPolicyAuthority::OwnerControlled`].
+//! [`crate::account::policies::mint::PolicyManager`] configured with
+//! [`crate::account::policies::mint::PolicyAuthority::OwnerControlled`].
 
 mod owner_only;
 
@@ -13,9 +13,9 @@ pub use owner_only::OwnerOnly;
 // ================================================================================================
 
 /// Initial configuration for an owner-controlled
-/// [`crate::account::policies::manager::MintPolicyManager`].
+/// [`crate::account::policies::mint::PolicyManager`].
 ///
-/// Passed to [`crate::account::policies::manager::MintPolicyManager::owner_controlled`] to select
+/// Passed to [`crate::account::policies::mint::PolicyManager::owner_controlled`] to select
 /// which policy is active when the faucet is first created. Future owner-controlled policies will
 /// show up here as additional variants.
 #[derive(Debug, Clone, Copy, Default)]

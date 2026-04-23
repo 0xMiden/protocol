@@ -46,15 +46,15 @@ static ALLOWED_POLICY_PROC_ROOTS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock
 /// Identifies which authority is allowed to manage the active burn policy for a faucet.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BurnPolicyAuthority {
+pub enum PolicyAuthority {
     /// Burn policy changes are authorized by the account's authentication component logic.
     AuthControlled = 0,
     /// Burn policy changes are authorized by the external account owner.
     OwnerControlled = 1,
 }
 
-impl From<BurnPolicyAuthority> for Word {
-    fn from(value: BurnPolicyAuthority) -> Self {
+impl From<PolicyAuthority> for Word {
+    fn from(value: PolicyAuthority) -> Self {
         Word::from([value as u8, 0, 0, 0])
     }
 }
@@ -64,7 +64,7 @@ impl From<BurnPolicyAuthority> for Word {
 
 /// An [`AccountComponent`] that owns the storage and procedures of the burn policy manager.
 ///
-/// Reexports the manager procedures from `miden::standards::burn_policies::policy_manager`:
+/// Reexports the manager procedures from `miden::standards::policies::burn::policy_manager`:
 /// - `set_burn_policy`
 /// - `get_burn_policy`
 /// - `execute_burn_policy`
@@ -72,22 +72,22 @@ impl From<BurnPolicyAuthority> for Word {
 /// Must be paired with at least one burn policy component (e.g. [`AllowAll`] or [`OwnerOnly`])
 /// whose procedure root is registered in the allowed-policies map.
 #[derive(Debug, Clone)]
-pub struct BurnPolicyManager {
-    authority: BurnPolicyAuthority,
+pub struct PolicyManager {
+    authority: PolicyAuthority,
     active_policy: Word,
     allowed_policies: Vec<Word>,
 }
 
-impl BurnPolicyManager {
+impl PolicyManager {
     /// The name of the component.
-    pub const NAME: &'static str = "miden::standards::components::burn_policies::policy_manager";
+    pub const NAME: &'static str = "miden::standards::components::policies::burn::policy_manager";
 
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
-    /// Creates a new [`BurnPolicyManager`] with the given authority and active policy root. The
-    /// active policy is automatically added to the allowed-policies list.
-    pub fn new(authority: BurnPolicyAuthority, active_policy: Word) -> Self {
+    /// Creates a new [`PolicyManager`] with the given authority and active policy root. The active
+    /// policy is automatically added to the allowed-policies list.
+    pub fn new(authority: PolicyAuthority, active_policy: Word) -> Self {
         Self {
             authority,
             active_policy,
@@ -98,14 +98,14 @@ impl BurnPolicyManager {
     /// Convenience: an auth-controlled manager with `allow_all` as the active (and only allowed)
     /// policy.
     pub fn auth_controlled() -> Self {
-        Self::new(BurnPolicyAuthority::AuthControlled, AllowAll::root())
+        Self::new(PolicyAuthority::AuthControlled, AllowAll::root())
     }
 
     /// Convenience: an owner-controlled manager. The active policy is chosen by `config`; both
     /// `allow_all` and `owner_only` are registered in the allowed-policies list so the owner can
     /// switch between them at runtime via `set_burn_policy`.
     pub fn owner_controlled(config: BurnOwnerControlledConfig) -> Self {
-        Self::new(BurnPolicyAuthority::OwnerControlled, config.initial_policy_root())
+        Self::new(PolicyAuthority::OwnerControlled, config.initial_policy_root())
             .with_allowed_policy(AllowAll::root())
             .with_allowed_policy(OwnerOnly::root())
     }
@@ -122,7 +122,7 @@ impl BurnPolicyManager {
     // --------------------------------------------------------------------------------------------
 
     /// Returns the authority used by this manager.
-    pub fn authority(&self) -> BurnPolicyAuthority {
+    pub fn authority(&self) -> PolicyAuthority {
         self.authority
     }
 
@@ -222,12 +222,12 @@ impl BurnPolicyManager {
     }
 }
 
-impl From<BurnPolicyManager> for AccountComponent {
-    fn from(manager: BurnPolicyManager) -> Self {
+impl From<PolicyManager> for AccountComponent {
+    fn from(manager: PolicyManager) -> Self {
         AccountComponent::new(
             burn_policy_manager_library(),
             manager.initial_storage_slots(),
-            BurnPolicyManager::component_metadata(),
+            PolicyManager::component_metadata(),
         )
         .expect(
             "burn policy manager component should satisfy the requirements of a valid account component",

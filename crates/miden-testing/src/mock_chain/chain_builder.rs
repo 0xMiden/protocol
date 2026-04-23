@@ -55,7 +55,6 @@ use miden_standards::account::metadata::{
     TokenName,
 };
 use miden_standards::account::policies::burn::owner_controlled::BurnOwnerControlledConfig;
-use miden_standards::account::policies::manager::{BurnPolicyManager, MintPolicyManager};
 use miden_standards::account::policies::mint::owner_controlled::MintOwnerControlledConfig;
 use miden_standards::account::policies::{burn, mint};
 use miden_standards::account::wallets::BasicWallet;
@@ -347,9 +346,9 @@ impl MockChainBuilder {
         let account_builder = AccountBuilder::new(self.rng.random())
             .storage_mode(AccountStorageMode::Public)
             .account_type(AccountType::FungibleFaucet)
-            .with_component(MintPolicyManager::auth_controlled())
+            .with_component(mint::PolicyManager::auth_controlled())
             .with_component(mint::AllowAll)
-            .with_component(BurnPolicyManager::auth_controlled())
+            .with_component(burn::PolicyManager::auth_controlled())
             .with_component(burn::AllowAll)
             .with_component(metadata)
             .with_component(BasicFungibleFaucet);
@@ -386,9 +385,9 @@ impl MockChainBuilder {
             .storage_mode(AccountStorageMode::Public)
             .with_component(metadata)
             .with_component(BasicFungibleFaucet)
-            .with_component(MintPolicyManager::auth_controlled())
+            .with_component(mint::PolicyManager::auth_controlled())
             .with_component(mint::AllowAll)
-            .with_component(BurnPolicyManager::auth_controlled())
+            .with_component(burn::PolicyManager::auth_controlled())
             .with_component(burn::AllowAll)
             .account_type(AccountType::FungibleFaucet);
 
@@ -400,7 +399,7 @@ impl MockChainBuilder {
     /// Network fungible faucets always use `AccountStorageMode::Network` and `Auth::NoAuth`.
     ///
     /// `mint_policy` selects the initial active mint policy on the faucet. The installed
-    /// [`MintPolicyManager`] is always owner-controlled.
+    /// [`mint::PolicyManager`] is always owner-controlled.
     pub fn add_existing_network_faucet(
         &mut self,
         token_symbol: &str,
@@ -429,9 +428,9 @@ impl MockChainBuilder {
             .with_component(metadata)
             .with_component(NetworkFungibleFaucet)
             .with_component(Ownable2Step::new(owner_account_id))
-            .with_component(MintPolicyManager::owner_controlled(mint_policy))
+            .with_component(mint::PolicyManager::owner_controlled(mint_policy))
             .with_component(mint::owner_controlled::OwnerOnly)
-            .with_component(BurnPolicyManager::owner_controlled(
+            .with_component(burn::PolicyManager::owner_controlled(
                 BurnOwnerControlledConfig::AllowAll,
             ))
             .with_component(burn::owner_controlled::OwnerOnly)
@@ -455,11 +454,11 @@ impl MockChainBuilder {
             .with_component(metadata)
             .with_component(NetworkFungibleFaucet)
             .with_component(Ownable2Step::new(owner_account_id))
-            .with_component(MintPolicyManager::owner_controlled(
+            .with_component(mint::PolicyManager::owner_controlled(
                 MintOwnerControlledConfig::OwnerOnly,
             ))
             .with_component(mint::owner_controlled::OwnerOnly)
-            .with_component(BurnPolicyManager::owner_controlled(
+            .with_component(burn::PolicyManager::owner_controlled(
                 BurnOwnerControlledConfig::AllowAll,
             ))
             .with_component(burn::owner_controlled::OwnerOnly)

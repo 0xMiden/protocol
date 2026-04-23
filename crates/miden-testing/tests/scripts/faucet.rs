@@ -32,7 +32,6 @@ use miden_standards::account::access::Ownable2Step;
 use miden_standards::account::faucets::{BasicFungibleFaucet, NetworkFungibleFaucet};
 use miden_standards::account::metadata::FungibleTokenMetadata;
 use miden_standards::account::policies::burn;
-use miden_standards::account::policies::manager::BurnPolicyManager;
 use miden_standards::account::policies::mint::owner_controlled::MintOwnerControlledConfig;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
@@ -155,7 +154,7 @@ async fn execute_faucet_note_script(
 fn create_set_burn_policy_note_script(policy_root: Word) -> String {
     format!(
         r#"
-        use miden::standards::burn_policies::policy_manager
+        use miden::standards::policies::burn::policy_manager
 
         begin
             padw padw padw
@@ -776,7 +775,7 @@ async fn test_network_faucet_set_policy_rejects_non_allowed_root() -> anyhow::Re
     let invalid_policy_root = NetworkFungibleFaucet::mint_and_send_digest();
     let set_policy_note_script = format!(
         r#"
-        use miden::standards::mint_policies::policy_manager->policy_manager
+        use miden::standards::policies::mint::policy_manager->policy_manager
 
         begin
             repeat.12 push.0 end
@@ -1313,7 +1312,7 @@ fn test_network_faucet_contains_default_burn_policy_root() -> anyhow::Result<()>
         MintOwnerControlledConfig::OwnerOnly,
     )?;
 
-    let stored_root = faucet.storage().get_item(BurnPolicyManager::active_policy_slot())?;
+    let stored_root = faucet.storage().get_item(burn::PolicyManager::active_policy_slot())?;
 
     assert_eq!(stored_root, burn::AllowAll::root());
     assert!(faucet.code().has_procedure(stored_root));

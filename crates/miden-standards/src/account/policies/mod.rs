@@ -1,16 +1,14 @@
-//! Mint and burn policy account components and their policy manager.
+//! Mint and burn policy account components and their policy managers.
 //!
-//! Policies are the procedures that gate minting and burning of tokens. They are installed on a
-//! faucet alongside a [`manager::MintPolicyManager`] / [`manager::BurnPolicyManager`] which owns
-//! the three manager storage slots (authority, active_policy, allowed_policies) and exposes the
-//! `set_*_policy` / `get_*_policy` / `execute_*_policy` procedures.
+//! Policies are the procedures that gate minting and burning of tokens. Each side ([`mint`],
+//! [`burn`]) exposes:
+//! - A [`PolicyManager`](mint::PolicyManager) that owns the three manager storage slots and the
+//!   `set_*_policy` / `get_*_policy` / `execute_*_policy` procedures.
+//! - Storage-free policy components (e.g. `mint::AllowAll`, `mint::owner_controlled::OwnerOnly`)
+//!   that install a specific policy procedure on the account.
 //!
-//! Policies are grouped by family (matching the `asm/account_components/{mint,burn}_policies/`
-//! layout):
-//! - Top-level policies (e.g. [`mint::AllowAll`], [`burn::AllowAll`]) — universal, no family.
-//! - [`mint::owner_controlled`] / [`burn::owner_controlled`] — policies intended for use with an
-//!   owner-controlled manager.
+//! A faucet installs the manager together with at least one policy component whose procedure root
+//! is registered in the manager's allowed-policies map.
 
 pub mod burn;
-pub mod manager;
 pub mod mint;

@@ -3,4 +3,4 @@
 # Exposes the `allow_all` procedure so its MAST root can be registered as the active
 # (or allowed) policy on a `BurnPolicyManager`. Storage-free.
 
-pub use ::miden::standards::burn_policies::allow_all
+pub use ::miden::standards::policies::burn::allow_all

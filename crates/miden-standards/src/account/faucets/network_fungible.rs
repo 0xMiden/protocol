@@ -16,7 +16,6 @@ use crate::account::components::network_fungible_faucet_library;
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
 use crate::account::metadata::FungibleTokenMetadata;
 use crate::account::policies::burn::owner_controlled::BurnOwnerControlledConfig;
-use crate::account::policies::manager::{BurnPolicyManager, MintPolicyManager};
 use crate::account::policies::mint::owner_controlled::MintOwnerControlledConfig;
 use crate::account::policies::{burn, mint};
 use crate::procedure_digest;
@@ -154,7 +153,7 @@ impl TryFrom<&Account> for NetworkFungibleFaucet {
 /// - [`NoAuth`] for authentication
 ///
 /// The storage layout of the faucet account is documented on the [`NetworkFungibleFaucet`],
-/// [`MintPolicyManager`], [`BurnPolicyManager`], and [`crate::account::access::Ownable2Step`]
+/// [`mint::PolicyManager`], [`burn::PolicyManager`], and [`crate::account::access::Ownable2Step`]
 /// component types. The mint and burn policy components installed alongside them
 /// ([`mint::owner_controlled::OwnerOnly`], [`burn::owner_controlled::OwnerOnly`],
 /// [`burn::AllowAll`]) are storage-free. The faucet contains no additional storage slots for its
@@ -186,9 +185,9 @@ pub fn create_network_fungible_faucet(
         .with_component(metadata)
         .with_component(NetworkFungibleFaucet)
         .with_component(access_control)
-        .with_component(MintPolicyManager::owner_controlled(MintOwnerControlledConfig::OwnerOnly))
+        .with_component(mint::PolicyManager::owner_controlled(MintOwnerControlledConfig::OwnerOnly))
         .with_component(mint::owner_controlled::OwnerOnly)
-        .with_component(BurnPolicyManager::owner_controlled(BurnOwnerControlledConfig::AllowAll))
+        .with_component(burn::PolicyManager::owner_controlled(BurnOwnerControlledConfig::AllowAll))
         .with_component(burn::owner_controlled::OwnerOnly)
         .with_component(burn::AllowAll)
         .build()

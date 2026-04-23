@@ -17,7 +17,7 @@ procedure_digest!(
 
 /// The storage-free `owner_only` burn policy account component (owner-controlled family).
 ///
-/// Pair with a [`crate::account::policies::manager::BurnPolicyManager`] whose allowed-policies
+/// Pair with a [`crate::account::policies::burn::PolicyManager`] whose allowed-policies
 /// map includes [`OwnerOnly::root`]. When active, only the account owner (as recorded by the
 /// `Ownable2Step` component) may trigger burn operations.
 #[derive(Debug, Clone, Copy, Default)]
@@ -26,7 +26,7 @@ pub struct OwnerOnly;
 impl OwnerOnly {
     /// The name of the component.
     pub const NAME: &'static str =
-        "miden::standards::components::burn_policies::owner_controlled::owner_only";
+        "miden::standards::components::policies::burn::owner_controlled::owner_only";
 
     const PROC_NAME: &str = "owner_only";
 

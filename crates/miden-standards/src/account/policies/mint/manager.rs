@@ -46,15 +46,15 @@ static ALLOWED_POLICY_PROC_ROOTS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock
 /// Identifies which authority is allowed to manage the active mint policy for a faucet.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MintPolicyAuthority {
+pub enum PolicyAuthority {
     /// Mint policy changes are authorized by the account's authentication component logic.
     AuthControlled = 0,
     /// Mint policy changes are authorized by the external account owner.
     OwnerControlled = 1,
 }
 
-impl From<MintPolicyAuthority> for Word {
-    fn from(value: MintPolicyAuthority) -> Self {
+impl From<PolicyAuthority> for Word {
+    fn from(value: PolicyAuthority) -> Self {
         Word::from([value as u8, 0, 0, 0])
     }
 }
@@ -64,7 +64,7 @@ impl From<MintPolicyAuthority> for Word {
 
 /// An [`AccountComponent`] that owns the storage and procedures of the mint policy manager.
 ///
-/// Reexports the manager procedures from `miden::standards::mint_policies::policy_manager`:
+/// Reexports the manager procedures from `miden::standards::policies::mint::policy_manager`:
 /// - `set_mint_policy`
 /// - `get_mint_policy`
 /// - `execute_mint_policy`
@@ -72,22 +72,22 @@ impl From<MintPolicyAuthority> for Word {
 /// Must be paired with at least one mint policy component (e.g. [`AllowAll`] or [`OwnerOnly`])
 /// whose procedure root is registered in the allowed-policies map.
 #[derive(Debug, Clone)]
-pub struct MintPolicyManager {
-    authority: MintPolicyAuthority,
+pub struct PolicyManager {
+    authority: PolicyAuthority,
     active_policy: Word,
     allowed_policies: Vec<Word>,
 }
 
-impl MintPolicyManager {
+impl PolicyManager {
     /// The name of the component.
-    pub const NAME: &'static str = "miden::standards::components::mint_policies::policy_manager";
+    pub const NAME: &'static str = "miden::standards::components::policies::mint::policy_manager";
 
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
-    /// Creates a new [`MintPolicyManager`] with the given authority and active policy root. The
-    /// active policy is automatically added to the allowed-policies list.
-    pub fn new(authority: MintPolicyAuthority, active_policy: Word) -> Self {
+    /// Creates a new [`PolicyManager`] with the given authority and active policy root. The active
+    /// policy is automatically added to the allowed-policies list.
+    pub fn new(authority: PolicyAuthority, active_policy: Word) -> Self {
         Self {
             authority,
             active_policy,
@@ -98,14 +98,14 @@ impl MintPolicyManager {
     /// Convenience: an auth-controlled manager with `allow_all` as the active (and only allowed)
     /// policy.
     pub fn auth_controlled() -> Self {
-        Self::new(MintPolicyAuthority::AuthControlled, AllowAll::root())
+        Self::new(PolicyAuthority::AuthControlled, AllowAll::root())
     }
 
     /// Convenience: an owner-controlled manager. The active policy is chosen by `config`;
     /// [`OwnerOnly::root`] is always registered in the allowed-policies list so the owner can
     /// switch to it at runtime if a different active policy was chosen initially.
     pub fn owner_controlled(config: MintOwnerControlledConfig) -> Self {
-        Self::new(MintPolicyAuthority::OwnerControlled, config.initial_policy_root())
+        Self::new(PolicyAuthority::OwnerControlled, config.initial_policy_root())
             .with_allowed_policy(OwnerOnly::root())
     }
 
@@ -121,7 +121,7 @@ impl MintPolicyManager {
     // --------------------------------------------------------------------------------------------
 
     /// Returns the authority used by this manager.
-    pub fn authority(&self) -> MintPolicyAuthority {
+    pub fn authority(&self) -> PolicyAuthority {
         self.authority
     }
 
@@ -221,12 +221,12 @@ impl MintPolicyManager {
     }
 }
 
-impl From<MintPolicyManager> for AccountComponent {
-    fn from(manager: MintPolicyManager) -> Self {
+impl From<PolicyManager> for AccountComponent {
+    fn from(manager: PolicyManager) -> Self {
         AccountComponent::new(
             mint_policy_manager_library(),
             manager.initial_storage_slots(),
-            MintPolicyManager::component_metadata(),
+            PolicyManager::component_metadata(),
         )
         .expect(
             "mint policy manager component should satisfy the requirements of a valid account component",
