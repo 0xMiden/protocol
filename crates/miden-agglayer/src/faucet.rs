@@ -16,9 +16,8 @@ use miden_protocol::account::{
 use miden_protocol::asset::TokenSymbol;
 use miden_protocol::errors::AccountIdError;
 use miden_standards::account::access::Ownable2Step;
-use miden_standards::account::burn_policies::BurnOwnerControlled;
 use miden_standards::account::faucets::{FungibleFaucetError, TokenMetadata};
-use miden_standards::account::mint_policies::MintOwnerControlled;
+use miden_standards::account::policy_manager::{BurnPolicyManager, MintPolicyManager};
 use miden_utils_sync::LazyLock;
 use thiserror::Error;
 
@@ -365,12 +364,12 @@ impl AggLayerFaucet {
             &*METADATA_HASH_HI_SLOT_NAME,
             TokenMetadata::metadata_slot(),
             Ownable2Step::slot_name(),
-            MintOwnerControlled::active_policy_proc_root_slot(),
-            MintOwnerControlled::allowed_policy_proc_roots_slot(),
-            MintOwnerControlled::policy_authority_slot(),
-            BurnOwnerControlled::active_policy_proc_root_slot(),
-            BurnOwnerControlled::allowed_policy_proc_roots_slot(),
-            BurnOwnerControlled::policy_authority_slot(),
+            MintPolicyManager::active_policy_slot(),
+            MintPolicyManager::allowed_policies_slot(),
+            MintPolicyManager::policy_authority_slot(),
+            BurnPolicyManager::active_policy_slot(),
+            BurnPolicyManager::allowed_policies_slot(),
+            BurnPolicyManager::policy_authority_slot(),
         ]
     }
 }

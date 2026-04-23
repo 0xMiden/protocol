@@ -1,7 +1,0 @@
-# The MASM code of the Mint Policy Auth Controlled Account Component.
-#
-# See the `MintAuthControlled` Rust type's documentation for more details.
-
-pub use ::miden::standards::mint_policies::allow_all
-pub use ::miden::standards::mint_policies::policy_manager::set_mint_policy
-pub use ::miden::standards::mint_policies::policy_manager::get_mint_policy

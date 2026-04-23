@@ -1,0 +1,6 @@
+# The MASM code of the `allow_all` Mint Policy Account Component.
+#
+# Exposes the `allow_all` procedure so its MAST root can be registered as the active
+# (or allowed) policy on a `MintPolicyManager`. Storage-free.
+
+pub use ::miden::standards::mint_policies::allow_all

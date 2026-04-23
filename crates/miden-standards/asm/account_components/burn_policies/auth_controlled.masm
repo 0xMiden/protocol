@@ -1,7 +1,0 @@
-# The MASM code of the Burn Policy Auth Controlled Account Component.
-#
-# See the `BurnAuthControlled` Rust type's documentation for more details.
-
-pub use ::miden::standards::burn_policies::allow_all
-pub use ::miden::standards::burn_policies::policy_manager::set_burn_policy
-pub use ::miden::standards::burn_policies::policy_manager::get_burn_policy

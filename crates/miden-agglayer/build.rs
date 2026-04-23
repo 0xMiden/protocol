@@ -16,8 +16,13 @@ use miden_protocol::account::{
 };
 use miden_protocol::transaction::TransactionKernel;
 use miden_standards::account::auth::NoAuth;
-use miden_standards::account::burn_policies::BurnOwnerControlled;
+use miden_standards::account::burn_policies::{BurnOwnerControlled, BurnPolicy};
 use miden_standards::account::mint_policies::MintOwnerControlled;
+use miden_standards::account::policy_manager::{
+    BurnPolicyAuthority,
+    BurnPolicyManager,
+    MintPolicyManager,
+};
 
 // CONSTANTS
 // ================================================================================================
@@ -256,8 +261,21 @@ fn generate_agglayer_constants(
             components.push(AccountComponent::from(
                 miden_standards::account::access::Ownable2Step::new(dummy_owner),
             ));
-            components.push(AccountComponent::from(MintOwnerControlled::owner_only()));
-            components.push(AccountComponent::from(BurnOwnerControlled::allow_all()));
+            // Mirror the component order used by `create_agglayer_faucet_builder` in lib.rs so
+            // the compile-time code commitment matches the one computed at runtime.
+            // Burn policy manager: active = `owner_only` (burns locked by default), `allow_all`
+            // is also allowed so the owner can open burns at runtime via `set_burn_policy`.
+            let burn_manager = BurnPolicyManager::new(
+                BurnPolicyAuthority::OwnerControlled,
+                BurnOwnerControlled::owner_only_root(),
+            )
+            .with_allowed_policy(BurnPolicy::allow_all_root());
+
+            components.push(MintPolicyManager::owner_controlled().into());
+            components.push(MintOwnerControlled::owner_only().into());
+            components.push(burn_manager.into());
+            components.push(BurnOwnerControlled::owner_only().into());
+            components.push(BurnPolicy::allow_all().into());
         }
 
         // use `AccountCode` to merge codes of agglayer and authentication components

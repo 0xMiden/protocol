@@ -1,101 +1,71 @@
-use miden_protocol::Word;
-use miden_protocol::account::component::{FeltSchema, SchemaType, StorageSlotSchema};
-use miden_protocol::account::{StorageSlot, StorageSlotName};
-use miden_protocol::utils::sync::LazyLock;
+//! Mint policy account components.
+//!
+//! Mint policies are the procedures that gate the minting of tokens. This module exposes the
+//! policy procedures as standalone, storage-free [`AccountComponent`]s. They are installed on a
+//! faucet alongside a [`crate::account::policy_manager::MintPolicyManager`] which owns the manager
+//! procedures and the 3 policy-manager storage slots.
+//!
+//! Top-level policies (at the standards path `miden::standards::mint_policies::*`) live on the
+//! [`MintPolicy`] namespace. Policies under a family (e.g.
+//! `miden::standards::mint_policies::owner_controlled::*`) live on a family-specific namespace like
+//! [`MintOwnerControlled`].
+//!
+//! [`AccountComponent`]: miden_protocol::account::AccountComponent
 
-mod auth_controlled;
 mod owner_controlled;
 
-pub use auth_controlled::{MintAuthControlled, MintAuthControlledConfig};
-pub use owner_controlled::{MintOwnerControlled, MintOwnerControlledConfig};
+use miden_protocol::Word;
+use miden_protocol::account::component::AccountComponentMetadata;
+use miden_protocol::account::{AccountComponent, AccountType};
 
-static POLICY_AUTHORITY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::mint_policy_manager::policy_authority")
-        .expect("storage slot name should be valid")
-});
+pub use self::owner_controlled::MintOwnerControlled;
+use crate::account::components::allow_all_mint_policy_library;
+use crate::procedure_digest;
 
-static ACTIVE_POLICY_PROC_ROOT_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::mint_policy_manager::active_policy_proc_root")
-        .expect("storage slot name should be valid")
-});
+// ALLOW-ALL MINT POLICY
+// ================================================================================================
 
-static ALLOWED_POLICY_PROC_ROOTS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::mint_policy_manager::allowed_policy_proc_roots")
-        .expect("storage slot name should be valid")
-});
+procedure_digest!(
+    ALLOW_ALL_POLICY_ROOT,
+    MintPolicy::NAME,
+    MintPolicy::ALLOW_ALL_PROC_NAME,
+    allow_all_mint_policy_library
+);
 
-/// Active / allowed policy root slot names shared by auth-controlled and owner-controlled
-/// components
-fn active_policy_proc_root_slot_name() -> &'static StorageSlotName {
-    &ACTIVE_POLICY_PROC_ROOT_SLOT_NAME
-}
-
-fn allowed_policy_proc_roots_slot_name() -> &'static StorageSlotName {
-    &ALLOWED_POLICY_PROC_ROOTS_SLOT_NAME
-}
-
-/// Shared storage layout for mint policy manager slots (auth- and owner-controlled components).
-pub(super) fn active_policy_proc_root_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-    (
-        ACTIVE_POLICY_PROC_ROOT_SLOT_NAME.clone(),
-        StorageSlotSchema::value("Active mint policy procedure root", SchemaType::native_word()),
-    )
-}
-
-pub(super) fn allowed_policy_proc_roots_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-    (
-        ALLOWED_POLICY_PROC_ROOTS_SLOT_NAME.clone(),
-        StorageSlotSchema::map(
-            "Allowed mint policy procedure roots",
-            SchemaType::native_word(),
-            SchemaType::native_word(),
-        ),
-    )
-}
-
-pub(super) fn policy_authority_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-    (
-        POLICY_AUTHORITY_SLOT_NAME.clone(),
-        StorageSlotSchema::value(
-            "Mint policy authority",
-            [
-                FeltSchema::u8("mint_policy_authority"),
-                FeltSchema::new_void(),
-                FeltSchema::new_void(),
-                FeltSchema::new_void(),
-            ],
-        ),
-    )
-}
-
-/// Identifies which authority is allowed to manage the active mint policy for a faucet.
+/// Namespace for top-level mint policies (those defined directly under the
+/// `miden::standards::mint_policies` module on the standards side).
 ///
-/// This value is stored in the policy authority slot so the account can distinguish whether mint
-/// policy updates are governed by authentication component logic or by the account owner.
-#[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MintPolicyAuthority {
-    /// Mint policy changes are authorized by the account's authentication component logic.
-    AuthControlled = 0,
-    /// Mint policy changes are authorized by the external account owner.
-    OwnerControlled = 1,
-}
+/// Currently exposes the storage-free `allow_all` policy. Pair the resulting [`AccountComponent`]
+/// with a [`crate::account::policy_manager::MintPolicyManager`] whose allowed-policies map
+/// includes [`MintPolicy::allow_all_root`].
+#[derive(Debug, Clone, Copy)]
+pub struct MintPolicy;
 
-impl MintPolicyAuthority {
-    /// Returns the [`StorageSlotName`] containing the mint policy authority mode.
-    pub fn slot() -> &'static StorageSlotName {
-        &POLICY_AUTHORITY_SLOT_NAME
+impl MintPolicy {
+    /// The name of the `allow_all` mint policy component.
+    pub const NAME: &'static str = "miden::standards::components::mint_policies::mod";
+
+    const ALLOW_ALL_PROC_NAME: &str = "allow_all";
+
+    /// Constructs the `allow_all` mint policy component.
+    pub fn allow_all() -> Self {
+        Self
+    }
+
+    /// Returns the MAST root of the `allow_all` mint policy procedure.
+    pub fn allow_all_root() -> Word {
+        *ALLOW_ALL_POLICY_ROOT
     }
 }
 
-impl From<MintPolicyAuthority> for Word {
-    fn from(value: MintPolicyAuthority) -> Self {
-        Word::from([value as u8, 0, 0, 0])
-    }
-}
+impl From<MintPolicy> for AccountComponent {
+    fn from(_: MintPolicy) -> Self {
+        let metadata =
+            AccountComponentMetadata::new(MintPolicy::NAME, [AccountType::FungibleFaucet])
+                .with_description("`allow_all` mint policy for fungible faucets");
 
-impl From<MintPolicyAuthority> for StorageSlot {
-    fn from(value: MintPolicyAuthority) -> Self {
-        StorageSlot::with_value(MintPolicyAuthority::slot().clone(), value.into())
+        AccountComponent::new(allow_all_mint_policy_library(), vec![], metadata).expect(
+            "`allow_all` mint policy component should satisfy the requirements of a valid account component",
+        )
     }
 }
