@@ -18,8 +18,8 @@ use miden_protocol::note::NoteScript;
 use miden_protocol::vm::Program;
 use miden_standards::account::access::Ownable2Step;
 use miden_standards::account::auth::NoAuth;
-use miden_standards::account::policies::burn::owner_controlled::BurnOwnerControlledConfig;
-use miden_standards::account::policies::mint::owner_controlled::MintOwnerControlledConfig;
+use miden_standards::account::policies::burn::owner_controlled::Config as BurnConfig;
+use miden_standards::account::policies::mint::owner_controlled::Config as MintConfig;
 use miden_standards::account::policies::{burn, mint};
 use miden_utils_sync::LazyLock;
 
@@ -243,12 +243,12 @@ fn create_agglayer_faucet_builder(
         .storage_mode(AccountStorageMode::Network)
         .with_component(agglayer_component)
         .with_component(Ownable2Step::new(bridge_account_id))
-        .with_component(mint::PolicyManager::owner_controlled(MintOwnerControlledConfig::OwnerOnly))
+        .with_component(mint::PolicyManager::owner_controlled(MintConfig::OwnerOnly))
         .with_component(mint::owner_controlled::OwnerOnly)
         // Burn policy manager: active = `owner_only` (burns locked by default); `allow_all` is
         // also registered in the allowed list so the owner can open burns at runtime via
         // `set_burn_policy`.
-        .with_component(burn::PolicyManager::owner_controlled(BurnOwnerControlledConfig::OwnerOnly))
+        .with_component(burn::PolicyManager::owner_controlled(BurnConfig::OwnerOnly))
         .with_component(burn::owner_controlled::OwnerOnly)
         .with_component(burn::AllowAll)
 }

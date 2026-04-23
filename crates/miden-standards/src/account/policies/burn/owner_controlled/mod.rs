@@ -11,20 +11,20 @@ pub use owner_only::OwnerOnly;
 
 use crate::account::policies::burn::AllowAll;
 
-// BURN OWNER-CONTROLLED CONFIG
+// CONFIG
 // ================================================================================================
 
 /// Initial configuration for an owner-controlled
 /// [`crate::account::policies::burn::PolicyManager`].
 ///
-/// Passed to [`crate::account::policies::burn::PolicyManager::owner_controlled`] to select
-/// which policy is active when the faucet is first created.
+/// Passed to [`crate::account::policies::burn::PolicyManager::owner_controlled`] to select which
+/// policy is active when the faucet is first created.
 ///
-/// Note: burn managers in the owner-controlled family register BOTH `owner_only` and `allow_all`
-/// as allowed policies so the owner can switch between them at runtime via `set_burn_policy`.
-/// This enum only selects the **initial active** policy.
+/// Note: owner-controlled burn managers register BOTH `owner_only` and `allow_all` as allowed
+/// policies so the owner can switch between them at runtime via `set_burn_policy`. This enum only
+/// selects the **initial active** policy.
 #[derive(Debug, Clone, Copy, Default)]
-pub enum BurnOwnerControlledConfig {
+pub enum Config {
     /// Active policy = [`AllowAll::root`] (burns open by default).
     #[default]
     AllowAll,
@@ -35,7 +35,7 @@ pub enum BurnOwnerControlledConfig {
     CustomInitialRoot(Word),
 }
 
-impl BurnOwnerControlledConfig {
+impl Config {
     /// Resolves the config into the concrete policy root to install as the active burn policy.
     pub fn initial_policy_root(self) -> Word {
         match self {

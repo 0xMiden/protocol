@@ -54,8 +54,8 @@ use miden_standards::account::metadata::{
     FungibleTokenMetadataBuilder,
     TokenName,
 };
-use miden_standards::account::policies::burn::owner_controlled::BurnOwnerControlledConfig;
-use miden_standards::account::policies::mint::owner_controlled::MintOwnerControlledConfig;
+use miden_standards::account::policies::burn::owner_controlled::Config as BurnConfig;
+use miden_standards::account::policies::mint::owner_controlled::Config as MintConfig;
 use miden_standards::account::policies::{burn, mint};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::note::{P2idNote, P2ideNote, P2ideNoteStorage, SwapNote};
@@ -406,7 +406,7 @@ impl MockChainBuilder {
         max_supply: u64,
         owner_account_id: AccountId,
         token_supply: Option<u64>,
-        mint_policy: MintOwnerControlledConfig,
+        mint_policy: MintConfig,
     ) -> anyhow::Result<Account> {
         let token_supply = token_supply.unwrap_or(0);
         let name = TokenName::new(token_symbol)?;
@@ -430,9 +430,7 @@ impl MockChainBuilder {
             .with_component(Ownable2Step::new(owner_account_id))
             .with_component(mint::PolicyManager::owner_controlled(mint_policy))
             .with_component(mint::owner_controlled::OwnerOnly)
-            .with_component(burn::PolicyManager::owner_controlled(
-                BurnOwnerControlledConfig::AllowAll,
-            ))
+            .with_component(burn::PolicyManager::owner_controlled(BurnConfig::AllowAll))
             .with_component(burn::owner_controlled::OwnerOnly)
             .with_component(burn::AllowAll)
             .account_type(AccountType::FungibleFaucet);
@@ -454,13 +452,9 @@ impl MockChainBuilder {
             .with_component(metadata)
             .with_component(NetworkFungibleFaucet)
             .with_component(Ownable2Step::new(owner_account_id))
-            .with_component(mint::PolicyManager::owner_controlled(
-                MintOwnerControlledConfig::OwnerOnly,
-            ))
+            .with_component(mint::PolicyManager::owner_controlled(MintConfig::OwnerOnly))
             .with_component(mint::owner_controlled::OwnerOnly)
-            .with_component(burn::PolicyManager::owner_controlled(
-                BurnOwnerControlledConfig::AllowAll,
-            ))
+            .with_component(burn::PolicyManager::owner_controlled(BurnConfig::AllowAll))
             .with_component(burn::owner_controlled::OwnerOnly)
             .with_component(burn::AllowAll)
             .account_type(AccountType::FungibleFaucet);

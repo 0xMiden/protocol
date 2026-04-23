@@ -15,8 +15,6 @@ use crate::account::auth::NoAuth;
 use crate::account::components::network_fungible_faucet_library;
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
 use crate::account::metadata::FungibleTokenMetadata;
-use crate::account::policies::burn::owner_controlled::BurnOwnerControlledConfig;
-use crate::account::policies::mint::owner_controlled::MintOwnerControlledConfig;
 use crate::account::policies::{burn, mint};
 use crate::procedure_digest;
 
@@ -185,9 +183,13 @@ pub fn create_network_fungible_faucet(
         .with_component(metadata)
         .with_component(NetworkFungibleFaucet)
         .with_component(access_control)
-        .with_component(mint::PolicyManager::owner_controlled(MintOwnerControlledConfig::OwnerOnly))
+        .with_component(mint::PolicyManager::owner_controlled(
+            mint::owner_controlled::Config::OwnerOnly,
+        ))
         .with_component(mint::owner_controlled::OwnerOnly)
-        .with_component(burn::PolicyManager::owner_controlled(BurnOwnerControlledConfig::AllowAll))
+        .with_component(burn::PolicyManager::owner_controlled(
+            burn::owner_controlled::Config::AllowAll,
+        ))
         .with_component(burn::owner_controlled::OwnerOnly)
         .with_component(burn::AllowAll)
         .build()
