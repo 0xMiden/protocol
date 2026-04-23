@@ -102,4 +102,5 @@ pub proc auth_tx_network_account
     if.true
         exec.native_account::incr_nonce drop
     end
+    # => [pad(16)]
 end
