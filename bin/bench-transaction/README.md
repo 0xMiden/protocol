@@ -92,6 +92,12 @@ The snapshot contract is documented in
 `miden-vm/benches/synthetic-tx-kernel/README.md` and
 `miden-vm/benches/synthetic-tx-kernel/src/snapshot.rs` (two tiers: `trace.*` hard-target totals, `shape.*` advisory per-chiplet breakdown).
 
+The consumer's hard match is based on padded trace brackets, not exact raw row equality:
+`padded_core_side = max(64, next_pow2(max(core_rows, range_rows)))` and
+`padded_chiplets = max(64, next_pow2(chiplets_rows))`. The raw per-chiplet `shape.*` values help
+the synthetic workload stay representative, but they are advisory profiling metadata rather than
+the primary proof-cost contract.
+
 The schema is maintained manually; there is no shared schema crate. The `schema_version` field is cross-checked at load time, and the consumer's loader rejects unknown versions. When changing the schema, bump both sides together.
 
 ## License

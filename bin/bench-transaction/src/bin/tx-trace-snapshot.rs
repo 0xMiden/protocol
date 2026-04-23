@@ -118,6 +118,8 @@ async fn capture_trace_shape(context: TransactionContext) -> Result<CapturedShap
         bitwise_rows: chiplets.bitwise_chiplet_len() as u64,
         memory_rows: chiplets.memory_chiplet_len() as u64,
         kernel_rom_rows: chiplets.kernel_rom_len() as u64,
+        // TODO: replace this with `chiplets.ace_chiplet_len()` once the protocol-side
+        // `miden-processor` dependency exposes that accessor.
         ace_rows: 0,
     };
     let trace_totals = TraceTotals {
@@ -197,4 +199,149 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use serde::Deserialize;
+
+    use super::*;
+
+    const MIN_TRACE_LEN: u64 = 64;
+
+    #[derive(Deserialize)]
+    struct SnapshotForTest {
+        schema_version: String,
+        source: String,
+        timestamp: String,
+        miden_vm_version: String,
+        trace: TraceTotalsForTest,
+        shape: TraceBreakdownForTest,
+    }
+
+    #[derive(Deserialize)]
+    struct TraceTotalsForTest {
+        core_rows: u64,
+        chiplets_rows: u64,
+        range_rows: u64,
+    }
+
+    #[derive(Deserialize)]
+    struct TraceBreakdownForTest {
+        hasher_rows: u64,
+        bitwise_rows: u64,
+        memory_rows: u64,
+        kernel_rom_rows: u64,
+        ace_rows: u64,
+    }
+
+    impl TraceTotalsForTest {
+        fn padded_core_side(&self) -> u64 {
+            self.core_rows.max(self.range_rows).next_power_of_two().max(MIN_TRACE_LEN)
+        }
+
+        fn padded_chiplets(&self) -> u64 {
+            self.chiplets_rows.next_power_of_two().max(MIN_TRACE_LEN)
+        }
+
+        fn padded_total(&self) -> u64 {
+            self.core_rows
+                .max(self.range_rows)
+                .max(self.chiplets_rows)
+                .next_power_of_two()
+                .max(MIN_TRACE_LEN)
+        }
+
+        fn range_dominates(&self) -> bool {
+            self.range_rows > self.core_rows && self.range_rows > self.chiplets_rows
+        }
+    }
+
+    struct ExpectedBrackets {
+        padded_core_side: u64,
+        padded_chiplets: u64,
+        padded_total: u64,
+        range_dominates: bool,
+    }
+
+    fn assert_snapshot_contract(name: &str, json: &str, expected: ExpectedBrackets) {
+        let snapshot: SnapshotForTest =
+            serde_json::from_str(json).expect("snapshot should match the schema");
+
+        assert_eq!(snapshot.schema_version, SCHEMA_VERSION);
+        assert_eq!(snapshot.source, format!("protocol/bench-transaction:{name}"));
+        assert_eq!(snapshot.miden_vm_version, MIDEN_VM_VERSION);
+        assert!(snapshot.timestamp.starts_with("unix-"));
+        assert!(snapshot.trace.core_rows > 0);
+        assert!(snapshot.trace.chiplets_rows > 0);
+        assert!(snapshot.trace.range_rows > 0);
+        assert_eq!(
+            snapshot.trace.chiplets_rows,
+            snapshot.shape.hasher_rows
+                + snapshot.shape.bitwise_rows
+                + snapshot.shape.memory_rows
+                + snapshot.shape.kernel_rom_rows
+                + snapshot.shape.ace_rows
+                + 1,
+        );
+
+        let formula_padded_core_side = snapshot
+            .trace
+            .core_rows
+            .max(snapshot.trace.range_rows)
+            .next_power_of_two()
+            .max(MIN_TRACE_LEN);
+        let formula_padded_chiplets =
+            snapshot.trace.chiplets_rows.next_power_of_two().max(MIN_TRACE_LEN);
+        let formula_padded_total = snapshot
+            .trace
+            .core_rows
+            .max(snapshot.trace.range_rows)
+            .max(snapshot.trace.chiplets_rows)
+            .next_power_of_two()
+            .max(MIN_TRACE_LEN);
+        let formula_range_dominates = snapshot.trace.range_rows > snapshot.trace.core_rows
+            && snapshot.trace.range_rows > snapshot.trace.chiplets_rows;
+
+        assert_eq!(snapshot.trace.padded_core_side(), formula_padded_core_side);
+        assert_eq!(snapshot.trace.padded_chiplets(), formula_padded_chiplets);
+        assert_eq!(snapshot.trace.padded_total(), formula_padded_total);
+        assert_eq!(snapshot.trace.range_dominates(), formula_range_dominates);
+
+        assert_eq!(snapshot.trace.padded_core_side(), expected.padded_core_side);
+        assert_eq!(snapshot.trace.padded_chiplets(), expected.padded_chiplets);
+        assert_eq!(snapshot.trace.padded_total(), expected.padded_total);
+        assert_eq!(snapshot.trace.range_dominates(), expected.range_dominates);
+
+        assert!(snapshot.trace.padded_core_side() > 0);
+        assert!(snapshot.trace.padded_core_side().is_power_of_two());
+        assert!(snapshot.trace.padded_chiplets() > 0);
+        assert!(snapshot.trace.padded_chiplets().is_power_of_two());
+        assert!(snapshot.trace.padded_total() > 0);
+        assert!(snapshot.trace.padded_total().is_power_of_two());
+    }
+
+    #[test]
+    fn committed_snapshots_match_schema() {
+        assert_snapshot_contract(
+            "consume-single-p2id",
+            include_str!("../../snapshots/consume-single-p2id.json"),
+            ExpectedBrackets {
+                padded_core_side: 131_072,
+                padded_chiplets: 131_072,
+                padded_total: 131_072,
+                range_dominates: false,
+            },
+        );
+        assert_snapshot_contract(
+            "consume-two-p2id",
+            include_str!("../../snapshots/consume-two-p2id.json"),
+            ExpectedBrackets {
+                padded_core_side: 131_072,
+                padded_chiplets: 262_144,
+                padded_total: 262_144,
+                range_dominates: false,
+            },
+        );
+    }
 }
