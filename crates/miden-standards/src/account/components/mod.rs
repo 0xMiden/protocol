@@ -146,6 +146,18 @@ static BURN_POLICY_AUTH_CONTROLLED_LIBRARY: LazyLock<Library> = LazyLock::new(||
         .expect("Shipped Burn Policy Auth Controlled library is well-formed")
 });
 
+// UTILS LIBRARIES
+// ================================================================================================
+
+// Initialize the Blocklistable library only once.
+static BLOCKLISTABLE_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+    let bytes = include_bytes!(concat!(
+        env!("OUT_DIR"),
+        "/assets/account_components/utils/blocklistable.masl"
+    ));
+    Library::read_from_bytes(bytes).expect("Shipped Blocklistable library is well-formed")
+});
+
 // METADATA LIBRARIES
 // ================================================================================================
 
@@ -192,6 +204,11 @@ pub fn burn_owner_controlled_library() -> Library {
 /// Returns the Burn Policy Auth Controlled Library.
 pub fn burn_auth_controlled_library() -> Library {
     BURN_POLICY_AUTH_CONTROLLED_LIBRARY.clone()
+}
+
+/// Returns the Blocklistable component library.
+pub fn blocklistable_library() -> Library {
+    BLOCKLISTABLE_LIBRARY.clone()
 }
 
 /// Returns the Singlesig Library.

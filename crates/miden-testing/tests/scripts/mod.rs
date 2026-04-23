@@ -1,3 +1,4 @@
+mod blocklistable;
 mod faucet;
 mod fee;
 mod ownable2step;

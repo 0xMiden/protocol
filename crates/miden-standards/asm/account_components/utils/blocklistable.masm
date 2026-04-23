@@ -1,0 +1,9 @@
+# The MASM code of the Blocklistable account component.
+#
+# NOTE: This is a temporary no-auth variant of the component for testing purposes.
+# It is intended to be replaced by dedicated owner and role-based access control wrappers.
+
+pub use ::miden::standards::utils::blocklistable::blocklist
+pub use ::miden::standards::utils::blocklistable::unblocklist
+pub use ::miden::standards::utils::blocklistable::on_before_asset_added_to_account
+pub use ::miden::standards::utils::blocklistable::on_before_asset_added_to_note

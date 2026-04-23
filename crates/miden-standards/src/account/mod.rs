@@ -2,6 +2,7 @@ use super::auth_method::AuthMethod;
 
 pub mod access;
 pub mod auth;
+pub mod blocklistable;
 pub mod burn_policies;
 pub mod components;
 pub mod faucets;
