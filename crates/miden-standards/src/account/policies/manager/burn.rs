@@ -18,93 +18,76 @@ use miden_protocol::account::{
 };
 use miden_protocol::utils::sync::LazyLock;
 
-use crate::account::components::mint_policy_manager_library;
-use crate::account::mint_policies::{
-    MintAuthControlled,
-    MintAuthControlledConfig,
-    MintOwnerControlled,
-    MintOwnerControlledConfig,
-};
+use crate::account::components::burn_policy_manager_library;
+use crate::account::policies::burn::AllowAll;
+use crate::account::policies::burn::owner_controlled::{BurnOwnerControlledConfig, OwnerOnly};
 
 // STORAGE SLOT NAMES
 // ================================================================================================
 
 static POLICY_AUTHORITY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::mint_policy_manager::policy_authority")
+    StorageSlotName::new("miden::standards::burn_policy_manager::policy_authority")
         .expect("storage slot name should be valid")
 });
 
 static ACTIVE_POLICY_PROC_ROOT_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::mint_policy_manager::active_policy_proc_root")
+    StorageSlotName::new("miden::standards::burn_policy_manager::active_policy_proc_root")
         .expect("storage slot name should be valid")
 });
 
 static ALLOWED_POLICY_PROC_ROOTS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::mint_policy_manager::allowed_policy_proc_roots")
+    StorageSlotName::new("miden::standards::burn_policy_manager::allowed_policy_proc_roots")
         .expect("storage slot name should be valid")
 });
 
 // POLICY AUTHORITY
 // ================================================================================================
 
-/// Identifies which authority is allowed to manage the active mint policy for a faucet.
-///
-/// This value is stored in the policy authority slot so the account can distinguish whether mint
-/// policy updates are governed by authentication component logic or by the account owner.
+/// Identifies which authority is allowed to manage the active burn policy for a faucet.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MintPolicyAuthority {
-    /// Mint policy changes are authorized by the account's authentication component logic.
+pub enum BurnPolicyAuthority {
+    /// Burn policy changes are authorized by the account's authentication component logic.
     AuthControlled = 0,
-    /// Mint policy changes are authorized by the external account owner.
+    /// Burn policy changes are authorized by the external account owner.
     OwnerControlled = 1,
 }
 
-impl From<MintPolicyAuthority> for Word {
-    fn from(value: MintPolicyAuthority) -> Self {
+impl From<BurnPolicyAuthority> for Word {
+    fn from(value: BurnPolicyAuthority) -> Self {
         Word::from([value as u8, 0, 0, 0])
     }
 }
 
-// MINT POLICY MANAGER
+// BURN POLICY MANAGER
 // ================================================================================================
 
-/// An [`AccountComponent`] that owns the storage and procedures of the mint policy manager.
+/// An [`AccountComponent`] that owns the storage and procedures of the burn policy manager.
 ///
-/// It reexports the manager procedures from `miden::standards::mint_policies::policy_manager`:
-/// - `set_mint_policy`
-/// - `get_mint_policy`
-/// - `execute_mint_policy`
+/// Reexports the manager procedures from `miden::standards::burn_policies::policy_manager`:
+/// - `set_burn_policy`
+/// - `get_burn_policy`
+/// - `execute_burn_policy`
 ///
-/// It must be paired with at least one mint policy component (e.g. [`MintPolicy::allow_all`] or
-/// [`MintOwnerControlled::owner_only`]) whose procedure root is registered in the allowed-policies
-/// map.
-///
-/// ## Storage Layout
-///
-/// - [`Self::active_policy_slot`]: Procedure root of the active mint policy.
-/// - [`Self::allowed_policies_slot`]: Set of allowed mint policy procedure roots.
-/// - [`Self::policy_authority_slot`]: Policy authority mode
-///   ([`MintPolicyAuthority::AuthControlled`] = tx auth, [`MintPolicyAuthority::OwnerControlled`] =
-///   external owner).
+/// Must be paired with at least one burn policy component (e.g. [`AllowAll`] or [`OwnerOnly`])
+/// whose procedure root is registered in the allowed-policies map.
 #[derive(Debug, Clone)]
-pub struct MintPolicyManager {
-    authority: MintPolicyAuthority,
+pub struct BurnPolicyManager {
+    authority: BurnPolicyAuthority,
     active_policy: Word,
     allowed_policies: Vec<Word>,
 }
 
-impl MintPolicyManager {
+impl BurnPolicyManager {
     /// The name of the component.
-    pub const NAME: &'static str = "miden::standards::components::mint_policies::policy_manager";
+    pub const NAME: &'static str = "miden::standards::components::burn_policies::policy_manager";
 
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
-    /// Creates a new [`MintPolicyManager`] with the given authority and active policy root.
-    ///
-    /// The active policy is automatically added to the allowed-policies list.
-    pub fn new(authority: MintPolicyAuthority, active_policy: Word) -> Self {
+    /// Creates a new [`BurnPolicyManager`] with the given authority and active policy root. The
+    /// active policy is automatically added to the allowed-policies list.
+    pub fn new(authority: BurnPolicyAuthority, active_policy: Word) -> Self {
         Self {
             authority,
             active_policy,
@@ -112,19 +95,19 @@ impl MintPolicyManager {
         }
     }
 
-    /// Convenience: an owner-controlled manager. The active policy is chosen by `config`; the
-    /// `owner_only` root is always registered in the allowed-policies list so the owner can switch
-    /// to it at runtime if the initial active policy differs.
-    pub fn owner_controlled(config: MintOwnerControlledConfig) -> Self {
-        Self::new(MintPolicyAuthority::OwnerControlled, config.initial_policy_root())
-            .with_allowed_policy(MintOwnerControlled::owner_only_root())
+    /// Convenience: an auth-controlled manager with `allow_all` as the active (and only allowed)
+    /// policy.
+    pub fn auth_controlled() -> Self {
+        Self::new(BurnPolicyAuthority::AuthControlled, AllowAll::root())
     }
 
-    /// Convenience: an auth-controlled manager. The active policy is chosen by `config`; the
-    /// `allow_all` root is always registered in the allowed-policies list.
-    pub fn auth_controlled(config: MintAuthControlledConfig) -> Self {
-        Self::new(MintPolicyAuthority::AuthControlled, config.initial_policy_root())
-            .with_allowed_policy(MintAuthControlled::allow_all_root())
+    /// Convenience: an owner-controlled manager. The active policy is chosen by `config`; both
+    /// `allow_all` and `owner_only` are registered in the allowed-policies list so the owner can
+    /// switch between them at runtime via `set_burn_policy`.
+    pub fn owner_controlled(config: BurnOwnerControlledConfig) -> Self {
+        Self::new(BurnPolicyAuthority::OwnerControlled, config.initial_policy_root())
+            .with_allowed_policy(AllowAll::root())
+            .with_allowed_policy(OwnerOnly::root())
     }
 
     /// Registers an additional policy root in the allowed-policies list.
@@ -139,7 +122,7 @@ impl MintPolicyManager {
     // --------------------------------------------------------------------------------------------
 
     /// Returns the authority used by this manager.
-    pub fn authority(&self) -> MintPolicyAuthority {
+    pub fn authority(&self) -> BurnPolicyAuthority {
         self.authority
     }
 
@@ -153,7 +136,7 @@ impl MintPolicyManager {
         &self.allowed_policies
     }
 
-    /// Returns the [`StorageSlotName`] where the active mint policy procedure root is stored.
+    /// Returns the [`StorageSlotName`] where the active burn policy procedure root is stored.
     pub fn active_policy_slot() -> &'static StorageSlotName {
         &ACTIVE_POLICY_PROC_ROOT_SLOT_NAME
     }
@@ -168,12 +151,12 @@ impl MintPolicyManager {
         &POLICY_AUTHORITY_SLOT_NAME
     }
 
-    /// Returns the storage slot schema for the active mint policy root.
+    /// Returns the storage slot schema for the active burn policy root.
     pub fn active_policy_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
         (
             ACTIVE_POLICY_PROC_ROOT_SLOT_NAME.clone(),
             StorageSlotSchema::value(
-                "Active mint policy procedure root",
+                "Active burn policy procedure root",
                 SchemaType::native_word(),
             ),
         )
@@ -184,7 +167,7 @@ impl MintPolicyManager {
         (
             ALLOWED_POLICY_PROC_ROOTS_SLOT_NAME.clone(),
             StorageSlotSchema::map(
-                "Allowed mint policy procedure roots",
+                "Allowed burn policy procedure roots",
                 SchemaType::native_word(),
                 SchemaType::native_word(),
             ),
@@ -196,9 +179,9 @@ impl MintPolicyManager {
         (
             POLICY_AUTHORITY_SLOT_NAME.clone(),
             StorageSlotSchema::value(
-                "Mint policy authority",
+                "Burn policy authority",
                 [
-                    FeltSchema::u8("mint_policy_authority"),
+                    FeltSchema::u8("burn_policy_authority"),
                     FeltSchema::new_void(),
                     FeltSchema::new_void(),
                     FeltSchema::new_void(),
@@ -217,7 +200,7 @@ impl MintPolicyManager {
         .expect("storage schema should be valid");
 
         AccountComponentMetadata::new(Self::NAME, [AccountType::FungibleFaucet])
-            .with_description("Mint policy manager for fungible faucets")
+            .with_description("Burn policy manager for fungible faucets")
             .with_storage_schema(storage_schema)
     }
 
@@ -229,7 +212,7 @@ impl MintPolicyManager {
             .map(|root| (StorageMapKey::from_raw(*root), allowed_flag))
             .collect();
         let allowed_map = StorageMap::with_entries(entries)
-            .expect("allowed mint policy roots should have unique keys");
+            .expect("allowed burn policy roots should have unique keys");
 
         vec![
             StorageSlot::with_value(ACTIVE_POLICY_PROC_ROOT_SLOT_NAME.clone(), self.active_policy),
@@ -239,15 +222,15 @@ impl MintPolicyManager {
     }
 }
 
-impl From<MintPolicyManager> for AccountComponent {
-    fn from(manager: MintPolicyManager) -> Self {
+impl From<BurnPolicyManager> for AccountComponent {
+    fn from(manager: BurnPolicyManager) -> Self {
         AccountComponent::new(
-            mint_policy_manager_library(),
+            burn_policy_manager_library(),
             manager.initial_storage_slots(),
-            MintPolicyManager::component_metadata(),
+            BurnPolicyManager::component_metadata(),
         )
         .expect(
-            "mint policy manager component should satisfy the requirements of a valid account component",
+            "burn policy manager component should satisfy the requirements of a valid account component",
         )
     }
 }

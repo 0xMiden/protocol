@@ -19,7 +19,7 @@ use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::note::{NoteAssets, NoteType};
 use miden_protocol::transaction::RawOutputNote;
 use miden_standards::account::faucets::TokenMetadata;
-use miden_standards::account::mint_policies::MintOwnerControlledConfig;
+use miden_standards::account::policies::mint::owner_controlled::MintOwnerControlledConfig;
 use miden_standards::note::StandardNote;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 use miden_tx::utils::hex_to_bytes;

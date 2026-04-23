@@ -17,7 +17,7 @@ use miden_protocol::asset::TokenSymbol;
 use miden_protocol::errors::AccountIdError;
 use miden_standards::account::access::Ownable2Step;
 use miden_standards::account::faucets::{FungibleFaucetError, TokenMetadata};
-use miden_standards::account::policy_manager::{BurnPolicyManager, MintPolicyManager};
+use miden_standards::account::policies::manager::{BurnPolicyManager, MintPolicyManager};
 use miden_utils_sync::LazyLock;
 use thiserror::Error;
 
@@ -89,7 +89,7 @@ static METADATA_HASH_HI_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| 
 ///
 /// This component re-exports `network_fungible::mint_and_send`, which requires:
 /// - [`Ownable2Step`]: Provides ownership data (bridge account ID as owner).
-/// - [`miden_standards::account::mint_policies::MintOwnerControlled`]: Provides mint policy
+/// - [`miden_standards::account::policies::manager::MintPolicyManager`]: Provides mint policy
 ///   management.
 ///
 /// These must be added as separate components when building the faucet account.

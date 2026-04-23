@@ -16,13 +16,10 @@ use miden_protocol::account::{
 };
 use miden_protocol::transaction::TransactionKernel;
 use miden_standards::account::auth::NoAuth;
-use miden_standards::account::burn_policies::{
-    BurnAuthControlled,
-    BurnOwnerControlled,
-    BurnOwnerControlledConfig,
-};
-use miden_standards::account::mint_policies::{MintOwnerControlled, MintOwnerControlledConfig};
-use miden_standards::account::policy_manager::{BurnPolicyManager, MintPolicyManager};
+use miden_standards::account::policies::burn::owner_controlled::BurnOwnerControlledConfig;
+use miden_standards::account::policies::manager::{BurnPolicyManager, MintPolicyManager};
+use miden_standards::account::policies::mint::owner_controlled::MintOwnerControlledConfig;
+use miden_standards::account::policies::{burn, mint};
 
 // CONSTANTS
 // ================================================================================================
@@ -266,14 +263,14 @@ fn generate_agglayer_constants(
             components.push(
                 MintPolicyManager::owner_controlled(MintOwnerControlledConfig::OwnerOnly).into(),
             );
-            components.push(MintOwnerControlled::owner_only().into());
+            components.push(mint::owner_controlled::OwnerOnly.into());
             // Burn policy manager: active = `owner_only` (burns locked by default), `allow_all`
             // is also allowed so the owner can open burns at runtime via `set_burn_policy`.
             components.push(
                 BurnPolicyManager::owner_controlled(BurnOwnerControlledConfig::OwnerOnly).into(),
             );
-            components.push(BurnOwnerControlled::owner_only().into());
-            components.push(BurnAuthControlled::allow_all().into());
+            components.push(burn::owner_controlled::OwnerOnly.into());
+            components.push(burn::AllowAll.into());
         }
 
         // use `AccountCode` to merge codes of agglayer and authentication components

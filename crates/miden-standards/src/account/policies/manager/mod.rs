@@ -1,3 +1,5 @@
+//! Mint and burn policy manager account components.
+
 mod burn;
 mod mint;
 

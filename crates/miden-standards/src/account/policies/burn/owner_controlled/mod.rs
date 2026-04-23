@@ -1,0 +1,47 @@
+//! Owner-controlled burn policies.
+//!
+//! Each policy under this family is intended to be paired with a
+//! [`crate::account::policies::manager::BurnPolicyManager`] configured with
+//! [`crate::account::policies::manager::BurnPolicyAuthority::OwnerControlled`].
+
+mod owner_only;
+
+use miden_protocol::Word;
+pub use owner_only::OwnerOnly;
+
+use crate::account::policies::burn::AllowAll;
+
+// BURN OWNER-CONTROLLED CONFIG
+// ================================================================================================
+
+/// Initial configuration for an owner-controlled
+/// [`crate::account::policies::manager::BurnPolicyManager`].
+///
+/// Passed to [`crate::account::policies::manager::BurnPolicyManager::owner_controlled`] to select
+/// which policy is active when the faucet is first created.
+///
+/// Note: burn managers in the owner-controlled family register BOTH `owner_only` and `allow_all`
+/// as allowed policies so the owner can switch between them at runtime via `set_burn_policy`.
+/// This enum only selects the **initial active** policy.
+#[derive(Debug, Clone, Copy, Default)]
+pub enum BurnOwnerControlledConfig {
+    /// Active policy = [`AllowAll::root`] (burns open by default).
+    #[default]
+    AllowAll,
+    /// Active policy = [`OwnerOnly::root`] (burns locked to owner).
+    OwnerOnly,
+    /// Active policy = the provided root. Must be one of the allowed policy roots registered on
+    /// the manager.
+    CustomInitialRoot(Word),
+}
+
+impl BurnOwnerControlledConfig {
+    /// Resolves the config into the concrete policy root to install as the active burn policy.
+    pub fn initial_policy_root(self) -> Word {
+        match self {
+            Self::AllowAll => AllowAll::root(),
+            Self::OwnerOnly => OwnerOnly::root(),
+            Self::CustomInitialRoot(root) => root,
+        }
+    }
+}

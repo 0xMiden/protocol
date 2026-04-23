@@ -18,13 +18,10 @@ use miden_protocol::note::NoteScript;
 use miden_protocol::vm::Program;
 use miden_standards::account::access::Ownable2Step;
 use miden_standards::account::auth::NoAuth;
-use miden_standards::account::burn_policies::{
-    BurnAuthControlled,
-    BurnOwnerControlled,
-    BurnOwnerControlledConfig,
-};
-use miden_standards::account::mint_policies::{MintOwnerControlled, MintOwnerControlledConfig};
-use miden_standards::account::policy_manager::{BurnPolicyManager, MintPolicyManager};
+use miden_standards::account::policies::burn::owner_controlled::BurnOwnerControlledConfig;
+use miden_standards::account::policies::manager::{BurnPolicyManager, MintPolicyManager};
+use miden_standards::account::policies::mint::owner_controlled::MintOwnerControlledConfig;
+use miden_standards::account::policies::{burn, mint};
 use miden_utils_sync::LazyLock;
 
 pub mod b2agg_note;
@@ -213,10 +210,11 @@ pub fn create_existing_bridge_account(
 /// The builder includes:
 /// - The `AggLayerFaucet` component (conversion metadata + token metadata).
 /// - The `Ownable2Step` component (bridge account ID as owner for mint authorization).
-/// - The `MintPolicyManager` + `MintOwnerControlled` components (mint policy management and the
-///   `owner_only` mint policy required by `network_fungible::mint_and_send`).
-/// - The `BurnPolicyManager` + `BurnOwnerControlled` + `BurnAuthControlled` components (burn
-///   policy management with `owner_only` as the active policy and `allow_all` also allowed).
+/// - The `MintPolicyManager` + `mint::owner_controlled::OwnerOnly` components (mint policy
+///   management and the `owner_only` mint policy required by `network_fungible::mint_and_send`).
+/// - The `BurnPolicyManager` + `burn::owner_controlled::OwnerOnly` + `burn::AllowAll` components
+///   (burn policy management with `owner_only` as the active policy and `allow_all` also registered
+///   as allowed).
 #[allow(clippy::too_many_arguments)]
 fn create_agglayer_faucet_builder(
     seed: Word,
@@ -247,13 +245,13 @@ fn create_agglayer_faucet_builder(
         .with_component(agglayer_component)
         .with_component(Ownable2Step::new(bridge_account_id))
         .with_component(MintPolicyManager::owner_controlled(MintOwnerControlledConfig::OwnerOnly))
-        .with_component(MintOwnerControlled::owner_only())
+        .with_component(mint::owner_controlled::OwnerOnly)
         // Burn policy manager: active = `owner_only` (burns locked by default); `allow_all` is
         // also registered in the allowed list so the owner can open burns at runtime via
         // `set_burn_policy`.
         .with_component(BurnPolicyManager::owner_controlled(BurnOwnerControlledConfig::OwnerOnly))
-        .with_component(BurnOwnerControlled::owner_only())
-        .with_component(BurnAuthControlled::allow_all())
+        .with_component(burn::owner_controlled::OwnerOnly)
+        .with_component(burn::AllowAll)
 }
 
 /// Creates a new agglayer faucet account with the specified configuration.

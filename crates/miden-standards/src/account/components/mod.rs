@@ -119,7 +119,7 @@ static MINT_POLICY_MANAGER_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
 static ALLOW_ALL_MINT_POLICY_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     let bytes = include_bytes!(concat!(
         env!("OUT_DIR"),
-        "/assets/account_components/mint_policies/auth_controlled/allow_all.masl"
+        "/assets/account_components/mint_policies/mod.masl"
     ));
     Library::read_from_bytes(bytes).expect("Shipped `allow_all` Mint Policy library is well-formed")
 });
@@ -147,7 +147,7 @@ static BURN_POLICY_MANAGER_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
 static ALLOW_ALL_BURN_POLICY_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     let bytes = include_bytes!(concat!(
         env!("OUT_DIR"),
-        "/assets/account_components/burn_policies/auth_controlled/allow_all.masl"
+        "/assets/account_components/burn_policies/mod.masl"
     ));
     Library::read_from_bytes(bytes).expect("Shipped `allow_all` Burn Policy library is well-formed")
 });
