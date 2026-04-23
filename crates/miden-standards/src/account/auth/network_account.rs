@@ -1,6 +1,6 @@
 use alloc::vec::Vec;
 
-use miden_protocol::Word;
+use miden_protocol::{Felt, Word};
 use miden_protocol::account::component::{
     AccountComponentMetadata,
     SchemaType,
@@ -27,20 +27,18 @@ static WHITELIST_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
         .expect("storage slot name should be valid")
 });
 
-// Marker value stored against each whitelisted script root. Any non-empty value would work; we
-// pick `[1, 0, 0, 0]` for readability when inspecting storage.
-const WHITELIST_SENTINEL: Word = Word::new([
-    miden_protocol::Felt::new(1),
-    miden_protocol::Felt::new(0),
-    miden_protocol::Felt::new(0),
-    miden_protocol::Felt::new(0),
-]);
+// Marker value stored as the map value for each whitelisted script root. Storage maps treat an
+// empty word (`[0, 0, 0, 0]`) as "key absent", so the presence check in MASM compares the
+// looked-up value against the empty word. Any non-empty word works as the sentinel; we pick
+// `[1, 0, 0, 0]` for readability when inspecting storage.
+const WHITELIST_SENTINEL: Word =
+    Word::new([Felt::new(1), Felt::new(0), Felt::new(0), Felt::new(0)]);
 
 // NETWORK ACCOUNT
 // ================================================================================================
 
 /// An [`AccountComponent`] implementing the authentication scheme used by network-owned accounts
-/// such as the AggLayer bridge and the AggLayer faucet.
+/// such as the AggLayer bridge and a network faucet.
 ///
 /// The component exports a single auth procedure, `auth_tx_network_account`, that rejects the
 /// transaction unless:
