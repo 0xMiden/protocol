@@ -1,6 +1,5 @@
 use alloc::vec::Vec;
 
-use miden_protocol::Word;
 use miden_protocol::account::component::{
     AccountComponentMetadata,
     SchemaType,
@@ -16,6 +15,7 @@ use miden_protocol::account::{
     StorageSlotName,
 };
 use miden_protocol::utils::sync::LazyLock;
+use miden_protocol::{Felt, Word};
 
 use crate::account::components::network_account_library;
 
@@ -27,20 +27,22 @@ static WHITELIST_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
         .expect("storage slot name should be valid")
 });
 
-// Marker value stored against each whitelisted script root. Any non-empty value would work; we
-// pick `[1, 0, 0, 0]` for readability when inspecting storage.
-const WHITELIST_SENTINEL: Word = Word::new([
-    miden_protocol::Felt::new(1),
-    miden_protocol::Felt::new(0),
-    miden_protocol::Felt::new(0),
-    miden_protocol::Felt::new(0),
-]);
+// A "sentinel value" is a placeholder value whose only job is to be distinguishable from a known
+// default, letting readers of the data detect a condition (here: "this key is present"). We call
+// this constant a sentinel because we only ever check whether the stored value differs from the
+// empty word; its actual contents carry no information.
+//
+// Storage maps treat an empty word (`[0, 0, 0, 0]`) as "key absent", so the MASM presence check
+// compares the looked-up value against the empty word. Any non-empty word would serve as the
+// sentinel; we pick `[1, 0, 0, 0]` for readability when inspecting storage.
+const WHITELIST_SENTINEL: Word =
+    Word::new([Felt::new(1), Felt::new(0), Felt::new(0), Felt::new(0)]);
 
 // NETWORK ACCOUNT
 // ================================================================================================
 
 /// An [`AccountComponent`] implementing the authentication scheme used by network-owned accounts
-/// such as the AggLayer bridge and the AggLayer faucet.
+/// such as network faucets and the AggLayer bridge.
 ///
 /// The component exports a single auth procedure, `auth_tx_network_account`, that rejects the
 /// transaction unless:

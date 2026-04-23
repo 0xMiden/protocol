@@ -21,13 +21,15 @@
 - [BREAKING] Added cycle counts to notes returned by `NoteConsumptionInfo` and removed public fields from related types ([#2772](https://github.com/0xMiden/miden-base/issues/2772)).
 - [BREAKING] Removed unused `payback_attachment` from `SwapNoteStorage` and `attachment` from `MintNoteStorage` ([#2789](https://github.com/0xMiden/protocol/pull/2789)).
 - Automatically enable `concurrent` feature in `miden-tx` for `std` context ([#2791](https://github.com/0xMiden/protocol/pull/2791)).
-- Added `tx::get_script_root` kernel procedure returning the root of the executed transaction script (zero word if no script was executed) ([#2816](https://github.com/0xMiden/protocol/pull/2816)).
+- Added `tx::get_tx_script_root` kernel procedure returning the root of the executed transaction script (zero word if no script was executed) ([#2816](https://github.com/0xMiden/protocol/pull/2816)).
 - Added `NetworkAccount` auth component that rejects transactions which execute a tx script or consume input notes outside of a fixed whitelist of note script roots ([#2817](https://github.com/0xMiden/protocol/pull/2817)).
+- Added `TransactionScript::from_package()` method to create `TransactionScript` from `miden-mast-package::Package` ([#2779](https://github.com/0xMiden/protocol/pull/2779)).
 
 ### Fixes
 
 - Made deserialization of `AccountCode` more robust ([#2788](https://github.com/0xMiden/protocol/pull/2788)).
 - [BREAKING] Replaced `NoAuth` with the new `NetworkAccount` auth component on the AggLayer bridge and AggLayer faucet, closing the forged-MINT attack surface where any transaction against the bridge could emit a bridge-authored MINT note ([#2797](https://github.com/0xMiden/protocol/issues/2797), [#2818](https://github.com/0xMiden/protocol/pull/2818)).
+
 
 ## 0.14.3 (2026-04-07)
 
