@@ -40,7 +40,8 @@ const ERR_PAUSABLE_EXPECTED_PAUSE = "the contract is not paused"
 #!
 #! Invocation: call
 pub proc is_paused
-    exec.load_is_paused_word
+    push.IS_PAUSED_SLOT[0..2]
+    exec.active_account::get_item
     # => [is_paused, 0, 0, 0, pad(16)]
 
     exec.word::eqz not
@@ -103,9 +104,8 @@ end
 
 #! Requires the contract to be unpaused (storage word is the zero word).
 #!
-#! Reads [`IS_PAUSED_SLOT`] on the active account via [`load_is_paused_word`], then uses
-#! [`word::eqz`]. If the stored word is non-zero (paused), panics with
-#! [`ERR_PAUSABLE_ENFORCED_PAUSE`].
+#! Reads [`IS_PAUSED_SLOT`] on the active account and applies [`word::eqz`]. If the stored word
+#! is non-zero (paused), panics with [`ERR_PAUSABLE_ENFORCED_PAUSE`].
 #!
 #! Use from other modules or transaction scripts to guard logic that must not run while paused.
 #! In asset callback foreign context, the active account is the issuing faucet.
@@ -118,7 +118,8 @@ end
 #!
 #! Invocation: exec
 pub proc assert_not_paused
-    exec.load_is_paused_word
+    push.IS_PAUSED_SLOT[0..2]
+    exec.active_account::get_item
     # => [is_paused, 0, 0, 0]
 
     exec.word::eqz
@@ -143,7 +144,8 @@ end
 #!
 #! Invocation: exec
 pub proc assert_paused
-    exec.load_is_paused_word
+    push.IS_PAUSED_SLOT[0..2]
+    exec.active_account::get_item
     # => [is_paused, 0, 0, 0]
 
     exec.word::eqz not
@@ -187,25 +189,4 @@ pub proc on_before_asset_added_to_note
 
     dropw
     # => [ASSET_VALUE, note_idx, pad(7)]
-end
-
-# HELPER PROCEDURES
-# ================================================================================================
-
-#! Loads the paused state word from storage.
-#!
-#! Inputs:  []
-#! Outputs: [is_paused, 0, 0, 0]
-#!
-#! Where:
-#! - is_paused is the flag felt at the top of [`IS_PAUSED_SLOT`] (`1` when paused, `0` when
-#!   unpaused).
-#! - The remaining three felts of the word are always zero by construction (see [`PAUSED_WORD`]
-#!   and [`UNPAUSED_WORD`]).
-#!
-#! Invocation: exec
-proc load_is_paused_word
-    push.IS_PAUSED_SLOT[0..2]
-    exec.active_account::get_item
-    # => [is_paused, 0, 0, 0]
 end
