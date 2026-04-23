@@ -41,7 +41,7 @@ const ERR_NETWORK_ACCOUNT_NOTE_NOT_WHITELISTED="input note script root is not in
 @auth_script
 pub proc auth_tx_network_account
     # ---- Reject transactions that executed a tx script ----
-    exec.tx::get_script_root
+    exec.tx::get_tx_script_root
     # => [TX_SCRIPT_ROOT, pad(16)]
 
     padw exec.word::eq
