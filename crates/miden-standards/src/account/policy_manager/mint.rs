@@ -19,7 +19,12 @@ use miden_protocol::account::{
 use miden_protocol::utils::sync::LazyLock;
 
 use crate::account::components::mint_policy_manager_library;
-use crate::account::mint_policies::{MintOwnerControlled, MintPolicy};
+use crate::account::mint_policies::{
+    MintAuthControlled,
+    MintAuthControlledConfig,
+    MintOwnerControlled,
+    MintOwnerControlledConfig,
+};
 
 // STORAGE SLOT NAMES
 // ================================================================================================
@@ -107,16 +112,19 @@ impl MintPolicyManager {
         }
     }
 
-    /// Convenience: an owner-controlled manager with `owner_only` as the active (and only allowed)
-    /// policy.
-    pub fn owner_controlled() -> Self {
-        Self::new(MintPolicyAuthority::OwnerControlled, MintOwnerControlled::owner_only_root())
+    /// Convenience: an owner-controlled manager. The active policy is chosen by `config`; the
+    /// `owner_only` root is always registered in the allowed-policies list so the owner can switch
+    /// to it at runtime if the initial active policy differs.
+    pub fn owner_controlled(config: MintOwnerControlledConfig) -> Self {
+        Self::new(MintPolicyAuthority::OwnerControlled, config.initial_policy_root())
+            .with_allowed_policy(MintOwnerControlled::owner_only_root())
     }
 
-    /// Convenience: an auth-controlled manager with `allow_all` as the active (and only allowed)
-    /// policy.
-    pub fn auth_controlled() -> Self {
-        Self::new(MintPolicyAuthority::AuthControlled, MintPolicy::allow_all_root())
+    /// Convenience: an auth-controlled manager. The active policy is chosen by `config`; the
+    /// `allow_all` root is always registered in the allowed-policies list.
+    pub fn auth_controlled(config: MintAuthControlledConfig) -> Self {
+        Self::new(MintPolicyAuthority::AuthControlled, config.initial_policy_root())
+            .with_allowed_policy(MintAuthControlled::allow_all_root())
     }
 
     /// Registers an additional policy root in the allowed-policies list.

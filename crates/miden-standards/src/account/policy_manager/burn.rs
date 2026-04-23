@@ -18,7 +18,12 @@ use miden_protocol::account::{
 };
 use miden_protocol::utils::sync::LazyLock;
 
-use crate::account::burn_policies::{BurnOwnerControlled, BurnPolicy};
+use crate::account::burn_policies::{
+    BurnAuthControlled,
+    BurnAuthControlledConfig,
+    BurnOwnerControlled,
+    BurnOwnerControlledConfig,
+};
 use crate::account::components::burn_policy_manager_library;
 
 // STORAGE SLOT NAMES
@@ -107,18 +112,20 @@ impl BurnPolicyManager {
         }
     }
 
-    /// Convenience: an owner-controlled manager. The active policy defaults to `allow_all` (so
-    /// burns are open by default, matching the pre-split network faucet default) but `owner_only`
-    /// is also allowed, so the owner can switch to it at runtime via `set_burn_policy`.
-    pub fn owner_controlled() -> Self {
-        Self::new(BurnPolicyAuthority::OwnerControlled, BurnPolicy::allow_all_root())
+    /// Convenience: an owner-controlled manager. The active policy is chosen by `config`; both
+    /// `allow_all` and `owner_only` are registered in the allowed-policies list so the owner can
+    /// switch between them at runtime via `set_burn_policy`.
+    pub fn owner_controlled(config: BurnOwnerControlledConfig) -> Self {
+        Self::new(BurnPolicyAuthority::OwnerControlled, config.initial_policy_root())
+            .with_allowed_policy(BurnAuthControlled::allow_all_root())
             .with_allowed_policy(BurnOwnerControlled::owner_only_root())
     }
 
-    /// Convenience: an auth-controlled manager with `allow_all` as the active (and only allowed)
-    /// policy.
-    pub fn auth_controlled() -> Self {
-        Self::new(BurnPolicyAuthority::AuthControlled, BurnPolicy::allow_all_root())
+    /// Convenience: an auth-controlled manager. The active policy is chosen by `config`; the
+    /// `allow_all` root is always registered in the allowed-policies list.
+    pub fn auth_controlled(config: BurnAuthControlledConfig) -> Self {
+        Self::new(BurnPolicyAuthority::AuthControlled, config.initial_policy_root())
+            .with_allowed_policy(BurnAuthControlled::allow_all_root())
     }
 
     /// Registers an additional policy root in the allowed-policies list.

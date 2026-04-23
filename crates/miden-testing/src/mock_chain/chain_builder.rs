@@ -48,19 +48,25 @@ use miden_protocol::testing::random_secret_key::random_secret_key;
 use miden_protocol::transaction::{OrderedTransactionHeaders, RawOutputNote, TransactionKernel};
 use miden_protocol::{MAX_OUTPUT_NOTES_PER_BATCH, Word};
 use miden_standards::account::access::Ownable2Step;
-use miden_standards::account::burn_policies::{BurnOwnerControlled, BurnPolicy};
+use miden_standards::account::burn_policies::{
+    BurnAuthControlled,
+    BurnAuthControlledConfig,
+    BurnOwnerControlled,
+    BurnOwnerControlledConfig,
+};
 use miden_standards::account::faucets::{BasicFungibleFaucet, NetworkFungibleFaucet};
 use miden_standards::account::metadata::{
     FungibleTokenMetadata,
     FungibleTokenMetadataBuilder,
     TokenName,
 };
-use miden_standards::account::mint_policies::{MintOwnerControlled, MintPolicy};
-use miden_standards::account::policy_manager::{
-    BurnPolicyManager,
-    MintPolicyAuthority,
-    MintPolicyManager,
+use miden_standards::account::mint_policies::{
+    MintAuthControlled,
+    MintAuthControlledConfig,
+    MintOwnerControlled,
+    MintOwnerControlledConfig,
 };
+use miden_standards::account::policy_manager::{BurnPolicyManager, MintPolicyManager};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::note::{P2idNote, P2ideNote, P2ideNoteStorage, SwapNote};
 use miden_standards::testing::account_component::MockAccountComponent;
@@ -350,10 +356,10 @@ impl MockChainBuilder {
         let account_builder = AccountBuilder::new(self.rng.random())
             .storage_mode(AccountStorageMode::Public)
             .account_type(AccountType::FungibleFaucet)
-            .with_component(MintPolicyManager::auth_controlled())
-            .with_component(MintPolicy::allow_all())
-            .with_component(BurnPolicyManager::auth_controlled())
-            .with_component(BurnPolicy::allow_all())
+            .with_component(MintPolicyManager::auth_controlled(MintAuthControlledConfig::AllowAll))
+            .with_component(MintAuthControlled::allow_all())
+            .with_component(BurnPolicyManager::auth_controlled(BurnAuthControlledConfig::AllowAll))
+            .with_component(BurnAuthControlled::allow_all())
             .with_component(metadata)
             .with_component(BasicFungibleFaucet);
 
@@ -389,10 +395,10 @@ impl MockChainBuilder {
             .storage_mode(AccountStorageMode::Public)
             .with_component(metadata)
             .with_component(BasicFungibleFaucet)
-            .with_component(MintPolicyManager::auth_controlled())
-            .with_component(MintPolicy::allow_all())
-            .with_component(BurnPolicyManager::auth_controlled())
-            .with_component(BurnPolicy::allow_all())
+            .with_component(MintPolicyManager::auth_controlled(MintAuthControlledConfig::AllowAll))
+            .with_component(MintAuthControlled::allow_all())
+            .with_component(BurnPolicyManager::auth_controlled(BurnAuthControlledConfig::AllowAll))
+            .with_component(BurnAuthControlled::allow_all())
             .account_type(AccountType::FungibleFaucet);
 
         self.add_account_from_builder(auth_method, account_builder, AccountState::Exists)
@@ -402,16 +408,15 @@ impl MockChainBuilder {
     ///
     /// Network fungible faucets always use `AccountStorageMode::Network` and `Auth::NoAuth`.
     ///
-    /// `initial_mint_policy_root` selects the active mint policy installed on the faucet. The only
-    /// mint policies shipped today are [`MintOwnerControlled::owner_only_root`] and
-    /// [`MintPolicy::allow_all_root`]; pass either depending on the desired default.
+    /// `mint_policy` selects the initial active mint policy on the faucet. The installed
+    /// [`MintPolicyManager`] is always owner-controlled.
     pub fn add_existing_network_faucet(
         &mut self,
         token_symbol: &str,
         max_supply: u64,
         owner_account_id: AccountId,
         token_supply: Option<u64>,
-        initial_mint_policy_root: Word,
+        mint_policy: MintOwnerControlledConfig,
     ) -> anyhow::Result<Account> {
         let token_supply = token_supply.unwrap_or(0);
         let name = TokenName::new(token_symbol)?;
@@ -428,19 +433,16 @@ impl MockChainBuilder {
         .build()
         .context("failed to create fungible token metadata")?;
 
-        let mint_manager =
-            MintPolicyManager::new(MintPolicyAuthority::OwnerControlled, initial_mint_policy_root);
-
         let account_builder = AccountBuilder::new(self.rng.random())
             .storage_mode(AccountStorageMode::Network)
             .with_component(metadata)
             .with_component(NetworkFungibleFaucet)
             .with_component(Ownable2Step::new(owner_account_id))
-            .with_component(mint_manager)
+            .with_component(MintPolicyManager::owner_controlled(mint_policy))
             .with_component(MintOwnerControlled::owner_only())
-            .with_component(BurnPolicyManager::owner_controlled())
+            .with_component(BurnPolicyManager::owner_controlled(BurnOwnerControlledConfig::AllowAll))
             .with_component(BurnOwnerControlled::owner_only())
-            .with_component(BurnPolicy::allow_all())
+            .with_component(BurnAuthControlled::allow_all())
             .account_type(AccountType::FungibleFaucet);
 
         // Network faucets always use IncrNonce auth (no authentication)
@@ -460,11 +462,11 @@ impl MockChainBuilder {
             .with_component(metadata)
             .with_component(NetworkFungibleFaucet)
             .with_component(Ownable2Step::new(owner_account_id))
-            .with_component(MintPolicyManager::owner_controlled())
+            .with_component(MintPolicyManager::owner_controlled(MintOwnerControlledConfig::OwnerOnly))
             .with_component(MintOwnerControlled::owner_only())
-            .with_component(BurnPolicyManager::owner_controlled())
+            .with_component(BurnPolicyManager::owner_controlled(BurnOwnerControlledConfig::AllowAll))
             .with_component(BurnOwnerControlled::owner_only())
-            .with_component(BurnPolicy::allow_all())
+            .with_component(BurnAuthControlled::allow_all())
             .account_type(AccountType::FungibleFaucet);
 
         self.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)

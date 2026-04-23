@@ -12,11 +12,11 @@ use miden_protocol::account::{
 use super::FungibleFaucetError;
 use crate::account::AuthMethod;
 use crate::account::auth::{AuthSingleSigAcl, AuthSingleSigAclConfig};
-use crate::account::burn_policies::BurnPolicy;
+use crate::account::burn_policies::{BurnAuthControlled, BurnAuthControlledConfig};
 use crate::account::components::basic_fungible_faucet_library;
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
 use crate::account::metadata::FungibleTokenMetadata;
-use crate::account::mint_policies::MintPolicy;
+use crate::account::mint_policies::{MintAuthControlled, MintAuthControlledConfig};
 use crate::account::policy_manager::{BurnPolicyManager, MintPolicyManager};
 use crate::procedure_digest;
 
@@ -148,8 +148,8 @@ impl TryFrom<&Account> for BasicFungibleFaucet {
 /// - [`FungibleTokenMetadata`] (token metadata, name, description, etc.)
 /// - [`BasicFungibleFaucet`] (mint_and_send and burn procedures)
 /// - [`AuthSingleSigAcl`]
-/// - [`MintPolicyManager`] + [`MintPolicy::allow_all`] (auth-controlled, allow-all mint policy)
-/// - [`BurnPolicyManager`] + [`BurnPolicy::allow_all`] (auth-controlled, allow-all burn policy)
+/// - [`MintPolicyManager`] + [`MintAuthControlled::allow_all`] (auth-controlled, allow-all mint policy)
+/// - [`BurnPolicyManager`] + [`BurnAuthControlled::allow_all`] (auth-controlled, allow-all burn policy)
 pub fn create_basic_fungible_faucet(
     init_seed: [u8; 32],
     metadata: FungibleTokenMetadata,
@@ -192,10 +192,10 @@ pub fn create_basic_fungible_faucet(
         .with_auth_component(auth_component)
         .with_component(metadata)
         .with_component(BasicFungibleFaucet)
-        .with_component(MintPolicyManager::auth_controlled())
-        .with_component(MintPolicy::allow_all())
-        .with_component(BurnPolicyManager::auth_controlled())
-        .with_component(BurnPolicy::allow_all())
+        .with_component(MintPolicyManager::auth_controlled(MintAuthControlledConfig::AllowAll))
+        .with_component(MintAuthControlled::allow_all())
+        .with_component(BurnPolicyManager::auth_controlled(BurnAuthControlledConfig::AllowAll))
+        .with_component(BurnAuthControlled::allow_all())
         .build()
         .map_err(FungibleFaucetError::AccountError)?;
 

@@ -12,11 +12,11 @@ use miden_protocol::account::{
 use super::FungibleFaucetError;
 use crate::account::access::AccessControl;
 use crate::account::auth::NoAuth;
-use crate::account::burn_policies::{BurnOwnerControlled, BurnPolicy};
+use crate::account::burn_policies::{BurnAuthControlled, BurnOwnerControlled, BurnOwnerControlledConfig};
 use crate::account::components::network_fungible_faucet_library;
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
 use crate::account::metadata::FungibleTokenMetadata;
-use crate::account::mint_policies::MintOwnerControlled;
+use crate::account::mint_policies::{MintOwnerControlled, MintOwnerControlledConfig};
 use crate::account::policy_manager::{BurnPolicyManager, MintPolicyManager};
 use crate::procedure_digest;
 
@@ -183,11 +183,11 @@ pub fn create_network_fungible_faucet(
         .with_component(metadata)
         .with_component(NetworkFungibleFaucet)
         .with_component(access_control)
-        .with_component(MintPolicyManager::owner_controlled())
+        .with_component(MintPolicyManager::owner_controlled(MintOwnerControlledConfig::OwnerOnly))
         .with_component(MintOwnerControlled::owner_only())
-        .with_component(BurnPolicyManager::owner_controlled())
+        .with_component(BurnPolicyManager::owner_controlled(BurnOwnerControlledConfig::AllowAll))
         .with_component(BurnOwnerControlled::owner_only())
-        .with_component(BurnPolicy::allow_all())
+        .with_component(BurnAuthControlled::allow_all())
         .build()
         .map_err(FungibleFaucetError::AccountError)?;
 
