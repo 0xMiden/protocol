@@ -1,6 +1,5 @@
 use alloc::vec::Vec;
 
-use miden_protocol::{Felt, Word};
 use miden_protocol::account::component::{
     AccountComponentMetadata,
     SchemaType,
@@ -16,6 +15,7 @@ use miden_protocol::account::{
     StorageSlotName,
 };
 use miden_protocol::utils::sync::LazyLock;
+use miden_protocol::{Felt, Word};
 
 use crate::account::components::network_account_library;
 
