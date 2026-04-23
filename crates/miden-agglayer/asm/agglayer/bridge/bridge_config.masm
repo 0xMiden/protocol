@@ -31,7 +31,7 @@ const IS_FAUCET_REGISTERED_FLAG = 1
 # Offset in the local memory of the `hash_token_address` procedure
 const TOKEN_ADDR_HASH_PTR = 0
 
-# Offsets in the local memory of the `register_faucet` procedure
+# Local memory slot offsets used inside the `register_faucet` procedure
 const REG_TOKEN_HASH_LOC = 0
 const REG_FAUCET_ID_SUFFIX_LOC = 4
 const REG_FAUCET_ID_PREFIX_LOC = 5
@@ -349,8 +349,6 @@ end
 #! - Key [2, 0, faucet_id_suffix, faucet_id_prefix] -> METADATA_HASH_LO
 #! - Key [3, 0, faucet_id_suffix, faucet_id_prefix] -> METADATA_HASH_HI
 #!
-#! Sub-key 3 (HI) is read first so the final stack has MH_LO on top without a swapw.
-#!
 #! Inputs:  [faucet_id_suffix, faucet_id_prefix]
 #! Outputs: [METADATA_HASH_LO, METADATA_HASH_HI]
 #!
@@ -360,7 +358,7 @@ proc get_faucet_metadata_hash
     dup.1 dup.1
     # => [faucet_id_suffix, faucet_id_prefix, faucet_id_suffix, faucet_id_prefix]
 
-    # Read sub-key 3 (MH_HI) first so MH_LO ends up on top after the second read.
+    # Read sub-key 3 (MH_HI) first so MH_LO ends up on top after the second read without a swapw.
     push.0.3
     # => [3, 0, faucet_id_suffix, faucet_id_prefix, faucet_id_suffix, faucet_id_prefix]
 

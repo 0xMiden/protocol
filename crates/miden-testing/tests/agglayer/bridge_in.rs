@@ -862,6 +862,216 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Tests that a second CLAIM reusing the same leaf against the native unlock path is rejected.
+///
+/// The native unlock path in `bridge_in_output::unlock_and_send` uses a deterministic P2ID serial
+/// number derived from `CLAIM_PROOF_DATA_KEY`. Replay safety therefore depends on the claim
+/// nullifier check in `bridge_in::claim` running before the branch into `unlock_and_send`. This
+/// test seeds the bridge vault with enough native supply to serve two unlocks, then confirms the
+/// second CLAIM with the same proof data is rejected with `ERR_CLAIM_ALREADY_SPENT` rather than
+/// draining the vault a second time.
+#[tokio::test]
+async fn bridge_in_unlock_native_duplicate_rejected() -> anyhow::Result<()> {
+    let data_source = ClaimDataSource::SimulatedL1ToMiden;
+    let mut builder = MockChain::builder();
+
+    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    let bridge_seed = builder.rng_mut().draw_word();
+    let mut bridge_account =
+        create_existing_bridge_account(bridge_seed, bridge_admin.id(), ger_manager.id());
+    builder.add_account(bridge_account.clone())?;
+
+    let (proof_data, leaf_data, ger, _cgi_chain_hash) = data_source.get_data();
+    let origin_token_address = leaf_data.origin_token_address;
+    let origin_network = leaf_data.origin_network;
+    let metadata_hash = leaf_data.metadata_hash;
+    let scale = 10u8;
+
+    let miden_claim_amount = leaf_data
+        .amount
+        .scale_to_token_amount(scale as u32)
+        .expect("amount should scale successfully");
+    let miden_claim_amount_u64 = miden_claim_amount.as_canonical_u64();
+
+    // Seed the native faucet and the lock sender with enough supply to cover two unlocks. If the
+    // nullifier check is ever weakened, the second claim would otherwise succeed and drain the
+    // vault a second time.
+    let faucet_owner_account_id = AccountId::dummy(
+        [3; 15],
+        AccountIdVersion::Version0,
+        AccountType::RegularAccountImmutableCode,
+        AccountStorageMode::Private,
+    );
+    let native_faucet = builder.add_existing_network_faucet(
+        "NATIVE",
+        miden_claim_amount_u64.saturating_mul(4),
+        faucet_owner_account_id,
+        Some(miden_claim_amount_u64.saturating_mul(4)),
+        OwnerControlledInitConfig::OwnerOnly,
+    )?;
+
+    let destination_account_id = EthEmbeddedAccountId::try_from(leaf_data.destination_address)
+        .expect("destination address is not an embedded Miden AccountId")
+        .into_account_id();
+    let destination_account =
+        Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE, IncrNonceAuthComponent);
+    assert_eq!(destination_account.id(), destination_account_id);
+    builder.add_account(destination_account)?;
+
+    let claim_sender = {
+        let account_builder =
+            Account::builder(builder.rng_mut().random()).with_component(BasicWallet);
+        builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)?
+    };
+
+    let lock_sender = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    let config_note = ConfigAggBridgeNote::create(
+        ConversionMetadata {
+            faucet_account_id: native_faucet.id(),
+            origin_token_address,
+            scale,
+            origin_network,
+            is_native: true,
+            metadata_hash,
+        },
+        bridge_admin.id(),
+        bridge_account.id(),
+        builder.rng_mut(),
+    )?;
+    builder.add_output_note(RawOutputNote::Full(config_note.clone()));
+
+    // Lock 2x the claim amount so the bridge vault could (if nullifier were broken) serve the
+    // replayed claim.
+    let bridge_asset: Asset =
+        FungibleAsset::new(native_faucet.id(), miden_claim_amount_u64.saturating_mul(2))
+            .unwrap()
+            .into();
+    let b2agg_destination_address =
+        EthAddress::from_hex("0x1234567890abcdef1122334455667788990011aa")
+            .expect("valid destination address");
+    let b2agg_note = B2AggNote::create(
+        1u32,
+        b2agg_destination_address,
+        NoteAssets::new(vec![bridge_asset])?,
+        bridge_account.id(),
+        lock_sender.id(),
+        builder.rng_mut(),
+    )?;
+    builder.add_output_note(RawOutputNote::Full(b2agg_note.clone()));
+
+    let claim_inputs_1 = ClaimNoteStorage {
+        proof_data: proof_data.clone(),
+        leaf_data: leaf_data.clone(),
+        miden_claim_amount,
+    };
+    let claim_note_1 = create_claim_note(
+        claim_inputs_1,
+        bridge_account.id(),
+        claim_sender.id(),
+        builder.rng_mut(),
+    )?;
+    builder.add_output_note(RawOutputNote::Full(claim_note_1.clone()));
+
+    let claim_inputs_2 = ClaimNoteStorage {
+        proof_data: proof_data.clone(),
+        leaf_data: leaf_data.clone(),
+        miden_claim_amount,
+    };
+    let claim_note_2 = create_claim_note(
+        claim_inputs_2,
+        bridge_account.id(),
+        claim_sender.id(),
+        builder.rng_mut(),
+    )?;
+    builder.add_output_note(RawOutputNote::Full(claim_note_2.clone()));
+
+    let update_ger_note =
+        UpdateGerNote::create(ger, ger_manager.id(), bridge_account.id(), builder.rng_mut())?;
+    builder.add_output_note(RawOutputNote::Full(update_ger_note.clone()));
+
+    let mut mock_chain = builder.clone().build()?;
+
+    // TX0: CONFIG — register native faucet.
+    let config_executed = mock_chain
+        .build_tx_context(bridge_account.id(), &[config_note.id()], &[])?
+        .build()?
+        .execute()
+        .await?;
+    bridge_account.apply_delta(config_executed.account_delta())?;
+    mock_chain.add_pending_executed_transaction(&config_executed)?;
+    mock_chain.prove_next_block()?;
+
+    // TX1: LOCK — seed bridge vault with 2x miden_claim_amount.
+    let lock_executed = mock_chain
+        .build_tx_context(bridge_account.clone(), &[b2agg_note.id()], &[])?
+        .build()?
+        .execute()
+        .await?;
+    bridge_account.apply_delta(lock_executed.account_delta())?;
+    assert_eq!(
+        bridge_account.vault().get_balance(native_faucet.id())?,
+        miden_claim_amount_u64.saturating_mul(2),
+    );
+    mock_chain.add_pending_executed_transaction(&lock_executed)?;
+    mock_chain.prove_next_block()?;
+
+    // TX2: UPDATE_GER.
+    let update_ger_executed = mock_chain
+        .build_tx_context(bridge_account.id(), &[update_ger_note.id()], &[])?
+        .build()?
+        .execute()
+        .await?;
+    bridge_account.apply_delta(update_ger_executed.account_delta())?;
+    mock_chain.add_pending_executed_transaction(&update_ger_executed)?;
+    mock_chain.prove_next_block()?;
+
+    // TX3: FIRST CLAIM — should succeed and drain half the vault.
+    let claim_executed_1 = mock_chain
+        .build_tx_context(bridge_account.clone(), &[], &[claim_note_1])?
+        .build()?
+        .execute()
+        .await?;
+    assert_eq!(claim_executed_1.output_notes().num_notes(), 1);
+    bridge_account.apply_delta(claim_executed_1.account_delta())?;
+    assert_eq!(
+        bridge_account.vault().get_balance(native_faucet.id())?,
+        miden_claim_amount_u64,
+        "Bridge vault should hold exactly the remaining half after the first unlock"
+    );
+    mock_chain.add_pending_executed_transaction(&claim_executed_1)?;
+    mock_chain.prove_next_block()?;
+
+    // TX4: SECOND CLAIM with same proof data — should fail on the nullifier, before reaching
+    // `unlock_and_send`. Vault still has enough to serve it, so a pass here would mean the
+    // nullifier gate is broken.
+    let result = mock_chain
+        .build_tx_context(bridge_account, &[], &[claim_note_2])?
+        .build()?
+        .execute()
+        .await;
+    assert!(
+        result.is_err(),
+        "Second native-path claim with the same PROOF_DATA_KEY should fail"
+    );
+    let error_msg = result.unwrap_err().to_string();
+    let expected_err_code = ERR_CLAIM_ALREADY_SPENT.code().to_string();
+    assert!(
+        error_msg.contains(&expected_err_code),
+        "expected error code {expected_err_code} for 'claim note has already been spent', got: {error_msg}"
+    );
+
+    Ok(())
+}
+
 #[tokio::test]
 async fn solidity_verify_merkle_proof_compatibility() -> anyhow::Result<()> {
     let merkle_paths = &*SOLIDITY_MERKLE_PROOF_VECTORS;

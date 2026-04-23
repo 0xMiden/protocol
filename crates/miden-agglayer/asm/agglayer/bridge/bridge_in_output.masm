@@ -93,6 +93,11 @@ end
 #! (matching the MINT path's serial-number choice) so the resulting note commitment is
 #! deterministic across runs.
 #!
+#! Replay safety does not rely on serial-number uniqueness. A replayed claim is rejected earlier
+#! in `bridge_in::claim` by the nullifier check (`assert_claim_not_spent`), so `unlock_and_send`
+#! only runs once per (leaf_index, source_bridge_network) pair even though its serial number is
+#! deterministic.
+#!
 #! Inputs:  [destination_id_suffix, destination_id_prefix, faucet_id_suffix, faucet_id_prefix]
 #! Outputs: []
 #!
