@@ -752,7 +752,7 @@ async fn test_tx_script_args() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Tests that `tx::get_script_root` returns the root of the executed transaction script.
+/// Tests that `tx::get_tx_script_root` returns the root of the executed transaction script.
 #[tokio::test]
 async fn test_get_script_root_with_script() -> anyhow::Result<()> {
     let tx_script = CodeBuilder::default().compile_tx_script("begin nop end")?;
@@ -766,7 +766,7 @@ async fn test_get_script_root_with_script() -> anyhow::Result<()> {
         begin
             exec.prologue::prepare_transaction
 
-            exec.tx::get_script_root
+            exec.tx::get_tx_script_root
             # => [TX_SCRIPT_ROOT]
 
             push.{expected_root} assert_eqw.err="tx script root mismatch"
@@ -783,7 +783,7 @@ async fn test_get_script_root_with_script() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Tests that `tx::get_script_root` returns the zero word when no transaction script is executed.
+/// Tests that `tx::get_tx_script_root` returns the zero word when no transaction script is executed.
 #[tokio::test]
 async fn test_get_script_root_without_script() -> anyhow::Result<()> {
     let code = r#"
@@ -793,7 +793,7 @@ async fn test_get_script_root_without_script() -> anyhow::Result<()> {
         begin
             exec.prologue::prepare_transaction
 
-            exec.tx::get_script_root
+            exec.tx::get_tx_script_root
             # => [TX_SCRIPT_ROOT]
 
             padw assert_eqw.err="tx script root must be zero when no script is executed"

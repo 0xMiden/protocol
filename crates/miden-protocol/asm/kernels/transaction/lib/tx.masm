@@ -93,7 +93,7 @@ pub use memory::get_num_output_notes
 #! Where:
 #! - TX_SCRIPT_ROOT is the transaction script root, or the zero word if no transaction script was
 #!   executed.
-pub use memory::get_tx_script_root->get_script_root
+pub use memory::get_tx_script_root
 
 #! Updates the transaction expiration block delta.
 #!
