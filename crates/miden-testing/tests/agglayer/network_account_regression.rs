@@ -1,13 +1,13 @@
-//! Regression tests for issue #2797.
+//! Regression tests for the forged-MINT attack on the AggLayer bridge.
 //!
-//! Before the `NetworkAccount` auth component existed, the AggLayer bridge was installed with
-//! `NoAuth`. Because the transaction kernel's `output_note::create` does not require any specific
-//! bridge procedure to appear on the call stack, an attacker could run any transaction that caused
-//! a state change against the bridge, emit a MINT note whose metadata sender was therefore the
-//! bridge, and have the faucet's owner-only mint policy accept it as owner-authorised.
+//! When the AggLayer bridge was installed with `NoAuth`, any transaction that caused a state
+//! change against the bridge could emit a MINT note whose metadata sender was the bridge. The
+//! faucet's owner-only mint policy would then accept that note as owner-authorised, even though
+//! the transaction came from an attacker, because the transaction kernel's `output_note::create`
+//! does not require any specific bridge procedure to appear on the call stack.
 //!
-//! PR #2815 fixes this by swapping `NoAuth` for `NetworkAccount`. The tests below exercise the two
-//! rejection paths that together close the forged-MINT attack surface:
+//! Swapping `NoAuth` for `NetworkAccount` closes the attack. The tests below exercise the two
+//! rejection paths that together eliminate the forged-MINT attack surface:
 //!
 //! 1. A transaction script cannot be executed against the bridge.
 //! 2. Any consumed input note whose script root is not in the bridge's whitelist is rejected.
@@ -28,11 +28,11 @@ use miden_standards::errors::standards::{
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 
-/// The attack in #2797 required the attacker's transaction to finalize against the bridge. The
+/// The forged-MINT attack required the attacker's transaction to finalize against the bridge. The
 /// attacker can no longer attach a tx script that drives an output-note creation, because the
 /// bridge's `NetworkAccount` auth procedure rejects any transaction that executed a tx script.
 #[tokio::test]
-async fn bridge_rejects_tx_script_after_2797_fix() -> anyhow::Result<()> {
+async fn bridge_rejects_tx_script() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
@@ -69,7 +69,7 @@ async fn bridge_rejects_tx_script_after_2797_fix() -> anyhow::Result<()> {
 /// The second rejection path: consuming any note not in the bridge whitelist is forbidden, so the
 /// attacker cannot finalize a transaction by consuming an arbitrary zero-asset note.
 #[tokio::test]
-async fn bridge_rejects_non_whitelisted_input_note_after_2797_fix() -> anyhow::Result<()> {
+async fn bridge_rejects_non_whitelisted_input_note() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {

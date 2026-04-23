@@ -245,9 +245,6 @@ fn generate_agglayer_constants(
         // The faucet account includes Ownable2Step and OwnerControlled components for mint and burn
         // policies alongside the agglayer faucet component, since
         // network_fungible::mint_and_send requires these for access control.
-        //
-        // The whitelist contents only affect storage and are irrelevant to the code commitment, so
-        // we pass an empty whitelist when building the auth component here.
         let mut components: Vec<AccountComponent> =
             vec![AccountComponent::from(NetworkAccount::new(Vec::new())), agglayer_component];
         if lib_name == "faucet" {
