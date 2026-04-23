@@ -6,8 +6,6 @@
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
-use miden_assembly::serde::Deserializable;
-use miden_core::program::Program;
 use miden_core::{Felt, Word};
 use miden_protocol::account::AccountId;
 use miden_protocol::crypto::rand::FeltRng;
@@ -33,8 +31,7 @@ use crate::EthAddress;
 // Initialize the B2AGG note script only once
 static B2AGG_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
     let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/B2AGG.masb"));
-    let program = Program::read_from_bytes(bytes).expect("shipped B2AGG script is well-formed");
-    NoteScript::new(program)
+    NoteScript::from_bytes(bytes).expect("shipped B2AGG script is well-formed")
 });
 
 // B2AGG NOTE

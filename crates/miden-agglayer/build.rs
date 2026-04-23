@@ -14,6 +14,7 @@ use miden_protocol::account::{
     AccountComponentMetadata,
     AccountType,
 };
+use miden_protocol::note::NoteScript;
 use miden_protocol::transaction::TransactionKernel;
 use miden_standards::account::auth::NoAuth;
 use miden_standards::account::mint_policies::OwnerControlled;
@@ -124,16 +125,15 @@ fn compile_agglayer_lib(
 // COMPILE EXECUTABLE MODULES
 // ================================================================================================
 
-/// Reads all MASM files from the "{source_dir}", complies each file individually into a MASB
-/// file, and stores the compiled files into the "{target_dir}".
-///
-/// The source files are expected to contain executable programs.
+/// Reads all MASM files from `{source_dir}`, compiles each file as a library with
+/// [`Assembler::assemble_library`], wraps it as a [`NoteScript`] via [`NoteScript::from_library`],
+/// and writes serialized bytes as `.masb`.
 fn compile_note_scripts(
     source_dir: &Path,
-    target_dir: &Path,
+    note_scripts_target_dir: &Path,
     mut assembler: Assembler,
 ) -> Result<()> {
-    fs::create_dir_all(target_dir)
+    fs::create_dir_all(note_scripts_target_dir)
         .into_diagnostic()
         .wrap_err("failed to create note_scripts directory")?;
 
@@ -141,22 +141,22 @@ fn compile_note_scripts(
     let standards_lib = miden_standards::StandardsLib::default();
     assembler.link_static_library(standards_lib)?;
 
-    for masm_file_path in shared::get_masm_files(source_dir).unwrap() {
+    for note_file_path in shared::get_masm_files(source_dir).unwrap() {
         // read the MASM file, parse it, and serialize the parsed AST to bytes
-        let code = assembler.clone().assemble_program(masm_file_path.clone())?;
+        let note_library = assembler.clone().assemble_library([note_file_path.clone()])?;
 
-        let bytes = code.to_bytes();
+        let note_script = NoteScript::from_library(&note_library).into_diagnostic()?;
 
-        let masm_file_name = masm_file_path
+        let note_file_name = note_file_path
             .file_name()
             .expect("file name should exist")
             .to_str()
             .ok_or_else(|| Report::msg("failed to convert file name to &str"))?;
-        let mut masb_file_path = target_dir.join(masm_file_name);
+        let mut masb_file_path = note_scripts_target_dir.join(note_file_name);
 
         // write the binary MASB to the output dir
         masb_file_path.set_extension("masb");
-        fs::write(masb_file_path, bytes).unwrap();
+        fs::write(masb_file_path, note_script.to_bytes()).unwrap();
     }
     Ok(())
 }

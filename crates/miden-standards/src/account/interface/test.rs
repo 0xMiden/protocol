@@ -260,7 +260,8 @@ fn test_basic_wallet_custom_notes() {
         use miden::standards::wallets::basic->wallet
         use miden::standards::faucets::basic_fungible->fungible_faucet
 
-        begin
+        @note_script
+        pub proc main
             push.1
             if.true
                 # supported procs
@@ -289,7 +290,8 @@ fn test_basic_wallet_custom_notes() {
         use miden::standards::wallets::basic->wallet
         use miden::standards::faucets::basic_fungible->fungible_faucet
 
-        begin
+        @note_script
+        pub proc main
             push.1
             if.true
                 # unsupported procs
@@ -342,7 +344,8 @@ fn test_basic_fungible_faucet_custom_notes() {
         use miden::standards::wallets::basic->wallet
         use miden::standards::faucets::basic_fungible->fungible_faucet
 
-        begin
+        @note_script
+        pub proc main
             push.1
             if.true
                 # supported procs
@@ -370,7 +373,8 @@ fn test_basic_fungible_faucet_custom_notes() {
         use miden::standards::wallets::basic->wallet
         use miden::standards::faucets::basic_fungible->fungible_faucet
 
-        begin
+        @note_script
+        pub proc main
             push.1
             if.true
                 # supported procs
@@ -445,7 +449,8 @@ fn test_custom_account_custom_notes() {
         use miden::standards::wallets::basic->wallet
         use test::account::component_1->test_account
 
-        begin
+        @note_script
+        pub proc main
             push.1
             if.true
                 # supported proc
@@ -476,7 +481,8 @@ fn test_custom_account_custom_notes() {
         use miden::standards::wallets::basic->wallet
         use test::account::component_1->test_account
 
-        begin
+        @note_script
+        pub proc main
             push.1
             if.true
                 call.wallet::receive_asset
@@ -550,7 +556,8 @@ fn test_custom_account_multiple_components_custom_notes() {
         use test::account::component_1->test_account
         use miden::standards::faucets::basic_fungible->fungible_faucet
 
-        begin
+        @note_script
+        pub proc main
             push.1
             if.true
                 # supported procs
@@ -587,7 +594,8 @@ fn test_custom_account_multiple_components_custom_notes() {
         use test::account::component_1->test_account
         use miden::standards::faucets::basic_fungible->fungible_faucet
 
-        begin
+        @note_script
+        pub proc main
             push.1
             if.true
                 # supported procs
