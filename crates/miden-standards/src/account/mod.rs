@@ -2,12 +2,14 @@ use super::auth_method::AuthMethod;
 
 pub mod access;
 pub mod auth;
+pub mod burn_policies;
 pub mod components;
 pub mod faucets;
 pub mod interface;
 pub mod metadata;
 pub mod mint_policies;
 pub mod pausable;
+pub mod policy_manager;
 pub mod wallets;
 
 pub use metadata::AccountBuilderSchemaCommitmentExt;
