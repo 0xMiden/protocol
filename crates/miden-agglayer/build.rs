@@ -5,7 +5,6 @@ use std::sync::Arc;
 
 use fs_err as fs;
 use miden_assembly::diagnostics::{IntoDiagnostic, NamedSource, Result, WrapErr};
-use miden_assembly::serde::Serializable;
 use miden_assembly::{Assembler, Library, Report};
 use miden_crypto::hash::keccak::{Keccak256, Keccak256Digest};
 use miden_protocol::account::{
@@ -14,7 +13,6 @@ use miden_protocol::account::{
     AccountComponentMetadata,
     AccountType,
 };
-use miden_protocol::note::NoteScript;
 use miden_protocol::transaction::TransactionKernel;
 use miden_standards::account::auth::NoAuth;
 use miden_standards::account::mint_policies::OwnerControlled;
@@ -44,7 +42,7 @@ const AGGLAYER_GLOBAL_CONSTANTS_FILE_NAME: &str = "agglayer_constants.rs";
 /// Read and parse the contents from `./asm`.
 /// - Compiles the contents of asm/agglayer directory into a single agglayer.masl library.
 /// - Compiles the contents of asm/components directory into individual per-component .masl files.
-/// - Compiles the contents of asm/note_scripts directory into individual .masb files.
+/// - Compiles the contents of asm/note_scripts directory into individual `.masl` libraries.
 fn main() -> Result<()> {
     // re-build when the MASM code changes
     println!("cargo::rerun-if-changed={ASM_DIR}/");
@@ -125,9 +123,9 @@ fn compile_agglayer_lib(
 // COMPILE EXECUTABLE MODULES
 // ================================================================================================
 
-/// Reads all MASM files from `{source_dir}`, compiles each file as a library with
-/// [`Assembler::assemble_library`], wraps it as a [`NoteScript`] via [`NoteScript::from_library`],
-/// and writes serialized bytes as `.masb`.
+/// Reads all MASM files from `{source_dir}`, compiles each file as a note script library with
+/// [`Assembler::assemble_library`], and writes the serialized library as `.masl` via
+/// [`Library::write_to_file`].
 fn compile_note_scripts(
     source_dir: &Path,
     note_scripts_target_dir: &Path,
@@ -142,21 +140,21 @@ fn compile_note_scripts(
     assembler.link_static_library(standards_lib)?;
 
     for note_file_path in shared::get_masm_files(source_dir).unwrap() {
-        // read the MASM file, parse it, and serialize the parsed AST to bytes
+        // compile the note script library from the provided MASM file
         let note_library = assembler.clone().assemble_library([note_file_path.clone()])?;
-
-        let note_script = NoteScript::from_library(&note_library).into_diagnostic()?;
 
         let note_file_name = note_file_path
             .file_name()
             .expect("file name should exist")
             .to_str()
             .ok_or_else(|| Report::msg("failed to convert file name to &str"))?;
-        let mut masb_file_path = note_scripts_target_dir.join(note_file_name);
+        let mut masl_file_path = note_scripts_target_dir.join(note_file_name);
+        masl_file_path.set_extension(Library::LIBRARY_EXTENSION);
 
-        // write the binary MASB to the output dir
-        masb_file_path.set_extension("masb");
-        fs::write(masb_file_path, note_script.to_bytes()).unwrap();
+        // write the note script library to the output dir
+        note_library
+            .write_to_file(&masl_file_path)
+            .map_err(|e| Report::msg(format!("{e:#}")))?;
     }
     Ok(())
 }

@@ -386,7 +386,8 @@ impl CodeBuilder {
     /// The parsed script will have access to all modules that have been added to this builder.
     ///
     /// # Arguments
-    /// * `source` - The note script source code
+    /// - `source` - the note script source code which is expected to have a single public procedure
+    ///   marked with the @note_script attribute.
     ///
     /// # Errors
     /// Returns an error if:
@@ -398,7 +399,7 @@ impl CodeBuilder {
             CodeBuilderError::build_error_with_report("failed to parse note script library", err)
         })?;
 
-        let note_script = NoteScript::from_library(&Self::apply_advice_map_to_library(
+        NoteScript::from_library(&Self::apply_advice_map_to_library(
             advice_map,
             Arc::unwrap_or_clone(note_script_lib),
         ))
@@ -407,9 +408,7 @@ impl CodeBuilder {
                 "failed to create note script from library",
                 err,
             )
-        })?;
-
-        Ok(note_script)
+        })
     }
 
     // ACCESSORS

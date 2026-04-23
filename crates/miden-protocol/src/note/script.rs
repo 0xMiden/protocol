@@ -42,6 +42,10 @@ impl NoteScript {
     // --------------------------------------------------------------------------------------------
 
     /// Returns a new [NoteScript] instantiated from the provided program.
+    ///
+    /// TODO: since the note script now should be created from `Library`, not `Program`, this
+    /// constructor should be removed:
+    /// (https://github.com/0xMiden/protocol/pull/2822#discussion_r3132965577).
     pub fn new(code: Program) -> Self {
         Self {
             entrypoint: code.entrypoint(),

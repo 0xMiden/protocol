@@ -8,6 +8,8 @@ extern crate alloc;
 use alloc::string::ToString;
 use alloc::vec;
 
+use miden_assembly::Library;
+use miden_assembly::serde::Deserializable;
 use miden_core::Word;
 use miden_protocol::account::AccountId;
 use miden_protocol::crypto::rand::FeltRng;
@@ -32,8 +34,10 @@ use crate::ExitRoot;
 
 // Initialize the UPDATE_GER note script only once
 static UPDATE_GER_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/UPDATE_GER.masb"));
-    NoteScript::from_bytes(bytes).expect("shipped UPDATE_GER script is well-formed")
+    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/UPDATE_GER.masl"));
+    let library =
+        Library::read_from_bytes(bytes).expect("shipped UPDATE_GER script library is well-formed");
+    NoteScript::from_library(&library).expect("shipped UPDATE_GER script is well-formed")
 });
 
 // UPDATE_GER NOTE
