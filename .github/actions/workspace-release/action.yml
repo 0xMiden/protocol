@@ -22,16 +22,25 @@ runs:
     - name: Verify tag matches release branch HEAD
       if: ${{ inputs.verify-branch-head == 'true' }}
       shell: bash
+      env:
+        RELEASE_BRANCH: ${{ inputs.release-branch }}
       run: |
-        git fetch origin ${{ inputs.release-branch }} --depth=1
-        branch_sha="$(git rev-parse origin/${{ inputs.release-branch }})"
+        case "$RELEASE_BRANCH" in
+          "" | -* | */* | *..* | *~* | *^* | *:* | *\?* | *\[* | *\\*)
+            echo "::error::Invalid release branch name: $RELEASE_BRANCH"
+            exit 1
+            ;;
+        esac
+
+        git fetch origin "refs/heads/$RELEASE_BRANCH:refs/remotes/origin/$RELEASE_BRANCH" --depth=1
+        branch_sha="$(git rev-parse "refs/remotes/origin/$RELEASE_BRANCH")"
         tag_sha="$(git rev-parse HEAD)"
 
         echo "branch_sha=$branch_sha"
         echo "tag_sha=$tag_sha"
 
         if [ "$branch_sha" != "$tag_sha" ]; then
-          echo "::error::The release/tag commit does not match origin/${{ inputs.release-branch }} HEAD. Aborting."
+          echo "::error::The release/tag commit does not match origin/$RELEASE_BRANCH HEAD. Aborting."
           exit 1
         fi
 
