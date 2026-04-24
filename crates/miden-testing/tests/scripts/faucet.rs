@@ -1427,7 +1427,7 @@ async fn test_network_faucet_non_owner_cannot_burn_when_owner_only_policy_active
         non_owner_account_id,
         faucet.id(),
         fungible_asset.into(),
-        NoteAttachment::default(),
+        NoteAttachments::default(),
         &mut rng,
     )?;
     builder.add_output_note(RawOutputNote::Full(set_policy_note.clone()));
@@ -1485,7 +1485,7 @@ async fn test_network_faucet_owner_can_burn_when_owner_only_policy_active() -> a
         owner_account_id,
         faucet.id(),
         fungible_asset.into(),
-        NoteAttachment::default(),
+        NoteAttachments::default(),
         &mut rng,
     )?;
     builder.add_output_note(RawOutputNote::Full(set_policy_note.clone()));
