@@ -293,7 +293,8 @@ async fn prove_burning_fungible_asset_on_existing_faucet_succeeds() -> anyhow::R
     // need to create a note with the fungible asset to be burned
     let burn_note_script_code = "
         # burn the asset
-        begin
+        @note_script
+        pub proc main
             dropw
             # => []
 
@@ -356,7 +357,8 @@ async fn faucet_burn_fungible_asset_fails_amount_exceeds_token_supply() -> anyho
 
     let burn_note_script_code = "
         # burn the asset
-        begin
+        @note_script
+        pub proc main
             dropw
             # => []
 
@@ -407,7 +409,7 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
     let note_type = NoteType::Public;
 
     // Create a simple output note script
-    let output_note_script_code = "begin push.1 drop end";
+    let output_note_script_code = "@note_script pub proc main push.1 drop end";
     let source_manager = Arc::new(DefaultSourceManager::default());
     let output_note_script = CodeBuilder::with_source_manager(source_manager.clone())
         .compile_note_script(output_note_script_code)?;
@@ -441,7 +443,8 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
         "
             use miden::protocol::note
             
-            begin
+            @note_script
+            pub proc main
                 # Build recipient hash from SERIAL_NUM, SCRIPT_ROOT, and STORAGE_COMMITMENT
                 push.{script_root}
                 # => [SCRIPT_ROOT]
@@ -763,7 +766,8 @@ async fn test_network_faucet_set_policy_rejects_non_allowed_root() -> anyhow::Re
         r#"
         use miden::standards::mint_policies::policy_manager->policy_manager
 
-        begin
+        @note_script
+        pub proc main
             repeat.12 push.0 end
             push.{invalid_policy_root}
             call.policy_manager::set_mint_policy
@@ -944,7 +948,8 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
         r#"
         use miden::standards::access::ownable2step
 
-        begin
+        @note_script
+        pub proc main
             repeat.14 push.0 end
             push.{new_owner_prefix}
             push.{new_owner_suffix}
@@ -997,7 +1002,8 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
     let accept_note_script_code = r#"
         use miden::standards::access::ownable2step
 
-        begin
+        @note_script
+        pub proc main
             repeat.16 push.0 end
             call.ownable2step::accept_ownership
             dropw dropw dropw dropw
@@ -1072,7 +1078,8 @@ async fn test_network_faucet_only_owner_can_transfer() -> anyhow::Result<()> {
         r#"
         use miden::standards::access::ownable2step
 
-        begin
+        @note_script
+        pub proc main
             repeat.14 push.0 end
             push.{new_owner_prefix}
             push.{new_owner_suffix}
@@ -1142,7 +1149,8 @@ async fn test_network_faucet_renounce_ownership() -> anyhow::Result<()> {
     let renounce_note_script_code = r#"
         use miden::standards::access::ownable2step
 
-        begin
+        @note_script
+        pub proc main
             repeat.16 push.0 end
             call.ownable2step::renounce_ownership
             dropw dropw dropw dropw
@@ -1156,7 +1164,8 @@ async fn test_network_faucet_renounce_ownership() -> anyhow::Result<()> {
         r#"
         use miden::standards::access::ownable2step
 
-        begin
+        @note_script
+        pub proc main
             repeat.14 push.0 end
             push.{new_owner_prefix}
             push.{new_owner_suffix}

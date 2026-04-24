@@ -23,6 +23,7 @@ use miden_protocol::testing::account_id::{
     ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
     ACCOUNT_ID_SENDER,
 };
+use miden_protocol::testing::note::DEFAULT_NOTE_SCRIPT;
 use miden_protocol::transaction::memory::ACTIVE_INPUT_NOTE_PTR;
 use miden_protocol::transaction::{RawOutputNote, TransactionArgs};
 use miden_protocol::{Felt, Word};
@@ -187,7 +188,7 @@ async fn test_build_recipient() -> anyhow::Result<()> {
     let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
 
     // Create test script and serial number
-    let note_script = CodeBuilder::default().compile_note_script("begin nop end")?;
+    let note_script = CodeBuilder::default().compile_note_script(DEFAULT_NOTE_SCRIPT)?;
     let serial_num = Word::default();
 
     // Define test values as Words
@@ -417,7 +418,8 @@ pub async fn test_timelock() -> anyhow::Result<()> {
       use miden::protocol::active_note
       use miden::protocol::tx
 
-      begin
+      @note_script
+      pub proc main
           # store the note storage to memory starting at address 0
           push.0 exec.active_note::get_storage
           # => [num_storage_items, storage_ptr]
@@ -518,7 +520,7 @@ async fn test_public_key_as_note_input() -> anyhow::Result<()> {
     let tag = NoteTag::with_account_target(target_account.id());
     let metadata = NoteMetadata::new(sender_account.id(), NoteType::Public).with_tag(tag);
     let vault = NoteAssets::new(vec![])?;
-    let note_script = CodeBuilder::default().compile_note_script("begin nop end")?;
+    let note_script = CodeBuilder::default().compile_note_script(DEFAULT_NOTE_SCRIPT)?;
     let recipient =
         NoteRecipient::new(serial_num, note_script, NoteStorage::new(public_key_value.to_vec())?);
     let note_with_pub_key = Note::new(vault.clone(), metadata, recipient);
