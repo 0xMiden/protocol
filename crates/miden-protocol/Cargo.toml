@@ -63,7 +63,6 @@ getrandom = { features = ["wasm_js"], version = "0.3" }
 [dev-dependencies]
 anyhow         = { features = ["backtrace", "std"], workspace = true }
 assert_matches = { workspace = true }
-color-eyre     = { version = "0.5" }
 criterion      = { default-features = false, features = ["html_reports"], version = "0.5" }
 miden-protocol = { features = ["testing"], path = "." }
 pprof          = { default-features = false, features = ["criterion", "flamegraph"], version = "0.15" }
@@ -77,3 +76,6 @@ miden-core     = { workspace = true }
 miden-core-lib = { workspace = true }
 regex          = { version = "1.11" }
 walkdir        = { version = "2.5" }
+
+[package.metadata.cargo-shear]
+ignored = ["getrandom"]

@@ -10,6 +10,10 @@ repository.workspace   = true
 rust-version.workspace = true
 version                = "0.1.0"
 
+[lib]
+doctest = false
+test    = false
+
 [[bench]]
 harness = false
 name    = "time_counting_benchmarks"
