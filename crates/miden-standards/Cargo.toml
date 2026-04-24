@@ -34,11 +34,11 @@ fs-err         = { workspace = true }
 miden-assembly = { workspace = true }
 miden-core-lib = { workspace = true }
 miden-protocol = { workspace = true }
-regex          = { version = "1.11" }
-walkdir        = { version = "2.5" }
+regex          = { workspace = true }
+walkdir        = { workspace = true }
 
 [dev-dependencies]
-anyhow          = "1.0"
+anyhow          = { workspace = true }
 assert_matches  = { workspace = true }
 miden-processor = { features = ["testing"], workspace = true }
 miden-protocol  = { features = ["testing"], workspace = true }

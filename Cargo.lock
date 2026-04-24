@@ -266,7 +266,7 @@ name = "bench-note-checker"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "criterion 0.6.0",
+ "criterion",
  "miden-protocol",
  "miden-standards",
  "miden-testing",
@@ -581,6 +581,7 @@ dependencies = [
  "ciborium",
  "clap",
  "criterion-plot",
+ "futures",
  "is-terminal",
  "itertools 0.10.5",
  "num-traits",
@@ -591,29 +592,6 @@ dependencies = [
  "regex",
  "serde",
  "serde_derive",
- "serde_json",
- "tinytemplate",
- "walkdir",
-]
-
-[[package]]
-name = "criterion"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3bf7af66b0989381bd0be551bd7cc91912a655a58c6918420c9527b1fd8b4679"
-dependencies = [
- "anes",
- "cast",
- "ciborium",
- "clap",
- "criterion-plot",
- "itertools 0.13.0",
- "num-traits",
- "oorandom",
- "plotters",
- "rayon",
- "regex",
- "serde",
  "serde_json",
  "tinytemplate",
  "tokio",
@@ -1351,15 +1329,6 @@ dependencies = [
 
 [[package]]
 name = "itertools"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "413ee7dfc52ee1a4949ceeb7dbc8a33f2d6c088194d9f922fb8318faf1f01186"
-dependencies = [
- "either",
-]
-
-[[package]]
-name = "itertools"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b192c782037fadd9cfa75548310488aabdbf3d2da73885b31bd0abd03351285"
@@ -1890,7 +1859,7 @@ dependencies = [
  "anyhow",
  "assert_matches",
  "bech32",
- "criterion 0.5.1",
+ "criterion",
  "fs-err",
  "getrandom 0.3.4",
  "miden-assembly",
@@ -2709,7 +2678,7 @@ dependencies = [
  "aligned-vec",
  "backtrace",
  "cfg-if",
- "criterion 0.5.1",
+ "criterion",
  "findshlibs",
  "inferno",
  "libc",
