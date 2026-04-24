@@ -656,10 +656,7 @@ impl From<PswapNote> for Note {
 
         let metadata = NoteMetadata::new(pswap.sender, pswap.note_type).with_tag(tag);
 
-        let attachments = pswap
-            .attachment
-            .map(NoteAttachments::from)
-            .expect("PswapNote attachments should be valid");
+        let attachments = pswap.attachment.map(NoteAttachments::from).unwrap_or_default();
 
         Note::with_attachments(assets, metadata, recipient, attachments)
     }
