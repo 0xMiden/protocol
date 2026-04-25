@@ -1,0 +1,58 @@
+# Runs benchmarks on a schedule and tracks results for regression detection.
+
+name: bench
+
+on:
+  schedule:
+    - cron: '0 0 * * 1'  # every Monday at midnight UTC
+  workflow_dispatch:       # allow manual runs
+
+permissions:
+  contents: write
+  deployments: write
+
+# Do not cancel in-progress runs — interrupting a benchmark corrupts stored history.
+concurrency:
+  group: bench
+  cancel-in-progress: false
+
+jobs:
+  bench:
+    name: performance regression check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@main
+
+      - name: Cleanup large tools for build space
+        uses: ./.github/actions/cleanup-runner
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: true
+
+      - name: Install Rust
+        run: rustup update --no-self-update
+
+      - name: Run note checker benchmarks
+        run: make bench-note-checker
+
+      - name: Run transaction benchmarks
+        run: make bench-tx
+
+      - name: Upload transaction cycle counts
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-tx-results
+          path: bin/bench-transaction/bench-tx.json
+
+      - name: Store benchmark results
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          name: Miden Protocol Benchmarks
+          tool: criterion
+          output-file-path: target/criterion
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: true
+          alert-threshold: '150%'
+          comment-on-alert: true
+          fail-on-alert: false
