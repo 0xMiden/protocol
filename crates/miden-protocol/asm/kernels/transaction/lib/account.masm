@@ -9,8 +9,11 @@ use $kernel::constants::EMPTY_SMT_ROOT
 use $kernel::constants::STORAGE_SLOT_TYPE_MAP
 use $kernel::constants::STORAGE_SLOT_TYPE_VALUE
 use $kernel::memory
-use $kernel::memory::ACCT_ID_SUFFIX_OFFSET
+use $kernel::memory::ACCOUNT_DATA_LENGTH
 use $kernel::memory::ACCT_ID_PREFIX_OFFSET
+use $kernel::memory::ACCT_ID_SUFFIX_OFFSET
+use $kernel::memory::MAX_FOREIGN_ACCOUNT_PTR
+use $kernel::memory::NATIVE_ACCOUNT_DATA_PTR
 use miden::core::collections::smt
 use miden::core::collections::sorted_array
 use miden::core::crypto::hashes::poseidon2
@@ -1793,7 +1796,7 @@ end
 pub proc get_account_data_ptr
     # move pointer one account block back so that the first account pointer in the cycle will point
     # to the native account
-    exec.memory::get_native_account_data_ptr exec.memory::get_account_data_length sub
+    push.NATIVE_ACCOUNT_DATA_PTR push.ACCOUNT_DATA_LENGTH sub
     # => [curr_account_ptr, foreign_account_id_suffix, foreign_account_id_prefix]
 
     # push the pad element onto the stack: it will represent the `is_equal_id` flag during the cycle
@@ -1810,7 +1813,7 @@ pub proc get_account_data_ptr
         # => [curr_account_ptr, foreign_account_id_suffix, foreign_account_id_prefix]
 
         # move the current account pointer to the next account data block
-        exec.memory::get_account_data_length add
+        add.ACCOUNT_DATA_LENGTH
         # => [curr_account_ptr', foreign_account_id_suffix, foreign_account_id_prefix]
 
         dup add.ACCT_ID_PREFIX_OFFSET mem_load
@@ -1834,7 +1837,7 @@ pub proc get_account_data_ptr
 
     # check that the loading of one more account won't exceed the maximum number of the foreign
     # accounts which can be loaded.
-    dup exec.memory::get_max_foreign_account_ptr lte
+    dup push.MAX_FOREIGN_ACCOUNT_PTR lte
     assert.err=ERR_FOREIGN_ACCOUNT_MAX_NUMBER_EXCEEDED
     # => [curr_account_ptr, foreign_account_id_suffix, foreign_account_id_prefix, is_equal_id]
 
