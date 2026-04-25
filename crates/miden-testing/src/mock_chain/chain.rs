@@ -260,17 +260,26 @@ impl MockChain {
             .apply_block(genesis_block)
             .context("failed to build account from builder")?;
 
-        // Update committed_notes with full note details for genesis notes.
-        // This is needed because apply_block only stores headers for private notes,
-        // but tests need full note details to create input notes.
-        for note in genesis_notes {
-            if let Some(MockChainNote::Private(_, _, inclusion_proof)) =
-                chain.committed_notes.get(&note.id())
-            {
-                chain.committed_notes.insert(
-                    note.id(),
-                    MockChainNote::Public(note.clone(), inclusion_proof.clone()),
-                );
+        // Add genesis notes to committed_notes with full note details.
+        // apply_block only stores Public output notes; private genesis notes must be added here
+        // since the test framework has the full note objects available.
+        let genesis_block = chain.blocks.first().expect("genesis block should exist after apply_block");
+        let notes_tree = genesis_block.body().compute_block_note_tree();
+        for (block_note_index, output_note) in genesis_block.body().output_notes() {
+            if let Some(genesis_note) = genesis_notes.iter().find(|n| n.id() == output_note.id()) {
+                if !chain.committed_notes.contains_key(&genesis_note.id()) {
+                    let note_path = notes_tree.open(block_note_index);
+                    let inclusion_proof = NoteInclusionProof::new(
+                        genesis_block.header().block_num(),
+                        block_note_index.leaf_index_value(),
+                        note_path,
+                    )
+                    .context("failed to create inclusion proof for genesis note")?;
+                    chain.committed_notes.insert(
+                        genesis_note.id(),
+                        MockChainNote::new(genesis_note.clone(), inclusion_proof),
+                    );
+                }
             }
         }
 
@@ -454,11 +463,9 @@ impl MockChain {
         &self.committed_notes
     }
 
-    /// Returns an [`InputNote`] for the given note ID. If the note does not exist or is not
-    /// public, `None` is returned.
+    /// Returns an [`InputNote`] for the given note ID, or `None` if not found.
     pub fn get_public_note(&self, note_id: &NoteId) -> Option<InputNote> {
-        let note = self.committed_notes.get(note_id)?;
-        note.clone().try_into().ok()
+        self.committed_notes.get(note_id).map(|n| n.clone().into())
     }
 
     /// Returns a reference to the account identified by the given account ID.
@@ -662,10 +669,7 @@ impl MockChain {
                 .get(note)
                 .with_context(|| format!("note with id {note} not found"))?
                 .clone()
-                .try_into()
-                .with_context(|| {
-                    format!("failed to convert mock chain note with id {note} into input note")
-                })?;
+                .into();
 
             let note_block_num = input_note
                 .location()
@@ -947,16 +951,7 @@ impl MockChain {
             if let OutputNote::Public(public_note) = created_note {
                 self.committed_notes.insert(
                     public_note.id(),
-                    MockChainNote::Public(public_note.as_note().clone(), note_inclusion_proof),
-                );
-            } else {
-                self.committed_notes.insert(
-                    created_note.id(),
-                    MockChainNote::Private(
-                        created_note.id(),
-                        created_note.metadata().clone(),
-                        note_inclusion_proof,
-                    ),
+                    MockChainNote::new(public_note.as_note().clone(), note_inclusion_proof),
                 );
             }
         }
