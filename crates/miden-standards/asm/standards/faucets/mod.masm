@@ -180,13 +180,13 @@ pub proc burn
 
     # this will fail if not called from a note context.
     push.ASSET_PTR exec.active_note::get_assets
-    # => [num_assets, dest_ptr, pad(16)]
+    # => [num_assets, pad(16)]
 
     # Verify we have exactly one asset
     assert.err=ERR_BASIC_FUNGIBLE_BURN_WRONG_NUMBER_OF_ASSETS
-    # => [dest_ptr, pad(16)]
+    # => [pad(16)]
 
-    exec.asset::load
+    push.ASSET_PTR exec.asset::load
     # => [ASSET_KEY, ASSET_VALUE, pad(16)]
 
     # Burn the asset from the transaction vault

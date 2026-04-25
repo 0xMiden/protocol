@@ -65,7 +65,7 @@ end
 #! information about the layout of each asset see the description of the `Asset` Rust type.
 #!
 #! Inputs:  [dest_ptr, note_index]
-#! Outputs: [num_assets, dest_ptr, note_index]
+#! Outputs: [num_assets]
 #!
 #! Where:
 #! - dest_ptr is the memory address to write the assets.
@@ -83,7 +83,10 @@ pub proc get_assets
 
     # write the assets stored in the advice map to the specified memory pointer
     exec.note::write_assets_to_memory
-    # => [num_assets, dest_ptr, note_index]
+    # => [num_assets, note_index]
+
+    swap drop
+    # => [num_assets]
 end
 
 #! Returns the recipient of the input note with the specified index.

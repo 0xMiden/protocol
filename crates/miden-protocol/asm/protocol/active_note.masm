@@ -25,7 +25,7 @@ const ERR_NOTE_INVALID_NUMBER_OF_STORAGE_ITEMS="the specified number of note sto
 #! Writes the assets of the active note into memory starting at the specified address.
 #!
 #! Inputs:  [dest_ptr]
-#! Outputs: [num_assets, dest_ptr]
+#! Outputs: [num_assets]
 #!
 #! Where:
 #! - dest_ptr is the memory address to write the assets.
@@ -56,7 +56,7 @@ pub proc get_assets
 
     # write the assets from the advice map into memory
     exec.note::write_assets_to_memory
-    # => [num_assets, dest_ptr]
+    # => [num_assets]
 end
 
 #! Returns the recipient of the active note.
@@ -97,7 +97,7 @@ end
 #!   Stack: [dest_ptr]
 #!   Advice Map: { NOTE_STORAGE_COMMITMENT: [STORAGE] }
 #! Outputs:
-#!   Stack: [num_storage_items, dest_ptr]
+#!   Stack: [num_storage_items]
 #!
 #! Where:
 #! - dest_ptr is the memory address to write the note storage.
@@ -130,7 +130,7 @@ pub proc get_storage
 
     # write the inputs to the memory using the provided destination pointer
     exec.write_storage_to_memory
-    # => [num_storage_items, dest_ptr]
+    # => [num_storage_items]
 end
 
 #! Returns the metadata of the active note.
@@ -264,7 +264,7 @@ end
 #!     NOTE_STORAGE_COMMITMENT: [[INPUT_VALUES]]
 #!   }
 #! Outputs:
-#!   Operand stack: [num_storage_items, dest_ptr]
+#!   Operand stack: [num_storage_items]
 proc write_storage_to_memory
     # load the inputs from the advice map to the advice stack
     # we pad the number of inputs to the next multiple of 8 so that we can use the
@@ -334,5 +334,6 @@ proc write_storage_to_memory
 
     # validate that the inputs written to memory match the inputs commitment
     assert_eqw.err=ERR_NOTE_DATA_DOES_NOT_MATCH_COMMITMENT
-    # => [num_storage_items, dest_ptr]
+    swap drop
+    # => [num_storage_items]
 end
