@@ -9,6 +9,7 @@ use $kernel::output_note
 use $kernel::tx
 # use $kernel::types::AccountId
 
+use $kernel::memory::KERNEL_PROCEDURES_PTR
 use $kernel::memory::UPCOMING_FOREIGN_PROCEDURE_PTR
 use $kernel::memory::UPCOMING_FOREIGN_PROC_INPUT_VALUE_15_PTR
 
@@ -1565,7 +1566,7 @@ pub proc exec_kernel_proc
     # => [procedure_offset, <procedure_inputs>, <pad>]
 
     # compute the memory pointer at which desired procedure is stored
-    mul.4 exec.memory::get_kernel_procedures_ptr add
+    mul.4 push.KERNEL_PROCEDURES_PTR add
     # => [procedure_pointer, <procedure_inputs>, <pad>]
 
     # execute loaded procedure

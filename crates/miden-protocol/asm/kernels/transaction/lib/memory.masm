@@ -44,10 +44,10 @@ const TX_EXPIRATION_BLOCK_NUM_PTR = 2
 const NATIVE_ACCT_STORAGE_COMMITMENT_DIRTY_FLAG_PTR = 3
 
 # The memory address at which the input vault root is stored.
-const INPUT_VAULT_ROOT_PTR = 4
+pub const INPUT_VAULT_ROOT_PTR = 4
 
 # The memory address at which the output vault root is stored.
-const OUTPUT_VAULT_ROOT_PTR = 8
+pub const OUTPUT_VAULT_ROOT_PTR = 8
 
 # Pointer to the prefix and suffix of the ID of the foreign account which will be loaded during the
 # upcoming FPI call. This ID is updated during the `prepare_fpi_call` kernel procedure.
@@ -104,7 +104,7 @@ const INIT_NATIVE_ACCOUNT_STORAGE_COMMITMENT_PTR=420
 const INPUT_NOTES_COMMITMENT_PTR=424
 
 # The memory address at which the transaction script mast root is stored.
-const TX_SCRIPT_ROOT_PTR=428
+pub const TX_SCRIPT_ROOT_PTR=428
 
 # The memory address at which the transaction script arguments are stored.
 const TX_SCRIPT_ARGS_PTR=432
@@ -116,7 +116,7 @@ const AUTH_ARGS_PTR=436
 # -------------------------------------------------------------------------------------------------
 
 # The memory address at which the block data section begins
-const BLOCK_DATA_SECTION_OFFSET=800
+pub const BLOCK_DATA_SECTION_OFFSET=800
 
 # The memory address at which the previous block commitment is stored
 const PREV_BLOCK_COMMITMENT_PTR=800
@@ -161,13 +161,13 @@ const NOTE_ROOT_PTR=840
 # -------------------------------------------------------------------------------------------------
 
 # The memory address at which the chain data section begins
-const PARTIAL_BLOCKCHAIN_PTR=1200
+pub const PARTIAL_BLOCKCHAIN_PTR=1200
 
 # The memory address at which the total number of leaves in the partial blockchain is stored
 const PARTIAL_BLOCKCHAIN_NUM_LEAVES_PTR=1200
 
 # The memory address at which the partial blockchain peaks are stored
-const PARTIAL_BLOCKCHAIN_PEAKS_PTR=1204
+pub const PARTIAL_BLOCKCHAIN_PEAKS_PTR=1204
 
 # KERNEL DATA
 # -------------------------------------------------------------------------------------------------
@@ -176,7 +176,7 @@ const PARTIAL_BLOCKCHAIN_PEAKS_PTR=1204
 const NUM_KERNEL_PROCEDURES_PTR=1600
 
 # The memory address at which the hashes of kernel procedures begin.
-const KERNEL_PROCEDURES_PTR=1604
+pub const KERNEL_PROCEDURES_PTR=1604
 
 # ACCOUNT DATA
 # -------------------------------------------------------------------------------------------------
@@ -184,15 +184,15 @@ const KERNEL_PROCEDURES_PTR=1604
 # The largest memory address which can be used to load the foreign account data.
 # It is computed as `2048 * 64 * 4` -- this is the memory address where the data block of the 64th
 # account starts.
-const MAX_FOREIGN_ACCOUNT_PTR=524288
+pub const MAX_FOREIGN_ACCOUNT_PTR=524288
 
 # The memory address at which the native account data is stored.
-const NATIVE_ACCOUNT_DATA_PTR=8192
+pub const NATIVE_ACCOUNT_DATA_PTR=8192
 const NATIVE_ACCOUNT_ID_SUFFIX_PTR = NATIVE_ACCOUNT_DATA_PTR + ACCT_ID_SUFFIX_OFFSET
 const NATIVE_ACCOUNT_ID_PREFIX_PTR = NATIVE_ACCOUNT_DATA_PTR + ACCT_ID_PREFIX_OFFSET
 
 # The length of the memory interval that the account data occupies.
-const ACCOUNT_DATA_LENGTH=8192
+pub const ACCOUNT_DATA_LENGTH=8192
 
 # The offsets at which the account data is stored relative to the start of the account data segment.
 const ACCT_NONCE_OFFSET=0
@@ -263,7 +263,7 @@ const INPUT_NOTE_ASSETS_OFFSET=44
 # -------------------------------------------------------------------------------------------------
 
 # The memory address at which the output notes section begins.
-const OUTPUT_NOTE_SECTION_OFFSET=16777216
+pub const OUTPUT_NOTE_SECTION_OFFSET=16777216
 
 # The offsets at which data of an output note is stored relative to the start of its data segment.
 const OUTPUT_NOTE_ID_OFFSET=0
@@ -282,21 +282,21 @@ const OUTPUT_NOTE_ASSETS_OFFSET=24
 # The inclusive start of the link map dynamic memory region.
 # Chosen as a number greater than 2^25 such that all entry pointers are multiples of
 # LINK_MAP_ENTRY_SIZE. That enables a simpler check in assert_entry_ptr_is_valid.
-const LINK_MAP_REGION_START_PTR=33554448
+pub const LINK_MAP_REGION_START_PTR=33554448
 
 # The non-inclusive end of the link map dynamic memory region.
 # This happens to be 2^26, but if it is changed, it should be chosen as a number such that
 # LINK_MAP_REGION_END_PTR - LINK_MAP_REGION_START_PTR is a multiple of LINK_MAP_ENTRY_SIZE,
 # because that enables checking whether a newly allocated entry pointer is at the end of the range
 # using equality rather than lt/gt in link_map_malloc.
-const LINK_MAP_REGION_END_PTR=67108864
+pub const LINK_MAP_REGION_END_PTR=67108864
 
 # LINK_MAP_REGION_START_PTR + the currently used size stored at this pointer defines the next
 # entry pointer that will be allocated.
 const LINK_MAP_USED_MEMORY_SIZE=33554432
 
 # The size of each map entry, i.e. four words.
-const LINK_MAP_ENTRY_SIZE=16
+pub const LINK_MAP_ENTRY_SIZE=16
 
 # MEMORY PROCEDURES
 # =================================================================================================
@@ -348,18 +348,6 @@ pub proc set_active_input_note_ptr
     mem_store.ACTIVE_INPUT_NOTE_PTR
 end
 
-#! Returns the pointer to the memory address at which the input vault root is stored.
-#!
-#! Inputs:  []
-#! Outputs: [input_vault_root_ptr]
-#!
-#! Where:
-#! - input_vault_root_ptr is a pointer to the memory address at which the input vault root is
-#!   stored.
-pub proc get_input_vault_root_ptr
-    push.INPUT_VAULT_ROOT_PTR
-end
-
 #! Returns the input vault root.
 #!
 #! Inputs:  []
@@ -380,18 +368,6 @@ end
 #! - INPUT_VAULT_ROOT is the input vault root.
 pub proc set_input_vault_root
     mem_storew_le.INPUT_VAULT_ROOT_PTR
-end
-
-#! Returns the pointer to the memory address at which the output vault root is stored.
-#!
-#! Inputs:  []
-#! Outputs: [output_vault_root_ptr]
-#!
-#! Where:
-#! - output_vault_root_ptr is the pointer to the memory address at which the output vault root is
-#!   stored.
-pub proc get_output_vault_root_ptr
-    push.OUTPUT_VAULT_ROOT_PTR
 end
 
 #! Returns the output vault root.
@@ -638,17 +614,6 @@ pub proc set_nullifier_commitment
     mem_storew_le.INPUT_NOTES_COMMITMENT_PTR
 end
 
-#! Returns the memory address of the transaction script root.
-#!
-#! Inputs:  []
-#! Outputs: [tx_script_root_ptr]
-#!
-#! Where:
-#! - tx_script_root_ptr is the pointer to the memory where transaction script root is stored.
-pub proc get_tx_script_root_ptr
-    push.TX_SCRIPT_ROOT_PTR
-end
-
 #! Sets the transaction script root.
 #!
 #! Inputs:  [TX_SCRIPT_ROOT]
@@ -708,17 +673,6 @@ end
 
 # BLOCK DATA
 # -------------------------------------------------------------------------------------------------
-
-#! Returns a pointer to the block data section.
-#!
-#! Inputs:  []
-#! Outputs: [ptr]
-#!
-#! Where:
-#! - ptr is a pointer to the block data section.
-pub proc get_block_data_ptr
-    push.BLOCK_DATA_SECTION_OFFSET
-end
 
 #! Returns the previous block commitment of the transaction reference block.
 #!
@@ -883,17 +837,6 @@ end
 # CHAIN DATA
 # -------------------------------------------------------------------------------------------------
 
-#! Returns a pointer to the partial blockchain section.
-#!
-#! Inputs:  []
-#! Outputs: [ptr]
-#!
-#! Where:
-#! - ptr is the pointer to the partial blockchain section.
-pub proc get_partial_blockchain_ptr
-    push.PARTIAL_BLOCKCHAIN_PTR
-end
-
 #! Sets the number of leaves in the partial blockchain.
 #!
 #! Inputs:  [num_leaves]
@@ -905,53 +848,8 @@ pub proc set_partial_blockchain_num_leaves
     mem_store.PARTIAL_BLOCKCHAIN_NUM_LEAVES_PTR
 end
 
-#! Returns a pointer to start of the partial blockchain peaks section.
-#!
-#! Inputs:  []
-#! Outputs: [ptr]
-#!
-#! Where:
-#! - ptr is the pointer to the start of the partial blockchain peaks section.
-pub proc get_partial_blockchain_peaks_ptr
-    push.PARTIAL_BLOCKCHAIN_PEAKS_PTR
-end
-
 # ACCOUNT DATA
 # -------------------------------------------------------------------------------------------------
-
-#! Returns the memory pointer at which the native account data is stored.
-#!
-#! Inputs:  []
-#! Outputs: [ptr]
-#!
-#! Where:
-#! - ptr is the memory address at which the native account data is stored.
-pub proc get_native_account_data_ptr
-    push.NATIVE_ACCOUNT_DATA_PTR
-end
-
-#! Returns the length of the memory interval that the account data occupies.
-#!
-#! Inputs:  []
-#! Outputs: [account_data_length]
-#!
-#! Where:
-#! - account_data_length is the length of the memory interval that the account data occupies.
-pub proc get_account_data_length
-    push.ACCOUNT_DATA_LENGTH
-end
-
-#! Returns the largest memory address which can be used to load the foreign account data.
-#!
-#! Inputs:  []
-#! Outputs: [max_foreign_account_ptr]
-#!
-#! Where:
-#! - max_foreign_account_ptr is the largest memory address which can be used to load the foreign
-#!   account data.
-pub proc get_max_foreign_account_ptr
-    push.MAX_FOREIGN_ACCOUNT_PTR
-end
 
 #! Sets the memory pointer of the active account data to the native account (8192).
 #!
@@ -1454,7 +1352,7 @@ end
 #! Where:
 #! - storage_slots_section_ptr is the memory pointer to the native account's storage slots section.
 pub proc get_native_account_active_storage_slots_ptr
-    exec.get_native_account_data_ptr add.ACCT_ACTIVE_STORAGE_SLOTS_SECTION_OFFSET
+    push.NATIVE_ACCOUNT_DATA_PTR add.ACCT_ACTIVE_STORAGE_SLOTS_SECTION_OFFSET
 end
 
 #! Returns the memory pointer to the initial storage slots of the native account.
@@ -1465,7 +1363,7 @@ end
 #! Where:
 #! - account_initial_storage_slots_ptr is the memory pointer to the initial storage slot values.
 pub proc get_native_account_initial_storage_slots_ptr
-  exec.get_native_account_data_ptr add.ACCT_INITIAL_STORAGE_SLOTS_SECTION_OFFSET
+  push.NATIVE_ACCOUNT_DATA_PTR add.ACCT_INITIAL_STORAGE_SLOTS_SECTION_OFFSET
 end
 
 #! Returns the memory pointer to the initial storage slots of the active account.
@@ -1861,17 +1759,6 @@ end
 # OUTPUT NOTES
 # -------------------------------------------------------------------------------------------------
 
-#! Returns the offset of the output note data segment.
-#!
-#! Inputs:  []
-#! Outputs: [offset]
-#!
-#! Where:
-#! - offset is the offset of the output note data segment.
-pub proc get_output_note_data_offset
-    push.OUTPUT_NOTE_SECTION_OFFSET
-end
-
 #! Computes a pointer to the memory address at which the data associated with an output note with
 #! index `i` is stored.
 #!
@@ -2130,44 +2017,8 @@ pub proc get_num_kernel_procedures
     mem_load.NUM_KERNEL_PROCEDURES_PTR
 end
 
-#! Returns a pointer to the memory where hashes of the kernel procedures are stored.
-#!
-#! Inputs:  []
-#! Outputs: [kernel_procedures_ptr]
-#!
-#! Where:
-#! - kernel_procedures_ptr is the memory address where the hashes of the kernel procedures are
-#!   stored.
-pub proc get_kernel_procedures_ptr
-    push.KERNEL_PROCEDURES_PTR
-end
-
 # LINK MAP
 # -------------------------------------------------------------------------------------------------
-
-#! Returns the link map memory start ptr constant.
-#!
-#! Inputs:  []
-#! Outputs: [start_ptr]
-pub proc get_link_map_region_start_ptr
-    push.LINK_MAP_REGION_START_PTR
-end
-
-#! Returns the link map memory end ptr constant.
-#!
-#! Inputs:  []
-#! Outputs: [end_ptr]
-pub proc get_link_map_region_end_ptr
-    push.LINK_MAP_REGION_END_PTR
-end
-
-#! Returns the link map entry size constant.
-#!
-#! Inputs:  []
-#! Outputs: [entry_size]
-pub proc get_link_map_entry_size
-    push.LINK_MAP_ENTRY_SIZE
-end
 
 #! Returns the next pointer to an empty link map entry.
 #!

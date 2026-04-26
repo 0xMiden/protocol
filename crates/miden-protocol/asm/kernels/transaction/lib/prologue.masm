@@ -14,6 +14,10 @@ use $kernel::constants::MAX_INPUT_NOTES_PER_TX
 use $kernel::constants::MAX_NOTE_STORAGE_ITEMS
 use $kernel::constants::NOTE_TREE_DEPTH
 use $kernel::memory
+use $kernel::memory::BLOCK_DATA_SECTION_OFFSET
+use $kernel::memory::INPUT_VAULT_ROOT_PTR
+use $kernel::memory::KERNEL_PROCEDURES_PTR
+use $kernel::memory::PARTIAL_BLOCKCHAIN_PTR
 
 # CONSTS
 # =================================================================================================
@@ -134,7 +138,7 @@ proc process_kernel_data
     # AS => [[KERNEL_PROCEDURE_ROOTS]]
 
     # get the pointer to the memory where hashes of the kernel procedures will be stored
-    exec.memory::get_kernel_procedures_ptr swap
+    push.KERNEL_PROCEDURES_PTR swap
     # OS => [num_kernel_procedures, kernel_procs_ptr, TX_KERNEL_COMMITMENT]
     # AS => [[KERNEL_PROCEDURE_ROOTS]]
 
@@ -195,7 +199,7 @@ end
 #!   transaction.
 #! - NOTE_ROOT is the root of the tree with all notes created in the block.
 proc process_block_data
-    exec.memory::get_block_data_ptr
+    push.BLOCK_DATA_SECTION_OFFSET
     # => [block_data_ptr, block_num]
 
     # read block data and compute its sub commitment
@@ -259,7 +263,7 @@ end
 #! - num_blocks is the number of blocks in the MMR.
 #! - PEAK_1 .. PEAK_N are the MMR peaks.
 proc process_chain_data
-    exec.memory::get_partial_blockchain_ptr dup
+    push.PARTIAL_BLOCKCHAIN_PTR dup
     # => [partial_blockchain_ptr, partial_blockchain_ptr]
 
     # save the MMR peaks to memory and verify it matches the block's CHAIN_COMMITMENT
@@ -479,7 +483,7 @@ proc authenticate_note
     # Load the BLOCK_COMMITMENT from the PARTIAL_BLOCKCHAIN
     # ---------------------------------------------------------------------------------------------
 
-    exec.memory::get_partial_blockchain_ptr adv_push.1
+    push.PARTIAL_BLOCKCHAIN_PTR adv_push.1
     # => [block_num, partial_blockchain_ptr, NOTE_COMMITMENT]
 
     exec.mmr::get
@@ -688,7 +692,7 @@ proc add_input_note_assets_to_vault
     # prepare the stack
     # ---------------------------------------------------------------------------------------------
 
-    exec.memory::get_input_vault_root_ptr
+    push.INPUT_VAULT_ROOT_PTR
     # => [input_vault_root_ptr, note_ptr]
 
     dup.1 exec.memory::get_input_note_assets_ptr
