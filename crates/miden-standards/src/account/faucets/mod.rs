@@ -5,6 +5,7 @@ use miden_protocol::errors::{AccountError, TokenSymbolError};
 use thiserror::Error;
 
 use crate::account::access::Ownable2StepError;
+use crate::utils::FixedWidthStringError;
 
 mod basic_fungible;
 mod network_fungible;
@@ -56,4 +57,12 @@ pub enum FungibleFaucetError {
     NotAFungibleFaucetAccount,
     #[error("failed to read ownership data from storage")]
     OwnershipError(#[source] Ownable2StepError),
+    #[error("mutability flag at index {index} has invalid value {value}: must be 0 or 1")]
+    InvalidMutabilityFlag { index: usize, value: u64 },
+    #[error("invalid string data in field '{field}'")]
+    InvalidStringField {
+        field: &'static str,
+        #[source]
+        source: FixedWidthStringError,
+    },
 }

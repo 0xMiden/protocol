@@ -13,6 +13,7 @@ use crate::account::components::{
     StandardAccountComponent,
     basic_fungible_faucet_library,
     basic_wallet_library,
+    fungible_token_metadata_library,
     guarded_multisig_library,
     multisig_library,
     network_fungible_faucet_library,
@@ -91,6 +92,11 @@ impl AccountInterfaceExt for AccountInterface {
                 AccountComponentInterface::BasicWallet => {
                     component_proc_digests
                         .extend(basic_wallet_library().mast_forest().procedure_digests());
+                },
+                AccountComponentInterface::FungibleTokenMetadata => {
+                    component_proc_digests.extend(
+                        fungible_token_metadata_library().mast_forest().procedure_digests(),
+                    );
                 },
                 AccountComponentInterface::BasicFungibleFaucet => {
                     component_proc_digests
