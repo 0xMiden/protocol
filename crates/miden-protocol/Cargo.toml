@@ -40,9 +40,9 @@ miden-assembly-syntax = { workspace = true }
 miden-core            = { workspace = true }
 miden-core-lib        = { workspace = true }
 miden-crypto          = { workspace = true }
+miden-crypto-derive   = { workspace = true }
 miden-mast-package    = { workspace = true }
 miden-processor       = { workspace = true }
-miden-protocol-macros = { workspace = true }
 miden-utils-sync      = { workspace = true }
 miden-verifier        = { workspace = true }
 

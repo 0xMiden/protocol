@@ -8,6 +8,7 @@ use core::str::FromStr;
 use miden_core::{Felt, Word};
 use thiserror::Error;
 
+use crate::account::RoleSymbol;
 use crate::account::auth::{AuthScheme, PublicKey};
 use crate::asset::TokenSymbol;
 use crate::utils::serde::{
@@ -32,6 +33,7 @@ pub static SCHEMA_TYPE_REGISTRY: LazyLock<SchemaTypeRegistry> = LazyLock::new(||
     registry.register_felt_type::<Bool>();
     registry.register_felt_type::<Felt>();
     registry.register_felt_type::<TokenSymbol>();
+    registry.register_felt_type::<RoleSymbol>();
     registry.register_felt_type::<AuthScheme>();
     registry.register_word_type::<Word>();
     registry.register_word_type::<PublicKey>();
@@ -183,6 +185,11 @@ impl SchemaType {
     pub fn token_symbol() -> SchemaType {
         SchemaType::new("miden::standards::fungible_faucets::metadata::token_symbol")
             .expect("type is well formed")
+    }
+
+    /// Returns the schema type for RBAC role symbols.
+    pub fn role_symbol() -> SchemaType {
+        SchemaType::new("miden::standards::access::role_symbol").expect("type is well formed")
     }
 
     /// Returns a reference to the inner string.
@@ -485,6 +492,29 @@ impl FeltType for TokenSymbol {
             ))
         })?;
         Ok(token.to_string())
+    }
+}
+
+impl FeltType for RoleSymbol {
+    fn type_name() -> SchemaType {
+        SchemaType::role_symbol()
+    }
+
+    fn parse_str(input: &str) -> Result<Felt, SchemaTypeError> {
+        let role_symbol = RoleSymbol::new(input).map_err(|err| {
+            SchemaTypeError::parse(input.to_string(), <Self as FeltType>::type_name(), err)
+        })?;
+        Ok(Felt::from(role_symbol))
+    }
+
+    fn display_felt(value: Felt) -> Result<String, SchemaTypeError> {
+        let role_symbol = RoleSymbol::try_from(value).map_err(|err| {
+            SchemaTypeError::ConversionError(format!(
+                "invalid role_symbol value `{}`: {err}",
+                value.as_canonical_u64()
+            ))
+        })?;
+        Ok(role_symbol.to_string())
     }
 }
 
@@ -818,5 +848,14 @@ mod tests {
         assert!(SCHEMA_TYPE_REGISTRY.try_parse_felt(&bool_type, "yes").is_err());
         assert!(SCHEMA_TYPE_REGISTRY.try_parse_felt(&bool_type, "2").is_err());
         assert!(SCHEMA_TYPE_REGISTRY.validate_felt_value(&bool_type, Felt::new(2)).is_err());
+
+        let role_symbol_type = SchemaType::role_symbol();
+        let role_symbol =
+            SCHEMA_TYPE_REGISTRY.try_parse_felt(&role_symbol_type, "MINTER_ADMIN").unwrap();
+        assert_eq!(
+            SCHEMA_TYPE_REGISTRY.display_felt(&role_symbol_type, role_symbol),
+            "MINTER_ADMIN"
+        );
+        assert!(SCHEMA_TYPE_REGISTRY.try_parse_felt(&role_symbol_type, "minter").is_err());
     }
 }

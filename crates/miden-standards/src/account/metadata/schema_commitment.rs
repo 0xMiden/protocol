@@ -1,3 +1,11 @@
+//! Account storage schema commitment component.
+//!
+//! [`AccountSchemaCommitment`] computes a commitment over the merged storage schemas of all
+//! account components and stores the result in a dedicated slot. The companion
+//! [`AccountBuilderSchemaCommitmentExt`] trait adds a convenience method to
+//! [`AccountBuilder`](miden_protocol::account::AccountBuilder) for building accounts with an
+//! automatically computed schema commitment.
+
 use alloc::collections::BTreeMap;
 
 use miden_protocol::Word;
@@ -33,6 +41,7 @@ static STORAGE_SCHEMA_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     Library::read_from_bytes(bytes).expect("Shipped Storage Schema library is well-formed")
 });
 
+/// Schema commitment slot name.
 static SCHEMA_COMMITMENT_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::metadata::storage_schema::commitment")
         .expect("storage slot name should be valid")
@@ -44,8 +53,8 @@ static SCHEMA_COMMITMENT_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(||
 /// An [`AccountComponent`] exposing the account storage schema commitment.
 ///
 /// The [`AccountSchemaCommitment`] component can be constructed from a list of [`StorageSchema`],
-/// from which a commitment is computed and then inserted into the
-/// `miden::standards::metadata::storage_schema::commitment` slot.
+/// from which a commitment is computed and then inserted into the slot returned by
+/// [`AccountSchemaCommitment::schema_commitment_slot()`].
 ///
 /// It reexports the `get_schema_commitment` procedure from
 /// `miden::standards::metadata::storage_schema`.
@@ -61,7 +70,6 @@ impl AccountSchemaCommitment {
     /// Name of the component is set to match the path of the corresponding module in the standards
     /// library.
     const NAME: &str = "miden::standards::metadata::storage_schema";
-
     /// Creates a new [`AccountSchemaCommitment`] component from storage schemas.
     ///
     /// The input schemas are merged into a single schema before the final commitment is computed.
@@ -151,8 +159,8 @@ impl AccountBuilderSchemaCommitmentExt for AccountBuilder {
 
 /// Computes the schema commitment.
 ///
-/// The account schema commitment is computed from the merged schema commitment. If the passed
-/// list of schemas is empty, [`Word::empty()`] is returned.
+/// The account schema commitment is computed from the merged schema commitment.
+/// If the passed list of schemas is empty, [`Word::empty()`] is returned.
 fn compute_schema_commitment<'a>(
     schemas: impl IntoIterator<Item = &'a StorageSchema>,
 ) -> Result<Word, ComponentMetadataError> {
