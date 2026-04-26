@@ -3,6 +3,7 @@
 ## 0.14.5 (2026-04-23)
 
 - Fixed note script compilation: all note scripts are now compiled as libraries ([#2822](https://github.com/0xMiden/protocol/pull/2822)).
+- Removed the obsolete `NoteScript::new()` constructor; note scripts should be created from libraries.
 
 ## 0.14.4 (2026-04-09)
 

@@ -18,7 +18,7 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
-use crate::vm::{AdviceMap, Program};
+use crate::vm::AdviceMap;
 use crate::{PrettyPrint, Word};
 
 /// The attribute name used to mark the entrypoint procedure in a note script library.
@@ -40,18 +40,6 @@ pub struct NoteScript {
 impl NoteScript {
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
-
-    /// Returns a new [NoteScript] instantiated from the provided program.
-    ///
-    /// TODO: since the note script now should be created from `Library`, not `Program`, this
-    /// constructor should be removed:
-    /// (<https://github.com/0xMiden/protocol/pull/2822#discussion_r3132965577>).
-    pub fn new(code: Program) -> Self {
-        Self {
-            entrypoint: code.entrypoint(),
-            mast: code.mast_forest().clone(),
-        }
-    }
 
     /// Returns a new [NoteScript] deserialized from the provided bytes.
     ///
