@@ -37,10 +37,10 @@ use crate::{Felt, Word};
 /// - [`AccountBuilder::with_component`], which must be called at least once.
 ///
 /// Under the `testing` feature, it is possible to:
-/// - Build an existing account using [`AccountBuilder::build_existing`] which will set the
-///   account's nonce to `1` by default, or to the configured value.
-/// - Add assets to the account's vault, however this will only succeed when using
-///   [`AccountBuilder::build_existing`].
+/// - Build an existing account using `AccountBuilder::build_existing`, which will set the account's
+///   nonce to `1` by default, or to the configured value.
+/// - Add assets to the account's vault; this only succeeds when using
+///   `AccountBuilder::build_existing`.
 ///
 /// **Storage Slot Order**
 ///

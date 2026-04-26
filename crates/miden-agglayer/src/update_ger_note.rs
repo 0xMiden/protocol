@@ -34,7 +34,7 @@ use crate::ExitRoot;
 
 // Initialize the UPDATE_GER note script only once
 static UPDATE_GER_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/UPDATE_GER.masb"));
+    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/update_ger.masb"));
     let program =
         Program::read_from_bytes(bytes).expect("shipped UPDATE_GER script is well-formed");
     NoteScript::new(program)
