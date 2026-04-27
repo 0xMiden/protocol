@@ -172,7 +172,8 @@ end
 #! Where:
 #! - is_native is a boolean flag that indicates whether the account ID was requested for the native
 #!   or the active account.
-#! - account_id_{prefix,suffix} are the prefix and suffix felts of the ID of the active account.
+#! - account_id_{prefix,suffix} are the prefix and suffix felts of the ID of the requested account
+#!   (native or active, depending on the is_native flag).
 #!
 #! Invocation: dynexec
 pub proc account_get_id
@@ -874,7 +875,7 @@ end
 
 #! Returns the recipient of the specified input note.
 #!
-#! Inputs:  [is_active_note, note_index, pad(15)]
+#! Inputs:  [is_active_note, note_index, pad(14)]
 #! Outputs: [RECIPIENT, pad(12)]
 #!
 #! Where:
@@ -1328,6 +1329,26 @@ pub proc tx_get_num_input_notes
     # truncate the stack
     swap drop
     # => [num_input_notes, pad(15)]
+end
+
+#! Returns the transaction script root.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [TX_SCRIPT_ROOT, pad(12)]
+#!
+#! Where:
+#! - TX_SCRIPT_ROOT is the transaction script root, or the empty word if no transaction script was
+#!   executed.
+#!
+#! Invocation: dynexec
+pub proc tx_get_tx_script_root
+    # get the tx script root
+    exec.tx::get_tx_script_root
+    # => [TX_SCRIPT_ROOT, pad(16)]
+
+    # truncate the stack
+    swapw dropw
+    # => [TX_SCRIPT_ROOT, pad(12)]
 end
 
 #! Returns the current number of output notes created in this transaction.
