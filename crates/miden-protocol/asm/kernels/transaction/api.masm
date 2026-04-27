@@ -172,7 +172,8 @@ end
 #! Where:
 #! - is_native is a boolean flag that indicates whether the account ID was requested for the native
 #!   or the active account.
-#! - account_id_{prefix,suffix} are the prefix and suffix felts of the ID of the active account.
+#! - account_id_{prefix,suffix} are the prefix and suffix felts of the ID of the requested account
+#!   (native or active, depending on the is_native flag).
 #!
 #! Invocation: dynexec
 pub proc account_get_id
@@ -874,7 +875,7 @@ end
 
 #! Returns the recipient of the specified input note.
 #!
-#! Inputs:  [is_active_note, note_index, pad(15)]
+#! Inputs:  [is_active_note, note_index, pad(14)]
 #! Outputs: [RECIPIENT, pad(12)]
 #!
 #! Where:
@@ -1118,11 +1119,15 @@ end
 #!
 #! Panics if:
 #! - the procedure is called when the active account is not the native one.
+#! - the note index points to a non-existent output note.
 #!
 #! Invocation: dynexec
 pub proc output_note_add_asset
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
+    # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
+
+    dup.8 exec.output_note::assert_note_index_in_bounds drop
     # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
 
     exec.output_note::add_asset
@@ -1150,6 +1155,9 @@ end
 pub proc output_note_set_attachment
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
+    # => [note_idx, attachment_scheme, attachment_kind, ATTACHMENT, pad(9)]
+
+    exec.output_note::assert_note_index_in_bounds
     # => [note_idx, attachment_scheme, attachment_kind, ATTACHMENT, pad(9)]
 
     exec.output_note::set_attachment
