@@ -113,12 +113,16 @@ end
 
 #! Returns the number of accounts assigned to a given role.
 #!
+#! If the role does not exist (i.e. has never had a member, or had its last member revoked),
+#! this returns `0` — the underlying role config map returns `Word::ZERO` for missing keys.
+#!
 #! Inputs:  [role_symbol, pad(15)]
 #! Outputs: [member_count, pad(15)]
 #!
 #! Where:
 #! - role_symbol is the encoded role symbol.
-#! - member_count is the number of accounts currently assigned to the given role.
+#! - member_count is the number of accounts currently assigned to the given role, or
+#!   `0` if no such role exists.
 #!
 #! Invocation: call
 pub proc get_role_member_count
@@ -160,8 +164,7 @@ end
 #!
 #! Invocation: call
 pub proc get_role_member
-    dup
-    exec.get_role_config
+    dup exec.get_role_config
     # => [member_count, admin_role_symbol, active_role_index, 0,
     #     role_symbol, member_index, pad(14)]
 
@@ -642,6 +645,18 @@ end
 
 
 #! Activates a role that is known to have members and not already be active.
+#!
+#! "Activating" a role means:
+#! 1. Append `[active_role_count] -> role_symbol` to the active roles map at the next
+#!    free index (which equals the current `active_role_count`).
+#! 2. Increment the `active_role_count` stored in `RBAC_STATE_SLOT` by one.
+#! 3. Update the role's config in `ROLE_CONFIGS_SLOT` to record its new
+#!    `active_role_index`.
+#!
+#! This procedure does not check whether the role actually has members or whether it is
+#! already active. The caller (`add_role_to_active_set` or `add_to_role_enumeration`)
+#! is responsible for guaranteeing both invariants — calling `activate_role` on a role
+#! that is empty or already active will corrupt the active role set.
 #!
 #! Inputs:  [role_symbol, member_count, admin_role_symbol, 0]
 #! Outputs: []

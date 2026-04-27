@@ -19,10 +19,9 @@
 #          word[0]       word[1]        word[2]                 word[3]
 #
 # All public procedures are designed to be invoked either via `call` (with the standard
-# pad(16) calling convention) or via `exec` from sibling components. The
-# `role_based_access_control` component composes this module by `exec`-ing its public
-# procedures, reusing both the owner storage and the transfer logic rather than
-# duplicating the 2-step flow.
+# pad(16) calling convention) or via `exec`. The `role_based_access_control` component composes 
+# this module by executing its public procedures, reusing both the owner storage and the transfer 
+# logic.
 
 use miden::protocol::account_id
 use miden::protocol::active_account
