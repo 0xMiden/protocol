@@ -215,6 +215,21 @@ mod tests {
             padded_core_side: 131_072,
             padded_chiplets: 131_072,
         },
+        ScenarioExpectation {
+            name: "consume CLAIM note (L1 to Miden)",
+            padded_core_side: 65_536,
+            padded_chiplets: 262_144,
+        },
+        ScenarioExpectation {
+            name: "consume CLAIM note (L2 to Miden)",
+            padded_core_side: 65_536,
+            padded_chiplets: 262_144,
+        },
+        ScenarioExpectation {
+            name: "consume B2AGG note (bridge-out)",
+            padded_core_side: 262_144,
+            padded_chiplets: 1_048_576,
+        },
     ];
 
     fn padded_core_side(t: &TraceForTest) -> u64 {
