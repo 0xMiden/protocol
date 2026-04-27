@@ -52,8 +52,9 @@ fn core_benchmarks(c: &mut Criterion) {
 
     execute_group
         .sampling_mode(SamplingMode::Flat)
-        .sample_size(10)
-        .warm_up_time(Duration::from_millis(1000));
+        .sample_size(30)
+        .warm_up_time(Duration::from_millis(1000))
+        .measurement_time(Duration::from_secs(30));
 
     execute_group.bench_function(BENCH_EXECUTE_TX_CONSUME_SINGLE_P2ID, |b| {
         b.to_async(tokio::runtime::Builder::new_current_thread().build().unwrap())
@@ -108,8 +109,9 @@ fn core_benchmarks(c: &mut Criterion) {
 
     execute_and_prove_group
         .sampling_mode(SamplingMode::Flat)
-        .sample_size(10)
-        .warm_up_time(Duration::from_millis(1000));
+        .sample_size(30)
+        .warm_up_time(Duration::from_millis(1000))
+        .measurement_time(Duration::from_secs(30));
 
     execute_and_prove_group.bench_function(BENCH_EXECUTE_AND_PROVE_TX_CONSUME_SINGLE_P2ID, |b| {
         b.to_async(tokio::runtime::Builder::new_current_thread().build().unwrap())
