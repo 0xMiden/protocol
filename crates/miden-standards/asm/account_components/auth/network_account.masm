@@ -69,7 +69,7 @@ pub proc auth_tx_network_account
         exec.active_account::get_map_item
         # => [VALUE, i-1, pad(16)]
 
-        padw exec.word::eq not
+        exec.word::eqz not
         # => [is_whitelisted, i-1, pad(16)]
 
         assert.err=ERR_NETWORK_ACCOUNT_NOTE_NOT_WHITELISTED
