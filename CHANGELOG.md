@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Features
+
+- [agglayer] Added `bridge_config::deregister_faucet` MASM procedure, `DEREGISTER_AGG_BRIDGE` note script, and `DeregisterAggBridgeNote` Rust builder, enabling the bridge admin to revoke a faucet's authorization by clearing both the `faucet_registry_map` and `token_registry_map` entries ([#2705](https://github.com/0xMiden/protocol/issues/2705)).
+
 ## 0.14.0 (2026-03-23)
 
 ### Features

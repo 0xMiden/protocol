@@ -170,6 +170,84 @@ pub proc register_faucet
     # => [pad(16)]
 end
 
+#! Deregisters a faucet from the bridge's faucet registry and token registry.
+#!
+#! Asserts the faucet is currently registered, then clears it from both maps so subsequent
+#! `assert_faucet_registered` and `lookup_faucet_by_token_address` calls panic. Note that any
+#! in-flight notes (B2AGG / CLAIM) targeting the deregistered faucet will fail their existing
+#! registration checks after this call.
+#!
+#! 1. Writes `KEY -> [0, 0, 0, 0]` into the `faucet_registry` map, where
+#!    `KEY = [0, 0, faucet_id_suffix, faucet_id_prefix]`.
+#! 2. Writes `hash(tokenAddress[5]) -> [0, 0, 0, 0]` into the `token_registry` map.
+#!
+#! Inputs:  [origin_token_addr(5), faucet_id_suffix, faucet_id_prefix, pad(9)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the note sender is not the bridge admin.
+#! - the faucet is not currently registered in the faucet registry.
+#!
+#! Invocation: call
+pub proc deregister_faucet
+    # assert the note sender is the bridge admin.
+    exec.assert_sender_is_bridge_admin
+    # => [origin_token_addr(5), faucet_id_suffix, faucet_id_prefix, pad(9)]
+
+    # Save faucet ID for the assert + faucet_registry write below.
+    dup.6 dup.6
+    # => [faucet_id_suffix, faucet_id_prefix, origin_token_addr(5),
+    #     faucet_id_suffix, faucet_id_prefix, pad(9)]
+
+    # --- 1. Assert faucet is currently registered ---
+    # assert_faucet_registered consumes [suffix, prefix], so duplicate first.
+    dup.1 dup.1
+    exec.assert_faucet_registered
+    # => [faucet_id_suffix, faucet_id_prefix, origin_token_addr(5),
+    #     faucet_id_suffix, faucet_id_prefix, pad(9)]
+
+    # --- 2. Clear faucet_registry: KEY=[0,0,suffix,prefix], VALUE=[0,0,0,0] ---
+    push.0.0.0.0
+    # => [0, 0, 0, 0,
+    #     faucet_id_suffix, faucet_id_prefix, origin_token_addr(5),
+    #     faucet_id_suffix, faucet_id_prefix, pad(9)]
+
+    movup.5 movup.5 push.0.0
+    # => [
+    #     [0, 0, faucet_id_suffix, faucet_id_prefix],
+    #     [0, 0, 0, 0],
+    #      origin_token_addr(5), faucet_id_suffix, faucet_id_prefix, pad(9)
+    #    ]
+
+    push.FAUCET_REGISTRY_MAP_SLOT[0..2]
+    exec.native_account::set_map_item
+    # => [OLD_VALUE, origin_token_addr(5), faucet_id_suffix, faucet_id_prefix, pad(9)]
+
+    dropw
+    # => [origin_token_addr(5), faucet_id_suffix, faucet_id_prefix, pad(9)]
+
+    # Drop the leftover faucet ID — token_registry value is [0,0,0,0], so we don't need it.
+    movup.6 movup.6 drop drop
+    # => [origin_token_addr(5), pad(11)]
+
+    # --- 3. Clear token_registry: KEY=hash(origin_token_addr), VALUE=[0,0,0,0] ---
+    exec.hash_token_address
+    # => [TOKEN_ADDR_HASH, pad(12)]
+
+    push.0.0.0.0
+    # => [0, 0, 0, 0, TOKEN_ADDR_HASH, pad(12)]
+
+    swapw
+    # => [TOKEN_ADDR_HASH, 0, 0, 0, 0, pad(12)]
+
+    push.TOKEN_REGISTRY_MAP_SLOT[0..2]
+    exec.native_account::set_map_item
+    # => [OLD_VALUE, pad(12)]
+
+    dropw
+    # => [pad(16)]
+end
+
 #! Asserts that a faucet is registered in the bridge's faucet registry.
 #!
 #! Looks up the faucet ID in the faucet registry map and asserts the registration flag is set.

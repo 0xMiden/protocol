@@ -31,6 +31,11 @@ pub const ERR_CONFIG_AGG_BRIDGE_TARGET_ACCOUNT_MISMATCH: MasmError = MasmError::
 /// Error Message: "CONFIG_AGG_BRIDGE expects exactly 7 note storage items"
 pub const ERR_CONFIG_AGG_BRIDGE_UNEXPECTED_STORAGE_ITEMS: MasmError = MasmError::from_static_str("CONFIG_AGG_BRIDGE expects exactly 7 note storage items");
 
+/// Error Message: "DEREGISTER_AGG_BRIDGE note attachment target account does not match consuming account"
+pub const ERR_DEREGISTER_AGG_BRIDGE_TARGET_ACCOUNT_MISMATCH: MasmError = MasmError::from_static_str("DEREGISTER_AGG_BRIDGE note attachment target account does not match consuming account");
+/// Error Message: "DEREGISTER_AGG_BRIDGE expects exactly 7 note storage items"
+pub const ERR_DEREGISTER_AGG_BRIDGE_UNEXPECTED_STORAGE_ITEMS: MasmError = MasmError::from_static_str("DEREGISTER_AGG_BRIDGE expects exactly 7 note storage items");
+
 /// Error Message: "faucet is not registered in the bridge's faucet registry"
 pub const ERR_FAUCET_NOT_REGISTERED: MasmError = MasmError::from_static_str("faucet is not registered in the bridge's faucet registry");
 
