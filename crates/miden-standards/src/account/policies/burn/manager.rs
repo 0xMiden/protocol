@@ -68,8 +68,8 @@ impl PolicyKind for BurnPolicyKind {
 /// An [`AccountComponent`] that owns the three policy-manager storage slots and the manager
 /// procedures for the burn side.
 ///
-/// Pair with at least one burn policy component (e.g. [`BurnAllowAll`], [`BurnOwnerOnly`]) whose
-/// procedure root is registered in this manager's allowed-policies map.
+/// Pair with at least one burn policy component (e.g. [`BurnAllowAll`], [`super::BurnOwnerOnly`])
+/// whose procedure root is registered in this manager's allowed-policies map.
 #[derive(Debug, Clone)]
 pub struct BurnPolicyManager(PolicyManager<BurnPolicyKind>);
 

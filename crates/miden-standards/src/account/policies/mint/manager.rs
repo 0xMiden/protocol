@@ -68,8 +68,8 @@ impl PolicyKind for MintPolicyKind {
 /// An [`AccountComponent`] that owns the three policy-manager storage slots and the manager
 /// procedures for the mint side.
 ///
-/// Pair with at least one mint policy component (e.g. [`MintAllowAll`], [`MintOwnerOnly`]) whose
-/// procedure root is registered in this manager's allowed-policies map.
+/// Pair with at least one mint policy component (e.g. [`MintAllowAll`], [`super::MintOwnerOnly`])
+/// whose procedure root is registered in this manager's allowed-policies map.
 #[derive(Debug, Clone)]
 pub struct MintPolicyManager(PolicyManager<MintPolicyKind>);
 

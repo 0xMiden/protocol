@@ -10,8 +10,8 @@
 //! A faucet installs the manager together with at least one policy component whose procedure
 //! root is registered in the manager's allowed-policies map.
 //!
-//! Internally both managers share a single generic implementation. See [`manager`] for the
-//! crate-private generic plumbing.
+//! Internally both managers share a single generic implementation living in a crate-private
+//! `manager` module.
 //!
 //! [`mint`]: self::mint
 //! [`burn`]: self::burn
