@@ -69,9 +69,10 @@ pub use file::NoteFile;
 /// A note with all the data required for it to be consumed by executing it against the transaction
 /// kernel.
 ///
-/// Notes consist of note metadata and details. Note metadata is always public, but details may be
-/// either public, encrypted, or private, depending on the note type. Note details consist of note
-/// assets, script, storage, and a serial number, the three latter grouped into a recipient object.
+/// Notes consist of note metadata and details. Note metadata and attachments are always public, but
+/// details are either private or public, depending on the note type. Note details consist of
+/// note assets, script, storage, and a serial number, the three latter grouped into a recipient
+/// object.
 ///
 /// Note details can be reduced to two unique identifiers: [NoteId] and [Nullifier]. The former is
 /// publicly associated with a note, while the latter is known only to entities which have access
