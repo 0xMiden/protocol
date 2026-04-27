@@ -441,7 +441,7 @@ pub const INPUT_NOTE_ASSETS_OFFSET: MemoryOffset = 44;
 // │ RECIPIENT │   ASSETS   │  NUM   │ DIRTY │ ASSET │  ASSET  │ ... │ ASSET  │  ASSET  │ PADDING │
 // │           │ COMMITMENT │ ASSETS │ FLAG  │ KEY 0 │ VALUE 0 │     │ KEY n  │ VALUE n │         │
 // ┼───────────┼────────────┼────────┼───────┼───────┼─────────┼─────┼────────┼─────────┼─────────┘
-// 8          32           36       37     40      44              40 + 8n  44 + 8n
+// 28          32           36       37      40      44              40 + 8n  44 + 8n
 //
 // The DIRTY_FLAG is the binary flag which specifies whether the assets commitment stored in this
 // note is outdated. It holds 1 if some changes were made to the note assets since the last
