@@ -17,7 +17,8 @@ use miden_protocol::account::{
 };
 use miden_protocol::transaction::TransactionKernel;
 use miden_standards::account::auth::NoAuth;
-use miden_standards::account::mint_policies::OwnerControlled;
+use miden_standards::account::burn_policies::BurnOwnerControlled;
+use miden_standards::account::mint_policies::MintOwnerControlled;
 use regex::Regex;
 
 // CONSTANTS
@@ -317,9 +318,9 @@ fn generate_agglayer_constants(
         let agglayer_component =
             AccountComponent::new(content_library, vec![], dummy_metadata.clone()).unwrap();
 
-        // The faucet account includes Ownable2Step and OwnerControlled components
-        // alongside the agglayer faucet component, since network_fungible::mint_and_send
-        // requires these for access control.
+        // The faucet account includes Ownable2Step and OwnerControlled components for mint and burn
+        // policies alongside the agglayer faucet component, since
+        // network_fungible::mint_and_send requires these for access control.
         let mut components: Vec<AccountComponent> =
             vec![AccountComponent::from(NoAuth), agglayer_component];
         if lib_name == "faucet" {
@@ -331,7 +332,8 @@ fn generate_agglayer_constants(
             components.push(AccountComponent::from(
                 miden_standards::account::access::Ownable2Step::new(dummy_owner),
             ));
-            components.push(AccountComponent::from(OwnerControlled::owner_only()));
+            components.push(AccountComponent::from(MintOwnerControlled::owner_only()));
+            components.push(AccountComponent::from(BurnOwnerControlled::allow_all()));
         }
 
         // use `AccountCode` to merge codes of agglayer and authentication components

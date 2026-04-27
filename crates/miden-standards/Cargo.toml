@@ -25,6 +25,7 @@ miden-processor = { workspace = true }
 miden-protocol  = { workspace = true }
 
 # External dependencies
+bon       = { workspace = true }
 rand      = { optional = true, workspace = true }
 thiserror = { workspace = true }
 

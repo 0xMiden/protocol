@@ -1,0 +1,716 @@
+use miden::core::math::u64
+use miden::core::math::u128
+use miden::protocol::account_id
+use miden::protocol::active_account
+use miden::protocol::active_note
+use miden::protocol::asset
+use miden::protocol::note
+use miden::protocol::output_note
+use miden::protocol::asset::FUNGIBLE_ASSET_MAX_AMOUNT
+use miden::standards::note_tag
+use miden::standards::notes::p2id
+use miden::standards::wallets::basic->wallet
+
+# CONSTANTS
+# =================================================================================================
+
+const NUM_STORAGE_ITEMS=7
+const MAX_U32=0x0000000100000000
+
+# Note storage layout (7 felts, loaded at STORAGE_PTR by get_storage):
+# - requested_enable_callbacks [0]  : 1 felt
+# - requested_faucet_suffix    [1]  : 1 felt
+# - requested_faucet_prefix    [2]  : 1 felt
+# - requested_amount           [3]  : 1 felt
+# - payback_note_type          [4]  : 1 felt
+# - creator_id_prefix          [5]  : 1 felt
+# - creator_id_suffix          [6]  : 1 felt
+#
+# Where:
+# - requested_enable_callbacks: Callback-enabled flag for the requested fungible asset
+#   (FungibleAsset::callbacks() as u8)
+# - requested_faucet_suffix: Suffix of the requested asset's faucet AccountId (Felt)
+# - requested_faucet_prefix: Prefix of the requested asset's faucet AccountId
+#   (AccountIdPrefix as Felt)
+# - requested_amount: Amount of the requested fungible asset (Felt)
+# - payback_note_type: The NoteType used for the P2ID payback note
+# - creator_id_prefix: The prefix of the creator's AccountId (AccountIdPrefix as Felt)
+# - creator_id_suffix: The suffix of the creator's AccountId (Felt)
+#
+# The payback note tag is derived at runtime from the creator's account ID
+# (via note_tag::create_account_target) rather than stored.
+#
+# The remainder PSWAP note's own tag is not stored — it is lifted from the
+# active note's metadata at remainder-creation time (same asset pair => same
+# tag), saving one storage slot.
+const STORAGE_PTR = 0
+const REQUESTED_ENABLE_CALLBACKS_ITEM = STORAGE_PTR
+const REQUESTED_FAUCET_SUFFIX_ITEM = STORAGE_PTR + 1
+const REQUESTED_FAUCET_PREFIX_ITEM = STORAGE_PTR + 2
+const REQUESTED_AMOUNT_ITEM = STORAGE_PTR + 3
+const PAYBACK_NOTE_TYPE_ITEM = STORAGE_PTR + 4
+const PSWAP_CREATOR_PREFIX_ITEM = STORAGE_PTR + 5
+const PSWAP_CREATOR_SUFFIX_ITEM = STORAGE_PTR + 6
+
+# Local memory offsets
+# =================================================================================================
+
+# calculate_output_amount locals
+const CALC_FILL_AMOUNT = 0
+const CALC_REQUESTED = 1
+
+# create_p2id_note locals
+const P2ID_NOTE_IDX = 0
+const P2ID_REQUESTED_ENABLE_CB = 1
+const P2ID_REQUESTED_FAUCET_SUFFIX = 2
+const P2ID_REQUESTED_FAUCET_PREFIX = 3
+const P2ID_AMT_ACCOUNT_FILL = 4
+const P2ID_AMT_NOTE_FILL = 5
+
+# create_remainder_note locals
+const REMAINDER_NOTE_IDX = 0
+const REMAINDER_OFFERED_FAUCET_PREFIX = 1
+const REMAINDER_OFFERED_FAUCET_SUFFIX = 2
+const REMAINDER_OFFERED_ENABLE_CB = 3
+const REMAINDER_AMT_PAYOUT = 4
+const REMAINDER_AMT_OFFERED = 5
+
+# execute_pswap locals
+const EXEC_AMT_OFFERED = 0
+const EXEC_AMT_REQUESTED = 1
+const EXEC_AMT_PAYOUT_TOTAL = 2
+const EXEC_AMT_PAYOUT_ACCOUNT_FILL = 3
+const EXEC_AMT_PAYOUT_NOTE_FILL = 4
+const EXEC_OFFERED_ENABLE_CB = 5
+const EXEC_OFFERED_FAUCET_SUFFIX = 6
+const EXEC_OFFERED_FAUCET_PREFIX = 7
+const EXEC_AMT_REQUESTED_ACCOUNT_FILL = 8
+const EXEC_AMT_REQUESTED_NOTE_FILL = 9
+
+# ERRORS
+# =================================================================================================
+
+const ERR_PSWAP_WRONG_NUMBER_OF_STORAGE_ITEMS="PSWAP script expects exactly 7 note storage items"
+const ERR_PSWAP_WRONG_NUMBER_OF_ASSETS="PSWAP script requires exactly one note asset"
+const ERR_PSWAP_FILL_EXCEEDS_REQUESTED="PSWAP fill amount exceeds requested amount"
+const ERR_PSWAP_FILL_SUM_OVERFLOW="PSWAP account_fill + note_fill overflows u64"
+const ERR_PSWAP_NOT_VALID_ASSET_AMOUNT="PSWAP computed amount exceeds max fungible asset amount"
+const ERR_PSWAP_PAYOUT_OVERFLOW="PSWAP payout quotient does not fit in u64"
+
+# U64 VALIDATION
+# =================================================================================================
+
+#! Asserts that the u64 value represented by [lo, hi] on the stack is a valid fungible asset
+#! amount, i.e. <= FUNGIBLE_ASSET_MAX_AMOUNT (2^63 - 2^31).
+#!
+#! Inputs:  [lo, hi]
+#! Outputs: [lo, hi]
+#!
+#! Panics if the value exceeds FUNGIBLE_ASSET_MAX_AMOUNT.
+proc assert_valid_asset_amount
+    dup.1 dup.1
+    # => [lo, hi, lo, hi]
+
+    push.FUNGIBLE_ASSET_MAX_AMOUNT u32split
+    # => [max_lo, max_hi, lo, hi, lo, hi]
+
+    exec.u64::lte
+    # => [is_lte, lo, hi]
+
+    assert.err=ERR_PSWAP_NOT_VALID_ASSET_AMOUNT
+    # => [lo, hi]
+end
+
+# PRICE CALCULATION
+# =================================================================================================
+
+#! Computes the proportional amount of offered tokens for a given fill amount.
+#!
+#! Formula: `payout = floor((offered * fill_amount) / requested)`.
+#!
+#! The intermediate product `offered * fill_amount` is computed as a full
+#! u128 via `u64::widening_mul`, then divided by `requested` (extended to
+#! u128) via `u128::div`. This gives exact integer precision with one floor
+#! division at the end, each input is safe
+#! up to `FungibleAsset::MAX ≈ 2^63`, and the resulting quotient
+#! `payout ≤ offered` always fits back in u64 (asserted via the upper-half
+#! limb check below).
+#!
+#! Inputs: [offered, requested, fill_amount] (offered on top)
+#! Outputs: [payout_amount]
+#!
+@locals(2)
+# CALC_FILL_AMOUNT: fill amount
+# CALC_REQUESTED:   requested amount
+proc calculate_output_amount
+    movup.2 loc_store.CALC_FILL_AMOUNT
+    # => [offered, requested]
+
+    swap loc_store.CALC_REQUESTED
+    # => [offered]
+
+    u32split
+    # => [off_lo, off_hi]
+
+    loc_load.CALC_FILL_AMOUNT u32split
+    # => [fill_lo, fill_hi, off_lo, off_hi]
+
+    exec.u64::widening_mul
+    # => [p0, p1, p2, p3]
+
+    loc_load.CALC_REQUESTED u32split
+    # => [req_lo, req_hi, p0, p1, p2, p3]
+
+    push.0 movdn.2 push.0 movdn.3
+    # => [req_lo, req_hi, 0, 0, p0, p1, p2, p3]
+
+    exec.u128::div
+    # => [q0, q1, q2, q3]  (quotient, little-endian limbs)
+
+    # assert whether the output fits in u64
+    movup.3 eq.0 assert.err=ERR_PSWAP_PAYOUT_OVERFLOW
+    # => [q0, q1, q2]
+
+    movup.2 eq.0 assert.err=ERR_PSWAP_PAYOUT_OVERFLOW
+    # => [q0, q1]
+
+    exec.assert_valid_asset_amount
+    # => [q0, q1]
+
+    # Reconstruct the u64 quotient as a single felt: `q0 + q1 * 2^32`.
+    swap mul.MAX_U32 add
+    # => [payout_amount]
+end
+
+# P2ID NOTE CREATION PROCEDURE
+# =================================================================================================
+
+#! Creates a P2ID output note for the swap creator.
+#!
+#! Derives a unique serial number by incrementing the least significant element
+#! of the provided serial, creates the output note using p2id::new, sets the
+#! attachment, and adds the requested assets (from the consumer's account vault
+#! and/or from another note in the same transaction).
+#!
+#! Inputs: [creator_suffix, creator_prefix, note_type, SERIAL_NUM,
+#!          enable_callbacks, faucet_suffix, faucet_prefix, amt_account_fill, amt_note_fill]
+#! Outputs: []
+#!
+@locals(6)
+# P2ID_NOTE_IDX              : note_idx
+# P2ID_REQUESTED_ENABLE_CB   : enable_callbacks
+# P2ID_REQUESTED_FAUCET_SUFFIX : faucet_suffix
+# P2ID_REQUESTED_FAUCET_PREFIX : faucet_prefix
+# P2ID_AMT_ACCOUNT_FILL      : amt_account_fill
+# P2ID_AMT_NOTE_FILL         : amt_note_fill
+proc create_p2id_note
+    # Derive P2ID serial: increment least significant element
+    movup.3 add.1 movdn.3
+    # => [creator_suffix, creator_prefix, note_type, P2ID_SERIAL_NUM,
+    #     enable_callbacks, faucet_suffix, faucet_prefix, amt_account_fill, amt_note_fill]
+
+    # Derive the payback tag from the creator's account ID prefix
+    dup.1
+    # => [creator_prefix, creator_suffix, creator_prefix, note_type, P2ID_SERIAL_NUM, ...]
+    exec.note_tag::create_account_target
+    # => [tag, creator_suffix, creator_prefix, note_type, P2ID_SERIAL_NUM, ...]
+    movdn.2
+    # => [creator_suffix, creator_prefix, tag, note_type, P2ID_SERIAL_NUM, ...]
+
+    exec.p2id::new
+    # => [note_idx, enable_callbacks, faucet_suffix, faucet_prefix, amt_account_fill, amt_note_fill]
+
+    loc_store.P2ID_NOTE_IDX
+    loc_store.P2ID_REQUESTED_ENABLE_CB
+    loc_store.P2ID_REQUESTED_FAUCET_SUFFIX
+    loc_store.P2ID_REQUESTED_FAUCET_PREFIX
+    loc_store.P2ID_AMT_ACCOUNT_FILL
+    loc_store.P2ID_AMT_NOTE_FILL
+    # => []
+
+    # Set attachment: aux = amt_account_fill + amt_note_fill at Word[0].
+    # attachment_scheme = 0 (NoteAttachmentScheme::none).
+    #
+    # The add cannot overflow: `execute_pswap` asserts
+    # `amt_account_fill + amt_note_fill <= requested_amount` before calling
+    # this procedure, and `requested_amount` itself fits in a felt.
+    push.0.0.0
+    loc_load.P2ID_AMT_ACCOUNT_FILL loc_load.P2ID_AMT_NOTE_FILL add
+    # => [total_fill, 0, 0, 0]
+
+    push.0 loc_load.P2ID_NOTE_IDX
+    # => [note_idx, attachment_scheme=0, total_fill, 0, 0, 0]
+
+    exec.output_note::set_word_attachment
+    # => []
+
+    # Move account_fill_amount from consumer's vault to P2ID note (if > 0)
+    loc_load.P2ID_AMT_ACCOUNT_FILL neq.0
+    # => [has_account_fill]
+    
+    if.true
+        # Build 16-element call frame: [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
+        padw push.0.0.0 loc_load.P2ID_NOTE_IDX
+        # => [note_idx, pad(7)]
+
+        loc_load.P2ID_AMT_ACCOUNT_FILL
+        loc_load.P2ID_REQUESTED_FAUCET_PREFIX
+        loc_load.P2ID_REQUESTED_FAUCET_SUFFIX
+        loc_load.P2ID_REQUESTED_ENABLE_CB
+        # => [enable_cb, faucet_suffix, faucet_prefix, amt_account_fill, note_idx, pad(7)]
+
+        exec.asset::create_fungible_asset
+        # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
+
+        call.wallet::move_asset_to_note
+        # => [pad(16)]
+
+        dropw dropw dropw dropw
+        # => []
+    end
+    # => []
+
+    # Add note_fill_amount directly to P2ID note (no vault debit, if > 0)
+    loc_load.P2ID_AMT_NOTE_FILL neq.0
+    # => [has_note_fill]
+    
+    if.true
+        loc_load.P2ID_NOTE_IDX
+        # => [note_idx]
+
+        loc_load.P2ID_AMT_NOTE_FILL
+        loc_load.P2ID_REQUESTED_FAUCET_PREFIX
+        loc_load.P2ID_REQUESTED_FAUCET_SUFFIX
+        loc_load.P2ID_REQUESTED_ENABLE_CB
+        # => [enable_cb, faucet_suffix, faucet_prefix, amt_note_fill, note_idx]
+
+        exec.asset::create_fungible_asset
+        # => [ASSET_KEY, ASSET_VALUE, note_idx]
+
+        exec.output_note::add_asset
+        # => []
+    end
+    # => []
+end
+
+# REMAINDER NOTE CREATION PROCEDURE
+# =================================================================================================
+
+#! Creates a PSWAP remainder output note for partial fills.
+#!
+#! Updates the requested amount in note storage, builds a new remainder recipient
+#! (using the active note's script root and a serial derived by incrementing the
+#! most significant element of the active note's serial number), creates the output
+#! note, sets the attachment, and adds the remaining offered asset.
+#!
+#! Inputs:  [offered_faucet_suffix, offered_faucet_prefix, offered_enable_cb,
+#!           amt_payout, amt_offered,
+#!           remaining_requested, note_type, tag]
+#! Outputs: []
+#!
+@locals(6)
+# REMAINDER_NOTE_IDX              : note_idx
+# REMAINDER_OFFERED_FAUCET_SUFFIX : offered_faucet_suffix
+# REMAINDER_OFFERED_FAUCET_PREFIX : offered_faucet_prefix
+# REMAINDER_OFFERED_ENABLE_CB     : offered_enable_cb
+# REMAINDER_AMT_PAYOUT            : amt_payout
+# REMAINDER_AMT_OFFERED           : amt_offered
+proc create_remainder_note
+    # Store offered asset info to locals (top element stored first)
+    loc_store.REMAINDER_OFFERED_FAUCET_SUFFIX
+    loc_store.REMAINDER_OFFERED_FAUCET_PREFIX
+    loc_store.REMAINDER_OFFERED_ENABLE_CB
+    loc_store.REMAINDER_AMT_PAYOUT
+    loc_store.REMAINDER_AMT_OFFERED
+    # => [remaining_requested, note_type, tag]
+
+    # Update note storage with new requested amount (needed by build_recipient)
+    mem_store.REQUESTED_AMOUNT_ITEM
+    # => [note_type, tag]
+
+    # Build PSWAP remainder recipient using the same script as the active note.
+    exec.active_note::get_script_root
+    # => [SCRIPT_ROOT, note_type, tag]
+
+    # Derive remainder serial: increment most significant element
+    exec.active_note::get_serial_number
+    # => [s0, s1, s2, s3, SCRIPT_ROOT, note_type, tag]
+    
+    movup.3 add.1 movdn.3
+    # => [s0, s1, s2, s3+1, SCRIPT_ROOT, note_type, tag]
+
+    # Build recipient from all note storage items (now with updated requested amount)
+    push.NUM_STORAGE_ITEMS push.STORAGE_PTR
+    # => [storage_ptr, num_storage_items, SERIAL_NUM', SCRIPT_ROOT, note_type, tag]
+
+    exec.note::build_recipient
+    # => [RECIPIENT, note_type, tag]
+
+    movup.4 movup.5
+    # => [tag, note_type, RECIPIENT]
+
+    exec.output_note::create
+    # => [note_idx]
+
+    loc_store.REMAINDER_NOTE_IDX
+    # => []
+
+    # Set attachment: aux = amt_payout at Word[0]
+    push.0.0.0 loc_load.REMAINDER_AMT_PAYOUT
+    # => [amt_payout, 0, 0, 0]
+
+    push.0 loc_load.REMAINDER_NOTE_IDX
+    # => [note_idx, attachment_scheme=0, amt_payout, 0, 0, 0]
+
+    exec.output_note::set_word_attachment
+    # => []
+
+    # Add remaining offered asset: remainder_amount = amt_offered - amt_payout.
+    # Sub cannot underflow: amt_payout <= amt_offered by construction in
+    # `calculate_output_amount`.
+    loc_load.REMAINDER_NOTE_IDX
+    # => [note_idx]
+
+    loc_load.REMAINDER_AMT_OFFERED loc_load.REMAINDER_AMT_PAYOUT sub
+    # => [remainder_amount, note_idx]
+
+    loc_load.REMAINDER_OFFERED_FAUCET_PREFIX
+    loc_load.REMAINDER_OFFERED_FAUCET_SUFFIX
+    loc_load.REMAINDER_OFFERED_ENABLE_CB
+    # => [offered_enable_cb, offered_faucet_suffix, offered_faucet_prefix, remainder_amount, note_idx]
+
+    exec.asset::create_fungible_asset
+    # => [ASSET_KEY, ASSET_VALUE, note_idx]
+
+    exec.output_note::add_asset
+    # => []
+end
+
+#! Checks if the currently consuming account is the creator of the note.
+#!
+#! Inputs: [creator_id_suffix, creator_id_prefix]
+#! Outputs: [is_creator]
+#!
+proc is_consumer_creator
+    exec.active_account::get_id
+    # => [acct_id_suffix, acct_id_prefix, creator_id_suffix, creator_id_prefix]
+
+    exec.account_id::is_equal
+    # => [is_creator]
+end
+
+#! Loads the offered asset from the active note and validates there is exactly one asset.
+#!
+#! Inputs: []
+#! Outputs: [ASSET_KEY, ASSET_VALUE]
+#!
+@locals(8)
+proc load_offered_asset
+    locaddr.0 exec.active_note::get_assets
+    # => [num_assets, dest_ptr]
+
+    push.1 eq assert.err=ERR_PSWAP_WRONG_NUMBER_OF_ASSETS
+    # => [dest_ptr]
+
+    exec.asset::load
+    # => [ASSET_KEY, ASSET_VALUE]
+end
+
+#! Reclaims all assets from the note back to the creator's vault.
+#!
+#! Called when the consumer IS the creator (cancel/reclaim path).
+#!
+#! Inputs: []
+#! Outputs: []
+#!
+proc handle_reclaim
+    exec.load_offered_asset
+    # => [ASSET_KEY, ASSET_VALUE]
+
+    # Build 16-element call frame: [ASSET_KEY, ASSET_VALUE, pad(8)]
+    padw padw swapdw
+    # => [ASSET_KEY, ASSET_VALUE, pad(8)]
+
+    call.wallet::receive_asset
+    # => [pad(16)]
+
+    dropw dropw dropw dropw
+    # => []
+end
+
+#! Executes the partially-fillable swap.
+#!
+#! Sends offered tokens to consumer, requested tokens to creator via P2ID,
+#! and creates a remainder note if partially filled.
+#!
+#! The total fill (account fill + note fill) must not exceed the requested amount:
+#! overfilling is disallowed because the consumer would lose the excess tokens with
+#! no change returned, and it is almost always unintentional.
+#!
+#! Account fill and note fill payouts are computed separately (rather than summing
+#! first) because the account fill portion must be credited to the consumer's vault
+#! on its own, while the combined total is needed to size the remainder note.
+#!
+#! Inputs: [account_fill_amount, note_fill_amount]
+#! Outputs: []
+#!
+@locals(10)
+# EXEC_AMT_OFFERED                : amt_offered
+# EXEC_AMT_REQUESTED              : amt_requested
+# EXEC_AMT_PAYOUT_TOTAL           : amt_payout (total)
+# EXEC_AMT_PAYOUT_ACCOUNT_FILL    : amt_payout_account_fill
+# EXEC_AMT_PAYOUT_NOTE_FILL       : amt_payout_note_fill
+# EXEC_OFFERED_ENABLE_CB          : offered_enable_cb
+# EXEC_OFFERED_FAUCET_SUFFIX      : offered_faucet_suffix
+# EXEC_OFFERED_FAUCET_PREFIX      : offered_faucet_prefix
+# EXEC_AMT_REQUESTED_ACCOUNT_FILL : amt_requested_account_fill
+# EXEC_AMT_REQUESTED_NOTE_FILL    : amt_requested_note_fill
+proc execute_pswap
+    loc_store.EXEC_AMT_REQUESTED_ACCOUNT_FILL
+    loc_store.EXEC_AMT_REQUESTED_NOTE_FILL
+    # => []
+
+    exec.load_offered_asset
+    # => [ASSET_KEY, ASSET_VALUE]
+
+    # Extract offered amount
+    exec.asset::fungible_to_amount
+    # => [amount, ASSET_KEY, ASSET_VALUE]
+
+    loc_store.EXEC_AMT_OFFERED
+    # => [ASSET_KEY, ASSET_VALUE]
+
+    # Extract and store offered faucet info from ASSET_KEY
+    exec.asset::key_to_callbacks_enabled loc_store.EXEC_OFFERED_ENABLE_CB
+    # => [ASSET_KEY, ASSET_VALUE]
+
+    exec.asset::key_into_faucet_id
+    # => [faucet_id_suffix, faucet_id_prefix, ASSET_VALUE]
+
+    loc_store.EXEC_OFFERED_FAUCET_SUFFIX loc_store.EXEC_OFFERED_FAUCET_PREFIX
+    # => [ASSET_VALUE]
+
+    dropw
+    # => []
+
+    # Read requested amount directly from note storage
+    mem_load.REQUESTED_AMOUNT_ITEM
+    loc_store.EXEC_AMT_REQUESTED
+    # => []
+
+    # Assert (account_fill + note_fill) <= requested.
+    # account_fill and note_fill are user-provided, so use overflow-checked add.
+    loc_load.EXEC_AMT_REQUESTED_ACCOUNT_FILL u32split
+    loc_load.EXEC_AMT_REQUESTED_NOTE_FILL u32split
+    # => [nf_lo, nf_hi, af_lo, af_hi]
+
+    exec.u64::overflowing_add
+    # => [overflow, sum_lo, sum_hi]
+
+    eq.0 assert.err=ERR_PSWAP_FILL_SUM_OVERFLOW
+    # => [sum_lo, sum_hi]
+
+    exec.assert_valid_asset_amount
+    # => [sum_lo, sum_hi]
+
+    swap mul.MAX_U32 add
+    # => [fill_amount]
+
+    loc_load.EXEC_AMT_REQUESTED
+    # => [requested, fill_amount]
+    
+    lte assert.err=ERR_PSWAP_FILL_EXCEEDS_REQUESTED
+    # => []
+
+    # Payout for account_fill_amount
+    loc_load.EXEC_AMT_REQUESTED_ACCOUNT_FILL
+    loc_load.EXEC_AMT_REQUESTED
+    loc_load.EXEC_AMT_OFFERED
+    # => [offered, requested, account_fill_amount]
+
+    exec.calculate_output_amount
+    # => [account_fill_payout]
+
+    loc_store.EXEC_AMT_PAYOUT_ACCOUNT_FILL
+    # => []
+
+    # Payout for note_fill_amount
+    loc_load.EXEC_AMT_REQUESTED_NOTE_FILL
+    loc_load.EXEC_AMT_REQUESTED
+    loc_load.EXEC_AMT_OFFERED
+    # => [offered, requested, note_fill_amount]
+
+    exec.calculate_output_amount
+    # => [note_fill_payout]
+
+    loc_store.EXEC_AMT_PAYOUT_NOTE_FILL
+    # => []
+
+    # total_payout = account_fill_payout + note_fill_payout
+    loc_load.EXEC_AMT_PAYOUT_ACCOUNT_FILL loc_load.EXEC_AMT_PAYOUT_NOTE_FILL add
+    # => [total_payout]
+
+    loc_store.EXEC_AMT_PAYOUT_TOTAL
+    # => []
+
+    # Create P2ID note carrying the requested asset to the creator. The note's
+    # assets are derived from the requested fill amounts (`account_fill +
+    # note_fill`), not from `total_payout` (which is the offered asset owed to
+    # the consumer). Fills are guaranteed > 0 by the `both_zero` guard in `main`.
+    loc_load.EXEC_AMT_REQUESTED_NOTE_FILL
+    loc_load.EXEC_AMT_REQUESTED_ACCOUNT_FILL
+    mem_load.REQUESTED_FAUCET_PREFIX_ITEM
+    mem_load.REQUESTED_FAUCET_SUFFIX_ITEM
+    mem_load.REQUESTED_ENABLE_CALLBACKS_ITEM
+    exec.active_note::get_serial_number
+    mem_load.PAYBACK_NOTE_TYPE_ITEM
+    mem_load.PSWAP_CREATOR_PREFIX_ITEM
+    mem_load.PSWAP_CREATOR_SUFFIX_ITEM
+    # => [creator_suffix, creator_prefix, note_type, SERIAL_NUM,
+    #     enable_callbacks, faucet_suffix, faucet_prefix, amt_account_fill, amt_note_fill]
+
+    exec.create_p2id_note
+    # => []
+
+    # Consumer receives only account_fill_payout into vault (not the note_fill portion, if > 0)
+    loc_load.EXEC_AMT_PAYOUT_ACCOUNT_FILL neq.0
+    # => [has_account_fill_payout]
+    
+    if.true
+        padw padw
+        # => [pad(8)]
+
+        loc_load.EXEC_AMT_PAYOUT_ACCOUNT_FILL
+        loc_load.EXEC_OFFERED_FAUCET_PREFIX
+        loc_load.EXEC_OFFERED_FAUCET_SUFFIX
+        loc_load.EXEC_OFFERED_ENABLE_CB
+        # => [enable_cb, faucet_suffix, faucet_prefix, amt_payout_account_fill, pad(8)]
+
+        exec.asset::create_fungible_asset
+        # => [ASSET_KEY, ASSET_VALUE, pad(8)]
+
+        call.wallet::receive_asset
+        # => [pad(16)]
+
+        dropw dropw dropw dropw
+        # => []
+    end
+    # => []
+
+    # Check if partial fill.
+    loc_load.EXEC_AMT_REQUESTED_ACCOUNT_FILL loc_load.EXEC_AMT_REQUESTED_NOTE_FILL add
+    loc_load.EXEC_AMT_REQUESTED
+    # => [total_requested, total_in]
+
+    dup.1 dup.1 neq
+    # => [is_partial, total_requested, total_in]
+
+    if.true
+        # remaining_requested = total_requested - total_in
+        swap sub
+        # => [remaining_requested]
+
+        exec.active_note::get_metadata
+        # => [NOTE_ATTACHMENT, METADATA_HEADER, remaining_requested]
+        # where METADATA_HEADER = [sid_suf_ver, sid_pre, tag, att_ks]
+        dropw
+        # => [sid_suf_ver, sid_pre, tag, att_ks, remaining_requested]
+
+        dup.2 movdn.4
+        # => [sid_suf_ver, sid_pre, tag, att_ks, tag, remaining_requested]
+
+        exec.note::metadata_into_note_type
+        # => [note_type, tag, remaining_requested]
+
+        movup.2
+        # => [remaining_requested, note_type, tag]
+
+        loc_load.EXEC_AMT_OFFERED
+        loc_load.EXEC_AMT_PAYOUT_TOTAL
+        loc_load.EXEC_OFFERED_ENABLE_CB
+        loc_load.EXEC_OFFERED_FAUCET_PREFIX
+        loc_load.EXEC_OFFERED_FAUCET_SUFFIX
+        # => [offered_faucet_suffix, offered_faucet_prefix, offered_enable_cb,
+        #     amt_payout, amt_offered,
+        #     remaining_requested, note_type, tag]
+
+        exec.create_remainder_note
+        # => []
+    else
+        drop drop
+        # => []
+    end
+    # => []
+
+end
+
+#! Partially-fillable swap note script: exchanges a portion of the offered asset for a
+#! proportional amount of the requested asset, producing a P2ID payback note for the creator
+#! and, on partial fills, a remainder PSWAP note carrying the unfilled balance.
+#!
+#! The consumer specifies two fill amounts via `NOTE_ARGS`:
+#! - `account_fill_amount`: portion of the requested asset debited from the consumer's vault.
+#! - `note_fill_amount`:    portion of the requested asset sourced from another note in the
+#!                          same transaction (cross-swap / net-zero flow, no vault debit).
+#!
+#! At least one of the two must be non-zero. If both are zero — which is the default in
+#! network transactions where the executor does not provide note_args — the script falls back
+#! to a full fill (`account_fill_amount = requested`). If the consuming account is the note's
+#! creator, the script reclaims the offered asset back to the creator's vault instead.
+#!
+#! Requires that the account exposes:
+#! - `miden::standards::wallets::basic::receive_asset` procedure.
+#! - `miden::standards::wallets::basic::move_asset_to_note` procedure.
+#!
+#! Inputs:  [NOTE_ARGS]
+#! Outputs: []
+#!
+#! Where NOTE_ARGS = [account_fill_amount, note_fill_amount, 0, 0] (top of stack first).
+#!
+#! See the `# Note storage layout` block near the top of this file for the full
+#! storage layout consumed by this script.
+#!
+#! Panics if:
+#! - the number of note storage items is not `NUM_STORAGE_ITEMS`.
+#! - the note does not carry exactly one offered asset.
+#! - the total fill amount (account fill + note fill) exceeds the requested amount.
+#! - the account does not expose `receive_asset` / `move_asset_to_note`.
+@note_script
+pub proc main
+    movdn.3 movdn.3 drop drop
+    # => [account_fill_amount, note_fill_amount]
+
+    # Load all note storage items to memory starting at address 0
+    push.STORAGE_PTR exec.active_note::get_storage
+    # => [num_storage_items, storage_ptr, account_fill_amount, note_fill_amount]
+
+    eq.NUM_STORAGE_ITEMS assert.err=ERR_PSWAP_WRONG_NUMBER_OF_STORAGE_ITEMS
+    # => [storage_ptr, account_fill_amount, note_fill_amount]
+
+    drop
+    # => [account_fill_amount, note_fill_amount]
+
+    dup.1 eq.0 dup.1 eq.0 and
+    # => [both_zero, account_fill_amount, note_fill_amount]
+    if.true
+        drop mem_load.REQUESTED_AMOUNT_ITEM
+        # => [account_fill_amount, note_fill_amount]
+    end
+    # => [account_fill_amount, note_fill_amount]
+
+    mem_load.PSWAP_CREATOR_PREFIX_ITEM mem_load.PSWAP_CREATOR_SUFFIX_ITEM
+    # => [creator_id_suffix, creator_id_prefix, account_fill_amount, note_fill_amount]
+
+    exec.is_consumer_creator
+    # => [is_creator, account_fill_amount, note_fill_amount]
+
+    if.true
+        drop drop
+        exec.handle_reclaim
+        # => []
+    else
+        exec.execute_pswap
+        # => []
+    end
+    # => []
+end

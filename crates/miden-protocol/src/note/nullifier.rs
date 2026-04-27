@@ -3,7 +3,7 @@ use core::fmt::{Debug, Display, Formatter};
 
 use miden_core::WORD_SIZE;
 use miden_crypto::WordError;
-use miden_protocol_macros::WordWrapper;
+use miden_crypto_derive::WordWrapper;
 
 use super::{
     ByteReader,

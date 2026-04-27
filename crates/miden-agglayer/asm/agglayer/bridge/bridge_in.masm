@@ -12,7 +12,6 @@ use miden::core::word
 use miden::protocol::note
 use miden::protocol::note::NOTE_TYPE_PUBLIC
 use miden::protocol::output_note
-use miden::protocol::output_note::ATTACHMENT_KIND_NONE
 use miden::protocol::active_account
 use miden::protocol::native_account
 use miden::protocol::tx
@@ -62,20 +61,16 @@ const CGI_CHAIN_HASH_HI_SLOT_NAME = word("agglayer::bridge::cgi_chain_hash_hi")
 const CLAIM_PROOF_DATA_WORD_LEN = 134
 const CLAIM_LEAF_DATA_WORD_LEN = 8
 
-# MINT note storage layout (public mode, 18 felts total):
-# - tag               [0]      : 1 felt
-# - amount            [1]      : 1 felt
-# - attachment_kind   [2]      : 1 felt
-# - attachment_scheme [3]      : 1 felt
-# - ATTACHMENT        [4..7]   : 4 felts
-# - P2ID_SCRIPT_ROOT  [8..11]  : 4 felts
-# - SERIAL_NUM        [12..15] : 4 felts
-# - account_id_suffix [16]     : 1 felt
-# - account_id_prefix [17]     : 1 felt
-const MINT_NOTE_NUM_STORAGE_ITEMS = 18
-
-# P2ID attachment constants (the P2ID note created by the faucet has no attachment)
-const P2ID_ATTACHMENT_SCHEME_NONE = 0
+# MINT note storage layout (public mode, 14 felts total):
+# - P2ID_SCRIPT_ROOT  [0..3]   : 4 felts
+# - SERIAL_NUM        [4..7]   : 4 felts
+# - tag               [8]      : 1 felt
+# - amount            [9]      : 1 felt
+# - 0                 [10]     : 1 felt (padding)
+# - 0                 [11]     : 1 felt (padding)
+# - account_id_suffix [12]     : 1 felt
+# - account_id_prefix [13]     : 1 felt
+const MINT_NOTE_NUM_STORAGE_ITEMS = 14
 
 # Global memory pointers
 # -------------------------------------------------------------------------------------------------
@@ -117,6 +112,8 @@ const CLAIM_SOURCE_BRIDGE_NETWORK_MEM_ADDR = 901
 # Memory addresses for leaf data fields (felts relative to CLAIM_LEAF_DATA_START_PTR):
 const LEAF_TYPE_ADDRESS = CLAIM_LEAF_DATA_START_PTR
 
+# CLAIM_LEAF_DATA_START_PTR + 1 holds origin network identifier, but it is not accessed anywhere yet
+
 const ORIGIN_TOKEN_ADDRESS_0 = CLAIM_LEAF_DATA_START_PTR + 2
 const ORIGIN_TOKEN_ADDRESS_1 = CLAIM_LEAF_DATA_START_PTR + 3
 const ORIGIN_TOKEN_ADDRESS_2 = CLAIM_LEAF_DATA_START_PTR + 4
@@ -142,15 +139,13 @@ const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_7 = CLAIM_LEAF_DATA_START_PTR + 20
 
 # Memory addresses for MINT note output construction
 const MINT_NOTE_STORAGE_MEM_ADDR_0 = 800
-const MINT_NOTE_STORAGE_DEST_TAG = 800
-const MINT_NOTE_STORAGE_NATIVE_AMOUNT = 801
-const MINT_NOTE_STORAGE_ATTACHMENT_KIND = 802
-const MINT_NOTE_STORAGE_ATTACHMENT_SCHEME = 803
-const MINT_NOTE_STORAGE_ATTACHMENT = 804
-const MINT_NOTE_STORAGE_OUTPUT_SCRIPT_ROOT = 808
-const MINT_NOTE_STORAGE_OUTPUT_SERIAL_NUM = 812
-const MINT_NOTE_STORAGE_OUTPUT_NOTE_SUFFIX = 816
-const MINT_NOTE_STORAGE_OUTPUT_NOTE_PREFIX = 817
+const MINT_NOTE_STORAGE_OUTPUT_SCRIPT_ROOT = 800
+const MINT_NOTE_STORAGE_OUTPUT_SERIAL_NUM = 804
+const MINT_NOTE_STORAGE_DEST_TAG = 808
+const MINT_NOTE_STORAGE_NATIVE_AMOUNT = 809
+# padding at 810, 811
+const MINT_NOTE_STORAGE_OUTPUT_NOTE_SUFFIX = 812
+const MINT_NOTE_STORAGE_OUTPUT_NOTE_PREFIX = 813
 
 # Local memory offsets
 # -------------------------------------------------------------------------------------------------
@@ -849,30 +844,29 @@ proc build_mint_output_note
     # => []
 end
 
-#! Writes all 18 MINT note storage items to global memory.
+#! Writes all 14 MINT note storage items to global memory.
 #!
 #! Storage layout:
-#! - [0]: tag (note tag for the P2ID output note, targeting the destination account)
-#! - [1]: amount (the scaled-down Miden amount to mint)
-#! - [2]: attachment_kind (0 = no attachment)
-#! - [3]: attachment_scheme (0 = no attachment)
-#! - [4-7]: ATTACHMENT ([0, 0, 0, 0])
-#! - [8-11]: P2ID_SCRIPT_ROOT (script root of the P2ID note)
-#! - [12-15]: SERIAL_NUM (serial number for the P2ID note, derived from PROOF_DATA_KEY)
-#! - [16]: account_id_suffix (destination account suffix)
-#! - [17]: account_id_prefix (destination account prefix)
+#! - [0-3]: P2ID_SCRIPT_ROOT (script root of the P2ID note)
+#! - [4-7]: SERIAL_NUM (serial number for the P2ID note, derived from PROOF_DATA_KEY)
+#! - [8]: tag (note tag for the P2ID output note, targeting the destination account)
+#! - [9]: amount (the scaled-down Miden amount to mint)
+#! - [10]: 0 (padding)
+#! - [11]: 0 (padding)
+#! - [12]: account_id_suffix (destination account suffix)
+#! - [13]: account_id_prefix (destination account prefix)
 #!
 #! Inputs:  [destination_id_suffix, destination_id_prefix]
 #! Outputs: []
 #!
 #! Invocation: exec
 proc write_mint_note_storage
-    # Write P2ID storage items first (before prefix is consumed): [16..17]
-    # Write destination_id_suffix [16]
+    # Write P2ID storage items first (before prefix is consumed): [12..13]
+    # Write destination_id_suffix [12]
     dup mem_store.MINT_NOTE_STORAGE_OUTPUT_NOTE_SUFFIX
     # => [destination_id_suffix, destination_id_prefix]
 
-    # Write destination_id_prefix [17]
+    # Write destination_id_prefix [13]
     dup.1 mem_store.MINT_NOTE_STORAGE_OUTPUT_NOTE_PREFIX
     # => [destination_id_suffix, destination_id_prefix]
 
@@ -890,35 +884,22 @@ proc write_mint_note_storage
     exec.note_tag::create_account_target
     # => [dest_tag, native_amount]
 
-    # Write tag to MINT note storage [0]
+    # Write tag to MINT note storage [8]
     mem_store.MINT_NOTE_STORAGE_DEST_TAG
     # => [native_amount]
 
-    # Write amount to MINT note storage [1]
+    # Write amount to MINT note storage [9]
     mem_store.MINT_NOTE_STORAGE_NATIVE_AMOUNT
     # => []
 
-    # Write P2ID attachment fields (the P2ID note has no attachment)
-    # attachment_kind = NONE [2]
-    push.ATTACHMENT_KIND_NONE mem_store.MINT_NOTE_STORAGE_ATTACHMENT_KIND
-    # => []
-
-    # attachment_scheme = NONE [3]
-    push.P2ID_ATTACHMENT_SCHEME_NONE mem_store.MINT_NOTE_STORAGE_ATTACHMENT_SCHEME
-    # => []
-
-    # ATTACHMENT = empty word [4..7]
-    padw mem_storew_le.MINT_NOTE_STORAGE_ATTACHMENT dropw
-    # => []
-
-    # Write P2ID_SCRIPT_ROOT to MINT note storage [8..11]
+    # Write P2ID_SCRIPT_ROOT to MINT note storage [0..3]
     procref.::miden::standards::notes::p2id::main
     # => [P2ID_SCRIPT_ROOT]
 
     mem_storew_le.MINT_NOTE_STORAGE_OUTPUT_SCRIPT_ROOT dropw
     # => []
 
-    # Write SERIAL_NUM (PROOF_DATA_KEY) to MINT note storage [12..15]
+    # Write SERIAL_NUM (PROOF_DATA_KEY) to MINT note storage [4..7]
     mem_loadw_be.CLAIM_PROOF_DATA_KEY_MEM_ADDR
     # => [SERIAL_NUM]
 
