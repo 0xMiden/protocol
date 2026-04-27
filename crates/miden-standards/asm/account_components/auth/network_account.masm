@@ -56,9 +56,9 @@ pub proc auth_tx_network_account
 
     dup neq.0
     while.true
-        # => [i, pad(16)]
+        # => [note_idx+1, pad(16)]
         sub.1
-        # => [i-1, pad(16)]
+        # => [note_idx, pad(16)]
 
         dup exec.input_note::get_script_root
         # => [NOTE_SCRIPT_ROOT, i-1, pad(16)]
