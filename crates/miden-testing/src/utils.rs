@@ -136,7 +136,8 @@ pub fn create_p2any_note(
         use ::miden::protocol::asset::ASSET_SIZE
         use miden::standards::wallets::basic->wallet
 
-        begin
+        @note_script
+        pub proc main
             # fetch pointer & number of assets
             push.0 exec.active_note::get_assets     # [num_assets, dest_ptr]
 
@@ -204,8 +205,8 @@ fn note_script_that_creates_notes<'note>(
     sender_id: AccountId,
     output_notes: impl Iterator<Item = &'note Note>,
 ) -> anyhow::Result<(String, AdviceMap)> {
-    let mut out = String::from("use miden::protocol::output_note\n\nbegin\n");
     let mut advice_map = AdviceMap::default();
+    let mut out = String::from("use miden::protocol::output_note\n\n@note_script\npub proc main\n");
 
     for (idx, note) in output_notes.into_iter().enumerate() {
         anyhow::ensure!(
