@@ -43,7 +43,7 @@ use miden_protocol::testing::account_id::{
     ACCOUNT_ID_SENDER,
 };
 use miden_protocol::testing::constants::{FUNGIBLE_ASSET_AMOUNT, NON_FUNGIBLE_ASSET_DATA};
-use miden_protocol::testing::note::DEFAULT_NOTE_CODE;
+use miden_protocol::testing::note::DEFAULT_NOTE_SCRIPT;
 use miden_protocol::transaction::{
     InputNotes,
     RawOutputNote,
@@ -235,7 +235,7 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
 
     // Create the expected output note for Note 2 which is public
     let serial_num_2 = Word::from([1, 2, 3, 4u32]);
-    let note_script_2 = CodeBuilder::default().compile_note_script(DEFAULT_NOTE_CODE)?;
+    let note_script_2 = CodeBuilder::default().compile_note_script(DEFAULT_NOTE_SCRIPT)?;
     let inputs_2 = NoteStorage::new(vec![ONE])?;
     let metadata_2 = NoteMetadata::new(account_id, note_type2)
         .with_tag(tag2)
@@ -246,7 +246,7 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
 
     // Create the expected output note for Note 3 which is public
     let serial_num_3 = Word::from([Felt::new(5), Felt::new(6), Felt::new(7), Felt::new(8)]);
-    let note_script_3 = CodeBuilder::default().compile_note_script(DEFAULT_NOTE_CODE)?;
+    let note_script_3 = CodeBuilder::default().compile_note_script(DEFAULT_NOTE_SCRIPT)?;
     let inputs_3 = NoteStorage::new(vec![ONE, Felt::new(2)])?;
     let metadata_3 = NoteMetadata::new(account_id, note_type3)
         .with_tag(tag3)

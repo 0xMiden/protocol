@@ -386,7 +386,8 @@ impl CodeBuilder {
     /// The parsed script will have access to all modules that have been added to this builder.
     ///
     /// # Arguments
-    /// * `program` - The note script source code
+    /// - `source` - the note script source code which is expected to have a single public procedure
+    ///   marked with the @note_script attribute.
     ///
     /// # Errors
     /// Returns an error if:
@@ -394,11 +395,20 @@ impl CodeBuilder {
     pub fn compile_note_script(self, source: impl Parse) -> Result<NoteScript, CodeBuilderError> {
         let CodeBuilder { assembler, advice_map, .. } = self;
 
-        let program = assembler.assemble_program(source).map_err(|err| {
-            CodeBuilderError::build_error_with_report("failed to parse note script", err)
+        let note_script_lib = assembler.assemble_library([source]).map_err(|err| {
+            CodeBuilderError::build_error_with_report("failed to parse note script library", err)
         })?;
 
-        Ok(NoteScript::new(Self::apply_advice_map(advice_map, program)))
+        NoteScript::from_library(&Self::apply_advice_map_to_library(
+            advice_map,
+            Arc::unwrap_or_clone(note_script_lib),
+        ))
+        .map_err(|err| {
+            CodeBuilderError::build_error_with_source(
+                "failed to create note script from library",
+                err,
+            )
+        })
     }
 
     // ACCESSORS
@@ -501,6 +511,7 @@ impl From<CodeBuilder> for Assembler {
 mod tests {
     use anyhow::Context;
     use miden_protocol::assembly::diagnostics::NamedSource;
+    use miden_protocol::testing::note::DEFAULT_NOTE_SCRIPT;
 
     use super::*;
 
@@ -759,7 +770,7 @@ mod tests {
 
         let script = CodeBuilder::default()
             .with_advice_map_entry(key, value.clone())
-            .compile_note_script("begin nop end")
+            .compile_note_script(DEFAULT_NOTE_SCRIPT)
             .context("failed to compile note script with advice map")?;
 
         let mast = script.mast();

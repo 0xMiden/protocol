@@ -29,6 +29,13 @@
 
 - Made deserialization of `AccountCode` more robust ([#2788](https://github.com/0xMiden/protocol/pull/2788)).
 - Fixed `output_note::add_asset` and `output_note::set_attachment` to no longer accept invalid note indices ([#2824](https://github.com/0xMiden/protocol/pull/2824)).
+## 0.14.5 (2026-04-23)
+
+- Fixed note script compilation: all note scripts are now compiled as libraries ([#2822](https://github.com/0xMiden/protocol/pull/2822)).
+
+## 0.14.4 (2026-04-09)
+
+- Fixed AggLayer `write_mint_note_storage` stack padding before loading the mint serial number ([#2749](https://github.com/0xMiden/protocol/pull/2749)).
 
 ## 0.14.3 (2026-04-07)
 
