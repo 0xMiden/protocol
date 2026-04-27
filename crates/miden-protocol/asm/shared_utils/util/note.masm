@@ -17,4 +17,4 @@ pub const NOTE_TYPE_PUBLIC=1
 pub const MAX_ATTACHMENT_SCHEME=65534
 
 # The maximum number of words in an attachment.
-pub const MAX_ATTACHMENT_WORD_SIZE=254
+pub const MAX_ATTACHMENT_WORDS=254

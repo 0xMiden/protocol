@@ -7,7 +7,7 @@ use $kernel::memory::KERNEL_SCRATCH_PTR
 use $kernel::note
 use $kernel::note::NOTE_TYPE_PUBLIC
 use $kernel::note::MAX_ATTACHMENT_SCHEME
-use $kernel::note::MAX_ATTACHMENT_WORD_SIZE
+use $kernel::note::MAX_ATTACHMENT_WORDS
 use $kernel::constants::MAX_OUTPUT_NOTES_PER_TX
 use $kernel::constants::WORD_SIZE
 use $kernel::asset::ASSET_SIZE
@@ -361,7 +361,7 @@ proc validate_attachment
 
     # validate 0 < num_words <= 254
     dup neq.0 assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_CANNOT_BE_ZERO
-    dup u32lte.MAX_ATTACHMENT_WORD_SIZE assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_MAX_EXCEEDED
+    dup u32lte.MAX_ATTACHMENT_WORDS assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_MAX_EXCEEDED
     # OS => [num_words, ATTACHMENT_COMMITMENT]
     # AS => [[ATTACHMENT_ELEMENTS]]
 

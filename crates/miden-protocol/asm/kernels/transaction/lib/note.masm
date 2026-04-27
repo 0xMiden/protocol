@@ -8,7 +8,7 @@ use $kernel::memory
 pub use $kernel::util::note::NOTE_TYPE_PUBLIC
 pub use $kernel::util::note::NOTE_TYPE_PRIVATE
 pub use $kernel::util::note::MAX_ATTACHMENT_SCHEME
-pub use $kernel::util::note::MAX_ATTACHMENT_WORD_SIZE
+pub use $kernel::util::note::MAX_ATTACHMENT_WORDS
 
 # ERRORS
 # =================================================================================================
