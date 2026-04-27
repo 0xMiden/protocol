@@ -222,13 +222,6 @@ pub proc add_word_attachment
     exec.poseidon2::hash
     # => [ATTACHMENT_COMMITMENT, attachment_scheme, note_idx]
 
-    # Hash the attachment word
-    # push.4 locaddr.0
-    # => [local_ptr, 4, attachment_scheme, note_idx]
-
-    # exec.poseidon2::hash_elements
-    # => [ATTACHMENT_COMMITMENT, attachment_scheme, note_idx]
-
     locaddr.0 dup add.4
     # => [end_ptr, start_ptr, ATTACHMENT_COMMITMENT, attachment_scheme, note_idx]
 
