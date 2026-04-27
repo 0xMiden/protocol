@@ -91,7 +91,7 @@ pub use memory::get_num_output_notes
 #! Outputs: [TX_SCRIPT_ROOT]
 #!
 #! Where:
-#! - TX_SCRIPT_ROOT is the transaction script root, or the zero word if no transaction script was
+#! - TX_SCRIPT_ROOT is the transaction script root, or the empty word if no transaction script was
 #!   executed.
 pub use memory::get_tx_script_root
 

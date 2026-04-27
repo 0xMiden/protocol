@@ -783,7 +783,7 @@ async fn test_get_script_root_with_script() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Tests that `tx::get_tx_script_root` returns the zero word when no transaction script is
+/// Tests that `tx::get_tx_script_root` returns the empty word when no transaction script is
 /// executed.
 #[tokio::test]
 async fn test_get_script_root_without_script() -> anyhow::Result<()> {

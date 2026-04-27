@@ -666,7 +666,7 @@ end
 #! Outputs: [TX_SCRIPT_ROOT]
 #!
 #! Where:
-#! - TX_SCRIPT_ROOT is the transaction script root, or the zero word if no transaction script was
+#! - TX_SCRIPT_ROOT is the transaction script root, or the empty word if no transaction script was
 #!   executed.
 pub proc get_tx_script_root
     padw mem_loadw_le.TX_SCRIPT_ROOT_PTR
