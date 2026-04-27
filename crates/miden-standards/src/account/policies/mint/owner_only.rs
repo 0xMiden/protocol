@@ -10,25 +10,25 @@ use crate::procedure_digest;
 
 procedure_digest!(
     OWNER_ONLY_POLICY_ROOT,
-    OwnerOnly::NAME,
-    OwnerOnly::PROC_NAME,
+    MintOwnerOnly::NAME,
+    MintOwnerOnly::PROC_NAME,
     owner_only_mint_policy_library
 );
 
 /// The storage-free `owner_only` mint policy account component (owner-controlled family).
 ///
-/// Pair with a [`crate::account::policies::mint::PolicyManager`] whose allowed-policies
-/// map includes [`OwnerOnly::root`]. When active, only the account owner (as recorded by the
-/// `Ownable2Step` component) may trigger mint operations.
+/// Pair with a [`crate::account::policies::MintPolicyManager`] whose allowed-policies
+/// map includes [`MintOwnerOnly::root`]. When active, only the account owner (as recorded by
+/// the `Ownable2Step` component) may trigger mint operations.
 #[derive(Debug, Clone, Copy, Default)]
-pub struct OwnerOnly;
+pub struct MintOwnerOnly;
 
-impl OwnerOnly {
+impl MintOwnerOnly {
     /// The name of the component.
     pub const NAME: &'static str =
-        "miden::standards::components::policies::mint::owner_controlled::owner_only";
+        "miden::standards::components::faucets::policies::mint::owner_controlled::owner_only";
 
-    const PROC_NAME: &str = "owner_only";
+    pub(crate) const PROC_NAME: &str = "check_policy";
 
     /// Returns the MAST root of the `owner_only` mint policy procedure.
     pub fn root() -> Word {
@@ -36,10 +36,10 @@ impl OwnerOnly {
     }
 }
 
-impl From<OwnerOnly> for AccountComponent {
-    fn from(_: OwnerOnly) -> Self {
+impl From<MintOwnerOnly> for AccountComponent {
+    fn from(_: MintOwnerOnly) -> Self {
         let metadata =
-            AccountComponentMetadata::new(OwnerOnly::NAME, [AccountType::FungibleFaucet])
+            AccountComponentMetadata::new(MintOwnerOnly::NAME, [AccountType::FungibleFaucet])
                 .with_description(
                     "`owner_only` mint policy (owner-controlled family) for fungible faucets",
                 );

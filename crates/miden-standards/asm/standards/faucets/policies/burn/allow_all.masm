@@ -1,21 +1,14 @@
-use miden::standards::access::ownable2step
+# Generic burn policy procedures shared by policy manager flows.
 
 # POLICY PROCEDURES
 # ================================================================================================
 
-#! Owner-only burn predicate.
+#! Burn policy that accepts every burn request.
 #!
 #! Inputs:  [ASSET_KEY, ASSET_VALUE]
 #! Outputs: []
-#!
-#! Panics if:
-#! - note sender is not owner.
-#!
 #! Invocation: dynexec
-pub proc owner_only
-    exec.ownable2step::assert_sender_is_owner
-    # => [ASSET_KEY, ASSET_VALUE]
-
+pub proc check_policy
     dropw dropw
     # => []
 end

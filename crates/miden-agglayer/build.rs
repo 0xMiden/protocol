@@ -16,9 +16,15 @@ use miden_protocol::account::{
 };
 use miden_protocol::transaction::TransactionKernel;
 use miden_standards::account::auth::NoAuth;
-use miden_standards::account::policies::burn::owner_controlled::Config as BurnConfig;
-use miden_standards::account::policies::mint::owner_controlled::Config as MintConfig;
-use miden_standards::account::policies::{burn, mint};
+use miden_standards::account::policies::{
+    BurnAllowAll,
+    BurnOwnerControlledConfig,
+    BurnOwnerOnly,
+    BurnPolicyManager,
+    MintOwnerControlledConfig,
+    MintOwnerOnly,
+    MintPolicyManager,
+};
 
 // CONSTANTS
 // ================================================================================================
@@ -259,13 +265,19 @@ fn generate_agglayer_constants(
             ));
             // Mirror the component order used by `create_agglayer_faucet_builder` in lib.rs so
             // the compile-time code commitment matches the one computed at runtime.
-            components.push(mint::PolicyManager::owner_controlled(MintConfig::OwnerOnly).into());
-            components.push(mint::owner_controlled::OwnerOnly.into());
+            components.push(
+                MintPolicyManager::owner_controlled(MintOwnerControlledConfig::OwnerOnly).into(),
+            );
+            components.push(MintOwnerOnly.into());
             // Burn policy manager: active = `owner_only` (burns locked by default), `allow_all`
-            // is also allowed so the owner can open burns at runtime via `set_burn_policy`.
-            components.push(burn::PolicyManager::owner_controlled(BurnConfig::OwnerOnly).into());
-            components.push(burn::owner_controlled::OwnerOnly.into());
-            components.push(burn::AllowAll.into());
+            // is explicitly allowed so the owner can open burns at runtime via `set_burn_policy`.
+            components.push(
+                BurnPolicyManager::owner_controlled(BurnOwnerControlledConfig::OwnerOnly)
+                    .with_allowed_policy(BurnAllowAll::root())
+                    .into(),
+            );
+            components.push(BurnOwnerOnly.into());
+            components.push(BurnAllowAll.into());
         }
 
         // use `AccountCode` to merge codes of agglayer and authentication components

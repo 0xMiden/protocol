@@ -110,7 +110,7 @@ static FUNGIBLE_TOKEN_METADATA_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
 static MINT_POLICY_MANAGER_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     let bytes = include_bytes!(concat!(
         env!("OUT_DIR"),
-        "/assets/account_components/policies/mint/policy_manager.masl"
+        "/assets/account_components/faucets/policies/mint/policy_manager.masl"
     ));
     Library::read_from_bytes(bytes).expect("Shipped Mint Policy Manager library is well-formed")
 });
@@ -119,7 +119,7 @@ static MINT_POLICY_MANAGER_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
 static ALLOW_ALL_MINT_POLICY_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     let bytes = include_bytes!(concat!(
         env!("OUT_DIR"),
-        "/assets/account_components/policies/mint/mod.masl"
+        "/assets/account_components/faucets/policies/mint/allow_all.masl"
     ));
     Library::read_from_bytes(bytes).expect("Shipped `allow_all` Mint Policy library is well-formed")
 });
@@ -128,7 +128,7 @@ static ALLOW_ALL_MINT_POLICY_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
 static OWNER_ONLY_MINT_POLICY_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     let bytes = include_bytes!(concat!(
         env!("OUT_DIR"),
-        "/assets/account_components/policies/mint/owner_controlled/owner_only.masl"
+        "/assets/account_components/faucets/policies/mint/owner_controlled/owner_only.masl"
     ));
     Library::read_from_bytes(bytes)
         .expect("Shipped `owner_only` Mint Policy library is well-formed")
@@ -138,7 +138,7 @@ static OWNER_ONLY_MINT_POLICY_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
 static BURN_POLICY_MANAGER_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     let bytes = include_bytes!(concat!(
         env!("OUT_DIR"),
-        "/assets/account_components/policies/burn/policy_manager.masl"
+        "/assets/account_components/faucets/policies/burn/policy_manager.masl"
     ));
     Library::read_from_bytes(bytes).expect("Shipped Burn Policy Manager library is well-formed")
 });
@@ -147,7 +147,7 @@ static BURN_POLICY_MANAGER_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
 static ALLOW_ALL_BURN_POLICY_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     let bytes = include_bytes!(concat!(
         env!("OUT_DIR"),
-        "/assets/account_components/policies/burn/mod.masl"
+        "/assets/account_components/faucets/policies/burn/allow_all.masl"
     ));
     Library::read_from_bytes(bytes).expect("Shipped `allow_all` Burn Policy library is well-formed")
 });
@@ -156,7 +156,7 @@ static ALLOW_ALL_BURN_POLICY_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
 static OWNER_ONLY_BURN_POLICY_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     let bytes = include_bytes!(concat!(
         env!("OUT_DIR"),
-        "/assets/account_components/policies/burn/owner_controlled/owner_only.masl"
+        "/assets/account_components/faucets/policies/burn/owner_controlled/owner_only.masl"
     ));
     Library::read_from_bytes(bytes)
         .expect("Shipped `owner_only` Burn Policy library is well-formed")
