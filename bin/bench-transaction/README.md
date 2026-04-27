@@ -14,10 +14,15 @@ Benchmarks consist of two groups:
     - Total number of cycles
     - Authentication procedure
     - After tx cycles were obtained (The number of cycles the epilogue took to execute after the number of transaction cycles were obtained)
-  
+
+  In the same pass we also rebuild the `ExecutionTrace` for each scenario and emit
+  per-component trace row counts (`core_rows`, `chiplets_rows`, `range_rows`) plus the
+  per-chiplet shape breakdown (`hasher_rows`, `bitwise_rows`, `memory_rows`,
+  `kernel_rom_rows`, `ace_rows`).
+
   Results of this benchmark will be stored in the [`bin/bench-tx/bench-tx.json`](bench-tx.json) file.
 - Benchmarking the transaction execution and proving.
-  For each transaction in this group we measure how much time it takes to execute the transaction and to execute and prove the transaction. 
+  For each transaction in this group we measure how much time it takes to execute the transaction and to execute and prove the transaction.
 
   This group uses the [Criterion.rs](https://github.com/bheisler/criterion.rs) to collect the elapsed time. Results of this benchmark group are printed to the terminal and look like so:
   ```zsh
@@ -62,43 +67,38 @@ cargo run --bin bench-transaction --features concurrent
 cargo bench --bin bench-transaction --bench time_counting_benchmarks --features concurrent
 ```
 
-## Generating trace snapshots for miden-vm's synthetic benchmark
+## Trace shape and miden-vm's synthetic benchmark
 
-A separate bin target, `tx-trace-snapshot`, executes the same representative transaction contexts through the VM in order to build a real `ExecutionTrace`, then it reads per-component trace lengths from `TraceLenSummary`, and writes JSON snapshots consumed by miden-vm's `miden-synthetic-tx-kernel` bench.
+The `trace` section in `bench-tx.json` is the input contract for miden-vm's
+`miden-vm-synthetic-bench`. Its hard targets are the AIR-side row totals
+(`trace.core_rows`, `trace.chiplets_rows`, `trace.range_rows`); the
+`trace.shape.*` per-chiplet breakdown is advisory profiling metadata and is
+required to satisfy the chiplet-bus invariant
+`chiplets_rows == hasher + bitwise + memory + kernel_rom + ace + 1`.
+
+The consumer's hard match is on padded power-of-two brackets, not raw row
+equality:
+
+- `padded_core_side = max(64, next_pow2(max(core_rows, range_rows)))`
+- `padded_chiplets  = max(64, next_pow2(chiplets_rows))`
+
+These two can land in different brackets on the same workload (e.g.
+`consume two P2ID notes` has `padded_core_side = 131072` but
+`padded_chiplets = 262144`).
+
+To feed the snapshot into `miden-vm`, regenerate `bench-tx.json` here and copy
+it across:
 
 ```bash
-cargo run --release -p bench-transaction --bin tx-trace-snapshot
+cargo run --release --bin bench-transaction --features concurrent
+cp bin/bench-transaction/bench-tx.json \
+   ../miden-vm/benches/synthetic-bench/snapshots/bench-tx.json
+cargo bench -p miden-vm-synthetic-bench
 ```
 
-Output: one JSON per scenario under `bin/bench-transaction/snapshots/`:
-
-- `consume-single-p2id.json`
-- `consume-two-p2id.json`
-
-These files are captured against whichever miden-processor version this workspace currently pins. To feed them into `miden-vm`, copy over the same-named files in the consumer's snapshot directory:
-
-```bash
-cp bin/bench-transaction/snapshots/*.json \
-   ../miden-vm/benches/synthetic-tx-kernel/snapshots/
-```
-
-then:
-
-```bash
-cargo bench -p miden-synthetic-tx-kernel
-```
-
-The snapshot contract is documented in
-`miden-vm/benches/synthetic-tx-kernel/README.md` and
-`miden-vm/benches/synthetic-tx-kernel/src/snapshot.rs` (two tiers: `trace.*` hard-target totals, `shape.*` advisory per-chiplet breakdown).
-
-The consumer's hard match is based on padded trace brackets, not exact raw row equality:
-`padded_core_side = max(64, next_pow2(max(core_rows, range_rows)))` and
-`padded_chiplets = max(64, next_pow2(chiplets_rows))`. The raw per-chiplet `shape.*` values help
-the synthetic workload stay representative, but they are advisory profiling metadata rather than
-the primary proof-cost contract.
-
-The schema is maintained manually; there is no shared schema crate. The `schema_version` field is cross-checked at load time, and the consumer's loader rejects unknown versions. When changing the schema, bump both sides together.
+The schema is maintained manually; bench-tx.json's `trace` section is what the
+consumer's loader keys off. When changing the shape of the trace section, bump
+both repos together.
 
 ## License
 
