@@ -262,8 +262,8 @@ pub proc add_attachment
     u32lte.MAX_ATTACHMENT_SCHEME assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_MAX_EXCEEDED
     # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx]
 
-    # assert the scheme is not value 0 which the kernel uses to represent absent attachments
-    dup eq.0 assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_CANNOT_BE_ZERO
+    # assert the scheme is not 0 which the kernel uses to represent absent attachments
+    dup neq.0 assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_CANNOT_BE_ZERO
     # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx]
 
     movdn.4
