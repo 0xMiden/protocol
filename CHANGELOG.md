@@ -19,6 +19,7 @@
 - [BREAKING] Changed `NoteType` encoding from 2 bits to 1 and makes `NoteType::Private` the default ([#2691](https://github.com/0xMiden/miden-base/issues/2691)).
 - Added `BlockNumber::saturating_sub()` ([#2660](https://github.com/0xMiden/protocol/issues/2660)).
 - Use number of storage slots from native account in account delta commitment computation ([#2770](https://github.com/0xMiden/protocol/pull/2770)).
+- [BREAKING] Stored `origin_network` in LE-packed format in AggLayer faucet storage ([#2745](https://github.com/0xMiden/protocol/pull/2745)).
 - [BREAKING] Added cycle counts to notes returned by `NoteConsumptionInfo` and removed public fields from related types ([#2772](https://github.com/0xMiden/miden-base/issues/2772)).
 - [BREAKING] Removed unused `payback_attachment` from `SwapNoteStorage` and `attachment` from `MintNoteStorage` ([#2789](https://github.com/0xMiden/protocol/pull/2789)).
 - Automatically enable `concurrent` feature in `miden-tx` for `std` context ([#2791](https://github.com/0xMiden/protocol/pull/2791)).
