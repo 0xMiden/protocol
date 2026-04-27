@@ -101,6 +101,11 @@ impl NoteAttachment {
         &self.content
     }
 
+    /// Computes the commitment of the attachment.
+    pub fn to_commitment(&self) -> Word {
+        self.content().to_commitment()
+    }
+
     /// Returns the size of this attachment in words.
     ///
     /// - `1` indicates a single word attachment ([`NoteAttachmentContent::Word`]).

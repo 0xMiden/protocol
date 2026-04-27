@@ -13,8 +13,6 @@ use miden_protocol::account::{
 use miden_protocol::asset::{Asset, AssetVault, AssetVaultKey, FungibleAsset};
 use miden_protocol::note::{
     NoteAttachment,
-    NoteAttachmentArray,
-    NoteAttachmentContent,
     NoteAttachmentScheme,
     NoteId,
     NoteMetadata,
@@ -426,18 +424,15 @@ impl TransactionEvent {
 
             TransactionEventId::NoteBeforeAddAttachment => {
                 // Expected stack state: [
-                //     event, num_attachments, note_ptr, num_words, attachment_scheme,
-                //     ATTACHMENT_COMMITMENT
+                //     event, num_attachments, note_ptr, attachment_scheme, ATTACHMENT_COMMITMENT
                 // ]
 
                 let note_ptr = process.get_stack_item(2);
-                let num_words = process.get_stack_item(3);
-                let attachment_scheme = process.get_stack_item(4);
-                let attachment_commitment = process.get_stack_word(5);
+                let attachment_scheme = process.get_stack_item(3);
+                let attachment_commitment = process.get_stack_word(4);
 
                 let (note_idx, attachment) = extract_note_attachment(
                     attachment_scheme,
-                    num_words,
                     attachment_commitment,
                     note_ptr,
                     process.advice_provider(),
@@ -736,16 +731,11 @@ fn build_note_metadata(
 
 fn extract_note_attachment(
     attachment_scheme: Felt,
-    attachment_num_words: Felt,
     attachment_commitment: Word,
     note_ptr: Felt,
     advice_provider: &AdviceProvider,
 ) -> Result<(usize, NoteAttachment), TransactionKernelError> {
     let note_idx = note_ptr_to_idx(note_ptr)?;
-
-    let num_words = u8::try_from(attachment_num_words.as_canonical_u64()).map_err(|_| {
-        TransactionKernelError::other("failed to convert attachment num_words to u8")
-    })?;
 
     let attachment_scheme = u16::try_from(attachment_scheme.as_canonical_u64())
         .map_err(|_| TransactionKernelError::other("failed to convert attachment scheme to u16"))
@@ -782,57 +772,26 @@ fn extract_note_attachment(
         .map(|chunk| Word::from([chunk[0], chunk[1], chunk[2], chunk[3]]))
         .collect();
 
-    let attachment_content = match num_words {
-        0 => {
-            return Err(TransactionKernelError::other("attachment num_words must be > 0"));
-        },
-        1 => {
-            if words.len() != 1 {
-                return Err(TransactionKernelError::other(format!(
-                    "word attachment expected 1 word from advice provider, got {}",
-                    words.len()
-                )));
-            }
-
-            // Verify the commitment matches hash(word)
-            let computed_commitment = Hasher::hash_elements(elements);
-            if computed_commitment != attachment_commitment {
-                return Err(TransactionKernelError::NoteAttachmentWordMismatch {
-                    actual: computed_commitment,
-                    provided: attachment_commitment,
-                });
-            }
-
-            NoteAttachmentContent::Word(words[0])
-        },
-        _ => {
-            let array_attachment = NoteAttachmentArray::new(words).map_err(|source| {
-                TransactionKernelError::other_with_source(
-                    "failed to construct note attachment array",
-                    source,
-                )
-            })?;
-
-            if array_attachment.commitment() != attachment_commitment {
-                return Err(TransactionKernelError::NoteAttachmentArrayMismatch {
-                    actual: array_attachment.commitment(),
-                    provided: attachment_commitment,
-                });
-            }
-
-            if array_attachment.num_words() != num_words {
-                return Err(TransactionKernelError::other(format!(
-                    "array attachment num_words {} does not match declared num_words {}",
-                    array_attachment.num_words(),
-                    num_words
-                )));
-            }
-
-            NoteAttachmentContent::Array(array_attachment)
-        },
+    let attachment = match words.len() {
+        0 => return Err(TransactionKernelError::other("attachment num_words must be > 0")),
+        1 => NoteAttachment::new_word(attachment_scheme, words[0]),
+        _ => NoteAttachment::new_array(attachment_scheme, words).map_err(|source| {
+            TransactionKernelError::other_with_source(
+                "failed to construct note attachment array",
+                source,
+            )
+        })?,
     };
 
-    let attachment = NoteAttachment::new(attachment_scheme, attachment_content);
+    let actual_commitment = attachment.to_commitment();
+
+    // Check the actual commitment of the advice data matches the declared commitment.
+    if actual_commitment != attachment_commitment {
+        return Err(TransactionKernelError::NoteAttachmentCommitmentMismatch {
+            actual: actual_commitment,
+            provided: attachment_commitment,
+        });
+    }
 
     Ok((note_idx as usize, attachment))
 }

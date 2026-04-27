@@ -128,9 +128,7 @@ impl Deserializable for NoteMetadata {
 /// ```text
 /// 0th felt: [sender_id_suffix (56 bits) | reserved (3 bits) | note_type (1 bit) | version (4 bits)]
 /// 1st felt: [sender_id_prefix (64 bits)]
-/// 2nd felt: [attachment_3_num_words (8 bits) | attachment_2_num_words (8 bits) |
-///            attachment_1_num_words (8 bits) | attachment_0_num_words (8 bits) |
-///            note_tag (32 bits)]
+/// 2nd felt: [reserved (32 bits) | note_tag (32 bits)]
 /// 3rd felt: [attachment_3_scheme (16 bits) | attachment_2_scheme (16 bits) |
 ///            attachment_1_scheme (16 bits) | attachment_0_scheme (16 bits)]
 /// ```
@@ -139,8 +137,8 @@ impl Deserializable for NoteMetadata {
 /// - 0th felt: The lower 8 bits of the account ID suffix are `0` by construction, so they can be
 ///   overwritten. The suffix's MSB is zero so the felt stays valid when lower bits are set.
 /// - 1st felt: Equivalent to the account ID prefix, so it inherits its validity.
-/// - 2nd felt: Max value is `0xFEFEFEFE_FFFFFFFF` (num_words capped at 254, tag at u32::MAX), which
-///   is less than the Goldilocks prime `p = 2^64 - 2^32 + 1`.
+/// - 2nd felt: The tag is a u32 and the reserved bits are _currently_ set to zero, however users
+///   shouldn't assume these are zero.
 /// - 3rd felt: Max value is `0xFFFEFFFE_FFFEFFFE` (schemes capped at 65534), which is less than
 ///   `p`.
 ///
@@ -217,7 +215,7 @@ impl NoteMetadataHeader {
             self.metadata.note_type,
         );
         word[1] = self.metadata.sender.prefix().as_felt();
-        word[2] = merge_tag_and_num_words(self.metadata.tag, num_words);
+        word[2] = self.metadata.tag.into();
         word[3] = merge_schemes(schemes);
         word
     }

@@ -263,52 +263,52 @@ pub proc add_attachment
     movdn.4
     # => [ATTACHMENT_COMMITMENT, attachment_scheme, note_idx]
 
-    # validate commitment against advice data and derive num_words
+    # validate preimage for commitment is available and number of committed words is within limits
     dupw exec.validate_attachment
-    # => [num_words, ATTACHMENT_COMMITMENT, note_idx]
+    # => [ATTACHMENT_COMMITMENT, attachment_scheme, note_idx]
 
-    movup.5 swap
-    # => [num_words, attachment_scheme, ATTACHMENT_COMMITMENT, note_idx]
+    movup.4
+    # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx]
 
     # get note_ptr from note_idx
-    movup.6 exec.memory::get_output_note_ptr
-    # => [note_ptr, num_words, attachment_scheme, ATTACHMENT_COMMITMENT]
+    movup.5 exec.memory::get_output_note_ptr
+    # => [note_ptr, attachment_scheme, ATTACHMENT_COMMITMENT]
 
     # validate current number of attachments < 4
     dup exec.memory::get_output_note_num_attachments
-    # => [num_attachments, note_ptr, num_words, attachment_scheme, ATTACHMENT_COMMITMENT]
+    # => [num_attachments, note_ptr, attachment_scheme, ATTACHMENT_COMMITMENT]
 
     dup lt.MAX_ATTACHMENTS_PER_NOTE assert.err=ERR_OUTPUT_NOTE_TOO_MANY_ATTACHMENTS
-    # => [num_attachments, note_ptr, num_words, attachment_scheme, ATTACHMENT_COMMITMENT]
+    # => [num_attachments, note_ptr, attachment_scheme, ATTACHMENT_COMMITMENT]
 
     # emit event
     emit.NOTE_BEFORE_ADD_ATTACHMENT_EVENT
-    # => [num_attachments, note_ptr, num_words, attachment_scheme, ATTACHMENT_COMMITMENT]
+    # => [num_attachments, note_ptr, attachment_scheme, ATTACHMENT_COMMITMENT]
 
-    # --- Update attachment into in output note memory ---
+    # --- Add attachment in output note memory ---
 
-    swapw
-    # => [ATTACHMENT_COMMITMENT, num_attachments, note_ptr, num_words, attachment_scheme]
+    movup.6 movup.6 movup.6 movup.6
+    # => [ATTACHMENT_COMMITMENT, num_attachments, note_ptr, attachment_scheme]
 
     # use attachment_idx = num_attachments
     dup.4 dup.6
-    # => [note_ptr, attachment_idx, ATTACHMENT_COMMITMENT, num_attachments, note_ptr, num_words, attachment_scheme]
+    # => [note_ptr, attachment_idx, ATTACHMENT_COMMITMENT, num_attachments, note_ptr, attachment_scheme]
 
     # store commitment in note memory
     exec.memory::set_output_note_attachment
-    # => [num_attachments, note_ptr, num_words, attachment_scheme]
+    # => [num_attachments, note_ptr, attachment_scheme]
 
     # increment number of attachments
     dup add.1
-    # => [new_num_attachments, num_attachments, note_ptr, num_words, attachment_scheme]
+    # => [new_num_attachments, num_attachments, note_ptr, attachment_scheme]
 
     dup.2 exec.memory::set_output_note_num_attachments
-    # => [num_attachments, note_ptr, num_words, attachment_scheme]
+    # => [num_attachments, note_ptr, attachment_scheme]
 
     movup.3 movdn.2
-    # => [num_attachments, note_ptr, attachment_scheme, num_words]
+    # => [num_attachments, note_ptr, attachment_scheme]
 
-    exec.set_attachment_num_words_and_scheme
+    exec.set_attachment_schemes
     # => []
 end
 
@@ -340,12 +340,11 @@ end
 #!   Advice map: {
 #!     ATTACHMENT_COMMITMENT: [[ATTACHMENT_ELEMENTS]],
 #!   }
-#! Outputs: [num_words]
+#! Outputs: []
 #!
 #! Panics if:
 #! - the number of elements is not a multiple of 4, or num_words is zero or exceeds 254.
 #! - the computed hash of fetched elements does not match ATTACHMENT_COMMITMENT.
-@locals(1)
 proc validate_attachment
     # push the attachment elements from the advice map onto the advice stack
     adv.push_mapvaln
@@ -367,22 +366,19 @@ proc validate_attachment
     dup neq.0 assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_CANNOT_BE_ZERO
     dup u32lte.MAX_ATTACHMENT_WORD_SIZE assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_MAX_EXCEEDED
     # OS => [num_words, ATTACHMENT_COMMITMENT]
-
-    # save num_words for later
-    dup movdn.5
-    # OS => [num_words, ATTACHMENT_COMMITMENT, num_words]
+    # AS => [[ATTACHMENT_ELEMENTS]]
 
     # --- Pipe elements from advice stack to scratch memory while hashing ---
 
     # we use scratch memory because pipe_preimage_to_memory needs to write to memory, but we only
     # need to assert that the preimage is available, the exact content itself is unimportant
     push.KERNEL_SCRATCH_PTR swap
-    # OS => [num_words, scratch_ptr, ATTACHMENT_COMMITMENT, num_words]
+    # OS => [num_words, scratch_ptr, ATTACHMENT_COMMITMENT]
     # AS => [[ATTACHMENT_ELEMENTS]]
 
     # validate the sequential hash over the attachment elements is ATTACHMENT_COMMITMENT
     exec.mem::pipe_preimage_to_memory drop
-    # OS => [num_words]
+    # OS => []
 end
 
 #! Builds the provided inputs into the NOTE_METADATA_HEADER word.
@@ -439,75 +435,49 @@ end
 #!
 #! WARNING: The attachment num_words and scheme must be valid.
 #!
-#! Inputs:  [num_attachments, note_ptr, attachment_scheme, attachment_num_words]
+#! Inputs:  [num_attachments, note_ptr, attachment_scheme]
 #! Outputs: []
 #!
 #! Where:
 #! - num_attachments is the number of attachments the note had before this attachment was added.
 #! - attachment_scheme is the user-defined type of the attachment.
-#! - attachment_num_words is the number of words of the attachment content.
 #! - note_ptr is the memory address at which the output note data begins.
-proc set_attachment_num_words_and_scheme
-    # the size and schemes are stored as follows in the second and third felt:
-    # 2nd felt: [
-    #   attachment_3_num_words (8 bits) | attachment_2_num_words (8 bits) | attachment_1_num_words (8 bits) |
-    #   attachment_0_num_words (8 bits) | note_tag (32 bits)
-    # ]
+proc set_attachment_schemes
+    # the schemes are stored as follows in the third felt:
     # 3rd felt: [
     #   attachment_3_scheme (16 bits) | attachment_2_scheme (16 bits) |
     #   attachment_1_scheme (16 bits) | attachment_0_scheme (16 bits)
     # ]
-    # -> the num_words needs to be shifted left by 32 + (num_attachments * 8)
-    # -> the scheme needs to be shifted left by num_attachments * 16
+    # -> current scheme needs to be shifted left by num_attachments * 16
 
     # Prepare scheme and num_words.
     # --------------------------------------------------------------------------------------------
 
+    movup.2 swap
+    # => [num_attachments, attachment_scheme, note_ptr]
+
     # shift the scheme left by num_attachments * 16 bits using felt multiplication
     # u32shl cannot be used because the shift may be >= 32
     # left shift is done with multiplication by 2^(num_attachments * 16)
-    movup.2 dup.1
-    # => [num_attachments, attachment_scheme, num_attachments, note_ptr, attachment_num_words]
-
     mul.16 pow2 mul
-    # => [attachment_scheme_shifted, num_attachments, note_ptr, attachment_num_words]
-
-    # shift the num_words left by num_attachments * 8 + 32 bits
-    # split into a u32shl (by num_attachments * 8, max 24) and a multiplication by 2^32
-    movup.3 movup.2 mul.8
-    # => [num_attachments * 8, attachment_num_words, attachment_scheme_shifted, note_ptr]
-
-    u32shl mul.0x100000000
-    # => [attachment_num_words_shifted, attachment_scheme_shifted, note_ptr]
+    # => [attachment_scheme_shifted, note_ptr]
 
     # Fetch and update metadata header.
     # --------------------------------------------------------------------------------------------
 
     dup.2 exec.memory::get_output_note_metadata_header
-    # => [METADATA_HEADER, attachment_num_words_shifted, attachment_scheme_shifted, note_ptr]
+    # => [METADATA_HEADER, attachment_scheme_shifted, note_ptr]
     # => [
-    #   [sender_id_suffix_type_version, sender_id_prefix, attachment_num_words_and_tag, attachment_schemes],
-    #   attachment_num_words_shifted, attachment_scheme_shifted, note_ptr
-    # ]
-
-    # merge num_words into existing sizes and tag
-    # (using add instead of u32or because the shifted values exceed u32; this is safe because the
-    # bit ranges of the tag, existing sizes, and the new size do not overlap)
-    movup.2 movup.4
-    add movdn.2
-    # => [
-    #   [sender_id_suffix_type_version, sender_id_prefix, new_attachment_num_words_and_tag, attachment_schemes],
+    #   [sender_id_suffix_type_version, sender_id_prefix, tag, attachment_schemes],
     #   attachment_scheme_shifted, note_ptr
     # ]
 
     # merge scheme into existing schemes
-    # (using add for the same reason as above)
+    # (using add instead of u32or because the shifted values exceed u32; this is safe because the
+    # bit ranges of the tag, existing sizes, and the new size do not overlap)
     movup.3 movup.4
     add movdn.3
-    # => [
-    #   [sender_id_suffix_type_version, sender_id_prefix, new_attachment_num_words_and_tag, new_attachment_schemes],
-    #   note_ptr
-    # ]
+    # => [[sender_id_suffix_type_version, sender_id_prefix, tag, new_attachment_schemes], note_ptr]
     # => [METADATA_HEADER, note_ptr]
 
     movup.4 exec.memory::set_output_note_metadata_header dropw
