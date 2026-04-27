@@ -64,11 +64,21 @@ async fn update_ger_note_updates_storage() -> anyhow::Result<()> {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
+    // CREATE GER REMOVER ACCOUNT (not used in this test, but distinct from admin and manager)
+    // --------------------------------------------------------------------------------------------
+    let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
     // CREATE BRIDGE ACCOUNT
     // --------------------------------------------------------------------------------------------
     let bridge_seed = builder.rng_mut().draw_word();
-    let bridge_account =
-        create_existing_bridge_account(bridge_seed, bridge_admin.id(), ger_manager.id());
+    let bridge_account = create_existing_bridge_account(
+        bridge_seed,
+        bridge_admin.id(),
+        ger_manager.id(),
+        ger_remover.id(),
+    );
     builder.add_account(bridge_account.clone())?;
 
     // CREATE UPDATE_GER NOTE WITH 8 STORAGE ITEMS (NEW GER AS TWO WORDS)

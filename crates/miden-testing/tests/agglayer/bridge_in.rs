@@ -141,11 +141,21 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
+    // CREATE GER REMOVER ACCOUNT (not used in this test, but distinct from admin and manager)
+    // --------------------------------------------------------------------------------------------
+    let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
     // CREATE BRIDGE ACCOUNT
     // --------------------------------------------------------------------------------------------
     let bridge_seed = builder.rng_mut().draw_word();
-    let bridge_account =
-        create_existing_bridge_account(bridge_seed, bridge_admin.id(), ger_manager.id());
+    let bridge_account = create_existing_bridge_account(
+        bridge_seed,
+        bridge_admin.id(),
+        ger_manager.id(),
+        ger_remover.id(),
+    );
     builder.add_account(bridge_account.clone())?;
 
     // GET CLAIM DATA FROM JSON (source depends on the test case)
@@ -442,10 +452,19 @@ async fn test_duplicate_claim_note_rejected() -> anyhow::Result<()> {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
+    // CREATE GER REMOVER ACCOUNT (not used in this test, but distinct from admin and manager)
+    let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
     // CREATE BRIDGE ACCOUNT
     let bridge_seed = builder.rng_mut().draw_word();
-    let bridge_account =
-        create_existing_bridge_account(bridge_seed, bridge_admin.id(), ger_manager.id());
+    let bridge_account = create_existing_bridge_account(
+        bridge_seed,
+        bridge_admin.id(),
+        ger_manager.id(),
+        ger_remover.id(),
+    );
     builder.add_account(bridge_account.clone())?;
 
     // GET CLAIM DATA FROM JSON

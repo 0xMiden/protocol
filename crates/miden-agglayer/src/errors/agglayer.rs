@@ -58,6 +58,11 @@ pub const ERR_NOT_U32: MasmError = MasmError::from_static_str("address limb is n
 /// Error Message: "remainder z must be < 10^s"
 pub const ERR_REMAINDER_TOO_LARGE: MasmError = MasmError::from_static_str("remainder z must be < 10^s");
 
+/// Error Message: "REMOVE_GER note attachment target account does not match consuming account"
+pub const ERR_REMOVE_GER_TARGET_ACCOUNT_MISMATCH: MasmError = MasmError::from_static_str("REMOVE_GER note attachment target account does not match consuming account");
+/// Error Message: "REMOVE_GER script expects exactly 8 note storage items"
+pub const ERR_REMOVE_GER_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS: MasmError = MasmError::from_static_str("REMOVE_GER script expects exactly 8 note storage items");
+
 /// Error Message: "rollup index must be zero for a mainnet deposit"
 pub const ERR_ROLLUP_INDEX_NON_ZERO: MasmError = MasmError::from_static_str("rollup index must be zero for a mainnet deposit");
 
@@ -68,6 +73,8 @@ pub const ERR_SCALE_AMOUNT_EXCEEDED_LIMIT: MasmError = MasmError::from_static_st
 pub const ERR_SENDER_NOT_BRIDGE_ADMIN: MasmError = MasmError::from_static_str("note sender is not the bridge admin");
 /// Error Message: "note sender is not the global exit root manager"
 pub const ERR_SENDER_NOT_GER_MANAGER: MasmError = MasmError::from_static_str("note sender is not the global exit root manager");
+/// Error Message: "note sender is not the global exit root remover"
+pub const ERR_SENDER_NOT_GER_REMOVER: MasmError = MasmError::from_static_str("note sender is not the global exit root remover");
 
 /// Error Message: "merkle proof verification failed: provided SMT root does not match the computed root"
 pub const ERR_SMT_ROOT_VERIFICATION_FAILED: MasmError = MasmError::from_static_str("merkle proof verification failed: provided SMT root does not match the computed root");

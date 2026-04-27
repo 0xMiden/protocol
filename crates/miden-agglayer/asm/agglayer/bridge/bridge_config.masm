@@ -1,3 +1,4 @@
+use miden::core::crypto::hashes::keccak256
 use miden::core::crypto::hashes::poseidon2
 use miden::protocol::account_id
 use miden::protocol::active_account
@@ -12,6 +13,7 @@ const ERR_FAUCET_NOT_REGISTERED = "faucet is not registered in the bridge's fauc
 const ERR_TOKEN_NOT_REGISTERED = "token address is not registered in the bridge's token registry"
 const ERR_SENDER_NOT_BRIDGE_ADMIN = "note sender is not the bridge admin"
 const ERR_SENDER_NOT_GER_MANAGER = "note sender is not the global exit root manager"
+const ERR_SENDER_NOT_GER_REMOVER = "note sender is not the global exit root remover"
 
 # CONSTANTS
 # =================================================================================================
@@ -19,9 +21,16 @@ const ERR_SENDER_NOT_GER_MANAGER = "note sender is not the global exit root mana
 # Storage slots
 const BRIDGE_ADMIN_SLOT = word("agglayer::bridge::admin_account_id")
 const GER_MANAGER_SLOT = word("agglayer::bridge::ger_manager_account_id")
+const GER_REMOVER_SLOT = word("agglayer::bridge::ger_remover_account_id")
 const GER_MAP_STORAGE_SLOT = word("agglayer::bridge::ger_map")
 const FAUCET_REGISTRY_MAP_SLOT = word("agglayer::bridge::faucet_registry_map")
 const TOKEN_REGISTRY_MAP_SLOT = word("agglayer::bridge::token_registry_map")
+
+# Storage slot constants for the removed GER hash chain.
+# The chain is updated as `keccak256(prev_chain || ger)` on each removal and stored in two
+# separate value slots (lo/hi) since a Word holds only 4 felts but the chain is 8 felts.
+const REMOVED_GER_HASH_CHAIN_LO_SLOT = word("agglayer::bridge::removed_ger_hash_chain_lo")
+const REMOVED_GER_HASH_CHAIN_HI_SLOT = word("agglayer::bridge::removed_ger_hash_chain_hi")
 
 # Flags
 const GER_KNOWN_FLAG = 1
@@ -68,6 +77,71 @@ pub proc update_ger
     # => [OLD_VALUE, pad(12)]
     
     dropw
+    # => [pad(16)]
+end
+
+#! Removes a Global Exit Root (GER) from the bridge account storage and folds it into the running
+#! removed-GER keccak256 hash chain.
+#!
+#! Computes hash(GER) = poseidon2::merge(GER_LOWER, GER_UPPER), asserts that the GER is currently
+#! known (map value equals [GER_KNOWN_FLAG, 0, 0, 0]), overwrites the map entry with [0, 0, 0, 0]
+#! (Miden equivalent of Solidity's `delete globalExitRootMap[ger]`), and updates the removed-GER
+#! hash chain as NEW_CHAIN = keccak256::merge(OLD_CHAIN, GER).
+#!
+#! Inputs: [GER_LOWER[4], GER_UPPER[4], pad(8)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the note sender is not the global exit root remover.
+#! - the GER is not currently registered in the bridge's GER map.
+#!
+#! Invocation: call
+pub proc remove_ger
+    # assert the note sender is the global exit root remover.
+    exec.assert_sender_is_ger_remover
+    # => [GER_LOWER[4], GER_UPPER[4], pad(8)]
+
+    # duplicate the GER (16 felts) so we can use one copy to compute the map key + clear the map
+    # and the other copy as the keccak256 preimage for the chain hash update later.
+    dupw.1 dupw.1
+    # => [GER_LOWER, GER_UPPER, GER_LOWER, GER_UPPER, pad(8)]
+
+    # compute hash(GER) = poseidon2::merge(GER_LOWER, GER_UPPER) on the top copy.
+    exec.poseidon2::merge
+    # => [GER_HASH, GER_LOWER, GER_UPPER, pad(8)]
+
+    # assert the GER is currently known: map[GER_HASH] must equal [GER_KNOWN_FLAG, 0, 0, 0].
+    dupw
+    # => [GER_HASH, GER_HASH, GER_LOWER, GER_UPPER, pad(8)]
+
+    push.GER_MAP_STORAGE_SLOT[0..2]
+    # => [slot_id_prefix, slot_id_suffix, GER_HASH, GER_HASH, GER_LOWER, GER_UPPER, pad(8)]
+
+    exec.active_account::get_map_item
+    # => [VALUE, GER_HASH, GER_LOWER, GER_UPPER, pad(8)]
+
+    push.0.0.0.GER_KNOWN_FLAG
+    assert_eqw.err=ERR_GER_NOT_FOUND
+    # => [GER_HASH, GER_LOWER, GER_UPPER, pad(8)]
+
+    # overwrite the map entry with [0, 0, 0, 0] to mark it removed.
+    push.0.0.0.0
+    # => [0, 0, 0, 0, GER_HASH, GER_LOWER, GER_UPPER, pad(8)]
+
+    swapw
+    # => [GER_HASH, [0, 0, 0, 0], GER_LOWER, GER_UPPER, pad(8)]
+
+    push.GER_MAP_STORAGE_SLOT[0..2]
+    # => [slot_id_prefix, slot_id_suffix, GER_HASH, [0, 0, 0, 0], GER_LOWER, GER_UPPER, pad(8)]
+
+    exec.native_account::set_map_item
+    # => [OLD_VALUE, GER_LOWER, GER_UPPER, pad(8)]
+
+    dropw
+    # => [GER_LOWER, GER_UPPER, pad(8)]
+
+    # update the removed-GER keccak256 hash chain: NEW_CHAIN = keccak256::merge(OLD_CHAIN, GER).
+    exec.update_removed_ger_hash_chain
     # => [pad(16)]
 end
 
@@ -306,4 +380,87 @@ proc assert_sender_is_ger_manager
     exec.account_id::is_equal
     assert.err=ERR_SENDER_NOT_GER_MANAGER
     # => [pad(16)]
+end
+
+#! Asserts that the note sender matches the global exit root remover stored in account storage.
+#!
+#! Reads the GER remover account ID from GER_REMOVER_SLOT and compares it against the sender of the
+#! currently executing note.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the note sender does not match the GER remover account ID.
+#!
+#! Invocation: exec
+proc assert_sender_is_ger_remover
+    push.GER_REMOVER_SLOT[0..2]
+    exec.active_account::get_item
+    # => [0, 0, rem_suffix, rem_prefix, pad(16)]
+
+    drop drop
+    # => [rem_suffix, rem_prefix, pad(16)]
+
+    exec.active_note::get_sender
+    # => [sender_suffix, sender_prefix, rem_suffix, rem_prefix, pad(16)]
+
+    exec.account_id::is_equal
+    assert.err=ERR_SENDER_NOT_GER_REMOVER
+    # => [pad(16)]
+end
+
+#! Updates the removed-GER keccak256 hash chain by folding in the provided GER.
+#!
+#! Computes NEW_CHAIN = keccak256::merge(OLD_CHAIN, GER), then writes the new chain to the
+#! REMOVED_GER_HASH_CHAIN_LO_SLOT and REMOVED_GER_HASH_CHAIN_HI_SLOT slots.
+#!
+#! Inputs:  [GER_LOWER[4], GER_UPPER[4]]
+#! Outputs: []
+#!
+#! Invocation: exec
+proc update_removed_ger_hash_chain
+    # load OLD_CHAIN above the GER preimage on the stack so that keccak256::merge produces
+    # keccak256(OLD_CHAIN || GER), matching Solidity's
+    # `removedGERHashChain = efficientKeccak256(removedGERHashChain, removedGER)`.
+    exec.load_removed_ger_hash_chain_data
+    # => [OLD_CHAIN[8], GER_LOWER, GER_UPPER]
+
+    exec.keccak256::merge
+    # => [NEW_CHAIN_LO, NEW_CHAIN_HI]
+
+    exec.store_removed_ger_hash_chain
+    # => []
+end
+
+#! Loads the old removed-GER hash chain onto the stack, below the existing GER preimage.
+#!
+#! Inputs:  [GER_LOWER[4], GER_UPPER[4]]
+#! Outputs: [OLD_CHAIN[8], GER_LOWER, GER_UPPER]
+#!
+#! Invocation: exec
+proc load_removed_ger_hash_chain_data
+    push.REMOVED_GER_HASH_CHAIN_HI_SLOT[0..2]
+    exec.active_account::get_item
+    # => [OLD_CHAIN_HI, GER_LOWER, GER_UPPER]
+
+    push.REMOVED_GER_HASH_CHAIN_LO_SLOT[0..2]
+    exec.active_account::get_item
+    # => [OLD_CHAIN_LO, OLD_CHAIN_HI, GER_LOWER, GER_UPPER]
+end
+
+#! Stores the updated removed-GER hash chain into the corresponding lo/hi storage slots.
+#!
+#! Inputs:  [NEW_CHAIN_LO, NEW_CHAIN_HI]
+#! Outputs: []
+#!
+#! Invocation: exec
+proc store_removed_ger_hash_chain
+    push.REMOVED_GER_HASH_CHAIN_LO_SLOT[0..2]
+    exec.native_account::set_item dropw
+    # => [NEW_CHAIN_HI]
+
+    push.REMOVED_GER_HASH_CHAIN_HI_SLOT[0..2]
+    exec.native_account::set_item dropw
+    # => []
 end

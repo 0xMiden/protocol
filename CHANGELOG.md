@@ -4,6 +4,7 @@
 
 ### Features
 
+- Added GER removal mechanism with a dedicated `ger_remover` role, `remove_ger` MASM procedure, `REMOVE_GER` note script, `RemoveGerNote` Rust helper, and a running keccak256 removed-GER hash chain ([#2837](https://github.com/0xMiden/protocol/pull/2837)).
 - Added single-word `Array` standard ([#2203](https://github.com/0xMiden/miden-base/pull/2203)).
 - Added `SignedBlock` struct ([#2355](https://github.com/0xMiden/miden-base/pull/2235)).
 - Enabled `CodeBuilder` to add advice map entries to compiled scripts ([#2275](https://github.com/0xMiden/miden-base/pull/2275)).
