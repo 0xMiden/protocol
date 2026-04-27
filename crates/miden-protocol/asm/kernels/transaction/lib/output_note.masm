@@ -36,6 +36,8 @@ const ERR_OUTPUT_NOTE_INDEX_OUT_OF_BOUNDS="requested output note index should be
 
 const ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_MAX_EXCEEDED="attachment scheme must not exceed 65534"
 
+const ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_CANNOT_BE_ZERO = "attachment scheme must not be 0"
+
 const ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_MAX_EXCEEDED="attachment num_words must not exceed 254"
 
 const ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_MUST_BE_MULTIPLE_OF_WORD_SIZE="number of elements in an attachment must be a multiple of 4"
@@ -250,7 +252,7 @@ end
 #! - note_idx is the index of the note to which the attachment is added.
 #!
 #! Panics if:
-#! - the attachment scheme exceeds 65534.
+#! - the attachment scheme is 0 or exceeds 65534.
 #! - the number of elements is not a multiple of 4, or num_words is zero or exceeds 254.
 #! - the computed hash of fetched attachment elements does not match ATTACHMENT_COMMITMENT.
 #! - the note already has 4 attachments.
@@ -258,6 +260,10 @@ pub proc add_attachment
     # validate attachment_scheme does not exceed max
     dup u32assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_MAX_EXCEEDED
     u32lte.MAX_ATTACHMENT_SCHEME assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_MAX_EXCEEDED
+    # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx]
+
+    # assert the scheme is not value 0 which the kernel uses to represent absent attachments
+    dup eq.0 assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_CANNOT_BE_ZERO
     # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx]
 
     movdn.4

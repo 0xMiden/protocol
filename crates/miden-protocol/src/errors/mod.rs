@@ -680,6 +680,8 @@ pub enum NoteError {
     TooManyAttachments(usize),
     #[error("attachment scheme {0} exceeds maximum value of {max}", max = NoteAttachmentScheme::MAX)]
     NoteAttachmentSchemeExceeded(u32),
+    #[error("attachment scheme value 0 is reserved")]
+    NoteAttachmentSchemeZeroReserved,
     #[error("{error_msg}")]
     Other {
         error_msg: Box<str>,

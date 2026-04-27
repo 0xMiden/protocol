@@ -373,9 +373,11 @@ impl From<NoteAttachmentArray> for NoteAttachmentContent {
 ///
 /// A note attachment scheme is an arbitrary 16-bit unsigned integer (max [`Self::MAX`]).
 ///
-/// Value `0` is reserved to signal that the scheme is none or absent. Whenever the kind of
-/// attachment is not standardized or interoperability is unimportant, this none value can be
-/// used.
+/// Value `0` is reserved to signal that the entire attachment is absent and so it is not a valid
+/// scheme.
+///
+/// Value `1` is reserved to signal that the scheme is none. Whenever the kind of attachment is not
+/// standardized or interoperability is unimportant, this none value can be used.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NoteAttachmentScheme(u16);
 
@@ -383,6 +385,7 @@ impl NoteAttachmentScheme {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
 
+    /// The reserved value to signal an absent attachment. This is not a valid attachment scheme.
     const RESERVED: u16 = 0;
 
     /// The reserved value to signal a `None` note attachment scheme.
@@ -402,12 +405,10 @@ impl NoteAttachmentScheme {
     ///
     /// # Errors
     ///
-    /// TODO
-    /// Returns an error if `attachment_scheme` exceeds [`Self::MAX`].
+    /// Returns an error if `attachment_scheme` is equal to 0 or exceeds [`Self::MAX`].
     pub fn new(attachment_scheme: u16) -> Result<Self, NoteError> {
         if attachment_scheme == Self::RESERVED {
-            // TODO: Replace with new error type.
-            return Err(NoteError::NoteAttachmentSchemeExceeded(attachment_scheme as u32));
+            return Err(NoteError::NoteAttachmentSchemeZeroReserved);
         }
 
         if attachment_scheme > Self::MAX.as_u16() {
@@ -420,8 +421,7 @@ impl NoteAttachmentScheme {
     ///
     /// # Panics
     ///
-    /// TODO
-    /// Panics if `attachment_scheme` exceeds [`Self::MAX`].
+    /// Panics if `attachment_scheme` is 0 or exceeds [`Self::MAX`].
     pub const fn new_const(attachment_scheme: u16) -> Self {
         assert!(attachment_scheme != Self::RESERVED, "attachment scheme must not be 0");
         assert!(attachment_scheme <= Self::MAX.as_u16(), "attachment scheme exceeds maximum");
