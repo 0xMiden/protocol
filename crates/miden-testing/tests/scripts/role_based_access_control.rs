@@ -186,13 +186,13 @@ fn set_role_admin_script(role: &RoleSymbol, admin_role: Option<&RoleSymbol>) -> 
     let admin_role = admin_role.map(Felt::from).unwrap_or(Felt::ZERO);
     format!(
         r#"
-        use miden::standards::access::role_based_access_control
+        use miden::standards::access::rbac
 
         begin
             repeat.14 push.0 end
             push.{admin_role}
             push.{role}
-            call.role_based_access_control::set_role_admin
+            call.rbac::set_role_admin
             dropw dropw dropw dropw
         end
         "#,
@@ -204,14 +204,14 @@ fn set_role_admin_script(role: &RoleSymbol, admin_role: Option<&RoleSymbol>) -> 
 fn grant_role_script(role: &RoleSymbol, account_id: AccountId) -> String {
     format!(
         r#"
-        use miden::standards::access::role_based_access_control
+        use miden::standards::access::rbac
 
         begin
             repeat.13 push.0 end
             push.{account_prefix}
             push.{account_suffix}
             push.{role}
-            call.role_based_access_control::grant_role
+            call.rbac::grant_role
             dropw dropw dropw dropw
         end
         "#,
@@ -224,14 +224,14 @@ fn grant_role_script(role: &RoleSymbol, account_id: AccountId) -> String {
 fn revoke_role_script(role: &RoleSymbol, account_id: AccountId) -> String {
     format!(
         r#"
-        use miden::standards::access::role_based_access_control
+        use miden::standards::access::rbac
 
         begin
             repeat.13 push.0 end
             push.{account_prefix}
             push.{account_suffix}
             push.{role}
-            call.role_based_access_control::revoke_role
+            call.rbac::revoke_role
             dropw dropw dropw dropw
         end
         "#,
@@ -244,12 +244,12 @@ fn revoke_role_script(role: &RoleSymbol, account_id: AccountId) -> String {
 fn renounce_role_script(role: &RoleSymbol) -> String {
     format!(
         r#"
-        use miden::standards::access::role_based_access_control
+        use miden::standards::access::rbac
 
         begin
             repeat.15 push.0 end
             push.{role}
-            call.role_based_access_control::renounce_role
+            call.rbac::renounce_role
             dropw dropw dropw dropw
         end
         "#,
@@ -260,12 +260,12 @@ fn renounce_role_script(role: &RoleSymbol) -> String {
 fn assert_role_member_count_script(role: &RoleSymbol, expected_count: u64) -> String {
     format!(
         r#"
-        use miden::standards::access::role_based_access_control
+        use miden::standards::access::rbac
 
         begin
             repeat.15 push.0 end
             push.{role}
-            call.role_based_access_control::get_role_member_count
+            call.rbac::get_role_member_count
             eq.{expected_count} assert
             dropw dropw dropw
             drop drop drop
@@ -281,12 +281,12 @@ fn assert_role_admin_script(role: &RoleSymbol, expected_admin_role: Option<&Role
 
     format!(
         r#"
-        use miden::standards::access::role_based_access_control
+        use miden::standards::access::rbac
 
         begin
             repeat.15 push.0 end
             push.{role}
-            call.role_based_access_control::get_role_admin
+            call.rbac::get_role_admin
             eq.{expected_admin_role} assert
             dropw dropw dropw
             drop drop drop
@@ -302,12 +302,12 @@ fn assert_role_exists_script(role: &RoleSymbol, expected_exists: bool) -> String
 
     format!(
         r#"
-        use miden::standards::access::role_based_access_control
+        use miden::standards::access::rbac
 
         begin
             repeat.15 push.0 end
             push.{role}
-            call.role_based_access_control::role_exists
+            call.rbac::role_exists
             eq.{expected_exists} assert
             dropw dropw dropw
             drop drop drop
@@ -327,14 +327,14 @@ fn assert_has_role_script(
 
     format!(
         r#"
-        use miden::standards::access::role_based_access_control
+        use miden::standards::access::rbac
 
         begin
             repeat.13 push.0 end
             push.{account_prefix}
             push.{account_suffix}
             push.{role}
-            call.role_based_access_control::has_role
+            call.rbac::has_role
             eq.{expected_has_role} assert
             dropw dropw dropw
             drop drop drop
@@ -350,13 +350,13 @@ fn assert_has_role_script(
 fn set_role_admin_raw_script(role: Felt, admin_role: Felt) -> String {
     format!(
         r#"
-        use miden::standards::access::role_based_access_control
+        use miden::standards::access::rbac
 
         begin
             repeat.14 push.0 end
             push.{admin_role}
             push.{role}
-            call.role_based_access_control::set_role_admin
+            call.rbac::set_role_admin
             dropw dropw dropw dropw
         end
         "#,
@@ -368,13 +368,13 @@ fn set_role_admin_raw_script(role: Felt, admin_role: Felt) -> String {
 fn get_role_member_script(role: &RoleSymbol, index: u64) -> String {
     format!(
         r#"
-        use miden::standards::access::role_based_access_control
+        use miden::standards::access::rbac
 
         begin
             repeat.14 push.0 end
             push.{index}
             push.{role}
-            call.role_based_access_control::get_role_member
+            call.rbac::get_role_member
             dropw dropw dropw dropw
         end
         "#,
@@ -386,12 +386,12 @@ fn get_role_member_script(role: &RoleSymbol, index: u64) -> String {
 fn get_active_role_script(index: u64) -> String {
     format!(
         r#"
-        use miden::standards::access::role_based_access_control
+        use miden::standards::access::rbac
 
         begin
             repeat.15 push.0 end
             push.{index}
-            call.role_based_access_control::get_active_role
+            call.rbac::get_active_role
             dropw dropw dropw dropw
         end
         "#,
@@ -402,12 +402,12 @@ fn get_active_role_script(index: u64) -> String {
 fn assert_sender_has_role_script(role: &RoleSymbol) -> String {
     format!(
         r#"
-        use miden::standards::access::role_based_access_control
+        use miden::standards::access::rbac
 
         begin
             repeat.15 push.0 end
             push.{role}
-            call.role_based_access_control::assert_sender_has_role
+            call.rbac::assert_sender_has_role
             dropw dropw dropw dropw
         end
         "#,

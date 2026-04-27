@@ -9,24 +9,24 @@ use miden::standards::access::ownable2step
 
 # Global RBAC state slot.
 # Layout: [active_role_count, 0, 0, 0]
-const RBAC_STATE_SLOT = word("miden::standards::access::role_based_access_control::state")
+const RBAC_STATE_SLOT = word("miden::standards::access::rbac::state")
 
 # Active roles map slot.
 # Map entries: [0, 0, 0, active_role_index] -> [role_symbol, 0, 0, 0]
-const ACTIVE_ROLES_SLOT = word("miden::standards::access::role_based_access_control::active_roles")
+const ACTIVE_ROLES_SLOT = word("miden::standards::access::rbac::active_roles")
 
 # Per-role config map slot.
 # Map entries: [0, 0, 0, role_symbol] ->
 #   [member_count, admin_role_symbol, active_role_index, 0]
-const ROLE_CONFIGS_SLOT = word("miden::standards::access::role_based_access_control::role_config")
+const ROLE_CONFIGS_SLOT = word("miden::standards::access::rbac::role_config")
 
 # Per-role member enumeration map slot.
 # Map entries: [0, 0, role_symbol, member_index] -> [account_suffix, account_prefix, 0, 0]
-const ROLE_MEMBERS_SLOT = word("miden::standards::access::role_based_access_control::role_members")
+const ROLE_MEMBERS_SLOT = word("miden::standards::access::rbac::role_members")
 
 # Per-role reverse member index map slot.
 # Map entries: [0, role_symbol, account_suffix, account_prefix] -> [is_member, member_index, 0, 0]
-const ROLE_MEMBER_INDEX_SLOT = word("miden::standards::access::role_based_access_control::role_member_index")
+const ROLE_MEMBER_INDEX_SLOT = word("miden::standards::access::rbac::role_member_index")
 
 # GRANT_ROLE_INTERNAL & REVOKE_ROLE_INTERNAL LOCALS
 const ROLE_SYMBOL_LOC = 0

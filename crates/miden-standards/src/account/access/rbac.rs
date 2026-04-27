@@ -23,26 +23,26 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
 use crate::account::access::Ownable2Step;
-use crate::account::components::role_based_access_control_library;
+use crate::account::components::rbac_library;
 
 static RBAC_STATE_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::access::role_based_access_control::state")
+    StorageSlotName::new("miden::standards::access::rbac::state")
         .expect("storage slot name should be valid")
 });
 static ACTIVE_ROLES_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::access::role_based_access_control::active_roles")
+    StorageSlotName::new("miden::standards::access::rbac::active_roles")
         .expect("storage slot name should be valid")
 });
 static ROLE_CONFIGS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::access::role_based_access_control::role_config")
+    StorageSlotName::new("miden::standards::access::rbac::role_config")
         .expect("storage slot name should be valid")
 });
 static ROLE_MEMBERS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::access::role_based_access_control::role_members")
+    StorageSlotName::new("miden::standards::access::rbac::role_members")
         .expect("storage slot name should be valid")
 });
 static ROLE_MEMBER_INDEX_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::access::role_based_access_control::role_member_index")
+    StorageSlotName::new("miden::standards::access::rbac::role_member_index")
         .expect("storage slot name should be valid")
 });
 
@@ -123,7 +123,7 @@ pub struct RoleInit {
 /// ```text
 /// pub proc mint
 ///     push.MINTER_ROLE_SYMBOL
-///     exec.::miden::standards::access::role_based_access_control::assert_sender_has_role
+///     exec.::miden::standards::access::rbac::assert_sender_has_role
 ///     # add mint logic
 /// end
 /// ```
@@ -133,8 +133,7 @@ pub struct RoleBasedAccessControl {
 }
 
 impl RoleBasedAccessControl {
-    pub const NAME: &'static str =
-        "miden::standards::components::access::role_based_access_control";
+    pub const NAME: &'static str = "miden::standards::components::access::rbac";
 
     pub fn new() -> Self {
         Self { roles: BTreeMap::new() }
@@ -378,7 +377,7 @@ impl From<RoleBasedAccessControl> for AccountComponent {
         );
 
         AccountComponent::new(
-            role_based_access_control_library(),
+            rbac_library(),
             vec![
                 state_slot,
                 active_roles_slot,

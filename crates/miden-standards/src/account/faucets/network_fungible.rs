@@ -1,3 +1,5 @@
+use alloc::vec::Vec;
+
 use miden_protocol::Word;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
@@ -162,17 +164,25 @@ pub fn create_network_fungible_faucet(
     // them or return Err(FungibleFaucetError::UnsupportedAccessControl).
     match access_control {
         AccessControl::Ownable2Step { .. } => {},
+        AccessControl::RBAC { .. } => {
+            return Err(FungibleFaucetError::UnsupportedAccessControl(
+                "network fungible faucets require Ownable2Step access control".into(),
+            ));
+        },
     }
 
     let auth_component: AccountComponent = NoAuth::new().into();
 
-    let account = AccountBuilder::new(init_seed)
+    let mut builder = AccountBuilder::new(init_seed)
         .account_type(AccountType::FungibleFaucet)
         .storage_mode(AccountStorageMode::Network)
         .with_auth_component(auth_component)
         .with_component(metadata)
-        .with_component(NetworkFungibleFaucet)
-        .with_component(access_control)
+        .with_component(NetworkFungibleFaucet);
+    for component in Vec::<AccountComponent>::from(access_control) {
+        builder = builder.with_component(component);
+    }
+    let account = builder
         .with_component(OwnerControlled::owner_only())
         .build()
         .map_err(FungibleFaucetError::AccountError)?;

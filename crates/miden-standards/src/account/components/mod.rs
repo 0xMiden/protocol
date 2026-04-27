@@ -35,11 +35,9 @@ static OWNABLE2STEP_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
 });
 
 // Initialize the RoleBasedAccessControl library only once.
-static ROLE_BASED_ACCESS_CONTROL_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(
-        env!("OUT_DIR"),
-        "/assets/account_components/access/role_based_access_control.masl"
-    ));
+static RBAC_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+    let bytes =
+        include_bytes!(concat!(env!("OUT_DIR"), "/assets/account_components/access/rbac.masl"));
     Library::read_from_bytes(bytes).expect("Shipped RoleBasedAccessControl library is well-formed")
 });
 
@@ -146,8 +144,8 @@ pub fn ownable2step_library() -> Library {
 }
 
 /// Returns the RoleBasedAccessControl Library.
-pub fn role_based_access_control_library() -> Library {
-    ROLE_BASED_ACCESS_CONTROL_LIBRARY.clone()
+pub fn rbac_library() -> Library {
+    RBAC_LIBRARY.clone()
 }
 
 /// Returns the Basic Fungible Faucet Library.

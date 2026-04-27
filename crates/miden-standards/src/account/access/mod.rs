@@ -1,29 +1,35 @@
+use alloc::vec;
+use alloc::vec::Vec;
+
 use miden_protocol::account::{AccountComponent, AccountId};
 
 pub mod ownable2step;
-pub mod role_based_access_control;
+pub mod rbac;
 
-/// Access control configuration for account components that need a single top-level
-/// authority.
+/// Access control configuration for account components.
 ///
-/// This represents access control choices that can be expressed as a single account
-/// component. Composite access control configurations (such as
-/// [`role_based_access_control::RoleBasedAccessControl`], which depends on
-/// [`ownable2step::Ownable2Step`]) are not represented here; build them via their own
-/// constructors instead (e.g. `RoleBasedAccessControl::with_owner`).
+/// Each variant expands into the set of [`AccountComponent`]s that implement that access
+/// control choice. Single-component variants like [`AccessControl::Ownable2Step`] expand
+/// to one component; composite variants like [`AccessControl::RBAC`] expand to multiple
+/// components in the order they must be installed (RBAC depends on
+/// [`ownable2step::Ownable2Step`], so the latter is included alongside it).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AccessControl {
     /// Two-step ownership transfer with the provided initial owner.
     Ownable2Step { owner: AccountId },
+    /// Role-based access control. Includes [`Ownable2Step`] internally; the provided
+    /// `owner` becomes the top-level RBAC authority (the account's owner).
+    RBAC { owner: AccountId },
 }
 
-impl From<AccessControl> for AccountComponent {
+impl From<AccessControl> for Vec<AccountComponent> {
     fn from(access_control: AccessControl) -> Self {
         match access_control {
-            AccessControl::Ownable2Step { owner } => Ownable2Step::new(owner).into(),
+            AccessControl::Ownable2Step { owner } => vec![Ownable2Step::new(owner).into()],
+            AccessControl::RBAC { owner } => RoleBasedAccessControl::with_owner(owner),
         }
     }
 }
 
 pub use ownable2step::{Ownable2Step, Ownable2StepError};
-pub use role_based_access_control::{RoleBasedAccessControl, RoleInit};
+pub use rbac::{RoleBasedAccessControl, RoleInit};
