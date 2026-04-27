@@ -32,9 +32,6 @@ pub const MAX_TX_EXECUTION_CYCLES: u32 = ExecutionOptions::MAX_CYCLES;
 /// The minimum number of VM cycles a transaction needs to execute.
 pub const MIN_TX_EXECUTION_CYCLES: u32 = 1 << 12;
 
-/// Maximum number of the foreign accounts that can be loaded.
-pub const MAX_NUM_FOREIGN_ACCOUNTS: u8 = 64;
-
 // TRANSACTION BATCH
 // ================================================================================================
 
