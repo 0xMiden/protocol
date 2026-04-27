@@ -158,11 +158,6 @@ impl NoteAttachmentContent {
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
-    /// Creates a new [`NoteAttachmentContent::Word`] containing an empty word.
-    pub fn empty_word() -> Self {
-        Self::Word(Word::empty())
-    }
-
     /// Creates a new [`NoteAttachmentContent::Word`] from the provided word.
     pub fn new_word(word: Word) -> Self {
         Self::Word(word)

@@ -1968,18 +1968,20 @@ pub proc set_output_note_metadata_header
     mem_storew_le
 end
 
-#! Returns the output note's attachment at the given attachment index.
+#! Returns the output note's attachment commitment at the given attachment index.
 #!
-#! WARNING: Assumes the attachment_idx is within bounds: 0..4.
+#! This is the commitment to the raw attachment data in the advice inputs.
+#!
+#! WARNING: Does not check the attachment_idx is within bounds.
 #!
 #! Inputs:  [note_ptr, attachment_idx]
-#! Outputs: [ATTACHMENT]
+#! Outputs: [ATTACHMENT_COMMITMENT]
 #!
 #! Where:
 #! - note_ptr is the memory address at which the output note data begins.
-#! - attachment_idx is the index of the attachment slot.
-#! - ATTACHMENT is the note attachment word.
-pub proc get_output_note_attachment
+#! - attachment_idx is the index of the attachment in the note.
+#! - ATTACHMENT_COMMITMENT is the note attachment commitment.
+pub proc get_output_note_attachment_commitment
     add.OUTPUT_NOTE_ATTACHMENT_0_OFFSET
     # => [note_ptr + attachment_0_offset, attachment_idx]
 
@@ -1987,7 +1989,7 @@ pub proc get_output_note_attachment
     # => [attachment_ptr]
 
     padw movup.4 mem_loadw_le
-    # => [ATTACHMENT]
+    # => [ATTACHMENT_COMMITMENT]
 end
 
 #! Returns a pointer to the start of the attachment data region for the output note.
@@ -1998,25 +2000,25 @@ end
 #! Where:
 #! - note_ptr is the memory address at which the output note data begins.
 #! - attachment_data_ptr is the memory address of the first attachment slot.
-pub proc get_output_note_attachment_data_ptr
+pub proc get_output_note_attachment_commitment_ptr
     add.OUTPUT_NOTE_ATTACHMENT_0_OFFSET
 end
 
 #! Sets the output note's attachment at the given slot index.
 #!
-#! Inputs:  [note_ptr, attachment_idx, ATTACHMENT]
+#! Inputs:  [note_ptr, attachment_idx, ATTACHMENT_COMMITMENT]
 #! Outputs: []
 #!
 #! Where:
 #! - note_ptr is the memory address at which the output note data begins.
 #! - attachment_idx is the index of the attachment slot (0..3).
-#! - ATTACHMENT is the note attachment word.
-pub proc set_output_note_attachment
+#! - ATTACHMENT_COMMITMENT is the note attachment word.
+pub proc set_output_note_attachment_commitment
     add.OUTPUT_NOTE_ATTACHMENT_0_OFFSET
-    # => [note_ptr + base_offset, attachment_idx, ATTACHMENT]
+    # => [note_ptr + base_offset, attachment_idx, ATTACHMENT_COMMITMENT]
 
     swap mul.WORD_SIZE add
-    # => [attachment_ptr, ATTACHMENT]
+    # => [attachment_ptr, ATTACHMENT_COMMITMENT]
 
     mem_storew_le dropw
     # => []

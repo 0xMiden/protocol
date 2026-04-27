@@ -1281,7 +1281,7 @@ pub proc output_note_get_metadata
 
     # TODO(multi_attachments): Temporarily maintain compatibility with the old API and return the
     # first attachment.
-    movup.4 push.0 swap exec.memory::get_output_note_attachment
+    movup.4 push.0 swap exec.memory::get_output_note_attachment_commitment
     # => [ATTACHMENT_0, METADATA_HEADER, pad(16)]
 
     # truncate the stack

@@ -102,7 +102,7 @@ proc compute_attachments_commitment
     # => [num_attachments, note_ptr]
 
     # end_ptr = attachment_data_ptr + num_attachments * WORD_SIZE
-    swap exec.memory::get_output_note_attachment_data_ptr
+    swap exec.memory::get_output_note_attachment_commitment_ptr
     # => [start_ptr, num_attachments]
 
     swap mul.WORD_SIZE dup.1 add swap

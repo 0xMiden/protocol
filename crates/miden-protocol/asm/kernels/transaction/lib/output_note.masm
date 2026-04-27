@@ -295,7 +295,7 @@ pub proc add_attachment
     # => [note_ptr, attachment_idx, ATTACHMENT_COMMITMENT, num_attachments, note_ptr, attachment_scheme]
 
     # store commitment in note memory
-    exec.memory::set_output_note_attachment
+    exec.memory::set_output_note_attachment_commitment
     # => [num_attachments, note_ptr, attachment_scheme]
 
     # increment number of attachments
