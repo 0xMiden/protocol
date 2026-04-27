@@ -172,7 +172,8 @@ end
 #! Where:
 #! - is_native is a boolean flag that indicates whether the account ID was requested for the native
 #!   or the active account.
-#! - account_id_{prefix,suffix} are the prefix and suffix felts of the ID of the active account.
+#! - account_id_{prefix,suffix} are the prefix and suffix felts of the ID of the requested account
+#!   (native or active, depending on the is_native flag).
 #!
 #! Invocation: dynexec
 pub proc account_get_id
@@ -874,7 +875,7 @@ end
 
 #! Returns the recipient of the specified input note.
 #!
-#! Inputs:  [is_active_note, note_index, pad(15)]
+#! Inputs:  [is_active_note, note_index, pad(14)]
 #! Outputs: [RECIPIENT, pad(12)]
 #!
 #! Where:

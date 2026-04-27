@@ -181,7 +181,7 @@ end
 #! - VAULT_ROOT is the commitment of the foreign account's vault.
 #! - STORAGE_ROOT is the commitment of the foreign account's storage.
 #! - STORAGE_SLOT_DATA is the data contained in the storage slot which is constructed as follows:
-#!   [SLOT_VALUE, slot_type, 0, 0, 0].
+#!   [0, slot_type, slot_id_suffix, slot_id_prefix, SLOT_VALUE].
 #! - CODE_COMMITMENT is the commitment of the foreign account's code.
 #! - ACCOUNT_PROCEDURE_DATA are the roots of the public procedures of the foreign account.
 #!
