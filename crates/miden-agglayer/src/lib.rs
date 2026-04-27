@@ -15,7 +15,6 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::TokenSymbol;
 use miden_protocol::note::NoteScript;
-use miden_protocol::vm::Program;
 use miden_standards::account::access::Ownable2Step;
 use miden_standards::account::auth::NoAuth;
 use miden_standards::account::policies::{
@@ -36,6 +35,8 @@ pub mod config_note;
 pub mod errors;
 pub mod eth_types;
 pub mod faucet;
+#[cfg(feature = "testing")]
+pub mod testing;
 pub mod update_ger_note;
 pub mod utils;
 
@@ -72,9 +73,10 @@ pub use utils::Keccak256Output;
 
 // Initialize the CLAIM note script only once
 static CLAIM_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/claim.masb"));
-    let program = Program::read_from_bytes(bytes).expect("shipped CLAIM script is well-formed");
-    NoteScript::new(program)
+    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/claim.masl"));
+    let library =
+        Library::read_from_bytes(bytes).expect("shipped CLAIM script library is well-formed");
+    NoteScript::from_library(&library).expect("shipped CLAIM script is well-formed")
 });
 
 /// Returns the CLAIM (Bridge from AggLayer) note script.
