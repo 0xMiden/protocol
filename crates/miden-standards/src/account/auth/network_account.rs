@@ -78,7 +78,7 @@ impl NetworkAccount {
         (
             Self::whitelist_slot().clone(),
             StorageSlotSchema::map(
-                "Allowed input-note script roots",
+                "Allowed input note script roots",
                 SchemaType::native_word(),
                 SchemaType::native_word(),
             ),
