@@ -239,8 +239,8 @@ proc create_p2id_note
     loc_load.P2ID_AMT_ACCOUNT_FILL loc_load.P2ID_AMT_NOTE_FILL add
     # => [[total_fill, 0, 0, 0], note_idx]
 
-    push.0
-    # => [attachment_scheme=0, [total_fill, 0, 0, 0], note_idx]
+    push.1
+    # => [attachment_scheme=1, [total_fill, 0, 0, 0], note_idx]
 
     exec.output_note::add_word_attachment
     # => []
@@ -361,8 +361,8 @@ proc create_remainder_note
     push.0.0.0 loc_load.REMAINDER_AMT_PAYOUT
     # => [[amt_payout, 0, 0, 0], note_idx]
 
-    push.0
-    # => [attachment_scheme=0, [amt_payout, 0, 0, 0], note_idx]
+    push.1
+    # => [attachment_scheme=1, [amt_payout, 0, 0, 0], note_idx]
 
     exec.output_note::add_word_attachment
     # => []

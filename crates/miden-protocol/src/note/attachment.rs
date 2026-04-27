@@ -388,8 +388,10 @@ impl NoteAttachmentScheme {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
 
-    /// The reserved value to signal an absent note attachment scheme.
-    const NONE: u16 = 0;
+    const RESERVED: u16 = 0;
+
+    /// The reserved value to signal a `None` note attachment scheme.
+    const NONE: u16 = 1;
 
     /// The maximum value for a note attachment scheme.
     ///
@@ -405,8 +407,14 @@ impl NoteAttachmentScheme {
     ///
     /// # Errors
     ///
+    /// TODO
     /// Returns an error if `attachment_scheme` exceeds [`Self::MAX`].
     pub fn new(attachment_scheme: u16) -> Result<Self, NoteError> {
+        if attachment_scheme == Self::RESERVED {
+            // TODO: Replace with new error type.
+            return Err(NoteError::NoteAttachmentSchemeExceeded(attachment_scheme as u32));
+        }
+
         if attachment_scheme > Self::MAX.as_u16() {
             return Err(NoteError::NoteAttachmentSchemeExceeded(attachment_scheme as u32));
         }
@@ -417,8 +425,10 @@ impl NoteAttachmentScheme {
     ///
     /// # Panics
     ///
+    /// TODO
     /// Panics if `attachment_scheme` exceeds [`Self::MAX`].
     pub const fn new_const(attachment_scheme: u16) -> Self {
+        assert!(attachment_scheme != Self::RESERVED, "attachment scheme must not be 0");
         assert!(attachment_scheme <= Self::MAX.as_u16(), "attachment scheme exceeds maximum");
         Self(attachment_scheme)
     }
@@ -493,50 +503,49 @@ impl Deserializable for NoteAttachmentScheme {
 /// - `num_words > 1`: array attachment (a commitment to a set of felts)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NoteAttachmentHeader {
-    scheme: NoteAttachmentScheme,
-    num_words: u8,
+    scheme: Option<NoteAttachmentScheme>,
 }
 
 impl NoteAttachmentHeader {
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
-    /// Creates a new [`NoteAttachmentHeader`].
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if `num_words` exceeds [`NoteAttachment::MAX_NUM_WORDS`].
-    pub fn new(scheme: NoteAttachmentScheme, num_words: u8) -> Result<Self, NoteError> {
-        if num_words > NoteAttachment::MAX_NUM_WORDS {
-            return Err(NoteError::NoteAttachmentHeaderSizeExceeded(num_words));
-        }
-        Ok(Self { scheme, num_words })
+    /// Creates a new [`NoteAttachmentHeader`] from a [`NoteAttachmentScheme`].
+    pub fn new(scheme: NoteAttachmentScheme) -> Self {
+        Self { scheme: Some(scheme) }
+    }
+
+    /// Creates a new [`NoteAttachmentHeader`] from a [`NoteAttachmentScheme`].
+    pub fn new_maybe(scheme: Option<NoteAttachmentScheme>) -> Self {
+        Self { scheme }
     }
 
     /// Returns a header representing the absence of an attachment.
     pub const fn absent() -> Self {
-        Self {
-            scheme: NoteAttachmentScheme::none(),
-            num_words: 0,
-        }
+        Self { scheme: None }
     }
 
     // ACCESSORS
     // --------------------------------------------------------------------------------------------
 
     /// Returns the attachment scheme.
-    pub const fn scheme(&self) -> NoteAttachmentScheme {
+    pub const fn scheme(&self) -> Option<NoteAttachmentScheme> {
         self.scheme
     }
 
-    /// Returns the number of words in the attachment.
-    pub const fn num_words(&self) -> u8 {
-        self.num_words
+    /// Returns the header encoded as a u16.
+    ///
+    /// Encodes `None` to 0 using the niche provided by [`NoteAttachmentScheme`].
+    pub(super) fn as_u16(&self) -> u16 {
+        match self.scheme {
+            None => 0,
+            Some(scheme) => scheme.as_u16(),
+        }
     }
 
     /// Returns `true` if this header represents an absent attachment, `false` otherwise.
     pub const fn is_absent(&self) -> bool {
-        self.num_words == 0 && self.scheme.is_none()
+        self.scheme.is_none()
     }
 }
 
@@ -546,22 +555,26 @@ impl Default for NoteAttachmentHeader {
     }
 }
 
+impl From<NoteAttachmentScheme> for NoteAttachmentHeader {
+    fn from(scheme: NoteAttachmentScheme) -> Self {
+        NoteAttachmentHeader::new(scheme)
+    }
+}
+
 impl Serializable for NoteAttachmentHeader {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         self.scheme.write_into(target);
-        self.num_words.write_into(target);
     }
 
     fn get_size_hint(&self) -> usize {
-        self.scheme.get_size_hint() + core::mem::size_of::<u8>()
+        self.scheme.get_size_hint()
     }
 }
 
 impl Deserializable for NoteAttachmentHeader {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let scheme = NoteAttachmentScheme::read_from(source)?;
-        let size = u8::read_from(source)?;
-        Self::new(scheme, size).map_err(|err| DeserializationError::InvalidValue(err.to_string()))
+        let scheme = Option::<NoteAttachmentScheme>::read_from(source)?;
+        Ok(Self::new_maybe(scheme))
     }
 }
 
@@ -676,9 +689,7 @@ impl NoteAttachments {
     pub fn to_headers(&self) -> [NoteAttachmentHeader; Self::MAX_COUNT] {
         let mut headers = [NoteAttachmentHeader::absent(); Self::MAX_COUNT];
         for (i, attachment) in self.attachments.iter().enumerate() {
-            headers[i] =
-                NoteAttachmentHeader::new(attachment.attachment_scheme(), attachment.num_words())
-                    .expect("attachment num_words should not exceed NoteAttachment::MAX_NUM_WORDS");
+            headers[i] = NoteAttachmentHeader::new(attachment.attachment_scheme());
         }
         headers
     }
@@ -816,7 +827,7 @@ mod tests {
 
     #[test]
     fn note_attachment_header_serde() -> anyhow::Result<()> {
-        let header = NoteAttachmentHeader::new(NoteAttachmentScheme::new(42)?, 10)?;
+        let header = NoteAttachmentHeader::new(NoteAttachmentScheme::new(42)?);
         let deserialized = NoteAttachmentHeader::read_from_bytes(&header.to_bytes())?;
         assert_eq!(header, deserialized);
         Ok(())
@@ -826,7 +837,6 @@ mod tests {
     fn note_attachment_header_absent() {
         let header = NoteAttachmentHeader::absent();
         assert!(header.is_absent());
-        assert_eq!(header.num_words(), 0);
         assert!(header.scheme().is_none());
     }
 
@@ -897,10 +907,8 @@ mod tests {
         ])?;
 
         let headers = attachments.to_headers();
-        assert_eq!(headers[0].scheme(), NoteAttachmentScheme::new(42)?);
-        assert_eq!(headers[0].num_words(), 1);
-        assert_eq!(headers[1].scheme(), NoteAttachmentScheme::new(100)?);
-        assert_eq!(headers[1].num_words(), 2);
+        assert_eq!(headers[0].scheme(), Some(NoteAttachmentScheme::new(42)?));
+        assert_eq!(headers[1].scheme(), Some(NoteAttachmentScheme::new(100)?));
         assert!(headers[2].is_absent());
         assert!(headers[3].is_absent());
 

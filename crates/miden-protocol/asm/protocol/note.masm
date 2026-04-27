@@ -202,34 +202,22 @@ end
 #! that supported just one attachment per note.
 #!
 #! Inputs:  [METADATA_HEADER]
-#! Outputs: [attachment_0_num_words, attachment_0_scheme]
+#! Outputs: [attachment_0_scheme]
 #!
 #! Where:
 #! - METADATA_HEADER is the metadata word of a note.
-#! - attachment_0_num_words is the number of words of the first attachment (0 if absent).
-#! - attachment_0_scheme is the scheme of the first attachment.
+#! - attachment_0_scheme is the scheme of the first attachment (0 if absent).
 #!
 #! Invocation: exec
 pub proc metadata_into_attachment_header
-    # => [sender_id_suffix_type_version, sender_id_prefix, attachment_num_words_and_tag, schemes]
+    # => [sender_id_suffix_type_version, sender_id_prefix, tag, schemes]
 
-    drop drop
-    # => [attachment_num_words_and_tag, schemes]
-
-    # extract attachment_0_num_words from attachment_num_words_and_tag:
-    # u32split converts into num_words_packed (upper 32 bits) and tag (lower 32 bits)
-    u32split drop
-    # => [num_words_packed, schemes]
-    # => [attachment_3_num_words (8 bits) | attachment_2_num_words (8 bits) |
-    #     attachment_1_num_words (8 bits) | attachment_0_num_words (8 bits)]
-
-    # extract attachment 0 num_words by taking only the lower 8 bits
-    u32and.0xff
-    # [attachment_0_num_words, schemes]
+    drop drop drop
+    # => [schemes]
 
     # extract attachment 0 scheme by taking only the lower 16 bits
-    swap u32and.0xffff swap
-    # [attachment_0_num_words, attachment_0_scheme]
+    u32and.0xffff
+    # [attachment_0_scheme]
 end
 
 #! Extracts the note type from the provided metadata header.
@@ -242,7 +230,7 @@ end
 #!
 #! Where:
 #! - METADATA_HEADER is the metadata of a note, laid out on the stack as
-#!   [sender_id_suffix_type_version, sender_id_prefix, tag, attachment_kind_scheme].
+#!   [sender_id_suffix_type_version, sender_id_prefix, tag, attachment_schemes].
 #!   The first felt (sender_id_suffix_type_version) has the following bit layout:
 #!   [sender_id_suffix (56 bits) | reserved (3 bits) | note_type (1 bit) | version (4 bits)]
 #! - note_type is the type of the note (0 for private, 1 for public).

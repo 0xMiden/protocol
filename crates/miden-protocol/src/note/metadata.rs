@@ -11,7 +11,7 @@ use super::{
     Word,
 };
 use crate::Hasher;
-use crate::note::{NoteAttachmentHeader, NoteAttachmentScheme, NoteAttachments};
+use crate::note::{NoteAttachmentHeader, NoteAttachments};
 
 // NOTE METADATA
 // ================================================================================================
@@ -207,8 +207,6 @@ impl NoteMetadataHeader {
     ///
     /// See [`NoteMetadataHeader`] docs for the layout.
     pub fn to_metadata_word(&self) -> Word {
-        let (num_words, schemes) = extract_num_words_and_schemes(&self.attachment_headers);
-
         let mut word = Word::empty();
         word[0] = merge_sender_suffix_and_note_type(
             self.metadata.sender.suffix(),
@@ -216,7 +214,7 @@ impl NoteMetadataHeader {
         );
         word[1] = self.metadata.sender.prefix().as_felt();
         word[2] = self.metadata.tag.into();
-        word[3] = merge_schemes(schemes);
+        word[3] = merge_schemes(self.attachment_headers);
         word
     }
 
@@ -289,22 +287,6 @@ impl Deserializable for NoteMetadataHeader {
 // HELPER FUNCTIONS
 // ================================================================================================
 
-/// Extracts the num_words and schemes arrays from the attachment headers.
-fn extract_num_words_and_schemes(
-    headers: &[NoteAttachmentHeader; NoteAttachments::MAX_COUNT],
-) -> (
-    [u8; NoteAttachments::MAX_COUNT],
-    [NoteAttachmentScheme; NoteAttachments::MAX_COUNT],
-) {
-    let mut num_words = [0u8; NoteAttachments::MAX_COUNT];
-    let mut schemes = [NoteAttachmentScheme::none(); NoteAttachments::MAX_COUNT];
-    for (i, header) in headers.iter().enumerate() {
-        num_words[i] = header.num_words();
-        schemes[i] = header.scheme();
-    }
-    (num_words, schemes)
-}
-
 /// Merges the suffix of an [`AccountId`] and note metadata into a single [`Felt`].
 ///
 /// The layout is as follows:
@@ -331,39 +313,21 @@ fn merge_sender_suffix_and_note_type(sender_id_suffix: Felt, note_type: NoteType
     Felt::try_from(merged).expect("encoded value should be a valid felt")
 }
 
-/// Merges the note tag and four attachment num_words into a single [`Felt`].
-///
-/// The layout is as follows:
-///
-/// ```text
-/// [attachment_3_num_words (8 bits) | attachment_2_num_words (8 bits) |
-///  attachment_1_num_words (8 bits) | attachment_0_num_words (8 bits) |
-///  note_tag (32 bits)]
-/// ```
-fn merge_tag_and_num_words(tag: NoteTag, num_words: [u8; 4]) -> Felt {
-    let mut merged: u64 = u32::from(tag) as u64;
-    merged |= (num_words[0] as u64) << 32;
-    merged |= (num_words[1] as u64) << 40;
-    merged |= (num_words[2] as u64) << 48;
-    merged |= (num_words[3] as u64) << 56;
-
-    Felt::try_from(merged).expect("encoded value should be a valid felt (num_words <= 254)")
-}
-
 /// Merges four attachment schemes into a single [`Felt`].
 ///
 /// The layout is as follows:
 ///
 /// ```text
-/// [attachment_3_scheme (16 bits) | attachment_2_scheme (16 bits) | attachment_1_scheme (16 bits) | attachment_0_scheme (16 bits)]
+/// [attachment_3_scheme (16 bits) | attachment_2_scheme (16 bits) |
+///  attachment_1_scheme (16 bits) | attachment_0_scheme (16 bits)]
 /// ```
 ///
 /// Max value: `0xFFFEFFFE_FFFEFFFE` < p. Schemes are capped at 65534.
-fn merge_schemes(schemes: [NoteAttachmentScheme; 4]) -> Felt {
-    let mut merged: u64 = schemes[0].as_u16() as u64;
-    merged |= (schemes[1].as_u16() as u64) << 16;
-    merged |= (schemes[2].as_u16() as u64) << 32;
-    merged |= (schemes[3].as_u16() as u64) << 48;
+fn merge_schemes(headers: [NoteAttachmentHeader; NoteAttachments::MAX_COUNT]) -> Felt {
+    let mut merged: u64 = headers[0].as_u16() as u64;
+    merged |= (headers[1].as_u16() as u64) << 16;
+    merged |= (headers[2].as_u16() as u64) << 32;
+    merged |= (headers[3].as_u16() as u64) << 48;
 
     Felt::try_from(merged).expect("encoded value should be a valid felt (schemes <= 65534)")
 }
@@ -395,10 +359,8 @@ mod tests {
 
         let encoded = metadata_header.to_metadata_word();
 
-        let num_words_and_tag = encoded[2].as_canonical_u64();
-        // num_words 3 and 4 are 0, 2 encodes to 0x2 and 1 encodes to 0x1
-        // tag should encode to 0xff
-        assert_eq!(num_words_and_tag, 0x0000_0201_0000_00ff);
+        let tag = encoded[2].as_canonical_u64();
+        assert_eq!(tag, 0x0000_0000_0000_00ff);
 
         let schemes = encoded[3].as_canonical_u64();
         // scheme 3 and 4 are 0, 2 is 0xfffe, 1 is 0x1

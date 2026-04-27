@@ -305,9 +305,6 @@ pub proc add_attachment
     dup.2 exec.memory::set_output_note_num_attachments
     # => [num_attachments, note_ptr, attachment_scheme]
 
-    movup.3 movdn.2
-    # => [num_attachments, note_ptr, attachment_scheme]
-
     exec.set_attachment_schemes
     # => []
 end
@@ -465,7 +462,7 @@ proc set_attachment_schemes
     # Fetch and update metadata header.
     # --------------------------------------------------------------------------------------------
 
-    dup.2 exec.memory::get_output_note_metadata_header
+    dup.1 exec.memory::get_output_note_metadata_header
     # => [METADATA_HEADER, attachment_scheme_shifted, note_ptr]
     # => [
     #   [sender_id_suffix_type_version, sender_id_prefix, tag, attachment_schemes],
