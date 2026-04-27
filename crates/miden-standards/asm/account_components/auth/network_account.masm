@@ -44,8 +44,8 @@ pub proc auth_tx_network_account
     exec.tx::get_tx_script_root
     # => [TX_SCRIPT_ROOT, pad(16)]
 
-    padw exec.word::eq
-    # => [no_tx_script, pad(16)]
+    exec.word::eqz
+    # => [has_no_tx_script, pad(16)]
 
     assert.err=ERR_NETWORK_ACCOUNT_TX_SCRIPT_NOT_ALLOWED
     # => [pad(16)]
