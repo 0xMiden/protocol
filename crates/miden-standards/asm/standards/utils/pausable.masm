@@ -3,7 +3,8 @@
 # Minimal pause flag storage and helpers. Pause/unpause procedures do not perform authorization.
 # Compose with ownable2step or role-based access control in a higher layer.
 #
-# Asset callbacks enforce "not paused" when the issuing faucet has callbacks enabled on the asset.
+# Downstream components compose `assert_not_paused` / `assert_paused` to gate their own logic
+# (e.g. asset callbacks, custom procedures). This module itself does not register any callbacks.
 
 use miden::core::word
 use miden::protocol::active_account
@@ -153,40 +154,4 @@ pub proc assert_paused
 
     assert.err=ERR_PAUSABLE_EXPECTED_PAUSE
     # => []
-end
-
-# CALLBACKS
-# ================================================================================================
-
-#! Callback when a callbacks-enabled asset is added to an account vault.
-#!
-#! Panics if this faucet account is paused (reads `IS_PAUSED_SLOT` on the active account,
-#! which is the issuing faucet in the callback foreign context).
-#!
-#! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
-#! Outputs: [ASSET_VALUE, pad(12)]
-#!
-#! Invocation: call
-pub proc on_before_asset_added_to_account
-    exec.assert_not_paused
-    # => [ASSET_KEY, ASSET_VALUE, pad(8)]
-
-    dropw
-    # => [ASSET_VALUE, pad(12)]
-end
-
-#! Callback when a callbacks-enabled asset is added to an output note.
-#!
-#! Panics if this faucet account is paused.
-#!
-#! Inputs:  [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
-#! Outputs: [ASSET_VALUE, pad(12)]
-#!
-#! Invocation: call
-pub proc on_before_asset_added_to_note
-    exec.assert_not_paused
-    # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
-
-    dropw
-    # => [ASSET_VALUE, note_idx, pad(7)]
 end

@@ -1,10 +1,18 @@
-//! Tests for [`miden_standards::account::pausable::Pausable`] asset callbacks and pause/unpause
-//! scripts.
+//! Tests for [`miden_standards::account::pausable::Pausable`] pause/unpause scripts and the
+//! `assert_not_paused` exec guard.
+//!
+//! `Pausable` itself is a pure pause primitive and does not register asset callbacks. To exercise
+//! the pause guard end-to-end through asset transfers, these tests pair `Pausable` with a
+//! [`pausable_callbacks_component`] — a test-only [`AccountComponent`] whose
+//! `on_before_asset_added_to_account` and `on_before_asset_added_to_note` procedures simply
+//! `exec.::miden::standards::utils::pausable::assert_not_paused`. This is the canonical pattern
+//! for downstream components that want to gate asset transfers on pause state.
 
 extern crate alloc;
 
 use miden_protocol::Word;
 use miden_protocol::account::auth::AuthScheme;
+use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
     Account,
     AccountBuilder,
@@ -16,6 +24,7 @@ use miden_protocol::account::{
 use miden_protocol::asset::{
     Asset,
     AssetCallbackFlag,
+    AssetCallbacks,
     FungibleAsset,
     NonFungibleAsset,
     NonFungibleAssetDetails,
@@ -40,6 +49,68 @@ const ERR_PAUSABLE_ENFORCED_PAUSE: MasmError = MasmError::from_static_str("the c
 const ERR_PAUSABLE_EXPECTED_PAUSE: MasmError =
     MasmError::from_static_str("the contract is not paused");
 
+/// Test-only [`AccountComponent`] that gates asset transfers on the pause flag.
+///
+/// Wires `on_before_asset_added_to_account` and `on_before_asset_added_to_note` callback
+/// procedures (registered via [`AssetCallbacks`]) to `pausable::assert_not_paused`. Compose with
+/// [`Pausable`] to exercise the pause guard end-to-end through asset-callback-enabled assets.
+fn pausable_callbacks_component() -> anyhow::Result<AccountComponent> {
+    const COMPONENT_NAME: &str = "miden::testing::pausable_callbacks";
+
+    const SOURCE: &str = r#"
+        use miden::standards::utils::pausable
+
+        #! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
+        #! Outputs: [ASSET_VALUE, pad(12)]
+        pub proc on_before_asset_added_to_account
+            exec.pausable::assert_not_paused
+            # => [ASSET_KEY, ASSET_VALUE, pad(8)]
+
+            dropw
+            # => [ASSET_VALUE, pad(12)]
+        end
+
+        #! Inputs:  [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
+        #! Outputs: [ASSET_VALUE, note_idx, pad(7)]
+        pub proc on_before_asset_added_to_note
+            exec.pausable::assert_not_paused
+            # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
+
+            dropw
+            # => [ASSET_VALUE, note_idx, pad(7)]
+        end
+    "#;
+
+    let library = CodeBuilder::default().compile_component_code(COMPONENT_NAME, SOURCE)?;
+
+    let on_account_path = format!("{COMPONENT_NAME}::on_before_asset_added_to_account");
+    let on_note_path = format!("{COMPONENT_NAME}::on_before_asset_added_to_note");
+
+    let on_account_root = library
+        .as_library()
+        .get_procedure_root_by_path(on_account_path.as_str())
+        .expect("account callback procedure should exist");
+    let on_note_root = library
+        .as_library()
+        .get_procedure_root_by_path(on_note_path.as_str())
+        .expect("note callback procedure should exist");
+
+    let storage_slots = AssetCallbacks::new()
+        .on_before_asset_added_to_account(on_account_root)
+        .on_before_asset_added_to_note(on_note_root)
+        .into_storage_slots();
+
+    let metadata = AccountComponentMetadata::new(
+        COMPONENT_NAME,
+        [AccountType::FungibleFaucet, AccountType::NonFungibleFaucet],
+    )
+    .with_description(
+        "Test-only callbacks that gate asset transfers via pausable::assert_not_paused",
+    );
+
+    Ok(AccountComponent::new(library, storage_slots, metadata)?)
+}
+
 fn add_faucet_with_pausable(builder: &mut MockChainBuilder) -> anyhow::Result<Account> {
     let faucet_metadata = FungibleTokenMetadataBuilder::new(
         TokenName::new("SYM")?,
@@ -54,7 +125,8 @@ fn add_faucet_with_pausable(builder: &mut MockChainBuilder) -> anyhow::Result<Ac
         .account_type(AccountType::FungibleFaucet)
         .with_component(faucet_metadata)
         .with_component(BasicFungibleFaucet)
-        .with_component(Pausable::default());
+        .with_component(Pausable::default())
+        .with_component(pausable_callbacks_component()?);
 
     builder.add_account_from_builder(
         Auth::BasicAuth {
@@ -94,7 +166,9 @@ fn add_faucet_with_pausable_for_account_type(
     for component in faucet_components {
         account_builder = account_builder.with_component(component);
     }
-    account_builder = account_builder.with_component(Pausable::default());
+    account_builder = account_builder
+        .with_component(Pausable::default())
+        .with_component(pausable_callbacks_component()?);
 
     builder.add_account_from_builder(
         Auth::BasicAuth {

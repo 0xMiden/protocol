@@ -6,5 +6,3 @@
 pub use ::miden::standards::utils::pausable::is_paused
 pub use ::miden::standards::utils::pausable::pause
 pub use ::miden::standards::utils::pausable::unpause
-pub use ::miden::standards::utils::pausable::on_before_asset_added_to_account
-pub use ::miden::standards::utils::pausable::on_before_asset_added_to_note
