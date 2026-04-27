@@ -37,6 +37,8 @@ pub async fn capture_measurements_and_trace_summary(
     Ok((measurements, trace_summary))
 }
 
+// TODO(#2841): integrate `TraceLenSummary` into `TransactionMeasurements` so we can drop this
+// duplicate-execute path. See https://github.com/0xMiden/protocol/issues/2841.
 async fn build_trace_summary(tx_inputs: TransactionInputs) -> Result<TraceLenSummary> {
     let (stack_inputs, tx_advice_inputs) = TransactionKernel::prepare_inputs(&tx_inputs);
 

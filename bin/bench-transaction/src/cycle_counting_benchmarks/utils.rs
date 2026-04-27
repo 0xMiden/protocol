@@ -79,18 +79,18 @@ impl EpilogueMeasurements {
 }
 
 /// Per-component trace row counts from a real `ExecutionTrace`. `core_rows`, `chiplets_rows`,
-/// and `range_rows` are the AIR-side totals; `shape` is an advisory per-chiplet breakdown that
-/// satisfies `chiplets_rows == hasher + bitwise + memory + kernel_rom + ace + 1`.
+/// and `range_rows` are the AIR-side totals; `chiplets_shape` is an advisory per-chiplet breakdown
+/// that satisfies `chiplets_rows == hasher + bitwise + memory + kernel_rom + ace + 1`.
 #[derive(Debug, Clone, Serialize)]
 struct TraceMeasurements {
     core_rows: usize,
     chiplets_rows: usize,
     range_rows: usize,
-    shape: TraceShape,
+    chiplets_shape: ChipletsTraceShape,
 }
 
 #[derive(Debug, Clone, Serialize)]
-struct TraceShape {
+struct ChipletsTraceShape {
     hasher_rows: usize,
     bitwise_rows: usize,
     memory_rows: usize,
@@ -122,7 +122,7 @@ impl From<TraceLenSummary> for TraceMeasurements {
             core_rows: summary.main_trace_len(),
             chiplets_rows: chiplets.trace_len(),
             range_rows: summary.range_trace_len(),
-            shape: TraceShape {
+            chiplets_shape: ChipletsTraceShape {
                 hasher_rows: chiplets.hash_chiplet_len(),
                 bitwise_rows: chiplets.bitwise_chiplet_len(),
                 memory_rows: chiplets.memory_chiplet_len(),
@@ -176,11 +176,11 @@ mod tests {
         core_rows: u64,
         chiplets_rows: u64,
         range_rows: u64,
-        shape: ShapeForTest,
+        chiplets_shape: ChipletsShapeForTest,
     }
 
     #[derive(Deserialize)]
-    struct ShapeForTest {
+    struct ChipletsShapeForTest {
         hasher_rows: u64,
         bitwise_rows: u64,
         memory_rows: u64,
@@ -248,21 +248,21 @@ mod tests {
         let scenario: ScenarioForTest = serde_json::from_value(raw.clone())
             .unwrap_or_else(|err| panic!("scenario `{name}` does not match the schema: {err}"));
         let trace = &scenario.trace;
-        let shape = &trace.shape;
+        let chiplets_shape = &trace.chiplets_shape;
 
         assert!(trace.core_rows > 0, "{name}: core_rows should be > 0");
         assert!(trace.chiplets_rows > 0, "{name}: chiplets_rows should be > 0");
         assert!(trace.range_rows > 0, "{name}: range_rows should be > 0");
 
-        let chiplets_sum = shape.hasher_rows
-            + shape.bitwise_rows
-            + shape.memory_rows
-            + shape.kernel_rom_rows
-            + shape.ace_rows
+        let chiplets_sum = chiplets_shape.hasher_rows
+            + chiplets_shape.bitwise_rows
+            + chiplets_shape.memory_rows
+            + chiplets_shape.kernel_rom_rows
+            + chiplets_shape.ace_rows
             + 1;
         assert_eq!(
             trace.chiplets_rows, chiplets_sum,
-            "{name}: chiplets_rows must equal sum(shape) + 1",
+            "{name}: chiplets_rows must equal sum(chiplets_shape) + 1",
         );
 
         let core_side = padded_core_side(trace);

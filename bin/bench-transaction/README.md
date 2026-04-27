@@ -91,8 +91,8 @@ cargo bench --bin bench-transaction --bench time_counting_benchmarks --features 
 The `trace` section in `bench-tx.json` is the input contract for miden-vm's
 `miden-vm-synthetic-bench`. Its hard targets are the AIR-side row totals
 (`trace.core_rows`, `trace.chiplets_rows`, `trace.range_rows`); the
-`trace.shape.*` per-chiplet breakdown is advisory profiling metadata and is
-required to satisfy the chiplet-bus invariant
+`trace.chiplets_shape.*` per-chiplet breakdown is advisory profiling metadata
+and is required to satisfy the chiplet-bus invariant
 `chiplets_rows == hasher + bitwise + memory + kernel_rom + ace + 1`.
 
 The consumer's hard match is on padded power-of-two brackets, not raw row
