@@ -1,36 +1,39 @@
 # miden::standards::access::ownable2step
 #
-# Provides two-step ownership management functionality for account components.
-# This module can be imported and used by any component that needs owner controls.
+# Provides two-step ownership management for account components.
 #
-# Unlike a single-step ownership transfer, this module requires the new owner to explicitly
-# accept the transfer before it takes effect. This prevents accidental transfers to incorrect
-# addresses, which would permanently lock the component.
+# Unlike a single-step ownership transfer, this requires the new owner to explicitly
+# accept the transfer before it takes effect. This prevents accidental transfers to
+# incorrect addresses, which would permanently lock the component.
 #
-# The transfer flow is:
+# Transfer flow:
 #   1. The current owner calls `transfer_ownership` to nominate a new owner.
 #   2. The nominated account calls `accept_ownership` to complete the transfer.
-#   3. Optionally, the current owner can call `transfer_ownership` with their own address
-#      to cancel the nominated transfer.
-#
-# The underlying two-step transfer protocol is implemented by the shared
-# `miden::standards::access::role_transfer` module. This component is a thin wrapper that
-# stores ownership state in its own slot and supplies domain-specific sender validation.
+#   3. To cancel a pending transfer, the current owner calls `transfer_ownership`
+#      again with their own account ID.
+#   4. The current owner can call `renounce_ownership` to permanently leave the
+#      component ownerless. Renouncement is rejected while a transfer is pending.
 #
 # Storage layout (single slot):
-#   Word:  [owner_suffix, owner_prefix, nominated_owner_suffix, nominated_owner_prefix]
-#           word[0]       word[1]        word[2]                  word[3]
+#   Word: [owner_suffix, owner_prefix, nominated_owner_suffix, nominated_owner_prefix]
+#          word[0]       word[1]        word[2]                 word[3]
+#
+# All public procedures are designed to be invoked either via `call` (with the standard
+# pad(16) calling convention) or via `exec` from sibling components. The
+# `role_based_access_control` component composes this module by `exec`-ing its public
+# procedures, reusing both the owner storage and the transfer logic rather than
+# duplicating the 2-step flow.
 
 use miden::protocol::account_id
+use miden::protocol::active_account
 use miden::protocol::active_note
 use miden::protocol::native_account
-use miden::standards::access::role_transfer
 
 # CONSTANTS
-# ================================================================================================
+# =================================================================================================
 
-# The slot in this component's storage layout where the owner configuration is stored.
-# Contains both the current owner and the nominated owner in a single word.
+# Owner config slot.
+# Layout: [owner_suffix, owner_prefix, nominated_owner_suffix, nominated_owner_prefix]
 const OWNER_CONFIG_SLOT = word("miden::standards::access::ownable2step::owner_config")
 
 # The zero-address word written when ownership is renounced.
@@ -38,29 +41,34 @@ const OWNER_CONFIG_SLOT = word("miden::standards::access::ownable2step::owner_co
 const ZERO_ADDRESS = [0, 0, 0, 0]
 
 # ERRORS
-# ================================================================================================
+# =================================================================================================
 
-const ERR_SENDER_NOT_OWNER                = "note sender is not the owner"
-const ERR_OWNERSHIP_TRANSFER_IN_PROGRESS  = "ownership transfer is in progress"
+const ERR_SENDER_NOT_OWNER               = "note sender is not the owner"
+const ERR_NO_NOMINATED_TRANSFER          = "no nominated ownership transfer exists"
+const ERR_SENDER_NOT_NOMINATED           = "note sender is not the nominated owner"
+const ERR_OWNERSHIP_TRANSFER_IN_PROGRESS = "ownership transfer is in progress"
 
-# INTERNAL PROCEDURES
-# ================================================================================================
+# PUBLIC INTERFACE
+# =================================================================================================
 
-#! Returns 1 if the note sender is the current owner, else 0.
+#! Returns whether the note sender is the current owner.
 #!
 #! Inputs:  []
 #! Outputs: [is_sender_owner]
 #!
-#! Invocation: exec
-proc is_sender_owner_internal
+#! Where:
+#! - is_sender_owner is 1 if the note sender is the current owner, otherwise 0.
+#!
+#! Invocation: exec or call
+pub proc is_sender_owner
     exec.active_note::get_sender
     # => [sender_suffix, sender_prefix]
 
-    push.OWNER_CONFIG_SLOT[0..2]
-    # => [slot_suffix, slot_prefix, sender_suffix, sender_prefix]
+    push.OWNER_CONFIG_SLOT[0..2] exec.active_account::get_item
+    # => [owner_suffix, owner_prefix, nominated_suffix, nominated_prefix, sender_suffix, sender_prefix]
 
-    exec.role_transfer::get_current
-    # => [current_suffix, current_prefix, sender_suffix, sender_prefix]
+    movup.3 drop movup.2 drop
+    # => [owner_suffix, owner_prefix, sender_suffix, sender_prefix]
 
     exec.account_id::is_equal
     # => [is_sender_owner]
@@ -72,164 +80,212 @@ end
 #! Outputs: []
 #!
 #! Panics if:
-#! - the note sender is not the owner.
+#! - the note sender is not the current owner.
 #!
-#! Invocation: exec
-proc assert_sender_is_owner_internal
-    exec.is_sender_owner_internal
+#! Invocation: exec or call
+pub proc assert_sender_is_owner
+    exec.is_sender_owner
     # => [is_sender_owner]
 
     assert.err=ERR_SENDER_NOT_OWNER
     # => []
 end
 
-# PUBLIC INTERFACE
-# ================================================================================================
-
-#! Checks if the note sender is the owner and panics if not.
+#! Returns the current owner. The owner is `(0, 0)` if ownership has been renounced.
 #!
-#! Inputs:  [pad(16)]
-#! Outputs: [pad(16)]
-#!
-#! Panics if:
-#! - the note sender is not the owner.
-#!
-#! Invocation: call
-pub proc assert_sender_is_owner
-    exec.assert_sender_is_owner_internal
-    # => [pad(16)]
-end
-
-#! Returns the owner account ID.
-#!
-#! Inputs:  [pad(16)]
-#! Outputs: [owner_suffix, owner_prefix, pad(14)]
+#! Inputs:  []
+#! Outputs: [owner_suffix, owner_prefix]
 #!
 #! Where:
-#! - owner_{suffix, prefix} are the suffix and prefix felts of the owner account ID.
+#! - owner_{suffix, prefix} are the suffix and prefix felts of the current owner account ID.
 #!
-#! Invocation: call
+#! Invocation: exec or call
 pub proc get_owner
-    push.OWNER_CONFIG_SLOT[0..2]
-    # => [slot_suffix, slot_prefix, pad(16)]
+    push.OWNER_CONFIG_SLOT[0..2] exec.active_account::get_item
+    # => [owner_suffix, owner_prefix, nominated_suffix, nominated_prefix]
 
-    exec.role_transfer::get_current
-    # => [owner_suffix, owner_prefix, pad(16)]
-
-    movup.2 drop movup.2 drop
-    # => [owner_suffix, owner_prefix, pad(14)]
+    movup.3 drop movup.2 drop
+    # => [owner_suffix, owner_prefix]
 end
 
-#! Returns the nominated owner account ID.
+#! Returns the nominated owner. The nominated owner is `(0, 0)` if no transfer is pending.
 #!
-#! Inputs:  [pad(16)]
-#! Outputs: [nominated_owner_suffix, nominated_owner_prefix, pad(14)]
+#! Inputs:  []
+#! Outputs: [nominated_suffix, nominated_prefix]
 #!
 #! Where:
-#! - nominated_owner_{suffix, prefix} are the suffix and prefix felts of the nominated
-#!   owner account ID. Both are zero if no nominated transfer exists.
+#! - nominated_{suffix, prefix} are the suffix and prefix felts of the nominated owner account ID.
 #!
-#! Invocation: call
+#! Invocation: exec or call
 pub proc get_nominated_owner
-    push.OWNER_CONFIG_SLOT[0..2]
-    # => [slot_suffix, slot_prefix, pad(16)]
+    push.OWNER_CONFIG_SLOT[0..2] exec.active_account::get_item
+    # => [owner_suffix, owner_prefix, nominated_suffix, nominated_prefix]
 
-    exec.role_transfer::get_nominated
-    # => [nominated_owner_suffix, nominated_owner_prefix, pad(16)]
-
-    movup.2 drop movup.2 drop
-    # => [nominated_owner_suffix, nominated_owner_prefix, pad(14)]
+    drop drop
+    # => [nominated_suffix, nominated_prefix]
 end
 
-#! Initiates a two-step ownership transfer by setting the nominated owner.
+#! Initiates or cancels a two-step ownership transfer.
 #!
-#! The current owner remains in control until the nominated owner calls `accept_ownership`.
-#! Can only be called by the current owner.
+#! If `new_owner` equals the current owner, the nominated owner is cleared (cancellation).
+#! Otherwise, the nominated owner is set to `new_owner`. The current owner remains in
+#! control until the nominated owner calls `accept_ownership`.
 #!
-#! If the new owner is the current owner, any nominated transfer is cancelled and the
-#! nominated owner field is cleared.
+#! Inputs:  [new_owner_suffix, new_owner_prefix]
+#! Outputs: []
 #!
-#! Inputs:  [new_owner_suffix, new_owner_prefix, pad(14)]
-#! Outputs: [pad(16)]
+#! Where:
+#! - new_owner_{suffix, prefix} are the suffix and prefix felts of the new owner account ID.
 #!
 #! Panics if:
-#! - the note sender is not the owner.
+#! - the note sender is not the current owner.
 #! - the new owner account ID is invalid.
 #!
-#! Invocation: call
+#! Locals:
+#! 0: new_suffix
+#! 1: new_prefix
+#! 2: current_suffix
+#! 3: current_prefix
+#!
+#! Invocation: exec or call
+@locals(4)
 pub proc transfer_ownership
-    exec.assert_sender_is_owner_internal
-    # => [new_owner_suffix, new_owner_prefix, pad(14)]
+    exec.assert_sender_is_owner
+    # => [new_suffix, new_prefix]
+
+    dup.1 dup.1 exec.account_id::validate
+    # => [new_suffix, new_prefix]
+
+    loc_store.0 loc_store.1
+    # => []
+
+    exec.get_owner
+    # => [current_suffix, current_prefix]
+
+    loc_store.2 loc_store.3
+    # => []
+
+    loc_load.1 loc_load.0 loc_load.3 loc_load.2
+    # => [current_suffix, current_prefix, new_suffix, new_prefix]
+
+    exec.account_id::is_equal
+    # => [is_self_transfer]
+
+    if.true
+        # Cancel: nominated = 0.
+        push.0 push.0 loc_load.3 loc_load.2
+        # => [current_suffix, current_prefix, 0, 0]
+    else
+        # Nominate: nominated = new.
+        loc_load.1 loc_load.0 loc_load.3 loc_load.2
+        # => [current_suffix, current_prefix, new_suffix, new_prefix]
+    end
 
     push.OWNER_CONFIG_SLOT[0..2]
-    # => [slot_suffix, slot_prefix, new_owner_suffix, new_owner_prefix, pad(14)]
+    # => [slot_suffix, slot_prefix, current_suffix, current_prefix, new_or_zero_suffix, new_or_zero_prefix]
 
-    exec.role_transfer::transfer_role
-    # => [pad(14)]
+    exec.native_account::set_item
+    # => [OLD_CONFIG_WORD]
+
+    dropw
+    # => []
 end
 
-#! Accepts a nominated ownership transfer. The nominated owner becomes the new owner
-#! and the nominated owner field is cleared.
+#! Accepts the pending ownership transfer.
 #!
-#! Can only be called by the nominated owner.
+#! Sets `current = nominated` and clears the nominated field.
 #!
-#! Inputs:  [pad(16)]
-#! Outputs: [pad(16)]
+#! Inputs:  []
+#! Outputs: []
 #!
 #! Panics if:
 #! - there is no nominated ownership transfer.
 #! - the note sender is not the nominated owner.
 #!
-#! Invocation: call
+#! Locals:
+#! 0: nominated_suffix
+#! 1: nominated_prefix
+#!
+#! Invocation: exec or call
+@locals(2)
 pub proc accept_ownership
-    push.OWNER_CONFIG_SLOT[0..2]
-    # => [slot_suffix, slot_prefix, pad(16)]
+    exec.get_nominated_owner
+    # => [nominated_suffix, nominated_prefix]
 
-    exec.role_transfer::accept_role
-    # => [pad(16)]
-end
+    loc_store.0 loc_store.1
+    # => []
 
-#! Renounces ownership, leaving the component without an owner.
-#!
-#! Can only be called by the current owner. Rejects if a nominated transfer is in progress
-#! to prevent accidentally discarding a pending nomination.
-#!
-#! Important Note!
-#! This feature allows the owner to relinquish administrative privileges, a common pattern
-#! after an initial stage with centralized administration is over. Once ownership is renounced,
-#! the component becomes permanently ownerless and cannot be managed by any account.
-#!
-#! Inputs:  [pad(16)]
-#! Outputs: [pad(16)]
-#!
-#! Panics if:
-#! - the note sender is not the owner.
-#! - an ownership transfer is in progress.
-#!
-#! Invocation: call
-pub proc renounce_ownership
-    exec.assert_sender_is_owner_internal
-    # => [pad(16)]
+    loc_load.1 loc_load.0
+    # => [nominated_suffix, nominated_prefix]
 
-    push.OWNER_CONFIG_SLOT[0..2]
-    # => [slot_suffix, slot_prefix, pad(16)]
+    # Assert nominated != 0.
+    dup.1 eq.0 dup.1 eq.0 and
+    # => [is_zero, nominated_suffix, nominated_prefix]
 
-    exec.role_transfer::has_nominated_transfer
-    # => [has_nominated_transfer, pad(16)]
+    assertz.err=ERR_NO_NOMINATED_TRANSFER
+    # => [nominated_suffix, nominated_prefix]
 
-    assertz.err=ERR_OWNERSHIP_TRANSFER_IN_PROGRESS
-    # => [pad(16)]
+    # Assert sender == nominated.
+    exec.active_note::get_sender
+    # => [sender_suffix, sender_prefix, nominated_suffix, nominated_prefix]
 
-    # Clear the owner config: [current, nominated] = ZERO_ADDRESS.
-    push.ZERO_ADDRESS
-    # => [0, 0, 0, 0, pad(16)]
+    exec.account_id::is_equal
+    # => [is_equal]
+
+    assert.err=ERR_SENDER_NOT_NOMINATED
+    # => []
+
+    # Write new config: current = nominated, nominated = 0.
+    push.0 push.0 loc_load.1 loc_load.0
+    # => [nominated_suffix, nominated_prefix, 0, 0]
 
     push.OWNER_CONFIG_SLOT[0..2]
-    # => [slot_suffix, slot_prefix, 0, 0, 0, 0, pad(16)]
+    # => [slot_suffix, slot_prefix, nominated_suffix, nominated_prefix, 0, 0]
 
     exec.native_account::set_item
-    # => [OLD_CONFIG_WORD, pad(16)]
+    # => [OLD_CONFIG_WORD]
 
     dropw
-    # => [pad(16)]
+    # => []
+end
+
+#! Renounces ownership permanently, leaving the component ownerless.
+#!
+#! Important: once ownership is renounced, no account holds owner authority and the
+#! component cannot be managed by any account. Procedures gated on owner authority will
+#! be permanently uncallable.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Panics if:
+#! - the note sender is not the current owner.
+#! - an ownership transfer is currently in progress.
+#!
+#! Invocation: exec or call
+pub proc renounce_ownership
+    exec.assert_sender_is_owner
+    # => []
+
+    exec.get_nominated_owner
+    # => [nominated_suffix, nominated_prefix]
+
+    eq.0 swap eq.0 and
+    # => [no_nominated_transfer]
+
+    assert.err=ERR_OWNERSHIP_TRANSFER_IN_PROGRESS
+    # => []
+
+    # Clear owner config: [current=0, nominated=0].
+    push.ZERO_ADDRESS
+    # => [0, 0, 0, 0]
+
+    push.OWNER_CONFIG_SLOT[0..2]
+    # => [slot_suffix, slot_prefix, 0, 0, 0, 0]
+
+    exec.native_account::set_item
+    # => [OLD_CONFIG_WORD]
+
+    dropw
+    # => []
 end

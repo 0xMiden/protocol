@@ -1,4 +1,5 @@
 use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::vec;
 use alloc::vec::Vec;
 
 use miden_protocol::account::component::{
@@ -21,12 +22,9 @@ use miden_protocol::account::{
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
+use crate::account::access::Ownable2Step;
 use crate::account::components::role_based_access_control_library;
 
-static ADMIN_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::access::role_based_access_control::admin_config")
-        .expect("storage slot name should be valid")
-});
 static RBAC_STATE_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::access::role_based_access_control::state")
         .expect("storage slot name should be valid")
@@ -56,47 +54,48 @@ pub struct RoleInit {
 
 /// Role-based access control (RBAC) for account components.
 ///
-/// RBAC provides fine-grained access control than the single owner model in `Ownable2Step`.
-/// Instead of having one account holding every privilege, privileges are split into named roles
-/// (for example `MINTER`, `BURNER`, `PAUSER`), and each procedure is guarded against the
-/// caller's role membership. It Allows role assignment with domain isolation to minimize the scope
-/// of damage from a compromised role.
+/// RBAC provides fine-grained access control on top of [`Ownable2Step`]. Instead of having
+/// one account holding every privilege, privileges are split into named roles (for example
+/// `MINTER`, `BURNER`, `PAUSER`), and each procedure is guarded against the caller's role
+/// membership. It allows role assignment with domain isolation to minimize the scope of
+/// damage from a compromised role.
 ///
-/// Admin management.
+/// Relation to [`Ownable2Step`].
 ///
-/// The admin can grant and revoke any role, configure the delegated admin of any role via
-/// `set_role_admin`, and transfer or renounce its own position.
+/// RBAC is a superset of [`Ownable2Step`] and depends on it: the top-level authority
+/// (previously called the "admin") is the [`Ownable2Step`] owner of the account. Use
+/// `RoleBasedAccessControl::with_owner` to build the pair of components together; this
+/// avoids duplicated state, duplicated 2-step transfer logic, and duplicated notes for
+/// owner / admin transfers. If you only need single-account control, use [`Ownable2Step`]
+/// alone.
 ///
-/// Admin transfers follow a two-step protocol: the current admin nominates a successor via
-/// `transfer_admin`, and the nominee must explicitly call `accept_admin` before the transfer
-/// takes effect. The current admin retains full authority until acceptance and may cancel a
-/// pending transfer by calling `transfer_admin` with its own account. This prevents
-/// accidental transfers to the wrong account.
+/// Owner management.
 ///
-/// The admin may also call `renounce_admin` to permanently remove the admin position. After
-/// renouncement, no account holds admin authority and role management falls entirely to the
-/// per-role admin roles. Renouncement is rejected while a pending transfer is in progress.
+/// The owner can grant and revoke any role, configure the delegated admin of any role via
+/// `set_role_admin`, and transfer or renounce its own position. Owner transfer and
+/// renouncement go through [`Ownable2Step`] (`transfer_ownership`, `accept_ownership`,
+/// `renounce_ownership`).
 ///
 /// Role hierarchy.
 ///
 /// Every role may optionally have a delegated admin role. Accounts holding a role's admin
-/// role are authorized to grant and revoke that role without going through the top-level
-/// admin. For example, accounts holding `MINTER_ADMIN` can manage the `MINTER` role but have
-/// no authority over `BURNER` or `PAUSER`. This lets responsibilities be distributed so that
+/// role are authorized to grant and revoke that role without going through the owner.
+/// For example, accounts holding `MINTER_ADMIN` can manage the `MINTER` role but have no
+/// authority over `BURNER` or `PAUSER`. This lets responsibilities be distributed so that
 /// compromise of one domain does not spill into the others.
 ///
-/// Combined with admin renouncement, this supports a fully decentralized configuration: once
-/// every role has its own admin role populated, the top-level admin can renounce and the
+/// Combined with owner renouncement, this supports a fully decentralized configuration:
+/// once every role has its own admin role populated, the owner can renounce and the
 /// system continues to operate with each role managed only by its designated admin role.
 ///
 /// The delegated admin of a role can itself be any role, including one that it admins.
-/// Circular relationships are possible but should be designed with care, since each role can
-/// then revoke the other.
+/// Circular relationships are possible but should be designed with care, since each role
+/// can then revoke the other.
 ///
 /// Role semantics.
 ///
-/// A role is considered to exist when it has at least one member. Granting the first member
-/// creates the role; revoking the last member removes it. As a consequence,
+/// A role is considered to exist when it has at least one member. Granting the first
+/// member creates the role; revoking the last member removes it. As a consequence,
 /// `set_role_admin(A, B)` stores the admin relationship in storage but does not make role
 /// `A` exist until a member is granted. Once the last member of `A` is revoked,
 /// `role_exists(A)` returns `false`, though the admin configuration is retained and will
@@ -104,19 +103,20 @@ pub struct RoleInit {
 ///
 /// Role enumeration.
 ///
-/// Three distinct lookup paths are maintained. `has_role(role, account)` check
-/// used as the primary guard by procedures that assert the caller's role membership.
+/// Three distinct lookup paths are maintained. `has_role(role, account)` is the primary
+/// guard used by procedures that assert the caller's role membership.
 /// `get_role_member(role, index)` iterates over all accounts currently holding a role and
 /// serves on-chain consumers that need to walk a role's membership without relying on an
-/// off-chain indexer. `get_active_role(index)` iterates over all roles that currently have
-/// at least one member.
+/// off-chain indexer. `get_active_role(index)` iterates over all roles that currently
+/// have at least one member.
 ///
 /// Role symbol format.
 ///
-/// A role symbol is a `RoleSymbol`, which encodes up to 12 uppercase ASCII characters with
-/// underscores into a single field element using the same packing as the token symbol type.
-/// Examples: `MINTER`, `MINTER_ADMIN`, `PAUSER`. The zero field element is reserved and
-/// cannot be used as a role symbol; attempting to do so panics with `ERR_ROLE_SYMBOL_ZERO`.
+/// A role symbol is a [`RoleSymbol`], which encodes up to 12 uppercase ASCII characters
+/// with underscores into a single field element using the same packing as the token
+/// symbol type. Examples: `MINTER`, `MINTER_ADMIN`, `PAUSER`. The zero field element is
+/// reserved and cannot be used as a role symbol; attempting to do so panics with
+/// `ERR_ROLE_SYMBOL_ZERO`.
 ///
 /// Guarding a procedure in MASM so that only members of `MINTER` can call it:
 ///
@@ -129,7 +129,6 @@ pub struct RoleInit {
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RoleBasedAccessControl {
-    admin: AccountId,
     roles: BTreeMap<RoleSymbol, RoleInit>,
 }
 
@@ -137,12 +136,19 @@ impl RoleBasedAccessControl {
     pub const NAME: &'static str =
         "miden::standards::components::access::role_based_access_control";
 
-    pub fn new(admin: AccountId) -> Self {
-        Self { admin, roles: BTreeMap::new() }
+    pub fn new() -> Self {
+        Self { roles: BTreeMap::new() }
     }
 
-    pub fn admin(&self) -> AccountId {
-        self.admin
+    /// Returns the pair of components needed to use RBAC: an [`Ownable2Step`] component
+    /// configured with `owner` (the top-level authority for the account) and the RBAC
+    /// component itself.
+    ///
+    /// RBAC depends on [`Ownable2Step`] for owner management, so both components must be
+    /// installed together. This is the recommended entry point for building an RBAC-enabled
+    /// account.
+    pub fn with_owner(owner: AccountId) -> Vec<AccountComponent> {
+        vec![Ownable2Step::new(owner).into(), Self::new().into()]
     }
 
     pub fn roles(&self) -> &BTreeMap<RoleSymbol, RoleInit> {
@@ -168,10 +174,6 @@ impl RoleBasedAccessControl {
         self
     }
 
-    pub fn admin_config_slot() -> &'static StorageSlotName {
-        &ADMIN_CONFIG_SLOT_NAME
-    }
-
     pub fn state_slot() -> &'static StorageSlotName {
         &RBAC_STATE_SLOT_NAME
     }
@@ -190,21 +192,6 @@ impl RoleBasedAccessControl {
 
     pub fn role_member_index_slot() -> &'static StorageSlotName {
         &ROLE_MEMBER_INDEX_SLOT_NAME
-    }
-
-    pub fn admin_config_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::admin_config_slot().clone(),
-            StorageSlotSchema::value(
-                "RBAC admin and nominated admin",
-                [
-                    FeltSchema::felt("admin_suffix"),
-                    FeltSchema::felt("admin_prefix"),
-                    FeltSchema::felt("nominated_admin_suffix"),
-                    FeltSchema::felt("nominated_admin_prefix"),
-                ],
-            ),
-        )
     }
 
     pub fn state_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
@@ -268,7 +255,6 @@ impl RoleBasedAccessControl {
 
     pub fn component_metadata() -> AccountComponentMetadata {
         let storage_schema = StorageSchema::new(vec![
-            Self::admin_config_slot_schema(),
             Self::state_slot_schema(),
             Self::active_roles_slot_schema(),
             Self::role_configs_slot_schema(),
@@ -283,18 +269,14 @@ impl RoleBasedAccessControl {
     }
 }
 
+impl Default for RoleBasedAccessControl {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl From<RoleBasedAccessControl> for AccountComponent {
     fn from(rbac: RoleBasedAccessControl) -> Self {
-        let admin_config_slot = StorageSlot::with_value(
-            RoleBasedAccessControl::admin_config_slot().clone(),
-            Word::from([
-                rbac.admin.suffix(),
-                rbac.admin.prefix().as_felt(),
-                Felt::ZERO,
-                Felt::ZERO,
-            ]),
-        );
-
         let mut active_role_entries = Vec::new();
         let mut role_config_entries = Vec::new();
         let mut role_member_entries = Vec::new();
@@ -398,7 +380,6 @@ impl From<RoleBasedAccessControl> for AccountComponent {
         AccountComponent::new(
             role_based_access_control_library(),
             vec![
-                admin_config_slot,
                 state_slot,
                 active_roles_slot,
                 role_configs_slot,

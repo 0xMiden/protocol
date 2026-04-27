@@ -2,18 +2,10 @@ use miden::protocol::account_id
 use miden::protocol::active_account
 use miden::protocol::active_note
 use miden::protocol::native_account
-use miden::standards::access::role_transfer
+use miden::standards::access::ownable2step
 
 # CONSTANTS
 # =================================================================================================
-
-# Admin config slot.
-# Layout: [admin_suffix, admin_prefix, nominated_admin_suffix, nominated_admin_prefix]
-const ADMIN_CONFIG_SLOT = word("miden::standards::access::role_based_access_control::admin_config")
-
-# The zero-address word written when the admin is renounced.
-# Layout: [admin_suffix=0, admin_prefix=0, nominated_suffix=0, nominated_prefix=0]
-const ZERO_ADDRESS = [0, 0, 0, 0]
 
 # Global RBAC state slot.
 # Layout: [active_role_count, 0, 0, 0]
@@ -44,17 +36,15 @@ const ACCOUNT_PREFIX_LOC = 2
 # ADD_TO_ROLE_ENUMERATION LOCALS
 const MEMBER_COUNT_LOC = 3
 
-# REMOVE_FROM_ROLE_ENUMERATION LOCALS
+# REMOVE_FROM_ROLE_ENUMERATION LOCALS
 const REMOVE_INDEX_LOC = 3
 const LAST_INDEX_LOC = 4
 
 # ERRORS
 # =================================================================================================
 
-const ERR_SENDER_NOT_ADMIN = "note sender is not the admin"
-const ERR_ADMIN_TRANSFER_IN_PROGRESS = "admin transfer is in progress"
 const ERR_SENDER_LACKS_ROLE = "note sender does not hold the required role"
-const ERR_SENDER_NOT_ADMIN_OR_ROLE_ADMIN = "note sender is not the admin or a role admin"
+const ERR_SENDER_NOT_OWNER_OR_ROLE_ADMIN = "note sender is not the owner or a role admin"
 const ERR_ROLE_MEMBER_OUT_OF_BOUNDS = "role member index is out of bounds"
 const ERR_ACTIVE_ROLE_OUT_OF_BOUNDS = "active role index is out of bounds"
 const ERR_ACCOUNT_NOT_IN_ROLE = "account does not hold the role"
@@ -62,20 +52,6 @@ const ERR_ROLE_SYMBOL_ZERO = "role symbol is zero"
 
 # PUBLIC INTERFACE
 # =================================================================================================
-
-#! Checks that the note sender is the current admin.
-#!
-#! Inputs:  [pad(16)]
-#! Outputs: [pad(16)]
-#!
-#! Panics if:
-#! - the note sender is not the current admin.
-#!
-#! Invocation: call
-pub proc assert_sender_is_admin
-    exec.assert_sender_is_admin_internal
-    # => [pad(16)]
-end
 
 #! Checks that the note sender holds the given role.
 #!
@@ -101,129 +77,6 @@ pub proc assert_sender_has_role
     # => [pad(16)]
 end
 
-#! Returns the current admin.
-#!
-#! Inputs:  [pad(16)]
-#! Outputs: [admin_suffix, admin_prefix, pad(14)]
-#!
-#! Where:
-#! - admin_{suffix,prefix} are the suffix and prefix felts of the current admin account ID.
-#!
-#! Invocation: call
-pub proc get_admin
-    push.ADMIN_CONFIG_SLOT[0..2]
-    # => [slot_suffix, slot_prefix, pad(16)]
-
-    exec.role_transfer::get_current
-    # => [admin_suffix, admin_prefix, pad(16)]
-
-    movup.2 drop movup.2 drop
-    # => [admin_suffix, admin_prefix, pad(14)]
-end
-
-#! Returns the nominated admin.
-#!
-#! Inputs:  [pad(16)]
-#! Outputs: [nominated_admin_suffix, nominated_admin_prefix, pad(14)]
-#!
-#! Where:
-#! - nominated_admin_{suffix,prefix} are the suffix and prefix felts of the nominated admin
-#!   account ID.
-#!
-#! Invocation: call
-pub proc get_nominated_admin
-    push.ADMIN_CONFIG_SLOT[0..2]
-    # => [slot_suffix, slot_prefix, pad(16)]
-
-    exec.role_transfer::get_nominated
-    # => [nominated_admin_suffix, nominated_admin_prefix, pad(16)]
-
-    movup.2 drop movup.2 drop
-    # => [nominated_admin_suffix, nominated_admin_prefix, pad(14)]
-end
-
-#! Initiates a two-step admin transfer by setting the nominated admin.
-#!
-#! Inputs:  [new_admin_suffix, new_admin_prefix, pad(14)]
-#! Outputs: [pad(16)]
-#!
-#! Where:
-#! - new_admin_{suffix,prefix} are the suffix and prefix felts of the new admin account ID.
-#!
-#! Panics if:
-#! - the note sender is not the current admin.
-#! - the new admin account ID is invalid.
-#!
-#! Invocation: call
-pub proc transfer_admin
-    exec.assert_sender_is_admin_internal
-    # => [new_admin_suffix, new_admin_prefix, pad(14)]
-
-    push.ADMIN_CONFIG_SLOT[0..2]
-    # => [slot_suffix, slot_prefix, new_admin_suffix, new_admin_prefix, pad(14)]
-
-    exec.role_transfer::transfer_role
-    # => [pad(14)]
-end
-
-
-#! Accepts the pending admin transfer.
-#!
-#! Inputs:  [pad(16)]
-#! Outputs: [pad(16)]
-#!
-#! Panics if:
-#! - there is no nominated admin.
-#! - the note sender is not the nominated admin.
-#!
-#! Invocation: call
-pub proc accept_admin
-    push.ADMIN_CONFIG_SLOT[0..2]
-    # => [slot_suffix, slot_prefix, pad(16)]
-
-    exec.role_transfer::accept_role
-    # => [pad(16)]
-end
-
-
-#! Renounces the admin role permanently.
-#!
-#! Inputs:  [pad(16)]
-#! Outputs: [pad(16)]
-#!
-#! Panics if:
-#! - the note sender is not the current admin.
-#! - an admin transfer is currently in progress.
-#!
-#! Invocation: call
-pub proc renounce_admin
-    exec.assert_sender_is_admin_internal
-    # => [pad(16)]
-
-    push.ADMIN_CONFIG_SLOT[0..2]
-    # => [slot_suffix, slot_prefix, pad(16)]
-
-    exec.role_transfer::has_nominated_transfer
-    # => [has_nominated_transfer, pad(16)]
-
-    assertz.err=ERR_ADMIN_TRANSFER_IN_PROGRESS
-    # => [pad(16)]
-
-    # Clear admin config: [current, nominated] = ZERO_ADDRESS.
-    push.ZERO_ADDRESS
-    # => [0, 0, 0, 0, pad(16)]
-
-    push.ADMIN_CONFIG_SLOT[0..2]
-    # => [slot_suffix, slot_prefix, 0, 0, 0, 0, pad(16)]
-
-    exec.native_account::set_item
-    # => [OLD_CONFIG_WORD, pad(16)]
-
-    dropw
-    # => [pad(16)]
-end
-
-
 #! Returns whether a role exists.
 #!
 #! Inputs:  [role_symbol, pad(15)]
@@ -247,7 +100,7 @@ end
 #!
 #! Where:
 #! - role_symbol is the encoded role symbol.
-#! - admin_role_symbol is the encoded admin role symbol, or 0 if the role is managed by an admin
+#! - admin_role_symbol is the encoded admin role symbol, or 0 if the role is managed by the owner.
 #!
 #! Invocation: call
 pub proc get_role_admin
@@ -402,15 +255,15 @@ end
 #!
 #! Where:
 #! - role_symbol is the encoded role symbol to configure.
-#! - admin_role_symbol is the encoded delegated admin role symbol, or 0 for admin-only.
+#! - admin_role_symbol is the encoded delegated admin role symbol, or 0 for owner-only.
 #!
 #! Panics if:
-#! - the note sender is not the current admin.
+#! - the note sender is not the current owner.
 #! - role_symbol is zero.
 #!
 #! Invocation: call
 pub proc set_role_admin
-    exec.assert_sender_is_admin_internal
+    exec.ownable2step::assert_sender_is_owner
     exec.assert_role_symbol_non_zero
     # => [role_symbol, admin_role_symbol, pad(14)]
 
@@ -439,14 +292,14 @@ end
 #!
 #! Panics if:
 #! - role_symbol is zero.
-#! - the note sender is neither the current admin nor a holder of the role's admin role.
+#! - the note sender is neither the current owner nor a holder of the role's admin role.
 #!
 #! Invocation: call
 pub proc grant_role
     exec.assert_role_symbol_non_zero
     # => [role_symbol, account_suffix, account_prefix, pad(13)]
 
-    dup exec.assert_sender_is_admin_or_role_admin
+    dup exec.assert_sender_is_owner_or_role_admin
     # => [role_symbol, account_suffix, account_prefix, pad(13)]
 
     exec.grant_role_internal
@@ -464,7 +317,7 @@ end
 #!
 #! Panics if:
 #! - role_symbol is zero.
-#! - the note sender is neither the current admin nor a holder of the role's admin role.
+#! - the note sender is neither the current owner nor a holder of the role's admin role.
 #! - the account does not hold the role.
 #!
 #! Invocation: call
@@ -472,7 +325,7 @@ pub proc revoke_role
     exec.assert_role_symbol_non_zero
     # => [role_symbol, account_suffix, account_prefix, pad(13)]
 
-    dup exec.assert_sender_is_admin_or_role_admin
+    dup exec.assert_sender_is_owner_or_role_admin
     # => [role_symbol, account_suffix, account_prefix, pad(13)]
 
     exec.revoke_role_internal
@@ -528,43 +381,6 @@ proc assert_role_symbol_non_zero
     # => [role_symbol]
 end
 
-#! Returns 1 if the note sender is the current admin, else 0.
-#!
-#! Inputs:  []
-#! Outputs: [is_sender_admin]
-#!
-#! Invocation: exec
-proc is_sender_admin_internal
-    exec.active_note::get_sender
-    # => [sender_suffix, sender_prefix]
-
-    push.ADMIN_CONFIG_SLOT[0..2]
-    # => [slot_suffix, slot_prefix, sender_suffix, sender_prefix]
-
-    exec.role_transfer::get_current
-    # => [admin_suffix, admin_prefix, sender_suffix, sender_prefix]
-
-    exec.account_id::is_equal
-    # => [is_sender_admin]
-end
-
-#! Asserts that the note sender is the current admin.
-#!
-#! Inputs:  []
-#! Outputs: []
-#!
-#! Panics if:
-#! - the note sender is not the current admin.
-#!
-#! Invocation: exec
-proc assert_sender_is_admin_internal
-    exec.is_sender_admin_internal
-    # => [is_sender_admin]
-
-    assert.err=ERR_SENDER_NOT_ADMIN
-    # => []
-end
-
 
 #! Returns the number of currently active roles.
 #!
@@ -615,7 +431,7 @@ end
 #! Where:
 #! - role_symbol is the encoded role symbol.
 #! - member_count is the number of current role members.
-#! - admin_role_symbol is the delegated admin role symbol, or 0 for admin-managed roles.
+#! - admin_role_symbol is the delegated admin role symbol, or 0 for owner-managed roles.
 #! - active_role_index is the role's index in the active roles map; meaningful only when member_count > 0.
 #!
 #! Invocation: exec
@@ -639,7 +455,7 @@ end
 #! Where:
 #! - role_symbol is the encoded role symbol.
 #! - member_count is the number of current role members.
-#! - admin_role_symbol is the delegated admin role symbol, or 0 for admin-managed roles.
+#! - admin_role_symbol is the delegated admin role symbol, or 0 for owner-managed roles.
 #! - active_role_index is the role's index in the active roles map; meaningful only when member_count > 0.
 #!
 #! Invocation: exec
@@ -750,7 +566,7 @@ proc is_sender_in_role
 end
 
 
-#! Asserts that the note sender is the admin or a member of the role's delegated admin role.
+#! Asserts that the note sender is the owner or a member of the role's delegated admin role.
 #!
 #! Inputs:  [role_symbol]
 #! Outputs: []
@@ -759,12 +575,12 @@ end
 #! - role_symbol is the encoded role symbol whose admin authority is being checked.
 #!
 #! Panics if:
-#! - the note sender is neither the current admin nor a holder of the role's delegated admin role.
+#! - the note sender is neither the current owner nor a holder of the role's delegated admin role.
 #!
 #! Invocation: exec
-proc assert_sender_is_admin_or_role_admin
-    exec.is_sender_admin_internal
-    # => [is_admin, role_symbol]
+proc assert_sender_is_owner_or_role_admin
+    exec.ownable2step::is_sender_owner
+    # => [is_owner, role_symbol]
     if.true
         drop
         # => []
@@ -776,12 +592,12 @@ proc assert_sender_is_admin_or_role_admin
         # => [admin_role_symbol]
 
         dup eq.0
-        assertz.err=ERR_SENDER_NOT_ADMIN_OR_ROLE_ADMIN
+        assertz.err=ERR_SENDER_NOT_OWNER_OR_ROLE_ADMIN
 
         exec.is_sender_in_role
         # => [has_admin_role]
 
-        assert.err=ERR_SENDER_NOT_ADMIN_OR_ROLE_ADMIN
+        assert.err=ERR_SENDER_NOT_OWNER_OR_ROLE_ADMIN
     end
 end
 

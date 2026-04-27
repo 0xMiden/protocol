@@ -162,12 +162,6 @@ pub fn create_network_fungible_faucet(
     // them or return Err(FungibleFaucetError::UnsupportedAccessControl).
     match access_control {
         AccessControl::Ownable2Step { .. } => {},
-        #[allow(unreachable_patterns)]
-        _ => {
-            return Err(FungibleFaucetError::UnsupportedAccessControl(
-                "network fungible faucets require Ownable2Step access control".into(),
-            ));
-        },
     }
 
     let auth_component: AccountComponent = NoAuth::new().into();
