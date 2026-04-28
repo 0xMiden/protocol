@@ -52,9 +52,9 @@ impl NoteAttachment {
 
     /// The maximum number of words in an attachment.
     ///
-    /// Limited to 254 to ensure the value fits into a u8 and the felt encoding remains valid
-    /// when four num_words values are packed into a single felt in the note metadata.
-    pub const MAX_NUM_WORDS: u8 = 254;
+    /// Each element holds roughly 8 bytes of data and so this allows for a maximum of
+    /// 256 * 32 = 2^13 = 8192 bytes.
+    pub const MAX_NUM_WORDS: u16 = 256;
 
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
