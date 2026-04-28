@@ -26,11 +26,16 @@ runs:
         RELEASE_BRANCH: ${{ inputs.release-branch }}
       run: |
         case "$RELEASE_BRANCH" in
-          "" | -* | */* | *..* | *~* | *^* | *:* | *\?* | *\[* | *\\*)
+          "" | -*)
             echo "::error::Invalid release branch name: $RELEASE_BRANCH"
             exit 1
             ;;
         esac
+
+        if ! git check-ref-format --branch "$RELEASE_BRANCH" >/dev/null 2>&1; then
+          echo "::error::Invalid release branch name: $RELEASE_BRANCH"
+          exit 1
+        fi
 
         git fetch origin "refs/heads/$RELEASE_BRANCH:refs/remotes/origin/$RELEASE_BRANCH" --depth=1
         branch_sha="$(git rev-parse "refs/remotes/origin/$RELEASE_BRANCH")"
