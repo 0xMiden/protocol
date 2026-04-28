@@ -75,7 +75,8 @@ const ERR_CLAIM_TARGET_ACCT_MISMATCH = "CLAIM note attachment target account doe
 #! Panics if:
 #! - account does not expose claim procedure.
 #! - note attachment target account does not match the consuming account.
-begin
+@note_script
+pub proc main
     dropw
     # => [pad(16)]
 

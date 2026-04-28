@@ -20,6 +20,7 @@ use miden_protocol::testing::account_id::{
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
     ACCOUNT_ID_SENDER,
 };
+use miden_protocol::testing::note::DEFAULT_NOTE_SCRIPT;
 use miden_protocol::transaction::memory::{ASSET_SIZE, ASSET_VALUE_OFFSET};
 use miden_protocol::{EMPTY_WORD, Felt, ONE, WORD_SIZE, Word};
 use miden_standards::code_builder::CodeBuilder;
@@ -479,7 +480,7 @@ async fn test_active_note_get_exactly_8_inputs() -> anyhow::Result<()> {
     let metadata = NoteMetadata::new(sender_id, NoteType::Public).with_tag(tag);
     let vault = NoteAssets::new(vec![]).context("failed to create input note assets")?;
     let note_script = CodeBuilder::default()
-        .compile_note_script("begin nop end")
+        .compile_note_script(DEFAULT_NOTE_SCRIPT)
         .context("failed to parse note script")?;
 
     // create a recipient with note storage, which number divides by 8. For simplicity create 8

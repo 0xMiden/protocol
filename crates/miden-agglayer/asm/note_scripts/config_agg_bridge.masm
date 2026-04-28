@@ -47,7 +47,8 @@ const ERR_CONFIG_AGG_BRIDGE_TARGET_ACCOUNT_MISMATCH = "CONFIG_AGG_BRIDGE note at
 #! - The note attachment target account does not match the consuming bridge account.
 #! - The note does not contain exactly 7 storage items.
 #! - The account does not expose the register_faucet procedure.
-begin
+@note_script
+pub proc main
     dropw
     # => [pad(16)]
 
