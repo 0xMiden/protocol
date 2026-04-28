@@ -60,6 +60,7 @@ async fn test_mint_fungible_asset_succeeds() -> anyhow::Result<()> {
             push.{FUNGIBLE_ASSET_VALUE}
             push.{FUNGIBLE_ASSET_KEY}
             call.mock_faucet::mint
+            dropw
 
             # assert the input vault has been updated
             exec.memory::get_input_vault_root_ptr
@@ -248,6 +249,7 @@ async fn test_mint_non_fungible_asset_succeeds() -> anyhow::Result<()> {
             push.{NON_FUNGIBLE_ASSET_VALUE}
             push.{NON_FUNGIBLE_ASSET_KEY}
             call.mock_faucet::mint
+            dropw
 
             # assert the input vault has been updated.
             exec.memory::get_input_vault_root_ptr
