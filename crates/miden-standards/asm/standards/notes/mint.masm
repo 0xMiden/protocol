@@ -1,28 +1,33 @@
 use miden::protocol::active_note
 use miden::protocol::note
-use miden::protocol::output_note
 use miden::standards::faucets::network_fungible->network_faucet
 
 # CONSTANTS
 # =================================================================================================
 
-const MINT_NOTE_NUM_STORAGE_ITEMS_PRIVATE=12
-const MINT_NOTE_MIN_NUM_STORAGE_ITEMS_PUBLIC=16
+const MINT_NOTE_NUM_STORAGE_ITEMS_PRIVATE=6
+const MINT_NOTE_MIN_NUM_STORAGE_ITEMS_PUBLIC=12
 
 use miden::protocol::note::NOTE_TYPE_PUBLIC
 use miden::protocol::note::NOTE_TYPE_PRIVATE
 
-# Memory Addresses of MINT note storage
-# The attachment is at the same memory address for both private and public storage.
-const ATTACHMENT_KIND_ADDRESS=2
-const ATTACHMENT_SCHEME_ADDRESS=3
-const ATTACHMENT_ADDRESS=4
-const OUTPUT_PUBLIC_NOTE_STORAGE_ADDR=16
+# Memory addresses of MINT note storage (private mode)
+const STORAGE_PTR = 0
+const PRIVATE_RECIPIENT_PTR = STORAGE_PTR
+const PRIVATE_TAG_PTR = STORAGE_PTR + 4
+const PRIVATE_AMOUNT_PTR = STORAGE_PTR + 5
+
+# Memory addresses of MINT note storage (public mode)
+const PUBLIC_SCRIPT_ROOT_PTR = STORAGE_PTR
+const PUBLIC_SERIAL_NUM_PTR = STORAGE_PTR + 4
+const PUBLIC_TAG_PTR = STORAGE_PTR + 8
+const PUBLIC_AMOUNT_PTR = STORAGE_PTR + 9
+const PUBLIC_OUTPUT_NOTE_STORAGE_PTR = STORAGE_PTR + 12
 
 # ERRORS
 # =================================================================================================
 
-const ERR_MINT_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS="MINT script expects exactly 12 storage items for private or 16+ storage items for public output notes"
+const ERR_MINT_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS="MINT script expects exactly 6 storage items for private or 12+ storage items for public output notes"
 
 #! Network Faucet MINT script: mints assets by calling the network faucet's mint_and_send
 #! function.
@@ -37,34 +42,32 @@ const ERR_MINT_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS="MINT script expects exactly 1
 #! Note storage supports two modes. Depending on the number of note storage items,
 #! a private or public note is created on consumption of the MINT note:
 #!
-#! Private mode (12 storage items) - creates a private note:
-#! - tag: Note tag for the output note
-#! - amount: The amount to mint
-#! - attachment_scheme: The user-defined type of the attachment.
-#! - attachment_kind: The attachment kind of the attachment.
-#! - ATTACHMENT: The attachment to be set.
+#! Private mode (6 storage items) - creates a private note:
 #! - RECIPIENT: The recipient digest (4 elements)
-#!
-#! Public mode (16+ storage items) - creates a public note with variable-length storage:
 #! - tag: Note tag for the output note
 #! - amount: The amount to mint
-#! - attachment_scheme: The user-defined type of the attachment.
-#! - attachment_kind: The attachment kind of the attachment.
-#! - ATTACHMENT: The attachment to be set.
+#!
+#! Public mode (12+ storage items) - creates a public note with variable-length storage:
 #! - SCRIPT_ROOT: Script root of the output note (4 elements)
 #! - SERIAL_NUM: Serial number of the output note (4 elements)
+#! - tag: Note tag for the output note
+#! - amount: The amount to mint
+#! - padding
+#! - padding
 #! - [STORAGE]: Variable-length storage for the output note (Vec<Felt>)
-#!              The number of output note storage items = num_mint_note_storage_items - 16
+#!              The number of output note storage items = num_mint_note_storage_items - 12
+#!
+#! The padding is necessary since note::build_recipient expects a word-aligned storage_ptr.
 #!
 #! Panics if:
 #! - account does not expose mint_and_send procedure.
-#! - the number of storage items is not exactly 12 for private or less than 16 for public output notes.
+#! - the number of storage items is not exactly 6 for private or less than 12 for public output notes.
 @note_script
 pub proc main
     dropw
     # => [pad(16)]
-    # Load note storage into memory starting at address 0
-    push.0 exec.active_note::get_storage
+    # Load note storage into memory starting at STORAGE_PTR
+    push.STORAGE_PTR exec.active_note::get_storage
     # => [num_storage_items, pad(16)]
 
     dup
@@ -81,17 +84,17 @@ pub proc main
         movdn.8
         # => [EMPTY_WORD, EMPTY_WORD, num_storage_items, pad(8)]
 
-        mem_loadw_le.8
+        mem_loadw_le.PUBLIC_SCRIPT_ROOT_PTR
         # => [SCRIPT_ROOT, EMPTY_WORD, num_storage_items, pad(8)]
 
-        swapw mem_loadw_le.12
+        swapw mem_loadw_le.PUBLIC_SERIAL_NUM_PTR
         # => [SERIAL_NUM, SCRIPT_ROOT, num_storage_items, pad(8)]
 
         # compute variable length note storage for the output note
         movup.8 sub.MINT_NOTE_MIN_NUM_STORAGE_ITEMS_PUBLIC
         # => [num_output_note_storage, SERIAL_NUM, SCRIPT_ROOT, pad(8)]
 
-        push.OUTPUT_PUBLIC_NOTE_STORAGE_ADDR
+        push.PUBLIC_OUTPUT_NOTE_STORAGE_PTR
         # => [storage_ptr, num_output_note_storage, SERIAL_NUM, SCRIPT_ROOT, pad(8)]
 
         exec.note::build_recipient
@@ -99,7 +102,7 @@ pub proc main
 
         # push note_type, and load tag and amount
         push.NOTE_TYPE_PUBLIC
-        mem_load.0 mem_load.1
+        mem_load.PUBLIC_TAG_PTR mem_load.PUBLIC_AMOUNT_PTR
         # => [amount, tag, note_type, RECIPIENT, pad(12)]
     else
         # private output note creation
@@ -107,12 +110,12 @@ pub proc main
         eq.MINT_NOTE_NUM_STORAGE_ITEMS_PRIVATE assert.err=ERR_MINT_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
         # => [pad(16)]
 
-        mem_loadw_le.8
+        mem_loadw_le.PRIVATE_RECIPIENT_PTR
         # => [RECIPIENT, pad(12)]
 
         # push note_type, and load tag and amount
         push.NOTE_TYPE_PRIVATE
-        mem_load.0 mem_load.1
+        mem_load.PRIVATE_TAG_PTR mem_load.PRIVATE_AMOUNT_PTR
         # => [amount, tag, note_type, RECIPIENT, pad(12)]
     end
     # => [amount, tag, note_type, RECIPIENT, pad(12)]
@@ -122,17 +125,6 @@ pub proc main
     call.network_faucet::mint_and_send
     # => [note_idx, pad(18))]
 
-    padw mem_loadw_le.ATTACHMENT_ADDRESS
-    # => [ATTACHMENT, note_idx, pad(18))]
-
-    mem_load.ATTACHMENT_KIND_ADDRESS
-    mem_load.ATTACHMENT_SCHEME_ADDRESS
-    movup.6
-    # => [note_idx, attachment_scheme, attachment_kind, ATTACHMENT, pad(18))]
-
-    exec.output_note::set_attachment
-    # => [pad(18))]
-
-    drop drop
+    drop drop drop
     # => [pad(16)]
 end

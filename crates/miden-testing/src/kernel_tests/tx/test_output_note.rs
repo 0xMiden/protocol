@@ -1,4 +1,5 @@
 use alloc::string::String;
+use alloc::vec::Vec;
 
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountId};
@@ -6,6 +7,8 @@ use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset};
 use miden_protocol::crypto::rand::RandomCoin;
 use miden_protocol::errors::tx_kernel::{
     ERR_NON_FUNGIBLE_ASSET_ALREADY_EXISTS,
+    ERR_NOTE_NUM_OF_ASSETS_EXCEED_LIMIT,
+    ERR_OUTPUT_NOTE_INDEX_OUT_OF_BOUNDS,
     ERR_TX_NUMBER_OF_OUTPUT_NOTES_EXCEEDS_LIMIT,
 };
 use miden_protocol::note::{
@@ -54,6 +57,7 @@ use miden_standards::note::{
 };
 use miden_standards::testing::mock_account::MockAccountExt;
 use miden_standards::testing::note::NoteBuilder;
+use rstest::rstest;
 
 use super::{TestSetup, setup_test};
 use crate::kernel_tests::tx::ExecutionOutputExt;
@@ -601,6 +605,79 @@ async fn test_create_note_and_add_same_nft_twice() -> anyhow::Result<()> {
     let exec_output = tx_context.execute_code(&code).await;
 
     assert_execution_error!(exec_output, ERR_NON_FUNGIBLE_ASSET_ALREADY_EXISTS);
+    Ok(())
+}
+
+/// Tests adding assets to an output note at and beyond the `MAX_ASSETS_PER_NOTE` limit.
+///
+/// - `at_max`: adding exactly `MAX_ASSETS_PER_NOTE` assets succeeds.
+/// - `exceeding_max`: adding `MAX_ASSETS_PER_NOTE + 1` assets fails with
+///   `ERR_NOTE_NUM_OF_ASSETS_EXCEED_LIMIT`.
+#[rstest::rstest]
+#[case::at_max(0, false)]
+#[case::exceeding_max(1, true)]
+#[tokio::test]
+async fn test_add_assets_around_max_per_note(
+    #[case] extra_assets: usize,
+    #[case] expect_error: bool,
+) -> anyhow::Result<()> {
+    use miden_protocol::MAX_ASSETS_PER_NOTE;
+
+    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+
+    let recipient = Word::from([0, 1, 2, 3u32]);
+    let tag = NoteTag::new(999 << 16 | 777);
+
+    // Create the required number of unique non-fungible assets.
+    let num_assets = MAX_ASSETS_PER_NOTE + extra_assets;
+    let assets: Vec<Asset> = (0..num_assets)
+        .map(|i| NonFungibleAsset::mock(&(i as u32).to_le_bytes()))
+        .collect();
+
+    // Build the MASM code: create a note, then add all assets one by one.
+    let mut add_assets_code = String::new();
+    for (i, asset) in assets.iter().enumerate() {
+        let is_last = i == num_assets - 1;
+        // For all but the last asset, duplicate note_idx so it remains on the stack.
+        if !is_last {
+            add_assets_code.push_str("dup\n");
+        }
+        add_assets_code.push_str(&format!(
+            "push.{ASSET_VALUE}\npush.{ASSET_KEY}\nexec.output_note::add_asset\n",
+            ASSET_KEY = asset.to_key_word(),
+            ASSET_VALUE = asset.to_value_word(),
+        ));
+    }
+
+    let code = format!(
+        "
+        use $kernel::prologue
+        use miden::protocol::output_note
+
+        begin
+            exec.prologue::prepare_transaction
+
+            push.{recipient}
+            push.{NOTE_TYPE_PUBLIC}
+            push.{tag}
+            exec.output_note::create
+            # => [note_idx]
+
+            {add_assets_code}
+        end
+        ",
+        recipient = recipient,
+        NOTE_TYPE_PUBLIC = NoteType::Public as u8,
+        tag = tag,
+        add_assets_code = add_assets_code,
+    );
+
+    if expect_error {
+        let exec_output = tx_context.execute_code(&code).await;
+        assert_execution_error!(exec_output, ERR_NOTE_NUM_OF_ASSETS_EXCEED_LIMIT);
+    } else {
+        tx_context.execute_code(&code).await?;
+    }
     Ok(())
 }
 
@@ -1325,6 +1402,78 @@ async fn test_network_note() -> anyhow::Result<()> {
     // TryFrom<Note> fails for a private note.
     assert!(AccountTargetNetworkNote::try_from(private_network_note).is_err());
 
+    Ok(())
+}
+
+/// Test that output_note procedures abort when given an out-of-bounds note index (equal to
+/// num_output_notes).
+///
+/// Each case creates one note via `mock::util::create_default_note` (index 0), then calls the
+/// procedure under test with index 1, which is out of bounds. The bounds assertion fires before
+/// any parameter validation, so dummy values are sufficient.
+#[rstest]
+#[case::add_asset(8, 0, "add_asset")]
+#[case::get_assets_info(0, 0, "get_assets_info")]
+#[case::get_assets(0, 1, "get_assets")]
+#[case::get_recipient(0, 0, "get_recipient")]
+#[case::get_metadata(0, 0, "get_metadata")]
+#[case::set_attachment(0, 6, "set_attachment")]
+#[case::set_word_attachment(0, 5, "set_word_attachment")]
+#[case::set_array_attachment(0, 5, "set_array_attachment")]
+#[tokio::test]
+async fn test_output_note_index_out_of_bounds(
+    #[case] params_above: usize,
+    #[case] params_below: usize,
+    #[case] procedure_name: &str,
+) -> anyhow::Result<()> {
+    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+
+    let push_below = if params_below > 0 {
+        format!("repeat.{params_below} push.99 end")
+    } else {
+        String::new()
+    };
+    let push_above = if params_above > 0 {
+        format!("repeat.{params_above} push.99 end")
+    } else {
+        String::new()
+    };
+
+    // Create one note (index 0), then try to call the procedure with index 1.
+    let code = format!(
+        "
+        use miden::protocol::output_note
+        use mock::util
+
+        use $kernel::prologue
+
+        begin
+            exec.prologue::prepare_transaction
+
+            exec.util::create_default_note
+            # => [note_idx = 0]
+            drop
+            # => []
+
+            # push garbage parameters that should sit below note_idx
+            {push_below}
+
+            # push the out-of-bounds index (1 == num_output_notes)
+            push.1
+            # => [note_idx = 1, params_below...]
+
+            # push garbage parameters that should sit above note_idx
+            {push_above}
+
+            # call the procedure under test with the invalid index
+            exec.output_note::{procedure_name}
+        end
+        ",
+    );
+
+    let exec_output = tx_context.execute_code(&code).await;
+
+    assert_execution_error!(exec_output, ERR_OUTPUT_NOTE_INDEX_OUT_OF_BOUNDS);
     Ok(())
 }
 

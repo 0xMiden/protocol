@@ -5,7 +5,7 @@ use core::fmt::Display;
 use core::num::TryFromIntError;
 
 use miden_core::mast::MastNodeExt;
-use miden_mast_package::{MastArtifact, Package};
+use miden_mast_package::Package;
 
 use super::Felt;
 use crate::assembly::mast::{ExternalNodeBuilder, MastForest, MastForestContributor, MastNodeId};
@@ -42,6 +42,10 @@ impl NoteScript {
     // --------------------------------------------------------------------------------------------
 
     /// Returns a new [NoteScript] instantiated from the provided program.
+    ///
+    /// TODO: since the note script now should be created from `Library`, not `Program`, this
+    /// constructor should be removed:
+    /// (<https://github.com/0xMiden/protocol/pull/2822#discussion_r3132965577>).
     pub fn new(code: Program) -> Self {
         Self {
             entrypoint: code.entrypoint(),
@@ -142,12 +146,6 @@ impl NoteScript {
 
     /// Creates an [`NoteScript`] from a [`Package`].
     ///
-    /// # Arguments
-    ///
-    /// * `package` - The package containing the
-    ///   [`Executable`](miden_mast_package::MastArtifact::Executable) or
-    ///   [`Library`](miden_mast_package::MastArtifact::Library).
-    ///
     /// # Errors
     ///
     /// Returns an error if:
@@ -156,17 +154,7 @@ impl NoteScript {
     /// - The package contains a library which contains multiple procedures with the `@note_script`
     ///   attribute.
     pub fn from_package(package: &Package) -> Result<Self, NoteError> {
-        match &package.mast {
-            // `NoteScript`s are compiled as executables by the miden compiler's
-            // cargo extension. Source, the "midenc_flags_from_target" function:
-            // https://github.com/0xMiden/compiler/blob/d3cd8cd4a2c1dfeae8a61643aa42734a35e3e840/tools/cargo-miden/src/commands/build.rs#L334
-            MastArtifact::Executable(executable) => {
-                let program = executable.as_ref().clone();
-
-                Ok(NoteScript::new(program))
-            },
-            MastArtifact::Library(library) => Ok(NoteScript::from_library(library))?,
-        }
+        Ok(NoteScript::from_library(&package.mast))?
     }
 
     // PUBLIC ACCESSORS
@@ -375,14 +363,14 @@ fn create_external_node_forest(digest: Word) -> (MastForest, MastNodeId) {
 mod tests {
     use super::{Felt, NoteScript, Vec};
     use crate::assembly::Assembler;
-    use crate::testing::note::DEFAULT_NOTE_CODE;
+    use crate::testing::note::DEFAULT_NOTE_SCRIPT;
 
     #[test]
     fn test_note_script_to_from_felt() {
         let assembler = Assembler::default();
-        let script_src = DEFAULT_NOTE_CODE;
-        let program = assembler.assemble_program(script_src).unwrap();
-        let note_script = NoteScript::new(program);
+        let script_src = DEFAULT_NOTE_SCRIPT;
+        let library = assembler.assemble_library([script_src]).unwrap();
+        let note_script = NoteScript::from_library(&library).unwrap();
 
         let encoded: Vec<Felt> = (&note_script).into();
         let decoded: NoteScript = encoded.try_into().unwrap();
@@ -397,8 +385,8 @@ mod tests {
         use crate::Word;
 
         let assembler = Assembler::default();
-        let program = assembler.assemble_program("begin nop end").unwrap();
-        let script = NoteScript::new(program);
+        let library = assembler.assemble_library([DEFAULT_NOTE_SCRIPT]).unwrap();
+        let script = NoteScript::from_library(&library).unwrap();
 
         assert!(script.mast().advice_map().is_empty());
 

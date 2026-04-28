@@ -55,6 +55,7 @@ use miden_protocol::testing::storage::{MOCK_MAP_SLOT, MOCK_VALUE_SLOT0, MOCK_VAL
 use miden_protocol::transaction::{RawOutputNote, TransactionKernel};
 use miden_protocol::utils::sync::LazyLock;
 use miden_standards::account::faucets::BasicFungibleFaucet;
+use miden_standards::account::metadata::{FungibleTokenMetadataBuilder, TokenName};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::mock_account::MockAccountExt;
@@ -1544,8 +1545,9 @@ async fn transaction_executor_account_code_using_custom_library() -> anyhow::Res
 
     let account_component_source =
         NamedSource::new("account_component::account_module", ACCOUNT_COMPONENT_CODE);
-    let account_component_lib =
-        assembler.clone().assemble_library([account_component_source]).unwrap();
+    let account_component_lib = Arc::unwrap_or_clone(
+        assembler.clone().assemble_library([account_component_source]).unwrap(),
+    );
 
     let tx_script_src = "\
           use account_component::account_module
@@ -1700,12 +1702,19 @@ async fn test_faucet_has_callbacks(
     #[case] callback_slots: Vec<StorageSlot>,
     #[case] expected_has_callbacks: bool,
 ) -> anyhow::Result<()> {
-    let basic_faucet = BasicFungibleFaucet::new("CBK".try_into()?, 8, Felt::new(1_000_000))?;
+    let faucet_metadata = FungibleTokenMetadataBuilder::new(
+        TokenName::new("").expect("empty string is a valid token name"),
+        "CBK".try_into()?,
+        8,
+        1_000_000u64,
+    )
+    .build()?;
 
     let account = AccountBuilder::new([1u8; 32])
         .storage_mode(AccountStorageMode::Public)
         .account_type(AccountType::FungibleFaucet)
-        .with_component(basic_faucet)
+        .with_component(faucet_metadata)
+        .with_component(BasicFungibleFaucet)
         .with_component(MockAccountComponent::with_slots(callback_slots))
         .with_auth_component(Auth::IncrNonce)
         .build_existing()?;
@@ -1991,9 +2000,11 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
         );
 
         let source = NamedSource::new("component1::interface", code);
-        TransactionKernel::assembler()
-            .assemble_library([source])
-            .expect("mock account code should be valid")
+        Arc::unwrap_or_clone(
+            TransactionKernel::assembler()
+                .assemble_library([source])
+                .expect("mock account code should be valid"),
+        )
     });
 
     static COMPONENT_2_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
@@ -2021,9 +2032,11 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
         );
 
         let source = NamedSource::new("component2::interface", code);
-        TransactionKernel::assembler()
-            .assemble_library([source])
-            .expect("mock account code should be valid")
+        Arc::unwrap_or_clone(
+            TransactionKernel::assembler()
+                .assemble_library([source])
+                .expect("mock account code should be valid"),
+        )
     });
 
     struct CustomComponent1 {

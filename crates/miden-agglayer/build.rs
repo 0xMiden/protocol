@@ -1,10 +1,10 @@
 use std::env;
 use std::fmt::Write;
 use std::path::Path;
+use std::sync::Arc;
 
 use fs_err as fs;
 use miden_assembly::diagnostics::{IntoDiagnostic, NamedSource, Result, WrapErr};
-use miden_assembly::serde::Serializable;
 use miden_assembly::{Assembler, Library, Report};
 use miden_crypto::hash::keccak::{Keccak256, Keccak256Digest};
 use miden_protocol::account::{
@@ -15,15 +15,11 @@ use miden_protocol::account::{
 };
 use miden_protocol::transaction::TransactionKernel;
 use miden_standards::account::auth::NoAuth;
-use miden_standards::account::mint_policies::OwnerControlled;
+use miden_standards::account::burn_policies::BurnOwnerControlled;
+use miden_standards::account::mint_policies::MintOwnerControlled;
 
 // CONSTANTS
 // ================================================================================================
-
-/// Defines whether the build script should generate files in `/src`.
-/// The docs.rs build pipeline has a read-only filesystem, so we have to avoid writing to `src`,
-/// otherwise the docs will fail to build there. Note that writing to `OUT_DIR` is fine.
-const BUILD_GENERATED_FILES_IN_SRC: bool = option_env!("BUILD_GENERATED_FILES_IN_SRC").is_some();
 
 const ASSETS_DIR: &str = "assets";
 const ASM_DIR: &str = "asm";
@@ -32,7 +28,7 @@ const ASM_AGGLAYER_DIR: &str = "agglayer";
 const ASM_AGGLAYER_BRIDGE_DIR: &str = "agglayer/bridge";
 const ASM_COMPONENTS_DIR: &str = "components";
 
-const AGGLAYER_ERRORS_FILE: &str = "src/errors/agglayer.rs";
+const AGGLAYER_ERRORS_RS_FILE: &str = "agglayer_errors.rs";
 const AGGLAYER_ERRORS_ARRAY_NAME: &str = "AGGLAYER_ERRORS";
 const AGGLAYER_GLOBAL_CONSTANTS_FILE_NAME: &str = "agglayer_constants.rs";
 
@@ -42,25 +38,21 @@ const AGGLAYER_GLOBAL_CONSTANTS_FILE_NAME: &str = "agglayer_constants.rs";
 /// Read and parse the contents from `./asm`.
 /// - Compiles the contents of asm/agglayer directory into a single agglayer.masl library.
 /// - Compiles the contents of asm/components directory into individual per-component .masl files.
-/// - Compiles the contents of asm/note_scripts directory into individual .masb files.
+/// - Compiles the contents of asm/note_scripts directory into individual `.masl` libraries.
 fn main() -> Result<()> {
     // re-build when the MASM code changes
     println!("cargo::rerun-if-changed={ASM_DIR}/");
-    println!("cargo::rerun-if-env-changed=BUILD_GENERATED_FILES_IN_SRC");
+    println!("cargo::rerun-if-env-changed=REGENERATE_CANONICAL_ZEROS");
 
-    // Copies the MASM code to the build directory
     let crate_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
     let build_dir = env::var("OUT_DIR").unwrap();
-    let src = Path::new(&crate_dir).join(ASM_DIR);
 
-    // generate canonical zeros in `asm/agglayer/bridge/canonical_zeros.masm`
-    generate_canonical_zeros(&src.join(ASM_AGGLAYER_BRIDGE_DIR))?;
+    // validate (or regenerate) canonical zeros in `asm/agglayer/bridge/canonical_zeros.masm`
+    let crate_path = Path::new(&crate_dir);
+    ensure_canonical_zeros(&crate_path.join(ASM_DIR).join(ASM_AGGLAYER_BRIDGE_DIR))?;
 
-    let dst = Path::new(&build_dir).to_path_buf();
-    shared::copy_directory(src, &dst, ASM_DIR)?;
-
-    // set source directory to {OUT_DIR}/asm
-    let source_dir = dst.join(ASM_DIR);
+    // Read MASM sources directly from the crate's asm/ directory.
+    let source_dir = crate_path.join(ASM_DIR);
 
     // set target directory to {OUT_DIR}/assets
     let target_dir = Path::new(&build_dir).join(ASSETS_DIR);
@@ -90,7 +82,7 @@ fn main() -> Result<()> {
     let constants_out_path = Path::new(&build_dir).join(AGGLAYER_GLOBAL_CONSTANTS_FILE_NAME);
     generate_agglayer_constants(constants_out_path, component_libraries)?;
 
-    generate_error_constants(&source_dir)?;
+    generate_error_constants(&source_dir, &build_dir)?;
 
     Ok(())
 }
@@ -117,22 +109,21 @@ fn compile_agglayer_lib(
     let output_file = target_dir.join("agglayer").with_extension(Library::LIBRARY_EXTENSION);
     agglayer_lib.write_to_file(output_file).into_diagnostic()?;
 
-    Ok(agglayer_lib)
+    Ok(Arc::unwrap_or_clone(agglayer_lib))
 }
 
 // COMPILE EXECUTABLE MODULES
 // ================================================================================================
 
-/// Reads all MASM files from the "{source_dir}", complies each file individually into a MASB
-/// file, and stores the compiled files into the "{target_dir}".
-///
-/// The source files are expected to contain executable programs.
+/// Reads all MASM files from `{source_dir}`, compiles each file as a note script library with
+/// [`Assembler::assemble_library`], and writes the serialized library as `.masl` via
+/// [`Library::write_to_file`].
 fn compile_note_scripts(
     source_dir: &Path,
-    target_dir: &Path,
+    note_scripts_target_dir: &Path,
     mut assembler: Assembler,
 ) -> Result<()> {
-    fs::create_dir_all(target_dir)
+    fs::create_dir_all(note_scripts_target_dir)
         .into_diagnostic()
         .wrap_err("failed to create note_scripts directory")?;
 
@@ -140,22 +131,22 @@ fn compile_note_scripts(
     let standards_lib = miden_standards::StandardsLib::default();
     assembler.link_static_library(standards_lib)?;
 
-    for masm_file_path in shared::get_masm_files(source_dir).unwrap() {
-        // read the MASM file, parse it, and serialize the parsed AST to bytes
-        let code = assembler.clone().assemble_program(masm_file_path.clone())?;
+    for note_file_path in shared::get_masm_files(source_dir).unwrap() {
+        // compile the note script library from the provided MASM file
+        let note_library = assembler.clone().assemble_library([note_file_path.clone()])?;
 
-        let bytes = code.to_bytes();
-
-        let masm_file_name = masm_file_path
+        let note_file_name = note_file_path
             .file_name()
             .expect("file name should exist")
             .to_str()
             .ok_or_else(|| Report::msg("failed to convert file name to &str"))?;
-        let mut masb_file_path = target_dir.join(masm_file_name);
+        let mut masl_file_path = note_scripts_target_dir.join(note_file_name);
+        masl_file_path.set_extension(Library::LIBRARY_EXTENSION);
 
-        // write the binary MASB to the output dir
-        masb_file_path.set_extension("masb");
-        fs::write(masb_file_path, bytes).unwrap();
+        // write the note script library to the output dir
+        note_library
+            .write_to_file(&masl_file_path)
+            .map_err(|e| Report::msg(format!("{e:#}")))?;
     }
     Ok(())
 }
@@ -206,7 +197,7 @@ fn compile_account_components(
             target_dir.join(&component_name).with_extension(Library::LIBRARY_EXTENSION);
         component_library.write_to_file(&component_file_path).into_diagnostic()?;
 
-        component_libraries.push((component_name, component_library));
+        component_libraries.push((component_name, Arc::unwrap_or_clone(component_library)));
     }
 
     Ok(component_libraries)
@@ -249,9 +240,9 @@ fn generate_agglayer_constants(
         let agglayer_component =
             AccountComponent::new(content_library, vec![], dummy_metadata.clone()).unwrap();
 
-        // The faucet account includes Ownable2Step and OwnerControlled components
-        // alongside the agglayer faucet component, since network_fungible::mint_and_send
-        // requires these for access control.
+        // The faucet account includes Ownable2Step and OwnerControlled components for mint and burn
+        // policies alongside the agglayer faucet component, since
+        // network_fungible::mint_and_send requires these for access control.
         let mut components: Vec<AccountComponent> =
             vec![AccountComponent::from(NoAuth), agglayer_component];
         if lib_name == "faucet" {
@@ -263,7 +254,8 @@ fn generate_agglayer_constants(
             components.push(AccountComponent::from(
                 miden_standards::account::access::Ownable2Step::new(dummy_owner),
             ));
-            components.push(AccountComponent::from(OwnerControlled::owner_only()));
+            components.push(AccountComponent::from(MintOwnerControlled::owner_only()));
+            components.push(AccountComponent::from(BurnOwnerControlled::allow_all()));
         }
 
         // use `AccountCode` to merge codes of agglayer and authentication components
@@ -319,15 +311,7 @@ fn generate_agglayer_constants(
 ///
 /// The function ensures that a constant is not defined twice, except if their error message is the
 /// same. This can happen across multiple files.
-///
-/// Because the error files will be written to ./src/errors, this should be a no-op if ./src is
-/// read-only. To enable writing to ./src, set the `BUILD_GENERATED_FILES_IN_SRC` environment
-/// variable.
-fn generate_error_constants(asm_source_dir: &Path) -> Result<()> {
-    if !BUILD_GENERATED_FILES_IN_SRC {
-        return Ok(());
-    }
-
+fn generate_error_constants(asm_source_dir: &Path, build_dir: &str) -> Result<()> {
     // Miden agglayer errors
     // ------------------------------------------
 
@@ -335,7 +319,7 @@ fn generate_error_constants(asm_source_dir: &Path) -> Result<()> {
         .context("failed to extract all masm errors")?;
     shared::generate_error_file(
         shared::ErrorModule {
-            file_name: AGGLAYER_ERRORS_FILE,
+            file_path: Path::new(build_dir).join(AGGLAYER_ERRORS_RS_FILE),
             array_name: AGGLAYER_ERRORS_ARRAY_NAME,
             is_crate_local: false,
         },
@@ -345,14 +329,13 @@ fn generate_error_constants(asm_source_dir: &Path) -> Result<()> {
     Ok(())
 }
 
-// CANONICAL ZEROS FILE GENERATION
+// CANONICAL ZEROS VALIDATION
 // ================================================================================================
 
-fn generate_canonical_zeros(target_dir: &Path) -> Result<()> {
-    if !BUILD_GENERATED_FILES_IN_SRC {
-        return Ok(());
-    }
-
+/// Validates that the committed `canonical_zeros.masm` matches the expected content computed from
+/// Keccak256 canonical zeros. If the `REGENERATE_CANONICAL_ZEROS` environment variable is set,
+/// the file is regenerated instead.
+fn ensure_canonical_zeros(target_dir: &Path) -> Result<()> {
     const TREE_HEIGHT: u8 = 32;
 
     let mut zeros_by_height = Vec::with_capacity(TREE_HEIGHT as usize);
@@ -372,10 +355,10 @@ fn generate_canonical_zeros(target_dir: &Path) -> Result<()> {
     // convert the keccak digest into the sequence of u32 values and create two word constants from
     // them to represent the hash
     let mut zero_constants = String::from(
-        "# This file is generated by build.rs, do not modify\n
-# This file contains the canonical zeros for the Keccak hash function. 
+        "# This file contains deterministic values. Do not modify manually.\n
+# This file contains the canonical zeros for the Keccak hash function.
 # Zero of height `n` (ZERO_N) is the root of the binary tree of height `n` with leaves equal zero.
-# 
+#
 # Since the Keccak hash is represented by eight u32 values, each constant consists of two Words.\n",
     );
 
@@ -397,7 +380,8 @@ fn generate_canonical_zeros(target_dir: &Path) -> Result<()> {
     zero_constants.push_str(
         "
 use ::agglayer::common::utils::mem_store_double_word
-    
+
+
 #! Inputs:  [zeros_ptr]
 #! Outputs: []
 pub proc load_zeros_to_memory\n",
@@ -409,9 +393,23 @@ pub proc load_zeros_to_memory\n",
 
     zero_constants.push_str("\tdrop\nend\n");
 
-    // write the resulting masm content into the file only if it changed to avoid
-    // invalidating the cargo fingerprint for the `asm/` directory
-    shared::write_if_changed(target_dir.join("canonical_zeros.masm"), zero_constants)?;
+    let file_path = target_dir.join("canonical_zeros.masm");
+
+    if option_env!("REGENERATE_CANONICAL_ZEROS").is_some() {
+        // Regeneration mode: write the file
+        shared::write_if_changed(&file_path, &zero_constants)?;
+    } else {
+        // Validation mode: ensure the committed file matches
+        let committed = fs::read_to_string(&file_path)
+            .into_diagnostic()
+            .wrap_err("canonical_zeros.masm not found - it should be committed in the repo")?;
+        if committed != zero_constants {
+            return Err(Report::msg(
+                "canonical_zeros.masm is out of date. \
+                 Run with REGENERATE_CANONICAL_ZEROS=1 to regenerate and commit the result.",
+            ));
+        }
+    }
 
     Ok(())
 }
@@ -429,54 +427,6 @@ mod shared {
     use miden_assembly::diagnostics::{IntoDiagnostic, Result, WrapErr};
     use regex::Regex;
     use walkdir::WalkDir;
-
-    /// Recursively copies `src` into `dst`.
-    ///
-    /// This function will overwrite the existing files if re-executed.
-    pub fn copy_directory<T: AsRef<Path>, R: AsRef<Path>>(
-        src: T,
-        dst: R,
-        asm_dir: &str,
-    ) -> Result<()> {
-        let mut prefix = src.as_ref().canonicalize().unwrap();
-        // keep all the files inside the `asm` folder
-        prefix.pop();
-
-        let target_dir = dst.as_ref().join(asm_dir);
-        if target_dir.exists() {
-            // Clear existing asm files that were copied earlier which may no longer exist.
-            fs::remove_dir_all(&target_dir)
-                .into_diagnostic()
-                .wrap_err("failed to remove ASM directory")?;
-        }
-
-        // Recreate the directory structure.
-        fs::create_dir_all(&target_dir)
-            .into_diagnostic()
-            .wrap_err("failed to create ASM directory")?;
-
-        let dst = dst.as_ref();
-        let mut todo = vec![src.as_ref().to_path_buf()];
-
-        while let Some(goal) = todo.pop() {
-            for entry in fs::read_dir(goal).unwrap() {
-                let path = entry.unwrap().path();
-                if path.is_dir() {
-                    let src_dir = path.canonicalize().unwrap();
-                    let dst_dir = dst.join(src_dir.strip_prefix(&prefix).unwrap());
-                    if !dst_dir.exists() {
-                        fs::create_dir_all(&dst_dir).unwrap();
-                    }
-                    todo.push(src_dir);
-                } else {
-                    let dst_file = dst.join(path.strip_prefix(&prefix).unwrap());
-                    fs::copy(&path, dst_file).unwrap();
-                }
-            }
-        }
-
-        Ok(())
-    }
 
     /// Returns a vector with paths to all MASM files in the specified directory.
     ///
@@ -656,7 +606,7 @@ mod shared {
             .into_diagnostic()?;
         }
 
-        write_if_changed(module.file_name, output)?;
+        fs::write(module.file_path, output).into_diagnostic()?;
 
         Ok(())
     }
@@ -689,9 +639,9 @@ mod shared {
         pub message: String,
     }
 
-    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+    #[derive(Debug, Clone)]
     pub struct ErrorModule {
-        pub file_name: &'static str,
+        pub file_path: PathBuf,
         pub array_name: &'static str,
         pub is_crate_local: bool,
     }

@@ -50,7 +50,8 @@ const ERR_B2AGG_TARGET_ACCOUNT_MISMATCH="B2AGG note attachment target account do
 #! - The note does not contain exactly 6 storage items.
 #! - The note does not contain exactly 1 asset.
 #! - The note attachment does not target the consuming account.
-begin
+@note_script
+pub proc main
     dropw
     # => [pad(16)]
 

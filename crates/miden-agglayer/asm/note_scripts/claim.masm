@@ -75,7 +75,8 @@ const ERR_CLAIM_TARGET_ACCT_MISMATCH = "CLAIM note attachment target account doe
 #! Panics if:
 #! - account does not expose claim procedure.
 #! - note attachment target account does not match the consuming account.
-begin
+@note_script
+pub proc main
     dropw
     # => [pad(16)]
 
@@ -160,7 +161,7 @@ proc write_claim_data_into_advice_map_by_key
     exec.poseidon2::hash_elements
     # => [PROOF_DATA_KEY, LEAF_DATA_KEY]
 
-    push.PROOF_DATA_SIZE push.PROOF_DATA_START_PTR
+    push.PROOF_DATA_SIZE add.PROOF_DATA_START_PTR push.PROOF_DATA_START_PTR
     movdn.5 movdn.5
     # => [PROOF_DATA_KEY, start_ptr, end_ptr, LEAF_DATA_KEY]
 

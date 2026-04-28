@@ -39,7 +39,8 @@ const ERR_UPDATE_GER_TARGET_ACCOUNT_MISMATCH = "UPDATE_GER note attachment targe
 #! - account does not expose update_ger procedure.
 #! - target account ID does not match the consuming account ID.
 #! - number of note storage items is not exactly 8.
-begin
+@note_script
+pub proc main
     dropw
     # => [pad(16)]
 

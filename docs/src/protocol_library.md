@@ -125,7 +125,9 @@ Note utility procedures can be used to compute the required utility data or writ
 | `write_assets_to_memory`    | Writes the assets data stored in the advice map to the memory specified by the provided destination pointer.<br/><br/>**Inputs:** `[ASSETS_COMMITMENT, num_assets, dest_ptr]`<br/>**Outputs:** `[num_assets, dest_ptr]` | Any     |
 | `build_recipient_hash`      | Returns the `RECIPIENT` for a specified `SERIAL_NUM`, `SCRIPT_ROOT`, and storage commitment.<br/><br/>**Inputs:** `[SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT]`<br/>**Outputs:** `[RECIPIENT]`                           | Any     |
 | `build_recipient`           | Builds the recipient hash from note storage, script root, and serial number.<br/><br/>**Inputs:** `[storage_ptr, num_storage_items, SERIAL_NUM, SCRIPT_ROOT]`<br/>**Outputs:** `[RECIPIENT]`                                     | Any     |
-| `extract_sender_from_metadata` | Extracts the sender ID from the provided metadata word.<br/><br/>**Inputs:** `[METADATA]`<br/>**Outputs:** `[sender_id_suffix, sender_id_prefix]` | Any     |
+| `metadata_into_sender` | Extracts the sender ID from the provided metadata word.<br/><br/>**Inputs:** `[METADATA]`<br/>**Outputs:** `[sender_id_suffix, sender_id_prefix]` | Any     |
+| `metadata_into_attachment_info` | Extracts the attachment kind and scheme from the provided metadata header.<br/><br/>**Inputs:** `[METADATA_HEADER]`<br/>**Outputs:** `[attachment_kind, attachment_scheme]` | Any     |
+| `metadata_into_note_type` | Extracts the note type from the provided metadata header. The note type is encoded as a single bit (0 = Private, 1 = Public).<br/><br/>**Inputs:** `[METADATA_HEADER]`<br/>**Outputs:** `[note_type]` | Any     |
 
 ## Transaction Procedures (`miden::protocol::tx`)
 

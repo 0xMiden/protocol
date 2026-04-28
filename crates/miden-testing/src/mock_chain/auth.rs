@@ -7,14 +7,14 @@ use miden_protocol::account::AccountComponent;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, PublicKeyCommitment};
 use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
 use miden_standards::account::auth::{
+    AuthGuardedMultisig,
+    AuthGuardedMultisigConfig,
     AuthMultisig,
     AuthMultisigConfig,
-    AuthMultisigPsm,
-    AuthMultisigPsmConfig,
     AuthSingleSig,
     AuthSingleSigAcl,
     AuthSingleSigAclConfig,
-    PsmConfig,
+    GuardianConfig,
 };
 use miden_standards::testing::account_component::{
     ConditionalAuthComponent,
@@ -38,11 +38,11 @@ pub enum Auth {
         proc_threshold_map: Vec<(Word, u32)>,
     },
 
-    /// Multisig with a private state manager.
-    MultisigPsm {
+    /// Guarded multisig.
+    GuardedMultisig {
         threshold: u32,
         approvers: Vec<(PublicKeyCommitment, AuthScheme)>,
-        psm_config: PsmConfig,
+        guardian_config: GuardianConfig,
         proc_threshold_map: Vec<(Word, u32)>,
     },
 
@@ -96,17 +96,18 @@ impl Auth {
 
                 (component, None)
             },
-            Auth::MultisigPsm {
+            Auth::GuardedMultisig {
                 threshold,
                 approvers,
-                psm_config,
+                guardian_config,
                 proc_threshold_map,
             } => {
-                let config = AuthMultisigPsmConfig::new(approvers.clone(), *threshold, *psm_config)
-                    .and_then(|cfg| cfg.with_proc_thresholds(proc_threshold_map.clone()))
-                    .expect("invalid multisig psm config");
-                let component = AuthMultisigPsm::new(config)
-                    .expect("multisig psm component creation failed")
+                let config =
+                    AuthGuardedMultisigConfig::new(approvers.clone(), *threshold, *guardian_config)
+                        .and_then(|cfg| cfg.with_proc_thresholds(proc_threshold_map.clone()))
+                        .expect("invalid guarded multisig config");
+                let component = AuthGuardedMultisig::new(config)
+                    .expect("guarded multisig component creation failed")
                     .into();
 
                 (component, None)

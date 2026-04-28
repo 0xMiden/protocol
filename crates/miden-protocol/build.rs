@@ -168,7 +168,7 @@ fn compile_tx_kernel(source_dir: &Path, target_dir: &Path, build_dir: &str) -> R
 
         let masb_file_path =
             target_dir.join("kernel_library").with_extension(Library::LIBRARY_EXTENSION);
-        test_lib.write_to_file(masb_file_path).into_diagnostic()?;
+        (*test_lib).write_to_file(masb_file_path).into_diagnostic()?;
     }
 
     Ok(assembler)
@@ -284,7 +284,7 @@ fn compile_protocol_lib(
     let output_file = target_dir.join("protocol").with_extension(Library::LIBRARY_EXTENSION);
     protocol_lib.write_to_file(output_file).into_diagnostic()?;
 
-    Ok(protocol_lib)
+    Ok(Arc::unwrap_or_clone(protocol_lib))
 }
 
 // HELPER FUNCTIONS
@@ -515,11 +515,10 @@ fn generate_event_file_content(
     for (event_path, event_name) in events {
         let value = EventId::from_name(event_path).as_felt().as_canonical_u64();
         debug_assert!(!event_name.is_empty());
-        writeln!(&mut output, "const {}_ID: u64 = {};", event_name, value)?;
+        writeln!(&mut output, "const {event_name}_ID: u64 = {value};")?;
         writeln!(
             &mut output,
-            "static {}_NAME: ::miden_core::events::EventName = ::miden_core::events::EventName::new(\"{}\");",
-            event_name, event_path
+            "static {event_name}_NAME: ::miden_core::events::EventName = ::miden_core::events::EventName::new(\"{event_path}\");"
         )?;
         writeln!(&mut output)?;
     }

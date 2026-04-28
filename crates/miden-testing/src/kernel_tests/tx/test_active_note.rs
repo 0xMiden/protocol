@@ -20,6 +20,7 @@ use miden_protocol::testing::account_id::{
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
     ACCOUNT_ID_SENDER,
 };
+use miden_protocol::testing::note::DEFAULT_NOTE_SCRIPT;
 use miden_protocol::transaction::memory::{ASSET_SIZE, ASSET_VALUE_OFFSET};
 use miden_protocol::{EMPTY_WORD, Felt, ONE, WORD_SIZE, Word};
 use miden_standards::code_builder::CodeBuilder;
@@ -164,6 +165,60 @@ async fn test_active_note_get_sender() -> anyhow::Result<()> {
     let sender = tx_context.input_notes().get_note(0).note().metadata().sender();
     assert_eq!(exec_output.get_stack_element(0), sender.suffix());
     assert_eq!(exec_output.get_stack_element(1), sender.prefix().as_felt());
+
+    Ok(())
+}
+
+#[rstest::rstest]
+#[case(NoteType::Public)]
+#[case(NoteType::Private)]
+#[tokio::test]
+async fn test_active_note_get_note_type(#[case] note_type: NoteType) -> anyhow::Result<()> {
+    let tx_context = {
+        let account =
+            Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
+        let mut rng = miden_protocol::crypto::rand::RandomCoin::new(Word::default());
+        let input_note = crate::utils::create_p2any_note(
+            ACCOUNT_ID_SENDER.try_into().unwrap(),
+            note_type,
+            [FungibleAsset::mock(100)],
+            &mut rng,
+        );
+        TransactionContextBuilder::new(account)
+            .extend_input_notes(vec![input_note])
+            .build()?
+    };
+
+    let code = "
+        use $kernel::prologue
+        use $kernel::note->note_internal
+        use miden::protocol::active_note
+        use miden::protocol::note
+
+        begin
+            exec.prologue::prepare_transaction
+            exec.note_internal::prepare_note
+            dropw dropw dropw dropw
+
+            exec.active_note::get_metadata
+            # => [NOTE_ATTACHMENT, METADATA_HEADER]
+            
+            dropw
+            # => [METADATA_HEADER]
+
+            exec.note::metadata_into_note_type
+            # => [note_type]
+
+            # truncate the stack
+            swapw dropw
+        end
+        ";
+
+    let exec_output = tx_context.execute_code(code).await?;
+
+    let actual_note_type = NoteType::try_from(exec_output.get_stack_element(0))
+        .expect("stack element should be a valid note type");
+    assert_eq!(actual_note_type, note_type);
 
     Ok(())
 }
@@ -426,7 +481,7 @@ async fn test_active_note_get_exactly_8_inputs() -> anyhow::Result<()> {
     let metadata = NoteMetadata::new(sender_id, NoteType::Public).with_tag(tag);
     let vault = NoteAssets::new(vec![]).context("failed to create input note assets")?;
     let note_script = CodeBuilder::default()
-        .compile_note_script("begin nop end")
+        .compile_note_script(DEFAULT_NOTE_SCRIPT)
         .context("failed to parse note script")?;
 
     // create a recipient with note storage, which number divides by 8. For simplicity create 8

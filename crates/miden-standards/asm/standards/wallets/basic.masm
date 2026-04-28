@@ -69,7 +69,7 @@ end
 #!
 #! Inputs:  []
 #! Outputs: []
-@locals(2048)
+@locals(512)
 pub proc add_assets_to_account
     # write assets to local memory starting at offset 0
     # we have allocated ASSET_SIZE * MAX_ASSETS_PER_NOTE number of locals so all assets should fit
