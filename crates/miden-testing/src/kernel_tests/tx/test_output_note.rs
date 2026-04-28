@@ -1571,6 +1571,87 @@ async fn test_get_attachment_commitments() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Test that `output_note::get_attachment` retrieves the correct attachment data from local memory
+/// after piping its preimage from the advice map.
+#[tokio::test]
+async fn test_get_attachment() -> anyhow::Result<()> {
+    let account = Account::mock(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET, Auth::IncrNonce);
+    let rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
+
+    let word_0 = Word::from([3, 4, 5, 6u32]);
+    let word_1 = Word::from([7, 8, 9, 10u32]);
+    let attachment_0 = NoteAttachment::new_word(NoteAttachmentScheme::new(1)?, word_0);
+    let attachment_1 = NoteAttachment::new_word(NoteAttachmentScheme::new(2)?, word_1);
+
+    let output_note = RawOutputNote::Full(
+        NoteBuilder::new(account.id(), rng)
+            .attachment(attachment_0.clone())
+            .attachment(attachment_1.clone())
+            .build()?,
+    );
+
+    let tx_script = format!(
+        "
+        use miden::protocol::output_note
+        use miden::core::sys
+
+        begin
+            push.{RECIPIENT}
+            push.{note_type}
+            push.{tag}
+            exec.output_note::create
+            # => [note_idx]
+
+            # add first word attachment (note_idx = 0)
+            push.{ATTACHMENT_WORD_0}
+            push.{attachment_scheme_0}
+            # => [attachment_scheme, ATTACHMENT, note_idx]
+            exec.output_note::add_word_attachment
+            # => []
+
+            # add second word attachment
+            push.0
+            push.{ATTACHMENT_WORD_1}
+            push.{attachment_scheme_1}
+            # => [attachment_scheme, ATTACHMENT, note_idx=0]
+            exec.output_note::add_word_attachment
+            # => []
+
+            # --- get attachment 1 first (to debug with non-zero idx) ---
+            push.0 push.1
+            # => [attachment_idx=1, note_idx=0]
+            exec.output_note::get_attachment
+            # => [attachment_ptr, num_words]
+            drop drop
+
+            # truncate the stack
+            exec.sys::truncate_stack
+        end
+        ",
+        RECIPIENT = output_note.recipient().unwrap().digest(),
+        note_type = output_note.metadata().note_type() as u8,
+        tag = output_note.metadata().tag().as_u32(),
+        attachment_scheme_0 = attachment_0.attachment_scheme().as_u16(),
+        ATTACHMENT_WORD_0 = word_0,
+        attachment_scheme_1 = attachment_1.attachment_scheme().as_u16(),
+        ATTACHMENT_WORD_1 = word_1,
+    );
+
+    let tx_script = CodeBuilder::new().compile_tx_script(tx_script)?;
+
+    let tx = TransactionContextBuilder::new(account)
+        .extend_expected_output_notes(vec![output_note.clone()])
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await?;
+
+    let actual_note = tx.output_notes().get_note(0);
+    assert_eq!(actual_note.header(), output_note.header());
+
+    Ok(())
+}
+
 /// Test that output_note procedures abort when given an out-of-bounds note index (equal to
 /// num_output_notes).
 ///
