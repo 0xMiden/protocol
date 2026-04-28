@@ -18,7 +18,7 @@ use miden_protocol::note::{
     NoteTag,
     NoteType,
 };
-use miden_protocol::testing::note::DEFAULT_NOTE_CODE;
+use miden_protocol::testing::note::DEFAULT_NOTE_SCRIPT;
 use miden_protocol::vm::Package;
 use miden_protocol::{Felt, Word};
 use rand::Rng;
@@ -67,7 +67,7 @@ impl NoteBuilder {
             serial_num,
             // The note tag is not under test, so we choose a value that is always valid.
             tag: NoteTag::with_account_target(sender),
-            code: DEFAULT_NOTE_CODE.to_string(),
+            code: DEFAULT_NOTE_SCRIPT.to_string(),
             attachment: NoteAttachment::default(),
             source_code: SourceCodeOrigin::Masm {
                 dyn_libraries: Vec::new(),

@@ -166,7 +166,7 @@ contract ClaimAssetTestVectorsMainnetTx is Test, DepositContractTestHelpers {
                 obj, "description", "L1 bridgeAsset transaction test vectors with valid Merkle proofs"
             );
 
-            string memory outputPath = "test-vectors/claim_asset_vectors_mainnet_tx.json";
+            string memory outputPath = "test-vectors/claim_asset_vectors_l1_tx.json";
             vm.writeJson(json, outputPath);
 
             console.log("Generated claim asset mainnet tx test vectors with valid Merkle proofs");

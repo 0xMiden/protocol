@@ -53,6 +53,13 @@ use super::test_utils::{
     SOLIDITY_MERKLE_PROOF_VECTORS,
 };
 
+// CONSTANTS
+// ================================================================================================
+
+/// Maximum allowed cycle count for CLAIM note processing.
+/// Current observed values: ~25,662 (real/simulated), ~40,485 (rollup).
+const MAX_CLAIM_NOTE_PROCESSING_CYCLES: usize = 64_000;
+
 // HELPER FUNCTIONS
 // ================================================================================================
 
@@ -113,14 +120,16 @@ fn merkle_proof_verification_code(
 /// TX4: P2ID → destination (runs for both `Mainnet` and `Rollup` simulated cases)
 ///
 /// Parameterized over two claim data sources:
-/// - [`ClaimDataSource::Mainnet`]: uses locally generated [`ProofData`] and [`LeafData`] from
-///   `claim_asset_vectors_mainnet_tx.json`, produced by simulating a `bridgeAsset()` call.
-/// - [`ClaimDataSource::Rollup`]: uses locally generated [`ProofData`] and [`LeafData`] from
-///   `claim_asset_vectors_rollup_tx.json`, produced by simulating the rollup exit tree from
-///   PolygonRollupManager.
+/// - [`ClaimDataSource::L1ToMiden`]: uses locally generated [`ProofData`] and [`LeafData`] from
+///   `claim_asset_vectors_l1_tx.json`, produced by simulating a `bridgeAsset()` call.
+/// - [`ClaimDataSource::L2ToMiden`]: uses rollup deposit data from
+///   `claim_asset_vectors_l2_tx.json`, produced by simulating a rollup deposit.
+///
+/// Note: Modifying anything in the real test vectors would invalidate the Merkle proof,
+/// as the proof was computed for the original leaf data including the original destination.
 #[rstest::rstest]
-#[case::mainnet(ClaimDataSource::Mainnet)]
-#[case::rollup(ClaimDataSource::Rollup)]
+#[case::simulated_l1_to_miden(ClaimDataSource::L1ToMiden)]
+#[case::simulated_l2_to_miden(ClaimDataSource::L2ToMiden)]
 #[tokio::test]
 async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
@@ -190,7 +199,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     // note.
     let destination_account = if matches!(
         data_source,
-        ClaimDataSource::Mainnet | ClaimDataSource::Rollup
+        ClaimDataSource::L1ToMiden | ClaimDataSource::L2ToMiden
     ) {
         let dest =
             Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE, IncrNonceAuthComponent);
@@ -309,6 +318,12 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
 
     assert_eq!(cgi_chain_hash, actual_cgi_chain_hash);
 
+    let claim_cycles = claim_executed.measurements().notes_processing;
+    assert!(
+        claim_cycles <= MAX_CLAIM_NOTE_PROCESSING_CYCLES,
+        "CLAIM note processing exceeded cycle budget: {claim_cycles} > {MAX_CLAIM_NOTE_PROCESSING_CYCLES}"
+    );
+
     // VERIFY MINT NOTE WAS CREATED BY THE BRIDGE
     // --------------------------------------------------------------------------------------------
     assert_eq!(claim_executed.output_notes().num_notes(), 1);
@@ -420,7 +435,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
 /// data is unchanged.
 #[tokio::test]
 async fn test_claim_rejects_wrong_destination_network() -> anyhow::Result<()> {
-    let data_source = ClaimDataSource::Mainnet;
+    let data_source = ClaimDataSource::L1ToMiden;
     let mut builder = MockChain::builder();
 
     // CREATE BRIDGE ADMIN ACCOUNT (sends CONFIG_AGG_BRIDGE notes)
@@ -557,7 +572,7 @@ async fn test_claim_rejects_wrong_destination_network() -> anyhow::Result<()> {
 ///    been spent"
 #[tokio::test]
 async fn test_duplicate_claim_note_rejected() -> anyhow::Result<()> {
-    let data_source = ClaimDataSource::Mainnet;
+    let data_source = ClaimDataSource::L1ToMiden;
     let mut builder = MockChain::builder();
 
     // CREATE BRIDGE ADMIN ACCOUNT
