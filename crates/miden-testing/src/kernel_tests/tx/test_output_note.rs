@@ -1171,7 +1171,7 @@ async fn test_get_assets() -> anyhow::Result<()> {
 }
 
 #[rstest]
-#[case::zero_elemenets(vec![], ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_CANNOT_BE_ZERO)]
+#[case::zero_elements(vec![], ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_CANNOT_BE_ZERO)]
 #[case::one_element(vec![1], ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_MUST_BE_MULTIPLE_OF_WORD_SIZE)]
 #[case::max_elements_exceeded(
   vec![2; WORD_SIZE * (NoteAttachment::MAX_NUM_WORDS as usize + 1)],
