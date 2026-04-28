@@ -280,7 +280,7 @@ name = "bench-transaction"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "criterion 0.6.0",
+ "criterion",
  "miden-agglayer",
  "miden-core",
  "miden-processor",
