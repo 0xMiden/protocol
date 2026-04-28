@@ -118,14 +118,11 @@ end
 #! Invocation: exec
 pub proc get_assets
     # get the assets commitment and assets number
-    dup.1 exec.get_assets_info
-    # => [ASSETS_COMMITMENT, num_assets, dest_ptr, note_index]
+    swap exec.get_assets_info
+    # => [ASSETS_COMMITMENT, num_assets, dest_ptr]
 
-    # save num_assets for the return value and drop note_index
-    dup.4 movdn.7
-    # => [ASSETS_COMMITMENT, num_assets, dest_ptr, note_index, num_assets]
-
-    movup.6 drop
+    # save num_assets for the return value
+    dup.4 movdn.6
     # => [ASSETS_COMMITMENT, num_assets, dest_ptr, num_assets]
 
     # write the assets stored in the advice map to the specified memory pointer

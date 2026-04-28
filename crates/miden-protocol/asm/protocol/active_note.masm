@@ -132,12 +132,12 @@ pub proc get_storage
     movup.5 drop movup.5 drop movup.5 drop
     # => [NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
 
+    # save num_storage_items for the return value
+    dup.4 movdn.6
+    # => [NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr, num_storage_items]
+
     # write the inputs to the memory using the provided destination pointer
     exec.write_storage_to_memory
-    # => [num_storage_items, dest_ptr]
-
-    # drop dest_ptr as it is identical to the input
-    swap drop
     # => [num_storage_items]
 end
 
@@ -311,36 +311,36 @@ proc write_storage_to_memory
     #
     # To match `poseidon2::hash_elements` (used for NOTE_STORAGE_COMMITMENT), we set the first capacity
     # element to `num_storage_items % 8`.
-    dup.6 dup.6
-    # OS => [num_storage_items, write_ptr, end_ptr, NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
+    movup.6 movup.6
+    # OS => [num_storage_items, write_ptr, end_ptr, NOTE_STORAGE_COMMITMENT]
     # AS => [[INPUT_VALUES]]
 
     u32divmod.8 swap drop
-    # OS => [num_storage_items_mod_8, write_ptr, end_ptr, NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
+    # OS => [num_storage_items_mod_8, write_ptr, end_ptr, NOTE_STORAGE_COMMITMENT]
     # AS => [[INPUT_VALUES]]
 
     push.0.0.0 movup.3
-    # OS => [CAPACITY = [num_storage_items_mod_8, 0, 0, 0], write_ptr, end_ptr, NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
+    # OS => [CAPACITY = [num_storage_items_mod_8, 0, 0, 0], write_ptr, end_ptr, NOTE_STORAGE_COMMITMENT]
     # AS => [[INPUT_VALUES]]
 
     padw padw
-    # OS => [RATE0, RATE1, CAPACITY, write_ptr, end_ptr, NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
+    # OS => [RATE0, RATE1, CAPACITY, write_ptr, end_ptr, NOTE_STORAGE_COMMITMENT]
     # AS => [[INPUT_VALUES]]
 
     # write the inputs from the advice stack into memory
     exec.mem::pipe_double_words_to_memory
-    # OS => [RATE0, RATE1, CAPACITY, end_ptr', NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
+    # OS => [RATE0, RATE1, CAPACITY, end_ptr', NOTE_STORAGE_COMMITMENT]
     # AS => []
 
     # extract the computed commitment from the hasher state
     exec.poseidon2::squeeze_digest
-    # OS => [COMPUTED_COMMITMENT, end_ptr', NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
+    # OS => [COMPUTED_COMMITMENT, end_ptr', NOTE_STORAGE_COMMITMENT]
 
     # drop end_ptr'
     movup.4 drop
-    # OS => [COMPUTED_COMMITMENT, NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
+    # OS => [COMPUTED_COMMITMENT, NOTE_STORAGE_COMMITMENT]
 
     # validate that the inputs written to memory match the inputs commitment
     assert_eqw.err=ERR_NOTE_DATA_DOES_NOT_MATCH_COMMITMENT
-    # => [num_storage_items, dest_ptr]
+    # => []
 end
