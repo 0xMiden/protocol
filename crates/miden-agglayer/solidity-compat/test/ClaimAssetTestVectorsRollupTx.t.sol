@@ -56,7 +56,7 @@ contract ClaimAssetTestVectorsRollupTx is Test, DepositContractV2, DepositContra
     /**
      * @notice Generates rollup deposit test vectors with valid two-level Merkle proofs.
      *
-     *         Output file: test-vectors/claim_asset_vectors_rollup_tx.json
+     *         Output file: test-vectors/claim_asset_vectors_l2_tx.json
      */
     function test_generateClaimAssetVectorsRollupTx() public {
         string memory obj = "root";
@@ -200,7 +200,7 @@ contract ClaimAssetTestVectorsRollupTx is Test, DepositContractV2, DepositContra
                 obj, "description", "Rollup deposit test vectors with valid two-level Merkle proofs (non-zero indices)"
             );
 
-            string memory outputPath = "test-vectors/claim_asset_vectors_rollup_tx.json";
+            string memory outputPath = "test-vectors/claim_asset_vectors_l2_tx.json";
             vm.writeJson(json, outputPath);
 
             console.log("Generated rollup deposit test vectors with valid two-level Merkle proofs");

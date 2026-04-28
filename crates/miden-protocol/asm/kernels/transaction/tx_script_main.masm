@@ -53,7 +53,8 @@ proc main
     exec.word::eqz assertz.err=ERR_TX_TRANSACTION_SCRIPT_IS_MISSING
     # => [tx_script_root_ptr]
 
-    # execute the transaction script
+    # Execute the transaction script via `dyncall`. Note that the program arguments passed to
+    # the script are always the empty word (i.e. [0, 0, 0, 0]).
     dyncall
     # => [OUTPUT_3, OUTPUT_2, OUTPUT_1, OUTPUT_0]
 end
