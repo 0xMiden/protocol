@@ -177,6 +177,41 @@ pub proc get_assets_info
     # => [ASSETS_COMMITMENT, num_assets]
 end
 
+#! Returns the commitment over all attachments in the note with the provided index.
+#!
+#! Inputs:  [note_index]
+#! Outputs: [ATTACHMENTS_COMMITMENT]
+#!
+#! Where:
+#! - note_index is the index of the output note whose attachments commitment should be returned.
+#! - ATTACHMENTS_COMMITMENT is the commitment to all attachments of the note.
+pub proc get_attachments_commitment
+    # get the note data pointer based on the index of the requested note
+    exec.memory::get_output_note_ptr
+    # => [note_ptr]
+
+    dup exec.memory::get_output_note_num_attachments
+    # => [num_attachments, note_ptr]
+
+    dup.1 exec.memory::get_output_note_attachment_commitment_ptr
+    # => [start_ptr, num_attachments, note_ptr]
+
+    # compute start_ptr and end_ptr for the attachment commitments in memory
+    dup movup.2 mul.WORD_SIZE add swap
+    # => [start_ptr, end_ptr, note_ptr]
+
+    movup.2 exec.note::compute_attachments_commitment
+    # => [ATTACHMENTS_COMMITMENT, start_ptr, end_ptr]
+
+    # store the attachment commitments to the advice map using ATTACHMENTS_COMMITMENT as a key
+    adv.insert_mem
+    # => [ATTACHMENTS_COMMITMENT, start_ptr, end_ptr]
+
+    # remove pointers from the stack
+    movup.4 drop movup.4 drop
+    # => [ATTACHMENTS_COMMITMENT]
+end
+
 #! Adds the asset to the note specified by the index.
 #!
 #! Inputs:  [ASSET_KEY, ASSET_VALUE, note_idx]

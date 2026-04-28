@@ -4,6 +4,7 @@ use miden::protocol::kernel_proc_offsets::OUTPUT_NOTE_ADD_ASSET_OFFSET
 use miden::protocol::kernel_proc_offsets::OUTPUT_NOTE_ADD_ATTACHMENT_OFFSET
 use miden::protocol::kernel_proc_offsets::OUTPUT_NOTE_GET_RECIPIENT_OFFSET
 use miden::protocol::kernel_proc_offsets::OUTPUT_NOTE_GET_METADATA_OFFSET
+use miden::protocol::kernel_proc_offsets::OUTPUT_NOTE_GET_ATTACHMENTS_COMMITMENT_OFFSET
 use miden::protocol::note
 use miden::core::crypto::hashes::poseidon2
 
@@ -121,6 +122,39 @@ pub proc get_assets
     # write the assets stored in the advice map to the specified memory pointer
     exec.note::write_assets_to_memory
     # => [num_assets]
+end
+
+#! Returns the commitment over all attachments of the output note with the specified index.
+#!
+#! Inputs:  [note_index]
+#! Outputs: [ATTACHMENTS_COMMITMENT]
+#!
+#! Where:
+#! - note_index is the index of the output note whose attachments commitment should be returned.
+#! - ATTACHMENTS_COMMITMENT is the commitment to all attachments of the note.
+#!
+#! Panics if:
+#! - the note index is greater or equal to the total number of output notes.
+#!
+#! Invocation: exec
+pub proc get_attachments_commitment
+    # start padding the stack
+    push.0.0 movup.2
+    # => [note_index, 0, 0]
+
+    push.OUTPUT_NOTE_GET_ATTACHMENTS_COMMITMENT_OFFSET
+    # => [offset, note_index, 0, 0]
+
+    # pad the stack
+    padw swapw padw padw swapdw
+    # => [offset, note_index, pad(14)]
+
+    syscall.exec_kernel_proc
+    # => [ATTACHMENTS_COMMITMENT, pad(12)]
+
+    # clean the stack
+    swapdw dropw dropw swapw dropw
+    # => [ATTACHMENTS_COMMITMENT]
 end
 
 #! Adds the asset to the note specified by the index.
@@ -342,4 +376,33 @@ pub proc get_metadata
     # clean the stack
     swapdw dropw dropw
     # => [NOTE_ATTACHMENT, METADATA_HEADER]
+end
+
+#! Writes the attachment commitments from the note with note_idx to memory and returns the pointer
+#! to it.
+#!
+#! Inputs:  [note_index]
+#! Outputs: [num_attachments, attachments_ptr]
+#!
+#! Where:
+#! - note_index is the index of the output note whose metadata should be returned.
+#! - METADATA_HEADER is the metadata header of the specified output note.
+#! - NOTE_ATTACHMENT is the first attachment of the specified output note.
+#!
+#! Pancis if:
+#! - The sequential hash over the attachment commitments in the advice inputs does not match the
+#!   attachments commitment.
+@locals(16)
+pub proc get_attachment_commitments
+    exec.get_attachments_commitment
+    # => [ATTACHMENTS_COMMITMENT]
+
+    locaddr.0 movdn.4
+    # => [ATTACHMENTS_COMMITMENT, dest_ptr]
+
+    exec.note::write_attachments_to_memory
+    # => [num_attachments]
+
+    locaddr.0 swap
+    # => [num_attachments, dest_ptr]
 end

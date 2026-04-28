@@ -1214,6 +1214,33 @@ pub proc output_note_get_assets_info
     # => [ASSETS_COMMITMENT, num_assets, pad(11)]
 end
 
+#! Returns the commitment over all attachments.
+#!
+#! Inputs:  [note_index, pad(15)]
+#! Outputs: [ATTACHMENTS_COMMITMENT, pad(12)]
+#!
+#! Where:
+#! - note_index is the index of the output note whose attachments commitment should be returned.
+#! - ATTACHMENTS_COMMITMENT is the commitment to all attachments of the note.
+#!
+#! Panics if:
+#! - the note index is greater or equal to the total number of output notes.
+#!
+#! Invocation: dynexec
+pub proc output_note_get_attachments_commitment
+    # assert that the provided note index is less than the total number of output notes
+    exec.output_note::assert_note_index_in_bounds
+    # => [note_index, pad(15)]
+
+    # get the attachments commitment
+    exec.output_note::get_attachments_commitment
+    # => [ATTACHMENTS_COMMITMENT, pad(16)]
+
+    # truncate the stack
+    swapw dropw
+    # => [ATTACHMENTS_COMMITMENT, pad(12)]
+end
+
 #! Returns the recipient of the output note with the specified index.
 #!
 #! Inputs:  [note_index, pad(15)]

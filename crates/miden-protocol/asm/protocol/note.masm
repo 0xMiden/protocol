@@ -79,6 +79,38 @@ pub proc write_assets_to_memory
     # AS => []
 end
 
+#! Writes the attachment commitments stored in the advice map to memory specified by the provided
+#! destination pointer.
+#!
+#! Inputs:
+#!   Operand stack: [ATTACHMENTS_COMMITMENT, dest_ptr]
+#!   Advice map: {
+#!     ATTACHMENTS_COMMITMENT: [[ATTACHMENT_COMMITMENT]]
+#!   }
+#! Outputs:
+#!   Operand stack: [num_attachments]
+pub proc write_attachments_to_memory
+    # push the individual ATTACHMENT commitments from the advice map onto the advice stack
+    adv.push_mapvaln
+    # OS => [ATTACHMENTS_COMMITMENT, dest_ptr]
+    # AS => [num_elements, [ATTACHMENT_COMMITMENT]]
+
+    # SAFETY: kernel should ensure num_elements is a multiple of WORD_SIZE = 4 and is in valid
+    # range
+    adv_push.1 u32div.4
+    # OS => [num_words, ATTACHMENTS_COMMITMENT, dest_ptr]
+    # AS => [[ATTACHMENT_COMMITMENT]]
+
+    # store the number of words as the number of attachments for return
+    swap.5 dup.5
+    # OS => [num_words, dest_ptr, ATTACHMENTS_COMMITMENT, num_attachments]
+    # AS => [[ATTACHMENT_COMMITMENT]]
+
+    # pipe attachment commitments to memory and validate they match the ATTACHMENTS_COMMITMENT
+    exec.mem::pipe_preimage_to_memory drop
+    # => [num_attachments]
+end
+
 #! Builds the recipient hash from note storage, script root, and serial number.
 #!
 #! This procedure computes the commitment of the note storage and then uses it to calculate the note
