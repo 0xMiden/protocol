@@ -15,7 +15,7 @@ use miden_protocol::account::{
     AccountType,
 };
 use miden_protocol::transaction::TransactionKernel;
-use miden_standards::account::auth::NoAuth;
+use miden_standards::account::auth::NetworkAccount;
 use miden_standards::account::burn_policies::BurnOwnerControlled;
 use miden_standards::account::mint_policies::MintOwnerControlled;
 
@@ -246,7 +246,7 @@ fn generate_agglayer_constants(
         // policies alongside the agglayer faucet component, since
         // network_fungible::mint_and_send requires these for access control.
         let mut components: Vec<AccountComponent> =
-            vec![AccountComponent::from(NoAuth), agglayer_component];
+            vec![AccountComponent::from(NetworkAccount::new(Vec::new())), agglayer_component];
         if lib_name == "faucet" {
             // Use a dummy owner for commitment computation - the actual owner is set at runtime
             let dummy_owner = miden_protocol::account::AccountId::try_from(
