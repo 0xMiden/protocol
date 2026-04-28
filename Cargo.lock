@@ -283,6 +283,8 @@ dependencies = [
  "anyhow",
  "criterion 0.6.0",
  "miden-agglayer",
+ "miden-core",
+ "miden-processor",
  "miden-protocol",
  "miden-standards",
  "miden-testing",
