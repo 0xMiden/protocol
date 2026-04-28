@@ -22,8 +22,8 @@ use miden_protocol::transaction::RawOutputNote;
 use miden_standards::account::access::Ownable2Step;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
-    ERR_NO_NOMINATED_TRANSFER,
-    ERR_SENDER_NOT_NOMINATED,
+    ERR_NO_NOMINATED_OWNER,
+    ERR_SENDER_NOT_NOMINATED_OWNER,
     ERR_SENDER_NOT_OWNER,
 };
 use miden_standards::testing::note::NoteBuilder;
@@ -274,7 +274,7 @@ async fn test_accept_ownership_only_nominated_owner() -> anyhow::Result<()> {
         .build()?;
     let result = tx2.execute().await;
 
-    assert_transaction_executor_error!(result, ERR_SENDER_NOT_NOMINATED);
+    assert_transaction_executor_error!(result, ERR_SENDER_NOT_NOMINATED_OWNER);
     Ok(())
 }
 
@@ -300,7 +300,7 @@ async fn test_accept_ownership_no_nominated() -> anyhow::Result<()> {
         .build()?;
     let result = tx.execute().await;
 
-    assert_transaction_executor_error!(result, ERR_NO_NOMINATED_TRANSFER);
+    assert_transaction_executor_error!(result, ERR_NO_NOMINATED_OWNER);
     Ok(())
 }
 
