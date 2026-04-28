@@ -147,7 +147,7 @@ pub enum NetworkAccountTargetError {
     )]
     AttachmentSchemeMismatch(NoteAttachmentScheme),
     #[error("attachment content is not a Word (num_words={0}, expected 1)")]
-    AttachmentContentNotWord(u8),
+    AttachmentContentNotWord(u16),
     #[error("failed to decode target account ID")]
     DecodeTargetId(#[source] AccountIdError),
     #[error("failed to decode execution hint")]

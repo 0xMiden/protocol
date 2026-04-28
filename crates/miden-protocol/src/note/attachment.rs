@@ -110,7 +110,7 @@ impl NoteAttachment {
     ///
     /// - `1` indicates a single word attachment ([`NoteAttachmentContent::Word`]).
     /// - `> 1` indicates an array attachment ([`NoteAttachmentContent::Array`]).
-    pub fn num_words(&self) -> u8 {
+    pub fn num_words(&self) -> u16 {
         self.content.num_words()
     }
 }
@@ -191,7 +191,7 @@ impl NoteAttachmentContent {
     ///
     /// - `1` for [`NoteAttachmentContent::Word`].
     /// - `> 1` for [`NoteAttachmentContent::Array`].
-    pub fn num_words(&self) -> u8 {
+    pub fn num_words(&self) -> u16 {
         match self {
             NoteAttachmentContent::Word(_) => 1,
             NoteAttachmentContent::Array(array) => array.num_words(),
@@ -211,8 +211,11 @@ impl NoteAttachmentContent {
 
 impl Serializable for NoteAttachmentContent {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        // Write num_words as discriminant: 1 = Word, >1 = Array.
-        self.num_words().write_into(target);
+        // Subtract 1 from num words so we can serialize it as a u8.
+        let num_words_minus_1 =
+            u8::try_from(self.num_words().checked_sub(1).expect("num_words should be at least 1"))
+                .expect("num_words - 1 should fit in u8");
+        num_words_minus_1.write_into(target);
 
         match self {
             NoteAttachmentContent::Word(word) => {
@@ -237,7 +240,9 @@ impl Serializable for NoteAttachmentContent {
 
 impl Deserializable for NoteAttachmentContent {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let num_words = u8::read_from(source)?;
+        // Add one to the serialized num words to get the original.
+        let num_words_minus_1 = u8::read_from(source)?;
+        let num_words = u16::from(num_words_minus_1) + 1;
 
         match num_words {
             0 => Err(DeserializationError::InvalidValue(
@@ -337,9 +342,9 @@ impl NoteAttachmentArray {
     }
 
     /// Returns the number of words in this note attachment array.
-    pub fn num_words(&self) -> u8 {
-        // SAFETY: constructor checks that num_words is less than 255
-        u8::try_from(self.words.len()).expect("num words should fit in u8")
+    pub fn num_words(&self) -> u16 {
+        // SAFETY: constructor checks that num_words is less than or equal to 256
+        u16::try_from(self.words.len()).expect("num words should fit in u16")
     }
 
     /// Returns the commitment over the contained words.
