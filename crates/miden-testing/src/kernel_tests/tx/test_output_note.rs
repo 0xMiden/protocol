@@ -6,10 +6,14 @@ use miden_protocol::account::{Account, AccountId};
 use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset};
 use miden_protocol::crypto::SequentialCommit;
 use miden_protocol::crypto::rand::RandomCoin;
+use miden_protocol::errors::MasmError;
 use miden_protocol::errors::tx_kernel::{
     ERR_NON_FUNGIBLE_ASSET_ALREADY_EXISTS,
     ERR_NOTE_NUM_OF_ASSETS_EXCEED_LIMIT,
+    ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_CANNOT_BE_ZERO,
     ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_CANNOT_BE_ZERO,
+    ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_MAX_EXCEEDED,
+    ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_MUST_BE_MULTIPLE_OF_WORD_SIZE,
     ERR_OUTPUT_NOTE_INDEX_OUT_OF_BOUNDS,
     ERR_TX_NUMBER_OF_OUTPUT_NOTES_EXCEEDS_LIMIT,
 };
@@ -1166,50 +1170,22 @@ async fn test_get_assets() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[rstest]
+#[case::zero_elemenets(vec![], ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_CANNOT_BE_ZERO)]
+#[case::one_element(vec![1], ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_MUST_BE_MULTIPLE_OF_WORD_SIZE)]
+#[case::max_elements_exceeded(
+  vec![2; WORD_SIZE * (NoteAttachment::MAX_NUM_WORDS as usize + 1)],
+  ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_MAX_EXCEEDED
+)]
 #[tokio::test]
-async fn test_add_attachment_with_missing_advice_map_entry_fails() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
-
-    let code = format!(
-        "
-        use miden::protocol::output_note
-        use miden::standards::note_tag::DEFAULT_TAG
-        use $kernel::prologue
-
-        begin
-            exec.prologue::prepare_transaction
-
-            push.1.2.3.4
-            push.{NOTE_TYPE_PUBLIC}
-            push.DEFAULT_TAG
-            exec.output_note::create
-            # => [note_idx]
-
-            # try to add an attachment with a commitment that is not in the advice map
-            padw push.0
-            # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx]
-            exec.output_note::add_array_attachment
-            # => []
-        end
-        ",
-        NOTE_TYPE_PUBLIC = NoteType::Public as u8,
-    );
-
-    let exec_output = tx_context.execute_code(&code).await;
-
-    // The adv.push_mapvaln instruction will fail when the commitment is not in the advice map
-    assert!(exec_output.is_err());
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_add_attachment_with_zero_num_words_fails() -> anyhow::Result<()> {
-    // Insert an empty entry in the advice map so that adv.push_mapvaln succeeds but
-    // the kernel rejects the attachment because num_felts / 4 == 0.
+async fn test_add_attachment_with_invalid_num_elements_fails(
+    #[case] elements: Vec<u8>,
+    #[case] expected_error: MasmError,
+) -> anyhow::Result<()> {
+    let elements = elements.into_iter().map(Felt::from).collect();
     let commitment = Word::from([42, 43, 44, 45u32]);
     let tx_context = TransactionContextBuilder::with_existing_mock_account()
-        .extend_advice_map(vec![(commitment, vec![])])
+        .extend_advice_map(vec![(commitment, elements)])
         .build()?;
 
     let code = format!(
@@ -1217,30 +1193,58 @@ async fn test_add_attachment_with_zero_num_words_fails() -> anyhow::Result<()> {
         use miden::protocol::output_note
         use miden::standards::note_tag::DEFAULT_TAG
         use $kernel::prologue
+        use mock::util
 
         begin
             exec.prologue::prepare_transaction
 
-            push.1.2.3.4
-            push.{NOTE_TYPE_PUBLIC}
-            push.DEFAULT_TAG
-            exec.output_note::create
+            exec.util::create_default_note
             # => [note_idx]
 
             push.{COMMITMENT}
-            push.0
+            push.5
             # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx]
-            exec.output_note::add_array_attachment
+            exec.output_note::add_attachment
             # => []
         end
         ",
-        NOTE_TYPE_PUBLIC = NoteType::Public as u8,
         COMMITMENT = commitment,
     );
 
     let exec_output = tx_context.execute_code(&code).await;
 
-    assert_execution_error!(exec_output, ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_CANNOT_BE_ZERO);
+    assert_execution_error!(exec_output, expected_error);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_add_attachment_with_scheme_zero_fails() -> anyhow::Result<()> {
+    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+
+    let code = "
+        use miden::protocol::output_note
+        use miden::standards::note_tag::DEFAULT_TAG
+        use $kernel::prologue
+        use mock::util
+
+        begin
+            exec.prologue::prepare_transaction
+
+            exec.util::create_default_note
+            # => [note_idx]
+
+            push.1.2.3.4
+            push.0
+            # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx]
+            exec.output_note::add_attachment
+            # => []
+        end
+        ";
+
+    let exec_output = tx_context.execute_code(code).await;
+
+    assert_execution_error!(exec_output, ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_CANNOT_BE_ZERO);
 
     Ok(())
 }
@@ -1251,8 +1255,9 @@ async fn test_add_word_attachment() -> anyhow::Result<()> {
     let rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
     let attachment =
         NoteAttachment::new_word(NoteAttachmentScheme::MAX, Word::from([3, 4, 5, 6u32]));
-    let output_note =
-        RawOutputNote::Full(NoteBuilder::new(account.id(), rng).attachment(attachment).build()?);
+    let output_note = RawOutputNote::Full(
+        NoteBuilder::new(account.id(), rng).attachment(attachment.clone()).build()?,
+    );
 
     let tx_script = format!(
         "
@@ -1292,6 +1297,9 @@ async fn test_add_word_attachment() -> anyhow::Result<()> {
         .await?;
 
     let actual_note = tx.output_notes().get_note(0);
+    assert_eq!(actual_note.attachments().num_attachments(), 1);
+    assert_eq!(actual_note.attachments().get(0).unwrap(), &attachment);
+
     assert_eq!(actual_note.header(), output_note.header());
     assert_eq!(actual_note.assets(), output_note.assets());
 
