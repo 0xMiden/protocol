@@ -1,8 +1,10 @@
 use core::fmt;
 
+pub mod trace_capture;
 pub mod utils;
 
 /// Indicates the type of the transaction execution benchmark
+#[derive(Clone, Copy)]
 pub enum ExecutionBenchmark {
     ConsumeSingleP2ID,
     ConsumeTwoP2ID,
