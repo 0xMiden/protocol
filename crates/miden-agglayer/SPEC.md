@@ -38,7 +38,8 @@ The crate `miden-agglayer` implements the AggLayer bridging protocol on the Mide
 A user initiates a bridge-out by creating a [`B2AGG`](#41-b2agg) note containing a single fungible
 asset and the destination network/address. The bridge account consumes this note:
 
-1. Validates that the asset's faucet is registered in the faucet registry.
+1. Validates that the asset's faucet is registered in the faucet registry, and that the
+   destination network is not Miden's AggLayer network ID.
 2. FPIs to the faucet (`agglayer_faucet::asset_to_origin_asset`) to obtain the scaled
    U256 amount, origin token address, and origin network.
 3. FPIs to the faucet (`agglayer_faucet::get_metadata_hash`) to obtain the metadata hash.
