@@ -46,8 +46,6 @@ const ERR_OWNERSHIP_TRANSFER_IN_PROGRESS = "ownership transfer is in progress"
 # transfer_ownership locals
 const NEW_OWNER_SUFFIX_LOC = 0
 const NEW_OWNER_PREFIX_LOC = 1
-const OWNER_SUFFIX_LOC = 2
-const OWNER_PREFIX_LOC = 3
 
 # INTERNAL PROCEDURES
 # ================================================================================================
@@ -147,18 +145,16 @@ proc is_nominated_owner_internal
     # => [is_nominated_owner]
 end
 
-#! Checks if the note sender is the owner and panics if not.
-#!
-#! Inputs:  []
-#! Outputs: []
-#!
 #! Returns 1 if the note sender is the current owner, otherwise 0.
 #!
 #! Inputs:  []
 #! Outputs: [is_sender_owner]
 #!
+#! Where:
+#! - is_sender_owner is 1 if the note sender is the current owner, otherwise 0.
+#!
 #! Invocation: exec
-proc is_sender_owner_internal
+pub proc is_sender_owner_internal
     exec.active_note::get_sender
     # => [sender_suffix, sender_prefix]
 
@@ -166,11 +162,16 @@ proc is_sender_owner_internal
     # => [is_sender_owner]
 end
 
+#! Asserts that the note sender is the current owner.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
 #! Panics if:
 #! - the note sender is not the owner.
 #!
 #! Invocation: exec
-proc assert_sender_is_owner_internal
+pub proc assert_sender_is_owner_internal
     exec.is_sender_owner_internal
     # => [is_sender_owner]
 
@@ -180,20 +181,6 @@ end
 
 # PUBLIC INTERFACE
 # ================================================================================================
-
-#! Returns whether the note sender is the current owner.
-#!
-#! Inputs:  []
-#! Outputs: [is_sender_owner]
-#!
-#! Where:
-#! - is_sender_owner is 1 if the note sender is the current owner, otherwise 0.
-#!
-#! Invocation: exec or call
-pub proc is_sender_owner
-    exec.is_sender_owner_internal
-    # => [is_sender_owner]
-end
 
 #! Checks if the note sender is the owner and panics if not.
 #!
@@ -244,80 +231,71 @@ pub proc get_nominated_owner
     # => [nominated_owner_suffix, nominated_owner_prefix, pad(14)]
 end
 
-#! Initiates a two-step ownership transfer by setting the nominated owner.
+#! Initiates or cancels a two-step ownership transfer.
 #!
 #! The current owner remains in control until the nominated owner calls `accept_ownership`.
 #! Can only be called by the current owner.
 #!
-#! If the new owner is the current owner, any nominated transfer is cancelled and the
-#! nominated owner field is cleared.
+#! Cancellation behaviour:
+#! - If `new_owner` is the zero address `(0, 0)`, any pending nomination is cleared. The
+#!   zero address is treated as a cancel value and is not validated as an
+#!   account ID.
+#! - Otherwise, `new_owner` is validated and stored as the nominated owner. The current
+#!   owner remains in control until the nominated owner calls `accept_ownership`.
 #!
 #! Inputs:  [new_owner_suffix, new_owner_prefix, pad(14)]
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
 #! - the note sender is not the owner.
+#! - new_owner is non-zero and the account ID is invalid.
 #!
 #! Locals:
 #! 0: new_owner_suffix
 #! 1: new_owner_prefix
-#! 2: owner_suffix
-#! 3: owner_prefix
 #!
 #! Invocation: call
-@locals(4)
+@locals(2)
 pub proc transfer_ownership
     exec.assert_sender_is_owner_internal
     # => [new_owner_suffix, new_owner_prefix, pad(14)]
 
-    dup.1 dup.1 exec.account_id::validate
-    # => [new_owner_suffix, new_owner_prefix, pad(14)]
-
-    loc_store.NEW_OWNER_SUFFIX_LOC
-    # => [new_owner_prefix, pad(14)]
-
-    loc_store.NEW_OWNER_PREFIX_LOC
-    # => [pad(14)]
-
-    exec.get_owner_internal
-    # => [owner_suffix, owner_prefix, pad(14)]
-
-    loc_store.OWNER_SUFFIX_LOC
-    # => [owner_prefix, pad(13)]
-
-    loc_store.OWNER_PREFIX_LOC
-    # => [pad(12)]
-
-    # Check if new_owner == owner (cancel case).
-    loc_load.NEW_OWNER_PREFIX_LOC loc_load.NEW_OWNER_SUFFIX_LOC
-    # => [new_owner_suffix, new_owner_prefix, pad(12)]
-
-    loc_load.OWNER_PREFIX_LOC loc_load.OWNER_SUFFIX_LOC
-    # => [owner_suffix, owner_prefix, new_owner_suffix, new_owner_prefix, pad(12)]
-
-    exec.account_id::is_equal
-    # => [is_self_transfer, pad(12)]
+    # Detect explicit cancel via the zero address. The zero address is not a valid
+    # account ID, so we must check for it before validating.
+    dup.1 eq.0 dup.1 eq.0 and
+    # => [is_zero_address, new_owner_suffix, new_owner_prefix, pad(14)]
 
     if.true
-        # Cancel ownership transfer and clear nominated owner.
-        # Stack for save: [owner_suffix, owner_prefix, nominated_suffix=0, nominated_prefix=0]
-        loc_load.OWNER_PREFIX_LOC loc_load.OWNER_SUFFIX_LOC
-        # => [owner_suffix, owner_prefix, pad(12)]
+        # Cancel via zero address: drop the (0, 0) inputs and write [owner, 0, 0].
+        drop drop
+        # => [pad(14)]
+
+        exec.get_owner_internal
+        # => [owner_suffix, owner_prefix, pad(14)]
 
         push.0.0 movup.3 movup.3
-        # => [owner_suffix, owner_prefix, 0, 0, pad(12)]
+        # => [owner_suffix, owner_prefix, 0, 0, pad(14)]
     else
-        # Transfer ownership by setting nominated = new_owner.
-        # Stack for save: [owner_suffix, owner_prefix, new_owner_suffix, new_owner_prefix]
-        loc_load.NEW_OWNER_PREFIX_LOC loc_load.NEW_OWNER_SUFFIX_LOC
-        # => [new_owner_suffix, new_owner_prefix, pad(12)]
+        # Non-zero new owner: validate and store as the nominated owner.
+        dup.1 dup.1 exec.account_id::validate
+        # => [new_owner_suffix, new_owner_prefix, pad(14)]
 
-        loc_load.OWNER_PREFIX_LOC loc_load.OWNER_SUFFIX_LOC
-        # => [owner_suffix, owner_prefix, new_owner_suffix, new_owner_prefix, pad(12)]
+        loc_store.NEW_OWNER_SUFFIX_LOC
+        # => [new_owner_prefix, pad(14)]
+
+        loc_store.NEW_OWNER_PREFIX_LOC
+        # => [pad(14)]
+
+        # Build save stack: [owner_suffix, owner_prefix, new_owner_suffix, new_owner_prefix].
+        loc_load.NEW_OWNER_PREFIX_LOC loc_load.NEW_OWNER_SUFFIX_LOC
+        # => [new_owner_suffix, new_owner_prefix, pad(14)]
+
+        exec.get_owner_internal
+        # => [owner_suffix, owner_prefix, new_owner_suffix, new_owner_prefix, pad(14)]
     end
 
     exec.save_ownership_info
-    # => [pad(12)]
+    # => [pad(14)]
 end
 
 #! Accepts a nominated ownership transfer. The nominated owner becomes the new owner

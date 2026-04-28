@@ -124,6 +124,31 @@ fn create_accept_note(
     Ok(note)
 }
 
+fn create_cancel_note(
+    sender: AccountId,
+    rng: &mut RandomCoin,
+    source_manager: Arc<dyn SourceManagerSync>,
+) -> anyhow::Result<Note> {
+    let script = r#"
+        use miden::standards::access::ownable2step->test_account
+        @note_script
+        pub proc main
+            repeat.14 push.0 end
+            push.0
+            push.0
+            call.test_account::transfer_ownership
+            dropw dropw dropw dropw
+        end
+    "#;
+
+    let note = NoteBuilder::new(sender, rng)
+        .source_manager(source_manager)
+        .code(script)
+        .build()?;
+
+    Ok(note)
+}
+
 fn create_renounce_note(
     sender: AccountId,
     rng: &mut RandomCoin,
@@ -340,9 +365,9 @@ async fn test_cancel_transfer() -> anyhow::Result<()> {
     mock_chain.add_pending_executed_transaction(&executed)?;
     mock_chain.prove_next_block()?;
 
-    // Step 2: cancel by transferring to self (owner)
+    // Step 2: cancel by transferring to the zero address
     let mut rng2 = RandomCoin::new([Felt::from(200u32); 4].into());
-    let cancel_note = create_transfer_note(owner, owner, &mut rng2, Arc::clone(&source_manager))?;
+    let cancel_note = create_cancel_note(owner, &mut rng2, Arc::clone(&source_manager))?;
 
     let tx2 = mock_chain
         .build_tx_context(updated.clone(), &[], std::slice::from_ref(&cancel_note))?
@@ -358,10 +383,10 @@ async fn test_cancel_transfer() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Tests that an owner can transfer to themselves when no nominated transfer exists.
-/// This is a no-op but should succeed without errors.
+/// Tests that passing the current owner's account ID as the new owner is NOT a
+/// cancellation but creates a self-nomination. To cancel, the zero address must be used.
 #[tokio::test]
-async fn test_transfer_to_self_no_nominated() -> anyhow::Result<()> {
+async fn test_transfer_to_self_creates_self_nomination() -> anyhow::Result<()> {
     let owner = AccountIdBuilder::new().build_with_seed([1; 32]);
 
     let account = create_ownable_account(owner, vec![])?;
@@ -386,7 +411,7 @@ async fn test_transfer_to_self_no_nominated() -> anyhow::Result<()> {
     updated.apply_delta(executed.account_delta())?;
 
     assert_eq!(get_owner_from_storage(&updated)?, Some(owner));
-    assert_eq!(get_nominated_owner_from_storage(&updated)?, None);
+    assert_eq!(get_nominated_owner_from_storage(&updated)?, Some(owner));
     Ok(())
 }
 

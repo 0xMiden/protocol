@@ -266,7 +266,7 @@ end
 #!
 #! Invocation: call
 pub proc set_role_admin
-    exec.ownable2step::assert_sender_is_owner
+    exec.ownable2step::assert_sender_is_owner_internal
     exec.assert_role_symbol_non_zero
     # => [role_symbol, admin_role_symbol, pad(14)]
 
@@ -582,7 +582,7 @@ end
 #!
 #! Invocation: exec
 proc assert_sender_is_owner_or_role_admin
-    exec.ownable2step::is_sender_owner
+    exec.ownable2step::is_sender_owner_internal
     # => [is_owner, role_symbol]
     if.true
         drop

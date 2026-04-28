@@ -174,7 +174,8 @@ fn renounce_ownership_script() -> &'static str {
     r#"
         use miden::standards::access::ownable2step
 
-        begin
+        @note_script
+        pub proc main
             repeat.16 push.0 end
             call.ownable2step::renounce_ownership
             dropw dropw dropw dropw
@@ -188,7 +189,8 @@ fn set_role_admin_script(role: &RoleSymbol, admin_role: Option<&RoleSymbol>) -> 
         r#"
         use miden::standards::access::rbac
 
-        begin
+        @note_script
+        pub proc main
             repeat.14 push.0 end
             push.{admin_role}
             push.{role}
@@ -206,7 +208,8 @@ fn grant_role_script(role: &RoleSymbol, account_id: AccountId) -> String {
         r#"
         use miden::standards::access::rbac
 
-        begin
+        @note_script
+        pub proc main
             repeat.13 push.0 end
             push.{account_prefix}
             push.{account_suffix}
@@ -226,7 +229,8 @@ fn revoke_role_script(role: &RoleSymbol, account_id: AccountId) -> String {
         r#"
         use miden::standards::access::rbac
 
-        begin
+        @note_script
+        pub proc main
             repeat.13 push.0 end
             push.{account_prefix}
             push.{account_suffix}
@@ -246,7 +250,8 @@ fn renounce_role_script(role: &RoleSymbol) -> String {
         r#"
         use miden::standards::access::rbac
 
-        begin
+        @note_script
+        pub proc main
             repeat.15 push.0 end
             push.{role}
             call.rbac::renounce_role
@@ -262,7 +267,8 @@ fn assert_role_member_count_script(role: &RoleSymbol, expected_count: u64) -> St
         r#"
         use miden::standards::access::rbac
 
-        begin
+        @note_script
+        pub proc main
             repeat.15 push.0 end
             push.{role}
             call.rbac::get_role_member_count
@@ -283,7 +289,8 @@ fn assert_role_admin_script(role: &RoleSymbol, expected_admin_role: Option<&Role
         r#"
         use miden::standards::access::rbac
 
-        begin
+        @note_script
+        pub proc main
             repeat.15 push.0 end
             push.{role}
             call.rbac::get_role_admin
@@ -304,7 +311,8 @@ fn assert_role_exists_script(role: &RoleSymbol, expected_exists: bool) -> String
         r#"
         use miden::standards::access::rbac
 
-        begin
+        @note_script
+        pub proc main
             repeat.15 push.0 end
             push.{role}
             call.rbac::role_exists
@@ -329,7 +337,8 @@ fn assert_has_role_script(
         r#"
         use miden::standards::access::rbac
 
-        begin
+        @note_script
+        pub proc main
             repeat.13 push.0 end
             push.{account_prefix}
             push.{account_suffix}
@@ -352,7 +361,8 @@ fn set_role_admin_raw_script(role: Felt, admin_role: Felt) -> String {
         r#"
         use miden::standards::access::rbac
 
-        begin
+        @note_script
+        pub proc main
             repeat.14 push.0 end
             push.{admin_role}
             push.{role}
@@ -370,7 +380,8 @@ fn get_role_member_script(role: &RoleSymbol, index: u64) -> String {
         r#"
         use miden::standards::access::rbac
 
-        begin
+        @note_script
+        pub proc main
             repeat.14 push.0 end
             push.{index}
             push.{role}
@@ -388,7 +399,8 @@ fn get_active_role_script(index: u64) -> String {
         r#"
         use miden::standards::access::rbac
 
-        begin
+        @note_script
+        pub proc main
             repeat.15 push.0 end
             push.{index}
             call.rbac::get_active_role
@@ -404,7 +416,8 @@ fn assert_sender_has_role_script(role: &RoleSymbol) -> String {
         r#"
         use miden::standards::access::rbac
 
-        begin
+        @note_script
+        pub proc main
             repeat.15 push.0 end
             push.{role}
             call.rbac::assert_sender_has_role
