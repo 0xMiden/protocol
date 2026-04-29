@@ -496,13 +496,10 @@ impl Deserializable for NoteAttachmentScheme {
 
 /// The header metadata for a single note attachment.
 ///
-/// Contains the scheme and number of words of an attachment, without the actual content data.
-/// The kind of attachment is inferred from the number of words:
-/// - `num_words == 0`: absent (no attachment)
-/// - `num_words == 1`: word attachment (a single [`Word`])
-/// - `num_words > 1`: array attachment (a commitment to a set of felts)
+/// Contains the scheme of an attachment, without the actual content data.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NoteAttachmentHeader {
+    /// `None` represents an absent note attachment and `Some` a present one.
     scheme: Option<NoteAttachmentScheme>,
 }
 
