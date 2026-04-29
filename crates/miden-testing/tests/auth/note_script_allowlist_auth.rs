@@ -3,12 +3,12 @@ use core::slice;
 use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountBuilder, AccountStorageMode, AccountType};
 use miden_protocol::transaction::RawOutputNote;
-use miden_standards::account::auth::NetworkAccount;
+use miden_standards::account::auth::NoteScriptAllowlistAuth;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
-    ERR_NETWORK_ACCOUNT_NOTE_NOT_WHITELISTED,
-    ERR_NETWORK_ACCOUNT_TX_SCRIPT_NOT_ALLOWED,
+    ERR_NOTE_SCRIPT_ALLOWLIST_NOTE_NOT_ALLOWED,
+    ERR_NOTE_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED,
 };
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{MockChain, assert_transaction_executor_error};
@@ -16,11 +16,11 @@ use miden_testing::{MockChain, assert_transaction_executor_error};
 // HELPER FUNCTIONS
 // ================================================================================================
 
-/// Builds a minimal account that uses the [`NetworkAccount`] auth component with the provided
-/// whitelist of input-note script roots.
-fn build_network_account(allowed_script_roots: Vec<Word>) -> anyhow::Result<Account> {
+/// Builds a minimal account that uses the [`NoteScriptAllowlistAuth`] auth component with the
+/// provided allowlist of input-note script roots.
+fn build_allowlist_account(allowed_script_roots: Vec<Word>) -> anyhow::Result<Account> {
     Ok(AccountBuilder::new([0; 32])
-        .with_auth_component(NetworkAccount::new(allowed_script_roots))
+        .with_auth_component(NoteScriptAllowlistAuth::new(allowed_script_roots))
         .with_component(BasicWallet)
         .account_type(AccountType::RegularAccountUpdatableCode)
         .storage_mode(AccountStorageMode::Public)
@@ -30,11 +30,11 @@ fn build_network_account(allowed_script_roots: Vec<Word>) -> anyhow::Result<Acco
 // TESTS
 // ================================================================================================
 
-/// A transaction that executes a tx script must be rejected by `NetworkAccount`, even if the
-/// whitelist and input notes are otherwise valid.
+/// A transaction that executes a tx script must be rejected by `NoteScriptAllowlistAuth`, even if
+/// the allowlist and input notes are otherwise valid.
 #[tokio::test]
-async fn test_network_account_rejects_tx_script() -> anyhow::Result<()> {
-    let account = build_network_account(Vec::new())?;
+async fn test_note_script_allowlist_rejects_tx_script() -> anyhow::Result<()> {
+    let account = build_allowlist_account(Vec::new())?;
 
     let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
@@ -49,17 +49,17 @@ async fn test_network_account_rejects_tx_script() -> anyhow::Result<()> {
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_NETWORK_ACCOUNT_TX_SCRIPT_NOT_ALLOWED);
+    assert_transaction_executor_error!(result, ERR_NOTE_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED);
 
     Ok(())
 }
 
-/// Consuming an input note whose script root is not in the whitelist must be rejected.
+/// Consuming an input note whose script root is not in the allowlist must be rejected.
 #[tokio::test]
-async fn test_network_account_rejects_non_whitelisted_note() -> anyhow::Result<()> {
-    // Whitelist is a dummy root that no real note will ever match.
+async fn test_note_script_allowlist_rejects_unallowed_note() -> anyhow::Result<()> {
+    // Allowlist a dummy root that no real note will ever match.
     let dummy_root = Word::from([0xdeadu32, 0xbeef, 0xcafe, 0xf00d]);
-    let account = build_network_account(vec![dummy_root])?;
+    let account = build_allowlist_account(vec![dummy_root])?;
 
     let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
@@ -77,24 +77,24 @@ async fn test_network_account_rejects_non_whitelisted_note() -> anyhow::Result<(
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_NETWORK_ACCOUNT_NOTE_NOT_WHITELISTED);
+    assert_transaction_executor_error!(result, ERR_NOTE_SCRIPT_ALLOWLIST_NOTE_NOT_ALLOWED);
 
     Ok(())
 }
 
-/// Consuming an input note whose script root is in the whitelist must succeed.
+/// Consuming an input note whose script root is in the allowlist must succeed.
 #[tokio::test]
-async fn test_network_account_accepts_whitelisted_note() -> anyhow::Result<()> {
+async fn test_note_script_allowlist_accepts_allowed_note() -> anyhow::Result<()> {
     // First build a template note so we know its script root, then use that root to configure the
-    // account's whitelist.
-    let bootstrap_account = build_network_account(Vec::new())?;
+    // account's allowlist.
+    let bootstrap_account = build_allowlist_account(Vec::new())?;
     let template_note = NoteBuilder::new(bootstrap_account.id(), &mut rand::rng())
         .build()
         .expect("failed to build template note");
     let allowed_root = template_note.script().root();
 
-    // Now build the real account with the whitelist containing that root.
-    let account = build_network_account(vec![allowed_root])?;
+    // Now build the real account with the allowlist containing that root.
+    let account = build_allowlist_account(vec![allowed_root])?;
 
     let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
@@ -118,7 +118,7 @@ async fn test_network_account_accepts_whitelisted_note() -> anyhow::Result<()> {
         .build()?
         .execute()
         .await
-        .expect("consuming a whitelisted note should succeed");
+        .expect("consuming an allowed note should succeed");
 
     Ok(())
 }
