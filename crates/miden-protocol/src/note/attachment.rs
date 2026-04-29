@@ -717,7 +717,7 @@ impl SequentialCommit for NoteAttachments {
     type Commitment = Word;
 
     fn to_elements(&self) -> Vec<Felt> {
-        attachments_to_elements(&self.attachments)
+        attachments_to_commitment_elements(&self.attachments)
     }
 
     fn to_commitment(&self) -> Self::Commitment {
@@ -726,9 +726,9 @@ impl SequentialCommit for NoteAttachments {
 }
 
 /// Collects all attachment commitments into a flat vector of field elements.
-fn attachments_to_elements(attachments: &[NoteAttachment]) -> Vec<Felt> {
+fn attachments_to_commitment_elements(attachments: &[NoteAttachment]) -> Vec<Felt> {
     let mut elements = Vec::new();
-    for commitment in attachments.iter().map(|attachment| attachment.content().to_commitment()) {
+    for commitment in attachments.iter().map(NoteAttachment::to_commitment) {
         elements.extend_from_slice(commitment.as_elements());
     }
     elements
@@ -743,7 +743,7 @@ fn compute_commitment(attachments: &[NoteAttachment]) -> Word {
     if attachments.is_empty() {
         Word::empty()
     } else {
-        let elements = attachments_to_elements(attachments);
+        let elements = attachments_to_commitment_elements(attachments);
         Hasher::hash_elements(&elements)
     }
 }
