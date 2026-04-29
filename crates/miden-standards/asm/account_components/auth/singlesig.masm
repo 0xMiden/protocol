@@ -41,10 +41,10 @@ pub proc auth_tx(auth_args: word)
     # Fetch public key from storage.
     # ---------------------------------------------------------------------------------------------
 
-    push.PUBLIC_KEY_SLOT[0..2] exec.active_account::get_item
+    push.PUBLIC_KEY_SLOT[0..2] exec.active_account::get_initial_item
     # => [PUB_KEY, pad(16)]
 
-    push.SCHEME_ID_SLOT[0..2] exec.active_account::get_item
+    push.SCHEME_ID_SLOT[0..2] exec.active_account::get_initial_item
     # => [scheme_id, 0, 0, 0, PUB_KEY, pad(16)]
 
     movdn.7 drop drop drop
