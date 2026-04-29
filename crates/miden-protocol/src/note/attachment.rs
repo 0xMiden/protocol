@@ -374,9 +374,16 @@ impl From<NoteAttachmentArray> for NoteAttachmentContent {
 // NOTE ATTACHMENT SCHEME
 // ================================================================================================
 
-/// The user-defined type of a [`NoteAttachment`].
+/// The user-defined scheme of a [`NoteAttachment`].
 ///
-/// A note attachment scheme is an arbitrary 16-bit unsigned integer (max [`Self::MAX`]).
+/// A note attachment scheme is an arbitrary 16-bit unsigned integer (max [`Self::MAX`]). It is
+/// intended to be used to distinguish one attachment from another, or find a specific attachment in
+/// a note's attachments.
+///
+/// The scheme is purely a hint, and there is no validation with respect to the attachment content.
+/// In other words, any scheme can be associated with any attachment conent. Hence, users should
+/// always validate the contents of an attachment, just like with
+/// [`NoteStorage`](super::NoteStorage).
 ///
 /// Value `0` is reserved to signal that the entire attachment is absent and so it is not a valid
 /// scheme.
