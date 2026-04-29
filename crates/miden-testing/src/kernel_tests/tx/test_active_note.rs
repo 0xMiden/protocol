@@ -4,7 +4,6 @@ use anyhow::Context;
 use miden_protocol::account::Account;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::asset::FungibleAsset;
-use miden_protocol::crypto::SequentialCommit;
 use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
 use miden_protocol::errors::tx_kernel::ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_METADATA_WHILE_NO_NOTE_BEING_PROCESSED;
 use miden_protocol::note::{

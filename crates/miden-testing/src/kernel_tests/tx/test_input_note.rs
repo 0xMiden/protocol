@@ -1,7 +1,6 @@
 use alloc::string::String;
 
 use miden_protocol::Word;
-use miden_protocol::crypto::SequentialCommit;
 use miden_protocol::note::Note;
 use miden_protocol::transaction::memory::{ASSET_SIZE, ASSET_VALUE_OFFSET};
 use miden_standards::code_builder::CodeBuilder;

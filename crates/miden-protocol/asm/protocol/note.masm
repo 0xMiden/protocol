@@ -401,3 +401,51 @@ pub proc metadata_into_note_type
     u32and.1
     # => [note_type]
 end
+
+#! Searches the metadata header for the specified attachment scheme and returns the index of the
+#! first matching slot.
+#!
+#! Inputs:  [attachment_scheme, METADATA_HEADER]
+#! Outputs: [is_found, attachment_idx]
+#!
+#! Where:
+#! - attachment_scheme is the scheme to search for.
+#! - METADATA_HEADER is the metadata header word of a note.
+#! - is_found is 1 if the scheme was found, 0 otherwise.
+#! - attachment_idx is the index (0-3) of the first matching slot, or undefined if not found.
+#!
+#! Invocation: exec
+pub proc find_attachment_idx
+    movdn.4 exec.metadata_into_attachment_schemes
+    # => [scheme_0, scheme_1, scheme_2, scheme_3, attachment_scheme]
+
+    # initialize is_found = 0 and attachment_idx = 0
+    movup.4 push.0 push.0
+    # => [attachment_idx = 0, is_found = 0, attachment_scheme, scheme_0, scheme_1, scheme_2, scheme_3]
+
+    repeat.4
+        # => [attachment_idx, is_found, attachment_scheme, scheme_n, ...]
+
+        # check if scheme_n is the scheme we're trying to find
+        dup.2 movup.4 eq
+        # => [is_scheme_n, attachment_idx, is_found, attachment_scheme, scheme_n+1, ...]
+
+        # set is_found = is_found || is_scheme_n
+        movup.2 or swap
+        # => [attachment_idx, is_found', attachment_scheme, scheme_n+1, ...]
+
+        # create prospective attachment idx by incrementing the current one
+        dup add.1 swap dup.2
+        # => [is_found', attachment_idx, attachment_idx+1, is_found', attachment_scheme, scheme_n+1, ...]
+
+        # if is_found' attachment_idx remains.
+        # if !is_found' attachment_idx+1 remains.
+        # this essentially increments the attachment idx as long as no match was found.
+        cdrop
+        # => [attachment_idx', is_found', attachment_scheme, scheme_n+1, ...]
+    end
+    # => [attachment_idx', is_found', attachment_scheme]
+
+    movup.2 drop swap
+    # => [is_found', attachment_idx']
+end
