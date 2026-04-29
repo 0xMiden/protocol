@@ -39,7 +39,9 @@ jobs:
         with:
           persist-credentials: false
       - name: Install cargo-shear
-        run: cargo install cargo-shear --version 1.11.2 --locked
+        uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486 # v2.75.18
+        with:
+          tool: cargo-shear@1.11.2
       - name: Check for unused dependencies
         run: make shear
 
