@@ -14,7 +14,13 @@ use crate::transaction::memory::{
     ACCT_VAULT_ROOT_OFFSET,
     MemoryOffset,
 };
-use crate::utils::serde::{Deserializable, Serializable};
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 use crate::{WORD_SIZE, Word, WordError};
 
 // ACCOUNT HEADER
@@ -69,10 +75,10 @@ impl AccountHeader {
             });
         }
 
-        let id = AccountId::try_from([
-            elements[ACCT_ID_AND_NONCE_OFFSET as usize + ACCT_ID_PREFIX_IDX],
+        let id = AccountId::try_from_elements(
             elements[ACCT_ID_AND_NONCE_OFFSET as usize + ACCT_ID_SUFFIX_IDX],
-        ])
+            elements[ACCT_ID_AND_NONCE_OFFSET as usize + ACCT_ID_PREFIX_IDX],
+        )
         .map_err(AccountError::FinalAccountHeaderIdParsingFailed)?;
         let nonce = elements[ACCT_ID_AND_NONCE_OFFSET as usize + ACCT_NONCE_IDX];
         let vault_root = parse_word(elements, ACCT_VAULT_ROOT_OFFSET)
@@ -197,7 +203,7 @@ impl SequentialCommit for AccountHeader {
 // ================================================================================================
 
 impl Serializable for AccountHeader {
-    fn write_into<W: miden_core::utils::ByteWriter>(&self, target: &mut W) {
+    fn write_into<W: ByteWriter>(&self, target: &mut W) {
         self.id.write_into(target);
         self.nonce.write_into(target);
         self.vault_root.write_into(target);
@@ -207,9 +213,7 @@ impl Serializable for AccountHeader {
 }
 
 impl Deserializable for AccountHeader {
-    fn read_from<R: miden_core::utils::ByteReader>(
-        source: &mut R,
-    ) -> Result<Self, miden_processor::DeserializationError> {
+    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let id = AccountId::read_from(source)?;
         let nonce = Felt::read_from(source)?;
         let vault_root = Word::read_from(source)?;
@@ -240,13 +244,13 @@ fn parse_word(data: &[Felt], offset: MemoryOffset) -> Result<Word, WordError> {
 #[cfg(test)]
 mod tests {
     use miden_core::Felt;
-    use miden_core::utils::{Deserializable, Serializable};
 
     use super::AccountHeader;
     use crate::Word;
     use crate::account::StorageSlotContent;
     use crate::account::tests::build_account;
     use crate::asset::FungibleAsset;
+    use crate::utils::serde::{Deserializable, Serializable};
 
     #[test]
     fn test_serde_account_storage() {

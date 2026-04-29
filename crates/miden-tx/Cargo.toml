@@ -14,9 +14,16 @@ version.workspace      = true
 
 [features]
 concurrent = ["miden-prover/concurrent", "std"]
-default    = ["std"]
-std        = ["miden-processor/std", "miden-protocol/std", "miden-prover/std", "miden-standards/std", "miden-verifier/std"]
-testing    = ["miden-processor/testing", "miden-protocol/testing", "miden-standards/testing"]
+default = ["std"]
+std = [
+  "concurrent",
+  "miden-processor/std",
+  "miden-protocol/std",
+  "miden-prover/std",
+  "miden-standards/std",
+  "miden-verifier/std",
+]
+testing = ["miden-processor/testing", "miden-protocol/testing", "miden-standards/testing"]
 
 [dependencies]
 # Workspace dependencies

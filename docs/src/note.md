@@ -32,7 +32,7 @@ These components are:
 An [asset](asset) container for a `Note`.
 :::
 
-A `Note` can contain from 0 up to 256 different assets. These assets represent fungible or non-fungible tokens, enabling flexible asset transfers.
+A `Note` can contain from 0 up to 64 different assets. These assets represent fungible or non-fungible tokens, enabling flexible asset transfers.
 
 ### Script
 

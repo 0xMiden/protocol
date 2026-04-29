@@ -6,13 +6,17 @@ use std::{
     vec::Vec,
 };
 
-#[cfg(feature = "std")]
-use miden_core::utils::SliceReader;
-use miden_core::utils::{ByteReader, ByteWriter, Deserializable, Serializable};
-use miden_processor::DeserializationError;
-
 use super::{Note, NoteDetails, NoteId, NoteInclusionProof, NoteTag};
 use crate::block::BlockNumber;
+#[cfg(feature = "std")]
+use crate::utils::serde::SliceReader;
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 
 const MAGIC: &str = "note";
 
@@ -137,8 +141,6 @@ impl Deserializable for NoteFile {
 mod tests {
     use alloc::vec::Vec;
 
-    use miden_core::utils::{Deserializable, Serializable};
-
     use crate::Word;
     use crate::account::AccountId;
     use crate::asset::{Asset, FungibleAsset};
@@ -159,6 +161,7 @@ mod tests {
         ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
         ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
     };
+    use crate::utils::serde::{Deserializable, Serializable};
 
     fn create_example_note() -> Note {
         let faucet = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap();

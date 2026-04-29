@@ -72,6 +72,12 @@ impl BlockNumber {
     pub fn checked_sub(&self, rhs: u32) -> Option<Self> {
         self.0.checked_sub(rhs).map(Self)
     }
+
+    /// Saturating integer subtraction. Computes `self - rhs`, saturating at
+    /// [`BlockNumber::GENESIS`] instead of underflowing.
+    pub fn saturating_sub(&self, rhs: u32) -> Self {
+        Self(self.0.saturating_sub(rhs))
+    }
 }
 
 impl Add<u32> for BlockNumber {
@@ -99,8 +105,8 @@ impl Deserializable for BlockNumber {
 }
 
 impl From<BlockNumber> for Felt {
-    fn from(value: BlockNumber) -> Self {
-        Felt::from(value.as_u32())
+    fn from(block_num: BlockNumber) -> Self {
+        Felt::from(block_num.as_u32())
     }
 }
 

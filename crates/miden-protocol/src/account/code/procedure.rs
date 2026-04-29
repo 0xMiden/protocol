@@ -3,8 +3,8 @@ use alloc::sync::Arc;
 
 use miden_core::mast::MastForest;
 use miden_core::prettier::PrettyPrint;
-use miden_processor::{MastNode, MastNodeExt, MastNodeId};
-use miden_protocol_macros::WordWrapper;
+use miden_crypto_derive::WordWrapper;
+use miden_processor::mast::{MastNode, MastNodeExt, MastNodeId};
 
 use super::Felt;
 use crate::Word;

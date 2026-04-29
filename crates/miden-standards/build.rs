@@ -1,5 +1,6 @@
 use std::env;
 use std::path::Path;
+use std::sync::Arc;
 
 use fs_err as fs;
 use miden_assembly::diagnostics::{IntoDiagnostic, NamedSource, Result, WrapErr};
@@ -9,19 +10,15 @@ use miden_protocol::transaction::TransactionKernel;
 // CONSTANTS
 // ================================================================================================
 
-/// Defines whether the build script should generate files in `/src`.
-/// The docs.rs build pipeline has a read-only filesystem, so we have to avoid writing to `src`,
-/// otherwise the docs will fail to build there. Note that writing to `OUT_DIR` is fine.
-const BUILD_GENERATED_FILES_IN_SRC: bool = option_env!("BUILD_GENERATED_FILES_IN_SRC").is_some();
-
 const ASSETS_DIR: &str = "assets";
 const ASM_DIR: &str = "asm";
 const ASM_STANDARDS_DIR: &str = "standards";
 const ASM_ACCOUNT_COMPONENTS_DIR: &str = "account_components";
 
 const STANDARDS_LIB_NAMESPACE: &str = "miden::standards";
+const ACCOUNT_COMPONENTS_LIB_NAMESPACE: &str = "miden::standards::components";
 
-const STANDARDS_ERRORS_FILE: &str = "src/errors/standards.rs";
+const STANDARDS_ERRORS_RS_FILE: &str = "standards_errors.rs";
 const STANDARDS_ERRORS_ARRAY_NAME: &str = "STANDARDS_ERRORS";
 
 // PRE-PROCESSING
@@ -34,26 +31,21 @@ const STANDARDS_ERRORS_ARRAY_NAME: &str = "STANDARDS_ERRORS";
 fn main() -> Result<()> {
     // re-build when the MASM code changes
     println!("cargo::rerun-if-changed={ASM_DIR}/");
-    println!("cargo::rerun-if-env-changed=BUILD_GENERATED_FILES_IN_SRC");
 
-    // Copies the MASM code to the build directory
     let crate_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
     let build_dir = env::var("OUT_DIR").unwrap();
-    let src = Path::new(&crate_dir).join(ASM_DIR);
-    let dst = Path::new(&build_dir).to_path_buf();
-    shared::copy_directory(src, &dst, ASM_DIR)?;
 
-    // set source directory to {OUT_DIR}/asm
-    let source_dir = dst.join(ASM_DIR);
+    // Read MASM sources directly from the crate's asm/ directory.
+    // No copy to OUT_DIR is needed because this crate doesn't mutate the source tree.
+    let source_dir = Path::new(&crate_dir).join(ASM_DIR);
 
     // set target directory to {OUT_DIR}/assets
     let target_dir = Path::new(&build_dir).join(ASSETS_DIR);
 
+    let mut assembler = TransactionKernel::assembler().with_warnings_as_errors(true);
     // compile standards library (includes note scripts)
-    let standards_lib =
-        compile_standards_lib(&source_dir, &target_dir, TransactionKernel::assembler())?;
+    let standards_lib = compile_standards_lib(&source_dir, &target_dir, assembler.clone())?;
 
-    let mut assembler = TransactionKernel::assembler();
     assembler.link_static_library(standards_lib)?;
 
     // compile account components
@@ -63,7 +55,7 @@ fn main() -> Result<()> {
         assembler,
     )?;
 
-    generate_error_constants(&source_dir)?;
+    generate_error_constants(&source_dir, &build_dir)?;
 
     Ok(())
 }
@@ -86,7 +78,7 @@ fn compile_standards_lib(
     let output_file = target_dir.join("standards").with_extension(Library::LIBRARY_EXTENSION);
     standards_lib.write_to_file(output_file).into_diagnostic()?;
 
-    Ok(standards_lib)
+    Ok(Arc::unwrap_or_clone(standards_lib))
 }
 
 // COMPILE ACCOUNT COMPONENTS
@@ -114,7 +106,19 @@ fn compile_account_components(
         let component_source_code = fs::read_to_string(&masm_file_path)
             .expect("reading the component's MASM source code should succeed");
 
-        let named_source = NamedSource::new(component_name.clone(), component_source_code);
+        // Build full library path from directory structure:
+        // e.g. faucets/basic_fungible_faucet.masm ->
+        // miden::standards::components::faucets::basic_fungible_faucet
+        let relative_path = masm_file_path
+            .strip_prefix(source_dir)
+            .expect("masm file should be inside source dir");
+        let mut library_path = ACCOUNT_COMPONENTS_LIB_NAMESPACE.to_owned();
+        for component in relative_path.with_extension("").components() {
+            let part = component.as_os_str().to_str().expect("valid UTF-8");
+            library_path.push_str("::");
+            library_path.push_str(part);
+        }
+        let named_source = NamedSource::new(library_path, component_source_code);
 
         let component_library = assembler
             .clone()
@@ -165,14 +169,9 @@ fn compile_account_components(
 /// The function ensures that a constant is not defined twice, except if their error message is the
 /// same. This can happen across multiple files.
 ///
-/// Because the error files will be written to ./src/errors, this should be a no-op if ./src is
-/// read-only. To enable writing to ./src, set the `BUILD_GENERATED_FILES_IN_SRC` environment
-/// variable.
-fn generate_error_constants(asm_source_dir: &Path) -> Result<()> {
-    if !BUILD_GENERATED_FILES_IN_SRC {
-        return Ok(());
-    }
-
+/// The generated file is written to `build_dir` (i.e. `OUT_DIR`) and included via `include!`
+/// in the source.
+fn generate_error_constants(asm_source_dir: &Path, build_dir: &str) -> Result<()> {
     // Miden standards errors
     // ------------------------------------------
 
@@ -180,7 +179,7 @@ fn generate_error_constants(asm_source_dir: &Path) -> Result<()> {
         .context("failed to extract all masm errors")?;
     shared::generate_error_file(
         shared::ErrorModule {
-            file_name: STANDARDS_ERRORS_FILE,
+            file_path: Path::new(build_dir).join(STANDARDS_ERRORS_RS_FILE),
             array_name: STANDARDS_ERRORS_ARRAY_NAME,
             is_crate_local: false,
         },
@@ -199,57 +198,9 @@ mod shared {
 
     use fs_err as fs;
     use miden_assembly::Report;
-    use miden_assembly::diagnostics::{IntoDiagnostic, Result, WrapErr};
+    use miden_assembly::diagnostics::{IntoDiagnostic, Result};
     use regex::Regex;
     use walkdir::WalkDir;
-
-    /// Recursively copies `src` into `dst`.
-    ///
-    /// This function will overwrite the existing files if re-executed.
-    pub fn copy_directory<T: AsRef<Path>, R: AsRef<Path>>(
-        src: T,
-        dst: R,
-        asm_dir: &str,
-    ) -> Result<()> {
-        let mut prefix = src.as_ref().canonicalize().unwrap();
-        // keep all the files inside the `asm` folder
-        prefix.pop();
-
-        let target_dir = dst.as_ref().join(asm_dir);
-        if target_dir.exists() {
-            // Clear existing asm files that were copied earlier which may no longer exist.
-            fs::remove_dir_all(&target_dir)
-                .into_diagnostic()
-                .wrap_err("failed to remove ASM directory")?;
-        }
-
-        // Recreate the directory structure.
-        fs::create_dir_all(&target_dir)
-            .into_diagnostic()
-            .wrap_err("failed to create ASM directory")?;
-
-        let dst = dst.as_ref();
-        let mut todo = vec![src.as_ref().to_path_buf()];
-
-        while let Some(goal) = todo.pop() {
-            for entry in fs::read_dir(goal).unwrap() {
-                let path = entry.unwrap().path();
-                if path.is_dir() {
-                    let src_dir = path.canonicalize().unwrap();
-                    let dst_dir = dst.join(src_dir.strip_prefix(&prefix).unwrap());
-                    if !dst_dir.exists() {
-                        fs::create_dir_all(&dst_dir).unwrap();
-                    }
-                    todo.push(src_dir);
-                } else {
-                    let dst_file = dst.join(path.strip_prefix(&prefix).unwrap());
-                    fs::copy(&path, dst_file).unwrap();
-                }
-            }
-        }
-
-        Ok(())
-    }
 
     /// Returns a vector with paths to all MASM files in the specified directory and its
     /// subdirectories.
@@ -380,7 +331,7 @@ mod shared {
     }
 
     /// Generates the content of an error file for the given category and the set of errors and
-    /// writes it to the category's file.
+    /// writes it to the file at the path specified in the module.
     pub fn generate_error_file(module: ErrorModule, errors: Vec<NamedError>) -> Result<()> {
         let mut output = String::new();
 
@@ -427,24 +378,9 @@ mod shared {
             .into_diagnostic()?;
         }
 
-        write_if_changed(module.file_name, output)?;
+        fs::write(module.file_path, output).into_diagnostic()?;
 
         Ok(())
-    }
-
-    /// Writes `contents` to `path` only if the file doesn't exist or its current contents
-    /// differ. This avoids updating the file's mtime when nothing changed, which prevents
-    /// cargo from treating the crate as dirty on the next build.
-    pub fn write_if_changed(path: impl AsRef<Path>, contents: impl AsRef<[u8]>) -> Result<()> {
-        let path = path.as_ref();
-        let new_contents = contents.as_ref();
-        if path.exists() {
-            let existing = std::fs::read(path).into_diagnostic()?;
-            if existing == new_contents {
-                return Ok(());
-            }
-        }
-        std::fs::write(path, new_contents).into_diagnostic()
     }
 
     pub type ErrorName = String;
@@ -460,9 +396,9 @@ mod shared {
         pub message: String,
     }
 
-    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+    #[derive(Debug, Clone)]
     pub struct ErrorModule {
-        pub file_name: &'static str,
+        pub file_path: PathBuf,
         pub array_name: &'static str,
         pub is_crate_local: bool,
     }

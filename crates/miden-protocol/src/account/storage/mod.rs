@@ -19,7 +19,7 @@ mod slot;
 pub use slot::{StorageSlot, StorageSlotContent, StorageSlotId, StorageSlotName, StorageSlotType};
 
 mod map;
-pub use map::{PartialStorageMap, StorageMap, StorageMapWitness};
+pub use map::{PartialStorageMap, StorageMap, StorageMapKey, StorageMapKeyHash, StorageMapWitness};
 
 mod header;
 pub use header::{AccountStorageHeader, StorageSlotHeader};
@@ -76,7 +76,7 @@ impl AccountStorage {
         }
 
         // Unstable sort is fine because we require all names to be unique.
-        slots.sort_unstable();
+        slots.sort_unstable_by(|a, b| a.name().cmp(b.name()));
 
         // Check for slot name uniqueness by checking each neighboring slot's IDs. This is
         // sufficient because the slots are sorted.
@@ -191,7 +191,7 @@ impl AccountStorage {
         self.get(slot_name)
             .ok_or_else(|| AccountError::StorageSlotNameNotFound { slot_name: slot_name.clone() })
             .and_then(|slot| match slot.content() {
-                StorageSlotContent::Map(map) => Ok(map.get(&key)),
+                StorageSlotContent::Map(map) => Ok(map.get(&StorageMapKey::from_raw(key))),
                 _ => Err(AccountError::StorageSlotNotMap(slot_name.clone())),
             })
     }
@@ -271,7 +271,7 @@ impl AccountStorage {
     pub fn set_map_item(
         &mut self,
         slot_name: &StorageSlotName,
-        raw_key: Word,
+        key: StorageMapKey,
         value: Word,
     ) -> Result<(Word, Word), AccountError> {
         let slot = self.get_mut(slot_name).ok_or_else(|| {
@@ -284,7 +284,7 @@ impl AccountStorage {
 
         let old_root = storage_map.root();
 
-        let old_value = storage_map.insert(raw_key, value)?;
+        let old_value = storage_map.insert(key, value)?;
 
         Ok((old_root, old_value))
     }
@@ -348,7 +348,7 @@ impl Serializable for AccountStorage {
 impl Deserializable for AccountStorage {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let num_slots = source.read_u8()? as usize;
-        let slots = source.read_many::<StorageSlot>(num_slots)?;
+        let slots = source.read_many_iter::<StorageSlot>(num_slots)?.collect::<Result<_, _>>()?;
 
         Self::new(slots).map_err(|err| DeserializationError::InvalidValue(err.to_string()))
     }
@@ -422,7 +422,7 @@ mod tests {
             assert_eq!(name, slot_name0);
         });
 
-        slots.sort_unstable();
+        slots.sort_unstable_by(|a, b| a.name().cmp(b.name()));
         let err = AccountStorageHeader::new(slots.iter().map(StorageSlotHeader::from).collect())
             .unwrap_err();
 

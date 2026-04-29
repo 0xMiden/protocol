@@ -3,12 +3,13 @@ use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use miden_processor::fast::ExecutionOutput;
-use miden_processor::{FutureMaybeSend, MastForest, MastForestStore, Word};
+use miden_processor::mast::MastForest;
+use miden_processor::{ExecutionOutput, FutureMaybeSend, MastForestStore, Word};
 use miden_protocol::account::{
     Account,
     AccountId,
     PartialAccount,
+    StorageMapKey,
     StorageMapWitness,
     StorageSlotContent,
 };
@@ -89,7 +90,7 @@ impl TransactionContext {
             .iter()
             .flat_map(|note| note.note().assets().iter().map(Asset::vault_key))
             .collect::<BTreeSet<_>>();
-        let fee_asset_vault_key = AssetVaultKey::from_account_id(
+        let fee_asset_vault_key = AssetVaultKey::new_fungible(
             self.tx_inputs().block_header().fee_parameters().native_asset_id(),
         )
         .expect("fee asset should be a fungible asset");
@@ -106,7 +107,7 @@ impl TransactionContext {
         // Add the vault key for the fee asset to the list of asset vault keys which may need to be
         // accessed at the end of the transaction.
         let fee_asset_vault_key =
-            AssetVaultKey::from_account_id(block_header.fee_parameters().native_asset_id())
+            AssetVaultKey::new_fungible(block_header.fee_parameters().native_asset_id())
                 .expect("fee asset should be a fungible asset");
         asset_vault_keys.insert(fee_asset_vault_key);
 
@@ -327,7 +328,7 @@ impl DataStore for TransactionContext {
         &self,
         account_id: AccountId,
         map_root: Word,
-        map_key: Word,
+        map_key: StorageMapKey,
     ) -> impl FutureMaybeSend<Result<StorageMapWitness, DataStoreError>> {
         async move {
             if account_id == self.account().id() {
@@ -404,8 +405,7 @@ impl MastForestStore for TransactionContext {
 #[cfg(test)]
 mod tests {
     use miden_protocol::Felt;
-    use miden_protocol::assembly::Assembler;
-    use miden_protocol::note::NoteScript;
+    use miden_standards::code_builder::CodeBuilder;
 
     use super::*;
     use crate::TransactionContextBuilder;
@@ -413,20 +413,16 @@ mod tests {
     #[tokio::test]
     async fn test_get_note_scripts() {
         // Create two note scripts
-        let assembler1 = Assembler::default();
-        let script1_code = "begin push.1 end";
-        let program1 = assembler1
-            .assemble_program(script1_code)
+        let script1_code = "@note_script\npub proc main\n    push.1\nend";
+        let note_script1 = CodeBuilder::default()
+            .compile_note_script(script1_code)
             .expect("failed to assemble note script 1");
-        let note_script1 = NoteScript::new(program1);
         let script_root1 = note_script1.root();
 
-        let assembler2 = Assembler::default();
-        let script2_code = "begin push.2 push.3 add end";
-        let program2 = assembler2
-            .assemble_program(script2_code)
+        let script2_code = "@note_script\npub proc main\n    push.2 push.3 add\nend";
+        let note_script2 = CodeBuilder::default()
+            .compile_note_script(script2_code)
             .expect("failed to assemble note script 2");
-        let note_script2 = NoteScript::new(program2);
         let script_root2 = note_script2.root();
 
         // Build a transaction context with both note scripts

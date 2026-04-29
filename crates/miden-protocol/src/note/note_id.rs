@@ -1,7 +1,7 @@
 use alloc::string::String;
 use core::fmt::Display;
 
-use miden_protocol_macros::WordWrapper;
+use miden_crypto_derive::WordWrapper;
 
 use super::{Felt, Hasher, NoteDetails, Word};
 use crate::WordError;
@@ -70,6 +70,10 @@ impl NoteId {
 impl Serializable for NoteId {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         target.write_bytes(&self.0.to_bytes());
+    }
+
+    fn get_size_hint(&self) -> usize {
+        Word::SERIALIZED_SIZE
     }
 }
 

@@ -1,5 +1,7 @@
-use crate::account::AccountComponent;
+use alloc::sync::Arc;
+
 use crate::account::component::AccountComponentMetadata;
+use crate::account::{AccountComponent, AccountType};
 use crate::assembly::{Assembler, Library};
 use crate::utils::sync::LazyLock;
 
@@ -7,15 +9,18 @@ use crate::utils::sync::LazyLock;
 // ================================================================================================
 
 const NOOP_AUTH_CODE: &str = "
+    @auth_script
     pub proc auth_noop
         push.0 drop
     end
 ";
 
 static NOOP_AUTH_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
-    Assembler::default()
-        .assemble_library([NOOP_AUTH_CODE])
-        .expect("noop auth code should be valid")
+    Arc::unwrap_or_clone(
+        Assembler::default()
+            .assemble_library([NOOP_AUTH_CODE])
+            .expect("noop auth code should be valid"),
+    )
 });
 
 /// Creates a mock authentication [`AccountComponent`] for testing purposes.
@@ -25,9 +30,9 @@ pub struct NoopAuthComponent;
 
 impl From<NoopAuthComponent> for AccountComponent {
     fn from(_: NoopAuthComponent) -> Self {
-        let metadata = AccountComponentMetadata::new("miden::testing::noop_auth")
-            .with_description("No-op auth component for testing")
-            .with_supports_all_types();
+        let metadata =
+            AccountComponentMetadata::new("miden::testing::noop_auth", AccountType::all())
+                .with_description("No-op auth component for testing");
 
         AccountComponent::new(NOOP_AUTH_LIBRARY.clone(), vec![], metadata)
             .expect("component should be valid")

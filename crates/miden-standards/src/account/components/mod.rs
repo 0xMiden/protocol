@@ -1,11 +1,11 @@
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
-use miden_processor::MastNodeExt;
+use miden_processor::mast::MastNodeExt;
 use miden_protocol::Word;
 use miden_protocol::account::AccountProcedureRoot;
 use miden_protocol::assembly::{Library, LibraryExport};
-use miden_protocol::utils::Deserializable;
+use miden_protocol::utils::serde::Deserializable;
 use miden_protocol::utils::sync::LazyLock;
 
 use crate::account::interface::AccountComponentInterface;
@@ -20,6 +20,18 @@ static BASIC_WALLET_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
         "/assets/account_components/wallets/basic_wallet.masl"
     ));
     Library::read_from_bytes(bytes).expect("Shipped Basic Wallet library is well-formed")
+});
+
+// ACCESS LIBRARIES
+// ================================================================================================
+
+// Initialize the Ownable2Step library only once.
+static OWNABLE2STEP_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+    let bytes = include_bytes!(concat!(
+        env!("OUT_DIR"),
+        "/assets/account_components/access/ownable2step.masl"
+    ));
+    Library::read_from_bytes(bytes).expect("Shipped Ownable2Step library is well-formed")
 });
 
 // AUTH LIBRARIES
@@ -46,6 +58,15 @@ static MULTISIG_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     let bytes =
         include_bytes!(concat!(env!("OUT_DIR"), "/assets/account_components/auth/multisig.masl"));
     Library::read_from_bytes(bytes).expect("Shipped Multisig library is well-formed")
+});
+
+/// Initialize the Guarded Multisig library only once.
+static GUARDED_MULTISIG_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+    let bytes = include_bytes!(concat!(
+        env!("OUT_DIR"),
+        "/assets/account_components/auth/guarded_multisig.masl"
+    ));
+    Library::read_from_bytes(bytes).expect("Shipped Guarded Multisig library is well-formed")
 });
 
 // Initialize the NoAuth library only once.
@@ -76,21 +97,66 @@ static NETWORK_FUNGIBLE_FAUCET_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     Library::read_from_bytes(bytes).expect("Shipped Network Fungible Faucet library is well-formed")
 });
 
-// METADATA LIBRARIES
-// ================================================================================================
-
-// Initialize the Storage Schema library only once.
-static STORAGE_SCHEMA_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+// Initialize the Fungible Token Metadata library only once.
+static FUNGIBLE_TOKEN_METADATA_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     let bytes = include_bytes!(concat!(
         env!("OUT_DIR"),
-        "/assets/account_components/metadata/schema_commitment.masl"
+        "/assets/account_components/faucets/fungible_token_metadata.masl"
     ));
-    Library::read_from_bytes(bytes).expect("Shipped Storage Schema library is well-formed")
+    Library::read_from_bytes(bytes).expect("Shipped Fungible Token Metadata library is well-formed")
 });
+
+// Initialize the Mint Policy Owner Controlled library only once.
+static MINT_POLICY_OWNER_CONTROLLED_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+    let bytes = include_bytes!(concat!(
+        env!("OUT_DIR"),
+        "/assets/account_components/mint_policies/owner_controlled.masl"
+    ));
+    Library::read_from_bytes(bytes)
+        .expect("Shipped Mint Policy Owner Controlled library is well-formed")
+});
+
+// Initialize the Mint Policy Auth Controlled library only once.
+static MINT_POLICY_AUTH_CONTROLLED_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+    let bytes = include_bytes!(concat!(
+        env!("OUT_DIR"),
+        "/assets/account_components/mint_policies/auth_controlled.masl"
+    ));
+    Library::read_from_bytes(bytes)
+        .expect("Shipped Mint Policy Auth Controlled library is well-formed")
+});
+
+// Initialize the Burn Policy Owner Controlled library only once.
+static BURN_POLICY_OWNER_CONTROLLED_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+    let bytes = include_bytes!(concat!(
+        env!("OUT_DIR"),
+        "/assets/account_components/burn_policies/owner_controlled.masl"
+    ));
+    Library::read_from_bytes(bytes)
+        .expect("Shipped Burn Policy Owner Controlled library is well-formed")
+});
+
+// Initialize the Burn Policy Auth Controlled library only once.
+static BURN_POLICY_AUTH_CONTROLLED_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+    let bytes = include_bytes!(concat!(
+        env!("OUT_DIR"),
+        "/assets/account_components/burn_policies/auth_controlled.masl"
+    ));
+    Library::read_from_bytes(bytes)
+        .expect("Shipped Burn Policy Auth Controlled library is well-formed")
+});
+
+// METADATA LIBRARIES
+// ================================================================================================
 
 /// Returns the Basic Wallet Library.
 pub fn basic_wallet_library() -> Library {
     BASIC_WALLET_LIBRARY.clone()
+}
+
+/// Returns the Ownable2Step Library.
+pub fn ownable2step_library() -> Library {
+    OWNABLE2STEP_LIBRARY.clone()
 }
 
 /// Returns the Basic Fungible Faucet Library.
@@ -103,9 +169,29 @@ pub fn network_fungible_faucet_library() -> Library {
     NETWORK_FUNGIBLE_FAUCET_LIBRARY.clone()
 }
 
-/// Returns the Storage Schema Library.
-pub fn storage_schema_library() -> Library {
-    STORAGE_SCHEMA_LIBRARY.clone()
+/// Returns the Fungible Token Metadata Library.
+pub fn fungible_token_metadata_library() -> Library {
+    FUNGIBLE_TOKEN_METADATA_LIBRARY.clone()
+}
+
+/// Returns the Mint Policy Owner Controlled Library.
+pub fn owner_controlled_library() -> Library {
+    MINT_POLICY_OWNER_CONTROLLED_LIBRARY.clone()
+}
+
+/// Returns the Mint Policy Auth Controlled Library.
+pub fn auth_controlled_library() -> Library {
+    MINT_POLICY_AUTH_CONTROLLED_LIBRARY.clone()
+}
+
+/// Returns the Burn Policy Owner Controlled Library.
+pub fn burn_owner_controlled_library() -> Library {
+    BURN_POLICY_OWNER_CONTROLLED_LIBRARY.clone()
+}
+
+/// Returns the Burn Policy Auth Controlled Library.
+pub fn burn_auth_controlled_library() -> Library {
+    BURN_POLICY_AUTH_CONTROLLED_LIBRARY.clone()
 }
 
 /// Returns the Singlesig Library.
@@ -123,6 +209,11 @@ pub fn multisig_library() -> Library {
     MULTISIG_LIBRARY.clone()
 }
 
+/// Returns the Guarded Multisig Library.
+pub fn guarded_multisig_library() -> Library {
+    GUARDED_MULTISIG_LIBRARY.clone()
+}
+
 /// Returns the NoAuth Library.
 pub fn no_auth_library() -> Library {
     NO_AUTH_LIBRARY.clone()
@@ -135,11 +226,13 @@ pub fn no_auth_library() -> Library {
 /// crate.
 pub enum StandardAccountComponent {
     BasicWallet,
+    FungibleTokenMetadata,
     BasicFungibleFaucet,
     NetworkFungibleFaucet,
     AuthSingleSig,
     AuthSingleSigAcl,
     AuthMultisig,
+    AuthGuardedMultisig,
     AuthNoAuth,
 }
 
@@ -148,11 +241,13 @@ impl StandardAccountComponent {
     pub fn procedure_digests(&self) -> impl Iterator<Item = Word> {
         let library = match self {
             Self::BasicWallet => BASIC_WALLET_LIBRARY.as_ref(),
+            Self::FungibleTokenMetadata => FUNGIBLE_TOKEN_METADATA_LIBRARY.as_ref(),
             Self::BasicFungibleFaucet => BASIC_FUNGIBLE_FAUCET_LIBRARY.as_ref(),
             Self::NetworkFungibleFaucet => NETWORK_FUNGIBLE_FAUCET_LIBRARY.as_ref(),
             Self::AuthSingleSig => SINGLESIG_LIBRARY.as_ref(),
             Self::AuthSingleSigAcl => SINGLESIG_ACL_LIBRARY.as_ref(),
             Self::AuthMultisig => MULTISIG_LIBRARY.as_ref(),
+            Self::AuthGuardedMultisig => GUARDED_MULTISIG_LIBRARY.as_ref(),
             Self::AuthNoAuth => NO_AUTH_LIBRARY.as_ref(),
         };
 
@@ -190,6 +285,9 @@ impl StandardAccountComponent {
                 Self::BasicWallet => {
                     component_interface_vec.push(AccountComponentInterface::BasicWallet)
                 },
+                Self::FungibleTokenMetadata => {
+                    component_interface_vec.push(AccountComponentInterface::FungibleTokenMetadata)
+                },
                 Self::BasicFungibleFaucet => {
                     component_interface_vec.push(AccountComponentInterface::BasicFungibleFaucet)
                 },
@@ -205,6 +303,9 @@ impl StandardAccountComponent {
                 Self::AuthMultisig => {
                     component_interface_vec.push(AccountComponentInterface::AuthMultisig)
                 },
+                Self::AuthGuardedMultisig => {
+                    component_interface_vec.push(AccountComponentInterface::AuthGuardedMultisig)
+                },
                 Self::AuthNoAuth => {
                     component_interface_vec.push(AccountComponentInterface::AuthNoAuth)
                 },
@@ -219,10 +320,12 @@ impl StandardAccountComponent {
         component_interface_vec: &mut Vec<AccountComponentInterface>,
     ) {
         Self::BasicWallet.extract_component(procedures_set, component_interface_vec);
+        Self::FungibleTokenMetadata.extract_component(procedures_set, component_interface_vec);
         Self::BasicFungibleFaucet.extract_component(procedures_set, component_interface_vec);
         Self::NetworkFungibleFaucet.extract_component(procedures_set, component_interface_vec);
         Self::AuthSingleSig.extract_component(procedures_set, component_interface_vec);
         Self::AuthSingleSigAcl.extract_component(procedures_set, component_interface_vec);
+        Self::AuthGuardedMultisig.extract_component(procedures_set, component_interface_vec);
         Self::AuthMultisig.extract_component(procedures_set, component_interface_vec);
         Self::AuthNoAuth.extract_component(procedures_set, component_interface_vec);
     }

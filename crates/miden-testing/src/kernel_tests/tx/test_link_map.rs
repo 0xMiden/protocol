@@ -3,11 +3,11 @@ use std::collections::BTreeMap;
 use std::string::String;
 
 use anyhow::Context;
+use miden_crypto::rand::test_utils::rand_value;
 use miden_processor::{ONE, ZERO};
-use miden_protocol::{EMPTY_WORD, LexicographicWord, Word};
+use miden_protocol::{EMPTY_WORD, Felt, Word};
 use miden_tx::{LinkMap, MemoryViewer};
 use rand::seq::IteratorRandom;
-use winter_rand_utils::rand_value;
 
 use crate::TransactionContextBuilder;
 
@@ -176,7 +176,7 @@ async fn insertion() -> anyhow::Result<()> {
     let exec_output = tx_context.execute_code(&code).await.context("failed to execute code")?;
     let mem_viewer = MemoryViewer::ExecutionOutputs(&exec_output);
 
-    let map = LinkMap::new(map_ptr.into(), &mem_viewer);
+    let map = LinkMap::new(Felt::from(map_ptr), &mem_viewer);
     let mut map_iter = map.iter();
 
     let entry0 = map_iter.next().expect("map should have four entries");
@@ -188,28 +188,28 @@ async fn insertion() -> anyhow::Result<()> {
     assert_eq!(entry0.metadata.map_ptr, map_ptr);
     assert_eq!(entry0.metadata.prev_entry_ptr, 0);
     assert_eq!(entry0.metadata.next_entry_ptr, entry1.ptr);
-    assert_eq!(Word::from(entry0.key), entry0_key);
+    assert_eq!(entry0.key, entry0_key);
     assert_eq!(entry0.value0, entry0_value);
     assert_eq!(entry0.value1, EMPTY_WORD);
 
     assert_eq!(entry1.metadata.map_ptr, map_ptr);
     assert_eq!(entry1.metadata.prev_entry_ptr, entry0.ptr);
     assert_eq!(entry1.metadata.next_entry_ptr, entry2.ptr);
-    assert_eq!(Word::from(entry1.key), entry1_key);
+    assert_eq!(entry1.key, entry1_key);
     assert_eq!(entry1.value0, entry1_value);
     assert_eq!(entry1.value1, EMPTY_WORD);
 
     assert_eq!(entry2.metadata.map_ptr, map_ptr);
     assert_eq!(entry2.metadata.prev_entry_ptr, entry1.ptr);
     assert_eq!(entry2.metadata.next_entry_ptr, entry3.ptr);
-    assert_eq!(Word::from(entry2.key), entry2_key);
+    assert_eq!(entry2.key, entry2_key);
     assert_eq!(entry2.value0, entry2_value);
     assert_eq!(entry2.value1, EMPTY_WORD);
 
     assert_eq!(entry3.metadata.map_ptr, map_ptr);
     assert_eq!(entry3.metadata.prev_entry_ptr, entry2.ptr);
     assert_eq!(entry3.metadata.next_entry_ptr, 0);
-    assert_eq!(Word::from(entry3.key), entry3_key);
+    assert_eq!(entry3.key, entry3_key);
     assert_eq!(entry3.value0, entry3_value);
     assert_eq!(entry3.value1, EMPTY_WORD);
 
@@ -362,20 +362,20 @@ async fn set_update_get_random_entries() -> anyhow::Result<()> {
 // TEST HELPERS
 // ================================================================================================
 
-fn link_map_key(elements: [u32; 4]) -> LexicographicWord {
-    LexicographicWord::from(Word::from(elements))
+fn link_map_key(elements: [u32; 4]) -> Word {
+    Word::from(elements)
 }
 
 enum TestOperation {
     Set {
         map_ptr: u32,
-        key: LexicographicWord,
+        key: Word,
         value0: Word,
         value1: Word,
     },
     Get {
         map_ptr: u32,
-        key: LexicographicWord,
+        key: Word,
     },
     Iter {
         map_ptr: u32,
@@ -383,7 +383,7 @@ enum TestOperation {
 }
 
 impl TestOperation {
-    pub fn set(map_ptr: u32, key: LexicographicWord, values: (Word, Word)) -> Self {
+    pub fn set(map_ptr: u32, key: Word, values: (Word, Word)) -> Self {
         Self::Set {
             map_ptr,
             key,
@@ -391,7 +391,7 @@ impl TestOperation {
             value1: values.1,
         }
     }
-    pub fn get(map_ptr: u32, key: LexicographicWord) -> Self {
+    pub fn get(map_ptr: u32, key: Word) -> Self {
         Self::Get { map_ptr, key }
     }
     pub fn iter(map_ptr: u32) -> Self {
@@ -401,8 +401,7 @@ impl TestOperation {
 
 async fn execute_link_map_test(operations: Vec<TestOperation>) -> anyhow::Result<()> {
     let mut test_code = String::new();
-    let mut control_maps: BTreeMap<u32, BTreeMap<LexicographicWord, (Word, Word)>> =
-        BTreeMap::new();
+    let mut control_maps: BTreeMap<u32, BTreeMap<Word, (Word, Word)>> = BTreeMap::new();
 
     for operation in operations {
         match operation {
@@ -419,9 +418,6 @@ async fn execute_link_map_test(operations: Vec<TestOperation>) -> anyhow::Result
                   push.{expected_is_new_key}
                   assert_eq.err="is_new_key returned by link_map::set for {key} did not match expected value {expected_is_new_key}"
                 "#,
-                    key = Word::from(key),
-                    value0 = value0,
-                    value1 = value1,
                     expected_is_new_key = is_new_key as u8,
                 );
 
@@ -450,9 +446,6 @@ async fn execute_link_map_test(operations: Vec<TestOperation>) -> anyhow::Result
                   push.{expected_value1}
                   assert_eqw.err="value1 returned from get is not the expected value: {expected_value1}"
                 "#,
-                    key = Word::from(key),
-                    expected_value0 = expected_value0,
-                    expected_value1 = expected_value1,
                     expected_contains_key = expected_contains_key as u8
                 );
 
@@ -517,9 +510,6 @@ async fn execute_link_map_test(operations: Vec<TestOperation>) -> anyhow::Result
 
                       # => [next_iter]
                   "#,
-                        control_key = Word::from(*control_key),
-                        control_value0 = *control_value0,
-                        control_value1 = *control_value1,
                         control_has_next = if control_iter.peek().is_some() { ONE } else { ZERO },
                     ));
                 }
@@ -546,7 +536,7 @@ async fn execute_link_map_test(operations: Vec<TestOperation>) -> anyhow::Result
     let mem_viewer = MemoryViewer::ExecutionOutputs(&exec_output);
 
     for (map_ptr, control_map) in control_maps {
-        let map = LinkMap::new(map_ptr.into(), &mem_viewer);
+        let map = LinkMap::new(Felt::from(map_ptr), &mem_viewer);
         let actual_map_len = map.iter().count();
         assert_eq!(
             actual_map_len,
@@ -583,24 +573,18 @@ async fn execute_link_map_test(operations: Vec<TestOperation>) -> anyhow::Result
     Ok(())
 }
 
-fn generate_set_ops(
-    map_ptr: u32,
-    entries: &[(LexicographicWord, (Word, Word))],
-) -> Vec<TestOperation> {
+fn generate_set_ops(map_ptr: u32, entries: &[(Word, (Word, Word))]) -> Vec<TestOperation> {
     entries
         .iter()
         .map(|(key, values)| TestOperation::set(map_ptr, *key, *values))
         .collect()
 }
 
-fn generate_get_ops(
-    map_ptr: u32,
-    entries: &[(LexicographicWord, (Word, Word))],
-) -> Vec<TestOperation> {
+fn generate_get_ops(map_ptr: u32, entries: &[(Word, (Word, Word))]) -> Vec<TestOperation> {
     entries.iter().map(|(key, _)| TestOperation::get(map_ptr, *key)).collect()
 }
 
-fn generate_entries(count: u64) -> Vec<(LexicographicWord, (Word, Word))> {
+fn generate_entries(count: u64) -> Vec<(Word, (Word, Word))> {
     (0..count)
         .map(|_| {
             let key = rand_link_map_key();
@@ -612,9 +596,9 @@ fn generate_entries(count: u64) -> Vec<(LexicographicWord, (Word, Word))> {
 }
 
 fn generate_updates(
-    entries: &[(LexicographicWord, (Word, Word))],
+    entries: &[(Word, (Word, Word))],
     num_updates: usize,
-) -> Vec<(LexicographicWord, (Word, Word))> {
+) -> Vec<(Word, (Word, Word))> {
     let mut rng = rand::rng();
 
     entries
@@ -625,6 +609,6 @@ fn generate_updates(
         .collect()
 }
 
-fn rand_link_map_key() -> LexicographicWord {
-    LexicographicWord::new(rand_value())
+fn rand_link_map_key() -> Word {
+    rand_value()
 }

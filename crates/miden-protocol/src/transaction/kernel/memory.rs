@@ -21,9 +21,9 @@ pub type StorageSlot = u8;
 // | Kernel data        | 1_600         | 140              | 34 procedures in total, 4 elements each    |
 // | Accounts data      | 8_192         | 524_288          | 64 accounts max, 8192 elements each        |
 // | Account delta      | 532_480       | 263              |                                            |
-// | Input notes        | 4_194_304     | 2_162_688        | nullifiers data segment + 1024 input notes |
-// |                    |               |                  | max, 2048 elements each                    |
-// | Output notes       | 16_777_216    | 2_097_152        | 1024 output notes max, 2048 elements each  |
+// | Input notes        | 4_194_304     | 1_114_112        | nullifiers data segment (2^16 elements)    |
+// |                    |               |                  | + 1024 input notes max, 1024 elements each |
+// | Output notes       | 16_777_216    | 1_048_576        | 1024 output notes max, 1024 elements each  |
 // | Link Map Memory    | 33_554_432    | 33_554_432       | Enough for 2_097_151 key-value pairs       |
 
 // Relative layout of one account
@@ -40,9 +40,9 @@ pub type StorageSlot = u8;
 // | Padding            | 1_056         | 4                |                                        |
 // | Proc tracking      | 1_060         | 256              | 256 procedures max, 1 element each     |
 // | Num storage slots  | 1_316         | 4                |                                        |
-// | Initial slot info  | 1_320         | 1_020            | Only initialized on the native account |
-// | Active slot info   | 2_340         | 1_020            | 255 slots max, 8 elements each         |
-// | Padding            | 3_360         | 4_832            |                                        |
+// | Initial slot info  | 1_320         | 2_040            | Only initialized on the native account |
+// | Active slot info   | 3_360         | 2_040            | 255 slots max, 8 elements each         |
+// | Padding            | 5_400         | 2_792            |                                        |
 //
 // Storage slots are laid out as [[0, slot_type, slot_id_suffix, slot_id_prefix], SLOT_VALUE].
 
@@ -333,7 +333,7 @@ pub const ACCT_STORAGE_SLOT_VALUE_OFFSET: u8 = 4;
 /// the account data segment.
 ///
 /// This section contains the current values of the account storage slots.
-pub const ACCT_ACTIVE_STORAGE_SLOTS_SECTION_OFFSET: MemoryAddress = 2340;
+pub const ACCT_ACTIVE_STORAGE_SLOTS_SECTION_OFFSET: MemoryAddress = 3360;
 
 /// The memory address at which the account's active storage slots section begins in the native
 /// account.
@@ -344,7 +344,7 @@ pub const NATIVE_ACCT_STORAGE_SLOTS_SECTION_PTR: MemoryAddress =
 // ================================================================================================
 
 /// The size of the memory segment allocated to each note.
-pub const NOTE_MEM_SIZE: MemoryAddress = 2048;
+pub const NOTE_MEM_SIZE: MemoryAddress = 1024;
 
 #[allow(clippy::empty_line_after_outer_attr)]
 #[rustfmt::skip]
@@ -358,29 +358,35 @@ pub const NOTE_MEM_SIZE: MemoryAddress = 2048;
 // │    NUM   │  NOTE 0   │  NOTE 1   │ ... │     NOTE n     │ PADDING │  NOTE 0  │ NOTE 1 │  ...  │ NOTE n │
 // │   NOTES  │ NULLIFIER │ NULLIFIER │     │    NULLIFIER   │         │   DATA   │  DATA  │       │  DATA  │
 // ├──────────┼───────────┼───────────┼─────┼────────────────┼─────────┼──────────┼────────┼───────┼────────┤
-// 4_194_304  4_194_308   4_194_312         4_194_304+4(n+1)           4_259_840  +2048    +4096   +2048n
+// 4_194_304  4_194_308   4_194_312         4_194_304+4(n+1)           4_259_840  +1024    +2048   +1024n
 //
 // Here `n` represents number of input notes.
 //
-// Each nullifier occupies a single word. A data section for each note consists of exactly 2048
+// Each nullifier occupies a single word. A data section for each note consists of exactly 1024
 // elements and is laid out like so:
 //
-// ┌──────┬────────┬────────┬─────────┬────────────┬───────────┬──────────┬────────────┬───────┬─────────┬────────┬───────┬─────┬───────┬─────────┬
-// │ NOTE │ SERIAL │ SCRIPT │ STORAGE │   ASSETS   | RECIPIENT │ METADATA │ ATTACHMENT │ NOTE  │ STORAGE │  NUM   │ ASSET │ ... │ ASSET │ PADDING │
-// │  ID  │  NUM   │  ROOT  │  COMM   │ COMMITMENT |           │  HEADER  │            │ ARGS  │ LENGTH  │ ASSETS │   0   │     │   n   │         │
-// ├──────┼────────┼────────┼─────────┼────────────┼───────────┼──────────┼────────────┼───────┼─────────┼────────┼───────┼─────┼───────┼─────────┤
-// 0      4        8        12        16           20          24         28           32      36        40       44 + 4n
+// ┌──────┬────────┬────────┬─────────┬────────────┬───────────┬──────────┬────────────┬───────┬
+// │ NOTE │ SERIAL │ SCRIPT │ STORAGE │   ASSETS   │ RECIPIENT │ METADATA │ ATTACHMENT │ NOTE  │
+// │  ID  │  NUM   │  ROOT  │  COMM   │ COMMITMENT │           │  HEADER  │            │ ARGS  │
+// ├──────┼────────┼────────┼─────────┼────────────┼───────────┼──────────┼────────────┼───────┼
+// 0      4        8        12        16           20          24         28           32
+//
+// ┬─────────┬────────┬───────┬─────────┬─────┬────────┬─────────┬─────────┐
+// │ STORAGE │  NUM   │ ASSET │  ASSET  │ ... │ ASSET  │  ASSET  │ PADDING │
+// │ LENGTH  │ ASSETS │ KEY 0 │ VALUE 0 │     │ KEY n  │ VALUE n │         │
+// ┼─────────┼────────┼───────┼─────────┼─────┼────────┼─────────┼─────────┘
+// 36        40       44      48              44 + 8n  48 + 8n
 //
 // - NUM_STORAGE_ITEMS is encoded as [num_storage_items, 0, 0, 0].
 // - NUM_ASSETS is encoded as [num_assets, 0, 0, 0].
 // - STORAGE_COMMITMENT is the key to look up note storage in the advice map.
 // - ASSETS_COMMITMENT is the key to look up note assets in the advice map.
 //
-// Notice that note storage values are not loaded to the memory, only their length. In order to obtain
+// Notice that note storage item are not loaded to the memory, only their length. In order to obtain
 // the storage values the advice map should be used: they are stored there as
 // `STORAGE_COMMITMENT -> STORAGE`.
 //
-// As opposed to the asset values, storage values are never used in kernel memory, so their presence
+// As opposed to the asset values, storage items are never used in kernel memory, so their presence
 // there is unnecessary.
 
 /// The memory address at which the input note section begins.
@@ -414,32 +420,34 @@ pub const INPUT_NOTE_ASSETS_OFFSET: MemoryOffset = 44;
 // OUTPUT NOTES DATA
 // ------------------------------------------------------------------------------------------------
 // Output notes section contains data of all notes produced by a transaction. The section starts at
-// memory offset 16_777_216 with each note data laid out one after another in 512 word increments.
+// memory offset 16_777_216 with each note data laid out one after another in 1024 elements chunks.
 //
 //     ┌─────────────┬─────────────┬───────────────┬─────────────┐
 //     │ NOTE 0 DATA │ NOTE 1 DATA │      ...      │ NOTE n DATA │
 //     └─────────────┴─────────────┴───────────────┴─────────────┘
-// 16_777_216      +2048         +4096           +2048n
+// 16_777_216      +1024         +2048           +1024n
 //
 // The total number of output notes for a transaction is stored in the bookkeeping section of the
 // memory. Data section of each note is laid out like so:
 //
-// ┌──────┬──────────┬────────────┬───────────┬────────────┬────────────────┬─────────┬─────┬─────────┬─────────┐
-// │ NOTE │ METADATA │  METADATA  │ RECIPIENT │   ASSETS   │   NUM ASSETS   │ ASSET 0 │ ... │ ASSET n │ PADDING │
-// |  ID  |  HEADER  | ATTACHMENT |           | COMMITMENT | AND DIRTY FLAG |         |     |         |         |
-// ├──────┼──────────┼────────────┼───────────┼────────────┼────────────────┼─────────┼─────┼─────────┼─────────┤
-//    0        1           2           3           4              5             6             6 + n
+// ┌──────┬──────────┬────────────┬───────────┬────────────┬────────┬───────┬
+// │ NOTE │ METADATA │  METADATA  │ RECIPIENT │   ASSETS   │  NUM   │ DIRTY │
+// │  ID  │  HEADER  │ ATTACHMENT │           │ COMMITMENT │ ASSETS │ FLAG  │
+// ├──────┼──────────┼────────────┼───────────┼────────────┼────────┼───────┼
+// 0      4          8            12          16           20       21
 //
-// The NUM_ASSETS_AND_DIRTY_FLAG word has the following layout:
-// `[num_assets, assets_commitment_dirty_flag, 0, 0]`, where:
-// - `num_assets` is the number of assets in this output note.
-// - `assets_commitment_dirty_flag` is the binary flag which specifies whether the assets commitment
-//   stored in this note is outdated. It holds 1 if some changes were made to the note assets since
-//   the last re-computation, and 0 otherwise.
+// ┬───────┬─────────┬─────┬────────┬─────────┬─────────┐
+// │ ASSET │  ASSET  │ ... │ ASSET  │  ASSET  │ PADDING │
+// │ KEY 0 │ VALUE 0 │     │ KEY n  │ VALUE n │         │
+// ┼───────┼─────────┼─────┼────────┼─────────┼─────────┘
+// 24      28              24 + 8n  28 + 8n
 //
-// Dirty flag is set to 0 after every recomputation of the assets commitment in the
-// `kernel::note::compute_output_note_assets_commitment` procedure. It is set to 1 in the
-// `kernel::output_note::add_asset` procedure after any change was made to the assets data.
+// The DIRTY_FLAG is the binary flag which specifies whether the assets commitment stored in this
+// note is outdated. It holds 1 if some changes were made to the note assets since the last
+// re-computation, and 0 otherwise.
+// It is set to 0 after every recomputation of the assets commitment in the
+// `$kernel::note::compute_output_note_assets_commitment` procedure. It is set to 1 in the
+// `$kernel::output_note::add_asset` procedure after any change was made to the assets data.
 
 /// The memory address at which the output notes section begins.
 pub const OUTPUT_NOTE_SECTION_OFFSET: MemoryOffset = 16_777_216;
@@ -453,6 +461,17 @@ pub const OUTPUT_NOTE_ASSET_COMMITMENT_OFFSET: MemoryOffset = 16;
 pub const OUTPUT_NOTE_NUM_ASSETS_OFFSET: MemoryOffset = 20;
 pub const OUTPUT_NOTE_DIRTY_FLAG_OFFSET: MemoryOffset = 21;
 pub const OUTPUT_NOTE_ASSETS_OFFSET: MemoryOffset = 24;
+
+// ASSETS
+// ------------------------------------------------------------------------------------------------
+
+/// The size of an asset's memory representation.
+#[cfg(any(feature = "testing", test))]
+pub const ASSET_SIZE: MemoryOffset = 8;
+
+/// The offset of the asset value in an asset's memory representation.
+#[cfg(any(feature = "testing", test))]
+pub const ASSET_VALUE_OFFSET: MemoryOffset = 4;
 
 // LINK MAP
 // ------------------------------------------------------------------------------------------------

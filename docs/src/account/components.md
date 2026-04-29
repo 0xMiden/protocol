@@ -7,7 +7,7 @@ title: "Components"
 
 Account components are reusable units of functionality that define a part of an account's code and storage. Multiple account components can be merged together to form an account's final [code](./code) and [storage](./storage).
 
-As an example, consider a typical wallet account, capable of holding a user's assets and requiring authentication whenever assets are added or removed. Such an account can be created by merging a `BasicWallet` component with an `Falcon512Rpo` authentication component. The basic wallet does not need any storage, but contains the code to move assets in and out of the account vault. The authentication component holds a user's public key in storage and additionally contains the code to verify a signature against that public key. Together, these components form a fully functional wallet account.
+As an example, consider a typical wallet account, capable of holding a user's assets and requiring authentication whenever assets are added or removed. Such an account can be created by merging a `BasicWallet` component with a `Falcon512Poseidon2` authentication component. The basic wallet does not need any storage, but contains the code to move assets in and out of the account vault. The authentication component holds a user's public key in storage and additionally contains the code to verify a signature against that public key. Together, these components form a fully functional wallet account.
 
 ## Account Component schemas
 
@@ -98,7 +98,7 @@ In TOML, these are declared using dotted array keys:
 
 **Value-slot** entries describe their schema via `WordSchema`. A value type can be either:
 
-- **Simple**: defined through the `type = "<identifier>"` field, indicating the expected `SchemaTypeId` for the entire word. The value is supplied at instantiation time via `InitStorageData`. Felt types are stored as full words in the following layout: `[0, 0, 0, <felt>]`.
+- **Simple**: defined through the `type = "<identifier>"` field, indicating the expected `SchemaType` for the entire word. The value is supplied at instantiation time via `InitStorageData`. Felt types are stored as full words in the following layout: `[<felt>, 0, 0, 0]`.
 - **Composite**: provided through `type = [ ... ]`, which contains exactly four `FeltSchema` descriptors. Each element is either a named typed field (optionally with `default-value`) or a `void` element for reserved/padding zeros.
 
 Composite schema entries reuse the existing TOML structure for four-element words, while simple schemas rely on `type`. In our example, the `token_metadata` slot uses a composite schema (`type = [...]`) mixing typed fields (`max_supply`, `decimals`) with defaults (`symbol`) and a reserved/padding `void` element.

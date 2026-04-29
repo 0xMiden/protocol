@@ -3,11 +3,12 @@ use alloc::vec::Vec;
 
 use assert_matches::assert_matches;
 use miden_processor::ExecutionError;
-use miden_processor::crypto::RpoRandomCoin;
+use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountId};
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::crypto::rand::FeltRng;
+use miden_protocol::field::PrimeField64;
 use miden_protocol::note::{
     Note,
     NoteAssets,
@@ -23,8 +24,8 @@ use miden_protocol::testing::account_id::{
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
     ACCOUNT_ID_SENDER,
 };
-use miden_protocol::transaction::{InputNote, OutputNote, TransactionKernel};
-use miden_protocol::{Felt, StarkField, Word};
+use miden_protocol::transaction::{InputNote, RawOutputNote, TransactionKernel};
+use miden_protocol::{Felt, Word};
 use miden_standards::note::{
     NoteConsumptionStatus,
     P2idNote,
@@ -35,13 +36,7 @@ use miden_standards::note::{
 use miden_standards::testing::mock_account::MockAccountExt;
 use miden_standards::testing::note::NoteBuilder;
 use miden_tx::auth::UnreachableAuth;
-use miden_tx::{
-    FailedNote,
-    NoteConsumptionChecker,
-    NoteConsumptionInfo,
-    TransactionExecutor,
-    TransactionExecutorError,
-};
+use miden_tx::{NoteConsumptionChecker, TransactionExecutor, TransactionExecutorError};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
@@ -56,7 +51,7 @@ async fn check_note_consumability_standard_notes_success() -> anyhow::Result<()>
         vec![FungibleAsset::mock(10)],
         NoteType::Public,
         Default::default(),
-        &mut RpoRandomCoin::new(Word::from([2u32; 4])),
+        &mut RandomCoin::new(Word::from([2u32; 4])),
     )?;
 
     let p2ide_note = P2ideNote::create(
@@ -69,7 +64,7 @@ async fn check_note_consumability_standard_notes_success() -> anyhow::Result<()>
         vec![FungibleAsset::mock(10)],
         NoteType::Public,
         Default::default(),
-        &mut RpoRandomCoin::new(Word::from([2u32; 4])),
+        &mut RandomCoin::new(Word::from([2u32; 4])),
     )?;
 
     let notes = vec![p2id_note, p2ide_note];
@@ -89,15 +84,16 @@ async fn check_note_consumability_standard_notes_success() -> anyhow::Result<()>
         .check_notes_consumability(target_account_id, block_ref, notes.clone(), tx_args)
         .await?;
 
-    assert_matches!(consumption_info, NoteConsumptionInfo { successful, failed, .. } => {
-        assert_eq!(successful.len(), notes.len());
+    let successful = consumption_info.successful();
+    let failed = consumption_info.failed();
 
-        // we asserted that `successful` and `notes` vectors have the same length, so it's safe to
-        // check their equality that way
-        successful.iter().for_each(|successful_note| assert!(notes.contains(successful_note)));
+    assert_eq!(successful.len(), notes.len());
 
-        assert!(failed.is_empty());
-    });
+    // we asserted that `successful` and `notes` vectors have the same length, so it's safe to
+    // check their equality that way
+    successful.iter().for_each(|s| assert!(notes.contains(s.note())));
+
+    assert!(failed.is_empty());
 
     Ok(())
 }
@@ -113,8 +109,10 @@ async fn check_note_consumability_custom_notes_success(
 
         let account =
             Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
-        let (_, authenticator) =
-            Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo }.build_component();
+        let (_, authenticator) = Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        }
+        .build_component();
         TransactionContextBuilder::new(account)
             .extend_input_notes(notes.clone())
             .authenticator(authenticator)
@@ -134,14 +132,15 @@ async fn check_note_consumability_custom_notes_success(
         .check_notes_consumability(account_id, block_ref, notes.clone(), tx_args)
         .await?;
 
-    assert_matches!(consumption_info, NoteConsumptionInfo { successful, failed, .. }=> {
-        if notes.is_empty() {
-            assert!(successful.is_empty());
-            assert!(failed.is_empty());
-        } else {
-            assert_eq!(successful.len(), notes.len());
-        }
-    });
+    let successful = consumption_info.successful();
+    let failed = consumption_info.failed();
+
+    if notes.is_empty() {
+        assert!(successful.is_empty());
+        assert!(failed.is_empty());
+    } else {
+        assert_eq!(successful.len(), notes.len());
+    }
     Ok(())
 }
 
@@ -156,7 +155,7 @@ async fn check_note_consumability_partial_success() -> anyhow::Result<()> {
         sender,
         ChaCha20Rng::from_seed(ChaCha20Rng::from_seed([0_u8; 32]).random()),
     )
-    .code("begin push.1 drop push.0 div end")
+    .code("@note_script pub proc main push.1 drop push.0 div end")
     .dynamically_linked_libraries([TransactionKernel::library()])
     .build()?;
 
@@ -164,7 +163,7 @@ async fn check_note_consumability_partial_success() -> anyhow::Result<()> {
         sender,
         ChaCha20Rng::from_seed(ChaCha20Rng::from_seed([0_u8; 32]).random()),
     )
-    .code("begin push.2 drop push.0 div end")
+    .code("@note_script pub proc main push.2 drop push.0 div end")
     .dynamically_linked_libraries([TransactionKernel::library()])
     .build()?;
 
@@ -213,49 +212,41 @@ async fn check_note_consumability_partial_success() -> anyhow::Result<()> {
         .check_notes_consumability(account_id, block_ref, notes, tx_args)
         .await?;
 
-    assert_matches!(
-        consumption_info,
-        NoteConsumptionInfo {
-            successful,
-            failed
-        } => {
-                assert_eq!(failed.len(), 2);
-                assert_eq!(successful.len(), 3);
+    let successful = consumption_info.successful();
+    let failed = consumption_info.failed();
 
-                // First failing note.
-                assert_matches!(
-                    failed.first().expect("first failed notes should exist"),
-                    FailedNote {
-                        note,
-                        error: TransactionExecutorError::TransactionProgramExecutionFailed(
-                            ExecutionError::DivideByZero { .. })
-                    } => {
-                        assert_eq!(
-                            note.id(),
-                            failing_note_2.id(),
-                        );
-                    }
-                );
-                // Second failing note.
-                assert_matches!(
-                    failed.get(1).expect("second failed note should exist"),
-                    FailedNote {
-                        note,
-                        error: TransactionExecutorError::TransactionProgramExecutionFailed(
-                            ExecutionError::DivideByZero { .. })
-                    } => {
-                        assert_eq!(
-                            note.id(),
-                            failing_note_1.id(),
-                        );
-                    }
-                );
-                // Successful notes.
-                assert_eq!(
-                    [successful[0].id(), successful[1].id(), successful[2].id()],
-                    [successful_note_2.id(), successful_note_1.id(), successful_note_3.id()],
-                );
+    assert_eq!(failed.len(), 2);
+    assert_eq!(successful.len(), 3);
+
+    // First failing note.
+    let first_failed = failed.first().expect("first failed notes should exist");
+    assert_matches!(
+        first_failed.error(),
+        TransactionExecutorError::TransactionProgramExecutionFailed(
+            ExecutionError::OperationError {
+                err: miden_processor::operation::OperationError::DivideByZero,
+                ..
             }
+        )
+    );
+    assert_eq!(first_failed.note().id(), failing_note_2.id());
+
+    // Second failing note.
+    let second_failed = failed.get(1).expect("second failed note should exist");
+    assert_matches!(
+        second_failed.error(),
+        TransactionExecutorError::TransactionProgramExecutionFailed(
+            ExecutionError::OperationError {
+                err: miden_processor::operation::OperationError::DivideByZero,
+                ..
+            }
+        )
+    );
+    assert_eq!(second_failed.note().id(), failing_note_1.id());
+    // Successful notes.
+    assert_eq!(
+        [successful[0].note().id(), successful[1].note().id(), successful[2].note().id()],
+        [successful_note_2.id(), successful_note_1.id(), successful_note_3.id()],
     );
     Ok(())
 }
@@ -265,8 +256,9 @@ async fn check_note_consumability_epilogue_failure() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     // Use basic auth which will cause epilogue failure when paired up with unreachable auth.
-    let account =
-        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+    let account = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
 
     let successful_note = builder.add_p2id_note(
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into().unwrap(),
@@ -294,16 +286,11 @@ async fn check_note_consumability_epilogue_failure() -> anyhow::Result<()> {
         .check_notes_consumability(account_id, block_ref, notes, tx_args)
         .await?;
 
-    assert_matches!(
-       consumption_info,
-       NoteConsumptionInfo {
-           successful,
-           failed
-       } => {
-           assert!(successful.is_empty());
-           assert_eq!(failed.len(), 1);
-       }
-    );
+    let successful = consumption_info.successful();
+    let failed = consumption_info.failed();
+
+    assert!(successful.is_empty());
+    assert_eq!(failed.len(), 1);
     Ok(())
 }
 
@@ -333,14 +320,14 @@ async fn check_note_consumability_epilogue_failure_with_new_combination() -> any
         sender,
         ChaCha20Rng::from_seed(ChaCha20Rng::from_seed([0_u8; 32]).random()),
     )
-    .code("begin push.1 drop push.1 div end")
+    .code("@note_script pub proc main push.1 drop push.1 div end")
     .dynamically_linked_libraries([TransactionKernel::library()])
     .build()?;
     let failing_note_1 = NoteBuilder::new(
         sender,
         ChaCha20Rng::from_seed(ChaCha20Rng::from_seed([0_u8; 32]).random()),
     )
-    .code("begin push.1 drop push.0 div end")
+    .code("@note_script pub proc main push.1 drop push.0 div end")
     .dynamically_linked_libraries([TransactionKernel::library()])
     .build()?;
 
@@ -350,7 +337,7 @@ async fn check_note_consumability_epilogue_failure_with_new_combination() -> any
     let fail_epilogue_note = NoteBuilder::new(account.id(), &mut rand::rng())
         .add_assets([Asset::from(note_asset)])
         .build()?;
-    builder.add_output_note(OutputNote::Full(fail_epilogue_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(fail_epilogue_note.clone()));
 
     let mock_chain = builder.build()?;
     let notes = vec![
@@ -376,49 +363,42 @@ async fn check_note_consumability_epilogue_failure_with_new_combination() -> any
         .check_notes_consumability(account_id, block_ref, notes, tx_args)
         .await?;
 
-    assert_matches!(
-        consumption_info,
-        NoteConsumptionInfo {
-            successful,
-            failed
-        } => {
-                assert_eq!(failed.len(), 2);
-                assert_eq!(successful.len(), 3);
+    let successful = consumption_info.successful();
+    let failed = consumption_info.failed();
 
-                // First failing note should be the note that does not cause epilogue failure.
-                assert_matches!(
-                    failed.first().expect("first failed notes should exist"),
-                    FailedNote {
-                        note,
-                        error: TransactionExecutorError::TransactionProgramExecutionFailed(
-                            ExecutionError::DivideByZero { .. })
-                    } => {
-                        assert_eq!(
-                            note.id(),
-                            failing_note_1.id(),
-                        );
-                    }
-                );
-                // Second failing note should be the note that causes epilogue failure.
-                assert_matches!(
-                    failed.get(1).expect("second failed note should exist"),
-                    FailedNote {
-                        note,
-                        error: TransactionExecutorError::TransactionProgramExecutionFailed(
-                            ExecutionError::FailedAssertion { .. })
-                    } => {
-                        assert_eq!(
-                            note.id(),
-                            fail_epilogue_note.id(),
-                        );
-                    }
-                );
-                // Successful notes.
-                assert_eq!(
-                    [successful[0].id(), successful[1].id(), successful[2].id()],
-                    [successful_note_1.id(), successful_note_2.id(), successful_note_3.id()],
-                );
+    assert_eq!(failed.len(), 2);
+    assert_eq!(successful.len(), 3);
+
+    // First failing note should be the note that does not cause epilogue failure.
+    let first_failed = failed.first().expect("first failed notes should exist");
+    assert_matches!(
+        first_failed.error(),
+        TransactionExecutorError::TransactionProgramExecutionFailed(
+            ExecutionError::OperationError {
+                err: miden_processor::operation::OperationError::DivideByZero,
+                ..
             }
+        )
+    );
+    assert_eq!(first_failed.note().id(), failing_note_1.id());
+
+    // Second failing note should be the note that causes epilogue failure.
+    let second_failed = failed.get(1).expect("second failed note should exist");
+    assert_matches!(
+        second_failed.error(),
+        TransactionExecutorError::TransactionProgramExecutionFailed(
+            ExecutionError::OperationError {
+                err: miden_processor::operation::OperationError::FailedAssertion { .. },
+                ..
+            }
+        )
+    );
+    assert_eq!(second_failed.note().id(), fail_epilogue_note.id());
+
+    // Successful notes.
+    assert_eq!(
+        [successful[0].note().id(), successful[1].note().id(), successful[2].note().id()],
+        [successful_note_1.id(), successful_note_2.id(), successful_note_3.id()],
     );
     Ok(())
 }
@@ -428,8 +408,9 @@ async fn test_check_note_consumability_without_signatures() -> anyhow::Result<()
     let mut builder = MockChain::builder();
 
     // Use basic auth which will cause epilogue failure when paired up with unreachable auth.
-    let account =
-        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+    let account = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
 
     let successful_note = builder.add_p2id_note(
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into().unwrap(),
@@ -484,15 +465,20 @@ async fn test_check_note_consumability_static_analysis_invalid_inputs() -> anyho
     let p2ide_invalid_target_id = create_p2ide_note_with_storage([1, 2, 3, 4], sender_account_id);
 
     let p2ide_wrong_target = create_p2ide_note_with_storage(
-        [wrong_target_id.suffix().as_int(), wrong_target_id.prefix().as_u64(), 3, 4],
+        [
+            wrong_target_id.suffix().as_canonical_u64(),
+            wrong_target_id.prefix().as_u64(),
+            3,
+            4,
+        ],
         sender_account_id,
     );
 
     let p2ide_invalid_reclaim = create_p2ide_note_with_storage(
         [
-            target_account_id.suffix().as_int(),
+            target_account_id.suffix().as_canonical_u64(),
             target_account_id.prefix().as_u64(),
-            Felt::MODULUS - 1,
+            Felt::ORDER_U64 - 1,
             4,
         ],
         sender_account_id,
@@ -500,10 +486,10 @@ async fn test_check_note_consumability_static_analysis_invalid_inputs() -> anyho
 
     let p2ide_invalid_timelock = create_p2ide_note_with_storage(
         [
-            target_account_id.suffix().as_int(),
+            target_account_id.suffix().as_canonical_u64(),
             target_account_id.prefix().as_u64(),
             3,
-            Felt::MODULUS - 1,
+            Felt::ORDER_U64 - 1,
         ],
         sender_account_id,
     );
@@ -658,14 +644,14 @@ async fn test_check_note_consumability_static_analysis_receiver(
 
     let p2ide = create_p2ide_note_with_storage(
         [
-            target_account_id.suffix().as_int(),
+            target_account_id.suffix().as_canonical_u64(),
             target_account_id.prefix().as_u64(),
             reclaim_height,
             timelock_height,
         ],
         sender_account_id,
     );
-    builder.add_output_note(OutputNote::Full(p2ide.clone()));
+    builder.add_output_note(RawOutputNote::Full(p2ide.clone()));
 
     let mut mock_chain = builder.build()?;
     mock_chain.prove_until_block(3)?;
@@ -748,14 +734,14 @@ async fn test_check_note_consumability_static_analysis_sender(
 
     let p2ide = create_p2ide_note_with_storage(
         [
-            target_account_id.suffix().as_int(),
+            target_account_id.suffix().as_canonical_u64(),
             target_account_id.prefix().as_u64(),
             reclaim_height,
             timelock_height,
         ],
         sender_account_id,
     );
-    builder.add_output_note(OutputNote::Full(p2ide.clone()));
+    builder.add_output_note(RawOutputNote::Full(p2ide.clone()));
 
     let mut mock_chain = builder.build()?;
     mock_chain.prove_until_block(3)?;
@@ -795,7 +781,7 @@ fn create_p2ide_note_with_storage(
     storage: impl IntoIterator<Item = u64>,
     sender: AccountId,
 ) -> Note {
-    let serial_num = RpoRandomCoin::new(Default::default()).draw_word();
+    let serial_num = RandomCoin::new(Default::default()).draw_word();
     let note_script = StandardNote::P2IDE.script();
     let recipient = NoteRecipient::new(
         serial_num,

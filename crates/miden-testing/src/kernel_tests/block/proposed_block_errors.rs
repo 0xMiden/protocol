@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use std::vec::Vec;
 
 use assert_matches::assert_matches;
-use miden_processor::crypto::MerklePath;
+use miden_processor::crypto::merkle::MerklePath;
 use miden_protocol::MAX_BATCHES_PER_BLOCK;
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::block::{BlockInputs, BlockNumber, ProposedBlock};
@@ -424,7 +424,7 @@ async fn proposed_block_fails_on_invalid_proof_or_missing_note_inclusion_referen
     let invalid_note_path = SparseMerklePath::try_from(original_merkle_path).unwrap();
     let invalid_note_proof = NoteInclusionProof::new(
         original_note_proof.location().block_num(),
-        original_note_proof.location().node_index_in_block(),
+        original_note_proof.location().block_note_tree_index(),
         invalid_note_path,
     )
     .unwrap();

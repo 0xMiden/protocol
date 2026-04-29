@@ -1,15 +1,19 @@
 use miden_protocol::Word;
-use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
+use miden_protocol::account::auth::{AuthScheme, PublicKey, PublicKeyCommitment};
 use miden_protocol::account::component::{
     AccountComponentMetadata,
-    SchemaTypeId,
+    SchemaType,
     StorageSchema,
     StorageSlotSchema,
 };
-use miden_protocol::account::{AccountComponent, StorageSlot, StorageSlotName};
+use miden_protocol::account::{AccountComponent, AccountType, StorageSlot, StorageSlotName};
+use miden_protocol::crypto::dsa::{ecdsa_k256_keccak, falcon512_poseidon2};
 use miden_protocol::utils::sync::LazyLock;
 
 use crate::account::components::singlesig_library;
+
+// CONSTANTS
+// ================================================================================================
 
 static PUBKEY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::auth::singlesig::pub_key")
@@ -42,11 +46,41 @@ pub struct AuthSingleSig {
 
 impl AuthSingleSig {
     /// The name of the component.
-    pub const NAME: &'static str = "miden::auth::singlesig";
+    pub const NAME: &'static str = "miden::standards::components::auth::singlesig";
 
     /// Creates a new [`AuthSingleSig`] component with the given `public_key`.
     pub fn new(pub_key: PublicKeyCommitment, auth_scheme: AuthScheme) -> Self {
         Self { pub_key, auth_scheme }
+    }
+
+    /// Creates a new [`AuthSingleSig`] component using the Falcon512Poseidon2 signature scheme.
+    ///
+    /// The public key commitment is derived from the provided Falcon512 public key.
+    pub fn falcon512_poseidon2(pub_key: falcon512_poseidon2::PublicKey) -> Self {
+        Self {
+            pub_key: pub_key.into(),
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        }
+    }
+
+    /// Creates a new [`AuthSingleSig`] component using the EcdsaK256Keccak signature scheme.
+    ///
+    /// The public key commitment is derived from the provided ECDSA K256 public key.
+    pub fn ecdsa_k256_keccak(pub_key: ecdsa_k256_keccak::PublicKey) -> Self {
+        Self {
+            pub_key: pub_key.into(),
+            auth_scheme: AuthScheme::EcdsaK256Keccak,
+        }
+    }
+
+    /// Creates a new [`AuthSingleSig`] component from a [`PublicKey`].
+    ///
+    /// The authentication scheme and public key commitment are derived from the provided key.
+    pub fn from_public_key(pub_key: PublicKey) -> Self {
+        Self {
+            auth_scheme: pub_key.auth_scheme(),
+            pub_key: pub_key.to_commitment(),
+        }
     }
 
     /// Returns the [`StorageSlotName`] where the public key is stored.
@@ -63,30 +97,36 @@ impl AuthSingleSig {
     pub fn public_key_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
         (
             Self::public_key_slot().clone(),
-            StorageSlotSchema::value("Public key commitment", SchemaTypeId::pub_key()),
+            StorageSlotSchema::value("Public key commitment", SchemaType::pub_key()),
         )
     }
     /// Returns the storage slot schema for the scheme ID slot.
     pub fn auth_scheme_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
         (
             Self::scheme_id_slot().clone(),
-            StorageSlotSchema::value("Scheme ID", SchemaTypeId::auth_scheme()),
+            StorageSlotSchema::value("Scheme ID", SchemaType::auth_scheme()),
         )
+    }
+
+    /// Returns the [`AccountComponentMetadata`] for this component.
+    pub fn component_metadata() -> AccountComponentMetadata {
+        let storage_schema = StorageSchema::new(vec![
+            Self::public_key_slot_schema(),
+            Self::auth_scheme_slot_schema(),
+        ])
+        .expect("storage schema should be valid");
+
+        AccountComponentMetadata::new(Self::NAME, AccountType::all())
+            .with_description(
+                "Authentication component using ECDSA K256 Keccak or Falcon512 Poseidon2 signature scheme",
+            )
+            .with_storage_schema(storage_schema)
     }
 }
 
 impl From<AuthSingleSig> for AccountComponent {
     fn from(basic_signature: AuthSingleSig) -> Self {
-        let storage_schema = StorageSchema::new(vec![
-            AuthSingleSig::public_key_slot_schema(),
-            AuthSingleSig::auth_scheme_slot_schema(),
-        ])
-        .expect("storage schema should be valid");
-
-        let metadata = AccountComponentMetadata::new(AuthSingleSig::NAME)
-            .with_description("Authentication component using ECDSA K256 Keccak or Rpo Falcon 512 signature scheme")
-            .with_supports_all_types()
-            .with_storage_schema(storage_schema);
+        let metadata = AuthSingleSig::component_metadata();
 
         let storage_slots = vec![
             StorageSlot::with_value(

@@ -1,9 +1,11 @@
+use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use std::collections::BTreeMap;
 
 use anyhow::Context;
 use assert_matches::assert_matches;
+use miden_crypto::rand::test_utils::rand_value;
 use miden_processor::{ExecutionError, Word};
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::component::AccountComponentMetadata;
@@ -18,6 +20,7 @@ use miden_protocol::account::{
     AccountStorageMode,
     AccountType,
     StorageMap,
+    StorageMapKey,
     StorageSlot,
     StorageSlotContent,
     StorageSlotDelta,
@@ -28,7 +31,7 @@ use miden_protocol::account::{
 use miden_protocol::assembly::diagnostics::NamedSource;
 use miden_protocol::assembly::diagnostics::reporting::PrintDiagnostic;
 use miden_protocol::assembly::{DefaultSourceManager, Library};
-use miden_protocol::asset::{Asset, FungibleAsset};
+use miden_protocol::asset::{Asset, AssetCallbacks, FungibleAsset};
 use miden_protocol::errors::tx_kernel::{
     ERR_ACCOUNT_ID_SUFFIX_LEAST_SIGNIFICANT_BYTE_MUST_BE_ZERO,
     ERR_ACCOUNT_ID_SUFFIX_MOST_SIGNIFICANT_BIT_MUST_BE_ZERO,
@@ -38,6 +41,7 @@ use miden_protocol::errors::tx_kernel::{
     ERR_ACCOUNT_NONCE_CAN_ONLY_BE_INCREMENTED_ONCE,
     ERR_ACCOUNT_UNKNOWN_STORAGE_SLOT_NAME,
 };
+use miden_protocol::field::PrimeField64;
 use miden_protocol::note::NoteType;
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET,
@@ -48,16 +52,16 @@ use miden_protocol::testing::account_id::{
     ACCOUNT_ID_SENDER,
 };
 use miden_protocol::testing::storage::{MOCK_MAP_SLOT, MOCK_VALUE_SLOT0, MOCK_VALUE_SLOT1};
-use miden_protocol::transaction::{OutputNote, TransactionKernel};
+use miden_protocol::transaction::{RawOutputNote, TransactionKernel};
 use miden_protocol::utils::sync::LazyLock;
-use miden_protocol::{LexicographicWord, StarkField};
+use miden_standards::account::faucets::BasicFungibleFaucet;
+use miden_standards::account::metadata::{FungibleTokenMetadataBuilder, TokenName};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::mock_account::MockAccountExt;
 use miden_tx::LocalTransactionProver;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
-use winter_rand_utils::rand_value;
 
 use super::{Felt, StackInputs, ZERO};
 use crate::executor::CodeExecutor;
@@ -81,7 +85,7 @@ pub async fn compute_commitment() -> anyhow::Result<()> {
 
     // Precompute a commitment to a changed account so we can assert it during tx script execution.
     let mut account_clone = account.clone();
-    let key = Word::from([1, 2, 3, 4u32]);
+    let key = StorageMapKey::from_array([1, 2, 3, 4]);
     let value = Word::from([2, 3, 4, 5u32]);
     let mock_map_slot = &*MOCK_MAP_SLOT;
     account_clone.storage_mut().set_map_item(mock_map_slot, key, value).unwrap();
@@ -116,7 +120,7 @@ pub async fn compute_commitment() -> anyhow::Result<()> {
             push.{value}
             push.{key}
             push.MOCK_MAP_SLOT[0..2]
-            # => [slot_id_prefix, slot_id_suffix, KEY, VALUE, pad(7)]
+            # => [slot_id_suffix, slot_id_prefix, KEY, VALUE, pad(7)]
             call.mock_account::set_map_item
             dropw dropw dropw dropw
             # => [STORAGE_COMMITMENT0]
@@ -194,12 +198,12 @@ async fn test_account_type() -> anyhow::Result<()> {
             );
 
             let exec_output = CodeExecutor::with_default_host()
-                .stack_inputs(StackInputs::new(vec![account_id.prefix().as_felt()])?)
+                .stack_inputs(StackInputs::new(&[account_id.prefix().as_felt()])?)
                 .run(&code)
                 .await?;
 
             let type_matches = account_id.account_type() == expected_type;
-            let expected_result = Felt::from(type_matches);
+            let expected_result = if type_matches { Felt::ONE } else { Felt::ZERO };
             has_type |= type_matches;
 
             assert_eq!(
@@ -251,8 +255,8 @@ async fn test_account_validate_id() -> anyhow::Result<()> {
     for (account_id, expected_error) in test_cases.iter() {
         // Manually split the account ID into prefix and suffix since we can't use AccountId methods
         // on invalid ids.
-        let prefix = Felt::try_from((account_id / (1u128 << 64)) as u64).unwrap();
-        let suffix = Felt::try_from((account_id % (1u128 << 64)) as u64).unwrap();
+        let prefix = Felt::try_from((account_id / (1u128 << 64)) as u64)?;
+        let suffix = Felt::try_from((account_id % (1u128 << 64)) as u64)?;
 
         let code = "
             use $kernel::account_id
@@ -263,7 +267,7 @@ async fn test_account_validate_id() -> anyhow::Result<()> {
             ";
 
         let result = CodeExecutor::with_default_host()
-            .stack_inputs(StackInputs::new(vec![suffix, prefix]).unwrap())
+            .stack_inputs(StackInputs::new(&[suffix, prefix]).unwrap())
             .run(code)
             .await;
 
@@ -272,7 +276,17 @@ async fn test_account_validate_id() -> anyhow::Result<()> {
             (Ok(_), Some(err)) => {
                 anyhow::bail!("expected error {err} but validation was successful")
             },
-            (Err(ExecutionError::FailedAssertion { err_code, err_msg, .. }), Some(err)) => {
+            (
+                Err(ExecutionError::OperationError {
+                    err:
+                        miden_processor::operation::OperationError::FailedAssertion {
+                            err_code,
+                            err_msg,
+                        },
+                    ..
+                }),
+                Some(err),
+            ) => {
                 if err_code != err.code() {
                     anyhow::bail!(
                         "actual error \"{}\" (code: {err_code}) did not match expected error {err}",
@@ -389,7 +403,7 @@ async fn test_get_item() -> anyhow::Result<()> {
 
                 # push the account storage item index
                 push.SLOT_NAME[0..2]
-                # => [slot_id_prefix, slot_id_suffix]
+                # => [slot_id_suffix, slot_id_prefix]
 
                 # assert the item value is correct
                 exec.account::get_item
@@ -455,7 +469,7 @@ async fn test_get_map_item() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn test_get_storage_slot_type() -> anyhow::Result<()> {
+async fn test_get_native_storage_slot_type() -> anyhow::Result<()> {
     for slot_name in [
         AccountStorage::mock_value_slot0().name(),
         AccountStorage::mock_value_slot1().name(),
@@ -483,7 +497,7 @@ async fn test_get_storage_slot_type() -> anyhow::Result<()> {
                 push.{slot_idx}
 
                 # get the type of the respective storage slot
-                exec.account::get_storage_slot_type
+                exec.account::get_native_storage_slot_type
 
                 # truncate the stack
                 swap drop
@@ -496,28 +510,16 @@ async fn test_get_storage_slot_type() -> anyhow::Result<()> {
         assert_eq!(
             slot.slot_type(),
             StorageSlotType::try_from(
-                u8::try_from(exec_output.get_stack_element(0).as_int()).unwrap()
+                u8::try_from(exec_output.get_stack_element(0).as_canonical_u64()).unwrap()
             )
             .unwrap()
         );
         assert_eq!(exec_output.get_stack_element(1), ZERO, "the rest of the stack is empty");
         assert_eq!(exec_output.get_stack_element(2), ZERO, "the rest of the stack is empty");
         assert_eq!(exec_output.get_stack_element(3), ZERO, "the rest of the stack is empty");
-        assert_eq!(
-            exec_output.get_stack_word_be(4),
-            Word::empty(),
-            "the rest of the stack is empty"
-        );
-        assert_eq!(
-            exec_output.get_stack_word_be(8),
-            Word::empty(),
-            "the rest of the stack is empty"
-        );
-        assert_eq!(
-            exec_output.get_stack_word_be(12),
-            Word::empty(),
-            "the rest of the stack is empty"
-        );
+        assert_eq!(exec_output.get_stack_word(4), Word::empty(), "the rest of the stack is empty");
+        assert_eq!(exec_output.get_stack_word(8), Word::empty(), "the rest of the stack is empty");
+        assert_eq!(exec_output.get_stack_word(12), Word::empty(), "the rest of the stack is empty");
     }
 
     Ok(())
@@ -533,8 +535,9 @@ async fn test_account_get_item_fails_on_unknown_slot() -> anyhow::Result<()> {
     let account_empty_storage = builder.add_existing_mock_account(Auth::IncrNonce)?;
     assert_eq!(account_empty_storage.storage().num_slots(), 0);
 
-    let account_non_empty_storage = builder
-        .add_existing_mock_account(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+    let account_non_empty_storage = builder.add_existing_mock_account(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
     assert_eq!(account_non_empty_storage.storage().num_slots(), 2);
 
     let chain = builder.build()?;
@@ -608,8 +611,8 @@ async fn test_is_slot_id_lt() -> anyhow::Result<()> {
             use $kernel::account
 
             begin
-                push.{curr_suffix}.{curr_prefix}.{prev_suffix}.{prev_prefix}
-                # => [prev_slot_id_prefix, prev_slot_id_suffix, curr_slot_id_prefix, curr_slot_id_suffix]
+                push.{curr_prefix}.{curr_suffix}.{prev_prefix}.{prev_suffix}
+                # => [prev_slot_id_suffix, prev_slot_id_prefix, curr_slot_id_suffix, curr_slot_id_prefix]
 
                 exec.account::is_slot_id_lt
                 # => [is_slot_id_lt]
@@ -653,7 +656,7 @@ async fn test_set_item() -> anyhow::Result<()> {
             # set the storage item
             push.{new_value}
             push.MOCK_VALUE_SLOT0[0..2]
-            # => [slot_id_prefix, slot_id_suffix, NEW_VALUE]
+            # => [slot_id_suffix, slot_id_prefix, NEW_VALUE]
 
             exec.account::set_item
 
@@ -663,7 +666,7 @@ async fn test_set_item() -> anyhow::Result<()> {
 
             # assert new value has been correctly set
             push.MOCK_VALUE_SLOT0[0..2]
-            # => [slot_id_prefix, slot_id_suffix]
+            # => [slot_id_suffix, slot_id_prefix]
 
             exec.account::get_item
             push.{new_value}
@@ -679,8 +682,10 @@ async fn test_set_item() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_set_map_item() -> anyhow::Result<()> {
-    let (new_key, new_value) =
-        (Word::from([109, 110, 111, 112u32]), Word::from([9, 10, 11, 12u32]));
+    let (new_key, new_value) = (
+        StorageMapKey::from_array([109, 110, 111, 112u32]),
+        Word::from([9, 10, 11, 12u32]),
+    );
 
     let slot = AccountStorage::mock_map_slot();
     let account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
@@ -711,11 +716,11 @@ async fn test_set_map_item() -> anyhow::Result<()> {
 
             # double check that the storage slot is indeed the new map
             push.SLOT_NAME[0..2]
-            # => [slot_id_prefix, slot_id_suffix, OLD_VALUE]
+            # => [slot_id_suffix, slot_id_prefix, OLD_VALUE]
 
             # pad the stack
             repeat.14 push.0 movdn.2 end
-            # => [slot_id_prefix, slot_id_suffix, pad(14), OLD_VALUE]
+            # => [slot_id_suffix, slot_id_prefix, pad(14), OLD_VALUE]
 
             call.mock_account::get_item
             # => [MAP_ROOT, pad(12), OLD_VALUE]
@@ -739,7 +744,7 @@ async fn test_set_map_item() -> anyhow::Result<()> {
 
     assert_eq!(
         new_storage_map.root(),
-        exec_output.get_stack_word_be(0),
+        exec_output.get_stack_word(0),
         "get_item should return the updated root",
     );
 
@@ -749,7 +754,7 @@ async fn test_set_map_item() -> anyhow::Result<()> {
     };
     assert_eq!(
         old_value_for_key,
-        exec_output.get_stack_word_be(4),
+        exec_output.get_stack_word(4),
         "set_map_item must return the old value for the key (empty word for new key)",
     );
 
@@ -816,16 +821,16 @@ async fn test_compute_storage_commitment() -> anyhow::Result<()> {
     let init_storage_commitment = account_storage.to_commitment();
 
     let mock_value_slot0 = &*MOCK_VALUE_SLOT0;
-    let mock_map_slot = &*MOCK_MAP_SLOT;
+    let value_slot0 = Word::from([9, 10, 11, 12u32]);
 
-    account_storage.set_item(mock_value_slot0, [9, 10, 11, 12].map(Felt::new).into())?;
+    let mock_map_slot = &*MOCK_MAP_SLOT;
+    let map_key = StorageMapKey::from_array([101, 102, 103, 104u32]);
+    let map_value = Word::from([5, 6, 7, 8u32]);
+
+    account_storage.set_item(mock_value_slot0, value_slot0)?;
     let storage_commitment_value = account_storage.to_commitment();
 
-    account_storage.set_map_item(
-        mock_map_slot,
-        [101, 102, 103, 104].map(Felt::new).into(),
-        [5, 6, 7, 8].map(Felt::new).into(),
-    )?;
+    account_storage.set_map_item(mock_map_slot, map_key, map_value)?;
     let storage_commitment_map = account_storage.to_commitment();
 
     let code = format!(
@@ -845,7 +850,7 @@ async fn test_compute_storage_commitment() -> anyhow::Result<()> {
             assert_eqw.err="storage commitment at the beginning of the transaction is not equal to the expected one"
 
             # update the value storage slot
-            push.9.10.11.12
+            push.{value_slot0}
             push.MOCK_VALUE_SLOT0[0..2]
             call.mock_account::set_item dropw drop
             # => []
@@ -862,9 +867,10 @@ async fn test_compute_storage_commitment() -> anyhow::Result<()> {
             assert_eqw.err="storage commitment should remain the same"
 
             # update the map storage slot
-            push.5.6.7.8.101.102.103.104
+            push.{map_value}
+            push.{map_key}
             push.MOCK_MAP_SLOT[0..2]
-            # => [slot_id_prefix, slot_id_suffix, KEY, VALUE]
+            # => [slot_id_suffix, slot_id_prefix, KEY, VALUE]
 
             call.mock_account::set_map_item dropw dropw
             # => []
@@ -896,7 +902,7 @@ async fn prove_account_creation_with_non_empty_storage() -> anyhow::Result<()> {
     let slot1 = StorageSlot::with_value(slot_name1.clone(), Word::from([10, 20, 30, 40u32]));
     let mut map_entries = Vec::new();
     for _ in 0..10 {
-        map_entries.push((rand_value::<Word>(), rand_value::<Word>()));
+        map_entries.push((StorageMapKey::from_raw(rand_value::<Word>()), rand_value::<Word>()));
     }
     let map_slot =
         StorageSlot::with_map(slot_name2.clone(), StorageMap::with_entries(map_entries.clone())?);
@@ -934,11 +940,7 @@ async fn prove_account_creation_with_non_empty_storage() -> anyhow::Result<()> {
     assert_matches!(
         tx.account_delta().storage().get(&slot_name2).unwrap(),
         StorageSlotDelta::Map(map_delta) => {
-            let expected = &BTreeMap::from_iter(
-            map_entries
-                .into_iter()
-                .map(|(key, value)| { (LexicographicWord::new(key), value) })
-            );
+            let expected = &BTreeMap::from_iter(map_entries);
             assert_eq!(expected, map_delta.entries())
         }
     );
@@ -946,7 +948,7 @@ async fn prove_account_creation_with_non_empty_storage() -> anyhow::Result<()> {
     assert!(tx.account_delta().vault().is_empty());
     assert_eq!(tx.final_account().nonce(), Felt::new(1));
 
-    let proven_tx = LocalTransactionProver::default().prove(tx.clone())?;
+    let proven_tx = LocalTransactionProver::default().prove(tx.clone()).await?;
 
     // The delta should be present on the proven tx.
     let AccountUpdateDetails::Delta(delta) = proven_tx.account_update().details() else {
@@ -1006,8 +1008,10 @@ async fn test_get_vault_root() -> anyhow::Result<()> {
             exec.prologue::prepare_transaction
 
             # add an asset to the account
-            push.{fungible_asset}
-            call.mock_account::add_asset dropw
+            push.{FUNGIBLE_ASSET_VALUE}
+            push.{FUNGIBLE_ASSET_KEY}
+            call.mock_account::add_asset
+            dropw dropw
             # => []
 
             # get the current vault root
@@ -1016,7 +1020,8 @@ async fn test_get_vault_root() -> anyhow::Result<()> {
             assert_eqw.err="vault root mismatch"
         end
         "#,
-        fungible_asset = Word::from(&fungible_asset),
+        FUNGIBLE_ASSET_VALUE = fungible_asset.to_value_word(),
+        FUNGIBLE_ASSET_KEY = fungible_asset.to_key_word(),
         expected_vault_root = &account.vault().root(),
     );
     tx_context.execute_code(&code).await?;
@@ -1046,7 +1051,9 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
         FungibleAsset::new(faucet_existing_asset, 10).context("fungible_asset_0 is invalid")?,
     );
     let account = builder.add_existing_wallet_with_assets(
-        crate::Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo },
+        crate::Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        },
         [fungible_asset_for_account],
     )?;
 
@@ -1088,17 +1095,17 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
 
         begin
             # push faucet ID prefix and suffix
-            push.{suffix}.{prefix}
-            # => [faucet_id_prefix, faucet_id_suffix]
+            push.{prefix}.{suffix}
+            # => [faucet_id_suffix, faucet_id_prefix]
 
             # get the current asset balance
             dup.1 dup.1 exec.active_account::get_balance
-            # => [final_balance, faucet_id_prefix, faucet_id_suffix]
+            # => [final_balance, faucet_id_suffix, faucet_id_prefix]
 
             # assert final balance is correct
             push.{final_balance}
             assert_eq.err="final balance is incorrect"
-            # => [faucet_id_prefix, faucet_id_suffix]
+            # => [faucet_id_suffix, faucet_id_prefix]
 
             # get the initial asset balance
             exec.active_account::get_initial_balance
@@ -1142,17 +1149,17 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
 
         begin
             # push faucet ID prefix and suffix
-            push.{suffix}.{prefix}
-            # => [faucet_id_prefix, faucet_id_suffix]
+            push.{prefix}.{suffix}
+            # => [faucet_id_suffix, faucet_id_prefix]
 
             # get the current asset balance
             dup.1 dup.1 exec.active_account::get_balance
-            # => [final_balance, faucet_id_prefix, faucet_id_suffix]
+            # => [final_balance, faucet_id_suffix, faucet_id_prefix]
 
             # assert final balance is correct
             push.{final_balance}
             assert_eq.err="final balance is incorrect"
-            # => [faucet_id_prefix, faucet_id_suffix]
+            # => [faucet_id_suffix, faucet_id_prefix]
 
             # get the initial asset balance
             exec.active_account::get_initial_balance
@@ -1196,7 +1203,9 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
         FungibleAsset::new(faucet_existing_asset, 10).context("fungible_asset_0 is invalid")?,
     );
     let account = builder.add_existing_wallet_with_assets(
-        crate::Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo },
+        crate::Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        },
         [fungible_asset_for_account],
     )?;
 
@@ -1221,42 +1230,28 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
         use miden::standards::wallets::basic->wallet
         use mock::util
 
-        # Inputs:  [ASSET, note_idx]
-        # Outputs: [ASSET, note_idx]
-        proc move_asset_to_note
-            # pad the stack before call
-            push.0.0.0 movdn.7 movdn.7 movdn.7 padw padw swapdw
-            # => [ASSET, note_idx, pad(11)]
-
-            call.wallet::move_asset_to_note
-            # => [ASSET, note_idx, pad(11)]
-
-            # remove excess PADs from the stack
-            swapdw dropw dropw swapw movdn.7 drop drop drop
-            # => [ASSET, note_idx]
-        end
-
         begin
             # create random note and move the asset into it
             exec.util::create_default_note
             # => [note_idx]
 
-            push.{REMOVED_ASSET}
-            exec.move_asset_to_note dropw drop
+            push.{REMOVED_ASSET_VALUE}
+            push.{REMOVED_ASSET_KEY}
+            exec.util::move_asset_to_note
             # => []
 
             # push faucet ID prefix and suffix
-            push.{suffix}.{prefix}
-            # => [faucet_id_prefix, faucet_id_suffix]
+            push.{prefix}.{suffix}
+            # => [faucet_id_suffix, faucet_id_prefix]
 
             # get the current asset balance
             dup.1 dup.1 exec.active_account::get_balance
-            # => [final_balance, faucet_id_prefix, faucet_id_suffix]
+            # => [final_balance, faucet_id_suffix, faucet_id_prefix]
 
             # assert final balance is correct
             push.{final_balance}
             assert_eq.err="final balance is incorrect"
-            # => [faucet_id_prefix, faucet_id_suffix]
+            # => [faucet_id_suffix, faucet_id_prefix]
 
             # get the initial asset balance
             exec.active_account::get_initial_balance
@@ -1267,7 +1262,8 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
             assert_eq.err="initial balance is incorrect"
         end
     "#,
-        REMOVED_ASSET = Word::from(fungible_asset_for_note_existing),
+        REMOVED_ASSET_KEY = fungible_asset_for_note_existing.to_key_word(),
+        REMOVED_ASSET_VALUE = fungible_asset_for_note_existing.to_value_word(),
         suffix = faucet_existing_asset.suffix(),
         prefix = faucet_existing_asset.prefix().as_felt(),
         final_balance =
@@ -1279,7 +1275,7 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
     let tx_context = mock_chain
         .build_tx_context(TxContextInput::AccountId(account.id()), &[], &[])?
         .tx_script(tx_script)
-        .extend_expected_output_notes(vec![OutputNote::Full(expected_output_note)])
+        .extend_expected_output_notes(vec![RawOutputNote::Full(expected_output_note)])
         .build()?;
 
     tx_context.execute().await?;
@@ -1303,7 +1299,9 @@ async fn test_get_init_asset() -> anyhow::Result<()> {
         FungibleAsset::new(faucet_existing_asset, 10).context("fungible_asset_0 is invalid")?,
     );
     let account = builder.add_existing_wallet_with_assets(
-        crate::Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo },
+        crate::Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        },
         [fungible_asset_for_account],
     )?;
 
@@ -1332,13 +1330,14 @@ async fn test_get_init_asset() -> anyhow::Result<()> {
             exec.util::create_default_note
             # => [note_idx]
 
-            push.{REMOVED_ASSET}
-            call.wallet::move_asset_to_note dropw drop
+            push.{REMOVED_ASSET_VALUE}
+            push.{ASSET_KEY}
+            exec.util::move_asset_to_note
             # => []
 
             # get the current asset
             push.{ASSET_KEY} exec.active_account::get_asset
-            # => [ASSET]
+            # => [ASSET_VALUE]
 
             push.{FINAL_ASSET}
             assert_eqw.err="final asset is incorrect"
@@ -1348,14 +1347,14 @@ async fn test_get_init_asset() -> anyhow::Result<()> {
             push.{ASSET_KEY} exec.active_account::get_initial_asset
             # => [INITIAL_ASSET]
 
-            push.{INITIAL_ASSET}
+            push.{INITIAL_ASSET_VALUE}
             assert_eqw.err="initial asset is incorrect"
         end
     "#,
-        ASSET_KEY = fungible_asset_for_note_existing.vault_key(),
-        REMOVED_ASSET = Word::from(fungible_asset_for_note_existing),
-        INITIAL_ASSET = Word::from(fungible_asset_for_account),
-        FINAL_ASSET = Word::from(final_asset),
+        ASSET_KEY = fungible_asset_for_note_existing.to_key_word(),
+        REMOVED_ASSET_VALUE = fungible_asset_for_note_existing.to_value_word(),
+        INITIAL_ASSET_VALUE = fungible_asset_for_account.to_value_word(),
+        FINAL_ASSET = final_asset.to_value_word(),
     );
 
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(remove_existing_source)?;
@@ -1363,7 +1362,7 @@ async fn test_get_init_asset() -> anyhow::Result<()> {
     mock_chain
         .build_tx_context(TxContextInput::AccountId(account.id()), &[], &[])?
         .tx_script(tx_script)
-        .extend_expected_output_notes(vec![OutputNote::Full(expected_output_note)])
+        .extend_expected_output_notes(vec![RawOutputNote::Full(expected_output_note)])
         .build()?
         .execute()
         .await?;
@@ -1504,6 +1503,7 @@ async fn test_was_procedure_called() -> anyhow::Result<()> {
 /// `tx script -> account code -> external library`
 #[tokio::test]
 async fn transaction_executor_account_code_using_custom_library() -> anyhow::Result<()> {
+    let slot_value = Word::from([2, 3, 4, 5u32]);
     let external_library_code = format!(
         r#"
       use miden::protocol::native_account
@@ -1511,7 +1511,7 @@ async fn transaction_executor_account_code_using_custom_library() -> anyhow::Res
       const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
 
       pub proc external_setter
-        push.2.3.4.5
+        push.{slot_value}
         push.MOCK_VALUE_SLOT0[0..2]
         exec.native_account::set_item
         dropw dropw
@@ -1545,8 +1545,9 @@ async fn transaction_executor_account_code_using_custom_library() -> anyhow::Res
 
     let account_component_source =
         NamedSource::new("account_component::account_module", ACCOUNT_COMPONENT_CODE);
-    let account_component_lib =
-        assembler.clone().assemble_library([account_component_source]).unwrap();
+    let account_component_lib = Arc::unwrap_or_clone(
+        assembler.clone().assemble_library([account_component_source]).unwrap(),
+    );
 
     let tx_script_src = "\
           use account_component::account_module
@@ -1585,7 +1586,7 @@ async fn transaction_executor_account_code_using_custom_library() -> anyhow::Res
     assert_eq!(executed_tx.account_delta().storage().values().count(), 1);
     assert_eq!(
         executed_tx.account_delta().storage().get(&MOCK_VALUE_SLOT0).unwrap(),
-        &StorageSlotDelta::Value(Word::from([2, 3, 4, 5u32])),
+        &StorageSlotDelta::Value(slot_value),
     );
     Ok(())
 }
@@ -1596,6 +1597,7 @@ async fn incrementing_nonce_twice_fails() -> anyhow::Result<()> {
     let source_code = "
         use miden::protocol::native_account
 
+        @auth_script
         pub proc auth_incr_nonce_twice
             exec.native_account::incr_nonce drop
             exec.native_account::incr_nonce drop
@@ -1670,6 +1672,72 @@ async fn test_has_procedure() -> anyhow::Result<()> {
         .execute()
         .await
         .map_err(|err| anyhow::anyhow!("Failed to execute transaction: {err}"))?;
+
+    Ok(())
+}
+
+/// Tests that the `has_callbacks` faucet procedure correctly reports whether a faucet defines
+/// callbacks.
+///
+/// - `with_callbacks`: callback slot has a non-empty value -> returns 1
+/// - `with_empty_callback`: callback slot exists but value is the empty word -> returns 0
+/// - `without_callbacks`: no callback slot at all -> returns 0
+#[rstest::rstest]
+#[case::with_callbacks(
+    vec![StorageSlot::with_value(
+        AssetCallbacks::on_before_asset_added_to_account_slot().clone(),
+        Word::from([1, 2, 3, 4u32]),
+    )],
+    true,
+)]
+#[case::with_empty_callback(
+    vec![StorageSlot::with_empty_value(
+        AssetCallbacks::on_before_asset_added_to_account_slot().clone(),
+    )],
+    false,
+)]
+#[case::without_callbacks(vec![], false)]
+#[tokio::test]
+async fn test_faucet_has_callbacks(
+    #[case] callback_slots: Vec<StorageSlot>,
+    #[case] expected_has_callbacks: bool,
+) -> anyhow::Result<()> {
+    let faucet_metadata = FungibleTokenMetadataBuilder::new(
+        TokenName::new("").expect("empty string is a valid token name"),
+        "CBK".try_into()?,
+        8,
+        1_000_000u64,
+    )
+    .build()?;
+
+    let account = AccountBuilder::new([1u8; 32])
+        .storage_mode(AccountStorageMode::Public)
+        .account_type(AccountType::FungibleFaucet)
+        .with_component(faucet_metadata)
+        .with_component(BasicFungibleFaucet)
+        .with_component(MockAccountComponent::with_slots(callback_slots))
+        .with_auth_component(Auth::IncrNonce)
+        .build_existing()?;
+
+    let tx_script_code = format!(
+        r#"
+        use miden::protocol::faucet
+
+        begin
+            exec.faucet::has_callbacks
+            push.{has_callbacks}
+            assert_eq.err="has_callbacks returned unexpected value"
+        end
+        "#,
+        has_callbacks = u8::from(expected_has_callbacks)
+    );
+    let tx_script = CodeBuilder::default().compile_tx_script(&tx_script_code)?;
+
+    TransactionContextBuilder::new(account)
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await?;
 
     Ok(())
 }
@@ -1806,6 +1874,86 @@ async fn test_get_initial_map_item() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Tests that `get_initial_item` returns the original slot values and `get_item` returns updated
+/// values after modification, for all possible storage slot indices.
+#[tokio::test]
+async fn test_get_item_and_get_initial_item_for_all_slots() -> anyhow::Result<()> {
+    // Build storage slots for all valid indices.
+    let slots: Vec<StorageSlot> = (0..AccountStorage::MAX_NUM_STORAGE_SLOTS as u32)
+        .map(|index| {
+            StorageSlot::with_value(
+                StorageSlotName::mock(index as usize),
+                Word::from([0, 0, 0, index]),
+            )
+        })
+        .collect();
+
+    let account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
+        .with_auth_component(Auth::IncrNonce)
+        .with_component(MockAccountComponent::with_slots(slots.clone()))
+        .build_existing()
+        .unwrap();
+
+    let tx_context = TransactionContextBuilder::new(account).build().unwrap();
+
+    // Build MASM code that, for each slot:
+    // 1. Sets a new value [index, 0, 0, 0]
+    // 2. Asserts get_initial_item returns the original value [0, 0, 0, index]
+    // 3. Asserts get_item returns the new value [index, 0, 0, 0]
+    let mut slot_constants = String::new();
+    let mut slot_operations = String::new();
+
+    for (index, slot) in slots.iter().enumerate() {
+        let slot_name = slot.name();
+        let initial_value = slot.value();
+        // Use a different format than the initial value (index at word position 0).
+        let new_value = Word::from([index as u32, 0, 0, 0]);
+        let const_name = format!("SLOT_{index}");
+
+        slot_constants.push_str(&format!("const {const_name} = word(\"{slot_name}\")\n"));
+
+        slot_operations.push_str(&format!(
+            r#"
+                # slot {index}: set new value
+                push.{new_value}
+                push.{const_name}[0..2]
+                call.mock_account::set_item dropw drop drop
+
+                # slot {index}: assert get_initial_item returns original value
+                push.{const_name}[0..2]
+                exec.account::get_initial_item
+                push.{initial_value}
+                assert_eqw.err="slot {index}: initial value mismatch"
+
+                # slot {index}: assert get_item returns the new value
+                push.{const_name}[0..2]
+                exec.account::get_item
+                push.{new_value}
+                assert_eqw.err="slot {index}: current value mismatch"
+            "#,
+        ));
+    }
+
+    let code = format!(
+        r#"
+        use $kernel::account
+        use $kernel::prologue
+        use mock::account->mock_account
+
+        {slot_constants}
+
+        begin
+            exec.prologue::prepare_transaction
+            {slot_operations}
+        end
+        "#,
+    );
+
+    tx_context.execute_code(&code).await?;
+
+    Ok(())
+}
+
 /// Tests that incrementing the account nonce fails if it would overflow the field.
 #[tokio::test]
 async fn incrementing_nonce_overflow_fails() -> anyhow::Result<()> {
@@ -1816,7 +1964,7 @@ async fn incrementing_nonce_overflow_fails() -> anyhow::Result<()> {
         .context("failed to build account")?;
     // Increment the nonce to the maximum felt value. The nonce is already 1, so we increment by
     // modulus - 2.
-    account.increment_nonce(Felt::new(Felt::MODULUS - 2))?;
+    account.increment_nonce(Felt::new(Felt::ORDER_U64 - 2))?;
 
     let result = TransactionContextBuilder::new(account).build()?.execute().await;
 
@@ -1852,9 +2000,11 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
         );
 
         let source = NamedSource::new("component1::interface", code);
-        TransactionKernel::assembler()
-            .assemble_library([source])
-            .expect("mock account code should be valid")
+        Arc::unwrap_or_clone(
+            TransactionKernel::assembler()
+                .assemble_library([source])
+                .expect("mock account code should be valid"),
+        )
     });
 
     static COMPONENT_2_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
@@ -1872,7 +2022,7 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
               end
 
               pub proc set_slot_content
-                  push.5.6.7.8
+                  push.[5,6,7,8]
                   push.TEST_SLOT_NAME[0..2]
                   exec.native_account::set_item
                   swapw dropw
@@ -1882,9 +2032,11 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
         );
 
         let source = NamedSource::new("component2::interface", code);
-        TransactionKernel::assembler()
-            .assemble_library([source])
-            .expect("mock account code should be valid")
+        Arc::unwrap_or_clone(
+            TransactionKernel::assembler()
+                .assemble_library([source])
+                .expect("mock account code should be valid"),
+        )
     });
 
     struct CustomComponent1 {
@@ -1915,7 +2067,8 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
         }
     }
 
-    let slot = StorageSlot::with_value(TEST_SLOT_NAME.clone(), Word::from([1, 2, 3, 4u32]));
+    let slot_content1 = Word::from([1, 2, 3, 4u32]);
+    let slot = StorageSlot::with_value(TEST_SLOT_NAME.clone(), slot_content1);
 
     let account = AccountBuilder::new([42; 32])
         .with_auth_component(Auth::IncrNonce)
@@ -1924,22 +2077,24 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
         .build()
         .context("failed to build account")?;
 
-    let tx_script = r#"
+    let tx_script = format!(
+        r#"
       use component1::interface->comp1_interface
       use component2::interface->comp2_interface
 
       begin
           call.comp1_interface::get_slot_content
-          push.1.2.3.4
+          push.{slot_content1}
           assert_eqw.err="failed to get slot content1"
 
           call.comp2_interface::set_slot_content
 
           call.comp2_interface::get_slot_content
-          push.5.6.7.8
+          push.[5,6,7,8]
           assert_eqw.err="failed to get slot content2"
       end
-    "#;
+    "#
+    );
 
     let tx_script = CodeBuilder::default()
         .with_dynamically_linked_library(COMPONENT_1_LIBRARY.clone())?

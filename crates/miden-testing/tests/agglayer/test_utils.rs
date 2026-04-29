@@ -1,27 +1,51 @@
 extern crate alloc;
 
-use alloc::vec;
-use alloc::vec::Vec;
+use alloc::sync::Arc;
 
 use miden_agglayer::agglayer_library;
+pub use miden_agglayer::testing::{
+    ClaimDataSource,
+    LEAF_VALUE_VECTORS_JSON,
+    LeafValueVector,
+    MerkleProofVerificationFile,
+    MtfVectorsFile,
+    SOLIDITY_CANONICAL_ZEROS,
+    SOLIDITY_MERKLE_PROOF_VECTORS,
+};
+use miden_assembly::{Assembler, DefaultSourceManager};
 use miden_core_lib::CoreLibrary;
-use miden_crypto::hash::keccak::Keccak256Digest;
-use miden_processor::fast::{ExecutionOutput, FastProcessor};
-use miden_processor::{AdviceInputs, DefaultHost, ExecutionError, Felt, Program, StackInputs};
+use miden_processor::advice::AdviceInputs;
+use miden_processor::{
+    DefaultHost,
+    ExecutionError,
+    ExecutionOutput,
+    FastProcessor,
+    Program,
+    StackInputs,
+};
 use miden_protocol::transaction::TransactionKernel;
+use miden_protocol::utils::sync::LazyLock;
 
-/// Transforms the `[Keccak256Digest]` into two word strings: (`a, b, c, d`, `e, f, g, h`)
-pub fn keccak_digest_to_word_strings(digest: Keccak256Digest) -> (String, String) {
-    let double_word = (*digest)
-        .chunks(4)
-        .map(|chunk| Felt::from(u32::from_le_bytes(chunk.try_into().unwrap())).to_string())
-        .rev()
-        .collect::<Vec<_>>();
+// EMBEDDED TEST VECTOR JSON FILES
+// ================================================================================================
 
-    (double_word[0..4].join(", "), double_word[4..8].join(", "))
-}
+/// Merkle Tree Frontier (MTF) vectors JSON from the Foundry-generated file.
+pub const MTF_VECTORS_JSON: &str = include_str!(
+    "../../../miden-agglayer/solidity-compat/test-vectors/merkle_tree_frontier_vectors.json"
+);
 
-/// Execute a program with default host and optional advice inputs
+// LAZY-PARSED TEST VECTORS
+// ================================================================================================
+
+/// Lazily parsed Merkle Tree frontier (MTF) vectors from the JSON file.
+pub static SOLIDITY_MTF_VECTORS: LazyLock<MtfVectorsFile> = LazyLock::new(|| {
+    serde_json::from_str(MTF_VECTORS_JSON).expect("failed to parse MTF vectors JSON")
+});
+
+// HELPER FUNCTIONS
+// ================================================================================================
+
+/// Execute a program with a default host and optional advice inputs.
 pub async fn execute_program_with_default_host(
     program: Program,
     advice_inputs: Option<AdviceInputs>,
@@ -34,7 +58,6 @@ pub async fn execute_program_with_default_host(
     let std_lib = CoreLibrary::default();
     host.load_library(std_lib.mast_forest()).unwrap();
 
-    // Register handlers from std_lib
     for (event_name, handler) in std_lib.handlers() {
         host.register_handler(event_name, handler)?;
     }
@@ -42,86 +65,38 @@ pub async fn execute_program_with_default_host(
     let agglayer_lib = agglayer_library();
     host.load_library(agglayer_lib.mast_forest()).unwrap();
 
-    let stack_inputs = StackInputs::new(vec![]).unwrap();
+    let stack_inputs = StackInputs::new(&[]).unwrap();
     let advice_inputs = advice_inputs.unwrap_or_default();
 
-    let processor = FastProcessor::new_debug(stack_inputs.as_slice(), advice_inputs);
+    let processor =
+        FastProcessor::new(stack_inputs).with_advice(advice_inputs).with_debugging(true);
     processor.execute(&program, &mut host).await
 }
 
-// TESTING HELPERS
-// ================================================================================================
+/// Execute a MASM script with the default host
+pub async fn execute_masm_script(script_code: &str) -> Result<ExecutionOutput, ExecutionError> {
+    let agglayer_lib = agglayer_library();
 
-/// Type alias for the complex return type of claim_note_test_inputs.
-///
-/// Contains native types for the new ClaimNoteParams structure:
-/// - smt_proof_local_exit_root: `Vec<[u8; 32]>` (256 bytes32 values)
-/// - smt_proof_rollup_exit_root: `Vec<[u8; 32]>` (256 bytes32 values)
-/// - global_index: [u32; 8]
-/// - mainnet_exit_root: [u8; 32]
-/// - rollup_exit_root: [u8; 32]
-/// - origin_network: u32
-/// - origin_token_address: [u8; 20]
-/// - destination_network: u32
-/// - metadata: [u32; 8]
-pub type ClaimNoteTestInputs = (
-    Vec<[u8; 32]>,
-    Vec<[u8; 32]>,
-    [u32; 8],
-    [u8; 32],
-    [u8; 32],
-    u32,
-    [u8; 20],
-    u32,
-    [u32; 8],
-);
+    let program = Assembler::new(Arc::new(DefaultSourceManager::default()))
+        .with_dynamic_library(CoreLibrary::default())
+        .unwrap()
+        .with_dynamic_library(agglayer_lib)
+        .unwrap()
+        .assemble_program(script_code)
+        .unwrap();
 
-/// Returns dummy test inputs for creating CLAIM notes with native types.
-///
-/// This is a convenience function for testing that provides realistic dummy data
-/// for all the agglayer claimAsset function inputs using native types.
-///
-/// # Returns
-/// A tuple containing native types for the new ClaimNoteParams structure
-pub fn claim_note_test_inputs() -> ClaimNoteTestInputs {
-    // Create SMT proofs with 32 bytes32 values each (SMT path depth)
-    let smt_proof_local_exit_root = vec![[0u8; 32]; 32];
-    let smt_proof_rollup_exit_root = vec![[0u8; 32]; 32];
-    // Global index format: [top 5 limbs = 0, mainnet_flag = 1, rollup_index = 0, leaf_index = 2]
-    let global_index = [0u32, 0, 0, 0, 0, 1, 0, 2];
+    execute_program_with_default_host(program, None).await
+}
 
-    let mainnet_exit_root: [u8; 32] = [
-        0xe3, 0xd3, 0x3b, 0x7e, 0x1f, 0x64, 0xb4, 0x04, 0x47, 0x2f, 0x53, 0xd1, 0xe4, 0x56, 0xc9,
-        0xfa, 0x02, 0x47, 0x03, 0x13, 0x72, 0xa3, 0x08, 0x0f, 0x82, 0xf2, 0x57, 0xa2, 0x60, 0x8a,
-        0x63, 0x1f,
-    ];
-
-    let rollup_exit_root: [u8; 32] = [
-        0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
-        0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
-        0x88, 0x99,
-    ];
-
-    let origin_network = 1u32;
-
-    let origin_token_address: [u8; 20] = [
-        0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
-        0x88, 0x99, 0xaa, 0xbb, 0xcc,
-    ];
-
-    let destination_network = 2u32;
-
-    let metadata: [u32; 8] = [0; 8];
-
-    (
-        smt_proof_local_exit_root,
-        smt_proof_rollup_exit_root,
-        global_index,
-        mainnet_exit_root,
-        rollup_exit_root,
-        origin_network,
-        origin_token_address,
-        destination_network,
-        metadata,
-    )
+/// Helper to assert execution fails with a specific error message
+pub async fn assert_execution_fails_with(script_code: &str, expected_error: &str) {
+    let result = execute_masm_script(script_code).await;
+    assert!(result.is_err(), "Expected execution to fail but it succeeded");
+    let error_msg = result.unwrap_err().to_string();
+    assert!(
+        error_msg.contains(expected_error),
+        "Expected error containing '{}', got: {}",
+        expected_error,
+        error_msg
+    );
 }

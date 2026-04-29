@@ -3,9 +3,10 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::error::Error;
 
-use miden_processor::{DeserializationError, ExecutionError};
-use miden_protocol::account::AccountId;
+use miden_processor::ExecutionError;
+use miden_processor::serde::DeserializationError;
 use miden_protocol::account::auth::PublicKeyCommitment;
+use miden_protocol::account::{AccountId, StorageMapKey};
 use miden_protocol::assembly::diagnostics::reporting::PrintDiagnostic;
 use miden_protocol::asset::AssetVaultKey;
 use miden_protocol::block::BlockNumber;
@@ -15,6 +16,7 @@ use miden_protocol::errors::{
     AccountError,
     AssetError,
     NoteError,
+    OutputNoteError,
     ProvenTransactionError,
     TransactionInputError,
     TransactionInputsExtractionError,
@@ -48,12 +50,23 @@ pub(crate) enum TransactionCheckerError {
     TransactionPreparation(#[source] TransactionExecutorError),
     #[error("transaction execution prologue failed: {0}")]
     PrologueExecution(#[source] TransactionExecutorError),
-    #[error("transaction execution epilogue failed: {0}")]
-    EpilogueExecution(#[source] TransactionExecutorError),
+    #[error("transaction execution epilogue failed: {error}")]
+    EpilogueExecution {
+        error: TransactionExecutorError,
+        /// Cycle counts for notes that executed successfully before the epilogue failed.
+        successful_notes_cycle_counts: Vec<usize>,
+    },
     #[error("transaction note execution failed on note index {failed_note_index}: {error}")]
     NoteExecution {
         failed_note_index: usize,
         error: TransactionExecutorError,
+        /// Cycle counts for notes that executed successfully before the failed note.
+        successful_notes_cycle_counts: Vec<usize>,
+        /// The number of cycles consumed by the failed note before it errored.
+        ///
+        /// This is `Some` when the failure was due to exceeding the cycle limit, and `None`
+        /// for other error types where the cycle count is not meaningful.
+        failed_note_cycle_count: Option<usize>,
     },
 }
 
@@ -62,7 +75,7 @@ impl From<TransactionCheckerError> for TransactionExecutorError {
         match error {
             TransactionCheckerError::TransactionPreparation(error) => error,
             TransactionCheckerError::PrologueExecution(error) => error,
-            TransactionCheckerError::EpilogueExecution(error) => error,
+            TransactionCheckerError::EpilogueExecution { error, .. } => error,
             TransactionCheckerError::NoteExecution { error, .. } => error,
         }
     }
@@ -148,6 +161,8 @@ pub enum TransactionProverError {
     RemoveFeeAssetFromDelta(#[source] AccountDeltaError),
     #[error("failed to construct transaction outputs")]
     TransactionOutputConstructionFailed(#[source] TransactionOutputError),
+    #[error("failed to shrink output note")]
+    OutputNoteShrinkFailed(#[source] OutputNoteError),
     #[error("failed to build proven transaction")]
     ProvenTransactionBuildFailed(#[source] ProvenTransactionError),
     // Print the diagnostic directly instead of returning the source error. In the source error
@@ -286,7 +301,7 @@ pub enum TransactionKernelError {
     )]
     GetStorageMapWitness {
         map_root: Word,
-        map_key: Word,
+        map_key: StorageMapKey,
         // thiserror will return this when calling Error::source on TransactionKernelError.
         source: DataStoreError,
     },

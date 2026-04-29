@@ -249,8 +249,8 @@ impl<ContainerId: Copy> InputOutputNoteTracker<ContainerId> {
             // Check if the notes with the same ID have differing hashes.
             // This could happen if the metadata of the notes is different, which we consider an
             // error.
-            let input_commitment = input_note_header.commitment();
-            let output_commitment = output_note.commitment();
+            let input_commitment = input_note_header.to_commitment();
+            let output_commitment = output_note.to_commitment();
             if output_commitment != input_commitment {
                 return Err(InputOutputNoteTrackerError::NoteCommitmentMismatch {
                     id,
@@ -290,8 +290,8 @@ impl<ContainerId: Copy> InputOutputNoteTracker<ContainerId> {
             })?
         };
 
-        let note_index = proof.location().node_index_in_block().into();
-        let note_commitment = note_header.commitment();
+        let note_index = proof.location().block_note_tree_index().into();
+        let note_commitment = note_header.to_commitment();
         proof
             .note_path()
             .verify(note_index, note_commitment, &note_block_header.note_root())

@@ -1,14 +1,15 @@
-use ::miden::protocol::kernel_proc_offsets::TX_GET_BLOCK_NUMBER_OFFSET
-use ::miden::protocol::kernel_proc_offsets::TX_GET_BLOCK_COMMITMENT_OFFSET
-use ::miden::protocol::kernel_proc_offsets::TX_GET_BLOCK_TIMESTAMP_OFFSET
-use ::miden::protocol::kernel_proc_offsets::TX_GET_INPUT_NOTES_COMMITMENT_OFFSET
-use ::miden::protocol::kernel_proc_offsets::TX_GET_OUTPUT_NOTES_COMMITMENT_OFFSET
-use ::miden::protocol::kernel_proc_offsets::TX_GET_NUM_INPUT_NOTES_OFFSET
-use ::miden::protocol::kernel_proc_offsets::TX_GET_NUM_OUTPUT_NOTES_OFFSET
-use ::miden::protocol::kernel_proc_offsets::TX_PREPARE_FPI_OFFSET
-use ::miden::protocol::kernel_proc_offsets::TX_EXEC_FOREIGN_PROC_OFFSET
-use ::miden::protocol::kernel_proc_offsets::TX_UPDATE_EXPIRATION_BLOCK_DELTA_OFFSET
-use ::miden::protocol::kernel_proc_offsets::TX_GET_EXPIRATION_DELTA_OFFSET
+use miden::protocol::kernel_proc_offsets::TX_GET_BLOCK_NUMBER_OFFSET
+use miden::protocol::kernel_proc_offsets::TX_GET_BLOCK_COMMITMENT_OFFSET
+use miden::protocol::kernel_proc_offsets::TX_GET_BLOCK_TIMESTAMP_OFFSET
+use miden::protocol::kernel_proc_offsets::TX_GET_INPUT_NOTES_COMMITMENT_OFFSET
+use miden::protocol::kernel_proc_offsets::TX_GET_OUTPUT_NOTES_COMMITMENT_OFFSET
+use miden::protocol::kernel_proc_offsets::TX_GET_NUM_INPUT_NOTES_OFFSET
+use miden::protocol::kernel_proc_offsets::TX_GET_NUM_OUTPUT_NOTES_OFFSET
+use miden::protocol::kernel_proc_offsets::TX_PREPARE_FPI_OFFSET
+use miden::protocol::kernel_proc_offsets::TX_EXEC_FOREIGN_PROC_OFFSET
+use miden::protocol::kernel_proc_offsets::TX_UPDATE_EXPIRATION_BLOCK_DELTA_OFFSET
+use miden::protocol::kernel_proc_offsets::TX_GET_EXPIRATION_DELTA_OFFSET
+use miden::protocol::kernel_proc_offsets::TX_GET_TX_SCRIPT_ROOT_OFFSET
 
 #! Returns the block number of the transaction reference block.
 #!
@@ -211,11 +212,11 @@ end
 
 #! Executes the provided procedure against the foreign account.
 #!
-#! Inputs:  [foreign_account_id_prefix, foreign_account_id_suffix, FOREIGN_PROC_ROOT, foreign_procedure_inputs(16)]
+#! Inputs:  [foreign_account_id_suffix, foreign_account_id_prefix, FOREIGN_PROC_ROOT, foreign_procedure_inputs(16)]
 #! Outputs: [foreign_procedure_outputs(16)]
 #!
 #! Where:
-#! - foreign_account_id_{prefix,suffix} are the prefix and suffix felts of the account ID of the
+#! - foreign_account_id_{suffix,prefix} are the suffix and prefix felts of the account ID of the
 #!   foreign account to execute the procedure on.
 #! - foreign_procedure_inputs are the inputs to the foreign procedure padded to 16 felts.
 #! - foreign_procedure_outputs are the outputs of the foreign procedure padded to 16 felts.
@@ -229,25 +230,25 @@ pub proc execute_foreign_procedure
     # store the foreign account ID and foreign procedure root to the local memory
     # this will allow us to get the 16th element of the foreign procedure inputs to pass it to the
     # `tx_prepare_fpi` kernel procedure
-    loc_store.4 loc_store.5 loc_storew_be.0 dropw
+    loc_store.4 loc_store.5 loc_storew_le.0 dropw
     # OS => [foreign_procedure_inputs(16)]
-    # LM => [FOREIGN_PROC_ROOT, foreign_account_id_prefix, foreign_account_id_suffix]
+    # LM => [FOREIGN_PROC_ROOT, foreign_account_id_suffix, foreign_account_id_prefix]
 
     # move up the last element of the foreign procedure inputs
     movup.15
     # => [foreign_proc_input_value_15, foreign_procedure_inputs(15)]
 
     # load the foreign account ID and foreign procedure root back to the operand stack
-    padw loc_loadw_be.0 loc_load.5 loc_load.4
-    # => [foreign_account_id_prefix, foreign_account_id_suffix, FOREIGN_PROC_ROOT, foreign_proc_input_value_15, foreign_procedure_inputs(15)]
+    padw loc_loadw_le.0 loc_load.5 loc_load.4
+    # => [foreign_account_id_suffix, foreign_account_id_prefix, FOREIGN_PROC_ROOT, foreign_proc_input_value_15, foreign_procedure_inputs(15)]
 
     # get the tx_prepare_fpi procedure offset
     push.TX_PREPARE_FPI_OFFSET
-    # => [offset, foreign_account_id_prefix, foreign_account_id_suffix, FOREIGN_PROC_ROOT, foreign_proc_input_value_15, foreign_procedure_inputs(15)]
-    
+    # => [offset, foreign_account_id_suffix, foreign_account_id_prefix, FOREIGN_PROC_ROOT, foreign_proc_input_value_15, foreign_procedure_inputs(15)]
+
     # pad the stack before the syscall
     padw padw swapdw
-    # => [offset, foreign_account_id_prefix, foreign_account_id_suffix, FOREIGN_PROC_ROOT, 
+    # => [offset, foreign_account_id_suffix, foreign_account_id_prefix, FOREIGN_PROC_ROOT,
     #     foreign_proc_input_value_15, pad(8), foreign_procedure_inputs(15)]
 
     # store the foreign account ID, foreign procedure root, and the 16th (last) element of the
@@ -318,4 +319,30 @@ pub proc get_expiration_block_delta
     # clear the stack
     swapdw dropw dropw swapw dropw movdn.3 drop drop drop
     # => [expiration_delta]
+end
+
+#! Returns the transaction script root, or the empty word if no transaction script was executed.
+#!
+#! Inputs:  []
+#! Outputs: [TX_SCRIPT_ROOT]
+#!
+#! Where:
+#! - TX_SCRIPT_ROOT is the root of the transaction script executed in this transaction, or the
+#!   empty word if no transaction script was executed.
+#!
+#! Invocation: exec
+pub proc get_tx_script_root
+    # pad the stack
+    padw padw padw push.0.0.0
+    # => [pad(15)]
+
+    push.TX_GET_TX_SCRIPT_ROOT_OFFSET
+    # => [offset, pad(15)]
+
+    syscall.exec_kernel_proc
+    # => [TX_SCRIPT_ROOT, pad(12)]
+
+    # clean the stack
+    swapdw dropw dropw swapw dropw
+    # => [TX_SCRIPT_ROOT]
 end

@@ -1,0 +1,170 @@
+use miden::core::sys
+use agglayer::common::asset_conversion
+use miden::protocol::active_account
+
+# CONSTANTS
+# =================================================================================================
+
+# Storage slots for conversion metadata.
+# Slot 1: [addr_felt0, addr_felt1, addr_felt2, addr_felt3] — first 4 felts of origin token address
+const CONVERSION_INFO_1_SLOT = word("agglayer::faucet::conversion_info_1")
+# Slot 2: [addr_felt4, origin_network, scale, 0] — remaining address felt + origin network + scale
+const CONVERSION_INFO_2_SLOT = word("agglayer::faucet::conversion_info_2")
+
+# Storage slots for the pre-computed metadata hash (keccak256 of ABI-encoded token metadata).
+# The 32-byte hash is split across two value slots, each holding 4 u32 felts.
+const METADATA_HASH_LO_SLOT = word("agglayer::faucet::metadata_hash_lo")
+const METADATA_HASH_HI_SLOT = word("agglayer::faucet::metadata_hash_hi")
+
+# PUBLIC INTERFACE
+# =================================================================================================
+
+#! Returns the origin token address (5 felts) and origin network identifier from faucet conversion
+#! storage.
+#!
+#! Reads conversion_info_1 (first 4 felts of address) and conversion_info_2 (5th felt + origin
+#! network) from storage in a single pass.
+#!
+#! Inputs:  []
+#! Outputs: [addr0, addr1, addr2, addr3, addr4, origin_network]
+#!
+#! Invocation: exec
+proc get_origin_token_address_and_network
+    push.CONVERSION_INFO_1_SLOT[0..2]
+    exec.active_account::get_item
+    # => [addr0, addr1, addr2, addr3]
+
+    push.CONVERSION_INFO_2_SLOT[0..2]
+    exec.active_account::get_item
+    # => [addr4, origin_network, scale, 0, addr0, addr1, addr2, addr3]
+
+    movdn.7 movdn.7 drop drop
+    # => [addr0, addr1, addr2, addr3, addr4, origin_network]
+end
+
+#! Returns the scale factor from faucet conversion storage.
+#!
+#! Inputs:  []
+#! Outputs: [scale]
+#!
+#! Invocation: exec
+proc get_scale_inner
+    push.CONVERSION_INFO_2_SLOT[0..2]
+    exec.active_account::get_item
+    # => [addr4, origin_network, scale, 0]
+
+    drop drop swap drop
+    # => [scale]
+end
+
+#! Returns the pre-computed metadata hash (8 u32 felts) from faucet storage.
+#!
+#! The metadata hash is `keccak256(abi.encode(name, symbol, decimals))` and is stored across two 
+#! value slots (lo and hi, 4 felts each).
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [METADATA_HASH_LO(4), METADATA_HASH_HI(4), pad(8)]
+#!
+#! Invocation: call
+pub proc get_metadata_hash
+    push.METADATA_HASH_LO_SLOT[0..2]
+    exec.active_account::get_item
+    # => [lo0, lo1, lo2, lo3, pad(16)]
+
+    push.METADATA_HASH_HI_SLOT[0..2]
+    exec.active_account::get_item
+    # => [hi0, hi1, hi2, hi3, lo0, lo1, lo2, lo3, pad(16)]
+
+    # Rearrange: move hi below lo
+    swapw
+    # => [lo0, lo1, lo2, lo3, hi0, hi1, hi2, hi3, pad(16)]
+
+    # Drop 8 excess padding elements (24 -> 16)
+    swapdw dropw dropw
+    # => [METADATA_HASH_LO(4), METADATA_HASH_HI(4), pad(8)]
+end
+
+#! Returns the scale factor from faucet conversion storage.
+#!
+#! Called via FPI from the bridge account.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [scale, pad(15)]
+#!
+#! Invocation: call
+pub proc get_scale
+    exec.get_scale_inner
+    # => [scale, pad(16)]
+
+    swap drop
+    # => [scale, pad(15)]
+end
+
+#! Converts a native Miden asset amount to origin asset data using the stored conversion metadata 
+#! (origin_token_address, origin_network, and scale).
+#!
+#! This procedure is intended to be called via FPI from the bridge account.
+#! It reads the faucet's conversion metadata from storage, scales the native amount to U256 format,
+#! and returns the result along with origin token address and network.
+#!
+#! Inputs:  [amount, pad(15)]
+#! Outputs: [AMOUNT_U256_LO, AMOUNT_U256_HI, addr0, addr1, addr2, addr3, addr4, origin_network, pad(2)]
+#!
+#! Where:
+#! - amount: The native Miden asset amount
+#! - AMOUNT_U256: The scaled amount as 8 u32 limbs (little-endian U256)
+#! - addr0..addr4: Origin token address (5 felts, u32 limbs)
+#! - origin_network: Origin network identifier
+#!
+#! Invocation: call
+pub proc asset_to_origin_asset
+    # => [amount, pad(15)]
+
+    # Step 1: Get scale from storage
+    exec.get_scale_inner swap
+    # => [amount, scale, pad(15)]
+
+    # Step 2: Scale amount to U256
+    exec.asset_conversion::scale_native_amount_to_u256
+    exec.asset_conversion::reverse_limbs_and_change_byte_endianness
+    # => [U256_LO, U256_HI, pad(15)]
+
+    # Step 3: Get origin token address and network
+    exec.get_origin_token_address_and_network
+    # => [addr0, addr1, addr2, addr3, addr4, origin_network, U256_LO, U256_HI, pad(15)]
+
+    # Move address + network below the U256 amount
+    repeat.6 movdn.13 end
+    # => [U256_LO, U256_HI, addr0, addr1, addr2, addr3, addr4, origin_network, pad(15)]
+
+    exec.sys::truncate_stack
+    # => [U256_LO, U256_HI, addr0, addr1, addr2, addr3, addr4, origin_network, pad(2)]
+end
+
+#! Burns the fungible asset from the active note.
+#!
+#! This procedure retrieves the asset from the active note and burns it. The note must contain
+#! exactly one asset, which must be a fungible asset issued by this faucet.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the procedure is not called from a note context (active_note::get_assets will fail).
+#! - the note does not contain exactly one asset.
+#! - the transaction is executed against an account which is not a fungible asset faucet.
+#! - the transaction is executed against a faucet which is not the origin of the specified asset.
+#! - the amount about to be burned is greater than the outstanding supply of the asset.
+#!
+#! Invocation: call
+pub use ::miden::standards::faucets::basic_fungible::burn
+
+#! Re-export the network fungible faucet's `mint_and_send` procedure.
+#!
+#! See `miden::standards::faucets::network_fungible::mint_and_send` for more details.
+#!
+#! Inputs:  [amount, tag, note_type, RECIPIENT, pad(9)]
+#! Outputs: [note_idx, pad(15)]
+#!
+#! Invocation: call
+pub use ::miden::standards::faucets::network_fungible::mint_and_send

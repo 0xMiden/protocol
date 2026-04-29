@@ -5,16 +5,15 @@ use core::error::Error;
 
 use miden_assembly::Report;
 use miden_assembly::diagnostics::reporting::PrintDiagnostic;
+use miden_core::Felt;
 use miden_core::mast::MastForestError;
-use miden_core::{EventId, Felt};
 use miden_crypto::merkle::mmr::MmrError;
 use miden_crypto::merkle::smt::{SmtLeafError, SmtProofError};
 use miden_crypto::utils::HexParseError;
-use miden_processor::DeserializationError;
 use thiserror::Error;
 
-use super::account::AccountId;
-use super::asset::{FungibleAsset, NonFungibleAsset, TokenSymbol};
+use super::account::{AccountId, RoleSymbol};
+use super::asset::{AssetVaultKey, FungibleAsset, NonFungibleAsset, TokenSymbol};
 use super::crypto::merkle::MerkleError;
 use super::note::NoteId;
 use super::{MAX_BATCHES_PER_BLOCK, MAX_OUTPUT_NOTES_PER_BATCH, Word};
@@ -24,18 +23,26 @@ use crate::account::{
     AccountIdPrefix,
     AccountStorage,
     AccountType,
+    StorageMapKey,
     StorageSlotId,
-    // StorageValueName,
-    // StorageValueNameError,
-    // TemplateTypeError,
     StorageSlotName,
 };
 use crate::address::AddressType;
-use crate::asset::AssetVaultKey;
+use crate::asset::AssetId;
 use crate::batch::BatchId;
 use crate::block::BlockNumber;
-use crate::note::{NoteAssets, NoteAttachmentArray, NoteTag, NoteType, Nullifier};
-use crate::transaction::{TransactionEventId, TransactionId};
+use crate::note::{
+    NoteAssets,
+    NoteAttachmentArray,
+    NoteAttachmentKind,
+    NoteAttachmentScheme,
+    NoteTag,
+    NoteType,
+    Nullifier,
+};
+use crate::transaction::TransactionId;
+use crate::utils::serde::DeserializationError;
+use crate::vm::EventId;
 use crate::{
     ACCOUNT_UPDATE_MAX_SIZE,
     MAX_ACCOUNTS_PER_BATCH,
@@ -43,6 +50,7 @@ use crate::{
     MAX_INPUT_NOTES_PER_TX,
     MAX_NOTE_STORAGE_ITEMS,
     MAX_OUTPUT_NOTES_PER_TX,
+    NOTE_MAX_SIZE,
 };
 
 #[cfg(any(feature = "testing", test))]
@@ -52,13 +60,15 @@ pub use masm_error::MasmError;
 
 /// The errors from the MASM code of the transaction kernel.
 #[cfg(any(feature = "testing", test))]
-#[rustfmt::skip]
-pub mod tx_kernel;
+pub mod tx_kernel {
+    include!(concat!(env!("OUT_DIR"), "/tx_kernel_errors.rs"));
+}
 
 /// The errors from the MASM code of the Miden protocol library.
 #[cfg(any(feature = "testing", test))]
-#[rustfmt::skip]
-pub mod protocol;
+pub mod protocol {
+    include!(concat!(env!("OUT_DIR"), "/protocol_errors.rs"));
+}
 
 // ACCOUNT COMPONENT TEMPLATE ERROR
 // ================================================================================================
@@ -98,8 +108,6 @@ pub enum ComponentMetadataError {
 
 #[derive(Debug, Error)]
 pub enum AccountError {
-    #[error("failed to deserialize account code")]
-    AccountCodeDeserializationError(#[source] DeserializationError),
     #[error("account code does not contain an auth component")]
     AccountCodeNoAuthComponent,
     #[error("account code contains multiple auth components")]
@@ -272,6 +280,8 @@ pub enum AccountTreeError {
     ApplyMutations(#[source] MerkleError),
     #[error("failed to compute account tree mutations")]
     ComputeMutations(#[source] MerkleError),
+    #[error("provided smt contains an invalid account ID in key {key}")]
+    InvalidAccountIdKey { key: Word, source: AccountIdError },
     #[error("smt leaf's index is not a valid account ID prefix")]
     InvalidAccountIdPrefix(#[source] AccountIdError),
     #[error("account witness merkle path depth {0} does not match AccountTree::DEPTH")]
@@ -401,9 +411,13 @@ pub enum AccountDeltaError {
 #[derive(Debug, Error)]
 pub enum StorageMapError {
     #[error("map entries contain key {key} twice with values {value0} and {value1}")]
-    DuplicateKey { key: Word, value0: Word, value1: Word },
-    #[error("map key {raw_key} is not present in provided SMT proof")]
-    MissingKey { raw_key: Word },
+    DuplicateKey {
+        key: StorageMapKey,
+        value0: Word,
+        value1: Word,
+    },
+    #[error("map key {key} is not present in provided SMT proof")]
+    MissingKey { key: StorageMapKey },
 }
 
 // BATCH ACCOUNT UPDATE ERROR
@@ -439,19 +453,15 @@ pub enum AssetError {
     FungibleAssetAmountTooBig(u64),
     #[error("subtracting {subtrahend} from fungible asset amount {minuend} would underflow")]
     FungibleAssetAmountNotSufficient { minuend: u64, subtrahend: u64 },
-    #[error("fungible asset word {0} does not contain expected ZERO at word index 1")]
-    FungibleAssetExpectedZero(Word),
     #[error(
-        "cannot add fungible asset with issuer {other_issuer} to fungible asset with issuer {original_issuer}"
+        "cannot combine fungible assets with different vault keys: {original_key} and {other_key}"
     )]
-    FungibleAssetInconsistentFaucetIds {
-        original_issuer: AccountId,
-        other_issuer: AccountId,
+    FungibleAssetInconsistentVaultKeys {
+        original_key: AssetVaultKey,
+        other_key: AssetVaultKey,
     },
     #[error("faucet account ID in asset is invalid")]
     InvalidFaucetAccountId(#[source] Box<dyn Error + Send + Sync + 'static>),
-    #[error("faucet account ID in asset has a non-faucet prefix: {}", .0)]
-    InvalidFaucetAccountIdPrefix(AccountIdPrefix),
     #[error(
       "faucet id {0} of type {id_type} must be of type {expected_ty} for fungible assets",
       id_type = .0.account_type(),
@@ -459,13 +469,25 @@ pub enum AssetError {
     )]
     FungibleFaucetIdTypeMismatch(AccountId),
     #[error(
+        "asset ID prefix and suffix in a non-fungible asset's vault key must match indices 0 and 1 in the value, but asset ID was {asset_id} and value was {value}"
+    )]
+    NonFungibleAssetIdMustMatchValue { asset_id: AssetId, value: Word },
+    #[error("asset ID prefix and suffix in a fungible asset's vault key must be zero but was {0}")]
+    FungibleAssetIdMustBeZero(AssetId),
+    #[error(
+        "the three most significant elements in a fungible asset's value must be zero but provided value was {0}"
+    )]
+    FungibleAssetValueMostSignificantElementsMustBeZero(Word),
+    #[error(
       "faucet id {0} of type {id_type} must be of type {expected_ty} for non fungible assets",
       id_type = .0.account_type(),
       expected_ty = AccountType::NonFungibleFaucet
     )]
-    NonFungibleFaucetIdTypeMismatch(AccountIdPrefix),
-    #[error("asset vault key {actual} does not match expected asset vault key {expected}")]
-    AssetVaultKeyMismatch { actual: Word, expected: Word },
+    NonFungibleFaucetIdTypeMismatch(AccountId),
+    #[error("smt proof in asset witness contains invalid key or value")]
+    AssetWitnessInvalid(#[source] Box<AssetError>),
+    #[error("invalid native asset callbacks encoding: {0}")]
+    InvalidAssetCallbackFlag(u8),
 }
 
 // TOKEN SYMBOL ERROR
@@ -475,11 +497,76 @@ pub enum AssetError {
 pub enum TokenSymbolError {
     #[error("token symbol value {0} cannot exceed {max}", max = TokenSymbol::MAX_ENCODED_VALUE)]
     ValueTooLarge(u64),
+    #[error(
+        "token symbol value {0} cannot be less than {min}",
+        min = TokenSymbol::MIN_ENCODED_VALUE
+    )]
+    ValueTooSmall(u64),
     #[error("token symbol should have length between 1 and 12 characters, but {0} was provided")]
     InvalidLength(usize),
     #[error("token symbol contains a character that is not uppercase ASCII")]
     InvalidCharacter,
     #[error("token symbol data left after decoding the specified number of characters")]
+    DataNotFullyDecoded,
+}
+
+impl From<ShortCapitalStringError> for TokenSymbolError {
+    fn from(value: ShortCapitalStringError) -> Self {
+        match value {
+            ShortCapitalStringError::ValueTooLarge(v) => Self::ValueTooLarge(v),
+            ShortCapitalStringError::ValueTooSmall(v) => Self::ValueTooSmall(v),
+            ShortCapitalStringError::InvalidLength(v) => Self::InvalidLength(v),
+            ShortCapitalStringError::InvalidCharacter => Self::InvalidCharacter,
+            ShortCapitalStringError::DataNotFullyDecoded => Self::DataNotFullyDecoded,
+        }
+    }
+}
+
+// ROLE ERROR
+// ================================================================================================
+
+#[derive(Debug, Error)]
+pub enum RoleSymbolError {
+    #[error("role symbol value {0} cannot exceed {max}", max = RoleSymbol::MAX_ENCODED_VALUE)]
+    ValueTooLarge(u64),
+    #[error("role symbol value {0} cannot be less than {min}", min = RoleSymbol::MIN_ENCODED_VALUE)]
+    ValueTooSmall(u64),
+    #[error("role symbol should have length between 1 and 12 characters, but {0} was provided")]
+    InvalidLength(usize),
+    #[error("role symbol contains a character that is not uppercase ASCII or underscore")]
+    InvalidCharacter,
+    #[error("role symbol data left after decoding the specified number of characters")]
+    DataNotFullyDecoded,
+}
+
+impl From<ShortCapitalStringError> for RoleSymbolError {
+    fn from(value: ShortCapitalStringError) -> Self {
+        match value {
+            ShortCapitalStringError::ValueTooLarge(v) => Self::ValueTooLarge(v),
+            ShortCapitalStringError::ValueTooSmall(v) => Self::ValueTooSmall(v),
+            ShortCapitalStringError::InvalidLength(v) => Self::InvalidLength(v),
+            ShortCapitalStringError::InvalidCharacter => Self::InvalidCharacter,
+            ShortCapitalStringError::DataNotFullyDecoded => Self::DataNotFullyDecoded,
+        }
+    }
+}
+
+// SHORT CAPITAL STRING ERROR
+// ================================================================================================
+
+#[derive(Debug, Error)]
+pub(crate) enum ShortCapitalStringError {
+    #[error("short capital string value {0} is too large")]
+    ValueTooLarge(u64),
+    #[error("short capital string value {0} is too small")]
+    ValueTooSmall(u64),
+    #[error(
+        "short capital string should have length between 1 and 12 characters, but {0} was provided"
+    )]
+    InvalidLength(usize),
+    #[error("short capital string contains an invalid character")]
+    InvalidCharacter,
+    #[error("short capital string data left after decoding the specified number of characters")]
     DataNotFullyDecoded,
 }
 
@@ -513,8 +600,6 @@ pub enum AssetVaultError {
 pub enum PartialAssetVaultError {
     #[error("provided SMT entry {entry} is not a valid asset")]
     InvalidAssetInSmt { entry: Word, source: AssetError },
-    #[error("expected asset vault key to be {expected} but it was {actual}")]
-    AssetVaultKeyMismatch { expected: AssetVaultKey, actual: Word },
     #[error("failed to add asset proof")]
     FailedToAddProof(#[source] MerkleError),
     #[error("asset is not tracked in the partial vault")]
@@ -556,9 +641,9 @@ pub enum NoteError {
     private = NoteType::Private,
     )]
     UnknownNoteType(Box<str>),
-    #[error("note location index {node_index_in_block} is out of bounds 0..={highest_index}")]
-    NoteLocationIndexOutOfBounds {
-        node_index_in_block: u16,
+    #[error("block note tree index {block_note_tree_index} is out of bounds 0..={highest_index}")]
+    BlockNoteTreeIndexOutOfBounds {
+        block_note_tree_index: u16,
         highest_index: usize,
     },
     #[error("note network execution requires a public note but note is of type {0}")]
@@ -584,6 +669,20 @@ pub enum NoteError {
     UnknownNoteAttachmentKind(u8),
     #[error("note attachment of kind None must have attachment scheme None")]
     AttachmentKindNoneMustHaveAttachmentSchemeNone,
+    #[error(
+        "note attachment kind mismatch: header has {header_kind:?} but attachment has {attachment_kind:?}"
+    )]
+    AttachmentKindMismatch {
+        header_kind: NoteAttachmentKind,
+        attachment_kind: NoteAttachmentKind,
+    },
+    #[error(
+        "note attachment scheme mismatch: header has {header_scheme:?} but attachment has {attachment_scheme:?}"
+    )]
+    AttachmentSchemeMismatch {
+        header_scheme: NoteAttachmentScheme,
+        attachment_scheme: NoteAttachmentScheme,
+    },
     #[error("{error_msg}")]
     Other {
         error_msg: Box<str>,
@@ -663,6 +762,8 @@ impl PartialBlockchainError {
 pub enum TransactionScriptError {
     #[error("failed to assemble transaction script:\n{}", PrintDiagnostic::new(.0))]
     AssemblyError(Report),
+    #[error("failed to convert package to transaction script:\n{}", PrintDiagnostic::new(.0))]
+    PackageNotProgram(Report),
 }
 
 // TRANSACTION INPUT ERROR
@@ -753,17 +854,31 @@ pub enum TransactionOutputError {
     AccountUpdateCommitment(Box<str>),
 }
 
+// OUTPUT NOTE ERROR
+// ================================================================================================
+
+/// Errors that can occur when creating a
+/// [`PublicOutputNote`](crate::transaction::PublicOutputNote) or
+/// [`PrivateNoteHeader`](crate::transaction::PrivateNoteHeader).
+#[derive(Debug, Error)]
+pub enum OutputNoteError {
+    #[error("note with id {0} is private but expected a public note")]
+    NoteIsPrivate(NoteId),
+    #[error("note with id {0} is public but expected a private note")]
+    NoteIsPublic(NoteId),
+    #[error(
+        "public note with id {note_id} has size {note_size} bytes which exceeds maximum note size of {NOTE_MAX_SIZE}"
+    )]
+    NoteSizeLimitExceeded { note_id: NoteId, note_size: usize },
+}
+
 // TRANSACTION EVENT PARSING ERROR
 // ================================================================================================
 
 #[derive(Debug, Error)]
 pub enum TransactionEventError {
     #[error("event id {0} is not a valid transaction event")]
-    InvalidTransactionEvent(EventId, Option<&'static str>),
-    #[error("event id {0} is not a transaction kernel event")]
-    NotTransactionEvent(EventId, Option<&'static str>),
-    #[error("event id {0} can only be emitted from the root context")]
-    NotRootContext(TransactionEventId),
+    InvalidTransactionEvent(EventId),
 }
 
 // TRANSACTION TRACE PARSING ERROR
@@ -1158,5 +1273,5 @@ pub enum NullifierTreeError {
 #[derive(Debug, Error)]
 pub enum AuthSchemeError {
     #[error("auth scheme identifier `{0}` is not valid")]
-    InvalidAuthSchemeIdentifier(u8),
+    InvalidAuthSchemeIdentifier(String),
 }

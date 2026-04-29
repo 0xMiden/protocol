@@ -1,10 +1,10 @@
 use miden_crypto::merkle::smt::Smt;
 #[cfg(not(target_family = "wasm"))]
-use winter_rand_utils::rand_value;
+use miden_crypto::rand::test_utils::rand_value;
 
 use crate::Word;
 use crate::account::Account;
-use crate::block::account_tree::{AccountTree, account_id_to_smt_key};
+use crate::block::account_tree::{AccountIdKey, AccountTree};
 use crate::block::{BlockHeader, BlockNumber, FeeParameters};
 use crate::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
 use crate::testing::random_secret_key::random_secret_key;
@@ -26,7 +26,7 @@ impl BlockHeader {
         let smt = Smt::with_entries(
             accounts
                 .iter()
-                .map(|acct| (account_id_to_smt_key(acct.id()), acct.to_commitment())),
+                .map(|acct| (AccountIdKey::from(acct.id()).as_word(), acct.to_commitment())),
         )
         .expect("failed to create account db");
         let acct_db = AccountTree::new(smt).expect("failed to create account tree");

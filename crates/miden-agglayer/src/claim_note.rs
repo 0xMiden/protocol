@@ -2,81 +2,31 @@ use alloc::string::ToString;
 use alloc::vec;
 use alloc::vec::Vec;
 
-use miden_core::{Felt, FieldElement, Word};
+use miden_core::{Felt, Word};
 use miden_protocol::account::AccountId;
 use miden_protocol::crypto::SequentialCommit;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
-use miden_protocol::note::{
-    Note,
-    NoteAssets,
-    NoteMetadata,
-    NoteRecipient,
-    NoteStorage,
-    NoteTag,
-    NoteType,
-};
+use miden_protocol::note::{Note, NoteAssets, NoteMetadata, NoteRecipient, NoteStorage, NoteType};
 use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 
-use crate::utils::bytes32_to_felts;
-use crate::{EthAddressFormat, EthAmount, claim_script};
+use crate::utils::Keccak256Output;
+use crate::{EthAddress, EthAmount, GlobalIndex, MetadataHash, claim_script};
 
-// CLAIM NOTE STRUCTURES
+// CLAIM NOTE TYPE ALIASES
 // ================================================================================================
 
-/// SMT node representation (32-byte hash)
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SmtNode([u8; 32]);
+/// SMT node representation (32-byte Keccak256 hash)
+pub type SmtNode = Keccak256Output;
 
-impl SmtNode {
-    /// Creates a new SMT node from a 32-byte array
-    pub fn new(bytes: [u8; 32]) -> Self {
-        Self(bytes)
-    }
+/// Exit root representation (32-byte Keccak256 hash)
+pub type ExitRoot = Keccak256Output;
 
-    /// Returns the inner 32-byte array
-    pub fn as_bytes(&self) -> &[u8; 32] {
-        &self.0
-    }
+/// Leaf value representation (32-byte Keccak256 hash)
+pub type LeafValue = Keccak256Output;
 
-    /// Converts the SMT node to 8 Felt elements (32-byte value as 8 u32 values in big-endian)
-    pub fn to_elements(&self) -> [Felt; 8] {
-        bytes32_to_felts(&self.0)
-    }
-}
-
-impl From<[u8; 32]> for SmtNode {
-    fn from(bytes: [u8; 32]) -> Self {
-        Self::new(bytes)
-    }
-}
-
-/// Exit root representation (32-byte hash)
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ExitRoot([u8; 32]);
-
-impl ExitRoot {
-    /// Creates a new exit root from a 32-byte array
-    pub fn new(bytes: [u8; 32]) -> Self {
-        Self(bytes)
-    }
-
-    /// Returns the inner 32-byte array
-    pub fn as_bytes(&self) -> &[u8; 32] {
-        &self.0
-    }
-
-    /// Converts the exit root to 8 Felt elements
-    pub fn to_elements(&self) -> [Felt; 8] {
-        bytes32_to_felts(&self.0)
-    }
-}
-
-impl From<[u8; 32]> for ExitRoot {
-    fn from(bytes: [u8; 32]) -> Self {
-        Self::new(bytes)
-    }
-}
+/// Claimed Global Index (CGI) chain hash representation (32-byte Keccak256 hash)
+pub type CgiChainHash = Keccak256Output;
 
 /// Proof data for CLAIM note creation.
 /// Contains SMT proofs and root hashes using typed representations.
@@ -86,8 +36,8 @@ pub struct ProofData {
     pub smt_proof_local_exit_root: [SmtNode; 32],
     /// SMT proof for rollup exit root (32 SMT nodes)
     pub smt_proof_rollup_exit_root: [SmtNode; 32],
-    /// Global index (uint256 as 8 u32 values)
-    pub global_index: [u32; 8],
+    /// Global index (uint256 as 32 bytes)
+    pub global_index: GlobalIndex,
     /// Mainnet exit root hash
     pub mainnet_exit_root: ExitRoot,
     /// Rollup exit root hash
@@ -103,25 +53,19 @@ impl SequentialCommit for ProofData {
 
         // Convert SMT proof elements to felts (each node is 8 felts)
         for node in self.smt_proof_local_exit_root.iter() {
-            let node_felts = node.to_elements();
-            elements.extend(node_felts);
+            elements.extend(node.to_elements());
         }
 
         for node in self.smt_proof_rollup_exit_root.iter() {
-            let node_felts = node.to_elements();
-            elements.extend(node_felts);
+            elements.extend(node.to_elements());
         }
 
-        // Global index (uint256 as 8 u32 felts)
-        elements.extend(self.global_index.iter().map(|&v| Felt::new(v as u64)));
+        // Global index (uint256 as 32 bytes)
+        elements.extend(self.global_index.to_elements());
 
-        // Mainnet exit root (bytes32 as 8 u32 felts)
-        let mainnet_exit_root_felts = self.mainnet_exit_root.to_elements();
-        elements.extend(mainnet_exit_root_felts);
-
-        // Rollup exit root (bytes32 as 8 u32 felts)
-        let rollup_exit_root_felts = self.rollup_exit_root.to_elements();
-        elements.extend(rollup_exit_root_felts);
+        // Mainnet and rollup exit roots
+        elements.extend(self.mainnet_exit_root.to_elements());
+        elements.extend(self.rollup_exit_root.to_elements());
 
         elements
     }
@@ -134,22 +78,22 @@ pub struct LeafData {
     /// Origin network identifier (uint32)
     pub origin_network: u32,
     /// Origin token address
-    pub origin_token_address: EthAddressFormat,
+    pub origin_token_address: EthAddress,
     /// Destination network identifier (uint32)
     pub destination_network: u32,
     /// Destination address
-    pub destination_address: EthAddressFormat,
+    pub destination_address: EthAddress,
     /// Amount of tokens (uint256)
     pub amount: EthAmount,
-    /// ABI encoded metadata (fixed size of 8 u32 values)
-    pub metadata: [u32; 8],
+    /// Metadata hash (32 bytes)
+    pub metadata_hash: MetadataHash,
 }
 
 impl SequentialCommit for LeafData {
     type Commitment = Word;
 
     fn to_elements(&self) -> Vec<Felt> {
-        const LEAF_DATA_ELEMENT_COUNT: usize = 32; // 1 + 3 + 1 + 5 + 1 + 5 + 8 + 8 (leafType + padding + networks + addresses + amount + metadata)
+        const LEAF_DATA_ELEMENT_COUNT: usize = 32; // 1 + 1 + 5 + 1 + 5 + 8 + 8 + 3 (leafType + networks + addresses + amount + metadata + padding)
         let mut elements = Vec::with_capacity(LEAF_DATA_ELEMENT_COUNT);
 
         // LeafType (uint32 as Felt): 0u32 for transfer Ether / ERC20 tokens, 1u32 for message
@@ -157,17 +101,16 @@ impl SequentialCommit for LeafData {
         // for a `CLAIM` note, leafType is always 0 (transfer Ether / ERC20 tokens)
         elements.push(Felt::ZERO);
 
-        // Padding
-        elements.extend(vec![Felt::ZERO; 3]);
-
-        // Origin network
-        elements.push(Felt::new(self.origin_network as u64));
+        // Origin network (encode as little-endian bytes for keccak)
+        let origin_network = u32::from_le_bytes(self.origin_network.to_be_bytes());
+        elements.push(Felt::from(origin_network));
 
         // Origin token address (5 u32 felts)
         elements.extend(self.origin_token_address.to_elements());
 
-        // Destination network
-        elements.push(Felt::new(self.destination_network as u64));
+        // Destination network (encode as little-endian bytes for keccak)
+        let destination_network = u32::from_le_bytes(self.destination_network.to_be_bytes());
+        elements.push(Felt::from(destination_network));
 
         // Destination address (5 u32 felts)
         elements.extend(self.destination_address.to_elements());
@@ -175,44 +118,11 @@ impl SequentialCommit for LeafData {
         // Amount (uint256 as 8 u32 felts)
         elements.extend(self.amount.to_elements());
 
-        // Metadata (8 u32 felts)
-        elements.extend(self.metadata.iter().map(|&v| Felt::new(v as u64)));
-
-        elements
-    }
-}
-
-/// Output note data for CLAIM note creation.
-/// Contains note-specific data and can use Miden types.
-/// TODO: Remove all but target_faucet_account_id
-#[derive(Clone)]
-pub struct OutputNoteData {
-    /// P2ID note serial number (4 felts as Word)
-    pub output_p2id_serial_num: Word,
-    /// Target agg faucet account ID (2 felts: prefix and suffix)
-    pub target_faucet_account_id: AccountId,
-    /// P2ID output note tag
-    pub output_note_tag: NoteTag,
-}
-
-impl OutputNoteData {
-    /// Converts the output note data to a vector of field elements for note storage
-    pub fn to_elements(&self) -> Vec<Felt> {
-        const OUTPUT_NOTE_DATA_ELEMENT_COUNT: usize = 8; // 4 + 2 + 1 + 1 (serial_num + account_id + tag + padding)
-        let mut elements = Vec::with_capacity(OUTPUT_NOTE_DATA_ELEMENT_COUNT);
-
-        // P2ID note serial number (4 felts as Word)
-        elements.extend(self.output_p2id_serial_num);
-
-        // Target faucet account ID (2 felts: prefix and suffix)
-        elements.push(self.target_faucet_account_id.prefix().as_felt());
-        elements.push(self.target_faucet_account_id.suffix());
-
-        // Output note tag
-        elements.push(Felt::new(self.output_note_tag.as_u32() as u64));
+        // Metadata hash (8 u32 felts)
+        elements.extend(self.metadata_hash.to_elements());
 
         // Padding
-        elements.extend(vec![Felt::ZERO; 1]);
+        elements.extend(vec![Felt::ZERO; 3]);
 
         elements
     }
@@ -228,21 +138,21 @@ pub struct ClaimNoteStorage {
     pub proof_data: ProofData,
     /// Leaf data containing network, address, amount, and metadata
     pub leaf_data: LeafData,
-    /// Output note data containing note-specific information
-    pub output_note_data: OutputNoteData,
+    /// Miden claim amount (scaled-down token amount as Felt)
+    pub miden_claim_amount: Felt,
 }
 
 impl TryFrom<ClaimNoteStorage> for NoteStorage {
     type Error = NoteError;
 
     fn try_from(storage: ClaimNoteStorage) -> Result<Self, Self::Error> {
-        // proof_data + leaf_data + empty_word + output_note_data
-        // 536 + 32 + 8
-        let mut claim_storage = Vec::with_capacity(576);
+        // proof_data + leaf_data + miden_claim_amount
+        // 536 + 32 + 1
+        let mut claim_storage = Vec::with_capacity(569);
 
         claim_storage.extend(storage.proof_data.to_elements());
         claim_storage.extend(storage.leaf_data.to_elements());
-        claim_storage.extend(storage.output_note_data.to_elements());
+        claim_storage.push(storage.miden_claim_amount);
 
         NoteStorage::new(claim_storage)
     }
@@ -251,10 +161,13 @@ impl TryFrom<ClaimNoteStorage> for NoteStorage {
 // CLAIM NOTE CREATION
 // ================================================================================================
 
-/// Generates a CLAIM note - a note that instructs an agglayer faucet to validate and mint assets.
+/// Generates a CLAIM note - a note that instructs the bridge to validate a claim and create
+/// a MINT note for the AggLayer Faucet.
 ///
 /// # Parameters
 /// - `storage`: The core storage for creating the CLAIM note
+/// - `target_bridge_id`: The account ID of the bridge that should consume this note. Encoded as a
+///   `NetworkAccountTarget` attachment on the note metadata.
 /// - `sender_account_id`: The account ID of the CLAIM note creator
 /// - `rng`: Random number generator for creating the CLAIM note serial number
 ///
@@ -262,17 +175,15 @@ impl TryFrom<ClaimNoteStorage> for NoteStorage {
 /// Returns an error if note creation fails.
 pub fn create_claim_note<R: FeltRng>(
     storage: ClaimNoteStorage,
+    target_bridge_id: AccountId,
     sender_account_id: AccountId,
     rng: &mut R,
 ) -> Result<Note, NoteError> {
     let note_storage = NoteStorage::try_from(storage.clone())?;
 
-    let attachment = NetworkAccountTarget::new(
-        storage.output_note_data.target_faucet_account_id,
-        NoteExecutionHint::Always,
-    )
-    .map_err(|e| NoteError::other(e.to_string()))?
-    .into();
+    let attachment = NetworkAccountTarget::new(target_bridge_id, NoteExecutionHint::Always)
+        .map_err(|e| NoteError::other(e.to_string()))?
+        .into();
 
     let metadata =
         NoteMetadata::new(sender_account_id, NoteType::Public).with_attachment(attachment);

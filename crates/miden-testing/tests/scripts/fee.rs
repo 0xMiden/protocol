@@ -45,7 +45,7 @@ async fn prove_account_creation_with_fees() -> anyhow::Result<()> {
     // account commitment should not be the empty word
     assert_ne!(tx.account_delta().to_commitment(), Word::empty());
 
-    prove_and_verify_transaction(tx)?;
+    prove_and_verify_transaction(tx).await?;
 
     Ok(())
 }

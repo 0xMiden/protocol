@@ -1,18 +1,21 @@
+use $kernel::asset
 use $kernel::account
 use $kernel::account_delta
 use $kernel::account_id
 use $kernel::faucet
 use $kernel::input_note
 use $kernel::memory
-use $kernel::note
 use $kernel::output_note
 use $kernel::tx
+# use $kernel::types::AccountId
 
 use $kernel::memory::UPCOMING_FOREIGN_PROCEDURE_PTR
 use $kernel::memory::UPCOMING_FOREIGN_PROC_INPUT_VALUE_15_PTR
 use $kernel::memory::KERNEL_PROCEDURES_PTR
 
 use miden::core::word
+
+pub type AccountId = struct { prefix: felt, suffix: felt }
 
 # NOTE
 # =================================================================================================
@@ -22,12 +25,6 @@ use miden::core::word
 # All other procedures must be invoked using a `dynexec` instruction by their hashes stored in    #
 # the memory.                                                                                     #
 # =================================================================================================
-
-# TYPE ALIASES
-# =================================================================================================
-
-type AccountID = struct { prefix: felt, suffix: felt }
-type BeWord = struct @bigendian { a: felt, b: felt, c: felt, d: felt }
 
 # ERRORS
 # =================================================================================================
@@ -171,49 +168,50 @@ end
 #! Returns the ID of the specified account.
 #!
 #! Inputs:  [is_native, pad(15)]
-#! Outputs: [account_id_prefix, account_id_suffix, pad(14)]
+#! Outputs: [account_id_suffix, account_id_prefix, pad(14)]
 #!
 #! Where:
 #! - is_native is a boolean flag that indicates whether the account ID was requested for the native
 #!   or the active account.
-#! - account_id_{prefix,suffix} are the prefix and suffix felts of the ID of the active account.
+#! - account_id_{prefix,suffix} are the prefix and suffix felts of the ID of the requested account
+#!   (native or active, depending on the is_native flag).
 #!
 #! Invocation: dynexec
 pub proc account_get_id
     # get the native account ID
     exec.memory::get_native_account_id
-    # => [native_account_id_prefix, native_account_id_suffix, is_native, pad(15)]
+    # => [native_account_id_suffix, native_account_id_prefix, is_native, pad(15)]
 
     # get the active account ID
     exec.account::get_id
     # => [
-    #        active_account_id_prefix, active_account_id_suffix, 
-    #        native_account_id_prefix, native_account_id_suffix, 
+    #        active_account_id_suffix, active_account_id_prefix,
+    #        native_account_id_suffix, native_account_id_prefix,
     #        is_native, pad(15)
     #    ]
 
     # prepare the stack for the first cdrop
     movup.2 dup.4
     # => [
-    #        is_native, native_account_id_prefix, active_account_id_prefix,
-    #        active_account_id_suffix, native_account_id_suffix, is_native, pad(15)
+    #        is_native, native_account_id_suffix, active_account_id_suffix,
+    #        active_account_id_prefix, native_account_id_prefix, is_native, pad(15)
     #    ]
-
-    # drop the prefix corresponding to the is_native flag
-    cdrop
-    # => [account_id_prefix, active_account_id_suffix, native_account_id_suffix, is_native, pad(15)]
-
-    # prepare the stack for the second cdrop
-    movdn.3 swap movup.2
-    # => [is_native, native_account_id_suffix, active_account_id_suffix, account_id_prefix, pad(15)]
 
     # drop the suffix corresponding to the is_native flag
     cdrop
-    # => [account_id_suffix, account_id_prefix, pad(15)]
+    # => [account_id_suffix, active_account_id_prefix, native_account_id_prefix, is_native, pad(15)]
 
-    # rearrange the ID parts and truncate the stack 
+    # prepare the stack for the second cdrop
+    movdn.3 swap movup.2
+    # => [is_native, native_account_id_prefix, active_account_id_prefix, account_id_suffix, pad(15)]
+
+    # drop the prefix corresponding to the is_native flag
+    cdrop
+    # => [account_id_prefix, account_id_suffix, pad(15)]
+
+    # rearrange the ID parts and truncate the stack
     swap movup.2 drop
-    # => [account_id_prefix, account_id_suffix, pad(14)]
+    # => [account_id_suffix, account_id_prefix, pad(14)]
 end
 
 #! Returns the active account nonce.
@@ -336,11 +334,11 @@ end
 
 #! Gets an item from the account storage.
 #!
-#! Inputs:  [slot_id_prefix, slot_id_suffix, pad(14)]
+#! Inputs:  [slot_id_suffix, slot_id_prefix, pad(14)]
 #! Outputs: [VALUE, pad(12)]
 #!
 #! Where:
-#! - slot_id_{prefix, suffix} are the prefix and suffix felts of the slot identifier, which are
+#! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
 #!   the first two felts of the hashed slot name.
 #! - VALUE is the value of the item.
 #!
@@ -351,7 +349,7 @@ end
 pub proc account_get_item
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
-    # => [slot_id_prefix, slot_id_suffix, pad(14)]
+    # => [slot_id_suffix, slot_id_prefix, pad(14)]
 
     # fetch the account storage item
     exec.account::get_item
@@ -364,11 +362,11 @@ end
 
 #! Sets an item in the account storage.
 #!
-#! Inputs:  [slot_id_prefix, slot_id_suffix, VALUE, pad(10)]
+#! Inputs:  [slot_id_suffix, slot_id_prefix, VALUE, pad(10)]
 #! Outputs: [OLD_VALUE, pad(12)]
 #!
 #! Where:
-#! - slot_id_{prefix, suffix} are the prefix and suffix felts of the slot identifier, which are
+#! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
 #!   the first two felts of the hashed slot name.
 #! - VALUE is the value to set.
 #! - OLD_VALUE is the previous value of the item.
@@ -381,11 +379,11 @@ end
 pub proc account_set_item
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
-    # => [slot_id_prefix, slot_id_suffix, VALUE, pad(10)]
+    # => [slot_id_suffix, slot_id_prefix, VALUE, pad(10)]
 
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
-    # => [slot_id_prefix, slot_id_suffix, VALUE, pad(10)]
+    # => [slot_id_suffix, slot_id_prefix, VALUE, pad(10)]
 
     # set the account storage item
     exec.account::set_item
@@ -395,11 +393,11 @@ end
 #! Returns the VALUE located under the specified KEY within the map contained in the account
 #! storage slot identified by the slot ID.
 #!
-#! Inputs:  [slot_id_prefix, slot_id_suffix, KEY, pad(10)]
+#! Inputs:  [slot_id_suffix, slot_id_prefix, KEY, pad(10)]
 #! Outputs: [VALUE, pad(12)]
 #!
 #! Where:
-#! - slot_id_{prefix, suffix} are the prefix and suffix felts of the slot identifier, which are
+#! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
 #!   the first two felts of the hashed slot name.
 #! - VALUE is the value of the map item at KEY.
 #!
@@ -411,7 +409,7 @@ end
 pub proc account_get_map_item
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
-    # => [slot_id_prefix, slot_id_suffix, KEY, pad(10)]
+    # => [slot_id_suffix, slot_id_prefix, KEY, pad(10)]
 
     # fetch the map item from account storage
     exec.account::get_map_item
@@ -420,11 +418,11 @@ end
 
 #! Gets an item from the account storage at its initial state (beginning of transaction).
 #!
-#! Inputs:  [slot_id_prefix, slot_id_suffix, pad(14)]
+#! Inputs:  [slot_id_suffix, slot_id_prefix, pad(14)]
 #! Outputs: [INIT_VALUE, pad(12)]
 #!
 #! Where:
-#! - slot_id_{prefix, suffix} are the prefix and suffix felts of the slot identifier, which are
+#! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
 #!   the first two felts of the hashed slot name.
 #! - INIT_VALUE is the initial value of the item at the beginning of the transaction.
 #!
@@ -435,7 +433,7 @@ end
 pub proc account_get_initial_item
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
-    # => [slot_id_prefix, slot_id_suffix, pad(14)]
+    # => [slot_id_suffix, slot_id_prefix, pad(14)]
 
     # fetch the initial account storage item
     exec.account::get_initial_item
@@ -449,11 +447,11 @@ end
 #! Returns the initial VALUE located under the specified KEY within the map contained in the
 #! account storage slot identified by the slot ID at the beginning of the transaction.
 #!
-#! Inputs:  [slot_id_prefix, slot_id_suffix, KEY, pad(10)]
+#! Inputs:  [slot_id_suffix, slot_id_prefix, KEY, pad(10)]
 #! Outputs: [INIT_VALUE, pad(12)]
 #!
 #! Where:
-#! - slot_id_{prefix, suffix} are the prefix and suffix felts of the slot identifier, which are
+#! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
 #!   the first two felts of the hashed slot name.
 #!    - the slot must point to the root of the storage map.
 #! - INIT_VALUE is the initial value of the map item at KEY at the beginning of the transaction.
@@ -466,7 +464,7 @@ end
 pub proc account_get_initial_map_item
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
-    # => [slot_id_prefix, slot_id_suffix, KEY, pad(10)]
+    # => [slot_id_suffix, slot_id_prefix, KEY, pad(10)]
 
     # fetch the initial map item from account storage
     exec.account::get_initial_map_item
@@ -476,11 +474,11 @@ end
 #! Stores NEW_VALUE under the specified KEY within the map contained in the given account storage 
 #! slot.
 #!
-#! Inputs:  [slot_id_prefix, slot_id_suffix, KEY, NEW_VALUE, pad(6)]
+#! Inputs:  [slot_id_suffix, slot_id_prefix, KEY, NEW_VALUE, pad(6)]
 #! Outputs: [OLD_VALUE, pad(12)]
 #!
 #! Where:
-#! - slot_id_{prefix, suffix} are the prefix and suffix felts of the slot identifier, which are
+#! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
 #!   the first two felts of the hashed slot name.
 #!    - the slot must point to the root of the storage map.
 #! - NEW_VALUE is the value of the new map item for the respective KEY.
@@ -497,11 +495,11 @@ end
 pub proc account_set_map_item
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
-    # => [slot_id_prefix, slot_id_suffix, KEY, NEW_VALUE, pad(6)]
+    # => [slot_id_suffix, slot_id_prefix, KEY, NEW_VALUE, pad(6)]
 
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
-    # => [slot_id_prefix, slot_id_suffix, KEY, NEW_VALUE, pad(6)]
+    # => [slot_id_suffix, slot_id_prefix, KEY, NEW_VALUE, pad(6)]
 
     # set the new map item
     exec.account::set_map_item
@@ -552,15 +550,16 @@ end
 
 #! Adds the specified asset to the vault.
 #!
-#! Inputs:  [ASSET, pad(12)]
-#! Outputs: [ASSET', pad(12)]
+#! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
+#! Outputs: [ASSET_VALUE', pad(12)]
 #!
 #! Where:
-#! - ASSET is the asset to add to the vault.
-#! - ASSET' final asset in the account vault defined as follows:
-#!   - If ASSET is a non-fungible asset, then ASSET' is the same as ASSET.
-#!   - If ASSET is a fungible asset, then ASSET' is the total fungible asset in the account vault
-#!     after ASSET was added to it.
+#! - ASSET_KEY is the vault key of the asset that is added to the vault.
+#! - ASSET_VALUE is the value of the asset to add to the vault.
+#! - ASSET_VALUE' final asset in the account vault defined as follows:
+#!   - If ASSET_VALUE is a non-fungible asset, then ASSET_VALUE' is the same as ASSET_VALUE.
+#!   - If ASSET_VALUE is a fungible asset, then ASSET_VALUE' is the total fungible asset in the account vault
+#!     after ASSET_VALUE was added to it.
 #!
 #! Panics if:
 #! - the asset is not valid.
@@ -573,24 +572,26 @@ end
 pub proc account_add_asset
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
-    # => [ASSET, pad(12)]
+    # => [ASSET_KEY, ASSET_VALUE, pad(8)]
 
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
-    # => [ASSET, pad(12)]
+    # => [ASSET_KEY, ASSET_VALUE, pad(8)]
 
     # add the specified asset to the account vault, emitting the corresponding events
     exec.account::add_asset_to_vault
-    # => [ASSET', pad(12)]
+    # => [ASSET_VALUE', pad(12)]
 end
 
-#! Removes the specified asset from the vault.
+#! Removes the specified asset from the vault and returns the remaining asset value.
 #!
-#! Inputs:  [ASSET, pad(12)]
-#! Outputs: [ASSET, pad(12)]
+#! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
+#! Outputs: [REMAINING_ASSET_VALUE, pad(12)]
 #!
 #! Where:
-#! - ASSET is the asset to remove from the vault.
+#! - ASSET_KEY is the vault key of the asset to remove from the vault.
+#! - ASSET_VALUE is the value of the asset to remove from the vault.
+#! - REMAINING_ASSET_VALUE is the value of the asset remaining in the vault after removal.
 #!
 #! Panics if:
 #! - the fungible asset is not found in the vault.
@@ -602,50 +603,53 @@ end
 pub proc account_remove_asset
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
-    # => [ASSET, pad(12)]
+    # => [ASSET_KEY, ASSET_VALUE, pad(8)]
 
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
-    # => [ASSET, pad(12)]
+    # => [ASSET_KEY, ASSET_VALUE, pad(8)]
 
     # remove the specified asset from the account vault, emitting the corresponding events
     exec.account::remove_asset_from_vault
-    # => [ASSET, pad(12)]
+    # => [REMAINING_ASSET_VALUE, pad(12)]
 end
 
-#! Returns the ASSET associated with the provided asset vault key in the active account's vault.
+#! Returns the asset associated with the provided asset vault key in the active account's vault.
 #!
 #! Inputs:  [ASSET_KEY, pad(12)]
-#! Outputs: [ASSET, pad(12)]
+#! Outputs: [ASSET_VALUE, pad(12)]
 #!
 #! Where:
 #! - ASSET_KEY is the asset vault key of the asset to fetch.
-#! - ASSET is the asset from the vault, which can be the EMPTY_WORD if it isn't present.
+#! - ASSET_VALUE is the value of the asset from the vault, which can be the EMPTY_WORD if it isn't
+#!   present.
 #!
 #! Invocation: dynexec
 pub proc account_get_asset
-    # TODO(expand_assets): Validate ASSET_KEY once validation logic exists.
+    exec.asset::validate_key
+    # => [ASSET_KEY, pad(12)]
 
     exec.account::get_asset
-    # => [ASSET, pad(12)]
+    # => [ASSET_VALUE, pad(12)]
 end
 
-#! Returns the ASSET associated with the provided asset vault key in the active account's vault at
+#! Returns the asset associated with the provided asset vault key in the active account's vault at
 #! the beginning of the transaction.
 #!
 #! Inputs:  [ASSET_KEY, pad(12)]
-#! Outputs: [ASSET, pad(12)]
+#! Outputs: [ASSET_VALUE, pad(12)]
 #!
 #! Where:
 #! - ASSET_KEY is the asset vault key of the asset to fetch.
-#! - ASSET is the asset from the vault, which can be the EMPTY_WORD if it isn't present.
+#! - ASSET_VALUE is the value of the asset from the vault, which can be the EMPTY_WORD if it isn't present.
 #!
 #! Invocation: dynexec
 pub proc account_get_initial_asset
-    # TODO(expand_assets): Validate ASSET_KEY once validation logic exists.
+    exec.asset::validate_key
+    # => [ASSET_KEY, pad(12)]
 
     exec.account::get_initial_asset
-    # => [ASSET, pad(12)]
+    # => [ASSET_VALUE, pad(12)]
 end
 
 #! Returns 1 if a native account procedure was called during transaction execution, and 0 otherwise.
@@ -738,11 +742,12 @@ end
 
 #! Mint an asset from the faucet the transaction is being executed against.
 #!
-#! Inputs:  [ASSET, pad(12)]
-#! Outputs: [ASSET, pad(12)]
+#! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
+#! Outputs: [pad(16)]
 #!
 #! Where:
-#! - ASSET is the asset that was minted.
+#! - ASSET_KEY is the vault key of the asset to mint.
+#! - ASSET_VALUE is the value of the asset to mint.
 #!
 #! Panics if:
 #! - the transaction is not being executed against a faucet.
@@ -759,24 +764,25 @@ end
 pub proc faucet_mint_asset
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
-    # => [ASSET, pad(12)]
+    # => [ASSET_KEY, ASSET_VALUE, pad(8)]
 
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
-    # => [ASSET, pad(12)]
+    # => [ASSET_KEY, ASSET_VALUE, pad(8)]
 
     # mint the asset
     exec.faucet::mint
-    # => [ASSET, pad(12)]
+    # => [pad(16)]
 end
 
 #! Burn an asset from the faucet the transaction is being executed against.
 #!
-#! Inputs:  [ASSET, pad(12)]
-#! Outputs: [ASSET, pad(12)]
+#! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
+#! Outputs: [pad(16)]
 #!
 #! Where:
-#! - ASSET is the asset that was burned.
+#! - ASSET_KEY is the vault key of the asset to burn.
+#! - ASSET_VALUE is the value of the asset to burn.
 #!
 #! Panics if:
 #! - the transaction is not being executed against a faucet.
@@ -794,15 +800,33 @@ end
 pub proc faucet_burn_asset
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
-    # => [ASSET, pad(12)]
+    # => [ASSET_KEY, ASSET_VALUE, pad(8)]
 
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
-    # => [ASSET, pad(12)]
+    # => [ASSET_KEY, ASSET_VALUE, pad(8)]
 
     # burn the asset
     exec.faucet::burn
-    # => [ASSET, pad(12)]
+    # => [pad(16)]
+end
+
+#! Returns whether the active account defines callbacks.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [has_callbacks, pad(15)]
+#!
+#! Where:
+#! - has_callbacks is 1 if the account defines callbacks, 0 otherwise.
+#!
+#! Invocation: dynexec
+pub proc faucet_has_callbacks
+    exec.account::has_callbacks
+    # => [has_callbacks, pad(16)]
+
+    # truncate the stack
+    swap drop
+    # => [has_callbacks, pad(15)]
 end
 
 # INPUT NOTE
@@ -849,7 +873,7 @@ end
 
 #! Returns the recipient of the specified input note.
 #!
-#! Inputs:  [is_active_note, note_index, pad(15)]
+#! Inputs:  [is_active_note, note_index, pad(14)]
 #! Outputs: [RECIPIENT, pad(12)]
 #!
 #! Where:
@@ -1081,23 +1105,28 @@ pub proc output_note_create
     # => [note_idx, pad(15)]
 end
 
-#! Adds the ASSET to the note specified by the index.
+#! Adds the asset to the note specified by the index.
 #!
-#! Inputs:  [note_idx, ASSET, pad(11)]
+#! Inputs:  [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
 #! Outputs: [pad(16)]
 #!
 #! Where:
 #! - note_idx is the index of the note to which the asset is added.
-#! - ASSET can be a fungible or non-fungible asset.
+#! - ASSET_KEY is the vault key of the asset to add.
+#! - ASSET_VALUE is the value of the asset to add.
 #!
 #! Panics if:
 #! - the procedure is called when the active account is not the native one.
+#! - the note index points to a non-existent output note.
 #!
 #! Invocation: dynexec
 pub proc output_note_add_asset
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
-    # => [note_idx, ASSET, pad(11)]
+    # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
+
+    dup.8 exec.output_note::assert_note_index_in_bounds drop
+    # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
 
     exec.output_note::add_asset
     # => [pad(16)]
@@ -1124,6 +1153,9 @@ end
 pub proc output_note_set_attachment
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
+    # => [note_idx, attachment_scheme, attachment_kind, ATTACHMENT, pad(9)]
+
+    exec.output_note::assert_note_index_in_bounds
     # => [note_idx, attachment_scheme, attachment_kind, ATTACHMENT, pad(9)]
 
     exec.output_note::set_attachment
@@ -1297,6 +1329,26 @@ pub proc tx_get_num_input_notes
     # => [num_input_notes, pad(15)]
 end
 
+#! Returns the transaction script root.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [TX_SCRIPT_ROOT, pad(12)]
+#!
+#! Where:
+#! - TX_SCRIPT_ROOT is the transaction script root, or the empty word if no transaction script was
+#!   executed.
+#!
+#! Invocation: dynexec
+pub proc tx_get_tx_script_root
+    # get the tx script root
+    exec.tx::get_tx_script_root
+    # => [TX_SCRIPT_ROOT, pad(16)]
+
+    # truncate the stack
+    swapw dropw
+    # => [TX_SCRIPT_ROOT, pad(12)]
+end
+
 #! Returns the current number of output notes created in this transaction.
 #!
 #! Inputs:  [pad(16)]
@@ -1377,7 +1429,7 @@ end
 #! 16th value of the foreign procedure inputs to the kernel memory: this allows to FPI any account 
 #! procedure, even if it has 16 input values.
 #!
-#! Inputs:  [foreign_account_id_prefix, foreign_account_id_suffix, FOREIGN_PROC_ROOT, foreign_proc_input_value_15, pad(9)]
+#! Inputs:  [foreign_account_id_suffix, foreign_account_id_prefix, FOREIGN_PROC_ROOT, foreign_proc_input_value_15, pad(9)]
 #! Outputs: [pad(16)]
 #!
 #! Where:
@@ -1391,10 +1443,10 @@ end
 #! - the provided foreign account ID is invalid.
 #!
 #! Invocation: dynexec
-pub proc tx_prepare_fpi(foreign_account_id: AccountID, foreign_proc_root: BeWord, foreign_procedure_input_15: felt)
+pub proc tx_prepare_fpi(foreign_account_id: AccountId, foreign_proc_root: word, foreign_procedure_input_15: felt)
     # validate the provided foreign account ID
     dup.1 dup.1 exec.account_id::validate
-    # => [foreign_account_id_prefix, foreign_account_id_suffix, FOREIGN_PROC_ROOT, foreign_proc_input_value_15, pad(9)]
+    # => [foreign_account_id_suffix, foreign_account_id_prefix, FOREIGN_PROC_ROOT, foreign_proc_input_value_15, pad(9)]
 
     # store the foreign account ID
     exec.memory::set_fpi_account_id
@@ -1444,11 +1496,11 @@ pub proc tx_exec_foreign_proc
 
     # load the ID of the foreign account onto the stack
     exec.memory::get_fpi_account_id
-    # => [foreign_account_id_prefix, foreign_account_id_suffix, foreign_procedure_inputs(16)]
+    # => [foreign_account_id_suffix, foreign_account_id_prefix, foreign_procedure_inputs(16)]
 
     # check that foreign account ID is not equal zero
     dup.1 eq.0 dup.1 eq.0 and not assert.err=ERR_FOREIGN_ACCOUNT_ID_IS_ZERO
-    # => [foreign_account_id_prefix, foreign_account_id_suffix, foreign_procedure_inputs(16)]
+    # => [foreign_account_id_suffix, foreign_account_id_prefix, foreign_procedure_inputs(16)]
 
     # load the foreign account to the memory
     exec.tx::start_foreign_context
@@ -1459,7 +1511,7 @@ pub proc tx_exec_foreign_proc
     # => [foreign_proc_root_ptr, foreign_procedure_inputs(16)]
 
     # check that the foreign procedure root is not zero
-    padw mem_loadw_be.UPCOMING_FOREIGN_PROCEDURE_PTR
+    padw mem_loadw_le.UPCOMING_FOREIGN_PROCEDURE_PTR
     # => [FOREIGN_PROC_ROOT, foreign_proc_root_ptr, foreign_procedure_inputs(16)]
 
     exec.word::eqz assertz.err=ERR_FOREIGN_ACCOUNT_PROCEDURE_ROOT_IS_ZERO
@@ -1471,6 +1523,10 @@ pub proc tx_exec_foreign_proc
 
     # end the foreign context
     exec.tx::end_foreign_context
+    # => [foreign_procedure_outputs(16)]
+
+    # clear the foreign procedure ID and root in memory
+    exec.tx::clear_fpi_memory
     # => [foreign_procedure_outputs(16)]
 end
 

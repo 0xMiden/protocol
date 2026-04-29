@@ -2,11 +2,13 @@ use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
+use miden_core::mast::MastNodeExt;
 use miden_crypto::merkle::InnerNodeInfo;
-use miden_processor::MastNodeExt;
+use miden_mast_package::Package;
 
 use super::{Felt, Hasher, Word};
 use crate::account::auth::{PublicKeyCommitment, Signature};
+use crate::errors::TransactionScriptError;
 use crate::note::{NoteId, NoteRecipient};
 use crate::utils::serde::{
     ByteReader,
@@ -308,6 +310,20 @@ impl TransactionScript {
         Self { mast, entrypoint }
     }
 
+    /// Creates a [TransactionScript] from a [`Package`].
+    ///
+    /// The package must be an executable (i.e., its target type must be
+    /// [`TargetType::Executable`](miden_mast_package::TargetType::Executable)).
+    ///
+    /// # Errors
+    /// Returns an error if the package cannot be converted to an executable program.
+    pub fn from_package(package: &Package) -> Result<Self, TransactionScriptError> {
+        let program =
+            package.try_into_program().map_err(TransactionScriptError::PackageNotProgram)?;
+
+        Ok(TransactionScript::new(program))
+    }
+
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
@@ -361,10 +377,10 @@ impl Deserializable for TransactionScript {
 
 #[cfg(test)]
 mod tests {
-    use miden_core::AdviceMap;
-    use miden_core::utils::{Deserializable, Serializable};
+    use miden_core::advice::AdviceMap;
 
     use crate::transaction::TransactionArgs;
+    use crate::utils::serde::{Deserializable, Serializable};
 
     #[test]
     fn test_tx_args_serialization() {

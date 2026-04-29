@@ -9,3 +9,6 @@ pub use singlesig_acl::{AuthSingleSigAcl, AuthSingleSigAclConfig};
 
 mod multisig;
 pub use multisig::{AuthMultisig, AuthMultisigConfig};
+
+mod guarded_multisig;
+pub use guarded_multisig::{AuthGuardedMultisig, AuthGuardedMultisigConfig, GuardianConfig};

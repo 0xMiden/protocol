@@ -11,7 +11,8 @@ pub use account_procedures::AccountProcedureIndexMap;
 
 pub(crate) mod note_builder;
 use miden_protocol::CoreLibrary;
-use miden_protocol::vm::EventId;
+use miden_protocol::transaction::TransactionEventId;
+use miden_protocol::vm::{EventId, EventName};
 use note_builder::OutputNoteBuilder;
 
 mod kernel_process;
@@ -28,15 +29,11 @@ use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use miden_processor::{
-    AdviceMutation,
-    EventError,
-    EventHandlerRegistry,
-    Felt,
-    MastForest,
-    MastForestStore,
-    ProcessState,
-};
+use miden_processor::advice::AdviceMutation;
+use miden_processor::event::{EventError, EventHandlerRegistry};
+use miden_processor::mast::MastForest;
+use miden_processor::trace::RowIndex;
+use miden_processor::{Felt, MastForestStore, ProcessorState};
 use miden_protocol::Word;
 use miden_protocol::account::{
     AccountCode,
@@ -45,6 +42,7 @@ use miden_protocol::account::{
     AccountId,
     AccountStorageHeader,
     PartialAccount,
+    StorageMapKey,
     StorageSlotHeader,
     StorageSlotId,
     StorageSlotName,
@@ -54,12 +52,11 @@ use miden_protocol::note::{NoteAttachment, NoteId, NoteMetadata, NoteRecipient};
 use miden_protocol::transaction::{
     InputNote,
     InputNotes,
-    OutputNote,
-    OutputNotes,
+    RawOutputNote,
+    RawOutputNotes,
     TransactionMeasurements,
     TransactionSummary,
 };
-use miden_protocol::vm::RowIndex;
 pub(crate) use tx_event::{RecipientData, TransactionEvent, TransactionProgressEvent};
 pub use tx_progress::TransactionProgress;
 
@@ -192,12 +189,12 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
 
     /// Clones the inner [`OutputNoteBuilder`]s and returns the vector of created output notes that
     /// are tracked by this host.
-    pub fn build_output_notes(&self) -> Vec<OutputNote> {
+    pub fn build_output_notes(&self) -> Vec<RawOutputNote> {
         self.output_notes.values().cloned().map(|builder| builder.build()).collect()
     }
 
     /// Consumes `self` and returns the account delta, input and output notes.
-    pub fn into_parts(self) -> (AccountDelta, InputNotes<InputNote>, Vec<OutputNote>) {
+    pub fn into_parts(self) -> (AccountDelta, InputNotes<InputNote>, Vec<RawOutputNote>) {
         let output_notes = self.output_notes.into_values().map(|builder| builder.build()).collect();
 
         (self.account_delta.into_delta(), self.input_notes, output_notes)
@@ -269,7 +266,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     /// Returns `Some` if the event was handled, `None` otherwise.
     pub fn handle_core_lib_events(
         &self,
-        process: &ProcessState,
+        process: &ProcessorState,
     ) -> Result<Option<Vec<AdviceMutation>>, EventError> {
         let event_id = EventId::from_felt(process.get_stack_item(0));
         if let Some(mutations) = self.core_lib_handlers.handle_event(event_id, process)? {
@@ -277,6 +274,20 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         } else {
             Ok(None)
         }
+    }
+
+    /// Resolves an [`EventId`] to its corresponding [`EventName`], if known.
+    ///
+    /// First checks if the event is a core library event, then checks if it is a transaction
+    /// kernel event.
+    pub fn resolve_event(&self, event_id: EventId) -> Option<&EventName> {
+        if let Some(name) = self.core_lib_handlers.resolve_event(event_id) {
+            return Some(name);
+        }
+
+        TransactionEventId::try_from(event_id)
+            .ok()
+            .map(|event_id| event_id.event_name())
     }
 
     /// Converts the provided signature into an advice mutation that pushes it onto the advice stack
@@ -358,7 +369,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     pub fn on_account_storage_after_set_map_item(
         &mut self,
         slot_name: StorageSlotName,
-        key: Word,
+        key: StorageMapKey,
         old_map_value: Word,
         new_map_value: Word,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
@@ -405,15 +416,15 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     /// provided commitments.
     pub(crate) fn build_tx_summary(
         &self,
-        salt: Word,
-        output_notes_commitment: Word,
-        input_notes_commitment: Word,
         account_delta_commitment: Word,
+        input_notes_commitment: Word,
+        output_notes_commitment: Word,
+        salt: Word,
     ) -> Result<TransactionSummary, TransactionKernelError> {
         let account_delta = self.build_account_delta();
         let input_notes = self.input_notes();
         let output_notes_vec = self.build_output_notes();
-        let output_notes = OutputNotes::new(output_notes_vec).map_err(|err| {
+        let output_notes = RawOutputNotes::new(output_notes_vec).map_err(|err| {
             TransactionKernelError::TransactionSummaryConstructionFailed(Box::new(err))
         })?;
 

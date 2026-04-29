@@ -11,8 +11,14 @@ use super::{
     Serializable,
     Word,
 };
-use crate::account::{StorageMap, StorageSlotContent, StorageSlotName, StorageSlotType};
-use crate::{EMPTY_WORD, Felt, LexicographicWord, ZERO};
+use crate::account::{
+    StorageMap,
+    StorageMapKey,
+    StorageSlotContent,
+    StorageSlotName,
+    StorageSlotType,
+};
+use crate::{EMPTY_WORD, Felt, ZERO};
 
 // ACCOUNT STORAGE DELTA
 // ================================================================================================
@@ -103,7 +109,7 @@ impl AccountStorageDelta {
     pub fn set_map_item(
         &mut self,
         slot_name: StorageSlotName,
-        key: Word,
+        key: StorageMapKey,
         new_value: Word,
     ) -> Result<(), AccountDeltaError> {
         match self
@@ -190,13 +196,14 @@ impl AccountStorageDelta {
                 },
                 StorageSlotDelta::Map(map_delta) => {
                     for (key, value) in map_delta.entries() {
-                        elements.extend_from_slice(key.inner().as_elements());
+                        elements.extend_from_slice(key.as_elements());
                         elements.extend_from_slice(value.as_elements());
                     }
 
-                    let num_changed_entries = Felt::try_from(map_delta.num_entries()).expect(
-                        "number of changed entries should not exceed max representable felt",
-                    );
+                    let num_changed_entries = Felt::try_from(map_delta.num_entries() as u64)
+                        .expect(
+                            "number of changed entries should not exceed max representable felt",
+                        );
 
                     elements.extend_from_slice(&[
                         DOMAIN_MAP,
@@ -288,12 +295,10 @@ impl Deserializable for AccountStorageDelta {
         }
 
         let num_maps = source.read_u8()? as usize;
-        deltas.extend(
-            source
-                .read_many::<(StorageSlotName, StorageMapDelta)>(num_maps)?
-                .into_iter()
-                .map(|(slot_name, map_delta)| (slot_name, StorageSlotDelta::Map(map_delta))),
-        );
+        for read_result in source.read_many_iter::<(StorageSlotName, StorageMapDelta)>(num_maps)? {
+            let (slot_name, map_delta) = read_result?;
+            deltas.insert(slot_name, StorageSlotDelta::Map(map_delta));
+        }
 
         Ok(Self::from_raw(deltas))
     }
@@ -461,15 +466,12 @@ impl Deserializable for StorageSlotDelta {
 ///
 /// The differences are represented as leaf updates: a map of updated item key ([Word]) to
 /// value ([Word]). For cleared items the value is [EMPTY_WORD].
-///
-/// The [`LexicographicWord`] wrapper is necessary to order the keys in the same way as the
-/// in-kernel account delta which uses a link map.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct StorageMapDelta(BTreeMap<LexicographicWord, Word>);
+pub struct StorageMapDelta(BTreeMap<StorageMapKey, Word>);
 
 impl StorageMapDelta {
     /// Creates a new storage map delta from the provided leaves.
-    pub fn new(map: BTreeMap<LexicographicWord, Word>) -> Self {
+    pub fn new(map: BTreeMap<StorageMapKey, Word>) -> Self {
         Self(map)
     }
 
@@ -480,14 +482,14 @@ impl StorageMapDelta {
 
     /// Returns a reference to the updated entries in this storage map delta.
     ///
-    /// Note that the returned key is the raw map key.
-    pub fn entries(&self) -> &BTreeMap<LexicographicWord, Word> {
+    /// Note that the returned key is the [`StorageMapKey`].
+    pub fn entries(&self) -> &BTreeMap<StorageMapKey, Word> {
         &self.0
     }
 
     /// Inserts an item into the storage map delta.
-    pub fn insert(&mut self, raw_key: Word, value: Word) {
-        self.0.insert(LexicographicWord::new(raw_key), value);
+    pub fn insert(&mut self, key: StorageMapKey, value: Word) {
+        self.0.insert(key, value);
     }
 
     /// Returns true if storage map delta contains no updates.
@@ -502,24 +504,22 @@ impl StorageMapDelta {
     }
 
     /// Returns a mutable reference to the underlying map.
-    pub fn as_map_mut(&mut self) -> &mut BTreeMap<LexicographicWord, Word> {
+    pub fn as_map_mut(&mut self) -> &mut BTreeMap<StorageMapKey, Word> {
         &mut self.0
     }
 
     /// Returns an iterator of all the cleared keys in the storage map.
-    fn cleared_keys(&self) -> impl Iterator<Item = &Word> + '_ {
-        self.0.iter().filter(|&(_, value)| value.is_empty()).map(|(key, _)| key.inner())
+    fn cleared_keys(&self) -> impl Iterator<Item = &StorageMapKey> + '_ {
+        self.0.iter().filter(|&(_, value)| value.is_empty()).map(|(key, _)| key)
     }
 
     /// Returns an iterator of all the updated entries in the storage map.
-    fn updated_entries(&self) -> impl Iterator<Item = (&Word, &Word)> + '_ {
-        self.0.iter().filter_map(|(key, value)| {
-            if !value.is_empty() {
-                Some((key.inner(), value))
-            } else {
-                None
-            }
-        })
+    fn updated_entries(&self) -> impl Iterator<Item = (&StorageMapKey, &Word)> + '_ {
+        self.0.iter().filter_map(
+            |(key, value)| {
+                if !value.is_empty() { Some((key, value)) } else { None }
+            },
+        )
     }
 }
 
@@ -527,23 +527,16 @@ impl StorageMapDelta {
 impl StorageMapDelta {
     /// Creates a new [StorageMapDelta] from the provided iterators.
     pub fn from_iters(
-        cleared_leaves: impl IntoIterator<Item = Word>,
-        updated_leaves: impl IntoIterator<Item = (Word, Word)>,
+        cleared_leaves: impl IntoIterator<Item = StorageMapKey>,
+        updated_leaves: impl IntoIterator<Item = (StorageMapKey, Word)>,
     ) -> Self {
         Self(BTreeMap::from_iter(
-            cleared_leaves
-                .into_iter()
-                .map(|key| (LexicographicWord::new(key), EMPTY_WORD))
-                .chain(
-                    updated_leaves
-                        .into_iter()
-                        .map(|(key, value)| (LexicographicWord::new(key), value)),
-                ),
+            cleared_leaves.into_iter().map(|key| (key, EMPTY_WORD)).chain(updated_leaves),
         ))
     }
 
     /// Consumes self and returns the underlying map.
-    pub fn into_map(self) -> BTreeMap<LexicographicWord, Word> {
+    pub fn into_map(self) -> BTreeMap<StorageMapKey, Word> {
         self.0
     }
 }
@@ -551,19 +544,14 @@ impl StorageMapDelta {
 /// Converts a [StorageMap] into a [StorageMapDelta] for initial delta construction.
 impl From<StorageMap> for StorageMapDelta {
     fn from(map: StorageMap) -> Self {
-        StorageMapDelta::new(
-            map.into_entries()
-                .into_iter()
-                .map(|(key, value)| (LexicographicWord::new(key), value))
-                .collect(),
-        )
+        StorageMapDelta::new(map.into_entries().into_iter().collect())
     }
 }
 
 impl Serializable for StorageMapDelta {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        let cleared: Vec<&Word> = self.cleared_keys().collect();
-        let updated: Vec<(&Word, &Word)> = self.updated_entries().collect();
+        let cleared: Vec<&StorageMapKey> = self.cleared_keys().collect();
+        let updated: Vec<(&StorageMapKey, &Word)> = self.updated_entries().collect();
 
         target.write_usize(cleared.len());
         target.write_many(cleared.iter());
@@ -573,18 +561,16 @@ impl Serializable for StorageMapDelta {
     }
 
     fn get_size_hint(&self) -> usize {
-        let word_size = EMPTY_WORD.get_size_hint();
-
         let cleared_keys_count = self.cleared_keys().count();
         let updated_entries_count = self.updated_entries().count();
 
         // Cleared Keys
         cleared_keys_count.get_size_hint() +
-        cleared_keys_count * Word::SERIALIZED_SIZE +
+        cleared_keys_count * StorageMapKey::SERIALIZED_SIZE +
 
         // Updated Entries
         updated_entries_count.get_size_hint() +
-        updated_entries_count * (Word::SERIALIZED_SIZE + word_size)
+        updated_entries_count * (StorageMapKey::SERIALIZED_SIZE + Word::SERIALIZED_SIZE)
     }
 }
 
@@ -595,13 +581,13 @@ impl Deserializable for StorageMapDelta {
         let cleared_count = source.read_usize()?;
         for _ in 0..cleared_count {
             let cleared_key = source.read()?;
-            map.insert(LexicographicWord::new(cleared_key), EMPTY_WORD);
+            map.insert(cleared_key, EMPTY_WORD);
         }
 
         let updated_count = source.read_usize()?;
         for _ in 0..updated_count {
             let (updated_key, updated_value) = source.read()?;
-            map.insert(LexicographicWord::new(updated_key), updated_value);
+            map.insert(updated_key, updated_value);
         }
 
         Ok(Self::new(map))
@@ -617,7 +603,7 @@ mod tests {
     use assert_matches::assert_matches;
 
     use super::{AccountStorageDelta, Deserializable, Serializable};
-    use crate::account::{StorageMapDelta, StorageSlotDelta, StorageSlotName};
+    use crate::account::{StorageMapDelta, StorageMapKey, StorageSlotDelta, StorageSlotName};
     use crate::errors::AccountDeltaError;
     use crate::{ONE, Word};
 
@@ -633,7 +619,7 @@ mod tests {
         );
 
         let err = delta
-            .set_map_item(value_slot_name.clone(), Word::empty(), Word::empty())
+            .set_map_item(value_slot_name.clone(), StorageMapKey::empty(), Word::empty())
             .unwrap_err();
         assert_matches!(err, AccountDeltaError::StorageSlotUsedAsDifferentTypes(slot_name) => {
             assert_eq!(value_slot_name, slot_name)
@@ -674,11 +660,13 @@ mod tests {
         let serialized = storage_delta.to_bytes();
         let deserialized = AccountStorageDelta::read_from_bytes(&serialized).unwrap();
         assert_eq!(deserialized, storage_delta);
+        assert_eq!(storage_delta.get_size_hint(), serialized.len());
 
         let storage_delta = AccountStorageDelta::from_iters([StorageSlotName::mock(1)], [], []);
         let serialized = storage_delta.to_bytes();
         let deserialized = AccountStorageDelta::read_from_bytes(&serialized).unwrap();
         assert_eq!(deserialized, storage_delta);
+        assert_eq!(storage_delta.get_size_hint(), serialized.len());
 
         let storage_delta = AccountStorageDelta::from_iters(
             [],
@@ -688,6 +676,7 @@ mod tests {
         let serialized = storage_delta.to_bytes();
         let deserialized = AccountStorageDelta::read_from_bytes(&serialized).unwrap();
         assert_eq!(deserialized, storage_delta);
+        assert_eq!(storage_delta.get_size_hint(), serialized.len());
 
         let storage_delta = AccountStorageDelta::from_iters(
             [],
@@ -697,6 +686,7 @@ mod tests {
         let serialized = storage_delta.to_bytes();
         let deserialized = AccountStorageDelta::read_from_bytes(&serialized).unwrap();
         assert_eq!(deserialized, storage_delta);
+        assert_eq!(storage_delta.get_size_hint(), serialized.len());
     }
 
     #[test]
@@ -706,13 +696,16 @@ mod tests {
         let deserialized = StorageMapDelta::read_from_bytes(&serialized).unwrap();
         assert_eq!(deserialized, storage_map_delta);
 
-        let storage_map_delta = StorageMapDelta::from_iters([Word::from([ONE, ONE, ONE, ONE])], []);
+        let storage_map_delta =
+            StorageMapDelta::from_iters([StorageMapKey::from_array([1, 1, 1, 1])], []);
         let serialized = storage_map_delta.to_bytes();
         let deserialized = StorageMapDelta::read_from_bytes(&serialized).unwrap();
         assert_eq!(deserialized, storage_map_delta);
 
-        let storage_map_delta =
-            StorageMapDelta::from_iters([], [(Word::empty(), Word::from([ONE, ONE, ONE, ONE]))]);
+        let storage_map_delta = StorageMapDelta::from_iters(
+            [],
+            [(StorageMapKey::empty(), Word::from([ONE, ONE, ONE, ONE]))],
+        );
         let serialized = storage_map_delta.to_bytes();
         let deserialized = StorageMapDelta::read_from_bytes(&serialized).unwrap();
         assert_eq!(deserialized, storage_map_delta);
@@ -739,8 +732,8 @@ mod tests {
         assert_eq!(deserialized, slot_delta);
 
         let map_delta = StorageMapDelta::from_iters(
-            [Word::from([1, 2, 3, 4u32])],
-            [(Word::from([5, 6, 7, 8u32]), Word::from([3, 4, 5, 6u32]))],
+            [StorageMapKey::from_array([1, 2, 3, 4])],
+            [(StorageMapKey::from_array([5, 6, 7, 8]), Word::from([3, 4, 5, 6u32]))],
         );
         let slot_delta = StorageSlotDelta::Map(map_delta);
         let serialized = slot_delta.to_bytes();
@@ -786,7 +779,7 @@ mod tests {
     #[test]
     fn merge_maps(#[case] x: Option<u32>, #[case] y: Option<u32>, #[case] expected: Option<u32>) {
         fn create_delta(value: Option<u32>) -> StorageMapDelta {
-            let key = Word::from([10u32, 0, 0, 0]);
+            let key = StorageMapKey::from_array([10, 0, 0, 0]);
             match value {
                 Some(value) => {
                     StorageMapDelta::from_iters([], [(key, Word::from([value, 0, 0, 0]))])

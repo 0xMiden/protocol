@@ -1,5 +1,7 @@
-use crate::account::AccountComponent;
+use alloc::sync::Arc;
+
 use crate::account::component::AccountComponentMetadata;
+use crate::account::{AccountComponent, AccountType};
 use crate::assembly::{Assembler, Library};
 use crate::utils::sync::LazyLock;
 
@@ -13,9 +15,11 @@ const ADD_CODE: &str = "
 ";
 
 static ADD_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
-    Assembler::default()
-        .assemble_library([ADD_CODE])
-        .expect("add code should be valid")
+    Arc::unwrap_or_clone(
+        Assembler::default()
+            .assemble_library([ADD_CODE])
+            .expect("add code should be valid"),
+    )
 });
 
 /// Creates a mock authentication [`AccountComponent`] for testing purposes.
@@ -25,9 +29,8 @@ pub struct AddComponent;
 
 impl From<AddComponent> for AccountComponent {
     fn from(_: AddComponent) -> Self {
-        let metadata = AccountComponentMetadata::new("miden::testing::add")
-            .with_description("Add component for testing")
-            .with_supports_all_types();
+        let metadata = AccountComponentMetadata::new("miden::testing::add", AccountType::all())
+            .with_description("Add component for testing");
 
         AccountComponent::new(ADD_LIBRARY.clone(), vec![], metadata)
             .expect("component should be valid")

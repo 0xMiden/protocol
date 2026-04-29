@@ -62,6 +62,11 @@ impl PartialNote {
     pub fn header(&self) -> &NoteHeader {
         &self.header
     }
+
+    /// Consumes self and returns the non-Copy parts of this note.
+    pub fn into_parts(self) -> (NoteAssets, NoteHeader) {
+        (self.assets, self.header)
+    }
 }
 
 // SERIALIZATION
@@ -74,6 +79,10 @@ impl Serializable for PartialNote {
         self.header().metadata().write_into(target);
         self.recipient_digest.write_into(target);
         self.assets.write_into(target)
+    }
+
+    fn get_size_hint(&self) -> usize {
+        self.metadata().get_size_hint() + Word::SERIALIZED_SIZE + self.assets.get_size_hint()
     }
 }
 

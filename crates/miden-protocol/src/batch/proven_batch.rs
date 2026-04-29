@@ -8,7 +8,13 @@ use crate::block::BlockNumber;
 use crate::errors::ProvenBatchError;
 use crate::note::Nullifier;
 use crate::transaction::{InputNoteCommitment, InputNotes, OrderedTransactionHeaders, OutputNote};
-use crate::utils::{ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable};
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 use crate::{MIN_PROOF_SECURITY_LEVEL, Word};
 
 /// A transaction batch with an execution proof.
@@ -30,13 +36,16 @@ impl ProvenBatch {
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
-    /// Creates a new [`ProvenBatch`] from the provided parts.
+    /// Creates a new [`ProvenBatch`] from the provided parts without checking any constraints
+    /// except the ones listed in the errors section below.
+    ///
+    /// This should essentially never be called by users.
     ///
     /// # Errors
     ///
     /// Returns an error if the batch expiration block number is not greater than the reference
     /// block number.
-    pub fn new(
+    pub fn new_unchecked(
         id: BatchId,
         reference_block_commitment: Word,
         reference_block_num: BlockNumber,
@@ -171,7 +180,7 @@ impl Deserializable for ProvenBatch {
         let batch_expiration_block_num = BlockNumber::read_from(source)?;
         let transactions = OrderedTransactionHeaders::read_from(source)?;
 
-        Self::new(
+        Self::new_unchecked(
             id,
             reference_block_commitment,
             reference_block_num,

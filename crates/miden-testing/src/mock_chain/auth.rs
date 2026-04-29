@@ -7,11 +7,14 @@ use miden_protocol::account::AccountComponent;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, PublicKeyCommitment};
 use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
 use miden_standards::account::auth::{
+    AuthGuardedMultisig,
+    AuthGuardedMultisigConfig,
     AuthMultisig,
     AuthMultisigConfig,
     AuthSingleSig,
     AuthSingleSigAcl,
     AuthSingleSigAclConfig,
+    GuardianConfig,
 };
 use miden_standards::testing::account_component::{
     ConditionalAuthComponent,
@@ -31,7 +34,15 @@ pub enum Auth {
     /// Multisig
     Multisig {
         threshold: u32,
-        approvers: Vec<(Word, AuthScheme)>,
+        approvers: Vec<(PublicKeyCommitment, AuthScheme)>,
+        proc_threshold_map: Vec<(Word, u32)>,
+    },
+
+    /// Guarded multisig.
+    GuardedMultisig {
+        threshold: u32,
+        approvers: Vec<(PublicKeyCommitment, AuthScheme)>,
+        guardian_config: GuardianConfig,
         proc_threshold_map: Vec<(Word, u32)>,
     },
 
@@ -77,18 +88,27 @@ impl Auth {
                 (component, Some(authenticator))
             },
             Auth::Multisig { threshold, approvers, proc_threshold_map } => {
-                let approvers = approvers
-                    .iter()
-                    .map(|(pub_key, auth_scheme)| {
-                        (PublicKeyCommitment::from(*pub_key), *auth_scheme)
-                    })
-                    .collect();
-
-                let config = AuthMultisigConfig::new(approvers, *threshold)
+                let config = AuthMultisigConfig::new(approvers.clone(), *threshold)
                     .and_then(|cfg| cfg.with_proc_thresholds(proc_threshold_map.clone()))
                     .expect("invalid multisig config");
                 let component =
                     AuthMultisig::new(config).expect("multisig component creation failed").into();
+
+                (component, None)
+            },
+            Auth::GuardedMultisig {
+                threshold,
+                approvers,
+                guardian_config,
+                proc_threshold_map,
+            } => {
+                let config =
+                    AuthGuardedMultisigConfig::new(approvers.clone(), *threshold, *guardian_config)
+                        .and_then(|cfg| cfg.with_proc_thresholds(proc_threshold_map.clone()))
+                        .expect("invalid guarded multisig config");
+                let component = AuthGuardedMultisig::new(config)
+                    .expect("guarded multisig component creation failed")
+                    .into();
 
                 (component, None)
             },

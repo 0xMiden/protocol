@@ -2,8 +2,14 @@ use alloc::vec::Vec;
 
 use crate::account::AccountDelta;
 use crate::crypto::SequentialCommit;
-use crate::transaction::{InputNote, InputNotes, OutputNotes};
-use crate::utils::{Deserializable, Serializable};
+use crate::transaction::{InputNote, InputNotes, RawOutputNotes};
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 use crate::{Felt, Word};
 
 /// The summary of the changes that result from executing a transaction.
@@ -14,7 +20,7 @@ use crate::{Felt, Word};
 pub struct TransactionSummary {
     account_delta: AccountDelta,
     input_notes: InputNotes<InputNote>,
-    output_notes: OutputNotes,
+    output_notes: RawOutputNotes,
     salt: Word,
 }
 
@@ -26,7 +32,7 @@ impl TransactionSummary {
     pub fn new(
         account_delta: AccountDelta,
         input_notes: InputNotes<InputNote>,
-        output_notes: OutputNotes,
+        output_notes: RawOutputNotes,
         salt: Word,
     ) -> Self {
         Self {
@@ -51,7 +57,7 @@ impl TransactionSummary {
     }
 
     /// Returns the output notes of this transaction summary.
-    pub fn output_notes(&self) -> &OutputNotes {
+    pub fn output_notes(&self) -> &RawOutputNotes {
         &self.output_notes
     }
 
@@ -82,7 +88,7 @@ impl SequentialCommit for TransactionSummary {
 }
 
 impl Serializable for TransactionSummary {
-    fn write_into<W: miden_core::utils::ByteWriter>(&self, target: &mut W) {
+    fn write_into<W: ByteWriter>(&self, target: &mut W) {
         self.account_delta.write_into(target);
         self.input_notes.write_into(target);
         self.output_notes.write_into(target);
@@ -91,9 +97,7 @@ impl Serializable for TransactionSummary {
 }
 
 impl Deserializable for TransactionSummary {
-    fn read_from<R: miden_core::utils::ByteReader>(
-        source: &mut R,
-    ) -> Result<Self, miden_processor::DeserializationError> {
+    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let account_delta = source.read()?;
         let input_notes = source.read()?;
         let output_notes = source.read()?;

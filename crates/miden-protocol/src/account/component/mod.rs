@@ -1,7 +1,8 @@
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
-use miden_mast_package::{MastArtifact, Package};
+use miden_mast_package::Package;
+use miden_processor::mast::MastNodeExt;
 
 mod metadata;
 pub use metadata::*;
@@ -12,10 +13,13 @@ pub use storage::*;
 mod code;
 pub use code::AccountComponentCode;
 
-use crate::account::{AccountType, StorageSlot};
+use crate::account::{AccountProcedureRoot, AccountType, StorageSlot};
 use crate::assembly::Path;
 use crate::errors::AccountError;
 use crate::{MastForest, Word};
+
+/// The attribute name used to mark the authentication procedure in an account component.
+const AUTH_SCRIPT_ATTRIBUTE: &str = "auth_script";
 
 // ACCOUNT COMPONENT
 // ================================================================================================
@@ -100,14 +104,7 @@ impl AccountComponent {
         init_storage_data: &InitStorageData,
     ) -> Result<Self, AccountError> {
         let metadata = AccountComponentMetadata::try_from(package)?;
-        let library = match &package.mast {
-            MastArtifact::Library(library) => library.as_ref().clone(),
-            MastArtifact::Executable(_) => {
-                return Err(AccountError::other(
-                    "expected Package to contain a library, but got an executable",
-                ));
-            },
-        };
+        let library = package.mast.as_ref().clone();
 
         let component_code = AccountComponentCode::from(library);
         Self::from_library(&component_code, &metadata, init_storage_data)
@@ -192,16 +189,24 @@ impl AccountComponent {
         self.metadata.supported_types().contains(&account_type)
     }
 
-    /// Returns a vector of tuples (digest, is_auth) for all procedures in this component.
-    pub fn get_procedures(&self) -> Vec<(Word, bool)> {
-        let mut procedures = Vec::new();
-        for module in self.code.as_library().module_infos() {
-            for (_, procedure_info) in module.procedures() {
-                let is_auth = procedure_info.name.starts_with("auth_");
-                procedures.push((procedure_info.digest, is_auth));
-            }
-        }
-        procedures
+    /// Returns an iterator over ([`AccountProcedureRoot`], is_auth) for all procedures in this
+    /// component.
+    ///
+    /// A procedure is considered an authentication procedure if it has the `@auth_script`
+    /// attribute.
+    pub fn procedures(&self) -> impl Iterator<Item = (AccountProcedureRoot, bool)> + '_ {
+        let library = self.code.as_library();
+        library.exports().filter_map(|export| {
+            export.as_procedure().map(|proc_export| {
+                let digest = library
+                    .mast_forest()
+                    .get_node_by_id(proc_export.node)
+                    .expect("export node not in the forest")
+                    .digest();
+                let is_auth = proc_export.attributes.has(AUTH_SCRIPT_ATTRIBUTE);
+                (AccountProcedureRoot::from_raw(digest), is_auth)
+            })
+        })
     }
 
     /// Returns the digest of the procedure with the specified path, or `None` if it was not found
@@ -223,19 +228,12 @@ mod tests {
     use alloc::sync::Arc;
 
     use miden_assembly::Assembler;
-    use miden_core::utils::Serializable;
-    use miden_mast_package::{
-        MastArtifact,
-        Package,
-        PackageKind,
-        PackageManifest,
-        Section,
-        SectionId,
-    };
+    use miden_mast_package::{Package, PackageManifest, Section, SectionId, TargetType};
     use semver::Version;
 
     use super::*;
     use crate::testing::account_code::CODE;
+    use crate::utils::serde::Serializable;
 
     #[test]
     fn test_extract_metadata_from_package() {
@@ -243,22 +241,24 @@ mod tests {
         let library = Assembler::default().assemble_library([CODE]).unwrap();
 
         // Test with metadata
-        let metadata = AccountComponentMetadata::new("test_component")
-            .with_description("A test component")
-            .with_version(Version::new(1, 0, 0))
-            .with_supported_type(AccountType::RegularAccountImmutableCode);
+        let metadata = AccountComponentMetadata::new(
+            "test_component",
+            [AccountType::RegularAccountImmutableCode],
+        )
+        .with_description("A test component")
+        .with_version(Version::new(1, 0, 0));
 
         let metadata_bytes = metadata.to_bytes();
         let package_with_metadata = Package {
-            name: "test_package".to_string(),
-            mast: MastArtifact::Library(Arc::new(library.clone())),
-            manifest: PackageManifest::new(None),
-            kind: PackageKind::AccountComponent,
+            name: "test_package".into(),
+            mast: library.clone(),
+            manifest: PackageManifest::new(core::iter::empty()).unwrap(),
+            kind: TargetType::AccountComponent,
             sections: vec![Section::new(
                 SectionId::ACCOUNT_COMPONENT_METADATA,
                 metadata_bytes.clone(),
             )],
-            version: Default::default(),
+            version: Version::new(0, 0, 0),
             description: None,
         };
 
@@ -273,12 +273,12 @@ mod tests {
 
         // Test without metadata - should fail
         let package_without_metadata = Package {
-            name: "test_package_no_metadata".to_string(),
-            mast: MastArtifact::Library(Arc::new(library)),
-            manifest: PackageManifest::new(None),
-            kind: PackageKind::AccountComponent,
+            name: "test_package_no_metadata".into(),
+            mast: library,
+            manifest: PackageManifest::new(core::iter::empty()).unwrap(),
+            kind: TargetType::AccountComponent,
             sections: vec![], // No metadata section
-            version: Default::default(),
+            version: Version::new(0, 0, 0),
             description: None,
         };
 
@@ -292,13 +292,12 @@ mod tests {
     fn test_from_library_with_init_data() {
         // Create a simple library for testing
         let library = Assembler::default().assemble_library([CODE]).unwrap();
-        let component_code = AccountComponentCode::from(library.clone());
+        let component_code = AccountComponentCode::from(Arc::unwrap_or_clone(library.clone()));
 
         // Create metadata for the component
-        let metadata = AccountComponentMetadata::new("test_component")
+        let metadata = AccountComponentMetadata::new("test_component", AccountType::regular())
             .with_description("A test component")
-            .with_version(Version::new(1, 0, 0))
-            .with_supports_regular_types();
+            .with_version(Version::new(1, 0, 0));
 
         // Test with empty init data - this tests the complete workflow:
         // Library + Metadata -> AccountComponent
@@ -314,12 +313,12 @@ mod tests {
 
         // Test without metadata - should fail
         let package_without_metadata = Package {
-            name: "test_package_no_metadata".to_string(),
-            mast: MastArtifact::Library(Arc::new(library)),
-            kind: PackageKind::AccountComponent,
-            manifest: PackageManifest::new(None),
+            name: "test_package_no_metadata".into(),
+            mast: library,
+            kind: TargetType::AccountComponent,
+            manifest: PackageManifest::new(core::iter::empty()).unwrap(),
             sections: vec![], // No metadata section
-            version: Default::default(),
+            version: Version::new(0, 0, 0),
             description: None,
         };
 

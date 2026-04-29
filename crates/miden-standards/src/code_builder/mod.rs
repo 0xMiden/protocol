@@ -111,6 +111,18 @@ impl CodeBuilder {
         }
     }
 
+    // CONFIGURATION
+    // --------------------------------------------------------------------------------------------
+
+    /// Configures the assembler to treat warning diagnostics as errors.
+    ///
+    /// When enabled, any warning emitted during compilation will be promoted to an error,
+    /// causing the compilation to fail.
+    pub fn with_warnings_as_errors(mut self, yes: bool) -> Self {
+        self.assembler = self.assembler.with_warnings_as_errors(yes);
+        self
+    }
+
     // LIBRARY MANAGEMENT
     // --------------------------------------------------------------------------------------------
 
@@ -341,7 +353,8 @@ impl CodeBuilder {
         })?;
 
         Ok(AccountComponentCode::from(Self::apply_advice_map_to_library(
-            advice_map, library,
+            advice_map,
+            Arc::unwrap_or_clone(library),
         )))
     }
 
@@ -373,7 +386,8 @@ impl CodeBuilder {
     /// The parsed script will have access to all modules that have been added to this builder.
     ///
     /// # Arguments
-    /// * `program` - The note script source code
+    /// - `source` - the note script source code which is expected to have a single public procedure
+    ///   marked with the @note_script attribute.
     ///
     /// # Errors
     /// Returns an error if:
@@ -381,11 +395,20 @@ impl CodeBuilder {
     pub fn compile_note_script(self, source: impl Parse) -> Result<NoteScript, CodeBuilderError> {
         let CodeBuilder { assembler, advice_map, .. } = self;
 
-        let program = assembler.assemble_program(source).map_err(|err| {
-            CodeBuilderError::build_error_with_report("failed to parse note script", err)
+        let note_script_lib = assembler.assemble_library([source]).map_err(|err| {
+            CodeBuilderError::build_error_with_report("failed to parse note script library", err)
         })?;
 
-        Ok(NoteScript::new(Self::apply_advice_map(advice_map, program)))
+        NoteScript::from_library(&Self::apply_advice_map_to_library(
+            advice_map,
+            Arc::unwrap_or_clone(note_script_lib),
+        ))
+        .map_err(|err| {
+            CodeBuilderError::build_error_with_source(
+                "failed to create note script from library",
+                err,
+            )
+        })
     }
 
     // ACCESSORS
@@ -424,7 +447,7 @@ impl CodeBuilder {
     ///
     /// [account_lib]: crate::testing::mock_account_code::MockAccountCodeExt::mock_account_library
     /// [faucet_lib]: crate::testing::mock_account_code::MockAccountCodeExt::mock_faucet_library
-    /// [util_lib]: miden_protocol::testing::mock_util_lib::mock_util_library
+    /// [util_lib]: crate::testing::mock_util_lib::mock_util_library
     #[cfg(any(feature = "testing", test))]
     pub fn with_mock_libraries() -> Self {
         Self::with_mock_libraries_with_source_manager(Arc::new(DefaultSourceManager::default()))
@@ -444,7 +467,7 @@ impl CodeBuilder {
     pub fn with_mock_libraries_with_source_manager(
         source_manager: Arc<dyn SourceManagerSync>,
     ) -> Self {
-        use miden_protocol::testing::mock_util_lib::mock_util_library;
+        use crate::testing::mock_util_lib::mock_util_library;
 
         // Start with the builder linking against the transaction kernel, protocol library and
         // standards library.
@@ -488,6 +511,7 @@ impl From<CodeBuilder> for Assembler {
 mod tests {
     use anyhow::Context;
     use miden_protocol::assembly::diagnostics::NamedSource;
+    use miden_protocol::testing::note::DEFAULT_NOTE_SCRIPT;
 
     use super::*;
 
@@ -696,6 +720,12 @@ mod tests {
     }
 
     #[test]
+    fn test_code_builder_warnings_as_errors() {
+        let assembler: Assembler = CodeBuilder::default().with_warnings_as_errors(true).into();
+        assert!(assembler.warnings_as_errors());
+    }
+
+    #[test]
     fn test_code_builder_with_advice_map_entry() -> anyhow::Result<()> {
         let key = Word::from([1u32, 2, 3, 4]);
         let value = vec![Felt::new(42), Felt::new(43)];
@@ -740,7 +770,7 @@ mod tests {
 
         let script = CodeBuilder::default()
             .with_advice_map_entry(key, value.clone())
-            .compile_note_script("begin nop end")
+            .compile_note_script(DEFAULT_NOTE_SCRIPT)
             .context("failed to compile note script with advice map")?;
 
         let mast = script.mast();

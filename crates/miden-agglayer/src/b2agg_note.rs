@@ -6,8 +6,9 @@
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
-use miden_assembly::utils::Deserializable;
-use miden_core::{Felt, Program, Word};
+use miden_assembly::Library;
+use miden_assembly::serde::Deserializable;
+use miden_core::{Felt, Word};
 use miden_protocol::account::AccountId;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
@@ -24,16 +25,17 @@ use miden_protocol::note::{
 use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 use miden_utils_sync::LazyLock;
 
-use crate::EthAddressFormat;
+use crate::EthAddress;
 
 // NOTE SCRIPT
 // ================================================================================================
 
 // Initialize the B2AGG note script only once
 static B2AGG_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/B2AGG.masb"));
-    let program = Program::read_from_bytes(bytes).expect("Shipped B2AGG script is well-formed");
-    NoteScript::new(program)
+    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/b2agg.masl"));
+    let library =
+        Library::read_from_bytes(bytes).expect("shipped B2AGG script library is well-formed");
+    NoteScript::from_library(&library).expect("shipped B2AGG script is well-formed")
 });
 
 // B2AGG NOTE
@@ -87,7 +89,7 @@ impl B2AggNote {
     /// Returns an error if note creation fails.
     pub fn create<R: FeltRng>(
         destination_network: u32,
-        destination_address: EthAddressFormat,
+        destination_address: EthAddress,
         assets: NoteAssets,
         target_account_id: AccountId,
         sender_account_id: AccountId,
@@ -119,11 +121,12 @@ impl B2AggNote {
 /// - 5 felts: destination_address (20 bytes as 5 u32 values)
 fn build_note_storage(
     destination_network: u32,
-    destination_address: EthAddressFormat,
+    destination_address: EthAddress,
 ) -> Result<NoteStorage, NoteError> {
     let mut elements = Vec::with_capacity(6);
 
-    elements.push(Felt::new(destination_network as u64));
+    let destination_network = u32::from_le_bytes(destination_network.to_be_bytes());
+    elements.push(Felt::from(destination_network));
     elements.extend(destination_address.to_elements());
 
     NoteStorage::new(elements)

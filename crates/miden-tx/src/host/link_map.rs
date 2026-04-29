@@ -1,9 +1,9 @@
 use alloc::vec::Vec;
 use core::cmp::Ordering;
 
-use miden_processor::fast::ExecutionOutput;
-use miden_processor::{AdviceMutation, ContextId, ProcessState};
-use miden_protocol::{Felt, LexicographicWord, Word, ZERO};
+use miden_processor::advice::AdviceMutation;
+use miden_processor::{ContextId, ExecutionOutput, ProcessorState};
+use miden_protocol::{Felt, Word, ZERO};
 
 // LINK MAP
 // ================================================================================================
@@ -30,7 +30,8 @@ impl<'process> LinkMap<'process> {
 
     /// Creates a new link map from the provided map_ptr in the provided process.
     pub fn new(map_ptr: Felt, mem: &'process MemoryViewer<'process>) -> Self {
-        let map_ptr: u32 = map_ptr.try_into().expect("map_ptr must be a valid u32");
+        let map_ptr: u32 =
+            u32::try_from(map_ptr.as_canonical_u64()).expect("map_ptr must be a valid u32");
 
         Self { map_ptr, mem }
     }
@@ -41,32 +42,32 @@ impl<'process> LinkMap<'process> {
     /// Handles a `LINK_MAP_SET_EVENT` emitted from a VM.
     ///
     /// Expected operand stack state before: [map_ptr, KEY, NEW_VALUE]
-    /// Advice stack state after: [set_operation, entry_ptr]
-    pub fn handle_set_event(process: &ProcessState<'_>) -> Vec<AdviceMutation> {
+    /// Advice stack state after: [entry_ptr, set_operation]
+    pub fn handle_set_event(process: &ProcessorState<'_>) -> Vec<AdviceMutation> {
         let map_ptr = process.get_stack_item(1);
-        let map_key = process.get_stack_word_be(2);
+        let map_key = process.get_stack_word(2);
 
         let mem_viewer = MemoryViewer::ProcessState(process);
         let link_map = LinkMap::new(map_ptr, &mem_viewer);
 
-        let (set_op, entry_ptr) = link_map.compute_set_operation(LexicographicWord::from(map_key));
+        let (set_op, entry_ptr) = link_map.compute_set_operation(map_key);
 
-        vec![AdviceMutation::extend_stack([Felt::from(set_op as u8), Felt::from(entry_ptr)])]
+        vec![AdviceMutation::extend_stack([Felt::from(entry_ptr), Felt::from(set_op as u8)])]
     }
 
     /// Handles a `LINK_MAP_GET_EVENT` emitted from a VM.
     ///
     /// Expected operand stack state before: [map_ptr, KEY]
-    /// Advice stack state after: [get_operation, entry_ptr]
-    pub fn handle_get_event(process: &ProcessState<'_>) -> Vec<AdviceMutation> {
+    /// Advice stack state after: [entry_ptr, get_operation]
+    pub fn handle_get_event(process: &ProcessorState<'_>) -> Vec<AdviceMutation> {
         let map_ptr = process.get_stack_item(1);
-        let map_key = process.get_stack_word_be(2);
+        let map_key = process.get_stack_word(2);
 
         let mem_viewer = MemoryViewer::ProcessState(process);
         let link_map = LinkMap::new(map_ptr, &mem_viewer);
-        let (get_op, entry_ptr) = link_map.compute_get_operation(LexicographicWord::from(map_key));
+        let (get_op, entry_ptr) = link_map.compute_get_operation(map_key);
 
-        vec![AdviceMutation::extend_stack([Felt::from(get_op as u8), Felt::from(entry_ptr)])]
+        vec![AdviceMutation::extend_stack([Felt::from(entry_ptr), Felt::from(get_op as u8)])]
     }
 
     /// Returns `true` if the map is empty, `false` otherwise.
@@ -94,7 +95,10 @@ impl<'process> LinkMap<'process> {
             if head_ptr == ZERO {
                 None
             } else {
-                Some(u32::try_from(head_ptr).expect("head ptr should be a valid ptr"))
+                Some(
+                    u32::try_from(head_ptr.as_canonical_u64())
+                        .expect("head ptr should be a valid ptr"),
+                )
             }
         })
     }
@@ -115,12 +119,10 @@ impl<'process> LinkMap<'process> {
     }
 
     /// Returns the key of the entry at the given pointer.
-    fn key(&self, entry_ptr: u32) -> LexicographicWord {
-        LexicographicWord::from(
-            self.mem
-                .get_kernel_mem_word(entry_ptr + 4)
-                .expect("entry pointer should be valid"),
-        )
+    fn key(&self, entry_ptr: u32) -> Word {
+        self.mem
+            .get_kernel_mem_word(entry_ptr + 4)
+            .expect("entry pointer should be valid")
     }
 
     /// Returns the values of the entry at the given pointer.
@@ -142,16 +144,15 @@ impl<'process> LinkMap<'process> {
             self.mem.get_kernel_mem_word(entry_ptr).expect("entry pointer should be valid");
 
         let map_ptr = entry_metadata[0];
-        let map_ptr = map_ptr.try_into().expect("entry_ptr should point to a u32 map_ptr");
+        let map_ptr = u32::try_from(map_ptr.as_canonical_u64())
+            .expect("entry_ptr should point to a u32 map_ptr");
 
         let prev_entry_ptr = entry_metadata[1];
-        let prev_entry_ptr = prev_entry_ptr
-            .try_into()
+        let prev_entry_ptr = u32::try_from(prev_entry_ptr.as_canonical_u64())
             .expect("entry_ptr should point to a u32 prev_entry_ptr");
 
         let next_entry_ptr = entry_metadata[2];
-        let next_entry_ptr = next_entry_ptr
-            .try_into()
+        let next_entry_ptr = u32::try_from(next_entry_ptr.as_canonical_u64())
             .expect("entry_ptr should point to a u32 next_entry_ptr");
 
         EntryMetadata { map_ptr, prev_entry_ptr, next_entry_ptr }
@@ -168,7 +169,7 @@ impl<'process> LinkMap<'process> {
     /// ([`SetOperation::InsertAfterEntry`]) in which case the key must be greater than the entry's
     /// key after which it is inserted and smaller than the entry before which it is inserted
     /// (unless it is the end of the map).
-    fn compute_set_operation(&self, key: LexicographicWord) -> (SetOperation, u32) {
+    fn compute_set_operation(&self, key: Word) -> (SetOperation, u32) {
         let Some(current_head) = self.head() else {
             return (SetOperation::InsertAtHead, 0);
         };
@@ -206,7 +207,7 @@ impl<'process> LinkMap<'process> {
     ///
     /// The way to compute this is the same as a set operation, so this function simply remaps its
     /// output.
-    fn compute_get_operation(&self, key: LexicographicWord) -> (GetOperation, u32) {
+    fn compute_get_operation(&self, key: Word) -> (GetOperation, u32) {
         let (set_op, entry_ptr) = self.compute_set_operation(key);
         let get_op = match set_op {
             SetOperation::Update => GetOperation::Found,
@@ -252,7 +253,7 @@ impl<'process> Iterator for LinkMapIter<'process> {
 pub struct Entry {
     pub ptr: u32,
     pub metadata: EntryMetadata,
-    pub key: LexicographicWord,
+    pub key: Word,
     pub value0: Word,
     pub value1: Word,
 }
@@ -293,14 +294,14 @@ enum SetOperation {
 
 /// A abstraction over ways to view a process' memory.
 ///
-/// More specifically, it allows using a [`LinkMap`] both with a [`ProcessState`], i.e. a process
+/// More specifically, it allows using a [`LinkMap`] both with a [`ProcessorState`], i.e. a process
 /// that is actively executing and also an [`ExecutionOutput`], i.e. a process that has finished
 /// execution.
 ///
 /// This should all go away again once we change a LinkMap's implementation to be based on an actual
 /// map type instead of viewing a process' memory directly.
 pub enum MemoryViewer<'mem> {
-    ProcessState(&'mem ProcessState<'mem>),
+    ProcessState(&'mem ProcessorState<'mem>),
     ExecutionOutputs(&'mem ExecutionOutput),
 }
 
@@ -333,14 +334,13 @@ impl<'mem> MemoryViewer<'mem> {
             MemoryViewer::ExecutionOutputs(execution_output) => {
                 let tx_kernel_context = ContextId::root();
                 let clk = 0u32;
-                let err_ctx = ();
 
                 // Note that this never returns None even if the location is uninitialized, but the
                 // link map does not rely on this.
                 Some(
                     execution_output
                         .memory
-                        .read_word(tx_kernel_context, Felt::from(addr), clk.into(), &err_ctx)
+                        .read_word(tx_kernel_context, Felt::from(addr), clk.into())
                         .expect("expected address to be word-aligned"),
                 )
             },

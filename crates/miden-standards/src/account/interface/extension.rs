@@ -2,7 +2,7 @@ use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use miden_processor::MastNodeExt;
+use miden_processor::mast::MastNodeExt;
 use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountCode, AccountId, AccountProcedureRoot};
 use miden_protocol::assembly::mast::{MastForest, MastNode, MastNodeId};
@@ -13,6 +13,8 @@ use crate::account::components::{
     StandardAccountComponent,
     basic_fungible_faucet_library,
     basic_wallet_library,
+    fungible_token_metadata_library,
+    guarded_multisig_library,
     multisig_library,
     network_fungible_faucet_library,
     no_auth_library,
@@ -91,6 +93,11 @@ impl AccountInterfaceExt for AccountInterface {
                     component_proc_digests
                         .extend(basic_wallet_library().mast_forest().procedure_digests());
                 },
+                AccountComponentInterface::FungibleTokenMetadata => {
+                    component_proc_digests.extend(
+                        fungible_token_metadata_library().mast_forest().procedure_digests(),
+                    );
+                },
                 AccountComponentInterface::BasicFungibleFaucet => {
                     component_proc_digests
                         .extend(basic_fungible_faucet_library().mast_forest().procedure_digests());
@@ -111,6 +118,10 @@ impl AccountInterfaceExt for AccountInterface {
                 AccountComponentInterface::AuthMultisig => {
                     component_proc_digests
                         .extend(multisig_library().mast_forest().procedure_digests());
+                },
+                AccountComponentInterface::AuthGuardedMultisig => {
+                    component_proc_digests
+                        .extend(guarded_multisig_library().mast_forest().procedure_digests());
                 },
                 AccountComponentInterface::AuthNoAuth => {
                     component_proc_digests

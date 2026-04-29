@@ -17,18 +17,33 @@ bench = false
 [features]
 default = ["std"]
 std     = ["miden-assembly/std", "miden-core/std"]
-testing = ["miden-protocol/testing"]
+testing = ["dep:serde", "dep:serde_json", "miden-protocol/testing"]
 
 [dependencies]
 # Miden dependencies
 miden-assembly   = { workspace = true }
 miden-core       = { workspace = true }
+miden-core-lib   = { workspace = true }
 miden-protocol   = { workspace = true }
 miden-standards  = { workspace = true }
 miden-utils-sync = { workspace = true }
 
+# Third-party dependencies
+alloy-sol-types = { workspace = true }
+primitive-types = { workspace = true }
+thiserror       = { workspace = true }
+
+# Crypto
+miden-crypto = { workspace = true }
+
+# Optional testing dependencies
+serde      = { features = ["alloc", "derive"], optional = true, workspace = true }
+serde_json = { default-features = false, features = ["alloc"], optional = true, version = "1.0" }
+
 [dev-dependencies]
 miden-agglayer = { features = ["testing"], path = "." }
+serde          = { features = ["derive"], workspace = true }
+serde_json     = { version = "1.0" }
 
 [build-dependencies]
 fs-err          = { workspace = true }

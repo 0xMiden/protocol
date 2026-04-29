@@ -1,8 +1,6 @@
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 
-use miden_core::FieldElement;
-
 use crate::account::component::StorageSchema;
 use crate::account::{
     Account,
@@ -39,10 +37,10 @@ use crate::{Felt, Word};
 /// - [`AccountBuilder::with_component`], which must be called at least once.
 ///
 /// Under the `testing` feature, it is possible to:
-/// - Build an existing account using [`AccountBuilder::build_existing`] which will set the
-///   account's nonce to `1` by default, or to the configured value.
-/// - Add assets to the account's vault, however this will only succeed when using
-///   [`AccountBuilder::build_existing`].
+/// - Build an existing account using `AccountBuilder::build_existing`, which will set the account's
+///   nonce to `1` by default, or to the configured value.
+/// - Add assets to the account's vault; this only succeeds when using
+///   `AccountBuilder::build_existing`.
 ///
 /// **Storage Slot Order**
 ///
@@ -115,7 +113,7 @@ impl AccountBuilder {
     /// Adds a designated authentication [`AccountComponent`] to the builder.
     ///
     /// This component may contain multiple procedures, but is expected to contain exactly one
-    /// authentication procedure (named `auth_*`).
+    /// authentication procedure (marked with the `@auth_script` attribute).
     /// Calling this method multiple times will override the previous auth component.
     ///
     /// Procedures from this component will be placed at the beginning of the account procedure
@@ -198,7 +196,8 @@ impl AccountBuilder {
     /// - Authentication component is missing.
     /// - Multiple authentication procedures are found.
     /// - The number of [`StorageSlot`](crate::account::StorageSlot)s of all components exceeds 255.
-    /// - [`MastForest::merge`](miden_processor::MastForest::merge) fails on the given components.
+    /// - [`MastForest::merge`](miden_processor::mast::MastForest::merge) fails on the given
+    ///   components.
     /// - If duplicate assets were added to the builder (only under the `testing` feature).
     /// - If the vault is not empty on new accounts (only under the `testing` feature).
     pub fn build(mut self) -> Result<Account, AccountError> {
@@ -290,12 +289,11 @@ impl AccountBuilder {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::LazyLock;
+    use std::sync::{Arc, LazyLock};
 
     use assert_matches::assert_matches;
     use miden_assembly::{Assembler, Library};
-    use miden_core::FieldElement;
-    use miden_processor::MastNodeExt;
+    use miden_core::mast::MastNodeExt;
 
     use super::*;
     use crate::account::component::AccountComponentMetadata;
@@ -314,14 +312,18 @@ mod tests {
           ";
 
     static CUSTOM_LIBRARY1: LazyLock<Library> = LazyLock::new(|| {
-        Assembler::default()
-            .assemble_library([CUSTOM_CODE1])
-            .expect("code should be valid")
+        Arc::unwrap_or_clone(
+            Assembler::default()
+                .assemble_library([CUSTOM_CODE1])
+                .expect("code should be valid"),
+        )
     });
     static CUSTOM_LIBRARY2: LazyLock<Library> = LazyLock::new(|| {
-        Assembler::default()
-            .assemble_library([CUSTOM_CODE2])
-            .expect("code should be valid")
+        Arc::unwrap_or_clone(
+            Assembler::default()
+                .assemble_library([CUSTOM_CODE2])
+                .expect("code should be valid"),
+        )
     });
 
     static CUSTOM_COMPONENT1_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
@@ -346,7 +348,7 @@ mod tests {
             value[0] = Felt::new(custom.slot0);
 
             let metadata =
-                AccountComponentMetadata::new("test::custom_component1").with_supports_all_types();
+                AccountComponentMetadata::new("test::custom_component1", AccountType::all());
             AccountComponent::new(
                 CUSTOM_LIBRARY1.clone(),
                 vec![StorageSlot::with_value(CUSTOM_COMPONENT1_SLOT_NAME.clone(), value)],
@@ -368,7 +370,7 @@ mod tests {
             value1[3] = Felt::new(custom.slot1);
 
             let metadata =
-                AccountComponentMetadata::new("test::custom_component2").with_supports_all_types();
+                AccountComponentMetadata::new("test::custom_component2", AccountType::all());
             AccountComponent::new(
                 CUSTOM_LIBRARY2.clone(),
                 vec![

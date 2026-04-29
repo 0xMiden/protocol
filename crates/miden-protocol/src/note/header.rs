@@ -51,7 +51,7 @@ impl NoteHeader {
     ///
     /// This value is used primarily for authenticating notes consumed when they are consumed
     /// in a transaction.
-    pub fn commitment(&self) -> Word {
+    pub fn to_commitment(&self) -> Word {
         compute_note_commitment(self.id(), self.metadata())
     }
 }
@@ -76,6 +76,10 @@ impl Serializable for NoteHeader {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         self.note_id.write_into(target);
         self.note_metadata.write_into(target);
+    }
+
+    fn get_size_hint(&self) -> usize {
+        self.note_id.get_size_hint() + self.note_metadata.get_size_hint()
     }
 }
 

@@ -1,0 +1,1112 @@
+use agglayer::bridge::bridge_config
+use agglayer::bridge::leaf_utils
+use agglayer::common::utils
+use agglayer::common::asset_conversion
+use agglayer::common::eth_address
+use agglayer::faucet -> agglayer_faucet
+use miden::core::crypto::hashes::keccak256
+use miden::core::crypto::hashes::poseidon2
+use miden::core::mem
+use miden::core::word
+use miden::protocol::note
+use miden::protocol::note::NOTE_TYPE_PUBLIC
+use miden::protocol::output_note
+use miden::protocol::active_account
+use miden::protocol::native_account
+use miden::protocol::tx
+use miden::standards::note_tag
+use miden::standards::note_tag::DEFAULT_TAG
+use miden::standards::attachments::network_account_target
+use miden::standards::note::execution_hint::ALWAYS
+use miden::protocol::types::DoubleWord
+use miden::protocol::types::MemoryAddress
+
+# ERRORS
+# =================================================================================================
+
+const ERR_BRIDGE_NOT_MAINNET = "mainnet flag must be 1 for a mainnet deposit"
+const ERR_BRIDGE_NOT_ROLLUP = "mainnet flag must be 0 for a rollup deposit"
+const ERR_LEADING_BITS_NON_ZERO = "leading bits of global index must be zero"
+const ERR_MAINNET_FLAG_INVALID = "mainnet flag must be 0 or 1"
+const ERR_ROLLUP_INDEX_NON_ZERO = "rollup index must be zero for a mainnet deposit"
+const ERR_SMT_ROOT_VERIFICATION_FAILED = "merkle proof verification failed: provided SMT root does not match the computed root"
+const ERR_CLAIM_ALREADY_SPENT = "claim note has already been spent"
+const ERR_SOURCE_BRIDGE_NETWORK_OVERFLOW = "source bridge network overflowed u32"
+const ERR_INVALID_LEAF_TYPE = "invalid leaf type: only asset claims (leafType=0) are supported"
+
+# CONSTANTS
+# =================================================================================================
+
+# Claim Nullifier Flag
+const IS_CLAIMED_FLAG = [1, 0, 0, 0]
+
+# Storage slots
+# -------------------------------------------------------------------------------------------------
+
+# The slot in this component's storage layout where claim nullifiers are stored.
+# Map entries: Poseidon2(leaf_index, source_bridge_network) => [1, 0, 0, 0]
+const CLAIM_NULLIFIERS_SLOT = word("agglayer::bridge::claim_nullifiers")
+
+# Storage slot constants for the CGI (claimed global index) chain hash. 
+# It is stored in two separate value slots.
+const CGI_CHAIN_HASH_LO_SLOT_NAME = word("agglayer::bridge::cgi_chain_hash_lo")
+const CGI_CHAIN_HASH_HI_SLOT_NAME = word("agglayer::bridge::cgi_chain_hash_hi")
+
+# Data sizes
+# -------------------------------------------------------------------------------------------------
+
+# the number of words (4 felts each) in the advice map leaf data
+const CLAIM_PROOF_DATA_WORD_LEN = 134
+const CLAIM_LEAF_DATA_WORD_LEN = 8
+
+# MINT note storage layout (public mode, 14 felts total):
+# - P2ID_SCRIPT_ROOT  [0..3]   : 4 felts
+# - SERIAL_NUM        [4..7]   : 4 felts
+# - tag               [8]      : 1 felt
+# - amount            [9]      : 1 felt
+# - 0                 [10]     : 1 felt (padding)
+# - 0                 [11]     : 1 felt (padding)
+# - account_id_suffix [12]     : 1 felt
+# - account_id_prefix [13]     : 1 felt
+const MINT_NOTE_NUM_STORAGE_ITEMS = 14
+
+# Global memory pointers
+# -------------------------------------------------------------------------------------------------
+
+# Memory pointers for proof data layout (used by verify_leaf / get_leaf_value)
+# Memory layout for proof data (loaded from advice map via pipe_preimage_to_memory).
+# The proof data occupies addresses [PROOF_DATA_PTR .. PROOF_DATA_PTR + 535]:
+#   [0..255]   smtProofLocalExitRoot  (256 felts = 32 Keccak256 nodes)
+#   [256..511] smtProofRollupExitRoot (256 felts = 32 Keccak256 nodes)
+#   [512..519] globalIndex            (8 felts)
+#   [520..527] mainnetExitRoot        (8 felts)
+#   [528..535] rollupExitRoot         (8 felts)
+
+const PROOF_DATA_PTR = 0
+const SMT_PROOF_LOCAL_EXIT_ROOT_PTR = PROOF_DATA_PTR
+const SMT_PROOF_ROLLUP_EXIT_ROOT_PTR = SMT_PROOF_LOCAL_EXIT_ROOT_PTR + 256
+const GLOBAL_INDEX_PTR = SMT_PROOF_ROLLUP_EXIT_ROOT_PTR + 256
+const EXIT_ROOTS_PTR = GLOBAL_INDEX_PTR + 8
+const MAINNET_EXIT_ROOT_PTR = EXIT_ROOTS_PTR
+const ROLLUP_EXIT_ROOT_PTR = EXIT_ROOTS_PTR + 8
+
+# Memory layout for leaf data (loaded separately via get_leaf_value)
+const LEAF_DATA_START_PTR = 0
+
+# Memory pointers for piped advice map data (used by claim procedure)
+const CLAIM_PROOF_DATA_START_PTR = 0
+const CLAIM_LEAF_DATA_START_PTR = 536
+const CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT = 568
+
+# Memory addresses for stored keys (used by claim procedure)
+const CLAIM_PROOF_DATA_KEY_MEM_ADDR = 700
+const CLAIM_LEAF_DATA_KEY_MEM_ADDR = 704
+
+# Memory addresses used to temporarily store leaf_index and source_bridge_network
+# across proof verification, and later as input to the claim nullifier hash.
+const CLAIM_LEAF_INDEX_MEM_ADDR = 900
+const CLAIM_SOURCE_BRIDGE_NETWORK_MEM_ADDR = 901
+
+# Memory addresses for leaf data fields (derived from leaf data layout at CLAIM_LEAF_DATA_START_PTR=536)
+const LEAF_TYPE_ADDRESS = 536
+const ORIGIN_TOKEN_ADDRESS_0 = 538
+const ORIGIN_TOKEN_ADDRESS_1 = 539
+const ORIGIN_TOKEN_ADDRESS_2 = 540
+const ORIGIN_TOKEN_ADDRESS_3 = 541
+const ORIGIN_TOKEN_ADDRESS_4 = 542
+const DESTINATION_ADDRESS_0 = 544
+const DESTINATION_ADDRESS_1 = 545
+const DESTINATION_ADDRESS_2 = 546
+const DESTINATION_ADDRESS_3 = 547
+const DESTINATION_ADDRESS_4 = 548
+const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_0 = 549
+const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_1 = 550
+const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_2 = 551
+const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_3 = 552
+const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_4 = 553
+const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_5 = 554
+const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_6 = 555
+const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_7 = 556
+
+# Memory addresses for MINT note output construction
+const MINT_NOTE_STORAGE_MEM_ADDR_0 = 800
+const MINT_NOTE_STORAGE_OUTPUT_SCRIPT_ROOT = 800
+const MINT_NOTE_STORAGE_OUTPUT_SERIAL_NUM = 804
+const MINT_NOTE_STORAGE_DEST_TAG = 808
+const MINT_NOTE_STORAGE_NATIVE_AMOUNT = 809
+# padding at 810, 811
+const MINT_NOTE_STORAGE_OUTPUT_NOTE_SUFFIX = 812
+const MINT_NOTE_STORAGE_OUTPUT_NOTE_PREFIX = 813
+
+# Local memory offsets
+# -------------------------------------------------------------------------------------------------
+
+# Offsets in the local memory of the `calculate_root` procedure
+const CUR_HASH_LO_LOCAL = 0 # first half of the current Keccak256 hash value
+const CUR_HASH_HI_LOCAL = 4 # second half of the current Keccak256 hash value
+
+# Offsets in the local memory of the `claim` procedure
+const CLAIM_DEST_ID_PREFIX_LOCAL = 0
+const CLAIM_DEST_ID_SUFFIX_LOCAL = 1
+
+# PUBLIC INTERFACE
+# =================================================================================================
+
+#! Validates a claim against the AggLayer bridge and creates a MINT note for the AggLayer faucet.
+#!
+#! This procedure is called by the CLAIM note script. It validates the Merkle proof and then
+#! looks up the faucet account ID from the token registry using the origin token address from
+#! the leaf data, and creates a MINT note targeting the AggLayer Faucet.
+#!
+#! The MINT note uses the standard MINT note pattern (public mode) with 18 storage items.
+#! See `write_mint_note_storage` for the full storage layout.
+#!
+#! Inputs:  [PROOF_DATA_KEY, LEAF_DATA_KEY, faucet_mint_amount, pad(7)]
+#! Outputs: [pad(16)]
+#!
+#! Advice map: {
+#!   PROOF_DATA_KEY => [
+#!     smtProofLocalExitRoot[256],      // SMT proof for local exit root (256 felts)
+#!     smtProofRollupExitRoot[256],     // SMT proof for rollup exit root (256 felts)
+#!     globalIndex[8],                  // Global index (8 felts, uint256 as 8 u32 felts)
+#!     mainnetExitRoot[8],              // Mainnet exit root hash (8 felts)
+#!     rollupExitRoot[8],               // Rollup exit root hash (8 felts)
+#!   ],
+#!   LEAF_DATA_KEY => [
+#!     leafType[1],                     // Leaf type (1 felt, uint32)
+#!     originNetwork[1],                // Origin network identifier (1 felt, uint32)
+#!     originTokenAddress[5],           // Origin token address (5 felts)
+#!     destinationNetwork[1],           // Destination network identifier (1 felt, uint32)
+#!     destinationAddress[5],           // Destination address (5 felts)
+#!     amount[8],                       // Amount of tokens (8 felts, uint256 as 8 u32 felts)
+#!     metadata[8],                     // ABI encoded metadata (8 felts, fixed size)
+#!     padding[3],                      // padding (3 felts)
+#!   ],
+#! }
+#!
+#! Panics if:
+#! - the leaf type is not 0 (not an asset claim).
+#! - the Merkle proof validation fails.
+#! - the origin token address is not registered in the bridge's token registry.
+#!
+#! Invocation: call
+@locals(2) # 0: dest_prefix, 1: dest_suffix
+pub proc claim
+    # Write output note faucet amount to memory
+    movup.8 mem_store.CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT
+    # => [PROOF_DATA_KEY, LEAF_DATA_KEY, pad(8)]
+
+    # Check AdviceMap values hash to keys & write CLAIM inputs & DATA_KEYs to global memory
+    exec.claim_batch_pipe_double_words
+    # => [pad(16)]
+
+    exec.load_destination_address
+    exec.eth_address::to_account_id
+    loc_store.CLAIM_DEST_ID_SUFFIX_LOCAL loc_store.CLAIM_DEST_ID_PREFIX_LOCAL
+    # => [pad(16)]
+
+    # Validate CLAIM data
+    mem_loadw_be.CLAIM_PROOF_DATA_KEY_MEM_ADDR
+    # => [PROOF_DATA_KEY, pad(12)]
+
+    swapw mem_loadw_be.CLAIM_LEAF_DATA_KEY_MEM_ADDR
+
+    # Validate that this is an asset claim (leafType == 0)
+    exec.validate_leaf_type
+    # => [LEAF_DATA_KEY, PROOF_DATA_KEY, pad(8)]
+
+    exec.verify_leaf_bridge
+    # => [pad(16)]
+
+    # Look up the faucet account ID from the origin token address
+    exec.load_origin_token_address
+    # => [origin_token_addr(5), pad(16)]
+
+    exec.bridge_config::lookup_faucet_by_token_address
+    # => [faucet_id_suffix, faucet_id_prefix, pad(16)]
+
+    dup.1 dup.1
+    # => [faucet_id_suffix, faucet_id_prefix, faucet_id_suffix, faucet_id_prefix, pad(16)]
+
+    # Verify faucet_mint_amount matches the leaf data amount
+    exec.verify_claim_amount
+    # => [faucet_id_suffix, faucet_id_prefix, pad(16)]
+    
+    # Build MINT output note targeting the AggLayer faucet
+    loc_load.CLAIM_DEST_ID_PREFIX_LOCAL loc_load.CLAIM_DEST_ID_SUFFIX_LOCAL
+    # => [destination_id_suffix, destination_id_prefix, faucet_id_suffix, faucet_id_prefix, pad(16)]
+
+    exec.build_mint_output_note
+    # => [pad(16)]
+end
+
+# HELPER PROCEDURES
+# =================================================================================================
+
+#! Validates that the leaf type is an asset claim (leafType == 0), not a message.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Panics if:
+#! - the leaf type is not 0 (not an asset claim).
+#!
+#! Invocation: exec
+proc validate_leaf_type
+    mem_load.LEAF_TYPE_ADDRESS
+    assertz.err=ERR_INVALID_LEAF_TYPE
+end
+
+#! Computes the leaf value and verifies it against the AggLayer bridge state.
+#!
+#! Verification is delegated to `verify_leaf` to mimic the AggLayer Solidity contracts.
+#! The steps involved in verification are:
+#! 1. Compute the GER from the mainnet and rollup exit roots.
+#! 2. Assert that the computed GER is valid (exists in storage).
+#! 3. Process the global index to determine if it's a mainnet or rollup deposit.
+#! 4. Verify the Merkle proof for the provided leaf-index tuple against the computed GER.
+#!
+#! Inputs:
+#!   Operand stack: [LEAF_DATA_KEY, PROOF_DATA_KEY]
+#!   Advice map: {
+#!     PROOF_DATA_KEY => [
+#!       smtProofLocalExitRoot[256],      // SMT proof for local exit root (256 felts, bytes32[_DEPOSIT_CONTRACT_TREE_DEPTH])
+#!       smtProofRollupExitRoot[256],     // SMT proof for rollup exit root (256 felts, bytes32[_DEPOSIT_CONTRACT_TREE_DEPTH])
+#!       globalIndex[8],                  // Global index (8 felts, uint256 as 8 u32 felts)
+#!       mainnetExitRoot[8],              // Mainnet exit root hash (8 felts, bytes32 as 8 u32 felts)
+#!       rollupExitRoot[8],               // Rollup exit root hash (8 felts, bytes32 as 8 u32 felts)
+#!     ],
+#!     LEAF_DATA_KEY => [
+#!       leafType[1],                     // Leaf type (1 felt, uint32)
+#!       originNetwork[1],                // Origin network identifier (1 felt, uint32)
+#!       originTokenAddress[5],           // Origin token address (5 felts, address as 5 u32 felts)
+#!       destinationNetwork[1],           // Destination network identifier (1 felt, uint32)
+#!       destinationAddress[5],           // Destination address (5 felts, address as 5 u32 felts)
+#!       amount[8],                       // Amount of tokens (8 felts, uint256 as 8 u32 felts)
+#!       metadata[8],                     // ABI encoded metadata (8 felts, fixed size)
+#!       padding[3],                      // padding (3 felts) - not used in the hash
+#!     ],
+#!   }
+#!
+#! Outputs: []
+#!
+#! Panics if:
+#! - the computed GER is invalid (never injected).
+#! - the global index is invalid.
+#! - the Merkle proof for the provided leaf-index tuple against the computed GER is invalid.
+#!
+#! Invocation: exec
+proc verify_leaf_bridge
+    # get the leaf value. We have all the necessary leaf data in the advice map
+    exec.get_leaf_value
+    # => [LEAF_VALUE[8], PROOF_DATA_KEY]
+
+    # duplicate the leaf value to use it later during the CGI chain hash computation
+    movupw.2 dupw.2 dupw.2
+    # => [LEAF_VALUE[8], PROOF_DATA_KEY, LEAF_VALUE[8]]
+
+    # delegate proof verification
+    exec.verify_leaf
+    # => [LEAF_VALUE[8]]
+
+    # update the CGI chain hash
+    exec.update_cgi_chain_hash
+    # => []
+end
+
+#! Assert the global index is valid for a mainnet deposit.
+#!
+#! Each element of the global index is a LE-packed u32 felt (as produced by
+#! `bytes_to_packed_u32_felts` / `GlobalIndex::to_elements()`).
+#!
+#! Inputs: [GLOBAL_INDEX[8]]
+#! Outputs: [leaf_index]
+#!
+#! Panics if:
+#! - the leading bits of the global index are not zero.
+#! - the mainnet flag is not 1.
+#! - the rollup index is not 0.
+#!
+#! Invocation: exec
+pub proc process_global_index_mainnet
+    # the top 191 bits of the global index are zero
+    repeat.5 
+        assertz.err=ERR_LEADING_BITS_NON_ZERO
+    end
+
+    # the next element is the mainnet flag (LE-packed u32)
+    # byte-swap to get the BE value, then assert it is exactly 1
+    # => [mainnet_flag_le, rollup_index_le, leaf_index_le]
+    exec.utils::swap_u32_bytes
+    assert.err=ERR_BRIDGE_NOT_MAINNET
+
+    # the rollup index must be zero for a mainnet deposit
+    # (zero is byte-order-independent, so no swap needed)
+    assertz.err=ERR_ROLLUP_INDEX_NON_ZERO
+
+    # the leaf index is the last element; byte-swap from LE to BE to get the actual index
+    exec.utils::swap_u32_bytes
+    # => [leaf_index]
+end
+
+#! Assert the global index is valid for a rollup deposit.
+#!
+#! Each element of the global index is a LE-packed u32 felt (as produced by
+#! `bytes_to_packed_u32_felts` / `GlobalIndex::to_elements()`).
+#!
+#! Inputs: [GLOBAL_INDEX[8]]
+#! Outputs: [leaf_index, rollup_index]
+#!
+#! Panics if:
+#! - the leading bits of the global index are not zero.
+#! - the mainnet flag is not 0.
+#!
+#! Invocation: exec
+pub proc process_global_index_rollup
+    # the top 191 bits of the global index are zero
+    repeat.5 
+        assertz.err=ERR_LEADING_BITS_NON_ZERO
+    end
+    # => [mainnet_flag_le, rollup_index_le, leaf_index_le]
+
+    # the next element is the mainnet flag (LE-packed u32)
+    # for a rollup deposit it must be exactly 0; zero is byte-order-independent,
+    # so no swap is needed before asserting
+    assertz.err=ERR_BRIDGE_NOT_ROLLUP
+    # => [rollup_index_le, leaf_index_le]
+
+    # byte-swap rollup_index from LE to BE
+    exec.utils::swap_u32_bytes
+    # => [rollup_index, leaf_index_le]
+
+    # byte-swap leaf_index from LE to BE
+    swap exec.utils::swap_u32_bytes
+    # => [leaf_index, rollup_index]
+end
+
+#! Computes the Global Exit Tree (GET) root from the mainnet and rollup exit roots.
+#!
+#! The mainnet exit root is expected at `exit_roots_ptr` and the rollup exit root is expected at 
+#! `exit_roots_ptr + 8`.
+#!
+#! Inputs: [exit_roots_ptr]
+#! Outputs: [GER_ROOT[8]]
+#!
+#! Invocation: exec
+pub proc compute_ger(exit_roots_ptr: MemoryAddress) -> DoubleWord
+    push.64 swap
+    # => [exit_roots_ptr, len_bytes]
+
+    exec.keccak256::hash_bytes
+    # => [GER_ROOT[8]]
+end
+
+#! Verifies a Merkle proof for a leaf value against a root.
+#!
+#! Verifies that the root, computed using the provided Merkle path and the leaf with its index,
+#! matches the provided root.
+#!
+#! Inputs:  [LEAF_VALUE_LO, LEAF_VALUE_HI, merkle_path_ptr, leaf_idx, expected_root_ptr]
+#! Outputs: [verification_flag]
+#!
+#! Where:
+#! - expected_root_ptr is the pointer to the memory where the expected SMT root is stored.
+#! - [LEAF_VALUE_LO, LEAF_VALUE_HI] is the leaf for the provided Merkle path.
+#! - merkle_path_ptr is the pointer to the memory where the merkle path is stored. This path is
+#!   represented as 32 Keccak256Digest values (64 words).
+#! - leaf_idx is the index of the provided leaf in the SMT.
+#! - [ROOT_LO, ROOT_HI] is the calculated root.
+#! - verification_flag is the binary flag indicating whether the verification was successful.
+pub proc verify_merkle_proof(
+    leaf_value: DoubleWord,
+    merkle_path_ptr: MemoryAddress,
+    leaf_idx: u32,
+    expected_root_ptr: MemoryAddress
+) -> i1
+    # calculate the root of the SMT
+    exec.calculate_root
+    # => [CALCULATED_ROOT_LO, CALCULATED_ROOT_HI, expected_root_ptr]
+
+    # load the expected root onto the stack
+    movup.8 exec.utils::mem_load_double_word
+    # => [EXPECTED_ROOT_LO, EXPECTED_ROOT_HI, CALCULATED_ROOT_LO, CALCULATED_ROOT_HI]
+
+    # assert the roots are equal
+    swapw.3 exec.word::eq
+    # => [exp_hi_equal_calc_hi, CALCULATED_ROOT_LO, EXPECTED_ROOT_LO]
+
+    movdn.8 exec.word::eq and
+    # => [verification_flag]
+end
+
+#! Verifies that the faucet_mint_amount matches the raw U256 amount from the leaf data, scaled down
+#! by the faucet's scale factor.
+#!
+#! This procedure:
+#! 1. Performs an FPI call to the faucet's `get_scale` procedure to retrieve the scale factor.
+#! 2. Loads the raw U256 amount from the leaf data in memory.
+#! 3. Calls `verify_u256_to_native_amount_conversion` to assert that
+#!    `faucet_mint_amount == floor(raw_amount / 10^scale)`.
+#!
+#! Inputs:  [faucet_id_suffix, faucet_id_prefix]
+#! Outputs: []
+#!
+#! Panics if:
+#! - the FPI call to the faucet's get_scale fails.
+#! - the faucet_mint_amount does not match the expected scaled-down value.
+#!
+#! Invocation: exec
+proc verify_claim_amount
+    # Step 1: Pad the stack explicitly for FPI call (get_scale takes no inputs)
+    padw padw
+    movup.9 movup.9
+    padw padw
+    movup.9 movup.9
+    # => [faucet_id_suffix, faucet_id_prefix, pad(16)]
+
+    # Step 2: FPI call to faucet's get_scale procedure
+    procref.agglayer_faucet::get_scale
+    # => [PROC_MAST_ROOT(4), faucet_id_suffix, faucet_id_prefix, pad(16)]
+
+    movup.5 movup.5
+    # => [faucet_id_suffix, faucet_id_prefix, PROC_MAST_ROOT(4), pad(16)]
+
+    exec.tx::execute_foreign_procedure
+    # => [scale, pad(15)]
+
+    # Clean up FPI output padding, keeping only scale
+    movdn.15 dropw dropw dropw drop drop drop
+    # => [scale]
+
+    # Step 3: Load the raw U256 amount from leaf data memory
+    exec.load_raw_claim_amount
+    # => [x7, x6, x5, x4, x3, x2, x1, x0, scale]
+
+    # Step 4: Load faucet_mint_amount (y) and position it for verification
+    mem_load.CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT
+    # => [y, x7, x6, x5, x4, x3, x2, x1, x0, scale]
+
+    movdn.9
+    # => [x7, x6, x5, x4, x3, x2, x1, x0, scale, y]
+
+    # Step 5: Verify that y = floor(x / 10^scale)
+    exec.asset_conversion::verify_u256_to_native_amount_conversion
+    # => []
+end
+
+#! Given the leaf data key, loads the leaf data from advice map to memory, packs the data in-place,
+#! and computes the leaf value by hashing the packed bytes.
+#!
+#! Inputs:
+#!   Operand stack: [LEAF_DATA_KEY]
+#!   Advice map: {
+#!     LEAF_DATA_KEY => [
+#!       leafType[1],                     // Leaf type (1 felt, uint8)
+#!       originNetwork[1],                // Origin network identifier (1 felt, uint32)
+#!       originTokenAddress[5],           // Origin token address (5 felts, address as 5 u32 felts)
+#!       destinationNetwork[1],           // Destination network identifier (1 felt, uint32)
+#!       destinationAddress[5],           // Destination address (5 felts, address as 5 u32 felts)
+#!       amount[8],                       // Amount of tokens (8 felts, uint256 as 8 u32 felts)
+#!       metadata_hash[8],                // Metadata hash (8 felts, bytes32 as 8 u32 felts)
+#!       padding[3],                      // padding (3 felts) - not used in the hash
+#!     ],
+#!   }
+#! Outputs: [LEAF_VALUE[8]]
+#!
+#! Invocation: exec
+pub proc get_leaf_value(leaf_data_key: word) -> DoubleWord
+    adv.push_mapval
+    # => [LEAF_DATA_KEY]
+
+    push.LEAF_DATA_START_PTR push.CLAIM_LEAF_DATA_WORD_LEN
+    exec.mem::pipe_preimage_to_memory drop
+    # => []
+
+    # compute the leaf value for elements in memory starting at LEAF_DATA_START_PTR
+    push.LEAF_DATA_START_PTR
+    exec.leaf_utils::compute_leaf_value
+    # => [LEAF_VALUE[8]]
+end
+
+#! Verify leaf, check that it has not been claimed, and mark it as claimed.
+#!
+#! Inputs:  [LEAF_VALUE[8], PROOF_DATA_KEY]
+#! Outputs: []
+#!
+#! Panics if:
+#! - the computed GER is invalid (never injected).
+#! - the global index is invalid.
+#! - the Merkle proof for the provided leaf-index tuple against the computed GER is invalid.
+#! - the claim has already been spent.
+#!
+#! Invocation: exec
+proc verify_leaf
+    movupw.2
+    # => [PROOF_DATA_KEY, LEAF_VALUE[8]]
+
+    # load proof data from the advice map into memory
+    adv.push_mapval
+    # => [PROOF_DATA_KEY, LEAF_VALUE[8]]
+
+    push.SMT_PROOF_LOCAL_EXIT_ROOT_PTR push.CLAIM_PROOF_DATA_WORD_LEN
+    exec.mem::pipe_preimage_to_memory drop
+    # => [LEAF_VALUE[8]]
+
+    # 1. compute GER from mainnet + rollup exit roots
+    push.EXIT_ROOTS_PTR
+    # => [exit_roots_ptr, LEAF_VALUE[8]]
+    
+    exec.compute_ger
+    # => [GER[8], LEAF_VALUE[8]]
+
+    # 2. assert the GER is valid
+    exec.bridge_config::assert_valid_ger
+    # => [LEAF_VALUE[8]]
+
+    # 3. load global index from memory
+    push.GLOBAL_INDEX_PTR exec.utils::mem_load_double_word
+    # => [GLOBAL_INDEX[8], LEAF_VALUE[8]]
+
+    # Determine if we're dealing with a deposit from mainnet or from a rollup.
+    # The global index is laid out as:
+    # [gi0, gi1, gi2, gi3, gi4, mainnet_flag_le, rollup_index_le, leaf_index_le]
+    # gi0 is on top (position 0). The mainnet flag is at stack position 5.
+
+    # Duplicate the mainnet flag element, byte-swap from LE to BE, assert it is a valid boolean 
+    # (0 or 1), then use it to branch.
+    dup.5 exec.utils::swap_u32_bytes dup
+    # => [mainnet_flag, mainnet_flag, GLOBAL_INDEX[8], LEAF_VALUE[8]]
+
+    u32lt.2 assert.err=ERR_MAINNET_FLAG_INVALID
+    # => [mainnet_flag, GLOBAL_INDEX[8], LEAF_VALUE[8]]
+
+    if.true
+        # ==================== MAINNET DEPOSIT ====================
+
+        exec.process_global_index_mainnet
+        # => [leaf_index, LEAF_VALUE[8]]
+
+        # Save leaf_index to memory for set_and_check_claimed after proof verification
+        dup mem_store.CLAIM_LEAF_INDEX_MEM_ADDR
+        # => [leaf_index, LEAF_VALUE[8]]
+
+        # verify single Merkle proof: leaf against mainnetExitRoot
+        push.MAINNET_EXIT_ROOT_PTR swap
+        push.SMT_PROOF_LOCAL_EXIT_ROOT_PTR
+        # => [smt_proof_ptr, leaf_index, mainnet_exit_root_ptr, LEAF_VALUE[8]]
+
+        movdn.10 movdn.10 movdn.10
+        # => [LEAF_VALUE[8], smt_proof_ptr, leaf_index, mainnet_exit_root_ptr]
+
+        exec.verify_merkle_proof
+        # => [verification_flag]
+
+        assert.err=ERR_SMT_ROOT_VERIFICATION_FAILED
+        # => []
+
+        # For mainnet deposits, source_bridge_network = 0
+        # globalIndex = uint256(leafIndex), so source_bridge_network is always 0
+        push.0 mem_store.CLAIM_SOURCE_BRIDGE_NETWORK_MEM_ADDR
+        # => []
+    else
+        # ==================== ROLLUP DEPOSIT ====================
+
+        # mainnet_flag = 0; extract rollup_index and leaf_index via helper, then do two-level
+        # verification
+        exec.process_global_index_rollup
+        # => [leaf_index, rollup_index, LEAF_VALUE[8]]
+
+        # Save leaf_index and rollup_index to memory for set_and_check_claimed
+        # mem[CLAIM_LEAF_INDEX_MEM_ADDR] = leaf_index
+        # mem[CLAIM_SOURCE_BRIDGE_NETWORK_MEM_ADDR] = rollup_index (temporarily, updated below)
+        dup mem_store.CLAIM_LEAF_INDEX_MEM_ADDR
+        # => [leaf_index, rollup_index, LEAF_VALUE[8]]
+        
+        dup.1 mem_store.CLAIM_SOURCE_BRIDGE_NETWORK_MEM_ADDR
+        # => [leaf_index, rollup_index, LEAF_VALUE[8]]
+
+        # Step 1: calculate_root(leafValue, smtProofLocalExitRoot, leafIndex) -> localExitRoot
+        # calculate_root expects: [LEAF_VALUE_LO, LEAF_VALUE_HI, merkle_path_ptr, leaf_index]
+        movdn.9 movdn.9
+        # => [LEAF_VALUE[8], leaf_index, rollup_index]
+
+        # Insert smt_proof_local_ptr before leaf_index
+        push.SMT_PROOF_LOCAL_EXIT_ROOT_PTR movdn.8
+        # => [LEAF_VALUE[8], smt_proof_local_ptr, leaf_index, rollup_index]
+
+        exec.calculate_root
+        # => [LOCAL_EXIT_ROOT_LO, LOCAL_EXIT_ROOT_HI, rollup_index]
+
+        # Step 2: verify_merkle_proof(localExitRoot, smtProofRollupExitRoot, rollupIndex, rollupExitRootPtr)
+        push.ROLLUP_EXIT_ROOT_PTR movdn.9
+        # => [LOCAL_EXIT_ROOT_LO, LOCAL_EXIT_ROOT_HI, rollup_index, rollup_exit_root_ptr]
+        
+        push.SMT_PROOF_ROLLUP_EXIT_ROOT_PTR movdn.8
+        # => [LOCAL_EXIT_ROOT[8], smt_proof_rollup_ptr, rollup_index, rollup_exit_root_ptr]
+
+        exec.verify_merkle_proof
+        # => [verification_flag]
+
+        assert.err=ERR_SMT_ROOT_VERIFICATION_FAILED
+        # => []
+
+        # For rollup deposits, source_bridge_network = rollup_index + 1
+        # Compute source_bridge_network and store it to memory
+        mem_load.CLAIM_SOURCE_BRIDGE_NETWORK_MEM_ADDR u32overflowing_add.1 assertz.err=ERR_SOURCE_BRIDGE_NETWORK_OVERFLOW
+        # => [source_bridge_network]
+
+        mem_store.CLAIM_SOURCE_BRIDGE_NETWORK_MEM_ADDR
+        # => []
+    end
+
+    # 4. Check the claim has not been spent and mark it as spent.
+    # Load leaf_index and source_bridge_network from memory.
+    mem_load.CLAIM_SOURCE_BRIDGE_NETWORK_MEM_ADDR
+    mem_load.CLAIM_LEAF_INDEX_MEM_ADDR
+    # => [leaf_index, source_bridge_network]
+
+    exec.set_and_check_claimed
+    # => []
+end
+
+#! Computes the claim nullifier as Poseidon2(leaf_index, source_bridge_network), then checks that
+#! the claim has not been spent and marks it as spent.
+#!
+#! This mimics the Solidity `_setAndCheckClaimed(leafIndex, sourceBridgeNetwork)` function.
+#! See: https://github.com/agglayer/agglayer-contracts/blob/60d06fc3224792ce55dc2690d66b6719a73398e7/contracts/v2/PolygonZkEVMBridgeV2.sol#L987
+#!
+#! Inputs:  [leaf_index, source_bridge_network]
+#! Outputs: []
+#!
+#! Panics if:
+#! - the CLAIM note has already been spent (nullifier already exists in the nullifier map).
+#!
+#! Invocation: exec
+proc set_and_check_claimed
+    # Write both values to memory for hashing
+    # mem[CLAIM_LEAF_INDEX_MEM_ADDR] = leaf_index
+    # mem[CLAIM_SOURCE_BRIDGE_NETWORK_MEM_ADDR] = source_bridge_network
+    mem_store.CLAIM_LEAF_INDEX_MEM_ADDR
+    # => [source_bridge_network]
+
+    mem_store.CLAIM_SOURCE_BRIDGE_NETWORK_MEM_ADDR
+    # => []
+
+    # Hash the two elements using Poseidon2 to produce the nullifier
+    push.2 push.CLAIM_LEAF_INDEX_MEM_ADDR
+    exec.poseidon2::hash_elements
+    # => [NULLIFIER]
+
+    exec.assert_claim_not_spent
+    # => []
+end
+
+#! Checks that the CLAIM note has not already been spent, and marks it as spent by storing
+#! [1, 0, 0, 0] in the CLAIM_NULLIFIERS_SLOT map.
+#!
+#! The nullifier is computed as Poseidon2(leaf_index, source_bridge_network), which uniquely
+#! identifies a claim in the Global Exit Root (GER) as per the AggLayer protocol.
+#!
+#! Inputs:  [NULLIFIER]
+#! Outputs: []
+#!
+#! Panics if:
+#! - the CLAIM note has already been spent (nullifier already exists in the nullifier map).
+#!
+#! Invocation: exec
+proc assert_claim_not_spent(nullifier: word)
+    push.IS_CLAIMED_FLAG
+    # => [IS_CLAIMED_FLAG, NULLIFIER]
+
+    swapw
+    # => [NULLIFIER, IS_CLAIMED_FLAG]
+
+    push.CLAIM_NULLIFIERS_SLOT[0..2]
+    # => [slot_prefix, slot_suffix, NULLIFIER, IS_CLAIMED_FLAG]
+
+    exec.native_account::set_map_item
+    # => [OLD_VALUE]
+
+    # OLD_VALUE[0] is the claimed flag: 0 if unclaimed, 1 if already claimed
+    assertz.err=ERR_CLAIM_ALREADY_SPENT drop drop drop
+    # => []
+end
+
+# Inputs: [PROOF_DATA_KEY, LEAF_DATA_KEY]
+# Outputs: []
+proc claim_batch_pipe_double_words
+    # 1) Verify PROOF_DATA_KEY
+    mem_storew_be.CLAIM_PROOF_DATA_KEY_MEM_ADDR
+    adv.push_mapval
+    # => [PROOF_DATA_KEY, LEAF_DATA_KEY]
+
+    push.CLAIM_PROOF_DATA_START_PTR push.CLAIM_PROOF_DATA_WORD_LEN
+    exec.mem::pipe_double_words_preimage_to_memory drop
+    # => [LEAF_DATA_KEY]
+
+    # 2) Verify LEAF_DATA_KEY
+    mem_storew_be.CLAIM_LEAF_DATA_KEY_MEM_ADDR
+    adv.push_mapval
+    # => [LEAF_DATA_KEY]
+
+    push.CLAIM_LEAF_DATA_START_PTR push.CLAIM_LEAF_DATA_WORD_LEN
+    exec.mem::pipe_double_words_preimage_to_memory drop
+    # => []
+end
+
+#! Extracts the destination account ID as address[5] from memory.
+#!
+#! Reads the destination address (5 felts) from the leaf data in memory.
+#!
+#! Inputs:  []
+#! Outputs: [address[5]]
+#!
+#! Invocation: exec
+proc load_destination_address
+    mem_load.DESTINATION_ADDRESS_4
+    mem_load.DESTINATION_ADDRESS_3
+    mem_load.DESTINATION_ADDRESS_2
+    mem_load.DESTINATION_ADDRESS_1
+    mem_load.DESTINATION_ADDRESS_0
+    # => [address[5]]
+end
+
+#! Loads the claim note asset amount onto the stack from memory.
+#!
+#! Inputs:  []
+#! Outputs: [U256_LO, U256_HI]
+#!
+#! Invocation: exec
+proc load_raw_claim_amount
+    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_7
+    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_6
+    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_5
+    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_4
+    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_3
+    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_2
+    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_1
+    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_0
+    # => [U256_LO, U256_HI]
+end
+
+#! Reads the origin token address (5 felts) from the leaf data in memory.
+#!
+#! Inputs:  []
+#! Outputs: [origin_token_addr(5)]
+#!
+#! Invocation: exec
+proc load_origin_token_address
+    mem_load.ORIGIN_TOKEN_ADDRESS_4
+    mem_load.ORIGIN_TOKEN_ADDRESS_3
+    mem_load.ORIGIN_TOKEN_ADDRESS_2
+    mem_load.ORIGIN_TOKEN_ADDRESS_1
+    mem_load.ORIGIN_TOKEN_ADDRESS_0
+    # => [origin_token_addr(5)]
+end
+
+#! Builds a PUBLIC MINT output note targeting the AggLayer Faucet.
+#!
+#! The MINT note uses public mode (18 storage items) so the AggLayer Faucet creates a PUBLIC P2ID
+#! note on consumption. This procedure orchestrates three steps:
+#! 1. Write all 18 MINT note storage items to global memory.
+#! 2. Build the MINT note recipient digest from the storage.
+#! 3. Create the output note, and set the attachment.
+#!
+#! Inputs:  [destination_id_suffix, destination_id_prefix, faucet_id_suffix, faucet_id_prefix]
+#! Outputs: []
+#!
+#! Invocation: exec
+proc build_mint_output_note
+    # Step 1: Write all 18 MINT note storage items to global memory
+    exec.write_mint_note_storage
+    # => [faucet_id_suffix, faucet_id_prefix]
+
+    # Step 2: Build the MINT note recipient digest
+    exec.build_mint_recipient
+    # => [MINT_RECIPIENT, faucet_id_suffix, faucet_id_prefix]
+
+    # Step 3: Create the output note and set the faucet attachment
+    exec.create_mint_note_with_attachment
+    # => []
+end
+
+#! Writes all 14 MINT note storage items to global memory.
+#!
+#! Storage layout:
+#! - [0-3]: P2ID_SCRIPT_ROOT (script root of the P2ID note)
+#! - [4-7]: SERIAL_NUM (serial number for the P2ID note, derived from PROOF_DATA_KEY)
+#! - [8]: tag (note tag for the P2ID output note, targeting the destination account)
+#! - [9]: amount (the scaled-down Miden amount to mint)
+#! - [10]: 0 (padding)
+#! - [11]: 0 (padding)
+#! - [12]: account_id_suffix (destination account suffix)
+#! - [13]: account_id_prefix (destination account prefix)
+#!
+#! Inputs:  [destination_id_suffix, destination_id_prefix]
+#! Outputs: []
+#!
+#! Invocation: exec
+proc write_mint_note_storage
+    # Write P2ID storage items first (before prefix is consumed): [12..13]
+    # Write destination_id_suffix [12]
+    dup mem_store.MINT_NOTE_STORAGE_OUTPUT_NOTE_SUFFIX
+    # => [destination_id_suffix, destination_id_prefix]
+
+    # Write destination_id_prefix [13]
+    dup.1 mem_store.MINT_NOTE_STORAGE_OUTPUT_NOTE_PREFIX
+    # => [destination_id_suffix, destination_id_prefix]
+
+    drop
+    # => [destination_id_prefix]
+
+    # Get the native amount from the pre-computed miden_claim_amount
+    mem_load.CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT
+    # => [native_amount, destination_id_prefix]
+
+    # Compute the note tag for the destination account (consumes prefix)
+    swap
+    # => [destination_id_prefix, native_amount]
+
+    exec.note_tag::create_account_target
+    # => [dest_tag, native_amount]
+
+    # Write tag to MINT note storage [8]
+    mem_store.MINT_NOTE_STORAGE_DEST_TAG
+    # => [native_amount]
+
+    # Write amount to MINT note storage [9]
+    mem_store.MINT_NOTE_STORAGE_NATIVE_AMOUNT
+    # => []
+
+    # Write P2ID_SCRIPT_ROOT to MINT note storage [0..3]
+    procref.::miden::standards::notes::p2id::main
+    # => [P2ID_SCRIPT_ROOT]
+
+    mem_storew_le.MINT_NOTE_STORAGE_OUTPUT_SCRIPT_ROOT dropw
+    # => []
+
+    # Write SERIAL_NUM (PROOF_DATA_KEY) to MINT note storage [4..7]
+    padw mem_loadw_be.CLAIM_PROOF_DATA_KEY_MEM_ADDR
+    # => [SERIAL_NUM]
+
+    mem_storew_le.MINT_NOTE_STORAGE_OUTPUT_SERIAL_NUM dropw
+    # => []
+end
+
+#! Builds the MINT note recipient digest from the storage items already written to global memory.
+#!
+#! Uses the MINT note script root and PROOF_DATA_KEY as serial number, then calls
+#! `note::build_recipient` with the storage pointer and item count.
+#!
+#! Inputs:  []
+#! Outputs: [MINT_RECIPIENT]
+#!
+#! Invocation: exec
+proc build_mint_recipient
+    # Get the MINT note script root
+    procref.::miden::standards::notes::mint::main
+    # => [MINT_SCRIPT_ROOT]
+
+    # Generate a serial number for the MINT note (use PROOF_DATA_KEY)
+    padw mem_loadw_be.CLAIM_PROOF_DATA_KEY_MEM_ADDR
+    # => [MINT_SERIAL_NUM, MINT_SCRIPT_ROOT]
+
+    # Build the MINT note recipient
+    push.MINT_NOTE_NUM_STORAGE_ITEMS
+    # => [num_storage_items, MINT_SERIAL_NUM, MINT_SCRIPT_ROOT]
+
+    push.MINT_NOTE_STORAGE_MEM_ADDR_0
+    # => [storage_ptr, num_storage_items, MINT_SERIAL_NUM, MINT_SCRIPT_ROOT]
+
+    exec.note::build_recipient
+    # => [MINT_RECIPIENT]
+end
+
+#! Creates the MINT output note and sets the NetworkAccountTarget attachment on it.
+#!
+#! Creates a public output note with no assets, and sets the attachment so only the target faucet
+#! can consume the note.
+#!
+#! Inputs:  [MINT_RECIPIENT, faucet_id_suffix, faucet_id_prefix]
+#! Outputs: []
+#!
+#! Invocation: exec
+proc create_mint_note_with_attachment
+    # Create the MINT output note targeting the faucet
+    push.NOTE_TYPE_PUBLIC
+    # => [note_type, MINT_RECIPIENT, faucet_id_suffix, faucet_id_prefix]
+
+    # Set tag to DEFAULT
+    push.DEFAULT_TAG
+    # => [tag, note_type, MINT_RECIPIENT, faucet_id_suffix, faucet_id_prefix]
+
+    # Create the output note (no assets - MINT notes carry no assets)
+    exec.output_note::create
+    # => [note_idx, faucet_id_suffix, faucet_id_prefix]
+    
+    movdn.2
+    # => [faucet_id_suffix, faucet_id_prefix, note_idx]
+
+    # Set the attachment on the MINT note to target the faucet account
+    # NetworkAccountTarget attachment: targets the faucet so only it can consume the note
+    # network_account_target::new expects [suffix, prefix, exec_hint]
+    # and returns [attachment_scheme, attachment_kind, ATTACHMENT]
+    push.ALWAYS # exec_hint = ALWAYS
+    movdn.2
+    # => [faucet_id_suffix, faucet_id_prefix, exec_hint, note_idx]
+
+    exec.network_account_target::new
+    # => [attachment_scheme, attachment_kind, ATTACHMENT, note_idx]
+
+    # Rearrange for set_attachment: [note_idx, attachment_scheme, attachment_kind, ATTACHMENT]
+    movup.6
+    # => [note_idx, attachment_scheme, attachment_kind, ATTACHMENT(4)]
+
+    exec.output_note::set_attachment
+    # => []
+end
+
+#! Computes the root of the SMT based on the provided Merkle path, leaf value and leaf index.
+#!
+#! Inputs:  [LEAF_VALUE_LO, LEAF_VALUE_HI, merkle_path_ptr, leaf_idx]
+#! Outputs: [ROOT_LO, ROOT_HI]
+#!
+#! Where:
+#! - [LEAF_VALUE_LO, LEAF_VALUE_HI] is the leaf for the provided Merkle path.
+#! - merkle_path_ptr is the pointer to the memory where the merkle path is stored. This path is
+#!   represented as 32 Keccak256Digest values (64 words).
+#! - leaf_idx is the index of the provided leaf in the SMT.
+#! - [ROOT_LO, ROOT_HI] is the calculated root.
+@locals(8) # current hash
+proc calculate_root(
+    leaf_value: DoubleWord,
+    merkle_path_ptr: MemoryAddress,
+    leaf_idx: u32
+) -> DoubleWord
+    # Local memory stores the current hash. It is initialized to the leaf value
+    loc_storew_le.CUR_HASH_LO_LOCAL dropw loc_storew_le.CUR_HASH_HI_LOCAL dropw
+    # => [merkle_path_ptr, leaf_idx]
+
+    # Merkle path is guaranteed to contain 32 nodes
+    repeat.32
+        # load the Merkle path node word-by-word in LE-felt order
+        padw dup.4 mem_loadw_le
+        # => [PATH_NODE_LO, merkle_path_ptr, leaf_idx]
+        padw dup.8 add.4 mem_loadw_le
+        swapw
+        # => [PATH_NODE_LO, PATH_NODE_HI, merkle_path_ptr, leaf_idx]
+
+        # advance merkle_path_ptr by 8 (two words = 8 element addresses)
+        movup.8 add.8 movdn.8
+        # => [PATH_NODE_LO, PATH_NODE_HI, merkle_path_ptr+8, leaf_idx]
+
+        # determine whether the last `leaf_idx` bit is 1 (is `leaf_idx` odd)
+        dup.9 u32and.1
+        # => [is_odd, PATH_NODE_LO, PATH_NODE_HI, merkle_path_ptr+8, leaf_idx]
+
+        # load the hash respective to the current height from the local memory
+        padw loc_loadw_le.CUR_HASH_HI_LOCAL padw loc_loadw_le.CUR_HASH_LO_LOCAL
+        # => [CURR_HASH_LO, CURR_HASH_HI, is_odd, PATH_NODE_LO, PATH_NODE_HI, merkle_path_ptr, leaf_idx]
+
+        # move the `is_odd` flag to the top of the stack
+        movup.8
+        # => [is_odd, CURR_HASH_LO, CURR_HASH_HI, PATH_NODE_LO, PATH_NODE_HI, merkle_path_ptr, leaf_idx]
+
+        # if is_odd flag equals 1 (`leaf_idx` is odd), change the order of the nodes on the stack
+        if.true
+            # rearrange the hashes: current position of the hash is odd, so it should be on the
+            # right
+            swapdw
+            # => [PATH_NODE_LO, PATH_NODE_HI, CURR_HASH_LO, CURR_HASH_HI, merkle_path_ptr, leaf_idx]
+        end
+
+        # compute the next height hash
+        exec.keccak256::merge
+        # => [CURR_HASH_LO', CURR_HASH_HI', merkle_path_ptr, leaf_idx]
+
+        # store the resulting hash to the local memory and drop the hash words
+        loc_storew_le.CUR_HASH_LO_LOCAL dropw
+        loc_storew_le.CUR_HASH_HI_LOCAL dropw
+        # => [merkle_path_ptr, leaf_idx]
+
+        # update the `leaf_idx` (shift it right by 1 bit)
+        swap u32shr.1 swap
+        # => [merkle_path_ptr, leaf_idx>>1]
+    end
+
+    # after all 32 hashes have been computed, the current hash stored in local memory represents
+    # the root of the SMT, which should be returned
+    drop drop
+    padw loc_loadw_le.CUR_HASH_HI_LOCAL padw loc_loadw_le.CUR_HASH_LO_LOCAL
+    # => [ROOT_LO, ROOT_HI]
+end
+
+#! Updates the claimed global index (CGI) chain hash by recomputing it and storing into the
+#! corresponding storage slot.
+#!
+#! The resulting hash is computed as a sequential hash of leaf value, global index, and previous 
+#! value of the CGI chain hash:
+#! NEW_CGI_CHAIN_HASH[8] = Keccak256(OLD_CGI_CHAIN_HASH[8], Keccak256(GLOBAL_INDEX[8], LEAF_VALUE[8]))
+#!
+#! Inputs:  [LEAF_VALUE[8]]
+#! Outputs: []
+#!
+#! Invocation: exec
+proc update_cgi_chain_hash
+    # load the required CGI chain data values onto the stack
+    exec.load_cgi_chain_hash_data
+    # => [GLOBAL_INDEX[8], LEAF_VALUE[8], OLD_CGI_CHAIN_HASH[8]]
+
+    # compute the new CGI chain hash
+    exec.keccak256::merge swapdw
+    # => [OLD_CGI_CHAIN_HASH[8], Keccak256(GLOBAL_INDEX, LEAF_VALUE)]
+
+    exec.keccak256::merge
+    # => [NEW_CGI_CHAIN_HASH[8]]
+
+    # store the new CGI chain hash
+    exec.store_cgi_chain_hash
+    # => []
+end
+
+#! Loads the old CGI chain hash, the leaf value, and the global index onto the stack as a
+#! preparation for the new CGI chain hash computation.
+#!
+#! Inputs: [LEAF_VALUE[8]]
+#! Outputs: [GLOBAL_INDEX[8], LEAF_VALUE[8], OLD_CGI_CHAIN_HASH[8]]
+#!
+#! Invocation: exec
+proc load_cgi_chain_hash_data
+    # load the old CGI chain hash onto the stack
+    push.CGI_CHAIN_HASH_HI_SLOT_NAME[0..2]
+    exec.active_account::get_item
+    # => [OLD_CGI_CHAIN_HASH_HI, LEAF_VALUE[8]]
+
+    push.CGI_CHAIN_HASH_LO_SLOT_NAME[0..2]
+    exec.active_account::get_item
+    # => [OLD_CGI_CHAIN_HASH[8], LEAF_VALUE[8]]
+
+    # move the leaf value to the top of the stack
+    swapdw
+    # => [LEAF_VALUE[8], OLD_CGI_CHAIN_HASH[8]]
+
+    # load the global index onto the stack
+    push.GLOBAL_INDEX_PTR exec.utils::mem_load_double_word
+    # => [GLOBAL_INDEX[8], LEAF_VALUE[8], OLD_CGI_CHAIN_HASH[8]]
+end
+
+#! Stores the computed global index (CGI) chain hash into the corresponding storage slots.
+#!
+#! Inputs: [NEW_CGI_CHAIN_HASH_LO, NEW_CGI_CHAIN_HASH_HI]
+#! Outputs: []
+#!
+#! Invocation: exec
+proc store_cgi_chain_hash
+    push.CGI_CHAIN_HASH_LO_SLOT_NAME[0..2]
+    exec.native_account::set_item dropw
+    # => [NEW_CGI_CHAIN_HASH_HI]
+
+    push.CGI_CHAIN_HASH_HI_SLOT_NAME[0..2]
+    exec.native_account::set_item dropw
+    # => []
+end
