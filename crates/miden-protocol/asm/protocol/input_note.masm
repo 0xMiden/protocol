@@ -334,8 +334,8 @@ end
 #! Writes the attachment commitments of the note identified by the is_active_note flag to memory
 #! and returns the pointer to the data.
 #!
-#! This is the shared implementation used by both `input_note::get_attachment_commitments` and
-#! `active_note::get_attachment_commitments`.
+#! This is the shared implementation used by both `input_note::get_attachments_commitment` and
+#! `active_note::get_attachments_commitment`.
 #!
 #! Inputs:  [is_active_note, note_index]
 #! Outputs: [ATTACHMENTS_COMMITMENT]
