@@ -30,6 +30,7 @@ use crate::account::interface::{
     AccountInterfaceExt,
     NoteAccountCompatibility,
 };
+use crate::account::metadata::{FungibleTokenMetadataBuilder, TokenName};
 use crate::account::wallets::BasicWallet;
 use crate::code_builder::CodeBuilder;
 use crate::note::{P2idNote, P2ideNote, P2ideNoteStorage, SwapNote};
@@ -55,13 +56,16 @@ fn test_basic_wallet_default_notes() {
         .account_type(AccountType::FungibleFaucet)
         .with_auth_component(get_mock_falcon_auth_component())
         .with_component(
-            BasicFungibleFaucet::new(
+            FungibleTokenMetadataBuilder::new(
+                TokenName::new("POL").unwrap(),
                 TokenSymbol::new("POL").expect("invalid token symbol"),
                 10,
-                Felt::new(100),
+                100u64,
             )
-            .expect("failed to create a fungible faucet component"),
+            .build()
+            .expect("failed to create token metadata"),
         )
+        .with_component(BasicFungibleFaucet)
         .build_existing()
         .expect("failed to create wallet account");
     let faucet_account_interface = AccountInterface::from_account(&faucet_account);
@@ -257,7 +261,8 @@ fn test_basic_wallet_custom_notes() {
         use miden::standards::wallets::basic->wallet
         use miden::standards::faucets::basic_fungible->fungible_faucet
 
-        begin
+        @note_script
+        pub proc main
             push.1
             if.true
                 # supported procs
@@ -286,7 +291,8 @@ fn test_basic_wallet_custom_notes() {
         use miden::standards::wallets::basic->wallet
         use miden::standards::faucets::basic_fungible->fungible_faucet
 
-        begin
+        @note_script
+        pub proc main
             push.1
             if.true
                 # unsupported procs
@@ -318,13 +324,16 @@ fn test_basic_fungible_faucet_custom_notes() {
         .account_type(AccountType::FungibleFaucet)
         .with_auth_component(get_mock_falcon_auth_component())
         .with_component(
-            BasicFungibleFaucet::new(
+            FungibleTokenMetadataBuilder::new(
+                TokenName::new("POL").unwrap(),
                 TokenSymbol::new("POL").expect("invalid token symbol"),
                 10,
-                Felt::new(100),
+                100u64,
             )
-            .expect("failed to create a fungible faucet component"),
+            .build()
+            .expect("failed to create token metadata"),
         )
+        .with_component(BasicFungibleFaucet)
         .build_existing()
         .expect("failed to create wallet account");
     let faucet_account_interface = AccountInterface::from_account(&faucet_account);
@@ -339,7 +348,8 @@ fn test_basic_fungible_faucet_custom_notes() {
         use miden::standards::wallets::basic->wallet
         use miden::standards::faucets::basic_fungible->fungible_faucet
 
-        begin
+        @note_script
+        pub proc main
             push.1
             if.true
                 # supported procs
@@ -367,7 +377,8 @@ fn test_basic_fungible_faucet_custom_notes() {
         use miden::standards::wallets::basic->wallet
         use miden::standards::faucets::basic_fungible->fungible_faucet
 
-        begin
+        @note_script
+        pub proc main
             push.1
             if.true
                 # supported procs
@@ -442,7 +453,8 @@ fn test_custom_account_custom_notes() {
         use miden::standards::wallets::basic->wallet
         use test::account::component_1->test_account
 
-        begin
+        @note_script
+        pub proc main
             push.1
             if.true
                 # supported proc
@@ -473,7 +485,8 @@ fn test_custom_account_custom_notes() {
         use miden::standards::wallets::basic->wallet
         use test::account::component_1->test_account
 
-        begin
+        @note_script
+        pub proc main
             push.1
             if.true
                 call.wallet::receive_asset
@@ -547,7 +560,8 @@ fn test_custom_account_multiple_components_custom_notes() {
         use test::account::component_1->test_account
         use miden::standards::faucets::basic_fungible->fungible_faucet
 
-        begin
+        @note_script
+        pub proc main
             push.1
             if.true
                 # supported procs
@@ -584,7 +598,8 @@ fn test_custom_account_multiple_components_custom_notes() {
         use test::account::component_1->test_account
         use miden::standards::faucets::basic_fungible->fungible_faucet
 
-        begin
+        @note_script
+        pub proc main
             push.1
             if.true
                 # supported procs

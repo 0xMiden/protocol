@@ -1,6 +1,7 @@
 # The MASM code of the Basic Fungible Faucet Account Component.
 #
 # See the `BasicFungibleFaucet` Rust type's documentation for more details.
+# This component depends on `FungibleTokenMetadata` being present in the account.
 
 pub use ::miden::standards::faucets::basic_fungible::mint_and_send
 pub use ::miden::standards::faucets::basic_fungible::burn

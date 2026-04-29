@@ -1,7 +1,8 @@
 use core::slice;
 
 use assert_matches::assert_matches;
-use miden_protocol::account::auth::AuthScheme;
+use miden_processor::ExecutionError;
+use miden_protocol::account::auth::{AuthScheme, AuthSecretKey};
 use miden_protocol::account::{
     Account,
     AccountBuilder,
@@ -10,6 +11,7 @@ use miden_protocol::account::{
     AccountStorageMode,
     AccountType,
 };
+use miden_protocol::errors::MasmError;
 use miden_protocol::note::Note;
 use miden_protocol::testing::storage::MOCK_VALUE_SLOT0;
 use miden_protocol::transaction::RawOutputNote;
@@ -18,8 +20,11 @@ use miden_standards::account::auth::AuthSingleSigAcl;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::note::NoteBuilder;
-use miden_testing::{Auth, MockChain};
+use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 use miden_tx::TransactionExecutorError;
+use miden_tx::auth::BasicAuthenticator;
+use rand::SeedableRng;
+use rand_chacha::ChaCha20Rng;
 use rstest::rstest;
 
 use crate::prove_and_verify_transaction;
@@ -288,6 +293,149 @@ async fn test_acl_with_disallow_unauthorized_input_notes(
     // This should fail with MissingAuthenticator error because input notes are being consumed
     // and allow_unauthorized_input_notes is false
     assert_matches!(executed_tx_no_auth, Err(TransactionExecutorError::MissingAuthenticator));
+
+    Ok(())
+}
+
+/// Tests that the singlesig ACL auth procedure reads the initial (pre-rotation) public key
+/// when verifying signatures. The transaction script overwrites the public key slot with
+/// a bogus value via `set_item` (which also triggers authentication); the test verifies
+/// that authentication still succeeds because the auth procedure uses `get_initial_item`
+/// to retrieve the original key, rather than `get_item` which would return the
+/// overwritten (bogus) value.
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[tokio::test]
+async fn test_acl_auth_uses_initial_public_key(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (account, mock_chain, note) = setup_acl_test(false, true, auth_scheme)?;
+
+    // Build the authenticator separately (same seed as Auth::Acl uses)
+    let component: AccountComponent =
+        MockAccountComponent::with_slots(AccountStorage::mock_storage_slots()).into();
+
+    let get_item_proc_root = component
+        .get_procedure_root_by_path("mock::account::get_item")
+        .expect("get_item procedure should exist");
+    let set_item_proc_root = component
+        .get_procedure_root_by_path("mock::account::set_item")
+        .expect("set_item procedure should exist");
+    let auth_trigger_procedures = vec![get_item_proc_root, set_item_proc_root];
+
+    let (_, authenticator) = Auth::Acl {
+        auth_trigger_procedures,
+        allow_unauthorized_output_notes: false,
+        allow_unauthorized_input_notes: true,
+        auth_scheme,
+    }
+    .build_component();
+
+    let pub_key_slot = AuthSingleSigAcl::public_key_slot();
+    let tx_script_src = format!(
+        r#"
+        use mock::account
+
+        const PUB_KEY_SLOT = word("{pub_key_slot}")
+
+        begin
+            push.99.98.97.96
+            push.PUB_KEY_SLOT[0..2]
+            call.account::set_item
+            dropw dropw
+        end
+        "#,
+    );
+
+    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script_src)?;
+    let tx_context = mock_chain
+        .build_tx_context(account.id(), &[], slice::from_ref(&note))?
+        .authenticator(authenticator)
+        .tx_script(tx_script)
+        .build()?;
+
+    let executed_tx = tx_context
+        .execute()
+        .await
+        .expect("singlesig_acl auth should use initial public key, not the rotated one");
+
+    prove_and_verify_transaction(executed_tx).await?;
+
+    Ok(())
+}
+
+/// Rotated-key negative (ACL): mirrors the singlesig version. `set_item` is a trigger
+/// procedure so auth runs; the authenticator signs with sec_b under key A's commitment, and
+/// MASM verify must reject the mismatched signature.
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[tokio::test]
+async fn test_acl_auth_rejects_rotated_key_signature(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (account, mock_chain, note) = setup_acl_test(false, true, auth_scheme)?;
+
+    let mut rng_a = ChaCha20Rng::from_seed(Default::default());
+    let pub_key_a = AuthSecretKey::with_scheme_and_rng(auth_scheme, &mut rng_a)
+        .expect("failed to derive original public key")
+        .public_key();
+
+    let mut rng_b = ChaCha20Rng::from_seed([1u8; 32]);
+    let sec_key_b = AuthSecretKey::with_scheme_and_rng(auth_scheme, &mut rng_b)
+        .expect("failed to create second secret key");
+    let pub_key_b_commitment: Word = sec_key_b.public_key().to_commitment().into();
+
+    let authenticator = BasicAuthenticator::from_key_pairs(&[(sec_key_b, pub_key_a)]);
+
+    let pub_key_slot = AuthSingleSigAcl::public_key_slot();
+    let tx_script_src = format!(
+        r#"
+        use mock::account
+
+        const PUB_KEY_SLOT = word("{pub_key_slot}")
+        const NEW_PUB_KEY = word("{new_pub_key}")
+
+        begin
+            push.NEW_PUB_KEY
+            push.PUB_KEY_SLOT[0..2]
+            call.account::set_item
+            dropw dropw
+        end
+        "#,
+        new_pub_key = pub_key_b_commitment,
+    );
+
+    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script_src)?;
+    let tx_context = mock_chain
+        .build_tx_context(account.id(), &[], slice::from_ref(&note))?
+        .authenticator(Some(authenticator))
+        .tx_script(tx_script)
+        .build()?;
+
+    let result = tx_context.execute().await;
+
+    match auth_scheme {
+        AuthScheme::EcdsaK256Keccak => {
+            assert_transaction_executor_error!(
+                result,
+                MasmError::from_static_str("invalid public key commitment")
+            );
+        },
+        AuthScheme::Falcon512Poseidon2 => {
+            assert_matches!(
+                result,
+                Err(TransactionExecutorError::TransactionProgramExecutionFailed(
+                    ExecutionError::OperationError {
+                        err: miden_processor::operation::OperationError::FailedAssertion { .. },
+                        ..
+                    }
+                ))
+            );
+        },
+        _ => unreachable!("only the two rstest cases are parameterized"),
+    }
 
     Ok(())
 }

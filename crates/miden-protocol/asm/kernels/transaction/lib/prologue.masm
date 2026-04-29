@@ -176,6 +176,7 @@ end
 #!   ]
 #! Outputs:
 #!   Operand stack: []
+#!   Advice stack: []
 #!
 #! Where:
 #! - PREV_BLOCK_COMMITMENT is the commitment to the previous block.
@@ -795,6 +796,7 @@ end
 #!        block_num,
 #!        BLOCK_SUB_COMMITMENT,
 #!        NOTE_ROOT,
+#!        note_index,
 #!      )?
 #!   ]
 #! Outputs:
@@ -818,6 +820,7 @@ end
 #!   - block_num is the note's creation block number.
 #!   - BLOCK_SUB_COMMITMENT is the block's sub_commitment for which the note was created.
 #!   - NOTE_ROOT is the merkle root of the note's tree.
+#!   - note_index is the input note's position in the notes tree.
 proc process_input_note
     # note details
     # ---------------------------------------------------------------------------------------------
@@ -1111,7 +1114,6 @@ end
 #!     [0, verification_base_fee, native_asset_id_suffix, native_asset_id_prefix]
 #!     [0, 0, 0, 0]
 #!     NOTE_ROOT,
-#!     kernel_version
 #!     [account_nonce, 0, account_id_suffix, account_id_prefix]
 #!     ACCOUNT_VAULT_ROOT,
 #!     ACCOUNT_STORAGE_COMMITMENT,
@@ -1153,8 +1155,10 @@ end
 #! - version is the current protocol version.
 #! - timestamp is the current timestamp.
 #! - NOTE_ROOT is the root of the tree with all notes created in the block.
-#! - kernel_version is the index of the desired kernel in the array of all kernels available for the
-#!   current transaction.
+#! - verification_base_fee is the base fee capturing the cost for the verification of a
+#!   transaction.
+#! - native_asset_id_{prefix, suffix} are the prefix and suffix felts of the faucet ID that defines
+#!   the native asset.
 #! - account_nonce is the account's nonce.
 #! - ACCOUNT_VAULT_ROOT is the account's vault root.
 #! - ACCOUNT_STORAGE_COMMITMENT is the account's storage commitment.
