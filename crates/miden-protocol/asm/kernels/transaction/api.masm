@@ -1289,12 +1289,11 @@ end
 #! Returns the metadata of the output note with the specified index.
 #!
 #! Inputs:  [note_index, pad(15)]
-#! Outputs: [NOTE_ATTACHMENT, METADATA_HEADER, pad(8)]
+#! Outputs: [METADATA_HEADER, pad(12)]
 #!
 #! Where:
 #! - note_index is the index of the output note whose metadata should be returned.
 #! - METADATA_HEADER is the metadata header of the specified output note.
-#! - NOTE_ATTACHMENT is the attachment of the specified output note.
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of output notes.
@@ -1309,22 +1308,13 @@ pub proc output_note_get_metadata
     exec.memory::get_output_note_ptr
     # => [note_ptr, pad(15)]
 
-    # make stack truncation at the end of the procedure easier
-    push.0 swap
-    # => [note_ptr, pad(16)]
-
     # get the metadata
-    dup exec.memory::get_output_note_metadata_header
-    # => [METADATA_HEADER, note_ptr, pad(16)]
-
-    # TODO(multi_attachments): Temporarily maintain compatibility with the old API and return the
-    # first attachment.
-    movup.4 push.0 swap exec.memory::get_output_note_attachment_commitment
-    # => [ATTACHMENT_0, METADATA_HEADER, pad(16)]
+    exec.memory::get_output_note_metadata_header
+    # => [METADATA_HEADER, pad(15)]
 
     # truncate the stack
-    swapdw dropw dropw
-    # => [NOTE_ATTACHMENT, METADATA_HEADER, pad(8)]
+    swapw drop drop drop movdn.4
+    # => [METADATA_HEADER, pad(12)]
 end
 
 # TRANSACTION

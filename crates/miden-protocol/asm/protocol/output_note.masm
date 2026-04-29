@@ -344,15 +344,14 @@ pub proc get_recipient
     # => [RECIPIENT]
 end
 
-#! Returns the metadata and first attachment of the output note with the specified index.
+#! Returns the metadata of the output note with the specified index.
 #!
 #! Inputs:  [note_index]
-#! Outputs: [NOTE_ATTACHMENT, METADATA_HEADER]
+#! Outputs: [METADATA_HEADER]
 #!
 #! Where:
 #! - note_index is the index of the output note whose metadata should be returned.
 #! - METADATA_HEADER is the metadata header of the specified output note.
-#! - NOTE_ATTACHMENT is the first attachment of the specified output note.
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of output notes.
@@ -371,11 +370,11 @@ pub proc get_metadata
     # => [offset, note_index, pad(14)]
 
     syscall.exec_kernel_proc
-    # => [NOTE_ATTACHMENT, METADATA_HEADER, pad(8)]
+    # => [METADATA_HEADER, pad(12)]
 
     # clean the stack
-    swapdw dropw dropw
-    # => [NOTE_ATTACHMENT, METADATA_HEADER]
+    swapdw dropw dropw swapw dropw
+    # => [METADATA_HEADER]
 end
 
 #! Searches the metadata header for the specified attachment scheme and if found, pipes the
@@ -402,7 +401,6 @@ pub proc find_attachment
     # => [note_idx, attachment_scheme, note_idx]
 
     exec.get_metadata
-    dropw
     # => [METADATA_HEADER, attachment_scheme, note_idx]
 
     movup.4
