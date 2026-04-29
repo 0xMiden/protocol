@@ -76,13 +76,13 @@ static NO_AUTH_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     Library::read_from_bytes(bytes).expect("Shipped NoAuth library is well-formed")
 });
 
-// Initialize the NetworkAccount library only once.
-static NETWORK_ACCOUNT_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+// Initialize the NoteScriptAllowlistAuth library only once.
+static NOTE_SCRIPT_ALLOWLIST_AUTH_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     let bytes = include_bytes!(concat!(
         env!("OUT_DIR"),
-        "/assets/account_components/auth/network_account.masl"
+        "/assets/account_components/auth/note_script_allowlist_auth.masl"
     ));
-    Library::read_from_bytes(bytes).expect("Shipped NetworkAccount library is well-formed")
+    Library::read_from_bytes(bytes).expect("Shipped NoteScriptAllowlistAuth library is well-formed")
 });
 
 // FAUCET LIBRARIES
@@ -228,9 +228,9 @@ pub fn no_auth_library() -> Library {
     NO_AUTH_LIBRARY.clone()
 }
 
-/// Returns the NetworkAccount Library.
-pub fn network_account_library() -> Library {
-    NETWORK_ACCOUNT_LIBRARY.clone()
+/// Returns the NoteScriptAllowlistAuth Library.
+pub fn note_script_allowlist_auth_library() -> Library {
+    NOTE_SCRIPT_ALLOWLIST_AUTH_LIBRARY.clone()
 }
 
 // STANDARD ACCOUNT COMPONENTS
@@ -248,7 +248,7 @@ pub enum StandardAccountComponent {
     AuthMultisig,
     AuthGuardedMultisig,
     AuthNoAuth,
-    AuthNetworkAccount,
+    AuthNoteScriptAllowlist,
 }
 
 impl StandardAccountComponent {
@@ -264,7 +264,7 @@ impl StandardAccountComponent {
             Self::AuthMultisig => MULTISIG_LIBRARY.as_ref(),
             Self::AuthGuardedMultisig => GUARDED_MULTISIG_LIBRARY.as_ref(),
             Self::AuthNoAuth => NO_AUTH_LIBRARY.as_ref(),
-            Self::AuthNetworkAccount => NETWORK_ACCOUNT_LIBRARY.as_ref(),
+            Self::AuthNoteScriptAllowlist => NOTE_SCRIPT_ALLOWLIST_AUTH_LIBRARY.as_ref(),
         };
 
         library
@@ -325,8 +325,8 @@ impl StandardAccountComponent {
                 Self::AuthNoAuth => {
                     component_interface_vec.push(AccountComponentInterface::AuthNoAuth)
                 },
-                Self::AuthNetworkAccount => {
-                    component_interface_vec.push(AccountComponentInterface::AuthNetworkAccount)
+                Self::AuthNoteScriptAllowlist => {
+                    component_interface_vec.push(AccountComponentInterface::AuthNoteScriptAllowlist)
                 },
             }
         }
@@ -347,6 +347,6 @@ impl StandardAccountComponent {
         Self::AuthGuardedMultisig.extract_component(procedures_set, component_interface_vec);
         Self::AuthMultisig.extract_component(procedures_set, component_interface_vec);
         Self::AuthNoAuth.extract_component(procedures_set, component_interface_vec);
-        Self::AuthNetworkAccount.extract_component(procedures_set, component_interface_vec);
+        Self::AuthNoteScriptAllowlist.extract_component(procedures_set, component_interface_vec);
     }
 }
