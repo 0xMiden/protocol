@@ -86,7 +86,7 @@ pub proc main
     # => [pad(16)]
 
     # Load CLAIM note storage into memory, starting at address 0
-    push.CLAIM_NOTE_STORAGE_PTR exec.active_note::get_storage drop drop
+    push.CLAIM_NOTE_STORAGE_PTR exec.active_note::get_storage drop
     # => [pad(16)]
 
     exec.write_claim_data_into_advice_map_by_key

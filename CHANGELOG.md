@@ -4,6 +4,7 @@
 
 ### Features
 
+- [BREAKING] Removed redundant outputs from kernel procedures: `note::write_assets_to_memory`, `active_note::get_assets`, `input_note::get_assets`, `output_note::get_assets`, `active_note::get_storage`, and `faucet::mint` no longer return values identical to their inputs ([#2523](https://github.com/0xMiden/protocol/issues/2523)).
 - Added PSWAP (partial swap) note for decentralized partial-fill asset exchange with remainder note re-creation ([#2636](https://github.com/0xMiden/protocol/pull/2636)).
 - Added a FungibleTokenMetadata ([#2439](https://github.com/0xMiden/miden-base/pull/2439)) component supporting name, description, logo URI, and external links, along with MASM procedures for retrieving token metadata (get_token_metadata, get_max_supply, get_decimals, get_token_symbol). Also aligned fungible faucet token metadata with the standard by using the canonical storage slot, enabling compatibility with MASM metadata getters.
 - Added validation of leaf type on CLAIM note processing to prevent message leaves from being processed as asset claims ([#2730](https://github.com/0xMiden/protocol/pull/2730)).
