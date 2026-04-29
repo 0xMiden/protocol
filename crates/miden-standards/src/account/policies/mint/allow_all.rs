@@ -17,7 +17,7 @@ procedure_digest!(
 
 /// The storage-free `allow_all` mint policy account component.
 ///
-/// Pair with a [`crate::account::policies::MintPolicyManager`] whose allowed-policies
+/// Pair with a [`crate::account::policies::TokenPolicyManager`] whose allowed mint-policies
 /// map includes [`MintAllowAll::root`]. `allow_all` makes minting permissionless (no additional
 /// authorization beyond the manager's authority gate).
 #[derive(Debug, Clone, Copy, Default)]

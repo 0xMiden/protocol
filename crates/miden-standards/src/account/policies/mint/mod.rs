@@ -26,8 +26,8 @@ pub enum MintPolicyConfig {
     #[default]
     OwnerOnly,
     /// Active policy = the provided root. The corresponding component must be installed by the
-    /// caller separately; converting this variant via
-    /// [`MintPolicyConfig::into_component`] panics because there is no library known to this enum.
+    /// caller separately; resolving this variant into a built-in component panics because there
+    /// is no library known to this enum.
     Custom(Word),
 }
 
@@ -45,8 +45,7 @@ impl MintPolicyConfig {
     ///
     /// # Panics
     ///
-    /// Panics for [`MintPolicyConfig::Custom`] — custom policies must be installed by the caller
-    /// directly.
+    /// Panics for [`Self::Custom`] — custom policies must be installed by the caller directly.
     pub(crate) fn into_component(self) -> AccountComponent {
         match self {
             Self::AllowAll => MintAllowAll.into(),

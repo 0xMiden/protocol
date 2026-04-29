@@ -17,7 +17,7 @@ procedure_digest!(
 
 /// The storage-free `owner_only` burn policy account component (owner-controlled family).
 ///
-/// Pair with a [`crate::account::policies::BurnPolicyManager`] whose allowed-policies
+/// Pair with a [`crate::account::policies::TokenPolicyManager`] whose allowed burn-policies
 /// map includes [`BurnOwnerOnly::root`]. When active, only the account owner (as recorded by
 /// the `Ownable2Step` component) may trigger burn operations.
 #[derive(Debug, Clone, Copy, Default)]

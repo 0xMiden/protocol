@@ -17,7 +17,7 @@ procedure_digest!(
 
 /// The storage-free `allow_all` burn policy account component.
 ///
-/// Pair with a [`crate::account::policies::BurnPolicyManager`] whose allowed-policies
+/// Pair with a [`crate::account::policies::TokenPolicyManager`] whose allowed burn-policies
 /// map includes [`BurnAllowAll::root`]. `allow_all` makes burning permissionless (no additional
 /// authorization beyond the manager's authority gate).
 #[derive(Debug, Clone, Copy, Default)]

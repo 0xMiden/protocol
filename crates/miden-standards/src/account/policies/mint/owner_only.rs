@@ -17,7 +17,7 @@ procedure_digest!(
 
 /// The storage-free `owner_only` mint policy account component (owner-controlled family).
 ///
-/// Pair with a [`crate::account::policies::MintPolicyManager`] whose allowed-policies
+/// Pair with a [`crate::account::policies::TokenPolicyManager`] whose allowed mint-policies
 /// map includes [`MintOwnerOnly::root`]. When active, only the account owner (as recorded by
 /// the `Ownable2Step` component) may trigger mint operations.
 #[derive(Debug, Clone, Copy, Default)]
