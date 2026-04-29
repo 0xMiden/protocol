@@ -316,30 +316,6 @@ pub proc metadata_into_sender
     # => [sender_id_suffix, sender_id_prefix]
 end
 
-#! Extracts the first attachment's num_words and scheme from the provided metadata header.
-#!
-#! TODO(multi_attachments): This API temporarily maintains compatibility with the previous approach
-#! that supported just one attachment per note.
-#!
-#! Inputs:  [METADATA_HEADER]
-#! Outputs: [attachment_0_scheme]
-#!
-#! Where:
-#! - METADATA_HEADER is the metadata word of a note.
-#! - attachment_0_scheme is the scheme of the first attachment (0 if absent).
-#!
-#! Invocation: exec
-pub proc metadata_into_attachment_header
-    # => [sender_id_suffix_type_version, sender_id_prefix, tag, schemes]
-
-    drop drop drop
-    # => [schemes]
-
-    # extract attachment 0 scheme by taking only the lower 16 bits
-    u32and.0xffff
-    # [attachment_0_scheme]
-end
-
 #! Extracts the attachment's schemes from the provided metadata header.
 #!
 #! Inputs:  [METADATA_HEADER]
