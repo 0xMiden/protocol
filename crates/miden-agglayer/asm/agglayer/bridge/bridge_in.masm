@@ -1,5 +1,6 @@
 use agglayer::bridge::bridge_config
 use agglayer::bridge::leaf_utils
+use agglayer::common::constants::MIDEN_NETWORK_ID
 use agglayer::common::utils
 use agglayer::common::asset_conversion
 use agglayer::common::eth_address
@@ -33,6 +34,7 @@ const ERR_SMT_ROOT_VERIFICATION_FAILED = "merkle proof verification failed: prov
 const ERR_CLAIM_ALREADY_SPENT = "claim note has already been spent"
 const ERR_SOURCE_BRIDGE_NETWORK_OVERFLOW = "source bridge network overflowed u32"
 const ERR_INVALID_LEAF_TYPE = "invalid leaf type: only asset claims (leafType=0) are supported"
+const ERR_CLAIM_LEAF_DESTINATION_NETWORK_MISMATCH = "claim leaf destination network does not match Miden AggLayer network ID"
 
 # CONSTANTS
 # =================================================================================================
@@ -107,26 +109,33 @@ const CLAIM_LEAF_DATA_KEY_MEM_ADDR = 704
 const CLAIM_LEAF_INDEX_MEM_ADDR = 900
 const CLAIM_SOURCE_BRIDGE_NETWORK_MEM_ADDR = 901
 
-# Memory addresses for leaf data fields (derived from leaf data layout at CLAIM_LEAF_DATA_START_PTR=536)
-const LEAF_TYPE_ADDRESS = 536
-const ORIGIN_TOKEN_ADDRESS_0 = 538
-const ORIGIN_TOKEN_ADDRESS_1 = 539
-const ORIGIN_TOKEN_ADDRESS_2 = 540
-const ORIGIN_TOKEN_ADDRESS_3 = 541
-const ORIGIN_TOKEN_ADDRESS_4 = 542
-const DESTINATION_ADDRESS_0 = 544
-const DESTINATION_ADDRESS_1 = 545
-const DESTINATION_ADDRESS_2 = 546
-const DESTINATION_ADDRESS_3 = 547
-const DESTINATION_ADDRESS_4 = 548
-const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_0 = 549
-const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_1 = 550
-const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_2 = 551
-const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_3 = 552
-const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_4 = 553
-const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_5 = 554
-const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_6 = 555
-const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_7 = 556
+# Memory addresses for leaf data fields (felts relative to CLAIM_LEAF_DATA_START_PTR):
+const LEAF_TYPE_ADDRESS = CLAIM_LEAF_DATA_START_PTR
+
+# CLAIM_LEAF_DATA_START_PTR + 1 holds origin network identifier, but it is not accessed anywhere yet
+
+const ORIGIN_TOKEN_ADDRESS_0 = CLAIM_LEAF_DATA_START_PTR + 2
+const ORIGIN_TOKEN_ADDRESS_1 = CLAIM_LEAF_DATA_START_PTR + 3
+const ORIGIN_TOKEN_ADDRESS_2 = CLAIM_LEAF_DATA_START_PTR + 4
+const ORIGIN_TOKEN_ADDRESS_3 = CLAIM_LEAF_DATA_START_PTR + 5
+const ORIGIN_TOKEN_ADDRESS_4 = CLAIM_LEAF_DATA_START_PTR + 6
+
+const DESTINATION_NETWORK_ID_MEM_ADDR = CLAIM_LEAF_DATA_START_PTR + 7
+
+const DESTINATION_ADDRESS_0 = CLAIM_LEAF_DATA_START_PTR + 8
+const DESTINATION_ADDRESS_1 = CLAIM_LEAF_DATA_START_PTR + 9
+const DESTINATION_ADDRESS_2 = CLAIM_LEAF_DATA_START_PTR + 10
+const DESTINATION_ADDRESS_3 = CLAIM_LEAF_DATA_START_PTR + 11
+const DESTINATION_ADDRESS_4 = CLAIM_LEAF_DATA_START_PTR + 12
+
+const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_0 = CLAIM_LEAF_DATA_START_PTR + 13
+const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_1 = CLAIM_LEAF_DATA_START_PTR + 14
+const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_2 = CLAIM_LEAF_DATA_START_PTR + 15
+const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_3 = CLAIM_LEAF_DATA_START_PTR + 16
+const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_4 = CLAIM_LEAF_DATA_START_PTR + 17
+const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_5 = CLAIM_LEAF_DATA_START_PTR + 18
+const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_6 = CLAIM_LEAF_DATA_START_PTR + 19
+const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_7 = CLAIM_LEAF_DATA_START_PTR + 20
 
 # Memory addresses for MINT note output construction
 const MINT_NOTE_STORAGE_MEM_ADDR_0 = 800
@@ -186,6 +195,7 @@ const CLAIM_DEST_ID_SUFFIX_LOCAL = 1
 #!
 #! Panics if:
 #! - the leaf type is not 0 (not an asset claim).
+#! - the leaf destination network does not match the global `MIDEN_NETWORK_ID` constant.
 #! - the Merkle proof validation fails.
 #! - the origin token address is not registered in the bridge's token registry.
 #!
@@ -198,6 +208,10 @@ pub proc claim
 
     # Check AdviceMap values hash to keys & write CLAIM inputs & DATA_KEYs to global memory
     exec.claim_batch_pipe_double_words
+    # => [pad(16)]
+
+    # check that the destination network stored in the leaf data matches the Miden network ID
+    exec.assert_claim_leaf_destination_network
     # => [pad(16)]
 
     exec.load_destination_address
@@ -522,7 +536,7 @@ pub proc get_leaf_value(leaf_data_key: word) -> DoubleWord
     exec.mem::pipe_preimage_to_memory drop
     # => []
 
-    # compute the leaf value for elements in memory starting at LEAF_DATA_START_PTR
+    # compute the leaf value from elements in memory starting at LEAF_DATA_START_PTR
     push.LEAF_DATA_START_PTR
     exec.leaf_utils::compute_leaf_value
     # => [LEAF_VALUE[8]]
@@ -1108,5 +1122,33 @@ proc store_cgi_chain_hash
 
     push.CGI_CHAIN_HASH_HI_SLOT_NAME[0..2]
     exec.native_account::set_item dropw
+    # => []
+end
+
+#! Asserts the claim leaf's `destination_network` matches the global `MIDEN_NETWORK_ID`.
+#!
+#! `claim_batch_pipe_double_words` stores leaf felts as LE-packed u32 limbs. `swap_u32_bytes`
+#! converts the loaded limb to the canonical u32 value so it can be compared to `MIDEN_NETWORK_ID`
+#! from `agglayer::common::constants`.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Panics if:
+#! - the leaf destination network does not match the Miden AggLayer network ID constant.
+#!
+#! Invocation: exec
+proc assert_claim_leaf_destination_network
+    # load the destination network ID onto the stack
+    mem_load.DESTINATION_NETWORK_ID_MEM_ADDR
+    # => [destination_network_id_le]
+
+    # change the endianness to BE to compare it with the Miden network ID
+    exec.utils::swap_u32_bytes
+    # => [destination_network_id_be]
+
+    # assert that the destination network ID matches the Miden network ID
+    push.MIDEN_NETWORK_ID
+    assert_eq.err=ERR_CLAIM_LEAF_DESTINATION_NETWORK_MISMATCH
     # => []
 end

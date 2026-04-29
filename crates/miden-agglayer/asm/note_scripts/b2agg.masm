@@ -50,6 +50,7 @@ const ERR_B2AGG_TARGET_ACCOUNT_MISMATCH="B2AGG note attachment target account do
 #! - The note does not contain exactly 6 storage items.
 #! - The note does not contain exactly 1 asset.
 #! - The note attachment does not target the consuming account.
+#! - The destination network ID equals Miden's AggLayer network ID.
 @note_script
 pub proc main
     dropw
@@ -77,26 +78,26 @@ pub proc main
 
         # Store note storage -> mem[8..14]
         push.B2AGG_NOTE_STORAGE_PTR exec.active_note::get_storage
-        # => [num_storage_items, storage_ptr, pad(16)]
+        # => [num_storage_items, pad(16)]
 
         # Validate the number of storage items
         push.B2AGG_NOTE_NUM_STORAGE_ITEMS assert_eq.err=ERR_B2AGG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
-        # => [storage_ptr, pad(16)]
+        # => [pad(16)]
 
         # load the 6 B2AGG felts from B2AGG_NOTE_STORAGE_PTR as two words
-        add.4 mem_loadw_le swapw mem_loadw_le.B2AGG_NOTE_STORAGE_PTR
+        push.B2AGG_NOTE_STORAGE_PTR add.4 mem_loadw_le swapw mem_loadw_le.B2AGG_NOTE_STORAGE_PTR
         # => [dest_network, dest_address(5), pad(10)]
 
         # Store note assets -> mem[0..8]
         push.B2AGG_NOTE_ASSETS_PTR exec.active_note::get_assets
-        # => [num_assets, assets_ptr, dest_network, dest_address(5), pad(10)]
+        # => [num_assets, dest_network, dest_address(5), pad(10)]
 
         # Must be exactly 1 asset
         push.B2AGG_NOTE_NUM_ASSETS assert_eq.err=ERR_B2AGG_WRONG_NUMBER_OF_ASSETS
-        # => [assets_ptr, dest_network, dest_address(5), pad(10)]
+        # => [dest_network, dest_address(5), pad(10)]
 
         # Load asset onto the stack from B2AGG_NOTE_ASSETS_PTR
-        exec.asset::load
+        push.B2AGG_NOTE_ASSETS_PTR exec.asset::load
         # => [ASSET_KEY, ASSET_VALUE, dest_network, dest_address(5), pad(10)]
 
         call.bridge_out::bridge_out

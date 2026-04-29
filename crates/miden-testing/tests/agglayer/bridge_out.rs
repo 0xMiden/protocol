@@ -1,6 +1,10 @@
 extern crate alloc;
 
-use miden_agglayer::errors::{ERR_B2AGG_TARGET_ACCOUNT_MISMATCH, ERR_FAUCET_NOT_REGISTERED};
+use miden_agglayer::errors::{
+    ERR_B2AGG_DESTINATION_NETWORK_IS_MIDEN,
+    ERR_B2AGG_TARGET_ACCOUNT_MISMATCH,
+    ERR_FAUCET_NOT_REGISTERED,
+};
 use miden_agglayer::{
     AggLayerBridge,
     B2AggNote,
@@ -348,6 +352,122 @@ async fn test_bridge_out_fails_with_unregistered_faucet() -> anyhow::Result<()> 
         .await;
 
     assert_transaction_executor_error!(result, ERR_FAUCET_NOT_REGISTERED);
+
+    Ok(())
+}
+
+/// B2AGG / bridge-out must reject a note whose `destination_network` equals the Miden network ID,
+/// even when the faucet is registered and the rest of the bridge-out path would otherwise succeed.
+#[tokio::test]
+async fn test_bridge_out_fails_when_destination_is_miden_network() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    // CREATE BRIDGE ADMIN ACCOUNT (sends CONFIG_AGG_BRIDGE notes)
+    // --------------------------------------------------------------------------------------------
+    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    // CREATE GER MANAGER ACCOUNT (not used for GER in this test, but distinct from admin)
+    // --------------------------------------------------------------------------------------------
+    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    // CREATE BRIDGE ACCOUNT
+    // --------------------------------------------------------------------------------------------
+    let mut bridge_account = create_existing_bridge_account(
+        builder.rng_mut().draw_word(),
+        bridge_admin.id(),
+        ger_manager.id(),
+    );
+    builder.add_account(bridge_account.clone())?;
+
+    // CREATE AGGLAYER FAUCET ACCOUNT (with conversion metadata for FPI)
+    // Use MTF vector token metadata and a fixed origin network compatible with the vectors.
+    // --------------------------------------------------------------------------------------------
+    let vectors = &*SOLIDITY_MTF_VECTORS;
+    let origin_token_address =
+        EthAddress::from_hex(&vectors.origin_token_address).expect("valid origin token address");
+    let metadata_hash = MetadataHash::from_token_info(
+        &vectors.token_name,
+        &vectors.token_symbol,
+        vectors.token_decimals,
+    );
+    let faucet = create_existing_agglayer_faucet(
+        builder.rng_mut().draw_word(),
+        &vectors.token_symbol,
+        vectors.token_decimals,
+        Felt::new(FungibleAsset::MAX_AMOUNT),
+        Felt::new(100),
+        bridge_account.id(),
+        &origin_token_address,
+        64u32,
+        0u8,
+        metadata_hash,
+    );
+    builder.add_account(faucet.clone())?;
+
+    // CREATE CONFIG_AGG_BRIDGE NOTE (registers faucet + token address in bridge)
+    // --------------------------------------------------------------------------------------------
+    let config_note = ConfigAggBridgeNote::create(
+        faucet.id(),
+        &origin_token_address,
+        bridge_admin.id(),
+        bridge_account.id(),
+        builder.rng_mut(),
+    )?;
+    builder.add_output_note(RawOutputNote::Full(config_note.clone()));
+
+    // CREATE B2AGG NOTE (targets the bridge)
+    // Set destination_network to exactly `AggLayerBridge::MIDEN_NETWORK_ID` so `bridge_out`
+    // fails immediately.
+    // --------------------------------------------------------------------------------------------
+    let amount = Felt::new(100);
+    let bridge_asset: Asset =
+        FungibleAsset::new(faucet.id(), amount.as_canonical_u64()).unwrap().into();
+    let eth_address =
+        EthAddress::from_hex(&vectors.destination_addresses[0]).expect("valid destination address");
+
+    let b2agg_note = B2AggNote::create(
+        AggLayerBridge::MIDEN_NETWORK_ID,
+        eth_address,
+        NoteAssets::new(vec![bridge_asset])?,
+        bridge_account.id(),
+        faucet.id(),
+        builder.rng_mut(),
+    )?;
+
+    builder.add_output_note(RawOutputNote::Full(b2agg_note.clone()));
+
+    // BUILD MOCK CHAIN WITH ALL ACCOUNTS AND PENDING OUTPUT NOTES
+    // --------------------------------------------------------------------------------------------
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    // TX0: EXECUTE CONFIG_AGG_BRIDGE NOTE TO REGISTER FAUCET IN BRIDGE
+    // --------------------------------------------------------------------------------------------
+    let config_executed = mock_chain
+        .build_tx_context(bridge_account.id(), &[config_note.id()], &[])?
+        .build()?
+        .execute()
+        .await?;
+    bridge_account.apply_delta(config_executed.account_delta())?;
+    mock_chain.add_pending_executed_transaction(&config_executed)?;
+    mock_chain.prove_next_block()?;
+
+    // TX1: EXECUTE B2AGG NOTE AGAINST BRIDGE (must fail: destination_network is Miden's ID)
+    // --------------------------------------------------------------------------------------------
+    let foreign_account_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
+
+    let result = mock_chain
+        .build_tx_context(bridge_account.id(), &[b2agg_note.id()], &[])?
+        .foreign_accounts(vec![foreign_account_inputs])
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_B2AGG_DESTINATION_NETWORK_IS_MIDEN);
 
     Ok(())
 }
