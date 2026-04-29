@@ -381,7 +381,7 @@ impl From<NoteAttachmentArray> for NoteAttachmentContent {
 /// a note's attachments.
 ///
 /// The scheme is purely a hint, and there is no validation with respect to the attachment content.
-/// In other words, any scheme can be associated with any attachment conent. Hence, users should
+/// In other words, any scheme can be associated with any attachment content. Hence, users should
 /// always validate the contents of an attachment, just like with
 /// [`NoteStorage`](super::NoteStorage).
 ///
