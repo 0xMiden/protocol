@@ -144,7 +144,6 @@ pub proc mint_and_send
     # this ensures that the asset's faucet ID matches the native account's ID.
     # this is ensured because create_fungible_asset creates the asset with the native account's ID
     exec.faucet::mint
-    dropw
     # => [ASSET_KEY, ASSET_VALUE, note_idx, note_idx]
 
     # Add the asset to the note.
@@ -180,13 +179,13 @@ pub proc burn
 
     # this will fail if not called from a note context.
     push.ASSET_PTR exec.active_note::get_assets
-    # => [num_assets, dest_ptr, pad(16)]
+    # => [num_assets, pad(16)]
 
     # Verify we have exactly one asset
     assert.err=ERR_BASIC_FUNGIBLE_BURN_WRONG_NUMBER_OF_ASSETS
-    # => [dest_ptr, pad(16)]
+    # => [pad(16)]
 
-    exec.asset::load
+    push.ASSET_PTR exec.asset::load
     # => [ASSET_KEY, ASSET_VALUE, pad(16)]
 
     dupw.1 dupw.1
