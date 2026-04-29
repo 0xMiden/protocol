@@ -378,6 +378,51 @@ pub proc get_metadata
     # => [NOTE_ATTACHMENT, METADATA_HEADER]
 end
 
+#! Searches the metadata header for the specified attachment scheme and if found, pipes the
+#! attachment's underlying data from the advice inputs to memory and returns the ptr to it.
+#!
+#! Pointer and num_words are zero if is_found = 0.
+#!
+#! Inputs:  [attachment_scheme, note_idx]
+#! Outputs: [is_found, num_words, attachment_ptr]
+#!
+#! Where:
+#! - note_index is the index of the output note whose attachment should be returned.
+#! - attachment_scheme is the scheme of the attachment to find.
+#! - is_found is 1 if the attachment with the provided scheme was found, 0 otherwise.
+#! - num_words is the number of words in the attachment.
+#! - attachment_ptr is the pointer to the attachment elements.
+#!
+#! Pancis if:
+#! - the sequential hash over the attachment commitments in the advice inputs does not match the
+#!   attachments commitment.
+pub proc find_attachment
+    dup.1
+    # => [note_idx, attachment_scheme, note_idx]
+
+    exec.get_metadata
+    dropw
+    # => [METADATA_HEADER, attachment_scheme, note_idx]
+
+    movup.4
+    # => [attachment_scheme, METADATA_HEADER, note_idx]
+
+    exec.note::find_attachment_idx
+    # => [is_found, attachment_idx, note_idx]
+
+    if.true
+        exec.get_attachment
+        # => [num_words, attachment_ptr]
+
+        push.1
+        # => [is_found = 1, num_words, attachment_ptr]
+    else
+        drop drop push.0.0.0
+        # => [is_found = 0, num_words = 0, attachment_ptr = 0]
+    end
+    # => [is_found, attachment_ptr, num_words]
+end
+
 #! Writes the attachment commitments from the note with note_idx to memory and returns the pointer
 #! to it.
 #!
@@ -390,7 +435,7 @@ end
 #! - NOTE_ATTACHMENT is the first attachment of the specified output note.
 #!
 #! Pancis if:
-#! - The sequential hash over the attachment commitments in the advice inputs does not match the
+#! - the sequential hash over the attachment commitments in the advice inputs does not match the
 #!   attachments commitment.
 @locals(16)
 pub proc get_attachment_commitments

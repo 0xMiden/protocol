@@ -1652,6 +1652,102 @@ async fn test_get_attachment() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Tests `output_note::find_attachment` for both the found and not-found cases.
+///
+/// Setup: a SPAWN note creates an output note with two word attachments (schemes 10 and 20).
+/// The tx_script then calls `find_attachment` on the created output note.
+///
+/// - `found`:     search for scheme 10 → is_found=1, attachment data is returned.
+/// - `not_found`: search for scheme 99 → is_found=0, num_words=0, attachment_ptr=0.
+#[rstest]
+#[case::found(10, true)]
+#[case::not_found(99, false)]
+#[tokio::test]
+async fn test_find_attachment(
+    #[case] search_scheme: u16,
+    #[case] expected_found: bool,
+) -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let account = builder.add_existing_wallet(Auth::IncrNonce)?;
+
+    let word_0 = Word::from([3, 4, 5, 6u32]);
+    let word_1 = Word::from([7, 8, 9, 10u32]);
+    let scheme_0 = NoteAttachmentScheme::new(10)?;
+    let scheme_1 = NoteAttachmentScheme::new(20)?;
+
+    let output_note = NoteBuilder::new(account.id(), RandomCoin::new(Word::from([1, 2, 3, 4u32])))
+        .note_type(NoteType::Public)
+        .attachment(NoteAttachment::new_word(scheme_0, word_0))
+        .attachment(NoteAttachment::new_word(scheme_1, word_1))
+        .build()?;
+
+    let spawn_note = builder.add_spawn_note([&output_note])?;
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let tx_script = format!(
+        r#"
+        use miden::protocol::output_note
+        use miden::core::sys
+
+        begin
+            # the spawn note creates output note at index 0;
+            # search for the target scheme on that note
+            push.0
+            push.{search_scheme}
+            # => [attachment_scheme, note_idx=0]
+            exec.output_note::find_attachment
+            # => [is_found, num_words, attachment_ptr]
+
+            # assert is_found matches expectation
+            push.{expected_found} assert_eq.err="is_found mismatch"
+            # => [num_words, attachment_ptr]
+
+            push.{expected_found}
+            if.true
+                # found path: verify num_words == 1 (word attachment)
+                eq.1 assert.err="expected num_words=1"
+                # => [attachment_ptr]
+
+                # read the word from memory and assert it matches
+                padw movup.4 mem_loadw_le
+                # => [ATTACHMENT_WORD]
+
+                push.{EXPECTED_WORD}
+                assert_eqw.err="attachment data mismatch"
+                # => []
+            else
+                # not-found path: verify num_words=0 and ptr=0
+                eq.0 assert.err="expected num_words=0"
+                eq.0 assert.err="expected attachment_ptr=0"
+                # => []
+            end
+
+            # truncate the stack
+            exec.sys::truncate_stack
+        end
+        "#,
+        expected_found = expected_found as u8,
+        EXPECTED_WORD = word_0,
+    );
+
+    let tx_script = CodeBuilder::new().compile_tx_script(tx_script)?;
+
+    let tx = mock_chain
+        .build_tx_context(account.id(), &[spawn_note.id()], &[])?
+        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note.clone())])
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await?;
+
+    let actual_note = tx.output_notes().get_note(0);
+    assert_eq!(actual_note.header(), output_note.header());
+
+    Ok(())
+}
+
 /// Test that output_note procedures abort when given an out-of-bounds note index (equal to
 /// num_output_notes).
 ///
@@ -1667,6 +1763,7 @@ async fn test_get_attachment() -> anyhow::Result<()> {
 #[case::add_attachment(5, "add_attachment")]
 #[case::add_word_attachment(5, "add_word_attachment")]
 #[case::add_array_attachment(5, "add_array_attachment")]
+#[case::find_attachment(1, "find_attachment")]
 #[case::get_attachment_commitments(0, "get_attachment_commitments")]
 #[case::get_attachments_commitment(0, "get_attachments_commitment")]
 #[tokio::test]
