@@ -52,7 +52,7 @@ pub proc auth_tx_acl(auth_args: word)
     # => [pad(16)]
 
     # Get the authentication configuration
-    push.AUTH_CONFIG_SLOT[0..2] exec.active_account::get_item
+    push.AUTH_CONFIG_SLOT[0..2] exec.active_account::get_initial_item
     # => [num_auth_trigger_procs, allow_unauthorized_output_notes, allow_unauthorized_input_notes, 0, pad(16)]
 
     movup.3 drop
@@ -78,7 +78,7 @@ pub proc auth_tx_acl(auth_args: word)
         push.0.0.0 dup.4 sub.1 push.AUTH_TRIGGER_PROCS_MAP_SLOT[0..2]
         # => [trigger_proc_slot_prefix, trigger_proc_slot_suffix, [i-1, 0, 0, 0], require_acl_auth, i, pad(16)]
 
-        exec.active_account::get_map_item
+        exec.active_account::get_initial_map_item
         # => [AUTH_TRIGGER_PROC_ROOT, require_acl_auth, i, pad(16)]
 
         exec.native_account::was_procedure_called
@@ -137,11 +137,11 @@ pub proc auth_tx_acl(auth_args: word)
     # If authentication is required, perform signature verification
     if.true
         # Fetch public key from storage.
-        push.PUBLIC_KEY_SLOT[0..2] exec.active_account::get_item
+        push.PUBLIC_KEY_SLOT[0..2] exec.active_account::get_initial_item
         # => [PUB_KEY, pad(16)]
 
         # Fetch scheme_id from storage
-        push.SCHEME_ID_SLOT[0..2] exec.active_account::get_item
+        push.SCHEME_ID_SLOT[0..2] exec.active_account::get_initial_item
         # => [[scheme_id, 0, 0, 0], PUB_KEY, pad(16)]
 
         movdn.7 drop drop drop
