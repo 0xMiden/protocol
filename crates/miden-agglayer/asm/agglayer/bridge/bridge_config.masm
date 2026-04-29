@@ -25,7 +25,7 @@ const TOKEN_REGISTRY_MAP_SLOT = word("agglayer::bridge::token_registry_map")
 
 # Flags
 const GER_KNOWN_FLAG = 1
-const IS_FAUCET_REGISTERED_FLAG = 1
+const FAUCET_REGISTERED_FLAG = 1
 
 # Offset in the local memory of the `hash_token_address` procedure
 const TOKEN_ADDR_HASH_PTR = 0
@@ -129,16 +129,16 @@ pub proc register_faucet
     # --- 1. Register faucet in faucet_registry ---
 
     # set_map_item expects [slot_id(2), KEY, VALUE] and returns [OLD_VALUE].
-    # Build KEY = [0, 0, suffix, prefix] and VALUE = [IS_FAUCET_REGISTERED_FLAG, 0, 0, 0]
-    push.0.0.0.IS_FAUCET_REGISTERED_FLAG
-    # => [IS_FAUCET_REGISTERED_FLAG, 0, 0, 0,
+    # Build KEY = [0, 0, suffix, prefix] and VALUE = [FAUCET_REGISTERED_FLAG, 0, 0, 0]
+    push.0.0.0.FAUCET_REGISTERED_FLAG
+    # => [FAUCET_REGISTERED_FLAG, 0, 0, 0,
     #     faucet_id_suffix, faucet_id_prefix, origin_token_addr(5),
     #     faucet_id_suffix, faucet_id_prefix, pad(9)]
 
     movup.5 movup.5 push.0.0
     # => [
     #     [0, 0, faucet_id_suffix, faucet_id_prefix],
-    #     [IS_FAUCET_REGISTERED_FLAG, 0, 0, 0],
+    #     [FAUCET_REGISTERED_FLAG, 0, 0, 0],
     #      origin_token_addr(5), faucet_id_suffix, faucet_id_prefix, pad(9)
     #    ]
 
