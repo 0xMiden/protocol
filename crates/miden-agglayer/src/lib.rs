@@ -19,12 +19,10 @@ use miden_standards::account::access::Ownable2Step;
 use miden_standards::account::auth::NoAuth;
 use miden_standards::account::policies::{
     BurnAllowAll,
-    BurnOwnerControlledConfig,
-    BurnOwnerOnly,
-    BurnPolicyManager,
-    MintOwnerControlledConfig,
-    MintOwnerOnly,
-    MintPolicyManager,
+    BurnPolicyConfig,
+    MintPolicyConfig,
+    PolicyAuthority,
+    TokenPolicyManager,
 };
 use miden_utils_sync::LazyLock;
 
@@ -217,10 +215,12 @@ pub fn create_existing_bridge_account(
 /// The builder includes:
 /// - The `AggLayerFaucet` component (conversion metadata + token metadata).
 /// - The `Ownable2Step` component (bridge account ID as owner for mint authorization).
-/// - The `MintPolicyManager` + `MintOwnerOnly` components (mint policy management and the
-///   `owner_only` mint policy required by `network_fungible::mint_and_send`).
-/// - The `BurnPolicyManager` + `BurnOwnerOnly` + `BurnAllowAll` components (burn policy management
-///   with `owner_only` as the active policy and `allow_all` also registered as allowed).
+/// - A [`TokenPolicyManager`] (owner-controlled) configured with `MintPolicyConfig::OwnerOnly` and
+///   `BurnPolicyConfig::OwnerOnly`. The manager additionally registers `BurnAllowAll::root()` as an
+///   allowed burn policy so the owner can open burns at runtime via `set_burn_policy`. The active
+///   mint policy component (`MintOwnerOnly`) and burn policy component (`BurnOwnerOnly`) are
+///   produced by the manager; `BurnAllowAll` is installed separately as the additional allowed burn
+///   policy procedure.
 #[allow(clippy::too_many_arguments)]
 fn create_agglayer_faucet_builder(
     seed: Word,
@@ -245,21 +245,22 @@ fn create_agglayer_faucet_builder(
         metadata_hash,
     );
 
+    // `allow_all` is explicitly registered in the allowed list so the owner can open burns at
+    // runtime via `set_burn_policy`.
+    let policy_components = TokenPolicyManager::new(
+        PolicyAuthority::OwnerControlled,
+        MintPolicyConfig::OwnerOnly,
+        BurnPolicyConfig::OwnerOnly,
+    )
+    .with_allowed_burn_policy(BurnAllowAll::root())
+    .into_components();
+
     Account::builder(seed.into())
         .account_type(AccountType::FungibleFaucet)
         .storage_mode(AccountStorageMode::Network)
         .with_component(agglayer_component)
         .with_component(Ownable2Step::new(bridge_account_id))
-        .with_component(MintPolicyManager::owner_controlled(MintOwnerControlledConfig::OwnerOnly))
-        .with_component(MintOwnerOnly)
-        // Burn policy manager: active = `owner_only` (burns locked by default); `allow_all` is
-        // explicitly registered in the allowed list so the owner can open burns at runtime via
-        // `set_burn_policy`.
-        .with_component(
-            BurnPolicyManager::owner_controlled(BurnOwnerControlledConfig::OwnerOnly)
-                .with_allowed_policy(BurnAllowAll::root()),
-        )
-        .with_component(BurnOwnerOnly)
+        .with_components(policy_components)
         .with_component(BurnAllowAll)
 }
 

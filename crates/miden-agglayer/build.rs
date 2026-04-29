@@ -17,12 +17,10 @@ use miden_protocol::transaction::TransactionKernel;
 use miden_standards::account::auth::NoAuth;
 use miden_standards::account::policies::{
     BurnAllowAll,
-    BurnOwnerControlledConfig,
-    BurnOwnerOnly,
-    BurnPolicyManager,
-    MintOwnerControlledConfig,
-    MintOwnerOnly,
-    MintPolicyManager,
+    BurnPolicyConfig,
+    MintPolicyConfig,
+    PolicyAuthority,
+    TokenPolicyManager,
 };
 
 // CONSTANTS
@@ -263,18 +261,18 @@ fn generate_agglayer_constants(
             ));
             // Mirror the component order used by `create_agglayer_faucet_builder` in lib.rs so
             // the compile-time code commitment matches the one computed at runtime.
-            components.push(
-                MintPolicyManager::owner_controlled(MintOwnerControlledConfig::OwnerOnly).into(),
-            );
-            components.push(MintOwnerOnly.into());
+            //
             // Burn policy manager: active = `owner_only` (burns locked by default), `allow_all`
             // is explicitly allowed so the owner can open burns at runtime via `set_burn_policy`.
-            components.push(
-                BurnPolicyManager::owner_controlled(BurnOwnerControlledConfig::OwnerOnly)
-                    .with_allowed_policy(BurnAllowAll::root())
-                    .into(),
-            );
-            components.push(BurnOwnerOnly.into());
+            let policy_components = TokenPolicyManager::new(
+                PolicyAuthority::OwnerControlled,
+                MintPolicyConfig::OwnerOnly,
+                BurnPolicyConfig::OwnerOnly,
+            )
+            .with_allowed_burn_policy(BurnAllowAll::root())
+            .into_components();
+
+            components.extend(policy_components);
             components.push(BurnAllowAll.into());
         }
 

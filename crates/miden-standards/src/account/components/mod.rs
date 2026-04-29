@@ -106,13 +106,13 @@ static FUNGIBLE_TOKEN_METADATA_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     Library::read_from_bytes(bytes).expect("Shipped Fungible Token Metadata library is well-formed")
 });
 
-// Initialize the Mint Policy Manager library only once.
-static MINT_POLICY_MANAGER_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+// Initialize the Token Policy Manager library only once.
+static POLICY_MANAGER_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     let bytes = include_bytes!(concat!(
         env!("OUT_DIR"),
-        "/assets/account_components/faucets/policies/mint/policy_manager.masl"
+        "/assets/account_components/faucets/policies/policy_manager.masl"
     ));
-    Library::read_from_bytes(bytes).expect("Shipped Mint Policy Manager library is well-formed")
+    Library::read_from_bytes(bytes).expect("Shipped Token Policy Manager library is well-formed")
 });
 
 // Initialize the `allow_all` Mint Policy library only once.
@@ -132,15 +132,6 @@ static OWNER_ONLY_MINT_POLICY_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     ));
     Library::read_from_bytes(bytes)
         .expect("Shipped `owner_only` Mint Policy library is well-formed")
-});
-
-// Initialize the Burn Policy Manager library only once.
-static BURN_POLICY_MANAGER_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(
-        env!("OUT_DIR"),
-        "/assets/account_components/faucets/policies/burn/policy_manager.masl"
-    ));
-    Library::read_from_bytes(bytes).expect("Shipped Burn Policy Manager library is well-formed")
 });
 
 // Initialize the `allow_all` Burn Policy library only once.
@@ -190,9 +181,9 @@ pub fn fungible_token_metadata_library() -> Library {
     FUNGIBLE_TOKEN_METADATA_LIBRARY.clone()
 }
 
-/// Returns the Mint Policy Manager Library.
-pub fn mint_policy_manager_library() -> Library {
-    MINT_POLICY_MANAGER_LIBRARY.clone()
+/// Returns the Token Policy Manager Library.
+pub fn policy_manager_library() -> Library {
+    POLICY_MANAGER_LIBRARY.clone()
 }
 
 /// Returns the `allow_all` Mint Policy Library.
@@ -203,11 +194,6 @@ pub fn allow_all_mint_policy_library() -> Library {
 /// Returns the `owner_only` Mint Policy Library.
 pub fn owner_only_mint_policy_library() -> Library {
     OWNER_ONLY_MINT_POLICY_LIBRARY.clone()
-}
-
-/// Returns the Burn Policy Manager Library.
-pub fn burn_policy_manager_library() -> Library {
-    BURN_POLICY_MANAGER_LIBRARY.clone()
 }
 
 /// Returns the `allow_all` Burn Policy Library.

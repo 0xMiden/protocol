@@ -1,42 +1,59 @@
-//! Mint policies and the mint policy manager.
+//! Mint policy components and the mint policy configuration enum used by
+//! [`super::TokenPolicyManager`].
 
 use miden_protocol::Word;
+use miden_protocol::account::AccountComponent;
 
 mod allow_all;
-mod manager;
 mod owner_only;
 
 pub use allow_all::MintAllowAll;
-pub use manager::MintPolicyManager;
 pub use owner_only::MintOwnerOnly;
 
 // CONFIG
 // ================================================================================================
 
-/// Initial configuration for an owner-controlled [`MintPolicyManager`].
+/// Selects which mint policy is active when the [`super::TokenPolicyManager`] is first installed.
 ///
-/// Passed to [`MintPolicyManager::owner_controlled`] to select which policy is active when the
-/// faucet is first created. Only the chosen policy is registered as allowed by default; to permit
-/// runtime switching to another policy, the caller must register it explicitly via
-/// [`MintPolicyManager::with_allowed_policy`] and add the corresponding component.
-///
-/// Future owner-controlled mint policies will show up here as additional variants.
+/// Only the chosen policy is registered as allowed by default; runtime switching to another policy
+/// requires explicit opt-in via [`super::TokenPolicyManager::with_allowed_mint_policy`] plus
+/// installing the matching policy component.
 #[derive(Debug, Clone, Copy, Default)]
-pub enum MintOwnerControlledConfig {
+pub enum MintPolicyConfig {
+    /// Active policy = [`MintAllowAll::root`] (mint open to anyone).
+    AllowAll,
     /// Active policy = [`MintOwnerOnly::root`] (mint gated by the account owner).
     #[default]
     OwnerOnly,
-    /// Active policy = the provided root. Must be one of the allowed policy roots registered on
-    /// the manager.
-    CustomInitialRoot(Word),
+    /// Active policy = the provided root. The corresponding component must be installed by the
+    /// caller separately; converting this variant via
+    /// [`MintPolicyConfig::into_component`] panics because there is no library known to this enum.
+    Custom(Word),
 }
 
-impl MintOwnerControlledConfig {
-    /// Resolves the config into the concrete policy root to install as the active mint policy.
-    pub fn initial_policy_root(self) -> Word {
+impl MintPolicyConfig {
+    /// Returns the procedure root of the active policy this config resolves to.
+    pub fn root(self) -> Word {
         match self {
+            Self::AllowAll => MintAllowAll::root(),
             Self::OwnerOnly => MintOwnerOnly::root(),
-            Self::CustomInitialRoot(root) => root,
+            Self::Custom(root) => root,
+        }
+    }
+
+    /// Returns the [`AccountComponent`] corresponding to the active policy.
+    ///
+    /// # Panics
+    ///
+    /// Panics for [`MintPolicyConfig::Custom`] — custom policies must be installed by the caller
+    /// directly.
+    pub(crate) fn into_component(self) -> AccountComponent {
+        match self {
+            Self::AllowAll => MintAllowAll.into(),
+            Self::OwnerOnly => MintOwnerOnly.into(),
+            Self::Custom(_) => panic!(
+                "MintPolicyConfig::Custom does not resolve to a built-in component; install the corresponding component separately",
+            ),
         }
     }
 }

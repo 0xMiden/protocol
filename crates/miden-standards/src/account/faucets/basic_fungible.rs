@@ -15,7 +15,12 @@ use crate::account::auth::{AuthSingleSigAcl, AuthSingleSigAclConfig};
 use crate::account::components::basic_fungible_faucet_library;
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
 use crate::account::metadata::FungibleTokenMetadata;
-use crate::account::policies::{BurnAllowAll, BurnPolicyManager, MintAllowAll, MintPolicyManager};
+use crate::account::policies::{
+    BurnPolicyConfig,
+    MintPolicyConfig,
+    PolicyAuthority,
+    TokenPolicyManager,
+};
 use crate::procedure_digest;
 
 // BASIC FUNGIBLE FAUCET ACCOUNT COMPONENT
@@ -146,16 +151,16 @@ impl TryFrom<&Account> for BasicFungibleFaucet {
 /// - [`FungibleTokenMetadata`] (token metadata, name, description, etc.)
 /// - [`BasicFungibleFaucet`] (mint_and_send and burn procedures)
 /// - [`AuthSingleSigAcl`]
-/// - [`MintPolicyManager`] + [`MintAllowAll`] (auth-controlled, allow-all mint policy)
-/// - [`BurnPolicyManager`] + [`BurnAllowAll`] (auth-controlled, allow-all burn policy)
+/// - [`TokenPolicyManager`] + the active mint and burn policy components produced by the
+///   [`MintPolicyConfig`] and [`BurnPolicyConfig`] passed to it (here: `MintAllowAll` and
+///   `BurnAllowAll`).
 ///
 /// Component dependency graph:
 /// ```text
 /// BasicFungibleFaucet
-/// ├── MintPolicyManager (auth-controlled, only allowed policy: AllowAll)
-/// │   └── MintAllowAll
-/// └── BurnPolicyManager (auth-controlled, only allowed policy: AllowAll)
-///     └── BurnAllowAll
+/// └── TokenPolicyManager (auth-controlled)
+///     ├── MintAllowAll  (active mint policy)
+///     └── BurnAllowAll  (active burn policy)
 /// ```
 pub fn create_basic_fungible_faucet(
     init_seed: [u8; 32],
@@ -199,10 +204,14 @@ pub fn create_basic_fungible_faucet(
         .with_auth_component(auth_component)
         .with_component(metadata)
         .with_component(BasicFungibleFaucet)
-        .with_component(MintPolicyManager::auth_controlled())
-        .with_component(MintAllowAll)
-        .with_component(BurnPolicyManager::auth_controlled())
-        .with_component(BurnAllowAll)
+        .with_components(
+            TokenPolicyManager::new(
+                PolicyAuthority::AuthControlled,
+                MintPolicyConfig::AllowAll,
+                BurnPolicyConfig::AllowAll,
+            )
+            .into_components(),
+        )
         .build()
         .map_err(FungibleFaucetError::AccountError)?;
 

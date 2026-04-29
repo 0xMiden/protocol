@@ -1,14 +1,9 @@
-//! Internal generic policy manager plumbing.
+//! Unified token policy manager.
 //!
-//! [`PolicyManager`] is parameterized by [`PolicyKind`] and provides shared construction logic for
-//! both mint and burn policy managers. The kind-specific [`MintPolicyKind`] and [`BurnPolicyKind`]
-//! markers carry the static data (library, slot names, schema labels) for each side.
-//!
-//! These types are intentionally crate-private. The public API exposes thin newtype wrappers
-//! [`super::MintPolicyManager`] and [`super::BurnPolicyManager`].
+//! [`TokenPolicyManager`] owns the five storage slots (shared authority + active/allowed maps for
+//! mint and burn) and exposes the management procedures via a single MASM library.
 
 use alloc::vec::Vec;
-use core::marker::PhantomData;
 
 use miden_protocol::Word;
 use miden_protocol::account::component::{
@@ -26,196 +21,321 @@ use miden_protocol::account::{
     StorageSlot,
     StorageSlotName,
 };
-use miden_protocol::assembly::Library;
+use miden_protocol::utils::sync::LazyLock;
 
 use super::PolicyAuthority;
+use super::burn::BurnPolicyConfig;
+use super::mint::MintPolicyConfig;
+use crate::account::components::policy_manager_library;
 
-// MARKERS
+// STORAGE SLOT NAMES
 // ================================================================================================
 
-/// Marker type selecting the mint side of the policy manager.
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct MintPolicyKind;
+static POLICY_AUTHORITY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::faucets::policies::policy_manager::policy_authority")
+        .expect("storage slot name should be valid")
+});
 
-/// Marker type selecting the burn side of the policy manager.
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct BurnPolicyKind;
+static ACTIVE_MINT_POLICY_PROC_ROOT_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new(
+        "miden::standards::faucets::policies::policy_manager::active_mint_policy_proc_root",
+    )
+    .expect("storage slot name should be valid")
+});
 
-// POLICY KIND TRAIT
+static ACTIVE_BURN_POLICY_PROC_ROOT_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new(
+        "miden::standards::faucets::policies::policy_manager::active_burn_policy_proc_root",
+    )
+    .expect("storage slot name should be valid")
+});
+
+static ALLOWED_MINT_POLICY_PROC_ROOTS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new(
+        "miden::standards::faucets::policies::policy_manager::allowed_mint_policy_proc_roots",
+    )
+    .expect("storage slot name should be valid")
+});
+
+static ALLOWED_BURN_POLICY_PROC_ROOTS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new(
+        "miden::standards::faucets::policies::policy_manager::allowed_burn_policy_proc_roots",
+    )
+    .expect("storage slot name should be valid")
+});
+
+// TOKEN POLICY MANAGER
 // ================================================================================================
 
-/// Kind-specific static data for a [`PolicyManager`].
+/// An [`AccountComponent`] that owns the policy-manager storage slots and the manager
+/// procedures for both mint and burn sides.
 ///
-/// Implementors are the [`MintPolicyKind`] and [`BurnPolicyKind`] marker types. The trait carries
-/// only static constants / function lookups (library, storage slot names, component metadata) — no
-/// "business logic"; kind-specific constructors live in inherent impls on the public newtype
-/// wrappers [`super::MintPolicyManager`] / [`super::BurnPolicyManager`].
-pub(crate) trait PolicyKind: Copy {
-    /// Component name used in `AccountComponentMetadata`.
-    const COMPONENT_NAME: &'static str;
-    /// Component description used in `AccountComponentMetadata`.
-    const COMPONENT_DESCRIPTION: &'static str;
-
-    /// Schema label for the active-policy storage slot.
-    const ACTIVE_POLICY_DESC: &'static str;
-    /// Schema label for the allowed-policies storage slot.
-    const ALLOWED_POLICIES_DESC: &'static str;
-    /// Schema label for the policy-authority storage slot.
-    const AUTHORITY_DESC: &'static str;
-    /// Felt label on the authority slot (e.g. `"mint_policy_authority"`).
-    const AUTHORITY_FELT_LABEL: &'static str;
-
-    /// Compiled MASM library for this kind's policy manager component.
-    fn library() -> Library;
-
-    /// Storage slot name holding the active policy procedure root.
-    fn active_policy_slot() -> &'static StorageSlotName;
-    /// Storage slot name holding the allowed policy procedure roots map.
-    fn allowed_policies_slot() -> &'static StorageSlotName;
-    /// Storage slot name holding the policy authority mode.
-    fn policy_authority_slot() -> &'static StorageSlotName;
-}
-
-// POLICY MANAGER (generic)
-// ================================================================================================
-
-/// Generic policy manager backing [`super::MintPolicyManager`] / [`super::BurnPolicyManager`].
+/// The component exposes `set_*_policy`, `get_*_policy`, and `execute_*_policy` procedures for
+/// both mint and burn. The shared [`PolicyAuthority`] mode controls who can change either policy:
+/// - [`PolicyAuthority::AuthControlled`]: changes are gated by the account's authentication
+///   component.
+/// - [`PolicyAuthority::OwnerControlled`]: changes require the account owner (verified through the
+///   `Ownable2Step` companion component).
+///
+/// Construct via [`Self::new`] and convert into the set of account components via
+/// `Vec::<AccountComponent>::from(self)`. The conversion produces three components:
+/// the policy manager itself, the chosen mint policy component, and the chosen burn policy
+/// component. To register additional allowed roots for runtime switching, call
+/// [`Self::with_allowed_mint_policy`] / [`Self::with_allowed_burn_policy`] and add the matching
+/// policy components to the account separately.
 ///
 /// ## Storage layout
 ///
-/// - `active_policy_slot`: Procedure root of the active policy.
-/// - `allowed_policies_slot`: Map of allowed policy procedure roots.
-/// - `policy_authority_slot`: [`PolicyAuthority`] mode.
+/// - [`Self::policy_authority_slot`]: shared authority mode.
+/// - [`Self::active_mint_policy_slot`]: procedure root of the active mint policy.
+/// - [`Self::active_burn_policy_slot`]: procedure root of the active burn policy.
+/// - [`Self::allowed_mint_policies_slot`]: map of allowed mint policy roots.
+/// - [`Self::allowed_burn_policies_slot`]: map of allowed burn policy roots.
 #[derive(Debug, Clone)]
-pub(crate) struct PolicyManager<K: PolicyKind> {
+pub struct TokenPolicyManager {
     authority: PolicyAuthority,
-    active_policy: Word,
-    allowed_policies: Vec<Word>,
-    _kind: PhantomData<K>,
+    mint_policy: MintPolicyConfig,
+    burn_policy: BurnPolicyConfig,
+    extra_allowed_mint_policies: Vec<Word>,
+    extra_allowed_burn_policies: Vec<Word>,
 }
 
-impl<K: PolicyKind> PolicyManager<K> {
-    /// Creates a new manager with the given authority and active policy root. The active policy is
-    /// automatically added to the allowed-policies list.
-    pub(crate) fn new(authority: PolicyAuthority, active_policy: Word) -> Self {
+impl TokenPolicyManager {
+    // CONSTANTS
+    // --------------------------------------------------------------------------------------------
+
+    /// The name of the component.
+    pub const NAME: &'static str = "miden::standards::faucets::policies::policy_manager";
+
+    /// Component description used in [`AccountComponentMetadata`].
+    pub const DESCRIPTION: &'static str = "Token policy manager for fungible faucets";
+
+    // CONSTRUCTORS
+    // --------------------------------------------------------------------------------------------
+
+    /// Creates a new token policy manager configured with the given authority and the initial
+    /// active mint and burn policies. Only the chosen policies are registered as allowed by
+    /// default; runtime switching to additional policies requires explicit opt-in via
+    /// [`Self::with_allowed_mint_policy`] / [`Self::with_allowed_burn_policy`] plus installing the
+    /// corresponding policy components.
+    pub fn new(
+        authority: PolicyAuthority,
+        mint_policy: MintPolicyConfig,
+        burn_policy: BurnPolicyConfig,
+    ) -> Self {
         Self {
             authority,
-            active_policy,
-            allowed_policies: vec![active_policy],
-            _kind: PhantomData,
+            mint_policy,
+            burn_policy,
+            extra_allowed_mint_policies: Vec::new(),
+            extra_allowed_burn_policies: Vec::new(),
         }
     }
 
-    /// Registers an additional policy root in the allowed-policies list.
+    /// Registers an additional mint policy root in the allowed-policies list.
     ///
-    /// If `policy_root` is already in the set, this is a no-op.
-    pub(crate) fn with_allowed_policy(mut self, policy_root: Word) -> Self {
-        if !self.allowed_policies.contains(&policy_root) {
-            self.allowed_policies.push(policy_root);
+    /// If `policy_root` is already in the set (including the active mint policy's root), this is a
+    /// no-op. The corresponding policy component must be added to the account separately.
+    pub fn with_allowed_mint_policy(mut self, policy_root: Word) -> Self {
+        if policy_root != self.mint_policy.root()
+            && !self.extra_allowed_mint_policies.contains(&policy_root)
+        {
+            self.extra_allowed_mint_policies.push(policy_root);
         }
         self
     }
 
+    /// Registers an additional burn policy root in the allowed-policies list.
+    ///
+    /// If `policy_root` is already in the set (including the active burn policy's root), this is a
+    /// no-op. The corresponding policy component must be added to the account separately.
+    pub fn with_allowed_burn_policy(mut self, policy_root: Word) -> Self {
+        if policy_root != self.burn_policy.root()
+            && !self.extra_allowed_burn_policies.contains(&policy_root)
+        {
+            self.extra_allowed_burn_policies.push(policy_root);
+        }
+        self
+    }
+
+    // ACCESSORS
+    // --------------------------------------------------------------------------------------------
+
     /// Returns the authority used by this manager.
-    pub(crate) fn authority(&self) -> PolicyAuthority {
+    pub fn authority(&self) -> PolicyAuthority {
         self.authority
     }
 
-    /// Returns the active policy procedure root.
-    pub(crate) fn active_policy(&self) -> Word {
-        self.active_policy
+    /// Returns the active mint policy procedure root.
+    pub fn active_mint_policy(&self) -> Word {
+        self.mint_policy.root()
     }
 
-    /// Returns the allowed policy procedure roots.
-    pub(crate) fn allowed_policies(&self) -> &[Word] {
-        &self.allowed_policies
+    /// Returns the active burn policy procedure root.
+    pub fn active_burn_policy(&self) -> Word {
+        self.burn_policy.root()
     }
 
-    pub(crate) fn active_policy_slot() -> &'static StorageSlotName {
-        K::active_policy_slot()
+    /// Returns the allowed mint policy procedure roots (including the active root).
+    pub fn allowed_mint_policies(&self) -> Vec<Word> {
+        let mut roots = vec![self.mint_policy.root()];
+        roots.extend(self.extra_allowed_mint_policies.iter().copied());
+        roots
     }
 
-    pub(crate) fn allowed_policies_slot() -> &'static StorageSlotName {
-        K::allowed_policies_slot()
+    /// Returns the allowed burn policy procedure roots (including the active root).
+    pub fn allowed_burn_policies(&self) -> Vec<Word> {
+        let mut roots = vec![self.burn_policy.root()];
+        roots.extend(self.extra_allowed_burn_policies.iter().copied());
+        roots
     }
 
-    pub(crate) fn policy_authority_slot() -> &'static StorageSlotName {
-        K::policy_authority_slot()
+    /// Returns the [`StorageSlotName`] containing the policy authority mode.
+    pub fn policy_authority_slot() -> &'static StorageSlotName {
+        &POLICY_AUTHORITY_SLOT_NAME
     }
 
-    pub(crate) fn active_policy_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            K::active_policy_slot().clone(),
-            StorageSlotSchema::value(K::ACTIVE_POLICY_DESC, SchemaType::native_word()),
-        )
+    /// Returns the [`StorageSlotName`] where the active mint policy procedure root is stored.
+    pub fn active_mint_policy_slot() -> &'static StorageSlotName {
+        &ACTIVE_MINT_POLICY_PROC_ROOT_SLOT_NAME
     }
 
-    pub(crate) fn allowed_policies_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            K::allowed_policies_slot().clone(),
-            StorageSlotSchema::map(
-                K::ALLOWED_POLICIES_DESC,
-                SchemaType::native_word(),
-                SchemaType::native_word(),
-            ),
-        )
+    /// Returns the [`StorageSlotName`] where the active burn policy procedure root is stored.
+    pub fn active_burn_policy_slot() -> &'static StorageSlotName {
+        &ACTIVE_BURN_POLICY_PROC_ROOT_SLOT_NAME
     }
 
-    pub(crate) fn policy_authority_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            K::policy_authority_slot().clone(),
-            StorageSlotSchema::value(
-                K::AUTHORITY_DESC,
-                [
-                    FeltSchema::u8(K::AUTHORITY_FELT_LABEL),
-                    FeltSchema::new_void(),
-                    FeltSchema::new_void(),
-                    FeltSchema::new_void(),
-                ],
-            ),
-        )
+    /// Returns the [`StorageSlotName`] where allowed mint policy roots are stored.
+    pub fn allowed_mint_policies_slot() -> &'static StorageSlotName {
+        &ALLOWED_MINT_POLICY_PROC_ROOTS_SLOT_NAME
     }
 
-    pub(crate) fn component_metadata() -> AccountComponentMetadata {
+    /// Returns the [`StorageSlotName`] where allowed burn policy roots are stored.
+    pub fn allowed_burn_policies_slot() -> &'static StorageSlotName {
+        &ALLOWED_BURN_POLICY_PROC_ROOTS_SLOT_NAME
+    }
+
+    /// Returns the [`AccountComponentMetadata`] for this component.
+    pub fn component_metadata() -> AccountComponentMetadata {
         let storage_schema = StorageSchema::new(vec![
-            Self::active_policy_slot_schema(),
-            Self::allowed_policies_slot_schema(),
-            Self::policy_authority_slot_schema(),
+            (
+                POLICY_AUTHORITY_SLOT_NAME.clone(),
+                StorageSlotSchema::value(
+                    "Token policy authority",
+                    [
+                        FeltSchema::u8("policy_authority"),
+                        FeltSchema::new_void(),
+                        FeltSchema::new_void(),
+                        FeltSchema::new_void(),
+                    ],
+                ),
+            ),
+            (
+                ACTIVE_MINT_POLICY_PROC_ROOT_SLOT_NAME.clone(),
+                StorageSlotSchema::value(
+                    "Active mint policy procedure root",
+                    SchemaType::native_word(),
+                ),
+            ),
+            (
+                ACTIVE_BURN_POLICY_PROC_ROOT_SLOT_NAME.clone(),
+                StorageSlotSchema::value(
+                    "Active burn policy procedure root",
+                    SchemaType::native_word(),
+                ),
+            ),
+            (
+                ALLOWED_MINT_POLICY_PROC_ROOTS_SLOT_NAME.clone(),
+                StorageSlotSchema::map(
+                    "Allowed mint policy procedure roots",
+                    SchemaType::native_word(),
+                    SchemaType::native_word(),
+                ),
+            ),
+            (
+                ALLOWED_BURN_POLICY_PROC_ROOTS_SLOT_NAME.clone(),
+                StorageSlotSchema::map(
+                    "Allowed burn policy procedure roots",
+                    SchemaType::native_word(),
+                    SchemaType::native_word(),
+                ),
+            ),
         ])
         .expect("storage schema should be valid");
 
-        AccountComponentMetadata::new(K::COMPONENT_NAME, [AccountType::FungibleFaucet])
-            .with_description(K::COMPONENT_DESCRIPTION)
+        AccountComponentMetadata::new(Self::NAME, [AccountType::FungibleFaucet])
+            .with_description(Self::DESCRIPTION)
             .with_storage_schema(storage_schema)
     }
 
-    fn initial_storage_slots(&self) -> Vec<StorageSlot> {
+    fn manager_storage_slots(&self) -> Vec<StorageSlot> {
         let allowed_flag = Word::from([1u32, 0, 0, 0]);
-        let entries: Vec<_> = self
-            .allowed_policies
-            .iter()
-            .map(|root| (StorageMapKey::from_raw(*root), allowed_flag))
+
+        let allowed_mint_entries: Vec<_> = self
+            .allowed_mint_policies()
+            .into_iter()
+            .map(|root| (StorageMapKey::from_raw(root), allowed_flag))
             .collect();
-        let allowed_map = StorageMap::with_entries(entries)
-            .expect("allowed policy roots should have unique keys");
+        let allowed_mint_map = StorageMap::with_entries(allowed_mint_entries)
+            .expect("allowed mint policy roots should have unique keys");
+
+        let allowed_burn_entries: Vec<_> = self
+            .allowed_burn_policies()
+            .into_iter()
+            .map(|root| (StorageMapKey::from_raw(root), allowed_flag))
+            .collect();
+        let allowed_burn_map = StorageMap::with_entries(allowed_burn_entries)
+            .expect("allowed burn policy roots should have unique keys");
 
         vec![
-            StorageSlot::with_value(K::active_policy_slot().clone(), self.active_policy),
-            StorageSlot::with_map(K::allowed_policies_slot().clone(), allowed_map),
-            StorageSlot::with_value(K::policy_authority_slot().clone(), self.authority.into()),
+            StorageSlot::with_value(POLICY_AUTHORITY_SLOT_NAME.clone(), self.authority.into()),
+            StorageSlot::with_value(
+                ACTIVE_MINT_POLICY_PROC_ROOT_SLOT_NAME.clone(),
+                self.mint_policy.root(),
+            ),
+            StorageSlot::with_value(
+                ACTIVE_BURN_POLICY_PROC_ROOT_SLOT_NAME.clone(),
+                self.burn_policy.root(),
+            ),
+            StorageSlot::with_map(
+                ALLOWED_MINT_POLICY_PROC_ROOTS_SLOT_NAME.clone(),
+                allowed_mint_map,
+            ),
+            StorageSlot::with_map(
+                ALLOWED_BURN_POLICY_PROC_ROOTS_SLOT_NAME.clone(),
+                allowed_burn_map,
+            ),
         ]
     }
-}
 
-impl<K: PolicyKind> From<PolicyManager<K>> for AccountComponent {
-    fn from(manager: PolicyManager<K>) -> Self {
+    fn into_manager_component(self) -> AccountComponent {
+        let storage_slots = self.manager_storage_slots();
         AccountComponent::new(
-            K::library(),
-            manager.initial_storage_slots(),
-            PolicyManager::<K>::component_metadata(),
+            policy_manager_library(),
+            storage_slots,
+            Self::component_metadata(),
         )
         .expect(
-            "policy manager component should satisfy the requirements of a valid account component",
+            "token policy manager component should satisfy the requirements of a valid account component",
         )
+    }
+
+    /// Returns the [`AccountComponent`]s implementing this token policy configuration, in the
+    /// order they must be installed on the account.
+    ///
+    /// The returned vector contains:
+    /// 1. The policy manager component (storage slots + manager procedures).
+    /// 2. The active mint policy component (resolved from the [`MintPolicyConfig`] passed to
+    ///    [`TokenPolicyManager::new`]).
+    /// 3. The active burn policy component (resolved from the [`BurnPolicyConfig`]).
+    ///
+    /// To register additional allowed policies for runtime switching, call
+    /// [`Self::with_allowed_mint_policy`] / [`Self::with_allowed_burn_policy`] and add the
+    /// matching policy components to the account separately.
+    pub fn into_components(self) -> Vec<AccountComponent> {
+        let mint_component = self.mint_policy.into_component();
+        let burn_component = self.burn_policy.into_component();
+        let manager_component = self.into_manager_component();
+        vec![manager_component, mint_component, burn_component]
     }
 }

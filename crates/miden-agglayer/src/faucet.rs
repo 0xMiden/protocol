@@ -18,7 +18,7 @@ use miden_protocol::asset::TokenSymbol;
 use miden_protocol::errors::AccountIdError;
 use miden_standards::account::access::Ownable2Step;
 use miden_standards::account::faucets::{FungibleFaucetError, TokenMetadata};
-use miden_standards::account::policies::{BurnPolicyManager, MintPolicyManager};
+use miden_standards::account::policies::TokenPolicyManager;
 use miden_utils_sync::LazyLock;
 use thiserror::Error;
 
@@ -90,7 +90,8 @@ static METADATA_HASH_HI_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| 
 ///
 /// This component re-exports `network_fungible::mint_and_send`, which requires:
 /// - [`Ownable2Step`]: Provides ownership data (bridge account ID as owner).
-/// - [`miden_standards::account::policies::MintPolicyManager`]: Provides mint policy management.
+/// - [`miden_standards::account::policies::TokenPolicyManager`]: Provides mint and burn policy
+///   management.
 ///
 /// These must be added as separate components when building the faucet account.
 #[derive(Debug, Clone)]
@@ -363,12 +364,11 @@ impl AggLayerFaucet {
             &*METADATA_HASH_HI_SLOT_NAME,
             TokenMetadata::metadata_slot(),
             Ownable2Step::slot_name(),
-            MintPolicyManager::active_policy_slot(),
-            MintPolicyManager::allowed_policies_slot(),
-            MintPolicyManager::policy_authority_slot(),
-            BurnPolicyManager::active_policy_slot(),
-            BurnPolicyManager::allowed_policies_slot(),
-            BurnPolicyManager::policy_authority_slot(),
+            TokenPolicyManager::policy_authority_slot(),
+            TokenPolicyManager::active_mint_policy_slot(),
+            TokenPolicyManager::active_burn_policy_slot(),
+            TokenPolicyManager::allowed_mint_policies_slot(),
+            TokenPolicyManager::allowed_burn_policies_slot(),
         ]
     }
 }

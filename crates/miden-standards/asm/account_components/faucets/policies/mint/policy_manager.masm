@@ -1,9 +1,0 @@
-# The MASM code of the Mint Policy Manager Account Component.
-#
-# Owns the three policy-manager storage slots (authority, active_policy_proc_root,
-# allowed_policy_proc_roots) and exposes the management procedures. Pair with any
-# mint policy component whose procedure root is registered in the allowed-policies map.
-
-pub use ::miden::standards::faucets::policies::mint::policy_manager::set_mint_policy
-pub use ::miden::standards::faucets::policies::mint::policy_manager::get_mint_policy
-pub use ::miden::standards::faucets::policies::mint::policy_manager::execute_mint_policy
