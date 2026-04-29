@@ -24,7 +24,7 @@ use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::crypto::SequentialCommit;
 use miden_protocol::crypto::rand::FeltRng;
-use miden_protocol::note::NoteType;
+use miden_protocol::note::{NoteTag, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
 use miden_protocol::transaction::RawOutputNote;
 use miden_standards::account::wallets::BasicWallet;
@@ -239,6 +239,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
         sender_account.id(),
         builder.rng_mut(),
     )?;
+    assert_eq!(claim_note.metadata().tag(), NoteTag::with_account_target(bridge_account.id()));
 
     // Add the claim note to the builder before building the mock chain
     builder.add_output_note(RawOutputNote::Full(claim_note.clone()));
