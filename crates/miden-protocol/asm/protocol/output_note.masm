@@ -426,6 +426,9 @@ end
 #! Writes the attachment commitments from the note with note_idx to memory and returns the pointer
 #! to it.
 #!
+#! This procedure allocates 16 elements of memory (max num attachments * WORD_SIZE) to store all
+#! potential four attachment commitments.
+#!
 #! Inputs:  [note_index]
 #! Outputs: [num_attachments, attachments_ptr]
 #!
@@ -454,6 +457,9 @@ end
 
 #! Writes the attachment with the provided index from the note with note_idx to memory and returns
 #! the pointer to the data.
+#!
+#! This procedure allocates 1024 elements of memory (MAX_ATTACHMENT_WORDS * WORD_SIZE) to store
+#! all potential attachment elements.
 #!
 #! Inputs:  [attachment_idx, note_index]
 #! Outputs: [num_words, attachment_ptr]
