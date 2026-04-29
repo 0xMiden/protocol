@@ -594,10 +594,10 @@ async fn test_metadata_into_attachment_schemes(
     let exec_output = CodeExecutor::with_default_host().run(&code).await?;
 
     for (i, header) in attachment_headers.iter().enumerate() {
-        let expected = header.scheme().map_or(0u64, |s| s.as_u16() as u64);
+        let expected_scheme = header.scheme().as_ref().map_or(0, NoteAttachmentScheme::as_u16);
         assert_eq!(
-            exec_output.get_stack_element(i),
-            Felt::new(expected),
+            exec_output.get_stack_element(i).as_canonical_u64(),
+            u64::from(expected_scheme),
             "attachment scheme mismatch at index {i}"
         );
     }
