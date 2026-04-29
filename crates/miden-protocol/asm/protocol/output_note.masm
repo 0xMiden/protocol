@@ -380,8 +380,6 @@ end
 #! Searches the metadata header for the specified attachment scheme and if found, pipes the
 #! attachment's underlying data from the advice inputs to memory and returns the ptr to it.
 #!
-#! Pointer and num_words are zero if is_found = 0.
-#!
 #! Inputs:  [attachment_scheme, note_idx]
 #! Outputs: [is_found, num_words, attachment_ptr]
 #!

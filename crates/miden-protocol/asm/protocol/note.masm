@@ -103,9 +103,11 @@ pub proc write_attachments_to_memory
     # OS => [ATTACHMENTS_COMMITMENT, dest_ptr]
     # AS => [num_elements, [ATTACHMENT_COMMITMENT]]
 
-    # SAFETY: kernel should ensure num_elements is a multiple of WORD_SIZE = 4 and is in valid
-    # range
-    adv_push.1 u32div.WORD_SIZE
+    # SAFETY: if the provided num_elements is invalid, the commitment check would fail in
+    # pipe_preimage_to_memory so we assume validity and only do a basic u32 assertion to protect
+    # against invalid advice inputs.
+    adv_push.1 u32assert.err="invalid attachment num_elements advice input"
+    u32div.WORD_SIZE
     # OS => [num_words, ATTACHMENTS_COMMITMENT, dest_ptr]
     # AS => [[ATTACHMENT_COMMITMENT]]
 
@@ -140,8 +142,11 @@ pub proc write_attachment_to_memory
     # OS => [ATTACHMENT_COMMITMENT, dest_ptr]
     # AS => [num_elements, [ATTACHMENT_ELEMENTS]]
 
-    # read num_elements and compute num_words
-    adv_push.1 u32div.WORD_SIZE
+    # SAFETY: if the provided num_elements is invalid, the commitment check would fail in
+    # pipe_preimage_to_memory so we assume validity and only do a basic u32 assertion to protect
+    # against invalid advice inputs.
+    adv_push.1 u32assert.err="invalid attachment num_elements advice input"
+    u32div.WORD_SIZE
     # OS => [num_words, ATTACHMENT_COMMITMENT, dest_ptr]
     # AS => [[ATTACHMENT_ELEMENTS]]
 
@@ -402,6 +407,7 @@ pub proc find_attachment_idx
     movup.4 push.0 push.0
     # => [attachment_idx = 0, is_found = 0, attachment_scheme, scheme_0, scheme_1, scheme_2, scheme_3]
 
+    # iterate over the four schemes
     repeat.4
         # => [attachment_idx, is_found, attachment_scheme, scheme_n, ...]
 
