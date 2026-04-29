@@ -22,19 +22,14 @@ use crate::{CgiChainHash, EthAddress, EthAmount, ExitRoot, GlobalIndex, LeafData
 // EMBEDDED TEST VECTOR JSON FILES
 // ================================================================================================
 
-/// Claim asset test vectors JSON — contains both LeafData and ProofData from a real claimAsset
-/// transaction.
-pub const CLAIM_ASSET_VECTORS_JSON: &str =
-    include_str!("../../solidity-compat/test-vectors/claim_asset_vectors_real_tx.json");
-
 /// Bridge asset test vectors JSON — contains test data for an L1 bridgeAsset transaction.
 pub const BRIDGE_ASSET_VECTORS_JSON: &str =
-    include_str!("../../solidity-compat/test-vectors/claim_asset_vectors_local_tx.json");
+    include_str!("../../solidity-compat/test-vectors/claim_asset_vectors_l1_tx.json");
 
 /// Rollup deposit test vectors JSON — contains test data for a rollup deposit with two-level
 /// Merkle proofs.
 pub const ROLLUP_ASSET_VECTORS_JSON: &str =
-    include_str!("../../solidity-compat/test-vectors/claim_asset_vectors_rollup_tx.json");
+    include_str!("../../solidity-compat/test-vectors/claim_asset_vectors_l2_tx.json");
 
 /// Leaf data test vectors JSON from the Foundry-generated file.
 pub const LEAF_VALUE_VECTORS_JSON: &str =
@@ -227,20 +222,14 @@ pub struct MtfVectorsFile {
 // LAZY-PARSED TEST VECTORS
 // ================================================================================================
 
-/// Lazily parsed claim asset test vector from the JSON file.
-pub static CLAIM_ASSET_VECTOR: LazyLock<ClaimAssetVector> = LazyLock::new(|| {
-    serde_json::from_str(CLAIM_ASSET_VECTORS_JSON)
-        .expect("failed to parse claim asset vectors JSON")
-});
-
 /// Lazily parsed bridge asset test vector from the JSON file (locally simulated L1 transaction).
-pub static CLAIM_ASSET_VECTOR_LOCAL: LazyLock<ClaimAssetVector> = LazyLock::new(|| {
+pub static CLAIM_ASSET_VECTOR_L1: LazyLock<ClaimAssetVector> = LazyLock::new(|| {
     serde_json::from_str(BRIDGE_ASSET_VECTORS_JSON)
         .expect("failed to parse bridge asset vectors JSON")
 });
 
-/// Lazily parsed rollup deposit test vector from the JSON file.
-pub static CLAIM_ASSET_VECTOR_ROLLUP: LazyLock<ClaimAssetVector> = LazyLock::new(|| {
+/// Lazily parsed rollup deposit test vector from the JSON file (locally simulated L2 transaction).
+pub static CLAIM_ASSET_VECTOR_L2: LazyLock<ClaimAssetVector> = LazyLock::new(|| {
     serde_json::from_str(ROLLUP_ASSET_VECTORS_JSON)
         .expect("failed to parse rollup asset vectors JSON")
 });
@@ -265,24 +254,21 @@ pub static SOLIDITY_MTF_VECTORS: LazyLock<MtfVectorsFile> = LazyLock::new(|| {
 // CLAIM DATA SOURCE
 // ================================================================================================
 
-/// Identifies the source of claim data used in bridge-in tests and benchmarks.
+/// Identifies the source of simulated claim data used in bridge-in tests and benchmarks.
 #[derive(Debug, Clone, Copy)]
 pub enum ClaimDataSource {
-    /// Real on-chain claimAsset data from claim_asset_vectors_real_tx.json (L1 to Miden).
-    RealL1ToMiden,
-    /// Locally simulated bridgeAsset data from claim_asset_vectors_local_tx.json (L1 to Miden).
-    SimulatedL1ToMiden,
-    /// Rollup deposit data from claim_asset_vectors_rollup_tx.json (L2 to Miden).
-    SimulatedL2ToMiden,
+    /// Mainnet `bridgeAsset` data from `claim_asset_vectors_l1_tx.json` (L1 to Miden).
+    L1ToMiden,
+    /// Rollup deposit data from `claim_asset_vectors_l2_tx.json` (L2 to Miden).
+    L2ToMiden,
 }
 
 impl ClaimDataSource {
     /// Returns the `(ProofData, LeafData, ExitRoot, CgiChainHash)` tuple for this data source.
     pub fn get_data(self) -> (ProofData, LeafData, ExitRoot, CgiChainHash) {
         let vector = match self {
-            ClaimDataSource::RealL1ToMiden => &*CLAIM_ASSET_VECTOR,
-            ClaimDataSource::SimulatedL1ToMiden => &*CLAIM_ASSET_VECTOR_LOCAL,
-            ClaimDataSource::SimulatedL2ToMiden => &*CLAIM_ASSET_VECTOR_ROLLUP,
+            ClaimDataSource::L1ToMiden => &*CLAIM_ASSET_VECTOR_L1,
+            ClaimDataSource::L2ToMiden => &*CLAIM_ASSET_VECTOR_L2,
         };
         let ger = ExitRoot::new(
             hex_to_bytes(&vector.proof.global_exit_root).expect("valid global exit root hex"),

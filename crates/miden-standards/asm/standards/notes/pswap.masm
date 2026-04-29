@@ -409,9 +409,12 @@ end
 @locals(8)
 proc load_offered_asset
     locaddr.0 exec.active_note::get_assets
-    # => [num_assets, dest_ptr]
+    # => [num_assets]
 
     push.1 eq assert.err=ERR_PSWAP_WRONG_NUMBER_OF_ASSETS
+    # => []
+
+    locaddr.0
     # => [dest_ptr]
 
     exec.asset::load
@@ -684,12 +687,9 @@ pub proc main
 
     # Load all note storage items to memory starting at address 0
     push.STORAGE_PTR exec.active_note::get_storage
-    # => [num_storage_items, storage_ptr, account_fill_amount, note_fill_amount]
+    # => [num_storage_items, account_fill_amount, note_fill_amount]
 
     eq.NUM_STORAGE_ITEMS assert.err=ERR_PSWAP_WRONG_NUMBER_OF_STORAGE_ITEMS
-    # => [storage_ptr, account_fill_amount, note_fill_amount]
-
-    drop
     # => [account_fill_amount, note_fill_amount]
 
     dup.1 eq.0 dup.1 eq.0 and

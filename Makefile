@@ -146,11 +146,12 @@ build-no-std-testing: ## Build without the standard library. Includes the `testi
 
 .PHONY: generate-solidity-test-vectors
 generate-solidity-test-vectors: ## Regenerate Solidity test vectors using Foundry
-	cd crates/miden-agglayer/solidity-compat && forge test -vv --match-test test_generateVectors
 	cd crates/miden-agglayer/solidity-compat && forge test -vv --match-test test_generateCanonicalZeros
-	cd crates/miden-agglayer/solidity-compat && forge test -vv --match-test test_generateVerificationProofData
-	cd crates/miden-agglayer/solidity-compat && forge test -vv --match-test test_generateLeafValueVectors
 	cd crates/miden-agglayer/solidity-compat && forge test -vv --match-test test_generateClaimAssetVectors
+	cd crates/miden-agglayer/solidity-compat && forge test -vv --match-test test_generateLeafValueVectors
+	cd crates/miden-agglayer/solidity-compat && forge test -vv --match-test test_generateVerificationProofData
+	cd crates/miden-agglayer/solidity-compat && forge test -vv --match-test test_generate_MTF_vectors
+	cd crates/miden-agglayer/solidity-compat && forge test -vv --match-test test_generateExitRootVectors
 
 # --- benchmarking --------------------------------------------------------------------------------
 

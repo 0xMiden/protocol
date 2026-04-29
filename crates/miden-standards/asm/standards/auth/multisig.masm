@@ -40,7 +40,6 @@ const DEFAULT_THRESHOLD_LOC=0
 # - PROC_THRESHOLD_ROOTS_SLOT (map):
 #   PROC_ROOT => [proc_threshold, 0, 0, 0]
 
-
 # The slot in this component's storage layout where the default signature threshold and
 # number of approvers are stored as:
 # [default_threshold, num_approvers, 0, 0].
@@ -187,7 +186,7 @@ proc assert_proc_thresholds_lte_num_approvers(num_approvers: u32)
         push.PROC_THRESHOLD_ROOTS_SLOT[0..2]
         # => [proc_roots_slot_suffix, proc_roots_slot_prefix, PROC_ROOT, proc_index, num_approvers]
 
-        exec.active_account::get_map_item
+        exec.active_account::get_initial_map_item
         # => [[proc_threshold, 0, 0, 0], proc_index, num_approvers]
 
         movdn.3 drop drop drop

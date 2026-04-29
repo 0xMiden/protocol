@@ -425,13 +425,14 @@ pub async fn test_timelock() -> anyhow::Result<()> {
       pub proc main
           # store the note storage to memory starting at address 0
           push.0 exec.active_note::get_storage
-          # => [num_storage_items, storage_ptr]
+          # => [num_storage_items]
 
           # make sure the number of storage items is 1
           eq.1 assert.err="note number of storage items is not 1"
-          # => [storage_ptr]
+          # => []
 
           # read the timestamp at which the note can be consumed
+          push.0
           mem_load
           # => [timestamp]
 
