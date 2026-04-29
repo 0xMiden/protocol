@@ -5,7 +5,6 @@
 use miden::protocol::account_id
 use miden::protocol::active_account
 use miden::protocol::active_note
-use miden::protocol::note
 
 # CONSTANTS
 # ================================================================================================
@@ -14,9 +13,18 @@ use miden::protocol::note
 #! This is a valid u32 that can be compared against an extracted attachment scheme.
 pub const NETWORK_ACCOUNT_TARGET_ATTACHMENT_SCHEME = 2
 
+#! The number of words in the network account target attachment.
+pub const NETWORK_ACCOUNT_TARGET_ATTACHMENT_NUM_WORDS = 1
+
 # ERRORS
 # ================================================================================================
-const ERR_NOT_NETWORK_ACCOUNT_TARGET = "attachment is not a valid network account target"
+
+const ERR_NETWORK_ACCOUNT_TARGET_MISSING = "network account target attachment is not present on active note"
+
+const ERR_NETWORK_ACCOUNT_TARGET_INCORRECT_NUMBER_OF_WORDS = "network account target attachment must consist of exactly one word"
+
+# PROCEDURES
+# ================================================================================================
 
 #! Returns a boolean indicating whether the attachment scheme matches the expected
 #! scheme for a NetworkAccountTarget attachment.
@@ -41,15 +49,16 @@ end
 #! WARNING: This procedure does not validate that the returned account ID is well-formed.
 #! The caller should validate the account ID if needed using `account_id::validate`.
 #!
-#! Inputs:  [NOTE_ATTACHMENT]
+#! Inputs:  [NETWORK_ACCOUNT_TARGET_ATTACHMENT]
 #! Outputs: [account_id_suffix, account_id_prefix]
 #!
 #! Where:
 #! - account_id_{suffix,prefix} are the suffix and prefix felts of an account ID.
 #!
 #! Invocation: exec
-pub proc get_id
-    # => [NOTE_ATTACHMENT] = [account_id_suffix, account_id_prefix, exec_hint_tag, 0]
+pub proc into_target_id
+    # => [NETWORK_ACCOUNT_TARGET_ATTACHMENT]
+    # => [account_id_suffix, account_id_prefix, exec_hint_tag, 0]
 
     movup.2 drop movup.2 drop
     # => [account_id_suffix, account_id_prefix]
@@ -85,25 +94,29 @@ end
 #! - is_equal is a boolean indicating whether the active account matches the target account.
 #!
 #! Panics if:
-#! - the attachment is not a valid network account target.
+#! - the attachment is missing from the active note or the number of words is invalid.
 #!
 #! Invocation: exec
 pub proc active_account_matches_target_account
-    # ensure note attachment targets the consuming bridge account
-    exec.active_note::get_metadata
-    # => [NOTE_ATTACHMENT, METADATA_HEADER]
+    # find the network account target attachment, if any
+    # if there are multiple, we consider the first one the canonical one
+    push.NETWORK_ACCOUNT_TARGET_ATTACHMENT_SCHEME
+    exec.active_note::find_attachment
+    # => [is_found, num_words, attachment_ptr]
 
-    swapw
-    # => [METADATA_HEADER, NOTE_ATTACHMENT]
+    # network account target attachment must be present
+    assert.err=ERR_NETWORK_ACCOUNT_TARGET_MISSING
+    # => [num_words, attachment_ptr]
 
-    exec.note::metadata_into_attachment_header
-    # => [attachment_0_scheme, NOTE_ATTACHMENT]
+    eq.NETWORK_ACCOUNT_TARGET_ATTACHMENT_NUM_WORDS
+    assert.err=ERR_NETWORK_ACCOUNT_TARGET_INCORRECT_NUMBER_OF_WORDS
+    # => [attachment_ptr]
 
-    # ensure the attachment is a network account target
-    exec.is_network_account_target assert.err=ERR_NOT_NETWORK_ACCOUNT_TARGET
-    # => [NOTE_ATTACHMENT] = [target_id_suffix, target_id_prefix, exec_hint_tag, 0]
+    padw movup.4 mem_loadw_le
+    # => [NETWORK_ACCOUNT_TARGET_ATTACHMENT]
+    # => [target_id_suffix, target_id_prefix, exec_hint_tag, 0]
 
-    exec.get_id
+    exec.into_target_id
     # => [target_id_suffix, target_id_prefix]
 
     exec.active_account::get_id

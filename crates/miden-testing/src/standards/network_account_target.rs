@@ -17,7 +17,7 @@ use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 use crate::executor::CodeExecutor;
 
 #[tokio::test]
-async fn network_account_target_get_id() -> anyhow::Result<()> {
+async fn network_account_target_into_target_id() -> anyhow::Result<()> {
     let target_id = AccountIdBuilder::new()
         .storage_mode(AccountStorageMode::Network)
         .build_with_rng(&mut rand::rng());
@@ -46,7 +46,7 @@ async fn network_account_target_get_id() -> anyhow::Result<()> {
             # => [is_valid, NOTE_ATTACHMENT]
             assert.err=ERR_NOT_NETWORK_ACCOUNT_TARGET
             # => [NOTE_ATTACHMENT]
-            exec.network_account_target::get_id
+            exec.network_account_target::into_target_id
             # => [account_id_suffix, account_id_prefix]
             # cleanup stack
             movup.2 drop movup.2 drop
@@ -138,7 +138,7 @@ async fn network_account_target_attachment_round_trip() -> anyhow::Result<()> {
             # => [is_valid, NOTE_ATTACHMENT]
             assert.err=ERR_NOT_NETWORK_ACCOUNT_TARGET
             # => [NOTE_ATTACHMENT]
-            exec.network_account_target::get_id
+            exec.network_account_target::into_target_id
             # => [target_id_suffix, target_id_prefix]
             # cleanup stack
             movup.2 drop movup.2 drop
