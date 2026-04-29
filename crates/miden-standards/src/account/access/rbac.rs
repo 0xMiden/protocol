@@ -33,7 +33,7 @@ static ACTIVE_ROLES_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::access::rbac::active_roles")
         .expect("storage slot name should be valid")
 });
-static ROLE_CONFIGS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+static ROLE_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::access::rbac::role_config")
         .expect("storage slot name should be valid")
 });
@@ -47,7 +47,7 @@ static ROLE_MEMBER_INDEX_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(||
 });
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct RoleInit {
+pub struct RoleConfig {
     pub admin_role: Option<RoleSymbol>,
     pub members: BTreeSet<AccountId>,
 }
@@ -129,11 +129,11 @@ pub struct RoleInit {
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RoleBasedAccessControl {
-    roles: BTreeMap<RoleSymbol, RoleInit>,
+    roles: BTreeMap<RoleSymbol, RoleConfig>,
 }
 
 impl RoleBasedAccessControl {
-    pub const NAME: &'static str = "miden::standards::components::access::rbac";
+    pub const NAME: &'static str = "miden::standards::access::rbac";
 
     pub fn new() -> Self {
         Self { roles: BTreeMap::new() }
@@ -150,7 +150,7 @@ impl RoleBasedAccessControl {
         vec![Ownable2Step::new(owner).into(), Self::new().into()]
     }
 
-    pub fn roles(&self) -> &BTreeMap<RoleSymbol, RoleInit> {
+    pub fn roles(&self) -> &BTreeMap<RoleSymbol, RoleConfig> {
         &self.roles
     }
 
@@ -159,12 +159,22 @@ impl RoleBasedAccessControl {
         self
     }
 
-    pub fn with_role_admin(mut self, role: RoleSymbol, admin_role: Option<RoleSymbol>) -> Self {
-        if let Some(admin_role) = admin_role.as_ref() {
-            self.roles.entry(admin_role.clone()).or_default();
-        }
+    /// Sets `admin_role` as the delegated admin of `role`.
+    ///
+    /// Both `role` and `admin_role` are recorded in the role map; if either was not previously
+    /// configured it is created with a default (empty) configuration. To clear a previously
+    /// configured admin, use [`Self::without_role_admin`].
+    pub fn with_role_admin(mut self, role: RoleSymbol, admin_role: RoleSymbol) -> Self {
+        self.roles.entry(admin_role.clone()).or_default();
+        self.roles.entry(role).or_default().admin_role = Some(admin_role);
+        self
+    }
 
-        self.roles.entry(role).or_default().admin_role = admin_role;
+    /// Clears the delegated admin of `role`, leaving the role owner-managed.
+    ///
+    /// The role itself remains configured; only its admin assignment is removed.
+    pub fn without_role_admin(mut self, role: RoleSymbol) -> Self {
+        self.roles.entry(role).or_default().admin_role = None;
         self
     }
 
@@ -181,8 +191,8 @@ impl RoleBasedAccessControl {
         &ACTIVE_ROLES_SLOT_NAME
     }
 
-    pub fn role_configs_slot() -> &'static StorageSlotName {
-        &ROLE_CONFIGS_SLOT_NAME
+    pub fn role_config_slot() -> &'static StorageSlotName {
+        &ROLE_CONFIG_SLOT_NAME
     }
 
     pub fn role_members_slot() -> &'static StorageSlotName {
@@ -219,9 +229,9 @@ impl RoleBasedAccessControl {
         )
     }
 
-    pub fn role_configs_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+    pub fn role_config_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
         (
-            Self::role_configs_slot().clone(),
+            Self::role_config_slot().clone(),
             StorageSlotSchema::map(
                 "Per-role RBAC configuration",
                 SchemaType::role_symbol(),
@@ -256,7 +266,7 @@ impl RoleBasedAccessControl {
         let storage_schema = StorageSchema::new(vec![
             Self::state_slot_schema(),
             Self::active_roles_slot_schema(),
-            Self::role_configs_slot_schema(),
+            Self::role_config_slot_schema(),
             Self::role_members_slot_schema(),
             Self::role_member_index_slot_schema(),
         ])
@@ -282,11 +292,11 @@ impl From<RoleBasedAccessControl> for AccountComponent {
         let mut role_member_index_entries = Vec::new();
         let mut active_role_count = 0u64;
 
-        for (role_symbol, role_init) in &rbac.roles {
+        for (role_symbol, role_config) in &rbac.roles {
             let role_symbol_felt = Felt::from(role_symbol);
             let admin_role_felt =
-                role_init.admin_role.as_ref().map(Felt::from).unwrap_or(Felt::ZERO);
-            let member_count = role_init.members.len() as u64;
+                role_config.admin_role.as_ref().map(Felt::from).unwrap_or(Felt::ZERO);
+            let member_count = role_config.members.len() as u64;
             let active_role_index = if member_count > 0 {
                 let active_index = active_role_count;
                 active_role_entries.push((
@@ -319,7 +329,7 @@ impl From<RoleBasedAccessControl> for AccountComponent {
                 ]),
             ));
 
-            for (member_index, member) in role_init.members.iter().enumerate() {
+            for (member_index, member) in role_config.members.iter().enumerate() {
                 role_member_entries.push((
                     StorageMapKey::from_raw(Word::from([
                         Felt::ZERO,
@@ -360,8 +370,8 @@ impl From<RoleBasedAccessControl> for AccountComponent {
             StorageMap::with_entries(active_role_entries)
                 .expect("active role entries should be unique"),
         );
-        let role_configs_slot = StorageSlot::with_map(
-            RoleBasedAccessControl::role_configs_slot().clone(),
+        let role_config_slot = StorageSlot::with_map(
+            RoleBasedAccessControl::role_config_slot().clone(),
             StorageMap::with_entries(role_config_entries)
                 .expect("role config entries should be unique"),
         );
@@ -381,7 +391,7 @@ impl From<RoleBasedAccessControl> for AccountComponent {
             vec![
                 state_slot,
                 active_roles_slot,
-                role_configs_slot,
+                role_config_slot,
                 role_members_slot,
                 role_member_index_slot,
             ],

@@ -18,7 +18,7 @@ const ACTIVE_ROLES_SLOT = word("miden::standards::access::rbac::active_roles")
 # Per-role config map slot.
 # Map entries: [0, 0, 0, role_symbol] ->
 #   [member_count, admin_role_symbol, active_role_index, 0]
-const ROLE_CONFIGS_SLOT = word("miden::standards::access::rbac::role_config")
+const ROLE_CONFIG_SLOT = word("miden::standards::access::rbac::role_config")
 
 # Per-role member enumeration map slot.
 # Map entries: [0, 0, role_symbol, member_index] -> [account_suffix, account_prefix, 0, 0]
@@ -461,7 +461,7 @@ proc get_role_config
     push.0.0.0
     # => [0, 0, 0, role_symbol]
 
-    push.ROLE_CONFIGS_SLOT[0..2]
+    push.ROLE_CONFIG_SLOT[0..2]
     # => [slot_suffix, slot_prefix, 0, 0, 0, role_symbol]
 
     exec.active_account::get_map_item
@@ -491,7 +491,7 @@ proc set_role_config
     push.0.0.0
     # => [0, 0, 0, role_symbol, member_count, admin_role_symbol, active_role_index, 0]
 
-    push.ROLE_CONFIGS_SLOT[0..2]
+    push.ROLE_CONFIG_SLOT[0..2]
     # => [slot_suffix, slot_prefix, 0, 0, 0, role_symbol, member_count, admin_role_symbol, active_role_index, 0]
 
     exec.native_account::set_map_item
@@ -635,7 +635,7 @@ end
 #! 1. Append `[active_role_count] -> role_symbol` to the active roles map at the next
 #!    free index (which equals the current `active_role_count`).
 #! 2. Increment the `active_role_count` stored in `RBAC_STATE_SLOT` by one.
-#! 3. Update the role's config in `ROLE_CONFIGS_SLOT` to record `member_count = 1`
+#! 3. Update the role's config in `ROLE_CONFIG_SLOT` to record `member_count = 1`
 #!    and its new `active_role_index`.
 #!
 #! This procedure does not check whether the role is already active. The caller

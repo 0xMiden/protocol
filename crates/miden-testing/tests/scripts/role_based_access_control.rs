@@ -106,7 +106,7 @@ fn get_owner(account: &Account) -> anyhow::Result<Option<AccountId>> {
 fn get_role_config(account: &Account, role: &RoleSymbol) -> anyhow::Result<Word> {
     Ok(account
         .storage()
-        .get_map_item(RoleBasedAccessControl::role_configs_slot(), role_config_key(role))?)
+        .get_map_item(RoleBasedAccessControl::role_config_slot(), role_config_key(role))?)
 }
 
 fn get_active_role_count(account: &Account) -> anyhow::Result<u64> {

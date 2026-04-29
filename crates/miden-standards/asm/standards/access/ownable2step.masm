@@ -40,13 +40,6 @@ const ERR_SENDER_NOT_NOMINATED_OWNER = "note sender is not the nominated owner"
 const ERR_NO_NOMINATED_OWNER = "no nominated ownership transfer exists"
 const ERR_OWNERSHIP_TRANSFER_IN_PROGRESS = "ownership transfer is in progress"
 
-# LOCAL MEMORY ADDRESSES
-# ================================================================================================
-
-# transfer_ownership locals
-const NEW_OWNER_SUFFIX_LOC = 0
-const NEW_OWNER_PREFIX_LOC = 1
-
 # INTERNAL PROCEDURES
 # ================================================================================================
 
@@ -250,12 +243,7 @@ end
 #! - the note sender is not the owner.
 #! - new_owner is non-zero and the account ID is invalid.
 #!
-#! Locals:
-#! 0: new_owner_suffix
-#! 1: new_owner_prefix
-#!
 #! Invocation: call
-@locals(2)
 pub proc transfer_ownership
     exec.assert_sender_is_owner_internal
     # => [new_owner_suffix, new_owner_prefix, pad(14)]
@@ -278,16 +266,6 @@ pub proc transfer_ownership
     else
         # Non-zero new owner: validate and store as the nominated owner.
         dup.1 dup.1 exec.account_id::validate
-        # => [new_owner_suffix, new_owner_prefix, pad(14)]
-
-        loc_store.NEW_OWNER_SUFFIX_LOC
-        # => [new_owner_prefix, pad(14)]
-
-        loc_store.NEW_OWNER_PREFIX_LOC
-        # => [pad(14)]
-
-        # Build save stack: [owner_suffix, owner_prefix, new_owner_suffix, new_owner_prefix].
-        loc_load.NEW_OWNER_PREFIX_LOC loc_load.NEW_OWNER_SUFFIX_LOC
         # => [new_owner_suffix, new_owner_prefix, pad(14)]
 
         exec.get_owner_internal

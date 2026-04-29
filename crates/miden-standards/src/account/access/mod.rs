@@ -10,7 +10,7 @@ pub mod rbac;
 ///
 /// Each variant expands into the set of [`AccountComponent`]s that implement that access
 /// control choice. Single-component variants like [`AccessControl::Ownable2Step`] expand
-/// to one component; composite variants like [`AccessControl::RBAC`] expand to multiple
+/// to one component; composite variants like [`AccessControl::Rbac`] expand to multiple
 /// components in the order they must be installed (RBAC depends on
 /// [`ownable2step::Ownable2Step`], so the latter is included alongside it).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -19,17 +19,25 @@ pub enum AccessControl {
     Ownable2Step { owner: AccountId },
     /// Role-based access control. Includes [`Ownable2Step`] internally; the provided
     /// `owner` becomes the top-level RBAC authority (the account's owner).
-    RBAC { owner: AccountId },
+    Rbac { owner: AccountId },
+}
+
+impl AccessControl {
+    /// Returns the [`AccountComponent`]s implementing this access control configuration,
+    /// in the order they must be installed on the account.
+    pub fn into_components(self) -> Vec<AccountComponent> {
+        self.into()
+    }
 }
 
 impl From<AccessControl> for Vec<AccountComponent> {
     fn from(access_control: AccessControl) -> Self {
         match access_control {
             AccessControl::Ownable2Step { owner } => vec![Ownable2Step::new(owner).into()],
-            AccessControl::RBAC { owner } => RoleBasedAccessControl::with_owner(owner),
+            AccessControl::Rbac { owner } => RoleBasedAccessControl::with_owner(owner),
         }
     }
 }
 
 pub use ownable2step::{Ownable2Step, Ownable2StepError};
-pub use rbac::{RoleBasedAccessControl, RoleInit};
+pub use rbac::{RoleBasedAccessControl, RoleConfig};
