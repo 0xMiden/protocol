@@ -337,6 +337,41 @@ pub proc metadata_into_attachment_header
     # [attachment_0_scheme]
 end
 
+#! Extracts the attachment's schemes from the provided metadata header.
+#!
+#! Inputs:  [METADATA_HEADER]
+#! Outputs: [attachment_0_scheme, attachment_1_scheme, attachment_2_scheme, attachment_3_scheme]
+#!
+#! Where:
+#! - METADATA_HEADER is the metadata word of a note.
+#! - attachment_n_scheme is the scheme of the nth attachment (0 if absent).
+#!
+#! Invocation: exec
+pub proc metadata_into_attachment_schemes
+    # => [sender_id_suffix_type_version, sender_id_prefix, tag, schemes]
+
+    drop drop drop
+    # => [schemes]
+
+    u32split swap
+    # => [schemes_hi, schemes_lo]
+
+    # extract attachment scheme 3 from bits 48..64
+    dup u32and.0xffff0000 u32shr.16
+    # => [attachment_3_scheme, schemes_hi, schemes_lo]
+
+    # extract attachment scheme 2 from bits 32..48
+    swap u32and.0xffff
+    # => [attachment_2_scheme, attachment_3_scheme, schemes_lo]
+
+    # extract attachment scheme 1 from bits 16..32
+    dup.2 u32and.0xffff0000 u32shr.16
+    # => [attachment_1_scheme, attachment_2_scheme, attachment_3_scheme, schemes_lo]
+
+    movup.3 u32and.0xffff
+    # => [attachment_0_scheme, attachment_1_scheme, attachment_2_scheme, attachment_3_scheme]
+end
+
 #! Extracts the note type from the provided metadata header.
 #!
 #! The note type is encoded as a single bit at the 4th position from the right side (LSB) of the

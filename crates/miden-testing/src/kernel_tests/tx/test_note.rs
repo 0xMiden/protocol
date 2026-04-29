@@ -13,6 +13,8 @@ use miden_protocol::errors::MasmError;
 use miden_protocol::note::{
     Note,
     NoteAssets,
+    NoteAttachmentHeader,
+    NoteAttachmentScheme,
     NoteAttachments,
     NoteMetadata,
     NoteMetadataHeader,
@@ -35,6 +37,7 @@ use miden_standards::testing::note::NoteBuilder;
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 
+use crate::executor::CodeExecutor;
 use crate::kernel_tests::tx::{ExecutionOutputExt, input_note_data_ptr};
 use crate::{
     Auth,
@@ -535,5 +538,69 @@ async fn test_public_key_as_note_input() -> anyhow::Result<()> {
         .build()?;
 
     tx_context.execute().await?;
+    Ok(())
+}
+
+#[rstest::rstest]
+#[case::all_present(
+    [
+        NoteAttachmentHeader::new(NoteAttachmentScheme::new_const(2)),
+        NoteAttachmentHeader::new(NoteAttachmentScheme::new_const(10000)),
+        NoteAttachmentHeader::new(NoteAttachmentScheme::new_const(0xfffe)),
+        NoteAttachmentHeader::new(NoteAttachmentScheme::new_const(42)),
+    ]
+)]
+#[case::first_only(
+    [
+        NoteAttachmentHeader::new(NoteAttachmentScheme::new_const(0x0fff)),
+        NoteAttachmentHeader::new(NoteAttachmentScheme::new_const(0xfffe)),
+        NoteAttachmentHeader::absent(),
+        NoteAttachmentHeader::absent(),
+    ]
+)]
+#[case::all_absent(
+    [
+        NoteAttachmentHeader::absent(),
+        NoteAttachmentHeader::absent(),
+        NoteAttachmentHeader::absent(),
+        NoteAttachmentHeader::absent(),
+    ]
+)]
+#[tokio::test]
+async fn test_metadata_into_attachment_schemes(
+    #[case] attachment_headers: [NoteAttachmentHeader; 4],
+) -> anyhow::Result<()> {
+    let sender = AccountId::try_from(ACCOUNT_ID_SENDER).unwrap();
+    let metadata = NoteMetadata::new(sender, NoteType::Public).with_tag(NoteTag::new(0));
+    let metadata_header =
+        NoteMetadataHeader::from_parts(metadata, attachment_headers, Word::default());
+    let metadata_word = metadata_header.to_metadata_word();
+
+    let code = format!(
+        "
+        use miden::protocol::note
+
+        begin
+            push.{metadata_word}
+            exec.note::metadata_into_attachment_schemes
+            # => [scheme0, scheme1, scheme2, scheme3, pad(16)]
+
+            # truncate the stack
+            swapw dropw
+        end
+        ",
+    );
+
+    let exec_output = CodeExecutor::with_default_host().run(&code).await?;
+
+    for (i, header) in attachment_headers.iter().enumerate() {
+        let expected = header.scheme().map_or(0u64, |s| s.as_u16() as u64);
+        assert_eq!(
+            exec_output.get_stack_element(i),
+            Felt::new(expected),
+            "attachment scheme mismatch at index {i}"
+        );
+    }
+
     Ok(())
 }
