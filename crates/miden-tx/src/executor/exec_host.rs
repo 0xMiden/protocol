@@ -22,7 +22,7 @@ use miden_protocol::assembly::{SourceFile, SourceManagerSync, SourceSpan};
 use miden_protocol::asset::{AssetVaultKey, AssetWitness, FungibleAsset};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::merkle::smt::SmtProof;
-use miden_protocol::note::{NoteMetadata, NoteRecipient, NoteScript, NoteStorage};
+use miden_protocol::note::{NoteMetadata, NoteRecipient, NoteScript, NoteScriptRoot, NoteStorage};
 use miden_protocol::transaction::{
     InputNote,
     InputNotes,
@@ -387,6 +387,7 @@ where
         serial_num: Word,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
         // Resolve standard note scripts directly, avoiding a data store round-trip.
+        let script_root = NoteScriptRoot::from_raw(script_root);
         let note_script: Option<NoteScript> =
             if let Some(standard_note) = StandardNote::from_script_root(script_root) {
                 Some(standard_note.script())
@@ -414,7 +415,7 @@ where
                 self.base_host.output_note_from_recipient(note_idx, metadata, recipient)?;
 
                 Ok(vec![AdviceMutation::extend_map(AdviceMap::from_iter([(
-                    script_root,
+                    Word::from(script_root),
                     script_felts,
                 )]))])
             },
@@ -428,7 +429,8 @@ where
                 Ok(Vec::new())
             },
             None => Err(TransactionKernelError::other(format!(
-                "note script with root {script_root} not found in data store for public note"
+                "note script with root {} not found in data store for public note",
+                Word::from(script_root),
             ))),
         }
     }

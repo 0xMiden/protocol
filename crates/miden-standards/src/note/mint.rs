@@ -11,6 +11,7 @@ use miden_protocol::note::{
     NoteMetadata,
     NoteRecipient,
     NoteScript,
+    NoteScriptRoot,
     NoteStorage,
     NoteTag,
     NoteType,
@@ -56,7 +57,7 @@ impl MintNote {
     }
 
     /// Returns the MINT note script root.
-    pub fn script_root() -> Word {
+    pub fn script_root() -> NoteScriptRoot {
         MINT_SCRIPT.root()
     }
 

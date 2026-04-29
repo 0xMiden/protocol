@@ -18,7 +18,7 @@ use miden_protocol::assembly::{Assembler, SourceManager, SourceManagerSync};
 use miden_protocol::asset::{Asset, AssetVaultKey, AssetWitness};
 use miden_protocol::block::account_tree::AccountWitness;
 use miden_protocol::block::{BlockHeader, BlockNumber};
-use miden_protocol::note::{Note, NoteScript};
+use miden_protocol::note::{Note, NoteScript, NoteScriptRoot};
 use miden_protocol::transaction::{
     AccountInputs,
     ExecutedTransaction,
@@ -61,7 +61,7 @@ pub struct TransactionContext {
     pub(super) mast_store: TransactionMastStore,
     pub(super) authenticator: Option<BasicAuthenticator>,
     pub(super) source_manager: Arc<dyn SourceManagerSync>,
-    pub(super) note_scripts: BTreeMap<Word, NoteScript>,
+    pub(super) note_scripts: BTreeMap<NoteScriptRoot, NoteScript>,
     pub(super) is_lazy_loading_enabled: bool,
     pub(super) is_debug_mode_enabled: bool,
 }
@@ -387,7 +387,7 @@ impl DataStore for TransactionContext {
 
     fn get_note_script(
         &self,
-        script_root: Word,
+        script_root: NoteScriptRoot,
     ) -> impl FutureMaybeSend<Result<Option<NoteScript>, DataStoreError>> {
         async move { Ok(self.note_scripts.get(&script_root).cloned()) }
     }
@@ -448,8 +448,12 @@ mod tests {
         assert_eq!(retrieved_script2, note_script2);
 
         // Fetching a non-existent one returns None
-        let non_existent_root =
-            Word::from([Felt::new(1), Felt::new(2), Felt::new(3), Felt::new(4)]);
+        let non_existent_root = NoteScriptRoot::from_raw(Word::from([
+            Felt::new(1),
+            Felt::new(2),
+            Felt::new(3),
+            Felt::new(4),
+        ]));
         let result = tx_context.get_note_script(non_existent_root).await;
         assert!(matches!(result, Ok(None)));
     }
