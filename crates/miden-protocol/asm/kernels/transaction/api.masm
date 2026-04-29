@@ -42,6 +42,8 @@ const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_SCRIPT_ROOT_WHILE_NO_NOTE_BEING_PROCESSED=
 
 const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_SERIAL_NUMBER_WHILE_NO_NOTE_BEING_PROCESSED="failed to access note serial number of active note because no note is currently being processed"
 
+const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_ATTACHMENTS_WHILE_NO_NOTE_BEING_PROCESSED="failed to access note attachments of active note because no note is currently being processed"
+
 const ERR_FOREIGN_ACCOUNT_PROCEDURE_ROOT_IS_ZERO="root of the provided foreign procedure equals zero indicating that tx_prepare_fpi was not called"
 
 const ERR_FOREIGN_ACCOUNT_ID_IS_ZERO="ID of the provided foreign account equals zero indicating that tx_prepare_fpi was not called"
@@ -1100,6 +1102,46 @@ pub proc input_note_get_script_root
         movup.4 drop
     end
     # => [SCRIPT_ROOT, pad(12)]
+end
+
+#! Returns the attachments commitment of the specified input note.
+#!
+#! Inputs:  [is_active_note, note_index, pad(14)]
+#! Outputs: [ATTACHMENTS_COMMITMENT, pad(12)]
+#!
+#! Where:
+#! - is_active_note is the boolean flag indicating whether we should return the attachments
+#!   commitment from the active note or from the note with the specified index.
+#! - note_index is the index of the input note whose attachments commitment should be returned.
+#!   Notice that if is_active_note is 1, note_index is ignored.
+#! - ATTACHMENTS_COMMITMENT is the commitment to all attachments of the specified input note.
+#!
+#! Panics if:
+#! - the note index is greater or equal to the total number of input notes.
+#! - is_active_note is 1 and no input note is not being processed (attempted to access note
+#!   attachments from incorrect context).
+#!
+#! Invocation: dynexec
+pub proc input_note_get_attachments_commitment
+    # get the input note pointer depending on whether the requested note is current or it was
+    # requested by index.
+    exec.get_requested_note_ptr
+    # => [input_note_ptr, pad(15)]
+
+    # assert the pointer is not zero - this would suggest the procedure has been called from an
+    # incorrect context
+    dup neq.0 assert.err=ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_ATTACHMENTS_WHILE_NO_NOTE_BEING_PROCESSED
+    # => [input_note_ptr, pad(15)]
+
+    # get the attachments commitment
+    exec.memory::get_input_note_attachments_commitment
+    # => [ATTACHMENTS_COMMITMENT, pad(15)]
+
+    # truncate the stack
+    repeat.3
+        movup.4 drop
+    end
+    # => [ATTACHMENTS_COMMITMENT, pad(12)]
 end
 
 # OUTPUT NOTE

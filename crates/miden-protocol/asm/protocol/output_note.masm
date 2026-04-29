@@ -394,6 +394,7 @@ end
 #! - attachment_ptr is the pointer to the attachment elements.
 #!
 #! Pancis if:
+#! - the note index is greater or equal to the total number of output notes.
 #! - the sequential hash over the attachment commitments in the advice inputs does not match the
 #!   attachments commitment.
 pub proc find_attachment
@@ -458,16 +459,13 @@ end
 #! Writes the attachment with the provided index from the note with note_idx to memory and returns
 #! the pointer to the data.
 #!
-#! This procedure allocates 1024 elements of memory (MAX_ATTACHMENT_WORDS * WORD_SIZE) to store
-#! all potential attachment elements.
-#!
 #! Inputs:  [attachment_idx, note_index]
 #! Outputs: [num_words, attachment_ptr]
 #!
 #! Where:
 #! - attachment_idx is the index of the attachment to retrieve.
 #! - note_index is the index of the output note.
-#! - attachment_ptr is a pointer to the attachment data written to local memory.
+#! - attachment_ptr is a pointer to the attachment data written to memory.
 #! - num_words is the number of words in the attachment.
 #!
 #! Panics if:
@@ -477,7 +475,6 @@ end
 #!   attachment commitment.
 #!
 #! Invocation: exec
-@locals(1024)
 pub proc get_attachment
     # get the attachment commitments for the note
     swap exec.get_attachment_commitments

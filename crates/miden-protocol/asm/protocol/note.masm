@@ -157,6 +157,9 @@ end
 #! Writes the attachment with the provided index from the provided attachments to memory and
 #! returns the pointer to the attachment elements.
 #!
+#! This procedure allocates 1024 elements of memory (MAX_ATTACHMENT_WORDS * WORD_SIZE) to store
+#! all potential attachment elements.
+#!
 #! Inputs:  [num_attachments, attachments_ptr, attachment_idx]
 #! Outputs: [num_words, attachment_ptr]
 #!

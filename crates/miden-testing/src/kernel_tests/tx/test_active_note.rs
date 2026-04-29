@@ -9,6 +9,8 @@ use miden_protocol::errors::tx_kernel::ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_METADATA_
 use miden_protocol::note::{
     Note,
     NoteAssets,
+    NoteAttachment,
+    NoteAttachmentScheme,
     NoteMetadata,
     NoteRecipient,
     NoteStorage,
@@ -25,6 +27,8 @@ use miden_protocol::transaction::memory::{ASSET_SIZE, ASSET_VALUE_OFFSET};
 use miden_protocol::{EMPTY_WORD, Felt, ONE, WORD_SIZE, Word};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::mock_account::MockAccountExt;
+use miden_standards::testing::note::NoteBuilder;
+use rstest::rstest;
 
 use crate::kernel_tests::tx::ExecutionOutputExt;
 use crate::utils::create_public_p2any_note;
@@ -611,5 +615,118 @@ async fn test_active_note_get_script_root() -> anyhow::Result<()> {
 
     let script_root = tx_context.input_notes().get_note(0).note().script().root();
     assert_eq!(exec_output.get_stack_word(0), script_root);
+    Ok(())
+}
+
+/// Tests `{input_note, active_note}::find_attachment` for both the found and not-found cases.
+///
+/// Setup: create an input note with two word attachments (schemes 10 and 20), then call
+/// `find_attachment` on the active/input note.
+///
+/// - `found`:     search for scheme 10 → is_found=1, attachment data is returned.
+/// - `not_found`: search for scheme 99 → is_found=0, ptr=0, num_words=0.
+#[rstest]
+#[case::active_note_scheme_found(None, "active_note", 10, true)]
+#[case::active_note_scheme_not_found(None, "active_note", 99, false)]
+// uses note index 1
+#[case::input_note_scheme_found(Some(1), "input_note", 10, true)]
+// uses note index 1
+#[case::input_note_scheme_not_found(Some(1), "input_note", 99, false)]
+#[tokio::test]
+async fn test_note_find_attachment(
+    #[case] note_idx: Option<u8>,
+    #[case] module_under_test: &str,
+    #[case] search_scheme: u16,
+    #[case] expected_found: bool,
+) -> anyhow::Result<()> {
+    let tx_context = {
+        let account =
+            Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
+
+        let word_0 = Word::from([3, 4, 5, 6u32]);
+        let word_1 = Word::from([7, 8, 9, 10u32]);
+        let scheme_0 = NoteAttachmentScheme::new(10)?;
+        let scheme_1 = NoteAttachmentScheme::new(20)?;
+
+        let mut rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
+        // Add a random first note so we test with note_index != 0.
+        let input_note0 = NoteBuilder::new(account.id(), &mut rng).build()?;
+        let input_note1 = NoteBuilder::new(account.id(), &mut rng)
+            .note_type(NoteType::Public)
+            .attachment(NoteAttachment::new_word(scheme_0, word_0))
+            .attachment(NoteAttachment::new_word(scheme_1, word_1))
+            .build()?;
+
+        TransactionContextBuilder::new(account)
+            .extend_input_notes(vec![input_note0, input_note1])
+            .build()?
+    };
+    assert_eq!(tx_context.tx_inputs().input_notes().num_notes(), 2);
+
+    let word_0 = Word::from([3, 4, 5, 6u32]);
+
+    let push_note_index = match note_idx {
+        Some(idx) => format!("push.{idx}"),
+        // for active_note module, we don't need to push anything
+        None => "".into(),
+    };
+
+    let code = format!(
+        r#"
+        use $kernel::prologue
+        use $kernel::note->note_internal
+        use miden::protocol::active_note
+        use miden::protocol::input_note
+
+        begin
+            exec.prologue::prepare_transaction
+            exec.note_internal::increment_active_input_note_ptr drop
+            # prepare note 1
+            exec.note_internal::prepare_note
+            dropw dropw dropw dropw
+
+            # push note index, if any
+            {push_note_index}
+            # search for the target scheme on the active note
+            push.{search_scheme}
+            # => [attachment_scheme]
+            exec.{module_under_test}::find_attachment
+            # => [is_found, num_words, attachment_ptr]
+
+            # assert is_found matches expectation
+            push.{expected_found}
+            assert_eq.err="is_found mismatch"
+            # => [num_words, attachment_ptr]
+
+            push.{expected_found}
+            if.true
+                # found path: verify num_words == 1 (word attachment)
+                eq.1 assert.err="expected num_words=1"
+                # => [attachment_ptr]
+
+                # read the word from memory and assert it matches
+                padw movup.4 mem_loadw_le
+                # => [ATTACHMENT_WORD]
+
+                push.{EXPECTED_WORD}
+                assert_eqw.err="attachment data mismatch"
+                # => []
+            else
+                # not-found path: verify num_words=0 and ptr=0
+                eq.0 assert.err="expected num_words=0"
+                eq.0 assert.err="expected attachment_ptr=0"
+                # => []
+            end
+
+            # truncate the stack
+            swapw dropw
+        end
+        "#,
+        expected_found = expected_found as u8,
+        EXPECTED_WORD = word_0,
+    );
+
+    tx_context.execute_code(&code).await?;
+
     Ok(())
 }

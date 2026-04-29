@@ -4,6 +4,7 @@ use miden::protocol::kernel_proc_offsets::INPUT_NOTE_GET_METADATA_OFFSET
 use miden::protocol::kernel_proc_offsets::INPUT_NOTE_GET_STORAGE_INFO_OFFSET
 use miden::protocol::kernel_proc_offsets::INPUT_NOTE_GET_SCRIPT_ROOT_OFFSET
 use miden::protocol::kernel_proc_offsets::INPUT_NOTE_GET_SERIAL_NUMBER_OFFSET
+use miden::protocol::kernel_proc_offsets::INPUT_NOTE_GET_ATTACHMENTS_COMMITMENT_OFFSET
 use miden::protocol::note
 
 # PROCEDURES
@@ -306,4 +307,175 @@ pub proc get_serial_number
     # clean the stack
     swapdw dropw dropw swapw dropw
     # => [SERIAL_NUMBER]
+end
+
+# ATTACHMENTS
+# =================================================================================================
+
+#! Returns the commitment over all attachments of the input note with the specified index.
+#!
+#! Inputs:  [note_index]
+#! Outputs: [ATTACHMENTS_COMMITMENT]
+#!
+#! Where:
+#! - note_index is the index of the input note whose attachments commitment should be returned.
+#! - ATTACHMENTS_COMMITMENT is the commitment to all attachments of the note.
+#!
+#! Panics if:
+#! - the note index is greater or equal to the total number of input notes.
+#!
+#! Invocation: exec
+pub proc get_attachments_commitment
+    push.0
+    # => [is_active_note = 0, note_index]
+
+    exec.get_attachments_commitment_raw
+    # => [ATTACHMENTS_COMMITMENT]
+end
+
+#! Writes the attachment commitments of the note identified by the is_active_note flag to memory
+#! and returns the pointer to the data.
+#!
+#! This is the shared implementation used by both `input_note::get_attachment_commitments` and
+#! `active_note::get_attachment_commitments`.
+#!
+#! Inputs:  [is_active_note, note_index]
+#! Outputs: [ATTACHMENTS_COMMITMENT]
+#!
+#! Where:
+#! - is_active_note is 0 for indexed access, 1 for the currently active note.
+#! - note_index is the index of the input note (ignored when is_active_note = 1).
+#! - ATTACHMENTS_COMMITMENT is the commitment to all attachments of the note.
+#!
+#! Panics if:
+#! - the note index is greater or equal to the total number of input notes.
+#!
+#! Invocation: exec
+pub proc get_attachments_commitment_raw
+    push.0 movdn.2
+    # => [is_active_note, note_index, 0]
+
+    push.INPUT_NOTE_GET_ATTACHMENTS_COMMITMENT_OFFSET
+    # => [offset, is_active_note, note_index, 0]
+
+    padw swapw padw padw swapdw
+    # => [offset, is_active_note, note_index, pad(13)]
+
+    syscall.exec_kernel_proc
+    # => [ATTACHMENTS_COMMITMENT, pad(12)]
+
+    # clean the stack, keeping only the commitment
+    swapdw dropw dropw swapw dropw
+    # => [ATTACHMENTS_COMMITMENT]
+end
+
+#! Writes the attachment commitments of the input note with the specified index to memory and
+#! returns the pointer to the data.
+#!
+#! This procedure allocates 16 elements of memory (max num attachments * WORD_SIZE) to store all
+#! potential four attachment commitments.
+#!
+#! Inputs:  [note_index]
+#! Outputs: [num_attachments, attachments_ptr]
+#!
+#! Where:
+#! - note_index is the index of the input note.
+#! - num_attachments is the number of attachments in the note.
+#! - attachments_ptr is a pointer to the attachment commitments written to local memory.
+#!
+#! Panics if:
+#! - the note index is greater or equal to the total number of input notes.
+#! - the sequential hash over the attachment commitments in the advice inputs does not match the
+#!   attachments commitment.
+#!
+#! Invocation: exec
+@locals(16)
+pub proc get_attachment_commitments
+    exec.get_attachments_commitment
+    # => [ATTACHMENTS_COMMITMENT]
+
+    locaddr.0 movdn.4
+    # => [ATTACHMENTS_COMMITMENT, dest_ptr]
+
+    exec.note::write_attachments_to_memory
+    # => [num_attachments]
+
+    locaddr.0 swap
+    # => [num_attachments, dest_ptr]
+end
+
+#! Writes the attachment with the provided index from the input note with the specified index
+#! to memory and returns the pointer to the data.
+#!
+#! Inputs:  [attachment_idx, note_index]
+#! Outputs: [num_words, attachment_ptr]
+#!
+#! Where:
+#! - attachment_idx is the index of the attachment to retrieve.
+#! - note_index is the index of the input note.
+#! - attachment_ptr is a pointer to the attachment data written to local memory.
+#! - num_words is the number of words in the attachment.
+#!
+#! Panics if:
+#! - the note index is greater or equal to the total number of input notes.
+#! - the attachment index is greater or equal to the number of attachments.
+#! - the sequential hash over the attachment data in the advice inputs does not match the
+#!   attachment commitment.
+#!
+#! Invocation: exec
+pub proc get_attachment
+    # get the attachment commitments for the note
+    swap exec.get_attachment_commitments
+    # => [num_attachments, attachments_ptr, attachment_idx]
+
+    exec.note::get_attachment
+    # => [num_words, attachment_ptr]
+end
+
+#! Searches the metadata header of the input note for the specified attachment scheme and if
+#! found, pipes the attachment's underlying data from the advice inputs to memory and returns
+#! the ptr to it.
+#!
+#! Inputs:  [attachment_scheme, note_index]
+#! Outputs: [is_found, num_words, attachment_ptr]
+#!
+#! Where:
+#! - attachment_scheme is the scheme of the attachment to find.
+#! - note_index is the index of the input note.
+#! - attachment_ptr is the pointer to the attachment data written to memory.
+#! - num_words is the number of words in the attachment.
+#! - is_found is 1 if the attachment with the provided scheme was found, 0 otherwise.
+#!
+#! Panics if:
+#! - the note index is greater or equal to the total number of input notes.
+#! - the sequential hash over the attachment commitments in the advice inputs does not match the
+#!   attachments commitment.
+#!
+#! Invocation: exec
+pub proc find_attachment
+    dup.1
+    # => [note_index, attachment_scheme, note_index]
+
+    exec.get_metadata
+    dropw
+    # => [METADATA_HEADER, attachment_scheme, note_index]
+    debug.stack.4
+
+    movup.4
+    # => [attachment_scheme, METADATA_HEADER, note_index]
+
+    exec.note::find_attachment_idx
+    # => [is_found, attachment_idx, note_index]
+
+    if.true
+        exec.get_attachment
+        # => [num_words, attachment_ptr]
+
+        push.1
+        # => [is_found = 1, num_words, attachment_ptr]
+    else
+        drop drop push.0.0.0
+        # => [is_found = 0, num_words = 0, attachment_ptr = 0]
+    end
+    # => [is_found, num_words, attachment_ptr]
 end
