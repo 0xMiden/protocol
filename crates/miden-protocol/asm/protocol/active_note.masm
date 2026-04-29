@@ -145,11 +145,10 @@ end
 #! Returns the metadata of the active note.
 #!
 #! Inputs:  []
-#! Outputs: [NOTE_ATTACHMENT, METADATA_HEADER]
+#! Outputs: [METADATA_HEADER]
 #!
 #! Where:
-#! - METADATA_HEADER is the metadata header of the specified input note.
-#! - NOTE_ATTACHMENT is the attachment of the specified input note.
+#! - METADATA_HEADER is the metadata header of the active note.
 #!
 #! Panics if:
 #! - no note is currently active.
@@ -168,11 +167,11 @@ pub proc get_metadata
     # => [offset, is_active_note = 1, pad(14)]
 
     syscall.exec_kernel_proc
-    # => [NOTE_ATTACHMENT, METADATA_HEADER, pad(8)]
+    # => [METADATA_HEADER, pad(12)]
 
     # clean the stack
-    swapdw dropw dropw
-    # => [NOTE_ATTACHMENT, METADATA_HEADER]
+    swapdw dropw dropw swapw dropw
+    # => [METADATA_HEADER]
 end
 
 #! Returns the sender of the active note.
@@ -188,8 +187,7 @@ end
 #!
 #! Invocation: exec
 pub proc get_sender
-    # get metadata and drop attachment
-    exec.get_metadata dropw
+    exec.get_metadata
     # => [METADATA_HEADER]
 
     # extract the sender ID from the metadata header
@@ -453,7 +451,6 @@ end
 #! Invocation: exec
 pub proc find_attachment
     exec.get_metadata
-    dropw
     # => [METADATA_HEADER, attachment_scheme]
 
     movup.4

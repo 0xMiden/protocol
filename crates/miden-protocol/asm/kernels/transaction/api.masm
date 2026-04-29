@@ -7,7 +7,6 @@ use $kernel::input_note
 use $kernel::memory
 use $kernel::output_note
 use $kernel::tx
-use $kernel::constants::WORD_SIZE
 
 use $kernel::memory::UPCOMING_FOREIGN_PROCEDURE_PTR
 use $kernel::memory::UPCOMING_FOREIGN_PROC_INPUT_VALUE_15_PTR
@@ -913,7 +912,7 @@ end
 #! Returns the metadata of the specified input note.
 #!
 #! Inputs:  [is_active_note, note_index, pad(14)]
-#! Outputs: [NOTE_ATTACHMENT_0, METADATA_HEADER, pad(8)]
+#! Outputs: [METADATA_HEADER, pad(12)]
 #!
 #! Where:
 #! - is_active_note is the boolean flag indicating whether we should return the metadata from
@@ -921,7 +920,6 @@ end
 #! - note_index is the index of the input note whose metadata should be returned. Notice that if
 #!   is_active_note is 1, note_index is ignored.
 #! - METADATA_HEADER is the metadata header of the specified input note.
-#! - NOTE_ATTACHMENT_0 is the first attachment of the specified input note.
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of input notes.
@@ -945,38 +943,12 @@ pub proc input_note_get_metadata
     # => [input_note_ptr, pad(16)]
 
     # get the metadata
-    dup exec.memory::get_input_note_metadata_header
-    # => [METADATA_HEADER, input_note_ptr, pad(16)]
-
-    # get the attachment
-    movup.4 exec.memory::get_input_note_attachments_commitment
-    # => [NOTE_ATTACHMENTS_COMMITMENT, METADATA_HEADER, pad(16)]
+    exec.memory::get_input_note_metadata_header
+    # => [METADATA_HEADER, pad(16)]
 
     # truncate the stack
-    swapdw dropw dropw
-    # => [NOTE_ATTACHMENTS_COMMITMENT, METADATA_HEADER, pad(8)]
-
-    # TODO(multi_attachments): Maintain temporary compatibility with the previous API by returning
-    # the first attachment. This will be refactored in a follow-up PR.
-    exec.word::testz not
-    # => [!is_attachments_commitment_empty, NOTE_ATTACHMENTS_COMMITMENT, METADATA_HEADER, pad(8)]
-
-    # if the attachments commitment is the empty word, the first attachment is also the empty word,
-    # so we leave the empty word on the stack
-    #
-    # otherwise:
-    if.true
-        # fetch the first attachment from the advice stack and overwrite the attachments commitment
-        adv.push_mapval
-        adv_loadw
-        # => [ATTACHMENT_COMMITMENT_0, METADATA_HEADER, pad(8)]
-
-        adv.push_mapvaln
-        adv_push.1 eq.WORD_SIZE assert.err="retrieved attachments must be temporarily word-sized"
-        adv_loadw
-        # => [ATTACHMENT_0, METADATA_HEADER, pad(8)]
-    end
-    # => [ATTACHMENT_0, METADATA_HEADER, pad(8)]
+    swapw dropw
+    # => [METADATA_HEADER, pad(12)]
 end
 
 #! Returns the serial number of the specified input note.

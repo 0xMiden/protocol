@@ -109,10 +109,6 @@ async fn test_active_note_get_metadata() -> anyhow::Result<()> {
 
             # get the metadata of the active note
             exec.active_note::get_metadata
-            # => [NOTE_ATTACHMENT, METADATA_HEADER]
-
-            push.{NOTE_ATTACHMENT}
-            assert_eqw.err="note 0 has incorrect note attachment"
             # => [METADATA_HEADER]
 
             push.{METADATA_HEADER}
@@ -125,7 +121,6 @@ async fn test_active_note_get_metadata() -> anyhow::Result<()> {
         "#,
         METADATA_HEADER =
             tx_context.input_notes().get_note(0).note().metadata_header().to_metadata_word(),
-        NOTE_ATTACHMENT = tx_context.input_notes().get_note(0).note().attachments().to_commitment()
     );
 
     tx_context.execute_code(&code).await?;
@@ -205,9 +200,6 @@ async fn test_active_note_get_note_type(#[case] note_type: NoteType) -> anyhow::
             dropw dropw dropw dropw
 
             exec.active_note::get_metadata
-            # => [NOTE_ATTACHMENT, METADATA_HEADER]
-            
-            dropw
             # => [METADATA_HEADER]
 
             exec.note::metadata_into_note_type
