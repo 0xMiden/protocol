@@ -9,6 +9,8 @@ use miden_protocol::errors::MasmError;
 // AGGLAYER ERRORS
 // ================================================================================================
 
+/// Error Message: "B2AGG note destination network ID must not be Miden's AggLayer network ID"
+pub const ERR_B2AGG_DESTINATION_NETWORK_IS_MIDEN: MasmError = MasmError::from_static_str("B2AGG note destination network ID must not be Miden's AggLayer network ID");
 /// Error Message: "B2AGG note attachment target account does not match consuming account"
 pub const ERR_B2AGG_TARGET_ACCOUNT_MISMATCH: MasmError = MasmError::from_static_str("B2AGG note attachment target account does not match consuming account");
 /// Error Message: "B2AGG script expects exactly 6 note storage items"
@@ -23,6 +25,8 @@ pub const ERR_BRIDGE_NOT_ROLLUP: MasmError = MasmError::from_static_str("mainnet
 
 /// Error Message: "claim note has already been spent"
 pub const ERR_CLAIM_ALREADY_SPENT: MasmError = MasmError::from_static_str("claim note has already been spent");
+/// Error Message: "claim leaf destination network does not match Miden AggLayer network ID"
+pub const ERR_CLAIM_LEAF_DESTINATION_NETWORK_MISMATCH: MasmError = MasmError::from_static_str("claim leaf destination network does not match Miden AggLayer network ID");
 /// Error Message: "CLAIM note attachment target account does not match consuming account"
 pub const ERR_CLAIM_TARGET_ACCT_MISMATCH: MasmError = MasmError::from_static_str("CLAIM note attachment target account does not match consuming account");
 
@@ -39,6 +43,9 @@ pub const ERR_FELT_OUT_OF_FIELD: MasmError = MasmError::from_static_str("combine
 
 /// Error Message: "GER not found in storage"
 pub const ERR_GER_NOT_FOUND: MasmError = MasmError::from_static_str("GER not found in storage");
+
+/// Error Message: "invalid leaf type: only asset claims (leafType=0) are supported"
+pub const ERR_INVALID_LEAF_TYPE: MasmError = MasmError::from_static_str("invalid leaf type: only asset claims (leafType=0) are supported");
 
 /// Error Message: "leading bits of global index must be zero"
 pub const ERR_LEADING_BITS_NON_ZERO: MasmError = MasmError::from_static_str("leading bits of global index must be zero");
