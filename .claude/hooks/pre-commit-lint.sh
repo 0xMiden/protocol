@@ -1,4 +1,9 @@
 #!/bin/bash
+# Internal guard: only fire for actual git commit invocations. Defense in depth
+# against settings.json filter regressions.
+COMMAND=$(jq -r '.tool_input.command // empty' 2>/dev/null)
+echo "$COMMAND" | grep -qE '(^|[[:space:]])git[[:space:]]+(-c[[:space:]]+[^ ]+[[:space:]]+)*commit([[:space:]]|$)' || exit 0
+
 # Pre-commit hook: runs `make lint` in Rust repositories before allowing git commit.
 # Exit 0 = allow, Exit 2 = block (reason on stderr).
 

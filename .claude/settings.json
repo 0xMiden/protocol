@@ -1,31 +1,27 @@
 {
   "hooks": {
     "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "if": "Bash(*git *commit*)",
-            "command": ".claude/hooks/pre-commit-lint.sh"
-          },
-          {
-            "type": "command",
-            "if": "Bash(*git push*)",
-            "command": ".claude/hooks/pre-push-test.sh"
-          },
-          {
-            "type": "command",
-            "if": "Bash(*git push*)",
-            "command": ".claude/hooks/pre-push-review.sh"
-          },
-          {
-            "type": "command",
-            "command": ".claude/hooks/pre-pr-draft.sh"
-          }
-        ]
-      }
-    ],
+        {
+            "matcher": "Bash",
+            "hooks": [
+            {
+                "type": "command",
+                "if": "Bash(*git *commit*)",
+                "command": ".claude/hooks/pre-commit-lint.sh"
+            },
+            {
+                "type": "command",
+                "if": "Bash(*git push*)",
+                "command": ".claude/hooks/pre-push-review.sh"
+            },
+            {
+                "type": "command",
+                "if": "Bash(*gh pr create*)",
+                "command": ".claude/hooks/pre-pr-draft.sh"
+            }
+            ]
+        }
+        ],
     "PostToolUse": [
       {
         "matcher": "Bash",
