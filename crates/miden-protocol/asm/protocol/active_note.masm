@@ -272,7 +272,7 @@ end
 #!     NOTE_STORAGE_COMMITMENT: [[INPUT_VALUES]]
 #!   }
 #! Outputs:
-#!   Operand stack: [num_storage_items, dest_ptr]
+#!   Operand stack: []
 proc write_storage_to_memory
     # load the inputs from the advice map to the advice stack
     # we pad the number of inputs to the next multiple of 8 so that we can use the

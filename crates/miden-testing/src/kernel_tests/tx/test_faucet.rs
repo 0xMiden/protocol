@@ -60,7 +60,7 @@ async fn test_mint_fungible_asset_succeeds() -> anyhow::Result<()> {
             push.{FUNGIBLE_ASSET_VALUE}
             push.{FUNGIBLE_ASSET_KEY}
             call.mock_faucet::mint
-            dropw
+            # => []
 
             # assert the input vault has been updated
             exec.memory::get_input_vault_root_ptr
@@ -75,7 +75,7 @@ async fn test_mint_fungible_asset_succeeds() -> anyhow::Result<()> {
             push.{FUNGIBLE_ASSET_AMOUNT} assert_eq.err="input vault should contain minted asset"
 
             # truncate the stack
-            dropw
+            dropw dropw
         end
         "#,
         FUNGIBLE_ASSET_KEY = asset.to_key_word(),
@@ -249,7 +249,7 @@ async fn test_mint_non_fungible_asset_succeeds() -> anyhow::Result<()> {
             push.{NON_FUNGIBLE_ASSET_VALUE}
             push.{NON_FUNGIBLE_ASSET_KEY}
             call.mock_faucet::mint
-            dropw
+            # => []
 
             # assert the input vault has been updated.
             exec.memory::get_input_vault_root_ptr
@@ -258,7 +258,8 @@ async fn test_mint_non_fungible_asset_succeeds() -> anyhow::Result<()> {
             push.{NON_FUNGIBLE_ASSET_VALUE}
             assert_eqw.err="vault should contain asset"
 
-            dropw
+            # truncate the stack
+            dropw dropw
         end
         "#,
         NON_FUNGIBLE_ASSET_KEY = non_fungible_asset.to_key_word(),
