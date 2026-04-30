@@ -13,5 +13,5 @@ pub use multisig::{AuthMultisig, AuthMultisigConfig};
 mod guarded_multisig;
 pub use guarded_multisig::{AuthGuardedMultisig, AuthGuardedMultisigConfig, GuardianConfig};
 
-mod note_script_allowlist_auth;
-pub use note_script_allowlist_auth::NoteScriptAllowlistAuth;
+mod network_account;
+pub use network_account::AuthNetworkAccount;

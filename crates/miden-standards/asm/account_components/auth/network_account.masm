@@ -1,6 +1,6 @@
-# The MASM code of the NoteScriptAllowlistAuth authentication component.
+# The MASM code of the NetworkAccountAuth authentication component.
 #
-# See the `NoteScriptAllowlistAuth` Rust type's documentation for more details.
+# See the `AuthNetworkAccount` Rust type's documentation for more details.
 
 use miden::protocol::active_account
 use miden::protocol::native_account
@@ -12,12 +12,12 @@ use miden::standards::auth::note_script_allowlist
 
 # The slot holding the map of allowed input-note script roots. Keys are note script roots
 # (defined as Word); any non-empty value marks a root as allowed.
-const ALLOWED_NOTE_SCRIPTS_SLOT = word("miden::standards::auth::note_script_allowlist::allowed_note_scripts")
+const ALLOWED_NOTE_SCRIPTS_SLOT = word("miden::standards::auth::network_account::allowed_note_scripts")
 
 # AUTH PROCEDURE
 # =================================================================================================
 
-#! Authenticates a transaction against a `NoteScriptAllowlistAuth` component.
+#! Authenticates a transaction against a `NetworkAccountAuth` component.
 #!
 #! Enforces two invariants:
 #! 1. No transaction script may have been executed in this transaction.
@@ -32,7 +32,7 @@ const ALLOWED_NOTE_SCRIPTS_SLOT = word("miden::standards::auth::note_script_allo
 #!
 #! Invocation: call
 @auth_script
-pub proc auth_tx_note_script_allowlist(auth_args: word)
+pub proc auth_network_transaction(auth_args: word)
     dropw
     # => [pad(16)]
 

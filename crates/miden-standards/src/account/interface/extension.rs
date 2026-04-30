@@ -16,9 +16,9 @@ use crate::account::components::{
     fungible_token_metadata_library,
     guarded_multisig_library,
     multisig_library,
+    network_account_auth_library,
     network_fungible_faucet_library,
     no_auth_library,
-    note_script_allowlist_auth_library,
     singlesig_acl_library,
     singlesig_library,
 };
@@ -128,9 +128,9 @@ impl AccountInterfaceExt for AccountInterface {
                     component_proc_digests
                         .extend(no_auth_library().mast_forest().procedure_digests());
                 },
-                AccountComponentInterface::AuthNoteScriptAllowlist => {
+                AccountComponentInterface::AuthNetworkAccount => {
                     component_proc_digests.extend(
-                        note_script_allowlist_auth_library().mast_forest().procedure_digests(),
+                        network_account_auth_library().mast_forest().procedure_digests(),
                     );
                 },
                 AccountComponentInterface::Custom(custom_procs) => {

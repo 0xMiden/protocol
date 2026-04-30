@@ -7,4 +7,4 @@ mod hybrid_multisig;
 
 mod guarded_multisig;
 
-mod note_script_allowlist_auth;
+mod network_account;

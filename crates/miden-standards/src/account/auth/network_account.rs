@@ -17,13 +17,13 @@ use miden_protocol::account::{
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
-use crate::account::components::note_script_allowlist_auth_library;
+use crate::account::components::network_account_auth_library;
 
 // CONSTANTS
 // ================================================================================================
 
 static ALLOWED_NOTE_SCRIPTS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::auth::note_script_allowlist::allowed_note_scripts")
+    StorageSlotName::new("miden::standards::auth::network_account::allowed_note_scripts")
         .expect("storage slot name should be valid")
 });
 
@@ -33,7 +33,7 @@ static ALLOWED_NOTE_SCRIPTS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new
 // readability when inspecting storage.
 const ALLOWED_SENTINEL: Word = Word::new([Felt::new(1), Felt::new(0), Felt::new(0), Felt::new(0)]);
 
-// NOTE SCRIPT ALLOWLIST AUTH
+// AUTH NETWORK ACCOUNT
 // ================================================================================================
 
 /// An [`AccountComponent`] implementing an authentication scheme that restricts what notes an
@@ -45,8 +45,8 @@ const ALLOWED_SENTINEL: Word = Word::new([Felt::new(1), Felt::new(0), Felt::new(
 /// `NoAuth` pattern, which lets any transaction emit output notes authored by the account and so
 /// allows arbitrary parties to forge bridge-authored output notes.
 ///
-/// The component exports a single auth procedure, `auth_tx_note_script_allowlist`, that rejects
-/// the transaction unless:
+/// The component exports a single auth procedure, `auth_network_transaction`, that rejects the
+/// transaction unless:
 /// - no transaction script was executed, and
 /// - every consumed input note has a script root present in the component's allowlist.
 ///
@@ -56,15 +56,15 @@ const ALLOWED_SENTINEL: Word = Word::new([Felt::new(1), Felt::new(0), Felt::new(
 ///
 /// The allowlist is fixed at account creation; there is intentionally no procedure to mutate it
 /// after deployment.
-pub struct NoteScriptAllowlistAuth {
+pub struct AuthNetworkAccount {
     allowed_script_roots: Vec<Word>,
 }
 
-impl NoteScriptAllowlistAuth {
+impl AuthNetworkAccount {
     /// The name of the component.
-    pub const NAME: &'static str = "miden::standards::components::auth::note_script_allowlist";
+    pub const NAME: &'static str = "miden::standards::components::auth::network_account";
 
-    /// Creates a new [`NoteScriptAllowlistAuth`] component with the provided list of allowed
+    /// Creates a new [`AuthNetworkAccount`] component with the provided list of allowed
     /// input-note script roots.
     pub fn new(allowed_script_roots: Vec<Word>) -> Self {
         Self { allowed_script_roots }
@@ -101,23 +101,23 @@ impl NoteScriptAllowlistAuth {
     }
 }
 
-impl From<NoteScriptAllowlistAuth> for AccountComponent {
-    fn from(component: NoteScriptAllowlistAuth) -> Self {
+impl From<AuthNetworkAccount> for AccountComponent {
+    fn from(component: AuthNetworkAccount) -> Self {
         let map_entries = component
             .allowed_script_roots
             .into_iter()
             .map(|root| (StorageMapKey::new(root), ALLOWED_SENTINEL));
 
         let storage_slots = vec![StorageSlot::with_map(
-            NoteScriptAllowlistAuth::allowed_note_scripts_slot().clone(),
+            AuthNetworkAccount::allowed_note_scripts_slot().clone(),
             StorageMap::with_entries(map_entries)
                 .expect("allowlist entries should produce a valid storage map"),
         )];
 
-        let metadata = NoteScriptAllowlistAuth::component_metadata();
+        let metadata = AuthNetworkAccount::component_metadata();
 
-        AccountComponent::new(note_script_allowlist_auth_library(), storage_slots, metadata).expect(
-            "NoteScriptAllowlistAuth component should satisfy the requirements of a valid \
+        AccountComponent::new(network_account_auth_library(), storage_slots, metadata).expect(
+            "AuthNetworkAccount component should satisfy the requirements of a valid \
                  account component",
         )
     }
@@ -134,21 +134,21 @@ mod tests {
     use crate::account::wallets::BasicWallet;
 
     #[test]
-    fn note_script_allowlist_auth_component_builds() {
+    fn auth_network_account_component_builds() {
         let root_a = Word::from([1u32, 2, 3, 4]);
         let root_b = Word::from([5u32, 6, 7, 8]);
 
         let _account = AccountBuilder::new([0; 32])
-            .with_auth_component(NoteScriptAllowlistAuth::new(vec![root_a, root_b]))
+            .with_auth_component(AuthNetworkAccount::new(vec![root_a, root_b]))
             .with_component(BasicWallet)
             .build()
-            .expect("account building with NoteScriptAllowlistAuth failed");
+            .expect("account building with AuthNetworkAccount failed");
     }
 
     #[test]
-    fn note_script_allowlist_auth_with_empty_allowlist_builds() {
+    fn auth_network_account_with_empty_allowlist_builds() {
         let _account = AccountBuilder::new([0; 32])
-            .with_auth_component(NoteScriptAllowlistAuth::new(Vec::new()))
+            .with_auth_component(AuthNetworkAccount::new(Vec::new()))
             .with_component(BasicWallet)
             .build()
             .expect("account building with empty allowlist failed");
@@ -161,7 +161,7 @@ mod tests {
         let root_a = Word::from([1u32, 2, 3, 4]);
         let root_b = Word::from([5u32, 6, 7, 8]);
 
-        let component: AccountComponent = NoteScriptAllowlistAuth::new(vec![root_a, root_b]).into();
+        let component: AccountComponent = AuthNetworkAccount::new(vec![root_a, root_b]).into();
 
         let storage_slots = component.storage_slots();
         assert_eq!(storage_slots.len(), 1);

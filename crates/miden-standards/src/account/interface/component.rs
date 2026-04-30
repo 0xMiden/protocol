@@ -45,12 +45,12 @@ pub enum AccountComponentInterface {
     /// the nonce if the account state has actually changed during transaction execution.
     AuthNoAuth,
     /// Exposes procedures from the
-    /// [`NoteScriptAllowlistAuth`][crate::account::auth::NoteScriptAllowlistAuth] module.
+    /// [`AuthNetworkAccount`][crate::account::auth::AuthNetworkAccount] module.
     ///
     /// This authentication scheme is intended for network-owned accounts. It rejects transactions
     /// that executed a tx script or consumed input notes outside of a fixed allowlist of note
     /// script roots.
-    AuthNoteScriptAllowlist,
+    AuthNetworkAccount,
     /// A non-standard, custom interface which exposes the contained procedures.
     ///
     /// Custom interface holds all procedures which are not part of some standard interface which is
@@ -79,8 +79,8 @@ impl AccountComponentInterface {
             AccountComponentInterface::AuthMultisig => "Multisig".to_string(),
             AccountComponentInterface::AuthGuardedMultisig => "Guarded Multisig".to_string(),
             AccountComponentInterface::AuthNoAuth => "No Auth".to_string(),
-            AccountComponentInterface::AuthNoteScriptAllowlist => {
-                "Note Script Allowlist Auth".to_string()
+            AccountComponentInterface::AuthNetworkAccount => {
+                "Network Account Auth".to_string()
             },
             AccountComponentInterface::Custom(proc_root_vec) => {
                 let result = proc_root_vec
@@ -104,7 +104,7 @@ impl AccountComponentInterface {
                 | AccountComponentInterface::AuthMultisig
                 | AccountComponentInterface::AuthGuardedMultisig
                 | AccountComponentInterface::AuthNoAuth
-                | AccountComponentInterface::AuthNoteScriptAllowlist
+                | AccountComponentInterface::AuthNetworkAccount
         )
     }
 
@@ -138,7 +138,7 @@ impl AccountComponentInterface {
                 )]
             },
             AccountComponentInterface::AuthNoAuth => vec![AuthMethod::NoAuth],
-            AccountComponentInterface::AuthNoteScriptAllowlist => vec![AuthMethod::NoAuth],
+            AccountComponentInterface::AuthNetworkAccount => vec![AuthMethod::NoAuth],
             _ => vec![], // Non-auth components return empty vector
         }
     }
