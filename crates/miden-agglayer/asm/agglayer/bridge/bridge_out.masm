@@ -327,9 +327,8 @@ end
 #! num_leaves, loads only the frontier entries that will be read by append_and_update_frontier
 #! (those at heights where the corresponding bit in num_leaves is 1).
 #!
-#! Entries at heights where the bit is 0 are not loaded because they will be overwritten by
-#! append_and_update_frontier before being read. Uninitialized memory defaults to zero, which
-#! is safe since these entries are written before use.
+#! Entries at heights where the corresponding bit in num_leaves is 0 are not loaded, because
+#! append_and_update_frontier will instead read the canonical zeros at those heights.
 #!
 #! The data is placed into memory at LET_FRONTIER_MEM_PTR, matching the layout expected by
 #! append_and_update_frontier:
@@ -417,11 +416,11 @@ end
 #! Selectively writes modified frontier entries from memory back to the LET map slot.
 #!
 #! Only entries that were written by append_and_update_frontier are saved back to storage.
-#! These are the entries at heights where the corresponding bit in the original num_leaves
-#! (before increment) was 0. The original num_leaves is recovered as new_num_leaves - 1.
+#! These are the entries at heights where the corresponding bit in the pre-append num_leaves
+#! was 0.
 #!
-#! Entries at heights where the bit was 1 were only READ (not modified) by
-#! append_and_update_frontier, so they don't need to be saved back.
+#! Entries at heights where the bit was 1 were only read by append_and_update_frontier, so they
+#! don't need to be saved back to storage.
 #!
 #! Inputs:  []
 #! Outputs: []
@@ -429,7 +428,6 @@ end
 #! Invocation: exec
 proc save_let_frontier_selective
     # Get old_num_leaves = new_num_leaves - 1
-    # (append_and_update_frontier stored new_num_leaves at LET_FRONTIER_MEM_PTR)
     push.LET_FRONTIER_MEM_PTR mem_load sub.1
     # => [old_num_leaves]
 
@@ -439,7 +437,7 @@ proc save_let_frontier_selective
     repeat.32
         # => [h, old_num_leaves_shifted]
 
-        # Check if bit h is clear (this entry was written and needs saving)
+        # Check if bit h is 0 (this entry was written and needs saving)
         dup.1 u32and.1
         if.false
             # Load frontier[h] double word from memory
