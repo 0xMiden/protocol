@@ -1,10 +1,4 @@
 #!/bin/bash
-# Internal guard: only fire for actual git commit invocations. Defense in depth
-# against settings.json filter regressions.
-COMMAND=$(jq -r '.tool_input.command // empty' 2>/dev/null)
-echo "$COMMAND" | grep -qE '(^|[^a-zA-Z0-9_-])gh[[:space:]]+pr[[:space:]]+create([[:space:]]|$)' || exit 0
-REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
-
 # Post-PR-create hook: spawns a changelog-manager agent to classify the PR diff
 # and decide whether a CHANGELOG.md entry or "no changelog" label is needed.
 # Outputs actionable instructions to the main agent via hookSpecificOutput.

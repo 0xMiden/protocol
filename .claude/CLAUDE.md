@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-> Per-project lessons: `.claude/lessons.md`. Read at the start of every non-trivial task. Append new entries with `/codify-lesson <description>`.
+> Per-project lessons: ~/.claude/projects/protocol/lessons.md
 
 ## Workflow Orchestration
 

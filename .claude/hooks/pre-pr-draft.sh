@@ -1,9 +1,4 @@
 #!/bin/bash
-# Internal guard: only fire for actual git commit invocations. Defense in depth
-# against settings.json filter regressions.
-COMMAND=$(jq -r '.tool_input.command // empty' 2>/dev/null)
-echo "$COMMAND" | grep -qE '(^|[^a-zA-Z0-9_-])gh[[:space:]]+pr[[:space:]]+create([[:space:]]|$)' || exit 0
-REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
 # PreToolUse hook for the Bash tool: blocks `gh pr create` invocations that
 # would create a non-draft PR. Always create PRs as drafts; promote with
 # `gh pr ready <num>` once human review is requested.
