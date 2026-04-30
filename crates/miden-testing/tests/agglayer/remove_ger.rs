@@ -173,24 +173,12 @@ async fn remove_ger_middle_of_multi_insert_leaves_others_intact() -> anyhow::Res
     let ger_b = ExitRoot::from(ger_b_bytes);
     let ger_c = ExitRoot::from(ger_c_bytes);
 
-    let update_a = UpdateGerNote::create(
-        ger_a,
-        ger_manager.id(),
-        bridge_account.id(),
-        builder.rng_mut(),
-    )?;
-    let update_b = UpdateGerNote::create(
-        ger_b,
-        ger_manager.id(),
-        bridge_account.id(),
-        builder.rng_mut(),
-    )?;
-    let update_c = UpdateGerNote::create(
-        ger_c,
-        ger_manager.id(),
-        bridge_account.id(),
-        builder.rng_mut(),
-    )?;
+    let update_a =
+        UpdateGerNote::create(ger_a, ger_manager.id(), bridge_account.id(), builder.rng_mut())?;
+    let update_b =
+        UpdateGerNote::create(ger_b, ger_manager.id(), bridge_account.id(), builder.rng_mut())?;
+    let update_c =
+        UpdateGerNote::create(ger_c, ger_manager.id(), bridge_account.id(), builder.rng_mut())?;
     let remove_b =
         RemoveGerNote::create(ger_b, ger_remover.id(), bridge_account.id(), builder.rng_mut())?;
 
@@ -203,9 +191,8 @@ async fn remove_ger_middle_of_multi_insert_leaves_others_intact() -> anyhow::Res
 
     let mut updated_bridge_account = bridge_account.clone();
     for note in [&update_a, &update_b, &update_c] {
-        let tx_context = mock_chain
-            .build_tx_context(bridge_account.id(), &[note.id()], &[])?
-            .build()?;
+        let tx_context =
+            mock_chain.build_tx_context(bridge_account.id(), &[note.id()], &[])?.build()?;
         let executed = tx_context.execute().await?;
         updated_bridge_account.apply_delta(executed.account_delta())?;
         mock_chain.add_pending_executed_transaction(&executed)?;
@@ -290,9 +277,8 @@ async fn remove_ger_double_remove_reverts() -> anyhow::Result<()> {
     let mut mock_chain = builder.build()?;
 
     for note in [&update_ger_note, &remove_ger_note_first] {
-        let tx_context = mock_chain
-            .build_tx_context(bridge_account.id(), &[note.id()], &[])?
-            .build()?;
+        let tx_context =
+            mock_chain.build_tx_context(bridge_account.id(), &[note.id()], &[])?.build()?;
         let executed = tx_context.execute().await?;
         mock_chain.add_pending_executed_transaction(&executed)?;
         mock_chain.prove_next_block()?;
@@ -353,9 +339,8 @@ async fn remove_ger_then_reinsert_succeeds() -> anyhow::Result<()> {
 
     let mut updated_bridge_account = bridge_account.clone();
     for note in [&update_first, &remove_note, &update_second] {
-        let tx_context = mock_chain
-            .build_tx_context(bridge_account.id(), &[note.id()], &[])?
-            .build()?;
+        let tx_context =
+            mock_chain.build_tx_context(bridge_account.id(), &[note.id()], &[])?.build()?;
         let executed = tx_context.execute().await?;
         updated_bridge_account.apply_delta(executed.account_delta())?;
         mock_chain.add_pending_executed_transaction(&executed)?;
