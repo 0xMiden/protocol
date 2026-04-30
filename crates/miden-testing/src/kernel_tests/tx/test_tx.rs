@@ -26,6 +26,7 @@ use miden_protocol::note::{
     NoteAttachment,
     NoteAttachmentContent,
     NoteAttachmentScheme,
+    NoteDetailsCommitment,
     NoteHeader,
     NoteId,
     NoteMetadata,
@@ -376,17 +377,18 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
     let resulting_output_note_1 = executed_transaction.output_notes().get_note(0);
 
     let expected_note_assets_1 = NoteAssets::new(vec![combined_asset])?;
-    let expected_note_id_1 = NoteId::new(recipient_1, expected_note_assets_1.commitment());
+    let details_commitment_1 =
+        NoteDetailsCommitment::new(recipient_1, expected_note_assets_1.commitment());
+    let expected_note_id_1 = NoteId::new(details_commitment_1, resulting_output_note_1.metadata());
     assert_eq!(resulting_output_note_1.id(), expected_note_id_1);
 
     // assert that the expected output note 2 is present
     let resulting_output_note_2 = executed_transaction.output_notes().get_note(1);
 
-    let expected_note_id_2 = expected_output_note_2.id();
     let expected_note_metadata_2 = expected_output_note_2.metadata().clone();
     assert_eq!(
         *resulting_output_note_2.header(),
-        NoteHeader::new(expected_note_id_2, expected_note_metadata_2)
+        NoteHeader::new(expected_output_note_2.commitment(), expected_note_metadata_2)
     );
 
     // assert that the expected output note 3 is present and has no assets

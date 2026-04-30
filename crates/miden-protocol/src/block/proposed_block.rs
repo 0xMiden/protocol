@@ -422,7 +422,7 @@ impl ProposedBlock {
                         BlockNoteIndex::new(batch_idx, *note_idx_in_batch).expect(
                             "max batches in block and max notes in batches should be enforced",
                         ),
-                        note.id(),
+                        note.commitment(),
                         note.metadata(),
                     )
                 })

@@ -453,8 +453,8 @@ fn input_notes_memory_assertions(
 
         assert_eq!(
             exec_output.get_note_mem_word(note_idx, INPUT_NOTE_ID_OFFSET),
-            note.id().as_word(),
-            "ID hash should be computed and stored at the correct offset"
+            note.commitment().as_word(),
+            "note details commitment should be computed and stored at INPUT_NOTE_ID_OFFSET"
         );
 
         assert_eq!(

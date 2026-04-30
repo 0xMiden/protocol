@@ -235,9 +235,9 @@ async fn test_compute_output_note_id() -> anyhow::Result<()> {
         );
 
         assert_eq!(
-            note.id().as_word(),
+            note.commitment().as_word(),
             exec_output.get_kernel_mem_word(OUTPUT_NOTE_SECTION_OFFSET + i * NOTE_MEM_SIZE),
-            "NOTE_ID didn't match expected value",
+            "note details commitment didn't match kernel NOTE_COMMITMENT slot",
         );
     }
 

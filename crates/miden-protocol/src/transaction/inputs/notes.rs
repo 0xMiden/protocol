@@ -21,7 +21,7 @@ use crate::{Felt, Hasher, MAX_INPUT_NOTES_PER_TX, Word};
 /// The commitment is composed of:
 ///
 /// - nullifier, which prevents double spend and provides unlinkability.
-/// - an optional note commitment, which allows for delayed note authentication.
+/// - an optional note ID, which allows for delayed note authentication.
 pub trait ToInputNoteCommitments {
     fn nullifier(&self) -> Nullifier;
     fn note_commitment(&self) -> Option<Word>;
@@ -313,7 +313,7 @@ impl ToInputNoteCommitments for InputNote {
     fn note_commitment(&self) -> Option<Word> {
         match self {
             InputNote::Authenticated { .. } => None,
-            InputNote::Unauthenticated { note } => Some(note.commitment()),
+            InputNote::Unauthenticated { note } => Some(note.id().as_word()),
         }
     }
 }

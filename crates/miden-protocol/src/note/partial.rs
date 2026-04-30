@@ -4,6 +4,7 @@ use super::{
     Deserializable,
     DeserializationError,
     NoteAssets,
+    NoteDetailsCommitment,
     NoteHeader,
     NoteId,
     NoteMetadata,
@@ -31,14 +32,20 @@ pub struct PartialNote {
 impl PartialNote {
     /// Returns a new [PartialNote] instantiated from the provided parameters.
     pub fn new(metadata: NoteMetadata, recipient_digest: Word, assets: NoteAssets) -> Self {
-        let note_id = NoteId::new(recipient_digest, assets.commitment());
-        let header = NoteHeader::new(note_id, metadata);
+        let note_details_commitment =
+            NoteDetailsCommitment::new(recipient_digest, assets.commitment());
+        let header = NoteHeader::new(note_details_commitment, metadata);
         Self { header, recipient_digest, assets }
     }
 
     /// Returns the ID corresponding to this note.
     pub fn id(&self) -> NoteId {
-        NoteId::new(self.recipient_digest, self.assets.commitment())
+        self.header.id()
+    }
+
+    /// Returns the commitment to the note details, excluding metadata.
+    pub fn commitment(&self) -> NoteDetailsCommitment {
+        self.header.commitment()
     }
 
     /// Returns the metadata associated with this note.

@@ -18,7 +18,7 @@ mod details;
 pub use details::NoteDetails;
 
 mod header;
-pub use header::{NoteHeader, compute_note_commitment};
+pub use header::NoteHeader;
 
 mod storage;
 pub use storage::NoteStorage;
@@ -37,6 +37,9 @@ pub use attachment::{
 
 mod note_id;
 pub use note_id::NoteId;
+
+mod note_details_commitment;
+pub use note_details_commitment::NoteDetailsCommitment;
 
 mod note_tag;
 pub use note_tag::NoteTag;
@@ -72,9 +75,9 @@ pub use file::NoteFile;
 /// either public, encrypted, or private, depending on the note type. Note details consist of note
 /// assets, script, storage, and a serial number, the three latter grouped into a recipient object.
 ///
-/// Note details can be reduced to two unique identifiers: [NoteId] and [Nullifier]. The former is
-/// publicly associated with a note, while the latter is known only to entities which have access
-/// to full note details.
+/// Note details can be reduced to a [NoteDetailsCommitment]. Together with the note metadata,
+/// this commitment determines the public [NoteId]. Full note details can also be reduced to a
+/// [Nullifier], which is known only to entities which have access to full note details.
 ///
 /// Fungible and non-fungible asset transfers are done by moving assets to the note's assets. The
 /// note's script determines the conditions required for the note consumption, i.e. the target
@@ -101,7 +104,7 @@ impl Note {
     /// Returns a new [Note] created with the specified parameters.
     pub fn new(assets: NoteAssets, metadata: NoteMetadata, recipient: NoteRecipient) -> Self {
         let details = NoteDetails::new(assets, recipient);
-        let header = NoteHeader::new(details.id(), metadata);
+        let header = NoteHeader::new(details.commitment(), metadata);
         let nullifier = details.nullifier();
 
         Self { header, details, nullifier }
@@ -117,9 +120,14 @@ impl Note {
 
     /// Returns the note's unique identifier.
     ///
-    /// This value is both an unique identifier and a commitment to the note.
+    /// This value commits to the note details and metadata.
     pub fn id(&self) -> NoteId {
         self.header.id()
+    }
+
+    /// Returns a commitment to the note's details, excluding metadata.
+    pub fn commitment(&self) -> NoteDetailsCommitment {
+        self.header.commitment()
     }
 
     /// Returns the note's metadata.
@@ -157,16 +165,6 @@ impl Note {
     /// This is public data, used to prevent double spend.
     pub fn nullifier(&self) -> Nullifier {
         self.nullifier
-    }
-
-    /// Returns a commitment to the note and its metadata.
-    ///
-    /// > hash(NOTE_ID || NOTE_METADATA_COMMITMENT)
-    ///
-    /// This value is used primarily for authenticating notes consumed when the are consumed
-    /// in a transaction.
-    pub fn commitment(&self) -> Word {
-        self.header.to_commitment()
     }
 
     // MUTATORS

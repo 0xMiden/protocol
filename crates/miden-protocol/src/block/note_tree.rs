@@ -6,7 +6,7 @@ use miden_crypto::merkle::SparseMerklePath;
 use crate::batch::BatchNoteTree;
 use crate::crypto::merkle::MerkleError;
 use crate::crypto::merkle::smt::{LeafIndex, SimpleSmt};
-use crate::note::{NoteId, NoteMetadata, compute_note_commitment};
+use crate::note::{NoteDetailsCommitment, NoteId, NoteMetadata};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -24,9 +24,7 @@ use crate::{
 
 /// Wrapper over [SimpleSmt<BLOCK_NOTE_TREE_DEPTH>] for notes tree.
 ///
-/// Each note is stored as two adjacent leaves: odd leaf for id, even leaf for metadata hash.
-/// ID's leaf index is calculated as [(batch_idx * MAX_NOTES_PER_BATCH + note_idx_in_batch) * 2].
-/// Metadata hash leaf is stored the next after id leaf: [id_index + 1].
+/// Each note leaf is the note ID: `hash(note_details_commitment || metadata_commitment)`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlockNoteTree(SimpleSmt<BLOCK_NOTE_TREE_DEPTH>);
 
@@ -34,9 +32,10 @@ impl BlockNoteTree {
     /// Returns a new [`BlockNoteTree`] instantiated with entries set as specified by the provided
     /// entries.
     ///
-    /// Entry format: (note_index, note_id, note_metadata).
+    /// Entry format: (note_index, note_details_commitment, note_metadata).
     ///
-    /// Value of each leaf is computed as: `hash(note_id || note_metadata_commitment)`.
+    /// Value of each leaf is computed as:
+    /// `hash(note_details_commitment || note_metadata_commitment)`.
     /// All leaves omitted from the entries list are set to [crate::EMPTY_WORD].
     ///
     /// # Errors
@@ -44,10 +43,12 @@ impl BlockNoteTree {
     /// - The number of entries exceeds the maximum notes tree capacity, that is 2^16.
     /// - The provided entries contain multiple values for the same key.
     pub fn with_entries<'metadata>(
-        entries: impl IntoIterator<Item = (BlockNoteIndex, NoteId, &'metadata NoteMetadata)>,
+        entries: impl IntoIterator<
+            Item = (BlockNoteIndex, NoteDetailsCommitment, &'metadata NoteMetadata),
+        >,
     ) -> Result<Self, MerkleError> {
-        let leaves = entries.into_iter().map(|(index, note_id, metadata)| {
-            (index.leaf_index_value() as u64, compute_note_commitment(note_id, metadata))
+        let leaves = entries.into_iter().map(|(index, commitment, metadata)| {
+            (index.leaf_index_value() as u64, NoteId::new(commitment, metadata).as_word())
         });
 
         SimpleSmt::with_leaves(leaves).map(Self)

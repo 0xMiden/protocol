@@ -543,7 +543,7 @@ fn validate_is_in_block(
     block_header: &BlockHeader,
 ) -> Result<(), TransactionInputError> {
     let note_index = proof.location().block_note_tree_index().into();
-    let note_commitment = note.commitment();
+    let note_commitment = note.id().as_word();
     proof
         .note_path()
         .verify(note_index, note_commitment, &block_header.note_root())
