@@ -76,6 +76,15 @@ static NO_AUTH_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     Library::read_from_bytes(bytes).expect("Shipped NoAuth library is well-formed")
 });
 
+// FEE LIBRARIES
+// ================================================================================================
+
+static NATIVE_FEE_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+    let bytes =
+        include_bytes!(concat!(env!("OUT_DIR"), "/assets/account_components/fees/native_fee.masl"));
+    Library::read_from_bytes(bytes).expect("Shipped NativeFee library is well-formed")
+});
+
 // FAUCET LIBRARIES
 // ================================================================================================
 
@@ -217,6 +226,11 @@ pub fn guarded_multisig_library() -> Library {
 /// Returns the NoAuth Library.
 pub fn no_auth_library() -> Library {
     NO_AUTH_LIBRARY.clone()
+}
+
+/// Returns the NativeFee Library.
+pub fn native_fee_library() -> Library {
+    NATIVE_FEE_LIBRARY.clone()
 }
 
 // STANDARD ACCOUNT COMPONENTS

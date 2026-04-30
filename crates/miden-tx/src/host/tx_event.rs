@@ -10,7 +10,7 @@ use miden_protocol::account::{
     StorageSlotName,
     StorageSlotType,
 };
-use miden_protocol::asset::{Asset, AssetVault, AssetVaultKey, FungibleAsset};
+use miden_protocol::asset::{Asset, AssetVault, AssetVaultKey};
 use miden_protocol::note::{
     NoteAttachment,
     NoteAttachmentArray,
@@ -154,7 +154,7 @@ pub(crate) enum TransactionEvent {
     },
 
     EpilogueBeforeTxFeeRemovedFromAccount {
-        fee_asset: FungibleAsset,
+        fee_asset: Asset,
     },
 
     LinkMapSet {
@@ -476,7 +476,7 @@ impl TransactionEvent {
                 let fee_asset_key = process.get_stack_word(1);
                 let fee_asset_value = process.get_stack_word(5);
 
-                let fee_asset = FungibleAsset::from_key_value_words(fee_asset_key, fee_asset_value)
+                let fee_asset = Asset::from_key_value_words(fee_asset_key, fee_asset_value)
                     .map_err(TransactionKernelError::FailedToConvertFeeAsset)?;
 
                 Some(TransactionEvent::EpilogueBeforeTxFeeRemovedFromAccount { fee_asset })

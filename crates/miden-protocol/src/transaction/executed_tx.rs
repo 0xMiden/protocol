@@ -14,7 +14,7 @@ use super::{
     TransactionOutputs,
 };
 use crate::account::PartialAccount;
-use crate::asset::FungibleAsset;
+use crate::asset::Asset;
 use crate::block::{BlockHeader, BlockNumber};
 use crate::transaction::TransactionInputs;
 use crate::utils::serde::{
@@ -117,7 +117,7 @@ impl ExecutedTransaction {
     }
 
     /// Returns the fee of the transaction.
-    pub fn fee(&self) -> FungibleAsset {
+    pub fn fee(&self) -> Asset {
         self.tx_outputs.fee()
     }
 

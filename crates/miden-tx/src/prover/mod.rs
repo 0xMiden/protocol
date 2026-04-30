@@ -3,7 +3,6 @@ use alloc::vec::Vec;
 
 use miden_protocol::account::delta::AccountUpdateDetails;
 use miden_protocol::account::{AccountDelta, PartialAccount};
-use miden_protocol::asset::Asset;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::transaction::{
     InputNote,
@@ -73,7 +72,7 @@ impl LocalTransactionProver {
         let mut post_fee_account_delta = pre_fee_account_delta;
         post_fee_account_delta
             .vault_mut()
-            .remove_asset(Asset::from(fee))
+            .remove_asset(fee)
             .map_err(TransactionProverError::RemoveFeeAssetFromDelta)?;
 
         let account_update_details = if account.has_public_state() {

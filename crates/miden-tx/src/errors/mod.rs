@@ -309,6 +309,8 @@ pub enum TransactionKernelError {
         "native asset amount {account_balance} in the account vault is not sufficient to cover the transaction fee of {tx_fee}"
     )]
     InsufficientFee { account_balance: u64, tx_fee: u64 },
+    #[error("non-fungible fee assets are not supported")]
+    NonFungibleFeeAssetNotSupported,
     /// This variant signals that a signature over the contained commitments is required, but
     /// missing.
     #[error("transaction requires a signature")]

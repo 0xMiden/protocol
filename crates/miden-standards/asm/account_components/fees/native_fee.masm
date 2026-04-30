@@ -1,0 +1,68 @@
+# Default fee procedure that pays fees in the native asset.
+#
+# The native faucet ID is passed via FEE_ARGS as:
+#   FEE_ARGS = [faucet_id_suffix, faucet_id_prefix, enable_callbacks, 0]
+#
+# The fee procedure constructs a fungible asset from the computation_units (as the amount)
+# and the faucet ID from FEE_ARGS, then returns the asset key and value words.
+#
+# For accounts using the default fee path, the client populates FEE_ARGS with the native
+# faucet ID from the reference block.
+
+use miden::protocol::active_account
+
+const FAUCET_ID_SLOT = word("miden::standards::fees::native_fee::faucet_id")
+
+#! Default fee procedure: returns a native fungible asset for the given computation units.
+#!
+#! The faucet ID is read from the account's storage slot configured at account creation.
+#!
+#! Inputs:  [computation_units, FEE_ARGS, pad(11)]
+#! Outputs: [ASSET_KEY, ASSET_VALUE, pad(8)]
+@fee_script
+pub proc create_fee
+    # drop everything except computation_units
+    # stack: [computation_units, FEE_ARGS(4), pad(11)]
+    swap drop swap drop swap drop swap drop
+    # => [computation_units, pad(11)]
+
+    # drop remaining padding
+    swap drop swap drop swap drop swap drop
+    swap drop swap drop swap drop
+    # => [computation_units]
+
+    # read the faucet ID from account storage
+    push.FAUCET_ID_SLOT[0..2] exec.active_account::get_item
+    # => [faucet_id_suffix, faucet_id_prefix, 0, 0, computation_units]
+
+    # construct ASSET_KEY = [faucet_id_suffix, faucet_id_prefix, 0, 0] (already on stack)
+    # construct ASSET_VALUE = [0, 0, computation_units, 0]
+
+    movup.4
+    # => [computation_units, faucet_id_suffix, faucet_id_prefix, 0, 0]
+
+    push.0.0.0
+    # => [0, 0, 0, computation_units, faucet_id_suffix, faucet_id_prefix, 0, 0]
+
+    movup.3
+    # => [computation_units, 0, 0, 0, faucet_id_suffix, faucet_id_prefix, 0, 0]
+
+    # reorder to ASSET_VALUE = [0, 0, computation_units, 0]
+    # Currently: [computation_units, 0, 0, 0, ...]
+    # Need: [0, 0, computation_units, 0, ...]
+    swap movdn.2
+    # => [0, 0, computation_units, 0, faucet_id_suffix, faucet_id_prefix, 0, 0]
+
+    # swap so ASSET_KEY is on top
+    swapw
+    # => [faucet_id_suffix, faucet_id_prefix, 0, 0, 0, 0, computation_units, 0]
+
+    # pad output to 16 elements
+    padw padw
+    # => [pad(8), faucet_id_suffix, faucet_id_prefix, 0, 0, 0, 0, computation_units, 0]
+
+    swapw.2 swapw
+    # => [faucet_id_suffix, faucet_id_prefix, 0, 0, 0, 0, computation_units, 0, pad(8)]
+
+    # => [ASSET_KEY, ASSET_VALUE, pad(8)]
+end

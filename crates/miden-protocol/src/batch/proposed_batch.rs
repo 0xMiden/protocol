@@ -440,7 +440,7 @@ mod tests {
     use crate::Word;
     use crate::account::delta::AccountUpdateDetails;
     use crate::account::{AccountIdVersion, AccountStorageMode, AccountType};
-    use crate::asset::FungibleAsset;
+    use crate::asset::{Asset, FungibleAsset};
     use crate::transaction::{InputNoteCommitment, OutputNote, ProvenTransaction, TxAccountUpdate};
 
     #[test]
@@ -497,7 +497,7 @@ mod tests {
             Vec::<OutputNote>::new(),
             block_num,
             block_ref,
-            FungibleAsset::mock(100).unwrap_fungible(),
+            Asset::from(FungibleAsset::mock(100).unwrap_fungible()),
             expiration_block_num,
             proof,
         )

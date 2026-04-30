@@ -3,12 +3,12 @@ use alloc::vec::Vec;
 
 use miden_core_lib::CoreLibrary;
 
-use crate::account::{AccountHeader, AccountId};
+use crate::account::{AccountHeader, AccountId, AccountType};
 #[cfg(any(feature = "testing", test))]
 use crate::assembly::Library;
 use crate::assembly::debuginfo::SourceManagerSync;
 use crate::assembly::{Assembler, DefaultSourceManager, KernelLibrary};
-use crate::asset::FungibleAsset;
+use crate::asset::{Asset, FungibleAsset};
 use crate::block::BlockNumber;
 use crate::crypto::SequentialCommit;
 use crate::errors::TransactionOutputError;
@@ -205,19 +205,22 @@ impl TransactionKernel {
     ///
     /// Where:
     /// - OUTPUT_NOTES_COMMITMENT is a commitment to the output notes.
-    /// - ACCOUNT_UPDATE_COMMITMENT is the hash of the the final account commitment and account
-    ///   delta commitment.
-    /// - FEE_ASSET is the fungible asset used as the transaction fee.
+    /// - ACCOUNT_UPDATE_COMMITMENT is the hash of the final account commitment and account delta
+    ///   commitment.
+    /// - the fee asset is packed as three felts: faucet ID + amount. For v1 fee assets must be
+    ///   fungible.
     /// - expiration_block_num is the block number at which the transaction will expire.
     pub fn build_output_stack(
         final_account_commitment: Word,
         account_delta_commitment: Word,
         output_notes_commitment: Word,
-        fee: FungibleAsset,
+        fee: Asset,
         expiration_block_num: BlockNumber,
     ) -> StackOutputs {
         let account_update_commitment =
             Hasher::merge(&[final_account_commitment, account_delta_commitment]);
+
+        let fee = fee.unwrap_fungible();
 
         let mut outputs: Vec<Felt> = Vec::with_capacity(12);
         outputs.extend(output_notes_commitment);
@@ -238,28 +241,21 @@ impl TransactionKernel {
     /// [
     ///     OUTPUT_NOTES_COMMITMENT,
     ///     ACCOUNT_UPDATE_COMMITMENT,
-    ///     FEE_ASSET,
+    ///     native_asset_id_suffix, native_asset_id_prefix, fee_amount,
     ///     expiration_block_num,
     /// ]
     /// ```
     ///
     /// Where:
     /// - OUTPUT_NOTES_COMMITMENT is the commitment of the output notes.
-    /// - ACCOUNT_UPDATE_COMMITMENT is the hash of the the final account commitment and account
-    ///   delta commitment.
-    /// - FEE_ASSET is the fungible asset used as the transaction fee.
-    /// - tx_expiration_block_num is the block height at which the transaction will become expired,
-    ///   defined by the sum of the execution block ref and the transaction's block expiration delta
-    ///   (if set during transaction execution).
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - Indices 13..16 on the stack are not zeroes.
-    /// - Overflow addresses are not empty.
+    /// - ACCOUNT_UPDATE_COMMITMENT is the hash of the final account commitment and account delta
+    ///   commitment.
+    /// - the fee is packed as three felts (faucet_id + amount). Returned wrapped in an
+    ///   [`Asset::Fungible`]. Non-fungible fee assets are rejected in v1.
+    /// - tx_expiration_block_num is the block height at which the transaction will become expired.
     pub fn parse_output_stack(
-        stack: &StackOutputs, // FIXME TODO add an extension trait for this one
-    ) -> Result<(Word, Word, FungibleAsset, BlockNumber), TransactionOutputError> {
+        stack: &StackOutputs,
+    ) -> Result<(Word, Word, Asset, BlockNumber), TransactionOutputError> {
         let output_notes_commitment = stack
             .get_word(TransactionOutputs::OUTPUT_NOTES_COMMITMENT_WORD_IDX)
             .expect("output_notes_commitment (first word) missing");
@@ -290,8 +286,7 @@ impl TransactionKernel {
             })?
             .into();
 
-        // Make sure that indices 13, 14 and 15 are zeroes (i.e. the fourth word without the
-        // expiration block number).
+        // Make sure that indices 13, 14 and 15 are zeroes.
         if stack.get_word(12).expect("fourth word missing").as_elements()[..3]
             != Word::empty().as_elements()[..3]
         {
@@ -303,10 +298,16 @@ impl TransactionKernel {
         let native_asset_id =
             AccountId::try_from_elements(native_asset_id_suffix, native_asset_id_prefix)
                 .expect("native asset ID should be validated by the tx kernel");
+        assert_eq!(native_asset_id.account_type(), AccountType::FungibleFaucet);
         let fee = FungibleAsset::new(native_asset_id, fee_amount.as_canonical_u64())
             .map_err(TransactionOutputError::FeeAssetNotFungibleAsset)?;
 
-        Ok((output_notes_commitment, account_update_commitment, fee, expiration_block_num))
+        Ok((
+            output_notes_commitment,
+            account_update_commitment,
+            Asset::from(fee),
+            expiration_block_num,
+        ))
     }
 
     // TRANSACTION OUTPUT PARSER
@@ -320,7 +321,8 @@ impl TransactionKernel {
     /// [
     ///     OUTPUT_NOTES_COMMITMENT,
     ///     ACCOUNT_UPDATE_COMMITMENT,
-    ///     FEE_ASSET,
+    ///     FEE_ASSET_KEY,
+    ///     FEE_ASSET_VALUE,
     ///     expiration_block_num,
     /// ]
     /// ```
@@ -329,10 +331,9 @@ impl TransactionKernel {
     /// - OUTPUT_NOTES_COMMITMENT is the commitment of the output notes.
     /// - ACCOUNT_UPDATE_COMMITMENT is the hash of the final account commitment and the account
     ///   delta commitment of the account that the transaction is being executed against.
-    /// - FEE_ASSET is the fungible asset used as the transaction fee.
-    /// - tx_expiration_block_num is the block height at which the transaction will become expired,
-    ///   defined by the sum of the execution block ref and the transaction's block expiration delta
-    ///   (if set during transaction execution).
+    /// - FEE_ASSET_KEY is the asset vault key of the fee asset.
+    /// - FEE_ASSET_VALUE is the value of the fee asset.
+    /// - tx_expiration_block_num is the block height at which the transaction will become expired.
     ///
     /// The actual data describing the new account state and output notes is expected to be located
     /// in the provided advice map under keys `OUTPUT_NOTES_COMMITMENT` and

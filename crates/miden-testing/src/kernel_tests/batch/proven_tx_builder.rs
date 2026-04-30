@@ -4,7 +4,7 @@ use anyhow::Context;
 use miden_protocol::Word;
 use miden_protocol::account::AccountId;
 use miden_protocol::account::delta::AccountUpdateDetails;
-use miden_protocol::asset::FungibleAsset;
+use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::merkle::SparseMerklePath;
 use miden_protocol::note::{Note, NoteInclusionProof, Nullifier};
@@ -130,7 +130,7 @@ impl MockProvenTxBuilder {
             self.output_notes.unwrap_or_default(),
             BlockNumber::from(0),
             self.ref_block_commitment.unwrap_or_default(),
-            self.fee,
+            Asset::from(self.fee),
             self.expiration_block_num,
             ExecutionProof::new_dummy(),
         )
