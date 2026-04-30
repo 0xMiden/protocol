@@ -43,12 +43,12 @@ async fn main() -> Result<()> {
         run_scenario(ExecutionBenchmark::CreateSingleP2ID, tx_create_single_p2id_note()?).await?,
         run_scenario(
             ExecutionBenchmark::ConsumeClaimNoteL1ToMiden,
-            tx_consume_claim_note(ClaimDataSource::SimulatedL1ToMiden).await?,
+            tx_consume_claim_note(ClaimDataSource::L1ToMiden).await?,
         )
         .await?,
         run_scenario(
             ExecutionBenchmark::ConsumeClaimNoteL2ToMiden,
-            tx_consume_claim_note(ClaimDataSource::SimulatedL2ToMiden).await?,
+            tx_consume_claim_note(ClaimDataSource::L2ToMiden).await?,
         )
         .await?,
         run_scenario(ExecutionBenchmark::ConsumeB2AggNote, tx_consume_b2agg_note().await?).await?,
