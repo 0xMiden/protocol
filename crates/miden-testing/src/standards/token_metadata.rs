@@ -673,7 +673,8 @@ async fn test_field_setter_owner_succeeds(
     // (setter leaves 20). Use `debug.stack` in the script and run with --nocapture to trace.
     let note_script_code = format!(
         r#"
-    begin
+    @note_script
+    pub proc main
         dropw push.{hash}
         call.::miden::standards::metadata::fungible_faucet::{proc_name}
         dropw
@@ -732,7 +733,8 @@ async fn test_field_setter_non_owner_fails(
     // Auth check fires before data is touched, so no hash push is needed.
     let note_script_code = format!(
         r#"
-    begin
+    @note_script
+    pub proc main
         call.::miden::standards::metadata::fungible_faucet::{proc_name}
         dropw
     end
@@ -899,7 +901,8 @@ async fn set_max_supply_mutable_owner_succeeds() -> anyhow::Result<()> {
 
     let note_script_code = format!(
         r#"
-        begin
+    @note_script
+    pub proc main
             push.{new_max_supply}
             swap drop
             call.::miden::standards::metadata::fungible_faucet::set_max_supply
@@ -949,7 +952,8 @@ async fn set_max_supply_mutable_non_owner_fails() -> anyhow::Result<()> {
 
     // Auth check fires before data is touched, so no arguments needed.
     let note_script_code = "
-        begin
+    @note_script
+    pub proc main
             call.::miden::standards::metadata::fungible_faucet::set_max_supply
         end
     ";

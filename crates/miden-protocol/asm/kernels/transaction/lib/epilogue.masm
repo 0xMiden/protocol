@@ -6,6 +6,8 @@ use $kernel::asset_vault
 use $kernel::constants::NOTE_MEM_SIZE
 use $kernel::fungible_asset
 use $kernel::memory
+use $kernel::memory::OUTPUT_NOTE_SECTION_OFFSET
+use $kernel::memory::OUTPUT_VAULT_ROOT_PTR
 use $kernel::note
 
 use miden::core::crypto::hashes::poseidon2
@@ -92,7 +94,7 @@ proc copy_output_notes_to_advice_map
         # => [OUTPUT_NOTES_COMMITMENT, output_notes_end_ptr]
 
         # compute the start boundary of the output notes section
-        exec.memory::get_output_note_data_offset movdn.4
+        push.OUTPUT_NOTE_SECTION_OFFSET movdn.4
         # => [OUTPUT_NOTES_COMMITMENT, output_note_ptr, output_notes_end_ptr]
 
         # insert created data into the advice map
@@ -149,7 +151,7 @@ proc build_output_vault
         # => [num_assets, note_data_ptr, output_notes_end_ptr]
 
         # prepare stack for reading output note assets
-        exec.memory::get_output_vault_root_ptr dup.2 exec.memory::get_output_note_asset_data_ptr dup
+        push.OUTPUT_VAULT_ROOT_PTR dup.2 exec.memory::get_output_note_asset_data_ptr dup
         # => [assets_start_ptr, assets_start_ptr, output_vault_root_ptr, num_assets, note_data_ptr,
         #     output_notes_end_ptr]
 

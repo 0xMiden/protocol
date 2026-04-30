@@ -292,12 +292,15 @@ mod test {
     use miden_protocol::account::auth::AuthSecretKey;
     use miden_protocol::utils::serde::{Deserializable, Serializable};
     use miden_protocol::{Felt, Word};
+    use rand_chacha::ChaCha20Rng;
+    use rand_chacha::rand_core::SeedableRng;
 
     use super::SigningInputs;
 
     #[test]
     fn serialize_auth_key() {
-        let auth_key = AuthSecretKey::new_falcon512_poseidon2();
+        let mut rng = ChaCha20Rng::from_seed([0_u8; 32]);
+        let auth_key = AuthSecretKey::new_falcon512_poseidon2_with_rng(&mut rng);
         let serialized = auth_key.to_bytes();
         let deserialized = AuthSecretKey::read_from_bytes(&serialized).unwrap();
 

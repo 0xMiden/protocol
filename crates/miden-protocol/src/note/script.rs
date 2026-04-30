@@ -42,6 +42,10 @@ impl NoteScript {
     // --------------------------------------------------------------------------------------------
 
     /// Returns a new [NoteScript] instantiated from the provided program.
+    ///
+    /// TODO: since the note script now should be created from `Library`, not `Program`, this
+    /// constructor should be removed:
+    /// (<https://github.com/0xMiden/protocol/pull/2822#discussion_r3132965577>).
     pub fn new(code: Program) -> Self {
         Self {
             entrypoint: code.entrypoint(),
@@ -359,14 +363,14 @@ fn create_external_node_forest(digest: Word) -> (MastForest, MastNodeId) {
 mod tests {
     use super::{Felt, NoteScript, Vec};
     use crate::assembly::Assembler;
-    use crate::testing::note::DEFAULT_NOTE_CODE;
+    use crate::testing::note::DEFAULT_NOTE_SCRIPT;
 
     #[test]
     fn test_note_script_to_from_felt() {
         let assembler = Assembler::default();
-        let script_src = DEFAULT_NOTE_CODE;
-        let program = assembler.assemble_program(script_src).unwrap();
-        let note_script = NoteScript::new(program);
+        let script_src = DEFAULT_NOTE_SCRIPT;
+        let library = assembler.assemble_library([script_src]).unwrap();
+        let note_script = NoteScript::from_library(&library).unwrap();
 
         let encoded: Vec<Felt> = (&note_script).into();
         let decoded: NoteScript = encoded.try_into().unwrap();
@@ -381,8 +385,8 @@ mod tests {
         use crate::Word;
 
         let assembler = Assembler::default();
-        let program = assembler.assemble_program("begin nop end").unwrap();
-        let script = NoteScript::new(program);
+        let library = assembler.assemble_library([DEFAULT_NOTE_SCRIPT]).unwrap();
+        let script = NoteScript::from_library(&library).unwrap();
 
         assert!(script.mast().advice_map().is_empty());
 

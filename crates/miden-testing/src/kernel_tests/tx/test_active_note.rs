@@ -20,6 +20,7 @@ use miden_protocol::testing::account_id::{
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
     ACCOUNT_ID_SENDER,
 };
+use miden_protocol::testing::note::DEFAULT_NOTE_SCRIPT;
 use miden_protocol::transaction::memory::{ASSET_SIZE, ASSET_VALUE_OFFSET};
 use miden_protocol::{EMPTY_WORD, Felt, ONE, WORD_SIZE, Word};
 use miden_standards::code_builder::CodeBuilder;
@@ -301,8 +302,8 @@ async fn test_active_note_get_assets() -> anyhow::Result<()> {
             # assert the number of assets is correct
             eq.{note_0_num_assets} assert.err="unexpected num assets for note 0"
 
-            # assert the pointer is returned
-            dup eq.{DEST_POINTER_NOTE_0} assert.err="unexpected dest ptr for note 0"
+            # push the dest pointer for asset assertions
+            push.{DEST_POINTER_NOTE_0}
 
             # asset memory assertions
             {NOTE_0_ASSET_ASSERTIONS}
@@ -324,8 +325,8 @@ async fn test_active_note_get_assets() -> anyhow::Result<()> {
             # assert the number of assets is correct
             eq.{note_1_num_assets} assert.err="unexpected num assets for note 1"
 
-            # assert the pointer is returned
-            dup eq.{DEST_POINTER_NOTE_1} assert.err="unexpected dest ptr for note 1"
+            # push the dest pointer for asset assertions
+            push.{DEST_POINTER_NOTE_1}
 
             # asset memory assertions
             {NOTE_1_ASSET_ASSERTIONS}
@@ -431,12 +432,13 @@ async fn test_active_note_get_storage() -> anyhow::Result<()> {
             # => []
 
             push.{NOTE_0_PTR} exec.active_note::get_storage
-            # => [num_storage_items, dest_ptr]
+            # => [num_storage_items]
 
             eq.{num_storage_items} assert.err="unexpected num_storage_items"
-            # => [dest_ptr]
+            # => []
 
-            dup eq.{NOTE_0_PTR} assert.err="unexpected dest ptr"
+            # push the dest pointer for storage assertions
+            push.{NOTE_0_PTR}
             # => [dest_ptr]
 
             # apply note 1 storage assertions
@@ -479,7 +481,7 @@ async fn test_active_note_get_exactly_8_inputs() -> anyhow::Result<()> {
     let metadata = NoteMetadata::new(sender_id, NoteType::Public).with_tag(tag);
     let vault = NoteAssets::new(vec![]).context("failed to create input note assets")?;
     let note_script = CodeBuilder::default()
-        .compile_note_script("begin nop end")
+        .compile_note_script(DEFAULT_NOTE_SCRIPT)
         .context("failed to parse note script")?;
 
     // create a recipient with note storage, which number divides by 8. For simplicity create 8
