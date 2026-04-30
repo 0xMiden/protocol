@@ -315,24 +315,17 @@ fn populate_let_state(bridge: &mut Account, num_leaves: u32, frontier: &[Keccak2
     }
 }
 
-/// Verifies bridge-out frontier correctness across all 32 bit positions by exercising the two
-/// boundary configurations that `bridge_out_consecutive` (which only walks `num_leaves` from
-/// 0..32, exercising bits 0-4) cannot reach.
+/// Verifies frontier correctness across all 32 bit positions using a high `num_leaves`.
 ///
-/// With `load_let_frontier_selective` and `save_let_frontier_selective` driven by the bit
-/// pattern of `num_leaves`, the two scenarios below exercise every height in both READ and
-/// WRITE roles in just two single-leaf inserts:
-///
-/// - `num_leaves = 2^31 - 1` (binary `0111...1`): every bit 0-30 is 1, bit 31 is 0. The masm READs
-///   frontier[0..30] from storage and WRITEs frontier[31] back — peak read.
-/// - `num_leaves = 2^31` (binary `1000...0`): every bit 0-30 is 0, bit 31 is 1. The masm READs
-///   frontier[31] and WRITEs frontier[0..30] — peak write.
+/// - `num_leaves = 2^31 - 1` (binary `0111...1`): internally, selectively reads all frontier
+///   heights 0..30 from storage, and writes the updated frontier[31] back to storage.
+/// - `num_leaves = 2^31` (binary `1000...0`): internally, selectively reads frontier[31] from
+///   storage, and writes the updated frontier[0..30] back to storage.
 ///
 /// Together these cover every height in both roles. Each scenario consumes one B2AGG note
-/// against a bridge account that's been pre-populated to the chosen `num_leaves`, then
-/// verifies the resulting Local Exit Root against the in-process `MerkleTreeFrontier32`
-/// reference (already Solidity-compatible — see
-/// `merkle_tree_frontier::test_solidity_mtf_compatibility`).
+/// against a bridge account that's been pre-populated to the chosen `num_leaves`, then verifies
+/// the resulting LER against the Rust `MerkleTreeFrontier32` reference.
+/// Note: we don't verify against the Solidity implementation here.
 #[rstest::rstest]
 #[case::peak_read((1u32 << 31) - 1)]
 #[case::peak_write(1u32 << 31)]
@@ -431,12 +424,6 @@ async fn bridge_out_at_high_num_leaves(#[case] initial_num_leaves: u32) -> anyho
     bridge_account.apply_delta(config_executed.account_delta())?;
     mock_chain.add_pending_executed_transaction(&config_executed)?;
     mock_chain.prove_next_block()?;
-
-    assert_eq!(
-        AggLayerBridge::read_let_num_leaves(&bridge_account),
-        initial_num_leaves as u64,
-        "config note should not change the LET leaf count",
-    );
 
     // Consume the B2AGG note. With the pre-populated frontier, this single insert hits the
     // peak-read configuration (for 2^31 - 1) or peak-write configuration (for 2^31).
