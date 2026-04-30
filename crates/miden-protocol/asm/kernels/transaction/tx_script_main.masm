@@ -1,6 +1,6 @@
 use miden::core::word
 
-use $kernel::memory
+use $kernel::memory::TX_SCRIPT_ROOT_PTR
 use $kernel::prologue
 
 # ERRORS
@@ -45,7 +45,7 @@ proc main
     # ---------------------------------------------------------------------------------------------
 
     # get the memory address of the transaction script root and load it to the stack
-    exec.memory::get_tx_script_root_ptr
+    push.TX_SCRIPT_ROOT_PTR
     padw dup.4 mem_loadw_le
     # => [TX_SCRIPT_ROOT, tx_script_root_ptr]
 
