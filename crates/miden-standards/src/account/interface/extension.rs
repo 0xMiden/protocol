@@ -129,9 +129,8 @@ impl AccountInterfaceExt for AccountInterface {
                         .extend(no_auth_library().mast_forest().procedure_digests());
                 },
                 AccountComponentInterface::AuthNetworkAccount => {
-                    component_proc_digests.extend(
-                        network_account_auth_library().mast_forest().procedure_digests(),
-                    );
+                    component_proc_digests
+                        .extend(network_account_auth_library().mast_forest().procedure_digests());
                 },
                 AccountComponentInterface::Custom(custom_procs) => {
                     component_proc_digests

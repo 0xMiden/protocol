@@ -79,9 +79,7 @@ impl AccountComponentInterface {
             AccountComponentInterface::AuthMultisig => "Multisig".to_string(),
             AccountComponentInterface::AuthGuardedMultisig => "Guarded Multisig".to_string(),
             AccountComponentInterface::AuthNoAuth => "No Auth".to_string(),
-            AccountComponentInterface::AuthNetworkAccount => {
-                "Network Account Auth".to_string()
-            },
+            AccountComponentInterface::AuthNetworkAccount => "Network Account Auth".to_string(),
             AccountComponentInterface::Custom(proc_root_vec) => {
                 let result = proc_root_vec
                     .iter()
