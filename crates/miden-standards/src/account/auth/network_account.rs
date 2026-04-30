@@ -62,7 +62,7 @@ pub struct AuthNetworkAccount {
 
 impl AuthNetworkAccount {
     /// The name of the component.
-    pub const NAME: &'static str = "miden::standards::components::auth::network_account";
+    pub const NAME: &'static str = "miden::standards::auth::network_account";
 
     /// Creates a new [`AuthNetworkAccount`] component with the provided list of allowed
     /// input-note script roots.

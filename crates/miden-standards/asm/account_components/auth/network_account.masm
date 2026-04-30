@@ -1,4 +1,4 @@
-# The MASM code of the NetworkAccountAuth authentication component.
+# The MASM code of the AuthNetworkAccount authentication component.
 #
 # See the `AuthNetworkAccount` Rust type's documentation for more details.
 
@@ -17,7 +17,7 @@ const ALLOWED_NOTE_SCRIPTS_SLOT = word("miden::standards::auth::network_account:
 # AUTH PROCEDURE
 # =================================================================================================
 
-#! Authenticates a transaction against a `NetworkAccountAuth` component.
+#! Authenticates a transaction against an `AuthNetworkAccount` component.
 #!
 #! Enforces two invariants:
 #! 1. No transaction script may have been executed in this transaction.
