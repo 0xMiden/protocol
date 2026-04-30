@@ -340,16 +340,17 @@ end
 #!
 #! Invocation: exec
 proc load_let_frontier_selective
-    # 1. Load num_leaves from its value slot and store to memory
+    # 1. Load num_leaves from its value slot
     push.LET_NUM_LEAVES_SLOT[0..2]
     exec.active_account::get_item
     # => [num_leaves, 0, 0, 0]
 
-    push.LET_FRONTIER_MEM_PTR mem_storew_le dropw
-    # => []
+    # 2. Keep a copy of num_leaves on the stack for bit checking, then write the
+    # [num_leaves, 0, 0, 0] word to memory at LET_FRONTIER_MEM_PTR.
+    dup.0 movdn.4
+    # => [num_leaves, 0, 0, 0, num_leaves]
 
-    # 2. Reload num_leaves for bit checking
-    push.LET_FRONTIER_MEM_PTR mem_load
+    push.LET_FRONTIER_MEM_PTR mem_storew_le dropw
     # => [num_leaves]
 
     push.0
