@@ -324,8 +324,28 @@ end
 #! Selectively loads the LET (Local Exit Tree) frontier from account storage into memory.
 #!
 #! First loads num_leaves from its dedicated value slot. Then, based on the bit pattern of
-#! num_leaves, loads only the frontier entries that will be read by append_and_update_frontier
-#! (those at heights where the corresponding bit in num_leaves is 1).
+#! num_leaves, loads only the frontier entries that will be read by append_and_update_frontier,
+#! i.e. those at heights where the corresponding bit in num_leaves is 1.
+#!
+#! For example:
+#! for a tree of depth=4, the frontier entry at height=2 will be read with the pattern 0b_X1XX:
+#! - num_leaves = 0b_0100 (4),
+#! - num_leaves = 0b_0101 (5),
+#! - num_leaves = 0b_0110 (6),
+#! - num_leaves = 0b_0111 (7),
+#! (without any writes to frontier[2] in the meantime).
+#!
+#! To understand the read pattern, consider the following:
+#! The root of the depth-3 subtree is computed as `merge(root-d2-left, root-d2-right)`:
+#!
+#!          root-d3
+#!         /      \
+#! root-d2-left  root-d2-right
+#!
+#! As we add leaves 5-8, the `root-d2-left` stays fixed as frontier[2] (all four leaves are inserted)
+#! while `root-d2-right` changes with each leaf 5-8.
+#! So as we're adding leaves 5-8, we ALWAYS read frontier[2] from storage and merge it with the
+#! freshly computed root-d2-right.
 #!
 #! Entries at heights where the corresponding bit in num_leaves is 0 are not loaded, because
 #! append_and_update_frontier will instead read the canonical zeros at those heights.
@@ -419,8 +439,26 @@ end
 #! These are the entries at heights where the corresponding bit in the pre-append num_leaves
 #! was 0.
 #!
-#! Entries at heights where the bit was 1 were only read by append_and_update_frontier, so they
-#! don't need to be saved back to storage.
+#! Note, that not all entries that are written to storage will be meaningfully read again.
+#! Some frontier heights may be written multiple times before they are read again. For example:
+#! for a tree of depth=4, the frontier entry at height=2 will be written with the pattern 0b_X0XX:
+#! - num_leaves = 0b_0000 (0),
+#! - num_leaves = 0b_0001 (1),
+#! - num_leaves = 0b_0010 (2),
+#! - num_leaves = 0b_0011 (3),
+#! before it's ever read when inserting the 5th leaf (when pre-insert num_leaves = 0b_0100 (4)).
+#! Notice that only the last write here is meaningful.
+#!
+#! This pattern is later repeated for height=2 but when the upper bit is 1:
+#! - num_leaves = 0b_1000 (8),
+#! - num_leaves = 0b_1001 (9),
+#! - num_leaves = 0b_1010 (10),
+#! - num_leaves = 0b_1011 (11),
+#! before it's read again when inserting the 13th leaf (when pre-insert num_leaves = 0b_1100 (12)).
+#!
+#! This is a little wasteful, but already better than the previous implementation, which
+#! unconditionally saved all frontier entries to storage.
+#! TODO: potential room for optimization here? Need to see if this affects root computation
 #!
 #! Inputs:  []
 #! Outputs: []
