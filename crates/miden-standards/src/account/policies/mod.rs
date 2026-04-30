@@ -10,9 +10,10 @@
 //! policy procedure on the account so that the manager's `dynexec` can dispatch to it.
 //!
 //! A faucet installs the manager together with at least one mint and one burn policy component
-//! whose procedure roots are registered in the manager's allowed-policies maps. Call
-//! [`TokenPolicyManager::into_components`] to obtain the three components produced by a manager
-//! configuration in a single call.
+//! whose procedure roots are registered in the manager's allowed-policies maps. Pass a
+//! [`TokenPolicyManager`] directly to
+//! [`miden_protocol::account::AccountBuilder::with_components`] to install the manager and the
+//! configured mint/burn policy components in one call.
 
 use miden_protocol::Word;
 
@@ -33,6 +34,7 @@ pub use mint::{MintAllowAll, MintOwnerOnly, MintPolicyConfig};
 /// `set_mint_policy` and `set_burn_policy`.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum PolicyAuthority {
     /// Policy changes are authorized by the account's authentication component logic.
     AuthControlled = 0,

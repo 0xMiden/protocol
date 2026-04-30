@@ -77,12 +77,14 @@ static ALLOWED_BURN_POLICY_PROC_ROOTS_SLOT_NAME: LazyLock<StorageSlotName> = Laz
 /// - [`PolicyAuthority::OwnerControlled`]: changes require the account owner (verified through the
 ///   `Ownable2Step` companion component).
 ///
-/// Construct via [`Self::new`] and convert into the set of account components via
-/// `Vec::<AccountComponent>::from(self)`. The conversion produces three components:
-/// the policy manager itself, the chosen mint policy component, and the chosen burn policy
-/// component. To register additional allowed roots for runtime switching, call
-/// [`Self::with_allowed_mint_policy`] / [`Self::with_allowed_burn_policy`] and add the matching
-/// policy components to the account separately.
+/// Construct via [`Self::new`] and pass the manager directly to
+/// [`miden_protocol::account::AccountBuilder::with_components`] (the type implements
+/// [`IntoIterator<Item = AccountComponent>`]). Iteration yields up to three components: the
+/// policy manager itself, the chosen mint policy component, and the chosen burn policy
+/// component. Custom policy variants are skipped — install the matching components on the
+/// account separately. To register additional allowed roots for runtime switching, call
+/// [`Self::with_allowed_mint_policy`] / [`Self::with_allowed_burn_policy`] and add the
+/// matching policy components to the account separately.
 ///
 /// ## Storage layout
 ///
@@ -319,23 +321,35 @@ impl TokenPolicyManager {
             "token policy manager component should satisfy the requirements of a valid account component",
         )
     }
+}
 
-    /// Returns the [`AccountComponent`]s implementing this token policy configuration, in the
-    /// order they must be installed on the account.
+impl IntoIterator for TokenPolicyManager {
+    type Item = AccountComponent;
+    type IntoIter = alloc::vec::IntoIter<AccountComponent>;
+
+    /// Yields the [`AccountComponent`]s implementing this token policy configuration, in the
+    /// order they must be installed on the account:
     ///
-    /// The returned vector contains:
     /// 1. The policy manager component (storage slots + manager procedures).
     /// 2. The active mint policy component (resolved from the [`MintPolicyConfig`] passed to
-    ///    [`TokenPolicyManager::new`]).
-    /// 3. The active burn policy component (resolved from the [`BurnPolicyConfig`]).
+    ///    [`TokenPolicyManager::new`]), if it resolves to a built-in component.
+    /// 3. The active burn policy component (resolved from the [`BurnPolicyConfig`]), if it resolves
+    ///    to a built-in component.
+    ///
+    /// [`MintPolicyConfig::Custom`] / [`BurnPolicyConfig::Custom`] variants are skipped — the
+    /// caller must install the corresponding components on the account separately.
     ///
     /// To register additional allowed policies for runtime switching, call
     /// [`Self::with_allowed_mint_policy`] / [`Self::with_allowed_burn_policy`] and add the
     /// matching policy components to the account separately.
-    pub fn into_components(self) -> Vec<AccountComponent> {
-        let mint_component = self.mint_policy.into_component();
-        let burn_component = self.burn_policy.into_component();
+    fn into_iter(self) -> Self::IntoIter {
+        let mint_policy = self.mint_policy;
+        let burn_policy = self.burn_policy;
         let manager_component = self.into_manager_component();
-        vec![manager_component, mint_component, burn_component]
+
+        let mut components = vec![manager_component];
+        components.extend(mint_policy.into_component());
+        components.extend(burn_policy.into_component());
+        components.into_iter()
     }
 }

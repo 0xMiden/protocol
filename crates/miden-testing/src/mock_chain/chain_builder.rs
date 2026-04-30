@@ -349,14 +349,11 @@ impl MockChainBuilder {
         let account_builder = AccountBuilder::new(self.rng.random())
             .storage_mode(AccountStorageMode::Public)
             .account_type(AccountType::FungibleFaucet)
-            .with_components(
-                TokenPolicyManager::new(
-                    PolicyAuthority::AuthControlled,
-                    MintPolicyConfig::AllowAll,
-                    BurnPolicyConfig::AllowAll,
-                )
-                .into_components(),
-            )
+            .with_components(TokenPolicyManager::new(
+                PolicyAuthority::AuthControlled,
+                MintPolicyConfig::AllowAll,
+                BurnPolicyConfig::AllowAll,
+            ))
             .with_component(metadata)
             .with_component(BasicFungibleFaucet);
 
@@ -392,14 +389,11 @@ impl MockChainBuilder {
             .storage_mode(AccountStorageMode::Public)
             .with_component(metadata)
             .with_component(BasicFungibleFaucet)
-            .with_components(
-                TokenPolicyManager::new(
-                    PolicyAuthority::AuthControlled,
-                    MintPolicyConfig::AllowAll,
-                    BurnPolicyConfig::AllowAll,
-                )
-                .into_components(),
-            )
+            .with_components(TokenPolicyManager::new(
+                PolicyAuthority::AuthControlled,
+                MintPolicyConfig::AllowAll,
+                BurnPolicyConfig::AllowAll,
+            ))
             .account_type(AccountType::FungibleFaucet);
 
         self.add_account_from_builder(auth_method, account_builder, AccountState::Exists)
@@ -439,14 +433,11 @@ impl MockChainBuilder {
             .with_component(metadata)
             .with_component(NetworkFungibleFaucet)
             .with_component(Ownable2Step::new(owner_account_id))
-            .with_components(
-                TokenPolicyManager::new(
-                    PolicyAuthority::OwnerControlled,
-                    mint_policy,
-                    BurnPolicyConfig::AllowAll,
-                )
-                .into_components(),
-            )
+            .with_components(TokenPolicyManager::new(
+                PolicyAuthority::OwnerControlled,
+                mint_policy,
+                BurnPolicyConfig::AllowAll,
+            ))
             .account_type(AccountType::FungibleFaucet);
 
         // Network faucets always use IncrNonce auth (no authentication)
@@ -466,14 +457,11 @@ impl MockChainBuilder {
             .with_component(metadata)
             .with_component(NetworkFungibleFaucet)
             .with_component(Ownable2Step::new(owner_account_id))
-            .with_components(
-                TokenPolicyManager::new(
-                    PolicyAuthority::OwnerControlled,
-                    MintPolicyConfig::OwnerOnly,
-                    BurnPolicyConfig::AllowAll,
-                )
-                .into_components(),
-            )
+            .with_components(TokenPolicyManager::new(
+                PolicyAuthority::OwnerControlled,
+                MintPolicyConfig::OwnerOnly,
+                BurnPolicyConfig::AllowAll,
+            ))
             .account_type(AccountType::FungibleFaucet);
 
         self.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)

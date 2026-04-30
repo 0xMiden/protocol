@@ -41,18 +41,13 @@ impl MintPolicyConfig {
         }
     }
 
-    /// Returns the [`AccountComponent`] corresponding to the active policy.
-    ///
-    /// # Panics
-    ///
-    /// Panics for [`Self::Custom`] — custom policies must be installed by the caller directly.
-    pub(crate) fn into_component(self) -> AccountComponent {
+    /// Returns the [`AccountComponent`] corresponding to the active policy, or [`None`] for
+    /// [`Self::Custom`] — custom policies must be installed by the caller directly.
+    pub(crate) fn into_component(self) -> Option<AccountComponent> {
         match self {
-            Self::AllowAll => MintAllowAll.into(),
-            Self::OwnerOnly => MintOwnerOnly.into(),
-            Self::Custom(_) => panic!(
-                "MintPolicyConfig::Custom does not resolve to a built-in component; install the corresponding component separately",
-            ),
+            Self::AllowAll => Some(MintAllowAll.into()),
+            Self::OwnerOnly => Some(MintOwnerOnly.into()),
+            Self::Custom(_) => None,
         }
     }
 }

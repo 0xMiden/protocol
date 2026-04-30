@@ -110,16 +110,13 @@ impl AccountBuilder {
         self
     }
 
-    /// Adds the components yielded by `components` to the builder, in iteration order.
+    /// Adds the components yielded by `components` to the builder.
     ///
     /// This is a convenience wrapper around repeated [`Self::with_component`] calls. It is
     /// most useful for installing the variable number of components produced by composite
     /// configurations whose component count is not known at the call site (for example, a
     /// configuration value that expands into one or several components depending on its
     /// variant).
-    ///
-    /// Iteration order is preserved, so callers can rely on it for components that must be
-    /// installed in a specific order.
     pub fn with_components(
         mut self,
         components: impl IntoIterator<Item = impl Into<AccountComponent>>,

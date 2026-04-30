@@ -247,20 +247,19 @@ fn create_agglayer_faucet_builder(
 
     // `allow_all` is explicitly registered in the allowed list so the owner can open burns at
     // runtime via `set_burn_policy`.
-    let policy_components = TokenPolicyManager::new(
+    let token_policy_manager = TokenPolicyManager::new(
         PolicyAuthority::OwnerControlled,
         MintPolicyConfig::OwnerOnly,
         BurnPolicyConfig::OwnerOnly,
     )
-    .with_allowed_burn_policy(BurnAllowAll::root())
-    .into_components();
+    .with_allowed_burn_policy(BurnAllowAll::root());
 
     Account::builder(seed.into())
         .account_type(AccountType::FungibleFaucet)
         .storage_mode(AccountStorageMode::Network)
         .with_component(agglayer_component)
         .with_component(Ownable2Step::new(bridge_account_id))
-        .with_components(policy_components)
+        .with_components(token_policy_manager)
         .with_component(BurnAllowAll)
 }
 

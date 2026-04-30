@@ -205,20 +205,19 @@ fn build_network_faucet_with_burn_switching(
         .token_supply(token_supply)
         .build()?;
 
-    let policy_components = TokenPolicyManager::new(
+    let token_policy_manager = TokenPolicyManager::new(
         PolicyAuthority::OwnerControlled,
         mint_policy,
         BurnPolicyConfig::AllowAll,
     )
-    .with_allowed_burn_policy(BurnOwnerOnly::root())
-    .into_components();
+    .with_allowed_burn_policy(BurnOwnerOnly::root());
 
     let account_builder = AccountBuilder::new(builder.rng_mut().random())
         .storage_mode(AccountStorageMode::Network)
         .with_component(metadata)
         .with_component(NetworkFungibleFaucet)
         .with_component(Ownable2Step::new(owner))
-        .with_components(policy_components)
+        .with_components(token_policy_manager)
         .with_component(BurnOwnerOnly)
         .account_type(AccountType::FungibleFaucet);
 

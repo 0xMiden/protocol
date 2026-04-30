@@ -41,18 +41,13 @@ impl BurnPolicyConfig {
         }
     }
 
-    /// Returns the [`AccountComponent`] corresponding to the active policy.
-    ///
-    /// # Panics
-    ///
-    /// Panics for [`Self::Custom`] — custom policies must be installed by the caller directly.
-    pub(crate) fn into_component(self) -> AccountComponent {
+    /// Returns the [`AccountComponent`] corresponding to the active policy, or [`None`] for
+    /// [`Self::Custom`] — custom policies must be installed by the caller directly.
+    pub(crate) fn into_component(self) -> Option<AccountComponent> {
         match self {
-            Self::AllowAll => BurnAllowAll.into(),
-            Self::OwnerOnly => BurnOwnerOnly.into(),
-            Self::Custom(_) => panic!(
-                "BurnPolicyConfig::Custom does not resolve to a built-in component; install the corresponding component separately",
-            ),
+            Self::AllowAll => Some(BurnAllowAll.into()),
+            Self::OwnerOnly => Some(BurnOwnerOnly.into()),
+            Self::Custom(_) => None,
         }
     }
 }

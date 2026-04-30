@@ -198,14 +198,11 @@ pub fn create_network_fungible_faucet(
         .with_component(metadata)
         .with_component(NetworkFungibleFaucet)
         .with_component(access_control)
-        .with_components(
-            TokenPolicyManager::new(
-                PolicyAuthority::OwnerControlled,
-                MintPolicyConfig::OwnerOnly,
-                BurnPolicyConfig::AllowAll,
-            )
-            .into_components(),
-        )
+        .with_components(TokenPolicyManager::new(
+            PolicyAuthority::OwnerControlled,
+            MintPolicyConfig::OwnerOnly,
+            BurnPolicyConfig::AllowAll,
+        ))
         .build()
         .map_err(FungibleFaucetError::AccountError)?;
 

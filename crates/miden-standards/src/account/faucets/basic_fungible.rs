@@ -204,14 +204,11 @@ pub fn create_basic_fungible_faucet(
         .with_auth_component(auth_component)
         .with_component(metadata)
         .with_component(BasicFungibleFaucet)
-        .with_components(
-            TokenPolicyManager::new(
-                PolicyAuthority::AuthControlled,
-                MintPolicyConfig::AllowAll,
-                BurnPolicyConfig::AllowAll,
-            )
-            .into_components(),
-        )
+        .with_components(TokenPolicyManager::new(
+            PolicyAuthority::AuthControlled,
+            MintPolicyConfig::AllowAll,
+            BurnPolicyConfig::AllowAll,
+        ))
         .build()
         .map_err(FungibleFaucetError::AccountError)?;
 

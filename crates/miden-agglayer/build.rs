@@ -340,15 +340,14 @@ fn generate_agglayer_constants(
             //
             // Burn policy manager: active = `owner_only` (burns locked by default), `allow_all`
             // is explicitly allowed so the owner can open burns at runtime via `set_burn_policy`.
-            let policy_components = TokenPolicyManager::new(
+            let token_policy_manager = TokenPolicyManager::new(
                 PolicyAuthority::OwnerControlled,
                 MintPolicyConfig::OwnerOnly,
                 BurnPolicyConfig::OwnerOnly,
             )
-            .with_allowed_burn_policy(BurnAllowAll::root())
-            .into_components();
+            .with_allowed_burn_policy(BurnAllowAll::root());
 
-            components.extend(policy_components);
+            components.extend(token_policy_manager);
             components.push(BurnAllowAll.into());
         }
 
