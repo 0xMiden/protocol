@@ -1,5 +1,7 @@
+use alloc::boxed::Box;
 use alloc::sync::Arc;
 
+use miden_mast_package::{Package, TargetType, Version};
 use miden_protocol::assembly::Library;
 use miden_protocol::assembly::mast::MastForest;
 use miden_protocol::utils::serde::Deserializable;
@@ -11,6 +13,8 @@ use miden_protocol::utils::sync::LazyLock;
 const STANDARDS_LIB_BYTES: &[u8] =
     include_bytes!(concat!(env!("OUT_DIR"), "/assets/standards.masl"));
 
+const STANDARDS_LIB_NAME: &str = "miden-standards";
+
 // MIDEN STANDARDS LIBRARY
 // ================================================================================================
 
@@ -21,6 +25,23 @@ impl StandardsLib {
     /// Returns a reference to the [`MastForest`] of the inner [`Library`].
     pub fn mast_forest(&self) -> &Arc<MastForest> {
         self.0.mast_forest()
+    }
+
+    /// Wraps this library into a [`Package`] named `PROTOCOL_PACKAGE_NAME`,
+    /// versioned with the `miden-protocol` crate's version.
+    pub fn into_package(self) -> Box<Package> {
+        // The ProtocolLib's version is the same as the crate's as per the miden-standards's
+        // Cargo.toml.
+        let version = Version::parse(env!("CARGO_PKG_VERSION"))
+            .expect("CARGO_PKG_VERSION must be valid semver");
+
+        Package::from_library(
+            STANDARDS_LIB_NAME.into(),
+            version,
+            TargetType::Library,
+            Arc::new(self.0),
+            [],
+        )
     }
 }
 

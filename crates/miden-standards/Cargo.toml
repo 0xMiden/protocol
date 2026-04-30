@@ -21,8 +21,9 @@ testing = ["dep:rand", "miden-assembly/testing", "miden-protocol/testing"]
 
 [dependencies]
 # Miden dependencies
-miden-processor = { workspace = true }
-miden-protocol  = { workspace = true }
+miden-mast-package = { workspace = true }
+miden-processor    = { workspace = true }
+miden-protocol     = { workspace = true }
 
 # External dependencies
 bon       = { workspace = true }

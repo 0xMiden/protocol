@@ -1,4 +1,7 @@
+use alloc::boxed::Box;
 use alloc::sync::Arc;
+
+use miden_mast_package::{Package, TargetType, Version};
 
 use crate::assembly::Library;
 use crate::assembly::mast::MastForest;
@@ -10,6 +13,8 @@ use crate::utils::sync::LazyLock;
 
 const PROTOCOL_LIB_BYTES: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/assets/protocol.masl"));
 
+const PROTOCOL_PACKAGE_NAME: &str = "miden-protocol";
+
 // PROTOCOL LIBRARY
 // ================================================================================================
 
@@ -20,6 +25,23 @@ impl ProtocolLib {
     /// Returns a reference to the [`MastForest`] of the inner [`Library`].
     pub fn mast_forest(&self) -> &Arc<MastForest> {
         self.0.mast_forest()
+    }
+
+    /// Wraps this library into a [`Package`] named `PROTOCOL_PACKAGE_NAME`,
+    /// versioned with the `miden-protocol` crate's version.
+    pub fn into_package(self) -> Box<Package> {
+        // The ProtocolLib's version is the same as the crate's as per the miden-protocol's
+        // Cargo.toml.
+        let version = Version::parse(env!("CARGO_PKG_VERSION"))
+            .expect("CARGO_PKG_VERSION must be valid semver");
+
+        Package::from_library(
+            PROTOCOL_PACKAGE_NAME.into(),
+            version,
+            TargetType::Library,
+            Arc::new(self.0),
+            [],
+        )
     }
 }
 

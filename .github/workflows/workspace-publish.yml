@@ -34,3 +34,43 @@ jobs:
           release-branch: ${{ github.event.release.target_commitish }}
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+
+  # Upload the pre-compiled artifacts (miden-protocol.masp) on the
+  # GitHub release page.
+  # Used by midenup to speed up installs.
+  upload-artifacts:
+    name: upload pre-built miden-protocol library artifacts
+    if: ${{ github.repository_owner == '0xMiden' }}
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.release.tag_name }}
+          persist-credentials: false
+      - uses: ./.github/actions/cleanup-runner
+      - name: Install Rust
+        run: |
+          rustup update --no-self-update
+          rustc --version
+      - name: Build miden-core.masp
+        run: |
+          make packages
+      - name: Prepare artifact
+        run: |
+          mv target/packages/miden-protocol.masp miden-protocol.masp
+      - name: Attest miden-core.masp
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        with:
+          subject-path: miden-core.masp
+      - name: Upload miden-core.masp
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          gh release upload ${RELEASE_TAG} miden-protocol.masp
