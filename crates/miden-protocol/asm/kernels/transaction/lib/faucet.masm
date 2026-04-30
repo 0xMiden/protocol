@@ -3,7 +3,7 @@ use $kernel::asset
 use $kernel::asset_vault
 use $kernel::fungible_asset
 use $kernel::non_fungible_asset
-use $kernel::memory
+use $kernel::memory::INPUT_VAULT_ROOT_PTR
 
 # FUNGIBLE ASSETS
 # ==================================================================================================
@@ -30,7 +30,7 @@ pub proc mint_fungible_asset
     exec.fungible_asset::validate_origin
     # => [ASSET_KEY, ASSET_VALUE]
 
-    exec.memory::get_input_vault_root_ptr
+    push.INPUT_VAULT_ROOT_PTR
     movdn.8
     # => [ASSET_KEY, ASSET_VALUE, input_vault_root_ptr]
 
@@ -61,7 +61,7 @@ proc burn_fungible_asset
     exec.fungible_asset::validate_origin
     # => [ASSET_KEY, ASSET_VALUE]
 
-    exec.memory::get_input_vault_root_ptr
+    push.INPUT_VAULT_ROOT_PTR
     movdn.8
     # => [ASSET_KEY, ASSET_VALUE, input_vault_root_ptr]
 
@@ -100,7 +100,7 @@ proc mint_non_fungible_asset
     exec.non_fungible_asset::validate_origin
     # => [ASSET_KEY, ASSET_VALUE]
 
-    exec.memory::get_input_vault_root_ptr
+    push.INPUT_VAULT_ROOT_PTR
     movdn.8
     # => [ASSET_KEY, ASSET_VALUE, input_vault_root_ptr]
 
@@ -131,7 +131,7 @@ proc burn_non_fungible_asset
     # => [ASSET_KEY, ASSET_VALUE]
 
     # remove the non-fungible asset from the input vault for asset preservation
-    exec.memory::get_input_vault_root_ptr
+    push.INPUT_VAULT_ROOT_PTR
     movdn.8
     # => [ASSET_KEY, ASSET_VALUE, input_vault_root_ptr]
 
