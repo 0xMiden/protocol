@@ -316,7 +316,7 @@ proc add_leaf_bridge(leaf_data_start_ptr: MemoryAddress)
     exec.save_let_root_and_num_leaves
     # => []
 
-    # Write only the frontier entries that were modified (bit h=0 in original num_leaves)
+    # Write only the frontier entries that were modified from memory back to storage (bit h=0 in original num_leaves)
     exec.save_let_frontier_selective
     # => []
 end
@@ -324,7 +324,7 @@ end
 #! Selectively loads the LET (Local Exit Tree) frontier from account storage into memory.
 #!
 #! First loads num_leaves from its dedicated value slot. Then, based on the bit pattern of
-#! num_leaves, loads only the frontier entries that will be READ by append_and_update_frontier
+#! num_leaves, loads only the frontier entries that will be read by append_and_update_frontier
 #! (those at heights where the corresponding bit in num_leaves is 1).
 #!
 #! Entries at heights where the bit is 0 are not loaded because they will be overwritten by
@@ -415,7 +415,7 @@ end
 
 #! Selectively writes modified frontier entries from memory back to the LET map slot.
 #!
-#! Only entries that were WRITTEN by append_and_update_frontier are saved back to storage.
+#! Only entries that were written by append_and_update_frontier are saved back to storage.
 #! These are the entries at heights where the corresponding bit in the original num_leaves
 #! (before increment) was 0. The original num_leaves is recovered as new_num_leaves - 1.
 #!
