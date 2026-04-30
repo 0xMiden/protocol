@@ -771,7 +771,7 @@ mod tests {
         assert_eq!(pswap.note_type(), NoteType::Public);
 
         let script = PswapNote::script();
-        assert!(*script.root().as_inner() != Word::default(), "Script root should not be zero");
+        assert!(Word::from(script.root()) != Word::default(), "Script root should not be zero");
         assert_eq!(note.metadata().sender(), creator_id);
         assert_eq!(note.metadata().note_type(), NoteType::Public);
         assert_eq!(note.assets().num_assets(), 1);

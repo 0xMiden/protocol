@@ -32,13 +32,6 @@ const NOTE_SCRIPT_ATTRIBUTE: &str = "note_script";
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, WordWrapper)]
 pub struct NoteScriptRoot(Word);
 
-impl NoteScriptRoot {
-    /// Returns a reference to the underlying [`Word`].
-    pub fn as_inner(&self) -> &Word {
-        &self.0
-    }
-}
-
 impl From<NoteScriptRoot> for Word {
     fn from(root: NoteScriptRoot) -> Self {
         root.0
