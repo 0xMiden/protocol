@@ -32,6 +32,8 @@ use miden_standards::account::mint_policies::OwnerControlledInitConfig;
 use miden_standards::note::StandardNote;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 use miden_tx::utils::hex_to_bytes;
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 
 use super::merkle_tree_frontier::MerkleTreeFrontier32;
 use super::test_utils::SOLIDITY_MTF_VECTORS;
@@ -333,15 +335,14 @@ fn populate_let_state(bridge: &mut Account, num_leaves: u32, frontier: &[Keccak2
 async fn bridge_out_at_high_num_leaves(#[case] initial_num_leaves: u32) -> anyhow::Result<()> {
     let vectors = &*SOLIDITY_MTF_VECTORS;
 
-    // Deterministic-but-arbitrary initial frontier. The masm storage and the Rust reference
-    // both start from the same digests, so we're verifying that the masm path computes the
-    // same root as the reference for arbitrary frontier contents — the cryptographic validity
-    // of the initial digests is irrelevant.
-    let initial_frontier: [Keccak256Digest; 32] = core::array::from_fn(|h| {
+    // Random-but-deterministic initial frontier. The masm storage and the Rust reference both
+    // start from the same digests, so we're verifying that the masm path computes the same root
+    // as the reference for arbitrary frontier contents — the cryptographic validity of the
+    // initial digests is irrelevant. A seeded RNG keeps the test reproducible across runs.
+    let mut rng = StdRng::seed_from_u64(0xa110_1eaf);
+    let initial_frontier: [Keccak256Digest; 32] = core::array::from_fn(|_| {
         let mut bytes = [0u8; 32];
-        for (i, b) in bytes.iter_mut().enumerate() {
-            *b = (h.wrapping_mul(31).wrapping_add(i.wrapping_mul(17)) ^ 0xa5) as u8;
-        }
+        rng.fill(&mut bytes);
         Keccak256Digest::from(bytes)
     });
 
