@@ -40,6 +40,10 @@ format: ## Runs Format using nightly toolchain
 format-check: ## Runs Format using nightly toolchain but only in check mode
 	cargo +nightly fmt --all --check
 
+.PHONY: shear
+shear: ## Runs cargo-shear to find unused or misplaced dependencies
+	cargo shear
+
 .PHONY: typos-check
 typos-check: ## Runs spellchecker
 	typos
@@ -60,7 +64,7 @@ lint: ## Runs all linting tasks at once (Clippy, fixing, formatting, typos)
 	@$(BUILD_GENERATED_FILES_IN_SRC) $(MAKE) clippy-no-std
 	@$(BUILD_GENERATED_FILES_IN_SRC) $(MAKE) typos-check
 	@$(BUILD_GENERATED_FILES_IN_SRC) $(MAKE) toml
-	cargo machete
+	@$(BUILD_GENERATED_FILES_IN_SRC) $(MAKE) shear
 
 # --- docs ----------------------------------------------------------------------------------------
 
@@ -173,7 +177,7 @@ check-tools: ## Checks if development tools are installed
 	@command -v typos >/dev/null 2>&1 && echo "[OK] typos is installed" || echo "[MISSING] typos is not installed (run: make install-tools)"
 	@command -v cargo nextest >/dev/null 2>&1 && echo "[OK] cargo-nextest is installed" || echo "[MISSING] cargo-nextest is not installed (run: make install-tools)"
 	@command -v taplo >/dev/null 2>&1 && echo "[OK] taplo is installed" || echo "[MISSING] taplo is not installed (run: make install-tools)"
-	@command -v cargo-machete >/dev/null 2>&1 && echo "[OK] cargo-machete is installed" || echo "[MISSING] cargo-machete is not installed (run: make install-tools)"
+	@command -v cargo-shear >/dev/null 2>&1 && echo "[OK] cargo-shear is installed" || echo "[MISSING] cargo-shear is not installed (run: make install-tools)"
 
 .PHONY: install-tools
 install-tools: ## Installs development tools required by the Makefile (mdbook, typos, nextest, taplo)
@@ -188,7 +192,7 @@ install-tools: ## Installs development tools required by the Makefile (mdbook, t
 	cargo install typos-cli --locked
 	cargo install cargo-nextest --locked
 	cargo install taplo-cli --locked
-	cargo install cargo-machete --locked
+	cargo install cargo-shear --locked
 	@echo "Development tools installation complete!"
 
 # -- documentation ---------------------------------------------------------------------------------

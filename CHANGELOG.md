@@ -28,6 +28,7 @@
 - Added `tx::get_tx_script_root` kernel procedure returning the root of the executed transaction script (empty word if no script was executed) ([#2816](https://github.com/0xMiden/protocol/pull/2816)).
 - Added `TransactionScript::from_package()` method to create `TransactionScript` from `miden-mast-package::Package` ([#2779](https://github.com/0xMiden/protocol/pull/2779)).
 - [BREAKING] Added `NoteScriptRoot` newtype wrapping note script roots ([#2851](https://github.com/0xMiden/protocol/pull/2851)).
+- Re-exported `MIN_STACK_DEPTH` from `miden-processor` ([#2856](https://github.com/0xMiden/protocol/pull/2856)).
 
 ### Fixes
 
