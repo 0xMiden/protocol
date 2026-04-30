@@ -13,7 +13,8 @@ rust-version.workspace = true
 version.workspace      = true
 
 [lib]
-bench = false
+bench   = false
+doctest = false
 
 [features]
 default = ["std"]

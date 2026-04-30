@@ -20,17 +20,24 @@ permissions:
 jobs:
   test:
     name: test
-    runs-on: ubuntu-latest
+    runs-on: warp-ubuntu-latest-x64-8x
     steps:
-      - uses: actions/checkout@main
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
       - name: Cleanup large tools for build space
         uses: ./.github/actions/cleanup-runner
-      - uses: taiki-e/install-action@nextest 
-      - uses: Swatinem/rust-cache@v2
+      # Keep this on a released install-action commit with an explicit tool; shortcut tags can
+      # trip zizmor's impostor-commit audit when they are later retagged.
+      - name: Install nextest
+        uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486 # v2.75.18
+        with:
+          tool: cargo-nextest
+      - uses: WarpBuilds/rust-cache@9d0cc3090d9c87de74ea67617b246e978735b1a1 # v2.9.1
         with:
           save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/next' }}
       - name: Install rust
-        run: rustup update --no-self-update 
+        run: rustup update --no-self-update
       - name: Build tests
         run: make test-release-build
       - name: test
@@ -38,12 +45,14 @@ jobs:
 
   doc-tests:
     name: doc-tests
-    runs-on: ubuntu-latest
+    runs-on: warp-ubuntu-latest-x64-8x
     steps:
-      - uses: actions/checkout@main
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
       - name: Cleanup large tools for build space
         uses: ./.github/actions/cleanup-runner
-      - uses: Swatinem/rust-cache@v2
+      - uses: WarpBuilds/rust-cache@9d0cc3090d9c87de74ea67617b246e978735b1a1 # v2.9.1
         with:
           save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/next' }}
       - name: Install rust

@@ -12,7 +12,8 @@ rust-version.workspace = true
 version.workspace      = true
 
 [lib]
-bench = false
+bench   = false
+doctest = false
 
 [features]
 default = ["std"]
@@ -23,7 +24,6 @@ testing = ["dep:serde", "dep:serde_json", "miden-protocol/testing"]
 # Miden dependencies
 miden-assembly   = { workspace = true }
 miden-core       = { workspace = true }
-miden-core-lib   = { workspace = true }
 miden-protocol   = { workspace = true }
 miden-standards  = { workspace = true }
 miden-utils-sync = { workspace = true }
@@ -38,23 +38,19 @@ miden-crypto = { workspace = true }
 
 # Optional testing dependencies
 serde      = { features = ["alloc", "derive"], optional = true, workspace = true }
-serde_json = { default-features = false, features = ["alloc"], optional = true, version = "1.0" }
+serde_json = { default-features = false, features = ["alloc"], optional = true, workspace = true }
 
 [dev-dependencies]
-miden-agglayer = { features = ["testing"], path = "." }
+miden-protocol = { features = ["testing"], workspace = true }
 serde          = { features = ["derive"], workspace = true }
-serde_json     = { version = "1.0" }
+serde_json     = { features = ["std"], workspace = true }
 
 [build-dependencies]
 fs-err          = { workspace = true }
 miden-assembly  = { workspace = true }
 miden-core      = { workspace = true }
-miden-core-lib  = { workspace = true }
 miden-crypto    = { workspace = true }
 miden-protocol  = { features = ["testing"], workspace = true }
 miden-standards = { workspace = true }
-regex           = { version = "1.11" }
-walkdir         = { version = "2.5" }
-
-[package.metadata.cargo-machete]
-ignored = ["miden-core-lib", "miden-standards"]
+regex           = { workspace = true }
+walkdir         = { workspace = true }
