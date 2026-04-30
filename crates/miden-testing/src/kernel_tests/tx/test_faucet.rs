@@ -31,6 +31,7 @@ use miden_protocol::testing::constants::{
     NON_FUNGIBLE_ASSET_DATA_2,
 };
 use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
+use miden_protocol::transaction::memory::INPUT_VAULT_ROOT_PTR;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::mock_account::MockAccountExt;
 
@@ -63,7 +64,7 @@ async fn test_mint_fungible_asset_succeeds() -> anyhow::Result<()> {
             # => []
 
             # assert the input vault has been updated
-            exec.memory::get_input_vault_root_ptr
+            push.{INPUT_VAULT_ROOT_PTR}
             push.{FUNGIBLE_ASSET_KEY}
             exec.asset_vault::get_asset
             # => [ASSET_VALUE]
@@ -252,7 +253,7 @@ async fn test_mint_non_fungible_asset_succeeds() -> anyhow::Result<()> {
             # => []
 
             # assert the input vault has been updated.
-            exec.memory::get_input_vault_root_ptr
+            push.{INPUT_VAULT_ROOT_PTR}
             push.{NON_FUNGIBLE_ASSET_KEY}
             exec.asset_vault::get_asset
             push.{NON_FUNGIBLE_ASSET_VALUE}
@@ -396,7 +397,7 @@ async fn test_burn_fungible_asset_succeeds() -> anyhow::Result<()> {
             call.mock_faucet::burn
 
             # assert the input vault has been updated
-            exec.memory::get_input_vault_root_ptr
+            push.{INPUT_VAULT_ROOT_PTR}
 
             push.{FUNGIBLE_ASSET_KEY}
             exec.asset_vault::get_asset
@@ -540,13 +541,13 @@ async fn test_burn_non_fungible_asset_succeeds() -> anyhow::Result<()> {
             exec.prologue::prepare_transaction
 
             # add non-fungible asset to the vault
-            exec.memory::get_input_vault_root_ptr
+            push.{INPUT_VAULT_ROOT_PTR}
             push.{NON_FUNGIBLE_ASSET_VALUE}
             push.{NON_FUNGIBLE_ASSET_KEY}
             exec.asset_vault::add_non_fungible_asset dropw
 
             # check that the non-fungible asset is presented in the input vault
-            exec.memory::get_input_vault_root_ptr
+            push.{INPUT_VAULT_ROOT_PTR}
             push.{NON_FUNGIBLE_ASSET_KEY}
             exec.asset_vault::get_asset
             push.{NON_FUNGIBLE_ASSET_VALUE}
@@ -559,7 +560,7 @@ async fn test_burn_non_fungible_asset_succeeds() -> anyhow::Result<()> {
             dropw
 
             # assert the input vault has been updated and does not have the burnt asset
-            exec.memory::get_input_vault_root_ptr
+            push.{INPUT_VAULT_ROOT_PTR}
             push.{NON_FUNGIBLE_ASSET_KEY}
             exec.asset_vault::get_asset
             # the returned word should be empty, indicating the asset is absent
