@@ -33,19 +33,19 @@ An [Account](account/index.md) can hold assets and define rules how assets can b
 
 ### Notes
 
-A [Note](note) is a message that accounts send to each other. A note stores assets and a script that defines how the note can be consumed. The [note chapter](note) describes the design, the storage types, and the creation of a note.
+A [Note](note.md) is a message that accounts send to each other. A note stores assets and a script that defines how the note can be consumed. The [note chapter](note.md) describes the design, the storage types, and the creation of a note.
 
 ### Assets
 
-An [Asset](asset) can be fungible and non-fungible. They are stored in the owner's account itself or in a note. The [asset chapter](asset) describes asset issuance, customization, and storage.
+An [Asset](asset.md) can be fungible and non-fungible. They are stored in the owner's account itself or in a note. The [asset chapter](asset.md) describes asset issuance, customization, and storage.
 
 ### Transactions
 
-A [Transaction](transaction) describes the production and consumption of notes by a single account.
+A [Transaction](transaction.md) describes the production and consumption of notes by a single account.
 
 Executing a transaction always results in a STARK proof.
 
-The [transaction chapter](transaction) describes the transaction design and implementation, including an in-depth discussion of how transaction execution happens in the transaction kernel program.
+The [transaction chapter](transaction.md) describes the transaction design and implementation, including an in-depth discussion of how transaction execution happens in the transaction kernel program.
 
 #### Accounts produce and consume notes to communicate
 
@@ -59,11 +59,11 @@ Miden's state model captures the individual states of all accounts and notes, an
 
 ### State model
 
-[State](state) describes everything that is the case at a certain point in time. Individual states of accounts or notes can be stored on-chain and off-chain. This chapter describes the three different state databases in Miden.
+[State](state.md) describes everything that is the case at a certain point in time. Individual states of accounts or notes can be stored on-chain and off-chain. This chapter describes the three different state databases in Miden.
 
 ### Blockchain
 
-The [Blockchain](blockchain) defines how state progresses as aggregated-state-updates in batches, blocks, and epochs. The [blockchain chapter](blockchain) describes the execution model and how blocks are built.
+The [Blockchain](blockchain.md) defines how state progresses as aggregated-state-updates in batches, blocks, and epochs. The [blockchain chapter](blockchain.md) describes the execution model and how blocks are built.
 
 ##### Operators capture and progress state
 
