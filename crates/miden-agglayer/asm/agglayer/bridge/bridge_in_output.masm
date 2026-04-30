@@ -1,3 +1,5 @@
+use agglayer::bridge::bridge_in::CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT
+use agglayer::bridge::bridge_in::CLAIM_PROOF_DATA_KEY_MEM_ADDR
 use miden::protocol::asset
 use miden::protocol::native_account
 use miden::protocol::note
@@ -30,12 +32,6 @@ const OUTPUT_NOTE_TYPE_PUBLIC = 1
 # P2ID attachment constants (the P2ID note created by the faucet has no attachment)
 const P2ID_ATTACHMENT_SCHEME_NONE = 0
 
-# Shared memory addresses — mirrored from bridge_in.masm; must stay in sync with the
-# values defined there. These are global offsets into the claim's working memory that
-# both `claim` (in bridge_in.masm) and the emission procs below read from.
-const CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT = 568
-const CLAIM_PROOF_DATA_KEY_MEM_ADDR = 700
-
 # Memory addresses for MINT note output construction
 const MINT_NOTE_STORAGE_MEM_ADDR_0 = 800
 const MINT_NOTE_STORAGE_DEST_TAG = 800
@@ -47,12 +43,6 @@ const MINT_NOTE_STORAGE_OUTPUT_SCRIPT_ROOT = 808
 const MINT_NOTE_STORAGE_OUTPUT_SERIAL_NUM = 812
 const MINT_NOTE_STORAGE_OUTPUT_NOTE_SUFFIX = 816
 const MINT_NOTE_STORAGE_OUTPUT_NOTE_PREFIX = 817
-
-# Offsets in the local memory of the `unlock_and_send` procedure
-const UNLOCK_ASSET_KEY_LOC = 0
-const UNLOCK_ASSET_VALUE_LOC = 4
-const UNLOCK_DEST_SUFFIX_LOC = 8
-const UNLOCK_DEST_PREFIX_LOC = 9
 
 # PUBLIC INTERFACE
 # =================================================================================================
@@ -82,6 +72,12 @@ pub proc build_mint_output_note
     exec.create_mint_note_with_attachment
     # => []
 end
+
+# Offsets in the local memory of the `unlock_and_send` procedure
+const UNLOCK_ASSET_KEY_LOC = 0
+const UNLOCK_ASSET_VALUE_LOC = 4
+const UNLOCK_DEST_SUFFIX_LOC = 8
+const UNLOCK_DEST_PREFIX_LOC = 9
 
 #! Removes the fungible asset for the claim from the bridge's vault and creates a PUBLIC P2ID
 #! output note targeted at the destination account.

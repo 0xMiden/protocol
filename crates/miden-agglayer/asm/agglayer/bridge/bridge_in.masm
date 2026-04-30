@@ -76,12 +76,10 @@ const LEAF_DATA_START_PTR = 0
 # Memory pointers for piped advice map data (used by claim procedure)
 const CLAIM_PROOF_DATA_START_PTR = 0
 const CLAIM_LEAF_DATA_START_PTR = 536
-# CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT is also mirrored in bridge_in_output.masm; keep values in sync.
-const CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT = 568
+pub const CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT = 568
 
 # Memory addresses for stored keys (used by claim procedure)
-# CLAIM_PROOF_DATA_KEY_MEM_ADDR is also mirrored in bridge_in_output.masm; keep values in sync.
-const CLAIM_PROOF_DATA_KEY_MEM_ADDR = 700
+pub const CLAIM_PROOF_DATA_KEY_MEM_ADDR = 700
 const CLAIM_LEAF_DATA_KEY_MEM_ADDR = 704
 
 # Memory addresses used to temporarily store leaf_index and source_bridge_network
