@@ -109,6 +109,7 @@ const config: Config = {
           src: "img/logo.png",
           alt: "Miden Logo",
           height: 240,
+          href: "/protocol",
         },
         title: "MIDEN",
         items: [
