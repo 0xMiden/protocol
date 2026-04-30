@@ -4,7 +4,6 @@ use alloc::vec::Vec;
 
 use miden_protocol::account::component::{
     AccountComponentMetadata,
-    FeltSchema,
     SchemaType,
     StorageSchema,
     StorageSlotSchema,
@@ -25,24 +24,12 @@ use miden_protocol::{Felt, Word};
 use crate::account::access::Ownable2Step;
 use crate::account::components::rbac_library;
 
-static RBAC_STATE_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::access::rbac::state")
-        .expect("storage slot name should be valid")
-});
-static ACTIVE_ROLES_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::access::rbac::active_roles")
-        .expect("storage slot name should be valid")
-});
 static ROLE_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::access::rbac::role_config")
         .expect("storage slot name should be valid")
 });
-static ROLE_MEMBERS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::access::rbac::role_members")
-        .expect("storage slot name should be valid")
-});
-static ROLE_MEMBER_INDEX_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::access::rbac::role_member_index")
+static ROLE_MEMBERSHIP_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::access::rbac::role_membership")
         .expect("storage slot name should be valid")
 });
 
@@ -101,14 +88,11 @@ pub struct RoleConfig {
 /// `role_exists(A)` returns `false`, though the admin configuration is retained and will
 /// apply the next time a member is granted.
 ///
-/// Role enumeration.
+/// Membership lookup.
 ///
-/// Three distinct lookup paths are maintained. `has_role(role, account)` is the primary
-/// guard used by procedures that assert the caller's role membership.
-/// `get_role_member(role, index)` iterates over all accounts currently holding a role and
-/// serves on-chain consumers that need to walk a role's membership without relying on an
-/// off-chain indexer. `get_active_role(index)` iterates over all roles that currently
-/// have at least one member.
+/// `has_role` procedure is the primary guard used by procedures that assert
+/// the caller's role membership. `get_role_member_count` returns the number of
+/// accounts holding a role
 ///
 /// Role symbol format.
 ///
@@ -133,7 +117,7 @@ pub struct RoleBasedAccessControl {
 }
 
 impl RoleBasedAccessControl {
-    pub const NAME: &'static str = "miden::standards::access::rbac";
+    pub const NAME: &'static str = "miden::standards::components::access::rbac";
 
     pub fn new() -> Self {
         Self { roles: BTreeMap::new() }
@@ -183,79 +167,30 @@ impl RoleBasedAccessControl {
         self
     }
 
-    pub fn state_slot() -> &'static StorageSlotName {
-        &RBAC_STATE_SLOT_NAME
-    }
-
-    pub fn active_roles_slot() -> &'static StorageSlotName {
-        &ACTIVE_ROLES_SLOT_NAME
-    }
-
     pub fn role_config_slot() -> &'static StorageSlotName {
         &ROLE_CONFIG_SLOT_NAME
     }
 
-    pub fn role_members_slot() -> &'static StorageSlotName {
-        &ROLE_MEMBERS_SLOT_NAME
-    }
-
-    pub fn role_member_index_slot() -> &'static StorageSlotName {
-        &ROLE_MEMBER_INDEX_SLOT_NAME
-    }
-
-    pub fn state_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::state_slot().clone(),
-            StorageSlotSchema::value(
-                "RBAC global state",
-                [
-                    FeltSchema::felt("active_role_count"),
-                    FeltSchema::new_void(),
-                    FeltSchema::new_void(),
-                    FeltSchema::new_void(),
-                ],
-            ),
-        )
-    }
-
-    pub fn active_roles_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::active_roles_slot().clone(),
-            StorageSlotSchema::map(
-                "Active roles indexed by active role position",
-                SchemaType::native_felt(),
-                SchemaType::role_symbol(),
-            ),
-        )
+    pub fn role_membership_slot() -> &'static StorageSlotName {
+        &ROLE_MEMBERSHIP_SLOT_NAME
     }
 
     pub fn role_config_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
         (
             Self::role_config_slot().clone(),
             StorageSlotSchema::map(
-                "Per-role RBAC configuration",
+                "Per-role RBAC configuration (member count and delegated admin role)",
                 SchemaType::role_symbol(),
                 SchemaType::native_word(),
             ),
         )
     }
 
-    pub fn role_members_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+    pub fn role_membership_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
         (
-            Self::role_members_slot().clone(),
+            Self::role_membership_slot().clone(),
             StorageSlotSchema::map(
-                "Role members indexed by role symbol and member index",
-                SchemaType::native_word(),
-                SchemaType::native_word(),
-            ),
-        )
-    }
-
-    pub fn role_member_index_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::role_member_index_slot().clone(),
-            StorageSlotSchema::map(
-                "Role member reverse index lookup",
+                "Role membership flag indexed by role symbol and account ID",
                 SchemaType::native_word(),
                 SchemaType::native_word(),
             ),
@@ -264,11 +199,8 @@ impl RoleBasedAccessControl {
 
     pub fn component_metadata() -> AccountComponentMetadata {
         let storage_schema = StorageSchema::new(vec![
-            Self::state_slot_schema(),
-            Self::active_roles_slot_schema(),
             Self::role_config_slot_schema(),
-            Self::role_members_slot_schema(),
-            Self::role_member_index_slot_schema(),
+            Self::role_membership_slot_schema(),
         ])
         .expect("storage schema should be valid");
 
@@ -286,34 +218,16 @@ impl Default for RoleBasedAccessControl {
 
 impl From<RoleBasedAccessControl> for AccountComponent {
     fn from(rbac: RoleBasedAccessControl) -> Self {
-        let mut active_role_entries = Vec::new();
         let mut role_config_entries = Vec::new();
-        let mut role_member_entries = Vec::new();
-        let mut role_member_index_entries = Vec::new();
-        let mut active_role_count = 0u64;
+        let mut role_membership_entries = Vec::new();
 
         for (role_symbol, role_config) in &rbac.roles {
             let role_symbol_felt = Felt::from(role_symbol);
             let admin_role_felt =
                 role_config.admin_role.as_ref().map(Felt::from).unwrap_or(Felt::ZERO);
             let member_count = role_config.members.len() as u64;
-            let active_role_index = if member_count > 0 {
-                let active_index = active_role_count;
-                active_role_entries.push((
-                    StorageMapKey::from_raw(Word::from([
-                        Felt::ZERO,
-                        Felt::ZERO,
-                        Felt::ZERO,
-                        Felt::new(active_index),
-                    ])),
-                    Word::from([role_symbol_felt, Felt::ZERO, Felt::ZERO, Felt::ZERO]),
-                ));
-                active_role_count += 1;
-                Felt::new(active_index)
-            } else {
-                Felt::ZERO
-            };
 
+            // ROLE_CONFIG: [member_count, admin_role_symbol, 0, 0]
             role_config_entries.push((
                 StorageMapKey::from_raw(Word::from([
                     Felt::ZERO,
@@ -321,80 +235,37 @@ impl From<RoleBasedAccessControl> for AccountComponent {
                     Felt::ZERO,
                     role_symbol_felt,
                 ])),
-                Word::from([
-                    Felt::new(member_count),
-                    admin_role_felt,
-                    active_role_index,
-                    Felt::ZERO,
-                ]),
+                Word::from([Felt::new(member_count), admin_role_felt, Felt::ZERO, Felt::ZERO]),
             ));
 
-            for (member_index, member) in role_config.members.iter().enumerate() {
-                role_member_entries.push((
-                    StorageMapKey::from_raw(Word::from([
-                        Felt::ZERO,
-                        Felt::ZERO,
-                        role_symbol_felt,
-                        Felt::new(member_index as u64),
-                    ])),
-                    Word::from([
-                        member.suffix(),
-                        member.prefix().as_felt(),
-                        Felt::ZERO,
-                        Felt::ZERO,
-                    ]),
-                ));
-                role_member_index_entries.push((
+            // ROLE_MEMBERSHIP: [is_member, 0, 0, 0]
+            for member in &role_config.members {
+                role_membership_entries.push((
                     StorageMapKey::from_raw(Word::from([
                         Felt::ZERO,
                         role_symbol_felt,
                         member.suffix(),
                         member.prefix().as_felt(),
                     ])),
-                    Word::from([
-                        Felt::new(1),
-                        Felt::new(member_index as u64),
-                        Felt::ZERO,
-                        Felt::ZERO,
-                    ]),
+                    Word::from([Felt::new(1), Felt::ZERO, Felt::ZERO, Felt::ZERO]),
                 ));
             }
         }
 
-        let state_slot = StorageSlot::with_value(
-            RoleBasedAccessControl::state_slot().clone(),
-            Word::from([Felt::new(active_role_count), Felt::ZERO, Felt::ZERO, Felt::ZERO]),
-        );
-        let active_roles_slot = StorageSlot::with_map(
-            RoleBasedAccessControl::active_roles_slot().clone(),
-            StorageMap::with_entries(active_role_entries)
-                .expect("active role entries should be unique"),
-        );
         let role_config_slot = StorageSlot::with_map(
             RoleBasedAccessControl::role_config_slot().clone(),
             StorageMap::with_entries(role_config_entries)
                 .expect("role config entries should be unique"),
         );
-        let role_members_slot = StorageSlot::with_map(
-            RoleBasedAccessControl::role_members_slot().clone(),
-            StorageMap::with_entries(role_member_entries)
-                .expect("role member entries should be unique"),
-        );
-        let role_member_index_slot = StorageSlot::with_map(
-            RoleBasedAccessControl::role_member_index_slot().clone(),
-            StorageMap::with_entries(role_member_index_entries)
-                .expect("role member index entries should be unique"),
+        let role_membership_slot = StorageSlot::with_map(
+            RoleBasedAccessControl::role_membership_slot().clone(),
+            StorageMap::with_entries(role_membership_entries)
+                .expect("role membership entries should be unique"),
         );
 
         AccountComponent::new(
             rbac_library(),
-            vec![
-                state_slot,
-                active_roles_slot,
-                role_config_slot,
-                role_members_slot,
-                role_member_index_slot,
-            ],
+            vec![role_config_slot, role_membership_slot],
             RoleBasedAccessControl::component_metadata(),
         )
         .expect("RBAC component should satisfy the requirements of a valid account component")

@@ -4,6 +4,6 @@ mod ownable2step;
 mod p2id;
 mod p2ide;
 mod pswap;
-mod role_based_access_control;
+mod rbac;
 mod send_note;
 mod swap;

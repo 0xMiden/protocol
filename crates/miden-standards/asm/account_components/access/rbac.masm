@@ -4,12 +4,9 @@
 
 pub use ::miden::standards::access::rbac::assert_sender_has_role
 pub use ::miden::standards::access::rbac::role_exists
+pub use ::miden::standards::access::rbac::has_role
 pub use ::miden::standards::access::rbac::get_role_admin
 pub use ::miden::standards::access::rbac::get_role_member_count
-pub use ::miden::standards::access::rbac::has_role
-pub use ::miden::standards::access::rbac::get_role_member
-pub use ::miden::standards::access::rbac::get_active_role_count
-pub use ::miden::standards::access::rbac::get_active_role
 pub use ::miden::standards::access::rbac::set_role_admin
 pub use ::miden::standards::access::rbac::grant_role
 pub use ::miden::standards::access::rbac::revoke_role

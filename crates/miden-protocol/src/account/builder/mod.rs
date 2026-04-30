@@ -117,9 +117,6 @@ impl AccountBuilder {
     /// configurations whose component count is not known at the call site (for example, a
     /// configuration value that expands into one or several components depending on its
     /// variant).
-    ///
-    /// Iteration order is preserved, so callers can rely on it for components that must be
-    /// installed in a specific order.
     pub fn with_components(
         mut self,
         components: impl IntoIterator<Item = impl Into<AccountComponent>>,

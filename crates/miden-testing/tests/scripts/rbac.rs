@@ -3,7 +3,6 @@ extern crate alloc;
 use alloc::string::String;
 use core::slice;
 
-use anyhow::Context;
 use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::{
     Account,
@@ -20,8 +19,6 @@ use miden_protocol::{Felt, Word};
 use miden_standards::account::access::{Ownable2Step, RoleBasedAccessControl};
 use miden_standards::errors::standards::{
     ERR_ACCOUNT_NOT_IN_ROLE,
-    ERR_ACTIVE_ROLE_OUT_OF_BOUNDS,
-    ERR_ROLE_MEMBER_OUT_OF_BOUNDS,
     ERR_ROLE_SYMBOL_ZERO,
     ERR_SENDER_NOT_OWNER,
     ERR_SENDER_NOT_OWNER_OR_ROLE_ADMIN,
@@ -75,15 +72,7 @@ fn role_config_key(role: &RoleSymbol) -> Word {
     Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::from(role)])
 }
 
-fn active_role_key(index: u64) -> Word {
-    Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::new(index)])
-}
-
-fn role_member_key(role: &RoleSymbol, index: u64) -> Word {
-    Word::from([Felt::ZERO, Felt::ZERO, Felt::from(role), Felt::new(index)])
-}
-
-fn role_member_index_key(role: &RoleSymbol, account_id: AccountId) -> Word {
+fn role_membership_key(role: &RoleSymbol, account_id: AccountId) -> Word {
     Word::from([Felt::ZERO, Felt::from(role), account_id.suffix(), account_id.prefix().as_felt()])
 }
 
@@ -109,38 +98,16 @@ fn get_role_config(account: &Account, role: &RoleSymbol) -> anyhow::Result<Word>
         .get_map_item(RoleBasedAccessControl::role_config_slot(), role_config_key(role))?)
 }
 
-fn get_active_role_count(account: &Account) -> anyhow::Result<u64> {
-    Ok(account.storage().get_item(RoleBasedAccessControl::state_slot())?[0].as_canonical_u64())
-}
-
-fn get_active_role(account: &Account, index: u64) -> anyhow::Result<RoleSymbol> {
-    let word = account
-        .storage()
-        .get_map_item(RoleBasedAccessControl::active_roles_slot(), active_role_key(index))?;
-    Ok(RoleSymbol::try_from(word[0])?)
-}
-
-fn get_role_member(account: &Account, role: &RoleSymbol, index: u64) -> anyhow::Result<AccountId> {
-    let word = account
-        .storage()
-        .get_map_item(RoleBasedAccessControl::role_members_slot(), role_member_key(role, index))?;
-    Ok(AccountId::try_from_elements(word[0], word[1])?)
-}
-
-fn get_role_member_index(
+fn is_role_member(
     account: &Account,
     role: &RoleSymbol,
     account_id: AccountId,
-) -> anyhow::Result<Option<u64>> {
+) -> anyhow::Result<bool> {
     let word = account.storage().get_map_item(
-        RoleBasedAccessControl::role_member_index_slot(),
-        role_member_index_key(role, account_id),
+        RoleBasedAccessControl::role_membership_slot(),
+        role_membership_key(role, account_id),
     )?;
-    if word[0].as_canonical_u64() == 0 {
-        Ok(None)
-    } else {
-        Ok(Some(word[1].as_canonical_u64()))
-    }
+    Ok(word[0].as_canonical_u64() != 0)
 }
 
 fn build_note(sender: AccountId, code: impl Into<String>, rng_seed: u32) -> anyhow::Result<Note> {
@@ -375,42 +342,6 @@ fn set_role_admin_raw_script(role: Felt, admin_role: Felt) -> String {
     )
 }
 
-fn get_role_member_script(role: &RoleSymbol, index: u64) -> String {
-    format!(
-        r#"
-        use miden::standards::access::rbac
-
-        @note_script
-        pub proc main
-            repeat.14 push.0 end
-            push.{index}
-            push.{role}
-            call.rbac::get_role_member
-            dropw dropw dropw dropw
-        end
-        "#,
-        index = index,
-        role = Felt::from(role),
-    )
-}
-
-fn get_active_role_script(index: u64) -> String {
-    format!(
-        r#"
-        use miden::standards::access::rbac
-
-        @note_script
-        pub proc main
-            repeat.15 push.0 end
-            push.{index}
-            call.rbac::get_active_role
-            dropw dropw dropw dropw
-        end
-        "#,
-        index = index,
-    )
-}
-
 fn assert_sender_has_role_script(role: &RoleSymbol) -> String {
     format!(
         r#"
@@ -454,13 +385,8 @@ async fn test_rbac_owner_role_management_and_lookup() -> anyhow::Result<()> {
     updated.apply_delta(executed.account_delta())?;
 
     let minter_config = get_role_config(&updated, &minter)?;
-    let minter_admin_config = get_role_config(&updated, &minter_admin)?;
     assert_eq!(minter_config[0], Felt::ZERO);
     assert_eq!(minter_config[1], Felt::from(&minter_admin));
-    assert_eq!(minter_config[2], Felt::ZERO);
-    assert_eq!(minter_config[3], Felt::ZERO);
-    assert_eq!(minter_admin_config[3], Felt::ZERO);
-    assert_eq!(get_active_role_count(&updated)?, 0);
 
     let grant_role_note = build_note(owner, grant_role_script(&minter, member), 202)?;
     let tx = mock_chain
@@ -473,11 +399,8 @@ async fn test_rbac_owner_role_management_and_lookup() -> anyhow::Result<()> {
 
     let minter_config = get_role_config(&granted, &minter)?;
     assert_eq!(minter_config[0], Felt::new(1));
-    assert_eq!(minter_config[2], Felt::ZERO);
-    assert_eq!(get_active_role_count(&granted)?, 1);
-    assert_eq!(get_active_role(&granted, 0)?, minter);
-    assert_eq!(get_role_member(&granted, &minter, 0)?, member);
-    assert_eq!(get_role_member_index(&granted, &minter, member)?, Some(0));
+    assert_eq!(minter_config[1], Felt::from(&minter_admin));
+    assert!(is_role_member(&granted, &minter, member)?);
 
     let revoke_role_note = build_note(owner, revoke_role_script(&minter, member), 203)?;
     let tx = mock_chain
@@ -490,113 +413,8 @@ async fn test_rbac_owner_role_management_and_lookup() -> anyhow::Result<()> {
 
     let minter_config = get_role_config(&revoked, &minter)?;
     assert_eq!(minter_config[0], Felt::ZERO);
-    assert_eq!(minter_config[2], Felt::ZERO);
-    assert_eq!(minter_config[3], Felt::ZERO);
-    assert_eq!(get_active_role_count(&revoked)?, 0);
-    assert_eq!(get_role_member_index(&revoked, &minter, member)?, None);
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_rbac_delegated_admin_and_swap_remove() -> anyhow::Result<()> {
-    let owner = test_account_id(21);
-    let delegate = test_account_id(22);
-    let alice = test_account_id(23);
-    let bob = test_account_id(24);
-    let burner_holder = test_account_id(25);
-
-    let minter = role("MINTER");
-    let minter_admin = role("MINTER_ADMIN");
-    let burner = role("BURNER");
-
-    let account = create_rbac_account_with_owner(owner)?;
-    let mut builder = MockChain::builder();
-    builder.add_account(account.clone())?;
-    let mock_chain = builder.build()?;
-
-    let set_role_admin_note =
-        build_note(owner, set_role_admin_script(&minter, Some(&minter_admin)), 304)?;
-    let tx = mock_chain
-        .build_tx_context(account.clone(), &[], slice::from_ref(&set_role_admin_note))?
-        .build()?;
-    let executed = tx.execute().await.context("set_role_admin for MINTER failed")?;
-    let mut updated = account.clone();
-    updated.apply_delta(executed.account_delta())?;
-
-    let delegate_grant_note = build_note(owner, grant_role_script(&minter_admin, delegate), 305)?;
-    let tx = mock_chain
-        .build_tx_context(updated.clone(), &[], slice::from_ref(&delegate_grant_note))?
-        .build()?;
-    let executed = tx.execute().await.context("grant MINTER_ADMIN to delegate failed")?;
-    updated.apply_delta(executed.account_delta())?;
-
-    assert_eq!(get_role_member_index(&updated, &minter_admin, delegate)?, Some(0));
-
-    let delegated_role_check_note =
-        build_note(delegate, assert_sender_has_role_script(&minter_admin), 307)?;
-    let tx = mock_chain
-        .build_tx_context(updated.clone(), &[], slice::from_ref(&delegated_role_check_note))?
-        .build()?;
-    tx.execute()
-        .await
-        .context("delegate assert_sender_has_role for MINTER_ADMIN failed")?;
-
-    assert_eq!(get_role_config(&updated, &minter)?[1], Felt::from(&minter_admin));
-
-    for (seed, target) in [(308, alice), (309, bob)] {
-        let note = build_note(delegate, grant_role_script(&minter, target), seed)?;
-        let tx = mock_chain
-            .build_tx_context(updated.clone(), &[], slice::from_ref(&note))?
-            .build()?;
-        let executed = tx
-            .execute()
-            .await
-            .with_context(|| format!("delegate grant MINTER failed for target {}", target))?;
-        updated.apply_delta(executed.account_delta())?;
-        if seed == 308 {
-            assert_eq!(get_role_config(&updated, &minter)?[1], Felt::from(&minter_admin));
-            assert_eq!(get_role_member_index(&updated, &minter_admin, delegate)?, Some(0));
-        }
-    }
-
-    let burner_grant_note = build_note(owner, grant_role_script(&burner, burner_holder), 310)?;
-    let tx = mock_chain
-        .build_tx_context(updated.clone(), &[], slice::from_ref(&burner_grant_note))?
-        .build()?;
-    let executed = tx.execute().await.context("grant BURNER failed")?;
-    updated.apply_delta(executed.account_delta())?;
-
-    assert_eq!(get_active_role_count(&updated)?, 3);
-    assert_eq!(get_active_role(&updated, 0)?, minter_admin);
-    assert_eq!(get_active_role(&updated, 1)?, minter);
-    assert_eq!(get_active_role(&updated, 2)?, burner);
-    assert_eq!(get_role_member(&updated, &minter, 0)?, alice);
-    assert_eq!(get_role_member(&updated, &minter, 1)?, bob);
-
-    let revoke_alice_note = build_note(delegate, revoke_role_script(&minter, alice), 311)?;
-    let tx = mock_chain
-        .build_tx_context(updated.clone(), &[], slice::from_ref(&revoke_alice_note))?
-        .build()?;
-    let executed = tx.execute().await.context("delegate revoke MINTER from alice failed")?;
-    updated.apply_delta(executed.account_delta())?;
-
-    assert_eq!(get_role_member(&updated, &minter, 0)?, bob);
-    assert_eq!(get_role_member_index(&updated, &minter, alice)?, None);
-    assert_eq!(get_role_member_index(&updated, &minter, bob)?, Some(0));
-
-    let revoke_bob_note = build_note(delegate, revoke_role_script(&minter, bob), 312)?;
-    let tx = mock_chain
-        .build_tx_context(updated.clone(), &[], slice::from_ref(&revoke_bob_note))?
-        .build()?;
-    let executed = tx.execute().await.context("delegate revoke MINTER from bob failed")?;
-    updated.apply_delta(executed.account_delta())?;
-
-    assert_eq!(get_active_role_count(&updated)?, 2);
-    assert_eq!(get_active_role(&updated, 0)?, minter_admin);
-    assert_eq!(get_active_role(&updated, 1)?, burner);
-    assert_eq!(get_role_config(&updated, &minter)?[0], Felt::ZERO);
-    assert_eq!(get_role_config(&updated, &burner)?[0], Felt::new(1));
+    assert_eq!(minter_config[1], Felt::from(&minter_admin));
+    assert!(!is_role_member(&revoked, &minter, member)?);
 
     Ok(())
 }
@@ -628,7 +446,7 @@ async fn test_rbac_renounce_role_and_permission_checks() -> anyhow::Result<()> {
 
     let mut updated = account.clone();
     updated.apply_delta(executed.account_delta())?;
-    assert_eq!(get_active_role_count(&updated)?, 1);
+    assert!(is_role_member(&updated, &pauser, member)?);
 
     let renounce_note = build_note(member, renounce_role_script(&pauser), 403)?;
     let tx = mock_chain
@@ -638,8 +456,7 @@ async fn test_rbac_renounce_role_and_permission_checks() -> anyhow::Result<()> {
 
     let mut renounced = updated.clone();
     renounced.apply_delta(executed.account_delta())?;
-    assert_eq!(get_active_role_count(&renounced)?, 0);
-    assert_eq!(get_role_member_index(&renounced, &pauser, member)?, None);
+    assert!(!is_role_member(&renounced, &pauser, member)?);
 
     let bad_revoke_note = build_note(owner, revoke_role_script(&pauser, member), 404)?;
     let tx = mock_chain
@@ -652,7 +469,7 @@ async fn test_rbac_renounce_role_and_permission_checks() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn test_rbac_grant_role_appends_member_and_sets_reverse_index() -> anyhow::Result<()> {
+async fn test_rbac_grant_role_sets_membership() -> anyhow::Result<()> {
     let owner = test_account_id(41);
     let member = test_account_id(42);
     let minter = role("MINTER");
@@ -662,34 +479,35 @@ async fn test_rbac_grant_role_appends_member_and_sets_reverse_index() -> anyhow:
     let grant_note = build_note(owner, grant_role_script(&minter, member), 601)?;
     let granted = execute_note_and_apply(&mock_chain, &account, &grant_note).await?;
 
-    assert_eq!(get_role_member(&granted, &minter, 0)?, member);
-    assert_eq!(get_role_member_index(&granted, &minter, member)?, Some(0));
+    assert!(is_role_member(&granted, &minter, member)?);
+    assert_eq!(get_role_config(&granted, &minter)?[0], Felt::new(1));
 
     Ok(())
 }
 
 #[tokio::test]
-async fn test_rbac_first_member_activates_role() -> anyhow::Result<()> {
+async fn test_rbac_grant_existing_member_is_noop() -> anyhow::Result<()> {
     let owner = test_account_id(43);
     let member = test_account_id(44);
-    let burner = role("BURNER");
+    let minter = role("MINTER");
 
     let (account, mock_chain) = create_rbac_chain(owner)?;
 
-    let grant_note = build_note(owner, grant_role_script(&burner, member), 602)?;
+    let grant_note = build_note(owner, grant_role_script(&minter, member), 602)?;
     let granted = execute_note_and_apply(&mock_chain, &account, &grant_note).await?;
 
-    let burner_config = get_role_config(&granted, &burner)?;
-    assert_eq!(burner_config[0], Felt::new(1));
-    assert_eq!(burner_config[2], Felt::ZERO);
-    assert_eq!(get_active_role_count(&granted)?, 1);
-    assert_eq!(get_active_role(&granted, 0)?, burner);
+    let regrant_note = build_note(owner, grant_role_script(&minter, member), 603)?;
+    let regranted = execute_note_and_apply(&mock_chain, &granted, &regrant_note).await?;
+
+    // Member count must remain at 1; granting an existing member is idempotent.
+    assert_eq!(get_role_config(&regranted, &minter)?[0], Felt::new(1));
+    assert!(is_role_member(&regranted, &minter, member)?);
 
     Ok(())
 }
 
 #[tokio::test]
-async fn test_rbac_additional_members_do_not_duplicate_active_role() -> anyhow::Result<()> {
+async fn test_rbac_member_count_tracks_grants_and_revokes() -> anyhow::Result<()> {
     let owner = test_account_id(45);
     let alice = test_account_id(46);
     let bob = test_account_id(47);
@@ -697,16 +515,24 @@ async fn test_rbac_additional_members_do_not_duplicate_active_role() -> anyhow::
 
     let (account, mock_chain) = create_rbac_chain(owner)?;
 
-    let first_grant = build_note(owner, grant_role_script(&pauser, alice), 603)?;
+    let first_grant = build_note(owner, grant_role_script(&pauser, alice), 604)?;
     let updated = execute_note_and_apply(&mock_chain, &account, &first_grant).await?;
+    assert_eq!(get_role_config(&updated, &pauser)?[0], Felt::new(1));
 
-    let second_grant = build_note(owner, grant_role_script(&pauser, bob), 604)?;
+    let second_grant = build_note(owner, grant_role_script(&pauser, bob), 605)?;
     let updated = execute_note_and_apply(&mock_chain, &updated, &second_grant).await?;
+    assert_eq!(get_role_config(&updated, &pauser)?[0], Felt::new(2));
 
-    let pauser_config = get_role_config(&updated, &pauser)?;
-    assert_eq!(pauser_config[0], Felt::new(2));
-    assert_eq!(get_active_role_count(&updated)?, 1);
-    assert_eq!(get_active_role(&updated, 0)?, pauser);
+    let revoke_alice = build_note(owner, revoke_role_script(&pauser, alice), 606)?;
+    let updated = execute_note_and_apply(&mock_chain, &updated, &revoke_alice).await?;
+    assert_eq!(get_role_config(&updated, &pauser)?[0], Felt::new(1));
+    assert!(!is_role_member(&updated, &pauser, alice)?);
+    assert!(is_role_member(&updated, &pauser, bob)?);
+
+    let revoke_bob = build_note(owner, revoke_role_script(&pauser, bob), 607)?;
+    let updated = execute_note_and_apply(&mock_chain, &updated, &revoke_bob).await?;
+    assert_eq!(get_role_config(&updated, &pauser)?[0], Felt::ZERO);
+    assert!(!is_role_member(&updated, &pauser, bob)?);
 
     Ok(())
 }
@@ -718,7 +544,7 @@ async fn test_rbac_get_role_member_count_returns_zero_for_missing_role() -> anyh
 
     let (account, mock_chain) = create_rbac_chain(owner)?;
 
-    let query_note = build_note(owner, assert_role_member_count_script(&missing_role, 0), 605)?;
+    let query_note = build_note(owner, assert_role_member_count_script(&missing_role, 0), 608)?;
     let _ = execute_note_and_apply(&mock_chain, &account, &query_note).await?;
 
     Ok(())
@@ -727,54 +553,12 @@ async fn test_rbac_get_role_member_count_returns_zero_for_missing_role() -> anyh
 #[tokio::test]
 async fn test_rbac_get_role_admin_returns_zero_when_unset() -> anyhow::Result<()> {
     let owner = test_account_id(49);
-    let root_managed_role = role("ROOT_MANAGED");
+    let owner_managed_role = role("OWNER_MGD");
 
     let (account, mock_chain) = create_rbac_chain(owner)?;
 
-    let query_note = build_note(owner, assert_role_admin_script(&root_managed_role, None), 606)?;
+    let query_note = build_note(owner, assert_role_admin_script(&owner_managed_role, None), 609)?;
     let _ = execute_note_and_apply(&mock_chain, &account, &query_note).await?;
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_rbac_get_role_member_out_of_bounds_fails() -> anyhow::Result<()> {
-    let owner = test_account_id(50);
-    let member = test_account_id(51);
-    let user = role("USER");
-
-    let (account, mock_chain) = create_rbac_chain(owner)?;
-
-    let grant_note = build_note(owner, grant_role_script(&user, member), 607)?;
-    let granted = execute_note_and_apply(&mock_chain, &account, &grant_note).await?;
-
-    let query_note = build_note(owner, get_role_member_script(&user, 1), 608)?;
-    let tx = mock_chain
-        .build_tx_context(granted, &[], slice::from_ref(&query_note))?
-        .build()?;
-    let result = tx.execute().await;
-    assert_transaction_executor_error!(result, ERR_ROLE_MEMBER_OUT_OF_BOUNDS);
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_rbac_get_active_role_out_of_bounds_fails() -> anyhow::Result<()> {
-    let owner = test_account_id(52);
-    let member = test_account_id(53);
-    let manager = role("MANAGER");
-
-    let (account, mock_chain) = create_rbac_chain(owner)?;
-
-    let grant_note = build_note(owner, grant_role_script(&manager, member), 609)?;
-    let granted = execute_note_and_apply(&mock_chain, &account, &grant_note).await?;
-
-    let query_note = build_note(owner, get_active_role_script(1), 610)?;
-    let tx = mock_chain
-        .build_tx_context(granted, &[], slice::from_ref(&query_note))?
-        .build()?;
-    let result = tx.execute().await;
-    assert_transaction_executor_error!(result, ERR_ACTIVE_ROLE_OUT_OF_BOUNDS);
 
     Ok(())
 }
@@ -820,7 +604,7 @@ async fn test_rbac_non_member_cannot_renounce_role() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn test_rbac_revoke_role_clears_removed_account_reverse_index() -> anyhow::Result<()> {
+async fn test_rbac_revoke_role_clears_membership() -> anyhow::Result<()> {
     let owner = test_account_id(59);
     let member = test_account_id(60);
     let burner = role("BURNER");
@@ -829,149 +613,12 @@ async fn test_rbac_revoke_role_clears_removed_account_reverse_index() -> anyhow:
 
     let grant_note = build_note(owner, grant_role_script(&burner, member), 614)?;
     let granted = execute_note_and_apply(&mock_chain, &account, &grant_note).await?;
+    assert!(is_role_member(&granted, &burner, member)?);
 
     let revoke_note = build_note(owner, revoke_role_script(&burner, member), 615)?;
     let revoked = execute_note_and_apply(&mock_chain, &granted, &revoke_note).await?;
-
-    assert_eq!(get_role_member_index(&revoked, &burner, member)?, None);
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_rbac_revoke_non_last_member_moves_last_member_into_removed_index()
--> anyhow::Result<()> {
-    let owner = test_account_id(61);
-    let alice = test_account_id(62);
-    let bob = test_account_id(63);
-    let minter = role("MINTER");
-
-    let (account, mock_chain) = create_rbac_chain(owner)?;
-
-    let grant_alice = build_note(owner, grant_role_script(&minter, alice), 616)?;
-    let updated = execute_note_and_apply(&mock_chain, &account, &grant_alice).await?;
-
-    let grant_bob = build_note(owner, grant_role_script(&minter, bob), 617)?;
-    let updated = execute_note_and_apply(&mock_chain, &updated, &grant_bob).await?;
-
-    let revoke_alice = build_note(owner, revoke_role_script(&minter, alice), 618)?;
-    let updated = execute_note_and_apply(&mock_chain, &updated, &revoke_alice).await?;
-
-    assert_eq!(get_role_member(&updated, &minter, 0)?, bob);
-    assert_eq!(get_role_member_index(&updated, &minter, alice)?, None);
-    assert_eq!(get_role_member_index(&updated, &minter, bob)?, Some(0));
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_rbac_revoke_last_member_keeps_remaining_enumeration_consistent() -> anyhow::Result<()>
-{
-    let owner = test_account_id(64);
-    let alice = test_account_id(65);
-    let bob = test_account_id(66);
-    let burner = role("BURNER");
-
-    let (account, mock_chain) = create_rbac_chain(owner)?;
-
-    let grant_alice = build_note(owner, grant_role_script(&burner, alice), 619)?;
-    let updated = execute_note_and_apply(&mock_chain, &account, &grant_alice).await?;
-
-    let grant_bob = build_note(owner, grant_role_script(&burner, bob), 620)?;
-    let updated = execute_note_and_apply(&mock_chain, &updated, &grant_bob).await?;
-
-    let revoke_bob = build_note(owner, revoke_role_script(&burner, bob), 621)?;
-    let updated = execute_note_and_apply(&mock_chain, &updated, &revoke_bob).await?;
-
-    let burner_config = get_role_config(&updated, &burner)?;
-    assert_eq!(burner_config[0], Felt::new(1));
-    assert_eq!(get_role_member(&updated, &burner, 0)?, alice);
-    assert_eq!(get_role_member_index(&updated, &burner, alice)?, Some(0));
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_rbac_revoke_last_role_member_deactivates_role() -> anyhow::Result<()> {
-    let owner = test_account_id(67);
-    let member = test_account_id(68);
-    let pauser = role("PAUSER");
-
-    let (account, mock_chain) = create_rbac_chain(owner)?;
-
-    let grant_note = build_note(owner, grant_role_script(&pauser, member), 622)?;
-    let granted = execute_note_and_apply(&mock_chain, &account, &grant_note).await?;
-
-    let revoke_note = build_note(owner, revoke_role_script(&pauser, member), 623)?;
-    let revoked = execute_note_and_apply(&mock_chain, &granted, &revoke_note).await?;
-
-    let pauser_config = get_role_config(&revoked, &pauser)?;
-    assert_eq!(pauser_config[0], Felt::ZERO);
-    assert_eq!(pauser_config[2], Felt::ZERO);
-    assert_eq!(get_active_role_count(&revoked)?, 0);
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_rbac_regrant_role_reactivates_role_after_becoming_empty() -> anyhow::Result<()> {
-    let owner = test_account_id(69);
-    let member = test_account_id(70);
-    let user = role("USER");
-
-    let (account, mock_chain) = create_rbac_chain(owner)?;
-
-    let grant_note = build_note(owner, grant_role_script(&user, member), 624)?;
-    let updated = execute_note_and_apply(&mock_chain, &account, &grant_note).await?;
-
-    let revoke_note = build_note(owner, revoke_role_script(&user, member), 625)?;
-    let updated = execute_note_and_apply(&mock_chain, &updated, &revoke_note).await?;
-
-    let regrant_note = build_note(owner, grant_role_script(&user, member), 626)?;
-    let updated = execute_note_and_apply(&mock_chain, &updated, &regrant_note).await?;
-
-    let user_config = get_role_config(&updated, &user)?;
-    assert_eq!(user_config[0], Felt::new(1));
-    assert_eq!(user_config[2], Felt::ZERO);
-    assert_eq!(get_active_role_count(&updated)?, 1);
-    assert_eq!(get_active_role(&updated, 0)?, user);
-    assert_eq!(get_role_member_index(&updated, &user, member)?, Some(0));
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_rbac_active_role_slot_is_reused_after_role_deactivation() -> anyhow::Result<()> {
-    let owner = test_account_id(71);
-    let alice = test_account_id(72);
-    let bob = test_account_id(73);
-    let carol = test_account_id(74);
-    let minter = role("MINTER");
-    let burner = role("BURNER");
-    let pauser = role("PAUSER");
-
-    let (account, mock_chain) = create_rbac_chain(owner)?;
-
-    let grant_minter = build_note(owner, grant_role_script(&minter, alice), 627)?;
-    let updated = execute_note_and_apply(&mock_chain, &account, &grant_minter).await?;
-
-    let grant_burner = build_note(owner, grant_role_script(&burner, bob), 628)?;
-    let updated = execute_note_and_apply(&mock_chain, &updated, &grant_burner).await?;
-
-    let revoke_minter = build_note(owner, revoke_role_script(&minter, alice), 629)?;
-    let updated = execute_note_and_apply(&mock_chain, &updated, &revoke_minter).await?;
-
-    assert_eq!(get_active_role_count(&updated)?, 1);
-    assert_eq!(get_active_role(&updated, 0)?, burner);
-    assert_eq!(get_role_config(&updated, &burner)?[2], Felt::ZERO);
-
-    let grant_pauser = build_note(owner, grant_role_script(&pauser, carol), 630)?;
-    let updated = execute_note_and_apply(&mock_chain, &updated, &grant_pauser).await?;
-
-    assert_eq!(get_active_role_count(&updated)?, 2);
-    assert_eq!(get_active_role(&updated, 0)?, burner);
-    assert_eq!(get_active_role(&updated, 1)?, pauser);
-    assert_eq!(get_role_config(&updated, &pauser)?[2], Felt::new(1));
+    assert!(!is_role_member(&revoked, &burner, member)?);
+    assert_eq!(get_role_config(&revoked, &burner)?[0], Felt::ZERO);
 
     Ok(())
 }
@@ -995,7 +642,8 @@ async fn test_rbac_get_role_admin_returns_set_role() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// After the owner renounces, role admins should still be able to manage their delegated roles.
+/// After the owner renounces, role admins should still be able to manage their delegated
+/// roles.
 #[tokio::test]
 async fn test_rbac_role_admin_can_manage_role_after_owner_renounces() -> anyhow::Result<()> {
     let owner = test_account_id(83);
@@ -1020,11 +668,11 @@ async fn test_rbac_role_admin_can_manage_role_after_owner_renounces() -> anyhow:
 
     let grant_user_note = build_note(manager, grant_role_script(&user_role, user), 645)?;
     let updated = execute_note_and_apply(&mock_chain, &updated, &grant_user_note).await?;
-    assert_eq!(get_role_member_index(&updated, &user_role, user)?, Some(0));
+    assert!(is_role_member(&updated, &user_role, user)?);
 
     let revoke_user_note = build_note(manager, revoke_role_script(&user_role, user), 646)?;
     let updated = execute_note_and_apply(&mock_chain, &updated, &revoke_user_note).await?;
-    assert_eq!(get_role_member_index(&updated, &user_role, user)?, None);
+    assert!(!is_role_member(&updated, &user_role, user)?);
 
     Ok(())
 }
@@ -1057,6 +705,33 @@ async fn test_rbac_role_exists_and_has_role_queries() -> anyhow::Result<()> {
     let outsider_note =
         build_note(owner, assert_has_role_script(&user_role, outsider, false), 652)?;
     let _ = execute_note_and_apply(&mock_chain, &updated, &outsider_note).await?;
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_rbac_assert_sender_has_role() -> anyhow::Result<()> {
+    let owner = test_account_id(120);
+    let minter = test_account_id(121);
+    let outsider = test_account_id(122);
+    let minter_role = role("MINTER");
+
+    let (account, mock_chain) = create_rbac_chain(owner)?;
+
+    let grant_note = build_note(owner, grant_role_script(&minter_role, minter), 720)?;
+    let updated = execute_note_and_apply(&mock_chain, &account, &grant_note).await?;
+
+    // Member can pass the assertion.
+    let member_check = build_note(minter, assert_sender_has_role_script(&minter_role), 721)?;
+    let _ = execute_note_and_apply(&mock_chain, &updated, &member_check).await?;
+
+    // Outsider cannot.
+    let outsider_check = build_note(outsider, assert_sender_has_role_script(&minter_role), 722)?;
+    let tx = mock_chain
+        .build_tx_context(updated, &[], slice::from_ref(&outsider_check))?
+        .build()?;
+    let result = tx.execute().await;
+    assert!(result.is_err());
 
     Ok(())
 }
@@ -1116,7 +791,7 @@ async fn test_rbac_set_role_admin_rejects_zero_role_symbol() -> anyhow::Result<(
 }
 
 #[tokio::test]
-async fn test_rbac_set_role_admin_stores_admin_without_activating_roles() -> anyhow::Result<()> {
+async fn test_rbac_set_role_admin_does_not_create_role() -> anyhow::Result<()> {
     let owner = test_account_id(93);
     let user_role = role("USER");
     let manager_role = role("MANAGER");
@@ -1126,8 +801,8 @@ async fn test_rbac_set_role_admin_stores_admin_without_activating_roles() -> any
     let note = build_note(owner, set_role_admin_script(&user_role, Some(&manager_role)), 658)?;
     let updated = execute_note_and_apply(&mock_chain, &account, &note).await?;
 
-    // set_role_admin stores the admin relationship but does not activate any role.
-    assert_eq!(get_active_role_count(&updated)?, 0);
+    // set_role_admin stores the admin relationship but does not create the role: the
+    // member count remains zero, and `role_exists` reports false.
     assert_eq!(get_role_config(&updated, &user_role)?[0], Felt::ZERO);
     assert_eq!(get_role_config(&updated, &user_role)?[1], Felt::from(&manager_role));
     assert_eq!(get_role_config(&updated, &manager_role)?[0], Felt::ZERO);
@@ -1156,44 +831,6 @@ async fn test_rbac_granting_admin_role_does_not_change_target_role_admin_config(
     let user_role_config = get_role_config(&updated, &user_role)?;
     assert_eq!(user_role_config[1], Felt::from(&manager_role));
     assert_eq!(user_role_config[0], Felt::ZERO);
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_rbac_revoke_non_last_active_role_moves_last_active_role_into_freed_slot()
--> anyhow::Result<()> {
-    let owner = test_account_id(98);
-    let alice = test_account_id(99);
-    let bob = test_account_id(100);
-    let carol = test_account_id(101);
-    let minter = role("MINTER");
-    let burner = role("BURNER");
-    let pauser = role("PAUSER");
-
-    let (account, mock_chain) = create_rbac_chain(owner)?;
-
-    let grant_minter = build_note(owner, grant_role_script(&minter, alice), 664)?;
-    let updated = execute_note_and_apply(&mock_chain, &account, &grant_minter).await?;
-
-    let grant_burner = build_note(owner, grant_role_script(&burner, bob), 665)?;
-    let updated = execute_note_and_apply(&mock_chain, &updated, &grant_burner).await?;
-
-    let grant_pauser = build_note(owner, grant_role_script(&pauser, carol), 666)?;
-    let updated = execute_note_and_apply(&mock_chain, &updated, &grant_pauser).await?;
-
-    assert_eq!(get_active_role(&updated, 0)?, minter);
-    assert_eq!(get_active_role(&updated, 1)?, burner);
-    assert_eq!(get_active_role(&updated, 2)?, pauser);
-
-    let revoke_burner = build_note(owner, revoke_role_script(&burner, bob), 667)?;
-    let updated = execute_note_and_apply(&mock_chain, &updated, &revoke_burner).await?;
-
-    assert_eq!(get_active_role_count(&updated)?, 2);
-    assert_eq!(get_active_role(&updated, 0)?, minter);
-    assert_eq!(get_active_role(&updated, 1)?, pauser);
-    assert_eq!(get_role_config(&updated, &pauser)?[2], Felt::new(1));
-    assert_eq!(get_role_config(&updated, &burner)?[2], Felt::ZERO);
 
     Ok(())
 }

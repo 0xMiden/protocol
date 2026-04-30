@@ -1,3 +1,28 @@
+# miden::standards::access::rbac
+#
+# Role-based access control for account components.
+#
+# Provides per-role membership tracking with delegated role admins, on top of the
+# Ownable2Step component which supplies the top-level authority. Members are tracked
+# with a boolean flag and a per-role member count
+#
+# Storage layout (2 slots):
+#
+# Slot 1 (`ROLE_CONFIG_SLOT`):
+#   Map: [0, 0, 0, role_symbol] -> [member_count, admin_role_symbol, 0, 0]
+#
+# Slot 2 (`ROLE_MEMBERSHIP_SLOT`):
+#   Map: [0, role_symbol, account_suffix, account_prefix] -> [is_member, 0, 0, 0]
+#
+# Authority model:
+# - The account's Ownable2Step owner is the top-level RBAC authority. The owner can
+#   set role admins and grant/revoke any role.
+# - Each role can have a delegated admin role (set via `set_role_admin`). Members of
+#   the admin role can grant/revoke that role without being the owner.
+# - A role is considered to "exist" when it has at least one member. Role admin
+#   relationships set via `set_role_admin` are stored in the config but do not, by
+#   themselves, make the role exist.
+
 use miden::protocol::account_id
 use miden::protocol::active_account
 use miden::protocol::active_note
@@ -7,46 +32,23 @@ use miden::standards::access::ownable2step
 # CONSTANTS
 # =================================================================================================
 
-# Global RBAC state slot.
-# Layout: [active_role_count, 0, 0, 0]
-const RBAC_STATE_SLOT = word("miden::standards::access::rbac::state")
-
-# Active roles map slot.
-# Map entries: [0, 0, 0, active_role_index] -> [role_symbol, 0, 0, 0]
-const ACTIVE_ROLES_SLOT = word("miden::standards::access::rbac::active_roles")
-
 # Per-role config map slot.
-# Map entries: [0, 0, 0, role_symbol] ->
-#   [member_count, admin_role_symbol, active_role_index, 0]
+# Map entries: [0, 0, 0, role_symbol] -> [member_count, admin_role_symbol, 0, 0]
 const ROLE_CONFIG_SLOT = word("miden::standards::access::rbac::role_config")
 
-# Per-role member enumeration map slot.
-# Map entries: [0, 0, role_symbol, member_index] -> [account_suffix, account_prefix, 0, 0]
-const ROLE_MEMBERS_SLOT = word("miden::standards::access::rbac::role_members")
+# Per-role membership map slot.
+# Map entries: [0, role_symbol, account_suffix, account_prefix] -> [is_member, 0, 0, 0]
+const ROLE_MEMBERSHIP_SLOT = word("miden::standards::access::rbac::role_membership")
 
-# Per-role reverse member index map slot.
-# Map entries: [0, role_symbol, account_suffix, account_prefix] -> [is_member, member_index, 0, 0]
-const ROLE_MEMBER_INDEX_SLOT = word("miden::standards::access::rbac::role_member_index")
-
-# GRANT_ROLE_INTERNAL & REVOKE_ROLE_INTERNAL LOCALS
-const ROLE_SYMBOL_LOC = 0
-const ACCOUNT_SUFFIX_LOC = 1
-const ACCOUNT_PREFIX_LOC = 2
-
-# ADD_TO_ROLE_ENUMERATION LOCALS
-const MEMBER_COUNT_LOC = 3
-
-# REMOVE_FROM_ROLE_ENUMERATION LOCALS
-const REMOVE_INDEX_LOC = 3
-const LAST_INDEX_LOC = 4
+# Membership map values: the first felt is the membership flag, remaining felts are 0.
+const SET_MEMBERSHIP = [1, 0, 0, 0]
+const CLEAR_MEMBERSHIP = [0, 0, 0, 0]
 
 # ERRORS
 # =================================================================================================
 
 const ERR_SENDER_LACKS_ROLE = "note sender does not hold the required role"
 const ERR_SENDER_NOT_OWNER_OR_ROLE_ADMIN = "note sender is not the owner or a role admin"
-const ERR_ROLE_MEMBER_OUT_OF_BOUNDS = "role member index is out of bounds"
-const ERR_ACTIVE_ROLE_OUT_OF_BOUNDS = "active role index is out of bounds"
 const ERR_ACCOUNT_NOT_IN_ROLE = "account does not hold the role"
 const ERR_ROLE_SYMBOL_ZERO = "role symbol is zero"
 
@@ -95,50 +97,6 @@ pub proc role_exists
     # => [role_exists, pad(15)]
 end
 
-
-#! Returns the delegated admin role for a role.
-#!
-#! Returns `0` when the role is owner-managed or when no role config exists for
-#! `role_symbol`.
-#!
-#! Inputs:  [role_symbol, pad(15)]
-#! Outputs: [admin_role_symbol, pad(15)]
-#!
-#! Where:
-#! - role_symbol is the encoded role symbol.
-#! - admin_role_symbol is the encoded admin role symbol, or 0 if the role is managed by the owner.
-#!
-#! Invocation: call
-pub proc get_role_admin
-    exec.get_role_config
-    # => [member_count, admin_role_symbol, active_role_index, 0, pad(12)]
-
-    drop movdn.2 drop drop
-    # => [admin_role_symbol, pad(15)]
-end
-
-#! Returns the number of accounts assigned to a given role.
-#!
-#! If the role does not exist (i.e. has never had a member, or had its last member revoked),
-#! this returns `0` — the underlying role config map returns `Word::ZERO` for missing keys.
-#!
-#! Inputs:  [role_symbol, pad(15)]
-#! Outputs: [member_count, pad(15)]
-#!
-#! Where:
-#! - role_symbol is the encoded role symbol.
-#! - member_count is the number of accounts currently assigned to the given role, or
-#!   `0` if no such role exists.
-#!
-#! Invocation: call
-pub proc get_role_member_count
-    exec.get_role_config
-    # => [member_count, admin_role_symbol, active_role_index, 0, pad(12)]
-
-    movdn.3 drop drop drop
-    # => [member_count, pad(15)]
-end
-
 #! Returns whether an account holds a role.
 #!
 #! Returns `0` if the role does not exist or the account is not a member.
@@ -157,108 +115,51 @@ pub proc has_role
     # => [has_role, pad(15)]
 end
 
-#! Returns the account at a given member index for a role.
+#! Returns the delegated admin role for a role.
 #!
-#! Member indices are enumeration cursors, not stable IDs. They may change whenever the
-#! role membership is mutated.
+#! Returns `0` when the role is owner-managed or when no role config exists for
+#! `role_symbol`.
 #!
-#! Inputs:  [role_symbol, member_index, pad(14)]
-#! Outputs: [account_suffix, account_prefix, pad(14)]
+#! Inputs:  [role_symbol, pad(15)]
+#! Outputs: [admin_role_symbol, pad(15)]
 #!
 #! Where:
 #! - role_symbol is the encoded role symbol.
-#! - member_index is the member index to look up.
-#! - account_{suffix,prefix} are the suffix and prefix felts of the account ID at the index.
-#!
-#! Panics if:
-#! - member_index is out of bounds.
+#! - admin_role_symbol is the encoded admin role symbol, or 0 if the role is managed
+#!   by the owner.
 #!
 #! Invocation: call
-pub proc get_role_member
-    dup exec.get_role_config
-    # => [member_count, admin_role_symbol, active_role_index, 0,
-    #     role_symbol, member_index, pad(14)]
-
-    movdn.3 drop drop drop
-    # => [member_count, role_symbol, member_index, pad(14)]
-
-    dup.2 swap
-    # => [member_count, member_index, role_symbol, member_index, pad(14)]
-
-    lt assert.err=ERR_ROLE_MEMBER_OUT_OF_BOUNDS
-    # => [role_symbol, member_index, pad(14)]
-
-    push.0.0
-    # => [0, 0, role_symbol, member_index, pad(14)]
-
-    push.ROLE_MEMBERS_SLOT[0..2] exec.active_account::get_map_item
-    # => [account_suffix, account_prefix, 0, 0, pad(12)]
-
-    movup.2 drop movup.2 drop
-    # => [account_suffix, account_prefix, pad(14)]
+pub proc get_role_admin
+    exec.get_role_admin_internal
+    # => [admin_role_symbol, pad(15)]
 end
 
-#! Returns the number of currently active roles.
+#! Returns the number of accounts assigned to a given role.
 #!
-#! Inputs:  [pad(16)]
-#! Outputs: [active_role_count, pad(15)]
+#! If the role does not exist (i.e. has never had a member, or had its last member
+#! revoked), this returns `0` — the underlying role config map returns `Word::ZERO`
+#! for missing keys.
+#!
+#! Inputs:  [role_symbol, pad(15)]
+#! Outputs: [member_count, pad(15)]
 #!
 #! Where:
-#! - active_role_count is the number of active roles.
+#! - role_symbol is the encoded role symbol.
+#! - member_count is the number of accounts currently assigned to the given role, or
+#!   `0` if no such role exists.
 #!
 #! Invocation: call
-pub proc get_active_role_count
-    exec.get_active_role_count_internal
-    # => [active_role_count, pad(16)]
-
-    swap drop
-    # => [active_role_count, pad(15)]
+pub proc get_role_member_count
+    exec.get_role_member_count_internal
+    # => [member_count, pad(15)]
 end
-
-
-#! Returns the role symbol at a given active role index.
-#!
-#! Active role indices are enumeration cursors, not stable IDs. They may change whenever
-#! the RBAC state is mutated.
-#!
-#! Inputs:  [active_role_index, pad(15)]
-#! Outputs: [role_symbol, pad(15)]
-#!
-#! Where:
-#! - active_role_index is the active role index to read.
-#! - role_symbol is the encoded role symbol stored at the index.
-#!
-#! Panics if:
-#! - active_role_index is out of bounds.
-#!
-#! Invocation: call
-pub proc get_active_role
-    exec.get_active_role_count_internal
-    # => [active_role_count, active_role_index, pad(14)]
-
-    dup.1 swap
-    # => [active_role_count, active_role_index, active_role_index, pad(14)]
-
-    lt assert.err=ERR_ACTIVE_ROLE_OUT_OF_BOUNDS
-    # => [active_role_index, pad(15)]
-
-    push.0.0.0
-    # => [0, 0, 0, active_role_index, pad(12)]
-
-    push.ACTIVE_ROLES_SLOT[0..2] exec.active_account::get_map_item
-    # => [role_symbol, 0, 0, 0, pad(12)]
-
-    movdn.3 drop drop drop
-    # => [role_symbol, pad(15)]
-end
-
 
 #! Sets or updates the delegated admin role for a role.
 #!
 #! The role does not need to exist (have members) when this is called: the admin
-#! relationship is recorded in the role's config so it takes effect as soon as the role
-#! gains its first member. Calling this on a role that has no members does not make the
-#! role exist.
+#! relationship is recorded in the role's config so it takes effect as soon as the
+#! role gains its first member. Calling this on a role that has no members does not
+#! make the role exist.
 #!
 #! Pass `admin_role_symbol = 0` to clear the delegation and revert the role to
 #! owner-only management.
@@ -268,7 +169,8 @@ end
 #!
 #! Where:
 #! - role_symbol is the encoded role symbol to configure.
-#! - admin_role_symbol is the encoded delegated admin role symbol, or 0 for owner-only.
+#! - admin_role_symbol is the encoded delegated admin role symbol, or 0 for
+#!   owner-only management.
 #!
 #! Panics if:
 #! - the note sender is not the current owner.
@@ -278,24 +180,17 @@ end
 pub proc set_role_admin
     exec.ownable2step::assert_sender_is_owner_internal
     exec.assert_role_symbol_non_zero
-    # => [role_symbol, admin_role_symbol, pad(14)]
+    # => [role_symbol, new_admin_role_symbol, pad(14)]
 
-    dup exec.get_role_config
-    # => [member_count, stored_admin_role_symbol, active_role_index, 0, role_symbol, admin_role_symbol, pad(14)]
+    dup exec.get_role_member_count_internal
+    # => [member_count, role_symbol, new_admin_role_symbol, pad(14)]
 
-    swap drop
-    # => [member_count, active_role_index, 0, role_symbol, admin_role_symbol, pad(14)]
-
-    movup.2 drop
-    # => [member_count, active_role_index, role_symbol, admin_role_symbol, pad(14)]
-
-    movup.2 movup.3 movdn.2
-    # => [role_symbol, member_count, admin_role_symbol, active_role_index, pad(14)]
+    swap
+    # => [role_symbol, member_count, new_admin_role_symbol, pad(14)]
 
     exec.set_role_config
     # => [pad(16)]
 end
-
 
 #! Grants a role to an account.
 #!
@@ -307,11 +202,13 @@ end
 #!
 #! Where:
 #! - role_symbol is the encoded role symbol to grant.
-#! - account_{suffix,prefix} are the suffix and prefix felts of the account ID to grant.
+#! - account_{suffix,prefix} are the suffix and prefix felts of the account ID.
 #!
 #! Panics if:
 #! - role_symbol is zero.
-#! - the note sender is neither the current owner nor a holder of the role's admin role.
+#! - the note sender is neither the current owner nor a holder of the role's
+#!   delegated admin role.
+#! - the account ID is invalid.
 #!
 #! Invocation: call
 pub proc grant_role
@@ -327,20 +224,22 @@ end
 
 #! Revokes a role from an account.
 #!
-#! If the removed account was the role's only member, the role becomes non-existent
-#! (i.e. it is removed from the active role set).
+#! Decrements the role's member count. If the removed account was the last member,
+#! the role becomes non-existent (member_count = 0).
 #!
 #! Inputs:  [role_symbol, account_suffix, account_prefix, pad(13)]
 #! Outputs: [pad(16)]
 #!
 #! Where:
 #! - role_symbol is the encoded role symbol to revoke.
-#! - account_{suffix,prefix} are the suffix and prefix felts of the account ID to revoke.
+#! - account_{suffix,prefix} are the suffix and prefix felts of the account ID.
 #!
 #! Panics if:
 #! - role_symbol is zero.
-#! - the note sender is neither the current owner nor a holder of the role's admin role.
-#! - the role does not exist or the account is not a member of it.
+#! - the note sender is neither the current owner nor a holder of the role's
+#!   delegated admin role.
+#! - the account does not hold the role.
+#! - the account ID is invalid.
 #!
 #! Invocation: call
 pub proc revoke_role
@@ -390,9 +289,6 @@ end
 #! Inputs:  [role_symbol]
 #! Outputs: [role_symbol]
 #!
-#! Where:
-#! - role_symbol is the encoded role symbol.
-#!
 #! Panics if:
 #! - role_symbol is zero.
 #!
@@ -403,58 +299,10 @@ proc assert_role_symbol_non_zero
     # => [role_symbol]
 end
 
-
-#! Returns the number of currently active roles.
-#!
-#! Inputs:  []
-#! Outputs: [active_role_count]
-#!
-#! Where:
-#! - active_role_count is the number of roles with at least one member.
-#!
-#! Invocation: exec
-proc get_active_role_count_internal
-    push.RBAC_STATE_SLOT[0..2] exec.active_account::get_item
-    # => [active_role_count, 0, 0, 0]
-
-    movdn.3 drop drop drop
-    # => [active_role_count]
-end
-
-#! Stores the number of currently active roles.
-#!
-#! Inputs:  [active_role_count]
-#! Outputs: []
-#!
-#! Where:
-#! - active_role_count is the number of roles with at least one member.
-#!
-#! Invocation: exec
-proc set_active_role_count_internal
-    push.0.0.0 movup.3
-    # => [active_role_count, 0, 0, 0]
-
-    push.RBAC_STATE_SLOT[0..2]
-    # => [slot_suffix, slot_prefix, active_role_count, 0, 0, 0]
-
-    exec.native_account::set_item
-    # => [OLD_RBAC_STATE]
-
-    dropw
-    # => []
-end
-
-
 #! Returns the config word for a role.
 #!
 #! Inputs:  [role_symbol]
-#! Outputs: [member_count, admin_role_symbol, active_role_index, 0]
-#!
-#! Where:
-#! - role_symbol is the encoded role symbol.
-#! - member_count is the number of current role members.
-#! - admin_role_symbol is the delegated admin role symbol, or 0 for owner-managed roles.
-#! - active_role_index is the role's index in the active roles map; meaningful only when member_count > 0.
+#! Outputs: [member_count, admin_role_symbol, 0, 0]
 #!
 #! Invocation: exec
 proc get_role_config
@@ -465,34 +313,31 @@ proc get_role_config
     # => [slot_suffix, slot_prefix, 0, 0, 0, role_symbol]
 
     exec.active_account::get_map_item
-    # => [member_count, admin_role_symbol, active_role_index, 0]
+    # => [member_count, admin_role_symbol, 0, 0]
 end
-
 
 #! Writes the config word for a role.
 #!
-#! The trailing zero in the stored config word is appended internally so callers do not
-#! need to push it themselves.
+#! The trailing zeros of the stored config word are appended internally so callers do
+#! not need to push them themselves.
 #!
-#! Inputs:  [role_symbol, member_count, admin_role_symbol, active_role_index]
+#! Inputs:  [role_symbol, member_count, admin_role_symbol]
 #! Outputs: []
-#!
-#! Where:
-#! - role_symbol is the encoded role symbol.
-#! - member_count is the number of current role members.
-#! - admin_role_symbol is the delegated admin role symbol, or 0 for owner-managed roles.
-#! - active_role_index is the role's index in the active roles map; meaningful only when member_count > 0.
 #!
 #! Invocation: exec
 proc set_role_config
-    push.0 movdn.4
-    # => [role_symbol, member_count, admin_role_symbol, active_role_index, 0]
+    push.0.0
+    # => [0, 0, role_symbol, member_count, admin_role_symbol]
+
+    movdn.4 movdn.4
+    # => [role_symbol, member_count, admin_role_symbol, 0, 0]
 
     push.0.0.0
-    # => [0, 0, 0, role_symbol, member_count, admin_role_symbol, active_role_index, 0]
+    # => [0, 0, 0, role_symbol, member_count, admin_role_symbol, 0, 0]
 
     push.ROLE_CONFIG_SLOT[0..2]
-    # => [slot_suffix, slot_prefix, 0, 0, 0, role_symbol, member_count, admin_role_symbol, active_role_index, 0]
+    # => [slot_suffix, slot_prefix, 0, 0, 0, role_symbol,
+    #     member_count, admin_role_symbol, 0, 0]
 
     exec.native_account::set_map_item
     # => [OLD_ROLE_CONFIG]
@@ -501,85 +346,72 @@ proc set_role_config
     # => []
 end
 
-
-#! Returns whether a role exists.
+#! Returns whether an account holds a role.
 #!
-#! A role is considered to exist when it has at least one member.
+#! Inputs:  [role_symbol, account_suffix, account_prefix]
+#! Outputs: [has_role]
+#!
+#! Invocation: exec
+proc has_role_internal
+    push.0
+    # => [0, role_symbol, account_suffix, account_prefix]
+
+    push.ROLE_MEMBERSHIP_SLOT[0..2]
+    # => [slot_suffix, slot_prefix, 0, role_symbol, account_suffix, account_prefix]
+
+    exec.active_account::get_map_item
+    # => [is_member, 0, 0, 0]
+
+    movdn.3 drop drop drop
+    # => [is_member]
+end
+
+#! Returns the number of accounts assigned to a role.
+#!
+#! Inputs:  [role_symbol]
+#! Outputs: [member_count]
+#!
+#! Invocation: exec
+proc get_role_member_count_internal
+    exec.get_role_config
+    # => [member_count, admin_role_symbol, 0, 0]
+
+    movdn.3 drop drop drop
+    # => [member_count]
+end
+
+#! Returns the delegated admin role for a role (0 if none).
+#!
+#! Inputs:  [role_symbol]
+#! Outputs: [admin_role_symbol]
+#!
+#! Invocation: exec
+proc get_role_admin_internal
+    exec.get_role_config
+    # => [member_count, admin_role_symbol, 0, 0]
+
+    drop movdn.2 drop drop
+    # => [admin_role_symbol]
+end
+
+#! Returns whether a role exists (has at least one member).
 #!
 #! Inputs:  [role_symbol]
 #! Outputs: [role_exists]
 #!
-#! Where:
-#! - role_symbol is the encoded role symbol.
-#! - role_exists is 1 if the role has at least one member, otherwise 0.
-#!
 #! Invocation: exec
 proc role_exists_internal
-    exec.get_role_config
-    # => [member_count, admin_role_symbol, active_role_index, 0]
-
-    movdn.3 drop drop drop
+    exec.get_role_member_count_internal
     # => [member_count]
 
     neq.0
     # => [role_exists]
 end
 
-#! Returns the stored membership entry for a role pair.
-#!
-#! Inputs:  [role_symbol, account_suffix, account_prefix]
-#! Outputs: [is_member, member_index]
-#!
-#! Where:
-#! - role_symbol is the encoded role symbol.
-#! - account_{suffix,prefix} are the suffix and prefix felts of the account ID.
-#! - is_member is 1 if the account holds the role, otherwise 0.
-#! - member_index is the stored member index when is_member is 1; unspecified otherwise.
-#!
-#! Invocation: exec
-proc get_role_member_entry
-    push.0
-    # => [0, role_symbol, account_suffix, account_prefix]
-
-    push.ROLE_MEMBER_INDEX_SLOT[0..2]
-    # => [slot_suffix, slot_prefix, 0, role_symbol, account_suffix, account_prefix]
-
-    exec.active_account::get_map_item
-    # => [is_member, member_index, 0, 0]
-
-    movup.3 drop movup.2 drop
-    # => [is_member, member_index]
-end
-
-
-#! Returns whether an account holds a role.
-#!
-#! Inputs:  [role_symbol, account_suffix, account_prefix]
-#! Outputs: [has_role]
-#!
-#! Where:
-#! - role_symbol is the encoded role symbol.
-#! - account_{suffix,prefix} are the suffix and prefix felts of the account ID.
-#! - has_role is 1 if the account holds the role, otherwise 0.
-#!
-#! Invocation: exec
-proc has_role_internal
-    exec.get_role_member_entry
-    # => [is_member, member_index]
-
-    swap drop
-    # => [is_member]
-end
-
-
 #! Returns whether the note sender holds a role.
 #!
 #! Inputs:  [role_symbol]
 #! Outputs: [has_role]
-#!
-#! Where:
-#! - role_symbol is the encoded role symbol.
-#! - has_role is 1 if the note sender holds the role, otherwise 0.
 #!
 #! Invocation: exec
 proc is_sender_in_role
@@ -593,573 +425,115 @@ proc is_sender_in_role
     # => [has_role]
 end
 
-
-#! Asserts that the note sender is the owner or a member of the role's delegated admin role.
+#! Asserts that the note sender is the owner or a member of the role's delegated
+#! admin role.
 #!
 #! Inputs:  [role_symbol]
 #! Outputs: []
 #!
-#! Where:
-#! - role_symbol is the encoded role symbol whose admin authority is being checked.
-#!
 #! Panics if:
-#! - the note sender is neither the current owner nor a holder of the role's delegated admin role.
+#! - the note sender is neither the current owner nor a holder of the role's
+#!   delegated admin role.
 #!
 #! Invocation: exec
 proc assert_sender_is_owner_or_role_admin
     exec.ownable2step::is_sender_owner_internal
     # => [is_owner, role_symbol]
+
     if.true
         drop
         # => []
     else
-        exec.get_role_config
-        # => [member_count, admin_role_symbol, active_role_index, 0]
-
-        drop movdn.2 drop drop
+        # [role_symbol] - look up the role's admin role and check sender membership
+        exec.get_role_admin_internal
         # => [admin_role_symbol]
 
+        # Reject if no admin role is configured (sender can't be a holder of role 0).
         dup eq.0
         assertz.err=ERR_SENDER_NOT_OWNER_OR_ROLE_ADMIN
+        # => [admin_role_symbol]
 
         exec.is_sender_in_role
         # => [has_admin_role]
 
         assert.err=ERR_SENDER_NOT_OWNER_OR_ROLE_ADMIN
-    end
-end
-
-#! Activates a role that is known to have its first member added and not already be active.
-#!
-#! "Activating" a role means:
-#! 1. Append `[active_role_count] -> role_symbol` to the active roles map at the next
-#!    free index (which equals the current `active_role_count`).
-#! 2. Increment the `active_role_count` stored in `RBAC_STATE_SLOT` by one.
-#! 3. Update the role's config in `ROLE_CONFIG_SLOT` to record `member_count = 1`
-#!    and its new `active_role_index`.
-#!
-#! This procedure does not check whether the role is already active. The caller
-#! (`add_to_role_enumeration`) is responsible for guaranteeing this — calling
-#! `activate_role` on a role that is already active will corrupt the active role set.
-#! It also hardcodes `member_count = 1` because `add_to_role_enumeration` only invokes
-#! it when adding the first member to the role.
-#!
-#! Inputs:  [role_symbol, admin_role_symbol, 0]
-#! Outputs: []
-#!
-#! Where:
-#! - role_symbol is the encoded role symbol to activate.
-#! - admin_role_symbol is the delegated admin role symbol.
-#!
-#! Invocation: exec
-proc activate_role
-    exec.get_active_role_count_internal
-    # => [active_role_count, role_symbol, admin_role_symbol, 0]
-
-    dup push.0.0.0
-    # => [0, 0, 0, active_role_count, active_role_count, role_symbol, admin_role_symbol, 0]
-
-    dup.5
-    # => [role_symbol, 0, 0, 0, active_role_count, active_role_count, role_symbol, admin_role_symbol, 0]
-
-    # use active_role_index = active_role_count for the appended active role
-    push.0.0.0 movup.3 swapw
-    # => [0, 0, 0, active_role_index, role_symbol, 0, 0, 0,
-    #     active_role_count, role_symbol, admin_role_symbol, 0]
-
-    push.ACTIVE_ROLES_SLOT[0..2] exec.native_account::set_map_item
-    # => [OLD_ACTIVE_ROLE_WORD, active_role_count, role_symbol, admin_role_symbol, 0]
-
-    dropw dup add.1
-    # => [active_role_count_plus_one, active_role_count, role_symbol, admin_role_symbol, 0]
-
-    exec.set_active_role_count_internal
-    # => [active_role_index, role_symbol, admin_role_symbol, 0]
-
-    # drop the trailing pad so the stack matches set_role_config's input
-    movup.3 drop
-    # => [active_role_index, role_symbol, admin_role_symbol]
-
-    # set member_count = 1 because activate_role is invoked when adding the first member
-    movdn.2 push.1 swap
-    # => [role_symbol, member_count = 1, admin_role_symbol, active_role_index]
-
-    exec.set_role_config
-    # => []
-end
-
-
-#! Removes a role from the active role set when it becomes empty.
-#!
-#! Inputs:  [role_symbol]
-#! Outputs: []
-#!
-#! Where:
-#! - role_symbol is the encoded role symbol to deactivate.
-#!
-#! Invocation: exec
-proc remove_role_from_active_set
-    dup exec.get_role_config
-    # => [member_count, admin_role_symbol, active_role_index, 0, role_symbol]
-
-    movup.2 movup.4
-    # => [role_symbol, active_role_index, member_count, admin_role_symbol, 0]
-
-    movup.4 drop movup.3 drop movup.2 drop
-    # => [role_symbol, active_role_index]
-
-    exec.deactivate_role
-    # => []
-end
-
-
-
-#! Deactivates a role that is known to be active.
-#!
-#! Inputs:  [role_symbol, active_role_index]
-#! Outputs: []
-#!
-#! Where:
-#! - role_symbol is the encoded role symbol to deactivate.
-#! - active_role_index is the role's current index in the active role set.
-#!
-#! Invocation: exec
-proc deactivate_role
-    exec.get_active_role_count_internal
-    # => [active_role_count, role_symbol, active_role_index]
-
-    # active_role_count > 0 here because this procedure is only called via
-    # `remove_role_from_active_set` for a role that is currently in the active set, so
-    # the subtraction below cannot underflow.
-    sub.1
-    # => [last_index, role_symbol, active_role_index]
-
-    dup.2 dup.1 neq
-    # => [should_move_last_role, last_index, role_symbol, active_role_index]
-
-    # swap-remove from the active role set: if the role being deactivated is not at the
-    # last index, copy the last role into the freed slot (then `last_index` is cleared).
-    # If the role is already at the last index, just clear that slot.
-    if.true
-        dup movup.3 swap
-        # => [last_index, active_role_index, last_index, role_symbol]
-
-        exec.move_last_active_role
-        # => [last_index, role_symbol]
-    else
-        movup.2 drop
-        # => [last_index, role_symbol]
-
-        padw dup.4 push.0.0.0
-        # => [0, 0, 0, last_index, 0, 0, 0, 0, last_index, role_symbol]
-
-        push.ACTIVE_ROLES_SLOT[0..2] exec.native_account::set_map_item
-        # => [OLD_ACTIVE_ROLE_WORD, last_index, role_symbol]
-
-        dropw
-        # => [last_index, role_symbol]
-    end
-
-    exec.set_active_role_count_internal
-    # => [role_symbol]
-
-    # reset the role's active_role_index to 0 in its config; member_count is already 0
-    # because the caller (`remove_role_from_active_set`) is invoked when the role's last
-    # member is removed
-    dup exec.get_role_config
-    # => [member_count = 0, admin_role_symbol, active_role_index, 0, role_symbol]
-
-    movup.2 drop
-    # => [member_count = 0, admin_role_symbol, 0, role_symbol]
-
-    # the trailing 0 here is the pad felt of the role config word; we reuse it as the
-    # new active_role_index = 0 instead of pushing another zero
-    movup.3
-    # => [role_symbol, member_count = 0, admin_role_symbol, active_role_index = 0]
-
-    exec.set_role_config
-    # => []
-end
-
-
-#! Moves the last active role into the removed role's active role slot.
-#!
-#! Performs the swap-remove with two map operations: clearing the source entry returns
-#! the moved role symbol through `set_map_item`, which is then written into the target
-#! active role slot. The moved role's config is also updated to point at its new
-#! active role index.
-#!
-#! Inputs:  [source_index, target_index]
-#! Outputs: []
-#!
-#! Where:
-#! - source_index is the current index of the last active role (cleared).
-#! - target_index is the vacated index that should receive the moved role.
-#!
-#! Invocation: exec
-proc move_last_active_role
-    # clear the source slot and keep the moved role returned by the map update
-    padw dup.4 push.0.0.0
-    # => [0, 0, 0, source_index, 0, 0, 0, 0, source_index, target_index]
-
-    push.ACTIVE_ROLES_SLOT[0..2] exec.native_account::set_map_item
-    # => [moved_role_symbol, 0, 0, 0, source_index, target_index]
-
-    movdn.3 drop drop drop
-    # => [moved_role_symbol, source_index, target_index]
-
-    # insert the moved role into the vacated active role slot
-    dup push.0.0.0 movup.3
-    # => [moved_role_symbol, 0, 0, 0, moved_role_symbol, source_index, target_index]
-
-    dup.6 push.0.0.0
-    # => [0, 0, 0, target_index, moved_role_symbol, 0, 0, 0,
-    #     moved_role_symbol, source_index, target_index]
-
-    push.ACTIVE_ROLES_SLOT[0..2] exec.native_account::set_map_item
-    # => [OLD_ACTIVE_ROLE_WORD, moved_role_symbol, source_index, target_index]
-
-    dropw
-    # => [moved_role_symbol, source_index, target_index]
-
-    # update the moved role's config to point at its new active role index
-    dup exec.get_role_config
-    # => [moved_member_count, moved_admin_role_symbol, moved_active_role_index, moved_0, moved_role_symbol, source_index, target_index]
-
-    movup.2 drop
-    # => [moved_member_count, moved_admin_role_symbol, moved_0, moved_role_symbol, source_index, target_index]
-
-    dup.5
-    # => [moved_active_role_index, moved_member_count, moved_admin_role_symbol, moved_0, moved_role_symbol, source_index, target_index]
-
-    movup.4 swap movdn.3
-    # => [moved_role_symbol, moved_member_count, moved_admin_role_symbol, moved_active_role_index, moved_0, source_index, target_index]
-
-    movup.4 drop
-    # => [moved_role_symbol, moved_member_count, moved_admin_role_symbol, moved_active_role_index, source_index, target_index]
-
-    exec.set_role_config
-    # => [source_index, target_index]
-
-    drop drop
-    # => []
-end
-
-#! Adds an account to a role's member enumeration.
-#! Assumes the account has already been checked not to hold the role.
-#! If the role does not yet exist, it is created first.
-#!
-#! Inputs:  [role_symbol, account_suffix, account_prefix]
-#! Outputs: []
-#!
-#! Where:
-#! - role_symbol is the encoded role symbol to add the account to.
-#! - account_{suffix,prefix} are the suffix and prefix felts of the account ID to add.
-#!
-#! Locals:
-#! 0: role_symbol (`ROLE_SYMBOL_LOC`)
-#! 1: account_suffix (`ACCOUNT_SUFFIX_LOC`)
-#! 2: account_prefix (`ACCOUNT_PREFIX_LOC`)
-#! 3: member_count (`MEMBER_COUNT_LOC`)
-#!
-#! Invocation: exec
-@locals(4)
-proc add_to_role_enumeration
-    loc_store.ROLE_SYMBOL_LOC
-    # => [account_suffix, account_prefix]
-
-    loc_store.ACCOUNT_SUFFIX_LOC
-    # => [account_prefix]
-
-    loc_store.ACCOUNT_PREFIX_LOC
-    # => []
-
-    loc_load.ROLE_SYMBOL_LOC
-    exec.get_role_config
-    # => [member_count, admin_role_symbol, active_role_index, 0]
-
-    dup loc_store.MEMBER_COUNT_LOC
-    # => [member_count, admin_role_symbol, active_role_index, 0]
-
-    # write ROLE_MEMBER_INDEX_SLOT[(role_symbol, account_id)]: set is_member = 1 and
-    # member_index = member_count (i.e. the new member is appended at the end)
-    push.0.0 loc_load.MEMBER_COUNT_LOC push.1
-    # => [is_member = 1, member_index, 0, 0, member_count, admin_role_symbol, active_role_index, 0]
-
-    loc_load.ACCOUNT_PREFIX_LOC loc_load.ACCOUNT_SUFFIX_LOC loc_load.ROLE_SYMBOL_LOC push.0
-    # => [0, role_symbol, account_suffix, account_prefix, 1, member_index, 0, 0,
-    #     member_count, admin_role_symbol, active_role_index, 0]
-
-    push.ROLE_MEMBER_INDEX_SLOT[0..2] exec.native_account::set_map_item
-    # => [OLD_MEMBER_INDEX_WORD, member_count, admin_role_symbol, active_role_index, 0]
-
-    dropw
-    # => [member_count, admin_role_symbol, active_role_index, 0]
-
-    # write ROLE_MEMBERS_SLOT[(role_symbol, member_index)] = account_id, with member_index = member_count
-    loc_load.ACCOUNT_PREFIX_LOC loc_load.ACCOUNT_SUFFIX_LOC push.0.0 movup.3 movup.3
-    # => [account_suffix, account_prefix, 0, 0, member_count, admin_role_symbol, active_role_index, 0]
-
-    dup.4 loc_load.ROLE_SYMBOL_LOC push.0.0
-    # => [0, 0, role_symbol, member_index, account_suffix, account_prefix, 0, 0,
-    #     member_count, admin_role_symbol, active_role_index, 0]
-
-    push.ROLE_MEMBERS_SLOT[0..2] exec.native_account::set_map_item
-    # => [OLD_MEMBER_WORD, member_count, admin_role_symbol, active_role_index, 0]
-
-    dropw
-    # => [member_count, admin_role_symbol, active_role_index, 0]
-
-    dup eq.0
-    # => [is_first_member, member_count, admin_role_symbol, active_role_index, 0]
-
-    if.true
-        movup.2 drop drop
-        # => [admin_role_symbol, 0]
-
-        loc_load.ROLE_SYMBOL_LOC
-        # => [role_symbol, admin_role_symbol, 0]
-
-        exec.activate_role
-        # => []
-    else
-        add.1
-        # => [member_count_plus_one, admin_role_symbol, active_role_index, 0]
-
-        movup.3 drop
-        # => [member_count_plus_one, admin_role_symbol, active_role_index]
-
-        loc_load.ROLE_SYMBOL_LOC
-        # => [role_symbol, member_count_plus_one, admin_role_symbol, active_role_index]
-
-        exec.set_role_config
         # => []
     end
 end
-
 
 #! Internal helper used by `grant_role` to assign a role to an account.
 #!
+#! Validates the account ID, then no-ops if the account is already a member.
+#! Otherwise, sets the membership flag and increments the role's member count.
+#!
 #! Inputs:  [role_symbol, account_suffix, account_prefix]
 #! Outputs: []
-#!
-#! Where:
-#! - role_symbol is the encoded role symbol to grant.
-#! - account_{suffix,prefix} are the suffix and prefix felts of the account ID to grant.
-#!
-#! Panics if:
-#! - the account ID is invalid.
 #!
 #! Invocation: exec
 proc grant_role_internal
     dup.2 dup.2 exec.account_id::validate
     # => [role_symbol, account_suffix, account_prefix]
 
-    dup.2 dup.2 dup.2
-    # => [role_symbol, account_suffix, account_prefix, role_symbol, account_suffix, account_prefix]
-
-    exec.has_role_internal
+    dup.2 dup.2 dup.2 exec.has_role_internal
     # => [has_role, role_symbol, account_suffix, account_prefix]
 
     if.true
+        # Already a member — no-op.
         drop drop drop
         # => []
     else
-        exec.add_to_role_enumeration
-        # => []
-    end
-end
+        # Save a copy of role_symbol at the bottom of the stack so it survives the
+        # membership map write and is available for the role-config update.
+        dup.0 movdn.3
+        # => [role_symbol, account_suffix, account_prefix, role_symbol]
 
-#! Moves the last role member into a removed member's slot.
-#!
-#! Performs the swap-remove with two map operations: clearing the source entry returns
-#! the moved account through `set_map_item`, which is then written into the target
-#! member slot. The moved account's reverse-index entry is also updated to point at its
-#! new member index.
-#!
-#! Inputs:  [role_symbol, source_index, target_index]
-#! Outputs: []
-#!
-#! Where:
-#! - role_symbol is the encoded role symbol.
-#! - source_index is the current index of the last role member (cleared).
-#! - target_index is the vacated index that should receive the moved member.
-#!
-#! Invocation: exec
-proc move_last_role_member
-    # clear the source member entry; set_map_item returns the moved account word
-    padw dup.5 dup.5 push.0.0
-    # => [0, 0, role_symbol, source_index, 0, 0, 0, 0,
-    #     role_symbol, source_index, target_index]
+        # Write membership[role, account] = [1, 0, 0, 0].
+        push.SET_MEMBERSHIP
+        # => [1, 0, 0, 0, role_symbol, account_suffix, account_prefix, role_symbol]
 
-    push.ROLE_MEMBERS_SLOT[0..2] exec.native_account::set_map_item
-    # => [moved_account_suffix, moved_account_prefix, 0, 0,
-    #     role_symbol, source_index, target_index]
+        # Bring role/suffix/prefix back in order.
+        movup.6 movup.6 movup.6
+        # => [role_symbol, account_suffix, account_prefix, 1, 0, 0, 0, role_symbol]
 
-    # write the moved account into the vacated member slot
-    dupw dup.10 dup.9 push.0.0
-    # => [0, 0, role_symbol, target_index,
-    #     moved_account_suffix, moved_account_prefix, 0, 0,
-    #     moved_account_suffix, moved_account_prefix, 0, 0,
-    #     role_symbol, source_index, target_index]
+        push.0
+        # => [0, role_symbol, account_suffix, account_prefix, 1, 0, 0, 0, role_symbol]
 
-    push.ROLE_MEMBERS_SLOT[0..2] exec.native_account::set_map_item
-    # => [OLD_MEMBER_WORD, moved_account_suffix, moved_account_prefix, 0, 0,
-    #     role_symbol, source_index, target_index]
+        push.ROLE_MEMBERSHIP_SLOT[0..2]
+        # => [slot_suffix, slot_prefix, 0, role_symbol, account_suffix, account_prefix,
+        #     1, 0, 0, 0, role_symbol]
 
-    dropw
-    # => [moved_account_suffix, moved_account_prefix, 0, 0,
-    #     role_symbol, source_index, target_index]
-
-    movup.2 drop movup.2 drop movup.3 drop
-    # => [moved_account_suffix, moved_account_prefix, role_symbol, target_index]
-
-    # update the moved account's reverse index to point at member_index = target_index
-    push.0.0 dup.5 push.1
-    # => [is_member = 1, member_index, 0, 0,
-    #     moved_account_suffix, moved_account_prefix, role_symbol, target_index]
-
-    dup.5 dup.5 dup.8 push.0
-    # => [0, role_symbol, moved_account_suffix, moved_account_prefix,
-    #     is_member = 1, member_index, 0, 0,
-    #     moved_account_suffix, moved_account_prefix, role_symbol, target_index]
-
-    push.ROLE_MEMBER_INDEX_SLOT[0..2] exec.native_account::set_map_item
-    # => [OLD_MEMBER_INDEX_WORD,
-    #     moved_account_suffix, moved_account_prefix, role_symbol, target_index]
-
-    dropw dropw
-    # => []
-end
-
-#! Removes an account from a role's enumeration.
-#!
-#! This procedure:
-#! - loads the account's current member index in the role.
-#! - if the account is not the last member, moves the last member into the removed
-#!   index and updates that moved account's reverse index.
-#! - clears the unused last member entry and the removed account's reverse-index entry.
-#! - decrements the role member count.
-#! - removes the role from the active role set if it becomes empty.
-#!
-#! Inputs:  [role_symbol, account_suffix, account_prefix]
-#! Outputs: []
-#!
-#! Where:
-#! - role_symbol is the encoded role symbol to remove the account from.
-#! - account_{suffix,prefix} are the suffix and prefix felts of the account ID to remove.
-#!
-#! Panics if:
-#! - the account does not hold the role.
-#!
-#! Locals:
-#! 0: role_symbol (`ROLE_SYMBOL_LOC`)
-#! 1: account_suffix (`ACCOUNT_SUFFIX_LOC`)
-#! 2: account_prefix (`ACCOUNT_PREFIX_LOC`)
-#! 3: remove_index (`REMOVE_INDEX_LOC`)
-#! 4: last_index (`LAST_INDEX_LOC`)
-#!
-#! Invocation: exec
-@locals(5)
-proc remove_from_role_enumeration
-    dup loc_store.ROLE_SYMBOL_LOC
-    # => [role_symbol, account_suffix, account_prefix]
-
-    dup.1 loc_store.ACCOUNT_SUFFIX_LOC
-    # => [role_symbol, account_suffix, account_prefix]
-
-    dup.2 loc_store.ACCOUNT_PREFIX_LOC
-    # => [role_symbol, account_suffix, account_prefix]
-
-    exec.get_role_member_entry
-    # => [is_member, member_index]
-
-    assert.err=ERR_ACCOUNT_NOT_IN_ROLE
-    # => [member_index]
-
-    loc_store.REMOVE_INDEX_LOC
-    # => []
-
-    loc_load.ROLE_SYMBOL_LOC
-    exec.get_role_config
-    # => [member_count, admin_role_symbol, active_role_index, 0]
-
-    # member_count is non-zero because the removed account was confirmed as a member
-    sub.1
-    loc_store.LAST_INDEX_LOC
-    # => [admin_role_symbol, active_role_index, 0]
-
-    drop drop drop
-    # => []
-
-    loc_load.REMOVE_INDEX_LOC
-    loc_load.LAST_INDEX_LOC
-    neq
-    # => [should_move_last_member]
-
-    if.true
-        loc_load.REMOVE_INDEX_LOC loc_load.LAST_INDEX_LOC loc_load.ROLE_SYMBOL_LOC
-        # => [role_symbol, last_index, remove_index]
-
-        exec.move_last_role_member
-        # => []
-    else
-        # clear the removed member entry when it is already the last entry
-        padw loc_load.LAST_INDEX_LOC loc_load.ROLE_SYMBOL_LOC push.0.0
-        # => [0, 0, role_symbol, last_index, 0, 0, 0, 0]
-
-        push.ROLE_MEMBERS_SLOT[0..2] exec.native_account::set_map_item
-        # => [OLD_MEMBER_WORD]
+        exec.native_account::set_map_item
+        # => [OLD_MEMBERSHIP_WORD, role_symbol]
 
         dropw
-        # => []
-    end
+        # => [role_symbol]
 
-    # clear the removed account's reverse-index entry
-    padw loc_load.ACCOUNT_PREFIX_LOC loc_load.ACCOUNT_SUFFIX_LOC loc_load.ROLE_SYMBOL_LOC push.0
-    # => [0, role_symbol, account_suffix, account_prefix, 0, 0, 0, 0]
+        # Step 2: increment the role's member count.
+        dup exec.get_role_config
+        # => [member_count, admin_role_symbol, 0, 0, role_symbol]
 
-    push.ROLE_MEMBER_INDEX_SLOT[0..2] exec.native_account::set_map_item
-    # => [OLD_MEMBER_INDEX_WORD]
+        movup.2 drop movup.2 drop
+        # => [member_count, admin_role_symbol, role_symbol]
 
-    dropw
-    # => []
+        add.1
+        # => [member_count + 1, admin_role_symbol, role_symbol]
 
-    loc_load.ROLE_SYMBOL_LOC
-    exec.get_role_config
-    # => [member_count, admin_role_symbol, active_role_index, 0]
+        movup.2
+        # => [role_symbol, member_count + 1, admin_role_symbol]
 
-    dup sub.1 swap drop
-    # => [member_count_minus_one, admin_role_symbol, active_role_index, 0]
-
-    movup.3 drop
-    # => [member_count_minus_one, admin_role_symbol, active_role_index]
-
-    loc_load.ROLE_SYMBOL_LOC
-    # => [role_symbol, member_count_minus_one, admin_role_symbol, active_role_index]
-
-    exec.set_role_config
-    # => []
-
-    loc_load.LAST_INDEX_LOC eq.0
-    # => [is_role_empty]
-
-    if.true
-        loc_load.ROLE_SYMBOL_LOC
-        exec.remove_role_from_active_set
+        exec.set_role_config
         # => []
     end
 end
 
-
-#! Internal helper used by `revoke_role` to remove a role from an account.
+#! Internal helper used by `revoke_role` and `renounce_role` to remove a role from
+#! an account.
+#!
+#! Validates the account ID, asserts that the account currently holds the role,
+#! clears the membership flag, and decrements the role's member count.
 #!
 #! Inputs:  [role_symbol, account_suffix, account_prefix]
 #! Outputs: []
-#!
-#! Where:
-#! - role_symbol is the encoded role symbol to revoke.
-#! - account_{suffix,prefix} are the suffix and prefix felts of the account ID to revoke.
 #!
 #! Panics if:
 #! - the account ID is invalid.
@@ -1170,6 +544,52 @@ proc revoke_role_internal
     dup.2 dup.2 exec.account_id::validate
     # => [role_symbol, account_suffix, account_prefix]
 
-    exec.remove_from_role_enumeration
+    # Assert the account currently holds the role, preserving the inputs.
+    dup.2 dup.2 dup.2 exec.has_role_internal
+    # => [has_role, role_symbol, account_suffix, account_prefix]
+
+    assert.err=ERR_ACCOUNT_NOT_IN_ROLE
+    # => [role_symbol, account_suffix, account_prefix]
+
+    # Save a copy of role_symbol at the bottom of the stack so it survives the
+    # membership map write and is available for the role-config update.
+    dup.0 movdn.3
+    # => [role_symbol, account_suffix, account_prefix, role_symbol]
+
+    # Clear membership[role, account] = [0, 0, 0, 0].
+    push.CLEAR_MEMBERSHIP
+    # => [0, 0, 0, 0, role_symbol, account_suffix, account_prefix, role_symbol]
+
+    # Bring role/suffix/prefix back above the value word, in order.
+    movup.6 movup.6 movup.6
+    # => [role_symbol, account_suffix, account_prefix, 0, 0, 0, 0, role_symbol]
+
+    push.0
+    # => [0, role_symbol, account_suffix, account_prefix, 0, 0, 0, 0, role_symbol]
+
+    push.ROLE_MEMBERSHIP_SLOT[0..2]
+    # => [slot_suffix, slot_prefix, 0, role_symbol, account_suffix, account_prefix,
+    #     0, 0, 0, 0, role_symbol]
+
+    exec.native_account::set_map_item
+    # => [OLD_MEMBERSHIP_WORD, role_symbol]
+
+    dropw
+    # => [role_symbol]
+
+    # Decrement the role's member count.
+    dup exec.get_role_config
+    # => [member_count, admin_role_symbol, 0, 0, role_symbol]
+
+    movup.2 drop movup.2 drop
+    # => [member_count, admin_role_symbol, role_symbol]
+
+    sub.1
+    # => [member_count - 1, admin_role_symbol, role_symbol]
+
+    movup.2
+    # => [role_symbol, member_count - 1, admin_role_symbol]
+
+    exec.set_role_config
     # => []
 end
