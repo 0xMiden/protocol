@@ -5,6 +5,7 @@ use miden_agglayer::{
     AggLayerBridge,
     B2AggNote,
     ConfigAggBridgeNote,
+    ConversionMetadata,
     EthAddress,
     ExitRoot,
     Keccak256Output,
@@ -96,7 +97,7 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
         .collect::<Vec<_>>();
     let total_burned: u64 = expected_amounts.iter().sum();
 
-    // CREATE AGGLAYER FAUCET ACCOUNT (with conversion metadata for FPI)
+    // CREATE AGGLAYER FAUCET ACCOUNT
     // --------------------------------------------------------------------------------------------
     let origin_token_address = EthAddress::from_hex(&vectors.origin_token_address)
         .expect("valid shared origin token address");
@@ -114,17 +115,19 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
         Felt::new(FungibleAsset::MAX_AMOUNT),
         Felt::new(total_burned),
         bridge_account.id(),
-        &origin_token_address,
-        origin_network,
-        scale,
-        metadata_hash,
     );
     builder.add_account(faucet.clone())?;
 
     // CONFIG_AGG_BRIDGE note to register the faucet in the bridge (sent by bridge admin)
     let config_note = ConfigAggBridgeNote::create(
-        faucet.id(),
-        &origin_token_address,
+        ConversionMetadata {
+            faucet_account_id: faucet.id(),
+            origin_token_address,
+            scale,
+            origin_network,
+            is_native: false,
+            metadata_hash,
+        },
         bridge_admin.id(),
         bridge_account.id(),
         builder.rng_mut(),
@@ -171,11 +174,8 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
     let mut burn_note_ids = Vec::with_capacity(note_count);
 
     for (i, note) in notes.iter().enumerate() {
-        let foreign_account_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
-
         let executed_tx = mock_chain
             .build_tx_context(bridge_account.clone(), &[note.id()], &[])?
-            .foreign_accounts(vec![foreign_account_inputs])
             .build()?
             .execute()
             .await?;
@@ -491,12 +491,6 @@ async fn test_bridge_out_fails_with_unregistered_faucet() -> anyhow::Result<()> 
     // CREATE AGGLAYER FAUCET ACCOUNT (NOT registered in the bridge)
     // --------------------------------------------------------------------------------------------
     let vectors = &*SOLIDITY_MTF_VECTORS;
-    let origin_token_address = EthAddress::new([0u8; 20]);
-    let metadata_hash = MetadataHash::from_token_info(
-        &vectors.token_name,
-        &vectors.token_symbol,
-        vectors.token_decimals,
-    );
     let faucet = create_existing_agglayer_faucet(
         builder.rng_mut().draw_word(),
         &vectors.token_symbol,
@@ -504,10 +498,6 @@ async fn test_bridge_out_fails_with_unregistered_faucet() -> anyhow::Result<()> 
         Felt::new(FungibleAsset::MAX_AMOUNT),
         Felt::new(100),
         bridge_account.id(),
-        &origin_token_address,
-        0, // origin_network
-        0, // scale
-        metadata_hash,
     );
     builder.add_account(faucet.clone())?;
 
@@ -534,11 +524,8 @@ async fn test_bridge_out_fails_with_unregistered_faucet() -> anyhow::Result<()> 
 
     // ATTEMPT TO BRIDGE OUT WITHOUT REGISTERING THE FAUCET (SHOULD FAIL)
     // --------------------------------------------------------------------------------------------
-    let foreign_account_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
-
     let result = mock_chain
         .build_tx_context(bridge_account.id(), &[b2agg_note.id()], &[])?
-        .foreign_accounts(vec![foreign_account_inputs])
         .build()?
         .execute()
         .await;
@@ -762,6 +749,143 @@ async fn b2agg_note_non_target_account_cannot_consume() -> anyhow::Result<()> {
         .await;
 
     assert_transaction_executor_error!(result, ERR_B2AGG_TARGET_ACCOUNT_MISMATCH);
+
+    Ok(())
+}
+
+/// Tests the bridge-out lock path for Miden-native faucets.
+///
+/// When a faucet is registered with `is_native = true`, the bridge does not burn the asset on
+/// bridge-out; it locks it in its own vault instead. This test verifies:
+/// 1. Registration stores the `is_native = true` flag on the bridge.
+/// 2. Consuming a B2AGG note carrying a native asset produces **no** output note (no BURN).
+/// 3. The asset ends up in the bridge account's vault.
+/// 4. The Local Exit Tree is still advanced (the leaf is committed the same way).
+#[tokio::test]
+async fn bridge_out_lock_native_token() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    // Bridge admin / GER manager / bridge account.
+    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    let mut bridge_account = create_existing_bridge_account(
+        builder.rng_mut().draw_word(),
+        bridge_admin.id(),
+        ger_manager.id(),
+    );
+    builder.add_account(bridge_account.clone())?;
+
+    // Native faucet: network-faucet pattern (not bridge-owned).
+    let faucet_owner_account_id = AccountId::dummy(
+        [2; 15],
+        AccountIdVersion::Version0,
+        AccountType::RegularAccountImmutableCode,
+        AccountStorageMode::Private,
+    );
+    let native_faucet = builder.add_existing_network_faucet(
+        "NATIVE",
+        1000,
+        faucet_owner_account_id,
+        Some(500),
+        OwnerControlledInitConfig::OwnerOnly,
+    )?;
+
+    // Sender of the B2AGG note (any regular wallet).
+    let sender_account = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    // Register the native faucet in the bridge with `is_native = true`.
+    let origin_token_address = EthAddress::from_hex("0x00000000000000000000000000000000deadbeef")
+        .expect("valid eth address");
+    let origin_network = 7u32; // any stable u32 — Miden's test network id
+    let scale = 0u8;
+    let metadata_hash = MetadataHash::from_token_info("Native Token", "NATIVE", 8);
+
+    let config_note = ConfigAggBridgeNote::create(
+        ConversionMetadata {
+            faucet_account_id: native_faucet.id(),
+            origin_token_address,
+            scale,
+            origin_network,
+            is_native: true,
+            metadata_hash,
+        },
+        bridge_admin.id(),
+        bridge_account.id(),
+        builder.rng_mut(),
+    )?;
+    builder.add_output_note(RawOutputNote::Full(config_note.clone()));
+
+    // B2AGG note carrying a native asset.
+    let amount = 42u64;
+    let bridge_asset: Asset = FungibleAsset::new(native_faucet.id(), amount).unwrap().into();
+    let destination_network = 1u32;
+    let destination_address = EthAddress::from_hex("0x1234567890abcdef1122334455667788990011aa")
+        .expect("valid destination address");
+
+    let b2agg_note = B2AggNote::create(
+        destination_network,
+        destination_address,
+        NoteAssets::new(vec![bridge_asset])?,
+        bridge_account.id(),
+        sender_account.id(),
+        builder.rng_mut(),
+    )?;
+    builder.add_output_note(RawOutputNote::Full(b2agg_note.clone()));
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    // TX0: register the faucet.
+    let config_executed = mock_chain
+        .build_tx_context(bridge_account.id(), &[config_note.id()], &[])?
+        .build()?
+        .execute()
+        .await?;
+    bridge_account.apply_delta(config_executed.account_delta())?;
+    mock_chain.add_pending_executed_transaction(&config_executed)?;
+    mock_chain.prove_next_block()?;
+
+    // TX1: consume the B2AGG note against the bridge (triggers lock_asset).
+    let executed_tx = mock_chain
+        .build_tx_context(bridge_account.clone(), &[b2agg_note.id()], &[])?
+        .build()?
+        .execute()
+        .await?;
+
+    // No BURN note is emitted on the lock path.
+    assert_eq!(
+        executed_tx.output_notes().num_notes(),
+        0,
+        "Lock path should not emit any output note"
+    );
+
+    bridge_account.apply_delta(executed_tx.account_delta())?;
+
+    // The asset now lives in the bridge's own vault.
+    let bridge_balance = bridge_account.vault().get_balance(native_faucet.id())?;
+    assert_eq!(bridge_balance, amount, "Bridge vault should hold the locked asset");
+
+    // Leaf was still committed to the LET; LER is non-zero.
+    assert_eq!(
+        AggLayerBridge::read_let_num_leaves(&bridge_account),
+        1,
+        "LET should have exactly one leaf after the lock"
+    );
+    let local_exit_root = AggLayerBridge::read_local_exit_root(&bridge_account)?;
+    assert!(
+        local_exit_root.iter().any(|f| f.as_canonical_u64() != 0),
+        "Local Exit Root should be non-zero after the lock"
+    );
+
+    mock_chain.add_pending_executed_transaction(&executed_tx)?;
+    mock_chain.prove_next_block()?;
 
     Ok(())
 }

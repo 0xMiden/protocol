@@ -3,7 +3,6 @@ use miden::protocol::active_account
 use miden::protocol::asset
 use miden::protocol::native_account
 use miden::protocol::note
-use miden::protocol::tx
 use miden::standards::data_structures::double_word_array
 use miden::standards::attachments::network_account_target
 use miden::standards::note_tag::DEFAULT_TAG
@@ -12,7 +11,7 @@ use miden::protocol::types::MemoryAddress
 use miden::protocol::output_note
 use miden::core::crypto::hashes::poseidon2
 use agglayer::common::utils
-use agglayer::faucet -> agglayer_faucet
+use agglayer::common::asset_conversion
 use agglayer::bridge::bridge_config
 use agglayer::bridge::leaf_utils
 use agglayer::bridge::merkle_tree_frontier
@@ -65,6 +64,7 @@ const DESTINATION_ADDRESS_2_LOC=10
 const DESTINATION_ADDRESS_3_LOC=11
 const DESTINATION_ADDRESS_4_LOC=12
 const DESTINATION_NETWORK_LOC=13
+const BRIDGE_OUT_IS_NATIVE_LOC=14
 
 # create_burn_note memory locals
 const CREATE_BURN_NOTE_BURN_ASSET_LOC=0
@@ -101,10 +101,8 @@ const BURN_NOTE_NUM_STORAGE_ITEMS=0
 #! - dest_address(5) are 5 u32 values representing a 20-byte Ethereum address.
 #!
 #! Invocation: call
-@locals(14)
+@locals(15)
 pub proc bridge_out
-    # => [ASSET_KEY, ASSET_VALUE, dest_network_id, dest_address(5), pad(2)]
-
     # Save ASSET to local memory for later BURN note creation
     locaddr.BRIDGE_OUT_BURN_ASSET_LOC
     exec.asset::store
@@ -165,27 +163,28 @@ pub proc bridge_out
     exec.write_address_to_memory
     # => [pad(16)]
 
-    # --- 3. Fetch metadata hash from the faucet via FPI and write to memory ---
-    procref.agglayer_faucet::get_metadata_hash
-    # => [PROC_MAST_ROOT, pad(16)]
-
-    # Reload asset to extract faucet ID for the FPI call
+    # --- 3. Fetch metadata hash from bridge storage and write to memory ---
+    # Reload asset to extract faucet id for the metadata lookup and the is_native flag.
     locaddr.BRIDGE_OUT_BURN_ASSET_LOC
     exec.asset::load
     swapw dropw
-    # => [ASSET_KEY, PROC_MAST_ROOT, pad(16)]
-    # ASSET_KEY layout: [0, 0, faucet_id_suffix, faucet_id_prefix]
+    # => [ASSET_KEY, pad(16)]
 
-    # Extract faucet ID, drop padding and amount
-    drop drop
-    # => [faucet_id_suffix, faucet_id_prefix, PROC_MAST_ROOT, pad(16)]
+    exec.asset::key_into_faucet_id
+    # => [faucet_id_suffix, faucet_id_prefix, pad(16)]
 
-    exec.tx::execute_foreign_procedure
-    # => [METADATA_HASH_LO, METADATA_HASH_HI, pad(8)]
+    # Stash the is_native flag for the lock/burn branch later in this procedure.
+    dup.1 dup.1
+    exec.bridge_config::is_faucet_native
+    loc_store.BRIDGE_OUT_IS_NATIVE_LOC
+    # => [faucet_id_suffix, faucet_id_prefix, pad(16)]
+
+    exec.bridge_config::get_faucet_metadata_hash
+    # => [METADATA_HASH_LO, METADATA_HASH_HI, pad(16)]
 
     push.LEAF_DATA_START_PTR push.METADATA_HASH_OFFSET add
     movdn.8
-    # => [METADATA_HASH_LO, METADATA_HASH_HI, metadata_hash_ptr, pad(8)]
+    # => [METADATA_HASH_LO, METADATA_HASH_HI, metadata_hash_ptr, pad(16)]
 
     exec.utils::mem_store_double_word_unaligned
     # => [pad(16)]
@@ -210,21 +209,29 @@ pub proc bridge_out
     exec.add_leaf_bridge
     # => [pad(16)]
 
-    # --- 4. Create BURN output note for ASSET ---
+    # --- 5. Dispatch on is_native: lock into the bridge vault or burn via an output note ---
     locaddr.BRIDGE_OUT_BURN_ASSET_LOC
     exec.asset::load
     # => [ASSET_KEY, ASSET_VALUE, pad(16)]
-    
-    exec.create_burn_note
-    # => [pad(16)]
+
+    loc_load.BRIDGE_OUT_IS_NATIVE_LOC
+    # => [is_native, ASSET_KEY, ASSET_VALUE, pad(16)]
+
+    if.true
+        exec.lock_asset
+        # => [pad(16)]
+    else
+        exec.create_burn_note
+        # => [pad(16)]
+    end
 end
 
 # HELPER PROCEDURES
 # =================================================================================================
 
-#! Validates that a faucet is registered in the bridge's faucet registry, then performs an FPI call
-#! to the faucet's `asset_to_origin_asset` procedure to obtain the scaled amount, origin token
-#! address, and origin network.
+#! Validates that a faucet is registered in the bridge's faucet registry and converts the asset's
+#! native Miden amount to the origin (AggLayer-side) U256 amount using bridge-local conversion
+#! metadata.
 #!
 #! Inputs:  [ASSET_KEY, ASSET_VALUE]
 #! Outputs: [AMOUNT_U256_LO, AMOUNT_U256_HI, origin_addr(5), origin_network]
@@ -238,43 +245,38 @@ end
 #!
 #! Panics if:
 #! - The faucet is not registered in the faucet registry.
-#! - The FPI call to asset_to_origin_asset fails.
 #!
 #! Invocation: exec
 proc convert_asset
-    # --- Step 1: Assert faucet is registered ---
-    # pad in preparation for FPI call
-    repeat.2
-        padw padw swapdw
-    end
-    # => [ASSET_KEY, ASSET_VALUE, pad(16)]
-
     swapw exec.asset::fungible_value_into_amount movdn.4
-    # => [ASSET_KEY, amount, pad(16)]
+    # => [ASSET_KEY, amount]
 
     exec.asset::key_into_faucet_id
-    # => [faucet_id_suffix, faucet_id_prefix, amount, pad(16)]
+    # => [faucet_id_suffix, faucet_id_prefix, amount]
 
     dup.1 dup.1
     exec.bridge_config::assert_faucet_registered
-    # => [faucet_id_suffix, faucet_id_prefix, amount, pad(16)]
+    # => [faucet_id_suffix, faucet_id_prefix, amount]
 
-    # --- Step 2: FPI to faucet's asset_to_origin_asset ---
+    # Fetch origin token address, origin network, and scale from bridge storage.
+    exec.bridge_config::get_faucet_conversion_info
+    # => [addr0, addr1, addr2, addr3, addr4, origin_network, scale, amount]
 
-    procref.agglayer_faucet::asset_to_origin_asset
-    # => [PROC_MAST_ROOT, faucet_id_suffix, faucet_id_prefix, amount, pad(16)]
+    # Bring [amount, scale] to the top for scale_native_amount_to_u256.
+    movup.6
+    # => [scale, addr0, addr1, addr2, addr3, addr4, origin_network, amount]
 
-    # Move faucet_id above PROC_MAST_ROOT
-    movup.5 movup.5
-    # => [faucet_id_suffix, faucet_id_prefix, PROC_MAST_ROOT, amount, pad(15), pad(1)]
+    movup.7
+    # => [amount, scale, addr0, addr1, addr2, addr3, addr4, origin_network]
 
-    exec.tx::execute_foreign_procedure
-    # => [AMOUNT_U256_LO, AMOUNT_U256_HI, origin_addr(5), origin_network, pad(2), pad(1)]
+    exec.asset_conversion::scale_native_amount_to_u256
+    exec.asset_conversion::reverse_limbs_and_change_byte_endianness
+    # => [U256_LO, U256_HI, addr0, addr1, addr2, addr3, addr4, origin_network]
 
-    # drop the 3 trailing padding elements
-    repeat.3
-        movup.14 drop
-    end
+    # Byte-swap origin_network to match the EVM-side big-endian encoding used in the leaf layout.
+    movup.13
+    exec.utils::swap_u32_bytes
+    movdn.13
     # => [AMOUNT_U256_LO, AMOUNT_U256_HI, origin_addr(5), origin_network]
 end
 
@@ -627,5 +629,23 @@ proc create_burn_note
     # => [pad(11)]
 
     dropw dropw drop drop drop
+    # => []
+end
+
+#! Locks a fungible asset in the bridge's own vault.
+#!
+#! Used on the bridge-out path for Miden-native faucets (ones whose mint/burn authority the bridge
+#! does not hold). Instead of creating a BURN note, the asset is simply added to the bridge's own
+#! vault; the bridge-in claim side will later remove it via `unlock_and_send`.
+#!
+#! Inputs:  [ASSET_KEY, ASSET_VALUE]
+#! Outputs: []
+#!
+#! Invocation: exec
+proc lock_asset
+    exec.native_account::add_asset
+    # => [ASSET_VALUE']
+
+    dropw
     # => []
 end

@@ -5,6 +5,7 @@ use miden_agglayer::{
     B2AggNote,
     ClaimNoteStorage,
     ConfigAggBridgeNote,
+    ConversionMetadata,
     EthAddress,
     MetadataHash,
     UpdateGerNote,
@@ -206,10 +207,6 @@ pub async fn tx_consume_claim_note(data_source: ClaimDataSource) -> Result<Trans
         max_supply,
         Felt::ZERO,
         bridge_account.id(),
-        &origin_token_address,
-        origin_network,
-        scale,
-        leaf_data.metadata_hash,
     );
     builder.add_account(agglayer_faucet.clone())?;
 
@@ -229,6 +226,7 @@ pub async fn tx_consume_claim_note(data_source: ClaimDataSource) -> Result<Trans
         .scale_to_token_amount(scale as u32)
         .expect("amount should scale successfully");
 
+    let config_metadata_hash = leaf_data.metadata_hash;
     let claim_inputs = ClaimNoteStorage {
         proof_data,
         leaf_data,
@@ -246,8 +244,14 @@ pub async fn tx_consume_claim_note(data_source: ClaimDataSource) -> Result<Trans
 
     // CREATE CONFIG_AGG_BRIDGE NOTE
     let config_note = ConfigAggBridgeNote::create(
-        agglayer_faucet.id(),
-        &origin_token_address,
+        ConversionMetadata {
+            faucet_account_id: agglayer_faucet.id(),
+            origin_token_address,
+            scale,
+            origin_network,
+            is_native: false,
+            metadata_hash: config_metadata_hash,
+        },
         bridge_admin.id(),
         bridge_account.id(),
         builder.rng_mut(),
@@ -405,17 +409,20 @@ pub async fn tx_consume_b2agg_note(pre_populate_leaves: Option<u32>) -> Result<T
         Felt::new(FungibleAsset::MAX_AMOUNT),
         Felt::new(bridge_amount),
         bridge_account.id(),
-        &origin_token_address,
-        origin_network,
-        scale,
-        MetadataHash::from_token_info("AGG", "AGG", 8),
     );
     builder.add_account(faucet.clone())?;
 
     // CREATE CONFIG_AGG_BRIDGE NOTE (registers faucet + token address in bridge)
+    let metadata_hash = MetadataHash::from_token_info("AGG", "AGG", 8);
     let config_note = ConfigAggBridgeNote::create(
-        faucet.id(),
-        &origin_token_address,
+        ConversionMetadata {
+            faucet_account_id: faucet.id(),
+            origin_token_address,
+            scale,
+            origin_network,
+            is_native: false,
+            metadata_hash,
+        },
         bridge_admin.id(),
         bridge_account.id(),
         builder.rng_mut(),

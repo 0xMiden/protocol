@@ -22,6 +22,7 @@ const GER_MANAGER_SLOT = word("agglayer::bridge::ger_manager_account_id")
 const GER_MAP_STORAGE_SLOT = word("agglayer::bridge::ger_map")
 const FAUCET_REGISTRY_MAP_SLOT = word("agglayer::bridge::faucet_registry_map")
 const TOKEN_REGISTRY_MAP_SLOT = word("agglayer::bridge::token_registry_map")
+const FAUCET_METADATA_MAP_SLOT = word("agglayer::bridge::faucet_metadata_map")
 
 # Flags
 const GER_KNOWN_FLAG = 1
@@ -29,6 +30,14 @@ const IS_FAUCET_REGISTERED_FLAG = 1
 
 # Offset in the local memory of the `hash_token_address` procedure
 const TOKEN_ADDR_HASH_PTR = 0
+
+# Local memory slot offsets used inside the `register_faucet` procedure
+const REG_TOKEN_HASH_LOC = 0
+const REG_FAUCET_ID_SUFFIX_LOC = 4
+const REG_FAUCET_ID_PREFIX_LOC = 5
+const REG_SCALE_LOC = 6
+const REG_ORIGIN_NETWORK_LOC = 7
+const REG_IS_NATIVE_LOC = 8
 
 # PUBLIC INTERFACE
 # =================================================================================================
@@ -102,70 +111,145 @@ proc assert_valid_ger
     # => []
 end
 
-#! Registers a faucet in the bridge's faucet registry and token registry.
+#! Registers a faucet in the bridge's faucet registry, token registry, and metadata map.
 #!
-#! 1. Writes `KEY -> [1, 0, 0, 0]` into the `faucet_registry` map, where
-#!    `KEY = [0, 0, faucet_id_suffix, faucet_id_prefix]`.
-#! 2. Writes `hash(tokenAddress[5]) -> [faucet_id_suffix, faucet_id_prefix, 0, 0]` into the
-#!    `token_registry` map.
+#! Stores conversion metadata for the faucet using a sub-key scheme in faucet_metadata_map:
+#! 1. KEY [0, 0, faucet_id_suffix, faucet_id_prefix] -> [addr0, addr1, addr2, addr3]  (origin address part 1)
+#! 2. KEY [1, 0, faucet_id_suffix, faucet_id_prefix] -> [addr4, origin_network, scale, 0]  (origin address part 2)
 #!
-#! Inputs:  [origin_token_addr(5), faucet_id_suffix, faucet_id_prefix, pad(9)]
+#! Also registers:
+#! 3. faucet_registry_map: [0, 0, faucet_id_suffix, faucet_id_prefix] -> [1, is_native, 0, 0]
+#! 4. token_registry_map: hash(tokenAddress) -> [0, 0, faucet_id_suffix, faucet_id_prefix]
+#!
+#! Inputs:  [origin_token_addr(5), faucet_id_suffix, faucet_id_prefix, scale, origin_network, is_native, pad(6)]
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
 #! - the note sender is not the bridge admin.
 #!
 #! Invocation: call
+@locals(14)
 pub proc register_faucet
-    # assert the note sender is the bridge admin.
     exec.assert_sender_is_bridge_admin
-    # => [origin_token_addr(5), faucet_id_suffix, faucet_id_prefix, pad(9)]
+    # => [addr0, addr1, addr2, addr3, addr4, faucet_id_suffix, faucet_id_prefix, scale, origin_network, is_native, pad(6)]
 
-    # Save faucet ID for later use in token_registry
-    dup.6 dup.6
-    # => [faucet_id_suffix, faucet_id_prefix, origin_token_addr(5),
-    #     faucet_id_suffix, faucet_id_prefix, pad(9)]
+    # Save non-address data to locals
+    movup.9 loc_store.REG_IS_NATIVE_LOC
+    movup.8 loc_store.REG_ORIGIN_NETWORK_LOC
+    movup.7 loc_store.REG_SCALE_LOC
+    movup.6 loc_store.REG_FAUCET_ID_PREFIX_LOC
+    movup.5 loc_store.REG_FAUCET_ID_SUFFIX_LOC
+    # => [addr0, addr1, addr2, addr3, addr4, pad(11)]
 
-    # --- 1. Register faucet in faucet_registry ---
+    # Duplicate address for hashing before it gets consumed
+    dup.4 dup.4 dup.4 dup.4 dup.4
+    # => [addr0, addr1, addr2, addr3, addr4, addr0, addr1, addr2, addr3, addr4, pad(6)]
 
-    # set_map_item expects [slot_id(2), KEY, VALUE] and returns [OLD_VALUE].
-    # Build KEY = [0, 0, suffix, prefix] and VALUE = [IS_FAUCET_REGISTERED_FLAG, 0, 0, 0]
-    push.0.0.0.IS_FAUCET_REGISTERED_FLAG
-    # => [IS_FAUCET_REGISTERED_FLAG, 0, 0, 0,
-    #     faucet_id_suffix, faucet_id_prefix, origin_token_addr(5),
-    #     faucet_id_suffix, faucet_id_prefix, pad(9)]
+    exec.hash_token_address
+    # => [TOKEN_ADDR_HASH, addr0, addr1, addr2, addr3, addr4, pad(6)]
 
-    movup.5 movup.5 push.0.0
-    # => [
-    #     [0, 0, faucet_id_suffix, faucet_id_prefix],
-    #     [IS_FAUCET_REGISTERED_FLAG, 0, 0, 0],
-    #      origin_token_addr(5), faucet_id_suffix, faucet_id_prefix, pad(9)
-    #    ]
+    loc_storew_le.REG_TOKEN_HASH_LOC dropw
+    # => [addr0, addr1, addr2, addr3, addr4, pad(11)]
+
+    # --- Step 1: Store origin address part 1 in faucet_metadata_map ---
+    # KEY = [0, 0, faucet_id_suffix, faucet_id_prefix], VALUE = [addr0, addr1, addr2, addr3]
+
+    loc_load.REG_FAUCET_ID_PREFIX_LOC loc_load.REG_FAUCET_ID_SUFFIX_LOC push.0.0
+    # => [0, 0, faucet_id_suffix, faucet_id_prefix, addr0, addr1, addr2, addr3, addr4, pad(11)]
+
+    push.FAUCET_METADATA_MAP_SLOT[0..2]
+    exec.native_account::set_map_item
+    dropw
+    # => [addr4, pad(15)]
+
+    # --- Step 2: Store origin address part 2 + origin_network + scale ---
+    # KEY = [1, 0, faucet_id_suffix, faucet_id_prefix], VALUE = [addr4, origin_network, scale, 0]
+
+    push.0
+    loc_load.REG_SCALE_LOC
+    loc_load.REG_ORIGIN_NETWORK_LOC
+    movup.3
+    # => [addr4, origin_network, scale, 0, pad(11)]
+
+    loc_load.REG_FAUCET_ID_PREFIX_LOC loc_load.REG_FAUCET_ID_SUFFIX_LOC
+    # => [faucet_id_suffix, faucet_id_prefix, addr4, origin_network, scale, 0, pad(11)]
+
+    push.0.1
+    # => [1, 0, faucet_id_suffix, faucet_id_prefix, addr4, origin_network, scale, 0, pad(11)]
+
+    push.FAUCET_METADATA_MAP_SLOT[0..2]
+    exec.native_account::set_map_item
+    dropw
+    # => [pad(11)]
+
+    # --- Step 3: Store [1, is_native, 0, 0] in faucet_registry_map ---
+    # KEY = [0, 0, faucet_id_suffix, faucet_id_prefix], VALUE = [1, is_native, 0, 0]
+    # The trailing [0, 0] of VALUE is supplied by the stack's bottom pads.
+
+    loc_load.REG_IS_NATIVE_LOC push.IS_FAUCET_REGISTERED_FLAG
+    # => [1, is_native, pad(14)]
+
+    loc_load.REG_FAUCET_ID_PREFIX_LOC loc_load.REG_FAUCET_ID_SUFFIX_LOC push.0.0
+    # => [0, 0, faucet_id_suffix, faucet_id_prefix, 1, is_native, pad(14)]
 
     push.FAUCET_REGISTRY_MAP_SLOT[0..2]
     exec.native_account::set_map_item
-    # => [OLD_VALUE, origin_token_addr(5), faucet_id_suffix, faucet_id_prefix, pad(9)]
-
     dropw
-    # => [origin_token_addr(5), faucet_id_suffix, faucet_id_prefix, pad(9)]
+    # => [pad(16)]
 
-    # --- 2. Register token address → faucet ID in token_registry ---
+    # --- Step 4: Store TOKEN_ADDR_HASH -> [0, 0, faucet_id_suffix, faucet_id_prefix] in token_registry ---
 
-    # Hash the token address
-    exec.hash_token_address
-    # => [TOKEN_ADDR_HASH, faucet_id_suffix, faucet_id_prefix, pad(10)]
+    loc_load.REG_FAUCET_ID_PREFIX_LOC loc_load.REG_FAUCET_ID_SUFFIX_LOC
+    # => [faucet_id_suffix, faucet_id_prefix, pad(11)]
 
-    # Build VALUE = [0, 0, faucet_id_suffix, faucet_id_prefix]
-    movup.5 movup.5 push.0.0
-    # => [0, 0, faucet_id_suffix, faucet_id_prefix, TOKEN_ADDR_HASH, pad(10)]
+    push.0.0
+    # => [0, 0, faucet_id_suffix, faucet_id_prefix, pad(11)]
 
-    swapw
-    # => [TOKEN_ADDR_HASH, 0, 0, faucet_id_suffix, faucet_id_prefix, pad(10)]
+    padw loc_loadw_le.REG_TOKEN_HASH_LOC
+    # => [TOKEN_ADDR_HASH, 0, 0, faucet_id_suffix, faucet_id_prefix, pad(7)]
 
     push.TOKEN_REGISTRY_MAP_SLOT[0..2]
     exec.native_account::set_map_item
-    # => [OLD_VALUE, pad(12)]
+    dropw
+    # => [pad(16)]
+end
 
+#! Stores the metadata hash for a registered faucet in the bridge's faucet metadata map.
+#!
+#! This is the second call in the faucet registration flow (called after register_faucet).
+#! Stores the metadata hash using sub-keys 2 and 3 in faucet_metadata_map:
+#! - KEY [2, 0, faucet_id_suffix, faucet_id_prefix] -> METADATA_HASH_LO
+#! - KEY [3, 0, faucet_id_suffix, faucet_id_prefix] -> METADATA_HASH_HI
+#!
+#! Inputs:  [faucet_id_suffix, faucet_id_prefix, METADATA_HASH_LO, METADATA_HASH_HI, pad(6)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the note sender is not the bridge admin.
+#!
+#! Invocation: call
+pub proc store_faucet_metadata_hash
+    exec.assert_sender_is_bridge_admin
+    # => [faucet_id_suffix, faucet_id_prefix, MH_LO, MH_HI, pad(6)]
+
+    # --- Store METADATA_HASH_LO at key [2, 0, faucet_id_suffix, faucet_id_prefix] ---
+    dup.1 dup.1 swapw movup.5 movup.5
+    # => [faucet_id_suffix, faucet_id_prefix, MH_LO, faucet_id_suffix, faucet_id_prefix, MH_HI, pad(6)]
+
+    push.0.2
+    # => [2, 0, faucet_id_suffix, faucet_id_prefix, MH_LO, faucet_id_suffix, faucet_id_prefix, MH_HI, pad(6)]
+
+    push.FAUCET_METADATA_MAP_SLOT[0..2]
+    exec.native_account::set_map_item
+    dropw
+    # => [faucet_id_suffix, faucet_id_prefix, MH_HI, pad(6)]
+
+    # --- Store METADATA_HASH_HI at key [3, 0, faucet_id_suffix, faucet_id_prefix] ---
+    push.0.3
+    # => [3, 0, faucet_id_suffix, faucet_id_prefix, MH_HI, pad(6)]
+
+    push.FAUCET_METADATA_MAP_SLOT[0..2]
+    exec.native_account::set_map_item
     dropw
     # => [pad(16)]
 end
@@ -173,6 +257,7 @@ end
 #! Asserts that a faucet is registered in the bridge's faucet registry.
 #!
 #! Looks up the faucet ID in the faucet registry map and asserts the registration flag is set.
+#! The stored value is [is_registered, is_native, 0, 0].
 #!
 #! Inputs:  [faucet_id_suffix, faucet_id_prefix]
 #! Outputs: []
@@ -190,9 +275,130 @@ proc assert_faucet_registered
     exec.active_account::get_map_item
     # => [VALUE]
 
-    # the stored word must be [1, 0, 0, 0] for registered faucets
+    # the stored word is [1, is_native, 0, 0] for registered faucets
+    # assert element 0 (registration flag) is non-zero
     assert.err=ERR_FAUCET_NOT_REGISTERED drop drop drop
     # => []
+end
+
+#! Returns the scale factor for a registered faucet from the bridge's faucet metadata map.
+#!
+#! Reads the metadata from the faucet_metadata_map at key [1, 0, faucet_id_suffix, faucet_id_prefix].
+#! The stored value is [addr4, origin_network, scale, 0].
+#!
+#! Inputs:  [faucet_id_suffix, faucet_id_prefix]
+#! Outputs: [scale]
+#!
+#! Invocation: exec
+proc get_faucet_scale
+    # Build KEY = [1, 0, faucet_id_suffix, faucet_id_prefix]
+    push.0.1
+    # => [1, 0, faucet_id_suffix, faucet_id_prefix]
+
+    push.FAUCET_METADATA_MAP_SLOT[0..2]
+    exec.active_account::get_map_item
+    # => [addr4, origin_network, scale, 0]
+
+    drop drop swap drop
+    # => [scale]
+end
+
+#! Returns the origin token address (5 felts), origin network, and scale factor for a registered
+#! faucet from the bridge's faucet metadata map.
+#!
+#! Reads sub-keys 0 and 1 from faucet_metadata_map:
+#! - Key [0, 0, faucet_id_suffix, faucet_id_prefix] -> [addr0, addr1, addr2, addr3]
+#! - Key [1, 0, faucet_id_suffix, faucet_id_prefix] -> [addr4, origin_network, scale, 0]
+#!
+#! Inputs:  [faucet_id_suffix, faucet_id_prefix]
+#! Outputs: [origin_addr(5), origin_network, scale]
+#!
+#! Invocation: exec
+proc get_faucet_conversion_info
+    # Prepare the sub-key 0 KEY underneath.
+    push.0.0
+    # => [0, 0, faucet_id_suffix, faucet_id_prefix]
+
+    # Prepare the sub-key 1 KEY on top.
+    dup.3 dup.3 push.0.1
+    # => [1, 0, faucet_id_suffix, faucet_id_prefix, 0, 0, faucet_id_suffix, faucet_id_prefix]
+
+    # Read sub-key 1: [addr4, origin_network, scale, 0]
+    push.FAUCET_METADATA_MAP_SLOT[0..2]
+    exec.active_account::get_map_item
+    # => [addr4, origin_network, scale, 0, 0, 0, faucet_id_suffix, faucet_id_prefix]
+
+    # Surface the pre-built sub-key 0 KEY for the second read.
+    swapw
+    # => [0, 0, faucet_id_suffix, faucet_id_prefix, addr4, origin_network, scale, 0]
+
+    # Read sub-key 0: [addr0, addr1, addr2, addr3]
+    push.FAUCET_METADATA_MAP_SLOT[0..2]
+    exec.active_account::get_map_item
+    # => [addr0, addr1, addr2, addr3, addr4, origin_network, scale, 0]
+
+    # Drop the trailing 0 left over from sub-key 1.
+    movup.7 drop
+    # => [addr0, addr1, addr2, addr3, addr4, origin_network, scale]
+end
+
+#! Returns the metadata hash (8 u32 felts) for a registered faucet from the bridge's faucet
+#! metadata map.
+#!
+#! Reads sub-keys 2 and 3 from faucet_metadata_map:
+#! - Key [2, 0, faucet_id_suffix, faucet_id_prefix] -> METADATA_HASH_LO
+#! - Key [3, 0, faucet_id_suffix, faucet_id_prefix] -> METADATA_HASH_HI
+#!
+#! Inputs:  [faucet_id_suffix, faucet_id_prefix]
+#! Outputs: [METADATA_HASH_LO, METADATA_HASH_HI]
+#!
+#! Invocation: exec
+proc get_faucet_metadata_hash
+    # Save faucet_id for second read
+    dup.1 dup.1
+    # => [faucet_id_suffix, faucet_id_prefix, faucet_id_suffix, faucet_id_prefix]
+
+    # Read sub-key 3 (MH_HI) first so MH_LO ends up on top after the second read without a swapw.
+    push.0.3
+    # => [3, 0, faucet_id_suffix, faucet_id_prefix, faucet_id_suffix, faucet_id_prefix]
+
+    push.FAUCET_METADATA_MAP_SLOT[0..2]
+    exec.active_account::get_map_item
+    # => [MH_HI, faucet_id_suffix, faucet_id_prefix]
+
+    # Move fid below MH_HI
+    movup.5 movup.5
+    # => [faucet_id_suffix, faucet_id_prefix, MH_HI]
+
+    # Read sub-key 2: METADATA_HASH_LO
+    push.0.2
+    # => [2, 0, faucet_id_suffix, faucet_id_prefix, MH_HI]
+
+    push.FAUCET_METADATA_MAP_SLOT[0..2]
+    exec.active_account::get_map_item
+    # => [MH_LO, MH_HI]
+end
+
+#! Returns whether a faucet is native (not owned by the bridge).
+#!
+#! Reads the faucet_registry_map value [1, is_native, 0, 0] and returns the is_native flag.
+#!
+#! Inputs:  [faucet_id_suffix, faucet_id_prefix]
+#! Outputs: [is_native]
+#!
+#! Invocation: exec
+proc is_faucet_native
+    # Build KEY = [0, 0, faucet_id_suffix, faucet_id_prefix]
+    push.0.0
+    # => [0, 0, faucet_id_suffix, faucet_id_prefix]
+
+    push.FAUCET_REGISTRY_MAP_SLOT[0..2]
+    exec.active_account::get_map_item
+    # => [1, is_native, 0, 0]
+
+    # Drop element 0 (registration flag), sink is_native below the trailing zeros, drop them.
+    drop movdn.2 drop drop
+    # => [is_native]
 end
 
 #! Looks up the faucet account ID for a given origin token address.

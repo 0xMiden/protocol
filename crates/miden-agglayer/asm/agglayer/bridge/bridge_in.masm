@@ -1,23 +1,15 @@
 use agglayer::bridge::bridge_config
+use agglayer::bridge::bridge_in_output
 use agglayer::bridge::leaf_utils
 use agglayer::common::utils
 use agglayer::common::asset_conversion
 use agglayer::common::eth_address
-use agglayer::faucet -> agglayer_faucet
 use miden::core::crypto::hashes::keccak256
 use miden::core::crypto::hashes::poseidon2
 use miden::core::mem
 use miden::core::word
-use miden::protocol::note
-use miden::protocol::output_note
-use miden::protocol::output_note::ATTACHMENT_KIND_NONE
 use miden::protocol::active_account
 use miden::protocol::native_account
-use miden::protocol::tx
-use miden::standards::note_tag
-use miden::standards::note_tag::DEFAULT_TAG
-use miden::standards::attachments::network_account_target
-use miden::standards::note::execution_hint::ALWAYS
 use miden::protocol::types::DoubleWord
 use miden::protocol::types::MemoryAddress
 
@@ -59,24 +51,6 @@ const CGI_CHAIN_HASH_HI_SLOT_NAME = word("agglayer::bridge::cgi_chain_hash_hi")
 const CLAIM_PROOF_DATA_WORD_LEN = 134
 const CLAIM_LEAF_DATA_WORD_LEN = 8
 
-# MINT note storage layout (public mode, 18 felts total):
-# - tag               [0]      : 1 felt
-# - amount            [1]      : 1 felt
-# - attachment_kind   [2]      : 1 felt
-# - attachment_scheme [3]      : 1 felt
-# - ATTACHMENT        [4..7]   : 4 felts
-# - P2ID_SCRIPT_ROOT  [8..11]  : 4 felts
-# - SERIAL_NUM        [12..15] : 4 felts
-# - account_id_suffix [16]     : 1 felt
-# - account_id_prefix [17]     : 1 felt
-const MINT_NOTE_NUM_STORAGE_ITEMS = 18
-
-# P2ID output note constants
-const OUTPUT_NOTE_TYPE_PUBLIC = 1
-
-# P2ID attachment constants (the P2ID note created by the faucet has no attachment)
-const P2ID_ATTACHMENT_SCHEME_NONE = 0
-
 # Global memory pointers
 # -------------------------------------------------------------------------------------------------
 
@@ -103,10 +77,10 @@ const LEAF_DATA_START_PTR = 0
 # Memory pointers for piped advice map data (used by claim procedure)
 const CLAIM_PROOF_DATA_START_PTR = 0
 const CLAIM_LEAF_DATA_START_PTR = 536
-const CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT = 568
+pub const CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT = 568
 
 # Memory addresses for stored keys (used by claim procedure)
-const CLAIM_PROOF_DATA_KEY_MEM_ADDR = 700
+pub const CLAIM_PROOF_DATA_KEY_MEM_ADDR = 700
 const CLAIM_LEAF_DATA_KEY_MEM_ADDR = 704
 
 # Memory addresses used to temporarily store leaf_index and source_bridge_network
@@ -134,18 +108,6 @@ const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_4 = 553
 const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_5 = 554
 const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_6 = 555
 const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_7 = 556
-
-# Memory addresses for MINT note output construction
-const MINT_NOTE_STORAGE_MEM_ADDR_0 = 800
-const MINT_NOTE_STORAGE_DEST_TAG = 800
-const MINT_NOTE_STORAGE_NATIVE_AMOUNT = 801
-const MINT_NOTE_STORAGE_ATTACHMENT_KIND = 802
-const MINT_NOTE_STORAGE_ATTACHMENT_SCHEME = 803
-const MINT_NOTE_STORAGE_ATTACHMENT = 804
-const MINT_NOTE_STORAGE_OUTPUT_SCRIPT_ROOT = 808
-const MINT_NOTE_STORAGE_OUTPUT_SERIAL_NUM = 812
-const MINT_NOTE_STORAGE_OUTPUT_NOTE_SUFFIX = 816
-const MINT_NOTE_STORAGE_OUTPUT_NOTE_PREFIX = 817
 
 # Local memory offsets
 # -------------------------------------------------------------------------------------------------
@@ -240,13 +202,25 @@ pub proc claim
     # Verify faucet_mint_amount matches the leaf data amount
     exec.verify_claim_amount
     # => [faucet_id_suffix, faucet_id_prefix, pad(16)]
-    
-    # Build MINT output note targeting the AggLayer faucet
-    loc_load.CLAIM_DEST_ID_PREFIX_LOCAL loc_load.CLAIM_DEST_ID_SUFFIX_LOCAL
-    # => [destination_id_suffix, destination_id_prefix, faucet_id_suffix, faucet_id_prefix, pad(16)]
 
-    exec.build_mint_output_note
-    # => [pad(16)]
+    # Branch on is_native: native faucets unlock from the bridge vault and emit a P2ID note
+    # directly to the recipient; non-native faucets go through the standard MINT path.
+    dup.1 dup.1 exec.bridge_config::is_faucet_native
+    # => [is_native, faucet_id_suffix, faucet_id_prefix, pad(16)]
+
+    if.true
+        loc_load.CLAIM_DEST_ID_PREFIX_LOCAL loc_load.CLAIM_DEST_ID_SUFFIX_LOCAL
+        # => [destination_id_suffix, destination_id_prefix, faucet_id_suffix, faucet_id_prefix, pad(16)]
+
+        exec.bridge_in_output::unlock_and_send
+        # => [pad(16)]
+    else
+        loc_load.CLAIM_DEST_ID_PREFIX_LOCAL loc_load.CLAIM_DEST_ID_SUFFIX_LOCAL
+        # => [destination_id_suffix, destination_id_prefix, faucet_id_suffix, faucet_id_prefix, pad(16)]
+
+        exec.bridge_in_output::build_mint_output_note
+        # => [pad(16)]
+    end
 end
 
 # HELPER PROCEDURES
@@ -452,7 +426,7 @@ end
 #! by the faucet's scale factor.
 #!
 #! This procedure:
-#! 1. Performs an FPI call to the faucet's `get_scale` procedure to retrieve the scale factor.
+#! 1. Reads the scale factor from the bridge's faucet_metadata_map.
 #! 2. Loads the raw U256 amount from the leaf data in memory.
 #! 3. Calls `verify_u256_to_native_amount_conversion` to assert that
 #!    `faucet_mint_amount == floor(raw_amount / 10^scale)`.
@@ -461,44 +435,26 @@ end
 #! Outputs: []
 #!
 #! Panics if:
-#! - the FPI call to the faucet's get_scale fails.
 #! - the faucet_mint_amount does not match the expected scaled-down value.
 #!
 #! Invocation: exec
 proc verify_claim_amount
-    # Step 1: Pad the stack explicitly for FPI call (get_scale takes no inputs)
-    padw padw
-    movup.9 movup.9
-    padw padw
-    movup.9 movup.9
-    # => [faucet_id_suffix, faucet_id_prefix, pad(16)]
-
-    # Step 2: FPI call to faucet's get_scale procedure
-    procref.agglayer_faucet::get_scale
-    # => [PROC_MAST_ROOT(4), faucet_id_suffix, faucet_id_prefix, pad(16)]
-
-    movup.5 movup.5
-    # => [faucet_id_suffix, faucet_id_prefix, PROC_MAST_ROOT(4), pad(16)]
-
-    exec.tx::execute_foreign_procedure
-    # => [scale, pad(15)]
-
-    # Clean up FPI output padding, keeping only scale
-    movdn.15 dropw dropw dropw drop drop drop
+    # Step 1: Read scale from bridge's faucet_metadata_map
+    exec.bridge_config::get_faucet_scale
     # => [scale]
 
-    # Step 3: Load the raw U256 amount from leaf data memory
+    # Step 2: Load the raw U256 amount from leaf data memory
     exec.load_raw_claim_amount
     # => [x7, x6, x5, x4, x3, x2, x1, x0, scale]
 
-    # Step 4: Load faucet_mint_amount (y) and position it for verification
+    # Step 3: Load faucet_mint_amount (y) and position it for verification
     mem_load.CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT
     # => [y, x7, x6, x5, x4, x3, x2, x1, x0, scale]
 
     movdn.9
     # => [x7, x6, x5, x4, x3, x2, x1, x0, scale, y]
 
-    # Step 5: Verify that y = floor(x / 10^scale)
+    # Step 4: Verify that y = floor(x / 10^scale)
     exec.asset_conversion::verify_u256_to_native_amount_conversion
     # => []
 end
@@ -811,182 +767,6 @@ proc load_origin_token_address
     mem_load.ORIGIN_TOKEN_ADDRESS_1
     mem_load.ORIGIN_TOKEN_ADDRESS_0
     # => [origin_token_addr(5)]
-end
-
-#! Builds a PUBLIC MINT output note targeting the AggLayer Faucet.
-#!
-#! The MINT note uses public mode (18 storage items) so the AggLayer Faucet creates a PUBLIC P2ID
-#! note on consumption. This procedure orchestrates three steps:
-#! 1. Write all 18 MINT note storage items to global memory.
-#! 2. Build the MINT note recipient digest from the storage.
-#! 3. Create the output note, and set the attachment.
-#!
-#! Inputs:  [destination_id_suffix, destination_id_prefix, faucet_id_suffix, faucet_id_prefix]
-#! Outputs: []
-#!
-#! Invocation: exec
-proc build_mint_output_note
-    # Step 1: Write all 18 MINT note storage items to global memory
-    exec.write_mint_note_storage
-    # => [faucet_id_suffix, faucet_id_prefix]
-
-    # Step 2: Build the MINT note recipient digest
-    exec.build_mint_recipient
-    # => [MINT_RECIPIENT, faucet_id_suffix, faucet_id_prefix]
-
-    # Step 3: Create the output note and set the faucet attachment
-    exec.create_mint_note_with_attachment
-    # => []
-end
-
-#! Writes all 18 MINT note storage items to global memory.
-#!
-#! Storage layout:
-#! - [0]: tag (note tag for the P2ID output note, targeting the destination account)
-#! - [1]: amount (the scaled-down Miden amount to mint)
-#! - [2]: attachment_kind (0 = no attachment)
-#! - [3]: attachment_scheme (0 = no attachment)
-#! - [4-7]: ATTACHMENT ([0, 0, 0, 0])
-#! - [8-11]: P2ID_SCRIPT_ROOT (script root of the P2ID note)
-#! - [12-15]: SERIAL_NUM (serial number for the P2ID note, derived from PROOF_DATA_KEY)
-#! - [16]: account_id_suffix (destination account suffix)
-#! - [17]: account_id_prefix (destination account prefix)
-#!
-#! Inputs:  [destination_id_suffix, destination_id_prefix]
-#! Outputs: []
-#!
-#! Invocation: exec
-proc write_mint_note_storage
-    # Write P2ID storage items first (before prefix is consumed): [16..17]
-    # Write destination_id_suffix [16]
-    dup mem_store.MINT_NOTE_STORAGE_OUTPUT_NOTE_SUFFIX
-    # => [destination_id_suffix, destination_id_prefix]
-
-    # Write destination_id_prefix [17]
-    dup.1 mem_store.MINT_NOTE_STORAGE_OUTPUT_NOTE_PREFIX
-    # => [destination_id_suffix, destination_id_prefix]
-
-    drop
-    # => [destination_id_prefix]
-
-    # Get the native amount from the pre-computed miden_claim_amount
-    mem_load.CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT
-    # => [native_amount, destination_id_prefix]
-
-    # Compute the note tag for the destination account (consumes prefix)
-    swap
-    # => [destination_id_prefix, native_amount]
-
-    exec.note_tag::create_account_target
-    # => [dest_tag, native_amount]
-
-    # Write tag to MINT note storage [0]
-    mem_store.MINT_NOTE_STORAGE_DEST_TAG
-    # => [native_amount]
-
-    # Write amount to MINT note storage [1]
-    mem_store.MINT_NOTE_STORAGE_NATIVE_AMOUNT
-    # => []
-
-    # Write P2ID attachment fields (the P2ID note has no attachment)
-    # attachment_kind = NONE [2]
-    push.ATTACHMENT_KIND_NONE mem_store.MINT_NOTE_STORAGE_ATTACHMENT_KIND
-    # => []
-
-    # attachment_scheme = NONE [3]
-    push.P2ID_ATTACHMENT_SCHEME_NONE mem_store.MINT_NOTE_STORAGE_ATTACHMENT_SCHEME
-    # => []
-
-    # ATTACHMENT = empty word [4..7]
-    padw mem_storew_le.MINT_NOTE_STORAGE_ATTACHMENT dropw
-    # => []
-
-    # Write P2ID_SCRIPT_ROOT to MINT note storage [8..11]
-    procref.::miden::standards::notes::p2id::main
-    # => [P2ID_SCRIPT_ROOT]
-
-    mem_storew_le.MINT_NOTE_STORAGE_OUTPUT_SCRIPT_ROOT dropw
-    # => []
-
-    # Write SERIAL_NUM (PROOF_DATA_KEY) to MINT note storage [12..15]
-    mem_loadw_be.CLAIM_PROOF_DATA_KEY_MEM_ADDR
-    # => [SERIAL_NUM]
-
-    mem_storew_le.MINT_NOTE_STORAGE_OUTPUT_SERIAL_NUM dropw
-    # => []
-end
-
-#! Builds the MINT note recipient digest from the storage items already written to global memory.
-#!
-#! Uses the MINT note script root and PROOF_DATA_KEY as serial number, then calls
-#! `note::build_recipient` with the storage pointer and item count.
-#!
-#! Inputs:  []
-#! Outputs: [MINT_RECIPIENT]
-#!
-#! Invocation: exec
-proc build_mint_recipient
-    # Get the MINT note script root
-    procref.::miden::standards::notes::mint::main
-    # => [MINT_SCRIPT_ROOT]
-
-    # Generate a serial number for the MINT note (use PROOF_DATA_KEY)
-    padw mem_loadw_be.CLAIM_PROOF_DATA_KEY_MEM_ADDR
-    # => [MINT_SERIAL_NUM, MINT_SCRIPT_ROOT]
-
-    # Build the MINT note recipient
-    push.MINT_NOTE_NUM_STORAGE_ITEMS
-    # => [num_storage_items, MINT_SERIAL_NUM, MINT_SCRIPT_ROOT]
-
-    push.MINT_NOTE_STORAGE_MEM_ADDR_0
-    # => [storage_ptr, num_storage_items, MINT_SERIAL_NUM, MINT_SCRIPT_ROOT]
-
-    exec.note::build_recipient
-    # => [MINT_RECIPIENT]
-end
-
-#! Creates the MINT output note and sets the NetworkAccountTarget attachment on it.
-#!
-#! Creates a public output note with no assets, and sets the attachment so only the target faucet
-#! can consume the note.
-#!
-#! Inputs:  [MINT_RECIPIENT, faucet_id_suffix, faucet_id_prefix]
-#! Outputs: []
-#!
-#! Invocation: exec
-proc create_mint_note_with_attachment
-    # Create the MINT output note targeting the faucet
-    push.OUTPUT_NOTE_TYPE_PUBLIC
-    # => [note_type, MINT_RECIPIENT, faucet_id_suffix, faucet_id_prefix]
-
-    # Set tag to DEFAULT
-    push.DEFAULT_TAG
-    # => [tag, note_type, MINT_RECIPIENT, faucet_id_suffix, faucet_id_prefix]
-
-    # Create the output note (no assets - MINT notes carry no assets)
-    exec.output_note::create
-    # => [note_idx, faucet_id_suffix, faucet_id_prefix]
-    
-    movdn.2
-    # => [faucet_id_suffix, faucet_id_prefix, note_idx]
-
-    # Set the attachment on the MINT note to target the faucet account
-    # NetworkAccountTarget attachment: targets the faucet so only it can consume the note
-    # network_account_target::new expects [suffix, prefix, exec_hint]
-    # and returns [attachment_scheme, attachment_kind, ATTACHMENT]
-    push.ALWAYS # exec_hint = ALWAYS
-    movdn.2
-    # => [faucet_id_suffix, faucet_id_prefix, exec_hint, note_idx]
-
-    exec.network_account_target::new
-    # => [attachment_scheme, attachment_kind, ATTACHMENT, note_idx]
-
-    # Rearrange for set_attachment: [note_idx, attachment_scheme, attachment_kind, ATTACHMENT]
-    movup.6
-    # => [note_idx, attachment_scheme, attachment_kind, ATTACHMENT(4)]
-
-    exec.output_note::set_attachment
-    # => []
 end
 
 #! Computes the root of the SMT based on the provided Merkle path, leaf value and leaf index.
