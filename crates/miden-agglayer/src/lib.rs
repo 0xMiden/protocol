@@ -28,6 +28,7 @@ pub mod config_note;
 pub mod errors;
 pub mod eth_types;
 pub mod faucet;
+pub mod remove_ger_note;
 #[cfg(feature = "testing")]
 pub mod testing;
 pub mod update_ger_note;
@@ -58,6 +59,7 @@ pub use eth_types::{
     MetadataHash,
 };
 pub use faucet::{AggLayerFaucet, AgglayerFaucetError};
+pub use remove_ger_note::RemoveGerNote;
 pub use update_ger_note::UpdateGerNote;
 pub use utils::Keccak256Output;
 
@@ -169,10 +171,11 @@ fn create_bridge_account_builder(
     seed: Word,
     bridge_admin_id: AccountId,
     ger_manager_id: AccountId,
+    ger_remover_id: AccountId,
 ) -> AccountBuilder {
     Account::builder(seed.into())
         .storage_mode(AccountStorageMode::Network)
-        .with_component(AggLayerBridge::new(bridge_admin_id, ger_manager_id))
+        .with_component(AggLayerBridge::new(bridge_admin_id, ger_manager_id, ger_remover_id))
 }
 
 /// Creates a new bridge account with the standard configuration.
@@ -182,8 +185,9 @@ pub fn create_bridge_account(
     seed: Word,
     bridge_admin_id: AccountId,
     ger_manager_id: AccountId,
+    ger_remover_id: AccountId,
 ) -> Account {
-    create_bridge_account_builder(seed, bridge_admin_id, ger_manager_id)
+    create_bridge_account_builder(seed, bridge_admin_id, ger_manager_id, ger_remover_id)
         .with_auth_component(AccountComponent::from(NoAuth))
         .build()
         .expect("bridge account should be valid")
@@ -197,8 +201,9 @@ pub fn create_existing_bridge_account(
     seed: Word,
     bridge_admin_id: AccountId,
     ger_manager_id: AccountId,
+    ger_remover_id: AccountId,
 ) -> Account {
-    create_bridge_account_builder(seed, bridge_admin_id, ger_manager_id)
+    create_bridge_account_builder(seed, bridge_admin_id, ger_manager_id, ger_remover_id)
         .with_auth_component(AccountComponent::from(NoAuth))
         .build_existing()
         .expect("bridge account should be valid")

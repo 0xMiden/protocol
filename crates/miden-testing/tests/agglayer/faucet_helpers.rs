@@ -23,11 +23,15 @@ fn test_faucet_helper_methods() -> anyhow::Result<()> {
     let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
+    let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
 
     let bridge_account = create_existing_bridge_account(
         builder.rng_mut().draw_word(),
         bridge_admin.id(),
         ger_manager.id(),
+        ger_remover.id(),
     );
     builder.add_account(bridge_account.clone())?;
 

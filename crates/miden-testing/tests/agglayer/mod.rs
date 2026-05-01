@@ -6,6 +6,7 @@ mod faucet_helpers;
 mod global_index;
 mod leaf_utils;
 mod merkle_tree_frontier;
+mod remove_ger;
 mod solidity_miden_address_conversion;
 pub mod test_utils;
 mod update_ger;

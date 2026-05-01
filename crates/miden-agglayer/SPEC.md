@@ -103,8 +103,23 @@ on Miden. The bridge consumes these notes:
 Subsequent CLAIM notes reference a GER that must be present in this map for the claim
 to be valid.
 
-TODO: GERs cannot be removed once inserted
-([#2702](https://github.com/0xMiden/protocol/issues/2702)).
+A separate GER Remover role can revoke a previously-registered GER by sending a
+`REMOVE_GER` note. The bridge consumes such a note and:
+
+1. Asserts the note sender is the designated GER remover (a role distinct from the GER
+   manager so that insertion and revocation authority can be split).
+2. Computes `KEY = poseidon2::merge(GER_LOWER, GER_UPPER)`.
+3. Asserts that `ger_map[KEY] == [1, 0, 0, 0]`, i.e. that the GER is currently known.
+4. Overwrites `ger_map[KEY]` with `[0, 0, 0, 0]`, the Miden equivalent of Solidity's
+   `delete globalExitRootMap[ger]`. After this, any CLAIM note referencing the removed
+   GER will fail `assert_valid_ger`.
+5. Updates a running keccak256 hash chain over all removed GERs:
+   `removed_ger_hash_chain = keccak256(removed_ger_hash_chain || removed_ger)`. This
+   chain is stored across two Word slots (`removed_ger_hash_chain_lo` /
+   `removed_ger_hash_chain_hi`) and mirrors the
+   `removeGlobalExitRoots` chain in Solidity's
+   `GlobalExitRootManagerL2SovereignChain`, providing an auditable record of every
+   removal.
 
 TODO: No hash chain tracks GER insertions for proof generation
 ([#2707](https://github.com/0xMiden/protocol/issues/2707)).
