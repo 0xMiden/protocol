@@ -1925,6 +1925,7 @@ dependencies = [
  "fs-err",
  "miden-assembly",
  "miden-core-lib",
+ "miden-mast-package",
  "miden-processor",
  "miden-protocol",
  "miden-standards",

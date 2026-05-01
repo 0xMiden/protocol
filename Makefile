@@ -146,6 +146,10 @@ build-no-std: ## Build without the standard library
 build-no-std-testing: ## Build without the standard library. Includes the `testing` feature
 	$(BUILD_GENERATED_FILES_IN_SRC) cargo build --no-default-features --target wasm32-unknown-unknown --workspace --exclude bench-transaction --features testing
 
+.PHONY: packages
+packages: ## Builds .masp packages and store them in target/packages
+	cargo +nightly -Zscript scripts/generate-package.rs
+
 # --- test vectors --------------------------------------------------------------------------------
 
 .PHONY: generate-solidity-test-vectors
