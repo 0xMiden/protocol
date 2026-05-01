@@ -160,7 +160,7 @@ proc write_claim_data_into_advice_map_by_key
     exec.poseidon2::hash_elements
     # => [PROOF_DATA_KEY, LEAF_DATA_KEY]
 
-    push.PROOF_DATA_SIZE push.PROOF_DATA_START_PTR
+    push.PROOF_DATA_SIZE add.PROOF_DATA_START_PTR push.PROOF_DATA_START_PTR
     movdn.5 movdn.5
     # => [PROOF_DATA_KEY, start_ptr, end_ptr, LEAF_DATA_KEY]
 

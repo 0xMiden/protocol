@@ -3,6 +3,7 @@ extern crate alloc;
 use alloc::vec;
 use alloc::vec::Vec;
 
+use miden_core::utils::bytes_to_packed_u32_elements;
 use miden_core::{Felt, Word};
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
@@ -264,10 +265,9 @@ impl AggLayerFaucet {
             .get_item(&CONVERSION_INFO_2_SLOT_NAME)
             .expect("should be able to read the second conversion info slot");
 
-        Ok(conversion_info_2[1]
-            .as_canonical_u64()
-            .try_into()
-            .expect("origin network ID should fit into u32"))
+        let le_packed = u32::try_from(conversion_info_2[1].as_canonical_u64())
+            .expect("origin network ID should fit into u32");
+        Ok(u32::from_be_bytes(le_packed.to_le_bytes()))
     }
 
     /// Extracts the scaling factor in form of the u8 from the corresponding storage slot of the
@@ -436,7 +436,7 @@ pub enum AgglayerFaucetError {
 /// - Slot 1 (`agglayer::faucet::conversion_info_1`): `[addr0, addr1, addr2, addr3]` — first 4 felts
 ///   of the origin token address (5 × u32 limbs).
 /// - Slot 2 (`agglayer::faucet::conversion_info_2`): `[addr4, origin_network, scale, 0]` —
-///   remaining address felt + origin network + scale factor.
+///   remaining address felt + origin network (LE-packed) + scale factor.
 ///
 /// # Parameters
 /// - `origin_token_address`: The EVM token address in Ethereum format
@@ -454,8 +454,14 @@ fn agglayer_faucet_conversion_slots(
 
     let slot1 = Word::new([addr_elements[0], addr_elements[1], addr_elements[2], addr_elements[3]]);
 
+    let origin_network_packed = bytes_to_packed_u32_elements(&origin_network.to_be_bytes());
+    assert_eq!(
+        origin_network_packed.len(),
+        1,
+        "origin_network should pack into exactly one Felt"
+    );
     let slot2 =
-        Word::new([addr_elements[4], Felt::from(origin_network), Felt::from(scale), Felt::ZERO]);
+        Word::new([addr_elements[4], origin_network_packed[0], Felt::from(scale), Felt::ZERO]);
 
     (slot1, slot2)
 }
