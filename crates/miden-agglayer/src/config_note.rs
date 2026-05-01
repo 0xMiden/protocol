@@ -56,8 +56,8 @@ impl ConfigAggBridgeNote {
     // --------------------------------------------------------------------------------------------
 
     /// Expected number of storage items for a CONFIG_AGG_BRIDGE note.
-    /// Layout: [origin_token_addr(5), faucet_id_suffix, faucet_id_prefix]
-    pub const NUM_STORAGE_ITEMS: usize = 7;
+    /// Layout: [origin_token_addr(5), origin_network, faucet_id_suffix, faucet_id_prefix]
+    pub const NUM_STORAGE_ITEMS: usize = 8;
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
@@ -77,14 +77,17 @@ impl ConfigAggBridgeNote {
 
     /// Creates a CONFIG_AGG_BRIDGE note to register a faucet in the bridge's registry.
     ///
-    /// The note storage contains 7 felts:
+    /// The note storage contains 8 felts:
     /// - `origin_token_addr[0..5]`: The 5 u32 felts of the origin EVM token address
+    /// - `origin_network`: The origin network identifier (LE-packed u32)
     /// - `faucet_id_suffix`: The suffix of the faucet account ID
     /// - `faucet_id_prefix`: The prefix of the faucet account ID
     ///
     /// # Parameters
     /// - `faucet_account_id`: The account ID of the faucet to register
     /// - `origin_token_address`: The origin EVM token address for the token registry
+    /// - `origin_network`: The origin network identifier; together with `origin_token_address` it
+    ///   forms the registry key
     /// - `sender_account_id`: The account ID of the note creator
     /// - `target_account_id`: The bridge account ID that will consume this note
     /// - `rng`: Random number generator for creating the note serial number
@@ -94,14 +97,19 @@ impl ConfigAggBridgeNote {
     pub fn create<R: FeltRng>(
         faucet_account_id: AccountId,
         origin_token_address: &EthAddress,
+        origin_network: u32,
         sender_account_id: AccountId,
         target_account_id: AccountId,
         rng: &mut R,
     ) -> Result<Note, NoteError> {
-        // Create note storage with 7 felts: [origin_token_addr(5), faucet_id_suffix,
-        // faucet_id_prefix]
+        // Create note storage with 8 felts:
+        // [origin_token_addr(5), origin_network, faucet_id_suffix, faucet_id_prefix]
         let addr_elements = origin_token_address.to_elements();
         let mut storage_values: Vec<Felt> = addr_elements;
+        // Pack origin_network using the same byte order as LeafData::to_elements and the faucet's
+        // conversion slots, so the felt is byte-identical across config note, leaf, and faucet.
+        let origin_network_packed = u32::from_le_bytes(origin_network.to_be_bytes());
+        storage_values.push(Felt::from(origin_network_packed));
         storage_values.push(faucet_account_id.suffix());
         storage_values.push(faucet_account_id.prefix().as_felt());
 

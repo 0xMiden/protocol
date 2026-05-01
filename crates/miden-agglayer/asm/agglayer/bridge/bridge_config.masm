@@ -9,7 +9,7 @@ use miden::protocol::native_account
 
 const ERR_GER_NOT_FOUND = "GER not found in storage"
 const ERR_FAUCET_NOT_REGISTERED = "faucet is not registered in the bridge's faucet registry"
-const ERR_TOKEN_NOT_REGISTERED = "token address is not registered in the bridge's token registry"
+const ERR_TOKEN_NOT_REGISTERED = "(origin token address, origin network) pair is not registered in the bridge's token registry"
 const ERR_SENDER_NOT_BRIDGE_ADMIN = "note sender is not the bridge admin"
 const ERR_SENDER_NOT_GER_MANAGER = "note sender is not the global exit root manager"
 
@@ -106,10 +106,11 @@ end
 #!
 #! 1. Writes `KEY -> [1, 0, 0, 0]` into the `faucet_registry` map, where
 #!    `KEY = [0, 0, faucet_id_suffix, faucet_id_prefix]`.
-#! 2. Writes `hash(tokenAddress[5]) -> [faucet_id_suffix, faucet_id_prefix, 0, 0]` into the
-#!    `token_registry` map.
+#! 2. Writes `hash(tokenAddress[5] || origin_network) -> [faucet_id_suffix, faucet_id_prefix, 0, 0]`
+#!    into the `token_registry` map. The (origin_network, origin_token_address) pair is the
+#!    canonical asset identity; keying on the address alone would collide across networks.
 #!
-#! Inputs:  [origin_token_addr(5), faucet_id_suffix, faucet_id_prefix, pad(9)]
+#! Inputs:  [origin_token_addr(5), origin_network, faucet_id_suffix, faucet_id_prefix, pad(8)]
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
@@ -119,12 +120,12 @@ end
 pub proc register_faucet
     # assert the note sender is the bridge admin.
     exec.assert_sender_is_bridge_admin
-    # => [origin_token_addr(5), faucet_id_suffix, faucet_id_prefix, pad(9)]
+    # => [origin_token_addr(5), origin_network, faucet_id_suffix, faucet_id_prefix, pad(8)]
 
     # Save faucet ID for later use in token_registry
-    dup.6 dup.6
-    # => [faucet_id_suffix, faucet_id_prefix, origin_token_addr(5),
-    #     faucet_id_suffix, faucet_id_prefix, pad(9)]
+    dup.7 dup.7
+    # => [faucet_id_suffix, faucet_id_prefix, origin_token_addr(5), origin_network,
+    #     faucet_id_suffix, faucet_id_prefix, pad(8)]
 
     # --- 1. Register faucet in faucet_registry ---
 
@@ -132,35 +133,35 @@ pub proc register_faucet
     # Build KEY = [0, 0, suffix, prefix] and VALUE = [IS_FAUCET_REGISTERED_FLAG, 0, 0, 0]
     push.0.0.0.IS_FAUCET_REGISTERED_FLAG
     # => [IS_FAUCET_REGISTERED_FLAG, 0, 0, 0,
-    #     faucet_id_suffix, faucet_id_prefix, origin_token_addr(5),
-    #     faucet_id_suffix, faucet_id_prefix, pad(9)]
+    #     faucet_id_suffix, faucet_id_prefix, origin_token_addr(5), origin_network,
+    #     faucet_id_suffix, faucet_id_prefix, pad(8)]
 
     movup.5 movup.5 push.0.0
     # => [
     #     [0, 0, faucet_id_suffix, faucet_id_prefix],
     #     [IS_FAUCET_REGISTERED_FLAG, 0, 0, 0],
-    #      origin_token_addr(5), faucet_id_suffix, faucet_id_prefix, pad(9)
+    #      origin_token_addr(5), origin_network, faucet_id_suffix, faucet_id_prefix, pad(8)
     #    ]
 
     push.FAUCET_REGISTRY_MAP_SLOT[0..2]
     exec.native_account::set_map_item
-    # => [OLD_VALUE, origin_token_addr(5), faucet_id_suffix, faucet_id_prefix, pad(9)]
+    # => [OLD_VALUE, origin_token_addr(5), origin_network, faucet_id_suffix, faucet_id_prefix, pad(8)]
 
     dropw
-    # => [origin_token_addr(5), faucet_id_suffix, faucet_id_prefix, pad(9)]
+    # => [origin_token_addr(5), origin_network, faucet_id_suffix, faucet_id_prefix, pad(8)]
 
-    # --- 2. Register token address → faucet ID in token_registry ---
+    # --- 2. Register (token address, origin network) → faucet ID in token_registry ---
 
-    # Hash the token address
+    # Hash the (token address, origin network) pair
     exec.hash_token_address
-    # => [TOKEN_ADDR_HASH, faucet_id_suffix, faucet_id_prefix, pad(10)]
+    # => [TOKEN_ADDR_HASH, faucet_id_suffix, faucet_id_prefix, pad(8)]
 
     # Build VALUE = [0, 0, faucet_id_suffix, faucet_id_prefix]
     movup.5 movup.5 push.0.0
-    # => [0, 0, faucet_id_suffix, faucet_id_prefix, TOKEN_ADDR_HASH, pad(10)]
+    # => [0, 0, faucet_id_suffix, faucet_id_prefix, TOKEN_ADDR_HASH, pad(8)]
 
     swapw
-    # => [TOKEN_ADDR_HASH, 0, 0, faucet_id_suffix, faucet_id_prefix, pad(10)]
+    # => [TOKEN_ADDR_HASH, 0, 0, faucet_id_suffix, faucet_id_prefix, pad(8)]
 
     push.TOKEN_REGISTRY_MAP_SLOT[0..2]
     exec.native_account::set_map_item
@@ -195,19 +196,22 @@ proc assert_faucet_registered
     # => []
 end
 
-#! Looks up the faucet account ID for a given origin token address.
+#! Looks up the faucet account ID for a given (origin_token_address, origin_network) pair.
 #!
-#! Hashes the origin token address (5 felts) and looks up the result in the token_registry map.
+#! Hashes the origin token address (5 felts) together with the origin network identifier
+#! and looks up the result in the token_registry map. The pair is the canonical asset identity
+#! used by `LeafData` and the wrapped-token hash; keying on the address alone would let a CLAIM
+#! for one network resolve to the faucet of another network.
 #!
-#! Inputs:  [origin_token_addr(5)]
+#! Inputs:  [origin_token_addr(5), origin_network]
 #! Outputs: [faucet_id_suffix, faucet_id_prefix]
 #!
 #! Panics if:
-#! - the token address is not registered in the token registry.
+#! - the (origin_token_address, origin_network) pair is not registered in the token registry.
 #!
 #! Invocation: exec
 proc lookup_faucet_by_token_address
-    # Hash the token address
+    # Hash the (token address, origin network) pair
     exec.hash_token_address
     # => [TOKEN_ADDR_HASH]
 
@@ -222,7 +226,7 @@ proc lookup_faucet_by_token_address
     exec.account_id::is_equal
     # => [is_id_zero, 0, 0, faucet_id_suffix, faucet_id_prefix]
 
-    # If AccountId returned from map is zero, it means the token is not registered.
+    # If AccountId returned from map is zero, it means the (address, network) pair is not registered.
     assertz.err=ERR_TOKEN_NOT_REGISTERED
     drop drop
     # => [faucet_id_suffix, faucet_id_prefix]
@@ -231,23 +235,31 @@ end
 # HELPER PROCEDURES
 # =================================================================================================
 
-#! Hashes a 5-felt origin token address using Poseidon2.
+#! Hashes the (origin_token_address, origin_network) pair using Poseidon2.
 #!
-#! Writes the 5 felts to memory and computes the Poseidon2 hash.
+#! Writes the 5 token-address felts followed by the origin_network felt to local memory and
+#! computes Poseidon2(addr0, addr1, addr2, addr3, addr4, origin_network).
 #!
-#! Inputs:  [origin_token_addr(5)]
+#! Inputs:  [origin_token_addr(5), origin_network]
 #! Outputs: [TOKEN_ADDR_HASH]
 #!
 #! Invocation: exec
 @locals(8)
 proc hash_token_address
-    # Write origin_token_addr[5] to local memory for hashing
+    # Write origin_token_addr[0..3] to local memory for hashing
     loc_storew_le.TOKEN_ADDR_HASH_PTR dropw
+    # => [addr4, origin_network]
+
+    # Write addr4 at local offset 4
     locaddr.TOKEN_ADDR_HASH_PTR add.4 mem_store
+    # => [origin_network]
+
+    # Write origin_network at local offset 5
+    locaddr.TOKEN_ADDR_HASH_PTR add.5 mem_store
     # => []
 
-    # Hash the token address: poseidon2::hash_elements(num_elements=5, start_ptr)
-    push.5 locaddr.TOKEN_ADDR_HASH_PTR
+    # Hash the (address, network) pair: poseidon2::hash_elements(num_elements=6, start_ptr)
+    push.6 locaddr.TOKEN_ADDR_HASH_PTR
     exec.poseidon2::hash_elements
     # => [TOKEN_ADDR_HASH]
 end

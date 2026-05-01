@@ -5,7 +5,7 @@ use miden::standards::attachments::network_account_target
 # CONSTANTS
 # =================================================================================================
 
-const CONFIG_AGG_BRIDGE_NUM_STORAGE_ITEMS = 7
+const CONFIG_AGG_BRIDGE_NUM_STORAGE_ITEMS = 8
 
 const STORAGE_START_PTR = 0
 const ORIGIN_TOKEN_ADDR_0 = STORAGE_START_PTR
@@ -14,7 +14,7 @@ const ORIGIN_TOKEN_ADDR_4 = 4
 # ERRORS
 # =================================================================================================
 
-const ERR_CONFIG_AGG_BRIDGE_UNEXPECTED_STORAGE_ITEMS = "CONFIG_AGG_BRIDGE expects exactly 7 note storage items"
+const ERR_CONFIG_AGG_BRIDGE_UNEXPECTED_STORAGE_ITEMS = "CONFIG_AGG_BRIDGE expects exactly 8 note storage items"
 const ERR_CONFIG_AGG_BRIDGE_TARGET_ACCOUNT_MISMATCH = "CONFIG_AGG_BRIDGE note attachment target account does not match consuming account"
 
 #! Agglayer Bridge CONFIG_AGG_BRIDGE script: registers a faucet in the bridge's faucet registry and
@@ -30,22 +30,25 @@ const ERR_CONFIG_AGG_BRIDGE_TARGET_ACCOUNT_MISMATCH = "CONFIG_AGG_BRIDGE note at
 #! Inputs:  [ARGS, pad(12)]
 #! Outputs: [pad(16)]
 #!
-#! NoteStorage layout (7 felts total):
+#! NoteStorage layout (8 felts total):
 #! - origin_token_addr_0 [0] : 1 felt
 #! - origin_token_addr_1 [1] : 1 felt
 #! - origin_token_addr_2 [2] : 1 felt
 #! - origin_token_addr_3 [3] : 1 felt
 #! - origin_token_addr_4 [4] : 1 felt
-#! - faucet_id_suffix    [5] : 1 felt
-#! - faucet_id_prefix    [6] : 1 felt
+#! - origin_network      [5] : 1 felt
+#! - faucet_id_suffix    [6] : 1 felt
+#! - faucet_id_prefix    [7] : 1 felt
 #!
 #! Where:
+#! - origin_network: Origin network identifier (LE-packed u32). Together with
+#!   `origin_token_addr` it forms the token registry key.
 #! - faucet_id_suffix: Suffix felt of the faucet account ID to register.
 #! - faucet_id_prefix: Prefix felt of the faucet account ID to register.
 #!
 #! Panics if:
 #! - The note attachment target account does not match the consuming bridge account.
-#! - The note does not contain exactly 7 storage items.
+#! - The note does not contain exactly 8 storage items.
 #! - The account does not expose the register_faucet procedure.
 begin
     dropw
@@ -64,23 +67,24 @@ begin
     push.CONFIG_AGG_BRIDGE_NUM_STORAGE_ITEMS assert_eq.err=ERR_CONFIG_AGG_BRIDGE_UNEXPECTED_STORAGE_ITEMS drop
     # => [pad(16)]
 
-    # Load origin_token_addr(5) and faucet_id from memory
-    # register_faucet expects: [origin_token_addr(5), faucet_id_suffix, faucet_id_prefix, pad(9)]
-
-    # Load origin_token_addr_4, faucet_id_suffix, and faucet_id_prefix onto the sack. Notice that we
-    # can use `mem_loadw_le` here: that allows us to reuse the existing zeros on the stack, and
-    # since note memory was not initialized, fourth element on the stack will be equal ZERO, which
-    # is what we want.
+    # Load origin_token_addr(5), origin_network, and faucet_id from memory.
+    # register_faucet expects:
+    #   [origin_token_addr(5), origin_network, faucet_id_suffix, faucet_id_prefix, pad(8)]
+    #
+    # Memory layout starting at STORAGE_START_PTR:
+    #   [addr0, addr1, addr2, addr3, addr4, origin_network, faucet_id_suffix, faucet_id_prefix]
+    # so the word at ORIGIN_TOKEN_ADDR_4 covers exactly
+    # [addr4, origin_network, faucet_id_suffix, faucet_id_prefix].
     mem_loadw_le.ORIGIN_TOKEN_ADDR_4
-    # => [addr4, faucet_id_suffix, faucet_id_prefix, pad(13)]
+    # => [addr4, origin_network, faucet_id_suffix, faucet_id_prefix, pad(12)]
 
     # Load remaining origin_token_addr_[0..3] onto the stack
     padw mem_loadw_le.ORIGIN_TOKEN_ADDR_0
-    # => [addr0, addr1, addr2, addr3, addr4, faucet_id_suffix, faucet_id_prefix, pad(13)]
+    # => [addr0, addr1, addr2, addr3, addr4, origin_network, faucet_id_suffix, faucet_id_prefix, pad(12)]
 
     # Register the faucet in the bridge
-    # => [addr0, addr1, addr2, addr3, addr4, faucet_id_suffix, faucet_id_prefix, pad(9), pad(4)]
-    
+    # => [addr0, addr1, addr2, addr3, addr4, origin_network, faucet_id_suffix, faucet_id_prefix, pad(8), pad(4)]
+
     call.bridge_config::register_faucet
     # => [pad(16), pad(4)]
 
