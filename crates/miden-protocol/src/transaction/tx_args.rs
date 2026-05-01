@@ -169,15 +169,16 @@ impl TransactionArgs {
         let script_encoded: Vec<Felt> = script.into();
 
         // Build the advice map entries
+        let script_root: Word = script.root().into();
         let sn_hash = Hasher::merge(&[note_recipient.serial_num(), Word::empty()]);
-        let sn_script_hash = Hasher::merge(&[sn_hash, script.root()]);
+        let sn_script_hash = Hasher::merge(&[sn_hash, script_root]);
 
         let new_elements = vec![
             (sn_hash, concat_words(note_recipient.serial_num(), Word::empty())),
-            (sn_script_hash, concat_words(sn_hash, script.root())),
+            (sn_script_hash, concat_words(sn_hash, script_root)),
             (note_recipient.digest(), concat_words(sn_script_hash, storage.commitment())),
             (storage.commitment(), storage.to_elements()),
-            (script.root(), script_encoded),
+            (script_root, script_encoded),
         ];
 
         self.advice_inputs.extend(AdviceInputs::default().with_map(new_elements));
