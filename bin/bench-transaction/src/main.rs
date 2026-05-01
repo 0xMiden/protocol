@@ -72,7 +72,25 @@ async fn main() -> Result<()> {
         ),
         (
             ExecutionBenchmark::ConsumeB2AggNote,
-            tx_consume_b2agg_note()
+            tx_consume_b2agg_note(None)
+                .await?
+                .execute()
+                .await
+                .map(TransactionMeasurements::from)?
+                .into(),
+        ),
+        (
+            ExecutionBenchmark::ConsumeB2AggNotePopulated2p31,
+            tx_consume_b2agg_note(Some(1 << 31))
+                .await?
+                .execute()
+                .await
+                .map(TransactionMeasurements::from)?
+                .into(),
+        ),
+        (
+            ExecutionBenchmark::ConsumeB2AggNotePopulated2p31m1,
+            tx_consume_b2agg_note(Some((1u32 << 31) - 1))
                 .await?
                 .execute()
                 .await
