@@ -24,6 +24,7 @@
 - [BREAKING] Added cycle counts to notes returned by `NoteConsumptionInfo` and removed public fields from related types ([#2772](https://github.com/0xMiden/miden-base/issues/2772)).
 - [BREAKING] Removed unused `payback_attachment` from `SwapNoteStorage` and `attachment` from `MintNoteStorage` ([#2789](https://github.com/0xMiden/protocol/pull/2789)).
 - Automatically enable `concurrent` feature in `miden-tx` for `std` context ([#2791](https://github.com/0xMiden/protocol/pull/2791)).
+- Added `Pausable` standard component with `pause`, `unpause`, `is_paused` procedures and `on_before_asset_added_to_account`, `on_before_asset_added_to_note` callbacks ([#2793](https://github.com/0xMiden/protocol/pull/2793)).
 - Added trace row counts to `bench-tx.json` ([#2794](https://github.com/0xMiden/protocol/pull/2794)).
 - Added `tx::get_tx_script_root` kernel procedure returning the root of the executed transaction script (empty word if no script was executed) ([#2816](https://github.com/0xMiden/protocol/pull/2816)).
 - Added `TransactionScript::from_package()` method to create `TransactionScript` from `miden-mast-package::Package` ([#2779](https://github.com/0xMiden/protocol/pull/2779)).
