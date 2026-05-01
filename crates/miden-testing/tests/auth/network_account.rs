@@ -94,7 +94,7 @@ async fn test_auth_network_account_accepts_allowed_note() -> anyhow::Result<()> 
     let allowed_root = template_note.script().root();
 
     // Now build the real account with the allowlist containing that root.
-    let account = build_allowlist_account(vec![allowed_root])?;
+    let account = build_allowlist_account(vec![allowed_root.into()])?;
 
     let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
