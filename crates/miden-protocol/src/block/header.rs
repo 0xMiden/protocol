@@ -33,7 +33,7 @@ use crate::{Felt, Hasher, Word, ZERO};
 ///   block.
 /// - `tx_kernel_commitment` a commitment to all transaction kernels supported by this block.
 /// - `validator_key` is the public key of the validator that is expected to sign the block.
-/// - `fee_parameters` are the parameters defining the base fees and the fee faucet, see
+/// - `fee_parameters` are the parameters defining the base fees and the fee faucet ID, see
 ///   [`FeeParameters`] for more details.
 /// - `timestamp` is the time when the block was created, in seconds since UNIX epoch. Current
 ///   representation is sufficient to represent time up to year 2106.
@@ -347,7 +347,7 @@ impl FeeParameters {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - the provided fee faucet ID is not a fungible faucet account ID.
+    /// - the provided fee faucet ID is not an ID of the fungible faucet.
     pub fn new(fee_faucet_id: AccountId, verification_base_fee: u32) -> Result<Self, FeeError> {
         if !matches!(fee_faucet_id.account_type(), AccountType::FungibleFaucet) {
             return Err(FeeError::FeeFaucetIdNotFungible {

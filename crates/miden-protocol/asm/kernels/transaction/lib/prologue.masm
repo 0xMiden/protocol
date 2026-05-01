@@ -34,7 +34,7 @@ const ERR_PROLOGUE_GLOBAL_INPUTS_PROVIDED_DO_NOT_MATCH_BLOCK_COMMITMENT="the pro
 
 const ERR_PROLOGUE_GLOBAL_INPUTS_PROVIDED_DO_NOT_MATCH_BLOCK_NUMBER_COMMITMENT="the provided global inputs do not match the block number commitment"
 
-const ERR_PROLOGUE_FEE_FAUCET_ID_IS_NOT_FUNGIBLE="fee faucet account ID in reference block is not of type fungible faucet"
+const ERR_PROLOGUE_FEE_FAUCET_ID_IS_NOT_FUNGIBLE="fee faucet ID in reference block is not of type fungible faucet"
 
 const ERR_PROLOGUE_VERIFICATION_BASE_FEE_MUST_BE_U32="verification base fee must fit into a u32"
 
