@@ -394,6 +394,7 @@ async fn bridge_out_at_high_num_leaves(#[case] initial_num_leaves: u32) -> anyho
     let config_note = ConfigAggBridgeNote::create(
         faucet.id(),
         &origin_token_address,
+        origin_network,
         bridge_admin.id(),
         bridge_account.id(),
         builder.rng_mut(),
