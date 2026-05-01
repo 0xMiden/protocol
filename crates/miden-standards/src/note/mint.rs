@@ -11,6 +11,7 @@ use miden_protocol::note::{
     NoteMetadata,
     NoteRecipient,
     NoteScript,
+    NoteScriptRoot,
     NoteStorage,
     NoteTag,
     NoteType,
@@ -45,7 +46,7 @@ impl MintNote {
     // --------------------------------------------------------------------------------------------
 
     /// Expected number of storage items of the MINT note (private mode).
-    pub const NUM_STORAGE_ITEMS_PRIVATE: usize = 8;
+    pub const NUM_STORAGE_ITEMS_PRIVATE: usize = 6;
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
@@ -56,7 +57,7 @@ impl MintNote {
     }
 
     /// Returns the MINT note script root.
-    pub fn script_root() -> Word {
+    pub fn script_root() -> NoteScriptRoot {
         MINT_SCRIPT.root()
     }
 
@@ -117,10 +118,10 @@ impl MintNote {
 // ================================================================================================
 
 /// Represents the different storage formats for MINT notes.
-/// - Private: Creates a private output note using a precomputed recipient digest (12 MINT note
+/// - Private: Creates a private output note using a precomputed recipient digest (6 MINT note
 ///   storage items)
 /// - Public: Creates a public output note by providing script root, serial number, and
-///   variable-length storage (16+ MINT note storage items: 16 fixed + variable number of output
+///   variable-length storage (12+ MINT note storage items: 12 fixed + variable number of output
 ///   note storage items)
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MintNoteStorage {
@@ -128,24 +129,17 @@ pub enum MintNoteStorage {
         recipient_digest: Word,
         amount: Felt,
         tag: Felt,
-        attachment: NoteAttachment,
     },
     Public {
         recipient: NoteRecipient,
         amount: Felt,
         tag: Felt,
-        attachment: NoteAttachment,
     },
 }
 
 impl MintNoteStorage {
     pub fn new_private(recipient_digest: Word, amount: Felt, tag: Felt) -> Self {
-        Self::Private {
-            recipient_digest,
-            amount,
-            tag,
-            attachment: NoteAttachment::default(),
-        }
+        Self::Private { recipient_digest, amount, tag }
     }
 
     pub fn new_public(
@@ -154,9 +148,9 @@ impl MintNoteStorage {
         tag: Felt,
     ) -> Result<Self, NoteError> {
         // Calculate total number of storage items that will be created:
-        // 16 fixed items (tag, amount, attachment_kind, attachment_scheme, ATTACHMENT,
-        // SCRIPT_ROOT, SERIAL_NUM) + variable recipient number of storage items
-        const FIXED_PUBLIC_STORAGE_ITEMS: usize = 16;
+        // 12 fixed items (SCRIPT_ROOT, SERIAL_NUM, tag, amount, 2 padding) + variable recipient
+        // number of storage items
+        const FIXED_PUBLIC_STORAGE_ITEMS: usize = 12;
         let total_storage_items =
             FIXED_PUBLIC_STORAGE_ITEMS + recipient.storage().num_items() as usize;
 
@@ -164,69 +158,25 @@ impl MintNoteStorage {
             return Err(NoteError::TooManyStorageItems(total_storage_items));
         }
 
-        Ok(Self::Public {
-            recipient,
-            amount,
-            tag,
-            attachment: NoteAttachment::default(),
-        })
-    }
-
-    /// Overwrites the [`NoteAttachment`] of the note storage.
-    pub fn with_attachment(self, attachment: NoteAttachment) -> Self {
-        match self {
-            MintNoteStorage::Private {
-                recipient_digest,
-                amount,
-                tag,
-                attachment: _,
-            } => MintNoteStorage::Private {
-                recipient_digest,
-                amount,
-                tag,
-                attachment,
-            },
-            MintNoteStorage::Public { recipient, amount, tag, attachment: _ } => {
-                MintNoteStorage::Public { recipient, amount, tag, attachment }
-            },
-        }
+        Ok(Self::Public { recipient, amount, tag })
     }
 }
 
 impl From<MintNoteStorage> for NoteStorage {
     fn from(mint_storage: MintNoteStorage) -> Self {
         match mint_storage {
-            MintNoteStorage::Private {
-                recipient_digest,
-                amount,
-                tag,
-                attachment,
-            } => {
-                let attachment_scheme = Felt::from(attachment.attachment_scheme().as_u32());
-                let attachment_kind = Felt::from(attachment.attachment_kind().as_u8());
-                let attachment = attachment.content().to_word();
-
-                let mut storage_values = Vec::with_capacity(12);
-                storage_values.extend_from_slice(&[
-                    tag,
-                    amount,
-                    attachment_kind,
-                    attachment_scheme,
-                ]);
-                storage_values.extend_from_slice(attachment.as_elements());
+            MintNoteStorage::Private { recipient_digest, amount, tag } => {
+                let mut storage_values = Vec::with_capacity(MintNote::NUM_STORAGE_ITEMS_PRIVATE);
                 storage_values.extend_from_slice(recipient_digest.as_elements());
+                storage_values.extend_from_slice(&[tag, amount]);
                 NoteStorage::new(storage_values)
                     .expect("number of storage items should not exceed max storage items")
             },
-            MintNoteStorage::Public { recipient, amount, tag, attachment } => {
-                let attachment_scheme = Felt::from(attachment.attachment_scheme().as_u32());
-                let attachment_kind = Felt::from(attachment.attachment_kind().as_u8());
-                let attachment = attachment.content().to_word();
-
-                let mut storage_values = vec![tag, amount, attachment_kind, attachment_scheme];
-                storage_values.extend_from_slice(attachment.as_elements());
+            MintNoteStorage::Public { recipient, amount, tag } => {
+                let mut storage_values = Vec::new();
                 storage_values.extend_from_slice(recipient.script().root().as_elements());
                 storage_values.extend_from_slice(recipient.serial_num().as_elements());
+                storage_values.extend_from_slice(&[tag, amount, Felt::ZERO, Felt::ZERO]);
                 storage_values.extend_from_slice(recipient.storage().items());
                 NoteStorage::new(storage_values)
                     .expect("number of storage items should not exceed max storage items")

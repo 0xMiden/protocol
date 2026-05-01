@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::env;
 use std::fmt::Write;
 use std::path::Path;
@@ -15,24 +16,22 @@ use miden_protocol::account::{
 };
 use miden_protocol::transaction::TransactionKernel;
 use miden_standards::account::auth::NoAuth;
-use miden_standards::account::mint_policies::OwnerControlled;
+use miden_standards::account::burn_policies::BurnOwnerControlled;
+use miden_standards::account::mint_policies::MintOwnerControlled;
+use regex::Regex;
 
 // CONSTANTS
 // ================================================================================================
-
-/// Defines whether the build script should generate files in `/src`.
-/// The docs.rs build pipeline has a read-only filesystem, so we have to avoid writing to `src`,
-/// otherwise the docs will fail to build there. Note that writing to `OUT_DIR` is fine.
-const BUILD_GENERATED_FILES_IN_SRC: bool = option_env!("BUILD_GENERATED_FILES_IN_SRC").is_some();
 
 const ASSETS_DIR: &str = "assets";
 const ASM_DIR: &str = "asm";
 const ASM_NOTE_SCRIPTS_DIR: &str = "note_scripts";
 const ASM_AGGLAYER_DIR: &str = "agglayer";
 const ASM_AGGLAYER_BRIDGE_DIR: &str = "agglayer/bridge";
+const ASM_AGGLAYER_CONSTANTS_MASM: &str = "agglayer/common/constants.masm";
 const ASM_COMPONENTS_DIR: &str = "components";
 
-const AGGLAYER_ERRORS_FILE: &str = "src/errors/agglayer.rs";
+const AGGLAYER_ERRORS_RS_FILE: &str = "agglayer_errors.rs";
 const AGGLAYER_ERRORS_ARRAY_NAME: &str = "AGGLAYER_ERRORS";
 const AGGLAYER_GLOBAL_CONSTANTS_FILE_NAME: &str = "agglayer_constants.rs";
 
@@ -46,21 +45,17 @@ const AGGLAYER_GLOBAL_CONSTANTS_FILE_NAME: &str = "agglayer_constants.rs";
 fn main() -> Result<()> {
     // re-build when the MASM code changes
     println!("cargo::rerun-if-changed={ASM_DIR}/");
-    println!("cargo::rerun-if-env-changed=BUILD_GENERATED_FILES_IN_SRC");
+    println!("cargo::rerun-if-env-changed=REGENERATE_CANONICAL_ZEROS");
 
-    // Copies the MASM code to the build directory
     let crate_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
     let build_dir = env::var("OUT_DIR").unwrap();
-    let src = Path::new(&crate_dir).join(ASM_DIR);
 
-    // generate canonical zeros in `asm/agglayer/bridge/canonical_zeros.masm`
-    generate_canonical_zeros(&src.join(ASM_AGGLAYER_BRIDGE_DIR))?;
+    // validate (or regenerate) canonical zeros in `asm/agglayer/bridge/canonical_zeros.masm`
+    let crate_path = Path::new(&crate_dir);
+    ensure_canonical_zeros(&crate_path.join(ASM_DIR).join(ASM_AGGLAYER_BRIDGE_DIR))?;
 
-    let dst = Path::new(&build_dir).to_path_buf();
-    shared::copy_directory(src, &dst, ASM_DIR)?;
-
-    // set source directory to {OUT_DIR}/asm
-    let source_dir = dst.join(ASM_DIR);
+    // Read MASM sources directly from the crate's asm/ directory.
+    let source_dir = crate_path.join(ASM_DIR);
 
     // set target directory to {OUT_DIR}/assets
     let target_dir = Path::new(&build_dir).join(ASSETS_DIR);
@@ -88,9 +83,14 @@ fn main() -> Result<()> {
 
     // generate agglayer specific constants
     let constants_out_path = Path::new(&build_dir).join(AGGLAYER_GLOBAL_CONSTANTS_FILE_NAME);
-    generate_agglayer_constants(constants_out_path, component_libraries)?;
+    let agglayer_constants_masm_path = crate_path.join(ASM_DIR).join(ASM_AGGLAYER_CONSTANTS_MASM);
+    generate_agglayer_constants(
+        constants_out_path,
+        component_libraries,
+        &agglayer_constants_masm_path,
+    )?;
 
-    generate_error_constants(&source_dir)?;
+    generate_error_constants(&source_dir, &build_dir)?;
 
     Ok(())
 }
@@ -214,14 +214,77 @@ fn compile_account_components(
 // GENERATE AGGLAYER CONSTANTS
 // ================================================================================================
 
+/// Parses every decimal `u32` constant from `asm/agglayer/common/constants.masm`.
+///
+/// Recognized lines (whitespace-flexible, one definition per line, `#` comments ignored by the
+/// regex):
+///
+/// ```text
+/// const SOME_NAME = 123
+/// ```
+///
+/// Each match is emitted to `agglayer_constants.rs` as `pub const SOME_NAME: u32`.
+/// Duplicate `const` names in the same file are a build error. Non-decimal values (e.g. `word(...)`
+/// or array literals) are not parsed here; add support in this function when needed.
+fn parse_numeric_constants_from_constants_masm(masm_path: &Path) -> Result<Vec<(String, u32)>> {
+    // Read the full `constants.masm` text; parsing is line-based so we need the whole file.
+    let contents = fs::read_to_string(masm_path)
+        .into_diagnostic()
+        .wrap_err_with(|| format!("failed to read {}", masm_path.display()))?;
+
+    // One line per match: optional leading space, `const`, identifier (no leading digit), `=`,
+    // decimal digits only. `(?m)^` makes `^` match after newlines so we skip comment-only lines.
+    let re = Regex::new(r"(?m)^\s*const\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(\d+)\s*$")
+        .expect("constants.masm parse regex should compile");
+
+    // `out` preserves declaration order; `seen` rejects duplicate const names in the same file.
+    let mut out = Vec::new();
+    let mut seen = HashSet::new();
+
+    for caps in re.captures_iter(&contents) {
+        let name = caps.get(1).expect("group 1").as_str();
+
+        // Require each identifier at most once so generated Rust names are unique.
+        if !seen.insert(name.to_string()) {
+            return Err(Report::msg(format!(
+                "duplicate `const {name}` in {}",
+                masm_path.display()
+            )));
+        }
+
+        // Right-hand side must fit `u32` (same range we emit in Rust).
+        let raw = caps.get(2).expect("group 2").as_str();
+        let value = raw.parse::<u32>().map_err(|_| {
+            Report::msg(format!(
+                "`const {name}` value `{raw}` is not a valid u32 in {}",
+                masm_path.display()
+            ))
+        })?;
+
+        out.push((name.to_string(), value));
+    }
+
+    // Empty match set is almost certainly a misconfigured or mistyped `constants.masm`.
+    if out.is_empty() {
+        return Err(Report::msg(format!(
+            "{} does not contain any constants to parse",
+            masm_path.display()
+        )));
+    }
+
+    Ok(out)
+}
+
 /// Generates a Rust file containing AggLayer specific constants.
 ///
-/// At the moment, this file contains the following constants:
+/// This file contains:
+/// - All the constants listed in the `constants.masm` file.
 /// - AggLayer Bridge code commitment.
 /// - AggLayer Faucet code commitment.
 fn generate_agglayer_constants(
     target_file: impl AsRef<Path>,
     component_libraries: Vec<(String, Library)>,
+    constants_masm_path: &Path,
 ) -> Result<()> {
     let mut file_contents = String::new();
 
@@ -239,6 +302,11 @@ fn generate_agglayer_constants(
     )
     .unwrap();
 
+    let masm_constants = parse_numeric_constants_from_constants_masm(constants_masm_path)?;
+    for (name, value) in &masm_constants {
+        writeln!(file_contents, "pub const {name}: u32 = {value};\n").unwrap();
+    }
+
     // Create a dummy metadata to be able to create components. We only interested in the resulting
     // code commitment, so it doesn't matter what does this metadata holds.
     let dummy_metadata = AccountComponentMetadata::new("dummy", AccountType::all());
@@ -248,9 +316,9 @@ fn generate_agglayer_constants(
         let agglayer_component =
             AccountComponent::new(content_library, vec![], dummy_metadata.clone()).unwrap();
 
-        // The faucet account includes Ownable2Step and OwnerControlled components
-        // alongside the agglayer faucet component, since network_fungible::mint_and_send
-        // requires these for access control.
+        // The faucet account includes Ownable2Step and OwnerControlled components for mint and burn
+        // policies alongside the agglayer faucet component, since
+        // network_fungible::mint_and_send requires these for access control.
         let mut components: Vec<AccountComponent> =
             vec![AccountComponent::from(NoAuth), agglayer_component];
         if lib_name == "faucet" {
@@ -262,7 +330,8 @@ fn generate_agglayer_constants(
             components.push(AccountComponent::from(
                 miden_standards::account::access::Ownable2Step::new(dummy_owner),
             ));
-            components.push(AccountComponent::from(OwnerControlled::owner_only()));
+            components.push(AccountComponent::from(MintOwnerControlled::owner_only()));
+            components.push(AccountComponent::from(BurnOwnerControlled::allow_all()));
         }
 
         // use `AccountCode` to merge codes of agglayer and authentication components
@@ -318,15 +387,7 @@ fn generate_agglayer_constants(
 ///
 /// The function ensures that a constant is not defined twice, except if their error message is the
 /// same. This can happen across multiple files.
-///
-/// Because the error files will be written to ./src/errors, this should be a no-op if ./src is
-/// read-only. To enable writing to ./src, set the `BUILD_GENERATED_FILES_IN_SRC` environment
-/// variable.
-fn generate_error_constants(asm_source_dir: &Path) -> Result<()> {
-    if !BUILD_GENERATED_FILES_IN_SRC {
-        return Ok(());
-    }
-
+fn generate_error_constants(asm_source_dir: &Path, build_dir: &str) -> Result<()> {
     // Miden agglayer errors
     // ------------------------------------------
 
@@ -334,7 +395,7 @@ fn generate_error_constants(asm_source_dir: &Path) -> Result<()> {
         .context("failed to extract all masm errors")?;
     shared::generate_error_file(
         shared::ErrorModule {
-            file_name: AGGLAYER_ERRORS_FILE,
+            file_path: Path::new(build_dir).join(AGGLAYER_ERRORS_RS_FILE),
             array_name: AGGLAYER_ERRORS_ARRAY_NAME,
             is_crate_local: false,
         },
@@ -344,14 +405,13 @@ fn generate_error_constants(asm_source_dir: &Path) -> Result<()> {
     Ok(())
 }
 
-// CANONICAL ZEROS FILE GENERATION
+// CANONICAL ZEROS VALIDATION
 // ================================================================================================
 
-fn generate_canonical_zeros(target_dir: &Path) -> Result<()> {
-    if !BUILD_GENERATED_FILES_IN_SRC {
-        return Ok(());
-    }
-
+/// Validates that the committed `canonical_zeros.masm` matches the expected content computed from
+/// Keccak256 canonical zeros. If the `REGENERATE_CANONICAL_ZEROS` environment variable is set,
+/// the file is regenerated instead.
+fn ensure_canonical_zeros(target_dir: &Path) -> Result<()> {
     const TREE_HEIGHT: u8 = 32;
 
     let mut zeros_by_height = Vec::with_capacity(TREE_HEIGHT as usize);
@@ -371,10 +431,10 @@ fn generate_canonical_zeros(target_dir: &Path) -> Result<()> {
     // convert the keccak digest into the sequence of u32 values and create two word constants from
     // them to represent the hash
     let mut zero_constants = String::from(
-        "# This file is generated by build.rs, do not modify\n
-# This file contains the canonical zeros for the Keccak hash function. 
+        "# This file contains deterministic values. Do not modify manually.\n
+# This file contains the canonical zeros for the Keccak hash function.
 # Zero of height `n` (ZERO_N) is the root of the binary tree of height `n` with leaves equal zero.
-# 
+#
 # Since the Keccak hash is represented by eight u32 values, each constant consists of two Words.\n",
     );
 
@@ -396,7 +456,8 @@ fn generate_canonical_zeros(target_dir: &Path) -> Result<()> {
     zero_constants.push_str(
         "
 use ::agglayer::common::utils::mem_store_double_word
-    
+
+
 #! Inputs:  [zeros_ptr]
 #! Outputs: []
 pub proc load_zeros_to_memory\n",
@@ -408,9 +469,23 @@ pub proc load_zeros_to_memory\n",
 
     zero_constants.push_str("\tdrop\nend\n");
 
-    // write the resulting masm content into the file only if it changed to avoid
-    // invalidating the cargo fingerprint for the `asm/` directory
-    shared::write_if_changed(target_dir.join("canonical_zeros.masm"), zero_constants)?;
+    let file_path = target_dir.join("canonical_zeros.masm");
+
+    if option_env!("REGENERATE_CANONICAL_ZEROS").is_some() {
+        // Regeneration mode: write the file
+        shared::write_if_changed(&file_path, &zero_constants)?;
+    } else {
+        // Validation mode: ensure the committed file matches
+        let committed = fs::read_to_string(&file_path)
+            .into_diagnostic()
+            .wrap_err("canonical_zeros.masm not found - it should be committed in the repo")?;
+        if committed != zero_constants {
+            return Err(Report::msg(
+                "canonical_zeros.masm is out of date. \
+                 Run with REGENERATE_CANONICAL_ZEROS=1 to regenerate and commit the result.",
+            ));
+        }
+    }
 
     Ok(())
 }
@@ -428,54 +503,6 @@ mod shared {
     use miden_assembly::diagnostics::{IntoDiagnostic, Result, WrapErr};
     use regex::Regex;
     use walkdir::WalkDir;
-
-    /// Recursively copies `src` into `dst`.
-    ///
-    /// This function will overwrite the existing files if re-executed.
-    pub fn copy_directory<T: AsRef<Path>, R: AsRef<Path>>(
-        src: T,
-        dst: R,
-        asm_dir: &str,
-    ) -> Result<()> {
-        let mut prefix = src.as_ref().canonicalize().unwrap();
-        // keep all the files inside the `asm` folder
-        prefix.pop();
-
-        let target_dir = dst.as_ref().join(asm_dir);
-        if target_dir.exists() {
-            // Clear existing asm files that were copied earlier which may no longer exist.
-            fs::remove_dir_all(&target_dir)
-                .into_diagnostic()
-                .wrap_err("failed to remove ASM directory")?;
-        }
-
-        // Recreate the directory structure.
-        fs::create_dir_all(&target_dir)
-            .into_diagnostic()
-            .wrap_err("failed to create ASM directory")?;
-
-        let dst = dst.as_ref();
-        let mut todo = vec![src.as_ref().to_path_buf()];
-
-        while let Some(goal) = todo.pop() {
-            for entry in fs::read_dir(goal).unwrap() {
-                let path = entry.unwrap().path();
-                if path.is_dir() {
-                    let src_dir = path.canonicalize().unwrap();
-                    let dst_dir = dst.join(src_dir.strip_prefix(&prefix).unwrap());
-                    if !dst_dir.exists() {
-                        fs::create_dir_all(&dst_dir).unwrap();
-                    }
-                    todo.push(src_dir);
-                } else {
-                    let dst_file = dst.join(path.strip_prefix(&prefix).unwrap());
-                    fs::copy(&path, dst_file).unwrap();
-                }
-            }
-        }
-
-        Ok(())
-    }
 
     /// Returns a vector with paths to all MASM files in the specified directory.
     ///
@@ -655,7 +682,7 @@ mod shared {
             .into_diagnostic()?;
         }
 
-        write_if_changed(module.file_name, output)?;
+        fs::write(module.file_path, output).into_diagnostic()?;
 
         Ok(())
     }
@@ -688,9 +715,9 @@ mod shared {
         pub message: String,
     }
 
-    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+    #[derive(Debug, Clone)]
     pub struct ErrorModule {
-        pub file_name: &'static str,
+        pub file_path: PathBuf,
         pub array_name: &'static str,
         pub is_crate_local: bool,
     }

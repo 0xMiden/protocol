@@ -26,6 +26,9 @@ pub use account_id::{
 
 pub mod auth;
 
+mod access;
+pub use access::RoleSymbol;
+
 mod builder;
 pub use builder::AccountBuilder;
 

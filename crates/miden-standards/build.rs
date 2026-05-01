@@ -32,15 +32,12 @@ fn main() -> Result<()> {
     // re-build when the MASM code changes
     println!("cargo::rerun-if-changed={ASM_DIR}/");
 
-    // Copies the MASM code to the build directory
     let crate_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
     let build_dir = env::var("OUT_DIR").unwrap();
-    let src = Path::new(&crate_dir).join(ASM_DIR);
-    let dst = Path::new(&build_dir).to_path_buf();
-    shared::copy_directory(src, &dst, ASM_DIR)?;
 
-    // set source directory to {OUT_DIR}/asm
-    let source_dir = dst.join(ASM_DIR);
+    // Read MASM sources directly from the crate's asm/ directory.
+    // No copy to OUT_DIR is needed because this crate doesn't mutate the source tree.
+    let source_dir = Path::new(&crate_dir).join(ASM_DIR);
 
     // set target directory to {OUT_DIR}/assets
     let target_dir = Path::new(&build_dir).join(ASSETS_DIR);
@@ -201,57 +198,9 @@ mod shared {
 
     use fs_err as fs;
     use miden_assembly::Report;
-    use miden_assembly::diagnostics::{IntoDiagnostic, Result, WrapErr};
+    use miden_assembly::diagnostics::{IntoDiagnostic, Result};
     use regex::Regex;
     use walkdir::WalkDir;
-
-    /// Recursively copies `src` into `dst`.
-    ///
-    /// This function will overwrite the existing files if re-executed.
-    pub fn copy_directory<T: AsRef<Path>, R: AsRef<Path>>(
-        src: T,
-        dst: R,
-        asm_dir: &str,
-    ) -> Result<()> {
-        let mut prefix = src.as_ref().canonicalize().unwrap();
-        // keep all the files inside the `asm` folder
-        prefix.pop();
-
-        let target_dir = dst.as_ref().join(asm_dir);
-        if target_dir.exists() {
-            // Clear existing asm files that were copied earlier which may no longer exist.
-            fs::remove_dir_all(&target_dir)
-                .into_diagnostic()
-                .wrap_err("failed to remove ASM directory")?;
-        }
-
-        // Recreate the directory structure.
-        fs::create_dir_all(&target_dir)
-            .into_diagnostic()
-            .wrap_err("failed to create ASM directory")?;
-
-        let dst = dst.as_ref();
-        let mut todo = vec![src.as_ref().to_path_buf()];
-
-        while let Some(goal) = todo.pop() {
-            for entry in fs::read_dir(goal).unwrap() {
-                let path = entry.unwrap().path();
-                if path.is_dir() {
-                    let src_dir = path.canonicalize().unwrap();
-                    let dst_dir = dst.join(src_dir.strip_prefix(&prefix).unwrap());
-                    if !dst_dir.exists() {
-                        fs::create_dir_all(&dst_dir).unwrap();
-                    }
-                    todo.push(src_dir);
-                } else {
-                    let dst_file = dst.join(path.strip_prefix(&prefix).unwrap());
-                    fs::copy(&path, dst_file).unwrap();
-                }
-            }
-        }
-
-        Ok(())
-    }
 
     /// Returns a vector with paths to all MASM files in the specified directory and its
     /// subdirectories.

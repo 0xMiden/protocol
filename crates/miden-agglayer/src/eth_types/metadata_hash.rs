@@ -92,7 +92,7 @@ mod tests {
 
     use super::*;
 
-    /// Partial deserialization of claim_asset_vectors_local_tx.json
+    /// Partial deserialization of claim_asset_vectors_l1_tx.json
     #[derive(Deserialize)]
     struct ClaimAssetVectors {
         metadata: std::string::String,
@@ -101,7 +101,7 @@ mod tests {
 
     fn load_test_vectors() -> ClaimAssetVectors {
         let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("solidity-compat/test-vectors/claim_asset_vectors_local_tx.json");
+            .join("solidity-compat/test-vectors/claim_asset_vectors_l1_tx.json");
         let data = std::fs::read_to_string(path).expect("failed to read test vectors");
         serde_json::from_str(&data).expect("failed to parse test vectors")
     }

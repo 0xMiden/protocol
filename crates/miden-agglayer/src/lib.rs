@@ -17,7 +17,8 @@ use miden_protocol::asset::TokenSymbol;
 use miden_protocol::note::NoteScript;
 use miden_standards::account::access::Ownable2Step;
 use miden_standards::account::auth::NoAuth;
-use miden_standards::account::mint_policies::OwnerControlled;
+use miden_standards::account::burn_policies::BurnOwnerControlled;
+use miden_standards::account::mint_policies::MintOwnerControlled;
 use miden_utils_sync::LazyLock;
 
 pub mod b2agg_note;
@@ -65,7 +66,7 @@ pub use utils::Keccak256Output;
 
 // Initialize the CLAIM note script only once
 static CLAIM_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/CLAIM.masl"));
+    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/claim.masl"));
     let library =
         Library::read_from_bytes(bytes).expect("shipped CLAIM script library is well-formed");
     NoteScript::from_library(&library).expect("shipped CLAIM script is well-formed")
@@ -209,8 +210,10 @@ pub fn create_existing_bridge_account(
 /// The builder includes:
 /// - The `AggLayerFaucet` component (conversion metadata + token metadata).
 /// - The `Ownable2Step` component (bridge account ID as owner for mint authorization).
-/// - The `OwnerControlled` component (mint policy management required by
+/// - The `MintOwnerControlled` component (mint policy management required by
 ///   `network_fungible::mint_and_send`).
+/// - The `BurnOwnerControlled` component (burn policy management required by
+///   `basic_fungible::burn`).
 #[allow(clippy::too_many_arguments)]
 fn create_agglayer_faucet_builder(
     seed: Word,
@@ -240,7 +243,8 @@ fn create_agglayer_faucet_builder(
         .storage_mode(AccountStorageMode::Network)
         .with_component(agglayer_component)
         .with_component(Ownable2Step::new(bridge_account_id))
-        .with_component(OwnerControlled::owner_only())
+        .with_component(MintOwnerControlled::owner_only())
+        .with_component(BurnOwnerControlled::owner_only())
 }
 
 /// Creates a new agglayer faucet account with the specified configuration.

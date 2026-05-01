@@ -9,7 +9,7 @@ pub type AccountId = struct { prefix: felt, suffix: felt }
 # ERRORS
 # =================================================================================================
 
-const ERR_NOTE_NUM_OF_ASSETS_EXCEED_LIMIT="number of assets in a note exceed 255"
+const ERR_NOTE_NUM_OF_ASSETS_EXCEED_LIMIT="number of assets in a note exceeds 64"
 
 const ERR_ACCOUNT_IS_NOT_NATIVE="the active account is not native"
 
@@ -143,16 +143,16 @@ const VALIDATOR_KEY_COMMITMENT_PTR=824
 const BLOCK_METADATA_PTR=828
 
 # The memory address at which the fee parameters are stored. These occupy a double word.
-# [0, verification_base_fee, native_asset_id_suffix, native_asset_id_prefix]
+# [0, verification_base_fee, fee_faucet_id_suffix, fee_faucet_id_prefix]
 # [0, 0, 0, 0]
 const FEE_PARAMETERS_PTR=832
 
 # The memory address at which the verification base fee is stored.
 const VERIFICATION_BASE_FEE_PTR = FEE_PARAMETERS_PTR + 1
 
-# The memory address at which the native asset ID is stored.
-const NATIVE_ASSET_ID_SUFFIX_PTR = FEE_PARAMETERS_PTR + 2
-const NATIVE_ASSET_ID_PREFIX_PTR = FEE_PARAMETERS_PTR + 3
+# The memory address at which the fee faucet ID is stored.
+const FEE_FAUCET_ID_SUFFIX_PTR = FEE_PARAMETERS_PTR + 2
+const FEE_FAUCET_ID_PREFIX_PTR = FEE_PARAMETERS_PTR + 3
 
 # The memory address at which the note root is stored
 const NOTE_ROOT_PTR=840
@@ -190,6 +190,7 @@ const MAX_FOREIGN_ACCOUNT_PTR=524288
 const NATIVE_ACCOUNT_DATA_PTR=8192
 const NATIVE_ACCOUNT_ID_SUFFIX_PTR = NATIVE_ACCOUNT_DATA_PTR + ACCT_ID_SUFFIX_OFFSET
 const NATIVE_ACCOUNT_ID_PREFIX_PTR = NATIVE_ACCOUNT_DATA_PTR + ACCT_ID_PREFIX_OFFSET
+const NATIVE_ACCOUNT_NUM_STORAGE_SLOTS_PTR = NATIVE_ACCOUNT_DATA_PTR + ACCT_NUM_STORAGE_SLOTS_OFFSET
 
 # The length of the memory interval that the account data occupies.
 const ACCOUNT_DATA_LENGTH=8192
@@ -348,18 +349,6 @@ pub proc set_active_input_note_ptr
     mem_store.ACTIVE_INPUT_NOTE_PTR
 end
 
-#! Returns the pointer to the memory address at which the input vault root is stored.
-#!
-#! Inputs:  []
-#! Outputs: [input_vault_root_ptr]
-#!
-#! Where:
-#! - input_vault_root_ptr is a pointer to the memory address at which the input vault root is
-#!   stored.
-pub proc get_input_vault_root_ptr
-    push.INPUT_VAULT_ROOT_PTR
-end
-
 #! Returns the input vault root.
 #!
 #! Inputs:  []
@@ -380,18 +369,6 @@ end
 #! - INPUT_VAULT_ROOT is the input vault root.
 pub proc set_input_vault_root
     mem_storew_le.INPUT_VAULT_ROOT_PTR
-end
-
-#! Returns the pointer to the memory address at which the output vault root is stored.
-#!
-#! Inputs:  []
-#! Outputs: [output_vault_root_ptr]
-#!
-#! Where:
-#! - output_vault_root_ptr is the pointer to the memory address at which the output vault root is
-#!   stored.
-pub proc get_output_vault_root_ptr
-    push.OUTPUT_VAULT_ROOT_PTR
 end
 
 #! Returns the output vault root.
@@ -638,17 +615,6 @@ pub proc set_nullifier_commitment
     mem_storew_le.INPUT_NOTES_COMMITMENT_PTR
 end
 
-#! Returns the memory address of the transaction script root.
-#!
-#! Inputs:  []
-#! Outputs: [tx_script_root_ptr]
-#!
-#! Where:
-#! - tx_script_root_ptr is the pointer to the memory where transaction script root is stored.
-pub proc get_tx_script_root_ptr
-    push.TX_SCRIPT_ROOT_PTR
-end
-
 #! Sets the transaction script root.
 #!
 #! Inputs:  [TX_SCRIPT_ROOT]
@@ -658,6 +624,18 @@ end
 #! - TX_SCRIPT_ROOT is the transaction script root.
 pub proc set_tx_script_root
     mem_storew_le.TX_SCRIPT_ROOT_PTR
+end
+
+#! Returns the transaction script root.
+#!
+#! Inputs:  []
+#! Outputs: [TX_SCRIPT_ROOT]
+#!
+#! Where:
+#! - TX_SCRIPT_ROOT is the transaction script root, or the empty word if no transaction script was
+#!   executed.
+pub proc get_tx_script_root
+    padw mem_loadw_le.TX_SCRIPT_ROOT_PTR
 end
 
 #! Returns the transaction script arguments.
@@ -709,17 +687,6 @@ end
 # BLOCK DATA
 # -------------------------------------------------------------------------------------------------
 
-#! Returns a pointer to the block data section.
-#!
-#! Inputs:  []
-#! Outputs: [ptr]
-#!
-#! Where:
-#! - ptr is a pointer to the block data section.
-pub proc get_block_data_ptr
-    push.BLOCK_DATA_SECTION_OFFSET
-end
-
 #! Returns the previous block commitment of the transaction reference block.
 #!
 #! Inputs:  []
@@ -766,18 +733,18 @@ pub proc get_blk_timestamp
     mem_load.BLOCK_METADATA_TIMESTAMP_PTR
 end
 
-#! Returns the faucet ID of the native asset as defined in the transaction's reference block.
+#! Returns the faucet ID of the fee asset as defined in the transaction's reference block.
 #!
 #! Inputs:  []
-#! Outputs: [native_asset_id_suffix, native_asset_id_prefix]
+#! Outputs: [fee_faucet_id_suffix, fee_faucet_id_prefix]
 #!
 #! Where:
-#! - native_asset_id_{prefix,suffix} are the prefix and suffix felts of the faucet ID that defines
-#!   the native asset.
-pub proc get_native_asset_id
-    mem_load.NATIVE_ASSET_ID_PREFIX_PTR
-    mem_load.NATIVE_ASSET_ID_SUFFIX_PTR
-    # => [native_asset_id_suffix, native_asset_id_prefix]
+#! - fee_faucet_id_{prefix,suffix} are the prefix and suffix felts of the faucet ID that defines
+#!   the fee asset.
+pub proc get_fee_faucet_id
+    mem_load.FEE_FAUCET_ID_PREFIX_PTR
+    mem_load.FEE_FAUCET_ID_SUFFIX_PTR
+    # => [fee_faucet_id_suffix, fee_faucet_id_prefix]
 end
 
 #! Returns the verification base fee from the transaction's reference block.
@@ -883,17 +850,6 @@ end
 # CHAIN DATA
 # -------------------------------------------------------------------------------------------------
 
-#! Returns a pointer to the partial blockchain section.
-#!
-#! Inputs:  []
-#! Outputs: [ptr]
-#!
-#! Where:
-#! - ptr is the pointer to the partial blockchain section.
-pub proc get_partial_blockchain_ptr
-    push.PARTIAL_BLOCKCHAIN_PTR
-end
-
 #! Sets the number of leaves in the partial blockchain.
 #!
 #! Inputs:  [num_leaves]
@@ -905,53 +861,8 @@ pub proc set_partial_blockchain_num_leaves
     mem_store.PARTIAL_BLOCKCHAIN_NUM_LEAVES_PTR
 end
 
-#! Returns a pointer to start of the partial blockchain peaks section.
-#!
-#! Inputs:  []
-#! Outputs: [ptr]
-#!
-#! Where:
-#! - ptr is the pointer to the start of the partial blockchain peaks section.
-pub proc get_partial_blockchain_peaks_ptr
-    push.PARTIAL_BLOCKCHAIN_PEAKS_PTR
-end
-
 # ACCOUNT DATA
 # -------------------------------------------------------------------------------------------------
-
-#! Returns the memory pointer at which the native account data is stored.
-#!
-#! Inputs:  []
-#! Outputs: [ptr]
-#!
-#! Where:
-#! - ptr is the memory address at which the native account data is stored.
-pub proc get_native_account_data_ptr
-    push.NATIVE_ACCOUNT_DATA_PTR
-end
-
-#! Returns the length of the memory interval that the account data occupies.
-#!
-#! Inputs:  []
-#! Outputs: [account_data_length]
-#!
-#! Where:
-#! - account_data_length is the length of the memory interval that the account data occupies.
-pub proc get_account_data_length
-    push.ACCOUNT_DATA_LENGTH
-end
-
-#! Returns the largest memory address which can be used to load the foreign account data.
-#!
-#! Inputs:  []
-#! Outputs: [max_foreign_account_ptr]
-#!
-#! Where:
-#! - max_foreign_account_ptr is the largest memory address which can be used to load the foreign
-#!   account data.
-pub proc get_max_foreign_account_ptr
-    push.MAX_FOREIGN_ACCOUNT_PTR
-end
 
 #! Sets the memory pointer of the active account data to the native account (8192).
 #!
@@ -960,7 +871,7 @@ end
 pub proc set_active_account_data_ptr_to_native_account
     # store the native account data pointer into the first account stack element.
     push.NATIVE_ACCOUNT_DATA_PTR mem_store.MIN_ACCOUNT_STACK_PTR
-    # => [native_acct_stack_ptr, account_stack_top_ptr]
+    # => []
 
     # store the pointer to the first account stack element into the account stack top pointer.
     push.MIN_ACCOUNT_STACK_PTR mem_store.ACCOUNT_STACK_TOP_PTR
@@ -1423,6 +1334,17 @@ pub proc get_num_storage_slots
     mem_load
 end
 
+#! Returns the number of storage slots contained in the native account's storage.
+#!
+#! Inputs:  []
+#! Outputs: [num_storage_slots]
+#!
+#! Where:
+#! - num_storage_slots is the number of storage slots contained in the native account's storage.
+pub proc get_native_num_storage_slots
+    mem_load.NATIVE_ACCOUNT_NUM_STORAGE_SLOTS_PTR
+end
+
 #! Sets the number of storage slots contained in the account storage.
 #!
 #! Inputs:  [num_storage_slots]
@@ -1454,7 +1376,7 @@ end
 #! Where:
 #! - storage_slots_section_ptr is the memory pointer to the native account's storage slots section.
 pub proc get_native_account_active_storage_slots_ptr
-    exec.get_native_account_data_ptr add.ACCT_ACTIVE_STORAGE_SLOTS_SECTION_OFFSET
+    push.NATIVE_ACCOUNT_DATA_PTR add.ACCT_ACTIVE_STORAGE_SLOTS_SECTION_OFFSET
 end
 
 #! Returns the memory pointer to the initial storage slots of the native account.
@@ -1465,7 +1387,7 @@ end
 #! Where:
 #! - account_initial_storage_slots_ptr is the memory pointer to the initial storage slot values.
 pub proc get_native_account_initial_storage_slots_ptr
-  exec.get_native_account_data_ptr add.ACCT_INITIAL_STORAGE_SLOTS_SECTION_OFFSET
+  push.NATIVE_ACCOUNT_DATA_PTR add.ACCT_INITIAL_STORAGE_SLOTS_SECTION_OFFSET
 end
 
 #! Returns the memory pointer to the initial storage slots of the active account.
@@ -1861,17 +1783,6 @@ end
 # OUTPUT NOTES
 # -------------------------------------------------------------------------------------------------
 
-#! Returns the offset of the output note data segment.
-#!
-#! Inputs:  []
-#! Outputs: [offset]
-#!
-#! Where:
-#! - offset is the offset of the output note data segment.
-pub proc get_output_note_data_offset
-    push.OUTPUT_NOTE_SECTION_OFFSET
-end
-
 #! Computes a pointer to the memory address at which the data associated with an output note with
 #! index `i` is stored.
 #!
@@ -2012,7 +1923,7 @@ pub proc set_output_note_num_assets
     # => [note_ptr + offset, num_assets]
 
     # check note number of assets limit
-    dup.1 push.MAX_ASSETS_PER_NOTE lt assert.err=ERR_NOTE_NUM_OF_ASSETS_EXCEED_LIMIT
+    dup.1 lte.MAX_ASSETS_PER_NOTE assert.err=ERR_NOTE_NUM_OF_ASSETS_EXCEED_LIMIT
 
     mem_store
 end
@@ -2130,44 +2041,8 @@ pub proc get_num_kernel_procedures
     mem_load.NUM_KERNEL_PROCEDURES_PTR
 end
 
-#! Returns a pointer to the memory where hashes of the kernel procedures are stored.
-#!
-#! Inputs:  []
-#! Outputs: [kernel_procedures_ptr]
-#!
-#! Where:
-#! - kernel_procedures_ptr is the memory address where the hashes of the kernel procedures are
-#!   stored.
-pub proc get_kernel_procedures_ptr
-    push.KERNEL_PROCEDURES_PTR
-end
-
 # LINK MAP
 # -------------------------------------------------------------------------------------------------
-
-#! Returns the link map memory start ptr constant.
-#!
-#! Inputs:  []
-#! Outputs: [start_ptr]
-pub proc get_link_map_region_start_ptr
-    push.LINK_MAP_REGION_START_PTR
-end
-
-#! Returns the link map memory end ptr constant.
-#!
-#! Inputs:  []
-#! Outputs: [end_ptr]
-pub proc get_link_map_region_end_ptr
-    push.LINK_MAP_REGION_END_PTR
-end
-
-#! Returns the link map entry size constant.
-#!
-#! Inputs:  []
-#! Outputs: [entry_size]
-pub proc get_link_map_entry_size
-    push.LINK_MAP_ENTRY_SIZE
-end
 
 #! Returns the next pointer to an empty link map entry.
 #!

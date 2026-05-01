@@ -116,7 +116,7 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
     let account_update_commitment =
         Hasher::merge(&[final_account.to_commitment(), account_delta_commitment]);
     let fee_asset = FungibleAsset::new(
-        tx_context.tx_inputs().block_header().fee_parameters().native_asset_id(),
+        tx_context.tx_inputs().block_header().fee_parameters().fee_faucet_id(),
         0,
     )?;
 
@@ -129,11 +129,11 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
         account_update_commitment,
     );
     assert_eq!(
-        exec_output.get_stack_element(TransactionOutputs::NATIVE_ASSET_ID_SUFFIX_ELEMENT_IDX),
+        exec_output.get_stack_element(TransactionOutputs::FEE_FAUCET_ID_SUFFIX_ELEMENT_IDX),
         fee_asset.faucet_id().suffix(),
     );
     assert_eq!(
-        exec_output.get_stack_element(TransactionOutputs::NATIVE_ASSET_ID_PREFIX_ELEMENT_IDX),
+        exec_output.get_stack_element(TransactionOutputs::FEE_FAUCET_ID_PREFIX_ELEMENT_IDX),
         fee_asset.faucet_id().prefix().as_felt()
     );
     assert_eq!(
