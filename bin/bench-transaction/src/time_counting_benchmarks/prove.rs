@@ -131,7 +131,7 @@ fn core_benchmarks(c: &mut Criterion) {
                     let rt = tokio::runtime::Builder::new_current_thread()
                         .build()
                         .expect("failed to build tokio runtime for setup");
-                    rt.block_on(tx_consume_b2agg_note())
+                    rt.block_on(tx_consume_b2agg_note(None))
                         .expect("failed to create a context which consumes B2AGG note")
                 },
                 |tx_context| async move {
@@ -264,7 +264,7 @@ fn core_benchmarks(c: &mut Criterion) {
                     let rt = tokio::runtime::Builder::new_current_thread()
                         .build()
                         .expect("failed to build tokio runtime for setup");
-                    rt.block_on(tx_consume_b2agg_note())
+                    rt.block_on(tx_consume_b2agg_note(None))
                         .expect("failed to create a context which consumes B2AGG note")
                 },
                 |tx_context| async move {
