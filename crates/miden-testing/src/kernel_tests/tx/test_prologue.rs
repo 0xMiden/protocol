@@ -41,7 +41,7 @@ use miden_protocol::transaction::memory::{
     INPUT_NOTE_ASSETS_COMMITMENT_OFFSET,
     INPUT_NOTE_ASSETS_OFFSET,
     INPUT_NOTE_ATTACHMENT_OFFSET,
-    INPUT_NOTE_ID_OFFSET,
+    INPUT_NOTE_DETAILS_COMMITMENT_OFFSET,
     INPUT_NOTE_METADATA_HEADER_OFFSET,
     INPUT_NOTE_NULLIFIER_SECTION_PTR,
     INPUT_NOTE_NUM_ASSETS_OFFSET,
@@ -452,9 +452,9 @@ fn input_notes_memory_assertions(
         );
 
         assert_eq!(
-            exec_output.get_note_mem_word(note_idx, INPUT_NOTE_ID_OFFSET),
+            exec_output.get_note_mem_word(note_idx, INPUT_NOTE_DETAILS_COMMITMENT_OFFSET),
             note.commitment().as_word(),
-            "note details commitment should be computed and stored at INPUT_NOTE_ID_OFFSET"
+            "note details commitment should be computed and stored at INPUT_NOTE_DETAILS_COMMITMENT_OFFSET"
         );
 
         assert_eq!(

@@ -1268,8 +1268,8 @@ end
 
 #! Returns the input notes commitment.
 #!
-#! This is computed as a sequential hash of `(NULLIFIER, EMPTY_WORD_OR_NOTE_COMMITMENT)` over all 
-#! input notes. The data `EMPTY_WORD_OR_NOTE_COMMITMENT` functions as a flag, if the value is set to
+#! This is computed as a sequential hash of `(NULLIFIER, EMPTY_WORD_OR_NOTE_ID)` over all 
+#! input notes. The data `EMPTY_WORD_OR_NOTE_ID` functions as a flag, if the value is set to
 #! zero, then the notes are authenticated by the transaction kernel. If the value is non-zero, then
 #! note authentication will be delayed to the batch/block kernel. The delayed authentication allows
 #! a transaction to consume a public note that is not yet included to a block.
@@ -1291,7 +1291,7 @@ pub proc tx_get_input_notes_commitment
 end
 
 #! Returns the output notes commitment. This is computed as a sequential hash of
-#! (note_id, note_metadata) tuples over all output notes.
+#! (note_details_commitment, note_metadata_commitment) tuples over all output notes.
 #!
 #! Inputs:  [pad(16)]
 #! Outputs: [OUTPUT_NOTES_COMMITMENT, pad(12)]

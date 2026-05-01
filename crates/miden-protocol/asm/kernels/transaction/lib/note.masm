@@ -134,21 +134,23 @@ pub proc compute_output_note_assets_commitment
     # => [ASSETS_COMMITMENT]
 end
 
-#! Computes the ID of an output note located at the specified memory address.
+#! Computes the note details commitment for an output note located at the specified memory address
+#! and saves it to memory.
 #!
-#! The note ID is computed as follows:
+#! The commitment is computed as follows:
 #! - we define, recipient =
 #!       hash(hash(hash(serial_num, [0; 4]), script_root), storage_commitment)
-#! - we then compute the output note ID as:
+#! - we then compute the output note details commitment as:
 #!       hash(recipient, assets_commitment)
 #!
 #! Inputs:  [note_data_ptr]
-#! Outputs: [NOTE_ID]
+#! Outputs: [NOTE_DETAILS_COMMITMENT]
 #!
 #! Where:
 #! - note_data_ptr is a pointer to the data section of the output note.
-#! - NOTE_ID is the ID of the output note located at note_data_ptr.
-proc compute_output_note_id
+#! - NOTE_DETAILS_COMMITMENT is the commitment to the note's details computed as
+#!   `hash(RECIPIENT_DIGEST || ASSETS_COMMITMENT)`.
+proc compute_output_note_details_commitment
     # compute assets commitment
     dup exec.compute_output_note_assets_commitment
     # => [ASSETS_COMMITMENT, note_data_ptr]
@@ -156,17 +158,17 @@ proc compute_output_note_id
     dup.4 exec.memory::get_output_note_recipient
     # => [RECIPIENT, ASSETS_COMMITMENT, note_data_ptr]
 
-    # compute output note ID
+    # compute note details commitment
     exec.poseidon2::merge
-    # => [NOTE_ID, note_data_ptr]
+    # => [NOTE_DETAILS_COMMITMENT, note_data_ptr]
 
-    # save the output note commitment (note ID) to memory
+    # save the output note details commitment to memory
     movup.4 mem_storew_le
-    # => [NOTE_ID]
+    # => [NOTE_DETAILS_COMMITMENT]
 end
 
 #! Computes a commitment to the output notes. This is computed as a sequential hash of
-#! (note_id, note_metadata) tuples.
+#! (note_details_commitment, note_metadata_commitment) tuples.
 #!
 #! Inputs:  []
 #! Outputs: [OUTPUT_NOTES_COMMITMENT]
@@ -195,29 +197,30 @@ pub proc compute_output_notes_commitment
         dup.12 exec.memory::get_output_note_ptr
         # => [current_note_ptr, RATE0, RATE1, CAPACITY, current_index, num_notes]
 
-        # compute and save output note ID to memory (this also computes the note's asset commitment)
-        dup exec.compute_output_note_id
-        # => [NOTE_ID, current_note_ptr, RATE0, RATE1, CAPACITY, current_index, num_notes]
+        # compute and save output note details commitment to memory (this also computes the note's
+        # asset commitment)
+        dup exec.compute_output_note_details_commitment
+        # => [NOTE_DETAILS_COMMITMENT, current_note_ptr, RATE0, RATE1, CAPACITY, current_index, num_notes]
 
         dup.4 exec.memory::get_output_note_attachment
-        # => [NOTE_ATTACHMENT, NOTE_ID, current_note_ptr, RATE0, RATE1, CAPACITY, current_index, num_notes]
+        # => [NOTE_ATTACHMENT, NOTE_DETAILS_COMMITMENT, current_note_ptr, RATE0, RATE1, CAPACITY, current_index, num_notes]
 
         movup.8 exec.memory::get_output_note_metadata_header
-        # => [NOTE_METADATA_HEADER, NOTE_ATTACHMENT, NOTE_ID, RATE0, RATE1, CAPACITY, current_index, num_notes]
+        # => [NOTE_METADATA_HEADER, NOTE_ATTACHMENT, NOTE_DETAILS_COMMITMENT, RATE0, RATE1, CAPACITY, current_index, num_notes]
 
         # compute hash(NOTE_METADATA_HEADER || NOTE_ATTACHMENT)
         exec.poseidon2::merge
-        # => [NOTE_METADATA_COMMITMENT, NOTE_ID, RATE0, RATE1, CAPACITY, current_index, num_notes]
+        # => [NOTE_METADATA_COMMITMENT, NOTE_DETAILS_COMMITMENT, RATE0, RATE1, CAPACITY, current_index, num_notes]
 
-        # replace rate words with note ID and metadata commitment
+        # replace rate words with note details commitment and metadata commitment
         swapdw dropw dropw
-        # => [NOTE_METADATA_COMMITMENT, NOTE_ID, CAPACITY, current_index, num_notes]
+        # => [NOTE_METADATA_COMMITMENT, NOTE_DETAILS_COMMITMENT, CAPACITY, current_index, num_notes]
 
-        # move note ID to the top of the stack
+        # move note details commitment to the top of the stack
         swapw
-        # => [NOTE_ID, NOTE_METADATA_COMMITMENT, CAPACITY, current_index, num_notes]
+        # => [NOTE_DETAILS_COMMITMENT, NOTE_METADATA_COMMITMENT, CAPACITY, current_index, num_notes]
 
-        # permute over (NOTE_ID, NOTE_METADATA_COMMITMENT)
+        # permute over (NOTE_DETAILS_COMMITMENT, NOTE_METADATA_COMMITMENT)
         exec.poseidon2::permute
         # => [RATE0, RATE1, CAPACITY, current_index, num_notes]
 

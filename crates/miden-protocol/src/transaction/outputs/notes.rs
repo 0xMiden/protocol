@@ -111,9 +111,9 @@ where
     /// Computes a commitment to output notes.
     ///
     /// - For an empty list, [`Word::empty`] is returned.
-    /// - For a non-empty list of notes, this is a sequential hash of (note_id, metadata_commitment)
-    ///   tuples for the notes created in a transaction, where `metadata_commitment` is the return
-    ///   value of [`NoteMetadata::to_commitment`].
+    /// - For a non-empty list of notes, this is a sequential hash of `(note_details_commitment,
+    ///   metadata_commitment)` pairs for the notes created in a transaction, where
+    ///   `metadata_commitment` is the return value of [`NoteMetadata::to_commitment`].
     pub(crate) fn compute_commitment<'header>(
         notes: impl ExactSizeIterator<Item = &'header NoteHeader>,
     ) -> Word {

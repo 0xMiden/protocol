@@ -160,7 +160,7 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
 
 /// Tests that the output note memory section is correctly populated during finalize_transaction.
 #[tokio::test]
-async fn test_compute_output_note_id() -> anyhow::Result<()> {
+async fn test_compute_output_note_details_commitment() -> anyhow::Result<()> {
     let mut rng = RandomCoin::new(Word::from([3, 4, 5, 6u32]));
     let account = Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
     let mut assets = account.vault().assets();
@@ -237,7 +237,7 @@ async fn test_compute_output_note_id() -> anyhow::Result<()> {
         assert_eq!(
             note.commitment().as_word(),
             exec_output.get_kernel_mem_word(OUTPUT_NOTE_SECTION_OFFSET + i * NOTE_MEM_SIZE),
-            "note details commitment didn't match kernel NOTE_COMMITMENT slot",
+            "note details commitment didn't match kernel output note offset 0",
         );
     }
 
