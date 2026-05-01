@@ -38,3 +38,11 @@ Recall that an [account's nonce](index.md#nonce) must be incremented whenever it
 ### Procedure invocation checks
 
 The authentication procedure can base its authentication decision on whether a specific account procedure was called during the transaction. A procedure invocation is tracked by the kernel only if it invokes account-restricted kernel APIs (procedures that are only allowed to be called from the account context, e.g. `exec.faucet::mint`). Invocation of procedures that execute only local instructions (e.g., a noop `push.0 drop`) will not be tracked by the kernel.
+
+### Reentrancy
+
+The transaction kernel ensures that an authentication procedure cannot be called by note scripts or transaction scripts before the epilogue. However, it is theoretically possible for an authentication procedure to re-enter itself.
+
+In practice, most authentication procedures call `native_account::incr_nonce` on all successful execution paths. Since `incr_nonce` can only be called once per transaction, a re-entrant call would abort when attempting to increment the nonce a second time, effectively preventing reentrancy as a side effect.
+
+If an authentication procedure does not call `incr_nonce` on all successful execution paths, the author should ensure that the procedure does not re-enter itself if this would result in unintended behavior, as the transaction kernel does not enforce this.

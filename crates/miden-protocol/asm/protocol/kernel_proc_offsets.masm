@@ -89,3 +89,6 @@ pub const TX_EXEC_FOREIGN_PROC_OFFSET = 48
 # expiration data
 pub const TX_GET_EXPIRATION_DELTA_OFFSET=49               # accessor
 pub const TX_UPDATE_EXPIRATION_BLOCK_DELTA_OFFSET=50      # mutator
+
+# tx script
+pub const TX_GET_TX_SCRIPT_ROOT_OFFSET=51

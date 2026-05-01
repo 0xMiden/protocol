@@ -264,7 +264,7 @@ impl TransactionAdviceInputs {
 
         // CODE_COMMITMENT -> [[ACCOUNT_PROCEDURE_DATA]]
         let code = account.code();
-        self.add_map_entry(code.commitment(), code.as_elements());
+        self.add_map_entry(code.commitment(), code.to_elements());
 
         // --- account storage ----------------------------------------------------
 

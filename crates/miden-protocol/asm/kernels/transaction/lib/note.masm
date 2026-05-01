@@ -10,14 +10,14 @@ pub use $kernel::util::note::NOTE_TYPE_PRIVATE
 # ERRORS
 # =================================================================================================
 
-const ERR_NOTE_NUM_OF_ASSETS_EXCEED_LIMIT="number of assets in a note exceed 255"
+const ERR_NOTE_NUM_OF_ASSETS_EXCEED_LIMIT="number of assets in a note exceeds 64"
 
 # CONSTANTS
 # =================================================================================================
 
 # The diff between the memory address after first mem_stream operation and the next target when
 # generating the output notes commitment. Must be NOTE_MEM_SIZE - 8;
-const OUTPUT_NOTE_HASHING_MEM_DIFF=2040
+const OUTPUT_NOTE_HASHING_MEM_DIFF=1016
 
 # ACTIVE NOTE PROCEDURES
 # =================================================================================================

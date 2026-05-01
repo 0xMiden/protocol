@@ -108,8 +108,6 @@ pub enum ComponentMetadataError {
 
 #[derive(Debug, Error)]
 pub enum AccountError {
-    #[error("failed to deserialize account code")]
-    AccountCodeDeserializationError(#[source] DeserializationError),
     #[error("account code does not contain an auth component")]
     AccountCodeNoAuthComponent,
     #[error("account code contains multiple auth components")]
@@ -764,6 +762,8 @@ impl PartialBlockchainError {
 pub enum TransactionScriptError {
     #[error("failed to assemble transaction script:\n{}", PrintDiagnostic::new(.0))]
     AssemblyError(Report),
+    #[error("failed to convert package to transaction script:\n{}", PrintDiagnostic::new(.0))]
+    PackageNotProgram(Report),
 }
 
 // TRANSACTION INPUT ERROR
