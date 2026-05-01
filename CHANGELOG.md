@@ -3,6 +3,9 @@
 ## v0.15.0 (TBD)
 
 ### Features
+
+- [agglayer] Added `bridge_config::deregister_faucet` MASM procedure, `DEREGISTER_AGG_BRIDGE` note script, and `DeregisterAggBridgeNote` Rust builder, enabling the bridge admin to revoke a faucet's authorization by clearing both the `faucet_registry_map` and `token_registry_map` entries ([#2838](https://github.com/0xMiden/protocol/pull/2838)).
+
 ### Changes
 - Added validation of leaf type on CLAIM note processing to prevent message leaves from being processed as asset claims ([#2730](https://github.com/0xMiden/protocol/pull/2730)).
 
