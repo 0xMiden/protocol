@@ -62,8 +62,8 @@ const ESTIMATED_AFTER_COMPUTE_FEE_CYCLES=NUM_POST_COMPUTE_FEE_CYCLES+SMT_SET_ADD
 #! Copies the entire output note data to the advice map. If no notes were created by a transaction,
 #! nothing is copied to the advice map.
 #!
-#! The output note data includes the note id, metadata, recipient, assets commitment, number of assets and
-#! a set of assets for each note.
+#! The output note data includes the note details commitment, metadata, recipient, assets
+#! commitment, number of assets, and a set of assets for each note.
 #!
 #! Inputs:
 #!   Operand stack: [OUTPUT_NOTES_COMMITMENT]

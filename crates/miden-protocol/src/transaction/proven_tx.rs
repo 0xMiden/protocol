@@ -564,7 +564,7 @@ impl ToInputNoteCommitments for InputNoteCommitment {
     }
 
     fn note_commitment(&self) -> Option<Word> {
-        self.header.as_ref().map(NoteHeader::to_commitment)
+        self.header.as_ref().map(|header| header.id().as_word())
     }
 }
 

@@ -368,7 +368,7 @@ impl TransactionAdviceInputs {
                     note_data.push(Felt::ONE);
 
                     // Merkle path
-                    self.extend_merkle_store(proof.authenticated_nodes(note.commitment()));
+                    self.extend_merkle_store(proof.authenticated_nodes(note.id().as_word()));
 
                     let block_num = proof.location().block_num();
                     let block_header = if block_num == tx_inputs.block_header().block_num() {

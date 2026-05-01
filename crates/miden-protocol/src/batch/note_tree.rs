@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 
 use crate::crypto::merkle::MerkleError;
 use crate::crypto::merkle::smt::{LeafIndex, SimpleSmt};
-use crate::note::{NoteId, NoteMetadata, compute_note_commitment};
+use crate::note::{NoteDetailsCommitment, NoteId, NoteMetadata};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -14,7 +14,8 @@ use crate::{BATCH_NOTE_TREE_DEPTH, EMPTY_WORD, Word};
 
 /// Wrapper over [SimpleSmt<BATCH_NOTE_TREE_DEPTH>] for batch note tree.
 ///
-/// Value of each leaf is computed as: `hash(note_id || note_metadata_commitment)`.
+/// Value of each leaf is the note ID, computed as
+/// `hash(note_details_commitment || note_metadata_commitment)`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BatchNoteTree(SimpleSmt<BATCH_NOTE_TREE_DEPTH>);
 
@@ -26,11 +27,11 @@ impl BatchNoteTree {
     /// Returns an error if the number of entries exceeds the maximum tree capacity, that is
     /// 2^{depth}.
     pub fn with_contiguous_leaves<'a>(
-        entries: impl IntoIterator<Item = (NoteId, &'a NoteMetadata)>,
+        entries: impl IntoIterator<Item = (NoteDetailsCommitment, &'a NoteMetadata)>,
     ) -> Result<Self, MerkleError> {
         let leaves = entries
             .into_iter()
-            .map(|(note_id, metadata)| compute_note_commitment(note_id, metadata));
+            .map(|(commitment, metadata)| NoteId::new(commitment, metadata).as_word());
 
         SimpleSmt::with_contiguous_leaves(leaves).map(Self)
     }

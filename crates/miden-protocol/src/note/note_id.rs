@@ -3,8 +3,7 @@ use core::fmt::Display;
 
 use miden_crypto_derive::WordWrapper;
 
-use super::{Felt, Hasher, NoteDetails, Word};
-use crate::WordError;
+use super::{Felt, NoteDetailsCommitment, NoteMetadata};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -12,46 +11,29 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
+use crate::{Hasher, Word, WordError};
 
 // NOTE ID
 // ================================================================================================
 
-/// Returns a unique identifier of a note, which is simultaneously a commitment to the note.
+/// A unique identifier of a note.
 ///
-/// Note ID is computed as:
+/// The note ID is computed as:
 ///
-/// > hash(recipient, asset_commitment),
-///
-/// where `recipient` is defined as:
-///
-/// > hash(hash(hash(serial_num, ZERO), script_root), storage_commitment)
-///
-/// This achieves the following properties:
-/// - Every note can be reduced to a single unique ID.
-/// - To compute a note ID, we do not need to know the note's serial_num. Knowing the hash of the
-///   serial_num (as well as script root, input commitment, and note assets) is sufficient.
+/// > hash(NOTE_DETAILS_COMMITMENT || NOTE_METADATA_COMMITMENT)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, WordWrapper)]
 pub struct NoteId(Word);
 
 impl NoteId {
-    /// Returns a new [NoteId] instantiated from the provided note components.
-    pub fn new(recipient: Word, asset_commitment: Word) -> Self {
-        Self(Hasher::merge(&[recipient, asset_commitment]))
+    /// Returns a new [`NoteId`] from the provided details commitment and metadata.
+    pub fn new(details_commitment: NoteDetailsCommitment, metadata: &NoteMetadata) -> Self {
+        Self(Hasher::merge(&[details_commitment.as_word(), metadata.to_commitment()]))
     }
 }
 
 impl Display for NoteId {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}", self.to_hex())
-    }
-}
-
-// CONVERSIONS INTO NOTE ID
-// ================================================================================================
-
-impl From<&NoteDetails> for NoteId {
-    fn from(note: &NoteDetails) -> Self {
-        Self::new(note.recipient().digest(), note.assets().commitment())
     }
 }
 

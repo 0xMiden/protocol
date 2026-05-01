@@ -306,17 +306,11 @@ async fn unauthenticated_note_converted_to_authenticated() -> anyhow::Result<()>
         "block 1 should contain note1 and note2"
     );
     assert!(
-        block1
-            .body()
-            .output_notes()
-            .any(|(_, note)| note.to_commitment() == note1.commitment()),
+        block1.body().output_notes().any(|(_, note)| note.id() == note1.id()),
         "block 1 should contain note1"
     );
     assert!(
-        block1
-            .body()
-            .output_notes()
-            .any(|(_, note)| note.to_commitment() == note2.commitment()),
+        block1.body().output_notes().any(|(_, note)| note.id() == note2.id()),
         "block 1 should contain note2"
     );
 
@@ -474,7 +468,7 @@ fn multiple_transactions_against_same_account() -> anyhow::Result<()> {
     .build()?;
 
     // Use some random hash as the final state commitment of tx2.
-    let final_state_commitment = mock_note(10).commitment();
+    let final_state_commitment = mock_note(10).id().as_word();
     let tx2 = MockProvenTxBuilder::with_account(
         account1.id(),
         account1.to_commitment(),

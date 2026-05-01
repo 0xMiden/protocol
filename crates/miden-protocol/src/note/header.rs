@@ -3,36 +3,44 @@ use super::{
     ByteWriter,
     Deserializable,
     DeserializationError,
+    NoteDetailsCommitment,
     NoteId,
     NoteMetadata,
     Serializable,
-    Word,
 };
-use crate::Hasher;
 
 // NOTE HEADER
 // ================================================================================================
 
 /// Holds the strictly required, public information of a note.
 ///
-/// See [NoteId] and [NoteMetadata] for additional details.
+/// See [NoteDetailsCommitment], [NoteId], and [NoteMetadata] for additional details.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NoteHeader {
-    note_id: NoteId,
+    note_details_commitment: NoteDetailsCommitment,
     note_metadata: NoteMetadata,
 }
 
 impl NoteHeader {
-    /// Returns a new [NoteHeader] instantiated from the specified note ID and metadata.
-    pub fn new(note_id: NoteId, note_metadata: NoteMetadata) -> Self {
-        Self { note_id, note_metadata }
+    /// Returns a new [NoteHeader] instantiated from the specified note details commitment and
+    /// metadata.
+    pub fn new(
+        note_details_commitment: NoteDetailsCommitment,
+        note_metadata: NoteMetadata,
+    ) -> Self {
+        Self { note_details_commitment, note_metadata }
     }
 
     /// Returns the note's identifier.
     ///
-    /// The [NoteId] value is both an unique identifier and a commitment to the note.
+    /// The [NoteId] commits to both the note details and the note metadata.
     pub fn id(&self) -> NoteId {
-        self.note_id
+        NoteId::new(self.commitment(), self.metadata())
+    }
+
+    /// Returns the commitment to the note details, excluding metadata.
+    pub fn commitment(&self) -> NoteDetailsCommitment {
+        self.note_details_commitment
     }
 
     /// Returns the note's metadata.
@@ -44,29 +52,6 @@ impl NoteHeader {
     pub fn into_metadata(self) -> NoteMetadata {
         self.note_metadata
     }
-
-    /// Returns a commitment to the note and its metadata.
-    ///
-    /// > hash(NOTE_ID || NOTE_METADATA_COMMITMENT)
-    ///
-    /// This value is used primarily for authenticating notes consumed when they are consumed
-    /// in a transaction.
-    pub fn to_commitment(&self) -> Word {
-        compute_note_commitment(self.id(), self.metadata())
-    }
-}
-
-// UTILITIES
-// ================================================================================================
-
-/// Returns a commitment to the note and its metadata.
-///
-/// > hash(NOTE_ID || NOTE_METADATA_COMMITMENT)
-///
-/// This value is used primarily for authenticating notes consumed when they are consumed
-/// in a transaction.
-pub fn compute_note_commitment(id: NoteId, metadata: &NoteMetadata) -> Word {
-    Hasher::merge(&[id.as_word(), metadata.to_commitment()])
 }
 
 // SERIALIZATION
@@ -74,20 +59,20 @@ pub fn compute_note_commitment(id: NoteId, metadata: &NoteMetadata) -> Word {
 
 impl Serializable for NoteHeader {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.note_id.write_into(target);
+        self.note_details_commitment.write_into(target);
         self.note_metadata.write_into(target);
     }
 
     fn get_size_hint(&self) -> usize {
-        self.note_id.get_size_hint() + self.note_metadata.get_size_hint()
+        self.note_details_commitment.get_size_hint() + self.note_metadata.get_size_hint()
     }
 }
 
 impl Deserializable for NoteHeader {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let note_id = NoteId::read_from(source)?;
+        let note_details_commitment = NoteDetailsCommitment::read_from(source)?;
         let note_metadata = NoteMetadata::read_from(source)?;
 
-        Ok(Self { note_id, note_metadata })
+        Ok(Self { note_details_commitment, note_metadata })
     }
 }

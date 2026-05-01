@@ -467,14 +467,15 @@ end
 #!   created in.
 #!
 #! Inputs:
-#!   Operand stack: [NOTE_COMMITMENT]
+#!   Operand stack: [NOTE_ID]
 #!   Advice stack: [block_num, BLOCK_SUB_COMMITMENT, NOTE_ROOT, note_index]
 #! Outputs:
 #!   Operand stack: []
 #!   Advice stack: []
 #!
 #! Where:
-#! - NOTE_COMMITMENT is the input note's commitment computed as `hash(NOTE_ID || NOTE_METADATA_COMMITMENT)`.
+#! - NOTE_ID is the ID of the input note computed as
+#!   `hash(NOTE_DETAILS_COMMITMENT || NOTE_METADATA_COMMITMENT)`.
 #! - block_num is the leaf position in the MMR chain of the block which created the input note.
 #! - BLOCK_SUB_COMMITMENT is the sub_commitment of the block which created the input note.
 #! - NOTE_ROOT is the merkle root of the notes tree containing the input note.
@@ -485,13 +486,13 @@ proc authenticate_note
     # ---------------------------------------------------------------------------------------------
 
     push.PARTIAL_BLOCKCHAIN_PTR adv_push.1
-    # => [block_num, partial_blockchain_ptr, NOTE_COMMITMENT]
+    # => [block_num, partial_blockchain_ptr, NOTE_ID]
 
     exec.mmr::get
-    # => [BLOCK_COMMITMENT, NOTE_COMMITMENT]
+    # => [BLOCK_COMMITMENT, NOTE_ID]
 
     locaddr.0
-    # => [mem_ptr, BLOCK_COMMITMENT, NOTE_COMMITMENT]
+    # => [mem_ptr, BLOCK_COMMITMENT, NOTE_ID]
 
     # Load and authenticate the NOTE_ROOT
     # ---------------------------------------------------------------------------------------------
@@ -500,31 +501,31 @@ proc authenticate_note
     exec.poseidon2::init_no_padding
     adv_pipe exec.poseidon2::permute
     exec.poseidon2::squeeze_digest
-    # => [COMPUTED_BLOCK_COMMITMENT, mem_ptr', BLOCK_COMMITMENT, NOTE_COMMITMENT]
+    # => [COMPUTED_BLOCK_COMMITMENT, mem_ptr', BLOCK_COMMITMENT, NOTE_ID]
 
     # assert the computed block commitment matches
     movup.4 drop
     assert_eqw.err=ERR_PROLOGUE_MISMATCH_OF_REFERENCE_BLOCK_MMR_AND_NOTE_AUTHENTICATION_MMR
-    # => [NOTE_COMMITMENT]
+    # => [NOTE_ID]
 
-    # Authenticate the NOTE_COMMITMENT
+    # Authenticate the NOTE_ID
     # ---------------------------------------------------------------------------------------------
 
     # load the note root from memory
     padw loc_loadw_le.4 swapw
-    # => [NOTE_COMMITMENT, NOTE_ROOT]
+    # => [NOTE_ID, NOTE_ROOT]
 
     # load the index of the note
     adv_push.1 movdn.4
-    # => [NOTE_COMMITMENT, note_index, NOTE_ROOT]
+    # => [NOTE_ID, note_index, NOTE_ROOT]
 
     # get the depth of the note tree
     push.NOTE_TREE_DEPTH movdn.4
-    # => [NOTE_COMMITMENT, depth, note_index, NOTE_ROOT]
+    # => [NOTE_ID, depth, note_index, NOTE_ROOT]
 
-    # verify the note commitment
+    # verify the note ID
     mtree_verify.err=ERR_PROLOGUE_NOTE_AUTHENTICATION_FAILED
-    # => [NOTE_COMMITMENT, depth, note_index, NOTE_ROOT]
+    # => [NOTE_ID, depth, note_index, NOTE_ROOT]
 
     dropw drop drop dropw
     # => []
@@ -574,11 +575,11 @@ end
 #! - The note's ARGS are not authenticated, these are optional arguments the user can provide when
 #!   consuming the note.
 #! - The note's metadata is authenticated, so the data is returned in the stack. The value is used
-#!   to compute the NOTE_COMMITMENT as `hash(NOTE_ID || NOTE_METADATA_COMMITMENT)`, where
+#!   to compute the NOTE_ID as `hash(NOTE_DETAILS_COMMITMENT || NOTE_METADATA_COMMITMENT)`, where
 #!   `NOTE_METADATA_COMMITMENT` is `hash(NOTE_METADATA_HEADER || NOTE_METADATA_ATTACHMENT)`. The
-#!   NOTE_COMMITMENT is the leaf value of the block note tree contained in the block header and is
-#!   either verified by this kernel, or delayed to be verified by another kernel (e.g. batch or
-#!   block kernels).
+#!   NOTE_ID is the leaf value of the block note tree contained in the block header and is either
+#!   verified by this kernel, or delayed to be verified by another kernel (e.g. batch or block
+#!   kernels).
 #!
 #! Inputs:
 #!   Operand stack: [note_ptr]
@@ -734,15 +735,15 @@ proc add_input_note_assets_to_vault
     # => []
 end
 
-#! Computes an input note's id.
+#! Computes an input note's details commitment.
 #!
 #! Inputs:  [note_ptr]
-#! Outputs: [NOTE_ID]
+#! Outputs: [NOTE_DETAILS_COMMITMENT]
 #!
 #! Where:
 #! - note_ptr is the memory location for the input note.
-#! - NOTE_ID is the note's id, i.e. `hash(RECIPIENT || ASSETS_COMMITMENT)`.
-proc compute_input_note_id
+#! - NOTE_DETAILS_COMMITMENT is the commitment of the input note details.
+proc compute_input_note_details_commitment
     # load all inputs on the stack
     dup exec.memory::get_input_note_assets_commitment
     dup.4 exec.memory::get_input_note_storage_commitment
@@ -771,17 +772,17 @@ proc compute_input_note_id
     movup.8 exec.memory::set_input_note_recipient
     # => [RECIPIENT, ASSETS_COMMITMENT, note_ptr]
 
-    # compute NOTE_ID: hash(RECIPIENT || ASSETS_COMMITMENT)
+    # compute NOTE_DETAILS_COMMITMENT: hash(RECIPIENT || ASSETS_COMMITMENT)
     exec.poseidon2::merge
-    # => [NOTE_ID]
+    # => [NOTE_DETAILS_COMMITMENT]
 end
 
 #! Reads data for the input note from the advice provider and stores it in memory at the appropriate
 #! memory address.
 #!
 #! This procedures will also compute the note's nullifier. Store the note's nullifier, metadata,
-#! args, assets, id, and hash to memory. And return the hasher state in the stack so that the
-#! commitment can be extracted.
+#! args, assets, note details commitment, and hash to memory. And return the hasher state in the
+#! stack so that the commitment can be extracted.
 #!
 #! Inputs:
 #!   Operand stack: [idx, CAPACITY]
@@ -868,28 +869,28 @@ proc process_input_note
     dup exec.add_input_note_assets_to_vault
     # => [note_ptr, NOTE_METADATA_COMMITMENT, NULLIFIER, CAPACITY]
 
-    # note id
+    # note details commitment
     # ---------------------------------------------------------------------------------------------
 
-    dup exec.compute_input_note_id
-    # => [NOTE_ID, note_ptr, NOTE_METADATA_COMMITMENT, NULLIFIER, CAPACITY]
+    dup exec.compute_input_note_details_commitment
+    # => [NOTE_DETAILS_COMMITMENT, note_ptr, NOTE_METADATA_COMMITMENT, NULLIFIER, CAPACITY]
 
-    # save note id to memory
-    movup.4 exec.memory::set_input_note_id
-    # => [NOTE_ID, NOTE_METADATA_COMMITMENT, NULLIFIER, CAPACITY]
+    # save note details commitment to memory
+    movup.4 exec.memory::set_input_note_details_commitment
+    # => [NOTE_DETAILS_COMMITMENT, NOTE_METADATA_COMMITMENT, NULLIFIER, CAPACITY]
 
     # note authentication
     # ---------------------------------------------------------------------------------------------
 
-    # NOTE_COMMITMENT: `hash(NOTE_ID || NOTE_METADATA_COMMITMENT)`
+    # NOTE_ID: `hash(NOTE_DETAILS_COMMITMENT || NOTE_METADATA_COMMITMENT)`
     exec.poseidon2::merge
-    # => [NOTE_COMMITMENT, NULLIFIER, CAPACITY]
+    # => [NOTE_ID, NULLIFIER, CAPACITY]
 
     adv_push.1
-    # => [is_authenticated, NOTE_COMMITMENT, NULLIFIER, CAPACITY]
+    # => [is_authenticated, NOTE_ID, NULLIFIER, CAPACITY]
 
     if.true
-        # => [NOTE_COMMITMENT, NULLIFIER, CAPACITY]
+        # => [NOTE_ID, NULLIFIER, CAPACITY]
 
         exec.authenticate_note
         # => [NULLIFIER, CAPACITY]
@@ -897,12 +898,12 @@ proc process_input_note
         padw
         # => [EMPTY_WORD, NULLIFIER, CAPACITY]
     end
-    # => [EMPTY_WORD_OR_NOTE_COMMITMENT, NULLIFIER, CAPACITY]
+    # => [EMPTY_WORD_OR_NOTE_ID, NULLIFIER, CAPACITY]
 
     swapw
-    # => [NULLIFIER, EMPTY_WORD_OR_NOTE_COMMITMENT, CAPACITY]
+    # => [NULLIFIER, EMPTY_WORD_OR_NOTE_ID, CAPACITY]
 
-    # update the input notes commitment with hash(NULLIFIER || EMPTY_WORD_OR_NOTE_COMMITMENT)
+    # update the input notes commitment with hash(NULLIFIER || EMPTY_WORD_OR_NOTE_ID)
     exec.poseidon2::permute
     # => [RATE0, RATE1, CAPACITY]
 end
@@ -910,7 +911,7 @@ end
 #! Process the input notes data provided via the advice provider. This involves reading the data
 #! from the advice provider and storing it at the appropriate memory addresses. As each note is
 #! processed its hash and nullifier are computed. The transaction input notes commitment is
-#! computed via a sequential hash of all (NULLIFIER, EMPTY_WORD_NOTE_COMMITMENT) pairs for all input
+#! computed via a sequential hash of all (NULLIFIER, EMPTY_WORD_OR_NOTE_ID) pairs for all input
 #! notes.
 #!
 #! Inputs:
