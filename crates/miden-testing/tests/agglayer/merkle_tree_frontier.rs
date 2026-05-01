@@ -28,9 +28,9 @@ static CANONICAL_ZEROS_32: LazyLock<Vec<Keccak256Digest>> = LazyLock::new(|| {
     zeros_by_height
 });
 
-struct MerkleTreeFrontier32<const TREE_HEIGHT: usize = 32> {
-    num_leaves: u32,
-    frontier: [Keccak256Digest; TREE_HEIGHT],
+pub(super) struct MerkleTreeFrontier32<const TREE_HEIGHT: usize = 32> {
+    pub num_leaves: u32,
+    pub frontier: [Keccak256Digest; TREE_HEIGHT],
 }
 
 impl<const TREE_HEIGHT: usize> MerkleTreeFrontier32<TREE_HEIGHT> {
@@ -39,6 +39,14 @@ impl<const TREE_HEIGHT: usize> MerkleTreeFrontier32<TREE_HEIGHT> {
             num_leaves: 0,
             frontier: [Keccak256Digest::default(); TREE_HEIGHT],
         }
+    }
+
+    /// Constructs an MTF directly from a chosen `num_leaves` and frontier state.
+    ///
+    /// Useful for tests that need to start at a high `num_leaves` count without performing the
+    /// (impractical) number of leaf insertions to organically reach that point.
+    pub fn from_state(num_leaves: u32, frontier: [Keccak256Digest; TREE_HEIGHT]) -> Self {
+        Self { num_leaves, frontier }
     }
 
     pub fn append_and_update_frontier(&mut self, new_leaf: Keccak256Digest) -> Keccak256Digest {

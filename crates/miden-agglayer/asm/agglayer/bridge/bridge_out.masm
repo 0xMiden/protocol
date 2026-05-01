@@ -300,8 +300,8 @@ proc add_leaf_bridge(leaf_data_start_ptr: MemoryAddress)
     exec.leaf_utils::compute_leaf_value
     # => [LEAF_VALUE_LO, LEAF_VALUE_HI]
 
-    # Load the LET frontier from storage into memory at LET_FRONTIER_MEM_PTR
-    exec.load_let_frontier_to_memory
+    # Load num_leaves and only the frontier entries that will be read (bit h=1)
+    exec.load_let_frontier_selective
     # => [LEAF_VALUE_LO, LEAF_VALUE_HI]
 
     # Push frontier pointer below the leaf value
@@ -316,58 +316,91 @@ proc add_leaf_bridge(leaf_data_start_ptr: MemoryAddress)
     exec.save_let_root_and_num_leaves
     # => []
 
-    # Write the updated frontier from memory back to the map
-    exec.save_let_frontier_to_storage
+    # Write only the frontier entries that were modified from memory back to storage (bit h=0 in original num_leaves)
+    exec.save_let_frontier_selective
     # => []
 end
 
-#! Loads the LET (Local Exit Tree) frontier from account storage into memory.
+#! Selectively loads the LET (Local Exit Tree) frontier from account storage into memory.
 #!
-#! The num_leaves is read from its dedicated value slot, and the 32 frontier entries are read from
-#! the LET map slot (double-word array, indices 0..31). The data is placed into memory at
-#! LET_FRONTIER_MEM_PTR, matching the layout expected by append_and_update_frontier:
+#! First loads num_leaves from its dedicated value slot. Then, based on the bit pattern of
+#! num_leaves, loads only the frontier entries that will be read by append_and_update_frontier,
+#! i.e. those at heights where the corresponding bit in num_leaves is 1.
+#!
+#! For example:
+#! for a tree of depth=4, the frontier entry at height=2 will be read with the pattern 0b_X1XX:
+#! - num_leaves = 0b_0100 (4),
+#! - num_leaves = 0b_0101 (5),
+#! - num_leaves = 0b_0110 (6),
+#! - num_leaves = 0b_0111 (7),
+#! (without any writes to frontier[2] in the meantime).
+#!
+#! To understand the read pattern, consider the following:
+#! The root of the depth-3 subtree is computed as `merge(root-d2-left, root-d2-right)`:
+#!
+#!          root-d3
+#!         /      \
+#! root-d2-left  root-d2-right
+#!
+#! As we add leaves 5-8, the `root-d2-left` stays fixed as frontier[2] (all four leaves are inserted)
+#! while `root-d2-right` changes with each leaf 5-8.
+#! So as we're adding leaves 5-8, we ALWAYS read frontier[2] from storage and merge it with the
+#! freshly computed root-d2-right.
+#!
+#! Entries at heights where the corresponding bit in num_leaves is 0 are not loaded, because
+#! append_and_update_frontier will instead read the canonical zeros at those heights.
+#!
+#! The data is placed into memory at LET_FRONTIER_MEM_PTR, matching the layout expected by
+#! append_and_update_frontier:
 #! [num_leaves, 0, 0, 0, [[FRONTIER_NODE_LO, FRONTIER_NODE_HI]; 32]]
-#!
-#! Empty (uninitialized) map entries return zeros, which is the correct initial state for the
-#! frontier when there are no leaves.
 #!
 #! Inputs:  []
 #! Outputs: []
 #!
 #! Invocation: exec
-proc load_let_frontier_to_memory
+proc load_let_frontier_selective
     # 1. Load num_leaves from its value slot
     push.LET_NUM_LEAVES_SLOT[0..2]
     exec.active_account::get_item
-    # => [num_leaves_word]
+    # => [num_leaves, 0, 0, 0]
+
+    # 2. Keep a copy of num_leaves on the stack for bit checking, then write the
+    # [num_leaves, 0, 0, 0] word to memory at LET_FRONTIER_MEM_PTR.
+    dup.0 movdn.4
+    # => [num_leaves, 0, 0, 0, num_leaves]
 
     push.LET_FRONTIER_MEM_PTR mem_storew_le dropw
-    # => []
+    # => [num_leaves]
 
-    # 2. Load 32 frontier double-word entries from the map via double_word_array::get
     push.0
-    # => [h=0]
+    # => [h=0, num_leaves]
 
     repeat.32
-        # => [h]
+        # => [h, num_leaves_shifted]
 
-        # Read frontier[h] as a double word from the map
-        dup push.LET_FRONTIER_SLOT[0..2]
-        exec.double_word_array::get
-        # => [VALUE_0, VALUE_1, h]
+        # Check if bit h is set (this entry will be read by append_and_update_frontier)
+        dup.1 u32and.1
+        if.true
+            # Load frontier[h] from storage into memory
+            dup push.LET_FRONTIER_SLOT[0..2]
+            exec.double_word_array::get
+            # => [VALUE_0, VALUE_1, h, num_leaves_shifted]
 
-        # Compute memory address and store the double word
-        dup.8 mul.8 add.LET_FRONTIER_MEM_PTR add.4 movdn.8
-        # => [VALUE_0, VALUE_1, mem_addr, h]
-        exec.utils::mem_store_double_word
-        dropw dropw drop
-        # => [h]
+            # Compute memory address: LET_FRONTIER_MEM_PTR + 4 + h * 8
+            dup.8 mul.8 add.LET_FRONTIER_MEM_PTR add.4 movdn.8
+            # => [VALUE_0, VALUE_1, mem_addr, h, num_leaves_shifted]
 
-        add.1
-        # => [h+1]
+            exec.utils::mem_store_double_word
+            dropw dropw drop
+            # => [h, num_leaves_shifted]
+        end
+
+        # Shift num_leaves right by 1, increment h
+        swap u32shr.1 swap add.1
+        # => [h+1, num_leaves_shifted>>1]
     end
 
-    drop
+    drop drop
     # => []
 end
 
@@ -400,38 +433,71 @@ proc save_let_root_and_num_leaves
     # => []
 end
 
-#! Writes the 32 frontier entries from memory back to the LET map slot.
+#! Selectively writes modified frontier entries from memory back to the LET map slot.
 #!
-#! Each frontier entry is a double word (Keccak256 digest) stored at
-#! LET_FRONTIER_MEM_PTR + 4 + h * 8, and is written to the map at double_word_array index h.
+#! Only entries that were written by append_and_update_frontier are saved back to storage.
+#! These are the entries at heights where the corresponding bit in the pre-append num_leaves
+#! was 0.
+#!
+#! Note, that not all entries that are written to storage will be meaningfully read again.
+#! Some frontier heights may be written multiple times before they are read again. For example:
+#! for a tree of depth=4, the frontier entry at height=2 will be written with the pattern 0b_X0XX:
+#! - num_leaves = 0b_0000 (0),
+#! - num_leaves = 0b_0001 (1),
+#! - num_leaves = 0b_0010 (2),
+#! - num_leaves = 0b_0011 (3),
+#! before it's ever read when inserting the 5th leaf (when pre-insert num_leaves = 0b_0100 (4)).
+#! Notice that only the last write here is meaningful.
+#!
+#! This pattern is later repeated for height=2 but when the upper bit is 1:
+#! - num_leaves = 0b_1000 (8),
+#! - num_leaves = 0b_1001 (9),
+#! - num_leaves = 0b_1010 (10),
+#! - num_leaves = 0b_1011 (11),
+#! before it's read again when inserting the 13th leaf (when pre-insert num_leaves = 0b_1100 (12)).
+#!
+#! This is a little wasteful, but already better than the previous implementation, which
+#! unconditionally saved all frontier entries to storage.
+#! TODO: potential room for optimization here? Need to see if this affects root computation
 #!
 #! Inputs:  []
 #! Outputs: []
 #!
 #! Invocation: exec
-proc save_let_frontier_to_storage
+proc save_let_frontier_selective
+    # Get old_num_leaves = new_num_leaves - 1
+    push.LET_FRONTIER_MEM_PTR mem_load sub.1
+    # => [old_num_leaves]
+
     push.0
-    # => [h=0]
+    # => [h=0, old_num_leaves]
 
     repeat.32
-        # => [h]
+        # => [h, old_num_leaves_shifted]
 
-        # Load frontier[h] double word from memory
-        dup mul.8 add.LET_FRONTIER_MEM_PTR add.4
-        exec.utils::mem_load_double_word
-        # => [VALUE_0, VALUE_1, h]
+        # Check if bit h is 0 (this entry was written and needs saving)
+        dup.1 u32and.1
+        if.false
+            # Load frontier[h] double word from memory
+            dup mul.8 add.LET_FRONTIER_MEM_PTR add.4
+            exec.utils::mem_load_double_word
+            # => [VALUE_0, VALUE_1, h, old_num_leaves_shifted]
 
-        # Write it back to the map at index h
-        dup.8 push.LET_FRONTIER_SLOT[0..2]
-        exec.double_word_array::set
-        dropw dropw
-        # => [h]
+            # Write it back to the map at index h
+            dup.8 push.LET_FRONTIER_SLOT[0..2]
+            exec.double_word_array::set
+            # => [OLD_VALUE_0, OLD_VALUE_1, h, old_num_leaves_shifted]
 
-        add.1
-        # => [h+1]
+            dropw dropw
+            # => [h, old_num_leaves_shifted]
+        end
+
+        # Shift old_num_leaves right by 1, increment h
+        swap u32shr.1 swap add.1
+        # => [h+1, old_num_leaves_shifted>>1]
     end
 
-    drop
+    drop drop
     # => []
 end
 
