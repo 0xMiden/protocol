@@ -4,7 +4,7 @@ use alloc::slice;
 use alloc::string::String;
 
 use anyhow::Context;
-use miden_agglayer::errors::ERR_CLAIM_ALREADY_SPENT;
+use miden_agglayer::errors::{ERR_CLAIM_ALREADY_SPENT, ERR_TOKEN_NOT_REGISTERED};
 use miden_agglayer::{
     ClaimNoteStorage,
     ConfigAggBridgeNote,
@@ -248,6 +248,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     let config_note = ConfigAggBridgeNote::create(
         agglayer_faucet.id(),
         &origin_token_address,
+        origin_network,
         bridge_admin.id(),
         bridge_account.id(),
         builder.rng_mut(),
@@ -515,6 +516,7 @@ async fn test_duplicate_claim_note_rejected() -> anyhow::Result<()> {
     let config_note = ConfigAggBridgeNote::create(
         agglayer_faucet.id(),
         &origin_token_address,
+        origin_network,
         bridge_admin.id(),
         bridge_account.id(),
         builder.rng_mut(),
@@ -571,6 +573,144 @@ async fn test_duplicate_claim_note_rejected() -> anyhow::Result<()> {
     assert!(
         error_msg.contains(&expected_err_code),
         "expected error code {expected_err_code} for 'claim note has already been spent', got: {error_msg}"
+    );
+
+    Ok(())
+}
+
+/// Regression test for issue #2799.
+///
+/// Registers a faucet for `(origin_token_address, registered_origin_network)` then submits a
+/// CLAIM whose leaf carries the same `origin_token_address` but a different `origin_network`.
+/// Before the fix, `lookup_faucet_by_token_address` was keyed on the address alone and would
+/// silently resolve to the registered faucet — letting a deposit on one network mint via a
+/// faucet bound to another. With the registry keyed on the (address, network) pair, the lookup
+/// now misses and the claim is rejected with `ERR_TOKEN_NOT_REGISTERED`.
+#[tokio::test]
+async fn test_claim_fails_when_origin_network_unregistered() -> anyhow::Result<()> {
+    let data_source = ClaimDataSource::SimulatedL1ToMiden;
+    let mut builder = MockChain::builder();
+
+    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    let bridge_seed = builder.rng_mut().draw_word();
+    let bridge_account =
+        create_existing_bridge_account(bridge_seed, bridge_admin.id(), ger_manager.id());
+    builder.add_account(bridge_account.clone())?;
+
+    let (proof_data, leaf_data, ger, _cgi_chain_hash) = data_source.get_data();
+
+    let token_symbol = "AGG";
+    let decimals = 8u8;
+    let max_supply = Felt::new(FungibleAsset::MAX_AMOUNT);
+    let agglayer_faucet_seed = builder.rng_mut().draw_word();
+
+    let origin_token_address = leaf_data.origin_token_address;
+    let leaf_origin_network = leaf_data.origin_network;
+    // The faucet itself stores the leaf's origin_network (so amount scaling is consistent), but
+    // the bridge is configured to recognize this faucet for a *different* origin_network.
+    let registered_origin_network = leaf_origin_network.wrapping_add(1);
+    assert_ne!(
+        registered_origin_network, leaf_origin_network,
+        "test setup: registered network must differ from the leaf's network"
+    );
+    let scale = 10u8;
+
+    let agglayer_faucet = create_existing_agglayer_faucet(
+        agglayer_faucet_seed,
+        token_symbol,
+        decimals,
+        max_supply,
+        Felt::ZERO,
+        bridge_account.id(),
+        &origin_token_address,
+        leaf_origin_network,
+        scale,
+        leaf_data.metadata_hash,
+    );
+    builder.add_account(agglayer_faucet.clone())?;
+
+    let sender_account_builder =
+        Account::builder(builder.rng_mut().random()).with_component(BasicWallet);
+    let sender_account = builder.add_account_from_builder(
+        Auth::IncrNonce,
+        sender_account_builder,
+        AccountState::Exists,
+    )?;
+
+    let miden_claim_amount = leaf_data
+        .amount
+        .scale_to_token_amount(scale as u32)
+        .expect("amount should scale successfully");
+
+    let claim_inputs = ClaimNoteStorage {
+        proof_data,
+        leaf_data,
+        miden_claim_amount,
+    };
+    let claim_note = create_claim_note(
+        claim_inputs,
+        bridge_account.id(),
+        sender_account.id(),
+        builder.rng_mut(),
+    )?;
+    builder.add_output_note(RawOutputNote::Full(claim_note.clone()));
+
+    // Register the faucet under the WRONG origin network. The leaf in the CLAIM will carry
+    // `leaf_origin_network`, so `lookup_faucet_by_token_address` will compute a different key
+    // and find no entry.
+    let config_note = ConfigAggBridgeNote::create(
+        agglayer_faucet.id(),
+        &origin_token_address,
+        registered_origin_network,
+        bridge_admin.id(),
+        bridge_account.id(),
+        builder.rng_mut(),
+    )?;
+    builder.add_output_note(RawOutputNote::Full(config_note.clone()));
+
+    let update_ger_note =
+        UpdateGerNote::create(ger, ger_manager.id(), bridge_account.id(), builder.rng_mut())?;
+    builder.add_output_note(RawOutputNote::Full(update_ger_note.clone()));
+
+    let mut mock_chain = builder.clone().build()?;
+
+    // TX0: register faucet for `registered_origin_network`.
+    let config_tx = mock_chain
+        .build_tx_context(bridge_account.id(), &[config_note.id()], &[])?
+        .build()?;
+    let config_executed = config_tx.execute().await?;
+    mock_chain.add_pending_executed_transaction(&config_executed)?;
+    mock_chain.prove_next_block()?;
+
+    // TX1: store the GER.
+    let update_ger_tx = mock_chain
+        .build_tx_context(bridge_account.id(), &[update_ger_note.id()], &[])?
+        .build()?;
+    let update_ger_executed = update_ger_tx.execute().await?;
+    mock_chain.add_pending_executed_transaction(&update_ger_executed)?;
+    mock_chain.prove_next_block()?;
+
+    // TX2: attempt the CLAIM whose leaf carries `leaf_origin_network`. The lookup must miss.
+    let faucet_foreign_inputs = mock_chain.get_foreign_account_inputs(agglayer_faucet.id())?;
+    let claim_tx = mock_chain
+        .build_tx_context(bridge_account.id(), &[], &[claim_note])?
+        .foreign_accounts(vec![faucet_foreign_inputs])
+        .build()?;
+
+    let result = claim_tx.execute().await;
+    assert!(result.is_err(), "CLAIM whose origin_network is not registered must fail");
+    let error_msg = result.unwrap_err().to_string();
+    let expected_err_code = ERR_TOKEN_NOT_REGISTERED.code().to_string();
+    assert!(
+        error_msg.contains(&expected_err_code),
+        "expected error code {expected_err_code} for cross-network unregistered claim, got: {error_msg}"
     );
 
     Ok(())

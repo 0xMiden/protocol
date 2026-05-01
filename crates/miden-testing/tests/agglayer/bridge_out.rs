@@ -113,6 +113,7 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
     let config_note = ConfigAggBridgeNote::create(
         faucet.id(),
         &origin_token_address,
+        origin_network,
         bridge_admin.id(),
         bridge_account.id(),
         builder.rng_mut(),

@@ -116,6 +116,7 @@ const CLAIM_SOURCE_BRIDGE_NETWORK_MEM_ADDR = 901
 
 # Memory addresses for leaf data fields (derived from leaf data layout at CLAIM_LEAF_DATA_START_PTR=536)
 const LEAF_TYPE_ADDRESS = 536
+const ORIGIN_NETWORK_ADDRESS = 537
 const ORIGIN_TOKEN_ADDRESS_0 = 538
 const ORIGIN_TOKEN_ADDRESS_1 = 539
 const ORIGIN_TOKEN_ADDRESS_2 = 540
@@ -164,8 +165,9 @@ const CLAIM_DEST_ID_SUFFIX_LOCAL = 1
 #! Validates a claim against the AggLayer bridge and creates a MINT note for the AggLayer faucet.
 #!
 #! This procedure is called by the CLAIM note script. It validates the Merkle proof and then
-#! looks up the faucet account ID from the token registry using the origin token address from
-#! the leaf data, and creates a MINT note targeting the AggLayer Faucet.
+#! looks up the faucet account ID from the token registry using the (origin_token_address,
+#! origin_network) pair from the leaf data, and creates a MINT note targeting the AggLayer
+#! Faucet.
 #!
 #! The MINT note uses the standard MINT note pattern (public mode) with 18 storage items.
 #! See `write_mint_note_storage` for the full storage layout.
@@ -196,7 +198,7 @@ const CLAIM_DEST_ID_SUFFIX_LOCAL = 1
 #! Panics if:
 #! - the leaf type is not 0 (not an asset claim).
 #! - the Merkle proof validation fails.
-#! - the origin token address is not registered in the bridge's token registry.
+#! - the (origin_token_address, origin_network) pair is not registered in the bridge's token registry.
 #!
 #! Invocation: call
 @locals(2) # 0: dest_prefix, 1: dest_suffix
@@ -227,9 +229,11 @@ pub proc claim
     exec.verify_leaf_bridge
     # => [pad(16)]
 
-    # Look up the faucet account ID from the origin token address
-    exec.load_origin_token_address
-    # => [origin_token_addr(5), pad(16)]
+    # Look up the faucet account ID from the (origin_token_address, origin_network) pair so a
+    # CLAIM bound to one origin network cannot resolve to a faucet registered for the same
+    # token address on a different network.
+    exec.load_origin_token_address_and_network
+    # => [origin_token_addr(5), origin_network, pad(16)]
 
     exec.bridge_config::lookup_faucet_by_token_address
     # => [faucet_id_suffix, faucet_id_prefix, pad(16)]
@@ -798,19 +802,21 @@ proc load_raw_claim_amount
     # => [U256_LO, U256_HI]
 end
 
-#! Reads the origin token address (5 felts) from the leaf data in memory.
+#! Reads the origin token address (5 felts) and origin network identifier from the leaf data
+#! in memory, in the order expected by `bridge_config::lookup_faucet_by_token_address`.
 #!
 #! Inputs:  []
-#! Outputs: [origin_token_addr(5)]
+#! Outputs: [origin_token_addr(5), origin_network]
 #!
 #! Invocation: exec
-proc load_origin_token_address
+proc load_origin_token_address_and_network
+    mem_load.ORIGIN_NETWORK_ADDRESS
     mem_load.ORIGIN_TOKEN_ADDRESS_4
     mem_load.ORIGIN_TOKEN_ADDRESS_3
     mem_load.ORIGIN_TOKEN_ADDRESS_2
     mem_load.ORIGIN_TOKEN_ADDRESS_1
     mem_load.ORIGIN_TOKEN_ADDRESS_0
-    # => [origin_token_addr(5)]
+    # => [origin_token_addr(5), origin_network]
 end
 
 #! Builds a PUBLIC MINT output note targeting the AggLayer Faucet.

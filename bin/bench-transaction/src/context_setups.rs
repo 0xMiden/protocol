@@ -246,6 +246,7 @@ pub async fn tx_consume_claim_note(data_source: ClaimDataSource) -> Result<Trans
     let config_note = ConfigAggBridgeNote::create(
         agglayer_faucet.id(),
         &origin_token_address,
+        origin_network,
         bridge_admin.id(),
         bridge_account.id(),
         builder.rng_mut(),
@@ -349,6 +350,7 @@ pub async fn tx_consume_b2agg_note() -> Result<TransactionContext> {
     let config_note = ConfigAggBridgeNote::create(
         faucet.id(),
         &origin_token_address,
+        origin_network,
         bridge_admin.id(),
         bridge_account.id(),
         builder.rng_mut(),
