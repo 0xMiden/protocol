@@ -1495,10 +1495,10 @@ end
 #! Outputs: [NOTE_DETAILS_COMMITMENT]
 #!
 #! Where:
-#! - note_ptr is the input note's the memory address.
+#! - note_ptr is the memory address at which the input note data segment begins.
 #! - NOTE_DETAILS_COMMITMENT is the commitment to the note's details computed as
 #!   `hash(RECIPIENT_DIGEST || ASSETS_COMMITMENT)`.
-pub proc set_input_note_id
+pub proc set_input_note_details_commitment
     mem_storew_le
 end
 

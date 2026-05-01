@@ -876,7 +876,7 @@ proc process_input_note
     # => [NOTE_DETAILS_COMMITMENT, note_ptr, NOTE_METADATA_COMMITMENT, NULLIFIER, CAPACITY]
 
     # save note details commitment to memory
-    movup.4 exec.memory::set_input_note_id
+    movup.4 exec.memory::set_input_note_details_commitment
     # => [NOTE_DETAILS_COMMITMENT, NOTE_METADATA_COMMITMENT, NULLIFIER, CAPACITY]
 
     # note authentication
