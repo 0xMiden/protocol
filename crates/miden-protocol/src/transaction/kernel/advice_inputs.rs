@@ -351,7 +351,7 @@ impl TransactionAdviceInputs {
 
             // note details / metadata
             note_data.extend(recipient.serial_num());
-            note_data.extend(*recipient.script().root());
+            note_data.extend(Word::from(recipient.script().root()));
             note_data.extend(*recipient.storage().commitment());
             note_data.extend(*assets.commitment());
             note_data.extend(*note_arg);

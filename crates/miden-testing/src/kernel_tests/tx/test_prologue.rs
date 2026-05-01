@@ -465,7 +465,7 @@ fn input_notes_memory_assertions(
 
         assert_eq!(
             exec_output.get_note_mem_word(note_idx, INPUT_NOTE_SCRIPT_ROOT_OFFSET),
-            note.script().root(),
+            note.script().root().into(),
             "note script root should be stored at the correct offset"
         );
 
