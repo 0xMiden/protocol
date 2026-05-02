@@ -4,7 +4,7 @@ sidebar_position: 1
 
 # Accounts / Smart Contracts
 
-An `Account` represents the primary entity in Miden. It is capable of holding assets, storing data, and executing custom code. Each `Account` is a smart contract with a programmable interface through which note and transaction scripts can interact with the account's state and assets. By executing [transactions](../transaction) against an account, its state can be modified.
+An `Account` represents the primary entity in Miden. It is capable of holding assets, storing data, and executing custom code. Each `Account` is a smart contract with a programmable interface through which note and transaction scripts can interact with the account's state and assets. By executing [transactions](../transaction.md) against an account, its state can be modified.
 
 ## What is the purpose of an account?
 
@@ -46,7 +46,7 @@ Note that a transaction does not always change the state of an account. For inst
 
 ## Account creation
 
-For an `Account` to be recognized by the network, it must exist in the [account database](../state#account-database) maintained by Miden node(s).
+For an `Account` to be recognized by the network, it must exist in the [account database](../state.md#account-database) maintained by Miden node(s).
 
 However, a user can locally create a new `Account` ID before it's recognized network-wide. The typical process might be:
 
