@@ -28,7 +28,12 @@ lto           = true
 
 [profile.test-dev]
 inherits  = "dev"
-opt-level = 1
+opt-level = 0
+
+# Optimize dependencies so that test execution (esp. crypto/ZK) is fast, while
+# keeping workspace crates at opt-level 0 for faster compilation.
+[profile.test-dev.package."*"]
+opt-level = 2
 
 [profile.bench]
 codegen-units = 1
