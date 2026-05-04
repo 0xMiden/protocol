@@ -99,6 +99,8 @@
 - [BREAKING] Changed `native_account::remove_asset` to return the asset value remaining in the vault instead of the removed value ([#2626](https://github.com/0xMiden/protocol/pull/2626)).
 - Implemented `TransactionEventId::event_name` and `Host::resolve_event` for better VM diagnostics during even handler failures ([#2628](https://github.com/0xMiden/protocol/pull/2628)).
 - Added `FixedWidthString` for fixed-width UTF-8 string storage in `miden-standards` (`miden::standards::utils::string`). ([#2633](https://github.com/0xMiden/protocol/pull/2633))
+- [BREAKING] Extracted mint and burn policy management into a unified `TokenPolicyManager` account component ([#2821](https://github.com/0xMiden/protocol/pull/2821))
+- Added `AccountBuilder::with_components` for installing iterators of components in order as part of ([#2821](https://github.com/0xMiden/protocol/pull/2821)).
 
 ### Changes
 

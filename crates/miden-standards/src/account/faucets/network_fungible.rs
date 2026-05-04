@@ -12,11 +12,15 @@ use miden_protocol::account::{
 use super::FungibleFaucetError;
 use crate::account::access::AccessControl;
 use crate::account::auth::NoAuth;
-use crate::account::burn_policies::BurnOwnerControlled;
 use crate::account::components::network_fungible_faucet_library;
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
 use crate::account::metadata::FungibleTokenMetadata;
-use crate::account::mint_policies::MintOwnerControlled;
+use crate::account::policies::{
+    BurnPolicyConfig,
+    MintPolicyConfig,
+    PolicyAuthority,
+    TokenPolicyManager,
+};
 use crate::procedure_digest;
 
 // NETWORK FUNGIBLE FAUCET ACCOUNT COMPONENT
@@ -151,10 +155,22 @@ impl TryFrom<&Account> for NetworkFungibleFaucet {
 /// - [`AccountStorageMode::Network`] for storage
 /// - [`NoAuth`] for authentication
 ///
-/// The storage layout of the faucet account is documented on the [`NetworkFungibleFaucet`] and
-/// [`MintOwnerControlled`], [`BurnOwnerControlled`], and
-/// [`crate::account::access::Ownable2Step`] component types and
-/// contains no additional storage slots for its auth ([`NoAuth`]).
+/// The storage layout of the faucet account is documented on the [`NetworkFungibleFaucet`],
+/// [`TokenPolicyManager`], and [`crate::account::access::Ownable2Step`] component types. The mint
+/// and burn policy components produced alongside the manager (`MintOwnerOnly` and `BurnAllowAll`)
+/// are storage-free. The faucet contains no additional storage slots for its auth ([`NoAuth`]).
+///
+/// Component dependency graph:
+/// ```text
+/// NetworkFungibleFaucet
+/// └── TokenPolicyManager (owner-controlled)
+///     ├── MintOwnerOnly  (active mint policy, requires Ownable2Step)
+///     └── BurnAllowAll   (active burn policy)
+/// ```
+/// The manager only allows its initial policies by default. Custom faucets that want runtime
+/// policy switching can register additional roots via
+/// [`TokenPolicyManager::with_allowed_mint_policy`] /
+/// [`TokenPolicyManager::with_allowed_burn_policy`] and install the matching policy components.
 pub fn create_network_fungible_faucet(
     init_seed: [u8; 32],
     metadata: FungibleTokenMetadata,
@@ -182,8 +198,11 @@ pub fn create_network_fungible_faucet(
         .with_component(metadata)
         .with_component(NetworkFungibleFaucet)
         .with_component(access_control)
-        .with_component(MintOwnerControlled::owner_only())
-        .with_component(BurnOwnerControlled::allow_all())
+        .with_components(TokenPolicyManager::new(
+            PolicyAuthority::OwnerControlled,
+            MintPolicyConfig::OwnerOnly,
+            BurnPolicyConfig::AllowAll,
+        ))
         .build()
         .map_err(FungibleFaucetError::AccountError)?;
 
