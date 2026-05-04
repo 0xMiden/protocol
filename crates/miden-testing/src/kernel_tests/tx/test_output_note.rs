@@ -1019,10 +1019,6 @@ async fn test_get_recipient_and_metadata() -> anyhow::Result<()> {
             # get the metadata (the only existing note has 0'th index)
             push.0
             exec.output_note::get_metadata
-            # => [NOTE_ATTACHMENT, METADATA_HEADER]
-
-            push.{NOTE_ATTACHMENT}
-            assert_eqw.err="requested note has incorrect note attachment"
             # => [METADATA_HEADER]
 
             push.{METADATA_HEADER}
@@ -1036,7 +1032,6 @@ async fn test_get_recipient_and_metadata() -> anyhow::Result<()> {
         output_note = create_output_note(&output_note),
         RECIPIENT = output_note.recipient().digest(),
         METADATA_HEADER = output_note.metadata_header().to_metadata_word(),
-        NOTE_ATTACHMENT = output_note.attachments().to_commitment(),
     );
 
     let tx_script = CodeBuilder::default().compile_tx_script(tx_script_src)?;
@@ -1468,6 +1463,286 @@ async fn test_network_note() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Test that `output_note::get_attachment_commitments` returns the correct number of attachments
+/// and writes the individual attachment commitments to memory at the returned pointer.
+#[tokio::test]
+async fn test_get_attachment_commitments() -> anyhow::Result<()> {
+    let account = Account::mock(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET, Auth::IncrNonce);
+    let rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
+
+    let attachment_0 =
+        NoteAttachment::new_word(NoteAttachmentScheme::new(1)?, Word::from([3, 4, 5, 6u32]));
+    let attachment_1 =
+        NoteAttachment::new_word(NoteAttachmentScheme::new(2)?, Word::from([7, 8, 9, 10u32]));
+
+    let output_note = RawOutputNote::Full(
+        NoteBuilder::new(account.id(), rng)
+            .attachment(attachment_0.clone())
+            .attachment(attachment_1.clone())
+            .build()?,
+    );
+
+    let _attachments_commitment = output_note.attachments().commitment();
+    let commitment_0 = attachment_0.to_commitment();
+    let commitment_1 = attachment_1.to_commitment();
+
+    let tx_script = format!(
+        "
+        use miden::protocol::output_note
+        use miden::core::sys
+
+        begin
+            push.{RECIPIENT}
+            push.{note_type}
+            push.{tag}
+            exec.output_note::create
+            # => [note_idx]
+
+            # add first word attachment (note_idx = 0)
+            push.{ATTACHMENT_WORD_0}
+            push.{attachment_scheme_0}
+            # => [attachment_scheme, ATTACHMENT, note_idx]
+            exec.output_note::add_word_attachment
+            # => []
+
+            # add second word attachment
+            push.0
+            push.{ATTACHMENT_WORD_1}
+            push.{attachment_scheme_1}
+            # => [attachment_scheme, ATTACHMENT, note_idx=0]
+            exec.output_note::add_word_attachment
+            # => []
+
+            # get attachment commitments for note at index 0
+            push.0
+            exec.output_note::get_attachment_commitments
+            # => [num_attachments, attachments_ptr]
+
+            # assert num_attachments == 2
+            eq.2 assert.err=\"expected 2 attachments\"
+            # => [attachments_ptr]
+
+            # read commitment 0 from memory at ptr and assert
+            padw dup.4 mem_loadw_le
+            # => [COMMITMENT_0, attachments_ptr]
+            push.{EXPECTED_COMMITMENT_0}
+            assert_eqw.err=\"attachment commitment 0 mismatch\"
+            # => [attachments_ptr]
+
+            # advance pointer to next word (WORD_SIZE=4) and read commitment 1
+            padw movup.4 add.4 mem_loadw_le
+            # => [COMMITMENT_1]
+            push.{EXPECTED_COMMITMENT_1}
+            assert_eqw.err=\"attachment commitment 1 mismatch\"
+            # => []
+
+            # truncate the stack
+            exec.sys::truncate_stack
+        end
+        ",
+        RECIPIENT = output_note.recipient().unwrap().digest(),
+        note_type = output_note.metadata().note_type() as u8,
+        tag = output_note.metadata().tag().as_u32(),
+        attachment_scheme_0 = attachment_0.attachment_scheme().as_u16(),
+        ATTACHMENT_WORD_0 = Word::from([3, 4, 5, 6u32]),
+        attachment_scheme_1 = attachment_1.attachment_scheme().as_u16(),
+        ATTACHMENT_WORD_1 = Word::from([7, 8, 9, 10u32]),
+        EXPECTED_COMMITMENT_0 = commitment_0,
+        EXPECTED_COMMITMENT_1 = commitment_1,
+    );
+
+    let tx_script = CodeBuilder::new().compile_tx_script(tx_script)?;
+
+    let tx = TransactionContextBuilder::new(account)
+        .extend_expected_output_notes(vec![output_note.clone()])
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await?;
+
+    let actual_note = tx.output_notes().get_note(0);
+    assert_eq!(actual_note.header(), output_note.header());
+
+    Ok(())
+}
+
+/// Test that `output_note::get_attachment` retrieves the correct attachment data from local memory
+/// after piping its preimage from the advice map.
+#[tokio::test]
+async fn test_get_attachment() -> anyhow::Result<()> {
+    let account = Account::mock(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET, Auth::IncrNonce);
+    let rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
+
+    let word_0 = Word::from([3, 4, 5, 6u32]);
+    let word_1 = Word::from([7, 8, 9, 10u32]);
+    let attachment_0 = NoteAttachment::new_word(NoteAttachmentScheme::new(1)?, word_0);
+    let attachment_1 = NoteAttachment::new_word(NoteAttachmentScheme::new(2)?, word_1);
+
+    let output_note = RawOutputNote::Full(
+        NoteBuilder::new(account.id(), rng)
+            .attachment(attachment_0.clone())
+            .attachment(attachment_1.clone())
+            .build()?,
+    );
+
+    let tx_script = format!(
+        "
+        use miden::protocol::output_note
+        use miden::core::sys
+
+        begin
+            push.{RECIPIENT}
+            push.{note_type}
+            push.{tag}
+            exec.output_note::create
+            # => [note_idx]
+
+            # add first word attachment (note_idx = 0)
+            push.{ATTACHMENT_WORD_0}
+            push.{attachment_scheme_0}
+            # => [attachment_scheme, ATTACHMENT, note_idx]
+            exec.output_note::add_word_attachment
+            # => []
+
+            # add second word attachment
+            push.0
+            push.{ATTACHMENT_WORD_1}
+            push.{attachment_scheme_1}
+            # => [attachment_scheme, ATTACHMENT, note_idx=0]
+            exec.output_note::add_word_attachment
+            # => []
+
+            # --- get attachment 1 first (to debug with non-zero idx) ---
+            push.0 push.1
+            # => [attachment_idx=1, note_idx=0]
+            exec.output_note::get_attachment
+            # => [attachment_ptr, num_words]
+            drop drop
+
+            # truncate the stack
+            exec.sys::truncate_stack
+        end
+        ",
+        RECIPIENT = output_note.recipient().unwrap().digest(),
+        note_type = output_note.metadata().note_type() as u8,
+        tag = output_note.metadata().tag().as_u32(),
+        attachment_scheme_0 = attachment_0.attachment_scheme().as_u16(),
+        ATTACHMENT_WORD_0 = word_0,
+        attachment_scheme_1 = attachment_1.attachment_scheme().as_u16(),
+        ATTACHMENT_WORD_1 = word_1,
+    );
+
+    let tx_script = CodeBuilder::new().compile_tx_script(tx_script)?;
+
+    let tx = TransactionContextBuilder::new(account)
+        .extend_expected_output_notes(vec![output_note.clone()])
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await?;
+
+    let actual_note = tx.output_notes().get_note(0);
+    assert_eq!(actual_note.header(), output_note.header());
+
+    Ok(())
+}
+
+/// Tests `output_note::find_attachment` for both the found and not-found cases.
+///
+/// Setup: a SPAWN note creates an output note with two word attachments (schemes 10 and 20).
+/// The tx_script then calls `find_attachment` on the created output note.
+///
+/// - `found`:     search for scheme 10 → is_found=1, attachment data is returned.
+/// - `not_found`: search for scheme 99 → is_found=0, num_words=0, attachment_ptr=0.
+#[rstest]
+#[case::found(10, true)]
+#[case::not_found(99, false)]
+#[tokio::test]
+async fn test_find_attachment(
+    #[case] search_scheme: u16,
+    #[case] expected_found: bool,
+) -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let account = builder.add_existing_wallet(Auth::IncrNonce)?;
+
+    let word_0 = Word::from([3, 4, 5, 6u32]);
+    let word_1 = Word::from([7, 8, 9, 10u32]);
+    let scheme_0 = NoteAttachmentScheme::new(10)?;
+    let scheme_1 = NoteAttachmentScheme::new(20)?;
+
+    let output_note = NoteBuilder::new(account.id(), RandomCoin::new(Word::from([1, 2, 3, 4u32])))
+        .note_type(NoteType::Public)
+        .attachment(NoteAttachment::new_word(scheme_0, word_0))
+        .attachment(NoteAttachment::new_word(scheme_1, word_1))
+        .build()?;
+
+    let spawn_note = builder.add_spawn_note([&output_note])?;
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let tx_script = format!(
+        r#"
+        use miden::protocol::output_note
+        use miden::core::sys
+
+        begin
+            # the spawn note creates output note at index 0;
+            # search for the target scheme on that note
+            push.0
+            push.{search_scheme}
+            # => [attachment_scheme, note_idx=0]
+            exec.output_note::find_attachment
+            # => [is_found, num_words, attachment_ptr]
+
+            # assert is_found matches expectation
+            push.{expected_found} assert_eq.err="is_found mismatch"
+            # => [num_words, attachment_ptr]
+
+            push.{expected_found}
+            if.true
+                # found path: verify num_words == 1 (word attachment)
+                eq.1 assert.err="expected num_words=1"
+                # => [attachment_ptr]
+
+                # read the word from memory and assert it matches
+                padw movup.4 mem_loadw_le
+                # => [ATTACHMENT_WORD]
+
+                push.{EXPECTED_WORD}
+                assert_eqw.err="attachment data mismatch"
+                # => []
+            else
+                # not-found path: verify num_words=0 and ptr=0
+                eq.0 assert.err="expected num_words=0"
+                eq.0 assert.err="expected attachment_ptr=0"
+                # => []
+            end
+
+            # truncate the stack
+            exec.sys::truncate_stack
+        end
+        "#,
+        expected_found = expected_found as u8,
+        EXPECTED_WORD = word_0,
+    );
+
+    let tx_script = CodeBuilder::new().compile_tx_script(tx_script)?;
+
+    let tx = mock_chain
+        .build_tx_context(account.id(), &[spawn_note.id()], &[])?
+        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note.clone())])
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await?;
+
+    let actual_note = tx.output_notes().get_note(0);
+    assert_eq!(actual_note.header(), output_note.header());
+
+    Ok(())
+}
+
 /// Test that output_note procedures abort when given an out-of-bounds note index (equal to
 /// num_output_notes).
 ///
@@ -1483,6 +1758,9 @@ async fn test_network_note() -> anyhow::Result<()> {
 #[case::add_attachment(5, "add_attachment")]
 #[case::add_word_attachment(5, "add_word_attachment")]
 #[case::add_array_attachment(5, "add_array_attachment")]
+#[case::find_attachment(1, "find_attachment")]
+#[case::get_attachment_commitments(0, "get_attachment_commitments")]
+#[case::get_attachments_commitment(0, "get_attachments_commitment")]
 #[tokio::test]
 async fn test_output_note_index_out_of_bounds(
     #[case] params_above: usize,

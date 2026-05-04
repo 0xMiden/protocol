@@ -1,7 +1,6 @@
 use alloc::string::String;
 
 use miden_protocol::Word;
-use miden_protocol::crypto::SequentialCommit;
 use miden_protocol::note::Note;
 use miden_protocol::transaction::memory::{ASSET_SIZE, ASSET_VALUE_OFFSET};
 use miden_standards::code_builder::CodeBuilder;
@@ -122,10 +121,6 @@ async fn test_get_recipient_and_metadata() -> anyhow::Result<()> {
             # get the metadata from the requested input note
             push.0
             exec.input_note::get_metadata
-            # => [NOTE_ATTACHMENT, METADATA_HEADER]
-
-            push.{NOTE_ATTACHMENT}
-            assert_eqw.err="note 0 has incorrect note attachment"
             # => [METADATA_HEADER]
 
             push.{METADATA_HEADER}
@@ -135,7 +130,6 @@ async fn test_get_recipient_and_metadata() -> anyhow::Result<()> {
     "#,
         RECIPIENT = p2id_note_1_asset.recipient().digest(),
         METADATA_HEADER = p2id_note_1_asset.metadata_header().to_metadata_word(),
-        NOTE_ATTACHMENT = p2id_note_1_asset.attachments().to_commitment(),
     );
 
     let tx_script = CodeBuilder::default().compile_tx_script(code)?;

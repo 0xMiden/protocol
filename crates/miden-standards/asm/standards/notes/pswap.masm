@@ -617,9 +617,8 @@ proc execute_pswap
         # => [remaining_requested]
 
         exec.active_note::get_metadata
-        # => [NOTE_ATTACHMENT, METADATA_HEADER, remaining_requested]
+        # => [METADATA_HEADER, remaining_requested]
         # where METADATA_HEADER = [sid_suf_ver, sid_pre, tag, att_ks]
-        dropw
         # => [sid_suf_ver, sid_pre, tag, att_ks, remaining_requested]
 
         dup.2 movdn.4

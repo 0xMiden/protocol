@@ -2,58 +2,43 @@
 
 use miden_protocol::Felt;
 use miden_protocol::account::AccountStorageMode;
-use miden_protocol::note::{
-    NoteAttachment,
-    NoteAttachmentContent,
-    NoteAttachments,
-    NoteMetadata,
-    NoteMetadataHeader,
-    NoteTag,
-    NoteType,
-};
+use miden_protocol::note::{NoteAttachment, NoteAttachmentContent};
 use miden_protocol::testing::account_id::AccountIdBuilder;
 use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 
 use crate::executor::CodeExecutor;
 
 #[tokio::test]
-async fn network_account_target_get_id() -> anyhow::Result<()> {
+async fn network_account_target_into_target_id() -> anyhow::Result<()> {
     let target_id = AccountIdBuilder::new()
         .storage_mode(AccountStorageMode::Network)
         .build_with_rng(&mut rand::rng());
     let exec_hint = NoteExecutionHint::Always;
 
     let attachment = NoteAttachment::from(NetworkAccountTarget::new(target_id, exec_hint)?);
-    let attachments = NoteAttachments::from(attachment.clone());
-    let metadata = NoteMetadata::new(target_id, NoteType::Public)
-        .with_tag(NoteTag::with_account_target(target_id));
-    let metadata_header = NoteMetadataHeader::new(metadata, &attachments);
-    let metadata_word = metadata_header.to_metadata_word();
 
     let source = format!(
         r#"
         use miden::standards::attachments::network_account_target
         use miden::protocol::note
 
-        const ERR_NOT_NETWORK_ACCOUNT_TARGET = "attachment is not a valid network account target"
-
         begin
-            push.{attachment_commitment}
-            push.{metadata_word}
-            exec.note::metadata_into_attachment_header
-            # => [attachment_0_scheme, NOTE_ATTACHMENT]
+            push.{attachment_scheme}
+            # => [attachment_scheme]
             exec.network_account_target::is_network_account_target
-            # => [is_valid, NOTE_ATTACHMENT]
-            assert.err=ERR_NOT_NETWORK_ACCOUNT_TARGET
+            # => [is_valid]
+            assert.err="expected scheme to be a valid network account target"
+
+            push.{attachment_word}
             # => [NOTE_ATTACHMENT]
-            exec.network_account_target::get_id
+            exec.network_account_target::into_target_id
             # => [account_id_suffix, account_id_prefix]
             # cleanup stack
             movup.2 drop movup.2 drop
         end
         "#,
-        metadata_word = metadata_word,
-        attachment_commitment = match attachment.content() {
+        attachment_scheme = attachment.attachment_scheme().as_u16(),
+        attachment_word = match attachment.content() {
             NoteAttachmentContent::Word(word) => *word,
             _ => unreachable!("expected word attachment"),
         },
@@ -138,7 +123,7 @@ async fn network_account_target_attachment_round_trip() -> anyhow::Result<()> {
             # => [is_valid, NOTE_ATTACHMENT]
             assert.err=ERR_NOT_NETWORK_ACCOUNT_TARGET
             # => [NOTE_ATTACHMENT]
-            exec.network_account_target::get_id
+            exec.network_account_target::into_target_id
             # => [target_id_suffix, target_id_prefix]
             # cleanup stack
             movup.2 drop movup.2 drop

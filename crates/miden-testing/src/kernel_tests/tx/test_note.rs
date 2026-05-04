@@ -13,6 +13,8 @@ use miden_protocol::errors::MasmError;
 use miden_protocol::note::{
     Note,
     NoteAssets,
+    NoteAttachmentHeader,
+    NoteAttachmentScheme,
     NoteAttachments,
     NoteMetadata,
     NoteMetadataHeader,
@@ -35,6 +37,7 @@ use miden_standards::testing::note::NoteBuilder;
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 
+use crate::executor::CodeExecutor;
 use crate::kernel_tests::tx::{ExecutionOutputExt, input_note_data_ptr};
 use crate::{
     Auth,
@@ -535,5 +538,161 @@ async fn test_public_key_as_note_input() -> anyhow::Result<()> {
         .build()?;
 
     tx_context.execute().await?;
+    Ok(())
+}
+
+#[rstest::rstest]
+#[case::all_present(
+    [
+        NoteAttachmentHeader::new(NoteAttachmentScheme::new_const(2)),
+        NoteAttachmentHeader::new(NoteAttachmentScheme::new_const(10000)),
+        NoteAttachmentHeader::new(NoteAttachmentScheme::new_const(0xfffe)),
+        NoteAttachmentHeader::new(NoteAttachmentScheme::new_const(42)),
+    ]
+)]
+#[case::first_only(
+    [
+        NoteAttachmentHeader::new(NoteAttachmentScheme::new_const(0x0fff)),
+        NoteAttachmentHeader::new(NoteAttachmentScheme::new_const(0xfffe)),
+        NoteAttachmentHeader::absent(),
+        NoteAttachmentHeader::absent(),
+    ]
+)]
+#[case::all_absent(
+    [
+        NoteAttachmentHeader::absent(),
+        NoteAttachmentHeader::absent(),
+        NoteAttachmentHeader::absent(),
+        NoteAttachmentHeader::absent(),
+    ]
+)]
+#[tokio::test]
+async fn test_metadata_into_attachment_schemes(
+    #[case] attachment_headers: [NoteAttachmentHeader; 4],
+) -> anyhow::Result<()> {
+    let sender = AccountId::try_from(ACCOUNT_ID_SENDER).unwrap();
+    let metadata = NoteMetadata::new(sender, NoteType::Public).with_tag(NoteTag::new(0));
+    let metadata_header =
+        NoteMetadataHeader::from_parts(metadata, attachment_headers, Word::default());
+    let metadata_word = metadata_header.to_metadata_word();
+
+    let code = format!(
+        "
+        use miden::protocol::note
+
+        begin
+            push.{metadata_word}
+            exec.note::metadata_into_attachment_schemes
+            # => [scheme0, scheme1, scheme2, scheme3, pad(16)]
+
+            # truncate the stack
+            swapw dropw
+        end
+        ",
+    );
+
+    let exec_output = CodeExecutor::with_default_host().run(&code).await?;
+
+    for (i, header) in attachment_headers.iter().enumerate() {
+        let expected_scheme = header.scheme().as_ref().map_or(0, NoteAttachmentScheme::as_u16);
+        assert_eq!(
+            exec_output.get_stack_element(i).as_canonical_u64(),
+            u64::from(expected_scheme),
+            "attachment scheme mismatch at index {i}"
+        );
+    }
+
+    Ok(())
+}
+
+/// Tests the `find_attachment_idx` procedure which searches for a given scheme in the
+/// metadata header and returns `[is_found, attachment_idx]`.
+#[rstest::rstest]
+#[case::found_at_index_0(
+    [
+        NoteAttachmentHeader::new(NoteAttachmentScheme::new_const(42)),
+        NoteAttachmentHeader::new(NoteAttachmentScheme::new_const(20)),
+        NoteAttachmentHeader::new(NoteAttachmentScheme::new_const(30)),
+        // The scheme exists again at a higher index, but the first match should be returned.
+        NoteAttachmentHeader::new(NoteAttachmentScheme::new_const(42)),
+    ],
+    42,
+    true,
+    0,
+)]
+#[case::found_at_index_2(
+    [
+        NoteAttachmentHeader::new(NoteAttachmentScheme::new_const(10)),
+        NoteAttachmentHeader::new(NoteAttachmentScheme::new_const(20)),
+        NoteAttachmentHeader::new(NoteAttachmentScheme::new_const(42)),
+        NoteAttachmentHeader::absent()
+    ],
+    42,
+    true,
+    2,
+)]
+#[case::found_at_index_3(
+    [
+        NoteAttachmentHeader::new(NoteAttachmentScheme::new_const(10)),
+        NoteAttachmentHeader::new(NoteAttachmentScheme::new_const(20)),
+        NoteAttachmentHeader::new(NoteAttachmentScheme::new_const(30)),
+        NoteAttachmentHeader::new(NoteAttachmentScheme::new_const(42)),
+    ],
+    42,
+    true,
+    3,
+)]
+#[case::not_found(
+    [
+        NoteAttachmentHeader::new(NoteAttachmentScheme::new_const(10)),
+        NoteAttachmentHeader::new(NoteAttachmentScheme::new_const(20)),
+        NoteAttachmentHeader::absent(),
+        NoteAttachmentHeader::absent(),
+    ],
+    42,
+    false,
+    0, // attachment_idx is undefined when not found; we don't assert it
+)]
+#[tokio::test]
+async fn test_find_attachment_idx(
+    #[case] attachment_headers: [NoteAttachmentHeader; 4],
+    #[case] search_scheme: u16,
+    #[case] expected_found: bool,
+    #[case] expected_idx: u8,
+) -> anyhow::Result<()> {
+    let sender = AccountId::try_from(ACCOUNT_ID_SENDER).unwrap();
+    let metadata = NoteMetadata::new(sender, NoteType::Public).with_tag(NoteTag::new(0));
+    let metadata_header =
+        NoteMetadataHeader::from_parts(metadata, attachment_headers, Word::default());
+    let metadata_word = metadata_header.to_metadata_word();
+
+    let code = format!(
+        "
+        use miden::protocol::note
+
+        begin
+            push.{metadata_word}
+            push.{search_scheme}
+            exec.note::find_attachment_idx
+            # => [is_found, attachment_idx, pad(16)]
+
+            # truncate the stack
+            movup.2 drop movup.2 drop
+            # => [is_found, attachment_idx, pad(14)]
+        end
+        ",
+    );
+
+    let exec_output = CodeExecutor::with_default_host().run(&code).await?;
+
+    let is_found = exec_output.get_stack_element(0);
+    assert_eq!(is_found, Felt::from(expected_found as u8), "is_found mismatch");
+
+    // attachment_idx is undefined when not found so we only assert when found
+    if expected_found {
+        let attachment_idx = exec_output.get_stack_element(1);
+        assert_eq!(attachment_idx, Felt::from(expected_idx), "attachment_idx mismatch");
+    }
+
     Ok(())
 }
