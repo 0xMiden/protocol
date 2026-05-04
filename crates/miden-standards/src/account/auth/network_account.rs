@@ -27,11 +27,11 @@ static ALLOWED_NOTE_SCRIPTS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new
         .expect("storage slot name should be valid")
 });
 
-// A "sentinel value" is a placeholder whose only job is to be distinguishable from the storage
-// map's default empty word, letting the MASM allowlist check detect "this key is present" without
-// caring about its contents. Any non-empty word would serve; we pick `[1, 0, 0, 0]` for
-// readability when inspecting storage.
-const ALLOWED_SENTINEL: Word = Word::new([Felt::new(1), Felt::new(0), Felt::new(0), Felt::new(0)]);
+// A flag value used as the storage map entry for each allowed script root. Its only job is to be
+// distinguishable from the storage map's default empty word, letting the MASM allowlist check
+// detect "this key is present" without caring about its contents. Any non-empty word would serve;
+// we pick `[1, 0, 0, 0]` for readability when inspecting storage.
+const ALLOWED_FLAG: Word = Word::new([Felt::new(1), Felt::new(0), Felt::new(0), Felt::new(0)]);
 
 // AUTH NETWORK ACCOUNT
 // ================================================================================================
@@ -41,9 +41,7 @@ const ALLOWED_SENTINEL: Word = Word::new([Felt::new(1), Felt::new(0), Felt::new(
 /// from running against the account.
 ///
 /// This is intended for network-owned accounts (e.g. the AggLayer bridge or a network faucet)
-/// whose only legitimate inputs are a known, finite set of system-issued notes. It replaces the
-/// `NoAuth` pattern, which lets any transaction emit output notes authored by the account and so
-/// allows arbitrary parties to forge bridge-authored output notes.
+/// whose only legitimate inputs are a known, finite set of system-issued notes.
 ///
 /// The component exports a single auth procedure, `auth_network_transaction`, that rejects the
 /// transaction unless:
@@ -106,7 +104,7 @@ impl From<AuthNetworkAccount> for AccountComponent {
         let map_entries = component
             .allowed_script_roots
             .into_iter()
-            .map(|root| (StorageMapKey::new(root), ALLOWED_SENTINEL));
+            .map(|root| (StorageMapKey::new(root), ALLOWED_FLAG));
 
         let storage_slots = vec![StorageSlot::with_map(
             AuthNetworkAccount::allowed_note_scripts_slot().clone(),
@@ -172,13 +170,13 @@ mod tests {
 
         assert_eq!(
             map.get(&StorageMapKey::new(root_a)),
-            ALLOWED_SENTINEL,
-            "root_a should resolve to the sentinel value"
+            ALLOWED_FLAG,
+            "root_a should resolve to the flag value"
         );
         assert_eq!(
             map.get(&StorageMapKey::new(root_b)),
-            ALLOWED_SENTINEL,
-            "root_b should resolve to the sentinel value"
+            ALLOWED_FLAG,
+            "root_b should resolve to the flag value"
         );
     }
 }

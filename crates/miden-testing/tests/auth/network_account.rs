@@ -54,25 +54,60 @@ async fn test_auth_network_account_rejects_tx_script() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Consuming an input note whose script root is not in the allowlist must be rejected.
+/// A transaction that consumes a mix of allowed and disallowed input notes must be rejected: the
+/// allowlist check must fail as soon as any single consumed note is not in the allowlist, even if
+/// the others are.
 #[tokio::test]
-async fn test_auth_network_account_rejects_unallowed_note() -> anyhow::Result<()> {
-    // Allowlist a dummy root that no real note will ever match.
-    let dummy_root = Word::from([0xdeadu32, 0xbeef, 0xcafe, 0xf00d]);
-    let account = build_allowlist_account(vec![dummy_root])?;
+async fn test_auth_network_account_rejects_when_any_note_disallowed() -> anyhow::Result<()> {
+    // Build a template note with the default code to learn the "allowed" script root.
+    let bootstrap_account = build_allowlist_account(Vec::new())?;
+    let template_allowed = NoteBuilder::new(bootstrap_account.id(), &mut rand::rng())
+        .build()
+        .expect("failed to build template allowed note");
+    let allowed_root = template_allowed.script().root();
+
+    // Build the real account with only that one root in the allowlist.
+    let account = build_allowlist_account(vec![allowed_root.into()])?;
 
     let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
 
-    let note = NoteBuilder::new(account.id(), &mut rand::rng())
+    // Allowed note: uses the default note code so its script root matches `allowed_root`.
+    let note_allowed = NoteBuilder::new(account.id(), &mut rand::rng())
         .build()
-        .expect("failed to build mock input note");
-    builder.add_output_note(RawOutputNote::Full(note.clone()));
+        .expect("failed to build allowed input note");
+    assert_eq!(
+        note_allowed.script().root(),
+        allowed_root,
+        "default-code NoteBuilder should reproduce the allowed script root",
+    );
+
+    // Disallowed note: distinct code → distinct script root → not in the allowlist.
+    let note_disallowed = NoteBuilder::new(account.id(), &mut rand::rng())
+        .code(
+            "\
+        @note_script
+        pub proc main
+            push.1 drop
+        end
+        ",
+        )
+        .build()
+        .expect("failed to build disallowed input note");
+    assert_ne!(
+        note_disallowed.script().root(),
+        allowed_root,
+        "disallowed note must have a different script root than the allowed one",
+    );
+
+    builder.add_output_note(RawOutputNote::Full(note_allowed.clone()));
+    builder.add_output_note(RawOutputNote::Full(note_disallowed.clone()));
 
     let mock_chain = builder.build()?;
 
+    let input_notes = [note_allowed, note_disallowed];
     let result = mock_chain
-        .build_tx_context(account.id(), &[], slice::from_ref(&note))?
+        .build_tx_context(account.id(), &[], &input_notes)?
         .build()?
         .execute()
         .await;
