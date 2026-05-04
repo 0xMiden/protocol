@@ -519,6 +519,7 @@ async fn test_claim_rejects_wrong_destination_network() -> anyhow::Result<()> {
     let config_note = ConfigAggBridgeNote::create(
         agglayer_faucet.id(),
         &origin_token_address,
+        origin_network,
         bridge_admin.id(),
         bridge_account.id(),
         builder.rng_mut(),
@@ -732,7 +733,7 @@ async fn test_duplicate_claim_note_rejected() -> anyhow::Result<()> {
 /// now misses and the claim is rejected with `ERR_TOKEN_NOT_REGISTERED`.
 #[tokio::test]
 async fn test_claim_fails_when_origin_network_unregistered() -> anyhow::Result<()> {
-    let data_source = ClaimDataSource::SimulatedL1ToMiden;
+    let data_source = ClaimDataSource::L1ToMiden;
     let mut builder = MockChain::builder();
 
     let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
