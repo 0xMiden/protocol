@@ -31,6 +31,8 @@ use miden_protocol::transaction::memory::{
     BLOCK_METADATA_PTR,
     BLOCK_NUMBER_IDX,
     CHAIN_COMMITMENT_PTR,
+    FEE_FAUCET_ID_PREFIX_IDX,
+    FEE_FAUCET_ID_SUFFIX_IDX,
     FEE_PARAMETERS_PTR,
     GLOBAL_ACCOUNT_ID_PREFIX_PTR,
     GLOBAL_ACCOUNT_ID_SUFFIX_PTR,
@@ -59,8 +61,6 @@ use miden_protocol::transaction::memory::{
     NATIVE_ACCT_STORAGE_COMMITMENT_PTR,
     NATIVE_ACCT_STORAGE_SLOTS_SECTION_PTR,
     NATIVE_ACCT_VAULT_ROOT_PTR,
-    NATIVE_ASSET_ID_PREFIX_IDX,
-    NATIVE_ASSET_ID_SUFFIX_IDX,
     NATIVE_NUM_ACCT_PROCEDURES_PTR,
     NATIVE_NUM_ACCT_STORAGE_SLOTS_PTR,
     NOTE_ROOT_PTR,
@@ -282,21 +282,21 @@ fn block_data_memory_assertions(exec_output: &ExecutionOutput, inputs: &Transact
     );
 
     assert_eq!(
-        exec_output.get_kernel_mem_word(FEE_PARAMETERS_PTR)[NATIVE_ASSET_ID_SUFFIX_IDX],
-        inputs.tx_inputs().block_header().fee_parameters().native_asset_id().suffix(),
-        "The native asset ID suffix should be stored at FEE_PARAMETERS_PTR[NATIVE_ASSET_ID_SUFFIX_IDX]"
+        exec_output.get_kernel_mem_word(FEE_PARAMETERS_PTR)[FEE_FAUCET_ID_SUFFIX_IDX],
+        inputs.tx_inputs().block_header().fee_parameters().fee_faucet_id().suffix(),
+        "The fee faucet ID suffix should be stored at FEE_PARAMETERS_PTR[FEE_FAUCET_ID_SUFFIX_IDX]"
     );
 
     assert_eq!(
-        exec_output.get_kernel_mem_word(FEE_PARAMETERS_PTR)[NATIVE_ASSET_ID_PREFIX_IDX],
+        exec_output.get_kernel_mem_word(FEE_PARAMETERS_PTR)[FEE_FAUCET_ID_PREFIX_IDX],
         inputs
             .tx_inputs()
             .block_header()
             .fee_parameters()
-            .native_asset_id()
+            .fee_faucet_id()
             .prefix()
             .as_felt(),
-        "The native asset ID prefix should be stored at FEE_PARAMETERS_PTR[NATIVE_ASSET_ID_PREFIX_IDX]"
+        "The fee faucet ID prefix should be stored at FEE_PARAMETERS_PTR[FEE_FAUCET_ID_PREFIX_IDX]"
     );
 
     assert_eq!(
@@ -466,7 +466,7 @@ fn input_notes_memory_assertions(
 
         assert_eq!(
             exec_output.get_note_mem_word(note_idx, INPUT_NOTE_SCRIPT_ROOT_OFFSET),
-            note.script().root(),
+            note.script().root().into(),
             "note script root should be stored at the correct offset"
         );
 

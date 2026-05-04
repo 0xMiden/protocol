@@ -14,6 +14,7 @@ use miden_protocol::note::{
     NoteMetadata,
     NoteRecipient,
     NoteScript,
+    NoteScriptRoot,
     NoteStorage,
     NoteTag,
     NoteType,
@@ -59,7 +60,7 @@ impl SwapNote {
     }
 
     /// Returns the SWAP note script root.
-    pub fn script_root() -> Word {
+    pub fn script_root() -> NoteScriptRoot {
         SWAP_SCRIPT.root()
     }
 
