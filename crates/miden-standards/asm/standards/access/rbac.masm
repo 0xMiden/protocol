@@ -1,0 +1,595 @@
+# miden::standards::access::rbac
+#
+# Role-based access control for account components.
+#
+# Provides per-role membership tracking with delegated role admins, on top of the
+# Ownable2Step component which supplies the top-level authority. Members are tracked
+# with a boolean flag and a per-role member count
+#
+# Storage layout (2 slots):
+#
+# Slot 1 (`ROLE_CONFIG_SLOT`):
+#   Map: [0, 0, 0, role_symbol] -> [member_count, admin_role_symbol, 0, 0]
+#
+# Slot 2 (`ROLE_MEMBERSHIP_SLOT`):
+#   Map: [0, role_symbol, account_suffix, account_prefix] -> [is_member, 0, 0, 0]
+#
+# Authority model:
+# - The account's Ownable2Step owner is the top-level RBAC authority. The owner can
+#   set role admins and grant/revoke any role.
+# - Each role can have a delegated admin role (set via `set_role_admin`). Members of
+#   the admin role can grant/revoke that role without being the owner.
+# - A role is considered to "exist" when it has at least one member. Role admin
+#   relationships set via `set_role_admin` are stored in the config but do not, by
+#   themselves, make the role exist.
+
+use miden::protocol::account_id
+use miden::protocol::active_account
+use miden::protocol::active_note
+use miden::protocol::native_account
+use miden::standards::access::ownable2step
+
+# CONSTANTS
+# =================================================================================================
+
+# Per-role config map slot.
+# Map entries: [0, 0, 0, role_symbol] -> [member_count, admin_role_symbol, 0, 0]
+const ROLE_CONFIG_SLOT = word("miden::standards::access::rbac::role_config")
+
+# Per-role membership map slot.
+# Map entries: [0, role_symbol, account_suffix, account_prefix] -> [is_member, 0, 0, 0]
+const ROLE_MEMBERSHIP_SLOT = word("miden::standards::access::rbac::role_membership")
+
+# Membership map values: the first felt is the membership flag, remaining felts are 0.
+const SET_MEMBERSHIP = [1, 0, 0, 0]
+const CLEAR_MEMBERSHIP = [0, 0, 0, 0]
+
+# ERRORS
+# =================================================================================================
+
+const ERR_SENDER_LACKS_ROLE = "note sender does not hold the required role"
+const ERR_SENDER_NOT_OWNER_OR_ROLE_ADMIN = "note sender is not the owner or a role admin"
+const ERR_ACCOUNT_NOT_IN_ROLE = "account does not hold the role"
+const ERR_ROLE_SYMBOL_ZERO = "role symbol is zero"
+
+# PUBLIC INTERFACE
+# =================================================================================================
+
+#! Checks that the note sender holds the given role.
+#!
+#! Inputs:  [role_symbol, pad(15)]
+#! Outputs: [pad(16)]
+#!
+#! Where:
+#! - role_symbol is the encoded role symbol.
+#!
+#! Panics if:
+#! - role_symbol is zero.
+#! - the note sender does not hold the given role.
+#!
+#! Invocation: call
+pub proc assert_sender_has_role
+    exec.assert_role_symbol_non_zero
+    # => [role_symbol, pad(15)]
+
+    exec.is_sender_in_role
+    # => [has_role, pad(15)]
+
+    assert.err=ERR_SENDER_LACKS_ROLE
+    # => [pad(16)]
+end
+
+#! Returns whether a role exists.
+#!
+#! A role is considered to exist when it has at least one member. A role with only an
+#! admin set via `set_role_admin` (and no members) is reported as not existing.
+#!
+#! Inputs:  [role_symbol, pad(15)]
+#! Outputs: [role_exists, pad(15)]
+#!
+#! Where:
+#! - role_symbol is the encoded role symbol.
+#! - role_exists is 1 if the role has at least one member, otherwise 0.
+#!
+#! Invocation: call
+pub proc role_exists
+    exec.role_exists_internal
+    # => [role_exists, pad(15)]
+end
+
+#! Returns whether an account holds a role.
+#!
+#! Returns `0` if the role does not exist or the account is not a member.
+#!
+#! Inputs:  [role_symbol, account_suffix, account_prefix, pad(13)]
+#! Outputs: [has_role, pad(15)]
+#!
+#! Where:
+#! - role_symbol is the encoded role symbol.
+#! - account_{suffix,prefix} are the suffix and prefix felts of the account ID.
+#! - has_role is 1 if the account holds the role, otherwise 0.
+#!
+#! Invocation: call
+pub proc has_role
+    exec.has_role_internal
+    # => [has_role, pad(15)]
+end
+
+#! Returns the delegated admin role for a role.
+#!
+#! Returns `0` when the role is owner-managed or when no role config exists for
+#! `role_symbol`.
+#!
+#! Inputs:  [role_symbol, pad(15)]
+#! Outputs: [admin_role_symbol, pad(15)]
+#!
+#! Where:
+#! - role_symbol is the encoded role symbol.
+#! - admin_role_symbol is the encoded admin role symbol, or 0 if the role is managed
+#!   by the owner.
+#!
+#! Invocation: call
+pub proc get_role_admin
+    exec.get_role_admin_internal
+    # => [admin_role_symbol, pad(15)]
+end
+
+#! Returns the number of accounts assigned to a given role.
+#!
+#! If the role does not exist (i.e. has never had a member, or had its last member
+#! revoked), this returns `0` — the underlying role config map returns `Word::ZERO`
+#! for missing keys.
+#!
+#! Inputs:  [role_symbol, pad(15)]
+#! Outputs: [member_count, pad(15)]
+#!
+#! Where:
+#! - role_symbol is the encoded role symbol.
+#! - member_count is the number of accounts currently assigned to the given role, or
+#!   `0` if no such role exists.
+#!
+#! Invocation: call
+pub proc get_role_member_count
+    exec.get_role_member_count_internal
+    # => [member_count, pad(15)]
+end
+
+#! Sets or updates the delegated admin role for a role.
+#!
+#! The role does not need to exist (have members) when this is called: the admin
+#! relationship is recorded in the role's config so it takes effect as soon as the
+#! role gains its first member. Calling this on a role that has no members does not
+#! make the role exist.
+#!
+#! Pass `admin_role_symbol = 0` to clear the delegation and revert the role to
+#! owner-only management.
+#!
+#! Inputs:  [role_symbol, admin_role_symbol, pad(14)]
+#! Outputs: [pad(16)]
+#!
+#! Where:
+#! - role_symbol is the encoded role symbol to configure.
+#! - admin_role_symbol is the encoded delegated admin role symbol, or 0 for
+#!   owner-only management.
+#!
+#! Panics if:
+#! - the note sender is not the current owner.
+#! - role_symbol is zero.
+#!
+#! Invocation: call
+pub proc set_role_admin
+    exec.ownable2step::assert_sender_is_owner_internal
+    exec.assert_role_symbol_non_zero
+    # => [role_symbol, new_admin_role_symbol, pad(14)]
+
+    dup exec.get_role_member_count_internal
+    # => [member_count, role_symbol, new_admin_role_symbol, pad(14)]
+
+    swap
+    # => [role_symbol, member_count, new_admin_role_symbol, pad(14)]
+
+    exec.set_role_config
+    # => [pad(16)]
+end
+
+#! Grants a role to an account.
+#!
+#! If the role does not yet exist, it is created (made existing) by this grant. If the
+#! account is already a member of the role, this is a no-op.
+#!
+#! Inputs:  [role_symbol, account_suffix, account_prefix, pad(13)]
+#! Outputs: [pad(16)]
+#!
+#! Where:
+#! - role_symbol is the encoded role symbol to grant.
+#! - account_{suffix,prefix} are the suffix and prefix felts of the account ID.
+#!
+#! Panics if:
+#! - role_symbol is zero.
+#! - the note sender is neither the current owner nor a holder of the role's
+#!   delegated admin role.
+#! - the account ID is invalid.
+#!
+#! Invocation: call
+pub proc grant_role
+    exec.assert_role_symbol_non_zero
+    # => [role_symbol, account_suffix, account_prefix, pad(13)]
+
+    dup exec.assert_sender_is_owner_or_role_admin
+    # => [role_symbol, account_suffix, account_prefix, pad(13)]
+
+    exec.grant_role_internal
+    # => [pad(16)]
+end
+
+#! Revokes a role from an account.
+#!
+#! Decrements the role's member count. If the removed account was the last member,
+#! the role becomes non-existent (member_count = 0).
+#!
+#! Inputs:  [role_symbol, account_suffix, account_prefix, pad(13)]
+#! Outputs: [pad(16)]
+#!
+#! Where:
+#! - role_symbol is the encoded role symbol to revoke.
+#! - account_{suffix,prefix} are the suffix and prefix felts of the account ID.
+#!
+#! Panics if:
+#! - role_symbol is zero.
+#! - the note sender is neither the current owner nor a holder of the role's
+#!   delegated admin role.
+#! - the account does not hold the role.
+#! - the account ID is invalid.
+#!
+#! Invocation: call
+pub proc revoke_role
+    exec.assert_role_symbol_non_zero
+    # => [role_symbol, account_suffix, account_prefix, pad(13)]
+
+    dup exec.assert_sender_is_owner_or_role_admin
+    # => [role_symbol, account_suffix, account_prefix, pad(13)]
+
+    exec.revoke_role_internal
+    # => [pad(16)]
+end
+
+#! Renounces a role held by the note sender.
+#!
+#! Inputs:  [role_symbol, pad(15)]
+#! Outputs: [pad(16)]
+#!
+#! Where:
+#! - role_symbol is the encoded role symbol to renounce.
+#!
+#! Panics if:
+#! - role_symbol is zero.
+#! - the note sender does not hold the role.
+#! - the note sender account ID fails validation.
+#!
+#! Invocation: call
+pub proc renounce_role
+    exec.assert_role_symbol_non_zero
+    # => [role_symbol, pad(15)]
+
+    exec.active_note::get_sender
+    # => [sender_suffix, sender_prefix, role_symbol, pad(15)]
+
+    movup.2
+    # => [role_symbol, sender_suffix, sender_prefix, pad(13)]
+
+    exec.revoke_role_internal
+    # => [pad(16)]
+end
+
+# HELPER PROCEDURES
+# =================================================================================================
+
+#! Asserts that a role symbol is non-zero.
+#!
+#! Inputs:  [role_symbol]
+#! Outputs: [role_symbol]
+#!
+#! Panics if:
+#! - role_symbol is zero.
+#!
+#! Invocation: exec
+proc assert_role_symbol_non_zero
+    dup eq.0
+    assertz.err=ERR_ROLE_SYMBOL_ZERO
+    # => [role_symbol]
+end
+
+#! Returns the config word for a role.
+#!
+#! Inputs:  [role_symbol]
+#! Outputs: [member_count, admin_role_symbol, 0, 0]
+#!
+#! Invocation: exec
+proc get_role_config
+    push.0.0.0
+    # => [0, 0, 0, role_symbol]
+
+    push.ROLE_CONFIG_SLOT[0..2]
+    # => [slot_suffix, slot_prefix, 0, 0, 0, role_symbol]
+
+    exec.active_account::get_map_item
+    # => [member_count, admin_role_symbol, 0, 0]
+end
+
+#! Writes the config word for a role.
+#!
+#! The trailing zeros of the stored config word are appended internally so callers do
+#! not need to push them themselves.
+#!
+#! Inputs:  [role_symbol, member_count, admin_role_symbol]
+#! Outputs: []
+#!
+#! Invocation: exec
+proc set_role_config
+    push.0.0
+    # => [0, 0, role_symbol, member_count, admin_role_symbol]
+
+    movdn.4 movdn.4
+    # => [role_symbol, member_count, admin_role_symbol, 0, 0]
+
+    push.0.0.0
+    # => [0, 0, 0, role_symbol, member_count, admin_role_symbol, 0, 0]
+
+    push.ROLE_CONFIG_SLOT[0..2]
+    # => [slot_suffix, slot_prefix, 0, 0, 0, role_symbol,
+    #     member_count, admin_role_symbol, 0, 0]
+
+    exec.native_account::set_map_item
+    # => [OLD_ROLE_CONFIG]
+
+    dropw
+    # => []
+end
+
+#! Returns whether an account holds a role.
+#!
+#! Inputs:  [role_symbol, account_suffix, account_prefix]
+#! Outputs: [has_role]
+#!
+#! Invocation: exec
+proc has_role_internal
+    push.0
+    # => [0, role_symbol, account_suffix, account_prefix]
+
+    push.ROLE_MEMBERSHIP_SLOT[0..2]
+    # => [slot_suffix, slot_prefix, 0, role_symbol, account_suffix, account_prefix]
+
+    exec.active_account::get_map_item
+    # => [is_member, 0, 0, 0]
+
+    movdn.3 drop drop drop
+    # => [is_member]
+end
+
+#! Returns the number of accounts assigned to a role.
+#!
+#! Inputs:  [role_symbol]
+#! Outputs: [member_count]
+#!
+#! Invocation: exec
+proc get_role_member_count_internal
+    exec.get_role_config
+    # => [member_count, admin_role_symbol, 0, 0]
+
+    movdn.3 drop drop drop
+    # => [member_count]
+end
+
+#! Returns the delegated admin role for a role (0 if none).
+#!
+#! Inputs:  [role_symbol]
+#! Outputs: [admin_role_symbol]
+#!
+#! Invocation: exec
+proc get_role_admin_internal
+    exec.get_role_config
+    # => [member_count, admin_role_symbol, 0, 0]
+
+    drop movdn.2 drop drop
+    # => [admin_role_symbol]
+end
+
+#! Returns whether a role exists (has at least one member).
+#!
+#! Inputs:  [role_symbol]
+#! Outputs: [role_exists]
+#!
+#! Invocation: exec
+proc role_exists_internal
+    exec.get_role_member_count_internal
+    # => [member_count]
+
+    neq.0
+    # => [role_exists]
+end
+
+#! Returns whether the note sender holds a role.
+#!
+#! Inputs:  [role_symbol]
+#! Outputs: [has_role]
+#!
+#! Invocation: exec
+proc is_sender_in_role
+    exec.active_note::get_sender
+    # => [sender_suffix, sender_prefix, role_symbol]
+
+    movup.2
+    # => [role_symbol, sender_suffix, sender_prefix]
+
+    exec.has_role_internal
+    # => [has_role]
+end
+
+#! Asserts that the note sender is the owner or a member of the role's delegated
+#! admin role.
+#!
+#! Inputs:  [role_symbol]
+#! Outputs: []
+#!
+#! Panics if:
+#! - the note sender is neither the current owner nor a holder of the role's
+#!   delegated admin role.
+#!
+#! Invocation: exec
+proc assert_sender_is_owner_or_role_admin
+    exec.ownable2step::is_sender_owner_internal
+    # => [is_owner, role_symbol]
+
+    if.true
+        drop
+        # => []
+    else
+        # [role_symbol] - look up the role's admin role and check sender membership
+        exec.get_role_admin_internal
+        # => [admin_role_symbol]
+
+        # Reject if no admin role is configured (sender can't be a holder of role 0).
+        dup eq.0
+        assertz.err=ERR_SENDER_NOT_OWNER_OR_ROLE_ADMIN
+        # => [admin_role_symbol]
+
+        exec.is_sender_in_role
+        # => [has_admin_role]
+
+        assert.err=ERR_SENDER_NOT_OWNER_OR_ROLE_ADMIN
+        # => []
+    end
+end
+
+#! Internal helper used by `grant_role` to assign a role to an account.
+#!
+#! Validates the account ID, then no-ops if the account is already a member.
+#! Otherwise, sets the membership flag and increments the role's member count.
+#!
+#! Inputs:  [role_symbol, account_suffix, account_prefix]
+#! Outputs: []
+#!
+#! Invocation: exec
+proc grant_role_internal
+    dup.2 dup.2 exec.account_id::validate
+    # => [role_symbol, account_suffix, account_prefix]
+
+    dup.2 dup.2 dup.2 exec.has_role_internal
+    # => [has_role, role_symbol, account_suffix, account_prefix]
+
+    if.true
+        # Already a member — no-op.
+        drop drop drop
+        # => []
+    else
+        # Save a copy of role_symbol at the bottom of the stack so it survives the
+        # membership map write and is available for the role-config update.
+        dup.0 movdn.3
+        # => [role_symbol, account_suffix, account_prefix, role_symbol]
+
+        # Write membership[role, account] = [1, 0, 0, 0].
+        push.SET_MEMBERSHIP
+        # => [1, 0, 0, 0, role_symbol, account_suffix, account_prefix, role_symbol]
+
+        # Bring role/suffix/prefix back in order.
+        movup.6 movup.6 movup.6
+        # => [role_symbol, account_suffix, account_prefix, 1, 0, 0, 0, role_symbol]
+
+        push.0
+        # => [0, role_symbol, account_suffix, account_prefix, 1, 0, 0, 0, role_symbol]
+
+        push.ROLE_MEMBERSHIP_SLOT[0..2]
+        # => [slot_suffix, slot_prefix, 0, role_symbol, account_suffix, account_prefix,
+        #     1, 0, 0, 0, role_symbol]
+
+        exec.native_account::set_map_item
+        # => [OLD_MEMBERSHIP_WORD, role_symbol]
+
+        dropw
+        # => [role_symbol]
+
+        # Step 2: increment the role's member count.
+        dup exec.get_role_config
+        # => [member_count, admin_role_symbol, 0, 0, role_symbol]
+
+        movup.2 drop movup.2 drop
+        # => [member_count, admin_role_symbol, role_symbol]
+
+        add.1
+        # => [member_count + 1, admin_role_symbol, role_symbol]
+
+        movup.2
+        # => [role_symbol, member_count + 1, admin_role_symbol]
+
+        exec.set_role_config
+        # => []
+    end
+end
+
+#! Internal helper used by `revoke_role` and `renounce_role` to remove a role from
+#! an account.
+#!
+#! Validates the account ID, asserts that the account currently holds the role,
+#! clears the membership flag, and decrements the role's member count.
+#!
+#! Inputs:  [role_symbol, account_suffix, account_prefix]
+#! Outputs: []
+#!
+#! Panics if:
+#! - the account ID is invalid.
+#! - the account does not hold the role.
+#!
+#! Invocation: exec
+proc revoke_role_internal
+    dup.2 dup.2 exec.account_id::validate
+    # => [role_symbol, account_suffix, account_prefix]
+
+    # Assert the account currently holds the role, preserving the inputs.
+    dup.2 dup.2 dup.2 exec.has_role_internal
+    # => [has_role, role_symbol, account_suffix, account_prefix]
+
+    assert.err=ERR_ACCOUNT_NOT_IN_ROLE
+    # => [role_symbol, account_suffix, account_prefix]
+
+    # Save a copy of role_symbol at the bottom of the stack so it survives the
+    # membership map write and is available for the role-config update.
+    dup.0 movdn.3
+    # => [role_symbol, account_suffix, account_prefix, role_symbol]
+
+    # Clear membership[role, account] = [0, 0, 0, 0].
+    push.CLEAR_MEMBERSHIP
+    # => [0, 0, 0, 0, role_symbol, account_suffix, account_prefix, role_symbol]
+
+    # Bring role/suffix/prefix back above the value word, in order.
+    movup.6 movup.6 movup.6
+    # => [role_symbol, account_suffix, account_prefix, 0, 0, 0, 0, role_symbol]
+
+    push.0
+    # => [0, role_symbol, account_suffix, account_prefix, 0, 0, 0, 0, role_symbol]
+
+    push.ROLE_MEMBERSHIP_SLOT[0..2]
+    # => [slot_suffix, slot_prefix, 0, role_symbol, account_suffix, account_prefix,
+    #     0, 0, 0, 0, role_symbol]
+
+    exec.native_account::set_map_item
+    # => [OLD_MEMBERSHIP_WORD, role_symbol]
+
+    dropw
+    # => [role_symbol]
+
+    # Decrement the role's member count.
+    dup exec.get_role_config
+    # => [member_count, admin_role_symbol, 0, 0, role_symbol]
+
+    movup.2 drop movup.2 drop
+    # => [member_count, admin_role_symbol, role_symbol]
+
+    sub.1
+    # => [member_count - 1, admin_role_symbol, role_symbol]
+
+    movup.2
+    # => [role_symbol, member_count - 1, admin_role_symbol]
+
+    exec.set_role_config
+    # => []
+end

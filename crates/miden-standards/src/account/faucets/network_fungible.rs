@@ -165,8 +165,7 @@ pub fn create_network_fungible_faucet(
     // them or return Err(FungibleFaucetError::UnsupportedAccessControl).
     match access_control {
         AccessControl::Ownable2Step { .. } => {},
-        #[allow(unreachable_patterns)]
-        _ => {
+        AccessControl::Rbac { .. } => {
             return Err(FungibleFaucetError::UnsupportedAccessControl(
                 "network fungible faucets require Ownable2Step access control".into(),
             ));
@@ -181,7 +180,7 @@ pub fn create_network_fungible_faucet(
         .with_auth_component(auth_component)
         .with_component(metadata)
         .with_component(NetworkFungibleFaucet)
-        .with_component(access_control)
+        .with_components(access_control.into_components())
         .with_component(MintOwnerControlled::owner_only())
         .with_component(BurnOwnerControlled::allow_all())
         .build()

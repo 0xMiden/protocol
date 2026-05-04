@@ -124,6 +124,31 @@ fn create_accept_note(
     Ok(note)
 }
 
+fn create_cancel_note(
+    sender: AccountId,
+    rng: &mut RandomCoin,
+    source_manager: Arc<dyn SourceManagerSync>,
+) -> anyhow::Result<Note> {
+    let script = r#"
+        use miden::standards::access::ownable2step->test_account
+        @note_script
+        pub proc main
+            repeat.14 push.0 end
+            push.0
+            push.0
+            call.test_account::transfer_ownership
+            dropw dropw dropw dropw
+        end
+    "#;
+
+    let note = NoteBuilder::new(sender, rng)
+        .source_manager(source_manager)
+        .code(script)
+        .build()?;
+
+    Ok(note)
+}
+
 fn create_renounce_note(
     sender: AccountId,
     rng: &mut RandomCoin,
@@ -340,9 +365,9 @@ async fn test_cancel_transfer() -> anyhow::Result<()> {
     mock_chain.add_pending_executed_transaction(&executed)?;
     mock_chain.prove_next_block()?;
 
-    // Step 2: cancel by transferring to self (owner)
+    // Step 2: cancel by transferring to the zero address
     let mut rng2 = RandomCoin::new([Felt::from(200u32); 4].into());
-    let cancel_note = create_transfer_note(owner, owner, &mut rng2, Arc::clone(&source_manager))?;
+    let cancel_note = create_cancel_note(owner, &mut rng2, Arc::clone(&source_manager))?;
 
     let tx2 = mock_chain
         .build_tx_context(updated.clone(), &[], std::slice::from_ref(&cancel_note))?
@@ -358,10 +383,10 @@ async fn test_cancel_transfer() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Tests that an owner can transfer to themselves when no nominated transfer exists.
-/// This is a no-op but should succeed without errors.
+/// Tests that passing the current owner's account ID as the new owner is NOT a
+/// cancellation but creates a self-nomination. To cancel, the zero address must be used.
 #[tokio::test]
-async fn test_transfer_to_self_no_nominated() -> anyhow::Result<()> {
+async fn test_transfer_to_self_creates_self_nomination() -> anyhow::Result<()> {
     let owner = AccountIdBuilder::new().build_with_seed([1; 32]);
 
     let account = create_ownable_account(owner, vec![])?;
@@ -386,18 +411,52 @@ async fn test_transfer_to_self_no_nominated() -> anyhow::Result<()> {
     updated.apply_delta(executed.account_delta())?;
 
     assert_eq!(get_owner_from_storage(&updated)?, Some(owner));
-    assert_eq!(get_nominated_owner_from_storage(&updated)?, None);
+    assert_eq!(get_nominated_owner_from_storage(&updated)?, Some(owner));
     Ok(())
 }
 
 #[tokio::test]
 async fn test_renounce_ownership() -> anyhow::Result<()> {
     let owner = AccountIdBuilder::new().build_with_seed([1; 32]);
+
+    let account = create_ownable_account(owner, vec![])?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+
+    let source_manager: Arc<dyn SourceManagerSync> = Arc::new(DefaultSourceManager::default());
+    let mut rng = RandomCoin::new([Felt::from(200u32); 4].into());
+    let renounce_note = create_renounce_note(owner, &mut rng, Arc::clone(&source_manager))?;
+
+    builder.add_output_note(RawOutputNote::Full(renounce_note.clone()));
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let tx = mock_chain
+        .build_tx_context(account.id(), &[renounce_note.id()], &[])?
+        .with_source_manager(source_manager)
+        .build()?;
+    let executed = tx.execute().await?;
+
+    let mut final_account = account.clone();
+    final_account.apply_delta(executed.account_delta())?;
+
+    assert_eq!(get_owner_from_storage(&final_account)?, None);
+    assert_eq!(get_nominated_owner_from_storage(&final_account)?, None);
+    Ok(())
+}
+
+/// Tests that renounce_ownership is rejected while a nominated transfer is in progress.
+#[tokio::test]
+async fn test_renounce_ownership_fails_with_pending_transfer() -> anyhow::Result<()> {
+    use miden_standards::errors::standards::ERR_OWNERSHIP_TRANSFER_IN_PROGRESS;
+
+    let owner = AccountIdBuilder::new().build_with_seed([1; 32]);
     let new_owner = AccountIdBuilder::new().build_with_seed([2; 32]);
 
     let account = create_ownable_account(owner, vec![])?;
 
-    // Step 1: transfer (to have nominated)
+    // Step 1: nominate a new owner (pending transfer).
     let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
 
@@ -419,11 +478,11 @@ async fn test_renounce_ownership() -> anyhow::Result<()> {
     let mut updated = account.clone();
     updated.apply_delta(executed.account_delta())?;
 
-    // Commit step 1 to the chain
+    // Commit step 1 to the chain.
     mock_chain.add_pending_executed_transaction(&executed)?;
     mock_chain.prove_next_block()?;
 
-    // Step 2: renounce
+    // Step 2: try to renounce while a transfer is pending — must fail.
     let mut rng2 = RandomCoin::new([Felt::from(200u32); 4].into());
     let renounce_note = create_renounce_note(owner, &mut rng2, Arc::clone(&source_manager))?;
 
@@ -431,13 +490,9 @@ async fn test_renounce_ownership() -> anyhow::Result<()> {
         .build_tx_context(updated.clone(), &[], std::slice::from_ref(&renounce_note))?
         .with_source_manager(source_manager)
         .build()?;
-    let executed2 = tx2.execute().await?;
+    let result = tx2.execute().await;
 
-    let mut final_account = updated.clone();
-    final_account.apply_delta(executed2.account_delta())?;
-
-    assert_eq!(get_owner_from_storage(&final_account)?, None);
-    assert_eq!(get_nominated_owner_from_storage(&final_account)?, None);
+    assert_transaction_executor_error!(result, ERR_OWNERSHIP_TRANSFER_IN_PROGRESS);
     Ok(())
 }
 
