@@ -13,17 +13,8 @@
 # Output protocol: writes JSON to stdout per the Claude Code PreToolUse hook
 # contract. Exit code is always 0; the deny signal is carried in the JSON
 # payload's `permissionDecision` field.
-#
-# Escape hatch: set SKIP_DRAFT_CHECK=1 in the environment to bypass. This is
-# for human maintainers; it is intentionally not surfaced in the deny reason
-# so the agent does not learn to circumvent the hook.
 
 set -uo pipefail
-
-# Escape hatch.
-if [ "${SKIP_DRAFT_CHECK:-}" = "1" ]; then
-  exit 0
-fi
 
 # Read the hook input. Fail open on malformed input so the hook can never
 # wedge tool use in a bad state.
