@@ -161,16 +161,14 @@ impl AccountInterface {
             note_creation_source,
         );
 
-        // Add attachment array entries to the code builder's advice map.
-        // For NoteAttachmentContent::Array, the commitment (to_word) is used as key
-        // and the array elements as value.
+        // Add attachment entries to the code builder's advice map.
+        // The commitment is used as key and the elements as value.
         let mut code_builder = CodeBuilder::new();
         for note in output_notes {
+            // Only support one attachment per note to keep it simple.
             if let Some(attachment) = note.attachments().iter().next() {
-                code_builder.add_advice_map_entry(
-                    attachment.content().to_commitment(),
-                    attachment.content().to_elements(),
-                );
+                code_builder
+                    .add_advice_map_entry(attachment.to_commitment(), attachment.to_elements());
             }
         }
 

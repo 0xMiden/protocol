@@ -29,7 +29,6 @@ pub use metadata::{NoteMetadata, NoteMetadataHeader};
 mod attachment;
 pub use attachment::{
     NoteAttachment,
-    NoteAttachmentArray,
     NoteAttachmentContent,
     NoteAttachmentHeader,
     NoteAttachmentScheme,

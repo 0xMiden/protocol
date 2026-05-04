@@ -339,7 +339,7 @@ fn merge_schemes(headers: [NoteAttachmentHeader; NoteAttachments::MAX_COUNT]) ->
 mod tests {
 
     use super::*;
-    use crate::note::{NoteAttachment, NoteAttachmentArray, NoteAttachmentScheme};
+    use crate::note::{NoteAttachment, NoteAttachmentScheme};
     use crate::testing::account_id::ACCOUNT_ID_MAX_ONES;
 
     #[test]
@@ -379,7 +379,7 @@ mod tests {
       NoteAttachment::new_word(NoteAttachmentScheme::none(), Word::from([3, 4, 5, 6u32])),
       NoteAttachment::new_array(
         NoteAttachmentScheme::MAX,
-        vec![Word::from([5, 5, 5, 5u32]); NoteAttachmentArray::MIN_NUM_WORDS as usize],
+        vec![Word::from([5, 5, 5, 5u32]); 2],
       )?,
       NoteAttachment::new_array(
         NoteAttachmentScheme::MAX,

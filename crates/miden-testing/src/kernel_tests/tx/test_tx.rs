@@ -24,7 +24,6 @@ use miden_protocol::note::{
     Note,
     NoteAssets,
     NoteAttachment,
-    NoteAttachmentContent,
     NoteAttachmentScheme,
     NoteAttachments,
     NoteId,
@@ -350,13 +349,12 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
     // --------------------------------------------------------------------------------------------
     // execute the transaction and get the witness
 
-    let NoteAttachmentContent::Array(array) = attachment3.content() else {
-        panic!("expected array attachment");
-    };
+    let content = attachment3.content();
+    assert!(content.num_words() > 1, "expected multi-word attachment");
 
     let tx_context = TransactionContextBuilder::new(executor_account)
         .tx_script(tx_script)
-        .extend_advice_map(vec![(attachment3.content().to_commitment(), array.to_elements())])
+        .extend_advice_map(vec![(content.to_commitment(), content.to_elements())])
         .extend_expected_output_notes(vec![
             RawOutputNote::Full(expected_output_note_2.clone()),
             RawOutputNote::Full(expected_output_note_3.clone()),

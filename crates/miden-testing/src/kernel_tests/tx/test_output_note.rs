@@ -249,7 +249,7 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
         )?)
         .build()?;
 
-    // Build the advice map entry for the array attachment's elements
+    // Build the advice map entry for the attachment's elements
     let attachment = output_note_2.attachments().get(0).unwrap();
     let attachment_commitment = attachment.content().to_commitment();
     let attachment_elements = attachment.content().to_elements();

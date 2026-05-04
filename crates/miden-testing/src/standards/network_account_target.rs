@@ -2,7 +2,7 @@
 
 use miden_protocol::Felt;
 use miden_protocol::account::AccountStorageMode;
-use miden_protocol::note::{NoteAttachment, NoteAttachmentContent};
+use miden_protocol::note::NoteAttachment;
 use miden_protocol::testing::account_id::AccountIdBuilder;
 use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 
@@ -38,10 +38,7 @@ async fn network_account_target_into_target_id() -> anyhow::Result<()> {
         end
         "#,
         attachment_scheme = attachment.attachment_scheme().as_u16(),
-        attachment_word = match attachment.content() {
-            NoteAttachmentContent::Word(word) => *word,
-            _ => unreachable!("expected word attachment"),
-        },
+        attachment_word = attachment.content().as_words()[0],
     );
 
     let exec_output = CodeExecutor::with_default_host().run(&source).await?;
@@ -60,10 +57,7 @@ async fn network_account_target_new_attachment() -> anyhow::Result<()> {
     let exec_hint = NoteExecutionHint::Always;
 
     let attachment = NoteAttachment::from(NetworkAccountTarget::new(target_id, exec_hint)?);
-    let raw_attachment_word = match attachment.content() {
-        NoteAttachmentContent::Word(word) => *word,
-        _ => unreachable!("expected word attachment"),
-    };
+    let raw_attachment_word = attachment.content().as_words()[0];
 
     let source = format!(
         r#"
