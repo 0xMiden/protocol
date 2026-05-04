@@ -389,3 +389,61 @@ async fn blocklist_does_not_affect_other_accounts() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+/// Empirical probe: does `mint_and_send` work on a `BasicFungibleFaucet` whose
+/// `TokenPolicyManager` registers transfer callbacks (here via
+/// [`TransferPolicyConfig::IfNotBlocklisted`])?
+///
+/// Hypothesis: the protocol fires `on_before_asset_added_to_note` when the mint adds the
+/// asset to its output note. The callback runs in the issuing faucet's foreign context, but
+/// the issuing faucet is also the native account here → kernel rejects with
+/// `ERR_FOREIGN_ACCOUNT_CONTEXT_AGAINST_NATIVE_ACCOUNT`.
+#[tokio::test]
+async fn mint_and_send_on_if_not_blocklisted_basic_faucet() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let faucet = add_faucet_with_transfer_blocklist(&mut builder)?;
+    let mock_chain = builder.build()?;
+
+    let recipient = Word::from([0u32, 1, 2, 3]);
+    let amount: u64 = 100;
+    let tag = NoteTag::default();
+    let note_type = NoteType::Private;
+
+    let tx_script_code = format!(
+        r#"
+        begin
+            padw padw push.0
+
+            push.{recipient}
+            push.{note_type}
+            push.{tag}
+            push.{amount}
+
+            call.::miden::standards::faucets::basic_fungible::mint_and_send
+
+            dropw dropw dropw dropw
+        end
+        "#,
+        recipient = recipient,
+        note_type = note_type as u8,
+        tag = u32::from(tag),
+        amount = amount,
+    );
+
+    let tx_script = CodeBuilder::default().compile_tx_script(&tx_script_code)?;
+    let result = mock_chain
+        .build_tx_context(faucet.id(), &[], &[])?
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await;
+
+    match result {
+        Ok(_) => println!(
+            "MINT SUCCEEDED — hypothesis WRONG, callback dispatch tolerates self-issued mint"
+        ),
+        Err(e) => println!("MINT FAILED: {e:?}"),
+    }
+
+    Ok(())
+}

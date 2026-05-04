@@ -1785,3 +1785,184 @@ async fn multiple_mints_in_single_tx_produce_correct_amounts() -> anyhow::Result
 
     Ok(())
 }
+
+// EMPIRICAL PROBE: NetworkFungibleFaucet + TransferIfNotBlocklisted
+// ================================================================================================
+
+/// Builds a network faucet with `TransferPolicyConfig::IfNotBlocklisted` so callbacks ARE
+/// installed. Used to probe whether the network-mint path tolerates a faucet whose
+/// `AssetCallbacks` slots are populated.
+fn build_network_faucet_with_transfer_blocklist(
+    builder: &mut MockChainBuilder,
+    token_symbol: &str,
+    max_supply: u64,
+    owner: AccountId,
+    token_supply: u64,
+) -> anyhow::Result<Account> {
+    let name = TokenName::new(token_symbol)?;
+    let symbol = TokenSymbol::new(token_symbol)?;
+    let metadata = FungibleTokenMetadataBuilder::new(name, symbol, 10, max_supply)
+        .token_supply(token_supply)
+        .build()?;
+
+    let token_policy_manager = TokenPolicyManager::new(
+        PolicyAuthority::OwnerControlled,
+        MintPolicyConfig::OwnerOnly,
+        BurnPolicyConfig::AllowAll,
+        TransferPolicyConfig::IfNotBlocklisted,
+    );
+
+    let account_builder = AccountBuilder::new(builder.rng_mut().random())
+        .storage_mode(AccountStorageMode::Network)
+        .with_component(metadata)
+        .with_component(NetworkFungibleFaucet)
+        .with_component(Ownable2Step::new(owner))
+        .with_components(token_policy_manager)
+        .account_type(AccountType::FungibleFaucet);
+
+    builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
+}
+
+/// Empirical probe: does the network-faucet mint pattern tolerate `IfNotBlocklisted` (i.e.
+/// installed asset callbacks)? Mirrors the `network_faucet_mint` happy-path test, swapping
+/// the policy config.
+#[tokio::test]
+async fn network_faucet_mint_with_if_not_blocklisted() -> anyhow::Result<()> {
+    let max_supply = 1000u64;
+    let token_supply = 50u64;
+
+    let mut builder = MockChain::builder();
+
+    let faucet_owner_account_id = AccountId::dummy(
+        [1; 15],
+        AccountIdVersion::Version0,
+        AccountType::RegularAccountImmutableCode,
+        AccountStorageMode::Private,
+    );
+
+    let faucet = build_network_faucet_with_transfer_blocklist(
+        &mut builder,
+        "NET",
+        max_supply,
+        faucet_owner_account_id,
+        token_supply,
+    )?;
+
+    let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
+
+    let amount = Felt::new(75);
+    let mint_asset: Asset =
+        FungibleAsset::new(faucet.id(), amount.as_canonical_u64()).unwrap().into();
+    let serial_num = Word::default();
+
+    let output_note_tag = NoteTag::with_account_target(target_account.id());
+    let p2id_mint_output_note = create_p2id_note_exact(
+        faucet.id(),
+        target_account.id(),
+        vec![mint_asset],
+        NoteType::Private,
+        serial_num,
+    )
+    .unwrap();
+    let recipient = p2id_mint_output_note.recipient().digest();
+
+    let mint_storage = MintNoteStorage::new_private(recipient, amount, output_note_tag.into());
+
+    let mut rng = RandomCoin::new([Felt::from(42u32); 4].into());
+    let mint_note = MintNote::create(
+        faucet.id(),
+        faucet_owner_account_id,
+        mint_storage,
+        NoteAttachment::default(),
+        &mut rng,
+    )?;
+
+    builder.add_output_note(RawOutputNote::Full(mint_note.clone()));
+    let mock_chain = builder.build()?;
+
+    let tx_context = mock_chain.build_tx_context(faucet.id(), &[mint_note.id()], &[])?.build()?;
+    let result = tx_context.execute().await;
+
+    match result {
+        Ok(_) => println!("NETWORK MINT SUCCEEDED with IfNotBlocklisted — callbacks tolerated"),
+        Err(e) => println!("NETWORK MINT FAILED with IfNotBlocklisted: {e:?}"),
+    }
+
+    Ok(())
+}
+
+/// Empirical probe: route the mint through an operator (target) account as native, so the
+/// faucet is NOT the native account when the mint note is consumed. The mint note's script
+/// does a cross-account `call.network_fungible::mint_and_send`. Native = operator, foreign
+/// context for callback = faucet (issuer) → should not collide with the kernel's
+/// "no-foreign-against-native" rule.
+#[tokio::test]
+async fn network_faucet_mint_via_operator_with_if_not_blocklisted() -> anyhow::Result<()> {
+    let max_supply = 1000u64;
+    let token_supply = 50u64;
+
+    let mut builder = MockChain::builder();
+
+    let faucet_owner_account_id = AccountId::dummy(
+        [2; 15],
+        AccountIdVersion::Version0,
+        AccountType::RegularAccountImmutableCode,
+        AccountStorageMode::Private,
+    );
+
+    let faucet = build_network_faucet_with_transfer_blocklist(
+        &mut builder,
+        "NET",
+        max_supply,
+        faucet_owner_account_id,
+        token_supply,
+    )?;
+
+    let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
+
+    let amount = Felt::new(75);
+    let mint_asset: Asset =
+        FungibleAsset::new(faucet.id(), amount.as_canonical_u64()).unwrap().into();
+    let serial_num = Word::default();
+
+    let output_note_tag = NoteTag::with_account_target(target_account.id());
+    let p2id_mint_output_note = create_p2id_note_exact(
+        faucet.id(),
+        target_account.id(),
+        vec![mint_asset],
+        NoteType::Private,
+        serial_num,
+    )
+    .unwrap();
+    let recipient = p2id_mint_output_note.recipient().digest();
+
+    let mint_storage = MintNoteStorage::new_private(recipient, amount, output_note_tag.into());
+
+    let mut rng = RandomCoin::new([Felt::from(43u32); 4].into());
+    let mint_note = MintNote::create(
+        faucet.id(),
+        faucet_owner_account_id,
+        mint_storage,
+        NoteAttachment::default(),
+        &mut rng,
+    )?;
+
+    builder.add_output_note(RawOutputNote::Full(mint_note.clone()));
+    let mock_chain = builder.build()?;
+
+    // Key change: target_account (operator) is native, not the faucet. Faucet is added as
+    // foreign so its procedures are loadable for the cross-account call.
+    let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
+    let tx_context = mock_chain
+        .build_tx_context(target_account.id(), &[mint_note.id()], &[])?
+        .foreign_accounts(vec![faucet_inputs])
+        .build()?;
+    let result = tx_context.execute().await;
+
+    match result {
+        Ok(_) => println!("NETWORK MINT (operator-as-native) SUCCEEDED with IfNotBlocklisted"),
+        Err(e) => println!("NETWORK MINT (operator-as-native) FAILED with IfNotBlocklisted: {e:?}"),
+    }
+
+    Ok(())
+}
