@@ -136,6 +136,10 @@ static LET_NUM_LEAVES_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 ///
 /// The bridge starts with an empty faucet registry; faucets are registered at runtime via
 /// CONFIG_AGG_BRIDGE notes.
+///
+/// Claim validation compares the leaf's `destination_network` to the global MASM constant
+/// `agglayer::common::constants::MIDEN_NETWORK_ID`. Rust exposes the same value as
+/// [`Self::MIDEN_NETWORK_ID`] from generated `agglayer_constants.rs` file.
 #[derive(Debug, Clone)]
 pub struct AggLayerBridge {
     bridge_admin_id: AccountId,
@@ -145,6 +149,11 @@ pub struct AggLayerBridge {
 impl AggLayerBridge {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
+
+    /// AggLayer-assigned network ID for this Miden chain.
+    ///
+    /// Matches `const MIDEN_NETWORK_ID` in `asm/agglayer/common/constants.masm`.
+    pub const MIDEN_NETWORK_ID: u32 = MIDEN_NETWORK_ID;
 
     const REGISTERED_GER_MAP_VALUE: Word = Word::new([ONE, ZERO, ZERO, ZERO]);
 

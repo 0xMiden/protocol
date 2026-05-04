@@ -93,7 +93,7 @@ fn core_benchmarks(c: &mut Criterion) {
                     let rt = tokio::runtime::Builder::new_current_thread()
                         .build()
                         .expect("failed to build tokio runtime for setup");
-                    rt.block_on(tx_consume_claim_note(ClaimDataSource::SimulatedL1ToMiden))
+                    rt.block_on(tx_consume_claim_note(ClaimDataSource::L1ToMiden))
                         .expect("failed to create a context which consumes CLAIM note (L1)")
                 },
                 |tx_context| async move {
@@ -112,7 +112,7 @@ fn core_benchmarks(c: &mut Criterion) {
                     let rt = tokio::runtime::Builder::new_current_thread()
                         .build()
                         .expect("failed to build tokio runtime for setup");
-                    rt.block_on(tx_consume_claim_note(ClaimDataSource::SimulatedL2ToMiden))
+                    rt.block_on(tx_consume_claim_note(ClaimDataSource::L2ToMiden))
                         .expect("failed to create a context which consumes CLAIM note (L2)")
                 },
                 |tx_context| async move {
@@ -210,7 +210,7 @@ fn core_benchmarks(c: &mut Criterion) {
                     let rt = tokio::runtime::Builder::new_current_thread()
                         .build()
                         .expect("failed to build tokio runtime for setup");
-                    rt.block_on(tx_consume_claim_note(ClaimDataSource::SimulatedL1ToMiden))
+                    rt.block_on(tx_consume_claim_note(ClaimDataSource::L1ToMiden))
                         .expect("failed to create a context which consumes CLAIM note (L1)")
                 },
                 |tx_context| async move {
@@ -237,7 +237,7 @@ fn core_benchmarks(c: &mut Criterion) {
                     let rt = tokio::runtime::Builder::new_current_thread()
                         .build()
                         .expect("failed to build tokio runtime for setup");
-                    rt.block_on(tx_consume_claim_note(ClaimDataSource::SimulatedL2ToMiden))
+                    rt.block_on(tx_consume_claim_note(ClaimDataSource::L2ToMiden))
                         .expect("failed to create a context which consumes CLAIM note (L2)")
                 },
                 |tx_context| async move {
