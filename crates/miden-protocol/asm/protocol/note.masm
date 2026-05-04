@@ -8,6 +8,7 @@ pub use miden::protocol::util::note::NOTE_TYPE_PUBLIC
 pub use miden::protocol::util::note::NOTE_TYPE_PRIVATE
 pub use miden::protocol::util::note::MAX_ATTACHMENT_SCHEME
 pub use miden::protocol::util::note::MAX_ATTACHMENT_WORDS
+pub use miden::protocol::util::note::ATTACHMENT_SCHEME_NONE
 
 # ERRORS
 # =================================================================================================
