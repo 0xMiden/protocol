@@ -233,6 +233,9 @@ pub proc claim
     # => [PROOF_DATA_KEY, pad(12)]
 
     swapw mem_loadw_be.CLAIM_LEAF_DATA_KEY_MEM_ADDR
+
+    # Validate that this is an asset claim (leafType == 0)
+    exec.validate_leaf_type
     # => [LEAF_DATA_KEY, PROOF_DATA_KEY, pad(8)]
 
     # Validate that this is an asset claim (leafType == 0)

@@ -11,23 +11,35 @@ use miden_agglayer::{
     ConfigAggBridgeNote,
     EthAddress,
     ExitRoot,
+    Keccak256Output,
     MetadataHash,
     create_existing_agglayer_faucet,
     create_existing_bridge_account,
 };
+use miden_crypto::hash::keccak::Keccak256Digest;
 use miden_crypto::rand::FeltRng;
-use miden_protocol::Felt;
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::account::{AccountId, AccountIdVersion, AccountStorageMode, AccountType};
+use miden_protocol::account::{
+    Account,
+    AccountId,
+    AccountIdVersion,
+    AccountStorageMode,
+    AccountType,
+    StorageMapKey,
+};
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::note::{NoteAssets, NoteType};
 use miden_protocol::transaction::RawOutputNote;
+use miden_protocol::{Felt, Word};
 use miden_standards::account::faucets::TokenMetadata;
 use miden_standards::account::mint_policies::OwnerControlledInitConfig;
 use miden_standards::note::StandardNote;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 use miden_tx::utils::hex_to_bytes;
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 
+use super::merkle_tree_frontier::MerkleTreeFrontier32;
 use super::test_utils::SOLIDITY_MTF_VECTORS;
 
 /// Tests that 32 sequential B2AGG note consumptions match all 32 Solidity MTF roots.
@@ -260,6 +272,190 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
         final_token_supply,
         Felt::new(initial_token_supply.as_canonical_u64() - total_burned),
         "Token supply should decrease by the sum of 32 bridged amounts"
+    );
+
+    Ok(())
+}
+
+/// Pre-populates the bridge account's LET storage with a chosen `num_leaves` value and 32
+/// frontier digests, so the bridge appears to have already received that many leaves without
+/// performing the (potentially billions of) sequential inserts.
+///
+/// The lo/hi packing matches what `load_let_frontier_selective` reads from `double_word_array`
+/// storage. The masm builds map keys via `loc_load.INDEX_LOC; push.0.0.0` (lo) or
+/// `push.1.0.0` (hi), leaving the index at the bottom of the 4-felt key window. Stack top maps
+/// to `felt[0]` of the storage `Word`, so the actual key Words are `[0, 0, 0, h]` (lo) and
+/// `[0, 0, 1, h]` (hi) in `(felt[0], felt[1], felt[2], felt[3])` order.
+fn populate_let_state(bridge: &mut Account, num_leaves: u32, frontier: &[Keccak256Digest; 32]) {
+    let zero = Felt::ZERO;
+
+    bridge
+        .storage_mut()
+        .set_item(
+            AggLayerBridge::let_num_leaves_slot_name(),
+            Word::new([Felt::new(num_leaves as u64), zero, zero, zero]),
+        )
+        .expect("should set LET num_leaves");
+
+    for (h, digest) in frontier.iter().enumerate() {
+        let bytes: [u8; 32] = (*digest).into();
+        let [lo, hi] = Keccak256Output::new(bytes).to_words();
+
+        let h = h as u32;
+        bridge
+            .storage_mut()
+            .set_map_item(
+                AggLayerBridge::let_frontier_slot_name(),
+                StorageMapKey::from_array([0, 0, 0, h]),
+                lo,
+            )
+            .expect("should set frontier word 0");
+        bridge
+            .storage_mut()
+            .set_map_item(
+                AggLayerBridge::let_frontier_slot_name(),
+                StorageMapKey::from_array([0, 0, 1, h]),
+                hi,
+            )
+            .expect("should set frontier word 1");
+    }
+}
+
+/// Verifies frontier correctness across all 32 bit positions using a high `num_leaves`.
+///
+/// - `num_leaves = 2^31 - 1` (binary `0111...1`): internally, selectively reads all frontier
+///   heights 0..30 from storage, and writes the updated frontier[31] back to storage.
+/// - `num_leaves = 2^31` (binary `1000...0`): internally, selectively reads frontier[31] from
+///   storage, and writes the updated frontier[0..30] back to storage.
+///
+/// Together these cover every height in both roles. Each scenario consumes one B2AGG note
+/// against a bridge account that's been pre-populated to the chosen `num_leaves`, then verifies
+/// the resulting LER against the Rust `MerkleTreeFrontier32` reference.
+/// Note: we don't verify against the Solidity implementation here.
+#[rstest::rstest]
+#[case::peak_read((1u32 << 31) - 1)]
+#[case::peak_write(1u32 << 31)]
+#[tokio::test]
+async fn bridge_out_at_high_num_leaves(#[case] initial_num_leaves: u32) -> anyhow::Result<()> {
+    let vectors = &*SOLIDITY_MTF_VECTORS;
+
+    // Random-but-deterministic initial frontier. The masm storage and the Rust reference both
+    // start from the same digests, so we're verifying that the masm path computes the same root
+    // as the reference for arbitrary frontier contents — the cryptographic validity of the
+    // initial digests is irrelevant. A seeded RNG keeps the test reproducible across runs.
+    let mut rng = StdRng::seed_from_u64(0xa110_1eaf);
+    let initial_frontier: [Keccak256Digest; 32] = core::array::from_fn(|_| {
+        let mut bytes = [0u8; 32];
+        rng.fill(&mut bytes);
+        Keccak256Digest::from(bytes)
+    });
+
+    let mut mtf = MerkleTreeFrontier32::<32>::from_state(initial_num_leaves, initial_frontier);
+
+    let mut builder = MockChain::builder();
+
+    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    let mut bridge_account = create_existing_bridge_account(
+        builder.rng_mut().draw_word(),
+        bridge_admin.id(),
+        ger_manager.id(),
+    );
+    populate_let_state(&mut bridge_account, initial_num_leaves, &initial_frontier);
+    builder.add_account(bridge_account.clone())?;
+
+    // CREATE AGGLAYER FAUCET ACCOUNT (with conversion metadata for FPI)
+    let amount = vectors.amounts[0].parse::<u64>().expect("valid amount decimal string");
+    let origin_token_address = EthAddress::from_hex(&vectors.origin_token_address)
+        .expect("valid shared origin token address");
+    let origin_network = 64u32;
+    let scale = 0u8;
+    let metadata_hash = MetadataHash::from_token_info(
+        &vectors.token_name,
+        &vectors.token_symbol,
+        vectors.token_decimals,
+    );
+    let faucet = create_existing_agglayer_faucet(
+        builder.rng_mut().draw_word(),
+        &vectors.token_symbol,
+        vectors.token_decimals,
+        Felt::new(FungibleAsset::MAX_AMOUNT),
+        Felt::new(amount),
+        bridge_account.id(),
+        &origin_token_address,
+        origin_network,
+        scale,
+        metadata_hash,
+    );
+    builder.add_account(faucet.clone())?;
+
+    let config_note = ConfigAggBridgeNote::create(
+        faucet.id(),
+        &origin_token_address,
+        bridge_admin.id(),
+        bridge_account.id(),
+        builder.rng_mut(),
+    )?;
+    builder.add_output_note(RawOutputNote::Full(config_note.clone()));
+
+    let destination_network = vectors.destination_networks[0];
+    let eth_address =
+        EthAddress::from_hex(&vectors.destination_addresses[0]).expect("valid destination address");
+    let bridge_asset: Asset = FungibleAsset::new(faucet.id(), amount).unwrap().into();
+    let b2agg_note = B2AggNote::create(
+        destination_network,
+        eth_address,
+        NoteAssets::new(vec![bridge_asset])?,
+        bridge_account.id(),
+        faucet.id(),
+        builder.rng_mut(),
+    )?;
+    builder.add_output_note(RawOutputNote::Full(b2agg_note.clone()));
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    // Register the faucet via CONFIG_AGG_BRIDGE.
+    let config_executed = mock_chain
+        .build_tx_context(bridge_account.id(), &[config_note.id()], &[])?
+        .build()?
+        .execute()
+        .await?;
+    bridge_account.apply_delta(config_executed.account_delta())?;
+    mock_chain.add_pending_executed_transaction(&config_executed)?;
+    mock_chain.prove_next_block()?;
+
+    // Consume the B2AGG note. With the pre-populated frontier, this single insert hits the
+    // peak-read configuration (for 2^31 - 1) or peak-write configuration (for 2^31).
+    let foreign_account_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
+    let executed_tx = mock_chain
+        .build_tx_context(bridge_account.clone(), &[b2agg_note.id()], &[])?
+        .foreign_accounts(vec![foreign_account_inputs])
+        .build()?
+        .execute()
+        .await?;
+    bridge_account.apply_delta(executed_tx.account_delta())?;
+
+    let leaf = Keccak256Digest::try_from(vectors.leaves[0].as_str())
+        .expect("valid leaf hex from MTF vectors");
+    let expected_root = mtf.append_and_update_frontier(leaf);
+
+    assert_eq!(
+        AggLayerBridge::read_let_num_leaves(&bridge_account),
+        initial_num_leaves as u64 + 1,
+        "LET leaf count should increment by 1",
+    );
+
+    let expected_ler = ExitRoot::new(expected_root.into()).to_elements();
+    assert_eq!(
+        AggLayerBridge::read_local_exit_root(&bridge_account)?,
+        expected_ler,
+        "Local Exit Root should match the Rust MTF reference",
     );
 
     Ok(())
