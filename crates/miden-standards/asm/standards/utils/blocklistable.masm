@@ -3,14 +3,10 @@
 # Per-account blocklist storage and helpers. Blocklist/unblocklist procedures do not perform
 # authorization. Compose with ownable2step or role-based access control in a higher layer.
 #
-# Asset callbacks enforce "native account is not blocklisted" when the issuing faucet has callbacks
-# enabled on the asset. The callbacks run in the faucet's foreign context but read the native
-# account ID (the account that started the transaction) via `native_account::get_id`:
-#
-# - `on_before_asset_added_to_account` is invoked when an asset is added to an account vault,
-#   so the native account is the asset recipient.
-# - `on_before_asset_added_to_note` is invoked when an asset is added to an output note,
-#   so the native account is the note creator (sender).
+# Asset-callback enforcement of "native account is not blocklisted" lives in the
+# `if_not_blocklisted` transfer policy procedure (see
+# `miden::standards::faucets::policies::transfer::if_not_blocklisted`). The policy manager owns
+# the asset callbacks and dispatches to that procedure via `dynexec`.
 
 use miden::core::word
 use miden::protocol::active_account
@@ -171,47 +167,6 @@ pub proc assert_not_blocklisted
 
     assert.err=ERR_BLOCKLIST_ACCOUNT_IS_BLOCKLISTED
     # => []
-end
-
-# CALLBACKS
-# ================================================================================================
-
-#! Callback when a callbacks-enabled asset is added to an account vault.
-#!
-#! Panics if the native account (the asset recipient) is blocklisted on this faucet.
-#!
-#! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
-#! Outputs: [ASSET_VALUE, pad(12)]
-#!
-#! Invocation: call
-pub proc on_before_asset_added_to_account
-    exec.native_account::get_id
-    # => [account_id_suffix, account_id_prefix, ASSET_KEY, ASSET_VALUE, pad(8)]
-
-    exec.assert_not_blocklisted
-    # => [ASSET_KEY, ASSET_VALUE, pad(8)]
-
-    dropw
-    # => [ASSET_VALUE, pad(12)]
-end
-
-#! Callback when a callbacks-enabled asset is added to an output note.
-#!
-#! Panics if the native account (the note creator / sender) is blocklisted on this faucet.
-#!
-#! Inputs:  [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
-#! Outputs: [ASSET_VALUE, pad(12)]
-#!
-#! Invocation: call
-pub proc on_before_asset_added_to_note
-    exec.native_account::get_id
-    # => [account_id_suffix, account_id_prefix, ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
-
-    exec.assert_not_blocklisted
-    # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
-
-    dropw
-    # => [ASSET_VALUE, note_idx, pad(7)]
 end
 
 # HELPER PROCEDURES

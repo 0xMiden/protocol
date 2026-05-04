@@ -23,6 +23,7 @@ use miden_standards::account::policies::{
     MintPolicyConfig,
     PolicyAuthority,
     TokenPolicyManager,
+    TransferPolicyConfig,
 };
 use miden_utils_sync::LazyLock;
 
@@ -251,6 +252,7 @@ fn create_agglayer_faucet_builder(
         PolicyAuthority::OwnerControlled,
         MintPolicyConfig::OwnerOnly,
         BurnPolicyConfig::OwnerOnly,
+        TransferPolicyConfig::AllowAll,
     )
     .with_allowed_burn_policy(BurnAllowAll::root());
 

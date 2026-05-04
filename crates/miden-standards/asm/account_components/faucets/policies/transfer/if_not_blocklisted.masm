@@ -1,0 +1,7 @@
+# The MASM code of the `if_not_blocklisted` Transfer Policy Account Component.
+#
+# Exposes the `check_policy` procedure so its MAST root can be registered as the active
+# (or allowed) transfer policy on a `TokenPolicyManager`. Pair with a `Blocklistable`
+# component that owns the per-account blocklist storage map.
+
+pub use ::miden::standards::faucets::policies::transfer::if_not_blocklisted::check_policy

@@ -20,6 +20,7 @@ use crate::account::policies::{
     MintPolicyConfig,
     PolicyAuthority,
     TokenPolicyManager,
+    TransferPolicyConfig,
 };
 use crate::procedure_digest;
 
@@ -156,21 +157,25 @@ impl TryFrom<&Account> for NetworkFungibleFaucet {
 /// - [`NoAuth`] for authentication
 ///
 /// The storage layout of the faucet account is documented on the [`NetworkFungibleFaucet`],
-/// [`TokenPolicyManager`], and [`crate::account::access::Ownable2Step`] component types. The mint
-/// and burn policy components produced alongside the manager (`MintOwnerOnly` and `BurnAllowAll`)
-/// are storage-free. The faucet contains no additional storage slots for its auth ([`NoAuth`]).
+/// [`TokenPolicyManager`], and [`crate::account::access::Ownable2Step`] component types. The
+/// mint, burn, and transfer policy components produced alongside the manager (`MintOwnerOnly`,
+/// `BurnAllowAll`, `TransferAllowAll`) are storage-free. The faucet contains no additional
+/// storage slots for its auth ([`NoAuth`]).
 ///
 /// Component dependency graph:
 /// ```text
 /// NetworkFungibleFaucet
 /// └── TokenPolicyManager (owner-controlled)
-///     ├── MintOwnerOnly  (active mint policy, requires Ownable2Step)
-///     └── BurnAllowAll   (active burn policy)
+///     ├── MintOwnerOnly     (active mint policy, requires Ownable2Step)
+///     ├── BurnAllowAll      (active burn policy)
+///     └── TransferAllowAll  (active transfer policy)
 /// ```
 /// The manager only allows its initial policies by default. Custom faucets that want runtime
 /// policy switching can register additional roots via
 /// [`TokenPolicyManager::with_allowed_mint_policy`] /
-/// [`TokenPolicyManager::with_allowed_burn_policy`] and install the matching policy components.
+/// [`TokenPolicyManager::with_allowed_burn_policy`] /
+/// [`TokenPolicyManager::with_allowed_transfer_policy`] and install the matching policy
+/// components.
 pub fn create_network_fungible_faucet(
     init_seed: [u8; 32],
     metadata: FungibleTokenMetadata,
@@ -202,6 +207,7 @@ pub fn create_network_fungible_faucet(
             PolicyAuthority::OwnerControlled,
             MintPolicyConfig::OwnerOnly,
             BurnPolicyConfig::AllowAll,
+            TransferPolicyConfig::AllowAll,
         ))
         .build()
         .map_err(FungibleFaucetError::AccountError)?;

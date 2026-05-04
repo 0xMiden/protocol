@@ -153,6 +153,26 @@ static OWNER_ONLY_BURN_POLICY_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
         .expect("Shipped `owner_only` Burn Policy library is well-formed")
 });
 
+// Initialize the `allow_all` Transfer Policy library only once.
+static ALLOW_ALL_TRANSFER_POLICY_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+    let bytes = include_bytes!(concat!(
+        env!("OUT_DIR"),
+        "/assets/account_components/faucets/policies/transfer/allow_all.masl"
+    ));
+    Library::read_from_bytes(bytes)
+        .expect("Shipped `allow_all` Transfer Policy library is well-formed")
+});
+
+// Initialize the `if_not_blocklisted` Transfer Policy library only once.
+static IF_NOT_BLOCKLISTED_TRANSFER_POLICY_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+    let bytes = include_bytes!(concat!(
+        env!("OUT_DIR"),
+        "/assets/account_components/faucets/policies/transfer/if_not_blocklisted.masl"
+    ));
+    Library::read_from_bytes(bytes)
+        .expect("Shipped `if_not_blocklisted` Transfer Policy library is well-formed")
+});
+
 // UTILS LIBRARIES
 // ================================================================================================
 
@@ -216,6 +236,16 @@ pub fn allow_all_burn_policy_library() -> Library {
 /// Returns the `owner_only` Burn Policy Library.
 pub fn owner_only_burn_policy_library() -> Library {
     OWNER_ONLY_BURN_POLICY_LIBRARY.clone()
+}
+
+/// Returns the `allow_all` Transfer Policy Library.
+pub fn allow_all_transfer_policy_library() -> Library {
+    ALLOW_ALL_TRANSFER_POLICY_LIBRARY.clone()
+}
+
+/// Returns the `if_not_blocklisted` Transfer Policy Library.
+pub fn if_not_blocklisted_transfer_policy_library() -> Library {
+    IF_NOT_BLOCKLISTED_TRANSFER_POLICY_LIBRARY.clone()
 }
 
 /// Returns the Blocklistable component library.

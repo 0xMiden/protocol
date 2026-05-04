@@ -1,29 +1,34 @@
-//! Token (mint and burn) policy account components.
+//! Token (mint, burn, and transfer) policy account components.
 //!
-//! Policies are the procedures that gate minting and burning of tokens. The policy state is owned
-//! by a single [`TokenPolicyManager`] component:
-//! - It owns five storage slots (shared authority + active/allowed maps for mint and burn).
+//! Policies are the procedures that gate minting, burning, and transferring of tokens. The policy
+//! state is owned by a single [`TokenPolicyManager`] component:
+//! - It owns seven storage slots (shared authority + active/allowed maps for mint, burn, and
+//!   transfer) plus the asset-callback slots that wire its `on_before_asset_added_to_*` procedures
+//!   into the protocol's callback dispatch.
 //! - It exposes the `set_*_policy` / `get_*_policy` / `execute_*_policy` procedures via a single
 //!   MASM library.
 //!
-//! Storage-free policy components (e.g. [`MintAllowAll`], [`BurnOwnerOnly`]) install a specific
-//! policy procedure on the account so that the manager's `dynexec` can dispatch to it.
+//! Storage-free policy components (e.g. [`MintAllowAll`], [`BurnOwnerOnly`],
+//! [`TransferAllowAll`]) install a specific policy procedure on the account so that the
+//! manager's `dynexec` can dispatch to it.
 //!
-//! A faucet installs the manager together with at least one mint and one burn policy component
-//! whose procedure roots are registered in the manager's allowed-policies maps. Pass a
-//! [`TokenPolicyManager`] directly to
+//! A faucet installs the manager together with at least one mint, one burn, and one transfer
+//! policy component whose procedure roots are registered in the manager's allowed-policies maps.
+//! Pass a [`TokenPolicyManager`] directly to
 //! [`miden_protocol::account::AccountBuilder::with_components`] to install the manager and the
-//! configured mint/burn policy components in one call.
+//! configured policy components in one call.
 
 use miden_protocol::Word;
 
 pub mod burn;
 mod manager;
 pub mod mint;
+pub mod transfer;
 
 pub use burn::{BurnAllowAll, BurnOwnerOnly, BurnPolicyConfig};
 pub use manager::TokenPolicyManager;
 pub use mint::{MintAllowAll, MintOwnerOnly, MintPolicyConfig};
+pub use transfer::{TransferAllowAll, TransferIfNotBlocklisted, TransferPolicyConfig};
 
 // POLICY AUTHORITY
 // ================================================================================================

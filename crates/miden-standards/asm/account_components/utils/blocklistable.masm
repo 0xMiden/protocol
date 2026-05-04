@@ -5,5 +5,3 @@
 
 pub use ::miden::standards::utils::blocklistable::blocklist
 pub use ::miden::standards::utils::blocklistable::unblocklist
-pub use ::miden::standards::utils::blocklistable::on_before_asset_added_to_account
-pub use ::miden::standards::utils::blocklistable::on_before_asset_added_to_note

@@ -22,6 +22,7 @@ use miden_standards::account::policies::{
     MintPolicyConfig,
     PolicyAuthority,
     TokenPolicyManager,
+    TransferPolicyConfig,
 };
 use regex::Regex;
 
@@ -344,6 +345,7 @@ fn generate_agglayer_constants(
                 PolicyAuthority::OwnerControlled,
                 MintPolicyConfig::OwnerOnly,
                 BurnPolicyConfig::OwnerOnly,
+                TransferPolicyConfig::AllowAll,
             )
             .with_allowed_burn_policy(BurnAllowAll::root());
 

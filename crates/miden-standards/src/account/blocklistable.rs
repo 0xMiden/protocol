@@ -1,5 +1,3 @@
-use alloc::vec::Vec;
-
 use miden_protocol::Word;
 use miden_protocol::account::component::{
     AccountComponentMetadata,
@@ -14,7 +12,6 @@ use miden_protocol::account::{
     StorageSlot,
     StorageSlotName,
 };
-use miden_protocol::asset::AssetCallbacks;
 use miden_protocol::utils::sync::LazyLock;
 
 use crate::account::components::blocklistable_library;
@@ -42,24 +39,11 @@ procedure_digest!(
     blocklistable_library
 );
 
-procedure_digest!(
-    BLOCKLISTABLE_ON_BEFORE_ASSET_ADDED_TO_ACCOUNT,
-    Blocklistable::NAME,
-    Blocklistable::ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_PROC_NAME,
-    blocklistable_library
-);
-
-procedure_digest!(
-    BLOCKLISTABLE_ON_BEFORE_ASSET_ADDED_TO_NOTE,
-    Blocklistable::NAME,
-    Blocklistable::ON_BEFORE_ASSET_ADDED_TO_NOTE_PROC_NAME,
-    blocklistable_library
-);
-
-/// Account component that stores a per-account blocklist map and registers asset callbacks that
-/// reject transfers whose native account (asset recipient for
-/// `on_before_asset_added_to_account`, or note creator for `on_before_asset_added_to_note`) is
-/// currently blocklisted on the issuing faucet.
+/// Account component that stores a per-account blocklist map plus the `blocklist` / `unblocklist`
+/// admin procedures. The component is intentionally callback-free: enforcement is performed by
+/// the `if_not_blocklisted` transfer policy procedure, which the
+/// [`crate::account::policies::TokenPolicyManager`] dispatches via `dynexec` from its
+/// `on_before_asset_added_to_*` callbacks.
 ///
 /// `blocklist` and `unblocklist` do not authenticate the caller — this is an intentional choice:
 /// the core mechanism is kept without access control so that owner and role-based access control
@@ -71,7 +55,6 @@ procedure_digest!(
 ///   account_id_suffix, account_id_prefix]`). An account is considered blocklisted when its entry
 ///   is the word `[1, 0, 0, 0]`; the zero word (including the default for unset entries) means not
 ///   blocklisted.
-/// - Protocol callback slots from [`AssetCallbacks`] registered by every constructor.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Blocklistable;
 
@@ -81,9 +64,6 @@ impl Blocklistable {
 
     const BLOCKLIST_PROC_NAME: &'static str = "blocklist";
     const UNBLOCKLIST_PROC_NAME: &'static str = "unblocklist";
-    const ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_PROC_NAME: &'static str =
-        "on_before_asset_added_to_account";
-    const ON_BEFORE_ASSET_ADDED_TO_NOTE_PROC_NAME: &'static str = "on_before_asset_added_to_note";
 
     /// Creates a new [`Blocklistable`] with an empty blocklist.
     pub const fn new() -> Self {
@@ -118,8 +98,8 @@ impl Blocklistable {
             [AccountType::FungibleFaucet, AccountType::NonFungibleFaucet],
         )
         .with_description(
-            "Blocklistable component: blocklist/unblocklist and on_before_asset_added callbacks \
-             without auth",
+            "Blocklistable component: blocklist storage map plus blocklist/unblocklist admin \
+             procedures (no callbacks; pair with the `if_not_blocklisted` transfer policy)",
         )
         .with_storage_schema(storage_schema)
     }
@@ -131,34 +111,16 @@ impl Blocklistable {
     pub fn unblocklist_digest() -> Word {
         *BLOCKLISTABLE_UNBLOCKLIST
     }
-
-    pub fn on_before_asset_added_to_account_digest() -> Word {
-        *BLOCKLISTABLE_ON_BEFORE_ASSET_ADDED_TO_ACCOUNT
-    }
-
-    pub fn on_before_asset_added_to_note_digest() -> Word {
-        *BLOCKLISTABLE_ON_BEFORE_ASSET_ADDED_TO_NOTE
-    }
 }
 
 impl From<Blocklistable> for AccountComponent {
     fn from(_blocklistable: Blocklistable) -> Self {
         let blocklist_slot =
             StorageSlot::with_map(Blocklistable::blocklist_slot().clone(), StorageMap::default());
-        let callback_slots = AssetCallbacks::new()
-            .on_before_asset_added_to_account(
-                Blocklistable::on_before_asset_added_to_account_digest(),
-            )
-            .on_before_asset_added_to_note(Blocklistable::on_before_asset_added_to_note_digest())
-            .into_storage_slots();
-
-        let mut storage_slots = Vec::with_capacity(1 + callback_slots.len());
-        storage_slots.push(blocklist_slot);
-        storage_slots.extend(callback_slots);
 
         let metadata = Blocklistable::component_metadata();
 
-        AccountComponent::new(blocklistable_library(), storage_slots, metadata).expect(
+        AccountComponent::new(blocklistable_library(), vec![blocklist_slot], metadata).expect(
             "blocklistable component should satisfy the requirements of a valid account component",
         )
     }

@@ -1,5 +1,6 @@
-//! Tests for [`miden_standards::account::blocklistable::Blocklistable`] asset callbacks and
-//! blocklist/unblocklist scripts.
+//! Tests for the [`miden_standards::account::blocklistable::Blocklistable`] admin procedures
+//! and the [`miden_standards::account::policies::TransferIfNotBlocklisted`] transfer policy
+//! callbacks dispatched by the [`miden_standards::account::policies::TokenPolicyManager`].
 
 extern crate alloc;
 
@@ -7,26 +8,24 @@ use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{
     Account,
     AccountBuilder,
-    AccountComponent,
     AccountId,
     AccountStorageMode,
     AccountType,
 };
-use miden_protocol::asset::{
-    Asset,
-    AssetCallbackFlag,
-    FungibleAsset,
-    NonFungibleAsset,
-    NonFungibleAssetDetails,
-};
+use miden_protocol::asset::{Asset, AssetCallbackFlag, FungibleAsset};
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::{NoteTag, NoteType};
 use miden_protocol::{Felt, Word};
-use miden_standards::account::blocklistable::Blocklistable;
 use miden_standards::account::faucets::BasicFungibleFaucet;
 use miden_standards::account::metadata::{FungibleTokenMetadataBuilder, TokenName};
+use miden_standards::account::policies::{
+    BurnPolicyConfig,
+    MintPolicyConfig,
+    PolicyAuthority,
+    TokenPolicyManager,
+    TransferPolicyConfig,
+};
 use miden_standards::code_builder::CodeBuilder;
-use miden_standards::testing::account_component::MockFaucetComponent;
 use miden_testing::{
     AccountState,
     Auth,
@@ -44,7 +43,11 @@ const ERR_BLOCKLIST_ALREADY_BLOCKLISTED: MasmError =
 const ERR_BLOCKLIST_NOT_BLOCKLISTED: MasmError =
     MasmError::from_static_str("account is not blocklisted");
 
-fn add_faucet_with_blocklistable(builder: &mut MockChainBuilder) -> anyhow::Result<Account> {
+/// Builds a fungible faucet with a [`TokenPolicyManager`] configured for
+/// [`TransferPolicyConfig::IfNotBlocklisted`]. The manager auto-installs the
+/// [`miden_standards::account::blocklistable::Blocklistable`] component so the predicate has
+/// access to the per-account blocklist storage and admin procedures.
+fn add_faucet_with_transfer_blocklist(builder: &mut MockChainBuilder) -> anyhow::Result<Account> {
     let faucet_metadata = FungibleTokenMetadataBuilder::new(
         TokenName::new("SYM")?,
         "SYM".try_into()?,
@@ -58,51 +61,12 @@ fn add_faucet_with_blocklistable(builder: &mut MockChainBuilder) -> anyhow::Resu
         .account_type(AccountType::FungibleFaucet)
         .with_component(faucet_metadata)
         .with_component(BasicFungibleFaucet)
-        .with_component(Blocklistable::new());
-
-    builder.add_account_from_builder(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
-        account_builder,
-        AccountState::Exists,
-    )
-}
-
-fn add_faucet_with_blocklistable_for_account_type(
-    builder: &mut MockChainBuilder,
-    account_type: AccountType,
-) -> anyhow::Result<Account> {
-    if !account_type.is_faucet() {
-        anyhow::bail!("account type must be a faucet");
-    }
-
-    let faucet_components: Vec<AccountComponent> = match account_type {
-        AccountType::FungibleFaucet => {
-            let faucet_metadata = FungibleTokenMetadataBuilder::new(
-                TokenName::new("SYM")?,
-                "SYM".try_into()?,
-                8,
-                1_000_000u64,
-            )
-            .build()?;
-            vec![faucet_metadata.into(), BasicFungibleFaucet.into()]
-        },
-        AccountType::NonFungibleFaucet => vec![MockFaucetComponent.into()],
-        _ => {
-            anyhow::bail!(
-                "blocklistable tests only use fungible or non-fungible faucet account types"
-            )
-        },
-    };
-
-    let mut account_builder = AccountBuilder::new([43u8; 32])
-        .storage_mode(AccountStorageMode::Public)
-        .account_type(account_type);
-    for component in faucet_components {
-        account_builder = account_builder.with_component(component);
-    }
-    account_builder = account_builder.with_component(Blocklistable::new());
+        .with_components(TokenPolicyManager::new(
+            PolicyAuthority::AuthControlled,
+            MintPolicyConfig::AllowAll,
+            BurnPolicyConfig::AllowAll,
+            TransferPolicyConfig::IfNotBlocklisted,
+        ));
 
     builder.add_account_from_builder(
         Auth::BasicAuth {
@@ -174,34 +138,17 @@ async fn execute_faucet_unblocklist(
     Ok(())
 }
 
-#[rstest::rstest]
-#[case::fungible(
-    AccountType::FungibleFaucet,
-    |faucet_id| {
-        Ok(FungibleAsset::new(faucet_id, 100)?.with_callbacks(AssetCallbackFlag::Enabled).into())
-    }
-)]
-#[case::non_fungible(
-    AccountType::NonFungibleFaucet,
-    |faucet_id| {
-        let details = NonFungibleAssetDetails::new(faucet_id, vec![1, 2, 3, 4])?;
-        Ok(NonFungibleAsset::new(&details)?.with_callbacks(AssetCallbackFlag::Enabled).into())
-    }
-)]
 #[tokio::test]
-async fn blocklist_receive_asset_succeeds_when_not_blocklisted(
-    #[case] account_type: AccountType,
-    #[case] create_asset: impl FnOnce(AccountId) -> anyhow::Result<Asset>,
-) -> anyhow::Result<()> {
+async fn blocklist_receive_asset_succeeds_when_not_blocklisted() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
+    let faucet = add_faucet_with_transfer_blocklist(&mut builder)?;
 
-    let faucet = add_faucet_with_blocklistable_for_account_type(&mut builder, account_type)?;
-
+    let asset = FungibleAsset::new(faucet.id(), 100)?.with_callbacks(AssetCallbackFlag::Enabled);
     let note = builder.add_p2id_note(
         faucet.id(),
         target_account.id(),
-        &[create_asset(faucet.id())?],
+        &[Asset::Fungible(asset)],
         NoteType::Public,
     )?;
 
@@ -220,34 +167,17 @@ async fn blocklist_receive_asset_succeeds_when_not_blocklisted(
     Ok(())
 }
 
-#[rstest::rstest]
-#[case::fungible(
-    AccountType::FungibleFaucet,
-    |faucet_id| {
-        Ok(FungibleAsset::new(faucet_id, 100)?.with_callbacks(AssetCallbackFlag::Enabled).into())
-    }
-)]
-#[case::non_fungible(
-    AccountType::NonFungibleFaucet,
-    |faucet_id| {
-        let details = NonFungibleAssetDetails::new(faucet_id, vec![1, 2, 3, 4])?;
-        Ok(NonFungibleAsset::new(&details)?.with_callbacks(AssetCallbackFlag::Enabled).into())
-    }
-)]
 #[tokio::test]
-async fn blocklist_receive_asset_fails_when_recipient_blocklisted(
-    #[case] account_type: AccountType,
-    #[case] create_asset: impl FnOnce(AccountId) -> anyhow::Result<Asset>,
-) -> anyhow::Result<()> {
+async fn blocklist_receive_asset_fails_when_recipient_blocklisted() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
+    let faucet = add_faucet_with_transfer_blocklist(&mut builder)?;
 
-    let faucet = add_faucet_with_blocklistable_for_account_type(&mut builder, account_type)?;
-
+    let asset = FungibleAsset::new(faucet.id(), 100)?.with_callbacks(AssetCallbackFlag::Enabled);
     let note = builder.add_p2id_note(
         faucet.id(),
         target_account.id(),
-        &[create_asset(faucet.id())?],
+        &[Asset::Fungible(asset)],
         NoteType::Public,
     )?;
 
@@ -270,31 +200,13 @@ async fn blocklist_receive_asset_fails_when_recipient_blocklisted(
     Ok(())
 }
 
-#[rstest::rstest]
-#[case::fungible(
-    AccountType::FungibleFaucet,
-    |faucet_id| {
-        Ok(FungibleAsset::new(faucet_id, 100)?.with_callbacks(AssetCallbackFlag::Enabled).into())
-    }
-)]
-#[case::non_fungible(
-    AccountType::NonFungibleFaucet,
-    |faucet_id| {
-        let details = NonFungibleAssetDetails::new(faucet_id, vec![1, 2, 3, 4])?;
-        Ok(NonFungibleAsset::new(&details)?.with_callbacks(AssetCallbackFlag::Enabled).into())
-    }
-)]
 #[tokio::test]
-async fn blocklist_add_asset_to_note_fails_when_sender_blocklisted(
-    #[case] account_type: AccountType,
-    #[case] create_asset: impl FnOnce(AccountId) -> anyhow::Result<Asset>,
-) -> anyhow::Result<()> {
+async fn blocklist_add_asset_to_note_fails_when_sender_blocklisted() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
+    let faucet = add_faucet_with_transfer_blocklist(&mut builder)?;
 
-    let faucet = add_faucet_with_blocklistable_for_account_type(&mut builder, account_type)?;
-
-    let asset = create_asset(faucet.id())?;
+    let asset = FungibleAsset::new(faucet.id(), 100)?.with_callbacks(AssetCallbackFlag::Enabled);
 
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
@@ -320,8 +232,8 @@ async fn blocklist_add_asset_to_note_fails_when_sender_blocklisted(
         recipient = recipient,
         note_type = NoteType::Private as u8,
         tag = NoteTag::default(),
-        asset_value = asset.to_value_word(),
-        asset_key = asset.to_key_word(),
+        asset_value = Asset::Fungible(asset).to_value_word(),
+        asset_key = Asset::Fungible(asset).to_key_word(),
     );
 
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(&script_code)?;
@@ -345,7 +257,7 @@ async fn blocklist_add_asset_to_note_fails_when_sender_blocklisted(
 async fn blocklist_then_unblocklist_then_receive_succeeds() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
-    let faucet = add_faucet_with_blocklistable(&mut builder)?;
+    let faucet = add_faucet_with_transfer_blocklist(&mut builder)?;
 
     let amount: u64 = 50;
     let fungible_asset =
@@ -379,7 +291,7 @@ async fn blocklist_then_unblocklist_then_receive_succeeds() -> anyhow::Result<()
 async fn blocklist_already_blocklisted_fails() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
-    let faucet = add_faucet_with_blocklistable(&mut builder)?;
+    let faucet = add_faucet_with_transfer_blocklist(&mut builder)?;
 
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
@@ -414,7 +326,7 @@ async fn blocklist_already_blocklisted_fails() -> anyhow::Result<()> {
 async fn unblocklist_when_not_blocklisted_fails() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
-    let faucet = add_faucet_with_blocklistable(&mut builder)?;
+    let faucet = add_faucet_with_transfer_blocklist(&mut builder)?;
 
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
@@ -448,7 +360,7 @@ async fn blocklist_does_not_affect_other_accounts() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let blocklisted_account = builder.add_existing_wallet(Auth::IncrNonce)?;
     let other_account = builder.add_existing_wallet(Auth::IncrNonce)?;
-    let faucet = add_faucet_with_blocklistable(&mut builder)?;
+    let faucet = add_faucet_with_transfer_blocklist(&mut builder)?;
 
     let amount: u64 = 25;
     let fungible_asset =

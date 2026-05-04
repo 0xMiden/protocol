@@ -43,6 +43,7 @@ use miden_standards::account::policies::{
     MintPolicyConfig,
     PolicyAuthority,
     TokenPolicyManager,
+    TransferPolicyConfig,
 };
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
@@ -209,6 +210,7 @@ fn build_network_faucet_with_burn_switching(
         PolicyAuthority::OwnerControlled,
         mint_policy,
         BurnPolicyConfig::AllowAll,
+        TransferPolicyConfig::AllowAll,
     )
     .with_allowed_burn_policy(BurnOwnerOnly::root());
 

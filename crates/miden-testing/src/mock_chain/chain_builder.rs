@@ -59,6 +59,7 @@ use miden_standards::account::policies::{
     MintPolicyConfig,
     PolicyAuthority,
     TokenPolicyManager,
+    TransferPolicyConfig,
 };
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::note::{P2idNote, P2ideNote, P2ideNoteStorage, SwapNote};
@@ -352,6 +353,7 @@ impl MockChainBuilder {
                 PolicyAuthority::AuthControlled,
                 MintPolicyConfig::AllowAll,
                 BurnPolicyConfig::AllowAll,
+                TransferPolicyConfig::AllowAll,
             ))
             .with_component(metadata)
             .with_component(BasicFungibleFaucet);
@@ -392,6 +394,7 @@ impl MockChainBuilder {
                 PolicyAuthority::AuthControlled,
                 MintPolicyConfig::AllowAll,
                 BurnPolicyConfig::AllowAll,
+                TransferPolicyConfig::AllowAll,
             ))
             .account_type(AccountType::FungibleFaucet);
 
@@ -436,6 +439,7 @@ impl MockChainBuilder {
                 PolicyAuthority::OwnerControlled,
                 mint_policy,
                 BurnPolicyConfig::AllowAll,
+                TransferPolicyConfig::AllowAll,
             ))
             .account_type(AccountType::FungibleFaucet);
 
@@ -460,6 +464,7 @@ impl MockChainBuilder {
                 PolicyAuthority::OwnerControlled,
                 MintPolicyConfig::OwnerOnly,
                 BurnPolicyConfig::AllowAll,
+                TransferPolicyConfig::AllowAll,
             ))
             .account_type(AccountType::FungibleFaucet);
 

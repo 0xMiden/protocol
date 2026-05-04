@@ -20,6 +20,7 @@ use crate::account::policies::{
     MintPolicyConfig,
     PolicyAuthority,
     TokenPolicyManager,
+    TransferPolicyConfig,
 };
 use crate::procedure_digest;
 
@@ -151,16 +152,17 @@ impl TryFrom<&Account> for BasicFungibleFaucet {
 /// - [`FungibleTokenMetadata`] (token metadata, name, description, etc.)
 /// - [`BasicFungibleFaucet`] (mint_and_send and burn procedures)
 /// - [`AuthSingleSigAcl`]
-/// - [`TokenPolicyManager`] + the active mint and burn policy components produced by the
-///   [`MintPolicyConfig`] and [`BurnPolicyConfig`] passed to it (here: `MintAllowAll` and
-///   `BurnAllowAll`).
+/// - [`TokenPolicyManager`] + the active mint, burn, and transfer policy components produced by the
+///   [`MintPolicyConfig`], [`BurnPolicyConfig`], and [`TransferPolicyConfig`] passed to it (here:
+///   `MintAllowAll`, `BurnAllowAll`, `TransferAllowAll`).
 ///
 /// Component dependency graph:
 /// ```text
 /// BasicFungibleFaucet
 /// └── TokenPolicyManager (auth-controlled)
-///     ├── MintAllowAll  (active mint policy)
-///     └── BurnAllowAll  (active burn policy)
+///     ├── MintAllowAll      (active mint policy)
+///     ├── BurnAllowAll      (active burn policy)
+///     └── TransferAllowAll  (active transfer policy)
 /// ```
 pub fn create_basic_fungible_faucet(
     init_seed: [u8; 32],
@@ -208,6 +210,7 @@ pub fn create_basic_fungible_faucet(
             PolicyAuthority::AuthControlled,
             MintPolicyConfig::AllowAll,
             BurnPolicyConfig::AllowAll,
+            TransferPolicyConfig::AllowAll,
         ))
         .build()
         .map_err(FungibleFaucetError::AccountError)?;
