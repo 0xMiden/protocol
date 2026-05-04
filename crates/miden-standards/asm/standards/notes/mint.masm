@@ -68,20 +68,20 @@ pub proc main
     # => [pad(16)]
     # Load note storage into memory starting at STORAGE_PTR
     push.STORAGE_PTR exec.active_note::get_storage
-    # => [num_storage_items, storage_ptr, pad(16)]
+    # => [num_storage_items, pad(16)]
 
     dup
-    # => [num_storage_items, num_storage_items, storage_ptr, pad(16)]
+    # => [num_storage_items, num_storage_items, pad(16)]
 
     u32assert2.err=ERR_MINT_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
     u32gte.MINT_NOTE_MIN_NUM_STORAGE_ITEMS_PUBLIC
-    # => [is_public_output_note, num_storage_items, storage_ptr, pad(16)]
+    # => [is_public_output_note, num_storage_items, pad(16)]
 
     if.true
         # public output note creation
-        # => [num_storage_items, storage_ptr, pad(16)]
+        # => [num_storage_items, pad(16)]
 
-        movdn.9 drop
+        movdn.8
         # => [EMPTY_WORD, EMPTY_WORD, num_storage_items, pad(8)]
 
         mem_loadw_le.PUBLIC_SCRIPT_ROOT_PTR
@@ -107,10 +107,7 @@ pub proc main
     else
         # private output note creation
 
-        eq.MINT_NOTE_NUM_STORAGE_ITEMS_PRIVATE assert.err=ERR_MINT_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS drop
-        # => [storage_ptr, pad(16)]
-
-        drop
+        eq.MINT_NOTE_NUM_STORAGE_ITEMS_PRIVATE assert.err=ERR_MINT_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
         # => [pad(16)]
 
         mem_loadw_le.PRIVATE_RECIPIENT_PTR

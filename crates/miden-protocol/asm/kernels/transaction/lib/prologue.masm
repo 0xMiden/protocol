@@ -14,6 +14,10 @@ use $kernel::constants::MAX_INPUT_NOTES_PER_TX
 use $kernel::constants::MAX_NOTE_STORAGE_ITEMS
 use $kernel::constants::NOTE_TREE_DEPTH
 use $kernel::memory
+use $kernel::memory::BLOCK_DATA_SECTION_OFFSET
+use $kernel::memory::INPUT_VAULT_ROOT_PTR
+use $kernel::memory::KERNEL_PROCEDURES_PTR
+use $kernel::memory::PARTIAL_BLOCKCHAIN_PTR
 
 # CONSTS
 # =================================================================================================
@@ -34,7 +38,7 @@ const ERR_PROLOGUE_GLOBAL_INPUTS_PROVIDED_DO_NOT_MATCH_BLOCK_COMMITMENT="the pro
 
 const ERR_PROLOGUE_GLOBAL_INPUTS_PROVIDED_DO_NOT_MATCH_BLOCK_NUMBER_COMMITMENT="the provided global inputs do not match the block number commitment"
 
-const ERR_PROLOGUE_NATIVE_ASSET_ID_IS_NOT_FUNGIBLE="native asset account ID in reference block is not of type fungible faucet"
+const ERR_PROLOGUE_FEE_FAUCET_ID_IS_NOT_FUNGIBLE="fee faucet ID in reference block is not of type fungible faucet"
 
 const ERR_PROLOGUE_VERIFICATION_BASE_FEE_MUST_BE_U32="verification base fee must fit into a u32"
 
@@ -134,7 +138,7 @@ proc process_kernel_data
     # AS => [[KERNEL_PROCEDURE_ROOTS]]
 
     # get the pointer to the memory where hashes of the kernel procedures will be stored
-    exec.memory::get_kernel_procedures_ptr swap
+    push.KERNEL_PROCEDURES_PTR swap
     # OS => [num_kernel_procedures, kernel_procs_ptr, TX_KERNEL_COMMITMENT]
     # AS => [[KERNEL_PROCEDURE_ROOTS]]
 
@@ -170,12 +174,13 @@ end
 #!     TX_KERNEL_COMMITMENT
 #!     VALIDATOR_KEY_COMMITMENT,
 #!     [block_num, version, timestamp, 0],
-#!     [0, verification_base_fee, native_asset_id_suffix, native_asset_id_prefix],
+#!     [0, verification_base_fee, fee_faucet_id_suffix, fee_faucet_id_prefix],
 #!     [0, 0, 0, 0],
 #!     NOTE_ROOT,
 #!   ]
 #! Outputs:
 #!   Operand stack: []
+#!   Advice stack: []
 #!
 #! Where:
 #! - PREV_BLOCK_COMMITMENT is the commitment to the previous block.
@@ -189,13 +194,13 @@ end
 #! - block_num is the reference block number.
 #! - version is the current protocol version.
 #! - timestamp is the current timestamp.
-#! - native_asset_id_{prefix, suffix} are the prefix and suffix felts of the faucet ID that defines
-#!   the native asset.
+#! - fee_faucet_id_{prefix, suffix} are the prefix and suffix felts of the faucet ID that defines
+#!   the fee asset.
 #! - verification_base_fee is the base fee capturing the cost for the verification of a
 #!   transaction.
 #! - NOTE_ROOT is the root of the tree with all notes created in the block.
 proc process_block_data
-    exec.memory::get_block_data_ptr
+    push.BLOCK_DATA_SECTION_OFFSET
     # => [block_data_ptr, block_num]
 
     # read block data and compute its sub commitment
@@ -259,7 +264,7 @@ end
 #! - num_blocks is the number of blocks in the MMR.
 #! - PEAK_1 .. PEAK_N are the MMR peaks.
 proc process_chain_data
-    exec.memory::get_partial_blockchain_ptr dup
+    push.PARTIAL_BLOCKCHAIN_PTR dup
     # => [partial_blockchain_ptr, partial_blockchain_ptr]
 
     # save the MMR peaks to memory and verify it matches the block's CHAIN_COMMITMENT
@@ -479,7 +484,7 @@ proc authenticate_note
     # Load the BLOCK_COMMITMENT from the PARTIAL_BLOCKCHAIN
     # ---------------------------------------------------------------------------------------------
 
-    exec.memory::get_partial_blockchain_ptr adv_push.1
+    push.PARTIAL_BLOCKCHAIN_PTR adv_push.1
     # => [block_num, partial_blockchain_ptr, NOTE_COMMITMENT]
 
     exec.mmr::get
@@ -688,7 +693,7 @@ proc add_input_note_assets_to_vault
     # prepare the stack
     # ---------------------------------------------------------------------------------------------
 
-    exec.memory::get_input_vault_root_ptr
+    push.INPUT_VAULT_ROOT_PTR
     # => [input_vault_root_ptr, note_ptr]
 
     dup.1 exec.memory::get_input_note_assets_ptr
@@ -795,6 +800,7 @@ end
 #!        block_num,
 #!        BLOCK_SUB_COMMITMENT,
 #!        NOTE_ROOT,
+#!        note_index,
 #!      )?
 #!   ]
 #! Outputs:
@@ -818,6 +824,7 @@ end
 #!   - block_num is the note's creation block number.
 #!   - BLOCK_SUB_COMMITMENT is the block's sub_commitment for which the note was created.
 #!   - NOTE_ROOT is the merkle root of the note's tree.
+#!   - note_index is the input note's position in the notes tree.
 proc process_input_note
     # note details
     # ---------------------------------------------------------------------------------------------
@@ -1089,10 +1096,9 @@ end
 #!     TX_KERNEL_COMMITMENT
 #!     VALIDATOR_KEY_COMMITMENT,
 #!     [block_num, version, timestamp, 0],
-#!     [0, verification_base_fee, native_asset_id_suffix, native_asset_id_prefix]
+#!     [0, verification_base_fee, fee_faucet_id_suffix, fee_faucet_id_prefix]
 #!     [0, 0, 0, 0]
 #!     NOTE_ROOT,
-#!     kernel_version
 #!     [account_nonce, 0, account_id_suffix, account_id_prefix]
 #!     ACCOUNT_VAULT_ROOT,
 #!     ACCOUNT_STORAGE_COMMITMENT,
@@ -1133,8 +1139,10 @@ end
 #! - version is the current protocol version.
 #! - timestamp is the current timestamp.
 #! - NOTE_ROOT is the root of the tree with all notes created in the block.
-#! - kernel_version is the index of the desired kernel in the array of all kernels available for the
-#!   current transaction.
+#! - verification_base_fee is the base fee capturing the cost for the verification of a
+#!   transaction.
+#! - native_asset_id_{prefix, suffix} are the prefix and suffix felts of the faucet ID that defines
+#!   the native asset.
 #! - account_nonce is the account's nonce.
 #! - ACCOUNT_VAULT_ROOT is the account's vault root.
 #! - ACCOUNT_STORAGE_COMMITMENT is the account's storage commitment.
