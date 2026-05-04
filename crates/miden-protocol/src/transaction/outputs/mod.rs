@@ -17,7 +17,7 @@ pub use notes::{
     OutputNote,
     OutputNoteCollection,
     OutputNotes,
-    PrivateNoteHeader,
+    PrivateOutputNote,
     PublicOutputNote,
     RawOutputNote,
     RawOutputNotes,

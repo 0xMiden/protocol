@@ -6,7 +6,7 @@ use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
     Note,
     NoteAssets,
-    NoteAttachment,
+    NoteAttachments,
     NoteMetadata,
     NoteRecipient,
     NoteScript,
@@ -78,7 +78,7 @@ impl BurnNote {
     /// - `sender`: The account ID of the note creator
     /// - `faucet_id`: The account ID of the faucet that will burn the assets
     /// - `fungible_asset`: The fungible asset to be burned
-    /// - `attachment`: The [`NoteAttachment`] of the BURN note
+    /// - `attachment`: The [`NoteAttachments`] of the BURN note
     /// - `rng`: Random number generator for creating the serial number
     ///
     /// # Errors
@@ -87,7 +87,7 @@ impl BurnNote {
         sender: AccountId,
         faucet_id: AccountId,
         fungible_asset: Asset,
-        attachment: NoteAttachment,
+        attachments: NoteAttachments,
         rng: &mut R,
     ) -> Result<Note, NoteError> {
         let note_script = Self::script();
@@ -99,11 +99,10 @@ impl BurnNote {
         let inputs = NoteStorage::new(vec![])?;
         let tag = NoteTag::with_account_target(faucet_id);
 
-        let metadata =
-            NoteMetadata::new(sender, note_type).with_tag(tag).with_attachment(attachment);
+        let metadata = NoteMetadata::new(sender, note_type).with_tag(tag);
         let assets = NoteAssets::new(vec![fungible_asset])?; // BURN notes contain the asset to burn
         let recipient = NoteRecipient::new(serial_num, note_script, inputs);
 
-        Ok(Note::new(assets, metadata, recipient))
+        Ok(Note::with_attachments(assets, metadata, recipient, attachments))
     }
 }

@@ -16,6 +16,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::{FungibleAsset, NonFungibleAsset};
 use miden_protocol::block::account_tree::AccountIdKey;
+use miden_protocol::crypto::SequentialCommit;
 use miden_protocol::errors::tx_kernel::ERR_ACCOUNT_SEED_AND_COMMITMENT_DIGEST_MISMATCH;
 use miden_protocol::note::NoteId;
 use miden_protocol::testing::account_id::{
@@ -489,13 +490,13 @@ fn input_notes_memory_assertions(
 
         assert_eq!(
             exec_output.get_note_mem_word(note_idx, INPUT_NOTE_METADATA_HEADER_OFFSET),
-            note.metadata().to_header_word(),
+            note.metadata_header().to_metadata_word(),
             "note metadata header should be stored at the correct offset"
         );
 
         assert_eq!(
             exec_output.get_note_mem_word(note_idx, INPUT_NOTE_ATTACHMENT_OFFSET),
-            note.metadata().to_attachment_word(),
+            note.attachments().to_commitment(),
             "note attachment should be stored at the correct offset"
         );
 

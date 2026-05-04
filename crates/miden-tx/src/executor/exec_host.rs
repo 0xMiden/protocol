@@ -611,9 +611,9 @@ where
                     self.base_host.on_note_before_add_asset(note_idx, asset)
                 },
 
-                TransactionEvent::NoteBeforeSetAttachment { note_idx, attachment } => self
+                TransactionEvent::NoteBeforeAddAttachment { note_idx, attachment } => self
                     .base_host
-                    .on_note_before_set_attachment(note_idx, attachment)
+                    .on_note_before_add_attachment(note_idx, attachment)
                     .map(|_| Vec::new()),
 
                 TransactionEvent::AuthRequest { pub_key_hash, tx_summary, signature } => {

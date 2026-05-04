@@ -42,7 +42,7 @@ use miden_protocol::block::{
 };
 use miden_protocol::crypto::merkle::smt::Smt;
 use miden_protocol::errors::NoteError;
-use miden_protocol::note::{Note, NoteAttachment, NoteDetails, NoteType};
+use miden_protocol::note::{Note, NoteAttachments, NoteDetails, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_FEE_FAUCET;
 use miden_protocol::testing::random_secret_key::random_secret_key;
 use miden_protocol::transaction::{OrderedTransactionHeaders, RawOutputNote, TransactionKernel};
@@ -611,7 +611,7 @@ impl MockChainBuilder {
             target_account_id,
             asset.to_vec(),
             note_type,
-            NoteAttachment::default(),
+            NoteAttachments::default(),
             &mut self.rng,
         )?;
         self.add_output_note(RawOutputNote::Full(note.clone()));
@@ -662,7 +662,7 @@ impl MockChainBuilder {
             offered_asset,
             requested_asset,
             NoteType::Public,
-            NoteAttachment::default(),
+            NoteAttachments::default(),
             payback_note_type,
             &mut self.rng,
         )?;

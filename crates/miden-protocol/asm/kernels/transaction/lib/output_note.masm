@@ -3,26 +3,29 @@ use $kernel::asset
 use $kernel::callbacks
 use $kernel::fungible_asset
 use $kernel::memory
+use $kernel::memory::KERNEL_SCRATCH_PTR
 use $kernel::note
 use $kernel::note::NOTE_TYPE_PUBLIC
+use $kernel::note::MAX_ATTACHMENT_SCHEME
+use $kernel::note::MAX_ATTACHMENT_WORDS
 use $kernel::constants::MAX_OUTPUT_NOTES_PER_TX
-use $kernel::util::note::ATTACHMENT_KIND_NONE
-use $kernel::util::note::ATTACHMENT_KIND_ARRAY
+use $kernel::constants::WORD_SIZE
 use $kernel::asset::ASSET_SIZE
 use $kernel::asset::ASSET_VALUE_MEMORY_OFFSET
 use miden::core::word
+use miden::core::mem
 
-# CONSTANTS
+# CONSTANTS
 # =================================================================================================
 
-# The default value of the felt at index 3 in the note metadata header when a new note is created.
-# All zeros sets the attachment kind to None and the user-defined attachment scheme to "none".
-const ATTACHMENT_DEFAULT_KIND_AND_SCHEME=0
+# The maximum number of attachments per note.
+const MAX_ATTACHMENTS_PER_NOTE=4
 
-#! The default attachment scheme, representing the absence of an attachment scheme.
-const ATTACHMENT_SCHEME_NONE=0
+# The default value of felt[3] in the metadata header when a new note is created.
+# All zeros means no attachment schemes are set.
+const ATTACHMENT_DEFAULT_SCHEMES=0
 
-# ERRORS
+# ERRORS
 # =================================================================================================
 
 const ERR_TX_NUMBER_OF_OUTPUT_NOTES_EXCEEDS_LIMIT="number of output notes in the transaction exceeds the maximum limit of 1024"
@@ -31,15 +34,21 @@ const ERR_NOTE_INVALID_TYPE="invalid note type"
 
 const ERR_OUTPUT_NOTE_INDEX_OUT_OF_BOUNDS="requested output note index should be less than the total number of created output notes"
 
-const ERR_OUTPUT_NOTE_INVALID_ATTACHMENT_SCHEMES="attachment scheme and attachment kind must fit into u32s"
+const ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_MAX_EXCEEDED="attachment scheme must not exceed 65534"
 
-const ERR_OUTPUT_NOTE_UNKNOWN_ATTACHMENT_KIND="attachment kind variant must be between 0 and 2"
+const ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_CANNOT_BE_ZERO = "attachment scheme must not be 0"
 
-const ERR_OUTPUT_NOTE_ATTACHMENT_KIND_NONE_MUST_HAVE_ATTACHMENT_SCHEME_NONE="attachment kind none must have attachment scheme none"
+const ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_MAX_EXCEEDED="attachment num_words must not exceed 254"
 
-const ERR_OUTPUT_NOTE_ATTACHMENT_KIND_NONE_MUST_BE_EMPTY_WORD="attachment kind None requires ATTACHMENT to be set to an empty word"
+const ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_MUST_BE_MULTIPLE_OF_WORD_SIZE="number of elements in an attachment must be a multiple of 4"
+
+const ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_CANNOT_BE_ZERO="attachment num_words cannot be zero"
+
+const ERR_OUTPUT_NOTE_TOO_MANY_ATTACHMENTS="number of attachments per note cannot exceed 4"
 
 const ERR_NOTE_FUNGIBLE_MAX_AMOUNT_EXCEEDED="adding a fungible asset to a note cannot exceed the max_amount of 9223372036854775807"
+
+const ERR_OUTPUT_NOTE_ATTACHMENT_COMMITMENT_MISMATCH="the computed hash of fetched attachment elements does not match the provided commitment"
 
 const ERR_NON_FUNGIBLE_ASSET_ALREADY_EXISTS="non-fungible asset that already exists in the note cannot be added again"
 
@@ -53,18 +62,20 @@ const NOTE_BEFORE_CREATED_EVENT=event("miden::protocol::note::before_created")
 # Event emitted after a new note is created.
 const NOTE_AFTER_CREATED_EVENT=event("miden::protocol::note::after_created")
 
-# Event emitted before an asset is added to a note
+# Event emitted before an asset is added to a note.
 const NOTE_BEFORE_ADD_ASSET_EVENT=event("miden::protocol::note::before_add_asset")
-# Event emitted after an asset is added to a note
+# Event emitted after an asset is added to a note.
 const NOTE_AFTER_ADD_ASSET_EVENT=event("miden::protocol::note::after_add_asset")
 
-# Event emitted before an ATTACHMENT is added to a note
-const NOTE_BEFORE_SET_ATTACHMENT_EVENT=event("miden::protocol::note::before_set_attachment")
+# Event emitted before an attachment is added to a note.
+const NOTE_BEFORE_ADD_ATTACHMENT_EVENT=event("miden::protocol::note::before_add_attachment")
 
 # OUTPUT NOTE PROCEDURES
 # =================================================================================================
 
 #! Creates a new note and returns the index of the note.
+#!
+#! All attachments are by default set to empty words and the number of attachments is 0.
 #!
 #! Inputs:  [tag, note_type, RECIPIENT]
 #! Outputs: [note_idx]
@@ -98,7 +109,7 @@ pub proc create
     movdn.4
     # => [NOTE_METADATA_HEADER, note_ptr, RECIPIENT, note_idx]
 
-    # emit event to signal that a new note is created
+    # emit event to signal that a new note is created
     emit.NOTE_AFTER_CREATED_EVENT
 
     # set the metadata for the output note
@@ -106,14 +117,6 @@ pub proc create
     # => [note_ptr, NOTE_METADATA_HEADER, note_ptr, RECIPIENT, note_idx]
 
     exec.memory::set_output_note_metadata_header dropw
-    # => [note_ptr, RECIPIENT, note_idx]
-
-    # set the attachment value of a new note to an empty word
-    # note that the attachment kind is set to None by build_metadata_header
-    padw dup.4
-    # => [note_ptr, EMPTY_WORD, note_ptr, RECIPIENT, note_idx]
-
-    exec.memory::set_output_note_attachment
     # => [note_ptr, RECIPIENT, note_idx]
 
     # set the RECIPIENT for the output note
@@ -230,44 +233,85 @@ pub proc add_asset
     # => []
 end
 
-#! Sets the attachment of the note specified by the index.
+#! Adds an attachment to the note specified by the index. Attachments are append-only.
 #!
-#! Inputs:  [note_idx, attachment_scheme, attachment_kind, ATTACHMENT]
+#! The attachment elements are fetched from the advice map using ATTACHMENT_COMMITMENT as the key.
+#! The number of words (num_words) is derived from the element count and the commitment is verified
+#! by hashing the fetched elements.
+#!
+#! Inputs:
+#!   Operand Stack: [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx]
+#!   Advice map: {
+#!     ATTACHMENT_COMMITMENT: [[ATTACHMENT_ELEMENTS]],
+#!   }
 #! Outputs: []
 #!
 #! Where:
-#! - note_idx is the index of the note on which the attachment is set.
 #! - attachment_scheme is the user-defined scheme of the attachment.
-#! - attachment_kind is the kind of the attachment content.
-#! - ATTACHMENT is the attachment to be set.
+#! - ATTACHMENT_COMMITMENT is the hash commitment to the attachment elements.
+#! - note_idx is the index of the note to which the attachment is added.
 #!
 #! Panics if:
-#! - the attachment kind or scheme does not fit into a u32.
-#! - the attachment kind is an unknown variant.
-pub proc set_attachment
-    exec.memory::get_output_note_ptr dup
-    # => [note_ptr, note_ptr, attachment_scheme, attachment_kind, ATTACHMENT]
+#! - the attachment scheme is 0 or exceeds 65534.
+#! - the number of elements is not a multiple of 4, or num_words is zero or exceeds 254.
+#! - the computed hash of fetched attachment elements does not match ATTACHMENT_COMMITMENT.
+#! - the note already has 4 attachments.
+pub proc add_attachment
+    # validate attachment_scheme does not exceed max
+    dup u32assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_MAX_EXCEEDED
+    u32lte.MAX_ATTACHMENT_SCHEME assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_MAX_EXCEEDED
+    # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx]
 
-    dupw.1
-    # => [ATTACHMENT, note_ptr, note_ptr, attachment_scheme, attachment_kind, ATTACHMENT]
+    # assert the scheme is not 0 which the kernel uses to represent absent attachments
+    dup neq.0 assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_CANNOT_BE_ZERO
+    # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx]
 
-    dup.7 dup.7
-    # => [attachment_scheme, attachment_kind, ATTACHMENT, note_ptr, note_ptr,
-    #     attachment_scheme, attachment_kind, ATTACHMENT]
+    movdn.4
+    # => [ATTACHMENT_COMMITMENT, attachment_scheme, note_idx]
 
-    exec.validate_attachment
-    # => [note_ptr, note_ptr, attachment_scheme, attachment_kind, ATTACHMENT]
+    # validate preimage for commitment is available and number of committed words is within limits
+    dupw exec.validate_attachment
+    # => [ATTACHMENT_COMMITMENT, attachment_scheme, note_idx]
 
-    movdn.3 movdn.3
-    # => [attachment_scheme, attachment_kind, note_ptr, note_ptr, ATTACHMENT]
+    movup.4
+    # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx]
 
-    emit.NOTE_BEFORE_SET_ATTACHMENT_EVENT
-    # => [attachment_scheme, attachment_kind, note_ptr, note_ptr, ATTACHMENT]
+    # get note_ptr from note_idx
+    movup.5 exec.memory::get_output_note_ptr
+    # => [note_ptr, attachment_scheme, ATTACHMENT_COMMITMENT]
 
-    exec.set_attachment_kind_scheme
-    # => [note_ptr, ATTACHMENT]
+    # validate current number of attachments < 4
+    dup exec.memory::get_output_note_num_attachments
+    # => [num_attachments, note_ptr, attachment_scheme, ATTACHMENT_COMMITMENT]
 
-    exec.memory::set_output_note_attachment
+    dup lt.MAX_ATTACHMENTS_PER_NOTE assert.err=ERR_OUTPUT_NOTE_TOO_MANY_ATTACHMENTS
+    # => [num_attachments, note_ptr, attachment_scheme, ATTACHMENT_COMMITMENT]
+
+    # emit event
+    emit.NOTE_BEFORE_ADD_ATTACHMENT_EVENT
+    # => [num_attachments, note_ptr, attachment_scheme, ATTACHMENT_COMMITMENT]
+
+    # --- Add attachment in output note memory ---
+
+    movup.6 movup.6 movup.6 movup.6
+    # => [ATTACHMENT_COMMITMENT, num_attachments, note_ptr, attachment_scheme]
+
+    # use attachment_idx = num_attachments
+    dup.4 dup.6
+    # => [note_ptr, attachment_idx, ATTACHMENT_COMMITMENT, num_attachments, note_ptr, attachment_scheme]
+
+    # store commitment in note memory
+    exec.memory::set_output_note_attachment_commitment
+    # => [num_attachments, note_ptr, attachment_scheme]
+
+    # increment number of attachments
+    dup add.1
+    # => [new_num_attachments, num_attachments, note_ptr, attachment_scheme]
+
+    dup.2 exec.memory::set_output_note_num_attachments
+    # => [num_attachments, note_ptr, attachment_scheme]
+
+    exec.set_attachment_schemes
     # => []
 end
 
@@ -285,17 +329,65 @@ pub proc assert_note_index_in_bounds
     # => [note_index]
 end
 
-# HELPER PROCEDURES
+# HELPER PROCEDURES
 # =================================================================================================
+
+#! Validates the attachment commitment against the advice data.
+#!
+#! Fetches the attachment elements from the advice map using ATTACHMENT_COMMITMENT as the key,
+#! derives num_words from the element count, pipes the elements to scratch memory to compute the
+#! commitment, and asserts the computed commitment matches the provided commitment.
+#!
+#! Inputs:
+#!   Operand Stack: [ATTACHMENT_COMMITMENT]
+#!   Advice map: {
+#!     ATTACHMENT_COMMITMENT: [[ATTACHMENT_ELEMENTS]],
+#!   }
+#! Outputs: []
+#!
+#! Panics if:
+#! - the number of elements is not a multiple of 4, or num_words is zero or exceeds 254.
+#! - the computed hash of fetched elements does not match ATTACHMENT_COMMITMENT.
+proc validate_attachment
+    # push the attachment elements from the advice map onto the advice stack
+    adv.push_mapvaln
+    # OS => [ATTACHMENT_COMMITMENT]
+    # AS => [num_elements, [ATTACHMENT_ELEMENTS]]
+
+    # derive num_words from num_elements
+    adv_push.1 u32assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_MAX_EXCEEDED
+    u32divmod.WORD_SIZE
+    # OS => [remainder, num_words, ATTACHMENT_COMMITMENT]
+    # AS => [[ATTACHMENT_ELEMENTS]]
+
+    # assert the number of elements is a multiple of WORD_SIZE
+    eq.0 assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_MUST_BE_MULTIPLE_OF_WORD_SIZE
+    # OS => [num_words, ATTACHMENT_COMMITMENT]
+    # AS => [[ATTACHMENT_ELEMENTS]]
+
+    # validate 0 < num_words <= 254
+    dup neq.0 assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_CANNOT_BE_ZERO
+    dup u32lte.MAX_ATTACHMENT_WORDS assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_MAX_EXCEEDED
+    # OS => [num_words, ATTACHMENT_COMMITMENT]
+    # AS => [[ATTACHMENT_ELEMENTS]]
+
+    # --- Pipe elements from advice stack to scratch memory while hashing ---
+
+    # we use scratch memory because pipe_preimage_to_memory needs to write to memory, but we only
+    # need to assert that the preimage is available, the exact content itself is unimportant
+    push.KERNEL_SCRATCH_PTR swap
+    # OS => [num_words, scratch_ptr, ATTACHMENT_COMMITMENT]
+    # AS => [[ATTACHMENT_ELEMENTS]]
+
+    # validate the sequential hash over the attachment elements is ATTACHMENT_COMMITMENT
+    exec.mem::pipe_preimage_to_memory drop
+    # OS => []
+end
 
 #! Builds the provided inputs into the NOTE_METADATA_HEADER word.
 #!
 #! - The sender ID is set to the native account's ID.
-#! - The attachment scheme is set to 0 (meaning none by convention) and the attachment content
-#!   type is set to None.
-#!
-#! Note that this procedure is only exported so it can be tested. It should not be called from
-#! non-test code.
+#! - Attachment num_words and schemes are initialized to 0 (no attachments).
 #!
 #! Inputs:  [tag, note_type]
 #! Outputs: [NOTE_METADATA_HEADER]
@@ -317,110 +409,82 @@ pub proc build_metadata_header
     # Validate the note tag fits into a u32.
     # --------------------------------------------------------------------------------------------
 
+    # this implies the upper 32 bits are zero, which initializes the attachment num_words to 0
     u32assert.err=ERR_NOTE_TAG_MUST_BE_U32
-    # => [tag, note_type]
+    # => [attachment_num_words_and_tag, note_type]
 
     # Merge note type, version, and sender ID suffix.
     # --------------------------------------------------------------------------------------------
 
     exec.account::get_id
-    # => [sender_id_suffix, sender_id_prefix, tag, note_type]
+    # => [sender_id_suffix, sender_id_prefix, attachment_num_words_and_tag, note_type]
 
     # The lower 8 bits of the account ID suffix are guaranteed to be zero by construction.
     # Encode note_type at bit 4, leaving version at 0 (in bits 0..=3).
     # Shifting note_type left by 4 is equivalent to multiplying by 16.
     movup.3 mul.16 add
-    # => [sender_id_suffix_type_version, sender_id_prefix, tag]
+    # => [sender_id_suffix_type_version, sender_id_prefix, attachment_num_words_and_tag]
 
     # Build metadata header.
     # --------------------------------------------------------------------------------------------
 
-    push.ATTACHMENT_DEFAULT_KIND_AND_SCHEME movdn.3
-    # => [sender_id_suffix_type_version, sender_id_prefix, tag, attachment_kind_scheme]
+    # push default absent attachment schemes (all zeros)
+    push.ATTACHMENT_DEFAULT_SCHEMES movdn.3
+    # => [sender_id_suffix_type_version, sender_id_prefix, attachment_num_words_and_tag, attachment_schemes]
     # => [NOTE_METADATA_HEADER]
 end
 
-#! Validate the ATTACHMENT against the attachment kind.
+#! Sets an output note's attachment scheme in the note metadata header.
 #!
-#! Inputs:  [attachment_scheme, attachment_kind, ATTACHMENT]
+#! WARNING: The attachment scheme must be valid.
+#!
+#! Inputs:  [num_attachments, note_ptr, attachment_scheme]
 #! Outputs: []
 #!
 #! Where:
-#! - attachment_scheme is the user-defined scheme of the attachment.
-#! - attachment_kind is the kind of the attachment content.
-#! - ATTACHMENT is the attachment to validate.
-#!
-#! Panics if:
-#! - the attachment kind or scheme does not fit into a u32.
-#! - the attachment kind is an unknown variant.
-#! - the attachment kind is None and the ATTACHMENT is not an empty word.
-proc validate_attachment
-    u32assert2.err=ERR_OUTPUT_NOTE_INVALID_ATTACHMENT_SCHEMES
-    # => [attachment_scheme, attachment_kind, ATTACHMENT]
-
-    # assert that the attachment kind is valid
-    swap dup u32lte.ATTACHMENT_KIND_ARRAY
-    assert.err=ERR_OUTPUT_NOTE_UNKNOWN_ATTACHMENT_KIND
-    # => [attachment_kind, attachment_scheme, ATTACHMENT]
-
-    eq.ATTACHMENT_KIND_NONE
-    # => [is_attachment_none, attachment_scheme, ATTACHMENT]
-
-    if.true
-        eq.ATTACHMENT_SCHEME_NONE
-        assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_KIND_NONE_MUST_HAVE_ATTACHMENT_SCHEME_NONE
-        # => [ATTACHMENT]
-
-        padw assert_eqw.err=ERR_OUTPUT_NOTE_ATTACHMENT_KIND_NONE_MUST_BE_EMPTY_WORD
-        # => []
-    else
-        drop dropw
-        # => []
-    end
-    # => []
-end
-
-#! Sets an output note's attachment kind and scheme in the note metadata header.
-#!
-#! WARNING: The attachment scheme and kind must be valid.
-#!
-#! Inputs:  [attachment_scheme, attachment_kind, note_ptr]
-#! Outputs: []
-#!
-#! Where:
+#! - num_attachments is the number of attachments the note had before this attachment was added.
 #! - attachment_scheme is the user-defined type of the attachment.
-#! - attachment_kind is the kind of the attachment content.
 #! - note_ptr is the memory address at which the output note data begins.
-proc set_attachment_kind_scheme
-    exec.merge_attachment_kind_and_scheme
-    # => [attachment_kind_scheme, note_ptr]
+proc set_attachment_schemes
+    # the schemes are stored as follows in the third felt:
+    # 3rd felt: [
+    #   attachment_3_scheme (16 bits) | attachment_2_scheme (16 bits) |
+    #   attachment_1_scheme (16 bits) | attachment_0_scheme (16 bits)
+    # ]
+    # -> current scheme needs to be shifted left by num_attachments * 16
 
-    swap
-    # => [note_ptr, attachment_kind_scheme]
+    # Prepare scheme and num_words.
+    # --------------------------------------------------------------------------------------------
 
-    exec.memory::set_output_note_attachment_kind_scheme
+    movup.2 swap
+    # => [num_attachments, attachment_scheme, note_ptr]
+
+    # shift the scheme left by num_attachments * 16 bits using felt multiplication
+    # u32shl cannot be used because the shift may be >= 32
+    # left shift is done with multiplication by 2^(num_attachments * 16)
+    mul.16 pow2 mul
+    # => [attachment_scheme_shifted, note_ptr]
+
+    # Fetch and update metadata header.
+    # --------------------------------------------------------------------------------------------
+
+    dup.1 exec.memory::get_output_note_metadata_header
+    # => [METADATA_HEADER, attachment_scheme_shifted, note_ptr]
+    # => [
+    #   [sender_id_suffix_type_version, sender_id_prefix, tag, attachment_schemes],
+    #   attachment_scheme_shifted, note_ptr
+    # ]
+
+    # merge scheme into existing schemes
+    # (using add instead of u32or because the shifted values exceed u32; this is safe because the
+    # bit ranges of the tag, existing sizes, and the new size do not overlap)
+    movup.3 movup.4
+    add movdn.3
+    # => [[sender_id_suffix_type_version, sender_id_prefix, tag, new_attachment_schemes], note_ptr]
+    # => [METADATA_HEADER, note_ptr]
+
+    movup.4 exec.memory::set_output_note_metadata_header dropw
     # => []
-end
-
-#! Merges the attachment kind and scheme into a single felt with the following layout:
-#!
-#! [30 zero bits | attachment_kind (2 bits) | attachment_scheme (32 bits)]
-#!
-#! WARNING: The attachment scheme and kind must be valid.
-#!
-#! Inputs:  [attachment_scheme, attachment_kind]
-#! Outputs: [attachment_kind_scheme]
-#!
-#! Where:
-#! - attachment_scheme is the user-defined scheme of the attachment.
-#! - attachment_kind is the kind of the attachment content.
-#! - attachment_kind_scheme is the felt constructed from the inputs.
-proc merge_attachment_kind_and_scheme
-    # shift the attachment_kind 32 bits to the left, which is the same as multiplying by 2^32
-    # and set the lower bits to the attachment_scheme, which is done by adding the values together
-    swap mul.0x100000000
-    add
-    # => [attachment_kind_scheme]
 end
 
 #! Increments the number of output notes by one. Returns the index of the next note to be created.

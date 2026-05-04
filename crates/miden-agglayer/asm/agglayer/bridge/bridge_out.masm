@@ -76,7 +76,6 @@ const DESTINATION_NETWORK_LOC=13
 const CREATE_BURN_NOTE_BURN_ASSET_LOC=0
 const ATTACHMENT_LOC=8
 const ATTACHMENT_SCHEME_LOC=12
-const ATTACHMENT_KIND_LOC=13
 
 # Other constants
 # -------------------------------------------------------------------------------------------------
@@ -540,11 +539,10 @@ proc create_burn_note
     # => [faucet_id_suffix, faucet_id_prefix, exec_hint, ASSET_KEY]
 
     exec.network_account_target::new
-    # => [attachment_scheme, attachment_kind, NOTE_ATTACHMENT, ASSET_KEY]
+    # => [attachment_scheme, NOTE_ATTACHMENT, ASSET_KEY]
 
     # Save attachment data to locals
     loc_store.ATTACHMENT_SCHEME_LOC
-    loc_store.ATTACHMENT_KIND_LOC
     loc_storew_le.ATTACHMENT_LOC dropw
     # => [ASSET_KEY]
 
@@ -571,27 +569,27 @@ proc create_burn_note
     call.output_note::create
     # => [note_idx, pad(15)]
 
-    # duplicate note_idx: one for set_attachment, one for add_asset
-    dup swapw loc_loadw_le.ATTACHMENT_LOC
-    # => [NOTE_ATTACHMENT, note_idx, note_idx, pad(11)]
+    # duplicate note_idx: one for add_word_attachment, one for add_asset
+    dup
+    # => [note_idx, note_idx, pad(15)]
 
-    loc_load.ATTACHMENT_KIND_LOC
+    padw loc_loadw_le.ATTACHMENT_LOC
+    # => [NOTE_ATTACHMENT, note_idx, note_idx, pad(15)]
+
     loc_load.ATTACHMENT_SCHEME_LOC
-    # => [scheme, kind, NOTE_ATTACHMENT, note_idx, note_idx, pad(11)]
+    # => [scheme, NOTE_ATTACHMENT, note_idx, note_idx, pad(15)]
 
-    movup.6
-    # => [note_idx, scheme, kind, NOTE_ATTACHMENT, note_idx, pad(11)]
-
-    exec.output_note::set_attachment
-    # => [note_idx, pad(11)]
+    # network_account_target is a word-sized attachment
+    exec.output_note::add_word_attachment
+    # => [note_idx, pad(15)]
 
     locaddr.CREATE_BURN_NOTE_BURN_ASSET_LOC
     exec.asset::load
-    # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(11)]
+    # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(15)]
 
     exec.output_note::add_asset
-    # => [pad(11)]
+    # => [pad(15)]
 
-    dropw dropw drop drop drop
+    dropw dropw dropw drop drop drop
     # => []
 end

@@ -5,7 +5,14 @@ use miden_protocol::account::{Account, AccountId, AccountStorageMode, AccountVau
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
 use miden_protocol::errors::MasmError;
-use miden_protocol::note::{Note, NoteAttachment, NoteAttachmentScheme, NoteType};
+use miden_protocol::note::{
+    Note,
+    NoteAttachment,
+    NoteAttachmentContent,
+    NoteAttachmentScheme,
+    NoteAttachments,
+    NoteType,
+};
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, ONE, Word, ZERO};
 use miden_standards::account::wallets::BasicWallet;
@@ -30,6 +37,15 @@ const BASIC_AUTH: Auth = Auth::BasicAuth {
 
 // HELPERS
 // ================================================================================================
+
+/// Extracts the first attachment's word content from a `NoteAttachments`.
+fn first_attachment_word(attachments: &NoteAttachments) -> Word {
+    let content = attachments.get(0).expect("expected at least one attachment").content();
+    match content {
+        NoteAttachmentContent::Word(w) => *w,
+        NoteAttachmentContent::Array(_) => panic!("expected Word attachment, got Array"),
+    }
+}
 
 /// Builds a PswapNote, registers it on the builder as an output note, and returns
 /// both the `PswapNote` (for `.execute()`) and the protocol `Note` (for
@@ -177,13 +193,13 @@ async fn pswap_note_alice_reconstructs_and_consumes_p2id() -> anyhow::Result<()>
     // Read the attachment from the executed transaction's output (not from the
     // Rust-predicted `p2id_note`) so this actually validates the MASM side.
     let output_p2id = executed_transaction.output_notes().get_note(0);
-    let aux_word = output_p2id.metadata().attachment().content().to_word();
+    let aux_word = first_attachment_word(output_p2id.attachments());
     let fill_amount_from_aux = aux_word[0].as_canonical_u64();
     assert_eq!(fill_amount_from_aux, 20, "Fill amount from aux should be 20 ETH");
 
     // Parity check: Rust-predicted P2ID attachment must match the MASM output.
     assert_eq!(
-        p2id_note.metadata().attachment().content().to_word(),
+        first_attachment_word(p2id_note.attachments()),
         aux_word,
         "Rust-predicted P2ID attachment does not match the MASM-produced one",
     );
@@ -208,7 +224,7 @@ async fn pswap_note_alice_reconstructs_and_consumes_p2id() -> anyhow::Result<()>
     // remainder PswapNote.
 
     let output_remainder = executed_transaction.output_notes().get_note(1);
-    let remainder_aux = output_remainder.metadata().attachment().content().to_word();
+    let remainder_aux = first_attachment_word(output_remainder.attachments());
     let amt_payout_from_aux = remainder_aux[0].as_canonical_u64();
 
     let expected_payout = pswap.calculate_offered_for_requested(fill_amount_from_aux)?;
@@ -238,7 +254,6 @@ async fn pswap_note_alice_reconstructs_and_consumes_p2id() -> anyhow::Result<()>
     ]);
     let remainder_attachment =
         NoteAttachment::new_word(NoteAttachmentScheme::none(), remainder_attachment_word);
-
     let reconstructed_remainder: Note = PswapNote::builder()
         .sender(bob.id())
         .storage(remainder_storage)
@@ -268,7 +283,7 @@ async fn pswap_note_alice_reconstructs_and_consumes_p2id() -> anyhow::Result<()>
 
     // Parity on the attachment word itself.
     assert_eq!(
-        reconstructed_remainder.metadata().attachment().content().to_word(),
+        first_attachment_word(reconstructed_remainder.attachments()),
         remainder_aux,
         "reconstructed remainder attachment does not match executed output",
     );
@@ -343,8 +358,8 @@ async fn pswap_attachment_layout_matches_masm_test() -> anyhow::Result<()> {
     let output_notes = executed_transaction.output_notes();
     assert_eq!(output_notes.num_notes(), 2, "expected P2ID + remainder");
 
-    let p2id_attachment = output_notes.get_note(0).metadata().attachment().content().to_word();
-    let remainder_attachment = output_notes.get_note(1).metadata().attachment().content().to_word();
+    let p2id_attachment = first_attachment_word(output_notes.get_note(0).attachments());
+    let remainder_attachment = first_attachment_word(output_notes.get_note(1).attachments());
 
     // P2ID payback attachment: `[fill_amount, 0, 0, 0]` — fill_amount at Word[0].
     let expected_p2id_attachment = Word::from([
@@ -374,12 +389,12 @@ async fn pswap_attachment_layout_matches_masm_test() -> anyhow::Result<()> {
     // words as the on-chain executed ones. A future drift between either side
     // would fail here even if the Word[0] position stays correct.
     assert_eq!(
-        p2id_note.metadata().attachment().content().to_word(),
+        first_attachment_word(p2id_note.attachments()),
         p2id_attachment,
         "Rust-predicted P2ID attachment does not match MASM output",
     );
     assert_eq!(
-        remainder_note.metadata().attachment().content().to_word(),
+        first_attachment_word(remainder_note.attachments()),
         remainder_attachment,
         "Rust-predicted remainder attachment does not match MASM output",
     );

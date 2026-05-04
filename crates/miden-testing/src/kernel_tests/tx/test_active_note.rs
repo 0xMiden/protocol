@@ -4,6 +4,7 @@ use anyhow::Context;
 use miden_protocol::account::Account;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::asset::FungibleAsset;
+use miden_protocol::crypto::SequentialCommit;
 use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
 use miden_protocol::errors::tx_kernel::ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_METADATA_WHILE_NO_NOTE_BEING_PROCESSED;
 use miden_protocol::note::{
@@ -119,9 +120,9 @@ async fn test_active_note_get_metadata() -> anyhow::Result<()> {
             swapw dropw
         end
         "#,
-        METADATA_HEADER = tx_context.input_notes().get_note(0).note().metadata().to_header_word(),
-        NOTE_ATTACHMENT =
-            tx_context.input_notes().get_note(0).note().metadata().to_attachment_word()
+        METADATA_HEADER =
+            tx_context.input_notes().get_note(0).note().metadata_header().to_metadata_word(),
+        NOTE_ATTACHMENT = tx_context.input_notes().get_note(0).note().attachments().to_commitment()
     );
 
     tx_context.execute_code(&code).await?;
