@@ -12,11 +12,15 @@ use miden_protocol::account::{
 use super::FungibleFaucetError;
 use crate::account::AuthMethod;
 use crate::account::auth::{AuthSingleSigAcl, AuthSingleSigAclConfig};
-use crate::account::burn_policies::BurnAuthControlled;
 use crate::account::components::basic_fungible_faucet_library;
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
 use crate::account::metadata::FungibleTokenMetadata;
-use crate::account::mint_policies::MintAuthControlled;
+use crate::account::policies::{
+    BurnPolicyConfig,
+    MintPolicyConfig,
+    PolicyAuthority,
+    TokenPolicyManager,
+};
 use crate::procedure_digest;
 
 // BASIC FUNGIBLE FAUCET ACCOUNT COMPONENT
@@ -147,8 +151,17 @@ impl TryFrom<&Account> for BasicFungibleFaucet {
 /// - [`FungibleTokenMetadata`] (token metadata, name, description, etc.)
 /// - [`BasicFungibleFaucet`] (mint_and_send and burn procedures)
 /// - [`AuthSingleSigAcl`]
-/// - [`MintAuthControlled`]
-/// - [`BurnAuthControlled`]
+/// - [`TokenPolicyManager`] + the active mint and burn policy components produced by the
+///   [`MintPolicyConfig`] and [`BurnPolicyConfig`] passed to it (here: `MintAllowAll` and
+///   `BurnAllowAll`).
+///
+/// Component dependency graph:
+/// ```text
+/// BasicFungibleFaucet
+/// └── TokenPolicyManager (auth-controlled)
+///     ├── MintAllowAll  (active mint policy)
+///     └── BurnAllowAll  (active burn policy)
+/// ```
 pub fn create_basic_fungible_faucet(
     init_seed: [u8; 32],
     metadata: FungibleTokenMetadata,
@@ -191,8 +204,11 @@ pub fn create_basic_fungible_faucet(
         .with_auth_component(auth_component)
         .with_component(metadata)
         .with_component(BasicFungibleFaucet)
-        .with_component(MintAuthControlled::allow_all())
-        .with_component(BurnAuthControlled::allow_all())
+        .with_components(TokenPolicyManager::new(
+            PolicyAuthority::AuthControlled,
+            MintPolicyConfig::AllowAll,
+            BurnPolicyConfig::AllowAll,
+        ))
         .build()
         .map_err(FungibleFaucetError::AccountError)?;
 
