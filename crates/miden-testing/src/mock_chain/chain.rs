@@ -454,6 +454,24 @@ impl MockChain {
         &self.committed_notes
     }
 
+    /// Returns `true` if a note with the given ID is recorded in committed notes.
+    pub fn is_note_committed(&self, note_id: &NoteId) -> bool {
+        self.committed_notes.contains_key(note_id)
+    }
+
+    /// Returns `true` if the nullifier has been recorded on-chain (note was consumed).
+    pub fn is_note_consumed(&self, nullifier: &Nullifier) -> bool {
+        self.nullifier_tree.get_block_num(nullifier).is_some()
+    }
+
+    /// Returns `true` if the nullifier is not yet on-chain.
+    ///
+    /// A nullifier can be unspent without the chain having seen the underlying note. Pair with
+    /// [`Self::is_note_committed`] when both conditions matter.
+    pub fn is_note_unspent(&self, nullifier: &Nullifier) -> bool {
+        !self.is_note_consumed(nullifier)
+    }
+
     /// Returns an [`InputNote`] for the given note ID. If the note does not exist or is not
     /// public, `None` is returned.
     pub fn get_public_note(&self, note_id: &NoteId) -> Option<InputNote> {

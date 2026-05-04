@@ -1,3 +1,4 @@
+use crate::note::NoteId;
 use crate::transaction::ExecutedTransaction;
 
 impl ExecutedTransaction {
@@ -8,5 +9,10 @@ impl ExecutedTransaction {
         let fee_amount =
             self.block_header().fee_parameters().verification_base_fee() * verification_cycles;
         fee_amount as u64
+    }
+
+    /// Returns `true` if the transaction consumes the note with the given ID.
+    pub fn consumes_note(&self, note_id: &NoteId) -> bool {
+        self.input_notes().iter().any(|n| n.id() == *note_id)
     }
 }
