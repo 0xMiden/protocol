@@ -4,7 +4,7 @@ use miden_crypto::rand::test_utils::rand_value;
 use miden_protocol::account::{AccountId, StorageMap, StorageMapKey, StorageSlot, StorageSlotName};
 use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset};
 use miden_protocol::note::NoteType;
-use miden_protocol::testing::account_id::ACCOUNT_ID_NATIVE_ASSET_FAUCET;
+use miden_protocol::testing::account_id::ACCOUNT_ID_FEE_FAUCET;
 use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote};
 use miden_protocol::{self, Felt, Word};
 use miden_tx::TransactionExecutorError;
@@ -36,7 +36,7 @@ async fn create_account_with_fees() -> anyhow::Result<()> {
     assert_eq!(expected_fee, tx.fee().amount());
 
     // We expect that the new account contains the note_amount minus the paid fee.
-    let added_asset = FungibleAsset::new(chain.native_asset_id(), note_amount)?.sub(tx.fee())?;
+    let added_asset = FungibleAsset::new(chain.fee_faucet_id(), note_amount)?.sub(tx.fee())?;
 
     assert_eq!(tx.account_delta().nonce_delta(), Felt::new(1));
     // except for the nonce, the storage delta should be empty
@@ -51,19 +51,17 @@ async fn create_account_with_fees() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Tests that the transaction executor host aborts the transaction if the balance of the native
+/// Tests that the transaction executor host aborts the transaction if the balance of the fee
 /// asset in the account does not cover the computed fee.
 #[tokio::test]
 async fn tx_host_aborts_if_account_balance_does_not_cover_fee() -> anyhow::Result<()> {
     let account_amount = 100;
     let note_amount = 100;
-    let native_asset_id = AccountId::try_from(ACCOUNT_ID_NATIVE_ASSET_FAUCET)?;
+    let fee_faucet_id = AccountId::try_from(ACCOUNT_ID_FEE_FAUCET)?;
 
-    let mut builder =
-        MockChain::builder().native_asset_id(native_asset_id).verification_base_fee(50);
-    let native_asset = FungibleAsset::new(native_asset_id, account_amount)?;
-    let account =
-        builder.add_existing_wallet_with_assets(Auth::IncrNonce, [native_asset.into()])?;
+    let mut builder = MockChain::builder().fee_faucet_id(fee_faucet_id).verification_base_fee(50);
+    let fee_asset = FungibleAsset::new(fee_faucet_id, account_amount)?;
+    let account = builder.add_existing_wallet_with_assets(Auth::IncrNonce, [fee_asset.into()])?;
     let fee_note = builder.add_p2id_note_with_fee(account.id(), note_amount)?;
     let chain = builder.build()?;
 
@@ -125,10 +123,9 @@ async fn create_account_no_storage_no_fees() -> anyhow::Result<ExecutedTransacti
 
 /// Returns a transaction that mutates an account with storage and consumes a note.
 async fn mutate_account_with_storage() -> anyhow::Result<ExecutedTransaction> {
-    let native_asset_id = AccountId::try_from(ACCOUNT_ID_NATIVE_ASSET_FAUCET)?;
-    let native_asset = FungibleAsset::new(native_asset_id, 10_000)?;
-    let mut builder =
-        MockChain::builder().native_asset_id(native_asset_id).verification_base_fee(100);
+    let fee_faucet_id = AccountId::try_from(ACCOUNT_ID_FEE_FAUCET)?;
+    let fee_asset = FungibleAsset::new(fee_faucet_id, 10_000)?;
+    let mut builder = MockChain::builder().fee_faucet_id(fee_faucet_id).verification_base_fee(100);
     let account = builder.add_existing_mock_account_with_storage_and_assets(
         Auth::IncrNonce,
         [
@@ -138,7 +135,7 @@ async fn mutate_account_with_storage() -> anyhow::Result<ExecutedTransaction> {
                 StorageMap::with_entries([(StorageMapKey::from_raw(rand_value()), rand_value())])?,
             ),
         ],
-        [Asset::from(native_asset), NonFungibleAsset::mock(&[1, 2, 3, 4])],
+        [Asset::from(fee_asset), NonFungibleAsset::mock(&[1, 2, 3, 4])],
     )?;
     let p2id_note = builder.add_p2id_note(
         account.id(),
@@ -157,10 +154,9 @@ async fn mutate_account_with_storage() -> anyhow::Result<ExecutedTransaction> {
 
 /// Returns a transaction that consumes two notes and creates two notes.
 async fn create_output_notes() -> anyhow::Result<ExecutedTransaction> {
-    let native_asset_id = AccountId::try_from(ACCOUNT_ID_NATIVE_ASSET_FAUCET)?;
-    let native_asset = FungibleAsset::new(native_asset_id, 10_000)?;
-    let mut builder =
-        MockChain::builder().native_asset_id(native_asset_id).verification_base_fee(20);
+    let fee_faucet_id = AccountId::try_from(ACCOUNT_ID_FEE_FAUCET)?;
+    let fee_asset = FungibleAsset::new(fee_faucet_id, 10_000)?;
+    let mut builder = MockChain::builder().fee_faucet_id(fee_faucet_id).verification_base_fee(20);
     let account = builder.add_existing_mock_account_with_storage_and_assets(
         Auth::IncrNonce,
         [
@@ -170,7 +166,7 @@ async fn create_output_notes() -> anyhow::Result<ExecutedTransaction> {
             ),
             StorageSlot::with_value(StorageSlotName::mock(1), rand_value()),
         ],
-        [Asset::from(native_asset), NonFungibleAsset::mock(&[1, 2, 3, 4])],
+        [Asset::from(fee_asset), NonFungibleAsset::mock(&[1, 2, 3, 4])],
     )?;
     let note_asset0 = FungibleAsset::mock(200).unwrap_fungible();
     let note_asset1 = FungibleAsset::mock(500).unwrap_fungible();

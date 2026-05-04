@@ -2,10 +2,9 @@ use alloc::boxed::Box;
 use alloc::string::ToString;
 use core::error::Error;
 
-use miden_protocol::Word;
 use miden_protocol::account::AccountId;
 use miden_protocol::block::BlockNumber;
-use miden_protocol::note::{Note, NoteScript};
+use miden_protocol::note::{Note, NoteScript, NoteScriptRoot};
 
 use crate::account::faucets::{BasicFungibleFaucet, NetworkFungibleFaucet};
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
@@ -66,7 +65,7 @@ impl StandardNote {
 
     /// Returns a [`StandardNote`] instance based on the provided script root. Returns `None` if
     /// the provided root does not match any standard note script.
-    pub fn from_script_root(root: Word) -> Option<Self> {
+    pub fn from_script_root(root: NoteScriptRoot) -> Option<Self> {
         if root == P2idNote::script_root() {
             return Some(Self::P2ID);
         }
@@ -129,7 +128,7 @@ impl StandardNote {
     }
 
     /// Returns the script root of the current [StandardNote] instance.
-    pub fn script_root(&self) -> Word {
+    pub fn script_root(&self) -> NoteScriptRoot {
         match self {
             Self::P2ID => P2idNote::script_root(),
             Self::P2IDE => P2ideNote::script_root(),
