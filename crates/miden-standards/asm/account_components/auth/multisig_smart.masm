@@ -11,7 +11,6 @@ pub use multisig::is_signer
 pub use multisig_smart::set_procedure_policy
 pub use multisig_smart::update_signers_and_threshold
 
-
 #! Authenticate a transaction using multisig smart-policy rules.
 #!
 #! Inputs:

@@ -542,7 +542,7 @@ end
 #! - delayed_threshold exceeds immediate_threshold when immediate_threshold is non-zero.
 #! - note_restrictions is non-zero while both thresholds are zero.
 #!
-#! Invocation: exec
+#! Invocation: call
 @locals(3)
 pub proc set_procedure_policy
     loc_store.0
@@ -554,32 +554,31 @@ pub proc set_procedure_policy
     loc_store.2
     # => [PROC_ROOT]
 
+    # Fetch num_approvers ONCE and reuse it for both threshold checks.
     exec.get_current_num_approvers
     # => [num_approvers, PROC_ROOT]
 
-    loc_load.0
-    swap
-    # => [num_approvers, immediate_threshold, PROC_ROOT]
+    # Validate immediate_threshold <= num_approvers.
+    dup loc_load.0
+    # => [immediate_threshold, num_approvers, num_approvers, PROC_ROOT]
 
-    dup.1 swap
+    swap
+    # => [num_approvers, immediate_threshold, num_approvers, PROC_ROOT]
+
     u32assert2.err=ERR_NUM_APPROVERS_OR_PROC_THRESHOLD_NOT_U32
     u32gt assertz.err=ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS
-    # => [immediate_threshold, PROC_ROOT]
-
-    drop
-    # => [PROC_ROOT]
-
-    exec.get_current_num_approvers
     # => [num_approvers, PROC_ROOT]
 
-    loc_load.1
-    swap
-    # => [num_approvers, delayed_threshold, PROC_ROOT]
+    # Validate delayed_threshold <= num_approvers.
+    dup loc_load.1
+    # => [delayed_threshold, num_approvers, num_approvers, PROC_ROOT]
 
-    dup.1 swap
+    swap
+    # => [num_approvers, delayed_threshold, num_approvers, PROC_ROOT]
+
     u32assert2.err=ERR_NUM_APPROVERS_OR_PROC_THRESHOLD_NOT_U32
     u32gt assertz.err=ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS
-    # => [delayed_threshold, PROC_ROOT]
+    # => [num_approvers, PROC_ROOT]
 
     drop
     # => [PROC_ROOT]
