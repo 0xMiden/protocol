@@ -244,7 +244,7 @@ async fn pswap_note_alice_reconstructs_and_consumes_p2id() -> anyhow::Result<()>
         ZERO,
     ]);
     let remainder_attachment =
-        NoteAttachment::new_word(NoteAttachmentScheme::none(), remainder_attachment_word);
+        NoteAttachment::with_word(NoteAttachmentScheme::none(), remainder_attachment_word);
     let reconstructed_remainder: Note = PswapNote::builder()
         .sender(bob.id())
         .storage(remainder_storage)

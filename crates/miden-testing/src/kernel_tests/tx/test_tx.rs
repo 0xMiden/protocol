@@ -217,8 +217,8 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
     let tag3 = NoteTag::default();
 
     let attachment2 =
-        NoteAttachment::new_word(NoteAttachmentScheme::new(28)?, Word::from([2, 3, 4, 5u32]));
-    let attachment3 = NoteAttachment::new_array(
+        NoteAttachment::with_word(NoteAttachmentScheme::new(28)?, Word::from([2, 3, 4, 5u32]));
+    let attachment3 = NoteAttachment::with_words(
         NoteAttachmentScheme::new(29)?,
         vec![Word::from([6, 7, 8, 9u32]), Word::from([10, 11, 12, 13u32])],
     )?;

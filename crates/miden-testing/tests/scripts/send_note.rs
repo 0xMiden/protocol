@@ -64,7 +64,7 @@ async fn test_send_note_script_basic_wallet() -> anyhow::Result<()> {
 
     let tag = NoteTag::with_account_target(sender_basic_wallet_account.id());
     let words = vec![Word::from([9, 8, 7, 6u32]), Word::from([5, 4, 3, 2u32])];
-    let attachment = NoteAttachment::new_array(NoteAttachmentScheme::new(42)?, words.clone())?;
+    let attachment = NoteAttachment::with_words(NoteAttachmentScheme::new(42)?, words.clone())?;
     let metadata =
         NoteMetadata::new(sender_basic_wallet_account.id(), NoteType::Public).with_tag(tag);
     let assets = NoteAssets::new(vec![sent_asset0, sent_asset1]).unwrap();
@@ -137,7 +137,7 @@ async fn test_send_note_script_basic_fungible_faucet() -> anyhow::Result<()> {
         AccountInterface::from_account(&sender_basic_fungible_faucet_account);
 
     let tag = NoteTag::with_account_target(sender_basic_fungible_faucet_account.id());
-    let attachment = NoteAttachment::new_word(NoteAttachmentScheme::new(100)?, Word::empty());
+    let attachment = NoteAttachment::with_word(NoteAttachmentScheme::new(100)?, Word::empty());
     let metadata = NoteMetadata::new(sender_basic_fungible_faucet_account.id(), NoteType::Public)
         .with_tag(tag);
     let assets = NoteAssets::new(vec![Asset::Fungible(

@@ -645,8 +645,8 @@ async fn test_note_find_attachment(
         let input_note0 = NoteBuilder::new(account.id(), &mut rng).build()?;
         let input_note1 = NoteBuilder::new(account.id(), &mut rng)
             .note_type(NoteType::Public)
-            .attachment(NoteAttachment::new_word(scheme_0, word_0))
-            .attachment(NoteAttachment::new_word(scheme_1, word_1))
+            .attachment(NoteAttachment::with_word(scheme_0, word_0))
+            .attachment(NoteAttachment::with_word(scheme_1, word_1))
             .build()?;
 
         TransactionContextBuilder::new(account)

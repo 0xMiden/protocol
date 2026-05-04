@@ -75,7 +75,7 @@ impl From<NetworkAccountTarget> for NoteAttachment {
         word[1] = network_attachment.target_id.prefix().as_felt();
         word[2] = network_attachment.exec_hint.into();
 
-        NoteAttachment::new_word(NetworkAccountTarget::ATTACHMENT_SCHEME, word)
+        NoteAttachment::with_word(NetworkAccountTarget::ATTACHMENT_SCHEME, word)
     }
 }
 

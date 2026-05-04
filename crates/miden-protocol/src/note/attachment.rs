@@ -59,7 +59,7 @@ impl NoteAttachment {
     }
 
     /// Creates a new note attachment from a single word.
-    pub fn new_word(attachment_scheme: NoteAttachmentScheme, word: Word) -> Self {
+    pub fn with_word(attachment_scheme: NoteAttachmentScheme, word: Word) -> Self {
         Self {
             attachment_scheme,
             content: NoteAttachmentContent::new(vec![word]).expect("single word is always valid"),
@@ -73,7 +73,7 @@ impl NoteAttachment {
     /// Returns an error if:
     /// - `words` is empty.
     /// - The number of words exceeds [`NoteAttachment::MAX_NUM_WORDS`].
-    pub fn new_array(
+    pub fn with_words(
         attachment_scheme: NoteAttachmentScheme,
         words: Vec<Word>,
     ) -> Result<Self, NoteError> {
@@ -650,8 +650,8 @@ mod tests {
     use super::*;
 
     #[rstest::rstest]
-    #[case::attachment_word(NoteAttachment::new_word(NoteAttachmentScheme::new(1)?, Word::from([3, 4, 5, 6u32])))]
-    #[case::attachment_array(NoteAttachment::new_array(
+    #[case::attachment_word(NoteAttachment::with_word(NoteAttachmentScheme::new(1)?, Word::from([3, 4, 5, 6u32])))]
+    #[case::attachment_words(NoteAttachment::with_words(
         NoteAttachmentScheme::MAX,
         vec![Word::from([1, 1, 1, 1u32]); 2],
     )?)]
@@ -704,17 +704,19 @@ mod tests {
     #[test]
     fn note_attachments_up_to_max() -> anyhow::Result<()> {
         let scheme = NoteAttachmentScheme::new(1)?;
-        let attachment = NoteAttachment::new_word(scheme, Word::from([1, 2, 3, 4u32]));
+        let attachment = NoteAttachment::with_word(scheme, Word::from([1, 2, 3, 4u32]));
         let attachments = NoteAttachments::new(vec![attachment; NoteAttachments::MAX_COUNT])?;
         assert_eq!(attachments.num_attachments() as usize, NoteAttachments::MAX_COUNT);
 
         // Exceeding MAX_COUNT should fail.
-        let err =
-            NoteAttachments::new(vec![
-                NoteAttachment::new_word(scheme, Word::from([1, 2, 3, 4u32]));
-                NoteAttachments::MAX_COUNT + 1
-            ])
-            .unwrap_err();
+        let err = NoteAttachments::new(vec![
+            NoteAttachment::with_word(
+                scheme,
+                Word::from([1, 2, 3, 4u32])
+            );
+            NoteAttachments::MAX_COUNT + 1
+        ])
+        .unwrap_err();
         assert_matches!(err, NoteError::TooManyAttachments(5));
 
         Ok(())
@@ -723,8 +725,8 @@ mod tests {
     #[test]
     fn note_attachments_serde() -> anyhow::Result<()> {
         let attachments = NoteAttachments::new(vec![
-            NoteAttachment::new_word(NoteAttachmentScheme::new(1)?, Word::from([1, 2, 3, 4u32])),
-            NoteAttachment::new_array(
+            NoteAttachment::with_word(NoteAttachmentScheme::new(1)?, Word::from([1, 2, 3, 4u32])),
+            NoteAttachment::with_words(
                 NoteAttachmentScheme::new(100)?,
                 vec![Word::from([1, 1, 1, 1u32]); 2],
             )?,
@@ -745,7 +747,7 @@ mod tests {
     #[test]
     fn note_attachments_commitment_single_word() -> anyhow::Result<()> {
         let word = Word::from([10, 20, 30, 40u32]);
-        let attachments = NoteAttachments::new(vec![NoteAttachment::new_word(
+        let attachments = NoteAttachments::new(vec![NoteAttachment::with_word(
             NoteAttachmentScheme::new(1)?,
             word,
         )])?;
@@ -760,8 +762,8 @@ mod tests {
     #[test]
     fn note_attachments_to_headers() -> anyhow::Result<()> {
         let attachments = NoteAttachments::new(vec![
-            NoteAttachment::new_word(NoteAttachmentScheme::new(42)?, Word::from([1, 2, 3, 4u32])),
-            NoteAttachment::new_array(
+            NoteAttachment::with_word(NoteAttachmentScheme::new(42)?, Word::from([1, 2, 3, 4u32])),
+            NoteAttachment::with_words(
                 NoteAttachmentScheme::new(100)?,
                 vec![Word::from([1, 1, 1, 1u32]); 2],
             )?,
@@ -779,7 +781,7 @@ mod tests {
     #[test]
     fn note_attachments_into_vec() -> anyhow::Result<()> {
         let word_att =
-            NoteAttachment::new_word(NoteAttachmentScheme::new(1)?, Word::from([1, 2, 3, 4u32]));
+            NoteAttachment::with_word(NoteAttachmentScheme::new(1)?, Word::from([1, 2, 3, 4u32]));
         let attachments = NoteAttachments::new(vec![word_att.clone()])?;
         let vec = attachments.into_vec();
         assert_eq!(vec, vec![word_att]);

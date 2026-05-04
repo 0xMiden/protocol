@@ -346,11 +346,11 @@ mod tests {
     fn note_metadata_word_encodes_attachment_header() -> anyhow::Result<()> {
         let sender = AccountId::try_from(ACCOUNT_ID_MAX_ONES).unwrap();
         let metadata = NoteMetadata::new(sender, NoteType::Public).with_tag(NoteTag::new(0xff));
-        let attachment0 = NoteAttachment::new_word(
+        let attachment0 = NoteAttachment::with_word(
             NoteAttachmentScheme::new(1)?,
             Word::from([10, 20, 30, 40u32]),
         );
-        let attachment1 = NoteAttachment::new_array(
+        let attachment1 = NoteAttachment::with_words(
             NoteAttachmentScheme::new(0xfffe)?,
             vec![Word::from([10, 20, 30, 40u32]), Word::from([10, 20, 30, 40u32])],
         )?;
@@ -372,16 +372,16 @@ mod tests {
     #[rstest::rstest]
     #[case::attachment_none([])]
     #[case::attachment_two_words([
-      NoteAttachment::new_word(NoteAttachmentScheme::none(), Word::from([3, 4, 5, 6u32])),
-      NoteAttachment::new_word(NoteAttachmentScheme::none(), Word::from([3, 4, 5, 6u32])),
+      NoteAttachment::with_word(NoteAttachmentScheme::none(), Word::from([3, 4, 5, 6u32])),
+      NoteAttachment::with_word(NoteAttachmentScheme::none(), Word::from([3, 4, 5, 6u32])),
     ])]
     #[case::attachment_word_and_two_arrays([
-      NoteAttachment::new_word(NoteAttachmentScheme::none(), Word::from([3, 4, 5, 6u32])),
-      NoteAttachment::new_array(
+      NoteAttachment::with_word(NoteAttachmentScheme::none(), Word::from([3, 4, 5, 6u32])),
+      NoteAttachment::with_words(
         NoteAttachmentScheme::MAX,
         vec![Word::from([5, 5, 5, 5u32]); 2],
       )?,
-      NoteAttachment::new_array(
+      NoteAttachment::with_words(
         NoteAttachmentScheme::MAX,
         vec![Word::from([10, 10, 10, 10u32]); NoteAttachment::MAX_NUM_WORDS as usize],
       )?,

@@ -243,7 +243,7 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
         .tag(NoteTag::with_custom_account_target(account.id(), 2)?.as_u32())
         .note_type(NoteType::Public)
         .add_assets([asset_2])
-        .attachment(NoteAttachment::new_array(
+        .attachment(NoteAttachment::with_words(
             NoteAttachmentScheme::new(5u16)?,
             vec![Word::from([42, 43, 44, 45u32]), Word::from([46, 47, 48, 49u32])],
         )?)
@@ -1254,7 +1254,7 @@ async fn test_add_word_attachment() -> anyhow::Result<()> {
     let account = Account::mock(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET, Auth::IncrNonce);
     let rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
     let attachment =
-        NoteAttachment::new_word(NoteAttachmentScheme::MAX, Word::from([3, 4, 5, 6u32]));
+        NoteAttachment::with_word(NoteAttachmentScheme::MAX, Word::from([3, 4, 5, 6u32]));
     let output_note = RawOutputNote::Full(
         NoteBuilder::new(account.id(), rng).attachment(attachment.clone()).build()?,
     );
@@ -1311,7 +1311,7 @@ async fn test_set_array_attachment() -> anyhow::Result<()> {
     let account = Account::mock(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET, Auth::IncrNonce);
     let rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
     let words = vec![Word::from([3, 4, 5, 6u32]), Word::from([7, 8, 9, 10u32])];
-    let attachment = NoteAttachment::new_array(NoteAttachmentScheme::new(42)?, words.clone())?;
+    let attachment = NoteAttachment::with_words(NoteAttachmentScheme::new(42)?, words.clone())?;
     let output_note =
         RawOutputNote::Full(NoteBuilder::new(account.id(), rng).attachment(attachment).build()?);
 
@@ -1472,9 +1472,9 @@ async fn test_get_attachment_commitments_ptr() -> anyhow::Result<()> {
     let rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
 
     let attachment_0 =
-        NoteAttachment::new_word(NoteAttachmentScheme::new(1)?, Word::from([3, 4, 5, 6u32]));
+        NoteAttachment::with_word(NoteAttachmentScheme::new(1)?, Word::from([3, 4, 5, 6u32]));
     let attachment_1 =
-        NoteAttachment::new_word(NoteAttachmentScheme::new(2)?, Word::from([7, 8, 9, 10u32]));
+        NoteAttachment::with_word(NoteAttachmentScheme::new(2)?, Word::from([7, 8, 9, 10u32]));
 
     let output_note = RawOutputNote::Full(
         NoteBuilder::new(account.id(), rng)
@@ -1576,8 +1576,8 @@ async fn test_get_attachment_ptr() -> anyhow::Result<()> {
 
     let word_0 = Word::from([3, 4, 5, 6u32]);
     let word_1 = Word::from([7, 8, 9, 10u32]);
-    let attachment_0 = NoteAttachment::new_word(NoteAttachmentScheme::new(1)?, word_0);
-    let attachment_1 = NoteAttachment::new_word(NoteAttachmentScheme::new(2)?, word_1);
+    let attachment_0 = NoteAttachment::with_word(NoteAttachmentScheme::new(1)?, word_0);
+    let attachment_1 = NoteAttachment::with_word(NoteAttachmentScheme::new(2)?, word_1);
 
     let output_note = RawOutputNote::Full(
         NoteBuilder::new(account.id(), rng)
@@ -1674,8 +1674,8 @@ async fn test_find_attachment(
 
     let output_note = NoteBuilder::new(account.id(), RandomCoin::new(Word::from([1, 2, 3, 4u32])))
         .note_type(NoteType::Public)
-        .attachment(NoteAttachment::new_word(scheme_0, word_0))
-        .attachment(NoteAttachment::new_word(scheme_1, word_1))
+        .attachment(NoteAttachment::with_word(scheme_0, word_0))
+        .attachment(NoteAttachment::with_word(scheme_1, word_1))
         .build()?;
 
     let spawn_note = builder.add_spawn_note([&output_note])?;
@@ -1746,11 +1746,11 @@ async fn test_find_attachment(
 
 #[tokio::test]
 async fn test_add_attachments_with_too_many_overall_elements_fails() -> anyhow::Result<()> {
-    let attachment0 = NoteAttachment::new_array(
+    let attachment0 = NoteAttachment::with_words(
         NoteAttachmentScheme::new_const(3),
         vec![Word::from([1, 2, 3, 4u32]); NoteAttachment::MAX_NUM_WORDS as usize],
     )?;
-    let attachment1 = NoteAttachment::new_array(
+    let attachment1 = NoteAttachment::with_words(
         NoteAttachmentScheme::new_const(6),
         vec![Word::from([2, 3, 4, 5u32]); NoteAttachment::MAX_NUM_WORDS as usize],
     )?;
