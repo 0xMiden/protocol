@@ -154,7 +154,7 @@ pub proc register_faucet
 
     # Hash the (token address, origin network) pair
     exec.hash_token_address
-    # => [TOKEN_ADDR_HASH, faucet_id_suffix, faucet_id_prefix, pad(8)]
+    # => [TOKEN_ADDR_HASH, faucet_id_suffix, faucet_id_prefix, pad(10)]
 
     # Build VALUE = [0, 0, faucet_id_suffix, faucet_id_prefix]
     movup.5 movup.5 push.0.0
@@ -198,10 +198,8 @@ end
 
 #! Looks up the faucet account ID for a given (origin_token_address, origin_network) pair.
 #!
-#! Hashes the origin token address (5 felts) together with the origin network identifier
-#! and looks up the result in the token_registry map. The pair is the canonical asset identity
-#! used by `LeafData` and the wrapped-token hash; keying on the address alone would let a CLAIM
-#! for one network resolve to the faucet of another network.
+#! Hashes the (origin_token_address, origin_network) pair and looks up the result in the
+#! token_registry map.
 #!
 #! Inputs:  [origin_token_addr(5), origin_network]
 #! Outputs: [faucet_id_suffix, faucet_id_prefix]
@@ -237,8 +235,7 @@ end
 
 #! Hashes the (origin_token_address, origin_network) pair using Poseidon2.
 #!
-#! Writes the 5 token-address felts followed by the origin_network felt to local memory and
-#! computes Poseidon2(addr0, addr1, addr2, addr3, addr4, origin_network).
+#! Writes the 6 felts to memory and computes the Poseidon2 hash.
 #!
 #! Inputs:  [origin_token_addr(5), origin_network]
 #! Outputs: [TOKEN_ADDR_HASH]
@@ -246,19 +243,13 @@ end
 #! Invocation: exec
 @locals(8)
 proc hash_token_address
-    # Write origin_token_addr[0..3] to local memory for hashing
+    # Write the (origin_token_addr, origin_network) felts to local memory for hashing
     loc_storew_le.TOKEN_ADDR_HASH_PTR dropw
-    # => [addr4, origin_network]
-
-    # Write addr4 at local offset 4
     locaddr.TOKEN_ADDR_HASH_PTR add.4 mem_store
-    # => [origin_network]
-
-    # Write origin_network at local offset 5
     locaddr.TOKEN_ADDR_HASH_PTR add.5 mem_store
     # => []
 
-    # Hash the (address, network) pair: poseidon2::hash_elements(num_elements=6, start_ptr)
+    # Hash the pair: poseidon2::hash_elements(num_elements=6, start_ptr)
     push.6 locaddr.TOKEN_ADDR_HASH_PTR
     exec.poseidon2::hash_elements
     # => [TOKEN_ADDR_HASH]
