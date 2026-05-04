@@ -11,7 +11,7 @@ use alloc::vec::Vec;
 
 use miden_assembly::Library;
 use miden_assembly::serde::Deserializable;
-use miden_core::{Felt, Word};
+use miden_core::Felt;
 use miden_protocol::account::AccountId;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
@@ -22,6 +22,7 @@ use miden_protocol::note::{
     NoteMetadata,
     NoteRecipient,
     NoteScript,
+    NoteScriptRoot,
     NoteStorage,
     NoteType,
 };
@@ -68,7 +69,7 @@ impl ConfigAggBridgeNote {
     }
 
     /// Returns the CONFIG_AGG_BRIDGE note script root.
-    pub fn script_root() -> Word {
+    pub fn script_root() -> NoteScriptRoot {
         CONFIG_AGG_BRIDGE_SCRIPT.root()
     }
 

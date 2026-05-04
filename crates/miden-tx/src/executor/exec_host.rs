@@ -22,7 +22,7 @@ use miden_protocol::assembly::{SourceFile, SourceManagerSync, SourceSpan};
 use miden_protocol::asset::{AssetVaultKey, AssetWitness, FungibleAsset};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::merkle::smt::SmtProof;
-use miden_protocol::note::{NoteMetadata, NoteRecipient, NoteScript, NoteStorage};
+use miden_protocol::note::{NoteMetadata, NoteRecipient, NoteScript, NoteScriptRoot, NoteStorage};
 use miden_protocol::transaction::{
     InputNote,
     InputNotes,
@@ -228,7 +228,7 @@ where
             FungibleAsset::new(fee_asset.faucet_id(), self.initial_fee_asset_balance)
                 .expect("fungible asset created from fee asset should be valid");
 
-        // Compute the current balance of the native asset in the account based on the initial value
+        // Compute the current balance of the fee asset in the account based on the initial value
         // and the delta.
         let current_fee_asset = {
             let fee_asset_amount_delta = self
@@ -239,7 +239,7 @@ where
                 .amount(&initial_fee_asset.vault_key())
                 .unwrap_or(0);
 
-            // SAFETY: Initial native asset faucet ID should be a fungible faucet and amount should
+            // SAFETY: Initial fee faucet ID should be a fungible faucet and amount should
             // be less than MAX_AMOUNT as checked by the account delta.
             let fee_asset_delta = FungibleAsset::new(
                 initial_fee_asset.faucet_id(),
@@ -387,6 +387,7 @@ where
         serial_num: Word,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
         // Resolve standard note scripts directly, avoiding a data store round-trip.
+        let script_root = NoteScriptRoot::from_raw(script_root);
         let note_script: Option<NoteScript> =
             if let Some(standard_note) = StandardNote::from_script_root(script_root) {
                 Some(standard_note.script())
@@ -414,7 +415,7 @@ where
                 self.base_host.output_note_from_recipient(note_idx, metadata, recipient)?;
 
                 Ok(vec![AdviceMutation::extend_map(AdviceMap::from_iter([(
-                    script_root,
+                    Word::from(script_root),
                     script_felts,
                 )]))])
             },
@@ -428,7 +429,8 @@ where
                 Ok(Vec::new())
             },
             None => Err(TransactionKernelError::other(format!(
-                "note script with root {script_root} not found in data store for public note"
+                "note script with root {} not found in data store for public note",
+                Word::from(script_root),
             ))),
         }
     }
