@@ -469,9 +469,9 @@ pub proc build_metadata_header
     # => [NOTE_METADATA_HEADER]
 end
 
-#! Sets an output note's attachment num_words and scheme in the note metadata header.
+#! Sets an output note's attachment scheme in the note metadata header.
 #!
-#! WARNING: The attachment num_words and scheme must be valid.
+#! WARNING: The attachment scheme must be valid.
 #!
 #! Inputs:  [num_attachments, note_ptr, attachment_scheme]
 #! Outputs: []
