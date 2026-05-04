@@ -1,0 +1,15 @@
+# The MASM code of the Token Policy Manager Account Component.
+#
+# Owns the seven policy-manager storage slots (shared authority, active/allowed maps for
+# mint, burn, and transfer) plus the asset-callback storage slots and exposes the management
+# procedures for all three policy axes. Pair with at least one mint, burn, and transfer
+# policy component whose procedure roots are registered in the allowed-policies maps.
+
+pub use ::miden::standards::faucets::policies::policy_manager::set_mint_policy
+pub use ::miden::standards::faucets::policies::policy_manager::get_mint_policy
+pub use ::miden::standards::faucets::policies::policy_manager::set_burn_policy
+pub use ::miden::standards::faucets::policies::policy_manager::get_burn_policy
+pub use ::miden::standards::faucets::policies::policy_manager::set_transfer_policy
+pub use ::miden::standards::faucets::policies::policy_manager::get_transfer_policy
+pub use ::miden::standards::faucets::policies::policy_manager::on_before_asset_added_to_account
+pub use ::miden::standards::faucets::policies::policy_manager::on_before_asset_added_to_note

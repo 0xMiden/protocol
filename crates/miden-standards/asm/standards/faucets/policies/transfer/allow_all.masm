@@ -1,0 +1,14 @@
+# Generic transfer policy procedures shared by policy manager flows.
+
+# POLICY PROCEDURES
+# ================================================================================================
+
+#! Transfer policy that accepts every transfer.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Invocation: dynexec
+pub proc check_policy
+    push.0 drop
+end

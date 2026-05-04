@@ -1,0 +1,27 @@
+use miden::protocol::native_account
+use miden::standards::utils::blocklistable
+
+# POLICY PROCEDURES
+# ================================================================================================
+
+#! Transfer policy that rejects transfers whose native account is blocklisted on this faucet.
+#!
+#! Reads the native account ID via `native_account::get_id` (the asset recipient when invoked
+#! from `on_before_asset_added_to_account`, or the note creator when invoked from
+#! `on_before_asset_added_to_note`) and asserts it is not blocklisted using the issuing faucet's
+#! own `blocklistable` storage.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Panics if:
+#! - the native account is blocklisted on the issuing faucet.
+#!
+#! Invocation: dynexec
+pub proc check_policy
+    exec.native_account::get_id
+    # => [account_id_suffix, account_id_prefix]
+
+    exec.blocklistable::assert_not_blocklisted
+    # => []
+end

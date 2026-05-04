@@ -28,6 +28,7 @@
 - Added trace row counts to `bench-tx.json` ([#2794](https://github.com/0xMiden/protocol/pull/2794)).
 - Added `tx::get_tx_script_root` kernel procedure returning the root of the executed transaction script (empty word if no script was executed) ([#2816](https://github.com/0xMiden/protocol/pull/2816)).
 - Added `TransactionScript::from_package()` method to create `TransactionScript` from `miden-mast-package::Package` ([#2779](https://github.com/0xMiden/protocol/pull/2779)).
+- Added Blocklistable component for per-account freezing ([#2820])(https://github.com/0xMiden/protocol/pull/2820).
 - [BREAKING] Added `NoteScriptRoot` newtype wrapping note script roots ([#2851](https://github.com/0xMiden/protocol/pull/2851)).
 - Re-exported `MIN_STACK_DEPTH` from `miden-processor` ([#2856](https://github.com/0xMiden/protocol/pull/2856)).
 
@@ -99,6 +100,8 @@
 - [BREAKING] Changed `native_account::remove_asset` to return the asset value remaining in the vault instead of the removed value ([#2626](https://github.com/0xMiden/protocol/pull/2626)).
 - Implemented `TransactionEventId::event_name` and `Host::resolve_event` for better VM diagnostics during even handler failures ([#2628](https://github.com/0xMiden/protocol/pull/2628)).
 - Added `FixedWidthString` for fixed-width UTF-8 string storage in `miden-standards` (`miden::standards::utils::string`). ([#2633](https://github.com/0xMiden/protocol/pull/2633))
+- [BREAKING] Extracted mint and burn policy management into a unified `TokenPolicyManager` account component ([#2821](https://github.com/0xMiden/protocol/pull/2821))
+- Added `AccountBuilder::with_components` for installing iterators of components in order as part of ([#2821](https://github.com/0xMiden/protocol/pull/2821)).
 
 ### Changes
 

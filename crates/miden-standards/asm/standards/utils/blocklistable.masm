@@ -1,0 +1,189 @@
+# miden::standards::utils::blocklistable
+#
+# Per-account blocklist storage and helpers. Blocklist/unblocklist procedures do not perform
+# authorization. Compose with ownable2step or role-based access control in a higher layer.
+#
+# Asset-callback enforcement of "native account is not blocklisted" lives in the
+# `if_not_blocklisted` transfer policy procedure (see
+# `miden::standards::faucets::policies::transfer::if_not_blocklisted`). The policy manager owns
+# the asset callbacks and dispatches to that procedure via `dynexec`.
+
+use miden::core::word
+use miden::protocol::active_account
+use miden::protocol::native_account
+
+# CONSTANTS
+# ================================================================================================
+
+# The slot where the per-account blocklist map is stored.
+# Map entries: [0, 0, account_id_suffix, account_id_prefix] => [is_blocklisted, 0, 0, 0]
+const BLOCKLIST_SLOT = word("miden::standards::utils::blocklistable::blocklist")
+
+const BLOCKLISTED_WORD = [1, 0, 0, 0]
+
+const UNBLOCKLISTED_WORD = [0, 0, 0, 0]
+
+# ERRORS
+# ================================================================================================
+
+const ERR_BLOCKLIST_ACCOUNT_IS_BLOCKLISTED = "account is blocklisted"
+
+const ERR_BLOCKLIST_ALREADY_BLOCKLISTED = "account is already blocklisted"
+
+const ERR_BLOCKLIST_NOT_BLOCKLISTED = "account is not blocklisted"
+
+# PUBLIC INTERFACE
+# ================================================================================================
+
+#! Returns whether the given account is currently blocklisted on this faucet.
+#!
+#! Reads [`BLOCKLIST_SLOT`] on the active account at the key derived from the account ID.
+#! Returns `1` if the stored word is non-zero (blocklisted) or `0` if it is the zero word
+#! (not blocklisted, including the default for never-set entries).
+#!
+#! Inputs:  [account_id_suffix, account_id_prefix]
+#! Outputs: [is_blocklisted]
+#!
+#! Invocation: exec
+pub proc is_blocklisted
+    exec.build_blocklist_map_key
+    # => [KEY]
+
+    push.BLOCKLIST_SLOT[0..2]
+    # => [slot_suffix, slot_prefix, KEY]
+
+    exec.active_account::get_map_item
+    # => [VALUE]
+
+    exec.word::eqz not
+    # => [is_blocklisted]
+end
+
+#! Adds the given account to the blocklist. Fails if it is already blocklisted.
+#!
+#! This procedure does not verify the caller. Wrap with access control in the account component
+#! composition if only privileged accounts should blocklist.
+#!
+#! Inputs:  [account_id_suffix, account_id_prefix, pad(14)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the account is already blocklisted.
+#!
+#! Invocation: call
+pub proc blocklist
+    # copy the ID to check it is not already blocklisted.
+    dup.1 dup.1
+    # => [account_id_suffix, account_id_prefix, account_id_suffix, account_id_prefix, pad(14)]
+
+    exec.is_blocklisted
+    # => [is_blocklisted, account_id_suffix, account_id_prefix, pad(14)]
+
+    not assert.err=ERR_BLOCKLIST_ALREADY_BLOCKLISTED
+    # => [account_id_suffix, account_id_prefix, pad(14)]
+
+    exec.build_blocklist_map_key
+    # => [KEY, pad(14)]
+
+    push.BLOCKLIST_SLOT[0..2]
+    # => [slot_suffix, slot_prefix, KEY, pad(14)]
+
+    push.BLOCKLISTED_WORD
+    # => [BLOCKLISTED_WORD, slot_suffix, slot_prefix, KEY, pad(14)]
+
+    # set_map_item expects: [slot_suffix, slot_prefix, KEY, VALUE]
+    movdnw.2
+    # => [slot_suffix, slot_prefix, KEY, BLOCKLISTED_WORD, pad(14)]
+
+    exec.native_account::set_map_item
+    # => [OLD_VALUE, pad(14)]
+
+    dropw
+    # => [pad(16)]
+end
+
+#! Removes the given account from the blocklist. Fails if it is not currently blocklisted.
+#!
+#! This procedure does not verify the caller.
+#!
+#! Inputs:  [account_id_suffix, account_id_prefix, pad(14)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the account is not currently blocklisted.
+#!
+#! Invocation: call
+pub proc unblocklist
+    # copy the ID to check it is currently blocklisted.
+    dup.1 dup.1
+    # => [account_id_suffix, account_id_prefix, account_id_suffix, account_id_prefix, pad(14)]
+
+    exec.is_blocklisted
+    # => [is_blocklisted, account_id_suffix, account_id_prefix, pad(14)]
+
+    assert.err=ERR_BLOCKLIST_NOT_BLOCKLISTED
+    # => [account_id_suffix, account_id_prefix, pad(14)]
+
+    exec.build_blocklist_map_key
+    # => [KEY, pad(14)]
+
+    push.BLOCKLIST_SLOT[0..2]
+    # => [slot_suffix, slot_prefix, KEY, pad(14)]
+
+    push.UNBLOCKLISTED_WORD
+    # => [UNBLOCKLISTED_WORD, slot_suffix, slot_prefix, KEY, pad(14)]
+
+    movdnw.2
+    # => [slot_suffix, slot_prefix, KEY, UNBLOCKLISTED_WORD, pad(14)]
+
+    exec.native_account::set_map_item
+    # => [OLD_VALUE, pad(14)]
+
+    dropw
+    # => [pad(16)]
+end
+
+#! Requires the given account to not be blocklisted.
+#!
+#! Delegates to [`is_blocklisted`] and inverts the result. If the account is blocklisted, panics
+#! with [`ERR_BLOCKLIST_ACCOUNT_IS_BLOCKLISTED`].
+#!
+#! Use from other modules or transaction scripts to guard logic that must not run for blocklisted
+#! accounts. In asset callback foreign context, the active account is the issuing faucet.
+#!
+#! Inputs:  [account_id_suffix, account_id_prefix]
+#! Outputs: []
+#!
+#! Panics if:
+#! - the stored blocklist word for this account is not the zero word.
+#!
+#! Invocation: exec
+pub proc assert_not_blocklisted
+    exec.is_blocklisted
+    # => [is_blocklisted]
+
+    not
+    # => [is_not_blocklisted]
+
+    assert.err=ERR_BLOCKLIST_ACCOUNT_IS_BLOCKLISTED
+    # => []
+end
+
+# HELPER PROCEDURES
+# ================================================================================================
+
+#! Builds the blocklist map key for the given account ID.
+#!
+#! Inputs:  [account_id_suffix, account_id_prefix]
+#! Outputs: [KEY]
+#!
+#! Where:
+#! - KEY is [0, 0, account_id_suffix, account_id_prefix].
+#!
+#! Invocation: exec
+proc build_blocklist_map_key
+    # => [account_id_suffix, account_id_prefix]
+
+    push.0.0
+    # => [0, 0, account_id_suffix, account_id_prefix] = KEY
+end

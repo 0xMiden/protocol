@@ -1,0 +1,6 @@
+# The MASM code of the `allow_all` Transfer Policy Account Component.
+#
+# Exposes the `check_policy` procedure so its MAST root can be registered as the active
+# (or allowed) transfer policy on a `TokenPolicyManager`. Storage-free.
+
+pub use ::miden::standards::faucets::policies::transfer::allow_all::check_policy
