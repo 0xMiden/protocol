@@ -199,7 +199,7 @@ impl TransactionKernel {
     /// [
     ///     OUTPUT_NOTES_COMMITMENT,
     ///     ACCOUNT_UPDATE_COMMITMENT,
-    ///     native_asset_id_suffix, native_asset_id_prefix, fee_amount, expiration_block_num
+    ///     fee_faucet_id_suffix, fee_faucet_id_prefix, fee_amount, expiration_block_num
     /// ]
     /// ```
     ///
@@ -268,12 +268,12 @@ impl TransactionKernel {
             .get_word(TransactionOutputs::ACCOUNT_UPDATE_COMMITMENT_WORD_IDX)
             .expect("account_update_commitment (second word) missing");
 
-        let native_asset_id_prefix = stack
-            .get_element(TransactionOutputs::NATIVE_ASSET_ID_PREFIX_ELEMENT_IDX)
-            .expect("native_asset_id_prefix missing");
-        let native_asset_id_suffix = stack
-            .get_element(TransactionOutputs::NATIVE_ASSET_ID_SUFFIX_ELEMENT_IDX)
-            .expect("native_asset_id_suffix missing");
+        let fee_faucet_id_prefix = stack
+            .get_element(TransactionOutputs::FEE_FAUCET_ID_PREFIX_ELEMENT_IDX)
+            .expect("fee_faucet_id_prefix missing");
+        let fee_faucet_id_suffix = stack
+            .get_element(TransactionOutputs::FEE_FAUCET_ID_SUFFIX_ELEMENT_IDX)
+            .expect("fee_faucet_id_suffix missing");
         let fee_amount = stack
             .get_element(TransactionOutputs::FEE_AMOUNT_ELEMENT_IDX)
             .expect("fee_amount missing");
@@ -300,10 +300,10 @@ impl TransactionKernel {
             ));
         }
 
-        let native_asset_id =
-            AccountId::try_from_elements(native_asset_id_suffix, native_asset_id_prefix)
-                .expect("native asset ID should be validated by the tx kernel");
-        let fee = FungibleAsset::new(native_asset_id, fee_amount.as_canonical_u64())
+        let fee_faucet_id =
+            AccountId::try_from_elements(fee_faucet_id_suffix, fee_faucet_id_prefix)
+                .expect("fee faucet ID should be validated by the tx kernel");
+        let fee = FungibleAsset::new(fee_faucet_id, fee_amount.as_canonical_u64())
             .map_err(TransactionOutputError::FeeAssetNotFungibleAsset)?;
 
         Ok((output_notes_commitment, account_update_commitment, fee, expiration_block_num))

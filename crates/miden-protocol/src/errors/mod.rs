@@ -1231,8 +1231,8 @@ pub enum ProposedBlockError {
 
 #[derive(Debug, Error)]
 pub enum FeeError {
-    #[error("native asset of the chain must be a fungible faucet but was of type {account_type}")]
-    NativeAssetIdNotFungible { account_type: AccountType },
+    #[error("fee faucet of the chain must be a fungible faucet but was of type {account_type}")]
+    FeeFaucetIdNotFungible { account_type: AccountType },
 }
 
 // NULLIFIER TREE ERROR

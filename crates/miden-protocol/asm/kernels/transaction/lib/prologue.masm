@@ -38,7 +38,7 @@ const ERR_PROLOGUE_GLOBAL_INPUTS_PROVIDED_DO_NOT_MATCH_BLOCK_COMMITMENT="the pro
 
 const ERR_PROLOGUE_GLOBAL_INPUTS_PROVIDED_DO_NOT_MATCH_BLOCK_NUMBER_COMMITMENT="the provided global inputs do not match the block number commitment"
 
-const ERR_PROLOGUE_NATIVE_ASSET_ID_IS_NOT_FUNGIBLE="native asset account ID in reference block is not of type fungible faucet"
+const ERR_PROLOGUE_FEE_FAUCET_ID_IS_NOT_FUNGIBLE="fee faucet ID in reference block is not of type fungible faucet"
 
 const ERR_PROLOGUE_VERIFICATION_BASE_FEE_MUST_BE_U32="verification base fee must fit into a u32"
 
@@ -174,7 +174,7 @@ end
 #!     TX_KERNEL_COMMITMENT
 #!     VALIDATOR_KEY_COMMITMENT,
 #!     [block_num, version, timestamp, 0],
-#!     [0, verification_base_fee, native_asset_id_suffix, native_asset_id_prefix],
+#!     [0, verification_base_fee, fee_faucet_id_suffix, fee_faucet_id_prefix],
 #!     [0, 0, 0, 0],
 #!     NOTE_ROOT,
 #!   ]
@@ -194,8 +194,8 @@ end
 #! - block_num is the reference block number.
 #! - version is the current protocol version.
 #! - timestamp is the current timestamp.
-#! - native_asset_id_{prefix, suffix} are the prefix and suffix felts of the faucet ID that defines
-#!   the native asset.
+#! - fee_faucet_id_{prefix, suffix} are the prefix and suffix felts of the faucet ID that defines
+#!   the fee asset.
 #! - verification_base_fee is the base fee capturing the cost for the verification of a
 #!   transaction.
 #! - NOTE_ROOT is the root of the tree with all notes created in the block.
@@ -1096,7 +1096,7 @@ end
 #!     TX_KERNEL_COMMITMENT
 #!     VALIDATOR_KEY_COMMITMENT,
 #!     [block_num, version, timestamp, 0],
-#!     [0, verification_base_fee, native_asset_id_suffix, native_asset_id_prefix]
+#!     [0, verification_base_fee, fee_faucet_id_suffix, fee_faucet_id_prefix]
 #!     [0, 0, 0, 0]
 #!     NOTE_ROOT,
 #!     [account_nonce, 0, account_id_suffix, account_id_prefix]

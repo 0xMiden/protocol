@@ -33,7 +33,7 @@ impl BlockHeader {
         let account_root = acct_db.root();
         let fee_parameters =
             FeeParameters::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap(), 500)
-                .expect("native asset ID should be a fungible faucet ID");
+                .expect("fee faucet ID should be a fungible faucet ID");
         let validator_key = random_secret_key();
 
         #[cfg(not(target_family = "wasm"))]
