@@ -15,6 +15,7 @@ use miden_protocol::errors::tx_kernel::{
     ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_MAX_EXCEEDED,
     ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_MUST_BE_MULTIPLE_OF_WORD_SIZE,
     ERR_OUTPUT_NOTE_INDEX_OUT_OF_BOUNDS,
+    ERR_OUTPUT_NOTE_TOTAL_ATTACHMENT_WORDS_EXCEEDED,
     ERR_TX_NUMBER_OF_OUTPUT_NOTES_EXCEEDS_LIMIT,
 };
 use miden_protocol::note::{
@@ -1739,6 +1740,66 @@ async fn test_find_attachment(
 
     let actual_note = tx.output_notes().get_note(0);
     assert_eq!(actual_note.header(), output_note.header());
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_add_attachments_with_too_many_overall_elements_fails() -> anyhow::Result<()> {
+    let attachment0 = NoteAttachment::new_array(
+        NoteAttachmentScheme::new_const(3),
+        vec![Word::from([1, 2, 3, 4u32]); NoteAttachment::MAX_NUM_WORDS as usize],
+    )?;
+    let attachment1 = NoteAttachment::new_array(
+        NoteAttachmentScheme::new_const(6),
+        vec![Word::from([2, 3, 4, 5u32]); NoteAttachment::MAX_NUM_WORDS as usize],
+    )?;
+
+    let tx_context = TransactionContextBuilder::with_existing_mock_account()
+        .extend_advice_map(vec![(attachment0.to_commitment(), attachment0.content().to_elements())])
+        .extend_advice_map(vec![(attachment1.to_commitment(), attachment1.content().to_elements())])
+        .build()?;
+
+    let code = format!(
+        "
+        use miden::protocol::output_note
+        use miden::standards::note_tag::DEFAULT_TAG
+        use $kernel::prologue
+        use mock::util
+
+        begin
+            exec.prologue::prepare_transaction
+
+            exec.util::create_default_note
+            # => [note_idx]
+
+            dup push.{ATTACHMENT_0_COMMITMENT} push.{attachment0_scheme}
+            # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx]
+
+            exec.output_note::add_attachment
+            # => [note_idx]
+
+            dup push.{ATTACHMENT_1_COMMITMENT} push.{attachment1_scheme}
+            # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx]
+
+            exec.output_note::add_attachment
+            # => [note_idx]
+
+            # add one more word which pushes the overall limit of 512 words over the edge
+            push.1.2.3.4 push.5
+            exec.output_note::add_word_attachment
+            # => []
+        end
+        ",
+        attachment0_scheme = attachment0.attachment_scheme().as_u16(),
+        attachment1_scheme = attachment0.attachment_scheme().as_u16(),
+        ATTACHMENT_0_COMMITMENT = attachment0.to_commitment(),
+        ATTACHMENT_1_COMMITMENT = attachment1.to_commitment(),
+    );
+
+    let exec_output = tx_context.execute_code(&code).await;
+
+    assert_execution_error!(exec_output, ERR_OUTPUT_NOTE_TOTAL_ATTACHMENT_WORDS_EXCEEDED);
 
     Ok(())
 }

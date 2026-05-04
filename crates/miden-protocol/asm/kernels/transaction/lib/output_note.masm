@@ -8,6 +8,7 @@ use $kernel::note
 use $kernel::note::NOTE_TYPE_PUBLIC
 use $kernel::note::MAX_ATTACHMENT_SCHEME
 use $kernel::note::MAX_ATTACHMENT_WORDS
+use $kernel::note::MAX_ATTACHMENT_TOTAL_WORDS
 use $kernel::constants::MAX_OUTPUT_NOTES_PER_TX
 use $kernel::constants::WORD_SIZE
 use $kernel::asset::ASSET_SIZE
@@ -48,6 +49,8 @@ const ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_MUST_BE_MULTIPLE_OF_WORD_SIZE="number of e
 const ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_CANNOT_BE_ZERO="attachment num_words cannot be zero"
 
 const ERR_OUTPUT_NOTE_TOO_MANY_ATTACHMENTS="number of attachments per note cannot exceed 4"
+
+const ERR_OUTPUT_NOTE_TOTAL_ATTACHMENT_WORDS_EXCEEDED="total number of attachment words per note cannot exceed 512"
 
 const ERR_NOTE_FUNGIBLE_MAX_AMOUNT_EXCEEDED="adding a fungible asset to a note cannot exceed the max_amount of 9223372036854775807"
 
@@ -309,13 +312,26 @@ pub proc add_attachment
 
     # validate preimage for commitment is available and number of committed words is within limits
     dupw exec.validate_attachment
-    # => [ATTACHMENT_COMMITMENT, attachment_scheme, note_idx]
+    # => [num_words, ATTACHMENT_COMMITMENT, attachment_scheme, note_idx]
 
-    movup.4
-    # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx]
+    movup.5
+    # => [attachment_scheme, num_words, ATTACHMENT_COMMITMENT, note_idx]
 
     # get note_ptr from note_idx
-    movup.5 exec.memory::get_output_note_ptr
+    movup.6 exec.memory::get_output_note_ptr
+    # => [note_ptr, attachment_scheme, num_words, ATTACHMENT_COMMITMENT]
+
+    # update and validate total attachment words
+    dup exec.memory::get_output_note_total_attachment_words
+    # => [total_num_words, note_ptr, attachment_scheme, num_words, ATTACHMENT_COMMITMENT]
+
+    movup.3 add
+    # => [new_total_num_words, note_ptr, attachment_scheme, ATTACHMENT_COMMITMENT]
+
+    dup u32lte.MAX_ATTACHMENT_TOTAL_WORDS assert.err=ERR_OUTPUT_NOTE_TOTAL_ATTACHMENT_WORDS_EXCEEDED
+    # => [new_total_num_words, note_ptr, attachment_scheme, ATTACHMENT_COMMITMENT]
+
+    dup.1 exec.memory::set_output_note_total_attachment_words
     # => [note_ptr, attachment_scheme, ATTACHMENT_COMMITMENT]
 
     # validate current number of attachments < 4
@@ -381,7 +397,7 @@ end
 #!   Advice map: {
 #!     ATTACHMENT_COMMITMENT: [[ATTACHMENT_ELEMENTS]],
 #!   }
-#! Outputs: []
+#! Outputs: [num_words]
 #!
 #! Panics if:
 #! - the number of elements is not a multiple of 4, or num_words is zero or exceeds 256.
@@ -413,13 +429,19 @@ proc validate_attachment
 
     # we use scratch memory because pipe_preimage_to_memory needs to write to memory, but we only
     # need to assert that the preimage is available, the exact content itself is unimportant
+
+    # save num_words to return it later
+    dup movdn.5
+    # OS => [num_words, ATTACHMENT_COMMITMENT, num_words]
+    # AS => [[ATTACHMENT_ELEMENTS]]
+
     push.KERNEL_SCRATCH_PTR swap
-    # OS => [num_words, scratch_ptr, ATTACHMENT_COMMITMENT]
+    # OS => [num_words, scratch_ptr, ATTACHMENT_COMMITMENT, num_words]
     # AS => [[ATTACHMENT_ELEMENTS]]
 
     # validate the sequential hash over the attachment elements is ATTACHMENT_COMMITMENT
     exec.mem::pipe_preimage_to_memory drop
-    # OS => []
+    # OS => [num_words]
 end
 
 #! Builds the provided inputs into the NOTE_METADATA_HEADER word.

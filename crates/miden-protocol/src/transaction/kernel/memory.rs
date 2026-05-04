@@ -466,6 +466,7 @@ pub const OUTPUT_NOTE_RECIPIENT_OFFSET: MemoryOffset = 8;
 pub const OUTPUT_NOTE_DIRTY_FLAG_OFFSET: MemoryOffset = 12;
 pub const OUTPUT_NOTE_NUM_ASSETS_OFFSET: MemoryOffset = 13;
 pub const OUTPUT_NOTE_NUM_ATTACHMENTS_OFFSET: MemoryOffset = 14;
+pub const OUTPUT_NOTE_TOTAL_ATTACHMENT_WORDS_OFFSET: MemoryOffset = 15;
 pub const OUTPUT_NOTE_ATTACHMENT_0_OFFSET: MemoryOffset = 16;
 pub const OUTPUT_NOTE_ATTACHMENT_1_OFFSET: MemoryOffset = 20;
 pub const OUTPUT_NOTE_ATTACHMENT_2_OFFSET: MemoryOffset = 24;
