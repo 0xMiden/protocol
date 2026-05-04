@@ -43,7 +43,7 @@ use miden_protocol::testing::account_id::{
     ACCOUNT_ID_SENDER,
 };
 use miden_protocol::testing::constants::{FUNGIBLE_ASSET_AMOUNT, NON_FUNGIBLE_ASSET_DATA};
-use miden_protocol::testing::note::DEFAULT_NOTE_CODE;
+use miden_protocol::testing::note::DEFAULT_NOTE_SCRIPT;
 use miden_protocol::transaction::{
     InputNotes,
     RawOutputNote,
@@ -235,7 +235,7 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
 
     // Create the expected output note for Note 2 which is public
     let serial_num_2 = Word::from([1, 2, 3, 4u32]);
-    let note_script_2 = CodeBuilder::default().compile_note_script(DEFAULT_NOTE_CODE)?;
+    let note_script_2 = CodeBuilder::default().compile_note_script(DEFAULT_NOTE_SCRIPT)?;
     let inputs_2 = NoteStorage::new(vec![ONE])?;
     let metadata_2 = NoteMetadata::new(account_id, note_type2)
         .with_tag(tag2)
@@ -246,7 +246,7 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
 
     // Create the expected output note for Note 3 which is public
     let serial_num_3 = Word::from([Felt::new(5), Felt::new(6), Felt::new(7), Felt::new(8)]);
-    let note_script_3 = CodeBuilder::default().compile_note_script(DEFAULT_NOTE_CODE)?;
+    let note_script_3 = CodeBuilder::default().compile_note_script(DEFAULT_NOTE_SCRIPT)?;
     let inputs_3 = NoteStorage::new(vec![ONE, Felt::new(2)])?;
     let metadata_3 = NoteMetadata::new(account_id, note_type3)
         .with_tag(tag3)
@@ -748,6 +748,62 @@ async fn test_tx_script_args() -> anyhow::Result<()> {
         .build()?;
 
     tx_context.execute().await?;
+
+    Ok(())
+}
+
+/// Tests that `tx::get_tx_script_root` returns the root of the executed transaction script.
+#[tokio::test]
+async fn test_get_script_root_with_script() -> anyhow::Result<()> {
+    let tx_script = CodeBuilder::default().compile_tx_script("begin nop end")?;
+    let expected_root = tx_script.root();
+
+    let code = format!(
+        r#"
+        use miden::protocol::tx
+        use $kernel::prologue
+
+        begin
+            exec.prologue::prepare_transaction
+
+            exec.tx::get_tx_script_root
+            # => [TX_SCRIPT_ROOT]
+
+            push.{expected_root} assert_eqw.err="tx script root mismatch"
+        end
+        "#
+    );
+
+    let tx_context = TransactionContextBuilder::with_existing_mock_account()
+        .tx_script(tx_script)
+        .build()?;
+
+    tx_context.execute_code(&code).await?;
+
+    Ok(())
+}
+
+/// Tests that `tx::get_tx_script_root` returns the empty word when no transaction script is
+/// executed.
+#[tokio::test]
+async fn test_get_script_root_without_script() -> anyhow::Result<()> {
+    let code = r#"
+        use miden::protocol::tx
+        use $kernel::prologue
+
+        begin
+            exec.prologue::prepare_transaction
+
+            exec.tx::get_tx_script_root
+            # => [TX_SCRIPT_ROOT]
+
+            padw assert_eqw.err="tx script root must be zero when no script is executed"
+        end
+        "#;
+
+    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+
+    tx_context.execute_code(code).await?;
 
     Ok(())
 }

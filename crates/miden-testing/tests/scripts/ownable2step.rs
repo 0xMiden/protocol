@@ -80,7 +80,8 @@ fn create_transfer_note(
     let script = format!(
         r#"
         use miden::standards::access::ownable2step->test_account
-        begin
+        @note_script
+        pub proc main
             repeat.14 push.0 end
             push.{new_owner_prefix}
             push.{new_owner_suffix}
@@ -107,7 +108,8 @@ fn create_accept_note(
 ) -> anyhow::Result<Note> {
     let script = r#"
         use miden::standards::access::ownable2step->test_account
-        begin
+        @note_script
+        pub proc main
             repeat.16 push.0 end
             call.test_account::accept_ownership
             dropw dropw dropw dropw
@@ -129,7 +131,8 @@ fn create_renounce_note(
 ) -> anyhow::Result<Note> {
     let script = r#"
         use miden::standards::access::ownable2step->test_account
-        begin
+        @note_script
+        pub proc main
             repeat.16 push.0 end
             call.test_account::renounce_ownership
             dropw dropw dropw dropw
@@ -456,7 +459,8 @@ async fn test_transfer_ownership_fails_with_invalid_account_id() -> anyhow::Resu
     let script = format!(
         r#"
         use miden::standards::access::ownable2step->test_account
-        begin
+        @note_script
+        pub proc main
             repeat.14 push.0 end
             push.{invalid_suffix}
             push.{invalid_prefix}
@@ -464,6 +468,8 @@ async fn test_transfer_ownership_fails_with_invalid_account_id() -> anyhow::Resu
             dropw dropw dropw dropw
         end
     "#,
+        invalid_prefix = invalid_prefix,
+        invalid_suffix = invalid_suffix,
     );
 
     let source_manager: Arc<dyn SourceManagerSync> = Arc::new(DefaultSourceManager::default());

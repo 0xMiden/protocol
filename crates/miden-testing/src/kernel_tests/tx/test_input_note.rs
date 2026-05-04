@@ -219,12 +219,16 @@ async fn test_get_assets() -> anyhow::Result<()> {
 
             # write the assets to the memory
             exec.input_note::get_assets
-            # => [num_assets, dest_ptr, note_index]
+            # => [num_assets]
 
             # assert the number of note assets
             push.{assets_number}
             assert_eq.err="note {note_index} has incorrect assets number"
-            # => [dest_ptr, note_index]
+            # => []
+
+            # push the dest pointer for asset assertions
+            push.{dest_ptr}
+            # => [dest_ptr]
         "#,
             note_idx = note_index,
             dest_ptr = dest_ptr,
@@ -237,27 +241,27 @@ async fn test_get_assets() -> anyhow::Result<()> {
                 r#"
                     # load the asset key stored in memory
                     padw dup.4 mem_loadw_le
-                    # => [STORED_ASSET_KEY, dest_ptr, note_index]
+                    # => [STORED_ASSET_KEY, dest_ptr]
 
                     # assert the asset key matches
                     push.{NOTE_ASSET_KEY}
                     assert_eqw.err="expected asset key at asset index {asset_index} of the note\
                     {note_index} to be {NOTE_ASSET_KEY}"
-                    # => [dest_ptr, note_index]
+                    # => [dest_ptr]
 
                     # load the asset value stored in memory
                     padw dup.4 add.{ASSET_VALUE_OFFSET} mem_loadw_le
-                    # => [STORED_ASSET_VALUE, dest_ptr, note_index]
+                    # => [STORED_ASSET_VALUE, dest_ptr]
 
                     # assert the asset value matches
                     push.{NOTE_ASSET_VALUE}
                     assert_eqw.err="expected asset value at asset index {asset_index} of the note\
                     {note_index} to be {NOTE_ASSET_VALUE}"
-                    # => [dest_ptr, note_index]
+                    # => [dest_ptr]
 
                     # move the pointer
                     add.{ASSET_SIZE}
-                    # => [dest_ptr+ASSET_SIZE, note_index]
+                    # => [dest_ptr+ASSET_SIZE]
                 "#,
                 NOTE_ASSET_KEY = asset.to_key_word(),
                 NOTE_ASSET_VALUE = asset.to_value_word(),
@@ -266,8 +270,8 @@ async fn test_get_assets() -> anyhow::Result<()> {
             ));
         }
 
-        // drop the final `dest_ptr` and `note_index` from the stack
-        check_assets_code.push_str("\ndrop drop");
+        // drop the final `dest_ptr` from the stack
+        check_assets_code.push_str("\ndrop");
 
         check_assets_code
     }

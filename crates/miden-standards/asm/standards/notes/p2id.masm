@@ -44,14 +44,13 @@ const TARGET_ACCOUNT_ID_PREFIX_PTR = STORAGE_PTR + 1
 pub proc main
     # store the note storage to memory starting at address 0
     push.STORAGE_PTR exec.active_note::get_storage
-    # => [num_storage_items, storage_ptr]
+    # => [num_storage_items]
 
     # make sure the number of storage items is 2
     eq.2 assert.err=ERR_P2ID_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
-    # => [storage_ptr]
+    # => []
 
     # read the target account ID from the note storage
-    drop
     mem_load.TARGET_ACCOUNT_ID_PREFIX_PTR
     mem_load.TARGET_ACCOUNT_ID_SUFFIX_PTR
     # => [target_account_id_suffix, target_account_id_prefix]

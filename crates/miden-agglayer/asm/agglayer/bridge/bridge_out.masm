@@ -11,12 +11,18 @@ use miden::standards::note::execution_hint::ALWAYS
 use miden::protocol::types::MemoryAddress
 use miden::protocol::output_note
 use miden::core::crypto::hashes::poseidon2
+use agglayer::common::constants::MIDEN_NETWORK_ID
 use agglayer::common::utils
 use agglayer::faucet -> agglayer_faucet
 use agglayer::bridge::bridge_config
 use agglayer::bridge::leaf_utils
 use agglayer::bridge::merkle_tree_frontier
 use agglayer::common::eth_address::EthereumAddressFormat
+
+# ERRORS
+# =================================================================================================
+
+const ERR_B2AGG_DESTINATION_NETWORK_IS_MIDEN = "B2AGG note destination network ID must not be Miden's AggLayer network ID"
 
 # CONSTANTS
 # =================================================================================================
@@ -100,6 +106,9 @@ const BURN_NOTE_NUM_STORAGE_ITEMS=0
 #! - dest_network_id is the u32 destination network/chain ID.
 #! - dest_address(5) are 5 u32 values representing a 20-byte Ethereum address.
 #!
+#! Panics if:
+#! - destination network ID is Miden's AggLayer network ID.
+#!
 #! Invocation: call
 @locals(14)
 pub proc bridge_out
@@ -108,6 +117,9 @@ pub proc bridge_out
     # Save ASSET to local memory for later BURN note creation
     locaddr.BRIDGE_OUT_BURN_ASSET_LOC
     exec.asset::store
+    # => [dest_network_id, dest_address(5), pad(10)]
+
+    dup exec.assert_destination_id_not_miden_id
     # => [dest_network_id, dest_address(5), pad(10)]
 
     loc_store.DESTINATION_NETWORK_LOC
@@ -221,6 +233,26 @@ end
 
 # HELPER PROCEDURES
 # =================================================================================================
+
+#! Asserts that the bridge-out destination network ID is not equal to the Miden's AggLayer network
+#! ID.
+#!
+#! Inputs:  [dest_network_id]
+#! Outputs: []
+#!
+#! Panics if:
+#! - the destination network ID equals `MIDEN_NETWORK_ID`.
+#!
+#! Invocation: exec
+proc assert_destination_id_not_miden_id
+    # change the endianness to BE to compare it with the Miden network ID
+    exec.utils::swap_u32_bytes
+    # => [destination_network_id_be]
+
+    # assert that the destination network ID is not equal to the Miden network ID
+    push.MIDEN_NETWORK_ID neq assert.err=ERR_B2AGG_DESTINATION_NETWORK_IS_MIDEN
+    # => []
+end
 
 #! Validates that a faucet is registered in the bridge's faucet registry, then performs an FPI call
 #! to the faucet's `asset_to_origin_asset` procedure to obtain the scaled amount, origin token

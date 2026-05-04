@@ -56,7 +56,7 @@ contract ClaimAssetTestVectorsRollupTx is Test, DepositContractV2, DepositContra
     /**
      * @notice Generates rollup deposit test vectors with valid two-level Merkle proofs.
      *
-     *         Output file: test-vectors/claim_asset_vectors_rollup_tx.json
+     *         Output file: test-vectors/claim_asset_vectors_l2_tx.json
      */
     function test_generateClaimAssetVectorsRollupTx() public {
         string memory obj = "root";
@@ -66,7 +66,7 @@ contract ClaimAssetTestVectorsRollupTx is Test, DepositContractV2, DepositContra
         uint8 leafType = 0;
         uint32 originNetwork = 3; // rollup network ID
         address originTokenAddress = 0x2DC70fb75b88d2eB4715bc06E1595E6D97c34DFF;
-        uint32 destinationNetwork = 20;
+        uint32 destinationNetwork = 77;
         // Destination address with zero MSB (embeds a Miden AccountId)
         address destinationAddress = 0x00000000AA0000000000bb000000cc000000Dd00;
         uint256 amount = 100000000000000000000;
@@ -200,7 +200,7 @@ contract ClaimAssetTestVectorsRollupTx is Test, DepositContractV2, DepositContra
                 obj, "description", "Rollup deposit test vectors with valid two-level Merkle proofs (non-zero indices)"
             );
 
-            string memory outputPath = "test-vectors/claim_asset_vectors_rollup_tx.json";
+            string memory outputPath = "test-vectors/claim_asset_vectors_l2_tx.json";
             vm.writeJson(json, outputPath);
 
             console.log("Generated rollup deposit test vectors with valid two-level Merkle proofs");

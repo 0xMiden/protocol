@@ -18,7 +18,7 @@ use miden_protocol::assembly::{Assembler, SourceManager, SourceManagerSync};
 use miden_protocol::asset::{Asset, AssetVaultKey, AssetWitness};
 use miden_protocol::block::account_tree::AccountWitness;
 use miden_protocol::block::{BlockHeader, BlockNumber};
-use miden_protocol::note::{Note, NoteScript};
+use miden_protocol::note::{Note, NoteScript, NoteScriptRoot};
 use miden_protocol::transaction::{
     AccountInputs,
     ExecutedTransaction,
@@ -61,7 +61,7 @@ pub struct TransactionContext {
     pub(super) mast_store: TransactionMastStore,
     pub(super) authenticator: Option<BasicAuthenticator>,
     pub(super) source_manager: Arc<dyn SourceManagerSync>,
-    pub(super) note_scripts: BTreeMap<Word, NoteScript>,
+    pub(super) note_scripts: BTreeMap<NoteScriptRoot, NoteScript>,
     pub(super) is_lazy_loading_enabled: bool,
     pub(super) is_debug_mode_enabled: bool,
 }
@@ -91,7 +91,7 @@ impl TransactionContext {
             .flat_map(|note| note.note().assets().iter().map(Asset::vault_key))
             .collect::<BTreeSet<_>>();
         let fee_asset_vault_key = AssetVaultKey::new_fungible(
-            self.tx_inputs().block_header().fee_parameters().native_asset_id(),
+            self.tx_inputs().block_header().fee_parameters().fee_faucet_id(),
         )
         .expect("fee asset should be a fungible asset");
         asset_vault_keys.extend([fee_asset_vault_key]);
@@ -107,7 +107,7 @@ impl TransactionContext {
         // Add the vault key for the fee asset to the list of asset vault keys which may need to be
         // accessed at the end of the transaction.
         let fee_asset_vault_key =
-            AssetVaultKey::new_fungible(block_header.fee_parameters().native_asset_id())
+            AssetVaultKey::new_fungible(block_header.fee_parameters().fee_faucet_id())
                 .expect("fee asset should be a fungible asset");
         asset_vault_keys.insert(fee_asset_vault_key);
 
@@ -387,7 +387,7 @@ impl DataStore for TransactionContext {
 
     fn get_note_script(
         &self,
-        script_root: Word,
+        script_root: NoteScriptRoot,
     ) -> impl FutureMaybeSend<Result<Option<NoteScript>, DataStoreError>> {
         async move { Ok(self.note_scripts.get(&script_root).cloned()) }
     }
@@ -405,8 +405,7 @@ impl MastForestStore for TransactionContext {
 #[cfg(test)]
 mod tests {
     use miden_protocol::Felt;
-    use miden_protocol::assembly::Assembler;
-    use miden_protocol::note::NoteScript;
+    use miden_standards::code_builder::CodeBuilder;
 
     use super::*;
     use crate::TransactionContextBuilder;
@@ -414,20 +413,16 @@ mod tests {
     #[tokio::test]
     async fn test_get_note_scripts() {
         // Create two note scripts
-        let assembler1 = Assembler::default();
-        let script1_code = "begin push.1 end";
-        let program1 = assembler1
-            .assemble_program(script1_code)
+        let script1_code = "@note_script\npub proc main\n    push.1\nend";
+        let note_script1 = CodeBuilder::default()
+            .compile_note_script(script1_code)
             .expect("failed to assemble note script 1");
-        let note_script1 = NoteScript::new(program1);
         let script_root1 = note_script1.root();
 
-        let assembler2 = Assembler::default();
-        let script2_code = "begin push.2 push.3 add end";
-        let program2 = assembler2
-            .assemble_program(script2_code)
+        let script2_code = "@note_script\npub proc main\n    push.2 push.3 add\nend";
+        let note_script2 = CodeBuilder::default()
+            .compile_note_script(script2_code)
             .expect("failed to assemble note script 2");
-        let note_script2 = NoteScript::new(program2);
         let script_root2 = note_script2.root();
 
         // Build a transaction context with both note scripts
@@ -453,8 +448,12 @@ mod tests {
         assert_eq!(retrieved_script2, note_script2);
 
         // Fetching a non-existent one returns None
-        let non_existent_root =
-            Word::from([Felt::new(1), Felt::new(2), Felt::new(3), Felt::new(4)]);
+        let non_existent_root = NoteScriptRoot::from_raw(Word::from([
+            Felt::new(1),
+            Felt::new(2),
+            Felt::new(3),
+            Felt::new(4),
+        ]));
         let result = tx_context.get_note_script(non_existent_root).await;
         assert!(matches!(result, Ok(None)));
     }

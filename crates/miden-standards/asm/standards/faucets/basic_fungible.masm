@@ -2,7 +2,8 @@
 #
 # See the `BasicFungibleFaucet` documentation for details.
 #
-# Note: This component requires `MintPolicyManager` component to also be present in the account.
+# Note: This component requires mint-policy and burn-policy components to also be present in the
+# account.
 # =================================================================================================
 
 use miden::standards::faucets
@@ -43,18 +44,22 @@ end
 
 #! Burns the fungible asset from the active note.
 #!
-#! This procedure retrieves the asset from the active note and burns it. The note must contain
-#! exactly one asset, which must be a fungible asset issued by this faucet.
+#! This is a re-export of `miden::standards::faucets::burn`.
 #!
-#! This is a re-export of basic_fungible::burn.
+#! The shared burn procedure first executes the active burn policy and then burns the single
+#! fungible asset contained in the active note.
 #!
 #! Inputs:  [pad(16)]
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
+#! - active burn policy validation fails.
 #! - the procedure is not called from a note context (active_note::get_assets will fail).
 #! - the note does not contain exactly one asset.
 #! - the transaction is executed against an account which is not a fungible asset faucet.
 #! - the transaction is executed against a faucet which is not the origin of the specified asset.
 #! - the amount about to be burned is greater than the outstanding supply of the asset.
+#! - any of the validations in faucets::burn fail.
+#!
+#! Invocation: call
 pub use faucets::burn

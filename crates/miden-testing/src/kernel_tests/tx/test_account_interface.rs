@@ -155,7 +155,7 @@ async fn check_note_consumability_partial_success() -> anyhow::Result<()> {
         sender,
         ChaCha20Rng::from_seed(ChaCha20Rng::from_seed([0_u8; 32]).random()),
     )
-    .code("begin push.1 drop push.0 div end")
+    .code("@note_script pub proc main push.1 drop push.0 div end")
     .dynamically_linked_libraries([TransactionKernel::library()])
     .build()?;
 
@@ -163,7 +163,7 @@ async fn check_note_consumability_partial_success() -> anyhow::Result<()> {
         sender,
         ChaCha20Rng::from_seed(ChaCha20Rng::from_seed([0_u8; 32]).random()),
     )
-    .code("begin push.2 drop push.0 div end")
+    .code("@note_script pub proc main push.2 drop push.0 div end")
     .dynamically_linked_libraries([TransactionKernel::library()])
     .build()?;
 
@@ -320,14 +320,14 @@ async fn check_note_consumability_epilogue_failure_with_new_combination() -> any
         sender,
         ChaCha20Rng::from_seed(ChaCha20Rng::from_seed([0_u8; 32]).random()),
     )
-    .code("begin push.1 drop push.1 div end")
+    .code("@note_script pub proc main push.1 drop push.1 div end")
     .dynamically_linked_libraries([TransactionKernel::library()])
     .build()?;
     let failing_note_1 = NoteBuilder::new(
         sender,
         ChaCha20Rng::from_seed(ChaCha20Rng::from_seed([0_u8; 32]).random()),
     )
-    .code("begin push.1 drop push.0 div end")
+    .code("@note_script pub proc main push.1 drop push.0 div end")
     .dynamically_linked_libraries([TransactionKernel::library()])
     .build()?;
 

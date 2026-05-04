@@ -39,7 +39,8 @@ const ERR_UPDATE_GER_TARGET_ACCOUNT_MISMATCH = "UPDATE_GER note attachment targe
 #! - account does not expose update_ger procedure.
 #! - target account ID does not match the consuming account ID.
 #! - number of note storage items is not exactly 8.
-begin
+@note_script
+pub proc main
     dropw
     # => [pad(16)]
 
@@ -50,10 +51,10 @@ begin
 
     # Load note storage to memory
     push.STORAGE_PTR_GER_LOWER exec.active_note::get_storage
-    # => [num_storage_items, dest_ptr, pad(16)]
+    # => [num_storage_items, pad(16)]
 
     # Validate the number of storage items
-    push.UPDATE_GER_NOTE_NUM_STORAGE_ITEMS assert_eq.err=ERR_UPDATE_GER_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS drop
+    push.UPDATE_GER_NOTE_NUM_STORAGE_ITEMS assert_eq.err=ERR_UPDATE_GER_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
     # => [pad(16)]
 
     # Load GER_LOWER and GER_UPPER from note storage

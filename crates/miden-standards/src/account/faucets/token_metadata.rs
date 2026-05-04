@@ -1,3 +1,8 @@
+// TODO: This file exists solely to maintain backward compatibility with the AggLayer crate, which
+// still depends on the old `TokenMetadata` type. It should be removed or replaced once the AggLayer
+// is updated to use `FungibleTokenMetadata` or something else if agreed upon by the team.
+// Note: The slot name was updated to match `FungibleTokenMetadata` and the MASM constant in
+// `faucets/mod.masm`, because both types share the same `mint_and_send` procedure in MASM.
 use miden_protocol::account::{AccountStorage, StorageSlot, StorageSlotName};
 use miden_protocol::asset::{FungibleAsset, TokenSymbol};
 use miden_protocol::utils::sync::LazyLock;
@@ -9,7 +14,7 @@ use super::FungibleFaucetError;
 // ================================================================================================
 
 static METADATA_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::fungible_faucets::metadata")
+    StorageSlotName::new("miden::standards::metadata::fungible_faucet::token_metadata")
         .expect("storage slot name should be valid")
 });
 

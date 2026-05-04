@@ -11,6 +11,9 @@ use $kernel::constants::STORAGE_SLOT_TYPE_VALUE
 use $kernel::memory
 use $kernel::memory::ACCT_ID_SUFFIX_OFFSET
 use $kernel::memory::ACCT_ID_PREFIX_OFFSET
+use $kernel::memory::ACCOUNT_DATA_LENGTH
+use $kernel::memory::MAX_FOREIGN_ACCOUNT_PTR
+use $kernel::memory::NATIVE_ACCOUNT_DATA_PTR
 use miden::core::collections::smt
 use miden::core::collections::sorted_array
 use miden::core::crypto::hashes::poseidon2
@@ -54,7 +57,7 @@ const ERR_ACCOUNT_STORAGE_COMMITMENT_MISMATCH="computed account storage commitme
 
 const ERR_ACCOUNT_STORAGE_MAP_ENTRIES_DO_NOT_MATCH_MAP_ROOT="storage map entries provided as advice inputs do not have the same storage map root as the root of the map the new account commits to"
 
-const ERR_FOREIGN_ACCOUNT_MAX_NUMBER_EXCEEDED="maximum allowed number of foreign account to be loaded (64) was exceeded"
+const ERR_FOREIGN_ACCOUNT_MAX_NUMBER_EXCEEDED="maximum allowed number of foreign accounts to be loaded (63) was exceeded"
 
 const ERR_FOREIGN_ACCOUNT_INVALID_COMMITMENT="commitment of the foreign account in the advice provider does not match the commitment in the account tree"
 
@@ -899,8 +902,15 @@ end
 #! 2. Assert the two least significant elements of the digest are equal to the account ID of the
 #!    account the transaction is being executed against.
 #!
-#! Inputs:  []
-#! Outputs: []
+#! Inputs:
+#!   Operand stack: []
+#!   Advice map: { ACCOUNT_ID_KEY: [SEED] }
+#! Outputs:
+#!   Operand stack: []
+#!
+#! Where:
+#! - ACCOUNT_ID_KEY is the map key constructed from the native account ID.
+#! - SEED is the account seed used to derive the account ID.
 pub proc validate_seed
     # Compute the hash of (SEED, CODE_COMMITMENT, STORAGE_COMMITMENT, EMPTY_WORD).
     # ---------------------------------------------------------------------------------------------
@@ -1074,7 +1084,7 @@ end
 #! - VAULT_ROOT is the commitment of the account's vault.
 #! - STORAGE_COMMITMENT is the commitment to the account's storage.
 #! - STORAGE_SLOT_DATA is the data contained in the storage slot which is constructed as follows:
-#!   [SLOT_VALUE, slot_type, 0, 0, 0].
+#!   [0, slot_type, slot_id_suffix, slot_id_prefix, SLOT_VALUE].
 #! - CODE_COMMITMENT is the commitment to the account's code.
 #! - ACCOUNT_PROCEDURE_DATA are the roots of the public procedures of the foreign account.
 #!
@@ -1164,7 +1174,7 @@ end
 #! Where:
 #! - STORAGE_COMMITMENT is the commitment of the active account's storage.
 #! - STORAGE_SLOT_DATA is the data contained in the storage slot which is constructed as follows:
-#!   [SLOT_VALUE, slot_type, 0, 0, 0]
+#!   [0, slot_type, slot_id_suffix, slot_id_prefix, SLOT_VALUE]
 #!
 #! Panics if:
 #! - the number of account storage slots exceeded the maximum limit of 255.
@@ -1552,7 +1562,6 @@ end
 #! Locals:
 #! - 0: slot_ptr
 #! - 4..8: OLD_MAP_VALUE
-#! - 8..12: OLD_MAP_ROOT
 @locals(8)
 proc set_map_item_raw
     # store slot_ptr until the end of the procedure
@@ -1636,6 +1645,7 @@ end
 #! Outputs: [VALUE]
 #!
 #! Where:
+#! - storage_slots_ptr is the pointer to the storage slots section in which to look up the slot.
 #! - KEY is the key to look up in the map.
 #! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
 #!   the first two felts of the hashed slot name.
@@ -1789,14 +1799,14 @@ end
 #!   data, depending on the value of the was_loaded flag.
 #!
 #! Panics if:
-#! - the maximum allowed number of foreign account to be loaded (64) was exceeded.
+#! - the maximum allowed number of foreign accounts to be loaded (63) was exceeded.
 pub proc get_account_data_ptr
     # move pointer one account block back so that the first account pointer in the cycle will point
     # to the native account
-    exec.memory::get_native_account_data_ptr exec.memory::get_account_data_length sub
+    push.NATIVE_ACCOUNT_DATA_PTR push.ACCOUNT_DATA_LENGTH sub
     # => [curr_account_ptr, foreign_account_id_suffix, foreign_account_id_prefix]
 
-    # push the pad element onto the stack: it will represent the `is_equal_id` flag during the cycle
+    # push the initial `is_equal_id` flag (0 = not found yet) onto the stack
     push.0 movdn.3
     # => [curr_account_ptr, foreign_account_id_suffix, foreign_account_id_prefix, is_equal_id=0]
 
@@ -1804,13 +1814,13 @@ pub proc get_account_data_ptr
     push.1
 
     while.true
-        # drop the flag left from the previous loop
-        # in the first iteration this will be a pad element
+        # drop the `is_equal_id` flag left from the previous iteration
+        # in the first iteration this is the initial is_equal_id=0 pushed above
         movup.3 drop
         # => [curr_account_ptr, foreign_account_id_suffix, foreign_account_id_prefix]
 
         # move the current account pointer to the next account data block
-        exec.memory::get_account_data_length add
+        push.ACCOUNT_DATA_LENGTH add
         # => [curr_account_ptr', foreign_account_id_suffix, foreign_account_id_prefix]
 
         dup add.ACCT_ID_PREFIX_OFFSET mem_load
@@ -1834,11 +1844,11 @@ pub proc get_account_data_ptr
 
     # check that the loading of one more account won't exceed the maximum number of the foreign
     # accounts which can be loaded.
-    dup exec.memory::get_max_foreign_account_ptr lte
+    dup push.MAX_FOREIGN_ACCOUNT_PTR lte
     assert.err=ERR_FOREIGN_ACCOUNT_MAX_NUMBER_EXCEEDED
     # => [curr_account_ptr, foreign_account_id_suffix, foreign_account_id_prefix, is_equal_id]
 
-    # the resulting `was_loaded` flag is essentially equal to the `is_equal_id` flag
+    # the resulting `was_loaded` flag is equal to the `is_equal_id` flag
     movup.3
     # => [was_loaded, curr_account_ptr, foreign_account_id_suffix, foreign_account_id_prefix]
 end

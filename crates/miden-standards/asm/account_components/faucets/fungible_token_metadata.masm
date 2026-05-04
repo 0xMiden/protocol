@@ -1,0 +1,20 @@
+# The MASM code of the Fungible Token Metadata Account Component.
+#
+# Re-exported from module miden::standards::components::fungible_token_metadata
+# All metadata-related procedures are re-exported here.
+
+pub use ::miden::standards::metadata::fungible_faucet::get_name
+pub use ::miden::standards::metadata::fungible_faucet::get_mutability_config
+pub use ::miden::standards::metadata::fungible_faucet::is_max_supply_mutable
+pub use ::miden::standards::metadata::fungible_faucet::is_description_mutable
+pub use ::miden::standards::metadata::fungible_faucet::is_logo_uri_mutable
+pub use ::miden::standards::metadata::fungible_faucet::is_external_link_mutable
+pub use ::miden::standards::metadata::fungible_faucet::get_token_metadata
+pub use ::miden::standards::metadata::fungible_faucet::get_max_supply
+pub use ::miden::standards::metadata::fungible_faucet::get_decimals
+pub use ::miden::standards::metadata::fungible_faucet::get_token_symbol
+pub use ::miden::standards::metadata::fungible_faucet::get_token_supply
+pub use ::miden::standards::metadata::fungible_faucet::set_description
+pub use ::miden::standards::metadata::fungible_faucet::set_logo_uri
+pub use ::miden::standards::metadata::fungible_faucet::set_external_link
+pub use ::miden::standards::metadata::fungible_faucet::set_max_supply

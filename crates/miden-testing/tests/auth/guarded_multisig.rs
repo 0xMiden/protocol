@@ -12,6 +12,7 @@ use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
 };
+use miden_protocol::testing::note::DEFAULT_NOTE_SCRIPT;
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
 use miden_standards::account::auth::{
@@ -482,7 +483,7 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
 
     // Also reject rotation transactions that touch notes even when no other account procedure is
     // called.
-    let note_script = CodeBuilder::default().compile_note_script("begin nop end")?;
+    let note_script = CodeBuilder::default().compile_note_script(DEFAULT_NOTE_SCRIPT)?;
     let note_serial_num = Word::from([Felt::new(1), Felt::new(2), Felt::new(3), Felt::new(4)]);
     let note_recipient =
         NoteRecipient::new(note_serial_num, note_script.clone(), NoteStorage::default());

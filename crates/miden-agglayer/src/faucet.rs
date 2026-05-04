@@ -3,6 +3,7 @@ extern crate alloc;
 use alloc::vec;
 use alloc::vec::Vec;
 
+use miden_core::utils::bytes_to_packed_u32_elements;
 use miden_core::{Felt, Word};
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
@@ -16,8 +17,9 @@ use miden_protocol::account::{
 use miden_protocol::asset::TokenSymbol;
 use miden_protocol::errors::AccountIdError;
 use miden_standards::account::access::Ownable2Step;
+use miden_standards::account::burn_policies::BurnOwnerControlled;
 use miden_standards::account::faucets::{FungibleFaucetError, TokenMetadata};
-use miden_standards::account::mint_policies::OwnerControlled;
+use miden_standards::account::mint_policies::MintOwnerControlled;
 use miden_utils_sync::LazyLock;
 use thiserror::Error;
 
@@ -89,7 +91,8 @@ static METADATA_HASH_HI_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| 
 ///
 /// This component re-exports `network_fungible::mint_and_send`, which requires:
 /// - [`Ownable2Step`]: Provides ownership data (bridge account ID as owner).
-/// - [`miden_standards::account::mint_policies::OwnerControlled`]: Provides mint policy management.
+/// - [`miden_standards::account::mint_policies::MintOwnerControlled`]: Provides mint policy
+///   management.
 ///
 /// These must be added as separate components when building the faucet account.
 #[derive(Debug, Clone)]
@@ -264,10 +267,9 @@ impl AggLayerFaucet {
             .get_item(&CONVERSION_INFO_2_SLOT_NAME)
             .expect("should be able to read the second conversion info slot");
 
-        Ok(conversion_info_2[1]
-            .as_canonical_u64()
-            .try_into()
-            .expect("origin network ID should fit into u32"))
+        let le_packed = u32::try_from(conversion_info_2[1].as_canonical_u64())
+            .expect("origin network ID should fit into u32");
+        Ok(u32::from_be_bytes(le_packed.to_le_bytes()))
     }
 
     /// Extracts the scaling factor in form of the u8 from the corresponding storage slot of the
@@ -363,9 +365,12 @@ impl AggLayerFaucet {
             &*METADATA_HASH_HI_SLOT_NAME,
             TokenMetadata::metadata_slot(),
             Ownable2Step::slot_name(),
-            OwnerControlled::active_policy_proc_root_slot(),
-            OwnerControlled::allowed_policy_proc_roots_slot(),
-            OwnerControlled::policy_authority_slot(),
+            MintOwnerControlled::active_policy_proc_root_slot(),
+            MintOwnerControlled::allowed_policy_proc_roots_slot(),
+            MintOwnerControlled::policy_authority_slot(),
+            BurnOwnerControlled::active_policy_proc_root_slot(),
+            BurnOwnerControlled::allowed_policy_proc_roots_slot(),
+            BurnOwnerControlled::policy_authority_slot(),
         ]
     }
 }
@@ -436,7 +441,7 @@ pub enum AgglayerFaucetError {
 /// - Slot 1 (`agglayer::faucet::conversion_info_1`): `[addr0, addr1, addr2, addr3]` — first 4 felts
 ///   of the origin token address (5 × u32 limbs).
 /// - Slot 2 (`agglayer::faucet::conversion_info_2`): `[addr4, origin_network, scale, 0]` —
-///   remaining address felt + origin network + scale factor.
+///   remaining address felt + origin network (LE-packed) + scale factor.
 ///
 /// # Parameters
 /// - `origin_token_address`: The EVM token address in Ethereum format
@@ -454,8 +459,14 @@ fn agglayer_faucet_conversion_slots(
 
     let slot1 = Word::new([addr_elements[0], addr_elements[1], addr_elements[2], addr_elements[3]]);
 
+    let origin_network_packed = bytes_to_packed_u32_elements(&origin_network.to_be_bytes());
+    assert_eq!(
+        origin_network_packed.len(),
+        1,
+        "origin_network should pack into exactly one Felt"
+    );
     let slot2 =
-        Word::new([addr_elements[4], Felt::from(origin_network), Felt::from(scale), Felt::ZERO]);
+        Word::new([addr_elements[4], origin_network_packed[0], Felt::from(scale), Felt::ZERO]);
 
     (slot1, slot2)
 }

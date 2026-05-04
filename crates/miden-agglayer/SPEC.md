@@ -38,7 +38,8 @@ The crate `miden-agglayer` implements the AggLayer bridging protocol on the Mide
 A user initiates a bridge-out by creating a [`B2AGG`](#41-b2agg) note containing a single fungible
 asset and the destination network/address. The bridge account consumes this note:
 
-1. Validates that the asset's faucet is registered in the faucet registry.
+1. Validates that the asset's faucet is registered in the faucet registry, and that the
+   destination network is not Miden's AggLayer network ID.
 2. FPIs to the faucet (`agglayer_faucet::asset_to_origin_asset`) to obtain the scaled
    U256 amount, origin token address, and origin network.
 3. FPIs to the faucet (`agglayer_faucet::get_metadata_hash`) to obtain the metadata hash.
@@ -79,8 +80,8 @@ The `CLAIM` note is consumed by the bridge account:
 The faucet consumes the `MINT` note, mints the specified amount, and creates a [`P2ID`](#46-p2id-generated) note
 that delivers the minted assets to the recipient's Miden account.
 
-TODO: Destination network from the leaf data is not validated against Miden's own network
-ID ([#2698](https://github.com/0xMiden/protocol/issues/2698)).
+Inside `bridge_in::claim`, immediately after proof and leaf data are piped into memory, the bridge asserts the leaf's `destination_network` equals the global MASM constant `MIDEN_NETWORK_ID` in `asm/agglayer/common/constants.masm` (after `swap_u32_bytes` on the LE-packed memory limb). The same value is exposed to Rust as `AggLayerBridge::MIDEN_NETWORK_ID`, matching Solidity test vectors.
+This mirrors Solidity `claimAsset` destination-network checks.
 
 TODO: The leaf type field is not validated to be `LEAF_TYPE_ASSET` (0)
 ([#2699](https://github.com/0xMiden/protocol/issues/2699)).
@@ -223,12 +224,14 @@ Asserts the note sender matches the GER manager stored in
 | **Inputs** | `[PROOF_DATA_KEY, LEAF_DATA_KEY, faucet_mint_amount, pad(7)]` on the operand stack; proof data and leaf data in the advice map keyed by `PROOF_DATA_KEY` and `LEAF_DATA_KEY` respectively |
 | **Outputs** | `[pad(16)]` |
 | **Context** | Consuming a `CLAIM` note on the bridge account |
-| **Panics** | GER not known; global index invalid; Merkle proof verification failed; origin token address not in token registry; claim already spent; amount conversion mismatch |
+| **Panics** | Leaf `destination_network` does not match `agglayer::common::constants::MIDEN_NETWORK_ID`; invalid leaf type; GER not known; global index invalid; Merkle proof verification failed; origin token address not in token registry; claim already spent; amount conversion mismatch |
 
 Validates a bridge-in claim and creates a MINT note targeting the faucet:
 
 1. Pipes proof data and leaf data from the advice map into memory, verifying preimage
-   integrity.
+   integrity, then asserts the leaf's `destination_network` matches the global
+   `MIDEN_NETWORK_ID` constant (`asm/agglayer/common/constants.masm`) after `swap_u32_bytes` on
+   the LE-packed limb (same convention as other AggLayer bridge-in u32 felts in memory).
 2. Extracts the destination account ID from the leaf data's destination address
    (via `eth_address::to_account_id`).
 3. Validates the Merkle proof via `verify_leaf_bridge`: computes the leaf
@@ -267,7 +270,7 @@ Validates a bridge-in claim and creates a MINT note targeting the faucet:
 | `agglayer::bridge::ger_manager_account_id` | Value | -- | `[0, 0, mgr_suffix, mgr_prefix]` | GER manager account ID for UPDATE_GER note authorization |
 
 Initial state: all map slots empty, all value slots `[0, 0, 0, 0]` except
-`admin_account_id` and `ger_manager_account_id` which are set at account creation time.
+`admin_account_id` and `ger_manager_account_id` (set at account creation time).
 
 ### 3.2 Faucet Account Component
 
@@ -495,9 +498,9 @@ The storage is divided into three logical regions: proof data (felts 0-535), lea
    advice map as two keyed entries (`PROOF_DATA_KEY`, `LEAF_DATA_KEY`).
 4. The `miden_claim_amount` is read from memory.
 5. `bridge_in::claim` is called with `[PROOF_DATA_KEY, LEAF_DATA_KEY, miden_claim_amount]`
-   on the stack. The bridge validates the proof, checks the claim nullifier, looks up the
-   faucet via the token registry, verifies the amount conversion, then builds a MINT
-   output note targeting the faucet.
+   on the stack. The bridge asserts the leaf's `destination_network` matches the global
+   `MIDEN_NETWORK_ID` MASM constant, validates the proof, checks the claim nullifier, looks up the faucet via the token
+   registry, verifies the amount conversion, then builds a MINT output note targeting the faucet.
 
 #### Permissions
 

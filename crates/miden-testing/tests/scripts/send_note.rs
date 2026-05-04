@@ -16,6 +16,7 @@ use miden_protocol::note::{
     NoteType,
     PartialNote,
 };
+use miden_protocol::testing::note::DEFAULT_NOTE_SCRIPT;
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
 use miden_standards::account::interface::{AccountInterface, AccountInterfaceExt};
@@ -67,7 +68,7 @@ async fn test_send_note_script_basic_wallet() -> anyhow::Result<()> {
         .with_tag(tag)
         .with_attachment(attachment.clone());
     let assets = NoteAssets::new(vec![sent_asset0, sent_asset1]).unwrap();
-    let note_script = CodeBuilder::default().compile_note_script("begin nop end").unwrap();
+    let note_script = CodeBuilder::default().compile_note_script(DEFAULT_NOTE_SCRIPT).unwrap();
     let serial_num = RandomCoin::new(Word::from([1, 2, 3, 4u32])).draw_word();
     let recipient = NoteRecipient::new(serial_num, note_script, NoteStorage::default());
 
@@ -142,7 +143,7 @@ async fn test_send_note_script_basic_fungible_faucet() -> anyhow::Result<()> {
     let assets = NoteAssets::new(vec![Asset::Fungible(
         FungibleAsset::new(sender_basic_fungible_faucet_account.id(), 10).unwrap(),
     )])?;
-    let note_script = CodeBuilder::default().compile_note_script("begin nop end").unwrap();
+    let note_script = CodeBuilder::default().compile_note_script(DEFAULT_NOTE_SCRIPT).unwrap();
     let serial_num = RandomCoin::new(Word::from([1, 2, 3, 4u32])).draw_word();
     let recipient = NoteRecipient::new(serial_num, note_script, NoteStorage::default());
 

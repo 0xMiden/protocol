@@ -1,10 +1,11 @@
-use alloc::string::ToString;
+use alloc::string::{String, ToString};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::fmt::Display;
 use core::num::TryFromIntError;
 
 use miden_core::mast::MastNodeExt;
+use miden_crypto_derive::WordWrapper;
 use miden_mast_package::Package;
 
 use super::Felt;
@@ -24,6 +25,42 @@ use crate::{PrettyPrint, Word};
 /// The attribute name used to mark the entrypoint procedure in a note script library.
 const NOTE_SCRIPT_ATTRIBUTE: &str = "note_script";
 
+// NOTE SCRIPT ROOT
+// ================================================================================================
+
+/// The MAST root of a [`NoteScript`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, WordWrapper)]
+pub struct NoteScriptRoot(Word);
+
+impl From<NoteScriptRoot> for Word {
+    fn from(root: NoteScriptRoot) -> Self {
+        root.0
+    }
+}
+
+impl Display for NoteScriptRoot {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        Display::fmt(&self.0, f)
+    }
+}
+
+impl Serializable for NoteScriptRoot {
+    fn write_into<W: ByteWriter>(&self, target: &mut W) {
+        target.write(self.0);
+    }
+
+    fn get_size_hint(&self) -> usize {
+        self.0.get_size_hint()
+    }
+}
+
+impl Deserializable for NoteScriptRoot {
+    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
+        let word: Word = source.read()?;
+        Ok(Self::from_raw(word))
+    }
+}
+
 // NOTE SCRIPT
 // ================================================================================================
 
@@ -42,6 +79,10 @@ impl NoteScript {
     // --------------------------------------------------------------------------------------------
 
     /// Returns a new [NoteScript] instantiated from the provided program.
+    ///
+    /// TODO: since the note script now should be created from `Library`, not `Program`, this
+    /// constructor should be removed:
+    /// (<https://github.com/0xMiden/protocol/pull/2822#discussion_r3132965577>).
     pub fn new(code: Program) -> Self {
         Self {
             entrypoint: code.entrypoint(),
@@ -157,8 +198,8 @@ impl NoteScript {
     // --------------------------------------------------------------------------------------------
 
     /// Returns the commitment of this note script (i.e., the script's MAST root).
-    pub fn root(&self) -> Word {
-        self.mast[self.entrypoint].digest()
+    pub fn root(&self) -> NoteScriptRoot {
+        NoteScriptRoot::from_raw(self.mast[self.entrypoint].digest())
     }
 
     /// Returns a reference to the [MastForest] backing this note script.
@@ -359,14 +400,14 @@ fn create_external_node_forest(digest: Word) -> (MastForest, MastNodeId) {
 mod tests {
     use super::{Felt, NoteScript, Vec};
     use crate::assembly::Assembler;
-    use crate::testing::note::DEFAULT_NOTE_CODE;
+    use crate::testing::note::DEFAULT_NOTE_SCRIPT;
 
     #[test]
     fn test_note_script_to_from_felt() {
         let assembler = Assembler::default();
-        let script_src = DEFAULT_NOTE_CODE;
-        let program = assembler.assemble_program(script_src).unwrap();
-        let note_script = NoteScript::new(program);
+        let script_src = DEFAULT_NOTE_SCRIPT;
+        let library = assembler.assemble_library([script_src]).unwrap();
+        let note_script = NoteScript::from_library(&library).unwrap();
 
         let encoded: Vec<Felt> = (&note_script).into();
         let decoded: NoteScript = encoded.try_into().unwrap();
@@ -381,8 +422,8 @@ mod tests {
         use crate::Word;
 
         let assembler = Assembler::default();
-        let program = assembler.assemble_program("begin nop end").unwrap();
-        let script = NoteScript::new(program);
+        let library = assembler.assemble_library([DEFAULT_NOTE_SCRIPT]).unwrap();
+        let script = NoteScript::from_library(&library).unwrap();
 
         assert!(script.mast().advice_map().is_empty());
 

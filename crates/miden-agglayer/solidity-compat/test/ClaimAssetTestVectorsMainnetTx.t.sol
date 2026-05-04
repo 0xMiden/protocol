@@ -6,7 +6,7 @@ import "@agglayer/lib/GlobalExitRootLib.sol";
 import "@agglayer/interfaces/IBasePolygonZkEVMGlobalExitRoot.sol";
 import "./DepositContractTestHelpers.sol";
 
-contract MockGlobalExitRootManagerLocal is IBasePolygonZkEVMGlobalExitRoot {
+contract MockGlobalExitRootManagerMainnet is IBasePolygonZkEVMGlobalExitRoot {
     mapping(bytes32 => uint256) public override globalExitRootMap;
 
     function updateExitRoot(bytes32) external override {}
@@ -17,24 +17,24 @@ contract MockGlobalExitRootManagerLocal is IBasePolygonZkEVMGlobalExitRoot {
 }
 
 /**
- * @title ClaimAssetTestVectorsLocalTx
+ * @title ClaimAssetTestVectorsMainnetTx
  * @notice Test contract that generates test vectors for an L1 bridgeAsset transaction.
  *         This simulates calling bridgeAsset() on the PolygonZkEVMBridgeV2 contract
  *         and captures all relevant data including VALID Merkle proofs.
  *         Uses BridgeL2SovereignChain to get the authoritative claimedGlobalIndexHashChain.
  *
- * Run with: forge test -vv --match-contract ClaimAssetTestVectorsLocalTx
+ * Run with: forge test -vv --match-contract ClaimAssetTestVectorsMainnetTx
  *
  * The output can be used to verify Miden's ability to process L1 bridge transactions.
  */
-contract ClaimAssetTestVectorsLocalTx is Test, DepositContractTestHelpers {
+contract ClaimAssetTestVectorsMainnetTx is Test, DepositContractTestHelpers {
     /**
      * @notice Generates bridge asset test vectors with VALID Merkle proofs.
      *         Simulates a user calling bridgeAsset() to bridge tokens from L1 to Miden.
      *
      *         Output file: test-vectors/bridge_asset_vectors.json
      */
-    function test_generateClaimAssetVectorsLocalTx() public {
+    function test_generateClaimAssetVectorsMainnetTx() public {
         string memory obj = "root";
 
         // ====== BRIDGE TRANSACTION PARAMETERS ======
@@ -42,7 +42,7 @@ contract ClaimAssetTestVectorsLocalTx is Test, DepositContractTestHelpers {
         uint8 leafType = 0;
         uint32 originNetwork = 0;
         address originTokenAddress = 0x2DC70fb75b88d2eB4715bc06E1595E6D97c34DFF;
-        uint32 destinationNetwork = 20;
+        uint32 destinationNetwork = 77;
         address destinationAddress = 0x00000000AA0000000000bb000000cc000000Dd00;
         uint256 amount = 100000000000000000000;
 
@@ -110,7 +110,7 @@ contract ClaimAssetTestVectorsLocalTx is Test, DepositContractTestHelpers {
         // Use the actual BridgeL2SovereignChain to compute the authoritative value
 
         // Set up the global exit root manager
-        MockGlobalExitRootManagerLocal gerManager = new MockGlobalExitRootManagerLocal();
+        MockGlobalExitRootManagerMainnet gerManager = new MockGlobalExitRootManagerMainnet();
         gerManager.setGlobalExitRoot(globalExitRoot);
         globalExitRootManager = IBasePolygonZkEVMGlobalExitRoot(address(gerManager));
 
@@ -166,10 +166,10 @@ contract ClaimAssetTestVectorsLocalTx is Test, DepositContractTestHelpers {
                 obj, "description", "L1 bridgeAsset transaction test vectors with valid Merkle proofs"
             );
 
-            string memory outputPath = "test-vectors/claim_asset_vectors_local_tx.json";
+            string memory outputPath = "test-vectors/claim_asset_vectors_l1_tx.json";
             vm.writeJson(json, outputPath);
 
-            console.log("Generated claim asset local tx test vectors with valid Merkle proofs");
+            console.log("Generated claim asset mainnet tx test vectors with valid Merkle proofs");
             console.log("Output file:", outputPath);
             console.log("Leaf index:", leafIndex);
             console.log("Deposit count:", depositCountValue);
