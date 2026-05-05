@@ -1463,10 +1463,10 @@ async fn test_network_note() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Test that `output_note::get_attachment_commitments` returns the correct number of attachments
+/// Test that `output_note::get_attachment_commitments_ptr` returns the correct number of attachments
 /// and writes the individual attachment commitments to memory at the returned pointer.
 #[tokio::test]
-async fn test_get_attachment_commitments() -> anyhow::Result<()> {
+async fn test_get_attachment_commitments_ptr() -> anyhow::Result<()> {
     let account = Account::mock(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET, Auth::IncrNonce);
     let rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
 
@@ -1515,7 +1515,7 @@ async fn test_get_attachment_commitments() -> anyhow::Result<()> {
 
             # get attachment commitments for note at index 0
             push.0
-            exec.output_note::get_attachment_commitments
+            exec.output_note::get_attachment_commitments_ptr
             # => [num_attachments, attachments_ptr]
 
             # assert num_attachments == 2
@@ -1566,10 +1566,10 @@ async fn test_get_attachment_commitments() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Test that `output_note::get_attachment` retrieves the correct attachment data from local memory
+/// Test that `output_note::get_attachment_ptr` retrieves the correct attachment data from local memory
 /// after piping its preimage from the advice map.
 #[tokio::test]
-async fn test_get_attachment() -> anyhow::Result<()> {
+async fn test_get_attachment_ptr() -> anyhow::Result<()> {
     let account = Account::mock(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET, Auth::IncrNonce);
     let rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
 
@@ -1615,7 +1615,7 @@ async fn test_get_attachment() -> anyhow::Result<()> {
             # --- get attachment 1 first (to debug with non-zero idx) ---
             push.0 push.1
             # => [attachment_idx=1, note_idx=0]
-            exec.output_note::get_attachment
+            exec.output_note::get_attachment_ptr
             # => [attachment_ptr, num_words]
             drop drop
 
@@ -1759,7 +1759,7 @@ async fn test_find_attachment(
 #[case::add_word_attachment(5, "add_word_attachment")]
 #[case::add_array_attachment(5, "add_array_attachment")]
 #[case::find_attachment(1, "find_attachment")]
-#[case::get_attachment_commitments(0, "get_attachment_commitments")]
+#[case::get_attachment_commitments_ptr(0, "get_attachment_commitments_ptr")]
 #[case::get_attachments_commitment(0, "get_attachments_commitment")]
 #[tokio::test]
 async fn test_output_note_index_out_of_bounds(

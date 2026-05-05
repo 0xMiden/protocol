@@ -183,7 +183,7 @@ end
 #!
 #! Invocation: exec
 @locals(1024)
-pub proc get_attachment
+pub proc get_attachment_ptr
     # assert attachment_idx < num_attachments
     dup.2 swap u32assert2.err=ERR_OUTPUT_NOTE_ATTACHMENT_IDX_OUT_OF_BOUNDS
     u32lt assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_IDX_OUT_OF_BOUNDS
