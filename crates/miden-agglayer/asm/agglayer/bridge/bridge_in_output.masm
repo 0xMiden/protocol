@@ -100,8 +100,8 @@ const UNLOCK_DEST_PREFIX_LOC = 9
 #! Invocation: exec
 @locals(10)
 pub proc unlock_and_send
-    # Stash destination to locals (claim's CLAIM_DEST_ID_*_LOCAL is in a different frame and is
-    # not visible here — `exec` invocations get their own local frame).
+    # Stash destination to locals so we can reload it later, after `native_account::remove_asset`
+    # has consumed the stack copy.
     loc_store.UNLOCK_DEST_SUFFIX_LOC loc_store.UNLOCK_DEST_PREFIX_LOC
     # => [faucet_id_suffix, faucet_id_prefix]
 
