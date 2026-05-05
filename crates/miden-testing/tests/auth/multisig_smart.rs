@@ -259,8 +259,8 @@ async fn test_multisig_smart_proc_policy_no_notes_constraint_is_enforced(
     Ok(())
 }
 
-/// Tests `update_signers_and_threshold` happy path: a 2-of-2 multisig is rotated to a 4-of-3
-/// signer set with new public keys; the new threshold and signers are persisted in storage.
+/// Tests `update_signers_and_threshold`: a 2-of-2 multisig is rotated to a 4-of-3
+/// signer set with new public keys. The new threshold and signers are persisted in storage.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[case::falcon(AuthScheme::Falcon512Poseidon2)]

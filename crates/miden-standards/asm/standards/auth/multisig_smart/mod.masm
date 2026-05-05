@@ -429,7 +429,7 @@ end
 #! - any stored note_restrictions value is non-zero while both thresholds are zero.
 #!
 #! Invocation: exec
-@locals(3)
+@locals(2)
 pub proc assert_proc_policies_lte_num_approvers
     exec.active_account::get_num_procedures
     # => [num_procedures, num_approvers]
@@ -447,74 +447,35 @@ pub proc assert_proc_policies_lte_num_approvers
         # => [procedure_policies_slot_suffix, procedure_policies_slot_prefix, PROC_ROOT,
         #     proc_index, num_approvers]
 
-        exec.active_account::get_map_item
+        exec.active_account::get_initial_map_item
         # => [immediate_threshold, delayed_threshold, note_restrictions, 0, proc_index, num_approvers]
 
+        # Validate threshold ranges only. Policy consistency was enforced when the policy
+        # was set via `set_procedure_policy` and is preserved across signer updates.
         loc_store.0
         # => [delayed_threshold, note_restrictions, 0, proc_index, num_approvers]
 
         loc_store.1
         # => [note_restrictions, 0, proc_index, num_approvers]
 
-        loc_store.2
-        # => [0, proc_index, num_approvers]
-
-        drop
+        drop drop
         # => [proc_index, num_approvers]
 
-        dup.1
-        loc_load.0
-        swap
+        # immediate_threshold <= num_approvers
+        dup.1 loc_load.0 swap
         # => [num_approvers, immediate_threshold, proc_index, num_approvers]
 
         u32assert2.err=ERR_NUM_APPROVERS_OR_PROC_THRESHOLD_NOT_U32
         u32gt assertz.err=ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS
         # => [proc_index, num_approvers]
 
-        dup.1
-        loc_load.1
-        swap
+        # delayed_threshold <= num_approvers
+        dup.1 loc_load.1 swap
         # => [num_approvers, delayed_threshold, proc_index, num_approvers]
 
         u32assert2.err=ERR_NUM_APPROVERS_OR_PROC_THRESHOLD_NOT_U32
         u32gt assertz.err=ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS
         # => [proc_index, num_approvers]
-
-        loc_load.2
-        exec.assert_valid_note_restrictions
-        # => [proc_index, num_approvers]
-
-        loc_load.0 eq.0
-        # => [is_immediate_threshold_zero, proc_index, num_approvers]
-
-        if.true
-            # => [proc_index, num_approvers]
-
-            loc_load.1 eq.0
-            # => [is_delayed_threshold_zero, proc_index, num_approvers]
-
-            if.true
-                # => [proc_index, num_approvers]
-
-                loc_load.2 assertz.err=ERR_NOTE_RESTRICTIONS_REQUIRE_THRESHOLD
-                # => [proc_index, num_approvers]
-            else
-                # => [proc_index, num_approvers]
-            end
-        else
-            # => [proc_index, num_approvers]
-
-            loc_load.1
-            loc_load.0
-            # => [immediate_threshold, delayed_threshold, proc_index, num_approvers]
-
-            dup.1 swap
-            # => [delayed_threshold, immediate_threshold, proc_index, num_approvers]
-
-            u32assert2.err=ERR_NUM_APPROVERS_OR_PROC_THRESHOLD_NOT_U32
-            u32gt assertz.err=ERR_DELAYED_THRESHOLD_EXCEEDS_IMMEDIATE
-            # => [proc_index, num_approvers]
-        end
 
         dup neq.0
         # => [should_continue, proc_index, num_approvers]
