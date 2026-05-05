@@ -129,6 +129,7 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
     let config_note = ConfigAggBridgeNote::create(
         faucet.id(),
         &origin_token_address,
+        origin_network,
         bridge_admin.id(),
         bridge_account.id(),
         builder.rng_mut(),
@@ -397,6 +398,7 @@ async fn bridge_out_at_high_num_leaves(#[case] initial_num_leaves: u32) -> anyho
     let config_note = ConfigAggBridgeNote::create(
         faucet.id(),
         &origin_token_address,
+        origin_network,
         bridge_admin.id(),
         bridge_account.id(),
         builder.rng_mut(),
@@ -585,6 +587,7 @@ async fn test_bridge_out_fails_when_destination_is_miden_network() -> anyhow::Re
     let vectors = &*SOLIDITY_MTF_VECTORS;
     let origin_token_address =
         EthAddress::from_hex(&vectors.origin_token_address).expect("valid origin token address");
+    let origin_network = 64u32;
     let metadata_hash = MetadataHash::from_token_info(
         &vectors.token_name,
         &vectors.token_symbol,
@@ -598,7 +601,7 @@ async fn test_bridge_out_fails_when_destination_is_miden_network() -> anyhow::Re
         Felt::new(100),
         bridge_account.id(),
         &origin_token_address,
-        64u32,
+        origin_network,
         0u8,
         metadata_hash,
     );
@@ -609,6 +612,7 @@ async fn test_bridge_out_fails_when_destination_is_miden_network() -> anyhow::Re
     let config_note = ConfigAggBridgeNote::create(
         faucet.id(),
         &origin_token_address,
+        origin_network,
         bridge_admin.id(),
         bridge_account.id(),
         builder.rng_mut(),
