@@ -276,7 +276,7 @@ proc assert_faucet_registered
     # => [VALUE]
 
     # the stored word is [1, is_native, 0, 0] for registered faucets
-    # assert element 0 (registration flag) is non-zero
+    # assert element 0 (registration flag) equals "1"
     assert.err=ERR_FAUCET_NOT_REGISTERED drop drop drop
     # => []
 end
