@@ -25,6 +25,9 @@ const MAX_ATTACHMENTS_PER_NOTE=4
 # All zeros means no attachment schemes are set.
 const ATTACHMENT_DEFAULT_SCHEMES=0
 
+#! The attachment scheme value that is reserved to represent an absent attachment.
+const ATTACHMENT_RESERVED_SCHEME = 0
+
 # ERRORS
 # =================================================================================================
 
@@ -38,7 +41,7 @@ const ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_MAX_EXCEEDED="attachment scheme must not
 
 const ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_CANNOT_BE_ZERO = "attachment scheme must not be 0"
 
-const ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_MAX_EXCEEDED="attachment num_words must not exceed 254"
+const ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_MAX_EXCEEDED="attachment num_words must not exceed 256"
 
 const ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_MUST_BE_MULTIPLE_OF_WORD_SIZE="number of elements in an attachment must be a multiple of 4"
 
@@ -253,7 +256,7 @@ end
 #!
 #! Panics if:
 #! - the attachment scheme is 0 or exceeds 65534.
-#! - the number of elements is not a multiple of 4, or num_words is zero or exceeds 254.
+#! - the number of elements is not a multiple of 4, or num_words is zero or exceeds 256.
 #! - the computed hash of fetched attachment elements does not match ATTACHMENT_COMMITMENT.
 #! - the note already has 4 attachments.
 pub proc add_attachment
@@ -263,7 +266,7 @@ pub proc add_attachment
     # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx]
 
     # assert the scheme is not 0 which the kernel uses to represent absent attachments
-    dup neq.0 assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_CANNOT_BE_ZERO
+    dup neq.ATTACHMENT_RESERVED_SCHEME assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_CANNOT_BE_ZERO
     # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx]
 
     movdn.4
@@ -346,7 +349,7 @@ end
 #! Outputs: []
 #!
 #! Panics if:
-#! - the number of elements is not a multiple of 4, or num_words is zero or exceeds 254.
+#! - the number of elements is not a multiple of 4, or num_words is zero or exceeds 256.
 #! - the computed hash of fetched elements does not match ATTACHMENT_COMMITMENT.
 proc validate_attachment
     # push the attachment elements from the advice map onto the advice stack
@@ -365,7 +368,7 @@ proc validate_attachment
     # OS => [num_words, ATTACHMENT_COMMITMENT]
     # AS => [[ATTACHMENT_ELEMENTS]]
 
-    # validate 0 < num_words <= 254
+    # validate 0 < num_words <= 256
     dup neq.0 assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_CANNOT_BE_ZERO
     dup u32lte.MAX_ATTACHMENT_WORDS assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_MAX_EXCEEDED
     # OS => [num_words, ATTACHMENT_COMMITMENT]
