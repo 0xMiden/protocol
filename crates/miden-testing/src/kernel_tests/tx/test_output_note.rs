@@ -15,6 +15,7 @@ use miden_protocol::errors::tx_kernel::{
     ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_MAX_EXCEEDED,
     ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_MUST_BE_MULTIPLE_OF_WORD_SIZE,
     ERR_OUTPUT_NOTE_INDEX_OUT_OF_BOUNDS,
+    ERR_OUTPUT_NOTE_TOO_MANY_ATTACHMENTS,
     ERR_OUTPUT_NOTE_TOTAL_ATTACHMENT_WORDS_EXCEEDED,
     ERR_TX_NUMBER_OF_OUTPUT_NOTES_EXCEEDS_LIMIT,
 };
@@ -72,7 +73,13 @@ use rstest::rstest;
 use super::{TestSetup, setup_test};
 use crate::kernel_tests::tx::ExecutionOutputExt;
 use crate::utils::{create_public_p2any_note, create_spawn_note};
-use crate::{Auth, MockChain, TransactionContextBuilder, assert_execution_error};
+use crate::{
+    Auth,
+    MockChain,
+    TransactionContextBuilder,
+    assert_execution_error,
+    assert_transaction_executor_error,
+};
 
 #[tokio::test]
 async fn test_create_note() -> anyhow::Result<()> {
@@ -1261,6 +1268,58 @@ async fn test_add_attachment_with_scheme_zero_fails() -> anyhow::Result<()> {
     let exec_output = tx_context.execute_code(code).await;
 
     assert_execution_error!(exec_output, ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_CANNOT_BE_ZERO);
+
+    Ok(())
+}
+
+/// Test that adding a fifth attachment to an output note fails with
+/// `ERR_OUTPUT_NOTE_TOO_MANY_ATTACHMENTS`.
+#[tokio::test]
+async fn test_add_fifth_attachment_fails() -> anyhow::Result<()> {
+    let tx_script = "
+        use miden::protocol::output_note
+        use mock::util
+
+        begin
+            exec.util::create_default_note
+            # => [note_idx]
+
+            # add attachment 1
+            dup push.1.2.3.4 push.1
+            exec.output_note::add_word_attachment
+            # => [note_idx]
+
+            # add attachment 2
+            dup push.5.6.7.8 push.2
+            exec.output_note::add_word_attachment
+            # => [note_idx]
+
+            # add attachment 3
+            dup push.9.10.11.12 push.3
+            exec.output_note::add_word_attachment
+            # => [note_idx]
+
+            # add attachment 4
+            dup push.13.14.15.16 push.4
+            exec.output_note::add_word_attachment
+            # => [note_idx]
+
+            # add attachment 5 (should fail)
+            push.17.18.19.20 push.5
+            exec.output_note::add_word_attachment
+            # => []
+        end
+        ";
+
+    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script)?;
+
+    let result = TransactionContextBuilder::with_existing_mock_account()
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_OUTPUT_NOTE_TOO_MANY_ATTACHMENTS);
 
     Ok(())
 }
