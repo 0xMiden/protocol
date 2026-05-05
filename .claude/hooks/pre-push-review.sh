@@ -8,15 +8,8 @@
 #   BLOCK on  ### Critical Issues | ### Critical Findings
 #             ### Important Issues | ### Warnings
 #   IGNORE    ### Nits | ### Notes | ### What's Done Well | ### Summary
-#
-# Escape hatch: SKIP_PRE_PUSH=1 bypasses everything.
 
 set -uo pipefail
-
-if [ "${SKIP_PRE_PUSH:-}" = "1" ]; then
-  echo "SKIP_PRE_PUSH=1 set; bypassing pre-push checks." >&2
-  exit 0
-fi
 
 REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || true)
 if [ -z "$REPO_ROOT" ]; then
@@ -25,18 +18,12 @@ if [ -z "$REPO_ROOT" ]; then
 fi
 
 # Determine the diff base. Prefer the configured upstream; fall back to
-# the repo's default branch resolved via gh; final fallback is HEAD~1.
+# origin/next (the repo's default branch).
 BASE=""
 if UPSTREAM=$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null); then
   BASE="$UPSTREAM"
-elif command -v gh >/dev/null 2>&1; then
-  if DEFAULT=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null); then
-    [ -n "$DEFAULT" ] && BASE="origin/$DEFAULT"
-  fi
-fi
-if [ -z "$BASE" ]; then
-  echo "Pre-push: cannot determine diff base; falling back to HEAD~1." >&2
-  BASE="HEAD~1"
+else
+  BASE="origin/next"
 fi
 
 MERGE_BASE=$(git merge-base HEAD "$BASE" 2>/dev/null || git rev-parse HEAD~1 2>/dev/null || true)
@@ -141,7 +128,6 @@ evaluate_reviewer "SECURITY REVIEWER" "$RC_SEC"  "$SEC_OUT"  || BLOCKED=1
 if [ "$BLOCKED" -eq 1 ]; then
   echo "" >&2
   echo "Pre-push: push blocked. Address Critical/Important/Warning findings above and retry." >&2
-  echo "Bypass with: SKIP_PRE_PUSH=1 git push ..." >&2
   exit 2
 fi
 
