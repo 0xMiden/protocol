@@ -17,6 +17,7 @@ use crate::account::components::{
     guarded_multisig_library,
     multisig_library,
     multisig_smart_library,
+    network_account_auth_library,
     network_fungible_faucet_library,
     no_auth_library,
     singlesig_acl_library,
@@ -131,6 +132,10 @@ impl AccountInterfaceExt for AccountInterface {
                 AccountComponentInterface::AuthNoAuth => {
                     component_proc_digests
                         .extend(no_auth_library().mast_forest().procedure_digests());
+                },
+                AccountComponentInterface::AuthNetworkAccount => {
+                    component_proc_digests
+                        .extend(network_account_auth_library().mast_forest().procedure_digests());
                 },
                 AccountComponentInterface::Custom(custom_procs) => {
                     component_proc_digests

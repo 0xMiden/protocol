@@ -1,0 +1,6 @@
+# The MASM code of the `owner_only` Burn Policy Account Component (owner-controlled family).
+#
+# Exposes the `check_policy` procedure so its MAST root can be registered as the active
+# (or allowed) policy on a `BurnPolicyManager`. Storage-free.
+
+pub use ::miden::standards::faucets::policies::burn::owner_controlled::owner_only::check_policy
