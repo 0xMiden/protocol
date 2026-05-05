@@ -40,6 +40,13 @@ const REG_SCALE_LOC = 6
 const REG_ORIGIN_NETWORK_LOC = 7
 const REG_IS_NATIVE_LOC = 8
 
+# faucet_metadata_map sub-keys (used as the first element of the 4-felt KEY).
+# Each sub-key indexes a different word of metadata for a given faucet ID.
+const FAUCET_METADATA_SUBKEY_ADDR_LO = 0  # [addr0, addr1, addr2, addr3]
+const FAUCET_METADATA_SUBKEY_ADDR_HI = 1  # [addr4, origin_network, scale, 0]
+const FAUCET_METADATA_SUBKEY_HASH_LO = 2  # METADATA_HASH_LO[4]
+const FAUCET_METADATA_SUBKEY_HASH_HI = 3  # METADATA_HASH_HI[4]
+
 # PUBLIC INTERFACE
 # =================================================================================================
 
@@ -168,8 +175,9 @@ pub proc register_faucet
     # --- Step 1: Store origin address part 1 in faucet_metadata_map ---
     # KEY = [0, 0, faucet_id_suffix, faucet_id_prefix], VALUE = [addr0, addr1, addr2, addr3]
 
-    loc_load.REG_FAUCET_ID_PREFIX_LOC loc_load.REG_FAUCET_ID_SUFFIX_LOC push.0.0
-    # => [0, 0, faucet_id_suffix, faucet_id_prefix, addr0, addr1, addr2, addr3, addr4, pad(11)]
+    loc_load.REG_FAUCET_ID_PREFIX_LOC loc_load.REG_FAUCET_ID_SUFFIX_LOC
+    push.0.FAUCET_METADATA_SUBKEY_ADDR_LO
+    # => [SUBKEY_ADDR_LO, 0, faucet_id_suffix, faucet_id_prefix, addr0, addr1, addr2, addr3, addr4, pad(11)]
 
     push.FAUCET_METADATA_MAP_SLOT[0..2]
     exec.native_account::set_map_item
@@ -177,7 +185,7 @@ pub proc register_faucet
     # => [addr4, pad(15)]
 
     # --- Step 2: Store origin address part 2 + origin_network + scale ---
-    # KEY = [1, 0, faucet_id_suffix, faucet_id_prefix], VALUE = [addr4, origin_network, scale, 0]
+    # KEY = [SUBKEY_ADDR_HI, 0, faucet_id_suffix, faucet_id_prefix], VALUE = [addr4, origin_network, scale, 0]
 
     push.0
     loc_load.REG_SCALE_LOC
@@ -188,8 +196,8 @@ pub proc register_faucet
     loc_load.REG_FAUCET_ID_PREFIX_LOC loc_load.REG_FAUCET_ID_SUFFIX_LOC
     # => [faucet_id_suffix, faucet_id_prefix, addr4, origin_network, scale, 0, pad(11)]
 
-    push.0.1
-    # => [1, 0, faucet_id_suffix, faucet_id_prefix, addr4, origin_network, scale, 0, pad(11)]
+    push.0.FAUCET_METADATA_SUBKEY_ADDR_HI
+    # => [SUBKEY_ADDR_HI, 0, faucet_id_suffix, faucet_id_prefix, addr4, origin_network, scale, 0, pad(11)]
 
     push.FAUCET_METADATA_MAP_SLOT[0..2]
     exec.native_account::set_map_item
@@ -246,21 +254,21 @@ pub proc store_faucet_metadata_hash
     exec.assert_sender_is_bridge_admin
     # => [faucet_id_suffix, faucet_id_prefix, MH_LO, MH_HI, pad(6)]
 
-    # --- Store METADATA_HASH_LO at key [2, 0, faucet_id_suffix, faucet_id_prefix] ---
+    # --- Store METADATA_HASH_LO at key [SUBKEY_HASH_LO, 0, faucet_id_suffix, faucet_id_prefix] ---
     dup.1 dup.1 swapw movup.5 movup.5
     # => [faucet_id_suffix, faucet_id_prefix, MH_LO, faucet_id_suffix, faucet_id_prefix, MH_HI, pad(6)]
 
-    push.0.2
-    # => [2, 0, faucet_id_suffix, faucet_id_prefix, MH_LO, faucet_id_suffix, faucet_id_prefix, MH_HI, pad(6)]
+    push.0.FAUCET_METADATA_SUBKEY_HASH_LO
+    # => [SUBKEY_HASH_LO, 0, faucet_id_suffix, faucet_id_prefix, MH_LO, faucet_id_suffix, faucet_id_prefix, MH_HI, pad(6)]
 
     push.FAUCET_METADATA_MAP_SLOT[0..2]
     exec.native_account::set_map_item
     dropw
     # => [faucet_id_suffix, faucet_id_prefix, MH_HI, pad(6)]
 
-    # --- Store METADATA_HASH_HI at key [3, 0, faucet_id_suffix, faucet_id_prefix] ---
-    push.0.3
-    # => [3, 0, faucet_id_suffix, faucet_id_prefix, MH_HI, pad(6)]
+    # --- Store METADATA_HASH_HI at key [SUBKEY_HASH_HI, 0, faucet_id_suffix, faucet_id_prefix] ---
+    push.0.FAUCET_METADATA_SUBKEY_HASH_HI
+    # => [SUBKEY_HASH_HI, 0, faucet_id_suffix, faucet_id_prefix, MH_HI, pad(6)]
 
     push.FAUCET_METADATA_MAP_SLOT[0..2]
     exec.native_account::set_map_item
@@ -305,9 +313,9 @@ end
 #!
 #! Invocation: exec
 proc get_faucet_scale
-    # Build KEY = [1, 0, faucet_id_suffix, faucet_id_prefix]
-    push.0.1
-    # => [1, 0, faucet_id_suffix, faucet_id_prefix]
+    # Build KEY = [SUBKEY_ADDR_HI, 0, faucet_id_suffix, faucet_id_prefix]
+    push.0.FAUCET_METADATA_SUBKEY_ADDR_HI
+    # => [SUBKEY_ADDR_HI, 0, faucet_id_suffix, faucet_id_prefix]
 
     push.FAUCET_METADATA_MAP_SLOT[0..2]
     exec.active_account::get_map_item
@@ -329,13 +337,13 @@ end
 #!
 #! Invocation: exec
 proc get_faucet_conversion_info
-    # Prepare the sub-key 0 KEY underneath.
-    push.0.0
-    # => [0, 0, faucet_id_suffix, faucet_id_prefix]
+    # Prepare the SUBKEY_ADDR_LO KEY underneath.
+    push.0.FAUCET_METADATA_SUBKEY_ADDR_LO
+    # => [SUBKEY_ADDR_LO, 0, faucet_id_suffix, faucet_id_prefix]
 
-    # Prepare the sub-key 1 KEY on top.
-    dup.3 dup.3 push.0.1
-    # => [1, 0, faucet_id_suffix, faucet_id_prefix, 0, 0, faucet_id_suffix, faucet_id_prefix]
+    # Prepare the SUBKEY_ADDR_HI KEY on top.
+    dup.3 dup.3 push.0.FAUCET_METADATA_SUBKEY_ADDR_HI
+    # => [SUBKEY_ADDR_HI, 0, faucet_id_suffix, faucet_id_prefix, SUBKEY_ADDR_LO, 0, faucet_id_suffix, faucet_id_prefix]
 
     # Read sub-key 1: [addr4, origin_network, scale, 0]
     push.FAUCET_METADATA_MAP_SLOT[0..2]
@@ -372,9 +380,9 @@ proc get_faucet_metadata_hash
     dup.1 dup.1
     # => [faucet_id_suffix, faucet_id_prefix, faucet_id_suffix, faucet_id_prefix]
 
-    # Read sub-key 3 (MH_HI) first so MH_LO ends up on top after the second read without a swapw.
-    push.0.3
-    # => [3, 0, faucet_id_suffix, faucet_id_prefix, faucet_id_suffix, faucet_id_prefix]
+    # Read SUBKEY_HASH_HI first so MH_LO ends up on top after the second read without a swapw.
+    push.0.FAUCET_METADATA_SUBKEY_HASH_HI
+    # => [SUBKEY_HASH_HI, 0, faucet_id_suffix, faucet_id_prefix, faucet_id_suffix, faucet_id_prefix]
 
     push.FAUCET_METADATA_MAP_SLOT[0..2]
     exec.active_account::get_map_item
@@ -384,9 +392,9 @@ proc get_faucet_metadata_hash
     movup.5 movup.5
     # => [faucet_id_suffix, faucet_id_prefix, MH_HI]
 
-    # Read sub-key 2: METADATA_HASH_LO
-    push.0.2
-    # => [2, 0, faucet_id_suffix, faucet_id_prefix, MH_HI]
+    # Read SUBKEY_HASH_LO: METADATA_HASH_LO
+    push.0.FAUCET_METADATA_SUBKEY_HASH_LO
+    # => [SUBKEY_HASH_LO, 0, faucet_id_suffix, faucet_id_prefix, MH_HI]
 
     push.FAUCET_METADATA_MAP_SLOT[0..2]
     exec.active_account::get_map_item
