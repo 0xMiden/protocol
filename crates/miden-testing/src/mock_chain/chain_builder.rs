@@ -208,16 +208,6 @@ impl MockChainBuilder {
         )
         .context("failed to create genesis account tree")?;
 
-        // Extract full notes before shrinking for later use in MockChain
-        let full_notes: Vec<Note> = self
-            .notes
-            .iter()
-            .filter_map(|note| match note {
-                RawOutputNote::Full(n) => Some(n.clone()),
-                _ => None,
-            })
-            .collect();
-
         let proven_notes: Vec<_> = self
             .notes
             .into_iter()
@@ -281,7 +271,6 @@ impl MockChainBuilder {
             account_tree,
             self.account_authenticators,
             validator_secret_key,
-            full_notes,
         )
     }
 
