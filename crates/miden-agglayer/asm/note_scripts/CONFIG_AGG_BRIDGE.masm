@@ -93,29 +93,24 @@ begin
     # --- Call 1: register_faucet ---
     # Expects: [addr0, addr1, addr2, addr3, addr4, faucet_id_suffix, faucet_id_prefix, scale, origin_network, is_native, pad(6)]
 
-    # Build the stack by loading deepest elements first
+    # Push the call's 6 trailing pad zeros first, then build the 10 args on top. This
+    # avoids the `movdn.15 ×6` shuffle that an after-the-fact pad would require.
+    padw push.0.0
+    # => [pad(6), pad(16)]
+
     mem_load.IS_NATIVE
     mem_load.ORIGIN_NETWORK
     mem_load.SCALE
     mem_load.FAUCET_ID_PREFIX
     mem_load.FAUCET_ID_SUFFIX
     mem_load.ORIGIN_TOKEN_ADDR_4
-    # => [addr4, faucet_id_suffix, faucet_id_prefix, scale, origin_network, is_native, pad(16)]
+    # => [addr4, faucet_id_suffix, faucet_id_prefix, scale, origin_network, is_native, pad(6), pad(16)]
 
-    # Load addr0..addr3 on top in reverse order so addr0 ends up on top
     mem_load.ORIGIN_TOKEN_ADDR_3
     mem_load.ORIGIN_TOKEN_ADDR_2
     mem_load.ORIGIN_TOKEN_ADDR_1
     mem_load.ORIGIN_TOKEN_ADDR_0
-    # => [addr0, addr1, addr2, addr3, addr4, faucet_id_suffix, faucet_id_prefix, scale, origin_network, is_native, pad(16)]
-
-    # Pad the call input region to 16 (need 6 more zeros)
-    padw push.0.0
-    # => [0, 0, 0, 0, 0, 0, addr0, addr1, addr2, addr3, addr4, faucet_id_suffix, faucet_id_prefix, scale, origin_network, is_native, pad(16)]
-
-    # Move 6 pad zeros to the end of the call input region
-    movdn.15 movdn.15 movdn.15 movdn.15 movdn.15 movdn.15
-    # => [addr0, addr1, addr2, addr3, addr4, faucet_id_suffix, faucet_id_prefix, scale, origin_network, is_native, pad(22)]
+    # => [addr0, addr1, addr2, addr3, addr4, faucet_id_suffix, faucet_id_prefix, scale, origin_network, is_native, pad(6), pad(16)]
 
     call.bridge_config::register_faucet
     # => [pad(32)]
@@ -123,22 +118,16 @@ begin
     # --- Call 2: store_faucet_metadata_hash ---
     # Expects: [faucet_id_suffix, faucet_id_prefix, MH_LO, MH_HI, pad(6)]
 
-    # Load [MH_LO, MH_HI] from memory addresses 10..17 (unaligned).
-    push.METADATA_HASH_LO_0 exec.utils::mem_load_double_word_unaligned
-    # => [MH_LO, MH_HI, pad(32)]
+    # Push the call's 6 trailing pad zeros first, then build the 10 args on top.
+    padw push.0.0
+    # => [pad(6), pad(32)]
 
-    # Load faucet_id_prefix, faucet_id_suffix
+    push.METADATA_HASH_LO_0 exec.utils::mem_load_double_word_unaligned
+    # => [MH_LO, MH_HI, pad(6), pad(32)]
+
     mem_load.FAUCET_ID_PREFIX
     mem_load.FAUCET_ID_SUFFIX
-    # => [faucet_id_suffix, faucet_id_prefix, MH_LO, MH_HI, pad(32)]
-
-    # Pad the call input region to 16 (need 6 more zeros)
-    padw push.0.0
-    # => [0, 0, 0, 0, 0, 0, faucet_id_suffix, faucet_id_prefix, MH_LO, MH_HI, pad(32)]
-
-    # Move 6 pad zeros to the end of the call input region
-    movdn.15 movdn.15 movdn.15 movdn.15 movdn.15 movdn.15
-    # => [faucet_id_suffix, faucet_id_prefix, MH_LO, MH_HI, pad(38)]
+    # => [faucet_id_suffix, faucet_id_prefix, MH_LO, MH_HI, pad(6), pad(32)]
 
     call.bridge_config::store_faucet_metadata_hash
     # => [pad(48)]
