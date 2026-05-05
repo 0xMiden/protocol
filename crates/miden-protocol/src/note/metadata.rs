@@ -20,7 +20,7 @@ use crate::note::{NoteAttachmentHeader, NoteAttachments};
 ///
 /// Contains the sender, note type, and tag. For the full protocol-level encoding (including
 /// attachment headers and commitment computation), see [`NoteMetadataHeader`].
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct NoteMetadata {
     /// The ID of the account which created the note.
     sender: AccountId,
@@ -143,7 +143,7 @@ impl Deserializable for NoteMetadata {
 ///   `p`.
 ///
 /// The version is hardcoded to 0 and is reserved for forward compatibility.
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct NoteMetadataHeader {
     metadata: NoteMetadata,
     attachment_headers: [NoteAttachmentHeader; NoteAttachments::MAX_COUNT],
@@ -397,7 +397,7 @@ mod tests {
         let tag = NoteTag::new(u32::MAX);
         let metadata = NoteMetadata::new(sender, note_type).with_tag(tag);
         let attachments = NoteAttachments::new(attachments.into_iter().collect())?;
-        let metadata_header = NoteMetadataHeader::new(metadata.clone(), &attachments);
+        let metadata_header = NoteMetadataHeader::new(metadata, &attachments);
 
         // Metadata Roundtrip
         let deserialized = NoteMetadata::read_from_bytes(&metadata.to_bytes())?;

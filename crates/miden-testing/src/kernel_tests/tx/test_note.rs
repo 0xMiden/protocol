@@ -404,8 +404,7 @@ async fn test_build_metadata_header() -> anyhow::Result<()> {
         let metadata_word = exec_output.get_stack_word(0);
 
         assert_eq!(
-            NoteMetadataHeader::new(test_metadata.clone(), &NoteAttachments::default())
-                .to_metadata_word(),
+            NoteMetadataHeader::new(test_metadata, &NoteAttachments::default()).to_metadata_word(),
             metadata_word,
             "failed in iteration {iteration}"
         );

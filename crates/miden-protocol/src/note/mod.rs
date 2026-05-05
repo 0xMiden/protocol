@@ -247,7 +247,7 @@ impl From<Note> for PartialNote {
 
 impl From<&Note> for NoteHeader {
     fn from(note: &Note) -> Self {
-        note.header.clone()
+        note.header
     }
 }
 
