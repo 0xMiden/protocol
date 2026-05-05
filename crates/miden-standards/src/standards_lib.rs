@@ -13,7 +13,7 @@ use miden_protocol::utils::sync::LazyLock;
 const STANDARDS_LIB_BYTES: &[u8] =
     include_bytes!(concat!(env!("OUT_DIR"), "/assets/standards.masl"));
 
-const STANDARDS_LIB_NAME: &str = "standards";
+const STANDARDS_PACKAGE_NAME: &str = "standards";
 
 // MIDEN STANDARDS LIBRARY
 // ================================================================================================
@@ -27,7 +27,7 @@ impl StandardsLib {
         self.0.mast_forest()
     }
 
-    /// Wraps this library into a [`Package`] named `PROTOCOL_PACKAGE_NAME`,
+    /// Wraps this library into a [`Package`] named `STANDARDS_PACKAGE_NAME`,
     /// versioned with the `miden-protocol` crate's version.
     pub fn into_package(self) -> Box<Package> {
         // The ProtocolLib's version is the same as the crate's as per the miden-standards's
@@ -36,7 +36,7 @@ impl StandardsLib {
             .expect("CARGO_PKG_VERSION must be valid semver");
 
         Package::from_library(
-            STANDARDS_LIB_NAME.into(),
+            STANDARDS_PACKAGE_NAME.into(),
             version,
             TargetType::Library,
             Arc::new(self.0),
