@@ -618,11 +618,15 @@ proc execute_pswap
 
         exec.active_note::get_metadata
         # => [METADATA_HEADER, remaining_requested]
-        # where METADATA_HEADER = [sid_suf_ver, sid_pre, tag, att_ks]
-        # => [sid_suf_ver, sid_pre, tag, att_ks, remaining_requested]
 
-        dup.2 movdn.4
-        # => [sid_suf_ver, sid_pre, tag, att_ks, tag, remaining_requested]
+        dupw
+        # => [METADATA_HEADER, METADATA_HEADER, remaining_requested]
+
+        exec.note::metadata_into_tag
+        # => [tag, METADATA_HEADER, remaining_requested]
+
+        movdn.4
+        # => [METADATA_HEADER, tag, remaining_requested]
 
         exec.note::metadata_into_note_type
         # => [note_type, tag, remaining_requested]

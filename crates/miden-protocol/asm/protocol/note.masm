@@ -383,6 +383,27 @@ pub proc metadata_into_note_type
     # => [note_type]
 end
 
+#! Extracts the tag from the provided metadata header.
+#!
+#! The tag is stored in the lower 32 bits of the tag element. The upper 32 bits are reserved.
+#!
+#! Inputs:  [METADATA_HEADER]
+#! Outputs: [tag]
+#!
+#! Where:
+#! - METADATA_HEADER is the metadata header word of a note.
+#! - tag is the lower 32 bits of the tag element.
+#!
+#! Invocation: exec
+pub proc metadata_into_tag
+    drop drop swap drop
+    # => [tag_element]
+
+    # extract the lower 32 bits as the tag
+    u32split swap drop
+    # => [tag]
+end
+
 #! Searches the metadata header for the specified attachment scheme and returns the index of the
 #! first matching slot.
 #!

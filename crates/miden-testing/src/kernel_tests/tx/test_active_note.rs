@@ -1,8 +1,8 @@
 use alloc::string::String;
 
 use anyhow::Context;
-use miden_protocol::account::Account;
 use miden_protocol::account::auth::AuthScheme;
+use miden_protocol::account::{Account, AccountId};
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
 use miden_protocol::errors::tx_kernel::ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_METADATA_WHILE_NO_NOTE_BEING_PROCESSED;
@@ -30,6 +30,7 @@ use miden_standards::testing::mock_account::MockAccountExt;
 use miden_standards::testing::note::NoteBuilder;
 use rstest::rstest;
 
+use super::StackInputs;
 use crate::kernel_tests::tx::ExecutionOutputExt;
 use crate::utils::create_public_p2any_note;
 use crate::{
@@ -215,6 +216,36 @@ async fn test_active_note_get_note_type(#[case] note_type: NoteType) -> anyhow::
     let actual_note_type = NoteType::try_from(exec_output.get_stack_element(0))
         .expect("stack element should be a valid note type");
     assert_eq!(actual_note_type, note_type);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_metadata_into_tag() -> anyhow::Result<()> {
+    use miden_protocol::note::{NoteAttachments, NoteMetadataHeader};
+
+    use crate::executor::CodeExecutor;
+
+    let sender_id: AccountId = ACCOUNT_ID_SENDER.try_into()?;
+    let tag = NoteTag::new(0xabcd_1234);
+    let metadata = NoteMetadata::new(sender_id, NoteType::Public).with_tag(tag);
+    let metadata_header = NoteMetadataHeader::new(metadata, &NoteAttachments::default());
+    let metadata_word = metadata_header.to_metadata_word();
+
+    let code = "
+        use miden::protocol::note
+
+        begin
+            exec.note::metadata_into_tag
+        end
+        ";
+
+    let exec_output = CodeExecutor::with_default_host()
+        .stack_inputs(StackInputs::new(metadata_word.as_slice())?)
+        .run(code)
+        .await?;
+
+    assert_eq!(exec_output.get_stack_element(0), Felt::from(tag.as_u32()));
 
     Ok(())
 }
