@@ -60,6 +60,45 @@ Non-fungible assets are encoded by hashing the `Asset` data into 32 bytes and pl
     <img src={require('./img/asset/asset-storage.png').default} style={{width: '70%'}} alt="Asset storage"/>
 </p>
 
+### Encoding
+
+Every asset in an account vault is stored as a key/value pair of two `Word`s (eight field elements). The same encoding is used by both the kernel and the standard library, and is the canonical layout when assets cross the MASM/Rust boundary.
+
+```
+ASSET_KEY   = [asset_id_suffix, asset_id_prefix, faucet_id_suffix_with_metadata, faucet_id_prefix]
+ASSET_VALUE = [amount, 0, 0, 0]   # fungible
+ASSET_VALUE = DATA_HASH           # non-fungible
+```
+
+The `asset_id_*` limbs distinguish different assets issued by the same faucet:
+
+- For fungible assets they are always `0`. A faucet only ever issues one asset, so the faucet ID alone identifies it.
+- For non-fungible assets they are `DATA_HASH[0]` and `DATA_HASH[1]` — the first two field elements of the hash of the asset data.
+
+The third element of the key, `faucet_id_suffix_with_metadata`, packs the faucet's account-ID suffix together with a small metadata byte. The lower 8 bits of every account-ID suffix are reserved zero by construction (`validate_suffix` in `account/account_id/v0/mod.rs`), and `AssetVaultKey::to_word()` (`asset/vault/vault_key.rs`) bit-OR's the metadata byte into those reserved bits. There is no left-shift; the suffix is already aligned.
+
+Today only the lowest of those 8 bits is used, holding the per-asset callback flag from `AssetCallbackFlag` (`asset/asset_callbacks_flag.rs`):
+
+- `Disabled = 0` — the kernel skips faucet callbacks for this asset.
+- `Enabled  = 1` — the kernel checks for and invokes the faucet's callback procedures (see [Callbacks](#callbacks) below).
+
+The remaining 7 bits are reserved for future asset-level metadata.
+
+#### Worked example
+
+A fungible asset with `amount = 10000`, callbacks enabled, issued by a faucet whose ID has `suffix = 447750849984126720` and `prefix = 12959558562786060576` lays out in vault memory as:
+
+```text
+[ 0,                       ← asset_id_suffix (zero for fungible)
+  0,                       ← asset_id_prefix (zero for fungible)
+  447750849984126721,      ← faucet_id_suffix | callbacks_enabled (suffix ends in 0x00, OR'd with 0x01)
+  12959558562786060576,    ← faucet_id_prefix
+  10000,                   ← amount
+  0, 0, 0 ]                ← ASSET_VALUE padding
+```
+
+For a non-fungible asset the last four elements are replaced with `DATA_HASH` and the first two elements of the key are filled from `DATA_HASH[0..2]`. See `FungibleAsset::to_value_word()` and `NonFungibleAsset::to_value_word()` in `asset/fungible.rs` and `asset/nonfungible.rs`.
+
 ### Burning
 
 Assets in Miden can be burned through various methods, such as rendering them unspendable by storing them in an unconsumable note, or sending them back to their original faucet for burning using it's dedicated function.
