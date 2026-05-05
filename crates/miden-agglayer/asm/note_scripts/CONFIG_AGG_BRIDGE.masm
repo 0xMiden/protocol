@@ -9,20 +9,6 @@ const CONFIG_AGG_BRIDGE_NUM_STORAGE_ITEMS = 18
 
 const STORAGE_START_PTR = 0
 
-# Memory layout after get_storage (18 felts):
-# [0]      origin_token_addr_0
-# [1]      origin_token_addr_1
-# [2]      origin_token_addr_2
-# [3]      origin_token_addr_3
-# [4]      origin_token_addr_4
-# [5]      faucet_id_suffix
-# [6]      faucet_id_prefix
-# [7]      scale
-# [8]      origin_network
-# [9]      is_native
-# [10..13] METADATA_HASH_LO_0..3 (4 felts)
-# [14..17] METADATA_HASH_HI_0..3 (4 felts)
-
 const ORIGIN_TOKEN_ADDR_0 = 0
 const ORIGIN_TOKEN_ADDR_1 = 1
 const ORIGIN_TOKEN_ADDR_2 = 2
