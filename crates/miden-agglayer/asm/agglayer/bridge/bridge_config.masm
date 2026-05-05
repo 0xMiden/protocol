@@ -157,7 +157,7 @@ pub proc register_faucet
     repeat.5
         dup.4
     end
-    # => [addr0, addr1, addr2, addr3, addr4, addr0, addr1, addr2, addr3, addr4, pad(6)]
+    # => [addr0, addr1, addr2, addr3, addr4, addr0, addr1, addr2, addr3, addr4, pad(11)]
 
     # Push origin_network to position 5 so hash_token_address sees [addr(5), origin_network].
     # Per the agglayer #2860 fix, the token registry is keyed on the (address, network) pair so
@@ -168,10 +168,10 @@ pub proc register_faucet
     # origin_network felt). `faucet_metadata_map` keeps origin_network in raw form, so this swap
     # is a hash-input-only conversion.
     loc_load.REG_ORIGIN_NETWORK_LOC exec.utils::swap_u32_bytes movdn.5
-    # => [addr0, addr1, addr2, addr3, addr4, origin_network_swapped, addr0, addr1, addr2, addr3, addr4, pad(6)]
+    # => [addr0, addr1, addr2, addr3, addr4, origin_network_swapped, addr0, addr1, addr2, addr3, addr4, pad(11)]
 
     exec.hash_token_address
-    # => [TOKEN_ADDR_HASH, addr0, addr1, addr2, addr3, addr4, pad(6)]
+    # => [TOKEN_ADDR_HASH, addr0, addr1, addr2, addr3, addr4, pad(11)]
 
     loc_storew_le.REG_TOKEN_HASH_LOC dropw
     # => [addr0, addr1, addr2, addr3, addr4, pad(11)]
@@ -195,28 +195,28 @@ pub proc register_faucet
     loc_load.REG_SCALE_LOC
     loc_load.REG_ORIGIN_NETWORK_LOC
     movup.3
-    # => [addr4, origin_network, scale, 0, pad(11)]
+    # => [addr4, origin_network, scale, 0, pad(15)]
 
     loc_load.REG_FAUCET_ID_PREFIX_LOC loc_load.REG_FAUCET_ID_SUFFIX_LOC
-    # => [faucet_id_suffix, faucet_id_prefix, addr4, origin_network, scale, 0, pad(11)]
+    # => [faucet_id_suffix, faucet_id_prefix, addr4, origin_network, scale, 0, pad(15)]
 
     push.0.FAUCET_METADATA_SUBKEY_ADDR_HI
-    # => [SUBKEY_ADDR_HI, 0, faucet_id_suffix, faucet_id_prefix, addr4, origin_network, scale, 0, pad(11)]
+    # => [SUBKEY_ADDR_HI, 0, faucet_id_suffix, faucet_id_prefix, addr4, origin_network, scale, 0, pad(15)]
 
     push.FAUCET_METADATA_MAP_SLOT[0..2]
     exec.native_account::set_map_item
     dropw
-    # => [pad(11)]
+    # => [pad(16)]
 
     # --- Step 3: Store [1, is_native, 0, 0] in faucet_registry_map ---
     # KEY = [0, 0, faucet_id_suffix, faucet_id_prefix], VALUE = [1, is_native, 0, 0]
     # The trailing [0, 0] of VALUE is supplied by the stack's bottom pads.
 
     loc_load.REG_IS_NATIVE_LOC push.IS_FAUCET_REGISTERED_FLAG
-    # => [1, is_native, pad(14)]
+    # => [1, is_native, pad(16)]
 
     loc_load.REG_FAUCET_ID_PREFIX_LOC loc_load.REG_FAUCET_ID_SUFFIX_LOC push.0.0
-    # => [0, 0, faucet_id_suffix, faucet_id_prefix, 1, is_native, pad(14)]
+    # => [0, 0, faucet_id_suffix, faucet_id_prefix, 1, is_native, pad(16)]
 
     push.FAUCET_REGISTRY_MAP_SLOT[0..2]
     exec.native_account::set_map_item
@@ -226,13 +226,13 @@ pub proc register_faucet
     # --- Step 4: Store TOKEN_ADDR_HASH -> [0, 0, faucet_id_suffix, faucet_id_prefix] in token_registry ---
 
     loc_load.REG_FAUCET_ID_PREFIX_LOC loc_load.REG_FAUCET_ID_SUFFIX_LOC
-    # => [faucet_id_suffix, faucet_id_prefix, pad(11)]
+    # => [faucet_id_suffix, faucet_id_prefix, pad(16)]
 
     push.0.0
-    # => [0, 0, faucet_id_suffix, faucet_id_prefix, pad(11)]
+    # => [0, 0, faucet_id_suffix, faucet_id_prefix, pad(16)]
 
     padw loc_loadw_le.REG_TOKEN_HASH_LOC
-    # => [TOKEN_ADDR_HASH, 0, 0, faucet_id_suffix, faucet_id_prefix, pad(7)]
+    # => [TOKEN_ADDR_HASH, 0, 0, faucet_id_suffix, faucet_id_prefix, pad(16)]
 
     push.TOKEN_REGISTRY_MAP_SLOT[0..2]
     exec.native_account::set_map_item
