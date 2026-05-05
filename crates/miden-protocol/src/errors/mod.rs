@@ -668,6 +668,11 @@ pub enum NoteError {
     )]
     NoteAttachmentContentTooManyWords(usize),
     #[error(
+        "note attachments contain a total of {0} words, but the maximum allowed is {max} words",
+        max = NoteAttachments::MAX_NUM_WORDS
+    )]
+    NoteAttachmentsTooManyWords(usize),
+    #[error(
         "attachment size {0} exceeds maximum {max}",
         max = NoteAttachment::MAX_NUM_WORDS
     )]

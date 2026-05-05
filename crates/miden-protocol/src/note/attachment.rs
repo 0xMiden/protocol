@@ -508,7 +508,7 @@ impl NoteAttachments {
             .sum::<usize>();
 
         if total_num_words > Self::MAX_NUM_WORDS as usize {
-            return Err(NoteError::NoteAttachmentContentTooManyWords(total_num_words));
+            return Err(NoteError::NoteAttachmentsTooManyWords(total_num_words));
         }
 
         let commitment = compute_commitment(&attachments);
