@@ -44,6 +44,13 @@ pub enum AccountComponentInterface {
     /// This authentication scheme provides no cryptographic authentication and only increments
     /// the nonce if the account state has actually changed during transaction execution.
     AuthNoAuth,
+    /// Exposes procedures from the
+    /// [`AuthNetworkAccount`][crate::account::auth::AuthNetworkAccount] module.
+    ///
+    /// This authentication scheme is intended for network-owned accounts. It rejects transactions
+    /// that executed a tx script or consumed input notes outside of a fixed allowlist of note
+    /// script roots.
+    AuthNetworkAccount,
     /// A non-standard, custom interface which exposes the contained procedures.
     ///
     /// Custom interface holds all procedures which are not part of some standard interface which is
@@ -72,6 +79,7 @@ impl AccountComponentInterface {
             AccountComponentInterface::AuthMultisig => "Multisig".to_string(),
             AccountComponentInterface::AuthGuardedMultisig => "Guarded Multisig".to_string(),
             AccountComponentInterface::AuthNoAuth => "No Auth".to_string(),
+            AccountComponentInterface::AuthNetworkAccount => "Network Account Auth".to_string(),
             AccountComponentInterface::Custom(proc_root_vec) => {
                 let result = proc_root_vec
                     .iter()
@@ -94,6 +102,7 @@ impl AccountComponentInterface {
                 | AccountComponentInterface::AuthMultisig
                 | AccountComponentInterface::AuthGuardedMultisig
                 | AccountComponentInterface::AuthNoAuth
+                | AccountComponentInterface::AuthNetworkAccount
         )
     }
 
@@ -127,6 +136,7 @@ impl AccountComponentInterface {
                 )]
             },
             AccountComponentInterface::AuthNoAuth => vec![AuthMethod::NoAuth],
+            AccountComponentInterface::AuthNetworkAccount => vec![AuthMethod::NoAuth],
             _ => vec![], // Non-auth components return empty vector
         }
     }

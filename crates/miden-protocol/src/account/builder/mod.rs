@@ -110,6 +110,23 @@ impl AccountBuilder {
         self
     }
 
+    /// Adds the components yielded by `components` to the builder.
+    ///
+    /// This is a convenience wrapper around repeated [`Self::with_component`] calls. It is
+    /// most useful for installing the variable number of components produced by composite
+    /// configurations whose component count is not known at the call site (for example, a
+    /// configuration value that expands into one or several components depending on its
+    /// variant).
+    pub fn with_components(
+        mut self,
+        components: impl IntoIterator<Item = impl Into<AccountComponent>>,
+    ) -> Self {
+        for component in components {
+            self = self.with_component(component);
+        }
+        self
+    }
+
     /// Adds a designated authentication [`AccountComponent`] to the builder.
     ///
     /// This component may contain multiple procedures, but is expected to contain exactly one
