@@ -10,6 +10,9 @@ repository.workspace   = true
 rust-version.workspace = true
 version                = "0.1.0"
 
+[lib]
+doctest = false
+
 [[bench]]
 harness = false
 name    = "time_counting_benchmarks"
@@ -29,8 +32,8 @@ miden-tx        = { features = ["concurrent"], workspace = true }
 anyhow     = { workspace = true }
 rand       = { workspace = true }
 serde      = { features = ["derive", "std"], workspace = true }
-serde_json = { features = ["preserve_order"], package = "serde_json", version = "1.0" }
+serde_json = { features = ["preserve_order", "std"], workspace = true }
 tokio      = { features = ["macros", "rt"], workspace = true }
 
 [dev-dependencies]
-criterion = { features = ["async_tokio", "html_reports"], version = "0.6" }
+criterion = { features = ["async_tokio", "html_reports"], workspace = true }

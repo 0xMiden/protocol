@@ -110,7 +110,7 @@ impl AccountBuilder {
         self
     }
 
-    /// Adds the components yielded by `components` to the builder, in iteration order.
+    /// Adds the components yielded by `components` to the builder.
     ///
     /// This is a convenience wrapper around repeated [`Self::with_component`] calls. It is
     /// most useful for installing the variable number of components produced by composite

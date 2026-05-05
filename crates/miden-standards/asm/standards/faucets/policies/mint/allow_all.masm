@@ -8,6 +8,6 @@
 #! Inputs:  [amount, tag, note_type, RECIPIENT]
 #! Outputs: [amount, tag, note_type, RECIPIENT]
 #! Invocation: dynexec
-pub proc allow_all
+pub proc check_policy
     push.0 drop
 end

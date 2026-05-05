@@ -12,6 +12,7 @@ use miden_protocol::note::{
     NoteMetadata,
     NoteRecipient,
     NoteScript,
+    NoteScriptRoot,
     NoteStorage,
     NoteTag,
     NoteType,
@@ -56,7 +57,7 @@ impl P2idNote {
     }
 
     /// Returns the P2ID (Pay-to-ID) note script root.
-    pub fn script_root() -> Word {
+    pub fn script_root() -> NoteScriptRoot {
         P2ID_SCRIPT.root()
     }
 

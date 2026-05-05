@@ -12,6 +12,9 @@ repository.workspace   = true
 rust-version.workspace = true
 version.workspace      = true
 
+[lib]
+doctest = false
+
 [features]
 concurrent = ["miden-prover/concurrent", "std"]
 default = ["std"]
@@ -39,8 +42,5 @@ miden-verifier  = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
-anyhow         = { features = ["backtrace", "std"], workspace = true }
-assert_matches = { workspace = true }
-miden-assembly = { workspace = true }
-miden-tx       = { features = ["testing"], path = "." }
-rstest         = { workspace = true }
+miden-protocol = { features = ["testing"], workspace = true }
+rand_chacha    = { workspace = true }

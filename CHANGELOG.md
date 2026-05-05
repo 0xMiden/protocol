@@ -4,6 +4,7 @@
 
 ### Features
 
+- [BREAKING] Renamed `native_asset_id` to `fee_faucet_id` ([#2718](https://github.com/0xMiden/protocol/pull/2718)).
 - [BREAKING] Removed redundant outputs from kernel procedures: `note::write_assets_to_memory`, `active_note::get_assets`, `input_note::get_assets`, `output_note::get_assets`, `active_note::get_storage`, and `faucet::mint` no longer return values identical to their inputs ([#2523](https://github.com/0xMiden/protocol/issues/2523)).
 - Added PSWAP (partial swap) note for decentralized partial-fill asset exchange with remainder note re-creation ([#2636](https://github.com/0xMiden/protocol/pull/2636)).
 - Added a FungibleTokenMetadata ([#2439](https://github.com/0xMiden/miden-base/pull/2439)) component supporting name, description, logo URI, and external links, along with MASM procedures for retrieving token metadata (get_token_metadata, get_max_supply, get_decimals, get_token_symbol). Also aligned fungible faucet token metadata with the standard by using the canonical storage slot, enabling compatibility with MASM metadata getters.
@@ -25,9 +26,12 @@
 - [BREAKING] Added cycle counts to notes returned by `NoteConsumptionInfo` and removed public fields from related types ([#2772](https://github.com/0xMiden/miden-base/issues/2772)).
 - [BREAKING] Removed unused `payback_attachment` from `SwapNoteStorage` and `attachment` from `MintNoteStorage` ([#2789](https://github.com/0xMiden/protocol/pull/2789)).
 - Automatically enable `concurrent` feature in `miden-tx` for `std` context ([#2791](https://github.com/0xMiden/protocol/pull/2791)).
+- Added `AuthNetworkAccount` auth component that rejects transactions which execute a tx script or consume input notes outside of a fixed allowlist of note script roots ([#2817](https://github.com/0xMiden/protocol/pull/2817)).
 - Added trace row counts to `bench-tx.json` ([#2794](https://github.com/0xMiden/protocol/pull/2794)).
 - Added `tx::get_tx_script_root` kernel procedure returning the root of the executed transaction script (empty word if no script was executed) ([#2816](https://github.com/0xMiden/protocol/pull/2816)).
 - Added `TransactionScript::from_package()` method to create `TransactionScript` from `miden-mast-package::Package` ([#2779](https://github.com/0xMiden/protocol/pull/2779)).
+- [BREAKING] Added `NoteScriptRoot` newtype wrapping note script roots ([#2851](https://github.com/0xMiden/protocol/pull/2851)).
+- Re-exported `MIN_STACK_DEPTH` from `miden-processor` ([#2856](https://github.com/0xMiden/protocol/pull/2856)).
 
 ### Fixes
 
@@ -97,6 +101,8 @@
 - [BREAKING] Changed `native_account::remove_asset` to return the asset value remaining in the vault instead of the removed value ([#2626](https://github.com/0xMiden/protocol/pull/2626)).
 - Implemented `TransactionEventId::event_name` and `Host::resolve_event` for better VM diagnostics during even handler failures ([#2628](https://github.com/0xMiden/protocol/pull/2628)).
 - Added `FixedWidthString` for fixed-width UTF-8 string storage in `miden-standards` (`miden::standards::utils::string`). ([#2633](https://github.com/0xMiden/protocol/pull/2633))
+- [BREAKING] Extracted mint and burn policy management into a unified `TokenPolicyManager` account component ([#2821](https://github.com/0xMiden/protocol/pull/2821))
+- Added `AccountBuilder::with_components` for installing iterators of components in order as part of ([#2821](https://github.com/0xMiden/protocol/pull/2821)).
 
 ### Changes
 

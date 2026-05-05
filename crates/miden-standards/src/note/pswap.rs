@@ -12,6 +12,7 @@ use miden_protocol::note::{
     NoteMetadata,
     NoteRecipient,
     NoteScript,
+    NoteScriptRoot,
     NoteStorage,
     NoteTag,
     NoteType,
@@ -256,7 +257,7 @@ impl PswapNote {
     }
 
     /// Returns the root hash of the PSWAP note script.
-    pub fn script_root() -> Word {
+    pub fn script_root() -> NoteScriptRoot {
         PSWAP_SCRIPT.root()
     }
 
@@ -770,7 +771,7 @@ mod tests {
         assert_eq!(pswap.note_type(), NoteType::Public);
 
         let script = PswapNote::script();
-        assert!(script.root() != Word::default(), "Script root should not be zero");
+        assert!(Word::from(script.root()) != Word::default(), "Script root should not be zero");
         assert_eq!(note.metadata().sender(), creator_id);
         assert_eq!(note.metadata().note_type(), NoteType::Public);
         assert_eq!(note.assets().num_assets(), 1);

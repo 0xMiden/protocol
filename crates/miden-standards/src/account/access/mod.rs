@@ -1,5 +1,4 @@
 use alloc::vec;
-use alloc::vec::Vec;
 
 use miden_protocol::account::{AccountComponent, AccountId};
 
@@ -22,19 +21,18 @@ pub enum AccessControl {
     Rbac { owner: AccountId },
 }
 
-impl AccessControl {
-    /// Returns the [`AccountComponent`]s implementing this access control configuration,
-    /// in the order they must be installed on the account.
-    pub fn into_components(self) -> Vec<AccountComponent> {
-        self.into()
-    }
-}
+impl IntoIterator for AccessControl {
+    type Item = AccountComponent;
+    type IntoIter = alloc::vec::IntoIter<AccountComponent>;
 
-impl From<AccessControl> for Vec<AccountComponent> {
-    fn from(access_control: AccessControl) -> Self {
-        match access_control {
-            AccessControl::Ownable2Step { owner } => vec![Ownable2Step::new(owner).into()],
-            AccessControl::Rbac { owner } => RoleBasedAccessControl::with_owner(owner),
+    /// Yields the [`AccountComponent`]s implementing this access control configuration,
+    /// in the order they must be installed on the account.
+    fn into_iter(self) -> Self::IntoIter {
+        match self {
+            AccessControl::Ownable2Step { owner } => {
+                vec![Ownable2Step::new(owner).into()].into_iter()
+            },
+            AccessControl::Rbac { owner } => RoleBasedAccessControl::with_owner(owner).into_iter(),
         }
     }
 }
