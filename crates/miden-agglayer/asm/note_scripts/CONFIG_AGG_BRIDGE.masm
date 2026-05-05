@@ -1,4 +1,5 @@
 use agglayer::bridge::bridge_config
+use agglayer::common::utils
 use miden::protocol::active_note
 use miden::standards::attachments::network_account_target
 
@@ -122,14 +123,8 @@ begin
     # --- Call 2: store_faucet_metadata_hash ---
     # Expects: [faucet_id_suffix, faucet_id_prefix, MH_LO, MH_HI, pad(6)]
 
-    # Load MH_HI from memory addresses 14..17 (individual loads — not word-aligned)
-    mem_load.METADATA_HASH_HI_3 mem_load.METADATA_HASH_HI_2
-    mem_load.METADATA_HASH_HI_1 mem_load.METADATA_HASH_HI_0
-    # => [MH_HI, pad(32)]
-
-    # Load MH_LO from memory addresses 10..13 (individual loads — not word-aligned)
-    mem_load.METADATA_HASH_LO_3 mem_load.METADATA_HASH_LO_2
-    mem_load.METADATA_HASH_LO_1 mem_load.METADATA_HASH_LO_0
+    # Load [MH_LO, MH_HI] from memory addresses 10..17 (unaligned).
+    push.METADATA_HASH_LO_0 exec.utils::mem_load_double_word_unaligned
     # => [MH_LO, MH_HI, pad(32)]
 
     # Load faucet_id_prefix, faucet_id_suffix
