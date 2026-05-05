@@ -420,7 +420,7 @@ proc is_faucet_native
     exec.active_account::get_map_item
     # => [1, is_native, 0, 0]
 
-    # Drop element 0 (registration flag), sink is_native below the trailing zeros, drop them.
+    # Drop element 0 (registration flag), move is_native past the two trailing zeros, drop them.
     drop movdn.2 drop drop
     # => [is_native]
 end
