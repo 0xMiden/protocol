@@ -143,12 +143,14 @@ pub proc register_faucet
     exec.assert_sender_is_bridge_admin
     # => [addr0, addr1, addr2, addr3, addr4, faucet_id_suffix, faucet_id_prefix, scale, origin_network, is_native, pad(6)]
 
-    # Save non-address data to locals
-    movup.9 loc_store.REG_IS_NATIVE_LOC
-    movup.8 loc_store.REG_ORIGIN_NETWORK_LOC
-    movup.7 loc_store.REG_SCALE_LOC
-    movup.6 loc_store.REG_FAUCET_ID_PREFIX_LOC
+    # Save non-address data to locals. Each `movup.5` lifts the now-deepest non-address
+    # element from depth 5 — cheaper than climbing 9→8→7→6→5 since each lift moves fewer
+    # elements.
     movup.5 loc_store.REG_FAUCET_ID_SUFFIX_LOC
+    movup.5 loc_store.REG_FAUCET_ID_PREFIX_LOC
+    movup.5 loc_store.REG_SCALE_LOC
+    movup.5 loc_store.REG_ORIGIN_NETWORK_LOC
+    movup.5 loc_store.REG_IS_NATIVE_LOC
     # => [addr0, addr1, addr2, addr3, addr4, pad(11)]
 
     # Duplicate address for hashing before it gets consumed
