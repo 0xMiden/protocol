@@ -380,26 +380,24 @@ end
 #!
 #! Invocation: exec
 proc get_faucet_metadata_hash
-    # Save faucet_id for second read
-    dup.1 dup.1
-    # => [faucet_id_suffix, faucet_id_prefix, faucet_id_suffix, faucet_id_prefix]
+    # Prepare the SUBKEY_HASH_LO KEY underneath.
+    push.0.FAUCET_METADATA_SUBKEY_HASH_LO
+    # => [SUBKEY_HASH_LO, 0, faucet_id_suffix, faucet_id_prefix]
 
-    # Read SUBKEY_HASH_HI first so MH_LO ends up on top after the second read without a swapw.
-    push.0.FAUCET_METADATA_SUBKEY_HASH_HI
-    # => [SUBKEY_HASH_HI, 0, faucet_id_suffix, faucet_id_prefix, faucet_id_suffix, faucet_id_prefix]
+    # Prepare the SUBKEY_HASH_HI KEY on top.
+    dup.3 dup.3 push.0.FAUCET_METADATA_SUBKEY_HASH_HI
+    # => [SUBKEY_HASH_HI, 0, faucet_id_suffix, faucet_id_prefix, SUBKEY_HASH_LO, 0, faucet_id_suffix, faucet_id_prefix]
 
+    # Read sub-key HASH_HI: METADATA_HASH_HI
     push.FAUCET_METADATA_MAP_SLOT[0..2]
     exec.active_account::get_map_item
-    # => [MH_HI, faucet_id_suffix, faucet_id_prefix]
+    # => [MH_HI, SUBKEY_HASH_LO, 0, faucet_id_suffix, faucet_id_prefix]
 
-    # Move fid below MH_HI
-    movup.5 movup.5
-    # => [faucet_id_suffix, faucet_id_prefix, MH_HI]
-
-    # Read SUBKEY_HASH_LO: METADATA_HASH_LO
-    push.0.FAUCET_METADATA_SUBKEY_HASH_LO
+    # Surface the pre-built sub-key HASH_LO KEY for the second read.
+    swapw
     # => [SUBKEY_HASH_LO, 0, faucet_id_suffix, faucet_id_prefix, MH_HI]
 
+    # Read sub-key HASH_LO: METADATA_HASH_LO
     push.FAUCET_METADATA_MAP_SLOT[0..2]
     exec.active_account::get_map_item
     # => [MH_LO, MH_HI]
