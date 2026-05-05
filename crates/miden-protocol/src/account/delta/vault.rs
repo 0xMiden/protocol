@@ -574,7 +574,8 @@ pub enum NonFungibleDeltaAction {
 
 #[cfg(test)]
 mod tests {
-    use super::{AccountVaultDelta, Deserializable, Serializable};
+    use super::{AccountVaultDelta, Deserializable, NonFungibleAssetDelta, Serializable};
+    use crate::utils::ByteWriter;
     use crate::account::AccountId;
     use crate::asset::{Asset, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
     use crate::testing::account_id::{
@@ -686,5 +687,27 @@ mod tests {
         } else {
             assert!(result.is_err());
         }
+    }
+
+    #[test]
+    fn deserialize_non_fungible_delta_rejects_duplicates() {
+        let account_id = NonFungibleAsset::mock_issuer();
+        let asset = NonFungibleAsset::new(
+            &NonFungibleAssetDetails::new(account_id, vec![1, 2, 3]).unwrap(),
+        )
+        .unwrap();
+
+        let mut bytes = Vec::new();
+
+        // num_added = 2 (duplicate)
+        bytes.write_usize(2);
+        bytes.write(&asset);
+        bytes.write(&asset);
+
+        // num_removed = 0
+        bytes.write_usize(0);
+
+        let result = NonFungibleAssetDelta::read_from_bytes(&bytes);
+        assert!(result.is_err());
     }
 }
