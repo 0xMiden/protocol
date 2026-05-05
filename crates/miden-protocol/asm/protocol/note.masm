@@ -1,4 +1,5 @@
 use miden::protocol::account_id
+use miden::protocol::util::constants::WORD_NUM_ELEMENTS
 use miden::core::crypto::hashes::poseidon2
 use miden::core::mem
 
@@ -17,12 +18,6 @@ pub use miden::protocol::util::note::ATTACHMENT_SCHEME_NONE
 const ERR_PROLOGUE_NOTE_NUM_STORAGE_ITEMS_EXCEEDED_LIMIT="number of note storage exceeded the maximum limit of 1024"
 
 const ERR_OUTPUT_NOTE_ATTACHMENT_IDX_OUT_OF_BOUNDS = "attachment index out of bounds"
-
-# CONSTANTS
-# =================================================================================================
-
-#! The number of elements in a word.
-pub const WORD_SIZE = 4
 
 # NOTE UTILITY PROCEDURES
 # =================================================================================================
@@ -109,7 +104,7 @@ pub proc write_attachment_commitments_to_memory
     # pipe_preimage_to_memory so we assume validity and only do a basic u32 assertion to protect
     # against invalid advice inputs.
     adv_push.1 u32assert.err="invalid attachment num_elements advice input"
-    u32div.WORD_SIZE
+    u32div.WORD_NUM_ELEMENTS
     # OS => [num_words, ATTACHMENTS_COMMITMENT, dest_ptr]
     # AS => [[ATTACHMENT_COMMITMENT]]
 
@@ -148,7 +143,7 @@ pub proc write_attachment_to_memory
     # pipe_preimage_to_memory so we assume validity and only do a basic u32 assertion to protect
     # against invalid advice inputs.
     adv_push.1 u32assert.err="invalid attachment num_elements advice input"
-    u32div.WORD_SIZE
+    u32div.WORD_NUM_ELEMENTS
     # OS => [num_words, ATTACHMENT_COMMITMENT, dest_ptr]
     # AS => [[ATTACHMENT_ELEMENTS]]
 
@@ -164,7 +159,7 @@ end
 #! Writes the attachment with the provided index from to memory and returns the pointer to the
 #! attachment elements.
 #!
-#! This procedure allocates 1024 elements of memory (MAX_ATTACHMENT_WORDS * WORD_SIZE) to store
+#! This procedure allocates 1024 elements of memory (MAX_ATTACHMENT_WORDS * WORD_NUM_ELEMENTS) to store
 #! all potential attachment elements.
 #!
 #! Inputs:  [num_attachments, attachment_commitments_ptr, attachment_idx]
@@ -191,8 +186,8 @@ pub proc get_attachment_ptr
     # => [attachment_commitments_ptr, attachment_idx]
 
     # compute the memory address of the attachment commitment:
-    # commitment_ptr = attachment_commitments_ptr + attachment_idx * WORD_SIZE
-    swap mul.WORD_SIZE add
+    # commitment_ptr = attachment_commitments_ptr + attachment_idx * WORD_NUM_ELEMENTS
+    swap mul.WORD_NUM_ELEMENTS add
     # => [commitment_ptr]
 
     # load the ATTACHMENT_COMMITMENT from memory

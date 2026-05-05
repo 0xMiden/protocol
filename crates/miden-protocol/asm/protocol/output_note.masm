@@ -5,7 +5,7 @@ use miden::protocol::kernel_proc_offsets::OUTPUT_NOTE_ADD_ATTACHMENT_OFFSET
 use miden::protocol::kernel_proc_offsets::OUTPUT_NOTE_GET_RECIPIENT_OFFSET
 use miden::protocol::kernel_proc_offsets::OUTPUT_NOTE_GET_METADATA_OFFSET
 use miden::protocol::kernel_proc_offsets::OUTPUT_NOTE_GET_ATTACHMENTS_COMMITMENT_OFFSET
-use miden::protocol::note::WORD_SIZE
+use miden::protocol::util::constants::WORD_NUM_ELEMENTS
 use miden::protocol::note
 use miden::core::crypto::hashes::poseidon2
 
@@ -311,8 +311,8 @@ end
 #!
 #! Invocation: exec
 pub proc add_words_attachment
-    # Compute num_elements = num_words * WORD_SIZE
-    movdn.3 mul.WORD_SIZE
+    # Compute num_elements = num_words * WORD_NUM_ELEMENTS
+    movdn.3 mul.WORD_NUM_ELEMENTS
     # => [num_elements, attachment_ptr, note_idx, attachment_scheme]
 
     # Compute end_ptr = attachment_ptr + num_elements
@@ -452,7 +452,7 @@ end
 #! Writes the attachment commitments from the note with note_idx to memory and returns the pointer
 #! to it.
 #!
-#! This procedure allocates 16 elements of memory (max num attachments * WORD_SIZE) to store all
+#! This procedure allocates 16 elements of memory (max num attachments * WORD_NUM_ELEMENTS) to store all
 #! potential four attachment commitments.
 #!
 #! Inputs:  [note_index]

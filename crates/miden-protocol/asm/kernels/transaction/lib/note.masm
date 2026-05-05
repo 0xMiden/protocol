@@ -2,7 +2,7 @@ use miden::core::crypto::hashes::poseidon2
 
 use $kernel::asset::ASSET_SIZE
 use $kernel::constants::NOTE_MEM_SIZE
-use $kernel::constants::WORD_SIZE
+use $kernel::constants::WORD_NUM_ELEMENTS
 use $kernel::memory
 
 pub use $kernel::util::note::NOTE_TYPE_PUBLIC
@@ -103,11 +103,11 @@ proc compute_attachments_commitment
     dup exec.memory::get_output_note_num_attachments
     # => [num_attachments, note_ptr]
 
-    # end_ptr = attachment_data_ptr + num_attachments * WORD_SIZE
+    # end_ptr = attachment_data_ptr + num_attachments * WORD_NUM_ELEMENTS
     swap exec.memory::get_output_note_attachment_commitment_ptr
     # => [start_ptr, num_attachments]
 
-    swap mul.WORD_SIZE dup.1 add swap
+    swap mul.WORD_NUM_ELEMENTS dup.1 add swap
     # => [start_ptr, end_ptr]
 
     exec.poseidon2::hash_words

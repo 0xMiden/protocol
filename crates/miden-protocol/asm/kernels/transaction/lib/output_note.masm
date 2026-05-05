@@ -10,7 +10,7 @@ use $kernel::note::MAX_ATTACHMENT_SCHEME
 use $kernel::note::MAX_ATTACHMENT_WORDS
 use $kernel::note::MAX_ATTACHMENT_TOTAL_WORDS
 use $kernel::constants::MAX_OUTPUT_NOTES_PER_TX
-use $kernel::constants::WORD_SIZE
+use $kernel::constants::WORD_NUM_ELEMENTS
 use $kernel::asset::ASSET_SIZE
 use $kernel::asset::ASSET_VALUE_MEMORY_OFFSET
 use miden::core::word
@@ -203,7 +203,7 @@ pub proc get_attachments_commitment
     # => [start_ptr, num_attachments, note_ptr]
 
     # compute start_ptr and end_ptr for the attachment commitments in memory
-    dup movup.2 mul.WORD_SIZE add swap
+    dup movup.2 mul.WORD_NUM_ELEMENTS add swap
     # => [start_ptr, end_ptr, note_ptr]
 
     movup.2 exec.note::compute_attachments_commitment
@@ -410,11 +410,11 @@ proc validate_attachment
 
     # derive num_words from num_elements
     adv_push.1 u32assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_MAX_EXCEEDED
-    u32divmod.WORD_SIZE
+    u32divmod.WORD_NUM_ELEMENTS
     # OS => [remainder, num_words, ATTACHMENT_COMMITMENT]
     # AS => [[ATTACHMENT_ELEMENTS]]
 
-    # assert the number of elements is a multiple of WORD_SIZE
+    # assert the number of elements is a multiple of WORD_NUM_ELEMENTS
     eq.0 assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_MUST_BE_MULTIPLE_OF_WORD_SIZE
     # OS => [num_words, ATTACHMENT_COMMITMENT]
     # AS => [[ATTACHMENT_ELEMENTS]]

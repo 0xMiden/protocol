@@ -1,0 +1,5 @@
+# CONSTANTS
+# =================================================================================================
+
+#! The number of field elements in a Word.
+pub const WORD_NUM_ELEMENTS = 4

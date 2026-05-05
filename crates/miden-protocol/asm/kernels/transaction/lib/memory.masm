@@ -1,7 +1,7 @@
 use $kernel::constants::ACCOUNT_PROCEDURE_DATA_LENGTH
 use $kernel::constants::MAX_ASSETS_PER_NOTE
 use $kernel::constants::NOTE_MEM_SIZE
-use $kernel::constants::WORD_SIZE
+use $kernel::constants::WORD_NUM_ELEMENTS
 # use $kernel::types::AccountId
 use miden::core::mem
 
@@ -1885,7 +1885,7 @@ pub proc get_output_note_attachment_commitment
     add.OUTPUT_NOTE_ATTACHMENT_0_OFFSET
     # => [note_ptr + attachment_0_offset, attachment_idx]
 
-    swap mul.WORD_SIZE add
+    swap mul.WORD_NUM_ELEMENTS add
     # => [attachment_ptr]
 
     padw movup.4 mem_loadw_le
@@ -1917,7 +1917,7 @@ pub proc set_output_note_attachment_commitment
     add.OUTPUT_NOTE_ATTACHMENT_0_OFFSET
     # => [note_ptr + base_offset, attachment_idx, ATTACHMENT_COMMITMENT]
 
-    swap mul.WORD_SIZE add
+    swap mul.WORD_NUM_ELEMENTS add
     # => [attachment_ptr, ATTACHMENT_COMMITMENT]
 
     mem_storew_le dropw

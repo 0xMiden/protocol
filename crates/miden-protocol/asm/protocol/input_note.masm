@@ -370,7 +370,7 @@ end
 #! Writes the attachment commitments of the input note with the specified index to memory and
 #! returns the pointer to the data.
 #!
-#! This procedure allocates 16 elements of memory (max num attachments * WORD_SIZE) to store all
+#! This procedure allocates 16 elements of memory (max num attachments * WORD_NUM_ELEMENTS) to store all
 #! potential four attachment commitments.
 #!
 #! Inputs:  [note_index]

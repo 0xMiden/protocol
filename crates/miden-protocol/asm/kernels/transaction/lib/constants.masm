@@ -1,8 +1,7 @@
 # CONSTANTS
 # =================================================================================================
 
-# The number of elements in a Word
-pub const WORD_SIZE = 4
+pub use $kernel::util::constants::WORD_NUM_ELEMENTS
 
 # The maximum number of storage items associated with a single note.
 pub const MAX_NOTE_STORAGE_ITEMS = 1024
