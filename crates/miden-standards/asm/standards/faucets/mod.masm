@@ -4,7 +4,7 @@ use miden::protocol::faucet
 use miden::protocol::native_account
 use miden::protocol::output_note
 use miden::protocol::asset
-use miden::standards::burn_policies::policy_manager
+use miden::standards::faucets::policies::policy_manager
 use miden::protocol::asset::FUNGIBLE_ASSET_MAX_AMOUNT
 use miden::standards::metadata::fungible_faucet::TOKEN_METADATA_SLOT
 

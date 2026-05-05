@@ -7,7 +7,7 @@
 # =================================================================================================
 
 use miden::standards::faucets
-use miden::standards::mint_policies::policy_manager
+use miden::standards::faucets::policies::policy_manager
 
 # PROCEDURES
 # =================================================================================================

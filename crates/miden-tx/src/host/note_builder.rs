@@ -128,14 +128,29 @@ impl OutputNoteBuilder {
         &mut self,
         attachment: NoteAttachment,
     ) -> Result<(), TransactionKernelError> {
-        if self.attachments.len() >= NoteAttachments::MAX_COUNT {
+        self.attachments.push(attachment);
+
+        if self.attachments.len() > NoteAttachments::MAX_COUNT {
             return Err(TransactionKernelError::other(format!(
-                "number of attachments exceeded max {}",
+                "number of attachments {} exceeded max {}",
+                self.attachments.len(),
                 NoteAttachments::MAX_COUNT
             )));
         }
 
-        self.attachments.push(attachment);
+        let total_num_words = self
+            .attachments
+            .iter()
+            .map(|attachment| attachment.num_words() as usize)
+            .sum::<usize>();
+
+        if total_num_words > NoteAttachments::MAX_NUM_WORDS as usize {
+            return Err(TransactionKernelError::other(format!(
+                "number of total words {} in all attachments exceeds max of {}",
+                total_num_words,
+                NoteAttachments::MAX_NUM_WORDS
+            )));
+        }
 
         Ok(())
     }
