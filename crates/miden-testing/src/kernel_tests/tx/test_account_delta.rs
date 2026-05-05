@@ -1057,7 +1057,7 @@ async fn adding_amount_zero_fungible_asset_to_account_vault_works() -> anyhow::R
     let chain = builder.build()?;
 
     let tx = chain
-        .build_tx_context(account, &[input_note.id()], &[])?
+        .build_tx_context(account, &[], &[input_note])?
         .build()?
         .execute()
         .await?;

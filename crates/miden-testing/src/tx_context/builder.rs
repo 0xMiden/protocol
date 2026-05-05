@@ -14,7 +14,7 @@ use miden_protocol::account::{Account, AccountHeader, AccountId};
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::assembly::debuginfo::SourceManagerSync;
 use miden_protocol::block::account_tree::AccountWitness;
-use miden_protocol::note::{Note, NoteId, NoteScript, NoteScriptRoot};
+use miden_protocol::note::{Note, NoteId, NoteScript, NoteScriptRoot, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
 use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
 use miden_protocol::transaction::{
@@ -283,20 +283,29 @@ impl TransactionContextBuilder {
                 // If no specific transaction inputs was provided, initialize an ad-hoc mockchain
                 // to generate valid block header/MMR data
 
+                let input_notes = self.input_notes;
+
                 let mut builder = MockChain::builder();
-                for i in self.input_notes {
-                    builder.add_output_note(RawOutputNote::Full(i));
+                for note in &input_notes {
+                    builder.add_output_note(RawOutputNote::Full(note.clone()));
                 }
                 let mut mock_chain = builder.build()?;
 
                 mock_chain.prove_next_block().context("failed to prove first block")?;
                 mock_chain.prove_next_block().context("failed to prove second block")?;
 
-                let input_note_ids: Vec<NoteId> =
-                    mock_chain.committed_notes().values().map(MockChainNote::id).collect();
+                let mut public_note_ids: Vec<NoteId> = vec![];
+                let mut private_notes: Vec<Note> = vec![];
+                for note in input_notes {
+                    if matches!(note.metadata().note_type(), NoteType::Public) {
+                        public_note_ids.push(note.id());
+                    } else {
+                        private_notes.push(note);
+                    }
+                }
 
                 mock_chain
-                    .get_transaction_inputs(&self.account, &input_note_ids, &[])
+                    .get_transaction_inputs(&self.account, &public_note_ids, &private_notes)
                     .context("failed to get transaction inputs from mock chain")?
             },
         };

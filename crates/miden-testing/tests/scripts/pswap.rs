@@ -474,13 +474,20 @@ async fn pswap_fill_test(
         expected_notes.push(RawOutputNote::Full(Note::from(remainder)));
     }
 
-    let mut tx_builder = mock_chain
-        .build_tx_context(consumer_id, &[pswap_note.id()], &[])?
-        .extend_expected_output_notes(expected_notes);
+    let pswap_note_id = pswap_note.id();
+    let mut tx_builder = if matches!(note_type, NoteType::Public) {
+        mock_chain
+            .build_tx_context(consumer_id, &[pswap_note_id], &[])?
+            .extend_expected_output_notes(expected_notes)
+    } else {
+        mock_chain
+            .build_tx_context(consumer_id, &[], &[pswap_note])?
+            .extend_expected_output_notes(expected_notes)
+    };
 
     if !use_network_account {
         let mut note_args_map = BTreeMap::new();
-        note_args_map.insert(pswap_note.id(), PswapNote::create_args(fill_amount, 0)?);
+        note_args_map.insert(pswap_note_id, PswapNote::create_args(fill_amount, 0)?);
         tx_builder = tx_builder.extend_note_args(note_args_map);
     }
 

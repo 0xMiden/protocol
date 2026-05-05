@@ -582,7 +582,7 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
     // Note: There is intentionally no call to extend_expected_output_notes here, so the
     // transaction host is forced to request the script from the data store during execution.
     let executed_transaction = mock_chain
-        .build_tx_context(faucet.id(), &[trigger_note.id()], &[])?
+        .build_tx_context(faucet.id(), &[], &[trigger_note])?
         .add_note_script(output_note_script)
         .with_source_manager(source_manager)
         .build()?
@@ -1097,7 +1097,7 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
 
     // Execute transfer_ownership via note script (nominates new owner)
     let tx_context = mock_chain
-        .build_tx_context(faucet.id(), &[transfer_note.id()], &[])?
+        .build_tx_context(faucet.id(), &[], &[transfer_note])?
         .with_source_manager(source_manager.clone())
         .build()?;
     let executed_transaction = tx_context.execute().await?;
@@ -1311,7 +1311,7 @@ async fn test_network_faucet_renounce_ownership() -> anyhow::Result<()> {
 
     // Execute renounce_ownership
     let tx_context = mock_chain
-        .build_tx_context(faucet.id(), &[renounce_note.id()], &[])?
+        .build_tx_context(faucet.id(), &[], &[renounce_note])?
         .with_source_manager(source_manager.clone())
         .build()?;
     let executed_transaction = tx_context.execute().await?;
@@ -1333,7 +1333,7 @@ async fn test_network_faucet_renounce_ownership() -> anyhow::Result<()> {
     mock_chain.prove_next_block()?;
 
     let tx_context = mock_chain
-        .build_tx_context(updated_faucet.id(), &[transfer_note.id()], &[])?
+        .build_tx_context(updated_faucet.id(), &[], &[transfer_note])?
         .with_source_manager(source_manager.clone())
         .build()?;
     let result = tx_context.execute().await;
@@ -1503,7 +1503,7 @@ async fn test_network_faucet_non_owner_cannot_burn_when_owner_only_policy_active
 
     let source_manager = Arc::new(DefaultSourceManager::default());
     let tx_context = mock_chain
-        .build_tx_context(faucet.id(), &[set_policy_note.id()], &[])?
+        .build_tx_context(faucet.id(), &[], &[set_policy_note])?
         .with_source_manager(source_manager.clone())
         .build()?;
     let executed_transaction = tx_context.execute().await?;
@@ -1561,7 +1561,7 @@ async fn test_network_faucet_owner_can_burn_when_owner_only_policy_active() -> a
 
     let source_manager = Arc::new(DefaultSourceManager::default());
     let tx_context = mock_chain
-        .build_tx_context(faucet.id(), &[set_policy_note.id()], &[])?
+        .build_tx_context(faucet.id(), &[], &[set_policy_note])?
         .with_source_manager(source_manager.clone())
         .build()?;
     let executed_transaction = tx_context.execute().await?;

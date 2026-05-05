@@ -170,7 +170,7 @@ async fn prove_consume_multiple_notes() -> anyhow::Result<()> {
     mock_chain.prove_next_block()?;
 
     let tx_context = mock_chain
-        .build_tx_context(account.id(), &[note_1.id(), note_2.id()], &[])?
+        .build_tx_context(account.id(), &[], &[note_1, note_2])?
         .build()?;
 
     let executed_transaction = tx_context.execute().await?;
@@ -280,7 +280,7 @@ async fn test_create_consume_multiple_notes() -> anyhow::Result<()> {
     let tx_script = CodeBuilder::default().compile_tx_script(tx_script_src)?;
 
     let tx_context = mock_chain
-        .build_tx_context(account.id(), &[input_note_1.id(), input_note_2.id()], &[])?
+        .build_tx_context(account.id(), &[], &[input_note_1, input_note_2])?
         .extend_expected_output_notes(vec![
             RawOutputNote::Full(output_note_1),
             RawOutputNote::Full(output_note_2),
