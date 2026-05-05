@@ -576,6 +576,7 @@ pub enum NonFungibleDeltaAction {
 mod tests {
     use super::{AccountVaultDelta, Deserializable, NonFungibleAssetDelta, Serializable};
     use crate::utils::ByteWriter;
+    use alloc::vec::Vec;
     use crate::account::AccountId;
     use crate::asset::{Asset, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
     use crate::testing::account_id::{
