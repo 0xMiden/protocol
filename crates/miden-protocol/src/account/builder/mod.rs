@@ -105,6 +105,9 @@ impl AccountBuilder {
     /// **must be called at least once** since an account must export at least one procedure.
     ///
     /// All components will be merged to form the final code and storage of the built account.
+    ///
+    /// For composite configurations that expand into multiple components (such as
+    /// `AccessControl` or `TokenPolicyManager`), use [`Self::with_components`].
     pub fn with_component(mut self, account_component: impl Into<AccountComponent>) -> Self {
         self.components.push(account_component.into());
         self

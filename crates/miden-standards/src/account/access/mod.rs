@@ -12,6 +12,17 @@ pub mod rbac;
 /// to one component; composite variants like [`AccessControl::Rbac`] expand to multiple
 /// components in the order they must be installed (RBAC depends on
 /// [`ownable2step::Ownable2Step`], so the latter is included alongside it).
+///
+/// Pass to
+/// [`AccountBuilder::with_components`] to install the access control components on the account.:
+///
+/// ```no_run
+/// use miden_protocol::account::AccountBuilder;
+/// use miden_standards::account::access::AccessControl;
+/// # let owner: miden_protocol::account::AccountId = unimplemented!();
+/// # let init_seed = [0u8; 32];
+/// AccountBuilder::new(init_seed).with_components(AccessControl::Rbac { owner });
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AccessControl {
     /// Two-step ownership transfer with the provided initial owner.
@@ -32,7 +43,10 @@ impl IntoIterator for AccessControl {
             AccessControl::Ownable2Step { owner } => {
                 vec![Ownable2Step::new(owner).into()].into_iter()
             },
-            AccessControl::Rbac { owner } => RoleBasedAccessControl::with_owner(owner).into_iter(),
+            AccessControl::Rbac { owner } => {
+                vec![Ownable2Step::new(owner).into(), RoleBasedAccessControl::empty().into()]
+                    .into_iter()
+            },
         }
     }
 }

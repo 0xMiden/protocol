@@ -1,5 +1,4 @@
 use alloc::vec;
-use alloc::vec::Vec;
 
 use miden_protocol::account::component::{
     AccountComponentMetadata,
@@ -9,7 +8,6 @@ use miden_protocol::account::component::{
 };
 use miden_protocol::account::{
     AccountComponent,
-    AccountId,
     AccountType,
     StorageMap,
     StorageSlot,
@@ -17,7 +15,6 @@ use miden_protocol::account::{
 };
 use miden_protocol::utils::sync::LazyLock;
 
-use crate::account::access::Ownable2Step;
 use crate::account::components::rbac_library;
 
 static ROLE_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
@@ -40,10 +37,13 @@ static ROLE_MEMBERSHIP_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// ## Relation to [`Ownable2Step`]
 ///
 /// RBAC is a superset of [`Ownable2Step`] and depends on it: the top-level authority is
-/// the [`Ownable2Step`] owner of the account. Use [`RoleBasedAccessControl::with_owner`]
-/// to build the pair of components together; this avoids duplicated state, duplicated
-/// 2-step transfer logic, and duplicated notes for owner / admin transfers. If you only
-/// need single-account control, use [`Ownable2Step`] alone.
+/// the [`Ownable2Step`] owner of the account. Build the pair via
+/// [`AccessControl::Rbac`] passed to [`AccountBuilder::with_components`].
+/// This avoids duplicated state, duplicated 2-step transfer logic, and duplicated notes
+/// for owner transfers. If you only need single-account control, use [`Ownable2Step`]
+/// alone.
+///
+/// [`Ownable2Step`]: crate::account::access::Ownable2Step
 ///
 /// ## Owner management
 ///
@@ -110,17 +110,6 @@ impl RoleBasedAccessControl {
     /// `grant_role`, `set_role_admin`, etc. procedures exposed by the component.
     pub fn empty() -> Self {
         Self
-    }
-
-    /// Returns the pair of components needed to use RBAC: an [`Ownable2Step`] component
-    /// configured with `owner` (the top-level authority for the account) and the RBAC
-    /// component itself.
-    ///
-    /// RBAC depends on [`Ownable2Step`] for owner management, so both components must be
-    /// installed together. This is the recommended entry point for building an RBAC-enabled
-    /// account.
-    pub fn with_owner(owner: AccountId) -> Vec<AccountComponent> {
-        vec![Ownable2Step::new(owner).into(), Self::empty().into()]
     }
 
     /// Returns the storage slot name for the per-role config map.
