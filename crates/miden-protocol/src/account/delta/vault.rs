@@ -575,7 +575,7 @@ pub enum NonFungibleDeltaAction {
 #[cfg(test)]
 mod tests {
     use super::{AccountVaultDelta, Deserializable, NonFungibleAssetDelta, Serializable};
-    use crate::utils::ByteWriter;
+    use crate::utils::serde::ByteWriter;
     use alloc::vec::Vec;
     use crate::account::AccountId;
     use crate::asset::{Asset, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
