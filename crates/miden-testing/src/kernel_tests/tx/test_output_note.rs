@@ -1463,8 +1463,8 @@ async fn test_network_note() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Test that `output_note::get_attachment_commitments_ptr` returns the correct number of attachments
-/// and writes the individual attachment commitments to memory at the returned pointer.
+/// Test that `output_note::get_attachment_commitments_ptr` returns the correct number of
+/// attachments and writes the individual attachment commitments to memory at the returned pointer.
 #[tokio::test]
 async fn test_get_attachment_commitments_ptr() -> anyhow::Result<()> {
     let account = Account::mock(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET, Auth::IncrNonce);
@@ -1566,8 +1566,8 @@ async fn test_get_attachment_commitments_ptr() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Test that `output_note::get_attachment_ptr` retrieves the correct attachment data from local memory
-/// after piping its preimage from the advice map.
+/// Test that `output_note::get_attachment_ptr` retrieves the correct attachment data from local
+/// memory after piping its preimage from the advice map.
 #[tokio::test]
 async fn test_get_attachment_ptr() -> anyhow::Result<()> {
     let account = Account::mock(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET, Auth::IncrNonce);
