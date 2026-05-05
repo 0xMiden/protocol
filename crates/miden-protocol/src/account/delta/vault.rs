@@ -541,21 +541,25 @@ impl Serializable for NonFungibleAssetDelta {
 
 impl Deserializable for NonFungibleAssetDelta {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let mut map = BTreeMap::new();
-
+        let mut delta = Self::default();
+        
         let num_added = source.read_usize()?;
         for _ in 0..num_added {
             let added_asset: NonFungibleAsset = source.read()?;
-            map.insert(added_asset.vault_key(), (added_asset, NonFungibleDeltaAction::Add));
+            delta
+                .apply_action(added_asset, NonFungibleDeltaAction::Add)
+                .map_err(|err| DeserializationError::InvalidValue(err.to_string()))?;
         }
-
+        
         let num_removed = source.read_usize()?;
         for _ in 0..num_removed {
             let removed_asset: NonFungibleAsset = source.read()?;
-            map.insert(removed_asset.vault_key(), (removed_asset, NonFungibleDeltaAction::Remove));
+            delta
+                .apply_action(removed_asset, NonFungibleDeltaAction::Remove)
+                .map_err(|err| DeserializationError::InvalidValue(err.to_string()))?;
         }
-
-        Ok(Self::new(map))
+        
+        Ok(delta)
     }
 }
 
