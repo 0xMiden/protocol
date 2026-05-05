@@ -136,6 +136,7 @@ fn create_cancel_note(
             repeat.14 push.0 end
             push.0
             push.0
+            # => [new_owner_suffix, new_owner_prefix, pad(14)]
             call.test_account::transfer_ownership
             dropw dropw dropw dropw
         end

@@ -1,4 +1,3 @@
-use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec;
 use alloc::vec::Vec;
 
@@ -12,14 +11,11 @@ use miden_protocol::account::{
     AccountComponent,
     AccountId,
     AccountType,
-    RoleSymbol,
     StorageMap,
-    StorageMapKey,
     StorageSlot,
     StorageSlotName,
 };
 use miden_protocol::utils::sync::LazyLock;
-use miden_protocol::{Felt, Word};
 
 use crate::account::access::Ownable2Step;
 use crate::account::components::rbac_library;
@@ -33,12 +29,6 @@ static ROLE_MEMBERSHIP_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
         .expect("storage slot name should be valid")
 });
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct RoleConfig {
-    pub admin_role: Option<RoleSymbol>,
-    pub members: BTreeSet<AccountId>,
-}
-
 /// Role-based access control (RBAC) for account components.
 ///
 /// RBAC provides fine-grained access control on top of [`Ownable2Step`]. Instead of having
@@ -47,23 +37,22 @@ pub struct RoleConfig {
 /// membership. It allows role assignment with domain isolation to minimize the scope of
 /// damage from a compromised role.
 ///
-/// Relation to [`Ownable2Step`].
+/// ## Relation to [`Ownable2Step`]
 ///
-/// RBAC is a superset of [`Ownable2Step`] and depends on it: the top-level authority
-/// (previously called the "admin") is the [`Ownable2Step`] owner of the account. Use
-/// `RoleBasedAccessControl::with_owner` to build the pair of components together; this
-/// avoids duplicated state, duplicated 2-step transfer logic, and duplicated notes for
-/// owner / admin transfers. If you only need single-account control, use [`Ownable2Step`]
-/// alone.
+/// RBAC is a superset of [`Ownable2Step`] and depends on it: the top-level authority is
+/// the [`Ownable2Step`] owner of the account. Use [`RoleBasedAccessControl::with_owner`]
+/// to build the pair of components together; this avoids duplicated state, duplicated
+/// 2-step transfer logic, and duplicated notes for owner / admin transfers. If you only
+/// need single-account control, use [`Ownable2Step`] alone.
 ///
-/// Owner management.
+/// ## Owner management
 ///
 /// The owner can grant and revoke any role, configure the delegated admin of any role via
 /// `set_role_admin`, and transfer or renounce its own position. Owner transfer and
 /// renouncement go through [`Ownable2Step`] (`transfer_ownership`, `accept_ownership`,
 /// `renounce_ownership`).
 ///
-/// Role hierarchy.
+/// ## Role hierarchy
 ///
 /// Every role may optionally have a delegated admin role. Accounts holding a role's admin
 /// role are authorized to grant and revoke that role without going through the owner.
@@ -79,7 +68,7 @@ pub struct RoleConfig {
 /// Circular relationships are possible but should be designed with care, since each role
 /// can then revoke the other.
 ///
-/// Role semantics.
+/// ## Role semantics
 ///
 /// A role is considered to exist when it has at least one member. Granting the first
 /// member creates the role; revoking the last member removes it. As a consequence,
@@ -88,19 +77,17 @@ pub struct RoleConfig {
 /// `role_exists(A)` returns `false`, though the admin configuration is retained and will
 /// apply the next time a member is granted.
 ///
-/// Membership lookup.
+/// ## Membership lookup
 ///
-/// `has_role` procedure is the primary guard used by procedures that assert
-/// the caller's role membership. `get_role_member_count` returns the number of
-/// accounts holding a role
+/// `has_role` procedure is the primary guard used by procedures that assert the caller's
+/// role membership. `get_role_member_count` returns the number of accounts holding a role.
 ///
-/// Role symbol format.
+/// ## Role symbol format
 ///
-/// A role symbol is a [`RoleSymbol`], which encodes up to 12 uppercase ASCII characters
-/// with underscores into a single field element using the same packing as the token
-/// symbol type. Examples: `MINTER`, `MINTER_ADMIN`, `PAUSER`. The zero field element is
-/// reserved and cannot be used as a role symbol; attempting to do so panics with
-/// `ERR_ROLE_SYMBOL_ZERO`.
+/// A [`RoleSymbol`] encodes up to 12 uppercase ASCII characters with underscores into a
+/// single field element using the same packing as the token symbol type. Examples:
+/// `MINTER`, `MINTER_ADMIN`, `PAUSER`. The zero field element is reserved and cannot be
+/// used as a role symbol; attempting to do so panics with `ERR_ROLE_SYMBOL_ZERO`.
 ///
 /// Guarding a procedure in MASM so that only members of `MINTER` can call it:
 ///
@@ -111,16 +98,18 @@ pub struct RoleConfig {
 ///     # add mint logic
 /// end
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RoleBasedAccessControl {
-    roles: BTreeMap<RoleSymbol, RoleConfig>,
-}
+///
+/// [`RoleSymbol`]: miden_protocol::account::RoleSymbol
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RoleBasedAccessControl;
 
 impl RoleBasedAccessControl {
     pub const NAME: &'static str = "miden::standards::components::access::rbac";
 
-    pub fn new() -> Self {
-        Self { roles: BTreeMap::new() }
+    /// Returns an empty RBAC component. Roles are populated at runtime via the
+    /// `grant_role`, `set_role_admin`, etc. procedures exposed by the component.
+    pub fn empty() -> Self {
+        Self
     }
 
     /// Returns the pair of components needed to use RBAC: an [`Ownable2Step`] component
@@ -131,50 +120,20 @@ impl RoleBasedAccessControl {
     /// installed together. This is the recommended entry point for building an RBAC-enabled
     /// account.
     pub fn with_owner(owner: AccountId) -> Vec<AccountComponent> {
-        vec![Ownable2Step::new(owner).into(), Self::new().into()]
+        vec![Ownable2Step::new(owner).into(), Self::empty().into()]
     }
 
-    pub fn roles(&self) -> &BTreeMap<RoleSymbol, RoleConfig> {
-        &self.roles
-    }
-
-    pub fn with_role(mut self, role: RoleSymbol) -> Self {
-        self.roles.entry(role).or_default();
-        self
-    }
-
-    /// Sets `admin_role` as the delegated admin of `role`.
-    ///
-    /// Both `role` and `admin_role` are recorded in the role map; if either was not previously
-    /// configured it is created with a default (empty) configuration. To clear a previously
-    /// configured admin, use [`Self::without_role_admin`].
-    pub fn with_role_admin(mut self, role: RoleSymbol, admin_role: RoleSymbol) -> Self {
-        self.roles.entry(admin_role.clone()).or_default();
-        self.roles.entry(role).or_default().admin_role = Some(admin_role);
-        self
-    }
-
-    /// Clears the delegated admin of `role`, leaving the role owner-managed.
-    ///
-    /// The role itself remains configured; only its admin assignment is removed.
-    pub fn without_role_admin(mut self, role: RoleSymbol) -> Self {
-        self.roles.entry(role).or_default().admin_role = None;
-        self
-    }
-
-    pub fn with_role_member(mut self, role: RoleSymbol, account_id: AccountId) -> Self {
-        self.roles.entry(role).or_default().members.insert(account_id);
-        self
-    }
-
+    /// Returns the storage slot name for the per-role config map.
     pub fn role_config_slot() -> &'static StorageSlotName {
         &ROLE_CONFIG_SLOT_NAME
     }
 
+    /// Returns the storage slot name for the per-role membership map.
     pub fn role_membership_slot() -> &'static StorageSlotName {
         &ROLE_MEMBERSHIP_SLOT_NAME
     }
 
+    /// Returns the schema entry for the per-role config map.
     pub fn role_config_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
         (
             Self::role_config_slot().clone(),
@@ -186,6 +145,7 @@ impl RoleBasedAccessControl {
         )
     }
 
+    /// Returns the schema entry for the per-role membership map.
     pub fn role_membership_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
         (
             Self::role_membership_slot().clone(),
@@ -197,6 +157,7 @@ impl RoleBasedAccessControl {
         )
     }
 
+    /// Returns the [`AccountComponentMetadata`] describing this component.
     pub fn component_metadata() -> AccountComponentMetadata {
         let storage_schema = StorageSchema::new(vec![
             Self::role_config_slot_schema(),
@@ -210,57 +171,15 @@ impl RoleBasedAccessControl {
     }
 }
 
-impl Default for RoleBasedAccessControl {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl From<RoleBasedAccessControl> for AccountComponent {
-    fn from(rbac: RoleBasedAccessControl) -> Self {
-        let mut role_config_entries = Vec::new();
-        let mut role_membership_entries = Vec::new();
-
-        for (role_symbol, role_config) in &rbac.roles {
-            let role_symbol_felt = Felt::from(role_symbol);
-            let admin_role_felt =
-                role_config.admin_role.as_ref().map(Felt::from).unwrap_or(Felt::ZERO);
-            let member_count = role_config.members.len() as u64;
-
-            // ROLE_CONFIG: [member_count, admin_role_symbol, 0, 0]
-            role_config_entries.push((
-                StorageMapKey::from_raw(Word::from([
-                    Felt::ZERO,
-                    Felt::ZERO,
-                    Felt::ZERO,
-                    role_symbol_felt,
-                ])),
-                Word::from([Felt::new(member_count), admin_role_felt, Felt::ZERO, Felt::ZERO]),
-            ));
-
-            // ROLE_MEMBERSHIP: [is_member, 0, 0, 0]
-            for member in &role_config.members {
-                role_membership_entries.push((
-                    StorageMapKey::from_raw(Word::from([
-                        Felt::ZERO,
-                        role_symbol_felt,
-                        member.suffix(),
-                        member.prefix().as_felt(),
-                    ])),
-                    Word::from([Felt::new(1), Felt::ZERO, Felt::ZERO, Felt::ZERO]),
-                ));
-            }
-        }
-
+    fn from(_rbac: RoleBasedAccessControl) -> Self {
         let role_config_slot = StorageSlot::with_map(
             RoleBasedAccessControl::role_config_slot().clone(),
-            StorageMap::with_entries(role_config_entries)
-                .expect("role config entries should be unique"),
+            StorageMap::with_entries(vec![]).expect("empty role config map should be valid"),
         );
         let role_membership_slot = StorageSlot::with_map(
             RoleBasedAccessControl::role_membership_slot().clone(),
-            StorageMap::with_entries(role_membership_entries)
-                .expect("role membership entries should be unique"),
+            StorageMap::with_entries(vec![]).expect("empty role membership map should be valid"),
         );
 
         AccountComponent::new(

@@ -51,6 +51,7 @@ const ERR_SENDER_LACKS_ROLE = "note sender does not hold the required role"
 const ERR_SENDER_NOT_OWNER_OR_ROLE_ADMIN = "note sender is not the owner or a role admin"
 const ERR_ACCOUNT_NOT_IN_ROLE = "account does not hold the role"
 const ERR_ROLE_SYMBOL_ZERO = "role symbol is zero"
+const ERR_MEMBER_COUNT_OVERFLOW = "role member count overflowed u32"
 
 # PUBLIC INTERFACE
 # =================================================================================================
@@ -299,10 +300,10 @@ proc assert_role_symbol_non_zero
     # => [role_symbol]
 end
 
-#! Returns the config word for a role.
+#! Returns the config for a role.
 #!
 #! Inputs:  [role_symbol]
-#! Outputs: [member_count, admin_role_symbol, 0, 0]
+#! Outputs: [member_count, admin_role_symbol]
 #!
 #! Invocation: exec
 proc get_role_config
@@ -314,6 +315,9 @@ proc get_role_config
 
     exec.active_account::get_map_item
     # => [member_count, admin_role_symbol, 0, 0]
+
+    movup.2 drop movup.2 drop
+    # => [member_count, admin_role_symbol]
 end
 
 #! Writes the config word for a role.
@@ -374,9 +378,9 @@ end
 #! Invocation: exec
 proc get_role_member_count_internal
     exec.get_role_config
-    # => [member_count, admin_role_symbol, 0, 0]
+    # => [member_count, admin_role_symbol]
 
-    movdn.3 drop drop drop
+    swap drop
     # => [member_count]
 end
 
@@ -388,9 +392,9 @@ end
 #! Invocation: exec
 proc get_role_admin_internal
     exec.get_role_config
-    # => [member_count, admin_role_symbol, 0, 0]
+    # => [member_count, admin_role_symbol]
 
-    drop movdn.2 drop drop
+    drop
     # => [admin_role_symbol]
 end
 
@@ -484,7 +488,7 @@ proc grant_role_internal
     else
         # Save a copy of role_symbol at the bottom of the stack so it survives the
         # membership map write and is available for the role-config update.
-        dup.0 movdn.3
+        dup movdn.3
         # => [role_symbol, account_suffix, account_prefix, role_symbol]
 
         # Write membership[role, account] = [1, 0, 0, 0].
@@ -508,14 +512,11 @@ proc grant_role_internal
         dropw
         # => [role_symbol]
 
-        # Step 2: increment the role's member count.
+        # Increment the role's member count.
         dup exec.get_role_config
-        # => [member_count, admin_role_symbol, 0, 0, role_symbol]
-
-        movup.2 drop movup.2 drop
         # => [member_count, admin_role_symbol, role_symbol]
 
-        add.1
+        add.1 u32assert.err=ERR_MEMBER_COUNT_OVERFLOW
         # => [member_count + 1, admin_role_symbol, role_symbol]
 
         movup.2
@@ -553,7 +554,7 @@ proc revoke_role_internal
 
     # Save a copy of role_symbol at the bottom of the stack so it survives the
     # membership map write and is available for the role-config update.
-    dup.0 movdn.3
+    dup movdn.3
     # => [role_symbol, account_suffix, account_prefix, role_symbol]
 
     # Clear membership[role, account] = [0, 0, 0, 0].
@@ -579,9 +580,6 @@ proc revoke_role_internal
 
     # Decrement the role's member count.
     dup exec.get_role_config
-    # => [member_count, admin_role_symbol, 0, 0, role_symbol]
-
-    movup.2 drop movup.2 drop
     # => [member_count, admin_role_symbol, role_symbol]
 
     sub.1

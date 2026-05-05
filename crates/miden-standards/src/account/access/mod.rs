@@ -38,4 +38,4 @@ impl IntoIterator for AccessControl {
 }
 
 pub use ownable2step::{Ownable2Step, Ownable2StepError};
-pub use rbac::{RoleBasedAccessControl, RoleConfig};
+pub use rbac::RoleBasedAccessControl;
