@@ -83,6 +83,7 @@
 ## 0.14.4 (2026-04-09)
 
 - Fixed AggLayer `write_mint_note_storage` stack padding before loading the mint serial number ([#2749](https://github.com/0xMiden/protocol/pull/2749)).
+- [BREAKING] Keyed AggLayer faucet token registry by `(origin_token_address, origin_network)` instead of `origin_token_address` alone, preventing same-address cross-network mint collisions on CLAIM ([#2860](https://github.com/0xMiden/protocol/pull/2860)).
 
 ## 0.14.3 (2026-04-07)
 
