@@ -109,7 +109,7 @@ end
 #!   ASSET_VALUE if no callback is configured.
 @locals(4)
 proc invoke_callback
-    exec.start_faucet_callback_context
+    exec.maybe_start_faucet_callback_context
     # => [was_foreign_context_started, should_invoke_callback, PROC_ROOT, ASSET_KEY, ASSET_VALUE, custom_data]
 
     # store was_foreign_context_started flag for later
@@ -144,7 +144,7 @@ proc invoke_callback
     movup.4
     # => [was_foreign_context_started, PROCESSED_ASSET_VALUE]
 
-    exec.end_faucet_callback_context
+    exec.maybe_end_faucet_callback_context
     # => [PROCESSED_ASSET_VALUE]
 end
 
@@ -168,7 +168,7 @@ end
 #! - should_invoke_callback is 1 if the callback should be invoked, 0 otherwise.
 #! - PROC_ROOT is the procedure root of the callback, or the empty word if not found.
 #! - was_foreign_context_started is 1 if the faucet is not the active account, 0 otherwise.
-proc start_faucet_callback_context
+proc maybe_start_faucet_callback_context
     # move slot IDs past ASSET_KEY and ASSET_VALUE
     movdn.9 movdn.9
     # => [ASSET_KEY, ASSET_VALUE, slot_id_suffix, slot_id_prefix]
@@ -215,18 +215,18 @@ proc start_faucet_callback_context
     # => [was_foreign_context_started, should_invoke_callback, PROC_ROOT, ASSET_KEY, ASSET_VALUE]
 end
 
-#! Ends a callback context against the faucet.
+#! Ends a callback context against the faucet if a foreign context was previously started.
 #!
 #! This pops the top of the account stack, making the previous account the active account.
 #!
-#! This wrapper exists only for uniformity with start_faucet_callback_context.
+#! This wrapper exists only for uniformity with maybe_start_faucet_callback_context.
 #!
 #! Inputs:  [was_foreign_context_started]
 #! Outputs: []
 #!
 #! Where:
 #! - was_foreign_context_started is 1 if a foreign context was started, 0 otherwise.
-proc end_faucet_callback_context
+proc maybe_end_faucet_callback_context
     # if a foreign context was started, end it
     if.true
         exec.tx::end_foreign_context
