@@ -153,8 +153,10 @@ pub proc register_faucet
     movup.5 loc_store.REG_IS_NATIVE_LOC
     # => [addr0, addr1, addr2, addr3, addr4, pad(11)]
 
-    # Duplicate address for hashing before it gets consumed
-    dup.4 dup.4 dup.4 dup.4 dup.4
+    # Duplicate the 5-felt address for hashing before it gets consumed.
+    repeat.5
+        dup.4
+    end
     # => [addr0, addr1, addr2, addr3, addr4, addr0, addr1, addr2, addr3, addr4, pad(6)]
 
     # Push origin_network to position 5 so hash_token_address sees [addr(5), origin_network].
