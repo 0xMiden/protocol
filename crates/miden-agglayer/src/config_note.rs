@@ -71,6 +71,12 @@ pub struct ConversionMetadata {
 
 impl ConversionMetadata {
     /// Serializes the metadata to the 18-felt layout consumed by `CONFIG_AGG_BRIDGE`.
+    ///
+    /// `origin_network` is written in raw u32 form (no byte swap). The bridge stores it as-is
+    /// in `faucet_metadata_map`; `bridge_out::convert_asset` later applies `swap_u32_bytes` to
+    /// produce the leaf-side representation. The token-registry side of registration applies
+    /// the matching swap inside `register_faucet`'s MASM before hashing, keeping the hash
+    /// byte-identical with the leaf-side `lookup_faucet_by_token_address` input.
     pub fn to_elements(&self) -> Vec<Felt> {
         let mut v = Vec::with_capacity(ConfigAggBridgeNote::NUM_STORAGE_ITEMS);
         v.extend(self.origin_token_address.to_elements());
@@ -105,7 +111,9 @@ impl ConfigAggBridgeNote {
     /// - `[5]`      faucet_id_suffix
     /// - `[6]`      faucet_id_prefix
     /// - `[7]`      scale
-    /// - `[8]`      origin_network
+    /// - `[8]`      origin_network (raw u32; the MASM register flow byte-swaps it before hashing
+    ///   into the token-registry key, and `bridge_out` byte-swaps it before placing it in the LET
+    ///   leaf)
     /// - `[9]`      is_native (0 or 1)
     /// - `[10..13]` METADATA_HASH_LO (4 felts)
     /// - `[14..17]` METADATA_HASH_HI (4 felts)
@@ -209,6 +217,8 @@ mod tests {
         assert_eq!(elements[5], faucet.suffix());
         assert_eq!(elements[6], faucet.prefix().as_felt());
         assert_eq!(elements[7], Felt::from(6_u8));
+        // origin_network is stored raw (the MASM bridge-side does any required byte-swap
+        // before hashing into the token-registry or placing into the LET leaf).
         assert_eq!(elements[8], Felt::from(42_u32));
         assert_eq!(elements[9], Felt::from(1_u8));
         assert_eq!(&elements[10..18], metadata_hash.to_elements().as_slice());

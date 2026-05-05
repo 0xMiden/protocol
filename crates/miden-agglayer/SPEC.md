@@ -38,7 +38,8 @@ The crate `miden-agglayer` implements the AggLayer bridging protocol on the Mide
 A user initiates a bridge-out by creating a [`B2AGG`](#41-b2agg) note containing a single fungible
 asset and the destination network/address. The bridge account consumes this note:
 
-1. Validates that the asset's faucet is registered in the faucet registry.
+1. Validates that the asset's faucet is registered in the faucet registry, and that the
+   destination network is not Miden's AggLayer network ID.
 2. FPIs to the faucet (`agglayer_faucet::asset_to_origin_asset`) to obtain the scaled
    U256 amount, origin token address, and origin network.
 3. FPIs to the faucet (`agglayer_faucet::get_metadata_hash`) to obtain the metadata hash.
@@ -79,8 +80,8 @@ The `CLAIM` note is consumed by the bridge account:
 The faucet consumes the `MINT` note, mints the specified amount, and creates a [`P2ID`](#46-p2id-generated) note
 that delivers the minted assets to the recipient's Miden account.
 
-TODO: Destination network from the leaf data is not validated against Miden's own network
-ID ([#2698](https://github.com/0xMiden/protocol/issues/2698)).
+Inside `bridge_in::claim`, immediately after proof and leaf data are piped into memory, the bridge asserts the leaf's `destination_network` equals the global MASM constant `MIDEN_NETWORK_ID` in `asm/agglayer/common/constants.masm` (after `swap_u32_bytes` on the LE-packed memory limb). The same value is exposed to Rust as `AggLayerBridge::MIDEN_NETWORK_ID`, matching Solidity test vectors.
+This mirrors Solidity `claimAsset` destination-network checks.
 
 TODO: The leaf type field is not validated to be `LEAF_TYPE_ASSET` (0)
 ([#2699](https://github.com/0xMiden/protocol/issues/2699)).
@@ -186,7 +187,7 @@ Bridges an asset out of Miden into the AggLayer:
 | | |
 |-|-|
 | **Invocation** | `call` |
-| **Inputs** | `[origin_token_addr(5), faucet_id_suffix, faucet_id_prefix, pad(9)]` |
+| **Inputs** | `[origin_token_addr(5), origin_network, faucet_id_suffix, faucet_id_prefix, pad(8)]` |
 | **Outputs** | `[pad(16)]` |
 | **Context** | Consuming a `CONFIG_AGG_BRIDGE` note on the bridge account |
 | **Panics** | Note sender is not the bridge admin |
@@ -196,9 +197,13 @@ Asserts the note sender matches the bridge admin stored in
 
 1. Writes `[0, 0, faucet_id_suffix, faucet_id_prefix] -> [1, 0, 0, 0]` into the
    `faucet_registry_map` map slot.
-2. Hashes `origin_token_addr` (5 felts) using `Poseidon2::hash_elements` and writes
-   `hash(origin_token_addr) -> [0, 0, faucet_id_suffix, faucet_id_prefix]` into the
-   `token_registry_map` map slot.
+2. Hashes `origin_token_addr` (5 felts) together with `origin_network` (1 felt) using
+   `Poseidon2::hash_elements` and writes
+   `hash(origin_token_addr, origin_network) -> [0, 0, faucet_id_suffix, faucet_id_prefix]`
+   into the `token_registry_map` map slot. The `(origin_network, origin_token_address)`
+   pair is the canonical asset identity (matching the Solidity `tokenInfoHash`); keying on
+   the address alone would let a CLAIM bound to one origin network resolve to the faucet of
+   the same address on another network.
 
 #### `bridge_config::update_ger`
 
@@ -223,12 +228,14 @@ Asserts the note sender matches the GER manager stored in
 | **Inputs** | `[PROOF_DATA_KEY, LEAF_DATA_KEY, faucet_mint_amount, pad(7)]` on the operand stack; proof data and leaf data in the advice map keyed by `PROOF_DATA_KEY` and `LEAF_DATA_KEY` respectively |
 | **Outputs** | `[pad(16)]` |
 | **Context** | Consuming a `CLAIM` note on the bridge account |
-| **Panics** | GER not known; global index invalid; Merkle proof verification failed; origin token address not in token registry; claim already spent; amount conversion mismatch |
+| **Panics** | Leaf `destination_network` does not match `agglayer::common::constants::MIDEN_NETWORK_ID`; invalid leaf type; GER not known; global index invalid; Merkle proof verification failed; (origin token address, origin network) pair not in token registry; claim already spent; amount conversion mismatch |
 
 Validates a bridge-in claim and creates a MINT note targeting the faucet:
 
 1. Pipes proof data and leaf data from the advice map into memory, verifying preimage
-   integrity.
+   integrity, then asserts the leaf's `destination_network` matches the global
+   `MIDEN_NETWORK_ID` constant (`asm/agglayer/common/constants.masm`) after `swap_u32_bytes` on
+   the LE-packed limb (same convention as other AggLayer bridge-in u32 felts in memory).
 2. Extracts the destination account ID from the leaf data's destination address
    (via `eth_address::to_account_id`).
 3. Validates the Merkle proof via `verify_leaf_bridge`: computes the leaf
@@ -242,8 +249,10 @@ Validates a bridge-in claim and creates a MINT note targeting the faucet:
    `Poseidon2::hash_elements(leaf_index, source_bridge_network)` to prevent
    double-claiming. For mainnet deposits, `source_bridge_network = 0`. For rollup
    deposits, `source_bridge_network = rollup_index + 1`.
-6. Looks up the faucet account ID from the origin token address via
-   `bridge_config::lookup_faucet_by_token_address`.
+6. Looks up the faucet account ID from the `(origin_token_address, origin_network)` pair via
+   `bridge_config::lookup_faucet_by_token_address`. Resolving by the full pair (rather than the
+   address alone) prevents same-address cross-network collisions where a CLAIM proven on one
+   origin network could resolve to a faucet registered on another.
 7. Verifies the `faucet_mint_amount` against the leaf data's U256 amount and the
    faucet's scale factor (via FPI to `agglayer_faucet::get_scale`), using
    `asset_conversion::verify_u256_to_native_amount_conversion`.
@@ -259,7 +268,7 @@ Validates a bridge-in claim and creates a MINT note targeting the faucet:
 | `agglayer::bridge::let_root_hi` | Value | -- | Upper word of the LET root | LET root high word (Keccak-256 upper 16 bytes) |
 | `agglayer::bridge::let_num_leaves` | Value | -- | `[count, 0, 0, 0]` | Number of leaves appended to the LET |
 | `agglayer::bridge::faucet_registry_map` | Map | `[0, 0, faucet_id_suffix, faucet_id_prefix]` | `[1, 0, 0, 0]` if registered | Registered faucet lookup |
-| `agglayer::bridge::token_registry_map` | Map | `Poseidon2::hash_elements(origin_token_addr[5])` | `[0, 0, faucet_id_suffix, faucet_id_prefix]` | Origin token address to faucet ID lookup |
+| `agglayer::bridge::token_registry_map` | Map | `Poseidon2::hash_elements(origin_token_addr[5] \|\| origin_network)` | `[0, 0, faucet_id_suffix, faucet_id_prefix]` | (Origin token address, origin network) to faucet ID lookup |
 | `agglayer::bridge::claim_nullifiers` | Map | `Poseidon2::hash_elements(leaf_index, source_bridge_network)` | `[1, 0, 0, 0]` if claimed | Prevents double-claiming of bridge-in deposits |
 | `agglayer::bridge::cgi_chain_hash_lo` | Value | -- | Lower word of the CGI chain hash | CGI chain hash low word (Keccak-256 lower 16 bytes) |
 | `agglayer::bridge::cgi_chain_hash_hi` | Value | -- | Upper word of the CGI chain hash | CGI chain hash high word (Keccak-256 upper 16 bytes) |
@@ -267,7 +276,7 @@ Validates a bridge-in claim and creates a MINT note targeting the faucet:
 | `agglayer::bridge::ger_manager_account_id` | Value | -- | `[0, 0, mgr_suffix, mgr_prefix]` | GER manager account ID for UPDATE_GER note authorization |
 
 Initial state: all map slots empty, all value slots `[0, 0, 0, 0]` except
-`admin_account_id` and `ger_manager_account_id` which are set at account creation time.
+`admin_account_id` and `ger_manager_account_id` (set at account creation time).
 
 ### 3.2 Faucet Account Component
 
@@ -495,9 +504,9 @@ The storage is divided into three logical regions: proof data (felts 0-535), lea
    advice map as two keyed entries (`PROOF_DATA_KEY`, `LEAF_DATA_KEY`).
 4. The `miden_claim_amount` is read from memory.
 5. `bridge_in::claim` is called with `[PROOF_DATA_KEY, LEAF_DATA_KEY, miden_claim_amount]`
-   on the stack. The bridge validates the proof, checks the claim nullifier, looks up the
-   faucet via the token registry, verifies the amount conversion, then builds a MINT
-   output note targeting the faucet.
+   on the stack. The bridge asserts the leaf's `destination_network` matches the global
+   `MIDEN_NETWORK_ID` MASM constant, validates the proof, checks the claim nullifier, looks up the faucet via the token
+   registry, verifies the amount conversion, then builds a MINT output note targeting the faucet.
 
 #### Permissions
 
@@ -531,15 +540,16 @@ The storage is divided into three logical regions: proof data (felts 0-535), lea
 |-------|-------|
 | `serial_num` | Random (`rng.draw_word()`) |
 | `script` | `CONFIG_AGG_BRIDGE.masb` |
-| `storage` | 7 felts -- see layout below |
+| `storage` | 8 felts -- see layout below |
 
-**Storage layout (7 felts):**
+**Storage layout (8 felts):**
 
 | Index | Field | Encoding |
 |-------|-------|----------|
 | 0-4 | `origin_token_addr` | 5 x u32 felts (20-byte Ethereum address) |
-| 5 | `faucet_id_suffix` | Felt (AccountId suffix) |
-| 6 | `faucet_id_prefix` | Felt (AccountId prefix) |
+| 5 | `origin_network` | Felt (LE-packed u32 origin network identifier) |
+| 6 | `faucet_id_suffix` | Felt (AccountId suffix) |
+| 7 | `faucet_id_prefix` | Felt (AccountId prefix) |
 
 **Consumption:** Script validates attachment target, loads storage, and calls
 `bridge_config::register_faucet` (which asserts sender is bridge admin and performs
@@ -997,8 +1007,12 @@ consumption:
   asset's faucet is authorized (`bridge_config::assert_faucet_registered`) and, via the
   `is_native` flag, to branch between burn/lock on bridge-out and mint/unlock on bridge-in.
 - **Token registry** (`agglayer::bridge::token_registry_map`): maps Poseidon2 hashes of
-  native token addresses to faucet account IDs. Used during bridge-in to look up the
-  correct faucet for a given origin token (`bridge_config::lookup_faucet_by_token_address`).
+  the `(origin_token_address, origin_network)` pair to faucet account IDs. Used during
+  bridge-in to look up the correct faucet for a given origin asset
+  (`bridge_config::lookup_faucet_by_token_address`). Keying on the pair (rather than the
+  address alone) matches the canonical asset identity used by Solidity's
+  `tokenInfoHash = keccak256(abi.encodePacked(originNetwork, originTokenAddress))` and
+  prevents same-address cross-network collisions.
 - **Faucet metadata map** (`agglayer::bridge::faucet_metadata_map`): stores all conversion
   metadata — origin address, origin network, scale, and the precomputed
   `keccak256(abi.encode(name, symbol, decimals))` metadata hash — for every registered
@@ -1043,11 +1057,16 @@ perform the following writes:
 2. `faucet_metadata_map`: origin-address + origin-network + scale under sub-keys
    `[0, 0, fid_s, fid_p]` and `[1, 0, fid_s, fid_p]`; metadata hash (lo/hi) under
    `[2, 0, fid_s, fid_p]` and `[3, 0, fid_s, fid_p]`.
-3. `token_registry_map`: `Poseidon2(origin_token_addr)` → `[0, 0, fid_s, fid_p]`.
+3. `token_registry_map`: `Poseidon2(origin_token_addr, origin_network)` → `[0, 0, fid_s, fid_p]`.
+   Keying on the pair (not the address alone) matches Solidity's `tokenInfoHash` and
+   prevents same-address cross-network collisions.
 
 The token registry enables the bridge to resolve which Miden-side faucet corresponds to a
-given origin token address during CLAIM note processing (`bridge_config::lookup_faucet_by_token_address`).
-If the token address is not registered, the `CLAIM` note consumption will fail.
+given origin asset during CLAIM note processing. When the bridge processes a
+[`CLAIM`](#42-claim) note, it reads the origin token address and origin network from the leaf
+data and calls `bridge_config::lookup_faucet_by_token_address` to find the registered
+faucet. If the `(origin_token_address, origin_network)` pair is not registered, the `CLAIM`
+note consumption will fail.
 
 The bridge admin is a trusted role, and is the sole entity that can register faucets on
 the Miden side (enforced by the caller restriction on

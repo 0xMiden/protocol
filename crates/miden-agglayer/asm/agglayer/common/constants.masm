@@ -1,0 +1,10 @@
+# AggLayer-wide numeric constants shared by bridge-in and other modules.
+#
+# Each `const NAME = <decimal u32 value>` line is parsed at crate build time into
+# `pub const NAME: u32 = value` in `agglayer_constants.rs` (see `build.rs`).
+
+# NETWORK IDS
+# =================================================================================================
+
+# AggLayer-assigned network ID for this Miden chain.
+const MIDEN_NETWORK_ID = 77

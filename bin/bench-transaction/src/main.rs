@@ -54,7 +54,7 @@ async fn main() -> Result<()> {
         ),
         (
             ExecutionBenchmark::ConsumeClaimNoteL1ToMiden,
-            tx_consume_claim_note(ClaimDataSource::SimulatedL1ToMiden)
+            tx_consume_claim_note(ClaimDataSource::L1ToMiden)
                 .await?
                 .execute()
                 .await
@@ -63,7 +63,7 @@ async fn main() -> Result<()> {
         ),
         (
             ExecutionBenchmark::ConsumeClaimNoteL2ToMiden,
-            tx_consume_claim_note(ClaimDataSource::SimulatedL2ToMiden)
+            tx_consume_claim_note(ClaimDataSource::L2ToMiden)
                 .await?
                 .execute()
                 .await
@@ -72,7 +72,25 @@ async fn main() -> Result<()> {
         ),
         (
             ExecutionBenchmark::ConsumeB2AggNote,
-            tx_consume_b2agg_note()
+            tx_consume_b2agg_note(None)
+                .await?
+                .execute()
+                .await
+                .map(TransactionMeasurements::from)?
+                .into(),
+        ),
+        (
+            ExecutionBenchmark::ConsumeB2AggNotePopulated2p31,
+            tx_consume_b2agg_note(Some(1 << 31))
+                .await?
+                .execute()
+                .await
+                .map(TransactionMeasurements::from)?
+                .into(),
+        ),
+        (
+            ExecutionBenchmark::ConsumeB2AggNotePopulated2p31m1,
+            tx_consume_b2agg_note(Some((1u32 << 31) - 1))
                 .await?
                 .execute()
                 .await
