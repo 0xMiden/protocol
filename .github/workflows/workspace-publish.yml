@@ -62,7 +62,7 @@ jobs:
           make packages
       - name: Prepare artifact
         run: |
-          mv target/packages/miden-protocol.masp miden-protocol.masp
+          mv target/packages/protocol.masp protocol.masp
       - name: Attest miden-core.masp
         uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
         with:
@@ -73,4 +73,4 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -e
-          gh release upload ${RELEASE_TAG} miden-protocol.masp
+          gh release upload ${RELEASE_TAG} protocol.masp

@@ -13,7 +13,7 @@ use miden_protocol::utils::sync::LazyLock;
 const STANDARDS_LIB_BYTES: &[u8] =
     include_bytes!(concat!(env!("OUT_DIR"), "/assets/standards.masl"));
 
-const STANDARDS_LIB_NAME: &str = "miden-standards";
+const STANDARDS_LIB_NAME: &str = "standards";
 
 // MIDEN STANDARDS LIBRARY
 // ================================================================================================

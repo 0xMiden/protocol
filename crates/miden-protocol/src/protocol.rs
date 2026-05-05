@@ -13,7 +13,7 @@ use crate::utils::sync::LazyLock;
 
 const PROTOCOL_LIB_BYTES: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/assets/protocol.masl"));
 
-const PROTOCOL_PACKAGE_NAME: &str = "miden-protocol";
+const PROTOCOL_PACKAGE_NAME: &str = "protocol";
 
 // PROTOCOL LIBRARY
 // ================================================================================================
