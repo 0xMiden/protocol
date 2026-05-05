@@ -510,3 +510,13 @@ const _: () = assert!(
     (LINK_MAP_REGION_END_PTR - LINK_MAP_REGION_START_PTR).is_multiple_of(LINK_MAP_ENTRY_SIZE),
     "the link map memory range should cleanly contain a multiple of the entry size"
 );
+
+// KERNEL SCRATCH MEMORY
+// ------------------------------------------------------------------------------------------------
+
+/// A scratch memory region for temporary use like computing commitments over a number of elements.
+///
+/// WARNING: This memory region should be assumed to contain garbage rather than zeros initially.
+///
+/// At most 1024 elements should be written to this region, though this number can be increased.
+pub const KERNEL_SCRATCH_PTR: MemoryAddress = 67108864;

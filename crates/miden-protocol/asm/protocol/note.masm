@@ -22,7 +22,7 @@ const ERR_OUTPUT_NOTE_ATTACHMENT_IDX_OUT_OF_BOUNDS = "attachment index out of bo
 # =================================================================================================
 
 #! The number of elements in a word.
-const WORD_SIZE = 4
+pub const WORD_SIZE = 4
 
 # NOTE UTILITY PROCEDURES
 # =================================================================================================

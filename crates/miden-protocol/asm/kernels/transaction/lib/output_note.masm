@@ -503,7 +503,7 @@ end
 #!
 #! Where:
 #! - num_attachments is the number of attachments the note had before this attachment was added.
-#! - attachment_scheme is the user-defined type of the attachment.
+#! - attachment_scheme is the user-defined scheme of the attachment.
 #! - note_ptr is the memory address at which the output note data begins.
 proc set_attachment_schemes
     # the schemes are stored as follows in the third felt:

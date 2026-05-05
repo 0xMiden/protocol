@@ -317,10 +317,15 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
             exec.output_note::create
             # => [note_idx = 2]
 
-            push.{ATTACHMENT3}
+            # Store attachment3 words to memory at address 1024
+            push.{attachment3_word0} mem_storew_le.1024 dropw
+            push.{attachment3_word1} mem_storew_le.1028 dropw
+
+            push.1024
+            push.{num_attachment3_words}
             push.{attachment_scheme3}
-            # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx]
-            exec.output_note::add_array_attachment
+            # => [attachment_scheme, num_words, ptr, note_idx]
+            exec.output_note::add_words_attachment
             # => []
         end
     ",
@@ -340,7 +345,9 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
         attachment_scheme2 = attachment2.attachment_scheme().as_u16(),
         ATTACHMENT2 = Word::from([2, 3, 4, 5u32]),
         attachment_scheme3 = attachment3.attachment_scheme().as_u16(),
-        ATTACHMENT3 = attachment3.content().to_commitment(),
+        attachment3_word0 = attachment3.content().as_words()[0],
+        attachment3_word1 = attachment3.content().as_words()[1],
+        num_attachment3_words = attachment3.content().num_words(),
     );
 
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script_src)?;
@@ -349,12 +356,10 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
     // --------------------------------------------------------------------------------------------
     // execute the transaction and get the witness
 
-    let content = attachment3.content();
-    assert!(content.num_words() > 1, "expected multi-word attachment");
+    assert!(attachment3.content().num_words() > 1, "expected multi-word attachment");
 
     let tx_context = TransactionContextBuilder::new(executor_account)
         .tx_script(tx_script)
-        .extend_advice_map(vec![(content.to_commitment(), content.to_elements())])
         .extend_expected_output_notes(vec![
             RawOutputNote::Full(expected_output_note_2.clone()),
             RawOutputNote::Full(expected_output_note_3.clone()),
