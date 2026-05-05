@@ -14,7 +14,8 @@ pub mod rbac;
 /// [`ownable2step::Ownable2Step`], so the latter is included alongside it).
 ///
 /// Pass to
-/// [`AccountBuilder::with_components`] to install the access control components on the account.:
+/// [`AccountBuilder::with_components`][miden_protocol::account::AccountBuilder::with_components]
+/// to install the access control components on the account:
 ///
 /// ```no_run
 /// use miden_protocol::account::AccountBuilder;

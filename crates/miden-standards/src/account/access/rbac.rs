@@ -38,7 +38,8 @@ static ROLE_MEMBERSHIP_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 ///
 /// RBAC is a superset of [`Ownable2Step`] and depends on it: the top-level authority is
 /// the [`Ownable2Step`] owner of the account. Build the pair via
-/// [`AccessControl::Rbac`] passed to [`AccountBuilder::with_components`].
+/// [`AccessControl::Rbac`][crate::account::access::AccessControl::Rbac] passed to
+/// [`AccountBuilder::with_components`][miden_protocol::account::AccountBuilder::with_components].
 /// This avoids duplicated state, duplicated 2-step transfer logic, and duplicated notes
 /// for owner transfers. If you only need single-account control, use [`Ownable2Step`]
 /// alone.
