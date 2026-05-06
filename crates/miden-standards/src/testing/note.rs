@@ -38,7 +38,7 @@ enum SourceCodeOrigin {
 }
 
 #[derive(Debug, Clone)]
-pub struct NoteBuilder {
+pub struct TestNoteBuilder {
     sender: AccountId,
     storage: Vec<Felt>,
     assets: Vec<Asset>,
@@ -51,7 +51,7 @@ pub struct NoteBuilder {
     source_code: SourceCodeOrigin,
 }
 
-impl NoteBuilder {
+impl TestNoteBuilder {
     pub fn new<T: Rng>(sender: AccountId, mut rng: T) -> Self {
         let serial_num = Word::from([
             Felt::new(rng.random()),

@@ -26,7 +26,7 @@ use miden_standards::note::{
     StandardNote,
 };
 use miden_standards::testing::mock_account::MockAccountExt;
-use miden_standards::testing::note::NoteBuilder;
+use miden_standards::testing::note::TestNoteBuilder;
 use miden_tx::auth::UnreachableAuth;
 use miden_tx::{NoteConsumptionChecker, TransactionExecutor, TransactionExecutorError};
 use rand::{Rng, SeedableRng};
@@ -143,7 +143,7 @@ async fn check_note_consumability_partial_success() -> anyhow::Result<()> {
 
     let sender = AccountId::try_from(ACCOUNT_ID_SENDER).unwrap();
 
-    let failing_note_1 = NoteBuilder::new(
+    let failing_note_1 = TestNoteBuilder::new(
         sender,
         ChaCha20Rng::from_seed(ChaCha20Rng::from_seed([0_u8; 32]).random()),
     )
@@ -151,7 +151,7 @@ async fn check_note_consumability_partial_success() -> anyhow::Result<()> {
     .dynamically_linked_libraries([TransactionKernel::library()])
     .build()?;
 
-    let failing_note_2 = NoteBuilder::new(
+    let failing_note_2 = TestNoteBuilder::new(
         sender,
         ChaCha20Rng::from_seed(ChaCha20Rng::from_seed([0_u8; 32]).random()),
     )
@@ -308,14 +308,14 @@ async fn check_note_consumability_epilogue_failure_with_new_combination() -> any
         NoteType::Public,
     )?;
     let sender = AccountId::try_from(ACCOUNT_ID_SENDER).unwrap();
-    let successful_note_3 = NoteBuilder::new(
+    let successful_note_3 = TestNoteBuilder::new(
         sender,
         ChaCha20Rng::from_seed(ChaCha20Rng::from_seed([0_u8; 32]).random()),
     )
     .code("@note_script pub proc main push.1 drop push.1 div end")
     .dynamically_linked_libraries([TransactionKernel::library()])
     .build()?;
-    let failing_note_1 = NoteBuilder::new(
+    let failing_note_1 = TestNoteBuilder::new(
         sender,
         ChaCha20Rng::from_seed(ChaCha20Rng::from_seed([0_u8; 32]).random()),
     )
@@ -326,7 +326,7 @@ async fn check_note_consumability_epilogue_failure_with_new_combination() -> any
     // Create a note that causes epilogue failure. Adds assets to the transaction without moving
     // them anywhere which causes an "asset imbalance" that violates the asset preservation rules.
     let note_asset = FungibleAsset::mock(700).unwrap_fungible();
-    let fail_epilogue_note = NoteBuilder::new(account.id(), &mut rand::rng())
+    let fail_epilogue_note = TestNoteBuilder::new(account.id(), &mut rand::rng())
         .add_assets([Asset::from(note_asset)])
         .build()?;
     builder.add_output_note(RawOutputNote::Full(fail_epilogue_note.clone()));

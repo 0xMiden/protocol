@@ -32,7 +32,7 @@ use miden_protocol::transaction::{RawOutputNote, TransactionArgs};
 use miden_protocol::{Felt, Word};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
-use miden_standards::testing::note::NoteBuilder;
+use miden_standards::testing::note::TestNoteBuilder;
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 
@@ -452,7 +452,7 @@ pub async fn test_timelock() -> anyhow::Result<()> {
 
     let lock_timestamp = 2_000_000_000;
     let source_manager = Arc::new(DefaultSourceManager::default());
-    let timelock_note = NoteBuilder::new(account.id(), &mut ChaCha20Rng::from_os_rng())
+    let timelock_note = TestNoteBuilder::new(account.id(), &mut ChaCha20Rng::from_os_rng())
         .note_storage([Felt::from(lock_timestamp)])?
         .source_manager(source_manager.clone())
         .code(code.clone())

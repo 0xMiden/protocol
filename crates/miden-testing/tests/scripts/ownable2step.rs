@@ -26,7 +26,7 @@ use miden_standards::errors::standards::{
     ERR_SENDER_NOT_NOMINATED_OWNER,
     ERR_SENDER_NOT_OWNER,
 };
-use miden_standards::testing::note::NoteBuilder;
+use miden_standards::testing::note::TestNoteBuilder;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 
 // HELPERS
@@ -93,7 +93,7 @@ fn create_transfer_note(
         new_owner_suffix = Felt::new(new_owner.suffix().as_canonical_u64()),
     );
 
-    let note = NoteBuilder::new(sender, rng)
+    let note = TestNoteBuilder::new(sender, rng)
         .source_manager(source_manager)
         .code(script)
         .build()?;
@@ -116,7 +116,7 @@ fn create_accept_note(
         end
     "#;
 
-    let note = NoteBuilder::new(sender, rng)
+    let note = TestNoteBuilder::new(sender, rng)
         .source_manager(source_manager)
         .code(script)
         .build()?;
@@ -139,7 +139,7 @@ fn create_renounce_note(
         end
     "#;
 
-    let note = NoteBuilder::new(sender, rng)
+    let note = TestNoteBuilder::new(sender, rng)
         .source_manager(source_manager)
         .code(script)
         .build()?;
@@ -474,7 +474,7 @@ async fn test_transfer_ownership_fails_with_invalid_account_id() -> anyhow::Resu
 
     let source_manager: Arc<dyn SourceManagerSync> = Arc::new(DefaultSourceManager::default());
     let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
-    let note = NoteBuilder::new(owner, &mut rng)
+    let note = TestNoteBuilder::new(owner, &mut rng)
         .source_manager(Arc::clone(&source_manager))
         .code(script)
         .build()?;

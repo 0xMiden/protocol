@@ -66,7 +66,7 @@ use miden_standards::note::{
     P2idNote,
 };
 use miden_standards::testing::mock_account::MockAccountExt;
-use miden_standards::testing::note::NoteBuilder;
+use miden_standards::testing::note::TestNoteBuilder;
 use rstest::rstest;
 
 use super::{TestSetup, setup_test};
@@ -240,14 +240,14 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
     let input_note_2 = create_public_p2any_note(ACCOUNT_ID_PRIVATE_SENDER.try_into()?, [asset_2]);
 
     // create output note 1
-    let output_note_1 = NoteBuilder::new(account.id(), &mut rng)
+    let output_note_1 = TestNoteBuilder::new(account.id(), &mut rng)
         .tag(NoteTag::with_account_target(account.id()).as_u32())
         .note_type(NoteType::Public)
         .add_assets([asset_1])
         .build()?;
 
     // create output note 2
-    let output_note_2 = NoteBuilder::new(account.id(), &mut rng)
+    let output_note_2 = TestNoteBuilder::new(account.id(), &mut rng)
         .tag(NoteTag::with_custom_account_target(account.id(), 2)?.as_u32())
         .note_type(NoteType::Public)
         .add_assets([asset_2])
@@ -1331,7 +1331,7 @@ async fn test_add_word_attachment() -> anyhow::Result<()> {
     let attachment_word = Word::from([3, 4, 5, 6u32]);
     let attachment = NoteAttachment::with_word(NoteAttachmentScheme::MAX, attachment_word);
     let output_note = RawOutputNote::Full(
-        NoteBuilder::new(account.id(), rng).attachment(attachment.clone()).build()?,
+        TestNoteBuilder::new(account.id(), rng).attachment(attachment.clone()).build()?,
     );
 
     let tx_script = format!(
@@ -1387,8 +1387,9 @@ async fn test_add_words_attachment() -> anyhow::Result<()> {
     let rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
     let words = vec![Word::from([3, 4, 5, 6u32]); NoteAttachment::MAX_NUM_WORDS as usize];
     let attachment = NoteAttachment::with_words(NoteAttachmentScheme::new(42)?, words.clone())?;
-    let output_note =
-        RawOutputNote::Full(NoteBuilder::new(account.id(), rng).attachment(attachment).build()?);
+    let output_note = RawOutputNote::Full(
+        TestNoteBuilder::new(account.id(), rng).attachment(attachment).build()?,
+    );
 
     let attachment_ptr = 1024;
     let store_attachment_words = words
@@ -1460,7 +1461,7 @@ async fn test_set_network_target_account_attachment() -> anyhow::Result<()> {
         ACCOUNT_ID_NETWORK_NON_FUNGIBLE_FAUCET.try_into()?,
         NoteExecutionHint::on_block_slot(5, 32, 3),
     )?;
-    let output_note = NoteBuilder::new(account.id(), rng)
+    let output_note = TestNoteBuilder::new(account.id(), rng)
         .note_type(NoteType::Private)
         .attachment(attachment)
         .build()?;
@@ -1493,7 +1494,7 @@ async fn test_network_note() -> anyhow::Result<()> {
     let target_id = AccountId::try_from(ACCOUNT_ID_NETWORK_NON_FUNGIBLE_FAUCET)?;
     let attachment = NetworkAccountTarget::new(target_id, NoteExecutionHint::Always)?;
 
-    let note = NoteBuilder::new(sender.id(), &mut rng)
+    let note = TestNoteBuilder::new(sender.id(), &mut rng)
         .note_type(NoteType::Public)
         .attachment(attachment)
         .build()?;
@@ -1509,7 +1510,7 @@ async fn test_network_note() -> anyhow::Result<()> {
     assert_eq!(network_note.note_type(), expected_note_type);
 
     // TryFrom<Note> succeeds for a valid network note.
-    let valid_note = NoteBuilder::new(sender.id(), &mut rng)
+    let valid_note = TestNoteBuilder::new(sender.id(), &mut rng)
         .note_type(NoteType::Public)
         .attachment(attachment)
         .build()?;
@@ -1517,8 +1518,9 @@ async fn test_network_note() -> anyhow::Result<()> {
     assert_eq!(try_from_note.target_account_id(), target_id);
 
     // --- Invalid: note with default (empty) attachment ---
-    let non_network_note =
-        NoteBuilder::new(sender.id(), &mut rng).note_type(NoteType::Public).build()?;
+    let non_network_note = TestNoteBuilder::new(sender.id(), &mut rng)
+        .note_type(NoteType::Public)
+        .build()?;
 
     // is_network_note() returns false for a note without a NetworkAccountTarget attachment.
     assert!(!non_network_note.is_network_note());
@@ -1533,7 +1535,7 @@ async fn test_network_note() -> anyhow::Result<()> {
     assert!(AccountTargetNetworkNote::try_from(non_network_note).is_err());
 
     // --- Invalid: private note with valid NetworkAccountTarget attachment ---
-    let private_network_note = NoteBuilder::new(sender.id(), &mut rng)
+    let private_network_note = TestNoteBuilder::new(sender.id(), &mut rng)
         .note_type(NoteType::Private)
         .attachment(attachment)
         .build()?;
@@ -1566,7 +1568,7 @@ async fn test_get_attachment_commitments_ptr() -> anyhow::Result<()> {
         NoteAttachment::with_word(NoteAttachmentScheme::new(2)?, Word::from([7, 8, 9, 10u32]));
 
     let output_note = RawOutputNote::Full(
-        NoteBuilder::new(account.id(), rng)
+        TestNoteBuilder::new(account.id(), rng)
             .attachment(attachment_0.clone())
             .attachment(attachment_1.clone())
             .build()?,
@@ -1674,7 +1676,7 @@ async fn test_get_attachment_ptr() -> anyhow::Result<()> {
     )?;
 
     let output_note = RawOutputNote::Full(
-        NoteBuilder::new(account.id(), rng)
+        TestNoteBuilder::new(account.id(), rng)
             .attachment(attachment_0.clone())
             .attachment(attachment_1.clone())
             .build()?,
@@ -1789,11 +1791,12 @@ async fn test_find_attachment(
     let scheme_0 = NoteAttachmentScheme::new(10)?;
     let scheme_1 = NoteAttachmentScheme::new(20)?;
 
-    let output_note = NoteBuilder::new(account.id(), RandomCoin::new(Word::from([1, 2, 3, 4u32])))
-        .note_type(NoteType::Public)
-        .attachment(NoteAttachment::with_word(scheme_0, word_0))
-        .attachment(NoteAttachment::with_word(scheme_1, word_1))
-        .build()?;
+    let output_note =
+        TestNoteBuilder::new(account.id(), RandomCoin::new(Word::from([1, 2, 3, 4u32])))
+            .note_type(NoteType::Public)
+            .attachment(NoteAttachment::with_word(scheme_0, word_0))
+            .attachment(NoteAttachment::with_word(scheme_1, word_1))
+            .build()?;
 
     let spawn_note = builder.add_spawn_note([&output_note])?;
     let mut mock_chain = builder.build()?;

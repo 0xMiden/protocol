@@ -12,7 +12,7 @@ use miden_protocol::testing::account_id::{
 use miden_protocol::testing::constants::FUNGIBLE_ASSET_AMOUNT;
 use miden_protocol::testing::storage::MOCK_MAP_SLOT;
 use miden_standards::code_builder::CodeBuilder;
-use miden_standards::testing::note::NoteBuilder;
+use miden_standards::testing::note::TestNoteBuilder;
 
 use super::Word;
 use crate::{Auth, MockChain, TransactionContextBuilder};
@@ -33,7 +33,7 @@ async fn adding_fungible_assets_with_lazy_loading_succeeds() -> anyhow::Result<(
 
     // Build a note that adds the assets to the input vault of the transaction. This is necessary
     // to adhere to asset preservation rules.
-    let asset_note = NoteBuilder::new(faucet_id1, rand::rng())
+    let asset_note = TestNoteBuilder::new(faucet_id1, rand::rng())
         .add_assets([fungible_asset1, fungible_asset2].map(Asset::from))
         .build()?;
 

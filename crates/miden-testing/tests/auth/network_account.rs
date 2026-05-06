@@ -10,7 +10,7 @@ use miden_standards::errors::standards::{
     ERR_NOTE_SCRIPT_ALLOWLIST_NOTE_NOT_ALLOWED,
     ERR_NOTE_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED,
 };
-use miden_standards::testing::note::NoteBuilder;
+use miden_standards::testing::note::TestNoteBuilder;
 use miden_testing::{MockChain, assert_transaction_executor_error};
 
 // HELPER FUNCTIONS
@@ -61,7 +61,7 @@ async fn test_auth_network_account_rejects_tx_script() -> anyhow::Result<()> {
 async fn test_auth_network_account_rejects_when_any_note_disallowed() -> anyhow::Result<()> {
     // Build a template note with the default code to learn the "allowed" script root.
     let bootstrap_account = build_allowlist_account(Vec::new())?;
-    let template_allowed = NoteBuilder::new(bootstrap_account.id(), &mut rand::rng())
+    let template_allowed = TestNoteBuilder::new(bootstrap_account.id(), &mut rand::rng())
         .build()
         .expect("failed to build template allowed note");
     let allowed_root = template_allowed.script().root();
@@ -73,17 +73,17 @@ async fn test_auth_network_account_rejects_when_any_note_disallowed() -> anyhow:
     builder.add_account(account.clone())?;
 
     // Allowed note: uses the default note code so its script root matches `allowed_root`.
-    let note_allowed = NoteBuilder::new(account.id(), &mut rand::rng())
+    let note_allowed = TestNoteBuilder::new(account.id(), &mut rand::rng())
         .build()
         .expect("failed to build allowed input note");
     assert_eq!(
         note_allowed.script().root(),
         allowed_root,
-        "default-code NoteBuilder should reproduce the allowed script root",
+        "default-code TestNoteBuilder should reproduce the allowed script root",
     );
 
     // Disallowed note: distinct code → distinct script root → not in the allowlist.
-    let note_disallowed = NoteBuilder::new(account.id(), &mut rand::rng())
+    let note_disallowed = TestNoteBuilder::new(account.id(), &mut rand::rng())
         .code(
             "\
         @note_script
@@ -123,7 +123,7 @@ async fn test_auth_network_account_accepts_allowed_note() -> anyhow::Result<()> 
     // First build a template note so we know its script root, then use that root to configure the
     // account's allowlist.
     let bootstrap_account = build_allowlist_account(Vec::new())?;
-    let template_note = NoteBuilder::new(bootstrap_account.id(), &mut rand::rng())
+    let template_note = TestNoteBuilder::new(bootstrap_account.id(), &mut rand::rng())
         .build()
         .expect("failed to build template note");
     let allowed_root = template_note.script().root();
@@ -136,13 +136,13 @@ async fn test_auth_network_account_accepts_allowed_note() -> anyhow::Result<()> 
 
     // Build a note that uses the same code but is sent from the real account so its script root
     // matches `allowed_root`.
-    let note = NoteBuilder::new(account.id(), &mut rand::rng())
+    let note = TestNoteBuilder::new(account.id(), &mut rand::rng())
         .build()
         .expect("failed to build input note");
     assert_eq!(
         note.script().root(),
         allowed_root,
-        "NoteBuilder with default code should produce a fixed script root"
+        "TestNoteBuilder with default code should produce a fixed script root"
     );
     builder.add_output_note(RawOutputNote::Full(note.clone()));
 

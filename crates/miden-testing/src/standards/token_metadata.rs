@@ -42,7 +42,7 @@ use miden_standards::errors::standards::{
     ERR_MAX_SUPPLY_NOT_MUTABLE,
     ERR_SENDER_NOT_OWNER,
 };
-use miden_standards::testing::note::NoteBuilder;
+use miden_standards::testing::note::TestNoteBuilder;
 
 use crate::{MockChain, TransactionContextBuilder, assert_transaction_executor_error};
 
@@ -685,7 +685,7 @@ async fn test_field_setter_owner_succeeds(
     let source_manager = Arc::new(DefaultSourceManager::default());
 
     let mut rng = RandomCoin::new([Felt::from(42u32); 4].into());
-    let note = NoteBuilder::new(owner, &mut rng)
+    let note = TestNoteBuilder::new(owner, &mut rng)
         .note_type(NoteType::Private)
         .tag(NoteTag::default().into())
         .serial_number(Word::from([7, 8, 9, 10u32]))
@@ -745,7 +745,7 @@ async fn test_field_setter_non_owner_fails(
     let source_manager = Arc::new(DefaultSourceManager::default());
 
     let mut rng = RandomCoin::new([Felt::from(99u32); 4].into());
-    let note = NoteBuilder::new(non_owner, &mut rng)
+    let note = TestNoteBuilder::new(non_owner, &mut rng)
         .note_type(NoteType::Private)
         .tag(NoteTag::default().into())
         .serial_number(Word::from([11, 12, 13, 14u32]))
@@ -913,7 +913,7 @@ async fn set_max_supply_mutable_owner_succeeds() -> anyhow::Result<()> {
     let source_manager = Arc::new(DefaultSourceManager::default());
 
     let mut rng = RandomCoin::new([Felt::from(42u32); 4].into());
-    let note = NoteBuilder::new(owner, &mut rng)
+    let note = TestNoteBuilder::new(owner, &mut rng)
         .note_type(NoteType::Private)
         .tag(NoteTag::default().into())
         .serial_number(Word::from([20, 21, 22, 23u32]))
@@ -961,7 +961,7 @@ async fn set_max_supply_mutable_non_owner_fails() -> anyhow::Result<()> {
     let source_manager = Arc::new(DefaultSourceManager::default());
 
     let mut rng = RandomCoin::new([Felt::from(99u32); 4].into());
-    let note = NoteBuilder::new(non_owner, &mut rng)
+    let note = TestNoteBuilder::new(non_owner, &mut rng)
         .note_type(NoteType::Private)
         .tag(NoteTag::default().into())
         .serial_number(Word::from([30, 31, 32, 33u32]))

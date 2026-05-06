@@ -15,7 +15,7 @@ use miden_standards::errors::standards::{
     ERR_PSWAP_NOT_VALID_ASSET_AMOUNT,
 };
 use miden_standards::note::{PswapNote, PswapNoteStorage};
-use miden_standards::testing::note::NoteBuilder;
+use miden_standards::testing::note::TestNoteBuilder;
 use miden_testing::{Auth, MockChain, MockChainBuilder, assert_transaction_executor_error};
 use rand::SeedableRng;
 use rand::rngs::SmallRng;
@@ -854,7 +854,7 @@ async fn pswap_note_idx_nonzero_regression_test() -> anyhow::Result<()> {
     // Dummy output note to be emitted by the SPAWN note. Sender must equal
     // the transaction's native account (bob) per `create_spawn_note`'s check.
     // No assets — keeps the spawn script trivial.
-    let dummy_note = NoteBuilder::new(bob.id(), SmallRng::seed_from_u64(7777)).build()?;
+    let dummy_note = TestNoteBuilder::new(bob.id(), SmallRng::seed_from_u64(7777)).build()?;
     let spawn_note = builder.add_spawn_note([&dummy_note])?;
 
     let mock_chain = builder.build()?;

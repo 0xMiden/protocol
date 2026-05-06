@@ -6,7 +6,7 @@ use miden_protocol::testing::account_id::{
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
     ACCOUNT_ID_SENDER,
 };
-use miden_standards::testing::note::NoteBuilder;
+use miden_standards::testing::note::TestNoteBuilder;
 use miden_testing::{Auth, MockChain, TxContextInput};
 use miden_tx::auth::UnreachableAuth;
 use miden_tx::{NoteConsumptionChecker, TransactionExecutor};
@@ -82,7 +82,7 @@ pub fn setup_mixed_notes_benchmark(config: MixedNotesConfig) -> anyhow::Result<M
 
     for i in 0..config.failing_note_count {
         let mut rng = RandomCoin::new([i as u32, 0, 0, 0].into());
-        let failing_note = NoteBuilder::new(sender, &mut rng)
+        let failing_note = TestNoteBuilder::new(sender, &mut rng)
             .code("@note_script pub proc main push.0 div end") // Division by zero - will fail.
             .build()?;
         failing_notes.push(failing_note);

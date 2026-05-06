@@ -28,7 +28,7 @@ use miden_protocol::transaction::{RawOutputNote, RawOutputNotes, TransactionOutp
 use miden_protocol::{Hasher, Word};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::mock_account::MockAccountExt;
-use miden_standards::testing::note::NoteBuilder;
+use miden_standards::testing::note::TestNoteBuilder;
 
 use crate::kernel_tests::tx::ExecutionOutputExt;
 use crate::utils::{create_p2any_note, create_public_p2any_note};
@@ -265,7 +265,7 @@ async fn epilogue_fails_when_assets_arent_preserved(
     // Add an input note that (automatically) adds its assets to the transaction's input vault, but
     // _does not_ add the asset to the account. This is just to keep the test conceptually simple -
     // there is no account involved.
-    let input_note = NoteBuilder::new(account.id(), *builder.rng_mut())
+    let input_note = TestNoteBuilder::new(account.id(), *builder.rng_mut())
         .add_assets([Asset::from(input_asset)])
         .build()?;
     builder.add_output_note(RawOutputNote::Full(input_note.clone()));

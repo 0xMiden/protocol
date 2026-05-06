@@ -13,7 +13,7 @@ use miden_protocol::note::{Note, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_SENDER;
 use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote, TransactionHeader};
 use miden_standards::testing::account_component::MockAccountComponent;
-use miden_standards::testing::note::NoteBuilder;
+use miden_standards::testing::note::TestNoteBuilder;
 use miden_tx::LocalTransactionProver;
 use rand::Rng;
 
@@ -276,9 +276,9 @@ async fn noop_tx_and_state_updating_tx_against_same_account_in_same_block() -> a
     )?;
 
     let noop_note0 =
-        NoteBuilder::new(ACCOUNT_ID_SENDER.try_into().unwrap(), &mut rand::rng()).build()?;
+        TestNoteBuilder::new(ACCOUNT_ID_SENDER.try_into().unwrap(), &mut rand::rng()).build()?;
     let noop_note1 =
-        NoteBuilder::new(ACCOUNT_ID_SENDER.try_into().unwrap(), &mut rand::rng()).build()?;
+        TestNoteBuilder::new(ACCOUNT_ID_SENDER.try_into().unwrap(), &mut rand::rng()).build()?;
     builder.add_output_note(RawOutputNote::Full(noop_note0.clone()));
     builder.add_output_note(RawOutputNote::Full(noop_note1.clone()));
     let mut chain = builder.build()?;

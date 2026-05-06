@@ -53,7 +53,7 @@ use miden_standards::errors::standards::{
     ERR_SENDER_NOT_OWNER,
 };
 use miden_standards::note::{BurnNote, MintNote, MintNoteStorage, StandardNote};
-use miden_standards::testing::note::NoteBuilder;
+use miden_standards::testing::note::TestNoteBuilder;
 use miden_testing::utils::create_p2id_note_exact;
 use miden_testing::{
     AccountState,
@@ -156,7 +156,7 @@ async fn execute_faucet_note_script(
     let source_manager = Arc::new(DefaultSourceManager::default());
 
     let mut rng = RandomCoin::new([Felt::from(rng_seed); 4].into());
-    let note = NoteBuilder::new(sender_account_id, &mut rng)
+    let note = TestNoteBuilder::new(sender_account_id, &mut rng)
         .note_type(NoteType::Private)
         .code(note_script_code)
         .build()?;
@@ -573,7 +573,7 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
 
     // Create the trigger note that will call mint
     let mut rng = RandomCoin::new([Felt::from(1u32); 4].into());
-    let trigger_note = NoteBuilder::new(faucet.id(), &mut rng)
+    let trigger_note = TestNoteBuilder::new(faucet.id(), &mut rng)
         .note_type(NoteType::Private)
         .tag(NoteTag::default().into())
         .serial_number(Word::from([1, 2, 3, 4u32]))
@@ -1081,7 +1081,7 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
 
     // Create the transfer note and add it to the builder so it exists on-chain
     let mut rng = RandomCoin::new([Felt::from(200u32); 4].into());
-    let transfer_note = NoteBuilder::new(initial_owner_account_id, &mut rng)
+    let transfer_note = TestNoteBuilder::new(initial_owner_account_id, &mut rng)
         .note_type(NoteType::Private)
         .tag(NoteTag::default().into())
         .serial_number(Word::from([11, 22, 33, 44u32]))
@@ -1127,7 +1127,7 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
         "#;
 
     let mut rng = RandomCoin::new([Felt::from(400u32); 4].into());
-    let accept_note = NoteBuilder::new(new_owner_account_id, &mut rng)
+    let accept_note = TestNoteBuilder::new(new_owner_account_id, &mut rng)
         .note_type(NoteType::Private)
         .tag(NoteTag::default().into())
         .serial_number(Word::from([55, 66, 77, 88u32]))
@@ -1211,7 +1211,7 @@ async fn test_network_faucet_only_owner_can_transfer() -> anyhow::Result<()> {
 
     // Create a note from NON-OWNER that tries to transfer ownership
     let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
-    let transfer_note = NoteBuilder::new(non_owner_account_id, &mut rng)
+    let transfer_note = TestNoteBuilder::new(non_owner_account_id, &mut rng)
         .note_type(NoteType::Private)
         .tag(NoteTag::default().into())
         .serial_number(Word::from([10, 20, 30, 40u32]))
@@ -1294,7 +1294,7 @@ async fn test_network_faucet_renounce_ownership() -> anyhow::Result<()> {
     );
 
     let mut rng = RandomCoin::new([Felt::from(200u32); 4].into());
-    let renounce_note = NoteBuilder::new(owner_account_id, &mut rng)
+    let renounce_note = TestNoteBuilder::new(owner_account_id, &mut rng)
         .note_type(NoteType::Private)
         .tag(NoteTag::default().into())
         .serial_number(Word::from([11, 22, 33, 44u32]))
@@ -1302,7 +1302,7 @@ async fn test_network_faucet_renounce_ownership() -> anyhow::Result<()> {
         .build()?;
 
     let mut rng = RandomCoin::new([Felt::from(300u32); 4].into());
-    let transfer_note = NoteBuilder::new(owner_account_id, &mut rng)
+    let transfer_note = TestNoteBuilder::new(owner_account_id, &mut rng)
         .note_type(NoteType::Private)
         .tag(NoteTag::default().into())
         .serial_number(Word::from([50, 60, 70, 80u32]))
@@ -1487,7 +1487,7 @@ async fn test_network_faucet_non_owner_cannot_burn_when_owner_only_policy_active
     )?;
     let set_policy_note_script = create_set_burn_policy_note_script(BurnOwnerOnly::root());
     let mut rng = RandomCoin::new([Felt::from(500u32); 4].into());
-    let set_policy_note = NoteBuilder::new(owner_account_id, &mut rng)
+    let set_policy_note = TestNoteBuilder::new(owner_account_id, &mut rng)
         .note_type(NoteType::Private)
         .code(set_policy_note_script.as_str())
         .build()?;
@@ -1545,7 +1545,7 @@ async fn test_network_faucet_owner_can_burn_when_owner_only_policy_active() -> a
     )?;
     let set_policy_note_script = create_set_burn_policy_note_script(BurnOwnerOnly::root());
     let mut rng = RandomCoin::new([Felt::from(510u32); 4].into());
-    let set_policy_note = NoteBuilder::new(owner_account_id, &mut rng)
+    let set_policy_note = TestNoteBuilder::new(owner_account_id, &mut rng)
         .note_type(NoteType::Private)
         .code(set_policy_note_script.as_str())
         .build()?;

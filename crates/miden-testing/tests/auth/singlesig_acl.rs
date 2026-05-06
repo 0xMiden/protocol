@@ -19,7 +19,7 @@ use miden_protocol::{Felt, Word};
 use miden_standards::account::auth::AuthSingleSigAcl;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::MockAccountComponent;
-use miden_standards::testing::note::NoteBuilder;
+use miden_standards::testing::note::TestNoteBuilder;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 use miden_tx::TransactionExecutorError;
 use miden_tx::auth::BasicAuthenticator;
@@ -79,7 +79,7 @@ fn setup_acl_test(
     let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
     // Create a mock note to consume (needed to make the transaction non-empty)
-    let note = NoteBuilder::new(account.id(), &mut rand::rng())
+    let note = TestNoteBuilder::new(account.id(), &mut rand::rng())
         .build()
         .expect("failed to create mock note");
     builder.add_output_note(RawOutputNote::Full(note.clone()));

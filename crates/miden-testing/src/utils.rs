@@ -11,7 +11,7 @@ use miden_protocol::note::{Note, NoteAssets, NoteTag, NoteType};
 use miden_protocol::vm::AdviceMap;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::P2idNoteStorage;
-use miden_standards::testing::note::NoteBuilder;
+use miden_standards::testing::note::TestNoteBuilder;
 use rand::SeedableRng;
 use rand::rngs::SmallRng;
 
@@ -153,7 +153,7 @@ pub fn create_p2any_note(
         num_assets = assets.len(),
     );
 
-    NoteBuilder::new(sender, SmallRng::from_seed([0; 32]))
+    TestNoteBuilder::new(sender, SmallRng::from_seed([0; 32]))
         .add_assets(assets.iter().copied())
         .note_type(note_type)
         .serial_number(serial_number)
@@ -192,7 +192,7 @@ where
 
     let (note_code, advice_map) = note_script_that_creates_notes(sender_id, output_notes)?;
 
-    let note = NoteBuilder::new(sender_id, SmallRng::from_os_rng())
+    let note = TestNoteBuilder::new(sender_id, SmallRng::from_os_rng())
         .code(note_code)
         .advice_map(advice_map)
         .dynamically_linked_libraries(CodeBuilder::mock_libraries())

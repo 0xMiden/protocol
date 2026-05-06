@@ -27,7 +27,7 @@ use miden_protocol::transaction::memory::{ASSET_SIZE, ASSET_VALUE_OFFSET};
 use miden_protocol::{EMPTY_WORD, Felt, ONE, WORD_SIZE, Word};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::mock_account::MockAccountExt;
-use miden_standards::testing::note::NoteBuilder;
+use miden_standards::testing::note::TestNoteBuilder;
 use rstest::rstest;
 
 use super::StackInputs;
@@ -674,8 +674,8 @@ async fn test_note_find_attachment(
 
         let mut rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
         // Add a random first note so we test with note_index != 0.
-        let input_note0 = NoteBuilder::new(account.id(), &mut rng).build()?;
-        let input_note1 = NoteBuilder::new(account.id(), &mut rng)
+        let input_note0 = TestNoteBuilder::new(account.id(), &mut rng).build()?;
+        let input_note1 = TestNoteBuilder::new(account.id(), &mut rng)
             .note_type(NoteType::Public)
             .attachment(NoteAttachment::with_word(scheme_0, word_0))
             .attachment(NoteAttachment::with_word(scheme_1, word_1))

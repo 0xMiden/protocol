@@ -19,7 +19,7 @@ use miden_protocol::transaction::{
     RawOutputNote,
 };
 use miden_standards::testing::account_component::MockAccountComponent;
-use miden_standards::testing::note::NoteBuilder;
+use miden_standards::testing::note::TestNoteBuilder;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 
@@ -33,7 +33,7 @@ fn mock_account_id(num: u8) -> AccountId {
 
 pub fn mock_note(num: u8) -> Note {
     let sender = mock_account_id(num);
-    NoteBuilder::new(sender, SmallRng::from_seed([num; 32])).build().unwrap()
+    TestNoteBuilder::new(sender, SmallRng::from_seed([num; 32])).build().unwrap()
 }
 
 pub fn mock_output_note(num: u8) -> OutputNote {
