@@ -168,7 +168,7 @@ fn note_setup_stack_assertions(exec_output: &ExecutionOutput, inputs: &Transacti
     // assert that the stack contains the note storage at the end of execution
     assert_eq!(
         exec_output.get_stack_word(0),
-        inputs.input_notes().get_note(0).note().script().root()
+        inputs.input_notes().get_note(0).note().script().root().into()
     );
     assert_eq!(exec_output.get_stack_word(4), Word::empty());
     assert_eq!(exec_output.get_stack_word(8), Word::empty());

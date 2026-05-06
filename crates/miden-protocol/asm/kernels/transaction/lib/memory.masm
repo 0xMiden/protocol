@@ -143,16 +143,16 @@ const VALIDATOR_KEY_COMMITMENT_PTR=824
 const BLOCK_METADATA_PTR=828
 
 # The memory address at which the fee parameters are stored. These occupy a double word.
-# [0, verification_base_fee, native_asset_id_suffix, native_asset_id_prefix]
+# [0, verification_base_fee, fee_faucet_id_suffix, fee_faucet_id_prefix]
 # [0, 0, 0, 0]
 const FEE_PARAMETERS_PTR=832
 
 # The memory address at which the verification base fee is stored.
 const VERIFICATION_BASE_FEE_PTR = FEE_PARAMETERS_PTR + 1
 
-# The memory address at which the native asset ID is stored.
-const NATIVE_ASSET_ID_SUFFIX_PTR = FEE_PARAMETERS_PTR + 2
-const NATIVE_ASSET_ID_PREFIX_PTR = FEE_PARAMETERS_PTR + 3
+# The memory address at which the fee faucet ID is stored.
+const FEE_FAUCET_ID_SUFFIX_PTR = FEE_PARAMETERS_PTR + 2
+const FEE_FAUCET_ID_PREFIX_PTR = FEE_PARAMETERS_PTR + 3
 
 # The memory address at which the note root is stored
 const NOTE_ROOT_PTR=840
@@ -733,18 +733,18 @@ pub proc get_blk_timestamp
     mem_load.BLOCK_METADATA_TIMESTAMP_PTR
 end
 
-#! Returns the faucet ID of the native asset as defined in the transaction's reference block.
+#! Returns the faucet ID of the fee asset as defined in the transaction's reference block.
 #!
 #! Inputs:  []
-#! Outputs: [native_asset_id_suffix, native_asset_id_prefix]
+#! Outputs: [fee_faucet_id_suffix, fee_faucet_id_prefix]
 #!
 #! Where:
-#! - native_asset_id_{prefix,suffix} are the prefix and suffix felts of the faucet ID that defines
-#!   the native asset.
-pub proc get_native_asset_id
-    mem_load.NATIVE_ASSET_ID_PREFIX_PTR
-    mem_load.NATIVE_ASSET_ID_SUFFIX_PTR
-    # => [native_asset_id_suffix, native_asset_id_prefix]
+#! - fee_faucet_id_{prefix,suffix} are the prefix and suffix felts of the faucet ID that defines
+#!   the fee asset.
+pub proc get_fee_faucet_id
+    mem_load.FEE_FAUCET_ID_PREFIX_PTR
+    mem_load.FEE_FAUCET_ID_SUFFIX_PTR
+    # => [fee_faucet_id_suffix, fee_faucet_id_prefix]
 end
 
 #! Returns the verification base fee from the transaction's reference block.

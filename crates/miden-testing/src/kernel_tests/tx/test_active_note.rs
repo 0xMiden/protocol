@@ -610,6 +610,6 @@ async fn test_active_note_get_script_root() -> anyhow::Result<()> {
     let exec_output = tx_context.execute_code(code).await?;
 
     let script_root = tx_context.input_notes().get_note(0).note().script().root();
-    assert_eq!(exec_output.get_stack_word(0), script_root);
+    assert_eq!(exec_output.get_stack_word(0), script_root.into());
     Ok(())
 }

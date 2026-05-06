@@ -45,7 +45,7 @@ pub struct Ownable2Step {
 
 impl Ownable2Step {
     /// The name of the component.
-    pub const NAME: &'static str = "miden::standards::components::access::ownable2step";
+    pub const NAME: &'static str = "miden::standards::access::ownable2step";
 
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------

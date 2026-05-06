@@ -14,7 +14,7 @@ use miden_protocol::account::{Account, AccountHeader, AccountId};
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::assembly::debuginfo::SourceManagerSync;
 use miden_protocol::block::account_tree::AccountWitness;
-use miden_protocol::note::{Note, NoteId, NoteScript};
+use miden_protocol::note::{Note, NoteId, NoteScript, NoteScriptRoot};
 use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
 use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
 use miden_protocol::transaction::{
@@ -81,7 +81,7 @@ pub struct TransactionContextBuilder {
     tx_inputs: Option<TransactionInputs>,
     auth_args: Word,
     signatures: Vec<(PublicKeyCommitment, Word, Signature)>,
-    note_scripts: BTreeMap<Word, NoteScript>,
+    note_scripts: BTreeMap<NoteScriptRoot, NoteScript>,
     is_lazy_loading_enabled: bool,
     is_debug_mode_enabled: bool,
 }
