@@ -4,12 +4,7 @@ use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use super::{
-    AccountDeltaError,
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    AccountDeltaError, ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 use crate::account::AccountType;
 use crate::asset::{Asset, AssetVaultKey, FungibleAsset, NonFungibleAsset};
@@ -542,7 +537,7 @@ impl Serializable for NonFungibleAssetDelta {
 impl Deserializable for NonFungibleAssetDelta {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let mut delta = Self::default();
-        
+
         let num_added = source.read_usize()?;
         for _ in 0..num_added {
             let added_asset: NonFungibleAsset = source.read()?;
@@ -550,7 +545,7 @@ impl Deserializable for NonFungibleAssetDelta {
                 .apply_action(added_asset, NonFungibleDeltaAction::Add)
                 .map_err(|err| DeserializationError::InvalidValue(err.to_string()))?;
         }
-        
+
         let num_removed = source.read_usize()?;
         for _ in 0..num_removed {
             let removed_asset: NonFungibleAsset = source.read()?;
@@ -558,7 +553,7 @@ impl Deserializable for NonFungibleAssetDelta {
                 .apply_action(removed_asset, NonFungibleDeltaAction::Remove)
                 .map_err(|err| DeserializationError::InvalidValue(err.to_string()))?;
         }
-        
+
         Ok(delta)
     }
 }
@@ -575,14 +570,13 @@ pub enum NonFungibleDeltaAction {
 #[cfg(test)]
 mod tests {
     use super::{AccountVaultDelta, Deserializable, NonFungibleAssetDelta, Serializable};
-    use crate::utils::serde::ByteWriter;
-    use alloc::vec::Vec;
     use crate::account::AccountId;
     use crate::asset::{Asset, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
     use crate::testing::account_id::{
-        ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
-        ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
+        ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET, ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     };
+    use crate::utils::serde::ByteWriter;
+    use alloc::vec::Vec;
 
     #[test]
     fn test_serde_account_vault() {
@@ -702,8 +696,8 @@ mod tests {
 
         // num_added = 2 (duplicate)
         bytes.write_usize(2);
-        bytes.write(&asset);
-        bytes.write(&asset);
+        bytes.write(asset);
+        bytes.write(asset);
 
         // num_removed = 0
         bytes.write_usize(0);
