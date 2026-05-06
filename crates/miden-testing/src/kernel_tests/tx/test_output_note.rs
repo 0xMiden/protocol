@@ -1663,10 +1663,15 @@ async fn test_get_attachment_ptr() -> anyhow::Result<()> {
     let account = Account::mock(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET, Auth::IncrNonce);
     let rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
 
-    let word_0 = Word::from([3, 4, 5, 6u32]);
-    let word_1 = Word::from([7, 8, 9, 10u32]);
-    let attachment_0 = NoteAttachment::with_word(NoteAttachmentScheme::new(1)?, word_0);
-    let attachment_1 = NoteAttachment::with_word(NoteAttachmentScheme::new(2)?, word_1);
+    let attachment0_word = Word::from([3, 4, 5, 6u32]);
+    let attachment1_word0 = Word::from([7, 8, 9, 10u32]);
+    let attachment1_word1 = Word::from([11, 12, 13, 14u32]);
+
+    let attachment_0 = NoteAttachment::with_word(NoteAttachmentScheme::new(1)?, attachment0_word);
+    let attachment_1 = NoteAttachment::with_words(
+        NoteAttachmentScheme::new(2)?,
+        [attachment1_word0, attachment1_word1].to_vec(),
+    )?;
 
     let output_note = RawOutputNote::Full(
         NoteBuilder::new(account.id(), rng)
@@ -1676,7 +1681,7 @@ async fn test_get_attachment_ptr() -> anyhow::Result<()> {
     );
 
     let tx_script = format!(
-        "
+        r#"
         use miden::protocol::output_note
         use miden::core::sys
 
@@ -1694,32 +1699,55 @@ async fn test_get_attachment_ptr() -> anyhow::Result<()> {
             exec.output_note::add_word_attachment
             # => []
 
-            # add second word attachment
-            push.0
-            push.{ATTACHMENT_WORD_1}
-            push.{attachment_scheme_1}
-            # => [attachment_scheme, ATTACHMENT, note_idx=0]
-            exec.output_note::add_word_attachment
+            # write attachment elements to memory
+            push.{attachment1_word0} mem_storew_le.1024 dropw
+            push.{attachment1_word1} mem_storew_le.1028 dropw
             # => []
 
-            # --- get attachment 1 first (to debug with non-zero idx) ---
+            # add second attachment
+            push.0
+            push.1024
+            push.2
+            push.{attachment_scheme_1}
+            # => [attachment_scheme, num_words, attachment_ptr, note_idx=0]
+            exec.output_note::add_words_attachment
+            # => []
+
+            # --- get attachment 1 first (to use a non-zero idx) ---
             push.0 push.1
             # => [attachment_idx=1, note_idx=0]
             exec.output_note::get_attachment_ptr
-            # => [attachment_ptr, num_words]
-            drop drop
+            # => [num_words, attachment_ptr]
+
+            eq.{attachment1_num_words}
+            assert.err="expected attachment 1 to have {attachment1_num_words} words"
+            # => [attachment_ptr]
+
+            # validate first word in attachment_ptr
+            padw dup.4 mem_loadw_le
+            # => [ATTACHMENT1_WORD0, attachment_ptr]
+            push.{attachment1_word0}
+            assert_eqw.err="attachment 1 word 0 mismatch"
+            # => [attachment_ptr]
+
+            # validate second word in attachment_ptr (offset by 4)
+            padw movup.4 add.4 mem_loadw_le
+            # => [ATTACHMENT1_WORD1]
+            push.{attachment1_word1}
+            assert_eqw.err="attachment 1 word 1 mismatch"
+            # => []
 
             # truncate the stack
             exec.sys::truncate_stack
         end
-        ",
+        "#,
         RECIPIENT = output_note.recipient().unwrap().digest(),
         note_type = output_note.metadata().note_type() as u8,
         tag = output_note.metadata().tag().as_u32(),
         attachment_scheme_0 = attachment_0.attachment_scheme().as_u16(),
-        ATTACHMENT_WORD_0 = word_0,
+        ATTACHMENT_WORD_0 = attachment0_word,
         attachment_scheme_1 = attachment_1.attachment_scheme().as_u16(),
-        ATTACHMENT_WORD_1 = word_1,
+        attachment1_num_words = attachment_1.num_words(),
     );
 
     let tx_script = CodeBuilder::new().compile_tx_script(tx_script)?;
