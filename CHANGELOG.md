@@ -37,6 +37,7 @@
 - Made deserialization of `AccountCode` more robust ([#2788](https://github.com/0xMiden/protocol/pull/2788)).
 - Fixed `output_note::add_asset` and `output_note::set_attachment` to no longer accept invalid note indices ([#2824](https://github.com/0xMiden/protocol/pull/2824)).
 - Fixed auth components to use initial storage state for authentication ([#2677](https://github.com/0xMiden/protocol/issues/2677)).
+- Reject duplicate non-fungible asset entries during `AccountVaultDelta` deserialization ([#2870](https://github.com/0xMiden/protocol/pull/2870)).
 
 ## 0.14.5 (2026-04-23)
 

@@ -4,7 +4,12 @@ use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use super::{
-    AccountDeltaError, ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
+    AccountDeltaError,
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
 };
 use crate::account::AccountType;
 use crate::asset::{Asset, AssetVaultKey, FungibleAsset, NonFungibleAsset};
@@ -569,14 +574,16 @@ pub enum NonFungibleDeltaAction {
 
 #[cfg(test)]
 mod tests {
+    use alloc::vec::Vec;
+
     use super::{AccountVaultDelta, Deserializable, NonFungibleAssetDelta, Serializable};
     use crate::account::AccountId;
     use crate::asset::{Asset, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
     use crate::testing::account_id::{
-        ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET, ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
+        ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
+        ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     };
     use crate::utils::serde::ByteWriter;
-    use alloc::vec::Vec;
 
     #[test]
     fn test_serde_account_vault() {
