@@ -11,7 +11,6 @@ use miden_protocol::note::{
     NoteAttachment,
     NoteAttachmentScheme,
     NoteAttachments,
-    NoteMetadata,
     NoteRecipient,
     NoteStorage,
     NoteTag,
@@ -65,15 +64,20 @@ async fn test_send_note_script_basic_wallet() -> anyhow::Result<()> {
     let tag = NoteTag::with_account_target(sender_basic_wallet_account.id());
     let words = vec![Word::from([9, 8, 7, 6u32]), Word::from([5, 4, 3, 2u32])];
     let attachment = NoteAttachment::with_words(NoteAttachmentScheme::new(42)?, words.clone())?;
-    let metadata =
-        NoteMetadata::new(sender_basic_wallet_account.id(), NoteType::Public).with_tag(tag);
     let assets = NoteAssets::new(vec![sent_asset0, sent_asset1]).unwrap();
     let note_script = CodeBuilder::default().compile_note_script(DEFAULT_NOTE_SCRIPT).unwrap();
     let serial_num = RandomCoin::new(Word::from([1, 2, 3, 4u32])).draw_word();
     let recipient = NoteRecipient::new(serial_num, note_script, NoteStorage::default());
     let attachments = NoteAttachments::from(attachment.clone());
 
-    let note = Note::with_attachments(assets.clone(), metadata, recipient, attachments);
+    let note = Note::builder()
+        .sender(sender_basic_wallet_account.id())
+        .recipient(recipient)
+        .assets(assets)
+        .attachments(attachments)
+        .note_tag(tag)
+        .note_type(NoteType::Public)
+        .build();
     let partial_note: PartialNote = note.clone().into();
 
     let expiration_delta = 10u16;
@@ -138,8 +142,6 @@ async fn test_send_note_script_basic_fungible_faucet() -> anyhow::Result<()> {
 
     let tag = NoteTag::with_account_target(sender_basic_fungible_faucet_account.id());
     let attachment = NoteAttachment::with_word(NoteAttachmentScheme::new(100)?, Word::empty());
-    let metadata = NoteMetadata::new(sender_basic_fungible_faucet_account.id(), NoteType::Public)
-        .with_tag(tag);
     let assets = NoteAssets::new(vec![Asset::Fungible(
         FungibleAsset::new(sender_basic_fungible_faucet_account.id(), 10).unwrap(),
     )])?;
@@ -148,7 +150,14 @@ async fn test_send_note_script_basic_fungible_faucet() -> anyhow::Result<()> {
     let recipient = NoteRecipient::new(serial_num, note_script, NoteStorage::default());
     let attachments = NoteAttachments::from(attachment);
 
-    let note = Note::with_attachments(assets.clone(), metadata, recipient, attachments);
+    let note = Note::builder()
+        .sender(sender_basic_fungible_faucet_account.id())
+        .recipient(recipient)
+        .assets(assets)
+        .attachments(attachments)
+        .note_tag(tag)
+        .note_type(NoteType::Public)
+        .build();
     let partial_note: PartialNote = note.clone().into();
 
     let expiration_delta = 10u16;

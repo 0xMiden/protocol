@@ -9,7 +9,6 @@ use miden_protocol::note::{
     Note,
     NoteAssets,
     NoteAttachments,
-    NoteMetadata,
     NoteRecipient,
     NoteStorage,
     NoteTag,
@@ -253,7 +252,6 @@ fn test_basic_wallet_custom_notes() {
     let sender_account_id = ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2.try_into().unwrap();
     let serial_num = RandomCoin::new(Word::from([1, 2, 3, 4u32])).draw_word();
     let tag = NoteTag::with_account_target(wallet_account.id());
-    let metadata = NoteMetadata::new(sender_account_id, NoteType::Public).with_tag(tag);
     let vault = NoteAssets::new(vec![FungibleAsset::mock(100)]).unwrap();
 
     let compatible_source_code = "
@@ -281,7 +279,13 @@ fn test_basic_wallet_custom_notes() {
     ";
     let note_script = CodeBuilder::default().compile_note_script(compatible_source_code).unwrap();
     let recipient = NoteRecipient::new(serial_num, note_script, NoteStorage::default());
-    let compatible_custom_note = Note::new(vault.clone(), metadata, recipient);
+    let compatible_custom_note = Note::builder()
+        .sender(sender_account_id)
+        .recipient(recipient)
+        .assets(vault.clone())
+        .note_tag(tag)
+        .note_type(NoteType::Public)
+        .build();
     assert_eq!(
         NoteAccountCompatibility::Maybe,
         wallet_account_interface.is_compatible_with(&compatible_custom_note)
@@ -310,7 +314,13 @@ fn test_basic_wallet_custom_notes() {
     ";
     let note_script = CodeBuilder::default().compile_note_script(incompatible_source_code).unwrap();
     let recipient = NoteRecipient::new(serial_num, note_script, NoteStorage::default());
-    let incompatible_custom_note = Note::new(vault, metadata, recipient);
+    let incompatible_custom_note = Note::builder()
+        .sender(sender_account_id)
+        .recipient(recipient)
+        .assets(vault)
+        .note_tag(tag)
+        .note_type(NoteType::Public)
+        .build();
     assert_eq!(
         NoteAccountCompatibility::No,
         wallet_account_interface.is_compatible_with(&incompatible_custom_note)
@@ -341,7 +351,6 @@ fn test_basic_fungible_faucet_custom_notes() {
     let sender_account_id = ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2.try_into().unwrap();
     let serial_num = RandomCoin::new(Word::from([1, 2, 3, 4u32])).draw_word();
     let tag = NoteTag::with_account_target(faucet_account.id());
-    let metadata = NoteMetadata::new(sender_account_id, NoteType::Public).with_tag(tag);
     let vault = NoteAssets::new(vec![FungibleAsset::mock(100)]).unwrap();
 
     let compatible_source_code = "
@@ -367,7 +376,13 @@ fn test_basic_fungible_faucet_custom_notes() {
     ";
     let note_script = CodeBuilder::default().compile_note_script(compatible_source_code).unwrap();
     let recipient = NoteRecipient::new(serial_num, note_script, NoteStorage::default());
-    let compatible_custom_note = Note::new(vault.clone(), metadata, recipient);
+    let compatible_custom_note = Note::builder()
+        .sender(sender_account_id)
+        .recipient(recipient)
+        .assets(vault.clone())
+        .note_tag(tag)
+        .note_type(NoteType::Public)
+        .build();
     assert_eq!(
         NoteAccountCompatibility::Maybe,
         faucet_account_interface.is_compatible_with(&compatible_custom_note)
@@ -398,7 +413,13 @@ fn test_basic_fungible_faucet_custom_notes() {
     ";
     let note_script = CodeBuilder::default().compile_note_script(incompatible_source_code).unwrap();
     let recipient = NoteRecipient::new(serial_num, note_script, NoteStorage::default());
-    let incompatible_custom_note = Note::new(vault, metadata, recipient);
+    let incompatible_custom_note = Note::builder()
+        .sender(sender_account_id)
+        .recipient(recipient)
+        .assets(vault)
+        .note_tag(tag)
+        .note_type(NoteType::Public)
+        .build();
     assert_eq!(
         NoteAccountCompatibility::No,
         faucet_account_interface.is_compatible_with(&incompatible_custom_note)
@@ -446,7 +467,6 @@ fn test_custom_account_custom_notes() {
 
     let serial_num = RandomCoin::new(Word::from([1, 2, 3, 4u32])).draw_word();
     let tag = NoteTag::with_account_target(target_account.id());
-    let metadata = NoteMetadata::new(sender_account.id(), NoteType::Public).with_tag(tag);
     let vault = NoteAssets::new(vec![FungibleAsset::mock(100)]).unwrap();
 
     let compatible_source_code = "
@@ -475,7 +495,13 @@ fn test_custom_account_custom_notes() {
         .compile_note_script(compatible_source_code)
         .unwrap();
     let recipient = NoteRecipient::new(serial_num, note_script, NoteStorage::default());
-    let compatible_custom_note = Note::new(vault.clone(), metadata, recipient);
+    let compatible_custom_note = Note::builder()
+        .sender(sender_account.id())
+        .recipient(recipient)
+        .assets(vault.clone())
+        .note_tag(tag)
+        .note_type(NoteType::Public)
+        .build();
     assert_eq!(
         NoteAccountCompatibility::Maybe,
         target_account_interface.is_compatible_with(&compatible_custom_note)
@@ -503,7 +529,13 @@ fn test_custom_account_custom_notes() {
         .compile_note_script(incompatible_source_code)
         .unwrap();
     let recipient = NoteRecipient::new(serial_num, note_script, NoteStorage::default());
-    let incompatible_custom_note = Note::new(vault, metadata, recipient);
+    let incompatible_custom_note = Note::builder()
+        .sender(sender_account.id())
+        .recipient(recipient)
+        .assets(vault)
+        .note_tag(tag)
+        .note_type(NoteType::Public)
+        .build();
     assert_eq!(
         NoteAccountCompatibility::No,
         target_account_interface.is_compatible_with(&incompatible_custom_note)
@@ -552,7 +584,6 @@ fn test_custom_account_multiple_components_custom_notes() {
 
     let serial_num = RandomCoin::new(Word::from([1, 2, 3, 4u32])).draw_word();
     let tag = NoteTag::with_account_target(target_account.id());
-    let metadata = NoteMetadata::new(sender_account.id(), NoteType::Public).with_tag(tag);
     let vault = NoteAssets::new(vec![FungibleAsset::mock(100)]).unwrap();
 
     let compatible_source_code = "
@@ -587,7 +618,13 @@ fn test_custom_account_multiple_components_custom_notes() {
         .compile_note_script(compatible_source_code)
         .unwrap();
     let recipient = NoteRecipient::new(serial_num, note_script, NoteStorage::default());
-    let compatible_custom_note = Note::new(vault.clone(), metadata, recipient);
+    let compatible_custom_note = Note::builder()
+        .sender(sender_account.id())
+        .recipient(recipient)
+        .assets(vault.clone())
+        .note_tag(tag)
+        .note_type(NoteType::Public)
+        .build();
     assert_eq!(
         NoteAccountCompatibility::Maybe,
         target_account_interface.is_compatible_with(&compatible_custom_note)
@@ -626,7 +663,13 @@ fn test_custom_account_multiple_components_custom_notes() {
         .compile_note_script(incompatible_source_code)
         .unwrap();
     let recipient = NoteRecipient::new(serial_num, note_script, NoteStorage::default());
-    let incompatible_custom_note = Note::new(vault.clone(), metadata, recipient);
+    let incompatible_custom_note = Note::builder()
+        .sender(sender_account.id())
+        .recipient(recipient)
+        .assets(vault.clone())
+        .note_tag(tag)
+        .note_type(NoteType::Public)
+        .build();
     assert_eq!(
         NoteAccountCompatibility::No,
         target_account_interface.is_compatible_with(&incompatible_custom_note)

@@ -8,16 +8,7 @@ use crate::assembly::mast::{ExternalNodeBuilder, MastForest, MastForestContribut
 use crate::asset::FungibleAsset;
 use crate::constants::NOTE_MAX_SIZE;
 use crate::errors::{OutputNoteError, TransactionOutputError};
-use crate::note::{
-    Note,
-    NoteAssets,
-    NoteMetadata,
-    NoteRecipient,
-    NoteScript,
-    NoteStorage,
-    NoteTag,
-    NoteType,
-};
+use crate::note::{Note, NoteAssets, NoteRecipient, NoteScript, NoteStorage, NoteTag, NoteType};
 use crate::testing::account_id::{
     ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
@@ -56,10 +47,6 @@ fn output_note_size_hint_matches_serialized_length() -> anyhow::Result<()> {
 
     let assets = NoteAssets::new(vec![asset_1, asset_2])?;
 
-    // Build metadata similarly to how mock notes are constructed.
-    let metadata = NoteMetadata::new(sender_id, NoteType::Private)
-        .with_tag(NoteTag::with_account_target(sender_id));
-
     // Build storage with at least two values.
     let storage = NoteStorage::new(vec![Felt::new(1), Felt::new(2)])?;
 
@@ -67,7 +54,13 @@ fn output_note_size_hint_matches_serialized_length() -> anyhow::Result<()> {
     let script = NoteScript::mock();
     let recipient = NoteRecipient::new(serial_num, script, storage);
 
-    let note = Note::new(assets, metadata, recipient);
+    let note = Note::builder()
+        .sender(sender_id)
+        .recipient(recipient)
+        .assets(assets)
+        .note_tag(NoteTag::with_account_target(sender_id))
+        .note_type(NoteType::Private)
+        .build();
     let output_note = RawOutputNote::Full(note);
 
     let bytes = output_note.to_bytes();
@@ -108,11 +101,14 @@ fn oversized_public_note_triggers_size_limit_error() -> anyhow::Result<()> {
     let asset = FungibleAsset::new(faucet_id, 100)?.into();
     let assets = NoteAssets::new(vec![asset])?;
 
-    let metadata = NoteMetadata::new(sender_id, NoteType::Public)
-        .with_tag(NoteTag::with_account_target(sender_id));
-
     let recipient = NoteRecipient::new(serial_num, script, storage);
-    let oversized_note = Note::new(assets, metadata, recipient);
+    let oversized_note = Note::builder()
+        .sender(sender_id)
+        .recipient(recipient)
+        .assets(assets)
+        .note_tag(NoteTag::with_account_target(sender_id))
+        .note_type(NoteType::Public)
+        .build();
 
     // Sanity-check that our constructed note is indeed larger than the configured
     // maximum.

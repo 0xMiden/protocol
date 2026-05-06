@@ -523,12 +523,17 @@ async fn test_public_key_as_note_input() -> anyhow::Result<()> {
 
     let serial_num = RandomCoin::new(Word::from([1, 2, 3, 4u32])).draw_word();
     let tag = NoteTag::with_account_target(target_account.id());
-    let metadata = NoteMetadata::new(sender_account.id(), NoteType::Public).with_tag(tag);
     let vault = NoteAssets::new(vec![])?;
     let note_script = CodeBuilder::default().compile_note_script(DEFAULT_NOTE_SCRIPT)?;
     let recipient =
         NoteRecipient::new(serial_num, note_script, NoteStorage::new(public_key_value.to_vec())?);
-    let note_with_pub_key = Note::new(vault.clone(), metadata, recipient);
+    let note_with_pub_key = Note::builder()
+        .sender(sender_account.id())
+        .recipient(recipient)
+        .assets(vault)
+        .note_tag(tag)
+        .note_type(NoteType::Public)
+        .build();
 
     let tx_context = TransactionContextBuilder::new(target_account)
         .extend_input_notes(vec![note_with_pub_key])

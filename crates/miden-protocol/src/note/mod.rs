@@ -97,29 +97,6 @@ pub struct Note {
 }
 
 impl Note {
-    // CONSTRUCTOR
-    // --------------------------------------------------------------------------------------------
-
-    /// Returns a new [Note] created with the specified parameters and empty attachments.
-    pub fn new(assets: NoteAssets, metadata: NoteMetadata, recipient: NoteRecipient) -> Self {
-        Self::with_attachments(assets, metadata, recipient, NoteAttachments::default())
-    }
-
-    /// Returns a new [Note] created with the specified parameters and attachments.
-    pub fn with_attachments(
-        assets: NoteAssets,
-        metadata: NoteMetadata,
-        recipient: NoteRecipient,
-        attachments: NoteAttachments,
-    ) -> Self {
-        let details = NoteDetails::new(assets, recipient);
-        let metadata = metadata.with_attachments(&attachments);
-        let header = NoteHeader::new(details.id(), metadata);
-        let nullifier = details.nullifier();
-
-        Self { header, details, attachments, nullifier }
-    }
-
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
@@ -208,13 +185,13 @@ impl Note {
 
 #[bon::bon]
 impl Note {
-    /// Builds a [`Note`] from the provided parts.
+    /// Returns a new [`Note`] from the provided parts.
     ///
     /// Use [`Note::builder`] to invoke this in builder form, e.g.
     /// `Note::builder().sender(sender).recipient(recipient).build()`. `sender` and `recipient` are
     /// required; all other fields default.
     #[builder]
-    pub fn build(
+    pub fn new(
         sender: AccountId,
         recipient: NoteRecipient,
         #[builder(default)] assets: NoteAssets,
@@ -222,8 +199,13 @@ impl Note {
         #[builder(default)] note_tag: NoteTag,
         #[builder(default)] note_type: NoteType,
     ) -> Self {
-        let metadata = NoteMetadata::new(sender, note_type).with_tag(note_tag);
-        Self::with_attachments(assets, metadata, recipient, attachments)
+        let metadata = NoteMetadata::new(sender, note_type)
+            .with_tag(note_tag)
+            .with_attachments(&attachments);
+        let details = NoteDetails::new(assets, recipient);
+        let header = NoteHeader::new(details.id(), metadata);
+        let nullifier = details.nullifier();
+        Self { header, details, attachments, nullifier }
     }
 }
 
@@ -304,11 +286,17 @@ impl Serializable for Note {
 impl Deserializable for Note {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let (sender, note_type, tag) = NoteMetadata::read_core(source)?;
-        let metadata = NoteMetadata::new(sender, note_type).with_tag(tag);
         let details = NoteDetails::read_from(source)?;
         let attachments = NoteAttachments::read_from(source)?;
         let (assets, recipient) = details.into_parts();
 
-        Ok(Self::with_attachments(assets, metadata, recipient, attachments))
+        Ok(Note::builder()
+            .sender(sender)
+            .recipient(recipient)
+            .assets(assets)
+            .attachments(attachments)
+            .note_tag(tag)
+            .note_type(note_type)
+            .build())
     }
 }

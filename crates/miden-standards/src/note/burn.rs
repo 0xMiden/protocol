@@ -7,7 +7,6 @@ use miden_protocol::note::{
     Note,
     NoteAssets,
     NoteAttachments,
-    NoteMetadata,
     NoteRecipient,
     NoteScript,
     NoteScriptRoot,
@@ -99,10 +98,16 @@ impl BurnNote {
         let inputs = NoteStorage::new(vec![])?;
         let tag = NoteTag::with_account_target(faucet_id);
 
-        let metadata = NoteMetadata::new(sender, note_type).with_tag(tag);
         let assets = NoteAssets::new(vec![fungible_asset])?; // BURN notes contain the asset to burn
         let recipient = NoteRecipient::new(serial_num, note_script, inputs);
 
-        Ok(Note::with_attachments(assets, metadata, recipient, attachments))
+        Ok(Note::builder()
+            .sender(sender)
+            .recipient(recipient)
+            .assets(assets)
+            .attachments(attachments)
+            .note_tag(tag)
+            .note_type(note_type)
+            .build())
     }
 }

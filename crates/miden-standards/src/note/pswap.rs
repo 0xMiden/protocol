@@ -10,7 +10,6 @@ use miden_protocol::note::{
     NoteAttachment,
     NoteAttachmentScheme,
     NoteAttachments,
-    NoteMetadata,
     NoteRecipient,
     NoteScript,
     NoteScriptRoot,
@@ -585,15 +584,15 @@ impl PswapNote {
         let attachment = Self::payback_attachment(fill_amount)?;
 
         let p2id_assets = NoteAssets::new(vec![Asset::Fungible(payback_asset)])?;
-        let p2id_metadata = NoteMetadata::new(consumer_account_id, self.storage.payback_note_type)
-            .with_tag(payback_note_tag);
 
-        Ok(Note::with_attachments(
-            p2id_assets,
-            p2id_metadata,
-            recipient,
-            NoteAttachments::from(attachment),
-        ))
+        Ok(Note::builder()
+            .sender(consumer_account_id)
+            .recipient(recipient)
+            .assets(p2id_assets)
+            .attachments(NoteAttachments::from(attachment))
+            .note_tag(payback_note_tag)
+            .note_type(self.storage.payback_note_type)
+            .build())
     }
 
     /// Builds a remainder PSWAP note carrying the unfilled portion of the swap.
@@ -655,11 +654,16 @@ impl From<PswapNote> for Note {
         let assets = NoteAssets::new(vec![Asset::Fungible(pswap.offered_asset)])
             .expect("single fungible asset should be valid");
 
-        let metadata = NoteMetadata::new(pswap.sender, pswap.note_type).with_tag(tag);
-
         let attachments = pswap.attachment.map(NoteAttachments::from).unwrap_or_default();
 
-        Note::with_attachments(assets, metadata, recipient, attachments)
+        Note::builder()
+            .sender(pswap.sender)
+            .recipient(recipient)
+            .assets(assets)
+            .attachments(attachments)
+            .note_tag(tag)
+            .note_type(pswap.note_type)
+            .build()
     }
 }
 

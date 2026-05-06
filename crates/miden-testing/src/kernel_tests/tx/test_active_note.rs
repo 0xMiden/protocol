@@ -501,7 +501,6 @@ async fn test_active_note_get_exactly_8_inputs() -> anyhow::Result<()> {
     // prepare note data
     let serial_num = RandomCoin::new(Word::from([4u32; 4])).draw_word();
     let tag = NoteTag::with_account_target(target_id);
-    let metadata = NoteMetadata::new(sender_id, NoteType::Public).with_tag(tag);
     let vault = NoteAssets::new(vec![]).context("failed to create input note assets")?;
     let note_script = CodeBuilder::default()
         .compile_note_script(DEFAULT_NOTE_SCRIPT)
@@ -524,7 +523,13 @@ async fn test_active_note_get_exactly_8_inputs() -> anyhow::Result<()> {
         ])
         .context("failed to create note storage")?,
     );
-    let input_note = Note::new(vault.clone(), metadata, recipient);
+    let input_note = Note::builder()
+        .sender(sender_id)
+        .recipient(recipient)
+        .assets(vault)
+        .note_tag(tag)
+        .note_type(NoteType::Public)
+        .build();
 
     // provide this input note to the transaction context
     let tx_context = TransactionContextBuilder::with_existing_mock_account()

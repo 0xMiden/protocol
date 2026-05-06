@@ -11,7 +11,6 @@ use miden_protocol::note::{
     NoteAssets,
     NoteAttachments,
     NoteDetails,
-    NoteMetadata,
     NoteRecipient,
     NoteScript,
     NoteScriptRoot,
@@ -101,9 +100,15 @@ impl SwapNote {
         let tag = Self::build_tag(swap_note_type, &offered_asset, &requested_asset);
 
         // build the outgoing note
-        let metadata = NoteMetadata::new(sender, swap_note_type).with_tag(tag);
         let assets = NoteAssets::new(vec![offered_asset])?;
-        let note = Note::with_attachments(assets, metadata, recipient, swap_note_attachments);
+        let note = Note::builder()
+            .sender(sender)
+            .recipient(recipient)
+            .assets(assets)
+            .attachments(swap_note_attachments)
+            .note_tag(tag)
+            .note_type(swap_note_type)
+            .build();
 
         // build the payback note details
         let payback_recipient = P2idNoteStorage::new(sender).into_recipient(payback_serial_num);

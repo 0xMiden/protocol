@@ -6,7 +6,6 @@
 extern crate alloc;
 
 use alloc::string::ToString;
-use alloc::vec;
 
 use miden_assembly::Library;
 use miden_assembly::serde::Deserializable;
@@ -15,10 +14,8 @@ use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
     Note,
-    NoteAssets,
     NoteAttachment,
     NoteAttachments,
-    NoteMetadata,
     NoteRecipient,
     NoteScript,
     NoteScriptRoot,
@@ -104,11 +101,12 @@ impl UpdateGerNote {
         let attachment = NetworkAccountTarget::new(target_account_id, NoteExecutionHint::Always)
             .map_err(|e| NoteError::other(e.to_string()))?;
         let attachments = NoteAttachments::from(NoteAttachment::from(attachment));
-        let metadata = NoteMetadata::new(sender_account_id, NoteType::Public);
 
-        // UPDATE_GER notes don't carry assets
-        let assets = NoteAssets::new(vec![])?;
-
-        Ok(Note::with_attachments(assets, metadata, recipient, attachments))
+        Ok(Note::builder()
+            .sender(sender_account_id)
+            .recipient(recipient)
+            .attachments(attachments)
+            .note_type(NoteType::Public)
+            .build())
     }
 }

@@ -151,7 +151,6 @@ mod tests {
         NoteAssets,
         NoteFile,
         NoteInclusionProof,
-        NoteMetadata,
         NoteRecipient,
         NoteScript,
         NoteStorage,
@@ -175,9 +174,14 @@ mod tests {
         let recipient = NoteRecipient::new(serial_num, script, note_storage);
 
         let asset = Asset::Fungible(FungibleAsset::new(faucet, 100).unwrap());
-        let metadata = NoteMetadata::new(faucet, NoteType::Public).with_tag(NoteTag::from(123));
 
-        Note::new(NoteAssets::new(vec![asset]).unwrap(), metadata, recipient)
+        Note::builder()
+            .sender(faucet)
+            .recipient(recipient)
+            .assets(NoteAssets::new(vec![asset]).unwrap())
+            .note_tag(NoteTag::from(123))
+            .note_type(NoteType::Public)
+            .build()
     }
 
     #[test]

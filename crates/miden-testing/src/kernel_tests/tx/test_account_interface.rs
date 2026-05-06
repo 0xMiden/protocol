@@ -9,15 +9,7 @@ use miden_protocol::account::{Account, AccountId};
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::field::PrimeField64;
-use miden_protocol::note::{
-    Note,
-    NoteAssets,
-    NoteMetadata,
-    NoteRecipient,
-    NoteStorage,
-    NoteTag,
-    NoteType,
-};
+use miden_protocol::note::{Note, NoteRecipient, NoteStorage, NoteTag, NoteType};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2,
@@ -790,7 +782,11 @@ fn create_p2ide_note_with_storage(
     );
 
     let tag = NoteTag::with_account_target(sender);
-    let metadata = NoteMetadata::new(sender, NoteType::Public).with_tag(tag);
 
-    Note::new(NoteAssets::default(), metadata, recipient)
+    Note::builder()
+        .sender(sender)
+        .recipient(recipient)
+        .note_tag(tag)
+        .note_type(NoteType::Public)
+        .build()
 }

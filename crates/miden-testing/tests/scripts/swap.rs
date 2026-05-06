@@ -128,11 +128,14 @@ async fn consume_swap_note_private_payback_note() -> anyhow::Result<()> {
     // CONSUME PAYBACK P2ID NOTE
     // --------------------------------------------------------------------------------------------
 
-    let full_payback_note = Note::new(
-        payback_note.assets().clone(),
-        *output_payback_note.metadata(),
-        payback_note.recipient().clone(),
-    );
+    let metadata = output_payback_note.metadata();
+    let full_payback_note = Note::builder()
+        .sender(metadata.sender())
+        .recipient(payback_note.recipient().clone())
+        .assets(payback_note.assets().clone())
+        .note_tag(metadata.tag())
+        .note_type(metadata.note_type())
+        .build();
 
     let consume_payback_tx = mock_chain
         .build_tx_context(sender_account.id(), &[], &[full_payback_note])
@@ -208,11 +211,14 @@ async fn consume_swap_note_public_payback_note() -> anyhow::Result<()> {
     // CONSUME PAYBACK P2ID NOTE
     // --------------------------------------------------------------------------------------------
 
-    let full_payback_note = Note::new(
-        payback_note.assets().clone(),
-        *output_payback_note.metadata(),
-        payback_note.recipient().clone(),
-    );
+    let metadata = output_payback_note.metadata();
+    let full_payback_note = Note::builder()
+        .sender(metadata.sender())
+        .recipient(payback_note.recipient().clone())
+        .assets(payback_note.assets().clone())
+        .note_tag(metadata.tag())
+        .note_type(metadata.note_type())
+        .build();
 
     let consume_payback_tx = mock_chain
         .build_tx_context(sender_account.id(), &[], &[full_payback_note])

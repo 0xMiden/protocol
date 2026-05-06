@@ -167,7 +167,14 @@ impl OutputNoteBuilder {
 
         match self.recipient {
             Some(recipient) => {
-                let note = Note::with_attachments(assets, self.metadata, recipient, attachments);
+                let note = Note::builder()
+                    .sender(self.metadata.sender())
+                    .recipient(recipient)
+                    .assets(assets)
+                    .attachments(attachments)
+                    .note_tag(self.metadata.tag())
+                    .note_type(self.metadata.note_type())
+                    .build();
                 RawOutputNote::Full(note)
             },
             None => {

@@ -9,10 +9,8 @@ use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
     Note,
-    NoteAssets,
     NoteAttachment,
     NoteAttachments,
-    NoteMetadata,
     NoteRecipient,
     NoteStorage,
     NoteType,
@@ -194,10 +192,12 @@ pub fn create_claim_note<R: FeltRng>(
         .map_err(|e| NoteError::other(e.to_string()))?;
     let attachments = NoteAttachments::from(NoteAttachment::from(attachment));
 
-    let metadata = NoteMetadata::new(sender_account_id, NoteType::Public);
-
     let recipient = NoteRecipient::new(rng.draw_word(), claim_script(), note_storage);
-    let assets = NoteAssets::new(vec![])?;
 
-    Ok(Note::with_attachments(assets, metadata, recipient, attachments))
+    Ok(Note::builder()
+        .sender(sender_account_id)
+        .recipient(recipient)
+        .attachments(attachments)
+        .note_type(NoteType::Public)
+        .build())
 }

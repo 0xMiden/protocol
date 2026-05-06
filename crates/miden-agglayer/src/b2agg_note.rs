@@ -16,7 +16,6 @@ use miden_protocol::note::{
     NoteAssets,
     NoteAttachment,
     NoteAttachments,
-    NoteMetadata,
     NoteRecipient,
     NoteScript,
     NoteScriptRoot,
@@ -104,11 +103,15 @@ impl B2AggNote {
             })?;
         let attachments = NoteAttachments::from(NoteAttachment::from(attachment));
 
-        let metadata = NoteMetadata::new(sender_account_id, NoteType::Public);
-
         let recipient = NoteRecipient::new(rng.draw_word(), Self::script(), note_storage);
 
-        Ok(Note::with_attachments(assets, metadata, recipient, attachments))
+        Ok(Note::builder()
+            .sender(sender_account_id)
+            .recipient(recipient)
+            .assets(assets)
+            .attachments(attachments)
+            .note_type(NoteType::Public)
+            .build())
     }
 }
 

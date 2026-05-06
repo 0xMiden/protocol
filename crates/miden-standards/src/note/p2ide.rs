@@ -10,7 +10,6 @@ use miden_protocol::note::{
     Note,
     NoteAssets,
     NoteAttachments,
-    NoteMetadata,
     NoteRecipient,
     NoteScript,
     NoteScriptRoot,
@@ -93,10 +92,14 @@ impl P2ideNote {
         let recipient = storage.into_recipient(serial_num)?;
         let tag = NoteTag::with_account_target(storage.target());
 
-        let metadata = NoteMetadata::new(sender, note_type).with_tag(tag);
-        let vault = NoteAssets::new(assets)?;
-
-        Ok(Note::with_attachments(vault, metadata, recipient, attachments))
+        Ok(Note::builder()
+            .sender(sender)
+            .recipient(recipient)
+            .assets(NoteAssets::new(assets)?)
+            .attachments(attachments)
+            .note_tag(tag)
+            .note_type(note_type)
+            .build())
     }
 }
 

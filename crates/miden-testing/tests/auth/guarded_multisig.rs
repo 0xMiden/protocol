@@ -7,7 +7,7 @@ use miden_protocol::account::{
     AccountType,
 };
 use miden_protocol::asset::FungibleAsset;
-use miden_protocol::note::{Note, NoteAssets, NoteMetadata, NoteRecipient, NoteStorage, NoteType};
+use miden_protocol::note::{Note, NoteRecipient, NoteStorage, NoteType};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
@@ -487,11 +487,11 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
     let note_serial_num = Word::from([Felt::new(1), Felt::new(2), Felt::new(3), Felt::new(4)]);
     let note_recipient =
         NoteRecipient::new(note_serial_num, note_script.clone(), NoteStorage::default());
-    let output_note = Note::new(
-        NoteAssets::new(vec![])?,
-        NoteMetadata::new(multisig_account.id(), NoteType::Public),
-        note_recipient,
-    );
+    let output_note = Note::builder()
+        .sender(multisig_account.id())
+        .recipient(note_recipient)
+        .note_type(NoteType::Public)
+        .build();
 
     let new_guardian_key_word: Word = new_guardian_public_key.to_commitment().into();
     let new_guardian_scheme_id = new_guardian_auth_scheme as u32;

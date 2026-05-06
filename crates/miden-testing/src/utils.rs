@@ -7,7 +7,7 @@ use miden_protocol::account::AccountId;
 use miden_protocol::asset::Asset;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
-use miden_protocol::note::{Note, NoteAssets, NoteMetadata, NoteTag, NoteType};
+use miden_protocol::note::{Note, NoteAssets, NoteTag, NoteType};
 use miden_protocol::vm::AdviceMap;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::P2idNoteStorage;
@@ -296,8 +296,13 @@ pub fn create_p2id_note_exact(
 
     let tag = NoteTag::with_account_target(target);
 
-    let metadata = NoteMetadata::new(sender, note_type).with_tag(tag);
     let vault = NoteAssets::new(assets)?;
 
-    Ok(Note::new(vault, metadata, recipient))
+    Ok(Note::builder()
+        .sender(sender)
+        .recipient(recipient)
+        .assets(vault)
+        .note_tag(tag)
+        .note_type(note_type)
+        .build())
 }

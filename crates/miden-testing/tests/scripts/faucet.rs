@@ -508,8 +508,13 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
     let output_script_root = note_recipient.script().root();
 
     let asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?;
-    let metadata = NoteMetadata::new(faucet.id(), note_type).with_tag(tag);
-    let expected_note = Note::new(NoteAssets::new(vec![asset.into()])?, metadata, note_recipient);
+    let expected_note = Note::builder()
+        .sender(faucet.id())
+        .recipient(note_recipient)
+        .assets(NoteAssets::new(vec![asset.into()])?)
+        .note_tag(tag)
+        .note_type(note_type)
+        .build();
 
     let trigger_note_script_code = format!(
         "
