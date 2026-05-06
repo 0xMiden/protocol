@@ -324,7 +324,7 @@ proc create_remainder_note
     loc_store.REMAINDER_AMT_OFFERED
     # => [remaining_requested, note_type, tag]
 
-    # Update note storage with new requested amount (needed by build_recipient)
+    # Update note storage with new requested amount (needed by compute_and_store_recipient)
     mem_store.REQUESTED_AMOUNT_ITEM
     # => [note_type, tag]
 
@@ -343,7 +343,7 @@ proc create_remainder_note
     push.NUM_STORAGE_ITEMS push.STORAGE_PTR
     # => [storage_ptr, num_storage_items, SERIAL_NUM', SCRIPT_ROOT, note_type, tag]
 
-    exec.note::build_recipient
+    exec.note::compute_and_store_recipient
     # => [RECIPIENT, note_type, tag]
 
     movup.4 movup.5
