@@ -14,7 +14,9 @@ use miden_protocol::asset::{Asset, AssetVault, AssetVaultKey, FungibleAsset};
 use miden_protocol::note::{
     NoteAttachment,
     NoteAttachmentContent,
+    NoteAttachmentHeader,
     NoteAttachmentScheme,
+    NoteAttachments,
     NoteId,
     NoteMetadata,
     NoteRecipient,
@@ -727,7 +729,13 @@ fn build_note_metadata(
         .map_err(|_| TransactionKernelError::other("failed to decode note tag into u32"))
         .map(NoteTag::new)?;
 
-    Ok(NoteMetadata::new(sender, note_type).with_tag(tag))
+    Ok(NoteMetadata::from_parts(
+        sender,
+        note_type,
+        tag,
+        [NoteAttachmentHeader::absent(); NoteAttachments::MAX_COUNT],
+        Word::empty(),
+    ))
 }
 
 fn extract_note_attachment(

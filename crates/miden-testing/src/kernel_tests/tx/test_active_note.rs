@@ -11,6 +11,7 @@ use miden_protocol::note::{
     NoteAssets,
     NoteAttachment,
     NoteAttachmentScheme,
+    NoteAttachments,
     NoteMetadata,
     NoteRecipient,
     NoteStorage,
@@ -225,7 +226,14 @@ async fn test_metadata_into_tag() -> anyhow::Result<()> {
 
     let sender_id: AccountId = ACCOUNT_ID_SENDER.try_into()?;
     let tag = NoteTag::new(0xabcd_1234);
-    let metadata = NoteMetadata::new(sender_id, NoteType::Public).with_tag(tag);
+    let attachments = NoteAttachments::default();
+    let metadata = NoteMetadata::from_parts(
+        sender_id,
+        NoteType::Public,
+        tag,
+        attachments.to_headers(),
+        attachments.commitment(),
+    );
     let metadata_word = metadata.to_metadata_word();
 
     let code = "

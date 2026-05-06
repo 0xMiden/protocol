@@ -32,6 +32,9 @@ pub struct PartialNote {
 
 impl PartialNote {
     /// Returns a new [PartialNote] instantiated from the provided parameters.
+    ///
+    /// The supplied `metadata` provides only the user-facing fields (sender, note type, tag); the
+    /// attachment headers and commitment are recomputed from the provided `attachments`.
     pub fn new(
         metadata: NoteMetadata,
         recipient_digest: Word,
@@ -39,7 +42,13 @@ impl PartialNote {
         attachments: NoteAttachments,
     ) -> Self {
         let note_id = NoteId::new(recipient_digest, assets.commitment());
-        let metadata = metadata.with_attachments(&attachments);
+        let metadata = NoteMetadata::from_parts(
+            metadata.sender(),
+            metadata.note_type(),
+            metadata.tag(),
+            attachments.to_headers(),
+            attachments.commitment(),
+        );
         let header = NoteHeader::new(note_id, metadata);
         Self {
             header,
@@ -115,10 +124,19 @@ impl Serializable for PartialNote {
 impl Deserializable for PartialNote {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let (sender, note_type, tag) = NoteMetadata::read_core(source)?;
-        let metadata = NoteMetadata::new(sender, note_type).with_tag(tag);
         let recipient_digest = Word::read_from(source)?;
         let assets = NoteAssets::read_from(source)?;
         let attachments = NoteAttachments::read_from(source)?;
+
+        // Build a partial metadata; PartialNote::new will fill in attachment fields from the
+        // attachments collection.
+        let metadata = NoteMetadata::from_parts(
+            sender,
+            note_type,
+            tag,
+            [super::NoteAttachmentHeader::absent(); NoteAttachments::MAX_COUNT],
+            Word::empty(),
+        );
 
         Ok(Self::new(metadata, recipient_digest, assets, attachments))
     }

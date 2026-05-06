@@ -126,11 +126,16 @@ async fn test_create_note() -> anyhow::Result<()> {
         "recipient must be stored at the correct memory location",
     );
 
-    let expected_metadata_word = NoteMetadata::new(account_id, NoteType::Public)
-        .with_tag(tag)
-        .with_attachments(&NoteAttachments::default())
-        .to_metadata_word();
-    let expected_note_attachment = NoteAttachments::default().to_commitment();
+    let attachments = NoteAttachments::default();
+    let expected_metadata_word = NoteMetadata::from_parts(
+        account_id,
+        NoteType::Public,
+        tag,
+        attachments.to_headers(),
+        attachments.commitment(),
+    )
+    .to_metadata_word();
+    let expected_note_attachment = attachments.to_commitment();
 
     assert_eq!(
         exec_output

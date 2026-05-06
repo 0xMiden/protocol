@@ -199,9 +199,13 @@ impl Note {
         #[builder(default)] note_tag: NoteTag,
         #[builder(default)] note_type: NoteType,
     ) -> Self {
-        let metadata = NoteMetadata::new(sender, note_type)
-            .with_tag(note_tag)
-            .with_attachments(&attachments);
+        let metadata = NoteMetadata::from_parts(
+            sender,
+            note_type,
+            note_tag,
+            attachments.to_headers(),
+            attachments.commitment(),
+        );
         let details = NoteDetails::new(assets, recipient);
         let header = NoteHeader::new(details.id(), metadata);
         let nullifier = details.nullifier();

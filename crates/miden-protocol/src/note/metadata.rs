@@ -75,24 +75,11 @@ impl NoteMetadata {
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns a new [`NoteMetadata`] with no attachments and a default tag.
-    ///
-    /// Use [`NoteMetadata::with_tag`] to set a specific tag and
-    /// [`NoteMetadata::with_attachments`] to populate attachment headers and commitment from a
-    /// [`NoteAttachments`] collection.
-    pub fn new(sender: AccountId, note_type: NoteType) -> Self {
-        Self {
-            sender,
-            note_type,
-            tag: NoteTag::default(),
-            attachment_headers: [NoteAttachmentHeader::absent(); NoteAttachments::MAX_COUNT],
-            attachments_commitment: Word::empty(),
-        }
-    }
-
     /// Creates a [`NoteMetadata`] from its raw parts.
     ///
-    /// Prefer [`Self::new`] combined with [`Self::with_attachments`] whenever possible.
+    /// This is a low-level constructor. To build a complete [`Note`](super::Note) end-to-end,
+    /// prefer [`Note::builder`](super::Note::builder), which derives the metadata from
+    /// constituent fields without requiring callers to materialize a `NoteMetadata` directly.
     pub fn from_parts(
         sender: AccountId,
         note_type: NoteType,
@@ -161,28 +148,6 @@ impl NoteMetadata {
     /// ```
     pub fn to_commitment(&self) -> Word {
         Hasher::merge(&[self.to_metadata_word(), self.attachments_commitment])
-    }
-
-    // MUTATORS
-    // --------------------------------------------------------------------------------------------
-
-    /// Mutates the note's tag by setting it to the provided value.
-    pub fn set_tag(&mut self, tag: NoteTag) {
-        self.tag = tag;
-    }
-
-    /// Returns a new [`NoteMetadata`] with the tag set to the provided value.
-    pub fn with_tag(mut self, tag: NoteTag) -> Self {
-        self.tag = tag;
-        self
-    }
-
-    /// Returns a new [`NoteMetadata`] with attachment headers and commitment derived from the
-    /// provided [`NoteAttachments`].
-    pub fn with_attachments(mut self, attachments: &NoteAttachments) -> Self {
-        self.attachment_headers = attachments.to_headers();
-        self.attachments_commitment = attachments.commitment();
-        self
     }
 
     // CRATE-INTERNAL HELPERS
@@ -340,9 +305,13 @@ mod tests {
             vec![Word::from([10, 20, 30, 40u32]), Word::from([10, 20, 30, 40u32])],
         )?;
         let attachments = NoteAttachments::new(vec![attachment0, attachment1])?;
-        let metadata = NoteMetadata::new(sender, NoteType::Public)
-            .with_tag(NoteTag::new(0xff))
-            .with_attachments(&attachments);
+        let metadata = NoteMetadata::from_parts(
+            sender,
+            NoteType::Public,
+            NoteTag::new(0xff),
+            attachments.to_headers(),
+            attachments.commitment(),
+        );
 
         let encoded = metadata.to_metadata_word();
 
@@ -383,9 +352,13 @@ mod tests {
         let note_type = NoteType::Public;
         let tag = NoteTag::new(u32::MAX);
         let attachments = NoteAttachments::new(attachments.into_iter().collect())?;
-        let metadata = NoteMetadata::new(sender, note_type)
-            .with_tag(tag)
-            .with_attachments(&attachments);
+        let metadata = NoteMetadata::from_parts(
+            sender,
+            note_type,
+            tag,
+            attachments.to_headers(),
+            attachments.commitment(),
+        );
 
         // Roundtrip
         let deserialized = NoteMetadata::read_from_bytes(&metadata.to_bytes())?;

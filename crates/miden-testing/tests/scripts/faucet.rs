@@ -138,9 +138,16 @@ pub fn verify_minted_output_note(
     let id = NoteId::new(params.recipient, assets.commitment());
 
     assert_eq!(output_note.id(), id);
+    let attachments = NoteAttachments::default();
     assert_eq!(
         output_note.metadata(),
-        &NoteMetadata::new(faucet.id(), params.note_type).with_tag(params.tag)
+        &NoteMetadata::from_parts(
+            faucet.id(),
+            params.note_type,
+            params.tag,
+            attachments.to_headers(),
+            attachments.commitment(),
+        )
     );
 
     Ok(())

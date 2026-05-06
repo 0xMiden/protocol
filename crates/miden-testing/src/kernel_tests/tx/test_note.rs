@@ -374,10 +374,21 @@ async fn test_build_metadata_header() -> anyhow::Result<()> {
     let receiver = AccountId::try_from(ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE)
         .map_err(|e| anyhow::anyhow!("Failed to convert account ID: {}", e))?;
 
-    let test_metadata1 = NoteMetadata::new(sender, NoteType::Private)
-        .with_tag(NoteTag::with_account_target(receiver));
-    let test_metadata2 =
-        NoteMetadata::new(sender, NoteType::Public).with_tag(NoteTag::new(u32::MAX));
+    let attachments = NoteAttachments::default();
+    let test_metadata1 = NoteMetadata::from_parts(
+        sender,
+        NoteType::Private,
+        NoteTag::with_account_target(receiver),
+        attachments.to_headers(),
+        attachments.commitment(),
+    );
+    let test_metadata2 = NoteMetadata::from_parts(
+        sender,
+        NoteType::Public,
+        NoteTag::new(u32::MAX),
+        attachments.to_headers(),
+        attachments.commitment(),
+    );
 
     for (iteration, test_metadata) in [test_metadata1, test_metadata2].into_iter().enumerate() {
         let code = format!(
@@ -403,7 +414,7 @@ async fn test_build_metadata_header() -> anyhow::Result<()> {
         let metadata_word = exec_output.get_stack_word(0);
 
         assert_eq!(
-            test_metadata.with_attachments(&NoteAttachments::default()).to_metadata_word(),
+            test_metadata.to_metadata_word(),
             metadata_word,
             "failed in iteration {iteration}"
         );
