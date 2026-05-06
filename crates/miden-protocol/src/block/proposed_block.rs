@@ -423,7 +423,7 @@ impl ProposedBlock {
                             "max batches in block and max notes in batches should be enforced",
                         ),
                         note.id(),
-                        note.metadata_header(),
+                        note.metadata(),
                     )
                 })
             });

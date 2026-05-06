@@ -490,7 +490,7 @@ fn input_notes_memory_assertions(
 
         assert_eq!(
             exec_output.get_note_mem_word(note_idx, INPUT_NOTE_METADATA_HEADER_OFFSET),
-            note.metadata_header().to_metadata_word(),
+            note.metadata().to_metadata_word(),
             "note metadata header should be stored at the correct offset"
         );
 

@@ -16,10 +16,33 @@ use crate::note::{NoteAttachmentHeader, NoteAttachments};
 // NOTE METADATA
 // ================================================================================================
 
-/// The user-facing metadata associated with a note.
+/// The metadata associated with a note.
 ///
-/// Contains the sender, note type, and tag. For the full protocol-level encoding (including
-/// attachment headers and commitment computation), see [`NoteMetadataHeader`].
+/// `NoteMetadata` carries the user-facing fields (sender, note type, tag) together with the
+/// attachment headers and the attachments commitment that are part of the note's protocol-level
+/// metadata. The actual attachment payloads live on [`Note`](super::Note) as a
+/// [`NoteAttachments`] collection; only their headers and commitment are part of the metadata.
+///
+/// The metadata word is encoded as a single [`Word`] (4 felts) with the following layout:
+///
+/// ```text
+/// 0th felt: [sender_id_suffix (56 bits) | reserved (3 bits) | note_type (1 bit) | version (4 bits)]
+/// 1st felt: [sender_id_prefix (64 bits)]
+/// 2nd felt: [reserved (32 bits) | note_tag (32 bits)]
+/// 3rd felt: [attachment_3_scheme (16 bits) | attachment_2_scheme (16 bits) |
+///            attachment_1_scheme (16 bits) | attachment_0_scheme (16 bits)]
+/// ```
+///
+/// Felt validity is guaranteed:
+/// - 0th felt: The lower 8 bits of the account ID suffix are `0` by construction, so they can be
+///   overwritten. The suffix's MSB is zero so the felt stays valid when lower bits are set.
+/// - 1st felt: Equivalent to the account ID prefix, so it inherits its validity.
+/// - 2nd felt: The tag is a u32 and the reserved bits are _currently_ set to zero, however users
+///   shouldn't assume these are zero.
+/// - 3rd felt: Max value is `0xFFFEFFFE_FFFEFFFE` (schemes capped at 65534), which is less than
+///   `p`.
+///
+/// The version is hardcoded to 0 and is reserved for forward compatibility.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct NoteMetadata {
     /// The ID of the account which created the note.
@@ -30,21 +53,59 @@ pub struct NoteMetadata {
 
     /// A value which can be used by the recipient(s) to identify notes intended for them.
     tag: NoteTag,
+
+    /// Per-attachment headers (scheme + size) for up to [`NoteAttachments::MAX_COUNT`] slots.
+    attachment_headers: [NoteAttachmentHeader; NoteAttachments::MAX_COUNT],
+
+    /// Commitment over the note's attachments. Equivalent to [`NoteAttachments::commitment`] of
+    /// the originating attachments.
+    attachments_commitment: Word,
 }
 
 impl NoteMetadata {
+    // CONSTANTS
+    // --------------------------------------------------------------------------------------------
+
+    /// The number of bits by which the note type is offset in the first felt of the metadata word.
+    const NOTE_TYPE_SHIFT: u64 = 4;
+
+    /// Version 0 of the note metadata encoding.
+    const VERSION_0: u8 = 0;
+
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns a new [`NoteMetadata`] instantiated with the specified parameters.
+    /// Returns a new [`NoteMetadata`] with no attachments and a default tag.
     ///
-    /// The tag defaults to [`NoteTag::default()`]. Use [`NoteMetadata::with_tag`] to set a
-    /// specific tag if needed.
+    /// Use [`NoteMetadata::with_tag`] to set a specific tag and
+    /// [`NoteMetadata::with_attachments`] to populate attachment headers and commitment from a
+    /// [`NoteAttachments`] collection.
     pub fn new(sender: AccountId, note_type: NoteType) -> Self {
         Self {
             sender,
             note_type,
             tag: NoteTag::default(),
+            attachment_headers: [NoteAttachmentHeader::absent(); NoteAttachments::MAX_COUNT],
+            attachments_commitment: Word::empty(),
+        }
+    }
+
+    /// Creates a [`NoteMetadata`] from its raw parts.
+    ///
+    /// Prefer [`Self::new`] combined with [`Self::with_attachments`] whenever possible.
+    pub fn from_parts(
+        sender: AccountId,
+        note_type: NoteType,
+        tag: NoteTag,
+        attachment_headers: [NoteAttachmentHeader; NoteAttachments::MAX_COUNT],
+        attachments_commitment: Word,
+    ) -> Self {
+        Self {
+            sender,
+            note_type,
+            tag,
+            attachment_headers,
+            attachments_commitment,
         }
     }
 
@@ -71,128 +132,6 @@ impl NoteMetadata {
         self.note_type == NoteType::Private
     }
 
-    // MUTATORS
-    // --------------------------------------------------------------------------------------------
-
-    /// Mutates the note's tag by setting it to the provided value.
-    pub fn set_tag(&mut self, tag: NoteTag) {
-        self.tag = tag;
-    }
-
-    /// Returns a new [`NoteMetadata`] with the tag set to the provided value.
-    ///
-    /// This is a builder method that consumes self and returns a new instance for method chaining.
-    pub fn with_tag(mut self, tag: NoteTag) -> Self {
-        self.tag = tag;
-        self
-    }
-}
-
-// SERIALIZATION
-// ================================================================================================
-
-impl Serializable for NoteMetadata {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.note_type().write_into(target);
-        self.sender().write_into(target);
-        self.tag().write_into(target);
-    }
-
-    fn get_size_hint(&self) -> usize {
-        self.note_type().get_size_hint()
-            + self.sender().get_size_hint()
-            + self.tag().get_size_hint()
-    }
-}
-
-impl Deserializable for NoteMetadata {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let note_type = NoteType::read_from(source)?;
-        let sender = AccountId::read_from(source)?;
-        let tag = NoteTag::read_from(source)?;
-
-        Ok(NoteMetadata::new(sender, note_type).with_tag(tag))
-    }
-}
-
-// NOTE METADATA HEADER
-// ================================================================================================
-
-/// Protocol-level note metadata header that combines [`NoteMetadata`] with attachment information.
-///
-/// This type wraps `NoteMetadata` together with attachment headers and an attachment commitment,
-/// and knows how to encode them into a [`Word`] and compute commitments.
-///
-/// The metadata word is encoded as a single [`Word`] (4 felts) with the following layout:
-///
-/// ```text
-/// 0th felt: [sender_id_suffix (56 bits) | reserved (3 bits) | note_type (1 bit) | version (4 bits)]
-/// 1st felt: [sender_id_prefix (64 bits)]
-/// 2nd felt: [reserved (32 bits) | note_tag (32 bits)]
-/// 3rd felt: [attachment_3_scheme (16 bits) | attachment_2_scheme (16 bits) |
-///            attachment_1_scheme (16 bits) | attachment_0_scheme (16 bits)]
-/// ```
-///
-/// Felt validity is guaranteed:
-/// - 0th felt: The lower 8 bits of the account ID suffix are `0` by construction, so they can be
-///   overwritten. The suffix's MSB is zero so the felt stays valid when lower bits are set.
-/// - 1st felt: Equivalent to the account ID prefix, so it inherits its validity.
-/// - 2nd felt: The tag is a u32 and the reserved bits are _currently_ set to zero, however users
-///   shouldn't assume these are zero.
-/// - 3rd felt: Max value is `0xFFFEFFFE_FFFEFFFE` (schemes capped at 65534), which is less than
-///   `p`.
-///
-/// The version is hardcoded to 0 and is reserved for forward compatibility.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub struct NoteMetadataHeader {
-    metadata: NoteMetadata,
-    attachment_headers: [NoteAttachmentHeader; NoteAttachments::MAX_COUNT],
-    attachments_commitment: Word,
-}
-
-impl NoteMetadataHeader {
-    // CONSTANTS
-    // --------------------------------------------------------------------------------------------
-
-    /// The number of bits by which the note type is offset in the first felt of the metadata word.
-    const NOTE_TYPE_SHIFT: u64 = 4;
-
-    /// Version 0 of the note metadata encoding.
-    const VERSION_0: u8 = 0;
-
-    // CONSTRUCTORS
-    // --------------------------------------------------------------------------------------------
-
-    /// Returns a new [`NoteMetadataHeader`] derived from the given metadata and attachments.
-    ///
-    /// The attachment headers and commitment are derived from the provided attachments.
-    pub fn new(metadata: NoteMetadata, attachments: &NoteAttachments) -> Self {
-        Self::from_parts(metadata, attachments.to_headers(), attachments.commitment())
-    }
-
-    /// Creates a [`NoteMetadataHeader`] from its raw parts.
-    ///
-    /// Prefer [`Self::new`] whenever possible.
-    pub fn from_parts(
-        metadata: NoteMetadata,
-        attachment_headers: [NoteAttachmentHeader; NoteAttachments::MAX_COUNT],
-        attachments_commitment: Word,
-    ) -> Self {
-        Self {
-            metadata,
-            attachment_headers,
-            attachments_commitment,
-        }
-    }
-
-    // ACCESSORS
-    // --------------------------------------------------------------------------------------------
-
-    /// Returns the inner [`NoteMetadata`].
-    pub fn metadata(&self) -> &NoteMetadata {
-        &self.metadata
-    }
-
     /// Returns the attachment headers.
     pub fn attachment_headers(&self) -> &[NoteAttachmentHeader; NoteAttachments::MAX_COUNT] {
         &self.attachment_headers
@@ -205,15 +144,12 @@ impl NoteMetadataHeader {
 
     /// Returns the metadata encoded as a [`Word`].
     ///
-    /// See [`NoteMetadataHeader`] docs for the layout.
+    /// See [`NoteMetadata`] docs for the layout.
     pub fn to_metadata_word(&self) -> Word {
         let mut word = Word::empty();
-        word[0] = merge_sender_suffix_and_note_type(
-            self.metadata.sender.suffix(),
-            self.metadata.note_type,
-        );
-        word[1] = self.metadata.sender.prefix().as_felt();
-        word[2] = self.metadata.tag.into();
+        word[0] = merge_sender_suffix_and_note_type(self.sender.suffix(), self.note_type);
+        word[1] = self.sender.prefix().as_felt();
+        word[2] = self.tag.into();
         word[3] = merge_schemes(self.attachment_headers);
         word
     }
@@ -227,15 +163,57 @@ impl NoteMetadataHeader {
         Hasher::merge(&[self.to_metadata_word(), self.attachments_commitment])
     }
 
-    /// Consumes self and returns the inner [`NoteMetadata`].
-    pub fn into_metadata(self) -> NoteMetadata {
-        self.metadata
+    // MUTATORS
+    // --------------------------------------------------------------------------------------------
+
+    /// Mutates the note's tag by setting it to the provided value.
+    pub fn set_tag(&mut self, tag: NoteTag) {
+        self.tag = tag;
+    }
+
+    /// Returns a new [`NoteMetadata`] with the tag set to the provided value.
+    pub fn with_tag(mut self, tag: NoteTag) -> Self {
+        self.tag = tag;
+        self
+    }
+
+    /// Returns a new [`NoteMetadata`] with attachment headers and commitment derived from the
+    /// provided [`NoteAttachments`].
+    pub fn with_attachments(mut self, attachments: &NoteAttachments) -> Self {
+        self.attachment_headers = attachments.to_headers();
+        self.attachments_commitment = attachments.commitment();
+        self
+    }
+
+    // CRATE-INTERNAL HELPERS
+    // --------------------------------------------------------------------------------------------
+
+    /// Writes only the user-facing core fields (sender, note type, tag), not the attachment
+    /// headers or commitment. Used by [`Note`](super::Note) serialization, which carries the full
+    /// [`NoteAttachments`] separately and thus does not need to write the derivable fields.
+    pub(super) fn write_core<W: ByteWriter>(&self, target: &mut W) {
+        self.note_type.write_into(target);
+        self.sender.write_into(target);
+        self.tag.write_into(target);
+    }
+
+    /// Reads the core fields written by [`Self::write_core`].
+    pub(super) fn read_core<R: ByteReader>(
+        source: &mut R,
+    ) -> Result<(AccountId, NoteType, NoteTag), DeserializationError> {
+        let note_type = NoteType::read_from(source)?;
+        let sender = AccountId::read_from(source)?;
+        let tag = NoteTag::read_from(source)?;
+        Ok((sender, note_type, tag))
     }
 }
 
-impl Serializable for NoteMetadataHeader {
+// SERIALIZATION
+// ================================================================================================
+
+impl Serializable for NoteMetadata {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.metadata.write_into(target);
+        self.write_core(target);
 
         let present_headers_iter =
             self.attachment_headers.iter().filter(|header| !header.is_absent());
@@ -249,7 +227,9 @@ impl Serializable for NoteMetadataHeader {
     }
 
     fn get_size_hint(&self) -> usize {
-        self.metadata.get_size_hint()
+        self.note_type.get_size_hint()
+            + self.sender.get_size_hint()
+            + self.tag.get_size_hint()
             + core::mem::size_of::<u8>()
             + self
                 .attachment_headers
@@ -261,9 +241,9 @@ impl Serializable for NoteMetadataHeader {
     }
 }
 
-impl Deserializable for NoteMetadataHeader {
+impl Deserializable for NoteMetadata {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let metadata = NoteMetadata::read_from(source)?;
+        let (sender, note_type, tag) = Self::read_core(source)?;
 
         let num_headers_present = u8::read_from(source)? as usize;
         if num_headers_present > NoteAttachments::MAX_COUNT {
@@ -278,9 +258,15 @@ impl Deserializable for NoteMetadataHeader {
             *header = NoteAttachmentHeader::read_from(source)?;
         }
 
-        let attachment_commitment = Word::read_from(source)?;
+        let attachments_commitment = Word::read_from(source)?;
 
-        Ok(Self::from_parts(metadata, attachment_headers, attachment_commitment))
+        Ok(Self::from_parts(
+            sender,
+            note_type,
+            tag,
+            attachment_headers,
+            attachments_commitment,
+        ))
     }
 }
 
@@ -304,9 +290,9 @@ fn merge_sender_suffix_and_note_type(sender_id_suffix: Felt, note_type: NoteType
 
     let note_type_byte = note_type as u8;
     debug_assert!(note_type_byte < 2, "note type must not contain values >= 2");
-    // note_type at bit 4, version at bits 0..=3 (hardcoded to NoteMetadataHeader::VERSION_0)
-    merged |= (note_type_byte as u64) << NoteMetadataHeader::NOTE_TYPE_SHIFT;
-    merged |= NoteMetadataHeader::VERSION_0 as u64;
+    // note_type at bit 4, version at bits 0..=3 (hardcoded to NoteMetadata::VERSION_0)
+    merged |= (note_type_byte as u64) << NoteMetadata::NOTE_TYPE_SHIFT;
+    merged |= NoteMetadata::VERSION_0 as u64;
 
     // SAFETY: The most significant bit of the suffix is zero by construction so the u64 will be a
     // valid felt.
@@ -345,7 +331,6 @@ mod tests {
     #[test]
     fn note_metadata_word_encodes_attachment_header() -> anyhow::Result<()> {
         let sender = AccountId::try_from(ACCOUNT_ID_MAX_ONES).unwrap();
-        let metadata = NoteMetadata::new(sender, NoteType::Public).with_tag(NoteTag::new(0xff));
         let attachment0 = NoteAttachment::with_word(
             NoteAttachmentScheme::new(1)?,
             Word::from([10, 20, 30, 40u32]),
@@ -355,9 +340,11 @@ mod tests {
             vec![Word::from([10, 20, 30, 40u32]), Word::from([10, 20, 30, 40u32])],
         )?;
         let attachments = NoteAttachments::new(vec![attachment0, attachment1])?;
-        let metadata_header = NoteMetadataHeader::new(metadata, &attachments);
+        let metadata = NoteMetadata::new(sender, NoteType::Public)
+            .with_tag(NoteTag::new(0xff))
+            .with_attachments(&attachments);
 
-        let encoded = metadata_header.to_metadata_word();
+        let encoded = metadata.to_metadata_word();
 
         let tag = encoded[2].as_canonical_u64();
         assert_eq!(tag, 0x0000_0000_0000_00ff);
@@ -395,17 +382,14 @@ mod tests {
         let sender = AccountId::try_from(ACCOUNT_ID_MAX_ONES).unwrap();
         let note_type = NoteType::Public;
         let tag = NoteTag::new(u32::MAX);
-        let metadata = NoteMetadata::new(sender, note_type).with_tag(tag);
         let attachments = NoteAttachments::new(attachments.into_iter().collect())?;
-        let metadata_header = NoteMetadataHeader::new(metadata, &attachments);
+        let metadata = NoteMetadata::new(sender, note_type)
+            .with_tag(tag)
+            .with_attachments(&attachments);
 
-        // Metadata Roundtrip
+        // Roundtrip
         let deserialized = NoteMetadata::read_from_bytes(&metadata.to_bytes())?;
         assert_eq!(deserialized, metadata);
-
-        // Metadata Header Roundtrip
-        let header = NoteMetadataHeader::read_from_bytes(&metadata_header.to_bytes())?;
-        assert_eq!(header, metadata_header);
 
         Ok(())
     }

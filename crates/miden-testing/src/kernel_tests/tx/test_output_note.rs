@@ -25,7 +25,6 @@ use miden_protocol::note::{
     NoteAttachmentScheme,
     NoteAttachments,
     NoteMetadata,
-    NoteMetadataHeader,
     NoteRecipient,
     NoteStorage,
     NoteTag,
@@ -127,9 +126,10 @@ async fn test_create_note() -> anyhow::Result<()> {
         "recipient must be stored at the correct memory location",
     );
 
-    let metadata = NoteMetadata::new(account_id, NoteType::Public).with_tag(tag);
-    let expected_metadata_word =
-        NoteMetadataHeader::new(metadata, &NoteAttachments::default()).to_metadata_word();
+    let expected_metadata_word = NoteMetadata::new(account_id, NoteType::Public)
+        .with_tag(tag)
+        .with_attachments(&NoteAttachments::default())
+        .to_metadata_word();
     let expected_note_attachment = NoteAttachments::default().to_commitment();
 
     assert_eq!(
@@ -370,7 +370,7 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
     assert_eq!(
         exec_output
             .get_kernel_mem_word(OUTPUT_NOTE_SECTION_OFFSET + OUTPUT_NOTE_METADATA_HEADER_OFFSET),
-        output_note_1.metadata_header().to_metadata_word(),
+        output_note_1.metadata().to_metadata_word(),
         "Validate the output note 1 metadata header",
     );
     for attachment_idx in 0..4u32 {
@@ -389,7 +389,7 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
         exec_output.get_kernel_mem_word(
             OUTPUT_NOTE_SECTION_OFFSET + OUTPUT_NOTE_METADATA_HEADER_OFFSET + NOTE_MEM_SIZE
         ),
-        output_note_2.metadata_header().to_metadata_word(),
+        output_note_2.metadata().to_metadata_word(),
         "Validate the output note 2 metadata header",
     );
     assert_eq!(
@@ -1055,7 +1055,7 @@ async fn test_get_recipient_and_metadata() -> anyhow::Result<()> {
         "#,
         output_note = create_output_note(&output_note),
         RECIPIENT = output_note.recipient().digest(),
-        METADATA_HEADER = output_note.metadata_header().to_metadata_word(),
+        METADATA_HEADER = output_note.metadata().to_metadata_word(),
     );
 
     let tx_script = CodeBuilder::default().compile_tx_script(tx_script_src)?;

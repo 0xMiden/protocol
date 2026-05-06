@@ -12,7 +12,6 @@ use crate::note::{
     NoteHeader,
     NoteId,
     NoteMetadata,
-    NoteMetadataHeader,
     NoteRecipient,
     PartialNote,
 };
@@ -114,7 +113,7 @@ where
     /// - For an empty list, [`Word::empty`] is returned.
     /// - For a non-empty list of notes, this is a sequential hash of (note_id, metadata_commitment)
     ///   tuples for the notes created in a transaction, where `metadata_commitment` is the return
-    ///   value of [`NoteMetadataHeader::to_commitment`].
+    ///   value of [`NoteMetadata::to_commitment`].
     pub(crate) fn compute_commitment<'header>(
         notes: impl ExactSizeIterator<Item = &'header NoteHeader>,
     ) -> Word {
@@ -125,7 +124,7 @@ where
         let mut elements: Vec<Felt> = Vec::with_capacity(notes.len() * 8);
         for note_header in notes {
             elements.extend_from_slice(note_header.id().as_elements());
-            elements.extend_from_slice(note_header.metadata_header().to_commitment().as_elements());
+            elements.extend_from_slice(note_header.metadata().to_commitment().as_elements());
         }
 
         Hasher::hash_elements(&elements)
@@ -257,8 +256,8 @@ impl RawOutputNote {
             Self::Full(note) if note.metadata().is_private() => {
                 let note_id = note.id();
                 let (_, metadata, _, attachments) = note.into_parts();
-                let metadata_header = NoteMetadataHeader::new(metadata, &attachments);
-                let note_header = NoteHeader::new(note_id, metadata_header);
+                let metadata = metadata.with_attachments(&attachments);
+                let note_header = NoteHeader::new(note_id, metadata);
                 Ok(OutputNote::Private(PrivateOutputNote::new(note_header, attachments)?))
             },
             Self::Full(note) => Ok(OutputNote::Public(PublicOutputNote::new(note)?)),
@@ -395,11 +394,6 @@ impl OutputNote {
             Self::Public(note) => Some(note.assets()),
             Self::Private(_) => None,
         }
-    }
-
-    /// Returns the note's metadata header.
-    pub fn metadata_header(&self) -> &NoteMetadataHeader {
-        <&NoteHeader>::from(self).metadata_header()
     }
 
     /// Returns a commitment to the note and its metadata.

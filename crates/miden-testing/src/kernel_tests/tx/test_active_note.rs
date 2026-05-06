@@ -120,8 +120,7 @@ async fn test_active_note_get_metadata() -> anyhow::Result<()> {
             swapw dropw
         end
         "#,
-        METADATA_HEADER =
-            tx_context.input_notes().get_note(0).note().metadata_header().to_metadata_word(),
+        METADATA_HEADER = tx_context.input_notes().get_note(0).note().metadata().to_metadata_word(),
     );
 
     tx_context.execute_code(&code).await?;
@@ -222,15 +221,12 @@ async fn test_active_note_get_note_type(#[case] note_type: NoteType) -> anyhow::
 
 #[tokio::test]
 async fn test_metadata_into_tag() -> anyhow::Result<()> {
-    use miden_protocol::note::{NoteAttachments, NoteMetadataHeader};
-
     use crate::executor::CodeExecutor;
 
     let sender_id: AccountId = ACCOUNT_ID_SENDER.try_into()?;
     let tag = NoteTag::new(0xabcd_1234);
     let metadata = NoteMetadata::new(sender_id, NoteType::Public).with_tag(tag);
-    let metadata_header = NoteMetadataHeader::new(metadata, &NoteAttachments::default());
-    let metadata_word = metadata_header.to_metadata_word();
+    let metadata_word = metadata.to_metadata_word();
 
     let code = "
         use miden::protocol::note

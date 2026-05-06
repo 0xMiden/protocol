@@ -8,7 +8,6 @@ use super::{
     NoteHeader,
     NoteId,
     NoteMetadata,
-    NoteMetadataHeader,
     Serializable,
 };
 use crate::Word;
@@ -40,8 +39,8 @@ impl PartialNote {
         attachments: NoteAttachments,
     ) -> Self {
         let note_id = NoteId::new(recipient_digest, assets.commitment());
-        let metadata_header = NoteMetadataHeader::new(metadata, &attachments);
-        let header = NoteHeader::new(note_id, metadata_header);
+        let metadata = metadata.with_attachments(&attachments);
+        let header = NoteHeader::new(note_id, metadata);
         Self {
             header,
             recipient_digest,
@@ -77,11 +76,6 @@ impl PartialNote {
         &self.attachments
     }
 
-    /// Returns a reference to the [`NoteMetadataHeader`] of this note.
-    pub fn metadata_header(&self) -> &NoteMetadataHeader {
-        self.header.metadata_header()
-    }
-
     /// Returns the [`NoteHeader`] of this note.
     pub fn header(&self) -> &NoteHeader {
         &self.header
@@ -98,16 +92,20 @@ impl PartialNote {
 
 impl Serializable for PartialNote {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        // Serialize only metadata since the note ID in the header can be recomputed from the
-        // remaining data.
-        self.header().metadata().write_into(target);
+        // The metadata's attachment headers and commitment are derivable from `attachments`, so
+        // only the user-facing metadata fields are written here. Note ID can be recomputed from
+        // the remaining data.
+        self.header().metadata().write_core(target);
         self.recipient_digest.write_into(target);
         self.assets.write_into(target);
         self.attachments.write_into(target);
     }
 
     fn get_size_hint(&self) -> usize {
-        self.metadata().get_size_hint()
+        let metadata = self.metadata();
+        metadata.sender().get_size_hint()
+            + metadata.note_type().get_size_hint()
+            + metadata.tag().get_size_hint()
             + Word::SERIALIZED_SIZE
             + self.assets.get_size_hint()
             + self.attachments.get_size_hint()
@@ -116,7 +114,8 @@ impl Serializable for PartialNote {
 
 impl Deserializable for PartialNote {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let metadata = NoteMetadata::read_from(source)?;
+        let (sender, note_type, tag) = NoteMetadata::read_core(source)?;
+        let metadata = NoteMetadata::new(sender, note_type).with_tag(tag);
         let recipient_digest = Word::read_from(source)?;
         let assets = NoteAssets::read_from(source)?;
         let attachments = NoteAttachments::read_from(source)?;

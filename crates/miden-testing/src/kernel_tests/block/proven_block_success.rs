@@ -115,7 +115,7 @@ async fn proven_block_success() -> anyhow::Result<()> {
             (
                 BlockNoteIndex::new(batch_idx, note_idx_in_batch).unwrap(),
                 note.id(),
-                note.metadata_header(),
+                note.metadata(),
             )
         },
     ))
@@ -343,7 +343,7 @@ async fn proven_block_erasing_unauthenticated_notes() -> anyhow::Result<()> {
 
     // Remove the erased note to get the expected batch note tree.
     let mut batch_tree = BatchNoteTree::with_contiguous_leaves(
-        batch0.output_notes().iter().map(|note| (note.id(), note.metadata_header())),
+        batch0.output_notes().iter().map(|note| (note.id(), note.metadata())),
     )
     .unwrap();
     batch_tree.remove(erased_note_idx as u64).unwrap();

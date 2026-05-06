@@ -24,7 +24,7 @@ mod storage;
 pub use storage::NoteStorage;
 
 mod metadata;
-pub use metadata::{NoteMetadata, NoteMetadataHeader};
+pub use metadata::NoteMetadata;
 
 mod attachment;
 pub use attachment::{
@@ -113,8 +113,8 @@ impl Note {
         attachments: NoteAttachments,
     ) -> Self {
         let details = NoteDetails::new(assets, recipient);
-        let metadata_header = NoteMetadataHeader::new(metadata, &attachments);
-        let header = NoteHeader::new(details.id(), metadata_header);
+        let metadata = metadata.with_attachments(&attachments);
+        let header = NoteHeader::new(details.id(), metadata);
         let nullifier = details.nullifier();
 
         Self { header, details, attachments, nullifier }
@@ -175,11 +175,6 @@ impl Note {
     /// Returns the note's attachments.
     pub fn attachments(&self) -> &NoteAttachments {
         &self.attachments
-    }
-
-    /// Returns a reference to the note's metadata header.
-    pub fn metadata_header(&self) -> &NoteMetadataHeader {
-        self.header.metadata_header()
     }
 
     /// Returns a commitment to the note and its metadata.
@@ -265,14 +260,18 @@ impl Serializable for Note {
             nullifier: _,
         } = self;
 
-        // only metadata is serialized as note ID can be computed from note details
-        header.metadata().write_into(target);
+        // The metadata's attachment headers and commitment are derivable from `attachments`, so
+        // only the user-facing metadata fields are written here.
+        header.metadata().write_core(target);
         details.write_into(target);
         attachments.write_into(target);
     }
 
     fn get_size_hint(&self) -> usize {
-        self.header.metadata().get_size_hint()
+        let metadata = self.header.metadata();
+        metadata.sender().get_size_hint()
+            + metadata.note_type().get_size_hint()
+            + metadata.tag().get_size_hint()
             + self.details.get_size_hint()
             + self.attachments.get_size_hint()
     }
@@ -280,7 +279,8 @@ impl Serializable for Note {
 
 impl Deserializable for Note {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let metadata = NoteMetadata::read_from(source)?;
+        let (sender, note_type, tag) = NoteMetadata::read_core(source)?;
+        let metadata = NoteMetadata::new(sender, note_type).with_tag(tag);
         let details = NoteDetails::read_from(source)?;
         let attachments = NoteAttachments::read_from(source)?;
         let (assets, recipient) = details.into_parts();

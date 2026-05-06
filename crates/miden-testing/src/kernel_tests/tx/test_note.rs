@@ -17,7 +17,6 @@ use miden_protocol::note::{
     NoteAttachmentScheme,
     NoteAttachments,
     NoteMetadata,
-    NoteMetadataHeader,
     NoteRecipient,
     NoteStorage,
     NoteTag,
@@ -404,7 +403,10 @@ async fn test_build_metadata_header() -> anyhow::Result<()> {
         let metadata_word = exec_output.get_stack_word(0);
 
         assert_eq!(
-            NoteMetadataHeader::new(test_metadata, &NoteAttachments::default()).to_metadata_word(),
+            test_metadata
+                .clone()
+                .with_attachments(&NoteAttachments::default())
+                .to_metadata_word(),
             metadata_word,
             "failed in iteration {iteration}"
         );
@@ -570,10 +572,14 @@ async fn test_metadata_into_attachment_schemes(
     #[case] attachment_headers: [NoteAttachmentHeader; 4],
 ) -> anyhow::Result<()> {
     let sender = AccountId::try_from(ACCOUNT_ID_SENDER).unwrap();
-    let metadata = NoteMetadata::new(sender, NoteType::Public).with_tag(NoteTag::new(0));
-    let metadata_header =
-        NoteMetadataHeader::from_parts(metadata, attachment_headers, Word::default());
-    let metadata_word = metadata_header.to_metadata_word();
+    let metadata = NoteMetadata::from_parts(
+        sender,
+        NoteType::Public,
+        NoteTag::new(0),
+        attachment_headers,
+        Word::default(),
+    );
+    let metadata_word = metadata.to_metadata_word();
 
     let code = format!(
         "
@@ -660,10 +666,14 @@ async fn test_find_attachment_idx(
     #[case] expected_idx: u8,
 ) -> anyhow::Result<()> {
     let sender = AccountId::try_from(ACCOUNT_ID_SENDER).unwrap();
-    let metadata = NoteMetadata::new(sender, NoteType::Public).with_tag(NoteTag::new(0));
-    let metadata_header =
-        NoteMetadataHeader::from_parts(metadata, attachment_headers, Word::default());
-    let metadata_word = metadata_header.to_metadata_word();
+    let metadata = NoteMetadata::from_parts(
+        sender,
+        NoteType::Public,
+        NoteTag::new(0),
+        attachment_headers,
+        Word::default(),
+    );
+    let metadata_word = metadata.to_metadata_word();
 
     let code = format!(
         "
