@@ -59,7 +59,6 @@ fn output_note_size_hint_matches_serialized_length() -> anyhow::Result<()> {
         .recipient(recipient)
         .assets(assets)
         .note_tag(NoteTag::with_account_target(sender_id))
-        .note_type(NoteType::Private)
         .build();
     let output_note = RawOutputNote::Full(note);
 

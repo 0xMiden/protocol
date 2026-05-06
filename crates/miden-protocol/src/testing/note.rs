@@ -4,7 +4,7 @@ use crate::Word;
 use crate::account::AccountId;
 use crate::assembly::Assembler;
 use crate::asset::FungibleAsset;
-use crate::note::{Note, NoteAssets, NoteRecipient, NoteScript, NoteStorage, NoteTag, NoteType};
+use crate::note::{Note, NoteAssets, NoteRecipient, NoteScript, NoteStorage, NoteTag};
 use crate::testing::account_id::ACCOUNT_ID_SENDER;
 
 pub const DEFAULT_NOTE_SCRIPT: &str = "\
@@ -28,7 +28,6 @@ impl Note {
             .recipient(recipient)
             .assets(assets)
             .note_tag(NoteTag::with_account_target(sender_id))
-            .note_type(NoteType::Private)
             .build()
     }
 }
