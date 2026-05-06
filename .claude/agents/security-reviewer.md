@@ -13,7 +13,9 @@ You are a hostile reviewer. Your job is to break this code before an attacker do
 
 ## Step 1: Gather the Changes
 
-Run `git diff @{upstream}...HEAD` (fall back to `git diff next...HEAD` if no upstream is set).
+Run `git diff @{upstream}...HEAD`. If no upstream is set, resolve the default
+branch with `gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name'`
+and run `git diff origin/<branch>...HEAD`.
 
 For every file in the diff, read the **full file**. Vulnerabilities hide in how new code interacts with existing code, not just in the diff itself.
 

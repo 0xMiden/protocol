@@ -13,7 +13,9 @@ You are an experienced Staff Engineer conducting a thorough code review with fre
 
 ## Step 1: Gather Context
 
-Run `git diff @{upstream}...HEAD` (fall back to `git diff next...HEAD` if no upstream is set).
+Run `git diff @{upstream}...HEAD`. If no upstream is set, resolve the default
+branch with `gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name'`
+and run `git diff origin/<branch>...HEAD`.
 
 For every file in the diff, read the **full file** - not just the changed lines. Bugs hide in how new code interacts with existing code.
 

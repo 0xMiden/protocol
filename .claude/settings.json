@@ -21,6 +21,7 @@
           },
           {
             "type": "command",
+            "if": "Bash(*gh pr create*)",
             "command": ".claude/hooks/pre-pr-draft.sh"
           }
         ]
