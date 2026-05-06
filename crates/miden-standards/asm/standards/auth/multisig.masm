@@ -177,7 +177,10 @@ proc assert_proc_thresholds_lte_num_approvers(num_approvers: u32)
         push.PROC_THRESHOLD_ROOTS_SLOT[0..2]
         # => [proc_roots_slot_suffix, proc_roots_slot_prefix, PROC_ROOT, proc_index, num_approvers]
 
-        exec.active_account::get_initial_map_item
+        # Use the *current* policy state, not the initial one; otherwise a `set_proc_threshold`
+        # call earlier in the same transaction that raised a threshold above the new num_approvers
+        # would be missed and the multisig could end up with an unreachable threshold.
+        exec.active_account::get_map_item
         # => [[proc_threshold, 0, 0, 0], proc_index, num_approvers]
 
         movdn.3 drop drop drop

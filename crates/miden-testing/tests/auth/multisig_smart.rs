@@ -21,7 +21,7 @@ use miden_standards::account::auth::{AuthMultisigSmart, AuthMultisigSmartConfig}
 use miden_standards::account::components::multisig_smart_library;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
-use miden_standards::errors::standards::ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_INPUT_OR_OUTPUT_NOTES;
+use miden_standards::errors::standards::ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_INPUT_NOTES;
 use miden_testing::{MockChainBuilder, assert_transaction_executor_error};
 use miden_tx::TransactionExecutorError;
 use miden_tx::auth::{BasicAuthenticator, SigningInputs, TransactionAuthenticator};
@@ -251,10 +251,7 @@ async fn test_multisig_smart_proc_policy_no_notes_constraint_is_enforced(
         .execute()
         .await;
 
-    assert_transaction_executor_error!(
-        result,
-        ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_INPUT_OR_OUTPUT_NOTES
-    );
+    assert_transaction_executor_error!(result, ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_INPUT_NOTES);
 
     Ok(())
 }
