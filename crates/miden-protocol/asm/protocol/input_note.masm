@@ -374,12 +374,12 @@ end
 #! potential four attachment commitments.
 #!
 #! Inputs:  [note_index]
-#! Outputs: [num_attachments, attachments_ptr]
+#! Outputs: [num_attachments, attachment_commitments_ptr]
 #!
 #! Where:
 #! - note_index is the index of the input note.
 #! - num_attachments is the number of attachments in the note.
-#! - attachments_ptr is a pointer to the attachment commitments written to local memory.
+#! - attachment_commitments_ptr is a pointer to the attachment commitments written to local memory.
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of input notes.
@@ -395,7 +395,7 @@ pub proc get_attachment_commitments_ptr
     locaddr.0 movdn.4
     # => [ATTACHMENTS_COMMITMENT, dest_ptr]
 
-    exec.note::write_attachments_to_memory
+    exec.note::write_attachment_commitments_to_memory
     # => [num_attachments]
 
     locaddr.0 swap
@@ -424,7 +424,7 @@ end
 pub proc get_attachment_ptr
     # get the attachment commitments for the note
     swap exec.get_attachment_commitments_ptr
-    # => [num_attachments, attachments_ptr, attachment_idx]
+    # => [num_attachments, attachment_commitments_ptr, attachment_idx]
 
     exec.note::get_attachment_ptr
     # => [num_words, attachment_ptr]

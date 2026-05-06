@@ -1516,18 +1516,18 @@ async fn test_get_attachment_commitments_ptr() -> anyhow::Result<()> {
             # get attachment commitments for note at index 0
             push.0
             exec.output_note::get_attachment_commitments_ptr
-            # => [num_attachments, attachments_ptr]
+            # => [num_attachments, attachment_commitments_ptr]
 
             # assert num_attachments == 2
             eq.2 assert.err=\"expected 2 attachments\"
-            # => [attachments_ptr]
+            # => [attachment_commitments_ptr]
 
             # read commitment 0 from memory at ptr and assert
             padw dup.4 mem_loadw_le
-            # => [COMMITMENT_0, attachments_ptr]
+            # => [COMMITMENT_0, attachment_commitments_ptr]
             push.{EXPECTED_COMMITMENT_0}
             assert_eqw.err=\"attachment commitment 0 mismatch\"
-            # => [attachments_ptr]
+            # => [attachment_commitments_ptr]
 
             # advance pointer to next word (WORD_SIZE=4) and read commitment 1
             padw movup.4 add.4 mem_loadw_le
