@@ -14,11 +14,8 @@ use miden_protocol::asset::{Asset, AssetVault, AssetVaultKey, FungibleAsset};
 use miden_protocol::note::{
     NoteAttachment,
     NoteAttachmentContent,
-    NoteAttachmentHeader,
     NoteAttachmentScheme,
-    NoteAttachments,
     NoteId,
-    NoteMetadata,
     NoteRecipient,
     NoteScript,
     NoteStorage,
@@ -122,8 +119,12 @@ pub(crate) enum TransactionEvent {
     NoteBeforeCreated {
         /// The note index extracted from the stack.
         note_idx: usize,
-        /// The note metadata extracted from the stack.
-        metadata: NoteMetadata,
+        /// The sender of the note (the active account).
+        sender: AccountId,
+        /// The type of the note extracted from the stack.
+        note_type: NoteType,
+        /// The tag of the note extracted from the stack.
+        note_tag: NoteTag,
         /// The recipient data extracted from the advice inputs.
         recipient_data: RecipientData,
     },
@@ -353,7 +354,7 @@ impl TransactionEvent {
                 let recipient_digest = process.get_stack_word(3);
 
                 let sender = base_host.native_account_id();
-                let metadata = build_note_metadata(sender, note_type, tag)?;
+                let (note_type, note_tag) = decode_note_type_and_tag(note_type, tag)?;
 
                 let note_idx = process.get_num_output_notes() as usize;
 
@@ -400,7 +401,13 @@ impl TransactionEvent {
                     RecipientData::Digest(recipient_digest)
                 };
 
-                Some(TransactionEvent::NoteBeforeCreated { note_idx, metadata, recipient_data })
+                Some(TransactionEvent::NoteBeforeCreated {
+                    note_idx,
+                    sender,
+                    note_type,
+                    note_tag,
+                    recipient_data,
+                })
             },
 
             TransactionEventId::NoteAfterCreated => None,
@@ -708,12 +715,11 @@ fn extract_tx_summary<'store, STORE>(
 // HELPER FUNCTIONS
 // ================================================================================================
 
-/// Builds the note metadata from sender, note type and tag if all inputs are valid.
-fn build_note_metadata(
-    sender: AccountId,
+/// Decodes the note type and tag from the raw [`Felt`] values pushed by the kernel.
+fn decode_note_type_and_tag(
     note_type: Felt,
     tag: Felt,
-) -> Result<NoteMetadata, TransactionKernelError> {
+) -> Result<(NoteType, NoteTag), TransactionKernelError> {
     let note_type = u8::try_from(note_type.as_canonical_u64())
         .map_err(|_| TransactionKernelError::other("failed to decode note_type into u8"))
         .and_then(|note_type_byte| {
@@ -729,13 +735,7 @@ fn build_note_metadata(
         .map_err(|_| TransactionKernelError::other("failed to decode note tag into u32"))
         .map(NoteTag::new)?;
 
-    Ok(NoteMetadata::from_parts(
-        sender,
-        note_type,
-        tag,
-        [NoteAttachmentHeader::absent(); NoteAttachments::MAX_COUNT],
-        Word::empty(),
-    ))
+    Ok((note_type, tag))
 }
 
 fn extract_note_attachment(

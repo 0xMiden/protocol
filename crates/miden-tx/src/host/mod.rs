@@ -48,7 +48,7 @@ use miden_protocol::account::{
     StorageSlotName,
 };
 use miden_protocol::asset::Asset;
-use miden_protocol::note::{NoteAttachment, NoteId, NoteMetadata, NoteRecipient};
+use miden_protocol::note::{NoteAttachment, NoteId, NoteRecipient, NoteTag, NoteType};
 use miden_protocol::transaction::{
     InputNote,
     InputNotes,
@@ -229,10 +229,17 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     pub(super) fn output_note_from_recipient_digest(
         &mut self,
         note_idx: usize,
-        metadata: NoteMetadata,
+        sender: AccountId,
+        note_type: NoteType,
+        note_tag: NoteTag,
         recipient_digest: Word,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
-        let note_builder = OutputNoteBuilder::from_recipient_digest(metadata, recipient_digest)?;
+        let note_builder = OutputNoteBuilder::from_recipient_digest(
+            sender,
+            note_type,
+            note_tag,
+            recipient_digest,
+        )?;
         self.insert_output_note_builder(note_idx, note_builder)?;
 
         Ok(Vec::new())
@@ -243,10 +250,13 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     pub(super) fn output_note_from_recipient(
         &mut self,
         note_idx: usize,
-        metadata: NoteMetadata,
+        sender: AccountId,
+        note_type: NoteType,
+        note_tag: NoteTag,
         recipient: NoteRecipient,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
-        let note_builder = OutputNoteBuilder::from_recipient(metadata, recipient);
+        let note_builder =
+            OutputNoteBuilder::from_recipient(sender, note_type, note_tag, recipient);
         self.insert_output_note_builder(note_idx, note_builder)?;
 
         Ok(Vec::new())

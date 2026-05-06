@@ -152,18 +152,34 @@ where
                 self.base_host.on_account_push_procedure_index(code_commitment, procedure_root)
             },
 
-            TransactionEvent::NoteBeforeCreated { note_idx, metadata, recipient_data } => {
-                match recipient_data {
-                    RecipientData::Digest(recipient_digest) => self
-                        .base_host
-                        .output_note_from_recipient_digest(note_idx, metadata, recipient_digest),
-                    RecipientData::Recipient(note_recipient) => self
-                        .base_host
-                        .output_note_from_recipient(note_idx, metadata, note_recipient),
-                    RecipientData::ScriptMissing { .. } => Err(TransactionKernelError::other(
-                        "note script should be in the advice provider at proving time",
-                    )),
-                }
+            TransactionEvent::NoteBeforeCreated {
+                note_idx,
+                sender,
+                note_type,
+                note_tag,
+                recipient_data,
+            } => match recipient_data {
+                RecipientData::Digest(recipient_digest) => {
+                    self.base_host.output_note_from_recipient_digest(
+                        note_idx,
+                        sender,
+                        note_type,
+                        note_tag,
+                        recipient_digest,
+                    )
+                },
+                RecipientData::Recipient(note_recipient) => {
+                    self.base_host.output_note_from_recipient(
+                        note_idx,
+                        sender,
+                        note_type,
+                        note_tag,
+                        note_recipient,
+                    )
+                },
+                RecipientData::ScriptMissing { .. } => Err(TransactionKernelError::other(
+                    "note script should be in the advice provider at proving time",
+                )),
             },
 
             TransactionEvent::NoteBeforeAddAsset { note_idx, asset } => {

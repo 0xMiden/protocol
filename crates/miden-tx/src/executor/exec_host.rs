@@ -22,7 +22,14 @@ use miden_protocol::assembly::{SourceFile, SourceManagerSync, SourceSpan};
 use miden_protocol::asset::{AssetVaultKey, AssetWitness, FungibleAsset};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::merkle::smt::SmtProof;
-use miden_protocol::note::{NoteMetadata, NoteRecipient, NoteScript, NoteScriptRoot, NoteStorage};
+use miden_protocol::note::{
+    NoteRecipient,
+    NoteScript,
+    NoteScriptRoot,
+    NoteStorage,
+    NoteTag,
+    NoteType,
+};
 use miden_protocol::transaction::{
     InputNote,
     InputNotes,
@@ -377,12 +384,15 @@ where
     /// - Constructing the recipient with the fetched script does not match the expected recipient
     ///   digest.
     /// - The data store returns an error when fetching the script.
+    #[allow(clippy::too_many_arguments)]
     async fn on_note_script_requested(
         &mut self,
         note_idx: usize,
         recipient_digest: Word,
         script_root: Word,
-        metadata: NoteMetadata,
+        sender: AccountId,
+        note_type: NoteType,
+        note_tag: NoteTag,
         note_storage: NoteStorage,
         serial_num: Word,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
@@ -412,17 +422,20 @@ where
                     )));
                 }
 
-                self.base_host.output_note_from_recipient(note_idx, metadata, recipient)?;
+                self.base_host
+                    .output_note_from_recipient(note_idx, sender, note_type, note_tag, recipient)?;
 
                 Ok(vec![AdviceMutation::extend_map(AdviceMap::from_iter([(
                     Word::from(script_root),
                     script_felts,
                 )]))])
             },
-            None if metadata.is_private() => {
+            None if note_type == NoteType::Private => {
                 self.base_host.output_note_from_recipient_digest(
                     note_idx,
-                    metadata,
+                    sender,
+                    note_type,
+                    note_tag,
                     recipient_digest,
                 )?;
 
@@ -576,35 +589,49 @@ where
                     self.base_host.on_account_push_procedure_index(code_commitment, procedure_root)
                 },
 
-                TransactionEvent::NoteBeforeCreated { note_idx, metadata, recipient_data } => {
-                    match recipient_data {
-                        RecipientData::Digest(recipient_digest) => {
-                            self.base_host.output_note_from_recipient_digest(
-                                note_idx,
-                                metadata,
-                                recipient_digest,
-                            )
-                        },
-                        RecipientData::Recipient(note_recipient) => self
-                            .base_host
-                            .output_note_from_recipient(note_idx, metadata, note_recipient),
-                        RecipientData::ScriptMissing {
+                TransactionEvent::NoteBeforeCreated {
+                    note_idx,
+                    sender,
+                    note_type,
+                    note_tag,
+                    recipient_data,
+                } => match recipient_data {
+                    RecipientData::Digest(recipient_digest) => {
+                        self.base_host.output_note_from_recipient_digest(
+                            note_idx,
+                            sender,
+                            note_type,
+                            note_tag,
                             recipient_digest,
-                            serial_num,
+                        )
+                    },
+                    RecipientData::Recipient(note_recipient) => {
+                        self.base_host.output_note_from_recipient(
+                            note_idx,
+                            sender,
+                            note_type,
+                            note_tag,
+                            note_recipient,
+                        )
+                    },
+                    RecipientData::ScriptMissing {
+                        recipient_digest,
+                        serial_num,
+                        script_root,
+                        note_storage,
+                    } => {
+                        self.on_note_script_requested(
+                            note_idx,
+                            recipient_digest,
                             script_root,
+                            sender,
+                            note_type,
+                            note_tag,
                             note_storage,
-                        } => {
-                            self.on_note_script_requested(
-                                note_idx,
-                                recipient_digest,
-                                script_root,
-                                metadata,
-                                note_storage,
-                                serial_num,
-                            )
-                            .await
-                        },
-                    }
+                            serial_num,
+                        )
+                        .await
+                    },
                 },
 
                 TransactionEvent::NoteBeforeAddAsset { note_idx, asset } => {

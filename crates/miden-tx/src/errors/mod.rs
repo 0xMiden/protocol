@@ -22,7 +22,7 @@ use miden_protocol::errors::{
     TransactionInputsExtractionError,
     TransactionOutputError,
 };
-use miden_protocol::note::{NoteId, NoteMetadata};
+use miden_protocol::note::{NoteId, NoteTag, NoteType};
 use miden_protocol::transaction::TransactionSummary;
 use miden_protocol::{Felt, Word};
 use miden_verifier::VerificationError;
@@ -255,9 +255,14 @@ pub enum TransactionKernelError {
     #[error("cannot add asset to note with index {0}, note does not exist in the advice provider")]
     MissingNote(usize),
     #[error(
-        "public note with metadata {0:?} and recipient digest {1} is missing details in the advice provider"
+        "public note (sender {sender}, note_type {note_type:?}, tag {note_tag}) with recipient digest {recipient_digest} is missing details in the advice provider"
     )]
-    PublicNoteMissingDetails(NoteMetadata, Word),
+    PublicNoteMissingDetails {
+        sender: AccountId,
+        note_type: NoteType,
+        note_tag: NoteTag,
+        recipient_digest: Word,
+    },
     #[error(
         "commitment of note attachment advice data is {actual} which does not match commitment {provided} provided to add_attachment"
     )]

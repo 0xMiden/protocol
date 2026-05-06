@@ -1,5 +1,6 @@
 use alloc::vec::Vec;
 
+use miden_protocol::account::AccountId;
 use miden_protocol::asset::Asset;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
@@ -9,6 +10,8 @@ use miden_protocol::note::{
     NoteAttachments,
     NoteMetadata,
     NoteRecipient,
+    NoteTag,
+    NoteType,
     PartialNote,
 };
 
@@ -23,9 +26,15 @@ use crate::errors::TransactionKernelError;
 /// Assets are accumulated in a `Vec` and the final `NoteAssets` is only constructed when
 /// [`build`](Self::build) is called. This avoids recomputing the commitment hash on every asset
 /// addition.
+///
+/// The user-facing metadata fields (`sender`, `note_type`, `note_tag`) are stored individually
+/// rather than as a [`NoteMetadata`] because the attachment headers and commitment that complete a
+/// `NoteMetadata` are not known until [`build`](Self::build) is called.
 #[derive(Debug, Clone)]
 pub struct OutputNoteBuilder {
-    metadata: NoteMetadata,
+    sender: AccountId,
+    note_type: NoteType,
+    note_tag: NoteTag,
     assets: Vec<Asset>,
     attachments: Vec<NoteAttachment>,
     recipient_digest: Word,
@@ -36,27 +45,31 @@ impl OutputNoteBuilder {
     // CONSTRUCTOR
     // --------------------------------------------------------------------------------------------
 
-    /// Returns a new [OutputNoteBuilder] from the provided metadata, recipient digest, and optional
-    /// recipient.
+    /// Returns a new [OutputNoteBuilder] from the provided metadata fields and recipient digest
+    /// (private note path: full recipient is not yet known).
     ///
     /// # Errors
     ///
-    /// Returns an error if:
-    /// - the note is public.
+    /// Returns an error if `note_type` is not [`NoteType::Private`].
     pub fn from_recipient_digest(
-        metadata: NoteMetadata,
+        sender: AccountId,
+        note_type: NoteType,
+        note_tag: NoteTag,
         recipient_digest: Word,
     ) -> Result<Self, TransactionKernelError> {
-        // For public notes, we must have a recipient.
-        if !metadata.is_private() {
-            return Err(TransactionKernelError::PublicNoteMissingDetails(
-                metadata,
+        if note_type != NoteType::Private {
+            return Err(TransactionKernelError::PublicNoteMissingDetails {
+                sender,
+                note_type,
+                note_tag,
                 recipient_digest,
-            ));
+            });
         }
 
         Ok(Self {
-            metadata,
+            sender,
+            note_type,
+            note_tag,
             recipient_digest,
             recipient: None,
             assets: Vec::new(),
@@ -64,10 +77,17 @@ impl OutputNoteBuilder {
         })
     }
 
-    /// Returns a new [`OutputNoteBuilder`] from the provided metadata and recipient.
-    pub fn from_recipient(metadata: NoteMetadata, recipient: NoteRecipient) -> Self {
+    /// Returns a new [`OutputNoteBuilder`] from the provided metadata fields and full recipient.
+    pub fn from_recipient(
+        sender: AccountId,
+        note_type: NoteType,
+        note_tag: NoteTag,
+        recipient: NoteRecipient,
+    ) -> Self {
         Self {
-            metadata,
+            sender,
+            note_type,
+            note_tag,
             recipient_digest: recipient.digest(),
             recipient: Some(recipient),
             assets: Vec::new(),
@@ -168,18 +188,26 @@ impl OutputNoteBuilder {
         match self.recipient {
             Some(recipient) => {
                 let note = Note::builder()
-                    .sender(self.metadata.sender())
+                    .sender(self.sender)
                     .recipient(recipient)
                     .assets(assets)
                     .attachments(attachments)
-                    .note_tag(self.metadata.tag())
-                    .note_type(self.metadata.note_type())
+                    .note_tag(self.note_tag)
+                    .note_type(self.note_type)
                     .build();
                 RawOutputNote::Full(note)
             },
             None => {
-                let note =
-                    PartialNote::new(self.metadata, self.recipient_digest, assets, attachments);
+                // Build a complete metadata now that attachments are known, then hand it to
+                // PartialNote::new (whose API still takes a NoteMetadata).
+                let metadata = NoteMetadata::from_parts(
+                    self.sender,
+                    self.note_type,
+                    self.note_tag,
+                    attachments.to_headers(),
+                    attachments.commitment(),
+                );
+                let note = PartialNote::new(metadata, self.recipient_digest, assets, attachments);
                 RawOutputNote::Partial(note)
             },
         }
