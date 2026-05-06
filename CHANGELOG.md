@@ -15,6 +15,7 @@
 - Updated `SwapNote::build_tag` to use 1-bit `NoteType` encoding, increasing script root bits from 14 to 15 ([#2758](https://github.com/0xMiden/protocol/pull/2758)).
 - Added `AssetAmount` wrapper type for validated fungible asset amounts ([#2721](https://github.com/0xMiden/protocol/pull/2721)).
 - [BREAKING] Renamed `ProvenBatch::new` to `new_unchecked` ([#2687](https://github.com/0xMiden/miden-base/issues/2687)).
+- Added `ShortCapitalString` type and related `TokenSymbol` and `RoleSymbol` types. ([#2690](https://github.com/0xMiden/protocol/pull/2690)).
 - Added `ShortCapitalString` type and related `TokenSymbol` and `RoleSymbol` types ([#2690](https://github.com/0xMiden/protocol/pull/2690)).
 - [BREAKING] Renamed the guarded multisig component-facing APIs from `multisig_guardian` / `AuthMultisigGuardian` to `guarded_multisig` / `AuthGuardedMultisig`, while retaining the `guardian` auth namespace and guardian-specific procedures.
 - Added shared `ProcedurePolicy` for AuthMultisig ([#2670](https://github.com/0xMiden/protocol/pull/2670)).
@@ -38,6 +39,7 @@
 - Made deserialization of `AccountCode` more robust ([#2788](https://github.com/0xMiden/protocol/pull/2788)).
 - Fixed `output_note::add_asset` and `output_note::set_attachment` to no longer accept invalid note indices ([#2824](https://github.com/0xMiden/protocol/pull/2824)).
 - Fixed auth components to use initial storage state for authentication ([#2677](https://github.com/0xMiden/protocol/issues/2677)).
+- Renamed the AggLayer faucet registry flag constant for clarity ([#2812](https://github.com/0xMiden/protocol/issues/2812)).
 
 ## 0.14.5 (2026-04-23)
 
