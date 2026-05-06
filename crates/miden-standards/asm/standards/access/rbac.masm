@@ -80,24 +80,6 @@ pub proc assert_sender_has_role
     # => [pad(16)]
 end
 
-#! Returns whether a role exists.
-#!
-#! A role is considered to exist when it has at least one member. A role with only an
-#! admin set via `set_role_admin` (and no members) is reported as not existing.
-#!
-#! Inputs:  [role_symbol, pad(15)]
-#! Outputs: [role_exists, pad(15)]
-#!
-#! Where:
-#! - role_symbol is the encoded role symbol.
-#! - role_exists is 1 if the role has at least one member, otherwise 0.
-#!
-#! Invocation: call
-pub proc role_exists
-    exec.role_exists_internal
-    # => [role_exists, pad(15)]
-end
-
 #! Returns whether an account holds a role.
 #!
 #! Returns `0` if the role does not exist or the account is not a member.
@@ -396,20 +378,6 @@ proc get_role_admin_internal
 
     drop
     # => [admin_role_symbol]
-end
-
-#! Returns whether a role exists (has at least one member).
-#!
-#! Inputs:  [role_symbol]
-#! Outputs: [role_exists]
-#!
-#! Invocation: exec
-proc role_exists_internal
-    exec.get_role_member_count_internal
-    # => [member_count]
-
-    neq.0
-    # => [role_exists]
 end
 
 #! Returns whether the note sender holds a role.

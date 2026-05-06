@@ -75,8 +75,8 @@ static ROLE_MEMBERSHIP_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// member creates the role; revoking the last member removes it. As a consequence,
 /// `set_role_admin(A, B)` stores the admin relationship in storage but does not make role
 /// `A` exist until a member is granted. Once the last member of `A` is revoked,
-/// `role_exists(A)` returns `false`, though the admin configuration is retained and will
-/// apply the next time a member is granted.
+/// `get_role_member_count(A)` returns `0`, though the admin configuration is retained and
+/// will apply the next time a member is granted.
 ///
 /// ## Membership lookup
 ///
@@ -89,6 +89,8 @@ static ROLE_MEMBERSHIP_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// single field element using the same packing as the token symbol type. Examples:
 /// `MINTER`, `MINTER_ADMIN`, `PAUSER`. The zero field element is reserved and cannot be
 /// used as a role symbol; attempting to do so panics with `ERR_ROLE_SYMBOL_ZERO`.
+///
+/// ## Usage
 ///
 /// Guarding a procedure in MASM so that only members of `MINTER` can call it:
 ///
