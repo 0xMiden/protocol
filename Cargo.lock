@@ -1859,6 +1859,7 @@ dependencies = [
  "anyhow",
  "assert_matches",
  "bech32",
+ "bon",
  "criterion",
  "fs-err",
  "getrandom 0.3.4",

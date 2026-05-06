@@ -48,6 +48,7 @@ miden-verifier        = { workspace = true }
 
 # External dependencies
 bech32       = { default-features = false, features = ["alloc"], version = "0.11" }
+bon          = { workspace = true }
 rand         = { workspace = true }
 rand_xoshiro = { default-features = false, optional = true, version = "0.7" }
 semver       = { features = ["serde"], version = "1.0" }

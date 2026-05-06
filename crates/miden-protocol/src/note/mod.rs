@@ -203,6 +203,30 @@ impl Note {
     }
 }
 
+// NOTE BUILDER
+// ================================================================================================
+
+#[bon::bon]
+impl Note {
+    /// Builds a [`Note`] from the provided parts.
+    ///
+    /// Use [`Note::builder`] to invoke this in builder form, e.g.
+    /// `Note::builder().sender(sender).recipient(recipient).build()`. `sender` and `recipient` are
+    /// required; all other fields default.
+    #[builder]
+    pub fn build(
+        sender: AccountId,
+        recipient: NoteRecipient,
+        #[builder(default)] assets: NoteAssets,
+        #[builder(default)] attachments: NoteAttachments,
+        #[builder(default)] note_tag: NoteTag,
+        #[builder(default)] note_type: NoteType,
+    ) -> Self {
+        let metadata = NoteMetadata::new(sender, note_type).with_tag(note_tag);
+        Self::with_attachments(assets, metadata, recipient, attachments)
+    }
+}
+
 // AS REF
 // ================================================================================================
 
