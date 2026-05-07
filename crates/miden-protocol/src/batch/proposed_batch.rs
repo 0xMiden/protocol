@@ -341,6 +341,11 @@ impl ProposedBatch {
         self.id
     }
 
+    /// Returns the header of the reference block this batch is proposed for.
+    pub fn reference_block_header(&self) -> &BlockHeader {
+        &self.reference_block_header
+    }
+
     /// Returns the block number at which the batch will expire.
     pub fn batch_expiration_block_num(&self) -> BlockNumber {
         self.batch_expiration_block_num

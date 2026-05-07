@@ -15,11 +15,10 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
+use crate::vm::ExecutionProof;
 use crate::{MIN_PROOF_SECURITY_LEVEL, Word};
 
-/// A transaction batch with an execution proof.
-/// Currently, there is no proof attached. Future versions will extend this structure to include
-/// a proof artifact once recursive proving is implemented.
+/// A transaction batch with an execution proof produced by the batch kernel.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProvenBatch {
     id: BatchId,
@@ -30,6 +29,7 @@ pub struct ProvenBatch {
     output_notes: Vec<OutputNote>,
     batch_expiration_block_num: BlockNumber,
     transactions: OrderedTransactionHeaders,
+    proof: ExecutionProof,
 }
 
 impl ProvenBatch {
@@ -45,6 +45,7 @@ impl ProvenBatch {
     ///
     /// Returns an error if the batch expiration block number is not greater than the reference
     /// block number.
+    #[allow(clippy::too_many_arguments)]
     pub fn new_unchecked(
         id: BatchId,
         reference_block_commitment: Word,
@@ -54,6 +55,7 @@ impl ProvenBatch {
         output_notes: Vec<OutputNote>,
         batch_expiration_block_num: BlockNumber,
         transactions: OrderedTransactionHeaders,
+        proof: ExecutionProof,
     ) -> Result<Self, ProvenBatchError> {
         // Check that the batch expiration block number is greater than the reference block number.
         if batch_expiration_block_num <= reference_block_num {
@@ -72,6 +74,7 @@ impl ProvenBatch {
             output_notes,
             batch_expiration_block_num,
             transactions,
+            proof,
         })
     }
 
@@ -144,6 +147,11 @@ impl ProvenBatch {
         &self.transactions
     }
 
+    /// Returns the [`ExecutionProof`] attached to this batch.
+    pub fn proof(&self) -> &ExecutionProof {
+        &self.proof
+    }
+
     // MUTATORS
     // --------------------------------------------------------------------------------------------
 
@@ -166,6 +174,7 @@ impl Serializable for ProvenBatch {
         self.output_notes.write_into(target);
         self.batch_expiration_block_num.write_into(target);
         self.transactions.write_into(target);
+        self.proof.write_into(target);
     }
 }
 
@@ -179,6 +188,7 @@ impl Deserializable for ProvenBatch {
         let output_notes = Vec::<OutputNote>::read_from(source)?;
         let batch_expiration_block_num = BlockNumber::read_from(source)?;
         let transactions = OrderedTransactionHeaders::read_from(source)?;
+        let proof = ExecutionProof::read_from(source)?;
 
         Self::new_unchecked(
             id,
@@ -189,6 +199,7 @@ impl Deserializable for ProvenBatch {
             output_notes,
             batch_expiration_block_num,
             transactions,
+            proof,
         )
         .map_err(|e| DeserializationError::UnknownError(e.to_string()))
     }

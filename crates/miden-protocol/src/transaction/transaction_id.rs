@@ -35,6 +35,9 @@ use crate::utils::serde::{
 pub struct TransactionId(Word);
 
 impl TransactionId {
+    /// Length of the felt sequence hashed by [`Self::new`] / [`Self::input_elements`].
+    pub(crate) const INPUT_ELEMENTS_LEN: usize = 6 * WORD_SIZE;
+
     /// Returns a new [TransactionId] instantiated from the provided transaction components.
     pub fn new(
         init_account_commitment: Word,
@@ -43,13 +46,36 @@ impl TransactionId {
         output_notes_commitment: Word,
         fee_asset: FungibleAsset,
     ) -> Self {
-        let mut elements = [ZERO; 6 * WORD_SIZE];
+        Self(Hasher::hash_elements(&Self::input_elements(
+            init_account_commitment,
+            final_account_commitment,
+            input_notes_commitment,
+            output_notes_commitment,
+            fee_asset,
+        )))
+    }
+
+    /// Returns the felt sequence that [`Self::new`] hashes to produce a [`TransactionId`].
+    ///
+    /// The layout is:
+    ///   `[INIT[4], FINAL[4], INPUT_NOTES_COMMITMENT[4], OUTPUT_NOTES_COMMITMENT[4], FEE_ASSET[8]]`
+    ///
+    /// Exposed for use by the batch kernel which pipes this same felt sequence from the advice
+    /// provider to memory and asserts the resulting hash matches a previously-verified `tx_id`.
+    pub(crate) fn input_elements(
+        init_account_commitment: Word,
+        final_account_commitment: Word,
+        input_notes_commitment: Word,
+        output_notes_commitment: Word,
+        fee_asset: FungibleAsset,
+    ) -> [Felt; Self::INPUT_ELEMENTS_LEN] {
+        let mut elements = [ZERO; Self::INPUT_ELEMENTS_LEN];
         elements[..4].copy_from_slice(init_account_commitment.as_elements());
         elements[4..8].copy_from_slice(final_account_commitment.as_elements());
         elements[8..12].copy_from_slice(input_notes_commitment.as_elements());
         elements[12..16].copy_from_slice(output_notes_commitment.as_elements());
         elements[16..].copy_from_slice(&Asset::from(fee_asset).as_elements());
-        Self(Hasher::hash_elements(&elements))
+        elements
     }
 }
 
