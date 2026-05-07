@@ -51,11 +51,9 @@ const ERR_BATCH_TRANSACTION_HEADER_MISMATCH="transaction header data piped from 
 #!   that transaction's tx_id.
 #!
 #! TODO: verify that each transaction's reference block is contained in the chain MMR rooted at
-#!       BLOCK_HASH (mirrors `ProposedBatch::new` lines 184-193).
-#! TODO: verify that the partial-blockchain peaks hash matches the block header's chain commitment
-#!       (mirrors `ProposedBatch::new` lines 145-161).
-#! TODO: assert each `expiration_block_num_i > reference_block_num` (mirrors
-#!       `ProposedBatch::new` lines 225-242).
+#!       BLOCK_HASH.
+#! TODO: verify that the partial-blockchain peaks hash matches the block header's chain commitment.
+#! TODO: assert each `expiration_block_num_i > reference_block_num`.
 #! TODO: verify each `expiration_block_num_i` is part of tx_i's verified ExecutionProof public
 #!       outputs once recursive proof verification ships.
 pub proc prepare_batch
