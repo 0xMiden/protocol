@@ -37,7 +37,7 @@ impl BatchId {
 
     /// Calculates a batch ID from the given transaction ID and account ID tuple.
     pub fn from_ids(iter: impl IntoIterator<Item = (TransactionId, AccountId)>) -> Self {
-        Self(Hasher::hash_elements(&Self::tuple_elements(iter)))
+        Self(Hasher::hash_elements(&Self::hash_input_elements(iter)))
     }
 
     /// Returns the felt sequence that [`Self::from_ids`] hashes to produce a [`BatchId`].
@@ -48,7 +48,7 @@ impl BatchId {
     /// Exposed for use by the batch kernel which pipes this same felt sequence from the advice
     /// provider to memory and asserts the resulting hash matches the public input
     /// `TRANSACTIONS_COMMITMENT`.
-    pub(crate) fn tuple_elements(
+    pub(crate) fn hash_input_elements(
         iter: impl IntoIterator<Item = (TransactionId, AccountId)>,
     ) -> Vec<Felt> {
         let mut elements: Vec<Felt> = Vec::new();

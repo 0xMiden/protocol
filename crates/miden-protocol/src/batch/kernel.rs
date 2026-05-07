@@ -177,7 +177,7 @@ impl BatchKernel {
         let mut advice_inputs = AdviceInputs::default();
 
         // Layer 1: TRANSACTIONS_COMMITMENT |-> [(tx_id, account_id_pair) tuples].
-        let layer1_data = BatchId::tuple_elements(
+        let layer1_data = BatchId::hash_input_elements(
             proposed_batch.transactions().iter().map(|tx| (tx.id(), tx.account_id())),
         );
         advice_inputs.map.extend([(proposed_batch.id().as_word(), layer1_data)]);
@@ -340,7 +340,7 @@ mod tests {
     }
 
     fn transactions_commitment(txs: &[SynthTransaction]) -> Word {
-        Hasher::hash_elements(&BatchId::tuple_elements(
+        Hasher::hash_elements(&BatchId::hash_input_elements(
             txs.iter().map(|tx| (tx.tx_id(), tx.account_id)),
         ))
     }
@@ -349,7 +349,7 @@ mod tests {
         let mut advice_inputs = AdviceInputs::default();
 
         // Layer 1: TRANSACTIONS_COMMITMENT |-> [(tx_id, account_id_pair) tuples].
-        let layer1 = BatchId::tuple_elements(txs.iter().map(|tx| (tx.tx_id(), tx.account_id)));
+        let layer1 = BatchId::hash_input_elements(txs.iter().map(|tx| (tx.tx_id(), tx.account_id)));
         advice_inputs.map.extend([(transactions_commitment(txs), layer1)]);
 
         for tx in txs {
