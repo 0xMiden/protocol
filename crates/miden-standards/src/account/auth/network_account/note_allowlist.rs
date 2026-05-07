@@ -1,0 +1,122 @@
+use alloc::vec::Vec;
+
+use miden_protocol::account::component::{SchemaType, StorageSlotSchema};
+use miden_protocol::account::{StorageMap, StorageMapKey, StorageSlot, StorageSlotName};
+use miden_protocol::utils::sync::LazyLock;
+use miden_protocol::{Felt, Word};
+
+// CONSTANTS
+// ================================================================================================
+
+static SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::auth::network_account::allowed_note_scripts")
+        .expect("storage slot name should be valid")
+});
+
+// A flag value used as the storage map entry for each allowed script root. Its only job is to be
+// distinguishable from the storage map's default empty word, letting the MASM allowlist check
+// detect "this key is present" without caring about its contents. Any non-empty word would serve;
+// we pick `[1, 0, 0, 0]` for readability when inspecting storage.
+const ALLOWED_FLAG: Word = Word::new([Felt::ONE, Felt::ZERO, Felt::ZERO, Felt::ZERO]);
+
+// NETWORK ACCOUNT NOTE ALLOWLIST
+// ================================================================================================
+
+/// A standardized storage slot holding the allowlist of input-note script roots that a network
+/// account is willing to consume.
+///
+/// The presence of this slot is what defines an account as a "network account": it is the
+/// abstraction shared by every network-account component, so off-chain services (like the network
+/// transaction builder) can identify a network account and filter notes by inspecting account
+/// storage for this slot, independent of which component the account uses.
+///
+/// The slot is a [`StorageMap`] keyed by note script root; any non-empty value marks a root as
+/// allowed.
+#[derive(Debug, Clone)]
+pub struct NetworkAccountNoteAllowlist {
+    allowed_script_roots: Vec<Word>,
+}
+
+impl NetworkAccountNoteAllowlist {
+    /// Creates a new allowlist from the provided list of allowed input-note script roots.
+    pub fn new(allowed_script_roots: Vec<Word>) -> Self {
+        Self { allowed_script_roots }
+    }
+
+    /// Returns the [`StorageSlotName`] of the standardized allowlist slot.
+    pub fn slot_name() -> &'static StorageSlotName {
+        &SLOT_NAME
+    }
+
+    /// Returns the schema entry for the allowlist slot.
+    pub fn slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+        (
+            Self::slot_name().clone(),
+            StorageSlotSchema::map(
+                "Allowed input note script roots",
+                SchemaType::native_word(),
+                SchemaType::native_word(),
+            ),
+        )
+    }
+
+    /// Consumes this allowlist and returns the [`StorageSlot`] suitable for inclusion in an
+    /// [`AccountComponent`](miden_protocol::account::AccountComponent)'s storage layout.
+    pub fn into_storage_slot(self) -> StorageSlot {
+        let entries = self
+            .allowed_script_roots
+            .into_iter()
+            .map(|root| (StorageMapKey::new(root), ALLOWED_FLAG));
+
+        let storage_map = StorageMap::with_entries(entries)
+            .expect("allowlist entries should produce a valid storage map");
+
+        StorageSlot::with_map(Self::slot_name().clone(), storage_map)
+    }
+}
+
+// TESTS
+// ================================================================================================
+
+#[cfg(test)]
+mod tests {
+    use miden_protocol::account::StorageSlotContent;
+
+    use super::*;
+
+    #[test]
+    fn allowlist_storage_slot_contains_expected_entries() {
+        let root_a = Word::from([1u32, 2, 3, 4]);
+        let root_b = Word::from([5u32, 6, 7, 8]);
+
+        let slot = NetworkAccountNoteAllowlist::new(vec![root_a, root_b]).into_storage_slot();
+
+        assert_eq!(slot.name(), NetworkAccountNoteAllowlist::slot_name());
+
+        let StorageSlotContent::Map(map) = slot.content() else {
+            panic!("allowlist slot must be a map");
+        };
+
+        assert_eq!(
+            map.get(&StorageMapKey::new(root_a)),
+            ALLOWED_FLAG,
+            "root_a should resolve to the flag value"
+        );
+        assert_eq!(
+            map.get(&StorageMapKey::new(root_b)),
+            ALLOWED_FLAG,
+            "root_b should resolve to the flag value"
+        );
+    }
+
+    #[test]
+    fn empty_allowlist_produces_empty_map() {
+        let slot = NetworkAccountNoteAllowlist::new(Vec::new()).into_storage_slot();
+
+        let StorageSlotContent::Map(map) = slot.content() else {
+            panic!("allowlist slot must be a map");
+        };
+
+        assert_eq!(map.entries().count(), 0);
+    }
+}

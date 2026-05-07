@@ -1,37 +1,16 @@
+use alloc::vec;
 use alloc::vec::Vec;
 
+use miden_protocol::Word;
 use miden_protocol::account::component::{
     AccountComponentMetadata,
-    SchemaType,
     StorageSchema,
     StorageSlotSchema,
 };
-use miden_protocol::account::{
-    AccountComponent,
-    AccountType,
-    StorageMap,
-    StorageMapKey,
-    StorageSlot,
-    StorageSlotName,
-};
-use miden_protocol::utils::sync::LazyLock;
-use miden_protocol::{Felt, Word};
+use miden_protocol::account::{AccountComponent, AccountType, StorageSlotName};
 
+use super::NetworkAccountNoteAllowlist;
 use crate::account::components::network_account_auth_library;
-
-// CONSTANTS
-// ================================================================================================
-
-static ALLOWED_NOTE_SCRIPTS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::auth::network_account::allowed_note_scripts")
-        .expect("storage slot name should be valid")
-});
-
-// A flag value used as the storage map entry for each allowed script root. Its only job is to be
-// distinguishable from the storage map's default empty word, letting the MASM allowlist check
-// detect "this key is present" without caring about its contents. Any non-empty word would serve;
-// we pick `[1, 0, 0, 0]` for readability when inspecting storage.
-const ALLOWED_FLAG: Word = Word::new([Felt::new(1), Felt::new(0), Felt::new(0), Felt::new(0)]);
 
 // AUTH NETWORK ACCOUNT
 // ================================================================================================
@@ -48,14 +27,13 @@ const ALLOWED_FLAG: Word = Word::new([Felt::new(1), Felt::new(0), Felt::new(0), 
 /// - no transaction script was executed, and
 /// - every consumed input note has a script root present in the component's allowlist.
 ///
-/// The allowlist is stored in a storage map at a well-known slot (see
-/// [`Self::allowed_note_scripts_slot`]) so off-chain services can identify a network account by
-/// inspecting its storage.
+/// The allowlist is stored in the standardized [`NetworkAccountNoteAllowlist`] slot so off-chain
+/// services can identify a network account by checking for this slot.
 ///
 /// The allowlist is fixed at account creation; there is intentionally no procedure to mutate it
 /// after deployment.
 pub struct AuthNetworkAccount {
-    allowed_script_roots: Vec<Word>,
+    allowlist: NetworkAccountNoteAllowlist,
 }
 
 impl AuthNetworkAccount {
@@ -65,29 +43,24 @@ impl AuthNetworkAccount {
     /// Creates a new [`AuthNetworkAccount`] component with the provided list of allowed
     /// input-note script roots.
     pub fn new(allowed_script_roots: Vec<Word>) -> Self {
-        Self { allowed_script_roots }
+        Self {
+            allowlist: NetworkAccountNoteAllowlist::new(allowed_script_roots),
+        }
     }
 
     /// Returns the storage slot holding the allowlist of allowed input-note script roots.
     pub fn allowed_note_scripts_slot() -> &'static StorageSlotName {
-        &ALLOWED_NOTE_SCRIPTS_SLOT_NAME
+        NetworkAccountNoteAllowlist::slot_name()
     }
 
     /// Returns the storage slot schema for the allowlist slot.
     pub fn allowed_note_scripts_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::allowed_note_scripts_slot().clone(),
-            StorageSlotSchema::map(
-                "Allowed input note script roots",
-                SchemaType::native_word(),
-                SchemaType::native_word(),
-            ),
-        )
+        NetworkAccountNoteAllowlist::slot_schema()
     }
 
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        let storage_schema = StorageSchema::new(vec![Self::allowed_note_scripts_slot_schema()])
+        let storage_schema = StorageSchema::new(vec![NetworkAccountNoteAllowlist::slot_schema()])
             .expect("storage schema should be valid");
 
         AccountComponentMetadata::new(Self::NAME, AccountType::all())
@@ -101,17 +74,7 @@ impl AuthNetworkAccount {
 
 impl From<AuthNetworkAccount> for AccountComponent {
     fn from(component: AuthNetworkAccount) -> Self {
-        let map_entries = component
-            .allowed_script_roots
-            .into_iter()
-            .map(|root| (StorageMapKey::new(root), ALLOWED_FLAG));
-
-        let storage_slots = vec![StorageSlot::with_map(
-            AuthNetworkAccount::allowed_note_scripts_slot().clone(),
-            StorageMap::with_entries(map_entries)
-                .expect("allowlist entries should produce a valid storage map"),
-        )];
-
+        let storage_slots = vec![component.allowlist.into_storage_slot()];
         let metadata = AuthNetworkAccount::component_metadata();
 
         AccountComponent::new(network_account_auth_library(), storage_slots, metadata).expect(
@@ -126,7 +89,7 @@ impl From<AuthNetworkAccount> for AccountComponent {
 
 #[cfg(test)]
 mod tests {
-    use miden_protocol::account::{AccountBuilder, StorageMapKey};
+    use miden_protocol::account::{AccountBuilder, StorageSlotContent};
 
     use super::*;
     use crate::account::wallets::BasicWallet;
@@ -153,30 +116,16 @@ mod tests {
     }
 
     #[test]
-    fn allowlist_storage_contains_expected_entries() {
-        use miden_protocol::account::StorageSlotContent;
-
+    fn auth_network_account_uses_standardized_allowlist_slot() {
         let root_a = Word::from([1u32, 2, 3, 4]);
-        let root_b = Word::from([5u32, 6, 7, 8]);
-
-        let component: AccountComponent = AuthNetworkAccount::new(vec![root_a, root_b]).into();
+        let component: AccountComponent = AuthNetworkAccount::new(vec![root_a]).into();
 
         let storage_slots = component.storage_slots();
         assert_eq!(storage_slots.len(), 1);
+        assert_eq!(storage_slots[0].name(), NetworkAccountNoteAllowlist::slot_name());
 
-        let StorageSlotContent::Map(map) = storage_slots[0].content() else {
+        let StorageSlotContent::Map(_) = storage_slots[0].content() else {
             panic!("allowlist slot must be a map");
         };
-
-        assert_eq!(
-            map.get(&StorageMapKey::new(root_a)),
-            ALLOWED_FLAG,
-            "root_a should resolve to the flag value"
-        );
-        assert_eq!(
-            map.get(&StorageMapKey::new(root_b)),
-            ALLOWED_FLAG,
-            "root_b should resolve to the flag value"
-        );
     }
 }
