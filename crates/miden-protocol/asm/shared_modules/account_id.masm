@@ -38,6 +38,8 @@ const ACCOUNT_ID_TYPE_MASK_U32=0x30 # 0b11_0000
 # to determine the account version.
 const ACCOUNT_VERSION_MASK_U32=0x0f # 0b1111
 
+const VERSION_1=1
+
 # Given the least significant 32 bits of an account ID's prefix, this mask defines the bits used
 # to determine the account storage mode.
 const ACCOUNT_ID_STORAGE_MODE_MASK_U32=0xC0 # 0b1100_0000
@@ -173,7 +175,7 @@ pub proc validate
 
     dup exec.id_version
     # => [id_version, account_id_prefix]
-    eq.1
+    eq.VERSION_1
     # => [is_supported_version, account_id_prefix]
     assert.err=ERR_ACCOUNT_ID_UNKNOWN_VERSION
     # => [account_id_prefix]

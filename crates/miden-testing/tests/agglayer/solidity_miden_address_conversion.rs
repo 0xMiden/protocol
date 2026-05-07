@@ -14,7 +14,6 @@ use miden_processor::{
     Program,
     StackInputs,
 };
-use miden_protocol::Felt;
 use miden_protocol::account::AccountId;
 use miden_protocol::address::NetworkId;
 use miden_protocol::testing::account_id::{
@@ -61,22 +60,10 @@ fn test_account_id_to_ethereum_roundtrip() {
 
 #[test]
 fn test_bech32_to_ethereum_roundtrip() {
-    let test_account_ids = [
-        AccountId::try_from_elements(
-            Felt::try_from(0x2726c6f102cca300u64).unwrap(),
-            Felt::try_from(0xb0e79c68cafc5481u64).unwrap(),
-        )
-        .unwrap(),
-        AccountId::try_from_elements(
-            Felt::try_from(0x3e2ef26b2d756200u64).unwrap(),
-            Felt::try_from(0xcdb3759dddfdf011u64).unwrap(),
-        )
-        .unwrap(),
-        AccountId::try_from_elements(
-            Felt::try_from(0x3f8604619c647400u64).unwrap(),
-            Felt::try_from(0xd41be5e1ebff3f51u64).unwrap(),
-        )
-        .unwrap(),
+    let test_addresses = [
+        "mtst1azcw08rget79fqf8ymr0zqkv5v6cmvk5",
+        "mtst1arxmxavamh7lqyf79mexktt4vggtukh0",
+        "mtst1ar2phe0pa0ln75flsczxr8rywsmhwmg0",
     ];
 
     let evm_addresses = [
@@ -85,9 +72,8 @@ fn test_bech32_to_ethereum_roundtrip() {
         "0x00000000d41be5e1ebff3f513f8604619c647400",
     ];
 
-    for (account_id, expected_evm) in test_account_ids.iter().zip(evm_addresses.iter()) {
-        let bech32 = account_id.to_bech32(NetworkId::Testnet);
-        let (network_id, account_id) = AccountId::from_bech32(&bech32).unwrap();
+    for (bech32, expected_evm) in test_addresses.iter().zip(evm_addresses.iter()) {
+        let (network_id, account_id) = AccountId::from_bech32(bech32).unwrap();
 
         let eth = EthEmbeddedAccountId::from_account_id(account_id);
         let recovered = eth.into_account_id();
@@ -95,7 +81,7 @@ fn test_bech32_to_ethereum_roundtrip() {
 
         assert_eq!(&account_id, &recovered);
         assert_eq!(*expected_evm, eth.to_string());
-        assert_eq!(bech32, recovered_bech32);
+        assert_eq!(*bech32, recovered_bech32);
     }
 }
 

@@ -17,8 +17,8 @@ mod account_id;
 pub use account_id::{
     AccountId,
     AccountIdPrefix,
-    AccountIdPrefixV0,
-    AccountIdV0,
+    AccountIdPrefixV1,
+    AccountIdV1,
     AccountIdVersion,
     AccountStorageMode,
     AccountType,

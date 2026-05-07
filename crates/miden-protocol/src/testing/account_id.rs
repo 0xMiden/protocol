@@ -1,6 +1,6 @@
 use rand_xoshiro::rand_core::SeedableRng;
 
-use crate::account::{AccountId, AccountIdV0, AccountIdVersion, AccountStorageMode, AccountType};
+use crate::account::{AccountId, AccountIdV1, AccountIdVersion, AccountStorageMode, AccountType};
 
 // CONSTANTS
 // --------------------------------------------------------------------------------------------
@@ -117,8 +117,8 @@ pub const fn account_id(
     let mut prefix: u64 = 0;
 
     prefix |= AccountIdVersion::Version1 as u64;
-    prefix |= (account_type as u64) << AccountIdV0::TYPE_SHIFT;
-    prefix |= (storage_mode as u64) << AccountIdV0::STORAGE_MODE_SHIFT;
+    prefix |= (account_type as u64) << AccountIdV1::TYPE_SHIFT;
+    prefix |= (storage_mode as u64) << AccountIdV1::STORAGE_MODE_SHIFT;
 
     // Produce non-trivial IDs by distributing the random value.
     let random_1st_felt_upper = random & 0xff00_0000;

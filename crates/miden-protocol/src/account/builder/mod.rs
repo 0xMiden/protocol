@@ -7,7 +7,7 @@ use crate::account::{
     AccountCode,
     AccountComponent,
     AccountId,
-    AccountIdV0,
+    AccountIdV1,
     AccountIdVersion,
     AccountStorage,
     AccountStorageMode,
@@ -188,7 +188,7 @@ impl AccountBuilder {
         code_commitment: Word,
         storage_commitment: Word,
     ) -> Result<Word, AccountError> {
-        let seed = AccountIdV0::compute_account_seed(
+        let seed = AccountIdV1::compute_account_seed(
             init_seed,
             self.account_type,
             self.storage_mode,
