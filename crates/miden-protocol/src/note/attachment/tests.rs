@@ -103,7 +103,10 @@ fn note_attachments_commitment_single_word() -> anyhow::Result<()> {
     // Single word attachment: the attachment commitment is hash(word), so the overall
     // attachments commitment is hash(hash(word)).
     let word_commitment = Hasher::hash_elements(word.as_elements());
-    assert_eq!(attachments.to_commitment(), Hasher::hash_elements(word_commitment.as_elements()));
+    assert_eq!(
+        attachments.to_commitment(),
+        Hasher::hash_elements(word_commitment.as_elements())
+    );
 
     Ok(())
 }

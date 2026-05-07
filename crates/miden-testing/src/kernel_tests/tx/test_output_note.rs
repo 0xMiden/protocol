@@ -1691,7 +1691,7 @@ async fn test_get_attachment_ptr() -> anyhow::Result<()> {
             # => [note_idx]
 
             # add first word attachment (note_idx = 0)
-            push.{ATTACHMENT_WORD_0}
+            push.{attachment0_word}
             push.{attachment_scheme_0}
             # => [attachment_scheme, ATTACHMENT, note_idx]
             exec.output_note::add_word_attachment
@@ -1705,13 +1705,27 @@ async fn test_get_attachment_ptr() -> anyhow::Result<()> {
             # add second attachment
             push.0
             push.1024
-            push.2
+            push.{attachment1_num_words}
             push.{attachment_scheme_1}
             # => [attachment_scheme, num_words, attachment_ptr, note_idx=0]
             exec.output_note::add_words_attachment
             # => []
 
-            # --- get attachment 1 first (to use a non-zero idx) ---
+            # --- validate attachment 0 ---
+            push.0 push.0
+            # => [attachment_idx=0, note_idx=0]
+            exec.output_note::get_attachment_ptr
+            # => [num_words, attachment_ptr]
+
+            eq.{attachment0_num_words}
+            assert.err="expected attachment 0 to have {attachment0_num_words} words"
+            # => [attachment_ptr]
+
+            padw movup.4 mem_loadw_le
+            push.{attachment0_word}
+            assert_eqw.err="attachment 0 word mismatch"
+
+            # --- validate attachment 1 ---
             push.0 push.1
             # => [attachment_idx=1, note_idx=0]
             exec.output_note::get_attachment_ptr
@@ -1743,8 +1757,8 @@ async fn test_get_attachment_ptr() -> anyhow::Result<()> {
         note_type = output_note.metadata().note_type() as u8,
         tag = output_note.metadata().tag().as_u32(),
         attachment_scheme_0 = attachment_0.attachment_scheme().as_u16(),
-        ATTACHMENT_WORD_0 = attachment0_word,
         attachment_scheme_1 = attachment_1.attachment_scheme().as_u16(),
+        attachment0_num_words = attachment_0.num_words(),
         attachment1_num_words = attachment_1.num_words(),
     );
 
@@ -1907,7 +1921,7 @@ async fn test_add_attachments_with_too_many_overall_elements_fails() -> anyhow::
         end
         ",
         attachment0_scheme = attachment0.attachment_scheme().as_u16(),
-        attachment1_scheme = attachment0.attachment_scheme().as_u16(),
+        attachment1_scheme = attachment1.attachment_scheme().as_u16(),
         ATTACHMENT_0_COMMITMENT = attachment0.to_commitment(),
         ATTACHMENT_1_COMMITMENT = attachment1.to_commitment(),
     );
