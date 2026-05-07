@@ -1,5 +1,5 @@
-use alloc::vec;
 use alloc::collections::BTreeSet;
+use alloc::vec;
 
 use miden_protocol::account::component::{
     AccountComponentMetadata,
