@@ -557,7 +557,7 @@ proc create_burn_note
     push.BURN_NOTE_NUM_STORAGE_ITEMS push.0
     # => [storage_ptr, num_storage_items, SERIAL_NUM, SCRIPT_ROOT]
 
-    exec.note::build_recipient
+    exec.note::compute_and_store_recipient
     # => [RECIPIENT]
 
     push.NOTE_TYPE_PUBLIC

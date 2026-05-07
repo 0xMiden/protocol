@@ -536,7 +536,7 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
                 push.7 push.0
                 # => [storage_ptr, num_storage_items = 7, SERIAL_NUM, SCRIPT_ROOT]
 
-                exec.note::build_recipient
+                exec.note::compute_and_store_recipient
                 # => [RECIPIENT]
 
                 # Now call mint with the computed recipient
