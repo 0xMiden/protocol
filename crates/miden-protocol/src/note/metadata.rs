@@ -167,7 +167,7 @@ impl NoteMetadataHeader {
     ///
     /// The attachment headers and commitment are derived from the provided attachments.
     pub fn new(metadata: NoteMetadata, attachments: &NoteAttachments) -> Self {
-        Self::from_parts(metadata, attachments.to_headers(), attachments.commitment())
+        Self::from_parts(metadata, attachments.to_headers(), attachments.to_commitment())
     }
 
     /// Creates a [`NoteMetadataHeader`] from its raw parts.

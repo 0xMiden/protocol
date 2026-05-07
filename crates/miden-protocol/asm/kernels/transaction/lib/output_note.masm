@@ -466,7 +466,7 @@ pub proc build_metadata_header
     # Build metadata header.
     # --------------------------------------------------------------------------------------------
 
-    # push default absent attachment schemes (all zeros)
+    # push default absent attachment schemes (four u16 zeros encoded into a zero felt)
     push.ATTACHMENT_DEFAULT_SCHEMES movdn.3
     # => [sender_id_suffix_type_version, sender_id_prefix, attachment_num_words_and_tag, attachment_schemes]
     # => [NOTE_METADATA_HEADER]
