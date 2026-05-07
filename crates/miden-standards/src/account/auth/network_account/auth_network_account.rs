@@ -1,13 +1,13 @@
 use alloc::vec;
 use alloc::vec::Vec;
 
-use miden_protocol::Word;
 use miden_protocol::account::component::{
     AccountComponentMetadata,
     StorageSchema,
     StorageSlotSchema,
 };
 use miden_protocol::account::{AccountComponent, AccountType, StorageSlotName};
+use miden_protocol::note::NoteScriptRoot;
 
 use super::NetworkAccountNoteAllowlist;
 use crate::account::components::network_account_auth_library;
@@ -42,7 +42,7 @@ impl AuthNetworkAccount {
 
     /// Creates a new [`AuthNetworkAccount`] component with the provided list of allowed
     /// input-note script roots.
-    pub fn new(allowed_script_roots: Vec<Word>) -> Self {
+    pub fn new(allowed_script_roots: Vec<NoteScriptRoot>) -> Self {
         Self {
             allowlist: NetworkAccountNoteAllowlist::new(allowed_script_roots),
         }
@@ -96,8 +96,8 @@ mod tests {
 
     #[test]
     fn auth_network_account_component_builds() {
-        let root_a = Word::from([1u32, 2, 3, 4]);
-        let root_b = Word::from([5u32, 6, 7, 8]);
+        let root_a = NoteScriptRoot::from_array([1, 2, 3, 4]);
+        let root_b = NoteScriptRoot::from_array([5, 6, 7, 8]);
 
         let _account = AccountBuilder::new([0; 32])
             .with_auth_component(AuthNetworkAccount::new(vec![root_a, root_b]))
@@ -117,7 +117,7 @@ mod tests {
 
     #[test]
     fn auth_network_account_uses_standardized_allowlist_slot() {
-        let root_a = Word::from([1u32, 2, 3, 4]);
+        let root_a = NoteScriptRoot::from_array([1, 2, 3, 4]);
         let component: AccountComponent = AuthNetworkAccount::new(vec![root_a]).into();
 
         let storage_slots = component.storage_slots();

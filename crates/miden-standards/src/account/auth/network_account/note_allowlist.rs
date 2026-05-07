@@ -9,6 +9,7 @@ use miden_protocol::account::{
     StorageSlotContent,
     StorageSlotName,
 };
+use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
@@ -41,12 +42,12 @@ const ALLOWED_FLAG: Word = Word::new([Felt::ONE, Felt::ZERO, Felt::ZERO, Felt::Z
 /// allowed.
 #[derive(Debug, Clone)]
 pub struct NetworkAccountNoteAllowlist {
-    allowed_script_roots: Vec<Word>,
+    allowed_script_roots: Vec<NoteScriptRoot>,
 }
 
 impl NetworkAccountNoteAllowlist {
     /// Creates a new allowlist from the provided list of allowed input-note script roots.
-    pub fn new(allowed_script_roots: Vec<Word>) -> Self {
+    pub fn new(allowed_script_roots: Vec<NoteScriptRoot>) -> Self {
         Self { allowed_script_roots }
     }
 
@@ -56,7 +57,7 @@ impl NetworkAccountNoteAllowlist {
     }
 
     /// Returns the allowed input-note script roots in this allowlist.
-    pub fn allowed_script_roots(&self) -> &[Word] {
+    pub fn allowed_script_roots(&self) -> &[NoteScriptRoot] {
         &self.allowed_script_roots
     }
 
@@ -78,7 +79,7 @@ impl NetworkAccountNoteAllowlist {
         let entries = self
             .allowed_script_roots
             .into_iter()
-            .map(|root| (StorageMapKey::new(root), ALLOWED_FLAG));
+            .map(|root| (StorageMapKey::new(root.as_word()), ALLOWED_FLAG));
 
         let storage_map = StorageMap::with_entries(entries)
             .expect("allowlist entries should produce a valid storage map");
@@ -109,7 +110,10 @@ impl TryFrom<&AccountStorage> for NetworkAccountNoteAllowlist {
             return Err(NetworkAccountNoteAllowlistError::UnexpectedSlotType);
         };
 
-        let allowed_script_roots = map.entries().map(|(key, _value)| Word::from(*key)).collect();
+        let allowed_script_roots = map
+            .entries()
+            .map(|(key, _value)| NoteScriptRoot::from_raw(key.as_word()))
+            .collect();
 
         Ok(Self::new(allowed_script_roots))
     }
@@ -146,8 +150,8 @@ mod tests {
 
     #[test]
     fn allowlist_storage_slot_contains_expected_entries() {
-        let root_a = Word::from([1u32, 2, 3, 4]);
-        let root_b = Word::from([5u32, 6, 7, 8]);
+        let root_a = NoteScriptRoot::from_array([1, 2, 3, 4]);
+        let root_b = NoteScriptRoot::from_array([5, 6, 7, 8]);
 
         let slot = NetworkAccountNoteAllowlist::new(vec![root_a, root_b]).into_storage_slot();
 
@@ -158,12 +162,12 @@ mod tests {
         };
 
         assert_eq!(
-            map.get(&StorageMapKey::new(root_a)),
+            map.get(&StorageMapKey::new(root_a.as_word())),
             ALLOWED_FLAG,
             "root_a should resolve to the flag value"
         );
         assert_eq!(
-            map.get(&StorageMapKey::new(root_b)),
+            map.get(&StorageMapKey::new(root_b.as_word())),
             ALLOWED_FLAG,
             "root_b should resolve to the flag value"
         );
@@ -184,9 +188,9 @@ mod tests {
     fn allowlist_round_trips_through_account_storage() {
         use alloc::collections::BTreeSet;
 
-        let root_a = Word::from([1u32, 2, 3, 4]);
-        let root_b = Word::from([5u32, 6, 7, 8]);
-        let root_c = Word::from([9u32, 10, 11, 12]);
+        let root_a = NoteScriptRoot::from_array([1, 2, 3, 4]);
+        let root_b = NoteScriptRoot::from_array([5, 6, 7, 8]);
+        let root_c = NoteScriptRoot::from_array([9, 10, 11, 12]);
         let original_roots = vec![root_a, root_b, root_c];
 
         let account = AccountBuilder::new([0; 32])
@@ -199,8 +203,9 @@ mod tests {
             .expect("allowlist should be reconstructable from account storage");
 
         // The map's ordering is determined by the StorageMapKey, so compare as sets.
-        let expected: BTreeSet<Word> = original_roots.into_iter().collect();
-        let actual: BTreeSet<Word> = allowlist.allowed_script_roots().iter().copied().collect();
+        let expected: BTreeSet<NoteScriptRoot> = original_roots.into_iter().collect();
+        let actual: BTreeSet<NoteScriptRoot> =
+            allowlist.allowed_script_roots().iter().copied().collect();
 
         assert_eq!(actual, expected);
     }

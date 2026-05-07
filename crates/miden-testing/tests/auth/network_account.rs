@@ -2,6 +2,7 @@ use core::slice;
 
 use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountBuilder, AccountStorageMode, AccountType};
+use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::transaction::RawOutputNote;
 use miden_standards::account::auth::AuthNetworkAccount;
 use miden_standards::account::wallets::BasicWallet;
@@ -20,7 +21,9 @@ use miden_testing::{MockChain, assert_transaction_executor_error};
 /// allowlist of input-note script roots.
 fn build_allowlist_account(allowed_script_roots: Vec<Word>) -> anyhow::Result<Account> {
     Ok(AccountBuilder::new([0; 32])
-        .with_auth_component(AuthNetworkAccount::new(allowed_script_roots))
+        .with_auth_component(AuthNetworkAccount::new(
+            allowed_script_roots.into_iter().map(NoteScriptRoot::from_raw).collect(),
+        ))
         .with_component(BasicWallet)
         .account_type(AccountType::RegularAccountUpdatableCode)
         .storage_mode(AccountStorageMode::Public)
