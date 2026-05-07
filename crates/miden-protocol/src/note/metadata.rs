@@ -176,6 +176,12 @@ impl NoteMetadata {
 // SERIALIZATION
 // ================================================================================================
 
+// Standalone `NoteMetadata` serialization writes every field, including the derived
+// `attachment_headers` and `attachments_commitment`, so a `NoteMetadata` round-trips on its own
+// (e.g., as part of `NoteHeader`). When a `NoteMetadata` is serialized as part of a `Note` or
+// `PartialNote` — which already carry the full `NoteAttachments` payload — those types use
+// `NoteMetadata::write_core` / `read_core` to skip the derivable fields and avoid wire
+// redundancy. Do not consolidate the two paths without preserving that distinction.
 impl Serializable for NoteMetadata {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         self.write_core(target);
