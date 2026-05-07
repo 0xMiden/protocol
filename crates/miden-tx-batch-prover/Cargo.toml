@@ -26,3 +26,6 @@ miden-processor = { workspace = true }
 miden-protocol  = { workspace = true }
 miden-prover    = { workspace = true }
 miden-tx        = { workspace = true }
+
+[dev-dependencies]
+miden-protocol = { features = ["testing"], workspace = true }
