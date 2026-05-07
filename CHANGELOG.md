@@ -8,6 +8,13 @@
 - [BREAKING] Removed redundant outputs from kernel procedures: `note::write_assets_to_memory`, `active_note::get_assets`, `input_note::get_assets`, `output_note::get_assets`, `active_note::get_storage`, and `faucet::mint` no longer return values identical to their inputs ([#2523](https://github.com/0xMiden/protocol/issues/2523)).
 - Added PSWAP (partial swap) note for decentralized partial-fill asset exchange with remainder note re-creation ([#2636](https://github.com/0xMiden/protocol/pull/2636)).
 - [BREAKING] Add support for multiple attachments per note ([#2795](https://github.com/0xMiden/protocol/pull/2795), [#2871](https://github.com/0xMiden/protocol/pull/2871)).
+- [BREAKING] Collapsed `NoteMetadataHeader` into `NoteMetadata` and reshaped the public note-construction API ([#2876](https://github.com/0xMiden/protocol/pull/2876)):
+  - Added `Note::builder()` (via `bon`) as the canonical way to construct a `Note`. `sender` and `recipient` are required; `assets`, `attachments`, `note_tag`, and `note_type` default.
+  - Removed `Note::new`, `Note::with_attachments`, `NoteMetadata::new`, `NoteMetadata::with_tag`, `NoteMetadata::with_attachments`, and `NoteMetadata::set_tag`. `NoteMetadata::from_parts` is the only remaining public constructor.
+  - Removed `NoteMetadataHeader` (and `NoteHeader::metadata_header()` / `into_metadata_header()`); `NoteHeader` now holds a `NoteMetadata` directly with `metadata()` / `into_metadata()` accessors.
+  - Renamed the test helper `miden_standards::testing::note::NoteBuilder` to `TestNoteBuilder`.
+  - `OutputNoteBuilder` and `TransactionEvent::NoteBeforeCreated` now carry `sender` / `note_type` / `note_tag` instead of a stub `NoteMetadata`.
+  - `TransactionKernelError::PublicNoteMissingDetails` is now a struct variant with `sender`, `note_type`, `note_tag`, and `recipient_digest` fields.
 - [BREAKING] Renamed `set_attachment` to `add_attachment`, `set_word_attachment` to `add_word_attachment`, and `set_array_attachment` to `add_array_attachment` in `miden::protocol::output_note` ([#2795](https://github.com/0xMiden/protocol/pull/2795), [#2849](https://github.com/0xMiden/protocol/pull/2849)).
 - [BREAKING] Replaced `metadata_into_attachment_info` with `metadata_into_attachment_schemes` in `miden::protocol::note` ([#2795](https://github.com/0xMiden/protocol/pull/2795), [#2849](https://github.com/0xMiden/protocol/pull/2849)).
 - [BREAKING] All `get_metadata` procedures (`active_note`, `input_note`, `output_note`) no longer return attachments ([#2795](https://github.com/0xMiden/protocol/pull/2795), [#2849](https://github.com/0xMiden/protocol/pull/2849)).
