@@ -30,14 +30,23 @@ use miden::batch_kernel::prologue
 #! Each layer is loaded via `adv.push_mapvaln` keyed by the previously-verified hash and asserted
 #! against that hash via `assert_eqw`. Only verified data feeds into the batch outputs.
 #!
-#! Inputs:  [BLOCK_HASH, TRANSACTIONS_COMMITMENT]
+#! Inputs: [
+#!   TRANSACTIONS_COMMITMENT,
+#!   BLOCK_HASH,
+#!   pad(8),
+#! ]
 #!
-#! Outputs: [INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, batch_expiration_block_num]
+#! Outputs: [
+#!   INPUT_NOTES_COMMITMENT,
+#!   OUTPUT_NOTES_COMMITMENT,
+#!   batch_expiration_block_num,
+#!   pad(7),
+#! ]
 #!
 #! Where:
-#! - BLOCK_HASH is the commitment of the batch's reference block.
 #! - TRANSACTIONS_COMMITMENT is the sequential hash of the `(tx_id, account_id)` tuples committing
 #!   to the transactions in the batch (i.e. the `BatchId` value).
+#! - BLOCK_HASH is the commitment of the batch's reference block.
 #! - INPUT_NOTES_COMMITMENT is the sequential hash over every transaction's verified
 #!   `(NULLIFIER, EMPTY_OR_COMMITMENT)` tuples in transaction order.
 #! - OUTPUT_NOTES_COMMITMENT is the sequential hash over every transaction's verified
@@ -58,14 +67,11 @@ use miden::batch_kernel::prologue
 #! TODO: derive `batch_expiration_block_num` from data committed-to in the verified chain rather
 #!       than from the unverified advice stack.
 proc main
-    swapw
-    # Stack: [TRANSACTIONS_COMMITMENT, BLOCK_HASH]
+    # TODO: verify BLOCK_HASH against block header data via the pipe-and-verify pattern.
+    swapw dropw
+    # Stack: [TRANSACTIONS_COMMITMENT]
 
     exec.prologue::prepare_batch
-    # Stack: [BLOCK_HASH]
-
-    # TODO: verify BLOCK_HASH against block header data via the pipe-and-verify pattern.
-    dropw
     # Stack: []
 
     exec.note_tracker::compute_input_notes_commitment
@@ -82,6 +88,9 @@ proc main
     swapw
     # Stack: [INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, batch_expiration_block_num]
 
+    # Drop the leftover words below the output region. The kernel's earlier `consume`-only
+    # operations don't reduce stack depth below the 16-felt floor, so by this point the depth
+    # has grown above 16 and we need to bring it back down.
     repeat.3 movupw.3 dropw end
 end
 

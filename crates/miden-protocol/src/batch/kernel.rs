@@ -74,25 +74,21 @@ impl BatchKernel {
 
     /// Returns the stack with the public inputs required by the batch kernel.
     ///
-    /// The initial stack is defined as:
+    /// The initial stack is:
     ///
     /// ```text
-    /// [BLOCK_HASH, TRANSACTIONS_COMMITMENT]
+    /// [TRANSACTIONS_COMMITMENT, BLOCK_HASH, pad(8)]
     /// ```
     ///
     /// Where:
-    /// - `BLOCK_HASH` is the commitment of the batch's reference block.
     /// - `TRANSACTIONS_COMMITMENT` is the value [`BatchId`] computes — a sequential hash of
     ///   `(transaction_id || account_id_prefix || account_id_suffix || 0 || 0)` over all
     ///   transactions in the batch.
-    ///
-    /// The element order is kept in sync with the leading `swapw` in `main.masm`, which moves
-    /// `TRANSACTIONS_COMMITMENT` to the top of the kernel-side stack before the prologue
-    /// consumes it.
+    /// - `BLOCK_HASH` is the commitment of the batch's reference block.
     pub fn build_input_stack(block_hash: Word, transactions_commitment: Word) -> StackInputs {
         let mut inputs: Vec<Felt> = Vec::with_capacity(8);
-        inputs.extend_from_slice(block_hash.as_elements());
         inputs.extend_from_slice(transactions_commitment.as_elements());
+        inputs.extend_from_slice(block_hash.as_elements());
 
         StackInputs::new(&inputs).expect("number of stack inputs should be <= 16")
     }
