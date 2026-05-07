@@ -93,8 +93,7 @@ begin
     # --- Call 1: register_faucet ---
     # Expects: [addr0, addr1, addr2, addr3, addr4, faucet_id_suffix, faucet_id_prefix, scale, origin_network, is_native, pad(6)]
 
-    # Push the call's 6 trailing pad zeros first, then build the 10 args on top. This
-    # avoids the `movdn.15 ×6` shuffle that an after-the-fact pad would require.
+    # Push the call's 6 trailing pad zeros first, then build the 10 args on top.
     padw push.0.0
     # => [pad(6), pad(16)]
 
