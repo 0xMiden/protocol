@@ -58,11 +58,9 @@ use miden::batch_kernel::prologue
 #! TODO: derive `batch_expiration_block_num` from data committed-to in the verified chain rather
 #!       than from the unverified advice stack.
 proc main
-    # Bring TRANSACTIONS_COMMITMENT to the top so the prologue can consume it.
     swapw
     # Stack: [TRANSACTIONS_COMMITMENT, BLOCK_HASH]
 
-    # Layer 1 + Layer 2 verification, plus expiration min accumulation.
     exec.prologue::prepare_batch
     # Stack: [BLOCK_HASH]
 
@@ -70,29 +68,20 @@ proc main
     dropw
     # Stack: []
 
-    # Compute the batch INPUT_NOTES_COMMITMENT (Layer 3 verification + sequential absorption).
     exec.note_tracker::compute_input_notes_commitment
     # Stack: [INPUT_NOTES_COMMITMENT]
 
-    # Compute the batch OUTPUT_NOTES_COMMITMENT (Layer 3' verification + sequential absorption).
     exec.note_tracker::compute_output_notes_commitment
     # Stack: [OUTPUT_NOTES_COMMITMENT, INPUT_NOTES_COMMITMENT]
 
-    # Read the accumulated batch_expiration_block_num.
     exec.memory::get_batch_expiration_block_num
     # Stack: [batch_expiration_block_num, OUTPUT_NOTES_COMMITMENT, INPUT_NOTES_COMMITMENT]
 
-    # Push the expiration felt down past both commitment words so the words become word-aligned.
+    # Push the expiration felt past both commitment words so the words land word-aligned.
     movdn.8
-    # Stack: [OUTPUT_NOTES_COMMITMENT, INPUT_NOTES_COMMITMENT, batch_expiration_block_num]
-
     swapw
     # Stack: [INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, batch_expiration_block_num]
 
-    # Truncate the stack to the canonical 16-element output: drop the bottom-most words that came
-    # from the depth-floor auto-fill during the kernel's earlier `consume`-only operations.
-    # See `crates/miden-protocol/asm/kernels/transaction/main.masm:182` for the equivalent
-    # truncate in the transaction kernel.
     repeat.3 movupw.3 dropw end
 end
 

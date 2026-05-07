@@ -66,21 +66,15 @@ pub proc prepare_batch
     push.TX_TUPLES_PTR movdn.4
     # Stack: [TRANSACTIONS_COMMITMENT, TX_TUPLES_PTR]
 
-    # Push the mapped value's length + data onto the advice stack, keyed by
-    # TRANSACTIONS_COMMITMENT (top-of-operand-stack word).
     adv.push_mapvaln
-    # Stack: [TRANSACTIONS_COMMITMENT, TX_TUPLES_PTR]
-    # AS:    [len_felts, data...]
+    # AS: [len_felts, data...]
 
-    # Pop length, divide by 4 to get number of words.
     adv_push.1 div.4
     # Stack: [num_words, TRANSACTIONS_COMMITMENT, TX_TUPLES_PTR]
 
     # num_transactions = num_words / 2 (each tx contributes 2 words: tx_id + account_id_pair).
     dup div.2 exec.memory::set_num_transactions
-    # Stack: [num_words, TRANSACTIONS_COMMITMENT, TX_TUPLES_PTR]
 
-    # Bring TX_TUPLES_PTR up so pipe_words_to_memory has [num_words, write_ptr, ...].
     movup.5 swap
     # Stack: [num_words, TX_TUPLES_PTR, TRANSACTIONS_COMMITMENT]
 
@@ -88,13 +82,10 @@ pub proc prepare_batch
     # Stack: [C, B, A, end_ptr, TRANSACTIONS_COMMITMENT]
 
     exec.poseidon2::squeeze_digest
-    # Stack: [DIGEST, end_ptr, TRANSACTIONS_COMMITMENT]
-
     movup.4 drop
     # Stack: [DIGEST, TRANSACTIONS_COMMITMENT]
 
     assert_eqw.err=ERR_BATCH_TRANSACTIONS_COMMITMENT_MISMATCH
-    # Stack: []
 
     # Initialise batch_expiration_block_num to u32::MAX.
     # ---------------------------------------------------------------------------------------------
@@ -112,15 +103,12 @@ pub proc prepare_batch
     # Stack: [should_loop, tx_index, num_transactions]
 
     while.true
-        # Get tx_id (4 felts) for this transaction.
         dup exec.memory::get_tx_id
         # Stack: [TX_ID, tx_index, num_transactions]
 
-        # Push the destination memory pointer (TX_HEADERS_PTR + TX_HEADER_FELT_LEN * tx_index).
         dup.4 exec.memory::tx_header_ptr movdn.4
         # Stack: [TX_ID, tx_header_ptr, tx_index, num_transactions]
 
-        # Pipe + verify Layer 2.
         adv.push_mapvaln
         adv_push.1 div.4
         # Stack: [num_words, TX_ID, tx_header_ptr, tx_index, num_transactions]
@@ -134,37 +122,28 @@ pub proc prepare_batch
         # Stack: [DIGEST, TX_ID, tx_index, num_transactions]
 
         assert_eqw.err=ERR_BATCH_TRANSACTION_HEADER_MISMATCH
-        # Stack: [tx_index, num_transactions]
 
-        # Pop expiration_block_num from the advice stack and fold it into the batch min.
         adv_push.1
         # Stack: [expiration, tx_index, num_transactions]
 
         dup exec.memory::get_batch_expiration_block_num
         # Stack: [current_min, expiration, expiration, tx_index, num_transactions]
 
+        # `u32lt` pops `[a (top), b]` and pushes `1` if `b < a`, so this is true iff
+        # `expiration < current_min`.
         u32lt
-        # `u32lt` pops `[a (top), b]` and pushes `1` if `b < a`. Here `a = current_min` and
-        # `b = expiration`, so the bool is `1` iff `expiration < current_min` — i.e. the candidate
-        # is the new minimum.
-        # Stack: [is_new_min, expiration, tx_index, num_transactions]
 
         if.true
-            # `expiration < current_min`: install the candidate as the new min.
             exec.memory::set_batch_expiration_block_num
         else
-            # `expiration >= current_min`: keep the current min and drop the candidate.
             drop
         end
         # Stack: [tx_index, num_transactions]
 
-        # Increment tx_index and re-evaluate the loop condition.
         add.1
         dup.1 dup.1 neq
         # Stack: [should_loop, tx_index, num_transactions]
     end
-    # Stack: [tx_index, num_transactions]
 
     drop drop
-    # Stack: []
 end

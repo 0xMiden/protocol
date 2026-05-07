@@ -27,59 +27,44 @@ const ERR_BATCH_OUTPUT_NOTES_MISMATCH="per-transaction output notes data piped f
 #! Inputs:  []
 #! Outputs: []
 proc absorb_scratch_into_batch_hasher
-    # Reset the iteration cursor.
     push.0 exec.memory::set_scratch_word_index
 
-    # Hoist the batch hasher state onto the operand stack; we'll save it back at the end.
     exec.memory::load_batch_hasher_state
     # Stack: [RATE0, RATE1, CAPACITY]
 
-    # Loop while word_index < num_words.
     exec.memory::get_scratch_word_index
     exec.memory::get_scratch_words_count
     u32lt
     # Stack: [should_loop, RATE0, RATE1, CAPACITY]
 
     while.true
-        # Compute the address of the next 2-word tuple.
         exec.memory::get_scratch_word_index
         mul.4 add.TX_NOTES_SCRATCH_PTR
         # Stack: [scratch_ptr, RATE0, RATE1, CAPACITY]
 
-        # Load the first word (DATA1 = NULL or NOTE_ID).
         padw dup.4 mem_loadw_le
         # Stack: [DATA1, scratch_ptr, RATE0, RATE1, CAPACITY]
 
-        # Load the second word (DATA2 = COMMIT_OR_ZERO or METADATA_COMMITMENT).
         padw dup.8 add.4 mem_loadw_le
         # Stack: [DATA2, DATA1, scratch_ptr, RATE0, RATE1, CAPACITY]
 
-        # Drop scratch_ptr.
         movup.8 drop
         # Stack: [DATA2, DATA1, RATE0, RATE1, CAPACITY]
 
-        # Replace RATE0 + RATE1 with DATA1 + DATA2 (in the absorbing order DATA1 first, DATA2
-        # second), then permute. Same pattern as
-        # crates/miden-protocol/asm/kernels/transaction/lib/note.masm:213-221.
+        # Replace RATE0 + RATE1 with DATA1 + DATA2 (DATA1 first, DATA2 second), then permute.
         swapdw
-        # Stack: [RATE0, RATE1, DATA2, DATA1, CAPACITY]
         dropw dropw
-        # Stack: [DATA2, DATA1, CAPACITY]
         swapw
-        # Stack: [DATA1, DATA2, CAPACITY]
         exec.poseidon2::permute
         # Stack: [RATE0', RATE1', CAPACITY']
 
-        # Advance the cursor by 2 words and re-evaluate the loop condition.
         exec.memory::get_scratch_word_index add.2 exec.memory::set_scratch_word_index
         exec.memory::get_scratch_word_index
         exec.memory::get_scratch_words_count
         u32lt
         # Stack: [should_loop, RATE0, RATE1, CAPACITY]
     end
-    # Stack: [RATE0, RATE1, CAPACITY]
 
-    # Save the updated state back to memory.
     exec.memory::save_batch_hasher_state
 end
 
@@ -123,9 +108,6 @@ end
 #! TODO: authenticate unauthenticated input notes against `BLOCK_HASH`'s chain MMR.
 #! TODO: enforce `MAX_INPUT_NOTES_PER_BATCH`.
 pub proc compute_input_notes_commitment
-    # Stack: []
-
-    # Init the batch hasher state in memory.
     exec.poseidon2::init_no_padding
     exec.memory::save_batch_hasher_state
 
@@ -137,19 +119,15 @@ pub proc compute_input_notes_commitment
     # Stack: [should_loop, tx_index, num_transactions]
 
     while.true
-        # Read INPUT_NOTES_COMMITMENT_i.
         dup exec.memory::get_tx_input_notes_commitment
         # Stack: [INPUT_NOTES_COMMITMENT_i, tx_index, num_transactions]
 
-        # Skip if empty (no map entry needed; the empty list contributes nothing).
         dupw exec.word::eqz
         # Stack: [is_empty, INPUT_NOTES_COMMITMENT_i, tx_index, num_transactions]
 
         if.true
             dropw
-            # Stack: [tx_index, num_transactions]
         else
-            # Pipe + verify Layer 3 to TX_NOTES_SCRATCH_PTR.
             push.TX_NOTES_SCRATCH_PTR movdn.4
             # Stack: [INPUT_NOTES_COMMITMENT_i, TX_NOTES_SCRATCH_PTR, tx_index, num_transactions]
 
@@ -157,9 +135,7 @@ pub proc compute_input_notes_commitment
             adv_push.1 div.4
             # Stack: [num_words, INPUT_NOTES_COMMITMENT_i, TX_NOTES_SCRATCH_PTR, tx_index, num_transactions]
 
-            # Save num_words for the absorption iterator.
             dup exec.memory::set_scratch_words_count
-            # Stack: [num_words, INPUT_NOTES_COMMITMENT_i, TX_NOTES_SCRATCH_PTR, tx_index, num_transactions]
 
             movup.5 swap
             # Stack: [num_words, TX_NOTES_SCRATCH_PTR, INPUT_NOTES_COMMITMENT_i, tx_index, num_transactions]
@@ -170,24 +146,18 @@ pub proc compute_input_notes_commitment
             # Stack: [DIGEST, INPUT_NOTES_COMMITMENT_i, tx_index, num_transactions]
 
             assert_eqw.err=ERR_BATCH_INPUT_NOTES_MISMATCH
-            # Stack: [tx_index, num_transactions]
 
-            # Absorb the verified scratch contents into the batch hasher.
             exec.absorb_scratch_into_batch_hasher
-            # Stack: [tx_index, num_transactions]
         end
+        # Stack: [tx_index, num_transactions]
 
         add.1
         dup.1 dup.1 neq
         # Stack: [should_loop, tx_index, num_transactions]
     end
-    # Stack: [tx_index, num_transactions]
 
     drop drop
-    # Stack: []
 
-    # Squeeze the final digest. `squeeze_digest` consumes the 12-felt hasher state and produces
-    # the 4-felt digest, so the stack now holds just `[INPUT_NOTES_COMMITMENT]`.
     exec.memory::load_batch_hasher_state
     exec.poseidon2::squeeze_digest
     # Stack: [INPUT_NOTES_COMMITMENT]
