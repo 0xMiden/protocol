@@ -185,11 +185,11 @@ impl Note {
 
 #[bon::bon]
 impl Note {
-    /// Returns a new [`Note`] from the provided parts.
+    /// Drives the [`bon`]-generated builder; **users should call [`Note::builder`] instead**.
     ///
-    /// Use [`Note::builder`] to invoke this in builder form, e.g.
-    /// `Note::builder().sender(sender).recipient(recipient).build()`. `sender` and `recipient` are
-    /// required; all other fields default.
+    /// Despite the `pub fn new` signature below, `Note::new(...)` is not a callable function:
+    /// `bon` rewrites it into `Note::builder().sender(..).recipient(..).build()`. `sender` and
+    /// `recipient` are required; `assets`, `attachments`, `note_tag`, and `note_type` default.
     #[builder]
     pub fn new(
         sender: AccountId,
