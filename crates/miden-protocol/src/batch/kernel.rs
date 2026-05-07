@@ -36,9 +36,13 @@ const TRAILING_PAD_WORD_FELT_IDX: usize = 12;
 /// The batch kernel program: an executable Miden program that proves a batch of transactions.
 ///
 /// The kernel takes `[BLOCK_HASH, TRANSACTIONS_COMMITMENT]` as public inputs and emits
-/// `[INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, batch_expiration_block_num]`.
-/// See [`crate::batch::ProposedBatch`] / `asm/kernels/batch/main.masm` for the verification
-/// chain and the list of TODOs the minimal kernel intentionally elides.
+/// `[INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, batch_expiration_block_num]`. See
+/// `asm/kernels/batch/main.masm` for the verification chain.
+///
+/// This is the initial, minimal implementation: it verifies the unhashing chain rooted at
+/// `TRANSACTIONS_COMMITMENT` but defers a number of checks (block-MMR-based note authentication,
+/// account-update aggregation, intra-batch note erasure, recursive transaction proof
+/// verification, batch-size limits) — see the `TODO` markers in the MASM source.
 pub struct BatchKernel;
 
 impl BatchKernel {

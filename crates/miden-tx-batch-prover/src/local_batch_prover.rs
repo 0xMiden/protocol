@@ -44,10 +44,10 @@ impl LocalBatchProver {
     ///
     /// After proof generation, the kernel's parsed `batch_expiration_block_num` output is
     /// sanity-checked against `proposed_batch.batch_expiration_block_num()`. The two batch note
-    /// commitments produced by the kernel are *not* checked here because the minimal kernel
-    /// computes a raw, un-erased sequential hash that intentionally diverges from
+    /// commitments produced by the kernel are *not* checked here because the kernel computes a
+    /// raw, un-erased sequential hash that intentionally diverges from
     /// `proposed_batch.input_notes().commitment()` whenever the batch contains intra-batch
-    /// unauthenticated-note erasure. Reconciling them is part of the erasure TODO.
+    /// unauthenticated-note erasure.
     ///
     /// # Errors
     ///

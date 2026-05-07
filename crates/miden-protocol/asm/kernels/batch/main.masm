@@ -5,7 +5,7 @@ use miden::batch_kernel::prologue
 # MAIN
 # =================================================================================================
 
-#! Minimal batch kernel program.
+#! Batch kernel program.
 #!
 #! A transaction batch groups a set of independently-proven transactions so they can later be
 #! aggregated into a block by the block kernel. This program:
