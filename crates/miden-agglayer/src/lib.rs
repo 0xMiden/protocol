@@ -50,7 +50,7 @@ pub use claim_note::{
     ProofData,
     SmtNode,
 };
-pub use config_note::ConfigAggBridgeNote;
+pub use config_note::{ConfigAggBridgeNote, ConversionMetadata};
 #[cfg(any(test, feature = "testing"))]
 pub use eth_types::GlobalIndexExt;
 pub use eth_types::{
@@ -104,51 +104,30 @@ fn agglayer_faucet_component_library() -> Library {
 
 /// Creates an agglayer faucet account component with the specified configuration.
 ///
-/// This function creates all the necessary storage slots for an agglayer faucet:
-/// - Network faucet metadata slot (token_supply, max_supply, decimals, token_symbol)
-/// - Conversion info slot 1: first 4 felts of origin token address
-/// - Conversion info slot 2: 5th address felt + origin network + scale
-/// - Owner config slot: bridge account ID for MINT note authorization
+/// The faucet holds only token metadata; conversion metadata (origin address, origin network,
+/// scale, metadata hash) lives on the bridge and is populated at registration time.
 ///
 /// # Parameters
 /// - `token_symbol`: The symbol for the fungible token (e.g., "AGG")
 /// - `decimals`: Number of decimal places for the token
 /// - `max_supply`: Maximum supply of the token
 /// - `token_supply`: Initial outstanding token supply (0 for new faucets)
-/// - `bridge_account_id`: The account ID of the bridge account for validation
-/// - `origin_token_address`: The EVM origin token address
-/// - `origin_network`: The origin network/chain ID
-/// - `scale`: The decimal scaling factor (exponent for 10^scale)
 ///
 /// # Returns
 /// Returns an [`AccountComponent`] configured for agglayer faucet operations.
 ///
 /// # Panics
 /// Panics if the token symbol is invalid or metadata validation fails.
-#[allow(clippy::too_many_arguments)]
 fn create_agglayer_faucet_component(
     token_symbol: &str,
     decimals: u8,
     max_supply: Felt,
     token_supply: Felt,
-    origin_token_address: &EthAddress,
-    origin_network: u32,
-    scale: u8,
-    metadata_hash: MetadataHash,
 ) -> AccountComponent {
     let symbol = TokenSymbol::new(token_symbol).expect("token symbol should be valid");
-    AggLayerFaucet::new(
-        symbol,
-        decimals,
-        max_supply,
-        token_supply,
-        *origin_token_address,
-        origin_network,
-        scale,
-        metadata_hash,
-    )
-    .expect("agglayer faucet metadata should be valid")
-    .into()
+    AggLayerFaucet::new(symbol, decimals, max_supply, token_supply)
+        .expect("agglayer faucet metadata should be valid")
+        .into()
 }
 
 /// Creates a complete bridge account builder with the standard configuration.
@@ -202,7 +181,7 @@ pub fn create_existing_bridge_account(
 /// Creates a complete agglayer faucet account builder with the specified configuration.
 ///
 /// The builder includes:
-/// - The `AggLayerFaucet` component (conversion metadata + token metadata).
+/// - The `AggLayerFaucet` component (token metadata only; conversion metadata lives on the bridge).
 /// - The `Ownable2Step` component (bridge account ID as owner for mint authorization).
 /// - A [`TokenPolicyManager`] (owner-controlled) configured with `MintPolicyConfig::OwnerOnly` and
 ///   `BurnPolicyConfig::OwnerOnly`. The manager additionally registers `BurnAllowAll::root()` as an
@@ -212,7 +191,6 @@ pub fn create_existing_bridge_account(
 ///   policy procedure.
 /// - The [`AuthNetworkAccount`] auth component, initialized with
 ///   [`AggLayerFaucet::allowed_notes()`] so the faucet only accepts MINT and BURN notes.
-#[allow(clippy::too_many_arguments)]
 fn create_agglayer_faucet_builder(
     seed: Word,
     token_symbol: &str,
@@ -220,21 +198,9 @@ fn create_agglayer_faucet_builder(
     max_supply: Felt,
     token_supply: Felt,
     bridge_account_id: AccountId,
-    origin_token_address: &EthAddress,
-    origin_network: u32,
-    scale: u8,
-    metadata_hash: MetadataHash,
 ) -> AccountBuilder {
-    let agglayer_component = create_agglayer_faucet_component(
-        token_symbol,
-        decimals,
-        max_supply,
-        token_supply,
-        origin_token_address,
-        origin_network,
-        scale,
-        metadata_hash,
-    );
+    let agglayer_component =
+        create_agglayer_faucet_component(token_symbol, decimals, max_supply, token_supply);
 
     // `allow_all` is explicitly registered as Reserved so the owner can open burns at runtime
     // via `set_burn_policy`.
@@ -267,17 +233,12 @@ fn create_agglayer_faucet_builder(
 /// Creates a new agglayer faucet account with the specified configuration.
 ///
 /// This creates a new account suitable for production use.
-#[allow(clippy::too_many_arguments)]
 pub fn create_agglayer_faucet(
     seed: Word,
     token_symbol: &str,
     decimals: u8,
     max_supply: Felt,
     bridge_account_id: AccountId,
-    origin_token_address: &EthAddress,
-    origin_network: u32,
-    scale: u8,
-    metadata_hash: MetadataHash,
 ) -> Account {
     create_agglayer_faucet_builder(
         seed,
@@ -286,10 +247,6 @@ pub fn create_agglayer_faucet(
         max_supply,
         Felt::ZERO,
         bridge_account_id,
-        origin_token_address,
-        origin_network,
-        scale,
-        metadata_hash,
     )
     .build()
     .expect("agglayer faucet account should be valid")
@@ -299,7 +256,6 @@ pub fn create_agglayer_faucet(
 ///
 /// This creates an existing account suitable for testing scenarios.
 #[cfg(any(feature = "testing", test))]
-#[allow(clippy::too_many_arguments)]
 pub fn create_existing_agglayer_faucet(
     seed: Word,
     token_symbol: &str,
@@ -307,10 +263,6 @@ pub fn create_existing_agglayer_faucet(
     max_supply: Felt,
     token_supply: Felt,
     bridge_account_id: AccountId,
-    origin_token_address: &EthAddress,
-    origin_network: u32,
-    scale: u8,
-    metadata_hash: MetadataHash,
 ) -> Account {
     create_agglayer_faucet_builder(
         seed,
@@ -319,10 +271,6 @@ pub fn create_existing_agglayer_faucet(
         max_supply,
         token_supply,
         bridge_account_id,
-        origin_token_address,
-        origin_network,
-        scale,
-        metadata_hash,
     )
     .build_existing()
     .expect("agglayer faucet account should be valid")

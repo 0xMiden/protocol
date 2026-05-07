@@ -5,7 +5,9 @@ use alloc::vec::Vec;
 use miden_agglayer::{
     AggLayerBridge,
     ConfigAggBridgeNote,
+    ConversionMetadata,
     EthAddress,
+    MetadataHash,
     create_existing_bridge_account,
 };
 use miden_protocol::account::auth::AuthScheme;
@@ -76,14 +78,20 @@ async fn test_config_agg_bridge_registers_faucet() -> anyhow::Result<()> {
     );
 
     // CREATE CONFIG_AGG_BRIDGE NOTE
-    // Use a dummy origin token address for this test
     let origin_token_address =
         EthAddress::from_hex("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48").unwrap();
+    let scale = 0u8;
     let origin_network = 1u32;
+    let metadata_hash = MetadataHash::from_token_info("USD Coin", "USDC", 6);
     let config_note = ConfigAggBridgeNote::create(
-        faucet_to_register,
-        &origin_token_address,
-        origin_network,
+        ConversionMetadata {
+            faucet_account_id: faucet_to_register,
+            origin_token_address,
+            scale,
+            origin_network,
+            is_native: false,
+            metadata_hash,
+        },
         bridge_admin.id(),
         bridge_account.id(),
         builder.rng_mut(),
@@ -93,9 +101,8 @@ async fn test_config_agg_bridge_registers_faucet() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
 
     // CONSUME THE CONFIG_AGG_BRIDGE NOTE WITH THE BRIDGE ACCOUNT
-    let tx_context = mock_chain
-        .build_tx_context(bridge_account.id(), &[config_note.id()], &[])?
-        .build()?;
+    let tx_context =
+        mock_chain.build_tx_context(bridge_account.id(), &[], &[config_note])?.build()?;
     let executed_transaction = tx_context.execute().await?;
 
     // VERIFY FAUCET IS NOW REGISTERED
@@ -164,18 +171,29 @@ async fn test_config_agg_bridge_distinguishes_origin_network() -> anyhow::Result
     let origin_network_1: u32 = 1;
     let origin_network_2: u32 = 2;
 
+    let metadata_hash = MetadataHash::from_token_info("USD Coin", "USDC", 6);
     let config_note_1 = ConfigAggBridgeNote::create(
-        faucet_network_1,
-        &origin_token_address,
-        origin_network_1,
+        ConversionMetadata {
+            faucet_account_id: faucet_network_1,
+            origin_token_address,
+            scale: 0,
+            origin_network: origin_network_1,
+            is_native: false,
+            metadata_hash,
+        },
         bridge_admin.id(),
         bridge_account.id(),
         builder.rng_mut(),
     )?;
     let config_note_2 = ConfigAggBridgeNote::create(
-        faucet_network_2,
-        &origin_token_address,
-        origin_network_2,
+        ConversionMetadata {
+            faucet_account_id: faucet_network_2,
+            origin_token_address,
+            scale: 0,
+            origin_network: origin_network_2,
+            is_native: false,
+            metadata_hash,
+        },
         bridge_admin.id(),
         bridge_account.id(),
         builder.rng_mut(),
