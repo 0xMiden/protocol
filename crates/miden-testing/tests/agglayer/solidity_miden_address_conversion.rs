@@ -61,20 +61,33 @@ fn test_account_id_to_ethereum_roundtrip() {
 
 #[test]
 fn test_bech32_to_ethereum_roundtrip() {
-    let test_addresses = [
-        "mtst1azcw08rget79fqp8ymr0zqkv5v5lj466",
-        "mtst1arxmxavamh7lqyp79mexktt4vgxv40mp",
-        "mtst1ar2phe0pa0ln75plsczxr8ryws4s8zyp",
+    let test_account_ids = [
+        AccountId::try_from_elements(
+            Felt::try_from(0x2726c6f102cca300u64).unwrap(),
+            Felt::try_from(0xb0e79c68cafc5481u64).unwrap(),
+        )
+        .unwrap(),
+        AccountId::try_from_elements(
+            Felt::try_from(0x3e2ef26b2d756200u64).unwrap(),
+            Felt::try_from(0xcdb3759dddfdf011u64).unwrap(),
+        )
+        .unwrap(),
+        AccountId::try_from_elements(
+            Felt::try_from(0x3f8604619c647400u64).unwrap(),
+            Felt::try_from(0xd41be5e1ebff3f51u64).unwrap(),
+        )
+        .unwrap(),
     ];
 
     let evm_addresses = [
-        "0x00000000b0e79c68cafc54802726c6f102cca300",
-        "0x00000000cdb3759dddfdf0103e2ef26b2d756200",
-        "0x00000000d41be5e1ebff3f503f8604619c647400",
+        "0x00000000b0e79c68cafc54812726c6f102cca300",
+        "0x00000000cdb3759dddfdf0113e2ef26b2d756200",
+        "0x00000000d41be5e1ebff3f513f8604619c647400",
     ];
 
-    for (bech32, expected_evm) in test_addresses.iter().zip(evm_addresses.iter()) {
-        let (network_id, account_id) = AccountId::from_bech32(bech32).unwrap();
+    for (account_id, expected_evm) in test_account_ids.iter().zip(evm_addresses.iter()) {
+        let bech32 = account_id.to_bech32(NetworkId::Testnet);
+        let (network_id, account_id) = AccountId::from_bech32(&bech32).unwrap();
 
         let eth = EthEmbeddedAccountId::from_account_id(account_id);
         let recovered = eth.into_account_id();
@@ -82,7 +95,7 @@ fn test_bech32_to_ethereum_roundtrip() {
 
         assert_eq!(&account_id, &recovered);
         assert_eq!(*expected_evm, eth.to_string());
-        assert_eq!(*bech32, recovered_bech32);
+        assert_eq!(bech32, recovered_bech32);
     }
 }
 

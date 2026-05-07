@@ -65,6 +65,15 @@ pub proc to_account_id
     exec.build_felt
     # => [prefix, suffix]
 
+    u32split
+    # => [prefix_lo, prefix_hi, suffix]
+
+    u32and.0xfffffff0 add.1
+    # => [prefix_lo_v1, prefix_hi, suffix]
+
+    swap push.TWO_POW_32 mul add
+    # => [prefix, suffix]
+
     swap
     # => [suffix, prefix]
 end

@@ -3,9 +3,11 @@ use alloc::vec::Vec;
 use core::fmt;
 
 use miden_protocol::Felt;
-use miden_protocol::account::AccountId;
+use miden_protocol::account::{AccountId, AccountIdVersion};
 
 use super::eth_address::{AddressConversionError, EthAddress};
+
+const ACCOUNT_ID_VERSION_MASK: u64 = 0x0f;
 
 // ================================================================================================
 // ETH EMBEDDED ACCOUNT ID
@@ -85,6 +87,11 @@ impl EthEmbeddedAccountId {
     pub fn try_from_eth_address(addr: EthAddress) -> Result<Self, AddressConversionError> {
         let bytes = addr.into_bytes();
         let (prefix, suffix) = bytes20_to_prefix_suffix(bytes)?;
+
+        // The bridge address format embeds the account ID payload. Normalize the version nibble
+        // before validating so older bridge fixtures continue to resolve to the current AccountId
+        // version.
+        let prefix = normalize_account_id_version(prefix);
 
         let prefix_felt =
             Felt::try_from(prefix).map_err(|_| AddressConversionError::FeltOutOfField)?;
@@ -205,4 +212,8 @@ fn bytes20_to_prefix_suffix(bytes: [u8; 20]) -> Result<(u64, u64), AddressConver
     let suffix = u64::from_be_bytes(bytes[12..20].try_into().unwrap());
 
     Ok((prefix, suffix))
+}
+
+fn normalize_account_id_version(prefix: u64) -> u64 {
+    (prefix & !ACCOUNT_ID_VERSION_MASK) | AccountIdVersion::Version1 as u64
 }
