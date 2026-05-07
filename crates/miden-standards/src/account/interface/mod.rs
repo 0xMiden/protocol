@@ -165,8 +165,7 @@ impl AccountInterface {
         // The commitment is used as key and the elements as value.
         let mut code_builder = CodeBuilder::new();
         for note in output_notes {
-            // Only support one attachment per note to keep it simple.
-            if let Some(attachment) = note.attachments().iter().next() {
+            for attachment in note.attachments().iter() {
                 code_builder
                     .add_advice_map_entry(attachment.to_commitment(), attachment.to_elements());
             }
@@ -264,6 +263,4 @@ pub enum AccountInterfaceError {
         "account does not contain the basic fungible faucet or basic wallet interfaces which are needed to support the send_note script generation"
     )]
     UnsupportedAccountInterface,
-    #[error("multiple attachments per note are not supported")]
-    MultipleAttachmentsUnsupported,
 }

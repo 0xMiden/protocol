@@ -218,7 +218,7 @@ pub proc add_attachment
     # => [offset, attachment_scheme, ATTACHMENT_COMMITMENT, note_idx]
 
     # pad the stack before the syscall
-    push.0 movdn.8 padw padw swapdw
+    push.0 movdn.7 padw padw swapdw
     # => [offset, attachment_scheme, ATTACHMENT_COMMITMENT, note_idx, pad(9)]
 
     syscall.exec_kernel_proc
