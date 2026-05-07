@@ -35,34 +35,28 @@ use miden::batch_kernel::prologue
 #! Outputs: [INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, batch_expiration_block_num]
 #!
 #! Where:
-#! - BLOCK_HASH is the commitment of the batch's reference block. Currently consumed and dropped;
-#!   verifying it against the chain MMR is a TODO.
+#! - BLOCK_HASH is the commitment of the batch's reference block.
 #! - TRANSACTIONS_COMMITMENT is the sequential hash of the `(tx_id, account_id)` tuples committing
 #!   to the transactions in the batch (i.e. the `BatchId` value).
 #! - INPUT_NOTES_COMMITMENT is the sequential hash over every transaction's verified
-#!   `(NULLIFIER, EMPTY_OR_COMMITMENT)` tuples in transaction order. It does not yet match
-#!   `proposed_batch.input_notes().commitment()` for batches with intra-batch erasure or
-#!   re-sorted nullifiers (TODO in `note_tracker.masm`).
+#!   `(NULLIFIER, EMPTY_OR_COMMITMENT)` tuples in transaction order.
 #! - OUTPUT_NOTES_COMMITMENT is the sequential hash over every transaction's verified
-#!   `(NOTE_ID, METADATA_COMMITMENT)` tuples. Switching to the `BatchNoteTree` SMT root is a TODO.
-#! - batch_expiration_block_num is the running min over each transaction's
-#!   `expiration_block_num`, which is currently supplied unverified on the advice stack. Anchoring
-#!   this in a verified commitment is a TODO that becomes possible once recursive transaction
-#!   proof verification ships (the per-tx `expiration_block_num` is a public output of the tx
-#!   kernel).
+#!   `(NOTE_ID, METADATA_COMMITMENT)` tuples in transaction order.
+#! - batch_expiration_block_num is the minimum of every transaction's `expiration_block_num`.
 #!
-#! TODOs (each will be lifted in a follow-up issue without changing this stack interface):
-#! - Verify BLOCK_HASH against block header data via the same pipe-and-verify pattern.
-#! - Authenticate unauthenticated input notes against BLOCK_HASH's chain MMR.
-#! - Verify each transaction's reference block is contained in the chain MMR rooted at BLOCK_HASH.
-#! - Aggregate per-account updates and emit a separate ACCOUNT_UPDATES_COMMITMENT output (mirrors
-#!   `BatchAccountUpdate` and `ProposedBatch::new` lines 195-223). The Layer 1 tuple list already
-#!   has `(tx_id, account_id)` per transaction in memory at TX_TUPLES_PTR, ready for this.
-#! - Erase intra-batch unauthenticated notes from INPUT_NOTES_COMMITMENT and the output set.
-#! - Recursively verify each transaction's `ExecutionProof`.
-#! - Switch OUTPUT_NOTES_COMMITMENT to the `BatchNoteTree` SMT root.
-#! - Assert `batch_expiration_block_num > reference_block_num`.
-#! - Enforce `MAX_INPUT_NOTES_PER_BATCH`, `MAX_OUTPUT_NOTES_PER_BATCH`, `MAX_ACCOUNTS_PER_BATCH`.
+#! TODO: verify BLOCK_HASH against block header data via the same pipe-and-verify pattern.
+#! TODO: authenticate unauthenticated input notes against BLOCK_HASH's chain MMR.
+#! TODO: verify each transaction's reference block is contained in the chain MMR rooted at
+#!       BLOCK_HASH.
+#! TODO: aggregate per-account updates and emit a separate ACCOUNT_UPDATES_COMMITMENT output.
+#! TODO: erase intra-batch unauthenticated notes from INPUT_NOTES_COMMITMENT and the output set.
+#! TODO: recursively verify each transaction's `ExecutionProof`.
+#! TODO: switch OUTPUT_NOTES_COMMITMENT to the `BatchNoteTree` SMT root.
+#! TODO: assert `batch_expiration_block_num > reference_block_num`.
+#! TODO: enforce `MAX_INPUT_NOTES_PER_BATCH`, `MAX_OUTPUT_NOTES_PER_BATCH`,
+#!       `MAX_ACCOUNTS_PER_BATCH`.
+#! TODO: derive `batch_expiration_block_num` from data committed-to in the verified chain rather
+#!       than from the unverified advice stack.
 proc main
     # Bring TRANSACTIONS_COMMITMENT to the top so the prologue can consume it.
     swapw
