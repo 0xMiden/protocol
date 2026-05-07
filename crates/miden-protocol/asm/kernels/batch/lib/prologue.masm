@@ -20,7 +20,8 @@ const ERR_BATCH_TRANSACTION_HEADER_MISMATCH="transaction header data piped from 
 # PROLOGUE
 # =================================================================================================
 
-#! Loads and verifies the batch's structural commitments and accumulates the batch expiration min.
+#! Loads and verifies the batch's structural commitments and tracks the smallest
+#! `expiration_block_num` across all transactions in [`memory::BATCH_EXPIRATION_PTR`].
 #!
 #! Performs three steps:
 #! - Layer 1: pipes the `(tx_id, account_id)` tuples from the advice map keyed by
@@ -32,23 +33,26 @@ const ERR_BATCH_TRANSACTION_HEADER_MISMATCH="transaction header data piped from 
 #!   `tx_id`. Each transaction's data is written into [`memory::TX_HEADERS_PTR`] at the appropriate
 #!   per-tx offset.
 #! - For each transaction, pops the `expiration_block_num` from the advice stack and updates the
-#!   batch-level min stored in [`memory::BATCH_EXPIRATION_PTR`].
+#!   running minimum in [`memory::BATCH_EXPIRATION_PTR`].
 #!
 #! Inputs:
 #!   Operand stack: [TRANSACTIONS_COMMITMENT]
 #!   Advice map:
-#!     TRANSACTIONS_COMMITMENT |-> Layer 1 tuple data
-#!     For each verified tx_id_i: tx_id_i |-> Layer 2 transaction header data
+#!     TRANSACTIONS_COMMITMENT |-> [(tx_id_0, account_id_0_pair), (tx_id_1, account_id_1_pair), ...]
+#!     For each verified tx_id_i:
+#!       tx_id_i |-> [INIT_i, FINAL_i, INPUT_NOTES_COMMITMENT_i, OUTPUT_NOTES_COMMITMENT_i,
+#!                    FEE_ASSET_i]
 #!   Advice stack: [expiration_block_num_0, expiration_block_num_1, ...]
 #!
 #! Outputs:
 #!   Operand stack: []
 #!
 #! Errors:
-#! - ERR_BATCH_TRANSACTIONS_COMMITMENT_MISMATCH: Layer 1 piped data does not hash to
-#!   TRANSACTIONS_COMMITMENT.
-#! - ERR_BATCH_TRANSACTION_HEADER_MISMATCH: Layer 2 piped data for a transaction does not hash to
-#!   that transaction's tx_id.
+#! - ERR_BATCH_TRANSACTIONS_COMMITMENT_MISMATCH: the `(tx_id, account_id)` tuple list piped from
+#!   the advice map does not hash to `TRANSACTIONS_COMMITMENT`.
+#! - ERR_BATCH_TRANSACTION_HEADER_MISMATCH: a transaction's
+#!   `(INIT, FINAL, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, FEE_ASSET)` data piped from
+#!   the advice map does not hash to its `tx_id`.
 #!
 #! TODO: verify that each transaction's reference block is contained in the chain MMR rooted at
 #!       BLOCK_HASH.
@@ -127,8 +131,6 @@ pub proc prepare_batch
         dup exec.memory::get_batch_expiration_block_num
         # Stack: [current_min, expiration, expiration, tx_index, num_transactions]
 
-        # `u32lt` pops `[a (top), b]` and pushes `1` if `b < a`, so this is true iff
-        # `expiration < current_min`.
         u32lt
 
         if.true

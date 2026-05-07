@@ -98,8 +98,9 @@ end
 #! Outputs: [INPUT_NOTES_COMMITMENT]
 #!
 #! Errors:
-#! - ERR_BATCH_INPUT_NOTES_MISMATCH: a transaction's piped input-note data does not hash to its
-#!   verified per-tx INPUT_NOTES_COMMITMENT_i.
+#! - ERR_BATCH_INPUT_NOTES_MISMATCH: a transaction's `(NULLIFIER, EMPTY_OR_COMMITMENT)` tuple
+#!   list piped from the advice map does not hash to its verified per-tx
+#!   `INPUT_NOTES_COMMITMENT_i`.
 #!
 #! TODO: erase intra-batch unauthenticated notes from the absorbed sequence (see
 #!       `InputOutputNoteTracker::from_transactions`).
@@ -176,8 +177,9 @@ end
 #! Outputs: [OUTPUT_NOTES_COMMITMENT]
 #!
 #! Errors:
-#! - ERR_BATCH_OUTPUT_NOTES_MISMATCH: a transaction's piped output-note data does not hash to its
-#!   verified per-tx OUTPUT_NOTES_COMMITMENT_i.
+#! - ERR_BATCH_OUTPUT_NOTES_MISMATCH: a transaction's `(NOTE_ID, METADATA_COMMITMENT)` tuple
+#!   list piped from the advice map does not hash to its verified per-tx
+#!   `OUTPUT_NOTES_COMMITMENT_i`.
 #!
 #! TODO: erase intra-batch unauthenticated notes from the absorbed sequence.
 #! TODO: switch the output to `BatchNoteTree::root` (an SMT root rather than this sequential
