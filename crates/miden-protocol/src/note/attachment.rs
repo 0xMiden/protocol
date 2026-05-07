@@ -651,6 +651,13 @@ impl NoteAttachments {
         self.attachments.get(index)
     }
 
+    /// Returns the first attachment with the provided scheme, if any.
+    pub fn find(&self, scheme: NoteAttachmentScheme) -> Option<&NoteAttachment> {
+        self.attachments
+            .iter()
+            .find(|attachment| attachment.attachment_scheme == scheme)
+    }
+
     /// Returns the number of attachments.
     pub fn num_attachments(&self) -> u8 {
         u8::try_from(self.attachments.len())
@@ -710,31 +717,13 @@ impl Default for NoteAttachments {
 impl SequentialCommit for NoteAttachments {
     type Commitment = Word;
 
+    /// Collects all attachment commitments into a flat vector of field elements.
     fn to_elements(&self) -> Vec<Felt> {
-        attachments_to_commitment_elements(&self.attachments)
-    }
-}
-
-/// Collects all attachment commitments into a flat vector of field elements.
-fn attachments_to_commitment_elements(attachments: &[NoteAttachment]) -> Vec<Felt> {
-    let mut elements = Vec::new();
-    for commitment in attachments.iter().map(NoteAttachment::to_commitment) {
-        elements.extend_from_slice(commitment.as_elements());
-    }
-    elements
-}
-
-/// Computes the commitment over a slice of attachments.
-///
-/// The commitment is defined as `hash(ATTACHMENT_0_COMMITMENT || ... || ATTACHMENT_N_COMMITMENT)`,
-/// i.e., the sequential hash over the individual attachment commitments. Returns `EMPTY_WORD` if
-/// no attachments are present.
-fn compute_commitment(attachments: &[NoteAttachment]) -> Word {
-    if attachments.is_empty() {
-        Word::empty()
-    } else {
-        let elements = attachments_to_commitment_elements(attachments);
-        Hasher::hash_elements(&elements)
+        let mut elements = Vec::new();
+        for commitment in self.attachments.iter().map(NoteAttachment::to_commitment) {
+            elements.extend_from_slice(commitment.as_elements());
+        }
+        elements
     }
 }
 

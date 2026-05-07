@@ -4,7 +4,6 @@ use alloc::vec::Vec;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountId};
 use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset};
-use miden_protocol::crypto::SequentialCommit;
 use miden_protocol::crypto::rand::RandomCoin;
 use miden_protocol::errors::MasmError;
 use miden_protocol::errors::tx_kernel::{
