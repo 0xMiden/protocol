@@ -1481,7 +1481,6 @@ async fn test_get_attachment_commitments_ptr() -> anyhow::Result<()> {
             .build()?,
     );
 
-    let _attachments_commitment = output_note.attachments().commitment();
     let commitment_0 = attachment_0.to_commitment();
     let commitment_1 = attachment_1.to_commitment();
 
