@@ -8,10 +8,12 @@ pub mod rbac;
 /// Access control configuration for account components.
 ///
 /// Each variant expands into the set of [`AccountComponent`]s that implement that access
-/// control choice. Single-component variants like [`AccessControl::Ownable2Step`] expand
-/// to one component; composite variants like [`AccessControl::Rbac`] expand to multiple
-/// components in the order they must be installed (RBAC depends on
-/// [`ownable2step::Ownable2Step`], so the latter is included alongside it).
+/// control choice. The [`AccessControl::AuthControlled`] variant expands to no components and
+/// represents accounts whose access decisions are gated solely by the account's auth component.
+/// Single-component variants like [`AccessControl::Ownable2Step`] expand to one component;
+/// composite variants like [`AccessControl::Rbac`] expand to multiple components in the order
+/// they must be installed (RBAC depends on [`ownable2step::Ownable2Step`], so the latter is
+/// included alongside it).
 ///
 /// Pass to
 /// [`AccountBuilder::with_components`][miden_protocol::account::AccountBuilder::with_components]
@@ -26,6 +28,9 @@ pub mod rbac;
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AccessControl {
+    /// No external access control component is installed; access decisions are gated solely
+    /// by the account's auth component.
+    AuthControlled,
     /// Two-step ownership transfer with the provided initial owner.
     Ownable2Step { owner: AccountId },
     /// Role-based access control. Includes [`Ownable2Step`] internally; the provided
@@ -41,6 +46,7 @@ impl IntoIterator for AccessControl {
     /// in the order they must be installed on the account.
     fn into_iter(self) -> Self::IntoIter {
         match self {
+            AccessControl::AuthControlled => vec![].into_iter(),
             AccessControl::Ownable2Step { owner } => {
                 vec![Ownable2Step::new(owner).into()].into_iter()
             },

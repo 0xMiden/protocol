@@ -19,14 +19,15 @@ pub enum AccountComponentInterface {
     /// Exposes procedures from the [`BasicWallet`][crate::account::wallets::BasicWallet] module.
     BasicWallet,
     /// Exposes procedures from the
-    /// [`FungibleTokenMetadata`][crate::account::metadata::FungibleTokenMetadata] module.
-    FungibleTokenMetadata,
-    /// Exposes procedures from the
     /// [`BasicFungibleFaucet`][crate::account::faucets::BasicFungibleFaucet] module.
     BasicFungibleFaucet,
     /// Exposes procedures from the
-    /// [`NetworkFungibleFaucet`][crate::account::faucets::NetworkFungibleFaucet] module.
-    NetworkFungibleFaucet,
+    /// [`Ownable2Step`][crate::account::access::Ownable2Step] access component.
+    Ownable2Step,
+    /// Exposes procedures from the
+    /// [`RoleBasedAccessControl`][crate::account::access::RoleBasedAccessControl] access
+    /// component.
+    RoleBasedAccessControl,
     /// Exposes procedures from the
     /// [`AuthSingleSig`][crate::account::auth::AuthSingleSig] module.
     AuthSingleSig,
@@ -67,12 +68,10 @@ impl AccountComponentInterface {
     pub fn name(&self) -> String {
         match self {
             AccountComponentInterface::BasicWallet => "Basic Wallet".to_string(),
-            AccountComponentInterface::FungibleTokenMetadata => {
-                "Fungible Token Metadata".to_string()
-            },
             AccountComponentInterface::BasicFungibleFaucet => "Basic Fungible Faucet".to_string(),
-            AccountComponentInterface::NetworkFungibleFaucet => {
-                "Network Fungible Faucet".to_string()
+            AccountComponentInterface::Ownable2Step => "Ownable2Step".to_string(),
+            AccountComponentInterface::RoleBasedAccessControl => {
+                "Role Based Access Control".to_string()
             },
             AccountComponentInterface::AuthSingleSig => "SingleSig".to_string(),
             AccountComponentInterface::AuthSingleSigAcl => "SingleSig ACL".to_string(),

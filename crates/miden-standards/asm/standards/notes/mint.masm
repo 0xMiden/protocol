@@ -1,6 +1,6 @@
 use miden::protocol::active_note
 use miden::protocol::note
-use miden::standards::faucets::network_fungible->network_faucet
+use miden::standards::faucets::basic_fungible->faucet
 
 # CONSTANTS
 # =================================================================================================
@@ -34,7 +34,7 @@ const ERR_MINT_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS="MINT script expects exactly 6
 #! This note is intended to be executed against a network fungible faucet account.
 #!
 #! Requires that the account exposes:
-#! - miden::standards::faucets::network_fungible::mint_and_send procedure.
+#! - miden::standards::faucets::basic_fungible::mint_and_send procedure.
 #!
 #! Inputs:  [ARGS, pad(12)]
 #! Outputs: [pad(16)]
@@ -122,7 +122,7 @@ pub proc main
 
     # mint_and_send expects 9 pad elements, returns 15 and 12 are provided here.
     # so the total number of pads after calling is 12 + (15-9) = 18
-    call.network_faucet::mint_and_send
+    call.faucet::mint_and_send
     # => [note_idx, pad(18))]
 
     drop drop drop

@@ -32,7 +32,7 @@ use miden_protocol::note::{NoteTag, NoteType};
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 use miden_standards::account::faucets::BasicFungibleFaucet;
-use miden_standards::account::metadata::{FungibleTokenMetadataBuilder, TokenName};
+use miden_standards::account::metadata::TokenName;
 use miden_standards::account::policies::{
     BurnPolicyConfig,
     MintPolicyConfig,
@@ -759,7 +759,7 @@ fn add_faucet_with_callbacks(
         callbacks = callbacks.on_before_asset_added_to_note(proc_root);
     }
 
-    let faucet_metadata = FungibleTokenMetadataBuilder::new(
+    let faucet = BasicFungibleFaucet::builder(
         TokenName::new("").expect("empty string is a valid token name"),
         "SYM".try_into()?,
         8,
@@ -777,8 +777,7 @@ fn add_faucet_with_callbacks(
     let account_builder = AccountBuilder::new([42; 32])
         .storage_mode(AccountStorageMode::Public)
         .account_type(AccountType::FungibleFaucet)
-        .with_component(faucet_metadata)
-        .with_component(BasicFungibleFaucet)
+        .with_component(faucet)
         .with_components(TokenPolicyManager::new(
             PolicyAuthority::AuthControlled,
             MintPolicyConfig::AllowAll,

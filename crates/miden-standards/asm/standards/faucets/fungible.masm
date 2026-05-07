@@ -1,8 +1,8 @@
-# miden::standards::metadata::fungible_faucet
+# miden::standards::faucets::fungible
 #
-# Metadata for fungible-style accounts: slots, getters (name, description, logo_uri,
-# external_link, token_metadata), and owner-gated setters.
-# Depends on ownable2step for ownership checks.
+# Storage layout and accessors for fungible faucet accounts: token config (supply, decimals,
+# symbol), name, optional fields (description, logo_uri, external_link), and owner-gated
+# setters. Depends on ownable2step for ownership checks.
 
 use miden::core::mem
 use miden::protocol::active_account
@@ -13,34 +13,34 @@ use miden::standards::access::ownable2step
 # CONSTANTS — slot names
 # =================================================================================================
 
-pub const TOKEN_METADATA_SLOT = word("miden::standards::metadata::fungible_faucet::token_metadata")
-const NAME_CHUNK_0_SLOT = word("miden::standards::metadata::fungible_faucet::name_chunk_0")
-const NAME_CHUNK_1_SLOT = word("miden::standards::metadata::fungible_faucet::name_chunk_1")
-const MUTABILITY_CONFIG_SLOT = word("miden::standards::metadata::fungible_faucet::mutability_config")
+pub const TOKEN_CONFIG_SLOT = word("miden::standards::faucets::fungible::token_config")
+const TOKEN_NAME_0_SLOT = word("miden::standards::faucets::fungible::token_name_0")
+const TOKEN_NAME_1_SLOT = word("miden::standards::faucets::fungible::token_name_1")
+const MUTABILITY_CONFIG_SLOT = word("miden::standards::faucets::fungible::mutability_config")
 
-const DESCRIPTION_0_SLOT = word("miden::standards::metadata::fungible_faucet::description_0")
-const DESCRIPTION_1_SLOT = word("miden::standards::metadata::fungible_faucet::description_1")
-const DESCRIPTION_2_SLOT = word("miden::standards::metadata::fungible_faucet::description_2")
-const DESCRIPTION_3_SLOT = word("miden::standards::metadata::fungible_faucet::description_3")
-const DESCRIPTION_4_SLOT = word("miden::standards::metadata::fungible_faucet::description_4")
-const DESCRIPTION_5_SLOT = word("miden::standards::metadata::fungible_faucet::description_5")
-const DESCRIPTION_6_SLOT = word("miden::standards::metadata::fungible_faucet::description_6")
+const TOKEN_DESCRIPTION_0_SLOT = word("miden::standards::faucets::fungible::token_description_0")
+const TOKEN_DESCRIPTION_1_SLOT = word("miden::standards::faucets::fungible::token_description_1")
+const TOKEN_DESCRIPTION_2_SLOT = word("miden::standards::faucets::fungible::token_description_2")
+const TOKEN_DESCRIPTION_3_SLOT = word("miden::standards::faucets::fungible::token_description_3")
+const TOKEN_DESCRIPTION_4_SLOT = word("miden::standards::faucets::fungible::token_description_4")
+const TOKEN_DESCRIPTION_5_SLOT = word("miden::standards::faucets::fungible::token_description_5")
+const TOKEN_DESCRIPTION_6_SLOT = word("miden::standards::faucets::fungible::token_description_6")
 
-const LOGO_URI_0_SLOT = word("miden::standards::metadata::fungible_faucet::logo_uri_0")
-const LOGO_URI_1_SLOT = word("miden::standards::metadata::fungible_faucet::logo_uri_1")
-const LOGO_URI_2_SLOT = word("miden::standards::metadata::fungible_faucet::logo_uri_2")
-const LOGO_URI_3_SLOT = word("miden::standards::metadata::fungible_faucet::logo_uri_3")
-const LOGO_URI_4_SLOT = word("miden::standards::metadata::fungible_faucet::logo_uri_4")
-const LOGO_URI_5_SLOT = word("miden::standards::metadata::fungible_faucet::logo_uri_5")
-const LOGO_URI_6_SLOT = word("miden::standards::metadata::fungible_faucet::logo_uri_6")
+const LOGO_URI_0_SLOT = word("miden::standards::faucets::fungible::logo_uri_0")
+const LOGO_URI_1_SLOT = word("miden::standards::faucets::fungible::logo_uri_1")
+const LOGO_URI_2_SLOT = word("miden::standards::faucets::fungible::logo_uri_2")
+const LOGO_URI_3_SLOT = word("miden::standards::faucets::fungible::logo_uri_3")
+const LOGO_URI_4_SLOT = word("miden::standards::faucets::fungible::logo_uri_4")
+const LOGO_URI_5_SLOT = word("miden::standards::faucets::fungible::logo_uri_5")
+const LOGO_URI_6_SLOT = word("miden::standards::faucets::fungible::logo_uri_6")
 
-const EXTERNAL_LINK_0_SLOT = word("miden::standards::metadata::fungible_faucet::external_link_0")
-const EXTERNAL_LINK_1_SLOT = word("miden::standards::metadata::fungible_faucet::external_link_1")
-const EXTERNAL_LINK_2_SLOT = word("miden::standards::metadata::fungible_faucet::external_link_2")
-const EXTERNAL_LINK_3_SLOT = word("miden::standards::metadata::fungible_faucet::external_link_3")
-const EXTERNAL_LINK_4_SLOT = word("miden::standards::metadata::fungible_faucet::external_link_4")
-const EXTERNAL_LINK_5_SLOT = word("miden::standards::metadata::fungible_faucet::external_link_5")
-const EXTERNAL_LINK_6_SLOT = word("miden::standards::metadata::fungible_faucet::external_link_6")
+const EXTERNAL_LINK_0_SLOT = word("miden::standards::faucets::fungible::external_link_0")
+const EXTERNAL_LINK_1_SLOT = word("miden::standards::faucets::fungible::external_link_1")
+const EXTERNAL_LINK_2_SLOT = word("miden::standards::faucets::fungible::external_link_2")
+const EXTERNAL_LINK_3_SLOT = word("miden::standards::faucets::fungible::external_link_3")
+const EXTERNAL_LINK_4_SLOT = word("miden::standards::faucets::fungible::external_link_4")
+const EXTERNAL_LINK_5_SLOT = word("miden::standards::faucets::fungible::external_link_5")
+const EXTERNAL_LINK_6_SLOT = word("miden::standards::faucets::fungible::external_link_6")
 
 const FIELD_0_LOC = 0
 const FIELD_1_LOC = 4
@@ -71,7 +71,7 @@ const ERR_NEW_MAX_SUPPLY_BELOW_TOKEN_SUPPLY = "new max supply is less than curre
 #!
 #! Invocation: exec
 proc get_token_metadata_internal
-    push.TOKEN_METADATA_SLOT[0..2]
+    push.TOKEN_CONFIG_SLOT[0..2]
     exec.active_account::get_item
 end
 
@@ -82,7 +82,7 @@ end
 #!
 #! Invocation: exec
 proc get_name_chunk_0
-    push.NAME_CHUNK_0_SLOT[0..2]
+    push.TOKEN_NAME_0_SLOT[0..2]
     exec.active_account::get_item
 end
 
@@ -93,7 +93,7 @@ end
 #!
 #! Invocation: exec
 proc get_name_chunk_1
-    push.NAME_CHUNK_1_SLOT[0..2]
+    push.TOKEN_NAME_1_SLOT[0..2]
     exec.active_account::get_item
 end
 
@@ -389,31 +389,31 @@ pub proc set_description
     # => [pad(16)]
 
     loc_loadw_le.0
-    push.DESCRIPTION_0_SLOT[0..2]
+    push.TOKEN_DESCRIPTION_0_SLOT[0..2]
     exec.native_account::set_item dropw
 
     loc_loadw_le.4
-    push.DESCRIPTION_1_SLOT[0..2]
+    push.TOKEN_DESCRIPTION_1_SLOT[0..2]
     exec.native_account::set_item dropw
 
     loc_loadw_le.8
-    push.DESCRIPTION_2_SLOT[0..2]
+    push.TOKEN_DESCRIPTION_2_SLOT[0..2]
     exec.native_account::set_item dropw
 
     loc_loadw_le.12
-    push.DESCRIPTION_3_SLOT[0..2]
+    push.TOKEN_DESCRIPTION_3_SLOT[0..2]
     exec.native_account::set_item dropw
 
     loc_loadw_le.16
-    push.DESCRIPTION_4_SLOT[0..2]
+    push.TOKEN_DESCRIPTION_4_SLOT[0..2]
     exec.native_account::set_item dropw
 
     loc_loadw_le.20
-    push.DESCRIPTION_5_SLOT[0..2]
+    push.TOKEN_DESCRIPTION_5_SLOT[0..2]
     exec.native_account::set_item dropw
 
     loc_loadw_le.24
-    push.DESCRIPTION_6_SLOT[0..2]
+    push.TOKEN_DESCRIPTION_6_SLOT[0..2]
     exec.native_account::set_item dropw
 end
 
@@ -609,7 +609,7 @@ pub proc set_max_supply
     # => [token_supply, new_max_supply, decimals, token_symbol, pad(15)]
 
     # 6. Write updated metadata word back to storage
-    push.TOKEN_METADATA_SLOT[0..2]
+    push.TOKEN_CONFIG_SLOT[0..2]
     exec.native_account::set_item
     dropw
     # => [pad(16)]

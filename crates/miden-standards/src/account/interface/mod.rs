@@ -48,6 +48,14 @@ impl AccountInterface {
         Self { account_id, auth, components }
     }
 
+    /// Returns `true` if the account installs an [`AccountComponentInterface::Ownable2Step`] (or
+    /// [`AccountComponentInterface::RoleBasedAccessControl`], which depends on Ownable2Step)
+    /// access component.
+    pub fn is_owner_controlled(&self) -> bool {
+        self.components.contains(&AccountComponentInterface::Ownable2Step)
+            || self.components.contains(&AccountComponentInterface::RoleBasedAccessControl)
+    }
+
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
@@ -197,15 +205,13 @@ impl AccountInterface {
         if let Some(basic_fungible_faucet) = self.components().iter().find(|component_interface| {
             matches!(component_interface, AccountComponentInterface::BasicFungibleFaucet)
         }) {
+            // Owner-controlled faucets (network-style) mint exclusively via MINT notes; refuse to
+            // generate a tx-script `send_note` flow that would fail at runtime under the
+            // OwnerOnly mint policy.
+            if self.is_owner_controlled() {
+                return Err(AccountInterfaceError::UnsupportedAccountInterface);
+            }
             basic_fungible_faucet.send_note_body(*self.id(), output_notes)
-        } else if let Some(_network_fungible_faucet) =
-            self.components().iter().find(|component_interface| {
-                matches!(component_interface, AccountComponentInterface::NetworkFungibleFaucet)
-            })
-        {
-            // Network fungible faucet doesn't support send_note_body, because minting
-            // is done via a MINT note.
-            Err(AccountInterfaceError::UnsupportedAccountInterface)
         } else if self.components().contains(&AccountComponentInterface::BasicWallet) {
             AccountComponentInterface::BasicWallet.send_note_body(*self.id(), output_notes)
         } else {

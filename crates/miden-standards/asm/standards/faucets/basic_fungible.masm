@@ -14,6 +14,9 @@ use miden::standards::faucets::policies::policy_manager
 
 #! Mints fungible assets to the provided recipient by creating a note.
 #!
+#! This procedure first executes the active mint policy configured via the `TokenPolicyManager`
+#! and then mints the asset and creates an output note with that asset for the recipient.
+#!
 #! Inputs:  [amount, tag, note_type, RECIPIENT, pad(9)]
 #! Outputs: [note_idx, pad(15)]
 #!
@@ -31,10 +34,6 @@ use miden::standards::faucets::policies::policy_manager
 #!
 #! Invocation: call
 pub proc mint_and_send
-    # TODO: Remove once AccountComponentInterface is refactored
-    # Keep this procedure digest distinct from network_fungible::mint_and_send.
-    push.0 drop
-    
     exec.policy_manager::execute_mint_policy
     # => [new_amount, new_tag, new_note_type, NEW_RECIPIENT, pad(9)]
 
@@ -42,11 +41,11 @@ pub proc mint_and_send
     # => [note_idx, pad(15)]
 end
 
-#! Burns the fungible asset from the active note.
+#! Receives a fungible asset from the active note and burns it.
 #!
-#! This is a re-export of `miden::standards::faucets::burn`.
+#! This is a re-export of `miden::standards::faucets::receive_and_burn`.
 #!
-#! The shared burn procedure first executes the active burn policy and then burns the single
+#! The shared procedure first executes the active burn policy and then burns the single
 #! fungible asset contained in the active note.
 #!
 #! Inputs:  [pad(16)]
@@ -59,7 +58,7 @@ end
 #! - the transaction is executed against an account which is not a fungible asset faucet.
 #! - the transaction is executed against a faucet which is not the origin of the specified asset.
 #! - the amount about to be burned is greater than the outstanding supply of the asset.
-#! - any of the validations in faucets::burn fail.
+#! - any of the validations in faucets::receive_and_burn fail.
 #!
 #! Invocation: call
-pub use faucets::burn
+pub use faucets::receive_and_burn
