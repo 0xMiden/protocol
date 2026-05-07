@@ -19,9 +19,9 @@ use miden::batch_kernel::prologue
 #! Each layer is loaded via `adv.push_mapvaln` keyed by the previously-verified hash and asserted
 #! against that hash via `assert_eqw`. Only verified data feeds into the batch outputs.
 #!
-#! Inputs: [BLOCK_HASH, TRANSACTIONS_COMMITMENT, pad(8)]
+#! Inputs:  [BLOCK_HASH, TRANSACTIONS_COMMITMENT]
 #!
-#! Outputs: [INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, batch_expiration_block_num, pad(7)]
+#! Outputs: [INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, batch_expiration_block_num]
 #!
 #! Where:
 #! - BLOCK_HASH is the commitment of the batch's reference block. Currently consumed and dropped;
@@ -55,35 +55,34 @@ use miden::batch_kernel::prologue
 proc main
     # Bring TRANSACTIONS_COMMITMENT to the top so the prologue can consume it.
     swapw
-    # Stack: [TRANSACTIONS_COMMITMENT, BLOCK_HASH, pad(8)]
+    # Stack: [TRANSACTIONS_COMMITMENT, BLOCK_HASH]
 
     # Layer 1 + Layer 2 verification, plus expiration min accumulation.
     exec.prologue::prepare_batch
-    # Stack: [BLOCK_HASH, pad(8)]
+    # Stack: [BLOCK_HASH]
 
     # TODO: verify BLOCK_HASH against block header data via the pipe-and-verify pattern.
     dropw
-    # Stack: [pad(8)]
+    # Stack: []
 
     # Compute the batch INPUT_NOTES_COMMITMENT (Layer 3 verification + sequential absorption).
     exec.note_tracker::compute_input_notes_commitment
-    # Stack: [INPUT_NOTES_COMMITMENT, pad(8)]
+    # Stack: [INPUT_NOTES_COMMITMENT]
 
     # Compute the batch OUTPUT_NOTES_COMMITMENT (Layer 3' verification + sequential absorption).
     exec.note_tracker::compute_output_notes_commitment
-    # Stack: [OUTPUT_NOTES_COMMITMENT, INPUT_NOTES_COMMITMENT, pad(8)]
+    # Stack: [OUTPUT_NOTES_COMMITMENT, INPUT_NOTES_COMMITMENT]
 
     # Read the accumulated batch_expiration_block_num.
     exec.memory::get_batch_expiration_block_num
-    # Stack: [batch_expiration_block_num,
-    #         OUTPUT_NOTES_COMMITMENT, INPUT_NOTES_COMMITMENT, pad...]
+    # Stack: [batch_expiration_block_num, OUTPUT_NOTES_COMMITMENT, INPUT_NOTES_COMMITMENT]
 
     # Push the expiration felt down past both commitment words so the words become word-aligned.
     movdn.8
-    # Stack: [OUTPUT_NOTES_COMMITMENT, INPUT_NOTES_COMMITMENT, batch_expiration_block_num, pad...]
+    # Stack: [OUTPUT_NOTES_COMMITMENT, INPUT_NOTES_COMMITMENT, batch_expiration_block_num]
 
     swapw
-    # Stack: [INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, batch_expiration_block_num, pad...]
+    # Stack: [INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, batch_expiration_block_num]
 
     # Truncate the stack to the canonical 16-element output: drop the bottom-most words that came
     # from the depth-floor auto-fill during the kernel's earlier `consume`-only operations.
