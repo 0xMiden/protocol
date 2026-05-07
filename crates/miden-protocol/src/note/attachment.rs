@@ -551,7 +551,7 @@ impl NoteAttachments {
 
     /// Returns the commitment over the contained attachments.
     pub fn to_commitment(&self) -> Word {
-        <Self as SequentialCommit>::to_commitment(&self)
+        <Self as SequentialCommit>::to_commitment(self)
     }
 
     /// Returns the attachment headers for all attachment slots.
