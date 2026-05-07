@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use core::collections::BTreeSet;
 
 use miden_protocol::account::component::{SchemaType, StorageSlotSchema};
 use miden_protocol::account::{
