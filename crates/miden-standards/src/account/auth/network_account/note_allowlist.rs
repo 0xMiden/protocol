@@ -1,4 +1,4 @@
-use alloc::vec::Vec;
+use std::collections::BTreeSet;
 
 use miden_protocol::account::component::{SchemaType, StorageSlotSchema};
 use miden_protocol::account::{
@@ -42,12 +42,12 @@ const ALLOWED_FLAG: Word = Word::new([Felt::ONE, Felt::ZERO, Felt::ZERO, Felt::Z
 /// allowed.
 #[derive(Debug, Clone)]
 pub struct NetworkAccountNoteAllowlist {
-    allowed_script_roots: Vec<NoteScriptRoot>,
+    allowed_script_roots: BTreeSet<NoteScriptRoot>,
 }
 
 impl NetworkAccountNoteAllowlist {
     /// Creates a new allowlist from the provided list of allowed input-note script roots.
-    pub fn new(allowed_script_roots: Vec<NoteScriptRoot>) -> Self {
+    pub fn new(allowed_script_roots: BTreeSet<NoteScriptRoot>) -> Self {
         Self { allowed_script_roots }
     }
 
@@ -57,7 +57,7 @@ impl NetworkAccountNoteAllowlist {
     }
 
     /// Returns the allowed input-note script roots in this allowlist.
-    pub fn allowed_script_roots(&self) -> &[NoteScriptRoot] {
+    pub fn allowed_script_roots(&self) -> &BTreeSet<NoteScriptRoot> {
         &self.allowed_script_roots
     }
 
@@ -153,7 +153,8 @@ mod tests {
         let root_a = NoteScriptRoot::from_array([1, 2, 3, 4]);
         let root_b = NoteScriptRoot::from_array([5, 6, 7, 8]);
 
-        let slot = NetworkAccountNoteAllowlist::new(vec![root_a, root_b]).into_storage_slot();
+        let slot = NetworkAccountNoteAllowlist::new(BTreeSet::from_iter([root_a, root_b]))
+            .into_storage_slot();
 
         assert_eq!(slot.name(), NetworkAccountNoteAllowlist::slot_name());
 
@@ -175,7 +176,7 @@ mod tests {
 
     #[test]
     fn empty_allowlist_produces_empty_map() {
-        let slot = NetworkAccountNoteAllowlist::new(Vec::new()).into_storage_slot();
+        let slot = NetworkAccountNoteAllowlist::new(BTreeSet::new()).into_storage_slot();
 
         let StorageSlotContent::Map(map) = slot.content() else {
             panic!("allowlist slot must be a map");
@@ -191,10 +192,10 @@ mod tests {
         let root_a = NoteScriptRoot::from_array([1, 2, 3, 4]);
         let root_b = NoteScriptRoot::from_array([5, 6, 7, 8]);
         let root_c = NoteScriptRoot::from_array([9, 10, 11, 12]);
-        let original_roots = vec![root_a, root_b, root_c];
+        let original_roots = BTreeSet::from_iter([root_a, root_b, root_c]);
 
         let account = AccountBuilder::new([0; 32])
-            .with_auth_component(AuthNetworkAccount::new(original_roots.clone()))
+            .with_auth_component(AuthNetworkAccount::with_allowlist(original_roots.clone()))
             .with_component(BasicWallet)
             .build()
             .expect("account building with AuthNetworkAccount failed");

@@ -1,5 +1,5 @@
 use alloc::vec;
-use alloc::vec::Vec;
+use std::collections::BTreeSet;
 
 use miden_protocol::account::component::{
     AccountComponentMetadata,
@@ -42,7 +42,7 @@ impl AuthNetworkAccount {
 
     /// Creates a new [`AuthNetworkAccount`] component with the provided list of allowed
     /// input-note script roots.
-    pub fn new(allowed_script_roots: Vec<NoteScriptRoot>) -> Self {
+    pub fn with_allowlist(allowed_script_roots: BTreeSet<NoteScriptRoot>) -> Self {
         Self {
             allowlist: NetworkAccountNoteAllowlist::new(allowed_script_roots),
         }
@@ -100,7 +100,9 @@ mod tests {
         let root_b = NoteScriptRoot::from_array([5, 6, 7, 8]);
 
         let _account = AccountBuilder::new([0; 32])
-            .with_auth_component(AuthNetworkAccount::new(vec![root_a, root_b]))
+            .with_auth_component(AuthNetworkAccount::with_allowlist(BTreeSet::from_iter([
+                root_a, root_b,
+            ])))
             .with_component(BasicWallet)
             .build()
             .expect("account building with AuthNetworkAccount failed");
@@ -109,7 +111,7 @@ mod tests {
     #[test]
     fn auth_network_account_with_empty_allowlist_builds() {
         let _account = AccountBuilder::new([0; 32])
-            .with_auth_component(AuthNetworkAccount::new(Vec::new()))
+            .with_auth_component(AuthNetworkAccount::with_allowlist(BTreeSet::new()))
             .with_component(BasicWallet)
             .build()
             .expect("account building with empty allowlist failed");
@@ -118,7 +120,8 @@ mod tests {
     #[test]
     fn auth_network_account_uses_standardized_allowlist_slot() {
         let root_a = NoteScriptRoot::from_array([1, 2, 3, 4]);
-        let component: AccountComponent = AuthNetworkAccount::new(vec![root_a]).into();
+        let component: AccountComponent =
+            AuthNetworkAccount::with_allowlist(BTreeSet::from_iter([root_a])).into();
 
         let storage_slots = component.storage_slots();
         assert_eq!(storage_slots.len(), 1);

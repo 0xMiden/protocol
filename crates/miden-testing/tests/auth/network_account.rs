@@ -21,7 +21,7 @@ use miden_testing::{MockChain, assert_transaction_executor_error};
 /// allowlist of input-note script roots.
 fn build_allowlist_account(allowed_script_roots: Vec<Word>) -> anyhow::Result<Account> {
     Ok(AccountBuilder::new([0; 32])
-        .with_auth_component(AuthNetworkAccount::new(
+        .with_auth_component(AuthNetworkAccount::with_allowlist(
             allowed_script_roots.into_iter().map(NoteScriptRoot::from_raw).collect(),
         ))
         .with_component(BasicWallet)
