@@ -567,7 +567,7 @@ mod tests {
     #[test]
     fn account_id_from_felts_with_max_pop_count() {
         let valid_suffix = Felt::try_from(0x7fff_ffff_ffff_ff00u64).unwrap();
-        let valid_prefix = Felt::try_from(0x7fff_ffff_ffff_ff70u64).unwrap();
+        let valid_prefix = Felt::try_from(0x7fff_ffff_ffff_ff71u64).unwrap();
 
         let id1 = AccountIdV0::new_unchecked([valid_prefix, valid_suffix]);
         assert_eq!(id1.account_type(), AccountType::NonFungibleFaucet);
