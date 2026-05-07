@@ -205,7 +205,7 @@ pub proc get_attachment_ptr
     # => [num_words, attachment_ptr]
 end
 
-#! Builds the recipient hash from note storage, script root, and serial number.
+#! Computes the recipient hash from note storage, script root, and serial number.
 #!
 #! This procedure computes the commitment of the note storage and then uses it to calculate the note
 #! recipient by hashing this commitment, the provided script root, and the serial number.
@@ -237,7 +237,7 @@ end
 #! - num_storage_items is greater than 1024.
 #!
 #! Invocation: exec
-pub proc build_recipient
+pub proc compute_and_store_recipient
     dup.1 dup.1
     # => [storage_ptr, num_storage_items, storage_ptr, num_storage_items, SERIAL_NUM, SCRIPT_ROOT]
 
@@ -275,7 +275,7 @@ pub proc build_recipient
     # => [RECIPIENT]
 end
 
-#! Returns the RECIPIENT for a specified SERIAL_NUM, SCRIPT_ROOT and STORAGE_COMMITMENT.
+#! Computes the RECIPIENT for a specified SERIAL_NUM, SCRIPT_ROOT and STORAGE_COMMITMENT.
 #!
 #! Inputs:  [SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT]
 #! Outputs: [RECIPIENT]
@@ -287,7 +287,7 @@ end
 #! - RECIPIENT is the recipient of the note.
 #!
 #! Invocation: exec
-pub proc build_recipient_hash
+pub proc compute_recipient
     padw swapw
     # => [SERIAL_NUM, EMPTY_WORD, SCRIPT_ROOT, STORAGE_COMMITMENT]
 

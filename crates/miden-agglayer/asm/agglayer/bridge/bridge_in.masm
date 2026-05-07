@@ -910,7 +910,7 @@ end
 #! Builds the MINT note recipient digest from the storage items already written to global memory.
 #!
 #! Uses the MINT note script root and PROOF_DATA_KEY as serial number, then calls
-#! `note::build_recipient` with the storage pointer and item count.
+#! `note::compute_and_store_recipient` with the storage pointer and item count.
 #!
 #! Inputs:  []
 #! Outputs: [MINT_RECIPIENT]
@@ -925,14 +925,14 @@ proc build_mint_recipient
     padw mem_loadw_be.CLAIM_PROOF_DATA_KEY_MEM_ADDR
     # => [MINT_SERIAL_NUM, MINT_SCRIPT_ROOT]
 
-    # Build the MINT note recipient
+    # Compute the MINT note recipient
     push.MINT_NOTE_NUM_STORAGE_ITEMS
     # => [num_storage_items, MINT_SERIAL_NUM, MINT_SCRIPT_ROOT]
 
     push.MINT_NOTE_STORAGE_MEM_ADDR_0
     # => [storage_ptr, num_storage_items, MINT_SERIAL_NUM, MINT_SCRIPT_ROOT]
 
-    exec.note::build_recipient
+    exec.note::compute_and_store_recipient
     # => [MINT_RECIPIENT]
 end
 

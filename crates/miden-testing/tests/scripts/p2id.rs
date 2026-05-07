@@ -301,7 +301,7 @@ async fn test_create_consume_multiple_notes() -> anyhow::Result<()> {
 
 /// Tests the P2ID `new` MASM constructor procedure.
 /// This test verifies that calling `p2id::new` from a transaction script creates an output note
-/// with the same recipient as `P2idNote::build_recipient` would create.
+/// with the same recipient as `P2idNoteStorage::into_recipient` would create.
 #[tokio::test]
 async fn test_p2id_new_constructor() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
@@ -393,7 +393,7 @@ async fn test_p2id_new_constructor() -> anyhow::Result<()> {
     assert_eq!(
         created_recipient.digest(),
         expected_recipient.digest(),
-        "The recipient created by p2id::new should match P2idNote::build_recipient"
+        "The recipient created by p2id::new should match P2idNoteStorage::into_recipient"
     );
 
     Ok(())
