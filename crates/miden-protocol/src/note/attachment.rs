@@ -596,7 +596,6 @@ impl Deserializable for NoteAttachmentHeader {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NoteAttachments {
     attachments: Vec<NoteAttachment>,
-    commitment: Word,
 }
 
 impl NoteAttachments {
@@ -617,10 +616,7 @@ impl NoteAttachments {
 
     /// Creates a new empty [`NoteAttachments`] collection.
     pub fn empty() -> Self {
-        Self {
-            attachments: Vec::new(),
-            commitment: Word::empty(),
-        }
+        Self { attachments: Vec::new() }
     }
 
     /// Creates a [`NoteAttachments`] from a vector of attachments.
@@ -644,9 +640,7 @@ impl NoteAttachments {
             return Err(NoteError::NoteAttachmentArrayTooManyWords(total_num_words));
         }
 
-        let commitment = compute_commitment(&attachments);
-
-        Ok(Self { attachments, commitment })
+        Ok(Self { attachments })
     }
 
     // ACCESSORS
@@ -681,9 +675,9 @@ impl NoteAttachments {
             .collect()
     }
 
-    /// Returns the cached commitment over the contained attachments.
-    pub fn commitment(&self) -> Word {
-        self.commitment
+    /// Returns the commitment over the contained attachments.
+    pub fn to_commitment(&self) -> Word {
+        <Self as SequentialCommit>::to_commitment(&self)
     }
 
     /// Returns the attachment headers for all attachment slots.
@@ -718,10 +712,6 @@ impl SequentialCommit for NoteAttachments {
 
     fn to_elements(&self) -> Vec<Felt> {
         attachments_to_commitment_elements(&self.attachments)
-    }
-
-    fn to_commitment(&self) -> Self::Commitment {
-        self.commitment
     }
 }
 
@@ -882,7 +872,7 @@ mod tests {
     #[test]
     fn note_attachments_commitment_empty() {
         let attachments = NoteAttachments::empty();
-        assert_eq!(attachments.commitment(), Word::empty());
+        assert_eq!(attachments.to_commitment(), Word::empty());
     }
 
     #[test]
@@ -895,7 +885,10 @@ mod tests {
         // Single word attachment: the attachment commitment is hash(word), so the overall
         // attachments commitment is hash(hash(word)).
         let word_commitment = Hasher::hash_elements(word.as_elements());
-        assert_eq!(attachments.commitment(), Hasher::hash_elements(word_commitment.as_elements()));
+        assert_eq!(
+            attachments.to_commitment(),
+            Hasher::hash_elements(word_commitment.as_elements())
+        );
 
         Ok(())
     }

@@ -341,7 +341,7 @@ impl TransactionAdviceInputs {
 
             // ATTACHMENTS_COMMITMENT |-> [[ATTACHMENT_COMMITMENTS]]
             self.add_map_entry(
-                note.attachments().commitment(),
+                note.attachments().to_commitment(),
                 note.attachments()
                     .commitments()
                     .iter()
