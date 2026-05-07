@@ -75,10 +75,10 @@ Regardless of [storage mode](#note-storage-mode), these metadata fields are alwa
 ### Attachments
 
 A note can have up to 4 attachments. Each attachment is a variable-size, _public_ extension to the note's metadata consisting of:
-- **Content**: Between 1 and 256 words of data (up to 8 KB per attachment, 16 KB total across all attachments). The content of an individual attachment is committed to via a sequential hash over its field elements.
-- **Scheme**: A 16-bit user-defined value that identifies the kind of attachment. This allows consumers to detect the presence of certain standardized attachments. For untyped attachments, a `none = 1` scheme can be used.
+- **Content**: Between 1 and 256 words of data (up to 8 KB per attachment, 16 KB total across all attachments). The content of an individual attachment is committed to via a sequential hash over its field elements. The full attachment contents are publicly stored on-chain, even for private notes.
+- **Scheme**: A 16-bit (limited to 65534) user-defined value that identifies the kind of attachment. This allows consumers to detect the presence of certain standardized attachments. For untyped attachments, the `none = 1` scheme can be used.
 
-The attachment schemes are encoded in the note's metadata and only the commitment of the attachment contents is stored on-chain. The actual content is provided via the advice provider when the note is consumed. The note commits to all of its attachments via a sequential hash over the individual attachment commitments (the attachments commitment).
+The note commits to all of its attachments via a sequential hash over the individual attachment commitments (the attachments commitment). The attachment schemes are encoded in the note's metadata. When the note is consumed, the actual attachment content is provided via the advice provider.
 
 Example use cases for attachments are:
 - Communicate the note details of a private note in encrypted form. This means the encrypted note is attached publicly to the otherwise private note.
