@@ -256,13 +256,6 @@ impl RawOutputNote {
             Self::Full(note) if note.metadata().is_private() => {
                 let note_id = note.id();
                 let (_, metadata, _, attachments) = note.into_parts();
-                let metadata = NoteMetadata::from_parts(
-                    metadata.sender(),
-                    metadata.note_type(),
-                    metadata.tag(),
-                    attachments.to_headers(),
-                    attachments.commitment(),
-                );
                 let note_header = NoteHeader::new(note_id, metadata);
                 Ok(OutputNote::Private(PrivateOutputNote::new(note_header, attachments)?))
             },
