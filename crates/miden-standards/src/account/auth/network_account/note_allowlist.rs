@@ -1,7 +1,14 @@
 use alloc::vec::Vec;
 
 use miden_protocol::account::component::{SchemaType, StorageSlotSchema};
-use miden_protocol::account::{StorageMap, StorageMapKey, StorageSlot, StorageSlotName};
+use miden_protocol::account::{
+    AccountStorage,
+    StorageMap,
+    StorageMapKey,
+    StorageSlot,
+    StorageSlotContent,
+    StorageSlotName,
+};
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
@@ -48,6 +55,11 @@ impl NetworkAccountNoteAllowlist {
         &SLOT_NAME
     }
 
+    /// Returns the allowed input-note script roots in this allowlist.
+    pub fn allowed_script_roots(&self) -> &[Word] {
+        &self.allowed_script_roots
+    }
+
     /// Returns the schema entry for the allowlist slot.
     pub fn slot_schema() -> (StorageSlotName, StorageSlotSchema) {
         (
@@ -75,14 +87,62 @@ impl NetworkAccountNoteAllowlist {
     }
 }
 
+// TRAIT IMPLEMENTATIONS
+// ================================================================================================
+
+impl TryFrom<&AccountStorage> for NetworkAccountNoteAllowlist {
+    type Error = NetworkAccountNoteAllowlistError;
+
+    /// Reconstructs a [`NetworkAccountNoteAllowlist`] from account storage by reading the
+    /// allowlist slot and collecting its keys.
+    ///
+    /// # Errors
+    /// Returns an error if:
+    /// - The standardized allowlist slot is not present in storage.
+    /// - The slot is present but is not a [`StorageSlotContent::Map`].
+    fn try_from(storage: &AccountStorage) -> Result<Self, Self::Error> {
+        let slot = storage
+            .get(Self::slot_name())
+            .ok_or(NetworkAccountNoteAllowlistError::SlotNotFound)?;
+
+        let StorageSlotContent::Map(map) = slot.content() else {
+            return Err(NetworkAccountNoteAllowlistError::UnexpectedSlotType);
+        };
+
+        let allowed_script_roots = map.entries().map(|(key, _value)| Word::from(*key)).collect();
+
+        Ok(Self::new(allowed_script_roots))
+    }
+}
+
+// NETWORK ACCOUNT NOTE ALLOWLIST ERROR
+// ================================================================================================
+
+/// Errors that can occur when reconstructing a [`NetworkAccountNoteAllowlist`] from storage.
+#[derive(Debug, thiserror::Error)]
+pub enum NetworkAccountNoteAllowlistError {
+    #[error(
+        "network account allowlist storage slot {} not found in account storage",
+        NetworkAccountNoteAllowlist::slot_name()
+    )]
+    SlotNotFound,
+    #[error(
+        "network account allowlist storage slot {} must be a map",
+        NetworkAccountNoteAllowlist::slot_name()
+    )]
+    UnexpectedSlotType,
+}
+
 // TESTS
 // ================================================================================================
 
 #[cfg(test)]
 mod tests {
-    use miden_protocol::account::StorageSlotContent;
+    use miden_protocol::account::{AccountBuilder, StorageSlotContent};
 
     use super::*;
+    use crate::account::auth::network_account::AuthNetworkAccount;
+    use crate::account::wallets::BasicWallet;
 
     #[test]
     fn allowlist_storage_slot_contains_expected_entries() {
@@ -118,5 +178,30 @@ mod tests {
         };
 
         assert_eq!(map.entries().count(), 0);
+    }
+
+    #[test]
+    fn allowlist_round_trips_through_account_storage() {
+        use alloc::collections::BTreeSet;
+
+        let root_a = Word::from([1u32, 2, 3, 4]);
+        let root_b = Word::from([5u32, 6, 7, 8]);
+        let root_c = Word::from([9u32, 10, 11, 12]);
+        let original_roots = vec![root_a, root_b, root_c];
+
+        let account = AccountBuilder::new([0; 32])
+            .with_auth_component(AuthNetworkAccount::new(original_roots.clone()))
+            .with_component(BasicWallet)
+            .build()
+            .expect("account building with AuthNetworkAccount failed");
+
+        let allowlist = NetworkAccountNoteAllowlist::try_from(account.storage())
+            .expect("allowlist should be reconstructable from account storage");
+
+        // The map's ordering is determined by the StorageMapKey, so compare as sets.
+        let expected: BTreeSet<Word> = original_roots.into_iter().collect();
+        let actual: BTreeSet<Word> = allowlist.allowed_script_roots().iter().copied().collect();
+
+        assert_eq!(actual, expected);
     }
 }
