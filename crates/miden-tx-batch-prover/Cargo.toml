@@ -19,7 +19,7 @@ doctest = false
 [features]
 default = ["std"]
 std     = ["miden-processor/std", "miden-protocol/std", "miden-prover/std", "miden-tx/std"]
-testing = []
+testing = ["miden-processor/testing", "miden-protocol/testing"]
 
 [dependencies]
 miden-processor = { workspace = true }
