@@ -7,8 +7,19 @@ use miden::batch_kernel::prologue
 
 #! Minimal batch kernel program.
 #!
-#! Verifies the unhashing chain rooted at `TRANSACTIONS_COMMITMENT` and emits the three batch
-#! commitments. The verification chain is:
+#! A transaction batch groups a set of independently-proven transactions so they can later be
+#! aggregated into a block by the block kernel. This program:
+#!
+#! 1. Reconstructs the per-transaction data (account state transitions, input/output notes, fee,
+#!    expiration) from the advice provider, anchoring the entire reconstruction in the public
+#!    `TRANSACTIONS_COMMITMENT`.
+#! 2. Aggregates the per-transaction data into batch-wide commitments — one over the consumed
+#!    input notes, one over the produced output notes, plus the batch's effective expiration
+#!    block number — that the block kernel will later consume.
+#!
+#! Reconstruction is a recursive unhashing chain. Each layer of advice data is keyed by a hash
+#! that the previous layer's verification produced, so once `TRANSACTIONS_COMMITMENT` is anchored
+#! to the public input, every byte that feeds the batch outputs is transitively committed-to:
 #!
 #!   `TRANSACTIONS_COMMITMENT` (public input) -> `(tx_id, account_id)` tuple list
 #!   each `tx_id`                              -> per-tx
