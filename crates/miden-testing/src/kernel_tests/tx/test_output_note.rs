@@ -4,7 +4,6 @@ use alloc::vec::Vec;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountId};
 use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset};
-use miden_protocol::crypto::SequentialCommit;
 use miden_protocol::crypto::rand::RandomCoin;
 use miden_protocol::errors::MasmError;
 use miden_protocol::errors::tx_kernel::{
@@ -1572,7 +1571,6 @@ async fn test_get_attachment_commitments_ptr() -> anyhow::Result<()> {
             .build()?,
     );
 
-    let _attachments_commitment = output_note.attachments().commitment();
     let commitment_0 = attachment_0.to_commitment();
     let commitment_1 = attachment_1.to_commitment();
 

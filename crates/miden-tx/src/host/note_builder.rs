@@ -1,3 +1,4 @@
+use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use miden_protocol::asset::Asset;
@@ -27,7 +28,7 @@ use crate::errors::TransactionKernelError;
 pub struct OutputNoteBuilder {
     metadata: NoteMetadata,
     assets: Vec<Asset>,
-    attachments: Vec<NoteAttachment>,
+    attachments: NoteAttachments,
     recipient_digest: Word,
     recipient: Option<NoteRecipient>,
 }
@@ -60,7 +61,7 @@ impl OutputNoteBuilder {
             recipient_digest,
             recipient: None,
             assets: Vec::new(),
-            attachments: Vec::default(),
+            attachments: NoteAttachments::empty(),
         })
     }
 
@@ -71,7 +72,7 @@ impl OutputNoteBuilder {
             recipient_digest: recipient.digest(),
             recipient: Some(recipient),
             assets: Vec::new(),
-            attachments: Vec::default(),
+            attachments: NoteAttachments::empty(),
         }
     }
 
@@ -123,34 +124,16 @@ impl OutputNoteBuilder {
     /// Appends an attachment to the note.
     ///
     /// # Errors
-    /// Returns an error if the note already has the maximum number of attachments.
+    /// Returns an error if the note already has the maximum number of attachments, or if the
+    /// total number of words across all attachments exceeds the maximum.
     pub fn add_attachment(
         &mut self,
         attachment: NoteAttachment,
     ) -> Result<(), TransactionKernelError> {
-        self.attachments.push(attachment);
-
-        if self.attachments.len() > NoteAttachments::MAX_COUNT {
-            return Err(TransactionKernelError::other(format!(
-                "number of attachments {} exceeded max {}",
-                self.attachments.len(),
-                NoteAttachments::MAX_COUNT
-            )));
-        }
-
-        let total_num_words = self
-            .attachments
-            .iter()
-            .map(|attachment| attachment.num_words() as usize)
-            .sum::<usize>();
-
-        if total_num_words > NoteAttachments::MAX_NUM_WORDS as usize {
-            return Err(TransactionKernelError::other(format!(
-                "number of total words {} in all attachments exceeds max of {}",
-                total_num_words,
-                NoteAttachments::MAX_NUM_WORDS
-            )));
-        }
+        let mut attachments = core::mem::take(&mut self.attachments).into_vec();
+        attachments.push(attachment);
+        self.attachments = NoteAttachments::new(attachments)
+            .map_err(|err| TransactionKernelError::other(err.to_string()))?;
 
         Ok(())
     }
@@ -162,17 +145,20 @@ impl OutputNoteBuilder {
     pub fn build(self) -> RawOutputNote {
         let assets = NoteAssets::new(self.assets)
             .expect("assets should be valid since add_asset validates them");
-        let attachments = NoteAttachments::new(self.attachments)
-            .expect("attachments should be valid since add_attachment validates them");
 
         match self.recipient {
             Some(recipient) => {
-                let note = Note::with_attachments(assets, self.metadata, recipient, attachments);
+                let note =
+                    Note::with_attachments(assets, self.metadata, recipient, self.attachments);
                 RawOutputNote::Full(note)
             },
             None => {
-                let note =
-                    PartialNote::new(self.metadata, self.recipient_digest, assets, attachments);
+                let note = PartialNote::new(
+                    self.metadata,
+                    self.recipient_digest,
+                    assets,
+                    self.attachments,
+                );
                 RawOutputNote::Partial(note)
             },
         }

@@ -86,10 +86,7 @@ impl TryFrom<&NoteAttachments> for NetworkAccountTarget {
         // Find the first matching attachment. In case of multiple network account target
         // attachments, we pick the first one as the canonical one.
         let attachment = attachments
-            .iter()
-            .find(|attachment| {
-                attachment.attachment_scheme() == NetworkAccountTarget::ATTACHMENT_SCHEME
-            })
+            .find(NetworkAccountTarget::ATTACHMENT_SCHEME)
             .ok_or_else(|| NetworkAccountTargetError::MissingAttachmentScheme)?;
 
         Self::try_from(attachment)

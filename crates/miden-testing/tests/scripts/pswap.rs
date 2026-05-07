@@ -184,14 +184,14 @@ async fn pswap_note_alice_reconstructs_and_consumes_p2id() -> anyhow::Result<()>
     // Read the attachment from the executed transaction's output (not from the
     // Rust-predicted `p2id_note`) so this actually validates the MASM side.
     let output_p2id = executed_transaction.output_notes().get_note(0);
-    let aux_word = first_attachment_word(output_p2id.attachments());
-    let fill_amount_from_aux = aux_word[0].as_canonical_u64();
+    let attachment_word = first_attachment_word(output_p2id.attachments());
+    let fill_amount_from_aux = attachment_word[0].as_canonical_u64();
     assert_eq!(fill_amount_from_aux, 20, "Fill amount from aux should be 20 ETH");
 
     // Parity check: Rust-predicted P2ID attachment must match the MASM output.
     assert_eq!(
         first_attachment_word(p2id_note.attachments()),
-        aux_word,
+        attachment_word,
         "Rust-predicted P2ID attachment does not match the MASM-produced one",
     );
 
@@ -215,16 +215,16 @@ async fn pswap_note_alice_reconstructs_and_consumes_p2id() -> anyhow::Result<()>
     // remainder PswapNote.
 
     let output_remainder = executed_transaction.output_notes().get_note(1);
-    let remainder_aux = first_attachment_word(output_remainder.attachments());
-    let amt_payout_from_aux = remainder_aux[0].as_canonical_u64();
+    let remainder_attachment_word = first_attachment_word(output_remainder.attachments());
+    let amt_payout_from_attachment = remainder_attachment_word[0].as_canonical_u64();
 
     let expected_payout = pswap.calculate_offered_for_requested(fill_amount_from_aux)?;
     assert_eq!(
-        amt_payout_from_aux, expected_payout,
+        amt_payout_from_attachment, expected_payout,
         "remainder aux should carry amt_payout matching the Rust-side calc",
     );
 
-    let remaining_offered = offered_asset.amount() - amt_payout_from_aux;
+    let remaining_offered = offered_asset.amount() - amt_payout_from_attachment;
     let remaining_requested = requested_asset.amount() - fill_amount_from_aux;
 
     let remainder_storage = PswapNoteStorage::builder()
@@ -238,7 +238,7 @@ async fn pswap_note_alice_reconstructs_and_consumes_p2id() -> anyhow::Result<()>
         Word::from([serial_number[0], serial_number[1], serial_number[2], serial_number[3] + ONE]);
 
     let remainder_attachment_word = Word::from([
-        Felt::try_from(amt_payout_from_aux).expect("amt_payout fits in a felt"),
+        Felt::try_from(amt_payout_from_attachment).expect("amt_payout fits in a felt"),
         ZERO,
         ZERO,
         ZERO,
@@ -275,7 +275,7 @@ async fn pswap_note_alice_reconstructs_and_consumes_p2id() -> anyhow::Result<()>
     // Parity on the attachment word itself.
     assert_eq!(
         first_attachment_word(reconstructed_remainder.attachments()),
-        remainder_aux,
+        remainder_attachment_word,
         "reconstructed remainder attachment does not match executed output",
     );
 
