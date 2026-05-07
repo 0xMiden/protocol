@@ -29,7 +29,7 @@ use crate::{Felt, Word};
 /// By default, the builder is initialized with:
 /// - The `account_type` set to [`AccountType::RegularAccountUpdatableCode`].
 /// - The `storage_mode` set to [`AccountStorageMode::Private`].
-/// - The `version` set to [`AccountIdVersion::Version0`].
+/// - The `version` set to [`AccountIdVersion::Version1`].
 ///
 /// The methods that are required to be called are:
 ///
@@ -79,7 +79,7 @@ impl AccountBuilder {
             init_seed,
             account_type: AccountType::RegularAccountUpdatableCode,
             storage_mode: AccountStorageMode::Private,
-            id_version: AccountIdVersion::Version0,
+            id_version: AccountIdVersion::Version1,
         }
     }
 
@@ -240,7 +240,7 @@ impl AccountBuilder {
 
         let account_id = AccountId::new(
             seed,
-            AccountIdVersion::Version0,
+            AccountIdVersion::Version1,
             code.commitment(),
             storage.to_commitment(),
         )
@@ -291,7 +291,7 @@ impl AccountBuilder {
                 .expect("we should have sliced exactly 15 bytes off");
             AccountId::dummy(
                 bytes,
-                AccountIdVersion::Version0,
+                AccountIdVersion::Version1,
                 self.account_type,
                 self.storage_mode,
             )
@@ -424,7 +424,7 @@ mod tests {
 
         let computed_id = AccountId::new(
             account.seed().unwrap(),
-            AccountIdVersion::Version0,
+            AccountIdVersion::Version1,
             account.code.commitment(),
             account.storage.to_commitment(),
         )

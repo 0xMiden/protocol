@@ -29,10 +29,10 @@ use crate::utils::serde::{
 };
 use crate::{EMPTY_WORD, Felt, Hasher, Word};
 
-// ACCOUNT ID VERSION 0
+// ACCOUNT ID VERSION 1
 // ================================================================================================
 
-/// Version 0 of the [`Account`](crate::account::Account) identifier.
+/// Version 1 of the [`Account`](crate::account::Account) identifier.
 ///
 /// See the [`AccountId`](super::AccountId) type's documentation for details.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -123,7 +123,7 @@ impl AccountIdV0 {
         account_type: AccountType,
         storage_mode: AccountStorageMode,
     ) -> AccountIdV0 {
-        let version = AccountIdVersion::Version0 as u8;
+        let version = AccountIdVersion::Version1 as u8;
         let low_nibble = ((storage_mode as u8) << Self::STORAGE_MODE_SHIFT)
             | ((account_type as u8) << Self::TYPE_SHIFT)
             | version;
@@ -572,7 +572,7 @@ mod tests {
         let id1 = AccountIdV0::new_unchecked([valid_prefix, valid_suffix]);
         assert_eq!(id1.account_type(), AccountType::NonFungibleFaucet);
         assert_eq!(id1.storage_mode(), AccountStorageMode::Network);
-        assert_eq!(id1.version(), AccountIdVersion::Version0);
+        assert_eq!(id1.version(), AccountIdVersion::Version1);
     }
 
     #[test]
@@ -592,7 +592,7 @@ mod tests {
                     let id = AccountIdV0::dummy(input, account_type, storage_mode);
                     assert_eq!(id.account_type(), account_type);
                     assert_eq!(id.storage_mode(), storage_mode);
-                    assert_eq!(id.version(), AccountIdVersion::Version0);
+                    assert_eq!(id.version(), AccountIdVersion::Version1);
 
                     // Do a serialization roundtrip to ensure validity.
                     let serialized_id = id.to_bytes();

@@ -34,7 +34,7 @@ use crate::utils::serde::{
 
 /// The identifier of an [`Account`](crate::account::Account).
 ///
-/// This enum is a wrapper around concrete versions of IDs. The following documents version 0.
+/// This enum is a wrapper around concrete versions of IDs. The following documents version 1.
 ///
 /// # Layout
 ///
@@ -124,7 +124,7 @@ impl AccountId {
         storage_commitment: Word,
     ) -> Result<Self, AccountIdError> {
         match version {
-            AccountIdVersion::Version0 => {
+            AccountIdVersion::Version1 => {
                 AccountIdV0::new(seed, code_commitment, storage_commitment).map(Self::V0)
             },
         }
@@ -150,7 +150,7 @@ impl AccountId {
         match v0::extract_version(elements[0].as_canonical_u64())
             .expect("prefix should contain a valid account ID version")
         {
-            AccountIdVersion::Version0 => Self::V0(AccountIdV0::new_unchecked(elements)),
+            AccountIdVersion::Version1 => Self::V0(AccountIdV0::new_unchecked(elements)),
         }
     }
 
@@ -164,7 +164,7 @@ impl AccountId {
         // The prefix contains the metadata.
         // If we add more versions in the future, we may need to generalize this.
         match v0::extract_version(prefix.as_canonical_u64())? {
-            AccountIdVersion::Version0 => {
+            AccountIdVersion::Version1 => {
                 AccountIdV0::try_from_elements(suffix, prefix).map(Self::V0)
             },
         }
@@ -192,7 +192,7 @@ impl AccountId {
         storage_mode: AccountStorageMode,
     ) -> AccountId {
         match version {
-            AccountIdVersion::Version0 => {
+            AccountIdVersion::Version1 => {
                 Self::V0(AccountIdV0::dummy(bytes, account_type, storage_mode))
             },
         }
@@ -213,7 +213,7 @@ impl AccountId {
         storage_commitment: Word,
     ) -> Result<Word, AccountError> {
         match version {
-            AccountIdVersion::Version0 => AccountIdV0::compute_account_seed(
+            AccountIdVersion::Version1 => AccountIdV0::compute_account_seed(
                 init_seed,
                 account_type,
                 storage_mode,
@@ -275,7 +275,7 @@ impl AccountId {
     /// Returns the version of this account ID.
     pub fn version(&self) -> AccountIdVersion {
         match self {
-            AccountId::V0(_) => AccountIdVersion::Version0,
+            AccountId::V0(_) => AccountIdVersion::Version1,
         }
     }
 
@@ -436,7 +436,7 @@ impl TryFrom<[u8; 15]> for AccountId {
         let version = v0::extract_version(metadata_byte as u64)?;
 
         match version {
-            AccountIdVersion::Version0 => AccountIdV0::try_from(bytes).map(Self::V0),
+            AccountIdVersion::Version1 => AccountIdV0::try_from(bytes).map(Self::V0),
         }
     }
 }

@@ -60,7 +60,7 @@ impl AccountIdPrefix {
         match v0::extract_version(prefix.as_canonical_u64())
             .expect("prefix should contain a valid account ID version")
         {
-            AccountIdVersion::Version0 => Self::V0(AccountIdPrefixV0::new_unchecked(prefix)),
+            AccountIdVersion::Version1 => Self::V0(AccountIdPrefixV0::new_unchecked(prefix)),
         }
     }
 
@@ -74,7 +74,7 @@ impl AccountIdPrefix {
         // The prefix contains the metadata.
         // If we add more versions in the future, we may need to generalize this.
         match v0::extract_version(prefix.as_canonical_u64())? {
-            AccountIdVersion::Version0 => AccountIdPrefixV0::new(prefix).map(Self::V0),
+            AccountIdVersion::Version1 => AccountIdPrefixV0::new(prefix).map(Self::V0),
         }
     }
 
@@ -143,7 +143,7 @@ impl AccountIdPrefix {
     /// Returns the version of this account ID.
     pub fn version(&self) -> AccountIdVersion {
         match self {
-            AccountIdPrefix::V0(_) => AccountIdVersion::Version0,
+            AccountIdPrefix::V0(_) => AccountIdVersion::Version1,
         }
     }
 
@@ -208,7 +208,7 @@ impl TryFrom<[u8; 8]> for AccountIdPrefix {
         let version = v0::extract_version(metadata_byte as u64)?;
 
         match version {
-            AccountIdVersion::Version0 => AccountIdPrefixV0::try_from(value).map(Self::V0),
+            AccountIdVersion::Version1 => AccountIdPrefixV0::try_from(value).map(Self::V0),
         }
     }
 }
@@ -318,7 +318,7 @@ mod tests {
                     let prefix = id.prefix();
                     assert_eq!(prefix.account_type(), account_type);
                     assert_eq!(prefix.storage_mode(), storage_mode);
-                    assert_eq!(prefix.version(), AccountIdVersion::Version0);
+                    assert_eq!(prefix.version(), AccountIdVersion::Version1);
 
                     // Do a serialization roundtrip to ensure validity.
                     let serialized_prefix = prefix.to_bytes();

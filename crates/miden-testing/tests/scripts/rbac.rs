@@ -50,7 +50,7 @@ fn create_rbac_chain(owner: AccountId) -> anyhow::Result<(Account, MockChain)> {
 fn test_account_id(seed: u8) -> AccountId {
     AccountId::dummy(
         [seed; 15],
-        AccountIdVersion::Version0,
+        AccountIdVersion::Version1,
         AccountType::RegularAccountImmutableCode,
         AccountStorageMode::Private,
     )

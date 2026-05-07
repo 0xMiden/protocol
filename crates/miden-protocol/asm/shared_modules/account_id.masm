@@ -145,7 +145,7 @@ end
 #! - account_id_{suffix,prefix} are the suffix and prefix felts of the account ID.
 #!
 #! Panics if:
-#! - account_id_prefix does not contain version zero.
+#! - account_id_prefix does not contain version one.
 #! - account_id_prefix does not contain either the public, network or private storage mode.
 #! - account_id_suffix does not have its most significant bit set to zero.
 #! - account_id_suffix does not have its lower 8 bits set to zero.
@@ -168,12 +168,14 @@ pub proc validate
     assert.err=ERR_ACCOUNT_ID_SUFFIX_MOST_SIGNIFICANT_BIT_MUST_BE_ZERO
     # => [account_id_prefix]
 
-    # Validate version in prefix. For now only version 0 is supported.
+    # Validate version in prefix. For now only version 1 is supported.
     # ---------------------------------------------------------------------------------------------
 
     dup exec.id_version
     # => [id_version, account_id_prefix]
-    assertz.err=ERR_ACCOUNT_ID_UNKNOWN_VERSION
+    eq.1
+    # => [is_supported_version, account_id_prefix]
+    assert.err=ERR_ACCOUNT_ID_UNKNOWN_VERSION
     # => [account_id_prefix]
 
     # Validate storage mode in prefix.

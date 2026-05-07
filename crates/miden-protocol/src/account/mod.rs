@@ -847,7 +847,7 @@ mod tests {
             [9; 32],
             AccountType::FungibleFaucet,
             Network,
-            AccountIdVersion::Version0,
+            AccountIdVersion::Version1,
             code.commitment(),
             storage.to_commitment(),
         )?;

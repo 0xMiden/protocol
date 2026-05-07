@@ -707,7 +707,7 @@ mod tests {
     fn test_proven_tx_serde_roundtrip() -> anyhow::Result<()> {
         let account_id = AccountId::dummy(
             [1; 15],
-            AccountIdVersion::Version0,
+            AccountIdVersion::Version1,
             AccountType::FungibleFaucet,
             AccountStorageMode::Private,
         );
