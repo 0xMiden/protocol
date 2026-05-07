@@ -60,8 +60,8 @@ impl TransactionId {
     /// The layout is:
     ///   `[INIT[4], FINAL[4], INPUT_NOTES_COMMITMENT[4], OUTPUT_NOTES_COMMITMENT[4], FEE_ASSET[8]]`
     ///
-    /// Exposed for use by the batch kernel which pipes this same felt sequence from the advice
-    /// provider to memory and asserts the resulting hash matches a previously-verified `tx_id`.
+    /// The batch kernel pipes this same felt sequence from the advice provider to memory and
+    /// asserts the resulting hash matches a previously-verified `tx_id`.
     pub(crate) fn input_elements(
         init_account_commitment: Word,
         final_account_commitment: Word,

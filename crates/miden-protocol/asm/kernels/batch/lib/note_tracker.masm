@@ -101,7 +101,7 @@ end
 #! - ERR_BATCH_INPUT_NOTES_MISMATCH: a transaction's piped input-note data does not hash to its
 #!   verified per-tx INPUT_NOTES_COMMITMENT_i.
 #!
-#! TODO: erase intra-batch unauthenticated notes from the absorbed sequence (mirrors
+#! TODO: erase intra-batch unauthenticated notes from the absorbed sequence (see
 #!       `InputOutputNoteTracker::from_transactions`).
 #! TODO: re-sort + dedupe by nullifier so the result equals
 #!       `proposed_batch.input_notes().commitment()`.

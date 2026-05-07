@@ -22,7 +22,7 @@ const ERR_BATCH_TRANSACTION_HEADER_MISMATCH="transaction header data piped from 
 
 #! Loads and verifies the batch's structural commitments and accumulates the batch expiration min.
 #!
-#! Runs the equivalent of the leading sections of `ProposedBatch::new`:
+#! Performs three steps:
 #! - Layer 1: pipes the `(tx_id, account_id)` tuples from the advice map keyed by
 #!   `TRANSACTIONS_COMMITMENT` into [`memory::TX_TUPLES_PTR`], asserting that the sequential hash of
 #!   the piped data matches `TRANSACTIONS_COMMITMENT`. The number of transactions is derived from
@@ -55,7 +55,7 @@ const ERR_BATCH_TRANSACTION_HEADER_MISMATCH="transaction header data piped from 
 #! TODO: verify that the partial-blockchain peaks hash matches the block header's chain commitment.
 #! TODO: assert each `expiration_block_num_i > reference_block_num`.
 #! TODO: verify each `expiration_block_num_i` is part of tx_i's verified ExecutionProof public
-#!       outputs once recursive proof verification ships.
+#!       outputs.
 pub proc prepare_batch
     # Layer 1: pipe TRANSACTIONS_COMMITMENT's mapped value to TX_TUPLES_PTR + verify.
     # ---------------------------------------------------------------------------------------------

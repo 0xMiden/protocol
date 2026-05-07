@@ -60,7 +60,7 @@ const BATCH_HASHER_CAP_PTR=12
 # =================================================================================================
 
 #! Number of words piped into TX_NOTES_SCRATCH_PTR for the transaction whose Layer 3 / 3' is
-#! currently being absorbed.
+#! being absorbed.
 const SCRATCH_WORDS_COUNT_PTR=16
 
 #! Iteration cursor (index in words) into TX_NOTES_SCRATCH_PTR for the absorption loop.

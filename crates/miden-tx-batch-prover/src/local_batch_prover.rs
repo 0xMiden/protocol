@@ -40,14 +40,11 @@ impl LocalBatchProver {
     /// Verifies each transaction's `ExecutionProof` natively first, then runs the batch kernel via
     /// `miden_prover::prove` and attaches the resulting proof to the returned [`ProvenBatch`].
     ///
-    /// `prove` is `async` because the underlying [`miden_prover::prove`] is `async`.
-    ///
     /// After proof generation, the kernel's parsed `batch_expiration_block_num` output is
-    /// sanity-checked against `proposed_batch.batch_expiration_block_num()`. The two batch note
+    /// checked against `proposed_batch.batch_expiration_block_num()`. The two batch note
     /// commitments produced by the kernel are *not* checked here because the kernel computes a
-    /// raw, un-erased sequential hash that intentionally diverges from
-    /// `proposed_batch.input_notes().commitment()` whenever the batch contains intra-batch
-    /// unauthenticated-note erasure.
+    /// raw sequential hash that does not match `proposed_batch.input_notes().commitment()` for
+    /// batches with intra-batch unauthenticated-note erasure.
     ///
     /// # Errors
     ///
@@ -56,7 +53,7 @@ impl LocalBatchProver {
     /// - the batch kernel program fails to execute or produce a proof;
     /// - the kernel output stack fails to parse;
     /// - the kernel's `batch_expiration_block_num` does not match
-    ///   `proposed_batch.batch_expiration_block_num()` (indicates a kernel/advice-builder bug).
+    ///   `proposed_batch.batch_expiration_block_num()`.
     pub async fn prove(
         &self,
         proposed_batch: ProposedBatch,
@@ -99,10 +96,8 @@ impl LocalBatchProver {
         Self::build_proven_batch(proposed_batch, proof)
     }
 
-    /// Proves the provided [`ProposedBatch`] into a [`ProvenBatch`] **without running the batch
-    /// kernel**, attaching a dummy [`ExecutionProof`] instead.
-    ///
-    /// Exposed for tests that want a `ProvenBatch` without paying the cost of proof generation.
+    /// Returns a [`ProvenBatch`] built from the proposed batch with a dummy [`ExecutionProof`]
+    /// attached, without running the batch kernel.
     #[cfg(any(feature = "testing", test))]
     pub fn prove_dummy(
         &self,

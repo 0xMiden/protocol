@@ -45,9 +45,8 @@ impl BatchId {
     /// The layout is, for each `(transaction_id, account_id)` pair in iteration order:
     ///   `[transaction_id[4], account_id_prefix, account_id_suffix, 0, 0]`
     ///
-    /// Exposed for use by the batch kernel which pipes this same felt sequence from the advice
-    /// provider to memory and asserts the resulting hash matches the public input
-    /// `TRANSACTIONS_COMMITMENT`.
+    /// The batch kernel pipes this same felt sequence from the advice provider to memory and
+    /// asserts the resulting hash matches the public input `TRANSACTIONS_COMMITMENT`.
     pub(crate) fn hash_input_elements(
         iter: impl IntoIterator<Item = (TransactionId, AccountId)>,
     ) -> Vec<Felt> {

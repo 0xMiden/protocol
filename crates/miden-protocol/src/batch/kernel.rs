@@ -37,12 +37,8 @@ const TRAILING_PAD_WORD_FELT_IDX: usize = 12;
 ///
 /// The kernel takes `[BLOCK_HASH, TRANSACTIONS_COMMITMENT]` as public inputs and emits
 /// `[INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, batch_expiration_block_num]`. See
-/// `asm/kernels/batch/main.masm` for the verification chain.
-///
-/// This is the initial, minimal implementation: it verifies the unhashing chain rooted at
-/// `TRANSACTIONS_COMMITMENT` but defers a number of checks (block-MMR-based note authentication,
-/// account-update aggregation, intra-batch note erasure, recursive transaction proof
-/// verification, batch-size limits) — see the `TODO` markers in the MASM source.
+/// `asm/kernels/batch/main.masm` for the verification chain and the `TODO` markers listing
+/// checks that the kernel does not yet enforce.
 pub struct BatchKernel;
 
 impl BatchKernel {
@@ -90,9 +86,9 @@ impl BatchKernel {
     ///   `(transaction_id || account_id_prefix || account_id_suffix || 0 || 0)` over all
     ///   transactions in the batch.
     ///
-    /// Note: `main.masm` immediately performs a `swapw`, so by the time `prologue::prepare_batch`
-    /// runs the kernel-side stack is `[TRANSACTIONS_COMMITMENT, BLOCK_HASH, pad(8)]`. Any
-    /// refactor that drops the leading `swapw` must update this builder to match.
+    /// The element order is kept in sync with the leading `swapw` in `main.masm`, which moves
+    /// `TRANSACTIONS_COMMITMENT` to the top of the kernel-side stack before the prologue
+    /// consumes it.
     pub fn build_input_stack(block_hash: Word, transactions_commitment: Word) -> StackInputs {
         let mut inputs: Vec<Felt> = Vec::with_capacity(8);
         inputs.extend_from_slice(block_hash.as_elements());
