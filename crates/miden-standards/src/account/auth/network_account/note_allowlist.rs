@@ -1,4 +1,4 @@
-use core::collections::BTreeSet;
+use alloc::collections::BTreeSet;
 
 use miden_protocol::account::component::{SchemaType, StorageSlotSchema};
 use miden_protocol::account::{
