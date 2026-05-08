@@ -2,6 +2,7 @@ use core::slice;
 
 use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountBuilder, AccountStorageMode, AccountType};
+use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::transaction::RawOutputNote;
 use miden_standards::account::auth::AuthNetworkAccount;
 use miden_standards::account::wallets::BasicWallet;
@@ -16,11 +17,23 @@ use miden_testing::{MockChain, assert_transaction_executor_error};
 // HELPER FUNCTIONS
 // ================================================================================================
 
+/// A placeholder script root used when a test needs an [`AuthNetworkAccount`] account whose
+/// allowlist contents are not material to the test logic (e.g. for bootstrap accounts that only
+/// exist to seed a [`NoteBuilder`]). The constructor rejects empty allowlists, so tests must
+/// supply at least one root.
+fn placeholder_script_root() -> Word {
+    NoteScriptRoot::from_array([1, 0, 0, 0]).into()
+}
+
 /// Builds a minimal account that uses the [`AuthNetworkAccount`] auth component with the provided
 /// allowlist of input-note script roots.
 fn build_allowlist_account(allowed_script_roots: Vec<Word>) -> anyhow::Result<Account> {
+    let auth_component = AuthNetworkAccount::with_allowlist(
+        allowed_script_roots.into_iter().map(NoteScriptRoot::from_raw).collect(),
+    )?;
+
     Ok(AccountBuilder::new([0; 32])
-        .with_auth_component(AuthNetworkAccount::new(allowed_script_roots))
+        .with_auth_component(auth_component)
         .with_component(BasicWallet)
         .account_type(AccountType::RegularAccountUpdatableCode)
         .storage_mode(AccountStorageMode::Public)
@@ -34,7 +47,8 @@ fn build_allowlist_account(allowed_script_roots: Vec<Word>) -> anyhow::Result<Ac
 /// allowlist and input notes are otherwise valid.
 #[tokio::test]
 async fn test_auth_network_account_rejects_tx_script() -> anyhow::Result<()> {
-    let account = build_allowlist_account(Vec::new())?;
+    // Allowlist contents don't matter — the tx-script check rejects before any allowlist lookup.
+    let account = build_allowlist_account(vec![placeholder_script_root()])?;
 
     let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
@@ -59,8 +73,9 @@ async fn test_auth_network_account_rejects_tx_script() -> anyhow::Result<()> {
 /// the others are.
 #[tokio::test]
 async fn test_auth_network_account_rejects_when_any_note_disallowed() -> anyhow::Result<()> {
-    // Build a template note with the default code to learn the "allowed" script root.
-    let bootstrap_account = build_allowlist_account(Vec::new())?;
+    // Build a template note with the default code to learn the "allowed" script root. The
+    // bootstrap account never executes a transaction, so its allowlist contents don't matter.
+    let bootstrap_account = build_allowlist_account(vec![placeholder_script_root()])?;
     let template_allowed = NoteBuilder::new(bootstrap_account.id(), &mut rand::rng())
         .build()
         .expect("failed to build template allowed note");
@@ -121,8 +136,9 @@ async fn test_auth_network_account_rejects_when_any_note_disallowed() -> anyhow:
 #[tokio::test]
 async fn test_auth_network_account_accepts_allowed_note() -> anyhow::Result<()> {
     // First build a template note so we know its script root, then use that root to configure the
-    // account's allowlist.
-    let bootstrap_account = build_allowlist_account(Vec::new())?;
+    // account's allowlist. The bootstrap account never executes a transaction, so its allowlist
+    // contents don't matter.
+    let bootstrap_account = build_allowlist_account(vec![placeholder_script_root()])?;
     let template_note = NoteBuilder::new(bootstrap_account.id(), &mut rand::rng())
         .build()
         .expect("failed to build template note");
