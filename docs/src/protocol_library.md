@@ -27,6 +27,21 @@ Most procedures in the Miden protocol library are implemented as wrappers around
 
 The procedures maintain the same security and context restrictions as the underlying kernel procedures. When invoking these procedures, ensure that the calling context matches the requirements.
 
+## Account ID Procedures (`miden::protocol::account_id`)
+
+Account ID procedures can be used to validate account IDs and inspect their account type.
+
+| Procedure                 | Description                                                                                                                                                                                                                   | Context |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| `is_fungible_faucet`      | Returns whether the account ID prefix belongs to a fungible faucet account.<br/><br/>**Inputs:** `[account_id_prefix]`<br/>**Outputs:** `[is_fungible_faucet]`                                                               | Any     |
+| `is_non_fungible_faucet`  | Returns whether the account ID prefix belongs to a non-fungible faucet account.<br/><br/>**Inputs:** `[account_id_prefix]`<br/>**Outputs:** `[is_non_fungible_faucet]`                                                       | Any     |
+| `is_equal`                | Returns whether two account IDs are equal.<br/><br/>**Inputs:** `[account_id_suffix, account_id_prefix, other_account_id_suffix, other_account_id_prefix]`<br/>**Outputs:** `[is_id_equal]`                                  | Any     |
+| `is_faucet`               | Returns whether the account ID prefix belongs to a faucet account.<br/><br/>**Inputs:** `[account_id_prefix]`<br/>**Outputs:** `[is_faucet]`                                                                                 | Any     |
+| `is_updatable_account`    | Returns whether the account ID prefix belongs to a regular account with updatable code.<br/><br/>**Inputs:** `[account_id_prefix]`<br/>**Outputs:** `[is_updatable_account]`                                                 | Any     |
+| `is_immutable_account`    | Returns whether the account ID prefix belongs to a regular account with immutable code.<br/><br/>**Inputs:** `[account_id_prefix]`<br/>**Outputs:** `[is_immutable_account]`                                                 | Any     |
+| `validate`                | Validates the provided account ID.<br/><br/>**Inputs:** `[account_id_suffix, account_id_prefix]`<br/>**Outputs:** `[]`                                                                                                       | Any     |
+| `shape_suffix`            | Shapes a digest suffix into an account ID suffix by clearing the lower 8 bits.<br/><br/>**Inputs:** `[seed_digest_suffix]`<br/>**Outputs:** `[account_id_suffix]`                                                            | Any     |
+
 ## Active account Procedures (`miden::protocol::active_account`)
 
 Active account procedures can be used to read from storage, fetch or compute commitments or obtain other internal data of the active account. 
