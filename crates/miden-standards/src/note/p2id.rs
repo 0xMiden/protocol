@@ -173,7 +173,7 @@ mod tests {
     fn try_from_valid_storage_succeeds() {
         let target = AccountId::dummy(
             [1u8; 15],
-            AccountIdVersion::Version0,
+            AccountIdVersion::Version1,
             AccountType::FungibleFaucet,
             AccountStorageMode::Private,
         );

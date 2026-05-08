@@ -81,11 +81,11 @@ pub struct NoteMetadata {
 }
 
 impl NoteMetadata {
-    /// Version 0 of the note metadata encoding.
+    /// Version 1 of the note metadata encoding.
     ///
     /// If we make this public, we may want to instead consider introducing a `NoteMetadataVersion`
     /// struct, similar to `AccountIdVersion`.
-    const VERSION_0: u8 = 0;
+    const VERSION_1: u8 = 0;
 
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
@@ -368,9 +368,9 @@ fn merge_sender_suffix_and_note_type(sender_id_suffix: Felt, note_type: NoteType
 
     let note_type_byte = note_type as u8;
     debug_assert!(note_type_byte < 2, "note type must not contain values >= 2");
-    // note_type at bit 4, version at bits 0..=3 (hardcoded to NoteMetadata::VERSION_0_NUMBER)
+    // note_type at bit 4, version at bits 0..=3 (hardcoded to NoteMetadata::VERSION_1)
     merged |= (note_type_byte as u64) << NOTE_TYPE_SHIFT;
-    merged |= NoteMetadata::VERSION_0 as u64;
+    merged |= NoteMetadata::VERSION_1 as u64;
 
     // SAFETY: The most significant bit of the suffix is zero by construction so the u64 will be a
     // valid felt.
@@ -391,10 +391,10 @@ fn unmerge_sender_suffix_and_note_type(element: Felt) -> Result<(Felt, NoteType)
         return Err(NoteError::other("reserved bits in note metadata header must be zero"));
     }
 
-    if version != NoteMetadata::VERSION_0 {
+    if version != NoteMetadata::VERSION_1 {
         return Err(NoteError::other(format!(
             "unsupported note metadata version {version}, expected {}",
-            NoteMetadata::VERSION_0
+            NoteMetadata::VERSION_1
         )));
     }
 

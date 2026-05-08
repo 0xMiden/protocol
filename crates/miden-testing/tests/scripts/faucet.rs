@@ -635,7 +635,7 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
 
     let faucet_owner_account_id = AccountId::dummy(
         [1; 15],
-        AccountIdVersion::Version0,
+        AccountIdVersion::Version1,
         AccountType::RegularAccountImmutableCode,
         AccountStorageMode::Private,
     );
@@ -755,7 +755,7 @@ async fn test_network_faucet_owner_can_mint() -> anyhow::Result<()> {
 
     let owner_account_id = AccountId::dummy(
         [1; 15],
-        AccountIdVersion::Version0,
+        AccountIdVersion::Version1,
         AccountType::RegularAccountImmutableCode,
         AccountStorageMode::Private,
     );
@@ -809,7 +809,7 @@ async fn test_network_faucet_set_policy_rejects_non_allowed_root() -> anyhow::Re
 
     let owner_account_id = AccountId::dummy(
         [1; 15],
-        AccountIdVersion::Version0,
+        AccountIdVersion::Version1,
         AccountType::RegularAccountImmutableCode,
         AccountStorageMode::Private,
     );
@@ -860,7 +860,7 @@ async fn test_network_faucet_set_burn_policy_rejects_non_allowed_root() -> anyho
 
     let owner_account_id = AccountId::dummy(
         [1; 15],
-        AccountIdVersion::Version0,
+        AccountIdVersion::Version1,
         AccountType::RegularAccountImmutableCode,
         AccountStorageMode::Private,
     );
@@ -899,14 +899,14 @@ async fn test_network_faucet_non_owner_cannot_mint() -> anyhow::Result<()> {
 
     let owner_account_id = AccountId::dummy(
         [1; 15],
-        AccountIdVersion::Version0,
+        AccountIdVersion::Version1,
         AccountType::RegularAccountImmutableCode,
         AccountStorageMode::Private,
     );
 
     let non_owner_account_id = AccountId::dummy(
         [2; 15],
-        AccountIdVersion::Version0,
+        AccountIdVersion::Version1,
         AccountType::RegularAccountImmutableCode,
         AccountStorageMode::Private,
     );
@@ -963,7 +963,7 @@ async fn test_network_faucet_owner_storage() -> anyhow::Result<()> {
 
     let owner_account_id = AccountId::dummy(
         [1; 15],
-        AccountIdVersion::Version0,
+        AccountIdVersion::Version1,
         AccountType::RegularAccountImmutableCode,
         AccountStorageMode::Private,
     );
@@ -999,14 +999,14 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
     // Setup: Create initial owner and new owner accounts
     let initial_owner_account_id = AccountId::dummy(
         [1; 15],
-        AccountIdVersion::Version0,
+        AccountIdVersion::Version1,
         AccountType::RegularAccountImmutableCode,
         AccountStorageMode::Private,
     );
 
     let new_owner_account_id = AccountId::dummy(
         [2; 15],
-        AccountIdVersion::Version0,
+        AccountIdVersion::Version1,
         AccountType::RegularAccountImmutableCode,
         AccountStorageMode::Private,
     );
@@ -1147,21 +1147,21 @@ async fn test_network_faucet_only_owner_can_transfer() -> anyhow::Result<()> {
 
     let owner_account_id = AccountId::dummy(
         [1; 15],
-        AccountIdVersion::Version0,
+        AccountIdVersion::Version1,
         AccountType::RegularAccountImmutableCode,
         AccountStorageMode::Private,
     );
 
     let non_owner_account_id = AccountId::dummy(
         [2; 15],
-        AccountIdVersion::Version0,
+        AccountIdVersion::Version1,
         AccountType::RegularAccountImmutableCode,
         AccountStorageMode::Private,
     );
 
     let new_owner_account_id = AccountId::dummy(
         [3; 15],
-        AccountIdVersion::Version0,
+        AccountIdVersion::Version1,
         AccountType::RegularAccountImmutableCode,
         AccountStorageMode::Private,
     );
@@ -1222,14 +1222,14 @@ async fn test_network_faucet_renounce_ownership() -> anyhow::Result<()> {
 
     let owner_account_id = AccountId::dummy(
         [1; 15],
-        AccountIdVersion::Version0,
+        AccountIdVersion::Version1,
         AccountType::RegularAccountImmutableCode,
         AccountStorageMode::Private,
     );
 
     let new_owner_account_id = AccountId::dummy(
         [2; 15],
-        AccountIdVersion::Version0,
+        AccountIdVersion::Version1,
         AccountType::RegularAccountImmutableCode,
         AccountStorageMode::Private,
     );
@@ -1357,7 +1357,7 @@ fn test_network_faucet_contains_default_burn_policy_root() -> anyhow::Result<()>
 
     let owner_account_id = AccountId::dummy(
         [1; 15],
-        AccountIdVersion::Version0,
+        AccountIdVersion::Version1,
         AccountType::RegularAccountImmutableCode,
         AccountStorageMode::Private,
     );
@@ -1385,7 +1385,7 @@ async fn network_faucet_burn() -> anyhow::Result<()> {
 
     let faucet_owner_account_id = AccountId::dummy(
         [1; 15],
-        AccountIdVersion::Version0,
+        AccountIdVersion::Version1,
         AccountType::RegularAccountImmutableCode,
         AccountStorageMode::Private,
     );
@@ -1451,14 +1451,14 @@ async fn test_network_faucet_non_owner_cannot_burn_when_owner_only_policy_active
 
     let owner_account_id = AccountId::dummy(
         [1; 15],
-        AccountIdVersion::Version0,
+        AccountIdVersion::Version1,
         AccountType::RegularAccountImmutableCode,
         AccountStorageMode::Private,
     );
 
     let non_owner_account_id = AccountId::dummy(
         [2; 15],
-        AccountIdVersion::Version0,
+        AccountIdVersion::Version1,
         AccountType::RegularAccountImmutableCode,
         AccountStorageMode::Private,
     );
@@ -1516,7 +1516,7 @@ async fn test_network_faucet_owner_can_burn_when_owner_only_policy_active() -> a
 
     let owner_account_id = AccountId::dummy(
         [1; 15],
-        AccountIdVersion::Version0,
+        AccountIdVersion::Version1,
         AccountType::RegularAccountImmutableCode,
         AccountStorageMode::Private,
     );
@@ -1582,7 +1582,7 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
 
     let faucet_owner_account_id = AccountId::dummy(
         [1; 15],
-        AccountIdVersion::Version0,
+        AccountIdVersion::Version1,
         AccountType::RegularAccountImmutableCode,
         AccountStorageMode::Private,
     );
