@@ -404,7 +404,6 @@ impl MastForestStore for TransactionContext {
 
 #[cfg(test)]
 mod tests {
-    use miden_protocol::Felt;
     use miden_protocol::assembly::Assembler;
     use miden_protocol::note::NoteScript;
 
@@ -453,12 +452,7 @@ mod tests {
         assert_eq!(retrieved_script2, note_script2);
 
         // Fetching a non-existent one returns None
-        let non_existent_root = NoteScriptRoot::from_raw(Word::from([
-            Felt::new(1),
-            Felt::new(2),
-            Felt::new(3),
-            Felt::new(4),
-        ]));
+        let non_existent_root = NoteScriptRoot::from_array([1, 2, 3, 4]);
         let result = tx_context.get_note_script(non_existent_root).await;
         assert!(matches!(result, Ok(None)));
     }
