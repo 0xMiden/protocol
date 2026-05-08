@@ -1,7 +1,12 @@
 # miden::standards::faucets::restricted
 #
-# Per-faucet blocklist storage and helpers. block/unblock procedures do not perform
-# authorization. Compose with ownable2step or role-based access control in a higher layer.
+# Per-faucet blocked-accounts storage and `Invocation: exec` helper procedures. `block` and
+# `unblock` perform NO authorization — they are low-level building blocks intended to be
+# called by `Invocation: call` wrapper procedures inside auth-checking account components
+# (e.g. Ownable2Step- or RBAC-gated wrappers).
+#
+# Tx scripts cannot invoke these procedures directly — they must go through a wrapper that is
+# installed on the faucet as an account component.
 #
 # Asset-callback enforcement of "native account is not blocked" lives in the
 # `if_not_blocklisted` transfer policy procedure (see
@@ -26,11 +31,11 @@ const UNBLOCKED_WORD = [0, 0, 0, 0]
 # ERRORS
 # ================================================================================================
 
-const ERR_RESTRICTED_ACCOUNT_IS_BLOCKED = "account is blocked"
+const ERR_ACCOUNT_IS_BLOCKED = "account is blocked"
 
-const ERR_RESTRICTED_ALREADY_BLOCKED = "account is already blocked"
+const ERR_ALREADY_BLOCKED = "account is already blocked"
 
-const ERR_RESTRICTED_NOT_BLOCKED = "account is not blocked"
+const ERR_NOT_BLOCKED = "account is not blocked"
 
 # PUBLIC INTERFACE
 # ================================================================================================
@@ -61,92 +66,93 @@ end
 
 #! Adds the given account to the blocked-accounts map. Fails if it is already blocked.
 #!
-#! This procedure does not verify the caller. Wrap with access control in the account component
-#! composition if only privileged accounts should be able to block.
+#! This procedure performs NO authorization. Wrappers running in `Invocation: call` mode add
+#! the auth check (e.g. `ownable2step::assert_sender_is_owner`) before delegating here via
+#! `exec.restricted::block`. Tx scripts cannot invoke this procedure directly — they go
+#! through the wrapper component installed on the faucet.
 #!
-#! Inputs:  [account_id_suffix, account_id_prefix, pad(14)]
-#! Outputs: [pad(16)]
+#! Inputs:  [account_id_suffix, account_id_prefix]
+#! Outputs: []
 #!
 #! Panics if:
 #! - the account is already blocked.
 #!
-#! Invocation: call
+#! Invocation: exec
 pub proc block
     # copy the ID to check it is not already blocked.
     dup.1 dup.1
-    # => [account_id_suffix, account_id_prefix, account_id_suffix, account_id_prefix, pad(14)]
+    # => [account_id_suffix, account_id_prefix, account_id_suffix, account_id_prefix]
 
     exec.is_blocked
-    # => [is_blocked, account_id_suffix, account_id_prefix, pad(14)]
+    # => [is_blocked, account_id_suffix, account_id_prefix]
 
-    not assert.err=ERR_RESTRICTED_ALREADY_BLOCKED
-    # => [account_id_suffix, account_id_prefix, pad(14)]
+    not assert.err=ERR_ALREADY_BLOCKED
+    # => [account_id_suffix, account_id_prefix]
 
     exec.build_blocked_accounts_map_key
-    # => [KEY, pad(14)]
+    # => [KEY]
 
     push.BLOCKED_ACCOUNTS_SLOT[0..2]
-    # => [slot_suffix, slot_prefix, KEY, pad(14)]
+    # => [slot_suffix, slot_prefix, KEY]
 
     push.BLOCKED_WORD
-    # => [BLOCKED_WORD, slot_suffix, slot_prefix, KEY, pad(14)]
+    # => [BLOCKED_WORD, slot_suffix, slot_prefix, KEY]
 
     # set_map_item expects: [slot_suffix, slot_prefix, KEY, VALUE]
     movdnw.2
-    # => [slot_suffix, slot_prefix, KEY, BLOCKED_WORD, pad(14)]
+    # => [slot_suffix, slot_prefix, KEY, BLOCKED_WORD]
 
     exec.native_account::set_map_item
-    # => [OLD_VALUE, pad(14)]
+    # => [OLD_VALUE]
 
     dropw
-    # => [pad(16)]
+    # => []
 end
 
-#! Removes the given account from the blocked-accounts map. Fails if it is not currently blocked.
+#! Removes the given account from the blocked-accounts map. Fails if it is not currently
+#! blocked. See [`block`] for the same authorization caveats.
 #!
-#! This procedure does not verify the caller.
-#!
-#! Inputs:  [account_id_suffix, account_id_prefix, pad(14)]
-#! Outputs: [pad(16)]
+#! Inputs:  [account_id_suffix, account_id_prefix]
+#! Outputs: []
 #!
 #! Panics if:
 #! - the account is not currently blocked.
 #!
-#! Invocation: call
+#! Invocation: exec
 pub proc unblock
     # copy the ID to check it is currently blocked.
     dup.1 dup.1
-    # => [account_id_suffix, account_id_prefix, account_id_suffix, account_id_prefix, pad(14)]
+    # => [account_id_suffix, account_id_prefix, account_id_suffix, account_id_prefix]
 
     exec.is_blocked
-    # => [is_blocked, account_id_suffix, account_id_prefix, pad(14)]
+    # => [is_blocked, account_id_suffix, account_id_prefix]
 
-    assert.err=ERR_RESTRICTED_NOT_BLOCKED
-    # => [account_id_suffix, account_id_prefix, pad(14)]
+    assert.err=ERR_NOT_BLOCKED
+    # => [account_id_suffix, account_id_prefix]
 
     exec.build_blocked_accounts_map_key
-    # => [KEY, pad(14)]
+    # => [KEY]
 
     push.BLOCKED_ACCOUNTS_SLOT[0..2]
-    # => [slot_suffix, slot_prefix, KEY, pad(14)]
+    # => [slot_suffix, slot_prefix, KEY]
 
     push.UNBLOCKED_WORD
-    # => [UNBLOCKED_WORD, slot_suffix, slot_prefix, KEY, pad(14)]
+    # => [UNBLOCKED_WORD, slot_suffix, slot_prefix, KEY]
 
     movdnw.2
-    # => [slot_suffix, slot_prefix, KEY, UNBLOCKED_WORD, pad(14)]
+    # => [slot_suffix, slot_prefix, KEY, UNBLOCKED_WORD]
 
     exec.native_account::set_map_item
-    # => [OLD_VALUE, pad(14)]
+    # => [OLD_VALUE]
 
     dropw
-    # => [pad(16)]
+    # => []
 end
 
 #! Requires the given account to not be blocked.
 #!
 #! Delegates to [`is_blocked`] and inverts the result. If the account is blocked, panics
-#! with [`ERR_RESTRICTED_ACCOUNT_IS_BLOCKED`].
+#! with [`ERR_ACCOUNT_IS_BLOCKED`].
 #!
 #! Use from other modules or transaction scripts to guard logic that must not run for blocked
 #! accounts. In asset callback foreign context, the active account is the issuing faucet.
@@ -165,7 +171,7 @@ pub proc assert_not_blocked
     not
     # => [is_not_blocked]
 
-    assert.err=ERR_RESTRICTED_ACCOUNT_IS_BLOCKED
+    assert.err=ERR_ACCOUNT_IS_BLOCKED
     # => []
 end
 

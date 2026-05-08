@@ -6,8 +6,6 @@ use alloc::vec::Vec;
 use miden_protocol::Word;
 use miden_protocol::account::AccountComponent;
 
-use crate::account::faucets::Restricted;
-
 mod allow_all;
 mod if_not_blocklisted;
 
@@ -29,9 +27,9 @@ pub enum TransferPolicy {
     /// Active policy = [`TransferAllowAll::root`] (the callback predicate accepts unconditionally).
     #[default]
     AllowAll,
-    /// Active policy = [`TransferIfNotBlocklisted::root`]. Pulls in [`Restricted`] so the
-    /// faucet has the per-account blocked-accounts storage and admin procedures the predicate
-    /// reads.
+    /// Active policy = [`TransferIfNotBlocklisted::root`]. The policy component installs the
+    /// `blocked_accounts` storage map alongside its predicate procedure (see
+    /// [`crate::account::faucets::Restricted`] for the storage namespace).
     IfNotBlocklisted,
     /// Active policy = the provided root. The corresponding component(s) must be installed by
     /// the caller separately; resolving this variant into built-in components yields an empty
@@ -69,15 +67,13 @@ impl TransferPolicy {
 
     /// Returns the [`AccountComponent`]s that must accompany this transfer policy variant.
     ///
-    /// For [`Self::IfNotBlocklisted`] this includes both the policy component itself and the
-    /// [`Restricted`] storage/admin component; for [`Self::Custom`] this is empty — the caller
-    /// installs whatever the chosen root requires.
+    /// For [`Self::IfNotBlocklisted`] this is the policy component, which installs both the
+    /// predicate procedure and the `blocked_accounts` storage map. For [`Self::Custom`] this is
+    /// empty — the caller installs whatever the chosen root requires.
     pub(crate) fn into_components(self) -> Vec<AccountComponent> {
         match self {
             Self::AllowAll => vec![TransferAllowAll.into()],
-            Self::IfNotBlocklisted => {
-                vec![TransferIfNotBlocklisted.into(), Restricted::new().into()]
-            },
+            Self::IfNotBlocklisted => vec![TransferIfNotBlocklisted.into()],
             Self::Custom(_) => Vec::new(),
         }
     }

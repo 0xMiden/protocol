@@ -1,23 +1,10 @@
-use miden_protocol::Word;
-use miden_protocol::account::component::{
-    AccountComponentMetadata,
-    SchemaType,
-    StorageSchema,
-    StorageSlotSchema,
-};
-use miden_protocol::account::{
-    AccountComponent,
-    AccountType,
-    StorageMap,
-    StorageSlot,
-    StorageSlotName,
-};
+use miden_protocol::account::component::{AccountComponentMetadata, SchemaType, StorageSlotSchema};
+use miden_protocol::account::{AccountComponent, AccountType, StorageSlotName};
 use miden_protocol::utils::sync::LazyLock;
 
-use crate::account::components::restricted_library;
-use crate::procedure_digest;
+use crate::account::components::restricted_owner_library;
 
-// RESTRICTED ACCOUNT COMPONENT
+// RESTRICTED STORAGE NAMESPACE
 // ================================================================================================
 
 static BLOCKED_ACCOUNTS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
@@ -25,29 +12,15 @@ static BLOCKED_ACCOUNTS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| 
         .expect("storage slot name should be valid")
 });
 
-procedure_digest!(
-    RESTRICTED_BLOCK,
-    Restricted::NAME,
-    Restricted::BLOCK_PROC_NAME,
-    restricted_library
-);
-
-procedure_digest!(
-    RESTRICTED_UNBLOCK,
-    Restricted::NAME,
-    Restricted::UNBLOCK_PROC_NAME,
-    restricted_library
-);
-
-/// Faucet account component that stores a per-account blocked-accounts map plus the `block` /
-/// `unblock` admin procedures. The component is intentionally callback-free: enforcement is
-/// performed by the `if_not_blocklisted` transfer policy procedure, which the
-/// [`crate::account::policies::TokenPolicyManager`] dispatches via `dynexec` from its
-/// `on_before_asset_added_to_*` callbacks.
+/// Namespace exposing accessors for the per-faucet `blocked_accounts` storage slot.
 ///
-/// `block` and `unblock` do not authenticate the caller — this is an intentional choice:
-/// the core mechanism is kept without access control so that owner and role-based access control
-/// can be implemented on top without duplicating the block/unblock logic.
+/// `Restricted` is **not** an installable account component on its own. The underlying storage
+/// slot is provided by [`crate::account::policies::TransferIfNotBlocklisted`], which is the
+/// only built-in policy reading from it. The `block` / `unblock` / `is_blocked` /
+/// `assert_not_blocked` procedures live in the standards library
+/// (`miden::standards::faucets::restricted`) as `Invocation: exec` helpers — they perform no
+/// authorization and must be wrapped by an auth-checking admin component (see
+/// [`OwnerOnlyRestrictedAdmin`]) before being exposed on a faucet.
 ///
 /// ## Storage
 ///
@@ -55,21 +28,10 @@ procedure_digest!(
 ///   account_id_suffix, account_id_prefix]`). An account is considered blocked when its entry is
 ///   the word `[1, 0, 0, 0]`; the zero word (including the default for unset entries) means not
 ///   blocked.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy)]
 pub struct Restricted;
 
 impl Restricted {
-    /// Component library path (merged account module name).
-    pub const NAME: &'static str = "miden::standards::components::faucets::restricted";
-
-    const BLOCK_PROC_NAME: &'static str = "block";
-    const UNBLOCK_PROC_NAME: &'static str = "unblock";
-
-    /// Creates a new [`Restricted`] with an empty blocked-accounts map.
-    pub const fn new() -> Self {
-        Self
-    }
-
     /// Storage slot name for the blocked-accounts map.
     pub fn blocked_accounts_slot() -> &'static StorageSlotName {
         &BLOCKED_ACCOUNTS_SLOT_NAME
@@ -86,44 +48,47 @@ impl Restricted {
             ),
         )
     }
+}
 
-    /// Metadata for accounts that include this component (faucet types that may issue
-    /// callback-enabled assets).
+// OWNER-CONTROLLED ADMIN COMPONENT
+// ================================================================================================
+
+/// Account component that exposes `block` and `unblock` admin procedures gated by the
+/// [`crate::account::access::Ownable2Step`] owner.
+///
+/// The wrapper procedures live in `miden::standards::faucets::restricted_owner` and call
+/// `ownable2step::assert_sender_is_owner` before delegating to the standards-library helpers
+/// in `miden::standards::faucets::restricted`.
+///
+/// Companion components required:
+/// - [`crate::account::access::Ownable2Step`] — provides the owner storage slot the auth check
+///   reads.
+/// - A component that installs the `blocked_accounts` storage slot — typically
+///   [`crate::account::policies::TransferIfNotBlocklisted`].
+#[derive(Debug, Clone, Copy, Default)]
+pub struct OwnerOnlyRestrictedAdmin;
+
+impl OwnerOnlyRestrictedAdmin {
+    /// The name of the component.
+    pub const NAME: &'static str = "miden::standards::components::faucets::restricted_owner";
+
+    /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        let storage_schema = StorageSchema::new([Self::blocked_accounts_slot_schema()])
-            .expect("storage schema should be valid");
-
         AccountComponentMetadata::new(
             Self::NAME,
             [AccountType::FungibleFaucet, AccountType::NonFungibleFaucet],
         )
         .with_description(
-            "Restricted faucet component: blocked-accounts storage map plus block/unblock admin \
-             procedures (no callbacks; pair with the `if_not_blocklisted` transfer policy)",
+            "Owner-controlled blocklist admin: wraps `restricted::block` / `unblock` with \
+             Ownable2Step authorization.",
         )
-        .with_storage_schema(storage_schema)
-    }
-
-    pub fn block_digest() -> Word {
-        *RESTRICTED_BLOCK
-    }
-
-    pub fn unblock_digest() -> Word {
-        *RESTRICTED_UNBLOCK
     }
 }
 
-impl From<Restricted> for AccountComponent {
-    fn from(_restricted: Restricted) -> Self {
-        let blocked_accounts_slot = StorageSlot::with_map(
-            Restricted::blocked_accounts_slot().clone(),
-            StorageMap::default(),
-        );
-
-        let metadata = Restricted::component_metadata();
-
-        AccountComponent::new(restricted_library(), vec![blocked_accounts_slot], metadata).expect(
-            "restricted component should satisfy the requirements of a valid account component",
-        )
+impl From<OwnerOnlyRestrictedAdmin> for AccountComponent {
+    fn from(_: OwnerOnlyRestrictedAdmin) -> Self {
+        let metadata = OwnerOnlyRestrictedAdmin::component_metadata();
+        AccountComponent::new(restricted_owner_library(), vec![], metadata)
+            .expect("owner-controlled Restricted admin component should be valid")
     }
 }

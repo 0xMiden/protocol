@@ -1,0 +1,51 @@
+# miden::standards::faucets::restricted_owner
+#
+# Owner-controlled blocklist admin: wraps the `Invocation: exec` helpers from
+# `miden::standards::faucets::restricted` with an Ownable2Step authorization check.
+#
+# Companion components required on the faucet:
+# - `Ownable2Step` — provides the owner storage slot the auth check reads.
+# - `TransferIfNotBlocklisted` (or any other component that installs the `blocked_accounts`
+#   storage slot) — provides the storage that `block` / `unblock` write to.
+
+use miden::standards::access::ownable2step
+use miden::standards::faucets::restricted
+
+# PUBLIC INTERFACE
+# ================================================================================================
+
+#! Block an account, gated by the Ownable2Step owner.
+#!
+#! Inputs:  [account_id_suffix, account_id_prefix, pad(14)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the sender is not the account owner.
+#! - the account is already blocked.
+#!
+#! Invocation: call
+pub proc block
+    exec.ownable2step::assert_sender_is_owner
+    # => [account_id_suffix, account_id_prefix, pad(14)]
+
+    exec.restricted::block
+    # => [pad(14)]
+end
+
+#! Unblock an account, gated by the Ownable2Step owner.
+#!
+#! Inputs:  [account_id_suffix, account_id_prefix, pad(14)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the sender is not the account owner.
+#! - the account is not currently blocked.
+#!
+#! Invocation: call
+pub proc unblock
+    exec.ownable2step::assert_sender_is_owner
+    # => [account_id_suffix, account_id_prefix, pad(14)]
+
+    exec.restricted::unblock
+    # => [pad(14)]
+end

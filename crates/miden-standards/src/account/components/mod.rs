@@ -189,13 +189,14 @@ static IF_NOT_BLOCKLISTED_TRANSFER_POLICY_LIBRARY: LazyLock<Library> = LazyLock:
         .expect("Shipped `if_not_blocklisted` Transfer Policy library is well-formed")
 });
 
-// Initialize the Restricted faucet library only once.
-static RESTRICTED_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+// Initialize the owner-controlled Restricted admin library only once.
+static RESTRICTED_OWNER_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     let bytes = include_bytes!(concat!(
         env!("OUT_DIR"),
-        "/assets/account_components/faucets/restricted.masl"
+        "/assets/account_components/faucets/restricted_owner.masl"
     ));
-    Library::read_from_bytes(bytes).expect("Shipped Restricted library is well-formed")
+    Library::read_from_bytes(bytes)
+        .expect("Shipped owner-controlled Restricted admin library is well-formed")
 });
 
 // METADATA LIBRARIES
@@ -266,9 +267,9 @@ pub fn if_not_blocklisted_transfer_policy_library() -> Library {
     IF_NOT_BLOCKLISTED_TRANSFER_POLICY_LIBRARY.clone()
 }
 
-/// Returns the Restricted faucet component library.
-pub fn restricted_library() -> Library {
-    RESTRICTED_LIBRARY.clone()
+/// Returns the owner-controlled Restricted admin library.
+pub fn restricted_owner_library() -> Library {
+    RESTRICTED_OWNER_LIBRARY.clone()
 }
 
 /// Returns the Singlesig Library.

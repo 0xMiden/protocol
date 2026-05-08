@@ -30,7 +30,7 @@
 - Added trace row counts to `bench-tx.json` ([#2794](https://github.com/0xMiden/protocol/pull/2794)).
 - Added `tx::get_tx_script_root` kernel procedure returning the root of the executed transaction script (empty word if no script was executed) ([#2816](https://github.com/0xMiden/protocol/pull/2816)).
 - Added `TransactionScript::from_package()` method to create `TransactionScript` from `miden-mast-package::Package` ([#2779](https://github.com/0xMiden/protocol/pull/2779)).
-- Added Blocklistable component for per-account freezing ([#2820])(https://github.com/0xMiden/protocol/pull/2820).
+- Added Restricted component for per-account freezing. Introduce transfer (send and receive) policies ([#2820])(https://github.com/0xMiden/protocol/pull/2820).
 - [BREAKING] Added `NoteScriptRoot` newtype wrapping note script roots ([#2851](https://github.com/0xMiden/protocol/pull/2851)).
 - Re-exported `MIN_STACK_DEPTH` from `miden-processor` ([#2856](https://github.com/0xMiden/protocol/pull/2856)).
 - [BREAKING] Renamed `note::build_recipient_hash` to `note::compute_recipient` and `note::build_recipient` to `note::compute_and_store_recipient` ([#2875](https://github.com/0xMiden/protocol/issues/2875)).
