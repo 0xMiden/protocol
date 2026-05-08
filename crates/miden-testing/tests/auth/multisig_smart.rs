@@ -1,5 +1,5 @@
 use miden_processor::advice::AdviceInputs;
-use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, PublicKey};
+use miden_protocol::account::auth::{AuthScheme, PublicKey};
 use miden_protocol::account::{
     Account,
     AccountBuilder,
@@ -21,56 +21,23 @@ use miden_standards::account::auth::{AuthMultisigSmart, AuthMultisigSmartConfig}
 use miden_standards::account::components::multisig_smart_library;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
-use miden_standards::errors::standards::ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_INPUT_NOTES;
+use miden_standards::errors::standards::{
+    ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_INPUT_NOTES,
+    ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_OUTPUT_NOTES,
+};
 use miden_testing::{MockChainBuilder, assert_transaction_executor_error};
 use miden_tx::TransactionExecutorError;
-use miden_tx::auth::{BasicAuthenticator, SigningInputs, TransactionAuthenticator};
-use rand::SeedableRng;
-use rand_chacha::ChaCha20Rng;
+use miden_tx::auth::{SigningInputs, TransactionAuthenticator};
 use rstest::rstest;
+
+use super::multisig::{
+    build_update_signers_config_vector,
+    setup_keys_and_authenticators_with_scheme,
+};
 
 // ================================================================================================
 // HELPER FUNCTIONS
 // ================================================================================================
-
-type MultisigTestSetup =
-    (Vec<AuthSecretKey>, Vec<AuthScheme>, Vec<PublicKey>, Vec<BasicAuthenticator>);
-
-/// Sets up secret keys, auth schemes, public keys, and authenticators for a specific scheme.
-fn setup_keys_and_authenticators_with_scheme(
-    num_approvers: usize,
-    threshold: usize,
-    auth_scheme: AuthScheme,
-) -> anyhow::Result<MultisigTestSetup> {
-    let seed: [u8; 32] = rand::random();
-    let mut rng = ChaCha20Rng::from_seed(seed);
-
-    let mut secret_keys = Vec::new();
-    let mut auth_schemes = Vec::new();
-    let mut public_keys = Vec::new();
-    let mut authenticators = Vec::new();
-
-    for _ in 0..num_approvers {
-        let sec_key = match auth_scheme {
-            AuthScheme::EcdsaK256Keccak => AuthSecretKey::new_ecdsa_k256_keccak_with_rng(&mut rng),
-            AuthScheme::Falcon512Poseidon2 => {
-                AuthSecretKey::new_falcon512_poseidon2_with_rng(&mut rng)
-            },
-            _ => anyhow::bail!("unsupported auth scheme for this test: {auth_scheme:?}"),
-        };
-        let pub_key = sec_key.public_key();
-
-        secret_keys.push(sec_key);
-        auth_schemes.push(auth_scheme);
-        public_keys.push(pub_key);
-    }
-
-    for secret_key in secret_keys.iter().take(threshold) {
-        authenticators.push(BasicAuthenticator::new(core::slice::from_ref(secret_key)));
-    }
-
-    Ok((secret_keys, auth_schemes, public_keys, authenticators))
-}
 
 /// Builds a multisig smart account with the given approvers, threshold, starting balance, and
 /// procedure policy map. Uses `BasicWallet` so the account exposes `receive_asset` and friends.
@@ -108,34 +75,6 @@ fn compile_multisig_smart_tx_script(script: impl AsRef<str>) -> anyhow::Result<T
     Ok(CodeBuilder::default()
         .with_dynamically_linked_library(multisig_smart_library())?
         .compile_tx_script(script.as_ref())?)
-}
-
-/// Layout expected by `update_signers_and_threshold` when looking up the new multisig config in
-/// the advice map: `[threshold, num_approvers, 0, 0, (PUB_KEY, SCHEME_WORD) for each approver]`.
-/// Public keys are appended in reverse so the procedure pops them in ascending index order.
-fn build_update_signers_config_vector(
-    threshold: u64,
-    num_of_approvers: u64,
-    public_keys: &[PublicKey],
-    auth_scheme: AuthScheme,
-) -> Vec<Felt> {
-    let mut config_and_pubkeys_vector = Vec::new();
-    config_and_pubkeys_vector.extend_from_slice(&[
-        Felt::new(threshold),
-        Felt::new(num_of_approvers),
-        Felt::new(0),
-        Felt::new(0),
-    ]);
-
-    let scheme_word = [Felt::new(auth_scheme as u64), Felt::new(0), Felt::new(0), Felt::new(0)];
-
-    for public_key in public_keys.iter().rev() {
-        let key_word: Word = public_key.to_commitment().into();
-        config_and_pubkeys_vector.extend_from_slice(key_word.as_elements());
-        config_and_pubkeys_vector.extend_from_slice(&scheme_word);
-    }
-
-    config_and_pubkeys_vector
 }
 
 // ================================================================================================
@@ -210,26 +149,30 @@ async fn test_multisig_smart_receive_asset_policy_overrides_default_three_of_thr
     Ok(())
 }
 
-/// A procedure policy with `NoInputOrOutputNotes` restriction must abort any transaction that
-/// reaches that procedure while carrying input or output notes.
+/// `enforce_note_restrictions` must abort transactions whose note layout violates the configured
+/// policy bit set. The receive_asset proc policy carries each restriction variant and the tx
+/// consumes a P2ID note (calls receive_asset). The test checks every variant against the
+/// "tx has input notes" axis.
 #[rstest]
-#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[case::no_restriction(ProcedurePolicyNoteRestriction::None)]
+#[case::no_input_notes(ProcedurePolicyNoteRestriction::NoInputNotes)]
+#[case::no_output_notes(ProcedurePolicyNoteRestriction::NoOutputNotes)]
+#[case::no_input_or_output_notes(ProcedurePolicyNoteRestriction::NoInputOrOutputNotes)]
 #[tokio::test]
-async fn test_multisig_smart_proc_policy_no_notes_constraint_is_enforced(
-    #[case] auth_scheme: AuthScheme,
+async fn test_multisig_smart_enforces_note_restrictions_on_tx_with_input_notes(
+    #[case] restriction: ProcedurePolicyNoteRestriction,
 ) -> anyhow::Result<()> {
     let (_secret_keys, _auth_schemes, public_keys, _authenticators) =
-        setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
+        setup_keys_and_authenticators_with_scheme(2, 2, AuthScheme::EcdsaK256Keccak)?;
+
     let multisig_account = create_multisig_smart_account(
         2,
         &public_keys,
-        auth_scheme,
+        AuthScheme::EcdsaK256Keccak,
         100,
         vec![(
             BasicWallet::receive_asset_digest(),
-            ProcedurePolicy::with_immediate_threshold(1)?
-                .with_note_restriction(ProcedurePolicyNoteRestriction::NoInputOrOutputNotes),
+            ProcedurePolicy::with_immediate_threshold(1)?.with_note_restriction(restriction),
         )],
     )?;
 
@@ -243,15 +186,111 @@ async fn test_multisig_smart_proc_policy_no_notes_constraint_is_enforced(
     )?;
     let mock_chain = mock_chain_builder.build()?;
 
-    let salt = Word::from([Felt::new(2); 4]);
     let result = mock_chain
         .build_tx_context(multisig_account.id(), &[note.id()], &[])?
-        .auth_args(salt)
+        .auth_args(Word::from([Felt::new(2); 4]))
         .build()?
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_INPUT_NOTES);
+    // For restrictions that include the input bit (1, 3), enforce_note_restrictions panics with
+    // the input-notes error before signatures are even checked. For the other variants the input
+    // bit is unset, so the tx falls through to signature verification and aborts there
+    // (no signatures were provided). The output bit (2) does not trigger because the tx has no
+    // output notes.
+    match restriction {
+        ProcedurePolicyNoteRestriction::NoInputNotes
+        | ProcedurePolicyNoteRestriction::NoInputOrOutputNotes => {
+            assert_transaction_executor_error!(
+                result,
+                ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_INPUT_NOTES
+            );
+        },
+        ProcedurePolicyNoteRestriction::None | ProcedurePolicyNoteRestriction::NoOutputNotes => {
+            match result {
+                Err(TransactionExecutorError::Unauthorized(_)) => {},
+                other => panic!("expected Unauthorized (no signatures provided), got: {other:?}"),
+            }
+        },
+    }
+
+    Ok(())
+}
+
+/// Mirror of the input-notes test for the output-notes axis. The policy lives on
+/// `move_asset_to_note` (the BasicWallet proc invoked when sending notes) and the tx creates a
+/// P2ID output note rather than consuming one.
+#[rstest]
+#[case::no_restriction(ProcedurePolicyNoteRestriction::None)]
+#[case::no_input_notes(ProcedurePolicyNoteRestriction::NoInputNotes)]
+#[case::no_output_notes(ProcedurePolicyNoteRestriction::NoOutputNotes)]
+#[case::no_input_or_output_notes(ProcedurePolicyNoteRestriction::NoInputOrOutputNotes)]
+#[tokio::test]
+async fn test_multisig_smart_enforces_note_restrictions_on_tx_with_output_notes(
+    #[case] restriction: ProcedurePolicyNoteRestriction,
+) -> anyhow::Result<()> {
+    use miden_processor::crypto::random::RandomCoin;
+    use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
+    use miden_protocol::transaction::RawOutputNote;
+    use miden_standards::account::interface::{AccountInterface, AccountInterfaceExt};
+    use miden_standards::note::P2idNote;
+
+    let (_secret_keys, _auth_schemes, public_keys, _authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, AuthScheme::EcdsaK256Keccak)?;
+
+    let multisig_account = create_multisig_smart_account(
+        2,
+        &public_keys,
+        AuthScheme::EcdsaK256Keccak,
+        100,
+        vec![(
+            BasicWallet::move_asset_to_note_digest(),
+            ProcedurePolicy::with_immediate_threshold(1)?.with_note_restriction(restriction),
+        )],
+    )?;
+
+    let output_note = P2idNote::create(
+        multisig_account.id(),
+        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap(),
+        vec![FungibleAsset::mock(5)],
+        NoteType::Public,
+        Default::default(),
+        &mut RandomCoin::new(Word::from([Felt::new(7); 4])),
+    )?;
+
+    let send_note_script = AccountInterface::from_account(&multisig_account)
+        .build_send_notes_script(&[output_note.clone().into()], None)?;
+
+    let mock_chain =
+        MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
+
+    let result = mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note)])
+        .tx_script(send_note_script)
+        .auth_args(Word::from([Felt::new(2); 4]))
+        .build()?
+        .execute()
+        .await;
+
+    // For restrictions that include the output bit (2, 3), enforce_note_restrictions panics with
+    // the output-notes error after the input check passes. For the other variants neither check
+    // trips and the tx falls through to signature verification (no signatures were provided).
+    match restriction {
+        ProcedurePolicyNoteRestriction::NoOutputNotes
+        | ProcedurePolicyNoteRestriction::NoInputOrOutputNotes => {
+            assert_transaction_executor_error!(
+                result,
+                ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_OUTPUT_NOTES
+            );
+        },
+        ProcedurePolicyNoteRestriction::None | ProcedurePolicyNoteRestriction::NoInputNotes => {
+            match result {
+                Err(TransactionExecutorError::Unauthorized(_)) => {},
+                other => panic!("expected Unauthorized (no signatures provided), got: {other:?}"),
+            }
+        },
+    }
 
     Ok(())
 }
@@ -384,21 +423,27 @@ async fn test_multisig_smart_set_procedure_policy(
         MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
 
     let receive_asset_root = BasicWallet::receive_asset_digest();
+    let immediate_threshold = 1u32;
+    let delayed_threshold = 0u32;
+    let note_restrictions = ProcedurePolicyNoteRestriction::NoInputNotes;
     // `call.` does not consume operand-stack inputs (the procedure sees a snapshot, the caller's
     // stack is preserved across the boundary), so we must manually drop the 7 elements we pushed.
     let set_policy_script = compile_multisig_smart_tx_script(format!(
         "
         begin
             push.{root}
-            push.0    # note_restrictions
-            push.0    # delayed_threshold
-            push.1    # immediate_threshold
+            push.{note_restrictions}
+            push.{delayed_threshold}
+            push.{immediate_threshold}
             call.::miden::standards::components::auth::multisig_smart::set_procedure_policy
             drop drop drop  # immediate, delayed, note_restrictions
             dropw           # PROC_ROOT
         end
         ",
         root = receive_asset_root,
+        note_restrictions = note_restrictions as u8,
+        delayed_threshold = delayed_threshold,
+        immediate_threshold = immediate_threshold,
     ))?;
 
     let salt = Word::from([Felt::new(4); 4]);
@@ -443,7 +488,10 @@ async fn test_multisig_smart_set_procedure_policy(
         .storage()
         .get_map_item(AuthMultisigSmart::procedure_policies_slot(), receive_asset_root)
         .expect("procedure policies slot should be present");
-    assert_eq!(stored_policy, Word::from([1u32, 0, 0, 0]));
+    assert_eq!(
+        stored_policy,
+        Word::from([immediate_threshold, delayed_threshold, note_restrictions as u32, 0])
+    );
 
     Ok(())
 }

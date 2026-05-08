@@ -26,25 +26,29 @@ use crate::account::components::multisig_library;
 // CONSTANTS
 // ================================================================================================
 
-static THRESHOLD_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+// The first four slots/schemas are shared with `AuthMultisigSmart` to keep the storage layout in
+// sync; they are exposed as `pub(super)` so the sibling module can reference them directly
+// (`AuthMultisigSmart::*_slot()` returns these same statics).
+pub(super) static THRESHOLD_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::auth::multisig::threshold_config")
         .expect("storage slot name should be valid")
 });
 
-static APPROVER_PUBKEYS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+pub(super) static APPROVER_PUBKEYS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::auth::multisig::approver_public_keys")
         .expect("storage slot name should be valid")
 });
 
-static APPROVER_SCHEME_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+pub(super) static APPROVER_SCHEME_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::auth::multisig::approver_schemes")
         .expect("storage slot name should be valid")
 });
 
-static EXECUTED_TRANSACTIONS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::auth::multisig::executed_transactions")
-        .expect("storage slot name should be valid")
-});
+pub(super) static EXECUTED_TRANSACTIONS_SLOT_NAME: LazyLock<StorageSlotName> =
+    LazyLock::new(|| {
+        StorageSlotName::new("miden::standards::auth::multisig::executed_transactions")
+            .expect("storage slot name should be valid")
+    });
 
 static PROCEDURE_THRESHOLDS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::auth::multisig::procedure_thresholds")

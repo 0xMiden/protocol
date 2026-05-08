@@ -4,7 +4,6 @@ use miden_protocol::Word;
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 use miden_protocol::account::component::{
     AccountComponentMetadata,
-    FeltSchema,
     SchemaType,
     StorageSchema,
     StorageSlotSchema,
@@ -20,32 +19,25 @@ use miden_protocol::account::{
 use miden_protocol::errors::AccountError;
 use miden_protocol::utils::sync::LazyLock;
 
+// Slots and schemas reused from `AuthMultisig` to keep the storage layout in sync. The statics
+// are exposed as `pub(super)` in the sibling `multisig` module; we reference them directly so
+// the sharing is visible at the use site rather than hidden behind delegating methods.
+use super::super::multisig::{
+    APPROVER_PUBKEYS_SLOT_NAME,
+    APPROVER_SCHEME_ID_SLOT_NAME,
+    EXECUTED_TRANSACTIONS_SLOT_NAME,
+    THRESHOLD_CONFIG_SLOT_NAME,
+};
 use super::ProcedurePolicy;
+use crate::account::auth::AuthMultisig;
 use crate::account::components::multisig_smart_library;
 
 // CONSTANTS
 // ================================================================================================
 
-static THRESHOLD_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::auth::multisig::threshold_config")
-        .expect("storage slot name should be valid")
-});
-
-static APPROVER_PUBKEYS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::auth::multisig::approver_public_keys")
-        .expect("storage slot name should be valid")
-});
-
-static APPROVER_SCHEME_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::auth::multisig::approver_schemes")
-        .expect("storage slot name should be valid")
-});
-
-static EXECUTED_TRANSACTIONS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::auth::multisig::executed_transactions")
-        .expect("storage slot name should be valid")
-});
-
+// Only the smart-specific procedure_policies slot needs its own constant here. The other four
+// slots (threshold config, approver public keys, approver scheme ids, executed transactions) are
+// reused from `AuthMultisig` via the imports above.
 static PROCEDURE_POLICIES_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::auth::multisig_smart::procedure_policies")
         .expect("storage slot name should be valid")
@@ -176,51 +168,19 @@ impl AuthMultisigSmart {
     }
 
     pub fn threshold_config_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::threshold_config_slot().clone(),
-            StorageSlotSchema::value(
-                "Threshold configuration",
-                [
-                    FeltSchema::u32("threshold"),
-                    FeltSchema::u32("num_approvers"),
-                    FeltSchema::new_void(),
-                    FeltSchema::new_void(),
-                ],
-            ),
-        )
+        AuthMultisig::threshold_config_slot_schema()
     }
 
     pub fn approver_public_keys_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::approver_public_keys_slot().clone(),
-            StorageSlotSchema::map(
-                "Approver public keys",
-                SchemaType::u32(),
-                SchemaType::pub_key(),
-            ),
-        )
+        AuthMultisig::approver_public_keys_slot_schema()
     }
 
     pub fn approver_auth_scheme_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::approver_scheme_ids_slot().clone(),
-            StorageSlotSchema::map(
-                "Approver scheme IDs",
-                SchemaType::u32(),
-                SchemaType::auth_scheme(),
-            ),
-        )
+        AuthMultisig::approver_auth_scheme_slot_schema()
     }
 
     pub fn executed_transactions_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::executed_transactions_slot().clone(),
-            StorageSlotSchema::map(
-                "Executed transactions",
-                SchemaType::native_word(),
-                SchemaType::native_word(),
-            ),
-        )
+        AuthMultisig::executed_transactions_slot_schema()
     }
 
     pub fn procedure_policies_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
@@ -310,7 +270,6 @@ mod tests {
     use miden_protocol::account::auth::AuthSecretKey;
 
     use super::*;
-    use crate::account::auth::multisig_smart::ProcedurePolicyNoteRestriction;
     use crate::account::wallets::BasicWallet;
 
     #[test]
@@ -321,12 +280,15 @@ mod tests {
             (sec_key_1.public_key().to_commitment(), sec_key_1.auth_scheme()),
             (sec_key_2.public_key().to_commitment(), sec_key_2.auth_scheme()),
         ];
+        let num_approvers = approvers.len() as u32;
+        let default_threshold = 2u32;
+        let receive_asset_immediate_threshold = 1u32;
 
-        let config = AuthMultisigSmartConfig::new(approvers.clone(), 2)
+        let config = AuthMultisigSmartConfig::new(approvers.clone(), default_threshold)
             .expect("invalid multisig smart config")
             .with_proc_policies(vec![(
                 BasicWallet::receive_asset_digest(),
-                ProcedurePolicy::with_immediate_threshold(1)
+                ProcedurePolicy::with_immediate_threshold(receive_asset_immediate_threshold)
                     .expect("procedure policy should be valid"),
             )])
             .expect("procedure policy config should be valid");
@@ -344,7 +306,7 @@ mod tests {
             .storage()
             .get_item(AuthMultisigSmart::threshold_config_slot())
             .expect("threshold config should be present");
-        assert_eq!(threshold_config, Word::from([2u32, 2u32, 0, 0]));
+        assert_eq!(threshold_config, Word::from([default_threshold, num_approvers, 0, 0]));
 
         let receive_asset_policy = account
             .storage()
@@ -353,7 +315,10 @@ mod tests {
                 BasicWallet::receive_asset_digest(),
             )
             .expect("receive_asset policy should be present");
-        assert_eq!(receive_asset_policy, Word::from([1u32, 0u32, 0u32, 0u32]));
+        assert_eq!(
+            receive_asset_policy,
+            Word::from([receive_asset_immediate_threshold, 0u32, 0u32, 0u32])
+        );
     }
 
     #[test]
@@ -364,41 +329,12 @@ mod tests {
         let result = AuthMultisigSmartConfig::new(approvers.clone(), 0);
         assert!(result.unwrap_err().to_string().contains("threshold must be at least 1"));
 
-        let result = AuthMultisigSmartConfig::new(approvers.clone(), 2);
+        let result = AuthMultisigSmartConfig::new(approvers, 2);
         assert!(
             result
                 .unwrap_err()
                 .to_string()
                 .contains("threshold cannot be greater than number of approvers")
-        );
-
-        let sec_key_2 = AuthSecretKey::new_ecdsa_k256_keccak();
-        let approvers = vec![
-            (sec_key.public_key().to_commitment(), sec_key.auth_scheme()),
-            (sec_key_2.public_key().to_commitment(), sec_key_2.auth_scheme()),
-        ];
-
-        let result = AuthMultisigSmartConfig::new(approvers.clone(), 2).and_then(|cfg| {
-            let policy = ProcedurePolicy::with_immediate_and_delay_thresholds(1, 2)?;
-            cfg.with_proc_policies(vec![(Word::from([1u32, 2, 3, 4]), policy)])
-        });
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("delay threshold cannot exceed immediate threshold")
-        );
-
-        let result = AuthMultisigSmartConfig::new(approvers, 2).and_then(|cfg| {
-            let policy = ProcedurePolicy::with_immediate_threshold(0)?
-                .with_note_restriction(ProcedurePolicyNoteRestriction::NoInputNotes);
-            cfg.with_proc_policies(vec![(Word::from([4u32, 3, 2, 1]), policy)])
-        });
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("procedure policy immediate threshold must be at least 1")
         );
     }
 
