@@ -47,7 +47,7 @@ async fn test_config_agg_bridge_registers_faucet() -> anyhow::Result<()> {
     // Use a dummy faucet ID to register (any valid AccountId will do)
     let faucet_to_register = AccountId::dummy(
         [42; 15],
-        AccountIdVersion::Version0,
+        AccountIdVersion::Version1,
         AccountType::FungibleFaucet,
         AccountStorageMode::Network,
     );

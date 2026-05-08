@@ -224,7 +224,7 @@ mod tests {
     fn dummy_account() -> AccountId {
         AccountId::dummy(
             [3u8; 15],
-            AccountIdVersion::Version0,
+            AccountIdVersion::Version1,
             AccountType::FungibleFaucet,
             AccountStorageMode::Private,
         )

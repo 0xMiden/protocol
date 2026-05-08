@@ -4,7 +4,7 @@ use core::hash::Hash;
 
 use miden_core::Felt;
 
-use crate::account::account_id::v0::{self, validate_prefix};
+use crate::account::account_id::v1::{self, validate_prefix};
 use crate::account::{AccountIdVersion, AccountStorageMode, AccountType};
 use crate::errors::AccountIdError;
 use crate::utils::serde::{
@@ -15,28 +15,28 @@ use crate::utils::serde::{
     Serializable,
 };
 
-// ACCOUNT ID PREFIX VERSION 0
+// ACCOUNT ID PREFIX VERSION 1
 // ================================================================================================
 
-/// The prefix of an [`AccountIdV0`](crate::account::AccountIdV0), i.e. its first field element.
+/// The prefix of an [`AccountIdV1`](crate::account::AccountIdV1), i.e. its first field element.
 ///
 /// See the [`AccountId`](crate::account::AccountId)'s documentation for details.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub struct AccountIdPrefixV0 {
+pub struct AccountIdPrefixV1 {
     prefix: Felt,
 }
 
-impl Hash for AccountIdPrefixV0 {
+impl Hash for AccountIdPrefixV1 {
     fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
         self.prefix.as_canonical_u64().hash(state);
     }
 }
 
-impl AccountIdPrefixV0 {
+impl AccountIdPrefixV1 {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
 
-    /// The serialized size of an [`AccountIdPrefixV0`] in bytes.
+    /// The serialized size of an [`AccountIdPrefixV1`] in bytes.
     const SERIALIZED_SIZE: usize = 8;
 
     // CONSTRUCTORS
@@ -51,14 +51,14 @@ impl AccountIdPrefixV0 {
                 .expect("AccountIdPrefix::new_unchecked called with invalid prefix");
         }
 
-        AccountIdPrefixV0 { prefix }
+        AccountIdPrefixV1 { prefix }
     }
 
     /// See [`AccountIdPrefix::new`](crate::account::AccountIdPrefix::new) for details.
     pub fn new(prefix: Felt) -> Result<Self, AccountIdError> {
         validate_prefix(prefix)?;
 
-        Ok(AccountIdPrefixV0 { prefix })
+        Ok(AccountIdPrefixV1 { prefix })
     }
 
     // PUBLIC ACCESSORS
@@ -77,7 +77,7 @@ impl AccountIdPrefixV0 {
     /// See [`AccountIdPrefix::account_type`](crate::account::AccountIdPrefix::account_type) for
     /// details.
     pub fn account_type(&self) -> AccountType {
-        v0::extract_type(self.prefix.as_canonical_u64())
+        v1::extract_type(self.prefix.as_canonical_u64())
     }
 
     /// See [`AccountIdPrefix::is_faucet`](crate::account::AccountIdPrefix::is_faucet) for details.
@@ -94,7 +94,7 @@ impl AccountIdPrefixV0 {
     /// See [`AccountIdPrefix::storage_mode`](crate::account::AccountIdPrefix::storage_mode) for
     /// details.
     pub fn storage_mode(&self) -> AccountStorageMode {
-        v0::extract_storage_mode(self.prefix.as_canonical_u64())
+        v1::extract_storage_mode(self.prefix.as_canonical_u64())
             .expect("account ID prefix should have been constructed with a valid storage mode")
     }
 
@@ -105,7 +105,7 @@ impl AccountIdPrefixV0 {
 
     /// See [`AccountIdPrefix::version`](crate::account::AccountIdPrefix::version) for details.
     pub fn version(&self) -> AccountIdVersion {
-        v0::extract_version(self.prefix.as_canonical_u64())
+        v1::extract_version(self.prefix.as_canonical_u64())
             .expect("account ID prefix should have been constructed with a valid version")
     }
 
@@ -118,22 +118,22 @@ impl AccountIdPrefixV0 {
 // CONVERSIONS FROM ACCOUNT ID PREFIX
 // ================================================================================================
 
-impl From<AccountIdPrefixV0> for Felt {
-    fn from(id: AccountIdPrefixV0) -> Self {
+impl From<AccountIdPrefixV1> for Felt {
+    fn from(id: AccountIdPrefixV1) -> Self {
         id.prefix
     }
 }
 
-impl From<AccountIdPrefixV0> for [u8; 8] {
-    fn from(id: AccountIdPrefixV0) -> Self {
+impl From<AccountIdPrefixV1> for [u8; 8] {
+    fn from(id: AccountIdPrefixV1) -> Self {
         let mut result = [0_u8; 8];
         result[..8].copy_from_slice(&id.prefix.as_canonical_u64().to_be_bytes());
         result
     }
 }
 
-impl From<AccountIdPrefixV0> for u64 {
-    fn from(id: AccountIdPrefixV0) -> Self {
+impl From<AccountIdPrefixV1> for u64 {
+    fn from(id: AccountIdPrefixV1) -> Self {
         id.prefix.as_canonical_u64()
     }
 }
@@ -141,7 +141,7 @@ impl From<AccountIdPrefixV0> for u64 {
 // CONVERSIONS TO ACCOUNT ID PREFIX
 // ================================================================================================
 
-impl TryFrom<[u8; 8]> for AccountIdPrefixV0 {
+impl TryFrom<[u8; 8]> for AccountIdPrefixV1 {
     type Error = AccountIdError;
 
     /// See [`TryFrom<[u8; 8]> for
@@ -162,7 +162,7 @@ impl TryFrom<[u8; 8]> for AccountIdPrefixV0 {
     }
 }
 
-impl TryFrom<u64> for AccountIdPrefixV0 {
+impl TryFrom<u64> for AccountIdPrefixV1 {
     type Error = AccountIdError;
 
     /// See [`TryFrom<u64> for
@@ -178,7 +178,7 @@ impl TryFrom<u64> for AccountIdPrefixV0 {
     }
 }
 
-impl TryFrom<Felt> for AccountIdPrefixV0 {
+impl TryFrom<Felt> for AccountIdPrefixV1 {
     type Error = AccountIdError;
 
     /// See [`TryFrom<Felt> for
@@ -192,19 +192,19 @@ impl TryFrom<Felt> for AccountIdPrefixV0 {
 // COMMON TRAIT IMPLS
 // ================================================================================================
 
-impl PartialOrd for AccountIdPrefixV0 {
+impl PartialOrd for AccountIdPrefixV1 {
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl Ord for AccountIdPrefixV0 {
+impl Ord for AccountIdPrefixV1 {
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
         self.prefix.as_canonical_u64().cmp(&other.prefix.as_canonical_u64())
     }
 }
 
-impl fmt::Display for AccountIdPrefixV0 {
+impl fmt::Display for AccountIdPrefixV1 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.to_hex())
     }
@@ -213,7 +213,7 @@ impl fmt::Display for AccountIdPrefixV0 {
 // SERIALIZATION
 // ================================================================================================
 
-impl Serializable for AccountIdPrefixV0 {
+impl Serializable for AccountIdPrefixV1 {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         let bytes: [u8; 8] = (*self).into();
         bytes.write_into(target);
@@ -224,7 +224,7 @@ impl Serializable for AccountIdPrefixV0 {
     }
 }
 
-impl Deserializable for AccountIdPrefixV0 {
+impl Deserializable for AccountIdPrefixV1 {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         <[u8; 8]>::read_from(source)?
             .try_into()

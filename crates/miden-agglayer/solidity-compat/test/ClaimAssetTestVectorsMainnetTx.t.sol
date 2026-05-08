@@ -43,7 +43,7 @@ contract ClaimAssetTestVectorsMainnetTx is Test, DepositContractTestHelpers {
         uint32 originNetwork = 0;
         address originTokenAddress = 0x2DC70fb75b88d2eB4715bc06E1595E6D97c34DFF;
         uint32 destinationNetwork = 77;
-        address destinationAddress = 0x00000000AA0000000000bb000000cc000000Dd00;
+        address destinationAddress = 0x00000000Aa0000000000BB010000cC000000DD00;
         uint256 amount = 100000000000000000000;
 
         bytes memory metadata = abi.encode("Test Token", "TEST", uint8(18));

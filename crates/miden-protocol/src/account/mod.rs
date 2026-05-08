@@ -17,8 +17,8 @@ mod account_id;
 pub use account_id::{
     AccountId,
     AccountIdPrefix,
-    AccountIdPrefixV0,
-    AccountIdV0,
+    AccountIdPrefixV1,
+    AccountIdV1,
     AccountIdVersion,
     AccountStorageMode,
     AccountType,
@@ -847,7 +847,7 @@ mod tests {
             [9; 32],
             AccountType::FungibleFaucet,
             Network,
-            AccountIdVersion::Version0,
+            AccountIdVersion::Version1,
             code.commitment(),
             storage.to_commitment(),
         )?;
