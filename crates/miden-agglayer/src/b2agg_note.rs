@@ -16,12 +16,12 @@ use miden_protocol::note::{
     NoteAssets,
     NoteAttachment,
     NoteAttachments,
-    NoteMetadata,
     NoteRecipient,
     NoteScript,
     NoteScriptRoot,
     NoteStorage,
     NoteType,
+    PartialNoteMetadata,
 };
 use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 use miden_utils_sync::LazyLock;
@@ -104,7 +104,7 @@ impl B2AggNote {
             })?;
         let attachments = NoteAttachments::from(NoteAttachment::from(attachment));
 
-        let metadata = NoteMetadata::new(sender_account_id, NoteType::Public);
+        let metadata = PartialNoteMetadata::new(sender_account_id, NoteType::Public);
 
         let recipient = NoteRecipient::new(rng.draw_word(), Self::script(), note_storage);
 

@@ -297,13 +297,13 @@ pub proc compute_recipient
     # => [RECIPIENT]
 end
 
-#! Extracts the sender ID from the provided metadata header.
+#! Extracts the sender ID from the provided metadata.
 #!
-#! Inputs:  [METADATA_HEADER]
+#! Inputs:  [METADATA]
 #! Outputs: [sender_id_suffix, sender_id_prefix]
 #!
 #! Where:
-#! - METADATA_HEADER is the metadata of a note.
+#! - METADATA is the metadata of a note.
 #! - sender_{suffix,prefix} are the suffix and prefix felts of the sender ID of the note which
 #!   metadata was provided.
 pub proc metadata_into_sender
@@ -318,13 +318,13 @@ pub proc metadata_into_sender
     # => [sender_id_suffix, sender_id_prefix]
 end
 
-#! Extracts the attachment's schemes from the provided metadata header.
+#! Extracts the attachment's schemes from the provided metadata.
 #!
-#! Inputs:  [METADATA_HEADER]
+#! Inputs:  [METADATA]
 #! Outputs: [attachment_0_scheme, attachment_1_scheme, attachment_2_scheme, attachment_3_scheme]
 #!
 #! Where:
-#! - METADATA_HEADER is the metadata word of a note.
+#! - METADATA is the metadata word of a note.
 #! - attachment_n_scheme is the scheme of the nth attachment (0 if absent).
 #!
 #! Invocation: exec
@@ -353,16 +353,16 @@ pub proc metadata_into_attachment_schemes
     # => [attachment_0_scheme, attachment_1_scheme, attachment_2_scheme, attachment_3_scheme]
 end
 
-#! Extracts the note type from the provided metadata header.
+#! Extracts the note type from the provided metadata.
 #!
 #! The note type is encoded as a single bit at the 4th position from the right side (LSB) of the
-#! first felt of the metadata header, where 0 = Private and 1 = Public.
+#! first felt of the metadata, where 0 = Private and 1 = Public.
 #!
-#! Inputs:  [METADATA_HEADER]
+#! Inputs:  [METADATA]
 #! Outputs: [note_type]
 #!
 #! Where:
-#! - METADATA_HEADER is the metadata of a note, laid out on the stack as
+#! - METADATA is the metadata of a note, laid out on the stack as
 #!   [sender_id_suffix_type_version, sender_id_prefix, tag, attachment_schemes].
 #!   The first felt (sender_id_suffix_type_version) has the following bit layout:
 #!   [sender_id_suffix (56 bits) | reserved (3 bits) | note_type (1 bit) | version (4 bits)]
@@ -383,15 +383,15 @@ pub proc metadata_into_note_type
     # => [note_type]
 end
 
-#! Extracts the tag from the provided metadata header.
+#! Extracts the tag from the provided metadata.
 #!
 #! The tag is stored in the lower 32 bits of the tag element. The upper 32 bits are reserved.
 #!
-#! Inputs:  [METADATA_HEADER]
+#! Inputs:  [METADATA]
 #! Outputs: [tag]
 #!
 #! Where:
-#! - METADATA_HEADER is the metadata header word of a note.
+#! - METADATA is the metadata word of a note.
 #! - tag is the lower 32 bits of the tag element.
 #!
 #! Invocation: exec
@@ -404,15 +404,15 @@ pub proc metadata_into_tag
     # => [tag]
 end
 
-#! Searches the metadata header for the specified attachment scheme and returns the index of the
+#! Searches the metadata for the specified attachment scheme and returns the index of the
 #! first matching slot.
 #!
-#! Inputs:  [attachment_scheme, METADATA_HEADER]
+#! Inputs:  [attachment_scheme, METADATA]
 #! Outputs: [is_found, attachment_idx]
 #!
 #! Where:
 #! - attachment_scheme is the scheme to search for.
-#! - METADATA_HEADER is the metadata header word of a note.
+#! - METADATA is the metadata word of a note.
 #! - is_found is 1 if the scheme was found, 0 otherwise.
 #! - attachment_idx is the index (0-3) of the first matching slot, or undefined if not found.
 #!

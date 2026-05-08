@@ -8,7 +8,7 @@ use super::{
     NoteHeader,
     NoteId,
     NoteMetadata,
-    NoteMetadataHeader,
+    PartialNoteMetadata,
     Serializable,
 };
 use crate::Word;
@@ -16,13 +16,16 @@ use crate::Word;
 // PARTIAL NOTE
 // ================================================================================================
 
-/// Partial information about a note.
+/// A note without detailed recipient information.
 ///
-/// Partial note consists of [NoteMetadata], [NoteAssets], [NoteAttachments], and a recipient digest
-/// (see [super::NoteRecipient]). However, it does not contain detailed recipient info, including
-/// note script, note storage, and note's serial number. This means that a partial note is
-/// sufficient to compute note ID and note header, but not sufficient to compute note nullifier,
-/// and generally does not have enough info to execute the note.
+/// A partial note consists of [`PartialNoteMetadata`], [`NoteAssets`], [`NoteAttachments`], and a
+/// commitment to the [`NoteRecipient`](super::NoteRecipient)). However, it does not contain
+/// the full recipient, including note script, note storage, and note's serial number. This
+/// means that a partial note is sufficient to compute note ID and note header, but not sufficient
+/// to compute note nullifier, and generally does not have enough info to execute the note.
+///
+/// One use case for the [`PartialNote`] is to return the details of a private note created during a
+/// transaction, where the assets and attachments are known, but the recipient is not.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PartialNote {
     header: NoteHeader,
@@ -34,14 +37,14 @@ pub struct PartialNote {
 impl PartialNote {
     /// Returns a new [PartialNote] instantiated from the provided parameters.
     pub fn new(
-        metadata: NoteMetadata,
+        partial_metadata: PartialNoteMetadata,
         recipient_digest: Word,
         assets: NoteAssets,
         attachments: NoteAttachments,
     ) -> Self {
         let note_id = NoteId::new(recipient_digest, assets.commitment());
-        let metadata_header = NoteMetadataHeader::new(metadata, &attachments);
-        let header = NoteHeader::new(note_id, metadata_header);
+        let metadata = NoteMetadata::new(partial_metadata, &attachments);
+        let header = NoteHeader::new(note_id, metadata);
         Self {
             header,
             recipient_digest,
@@ -55,9 +58,9 @@ impl PartialNote {
         NoteId::new(self.recipient_digest, self.assets.commitment())
     }
 
-    /// Returns the metadata associated with this note.
-    pub fn metadata(&self) -> &NoteMetadata {
-        self.header.metadata()
+    /// Returns the partial metadata associated with this note.
+    pub fn partial_metadata(&self) -> &PartialNoteMetadata {
+        self.header.metadata().partial_metadata()
     }
 
     /// Returns the digest of the recipient associated with this note.
@@ -77,9 +80,9 @@ impl PartialNote {
         &self.attachments
     }
 
-    /// Returns a reference to the [`NoteMetadataHeader`] of this note.
-    pub fn metadata_header(&self) -> &NoteMetadataHeader {
-        self.header.metadata_header()
+    /// Returns a reference to the [`NoteMetadata`] of this note.
+    pub fn metadata(&self) -> &NoteMetadata {
+        self.header.metadata()
     }
 
     /// Returns the [`NoteHeader`] of this note.
@@ -98,16 +101,16 @@ impl PartialNote {
 
 impl Serializable for PartialNote {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        // Serialize only metadata since the note ID in the header can be recomputed from the
-        // remaining data.
-        self.header().metadata().write_into(target);
+        // Serialize only partial metadata since note ID can be recomputed from the note details and
+        // attachment schemes and commitments can be reconstructed from attachments
+        self.header().metadata().partial_metadata().write_into(target);
         self.recipient_digest.write_into(target);
         self.assets.write_into(target);
         self.attachments.write_into(target);
     }
 
     fn get_size_hint(&self) -> usize {
-        self.metadata().get_size_hint()
+        self.partial_metadata().get_size_hint()
             + Word::SERIALIZED_SIZE
             + self.assets.get_size_hint()
             + self.attachments.get_size_hint()
@@ -116,11 +119,11 @@ impl Serializable for PartialNote {
 
 impl Deserializable for PartialNote {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let metadata = NoteMetadata::read_from(source)?;
+        let partial_metadata = PartialNoteMetadata::read_from(source)?;
         let recipient_digest = Word::read_from(source)?;
         let assets = NoteAssets::read_from(source)?;
         let attachments = NoteAttachments::read_from(source)?;
 
-        Ok(Self::new(metadata, recipient_digest, assets, attachments))
+        Ok(Self::new(partial_metadata, recipient_digest, assets, attachments))
     }
 }

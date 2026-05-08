@@ -575,22 +575,22 @@ end
 #!   consuming the note.
 #! - The note's metadata is authenticated, so the data is returned in the stack. The value is used
 #!   to compute the NOTE_COMMITMENT as `hash(NOTE_ID || NOTE_METADATA_COMMITMENT)`, where
-#!   `NOTE_METADATA_COMMITMENT` is `hash(NOTE_METADATA_HEADER || NOTE_METADATA_ATTACHMENT)`. The
+#!   `NOTE_METADATA_COMMITMENT` is `hash(NOTE_METADATA || NOTE_METADATA_ATTACHMENT)`. The
 #!   NOTE_COMMITMENT is the leaf value of the block note tree contained in the block header and is
 #!   either verified by this kernel, or delayed to be verified by another kernel (e.g. batch or
 #!   block kernels).
 #!
 #! Inputs:
 #!   Operand stack: [note_ptr]
-#!   Advice stack: [NOTE_ARGS, NOTE_ATTACHMENTS_COMMITMENT, NOTE_METADATA_HEADER]
+#!   Advice stack: [NOTE_ARGS, NOTE_ATTACHMENTS_COMMITMENT, NOTE_METADATA]
 #! Outputs:
-#!   Operand stack: [NOTE_METADATA_HEADER, NOTE_ATTACHMENTS_COMMITMENT]
+#!   Operand stack: [NOTE_METADATA, NOTE_ATTACHMENTS_COMMITMENT]
 #!   Advice stack: []
 #!
 #! Where:
 #! - note_ptr is the memory location for the input note.
 #! - NOTE_ARGS are the user arguments passed to the note.
-#! - NOTE_METADATA_HEADER is the note's metadata header.
+#! - NOTE_METADATA is the note's metadata header.
 #! - NOTE_ATTACHMENTS_COMMITMENT is the note's attachments commitment.
 proc process_note_args_and_metadata
     padw adv_loadw dup.4 exec.memory::set_input_note_args dropw
@@ -599,8 +599,8 @@ proc process_note_args_and_metadata
     padw adv_loadw dup.4 exec.memory::set_input_note_attachments_commitment
     # => [NOTE_ATTACHMENTS_COMMITMENT]
 
-    padw adv_loadw movup.8 exec.memory::set_input_note_metadata_header
-    # => [NOTE_METADATA_HEADER, NOTE_ATTACHMENTS_COMMITMENT, note_ptr]
+    padw adv_loadw movup.8 exec.memory::set_input_note_metadata
+    # => [NOTE_METADATA, NOTE_ATTACHMENTS_COMMITMENT, note_ptr]
 end
 
 #! Checks that the number of note storage is within limit and stores it to memory.
@@ -792,7 +792,7 @@ end
 #!      ASSETS_COMMITMENT,
 #!      NOTE_ARGS,
 #!      NOTE_ATTACHMENT,
-#!      NOTE_METADATA_HEADER,
+#!      NOTE_METADATA,
 #!      num_assets,
 #!      ASSET_0, ..., ASSET_N,
 #!      is_authenticated,
@@ -814,7 +814,7 @@ end
 #! - SCRIPT_ROOT is the note's script root.
 #! - STORAGE_COMMITMENT is the sequential hash of the padded note's storage.
 #! - ASSETS_COMMITMENT is the sequential hash of the padded note's assets.
-#! - NOTE_METADATA_HEADER is the note's metadata header.
+#! - NOTE_METADATA is the note's metadata header.
 #! - NOTE_ATTACHMENT is the note's attachment.
 #! - NOTE_ARGS are the user arguments passed to the note.
 #! - num_assets is the number of note assets.
@@ -846,9 +846,9 @@ proc process_input_note
     # => [note_ptr, NULLIFIER, CAPACITY]
 
     dup exec.process_note_args_and_metadata
-    # => [NOTE_METADATA_HEADER, NOTE_ATTACHMENTS_COMMITMENT, note_ptr, NULLIFIER, CAPACITY]
+    # => [NOTE_METADATA, NOTE_ATTACHMENTS_COMMITMENT, note_ptr, NULLIFIER, CAPACITY]
 
-    # compute hash(NOTE_METADATA_HEADER || NOTE_ATTACHMENTS_COMMITMENT)
+    # compute hash(NOTE_METADATA || NOTE_ATTACHMENTS_COMMITMENT)
     exec.poseidon2::merge
     # => [NOTE_METADATA_COMMITMENT, note_ptr, NULLIFIER, CAPACITY]
 

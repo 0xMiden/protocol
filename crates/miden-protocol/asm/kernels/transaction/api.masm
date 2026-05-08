@@ -913,14 +913,14 @@ end
 #! Returns the metadata of the specified input note.
 #!
 #! Inputs:  [is_active_note, note_index, pad(14)]
-#! Outputs: [METADATA_HEADER, pad(12)]
+#! Outputs: [METADATA, pad(12)]
 #!
 #! Where:
 #! - is_active_note is the boolean flag indicating whether we should return the metadata from
 #!   the active note or from the note with the specified index.
 #! - note_index is the index of the input note whose metadata should be returned. Notice that if
 #!   is_active_note is 1, note_index is ignored.
-#! - METADATA_HEADER is the metadata header of the specified input note.
+#! - METADATA is the metadata of the specified input note.
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of input notes.
@@ -944,12 +944,12 @@ pub proc input_note_get_metadata
     # => [input_note_ptr, pad(16)]
 
     # get the metadata
-    exec.memory::get_input_note_metadata_header
-    # => [METADATA_HEADER, pad(16)]
+    exec.memory::get_input_note_metadata
+    # => [METADATA, pad(16)]
 
     # truncate the stack
     swapw dropw
-    # => [METADATA_HEADER, pad(12)]
+    # => [METADATA, pad(12)]
 end
 
 #! Returns the serial number of the specified input note.
@@ -1290,11 +1290,11 @@ end
 #! Returns the metadata of the output note with the specified index.
 #!
 #! Inputs:  [note_index, pad(15)]
-#! Outputs: [METADATA_HEADER, pad(12)]
+#! Outputs: [METADATA, pad(12)]
 #!
 #! Where:
 #! - note_index is the index of the output note whose metadata should be returned.
-#! - METADATA_HEADER is the metadata header of the specified output note.
+#! - METADATA is the metadata of the specified output note.
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of output notes.
@@ -1310,12 +1310,12 @@ pub proc output_note_get_metadata
     # => [note_ptr, pad(15)]
 
     # get the metadata
-    exec.memory::get_output_note_metadata_header
-    # => [METADATA_HEADER, pad(15)]
+    exec.memory::get_output_note_metadata
+    # => [METADATA, pad(15)]
 
     # truncate the stack
     swapw drop drop drop movdn.4
-    # => [METADATA_HEADER, pad(12)]
+    # => [METADATA, pad(12)]
 end
 
 # TRANSACTION

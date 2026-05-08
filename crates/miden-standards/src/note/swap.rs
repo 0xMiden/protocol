@@ -11,13 +11,13 @@ use miden_protocol::note::{
     NoteAssets,
     NoteAttachments,
     NoteDetails,
-    NoteMetadata,
     NoteRecipient,
     NoteScript,
     NoteScriptRoot,
     NoteStorage,
     NoteTag,
     NoteType,
+    PartialNoteMetadata,
 };
 use miden_protocol::utils::sync::LazyLock;
 
@@ -101,7 +101,7 @@ impl SwapNote {
         let tag = Self::build_tag(swap_note_type, &offered_asset, &requested_asset);
 
         // build the outgoing note
-        let metadata = NoteMetadata::new(sender, swap_note_type).with_tag(tag);
+        let metadata = PartialNoteMetadata::new(sender, swap_note_type).with_tag(tag);
         let assets = NoteAssets::new(vec![offered_asset])?;
         let note = Note::with_attachments(assets, metadata, recipient, swap_note_attachments);
 

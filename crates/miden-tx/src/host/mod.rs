@@ -48,7 +48,7 @@ use miden_protocol::account::{
     StorageSlotName,
 };
 use miden_protocol::asset::Asset;
-use miden_protocol::note::{NoteAttachment, NoteId, NoteMetadata, NoteRecipient};
+use miden_protocol::note::{NoteAttachment, NoteId, NoteRecipient, PartialNoteMetadata};
 use miden_protocol::transaction::{
     InputNote,
     InputNotes,
@@ -229,7 +229,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     pub(super) fn output_note_from_recipient_digest(
         &mut self,
         note_idx: usize,
-        metadata: NoteMetadata,
+        metadata: PartialNoteMetadata,
         recipient_digest: Word,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
         let note_builder = OutputNoteBuilder::from_recipient_digest(metadata, recipient_digest)?;
@@ -243,7 +243,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     pub(super) fn output_note_from_recipient(
         &mut self,
         note_idx: usize,
-        metadata: NoteMetadata,
+        metadata: PartialNoteMetadata,
         recipient: NoteRecipient,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
         let note_builder = OutputNoteBuilder::from_recipient(metadata, recipient);

@@ -236,10 +236,10 @@ pub proc compute_output_notes_commitment
         dup.4 exec.compute_attachments_commitment
         # => [ATTACHMENTS_COMMITMENT, NOTE_ID, current_note_ptr, RATE0, RATE1, CAPACITY, current_index, num_notes]
 
-        movup.8 exec.memory::get_output_note_metadata_header
-        # => [NOTE_METADATA_HEADER, ATTACHMENTS_COMMITMENT, NOTE_ID, RATE0, RATE1, CAPACITY, current_index, num_notes]
+        movup.8 exec.memory::get_output_note_metadata
+        # => [NOTE_METADATA, ATTACHMENTS_COMMITMENT, NOTE_ID, RATE0, RATE1, CAPACITY, current_index, num_notes]
 
-        # compute hash(NOTE_METADATA_HEADER || ATTACHMENTS_COMMITMENT)
+        # compute hash(NOTE_METADATA || ATTACHMENTS_COMMITMENT)
         exec.poseidon2::merge
         # => [NOTE_METADATA_COMMITMENT, NOTE_ID, RATE0, RATE1, CAPACITY, current_index, num_notes]
 

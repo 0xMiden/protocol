@@ -10,13 +10,13 @@ use miden_protocol::note::{
     NoteAttachment,
     NoteAttachmentScheme,
     NoteAttachments,
-    NoteMetadata,
     NoteRecipient,
     NoteScript,
     NoteScriptRoot,
     NoteStorage,
     NoteTag,
     NoteType,
+    PartialNoteMetadata,
 };
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, ONE, Word, ZERO};
@@ -585,8 +585,9 @@ impl PswapNote {
         let attachment = Self::payback_attachment(fill_amount)?;
 
         let p2id_assets = NoteAssets::new(vec![Asset::Fungible(payback_asset)])?;
-        let p2id_metadata = NoteMetadata::new(consumer_account_id, self.storage.payback_note_type)
-            .with_tag(payback_note_tag);
+        let p2id_metadata =
+            PartialNoteMetadata::new(consumer_account_id, self.storage.payback_note_type)
+                .with_tag(payback_note_tag);
 
         Ok(Note::with_attachments(
             p2id_assets,
@@ -655,7 +656,7 @@ impl From<PswapNote> for Note {
         let assets = NoteAssets::new(vec![Asset::Fungible(pswap.offered_asset)])
             .expect("single fungible asset should be valid");
 
-        let metadata = NoteMetadata::new(pswap.sender, pswap.note_type).with_tag(tag);
+        let metadata = PartialNoteMetadata::new(pswap.sender, pswap.note_type).with_tag(tag);
 
         let attachments = pswap.attachment.map(NoteAttachments::from).unwrap_or_default();
 

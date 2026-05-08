@@ -376,11 +376,11 @@ end
 #! Returns the metadata of the output note with the specified index.
 #!
 #! Inputs:  [note_index]
-#! Outputs: [METADATA_HEADER]
+#! Outputs: [METADATA]
 #!
 #! Where:
 #! - note_index is the index of the output note whose metadata should be returned.
-#! - METADATA_HEADER is the metadata header of the specified output note.
+#! - METADATA is the metadata of the specified output note.
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of output notes.
@@ -399,14 +399,14 @@ pub proc get_metadata
     # => [offset, note_index, pad(14)]
 
     syscall.exec_kernel_proc
-    # => [METADATA_HEADER, pad(12)]
+    # => [METADATA, pad(12)]
 
     # clean the stack
     swapdw dropw dropw swapw dropw
-    # => [METADATA_HEADER]
+    # => [METADATA]
 end
 
-#! Searches the metadata header for the specified attachment scheme and if found, pipes the
+#! Searches the metadata for the specified attachment scheme and if found, pipes the
 #! attachment's underlying data from the advice inputs to memory and returns the ptr to it.
 #!
 #! Inputs:  [attachment_scheme, note_idx]
@@ -428,10 +428,10 @@ pub proc find_attachment
     # => [note_idx, attachment_scheme, note_idx]
 
     exec.get_metadata
-    # => [METADATA_HEADER, attachment_scheme, note_idx]
+    # => [METADATA, attachment_scheme, note_idx]
 
     movup.4
-    # => [attachment_scheme, METADATA_HEADER, note_idx]
+    # => [attachment_scheme, METADATA, note_idx]
 
     exec.note::find_attachment_idx
     # => [is_found, attachment_idx, note_idx]

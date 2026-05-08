@@ -17,11 +17,11 @@ use miden_protocol::note::{
     NoteAttachmentScheme,
     NoteAttachments,
     NoteMetadata,
-    NoteMetadataHeader,
     NoteRecipient,
     NoteStorage,
     NoteTag,
     NoteType,
+    PartialNoteMetadata,
 };
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
@@ -368,17 +368,17 @@ async fn test_compute_storage_commitment() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn test_build_metadata_header() -> anyhow::Result<()> {
+async fn test_build_metadata() -> anyhow::Result<()> {
     let tx_context = TransactionContextBuilder::with_existing_mock_account().build().unwrap();
 
     let sender = tx_context.account().id();
     let receiver = AccountId::try_from(ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE)
         .map_err(|e| anyhow::anyhow!("Failed to convert account ID: {}", e))?;
 
-    let test_metadata1 = NoteMetadata::new(sender, NoteType::Private)
+    let test_metadata1 = PartialNoteMetadata::new(sender, NoteType::Private)
         .with_tag(NoteTag::with_account_target(receiver));
     let test_metadata2 =
-        NoteMetadata::new(sender, NoteType::Public).with_tag(NoteTag::new(u32::MAX));
+        PartialNoteMetadata::new(sender, NoteType::Public).with_tag(NoteTag::new(u32::MAX));
 
     for (iteration, test_metadata) in [test_metadata1, test_metadata2].into_iter().enumerate() {
         let code = format!(
@@ -389,7 +389,7 @@ async fn test_build_metadata_header() -> anyhow::Result<()> {
         begin
           exec.prologue::prepare_transaction
           push.{note_type} push.{tag}
-          exec.output_note::build_metadata_header
+          exec.output_note::build_metadata
 
           # truncate the stack
           swapw dropw
@@ -404,7 +404,7 @@ async fn test_build_metadata_header() -> anyhow::Result<()> {
         let metadata_word = exec_output.get_stack_word(0);
 
         assert_eq!(
-            NoteMetadataHeader::new(test_metadata, &NoteAttachments::default()).to_metadata_word(),
+            NoteMetadata::new(test_metadata, &NoteAttachments::default()).to_metadata_word(),
             metadata_word,
             "failed in iteration {iteration}"
         );
@@ -524,7 +524,7 @@ async fn test_public_key_as_note_input() -> anyhow::Result<()> {
 
     let serial_num = RandomCoin::new(Word::from([1, 2, 3, 4u32])).draw_word();
     let tag = NoteTag::with_account_target(target_account.id());
-    let metadata = NoteMetadata::new(sender_account.id(), NoteType::Public).with_tag(tag);
+    let metadata = PartialNoteMetadata::new(sender_account.id(), NoteType::Public).with_tag(tag);
     let vault = NoteAssets::new(vec![])?;
     let note_script = CodeBuilder::default().compile_note_script(DEFAULT_NOTE_SCRIPT)?;
     let recipient =
@@ -570,10 +570,9 @@ async fn test_metadata_into_attachment_schemes(
     #[case] attachment_headers: [NoteAttachmentHeader; 4],
 ) -> anyhow::Result<()> {
     let sender = AccountId::try_from(ACCOUNT_ID_SENDER).unwrap();
-    let metadata = NoteMetadata::new(sender, NoteType::Public).with_tag(NoteTag::new(0));
-    let metadata_header =
-        NoteMetadataHeader::from_parts(metadata, attachment_headers, Word::default());
-    let metadata_word = metadata_header.to_metadata_word();
+    let partial_metadata = PartialNoteMetadata::new(sender, NoteType::Public);
+    let metadata = NoteMetadata::from_parts(partial_metadata, attachment_headers, Word::default());
+    let metadata_word = metadata.to_metadata_word();
 
     let code = format!(
         "
@@ -660,10 +659,9 @@ async fn test_find_attachment_idx(
     #[case] expected_idx: u8,
 ) -> anyhow::Result<()> {
     let sender = AccountId::try_from(ACCOUNT_ID_SENDER).unwrap();
-    let metadata = NoteMetadata::new(sender, NoteType::Public).with_tag(NoteTag::new(0));
-    let metadata_header =
-        NoteMetadataHeader::from_parts(metadata, attachment_headers, Word::default());
-    let metadata_word = metadata_header.to_metadata_word();
+    let partial_metadata = PartialNoteMetadata::new(sender, NoteType::Public);
+    let metadata = NoteMetadata::from_parts(partial_metadata, attachment_headers, Word::default());
+    let metadata_word = metadata.to_metadata_word();
 
     let code = format!(
         "

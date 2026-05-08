@@ -16,12 +16,12 @@ use miden_protocol::note::{
     NoteAttachmentContent,
     NoteAttachmentScheme,
     NoteId,
-    NoteMetadata,
     NoteRecipient,
     NoteScript,
     NoteStorage,
     NoteTag,
     NoteType,
+    PartialNoteMetadata,
 };
 use miden_protocol::transaction::memory::{NOTE_MEM_SIZE, OUTPUT_NOTE_SECTION_OFFSET};
 use miden_protocol::transaction::{TransactionEventId, TransactionSummary};
@@ -121,7 +121,7 @@ pub(crate) enum TransactionEvent {
         /// The note index extracted from the stack.
         note_idx: usize,
         /// The note metadata extracted from the stack.
-        metadata: NoteMetadata,
+        metadata: PartialNoteMetadata,
         /// The recipient data extracted from the advice inputs.
         recipient_data: RecipientData,
     },
@@ -711,7 +711,7 @@ fn build_note_metadata(
     sender: AccountId,
     note_type: Felt,
     tag: Felt,
-) -> Result<NoteMetadata, TransactionKernelError> {
+) -> Result<PartialNoteMetadata, TransactionKernelError> {
     let note_type = u8::try_from(note_type.as_canonical_u64())
         .map_err(|_| TransactionKernelError::other("failed to decode note_type into u8"))
         .and_then(|note_type_byte| {
@@ -727,7 +727,7 @@ fn build_note_metadata(
         .map_err(|_| TransactionKernelError::other("failed to decode note tag into u32"))
         .map(NoteTag::new)?;
 
-    Ok(NoteMetadata::new(sender, note_type).with_tag(tag))
+    Ok(PartialNoteMetadata::new(sender, note_type).with_tag(tag))
 }
 
 fn extract_note_attachment(

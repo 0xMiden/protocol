@@ -12,12 +12,12 @@ use miden_protocol::note::{
     NoteAssets,
     NoteAttachment,
     NoteAttachments,
-    NoteMetadata,
     NoteRecipient,
     NoteScript,
     NoteStorage,
     NoteTag,
     NoteType,
+    PartialNoteMetadata,
 };
 use miden_protocol::testing::note::DEFAULT_NOTE_SCRIPT;
 use miden_protocol::vm::{AdviceMap, Package};
@@ -201,7 +201,7 @@ impl NoteBuilder {
         let note_script = note_script.with_advice_map(self.advice_map);
 
         let vault = NoteAssets::new(self.assets)?;
-        let metadata = NoteMetadata::new(self.sender, self.note_type).with_tag(self.tag);
+        let metadata = PartialNoteMetadata::new(self.sender, self.note_type).with_tag(self.tag);
         let storage = NoteStorage::new(self.storage)?;
         let recipient = NoteRecipient::new(self.serial_num, note_script, storage);
 

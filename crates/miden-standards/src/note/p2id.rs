@@ -9,13 +9,13 @@ use miden_protocol::note::{
     Note,
     NoteAssets,
     NoteAttachments,
-    NoteMetadata,
     NoteRecipient,
     NoteScript,
     NoteScriptRoot,
     NoteStorage,
     NoteTag,
     NoteType,
+    PartialNoteMetadata,
 };
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
@@ -87,7 +87,7 @@ impl P2idNote {
 
         let tag = NoteTag::with_account_target(target);
 
-        let metadata = NoteMetadata::new(sender, note_type).with_tag(tag);
+        let metadata = PartialNoteMetadata::new(sender, note_type).with_tag(tag);
         let vault = NoteAssets::new(assets)?;
 
         Ok(Note::with_attachments(vault, metadata, recipient, attachments))

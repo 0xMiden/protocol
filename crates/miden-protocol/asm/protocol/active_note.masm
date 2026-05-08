@@ -145,10 +145,10 @@ end
 #! Returns the metadata of the active note.
 #!
 #! Inputs:  []
-#! Outputs: [METADATA_HEADER]
+#! Outputs: [METADATA]
 #!
 #! Where:
-#! - METADATA_HEADER is the metadata header of the active note.
+#! - METADATA is the metadata of the active note.
 #!
 #! Panics if:
 #! - no note is currently active.
@@ -167,11 +167,11 @@ pub proc get_metadata
     # => [offset, is_active_note = 1, pad(14)]
 
     syscall.exec_kernel_proc
-    # => [METADATA_HEADER, pad(12)]
+    # => [METADATA, pad(12)]
 
     # clean the stack
     swapdw dropw dropw swapw dropw
-    # => [METADATA_HEADER]
+    # => [METADATA]
 end
 
 #! Returns the sender of the active note.
@@ -188,9 +188,9 @@ end
 #! Invocation: exec
 pub proc get_sender
     exec.get_metadata
-    # => [METADATA_HEADER]
+    # => [METADATA]
 
-    # extract the sender ID from the metadata header
+    # extract the sender ID from the metadata
     exec.note::metadata_into_sender
     # => [sender_id_suffix, sender_id_prefix]
 end
@@ -429,7 +429,7 @@ pub proc get_attachment_ptr
     # => [num_words, attachment_ptr]
 end
 
-#! Searches the metadata header of the active note for the specified attachment scheme and if
+#! Searches the metadata of the active note for the specified attachment scheme and if
 #! found, pipes the attachment's underlying data from the advice inputs to memory and returns
 #! the ptr to it.
 #!
@@ -451,10 +451,10 @@ end
 #! Invocation: exec
 pub proc find_attachment
     exec.get_metadata
-    # => [METADATA_HEADER, attachment_scheme]
+    # => [METADATA, attachment_scheme]
 
     movup.4
-    # => [attachment_scheme, METADATA_HEADER]
+    # => [attachment_scheme, METADATA]
 
     exec.note::find_attachment_idx
     # => [is_found, attachment_idx]
