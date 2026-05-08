@@ -1791,7 +1791,7 @@ async fn multiple_mints_in_single_tx_produce_correct_amounts() -> anyhow::Result
 /// Builds a network faucet with [`TransferPolicy::IfNotBlocklisted`] on both send and receive,
 /// so the manager populates the asset-callback slots and callbacks dispatch to the
 /// `if_not_blocklisted` predicate.
-fn build_network_faucet_with_restricted_transfer(
+fn build_network_faucet_with_blocklist_transfer(
     builder: &mut MockChainBuilder,
     token_symbol: &str,
     max_supply: u64,
@@ -1842,7 +1842,7 @@ async fn network_faucet_mint_with_if_not_blocklisted() -> anyhow::Result<()> {
         AccountStorageMode::Private,
     );
 
-    let faucet = build_network_faucet_with_restricted_transfer(
+    let faucet = build_network_faucet_with_blocklist_transfer(
         &mut builder,
         "NET",
         max_supply,

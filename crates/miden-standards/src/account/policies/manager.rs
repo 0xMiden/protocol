@@ -126,7 +126,7 @@ pub struct PolicyConfig {
     /// The procedure root the manager writes into the `active_*_policy` slot (when
     /// [`PolicyRegistration::Active`]) and / or adds to the `allowed_*_policies` map.
     root: Word,
-    /// Companion components the policy needs installed on the account (e.g. `Restricted`
+    /// Companion components the policy needs installed on the account (e.g. `Blocklist`
     /// storage for `IfNotBlocklisted`). Empty for `Custom` variants — the caller installs
     /// separately.
     components: Vec<AccountComponent>,

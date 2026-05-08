@@ -1,7 +1,7 @@
-# miden::standards::faucets::restricted
+# miden::standards::faucets::restrictions::blocklist
 #
-# Per-faucet blocked-accounts storage and `Invocation: exec` helper procedures. `block` and
-# `unblock` perform NO authorization — they are low-level building blocks intended to be
+# Per-faucet blocklist storage and `Invocation: exec` helper procedures. `block_user` and
+# `unblock_user` perform NO authorization — they are low-level building blocks intended to be
 # called by `Invocation: call` wrapper procedures inside auth-checking account components
 # (e.g. Ownable2Step- or RBAC-gated wrappers).
 #
@@ -20,9 +20,9 @@ use miden::protocol::native_account
 # CONSTANTS
 # ================================================================================================
 
-# The slot where the per-faucet map of blocked accounts is stored.
+# The slot where the per-faucet map of blocked users is stored.
 # Map entries: [0, 0, account_id_suffix, account_id_prefix] => [is_blocked, 0, 0, 0]
-const BLOCKED_ACCOUNTS_SLOT = word("miden::standards::faucets::restricted::blocked_accounts")
+const BLOCKED_USERS_SLOT = word("miden::standards::faucets::restrictions::blocklist::blocked_users")
 
 const BLOCKED_WORD = [1, 0, 0, 0]
 
@@ -31,18 +31,18 @@ const UNBLOCKED_WORD = [0, 0, 0, 0]
 # ERRORS
 # ================================================================================================
 
-const ERR_ACCOUNT_IS_BLOCKED = "account is blocked"
+const ERR_USER_IS_BLOCKED = "user is blocked"
 
-const ERR_ALREADY_BLOCKED = "account is already blocked"
+const ERR_USER_ALREADY_BLOCKED = "user is already blocked"
 
-const ERR_NOT_BLOCKED = "account is not blocked"
+const ERR_USER_NOT_BLOCKED = "user is not blocked"
 
 # PUBLIC INTERFACE
 # ================================================================================================
 
-#! Returns whether the given account is currently blocked on this faucet.
+#! Returns whether the given user is currently blocked on this faucet.
 #!
-#! Reads [`BLOCKED_ACCOUNTS_SLOT`] on the active account at the key derived from the account ID.
+#! Reads [`BLOCKED_USERS_SLOT`] on the active account at the key derived from the account ID.
 #! Returns `1` if the stored word is non-zero (blocked) or `0` if it is the zero word
 #! (not blocked, including the default for never-set entries).
 #!
@@ -51,10 +51,10 @@ const ERR_NOT_BLOCKED = "account is not blocked"
 #!
 #! Invocation: exec
 pub proc is_blocked
-    exec.build_blocked_accounts_map_key
+    exec.build_blocked_users_map_key
     # => [KEY]
 
-    push.BLOCKED_ACCOUNTS_SLOT[0..2]
+    push.BLOCKED_USERS_SLOT[0..2]
     # => [slot_suffix, slot_prefix, KEY]
 
     exec.active_account::get_map_item
@@ -64,21 +64,21 @@ pub proc is_blocked
     # => [is_blocked]
 end
 
-#! Adds the given account to the blocked-accounts map. Fails if it is already blocked.
+#! Adds the given user to the blocklist. Fails if it is already blocked.
 #!
 #! This procedure performs NO authorization. Wrappers running in `Invocation: call` mode add
 #! the auth check (e.g. `ownable2step::assert_sender_is_owner`) before delegating here via
-#! `exec.restricted::block`. Tx scripts cannot invoke this procedure directly — they go
+#! `exec.blocklist::block_user`. Tx scripts cannot invoke this procedure directly — they go
 #! through the wrapper component installed on the faucet.
 #!
 #! Inputs:  [account_id_suffix, account_id_prefix]
 #! Outputs: []
 #!
 #! Panics if:
-#! - the account is already blocked.
+#! - the user is already blocked.
 #!
 #! Invocation: exec
-pub proc block
+pub proc block_user
     # copy the ID to check it is not already blocked.
     dup.1 dup.1
     # => [account_id_suffix, account_id_prefix, account_id_suffix, account_id_prefix]
@@ -86,13 +86,13 @@ pub proc block
     exec.is_blocked
     # => [is_blocked, account_id_suffix, account_id_prefix]
 
-    not assert.err=ERR_ALREADY_BLOCKED
+    not assert.err=ERR_USER_ALREADY_BLOCKED
     # => [account_id_suffix, account_id_prefix]
 
-    exec.build_blocked_accounts_map_key
+    exec.build_blocked_users_map_key
     # => [KEY]
 
-    push.BLOCKED_ACCOUNTS_SLOT[0..2]
+    push.BLOCKED_USERS_SLOT[0..2]
     # => [slot_suffix, slot_prefix, KEY]
 
     push.BLOCKED_WORD
@@ -109,17 +109,17 @@ pub proc block
     # => []
 end
 
-#! Removes the given account from the blocked-accounts map. Fails if it is not currently
-#! blocked. See [`block`] for the same authorization caveats.
+#! Removes the given user from the blocklist. Fails if it is not currently blocked. See
+#! [`block_user`] for the same authorization caveats.
 #!
 #! Inputs:  [account_id_suffix, account_id_prefix]
 #! Outputs: []
 #!
 #! Panics if:
-#! - the account is not currently blocked.
+#! - the user is not currently blocked.
 #!
 #! Invocation: exec
-pub proc unblock
+pub proc unblock_user
     # copy the ID to check it is currently blocked.
     dup.1 dup.1
     # => [account_id_suffix, account_id_prefix, account_id_suffix, account_id_prefix]
@@ -127,13 +127,13 @@ pub proc unblock
     exec.is_blocked
     # => [is_blocked, account_id_suffix, account_id_prefix]
 
-    assert.err=ERR_NOT_BLOCKED
+    assert.err=ERR_USER_NOT_BLOCKED
     # => [account_id_suffix, account_id_prefix]
 
-    exec.build_blocked_accounts_map_key
+    exec.build_blocked_users_map_key
     # => [KEY]
 
-    push.BLOCKED_ACCOUNTS_SLOT[0..2]
+    push.BLOCKED_USERS_SLOT[0..2]
     # => [slot_suffix, slot_prefix, KEY]
 
     push.UNBLOCKED_WORD
@@ -149,19 +149,19 @@ pub proc unblock
     # => []
 end
 
-#! Requires the given account to not be blocked.
+#! Requires the given user to not be blocked.
 #!
-#! Delegates to [`is_blocked`] and inverts the result. If the account is blocked, panics
-#! with [`ERR_ACCOUNT_IS_BLOCKED`].
+#! Delegates to [`is_blocked`] and inverts the result. If the user is blocked, panics
+#! with [`ERR_USER_IS_BLOCKED`].
 #!
 #! Use from other modules or transaction scripts to guard logic that must not run for blocked
-#! accounts. In asset callback foreign context, the active account is the issuing faucet.
+#! users. In asset callback foreign context, the active account is the issuing faucet.
 #!
 #! Inputs:  [account_id_suffix, account_id_prefix]
 #! Outputs: []
 #!
 #! Panics if:
-#! - the stored entry for this account is not the zero word.
+#! - the stored entry for this user is not the zero word.
 #!
 #! Invocation: exec
 pub proc assert_not_blocked
@@ -171,14 +171,14 @@ pub proc assert_not_blocked
     not
     # => [is_not_blocked]
 
-    assert.err=ERR_ACCOUNT_IS_BLOCKED
+    assert.err=ERR_USER_IS_BLOCKED
     # => []
 end
 
 # HELPER PROCEDURES
 # ================================================================================================
 
-#! Builds the blocked-accounts map key for the given account ID.
+#! Builds the blocked-users map key for the given account ID.
 #!
 #! Inputs:  [account_id_suffix, account_id_prefix]
 #! Outputs: [KEY]
@@ -187,7 +187,7 @@ end
 #! - KEY is [0, 0, account_id_suffix, account_id_prefix].
 #!
 #! Invocation: exec
-proc build_blocked_accounts_map_key
+proc build_blocked_users_map_key
     # => [account_id_suffix, account_id_prefix]
 
     push.0.0

@@ -1,5 +1,5 @@
 use miden::protocol::native_account
-use miden::standards::faucets::restricted
+use miden::standards::faucets::restrictions::blocklist
 
 # POLICY PROCEDURES
 # ================================================================================================
@@ -9,7 +9,7 @@ use miden::standards::faucets::restricted
 #! Reads the native account ID via `native_account::get_id` (the asset recipient when invoked
 #! from `on_before_asset_added_to_account`, or the note creator when invoked from
 #! `on_before_asset_added_to_note`) and asserts it is not blocked using the issuing faucet's
-#! own `restricted` storage.
+#! own `blocklist` storage.
 #!
 #! Inputs:  []
 #! Outputs: []
@@ -22,6 +22,6 @@ pub proc check_policy
     exec.native_account::get_id
     # => [account_id_suffix, account_id_prefix]
 
-    exec.restricted::assert_not_blocked
+    exec.blocklist::assert_not_blocked
     # => []
 end

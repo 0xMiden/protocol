@@ -28,8 +28,8 @@ pub enum TransferPolicy {
     #[default]
     AllowAll,
     /// Active policy = [`TransferIfNotBlocklisted::root`]. The policy component installs the
-    /// `blocked_accounts` storage map alongside its predicate procedure (see
-    /// [`crate::account::faucets::Restricted`] for the storage namespace).
+    /// `blocked_users` storage map alongside its predicate procedure (see
+    /// [`crate::account::faucets::Blocklist`] for the storage namespace).
     IfNotBlocklisted,
     /// Active policy = the provided root. The corresponding component(s) must be installed by
     /// the caller separately; resolving this variant into built-in components yields an empty
@@ -68,7 +68,7 @@ impl TransferPolicy {
     /// Returns the [`AccountComponent`]s that must accompany this transfer policy variant.
     ///
     /// For [`Self::IfNotBlocklisted`] this is the policy component, which installs both the
-    /// predicate procedure and the `blocked_accounts` storage map. For [`Self::Custom`] this is
+    /// predicate procedure and the `blocked_users` storage map. For [`Self::Custom`] this is
     /// empty — the caller installs whatever the chosen root requires.
     pub(crate) fn into_components(self) -> Vec<AccountComponent> {
         match self {

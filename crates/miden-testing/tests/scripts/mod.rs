@@ -1,3 +1,4 @@
+mod blocklist;
 mod faucet;
 mod fee;
 mod ownable2step;
@@ -5,6 +6,5 @@ mod p2id;
 mod p2ide;
 mod pswap;
 mod rbac;
-mod restricted;
 mod send_note;
 mod swap;

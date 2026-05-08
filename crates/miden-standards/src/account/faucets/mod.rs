@@ -9,12 +9,12 @@ use crate::utils::FixedWidthStringError;
 
 mod basic_fungible;
 mod network_fungible;
-pub mod restricted;
+pub mod restrictions;
 mod token_metadata;
 
 pub use basic_fungible::{BasicFungibleFaucet, create_basic_fungible_faucet};
 pub use network_fungible::{NetworkFungibleFaucet, create_network_fungible_faucet};
-pub use restricted::{OwnerOnlyRestrictedAdmin, Restricted};
+pub use restrictions::{Blocklist, OwnerOnlyBlocklistAdmin};
 pub use token_metadata::TokenMetadata;
 
 // FUNGIBLE FAUCET ERROR

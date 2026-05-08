@@ -1,0 +1,12 @@
+# Owner-controlled blocklist admin component.
+#
+# Re-exports `block_user` and `unblock_user` from
+# `miden::standards::faucets::restrictions::blocklist_owner`, which wraps the underlying
+# `Invocation: exec` helpers with an Ownable2Step authorization check.
+#
+# Pair with the [`Ownable2Step`] component (which provides the owner storage slot) and a
+# component that installs the `blocked_users` storage slot — typically
+# [`TransferIfNotBlocklisted`].
+
+pub use ::miden::standards::faucets::restrictions::blocklist_owner::block_user
+pub use ::miden::standards::faucets::restrictions::blocklist_owner::unblock_user

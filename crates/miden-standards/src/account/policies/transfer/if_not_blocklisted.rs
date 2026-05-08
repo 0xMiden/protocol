@@ -3,7 +3,7 @@ use miden_protocol::account::component::{AccountComponentMetadata, StorageSchema
 use miden_protocol::account::{AccountComponent, AccountType, StorageMap, StorageSlot};
 
 use crate::account::components::if_not_blocklisted_transfer_policy_library;
-use crate::account::faucets::Restricted;
+use crate::account::faucets::Blocklist;
 use crate::procedure_digest;
 
 // IF-NOT-BLOCKLISTED TRANSFER POLICY
@@ -18,17 +18,17 @@ procedure_digest!(
 
 /// The `if_not_blocklisted` transfer policy account component.
 ///
-/// Installs the per-faucet `blocked_accounts` storage map (see [`Restricted`]) plus the
+/// Installs the per-faucet `blocked_users` storage map (see [`Blocklist`]) plus the
 /// `check_policy` predicate procedure. Pair with a
 /// [`crate::account::policies::TokenPolicyManager`] whose send / receive policy maps include
 /// [`TransferIfNotBlocklisted::root`]. When active, transfers fail if the native account (asset
 /// recipient or note creator) is currently blocked on the issuing faucet.
 ///
 /// Block / unblock administration is intentionally not part of this component. The
-/// `block` / `unblock` procedures live in the standards library and require an auth-wrapped
-/// admin component (e.g. an Ownable2Step- or RBAC-gated wrapper) to be safely exposed on a
-/// production faucet. Tests may invoke them via `exec.` directly when the test transaction
-/// runs with the faucet as the native account.
+/// `block_user` / `unblock_user` procedures live in the standards library and require an
+/// auth-wrapped admin component (e.g. an Ownable2Step- or RBAC-gated wrapper) to be safely
+/// exposed on a production faucet. Tests may invoke them via `exec.` directly when the test
+/// transaction runs with the faucet as the native account.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct TransferIfNotBlocklisted;
 
@@ -47,12 +47,10 @@ impl TransferIfNotBlocklisted {
 
 impl From<TransferIfNotBlocklisted> for AccountComponent {
     fn from(_: TransferIfNotBlocklisted) -> Self {
-        let blocked_accounts_slot = StorageSlot::with_map(
-            Restricted::blocked_accounts_slot().clone(),
-            StorageMap::default(),
-        );
+        let blocked_users_slot =
+            StorageSlot::with_map(Blocklist::blocked_users_slot().clone(), StorageMap::default());
 
-        let storage_schema = StorageSchema::new([Restricted::blocked_accounts_slot_schema()])
+        let storage_schema = StorageSchema::new([Blocklist::blocked_users_slot_schema()])
             .expect("storage schema should be valid");
 
         let metadata = AccountComponentMetadata::new(
@@ -61,13 +59,13 @@ impl From<TransferIfNotBlocklisted> for AccountComponent {
         )
         .with_description(
             "`if_not_blocklisted` transfer policy: predicate procedure plus the \
-             `blocked_accounts` storage map it reads",
+             `blocked_users` storage map it reads",
         )
         .with_storage_schema(storage_schema);
 
         AccountComponent::new(
             if_not_blocklisted_transfer_policy_library(),
-            vec![blocked_accounts_slot],
+            vec![blocked_users_slot],
             metadata,
         )
         .expect(

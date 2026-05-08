@@ -1,51 +1,51 @@
-# miden::standards::faucets::restricted_owner
+# miden::standards::faucets::restrictions::blocklist_owner
 #
 # Owner-controlled blocklist admin: wraps the `Invocation: exec` helpers from
-# `miden::standards::faucets::restricted` with an Ownable2Step authorization check.
+# `miden::standards::faucets::restrictions::blocklist` with an Ownable2Step authorization check.
 #
 # Companion components required on the faucet:
 # - `Ownable2Step` — provides the owner storage slot the auth check reads.
-# - `TransferIfNotBlocklisted` (or any other component that installs the `blocked_accounts`
-#   storage slot) — provides the storage that `block` / `unblock` write to.
+# - `TransferIfNotBlocklisted` (or any other component that installs the `blocked_users`
+#   storage slot) — provides the storage that `block_user` / `unblock_user` write to.
 
 use miden::standards::access::ownable2step
-use miden::standards::faucets::restricted
+use miden::standards::faucets::restrictions::blocklist
 
 # PUBLIC INTERFACE
 # ================================================================================================
 
-#! Block an account, gated by the Ownable2Step owner.
+#! Block a user, gated by the Ownable2Step owner.
 #!
 #! Inputs:  [account_id_suffix, account_id_prefix, pad(14)]
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
 #! - the sender is not the account owner.
-#! - the account is already blocked.
+#! - the user is already blocked.
 #!
 #! Invocation: call
-pub proc block
+pub proc block_user
     exec.ownable2step::assert_sender_is_owner
     # => [account_id_suffix, account_id_prefix, pad(14)]
 
-    exec.restricted::block
+    exec.blocklist::block_user
     # => [pad(14)]
 end
 
-#! Unblock an account, gated by the Ownable2Step owner.
+#! Unblock a user, gated by the Ownable2Step owner.
 #!
 #! Inputs:  [account_id_suffix, account_id_prefix, pad(14)]
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
 #! - the sender is not the account owner.
-#! - the account is not currently blocked.
+#! - the user is not currently blocked.
 #!
 #! Invocation: call
-pub proc unblock
+pub proc unblock_user
     exec.ownable2step::assert_sender_is_owner
     # => [account_id_suffix, account_id_prefix, pad(14)]
 
-    exec.restricted::unblock
+    exec.blocklist::unblock_user
     # => [pad(14)]
 end
