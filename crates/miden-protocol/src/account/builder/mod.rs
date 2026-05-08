@@ -7,7 +7,7 @@ use crate::account::{
     AccountCode,
     AccountComponent,
     AccountId,
-    AccountIdV0,
+    AccountIdV1,
     AccountIdVersion,
     AccountStorage,
     AccountStorageMode,
@@ -29,7 +29,7 @@ use crate::{Felt, Word};
 /// By default, the builder is initialized with:
 /// - The `account_type` set to [`AccountType::RegularAccountUpdatableCode`].
 /// - The `storage_mode` set to [`AccountStorageMode::Private`].
-/// - The `version` set to [`AccountIdVersion::Version0`].
+/// - The `version` set to [`AccountIdVersion::Version1`].
 ///
 /// The methods that are required to be called are:
 ///
@@ -79,7 +79,7 @@ impl AccountBuilder {
             init_seed,
             account_type: AccountType::RegularAccountUpdatableCode,
             storage_mode: AccountStorageMode::Private,
-            id_version: AccountIdVersion::Version0,
+            id_version: AccountIdVersion::Version1,
         }
     }
 
@@ -105,8 +105,28 @@ impl AccountBuilder {
     /// **must be called at least once** since an account must export at least one procedure.
     ///
     /// All components will be merged to form the final code and storage of the built account.
+    ///
+    /// For composite configurations that expand into multiple components (such as
+    /// `AccessControl` or `TokenPolicyManager`), use [`Self::with_components`].
     pub fn with_component(mut self, account_component: impl Into<AccountComponent>) -> Self {
         self.components.push(account_component.into());
+        self
+    }
+
+    /// Adds the components yielded by `components` to the builder.
+    ///
+    /// This is a convenience wrapper around repeated [`Self::with_component`] calls. It is
+    /// most useful for installing the variable number of components produced by composite
+    /// configurations whose component count is not known at the call site (for example, a
+    /// configuration value that expands into one or several components depending on its
+    /// variant).
+    pub fn with_components(
+        mut self,
+        components: impl IntoIterator<Item = impl Into<AccountComponent>>,
+    ) -> Self {
+        for component in components {
+            self = self.with_component(component);
+        }
         self
     }
 
@@ -168,7 +188,7 @@ impl AccountBuilder {
         code_commitment: Word,
         storage_commitment: Word,
     ) -> Result<Word, AccountError> {
-        let seed = AccountIdV0::compute_account_seed(
+        let seed = AccountIdV1::compute_account_seed(
             init_seed,
             self.account_type,
             self.storage_mode,
@@ -220,7 +240,7 @@ impl AccountBuilder {
 
         let account_id = AccountId::new(
             seed,
-            AccountIdVersion::Version0,
+            AccountIdVersion::Version1,
             code.commitment(),
             storage.to_commitment(),
         )
@@ -271,7 +291,7 @@ impl AccountBuilder {
                 .expect("we should have sliced exactly 15 bytes off");
             AccountId::dummy(
                 bytes,
-                AccountIdVersion::Version0,
+                AccountIdVersion::Version1,
                 self.account_type,
                 self.storage_mode,
             )
@@ -404,7 +424,7 @@ mod tests {
 
         let computed_id = AccountId::new(
             account.seed().unwrap(),
-            AccountIdVersion::Version0,
+            AccountIdVersion::Version1,
             account.code.commitment(),
             account.storage.to_commitment(),
         )
@@ -436,6 +456,60 @@ mod tests {
             account.storage().get_item(&CUSTOM_COMPONENT2_SLOT_NAME1).unwrap(),
             [Felt::new(0), Felt::new(0), Felt::new(0), Felt::new(storage_slot2)].into()
         );
+    }
+
+    #[test]
+    fn account_builder_with_components() {
+        let storage_slot0 = 25;
+        let storage_slot1 = 12;
+        let storage_slot2 = 42;
+
+        let components: Vec<AccountComponent> = vec![
+            CustomComponent1 { slot0: storage_slot0 }.into(),
+            CustomComponent2 {
+                slot0: storage_slot1,
+                slot1: storage_slot2,
+            }
+            .into(),
+        ];
+
+        let account = Account::builder([5; 32])
+            .with_auth_component(NoopAuthComponent)
+            .with_components(components)
+            .build()
+            .unwrap();
+
+        // The account built via `with_components` should be identical to one built via
+        // chained `with_component` calls in the same order.
+        let expected = Account::builder([5; 32])
+            .with_auth_component(NoopAuthComponent)
+            .with_component(CustomComponent1 { slot0: storage_slot0 })
+            .with_component(CustomComponent2 {
+                slot0: storage_slot1,
+                slot1: storage_slot2,
+            })
+            .build()
+            .unwrap();
+
+        assert_eq!(account.id(), expected.id());
+        assert_eq!(account.code().commitment(), expected.code().commitment());
+        assert_eq!(account.storage().to_commitment(), expected.storage().to_commitment());
+
+        // Empty iterators are accepted and behave as a no-op.
+        let account_no_extra = Account::builder([6; 32])
+            .with_auth_component(NoopAuthComponent)
+            .with_component(CustomComponent1 { slot0: storage_slot0 })
+            .with_components(core::iter::empty::<CustomComponent2>())
+            .build()
+            .unwrap();
+
+        let expected_no_extra = Account::builder([6; 32])
+            .with_auth_component(NoopAuthComponent)
+            .with_component(CustomComponent1 { slot0: storage_slot0 })
+            .build()
+            .unwrap();
+
+        assert_eq!(account_no_extra.id(), expected_no_extra.id());
     }
 
     #[test]

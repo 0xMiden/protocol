@@ -1,4 +1,3 @@
-use miden_protocol::Word;
 use miden_protocol::account::AccountId;
 use miden_protocol::assembly::Path;
 use miden_protocol::asset::Asset;
@@ -11,6 +10,7 @@ use miden_protocol::note::{
     NoteMetadata,
     NoteRecipient,
     NoteScript,
+    NoteScriptRoot,
     NoteStorage,
     NoteTag,
     NoteType,
@@ -55,7 +55,7 @@ impl BurnNote {
     }
 
     /// Returns the BURN note script root.
-    pub fn script_root() -> Word {
+    pub fn script_root() -> NoteScriptRoot {
         BURN_SCRIPT.root()
     }
 

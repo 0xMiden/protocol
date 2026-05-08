@@ -1,6 +1,6 @@
 use rand_xoshiro::rand_core::SeedableRng;
 
-use crate::account::{AccountId, AccountIdV0, AccountIdVersion, AccountStorageMode, AccountType};
+use crate::account::{AccountId, AccountIdV1, AccountIdVersion, AccountStorageMode, AccountType};
 
 // CONSTANTS
 // --------------------------------------------------------------------------------------------
@@ -58,8 +58,8 @@ pub const ACCOUNT_ID_REGULAR_NETWORK_ACCOUNT_IMMUTABLE_CODE: u128 = account_id(
 pub const ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET: u128 =
     account_id(AccountType::FungibleFaucet, AccountStorageMode::Private, 0xfabb_cddd);
 // FUNGIBLE TOKENS - PUBLIC
-/// A native asset faucet ID for use in testing scenarios.
-pub const ACCOUNT_ID_NATIVE_ASSET_FAUCET: u128 =
+/// A fee faucet ID for use in testing scenarios.
+pub const ACCOUNT_ID_FEE_FAUCET: u128 =
     account_id(AccountType::FungibleFaucet, AccountStorageMode::Public, 0xabcd_acde);
 pub const ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET: u128 =
     account_id(AccountType::FungibleFaucet, AccountStorageMode::Public, 0xaabc_bcde);
@@ -99,7 +99,7 @@ pub const ACCOUNT_ID_MAX_ZEROES: u128 =
 
 /// Produces a valid account ID with the given account type and storage mode.
 ///
-/// - Version is set to 0.
+/// - Version is set to 1.
 ///
 /// Finally, distributes the given `random` value over the ID to produce non-trivial values for
 /// testing. This is easiest explained with an example. Suppose `random` is `0xaabb_ccdd`,
@@ -116,8 +116,9 @@ pub const fn account_id(
 ) -> u128 {
     let mut prefix: u64 = 0;
 
-    prefix |= (account_type as u64) << AccountIdV0::TYPE_SHIFT;
-    prefix |= (storage_mode as u64) << AccountIdV0::STORAGE_MODE_SHIFT;
+    prefix |= AccountIdVersion::Version1 as u64;
+    prefix |= (account_type as u64) << AccountIdV1::TYPE_SHIFT;
+    prefix |= (storage_mode as u64) << AccountIdV1::STORAGE_MODE_SHIFT;
 
     // Produce non-trivial IDs by distributing the random value.
     let random_1st_felt_upper = random & 0xff00_0000;
@@ -199,7 +200,7 @@ impl AccountIdBuilder {
             None => rng.random(),
         };
 
-        AccountId::dummy(rng.random(), AccountIdVersion::Version0, account_type, storage_mode)
+        AccountId::dummy(rng.random(), AccountIdVersion::Version1, account_type, storage_mode)
     }
 
     /// Builds an [`AccountId`] using the provided seed as input for an RNG implemented in

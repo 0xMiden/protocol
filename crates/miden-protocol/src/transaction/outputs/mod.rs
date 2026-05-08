@@ -56,13 +56,13 @@ impl TransactionOutputs {
     /// output stack.
     pub const ACCOUNT_UPDATE_COMMITMENT_WORD_IDX: usize = 4;
 
-    /// The index of the element at which the ID suffix of the faucet that issues the native asset
-    /// is stored on the output stack.
-    pub const NATIVE_ASSET_ID_SUFFIX_ELEMENT_IDX: usize = 8;
+    /// The index of the element at which the ID suffix of the fee faucet is stored on the output
+    /// stack.
+    pub const FEE_FAUCET_ID_SUFFIX_ELEMENT_IDX: usize = 8;
 
-    /// The index of the element at which the ID prefix of the faucet that issues the native asset
-    /// is stored on the output stack.
-    pub const NATIVE_ASSET_ID_PREFIX_ELEMENT_IDX: usize = 9;
+    /// The index of the element at which the ID prefix of the fee faucet is stored on the output
+    /// stack.
+    pub const FEE_FAUCET_ID_PREFIX_ELEMENT_IDX: usize = 9;
 
     /// The index of the element at which the fee amount is stored on the output stack.
     pub const FEE_AMOUNT_ELEMENT_IDX: usize = 10;

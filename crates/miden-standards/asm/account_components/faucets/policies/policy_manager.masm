@@ -1,0 +1,17 @@
+# The MASM code of the Token Policy Manager Account Component.
+#
+# Owns the five policy-manager storage slots (shared authority, active mint policy,
+# active burn policy, allowed mint policies map, allowed burn policies map) and exposes the
+# management procedures for both mint and burn policies. Pair with at least one mint policy
+# component and one burn policy component whose procedure roots are registered in the allowed-
+# policies maps.
+#
+# `execute_*_policy` procedures are intentionally not exposed here: they are `exec`-invocation
+# helpers used inline by other MASM (e.g. `faucets::basic_fungible::mint_and_send`), which `use`
+# the standards-side library directly. Only `call`-invocation procedures (`set_*_policy` and
+# `get_*_policy`) are part of this component's public API.
+
+pub use ::miden::standards::faucets::policies::policy_manager::set_mint_policy
+pub use ::miden::standards::faucets::policies::policy_manager::get_mint_policy
+pub use ::miden::standards::faucets::policies::policy_manager::set_burn_policy
+pub use ::miden::standards::faucets::policies::policy_manager::get_burn_policy

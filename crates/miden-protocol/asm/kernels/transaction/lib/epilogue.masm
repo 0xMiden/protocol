@@ -252,7 +252,7 @@ end
 #! Outputs: [fee_amount]
 #!
 #! Where:
-#! - fee_amount is the computed fee amount of the transaction in the native asset.
+#! - fee_amount is the computed fee amount of the transaction in the fee asset.
 proc compute_fee
     # get the number of cycles the transaction has taken to execute up this point
     clk
@@ -278,27 +278,27 @@ proc compute_fee
     # => [verification_cost]
 end
 
-#! Creates the fee asset with the provided fee amount and the native asset ID of the transaction's
+#! Creates the fee asset with the provided fee amount and the fee faucet ID of the transaction's
 #! reference block as the faucet ID.
 #!
 #! Inputs:  [fee_amount]
 #! Outputs: [FEE_ASSET_KEY, FEE_ASSET_VALUE]
 #!
 #! Where:
-#! - fee_amount is the computed fee amount of the transaction in the native asset.
+#! - fee_amount is the computed fee amount of the transaction in the fee asset.
 #! - FEE_ASSET_KEY is the asset vault key of the fee asset.
 #! - FEE_ASSET_VALUE is the fungible asset with amount set to fee_amount and the faucet ID set to
-#!   the native asset.
-proc create_native_fee_asset
-    exec.memory::get_native_asset_id
-    # => [native_asset_id_suffix, native_asset_id_prefix, fee_amount]
+#!   the fee faucet.
+proc create_fee_asset
+    exec.memory::get_fee_faucet_id
+    # => [fee_faucet_id_suffix, fee_faucet_id_prefix, fee_amount]
 
     # assume the fee asset does not have callbacks
     # this should be addressed more holistically with a fee construction refactor
     push.0
-    # => [enable_callbacks, native_asset_id_suffix, native_asset_id_prefix, fee_amount]
+    # => [enable_callbacks, fee_faucet_id_suffix, fee_faucet_id_prefix, fee_amount]
 
-    # SAFETY: native asset ID should be fungible and amount should not be exceeded
+    # SAFETY: fee faucet ID should be fungible and amount should not be exceeded
     exec.fungible_asset::create_unchecked
     # => [FEE_ASSET_KEY, FEE_ASSET_VALUE]
 end
@@ -311,12 +311,12 @@ end
 #! check. That's okay, because the logic is entirely determined by the transaction kernel.
 #!
 #! Inputs:  []
-#! Outputs: [native_asset_id_suffix, native_asset_id_prefix, fee_amount]
+#! Outputs: [fee_faucet_id_suffix, fee_faucet_id_prefix, fee_amount]
 #!
 #! Where:
-#! - fee_amount is the computed fee amount of the transaction in the native asset.
-#! - native_asset_id_{prefix,suffix} are the prefix and suffix felts of the faucet that issues the
-#!   native asset.
+#! - fee_amount is the computed fee amount of the transaction in the fee asset.
+#! - fee_faucet_id_{prefix,suffix} are the prefix and suffix felts of the faucet that issues the
+#!   fee asset.
 #!
 #! Panics if:
 #! - the account vault contains less than the computed fee.
@@ -325,8 +325,8 @@ proc compute_and_remove_fee
     exec.compute_fee dup
     # => [fee_amount, fee_amount]
 
-    # build the native asset from the fee amount
-    exec.create_native_fee_asset
+    # build the fee asset from the fee amount
+    exec.create_fee_asset
     # => [FEE_ASSET_KEY, FEE_ASSET_VALUE, fee_amount]
 
     emit.EPILOGUE_BEFORE_TX_FEE_REMOVED_FROM_ACCOUNT_EVENT
@@ -334,10 +334,10 @@ proc compute_and_remove_fee
 
     # prepare the return value
     exec.asset::key_to_faucet_id
-    # => [native_asset_id_suffix, native_asset_id_prefix, FEE_ASSET_KEY, FEE_ASSET_VALUE, fee_amount]
+    # => [fee_faucet_id_suffix, fee_faucet_id_prefix, FEE_ASSET_KEY, FEE_ASSET_VALUE, fee_amount]
 
     movdn.9 movdn.9
-    # => [FEE_ASSET_KEY, FEE_ASSET_VALUE, native_asset_id_suffix, native_asset_id_prefix, fee_amount]
+    # => [FEE_ASSET_KEY, FEE_ASSET_VALUE, fee_faucet_id_suffix, fee_faucet_id_prefix, fee_amount]
 
     # remove the fee from the native account's vault
     # note that this deliberately does not use account::remove_asset_from_vault, because that
@@ -349,11 +349,11 @@ proc compute_and_remove_fee
 
     # fetch the vault root ptr
     exec.memory::get_account_vault_root_ptr movdn.8
-    # => [FEE_ASSET_KEY, FEE_ASSET_VALUE, account_vault_root_ptr, native_asset_id_suffix, native_asset_id_prefix, fee_amount]
+    # => [FEE_ASSET_KEY, FEE_ASSET_VALUE, account_vault_root_ptr, fee_faucet_id_suffix, fee_faucet_id_prefix, fee_amount]
 
     # remove the asset from the account vault
     exec.asset_vault::remove_fungible_asset dropw
-    # => [native_asset_id_suffix, native_asset_id_prefix, fee_amount]
+    # => [fee_faucet_id_suffix, fee_faucet_id_prefix, fee_amount]
 end
 
 # TRANSACTION EPILOGUE PROCEDURE
@@ -375,16 +375,16 @@ end
 #! Inputs:  []
 #! Outputs: [
 #!   OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT,
-#!   native_asset_id_suffix, native_asset_id_prefix, fee_amount, tx_expiration_block_num
+#!   fee_faucet_id_suffix, fee_faucet_id_prefix, fee_amount, tx_expiration_block_num
 #! ]
 #!
 #! Where:
 #! - OUTPUT_NOTES_COMMITMENT is the commitment of the output notes.
 #! - ACCOUNT_UPDATE_COMMITMENT is the hash of the the final account commitment and account
 #!   delta commitment.
-#! - fee_amount is the computed fee amount of the transaction denominated in the native asset.
-#! - native_asset_id_{prefix,suffix} are the prefix and suffix felts of the faucet that issues the
-#!   native asset.
+#! - fee_amount is the computed fee amount of the transaction denominated in the fee asset.
+#! - fee_faucet_id_{prefix,suffix} are the prefix and suffix felts of the faucet that issues the
+#!   fee asset.
 #! - tx_expiration_block_num is the transaction expiration block number.
 #!
 #! Locals:
@@ -473,11 +473,11 @@ pub proc finalize_transaction
     # ------ Compute fees ------
 
     exec.compute_and_remove_fee
-    # => [native_asset_id_suffix, native_asset_id_prefix, fee_amount]
+    # => [fee_faucet_id_suffix, fee_faucet_id_prefix, fee_amount]
 
     # pad to word size so we can store the info as a word
     push.0 movdn.3
-    # => [native_asset_id_suffix, native_asset_id_prefix, fee_amount, 0]
+    # => [fee_faucet_id_suffix, fee_faucet_id_prefix, fee_amount, 0]
 
     # store fee info in local memory
     loc_storew_le.4 dropw
@@ -523,14 +523,14 @@ pub proc finalize_transaction
 
     # load fee asset from local
     padw loc_loadw_le.4 swapw
-    # => [ACCOUNT_UPDATE_COMMITMENT, [native_asset_id_suffix, native_asset_id_prefix, fee_amount, 0]]
+    # => [ACCOUNT_UPDATE_COMMITMENT, [fee_faucet_id_suffix, fee_faucet_id_prefix, fee_amount, 0]]
 
     # replace 0 with expiration block num
     exec.memory::get_expiration_block_num swap.8 drop
-    # => [ACCOUNT_UPDATE_COMMITMENT, [native_asset_id_suffix, native_asset_id_prefix, fee_amount, tx_expiration_block_num]]
+    # => [ACCOUNT_UPDATE_COMMITMENT, [fee_faucet_id_suffix, fee_faucet_id_prefix, fee_amount, tx_expiration_block_num]]
 
     # load output notes commitment from local
     padw loc_loadw_le.0
     # => [OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT,
-    #     native_asset_id_suffix, native_asset_id_prefix, fee_amount, tx_expiration_block_num]
+    #     fee_faucet_id_suffix, fee_faucet_id_prefix, fee_amount, tx_expiration_block_num]
 end

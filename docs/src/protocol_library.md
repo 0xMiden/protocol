@@ -27,6 +27,21 @@ Most procedures in the Miden protocol library are implemented as wrappers around
 
 The procedures maintain the same security and context restrictions as the underlying kernel procedures. When invoking these procedures, ensure that the calling context matches the requirements.
 
+## Account ID Procedures (`miden::protocol::account_id`)
+
+Account ID procedures can be used to validate account IDs and inspect their account type.
+
+| Procedure                 | Description                                                                                                                                                                                                                   | Context |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| `is_fungible_faucet`      | Returns whether the account ID prefix belongs to a fungible faucet account.<br/><br/>**Inputs:** `[account_id_prefix]`<br/>**Outputs:** `[is_fungible_faucet]`                                                               | Any     |
+| `is_non_fungible_faucet`  | Returns whether the account ID prefix belongs to a non-fungible faucet account.<br/><br/>**Inputs:** `[account_id_prefix]`<br/>**Outputs:** `[is_non_fungible_faucet]`                                                       | Any     |
+| `is_equal`                | Returns whether two account IDs are equal.<br/><br/>**Inputs:** `[account_id_suffix, account_id_prefix, other_account_id_suffix, other_account_id_prefix]`<br/>**Outputs:** `[is_id_equal]`                                  | Any     |
+| `is_faucet`               | Returns whether the account ID prefix belongs to a faucet account.<br/><br/>**Inputs:** `[account_id_prefix]`<br/>**Outputs:** `[is_faucet]`                                                                                 | Any     |
+| `is_updatable_account`    | Returns whether the account ID prefix belongs to a regular account with updatable code.<br/><br/>**Inputs:** `[account_id_prefix]`<br/>**Outputs:** `[is_updatable_account]`                                                 | Any     |
+| `is_immutable_account`    | Returns whether the account ID prefix belongs to a regular account with immutable code.<br/><br/>**Inputs:** `[account_id_prefix]`<br/>**Outputs:** `[is_immutable_account]`                                                 | Any     |
+| `validate`                | Validates the provided account ID.<br/><br/>**Inputs:** `[account_id_suffix, account_id_prefix]`<br/>**Outputs:** `[]`                                                                                                       | Any     |
+| `shape_suffix`            | Shapes a digest suffix into an account ID suffix by clearing the lower 8 bits.<br/><br/>**Inputs:** `[seed_digest_suffix]`<br/>**Outputs:** `[account_id_suffix]`                                                            | Any     |
+
 ## Active account Procedures (`miden::protocol::active_account`)
 
 Active account procedures can be used to read from storage, fetch or compute commitments or obtain other internal data of the active account. 
@@ -123,8 +138,8 @@ Note utility procedures can be used to compute the required utility data or writ
 | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
 | `compute_storage_commitment` | Computes the commitment to the output note storage starting at the specified memory address.<br/><br/>**Inputs:** `[storage_ptr, num_storage_items]`<br/>**Outputs:** `[STORAGE_COMMITMENT]`                                      | Any     |
 | `write_assets_to_memory`    | Writes the assets data stored in the advice map to the memory specified by the provided destination pointer.<br/><br/>**Inputs:** `[ASSETS_COMMITMENT, num_assets, dest_ptr]`<br/>**Outputs:** `[num_assets, dest_ptr]` | Any     |
-| `build_recipient_hash`      | Returns the `RECIPIENT` for a specified `SERIAL_NUM`, `SCRIPT_ROOT`, and storage commitment.<br/><br/>**Inputs:** `[SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT]`<br/>**Outputs:** `[RECIPIENT]`                           | Any     |
-| `build_recipient`           | Builds the recipient hash from note storage, script root, and serial number.<br/><br/>**Inputs:** `[storage_ptr, num_storage_items, SERIAL_NUM, SCRIPT_ROOT]`<br/>**Outputs:** `[RECIPIENT]`                                     | Any     |
+| `compute_recipient`         | Returns the `RECIPIENT` for a specified `SERIAL_NUM`, `SCRIPT_ROOT`, and storage commitment.<br/><br/>**Inputs:** `[SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT]`<br/>**Outputs:** `[RECIPIENT]`                              | Any     |
+| `compute_and_store_recipient` | Computes the recipient from note storage, script root, and serial number, and stores the recipient preimages in advice inputs.<br/><br/>**Inputs:** `[storage_ptr, num_storage_items, SERIAL_NUM, SCRIPT_ROOT]`<br/>**Outputs:** `[RECIPIENT]` | Any     |
 | `metadata_into_sender` | Extracts the sender ID from the provided metadata word.<br/><br/>**Inputs:** `[METADATA]`<br/>**Outputs:** `[sender_id_suffix, sender_id_prefix]` | Any     |
 | `metadata_into_attachment_info` | Extracts the attachment kind and scheme from the provided metadata header.<br/><br/>**Inputs:** `[METADATA_HEADER]`<br/>**Outputs:** `[attachment_kind, attachment_scheme]` | Any     |
 | `metadata_into_note_type` | Extracts the note type from the provided metadata header. The note type is encoded as a single bit (0 = Private, 1 = Public).<br/><br/>**Inputs:** `[METADATA_HEADER]`<br/>**Outputs:** `[note_type]` | Any     |

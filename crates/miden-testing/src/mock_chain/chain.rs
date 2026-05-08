@@ -434,12 +434,12 @@ impl MockChain {
     }
 
     /// Returns the [`AccountId`] of the faucet whose assets are accepted for fee payments in the
-    /// transaction kernel, or in other words, the native asset of the blockchain.
+    /// transaction kernel, or in other words, the fee faucet of the blockchain.
     ///
     /// This value is taken from the genesis block because it is assumed not to change throughout
     /// the chain's lifecycle.
-    pub fn native_asset_id(&self) -> AccountId {
-        self.genesis_block_header().fee_parameters().native_asset_id()
+    pub fn fee_faucet_id(&self) -> AccountId {
+        self.genesis_block_header().fee_parameters().fee_faucet_id()
     }
 
     /// Returns a reference to the nullifier tree.

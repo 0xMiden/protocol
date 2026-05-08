@@ -43,22 +43,22 @@ use miden_protocol::block::{
 use miden_protocol::crypto::merkle::smt::Smt;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{Note, NoteAttachment, NoteDetails, NoteType};
-use miden_protocol::testing::account_id::ACCOUNT_ID_NATIVE_ASSET_FAUCET;
+use miden_protocol::testing::account_id::ACCOUNT_ID_FEE_FAUCET;
 use miden_protocol::testing::random_secret_key::random_secret_key;
 use miden_protocol::transaction::{OrderedTransactionHeaders, RawOutputNote, TransactionKernel};
 use miden_protocol::{MAX_OUTPUT_NOTES_PER_BATCH, Word};
 use miden_standards::account::access::Ownable2Step;
-use miden_standards::account::burn_policies::{BurnAuthControlled, BurnOwnerControlled};
 use miden_standards::account::faucets::{BasicFungibleFaucet, NetworkFungibleFaucet};
 use miden_standards::account::metadata::{
     FungibleTokenMetadata,
     FungibleTokenMetadataBuilder,
     TokenName,
 };
-use miden_standards::account::mint_policies::{
-    MintAuthControlled,
-    MintOwnerControlled,
-    MintOwnerControlledConfig,
+use miden_standards::account::policies::{
+    BurnPolicyConfig,
+    MintPolicyConfig,
+    PolicyAuthority,
+    TokenPolicyManager,
 };
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::note::{P2idNote, P2ideNote, P2ideNoteStorage, SwapNote};
@@ -119,7 +119,7 @@ pub struct MockChainBuilder {
     notes: Vec<RawOutputNote>,
     rng: RandomCoin,
     // Fee parameters.
-    native_asset_id: AccountId,
+    fee_faucet_id: AccountId,
     verification_base_fee: u32,
 }
 
@@ -129,20 +129,19 @@ impl MockChainBuilder {
 
     /// Initializes a new mock chain builder with an empty state.
     ///
-    /// By default, the `native_asset_id` is set to [`ACCOUNT_ID_NATIVE_ASSET_FAUCET`] and can be
-    /// overwritten using [`Self::native_asset_id`].
+    /// By default, the `fee_faucet_id` is set to [`ACCOUNT_ID_FEE_FAUCET`] and can be
+    /// overwritten using [`Self::fee_faucet_id`].
     ///
     /// The `verification_base_fee` is initialized to 0 which means no fees are required by default.
     pub fn new() -> Self {
-        let native_asset_id =
-            ACCOUNT_ID_NATIVE_ASSET_FAUCET.try_into().expect("account ID should be valid");
+        let fee_faucet_id = ACCOUNT_ID_FEE_FAUCET.try_into().expect("account ID should be valid");
 
         Self {
             accounts: BTreeMap::new(),
             account_authenticators: BTreeMap::new(),
             notes: Vec::new(),
             rng: RandomCoin::new(Default::default()),
-            native_asset_id,
+            fee_faucet_id,
             verification_base_fee: 0,
         }
     }
@@ -168,12 +167,12 @@ impl MockChainBuilder {
     // BUILDER METHODS
     // ----------------------------------------------------------------------------------------
 
-    /// Sets the native asset ID of the chain.
+    /// Sets the fee faucet ID of the chain.
     ///
     /// This must be a fungible faucet [`AccountId`] and is the asset in which fees will be accepted
     /// by the transaction kernel.
-    pub fn native_asset_id(mut self, native_asset_id: AccountId) -> Self {
-        self.native_asset_id = native_asset_id;
+    pub fn fee_faucet_id(mut self, fee_faucet_id: AccountId) -> Self {
+        self.fee_faucet_id = fee_faucet_id;
         self
     }
 
@@ -246,7 +245,7 @@ impl MockChainBuilder {
         let tx_commitment = transactions.commitment();
         let tx_kernel_commitment = TransactionKernel.to_commitment();
         let timestamp = MockChain::TIMESTAMP_START_SECS;
-        let fee_parameters = FeeParameters::new(self.native_asset_id, self.verification_base_fee)
+        let fee_parameters = FeeParameters::new(self.fee_faucet_id, self.verification_base_fee)
             .context("failed to construct fee parameters")?;
         let validator_secret_key = random_secret_key();
         let validator_public_key = validator_secret_key.public_key();
@@ -349,8 +348,11 @@ impl MockChainBuilder {
         let account_builder = AccountBuilder::new(self.rng.random())
             .storage_mode(AccountStorageMode::Public)
             .account_type(AccountType::FungibleFaucet)
-            .with_component(MintAuthControlled::allow_all())
-            .with_component(BurnAuthControlled::allow_all())
+            .with_components(TokenPolicyManager::new(
+                PolicyAuthority::AuthControlled,
+                MintPolicyConfig::AllowAll,
+                BurnPolicyConfig::AllowAll,
+            ))
             .with_component(metadata)
             .with_component(BasicFungibleFaucet);
 
@@ -386,8 +388,11 @@ impl MockChainBuilder {
             .storage_mode(AccountStorageMode::Public)
             .with_component(metadata)
             .with_component(BasicFungibleFaucet)
-            .with_component(MintAuthControlled::allow_all())
-            .with_component(BurnAuthControlled::allow_all())
+            .with_components(TokenPolicyManager::new(
+                PolicyAuthority::AuthControlled,
+                MintPolicyConfig::AllowAll,
+                BurnPolicyConfig::AllowAll,
+            ))
             .account_type(AccountType::FungibleFaucet);
 
         self.add_account_from_builder(auth_method, account_builder, AccountState::Exists)
@@ -396,13 +401,16 @@ impl MockChainBuilder {
     /// Adds an existing [`NetworkFungibleFaucet`] account to the initial chain state.
     ///
     /// Network fungible faucets always use `AccountStorageMode::Network` and `Auth::NoAuth`.
+    ///
+    /// `mint_policy` selects the initial active mint policy on the faucet. The installed
+    /// [`TokenPolicyManager`] is always owner-controlled.
     pub fn add_existing_network_faucet(
         &mut self,
         token_symbol: &str,
         max_supply: u64,
         owner_account_id: AccountId,
         token_supply: Option<u64>,
-        mint_policy: MintOwnerControlledConfig,
+        mint_policy: MintPolicyConfig,
     ) -> anyhow::Result<Account> {
         let token_supply = token_supply.unwrap_or(0);
         let name = TokenName::new(token_symbol)?;
@@ -424,8 +432,11 @@ impl MockChainBuilder {
             .with_component(metadata)
             .with_component(NetworkFungibleFaucet)
             .with_component(Ownable2Step::new(owner_account_id))
-            .with_component(MintOwnerControlled::new(mint_policy))
-            .with_component(BurnOwnerControlled::allow_all())
+            .with_components(TokenPolicyManager::new(
+                PolicyAuthority::OwnerControlled,
+                mint_policy,
+                BurnPolicyConfig::AllowAll,
+            ))
             .account_type(AccountType::FungibleFaucet);
 
         // Network faucets always use IncrNonce auth (no authentication)
@@ -445,8 +456,11 @@ impl MockChainBuilder {
             .with_component(metadata)
             .with_component(NetworkFungibleFaucet)
             .with_component(Ownable2Step::new(owner_account_id))
-            .with_component(MintOwnerControlled::new(MintOwnerControlledConfig::OwnerOnly))
-            .with_component(BurnOwnerControlled::allow_all())
+            .with_components(TokenPolicyManager::new(
+                PolicyAuthority::OwnerControlled,
+                MintPolicyConfig::OwnerOnly,
+                BurnPolicyConfig::AllowAll,
+            ))
             .account_type(AccountType::FungibleFaucet);
 
         self.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
@@ -696,10 +710,10 @@ impl MockChainBuilder {
         Ok(note)
     }
 
-    /// Creates a new P2ID note with the provided amount of the native fee asset of the chain.
+    /// Creates a new P2ID note with the provided amount of the fee asset of the chain.
     ///
-    /// The native asset ID of the asset can be set using [`Self::native_asset_id`]. By default it
-    /// is [`ACCOUNT_ID_NATIVE_ASSET_FAUCET`].
+    /// The fee faucet ID of the asset can be set using [`Self::fee_faucet_id`]. By default it
+    /// is [`ACCOUNT_ID_FEE_FAUCET`].
     ///
     /// In the created [`MockChain`], the note will be immediately spendable by `target_account_id`.
     pub fn add_p2id_note_with_fee(
@@ -707,9 +721,9 @@ impl MockChainBuilder {
         target_account_id: AccountId,
         amount: u64,
     ) -> anyhow::Result<Note> {
-        let fee_asset = self.native_fee_asset(amount)?;
+        let fee_asset = self.fee_asset(amount)?;
         let note = self.add_p2id_note(
-            self.native_asset_id,
+            self.fee_faucet_id,
             target_account_id,
             &[Asset::from(fee_asset)],
             NoteType::Public,
@@ -728,9 +742,9 @@ impl MockChainBuilder {
         &mut self.rng
     }
 
-    /// Constructs a fungible asset based on the native asset ID and the provided amount.
-    fn native_fee_asset(&self, amount: u64) -> anyhow::Result<FungibleAsset> {
-        FungibleAsset::new(self.native_asset_id, amount).context("failed to create fee asset")
+    /// Constructs a fungible asset based on the fee faucet ID and the provided amount.
+    fn fee_asset(&self, amount: u64) -> anyhow::Result<FungibleAsset> {
+        FungibleAsset::new(self.fee_faucet_id, amount).context("failed to create fee asset")
     }
 }
 

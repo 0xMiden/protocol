@@ -37,7 +37,7 @@ fn grind_account_seed(c: &mut Criterion) {
                 rng.random(),
                 AccountType::RegularAccountImmutableCode,
                 AccountStorageMode::Public,
-                AccountIdVersion::Version0,
+                AccountIdVersion::Version1,
                 Word::empty(),
                 Word::empty(),
             )

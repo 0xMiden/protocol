@@ -12,6 +12,7 @@ use miden_protocol::note::{
     NoteMetadata,
     NoteRecipient,
     NoteScript,
+    NoteScriptRoot,
     NoteStorage,
     NoteTag,
     NoteType,
@@ -56,7 +57,7 @@ impl P2idNote {
     }
 
     /// Returns the P2ID (Pay-to-ID) note script root.
-    pub fn script_root() -> Word {
+    pub fn script_root() -> NoteScriptRoot {
         P2ID_SCRIPT.root()
     }
 
@@ -172,7 +173,7 @@ mod tests {
     fn try_from_valid_storage_succeeds() {
         let target = AccountId::dummy(
             [1u8; 15],
-            AccountIdVersion::Version0,
+            AccountIdVersion::Version1,
             AccountType::FungibleFaucet,
             AccountStorageMode::Private,
         );
