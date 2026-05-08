@@ -103,8 +103,7 @@ impl AccountInterfaceExt for AccountInterface {
                         .extend(ownable2step_library().mast_forest().procedure_digests());
                 },
                 AccountComponentInterface::RoleBasedAccessControl => {
-                    component_proc_digests
-                        .extend(rbac_library().mast_forest().procedure_digests());
+                    component_proc_digests.extend(rbac_library().mast_forest().procedure_digests());
                 },
                 AccountComponentInterface::AuthSingleSig => {
                     component_proc_digests

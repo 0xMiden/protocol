@@ -7,7 +7,7 @@ use core::hash::Hash;
 use bech32::Bech32m;
 use bech32::primitives::decode::{ByteIter, CheckedHrpstring};
 use miden_crypto::utils::hex_to_bytes;
-pub use prefix::AccountIdPrefixV0;
+pub use prefix::AccountIdPrefixV1;
 
 use crate::account::account_id::NetworkId;
 use crate::account::account_id::account_type::{
@@ -29,30 +29,30 @@ use crate::utils::serde::{
 };
 use crate::{EMPTY_WORD, Felt, Hasher, Word};
 
-// ACCOUNT ID VERSION 0
+// ACCOUNT ID VERSION 1
 // ================================================================================================
 
-/// Version 0 of the [`Account`](crate::account::Account) identifier.
+/// Version 1 of the [`Account`](crate::account::Account) identifier.
 ///
 /// See the [`AccountId`](super::AccountId) type's documentation for details.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub struct AccountIdV0 {
+pub struct AccountIdV1 {
     suffix: Felt,
     prefix: Felt,
 }
 
-impl Hash for AccountIdV0 {
+impl Hash for AccountIdV1 {
     fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
         self.prefix.as_canonical_u64().hash(state);
         self.suffix.as_canonical_u64().hash(state);
     }
 }
 
-impl AccountIdV0 {
+impl AccountIdV1 {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
 
-    /// The serialized size of an [`AccountIdV0`] in bytes.
+    /// The serialized size of an [`AccountIdV1`] in bytes.
     const SERIALIZED_SIZE: usize = 15;
 
     /// The lower two bits of the second least significant nibble encode the account type.
@@ -113,7 +113,7 @@ impl AccountIdV0 {
         validate_suffix(suffix)?;
         validate_prefix(prefix)?;
 
-        Ok(AccountIdV0 { suffix, prefix })
+        Ok(AccountIdV1 { suffix, prefix })
     }
 
     /// See [`AccountId::dummy`](super::AccountId::dummy) for details.
@@ -122,8 +122,8 @@ impl AccountIdV0 {
         mut bytes: [u8; 15],
         account_type: AccountType,
         storage_mode: AccountStorageMode,
-    ) -> AccountIdV0 {
-        let version = AccountIdVersion::Version0 as u8;
+    ) -> AccountIdV1 {
+        let version = AccountIdVersion::Version1 as u8;
         let low_nibble = ((storage_mode as u8) << Self::STORAGE_MODE_SHIFT)
             | ((account_type as u8) << Self::TYPE_SHIFT)
             | version;
@@ -217,10 +217,10 @@ impl AccountIdV0 {
     }
 
     /// See [`AccountId::from_hex`](super::AccountId::from_hex) for details.
-    pub fn from_hex(hex_str: &str) -> Result<AccountIdV0, AccountIdError> {
+    pub fn from_hex(hex_str: &str) -> Result<AccountIdV1, AccountIdError> {
         hex_to_bytes(hex_str)
             .map_err(AccountIdError::AccountIdHexParseError)
-            .and_then(AccountIdV0::try_from)
+            .and_then(AccountIdV1::try_from)
     }
 
     /// See [`AccountId::to_hex`](super::AccountId::to_hex) for details.
@@ -311,13 +311,13 @@ impl AccountIdV0 {
         Ok(account_id)
     }
 
-    /// Returns the [`AccountIdPrefixV0`] of this account ID.
+    /// Returns the [`AccountIdPrefixV1`] of this account ID.
     ///
     /// See also [`AccountId::prefix`](super::AccountId::prefix) for details.
-    pub fn prefix(&self) -> AccountIdPrefixV0 {
+    pub fn prefix(&self) -> AccountIdPrefixV1 {
         // SAFETY: We only construct account IDs with valid prefixes, so we don't have to validate
         // it again.
-        AccountIdPrefixV0::new_unchecked(self.prefix)
+        AccountIdPrefixV1::new_unchecked(self.prefix)
     }
 
     /// See [`AccountId::suffix`](super::AccountId::suffix) for details.
@@ -329,14 +329,14 @@ impl AccountIdV0 {
 // CONVERSIONS FROM ACCOUNT ID
 // ================================================================================================
 
-impl From<AccountIdV0> for [Felt; 2] {
-    fn from(id: AccountIdV0) -> Self {
+impl From<AccountIdV1> for [Felt; 2] {
+    fn from(id: AccountIdV1) -> Self {
         [id.prefix, id.suffix]
     }
 }
 
-impl From<AccountIdV0> for [u8; 15] {
-    fn from(id: AccountIdV0) -> Self {
+impl From<AccountIdV1> for [u8; 15] {
+    fn from(id: AccountIdV1) -> Self {
         let mut result = [0_u8; 15];
         result[..8].copy_from_slice(&id.prefix().as_u64().to_be_bytes());
         // The last byte of the suffix is always zero so we skip it here.
@@ -345,8 +345,8 @@ impl From<AccountIdV0> for [u8; 15] {
     }
 }
 
-impl From<AccountIdV0> for u128 {
-    fn from(id: AccountIdV0) -> Self {
+impl From<AccountIdV1> for u128 {
+    fn from(id: AccountIdV1) -> Self {
         let mut le_bytes = [0_u8; 16];
         le_bytes[..8].copy_from_slice(&id.suffix().as_canonical_u64().to_le_bytes());
         le_bytes[8..].copy_from_slice(&id.prefix().as_u64().to_le_bytes());
@@ -357,7 +357,7 @@ impl From<AccountIdV0> for u128 {
 // CONVERSIONS TO ACCOUNT ID
 // ================================================================================================
 
-impl TryFrom<[u8; 15]> for AccountIdV0 {
+impl TryFrom<[u8; 15]> for AccountIdV1 {
     type Error = AccountIdError;
 
     /// See [`TryFrom<[u8; 15]> for
@@ -396,7 +396,7 @@ impl TryFrom<[u8; 15]> for AccountIdV0 {
     }
 }
 
-impl TryFrom<u128> for AccountIdV0 {
+impl TryFrom<u128> for AccountIdV1 {
     type Error = AccountIdError;
 
     /// See [`TryFrom<u128> for AccountId`](super::AccountId#impl-TryFrom<u128>-for-AccountId) for
@@ -412,7 +412,7 @@ impl TryFrom<u128> for AccountIdV0 {
 // SERIALIZATION
 // ================================================================================================
 
-impl Serializable for AccountIdV0 {
+impl Serializable for AccountIdV1 {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         let bytes: [u8; 15] = (*self).into();
         bytes.write_into(target);
@@ -423,7 +423,7 @@ impl Serializable for AccountIdV0 {
     }
 }
 
-impl Deserializable for AccountIdV0 {
+impl Deserializable for AccountIdV1 {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         <[u8; 15]>::read_from(source)?
             .try_into()
@@ -472,7 +472,7 @@ fn validate_suffix(suffix: Felt) -> Result<(), AccountIdError> {
 }
 
 pub(crate) fn extract_storage_mode(prefix: u64) -> Result<AccountStorageMode, AccountIdError> {
-    let bits = (prefix & AccountIdV0::STORAGE_MODE_MASK as u64) >> AccountIdV0::STORAGE_MODE_SHIFT;
+    let bits = (prefix & AccountIdV1::STORAGE_MODE_MASK as u64) >> AccountIdV1::STORAGE_MODE_SHIFT;
     // SAFETY: `STORAGE_MODE_MASK` is u8 so casting bits is lossless
     match bits as u8 {
         PUBLIC => Ok(AccountStorageMode::Public),
@@ -485,12 +485,12 @@ pub(crate) fn extract_storage_mode(prefix: u64) -> Result<AccountStorageMode, Ac
 pub(crate) fn extract_version(prefix: u64) -> Result<AccountIdVersion, AccountIdError> {
     // SAFETY: The mask guarantees that we only mask out the least significant nibble, so casting to
     // u8 is safe.
-    let version = (prefix & AccountIdV0::VERSION_MASK) as u8;
+    let version = (prefix & AccountIdV1::VERSION_MASK) as u8;
     AccountIdVersion::try_from(version)
 }
 
 pub(crate) const fn extract_type(prefix: u64) -> AccountType {
-    let bits = (prefix & (AccountIdV0::TYPE_MASK as u64)) >> AccountIdV0::TYPE_SHIFT;
+    let bits = (prefix & (AccountIdV1::TYPE_MASK as u64)) >> AccountIdV1::TYPE_SHIFT;
     // SAFETY: `TYPE_MASK` is u8 so casting bits is lossless
     match bits as u8 {
         REGULAR_ACCOUNT_UPDATABLE_CODE => AccountType::RegularAccountUpdatableCode,
@@ -519,19 +519,19 @@ fn shape_suffix(suffix: Felt) -> Felt {
 // COMMON TRAIT IMPLS
 // ================================================================================================
 
-impl PartialOrd for AccountIdV0 {
+impl PartialOrd for AccountIdV1 {
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl Ord for AccountIdV0 {
+impl Ord for AccountIdV1 {
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
         u128::from(*self).cmp(&u128::from(*other))
     }
 }
 
-impl fmt::Display for AccountIdV0 {
+impl fmt::Display for AccountIdV1 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.to_hex())
     }
@@ -567,12 +567,12 @@ mod tests {
     #[test]
     fn account_id_from_felts_with_max_pop_count() {
         let valid_suffix = Felt::try_from(0x7fff_ffff_ffff_ff00u64).unwrap();
-        let valid_prefix = Felt::try_from(0x7fff_ffff_ffff_ff70u64).unwrap();
+        let valid_prefix = Felt::try_from(0x7fff_ffff_ffff_ff71u64).unwrap();
 
-        let id1 = AccountIdV0::new_unchecked([valid_prefix, valid_suffix]);
+        let id1 = AccountIdV1::new_unchecked([valid_prefix, valid_suffix]);
         assert_eq!(id1.account_type(), AccountType::NonFungibleFaucet);
         assert_eq!(id1.storage_mode(), AccountStorageMode::Network);
-        assert_eq!(id1.version(), AccountIdVersion::Version0);
+        assert_eq!(id1.version(), AccountIdVersion::Version1);
     }
 
     #[test]
@@ -589,15 +589,15 @@ mod tests {
                 AccountType::RegularAccountUpdatableCode,
             ] {
                 for storage_mode in [AccountStorageMode::Private, AccountStorageMode::Public] {
-                    let id = AccountIdV0::dummy(input, account_type, storage_mode);
+                    let id = AccountIdV1::dummy(input, account_type, storage_mode);
                     assert_eq!(id.account_type(), account_type);
                     assert_eq!(id.storage_mode(), storage_mode);
-                    assert_eq!(id.version(), AccountIdVersion::Version0);
+                    assert_eq!(id.version(), AccountIdVersion::Version1);
 
                     // Do a serialization roundtrip to ensure validity.
                     let serialized_id = id.to_bytes();
-                    AccountIdV0::read_from_bytes(&serialized_id).unwrap();
-                    assert_eq!(serialized_id.len(), AccountIdV0::SERIALIZED_SIZE);
+                    AccountIdV1::read_from_bytes(&serialized_id).unwrap();
+                    assert_eq!(serialized_id.len(), AccountIdV1::SERIALIZED_SIZE);
                 }
             }
         }
@@ -606,12 +606,12 @@ mod tests {
     #[test]
     fn account_id_prefix_serialization_compatibility() {
         // Ensure that an AccountIdPrefix can be read from the serialized bytes of an AccountId.
-        let account_id = AccountIdV0::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
+        let account_id = AccountIdV1::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
         let id_bytes = account_id.to_bytes();
         assert_eq!(account_id.prefix().to_bytes(), id_bytes[..8]);
 
         let deserialized_prefix = AccountIdPrefix::read_from_bytes(&id_bytes).unwrap();
-        assert_eq!(AccountIdPrefix::V0(account_id.prefix()), deserialized_prefix);
+        assert_eq!(AccountIdPrefix::V1(account_id.prefix()), deserialized_prefix);
 
         // Ensure AccountId and AccountIdPrefix's hex representation are compatible.
         assert!(account_id.to_hex().starts_with(&account_id.prefix().to_hex()));
@@ -632,10 +632,10 @@ mod tests {
         .into_iter()
         .enumerate()
         {
-            let id = AccountIdV0::try_from(account_id).expect("account ID should be valid");
-            assert_eq!(id, AccountIdV0::from_hex(&id.to_hex()).unwrap(), "failed in {idx}");
-            assert_eq!(id, AccountIdV0::try_from(<[u8; 15]>::from(id)).unwrap(), "failed in {idx}");
-            assert_eq!(id, AccountIdV0::try_from(u128::from(id)).unwrap(), "failed in {idx}");
+            let id = AccountIdV1::try_from(account_id).expect("account ID should be valid");
+            assert_eq!(id, AccountIdV1::from_hex(&id.to_hex()).unwrap(), "failed in {idx}");
+            assert_eq!(id, AccountIdV1::try_from(<[u8; 15]>::from(id)).unwrap(), "failed in {idx}");
+            assert_eq!(id, AccountIdV1::try_from(u128::from(id)).unwrap(), "failed in {idx}");
             // The u128 big-endian representation without the least significant byte and the
             // [u8; 15] representations should be equivalent.
             assert_eq!(u128::from(id).to_be_bytes()[0..15], <[u8; 15]>::from(id));
@@ -645,25 +645,25 @@ mod tests {
 
     #[test]
     fn test_account_id_tag_identifiers() {
-        let account_id = AccountIdV0::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE)
+        let account_id = AccountIdV1::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE)
             .expect("valid account ID");
         assert!(account_id.is_regular_account());
         assert_eq!(account_id.account_type(), AccountType::RegularAccountImmutableCode);
         assert!(account_id.is_public());
 
-        let account_id = AccountIdV0::try_from(ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE)
+        let account_id = AccountIdV1::try_from(ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE)
             .expect("valid account ID");
         assert!(account_id.is_regular_account());
         assert_eq!(account_id.account_type(), AccountType::RegularAccountUpdatableCode);
         assert!(!account_id.is_public());
 
         let account_id =
-            AccountIdV0::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).expect("valid account ID");
+            AccountIdV1::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).expect("valid account ID");
         assert!(account_id.is_faucet());
         assert_eq!(account_id.account_type(), AccountType::FungibleFaucet);
         assert!(account_id.is_public());
 
-        let account_id = AccountIdV0::try_from(ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET)
+        let account_id = AccountIdV1::try_from(ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET)
             .expect("valid account ID");
         assert!(account_id.is_faucet());
         assert_eq!(account_id.account_type(), AccountType::NonFungibleFaucet);

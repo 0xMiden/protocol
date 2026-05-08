@@ -303,8 +303,9 @@ impl StandardAccountComponent {
                 Self::Ownable2Step => {
                     component_interface_vec.push(AccountComponentInterface::Ownable2Step)
                 },
-                Self::RoleBasedAccessControl => component_interface_vec
-                    .push(AccountComponentInterface::RoleBasedAccessControl),
+                Self::RoleBasedAccessControl => {
+                    component_interface_vec.push(AccountComponentInterface::RoleBasedAccessControl)
+                },
                 Self::AuthSingleSig => {
                     component_interface_vec.push(AccountComponentInterface::AuthSingleSig)
                 },
@@ -335,8 +336,7 @@ impl StandardAccountComponent {
     ) {
         Self::BasicWallet.extract_component(procedures_set, component_interface_vec);
         Self::BasicFungibleFaucet.extract_component(procedures_set, component_interface_vec);
-        Self::RoleBasedAccessControl
-            .extract_component(procedures_set, component_interface_vec);
+        Self::RoleBasedAccessControl.extract_component(procedures_set, component_interface_vec);
         Self::Ownable2Step.extract_component(procedures_set, component_interface_vec);
         Self::AuthSingleSig.extract_component(procedures_set, component_interface_vec);
         Self::AuthSingleSigAcl.extract_component(procedures_set, component_interface_vec);
