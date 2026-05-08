@@ -1837,7 +1837,7 @@ async fn network_faucet_mint_with_if_not_blocklisted() -> anyhow::Result<()> {
 
     let faucet_owner_account_id = AccountId::dummy(
         [1; 15],
-        AccountIdVersion::Version0,
+        AccountIdVersion::Version1,
         AccountType::RegularAccountImmutableCode,
         AccountStorageMode::Private,
     );

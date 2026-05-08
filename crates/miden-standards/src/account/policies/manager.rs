@@ -552,7 +552,7 @@ impl TokenPolicyManager {
         slots
     }
 
-    fn into_manager_component(&self) -> AccountComponent {
+    fn to_manager_component(&self) -> AccountComponent {
         let storage_slots = self.manager_storage_slots();
         AccountComponent::new(
             policy_manager_library(),
@@ -579,7 +579,7 @@ impl IntoIterator for TokenPolicyManager {
     /// Every kind must have exactly one [`PolicyRegistration::Active`] entry; otherwise the
     /// internal storage-slot construction panics.
     fn into_iter(self) -> Self::IntoIter {
-        let manager_component = self.into_manager_component();
+        let manager_component = self.to_manager_component();
         let TokenPolicyManager {
             mint_policies,
             burn_policies,

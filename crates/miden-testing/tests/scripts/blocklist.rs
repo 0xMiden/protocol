@@ -57,7 +57,7 @@ const ERR_USER_NOT_BLOCKED: MasmError = MasmError::from_static_str("user is not 
 fn dummy_owner() -> AccountId {
     AccountId::dummy(
         [9; 15],
-        AccountIdVersion::Version0,
+        AccountIdVersion::Version1,
         AccountType::RegularAccountImmutableCode,
         AccountStorageMode::Private,
     )
