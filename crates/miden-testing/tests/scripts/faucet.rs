@@ -29,7 +29,7 @@ use miden_protocol::note::{
 use miden_protocol::testing::account_id::ACCOUNT_ID_PRIVATE_SENDER;
 use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote};
 use miden_protocol::{Felt, Word};
-use miden_standards::account::access::Ownable2Step;
+use miden_standards::account::access::{Authority, Ownable2Step};
 use miden_standards::account::faucets::BasicFungibleFaucet;
 use miden_standards::account::metadata::TokenName;
 use miden_standards::account::policies::{
@@ -37,7 +37,6 @@ use miden_standards::account::policies::{
     BurnOwnerOnly,
     BurnPolicyConfig,
     MintPolicyConfig,
-    PolicyAuthority,
     TokenPolicyManager,
 };
 use miden_standards::code_builder::CodeBuilder;
@@ -201,17 +200,14 @@ fn build_network_faucet_with_burn_switching(
         .token_supply(token_supply)
         .build()?;
 
-    let token_policy_manager = TokenPolicyManager::new(
-        PolicyAuthority::OwnerControlled,
-        mint_policy,
-        BurnPolicyConfig::AllowAll,
-    )
-    .with_allowed_burn_policy(BurnOwnerOnly::root());
+    let token_policy_manager = TokenPolicyManager::new(mint_policy, BurnPolicyConfig::AllowAll)
+        .with_allowed_burn_policy(BurnOwnerOnly::root());
 
     let account_builder = AccountBuilder::new(builder.rng_mut().random())
         .storage_mode(AccountStorageMode::Network)
         .with_component(metadata)
         .with_component(Ownable2Step::new(owner))
+        .with_component(Authority::OwnerControlled)
         .with_components(token_policy_manager)
         .with_component(BurnOwnerOnly)
         .account_type(AccountType::FungibleFaucet);

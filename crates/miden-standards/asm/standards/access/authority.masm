@@ -1,0 +1,78 @@
+# miden::standards::access::authority
+#
+# Single source of truth for the account wide authority discriminator. Components that use
+# state changing procedures (TokenPolicyManager `set_*_policy`, fungible token metadata
+# `set_*` procedures) all uses this slot via `assert_authorized`.
+
+use miden::protocol::active_account
+use miden::standards::access::ownable2step
+
+# CONSTANTS
+# =================================================================================================
+
+const AUTHORITY_SLOT = word("miden::standards::access::authority::authority")
+
+const AUTHORITY_AUTH_CONTROLLED = 0
+const AUTHORITY_OWNER_CONTROLLED = 1
+# AUTHORITY_RBAC_CONTROLLED = 2 — currently unsupported; reserved for future RBAC integration.
+
+# ERRORS
+# =================================================================================================
+
+const ERR_UNSUPPORTED_AUTHORITY = "authority discriminator is not supported"
+
+# PUBLIC PROCEDURES
+# =================================================================================================
+
+#! Returns the authority discriminator stored on the account.
+#!
+#! Inputs:  []
+#! Outputs: [authority]
+#!
+#! Where:
+#! - authority is a single Felt: 0 = AuthControlled, 1 = OwnerControlled, 2 = RbacControlled.
+#!
+#! Invocation: exec
+pub proc get_authority
+    push.AUTHORITY_SLOT[0..2] exec.active_account::get_item
+    # => [authority, 0, 0, 0]
+
+    movdn.3
+    drop drop drop
+    # => [authority]
+end
+
+#! Asserts the caller is authorized to invoke an authority-gated procedure.
+#!
+#! - AuthControlled (0)  → no-op (the account's auth component already gated the call).
+#! - OwnerControlled (1) → calls `ownable2step::assert_sender_is_owner`.
+#! - RbacControlled (2)  → currently unsupported, panics with ERR_UNSUPPORTED_AUTHORITY.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Panics if:
+#! - the discriminator is OwnerControlled and the sender is not the registered owner.
+#! - the discriminator is RbacControlled (not yet supported).
+#! - the discriminator is an unknown value.
+#!
+#! Invocation: exec
+pub proc assert_authorized
+    exec.get_authority
+    # => [authority]
+
+    dup eq.AUTHORITY_AUTH_CONTROLLED
+    if.true
+        # AuthControlled — auth component already gated the call.
+        drop
+    else
+        eq.AUTHORITY_OWNER_CONTROLLED
+        if.true
+            exec.ownable2step::assert_sender_is_owner
+        else
+            # Unknown discriminator (including RbacControlled, which is reserved but not
+            # yet implemented).
+            push.0 assert.err=ERR_UNSUPPORTED_AUTHORITY
+        end
+    end
+end

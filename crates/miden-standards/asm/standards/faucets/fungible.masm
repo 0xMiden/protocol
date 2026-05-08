@@ -1,13 +1,14 @@
 # miden::standards::faucets::fungible
 #
 # Storage layout and accessors for fungible faucet accounts: token config (supply, decimals,
-# symbol), name, optional fields (description, logo_uri, external_link), and owner-gated
-# setters. Depends on ownable2step for ownership checks.
+# symbol), name, optional fields (description, logo_uri, external_link), and authority-gated
+# setters. The setters delegate authorization to the account-wide `Authority` component via
+# `authority::assert_authorized`.
 
 use miden::core::mem
 use miden::protocol::active_account
 use miden::protocol::native_account
-use miden::standards::access::ownable2step
+use miden::standards::access::authority
 
 # =================================================================================================
 # CONSTANTS — slot names
@@ -378,7 +379,7 @@ pub proc set_description
     assert.err=ERR_DESCRIPTION_NOT_MUTABLE
     # => [DESCRIPTION_HASH, pad(12)]
 
-    exec.ownable2step::assert_sender_is_owner
+    exec.authority::assert_authorized
     # => [DESCRIPTION_HASH, pad(12)]
 
     # Pipe 7 words from advice map into local words 0–6, validating the hash.
@@ -455,7 +456,7 @@ pub proc set_logo_uri
     assert.err=ERR_LOGO_URI_NOT_MUTABLE
     # => [LOGO_URI_HASH, pad(12)]
 
-    exec.ownable2step::assert_sender_is_owner
+    exec.authority::assert_authorized
     # => [LOGO_URI_HASH, pad(12)]
 
     adv.push_mapval
@@ -531,7 +532,7 @@ pub proc set_external_link
     assert.err=ERR_EXTERNAL_LINK_NOT_MUTABLE
     # => [EXTERNAL_LINK_HASH, pad(12)]
 
-    exec.ownable2step::assert_sender_is_owner
+    exec.authority::assert_authorized
     # => [EXTERNAL_LINK_HASH, pad(12)]
 
     adv.push_mapval
@@ -592,7 +593,7 @@ pub proc set_max_supply
     assert.err=ERR_MAX_SUPPLY_NOT_MUTABLE
 
     # 2. Verify note sender is the owner
-    exec.ownable2step::assert_sender_is_owner
+    exec.authority::assert_authorized
     # => [new_max_supply, pad(15)]
 
     # 3. Read current metadata word

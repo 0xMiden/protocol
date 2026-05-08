@@ -17,7 +17,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::TokenSymbol;
 use miden_protocol::errors::AccountIdError;
-use miden_standards::account::access::Ownable2Step;
+use miden_standards::account::access::{Authority, Ownable2Step};
 use miden_standards::account::faucets::{BasicFungibleFaucet, FungibleFaucetError};
 use miden_standards::account::metadata::TokenName;
 use miden_standards::account::policies::TokenPolicyManager;
@@ -374,7 +374,7 @@ impl AggLayerFaucet {
             &*METADATA_HASH_HI_SLOT_NAME,
             BasicFungibleFaucet::token_config_slot(),
             Ownable2Step::slot_name(),
-            TokenPolicyManager::policy_authority_slot(),
+            Authority::slot_name(),
             TokenPolicyManager::active_mint_policy_slot(),
             TokenPolicyManager::active_burn_policy_slot(),
             TokenPolicyManager::allowed_mint_policies_slot(),

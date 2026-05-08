@@ -629,7 +629,7 @@ impl BasicFungibleFaucetBuilder {
 use miden_protocol::account::{AccountBuilder, AccountStorageMode};
 
 use crate::AuthMethod;
-use crate::account::access::AccessControl;
+use crate::account::access::{AccessControl, Authority};
 use crate::account::auth::{AuthSingleSigAcl, AuthSingleSigAclConfig, NoAuth};
 use crate::account::policies::TokenPolicyManager;
 
@@ -643,19 +643,20 @@ use crate::account::policies::TokenPolicyManager;
 ///   [`AuthMethod::NoAuth`] for network-style faucets.
 /// - `access_control`: [`AccessControl::AuthControlled`] for auth-only faucets, or
 ///   [`AccessControl::Ownable2Step`] / [`AccessControl::Rbac`] for owner-controlled faucets.
-/// - `token_policy_manager`: the unified [`TokenPolicyManager`] holding both mint and burn policy
-///   plus the shared [`PolicyAuthority`].
+/// - `authority`: the account-wide [`Authority`] discriminator that gates `set_*_policy` and
+///   `set_*` metadata mutators. Should be paired with `access_control` (e.g. `Ownable2Step` access
+///   control with [`Authority::OwnerControlled`]).
+/// - `token_policy_manager`: the unified [`TokenPolicyManager`] holding both mint and burn policy.
 ///
 /// The faucet itself, including all token metadata, is provided in the `faucet` parameter (see
 /// [`BasicFungibleFaucet::builder`]).
-///
-/// [`PolicyAuthority`]: crate::account::policies::PolicyAuthority
 pub fn create_basic_fungible_faucet(
     init_seed: [u8; 32],
     faucet: BasicFungibleFaucet,
     storage_mode: AccountStorageMode,
     auth_method: AuthMethod,
     access_control: AccessControl,
+    authority: Authority,
     token_policy_manager: TokenPolicyManager,
 ) -> Result<Account, FungibleFaucetError> {
     let mint_proc_root = BasicFungibleFaucet::mint_and_send_digest();
@@ -689,6 +690,7 @@ pub fn create_basic_fungible_faucet(
         .with_auth_component(auth_component)
         .with_component(faucet)
         .with_components(access_control)
+        .with_component(authority)
         .with_components(token_policy_manager)
         .build()
         .map_err(FungibleFaucetError::AccountError)?;
@@ -707,14 +709,10 @@ mod tests {
     use miden_protocol::{Felt, Word};
 
     use super::*;
+    use crate::account::access::Authority;
     use crate::account::auth::{AuthSingleSig, AuthSingleSigAcl};
     use crate::account::metadata::{Description, TokenName};
-    use crate::account::policies::{
-        BurnPolicyConfig,
-        MintPolicyConfig,
-        PolicyAuthority,
-        TokenPolicyManager,
-    };
+    use crate::account::policies::{BurnPolicyConfig, MintPolicyConfig, TokenPolicyManager};
     use crate::account::wallets::BasicWallet;
 
     #[test]
@@ -751,11 +749,8 @@ mod tests {
             storage_mode,
             auth_method,
             AccessControl::AuthControlled,
-            TokenPolicyManager::new(
-                PolicyAuthority::AuthControlled,
-                MintPolicyConfig::AllowAll,
-                BurnPolicyConfig::AllowAll,
-            ),
+            Authority::AuthControlled,
+            TokenPolicyManager::new(MintPolicyConfig::AllowAll, BurnPolicyConfig::AllowAll),
         )
         .unwrap();
 

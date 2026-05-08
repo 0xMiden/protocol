@@ -11,6 +11,7 @@ use miden_protocol::note::{Note, NoteScript};
 use crate::AuthMethod;
 use crate::account::components::{
     StandardAccountComponent,
+    authority_library,
     basic_fungible_faucet_library,
     basic_wallet_library,
     guarded_multisig_library,
@@ -98,13 +99,16 @@ impl AccountInterfaceExt for AccountInterface {
                     component_proc_digests
                         .extend(basic_fungible_faucet_library().mast_forest().procedure_digests());
                 },
+                AccountComponentInterface::Authority => {
+                    component_proc_digests
+                        .extend(authority_library().mast_forest().procedure_digests());
+                },
                 AccountComponentInterface::Ownable2Step => {
                     component_proc_digests
                         .extend(ownable2step_library().mast_forest().procedure_digests());
                 },
                 AccountComponentInterface::RoleBasedAccessControl => {
-                    component_proc_digests
-                        .extend(rbac_library().mast_forest().procedure_digests());
+                    component_proc_digests.extend(rbac_library().mast_forest().procedure_digests());
                 },
                 AccountComponentInterface::AuthSingleSig => {
                     component_proc_digests

@@ -31,14 +31,10 @@ use miden_protocol::errors::MasmError;
 use miden_protocol::note::{NoteTag, NoteType};
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
+use miden_standards::account::access::Authority;
 use miden_standards::account::faucets::BasicFungibleFaucet;
 use miden_standards::account::metadata::TokenName;
-use miden_standards::account::policies::{
-    BurnPolicyConfig,
-    MintPolicyConfig,
-    PolicyAuthority,
-    TokenPolicyManager,
-};
+use miden_standards::account::policies::{BurnPolicyConfig, MintPolicyConfig, TokenPolicyManager};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::procedure_digest;
 use miden_standards::testing::account_component::MockFaucetComponent;
@@ -778,8 +774,8 @@ fn add_faucet_with_callbacks(
         .storage_mode(AccountStorageMode::Public)
         .account_type(AccountType::FungibleFaucet)
         .with_component(faucet)
+        .with_component(Authority::AuthControlled)
         .with_components(TokenPolicyManager::new(
-            PolicyAuthority::AuthControlled,
             MintPolicyConfig::AllowAll,
             BurnPolicyConfig::AllowAll,
         ))

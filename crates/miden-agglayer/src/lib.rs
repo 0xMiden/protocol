@@ -15,13 +15,12 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::TokenSymbol;
 use miden_protocol::note::NoteScript;
-use miden_standards::account::access::Ownable2Step;
+use miden_standards::account::access::{Authority, Ownable2Step};
 use miden_standards::account::auth::NoAuth;
 use miden_standards::account::policies::{
     BurnAllowAll,
     BurnPolicyConfig,
     MintPolicyConfig,
-    PolicyAuthority,
     TokenPolicyManager,
 };
 use miden_utils_sync::LazyLock;
@@ -247,18 +246,16 @@ fn create_agglayer_faucet_builder(
 
     // `allow_all` is explicitly registered in the allowed list so the owner can open burns at
     // runtime via `set_burn_policy`.
-    let token_policy_manager = TokenPolicyManager::new(
-        PolicyAuthority::OwnerControlled,
-        MintPolicyConfig::OwnerOnly,
-        BurnPolicyConfig::OwnerOnly,
-    )
-    .with_allowed_burn_policy(BurnAllowAll::root());
+    let token_policy_manager =
+        TokenPolicyManager::new(MintPolicyConfig::OwnerOnly, BurnPolicyConfig::OwnerOnly)
+            .with_allowed_burn_policy(BurnAllowAll::root());
 
     Account::builder(seed.into())
         .account_type(AccountType::FungibleFaucet)
         .storage_mode(AccountStorageMode::Network)
         .with_component(agglayer_component)
         .with_component(Ownable2Step::new(bridge_account_id))
+        .with_component(Authority::OwnerControlled)
         .with_components(token_policy_manager)
         .with_component(BurnAllowAll)
 }

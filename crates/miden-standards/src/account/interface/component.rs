@@ -22,6 +22,10 @@ pub enum AccountComponentInterface {
     /// [`BasicFungibleFaucet`][crate::account::faucets::BasicFungibleFaucet] module.
     BasicFungibleFaucet,
     /// Exposes procedures from the
+    /// [`Authority`][crate::account::access::Authority] access component (account-wide
+    /// authority discriminator consulted by `set_*` procedures).
+    Authority,
+    /// Exposes procedures from the
     /// [`Ownable2Step`][crate::account::access::Ownable2Step] access component.
     Ownable2Step,
     /// Exposes procedures from the
@@ -69,6 +73,7 @@ impl AccountComponentInterface {
         match self {
             AccountComponentInterface::BasicWallet => "Basic Wallet".to_string(),
             AccountComponentInterface::BasicFungibleFaucet => "Basic Fungible Faucet".to_string(),
+            AccountComponentInterface::Authority => "Authority".to_string(),
             AccountComponentInterface::Ownable2Step => "Ownable2Step".to_string(),
             AccountComponentInterface::RoleBasedAccessControl => {
                 "Role Based Access Control".to_string()

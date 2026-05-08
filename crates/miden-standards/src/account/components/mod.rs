@@ -41,6 +41,15 @@ static RBAC_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     Library::read_from_bytes(bytes).expect("Shipped RoleBasedAccessControl library is well-formed")
 });
 
+// Initialize the Authority library only once.
+static AUTHORITY_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+    let bytes = include_bytes!(concat!(
+        env!("OUT_DIR"),
+        "/assets/account_components/access/authority.masl"
+    ));
+    Library::read_from_bytes(bytes).expect("Shipped Authority library is well-formed")
+});
+
 // AUTH LIBRARIES
 // ================================================================================================
 
@@ -169,6 +178,11 @@ pub fn rbac_library() -> Library {
     RBAC_LIBRARY.clone()
 }
 
+/// Returns the Authority Library.
+pub fn authority_library() -> Library {
+    AUTHORITY_LIBRARY.clone()
+}
+
 /// Returns the Basic Fungible Faucet Library.
 pub fn basic_fungible_faucet_library() -> Library {
     BASIC_FUNGIBLE_FAUCET_LIBRARY.clone()
@@ -237,6 +251,7 @@ pub fn network_account_auth_library() -> Library {
 pub enum StandardAccountComponent {
     BasicWallet,
     BasicFungibleFaucet,
+    Authority,
     Ownable2Step,
     RoleBasedAccessControl,
     AuthSingleSig,
@@ -253,6 +268,7 @@ impl StandardAccountComponent {
         let library = match self {
             Self::BasicWallet => BASIC_WALLET_LIBRARY.as_ref(),
             Self::BasicFungibleFaucet => BASIC_FUNGIBLE_FAUCET_LIBRARY.as_ref(),
+            Self::Authority => AUTHORITY_LIBRARY.as_ref(),
             Self::Ownable2Step => OWNABLE2STEP_LIBRARY.as_ref(),
             Self::RoleBasedAccessControl => RBAC_LIBRARY.as_ref(),
             Self::AuthSingleSig => SINGLESIG_LIBRARY.as_ref(),
@@ -300,11 +316,15 @@ impl StandardAccountComponent {
                 Self::BasicFungibleFaucet => {
                     component_interface_vec.push(AccountComponentInterface::BasicFungibleFaucet)
                 },
+                Self::Authority => {
+                    component_interface_vec.push(AccountComponentInterface::Authority)
+                },
                 Self::Ownable2Step => {
                     component_interface_vec.push(AccountComponentInterface::Ownable2Step)
                 },
-                Self::RoleBasedAccessControl => component_interface_vec
-                    .push(AccountComponentInterface::RoleBasedAccessControl),
+                Self::RoleBasedAccessControl => {
+                    component_interface_vec.push(AccountComponentInterface::RoleBasedAccessControl)
+                },
                 Self::AuthSingleSig => {
                     component_interface_vec.push(AccountComponentInterface::AuthSingleSig)
                 },
@@ -335,8 +355,8 @@ impl StandardAccountComponent {
     ) {
         Self::BasicWallet.extract_component(procedures_set, component_interface_vec);
         Self::BasicFungibleFaucet.extract_component(procedures_set, component_interface_vec);
-        Self::RoleBasedAccessControl
-            .extract_component(procedures_set, component_interface_vec);
+        Self::Authority.extract_component(procedures_set, component_interface_vec);
+        Self::RoleBasedAccessControl.extract_component(procedures_set, component_interface_vec);
         Self::Ownable2Step.extract_component(procedures_set, component_interface_vec);
         Self::AuthSingleSig.extract_component(procedures_set, component_interface_vec);
         Self::AuthSingleSigAcl.extract_component(procedures_set, component_interface_vec);

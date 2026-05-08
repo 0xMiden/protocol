@@ -2,6 +2,7 @@ use alloc::vec;
 
 use miden_protocol::account::{AccountComponent, AccountId};
 
+pub mod authority;
 pub mod ownable2step;
 pub mod rbac;
 
@@ -58,5 +59,6 @@ impl IntoIterator for AccessControl {
     }
 }
 
+pub use authority::{Authority, AuthorityError};
 pub use ownable2step::{Ownable2Step, Ownable2StepError};
 pub use rbac::RoleBasedAccessControl;

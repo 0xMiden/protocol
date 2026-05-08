@@ -1,14 +1,15 @@
 //! Unified token policy manager.
 //!
-//! [`TokenPolicyManager`] owns the five storage slots (shared authority + active/allowed maps for
-//! mint and burn) and exposes the management procedures via a single MASM library.
+//! [`TokenPolicyManager`] owns the four storage slots (active/allowed maps for mint and burn) and
+//! exposes the management procedures via a single MASM library. Authority for switching policies
+//! is provided by the separate [`Authority`][crate::account::access::Authority] component, which
+//! must be installed on the account.
 
 use alloc::vec::Vec;
 
 use miden_protocol::Word;
 use miden_protocol::account::component::{
     AccountComponentMetadata,
-    FeltSchema,
     SchemaType,
     StorageSchema,
     StorageSlotSchema,
@@ -23,18 +24,12 @@ use miden_protocol::account::{
 };
 use miden_protocol::utils::sync::LazyLock;
 
-use super::PolicyAuthority;
 use super::burn::BurnPolicyConfig;
 use super::mint::MintPolicyConfig;
 use crate::account::components::policy_manager_library;
 
 // STORAGE SLOT NAMES
 // ================================================================================================
-
-static POLICY_AUTHORITY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::faucets::policies::policy_manager::policy_authority")
-        .expect("storage slot name should be valid")
-});
 
 static ACTIVE_MINT_POLICY_PROC_ROOT_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new(
@@ -71,11 +66,9 @@ static ALLOWED_BURN_POLICY_PROC_ROOTS_SLOT_NAME: LazyLock<StorageSlotName> = Laz
 /// procedures for both mint and burn sides.
 ///
 /// The component exposes `set_*_policy`, `get_*_policy`, and `execute_*_policy` procedures for
-/// both mint and burn. The shared [`PolicyAuthority`] mode controls who can change either policy:
-/// - [`PolicyAuthority::AuthControlled`]: changes are gated by the account's authentication
-///   component.
-/// - [`PolicyAuthority::OwnerControlled`]: changes require the account owner (verified through the
-///   `Ownable2Step` companion component).
+/// both mint and burn. Authorization for switching the active policies is delegated to the
+/// account-wide [`Authority`][crate::account::access::Authority] component, which must be
+/// installed alongside this manager.
 ///
 /// Construct via [`Self::new`] and pass the manager directly to
 /// [`miden_protocol::account::AccountBuilder::with_components`] (the type implements
@@ -88,14 +81,12 @@ static ALLOWED_BURN_POLICY_PROC_ROOTS_SLOT_NAME: LazyLock<StorageSlotName> = Laz
 ///
 /// ## Storage layout
 ///
-/// - [`Self::policy_authority_slot`]: shared authority mode.
 /// - [`Self::active_mint_policy_slot`]: procedure root of the active mint policy.
 /// - [`Self::active_burn_policy_slot`]: procedure root of the active burn policy.
 /// - [`Self::allowed_mint_policies_slot`]: map of allowed mint policy roots.
 /// - [`Self::allowed_burn_policies_slot`]: map of allowed burn policy roots.
 #[derive(Debug, Clone)]
 pub struct TokenPolicyManager {
-    authority: PolicyAuthority,
     mint_policy: MintPolicyConfig,
     burn_policy: BurnPolicyConfig,
     extra_allowed_mint_policies: Vec<Word>,
@@ -115,18 +106,16 @@ impl TokenPolicyManager {
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
-    /// Creates a new token policy manager configured with the given authority and the initial
-    /// active mint and burn policies. Only the chosen policies are registered as allowed by
-    /// default; runtime switching to additional policies requires explicit opt-in via
-    /// [`Self::with_allowed_mint_policy`] / [`Self::with_allowed_burn_policy`] plus installing the
-    /// corresponding policy components.
-    pub fn new(
-        authority: PolicyAuthority,
-        mint_policy: MintPolicyConfig,
-        burn_policy: BurnPolicyConfig,
-    ) -> Self {
+    /// Creates a new token policy manager configured with the initial active mint and burn
+    /// policies. Only the chosen policies are registered as allowed by default; runtime switching
+    /// to additional policies requires explicit opt-in via [`Self::with_allowed_mint_policy`] /
+    /// [`Self::with_allowed_burn_policy`] plus installing the corresponding policy components.
+    ///
+    /// Authority for switching policies is provided by the separate
+    /// [`Authority`][crate::account::access::Authority] component, which must be installed on
+    /// the account.
+    pub fn new(mint_policy: MintPolicyConfig, burn_policy: BurnPolicyConfig) -> Self {
         Self {
-            authority,
             mint_policy,
             burn_policy,
             extra_allowed_mint_policies: Vec::new(),
@@ -163,11 +152,6 @@ impl TokenPolicyManager {
     // ACCESSORS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns the authority used by this manager.
-    pub fn authority(&self) -> PolicyAuthority {
-        self.authority
-    }
-
     /// Returns the active mint policy procedure root.
     pub fn active_mint_policy(&self) -> Word {
         self.mint_policy.root()
@@ -190,11 +174,6 @@ impl TokenPolicyManager {
         let mut roots = vec![self.burn_policy.root()];
         roots.extend(self.extra_allowed_burn_policies.iter().copied());
         roots
-    }
-
-    /// Returns the [`StorageSlotName`] containing the policy authority mode.
-    pub fn policy_authority_slot() -> &'static StorageSlotName {
-        &POLICY_AUTHORITY_SLOT_NAME
     }
 
     /// Returns the [`StorageSlotName`] where the active mint policy procedure root is stored.
@@ -220,18 +199,6 @@ impl TokenPolicyManager {
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
         let storage_schema = StorageSchema::new(vec![
-            (
-                POLICY_AUTHORITY_SLOT_NAME.clone(),
-                StorageSlotSchema::value(
-                    "Token policy authority",
-                    [
-                        FeltSchema::u8("policy_authority"),
-                        FeltSchema::new_void(),
-                        FeltSchema::new_void(),
-                        FeltSchema::new_void(),
-                    ],
-                ),
-            ),
             (
                 ACTIVE_MINT_POLICY_PROC_ROOT_SLOT_NAME.clone(),
                 StorageSlotSchema::value(
@@ -290,7 +257,6 @@ impl TokenPolicyManager {
             .expect("allowed burn policy roots should have unique keys");
 
         vec![
-            StorageSlot::with_value(POLICY_AUTHORITY_SLOT_NAME.clone(), self.authority.into()),
             StorageSlot::with_value(
                 ACTIVE_MINT_POLICY_PROC_ROOT_SLOT_NAME.clone(),
                 self.mint_policy.root(),
