@@ -2,6 +2,8 @@
 
 extern crate alloc;
 
+use alloc::collections::BTreeSet;
+
 use miden_assembly::Library;
 use miden_assembly::serde::Deserializable;
 use miden_core::{Felt, Word};
@@ -14,9 +16,9 @@ use miden_protocol::account::{
     AccountType,
 };
 use miden_protocol::asset::TokenSymbol;
-use miden_protocol::note::NoteScript;
+use miden_protocol::note::{NoteScript, NoteScriptRoot};
 use miden_standards::account::access::Ownable2Step;
-use miden_standards::account::auth::NoAuth;
+use miden_standards::account::auth::AuthNetworkAccount;
 use miden_standards::account::policies::{
     BurnAllowAll,
     BurnPolicyConfig,
@@ -24,6 +26,7 @@ use miden_standards::account::policies::{
     PolicyAuthority,
     TokenPolicyManager,
 };
+use miden_standards::note::{BurnNote, MintNote};
 use miden_utils_sync::LazyLock;
 
 pub mod b2agg_note;
@@ -80,6 +83,31 @@ static CLAIM_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 /// Returns the CLAIM (Bridge from AggLayer) note script.
 pub fn claim_script() -> NoteScript {
     CLAIM_SCRIPT.clone()
+}
+
+/// Returns the root of the CLAIM (Bridge from AggLayer) note script.
+pub fn claim_script_root() -> NoteScriptRoot {
+    CLAIM_SCRIPT.root()
+}
+
+/// Returns the set of input-note script roots that AggLayer bridge accounts accept. The bridge's
+/// [`AuthNetworkAccount`] component is initialized with this allowlist, which means any
+/// transaction consuming a note outside this set is rejected before reaching
+/// `output_note::create`.
+pub fn bridge_note_allowlist() -> BTreeSet<NoteScriptRoot> {
+    BTreeSet::from([
+        claim_script_root(),
+        B2AggNote::script_root(),
+        ConfigAggBridgeNote::script_root(),
+        UpdateGerNote::script_root(),
+    ])
+}
+
+/// Returns the set of input-note script roots that AggLayer faucet accounts accept. The faucet's
+/// [`AuthNetworkAccount`] component is initialized with this allowlist so only MINT and BURN
+/// notes can drive the faucet.
+pub fn faucet_note_allowlist() -> BTreeSet<NoteScriptRoot> {
+    BTreeSet::from([MintNote::script_root(), BurnNote::script_root()])
 }
 
 // AGGLAYER ACCOUNT COMPONENTS
@@ -190,7 +218,10 @@ pub fn create_bridge_account(
     ger_manager_id: AccountId,
 ) -> Account {
     create_bridge_account_builder(seed, bridge_admin_id, ger_manager_id)
-        .with_auth_component(AccountComponent::from(NoAuth))
+        .with_auth_component(
+            AuthNetworkAccount::with_allowlist(bridge_note_allowlist())
+                .expect("bridge note allowlist is non-empty"),
+        )
         .build()
         .expect("bridge account should be valid")
 }
@@ -205,7 +236,10 @@ pub fn create_existing_bridge_account(
     ger_manager_id: AccountId,
 ) -> Account {
     create_bridge_account_builder(seed, bridge_admin_id, ger_manager_id)
-        .with_auth_component(AccountComponent::from(NoAuth))
+        .with_auth_component(
+            AuthNetworkAccount::with_allowlist(bridge_note_allowlist())
+                .expect("bridge note allowlist is non-empty"),
+        )
         .build_existing()
         .expect("bridge account should be valid")
 }
@@ -290,7 +324,10 @@ pub fn create_agglayer_faucet(
         scale,
         metadata_hash,
     )
-    .with_auth_component(AccountComponent::from(NoAuth))
+    .with_auth_component(
+        AuthNetworkAccount::with_allowlist(faucet_note_allowlist())
+            .expect("faucet note allowlist is non-empty"),
+    )
     .build()
     .expect("agglayer faucet account should be valid")
 }
@@ -324,7 +361,10 @@ pub fn create_existing_agglayer_faucet(
         scale,
         metadata_hash,
     )
-    .with_auth_component(AccountComponent::from(NoAuth))
+    .with_auth_component(
+        AuthNetworkAccount::with_allowlist(faucet_note_allowlist())
+            .expect("faucet note allowlist is non-empty"),
+    )
     .build_existing()
     .expect("agglayer faucet account should be valid")
 }
