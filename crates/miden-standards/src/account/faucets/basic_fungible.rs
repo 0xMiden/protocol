@@ -22,18 +22,7 @@ use miden_protocol::{Felt, Word};
 use super::{FungibleFaucetError, TokenMetadataError};
 use crate::account::components::basic_fungible_faucet_library;
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
-use crate::account::metadata::{
-    DESCRIPTION_SLOTS,
-    Description,
-    EXTERNAL_LINK_SLOTS,
-    ExternalLink,
-    LOGO_URI_SLOTS,
-    LogoURI,
-    MUTABILITY_CONFIG_SLOT,
-    NAME_SLOTS,
-    TokenMetadata,
-    TokenName,
-};
+use crate::account::metadata::{Description, ExternalLink, LogoURI, TokenMetadata, TokenName};
 use crate::procedure_digest;
 
 // CONSTANTS
@@ -263,48 +252,7 @@ impl BasicFungibleFaucet {
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
         let mut schema_entries = vec![Self::token_config_slot_schema()];
-
-        // Name chunks (2 slots)
-        for (i, slot) in NAME_SLOTS.iter().enumerate() {
-            schema_entries.push((
-                slot.clone(),
-                StorageSlotSchema::value(
-                    alloc::format!("Name chunk {i}"),
-                    core::array::from_fn(|j| FeltSchema::felt(alloc::format!("data_{j}"))),
-                ),
-            ));
-        }
-
-        // Mutability config (1 slot)
-        schema_entries.push((
-            MUTABILITY_CONFIG_SLOT.clone(),
-            StorageSlotSchema::value(
-                "Mutability config",
-                [
-                    FeltSchema::bool("is_description_mutable"),
-                    FeltSchema::bool("is_logo_uri_mutable"),
-                    FeltSchema::bool("is_external_link_mutable"),
-                    FeltSchema::bool("is_max_supply_mutable"),
-                ],
-            ),
-        ));
-
-        // Description, Logo URI, External link (7 slots each)
-        for (label, slots) in [
-            ("Description", DESCRIPTION_SLOTS.as_slice()),
-            ("Logo URI", LOGO_URI_SLOTS.as_slice()),
-            ("External link", EXTERNAL_LINK_SLOTS.as_slice()),
-        ] {
-            for (i, slot) in slots.iter().enumerate() {
-                schema_entries.push((
-                    slot.clone(),
-                    StorageSlotSchema::value(
-                        alloc::format!("{label} chunk {i}"),
-                        core::array::from_fn(|j| FeltSchema::felt(alloc::format!("data_{j}"))),
-                    ),
-                ));
-            }
-        }
+        schema_entries.extend(TokenMetadata::storage_schema());
 
         let storage_schema =
             StorageSchema::new(schema_entries).expect("storage schema should be valid");

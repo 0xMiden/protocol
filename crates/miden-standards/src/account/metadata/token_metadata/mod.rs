@@ -35,6 +35,7 @@
 
 use alloc::vec::Vec;
 
+use miden_protocol::account::component::{FeltSchema, StorageSlotSchema};
 use miden_protocol::account::{AccountStorage, StorageSlot, StorageSlotName};
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
@@ -46,7 +47,7 @@ use crate::utils::{FixedWidthString, FixedWidthStringError};
 // ================================================================================================
 
 /// Token name (2 Words = 8 felts), split across 2 slots.
-pub(crate) static NAME_SLOTS: LazyLock<[StorageSlotName; 2]> = LazyLock::new(|| {
+static NAME_SLOTS: LazyLock<[StorageSlotName; 2]> = LazyLock::new(|| {
     [
         StorageSlotName::new("miden::standards::faucets::fungible::token_name_0")
             .expect("valid slot name"),
@@ -57,13 +58,13 @@ pub(crate) static NAME_SLOTS: LazyLock<[StorageSlotName; 2]> = LazyLock::new(|| 
 
 /// Mutability config slot: `[is_desc_mutable, is_logo_mutable, is_extlink_mutable,
 /// is_max_supply_mutable]`.
-pub(crate) static MUTABILITY_CONFIG_SLOT: LazyLock<StorageSlotName> = LazyLock::new(|| {
+static MUTABILITY_CONFIG_SLOT: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::faucets::fungible::mutability_config")
         .expect("storage slot name should be valid")
 });
 
 /// Description (7 Words), split across 7 slots.
-pub(crate) static DESCRIPTION_SLOTS: LazyLock<[StorageSlotName; 7]> = LazyLock::new(|| {
+static DESCRIPTION_SLOTS: LazyLock<[StorageSlotName; 7]> = LazyLock::new(|| {
     [
         StorageSlotName::new("miden::standards::faucets::fungible::token_description_0")
             .expect("valid slot name"),
@@ -83,7 +84,7 @@ pub(crate) static DESCRIPTION_SLOTS: LazyLock<[StorageSlotName; 7]> = LazyLock::
 });
 
 /// Logo URI (7 Words), split across 7 slots.
-pub(crate) static LOGO_URI_SLOTS: LazyLock<[StorageSlotName; 7]> = LazyLock::new(|| {
+static LOGO_URI_SLOTS: LazyLock<[StorageSlotName; 7]> = LazyLock::new(|| {
     [
         StorageSlotName::new("miden::standards::faucets::fungible::logo_uri_0")
             .expect("valid slot name"),
@@ -103,7 +104,7 @@ pub(crate) static LOGO_URI_SLOTS: LazyLock<[StorageSlotName; 7]> = LazyLock::new
 });
 
 /// External link (7 Words), split across 7 slots.
-pub(crate) static EXTERNAL_LINK_SLOTS: LazyLock<[StorageSlotName; 7]> = LazyLock::new(|| {
+static EXTERNAL_LINK_SLOTS: LazyLock<[StorageSlotName; 7]> = LazyLock::new(|| {
     [
         StorageSlotName::new("miden::standards::faucets::fungible::external_link_0")
             .expect("valid slot name"),
@@ -409,6 +410,55 @@ impl TokenMetadata {
     /// Returns the [`StorageSlotName`] for an external link chunk by index (0..=6).
     pub fn external_link_slot(index: usize) -> &'static StorageSlotName {
         &EXTERNAL_LINK_SLOTS[index]
+    }
+
+    /// Returns the storage slot schema entries describing the token metadata layout
+    /// (name chunks, mutability config, description, logo URI, external link).
+    ///
+    /// Embedding components should call this and extend their own schema with the result.
+    pub fn storage_schema() -> Vec<(StorageSlotName, StorageSlotSchema)> {
+        let mut entries: Vec<(StorageSlotName, StorageSlotSchema)> = Vec::new();
+
+        for (i, slot) in NAME_SLOTS.iter().enumerate() {
+            entries.push((
+                slot.clone(),
+                StorageSlotSchema::value(
+                    alloc::format!("Name chunk {i}"),
+                    core::array::from_fn(|j| FeltSchema::felt(alloc::format!("data_{j}"))),
+                ),
+            ));
+        }
+
+        entries.push((
+            MUTABILITY_CONFIG_SLOT.clone(),
+            StorageSlotSchema::value(
+                "Mutability config",
+                [
+                    FeltSchema::bool("is_description_mutable"),
+                    FeltSchema::bool("is_logo_uri_mutable"),
+                    FeltSchema::bool("is_external_link_mutable"),
+                    FeltSchema::bool("is_max_supply_mutable"),
+                ],
+            ),
+        ));
+
+        for (label, slots) in [
+            ("Description", DESCRIPTION_SLOTS.as_slice()),
+            ("Logo URI", LOGO_URI_SLOTS.as_slice()),
+            ("External link", EXTERNAL_LINK_SLOTS.as_slice()),
+        ] {
+            for (i, slot) in slots.iter().enumerate() {
+                entries.push((
+                    slot.clone(),
+                    StorageSlotSchema::value(
+                        alloc::format!("{label} chunk {i}"),
+                        core::array::from_fn(|j| FeltSchema::felt(alloc::format!("data_{j}"))),
+                    ),
+                ));
+            }
+        }
+
+        entries
     }
 
     // STORAGE
