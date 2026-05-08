@@ -14,6 +14,7 @@ use miden_processor::{
     Program,
     StackInputs,
 };
+use miden_protocol::Felt;
 use miden_protocol::account::AccountId;
 use miden_protocol::address::NetworkId;
 use miden_protocol::testing::account_id::{
