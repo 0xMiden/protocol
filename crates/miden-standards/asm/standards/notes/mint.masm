@@ -57,7 +57,7 @@ const ERR_MINT_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS="MINT script expects exactly 6
 #! - [STORAGE]: Variable-length storage for the output note (Vec<Felt>)
 #!              The number of output note storage items = num_mint_note_storage_items - 12
 #!
-#! The padding is necessary since note::build_recipient expects a word-aligned storage_ptr.
+#! The padding is necessary since note::compute_and_store_recipient expects a word-aligned storage_ptr.
 #!
 #! Panics if:
 #! - account does not expose mint_and_send procedure.
@@ -97,7 +97,7 @@ pub proc main
         push.PUBLIC_OUTPUT_NOTE_STORAGE_PTR
         # => [storage_ptr, num_output_note_storage, SERIAL_NUM, SCRIPT_ROOT, pad(8)]
 
-        exec.note::build_recipient
+        exec.note::compute_and_store_recipient
         # => [RECIPIENT, pad(12)]
 
         # push note_type, and load tag and amount

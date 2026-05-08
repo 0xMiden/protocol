@@ -705,7 +705,7 @@ async fn creating_note_with_fungible_asset_amount_zero_works() -> anyhow::Result
 }
 
 #[tokio::test]
-async fn test_build_recipient_hash() -> anyhow::Result<()> {
+async fn test_compute_recipient() -> anyhow::Result<()> {
     let tx_context = {
         let account =
             Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
@@ -746,7 +746,7 @@ async fn test_build_recipient_hash() -> anyhow::Result<()> {
             push.{output_serial_no}
             # => [SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT]
 
-            exec.note::build_recipient_hash
+            exec.note::compute_recipient
             # => [RECIPIENT, pad(12)]
 
             push.{NOTE_TYPE_PUBLIC}

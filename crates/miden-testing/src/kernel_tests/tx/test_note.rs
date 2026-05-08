@@ -184,7 +184,7 @@ fn note_setup_memory_assertions(exec_output: &ExecutionOutput) {
 }
 
 #[tokio::test]
-async fn test_build_recipient() -> anyhow::Result<()> {
+async fn test_compute_and_store_recipient() -> anyhow::Result<()> {
     let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
 
     // Create test script and serial number
@@ -210,21 +210,21 @@ async fn test_build_recipient() -> anyhow::Result<()> {
             push.{script_root}  # SCRIPT_ROOT
             push.{serial_num}   # SERIAL_NUM
             push.4.{base_addr}  # num_storage_items, storage_ptr
-            exec.note::build_recipient
+            exec.note::compute_and_store_recipient
             # => [RECIPIENT_4]
 
             # Test with 5 values (needs padding to 8)
             push.{script_root}  # SCRIPT_ROOT
             push.{serial_num}   # SERIAL_NUM
             push.5.{base_addr}  # num_storage_items, storage_ptr
-            exec.note::build_recipient
+            exec.note::compute_and_store_recipient
             # => [RECIPIENT_5, RECIPIENT_4]
 
             # Test with 8 values (no padding needed - exactly one rate block)
             push.{script_root}  # SCRIPT_ROOT
             push.{serial_num}   # SERIAL_NUM
             push.8.{base_addr}  # num_storage_items, storage_ptr
-            exec.note::build_recipient
+            exec.note::compute_and_store_recipient
             # => [RECIPIENT_8, RECIPIENT_5, RECIPIENT_4]
 
             # truncate the stack
