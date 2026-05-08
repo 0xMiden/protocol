@@ -222,7 +222,7 @@ mod tests {
 
         let owner = AccountId::dummy(
             [1u8; 15],
-            AccountIdVersion::Version0,
+            AccountIdVersion::Version1,
             AccountType::RegularAccountImmutableCode,
             AccountStorageMode::Private,
         );
