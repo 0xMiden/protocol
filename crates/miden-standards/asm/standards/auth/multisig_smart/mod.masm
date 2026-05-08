@@ -437,7 +437,8 @@ proc assert_proc_policies_lte_num_approvers
         exec.active_account::get_map_item
         # => [immediate_threshold, delayed_threshold, note_restrictions, 0, proc_index, num_approvers]
 
-        drop
+        # Drop the trailing 0 (depth 3) without disturbing the three policy fields above it.
+        movup.3 drop
         # => [immediate_threshold, delayed_threshold, note_restrictions, proc_index, num_approvers]
 
         # immediate_threshold <= num_approvers
@@ -631,13 +632,12 @@ pub proc update_signers_and_threshold(multisig_config_commitment: word)
     # => [OLD_THRESHOLD_CONFIG, pad(12)]
 
     # Save the old num_of_approvers for the post-loop scheme/pubkey cleanup, then drop the rest
-    # of OLD_THRESHOLD_CONFIG. The kernel auto-pads the consumed elements back, so the stack
-    # still ends with pad(16).
+    # of OLD_THRESHOLD_CONFIG.
     drop loc_store.1 drop drop
-    # => [pad(16)]
+    # => [pad(12)]
 
     loc_load.0
-    # => [num_approvers, pad(15)]
+    # => [num_approvers, pad(12)]
 
     dup neq.0
     while.true
@@ -753,13 +753,10 @@ pub proc auth_tx(salt: word)
     exec.::miden::standards::auth::signature::verify_signatures
     # => [num_verified_signatures, TX_SUMMARY_COMMITMENT, default_threshold]
 
-    movup.5
-    # => [default_threshold, num_verified_signatures, TX_SUMMARY_COMMITMENT]
-
     loc_load.0
-    # => [policy_threshold, default_threshold, num_verified_signatures, TX_SUMMARY_COMMITMENT]
+    # => [policy_threshold, num_verified_signatures, TX_SUMMARY_COMMITMENT, default_threshold]
 
-    swap
+    movup.6
     # => [default_threshold, policy_threshold, num_verified_signatures, TX_SUMMARY_COMMITMENT]
 
     exec.compute_tx_threshold

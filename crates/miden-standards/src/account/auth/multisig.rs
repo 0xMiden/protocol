@@ -26,9 +26,6 @@ use crate::account::components::multisig_library;
 // CONSTANTS
 // ================================================================================================
 
-// The first four slots/schemas are shared with `AuthMultisigSmart` to keep the storage layout in
-// sync; they are exposed as `pub(super)` so the sibling module can reference them directly
-// (`AuthMultisigSmart::*_slot()` returns these same statics).
 pub(super) static THRESHOLD_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::auth::multisig::threshold_config")
         .expect("storage slot name should be valid")

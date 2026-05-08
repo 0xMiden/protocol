@@ -25,7 +25,8 @@ use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_AUTH_PROCEDURE_MUST_BE_CALLED_ALONE,
-    ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_INPUT_OR_OUTPUT_NOTES,
+    ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_INPUT_NOTES,
+    ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_OUTPUT_NOTES,
 };
 use miden_testing::{MockChainBuilder, assert_transaction_executor_error};
 use miden_tx::TransactionExecutorError;
@@ -544,10 +545,168 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
         .execute()
         .await;
 
-    assert_transaction_executor_error!(
-        result,
-        ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_INPUT_OR_OUTPUT_NOTES
-    );
+    // The transaction creates an output note (no input notes), so after the input check passes
+    // the output check fires.
+    assert_transaction_executor_error!(result, ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_OUTPUT_NOTES);
+
+    Ok(())
+}
+
+/// `update_guardian_public_key` rejects every transaction that consumes input notes or creates
+/// output notes. Parametrized over the (input, output) tx layout so each path through the two
+/// separate `assert_no_*_notes` calls in `guardian.masm` is exercised — and the input check
+/// firing before the output check is verified explicitly via the (true, true) case.
+#[rstest]
+#[case::no_notes(false, false)]
+#[case::input_only(true, false)]
+#[case::output_only(false, true)]
+#[case::both(true, true)]
+#[tokio::test]
+async fn test_guarded_multisig_update_guardian_enforces_no_notes(
+    #[case] include_input_note: bool,
+    #[case] include_output_note: bool,
+) -> anyhow::Result<()> {
+    let auth_scheme = AuthScheme::EcdsaK256Keccak;
+    let (_secret_keys, auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
+    let approvers = public_keys
+        .iter()
+        .zip(auth_schemes.iter())
+        .map(|(pk, scheme)| (pk.clone(), *scheme))
+        .collect::<Vec<_>>();
+
+    let old_guardian_secret_key = AuthSecretKey::new_ecdsa_k256_keccak();
+    let old_guardian_public_key = old_guardian_secret_key.public_key();
+    let old_guardian_authenticator =
+        BasicAuthenticator::new(core::slice::from_ref(&old_guardian_secret_key));
+
+    let new_guardian_secret_key = AuthSecretKey::new_falcon512_poseidon2();
+    let new_guardian_public_key = new_guardian_secret_key.public_key();
+    let new_guardian_auth_scheme = new_guardian_secret_key.auth_scheme();
+
+    let multisig_account = create_guarded_multisig_account(
+        2,
+        &approvers,
+        GuardianConfig::new(old_guardian_public_key.to_commitment(), AuthScheme::EcdsaK256Keccak),
+        10,
+        vec![],
+    )?;
+
+    let new_guardian_key_word: Word = new_guardian_public_key.to_commitment().into();
+    let new_guardian_scheme_id = new_guardian_auth_scheme as u32;
+
+    // Optional output note (no-op script — doesn't trigger any account procedure).
+    let output_note = if include_output_note {
+        let serial = Word::from([Felt::new(1), Felt::new(2), Felt::new(3), Felt::new(4)]);
+        let recipient = NoteRecipient::new(
+            serial,
+            CodeBuilder::default().compile_note_script(DEFAULT_NOTE_SCRIPT)?,
+            NoteStorage::default(),
+        );
+        Some(Note::new(
+            NoteAssets::new(vec![])?,
+            NoteMetadata::new(multisig_account.id(), NoteType::Public),
+            recipient,
+        ))
+    } else {
+        None
+    };
+
+    // Compile the tx-script: bare update_guardian, or one that also creates the output note.
+    let update_guardian_script = if let Some(ref out) = output_note {
+        CodeBuilder::new()
+            .with_dynamically_linked_library(guarded_multisig_library())?
+            .compile_tx_script(format!(
+                "use miden::protocol::output_note\nbegin\n    push.{recipient}\n    push.{note_type}\n    push.{tag}\n    exec.output_note::create\n    swapdw\n    dropw\n    dropw\n    push.{new_guardian_key_word}\n    push.{new_guardian_scheme_id}\n    call.::miden::standards::components::auth::guarded_multisig::update_guardian_public_key\n    drop\n    dropw\nend",
+                recipient = out.recipient().digest(),
+                note_type = NoteType::Public as u8,
+                tag = Felt::from(out.metadata().tag()),
+            ))?
+    } else {
+        CodeBuilder::new()
+            .with_dynamically_linked_library(guarded_multisig_library())?
+            .compile_tx_script(format!(
+                "begin\n    push.{new_guardian_key_word}\n    push.{new_guardian_scheme_id}\n    call.::miden::standards::components::auth::guarded_multisig::update_guardian_public_key\n    drop\n    dropw\nend"
+            ))?
+    };
+
+    // Optional no-op input note seeded into the chain so the multisig account can consume it
+    // without invoking any non-auth procedure (DEFAULT_NOTE_SCRIPT is a single `nop`).
+    let mut chain_builder = MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap();
+    let input_note = if include_input_note {
+        let serial = Word::from([Felt::new(5), Felt::new(6), Felt::new(7), Felt::new(8)]);
+        let recipient = NoteRecipient::new(
+            serial,
+            CodeBuilder::default().compile_note_script(DEFAULT_NOTE_SCRIPT)?,
+            NoteStorage::default(),
+        );
+        let note = Note::new(
+            NoteAssets::new(vec![])?,
+            NoteMetadata::new(multisig_account.id(), NoteType::Public),
+            recipient,
+        );
+        chain_builder.add_output_note(RawOutputNote::Full(note.clone()));
+        Some(note)
+    } else {
+        None
+    };
+    let mock_chain = chain_builder.build()?;
+
+    let input_ids: Vec<_> = input_note.as_ref().map(|n| vec![n.id()]).unwrap_or_default();
+    let salt = Word::from([Felt::new(995); 4]);
+
+    // Dry-run to obtain the tx summary the signers must sign.
+    let mut init_ctx = mock_chain
+        .build_tx_context(multisig_account.id(), &input_ids, &[])?
+        .tx_script(update_guardian_script.clone())
+        .auth_args(salt);
+    if let Some(ref out) = output_note {
+        init_ctx = init_ctx.extend_expected_output_notes(vec![RawOutputNote::Full(out.clone())]);
+    }
+    let tx_summary = match init_ctx.build()?.execute().await.unwrap_err() {
+        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
+        error => anyhow::bail!("expected dry-run abort with tx effects: {error}"),
+    };
+
+    let msg = tx_summary.as_ref().to_commitment();
+    let signing = SigningInputs::TransactionSummary(tx_summary);
+    let sig_1 = authenticators[0]
+        .get_signature(public_keys[0].to_commitment(), &signing)
+        .await?;
+    let sig_2 = authenticators[1]
+        .get_signature(public_keys[1].to_commitment(), &signing)
+        .await?;
+    let guardian_sig = old_guardian_authenticator
+        .get_signature(old_guardian_public_key.to_commitment(), &signing)
+        .await?;
+
+    let mut signed_ctx = mock_chain
+        .build_tx_context(multisig_account.id(), &input_ids, &[])?
+        .tx_script(update_guardian_script)
+        .auth_args(salt)
+        .add_signature(public_keys[0].to_commitment(), msg, sig_1)
+        .add_signature(public_keys[1].to_commitment(), msg, sig_2)
+        .add_signature(old_guardian_public_key.to_commitment(), msg, guardian_sig);
+    if let Some(ref out) = output_note {
+        signed_ctx =
+            signed_ctx.extend_expected_output_notes(vec![RawOutputNote::Full(out.clone())]);
+    }
+    let result = signed_ctx.build()?.execute().await;
+
+    // Input check fires first, output check fires only when no input notes are present.
+    match (include_input_note, include_output_note) {
+        (false, false) => {
+            result.expect("tx must succeed when neither input nor output notes are present");
+        },
+        (true, _) => assert_transaction_executor_error!(
+            result,
+            ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_INPUT_NOTES
+        ),
+        (false, true) => assert_transaction_executor_error!(
+            result,
+            ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_OUTPUT_NOTES
+        ),
+    }
 
     Ok(())
 }
