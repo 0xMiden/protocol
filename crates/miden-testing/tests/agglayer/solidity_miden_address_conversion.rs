@@ -62,15 +62,15 @@ fn test_account_id_to_ethereum_roundtrip() {
 #[test]
 fn test_bech32_to_ethereum_roundtrip() {
     let test_addresses = [
-        "mtst1azcw08rget79fqp8ymr0zqkv5v5lj466",
-        "mtst1arxmxavamh7lqyp79mexktt4vgxv40mp",
-        "mtst1ar2phe0pa0ln75plsczxr8ryws4s8zyp",
+        "mtst1azcw08rget79fqf8ymr0zqkv5v6cmvk5",
+        "mtst1arxmxavamh7lqyf79mexktt4vggtukh0",
+        "mtst1ar2phe0pa0ln75flsczxr8rywsmhwmg0",
     ];
 
     let evm_addresses = [
-        "0x00000000b0e79c68cafc54802726c6f102cca300",
-        "0x00000000cdb3759dddfdf0103e2ef26b2d756200",
-        "0x00000000d41be5e1ebff3f503f8604619c647400",
+        "0x00000000b0e79c68cafc54812726c6f102cca300",
+        "0x00000000cdb3759dddfdf0113e2ef26b2d756200",
+        "0x00000000d41be5e1ebff3f513f8604619c647400",
     ];
 
     for (bech32, expected_evm) in test_addresses.iter().zip(evm_addresses.iter()) {

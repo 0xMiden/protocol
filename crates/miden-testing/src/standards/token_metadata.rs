@@ -113,7 +113,7 @@ fn new_field_data() -> [Word; 7] {
 fn owner_account_id() -> AccountId {
     AccountId::dummy(
         [1; 15],
-        AccountIdVersion::Version0,
+        AccountIdVersion::Version1,
         AccountType::RegularAccountImmutableCode,
         AccountStorageMode::Private,
     )
@@ -122,7 +122,7 @@ fn owner_account_id() -> AccountId {
 fn non_owner_account_id() -> AccountId {
     AccountId::dummy(
         [2; 15],
-        AccountIdVersion::Version0,
+        AccountIdVersion::Version1,
         AccountType::RegularAccountImmutableCode,
         AccountStorageMode::Private,
     )

@@ -38,6 +38,8 @@ const ACCOUNT_ID_TYPE_MASK_U32=0x30 # 0b11_0000
 # to determine the account version.
 const ACCOUNT_VERSION_MASK_U32=0x0f # 0b1111
 
+const VERSION_1=1
+
 # Given the least significant 32 bits of an account ID's prefix, this mask defines the bits used
 # to determine the account storage mode.
 const ACCOUNT_ID_STORAGE_MODE_MASK_U32=0xC0 # 0b1100_0000
@@ -145,7 +147,7 @@ end
 #! - account_id_{suffix,prefix} are the suffix and prefix felts of the account ID.
 #!
 #! Panics if:
-#! - account_id_prefix does not contain version zero.
+#! - account_id_prefix does not contain version one.
 #! - account_id_prefix does not contain either the public, network or private storage mode.
 #! - account_id_suffix does not have its most significant bit set to zero.
 #! - account_id_suffix does not have its lower 8 bits set to zero.
@@ -168,12 +170,14 @@ pub proc validate
     assert.err=ERR_ACCOUNT_ID_SUFFIX_MOST_SIGNIFICANT_BIT_MUST_BE_ZERO
     # => [account_id_prefix]
 
-    # Validate version in prefix. For now only version 0 is supported.
+    # Validate version in prefix. For now only version 1 is supported.
     # ---------------------------------------------------------------------------------------------
 
     dup exec.id_version
     # => [id_version, account_id_prefix]
-    assertz.err=ERR_ACCOUNT_ID_UNKNOWN_VERSION
+    eq.VERSION_1
+    # => [is_supported_version, account_id_prefix]
+    assert.err=ERR_ACCOUNT_ID_UNKNOWN_VERSION
     # => [account_id_prefix]
 
     # Validate storage mode in prefix.
