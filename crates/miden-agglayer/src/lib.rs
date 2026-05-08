@@ -22,8 +22,9 @@ use miden_standards::account::policies::{
     BurnPolicyConfig,
     MintPolicyConfig,
     PolicyAuthority,
+    PolicyRegistration,
     TokenPolicyManager,
-    TransferPolicyConfig,
+    TransferPolicy,
 };
 use miden_utils_sync::LazyLock;
 
@@ -246,15 +247,14 @@ fn create_agglayer_faucet_builder(
         metadata_hash,
     );
 
-    // `allow_all` is explicitly registered in the allowed list so the owner can open burns at
-    // runtime via `set_burn_policy`.
-    let token_policy_manager = TokenPolicyManager::new(
-        PolicyAuthority::OwnerControlled,
-        MintPolicyConfig::OwnerOnly,
-        BurnPolicyConfig::OwnerOnly,
-        TransferPolicyConfig::AllowAll,
-    )
-    .with_allowed_burn_policy(BurnAllowAll::root());
+    // `allow_all` is explicitly registered as Reserved so the owner can open burns at runtime
+    // via `set_burn_policy`.
+    let token_policy_manager = TokenPolicyManager::new(PolicyAuthority::OwnerControlled)
+        .with_mint_policy(MintPolicyConfig::OwnerOnly, PolicyRegistration::Active)
+        .with_burn_policy(BurnPolicyConfig::OwnerOnly, PolicyRegistration::Active)
+        .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Reserved)
+        .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)
+        .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active);
 
     Account::builder(seed.into())
         .account_type(AccountType::FungibleFaucet)

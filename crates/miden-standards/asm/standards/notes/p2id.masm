@@ -105,7 +105,7 @@ pub proc new
     push.2 locaddr.STORAGE_PTR
     # => [storage_ptr, num_storage_items=2, SERIAL_NUM, SCRIPT_ROOT, tag, note_type]
 
-    exec.note::build_recipient
+    exec.note::compute_and_store_recipient
     # => [RECIPIENT, tag, note_type]
 
     movup.5 movup.5

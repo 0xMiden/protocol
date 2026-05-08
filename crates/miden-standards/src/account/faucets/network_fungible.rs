@@ -19,8 +19,9 @@ use crate::account::policies::{
     BurnPolicyConfig,
     MintPolicyConfig,
     PolicyAuthority,
+    PolicyRegistration,
     TokenPolicyManager,
-    TransferPolicyConfig,
+    TransferPolicy,
 };
 use crate::procedure_digest;
 
@@ -158,9 +159,9 @@ impl TryFrom<&Account> for NetworkFungibleFaucet {
 ///
 /// The storage layout of the faucet account is documented on the [`NetworkFungibleFaucet`],
 /// [`TokenPolicyManager`], and [`crate::account::access::Ownable2Step`] component types. The
-/// mint, burn, and transfer policy components produced alongside the manager (`MintOwnerOnly`,
-/// `BurnAllowAll`, `TransferAllowAll`) are storage-free. The faucet contains no additional
-/// storage slots for its auth ([`NoAuth`]).
+/// policy components produced alongside the manager (`MintOwnerOnly`, `BurnAllowAll`, and
+/// `TransferAllowAll` for both send and receive) are storage-free. The faucet contains no
+/// additional storage slots for its auth ([`NoAuth`]).
 ///
 /// Component dependency graph:
 /// ```text
@@ -168,32 +169,19 @@ impl TryFrom<&Account> for NetworkFungibleFaucet {
 /// └── TokenPolicyManager (owner-controlled)
 ///     ├── MintOwnerOnly     (active mint policy, requires Ownable2Step)
 ///     ├── BurnAllowAll      (active burn policy)
-///     └── TransferAllowAll  (active transfer policy)
+///     ├── TransferAllowAll  (active send policy)
+///     └── TransferAllowAll  (active receive policy)
 /// ```
-/// The manager only allows its initial policies by default. Custom faucets that want runtime
-/// policy switching can register additional roots via
-/// [`TokenPolicyManager::with_allowed_mint_policy`] /
-/// [`TokenPolicyManager::with_allowed_burn_policy`] /
-/// [`TokenPolicyManager::with_allowed_transfer_policy`] and install the matching policy
-/// components.
+/// The manager only allows its active policies by default. Custom faucets that want runtime
+/// policy switching can register additional roots by calling
+/// [`TokenPolicyManager::with_mint_policy`] / [`TokenPolicyManager::with_burn_policy`] /
+/// [`TokenPolicyManager::with_send_policy`] / [`TokenPolicyManager::with_receive_policy`] with
+/// [`crate::account::policies::PolicyRegistration::Reserved`].
 pub fn create_network_fungible_faucet(
     init_seed: [u8; 32],
     metadata: FungibleTokenMetadata,
     access_control: AccessControl,
 ) -> Result<Account, FungibleFaucetError> {
-    // Validate that access_control is Ownable2Step, as this faucet depends on it.
-    // When new variants are added to AccessControl, update this match to either support
-    // them or return Err(FungibleFaucetError::UnsupportedAccessControl).
-    match access_control {
-        AccessControl::Ownable2Step { .. } => {},
-        #[allow(unreachable_patterns)]
-        _ => {
-            return Err(FungibleFaucetError::UnsupportedAccessControl(
-                "network fungible faucets require Ownable2Step access control".into(),
-            ));
-        },
-    }
-
     let auth_component: AccountComponent = NoAuth::new().into();
 
     let account = AccountBuilder::new(init_seed)
@@ -202,13 +190,14 @@ pub fn create_network_fungible_faucet(
         .with_auth_component(auth_component)
         .with_component(metadata)
         .with_component(NetworkFungibleFaucet)
-        .with_component(access_control)
-        .with_components(TokenPolicyManager::new(
-            PolicyAuthority::OwnerControlled,
-            MintPolicyConfig::OwnerOnly,
-            BurnPolicyConfig::AllowAll,
-            TransferPolicyConfig::AllowAll,
-        ))
+        .with_components(access_control)
+        .with_components(
+            TokenPolicyManager::new(PolicyAuthority::OwnerControlled)
+                .with_mint_policy(MintPolicyConfig::OwnerOnly, PolicyRegistration::Active)
+                .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)
+                .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)
+                .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active),
+        )
         .build()
         .map_err(FungibleFaucetError::AccountError)?;
 

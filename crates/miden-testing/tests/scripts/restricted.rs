@@ -1,4 +1,4 @@
-//! Tests for the [`miden_standards::account::blocklistable::Blocklistable`] admin procedures
+//! Tests for the [`miden_standards::account::faucets::Restricted`] admin procedures
 //! and the [`miden_standards::account::policies::TransferIfNotBlocklisted`] transfer policy
 //! callbacks dispatched by the [`miden_standards::account::policies::TokenPolicyManager`].
 
@@ -22,8 +22,9 @@ use miden_standards::account::policies::{
     BurnPolicyConfig,
     MintPolicyConfig,
     PolicyAuthority,
+    PolicyRegistration,
     TokenPolicyManager,
-    TransferPolicyConfig,
+    TransferPolicy,
 };
 use miden_standards::code_builder::CodeBuilder;
 use miden_testing::{
@@ -34,20 +35,19 @@ use miden_testing::{
     assert_transaction_executor_error,
 };
 
-const ERR_BLOCKLIST_ACCOUNT_IS_BLOCKLISTED: MasmError =
-    MasmError::from_static_str("account is blocklisted");
+const ERR_RESTRICTED_ACCOUNT_IS_BLOCKED: MasmError =
+    MasmError::from_static_str("account is blocked");
 
-const ERR_BLOCKLIST_ALREADY_BLOCKLISTED: MasmError =
-    MasmError::from_static_str("account is already blocklisted");
+const ERR_RESTRICTED_ALREADY_BLOCKED: MasmError =
+    MasmError::from_static_str("account is already blocked");
 
-const ERR_BLOCKLIST_NOT_BLOCKLISTED: MasmError =
-    MasmError::from_static_str("account is not blocklisted");
+const ERR_RESTRICTED_NOT_BLOCKED: MasmError = MasmError::from_static_str("account is not blocked");
 
-/// Builds a fungible faucet with a [`TokenPolicyManager`] configured for
-/// [`TransferPolicyConfig::IfNotBlocklisted`]. The manager auto-installs the
-/// [`miden_standards::account::blocklistable::Blocklistable`] component so the predicate has
-/// access to the per-account blocklist storage and admin procedures.
-fn add_faucet_with_transfer_blocklist(builder: &mut MockChainBuilder) -> anyhow::Result<Account> {
+/// Builds a fungible faucet with a [`TokenPolicyManager`] configured with
+/// [`TransferPolicy::IfNotBlocklisted`] on both send and receive. The manager pulls in the
+/// [`miden_standards::account::faucets::Restricted`] companion component so the predicate has
+/// access to the per-account blocked-accounts storage and admin procedures.
+fn add_faucet_with_restricted_transfer(builder: &mut MockChainBuilder) -> anyhow::Result<Account> {
     let faucet_metadata = FungibleTokenMetadataBuilder::new(
         TokenName::new("SYM")?,
         "SYM".try_into()?,
@@ -61,12 +61,13 @@ fn add_faucet_with_transfer_blocklist(builder: &mut MockChainBuilder) -> anyhow:
         .account_type(AccountType::FungibleFaucet)
         .with_component(faucet_metadata)
         .with_component(BasicFungibleFaucet)
-        .with_components(TokenPolicyManager::new(
-            PolicyAuthority::AuthControlled,
-            MintPolicyConfig::AllowAll,
-            BurnPolicyConfig::AllowAll,
-            TransferPolicyConfig::IfNotBlocklisted,
-        ));
+        .with_components(
+            TokenPolicyManager::new(PolicyAuthority::AuthControlled)
+                .with_mint_policy(MintPolicyConfig::AllowAll, PolicyRegistration::Active)
+                .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)
+                .with_send_policy(TransferPolicy::IfNotBlocklisted, PolicyRegistration::Active)
+                .with_receive_policy(TransferPolicy::IfNotBlocklisted, PolicyRegistration::Active),
+        );
 
     builder.add_account_from_builder(
         Auth::BasicAuth {
@@ -82,7 +83,7 @@ fn account_id_felts(account_id: AccountId) -> (Felt, Felt) {
     (prefix, suffix)
 }
 
-async fn execute_faucet_blocklist(
+async fn execute_faucet_block(
     mock_chain: &mut MockChain,
     faucet_id: AccountId,
     target_id: AccountId,
@@ -93,7 +94,7 @@ async fn execute_faucet_blocklist(
         begin
             push.{prefix}
             push.{suffix}
-            call.::miden::standards::utils::blocklistable::blocklist
+            call.::miden::standards::faucets::restricted::block
             dropw dropw dropw dropw
         end
         "#
@@ -110,7 +111,7 @@ async fn execute_faucet_blocklist(
     Ok(())
 }
 
-async fn execute_faucet_unblocklist(
+async fn execute_faucet_unblock(
     mock_chain: &mut MockChain,
     faucet_id: AccountId,
     target_id: AccountId,
@@ -121,7 +122,7 @@ async fn execute_faucet_unblocklist(
         begin
             push.{prefix}
             push.{suffix}
-            call.::miden::standards::utils::blocklistable::unblocklist
+            call.::miden::standards::faucets::restricted::unblock
             dropw dropw dropw dropw
         end
         "#
@@ -139,10 +140,10 @@ async fn execute_faucet_unblocklist(
 }
 
 #[tokio::test]
-async fn blocklist_receive_asset_succeeds_when_not_blocklisted() -> anyhow::Result<()> {
+async fn block_receive_asset_succeeds_when_not_blocked() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
-    let faucet = add_faucet_with_transfer_blocklist(&mut builder)?;
+    let faucet = add_faucet_with_restricted_transfer(&mut builder)?;
 
     let asset = FungibleAsset::new(faucet.id(), 100)?.with_callbacks(AssetCallbackFlag::Enabled);
     let note = builder.add_p2id_note(
@@ -168,10 +169,10 @@ async fn blocklist_receive_asset_succeeds_when_not_blocklisted() -> anyhow::Resu
 }
 
 #[tokio::test]
-async fn blocklist_receive_asset_fails_when_recipient_blocklisted() -> anyhow::Result<()> {
+async fn block_receive_asset_fails_when_recipient_blocked() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
-    let faucet = add_faucet_with_transfer_blocklist(&mut builder)?;
+    let faucet = add_faucet_with_restricted_transfer(&mut builder)?;
 
     let asset = FungibleAsset::new(faucet.id(), 100)?.with_callbacks(AssetCallbackFlag::Enabled);
     let note = builder.add_p2id_note(
@@ -184,7 +185,7 @@ async fn blocklist_receive_asset_fails_when_recipient_blocklisted() -> anyhow::R
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
-    execute_faucet_blocklist(&mut mock_chain, faucet.id(), target_account.id()).await?;
+    execute_faucet_block(&mut mock_chain, faucet.id(), target_account.id()).await?;
 
     let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
 
@@ -195,23 +196,23 @@ async fn blocklist_receive_asset_fails_when_recipient_blocklisted() -> anyhow::R
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_BLOCKLIST_ACCOUNT_IS_BLOCKLISTED);
+    assert_transaction_executor_error!(result, ERR_RESTRICTED_ACCOUNT_IS_BLOCKED);
 
     Ok(())
 }
 
 #[tokio::test]
-async fn blocklist_add_asset_to_note_fails_when_sender_blocklisted() -> anyhow::Result<()> {
+async fn block_add_asset_to_note_fails_when_sender_blocked() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
-    let faucet = add_faucet_with_transfer_blocklist(&mut builder)?;
+    let faucet = add_faucet_with_restricted_transfer(&mut builder)?;
 
     let asset = FungibleAsset::new(faucet.id(), 100)?.with_callbacks(AssetCallbackFlag::Enabled);
 
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
-    execute_faucet_blocklist(&mut mock_chain, faucet.id(), target_account.id()).await?;
+    execute_faucet_block(&mut mock_chain, faucet.id(), target_account.id()).await?;
 
     let recipient = Word::from([0u32, 1, 2, 3]);
     let script_code = format!(
@@ -248,16 +249,16 @@ async fn blocklist_add_asset_to_note_fails_when_sender_blocklisted() -> anyhow::
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_BLOCKLIST_ACCOUNT_IS_BLOCKLISTED);
+    assert_transaction_executor_error!(result, ERR_RESTRICTED_ACCOUNT_IS_BLOCKED);
 
     Ok(())
 }
 
 #[tokio::test]
-async fn blocklist_then_unblocklist_then_receive_succeeds() -> anyhow::Result<()> {
+async fn block_then_unblock_then_receive_succeeds() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
-    let faucet = add_faucet_with_transfer_blocklist(&mut builder)?;
+    let faucet = add_faucet_with_restricted_transfer(&mut builder)?;
 
     let amount: u64 = 50;
     let fungible_asset =
@@ -272,8 +273,8 @@ async fn blocklist_then_unblocklist_then_receive_succeeds() -> anyhow::Result<()
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
-    execute_faucet_blocklist(&mut mock_chain, faucet.id(), target_account.id()).await?;
-    execute_faucet_unblocklist(&mut mock_chain, faucet.id(), target_account.id()).await?;
+    execute_faucet_block(&mut mock_chain, faucet.id(), target_account.id()).await?;
+    execute_faucet_unblock(&mut mock_chain, faucet.id(), target_account.id()).await?;
 
     let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
 
@@ -288,15 +289,15 @@ async fn blocklist_then_unblocklist_then_receive_succeeds() -> anyhow::Result<()
 }
 
 #[tokio::test]
-async fn blocklist_already_blocklisted_fails() -> anyhow::Result<()> {
+async fn block_already_blocked_fails() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
-    let faucet = add_faucet_with_transfer_blocklist(&mut builder)?;
+    let faucet = add_faucet_with_restricted_transfer(&mut builder)?;
 
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
-    execute_faucet_blocklist(&mut mock_chain, faucet.id(), target_account.id()).await?;
+    execute_faucet_block(&mut mock_chain, faucet.id(), target_account.id()).await?;
 
     let (prefix, suffix) = account_id_felts(target_account.id());
     let script = format!(
@@ -304,7 +305,7 @@ async fn blocklist_already_blocklisted_fails() -> anyhow::Result<()> {
         begin
             push.{prefix}
             push.{suffix}
-            call.::miden::standards::utils::blocklistable::blocklist
+            call.::miden::standards::faucets::restricted::block
             dropw dropw dropw dropw
         end
         "#
@@ -317,16 +318,16 @@ async fn blocklist_already_blocklisted_fails() -> anyhow::Result<()> {
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_BLOCKLIST_ALREADY_BLOCKLISTED);
+    assert_transaction_executor_error!(result, ERR_RESTRICTED_ALREADY_BLOCKED);
 
     Ok(())
 }
 
 #[tokio::test]
-async fn unblocklist_when_not_blocklisted_fails() -> anyhow::Result<()> {
+async fn unblock_when_not_blocked_fails() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
-    let faucet = add_faucet_with_transfer_blocklist(&mut builder)?;
+    let faucet = add_faucet_with_restricted_transfer(&mut builder)?;
 
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
@@ -337,7 +338,7 @@ async fn unblocklist_when_not_blocklisted_fails() -> anyhow::Result<()> {
         begin
             push.{prefix}
             push.{suffix}
-            call.::miden::standards::utils::blocklistable::unblocklist
+            call.::miden::standards::faucets::restricted::unblock
             dropw dropw dropw dropw
         end
         "#
@@ -350,17 +351,17 @@ async fn unblocklist_when_not_blocklisted_fails() -> anyhow::Result<()> {
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_BLOCKLIST_NOT_BLOCKLISTED);
+    assert_transaction_executor_error!(result, ERR_RESTRICTED_NOT_BLOCKED);
 
     Ok(())
 }
 
 #[tokio::test]
-async fn blocklist_does_not_affect_other_accounts() -> anyhow::Result<()> {
+async fn block_does_not_affect_other_accounts() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let blocklisted_account = builder.add_existing_wallet(Auth::IncrNonce)?;
+    let blocked_account = builder.add_existing_wallet(Auth::IncrNonce)?;
     let other_account = builder.add_existing_wallet(Auth::IncrNonce)?;
-    let faucet = add_faucet_with_transfer_blocklist(&mut builder)?;
+    let faucet = add_faucet_with_restricted_transfer(&mut builder)?;
 
     let amount: u64 = 25;
     let fungible_asset =
@@ -375,8 +376,8 @@ async fn blocklist_does_not_affect_other_accounts() -> anyhow::Result<()> {
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
-    // Blocklist a different account — the non-blocklisted one should still receive.
-    execute_faucet_blocklist(&mut mock_chain, faucet.id(), blocklisted_account.id()).await?;
+    // Block a different account — the non-blocked one should still receive.
+    execute_faucet_block(&mut mock_chain, faucet.id(), blocked_account.id()).await?;
 
     let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
 
@@ -390,18 +391,18 @@ async fn blocklist_does_not_affect_other_accounts() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Empirical probe: does `mint_and_send` work on a `BasicFungibleFaucet` whose
-/// `TokenPolicyManager` registers transfer callbacks (here via
-/// [`TransferPolicyConfig::IfNotBlocklisted`])?
+/// Verifies that `mint_and_send` works on a `BasicFungibleFaucet` whose `TokenPolicyManager`
+/// installs the asset-callback slots (here via [`TransferPolicy::IfNotBlocklisted`]).
 ///
-/// Hypothesis: the protocol fires `on_before_asset_added_to_note` when the mint adds the
-/// asset to its output note. The callback runs in the issuing faucet's foreign context, but
-/// the issuing faucet is also the native account here → kernel rejects with
-/// `ERR_FOREIGN_ACCOUNT_CONTEXT_AGAINST_NATIVE_ACCOUNT`.
+/// The protocol fires `on_before_asset_added_to_note` when the mint adds the asset to its
+/// output note. Before the protocol fix in 0xMiden/protocol#2879 the kernel rejected this with
+/// `ERR_FOREIGN_ACCOUNT_CONTEXT_AGAINST_NATIVE_ACCOUNT` because the issuing faucet was also
+/// the native account. The fix short-circuits callback dispatch when the issuer equals the
+/// native account, so this test now succeeds.
 #[tokio::test]
 async fn mint_and_send_on_if_not_blocklisted_basic_faucet() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let faucet = add_faucet_with_transfer_blocklist(&mut builder)?;
+    let faucet = add_faucet_with_restricted_transfer(&mut builder)?;
     let mock_chain = builder.build()?;
 
     let recipient = Word::from([0u32, 1, 2, 3]);
@@ -431,19 +432,13 @@ async fn mint_and_send_on_if_not_blocklisted_basic_faucet() -> anyhow::Result<()
     );
 
     let tx_script = CodeBuilder::default().compile_tx_script(&tx_script_code)?;
-    let result = mock_chain
+    let executed = mock_chain
         .build_tx_context(faucet.id(), &[], &[])?
         .tx_script(tx_script)
         .build()?
         .execute()
-        .await;
+        .await?;
 
-    match result {
-        Ok(_) => println!(
-            "MINT SUCCEEDED — hypothesis WRONG, callback dispatch tolerates self-issued mint"
-        ),
-        Err(e) => println!("MINT FAILED: {e:?}"),
-    }
-
+    assert_eq!(executed.output_notes().num_notes(), 1);
     Ok(())
 }

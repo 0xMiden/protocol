@@ -19,8 +19,9 @@ use crate::account::policies::{
     BurnPolicyConfig,
     MintPolicyConfig,
     PolicyAuthority,
+    PolicyRegistration,
     TokenPolicyManager,
-    TransferPolicyConfig,
+    TransferPolicy,
 };
 use crate::procedure_digest;
 
@@ -152,9 +153,9 @@ impl TryFrom<&Account> for BasicFungibleFaucet {
 /// - [`FungibleTokenMetadata`] (token metadata, name, description, etc.)
 /// - [`BasicFungibleFaucet`] (mint_and_send and burn procedures)
 /// - [`AuthSingleSigAcl`]
-/// - [`TokenPolicyManager`] + the active mint, burn, and transfer policy components produced by the
-///   [`MintPolicyConfig`], [`BurnPolicyConfig`], and [`TransferPolicyConfig`] passed to it (here:
-///   `MintAllowAll`, `BurnAllowAll`, `TransferAllowAll`).
+/// - [`TokenPolicyManager`] + the active policy components produced by the [`MintPolicyConfig`],
+///   [`BurnPolicyConfig`], and [`TransferPolicy`] passed to it (here: `MintAllowAll`,
+///   `BurnAllowAll`, and `TransferAllowAll` for both send and receive).
 ///
 /// Component dependency graph:
 /// ```text
@@ -162,7 +163,8 @@ impl TryFrom<&Account> for BasicFungibleFaucet {
 /// └── TokenPolicyManager (auth-controlled)
 ///     ├── MintAllowAll      (active mint policy)
 ///     ├── BurnAllowAll      (active burn policy)
-///     └── TransferAllowAll  (active transfer policy)
+///     ├── TransferAllowAll  (active send policy)
+///     └── TransferAllowAll  (active receive policy)
 /// ```
 pub fn create_basic_fungible_faucet(
     init_seed: [u8; 32],
@@ -206,12 +208,13 @@ pub fn create_basic_fungible_faucet(
         .with_auth_component(auth_component)
         .with_component(metadata)
         .with_component(BasicFungibleFaucet)
-        .with_components(TokenPolicyManager::new(
-            PolicyAuthority::AuthControlled,
-            MintPolicyConfig::AllowAll,
-            BurnPolicyConfig::AllowAll,
-            TransferPolicyConfig::AllowAll,
-        ))
+        .with_components(
+            TokenPolicyManager::new(PolicyAuthority::AuthControlled)
+                .with_mint_policy(MintPolicyConfig::AllowAll, PolicyRegistration::Active)
+                .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)
+                .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)
+                .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active),
+        )
         .build()
         .map_err(FungibleFaucetError::AccountError)?;
 

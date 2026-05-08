@@ -1,0 +1,98 @@
+# Reusable note-script allowlist primitives.
+#
+# Provides two checks used to restrict what an account can do during a transaction:
+# - `assert_no_tx_script` rejects transactions that executed a tx script.
+# - `assert_all_input_notes_allowed` rejects transactions that consume an input note whose script
+#   root is not present in a storage map at the given slot id.
+#
+# These are designed to be composed into auth components. The caller owns the storage map and
+# passes the slot id (suffix, prefix) so the same logic can back multiple components, each with
+# their own allowlist.
+
+use miden::protocol::active_account
+use miden::protocol::tx
+use miden::protocol::input_note
+use miden::core::word
+
+# ERRORS
+# =================================================================================================
+
+const ERR_NOTE_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED="a transaction script cannot be executed against an account guarded by a note script allowlist"
+const ERR_NOTE_SCRIPT_ALLOWLIST_NOTE_NOT_ALLOWED="input note script root is not in the note script allowlist"
+
+# PROCEDURES
+# =================================================================================================
+
+#! Asserts that no transaction script was executed in the current transaction.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Invocation: exec
+pub proc assert_no_tx_script
+    exec.tx::get_tx_script_root
+    # => [TX_SCRIPT_ROOT]
+
+    exec.word::eqz
+    # => [has_no_tx_script]
+
+    assert.err=ERR_NOTE_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED
+    # => []
+end
+
+#! Asserts that every input note consumed by this transaction has a script root present in the
+#! storage map at the given slot id.
+#!
+#! Map convention: keys are note script roots (defined as Word), and any non-empty value marks a
+#! root as allowed. Empty values (the default for absent keys) cause this procedure to fail.
+#!
+#! Inputs:  [allowlist_slot_id_suffix, allowlist_slot_id_prefix]
+#! Outputs: []
+#!
+#! Where:
+#! - allowlist_slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier
+#!   pointing at the allowlist storage map.
+#!
+#! Invocation: exec
+pub proc assert_all_input_notes_allowed
+    # => [slot_id_suffix, slot_id_prefix]
+
+    exec.tx::get_num_input_notes
+    # => [num_input_notes, slot_id_suffix, slot_id_prefix]
+
+    dup sub.1 swap
+    # => [num_input_notes, note_idx, slot_id_suffix, slot_id_prefix]
+
+    neq.0
+    # => [should_loop, note_idx, slot_id_suffix, slot_id_prefix]
+
+    while.true
+        # => [note_idx, slot_id_suffix, slot_id_prefix]
+
+        dup exec.input_note::get_script_root
+        # => [NOTE_SCRIPT_ROOT, note_idx, slot_id_suffix, slot_id_prefix]
+
+        # Copy the slot id to the top of the stack to call get_map_item.
+        dup.6 dup.6
+        # => [slot_id_suffix, slot_id_prefix, NOTE_SCRIPT_ROOT, note_idx, slot_id_suffix, slot_id_prefix]
+
+        exec.active_account::get_map_item
+        # => [VALUE, note_idx, slot_id_suffix, slot_id_prefix]
+
+        exec.word::eqz not
+        # => [is_allowed, note_idx, slot_id_suffix, slot_id_prefix]
+
+        assert.err=ERR_NOTE_SCRIPT_ALLOWLIST_NOTE_NOT_ALLOWED
+        # => [note_idx, slot_id_suffix, slot_id_prefix]
+
+        dup sub.1 swap
+        # => [note_idx, note_idx-1, slot_id_suffix, slot_id_prefix]
+
+        neq.0
+        # => [should_continue, note_idx-1, slot_id_suffix, slot_id_prefix]
+    end
+    # => [stale_idx, slot_id_suffix, slot_id_prefix]
+
+    drop drop drop
+    # => []
+end

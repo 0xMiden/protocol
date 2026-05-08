@@ -2,7 +2,6 @@ use super::auth_method::AuthMethod;
 
 pub mod access;
 pub mod auth;
-pub mod blocklistable;
 pub mod components;
 pub mod faucets;
 pub mod interface;

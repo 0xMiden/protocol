@@ -19,9 +19,9 @@ procedure_digest!(
 ///
 /// Pair with a [`crate::account::policies::TokenPolicyManager`] whose allowed transfer-policies
 /// map includes [`TransferIfNotBlocklisted::root`], plus a
-/// [`crate::account::blocklistable::Blocklistable`] component that owns the per-account blocklist
+/// [`crate::account::faucets::Restricted`] component that owns the per-account blocked-accounts
 /// storage map. When active, transfers fail if the native account (asset recipient or note
-/// creator) is currently blocklisted on the issuing faucet.
+/// creator) is currently blocked on the issuing faucet.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct TransferIfNotBlocklisted;
 
@@ -46,7 +46,7 @@ impl From<TransferIfNotBlocklisted> for AccountComponent {
         )
         .with_description(
             "`if_not_blocklisted` transfer policy for callback-enabled faucets; pairs with \
-             Blocklistable",
+             Restricted",
         );
 
         AccountComponent::new(if_not_blocklisted_transfer_policy_library(), vec![], metadata)

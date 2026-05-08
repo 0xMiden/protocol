@@ -9,10 +9,12 @@ use crate::utils::FixedWidthStringError;
 
 mod basic_fungible;
 mod network_fungible;
+pub mod restricted;
 mod token_metadata;
 
 pub use basic_fungible::{BasicFungibleFaucet, create_basic_fungible_faucet};
 pub use network_fungible::{NetworkFungibleFaucet, create_network_fungible_faucet};
+pub use restricted::Restricted;
 pub use token_metadata::TokenMetadata;
 
 // FUNGIBLE FAUCET ERROR
@@ -49,8 +51,6 @@ pub enum FungibleFaucetError {
     },
     #[error("unsupported authentication method: {0}")]
     UnsupportedAuthMethod(String),
-    #[error("unsupported access control method: {0}")]
-    UnsupportedAccessControl(String),
     #[error("account creation failed")]
     AccountError(#[source] AccountError),
     #[error("account is not a fungible faucet account")]

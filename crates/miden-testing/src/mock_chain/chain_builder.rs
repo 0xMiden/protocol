@@ -58,8 +58,9 @@ use miden_standards::account::policies::{
     BurnPolicyConfig,
     MintPolicyConfig,
     PolicyAuthority,
+    PolicyRegistration,
     TokenPolicyManager,
-    TransferPolicyConfig,
+    TransferPolicy,
 };
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::note::{P2idNote, P2ideNote, P2ideNoteStorage, SwapNote};
@@ -349,12 +350,13 @@ impl MockChainBuilder {
         let account_builder = AccountBuilder::new(self.rng.random())
             .storage_mode(AccountStorageMode::Public)
             .account_type(AccountType::FungibleFaucet)
-            .with_components(TokenPolicyManager::new(
-                PolicyAuthority::AuthControlled,
-                MintPolicyConfig::AllowAll,
-                BurnPolicyConfig::AllowAll,
-                TransferPolicyConfig::AllowAll,
-            ))
+            .with_components(
+                TokenPolicyManager::new(PolicyAuthority::AuthControlled)
+                    .with_mint_policy(MintPolicyConfig::AllowAll, PolicyRegistration::Active)
+                    .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)
+                    .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)
+                    .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active),
+            )
             .with_component(metadata)
             .with_component(BasicFungibleFaucet);
 
@@ -390,12 +392,13 @@ impl MockChainBuilder {
             .storage_mode(AccountStorageMode::Public)
             .with_component(metadata)
             .with_component(BasicFungibleFaucet)
-            .with_components(TokenPolicyManager::new(
-                PolicyAuthority::AuthControlled,
-                MintPolicyConfig::AllowAll,
-                BurnPolicyConfig::AllowAll,
-                TransferPolicyConfig::AllowAll,
-            ))
+            .with_components(
+                TokenPolicyManager::new(PolicyAuthority::AuthControlled)
+                    .with_mint_policy(MintPolicyConfig::AllowAll, PolicyRegistration::Active)
+                    .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)
+                    .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)
+                    .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active),
+            )
             .account_type(AccountType::FungibleFaucet);
 
         self.add_account_from_builder(auth_method, account_builder, AccountState::Exists)
@@ -435,12 +438,13 @@ impl MockChainBuilder {
             .with_component(metadata)
             .with_component(NetworkFungibleFaucet)
             .with_component(Ownable2Step::new(owner_account_id))
-            .with_components(TokenPolicyManager::new(
-                PolicyAuthority::OwnerControlled,
-                mint_policy,
-                BurnPolicyConfig::AllowAll,
-                TransferPolicyConfig::AllowAll,
-            ))
+            .with_components(
+                TokenPolicyManager::new(PolicyAuthority::OwnerControlled)
+                    .with_mint_policy(mint_policy, PolicyRegistration::Active)
+                    .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)
+                    .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)
+                    .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active),
+            )
             .account_type(AccountType::FungibleFaucet);
 
         // Network faucets always use IncrNonce auth (no authentication)
@@ -460,12 +464,13 @@ impl MockChainBuilder {
             .with_component(metadata)
             .with_component(NetworkFungibleFaucet)
             .with_component(Ownable2Step::new(owner_account_id))
-            .with_components(TokenPolicyManager::new(
-                PolicyAuthority::OwnerControlled,
-                MintPolicyConfig::OwnerOnly,
-                BurnPolicyConfig::AllowAll,
-                TransferPolicyConfig::AllowAll,
-            ))
+            .with_components(
+                TokenPolicyManager::new(PolicyAuthority::OwnerControlled)
+                    .with_mint_policy(MintPolicyConfig::OwnerOnly, PolicyRegistration::Active)
+                    .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)
+                    .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)
+                    .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active),
+            )
             .account_type(AccountType::FungibleFaucet);
 
         self.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)

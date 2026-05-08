@@ -367,10 +367,12 @@ impl AggLayerFaucet {
             TokenPolicyManager::policy_authority_slot(),
             TokenPolicyManager::active_mint_policy_slot(),
             TokenPolicyManager::active_burn_policy_slot(),
-            TokenPolicyManager::active_transfer_policy_slot(),
+            TokenPolicyManager::active_send_policy_slot(),
+            TokenPolicyManager::active_receive_policy_slot(),
             TokenPolicyManager::allowed_mint_policies_slot(),
             TokenPolicyManager::allowed_burn_policies_slot(),
-            TokenPolicyManager::allowed_transfer_policies_slot(),
+            TokenPolicyManager::allowed_send_policies_slot(),
+            TokenPolicyManager::allowed_receive_policies_slot(),
         ]
     }
 }

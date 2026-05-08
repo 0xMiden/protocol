@@ -34,6 +34,13 @@ static OWNABLE2STEP_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     Library::read_from_bytes(bytes).expect("Shipped Ownable2Step library is well-formed")
 });
 
+// Initialize the RoleBasedAccessControl library only once.
+static RBAC_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+    let bytes =
+        include_bytes!(concat!(env!("OUT_DIR"), "/assets/account_components/access/rbac.masl"));
+    Library::read_from_bytes(bytes).expect("Shipped RoleBasedAccessControl library is well-formed")
+});
+
 // AUTH LIBRARIES
 // ================================================================================================
 
@@ -74,6 +81,15 @@ static NO_AUTH_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     let bytes =
         include_bytes!(concat!(env!("OUT_DIR"), "/assets/account_components/auth/no_auth.masl"));
     Library::read_from_bytes(bytes).expect("Shipped NoAuth library is well-formed")
+});
+
+// Initialize the AuthNetworkAccount library only once.
+static NETWORK_ACCOUNT_AUTH_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+    let bytes = include_bytes!(concat!(
+        env!("OUT_DIR"),
+        "/assets/account_components/auth/network_account.masl"
+    ));
+    Library::read_from_bytes(bytes).expect("Shipped AuthNetworkAccount library is well-formed")
 });
 
 // FAUCET LIBRARIES
@@ -173,16 +189,13 @@ static IF_NOT_BLOCKLISTED_TRANSFER_POLICY_LIBRARY: LazyLock<Library> = LazyLock:
         .expect("Shipped `if_not_blocklisted` Transfer Policy library is well-formed")
 });
 
-// UTILS LIBRARIES
-// ================================================================================================
-
-// Initialize the Blocklistable library only once.
-static BLOCKLISTABLE_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+// Initialize the Restricted faucet library only once.
+static RESTRICTED_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     let bytes = include_bytes!(concat!(
         env!("OUT_DIR"),
-        "/assets/account_components/utils/blocklistable.masl"
+        "/assets/account_components/faucets/restricted.masl"
     ));
-    Library::read_from_bytes(bytes).expect("Shipped Blocklistable library is well-formed")
+    Library::read_from_bytes(bytes).expect("Shipped Restricted library is well-formed")
 });
 
 // METADATA LIBRARIES
@@ -196,6 +209,11 @@ pub fn basic_wallet_library() -> Library {
 /// Returns the Ownable2Step Library.
 pub fn ownable2step_library() -> Library {
     OWNABLE2STEP_LIBRARY.clone()
+}
+
+/// Returns the RoleBasedAccessControl Library.
+pub fn rbac_library() -> Library {
+    RBAC_LIBRARY.clone()
 }
 
 /// Returns the Basic Fungible Faucet Library.
@@ -248,9 +266,9 @@ pub fn if_not_blocklisted_transfer_policy_library() -> Library {
     IF_NOT_BLOCKLISTED_TRANSFER_POLICY_LIBRARY.clone()
 }
 
-/// Returns the Blocklistable component library.
-pub fn blocklistable_library() -> Library {
-    BLOCKLISTABLE_LIBRARY.clone()
+/// Returns the Restricted faucet component library.
+pub fn restricted_library() -> Library {
+    RESTRICTED_LIBRARY.clone()
 }
 
 /// Returns the Singlesig Library.
@@ -278,6 +296,11 @@ pub fn no_auth_library() -> Library {
     NO_AUTH_LIBRARY.clone()
 }
 
+/// Returns the AuthNetworkAccount Library.
+pub fn network_account_auth_library() -> Library {
+    NETWORK_ACCOUNT_AUTH_LIBRARY.clone()
+}
+
 // STANDARD ACCOUNT COMPONENTS
 // ================================================================================================
 
@@ -293,6 +316,7 @@ pub enum StandardAccountComponent {
     AuthMultisig,
     AuthGuardedMultisig,
     AuthNoAuth,
+    AuthNetworkAccount,
 }
 
 impl StandardAccountComponent {
@@ -308,6 +332,7 @@ impl StandardAccountComponent {
             Self::AuthMultisig => MULTISIG_LIBRARY.as_ref(),
             Self::AuthGuardedMultisig => GUARDED_MULTISIG_LIBRARY.as_ref(),
             Self::AuthNoAuth => NO_AUTH_LIBRARY.as_ref(),
+            Self::AuthNetworkAccount => NETWORK_ACCOUNT_AUTH_LIBRARY.as_ref(),
         };
 
         library
@@ -368,6 +393,9 @@ impl StandardAccountComponent {
                 Self::AuthNoAuth => {
                     component_interface_vec.push(AccountComponentInterface::AuthNoAuth)
                 },
+                Self::AuthNetworkAccount => {
+                    component_interface_vec.push(AccountComponentInterface::AuthNetworkAccount)
+                },
             }
         }
     }
@@ -387,5 +415,6 @@ impl StandardAccountComponent {
         Self::AuthGuardedMultisig.extract_component(procedures_set, component_interface_vec);
         Self::AuthMultisig.extract_component(procedures_set, component_interface_vec);
         Self::AuthNoAuth.extract_component(procedures_set, component_interface_vec);
+        Self::AuthNetworkAccount.extract_component(procedures_set, component_interface_vec);
     }
 }

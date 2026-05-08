@@ -1,0 +1,189 @@
+# miden::standards::faucets::restricted
+#
+# Per-faucet blocklist storage and helpers. block/unblock procedures do not perform
+# authorization. Compose with ownable2step or role-based access control in a higher layer.
+#
+# Asset-callback enforcement of "native account is not blocked" lives in the
+# `if_not_blocklisted` transfer policy procedure (see
+# `miden::standards::faucets::policies::transfer::if_not_blocklisted`). The policy manager owns
+# the asset callbacks and dispatches to that procedure via `dynexec`.
+
+use miden::core::word
+use miden::protocol::active_account
+use miden::protocol::native_account
+
+# CONSTANTS
+# ================================================================================================
+
+# The slot where the per-faucet map of blocked accounts is stored.
+# Map entries: [0, 0, account_id_suffix, account_id_prefix] => [is_blocked, 0, 0, 0]
+const BLOCKED_ACCOUNTS_SLOT = word("miden::standards::faucets::restricted::blocked_accounts")
+
+const BLOCKED_WORD = [1, 0, 0, 0]
+
+const UNBLOCKED_WORD = [0, 0, 0, 0]
+
+# ERRORS
+# ================================================================================================
+
+const ERR_RESTRICTED_ACCOUNT_IS_BLOCKED = "account is blocked"
+
+const ERR_RESTRICTED_ALREADY_BLOCKED = "account is already blocked"
+
+const ERR_RESTRICTED_NOT_BLOCKED = "account is not blocked"
+
+# PUBLIC INTERFACE
+# ================================================================================================
+
+#! Returns whether the given account is currently blocked on this faucet.
+#!
+#! Reads [`BLOCKED_ACCOUNTS_SLOT`] on the active account at the key derived from the account ID.
+#! Returns `1` if the stored word is non-zero (blocked) or `0` if it is the zero word
+#! (not blocked, including the default for never-set entries).
+#!
+#! Inputs:  [account_id_suffix, account_id_prefix]
+#! Outputs: [is_blocked]
+#!
+#! Invocation: exec
+pub proc is_blocked
+    exec.build_blocked_accounts_map_key
+    # => [KEY]
+
+    push.BLOCKED_ACCOUNTS_SLOT[0..2]
+    # => [slot_suffix, slot_prefix, KEY]
+
+    exec.active_account::get_map_item
+    # => [VALUE]
+
+    exec.word::eqz not
+    # => [is_blocked]
+end
+
+#! Adds the given account to the blocked-accounts map. Fails if it is already blocked.
+#!
+#! This procedure does not verify the caller. Wrap with access control in the account component
+#! composition if only privileged accounts should be able to block.
+#!
+#! Inputs:  [account_id_suffix, account_id_prefix, pad(14)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the account is already blocked.
+#!
+#! Invocation: call
+pub proc block
+    # copy the ID to check it is not already blocked.
+    dup.1 dup.1
+    # => [account_id_suffix, account_id_prefix, account_id_suffix, account_id_prefix, pad(14)]
+
+    exec.is_blocked
+    # => [is_blocked, account_id_suffix, account_id_prefix, pad(14)]
+
+    not assert.err=ERR_RESTRICTED_ALREADY_BLOCKED
+    # => [account_id_suffix, account_id_prefix, pad(14)]
+
+    exec.build_blocked_accounts_map_key
+    # => [KEY, pad(14)]
+
+    push.BLOCKED_ACCOUNTS_SLOT[0..2]
+    # => [slot_suffix, slot_prefix, KEY, pad(14)]
+
+    push.BLOCKED_WORD
+    # => [BLOCKED_WORD, slot_suffix, slot_prefix, KEY, pad(14)]
+
+    # set_map_item expects: [slot_suffix, slot_prefix, KEY, VALUE]
+    movdnw.2
+    # => [slot_suffix, slot_prefix, KEY, BLOCKED_WORD, pad(14)]
+
+    exec.native_account::set_map_item
+    # => [OLD_VALUE, pad(14)]
+
+    dropw
+    # => [pad(16)]
+end
+
+#! Removes the given account from the blocked-accounts map. Fails if it is not currently blocked.
+#!
+#! This procedure does not verify the caller.
+#!
+#! Inputs:  [account_id_suffix, account_id_prefix, pad(14)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the account is not currently blocked.
+#!
+#! Invocation: call
+pub proc unblock
+    # copy the ID to check it is currently blocked.
+    dup.1 dup.1
+    # => [account_id_suffix, account_id_prefix, account_id_suffix, account_id_prefix, pad(14)]
+
+    exec.is_blocked
+    # => [is_blocked, account_id_suffix, account_id_prefix, pad(14)]
+
+    assert.err=ERR_RESTRICTED_NOT_BLOCKED
+    # => [account_id_suffix, account_id_prefix, pad(14)]
+
+    exec.build_blocked_accounts_map_key
+    # => [KEY, pad(14)]
+
+    push.BLOCKED_ACCOUNTS_SLOT[0..2]
+    # => [slot_suffix, slot_prefix, KEY, pad(14)]
+
+    push.UNBLOCKED_WORD
+    # => [UNBLOCKED_WORD, slot_suffix, slot_prefix, KEY, pad(14)]
+
+    movdnw.2
+    # => [slot_suffix, slot_prefix, KEY, UNBLOCKED_WORD, pad(14)]
+
+    exec.native_account::set_map_item
+    # => [OLD_VALUE, pad(14)]
+
+    dropw
+    # => [pad(16)]
+end
+
+#! Requires the given account to not be blocked.
+#!
+#! Delegates to [`is_blocked`] and inverts the result. If the account is blocked, panics
+#! with [`ERR_RESTRICTED_ACCOUNT_IS_BLOCKED`].
+#!
+#! Use from other modules or transaction scripts to guard logic that must not run for blocked
+#! accounts. In asset callback foreign context, the active account is the issuing faucet.
+#!
+#! Inputs:  [account_id_suffix, account_id_prefix]
+#! Outputs: []
+#!
+#! Panics if:
+#! - the stored entry for this account is not the zero word.
+#!
+#! Invocation: exec
+pub proc assert_not_blocked
+    exec.is_blocked
+    # => [is_blocked]
+
+    not
+    # => [is_not_blocked]
+
+    assert.err=ERR_RESTRICTED_ACCOUNT_IS_BLOCKED
+    # => []
+end
+
+# HELPER PROCEDURES
+# ================================================================================================
+
+#! Builds the blocked-accounts map key for the given account ID.
+#!
+#! Inputs:  [account_id_suffix, account_id_prefix]
+#! Outputs: [KEY]
+#!
+#! Where:
+#! - KEY is [0, 0, account_id_suffix, account_id_prefix].
+#!
+#! Invocation: exec
+proc build_blocked_accounts_map_key
+    # => [account_id_suffix, account_id_prefix]
+
+    push.0.0
+    # => [0, 0, account_id_suffix, account_id_prefix] = KEY
+end
