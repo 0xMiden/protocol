@@ -1,30 +1,31 @@
 # miden::standards::access::authority
 #
-# Single source of truth for the account wide authority discriminator. Components that use
-# state changing procedures (TokenPolicyManager `set_*_policy`, fungible token metadata
-# `set_*` procedures) all uses this slot via `assert_authorized`.
+# Single source of truth for the account-wide authority. Components that gate state-mutating
+# procedures (TokenPolicyManager `set_*_policy`, fungible token metadata `set_*` procedures,
+# future NFT metadata setters, ...) all consult this slot via `assert_authorized`.
 
 use miden::protocol::active_account
 use miden::standards::access::ownable2step
+use miden::standards::access::rbac
 
 # CONSTANTS
 # =================================================================================================
 
 const AUTHORITY_SLOT = word("miden::standards::access::authority::authority")
 
-const AUTHORITY_AUTH_CONTROLLED = 0
-const AUTHORITY_OWNER_CONTROLLED = 1
-# AUTHORITY_RBAC_CONTROLLED = 2 — currently unsupported; reserved for future RBAC integration.
+const AUTH_CONTROLLED = 0
+const OWNER_CONTROLLED = 1
+const RBAC_CONTROLLED = 2
 
 # ERRORS
 # =================================================================================================
 
-const ERR_UNSUPPORTED_AUTHORITY = "authority discriminator is not supported"
+const ERR_UNSUPPORTED_AUTHORITY = "authority is not supported"
 
 # PUBLIC PROCEDURES
 # =================================================================================================
 
-#! Returns the authority discriminator stored on the account.
+#! Returns the authority value stored on the account.
 #!
 #! Inputs:  []
 #! Outputs: [authority]
@@ -35,10 +36,9 @@ const ERR_UNSUPPORTED_AUTHORITY = "authority discriminator is not supported"
 #! Invocation: exec
 pub proc get_authority
     push.AUTHORITY_SLOT[0..2] exec.active_account::get_item
-    # => [authority, 0, 0, 0]
+    # => [authority, role_symbol, 0, 0]
 
-    movdn.3
-    drop drop drop
+    movdn.3 drop drop drop
     # => [authority]
 end
 
@@ -46,33 +46,47 @@ end
 #!
 #! - AuthControlled (0)  → no-op (the account's auth component already gated the call).
 #! - OwnerControlled (1) → calls `ownable2step::assert_sender_is_owner`.
-#! - RbacControlled (2)  → currently unsupported, panics with ERR_UNSUPPORTED_AUTHORITY.
+#! - RbacControlled (2)  → loads the role symbol from the authority slot and calls
+#!   `rbac::assert_sender_has_role`. Requires the
+#!   [`RoleBasedAccessControl`][crate::account::access::RoleBasedAccessControl] component to be
+#!   installed on the account; otherwise linking the account fails.
 #!
 #! Inputs:  []
 #! Outputs: []
 #!
 #! Panics if:
-#! - the discriminator is OwnerControlled and the sender is not the registered owner.
-#! - the discriminator is RbacControlled (not yet supported).
-#! - the discriminator is an unknown value.
+#! - the authority is OwnerControlled and the sender is not the registered owner.
+#! - the authority is RbacControlled and the sender does not hold the configured role.
+#! - the authority is an unknown value.
 #!
 #! Invocation: exec
 pub proc assert_authorized
-    exec.get_authority
-    # => [authority]
+    push.AUTHORITY_SLOT[0..2] exec.active_account::get_item
+    # => [authority, role_symbol, 0, 0]
 
-    dup eq.AUTHORITY_AUTH_CONTROLLED
+    dup eq.AUTH_CONTROLLED
     if.true
-        # AuthControlled — auth component already gated the call.
-        drop
+        # AuthControlled — auth component already gated the call. Word intact;
+        # drop everything in one step.
+        dropw
     else
-        eq.AUTHORITY_OWNER_CONTROLLED
+        dup eq.OWNER_CONTROLLED
         if.true
+            # OwnerControlled — `assert_sender_is_owner` consumes 0 elements; word intact.
             exec.ownable2step::assert_sender_is_owner
+            dropw
         else
-            # Unknown discriminator (including RbacControlled, which is reserved but not
-            # yet implemented).
-            push.0 assert.err=ERR_UNSUPPORTED_AUTHORITY
+            eq.RBAC_CONTROLLED
+            if.true
+                # RbacControlled — `eq` consumed the authority. Stack: [role_symbol, 0, 0].
+                # `rbac::assert_sender_has_role` consumes the role symbol.
+                exec.rbac::assert_sender_has_role
+                # Stack: [0, 0]
+                drop drop
+            else
+                # Unknown authority — panic. Stack state irrelevant.
+                push.0 assert.err=ERR_UNSUPPORTED_AUTHORITY
+            end
         end
     end
 end

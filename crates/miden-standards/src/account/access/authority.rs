@@ -1,4 +1,3 @@
-use miden_protocol::Word;
 use miden_protocol::account::component::{
     AccountComponentMetadata,
     FeltSchema,
@@ -9,10 +8,13 @@ use miden_protocol::account::{
     AccountComponent,
     AccountStorage,
     AccountType,
+    RoleSymbol,
     StorageSlot,
     StorageSlotName,
 };
+use miden_protocol::errors::RoleSymbolError;
 use miden_protocol::utils::sync::LazyLock;
+use miden_protocol::{Felt, Word};
 use thiserror::Error;
 
 use crate::account::components::authority_library;
@@ -36,38 +38,46 @@ static AUTHORITY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// the MASM helper `authority::assert_authorized`. Installing the [`Authority`] component on an
 /// account thus selects the gating mode for *all* such procedures in one place.
 ///
-/// Storage layout: `[discriminator, 0, 0, 0]` — single Felt at index 0.
-#[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Storage layout: `[authority, role_symbol_or_zero, 0, 0]` — single Word.
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Authority {
     /// Authority is the account's auth component; no extra check is performed by
     /// `authority::assert_authorized`.
-    AuthControlled = 0,
+    AuthControlled,
     /// Authority is the [`Ownable2Step`][crate::account::access::Ownable2Step] owner; the call
     /// must be sent by the registered owner.
-    OwnerControlled = 1,
-    /// Authority is determined via RBAC role-based checks.
+    OwnerControlled,
+    /// Authority is membership in a specific RBAC role. The call must be sent by an account that
+    /// holds `role` in the
+    /// [`RoleBasedAccessControl`][crate::account::access::RoleBasedAccessControl] component.
     ///
-    /// Note: not yet supported by `authority::assert_authorized`. Reserved for a future
-    /// extension; selecting this variant today will cause `assert_authorized` to panic when
-    /// invoked.
-    RbacControlled = 2,
+    /// Requires the [`RoleBasedAccessControl`][crate::account::access::RoleBasedAccessControl]
+    /// component to be installed on the account; the MASM helper calls into
+    /// `rbac::assert_sender_has_role` and will fail to link otherwise.
+    RbacControlled { role: RoleSymbol },
 }
 
 impl Authority {
     /// The name of the component.
     pub const NAME: &'static str = "miden::standards::components::access::authority";
 
+    /// Authority value written to the storage slot for [`Authority::AuthControlled`].
+    const AUTH_CONTROLLED: u8 = 0;
+    /// Authority value written to the storage slot for [`Authority::OwnerControlled`].
+    const OWNER_CONTROLLED: u8 = 1;
+    /// Authority value written to the storage slot for [`Authority::RbacControlled`].
+    const RBAC_CONTROLLED: u8 = 2;
+
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns the [`StorageSlotName`] holding the authority discriminator.
+    /// Returns the [`StorageSlotName`] holding the authority configuration.
     pub fn slot_name() -> &'static StorageSlotName {
         &AUTHORITY_SLOT_NAME
     }
 
-    /// Reads the authority discriminator from account storage.
+    /// Reads the authority configuration from account storage.
     pub fn try_from_storage(storage: &AccountStorage) -> Result<Self, AuthorityError> {
         let word = storage
             .get_item(Self::slot_name())
@@ -80,10 +90,10 @@ impl Authority {
         let storage_schema = StorageSchema::new(vec![(
             AUTHORITY_SLOT_NAME.clone(),
             StorageSlotSchema::value(
-                "Authority discriminator",
+                "Authority configuration",
                 [
                     FeltSchema::u8("authority"),
-                    FeltSchema::new_void(),
+                    FeltSchema::felt("role_symbol"),
                     FeltSchema::new_void(),
                     FeltSchema::new_void(),
                 ],
@@ -93,8 +103,8 @@ impl Authority {
 
         AccountComponentMetadata::new(Self::NAME, AccountType::all())
             .with_description(
-                "Account-wide authority discriminator shared by procedures that gate \
-                 state-mutating operations behind either auth-only or owner-based checks",
+                "Account-wide authority shared by procedures that gate state-mutating \
+                 operations behind auth-only, owner-based, or RBAC role-based checks",
             )
             .with_storage_schema(storage_schema)
     }
@@ -105,7 +115,26 @@ impl Authority {
 
 impl From<Authority> for Word {
     fn from(value: Authority) -> Self {
-        Word::from([value as u8, 0, 0, 0])
+        match value {
+            Authority::AuthControlled => Word::new([
+                Felt::from(Authority::AUTH_CONTROLLED),
+                Felt::ZERO,
+                Felt::ZERO,
+                Felt::ZERO,
+            ]),
+            Authority::OwnerControlled => Word::new([
+                Felt::from(Authority::OWNER_CONTROLLED),
+                Felt::ZERO,
+                Felt::ZERO,
+                Felt::ZERO,
+            ]),
+            Authority::RbacControlled { role } => Word::new([
+                Felt::from(Authority::RBAC_CONTROLLED),
+                role.into(),
+                Felt::ZERO,
+                Felt::ZERO,
+            ]),
+        }
     }
 }
 
@@ -113,11 +142,16 @@ impl TryFrom<Word> for Authority {
     type Error = AuthorityError;
 
     fn try_from(word: Word) -> Result<Self, Self::Error> {
-        match word[0].as_canonical_u64() {
-            0 => Ok(Self::AuthControlled),
-            1 => Ok(Self::OwnerControlled),
-            2 => Ok(Self::RbacControlled),
-            v => Err(AuthorityError::InvalidDiscriminator(v)),
+        let authority = word[0].as_canonical_u64();
+        match authority {
+            v if v == Authority::AUTH_CONTROLLED as u64 => Ok(Self::AuthControlled),
+            v if v == Authority::OWNER_CONTROLLED as u64 => Ok(Self::OwnerControlled),
+            v if v == Authority::RBAC_CONTROLLED as u64 => {
+                let role =
+                    RoleSymbol::try_from(word[1]).map_err(AuthorityError::InvalidRoleSymbol)?;
+                Ok(Self::RbacControlled { role })
+            },
+            v => Err(AuthorityError::InvalidAuthority(v)),
         }
     }
 }
@@ -138,8 +172,10 @@ impl From<Authority> for AccountComponent {
 /// Errors raised when reading or parsing an [`Authority`] from storage.
 #[derive(Debug, Error)]
 pub enum AuthorityError {
-    #[error("invalid authority discriminator: {0}")]
-    InvalidDiscriminator(u64),
+    #[error("invalid authority value: {0}")]
+    InvalidAuthority(u64),
+    #[error("invalid role symbol in authority slot")]
+    InvalidRoleSymbol(#[source] RoleSymbolError),
     #[error("failed to read authority slot from storage: {0}")]
     StorageLookupFailed(alloc::string::String),
 }

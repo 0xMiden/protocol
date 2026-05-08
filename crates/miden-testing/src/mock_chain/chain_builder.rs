@@ -47,7 +47,7 @@ use miden_protocol::testing::account_id::ACCOUNT_ID_FEE_FAUCET;
 use miden_protocol::testing::random_secret_key::random_secret_key;
 use miden_protocol::transaction::{OrderedTransactionHeaders, RawOutputNote, TransactionKernel};
 use miden_protocol::{MAX_OUTPUT_NOTES_PER_BATCH, Word};
-use miden_standards::account::access::{AccessControl, Authority};
+use miden_standards::account::access::AccessControl;
 use miden_standards::account::faucets::BasicFungibleFaucet;
 use miden_standards::account::metadata::TokenName;
 use miden_standards::account::policies::TokenPolicyManager;
@@ -324,7 +324,6 @@ impl MockChainBuilder {
         faucet: BasicFungibleFaucet,
         storage_mode: AccountStorageMode,
         access_control: AccessControl,
-        authority: Authority,
         token_policy_manager: TokenPolicyManager,
     ) -> anyhow::Result<Account> {
         let account_builder = AccountBuilder::new(self.rng.random())
@@ -332,7 +331,6 @@ impl MockChainBuilder {
             .account_type(AccountType::FungibleFaucet)
             .with_component(faucet)
             .with_components(access_control)
-            .with_component(authority)
             .with_components(token_policy_manager);
 
         self.add_account_from_builder(auth_method, account_builder, AccountState::New)
@@ -349,9 +347,7 @@ impl MockChainBuilder {
     ///   for network-style faucets.
     /// - `access_control`: [`AccessControl::AuthControlled`] for basic faucets;
     ///   [`AccessControl::Ownable2Step`] / [`AccessControl::Rbac`] for owner-controlled faucets.
-    /// - `authority`: the account-wide [`Authority`] discriminator that gates `set_*_policy` and
-    ///   metadata mutators. Should match the choice of `access_control` (e.g. `Ownable2Step` access
-    ///   with [`Authority::OwnerControlled`]).
+    ///   The matching `Authority` component is auto-installed by `AccessControl`.
     /// - `token_policy_manager`: the unified [`TokenPolicyManager`] holding both mint and burn
     ///   policy.
     pub fn add_existing_fungible_faucet(
@@ -360,7 +356,6 @@ impl MockChainBuilder {
         faucet: BasicFungibleFaucet,
         storage_mode: AccountStorageMode,
         access_control: AccessControl,
-        authority: Authority,
         token_policy_manager: TokenPolicyManager,
     ) -> anyhow::Result<Account> {
         let account_builder = AccountBuilder::new(self.rng.random())
@@ -368,7 +363,6 @@ impl MockChainBuilder {
             .account_type(AccountType::FungibleFaucet)
             .with_component(faucet)
             .with_components(access_control)
-            .with_component(authority)
             .with_components(token_policy_manager);
 
         self.add_account_from_builder(auth_method, account_builder, AccountState::Exists)
@@ -407,7 +401,6 @@ impl MockChainBuilder {
             faucet,
             AccountStorageMode::Public,
             AccessControl::AuthControlled,
-            Authority::AuthControlled,
             token_policy_manager,
         )
     }
@@ -443,7 +436,6 @@ impl MockChainBuilder {
             faucet,
             AccountStorageMode::Network,
             AccessControl::Ownable2Step { owner: owner_account_id },
-            Authority::OwnerControlled,
             token_policy_manager,
         )
     }
@@ -466,7 +458,6 @@ impl MockChainBuilder {
             faucet,
             AccountStorageMode::Network,
             AccessControl::Ownable2Step { owner: owner_account_id },
-            Authority::OwnerControlled,
             token_policy_manager,
         )
     }
@@ -497,7 +488,6 @@ impl MockChainBuilder {
             faucet,
             AccountStorageMode::Public,
             AccessControl::AuthControlled,
-            Authority::AuthControlled,
             token_policy_manager,
         )
     }
