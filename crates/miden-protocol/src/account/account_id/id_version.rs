@@ -3,13 +3,13 @@ use crate::errors::AccountIdError;
 // ACCOUNT ID VERSION
 // ================================================================================================
 
-const VERSION_0_NUMBER: u8 = 0;
+const VERSION_1_NUMBER: u8 = 1;
 
 /// The version of an [`AccountId`](crate::account::AccountId).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum AccountIdVersion {
-    Version0 = VERSION_0_NUMBER,
+    Version1 = VERSION_1_NUMBER,
 }
 
 impl AccountIdVersion {
@@ -27,7 +27,7 @@ impl TryFrom<u8> for AccountIdVersion {
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
-            VERSION_0_NUMBER => Ok(AccountIdVersion::Version0),
+            VERSION_1_NUMBER => Ok(AccountIdVersion::Version1),
             other_version => Err(AccountIdError::UnknownAccountIdVersion(other_version)),
         }
     }
