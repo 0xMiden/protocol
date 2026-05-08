@@ -858,8 +858,7 @@ mod tests {
             .expect("failed to create wallet account");
 
         let err = BasicFungibleFaucet::try_from(invalid_faucet_account)
-            .err()
-            .expect("basic fungible faucet creation should fail");
+            .expect_err("basic fungible faucet creation should fail");
         assert_matches!(err, FungibleFaucetError::MissingBasicFungibleFaucetInterface);
     }
 
