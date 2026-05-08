@@ -9,7 +9,7 @@ use miden_protocol::account::component::{
 use miden_protocol::account::{AccountComponent, AccountType, StorageSlotName};
 use miden_protocol::note::NoteScriptRoot;
 
-use super::NetworkAccountNoteAllowlist;
+use super::{NetworkAccountNoteAllowlist, NetworkAccountNoteAllowlistError};
 use crate::account::components::network_account_auth_library;
 
 // AUTH NETWORK ACCOUNT
@@ -42,10 +42,17 @@ impl AuthNetworkAccount {
 
     /// Creates a new [`AuthNetworkAccount`] component with the provided list of allowed
     /// input-note script roots.
-    pub fn with_allowlist(allowed_script_roots: BTreeSet<NoteScriptRoot>) -> Self {
-        Self {
-            allowlist: NetworkAccountNoteAllowlist::new(allowed_script_roots),
-        }
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `allowed_script_roots` is empty since the account could not consume any
+    /// notes.
+    pub fn with_allowlist(
+        allowed_script_roots: BTreeSet<NoteScriptRoot>,
+    ) -> Result<Self, NetworkAccountNoteAllowlistError> {
+        Ok(Self {
+            allowlist: NetworkAccountNoteAllowlist::new(allowed_script_roots)?,
+        })
     }
 
     /// Returns the storage slot holding the allowlist of allowed input-note script roots.
@@ -100,28 +107,28 @@ mod tests {
         let root_b = NoteScriptRoot::from_array([5, 6, 7, 8]);
 
         let _account = AccountBuilder::new([0; 32])
-            .with_auth_component(AuthNetworkAccount::with_allowlist(BTreeSet::from_iter([
-                root_a, root_b,
-            ])))
+            .with_auth_component(
+                AuthNetworkAccount::with_allowlist(BTreeSet::from_iter([root_a, root_b]))
+                    .expect("non-empty allowlist should construct"),
+            )
             .with_component(BasicWallet)
             .build()
             .expect("account building with AuthNetworkAccount failed");
     }
 
     #[test]
-    fn auth_network_account_with_empty_allowlist_builds() {
-        let _account = AccountBuilder::new([0; 32])
-            .with_auth_component(AuthNetworkAccount::with_allowlist(BTreeSet::new()))
-            .with_component(BasicWallet)
-            .build()
-            .expect("account building with empty allowlist failed");
+    fn auth_network_account_with_empty_allowlist_is_rejected() {
+        let result = AuthNetworkAccount::with_allowlist(BTreeSet::new());
+        assert!(matches!(result, Err(NetworkAccountNoteAllowlistError::EmptyAllowlist)));
     }
 
     #[test]
     fn auth_network_account_uses_standardized_allowlist_slot() {
         let root_a = NoteScriptRoot::from_array([1, 2, 3, 4]);
         let component: AccountComponent =
-            AuthNetworkAccount::with_allowlist(BTreeSet::from_iter([root_a])).into();
+            AuthNetworkAccount::with_allowlist(BTreeSet::from_iter([root_a]))
+                .expect("non-empty allowlist should construct")
+                .into();
 
         let storage_slots = component.storage_slots();
         assert_eq!(storage_slots.len(), 1);

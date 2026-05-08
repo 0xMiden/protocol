@@ -47,8 +47,19 @@ pub struct NetworkAccountNoteAllowlist {
 
 impl NetworkAccountNoteAllowlist {
     /// Creates a new allowlist from the provided list of allowed input-note script roots.
-    pub fn new(allowed_script_roots: BTreeSet<NoteScriptRoot>) -> Self {
-        Self { allowed_script_roots }
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `allowed_script_roots` is empty since the account could not consume any
+    /// notes.
+    pub fn new(
+        allowed_script_roots: BTreeSet<NoteScriptRoot>,
+    ) -> Result<Self, NetworkAccountNoteAllowlistError> {
+        if allowed_script_roots.is_empty() {
+            return Err(NetworkAccountNoteAllowlistError::EmptyAllowlist);
+        }
+
+        Ok(Self { allowed_script_roots })
     }
 
     /// Returns the [`StorageSlotName`] of the standardized allowlist slot.
@@ -115,16 +126,22 @@ impl TryFrom<&AccountStorage> for NetworkAccountNoteAllowlist {
             .map(|(key, _value)| NoteScriptRoot::from_raw(key.as_word()))
             .collect();
 
-        Ok(Self::new(allowed_script_roots))
+        Self::new(allowed_script_roots)
     }
 }
 
 // NETWORK ACCOUNT NOTE ALLOWLIST ERROR
 // ================================================================================================
 
-/// Errors that can occur when reconstructing a [`NetworkAccountNoteAllowlist`] from storage.
+/// Errors that can occur when constructing a [`NetworkAccountNoteAllowlist`] or reconstructing one
+/// from storage.
 #[derive(Debug, thiserror::Error)]
 pub enum NetworkAccountNoteAllowlistError {
+    #[error(
+        "network account allowlist must contain at least one allowed note script root: an empty \
+         allowlist would prevent the account from consuming any notes"
+    )]
+    EmptyAllowlist,
     #[error(
         "network account allowlist storage slot {} not found in account storage",
         NetworkAccountNoteAllowlist::slot_name()
@@ -154,6 +171,7 @@ mod tests {
         let root_b = NoteScriptRoot::from_array([5, 6, 7, 8]);
 
         let slot = NetworkAccountNoteAllowlist::new(BTreeSet::from_iter([root_a, root_b]))
+            .expect("non-empty allowlist should construct")
             .into_storage_slot();
 
         assert_eq!(slot.name(), NetworkAccountNoteAllowlist::slot_name());
@@ -175,14 +193,9 @@ mod tests {
     }
 
     #[test]
-    fn empty_allowlist_produces_empty_map() {
-        let slot = NetworkAccountNoteAllowlist::new(BTreeSet::new()).into_storage_slot();
-
-        let StorageSlotContent::Map(map) = slot.content() else {
-            panic!("allowlist slot must be a map");
-        };
-
-        assert_eq!(map.entries().count(), 0);
+    fn empty_allowlist_is_rejected() {
+        let result = NetworkAccountNoteAllowlist::new(BTreeSet::new());
+        assert!(matches!(result, Err(NetworkAccountNoteAllowlistError::EmptyAllowlist)));
     }
 
     #[test]
@@ -195,7 +208,10 @@ mod tests {
         let original_roots = BTreeSet::from_iter([root_a, root_b, root_c]);
 
         let account = AccountBuilder::new([0; 32])
-            .with_auth_component(AuthNetworkAccount::with_allowlist(original_roots.clone()))
+            .with_auth_component(
+                AuthNetworkAccount::with_allowlist(original_roots.clone())
+                    .expect("non-empty allowlist should construct"),
+            )
             .with_component(BasicWallet)
             .build()
             .expect("account building with AuthNetworkAccount failed");
