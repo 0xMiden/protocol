@@ -201,12 +201,11 @@ impl Serializable for SignedBlock {
 
 impl Deserializable for SignedBlock {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let block = Self {
-            header: BlockHeader::read_from(source)?,
-            body: BlockBody::read_from(source)?,
-            signature: Signature::read_from(source)?,
-        };
-
-        Ok(block)
+        let header    = BlockHeader::read_from(source)?;
+        let body      = BlockBody::read_from(source)?;
+        let signature = Signature::read_from(source)?;
+    
+        SignedBlock::new(header, body, signature)
+            .map_err(|e| DeserializationError::InvalidValue(e.to_string()))
     }
 }
