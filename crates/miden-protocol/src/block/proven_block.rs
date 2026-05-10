@@ -231,13 +231,12 @@ impl Serializable for ProvenBlock {
 
 impl Deserializable for ProvenBlock {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let block = Self {
-            header: BlockHeader::read_from(source)?,
-            body: BlockBody::read_from(source)?,
-            signature: Signature::read_from(source)?,
-            proof: BlockProof::read_from(source)?,
-        };
-
-        Ok(block)
+        let header    = BlockHeader::read_from(source)?;
+        let body      = BlockBody::read_from(source)?;
+        let signature = Signature::read_from(source)?;
+        let proof     = BlockProof::read_from(source)?;
+    
+        ProvenBlock::new(header, body, signature, proof)
+            .map_err(|e| DeserializationError::InvalidValue(e.to_string()))
     }
 }
