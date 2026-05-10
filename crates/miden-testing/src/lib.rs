@@ -23,6 +23,8 @@ pub mod asserts;
 
 pub mod executor;
 
+pub mod expected_error;
+
 mod mock_host;
 
 pub mod utils;

@@ -18,52 +18,91 @@ use rand::rngs::SmallRng;
 // HELPER MACROS
 // ================================================================================================
 
+/// Asserts that a `Result<_, ExecError>` failed as expected.
+///
+/// Three forms:
+/// - `..., matches <pat> [if <guard>]` — matches the inner `ExecutionError`
+///   against `<pat>`. Use this for variants other than `FailedAssertion`,
+///   or to assert on a specific `err_code`.
+/// - `..., any` — succeeds on any `Err`.
+/// - `..., $expected` — delegates to `ExpectedExecutionError::matches`
+///   (e.g. a `MasmError` error code).
 #[macro_export]
 macro_rules! assert_execution_error {
-    ($execution_result:expr, $expected_err:expr) => {
+    ($execution_result:expr, matches $pat:pat $(if $guard:expr)? $(,)?) => {
         match $execution_result {
-            Err($crate::ExecError(miden_processor::ExecutionError::OperationError { label: _, source_file: _, err: miden_processor::operation::OperationError::FailedAssertion { err_code, err_msg } })) => {
-                if let Some(ref msg) = err_msg {
-                  assert_eq!(msg.as_ref(), $expected_err.message(), "error messages did not match");
-                }
+            Err($crate::ExecError($pat)) $(if $guard)? => {},
+            Ok(_) => ::core::panic!("Execution was unexpectedly successful"),
+            Err(err) => ::core::panic!(
+                "Execution error did not match `{}`: {}",
+                ::core::stringify!($pat),
+                err,
+            ),
+        }
+    };
 
-                assert_eq!(
-                    err_code, $expected_err.code(),
-                    "Execution failed on assertion with an unexpected error (Actual code: {}, msg: {}, Expected code: {}).",
-                    err_code, err_msg.as_ref().map(|string| string.as_ref()).unwrap_or("<no message>"), $expected_err,
-                );
+    ($execution_result:expr, any $(,)?) => {
+        match $execution_result {
+            Err(_) => {},
+            Ok(_) => ::core::panic!("Execution was unexpectedly successful"),
+        }
+    };
+
+    ($execution_result:expr, $expected:expr $(,)?) => {
+        match $execution_result {
+            Err($crate::ExecError(actual)) => {
+                if !$crate::expected_error::ExpectedExecutionError::matches(&$expected, &actual) {
+                    ::core::panic!(
+                        "Execution error did not match expected `{}`: {}",
+                        $expected,
+                        actual,
+                    );
+                }
             },
-            Ok(_) => panic!("Execution was unexpectedly successful"),
-            Err(err) => panic!("Execution error was not as expected: {err}"),
+            Ok(_) => ::core::panic!("Execution was unexpectedly successful"),
         }
     };
 }
 
+/// Same as [`assert_execution_error!`], but for `TransactionExecutorError`.
+/// The `matches` and `$expected` arms unwrap
+/// `TransactionProgramExecutionFailed(_)` and match against the inner
+/// `ExecutionError`.
 #[macro_export]
 macro_rules! assert_transaction_executor_error {
-    ($execution_result:expr, $expected_err:expr) => {
+    ($execution_result:expr, matches $pat:pat $(if $guard:expr)? $(,)?) => {
         match $execution_result {
-            Err(miden_tx::TransactionExecutorError::TransactionProgramExecutionFailed(
-                miden_processor::ExecutionError::OperationError {
-                    label: _,
-                    source_file: _,
-                    err: miden_processor::operation::OperationError::FailedAssertion {
-                        err_code,
-                        err_msg,
-                    },
-                },
-            )) => {
-                if let Some(ref msg) = err_msg {
-                  assert_eq!(msg.as_ref(), $expected_err.message(), "error messages did not match");
-                }
+            Err(miden_tx::TransactionExecutorError::TransactionProgramExecutionFailed($pat))
+                $(if $guard)? => {},
+            Ok(_) => ::core::panic!("Execution was unexpectedly successful"),
+            Err(err) => ::core::panic!(
+                "Execution error did not match `{}`: {}",
+                ::core::stringify!($pat),
+                err,
+            ),
+        }
+    };
 
-                assert_eq!(
-                  err_code, $expected_err.code(),
-                  "Execution failed on assertion with an unexpected error (Actual code: {}, msg: {}, Expected: {}).",
-                  err_code, err_msg.as_ref().map(|string| string.as_ref()).unwrap_or("<no message>"), $expected_err);
+    ($execution_result:expr, any $(,)?) => {
+        match $execution_result {
+            Err(_) => {},
+            Ok(_) => ::core::panic!("Execution was unexpectedly successful"),
+        }
+    };
+
+    ($execution_result:expr, $expected:expr $(,)?) => {
+        match $execution_result {
+            Err(miden_tx::TransactionExecutorError::TransactionProgramExecutionFailed(actual)) => {
+                if !$crate::expected_error::ExpectedExecutionError::matches(&$expected, &actual) {
+                    ::core::panic!(
+                        "Execution error did not match expected `{}`: {}",
+                        $expected,
+                        actual,
+                    );
+                }
             },
-            Ok(_) => panic!("Execution was unexpectedly successful"),
-            Err(err) => panic!("Execution error was not as expected: {err}"),
+            Ok(_) => ::core::panic!("Execution was unexpectedly successful"),
+            Err(err) => ::core::panic!("Execution error was not as expected: {err}"),
         }
     };
 }
