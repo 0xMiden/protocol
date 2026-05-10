@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.14.6 (2026-05-05)
+## 0.14.6 (2026-05-09)
 
 - Fixed asset callback against native account panicking ([#2868](https://github.com/0xMiden/protocol/pull/2868)).
 
