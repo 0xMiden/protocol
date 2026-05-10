@@ -36,6 +36,19 @@ macro_rules! assert_execution_error {
             Err(err) => panic!("Execution error was not as expected: {err}"),
         }
     };
+    ($execution_result:expr, matches: $pat:pat $(if $guard:expr)?) => {
+        match $execution_result {
+            Err($crate::ExecError($pat)) $(if $guard)? => {},
+            Ok(_) => panic!("Execution was unexpectedly successful"),
+            Err(err) => panic!("Execution error was not as expected: {err}"),
+        }
+    };
+    ($execution_result:expr, any) => {
+        match $execution_result {
+            Err(_) => {},
+            Ok(_) => panic!("Execution was unexpectedly successful"),
+        }
+    };
 }
 
 #[macro_export]
@@ -63,6 +76,19 @@ macro_rules! assert_transaction_executor_error {
             },
             Ok(_) => panic!("Execution was unexpectedly successful"),
             Err(err) => panic!("Execution error was not as expected: {err}"),
+        }
+    };
+    ($execution_result:expr, matches: $pat:pat $(if $guard:expr)?) => {
+        match $execution_result {
+            Err(miden_tx::TransactionExecutorError::TransactionProgramExecutionFailed($pat)) $(if $guard)? => {},
+            Ok(_) => panic!("Execution was unexpectedly successful"),
+            Err(err) => panic!("Execution error was not as expected: {err}"),
+        }
+    };
+    ($execution_result:expr, any) => {
+        match $execution_result {
+            Err(_) => {},
+            Ok(_) => panic!("Execution was unexpectedly successful"),
         }
     };
 }
@@ -292,4 +318,60 @@ pub fn create_p2id_note_exact(
     let vault = NoteAssets::new(assets)?;
 
     Ok(Note::new(vault, metadata, recipient))
+}
+
+// MACRO TESTS
+// ================================================================================================
+
+#[cfg(test)]
+mod tests {
+    use miden_processor::ExecutionError;
+    use miden_protocol::errors::MasmError;
+
+    use crate::executor::CodeExecutor;
+    use crate::{assert_execution_error, assert_transaction_executor_error};
+
+    /// `any` arm accepts any `Err` result and panics on `Ok`.
+    #[tokio::test]
+    async fn assert_execution_error_any() {
+        let result = CodeExecutor::with_default_host().run("begin assert end").await;
+        assert_execution_error!(result, any);
+    }
+
+    /// `matches:` arm without a guard matches an outer `ExecutionError` variant.
+    #[tokio::test]
+    async fn assert_execution_error_matches_divide_by_zero() {
+        let result = CodeExecutor::with_default_host().run("begin push.0 div end").await;
+        assert_execution_error!(
+            result,
+            matches: ExecutionError::OperationError {
+                err: miden_processor::operation::OperationError::DivideByZero,
+                ..
+            }
+        );
+    }
+
+    /// `matches:` arm with `if` guard matches an inner `OperationError` and checks `err_code`.
+    #[tokio::test]
+    async fn assert_execution_error_matches_with_err_code_guard() {
+        const ERR_MSG: &str = "assert_execution_error guard test";
+        let code = format!(r#"begin assert.err="{ERR_MSG}" end"#);
+        let result = CodeExecutor::with_default_host().run(&code).await;
+        let expected_code = MasmError::from_static_str(ERR_MSG).code();
+        assert_execution_error!(
+            result,
+            matches: ExecutionError::OperationError {
+                err: miden_processor::operation::OperationError::FailedAssertion { err_code, .. },
+                ..
+            } if err_code == expected_code
+        );
+    }
+
+    /// Compile-time check that the `any` arm is available on `assert_transaction_executor_error!`.
+    #[allow(dead_code)]
+    fn _assert_transaction_executor_error_any_compiles() {
+        let _: fn(Result<(), miden_tx::TransactionExecutorError>) = |result| {
+            assert_transaction_executor_error!(result, any);
+        };
+    }
 }
