@@ -254,17 +254,23 @@ impl PartialBlockchain {
 impl Serializable for PartialBlockchain {
     fn write_into<W: miden_crypto::utils::ByteWriter>(&self, target: &mut W) {
         self.mmr.write_into(target);
-        self.blocks.write_into(target);
+        self.blocks.values().cloned().collect::<Vec<_>>().write_into(target);
     }
+
 }
 
 impl Deserializable for PartialBlockchain {
     fn read_from<R: miden_crypto::utils::ByteReader>(
-        source: &mut R,
+    source: &mut R,
     ) -> Result<Self, miden_crypto::utils::DeserializationError> {
         let mmr = PartialMmr::read_from(source)?;
-        let blocks = BTreeMap::<BlockNumber, BlockHeader>::read_from(source)?;
-        Ok(Self { mmr, blocks })
+        let blocks = Vec::<BlockHeader>::read_from(source)?;
+    
+        Self::new(mmr, blocks).map_err(|e| {
+            miden_crypto::utils::DeserializationError::InvalidValue(format!(
+                "PartialBlockchain failed MMR integrity check during deserialization: {e}"
+            ))
+        })
     }
 }
 
