@@ -42,7 +42,7 @@ use miden_protocol::block::{
 };
 use miden_protocol::crypto::merkle::smt::Smt;
 use miden_protocol::errors::NoteError;
-use miden_protocol::note::{Note, NoteAttachments, NoteDetails, NoteType};
+use miden_protocol::note::{Note, NoteAttachments, NoteDetails, NoteScriptRoot, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_FEE_FAUCET;
 use miden_protocol::testing::random_secret_key::random_secret_key;
 use miden_protocol::transaction::{OrderedTransactionHeaders, RawOutputNote, TransactionKernel};
@@ -56,7 +56,7 @@ use miden_standards::account::policies::{
     TokenPolicyManager,
 };
 use miden_standards::account::wallets::BasicWallet;
-use miden_standards::note::{P2idNote, P2ideNote, P2ideNoteStorage, SwapNote};
+use miden_standards::note::{BurnNote, MintNote, P2idNote, P2ideNote, P2ideNoteStorage, SwapNote};
 use miden_standards::testing::account_component::MockAccountComponent;
 use rand::Rng;
 
@@ -413,7 +413,13 @@ impl MockChainBuilder {
     /// Convenience: builds an owner-controlled (network-style) fungible faucet from a
     /// token-symbol shorthand using default decimals, the given `mint_policy`, and `BurnAllowAll`.
     ///
-    /// The faucet is added with [`AccountStorageMode::Network`] and [`Auth::IncrNonce`].
+    /// The faucet is added with [`AccountStorageMode::Public`] and [`Auth::IncrNonce`].
+    ///
+    /// `mint_policy` selects the initial active mint policy on the faucet. The installed
+    /// [`TokenPolicyManager`] is always owner-controlled.
+    ///
+    /// The [`MintNote`] and [`BurnNote`] script roots are always added to `allowed_script_roots`,
+    /// so callers only need to provide any additional roots their test scripts require.
     pub fn add_existing_network_faucet(
         &mut self,
         token_symbol: &str,
@@ -421,6 +427,7 @@ impl MockChainBuilder {
         owner_account_id: AccountId,
         token_supply: Option<u64>,
         mint_policy: MintPolicyConfig,
+        allowed_script_roots: impl IntoIterator<Item = NoteScriptRoot>,
     ) -> anyhow::Result<Account> {
         let token_supply = AssetAmount::new(token_supply.unwrap_or(0))
             .context("token supply exceeds AssetAmount::MAX")?;
@@ -440,10 +447,15 @@ impl MockChainBuilder {
             BurnPolicyConfig::AllowAll,
         );
 
+        let allowed_script_roots = allowed_script_roots
+            .into_iter()
+            .chain([MintNote::script_root(), BurnNote::script_root()])
+            .collect();
+
         self.add_existing_fungible_faucet(
-            Auth::IncrNonce,
+            Auth::NetworkAccount { allowed_script_roots },
             faucet,
-            AccountStorageMode::Network,
+            AccountStorageMode::Public,
             AccessControl::Ownable2Step { owner: owner_account_id },
             token_policy_manager,
         )
@@ -452,10 +464,14 @@ impl MockChainBuilder {
     /// Convenience: adds an existing owner-controlled (network-style) fungible faucet whose token
     /// metadata is fully provided by the caller. Uses `OwnerOnly` mint policy and `AllowAll`
     /// burn policy by default.
+    ///
+    /// The [`MintNote`] and [`BurnNote`] script roots are always added to `allowed_script_roots`,
+    /// so callers only need to provide any additional roots their test scripts require.
     pub fn add_existing_network_faucet_with_metadata(
         &mut self,
         owner_account_id: AccountId,
         faucet: FungibleFaucet,
+        allowed_script_roots: impl IntoIterator<Item = NoteScriptRoot>,
     ) -> anyhow::Result<Account> {
         let token_policy_manager = TokenPolicyManager::new(
             PolicyAuthority::OwnerControlled,
@@ -463,10 +479,15 @@ impl MockChainBuilder {
             BurnPolicyConfig::AllowAll,
         );
 
+        let allowed_script_roots = allowed_script_roots
+            .into_iter()
+            .chain([MintNote::script_root(), BurnNote::script_root()])
+            .collect();
+
         self.add_existing_fungible_faucet(
-            Auth::IncrNonce,
+            Auth::NetworkAccount { allowed_script_roots },
             faucet,
-            AccountStorageMode::Network,
+            AccountStorageMode::Public,
             AccessControl::Ownable2Step { owner: owner_account_id },
             token_policy_manager,
         )

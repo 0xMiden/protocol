@@ -337,7 +337,7 @@ fn generate_agglayer_constants(
         if lib_name == "faucet" {
             // Use a dummy owner for commitment computation - the actual owner is set at runtime
             let dummy_owner = miden_protocol::account::AccountId::try_from(
-                miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_NETWORK_ACCOUNT_IMMUTABLE_CODE,
+                miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
             )
             .unwrap();
             components.push(AccountComponent::from(

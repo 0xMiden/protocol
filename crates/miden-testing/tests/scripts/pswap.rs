@@ -441,7 +441,7 @@ async fn pswap_fill_test(
         let network_consumer = builder.add_account_from_builder(
             BASIC_AUTH,
             Account::builder(seed)
-                .storage_mode(AccountStorageMode::Network)
+                .storage_mode(AccountStorageMode::Public)
                 .with_component(BasicWallet)
                 .with_assets([FungibleAsset::new(eth_faucet.id(), fill_amount)?.into()]),
             miden_testing::AccountState::Exists,

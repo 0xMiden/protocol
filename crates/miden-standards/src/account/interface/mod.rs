@@ -78,14 +78,6 @@ impl AccountInterface {
         self.account_id.is_regular_account()
     }
 
-    /// Returns `true` if the full state of the account is public on chain, i.e. if the modes are
-    /// [`AccountStorageMode::Public`](miden_protocol::account::AccountStorageMode::Public) or
-    /// [`AccountStorageMode::Network`](miden_protocol::account::AccountStorageMode::Network),
-    /// `false` otherwise.
-    pub fn has_public_state(&self) -> bool {
-        self.account_id.has_public_state()
-    }
-
     /// Returns `true` if the reference account is a private account, `false` otherwise.
     pub fn is_private(&self) -> bool {
         self.account_id.is_private()
@@ -94,11 +86,6 @@ impl AccountInterface {
     /// Returns true if the reference account is a public account, `false` otherwise.
     pub fn is_public(&self) -> bool {
         self.account_id.is_public()
-    }
-
-    /// Returns true if the reference account is a network account, `false` otherwise.
-    pub fn is_network(&self) -> bool {
-        self.account_id.is_network()
     }
 
     /// Returns a reference to the vector of used authentication methods.

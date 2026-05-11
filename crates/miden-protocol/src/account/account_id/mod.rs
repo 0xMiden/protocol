@@ -42,7 +42,7 @@ use crate::utils::serde::{
 /// second is called the suffix. It is laid out as follows:
 ///
 /// ```text
-/// prefix: [hash (56 bits) | storage mode (2 bits) | type (2 bits) | version (4 bits)]
+/// prefix: [hash (57 bits) | storage mode (1 bit) | type (2 bits) | version (4 bits)]
 /// suffix: [zero bit | hash (55 bits) | 8 zero bits]
 /// ```
 ///
@@ -60,14 +60,13 @@ use crate::utils::serde::{
 /// hash.
 ///
 /// In total, due to requiring specific bits for storage mode, type, version and the most
-/// significant bit in the suffix, generating an ID requires 9 bits of Proof-of-Work.
+/// significant bit in the suffix, generating an ID requires 8 bits of Proof-of-Work.
 ///
 /// # Constraints
 ///
 /// Constructors will return an error if:
 ///
-/// - The prefix contains account ID metadata (storage mode, type or version) that does not match
-///   any of the known values.
+/// - The prefix contains an account ID version that does not match any of the known values.
 /// - The most significant bit of the suffix is not zero.
 /// - The lower 8 bits of the suffix are not zero, although [`AccountId::new`] ensures this is the
 ///   case rather than return an error.
@@ -251,20 +250,9 @@ impl AccountId {
         }
     }
 
-    /// Returns `true` if the full state of the account is public on chain, i.e. if the modes are
-    /// [`AccountStorageMode::Public`] or [`AccountStorageMode::Network`], `false` otherwise.
-    pub fn has_public_state(&self) -> bool {
-        self.storage_mode().has_public_state()
-    }
-
     /// Returns `true` if the storage mode is [`AccountStorageMode::Public`], `false` otherwise.
     pub fn is_public(&self) -> bool {
         self.storage_mode().is_public()
-    }
-
-    /// Returns `true` if the storage mode is [`AccountStorageMode::Network`], `false` otherwise.
-    pub fn is_network(&self) -> bool {
-        self.storage_mode().is_network()
     }
 
     /// Returns `true` if the storage mode is [`AccountStorageMode::Private`], `false` otherwise.
@@ -521,10 +509,10 @@ mod tests {
     use crate::address::{AddressType, CustomNetworkId};
     use crate::errors::Bech32Error;
     use crate::testing::account_id::{
-        ACCOUNT_ID_NETWORK_NON_FUNGIBLE_FAUCET,
         ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET,
         ACCOUNT_ID_PRIVATE_SENDER,
         ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
+        ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET,
         ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
         AccountIdBuilder,
@@ -538,7 +526,7 @@ mod tests {
             ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
             ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET,
             ACCOUNT_ID_PRIVATE_SENDER,
-            ACCOUNT_ID_NETWORK_NON_FUNGIBLE_FAUCET,
+            ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET,
         ]
         .into_iter()
         .enumerate()
@@ -594,10 +582,7 @@ mod tests {
                 // Raw bech32 data should contain the metadata byte at index 8.
                 assert_eq!(extract_version(data[8] as u64).unwrap(), account_id.version());
                 assert_eq!(extract_type(data[8] as u64), account_id.account_type());
-                assert_eq!(
-                    extract_storage_mode(data[8] as u64).unwrap(),
-                    account_id.storage_mode()
-                );
+                assert_eq!(extract_storage_mode(data[8] as u64), account_id.storage_mode());
             }
         }
 

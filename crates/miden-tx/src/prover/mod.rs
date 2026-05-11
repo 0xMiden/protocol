@@ -76,7 +76,7 @@ impl LocalTransactionProver {
             .remove_asset(Asset::from(fee))
             .map_err(TransactionProverError::RemoveFeeAssetFromDelta)?;
 
-        let account_update_details = if account.has_public_state() {
+        let account_update_details = if account.id().is_public() {
             AccountUpdateDetails::Delta(post_fee_account_delta)
         } else {
             AccountUpdateDetails::Private

@@ -1,16 +1,19 @@
 // AUTH
 // ================================================================================================
+use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use miden_protocol::Word;
 use miden_protocol::account::AccountComponent;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, PublicKeyCommitment};
+use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
 use miden_standards::account::auth::{
     AuthGuardedMultisig,
     AuthGuardedMultisigConfig,
     AuthMultisig,
     AuthMultisigConfig,
+    AuthNetworkAccount,
     AuthSingleSig,
     AuthSingleSigAcl,
     AuthSingleSigAclConfig,
@@ -68,6 +71,12 @@ pub enum Auth {
     /// The auth procedure expects the first three arguments as [99, 98, 97] to succeed.
     /// In case it succeeds, it conditionally increments the nonce based on the fourth argument.
     Conditional,
+
+    /// Network-account authentication that restricts the account to consuming only notes whose
+    /// script roots appear in `allowed_script_roots`. Must be non-empty.
+    NetworkAccount {
+        allowed_script_roots: BTreeSet<NoteScriptRoot>,
+    },
 }
 
 impl Auth {
@@ -140,6 +149,12 @@ impl Auth {
             Auth::IncrNonce => (IncrNonceAuthComponent.into(), None),
             Auth::Noop => (NoopAuthComponent.into(), None),
             Auth::Conditional => (ConditionalAuthComponent.into(), None),
+            Auth::NetworkAccount { allowed_script_roots } => {
+                let component = AuthNetworkAccount::with_allowlist(allowed_script_roots.clone())
+                    .expect("network account allowlist must be non-empty")
+                    .into();
+                (component, None)
+            },
         }
     }
 }
