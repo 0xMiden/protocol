@@ -353,7 +353,8 @@ end
 #! Outputs: [ATTACHMENTS_COMMITMENT]
 #!
 #! Where:
-#! - ATTACHMENTS_COMMITMENT is the commitment to all attachments of the active note.
+#! - ATTACHMENTS_COMMITMENT is the commitment to all attachments of the note, or the EMPTY_WORD if
+#!   the note does not have any attachments.
 #!
 #! Panics if:
 #! - no note is currently active.

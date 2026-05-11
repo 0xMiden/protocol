@@ -317,7 +317,8 @@ end
 #!
 #! Where:
 #! - note_index is the index of the input note whose attachments commitment should be returned.
-#! - ATTACHMENTS_COMMITMENT is the commitment to all attachments of the note.
+#! - ATTACHMENTS_COMMITMENT is the commitment to all attachments of the note, or the EMPTY_WORD if
+#!   the note does not have any attachments.
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of input notes.
@@ -343,7 +344,8 @@ end
 #! Where:
 #! - is_active_note is 0 for indexed access, 1 for the currently active note.
 #! - note_index is the index of the input note (ignored when is_active_note = 1).
-#! - ATTACHMENTS_COMMITMENT is the commitment to all attachments of the note.
+#! - ATTACHMENTS_COMMITMENT is the commitment to all attachments of the note, or the EMPTY_WORD if
+#!   the note does not have any attachments.
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of input notes.

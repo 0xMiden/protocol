@@ -131,7 +131,8 @@ end
 #!
 #! Where:
 #! - note_index is the index of the output note whose attachments commitment should be returned.
-#! - ATTACHMENTS_COMMITMENT is the commitment to all attachments of the note.
+#! - ATTACHMENTS_COMMITMENT is the commitment to all attachments of the note, or the EMPTY_WORD if
+#!   the note does not have any attachments.
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of output notes.
