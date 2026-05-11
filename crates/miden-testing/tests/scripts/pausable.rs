@@ -13,7 +13,6 @@
 extern crate alloc;
 
 use alloc::string::String;
-use core::slice;
 
 use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::Word;
@@ -37,6 +36,7 @@ use miden_protocol::asset::{
 };
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::{Note, NoteType};
+use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, utils::sync::LazyLock};
 use miden_standards::account::access::AccessControl;
 use miden_standards::account::faucets::BasicFungibleFaucet;
@@ -59,7 +59,8 @@ const ERR_PAUSABLE_ENFORCED_PAUSE: MasmError = MasmError::from_static_str("the c
 const ERR_PAUSABLE_EXPECTED_PAUSE: MasmError =
     MasmError::from_static_str("the contract is not paused");
 
-const ERR_SENDER_NOT_OWNER: MasmError = MasmError::from_static_str("sender is not the owner");
+const ERR_SENDER_NOT_OWNER: MasmError =
+    MasmError::from_static_str("note sender is not the owner");
 
 /// Stable deterministic owner ID used for tests. Distinct from `non_owner_id`.
 static OWNER_ID: LazyLock<AccountId> = LazyLock::new(|| test_account_id(11));
@@ -252,32 +253,15 @@ fn build_note(sender: AccountId, code: impl Into<String>) -> anyhow::Result<Note
         .build()?)
 }
 
-/// Executes the given owner-sent pause note against the faucet and commits the resulting tx
-/// to the chain so subsequent operations observe the updated pause state.
-async fn execute_faucet_pause(
+/// Executes a previously-staged pause/unpause note (already on-chain as a genesis note) and
+/// commits the resulting tx to the chain so subsequent operations observe the updated state.
+async fn execute_note_on_faucet(
     mock_chain: &mut MockChain,
     faucet_id: AccountId,
-    owner: AccountId,
+    note: &Note,
 ) -> anyhow::Result<()> {
-    let note = build_pause_note(owner)?;
     let executed = mock_chain
-        .build_tx_context(faucet_id, &[], slice::from_ref(&note))?
-        .build()?
-        .execute()
-        .await?;
-    mock_chain.add_pending_executed_transaction(&executed)?;
-    mock_chain.prove_next_block()?;
-    Ok(())
-}
-
-async fn execute_faucet_unpause(
-    mock_chain: &mut MockChain,
-    faucet_id: AccountId,
-    owner: AccountId,
-) -> anyhow::Result<()> {
-    let note = build_unpause_note(owner)?;
-    let executed = mock_chain
-        .build_tx_context(faucet_id, &[], slice::from_ref(&note))?
+        .build_tx_context(faucet_id, &[note.id()], &[])?
         .build()?
         .execute()
         .await?;
@@ -368,10 +352,13 @@ async fn pausable_receive_asset_fails_when_paused(
         NoteType::Public,
     )?;
 
+    let pause_note = build_pause_note(*OWNER_ID)?;
+    builder.add_output_note(RawOutputNote::Full(pause_note.clone()));
+
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
-    execute_faucet_pause(&mut mock_chain, faucet.id(), *OWNER_ID).await?;
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &pause_note).await?;
 
     let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
 
@@ -414,10 +401,13 @@ async fn pausable_add_asset_to_note_fails_when_paused(
 
     let asset = create_asset(faucet.id())?;
 
+    let pause_note = build_pause_note(*OWNER_ID)?;
+    builder.add_output_note(RawOutputNote::Full(pause_note.clone()));
+
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
-    execute_faucet_pause(&mut mock_chain, faucet.id(), *OWNER_ID).await?;
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &pause_note).await?;
 
     let recipient = Word::from([0u32, 1, 2, 3]);
     let script_code = format!(
@@ -475,11 +465,16 @@ async fn pausable_pause_then_unpause_then_receive_succeeds() -> anyhow::Result<(
         NoteType::Public,
     )?;
 
+    let pause_note = build_pause_note(*OWNER_ID)?;
+    let unpause_note = build_unpause_note(*OWNER_ID)?;
+    builder.add_output_note(RawOutputNote::Full(pause_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(unpause_note.clone()));
+
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
-    execute_faucet_pause(&mut mock_chain, faucet.id(), *OWNER_ID).await?;
-    execute_faucet_unpause(&mut mock_chain, faucet.id(), *OWNER_ID).await?;
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &pause_note).await?;
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &unpause_note).await?;
 
     let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
 
@@ -499,12 +494,14 @@ async fn pausable_unpause_while_unpaused_fails() -> anyhow::Result<()> {
     let _wallet = builder.add_existing_wallet(Auth::IncrNonce)?;
     let faucet = add_faucet_with_pausable_owner(&mut builder, *OWNER_ID)?;
 
+    let unpause_note = build_unpause_note(*OWNER_ID)?;
+    builder.add_output_note(RawOutputNote::Full(unpause_note.clone()));
+
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
-    let note = build_unpause_note(*OWNER_ID)?;
     let result = mock_chain
-        .build_tx_context(faucet.id(), &[], slice::from_ref(&note))?
+        .build_tx_context(faucet.id(), &[unpause_note.id()], &[])?
         .build()?
         .execute()
         .await;
@@ -523,13 +520,15 @@ async fn pausable_owner_pause_fails_when_sender_not_owner() -> anyhow::Result<()
     let _wallet = builder.add_existing_wallet(Auth::IncrNonce)?;
     let faucet = add_faucet_with_pausable_owner(&mut builder, *OWNER_ID)?;
 
+    // Note sender is NOT_OWNER, but pausable_owner::pause asserts sender == owner.
+    let attacker_note = build_pause_note(*NON_OWNER_ID)?;
+    builder.add_output_note(RawOutputNote::Full(attacker_note.clone()));
+
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
-    // Note sender is NOT_OWNER, but pausable_owner::pause asserts sender == owner.
-    let note = build_pause_note(*NON_OWNER_ID)?;
     let result = mock_chain
-        .build_tx_context(faucet.id(), &[], slice::from_ref(&note))?
+        .build_tx_context(faucet.id(), &[attacker_note.id()], &[])?
         .build()?
         .execute()
         .await;
@@ -545,16 +544,21 @@ async fn pausable_owner_unpause_fails_when_sender_not_owner() -> anyhow::Result<
     let _wallet = builder.add_existing_wallet(Auth::IncrNonce)?;
     let faucet = add_faucet_with_pausable_owner(&mut builder, *OWNER_ID)?;
 
+    // Pre-stage both notes: the legitimate owner pause, and the attacker's unpause attempt.
+    let pause_note = build_pause_note(*OWNER_ID)?;
+    let attacker_note = build_unpause_note(*NON_OWNER_ID)?;
+    builder.add_output_note(RawOutputNote::Full(pause_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(attacker_note.clone()));
+
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
     // Pause first (legitimately) so the unpause attempt can reach the owner check.
-    execute_faucet_pause(&mut mock_chain, faucet.id(), *OWNER_ID).await?;
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &pause_note).await?;
 
     // Then try to unpause as a non-owner.
-    let note = build_unpause_note(*NON_OWNER_ID)?;
     let result = mock_chain
-        .build_tx_context(faucet.id(), &[], slice::from_ref(&note))?
+        .build_tx_context(faucet.id(), &[attacker_note.id()], &[])?
         .build()?
         .execute()
         .await;
