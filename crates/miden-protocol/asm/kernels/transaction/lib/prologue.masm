@@ -289,7 +289,7 @@ end
 #! for a new account.
 #!
 #! Applies the following validation to the new account:
-#! - assert that the account ID is valid.
+#! - assert that the account ID uses the supported version and is otherwise valid.
 #! - assert that the account vault is empty.
 #! - assert that the account nonce is set to 0.
 #! - read the account seed from the advice provider and assert it satisfies seed requirements.

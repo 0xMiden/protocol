@@ -166,7 +166,7 @@ impl NoteMetadata {
     ///
     /// If we make this public, we may want to instead consider introducing a `NoteMetadataVersion`
     /// struct, similar to `AccountIdVersion`.
-    const VERSION_1: u8 = 0;
+    const VERSION_1: u8 = 1;
 
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
@@ -371,6 +371,8 @@ fn merge_schemes(headers: [NoteAttachmentHeader; NoteAttachments::MAX_COUNT]) ->
 #[cfg(test)]
 mod tests {
 
+    use alloc::string::ToString;
+
     use super::*;
     use crate::note::{NoteAttachment, NoteAttachmentScheme};
     use crate::testing::account_id::ACCOUNT_ID_MAX_ONES;
@@ -442,5 +444,18 @@ mod tests {
         assert_eq!(roundtripped, metadata);
 
         Ok(())
+    }
+
+    #[test]
+    fn note_metadata_header_encodes_v1_as_one() {
+        let sender = AccountId::try_from(ACCOUNT_ID_MAX_ONES).unwrap();
+        let metadata = PartialNoteMetadata::new(sender, NoteType::Private);
+        let metadata = NoteMetadata::new(metadata, &NoteAttachments::default());
+
+        let metadata = metadata.to_metadata_word();
+        let version = metadata[0].as_canonical_u64() & 0b1111;
+
+        assert_eq!(version, NoteMetadata::VERSION_1 as u64);
+        assert_eq!(version, 1);
     }
 }
