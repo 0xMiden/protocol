@@ -2,16 +2,63 @@ use alloc::string::ToString;
 use alloc::vec;
 use alloc::vec::Vec;
 
+use miden_assembly::Library;
+use miden_assembly::serde::Deserializable;
 use miden_core::{Felt, Word};
 use miden_protocol::account::AccountId;
 use miden_protocol::crypto::SequentialCommit;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
-use miden_protocol::note::{Note, NoteAssets, NoteMetadata, NoteRecipient, NoteStorage, NoteType};
+use miden_protocol::note::{
+    Note,
+    NoteAssets,
+    NoteMetadata,
+    NoteRecipient,
+    NoteScript,
+    NoteScriptRoot,
+    NoteStorage,
+    NoteType,
+};
 use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
+use miden_utils_sync::LazyLock;
 
 use crate::utils::Keccak256Output;
-use crate::{EthAddress, EthAmount, GlobalIndex, MetadataHash, claim_script};
+use crate::{EthAddress, EthAmount, GlobalIndex, MetadataHash};
+
+// NOTE SCRIPT
+// ================================================================================================
+
+// Initialize the CLAIM note script only once
+static CLAIM_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
+    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/claim.masl"));
+    let library =
+        Library::read_from_bytes(bytes).expect("shipped CLAIM script library is well-formed");
+    NoteScript::from_library(&library).expect("shipped CLAIM script is well-formed")
+});
+
+// CLAIM NOTE
+// ================================================================================================
+
+/// CLAIM (Bridge from AggLayer) note.
+///
+/// This note instructs the AggLayer bridge to validate a claim against its registered GERs and
+/// emit a corresponding MINT note for the AggLayer faucet. CLAIM notes are always public.
+pub struct ClaimNote;
+
+impl ClaimNote {
+    // PUBLIC ACCESSORS
+    // --------------------------------------------------------------------------------------------
+
+    /// Returns the CLAIM (Bridge from AggLayer) note script.
+    pub fn script() -> NoteScript {
+        CLAIM_SCRIPT.clone()
+    }
+
+    /// Returns the CLAIM note script root.
+    pub fn script_root() -> NoteScriptRoot {
+        CLAIM_SCRIPT.root()
+    }
+}
 
 // CLAIM NOTE TYPE ALIASES
 // ================================================================================================
@@ -188,7 +235,7 @@ pub fn create_claim_note<R: FeltRng>(
     let metadata =
         NoteMetadata::new(sender_account_id, NoteType::Public).with_attachment(attachment);
 
-    let recipient = NoteRecipient::new(rng.draw_word(), claim_script(), note_storage);
+    let recipient = NoteRecipient::new(rng.draw_word(), ClaimNote::script(), note_storage);
     let assets = NoteAssets::new(vec![])?;
 
     Ok(Note::new(assets, metadata, recipient))

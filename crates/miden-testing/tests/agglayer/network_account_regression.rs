@@ -4,7 +4,7 @@
 //!
 //! 1. The bridge rejects any transaction that executes a tx script.
 //! 2. The bridge rejects any input note whose script root is not in
-//!    [`miden_agglayer::bridge_note_allowlist`].
+//!    [`miden_agglayer::AggLayerBridge::allowed_notes`].
 //!
 //! [`AuthNetworkAccount`]: miden_standards::account::auth::AuthNetworkAccount
 
