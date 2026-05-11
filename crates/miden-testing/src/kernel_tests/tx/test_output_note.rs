@@ -1550,10 +1550,11 @@ async fn test_network_note() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Test that `output_note::get_attachment_commitments_ptr` returns the correct number of
-/// attachments and writes the individual attachment commitments to memory at the returned pointer.
+/// Test that `output_note::write_attachment_commitments_to_memory` returns the correct number of
+/// attachments and writes the individual attachment commitments to memory at the destination
+/// pointer.
 #[tokio::test]
-async fn test_get_attachment_commitments_ptr() -> anyhow::Result<()> {
+async fn test_write_attachment_commitments_to_memory() -> anyhow::Result<()> {
     let account = Account::mock(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET, Auth::IncrNonce);
     let rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
 
@@ -1577,6 +1578,8 @@ async fn test_get_attachment_commitments_ptr() -> anyhow::Result<()> {
         use miden::protocol::output_note
         use miden::core::sys
 
+        const DEST_PTR = 0x1000
+
         begin
             push.{RECIPIENT}
             push.{note_type}
@@ -1599,24 +1602,25 @@ async fn test_get_attachment_commitments_ptr() -> anyhow::Result<()> {
             exec.output_note::add_word_attachment
             # => []
 
-            # get attachment commitments for note at index 0
-            push.0
-            exec.output_note::get_attachment_commitments_ptr
-            # => [num_attachments, attachment_commitments_ptr]
+            # write attachment commitments for note at index 0 to DEST_PTR
+            push.0 push.DEST_PTR
+            # => [dest_ptr, note_idx=0]
+            exec.output_note::write_attachment_commitments_to_memory
+            # => [num_attachments]
 
             # assert num_attachments == 2
             eq.2 assert.err=\"expected 2 attachments\"
-            # => [attachment_commitments_ptr]
+            # => []
 
-            # read commitment 0 from memory at ptr and assert
-            padw dup.4 mem_loadw_le
-            # => [COMMITMENT_0, attachment_commitments_ptr]
+            # read commitment 0 from memory at DEST_PTR and assert
+            padw push.DEST_PTR mem_loadw_le
+            # => [COMMITMENT_0]
             push.{EXPECTED_COMMITMENT_0}
             assert_eqw.err=\"attachment commitment 0 mismatch\"
-            # => [attachment_commitments_ptr]
+            # => []
 
-            # advance pointer to next word (WORD_SIZE=4) and read commitment 1
-            padw movup.4 add.4 mem_loadw_le
+            # read commitment 1 from DEST_PTR + WORD_SIZE
+            padw push.DEST_PTR add.4 mem_loadw_le
             # => [COMMITMENT_1]
             push.{EXPECTED_COMMITMENT_1}
             assert_eqw.err=\"attachment commitment 1 mismatch\"
@@ -1652,10 +1656,10 @@ async fn test_get_attachment_commitments_ptr() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Test that `output_note::get_attachment_ptr` retrieves the correct attachment data from local
-/// memory after piping its preimage from the advice map.
+/// Test that `output_note::write_attachment_to_memory` retrieves the correct attachment data from
+/// the advice map and writes it to the destination pointer.
 #[tokio::test]
-async fn test_get_attachment_ptr() -> anyhow::Result<()> {
+async fn test_write_attachment_to_memory() -> anyhow::Result<()> {
     let account = Account::mock(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET, Auth::IncrNonce);
     let rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
 
@@ -1681,6 +1685,12 @@ async fn test_get_attachment_ptr() -> anyhow::Result<()> {
         use miden::protocol::output_note
         use miden::core::sys
 
+        const ATTACHMENT_2_PTR = 1024
+        const ATTACHMENT_2_WORD_0_PTR = ATTACHMENT_2_PTR
+        const ATTACHMENT_2_WORD_1_PTR = ATTACHMENT_2_PTR + 4
+
+        const ATTACHMENT_DEST_PTR = 2048
+
         begin
             push.{RECIPIENT}
             push.{note_type}
@@ -1696,13 +1706,13 @@ async fn test_get_attachment_ptr() -> anyhow::Result<()> {
             # => []
 
             # write attachment elements to memory
-            push.{attachment1_word0} mem_storew_le.1024 dropw
-            push.{attachment1_word1} mem_storew_le.1028 dropw
+            push.{attachment1_word0} mem_storew_le.ATTACHMENT_2_WORD_0_PTR dropw
+            push.{attachment1_word1} mem_storew_le.ATTACHMENT_2_WORD_1_PTR dropw
             # => []
 
             # add second attachment
             push.0
-            push.1024
+            push.ATTACHMENT_2_PTR
             push.{attachment1_num_words}
             push.{attachment_scheme_1}
             # => [attachment_scheme, num_words, attachment_ptr, note_idx=0]
@@ -1710,38 +1720,38 @@ async fn test_get_attachment_ptr() -> anyhow::Result<()> {
             # => []
 
             # --- validate attachment 0 ---
-            push.0 push.0
-            # => [attachment_idx=0, note_idx=0]
-            exec.output_note::get_attachment_ptr
-            # => [num_words, attachment_ptr]
+            push.0 push.0 push.ATTACHMENT_DEST_PTR
+            # => [dest_ptr, attachment_idx=0, note_idx=0]
+            exec.output_note::write_attachment_to_memory
+            # => [num_words]
 
             eq.{attachment0_num_words}
             assert.err="expected attachment 0 to have {attachment0_num_words} words"
-            # => [attachment_ptr]
+            # => []
 
-            padw movup.4 mem_loadw_le
+            padw mem_loadw_le.ATTACHMENT_DEST_PTR
             push.{attachment0_word}
             assert_eqw.err="attachment 0 word mismatch"
 
             # --- validate attachment 1 ---
-            push.0 push.1
-            # => [attachment_idx=1, note_idx=0]
-            exec.output_note::get_attachment_ptr
-            # => [num_words, attachment_ptr]
+            push.0 push.1 push.ATTACHMENT_DEST_PTR
+            # => [dest_ptr, attachment_idx=1, note_idx=0]
+            exec.output_note::write_attachment_to_memory
+            # => [num_words]
 
             eq.{attachment1_num_words}
             assert.err="expected attachment 1 to have {attachment1_num_words} words"
-            # => [attachment_ptr]
+            # => []
 
             # validate first word in attachment_ptr
-            padw dup.4 mem_loadw_le
+            padw mem_loadw_le.ATTACHMENT_DEST_PTR
             # => [ATTACHMENT1_WORD0, attachment_ptr]
             push.{attachment1_word0}
             assert_eqw.err="attachment 1 word 0 mismatch"
             # => [attachment_ptr]
 
             # validate second word in attachment_ptr (offset by 4)
-            padw movup.4 add.4 mem_loadw_le
+            padw push.ATTACHMENT_DEST_PTR add.4 mem_loadw_le
             # => [ATTACHMENT1_WORD1]
             push.{attachment1_word1}
             assert_eqw.err="attachment 1 word 1 mismatch"
@@ -1780,15 +1790,16 @@ async fn test_get_attachment_ptr() -> anyhow::Result<()> {
 /// Setup: a SPAWN note creates an output note with two word attachments (schemes 10 and 20).
 /// The tx_script then calls `find_attachment` on the created output note.
 ///
-/// - `found`:     search for scheme 10 → is_found=1, attachment data is returned.
-/// - `not_found`: search for scheme 99 → is_found=0, num_words=0, attachment_ptr=0.
+/// - `found`:     search for scheme 10 → is_found=1, attachment_idx=0.
+/// - `not_found`: search for scheme 99 → is_found=0.
 #[rstest]
-#[case::found(10, true)]
-#[case::not_found(99, false)]
+#[case::found(20, true, 1)]
+#[case::not_found(99, false, 0)]
 #[tokio::test]
 async fn test_find_attachment(
     #[case] search_scheme: u16,
     #[case] expected_found: bool,
+    #[case] expected_idx: u8,
 ) -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
@@ -1814,6 +1825,8 @@ async fn test_find_attachment(
         use miden::protocol::output_note
         use miden::core::sys
 
+        const DEST_PTR = 0x1000
+
         begin
             # the spawn note creates output note at index 0;
             # search for the target scheme on that note
@@ -1821,29 +1834,37 @@ async fn test_find_attachment(
             push.{search_scheme}
             # => [attachment_scheme, note_idx=0]
             exec.output_note::find_attachment
-            # => [is_found, num_words, attachment_ptr]
+            # => [is_found, attachment_idx]
 
             # assert is_found matches expectation
             push.{expected_found} assert_eq.err="is_found mismatch"
-            # => [num_words, attachment_ptr]
+            # => [attachment_idx]
 
             push.{expected_found}
             if.true
-                # found path: verify num_words == 1 (word attachment)
+                # found path: verify attachment_idx matches expectation
+                push.{expected_idx} assert_eq.err="attachment_idx mismatch"
+                # => []
+
+                # write the found attachment to memory and read it back
+                push.0 push.{expected_idx} push.DEST_PTR
+                # => [dest_ptr, attachment_idx, note_idx=0]
+                exec.output_note::write_attachment_to_memory
+                # => [num_words]
+
                 eq.1 assert.err="expected num_words=1"
-                # => [attachment_ptr]
+                # => []
 
                 # read the word from memory and assert it matches
-                padw movup.4 mem_loadw_le
+                padw push.DEST_PTR mem_loadw_le
                 # => [ATTACHMENT_WORD]
 
                 push.{EXPECTED_WORD}
                 assert_eqw.err="attachment data mismatch"
                 # => []
             else
-                # not-found path: verify num_words=0 and ptr=0
-                eq.0 assert.err="expected num_words=0"
-                eq.0 assert.err="expected attachment_ptr=0"
+                # not-found path: drop the (undefined) attachment_idx
+                drop
                 # => []
             end
 
@@ -1852,7 +1873,7 @@ async fn test_find_attachment(
         end
         "#,
         expected_found = expected_found as u8,
-        EXPECTED_WORD = word_0,
+        EXPECTED_WORD = word_1,
     );
 
     let tx_script = CodeBuilder::new().compile_tx_script(tx_script)?;
@@ -1946,7 +1967,8 @@ async fn test_add_attachments_with_too_many_overall_elements_fails() -> anyhow::
 #[case::add_attachment(5, "add_attachment")]
 #[case::add_word_attachment(5, "add_word_attachment")]
 #[case::find_attachment(1, "find_attachment")]
-#[case::get_attachment_commitments_ptr(0, "get_attachment_commitments_ptr")]
+#[case::write_attachment_commitments_to_memory(1, "write_attachment_commitments_to_memory")]
+#[case::write_attachment_to_memory(2, "write_attachment_to_memory")]
 #[case::get_attachments_commitment(0, "get_attachments_commitment")]
 #[tokio::test]
 async fn test_output_note_index_out_of_bounds(

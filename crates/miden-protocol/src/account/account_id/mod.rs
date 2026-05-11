@@ -1,5 +1,5 @@
-pub(crate) mod v0;
-pub use v0::{AccountIdPrefixV0, AccountIdV0};
+pub(crate) mod v1;
+pub use v1::{AccountIdPrefixV1, AccountIdV1};
 
 mod id_prefix;
 pub use id_prefix::AccountIdPrefix;
@@ -34,7 +34,7 @@ use crate::utils::serde::{
 
 /// The identifier of an [`Account`](crate::account::Account).
 ///
-/// This enum is a wrapper around concrete versions of IDs. The following documents version 0.
+/// This enum is a wrapper around concrete versions of IDs. The following documents version 1.
 ///
 /// # Layout
 ///
@@ -94,7 +94,7 @@ use crate::utils::serde::{
 ///   of the encoded suffix are one, so having the zero bit constraint is important for validity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AccountId {
-    V0(AccountIdV0),
+    V1(AccountIdV1),
 }
 
 impl AccountId {
@@ -124,8 +124,8 @@ impl AccountId {
         storage_commitment: Word,
     ) -> Result<Self, AccountIdError> {
         match version {
-            AccountIdVersion::Version0 => {
-                AccountIdV0::new(seed, code_commitment, storage_commitment).map(Self::V0)
+            AccountIdVersion::Version1 => {
+                AccountIdV1::new(seed, code_commitment, storage_commitment).map(Self::V1)
             },
         }
     }
@@ -147,10 +147,10 @@ impl AccountId {
     pub fn new_unchecked(elements: [Felt; 2]) -> Self {
         // The prefix contains the metadata.
         // If we add more versions in the future, we may need to generalize this.
-        match v0::extract_version(elements[0].as_canonical_u64())
+        match v1::extract_version(elements[0].as_canonical_u64())
             .expect("prefix should contain a valid account ID version")
         {
-            AccountIdVersion::Version0 => Self::V0(AccountIdV0::new_unchecked(elements)),
+            AccountIdVersion::Version1 => Self::V1(AccountIdV1::new_unchecked(elements)),
         }
     }
 
@@ -163,9 +163,9 @@ impl AccountId {
     pub fn try_from_elements(suffix: Felt, prefix: Felt) -> Result<Self, AccountIdError> {
         // The prefix contains the metadata.
         // If we add more versions in the future, we may need to generalize this.
-        match v0::extract_version(prefix.as_canonical_u64())? {
-            AccountIdVersion::Version0 => {
-                AccountIdV0::try_from_elements(suffix, prefix).map(Self::V0)
+        match v1::extract_version(prefix.as_canonical_u64())? {
+            AccountIdVersion::Version1 => {
+                AccountIdV1::try_from_elements(suffix, prefix).map(Self::V1)
             },
         }
     }
@@ -192,8 +192,8 @@ impl AccountId {
         storage_mode: AccountStorageMode,
     ) -> AccountId {
         match version {
-            AccountIdVersion::Version0 => {
-                Self::V0(AccountIdV0::dummy(bytes, account_type, storage_mode))
+            AccountIdVersion::Version1 => {
+                Self::V1(AccountIdV1::dummy(bytes, account_type, storage_mode))
             },
         }
     }
@@ -213,7 +213,7 @@ impl AccountId {
         storage_commitment: Word,
     ) -> Result<Word, AccountError> {
         match version {
-            AccountIdVersion::Version0 => AccountIdV0::compute_account_seed(
+            AccountIdVersion::Version1 => AccountIdV1::compute_account_seed(
                 init_seed,
                 account_type,
                 storage_mode,
@@ -230,7 +230,7 @@ impl AccountId {
     /// Returns the type of this account ID.
     pub fn account_type(&self) -> AccountType {
         match self {
-            AccountId::V0(account_id) => account_id.account_type(),
+            AccountId::V1(account_id) => account_id.account_type(),
         }
     }
 
@@ -247,7 +247,7 @@ impl AccountId {
     /// Returns the storage mode of this account ID.
     pub fn storage_mode(&self) -> AccountStorageMode {
         match self {
-            AccountId::V0(account_id) => account_id.storage_mode(),
+            AccountId::V1(account_id) => account_id.storage_mode(),
         }
     }
 
@@ -275,7 +275,7 @@ impl AccountId {
     /// Returns the version of this account ID.
     pub fn version(&self) -> AccountIdVersion {
         match self {
-            AccountId::V0(_) => AccountIdVersion::Version0,
+            AccountId::V1(_) => AccountIdVersion::Version1,
         }
     }
 
@@ -291,7 +291,7 @@ impl AccountId {
     /// it encodes 15 bytes.
     pub fn to_hex(self) -> String {
         match self {
-            AccountId::V0(account_id) => account_id.to_hex(),
+            AccountId::V1(account_id) => account_id.to_hex(),
         }
     }
 
@@ -325,7 +325,7 @@ impl AccountId {
     /// conveniently human-readable.
     pub fn to_bech32(&self, network_id: NetworkId) -> String {
         match self {
-            AccountId::V0(account_id_v0) => account_id_v0.to_bech32(network_id),
+            AccountId::V1(account_id_v1) => account_id_v1.to_bech32(network_id),
         }
     }
 
@@ -334,8 +334,8 @@ impl AccountId {
     /// See [`AccountId::to_bech32`] for details on the format. The procedure for decoding the
     /// bech32 data into the ID consists of the inverse operations of encoding.
     pub fn from_bech32(bech32_string: &str) -> Result<(NetworkId, Self), AccountIdError> {
-        AccountIdV0::from_bech32(bech32_string)
-            .map(|(network_id, account_id)| (network_id, AccountId::V0(account_id)))
+        AccountIdV1::from_bech32(bech32_string)
+            .map(|(network_id, account_id)| (network_id, AccountId::V1(account_id)))
     }
 
     /// Parses a string into an [`AccountId`].
@@ -363,7 +363,7 @@ impl AccountId {
 
     /// Decodes the data from the bech32 byte iterator into an [`AccountId`].
     pub(crate) fn from_bech32_byte_iter(byte_iter: ByteIter<'_>) -> Result<Self, AccountIdError> {
-        AccountIdV0::from_bech32_byte_iter(byte_iter).map(AccountId::V0)
+        AccountIdV1::from_bech32_byte_iter(byte_iter).map(AccountId::V1)
     }
 
     /// Returns the [`AccountIdPrefix`] of this ID.
@@ -371,14 +371,14 @@ impl AccountId {
     /// The prefix of an account ID is guaranteed to be unique.
     pub fn prefix(&self) -> AccountIdPrefix {
         match self {
-            AccountId::V0(account_id) => AccountIdPrefix::V0(account_id.prefix()),
+            AccountId::V1(account_id) => AccountIdPrefix::V1(account_id.prefix()),
         }
     }
 
     /// Returns the suffix of this ID as a [`Felt`].
     pub const fn suffix(&self) -> Felt {
         match self {
-            AccountId::V0(account_id) => account_id.suffix(),
+            AccountId::V1(account_id) => account_id.suffix(),
         }
     }
 }
@@ -389,7 +389,7 @@ impl AccountId {
 impl From<AccountId> for [Felt; 2] {
     fn from(id: AccountId) -> Self {
         match id {
-            AccountId::V0(account_id) => account_id.into(),
+            AccountId::V1(account_id) => account_id.into(),
         }
     }
 }
@@ -397,7 +397,7 @@ impl From<AccountId> for [Felt; 2] {
 impl From<AccountId> for [u8; 15] {
     fn from(id: AccountId) -> Self {
         match id {
-            AccountId::V0(account_id) => account_id.into(),
+            AccountId::V1(account_id) => account_id.into(),
         }
     }
 }
@@ -405,7 +405,7 @@ impl From<AccountId> for [u8; 15] {
 impl From<AccountId> for u128 {
     fn from(id: AccountId) -> Self {
         match id {
-            AccountId::V0(account_id) => account_id.into(),
+            AccountId::V1(account_id) => account_id.into(),
         }
     }
 }
@@ -413,9 +413,9 @@ impl From<AccountId> for u128 {
 // CONVERSIONS TO ACCOUNT ID
 // ================================================================================================
 
-impl From<AccountIdV0> for AccountId {
-    fn from(id: AccountIdV0) -> Self {
-        Self::V0(id)
+impl From<AccountIdV1> for AccountId {
+    fn from(id: AccountIdV1) -> Self {
+        Self::V1(id)
     }
 }
 
@@ -433,10 +433,10 @@ impl TryFrom<[u8; 15]> for AccountId {
         let metadata_byte = bytes[7];
         // We only have one supported version for now, so we use the extractor from that version.
         // If we add more versions in the future, we may need to generalize this.
-        let version = v0::extract_version(metadata_byte as u64)?;
+        let version = v1::extract_version(metadata_byte as u64)?;
 
         match version {
-            AccountIdVersion::Version0 => AccountIdV0::try_from(bytes).map(Self::V0),
+            AccountIdVersion::Version1 => AccountIdV1::try_from(bytes).map(Self::V1),
         }
     }
 }
@@ -485,7 +485,7 @@ impl fmt::Display for AccountId {
 impl Serializable for AccountId {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         match self {
-            AccountId::V0(account_id) => {
+            AccountId::V1(account_id) => {
                 account_id.write_into(target);
             },
         }
@@ -493,7 +493,7 @@ impl Serializable for AccountId {
 
     fn get_size_hint(&self) -> usize {
         match self {
-            AccountId::V0(account_id) => account_id.get_size_hint(),
+            AccountId::V1(account_id) => account_id.get_size_hint(),
         }
     }
 }
@@ -517,7 +517,7 @@ mod tests {
     use bech32::{Bech32, Bech32m, NoChecksum};
 
     use super::*;
-    use crate::account::account_id::v0::{extract_storage_mode, extract_type, extract_version};
+    use crate::account::account_id::v1::{extract_storage_mode, extract_type, extract_version};
     use crate::address::{AddressType, CustomNetworkId};
     use crate::errors::Bech32Error;
     use crate::testing::account_id::{

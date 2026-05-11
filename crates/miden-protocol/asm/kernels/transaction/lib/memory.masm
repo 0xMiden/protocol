@@ -1601,7 +1601,7 @@ end
 #!
 #! Where:
 #! - note_ptr is the memory address at which the input note data begins.
-#! - NOTE_METADATA is the metadata header of the input note.
+#! - NOTE_METADATA is the metadata of the input note.
 pub proc get_input_note_metadata
     padw
     movup.4 add.INPUT_NOTE_METADATA_OFFSET

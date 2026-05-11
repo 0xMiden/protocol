@@ -137,7 +137,7 @@ pub proc get_storage
     dup.4 movdn.6
     # => [NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr, num_storage_items]
 
-    # write the inputs to the memory using the provided destination pointer
+    # write the inputs to the provided destination pointer
     exec.write_storage_to_memory
     # => [num_storage_items]
 end
@@ -353,64 +353,54 @@ end
 #! Outputs: [ATTACHMENTS_COMMITMENT]
 #!
 #! Where:
-#! - ATTACHMENTS_COMMITMENT is the commitment to all attachments of the active note.
+#! - ATTACHMENTS_COMMITMENT is the commitment to all attachments of the note, or the EMPTY_WORD if
+#!   the note does not have any attachments.
 #!
 #! Panics if:
 #! - no note is currently active.
 #!
 #! Invocation: exec
 pub proc get_attachments_commitment
-    push.1
-    # => [is_active_note = 1, note_index]
+    # push a placeholder note_index (ignored when is_active_note = 1) and the active note flag
+    push.0.1
+    # => [is_active_note = 1, note_index = 0]
 
     exec.input_note::get_attachments_commitment_raw
     # => [ATTACHMENTS_COMMITMENT]
 end
 
-#! Writes the attachment commitments of the active note with the specified index to memory and
-#! returns the pointer to the data.
+#! Writes the attachment commitments of the active note to the provided destination pointer.
 #!
-#! This procedure allocates 16 elements of memory (max num attachments * WORD_NUM_ELEMENTS) to store all
-#! potential four attachment commitments.
-#!
-#! Inputs:  []
-#! Outputs: [num_attachments, attachment_commitments_ptr]
+#! Inputs:  [dest_ptr]
+#! Outputs: [num_attachments]
 #!
 #! Where:
+#! - dest_ptr is the memory address to which to write the attachment commitments.
 #! - num_attachments is the number of attachments in the note.
-#! - attachment_commitments_ptr is a pointer to the attachment commitments written to local memory.
 #!
 #! Panics if:
 #! - no note is currently active.
-#! - the note index is greater or equal to the total number of input notes.
 #! - the sequential hash over the attachment commitments in the advice inputs does not match the
 #!   attachments commitment.
 #!
 #! Invocation: exec
-@locals(16)
-pub proc get_attachment_commitments_ptr
+pub proc write_attachment_commitments_to_memory
     exec.get_attachments_commitment
-    # => [ATTACHMENTS_COMMITMENT]
-
-    locaddr.0 movdn.4
     # => [ATTACHMENTS_COMMITMENT, dest_ptr]
 
     exec.note::write_attachment_commitments_to_memory
     # => [num_attachments]
-
-    locaddr.0 swap
-    # => [num_attachments, dest_ptr]
 end
 
-#! Writes the attachment with the provided index from the active note to memory and returns the
-#! pointer to the data.
+#! Writes the attachment with the provided index from the active note the provided destination
+#! pointer.
 #!
-#! Inputs:  [attachment_idx]
-#! Outputs: [num_words, attachment_ptr]
+#! Inputs:  [dest_ptr, attachment_idx]
+#! Outputs: [num_words]
 #!
 #! Where:
+#! - dest_ptr is the memory address to which to write the attachment data.
 #! - attachment_idx is the index of the attachment to retrieve.
-#! - attachment_ptr is a pointer to the attachment data written to local memory.
 #! - num_words is the number of words in the attachment.
 #!
 #! Panics if:
@@ -420,33 +410,37 @@ end
 #!   attachment commitment.
 #!
 #! Invocation: exec
-pub proc get_attachment_ptr
-    # get the attachment commitments for the active note
-    swap exec.get_attachment_commitments_ptr
-    # => [num_attachments, attachment_commitments_ptr, attachment_idx]
+@locals(16)
+pub proc write_attachment_to_memory
+    # write the attachment commitments to local memory
+    # we allocate 16 elements of memory (max num attachments * WORD_SIZE) to store all
+    # four attachment commitments
+    swap locaddr.0
+    # => [attachment_commitments_ptr, attachment_idx, dest_ptr]
 
-    exec.note::get_attachment_ptr
-    # => [num_words, attachment_ptr]
+    exec.write_attachment_commitments_to_memory
+    # => [num_attachments, attachment_idx, dest_ptr]
+
+    locaddr.0 swap
+    # => [num_attachments, attachment_commitments_ptr, attachment_idx, dest_ptr]
+
+    exec.note::write_indexed_attachment_to_memory
+    # => [num_words]
 end
 
-#! Searches the metadata of the active note for the specified attachment scheme and if
-#! found, pipes the attachment's underlying data from the advice inputs to memory and returns
-#! the ptr to it.
+#! Searches the metadata of the active note for the specified attachment scheme and returns
+#! the index of the first matching slot.
 #!
 #! Inputs:  [attachment_scheme]
-#! Outputs: [is_found, num_words, attachment_ptr]
+#! Outputs: [is_found, attachment_idx]
 #!
 #! Where:
 #! - attachment_scheme is the scheme of the attachment to find.
-#! - note_index is the index of the input note.
-#! - attachment_ptr is the pointer to the attachment data written to memory.
-#! - num_words is the number of words in the attachment.
 #! - is_found is 1 if the attachment with the provided scheme was found, 0 otherwise.
+#! - attachment_idx is the index (0-3) of the first matching slot, or undefined if not found.
 #!
 #! Panics if:
 #! - no note is currently active.
-#! - the sequential hash over the attachment commitments in the advice inputs does not match the
-#!   attachments commitment.
 #!
 #! Invocation: exec
 pub proc find_attachment
@@ -458,16 +452,4 @@ pub proc find_attachment
 
     exec.note::find_attachment_idx
     # => [is_found, attachment_idx]
-
-    if.true
-        exec.get_attachment_ptr
-        # => [num_words, attachment_ptr]
-
-        push.1
-        # => [is_found = 1, num_words, attachment_ptr]
-    else
-        drop push.0.0.0
-        # => [is_found = 0, num_words = 0, attachment_ptr = 0]
-    end
-    # => [is_found, num_words, attachment_ptr]
 end

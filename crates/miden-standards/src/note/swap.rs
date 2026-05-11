@@ -351,7 +351,7 @@ mod tests {
             FungibleAsset::new(
                 AccountId::dummy(
                     fungible_faucet_id_bytes,
-                    AccountIdVersion::Version0,
+                    AccountIdVersion::Version1,
                     AccountType::FungibleFaucet,
                     AccountStorageMode::Public,
                 ),
@@ -365,7 +365,7 @@ mod tests {
                 &NonFungibleAssetDetails::new(
                     AccountId::dummy(
                         non_fungible_faucet_id_bytes,
-                        AccountIdVersion::Version0,
+                        AccountIdVersion::Version1,
                         AccountType::NonFungibleFaucet,
                         AccountStorageMode::Public,
                     ),
