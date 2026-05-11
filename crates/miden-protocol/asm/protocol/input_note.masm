@@ -331,8 +331,8 @@ pub proc get_attachments_commitment
     # => [ATTACHMENTS_COMMITMENT]
 end
 
-#! Writes the attachment commitments of the note identified by the is_active_note flag to memory
-#! and returns the pointer to the data.
+#! Returns the commitment over all attachments of the input note with the specified index or the
+#! active note, depending on the provided flag.
 #!
 #! This is the shared implementation used by both `input_note::get_attachments_commitment` and
 #! `active_note::get_attachments_commitment`.

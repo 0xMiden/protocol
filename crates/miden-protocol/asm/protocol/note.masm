@@ -105,10 +105,15 @@ pub proc write_attachment_commitments_to_memory
     # AS => [num_elements, [ATTACHMENT_COMMITMENT]]
 
     # SAFETY: if the provided num_elements is invalid, the commitment check would fail in
-    # pipe_preimage_to_memory so we assume validity and only do a basic u32 assertion to protect
-    # against invalid advice inputs.
+    # pipe_preimage_to_memory so we assume validity and only do basic checks to protect against
+    # invalid advice inputs.
     adv_push.1 u32assert.err="invalid attachment num_elements advice input"
-    u32div.WORD_SIZE
+    u32divmod.WORD_SIZE
+    # OS => [remainder, num_words, ATTACHMENTS_COMMITMENT, dest_ptr]
+    # AS => [[ATTACHMENT_COMMITMENT]]
+
+    # assert that num_elements is a multiple of WORD_SIZE
+    eq.0 assert.err="attachment commitments num_elements is not a multiple of WORD_SIZE"
     # OS => [num_words, ATTACHMENTS_COMMITMENT, dest_ptr]
     # AS => [[ATTACHMENT_COMMITMENT]]
 
@@ -144,10 +149,15 @@ pub proc write_attachment_to_memory
     # AS => [num_elements, [ATTACHMENT_ELEMENTS]]
 
     # SAFETY: if the provided num_elements is invalid, the commitment check would fail in
-    # pipe_preimage_to_memory so we assume validity and only do a basic u32 assertion to protect
-    # against invalid advice inputs.
+    # pipe_preimage_to_memory so we assume validity and only do basic checks to protect against
+    # invalid advice inputs.
     adv_push.1 u32assert.err="invalid attachment num_elements advice input"
-    u32div.WORD_SIZE
+    u32divmod.WORD_SIZE
+    # OS => [remainder, num_words, ATTACHMENT_COMMITMENT, dest_ptr]
+    # AS => [[ATTACHMENT_ELEMENTS]]
+
+    # assert that num_elements is a multiple of WORD_SIZE
+    eq.0 assert.err="attachment num_elements is not a multiple of WORD_SIZE"
     # OS => [num_words, ATTACHMENT_COMMITMENT, dest_ptr]
     # AS => [[ATTACHMENT_ELEMENTS]]
 
