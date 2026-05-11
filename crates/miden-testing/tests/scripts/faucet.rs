@@ -60,6 +60,7 @@ use miden_testing::{
     Auth,
     MockChain,
     MockChainBuilder,
+    assert_note_created,
     assert_transaction_executor_error,
 };
 use rand::Rng;
@@ -589,28 +590,20 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
         .execute()
         .await?;
 
-    // Verify that a PUBLIC note was created
     assert_eq!(executed_transaction.output_notes().num_notes(), 1);
-    let output_note = executed_transaction.output_notes().get_note(0);
+    assert_note_created!(
+        executed_transaction,
+        note_type: NoteType::Public,
+        sender: faucet.id(),
+        assets: [FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?],
+    );
 
-    // Extract the full note from the OutputNote enum
+    let output_note = executed_transaction.output_notes().get_note(0);
     let full_note = match output_note {
         RawOutputNote::Full(note) => note,
         _ => panic!("Expected OutputNote::Full variant"),
     };
 
-    // Verify the output note is public
-    assert_eq!(full_note.metadata().note_type(), NoteType::Public);
-
-    // Verify the output note contains the minted fungible asset
-    let expected_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?;
-    let expected_asset_obj = Asset::from(expected_asset);
-    assert!(full_note.assets().iter().any(|asset| asset == &expected_asset_obj));
-
-    // Verify the note was created by the faucet
-    assert_eq!(full_note.metadata().sender(), faucet.id());
-
-    // Verify the note storage commitment matches the expected commitment
     assert_eq!(
         full_note.recipient().storage().commitment(),
         note_storage.commitment(),
