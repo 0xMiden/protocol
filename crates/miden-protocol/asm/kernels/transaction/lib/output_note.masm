@@ -22,7 +22,7 @@ use miden::core::mem
 # The maximum number of attachments per note.
 const MAX_ATTACHMENTS_PER_NOTE=4
 
-# The default value of felt[3] in the metadata header when a new note is created.
+# The default value of felt[3] in the metadata when a new note is created.
 # All zeros means no attachment schemes are set.
 const ATTACHMENT_DEFAULT_SCHEMES=0
 
@@ -485,7 +485,7 @@ pub proc build_metadata
     movup.3 mul.16 add
     # => [sender_id_suffix_type_version, sender_id_prefix, attachment_num_words_and_tag]
 
-    # Build metadata header.
+    # Build metadata.
     # --------------------------------------------------------------------------------------------
 
     # push default absent attachment schemes (four u16 zeros encoded into a zero felt)
@@ -494,7 +494,7 @@ pub proc build_metadata
     # => [NOTE_METADATA]
 end
 
-#! Sets an output note's attachment scheme in the note metadata header.
+#! Sets an output note's attachment scheme in the note metadata.
 #!
 #! WARNING: The attachment scheme must be valid.
 #!
@@ -525,7 +525,7 @@ proc set_attachment_schemes
     mul.16 pow2 mul
     # => [attachment_scheme_shifted, note_ptr]
 
-    # Fetch and update metadata header.
+    # Fetch and update metadata.
     # --------------------------------------------------------------------------------------------
 
     dup.1 exec.memory::get_output_note_metadata

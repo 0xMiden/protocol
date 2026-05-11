@@ -567,7 +567,7 @@ proc process_input_note_details
     # => [NULLIFIER]
 end
 
-#! Copies the note's metadata header and attachment as well as note args from the advice stack to
+#! Copies the note's metadata and attachment as well as note args from the advice stack to
 #! memory.
 #!
 #! Notes:
@@ -590,7 +590,7 @@ end
 #! Where:
 #! - note_ptr is the memory location for the input note.
 #! - NOTE_ARGS are the user arguments passed to the note.
-#! - NOTE_METADATA is the note's metadata header.
+#! - NOTE_METADATA is the note's metadata.
 #! - NOTE_ATTACHMENTS_COMMITMENT is the note's attachments commitment.
 proc process_note_args_and_metadata
     padw adv_loadw dup.4 exec.memory::set_input_note_args dropw
@@ -814,7 +814,7 @@ end
 #! - SCRIPT_ROOT is the note's script root.
 #! - STORAGE_COMMITMENT is the sequential hash of the padded note's storage.
 #! - ASSETS_COMMITMENT is the sequential hash of the padded note's assets.
-#! - NOTE_METADATA is the note's metadata header.
+#! - NOTE_METADATA is the note's metadata.
 #! - NOTE_ATTACHMENT is the note's attachment.
 #! - NOTE_ARGS are the user arguments passed to the note.
 #! - num_assets is the number of note assets.

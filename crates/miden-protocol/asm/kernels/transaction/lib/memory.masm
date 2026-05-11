@@ -1615,7 +1615,7 @@ end
 #!
 #! Where:
 #! - note_ptr is the memory address at which the input note data begins.
-#! - NOTE_METADATA is the metadata header of the input note.
+#! - NOTE_METADATA is the metadata of the input note.
 pub proc set_input_note_metadata
     add.INPUT_NOTE_METADATA_OFFSET
     mem_storew_le
@@ -1844,7 +1844,7 @@ end
 #! Outputs: [METADATA]
 #!
 #! Where:
-#! - METADATA is the note metadata header.
+#! - METADATA is the note metadata.
 #! - note_ptr is the memory address at which the output note data begins.
 pub proc get_output_note_metadata
     padw
@@ -1855,13 +1855,13 @@ pub proc get_output_note_metadata
     # => [METADATA]
 end
 
-#! Sets the output note's metadata header.
+#! Sets the output note's metadata.
 #!
 #! Inputs:  [note_ptr, METADATA]
 #! Outputs: [METADATA]
 #!
 #! Where:
-#! - METADATA is the note metadata header.
+#! - METADATA is the note metadata.
 #! - note_ptr is the memory address at which the output note data begins.
 pub proc set_output_note_metadata
     add.OUTPUT_NOTE_METADATA_OFFSET

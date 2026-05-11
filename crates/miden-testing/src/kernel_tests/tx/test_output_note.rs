@@ -134,7 +134,7 @@ async fn test_create_note() -> anyhow::Result<()> {
     assert_eq!(
         exec_output.get_kernel_mem_word(OUTPUT_NOTE_SECTION_OFFSET + OUTPUT_NOTE_METADATA_OFFSET),
         expected_metadata_word,
-        "metadata header must be stored at the correct memory location",
+        "metadata must be stored at the correct memory location",
     );
 
     assert_eq!(
@@ -368,7 +368,7 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
     assert_eq!(
         exec_output.get_kernel_mem_word(OUTPUT_NOTE_SECTION_OFFSET + OUTPUT_NOTE_METADATA_OFFSET),
         output_note_1.metadata().to_metadata_word(),
-        "Validate the output note 1 metadata header",
+        "Validate the output note 1 metadata",
     );
     for attachment_idx in 0..4u32 {
         assert_eq!(
@@ -387,7 +387,7 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
             OUTPUT_NOTE_SECTION_OFFSET + OUTPUT_NOTE_METADATA_OFFSET + NOTE_MEM_SIZE
         ),
         output_note_2.metadata().to_metadata_word(),
-        "Validate the output note 2 metadata header",
+        "Validate the output note 2 metadata",
     );
     assert_eq!(
         exec_output.get_kernel_mem_word(
@@ -1043,7 +1043,7 @@ async fn test_get_recipient_and_metadata() -> anyhow::Result<()> {
             # => [METADATA]
 
             push.{METADATA}
-            assert_eqw.err="requested note has incorrect metadata header"
+            assert_eqw.err="requested note has incorrect metadata"
             # => []
 
             # truncate the stack

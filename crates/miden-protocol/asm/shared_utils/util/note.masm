@@ -4,7 +4,7 @@
 # The maximum number of storage values associated with a single note.
 pub const MAX_NOTE_STORAGE_ITEMS = 1024
 
-# Note type constants. These encode the note type in the lower byte of the metadata header.
+# Note type constants. These encode the note type in the lower byte of the metadata.
 # See NoteType in the Rust protocol crate for details.
 
 #! The note type of private notes.

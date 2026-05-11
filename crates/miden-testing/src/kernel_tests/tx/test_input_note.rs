@@ -124,7 +124,7 @@ async fn test_get_recipient_and_metadata() -> anyhow::Result<()> {
             # => [METADATA]
 
             push.{METADATA}
-            assert_eqw.err="note 0 has incorrect metadata header"
+            assert_eqw.err="note 0 has incorrect metadata"
             # => []
         end
     "#,

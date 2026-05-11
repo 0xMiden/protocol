@@ -604,7 +604,7 @@ async fn test_metadata_into_attachment_schemes(
 }
 
 /// Tests the `find_attachment_idx` procedure which searches for a given scheme in the
-/// metadata header and returns `[is_found, attachment_idx]`.
+/// metadata and returns `[is_found, attachment_idx]`.
 #[rstest::rstest]
 #[case::found_at_index_0(
     [
