@@ -9,7 +9,6 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
 use crate::account::components::pausable_library;
-use crate::procedure_digest;
 
 // PAUSABLE ACCOUNT COMPONENT
 // ================================================================================================
@@ -19,31 +18,25 @@ static IS_PAUSED_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
         .expect("storage slot name should be valid")
 });
 
-procedure_digest!(
-    PAUSABLE_IS_PAUSED,
-    Pausable::NAME,
-    Pausable::IS_PAUSED_PROC_NAME,
-    pausable_library
-);
-
-procedure_digest!(PAUSABLE_PAUSE, Pausable::NAME, Pausable::PAUSE_PROC_NAME, pausable_library);
-
-procedure_digest!(PAUSABLE_UNPAUSE, Pausable::NAME, Pausable::UNPAUSE_PROC_NAME, pausable_library);
-
-/// Account component that stores a pause flag exposing `pause` / `unpause` / `is_paused`.
+/// Storage-only account component that installs the `is_paused` flag slot.
 ///
-/// `pause` and `unpause` do not authenticate the caller — this is an intentional choice:
-/// the core mechanism is kept without access control so that owner and role-based access control
-/// can be implemented on top without duplicating the pause/unpause.
+/// `Pausable` exports no procedures of its own. The pause primitive lives at
+/// `miden::standards::utils::pausable` (exec-only `pause`, `unpause`, `is_paused`,
+/// `assert_not_paused`, `assert_paused`) and is exposed through wrapper components that
+/// add an authorization layer:
+/// - [`crate::account::pausable_owner::PausableOwner`] gates pause/unpause behind the
+///   [`crate::account::access::Ownable2Step`] owner.
+/// - `PausableRbac` gates pause/unpause behind separate `PAUSER` / `UNPAUSER` roles in
+///   [`crate::account::access::RoleBasedAccessControl`].
 ///
-/// Downstream components compose `assert_not_paused` / `assert_paused` (exec) to gate their own
-/// logic — for example asset-callback procedures that must reject transfers while paused. This
-/// component itself does not register any callbacks.
+/// Downstream components that need to gate their own logic on pause state (e.g. asset
+/// callbacks) can compose `exec.::miden::standards::utils::pausable::assert_not_paused`
+/// (or `assert_paused`) directly without going through a wrapper.
 ///
 /// ## Storage
 ///
-/// - [`Self::is_paused_slot()`]: single word; all zeros means unpaused, `[1,0,0,0]` means paused
-///   (see MASM `miden::standards::utils::pausable`).
+/// - [`Self::is_paused_slot()`]: single word; all zeros means unpaused, `[1, 0, 0, 0]`
+///   means paused (see MASM `miden::standards::utils::pausable`).
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Pausable {
     initial_state: bool,
@@ -52,10 +45,6 @@ pub struct Pausable {
 impl Pausable {
     /// Component library path (merged account module name).
     pub const NAME: &'static str = "miden::standards::components::utils::pausable";
-
-    const IS_PAUSED_PROC_NAME: &'static str = "is_paused";
-    const PAUSE_PROC_NAME: &'static str = "pause";
-    const UNPAUSE_PROC_NAME: &'static str = "unpause";
 
     /// Creates a new [`Pausable`] with the given initial paused state.
     ///
@@ -100,8 +89,7 @@ impl Pausable {
         )
     }
 
-    /// Metadata for accounts that include this component (faucet types that may issue
-    /// callback-enabled assets and need a pause primitive).
+    /// Metadata for accounts that include this component.
     pub fn component_metadata() -> AccountComponentMetadata {
         let storage_schema = StorageSchema::new([Self::is_paused_slot_schema()])
             .expect("storage schema should be valid");
@@ -111,22 +99,11 @@ impl Pausable {
             [AccountType::FungibleFaucet, AccountType::NonFungibleFaucet],
         )
         .with_description(
-            "Pausable component: pause / unpause / is_paused without auth. Downstream \
-             components compose `assert_not_paused` / `assert_paused` to gate their own logic.",
+            "Storage-only Pausable component: installs the `is_paused` flag slot. Pair with \
+             a wrapper component (PausableOwner / PausableRbac) to expose authorized \
+             pause/unpause procedures.",
         )
         .with_storage_schema(storage_schema)
-    }
-
-    pub fn is_paused_digest() -> Word {
-        *PAUSABLE_IS_PAUSED
-    }
-
-    pub fn pause_digest() -> Word {
-        *PAUSABLE_PAUSE
-    }
-
-    pub fn unpause_digest() -> Word {
-        *PAUSABLE_UNPAUSE
     }
 }
 

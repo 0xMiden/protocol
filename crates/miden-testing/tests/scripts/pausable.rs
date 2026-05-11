@@ -1,23 +1,29 @@
-//! Tests for [`miden_standards::account::pausable::Pausable`] pause/unpause scripts and the
-//! `assert_not_paused` exec guard.
+//! Tests for the Pausable storage component and its owner-gated wrapper `PausableOwner`.
 //!
-//! `Pausable` itself is a pure pause primitive and does not register asset callbacks. To exercise
-//! the pause guard end-to-end through asset transfers, these tests pair `Pausable` with a
-//! [`pausable_callbacks_component`] — a test-only [`AccountComponent`] whose
-//! `on_before_asset_added_to_account` and `on_before_asset_added_to_note` procedures simply
-//! `exec.::miden::standards::utils::pausable::assert_not_paused`. This is the canonical pattern
-//! for downstream components that want to gate asset transfers on pause state.
+//! `Pausable` itself is a storage-only descriptor; it installs the `is_paused` slot but does
+//! not export pause/unpause procedures. The wrapper [`PausableOwner`] exposes `pause` and
+//! `unpause` as `Invocation: call` procedures gated by the Ownable2Step owner.
+//!
+//! To exercise the pause guard end-to-end through asset transfers, these tests pair the
+//! storage component with a [`pausable_callbacks_component`] — a test-only [`AccountComponent`]
+//! whose `on_before_asset_added_to_account` and `on_before_asset_added_to_note` procedures
+//! call `exec.::miden::standards::utils::pausable::assert_not_paused`. This is the canonical
+//! pattern for downstream components that want to gate asset transfers on pause state.
 
 extern crate alloc;
 
+use alloc::string::String;
+use core::slice;
+
+use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::Word;
-use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
     Account,
     AccountBuilder,
     AccountComponent,
     AccountId,
+    AccountIdVersion,
     AccountStorageMode,
     AccountType,
 };
@@ -30,12 +36,16 @@ use miden_protocol::asset::{
     NonFungibleAssetDetails,
 };
 use miden_protocol::errors::MasmError;
-use miden_protocol::note::{NoteTag, NoteType};
+use miden_protocol::note::{Note, NoteType};
+use miden_protocol::{Felt, utils::sync::LazyLock};
+use miden_standards::account::access::AccessControl;
 use miden_standards::account::faucets::BasicFungibleFaucet;
 use miden_standards::account::metadata::{FungibleTokenMetadataBuilder, TokenName};
 use miden_standards::account::pausable::Pausable;
+use miden_standards::account::pausable_owner::PausableOwner;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::MockFaucetComponent;
+use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{
     AccountState,
     Auth,
@@ -49,11 +59,29 @@ const ERR_PAUSABLE_ENFORCED_PAUSE: MasmError = MasmError::from_static_str("the c
 const ERR_PAUSABLE_EXPECTED_PAUSE: MasmError =
     MasmError::from_static_str("the contract is not paused");
 
+const ERR_SENDER_NOT_OWNER: MasmError = MasmError::from_static_str("sender is not the owner");
+
+/// Stable deterministic owner ID used for tests. Distinct from `non_owner_id`.
+static OWNER_ID: LazyLock<AccountId> = LazyLock::new(|| test_account_id(11));
+
+/// Stable deterministic non-owner ID used for negative auth tests.
+static NON_OWNER_ID: LazyLock<AccountId> = LazyLock::new(|| test_account_id(99));
+
+fn test_account_id(seed: u8) -> AccountId {
+    AccountId::dummy(
+        [seed; 15],
+        AccountIdVersion::Version1,
+        AccountType::RegularAccountImmutableCode,
+        AccountStorageMode::Private,
+    )
+}
+
 /// Test-only [`AccountComponent`] that gates asset transfers on the pause flag.
 ///
 /// Wires `on_before_asset_added_to_account` and `on_before_asset_added_to_note` callback
-/// procedures (registered via [`AssetCallbacks`]) to `pausable::assert_not_paused`. Compose with
-/// [`Pausable`] to exercise the pause guard end-to-end through asset-callback-enabled assets.
+/// procedures (registered via [`AssetCallbacks`]) to `pausable::assert_not_paused`. Compose
+/// with [`Pausable`] to exercise the pause guard end-to-end through asset-callback-enabled
+/// assets.
 fn pausable_callbacks_component() -> anyhow::Result<AccountComponent> {
     const COMPONENT_NAME: &str = "miden::testing::pausable_callbacks";
 
@@ -111,7 +139,13 @@ fn pausable_callbacks_component() -> anyhow::Result<AccountComponent> {
     Ok(AccountComponent::new(library, storage_slots, metadata)?)
 }
 
-fn add_faucet_with_pausable(builder: &mut MockChainBuilder) -> anyhow::Result<Account> {
+/// Adds a fungible faucet with the storage-only `Pausable`, the `PausableOwner` admin
+/// wrapper gated by `Ownable2Step::new(owner)`, and the `pausable_callbacks_component`
+/// that gates asset transfers on the pause flag.
+fn add_faucet_with_pausable_owner(
+    builder: &mut MockChainBuilder,
+    owner: AccountId,
+) -> anyhow::Result<Account> {
     let faucet_metadata = FungibleTokenMetadataBuilder::new(
         TokenName::new("SYM")?,
         "SYM".try_into()?,
@@ -126,20 +160,19 @@ fn add_faucet_with_pausable(builder: &mut MockChainBuilder) -> anyhow::Result<Ac
         .with_component(faucet_metadata)
         .with_component(BasicFungibleFaucet)
         .with_component(Pausable::default())
+        .with_components(AccessControl::Ownable2Step { owner })
+        .with_component(PausableOwner)
         .with_component(pausable_callbacks_component()?);
 
-    builder.add_account_from_builder(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
-        account_builder,
-        AccountState::Exists,
-    )
+    builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
 }
 
-fn add_faucet_with_pausable_for_account_type(
+/// Adds either a fungible or non-fungible faucet with the same pause/owner wiring as
+/// [`add_faucet_with_pausable_owner`], parameterised by `account_type`.
+fn add_faucet_with_pausable_owner_for_account_type(
     builder: &mut MockChainBuilder,
     account_type: AccountType,
+    owner: AccountId,
 ) -> anyhow::Result<Account> {
     if !account_type.is_faucet() {
         anyhow::bail!("account type must be a faucet");
@@ -168,32 +201,67 @@ fn add_faucet_with_pausable_for_account_type(
     }
     account_builder = account_builder
         .with_component(Pausable::default())
+        .with_components(AccessControl::Ownable2Step { owner })
+        .with_component(PausableOwner)
         .with_component(pausable_callbacks_component()?);
 
-    builder.add_account_from_builder(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
-        account_builder,
-        AccountState::Exists,
+    builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
+}
+
+/// Builds a private note whose `main` proc calls `pausable_owner::pause`. The note's sender
+/// is the value passed in, which is what the Ownable2Step auth check reads.
+fn build_pause_note(sender: AccountId) -> anyhow::Result<Note> {
+    build_note(
+        sender,
+        r#"
+        use miden::standards::utils::pausable_owner
+
+        @note_script
+        pub proc main
+            repeat.16 push.0 end
+            call.pausable_owner::pause
+            dropw dropw dropw dropw
+        end
+        "#,
     )
 }
 
+/// Builds a private note whose `main` proc calls `pausable_owner::unpause`.
+fn build_unpause_note(sender: AccountId) -> anyhow::Result<Note> {
+    build_note(
+        sender,
+        r#"
+        use miden::standards::utils::pausable_owner
+
+        @note_script
+        pub proc main
+            repeat.16 push.0 end
+            call.pausable_owner::unpause
+            dropw dropw dropw dropw
+        end
+        "#,
+    )
+}
+
+fn build_note(sender: AccountId, code: impl Into<String>) -> anyhow::Result<Note> {
+    let seed: [u64; 4] = rand::random();
+    let mut rng = RandomCoin::new(Word::from(seed.map(Felt::new)));
+    Ok(NoteBuilder::new(sender, &mut rng)
+        .note_type(NoteType::Private)
+        .code(code.into())
+        .build()?)
+}
+
+/// Executes the given owner-sent pause note against the faucet and commits the resulting tx
+/// to the chain so subsequent operations observe the updated pause state.
 async fn execute_faucet_pause(
     mock_chain: &mut MockChain,
     faucet_id: AccountId,
+    owner: AccountId,
 ) -> anyhow::Result<()> {
-    let pause_script = r#"
-        begin
-            padw padw push.0
-            call.::miden::standards::utils::pausable::pause
-            dropw dropw dropw dropw
-        end
-    "#;
-    let tx_script = CodeBuilder::default().compile_tx_script(pause_script)?;
+    let note = build_pause_note(owner)?;
     let executed = mock_chain
-        .build_tx_context(faucet_id, &[], &[])?
-        .tx_script(tx_script)
+        .build_tx_context(faucet_id, &[], slice::from_ref(&note))?
         .build()?
         .execute()
         .await?;
@@ -205,18 +273,11 @@ async fn execute_faucet_pause(
 async fn execute_faucet_unpause(
     mock_chain: &mut MockChain,
     faucet_id: AccountId,
+    owner: AccountId,
 ) -> anyhow::Result<()> {
-    let unpause_script = r#"
-        begin
-            padw padw push.0
-            call.::miden::standards::utils::pausable::unpause
-            dropw dropw dropw dropw
-        end
-    "#;
-    let tx_script = CodeBuilder::default().compile_tx_script(unpause_script)?;
+    let note = build_unpause_note(owner)?;
     let executed = mock_chain
-        .build_tx_context(faucet_id, &[], &[])?
-        .tx_script(tx_script)
+        .build_tx_context(faucet_id, &[], slice::from_ref(&note))?
         .build()?
         .execute()
         .await?;
@@ -224,6 +285,9 @@ async fn execute_faucet_unpause(
     mock_chain.prove_next_block()?;
     Ok(())
 }
+
+// TESTS — ASSET TRANSFER GATING
+// ================================================================================================
 
 #[rstest::rstest]
 #[case::fungible(
@@ -247,7 +311,8 @@ async fn pausable_receive_asset_succeeds_when_unpaused(
     let mut builder = MockChain::builder();
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
 
-    let faucet = add_faucet_with_pausable_for_account_type(&mut builder, account_type)?;
+    let faucet =
+        add_faucet_with_pausable_owner_for_account_type(&mut builder, account_type, *OWNER_ID)?;
 
     let note = builder.add_p2id_note(
         faucet.id(),
@@ -293,7 +358,8 @@ async fn pausable_receive_asset_fails_when_paused(
     let mut builder = MockChain::builder();
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
 
-    let faucet = add_faucet_with_pausable_for_account_type(&mut builder, account_type)?;
+    let faucet =
+        add_faucet_with_pausable_owner_for_account_type(&mut builder, account_type, *OWNER_ID)?;
 
     let note = builder.add_p2id_note(
         faucet.id(),
@@ -305,7 +371,7 @@ async fn pausable_receive_asset_fails_when_paused(
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
-    execute_faucet_pause(&mut mock_chain, faucet.id()).await?;
+    execute_faucet_pause(&mut mock_chain, faucet.id(), *OWNER_ID).await?;
 
     let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
 
@@ -343,14 +409,15 @@ async fn pausable_add_asset_to_note_fails_when_paused(
     let mut builder = MockChain::builder();
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
 
-    let faucet = add_faucet_with_pausable_for_account_type(&mut builder, account_type)?;
+    let faucet =
+        add_faucet_with_pausable_owner_for_account_type(&mut builder, account_type, *OWNER_ID)?;
 
     let asset = create_asset(faucet.id())?;
 
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
-    execute_faucet_pause(&mut mock_chain, faucet.id()).await?;
+    execute_faucet_pause(&mut mock_chain, faucet.id(), *OWNER_ID).await?;
 
     let recipient = Word::from([0u32, 1, 2, 3]);
     let script_code = format!(
@@ -370,7 +437,7 @@ async fn pausable_add_asset_to_note_fails_when_paused(
         "#,
         recipient = recipient,
         note_type = NoteType::Private as u8,
-        tag = NoteTag::default(),
+        tag = miden_protocol::note::NoteTag::default(),
         asset_value = asset.to_value_word(),
         asset_key = asset.to_key_word(),
     );
@@ -396,7 +463,7 @@ async fn pausable_add_asset_to_note_fails_when_paused(
 async fn pausable_pause_then_unpause_then_receive_succeeds() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
-    let faucet = add_faucet_with_pausable(&mut builder)?;
+    let faucet = add_faucet_with_pausable_owner(&mut builder, *OWNER_ID)?;
 
     let amount: u64 = 50;
     let fungible_asset =
@@ -411,8 +478,8 @@ async fn pausable_pause_then_unpause_then_receive_succeeds() -> anyhow::Result<(
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
-    execute_faucet_pause(&mut mock_chain, faucet.id()).await?;
-    execute_faucet_unpause(&mut mock_chain, faucet.id()).await?;
+    execute_faucet_pause(&mut mock_chain, faucet.id(), *OWNER_ID).await?;
+    execute_faucet_unpause(&mut mock_chain, faucet.id(), *OWNER_ID).await?;
 
     let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
 
@@ -430,28 +497,69 @@ async fn pausable_pause_then_unpause_then_receive_succeeds() -> anyhow::Result<(
 async fn pausable_unpause_while_unpaused_fails() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let _wallet = builder.add_existing_wallet(Auth::IncrNonce)?;
-    let faucet = add_faucet_with_pausable(&mut builder)?;
+    let faucet = add_faucet_with_pausable_owner(&mut builder, *OWNER_ID)?;
 
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
-    let unpause_script = r#"
-        begin
-            padw padw push.0
-            call.::miden::standards::utils::pausable::unpause
-            dropw dropw dropw dropw
-        end
-    "#;
-    let tx_script = CodeBuilder::default().compile_tx_script(unpause_script)?;
-
+    let note = build_unpause_note(*OWNER_ID)?;
     let result = mock_chain
-        .build_tx_context(faucet.id(), &[], &[])?
-        .tx_script(tx_script)
+        .build_tx_context(faucet.id(), &[], slice::from_ref(&note))?
         .build()?
         .execute()
         .await;
 
     assert_transaction_executor_error!(result, ERR_PAUSABLE_EXPECTED_PAUSE);
+
+    Ok(())
+}
+
+// TESTS — OWNER AUTHORIZATION
+// ================================================================================================
+
+#[tokio::test]
+async fn pausable_owner_pause_fails_when_sender_not_owner() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let _wallet = builder.add_existing_wallet(Auth::IncrNonce)?;
+    let faucet = add_faucet_with_pausable_owner(&mut builder, *OWNER_ID)?;
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    // Note sender is NOT_OWNER, but pausable_owner::pause asserts sender == owner.
+    let note = build_pause_note(*NON_OWNER_ID)?;
+    let result = mock_chain
+        .build_tx_context(faucet.id(), &[], slice::from_ref(&note))?
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_SENDER_NOT_OWNER);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn pausable_owner_unpause_fails_when_sender_not_owner() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let _wallet = builder.add_existing_wallet(Auth::IncrNonce)?;
+    let faucet = add_faucet_with_pausable_owner(&mut builder, *OWNER_ID)?;
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    // Pause first (legitimately) so the unpause attempt can reach the owner check.
+    execute_faucet_pause(&mut mock_chain, faucet.id(), *OWNER_ID).await?;
+
+    // Then try to unpause as a non-owner.
+    let note = build_unpause_note(*NON_OWNER_ID)?;
+    let result = mock_chain
+        .build_tx_context(faucet.id(), &[], slice::from_ref(&note))?
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_SENDER_NOT_OWNER);
 
     Ok(())
 }

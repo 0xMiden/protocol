@@ -1,8 +1,13 @@
-# The MASM code of the Pausable account component.
+# Storage-only Pausable component.
 #
-# NOTE: This is a temporary no-auth variant of the component for testing purposes. 
-# It is intended to be replaced by dedicated owner and role-based access control wrappers.
+# This component installs the `is_paused` storage slot. It does not expose any
+# authorization-sensitive procedures: `pause` and `unpause` are gated and exposed
+# by wrapper components such as `pausable_owner` (Ownable2Step-gated) or
+# `pausable_rbac` (role-gated), which compose the underlying `exec.pausable::*`
+# helpers from `miden::standards::utils::pausable`.
+#
+# As a read-only convenience this component re-exports `is_paused` (no auth needed).
+# Downstream components that need to gate logic on pause state (e.g. asset callbacks)
+# should call `exec.::miden::standards::utils::pausable::assert_not_paused` directly.
 
 pub use ::miden::standards::utils::pausable::is_paused
-pub use ::miden::standards::utils::pausable::pause
-pub use ::miden::standards::utils::pausable::unpause

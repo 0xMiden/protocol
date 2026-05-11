@@ -7,6 +7,7 @@ pub mod faucets;
 pub mod interface;
 pub mod metadata;
 pub mod pausable;
+pub mod pausable_owner;
 pub mod policies;
 pub mod wallets;
 
