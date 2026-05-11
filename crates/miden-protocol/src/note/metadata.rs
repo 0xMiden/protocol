@@ -1,6 +1,14 @@
 use super::{
-    AccountId, ByteReader, ByteWriter, Deserializable, DeserializationError, Felt, NoteTag,
-    NoteType, Serializable, Word,
+    AccountId,
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Felt,
+    NoteTag,
+    NoteType,
+    Serializable,
+    Word,
 };
 use crate::Hasher;
 use crate::errors::NoteError;
@@ -443,6 +451,8 @@ fn unmerge_attachment_kind_scheme(
 
 #[cfg(test)]
 mod tests {
+
+    use alloc::string::ToString;
 
     use super::*;
     use crate::note::NoteAttachmentScheme;
