@@ -165,7 +165,7 @@ impl NoteAttachmentContent {
             return Err(NoteError::NoteAttachmentContentTooManyWords(words.len()));
         }
 
-        let elements = attachment_content_to_elements(&words);
+        let elements = Word::words_as_elements(&words).to_vec();
         let commitment = Hasher::hash_elements(&elements);
 
         Ok(Self { words, commitment })
@@ -226,16 +226,12 @@ impl SequentialCommit for NoteAttachmentContent {
     type Commitment = Word;
 
     fn to_elements(&self) -> Vec<Felt> {
-        attachment_content_to_elements(&self.words)
+        Word::words_as_elements(&self.words).to_vec()
     }
 
     fn to_commitment(&self) -> Self::Commitment {
         self.commitment
     }
-}
-
-fn attachment_content_to_elements(content: &[Word]) -> Vec<Felt> {
-    content.iter().flat_map(Word::as_elements).copied().collect()
 }
 
 // NOTE ATTACHMENT SCHEME
