@@ -431,10 +431,10 @@ pub const INPUT_NOTE_ASSETS_OFFSET: MemoryOffset = 44;
 // The total number of output notes for a transaction is stored in the bookkeeping section of the
 // memory. Data section of each note is laid out like so:
 //
-// ┌──────┬──────────┬───────────┬──────────────────────────┬
-// │ NOTE │ METADATA │           │ [dirty_flag, num_assets, │
-// │  ID  │  HEADER  │ RECIPIENT │  num_attachments, 0]     │
-// ├──────┼──────────┼───────────┼──────────────────────────┼
+// ┌──────┬──────────┬───────────┬───────────────────────────────────────────┬
+// │ NOTE │ METADATA │           │ [dirty_flag, num_assets,                  │
+// │  ID  │  HEADER  │ RECIPIENT │  num_attachments, total_attachment_words] │
+// ├──────┼──────────┼───────────┼───────────────────────────────────────────┼
 // 0      4          8           12
 //
 // ┬────────────┬────────────┬────────────┬────────────┬────────────┬
