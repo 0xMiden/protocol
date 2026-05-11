@@ -121,7 +121,7 @@ pub proc active_account_matches_target_account
     assert.err=ERR_NETWORK_ACCOUNT_TARGET_INCORRECT_NUMBER_OF_WORDS
     # => []
 
-    padw mem_loadw_le.0
+    padw loc_loadw_le.0
     # => [NETWORK_ACCOUNT_TARGET_ATTACHMENT]
     # => [target_id_suffix, target_id_prefix, exec_hint_tag, 0]
 
