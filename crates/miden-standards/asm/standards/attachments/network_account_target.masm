@@ -97,22 +97,31 @@ end
 #! - the attachment is missing from the active note or the number of words is invalid.
 #!
 #! Invocation: exec
+@locals(4)
 pub proc active_account_matches_target_account
     # find the network account target attachment, if any
     # if there are multiple, we consider the first one the canonical one
     push.NETWORK_ACCOUNT_TARGET_ATTACHMENT_SCHEME
     exec.active_note::find_attachment
-    # => [is_found, num_words, attachment_ptr]
+    # => [is_found, attachment_idx]
 
     # network account target attachment must be present
     assert.err=ERR_NETWORK_ACCOUNT_TARGET_MISSING
-    # => [num_words, attachment_ptr]
+    # => [attachment_idx]
+
+    # write the attachment data to local memory
+    # we allocate one word of local memory matching NETWORK_ACCOUNT_TARGET_ATTACHMENT_NUM_WORDS
+    locaddr.0
+    # => [dest_ptr, attachment_idx]
+
+    exec.active_note::write_attachment_to_memory
+    # => [num_words]
 
     eq.NETWORK_ACCOUNT_TARGET_ATTACHMENT_NUM_WORDS
     assert.err=ERR_NETWORK_ACCOUNT_TARGET_INCORRECT_NUMBER_OF_WORDS
-    # => [attachment_ptr]
+    # => []
 
-    padw movup.4 mem_loadw_le
+    padw mem_loadw_le.0
     # => [NETWORK_ACCOUNT_TARGET_ATTACHMENT]
     # => [target_id_suffix, target_id_prefix, exec_hint_tag, 0]
 
