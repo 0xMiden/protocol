@@ -467,7 +467,7 @@ mod tests {
 
         let account_id = AccountId::dummy(
             [1; 15],
-            AccountIdVersion::Version0,
+            AccountIdVersion::Version1,
             AccountType::FungibleFaucet,
             AccountStorageMode::Private,
         );

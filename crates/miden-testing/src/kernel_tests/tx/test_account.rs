@@ -231,8 +231,13 @@ async fn test_account_validate_id() -> anyhow::Result<()> {
         (ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET, None),
         (ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET, None),
         (
-            // Set version to a non-zero value (10).
-            ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE | (0x0a << 64),
+            // The zero account ID should be invalid by construction.
+            0,
+            Some(ERR_ACCOUNT_ID_UNKNOWN_VERSION),
+        ),
+        (
+            // Set version to another unsupported value (10).
+            (ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE & !(0x0f << 64)) | (0x0a << 64),
             Some(ERR_ACCOUNT_ID_UNKNOWN_VERSION),
         ),
         (

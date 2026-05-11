@@ -1,9 +1,9 @@
 use alloc::string::{String, ToString};
 use core::fmt;
 
-use super::v0;
+use super::v1;
 use crate::Felt;
-use crate::account::account_id::AccountIdPrefixV0;
+use crate::account::account_id::AccountIdPrefixV1;
 use crate::account::{AccountIdVersion, AccountStorageMode, AccountType};
 use crate::errors::AccountIdError;
 use crate::utils::serde::{
@@ -27,7 +27,7 @@ use crate::utils::serde::{
 /// [id]: crate::account::AccountId
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum AccountIdPrefix {
-    V0(AccountIdPrefixV0),
+    V1(AccountIdPrefixV1),
 }
 
 impl AccountIdPrefix {
@@ -57,10 +57,10 @@ impl AccountIdPrefix {
     pub fn new_unchecked(prefix: Felt) -> Self {
         // The prefix contains the metadata.
         // If we add more versions in the future, we may need to generalize this.
-        match v0::extract_version(prefix.as_canonical_u64())
+        match v1::extract_version(prefix.as_canonical_u64())
             .expect("prefix should contain a valid account ID version")
         {
-            AccountIdVersion::Version0 => Self::V0(AccountIdPrefixV0::new_unchecked(prefix)),
+            AccountIdVersion::Version1 => Self::V1(AccountIdPrefixV1::new_unchecked(prefix)),
         }
     }
 
@@ -73,8 +73,8 @@ impl AccountIdPrefix {
     pub fn new(prefix: Felt) -> Result<Self, AccountIdError> {
         // The prefix contains the metadata.
         // If we add more versions in the future, we may need to generalize this.
-        match v0::extract_version(prefix.as_canonical_u64())? {
-            AccountIdVersion::Version0 => AccountIdPrefixV0::new(prefix).map(Self::V0),
+        match v1::extract_version(prefix.as_canonical_u64())? {
+            AccountIdVersion::Version1 => AccountIdPrefixV1::new(prefix).map(Self::V1),
         }
     }
 
@@ -84,21 +84,21 @@ impl AccountIdPrefix {
     /// Returns the [`Felt`] that represents this prefix.
     pub const fn as_felt(&self) -> Felt {
         match self {
-            AccountIdPrefix::V0(id_prefix) => id_prefix.as_felt(),
+            AccountIdPrefix::V1(id_prefix) => id_prefix.as_felt(),
         }
     }
 
     /// Returns the prefix as a [`u64`].
     pub fn as_u64(&self) -> u64 {
         match self {
-            AccountIdPrefix::V0(id_prefix) => id_prefix.as_u64(),
+            AccountIdPrefix::V1(id_prefix) => id_prefix.as_u64(),
         }
     }
 
     /// Returns the type of this account ID.
     pub fn account_type(&self) -> AccountType {
         match self {
-            AccountIdPrefix::V0(id_prefix) => id_prefix.account_type(),
+            AccountIdPrefix::V1(id_prefix) => id_prefix.account_type(),
         }
     }
 
@@ -115,7 +115,7 @@ impl AccountIdPrefix {
     /// Returns the storage mode of this account ID.
     pub fn storage_mode(&self) -> AccountStorageMode {
         match self {
-            AccountIdPrefix::V0(id_prefix) => id_prefix.storage_mode(),
+            AccountIdPrefix::V1(id_prefix) => id_prefix.storage_mode(),
         }
     }
 
@@ -143,14 +143,14 @@ impl AccountIdPrefix {
     /// Returns the version of this account ID.
     pub fn version(&self) -> AccountIdVersion {
         match self {
-            AccountIdPrefix::V0(_) => AccountIdVersion::Version0,
+            AccountIdPrefix::V1(_) => AccountIdVersion::Version1,
         }
     }
 
     /// Returns the prefix as a big-endian, hex-encoded string.
     pub fn to_hex(self) -> String {
         match self {
-            AccountIdPrefix::V0(id_prefix) => id_prefix.to_hex(),
+            AccountIdPrefix::V1(id_prefix) => id_prefix.to_hex(),
         }
     }
 }
@@ -158,16 +158,16 @@ impl AccountIdPrefix {
 // CONVERSIONS FROM ACCOUNT ID PREFIX
 // ================================================================================================
 
-impl From<AccountIdPrefixV0> for AccountIdPrefix {
-    fn from(id: AccountIdPrefixV0) -> Self {
-        Self::V0(id)
+impl From<AccountIdPrefixV1> for AccountIdPrefix {
+    fn from(id: AccountIdPrefixV1) -> Self {
+        Self::V1(id)
     }
 }
 
 impl From<AccountIdPrefix> for Felt {
     fn from(id: AccountIdPrefix) -> Self {
         match id {
-            AccountIdPrefix::V0(id_prefix) => id_prefix.into(),
+            AccountIdPrefix::V1(id_prefix) => id_prefix.into(),
         }
     }
 }
@@ -175,7 +175,7 @@ impl From<AccountIdPrefix> for Felt {
 impl From<AccountIdPrefix> for [u8; 8] {
     fn from(id: AccountIdPrefix) -> Self {
         match id {
-            AccountIdPrefix::V0(id_prefix) => id_prefix.into(),
+            AccountIdPrefix::V1(id_prefix) => id_prefix.into(),
         }
     }
 }
@@ -183,7 +183,7 @@ impl From<AccountIdPrefix> for [u8; 8] {
 impl From<AccountIdPrefix> for u64 {
     fn from(id: AccountIdPrefix) -> Self {
         match id {
-            AccountIdPrefix::V0(id_prefix) => id_prefix.into(),
+            AccountIdPrefix::V1(id_prefix) => id_prefix.into(),
         }
     }
 }
@@ -205,10 +205,10 @@ impl TryFrom<[u8; 8]> for AccountIdPrefix {
         let metadata_byte = value[7];
         // We only have one supported version for now, so we use the extractor from that version.
         // If we add more versions in the future, we may need to generalize this.
-        let version = v0::extract_version(metadata_byte as u64)?;
+        let version = v1::extract_version(metadata_byte as u64)?;
 
         match version {
-            AccountIdVersion::Version0 => AccountIdPrefixV0::try_from(value).map(Self::V0),
+            AccountIdVersion::Version1 => AccountIdPrefixV1::try_from(value).map(Self::V1),
         }
     }
 }
@@ -273,13 +273,13 @@ impl fmt::Display for AccountIdPrefix {
 impl Serializable for AccountIdPrefix {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         match self {
-            AccountIdPrefix::V0(id_prefix) => id_prefix.write_into(target),
+            AccountIdPrefix::V1(id_prefix) => id_prefix.write_into(target),
         }
     }
 
     fn get_size_hint(&self) -> usize {
         match self {
-            AccountIdPrefix::V0(id_prefix) => id_prefix.get_size_hint(),
+            AccountIdPrefix::V1(id_prefix) => id_prefix.get_size_hint(),
         }
     }
 }
@@ -298,7 +298,7 @@ impl Deserializable for AccountIdPrefix {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::account::AccountIdV0;
+    use crate::account::AccountIdV1;
 
     #[test]
     fn account_id_prefix_construction() {
@@ -314,11 +314,11 @@ mod tests {
                 AccountType::RegularAccountUpdatableCode,
             ] {
                 for storage_mode in [AccountStorageMode::Private, AccountStorageMode::Public] {
-                    let id = AccountIdV0::dummy(input, account_type, storage_mode);
+                    let id = AccountIdV1::dummy(input, account_type, storage_mode);
                     let prefix = id.prefix();
                     assert_eq!(prefix.account_type(), account_type);
                     assert_eq!(prefix.storage_mode(), storage_mode);
-                    assert_eq!(prefix.version(), AccountIdVersion::Version0);
+                    assert_eq!(prefix.version(), AccountIdVersion::Version1);
 
                     // Do a serialization roundtrip to ensure validity.
                     let serialized_prefix = prefix.to_bytes();
