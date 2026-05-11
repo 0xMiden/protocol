@@ -646,13 +646,13 @@ async fn test_active_note_get_script_root() -> anyhow::Result<()> {
 /// Setup: create an input note with two word attachments (schemes 10 and 20), then call
 /// `find_attachment` on the active/input note.
 ///
-/// - `found`:     search for scheme 10 → is_found=1, attachment data is returned.
-/// - `not_found`: search for scheme 99 → is_found=0, ptr=0, num_words=0.
+/// - `found`:     search for scheme 10 → is_found=1, attachment_idx=0.
+/// - `not_found`: search for scheme 99 → is_found=0.
 #[rstest]
-#[case::active_note_scheme_found(None, "active_note", 10, true)]
+#[case::active_note_scheme_found(None, "active_note", 20, true)]
 #[case::active_note_scheme_not_found(None, "active_note", 99, false)]
 // uses note index 1
-#[case::input_note_scheme_found(Some(1), "input_note", 10, true)]
+#[case::input_note_scheme_found(Some(1), "input_note", 20, true)]
 // uses note index 1
 #[case::input_note_scheme_not_found(Some(1), "input_note", 99, false)]
 #[tokio::test]
@@ -662,14 +662,14 @@ async fn test_note_find_attachment(
     #[case] search_scheme: u16,
     #[case] expected_found: bool,
 ) -> anyhow::Result<()> {
+    let word_0 = Word::from([3, 4, 5, 6u32]);
+    let word_1 = Word::from([7, 8, 9, 10u32]);
+    let scheme_0 = NoteAttachmentScheme::new(10)?;
+    let scheme_1 = NoteAttachmentScheme::new(20)?;
+
     let tx_context = {
         let account =
             Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
-
-        let word_0 = Word::from([3, 4, 5, 6u32]);
-        let word_1 = Word::from([7, 8, 9, 10u32]);
-        let scheme_0 = NoteAttachmentScheme::new(10)?;
-        let scheme_1 = NoteAttachmentScheme::new(20)?;
 
         let mut rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
         // Add a random first note so we test with note_index != 0.
@@ -686,12 +686,18 @@ async fn test_note_find_attachment(
     };
     assert_eq!(tx_context.tx_inputs().input_notes().num_notes(), 2);
 
-    let word_0 = Word::from([3, 4, 5, 6u32]);
-
-    let push_note_index = match note_idx {
+    let setup_find_attachment = match note_idx {
         Some(idx) => format!("push.{idx}"),
         // for active_note module, we don't need to push anything
         None => "".into(),
+    };
+
+    // Setup stack for write_attachment_to_memory based on whether note_idx is needed.
+    // active_note needs [dest_ptr, attachment_idx]
+    // input_note needs [dest_ptr, attachment_idx, note_index]
+    let setup_write_stack = match note_idx {
+        Some(idx) => format!("push.{idx} swap push.DEST_PTR"),
+        None => "push.DEST_PTR".into(),
     };
 
     let code = format!(
@@ -701,6 +707,8 @@ async fn test_note_find_attachment(
         use miden::protocol::active_note
         use miden::protocol::input_note
 
+        const DEST_PTR = 0x1000
+
         begin
             exec.prologue::prepare_transaction
             exec.note_internal::increment_active_input_note_ptr drop
@@ -709,35 +717,38 @@ async fn test_note_find_attachment(
             dropw dropw dropw dropw
 
             # push note index, if any
-            {push_note_index}
+            {setup_find_attachment}
             # search for the target scheme on the active note
             push.{search_scheme}
             # => [attachment_scheme]
             exec.{module_under_test}::find_attachment
-            # => [is_found, num_words, attachment_ptr]
+            # => [is_found, attachment_idx]
 
             # assert is_found matches expectation
             push.{expected_found}
             assert_eq.err="is_found mismatch"
-            # => [num_words, attachment_ptr]
+            # => [attachment_idx]
 
             push.{expected_found}
             if.true
-                # found path: verify num_words == 1 (word attachment)
+                # found path: write attachment to memory using returned index
+                {setup_write_stack}
+                exec.{module_under_test}::write_attachment_to_memory
+                # => [num_words]
+
                 eq.1 assert.err="expected num_words=1"
-                # => [attachment_ptr]
+                # => []
 
                 # read the word from memory and assert it matches
-                padw movup.4 mem_loadw_le
+                padw push.DEST_PTR mem_loadw_le
                 # => [ATTACHMENT_WORD]
 
                 push.{EXPECTED_WORD}
                 assert_eqw.err="attachment data mismatch"
                 # => []
             else
-                # not-found path: verify num_words=0 and ptr=0
-                eq.0 assert.err="expected num_words=0"
-                eq.0 assert.err="expected attachment_ptr=0"
+                # not-found path: drop the (undefined) attachment_idx
+                drop
                 # => []
             end
 
@@ -746,7 +757,7 @@ async fn test_note_find_attachment(
         end
         "#,
         expected_found = expected_found as u8,
-        EXPECTED_WORD = word_0,
+        EXPECTED_WORD = word_1,
     );
 
     tx_context.execute_code(&code).await?;

@@ -101,10 +101,15 @@ pub proc write_attachment_commitments_to_memory
     # AS => [num_elements, [ATTACHMENT_COMMITMENT]]
 
     # SAFETY: if the provided num_elements is invalid, the commitment check would fail in
-    # pipe_preimage_to_memory so we assume validity and only do a basic u32 assertion to protect
-    # against invalid advice inputs.
+    # pipe_preimage_to_memory so we assume validity and only do basic checks to protect against
+    # invalid advice inputs.
     adv_push.1 u32assert.err="invalid attachment num_elements advice input"
-    u32div.WORD_NUM_ELEMENTS
+    u32divmod.WORD_NUM_ELEMENTS
+    # OS => [remainder, num_words, ATTACHMENTS_COMMITMENT, dest_ptr]
+    # AS => [[ATTACHMENT_COMMITMENT]]
+
+    # assert that num_elements is a multiple of WORD_NUM_ELEMENTS
+    eq.0 assert.err="attachment commitments num_elements is not a multiple of WORD_NUM_ELEMENTS"
     # OS => [num_words, ATTACHMENTS_COMMITMENT, dest_ptr]
     # AS => [[ATTACHMENT_COMMITMENT]]
 
@@ -131,7 +136,7 @@ end
 #!
 #! Where:
 #! - ATTACHMENT_COMMITMENT is the hash commitment to the attachment elements.
-#! - dest_ptr is the memory address to write the attachment data.
+#! - dest_ptr is the memory address to which to write the attachment data.
 #! - num_words is the number of words in the attachment.
 pub proc write_attachment_to_memory
     # push the number of attachment elements from the advice map onto the advice stack
@@ -140,10 +145,15 @@ pub proc write_attachment_to_memory
     # AS => [num_elements, [ATTACHMENT_ELEMENTS]]
 
     # SAFETY: if the provided num_elements is invalid, the commitment check would fail in
-    # pipe_preimage_to_memory so we assume validity and only do a basic u32 assertion to protect
-    # against invalid advice inputs.
+    # pipe_preimage_to_memory so we assume validity and only do basic checks to protect against
+    # invalid advice inputs.
     adv_push.1 u32assert.err="invalid attachment num_elements advice input"
-    u32div.WORD_NUM_ELEMENTS
+    u32divmod.WORD_NUM_ELEMENTS
+    # OS => [remainder, num_words, ATTACHMENT_COMMITMENT, dest_ptr]
+    # AS => [[ATTACHMENT_ELEMENTS]]
+
+    # assert that num_elements is a multiple of WORD_NUM_ELEMENTS
+    eq.0 assert.err="attachment num_elements is not a multiple of WORD_NUM_ELEMENTS"
     # OS => [num_words, ATTACHMENT_COMMITMENT, dest_ptr]
     # AS => [[ATTACHMENT_ELEMENTS]]
 
@@ -156,20 +166,17 @@ pub proc write_attachment_to_memory
     # => [num_words]
 end
 
-#! Writes the attachment with the provided index from to memory and returns the pointer to the
-#! attachment elements.
+#! Writes the attachment with the provided index from the provided attachment commitments to the
+#! memory specified by the destination pointer.
 #!
-#! This procedure allocates 1024 elements of memory (MAX_ATTACHMENT_WORDS * WORD_NUM_ELEMENTS) to store
-#! all potential attachment elements.
-#!
-#! Inputs:  [num_attachments, attachment_commitments_ptr, attachment_idx]
-#! Outputs: [num_words, attachment_ptr]
+#! Inputs:  [num_attachments, attachment_commitments_ptr, attachment_idx, dest_ptr]
+#! Outputs: [num_words]
 #!
 #! Where:
 #! - attachment_idx is the index of the attachment to retrieve.
-#! - attachment_ptr is a pointer to the attachment data written to memory.
-#! - attachment_commitments_ptr is a pointer to the attachment commitments written to memory.
-#! - num_words is the number of attachments.
+#! - attachment_commitments_ptr is a pointer to the attachment commitments in memory.
+#! - dest_ptr is the memory address to which to write the attachment data.
+#! - num_attachments is the number of attachments.
 #! - num_words is the number of words in the attachment.
 #!
 #! Panics if:
@@ -178,27 +185,23 @@ end
 #!   attachment commitment.
 #!
 #! Invocation: exec
-@locals(1024)
-pub proc get_attachment_ptr
+pub proc write_indexed_attachment_to_memory
     # assert attachment_idx < num_attachments
     dup.2 swap u32assert2.err=ERR_OUTPUT_NOTE_ATTACHMENT_IDX_OUT_OF_BOUNDS
     u32lt assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_IDX_OUT_OF_BOUNDS
-    # => [attachment_commitments_ptr, attachment_idx]
+    # => [attachment_commitments_ptr, attachment_idx, dest_ptr]
 
     # compute the memory address of the attachment commitment:
     # commitment_ptr = attachment_commitments_ptr + attachment_idx * WORD_NUM_ELEMENTS
     swap mul.WORD_NUM_ELEMENTS add
-    # => [commitment_ptr]
+    # => [commitment_ptr, dest_ptr]
 
     # load the ATTACHMENT_COMMITMENT from memory
-    locaddr.0 padw movup.5 mem_loadw_le
+    padw movup.4 mem_loadw_le
     # => [ATTACHMENT_COMMITMENT, dest_ptr]
 
     exec.write_attachment_to_memory
     # => [num_words]
-
-    locaddr.0 swap
-    # => [num_words, attachment_ptr]
 end
 
 #! Computes the recipient hash from note storage, script root, and serial number.

@@ -1,8 +1,8 @@
 use alloc::vec::Vec;
 
 use crate::account::account_id::AccountIdVersion;
-use crate::account::account_id::v0::{compute_digest, validate_prefix};
-use crate::account::{AccountIdV0, AccountStorageMode, AccountType};
+use crate::account::account_id::v1::{compute_digest, validate_prefix};
+use crate::account::{AccountIdV1, AccountStorageMode, AccountType};
 use crate::errors::AccountError;
 use crate::{Felt, Word};
 
@@ -52,8 +52,8 @@ fn compute_account_seed_single(
     loop {
         // Check if the seed satisfies the specified type, storage mode and version. Additionally,
         // the most significant bit of the suffix must be zero to ensure felt validity.
-        let suffix = current_digest[AccountIdV0::SEED_DIGEST_SUFFIX_ELEMENT_IDX];
-        let prefix = current_digest[AccountIdV0::SEED_DIGEST_PREFIX_ELEMENT_IDX];
+        let suffix = current_digest[AccountIdV1::SEED_DIGEST_SUFFIX_ELEMENT_IDX];
+        let prefix = current_digest[AccountIdV1::SEED_DIGEST_PREFIX_ELEMENT_IDX];
         let is_suffix_msb_zero = suffix.as_canonical_u64() >> 63 == 0;
 
         if let Ok((computed_account_type, computed_storage_mode, computed_version)) =

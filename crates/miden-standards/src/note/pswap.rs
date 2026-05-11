@@ -722,7 +722,7 @@ mod tests {
         bytes[0] = byte;
         AccountId::dummy(
             bytes,
-            AccountIdVersion::Version0,
+            AccountIdVersion::Version1,
             AccountType::FungibleFaucet,
             AccountStorageMode::Public,
         )
@@ -731,7 +731,7 @@ mod tests {
     fn dummy_creator_id() -> AccountId {
         AccountId::dummy(
             [1; 15],
-            AccountIdVersion::Version0,
+            AccountIdVersion::Version1,
             AccountType::RegularAccountImmutableCode,
             AccountStorageMode::Public,
         )
@@ -740,7 +740,7 @@ mod tests {
     fn dummy_consumer_id() -> AccountId {
         AccountId::dummy(
             [2; 15],
-            AccountIdVersion::Version0,
+            AccountIdVersion::Version1,
             AccountType::RegularAccountImmutableCode,
             AccountStorageMode::Public,
         )
@@ -826,7 +826,7 @@ mod tests {
         let offered_asset = FungibleAsset::new(
             AccountId::dummy(
                 offered_faucet_bytes,
-                AccountIdVersion::Version0,
+                AccountIdVersion::Version1,
                 AccountType::FungibleFaucet,
                 AccountStorageMode::Public,
             ),
@@ -836,7 +836,7 @@ mod tests {
         let requested_asset = FungibleAsset::new(
             AccountId::dummy(
                 requested_faucet_bytes,
-                AccountIdVersion::Version0,
+                AccountIdVersion::Version1,
                 AccountType::FungibleFaucet,
                 AccountStorageMode::Public,
             ),
