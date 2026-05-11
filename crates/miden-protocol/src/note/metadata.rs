@@ -1,14 +1,6 @@
 use super::{
-    AccountId,
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Felt,
-    NoteTag,
-    NoteType,
-    Serializable,
-    Word,
+    AccountId, ByteReader, ByteWriter, Deserializable, DeserializationError, Felt, NoteTag,
+    NoteType, Serializable, Word,
 };
 use crate::Hasher;
 use crate::errors::NoteError;
@@ -85,7 +77,7 @@ impl NoteMetadata {
     ///
     /// If we make this public, we may want to instead consider introducing a `NoteMetadataVersion`
     /// struct, similar to `AccountIdVersion`.
-    const VERSION_1: u8 = 0;
+    const VERSION_1: u8 = 1;
 
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
@@ -482,5 +474,30 @@ mod tests {
         assert_eq!(header, metadata.to_header());
 
         Ok(())
+    }
+
+    #[test]
+    fn note_metadata_header_encodes_v1_as_one() {
+        let sender = AccountId::try_from(ACCOUNT_ID_MAX_ONES).unwrap();
+        let metadata = NoteMetadata::new(sender, NoteType::Private);
+
+        let header = metadata.to_header_word();
+        let version = header[0].as_canonical_u64() & 0b1111;
+
+        assert_eq!(version, NoteMetadata::VERSION_1 as u64);
+        assert_eq!(version, 1);
+    }
+
+    #[test]
+    fn note_metadata_header_rejects_zero_version() {
+        let sender = AccountId::try_from(ACCOUNT_ID_MAX_ONES).unwrap();
+        let metadata = NoteMetadata::new(sender, NoteType::Private);
+        let mut header = metadata.to_header_word();
+
+        let header0 = header[0].as_canonical_u64() & !0b1111;
+        header[0] = Felt::try_from(header0).expect("header should still be a valid felt");
+
+        let err = NoteMetadataHeader::try_from(header).expect_err("version 0 should be rejected");
+        assert!(err.to_string().contains("unsupported note metadata version 0"), "{err}");
     }
 }
