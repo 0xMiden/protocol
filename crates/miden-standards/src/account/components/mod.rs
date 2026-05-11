@@ -96,10 +96,10 @@ static NETWORK_ACCOUNT_AUTH_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
 // ================================================================================================
 
 // Initialize the Basic Fungible Faucet library only once.
-static BASIC_FUNGIBLE_FAUCET_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+static FUNGIBLE_FAUCET_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     let bytes = include_bytes!(concat!(
         env!("OUT_DIR"),
-        "/assets/account_components/faucets/basic_fungible_faucet.masl"
+        "/assets/account_components/faucets/fungible_faucet.masl"
     ));
     Library::read_from_bytes(bytes).expect("Shipped Basic Fungible Faucet library is well-formed")
 });
@@ -170,8 +170,8 @@ pub fn rbac_library() -> Library {
 }
 
 /// Returns the Basic Fungible Faucet Library.
-pub fn basic_fungible_faucet_library() -> Library {
-    BASIC_FUNGIBLE_FAUCET_LIBRARY.clone()
+pub fn fungible_faucet_library() -> Library {
+    FUNGIBLE_FAUCET_LIBRARY.clone()
 }
 
 /// Returns the Token Policy Manager Library.
@@ -236,7 +236,7 @@ pub fn network_account_auth_library() -> Library {
 /// crate.
 pub enum StandardAccountComponent {
     BasicWallet,
-    BasicFungibleFaucet,
+    FungibleFaucet,
     Ownable2Step,
     RoleBasedAccessControl,
     AuthSingleSig,
@@ -252,7 +252,7 @@ impl StandardAccountComponent {
     pub fn procedure_digests(&self) -> impl Iterator<Item = Word> {
         let library = match self {
             Self::BasicWallet => BASIC_WALLET_LIBRARY.as_ref(),
-            Self::BasicFungibleFaucet => BASIC_FUNGIBLE_FAUCET_LIBRARY.as_ref(),
+            Self::FungibleFaucet => FUNGIBLE_FAUCET_LIBRARY.as_ref(),
             Self::Ownable2Step => OWNABLE2STEP_LIBRARY.as_ref(),
             Self::RoleBasedAccessControl => RBAC_LIBRARY.as_ref(),
             Self::AuthSingleSig => SINGLESIG_LIBRARY.as_ref(),
@@ -297,8 +297,8 @@ impl StandardAccountComponent {
                 Self::BasicWallet => {
                     component_interface_vec.push(AccountComponentInterface::BasicWallet)
                 },
-                Self::BasicFungibleFaucet => {
-                    component_interface_vec.push(AccountComponentInterface::BasicFungibleFaucet)
+                Self::FungibleFaucet => {
+                    component_interface_vec.push(AccountComponentInterface::FungibleFaucet)
                 },
                 Self::Ownable2Step => {
                     component_interface_vec.push(AccountComponentInterface::Ownable2Step)
@@ -335,7 +335,7 @@ impl StandardAccountComponent {
         component_interface_vec: &mut Vec<AccountComponentInterface>,
     ) {
         Self::BasicWallet.extract_component(procedures_set, component_interface_vec);
-        Self::BasicFungibleFaucet.extract_component(procedures_set, component_interface_vec);
+        Self::FungibleFaucet.extract_component(procedures_set, component_interface_vec);
         Self::RoleBasedAccessControl.extract_component(procedures_set, component_interface_vec);
         Self::Ownable2Step.extract_component(procedures_set, component_interface_vec);
         Self::AuthSingleSig.extract_component(procedures_set, component_interface_vec);

@@ -11,9 +11,8 @@ pub mod rbac;
 /// control choice. The [`AccessControl::AuthControlled`] variant expands to no components and
 /// represents accounts whose access decisions are gated solely by the account's auth component.
 /// Single-component variants like [`AccessControl::Ownable2Step`] expand to one component;
-/// composite variants like [`AccessControl::Rbac`] expand to multiple components in the order
-/// they must be installed (RBAC depends on [`ownable2step::Ownable2Step`], so the latter is
-/// included alongside it).
+/// composite variants like [`AccessControl::Rbac`] expand to multiple components (RBAC depends
+/// on [`ownable2step::Ownable2Step`], so the latter is included alongside it).
 ///
 /// Pass to
 /// [`AccountBuilder::with_components`][miden_protocol::account::AccountBuilder::with_components]

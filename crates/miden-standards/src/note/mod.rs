@@ -6,7 +6,7 @@ use miden_protocol::account::AccountId;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::note::{Note, NoteScript, NoteScriptRoot};
 
-use crate::account::faucets::BasicFungibleFaucet;
+use crate::account::faucets::FungibleFaucet;
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
 use crate::account::wallets::BasicWallet;
 
@@ -163,11 +163,11 @@ impl StandardNote {
                 // MINT notes invoke the faucet's `mint_and_send` procedure. The note-based
                 // mint flow is intended for network-style faucets where the active mint policy
                 // gates minting via owner verification.
-                interface_proc_digests.contains(&BasicFungibleFaucet::mint_and_send_digest())
+                interface_proc_digests.contains(&FungibleFaucet::mint_and_send_digest())
             },
             Self::BURN => {
                 // BURN notes invoke the faucet's `receive_and_burn` procedure.
-                interface_proc_digests.contains(&BasicFungibleFaucet::receive_and_burn_digest())
+                interface_proc_digests.contains(&FungibleFaucet::receive_and_burn_digest())
             },
         }
     }

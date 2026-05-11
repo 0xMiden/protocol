@@ -116,13 +116,13 @@ async fn test_send_note_script_basic_wallet() -> anyhow::Result<()> {
 }
 
 /// Tests the execution of the generated send_note transaction script in case the sending account
-/// has the [`BasicFungibleFaucet`][faucet] interface.
+/// has the [`FungibleFaucet`][faucet] interface.
 ///
-/// [faucet]: miden_standards::account::interface::AccountComponentInterface::BasicFungibleFaucet
+/// [faucet]: miden_standards::account::interface::AccountComponentInterface::FungibleFaucet
 #[tokio::test]
-async fn test_send_note_script_basic_fungible_faucet() -> anyhow::Result<()> {
+async fn test_send_note_script_fungible_faucet() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let sender_basic_fungible_faucet_account = builder.add_existing_basic_faucet(
+    let sender_fungible_faucet_account = builder.add_existing_basic_faucet(
         Auth::BasicAuth {
             auth_scheme: AuthScheme::Falcon512Poseidon2,
         },
@@ -132,16 +132,15 @@ async fn test_send_note_script_basic_fungible_faucet() -> anyhow::Result<()> {
     )?;
     let mock_chain = builder.build()?;
 
-    let sender_account_interface =
-        AccountInterface::from_account(&sender_basic_fungible_faucet_account);
+    let sender_account_interface = AccountInterface::from_account(&sender_fungible_faucet_account);
 
-    let tag = NoteTag::with_account_target(sender_basic_fungible_faucet_account.id());
+    let tag = NoteTag::with_account_target(sender_fungible_faucet_account.id());
     let attachment = NoteAttachment::new_word(NoteAttachmentScheme::new(100), Word::empty());
-    let metadata = NoteMetadata::new(sender_basic_fungible_faucet_account.id(), NoteType::Public)
+    let metadata = NoteMetadata::new(sender_fungible_faucet_account.id(), NoteType::Public)
         .with_tag(tag)
         .with_attachment(attachment);
     let assets = NoteAssets::new(vec![Asset::Fungible(
-        FungibleAsset::new(sender_basic_fungible_faucet_account.id(), 10).unwrap(),
+        FungibleAsset::new(sender_fungible_faucet_account.id(), 10).unwrap(),
     )])?;
     let note_script = CodeBuilder::default().compile_note_script(DEFAULT_NOTE_SCRIPT).unwrap();
     let serial_num = RandomCoin::new(Word::from([1, 2, 3, 4u32])).draw_word();
@@ -155,7 +154,7 @@ async fn test_send_note_script_basic_fungible_faucet() -> anyhow::Result<()> {
         .build_send_notes_script(slice::from_ref(&partial_note), Some(expiration_delta))?;
 
     let executed_transaction = mock_chain
-        .build_tx_context(sender_basic_fungible_faucet_account.id(), &[], &[])
+        .build_tx_context(sender_fungible_faucet_account.id(), &[], &[])
         .expect("failed to build tx context")
         .tx_script(send_note_transaction_script)
         .extend_expected_output_notes(vec![RawOutputNote::Full(note.clone())])

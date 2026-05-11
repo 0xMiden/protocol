@@ -54,8 +54,7 @@ use miden_protocol::testing::account_id::{
 use miden_protocol::testing::storage::{MOCK_MAP_SLOT, MOCK_VALUE_SLOT0, MOCK_VALUE_SLOT1};
 use miden_protocol::transaction::{RawOutputNote, TransactionKernel};
 use miden_protocol::utils::sync::LazyLock;
-use miden_standards::account::faucets::BasicFungibleFaucet;
-use miden_standards::account::metadata::TokenName;
+use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::mock_account::MockAccountExt;
@@ -1707,11 +1706,11 @@ async fn test_faucet_has_callbacks(
     #[case] callback_slots: Vec<StorageSlot>,
     #[case] expected_has_callbacks: bool,
 ) -> anyhow::Result<()> {
-    let faucet = BasicFungibleFaucet::builder(
+    let faucet = FungibleFaucet::builder(
         TokenName::new("").expect("empty string is a valid token name"),
         "CBK".try_into()?,
         8,
-        1_000_000u64,
+        miden_protocol::asset::AssetAmount::new(1_000_000)?,
     )
     .build()?;
 

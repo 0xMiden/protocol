@@ -19,8 +19,8 @@ pub enum AccountComponentInterface {
     /// Exposes procedures from the [`BasicWallet`][crate::account::wallets::BasicWallet] module.
     BasicWallet,
     /// Exposes procedures from the
-    /// [`BasicFungibleFaucet`][crate::account::faucets::BasicFungibleFaucet] module.
-    BasicFungibleFaucet,
+    /// [`FungibleFaucet`][crate::account::faucets::FungibleFaucet] module.
+    FungibleFaucet,
     /// Exposes procedures from the
     /// [`Ownable2Step`][crate::account::access::Ownable2Step] access component.
     Ownable2Step,
@@ -68,7 +68,7 @@ impl AccountComponentInterface {
     pub fn name(&self) -> String {
         match self {
             AccountComponentInterface::BasicWallet => "Basic Wallet".to_string(),
-            AccountComponentInterface::BasicFungibleFaucet => "Basic Fungible Faucet".to_string(),
+            AccountComponentInterface::FungibleFaucet => "Fungible Faucet".to_string(),
             AccountComponentInterface::Ownable2Step => "Ownable2Step".to_string(),
             AccountComponentInterface::RoleBasedAccessControl => {
                 "Role Based Access Control".to_string()
@@ -163,13 +163,13 @@ impl AccountComponentInterface {
     ///     dropw dropw dropw drop
     /// ```
     ///
-    /// Example script for the [`AccountComponentInterface::BasicFungibleFaucet`] with one note:
+    /// Example script for the [`AccountComponentInterface::FungibleFaucet`] with one note:
     ///
     /// ```masm
     ///     push.{note information}
     ///
     ///     push.{asset amount}
-    ///     call.::miden::standards::faucets::basic_fungible::mint_and_send dropw dropw drop
+    ///     call.::miden::standards::faucets::fungible::mint_and_send dropw dropw drop
     /// ```
     ///
     /// # Errors:
@@ -205,7 +205,7 @@ impl AccountComponentInterface {
             ));
 
             match self {
-                AccountComponentInterface::BasicFungibleFaucet => {
+                AccountComponentInterface::FungibleFaucet => {
                     if partial_note.assets().num_assets() != 1 {
                         return Err(AccountInterfaceError::FaucetNoteWithoutAsset);
                     }
@@ -223,7 +223,7 @@ impl AccountComponentInterface {
                     body.push_str(&format!(
                         "
                         push.{amount}
-                        call.::miden::standards::faucets::basic_fungible::mint_and_send
+                        call.::miden::standards::faucets::fungible::mint_and_send
                         # => [note_idx, pad(25)]
                         swapdw dropw dropw swap drop
                         # => [note_idx, pad(16)]\n

@@ -1,4 +1,4 @@
-//! Integration tests for the Token Metadata standard (`BasicFungibleFaucet`).
+//! Integration tests for the Token Metadata standard (`FungibleFaucet`).
 
 extern crate alloc;
 
@@ -18,16 +18,16 @@ use miden_protocol::account::{
     StorageSlotName,
 };
 use miden_protocol::assembly::DefaultSourceManager;
-use miden_protocol::asset::TokenSymbol;
+use miden_protocol::asset::{AssetAmount, TokenSymbol};
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::{NoteTag, NoteType};
 use miden_protocol::{Felt, Word};
 use miden_standards::account::access::Ownable2Step;
 use miden_standards::account::auth::NoAuth;
-use miden_standards::account::faucets::BasicFungibleFaucet;
-use miden_standards::account::metadata::{
+use miden_standards::account::faucets::{
     Description,
     ExternalLink,
+    FungibleFaucet,
     LogoURI,
     TokenMetadata,
     TokenName,
@@ -47,7 +47,7 @@ use crate::{MockChain, TransactionContextBuilder, assert_transaction_executor_er
 // SHARED HELPERS
 // ================================================================================================
 
-/// Builds [`BasicFungibleFaucet`] for tests that use raw word arrays + mutability flags
+/// Builds [`FungibleFaucet`] for tests that use raw word arrays + mutability flags
 /// (e.g. from [`description_config`] / [`logo_uri_config`] / [`external_link_config`]).
 fn network_faucet_metadata(
     token_symbol: &str,
@@ -57,12 +57,13 @@ fn network_faucet_metadata(
     description: Option<([Word; 7], bool)>,
     logo_uri: Option<([Word; 7], bool)>,
     external_link: Option<([Word; 7], bool)>,
-) -> anyhow::Result<BasicFungibleFaucet> {
-    let token_supply = token_supply.unwrap_or(0);
+) -> anyhow::Result<FungibleFaucet> {
+    let token_supply = AssetAmount::new(token_supply.unwrap_or(0))?;
+    let max_supply = AssetAmount::new(max_supply)?;
     let name = TokenName::new(token_symbol)?;
     let token_symbol = TokenSymbol::new(token_symbol)?;
 
-    let mut builder = BasicFungibleFaucet::builder(name, token_symbol, 10, max_supply)
+    let mut builder = FungibleFaucet::builder(name, token_symbol, 10, max_supply)
         .token_supply(token_supply)
         .is_max_supply_mutable(max_supply_mutable);
     if let Some((words, mutable)) = description {
@@ -127,12 +128,12 @@ fn non_owner_account_id() -> AccountId {
 }
 
 /// Build a minimal faucet metadata (no optional fields).
-fn build_faucet_metadata() -> BasicFungibleFaucet {
-    BasicFungibleFaucet::builder(
+fn build_faucet_metadata() -> FungibleFaucet {
+    FungibleFaucet::builder(
         TokenName::new("T").unwrap(),
         "TST".try_into().unwrap(),
         2,
-        1_000u64,
+        AssetAmount::new(1_000).unwrap(),
     )
     .build()
     .unwrap()
@@ -140,12 +141,12 @@ fn build_faucet_metadata() -> BasicFungibleFaucet {
 
 /// Build a standard POL faucet metadata (used by scalar getter tests).
 /// Uses "Polygon Token" (13 bytes) so both name word chunks are non-zero.
-fn build_pol_faucet_metadata() -> BasicFungibleFaucet {
-    BasicFungibleFaucet::builder(
+fn build_pol_faucet_metadata() -> FungibleFaucet {
+    FungibleFaucet::builder(
         TokenName::new("Polygon Token").unwrap(),
         TokenSymbol::new("POL").unwrap(),
         8,
-        1_000_000u64,
+        AssetAmount::new(1_000_000).unwrap(),
     )
     .build()
     .unwrap()
@@ -202,9 +203,14 @@ async fn get_name_from_masm() -> anyhow::Result<()> {
     let token_name = TokenName::new("test name").unwrap();
     let name = token_name.to_words();
 
-    let metadata = BasicFungibleFaucet::builder(token_name, "TST".try_into().unwrap(), 2, 1_000u64)
-        .build()
-        .unwrap();
+    let metadata = FungibleFaucet::builder(
+        token_name,
+        "TST".try_into().unwrap(),
+        2,
+        AssetAmount::new(1_000).unwrap(),
+    )
+    .build()
+    .unwrap();
 
     let account = AccountBuilder::new([1u8; 32])
         .account_type(AccountType::FungibleFaucet)
@@ -217,7 +223,7 @@ async fn get_name_from_masm() -> anyhow::Result<()> {
         format!(
             r#"
             begin
-                call.::miden::standards::faucets::fungible::get_name
+                call.::miden::standards::faucets::get_name
                 push.{n0}
                 assert_eqw.err="name chunk 0 does not match"
                 push.{n1}
@@ -234,11 +240,11 @@ async fn get_name_from_masm() -> anyhow::Result<()> {
 #[tokio::test]
 async fn get_name_zeros_returns_empty() -> anyhow::Result<()> {
     // Build a faucet with an empty name to verify get_name returns zero words.
-    let metadata = BasicFungibleFaucet::builder(
+    let metadata = FungibleFaucet::builder(
         TokenName::new("").expect("empty string is a valid token name"),
         "TST".try_into().unwrap(),
         2,
-        1_000u64,
+        AssetAmount::new(1_000).unwrap(),
     )
     .build()
     .unwrap();
@@ -253,7 +259,7 @@ async fn get_name_zeros_returns_empty() -> anyhow::Result<()> {
         account,
         r#"
         begin
-            call.::miden::standards::faucets::fungible::get_name
+            call.::miden::standards::faucets::get_name
             padw assert_eqw.err="name chunk 0 should be empty"
             padw assert_eqw.err="name chunk 1 should be empty"
         end
@@ -336,7 +342,7 @@ async fn faucet_get_max_supply() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn faucet_get_token_metadata() -> anyhow::Result<()> {
+async fn faucet_get_token_config() -> anyhow::Result<()> {
     let symbol = TokenSymbol::new("POL").unwrap();
     let expected_symbol = Felt::from(symbol).as_canonical_u64();
     let expected_decimals = Felt::from(8u8).as_canonical_u64();
@@ -347,7 +353,7 @@ async fn faucet_get_token_metadata() -> anyhow::Result<()> {
         format!(
             r#"
             begin
-                call.::miden::standards::faucets::fungible::get_token_metadata
+                call.::miden::standards::faucets::fungible::get_token_config
                 push.0 assert_eq.err="token_supply does not match"
                 push.{expected_max_supply} assert_eq.err="max_supply does not match"
                 push.{expected_decimals} assert_eq.err="decimals does not match"
@@ -390,11 +396,11 @@ async fn faucet_get_decimals_symbol_and_max_supply() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn get_mutability_config() -> anyhow::Result<()> {
-    let metadata = BasicFungibleFaucet::builder(
+    let metadata = FungibleFaucet::builder(
         TokenName::new("T").unwrap(),
         "TST".try_into().unwrap(),
         2,
-        1_000u64,
+        AssetAmount::new(1_000).unwrap(),
     )
     .description(Description::new("test").unwrap())
     .is_description_mutable(true)
@@ -412,7 +418,7 @@ async fn get_mutability_config() -> anyhow::Result<()> {
         account,
         r#"
         begin
-            call.::miden::standards::faucets::fungible::get_mutability_config
+            call.::miden::standards::faucets::get_mutability_config
             push.1 assert_eq.err="desc_mutable should be 1"
             push.0 assert_eq.err="logo_mutable should be 0"
             push.0 assert_eq.err="extlink_mutable should be 0"
@@ -425,17 +431,24 @@ async fn get_mutability_config() -> anyhow::Result<()> {
 
 /// Tests all `is_*_mutable` procedures with flag=0 and flag=1.
 #[rstest::rstest]
-#[case("is_max_supply_mutable",    build_faucet_metadata().with_max_supply_mutable(true),    1)]
-#[case("is_description_mutable",   build_faucet_metadata().with_description_mutable(true),   1)]
-#[case("is_description_mutable",   build_faucet_metadata().with_description_mutable(false),  0)]
-#[case("is_logo_uri_mutable",      build_faucet_metadata().with_logo_uri_mutable(true),      1)]
-#[case("is_logo_uri_mutable",      build_faucet_metadata().with_logo_uri_mutable(false),     0)]
-#[case("is_external_link_mutable", build_faucet_metadata().with_external_link_mutable(true), 1)]
-#[case("is_external_link_mutable", build_faucet_metadata().with_external_link_mutable(false),0)]
+#[case("::miden::standards::faucets::fungible::is_max_supply_mutable",
+    build_faucet_metadata().with_max_supply_mutable(true),    1)]
+#[case("::miden::standards::faucets::is_description_mutable",
+    build_faucet_metadata().with_description_mutable(true),   1)]
+#[case("::miden::standards::faucets::is_description_mutable",
+    build_faucet_metadata().with_description_mutable(false),  0)]
+#[case("::miden::standards::faucets::is_logo_uri_mutable",
+    build_faucet_metadata().with_logo_uri_mutable(true),      1)]
+#[case("::miden::standards::faucets::is_logo_uri_mutable",
+    build_faucet_metadata().with_logo_uri_mutable(false),     0)]
+#[case("::miden::standards::faucets::is_external_link_mutable",
+    build_faucet_metadata().with_external_link_mutable(true), 1)]
+#[case("::miden::standards::faucets::is_external_link_mutable",
+    build_faucet_metadata().with_external_link_mutable(false),0)]
 #[tokio::test]
 async fn is_field_mutable_checks(
-    #[case] proc_name: &str,
-    #[case] metadata: BasicFungibleFaucet,
+    #[case] proc_path: &str,
+    #[case] metadata: FungibleFaucet,
     #[case] expected: u8,
 ) -> anyhow::Result<()> {
     let account = AccountBuilder::new([1u8; 32])
@@ -448,9 +461,9 @@ async fn is_field_mutable_checks(
         account,
         format!(
             "begin
-                call.::miden::standards::faucets::fungible::{proc_name}
+                call.{proc_path}
                 push.{expected}
-                assert_eq.err=\"{proc_name} returned unexpected value\"
+                assert_eq.err=\"{proc_path} returned unexpected value\"
             end"
         ),
     )
@@ -467,11 +480,15 @@ fn faucet_with_metadata_storage_layout() {
     let desc_text = "faucet description text for testing";
     let description = Description::new(desc_text).unwrap();
 
-    let metadata =
-        BasicFungibleFaucet::builder(token_name, "TST".try_into().unwrap(), 8, 1_000_000u64)
-            .description(description)
-            .build()
-            .unwrap();
+    let metadata = FungibleFaucet::builder(
+        token_name,
+        "TST".try_into().unwrap(),
+        8,
+        AssetAmount::new(1_000_000).unwrap(),
+    )
+    .description(description)
+    .build()
+    .unwrap();
 
     let account = AccountBuilder::new([1u8; 32])
         .account_type(AccountType::FungibleFaucet)
@@ -482,7 +499,7 @@ fn faucet_with_metadata_storage_layout() {
         .unwrap();
 
     // Verify roundtrip via try_from
-    let restored = BasicFungibleFaucet::try_from(account.storage()).unwrap();
+    let restored = FungibleFaucet::try_from(account.storage()).unwrap();
     assert_eq!(restored.token_supply(), Felt::ZERO);
     assert_eq!(restored.max_supply().as_canonical_u64(), 1_000_000);
     assert_eq!(restored.decimals(), 8);
@@ -504,7 +521,8 @@ fn verify_faucet_with_max_name_and_description(
     let desc_text = "a".repeat(Description::MAX_BYTES);
     let description = Description::new(&desc_text).unwrap();
 
-    let faucet = BasicFungibleFaucet::builder(
+    let max_supply = AssetAmount::new(max_supply).unwrap();
+    let faucet = FungibleFaucet::builder(
         TokenName::new(&max_name).unwrap(),
         symbol.try_into().unwrap(),
         6,
@@ -527,10 +545,10 @@ fn verify_faucet_with_max_name_and_description(
     let account = builder.build().unwrap();
 
     // Verify roundtrip via try_from
-    let restored = BasicFungibleFaucet::try_from(account.storage()).unwrap();
+    let restored = FungibleFaucet::try_from(account.storage()).unwrap();
     assert_eq!(restored.name().as_str(), max_name);
     assert_eq!(restored.description().map(|d| d.as_str()), Some(desc_text.as_str()));
-    assert_eq!(restored.max_supply().as_canonical_u64(), max_supply);
+    assert_eq!(restored.max_supply().as_canonical_u64(), u64::from(max_supply));
 }
 
 #[test]
@@ -616,7 +634,7 @@ async fn test_field_setter_immutable_fails(
     let tx_script_code = format!(
         r#"
         begin
-            call.::miden::standards::faucets::fungible::{proc_name}
+            call.::miden::standards::faucets::{proc_name}
         end
     "#
     );
@@ -667,7 +685,7 @@ async fn test_field_setter_owner_succeeds(
     @note_script
     pub proc main
         dropw push.{hash}
-        call.::miden::standards::faucets::fungible::{proc_name}
+        call.::miden::standards::faucets::{proc_name}
         dropw
     end
 "#,
@@ -726,7 +744,7 @@ async fn test_field_setter_non_owner_fails(
         r#"
     @note_script
     pub proc main
-        call.::miden::standards::faucets::fungible::{proc_name}
+        call.::miden::standards::faucets::{proc_name}
         dropw
     end
 "#,
@@ -920,7 +938,7 @@ async fn set_max_supply_mutable_owner_succeeds() -> anyhow::Result<()> {
     let mut updated_faucet = faucet.clone();
     updated_faucet.apply_delta(executed.account_delta())?;
 
-    let restored = BasicFungibleFaucet::try_from(updated_faucet.storage())?;
+    let restored = FungibleFaucet::try_from(updated_faucet.storage())?;
     assert_eq!(
         restored.max_supply().as_canonical_u64(),
         new_max_supply,

@@ -15,11 +15,10 @@ use miden_protocol::account::{
     StorageSlot,
     StorageSlotName,
 };
-use miden_protocol::asset::TokenSymbol;
+use miden_protocol::asset::{AssetAmount, TokenSymbol};
 use miden_protocol::errors::AccountIdError;
 use miden_standards::account::access::Ownable2Step;
-use miden_standards::account::faucets::{BasicFungibleFaucet, FungibleFaucetError};
-use miden_standards::account::metadata::TokenName;
+use miden_standards::account::faucets::{FungibleFaucet, FungibleFaucetError, TokenName};
 use miden_standards::account::policies::TokenPolicyManager;
 use miden_utils_sync::LazyLock;
 use thiserror::Error;
@@ -81,8 +80,8 @@ static METADATA_HASH_HI_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| 
 ///
 /// ## Storage Layout
 ///
-/// - All [`BasicFungibleFaucet`] storage slots (token config + name + mutability + description +
-///   logo URI + external link).
+/// - All [`FungibleFaucet`] storage slots (token config + name + mutability + description + logo
+///   URI + external link).
 /// - [`Self::conversion_info_1_slot`]: Stores the first 4 felts of the origin token address.
 /// - [`Self::conversion_info_2_slot`]: Stores the remaining 5th felt of the origin token address +
 ///   origin network + scale.
@@ -99,7 +98,7 @@ static METADATA_HASH_HI_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| 
 /// These must be added as separate components when building the faucet account.
 #[derive(Debug, Clone)]
 pub struct AggLayerFaucet {
-    metadata: BasicFungibleFaucet,
+    metadata: FungibleFaucet,
     origin_token_address: EthAddress,
     origin_network: u32,
     scale: u8,
@@ -117,7 +116,7 @@ impl AggLayerFaucet {
     ///
     /// # Errors
     /// Returns an error if:
-    /// - The decimals parameter exceeds maximum value of [`BasicFungibleFaucet::MAX_DECIMALS`].
+    /// - The decimals parameter exceeds maximum value of [`FungibleFaucet::MAX_DECIMALS`].
     /// - The max supply exceeds maximum possible amount for a fungible asset.
     /// - The token supply exceeds the max supply.
     #[allow(clippy::too_many_arguments)]
@@ -134,10 +133,22 @@ impl AggLayerFaucet {
         // Use the symbol as the display name; AggLayer faucets do not use a separate token name.
         let name = TokenName::new(symbol.to_string().as_str())
             .expect("symbol fits within token name capacity");
-        let metadata =
-            BasicFungibleFaucet::builder(name, symbol, decimals, max_supply.as_canonical_u64())
-                .token_supply(token_supply.as_canonical_u64())
-                .build()?;
+        let max_supply_amount = AssetAmount::new(max_supply.as_canonical_u64()).map_err(|_| {
+            FungibleFaucetError::MaxSupplyTooLarge {
+                actual: max_supply.as_canonical_u64(),
+                max: AssetAmount::MAX,
+            }
+        })?;
+        let token_supply_amount =
+            AssetAmount::new(token_supply.as_canonical_u64()).map_err(|_| {
+                FungibleFaucetError::MaxSupplyTooLarge {
+                    actual: token_supply.as_canonical_u64(),
+                    max: AssetAmount::MAX,
+                }
+            })?;
+        let metadata = FungibleFaucet::builder(name, symbol, decimals, max_supply_amount)
+            .token_supply(token_supply_amount)
+            .build()?;
         Ok(Self {
             metadata,
             origin_token_address,
@@ -162,7 +173,7 @@ impl AggLayerFaucet {
     /// Storage slot name for the token config word
     /// `[token_supply, max_supply, decimals, token_symbol]`.
     pub fn token_config_slot() -> &'static StorageSlotName {
-        BasicFungibleFaucet::token_config_slot()
+        FungibleFaucet::token_config_slot()
     }
 
     /// Storage slot name for the first 4 felts of the origin token address.
@@ -196,11 +207,11 @@ impl AggLayerFaucet {
     ///
     /// Returns an error if:
     /// - the provided account is not an [`AggLayerFaucet`] account.
-    pub fn metadata(faucet_account: &Account) -> Result<BasicFungibleFaucet, AgglayerFaucetError> {
+    pub fn metadata(faucet_account: &Account) -> Result<FungibleFaucet, AgglayerFaucetError> {
         // check that the provided account is a faucet account
         Self::assert_faucet_account(faucet_account)?;
 
-        BasicFungibleFaucet::try_from(faucet_account.storage())
+        FungibleFaucet::try_from(faucet_account.storage())
             .map_err(AgglayerFaucetError::FungibleFaucetError)
     }
 
@@ -372,7 +383,7 @@ impl AggLayerFaucet {
             &*CONVERSION_INFO_2_SLOT_NAME,
             &*METADATA_HASH_LO_SLOT_NAME,
             &*METADATA_HASH_HI_SLOT_NAME,
-            BasicFungibleFaucet::token_config_slot(),
+            FungibleFaucet::token_config_slot(),
             Ownable2Step::slot_name(),
             TokenPolicyManager::policy_authority_slot(),
             TokenPolicyManager::active_mint_policy_slot(),
@@ -385,7 +396,7 @@ impl AggLayerFaucet {
 
 impl From<AggLayerFaucet> for AccountComponent {
     fn from(faucet: AggLayerFaucet) -> Self {
-        // Bring in all of the BasicFungibleFaucet's storage slots (token config + name +
+        // Bring in all of the FungibleFaucet's storage slots (token config + name +
         // mutability + description + logo URI + external link). The AggLayer faucet itself adds
         // four bridge-specific slots on top.
         let mut agglayer_storage_slots = faucet.metadata.into_storage_slots();

@@ -7,13 +7,11 @@ use thiserror::Error;
 use crate::account::access::Ownable2StepError;
 use crate::utils::FixedWidthStringError;
 
-mod basic_fungible;
+mod fungible;
+mod token_metadata;
 
-pub use basic_fungible::{
-    BasicFungibleFaucet,
-    BasicFungibleFaucetBuilder,
-    create_basic_fungible_faucet,
-};
+pub use fungible::{FungibleFaucet, FungibleFaucetBuilder, create_fungible_faucet};
+pub use token_metadata::{Description, ExternalLink, LogoURI, TokenMetadata, TokenName};
 
 // TOKEN METADATA ERROR
 // ================================================================================================
@@ -58,7 +56,7 @@ pub enum FungibleFaucetError {
     #[error(
         "account interface does not have the procedures of the basic fungible faucet component"
     )]
-    MissingBasicFungibleFaucetInterface,
+    MissingFungibleFaucetInterface,
     #[error("unsupported authentication method: {0}")]
     UnsupportedAuthMethod(String),
     #[error("account creation failed")]

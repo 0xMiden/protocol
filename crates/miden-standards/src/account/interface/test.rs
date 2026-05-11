@@ -23,14 +23,13 @@ use miden_protocol::{Felt, Word};
 
 use crate::AuthMethod;
 use crate::account::auth::{AuthMultisig, AuthMultisigConfig, AuthSingleSig, NoAuth};
-use crate::account::faucets::BasicFungibleFaucet;
+use crate::account::faucets::{FungibleFaucet, TokenName};
 use crate::account::interface::{
     AccountComponentInterface,
     AccountInterface,
     AccountInterfaceExt,
     NoteAccountCompatibility,
 };
-use crate::account::metadata::TokenName;
 use crate::account::wallets::BasicWallet;
 use crate::code_builder::CodeBuilder;
 use crate::note::{P2idNote, P2ideNote, P2ideNoteStorage, SwapNote};
@@ -56,11 +55,11 @@ fn test_basic_wallet_default_notes() {
         .account_type(AccountType::FungibleFaucet)
         .with_auth_component(get_mock_falcon_auth_component())
         .with_component(
-            BasicFungibleFaucet::builder(
+            FungibleFaucet::builder(
                 TokenName::new("POL").unwrap(),
                 TokenSymbol::new("POL").expect("invalid token symbol"),
                 10,
-                100u64,
+                miden_protocol::asset::AssetAmount::new(100).unwrap(),
             )
             .build()
             .expect("failed to create faucet"),
@@ -258,7 +257,7 @@ fn test_basic_wallet_custom_notes() {
     let compatible_source_code = "
         use miden::protocol::tx
         use miden::standards::wallets::basic->wallet
-        use miden::standards::faucets::basic_fungible->fungible_faucet
+        use miden::standards::faucets::fungible->fungible_faucet
 
         @note_script
         pub proc main
@@ -288,7 +287,7 @@ fn test_basic_wallet_custom_notes() {
 
     let incompatible_source_code = "
         use miden::standards::wallets::basic->wallet
-        use miden::standards::faucets::basic_fungible->fungible_faucet
+        use miden::standards::faucets::fungible->fungible_faucet
 
         @note_script
         pub proc main
@@ -317,17 +316,17 @@ fn test_basic_wallet_custom_notes() {
 }
 
 #[test]
-fn test_basic_fungible_faucet_custom_notes() {
+fn test_fungible_faucet_custom_notes() {
     let mock_seed = Word::from([Felt::new(4), Felt::new(5), Felt::new(6), Felt::new(7)]).as_bytes();
     let faucet_account = AccountBuilder::new(mock_seed)
         .account_type(AccountType::FungibleFaucet)
         .with_auth_component(get_mock_falcon_auth_component())
         .with_component(
-            BasicFungibleFaucet::builder(
+            FungibleFaucet::builder(
                 TokenName::new("POL").unwrap(),
                 TokenSymbol::new("POL").expect("invalid token symbol"),
                 10,
-                100u64,
+                miden_protocol::asset::AssetAmount::new(100).unwrap(),
             )
             .build()
             .expect("failed to create faucet"),
@@ -344,7 +343,7 @@ fn test_basic_fungible_faucet_custom_notes() {
 
     let compatible_source_code = "
         use miden::standards::wallets::basic->wallet
-        use miden::standards::faucets::basic_fungible->fungible_faucet
+        use miden::standards::faucets::fungible->fungible_faucet
 
         @note_script
         pub proc main
@@ -373,7 +372,7 @@ fn test_basic_fungible_faucet_custom_notes() {
 
     let incompatible_source_code = "
         use miden::standards::wallets::basic->wallet
-        use miden::standards::faucets::basic_fungible->fungible_faucet
+        use miden::standards::faucets::fungible->fungible_faucet
 
         @note_script
         pub proc main
@@ -556,7 +555,7 @@ fn test_custom_account_multiple_components_custom_notes() {
     let compatible_source_code = "
         use miden::standards::wallets::basic->wallet
         use test::account::component_1->test_account
-        use miden::standards::faucets::basic_fungible->fungible_faucet
+        use miden::standards::faucets::fungible->fungible_faucet
 
         @note_script
         pub proc main
@@ -594,7 +593,7 @@ fn test_custom_account_multiple_components_custom_notes() {
     let incompatible_source_code = "
         use miden::standards::wallets::basic->wallet
         use test::account::component_1->test_account
-        use miden::standards::faucets::basic_fungible->fungible_faucet
+        use miden::standards::faucets::fungible->fungible_faucet
 
         @note_script
         pub proc main
