@@ -102,6 +102,11 @@ impl NoteAttachment {
     }
 
     /// Returns the raw elements of this attachment content.
+    pub fn as_elements(&self) -> &[Felt] {
+        self.content.as_elements()
+    }
+
+    /// Returns the raw elements of this attachment content.
     pub fn to_elements(&self) -> Vec<Felt> {
         self.content().to_elements()
     }
@@ -182,6 +187,11 @@ impl NoteAttachmentContent {
     /// Returns the size of this attachment content in words.
     pub fn num_words(&self) -> u16 {
         u16::try_from(self.words.len()).expect("num words should fit in u16")
+    }
+
+    /// Returns the raw elements of this attachment content.
+    pub fn as_elements(&self) -> &[Felt] {
+        Word::words_as_elements(&self.words)
     }
 
     /// Returns the raw elements of this attachment content.
