@@ -12,10 +12,10 @@ use miden_protocol::note::{
     NoteAssets,
     NoteAttachment,
     NoteAttachments,
-    NoteMetadata,
     NoteRecipient,
     NoteStorage,
     NoteType,
+    PartialNoteMetadata,
 };
 use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 
@@ -194,7 +194,7 @@ pub fn create_claim_note<R: FeltRng>(
         .map_err(|e| NoteError::other(e.to_string()))?;
     let attachments = NoteAttachments::from(NoteAttachment::from(attachment));
 
-    let metadata = NoteMetadata::new(sender_account_id, NoteType::Public);
+    let metadata = PartialNoteMetadata::new(sender_account_id, NoteType::Public);
 
     let recipient = NoteRecipient::new(rng.draw_word(), claim_script(), note_storage);
     let assets = NoteAssets::new(vec![])?;

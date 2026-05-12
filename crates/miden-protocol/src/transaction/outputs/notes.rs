@@ -12,7 +12,6 @@ use crate::note::{
     NoteHeader,
     NoteId,
     NoteMetadata,
-    NoteMetadataHeader,
     NoteRecipient,
     PartialNote,
 };
@@ -114,7 +113,7 @@ where
     /// - For an empty list, [`Word::empty`] is returned.
     /// - For a non-empty list of notes, this is a sequential hash of (note_id, metadata_commitment)
     ///   tuples for the notes created in a transaction, where `metadata_commitment` is the return
-    ///   value of [`NoteMetadataHeader::to_commitment`].
+    ///   value of [`NoteMetadata::to_commitment`].
     pub(crate) fn compute_commitment<'header>(
         notes: impl ExactSizeIterator<Item = &'header NoteHeader>,
     ) -> Word {
@@ -125,7 +124,7 @@ where
         let mut elements: Vec<Felt> = Vec::with_capacity(notes.len() * 8);
         for note_header in notes {
             elements.extend_from_slice(note_header.id().as_elements());
-            elements.extend_from_slice(note_header.metadata_header().to_commitment().as_elements());
+            elements.extend_from_slice(note_header.metadata().to_commitment().as_elements());
         }
 
         Hasher::hash_elements(&elements)
@@ -257,8 +256,7 @@ impl RawOutputNote {
             Self::Full(note) if note.metadata().is_private() => {
                 let note_id = note.id();
                 let (_, metadata, _, attachments) = note.into_parts();
-                let metadata_header = NoteMetadataHeader::new(metadata, &attachments);
-                let note_header = NoteHeader::new(note_id, metadata_header);
+                let note_header = NoteHeader::new(note_id, metadata);
                 Ok(OutputNote::Private(PrivateOutputNote::new(note_header, attachments)?))
             },
             Self::Full(note) => Ok(OutputNote::Public(PublicOutputNote::new(note)?)),
@@ -379,14 +377,6 @@ impl OutputNote {
         }
     }
 
-    /// Note's metadata.
-    pub fn metadata(&self) -> &NoteMetadata {
-        match self {
-            Self::Public(note) => note.metadata(),
-            Self::Private(header) => header.metadata(),
-        }
-    }
-
     /// The assets contained in the note, if available.
     ///
     /// Returns `Some` for public notes, `None` for private notes.
@@ -397,9 +387,9 @@ impl OutputNote {
         }
     }
 
-    /// Returns the note's metadata header.
-    pub fn metadata_header(&self) -> &NoteMetadataHeader {
-        <&NoteHeader>::from(self).metadata_header()
+    /// Returns the note's metadata.
+    pub fn metadata(&self) -> &NoteMetadata {
+        <&NoteHeader>::from(self).metadata()
     }
 
     /// Returns a commitment to the note and its metadata.
@@ -583,7 +573,7 @@ impl PrivateOutputNote {
     /// Returns an error if:
     /// - The provided header is for a public note.
     pub fn new(header: NoteHeader, attachments: NoteAttachments) -> Result<Self, OutputNoteError> {
-        if !header.metadata().is_private() {
+        if header.metadata().is_public() {
             return Err(OutputNoteError::NoteIsPublic(header.id()));
         }
 
@@ -605,11 +595,6 @@ impl PrivateOutputNote {
     /// Returns the note's attachments.
     pub fn attachments(&self) -> &NoteAttachments {
         &self.attachments
-    }
-
-    /// Consumes self and returns the note header's metadata.
-    pub fn into_metadata(self) -> NoteMetadata {
-        self.header.into_metadata()
     }
 
     /// Returns a commitment to the note and its metadata.

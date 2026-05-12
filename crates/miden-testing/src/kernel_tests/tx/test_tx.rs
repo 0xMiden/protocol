@@ -27,11 +27,11 @@ use miden_protocol::note::{
     NoteAttachmentScheme,
     NoteAttachments,
     NoteId,
-    NoteMetadata,
     NoteRecipient,
     NoteStorage,
     NoteTag,
     NoteType,
+    PartialNoteMetadata,
 };
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PRIVATE_SENDER,
@@ -236,7 +236,7 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
     let serial_num_2 = Word::from([1, 2, 3, 4u32]);
     let note_script_2 = CodeBuilder::default().compile_note_script(DEFAULT_NOTE_SCRIPT)?;
     let inputs_2 = NoteStorage::new(vec![ONE])?;
-    let metadata_2 = NoteMetadata::new(account_id, note_type2).with_tag(tag2);
+    let metadata_2 = PartialNoteMetadata::new(account_id, note_type2).with_tag(tag2);
     let vault_2 = NoteAssets::new(vec![removed_asset_3, removed_asset_4])?;
     let recipient_2 = NoteRecipient::new(serial_num_2, note_script_2, inputs_2);
     let attachments_2 = NoteAttachments::from(attachment2.clone());
@@ -247,7 +247,7 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
     let serial_num_3 = Word::from([Felt::new(5), Felt::new(6), Felt::new(7), Felt::new(8)]);
     let note_script_3 = CodeBuilder::default().compile_note_script(DEFAULT_NOTE_SCRIPT)?;
     let inputs_3 = NoteStorage::new(vec![ONE, Felt::new(2)])?;
-    let metadata_3 = NoteMetadata::new(account_id, note_type3).with_tag(tag3);
+    let metadata_3 = PartialNoteMetadata::new(account_id, note_type3).with_tag(tag3);
     let vault_3 = NoteAssets::new(vec![])?;
     let recipient_3 = NoteRecipient::new(serial_num_3, note_script_3, inputs_3);
     let attachments_3 = NoteAttachments::from(attachment3.clone());

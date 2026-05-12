@@ -8,9 +8,9 @@ use miden_protocol::note::{
     NoteAssets,
     NoteAttachment,
     NoteAttachments,
-    NoteMetadata,
     NoteRecipient,
     PartialNote,
+    PartialNoteMetadata,
 };
 
 use super::{RawOutputNote, Word};
@@ -26,7 +26,7 @@ use crate::errors::TransactionKernelError;
 /// addition.
 #[derive(Debug, Clone)]
 pub struct OutputNoteBuilder {
-    metadata: NoteMetadata,
+    metadata: PartialNoteMetadata,
     assets: Vec<Asset>,
     attachments: NoteAttachments,
     recipient_digest: Word,
@@ -45,11 +45,11 @@ impl OutputNoteBuilder {
     /// Returns an error if:
     /// - the note is public.
     pub fn from_recipient_digest(
-        metadata: NoteMetadata,
+        metadata: PartialNoteMetadata,
         recipient_digest: Word,
     ) -> Result<Self, TransactionKernelError> {
         // For public notes, we must have a recipient.
-        if !metadata.is_private() {
+        if metadata.is_public() {
             return Err(TransactionKernelError::PublicNoteMissingDetails(
                 metadata,
                 recipient_digest,
@@ -66,7 +66,7 @@ impl OutputNoteBuilder {
     }
 
     /// Returns a new [`OutputNoteBuilder`] from the provided metadata and recipient.
-    pub fn from_recipient(metadata: NoteMetadata, recipient: NoteRecipient) -> Self {
+    pub fn from_recipient(metadata: PartialNoteMetadata, recipient: NoteRecipient) -> Self {
         Self {
             metadata,
             recipient_digest: recipient.digest(),
