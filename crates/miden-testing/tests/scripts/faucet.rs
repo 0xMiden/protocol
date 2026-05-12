@@ -20,11 +20,11 @@ use miden_protocol::note::{
     NoteAssets,
     NoteAttachments,
     NoteId,
-    NoteMetadata,
     NoteRecipient,
     NoteStorage,
     NoteTag,
     NoteType,
+    PartialNoteMetadata,
 };
 use miden_protocol::testing::account_id::ACCOUNT_ID_PRIVATE_SENDER;
 use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote};
@@ -142,8 +142,8 @@ pub fn verify_minted_output_note(
 
     assert_eq!(output_note.id(), id);
     assert_eq!(
-        output_note.metadata(),
-        &NoteMetadata::new(faucet.id(), params.note_type).with_tag(params.tag)
+        output_note.metadata().partial_metadata(),
+        &PartialNoteMetadata::new(faucet.id(), params.note_type).with_tag(params.tag)
     );
 
     Ok(())
@@ -510,7 +510,7 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
     let output_script_root = note_recipient.script().root();
 
     let asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?;
-    let metadata = NoteMetadata::new(faucet.id(), note_type).with_tag(tag);
+    let metadata = PartialNoteMetadata::new(faucet.id(), note_type).with_tag(tag);
     let expected_note = Note::new(NoteAssets::new(vec![asset.into()])?, metadata, note_recipient);
 
     let trigger_note_script_code = format!(

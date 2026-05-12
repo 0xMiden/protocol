@@ -22,7 +22,7 @@ use miden_protocol::errors::{
     TransactionInputsExtractionError,
     TransactionOutputError,
 };
-use miden_protocol::note::{NoteId, NoteMetadata};
+use miden_protocol::note::{NoteId, PartialNoteMetadata};
 use miden_protocol::transaction::TransactionSummary;
 use miden_protocol::{Felt, Word};
 use miden_verifier::VerificationError;
@@ -257,7 +257,7 @@ pub enum TransactionKernelError {
     #[error(
         "public note with metadata {0:?} and recipient digest {1} is missing details in the advice provider"
     )]
-    PublicNoteMissingDetails(NoteMetadata, Word),
+    PublicNoteMissingDetails(PartialNoteMetadata, Word),
     #[error(
         "commitment of note attachment advice data is {actual} which does not match commitment {provided} provided to add_attachment"
     )]

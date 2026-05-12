@@ -22,7 +22,13 @@ use miden_protocol::assembly::{SourceFile, SourceManagerSync, SourceSpan};
 use miden_protocol::asset::{AssetVaultKey, AssetWitness, FungibleAsset};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::merkle::smt::SmtProof;
-use miden_protocol::note::{NoteMetadata, NoteRecipient, NoteScript, NoteScriptRoot, NoteStorage};
+use miden_protocol::note::{
+    NoteRecipient,
+    NoteScript,
+    NoteScriptRoot,
+    NoteStorage,
+    PartialNoteMetadata,
+};
 use miden_protocol::transaction::{
     InputNote,
     InputNotes,
@@ -382,7 +388,7 @@ where
         note_idx: usize,
         recipient_digest: Word,
         script_root: Word,
-        metadata: NoteMetadata,
+        metadata: PartialNoteMetadata,
         note_storage: NoteStorage,
         serial_num: Word,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {

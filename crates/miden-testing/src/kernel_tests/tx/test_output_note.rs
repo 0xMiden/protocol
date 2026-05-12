@@ -24,11 +24,11 @@ use miden_protocol::note::{
     NoteAttachmentScheme,
     NoteAttachments,
     NoteMetadata,
-    NoteMetadataHeader,
     NoteRecipient,
     NoteStorage,
     NoteTag,
     NoteType,
+    PartialNoteMetadata,
 };
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_NETWORK_NON_FUNGIBLE_FAUCET,
@@ -49,7 +49,7 @@ use miden_protocol::transaction::memory::{
     NUM_OUTPUT_NOTES_PTR,
     OUTPUT_NOTE_ASSETS_OFFSET,
     OUTPUT_NOTE_ATTACHMENT_0_OFFSET,
-    OUTPUT_NOTE_METADATA_HEADER_OFFSET,
+    OUTPUT_NOTE_METADATA_OFFSET,
     OUTPUT_NOTE_NUM_ASSETS_OFFSET,
     OUTPUT_NOTE_RECIPIENT_OFFSET,
     OUTPUT_NOTE_SECTION_OFFSET,
@@ -125,16 +125,15 @@ async fn test_create_note() -> anyhow::Result<()> {
         "recipient must be stored at the correct memory location",
     );
 
-    let metadata = NoteMetadata::new(account_id, NoteType::Public).with_tag(tag);
+    let metadata = PartialNoteMetadata::new(account_id, NoteType::Public).with_tag(tag);
     let expected_metadata_word =
-        NoteMetadataHeader::new(metadata, &NoteAttachments::default()).to_metadata_word();
+        NoteMetadata::new(metadata, &NoteAttachments::default()).to_metadata_word();
     let expected_note_attachment = NoteAttachments::default().to_commitment();
 
     assert_eq!(
-        exec_output
-            .get_kernel_mem_word(OUTPUT_NOTE_SECTION_OFFSET + OUTPUT_NOTE_METADATA_HEADER_OFFSET),
+        exec_output.get_kernel_mem_word(OUTPUT_NOTE_SECTION_OFFSET + OUTPUT_NOTE_METADATA_OFFSET),
         expected_metadata_word,
-        "metadata header must be stored at the correct memory location",
+        "metadata must be stored at the correct memory location",
     );
 
     assert_eq!(
@@ -375,10 +374,9 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
         "The test creates two notes",
     );
     assert_eq!(
-        exec_output
-            .get_kernel_mem_word(OUTPUT_NOTE_SECTION_OFFSET + OUTPUT_NOTE_METADATA_HEADER_OFFSET),
-        output_note_1.metadata_header().to_metadata_word(),
-        "Validate the output note 1 metadata header",
+        exec_output.get_kernel_mem_word(OUTPUT_NOTE_SECTION_OFFSET + OUTPUT_NOTE_METADATA_OFFSET),
+        output_note_1.metadata().to_metadata_word(),
+        "Validate the output note 1 metadata",
     );
     for attachment_idx in 0..4u32 {
         assert_eq!(
@@ -394,10 +392,10 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
 
     assert_eq!(
         exec_output.get_kernel_mem_word(
-            OUTPUT_NOTE_SECTION_OFFSET + OUTPUT_NOTE_METADATA_HEADER_OFFSET + NOTE_MEM_SIZE
+            OUTPUT_NOTE_SECTION_OFFSET + OUTPUT_NOTE_METADATA_OFFSET + NOTE_MEM_SIZE
         ),
-        output_note_2.metadata_header().to_metadata_word(),
-        "Validate the output note 2 metadata header",
+        output_note_2.metadata().to_metadata_word(),
+        "Validate the output note 2 metadata",
     );
     assert_eq!(
         exec_output.get_kernel_mem_word(
@@ -1050,10 +1048,10 @@ async fn test_get_recipient_and_metadata() -> anyhow::Result<()> {
             # get the metadata (the only existing note has 0'th index)
             push.0
             exec.output_note::get_metadata
-            # => [METADATA_HEADER]
+            # => [METADATA]
 
-            push.{METADATA_HEADER}
-            assert_eqw.err="requested note has incorrect metadata header"
+            push.{METADATA}
+            assert_eqw.err="requested note has incorrect metadata"
             # => []
 
             # truncate the stack
@@ -1062,7 +1060,7 @@ async fn test_get_recipient_and_metadata() -> anyhow::Result<()> {
         "#,
         output_note = create_output_note(&output_note),
         RECIPIENT = output_note.recipient().digest(),
-        METADATA_HEADER = output_note.metadata_header().to_metadata_word(),
+        METADATA = output_note.metadata().to_metadata_word(),
     );
 
     let tx_script = CodeBuilder::default().compile_tx_script(tx_script_src)?;
@@ -1455,7 +1453,6 @@ async fn test_add_attachment_from_memory() -> anyhow::Result<()> {
     let actual_note = tx.output_notes().get_note(0);
     assert_eq!(actual_note.attachments().num_attachments(), 1);
     assert_eq!(actual_note.attachments().get(0).unwrap(), &attachment);
-
     assert_eq!(actual_note.header(), output_note.header());
     assert_eq!(actual_note.assets(), output_note.assets());
 

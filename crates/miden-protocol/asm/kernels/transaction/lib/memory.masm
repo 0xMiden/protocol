@@ -2,6 +2,7 @@ use $kernel::constants::ACCOUNT_PROCEDURE_DATA_LENGTH
 use $kernel::constants::MAX_ASSETS_PER_NOTE
 use $kernel::constants::NOTE_MEM_SIZE
 use $kernel::constants::WORD_NUM_ELEMENTS
+# use $kernel::types::AccountId
 use miden::core::mem
 
 pub type AccountId = struct { prefix: felt, suffix: felt }
@@ -253,7 +254,7 @@ const INPUT_NOTE_SCRIPT_ROOT_OFFSET=8
 const INPUT_NOTE_STORAGE_COMMITMENT_OFFSET=12
 const INPUT_NOTE_ASSETS_COMMITMENT_OFFSET=16
 const INPUT_NOTE_RECIPIENT_OFFSET=20
-const INPUT_NOTE_METADATA_HEADER_OFFSET=24
+const INPUT_NOTE_METADATA_OFFSET=24
 const INPUT_NOTE_ATTACHMENTS_COMMITMENT_OFFSET=28
 const INPUT_NOTE_ARGS_OFFSET=32
 const INPUT_NOTE_NUM_STORAGE_ITEMS_OFFSET=36
@@ -268,7 +269,7 @@ const OUTPUT_NOTE_SECTION_OFFSET=16777216
 
 # The offsets at which data of an output note is stored relative to the start of its data segment.
 const OUTPUT_NOTE_ID_OFFSET=0
-const OUTPUT_NOTE_METADATA_HEADER_OFFSET=4
+const OUTPUT_NOTE_METADATA_OFFSET=4
 const OUTPUT_NOTE_RECIPIENT_OFFSET=8
 const OUTPUT_NOTE_DIRTY_FLAG_OFFSET=12
 const OUTPUT_NOTE_NUM_ASSETS_OFFSET=13
@@ -1586,27 +1587,27 @@ end
 #! Returns the metadata of an input note located at the specified memory address.
 #!
 #! Inputs:  [note_ptr]
-#! Outputs: [NOTE_METADATA_HEADER]
+#! Outputs: [NOTE_METADATA]
 #!
 #! Where:
 #! - note_ptr is the memory address at which the input note data begins.
-#! - NOTE_METADATA_HEADER is the metadata header of the input note.
-pub proc get_input_note_metadata_header
+#! - NOTE_METADATA is the metadata of the input note.
+pub proc get_input_note_metadata
     padw
-    movup.4 add.INPUT_NOTE_METADATA_HEADER_OFFSET
+    movup.4 add.INPUT_NOTE_METADATA_OFFSET
     mem_loadw_le
 end
 
 #! Sets the metadata for an input note located at the specified memory address.
 #!
-#! Inputs:  [note_ptr, NOTE_METADATA_HEADER]
-#! Outputs: [NOTE_METADATA_HEADER]
+#! Inputs:  [note_ptr, NOTE_METADATA]
+#! Outputs: [NOTE_METADATA]
 #!
 #! Where:
 #! - note_ptr is the memory address at which the input note data begins.
-#! - NOTE_METADATA_HEADER is the metadata header of the input note.
-pub proc set_input_note_metadata_header
-    add.INPUT_NOTE_METADATA_HEADER_OFFSET
+#! - NOTE_METADATA is the metadata of the input note.
+pub proc set_input_note_metadata
+    add.INPUT_NOTE_METADATA_OFFSET
     mem_storew_le
 end
 
@@ -1830,30 +1831,30 @@ end
 #! Returns the output note's metadata.
 #!
 #! Inputs:  [note_ptr]
-#! Outputs: [METADATA_HEADER]
+#! Outputs: [METADATA]
 #!
 #! Where:
-#! - METADATA_HEADER is the note metadata header.
+#! - METADATA is the note metadata.
 #! - note_ptr is the memory address at which the output note data begins.
-pub proc get_output_note_metadata_header
+pub proc get_output_note_metadata
     padw
     # => [0, 0, 0, 0, note_ptr]
-    movup.4 add.OUTPUT_NOTE_METADATA_HEADER_OFFSET
+    movup.4 add.OUTPUT_NOTE_METADATA_OFFSET
     # => [(note_ptr + offset), 0, 0, 0, 0]
     mem_loadw_le
-    # => [METADATA_HEADER]
+    # => [METADATA]
 end
 
-#! Sets the output note's metadata header.
+#! Sets the output note's metadata.
 #!
-#! Inputs:  [note_ptr, METADATA_HEADER]
-#! Outputs: [METADATA_HEADER]
+#! Inputs:  [note_ptr, METADATA]
+#! Outputs: [METADATA]
 #!
 #! Where:
-#! - METADATA_HEADER is the note metadata header.
+#! - METADATA is the note metadata.
 #! - note_ptr is the memory address at which the output note data begins.
-pub proc set_output_note_metadata_header
-    add.OUTPUT_NOTE_METADATA_HEADER_OFFSET
+pub proc set_output_note_metadata
+    add.OUTPUT_NOTE_METADATA_OFFSET
     mem_storew_le
 end
 

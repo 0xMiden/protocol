@@ -20,7 +20,7 @@ use crate::{Felt, Hasher, Word};
 
 /// The optional attachment for a [`Note`](super::Note).
 ///
-/// An attachment is a _public_ extension to a note's [`NoteMetadata`](super::NoteMetadata).
+/// An attachment is a _public_ extension to a note.
 ///
 /// Example use cases:
 /// - Communicate the [`NoteDetails`](super::NoteDetails) of a private note in encrypted form.
