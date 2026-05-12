@@ -3,7 +3,6 @@ use $kernel::asset
 use $kernel::callbacks
 use $kernel::fungible_asset
 use $kernel::memory
-use $kernel::memory::KERNEL_SCRATCH_PTR
 use $kernel::note
 use $kernel::note::NOTE_TYPE_PUBLIC
 use $kernel::note::MAX_ATTACHMENT_SCHEME
@@ -389,7 +388,7 @@ end
 #! Validates the attachment commitment against the advice data.
 #!
 #! Fetches the attachment elements from the advice map using ATTACHMENT_COMMITMENT as the key,
-#! derives num_words from the element count, pipes the elements to scratch memory to compute the
+#! derives num_words from the element count, pipes the elements to local memory to compute the
 #! commitment, and asserts the computed commitment matches the provided commitment.
 #!
 #! Inputs:
@@ -402,6 +401,7 @@ end
 #! Panics if:
 #! - the number of elements is not a multiple of 4, or num_words is zero or exceeds 256.
 #! - the computed hash of fetched elements does not match ATTACHMENT_COMMITMENT.
+@locals(1024)
 proc validate_attachment
     # push the attachment elements from the advice map onto the advice stack
     adv.push_mapvaln
@@ -425,9 +425,9 @@ proc validate_attachment
     # OS => [num_words, ATTACHMENT_COMMITMENT]
     # AS => [[ATTACHMENT_ELEMENTS]]
 
-    # --- Pipe elements from advice stack to scratch memory while hashing ---
+    # --- Pipe elements from advice stack to local memory while hashing ---
 
-    # we use scratch memory because pipe_preimage_to_memory needs to write to memory, but we only
+    # we use local memory because pipe_preimage_to_memory needs to write to memory, but we only
     # need to assert that the preimage is available, the exact content itself is unimportant
 
     # save num_words to return it later
@@ -435,8 +435,10 @@ proc validate_attachment
     # OS => [num_words, ATTACHMENT_COMMITMENT, num_words]
     # AS => [[ATTACHMENT_ELEMENTS]]
 
-    push.KERNEL_SCRATCH_PTR swap
-    # OS => [num_words, scratch_ptr, ATTACHMENT_COMMITMENT, num_words]
+    # SAFETY: we have allocated 1024 elements of local memory which is sufficient for the largest
+    # possible attachment with 256 words
+    locaddr.0 swap
+    # OS => [num_words, dest_ptr, ATTACHMENT_COMMITMENT, num_words]
     # AS => [[ATTACHMENT_ELEMENTS]]
 
     # validate the sequential hash over the attachment elements is ATTACHMENT_COMMITMENT

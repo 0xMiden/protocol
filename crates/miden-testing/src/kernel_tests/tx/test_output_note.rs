@@ -43,7 +43,6 @@ use miden_protocol::testing::account_id::{
 };
 use miden_protocol::testing::constants::NON_FUNGIBLE_ASSET_DATA_2;
 use miden_protocol::transaction::memory::{
-    self,
     ASSET_SIZE,
     ASSET_VALUE_OFFSET,
     NOTE_MEM_SIZE,
@@ -258,15 +257,11 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
 
     let attachment = output_note_2.attachments().get(0).unwrap();
     let attachment_words = attachment.content().as_words();
-    let attachment_ptr = memory::KERNEL_SCRATCH_PTR as usize;
     let store_attachment_words = attachment_words
         .iter()
         .enumerate()
-        .map(|(idx, word)| {
-            format!(
-                "push.{word} push.{ptr} mem_storew_le dropw",
-                ptr = attachment_ptr + idx * WORD_SIZE
-            )
+        .map(|(word_idx, word)| {
+            format!("push.{word} loc_storew_le.{offset} dropw", offset = word_idx * WORD_SIZE)
         })
         .collect::<Vec<_>>()
         .join("\n            ");
@@ -295,6 +290,20 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
         use miden::protocol::output_note
 
         use $kernel::prologue
+
+        #! Since we execute in the kernel context, we write to local memory rather than to global
+        #! kernel memory to avoid accidental overwrites.
+        #!
+        #! Inputs:  []
+        #! Outputs: [attachment_ptr]
+        @locals({num_attachment_elements})
+        proc store_attachment_words
+            {store_attachment_words}
+            # => []
+
+            locaddr.0
+            # => [attachment_ptr]
+        end
 
         begin
             exec.prologue::prepare_transaction
@@ -326,9 +335,7 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
             # => [note_idx]
 
             # Store attachment words to memory
-            {store_attachment_words}
-
-            push.{attachment_ptr}
+            exec.store_attachment_words
             push.{num_attachment_words}
             push.{attachment_scheme2}
             # => [attachment_scheme, num_words, ptr, note_idx]
@@ -357,6 +364,7 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
         num_attachment_words = num_attachment_words,
         attachment_scheme2 =
             output_note_2.attachments().get(0).unwrap().attachment_scheme().as_u16(),
+        num_attachment_elements = output_note_2.attachments().get(0).unwrap().as_elements().len(),
     );
 
     let exec_output = &tx_context.execute_code(&code).await?;
