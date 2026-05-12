@@ -19,14 +19,15 @@ pub enum AccountComponentInterface {
     /// Exposes procedures from the [`BasicWallet`][crate::account::wallets::BasicWallet] module.
     BasicWallet,
     /// Exposes procedures from the
-    /// [`FungibleTokenMetadata`][crate::account::metadata::FungibleTokenMetadata] module.
-    FungibleTokenMetadata,
+    /// [`FungibleFaucet`][crate::account::faucets::FungibleFaucet] module.
+    FungibleFaucet,
     /// Exposes procedures from the
-    /// [`BasicFungibleFaucet`][crate::account::faucets::BasicFungibleFaucet] module.
-    BasicFungibleFaucet,
+    /// [`Ownable2Step`][crate::account::access::Ownable2Step] access component.
+    Ownable2Step,
     /// Exposes procedures from the
-    /// [`NetworkFungibleFaucet`][crate::account::faucets::NetworkFungibleFaucet] module.
-    NetworkFungibleFaucet,
+    /// [`RoleBasedAccessControl`][crate::account::access::RoleBasedAccessControl] access
+    /// component.
+    RoleBasedAccessControl,
     /// Exposes procedures from the
     /// [`AuthSingleSig`][crate::account::auth::AuthSingleSig] module.
     AuthSingleSig,
@@ -67,12 +68,10 @@ impl AccountComponentInterface {
     pub fn name(&self) -> String {
         match self {
             AccountComponentInterface::BasicWallet => "Basic Wallet".to_string(),
-            AccountComponentInterface::FungibleTokenMetadata => {
-                "Fungible Token Metadata".to_string()
-            },
-            AccountComponentInterface::BasicFungibleFaucet => "Basic Fungible Faucet".to_string(),
-            AccountComponentInterface::NetworkFungibleFaucet => {
-                "Network Fungible Faucet".to_string()
+            AccountComponentInterface::FungibleFaucet => "Fungible Faucet".to_string(),
+            AccountComponentInterface::Ownable2Step => "Ownable2Step".to_string(),
+            AccountComponentInterface::RoleBasedAccessControl => {
+                "Role Based Access Control".to_string()
             },
             AccountComponentInterface::AuthSingleSig => "SingleSig".to_string(),
             AccountComponentInterface::AuthSingleSigAcl => "SingleSig ACL".to_string(),
@@ -164,13 +163,13 @@ impl AccountComponentInterface {
     ///     dropw dropw dropw drop
     /// ```
     ///
-    /// Example script for the [`AccountComponentInterface::BasicFungibleFaucet`] with one note:
+    /// Example script for the [`AccountComponentInterface::FungibleFaucet`] with one note:
     ///
     /// ```masm
     ///     push.{note information}
     ///
     ///     push.{asset amount}
-    ///     call.::miden::standards::faucets::basic_fungible::mint_and_send dropw dropw drop
+    ///     call.::miden::standards::faucets::fungible::mint_and_send dropw dropw drop
     /// ```
     ///
     /// # Errors:
@@ -206,7 +205,7 @@ impl AccountComponentInterface {
             ));
 
             match self {
-                AccountComponentInterface::BasicFungibleFaucet => {
+                AccountComponentInterface::FungibleFaucet => {
                     if partial_note.assets().num_assets() != 1 {
                         return Err(AccountInterfaceError::FaucetNoteWithoutAsset);
                     }
@@ -224,7 +223,7 @@ impl AccountComponentInterface {
                     body.push_str(&format!(
                         "
                         push.{amount}
-                        call.::miden::standards::faucets::basic_fungible::mint_and_send
+                        call.::miden::standards::faucets::fungible::mint_and_send
                         # => [note_idx, pad(25)]
                         swapdw dropw dropw swap drop
                         # => [note_idx, pad(16)]\n

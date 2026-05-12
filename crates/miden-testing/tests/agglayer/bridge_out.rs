@@ -22,7 +22,7 @@ use miden_protocol::account::{AccountId, AccountIdVersion, AccountStorageMode, A
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::note::{NoteAssets, NoteType};
 use miden_protocol::transaction::RawOutputNote;
-use miden_standards::account::faucets::TokenMetadata;
+use miden_standards::account::faucets::FungibleFaucet;
 use miden_standards::account::policies::MintPolicyConfig;
 use miden_standards::note::{NetworkAccountTarget, StandardNote};
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
@@ -235,7 +235,7 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
 
     // STEP 3: CONSUME ALL BURN NOTES WITH THE AGGLAYER FAUCET
     // --------------------------------------------------------------------------------------------
-    let initial_token_supply = TokenMetadata::try_from(faucet.storage())?.token_supply();
+    let initial_token_supply = FungibleFaucet::try_from(faucet.storage())?.token_supply();
     assert_eq!(
         initial_token_supply,
         Felt::new(total_burned),
@@ -259,7 +259,7 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
         mock_chain.prove_next_block()?;
     }
 
-    let final_token_supply = TokenMetadata::try_from(faucet.storage())?.token_supply();
+    let final_token_supply = FungibleFaucet::try_from(faucet.storage())?.token_supply();
     assert_eq!(
         final_token_supply,
         Felt::new(initial_token_supply.as_canonical_u64() - total_burned),

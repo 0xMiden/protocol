@@ -48,6 +48,13 @@ impl AccountInterface {
         Self { account_id, auth, components }
     }
 
+    /// Returns `true` if the account installs an [`AccountComponentInterface::Ownable2Step`]
+    /// access component. Since [`AccountComponentInterface::RoleBasedAccessControl`] always
+    /// includes Ownable2Step, this also covers RBAC-controlled accounts.
+    pub fn is_owner_controlled(&self) -> bool {
+        self.components.contains(&AccountComponentInterface::Ownable2Step)
+    }
+
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
@@ -118,10 +125,10 @@ impl AccountInterface {
     /// considered expired and cannot be included into the chain.
     ///
     /// Currently only [`AccountComponentInterface::BasicWallet`] and
-    /// [`AccountComponentInterface::BasicFungibleFaucet`] interfaces are supported for the
+    /// [`AccountComponentInterface::FungibleFaucet`] interfaces are supported for the
     /// `send_note` script creation. Attempt to generate the script using some other interface will
     /// lead to an error. In case both supported interfaces are available in the account, the script
-    /// will be generated for the [`AccountComponentInterface::BasicFungibleFaucet`] interface.
+    /// will be generated for the [`AccountComponentInterface::FungibleFaucet`] interface.
     ///
     /// # Example
     ///
@@ -134,7 +141,7 @@ impl AccountInterface {
     ///     push.{note information}
     ///
     ///     push.{asset amount}
-    ///     call.::miden::standards::faucets::basic_fungible::mint_and_send dropw dropw drop
+    ///     call.::miden::standards::faucets::fungible::mint_and_send dropw dropw drop
     /// end
     /// ```
     ///
@@ -147,7 +154,7 @@ impl AccountInterface {
     /// - a faucet tries to mint an asset with a different faucet ID.
     ///
     /// [wallet]: crate::account::interface::AccountComponentInterface::BasicWallet
-    /// [faucet]: crate::account::interface::AccountComponentInterface::BasicFungibleFaucet
+    /// [faucet]: crate::account::interface::AccountComponentInterface::FungibleFaucet
     pub fn build_send_notes_script(
         &self,
         output_notes: &[PartialNote],
@@ -194,18 +201,16 @@ impl AccountInterface {
         &self,
         output_notes: &[PartialNote],
     ) -> Result<String, AccountInterfaceError> {
-        if let Some(basic_fungible_faucet) = self.components().iter().find(|component_interface| {
-            matches!(component_interface, AccountComponentInterface::BasicFungibleFaucet)
+        if let Some(fungible_faucet) = self.components().iter().find(|component_interface| {
+            matches!(component_interface, AccountComponentInterface::FungibleFaucet)
         }) {
-            basic_fungible_faucet.send_note_body(*self.id(), output_notes)
-        } else if let Some(_network_fungible_faucet) =
-            self.components().iter().find(|component_interface| {
-                matches!(component_interface, AccountComponentInterface::NetworkFungibleFaucet)
-            })
-        {
-            // Network fungible faucet doesn't support send_note_body, because minting
-            // is done via a MINT note.
-            Err(AccountInterfaceError::UnsupportedAccountInterface)
+            // Owner-controlled faucets (network-style) mint exclusively via MINT notes; refuse to
+            // generate a tx-script `send_note` flow that would fail at runtime under the
+            // OwnerOnly mint policy.
+            if self.is_owner_controlled() {
+                return Err(AccountInterfaceError::UnsupportedAccountInterface);
+            }
+            fungible_faucet.send_note_body(*self.id(), output_notes)
         } else if self.components().contains(&AccountComponentInterface::BasicWallet) {
             AccountComponentInterface::BasicWallet.send_note_body(*self.id(), output_notes)
         } else {

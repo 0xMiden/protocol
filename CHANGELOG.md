@@ -42,6 +42,7 @@
 - [BREAKING] Added `NoteScriptRoot` newtype wrapping note script roots ([#2851](https://github.com/0xMiden/protocol/pull/2851)).
 - Re-exported `MIN_STACK_DEPTH` from `miden-processor` ([#2856](https://github.com/0xMiden/protocol/pull/2856)).
 - [BREAKING] Renamed `note::build_recipient_hash` to `note::compute_recipient` and `note::build_recipient` to `note::compute_and_store_recipient` ([#2875](https://github.com/0xMiden/protocol/issues/2875)).
+- [BREAKING] Merged `BasicFungibleFaucet` and `NetworkFungibleFaucet` ([#2890](https://github.com/0xMiden/protocol/pull/2890)).
 - [BREAKING] Renamed `NoteMetadata` to `PartialNoteMetadata` and renamed `NoteMetadataHeader` to `NoteMetadata` ([#2887](https://github.com/0xMiden/protocol/pull/2887)).
 - [BREAKING] Renamed account ID version 0 to version 1 and made encoded version 0 invalid ([#2842](https://github.com/0xMiden/protocol/issues/2842)).
 - [BREAKING] Changed note metadata version 1 to encode as `1`, leaving encoded version `0` invalid.
