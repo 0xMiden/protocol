@@ -6,12 +6,12 @@ use crate::asset::FungibleAsset;
 use crate::note::{
     Note,
     NoteAssets,
-    NoteMetadata,
     NoteRecipient,
     NoteScript,
     NoteStorage,
     NoteTag,
     NoteType,
+    PartialNoteMetadata,
 };
 use crate::testing::account_id::ACCOUNT_ID_SENDER;
 
@@ -28,7 +28,7 @@ impl Note {
         let note_script = NoteScript::mock();
         let assets =
             NoteAssets::new(vec![FungibleAsset::mock(200)]).expect("note assets should be valid");
-        let metadata = NoteMetadata::new(sender_id, NoteType::Private)
+        let metadata = PartialNoteMetadata::new(sender_id, NoteType::Private)
             .with_tag(NoteTag::with_account_target(sender_id));
         let inputs = NoteStorage::new(Vec::new()).unwrap();
         let recipient = NoteRecipient::new(serial_num, note_script, inputs);

@@ -1,26 +1,34 @@
-use miden_protocol::asset::TokenSymbol;
+use miden_protocol::asset::{AssetAmount, TokenSymbol};
 
-use super::super::{TokenMetadata, TokenName};
-use super::{Description, ExternalLink, FungibleTokenMetadata, LogoURI};
-use crate::account::faucets::FungibleFaucetError;
+use super::FungibleFaucet;
+use crate::account::faucets::{
+    Description,
+    ExternalLink,
+    FungibleFaucetError,
+    LogoURI,
+    TokenMetadata,
+    TokenName,
+};
 
-/// Builder for [`FungibleTokenMetadata`] to avoid unwieldy optional arguments.
+// FUNGIBLE FAUCET BUILDER
+// ================================================================================================
+
+/// Builder for [`FungibleFaucet`] to avoid unwieldy optional arguments.
 ///
-/// Required fields are set in [`Self::new`]; optional fields and token supply
-/// can be set via chainable methods. Token supply defaults to zero.
+/// Required fields are set in [`Self::new`]; optional fields and token supply can be set via
+/// chainable methods. Token supply defaults to zero.
 ///
 /// # Example
 ///
 /// ```
-/// # use miden_protocol::asset::TokenSymbol;
-/// # use miden_standards::account::metadata::{
-/// #     Description, FungibleTokenMetadataBuilder, LogoURI, TokenName,
-/// # };
+/// # use miden_protocol::asset::{AssetAmount, TokenSymbol};
+/// # use miden_standards::account::faucets::FungibleFaucet;
+/// # use miden_standards::account::faucets::{Description, LogoURI, TokenName};
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// let name = TokenName::new("My Token")?;
 /// let symbol = TokenSymbol::new("MTK")?;
-/// let metadata = FungibleTokenMetadataBuilder::new(name, symbol, 8, 1_000_000)
-///     .token_supply(100)
+/// let faucet = FungibleFaucet::builder(name, symbol, 8, AssetAmount::new(1_000_000)?)
+///     .token_supply(AssetAmount::new(100)?)
 ///     .description(Description::new("A test token")?)
 ///     .logo_uri(LogoURI::new("https://example.com/logo.png")?)
 ///     .build()?;
@@ -28,12 +36,12 @@ use crate::account::faucets::FungibleFaucetError;
 /// # }
 /// ```
 #[derive(Debug, Clone)]
-pub struct FungibleTokenMetadataBuilder {
+pub struct FungibleFaucetBuilder {
     name: TokenName,
     symbol: TokenSymbol,
     decimals: u8,
-    max_supply: u64,
-    token_supply: u64,
+    max_supply: AssetAmount,
+    token_supply: AssetAmount,
     description: Option<Description>,
     logo_uri: Option<LogoURI>,
     external_link: Option<ExternalLink>,
@@ -43,7 +51,7 @@ pub struct FungibleTokenMetadataBuilder {
     is_max_supply_mutable: bool,
 }
 
-impl FungibleTokenMetadataBuilder {
+impl FungibleFaucetBuilder {
     /// Creates a new builder with required fields. Token supply defaults to zero.
     ///
     /// # Parameters
@@ -51,16 +59,20 @@ impl FungibleTokenMetadataBuilder {
     /// - `name`: display name (at most 32 UTF-8 bytes).
     /// - `symbol`: token symbol.
     /// - `decimals`: decimal precision; must be in the range `0..=12`.
-    /// - `max_supply`: maximum number of tokens that can ever be minted; must be in the range
-    ///   `0..=FungibleAsset::MAX_AMOUNT` (≤ 2^63 − 1). Expressed as a `u64` rather than a `Felt` to
-    ///   avoid accidental out-of-range values.
-    pub fn new(name: TokenName, symbol: TokenSymbol, decimals: u8, max_supply: u64) -> Self {
+    /// - `max_supply`: maximum number of tokens that can ever be minted, as a validated
+    ///   [`AssetAmount`].
+    pub fn new(
+        name: TokenName,
+        symbol: TokenSymbol,
+        decimals: u8,
+        max_supply: AssetAmount,
+    ) -> Self {
         Self {
             name,
             symbol,
             decimals,
             max_supply,
-            token_supply: 0,
+            token_supply: AssetAmount::default(),
             description: None,
             logo_uri: None,
             external_link: None,
@@ -72,7 +84,7 @@ impl FungibleTokenMetadataBuilder {
     }
 
     /// Sets the initial token supply (default is zero).
-    pub fn token_supply(mut self, token_supply: u64) -> Self {
+    pub fn token_supply(mut self, token_supply: AssetAmount) -> Self {
         self.token_supply = token_supply;
         self
     }
@@ -119,8 +131,8 @@ impl FungibleTokenMetadataBuilder {
         self
     }
 
-    /// Builds [`FungibleTokenMetadata`].
-    pub fn build(self) -> Result<FungibleTokenMetadata, FungibleFaucetError> {
+    /// Builds [`FungibleFaucet`].
+    pub fn build(self) -> Result<FungibleFaucet, FungibleFaucetError> {
         let mut token_metadata = TokenMetadata::new(self.name);
         if let Some(desc) = self.description {
             token_metadata = token_metadata.with_description(desc, self.is_description_mutable);
@@ -140,7 +152,7 @@ impl FungibleTokenMetadataBuilder {
         }
         token_metadata = token_metadata.with_max_supply_mutable(self.is_max_supply_mutable);
 
-        FungibleTokenMetadata::new_validated(
+        FungibleFaucet::new_validated(
             self.symbol,
             self.decimals,
             self.max_supply,
