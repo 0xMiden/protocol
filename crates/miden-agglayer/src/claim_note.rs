@@ -12,12 +12,14 @@ use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
     Note,
     NoteAssets,
-    NoteMetadata,
+    NoteAttachment,
+    NoteAttachments,
     NoteRecipient,
     NoteScript,
     NoteScriptRoot,
     NoteStorage,
     NoteType,
+    PartialNoteMetadata,
 };
 use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 use miden_utils_sync::LazyLock;
@@ -229,14 +231,13 @@ pub fn create_claim_note<R: FeltRng>(
     let note_storage = NoteStorage::try_from(storage.clone())?;
 
     let attachment = NetworkAccountTarget::new(target_bridge_id, NoteExecutionHint::Always)
-        .map_err(|e| NoteError::other(e.to_string()))?
-        .into();
+        .map_err(|e| NoteError::other(e.to_string()))?;
+    let attachments = NoteAttachments::from(NoteAttachment::from(attachment));
 
-    let metadata =
-        NoteMetadata::new(sender_account_id, NoteType::Public).with_attachment(attachment);
+    let metadata = PartialNoteMetadata::new(sender_account_id, NoteType::Public);
 
     let recipient = NoteRecipient::new(rng.draw_word(), ClaimNote::script(), note_storage);
     let assets = NoteAssets::new(vec![])?;
 
-    Ok(Note::new(assets, metadata, recipient))
+    Ok(Note::with_attachments(assets, metadata, recipient, attachments))
 }

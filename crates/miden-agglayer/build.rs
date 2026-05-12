@@ -325,7 +325,7 @@ fn generate_agglayer_constants(
 
         // The faucet account includes Ownable2Step and OwnerControlled components for mint and burn
         // policies alongside the agglayer faucet component, since
-        // network_fungible::mint_and_send requires these for access control.
+        // fungible::mint_and_send requires these for access control.
         //
         // The allowlist lives in storage, not code, and here we only care about the code commitment
         // of the accounts, so we can init the allowlists with dummy values.

@@ -147,7 +147,7 @@ end
 #! - account_id_{suffix,prefix} are the suffix and prefix felts of the account ID.
 #!
 #! Panics if:
-#! - account_id_prefix does not contain version one.
+#! - account_id_prefix contains an unsupported account ID version.
 #! - account_id_prefix does not contain either the public, network or private storage mode.
 #! - account_id_suffix does not have its most significant bit set to zero.
 #! - account_id_suffix does not have its lower 8 bits set to zero.

@@ -107,8 +107,8 @@ fn compile_account_components(
             .expect("reading the component's MASM source code should succeed");
 
         // Build full library path from directory structure:
-        // e.g. faucets/basic_fungible_faucet.masm ->
-        // miden::standards::components::faucets::basic_fungible_faucet
+        // e.g. faucets/fungible_faucet.masm ->
+        // miden::standards::components::faucets::fungible_faucet
         let relative_path = masm_file_path
             .strip_prefix(source_dir)
             .expect("masm file should be inside source dir");
