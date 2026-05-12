@@ -5,24 +5,14 @@ use miden_protocol::assembly::Path;
 use miden_protocol::asset::{Asset, AssetAmount, AssetCallbackFlag, FungibleAsset};
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
-    Note,
-    NoteAssets,
-    NoteAttachment,
-    NoteAttachmentScheme,
-    NoteAttachments,
-    NoteMetadata,
-    NoteRecipient,
-    NoteScript,
-    NoteScriptRoot,
-    NoteStorage,
-    NoteTag,
-    NoteType,
+    Note, NoteAssets, NoteAttachment, NoteAttachmentScheme, NoteAttachments, NoteMetadata,
+    NoteRecipient, NoteScript, NoteScriptRoot, NoteStorage, NoteTag, NoteType,
 };
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, ONE, Word, ZERO};
 
 use crate::StandardsLib;
-use crate::note::P2idNoteStorage;
+use crate::note::{P2idNoteStorage, StandardNoteAttachment};
 
 // NOTE SCRIPT
 // ================================================================================================
@@ -248,6 +238,19 @@ impl PswapNote {
     /// Expected number of storage items for the PSWAP note.
     pub const NUM_STORAGE_ITEMS: usize = PswapNoteStorage::NUM_STORAGE_ITEMS;
 
+    /// Attachment scheme stamped on both PSWAP output notes (the payback P2ID and the
+    /// remainder PSWAP). Carries the word `[amount, order_id, depth, 0]`.
+    ///
+    /// The source of truth is [`StandardNoteAttachment::PswapAttachment`]; the matching
+    /// `PSWAP_ATTACHMENT_SCHEME` constant in `pswap.masm` mirrors this Rust value and
+    /// `pswap_attachment_layout_matches_masm_test` cross-checks they stay in sync.
+    pub const PSWAP_ATTACHMENT_SCHEME: NoteAttachmentScheme =
+        StandardNoteAttachment::PswapAttachment.attachment_scheme();
+
+    /// Offset of the `depth` field within the [`Self::PSWAP_ATTACHMENT_SCHEME`] word
+    /// `[amount, order_id, depth, 0]`. Mirrors `PARENT_ATTACHMENT_DEPTH` in `pswap.masm`.
+    const ATTACHMENT_DEPTH_INDEX: usize = 2;
+
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
@@ -319,10 +322,33 @@ impl PswapNote {
     /// Returns a reference to the note attachments.
     ///
     /// For notes targeting a network account, this may contain a
-    /// [`NetworkAccountTarget`](crate::note::NetworkAccountTarget) with scheme = 1.
-    /// For local-only notes, this is typically empty.
+    /// [`NetworkAccountTarget`](crate::note::NetworkAccountTarget) with scheme = 2. For a
+    /// remainder PSWAP this contains the [`Self::PSWAP_ATTACHMENT_SCHEME`] word
+    /// `[amt_payout, order_id, depth, 0]`. For local-only originals, this is typically
+    /// empty.
     pub fn attachments(&self) -> Option<&NoteAttachment> {
         self.attachment.as_ref()
+    }
+
+    /// Returns the order_id of this lineage, equal to `serial_number()[1]`.
+    pub fn order_id(&self) -> Felt {
+        self.serial_number[1]
+    }
+
+    /// Returns the depth carried in this note's [`Self::PSWAP_ATTACHMENT_SCHEME`] attachment,
+    /// or 0 if the note has no such attachment (i.e., it is the original PSWAP, not a
+    /// remainder produced by an earlier fill).
+    ///
+    /// Mirrors the on-chain `get_current_depth` logic that the MASM script uses to derive
+    /// the next round's depth as `parent_depth + 1`.
+    pub fn parent_depth(&self) -> u64 {
+        match self.attachment.as_ref() {
+            Some(att) if att.attachment_scheme() == Self::PSWAP_ATTACHMENT_SCHEME => {
+                let attachment_word = att.content().as_words()[0];
+                attachment_word[Self::ATTACHMENT_DEPTH_INDEX].as_canonical_u64()
+            },
+            _ => 0,
+        }
     }
 
     // INSTANCE METHODS
@@ -461,6 +487,131 @@ impl PswapNote {
         Self::calculate_output_amount(total_offered, total_requested, fill_amount)
     }
 
+    // LINEAGE DISCOVERY
+    // --------------------------------------------------------------------------------------------
+
+    /// Reconstructs the depth-`d` payback P2ID [`Note`], byte-identical to the on-chain
+    /// body (matching both [`Note::id`] and [`Note::commitment`]) so the creator can
+    /// consume it as an unauthenticated input note.
+    ///
+    /// `consumer_account_id` must be the account that consumed the parent PSWAP in round
+    /// `d`: the MASM stamps it as the payback's metadata sender, which feeds into
+    /// [`Note::commitment`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `depth == 0` or if `fill_amount` is not a valid asset amount.
+    pub fn payback_note(
+        &self,
+        consumer_account_id: AccountId,
+        depth: u64,
+        fill_amount: u64,
+    ) -> Result<Note, NoteError> {
+        if depth == 0 {
+            return Err(NoteError::other("depth must be >= 1"));
+        }
+        let parent_depth_felt = Felt::try_from(depth - 1)
+            .map_err(|e| NoteError::other_with_source("depth - 1 does not fit in a felt", e))?;
+        let p2id_serial = Word::from([
+            self.serial_number[0] + ONE,
+            self.serial_number[1],
+            self.serial_number[2],
+            self.serial_number[3] + parent_depth_felt,
+        ]);
+
+        let recipient =
+            P2idNoteStorage::new(self.storage.creator_account_id).into_recipient(p2id_serial);
+
+        let fill_asset = FungibleAsset::new(self.storage.requested_faucet_id(), fill_amount)
+            .map_err(|e| NoteError::other_with_source("invalid fill amount", e))?;
+        let assets = NoteAssets::new(vec![fill_asset.into()])?;
+
+        let attachment = Self::pswap_output_attachment(fill_amount, self.order_id(), depth)?;
+
+        let metadata = NoteMetadata::new(consumer_account_id, self.storage.payback_note_type)
+            .with_tag(self.storage.payback_note_tag());
+
+        Ok(Note::with_attachments(
+            assets,
+            metadata,
+            recipient,
+            NoteAttachments::from(attachment),
+        ))
+    }
+
+    /// Reconstructs the depth-`d` remainder PSWAP [`Note`] in this lineage.
+    ///
+    /// Called on the original PSWAP, this returns the full Note for the remainder produced
+    /// in round `d`. The returned Note matches the on-chain body byte-for-byte — both
+    /// [`Note::id`] and [`Note::commitment`] equal the on-chain values — so it can be fed
+    /// as an unauthenticated input note and authenticated against the on-chain leaf by
+    /// block proposal.
+    ///
+    /// All four runtime parameters mirror what the on-chain MASM stamps when minting the
+    /// remainder:
+    /// - `consumer_account_id` — the account that consumed the parent PSWAP in round `d`,
+    ///   used as the remainder's metadata sender.
+    /// - `payout_amount` — the offered-asset units the consumer received this round, i.e.
+    ///   `calculate_offered_for_requested(fill_amount)` evaluated against the *parent*
+    ///   PSWAP's offered/requested ratio. Carried in the attachment word as
+    ///   `[payout_amount, order_id, depth, 0]` under [`Self::PSWAP_ATTACHMENT_SCHEME`].
+    /// - `remaining_offered` / `remaining_requested` — the leftover amounts that survive
+    ///   into this remainder. Both are required because the price formula uses floor
+    ///   division, so one isn't derivable from the other across rounds in general.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `depth == 0` or if any amount is not a valid asset amount.
+    pub fn remainder_note(
+        &self,
+        consumer_account_id: AccountId,
+        depth: u64,
+        payout_amount: u64,
+        remaining_offered: u64,
+        remaining_requested: u64,
+    ) -> Result<Note, NoteError> {
+        if depth == 0 {
+            return Err(NoteError::other("depth must be >= 1"));
+        }
+        let depth_felt = Felt::try_from(depth)
+            .map_err(|e| NoteError::other_with_source("depth does not fit in a felt", e))?;
+        let remainder_serial = Word::from([
+            self.serial_number[0],
+            self.serial_number[1],
+            self.serial_number[2],
+            self.serial_number[3] + depth_felt,
+        ]);
+
+        let requested_asset =
+            FungibleAsset::new(self.storage.requested_faucet_id(), remaining_requested).map_err(
+                |e| NoteError::other_with_source("invalid remaining_requested amount", e),
+            )?;
+        let offered_asset =
+            FungibleAsset::new(self.offered_asset.faucet_id(), remaining_offered)
+                .map_err(|e| NoteError::other_with_source("invalid remaining_offered amount", e))?;
+
+        let new_storage = PswapNoteStorage::builder()
+            .requested_asset(requested_asset)
+            .creator_account_id(self.storage.creator_account_id)
+            .payback_note_type(self.storage.payback_note_type)
+            .build();
+        let recipient = new_storage.into_recipient(remainder_serial);
+
+        let assets = NoteAssets::new(vec![offered_asset.into()])?;
+
+        let attachment = Self::pswap_output_attachment(payout_amount, self.order_id(), depth)?;
+
+        let tag = Self::create_tag(self.note_type, &offered_asset, &requested_asset);
+        let metadata = NoteMetadata::new(consumer_account_id, self.note_type).with_tag(tag);
+
+        Ok(Note::with_attachments(
+            assets,
+            metadata,
+            recipient,
+            NoteAttachments::from(attachment),
+        ))
+    }
+
     // ASSOCIATED FUNCTIONS
     // --------------------------------------------------------------------------------------------
 
@@ -523,36 +674,24 @@ impl PswapNote {
         Ok(amount)
     }
 
-    /// Creates a [`NoteAttachment`] for a payback P2ID note.
+    /// Builds the [`NoteAttachment`] carried by both PSWAP output notes (payback and
+    /// remainder).
     ///
-    /// The attachment carries the fill amount as auxiliary data with
-    /// `NoteAttachmentScheme::none()`, matching the on-chain MASM behavior.
-    fn payback_attachment(fill_amount: u64) -> Result<NoteAttachment, NoteError> {
-        let word = Word::from([
-            Felt::try_from(fill_amount).map_err(|e| {
-                NoteError::other_with_source("fill amount does not fit in a felt", e)
-            })?,
-            ZERO,
-            ZERO,
-            ZERO,
-        ]);
-        Ok(NoteAttachment::with_word(NoteAttachmentScheme::none(), word))
-    }
-
-    /// Creates a [`NoteAttachment`] for a remainder PSWAP note.
-    ///
-    /// The attachment carries the total offered amount for the fill as auxiliary data
-    /// with `NoteAttachmentScheme::none()`, matching the on-chain MASM behavior.
-    fn remainder_attachment(offered_amount_for_fill: u64) -> Result<NoteAttachment, NoteError> {
-        let word = Word::from([
-            Felt::try_from(offered_amount_for_fill).map_err(|e| {
-                NoteError::other_with_source("offered amount for fill does not fit in a felt", e)
-            })?,
-            ZERO,
-            ZERO,
-            ZERO,
-        ]);
-        Ok(NoteAttachment::with_word(NoteAttachmentScheme::none(), word))
+    /// The attachment word is `[amount, order_id, depth, 0]` under
+    /// [`Self::PSWAP_ATTACHMENT_SCHEME`], matching the on-chain MASM. `amount` is the
+    /// round's transferred amount on the relevant side of the trade — requested-asset units
+    /// for the payback, offered-asset units for the remainder.
+    fn pswap_output_attachment(
+        amount: u64,
+        order_id: Felt,
+        depth: u64,
+    ) -> Result<NoteAttachment, NoteError> {
+        let amount_felt = Felt::try_from(amount)
+            .map_err(|e| NoteError::other_with_source("amount does not fit in a felt", e))?;
+        let depth_felt = Felt::try_from(depth)
+            .map_err(|e| NoteError::other_with_source("depth does not fit in a felt", e))?;
+        let word = Word::from([amount_felt, order_id, depth_felt, ZERO]);
+        Ok(NoteAttachment::with_word(Self::PSWAP_ATTACHMENT_SCHEME, word))
     }
 
     /// Builds a payback note (P2ID) that delivers the filled assets to the swap creator.
@@ -561,8 +700,9 @@ impl PswapNote {
     /// deterministic serial number by incrementing the least significant element of the
     /// serial number (`serial[0] + 1`).
     ///
-    /// The attachment carries the fill amount as auxiliary data with
-    /// `NoteAttachmentScheme::none()`, matching the on-chain MASM behavior.
+    /// The attachment carries `[fill_amount, order_id, current_depth, 0]` under
+    /// [`Self::PSWAP_ATTACHMENT_SCHEME`], matching the on-chain MASM. `current_depth` is
+    /// `parent_depth + 1` — i.e., the round number that produced this payback (1-indexed).
     fn create_payback_note(
         &self,
         consumer_account_id: AccountId,
@@ -582,9 +722,11 @@ impl PswapNote {
         let recipient =
             P2idNoteStorage::new(self.storage.creator_account_id).into_recipient(p2id_serial_num);
 
-        let attachment = Self::payback_attachment(fill_amount)?;
+        let current_depth = self.parent_depth() + 1;
+        let attachment =
+            Self::pswap_output_attachment(fill_amount, self.order_id(), current_depth)?;
 
-        let p2id_assets = NoteAssets::new(vec![Asset::Fungible(payback_asset)])?;
+        let p2id_assets = NoteAssets::new(vec![payback_asset.into()])?;
         let p2id_metadata = NoteMetadata::new(consumer_account_id, self.storage.payback_note_type)
             .with_tag(payback_note_tag);
 
@@ -601,8 +743,10 @@ impl PswapNote {
     /// The remainder inherits the original creator, tags, and note type, with an updated
     /// serial number (`serial[3] + 1`) matching the MASM-side derivation.
     ///
-    /// The attachment carries the total offered amount for the fill as auxiliary data
-    /// with `NoteAttachmentScheme::none()`, matching the on-chain MASM behavior.
+    /// The attachment carries `[offered_amount_for_fill, order_id, current_depth, 0]` under
+    /// [`Self::PSWAP_ATTACHMENT_SCHEME`], matching the on-chain MASM. The remainder must
+    /// carry this attachment so that when *it* is later consumed as a parent, the
+    /// on-chain `get_current_depth` reads the right scheme and increments depth correctly.
     fn create_remainder_pswap_note(
         &self,
         consumer_account_id: AccountId,
@@ -625,7 +769,9 @@ impl PswapNote {
             self.serial_number[3] + ONE,
         ]);
 
-        let attachment = Self::remainder_attachment(offered_amount_for_fill)?;
+        let current_depth = self.parent_depth() + 1;
+        let attachment =
+            Self::pswap_output_attachment(offered_amount_for_fill, self.order_id(), current_depth)?;
 
         PswapNote::builder()
             .sender(consumer_account_id)
@@ -652,7 +798,7 @@ impl From<PswapNote> for Note {
 
         let recipient = pswap.storage.into_recipient(pswap.serial_number);
 
-        let assets = NoteAssets::new(vec![Asset::Fungible(pswap.offered_asset)])
+        let assets = NoteAssets::new(vec![pswap.offered_asset.into()])
             .expect("single fungible asset should be valid");
 
         let metadata = NoteMetadata::new(pswap.sender, pswap.note_type).with_tag(tag);
