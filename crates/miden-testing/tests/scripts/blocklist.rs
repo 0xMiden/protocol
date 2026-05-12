@@ -19,14 +19,13 @@ use miden_protocol::account::{
     AccountType,
 };
 use miden_protocol::assembly::DefaultSourceManager;
-use miden_protocol::asset::{Asset, AssetCallbackFlag, FungibleAsset};
+use miden_protocol::asset::{Asset, AssetAmount, AssetCallbackFlag, FungibleAsset};
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::{Note, NoteTag, NoteType};
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
 use miden_standards::account::access::Ownable2Step;
-use miden_standards::account::faucets::BasicFungibleFaucet;
-use miden_standards::account::metadata::{FungibleTokenMetadataBuilder, TokenName};
+use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
     BurnPolicyConfig,
     MintPolicyConfig,
@@ -72,19 +71,18 @@ fn add_faucet_with_owner_blocklist_transfer(
     builder: &mut MockChainBuilder,
     owner_id: AccountId,
 ) -> anyhow::Result<Account> {
-    let faucet_metadata = FungibleTokenMetadataBuilder::new(
+    let faucet = FungibleFaucet::builder(
         TokenName::new("SYM")?,
         "SYM".try_into()?,
         8,
-        1_000_000u64,
+        AssetAmount::new(1_000_000)?,
     )
     .build()?;
 
     let account_builder = AccountBuilder::new([43u8; 32])
         .storage_mode(AccountStorageMode::Public)
         .account_type(AccountType::FungibleFaucet)
-        .with_component(faucet_metadata)
-        .with_component(BasicFungibleFaucet)
+        .with_component(faucet)
         .with_component(Ownable2Step::new(owner_id))
         .with_components(
             TokenPolicyManager::new(PolicyAuthority::OwnerControlled)
@@ -444,7 +442,7 @@ async fn mint_and_send_on_blocklist_basic_faucet() -> anyhow::Result<()> {
             push.{tag}
             push.{amount}
 
-            call.::miden::standards::faucets::basic_fungible::mint_and_send
+            call.::miden::standards::faucets::fungible::mint_and_send
 
             dropw dropw dropw dropw
         end

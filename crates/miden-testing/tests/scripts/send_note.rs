@@ -1,6 +1,7 @@
 use core::slice;
 use std::collections::BTreeMap;
 
+use miden_protocol::Word;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset};
 use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
@@ -9,18 +10,19 @@ use miden_protocol::note::{
     NoteAssets,
     NoteAttachment,
     NoteAttachmentScheme,
-    NoteMetadata,
+    NoteAttachments,
     NoteRecipient,
     NoteStorage,
     NoteTag,
     NoteType,
     PartialNote,
+    PartialNoteMetadata,
 };
 use miden_protocol::testing::note::DEFAULT_NOTE_SCRIPT;
 use miden_protocol::transaction::RawOutputNote;
-use miden_protocol::{Felt, Word};
 use miden_standards::account::interface::{AccountInterface, AccountInterfaceExt};
 use miden_standards::code_builder::CodeBuilder;
+use miden_standards::note::P2idNote;
 use miden_testing::utils::create_p2any_note;
 use miden_testing::{Auth, MockChain};
 
@@ -50,30 +52,47 @@ async fn test_send_note_script_basic_wallet() -> anyhow::Result<()> {
         },
         [sent_asset0, total_asset],
     )?;
+    let mut rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
     let p2any_note = create_p2any_note(
         sender_basic_wallet_account.id(),
         NoteType::Private,
-        [sent_asset2],
-        &mut RandomCoin::new(Word::from([1, 2, 3, 4u32])),
+        [sent_asset1],
+        &mut rng,
     );
     let spawn_note = builder.add_spawn_note([&p2any_note])?;
     let mock_chain = builder.build()?;
 
     let sender_account_interface = AccountInterface::from_account(&sender_basic_wallet_account);
 
-    let tag = NoteTag::with_account_target(sender_basic_wallet_account.id());
-    let elements = [9, 8, 7, 6, 5u32].map(Felt::from).to_vec();
-    let attachment = NoteAttachment::new_array(NoteAttachmentScheme::new(42), elements.clone())?;
-    let metadata = NoteMetadata::new(sender_basic_wallet_account.id(), NoteType::Public)
-        .with_tag(tag)
-        .with_attachment(attachment.clone());
-    let assets = NoteAssets::new(vec![sent_asset0, sent_asset1]).unwrap();
-    let note_script = CodeBuilder::default().compile_note_script(DEFAULT_NOTE_SCRIPT).unwrap();
-    let serial_num = RandomCoin::new(Word::from([1, 2, 3, 4u32])).draw_word();
-    let recipient = NoteRecipient::new(serial_num, note_script, NoteStorage::default());
+    let attachment_0 = NoteAttachment::with_words(
+        NoteAttachmentScheme::new(42)?,
+        vec![Word::from([9, 8, 7, 6u32]), Word::from([5, 4, 3, 2u32])],
+    )?;
+    let attachment_1 =
+        NoteAttachment::with_word(NoteAttachmentScheme::new(43)?, Word::from([1, 2, 3, 4u32]));
+    let attachment_2 = NoteAttachment::with_words(
+        NoteAttachmentScheme::new(44)?,
+        vec![Word::from([10, 11, 12, 13u32])],
+    )?;
+    let attachment_3 =
+        NoteAttachment::with_word(NoteAttachmentScheme::new(45)?, Word::from([20, 21, 22, 23u32]));
+    let attachments =
+        NoteAttachments::new(vec![attachment_0, attachment_1, attachment_2, attachment_3])?;
+    assert_eq!(
+        attachments.num_attachments() as usize,
+        NoteAttachments::MAX_COUNT,
+        "test should use max num of attachments"
+    );
 
-    let note = Note::new(assets.clone(), metadata, recipient);
-    let partial_note: PartialNote = note.clone().into();
+    let p2id_note = P2idNote::create(
+        sender_basic_wallet_account.id(),
+        sender_basic_wallet_account.id(),
+        vec![sent_asset0, sent_asset2],
+        NoteType::Public,
+        attachments,
+        &mut rng,
+    )?;
+    let partial_note = PartialNote::from(p2id_note.clone());
 
     let expiration_delta = 10u16;
     let send_note_transaction_script = sender_account_interface
@@ -83,7 +102,7 @@ async fn test_send_note_script_basic_wallet() -> anyhow::Result<()> {
         .build_tx_context(sender_basic_wallet_account.id(), &[spawn_note.id()], &[])
         .expect("failed to build tx context")
         .tx_script(send_note_transaction_script)
-        .extend_expected_output_notes(vec![RawOutputNote::Full(note.clone())])
+        .extend_expected_output_notes(vec![RawOutputNote::Full(p2id_note.clone())])
         .build()?
         .execute()
         .await?;
@@ -110,19 +129,19 @@ async fn test_send_note_script_basic_wallet() -> anyhow::Result<()> {
         executed_transaction.output_notes().get_note(0),
         &RawOutputNote::Partial(p2any_note.into())
     );
-    assert_eq!(executed_transaction.output_notes().get_note(1), &RawOutputNote::Full(note));
+    assert_eq!(executed_transaction.output_notes().get_note(1), &RawOutputNote::Full(p2id_note));
 
     Ok(())
 }
 
 /// Tests the execution of the generated send_note transaction script in case the sending account
-/// has the [`BasicFungibleFaucet`][faucet] interface.
+/// has the [`FungibleFaucet`][faucet] interface.
 ///
-/// [faucet]: miden_standards::account::interface::AccountComponentInterface::BasicFungibleFaucet
+/// [faucet]: miden_standards::account::interface::AccountComponentInterface::FungibleFaucet
 #[tokio::test]
-async fn test_send_note_script_basic_fungible_faucet() -> anyhow::Result<()> {
+async fn test_send_note_script_fungible_faucet() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let sender_basic_fungible_faucet_account = builder.add_existing_basic_faucet(
+    let sender_fungible_faucet_account = builder.add_existing_basic_faucet(
         Auth::BasicAuth {
             auth_scheme: AuthScheme::Falcon512Poseidon2,
         },
@@ -132,22 +151,21 @@ async fn test_send_note_script_basic_fungible_faucet() -> anyhow::Result<()> {
     )?;
     let mock_chain = builder.build()?;
 
-    let sender_account_interface =
-        AccountInterface::from_account(&sender_basic_fungible_faucet_account);
+    let sender_account_interface = AccountInterface::from_account(&sender_fungible_faucet_account);
 
-    let tag = NoteTag::with_account_target(sender_basic_fungible_faucet_account.id());
-    let attachment = NoteAttachment::new_word(NoteAttachmentScheme::new(100), Word::empty());
-    let metadata = NoteMetadata::new(sender_basic_fungible_faucet_account.id(), NoteType::Public)
-        .with_tag(tag)
-        .with_attachment(attachment);
+    let tag = NoteTag::with_account_target(sender_fungible_faucet_account.id());
+    let attachment = NoteAttachment::with_word(NoteAttachmentScheme::new(100)?, Word::empty());
+    let metadata = PartialNoteMetadata::new(sender_fungible_faucet_account.id(), NoteType::Public)
+        .with_tag(tag);
     let assets = NoteAssets::new(vec![Asset::Fungible(
-        FungibleAsset::new(sender_basic_fungible_faucet_account.id(), 10).unwrap(),
+        FungibleAsset::new(sender_fungible_faucet_account.id(), 10).unwrap(),
     )])?;
     let note_script = CodeBuilder::default().compile_note_script(DEFAULT_NOTE_SCRIPT).unwrap();
     let serial_num = RandomCoin::new(Word::from([1, 2, 3, 4u32])).draw_word();
     let recipient = NoteRecipient::new(serial_num, note_script, NoteStorage::default());
+    let attachments = NoteAttachments::from(attachment);
 
-    let note = Note::new(assets.clone(), metadata, recipient);
+    let note = Note::with_attachments(assets.clone(), metadata, recipient, attachments);
     let partial_note: PartialNote = note.clone().into();
 
     let expiration_delta = 10u16;
@@ -155,7 +173,7 @@ async fn test_send_note_script_basic_fungible_faucet() -> anyhow::Result<()> {
         .build_send_notes_script(slice::from_ref(&partial_note), Some(expiration_delta))?;
 
     let executed_transaction = mock_chain
-        .build_tx_context(sender_basic_fungible_faucet_account.id(), &[], &[])
+        .build_tx_context(sender_fungible_faucet_account.id(), &[], &[])
         .expect("failed to build tx context")
         .tx_script(send_note_transaction_script)
         .extend_expected_output_notes(vec![RawOutputNote::Full(note.clone())])

@@ -9,7 +9,7 @@
 # components whose procedure roots are registered in the relevant allowed-policies map.
 #
 # `execute_*_policy` procedures are intentionally not exposed here: they are `exec`-invocation
-# helpers used inline by other MASM (e.g. `faucets::basic_fungible::mint_and_send`), which `use`
+# helpers used inline by other MASM (e.g. `faucets::fungible::mint_and_send`), which `use`
 # the standards-side library directly. Only `call`-invocation procedures (`set_*_policy` and
 # `get_*_policy`) are part of this component's public API. Send and receive policies are
 # invoked directly by the kernel via the protocol callback slots — the manager no longer wraps

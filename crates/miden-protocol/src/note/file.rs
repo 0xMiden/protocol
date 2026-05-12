@@ -25,6 +25,7 @@ const MAGIC: &str = "note";
 
 /// A serialized representation of a note.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[allow(clippy::large_enum_variant)]
 pub enum NoteFile {
     /// The note's details aren't known.
     NoteId(NoteId),
@@ -150,12 +151,12 @@ mod tests {
         NoteAssets,
         NoteFile,
         NoteInclusionProof,
-        NoteMetadata,
         NoteRecipient,
         NoteScript,
         NoteStorage,
         NoteTag,
         NoteType,
+        PartialNoteMetadata,
     };
     use crate::testing::account_id::{
         ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
@@ -174,7 +175,8 @@ mod tests {
         let recipient = NoteRecipient::new(serial_num, script, note_storage);
 
         let asset = Asset::Fungible(FungibleAsset::new(faucet, 100).unwrap());
-        let metadata = NoteMetadata::new(faucet, NoteType::Public).with_tag(NoteTag::from(123));
+        let metadata =
+            PartialNoteMetadata::new(faucet, NoteType::Public).with_tag(NoteTag::from(123));
 
         Note::new(NoteAssets::new(vec![asset]).unwrap(), metadata, recipient)
     }
