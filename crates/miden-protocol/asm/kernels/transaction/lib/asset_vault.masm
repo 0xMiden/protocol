@@ -1,8 +1,25 @@
 use miden::core::collections::smt
+use miden::core::crypto::hashes::poseidon2
 
 use $kernel::asset
 use $kernel::fungible_asset
 use $kernel::non_fungible_asset
+
+# ASSET KEY HASHING
+# =================================================================================================
+
+#! Hashes the raw asset vault key into the key used by the asset vault SMT.
+#!
+#! See [`AssetVaultKey::to_smt_key`] in Rust for the rationale: hashing the raw key gives a uniform
+#! distribution across SMT leaves and in particular prevents non-fungible assets issued by the same
+#! faucet from sharing a leaf.
+#!
+#! Inputs:  [ASSET_KEY]
+#! Outputs: [HASHED_ASSET_KEY]
+proc hash_asset_key
+    exec.poseidon2::hash
+    # => [HASHED_ASSET_KEY]
+end
 
 # ERRORS
 # =================================================================================================
@@ -28,12 +45,16 @@ const ERR_VAULT_NON_FUNGIBLE_ASSET_TO_REMOVE_NOT_FOUND="failed to remove non-exi
 #! - ASSET_KEY is the asset vault key of the asset to fetch.
 #! - ASSET_VALUE is the value of the asset from the vault, which can be the EMPTY_WORD if it isn't present.
 pub proc get_asset
+    # hash the asset vault key before using it as the SMT key
+    exec.hash_asset_key
+    # => [HASHED_ASSET_KEY, vault_root_ptr]
+
     # load the asset vault root from memory
     padw movup.8 mem_loadw_le
-    # => [ASSET_VAULT_ROOT, ASSET_KEY]
+    # => [ASSET_VAULT_ROOT, HASHED_ASSET_KEY]
 
     swapw
-    # => [ASSET_KEY, ASSET_VAULT_ROOT]
+    # => [HASHED_ASSET_KEY, ASSET_VAULT_ROOT]
 
     # lookup asset
     exec.smt::get swapw dropw
@@ -64,16 +85,20 @@ end
 #! - ASSET_KEY is the asset vault key of the asset to fetch.
 #! - ASSET_VALUE is the retrieved asset.
 pub proc peek_asset
+    # hash the asset vault key before using it as the SMT key
+    exec.hash_asset_key
+    # => [HASHED_ASSET_KEY, vault_root_ptr]
+
     # load the asset vault root from memory
     padw movup.8 mem_loadw_le
-    # => [ASSET_VAULT_ROOT, ASSET_KEY]
+    # => [ASSET_VAULT_ROOT, HASHED_ASSET_KEY]
 
     swapw
-    # => [ASSET_KEY, ASSET_VAULT_ROOT]
+    # => [HASHED_ASSET_KEY, ASSET_VAULT_ROOT]
 
     # lookup asset
     exec.smt::peek
-    # OS => [ASSET_KEY, ASSET_VAULT_ROOT]
+    # OS => [HASHED_ASSET_KEY, ASSET_VAULT_ROOT]
     # AS => [ASSET_VALUE]
 
     dropw
@@ -153,6 +178,10 @@ pub proc add_fungible_asset
     movdnw.2
     # => [MERGED_ASSET_VALUE, ASSET_KEY, VAULT_ROOT, CUR_VAULT_VALUE, MERGED_ASSET_VALUE]
 
+    # hash the asset key before using it as the SMT key
+    swapw exec.hash_asset_key swapw
+    # => [MERGED_ASSET_VALUE, HASHED_ASSET_KEY, VAULT_ROOT, CUR_VAULT_VALUE, MERGED_ASSET_VALUE]
+
     # update asset in vault
     exec.smt::set
     # => [PREV_VAULT_VALUE, NEW_VAULT_ROOT, CUR_VAULT_VALUE, MERGED_ASSET_VALUE]
@@ -191,6 +220,10 @@ pub proc add_non_fungible_asset
 
     dupw.2
     # => [ASSET_VALUE, ASSET_KEY, VAULT_ROOT, ASSET_VALUE, vault_root_ptr]
+
+    # hash the asset key before using it as the SMT key
+    swapw exec.hash_asset_key swapw
+    # => [ASSET_VALUE, HASHED_ASSET_KEY, VAULT_ROOT, ASSET_VALUE, vault_root_ptr]
 
     # insert asset into vault
     exec.smt::set
@@ -299,6 +332,10 @@ pub proc remove_fungible_asset
     movdnw.2
     # => [REMAINING_ASSET_VALUE, ASSET_KEY, VAULT_ROOT, PEEKED_ASSET_VALUE, vault_root_ptr]
 
+    # hash the asset key before using it as the SMT key
+    swapw exec.hash_asset_key swapw
+    # => [REMAINING_ASSET_VALUE, HASHED_ASSET_KEY, VAULT_ROOT, PEEKED_ASSET_VALUE, vault_root_ptr]
+
     # update asset in vault and assert the old value is equivalent to the peeked value provided
     # via peek_asset
     exec.smt::set
@@ -342,6 +379,10 @@ pub proc remove_non_fungible_asset
     # prepare insertion of an EMPTY_WORD into the vault at the asset key to remove the asset
     swapw padw
     # => [EMPTY_WORD, ASSET_KEY, VAULT_ROOT, ASSET_VALUE, vault_root_ptr]
+
+    # hash the asset key before using it as the SMT key
+    swapw exec.hash_asset_key swapw
+    # => [EMPTY_WORD, HASHED_ASSET_KEY, VAULT_ROOT, ASSET_VALUE, vault_root_ptr]
 
     # insert empty word into the vault to remove the asset
     exec.smt::set

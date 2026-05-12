@@ -300,7 +300,7 @@ impl TransactionInputs {
 
             // Construct SMT proof and witness.
             let smt_proof = SmtProof::new(sparse_path, smt_leaf)?;
-            let asset_witness = AssetWitness::new(smt_proof)?;
+            let asset_witness = AssetWitness::new(smt_proof, [vault_key])?;
             asset_witnesses.push(asset_witness);
         }
         Ok(asset_witnesses)
@@ -353,11 +353,12 @@ impl TransactionInputs {
             .ok_or(TransactionInputsExtractionError::MissingVaultRoot)?;
         let smt_leaf = SmtLeaf::try_from_elements(smt_leaf_elements, smt_index)?;
 
-        // Find the asset in the SMT leaf
+        // Find the asset in the SMT leaf. Leaves are keyed by the hashed form of the vault key.
+        let hashed_key = asset_key.to_smt_key();
         let asset = smt_leaf
             .entries()
             .iter()
-            .find(|(key, _value)| key == &asset_key.to_word())
+            .find(|(key, _value)| key == &hashed_key)
             .map(|(_key, value)| Asset::from_key_value(asset_key, *value))
             .transpose()?;
 

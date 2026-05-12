@@ -17,7 +17,7 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
-use crate::{Felt, Word};
+use crate::{Felt, Hasher, Word};
 
 /// The unique identifier of an [`Asset`] in the [`AssetVault`](crate::asset::AssetVault).
 ///
@@ -30,6 +30,10 @@ use crate::{Felt, Word};
 ///   faucet_id_prefix (64 bits)
 /// ]
 /// ```
+///
+/// This raw key is hashed via [`Self::to_smt_key`] before being used as the key in the asset
+/// vault's underlying SMT. Hashing ensures a uniform distribution across leaves regardless of how
+/// faucet IDs or asset IDs are chosen.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct AssetVaultKey {
     /// The asset ID of the vault key.
@@ -149,9 +153,19 @@ impl AssetVaultKey {
         }
     }
 
-    /// Returns the leaf index of a vault key.
+    /// Returns the hashed [`Word`] used as the key in the asset vault's underlying SMT.
+    ///
+    /// Hashing the raw key ensures a uniform distribution across SMT leaves. In particular it
+    /// prevents non-fungible assets issued by the same faucet from sharing a leaf: their raw
+    /// vault keys share their third element (the faucet ID suffix), which the SMT uses to
+    /// determine leaf membership.
+    pub fn to_smt_key(&self) -> Word {
+        Hasher::hash_elements(self.to_word().as_elements())
+    }
+
+    /// Returns the leaf index of a vault key in the asset vault's underlying SMT.
     pub fn to_leaf_index(&self) -> LeafIndex<SMT_DEPTH> {
-        LeafIndex::<SMT_DEPTH>::from(self.to_word())
+        LeafIndex::<SMT_DEPTH>::from(self.to_smt_key())
     }
 }
 

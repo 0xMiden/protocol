@@ -486,6 +486,8 @@ pub enum AssetError {
     NonFungibleFaucetIdTypeMismatch(AccountId),
     #[error("smt proof in asset witness contains invalid key or value")]
     AssetWitnessInvalid(#[source] Box<AssetError>),
+    #[error("vault key {key} is not present in the provided asset witness SMT proof")]
+    AssetWitnessMissingKey { key: AssetVaultKey },
     #[error("invalid native asset callbacks encoding: {0}")]
     InvalidAssetCallbackFlag(u8),
 }
