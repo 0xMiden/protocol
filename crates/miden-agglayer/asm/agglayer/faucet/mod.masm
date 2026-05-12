@@ -163,7 +163,7 @@ pub use ::miden::standards::faucets::fungible::receive_and_burn
 #!
 #! See `miden::standards::faucets::fungible::mint_and_send` for more details.
 #!
-#! Inputs:  [amount, tag, note_type, RECIPIENT, pad(9)]
+#! Inputs:  [ASSET_KEY, ASSET_VALUE, tag, note_type, RECIPIENT, pad(2)]
 #! Outputs: [note_idx, pad(15)]
 #!
 #! Invocation: call

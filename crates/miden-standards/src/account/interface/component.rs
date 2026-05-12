@@ -168,8 +168,9 @@ impl AccountComponentInterface {
     /// ```masm
     ///     push.{note information}
     ///
-    ///     push.{asset amount}
-    ///     call.::miden::standards::faucets::fungible::mint_and_send dropw dropw drop
+    ///     push.{ASSET_VALUE} push.{ASSET_KEY}
+    ///     call.::miden::standards::faucets::fungible::mint_and_send
+    ///     swapdw dropw dropw swapdw dropw dropw
     /// ```
     ///
     /// # Errors:
@@ -222,13 +223,18 @@ impl AccountComponentInterface {
 
                     body.push_str(&format!(
                         "
-                        push.{amount}
+                        push.{ASSET_VALUE}
+                        push.{ASSET_KEY}
+                        # => [ASSET_KEY, ASSET_VALUE, tag, note_type, RECIPIENT, pad(16)]
+
                         call.::miden::standards::faucets::fungible::mint_and_send
-                        # => [note_idx, pad(25)]
-                        swapdw dropw dropw swap drop
+                        # => [note_idx, pad(32)]
+
+                        swapdw dropw dropw swapdw dropw dropw
                         # => [note_idx, pad(16)]\n
                         ",
-                        amount = asset.unwrap_fungible().amount()
+                        ASSET_KEY = asset.to_key_word(),
+                        ASSET_VALUE = asset.to_value_word(),
                     ));
                 },
                 AccountComponentInterface::BasicWallet => {

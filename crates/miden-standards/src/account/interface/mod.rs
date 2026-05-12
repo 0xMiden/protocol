@@ -140,8 +140,9 @@ impl AccountInterface {
     ///
     ///     push.{note information}
     ///
-    ///     push.{asset amount}
-    ///     call.::miden::standards::faucets::fungible::mint_and_send dropw dropw drop
+    ///     push.{ASSET_VALUE} push.{ASSET_KEY}
+    ///     call.::miden::standards::faucets::fungible::mint_and_send
+    ///     swapdw dropw dropw swapdw dropw dropw
     /// end
     /// ```
     ///

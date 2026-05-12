@@ -662,7 +662,13 @@ async fn test_faucet_with_callback_calls_itself() -> anyhow::Result<()> {
             push.{note_type}
             push.{tag}
             push.{amount}
-            # => [amount, tag, note_type, RECIPIENT, pad(9)]
+            push.{faucet_id_prefix}
+            push.{faucet_id_suffix}
+            push.1
+            # => [enable_callbacks=1, faucet_id_suffix, faucet_id_prefix, amount, tag, note_type, RECIPIENT, pad(...)]
+
+            exec.::miden::protocol::asset::create_fungible_asset
+            # => [ASSET_KEY, ASSET_VALUE, tag, note_type, RECIPIENT, pad(...)]
 
             call.::miden::standards::faucets::fungible::mint_and_send
             # => [note_idx, pad(15)]
@@ -672,6 +678,8 @@ async fn test_faucet_with_callback_calls_itself() -> anyhow::Result<()> {
         end
         ",
         note_type = NoteType::Private as u8,
+        faucet_id_suffix = faucet.id().suffix(),
+        faucet_id_prefix = faucet.id().prefix().as_felt(),
     );
 
     let tx_script = CodeBuilder::default().compile_tx_script(tx_script_code)?;

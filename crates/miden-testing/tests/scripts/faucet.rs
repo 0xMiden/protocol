@@ -74,18 +74,21 @@ pub struct FaucetTestParams {
 }
 
 /// Creates minting script code for fungible asset distribution
-pub fn create_mint_script_code(params: &FaucetTestParams) -> String {
+pub fn create_mint_script_code(params: &FaucetTestParams, faucet_id: AccountId) -> String {
     format!(
         "
             begin
-                # pad the stack before call
-                padw padw push.0
-
                 push.{recipient}
                 push.{note_type}
                 push.{tag}
                 push.{amount}
-                # => [amount, tag, note_type, RECIPIENT, pad(9)]
+                push.{faucet_id_prefix}
+                push.{faucet_id_suffix}
+                push.0
+                # => [enable_callbacks=0, faucet_id_suffix, faucet_id_prefix, amount, tag, note_type, RECIPIENT, ...]
+
+                exec.::miden::protocol::asset::create_fungible_asset
+                # => [ASSET_KEY, ASSET_VALUE, tag, note_type, RECIPIENT, ...]
 
                 call.::miden::standards::faucets::fungible::mint_and_send
                 # => [note_idx, pad(15)]
@@ -98,6 +101,8 @@ pub fn create_mint_script_code(params: &FaucetTestParams) -> String {
         recipient = params.recipient,
         tag = u32::from(params.tag),
         amount = params.amount,
+        faucet_id_suffix = faucet_id.suffix(),
+        faucet_id_prefix = faucet_id.prefix().as_felt(),
     )
 }
 
@@ -108,7 +113,7 @@ pub async fn execute_mint_transaction(
     params: &FaucetTestParams,
 ) -> anyhow::Result<ExecutedTransaction> {
     let source_manager = Arc::new(DefaultSourceManager::default());
-    let tx_script_code = create_mint_script_code(params);
+    let tx_script_code = create_mint_script_code(params, faucet.id());
     let tx_script = CodeBuilder::with_source_manager(source_manager.clone())
         .compile_tx_script(tx_script_code)?;
     let tx_context = mock_chain
@@ -275,14 +280,17 @@ async fn faucet_contract_mint_fungible_asset_fails_exceeds_max_supply() -> anyho
     let tx_script_code = format!(
         "
             begin
-                # pad the stack before call
-                padw padw push.0
-
                 push.{recipient}
                 push.{note_type}
                 push.{tag}
                 push.{amount}
-                # => [amount, tag, note_type, RECIPIENT, pad(9)]
+                push.{faucet_id_prefix}
+                push.{faucet_id_suffix}
+                push.0
+                # => [0, faucet_id_suffix, faucet_id_prefix, amount, tag, note_type, RECIPIENT, ...]
+
+                exec.::miden::protocol::asset::create_fungible_asset
+                # => [ASSET_KEY, ASSET_VALUE, tag, note_type, RECIPIENT, ...]
 
                 call.::miden::standards::faucets::fungible::mint_and_send
                 # => [note_idx, pad(15)]
@@ -294,6 +302,8 @@ async fn faucet_contract_mint_fungible_asset_fails_exceeds_max_supply() -> anyho
             ",
         note_type = NoteType::Private as u8,
         recipient = recipient,
+        faucet_id_suffix = faucet.id().suffix(),
+        faucet_id_prefix = faucet.id().prefix().as_felt(),
     );
 
     let tx_script = CodeBuilder::default().compile_tx_script(tx_script_code)?;
@@ -540,7 +550,13 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
                 push.{note_type}
                 push.{tag}
                 push.{amount}
-                # => [amount, tag, note_type, RECIPIENT]
+                push.{faucet_id_prefix}
+                push.{faucet_id_suffix}
+                push.0
+                # => [0, faucet_id_suffix, faucet_id_prefix, amount, tag, note_type, RECIPIENT]
+
+                exec.::miden::protocol::asset::create_fungible_asset
+                # => [ASSET_KEY, ASSET_VALUE, tag, note_type, RECIPIENT]
 
                 call.::miden::standards::faucets::fungible::mint_and_send
                 # => [note_idx, pad(15)]
@@ -561,6 +577,8 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
         serial_num = serial_num,
         tag = u32::from(tag),
         amount = amount,
+        faucet_id_suffix = faucet.id().suffix(),
+        faucet_id_prefix = faucet.id().prefix().as_felt(),
     );
 
     // Create the trigger note that will call mint
@@ -689,7 +707,8 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
     let recipient = p2id_mint_output_note.recipient().digest();
 
     // Create the MINT note using the helper function
-    let mint_storage = MintNoteStorage::new_private(recipient, amount, output_note_tag.into());
+    let mint_storage =
+        MintNoteStorage::new_private(recipient, mint_asset, output_note_tag.into());
 
     let mut rng = RandomCoin::new([Felt::from(42u32); 4].into());
     let mint_note = MintNote::create(
@@ -781,7 +800,7 @@ async fn test_network_faucet_owner_can_mint() -> anyhow::Result<()> {
     )?;
     let recipient = p2id_note.recipient().digest();
 
-    let mint_inputs = MintNoteStorage::new_private(recipient, amount, output_note_tag.into());
+    let mint_inputs = MintNoteStorage::new_private(recipient, mint_asset, output_note_tag.into());
 
     let mut rng = RandomCoin::new([Felt::from(42u32); 4].into());
     let mint_note = MintNote::create(
@@ -932,7 +951,7 @@ async fn test_network_faucet_non_owner_cannot_mint() -> anyhow::Result<()> {
     )?;
     let recipient = p2id_note.recipient().digest();
 
-    let mint_inputs = MintNoteStorage::new_private(recipient, amount, output_note_tag.into());
+    let mint_inputs = MintNoteStorage::new_private(recipient, mint_asset, output_note_tag.into());
 
     // Create mint note from NON-OWNER
     let mut rng = RandomCoin::new([Felt::from(42u32); 4].into());
@@ -1032,7 +1051,7 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
     let recipient = p2id_note.recipient().digest();
 
     // Sanity Check: Prove that the initial owner can mint assets
-    let mint_inputs = MintNoteStorage::new_private(recipient, amount, output_note_tag.into());
+    let mint_inputs = MintNoteStorage::new_private(recipient, mint_asset, output_note_tag.into());
 
     let mut rng = RandomCoin::new([Felt::from(42u32); 4].into());
     let mint_note = MintNote::create(
@@ -1614,7 +1633,7 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
         NoteType::Private => {
             let output_note_tag = NoteTag::with_account_target(target_account.id());
             let recipient = p2id_mint_output_note.recipient().digest();
-            MintNoteStorage::new_private(recipient, amount, output_note_tag.into())
+            MintNoteStorage::new_private(recipient, mint_asset, output_note_tag.into())
         },
         NoteType::Public => {
             let output_note_tag = NoteTag::with_account_target(target_account.id());
@@ -1623,7 +1642,7 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
                 vec![target_account.id().suffix(), target_account.id().prefix().as_felt()];
             let note_storage = NoteStorage::new(p2id_storage)?;
             let recipient = NoteRecipient::new(serial_num, p2id_script, note_storage);
-            MintNoteStorage::new_public(recipient, amount, output_note_tag.into())?
+            MintNoteStorage::new_public(recipient, mint_asset, output_note_tag.into())?
         },
     };
 
@@ -1708,13 +1727,17 @@ async fn multiple_mints_in_single_tx_produce_correct_amounts() -> anyhow::Result
         "
             begin
                 # --- First mint: mint {amount_1} tokens to recipient_1 ---
-                padw padw push.0
-
                 push.{recipient_1}
                 push.{note_type}
                 push.{tag}
                 push.{amount_1}
-                # => [amount_1, tag, note_type, RECIPIENT_1, pad(9)]
+                push.{faucet_id_prefix}
+                push.{faucet_id_suffix}
+                push.0
+                # => [0, faucet_id_suffix, faucet_id_prefix, amount_1, tag, note_type, RECIPIENT_1]
+
+                exec.::miden::protocol::asset::create_fungible_asset
+                # => [ASSET_KEY, ASSET_VALUE, tag, note_type, RECIPIENT_1]
 
                 call.::miden::standards::faucets::fungible::mint_and_send
                 # => [note_idx, pad(15)]
@@ -1723,13 +1746,17 @@ async fn multiple_mints_in_single_tx_produce_correct_amounts() -> anyhow::Result
                 dropw dropw dropw dropw
 
                 # --- Second mint: mint {amount_2} tokens to recipient_2 ---
-                padw padw push.0
-
                 push.{recipient_2}
                 push.{note_type}
                 push.{tag}
                 push.{amount_2}
-                # => [amount_2, tag, note_type, RECIPIENT_2, pad(9)]
+                push.{faucet_id_prefix}
+                push.{faucet_id_suffix}
+                push.0
+                # => [0, faucet_id_suffix, faucet_id_prefix, amount_2, tag, note_type, RECIPIENT_2]
+
+                exec.::miden::protocol::asset::create_fungible_asset
+                # => [ASSET_KEY, ASSET_VALUE, tag, note_type, RECIPIENT_2]
 
                 call.::miden::standards::faucets::fungible::mint_and_send
                 # => [note_idx, pad(15)]
@@ -1740,6 +1767,8 @@ async fn multiple_mints_in_single_tx_produce_correct_amounts() -> anyhow::Result
             ",
         note_type = note_type as u8,
         tag = u32::from(tag),
+        faucet_id_suffix = faucet.id().suffix(),
+        faucet_id_prefix = faucet.id().prefix().as_felt(),
     );
 
     let source_manager = Arc::new(DefaultSourceManager::default());
