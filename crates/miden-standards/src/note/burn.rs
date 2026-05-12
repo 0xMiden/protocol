@@ -64,10 +64,9 @@ impl BurnNote {
 
     /// Generates a BURN note - a note that instructs a faucet to burn a fungible asset.
     ///
-    /// This script enables the creation of a PUBLIC note that, when consumed by a network
-    /// fungible faucet, will burn the fungible assets contained in the note. The compiled call
-    /// targets `network_fungible::burn`, while basic and network fungible faucets continue to
-    /// share the same `burn` procedure root.
+    /// This script enables the creation of a PUBLIC note that, when consumed by a fungible
+    /// faucet, will burn the fungible assets contained in the note. The compiled call targets
+    /// `fungible::receive_and_burn`.
     ///
     /// BURN notes are always PUBLIC for network execution.
     ///

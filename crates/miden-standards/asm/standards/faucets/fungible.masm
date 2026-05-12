@@ -66,7 +66,7 @@ end
 #! Outputs: [is_max_supply_mutable]
 #!
 #! Invocation: exec
-proc is_max_supply_mutable_inner
+proc is_max_supply_mutable_internal
     push.MUTABILITY_CONFIG_SLOT[0..2]
     exec.active_account::get_item
     # => [is_description_mutable, is_logo_uri_mutable, is_external_link_mutable, is_max_supply_mutable]
@@ -149,7 +149,7 @@ end
 #!
 #! Invocation: call
 pub proc is_max_supply_mutable
-    exec.is_max_supply_mutable_inner
+    exec.is_max_supply_mutable_internal
     # => [is_max_supply_mutable, pad(16)]
     swap drop
     # => [is_max_supply_mutable, pad(15)]
@@ -173,7 +173,7 @@ end
 #! Invocation: call
 pub proc set_max_supply
     # 1. Check max supply mutability
-    exec.is_max_supply_mutable_inner
+    exec.is_max_supply_mutable_internal
     # => [is_max_supply_mutable, new_max_supply, pad(15)]
     assert.err=ERR_MAX_SUPPLY_NOT_MUTABLE
 

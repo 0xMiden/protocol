@@ -2,7 +2,7 @@ use assert_matches::assert_matches;
 use miden_protocol::account::auth::{self, PublicKeyCommitment};
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{AccountBuilder, AccountComponent, AccountId, AccountType};
-use miden_protocol::asset::{FungibleAsset, NonFungibleAsset, TokenSymbol};
+use miden_protocol::asset::{AssetAmount, FungibleAsset, NonFungibleAsset, TokenSymbol};
 use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
@@ -59,7 +59,7 @@ fn test_basic_wallet_default_notes() {
                 TokenName::new("POL").unwrap(),
                 TokenSymbol::new("POL").expect("invalid token symbol"),
                 10,
-                miden_protocol::asset::AssetAmount::new(100).unwrap(),
+                AssetAmount::new(100).unwrap(),
             )
             .build()
             .expect("failed to create faucet"),
@@ -326,7 +326,7 @@ fn test_fungible_faucet_custom_notes() {
                 TokenName::new("POL").unwrap(),
                 TokenSymbol::new("POL").expect("invalid token symbol"),
                 10,
-                miden_protocol::asset::AssetAmount::new(100).unwrap(),
+                AssetAmount::new(100).unwrap(),
             )
             .build()
             .expect("failed to create faucet"),

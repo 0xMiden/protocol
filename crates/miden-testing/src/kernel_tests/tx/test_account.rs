@@ -31,7 +31,7 @@ use miden_protocol::account::{
 use miden_protocol::assembly::diagnostics::NamedSource;
 use miden_protocol::assembly::diagnostics::reporting::PrintDiagnostic;
 use miden_protocol::assembly::{DefaultSourceManager, Library};
-use miden_protocol::asset::{Asset, AssetCallbacks, FungibleAsset};
+use miden_protocol::asset::{Asset, AssetAmount, AssetCallbacks, FungibleAsset};
 use miden_protocol::errors::tx_kernel::{
     ERR_ACCOUNT_ID_SUFFIX_LEAST_SIGNIFICANT_BYTE_MUST_BE_ZERO,
     ERR_ACCOUNT_ID_SUFFIX_MOST_SIGNIFICANT_BIT_MUST_BE_ZERO,
@@ -1710,7 +1710,7 @@ async fn test_faucet_has_callbacks(
         TokenName::new("").expect("empty string is a valid token name"),
         "CBK".try_into()?,
         8,
-        miden_protocol::asset::AssetAmount::new(1_000_000)?,
+        AssetAmount::new(1_000_000)?,
     )
     .build()?;
 

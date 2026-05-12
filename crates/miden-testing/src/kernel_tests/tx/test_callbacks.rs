@@ -20,6 +20,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::{
     Asset,
+    AssetAmount,
     AssetCallbackFlag,
     AssetCallbacks,
     FungibleAsset,
@@ -762,7 +763,7 @@ fn add_faucet_with_callbacks(
         TokenName::new("").expect("empty string is a valid token name"),
         "SYM".try_into()?,
         8,
-        miden_protocol::asset::AssetAmount::new(1_000_000)?,
+        AssetAmount::new(1_000_000)?,
     )
     .build()?;
 

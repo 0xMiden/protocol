@@ -171,12 +171,9 @@ impl FungibleFaucet {
             });
         }
 
-        // SAFETY: max_supply and token_supply are AssetAmount which guarantees the value is at
-        // most AssetAmount::MAX (= FungibleAsset::MAX_AMOUNT), well below the Goldilocks prime,
-        // so Felt::new will not wrap.
         Ok(Self {
-            token_supply: Felt::new(u64::from(token_supply)),
-            max_supply: Felt::new(u64::from(max_supply)),
+            token_supply: token_supply.into(),
+            max_supply: max_supply.into(),
             decimals,
             symbol,
             metadata,
@@ -346,13 +343,13 @@ impl FungibleFaucet {
     /// Checks that the account contains the fungible faucet interface.
     fn try_from_interface(
         interface: AccountInterface,
-        _storage: &AccountStorage,
+        storage: &AccountStorage,
     ) -> Result<Self, FungibleFaucetError> {
         if !interface.components().contains(&AccountComponentInterface::FungibleFaucet) {
             return Err(FungibleFaucetError::MissingFungibleFaucetInterface);
         }
 
-        FungibleFaucet::try_from(_storage)
+        FungibleFaucet::try_from(storage)
     }
 
     /// Reconstructs from the token config word and the embedded [`TokenMetadata`] read from

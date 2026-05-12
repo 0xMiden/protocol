@@ -48,12 +48,11 @@ impl AccountInterface {
         Self { account_id, auth, components }
     }
 
-    /// Returns `true` if the account installs an [`AccountComponentInterface::Ownable2Step`] (or
-    /// [`AccountComponentInterface::RoleBasedAccessControl`], which depends on Ownable2Step)
-    /// access component.
+    /// Returns `true` if the account installs an [`AccountComponentInterface::Ownable2Step`]
+    /// access component. Since [`AccountComponentInterface::RoleBasedAccessControl`] always
+    /// includes Ownable2Step, this also covers RBAC-controlled accounts.
     pub fn is_owner_controlled(&self) -> bool {
         self.components.contains(&AccountComponentInterface::Ownable2Step)
-            || self.components.contains(&AccountComponentInterface::RoleBasedAccessControl)
     }
 
     // PUBLIC ACCESSORS

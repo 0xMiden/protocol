@@ -14,7 +14,7 @@ use miden_protocol::account::{
     AccountType,
 };
 use miden_protocol::assembly::DefaultSourceManager;
-use miden_protocol::asset::{Asset, FungibleAsset, TokenSymbol};
+use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset, TokenSymbol};
 use miden_protocol::note::{
     Note,
     NoteAssets,
@@ -196,9 +196,9 @@ fn build_network_faucet_with_burn_switching(
 ) -> anyhow::Result<Account> {
     let name = TokenName::new(token_symbol)?;
     let symbol = TokenSymbol::new(token_symbol)?;
-    let max_supply = miden_protocol::asset::AssetAmount::new(max_supply)?;
-    let token_supply = miden_protocol::asset::AssetAmount::new(token_supply)?;
-    let metadata = FungibleFaucet::builder(name, symbol, 10, max_supply)
+    let max_supply = AssetAmount::new(max_supply)?;
+    let token_supply = AssetAmount::new(token_supply)?;
+    let faucet = FungibleFaucet::builder(name, symbol, 10, max_supply)
         .token_supply(token_supply)
         .build()?;
 
@@ -211,7 +211,7 @@ fn build_network_faucet_with_burn_switching(
 
     let account_builder = AccountBuilder::new(builder.rng_mut().random())
         .storage_mode(AccountStorageMode::Network)
-        .with_component(metadata)
+        .with_component(faucet)
         .with_component(Ownable2Step::new(owner))
         .with_components(token_policy_manager)
         .with_component(BurnOwnerOnly)

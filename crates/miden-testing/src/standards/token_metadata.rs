@@ -203,7 +203,7 @@ async fn get_name_from_masm() -> anyhow::Result<()> {
     let token_name = TokenName::new("test name").unwrap();
     let name = token_name.to_words();
 
-    let metadata = FungibleFaucet::builder(
+    let faucet = FungibleFaucet::builder(
         token_name,
         "TST".try_into().unwrap(),
         2,
@@ -215,7 +215,7 @@ async fn get_name_from_masm() -> anyhow::Result<()> {
     let account = AccountBuilder::new([1u8; 32])
         .account_type(AccountType::FungibleFaucet)
         .with_auth_component(NoAuth)
-        .with_component(metadata)
+        .with_component(faucet)
         .build()?;
 
     execute_tx_script(
@@ -240,7 +240,7 @@ async fn get_name_from_masm() -> anyhow::Result<()> {
 #[tokio::test]
 async fn get_name_zeros_returns_empty() -> anyhow::Result<()> {
     // Build a faucet with an empty name to verify get_name returns zero words.
-    let metadata = FungibleFaucet::builder(
+    let faucet = FungibleFaucet::builder(
         TokenName::new("").expect("empty string is a valid token name"),
         "TST".try_into().unwrap(),
         2,
@@ -252,7 +252,7 @@ async fn get_name_zeros_returns_empty() -> anyhow::Result<()> {
     let account = AccountBuilder::new([1u8; 32])
         .account_type(AccountType::FungibleFaucet)
         .with_auth_component(NoAuth)
-        .with_component(metadata)
+        .with_component(faucet)
         .build()?;
 
     execute_tx_script(
@@ -396,7 +396,7 @@ async fn faucet_get_decimals_symbol_and_max_supply() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn get_mutability_config() -> anyhow::Result<()> {
-    let metadata = FungibleFaucet::builder(
+    let faucet = FungibleFaucet::builder(
         TokenName::new("T").unwrap(),
         "TST".try_into().unwrap(),
         2,
@@ -411,7 +411,7 @@ async fn get_mutability_config() -> anyhow::Result<()> {
     let account = AccountBuilder::new([1u8; 32])
         .account_type(AccountType::FungibleFaucet)
         .with_auth_component(NoAuth)
-        .with_component(metadata)
+        .with_component(faucet)
         .build()?;
 
     execute_tx_script(
@@ -448,13 +448,13 @@ async fn get_mutability_config() -> anyhow::Result<()> {
 #[tokio::test]
 async fn is_field_mutable_checks(
     #[case] proc_path: &str,
-    #[case] metadata: FungibleFaucet,
+    #[case] faucet: FungibleFaucet,
     #[case] expected: u8,
 ) -> anyhow::Result<()> {
     let account = AccountBuilder::new([1u8; 32])
         .account_type(AccountType::FungibleFaucet)
         .with_auth_component(NoAuth)
-        .with_component(metadata)
+        .with_component(faucet)
         .build()?;
 
     execute_tx_script(
@@ -480,7 +480,7 @@ fn faucet_with_metadata_storage_layout() {
     let desc_text = "faucet description text for testing";
     let description = Description::new(desc_text).unwrap();
 
-    let metadata = FungibleFaucet::builder(
+    let faucet = FungibleFaucet::builder(
         token_name,
         "TST".try_into().unwrap(),
         8,
@@ -494,7 +494,7 @@ fn faucet_with_metadata_storage_layout() {
         .account_type(AccountType::FungibleFaucet)
         .storage_mode(AccountStorageMode::Public)
         .with_auth_component(NoAuth)
-        .with_component(metadata)
+        .with_component(faucet)
         .build()
         .unwrap();
 
@@ -619,7 +619,7 @@ async fn test_field_setter_immutable_fails(
     let mut builder = MockChain::builder();
     let owner = owner_account_id();
 
-    let metadata = network_faucet_metadata(
+    let faucet = network_faucet_metadata(
         "FLD",
         1000,
         Some(0),
@@ -628,7 +628,7 @@ async fn test_field_setter_immutable_fails(
         args.logo_uri,
         args.external_link,
     )?;
-    let faucet = builder.add_existing_network_faucet_with_metadata(owner, metadata)?;
+    let faucet_account = builder.add_existing_network_faucet_with_metadata(owner, faucet)?;
     let mock_chain = builder.build()?;
 
     let tx_script_code = format!(
@@ -644,7 +644,7 @@ async fn test_field_setter_immutable_fails(
         .compile_tx_script(&tx_script_code)?;
 
     let tx_context = mock_chain
-        .build_tx_context(faucet.id(), &[], &[])?
+        .build_tx_context(faucet_account.id(), &[], &[])?
         .tx_script(tx_script)
         .with_source_manager(source_manager)
         .build()?;
@@ -664,7 +664,7 @@ async fn test_field_setter_owner_succeeds(
     let owner = owner_account_id();
     let new_data = new_field_data();
 
-    let metadata = network_faucet_metadata(
+    let faucet = network_faucet_metadata(
         "FLD",
         1000,
         Some(0),
@@ -673,7 +673,7 @@ async fn test_field_setter_owner_succeeds(
         args.logo_uri,
         args.external_link,
     )?;
-    let faucet = builder.add_existing_network_faucet_with_metadata(owner, metadata)?;
+    let faucet_account = builder.add_existing_network_faucet_with_metadata(owner, faucet)?;
     let mock_chain = builder.build()?;
 
     let hash = compute_field_hash(&new_data);
@@ -702,13 +702,13 @@ async fn test_field_setter_owner_succeeds(
         .build()?;
 
     let tx_context = mock_chain
-        .build_tx_context(faucet.id(), &[], &[note])?
+        .build_tx_context(faucet_account.id(), &[], &[note])?
         .extend_advice_map([(hash, field_advice_map_value(&new_data))])
         .with_source_manager(source_manager)
         .build()?;
 
     let executed = tx_context.execute().await?;
-    let mut updated_faucet = faucet.clone();
+    let mut updated_faucet = faucet_account.clone();
     updated_faucet.apply_delta(executed.account_delta())?;
 
     for (i, expected) in new_data.iter().enumerate() {
@@ -727,7 +727,7 @@ async fn test_field_setter_non_owner_fails(
     let owner = owner_account_id();
     let non_owner = non_owner_account_id();
 
-    let metadata = network_faucet_metadata(
+    let faucet = network_faucet_metadata(
         "FLD",
         1000,
         Some(0),
@@ -736,7 +736,7 @@ async fn test_field_setter_non_owner_fails(
         args.logo_uri,
         args.external_link,
     )?;
-    let faucet = builder.add_existing_network_faucet_with_metadata(owner, metadata)?;
+    let faucet_account = builder.add_existing_network_faucet_with_metadata(owner, faucet)?;
     let mock_chain = builder.build()?;
 
     // Auth check fires before data is touched, so no hash push is needed.
@@ -762,7 +762,7 @@ async fn test_field_setter_non_owner_fails(
         .build()?;
 
     let tx_context = mock_chain
-        .build_tx_context(faucet.id(), &[], &[note])?
+        .build_tx_context(faucet_account.id(), &[], &[note])?
         .with_source_manager(source_manager)
         .build()?;
 
@@ -871,8 +871,8 @@ async fn set_max_supply_immutable_fails() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let owner = owner_account_id();
 
-    let metadata = network_faucet_metadata("MSM", 1000, Some(0), false, None, None, None)?;
-    let faucet = builder.add_existing_network_faucet_with_metadata(owner, metadata)?;
+    let faucet = network_faucet_metadata("MSM", 1000, Some(0), false, None, None, None)?;
+    let faucet_account = builder.add_existing_network_faucet_with_metadata(owner, faucet)?;
     let mock_chain = builder.build()?;
 
     let tx_script_code = r#"
@@ -887,7 +887,7 @@ async fn set_max_supply_immutable_fails() -> anyhow::Result<()> {
         .compile_tx_script(tx_script_code)?;
 
     let tx_context = mock_chain
-        .build_tx_context(faucet.id(), &[], &[])?
+        .build_tx_context(faucet_account.id(), &[], &[])?
         .tx_script(tx_script)
         .with_source_manager(source_manager)
         .build()?;
@@ -904,8 +904,8 @@ async fn set_max_supply_mutable_owner_succeeds() -> anyhow::Result<()> {
     let owner = owner_account_id();
     let new_max_supply: u64 = 2000;
 
-    let metadata = network_faucet_metadata("MSM", 1000, Some(0), true, None, None, None)?;
-    let faucet = builder.add_existing_network_faucet_with_metadata(owner, metadata)?;
+    let faucet = network_faucet_metadata("MSM", 1000, Some(0), true, None, None, None)?;
+    let faucet_account = builder.add_existing_network_faucet_with_metadata(owner, faucet)?;
     let mock_chain = builder.build()?;
 
     let note_script_code = format!(
@@ -930,12 +930,12 @@ async fn set_max_supply_mutable_owner_succeeds() -> anyhow::Result<()> {
         .build()?;
 
     let tx_context = mock_chain
-        .build_tx_context(faucet.id(), &[], &[note])?
+        .build_tx_context(faucet_account.id(), &[], &[note])?
         .with_source_manager(source_manager)
         .build()?;
 
     let executed = tx_context.execute().await?;
-    let mut updated_faucet = faucet.clone();
+    let mut updated_faucet = faucet_account.clone();
     updated_faucet.apply_delta(executed.account_delta())?;
 
     let restored = FungibleFaucet::try_from(updated_faucet.storage())?;
@@ -955,8 +955,8 @@ async fn set_max_supply_mutable_non_owner_fails() -> anyhow::Result<()> {
     let owner = owner_account_id();
     let non_owner = non_owner_account_id();
 
-    let metadata = network_faucet_metadata("MSM", 1000, Some(0), true, None, None, None)?;
-    let faucet = builder.add_existing_network_faucet_with_metadata(owner, metadata)?;
+    let faucet = network_faucet_metadata("MSM", 1000, Some(0), true, None, None, None)?;
+    let faucet_account = builder.add_existing_network_faucet_with_metadata(owner, faucet)?;
     let mock_chain = builder.build()?;
 
     // Auth check fires before data is touched, so no arguments needed.
@@ -978,7 +978,7 @@ async fn set_max_supply_mutable_non_owner_fails() -> anyhow::Result<()> {
         .build()?;
 
     let tx_context = mock_chain
-        .build_tx_context(faucet.id(), &[], &[note])?
+        .build_tx_context(faucet_account.id(), &[], &[note])?
         .with_source_manager(source_manager)
         .build()?;
 

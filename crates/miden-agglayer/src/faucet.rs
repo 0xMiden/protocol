@@ -90,7 +90,7 @@ static METADATA_HASH_HI_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| 
 ///
 /// ## Required Companion Components
 ///
-/// This component re-exports `basic_fungible::mint_and_send`, which requires:
+/// This component re-exports `fungible::mint_and_send`, which requires:
 /// - [`Ownable2Step`]: Provides ownership data (bridge account ID as owner).
 /// - [`miden_standards::account::policies::TokenPolicyManager`]: Provides mint and burn policy
 ///   management.
@@ -98,7 +98,7 @@ static METADATA_HASH_HI_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| 
 /// These must be added as separate components when building the faucet account.
 #[derive(Debug, Clone)]
 pub struct AggLayerFaucet {
-    metadata: FungibleFaucet,
+    faucet: FungibleFaucet,
     origin_token_address: EthAddress,
     origin_network: u32,
     scale: u8,
@@ -146,11 +146,11 @@ impl AggLayerFaucet {
                     max: AssetAmount::MAX,
                 }
             })?;
-        let metadata = FungibleFaucet::builder(name, symbol, decimals, max_supply_amount)
+        let faucet = FungibleFaucet::builder(name, symbol, decimals, max_supply_amount)
             .token_supply(token_supply_amount)
             .build()?;
         Ok(Self {
-            metadata,
+            faucet,
             origin_token_address,
             origin_network,
             scale,
@@ -163,7 +163,7 @@ impl AggLayerFaucet {
     /// # Errors
     /// Returns an error if the token supply exceeds the max supply.
     pub fn with_token_supply(mut self, token_supply: Felt) -> Result<Self, FungibleFaucetError> {
-        self.metadata = self.metadata.with_token_supply(token_supply)?;
+        self.faucet = self.faucet.with_token_supply(token_supply)?;
         Ok(self)
     }
 
@@ -201,13 +201,16 @@ impl AggLayerFaucet {
         Ownable2Step::slot_name()
     }
 
-    /// Extracts the token metadata from the storage slots of the provided account.
+    /// Extracts the underlying [`FungibleFaucet`] component (which holds the token metadata)
+    /// from the storage slots of the provided account.
     ///
     /// # Errors
     ///
     /// Returns an error if:
     /// - the provided account is not an [`AggLayerFaucet`] account.
-    pub fn metadata(faucet_account: &Account) -> Result<FungibleFaucet, AgglayerFaucetError> {
+    pub fn try_faucet_from_account(
+        faucet_account: &Account,
+    ) -> Result<FungibleFaucet, AgglayerFaucetError> {
         // check that the provided account is a faucet account
         Self::assert_faucet_account(faucet_account)?;
 
@@ -395,16 +398,16 @@ impl AggLayerFaucet {
 }
 
 impl From<AggLayerFaucet> for AccountComponent {
-    fn from(faucet: AggLayerFaucet) -> Self {
+    fn from(agglayer_faucet: AggLayerFaucet) -> Self {
         // Bring in all of the FungibleFaucet's storage slots (token config + name +
         // mutability + description + logo URI + external link). The AggLayer faucet itself adds
         // four bridge-specific slots on top.
-        let mut agglayer_storage_slots = faucet.metadata.into_storage_slots();
+        let mut agglayer_storage_slots = agglayer_faucet.faucet.into_storage_slots();
 
         let (conversion_slot1_word, conversion_slot2_word) = agglayer_faucet_conversion_slots(
-            &faucet.origin_token_address,
-            faucet.origin_network,
-            faucet.scale,
+            &agglayer_faucet.origin_token_address,
+            agglayer_faucet.origin_network,
+            agglayer_faucet.scale,
         );
         agglayer_storage_slots.push(StorageSlot::with_value(
             CONVERSION_INFO_1_SLOT_NAME.clone(),
@@ -415,7 +418,7 @@ impl From<AggLayerFaucet> for AccountComponent {
             conversion_slot2_word,
         ));
 
-        let hash_elements = faucet.metadata_hash.to_elements();
+        let hash_elements = agglayer_faucet.metadata_hash.to_elements();
         agglayer_storage_slots.push(StorageSlot::with_value(
             METADATA_HASH_LO_SLOT_NAME.clone(),
             Word::new([hash_elements[0], hash_elements[1], hash_elements[2], hash_elements[3]]),

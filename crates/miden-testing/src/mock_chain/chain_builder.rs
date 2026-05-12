@@ -49,7 +49,12 @@ use miden_protocol::transaction::{OrderedTransactionHeaders, RawOutputNote, Tran
 use miden_protocol::{MAX_OUTPUT_NOTES_PER_BATCH, Word};
 use miden_standards::account::access::AccessControl;
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
-use miden_standards::account::policies::TokenPolicyManager;
+use miden_standards::account::policies::{
+    BurnPolicyConfig,
+    MintPolicyConfig,
+    PolicyAuthority,
+    TokenPolicyManager,
+};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::note::{P2idNote, P2ideNote, P2ideNoteStorage, SwapNote};
 use miden_standards::testing::account_component::MockAccountComponent;
@@ -317,7 +322,7 @@ impl MockChainBuilder {
     ///
     /// This does not add the account to the chain state, but it can still be used to call
     /// [`MockChain::build_tx_context`] to automatically add the authenticator.
-    pub fn create_new_fungible_faucet(
+    fn create_new_fungible_faucet(
         &mut self,
         auth_method: Auth,
         faucet: FungibleFaucet,
@@ -348,7 +353,7 @@ impl MockChainBuilder {
     ///   [`AccessControl::Ownable2Step`] / [`AccessControl::Rbac`] for owner-controlled faucets.
     /// - `token_policy_manager`: the unified [`TokenPolicyManager`] holding both mint and burn
     ///   policy plus the shared `PolicyAuthority`.
-    pub fn add_existing_fungible_faucet(
+    fn add_existing_fungible_faucet(
         &mut self,
         auth_method: Auth,
         faucet: FungibleFaucet,
@@ -379,12 +384,6 @@ impl MockChainBuilder {
         max_supply: u64,
         token_supply: Option<u64>,
     ) -> anyhow::Result<Account> {
-        use miden_standards::account::policies::{
-            BurnPolicyConfig,
-            MintPolicyConfig,
-            PolicyAuthority,
-        };
-
         let token_supply = AssetAmount::new(token_supply.unwrap_or(0))
             .context("token supply exceeds AssetAmount::MAX")?;
         let max_supply =
@@ -422,10 +421,8 @@ impl MockChainBuilder {
         max_supply: u64,
         owner_account_id: AccountId,
         token_supply: Option<u64>,
-        mint_policy: miden_standards::account::policies::MintPolicyConfig,
+        mint_policy: MintPolicyConfig,
     ) -> anyhow::Result<Account> {
-        use miden_standards::account::policies::{BurnPolicyConfig, PolicyAuthority};
-
         let token_supply = AssetAmount::new(token_supply.unwrap_or(0))
             .context("token supply exceeds AssetAmount::MAX")?;
         let max_supply =
@@ -461,12 +458,6 @@ impl MockChainBuilder {
         owner_account_id: AccountId,
         faucet: FungibleFaucet,
     ) -> anyhow::Result<Account> {
-        use miden_standards::account::policies::{
-            BurnPolicyConfig,
-            MintPolicyConfig,
-            PolicyAuthority,
-        };
-
         let token_policy_manager = TokenPolicyManager::new(
             PolicyAuthority::OwnerControlled,
             MintPolicyConfig::OwnerOnly,
@@ -490,12 +481,6 @@ impl MockChainBuilder {
         token_symbol: &str,
         max_supply: u64,
     ) -> anyhow::Result<Account> {
-        use miden_standards::account::policies::{
-            BurnPolicyConfig,
-            MintPolicyConfig,
-            PolicyAuthority,
-        };
-
         let max_supply =
             AssetAmount::new(max_supply).context("max supply exceeds AssetAmount::MAX")?;
         let name = TokenName::new(token_symbol)?;
