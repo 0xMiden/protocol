@@ -2,12 +2,12 @@
 //! [`super::TokenPolicyManager`] for both the send and receive policy kinds.
 //!
 //! Layout convention inside this module:
-//! - File at the root (e.g. [`allow_all`], [`basic_blocklist`]) = a transfer policy variant. Each
+//! - File at the root (e.g. `allow_all`, `basic_blocklist`) = a transfer policy variant. Each
 //!   exports a `check_policy` procedure that the kernel invokes via `call` through the
 //!   protocol-reserved callback slots.
 //! - Folder at the root (e.g. [`blocklist`]) = a primitive bundle: storage namespace + helpers
 //!   + auth-gated admin component(s) that maintain the storage. Primitives are not transfer
-//!     policies by themselves; they are consumed by policy variants.
+//!   policies by themselves; they are consumed by policy variants.
 
 use alloc::vec::Vec;
 

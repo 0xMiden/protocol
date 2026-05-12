@@ -14,7 +14,7 @@ use crate::account::components::blocklist_owner_managed_library;
 /// - [`crate::account::access::Ownable2Step`] — provides the owner storage slot the auth check
 ///   reads.
 /// - A component that installs the `blocked_accounts` storage slot — typically
-///   [`super::BasicBlocklist`].
+///   [`crate::account::policies::BasicBlocklist`].
 #[derive(Debug, Clone, Copy, Default)]
 pub struct OwnerManagedBlocklist;
 
