@@ -8,6 +8,7 @@ use $kernel::note::NOTE_TYPE_PUBLIC
 use $kernel::constants::MAX_OUTPUT_NOTES_PER_TX
 use $kernel::util::note::ATTACHMENT_KIND_NONE
 use $kernel::util::note::ATTACHMENT_KIND_ARRAY
+use $kernel::util::note::NOTE_METADATA_VERSION_1
 use $kernel::asset::ASSET_SIZE
 use $kernel::asset::ASSET_VALUE_MEMORY_OFFSET
 use miden::core::word
@@ -327,9 +328,9 @@ pub proc build_metadata_header
     # => [sender_id_suffix, sender_id_prefix, tag, note_type]
 
     # The lower 8 bits of the account ID suffix are guaranteed to be zero by construction.
-    # Encode note_type at bit 4, leaving version at 0 (in bits 0..=3).
+    # Encode note_type at bit 4 and version at bits 0..=3.
     # Shifting note_type left by 4 is equivalent to multiplying by 16.
-    movup.3 mul.16 add
+    movup.3 mul.16 add.NOTE_METADATA_VERSION_1 add
     # => [sender_id_suffix_type_version, sender_id_prefix, tag]
 
     # Build metadata header.
