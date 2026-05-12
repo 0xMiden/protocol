@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::slice;
 
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountId, AccountType, AccountVaultDelta};
@@ -274,7 +275,7 @@ async fn pswap_note_alice_reconstructs_and_consumes_p2id(
     // public ones.
 
     let tx_context = mock_chain
-        .build_tx_context(alice.id(), &[], &[reconstructed_payback.clone()])?
+        .build_tx_context(alice.id(), &[], slice::from_ref(&reconstructed_payback))?
         .build()?;
 
     let executed_transaction = tx_context.execute().await?;
@@ -1587,7 +1588,7 @@ async fn pswap_creator_reconstructs_lineage_from_attachments() -> anyhow::Result
 
         // --- Alice consumes the reconstructed payback (unauthenticated path) ---
         let alice_tx = mock_chain
-            .build_tx_context(alice.id(), &[], &[reconstructed_payback.clone()])?
+            .build_tx_context(alice.id(), &[], slice::from_ref(&reconstructed_payback))?
             .build()?
             .execute()
             .await?;
