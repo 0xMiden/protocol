@@ -660,7 +660,7 @@ async fn test_guarded_multisig_update_guardian_enforces_no_notes(
         );
         Some(Note::new(
             NoteAssets::new(vec![])?,
-            NoteMetadata::new(multisig_account.id(), NoteType::Public),
+            PartialNoteMetadata::new(multisig_account.id(), NoteType::Public),
             recipient,
         ))
     } else {
@@ -689,7 +689,7 @@ async fn test_guarded_multisig_update_guardian_enforces_no_notes(
         );
         let note = Note::new(
             NoteAssets::new(vec![])?,
-            NoteMetadata::new(multisig_account.id(), NoteType::Public),
+            PartialNoteMetadata::new(multisig_account.id(), NoteType::Public),
             recipient,
         );
         chain_builder.add_output_note(RawOutputNote::Full(note.clone()));
