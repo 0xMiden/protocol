@@ -13,6 +13,7 @@ use miden_protocol::account::{
 use miden_protocol::asset::{Asset, AssetVault, AssetVaultKey, FungibleAsset};
 use miden_protocol::note::{
     NoteAttachment,
+    NoteAttachmentContent,
     NoteAttachmentScheme,
     NoteId,
     NoteMetadata,
@@ -772,16 +773,13 @@ fn extract_note_attachment(
         .map(|chunk| Word::from([chunk[0], chunk[1], chunk[2], chunk[3]]))
         .collect();
 
-    let attachment = match words.len() {
-        0 => return Err(TransactionKernelError::other("attachment num_words must be > 0")),
-        1 => NoteAttachment::new_word(attachment_scheme, words[0]),
-        _ => NoteAttachment::new_array(attachment_scheme, words).map_err(|source| {
-            TransactionKernelError::other_with_source(
-                "failed to construct note attachment array",
-                source,
-            )
-        })?,
-    };
+    let content = NoteAttachmentContent::new(words).map_err(|source| {
+        TransactionKernelError::other_with_source(
+            "failed to construct note attachment content",
+            source,
+        )
+    })?;
+    let attachment = NoteAttachment::new(attachment_scheme, content);
 
     let actual_commitment = attachment.to_commitment();
 

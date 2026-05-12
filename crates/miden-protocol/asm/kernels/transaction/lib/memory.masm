@@ -1,8 +1,7 @@
 use $kernel::constants::ACCOUNT_PROCEDURE_DATA_LENGTH
 use $kernel::constants::MAX_ASSETS_PER_NOTE
 use $kernel::constants::NOTE_MEM_SIZE
-use $kernel::constants::WORD_SIZE
-# use $kernel::types::AccountId
+use $kernel::constants::WORD_NUM_ELEMENTS
 use miden::core::mem
 
 pub type AccountId = struct { prefix: felt, suffix: felt }
@@ -270,16 +269,17 @@ const OUTPUT_NOTE_SECTION_OFFSET=16777216
 # The offsets at which data of an output note is stored relative to the start of its data segment.
 const OUTPUT_NOTE_ID_OFFSET=0
 const OUTPUT_NOTE_METADATA_HEADER_OFFSET=4
-const OUTPUT_NOTE_NUM_ATTACHMENTS_OFFSET=8
-const OUTPUT_NOTE_ATTACHMENT_0_OFFSET=12
-const OUTPUT_NOTE_ATTACHMENT_1_OFFSET=16
-const OUTPUT_NOTE_ATTACHMENT_2_OFFSET=20
-const OUTPUT_NOTE_ATTACHMENT_3_OFFSET=24
-const OUTPUT_NOTE_RECIPIENT_OFFSET=28
+const OUTPUT_NOTE_RECIPIENT_OFFSET=8
+const OUTPUT_NOTE_DIRTY_FLAG_OFFSET=12
+const OUTPUT_NOTE_NUM_ASSETS_OFFSET=13
+const OUTPUT_NOTE_NUM_ATTACHMENTS_OFFSET=14
+const OUTPUT_NOTE_TOTAL_ATTACHMENT_WORDS_OFFSET=15
+const OUTPUT_NOTE_ATTACHMENT_0_OFFSET=16
+const OUTPUT_NOTE_ATTACHMENT_1_OFFSET=20
+const OUTPUT_NOTE_ATTACHMENT_2_OFFSET=24
+const OUTPUT_NOTE_ATTACHMENT_3_OFFSET=28
 const OUTPUT_NOTE_ASSETS_COMMITMENT_OFFSET=32
-const OUTPUT_NOTE_NUM_ASSETS_OFFSET=36
-const OUTPUT_NOTE_DIRTY_FLAG_OFFSET=37
-const OUTPUT_NOTE_ASSETS_OFFSET=40
+const OUTPUT_NOTE_ASSETS_OFFSET=36
 
 # LINK MAP MEMORY
 # -------------------------------------------------------------------------------------------------
@@ -302,16 +302,6 @@ const LINK_MAP_USED_MEMORY_SIZE=33554432
 
 # The size of each map entry, i.e. four words.
 const LINK_MAP_ENTRY_SIZE=16
-
-# KERNEL SCRATCH MEMORY
-# -------------------------------------------------------------------------------------------------
-
-# A scratch memory region for temporary use like computing commitments over a number of elements.
-#
-# WARNING: This memory region should be assumed to contain garbage rather than zeros initially.
-#
-# At most 1024 elements should be written to this region, though this number can be increased.
-pub const KERNEL_SCRATCH_PTR=67108864
 
 # MEMORY PROCEDURES
 # =================================================================================================
@@ -1884,7 +1874,7 @@ pub proc get_output_note_attachment_commitment
     add.OUTPUT_NOTE_ATTACHMENT_0_OFFSET
     # => [note_ptr + attachment_0_offset, attachment_idx]
 
-    swap mul.WORD_SIZE add
+    swap mul.WORD_NUM_ELEMENTS add
     # => [attachment_ptr]
 
     padw movup.4 mem_loadw_le
@@ -1916,7 +1906,7 @@ pub proc set_output_note_attachment_commitment
     add.OUTPUT_NOTE_ATTACHMENT_0_OFFSET
     # => [note_ptr + base_offset, attachment_idx, ATTACHMENT_COMMITMENT]
 
-    swap mul.WORD_SIZE add
+    swap mul.WORD_NUM_ELEMENTS add
     # => [attachment_ptr, ATTACHMENT_COMMITMENT]
 
     mem_storew_le dropw
@@ -1945,6 +1935,30 @@ end
 #! - num_attachments is the number of attachments in the output note.
 pub proc set_output_note_num_attachments
     add.OUTPUT_NOTE_NUM_ATTACHMENTS_OFFSET mem_store
+end
+
+#! Returns the total number of attachment words for the output note.
+#!
+#! Inputs:  [note_ptr]
+#! Outputs: [total_num_attachment_words]
+#!
+#! Where:
+#! - note_ptr is the memory address at which the output note data begins.
+#! - total_num_attachment_words is the total number of words across all attachments.
+pub proc get_output_note_total_attachment_words
+    add.OUTPUT_NOTE_TOTAL_ATTACHMENT_WORDS_OFFSET mem_load
+end
+
+#! Sets the total number of attachment words for the output note.
+#!
+#! Inputs:  [note_ptr, total_num_attachment_words]
+#! Outputs: []
+#!
+#! Where:
+#! - note_ptr is the memory address at which the output note data begins.
+#! - total_num_attachment_words is the total number of words across all attachments.
+pub proc set_output_note_total_attachment_words
+    add.OUTPUT_NOTE_TOTAL_ATTACHMENT_WORDS_OFFSET mem_store
 end
 
 #! Returns the number of assets in the output note.

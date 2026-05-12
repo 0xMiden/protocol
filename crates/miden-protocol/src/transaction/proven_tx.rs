@@ -546,7 +546,7 @@ impl From<&InputNote> for InputNoteCommitment {
             },
             InputNote::Unauthenticated { note } => Self {
                 nullifier: note.nullifier(),
-                header: Some(note.header().clone()),
+                header: Some(*note.header()),
             },
         }
     }

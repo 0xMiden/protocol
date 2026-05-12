@@ -20,7 +20,7 @@ use crate::note::{NoteAttachmentHeader, NoteAttachments};
 ///
 /// Contains the sender, note type, and tag. For the full protocol-level encoding (including
 /// attachment headers and commitment computation), see [`NoteMetadataHeader`].
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct NoteMetadata {
     /// The ID of the account which created the note.
     sender: AccountId,
@@ -143,7 +143,7 @@ impl Deserializable for NoteMetadata {
 ///   `p`.
 ///
 /// The version is hardcoded to 0 and is reserved for forward compatibility.
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct NoteMetadataHeader {
     metadata: NoteMetadata,
     attachment_headers: [NoteAttachmentHeader; NoteAttachments::MAX_COUNT],
@@ -342,18 +342,18 @@ fn merge_schemes(headers: [NoteAttachmentHeader; NoteAttachments::MAX_COUNT]) ->
 mod tests {
 
     use super::*;
-    use crate::note::{NoteAttachment, NoteAttachmentArray, NoteAttachmentScheme};
+    use crate::note::{NoteAttachment, NoteAttachmentScheme};
     use crate::testing::account_id::ACCOUNT_ID_MAX_ONES;
 
     #[test]
     fn note_metadata_word_encodes_attachment_header() -> anyhow::Result<()> {
         let sender = AccountId::try_from(ACCOUNT_ID_MAX_ONES).unwrap();
         let metadata = NoteMetadata::new(sender, NoteType::Public).with_tag(NoteTag::new(0xff));
-        let attachment0 = NoteAttachment::new_word(
+        let attachment0 = NoteAttachment::with_word(
             NoteAttachmentScheme::new(1)?,
             Word::from([10, 20, 30, 40u32]),
         );
-        let attachment1 = NoteAttachment::new_array(
+        let attachment1 = NoteAttachment::with_words(
             NoteAttachmentScheme::new(0xfffe)?,
             vec![Word::from([10, 20, 30, 40u32]), Word::from([10, 20, 30, 40u32])],
         )?;
@@ -375,16 +375,16 @@ mod tests {
     #[rstest::rstest]
     #[case::attachment_none([])]
     #[case::attachment_two_words([
-      NoteAttachment::new_word(NoteAttachmentScheme::none(), Word::from([3, 4, 5, 6u32])),
-      NoteAttachment::new_word(NoteAttachmentScheme::none(), Word::from([3, 4, 5, 6u32])),
+      NoteAttachment::with_word(NoteAttachmentScheme::none(), Word::from([3, 4, 5, 6u32])),
+      NoteAttachment::with_word(NoteAttachmentScheme::none(), Word::from([3, 4, 5, 6u32])),
     ])]
-    #[case::attachment_word_and_two_arrays([
-      NoteAttachment::new_word(NoteAttachmentScheme::none(), Word::from([3, 4, 5, 6u32])),
-      NoteAttachment::new_array(
+    #[case::attachment_word_and_two_multi_word_attachments([
+      NoteAttachment::with_word(NoteAttachmentScheme::none(), Word::from([3, 4, 5, 6u32])),
+      NoteAttachment::with_words(
         NoteAttachmentScheme::MAX,
-        vec![Word::from([5, 5, 5, 5u32]); NoteAttachmentArray::MIN_NUM_WORDS as usize],
+        vec![Word::from([5, 5, 5, 5u32]); 2],
       )?,
-      NoteAttachment::new_array(
+      NoteAttachment::with_words(
         NoteAttachmentScheme::MAX,
         vec![Word::from([10, 10, 10, 10u32]); NoteAttachment::MAX_NUM_WORDS as usize],
       )?,
@@ -400,7 +400,7 @@ mod tests {
         let tag = NoteTag::new(u32::MAX);
         let metadata = NoteMetadata::new(sender, note_type).with_tag(tag);
         let attachments = NoteAttachments::new(attachments.into_iter().collect())?;
-        let metadata_header = NoteMetadataHeader::new(metadata.clone(), &attachments);
+        let metadata_header = NoteMetadataHeader::new(metadata, &attachments);
 
         // Metadata Roundtrip
         let deserialized = NoteMetadata::read_from_bytes(&metadata.to_bytes())?;

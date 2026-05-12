@@ -24,7 +24,6 @@ use miden_protocol::note::{
     Note,
     NoteAssets,
     NoteAttachment,
-    NoteAttachmentContent,
     NoteAttachmentScheme,
     NoteAttachments,
     NoteId,
@@ -218,8 +217,8 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
     let tag3 = NoteTag::default();
 
     let attachment2 =
-        NoteAttachment::new_word(NoteAttachmentScheme::new(28)?, Word::from([2, 3, 4, 5u32]));
-    let attachment3 = NoteAttachment::new_array(
+        NoteAttachment::with_word(NoteAttachmentScheme::new(28)?, Word::from([2, 3, 4, 5u32]));
+    let attachment3 = NoteAttachment::with_words(
         NoteAttachmentScheme::new(29)?,
         vec![Word::from([6, 7, 8, 9u32]), Word::from([10, 11, 12, 13u32])],
     )?;
@@ -318,10 +317,15 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
             exec.output_note::create
             # => [note_idx = 2]
 
-            push.{ATTACHMENT3}
+            # Store attachment3 words to memory at address 1024
+            push.{attachment3_word0} mem_storew_le.1024 dropw
+            push.{attachment3_word1} mem_storew_le.1028 dropw
+
+            push.1024
+            push.{num_attachment3_words}
             push.{attachment_scheme3}
-            # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx]
-            exec.output_note::add_array_attachment
+            # => [attachment_scheme, num_words, ptr, note_idx]
+            exec.output_note::add_attachment_from_memory
             # => []
         end
     ",
@@ -341,7 +345,9 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
         attachment_scheme2 = attachment2.attachment_scheme().as_u16(),
         ATTACHMENT2 = Word::from([2, 3, 4, 5u32]),
         attachment_scheme3 = attachment3.attachment_scheme().as_u16(),
-        ATTACHMENT3 = attachment3.content().to_commitment(),
+        attachment3_word0 = attachment3.content().as_words()[0],
+        attachment3_word1 = attachment3.content().as_words()[1],
+        num_attachment3_words = attachment3.content().num_words(),
     );
 
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script_src)?;
@@ -350,13 +356,10 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
     // --------------------------------------------------------------------------------------------
     // execute the transaction and get the witness
 
-    let NoteAttachmentContent::Array(array) = attachment3.content() else {
-        panic!("expected array attachment");
-    };
+    assert!(attachment3.content().num_words() > 1, "expected multi-word attachment");
 
     let tx_context = TransactionContextBuilder::new(executor_account)
         .tx_script(tx_script)
-        .extend_advice_map(vec![(attachment3.content().to_commitment(), array.to_elements())])
         .extend_expected_output_notes(vec![
             RawOutputNote::Full(expected_output_note_2.clone()),
             RawOutputNote::Full(expected_output_note_3.clone()),

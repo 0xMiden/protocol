@@ -22,5 +22,8 @@ pub const MAX_ATTACHMENT_SCHEME=65534
 #! The maximum number of words in an attachment.
 pub const MAX_ATTACHMENT_WORDS=256
 
+#! The maximum total number of words across all attachments in a note.
+pub const MAX_ATTACHMENT_TOTAL_WORDS=512
+
 #! The reserved value to signal a `None` note attachment scheme.
 pub const ATTACHMENT_SCHEME_NONE = 1

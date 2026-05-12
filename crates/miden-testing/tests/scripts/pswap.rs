@@ -5,14 +5,7 @@ use miden_protocol::account::{Account, AccountId, AccountStorageMode, AccountVau
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
 use miden_protocol::errors::MasmError;
-use miden_protocol::note::{
-    Note,
-    NoteAttachment,
-    NoteAttachmentContent,
-    NoteAttachmentScheme,
-    NoteAttachments,
-    NoteType,
-};
+use miden_protocol::note::{Note, NoteAttachment, NoteAttachmentScheme, NoteAttachments, NoteType};
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, ONE, Word, ZERO};
 use miden_standards::account::wallets::BasicWallet;
@@ -41,10 +34,8 @@ const BASIC_AUTH: Auth = Auth::BasicAuth {
 /// Extracts the first attachment's word content from a `NoteAttachments`.
 fn first_attachment_word(attachments: &NoteAttachments) -> Word {
     let content = attachments.get(0).expect("expected at least one attachment").content();
-    match content {
-        NoteAttachmentContent::Word(w) => *w,
-        NoteAttachmentContent::Array(_) => panic!("expected Word attachment, got Array"),
-    }
+    assert_eq!(content.num_words(), 1, "expected single word attachment");
+    content.as_words()[0]
 }
 
 /// Builds a PswapNote, registers it on the builder as an output note, and returns
@@ -253,7 +244,7 @@ async fn pswap_note_alice_reconstructs_and_consumes_p2id() -> anyhow::Result<()>
         ZERO,
     ]);
     let remainder_attachment =
-        NoteAttachment::new_word(NoteAttachmentScheme::none(), remainder_attachment_word);
+        NoteAttachment::with_word(NoteAttachmentScheme::none(), remainder_attachment_word);
     let reconstructed_remainder: Note = PswapNote::builder()
         .sender(bob.id())
         .storage(remainder_storage)

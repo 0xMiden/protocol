@@ -536,7 +536,7 @@ impl PswapNote {
             ZERO,
             ZERO,
         ]);
-        Ok(NoteAttachment::new_word(NoteAttachmentScheme::none(), word))
+        Ok(NoteAttachment::with_word(NoteAttachmentScheme::none(), word))
     }
 
     /// Creates a [`NoteAttachment`] for a remainder PSWAP note.
@@ -552,7 +552,7 @@ impl PswapNote {
             ZERO,
             ZERO,
         ]);
-        Ok(NoteAttachment::new_word(NoteAttachmentScheme::none(), word))
+        Ok(NoteAttachment::with_word(NoteAttachmentScheme::none(), word))
     }
 
     /// Builds a payback note (P2ID) that delivers the filled assets to the swap creator.

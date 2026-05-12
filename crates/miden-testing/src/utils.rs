@@ -202,7 +202,7 @@ where
 }
 
 /// Returns the code for a note that creates all notes in `output_notes`, along with an
-/// advice map containing the elements for any array attachments keyed by their commitment.
+/// advice map containing the elements for any attachments keyed by their commitment.
 fn note_script_that_creates_notes<'note>(
     sender_id: AccountId,
     output_notes: impl Iterator<Item = &'note Note>,

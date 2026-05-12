@@ -33,7 +33,6 @@ use crate::block::BlockNumber;
 use crate::note::{
     NoteAssets,
     NoteAttachment,
-    NoteAttachmentArray,
     NoteAttachmentScheme,
     NoteAttachments,
     NoteTag,
@@ -661,16 +660,18 @@ pub enum NoteError {
     InvalidNoteStorageLength { expected: usize, actual: usize },
     #[error("note tag requires a public note but the note is of type {0}")]
     PublicNoteRequired(NoteType),
+    #[error("note attachment content must have at least one word")]
+    NoteAttachmentContentEmpty,
     #[error(
-        "note attachment array must have at least {min} words, got {0}",
-        min = NoteAttachmentArray::MIN_NUM_WORDS
-    )]
-    NoteAttachmentArrayTooFewWords(usize),
-    #[error(
-        "note attachment array contains {0} words, but the maximum is {max} words",
+        "note attachment content contains {0} words, but the maximum is {max} words",
         max = NoteAttachment::MAX_NUM_WORDS
     )]
-    NoteAttachmentArrayTooManyWords(usize),
+    NoteAttachmentContentTooManyWords(usize),
+    #[error(
+        "note attachments contain a total of {0} words, but the maximum allowed is {max} words",
+        max = NoteAttachments::MAX_NUM_WORDS
+    )]
+    NoteAttachmentsTooManyWords(usize),
     #[error(
         "attachment size {0} exceeds maximum {max}",
         max = NoteAttachment::MAX_NUM_WORDS

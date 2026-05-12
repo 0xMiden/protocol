@@ -1,13 +1,7 @@
 use miden_protocol::Word;
 use miden_protocol::account::AccountId;
 use miden_protocol::errors::{AccountIdError, NoteError};
-use miden_protocol::note::{
-    NoteAttachment,
-    NoteAttachmentContent,
-    NoteAttachmentScheme,
-    NoteAttachments,
-    NoteType,
-};
+use miden_protocol::note::{NoteAttachment, NoteAttachmentScheme, NoteAttachments, NoteType};
 
 use crate::note::{NoteExecutionHint, StandardNoteAttachment};
 
@@ -16,7 +10,7 @@ use crate::note::{NoteExecutionHint, StandardNoteAttachment};
 
 /// A [`NoteAttachment`] for notes targeted at network accounts.
 ///
-/// It can be encoded to and from a [`NoteAttachmentContent::Word`] with the following layout:
+/// It can be encoded to and from a single-word attachment content with the following layout:
 ///
 /// ```text
 /// - 0th felt: [target_id_suffix (56 bits) | 8 zero bits]
@@ -81,7 +75,7 @@ impl From<NetworkAccountTarget> for NoteAttachment {
         word[1] = network_attachment.target_id.prefix().as_felt();
         word[2] = network_attachment.exec_hint.into();
 
-        NoteAttachment::new_word(NetworkAccountTarget::ATTACHMENT_SCHEME, word)
+        NoteAttachment::with_word(NetworkAccountTarget::ATTACHMENT_SCHEME, word)
     }
 }
 
@@ -108,24 +102,25 @@ impl TryFrom<&NoteAttachment> for NetworkAccountTarget {
             ));
         }
 
-        match attachment.content() {
-            NoteAttachmentContent::Word(word) => {
-                let id_suffix = word[0];
-                let id_prefix = word[1];
-                let exec_hint = word[2];
-
-                let target_id = AccountId::try_from_elements(id_suffix, id_prefix)
-                    .map_err(NetworkAccountTargetError::DecodeTargetId)?;
-
-                let exec_hint = NoteExecutionHint::try_from(exec_hint.as_canonical_u64())
-                    .map_err(NetworkAccountTargetError::DecodeExecutionHint)?;
-
-                NetworkAccountTarget::new(target_id, exec_hint)
-            },
-            _ => Err(NetworkAccountTargetError::AttachmentContentNotWord(
+        let words = attachment.content().as_words();
+        if words.len() != 1 {
+            return Err(NetworkAccountTargetError::AttachmentContentNumWordsMismatch(
                 attachment.content().num_words(),
-            )),
+            ));
         }
+        let word = words[0];
+
+        let id_suffix = word[0];
+        let id_prefix = word[1];
+        let exec_hint = word[2];
+
+        let target_id = AccountId::try_from_elements(id_suffix, id_prefix)
+            .map_err(NetworkAccountTargetError::DecodeTargetId)?;
+
+        let exec_hint = NoteExecutionHint::try_from(exec_hint.as_canonical_u64())
+            .map_err(NetworkAccountTargetError::DecodeExecutionHint)?;
+
+        NetworkAccountTarget::new(target_id, exec_hint)
     }
 }
 
@@ -143,8 +138,8 @@ pub enum NetworkAccountTargetError {
         expected = NetworkAccountTarget::ATTACHMENT_SCHEME
     )]
     AttachmentSchemeMismatch(NoteAttachmentScheme),
-    #[error("attachment content is not a Word (num_words={0}, expected 1)")]
-    AttachmentContentNotWord(u16),
+    #[error("network account target expects attachment content with one word, got {0}")]
+    AttachmentContentNumWordsMismatch(u16),
     #[error("failed to decode target account ID")]
     DecodeTargetId(#[source] AccountIdError),
     #[error("failed to decode execution hint")]

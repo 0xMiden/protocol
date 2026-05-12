@@ -17,7 +17,7 @@ use crate::Hasher;
 /// Holds the strictly required, public information of a note.
 ///
 /// See [NoteId] and [NoteMetadataHeader] for additional details.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NoteHeader {
     note_id: NoteId,
     metadata_header: NoteMetadataHeader,

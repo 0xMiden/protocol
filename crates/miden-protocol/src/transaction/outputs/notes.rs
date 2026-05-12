@@ -361,7 +361,7 @@ pub type OutputNotes = OutputNoteCollection<OutputNote>;
 pub enum OutputNote {
     /// A public note with full details, size-validated.
     Public(PublicOutputNote),
-    /// A private note header (for private notes).
+    /// A private note with a header and attachments.
     Private(PrivateOutputNote),
 }
 

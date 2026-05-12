@@ -1,3 +1,6 @@
+#[cfg(test)]
+mod tests;
+
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
@@ -30,12 +33,6 @@ use crate::{Felt, Hasher, Word};
 ///   the note is private, nor is a side-channel available. The note attachment can encode those
 ///   details.
 ///
-/// These use cases require different amounts of data, e.g. an account ID takes up just two felts
-/// while the details of an encrypted note require many felts. To accommodate these cases, both a
-/// computationally efficient [`NoteAttachmentContent::Word`] as well as a more flexible
-/// [`NoteAttachmentContent::Array`] variant are available. See the type's docs for more
-/// details.
-///
 /// Next to the content, a note attachment can optionally specify a [`NoteAttachmentScheme`]. This
 /// allows a note attachment to describe itself. For example, a network account target attachment
 /// can be identified by a standardized type. For cases when the attachment scheme is known from
@@ -64,28 +61,26 @@ impl NoteAttachment {
         Self { attachment_scheme, content }
     }
 
-    /// Creates a new note attachment with content [`NoteAttachmentContent::Word`] from the provided
-    /// word.
-    pub fn new_word(attachment_scheme: NoteAttachmentScheme, word: Word) -> Self {
+    /// Creates a new note attachment from a single word.
+    pub fn with_word(attachment_scheme: NoteAttachmentScheme, word: Word) -> Self {
         Self {
             attachment_scheme,
-            content: NoteAttachmentContent::new_word(word),
+            content: NoteAttachmentContent::new(vec![word]).expect("single word is always valid"),
         }
     }
 
-    /// Creates a new note attachment with content [`NoteAttachmentContent::Array`] from the
-    /// provided words.
+    /// Creates a new note attachment from the provided words.
     ///
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The number of words is less than [`NoteAttachmentArray::MIN_NUM_WORDS`].
+    /// - `words` is empty.
     /// - The number of words exceeds [`NoteAttachment::MAX_NUM_WORDS`].
-    pub fn new_array(
+    pub fn with_words(
         attachment_scheme: NoteAttachmentScheme,
         words: Vec<Word>,
     ) -> Result<Self, NoteError> {
-        NoteAttachmentContent::new_array(words).map(|content| Self { attachment_scheme, content })
+        NoteAttachmentContent::new(words).map(|content| Self { attachment_scheme, content })
     }
 
     // ACCESSORS
@@ -106,10 +101,17 @@ impl NoteAttachment {
         self.content().to_commitment()
     }
 
-    /// Returns the size of this attachment in words.
-    ///
-    /// - `1` indicates a single word attachment ([`NoteAttachmentContent::Word`]).
-    /// - `> 1` indicates an array attachment ([`NoteAttachmentContent::Array`]).
+    /// Returns the raw elements of this attachment content.
+    pub fn as_elements(&self) -> &[Felt] {
+        self.content.as_elements()
+    }
+
+    /// Returns the raw elements of this attachment content.
+    pub fn to_elements(&self) -> Vec<Felt> {
+        self.content().to_elements()
+    }
+
+    /// Returns the size of this attachment in words (1 to [`Self::MAX_NUM_WORDS`]).
     pub fn num_words(&self) -> u16 {
         self.content.num_words()
     }
@@ -140,62 +142,56 @@ impl Deserializable for NoteAttachment {
 
 /// The content of a [`NoteAttachment`].
 ///
-/// When a single [`Word`] has sufficient space, [`NoteAttachmentContent::Word`] should be used.
-///
-/// If the space of a [`Word`] is insufficient, the more flexible
-/// [`NoteAttachmentContent::Array`] variant can be used. It contains a set of field elements
-/// where only their sequential hash is encoded into the [`NoteMetadata`](super::NoteMetadata).
+/// Contains between 1 and [`NoteAttachment::MAX_NUM_WORDS`] words of data. The commitment is
+/// the sequential hash over the flattened field elements and is cached at construction time.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum NoteAttachmentContent {
-    /// A note attachment consisting of a single [`Word`].
-    Word(Word),
-
-    /// A note attachment consisting of the commitment to a set of felts.
-    Array(NoteAttachmentArray),
+pub struct NoteAttachmentContent {
+    words: Vec<Word>,
+    commitment: Word,
 }
 
 impl NoteAttachmentContent {
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
-    /// Creates a new [`NoteAttachmentContent::Word`] from the provided word.
-    pub fn new_word(word: Word) -> Self {
-        Self::Word(word)
-    }
-
-    /// Creates a new [`NoteAttachmentContent::Array`] from the provided words.
+    /// Creates a new [`NoteAttachmentContent`] from the provided words.
     ///
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The number of words is less than [`NoteAttachmentArray::MIN_NUM_WORDS`].
+    /// - `words` is empty.
     /// - The number of words exceeds [`NoteAttachment::MAX_NUM_WORDS`].
-    pub fn new_array(words: Vec<Word>) -> Result<Self, NoteError> {
-        NoteAttachmentArray::new(words).map(Self::from)
+    pub fn new(words: Vec<Word>) -> Result<Self, NoteError> {
+        if words.is_empty() {
+            return Err(NoteError::NoteAttachmentContentEmpty);
+        }
+
+        if words.len() > NoteAttachment::MAX_NUM_WORDS as usize {
+            return Err(NoteError::NoteAttachmentContentTooManyWords(words.len()));
+        }
+
+        let elements = Word::words_as_elements(&words).to_vec();
+        let commitment = Hasher::hash_elements(&elements);
+
+        Ok(Self { words, commitment })
     }
 
     // ACCESSORS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns `true` if the content is `Word`, `false` otherwise.
-    pub fn is_word(&self) -> bool {
-        matches!(self, NoteAttachmentContent::Word(_))
-    }
-
-    /// Returns `true` if the content is `Array`, `false` otherwise.
-    pub fn is_array(&self) -> bool {
-        matches!(self, NoteAttachmentContent::Array(_))
+    /// Returns a reference to the words in this attachment content.
+    pub fn as_words(&self) -> &[Word] {
+        &self.words
     }
 
     /// Returns the size of this attachment content in words.
-    ///
-    /// - `1` for [`NoteAttachmentContent::Word`].
-    /// - `> 1` for [`NoteAttachmentContent::Array`].
     pub fn num_words(&self) -> u16 {
-        match self {
-            NoteAttachmentContent::Word(_) => 1,
-            NoteAttachmentContent::Array(array) => array.num_words(),
-        }
+        u16::try_from(self.words.len()).expect("num words should fit in u16")
+    }
+
+    /// Returns the raw elements of this attachment content.
+    pub fn as_elements(&self) -> &[Felt] {
+        Word::words_as_elements(&self.words)
     }
 
     /// Returns the raw elements of this attachment content.
@@ -216,25 +212,11 @@ impl Serializable for NoteAttachmentContent {
             u8::try_from(self.num_words().checked_sub(1).expect("num_words should be at least 1"))
                 .expect("num_words - 1 should fit in u8");
         num_words_minus_1.write_into(target);
-
-        match self {
-            NoteAttachmentContent::Word(word) => {
-                word.write_into(target);
-            },
-            NoteAttachmentContent::Array(array) => {
-                target.write_many(array.as_words());
-            },
-        }
+        target.write_many(self.as_words());
     }
 
     fn get_size_hint(&self) -> usize {
-        let discriminant_size = core::mem::size_of::<u8>();
-        match self {
-            NoteAttachmentContent::Word(word) => discriminant_size + word.get_size_hint(),
-            NoteAttachmentContent::Array(array) => {
-                discriminant_size + usize::from(array.num_words()) * Word::empty().get_size_hint()
-            },
-        }
+        core::mem::size_of::<u8>() + usize::from(self.num_words()) * Word::empty().get_size_hint()
     }
 }
 
@@ -244,21 +226,9 @@ impl Deserializable for NoteAttachmentContent {
         let num_words_minus_1 = u8::read_from(source)?;
         let num_words = u16::from(num_words_minus_1) + 1;
 
-        match num_words {
-            0 => Err(DeserializationError::InvalidValue(
-                "attachment content num_words must be > 0".into(),
-            )),
-            1 => {
-                let word = Word::read_from(source)?;
-                Ok(NoteAttachmentContent::Word(word))
-            },
-            _ => {
-                let words: Vec<Word> =
-                    source.read_many_iter(num_words as usize)?.collect::<Result<_, _>>()?;
-                Self::new_array(words)
-                    .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
-            },
-        }
+        let words: Vec<Word> =
+            source.read_many_iter(num_words as usize)?.collect::<Result<_, _>>()?;
+        Self::new(words).map_err(|err| DeserializationError::InvalidValue(err.to_string()))
     }
 }
 
@@ -266,108 +236,11 @@ impl SequentialCommit for NoteAttachmentContent {
     type Commitment = Word;
 
     fn to_elements(&self) -> Vec<Felt> {
-        match self {
-            NoteAttachmentContent::Word(word) => word.as_elements().to_vec(),
-            NoteAttachmentContent::Array(array) => array.to_elements(),
-        }
-    }
-
-    fn to_commitment(&self) -> Self::Commitment {
-        match self {
-            NoteAttachmentContent::Word(word) => Hasher::hash_elements(word.as_elements()),
-            NoteAttachmentContent::Array(array) => array.commitment(),
-        }
-    }
-}
-
-// NOTE ATTACHMENT ARRAY
-// ================================================================================================
-
-/// The type contained in [`NoteAttachmentContent::Array`] that commits to a set of words.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct NoteAttachmentArray {
-    words: Vec<Word>,
-    commitment: Word,
-}
-
-impl NoteAttachmentArray {
-    // CONSTANTS
-    // --------------------------------------------------------------------------------------------
-
-    /// The minimum number of words in a note attachment array.
-    ///
-    /// Array attachments must contain at least 2 words to distinguish them from word attachments.
-    pub const MIN_NUM_WORDS: u8 = 2;
-
-    // CONSTRUCTORS
-    // --------------------------------------------------------------------------------------------
-
-    /// Creates a new [`NoteAttachmentArray`] from the provided words.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - The number of words is less than [`Self::MIN_NUM_WORDS`].
-    /// - The number of words exceeds [`NoteAttachment::MAX_NUM_WORDS`].
-    pub fn new(words: Vec<Word>) -> Result<Self, NoteError> {
-        if words.len() < Self::MIN_NUM_WORDS as usize {
-            return Err(NoteError::NoteAttachmentArrayTooFewWords(words.len()));
-        }
-
-        if words.len() > NoteAttachment::MAX_NUM_WORDS as usize {
-            return Err(NoteError::NoteAttachmentArrayTooManyWords(words.len()));
-        }
-
-        let elements: Vec<Felt> = words.iter().flat_map(Word::as_elements).copied().collect();
-        let commitment = Hasher::hash_elements(&elements);
-        Ok(Self { words, commitment })
-    }
-
-    // ACCESSORS
-    // --------------------------------------------------------------------------------------------
-
-    /// Returns a reference to the words this note attachment commits to.
-    pub fn as_words(&self) -> &[Word] {
-        &self.words
-    }
-
-    /// Returns an iterator over the elements this note attachment commits to.
-    pub fn as_elements(&self) -> impl Iterator<Item = &Felt> {
-        self.words.iter().flat_map(Word::as_elements)
-    }
-
-    /// Returns the elements this note attachment commits to.
-    pub fn to_elements(&self) -> Vec<Felt> {
-        <Self as SequentialCommit>::to_elements(self)
-    }
-
-    /// Returns the number of words in this note attachment array.
-    pub fn num_words(&self) -> u16 {
-        // SAFETY: constructor checks that num_words is less than or equal to 256
-        u16::try_from(self.words.len()).expect("num words should fit in u16")
-    }
-
-    /// Returns the commitment over the contained words.
-    pub fn commitment(&self) -> Word {
-        self.commitment
-    }
-}
-
-impl SequentialCommit for NoteAttachmentArray {
-    type Commitment = Word;
-
-    fn to_elements(&self) -> Vec<Felt> {
-        self.as_elements().copied().collect()
+        Word::words_as_elements(&self.words).to_vec()
     }
 
     fn to_commitment(&self) -> Self::Commitment {
         self.commitment
-    }
-}
-
-impl From<NoteAttachmentArray> for NoteAttachmentContent {
-    fn from(array: NoteAttachmentArray) -> Self {
-        NoteAttachmentContent::Array(array)
     }
 }
 
@@ -637,7 +510,7 @@ impl NoteAttachments {
             .sum::<usize>();
 
         if total_num_words > Self::MAX_NUM_WORDS as usize {
-            return Err(NoteError::NoteAttachmentArrayTooManyWords(total_num_words));
+            return Err(NoteError::NoteAttachmentsTooManyWords(total_num_words));
         }
 
         Ok(Self { attachments })
@@ -752,178 +625,5 @@ impl Deserializable for NoteAttachments {
             .read_many_iter::<NoteAttachment>(num_attachments)?
             .collect::<Result<Vec<_>, _>>()?;
         Self::new(attachments).map_err(|err| DeserializationError::InvalidValue(err.to_string()))
-    }
-}
-
-// TESTS
-// ================================================================================================
-
-#[cfg(test)]
-mod tests {
-    use assert_matches::assert_matches;
-
-    use super::*;
-
-    #[rstest::rstest]
-    #[case::attachment_word(NoteAttachment::new_word(NoteAttachmentScheme::new(1)?, Word::from([3, 4, 5, 6u32])))]
-    #[case::attachment_array(NoteAttachment::new_array(
-        NoteAttachmentScheme::MAX,
-        vec![Word::from([1, 1, 1, 1u32]); 2],
-    )?)]
-    #[test]
-    fn note_attachment_serde(#[case] attachment: NoteAttachment) -> anyhow::Result<()> {
-        assert_eq!(attachment, NoteAttachment::read_from_bytes(&attachment.to_bytes())?);
-        Ok(())
-    }
-
-    #[test]
-    fn note_attachment_array_fails_on_too_many_words() -> anyhow::Result<()> {
-        let too_many_words = NoteAttachment::MAX_NUM_WORDS as usize + 1;
-        let words = vec![Word::from([1, 1, 1, 1u32]); too_many_words];
-        let err = NoteAttachmentArray::new(words).unwrap_err();
-
-        assert_matches!(err, NoteError::NoteAttachmentArrayTooManyWords(len) => {
-            len == too_many_words
-        });
-
-        Ok(())
-    }
-
-    #[test]
-    fn note_attachment_array_fails_on_too_few_words() {
-        let words = vec![Word::from([1, 1, 1, 1u32]); 1];
-        let err = NoteAttachmentArray::new(words).unwrap_err();
-        assert_matches!(err, NoteError::NoteAttachmentArrayTooFewWords(1));
-    }
-
-    #[test]
-    fn note_attachment_scheme_max_is_valid() {
-        let scheme = NoteAttachmentScheme::MAX;
-        assert_eq!(scheme.as_u16(), 65534);
-    }
-
-    #[test]
-    fn note_attachment_scheme_exceeding_max_fails() {
-        let err = NoteAttachmentScheme::new(u16::MAX).unwrap_err();
-        assert_matches!(err, NoteError::NoteAttachmentSchemeExceeded(_));
-    }
-
-    #[test]
-    fn note_attachment_header_serde() -> anyhow::Result<()> {
-        let header = NoteAttachmentHeader::new(NoteAttachmentScheme::new(42)?);
-        let deserialized = NoteAttachmentHeader::read_from_bytes(&header.to_bytes())?;
-        assert_eq!(header, deserialized);
-        Ok(())
-    }
-
-    #[test]
-    fn note_attachment_header_absent() {
-        let header = NoteAttachmentHeader::absent();
-        assert!(header.is_absent());
-        assert!(header.scheme().is_none());
-    }
-
-    #[test]
-    fn note_attachments_up_to_max() -> anyhow::Result<()> {
-        let scheme = NoteAttachmentScheme::new(1)?;
-        let attachment = NoteAttachment::new_word(scheme, Word::from([1, 2, 3, 4u32]));
-        let attachments = NoteAttachments::new(vec![attachment; NoteAttachments::MAX_COUNT])?;
-        assert_eq!(attachments.num_attachments() as usize, NoteAttachments::MAX_COUNT);
-
-        // Exceeding MAX_COUNT should fail.
-        let err =
-            NoteAttachments::new(vec![
-                NoteAttachment::new_word(scheme, Word::from([1, 2, 3, 4u32]));
-                NoteAttachments::MAX_COUNT + 1
-            ])
-            .unwrap_err();
-        assert_matches!(err, NoteError::TooManyAttachments(5));
-
-        Ok(())
-    }
-
-    #[test]
-    fn note_attachments_serde() -> anyhow::Result<()> {
-        let attachments = NoteAttachments::new(vec![
-            NoteAttachment::new_word(NoteAttachmentScheme::new(1)?, Word::from([1, 2, 3, 4u32])),
-            NoteAttachment::new_array(
-                NoteAttachmentScheme::new(100)?,
-                vec![Word::from([1, 1, 1, 1u32]); 2],
-            )?,
-        ])?;
-
-        let deserialized = NoteAttachments::read_from_bytes(&attachments.to_bytes())?;
-        assert_eq!(attachments, deserialized);
-
-        Ok(())
-    }
-
-    #[test]
-    fn note_attachments_commitment_empty() {
-        let attachments = NoteAttachments::empty();
-        assert_eq!(attachments.to_commitment(), Word::empty());
-    }
-
-    #[test]
-    fn note_attachments_commitment_single_word() -> anyhow::Result<()> {
-        let word = Word::from([10, 20, 30, 40u32]);
-        let attachments = NoteAttachments::new(vec![NoteAttachment::new_word(
-            NoteAttachmentScheme::new(1)?,
-            word,
-        )])?;
-        // Single word attachment: the attachment commitment is hash(word), so the overall
-        // attachments commitment is hash(hash(word)).
-        let word_commitment = Hasher::hash_elements(word.as_elements());
-        assert_eq!(
-            attachments.to_commitment(),
-            Hasher::hash_elements(word_commitment.as_elements())
-        );
-
-        Ok(())
-    }
-
-    #[test]
-    fn note_attachments_to_headers() -> anyhow::Result<()> {
-        let attachments = NoteAttachments::new(vec![
-            NoteAttachment::new_word(NoteAttachmentScheme::new(42)?, Word::from([1, 2, 3, 4u32])),
-            NoteAttachment::new_array(
-                NoteAttachmentScheme::new(100)?,
-                vec![Word::from([1, 1, 1, 1u32]); 2],
-            )?,
-        ])?;
-
-        let headers = attachments.to_headers();
-        assert_eq!(headers[0].scheme(), Some(NoteAttachmentScheme::new(42)?));
-        assert_eq!(headers[1].scheme(), Some(NoteAttachmentScheme::new(100)?));
-        assert!(headers[2].is_absent());
-        assert!(headers[3].is_absent());
-
-        Ok(())
-    }
-
-    #[test]
-    fn note_attachments_into_vec() -> anyhow::Result<()> {
-        let word_att =
-            NoteAttachment::new_word(NoteAttachmentScheme::new(1)?, Word::from([1, 2, 3, 4u32]));
-        let attachments = NoteAttachments::new(vec![word_att.clone()])?;
-        let vec = attachments.into_vec();
-        assert_eq!(vec, vec![word_att]);
-
-        Ok(())
-    }
-
-    #[test]
-    fn note_attachment_num_words() {
-        // Word => 1
-        let word = NoteAttachmentContent::new_word(Word::from([1, 2, 3, 4u32]));
-        assert_eq!(word.num_words(), 1);
-
-        // Array with 2 words
-        let array = NoteAttachmentContent::new_array(vec![Word::from([1, 1, 1, 1u32]); 2]).unwrap();
-        assert_eq!(array.num_words(), 2);
-
-        // Array with 3 words
-        let array = NoteAttachmentContent::new_array(vec![Word::from([1, 1, 1, 1u32]); 3]).unwrap();
-        assert_eq!(array.num_words(), 3);
     }
 }

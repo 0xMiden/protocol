@@ -269,36 +269,29 @@ impl AccountComponentInterface {
                 },
             }
 
-            let attachments = partial_note.attachments();
-            // Only support one attachment per note to keep it simple.
-            if attachments.num_attachments() > 1 {
-                return Err(AccountInterfaceError::MultipleAttachmentsUnsupported);
-            }
+            for attachment in partial_note.attachments().iter() {
+                let attachment_scheme = attachment.attachment_scheme().as_u16();
+                let attachment_commitment = attachment.content().to_commitment();
 
-            match attachments.iter().next() {
-                Some(attachment) => {
-                    let attachment_scheme = attachment.attachment_scheme().as_u16() as u32;
-                    let attachment_commitment = attachment.content().to_commitment();
-
-                    body.push_str(&format!(
-                        "
+                body.push_str(&format!(
+                    "
+                dup
                 push.{attachment_commitment}
                 push.{attachment_scheme}
-                # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx, pad(16)]
+                # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx, note_idx, pad(16)]
                 exec.::miden::protocol::output_note::add_attachment
-                # => [pad(16)]
+                # => [note_idx, pad(16)]
             ",
-                    ));
-                },
-                None => {
-                    body.push_str(
-                        "
+                ));
+            }
+
+            body.push_str(
+                "
+                # drop the note idx
                 drop
                 # => [pad(16)]
             ",
-                    );
-                },
-            }
+            );
         }
 
         Ok(body)
