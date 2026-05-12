@@ -10,9 +10,10 @@
 //! - **receive** — fired by the protocol's `on_before_asset_added_to_account` callback when the
 //!   issuing faucet's asset is added to an account vault (transfer "to" side)
 //!
-//! The manager owns one `active_*_policy` slot per kind plus an `allowed_*_policies` map per kind
-//! and dispatches via `dynexec` to the active policy procedure. Send and receive callbacks are
-//! also wired into the protocol's asset-callback dispatch.
+//! The manager owns an `active_*_policy` slot per mint / burn kind (and dispatches them via
+//! `dynexec`) plus an `allowed_*_policies` map per kind for set-time validation. The active roots
+//! for send and receive policies reside directly in the protocol-reserved
+//! callback slots so the kernel dispatches to them via `call`.
 //!
 //! Storage-free policy components (e.g. [`MintAllowAll`], [`BurnOwnerOnly`],
 //! [`TransferAllowAll`]) install a specific policy procedure on the account so that the
@@ -33,7 +34,13 @@ pub mod transfer;
 pub use burn::{BurnAllowAll, BurnOwnerOnly, BurnPolicyConfig};
 pub use manager::{PolicyConfig, TokenPolicyManager};
 pub use mint::{MintAllowAll, MintOwnerOnly, MintPolicyConfig};
-pub use transfer::{TransferAllowAll, TransferIfNotBlocklisted, TransferPolicy};
+pub use transfer::{
+    BasicBlocklist,
+    Blocklist,
+    OwnerManagedBlocklist,
+    TransferAllowAll,
+    TransferPolicy,
+};
 
 // POLICY AUTHORITY
 // ================================================================================================

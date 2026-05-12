@@ -9,6 +9,12 @@ use miden::standards::access::ownable2step
 # - 0: auth_controlled: no Ownable2Step dependency.
 # - 1: owner_controlled: requires Ownable2Step component (`ownable2step::assert_sender_is_owner`)
 #   for `set_*_policy`.
+#
+# Mint and burn policies are dispatched internally via `dynexec` from `execute_mint_policy` /
+# `execute_burn_policy`. Send and receive policies are flattened: the active policy root is
+# written directly into the protocol-reserved callback slots
+# (`miden::protocol::faucet::callback::on_before_asset_added_to_account` and
+# `..._to_note`) and the kernel invokes them via `call`.
 
 # CONSTANTS
 # ================================================================================================
@@ -19,11 +25,13 @@ const ACTIVE_MINT_POLICY_PROC_ROOT_SLOT=word("miden::standards::faucets::policie
 # Active burn policy root slot. Layout: [PROC_ROOT]
 const ACTIVE_BURN_POLICY_PROC_ROOT_SLOT=word("miden::standards::faucets::policies::policy_manager::active_burn_policy_proc_root")
 
-# Active send policy root slot. Layout: [PROC_ROOT]
-const ACTIVE_SEND_POLICY_PROC_ROOT_SLOT=word("miden::standards::faucets::policies::policy_manager::active_send_policy_proc_root")
+# Protocol-reserved callback slot holding the active receive policy proc root. Written by
+# `set_receive_policy`, read by the kernel when dispatching `on_before_asset_added_to_account`.
+const ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_SLOT=word("miden::protocol::faucet::callback::on_before_asset_added_to_account")
 
-# Active receive policy root slot. Layout: [PROC_ROOT]
-const ACTIVE_RECEIVE_POLICY_PROC_ROOT_SLOT=word("miden::standards::faucets::policies::policy_manager::active_receive_policy_proc_root")
+# Protocol-reserved callback slot holding the active send policy proc root. Written by
+# `set_send_policy`, read by the kernel when dispatching `on_before_asset_added_to_note`.
+const ON_BEFORE_ASSET_ADDED_TO_NOTE_SLOT=word("miden::protocol::faucet::callback::on_before_asset_added_to_note")
 
 # Allowlist map slot for mint policy roots. Map entries: [PROC_ROOT] -> [1, 0, 0, 0]
 const ALLOWED_MINT_POLICY_PROC_ROOTS_SLOT=word("miden::standards::faucets::policies::policy_manager::allowed_mint_policy_proc_roots")
@@ -222,17 +230,6 @@ end
 # SEND INTERNAL PROCEDURES
 # ================================================================================================
 
-#! Reads active send policy root from storage.
-#!
-#! Inputs:  []
-#! Outputs: [SEND_POLICY_ROOT]
-#!
-#! Invocation: exec
-proc get_send_policy_root
-    push.ACTIVE_SEND_POLICY_PROC_ROOT_SLOT[0..2] exec.active_account::get_item
-    # => [SEND_POLICY_ROOT]
-end
-
 #! Validates send policy root before use.
 #!
 #! Inputs:  [SEND_POLICY_ROOT]
@@ -275,17 +272,6 @@ end
 
 # RECEIVE INTERNAL PROCEDURES
 # ================================================================================================
-
-#! Reads active receive policy root from storage.
-#!
-#! Inputs:  []
-#! Outputs: [RECEIVE_POLICY_ROOT]
-#!
-#! Invocation: exec
-proc get_receive_policy_root
-    push.ACTIVE_RECEIVE_POLICY_PROC_ROOT_SLOT[0..2] exec.active_account::get_item
-    # => [RECEIVE_POLICY_ROOT]
-end
 
 #! Validates receive policy root before use.
 #!
@@ -472,47 +458,21 @@ end
 # SEND PUBLIC INTERFACE
 # ================================================================================================
 
-#! Executes the active send policy by dynamic execution.
-#!
-#! Inputs:  []
-#! Outputs: []
-#!
-#! Panics if:
-#! - send policy root is invalid.
-#! - active send policy predicate fails.
-#!
-#! Invocation: exec
-@locals(4)
-pub proc execute_send_policy
-    exec.get_send_policy_root
-    # => [SEND_POLICY_ROOT]
-
-    exec.assert_existing_send_policy_root
-
-    exec.assert_allowed_send_policy_root
-
-    loc_storew_le.POLICY_PROC_ROOT_PTR dropw
-    # => []
-
-    locaddr.POLICY_PROC_ROOT_PTR
-    # => [policy_root_ptr]
-
-    dynexec
-    # => []
-end
-
-#! Returns active send policy root.
+#! Returns active send policy root (reads the protocol-reserved callback slot).
 #!
 #! Inputs:  [pad(16)]
 #! Outputs: [SEND_POLICY_ROOT, pad(12)]
 #!
 #! Invocation: call
 pub proc get_send_policy
-    exec.get_send_policy_root
+    push.ON_BEFORE_ASSET_ADDED_TO_NOTE_SLOT[0..2] exec.active_account::get_item
     # => [SEND_POLICY_ROOT, pad(12)]
 end
 
-#! Sets active send policy root.
+#! Sets active send policy root by writing directly into the protocol-reserved callback slot
+#! `miden::protocol::faucet::callback::on_before_asset_added_to_note`. The kernel will dispatch
+#! to whatever root is stored there via `call` the next time an asset with the callback flag is
+#! added to an output note.
 #!
 #! Inputs:  [NEW_POLICY_ROOT, pad(12)]
 #! Outputs: [pad(16)]
@@ -534,54 +494,28 @@ pub proc set_send_policy
     exec.assert_allowed_send_policy_root
     # => [NEW_POLICY_ROOT, pad(12)]
 
-    push.ACTIVE_SEND_POLICY_PROC_ROOT_SLOT[0..2] exec.native_account::set_item dropw
+    push.ON_BEFORE_ASSET_ADDED_TO_NOTE_SLOT[0..2] exec.native_account::set_item dropw
     # => [pad(16)]
 end
 
 # RECEIVE PUBLIC INTERFACE
 # ================================================================================================
 
-#! Executes the active receive policy by dynamic execution.
-#!
-#! Inputs:  []
-#! Outputs: []
-#!
-#! Panics if:
-#! - receive policy root is invalid.
-#! - active receive policy predicate fails.
-#!
-#! Invocation: exec
-@locals(4)
-pub proc execute_receive_policy
-    exec.get_receive_policy_root
-    # => [RECEIVE_POLICY_ROOT]
-
-    exec.assert_existing_receive_policy_root
-
-    exec.assert_allowed_receive_policy_root
-
-    loc_storew_le.POLICY_PROC_ROOT_PTR dropw
-    # => []
-
-    locaddr.POLICY_PROC_ROOT_PTR
-    # => [policy_root_ptr]
-
-    dynexec
-    # => []
-end
-
-#! Returns active receive policy root.
+#! Returns active receive policy root (reads the protocol-reserved callback slot).
 #!
 #! Inputs:  [pad(16)]
 #! Outputs: [RECEIVE_POLICY_ROOT, pad(12)]
 #!
 #! Invocation: call
 pub proc get_receive_policy
-    exec.get_receive_policy_root
+    push.ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_SLOT[0..2] exec.active_account::get_item
     # => [RECEIVE_POLICY_ROOT, pad(12)]
 end
 
-#! Sets active receive policy root.
+#! Sets active receive policy root by writing directly into the protocol-reserved callback slot
+#! `miden::protocol::faucet::callback::on_before_asset_added_to_account`. The kernel will
+#! dispatch to whatever root is stored there via `call` the next time an asset with the callback
+#! flag is added to an account vault.
 #!
 #! Inputs:  [NEW_POLICY_ROOT, pad(12)]
 #! Outputs: [pad(16)]
@@ -603,59 +537,6 @@ pub proc set_receive_policy
     exec.assert_allowed_receive_policy_root
     # => [NEW_POLICY_ROOT, pad(12)]
 
-    push.ACTIVE_RECEIVE_POLICY_PROC_ROOT_SLOT[0..2] exec.native_account::set_item dropw
+    push.ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_SLOT[0..2] exec.native_account::set_item dropw
     # => [pad(16)]
-end
-
-# ASSET CALLBACKS
-# ================================================================================================
-
-#! Asset callback invoked when a callbacks-enabled asset is added to an account vault.
-#!
-#! Dispatches to the active receive policy via `execute_receive_policy`. The predicate runs
-#! in the issuing faucet's foreign context — use `native_account::get_id` from within a
-#! predicate to read the asset recipient's account ID.
-#!
-#! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
-#! Outputs: [ASSET_VALUE, pad(12)]
-#!
-#! Where:
-#! - ASSET_KEY is the key word of the asset being added.
-#! - ASSET_VALUE is the value word of the asset being added.
-#!
-#! Panics if:
-#! - active receive policy validation fails.
-#!
-#! Invocation: call
-pub proc on_before_asset_added_to_account
-    exec.execute_receive_policy
-    # => [ASSET_KEY, ASSET_VALUE, pad(8)]
-
-    dropw
-    # => [ASSET_VALUE, pad(8)]
-end
-
-#! Asset callback invoked when a callbacks-enabled asset is added to an output note.
-#!
-#! Dispatches to the active send policy via `execute_send_policy`. Use
-#! `native_account::get_id` from within a predicate to read the note creator's account ID.
-#!
-#! Inputs:  [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
-#! Outputs: [ASSET_VALUE, note_idx, pad(7)]
-#!
-#! Where:
-#! - ASSET_KEY is the key word of the asset being added.
-#! - ASSET_VALUE is the value word of the asset being added.
-#! - note_idx is the index of the output note receiving the asset.
-#!
-#! Panics if:
-#! - active send policy validation fails.
-#!
-#! Invocation: call
-pub proc on_before_asset_added_to_note
-    exec.execute_send_policy
-    # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
-
-    dropw
-    # => [ASSET_VALUE, note_idx, pad(7)]
 end

@@ -14,7 +14,7 @@ use miden_protocol::account::{
     StorageSlot,
     StorageSlotName,
 };
-use miden_protocol::asset::TokenSymbol;
+use miden_protocol::asset::{AssetCallbacks, TokenSymbol};
 use miden_protocol::errors::AccountIdError;
 use miden_standards::account::access::Ownable2Step;
 use miden_standards::account::faucets::{FungibleFaucetError, TokenMetadata};
@@ -367,8 +367,8 @@ impl AggLayerFaucet {
             TokenPolicyManager::policy_authority_slot(),
             TokenPolicyManager::active_mint_policy_slot(),
             TokenPolicyManager::active_burn_policy_slot(),
-            TokenPolicyManager::active_send_policy_slot(),
-            TokenPolicyManager::active_receive_policy_slot(),
+            AssetCallbacks::on_before_asset_added_to_note_slot(),
+            AssetCallbacks::on_before_asset_added_to_account_slot(),
             TokenPolicyManager::allowed_mint_policies_slot(),
             TokenPolicyManager::allowed_burn_policies_slot(),
             TokenPolicyManager::allowed_send_policies_slot(),

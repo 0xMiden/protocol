@@ -1785,12 +1785,12 @@ async fn multiple_mints_in_single_tx_produce_correct_amounts() -> anyhow::Result
     Ok(())
 }
 
-// NetworkFungibleFaucet + TransferIfNotBlocklisted (post-#2879 happy path)
+// NetworkFungibleFaucet + TransferPolicy::Blocklist (post-#2879 happy path)
 // ================================================================================================
 
-/// Builds a network faucet with [`TransferPolicy::IfNotBlocklisted`] on both send and receive,
+/// Builds a network faucet with [`TransferPolicy::Blocklist`] on both send and receive,
 /// so the manager populates the asset-callback slots and callbacks dispatch to the
-/// `if_not_blocklisted` predicate.
+/// basic blocklist predicate.
 fn build_network_faucet_with_blocklist_transfer(
     builder: &mut MockChainBuilder,
     token_symbol: &str,
@@ -1807,8 +1807,8 @@ fn build_network_faucet_with_blocklist_transfer(
     let token_policy_manager = TokenPolicyManager::new(PolicyAuthority::OwnerControlled)
         .with_mint_policy(MintPolicyConfig::OwnerOnly, PolicyRegistration::Active)
         .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)
-        .with_send_policy(TransferPolicy::IfNotBlocklisted, PolicyRegistration::Active)
-        .with_receive_policy(TransferPolicy::IfNotBlocklisted, PolicyRegistration::Active);
+        .with_send_policy(TransferPolicy::Blocklist, PolicyRegistration::Active)
+        .with_receive_policy(TransferPolicy::Blocklist, PolicyRegistration::Active);
 
     let account_builder = AccountBuilder::new(builder.rng_mut().random())
         .storage_mode(AccountStorageMode::Network)
@@ -1822,14 +1822,14 @@ fn build_network_faucet_with_blocklist_transfer(
 }
 
 /// Verifies that the network-faucet mint pattern works when `TokenPolicyManager` installs
-/// asset-callback slots (here via [`TransferPolicy::IfNotBlocklisted`]).
+/// asset-callback slots (here via [`TransferPolicy::Blocklist`]).
 ///
 /// Before the protocol fix in 0xMiden/protocol#2879 the kernel rejected this with
 /// `ERR_FOREIGN_ACCOUNT_CONTEXT_AGAINST_NATIVE_ACCOUNT` because the issuing faucet was also
 /// the native account during the mint-note flow. The fix short-circuits callback dispatch
 /// when the issuer equals the native account, so this test now succeeds.
 #[tokio::test]
-async fn network_faucet_mint_with_if_not_blocklisted() -> anyhow::Result<()> {
+async fn network_faucet_mint_with_blocklist() -> anyhow::Result<()> {
     let max_supply = 1000u64;
     let token_supply = 50u64;
 

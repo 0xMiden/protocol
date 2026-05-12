@@ -1,0 +1,40 @@
+# miden::standards::faucets::policies::transfer::basic_blocklist
+#
+# Basic blocklist transfer policy: rejects transfers whose native account is blocked on the
+# issuing faucet. Delegates the per-account state to the sibling `blocklist` primitive
+# (storage + helpers).
+
+use miden::protocol::native_account
+use miden::standards::faucets::policies::transfer::blocklist
+
+# POLICY PROCEDURES
+# ================================================================================================
+
+#! Transfer policy that rejects transfers whose native account is blocked on the issuing faucet.
+#!
+#! Invoked as the active send or receive policy via `TokenPolicyManager`. Reads the native
+#! account ID (asset recipient when invoked from `on_before_asset_added_to_account`, note
+#! creator when invoked from `on_before_asset_added_to_note`) and asserts it is not blocked
+#! against the issuing faucet's `blocked_accounts` storage.
+#!
+#! The same procedure root is reusable as both send and receive policy because it only
+#! consumes the top eight felts (`ASSET_KEY`, `ASSET_VALUE`) and leaves the rest of the call
+#! frame untouched — any `note_idx` carried in the send signature passes through unchanged.
+#!
+#! Inputs:  [ASSET_KEY, ASSET_VALUE]
+#! Outputs: [ASSET_VALUE]
+#!
+#! Panics if:
+#! - the native account is blocked on the issuing faucet.
+#!
+#! Invocation: call
+pub proc check_policy
+    exec.native_account::get_id
+    # => [account_id_suffix, account_id_prefix, ASSET_KEY, ASSET_VALUE]
+
+    exec.blocklist::assert_not_blocked
+    # => [ASSET_KEY, ASSET_VALUE]
+
+    dropw
+    # => [ASSET_VALUE]
+end

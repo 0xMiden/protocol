@@ -179,24 +179,24 @@ static ALLOW_ALL_TRANSFER_POLICY_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
         .expect("Shipped `allow_all` Transfer Policy library is well-formed")
 });
 
-// Initialize the `if_not_blocklisted` Transfer Policy library only once.
-static IF_NOT_BLOCKLISTED_TRANSFER_POLICY_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+// Initialize the basic blocklist Transfer Policy library only once.
+static BASIC_BLOCKLIST_TRANSFER_POLICY_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     let bytes = include_bytes!(concat!(
         env!("OUT_DIR"),
-        "/assets/account_components/faucets/policies/transfer/if_not_blocklisted.masl"
+        "/assets/account_components/faucets/policies/transfer/basic_blocklist.masl"
     ));
     Library::read_from_bytes(bytes)
-        .expect("Shipped `if_not_blocklisted` Transfer Policy library is well-formed")
+        .expect("Shipped basic blocklist Transfer Policy library is well-formed")
 });
 
-// Initialize the owner-controlled Blocklist admin library only once.
-static BLOCKLIST_OWNER_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+// Initialize the owner-managed Blocklist admin library only once.
+static BLOCKLIST_OWNER_MANAGED_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     let bytes = include_bytes!(concat!(
         env!("OUT_DIR"),
-        "/assets/account_components/faucets/restrictions/blocklist_owner.masl"
+        "/assets/account_components/faucets/policies/transfer/blocklist/owner_managed.masl"
     ));
     Library::read_from_bytes(bytes)
-        .expect("Shipped owner-controlled Blocklist admin library is well-formed")
+        .expect("Shipped owner-managed Blocklist admin library is well-formed")
 });
 
 // METADATA LIBRARIES
@@ -262,14 +262,14 @@ pub fn allow_all_transfer_policy_library() -> Library {
     ALLOW_ALL_TRANSFER_POLICY_LIBRARY.clone()
 }
 
-/// Returns the `if_not_blocklisted` Transfer Policy Library.
-pub fn if_not_blocklisted_transfer_policy_library() -> Library {
-    IF_NOT_BLOCKLISTED_TRANSFER_POLICY_LIBRARY.clone()
+/// Returns the basic blocklist Transfer Policy Library.
+pub fn basic_blocklist_transfer_policy_library() -> Library {
+    BASIC_BLOCKLIST_TRANSFER_POLICY_LIBRARY.clone()
 }
 
-/// Returns the owner-controlled Blocklist admin library.
-pub fn blocklist_owner_library() -> Library {
-    BLOCKLIST_OWNER_LIBRARY.clone()
+/// Returns the owner-managed Blocklist admin library.
+pub fn blocklist_owner_managed_library() -> Library {
+    BLOCKLIST_OWNER_MANAGED_LIBRARY.clone()
 }
 
 /// Returns the Singlesig Library.

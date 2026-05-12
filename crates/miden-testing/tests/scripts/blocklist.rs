@@ -1,7 +1,7 @@
-//! Tests for the [`miden_standards::account::faucets::Blocklist`] storage namespace, the
-//! [`miden_standards::account::faucets::OwnerOnlyBlocklistAdmin`] owner-controlled admin
-//! component, and the [`miden_standards::account::policies::TransferIfNotBlocklisted`]
-//! transfer policy callbacks dispatched by
+//! Tests for the [`miden_standards::account::policies::BasicBlocklist`] transfer policy
+//! component (storage + `check_policy` predicate) and the
+//! [`miden_standards::account::policies::OwnerManagedBlocklist`] owner-controlled admin
+//! component, dispatched directly by the protocol callback slots via
 //! [`miden_standards::account::policies::TokenPolicyManager`].
 
 extern crate alloc;
@@ -25,11 +25,12 @@ use miden_protocol::note::{Note, NoteTag, NoteType};
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
 use miden_standards::account::access::Ownable2Step;
-use miden_standards::account::faucets::{BasicFungibleFaucet, OwnerOnlyBlocklistAdmin};
+use miden_standards::account::faucets::BasicFungibleFaucet;
 use miden_standards::account::metadata::{FungibleTokenMetadataBuilder, TokenName};
 use miden_standards::account::policies::{
     BurnPolicyConfig,
     MintPolicyConfig,
+    OwnerManagedBlocklist,
     PolicyAuthority,
     PolicyRegistration,
     TokenPolicyManager,
@@ -45,11 +46,12 @@ use miden_testing::{
     assert_transaction_executor_error,
 };
 
-const ERR_USER_IS_BLOCKED: MasmError = MasmError::from_static_str("user is blocked");
+const ERR_ACCOUNT_IS_BLOCKED: MasmError = MasmError::from_static_str("account is blocked");
 
-const ERR_USER_ALREADY_BLOCKED: MasmError = MasmError::from_static_str("user is already blocked");
+const ERR_ACCOUNT_ALREADY_BLOCKED: MasmError =
+    MasmError::from_static_str("account is already blocked");
 
-const ERR_USER_NOT_BLOCKED: MasmError = MasmError::from_static_str("user is not blocked");
+const ERR_ACCOUNT_NOT_BLOCKED: MasmError = MasmError::from_static_str("account is not blocked");
 
 // HELPERS
 // ================================================================================================
@@ -63,9 +65,9 @@ fn dummy_owner() -> AccountId {
     )
 }
 
-/// Builds a fungible faucet with [`TransferPolicy::IfNotBlocklisted`] on both send and receive,
-/// plus the [`OwnerOnlyBlocklistAdmin`] component (gated by `Ownable2Step::new(owner_id)`)
-/// so that the owner can invoke `block_user` / `unblock_user` via owner-authored notes.
+/// Builds a fungible faucet with [`TransferPolicy::Blocklist`] on both send and receive,
+/// plus the [`OwnerManagedBlocklist`] component (gated by `Ownable2Step::new(owner_id)`)
+/// so that the owner can invoke `block_account` / `unblock_account` via owner-authored notes.
 fn add_faucet_with_owner_blocklist_transfer(
     builder: &mut MockChainBuilder,
     owner_id: AccountId,
@@ -88,10 +90,10 @@ fn add_faucet_with_owner_blocklist_transfer(
             TokenPolicyManager::new(PolicyAuthority::OwnerControlled)
                 .with_mint_policy(MintPolicyConfig::AllowAll, PolicyRegistration::Active)
                 .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)
-                .with_send_policy(TransferPolicy::IfNotBlocklisted, PolicyRegistration::Active)
-                .with_receive_policy(TransferPolicy::IfNotBlocklisted, PolicyRegistration::Active),
+                .with_send_policy(TransferPolicy::Blocklist, PolicyRegistration::Active)
+                .with_receive_policy(TransferPolicy::Blocklist, PolicyRegistration::Active),
         )
-        .with_component(OwnerOnlyBlocklistAdmin);
+        .with_component(OwnerManagedBlocklist);
 
     builder.add_account_from_builder(
         Auth::BasicAuth {
@@ -108,7 +110,7 @@ fn account_id_felts(account_id: AccountId) -> (Felt, Felt) {
 }
 
 /// Builds an owner-authored note whose script invokes
-/// `blocklist_owner::{block_user|unblock_user}` on the given target account.
+/// `owner_managed::{block_account|unblock_account}` on the given target account.
 fn build_owner_admin_note(
     owner_id: AccountId,
     target_id: AccountId,
@@ -118,7 +120,7 @@ fn build_owner_admin_note(
     let (prefix, suffix) = account_id_felts(target_id);
     let script_code = format!(
         r#"
-        use miden::standards::faucets::restrictions::blocklist_owner
+        use miden::standards::faucets::policies::transfer::blocklist::owner_managed
 
         @note_script
         pub proc main
@@ -126,7 +128,7 @@ fn build_owner_admin_note(
 
             push.{prefix}
             push.{suffix}
-            call.blocklist_owner::{proc}
+            call.owner_managed::{proc}
 
             dropw dropw dropw dropw
         end
@@ -207,7 +209,7 @@ async fn block_receive_asset_fails_when_recipient_blocked() -> anyhow::Result<()
         NoteType::Public,
     )?;
 
-    let block_note = build_owner_admin_note(owner_id, target_account.id(), "block_user", 1)?;
+    let block_note = build_owner_admin_note(owner_id, target_account.id(), "block_account", 1)?;
     builder.add_output_note(RawOutputNote::Full(block_note.clone()));
 
     let mut mock_chain = builder.build()?;
@@ -224,7 +226,7 @@ async fn block_receive_asset_fails_when_recipient_blocked() -> anyhow::Result<()
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_USER_IS_BLOCKED);
+    assert_transaction_executor_error!(result, ERR_ACCOUNT_IS_BLOCKED);
 
     Ok(())
 }
@@ -238,7 +240,7 @@ async fn block_add_asset_to_note_fails_when_sender_blocked() -> anyhow::Result<(
 
     let asset = FungibleAsset::new(faucet.id(), 100)?.with_callbacks(AssetCallbackFlag::Enabled);
 
-    let block_note = build_owner_admin_note(owner_id, target_account.id(), "block_user", 2)?;
+    let block_note = build_owner_admin_note(owner_id, target_account.id(), "block_account", 2)?;
     builder.add_output_note(RawOutputNote::Full(block_note.clone()));
 
     let mut mock_chain = builder.build()?;
@@ -281,7 +283,7 @@ async fn block_add_asset_to_note_fails_when_sender_blocked() -> anyhow::Result<(
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_USER_IS_BLOCKED);
+    assert_transaction_executor_error!(result, ERR_ACCOUNT_IS_BLOCKED);
 
     Ok(())
 }
@@ -303,8 +305,8 @@ async fn block_then_unblock_then_receive_succeeds() -> anyhow::Result<()> {
         NoteType::Public,
     )?;
 
-    let block_note = build_owner_admin_note(owner_id, target_account.id(), "block_user", 3)?;
-    let unblock_note = build_owner_admin_note(owner_id, target_account.id(), "unblock_user", 4)?;
+    let block_note = build_owner_admin_note(owner_id, target_account.id(), "block_account", 3)?;
+    let unblock_note = build_owner_admin_note(owner_id, target_account.id(), "unblock_account", 4)?;
     builder.add_output_note(RawOutputNote::Full(block_note.clone()));
     builder.add_output_note(RawOutputNote::Full(unblock_note.clone()));
 
@@ -333,8 +335,8 @@ async fn block_already_blocked_fails() -> anyhow::Result<()> {
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
     let faucet = add_faucet_with_owner_blocklist_transfer(&mut builder, owner_id)?;
 
-    let block_note_1 = build_owner_admin_note(owner_id, target_account.id(), "block_user", 5)?;
-    let block_note_2 = build_owner_admin_note(owner_id, target_account.id(), "block_user", 6)?;
+    let block_note_1 = build_owner_admin_note(owner_id, target_account.id(), "block_account", 5)?;
+    let block_note_2 = build_owner_admin_note(owner_id, target_account.id(), "block_account", 6)?;
     builder.add_output_note(RawOutputNote::Full(block_note_1.clone()));
     builder.add_output_note(RawOutputNote::Full(block_note_2.clone()));
 
@@ -343,14 +345,14 @@ async fn block_already_blocked_fails() -> anyhow::Result<()> {
 
     consume_admin_note(&mut mock_chain, faucet.id(), &block_note_1).await?;
 
-    // Second block on the same user must fail with ERR_USER_ALREADY_BLOCKED.
+    // Second block on the same user must fail with ERR_ACCOUNT_ALREADY_BLOCKED.
     let result = mock_chain
         .build_tx_context(faucet.id(), &[block_note_2.id()], &[])?
         .build()?
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_USER_ALREADY_BLOCKED);
+    assert_transaction_executor_error!(result, ERR_ACCOUNT_ALREADY_BLOCKED);
 
     Ok(())
 }
@@ -362,7 +364,7 @@ async fn unblock_when_not_blocked_fails() -> anyhow::Result<()> {
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
     let faucet = add_faucet_with_owner_blocklist_transfer(&mut builder, owner_id)?;
 
-    let unblock_note = build_owner_admin_note(owner_id, target_account.id(), "unblock_user", 7)?;
+    let unblock_note = build_owner_admin_note(owner_id, target_account.id(), "unblock_account", 7)?;
     builder.add_output_note(RawOutputNote::Full(unblock_note.clone()));
 
     let mut mock_chain = builder.build()?;
@@ -374,7 +376,7 @@ async fn unblock_when_not_blocked_fails() -> anyhow::Result<()> {
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_USER_NOT_BLOCKED);
+    assert_transaction_executor_error!(result, ERR_ACCOUNT_NOT_BLOCKED);
 
     Ok(())
 }
@@ -398,7 +400,7 @@ async fn block_does_not_affect_other_accounts() -> anyhow::Result<()> {
     )?;
 
     // Block a different account — the non-blocked one should still receive.
-    let block_note = build_owner_admin_note(owner_id, blocked_account.id(), "block_user", 8)?;
+    let block_note = build_owner_admin_note(owner_id, blocked_account.id(), "block_account", 8)?;
     builder.add_output_note(RawOutputNote::Full(block_note.clone()));
 
     let mut mock_chain = builder.build()?;
@@ -419,9 +421,9 @@ async fn block_does_not_affect_other_accounts() -> anyhow::Result<()> {
 }
 
 /// Verifies that `mint_and_send` works on a `BasicFungibleFaucet` whose `TokenPolicyManager`
-/// installs the asset-callback slots (here via [`TransferPolicy::IfNotBlocklisted`]).
+/// installs the asset-callback slots (here via [`TransferPolicy::Blocklist`]).
 #[tokio::test]
-async fn mint_and_send_on_if_not_blocklisted_basic_faucet() -> anyhow::Result<()> {
+async fn mint_and_send_on_blocklist_basic_faucet() -> anyhow::Result<()> {
     let owner_id = dummy_owner();
     let mut builder = MockChain::builder();
     let faucet = add_faucet_with_owner_blocklist_transfer(&mut builder, owner_id)?;
