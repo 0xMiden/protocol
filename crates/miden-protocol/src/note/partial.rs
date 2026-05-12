@@ -58,6 +58,11 @@ impl PartialNote {
         NoteId::new(self.recipient_digest, self.assets.commitment())
     }
 
+    /// Returns a reference to the [`NoteMetadata`] of this note.
+    pub fn metadata(&self) -> &NoteMetadata {
+        self.header.metadata()
+    }
+
     /// Returns the partial metadata associated with this note.
     pub fn partial_metadata(&self) -> &PartialNoteMetadata {
         self.header.metadata().partial_metadata()
@@ -78,11 +83,6 @@ impl PartialNote {
     /// Returns the note's attachments.
     pub fn attachments(&self) -> &NoteAttachments {
         &self.attachments
-    }
-
-    /// Returns a reference to the [`NoteMetadata`] of this note.
-    pub fn metadata(&self) -> &NoteMetadata {
-        self.header.metadata()
     }
 
     /// Returns the [`NoteHeader`] of this note.
