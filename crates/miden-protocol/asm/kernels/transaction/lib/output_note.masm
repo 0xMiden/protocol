@@ -10,6 +10,7 @@ use $kernel::note::MAX_ATTACHMENT_SCHEME
 use $kernel::note::MAX_ATTACHMENT_WORDS
 use $kernel::constants::MAX_OUTPUT_NOTES_PER_TX
 use $kernel::constants::WORD_SIZE
+use $kernel::util::note::NOTE_METADATA_VERSION_1
 use $kernel::asset::ASSET_SIZE
 use $kernel::asset::ASSET_VALUE_MEMORY_OFFSET
 use miden::core::word
@@ -447,28 +448,28 @@ pub proc build_metadata_header
     # Validate the note tag fits into a u32.
     # --------------------------------------------------------------------------------------------
 
-    # this implies the upper 32 bits are zero, which initializes the attachment num_words to 0
+    # this implies the upper 32 bits are zero (which are reserved)
     u32assert.err=ERR_NOTE_TAG_MUST_BE_U32
-    # => [attachment_num_words_and_tag, note_type]
+    # => [tag, note_type]
 
     # Merge note type, version, and sender ID suffix.
     # --------------------------------------------------------------------------------------------
 
     exec.account::get_id
-    # => [sender_id_suffix, sender_id_prefix, attachment_num_words_and_tag, note_type]
+    # => [sender_id_suffix, sender_id_prefix, tag, note_type]
 
     # The lower 8 bits of the account ID suffix are guaranteed to be zero by construction.
-    # Encode note_type at bit 4, leaving version at 0 (in bits 0..=3).
+    # Encode note_type at bit 4 and version at bits 0..=3.
     # Shifting note_type left by 4 is equivalent to multiplying by 16.
-    movup.3 mul.16 add
-    # => [sender_id_suffix_type_version, sender_id_prefix, attachment_num_words_and_tag]
+    movup.3 mul.16 add.NOTE_METADATA_VERSION_1 add
+    # => [sender_id_suffix_type_version, sender_id_prefix, tag]
 
     # Build metadata header.
     # --------------------------------------------------------------------------------------------
 
     # push default absent attachment schemes (four u16 zeros encoded into a zero felt)
     push.ATTACHMENT_DEFAULT_SCHEMES movdn.3
-    # => [sender_id_suffix_type_version, sender_id_prefix, attachment_num_words_and_tag, attachment_schemes]
+    # => [sender_id_suffix_type_version, sender_id_prefix, tag, attachment_schemes]
     # => [NOTE_METADATA_HEADER]
 end
 
