@@ -327,9 +327,8 @@ fn generate_agglayer_constants(
         // policies alongside the agglayer faucet component, since
         // network_fungible::mint_and_send requires these for access control.
         //
-        // The allowlist lives in storage, not code; the real allowlist is supplied at
-        // account-creation time by `AggLayerBridge::allowed_notes()` /
-        // `AggLayerFaucet::allowed_notes()`.
+        // The allowlist lives in storage, not code, and here we only care about the code commitment
+        // of the accounts, so we can init the allowlists with dummy values.
         let placeholder_allowlist = BTreeSet::from([NoteScriptRoot::from_raw(Word::default())]);
         let auth_component = AuthNetworkAccount::with_allowlist(placeholder_allowlist)
             .expect("placeholder allowlist is non-empty");
