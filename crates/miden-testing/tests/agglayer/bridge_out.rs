@@ -22,9 +22,9 @@ use miden_protocol::account::{AccountId, AccountIdVersion, AccountStorageMode, A
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::note::{NoteAssets, NoteType};
 use miden_protocol::transaction::RawOutputNote;
-use miden_standards::account::faucets::TokenMetadata;
+use miden_standards::account::faucets::FungibleFaucet;
 use miden_standards::account::policies::MintPolicyConfig;
-use miden_standards::note::StandardNote;
+use miden_standards::note::{NetworkAccountTarget, StandardNote};
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 use miden_tx::utils::hex_to_bytes;
 
@@ -195,8 +195,12 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
             NoteType::Public,
             "BURN note should be public"
         );
-        let attachment = burn_note.metadata().attachment();
-        let network_target = miden_standards::note::NetworkAccountTarget::try_from(attachment)
+        assert_eq!(
+            burn_note.attachments().num_attachments(),
+            1,
+            "BURN note should have one attachment"
+        );
+        let network_target = NetworkAccountTarget::try_from(burn_note.attachments())
             .expect("BURN note attachment should be a valid NetworkAccountTarget");
         assert_eq!(
             network_target.target_id(),
@@ -231,7 +235,7 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
 
     // STEP 3: CONSUME ALL BURN NOTES WITH THE AGGLAYER FAUCET
     // --------------------------------------------------------------------------------------------
-    let initial_token_supply = TokenMetadata::try_from(faucet.storage())?.token_supply();
+    let initial_token_supply = FungibleFaucet::try_from(faucet.storage())?.token_supply();
     assert_eq!(
         initial_token_supply,
         Felt::new(total_burned),
@@ -255,7 +259,7 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
         mock_chain.prove_next_block()?;
     }
 
-    let final_token_supply = TokenMetadata::try_from(faucet.storage())?.token_supply();
+    let final_token_supply = FungibleFaucet::try_from(faucet.storage())?.token_supply();
     assert_eq!(
         final_token_supply,
         Felt::new(initial_token_supply.as_canonical_u64() - total_burned),
@@ -490,7 +494,7 @@ async fn b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
     // Create a network faucet owner account
     let faucet_owner_account_id = AccountId::dummy(
         [1; 15],
-        AccountIdVersion::Version0,
+        AccountIdVersion::Version1,
         AccountType::RegularAccountImmutableCode,
         AccountStorageMode::Private,
     );
@@ -608,7 +612,7 @@ async fn b2agg_note_non_target_account_cannot_consume() -> anyhow::Result<()> {
     // Create a network faucet owner account
     let faucet_owner_account_id = AccountId::dummy(
         [1; 15],
-        AccountIdVersion::Version0,
+        AccountIdVersion::Version1,
         AccountType::RegularAccountImmutableCode,
         AccountStorageMode::Private,
     );

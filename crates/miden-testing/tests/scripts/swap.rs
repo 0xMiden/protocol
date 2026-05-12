@@ -133,7 +133,7 @@ async fn consume_swap_note_private_payback_note() -> anyhow::Result<()> {
 
     let full_payback_note = Note::new(
         payback_note.assets().clone(),
-        output_payback_note.metadata().clone(),
+        *output_payback_note.metadata().partial_metadata(),
         payback_note.recipient().clone(),
     );
 
@@ -216,7 +216,7 @@ async fn consume_swap_note_public_payback_note() -> anyhow::Result<()> {
 
     let full_payback_note = Note::new(
         payback_note.assets().clone(),
-        output_payback_note.metadata().clone(),
+        *output_payback_note.metadata().partial_metadata(),
         payback_note.recipient().clone(),
     );
 

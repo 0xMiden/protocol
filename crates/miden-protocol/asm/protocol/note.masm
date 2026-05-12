@@ -1,4 +1,5 @@
 use miden::protocol::account_id
+use miden::protocol::util::constants::WORD_NUM_ELEMENTS
 use miden::core::crypto::hashes::poseidon2
 use miden::core::mem
 
@@ -6,11 +7,17 @@ use miden::core::mem
 pub use miden::protocol::util::note::MAX_NOTE_STORAGE_ITEMS
 pub use miden::protocol::util::note::NOTE_TYPE_PUBLIC
 pub use miden::protocol::util::note::NOTE_TYPE_PRIVATE
+pub use miden::protocol::util::note::MAX_ATTACHMENT_SCHEME
+pub use miden::protocol::util::note::MAX_ATTACHMENT_WORDS
+pub use miden::protocol::util::note::MAX_ATTACHMENT_TOTAL_WORDS
+pub use miden::protocol::util::note::ATTACHMENT_SCHEME_NONE
 
 # ERRORS
 # =================================================================================================
 
 const ERR_PROLOGUE_NOTE_NUM_STORAGE_ITEMS_EXCEEDED_LIMIT="number of note storage exceeded the maximum limit of 1024"
+
+const ERR_OUTPUT_NOTE_ATTACHMENT_IDX_OUT_OF_BOUNDS = "attachment index out of bounds"
 
 # NOTE UTILITY PROCEDURES
 # =================================================================================================
@@ -77,7 +84,127 @@ pub proc write_assets_to_memory
     # AS => []
 end
 
-#! Builds the recipient hash from note storage, script root, and serial number.
+#! Writes the attachment commitments stored in the advice map to memory specified by the provided
+#! destination pointer.
+#!
+#! Inputs:
+#!   Operand stack: [ATTACHMENTS_COMMITMENT, dest_ptr]
+#!   Advice map: {
+#!     ATTACHMENTS_COMMITMENT: [[ATTACHMENT_COMMITMENT]]
+#!   }
+#! Outputs:
+#!   Operand stack: [num_attachments]
+pub proc write_attachment_commitments_to_memory
+    # push the individual ATTACHMENT commitments from the advice map onto the advice stack
+    adv.push_mapvaln
+    # OS => [ATTACHMENTS_COMMITMENT, dest_ptr]
+    # AS => [num_elements, [ATTACHMENT_COMMITMENT]]
+
+    # SAFETY: if the provided num_elements is invalid, the commitment check would fail in
+    # pipe_preimage_to_memory so we assume validity and only do basic checks to protect against
+    # invalid advice inputs.
+    adv_push.1 u32assert.err="invalid attachment num_elements advice input"
+    u32divmod.WORD_NUM_ELEMENTS
+    # OS => [remainder, num_words, ATTACHMENTS_COMMITMENT, dest_ptr]
+    # AS => [[ATTACHMENT_COMMITMENT]]
+
+    # assert that num_elements is a multiple of WORD_NUM_ELEMENTS
+    eq.0 assert.err="attachment commitments num_elements is not a multiple of WORD_NUM_ELEMENTS"
+    # OS => [num_words, ATTACHMENTS_COMMITMENT, dest_ptr]
+    # AS => [[ATTACHMENT_COMMITMENT]]
+
+    # store the number of words as the number of attachments for return
+    swap.5 dup.5
+    # OS => [num_words, dest_ptr, ATTACHMENTS_COMMITMENT, num_attachments]
+    # AS => [[ATTACHMENT_COMMITMENT]]
+
+    # pipe attachment commitments to memory and validate they match the ATTACHMENTS_COMMITMENT
+    exec.mem::pipe_preimage_to_memory drop
+    # => [num_attachments]
+end
+
+#! Writes a single attachment's data stored in the advice map to the memory specified by the
+#! provided destination pointer.
+#!
+#! Inputs:
+#!   Operand stack: [ATTACHMENT_COMMITMENT, dest_ptr]
+#!   Advice map: {
+#!     ATTACHMENT_COMMITMENT: [[ATTACHMENT_ELEMENTS]],
+#!   }
+#! Outputs:
+#!   Operand stack: [num_words]
+#!
+#! Where:
+#! - ATTACHMENT_COMMITMENT is the hash commitment to the attachment elements.
+#! - dest_ptr is the memory address to which to write the attachment data.
+#! - num_words is the number of words in the attachment.
+pub proc write_attachment_to_memory
+    # push the number of attachment elements from the advice map onto the advice stack
+    adv.push_mapvaln
+    # OS => [ATTACHMENT_COMMITMENT, dest_ptr]
+    # AS => [num_elements, [ATTACHMENT_ELEMENTS]]
+
+    # SAFETY: if the provided num_elements is invalid, the commitment check would fail in
+    # pipe_preimage_to_memory so we assume validity and only do basic checks to protect against
+    # invalid advice inputs.
+    adv_push.1 u32assert.err="invalid attachment num_elements advice input"
+    u32divmod.WORD_NUM_ELEMENTS
+    # OS => [remainder, num_words, ATTACHMENT_COMMITMENT, dest_ptr]
+    # AS => [[ATTACHMENT_ELEMENTS]]
+
+    # assert that num_elements is a multiple of WORD_NUM_ELEMENTS
+    eq.0 assert.err="attachment num_elements is not a multiple of WORD_NUM_ELEMENTS"
+    # OS => [num_words, ATTACHMENT_COMMITMENT, dest_ptr]
+    # AS => [[ATTACHMENT_ELEMENTS]]
+
+    swap.5 dup.5
+    # OS => [num_words, dest_ptr, ATTACHMENT_COMMITMENT, num_words]
+    # AS => [[ATTACHMENT_ELEMENTS]]
+
+    # pipe the attachment data into memory, validating against ATTACHMENT_COMMITMENT
+    exec.mem::pipe_preimage_to_memory drop
+    # => [num_words]
+end
+
+#! Writes the attachment with the provided index from the provided attachment commitments to the
+#! memory specified by the destination pointer.
+#!
+#! Inputs:  [num_attachments, attachment_commitments_ptr, attachment_idx, dest_ptr]
+#! Outputs: [num_words]
+#!
+#! Where:
+#! - attachment_idx is the index of the attachment to retrieve.
+#! - attachment_commitments_ptr is a pointer to the attachment commitments in memory.
+#! - dest_ptr is the memory address to which to write the attachment data.
+#! - num_attachments is the number of attachments.
+#! - num_words is the number of words in the attachment.
+#!
+#! Panics if:
+#! - the attachment index is greater or equal to the number of attachments.
+#! - the sequential hash over the attachment data in the advice inputs does not match the
+#!   attachment commitment.
+#!
+#! Invocation: exec
+pub proc write_indexed_attachment_to_memory
+    # assert attachment_idx < num_attachments
+    dup.2 swap u32assert2.err=ERR_OUTPUT_NOTE_ATTACHMENT_IDX_OUT_OF_BOUNDS
+    u32lt assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_IDX_OUT_OF_BOUNDS
+    # => [attachment_commitments_ptr, attachment_idx, dest_ptr]
+
+    # compute the memory address of the attachment commitment:
+    # commitment_ptr = attachment_commitments_ptr + attachment_idx * WORD_NUM_ELEMENTS
+    swap mul.WORD_NUM_ELEMENTS add
+    # => [commitment_ptr, dest_ptr]
+
+    # load the ATTACHMENT_COMMITMENT from memory
+    padw movup.4 mem_loadw_le
+    # => [ATTACHMENT_COMMITMENT, dest_ptr]
+
+    exec.write_attachment_to_memory
+    # => [num_words]
+end
+
+#! Computes the recipient hash from note storage, script root, and serial number.
 #!
 #! This procedure computes the commitment of the note storage and then uses it to calculate the note
 #! recipient by hashing this commitment, the provided script root, and the serial number.
@@ -109,7 +236,7 @@ end
 #! - num_storage_items is greater than 1024.
 #!
 #! Invocation: exec
-pub proc build_recipient
+pub proc compute_and_store_recipient
     dup.1 dup.1
     # => [storage_ptr, num_storage_items, storage_ptr, num_storage_items, SERIAL_NUM, SCRIPT_ROOT]
 
@@ -147,7 +274,7 @@ pub proc build_recipient
     # => [RECIPIENT]
 end
 
-#! Returns the RECIPIENT for a specified SERIAL_NUM, SCRIPT_ROOT and STORAGE_COMMITMENT.
+#! Computes the RECIPIENT for a specified SERIAL_NUM, SCRIPT_ROOT and STORAGE_COMMITMENT.
 #!
 #! Inputs:  [SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT]
 #! Outputs: [RECIPIENT]
@@ -159,7 +286,7 @@ end
 #! - RECIPIENT is the recipient of the note.
 #!
 #! Invocation: exec
-pub proc build_recipient_hash
+pub proc compute_recipient
     padw swapw
     # => [SERIAL_NUM, EMPTY_WORD, SCRIPT_ROOT, STORAGE_COMMITMENT]
 
@@ -173,13 +300,13 @@ pub proc build_recipient_hash
     # => [RECIPIENT]
 end
 
-#! Extracts the sender ID from the provided metadata header.
+#! Extracts the sender ID from the provided metadata.
 #!
-#! Inputs:  [METADATA_HEADER]
+#! Inputs:  [METADATA]
 #! Outputs: [sender_id_suffix, sender_id_prefix]
 #!
 #! Where:
-#! - METADATA_HEADER is the metadata of a note.
+#! - METADATA is the metadata of a note.
 #! - sender_{suffix,prefix} are the suffix and prefix felts of the sender ID of the note which
 #!   metadata was provided.
 pub proc metadata_into_sender
@@ -194,40 +321,52 @@ pub proc metadata_into_sender
     # => [sender_id_suffix, sender_id_prefix]
 end
 
-#! Extracts the attachment kind and scheme from the provided metadata header.
+#! Extracts the attachment's schemes from the provided metadata.
 #!
-#! Inputs:  [METADATA_HEADER]
-#! Outputs: [attachment_kind, attachment_scheme]
+#! Inputs:  [METADATA]
+#! Outputs: [attachment_0_scheme, attachment_1_scheme, attachment_2_scheme, attachment_3_scheme]
 #!
 #! Where:
-#! - METADATA_HEADER is the metadata of a note.
-#! - attachment_kind is the attachment kind of the note.
-#! - attachment_scheme is the attachment scheme of the note.
+#! - METADATA is the metadata word of a note.
+#! - attachment_n_scheme is the scheme of the nth attachment (0 if absent).
 #!
 #! Invocation: exec
-pub proc metadata_into_attachment_info
-    # => [sender_id_suffix_type_version, sender_id_prefix, tag, attachment_kind_scheme]
-    drop drop drop
-    # => [attachment_kind_scheme]
+pub proc metadata_into_attachment_schemes
+    # => [sender_id_suffix_type_version, sender_id_prefix, tag, schemes]
 
-    # deconstruct the attachment_kind_scheme to extract the attachment_scheme
-    # attachment_kind_scheme = [30 zero bits | attachment_kind (2 bits) | attachment_scheme (32 bits)]
-    # u32split splits into [lo, hi] where lo is attachment_scheme
+    drop drop drop
+    # => [schemes]
+
     u32split swap
-    # => [attachment_kind, attachment_scheme]
+    # => [schemes_hi, schemes_lo]
+
+    # extract attachment scheme 3 from bits 48..64
+    dup u32and.0xffff0000 u32shr.16
+    # => [attachment_3_scheme, schemes_hi, schemes_lo]
+
+    # extract attachment scheme 2 from bits 32..48
+    swap u32and.0xffff
+    # => [attachment_2_scheme, attachment_3_scheme, schemes_lo]
+
+    # extract attachment scheme 1 from bits 16..32
+    dup.2 u32and.0xffff0000 u32shr.16
+    # => [attachment_1_scheme, attachment_2_scheme, attachment_3_scheme, schemes_lo]
+
+    movup.3 u32and.0xffff
+    # => [attachment_0_scheme, attachment_1_scheme, attachment_2_scheme, attachment_3_scheme]
 end
 
-#! Extracts the note type from the provided metadata header.
+#! Extracts the note type from the provided metadata.
 #!
 #! The note type is encoded as a single bit at the 4th position from the right side (LSB) of the
-#! first felt of the metadata header, where 0 = Private and 1 = Public.
+#! first felt of the metadata, where 0 = Private and 1 = Public.
 #!
-#! Inputs:  [METADATA_HEADER]
+#! Inputs:  [METADATA]
 #! Outputs: [note_type]
 #!
 #! Where:
-#! - METADATA_HEADER is the metadata of a note, laid out on the stack as
-#!   [sender_id_suffix_type_version, sender_id_prefix, tag, attachment_kind_scheme].
+#! - METADATA is the metadata of a note, laid out on the stack as
+#!   [sender_id_suffix_type_version, sender_id_prefix, tag, attachment_schemes].
 #!   The first felt (sender_id_suffix_type_version) has the following bit layout:
 #!   [sender_id_suffix (56 bits) | reserved (3 bits) | note_type (1 bit) | version (4 bits)]
 #! - note_type is the type of the note (0 for private, 1 for public).
@@ -245,4 +384,74 @@ pub proc metadata_into_note_type
 
     u32and.1
     # => [note_type]
+end
+
+#! Extracts the tag from the provided metadata.
+#!
+#! The tag is stored in the lower 32 bits of the tag element. The upper 32 bits are reserved.
+#!
+#! Inputs:  [METADATA]
+#! Outputs: [tag]
+#!
+#! Where:
+#! - METADATA is the metadata word of a note.
+#! - tag is the lower 32 bits of the tag element.
+#!
+#! Invocation: exec
+pub proc metadata_into_tag
+    drop drop swap drop
+    # => [tag_element]
+
+    # extract the lower 32 bits as the tag
+    u32split swap drop
+    # => [tag]
+end
+
+#! Searches the metadata for the specified attachment scheme and returns the index of the
+#! first matching slot.
+#!
+#! Inputs:  [attachment_scheme, METADATA]
+#! Outputs: [is_found, attachment_idx]
+#!
+#! Where:
+#! - attachment_scheme is the scheme to search for.
+#! - METADATA is the metadata word of a note.
+#! - is_found is 1 if the scheme was found, 0 otherwise.
+#! - attachment_idx is the index (0-3) of the first matching slot, or undefined if not found.
+#!
+#! Invocation: exec
+pub proc find_attachment_idx
+    movdn.4 exec.metadata_into_attachment_schemes
+    # => [scheme_0, scheme_1, scheme_2, scheme_3, attachment_scheme]
+
+    # initialize is_found = 0 and attachment_idx = 0
+    movup.4 push.0 push.0
+    # => [attachment_idx = 0, is_found = 0, attachment_scheme, scheme_0, scheme_1, scheme_2, scheme_3]
+
+    # iterate over the four schemes
+    repeat.4
+        # => [attachment_idx, is_found, attachment_scheme, scheme_n, ...]
+
+        # check if scheme_n is the scheme we're trying to find
+        dup.2 movup.4 eq
+        # => [is_scheme_n, attachment_idx, is_found, attachment_scheme, scheme_n+1, ...]
+
+        # set is_found = is_found || is_scheme_n
+        movup.2 or swap
+        # => [attachment_idx, is_found', attachment_scheme, scheme_n+1, ...]
+
+        # create prospective attachment idx by incrementing the current one
+        dup add.1 swap dup.2
+        # => [is_found', attachment_idx, attachment_idx+1, is_found', attachment_scheme, scheme_n+1, ...]
+
+        # if is_found' attachment_idx remains.
+        # if !is_found' attachment_idx+1 remains.
+        # this essentially increments the attachment idx as long as no match was found.
+        cdrop
+        # => [attachment_idx', is_found', attachment_scheme, scheme_n+1, ...]
+    end
+    # => [attachment_idx', is_found', attachment_scheme]
+
+    movup.2 drop swap
+    # => [is_found', attachment_idx']
 end

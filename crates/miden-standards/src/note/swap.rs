@@ -9,15 +9,15 @@ use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
     Note,
     NoteAssets,
-    NoteAttachment,
+    NoteAttachments,
     NoteDetails,
-    NoteMetadata,
     NoteRecipient,
     NoteScript,
     NoteScriptRoot,
     NoteStorage,
     NoteTag,
     NoteType,
+    PartialNoteMetadata,
 };
 use miden_protocol::utils::sync::LazyLock;
 
@@ -81,7 +81,7 @@ impl SwapNote {
         offered_asset: Asset,
         requested_asset: Asset,
         swap_note_type: NoteType,
-        swap_note_attachment: NoteAttachment,
+        swap_note_attachments: NoteAttachments,
         payback_note_type: NoteType,
         rng: &mut R,
     ) -> Result<(Note, NoteDetails), NoteError> {
@@ -101,11 +101,9 @@ impl SwapNote {
         let tag = Self::build_tag(swap_note_type, &offered_asset, &requested_asset);
 
         // build the outgoing note
-        let metadata = NoteMetadata::new(sender, swap_note_type)
-            .with_tag(tag)
-            .with_attachment(swap_note_attachment);
+        let metadata = PartialNoteMetadata::new(sender, swap_note_type).with_tag(tag);
         let assets = NoteAssets::new(vec![offered_asset])?;
-        let note = Note::new(assets, metadata, recipient);
+        let note = Note::with_attachments(assets, metadata, recipient, swap_note_attachments);
 
         // build the payback note details
         let payback_recipient = P2idNoteStorage::new(sender).into_recipient(payback_serial_num);
@@ -353,7 +351,7 @@ mod tests {
             FungibleAsset::new(
                 AccountId::dummy(
                     fungible_faucet_id_bytes,
-                    AccountIdVersion::Version0,
+                    AccountIdVersion::Version1,
                     AccountType::FungibleFaucet,
                     AccountStorageMode::Public,
                 ),
@@ -367,7 +365,7 @@ mod tests {
                 &NonFungibleAssetDetails::new(
                     AccountId::dummy(
                         non_fungible_faucet_id_bytes,
-                        AccountIdVersion::Version0,
+                        AccountIdVersion::Version1,
                         AccountType::NonFungibleFaucet,
                         AccountStorageMode::Public,
                     ),

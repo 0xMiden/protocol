@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 
 use crate::crypto::merkle::MerkleError;
 use crate::crypto::merkle::smt::{LeafIndex, SimpleSmt};
-use crate::note::{NoteDetailsCommitment, NoteId, NoteMetadata};
+use crate::note::NoteHeader;
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -27,11 +27,9 @@ impl BatchNoteTree {
     /// Returns an error if the number of entries exceeds the maximum tree capacity, that is
     /// 2^{depth}.
     pub fn with_contiguous_leaves<'a>(
-        entries: impl IntoIterator<Item = (NoteDetailsCommitment, &'a NoteMetadata)>,
+        entries: impl IntoIterator<Item = &'a NoteHeader>,
     ) -> Result<Self, MerkleError> {
-        let leaves = entries
-            .into_iter()
-            .map(|(commitment, metadata)| NoteId::new(commitment, metadata).as_word());
+        let leaves = entries.into_iter().map(|header| header.id().as_word());
 
         SimpleSmt::with_contiguous_leaves(leaves).map(Self)
     }

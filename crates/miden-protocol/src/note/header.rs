@@ -14,21 +14,18 @@ use super::{
 
 /// Holds the strictly required, public information of a note.
 ///
-/// See [NoteDetailsCommitment], [NoteId], and [NoteMetadata] for additional details.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// See [NoteDetailsCommitment] and [NoteMetadata] for additional details.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NoteHeader {
-    note_details_commitment: NoteDetailsCommitment,
-    note_metadata: NoteMetadata,
+    details_commitment: NoteDetailsCommitment,
+    metadata: NoteMetadata,
 }
 
 impl NoteHeader {
     /// Returns a new [NoteHeader] instantiated from the specified note details commitment and
     /// metadata.
-    pub fn new(
-        note_details_commitment: NoteDetailsCommitment,
-        note_metadata: NoteMetadata,
-    ) -> Self {
-        Self { note_details_commitment, note_metadata }
+    pub fn new(details_commitment: NoteDetailsCommitment, metadata: NoteMetadata) -> Self {
+        Self { details_commitment, metadata }
     }
 
     /// Returns the note's identifier.
@@ -40,17 +37,17 @@ impl NoteHeader {
 
     /// Returns the commitment to the note details, excluding metadata.
     pub fn commitment(&self) -> NoteDetailsCommitment {
-        self.note_details_commitment
+        self.details_commitment
     }
 
-    /// Returns the note's metadata.
+    /// Returns a reference to the note's metadata.
     pub fn metadata(&self) -> &NoteMetadata {
-        &self.note_metadata
+        &self.metadata
     }
 
     /// Consumes self and returns the note header's metadata.
     pub fn into_metadata(self) -> NoteMetadata {
-        self.note_metadata
+        self.metadata
     }
 }
 
@@ -59,20 +56,20 @@ impl NoteHeader {
 
 impl Serializable for NoteHeader {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.note_details_commitment.write_into(target);
-        self.note_metadata.write_into(target);
+        self.details_commitment.write_into(target);
+        self.metadata.write_into(target);
     }
 
     fn get_size_hint(&self) -> usize {
-        self.note_details_commitment.get_size_hint() + self.note_metadata.get_size_hint()
+        self.details_commitment.get_size_hint() + self.metadata.get_size_hint()
     }
 }
 
 impl Deserializable for NoteHeader {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let note_details_commitment = NoteDetailsCommitment::read_from(source)?;
-        let note_metadata = NoteMetadata::read_from(source)?;
+        let details_commitment = NoteDetailsCommitment::read_from(source)?;
+        let metadata = NoteMetadata::read_from(source)?;
 
-        Ok(Self { note_details_commitment, note_metadata })
+        Ok(Self::new(details_commitment, metadata))
     }
 }

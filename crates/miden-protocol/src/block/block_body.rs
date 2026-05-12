@@ -112,9 +112,7 @@ impl BlockBody {
 
     /// Computes the [`BlockNoteTree`] containing all [`OutputNote`]s created in this block.
     pub fn compute_block_note_tree(&self) -> BlockNoteTree {
-        let entries = self
-            .output_notes()
-            .map(|(note_index, note)| (note_index, note.commitment(), note.metadata()));
+        let entries = self.output_notes().map(|(note_index, note)| (note_index, note.into()));
 
         // SAFETY: We only construct block bodies that:
         // - do not contain duplicates

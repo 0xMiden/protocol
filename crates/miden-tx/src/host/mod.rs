@@ -48,7 +48,7 @@ use miden_protocol::account::{
     StorageSlotName,
 };
 use miden_protocol::asset::Asset;
-use miden_protocol::note::{NoteAttachment, NoteId, NoteMetadata, NoteRecipient};
+use miden_protocol::note::{NoteAttachment, NoteId, NoteRecipient, PartialNoteMetadata};
 use miden_protocol::transaction::{
     InputNote,
     InputNotes,
@@ -229,7 +229,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     pub(super) fn output_note_from_recipient_digest(
         &mut self,
         note_idx: usize,
-        metadata: NoteMetadata,
+        metadata: PartialNoteMetadata,
         recipient_digest: Word,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
         let note_builder = OutputNoteBuilder::from_recipient_digest(metadata, recipient_digest)?;
@@ -243,7 +243,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     pub(super) fn output_note_from_recipient(
         &mut self,
         note_idx: usize,
-        metadata: NoteMetadata,
+        metadata: PartialNoteMetadata,
         recipient: NoteRecipient,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
         let note_builder = OutputNoteBuilder::from_recipient(metadata, recipient);
@@ -311,8 +311,8 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         Ok(Vec::new())
     }
 
-    /// Sets the attachment on the output note identified by the note index.
-    pub fn on_note_before_set_attachment(
+    /// Appends an attachment to the output note identified by the note index.
+    pub fn on_note_before_add_attachment(
         &mut self,
         note_idx: usize,
         attachment: NoteAttachment,
@@ -321,7 +321,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
             TransactionKernelError::other(format!("failed to find output note {note_idx}"))
         })?;
 
-        note_builder.set_attachment(attachment);
+        note_builder.add_attachment(attachment)?;
 
         Ok(Vec::new())
     }

@@ -10,6 +10,7 @@ use super::super::utils::serde::{
     DeserializationError,
     Serializable,
 };
+use crate::Felt;
 
 // ASSET AMOUNT
 // ================================================================================================
@@ -98,6 +99,12 @@ impl TryFrom<u64> for AssetAmount {
 impl From<AssetAmount> for u64 {
     fn from(amount: AssetAmount) -> Self {
         amount.0
+    }
+}
+
+impl From<AssetAmount> for Felt {
+    fn from(amount: AssetAmount) -> Self {
+        Felt::try_from(amount.0).expect("asset amount should guarantee felt validity")
     }
 }
 
