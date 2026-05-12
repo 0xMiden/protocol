@@ -44,6 +44,7 @@
 - [BREAKING] Renamed `note::build_recipient_hash` to `note::compute_recipient` and `note::build_recipient` to `note::compute_and_store_recipient` ([#2875](https://github.com/0xMiden/protocol/issues/2875)).
 - [BREAKING] Merged `BasicFungibleFaucet` and `NetworkFungibleFaucet` ([#2890](https://github.com/0xMiden/protocol/pull/2890)).
 - [BREAKING] Renamed `NoteMetadata` to `PartialNoteMetadata` and renamed `NoteMetadataHeader` to `NoteMetadata` ([#2887](https://github.com/0xMiden/protocol/pull/2887)).
+- [BREAKING] Hashed `AssetVaultKey` before insertion into the asset vault SMT so non-fungible assets issued by the same faucet no longer share a leaf ([#2912](https://github.com/0xMiden/protocol/pull/2912)).
 - [BREAKING] Renamed account ID version 0 to version 1 and made encoded version 0 invalid ([#2842](https://github.com/0xMiden/protocol/issues/2842)).
 - [BREAKING] Changed note metadata version 1 to encode as `1`, leaving encoded version `0` invalid.
 - Documented the `miden::protocol::account_id` module in the protocol library docs ([#2607](https://github.com/0xMiden/protocol/issues/2607)).
