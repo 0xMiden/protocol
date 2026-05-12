@@ -161,7 +161,7 @@ impl NoteMetadataHeader {
     ///
     /// If we make this public, we may want to instead consider introducing a `NoteMetadataVersion`
     /// struct, similar to `AccountIdVersion`.
-    const VERSION_1: u8 = 0;
+    const VERSION_1: u8 = 1;
 
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
@@ -411,5 +411,18 @@ mod tests {
         assert_eq!(header, metadata_header);
 
         Ok(())
+    }
+
+    #[test]
+    fn note_metadata_header_encodes_v1_as_one() {
+        let sender = AccountId::try_from(ACCOUNT_ID_MAX_ONES).unwrap();
+        let metadata = NoteMetadata::new(sender, NoteType::Private);
+        let metadata = NoteMetadataHeader::new(metadata, &NoteAttachments::default());
+
+        let metadata = metadata.to_metadata_word();
+        let version = metadata[0].as_canonical_u64() & 0b1111;
+
+        assert_eq!(version, NoteMetadataHeader::VERSION_1 as u64);
+        assert_eq!(version, 1);
     }
 }
