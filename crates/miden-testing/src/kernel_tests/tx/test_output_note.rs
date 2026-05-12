@@ -338,7 +338,7 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
             push.{num_attachment_words}
             push.{attachment_scheme2}
             # => [attachment_scheme, num_words, ptr, note_idx]
-            exec.output_note::add_words_attachment
+            exec.output_note::add_attachment_from_memory
             # => []
 
             # compute the output notes commitment
@@ -1387,7 +1387,7 @@ async fn test_add_word_attachment() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn test_add_words_attachment() -> anyhow::Result<()> {
+async fn test_add_attachment_from_memory() -> anyhow::Result<()> {
     let account = Account::mock(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET, Auth::IncrNonce);
     let rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
     let words = vec![Word::from([3, 4, 5, 6u32]); NoteAttachment::MAX_NUM_WORDS as usize];
@@ -1426,7 +1426,7 @@ async fn test_add_words_attachment() -> anyhow::Result<()> {
             push.{num_words}
             push.{attachment_scheme}
             # => [attachment_scheme, num_words, ptr, note_idx]
-            exec.output_note::add_words_attachment
+            exec.output_note::add_attachment_from_memory
             # => []
 
             # truncate the stack
@@ -1724,7 +1724,7 @@ async fn test_write_attachment_to_memory() -> anyhow::Result<()> {
             push.{attachment1_num_words}
             push.{attachment_scheme_1}
             # => [attachment_scheme, num_words, attachment_ptr, note_idx=0]
-            exec.output_note::add_words_attachment
+            exec.output_note::add_attachment_from_memory
             # => []
 
             # --- validate attachment 0 ---

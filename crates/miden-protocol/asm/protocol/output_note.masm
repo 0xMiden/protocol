@@ -311,7 +311,7 @@ end
 #! - the total number of attachment words in the note exceeds 512.
 #!
 #! Invocation: exec
-pub proc add_words_attachment
+pub proc add_attachment_from_memory
     # Compute num_elements = num_words * WORD_NUM_ELEMENTS
     movdn.3 mul.WORD_NUM_ELEMENTS
     # => [num_elements, attachment_ptr, note_idx, attachment_scheme]
