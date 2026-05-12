@@ -7,7 +7,7 @@
 //!   protocol-reserved callback slots.
 //! - Folder at the root (e.g. [`blocklist`]) = a primitive bundle: storage namespace + helpers
 //!   + auth-gated admin component(s) that maintain the storage. Primitives are not transfer
-//!   policies by themselves; they are consumed by policy variants.
+//!     policies by themselves; they are consumed by policy variants.
 
 use alloc::vec::Vec;
 
