@@ -325,7 +325,7 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
             push.{num_attachment3_words}
             push.{attachment_scheme3}
             # => [attachment_scheme, num_words, ptr, note_idx]
-            exec.output_note::add_words_attachment
+            exec.output_note::add_attachment_from_memory
             # => []
         end
     ",
