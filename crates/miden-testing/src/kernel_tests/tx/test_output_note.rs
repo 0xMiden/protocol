@@ -1392,8 +1392,9 @@ async fn test_add_attachment_from_memory() -> anyhow::Result<()> {
     let rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
     let words = vec![Word::from([3, 4, 5, 6u32]); NoteAttachment::MAX_NUM_WORDS as usize];
     let attachment = NoteAttachment::with_words(NoteAttachmentScheme::new(42)?, words.clone())?;
-    let output_note =
-        RawOutputNote::Full(NoteBuilder::new(account.id(), rng).attachment(attachment).build()?);
+    let output_note = RawOutputNote::Full(
+        NoteBuilder::new(account.id(), rng).attachment(attachment.clone()).build()?,
+    );
 
     let attachment_ptr = 1024;
     let store_attachment_words = words
@@ -1450,6 +1451,8 @@ async fn test_add_attachment_from_memory() -> anyhow::Result<()> {
         .await?;
 
     let actual_note = tx.output_notes().get_note(0);
+    assert_eq!(actual_note.attachments().num_attachments(), 1);
+    assert_eq!(actual_note.attachments().get(0).unwrap(), &attachment);
     assert_eq!(actual_note.header(), output_note.header());
     assert_eq!(actual_note.assets(), output_note.assets());
 
