@@ -17,6 +17,7 @@ use miden_protocol::note::{
     Note,
     NoteAssets,
     NoteAttachment,
+    NoteAttachments,
     NoteMetadata,
     NoteRecipient,
     NoteScript,
@@ -100,16 +101,14 @@ impl UpdateGerNote {
 
         let recipient = NoteRecipient::new(serial_num, Self::script(), note_storage);
 
-        let attachment = NoteAttachment::from(
-            NetworkAccountTarget::new(target_account_id, NoteExecutionHint::Always)
-                .map_err(|e| NoteError::other(e.to_string()))?,
-        );
-        let metadata =
-            NoteMetadata::new(sender_account_id, NoteType::Public).with_attachment(attachment);
+        let attachment = NetworkAccountTarget::new(target_account_id, NoteExecutionHint::Always)
+            .map_err(|e| NoteError::other(e.to_string()))?;
+        let attachments = NoteAttachments::from(NoteAttachment::from(attachment));
+        let metadata = NoteMetadata::new(sender_account_id, NoteType::Public);
 
         // UPDATE_GER notes don't carry assets
         let assets = NoteAssets::new(vec![])?;
 
-        Ok(Note::new(assets, metadata, recipient))
+        Ok(Note::with_attachments(assets, metadata, recipient, attachments))
     }
 }

@@ -9,7 +9,7 @@ use miden_protocol::asset::FungibleAsset;
 use miden_protocol::block::{BlockInputs, BlockNumber, ProposedBlock};
 use miden_protocol::crypto::merkle::SparseMerklePath;
 use miden_protocol::errors::ProposedBlockError;
-use miden_protocol::note::{NoteAttachment, NoteInclusionProof, NoteType};
+use miden_protocol::note::{NoteAttachments, NoteInclusionProof, NoteType};
 use miden_standards::note::P2idNote;
 use miden_tx::LocalTransactionProver;
 
@@ -353,7 +353,7 @@ async fn proposed_block_fails_on_invalid_proof_or_missing_note_inclusion_referen
         account1.id(),
         vec![],
         NoteType::Private,
-        NoteAttachment::default(),
+        NoteAttachments::default(),
         builder.rng_mut(),
     )?;
     let spawn_note = builder.add_spawn_note([&p2id_note])?;

@@ -119,9 +119,9 @@ async fn test_active_note_get_metadata() -> anyhow::Result<()> {
             swapw dropw
         end
         "#,
-        METADATA_HEADER = tx_context.input_notes().get_note(0).note().metadata().to_header_word(),
-        NOTE_ATTACHMENT =
-            tx_context.input_notes().get_note(0).note().metadata().to_attachment_word()
+        METADATA_HEADER =
+            tx_context.input_notes().get_note(0).note().metadata_header().to_metadata_word(),
+        NOTE_ATTACHMENT = tx_context.input_notes().get_note(0).note().attachments().to_commitment()
     );
 
     tx_context.execute_code(&code).await?;

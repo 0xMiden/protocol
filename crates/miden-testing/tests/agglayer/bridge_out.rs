@@ -24,7 +24,7 @@ use miden_protocol::note::{NoteAssets, NoteType};
 use miden_protocol::transaction::RawOutputNote;
 use miden_standards::account::faucets::TokenMetadata;
 use miden_standards::account::policies::MintPolicyConfig;
-use miden_standards::note::StandardNote;
+use miden_standards::note::{NetworkAccountTarget, StandardNote};
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 use miden_tx::utils::hex_to_bytes;
 
@@ -195,8 +195,12 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
             NoteType::Public,
             "BURN note should be public"
         );
-        let attachment = burn_note.metadata().attachment();
-        let network_target = miden_standards::note::NetworkAccountTarget::try_from(attachment)
+        assert_eq!(
+            burn_note.attachments().num_attachments(),
+            1,
+            "BURN note should have one attachment"
+        );
+        let network_target = NetworkAccountTarget::try_from(burn_note.attachments())
             .expect("BURN note attachment should be a valid NetworkAccountTarget");
         assert_eq!(
             network_target.target_id(),

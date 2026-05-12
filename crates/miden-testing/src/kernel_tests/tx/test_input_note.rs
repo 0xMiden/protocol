@@ -133,8 +133,8 @@ async fn test_get_recipient_and_metadata() -> anyhow::Result<()> {
         end
     "#,
         RECIPIENT = p2id_note_1_asset.recipient().digest(),
-        METADATA_HEADER = p2id_note_1_asset.metadata().to_header_word(),
-        NOTE_ATTACHMENT = p2id_note_1_asset.metadata().to_attachment_word(),
+        METADATA_HEADER = p2id_note_1_asset.metadata_header().to_metadata_word(),
+        NOTE_ATTACHMENT = p2id_note_1_asset.attachments().to_commitment(),
     );
 
     let tx_script = CodeBuilder::default().compile_tx_script(code)?;

@@ -31,8 +31,9 @@ pub use attachment::{
     NoteAttachment,
     NoteAttachmentArray,
     NoteAttachmentContent,
-    NoteAttachmentKind,
+    NoteAttachmentHeader,
     NoteAttachmentScheme,
+    NoteAttachments,
 };
 
 mod note_id;
@@ -68,9 +69,10 @@ pub use file::NoteFile;
 /// A note with all the data required for it to be consumed by executing it against the transaction
 /// kernel.
 ///
-/// Notes consist of note metadata and details. Note metadata is always public, but details may be
-/// either public, encrypted, or private, depending on the note type. Note details consist of note
-/// assets, script, storage, and a serial number, the three latter grouped into a recipient object.
+/// Notes consist of note metadata, attachments and details. Note metadata and attachments are
+/// always public, but details are either private or public, depending on the note type. Note
+/// details consist of note assets, script, storage, and a serial number, the three latter grouped
+/// into a recipient object.
 ///
 /// Note details can be reduced to two unique identifiers: [NoteId] and [Nullifier]. The former is
 /// publicly associated with a note, while the latter is known only to entities which have access
@@ -90,6 +92,7 @@ pub use file::NoteFile;
 pub struct Note {
     header: NoteHeader,
     details: NoteDetails,
+    attachments: NoteAttachments,
 
     nullifier: Nullifier,
 }
@@ -98,13 +101,24 @@ impl Note {
     // CONSTRUCTOR
     // --------------------------------------------------------------------------------------------
 
-    /// Returns a new [Note] created with the specified parameters.
+    /// Returns a new [Note] created with the specified parameters and empty attachments.
     pub fn new(assets: NoteAssets, metadata: NoteMetadata, recipient: NoteRecipient) -> Self {
+        Self::with_attachments(assets, metadata, recipient, NoteAttachments::default())
+    }
+
+    /// Returns a new [Note] created with the specified parameters and attachments.
+    pub fn with_attachments(
+        assets: NoteAssets,
+        metadata: NoteMetadata,
+        recipient: NoteRecipient,
+        attachments: NoteAttachments,
+    ) -> Self {
         let details = NoteDetails::new(assets, recipient);
-        let header = NoteHeader::new(details.id(), metadata);
+        let metadata_header = NoteMetadataHeader::new(metadata, &attachments);
+        let header = NoteHeader::new(details.id(), metadata_header);
         let nullifier = details.nullifier();
 
-        Self { header, details, nullifier }
+        Self { header, details, attachments, nullifier }
     }
 
     // PUBLIC ACCESSORS
@@ -159,6 +173,16 @@ impl Note {
         self.nullifier
     }
 
+    /// Returns the note's attachments.
+    pub fn attachments(&self) -> &NoteAttachments {
+        &self.attachments
+    }
+
+    /// Returns a reference to the note's metadata header.
+    pub fn metadata_header(&self) -> &NoteMetadataHeader {
+        self.header.metadata_header()
+    }
+
     /// Returns a commitment to the note and its metadata.
     ///
     /// > hash(NOTE_ID || NOTE_METADATA_COMMITMENT)
@@ -178,10 +202,10 @@ impl Note {
     }
 
     /// Consumes self and returns the underlying parts of the [`Note`].
-    pub fn into_parts(self) -> (NoteAssets, NoteMetadata, NoteRecipient) {
+    pub fn into_parts(self) -> (NoteAssets, NoteMetadata, NoteRecipient, NoteAttachments) {
         let (assets, recipient) = self.details.into_parts();
         let metadata = self.header.into_metadata();
-        (assets, metadata, recipient)
+        (assets, metadata, recipient, self.attachments)
     }
 }
 
@@ -218,7 +242,13 @@ impl From<Note> for NoteDetails {
 impl From<Note> for PartialNote {
     fn from(note: Note) -> Self {
         let (assets, recipient, ..) = note.details.into_parts();
-        PartialNote::new(note.header.into_metadata(), recipient.digest(), assets)
+        PartialNote::new(note.header.into_metadata(), recipient.digest(), assets, note.attachments)
+    }
+}
+
+impl From<&Note> for NoteHeader {
+    fn from(note: &Note) -> Self {
+        note.header.clone()
     }
 }
 
@@ -230,6 +260,7 @@ impl Serializable for Note {
         let Self {
             header,
             details,
+            attachments,
 
             // nullifier is not serialized as it can be computed from the rest of the data
             nullifier: _,
@@ -238,10 +269,13 @@ impl Serializable for Note {
         // only metadata is serialized as note ID can be computed from note details
         header.metadata().write_into(target);
         details.write_into(target);
+        attachments.write_into(target);
     }
 
     fn get_size_hint(&self) -> usize {
-        self.header.metadata().get_size_hint() + self.details.get_size_hint()
+        self.header.metadata().get_size_hint()
+            + self.details.get_size_hint()
+            + self.attachments.get_size_hint()
     }
 }
 
@@ -249,8 +283,9 @@ impl Deserializable for Note {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let metadata = NoteMetadata::read_from(source)?;
         let details = NoteDetails::read_from(source)?;
+        let attachments = NoteAttachments::read_from(source)?;
         let (assets, recipient) = details.into_parts();
 
-        Ok(Self::new(assets, metadata, recipient))
+        Ok(Self::with_attachments(assets, metadata, recipient, attachments))
     }
 }

@@ -18,7 +18,7 @@ use miden_protocol::asset::{Asset, FungibleAsset, TokenSymbol};
 use miden_protocol::note::{
     Note,
     NoteAssets,
-    NoteAttachment,
+    NoteAttachments,
     NoteId,
     NoteMetadata,
     NoteRecipient,
@@ -62,6 +62,7 @@ use miden_testing::{
     Auth,
     MockChain,
     MockChainBuilder,
+    assert_note_created,
     assert_transaction_executor_error,
 };
 use rand::Rng;
@@ -590,28 +591,20 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
         .execute()
         .await?;
 
-    // Verify that a PUBLIC note was created
     assert_eq!(executed_transaction.output_notes().num_notes(), 1);
-    let output_note = executed_transaction.output_notes().get_note(0);
+    assert_note_created!(
+        executed_transaction,
+        note_type: NoteType::Public,
+        sender: faucet.id(),
+        assets: [FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?],
+    );
 
-    // Extract the full note from the OutputNote enum
+    let output_note = executed_transaction.output_notes().get_note(0);
     let full_note = match output_note {
         RawOutputNote::Full(note) => note,
         _ => panic!("Expected OutputNote::Full variant"),
     };
 
-    // Verify the output note is public
-    assert_eq!(full_note.metadata().note_type(), NoteType::Public);
-
-    // Verify the output note contains the minted fungible asset
-    let expected_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?;
-    let expected_asset_obj = Asset::from(expected_asset);
-    assert!(full_note.assets().iter().any(|asset| asset == &expected_asset_obj));
-
-    // Verify the note was created by the faucet
-    assert_eq!(full_note.metadata().sender(), faucet.id());
-
-    // Verify the note storage commitment matches the expected commitment
     assert_eq!(
         full_note.recipient().storage().commitment(),
         note_storage.commitment(),
@@ -708,7 +701,7 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
         faucet.id(),
         faucet_owner_account_id,
         mint_storage,
-        NoteAttachment::default(),
+        NoteAttachments::default(),
         &mut rng,
     )?;
 
@@ -800,7 +793,7 @@ async fn test_network_faucet_owner_can_mint() -> anyhow::Result<()> {
         faucet.id(),
         owner_account_id,
         mint_inputs,
-        NoteAttachment::default(),
+        NoteAttachments::default(),
         &mut rng,
     )?;
 
@@ -952,7 +945,7 @@ async fn test_network_faucet_non_owner_cannot_mint() -> anyhow::Result<()> {
         faucet.id(),
         non_owner_account_id,
         mint_inputs,
-        NoteAttachment::default(),
+        NoteAttachments::default(),
         &mut rng,
     )?;
 
@@ -1051,7 +1044,7 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
         faucet.id(),
         initial_owner_account_id,
         mint_inputs.clone(),
-        NoteAttachment::default(),
+        NoteAttachments::default(),
         &mut rng,
     )?;
 
@@ -1418,7 +1411,7 @@ async fn network_faucet_burn() -> anyhow::Result<()> {
         faucet_owner_account_id,
         faucet.id(),
         fungible_asset.into(),
-        NoteAttachment::default(),
+        NoteAttachments::default(),
         &mut rng,
     )?;
 
@@ -1494,7 +1487,7 @@ async fn test_network_faucet_non_owner_cannot_burn_when_owner_only_policy_active
         non_owner_account_id,
         faucet.id(),
         fungible_asset.into(),
-        NoteAttachment::default(),
+        NoteAttachments::default(),
         &mut rng,
     )?;
     builder.add_output_note(RawOutputNote::Full(set_policy_note.clone()));
@@ -1552,7 +1545,7 @@ async fn test_network_faucet_owner_can_burn_when_owner_only_policy_active() -> a
         owner_account_id,
         faucet.id(),
         fungible_asset.into(),
-        NoteAttachment::default(),
+        NoteAttachments::default(),
         &mut rng,
     )?;
     builder.add_output_note(RawOutputNote::Full(set_policy_note.clone()));
@@ -1644,7 +1637,7 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
         faucet.id(),
         faucet_owner_account_id,
         mint_storage.clone(),
-        NoteAttachment::default(),
+        NoteAttachments::default(),
         &mut rng,
     )?;
 

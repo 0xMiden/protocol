@@ -114,7 +114,7 @@ impl BlockBody {
     pub fn compute_block_note_tree(&self) -> BlockNoteTree {
         let entries = self
             .output_notes()
-            .map(|(note_index, note)| (note_index, note.id(), note.metadata()));
+            .map(|(note_index, note)| (note_index, note.id(), note.metadata_header()));
 
         // SAFETY: We only construct block bodies that:
         // - do not contain duplicates

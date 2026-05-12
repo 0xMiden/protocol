@@ -2,7 +2,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use miden_protocol::account::{AccountId, AccountType};
-use miden_protocol::note::{NoteAttachmentContent, PartialNote};
+use miden_protocol::note::PartialNote;
 use miden_protocol::transaction::TransactionScript;
 use thiserror::Error;
 
@@ -166,8 +166,11 @@ impl AccountInterface {
         // and the array elements as value.
         let mut code_builder = CodeBuilder::new();
         for note in output_notes {
-            if let NoteAttachmentContent::Array(array) = note.metadata().attachment().content() {
-                code_builder.add_advice_map_entry(array.commitment(), array.as_slice().to_vec());
+            if let Some(attachment) = note.attachments().iter().next() {
+                code_builder.add_advice_map_entry(
+                    attachment.content().to_commitment(),
+                    attachment.content().to_elements(),
+                );
             }
         }
 
@@ -263,4 +266,6 @@ pub enum AccountInterfaceError {
         "account does not contain the basic fungible faucet or basic wallet interfaces which are needed to support the send_note script generation"
     )]
     UnsupportedAccountInterface,
+    #[error("multiple attachments per note are not supported")]
+    MultipleAttachmentsUnsupported,
 }

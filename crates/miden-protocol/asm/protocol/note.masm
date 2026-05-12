@@ -6,6 +6,9 @@ use miden::core::mem
 pub use miden::protocol::util::note::MAX_NOTE_STORAGE_ITEMS
 pub use miden::protocol::util::note::NOTE_TYPE_PUBLIC
 pub use miden::protocol::util::note::NOTE_TYPE_PRIVATE
+pub use miden::protocol::util::note::MAX_ATTACHMENT_SCHEME
+pub use miden::protocol::util::note::MAX_ATTACHMENT_WORDS
+pub use miden::protocol::util::note::ATTACHMENT_SCHEME_NONE
 
 # ERRORS
 # =================================================================================================
@@ -194,27 +197,28 @@ pub proc metadata_into_sender
     # => [sender_id_suffix, sender_id_prefix]
 end
 
-#! Extracts the attachment kind and scheme from the provided metadata header.
+#! Extracts the first attachment's num_words and scheme from the provided metadata header.
+#!
+#! TODO(multi_attachments): This API temporarily maintains compatibility with the previous approach
+#! that supported just one attachment per note.
 #!
 #! Inputs:  [METADATA_HEADER]
-#! Outputs: [attachment_kind, attachment_scheme]
+#! Outputs: [attachment_0_scheme]
 #!
 #! Where:
-#! - METADATA_HEADER is the metadata of a note.
-#! - attachment_kind is the attachment kind of the note.
-#! - attachment_scheme is the attachment scheme of the note.
+#! - METADATA_HEADER is the metadata word of a note.
+#! - attachment_0_scheme is the scheme of the first attachment (0 if absent).
 #!
 #! Invocation: exec
-pub proc metadata_into_attachment_info
-    # => [sender_id_suffix_type_version, sender_id_prefix, tag, attachment_kind_scheme]
-    drop drop drop
-    # => [attachment_kind_scheme]
+pub proc metadata_into_attachment_header
+    # => [sender_id_suffix_type_version, sender_id_prefix, tag, schemes]
 
-    # deconstruct the attachment_kind_scheme to extract the attachment_scheme
-    # attachment_kind_scheme = [30 zero bits | attachment_kind (2 bits) | attachment_scheme (32 bits)]
-    # u32split splits into [lo, hi] where lo is attachment_scheme
-    u32split swap
-    # => [attachment_kind, attachment_scheme]
+    drop drop drop
+    # => [schemes]
+
+    # extract attachment 0 scheme by taking only the lower 16 bits
+    u32and.0xffff
+    # [attachment_0_scheme]
 end
 
 #! Extracts the note type from the provided metadata header.
@@ -227,7 +231,7 @@ end
 #!
 #! Where:
 #! - METADATA_HEADER is the metadata of a note, laid out on the stack as
-#!   [sender_id_suffix_type_version, sender_id_prefix, tag, attachment_kind_scheme].
+#!   [sender_id_suffix_type_version, sender_id_prefix, tag, attachment_schemes].
 #!   The first felt (sender_id_suffix_type_version) has the following bit layout:
 #!   [sender_id_suffix (56 bits) | reserved (3 bits) | note_type (1 bit) | version (4 bits)]
 #! - note_type is the type of the note (0 for private, 1 for public).

@@ -7,6 +7,7 @@ use miden::protocol::asset
 use miden::protocol::note
 use miden::protocol::output_note
 use miden::protocol::asset::FUNGIBLE_ASSET_MAX_AMOUNT
+use miden::protocol::note::ATTACHMENT_SCHEME_NONE
 use miden::standards::note_tag
 use miden::standards::notes::p2id
 use miden::standards::wallets::basic->wallet
@@ -228,20 +229,21 @@ proc create_p2id_note
     loc_store.P2ID_AMT_NOTE_FILL
     # => []
 
-    # Set attachment: aux = amt_account_fill + amt_note_fill at Word[0].
-    # attachment_scheme = 0 (NoteAttachmentScheme::none).
+    # Add word-sized attachment [amt_account_fill + amt_note_fill, 0, 0, 0].
+    # with attachment scheme set to none.
     #
     # The add cannot overflow: `execute_pswap` asserts
     # `amt_account_fill + amt_note_fill <= requested_amount` before calling
     # this procedure, and `requested_amount` itself fits in a felt.
+    loc_load.P2ID_NOTE_IDX
     push.0.0.0
     loc_load.P2ID_AMT_ACCOUNT_FILL loc_load.P2ID_AMT_NOTE_FILL add
-    # => [total_fill, 0, 0, 0]
+    # => [[total_fill, 0, 0, 0], note_idx]
 
-    push.0 loc_load.P2ID_NOTE_IDX
-    # => [note_idx, attachment_scheme=0, total_fill, 0, 0, 0]
+    push.ATTACHMENT_SCHEME_NONE
+    # => [attachment_scheme_none, [total_fill, 0, 0, 0], note_idx]
 
-    exec.output_note::set_word_attachment
+    exec.output_note::add_word_attachment
     # => []
 
     # Move account_fill_amount from consumer's vault to P2ID note (if > 0)
@@ -355,14 +357,15 @@ proc create_remainder_note
     loc_store.REMAINDER_NOTE_IDX
     # => []
 
-    # Set attachment: aux = amt_payout at Word[0]
+    # Add word-sized attachment with [amt_payout, 0, 0, 0] with attachment scheme set to none.
+    loc_load.REMAINDER_NOTE_IDX
     push.0.0.0 loc_load.REMAINDER_AMT_PAYOUT
-    # => [amt_payout, 0, 0, 0]
+    # => [[amt_payout, 0, 0, 0], note_idx]
 
-    push.0 loc_load.REMAINDER_NOTE_IDX
-    # => [note_idx, attachment_scheme=0, amt_payout, 0, 0, 0]
+    push.ATTACHMENT_SCHEME_NONE
+    # => [attachment_scheme_none, [amt_payout, 0, 0, 0], note_idx]
 
-    exec.output_note::set_word_attachment
+    exec.output_note::add_word_attachment
     # => []
 
     # Add remaining offered asset: remainder_amount = amt_offered - amt_payout.

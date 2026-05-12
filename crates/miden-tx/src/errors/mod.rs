@@ -258,12 +258,10 @@ pub enum TransactionKernelError {
         "public note with metadata {0:?} and recipient digest {1} is missing details in the advice provider"
     )]
     PublicNoteMissingDetails(NoteMetadata, Word),
-    #[error("attachment provided to set_attachment must be empty when attachment kind is None")]
-    NoteAttachmentNoneIsNotEmpty,
     #[error(
-        "commitment of note attachment {actual} does not match attachment {provided} provided to set_attachment"
+        "commitment of note attachment advice data is {actual} which does not match commitment {provided} provided to add_attachment"
     )]
-    NoteAttachmentArrayMismatch { actual: Word, provided: Word },
+    NoteAttachmentCommitmentMismatch { actual: Word, provided: Word },
     #[error(
         "note storage in advice provider contains fewer items ({actual}) than specified ({specified}) by its number of storage items"
     )]
