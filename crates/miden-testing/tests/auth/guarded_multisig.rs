@@ -80,6 +80,54 @@ fn setup_keys_and_authenticators_with_scheme(
     Ok((secret_keys, auth_schemes, public_keys, authenticators))
 }
 
+/// Builds the source for a tx-script that calls `update_guardian_public_key`. When `output_note`
+/// is `Some`, the script also creates that note before the guardian update so a single call
+/// exercises both `assert_no_input_notes` and `assert_no_output_notes` paths.
+fn build_update_guardian_script_source(
+    new_guardian_key_word: Word,
+    new_guardian_scheme_id: u32,
+    output_note: Option<&Note>,
+) -> String {
+    match output_note {
+        Some(out) => {
+            let recipient = out.recipient().digest();
+            let note_type = NoteType::Public as u8;
+            let tag = Felt::from(out.metadata().tag());
+            format!(
+                "
+                use miden::protocol::output_note
+
+                begin
+                    push.{recipient}
+                    push.{note_type}
+                    push.{tag}
+                    exec.output_note::create
+                    swapdw
+                    dropw
+                    dropw
+                    push.{new_guardian_key_word}
+                    push.{new_guardian_scheme_id}
+                    call.::miden::standards::components::auth::guarded_multisig::update_guardian_public_key
+                    drop
+                    dropw
+                end
+                "
+            )
+        },
+        None => format!(
+            "
+            begin
+                push.{new_guardian_key_word}
+                push.{new_guardian_scheme_id}
+                call.::miden::standards::components::auth::guarded_multisig::update_guardian_public_key
+                drop
+                dropw
+            end
+            "
+        ),
+    }
+}
+
 /// Creates a guarded multisig account configured with a guardian signer.
 fn create_guarded_multisig_account(
     threshold: u32,
@@ -613,22 +661,14 @@ async fn test_guarded_multisig_update_guardian_enforces_no_notes(
     };
 
     // Compile the tx-script: bare update_guardian, or one that also creates the output note.
-    let update_guardian_script = if let Some(ref out) = output_note {
-        CodeBuilder::new()
-            .with_dynamically_linked_library(guarded_multisig_library())?
-            .compile_tx_script(format!(
-                "use miden::protocol::output_note\nbegin\n    push.{recipient}\n    push.{note_type}\n    push.{tag}\n    exec.output_note::create\n    swapdw\n    dropw\n    dropw\n    push.{new_guardian_key_word}\n    push.{new_guardian_scheme_id}\n    call.::miden::standards::components::auth::guarded_multisig::update_guardian_public_key\n    drop\n    dropw\nend",
-                recipient = out.recipient().digest(),
-                note_type = NoteType::Public as u8,
-                tag = Felt::from(out.metadata().tag()),
-            ))?
-    } else {
-        CodeBuilder::new()
-            .with_dynamically_linked_library(guarded_multisig_library())?
-            .compile_tx_script(format!(
-                "begin\n    push.{new_guardian_key_word}\n    push.{new_guardian_scheme_id}\n    call.::miden::standards::components::auth::guarded_multisig::update_guardian_public_key\n    drop\n    dropw\nend"
-            ))?
-    };
+    let script_source = build_update_guardian_script_source(
+        new_guardian_key_word,
+        new_guardian_scheme_id,
+        output_note.as_ref(),
+    );
+    let update_guardian_script = CodeBuilder::new()
+        .with_dynamically_linked_library(guarded_multisig_library())?
+        .compile_tx_script(script_source)?;
 
     // Optional no-op input note seeded into the chain so the multisig account can consume it
     // without invoking any non-auth procedure (DEFAULT_NOTE_SCRIPT is a single `nop`).
