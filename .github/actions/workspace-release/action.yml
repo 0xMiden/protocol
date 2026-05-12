@@ -22,24 +22,41 @@ runs:
     - name: Verify tag matches release branch HEAD
       if: ${{ inputs.verify-branch-head == 'true' }}
       shell: bash
+      env:
+        RELEASE_BRANCH: ${{ inputs.release-branch }}
       run: |
-        git fetch origin ${{ inputs.release-branch }} --depth=1
-        branch_sha="$(git rev-parse origin/${{ inputs.release-branch }})"
+        case "$RELEASE_BRANCH" in
+          "" | -*)
+            echo "::error::Invalid release branch name: $RELEASE_BRANCH"
+            exit 1
+            ;;
+        esac
+
+        if ! git check-ref-format --branch "$RELEASE_BRANCH" >/dev/null 2>&1; then
+          echo "::error::Invalid release branch name: $RELEASE_BRANCH"
+          exit 1
+        fi
+
+        git fetch origin "refs/heads/$RELEASE_BRANCH:refs/remotes/origin/$RELEASE_BRANCH" --depth=1
+        branch_sha="$(git rev-parse "refs/remotes/origin/$RELEASE_BRANCH")"
         tag_sha="$(git rev-parse HEAD)"
 
         echo "branch_sha=$branch_sha"
         echo "tag_sha=$tag_sha"
 
         if [ "$branch_sha" != "$tag_sha" ]; then
-          echo "::error::The release/tag commit does not match origin/${{ inputs.release-branch }} HEAD. Aborting."
+          echo "::error::The release/tag commit does not match origin/$RELEASE_BRANCH HEAD. Aborting."
           exit 1
         fi
 
     - name: Install Rust toolchain
-      uses: dtolnay/rust-toolchain@stable
+      shell: bash
+      run: |
+        rustup +stable update --no-self-update
+        rustup default stable
 
     - name: Cache cargo registry and git index
-      uses: actions/cache@v4
+      uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
       with:
         path: |
           ~/.cargo/registry
@@ -53,8 +70,10 @@ runs:
 
     # Install cargo-msrv for MSRV checks
     # Using binstall with --force to avoid stale cached binaries (see PR #2234)
+    # Keep this on a released install-action commit with an explicit tool; shortcut tags can
+    # trip zizmor's impostor-commit audit when they are later retagged.
     - name: Install cargo-binstall
-      uses: taiki-e/install-action@v2
+      uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486 # v2.75.18
       with:
         tool: cargo-binstall
 

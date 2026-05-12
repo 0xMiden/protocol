@@ -78,7 +78,7 @@ mod tests {
     fn test_as_word_layout() {
         let id = AccountId::dummy(
             [1u8; 15],
-            AccountIdVersion::Version0,
+            AccountIdVersion::Version1,
             AccountType::RegularAccountImmutableCode,
             AccountStorageMode::Private,
         );
@@ -95,7 +95,7 @@ mod tests {
     fn test_roundtrip_word_conversion() {
         let id = AccountId::dummy(
             [1u8; 15],
-            AccountIdVersion::Version0,
+            AccountIdVersion::Version1,
             AccountType::RegularAccountImmutableCode,
             AccountStorageMode::Private,
         );
@@ -111,7 +111,7 @@ mod tests {
     fn test_leaf_index_consistency() {
         let id = AccountId::dummy(
             [1u8; 15],
-            AccountIdVersion::Version0,
+            AccountIdVersion::Version1,
             AccountType::RegularAccountImmutableCode,
             AccountStorageMode::Private,
         );
@@ -127,7 +127,7 @@ mod tests {
     fn test_from_conversion() {
         let id = AccountId::dummy(
             [1u8; 15],
-            AccountIdVersion::Version0,
+            AccountIdVersion::Version1,
             AccountType::RegularAccountImmutableCode,
             AccountStorageMode::Private,
         );
@@ -141,7 +141,7 @@ mod tests {
         for _ in 0..100 {
             let id = AccountId::dummy(
                 [1u8; 15],
-                AccountIdVersion::Version0,
+                AccountIdVersion::Version1,
                 AccountType::RegularAccountImmutableCode,
                 AccountStorageMode::Private,
             );

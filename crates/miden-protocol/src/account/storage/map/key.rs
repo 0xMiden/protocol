@@ -1,7 +1,7 @@
 use alloc::string::String;
 
 use miden_crypto::merkle::smt::{LeafIndex, SMT_DEPTH};
-use miden_protocol_macros::WordWrapper;
+use miden_crypto_derive::WordWrapper;
 
 use crate::utils::serde::{
     ByteReader,

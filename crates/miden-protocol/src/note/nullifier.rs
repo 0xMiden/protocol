@@ -3,7 +3,7 @@ use core::fmt::{Debug, Display, Formatter};
 
 use miden_core::WORD_SIZE;
 use miden_crypto::WordError;
-use miden_protocol_macros::WordWrapper;
+use miden_crypto_derive::WordWrapper;
 
 use super::{
     ByteReader,
@@ -100,7 +100,7 @@ impl Debug for Nullifier {
 impl From<&NoteDetails> for Nullifier {
     fn from(note: &NoteDetails) -> Self {
         Self::new(
-            note.script().root(),
+            note.script().root().into(),
             note.storage().commitment(),
             note.assets().commitment(),
             note.serial_num(),

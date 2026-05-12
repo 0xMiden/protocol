@@ -1,7 +1,7 @@
 use alloc::string::String;
 use core::fmt::Display;
 
-use miden_protocol_macros::WordWrapper;
+use miden_crypto_derive::WordWrapper;
 
 use super::{Felt, Hasher, NoteDetails, Word};
 use crate::WordError;

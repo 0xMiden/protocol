@@ -24,15 +24,14 @@ use miden_protocol::note::{
     Note,
     NoteAssets,
     NoteAttachment,
-    NoteAttachmentContent,
     NoteAttachmentScheme,
-    NoteHeader,
+    NoteAttachments,
     NoteId,
-    NoteMetadata,
     NoteRecipient,
     NoteStorage,
     NoteTag,
     NoteType,
+    PartialNoteMetadata,
 };
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PRIVATE_SENDER,
@@ -43,7 +42,7 @@ use miden_protocol::testing::account_id::{
     ACCOUNT_ID_SENDER,
 };
 use miden_protocol::testing::constants::{FUNGIBLE_ASSET_AMOUNT, NON_FUNGIBLE_ASSET_DATA};
-use miden_protocol::testing::note::DEFAULT_NOTE_CODE;
+use miden_protocol::testing::note::DEFAULT_NOTE_SCRIPT;
 use miden_protocol::transaction::{
     InputNotes,
     RawOutputNote,
@@ -218,10 +217,10 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
     let tag3 = NoteTag::default();
 
     let attachment2 =
-        NoteAttachment::new_word(NoteAttachmentScheme::new(28), Word::from([2, 3, 4, 5u32]));
-    let attachment3 = NoteAttachment::new_array(
-        NoteAttachmentScheme::new(29),
-        [6, 7, 8, 9u32].map(Felt::from).to_vec(),
+        NoteAttachment::with_word(NoteAttachmentScheme::new(28)?, Word::from([2, 3, 4, 5u32]));
+    let attachment3 = NoteAttachment::with_words(
+        NoteAttachmentScheme::new(29)?,
+        vec![Word::from([6, 7, 8, 9u32]), Word::from([10, 11, 12, 13u32])],
     )?;
 
     let note_type1 = NoteType::Private;
@@ -235,25 +234,25 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
 
     // Create the expected output note for Note 2 which is public
     let serial_num_2 = Word::from([1, 2, 3, 4u32]);
-    let note_script_2 = CodeBuilder::default().compile_note_script(DEFAULT_NOTE_CODE)?;
+    let note_script_2 = CodeBuilder::default().compile_note_script(DEFAULT_NOTE_SCRIPT)?;
     let inputs_2 = NoteStorage::new(vec![ONE])?;
-    let metadata_2 = NoteMetadata::new(account_id, note_type2)
-        .with_tag(tag2)
-        .with_attachment(attachment2.clone());
+    let metadata_2 = PartialNoteMetadata::new(account_id, note_type2).with_tag(tag2);
     let vault_2 = NoteAssets::new(vec![removed_asset_3, removed_asset_4])?;
     let recipient_2 = NoteRecipient::new(serial_num_2, note_script_2, inputs_2);
-    let expected_output_note_2 = Note::new(vault_2, metadata_2, recipient_2);
+    let attachments_2 = NoteAttachments::from(attachment2.clone());
+    let expected_output_note_2 =
+        Note::with_attachments(vault_2, metadata_2, recipient_2, attachments_2);
 
     // Create the expected output note for Note 3 which is public
     let serial_num_3 = Word::from([Felt::new(5), Felt::new(6), Felt::new(7), Felt::new(8)]);
-    let note_script_3 = CodeBuilder::default().compile_note_script(DEFAULT_NOTE_CODE)?;
+    let note_script_3 = CodeBuilder::default().compile_note_script(DEFAULT_NOTE_SCRIPT)?;
     let inputs_3 = NoteStorage::new(vec![ONE, Felt::new(2)])?;
-    let metadata_3 = NoteMetadata::new(account_id, note_type3)
-        .with_tag(tag3)
-        .with_attachment(attachment3.clone());
+    let metadata_3 = PartialNoteMetadata::new(account_id, note_type3).with_tag(tag3);
     let vault_3 = NoteAssets::new(vec![])?;
     let recipient_3 = NoteRecipient::new(serial_num_3, note_script_3, inputs_3);
-    let expected_output_note_3 = Note::new(vault_3, metadata_3, recipient_3);
+    let attachments_3 = NoteAttachments::from(attachment3.clone());
+    let expected_output_note_3 =
+        Note::with_attachments(vault_3, metadata_3, recipient_3, attachments_3);
 
     let tx_script_src = format!(
         "\
@@ -307,8 +306,8 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
 
             push.{ATTACHMENT2}
             push.{attachment_scheme2}
-            movup.5
-            exec.output_note::set_word_attachment
+            # => [attachment_scheme, ATTACHMENT, note_idx]
+            exec.output_note::add_word_attachment
             # => []
 
             # create a public note without assets
@@ -318,10 +317,15 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
             exec.output_note::create
             # => [note_idx = 2]
 
-            push.{ATTACHMENT3}
+            # Store attachment3 words to memory at address 1024
+            push.{attachment3_word0} mem_storew_le.1024 dropw
+            push.{attachment3_word1} mem_storew_le.1028 dropw
+
+            push.1024
+            push.{num_attachment3_words}
             push.{attachment_scheme3}
-            movup.5
-            exec.output_note::set_array_attachment
+            # => [attachment_scheme, num_words, ptr, note_idx]
+            exec.output_note::add_attachment_from_memory
             # => []
         end
     ",
@@ -338,10 +342,12 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
         NOTETYPE1 = note_type1 as u8,
         NOTETYPE2 = note_type2 as u8,
         NOTETYPE3 = note_type3 as u8,
-        attachment_scheme2 = attachment2.attachment_scheme().as_u32(),
-        ATTACHMENT2 = attachment2.content().to_word(),
-        attachment_scheme3 = attachment3.attachment_scheme().as_u32(),
-        ATTACHMENT3 = attachment3.content().to_word(),
+        attachment_scheme2 = attachment2.attachment_scheme().as_u16(),
+        ATTACHMENT2 = Word::from([2, 3, 4, 5u32]),
+        attachment_scheme3 = attachment3.attachment_scheme().as_u16(),
+        attachment3_word0 = attachment3.content().as_words()[0],
+        attachment3_word1 = attachment3.content().as_words()[1],
+        num_attachment3_words = attachment3.content().num_words(),
     );
 
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script_src)?;
@@ -350,13 +356,10 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
     // --------------------------------------------------------------------------------------------
     // execute the transaction and get the witness
 
-    let NoteAttachmentContent::Array(array) = attachment3.content() else {
-        panic!("expected array attachment");
-    };
+    assert!(attachment3.content().num_words() > 1, "expected multi-word attachment");
 
     let tx_context = TransactionContextBuilder::new(executor_account)
         .tx_script(tx_script)
-        .extend_advice_map(vec![(attachment3.content().to_word(), array.as_slice().to_vec())])
         .extend_expected_output_notes(vec![
             RawOutputNote::Full(expected_output_note_2.clone()),
             RawOutputNote::Full(expected_output_note_3.clone()),
@@ -382,12 +385,7 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
     // assert that the expected output note 2 is present
     let resulting_output_note_2 = executed_transaction.output_notes().get_note(1);
 
-    let expected_note_id_2 = expected_output_note_2.id();
-    let expected_note_metadata_2 = expected_output_note_2.metadata().clone();
-    assert_eq!(
-        *resulting_output_note_2.header(),
-        NoteHeader::new(expected_note_id_2, expected_note_metadata_2)
-    );
+    assert_eq!(*resulting_output_note_2.header(), *expected_output_note_2.header());
 
     // assert that the expected output note 3 is present and has no assets
     let resulting_output_note_3 = executed_transaction.output_notes().get_note(2);
@@ -472,7 +470,7 @@ async fn user_code_can_abort_transaction_with_summary() -> anyhow::Result<()> {
         account.id(),
         vec![],
         NoteType::Private,
-        NoteAttachment::default(),
+        NoteAttachments::default(),
         &mut rng,
     )?;
     let input_note = create_spawn_note(vec![&output_note])?;
@@ -517,7 +515,7 @@ async fn tx_summary_commitment_is_signed_by_falcon_auth() -> anyhow::Result<()> 
         account.id(),
         vec![],
         NoteType::Private,
-        NoteAttachment::default(),
+        NoteAttachments::default(),
         &mut rng,
     )?;
     let spawn_note = builder.add_spawn_note([&p2id_note])?;
@@ -576,7 +574,7 @@ async fn tx_summary_commitment_is_signed_by_ecdsa_auth() -> anyhow::Result<()> {
         account.id(),
         vec![],
         NoteType::Private,
-        NoteAttachment::default(),
+        NoteAttachments::default(),
         &mut rng,
     )?;
     let spawn_note = builder.add_spawn_note([&p2id_note])?;
@@ -748,6 +746,62 @@ async fn test_tx_script_args() -> anyhow::Result<()> {
         .build()?;
 
     tx_context.execute().await?;
+
+    Ok(())
+}
+
+/// Tests that `tx::get_tx_script_root` returns the root of the executed transaction script.
+#[tokio::test]
+async fn test_get_script_root_with_script() -> anyhow::Result<()> {
+    let tx_script = CodeBuilder::default().compile_tx_script("begin nop end")?;
+    let expected_root = tx_script.root();
+
+    let code = format!(
+        r#"
+        use miden::protocol::tx
+        use $kernel::prologue
+
+        begin
+            exec.prologue::prepare_transaction
+
+            exec.tx::get_tx_script_root
+            # => [TX_SCRIPT_ROOT]
+
+            push.{expected_root} assert_eqw.err="tx script root mismatch"
+        end
+        "#
+    );
+
+    let tx_context = TransactionContextBuilder::with_existing_mock_account()
+        .tx_script(tx_script)
+        .build()?;
+
+    tx_context.execute_code(&code).await?;
+
+    Ok(())
+}
+
+/// Tests that `tx::get_tx_script_root` returns the empty word when no transaction script is
+/// executed.
+#[tokio::test]
+async fn test_get_script_root_without_script() -> anyhow::Result<()> {
+    let code = r#"
+        use miden::protocol::tx
+        use $kernel::prologue
+
+        begin
+            exec.prologue::prepare_transaction
+
+            exec.tx::get_tx_script_root
+            # => [TX_SCRIPT_ROOT]
+
+            padw assert_eqw.err="tx script root must be zero when no script is executed"
+        end
+        "#;
+
+    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+
+    tx_context.execute_code(code).await?;
 
     Ok(())
 }

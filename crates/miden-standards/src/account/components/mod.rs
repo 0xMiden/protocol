@@ -34,6 +34,13 @@ static OWNABLE2STEP_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     Library::read_from_bytes(bytes).expect("Shipped Ownable2Step library is well-formed")
 });
 
+// Initialize the RoleBasedAccessControl library only once.
+static RBAC_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+    let bytes =
+        include_bytes!(concat!(env!("OUT_DIR"), "/assets/account_components/access/rbac.masl"));
+    Library::read_from_bytes(bytes).expect("Shipped RoleBasedAccessControl library is well-formed")
+});
+
 // AUTH LIBRARIES
 // ================================================================================================
 
@@ -76,45 +83,72 @@ static NO_AUTH_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     Library::read_from_bytes(bytes).expect("Shipped NoAuth library is well-formed")
 });
 
+// Initialize the AuthNetworkAccount library only once.
+static NETWORK_ACCOUNT_AUTH_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+    let bytes = include_bytes!(concat!(
+        env!("OUT_DIR"),
+        "/assets/account_components/auth/network_account.masl"
+    ));
+    Library::read_from_bytes(bytes).expect("Shipped AuthNetworkAccount library is well-formed")
+});
+
 // FAUCET LIBRARIES
 // ================================================================================================
 
 // Initialize the Basic Fungible Faucet library only once.
-static BASIC_FUNGIBLE_FAUCET_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+static FUNGIBLE_FAUCET_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     let bytes = include_bytes!(concat!(
         env!("OUT_DIR"),
-        "/assets/account_components/faucets/basic_fungible_faucet.masl"
+        "/assets/account_components/faucets/fungible_faucet.masl"
     ));
     Library::read_from_bytes(bytes).expect("Shipped Basic Fungible Faucet library is well-formed")
 });
 
-// Initialize the Network Fungible Faucet library only once.
-static NETWORK_FUNGIBLE_FAUCET_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+// Initialize the Token Policy Manager library only once.
+static POLICY_MANAGER_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     let bytes = include_bytes!(concat!(
         env!("OUT_DIR"),
-        "/assets/account_components/faucets/network_fungible_faucet.masl"
+        "/assets/account_components/faucets/policies/policy_manager.masl"
     ));
-    Library::read_from_bytes(bytes).expect("Shipped Network Fungible Faucet library is well-formed")
+    Library::read_from_bytes(bytes).expect("Shipped Token Policy Manager library is well-formed")
 });
 
-// Initialize the Mint Policy Owner Controlled library only once.
-static MINT_POLICY_OWNER_CONTROLLED_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+// Initialize the `allow_all` Mint Policy library only once.
+static ALLOW_ALL_MINT_POLICY_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     let bytes = include_bytes!(concat!(
         env!("OUT_DIR"),
-        "/assets/account_components/mint_policies/owner_controlled.masl"
+        "/assets/account_components/faucets/policies/mint/allow_all.masl"
     ));
-    Library::read_from_bytes(bytes)
-        .expect("Shipped Mint Policy Owner Controlled library is well-formed")
+    Library::read_from_bytes(bytes).expect("Shipped `allow_all` Mint Policy library is well-formed")
 });
 
-// Initialize the Mint Policy Auth Controlled library only once.
-static MINT_POLICY_AUTH_CONTROLLED_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+// Initialize the `owner_only` Mint Policy library only once.
+static OWNER_ONLY_MINT_POLICY_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     let bytes = include_bytes!(concat!(
         env!("OUT_DIR"),
-        "/assets/account_components/mint_policies/auth_controlled.masl"
+        "/assets/account_components/faucets/policies/mint/owner_controlled/owner_only.masl"
     ));
     Library::read_from_bytes(bytes)
-        .expect("Shipped Mint Policy Auth Controlled library is well-formed")
+        .expect("Shipped `owner_only` Mint Policy library is well-formed")
+});
+
+// Initialize the `allow_all` Burn Policy library only once.
+static ALLOW_ALL_BURN_POLICY_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+    let bytes = include_bytes!(concat!(
+        env!("OUT_DIR"),
+        "/assets/account_components/faucets/policies/burn/allow_all.masl"
+    ));
+    Library::read_from_bytes(bytes).expect("Shipped `allow_all` Burn Policy library is well-formed")
+});
+
+// Initialize the `owner_only` Burn Policy library only once.
+static OWNER_ONLY_BURN_POLICY_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+    let bytes = include_bytes!(concat!(
+        env!("OUT_DIR"),
+        "/assets/account_components/faucets/policies/burn/owner_controlled/owner_only.masl"
+    ));
+    Library::read_from_bytes(bytes)
+        .expect("Shipped `owner_only` Burn Policy library is well-formed")
 });
 
 // METADATA LIBRARIES
@@ -130,24 +164,39 @@ pub fn ownable2step_library() -> Library {
     OWNABLE2STEP_LIBRARY.clone()
 }
 
+/// Returns the RoleBasedAccessControl Library.
+pub fn rbac_library() -> Library {
+    RBAC_LIBRARY.clone()
+}
+
 /// Returns the Basic Fungible Faucet Library.
-pub fn basic_fungible_faucet_library() -> Library {
-    BASIC_FUNGIBLE_FAUCET_LIBRARY.clone()
+pub fn fungible_faucet_library() -> Library {
+    FUNGIBLE_FAUCET_LIBRARY.clone()
 }
 
-/// Returns the Network Fungible Faucet Library.
-pub fn network_fungible_faucet_library() -> Library {
-    NETWORK_FUNGIBLE_FAUCET_LIBRARY.clone()
+/// Returns the Token Policy Manager Library.
+pub fn policy_manager_library() -> Library {
+    POLICY_MANAGER_LIBRARY.clone()
 }
 
-/// Returns the Mint Policy Owner Controlled Library.
-pub fn owner_controlled_library() -> Library {
-    MINT_POLICY_OWNER_CONTROLLED_LIBRARY.clone()
+/// Returns the `allow_all` Mint Policy Library.
+pub fn allow_all_mint_policy_library() -> Library {
+    ALLOW_ALL_MINT_POLICY_LIBRARY.clone()
 }
 
-/// Returns the Mint Policy Auth Controlled Library.
-pub fn auth_controlled_library() -> Library {
-    MINT_POLICY_AUTH_CONTROLLED_LIBRARY.clone()
+/// Returns the `owner_only` Mint Policy Library.
+pub fn owner_only_mint_policy_library() -> Library {
+    OWNER_ONLY_MINT_POLICY_LIBRARY.clone()
+}
+
+/// Returns the `allow_all` Burn Policy Library.
+pub fn allow_all_burn_policy_library() -> Library {
+    ALLOW_ALL_BURN_POLICY_LIBRARY.clone()
+}
+
+/// Returns the `owner_only` Burn Policy Library.
+pub fn owner_only_burn_policy_library() -> Library {
+    OWNER_ONLY_BURN_POLICY_LIBRARY.clone()
 }
 
 /// Returns the Singlesig Library.
@@ -175,6 +224,11 @@ pub fn no_auth_library() -> Library {
     NO_AUTH_LIBRARY.clone()
 }
 
+/// Returns the AuthNetworkAccount Library.
+pub fn network_account_auth_library() -> Library {
+    NETWORK_ACCOUNT_AUTH_LIBRARY.clone()
+}
+
 // STANDARD ACCOUNT COMPONENTS
 // ================================================================================================
 
@@ -182,13 +236,15 @@ pub fn no_auth_library() -> Library {
 /// crate.
 pub enum StandardAccountComponent {
     BasicWallet,
-    BasicFungibleFaucet,
-    NetworkFungibleFaucet,
+    FungibleFaucet,
+    Ownable2Step,
+    RoleBasedAccessControl,
     AuthSingleSig,
     AuthSingleSigAcl,
     AuthMultisig,
     AuthGuardedMultisig,
     AuthNoAuth,
+    AuthNetworkAccount,
 }
 
 impl StandardAccountComponent {
@@ -196,13 +252,15 @@ impl StandardAccountComponent {
     pub fn procedure_digests(&self) -> impl Iterator<Item = Word> {
         let library = match self {
             Self::BasicWallet => BASIC_WALLET_LIBRARY.as_ref(),
-            Self::BasicFungibleFaucet => BASIC_FUNGIBLE_FAUCET_LIBRARY.as_ref(),
-            Self::NetworkFungibleFaucet => NETWORK_FUNGIBLE_FAUCET_LIBRARY.as_ref(),
+            Self::FungibleFaucet => FUNGIBLE_FAUCET_LIBRARY.as_ref(),
+            Self::Ownable2Step => OWNABLE2STEP_LIBRARY.as_ref(),
+            Self::RoleBasedAccessControl => RBAC_LIBRARY.as_ref(),
             Self::AuthSingleSig => SINGLESIG_LIBRARY.as_ref(),
             Self::AuthSingleSigAcl => SINGLESIG_ACL_LIBRARY.as_ref(),
             Self::AuthMultisig => MULTISIG_LIBRARY.as_ref(),
             Self::AuthGuardedMultisig => GUARDED_MULTISIG_LIBRARY.as_ref(),
             Self::AuthNoAuth => NO_AUTH_LIBRARY.as_ref(),
+            Self::AuthNetworkAccount => NETWORK_ACCOUNT_AUTH_LIBRARY.as_ref(),
         };
 
         library
@@ -239,11 +297,14 @@ impl StandardAccountComponent {
                 Self::BasicWallet => {
                     component_interface_vec.push(AccountComponentInterface::BasicWallet)
                 },
-                Self::BasicFungibleFaucet => {
-                    component_interface_vec.push(AccountComponentInterface::BasicFungibleFaucet)
+                Self::FungibleFaucet => {
+                    component_interface_vec.push(AccountComponentInterface::FungibleFaucet)
                 },
-                Self::NetworkFungibleFaucet => {
-                    component_interface_vec.push(AccountComponentInterface::NetworkFungibleFaucet)
+                Self::Ownable2Step => {
+                    component_interface_vec.push(AccountComponentInterface::Ownable2Step)
+                },
+                Self::RoleBasedAccessControl => {
+                    component_interface_vec.push(AccountComponentInterface::RoleBasedAccessControl)
                 },
                 Self::AuthSingleSig => {
                     component_interface_vec.push(AccountComponentInterface::AuthSingleSig)
@@ -260,6 +321,9 @@ impl StandardAccountComponent {
                 Self::AuthNoAuth => {
                     component_interface_vec.push(AccountComponentInterface::AuthNoAuth)
                 },
+                Self::AuthNetworkAccount => {
+                    component_interface_vec.push(AccountComponentInterface::AuthNetworkAccount)
+                },
             }
         }
     }
@@ -271,12 +335,14 @@ impl StandardAccountComponent {
         component_interface_vec: &mut Vec<AccountComponentInterface>,
     ) {
         Self::BasicWallet.extract_component(procedures_set, component_interface_vec);
-        Self::BasicFungibleFaucet.extract_component(procedures_set, component_interface_vec);
-        Self::NetworkFungibleFaucet.extract_component(procedures_set, component_interface_vec);
+        Self::FungibleFaucet.extract_component(procedures_set, component_interface_vec);
+        Self::RoleBasedAccessControl.extract_component(procedures_set, component_interface_vec);
+        Self::Ownable2Step.extract_component(procedures_set, component_interface_vec);
         Self::AuthSingleSig.extract_component(procedures_set, component_interface_vec);
         Self::AuthSingleSigAcl.extract_component(procedures_set, component_interface_vec);
         Self::AuthGuardedMultisig.extract_component(procedures_set, component_interface_vec);
         Self::AuthMultisig.extract_component(procedures_set, component_interface_vec);
         Self::AuthNoAuth.extract_component(procedures_set, component_interface_vec);
+        Self::AuthNetworkAccount.extract_component(procedures_set, component_interface_vec);
     }
 }

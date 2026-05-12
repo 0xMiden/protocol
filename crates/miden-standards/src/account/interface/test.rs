@@ -2,18 +2,18 @@ use assert_matches::assert_matches;
 use miden_protocol::account::auth::{self, PublicKeyCommitment};
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{AccountBuilder, AccountComponent, AccountId, AccountType};
-use miden_protocol::asset::{FungibleAsset, NonFungibleAsset, TokenSymbol};
+use miden_protocol::asset::{AssetAmount, FungibleAsset, NonFungibleAsset, TokenSymbol};
 use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
     Note,
     NoteAssets,
-    NoteAttachment,
-    NoteMetadata,
+    NoteAttachments,
     NoteRecipient,
     NoteStorage,
     NoteTag,
     NoteType,
+    PartialNoteMetadata,
 };
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
@@ -23,7 +23,7 @@ use miden_protocol::{Felt, Word};
 
 use crate::AuthMethod;
 use crate::account::auth::{AuthMultisig, AuthMultisigConfig, AuthSingleSig, NoAuth};
-use crate::account::faucets::BasicFungibleFaucet;
+use crate::account::faucets::{FungibleFaucet, TokenName};
 use crate::account::interface::{
     AccountComponentInterface,
     AccountInterface,
@@ -55,12 +55,14 @@ fn test_basic_wallet_default_notes() {
         .account_type(AccountType::FungibleFaucet)
         .with_auth_component(get_mock_falcon_auth_component())
         .with_component(
-            BasicFungibleFaucet::new(
+            FungibleFaucet::builder(
+                TokenName::new("POL").unwrap(),
                 TokenSymbol::new("POL").expect("invalid token symbol"),
                 10,
-                Felt::new(100),
+                AssetAmount::new(100).unwrap(),
             )
-            .expect("failed to create a fungible faucet component"),
+            .build()
+            .expect("failed to create faucet"),
         )
         .build_existing()
         .expect("failed to create wallet account");
@@ -98,9 +100,8 @@ fn test_basic_wallet_default_notes() {
         offered_asset,
         requested_asset,
         NoteType::Public,
-        NoteAttachment::default(),
+        NoteAttachments::default(),
         NoteType::Public,
-        NoteAttachment::default(),
         &mut RandomCoin::new(Word::from([1, 2, 3, 4u32])),
     )
     .unwrap();
@@ -193,9 +194,8 @@ fn test_custom_account_default_note() {
         offered_asset,
         requested_asset,
         NoteType::Public,
-        NoteAttachment::default(),
+        NoteAttachments::default(),
         NoteType::Public,
-        NoteAttachment::default(),
         &mut RandomCoin::new(Word::from([1, 2, 3, 4u32])),
     )
     .unwrap();
@@ -226,9 +226,8 @@ fn test_required_asset_same_as_offered() {
         offered_asset,
         requested_asset,
         NoteType::Public,
-        NoteAttachment::default(),
+        NoteAttachments::default(),
         NoteType::Public,
-        NoteAttachment::default(),
         &mut RandomCoin::new(Word::from([1, 2, 3, 4u32])),
     );
 
@@ -252,15 +251,16 @@ fn test_basic_wallet_custom_notes() {
     let sender_account_id = ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2.try_into().unwrap();
     let serial_num = RandomCoin::new(Word::from([1, 2, 3, 4u32])).draw_word();
     let tag = NoteTag::with_account_target(wallet_account.id());
-    let metadata = NoteMetadata::new(sender_account_id, NoteType::Public).with_tag(tag);
+    let metadata = PartialNoteMetadata::new(sender_account_id, NoteType::Public).with_tag(tag);
     let vault = NoteAssets::new(vec![FungibleAsset::mock(100)]).unwrap();
 
     let compatible_source_code = "
         use miden::protocol::tx
         use miden::standards::wallets::basic->wallet
-        use miden::standards::faucets::basic_fungible->fungible_faucet
+        use miden::standards::faucets::fungible->fungible_faucet
 
-        begin
+        @note_script
+        pub proc main
             push.1
             if.true
                 # supported procs
@@ -269,7 +269,7 @@ fn test_basic_wallet_custom_notes() {
 
                 # unsupported procs
                 call.fungible_faucet::mint_and_send
-                call.fungible_faucet::burn
+                call.fungible_faucet::receive_and_burn
             else
                 # supported procs
                 call.wallet::receive_asset
@@ -279,7 +279,7 @@ fn test_basic_wallet_custom_notes() {
     ";
     let note_script = CodeBuilder::default().compile_note_script(compatible_source_code).unwrap();
     let recipient = NoteRecipient::new(serial_num, note_script, NoteStorage::default());
-    let compatible_custom_note = Note::new(vault.clone(), metadata.clone(), recipient);
+    let compatible_custom_note = Note::new(vault.clone(), metadata, recipient);
     assert_eq!(
         NoteAccountCompatibility::Maybe,
         wallet_account_interface.is_compatible_with(&compatible_custom_note)
@@ -287,14 +287,15 @@ fn test_basic_wallet_custom_notes() {
 
     let incompatible_source_code = "
         use miden::standards::wallets::basic->wallet
-        use miden::standards::faucets::basic_fungible->fungible_faucet
+        use miden::standards::faucets::fungible->fungible_faucet
 
-        begin
+        @note_script
+        pub proc main
             push.1
             if.true
                 # unsupported procs
                 call.fungible_faucet::mint_and_send
-                call.fungible_faucet::burn
+                call.fungible_faucet::receive_and_burn
             else
                 # unsupported proc
                 call.fungible_faucet::mint_and_send
@@ -315,18 +316,20 @@ fn test_basic_wallet_custom_notes() {
 }
 
 #[test]
-fn test_basic_fungible_faucet_custom_notes() {
+fn test_fungible_faucet_custom_notes() {
     let mock_seed = Word::from([Felt::new(4), Felt::new(5), Felt::new(6), Felt::new(7)]).as_bytes();
     let faucet_account = AccountBuilder::new(mock_seed)
         .account_type(AccountType::FungibleFaucet)
         .with_auth_component(get_mock_falcon_auth_component())
         .with_component(
-            BasicFungibleFaucet::new(
+            FungibleFaucet::builder(
+                TokenName::new("POL").unwrap(),
                 TokenSymbol::new("POL").expect("invalid token symbol"),
                 10,
-                Felt::new(100),
+                AssetAmount::new(100).unwrap(),
             )
-            .expect("failed to create a fungible faucet component"),
+            .build()
+            .expect("failed to create faucet"),
         )
         .build_existing()
         .expect("failed to create wallet account");
@@ -335,19 +338,20 @@ fn test_basic_fungible_faucet_custom_notes() {
     let sender_account_id = ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2.try_into().unwrap();
     let serial_num = RandomCoin::new(Word::from([1, 2, 3, 4u32])).draw_word();
     let tag = NoteTag::with_account_target(faucet_account.id());
-    let metadata = NoteMetadata::new(sender_account_id, NoteType::Public).with_tag(tag);
+    let metadata = PartialNoteMetadata::new(sender_account_id, NoteType::Public).with_tag(tag);
     let vault = NoteAssets::new(vec![FungibleAsset::mock(100)]).unwrap();
 
     let compatible_source_code = "
         use miden::standards::wallets::basic->wallet
-        use miden::standards::faucets::basic_fungible->fungible_faucet
+        use miden::standards::faucets::fungible->fungible_faucet
 
-        begin
+        @note_script
+        pub proc main
             push.1
             if.true
                 # supported procs
                 call.fungible_faucet::mint_and_send
-                call.fungible_faucet::burn
+                call.fungible_faucet::receive_and_burn
             else
                 # supported proc
                 call.fungible_faucet::mint_and_send
@@ -360,7 +364,7 @@ fn test_basic_fungible_faucet_custom_notes() {
     ";
     let note_script = CodeBuilder::default().compile_note_script(compatible_source_code).unwrap();
     let recipient = NoteRecipient::new(serial_num, note_script, NoteStorage::default());
-    let compatible_custom_note = Note::new(vault.clone(), metadata.clone(), recipient);
+    let compatible_custom_note = Note::new(vault.clone(), metadata, recipient);
     assert_eq!(
         NoteAccountCompatibility::Maybe,
         faucet_account_interface.is_compatible_with(&compatible_custom_note)
@@ -368,20 +372,21 @@ fn test_basic_fungible_faucet_custom_notes() {
 
     let incompatible_source_code = "
         use miden::standards::wallets::basic->wallet
-        use miden::standards::faucets::basic_fungible->fungible_faucet
+        use miden::standards::faucets::fungible->fungible_faucet
 
-        begin
+        @note_script
+        pub proc main
             push.1
             if.true
                 # supported procs
                 call.fungible_faucet::mint_and_send
-                call.fungible_faucet::burn
+                call.fungible_faucet::receive_and_burn
 
                 # unsupported proc
                 call.wallet::receive_asset
             else
                 # supported proc
-                call.fungible_faucet::burn
+                call.fungible_faucet::receive_and_burn
 
                 # unsupported procs
                 call.wallet::move_asset_to_note
@@ -438,14 +443,15 @@ fn test_custom_account_custom_notes() {
 
     let serial_num = RandomCoin::new(Word::from([1, 2, 3, 4u32])).draw_word();
     let tag = NoteTag::with_account_target(target_account.id());
-    let metadata = NoteMetadata::new(sender_account.id(), NoteType::Public).with_tag(tag);
+    let metadata = PartialNoteMetadata::new(sender_account.id(), NoteType::Public).with_tag(tag);
     let vault = NoteAssets::new(vec![FungibleAsset::mock(100)]).unwrap();
 
     let compatible_source_code = "
         use miden::standards::wallets::basic->wallet
         use test::account::component_1->test_account
 
-        begin
+        @note_script
+        pub proc main
             push.1
             if.true
                 # supported proc
@@ -466,7 +472,7 @@ fn test_custom_account_custom_notes() {
         .compile_note_script(compatible_source_code)
         .unwrap();
     let recipient = NoteRecipient::new(serial_num, note_script, NoteStorage::default());
-    let compatible_custom_note = Note::new(vault.clone(), metadata.clone(), recipient);
+    let compatible_custom_note = Note::new(vault.clone(), metadata, recipient);
     assert_eq!(
         NoteAccountCompatibility::Maybe,
         target_account_interface.is_compatible_with(&compatible_custom_note)
@@ -476,7 +482,8 @@ fn test_custom_account_custom_notes() {
         use miden::standards::wallets::basic->wallet
         use test::account::component_1->test_account
 
-        begin
+        @note_script
+        pub proc main
             push.1
             if.true
                 call.wallet::receive_asset
@@ -542,15 +549,16 @@ fn test_custom_account_multiple_components_custom_notes() {
 
     let serial_num = RandomCoin::new(Word::from([1, 2, 3, 4u32])).draw_word();
     let tag = NoteTag::with_account_target(target_account.id());
-    let metadata = NoteMetadata::new(sender_account.id(), NoteType::Public).with_tag(tag);
+    let metadata = PartialNoteMetadata::new(sender_account.id(), NoteType::Public).with_tag(tag);
     let vault = NoteAssets::new(vec![FungibleAsset::mock(100)]).unwrap();
 
     let compatible_source_code = "
         use miden::standards::wallets::basic->wallet
         use test::account::component_1->test_account
-        use miden::standards::faucets::basic_fungible->fungible_faucet
+        use miden::standards::faucets::fungible->fungible_faucet
 
-        begin
+        @note_script
+        pub proc main
             push.1
             if.true
                 # supported procs
@@ -576,7 +584,7 @@ fn test_custom_account_multiple_components_custom_notes() {
         .compile_note_script(compatible_source_code)
         .unwrap();
     let recipient = NoteRecipient::new(serial_num, note_script, NoteStorage::default());
-    let compatible_custom_note = Note::new(vault.clone(), metadata.clone(), recipient);
+    let compatible_custom_note = Note::new(vault.clone(), metadata, recipient);
     assert_eq!(
         NoteAccountCompatibility::Maybe,
         target_account_interface.is_compatible_with(&compatible_custom_note)
@@ -585,9 +593,10 @@ fn test_custom_account_multiple_components_custom_notes() {
     let incompatible_source_code = "
         use miden::standards::wallets::basic->wallet
         use test::account::component_1->test_account
-        use miden::standards::faucets::basic_fungible->fungible_faucet
+        use miden::standards::faucets::fungible->fungible_faucet
 
-        begin
+        @note_script
+        pub proc main
             push.1
             if.true
                 # supported procs
@@ -604,7 +613,7 @@ fn test_custom_account_multiple_components_custom_notes() {
                 call.test_account::procedure_2
 
                 # unsupported proc
-                call.fungible_faucet::burn
+                call.fungible_faucet::receive_and_burn
             end
         end
     ";

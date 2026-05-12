@@ -183,7 +183,7 @@ impl SchemaType {
 
     /// Returns the schema type for fungible faucet token symbols.
     pub fn token_symbol() -> SchemaType {
-        SchemaType::new("miden::standards::fungible_faucets::metadata::token_symbol")
+        SchemaType::new("miden::standards::faucets::fungible::token_symbol")
             .expect("type is well formed")
     }
 

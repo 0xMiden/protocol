@@ -546,7 +546,7 @@ impl From<&InputNote> for InputNoteCommitment {
             },
             InputNote::Unauthenticated { note } => Self {
                 nullifier: note.nullifier(),
-                header: Some(note.header().clone()),
+                header: Some(*note.header()),
             },
         }
     }
@@ -583,7 +583,7 @@ impl Deserializable for InputNoteCommitment {
         let nullifier = Nullifier::read_from(source)?;
         let header = <Option<NoteHeader>>::read_from(source)?;
 
-        Ok(Self { nullifier, header })
+        Ok(Self::from_parts_unchecked(nullifier, header))
     }
 }
 
@@ -707,7 +707,7 @@ mod tests {
     fn test_proven_tx_serde_roundtrip() -> anyhow::Result<()> {
         let account_id = AccountId::dummy(
             [1; 15],
-            AccountIdVersion::Version0,
+            AccountIdVersion::Version1,
             AccountType::FungibleFaucet,
             AccountStorageMode::Private,
         );

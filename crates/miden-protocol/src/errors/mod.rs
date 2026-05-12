@@ -5,7 +5,6 @@ use core::error::Error;
 
 use miden_assembly::Report;
 use miden_assembly::diagnostics::reporting::PrintDiagnostic;
-use miden_core::Felt;
 use miden_core::mast::MastForestError;
 use miden_crypto::merkle::mmr::MmrError;
 use miden_crypto::merkle::smt::{SmtLeafError, SmtProofError};
@@ -33,9 +32,9 @@ use crate::batch::BatchId;
 use crate::block::BlockNumber;
 use crate::note::{
     NoteAssets,
-    NoteAttachmentArray,
-    NoteAttachmentKind,
+    NoteAttachment,
     NoteAttachmentScheme,
+    NoteAttachments,
     NoteTag,
     NoteType,
     Nullifier,
@@ -45,6 +44,7 @@ use crate::utils::serde::DeserializationError;
 use crate::vm::EventId;
 use crate::{
     ACCOUNT_UPDATE_MAX_SIZE,
+    Felt,
     MAX_ACCOUNTS_PER_BATCH,
     MAX_INPUT_NOTES_PER_BATCH,
     MAX_INPUT_NOTES_PER_TX,
@@ -108,8 +108,6 @@ pub enum ComponentMetadataError {
 
 #[derive(Debug, Error)]
 pub enum AccountError {
-    #[error("failed to deserialize account code")]
-    AccountCodeDeserializationError(#[source] DeserializationError),
     #[error("account code does not contain an auth component")]
     AccountCodeNoAuthComponent,
     #[error("account code contains multiple auth components")]
@@ -662,29 +660,29 @@ pub enum NoteError {
     InvalidNoteStorageLength { expected: usize, actual: usize },
     #[error("note tag requires a public note but the note is of type {0}")]
     PublicNoteRequired(NoteType),
+    #[error("note attachment content must have at least one word")]
+    NoteAttachmentContentEmpty,
     #[error(
-        "note attachment cannot commit to more than {} elements",
-        NoteAttachmentArray::MAX_NUM_ELEMENTS
+        "note attachment content contains {0} words, but the maximum is {max} words",
+        max = NoteAttachment::MAX_NUM_WORDS
     )]
-    NoteAttachmentArraySizeExceeded(usize),
-    #[error("unknown note attachment kind {0}")]
-    UnknownNoteAttachmentKind(u8),
-    #[error("note attachment of kind None must have attachment scheme None")]
-    AttachmentKindNoneMustHaveAttachmentSchemeNone,
+    NoteAttachmentContentTooManyWords(usize),
     #[error(
-        "note attachment kind mismatch: header has {header_kind:?} but attachment has {attachment_kind:?}"
+        "note attachments contain a total of {0} words, but the maximum allowed is {max} words",
+        max = NoteAttachments::MAX_NUM_WORDS
     )]
-    AttachmentKindMismatch {
-        header_kind: NoteAttachmentKind,
-        attachment_kind: NoteAttachmentKind,
-    },
+    NoteAttachmentsTooManyWords(usize),
     #[error(
-        "note attachment scheme mismatch: header has {header_scheme:?} but attachment has {attachment_scheme:?}"
+        "attachment size {0} exceeds maximum {max}",
+        max = NoteAttachment::MAX_NUM_WORDS
     )]
-    AttachmentSchemeMismatch {
-        header_scheme: NoteAttachmentScheme,
-        attachment_scheme: NoteAttachmentScheme,
-    },
+    NoteAttachmentHeaderSizeExceeded(u8),
+    #[error("{0} attachments were provided but maximum is {max}", max = NoteAttachments::MAX_COUNT)]
+    TooManyAttachments(usize),
+    #[error("attachment scheme {0} exceeds maximum value of {max}", max = NoteAttachmentScheme::MAX)]
+    NoteAttachmentSchemeExceeded(u32),
+    #[error("attachment scheme value 0 is reserved")]
+    NoteAttachmentSchemeZeroReserved,
     #[error("{error_msg}")]
     Other {
         error_msg: Box<str>,
@@ -764,6 +762,8 @@ impl PartialBlockchainError {
 pub enum TransactionScriptError {
     #[error("failed to assemble transaction script:\n{}", PrintDiagnostic::new(.0))]
     AssemblyError(Report),
+    #[error("failed to convert package to transaction script:\n{}", PrintDiagnostic::new(.0))]
+    PackageNotProgram(Report),
 }
 
 // TRANSACTION INPUT ERROR
@@ -859,7 +859,7 @@ pub enum TransactionOutputError {
 
 /// Errors that can occur when creating a
 /// [`PublicOutputNote`](crate::transaction::PublicOutputNote) or
-/// [`PrivateNoteHeader`](crate::transaction::PrivateNoteHeader).
+/// [`PrivateOutputNote`](crate::transaction::PrivateOutputNote).
 #[derive(Debug, Error)]
 pub enum OutputNoteError {
     #[error("note with id {0} is private but expected a public note")]
@@ -1231,8 +1231,8 @@ pub enum ProposedBlockError {
 
 #[derive(Debug, Error)]
 pub enum FeeError {
-    #[error("native asset of the chain must be a fungible faucet but was of type {account_type}")]
-    NativeAssetIdNotFungible { account_type: AccountType },
+    #[error("fee faucet of the chain must be a fungible faucet but was of type {account_type}")]
+    FeeFaucetIdNotFungible { account_type: AccountType },
 }
 
 // NULLIFIER TREE ERROR
