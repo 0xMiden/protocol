@@ -263,6 +263,4 @@ pub enum AccountInterfaceError {
         "account does not contain the basic fungible faucet or basic wallet interfaces which are needed to support the send_note script generation"
     )]
     UnsupportedAccountInterface,
-    #[error("multiple attachments per note are not supported")]
-    MultipleAttachmentsUnsupported,
 }
