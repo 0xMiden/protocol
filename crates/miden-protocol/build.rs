@@ -20,6 +20,7 @@ const ASM_PROTOCOL_DIR: &str = "protocol";
 const SHARED_UTILS_DIR: &str = "shared_utils";
 const SHARED_MODULES_DIR: &str = "shared_modules";
 const ASM_TX_KERNEL_DIR: &str = "kernels/transaction";
+const ASM_BATCH_KERNEL_DIR: &str = "kernels/batch";
 
 const PROTOCOL_LIB_NAMESPACE: &str = "miden::protocol";
 
@@ -30,7 +31,7 @@ const PROTOCOL_LIB_ERRORS_RS_FILE: &str = "protocol_errors.rs";
 const TX_KERNEL_ERRORS_ARRAY_NAME: &str = "TX_KERNEL_ERRORS";
 const PROTOCOL_LIB_ERRORS_ARRAY_NAME: &str = "PROTOCOL_LIB_ERRORS";
 
-const TX_KERNEL_ERROR_CATEGORIES: [&str; 14] = [
+const TX_KERNEL_ERROR_CATEGORIES: [&str; 15] = [
     "KERNEL",
     "PROLOGUE",
     "EPILOGUE",
@@ -45,6 +46,7 @@ const TX_KERNEL_ERROR_CATEGORIES: [&str; 14] = [
     "LINK_MAP",
     "INPUT_NOTE",
     "OUTPUT_NOTE",
+    "BATCH",
 ];
 
 // PRE-PROCESSING
@@ -85,11 +87,34 @@ fn main() -> Result<()> {
     let protocol_lib = compile_protocol_lib(&source_dir, &target_dir, assembler.clone())?;
     assembler.link_dynamic_library(protocol_lib)?;
 
+    // compile batch kernel
+    compile_batch_kernel(&source_dir, &target_dir.join("kernels"))?;
+
     generate_error_constants(&source_dir, &build_dir)?;
 
     generate_event_constants(&source_dir, &target_dir)?;
 
     Ok(())
+}
+
+// COMPILE BATCH KERNEL
+// ================================================================================================
+
+/// Reads the batch kernel MASM source from the `source_dir`, compiles it, and saves the result
+/// to the `target_dir` as a `batch_kernel.masb` binary file.
+///
+/// Unlike the transaction kernel, the batch kernel does not expose syscalls, so there is no
+/// `KernelLibrary` to build — only a single executable program assembled from
+/// `kernels/batch/main.masm`.
+fn compile_batch_kernel(source_dir: &Path, target_dir: &Path) -> Result<()> {
+    let batch_kernel_dir = source_dir.join(ASM_BATCH_KERNEL_DIR);
+    let main_file_path = batch_kernel_dir.join("main.masm");
+
+    let assembler = build_assembler(None)?;
+    let batch_main = assembler.assemble_program(main_file_path)?;
+
+    let masb_file_path = target_dir.join("batch_kernel.masb");
+    batch_main.write_to_file(masb_file_path).into_diagnostic()
 }
 
 // COMPILE TRANSACTION KERNEL

@@ -1058,6 +1058,19 @@ pub enum ProvenBatchError {
         batch_expiration_block_num: BlockNumber,
         reference_block_num: BlockNumber,
     },
+    #[error("batch kernel execution failed: {0}")]
+    BatchKernelExecutionFailed(String),
+}
+
+// BATCH OUTPUT ERROR
+// ================================================================================================
+
+#[derive(Debug, Error)]
+pub enum BatchOutputError {
+    #[error("batch kernel output stack is invalid: {0}")]
+    OutputStackInvalid(String),
+    #[error("batch expiration block number {0} does not fit into a u32")]
+    ExpirationBlockNumberTooLarge(Felt),
 }
 
 // PROPOSED BLOCK ERROR
