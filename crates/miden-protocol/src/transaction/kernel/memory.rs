@@ -25,6 +25,7 @@ pub type StorageSlot = u8;
 // |                    |               |                  | + 1024 input notes max, 1024 elements each |
 // | Output notes       | 16_777_216    | 1_048_576        | 1024 output notes max, 1024 elements each  |
 // | Link Map Memory    | 33_554_432    | 33_554_432       | Enough for 2_097_151 key-value pairs       |
+// | Scratch Memory     | 67_108_864    | 1_024            | Memory for temporary use                   |
 
 // Relative layout of one account
 //

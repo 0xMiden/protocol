@@ -374,7 +374,7 @@ pub proc get_recipient
     # => [RECIPIENT]
 end
 
-#! Returns the metadata of the output note with the specified index.
+#! Returns the metadata and first attachment of the output note with the specified index.
 #!
 #! Inputs:  [note_index]
 #! Outputs: [METADATA_HEADER]
