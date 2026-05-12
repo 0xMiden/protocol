@@ -48,7 +48,6 @@ pub use claim_note::{
     LeafValue,
     ProofData,
     SmtNode,
-    create_claim_note,
 };
 pub use config_note::ConfigAggBridgeNote;
 #[cfg(any(test, feature = "testing"))]

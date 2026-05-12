@@ -39,7 +39,6 @@ pub use crate::{
     ProofData,
     SmtNode,
     UpdateGerNote,
-    create_claim_note,
 };
 
 // CONSTANTS
