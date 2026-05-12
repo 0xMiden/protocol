@@ -20,12 +20,12 @@ use miden_protocol::note::{
     NoteAssets,
     NoteAttachment,
     NoteAttachments,
-    NoteMetadata,
     NoteRecipient,
     NoteScript,
     NoteScriptRoot,
     NoteStorage,
     NoteType,
+    PartialNoteMetadata,
 };
 use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 use miden_utils_sync::LazyLock;
@@ -117,7 +117,7 @@ impl ConfigAggBridgeNote {
         let attachment = NetworkAccountTarget::new(target_account_id, NoteExecutionHint::Always)
             .map_err(|e| NoteError::other(e.to_string()))?;
         let attachments = NoteAttachments::from(NoteAttachment::from(attachment));
-        let metadata = NoteMetadata::new(sender_account_id, NoteType::Public);
+        let metadata = PartialNoteMetadata::new(sender_account_id, NoteType::Public);
 
         // CONFIG_AGG_BRIDGE notes don't carry assets
         let assets = NoteAssets::new(vec![])?;

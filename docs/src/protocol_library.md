@@ -94,14 +94,14 @@ Active note procedures can be used to fetch data from the note that is currently
 | `get_assets`            | Writes the [assets](note.md#assets) of the active note into memory starting at the specified address.<br/><br/>**Inputs:** `[dest_ptr]`<br/>**Outputs:** `[num_assets, dest_ptr]` | Note    |
 | `get_recipient`         | Returns the [recipient](note.md#note-recipient-restricting-consumption) of the active note.<br/><br/>**Inputs:** `[]`<br/>**Outputs:** `[RECIPIENT]`                                                              | Note    |
 | `get_storage`            | Writes the note's [inputs](note.md#inputs) to the specified memory address.<br/><br/>**Inputs:** `[dest_ptr]`<br/>**Outputs:** `[num_storage_items, dest_ptr]`                           | Note    |
-| `get_metadata`          | Returns the [metadata](note.md#metadata) of the active note.<br/><br/>**Inputs:** `[]`<br/>**Outputs:** `[METADATA_HEADER]`                                                              | Note    |
+| `get_metadata`          | Returns the [metadata](note.md#metadata) of the active note.<br/><br/>**Inputs:** `[]`<br/>**Outputs:** `[METADATA]`                                                              | Note    |
 | `get_sender`            | Returns the sender of the active note.<br/><br/>**Inputs:** `[]`<br/>**Outputs:** `[sender_id_suffix, sender_id_prefix]`                                        | Note    |
 | `get_serial_number`     | Returns the [serial number](note.md#serial-number) of the active note.<br/><br/>**Inputs:** `[]`<br/>**Outputs:** `[SERIAL_NUMBER]`                                                      | Note    |
 | `get_script_root`       | Returns the [script root](note.md#script) of the active note.<br/><br/>**Inputs:** `[]`<br/>**Outputs:** `[SCRIPT_ROOT]`                                                          | Note    |
 | `get_attachments_commitment` | Returns the commitment over all attachments of the active note.<br/><br/>**Inputs:** `[]`<br/>**Outputs:** `[ATTACHMENTS_COMMITMENT]` | Note    |
 | `write_attachment_commitments_to_memory` | Writes the attachment commitments of the active note to the specified memory address.<br/><br/>**Inputs:** `[dest_ptr]`<br/>**Outputs:** `[num_attachments]` | Note    |
 | `write_attachment_to_memory` | Writes the attachment with the provided index from the active note to the specified memory address.<br/><br/>**Inputs:** `[dest_ptr, attachment_idx]`<br/>**Outputs:** `[num_words]` | Note    |
-| `find_attachment`       | Searches the metadata header of the active note for the specified attachment scheme and returns the index of the first matching slot.<br/><br/>**Inputs:** `[attachment_scheme]`<br/>**Outputs:** `[is_found, attachment_idx]` | Note    |
+| `find_attachment`       | Searches the metadata of the active note for the specified attachment scheme and returns the index of the first matching slot.<br/><br/>**Inputs:** `[attachment_scheme]`<br/>**Outputs:** `[is_found, attachment_idx]` | Note    |
 
 ## Input Note Procedures (`miden::protocol::input_note`)
 
@@ -112,7 +112,7 @@ Input note procedures can be used to fetch data on input notes consumed by the t
 | `get_assets_info`   | Returns the information about [assets](note.md#assets) in the input note with the specified index.<br/><br/>**Inputs:** `[note_index]`<br/>**Outputs:** `[ASSETS_COMMITMENT, num_assets]`                                         | Any     |
 | `get_assets`        | Writes the [assets](note.md#assets) of the input note with the specified index into memory starting at the specified address.<br/><br/>**Inputs:** `[dest_ptr, note_index]`<br/>**Outputs:** `[num_assets, dest_ptr, note_index]` | Any     |
 | `get_recipient`     | Returns the [recipient](note.md#note-recipient-restricting-consumption) of the input note with the specified index.<br/><br/>**Inputs:** `[note_index]`<br/>**Outputs:** `[RECIPIENT]`                                            | Any     |
-| `get_metadata`      | Returns the [metadata](note.md#metadata) of the input note with the specified index.<br/><br/>**Inputs:** `[note_index]`<br/>**Outputs:** `[METADATA_HEADER]`                                                                            | Any     |
+| `get_metadata`      | Returns the [metadata](note.md#metadata) of the input note with the specified index.<br/><br/>**Inputs:** `[note_index]`<br/>**Outputs:** `[METADATA]`                                                                            | Any     |
 | `get_sender`        | Returns the sender of the input note with the specified index.<br/><br/>**Inputs:** `[note_index]`<br/>**Outputs:** `[sender_id_suffix, sender_id_prefix]`                                                                      | Any     |
 | `get_storage_info`   | Returns the [inputs](note.md#inputs) commitment and length of the input note with the specified index.<br/><br/>**Inputs:** `[note_index]`<br/>**Outputs:** `[NOTE_STORAGE_COMMITMENT, num_storage_items]`                                | Any     |
 | `get_script_root`   | Returns the [script root](note.md#script) of the input note with the specified index.<br/><br/>**Inputs:** `[note_index]`<br/>**Outputs:** `[SCRIPT_ROOT]`                                                                        | Any     |
@@ -120,7 +120,7 @@ Input note procedures can be used to fetch data on input notes consumed by the t
 | `get_attachments_commitment` | Returns the commitment over all attachments of the input note with the specified index.<br/><br/>**Inputs:** `[note_index]`<br/>**Outputs:** `[ATTACHMENTS_COMMITMENT]` | Any     |
 | `write_attachment_commitments_to_memory` | Writes the attachment commitments of the input note with the specified index to the specified memory address.<br/><br/>**Inputs:** `[dest_ptr, note_index]`<br/>**Outputs:** `[num_attachments]` | Any     |
 | `write_attachment_to_memory` | Writes the attachment with the provided index from the input note with the specified index to the specified memory address.<br/><br/>**Inputs:** `[dest_ptr, attachment_idx, note_index]`<br/>**Outputs:** `[num_words]` | Any     |
-| `find_attachment`   | Searches the metadata header of the input note for the specified attachment scheme and returns the index of the first matching slot.<br/><br/>**Inputs:** `[attachment_scheme, note_index]`<br/>**Outputs:** `[is_found, attachment_idx]` | Any     |
+| `find_attachment`   | Searches the metadata of the input note for the specified attachment scheme and returns the index of the first matching slot.<br/><br/>**Inputs:** `[attachment_scheme, note_index]`<br/>**Outputs:** `[is_found, attachment_idx]` | Any     |
 
 ## Output Note Procedures (`miden::protocol::output_note`)
 
@@ -138,9 +138,9 @@ Output note procedures can be used to fetch data on output notes created by the 
 | `get_attachments_commitment` | Returns the commitment over all attachments of the output note with the specified index.<br/><br/>**Inputs:** `[note_index]`<br/>**Outputs:** `[ATTACHMENTS_COMMITMENT]` | Any              |
 | `write_attachment_commitments_to_memory` | Writes the attachment commitments of the output note with the specified index to the specified memory address.<br/><br/>**Inputs:** `[dest_ptr, note_index]`<br/>**Outputs:** `[num_attachments]` | Any              |
 | `write_attachment_to_memory` | Writes the attachment with the provided index from the output note with the specified index to the specified memory address.<br/><br/>**Inputs:** `[dest_ptr, attachment_idx, note_index]`<br/>**Outputs:** `[num_words]` | Any              |
-| `find_attachment` | Searches the metadata header of the output note for the specified attachment scheme and returns the index of the first matching slot.<br/><br/>**Inputs:** `[attachment_scheme, note_index]`<br/>**Outputs:** `[is_found, attachment_idx]` | Any              |
+| `find_attachment` | Searches the metadata of the output note for the specified attachment scheme and returns the index of the first matching slot.<br/><br/>**Inputs:** `[attachment_scheme, note_index]`<br/>**Outputs:** `[is_found, attachment_idx]` | Any              |
 | `get_recipient`   | Returns the [recipient](note#note-recipient-restricting-consumption) of the output note with the specified index.<br/><br/>**Inputs:** `[note_index]`<br/>**Outputs:** `[RECIPIENT]`                             | Any              |
-| `get_metadata`    | Returns the [metadata](note#metadata) of the output note with the specified index.<br/><br/>**Inputs:** `[note_index]`<br/>**Outputs:** `[METADATA_HEADER]`                                                             | Any              |
+| `get_metadata`    | Returns the [metadata](note#metadata) of the output note with the specified index.<br/><br/>**Inputs:** `[note_index]`<br/>**Outputs:** `[METADATA]`                                                             | Any              |
 
 ## Note Utility Procedures (`miden::protocol::note`)
 
@@ -153,12 +153,12 @@ Note utility procedures can be used to compute the required utility data or writ
 | `write_attachments_to_memory` | Writes the attachment commitments stored in the advice map to the memory specified by the provided destination pointer.<br/><br/>**Inputs:**<br/>`Operand Stack: [ATTACHMENTS_COMMITMENT, dest_ptr]`<br/>`Advice map: { ATTACHMENTS_COMMITMENT: [[ATTACHMENT_COMMITMENT]] }`<br/>**Outputs:** `[num_attachments]` | Any     |
 | `write_attachment_to_memory` | Writes a single attachment's data stored in the advice map to the memory specified by the provided destination pointer.<br/><br/>**Inputs:**<br/>`Operand Stack: [ATTACHMENT_COMMITMENT, dest_ptr]`<br/>`Advice map: { ATTACHMENT_COMMITMENT: [[ATTACHMENT_ELEMENTS]] }`<br/>**Outputs:** `[num_words]` | Any     |
 | `write_indexed_attachment_to_memory` | Writes the attachment with the provided index from the provided attachment commitments to the specified memory address.<br/><br/>**Inputs:** `[num_attachments, attachment_commitments_ptr, attachment_idx, dest_ptr]`<br/>**Outputs:** `[num_words]` | Any     |
-| `find_attachment_idx` | Searches the metadata header for the specified attachment scheme and returns the index of the first matching slot.<br/><br/>**Inputs:** `[attachment_scheme, METADATA_HEADER]`<br/>**Outputs:** `[is_found, attachment_idx]` | Any     |
+| `find_attachment_idx` | Searches the metadata for the specified attachment scheme and returns the index of the first matching slot.<br/><br/>**Inputs:** `[attachment_scheme, METADATA]`<br/>**Outputs:** `[is_found, attachment_idx]` | Any     |
 | `compute_recipient`         | Returns the `RECIPIENT` for a specified `SERIAL_NUM`, `SCRIPT_ROOT`, and storage commitment.<br/><br/>**Inputs:** `[SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT]`<br/>**Outputs:** `[RECIPIENT]`                              | Any     |
 | `compute_and_store_recipient` | Computes the recipient from note storage, script root, and serial number, and stores the recipient preimages in advice inputs.<br/><br/>**Inputs:** `[storage_ptr, num_storage_items, SERIAL_NUM, SCRIPT_ROOT]`<br/>**Outputs:** `[RECIPIENT]` | Any     |
-| `metadata_into_sender` | Extracts the sender ID from the provided metadata word.<br/><br/>**Inputs:** `[METADATA_HEADER]`<br/>**Outputs:** `[sender_id_suffix, sender_id_prefix]` | Any     |
-| `metadata_into_attachment_schemes` | Extracts the attachment schemes from the provided metadata header.<br/><br/>**Inputs:** `[METADATA_HEADER]`<br/>**Outputs:** `[attachment_0_scheme, attachment_1_scheme, attachment_2_scheme, attachment_3_scheme]` | Any     |
-| `metadata_into_note_type` | Extracts the note type from the provided metadata header. The note type is encoded as a single bit (0 = Private, 1 = Public).<br/><br/>**Inputs:** `[METADATA_HEADER]`<br/>**Outputs:** `[note_type]` | Any     |
+| `metadata_into_sender` | Extracts the sender ID from the provided metadata word.<br/><br/>**Inputs:** `[METADATA]`<br/>**Outputs:** `[sender_id_suffix, sender_id_prefix]` | Any     |
+| `metadata_into_attachment_schemes` | Extracts the attachment schemes from the provided metadata.<br/><br/>**Inputs:** `[METADATA]`<br/>**Outputs:** `[attachment_0_scheme, attachment_1_scheme, attachment_2_scheme, attachment_3_scheme]` | Any     |
+| `metadata_into_note_type` | Extracts the note type from the provided metadata. The note type is encoded as a single bit (0 = Private, 1 = Public).<br/><br/>**Inputs:** `[METADATA]`<br/>**Outputs:** `[note_type]` | Any     |
 
 ## Transaction Procedures (`miden::protocol::tx`)
 

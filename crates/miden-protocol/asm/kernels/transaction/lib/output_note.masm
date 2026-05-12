@@ -8,8 +8,8 @@ use $kernel::note::NOTE_TYPE_PUBLIC
 use $kernel::note::MAX_ATTACHMENT_SCHEME
 use $kernel::note::MAX_ATTACHMENT_WORDS
 use $kernel::note::MAX_ATTACHMENT_TOTAL_WORDS
-use $kernel::constants::WORD_NUM_ELEMENTS
 use $kernel::constants::MAX_OUTPUT_NOTES_PER_TX
+use $kernel::constants::WORD_NUM_ELEMENTS
 use $kernel::util::note::NOTE_METADATA_VERSION_1
 use $kernel::asset::ASSET_SIZE
 use $kernel::asset::ASSET_VALUE_MEMORY_OFFSET
@@ -22,7 +22,7 @@ use miden::core::mem
 # The maximum number of attachments per note.
 const MAX_ATTACHMENTS_PER_NOTE=4
 
-# The default value of felt[3] in the metadata header when a new note is created.
+# The default value of felt[3] in the metadata when a new note is created.
 # All zeros means no attachment schemes are set.
 const ATTACHMENT_DEFAULT_SCHEMES=0
 
@@ -101,28 +101,28 @@ pub proc create
     emit.NOTE_BEFORE_CREATED_EVENT
     # => [tag, note_type, RECIPIENT]
 
-    exec.build_metadata_header
-    # => [NOTE_METADATA_HEADER, RECIPIENT]
+    exec.build_metadata
+    # => [NOTE_METADATA, RECIPIENT]
 
     # get the index for the next note to be created and increment counter
     exec.increment_num_output_notes dup movdn.9
-    # => [note_idx, NOTE_METADATA_HEADER, RECIPIENT, note_idx]
+    # => [note_idx, NOTE_METADATA, RECIPIENT, note_idx]
 
     # get a pointer to the memory address at which the note will be stored
     exec.memory::get_output_note_ptr
-    # => [note_ptr, NOTE_METADATA_HEADER, RECIPIENT, note_idx]
+    # => [note_ptr, NOTE_METADATA, RECIPIENT, note_idx]
 
     movdn.4
-    # => [NOTE_METADATA_HEADER, note_ptr, RECIPIENT, note_idx]
+    # => [NOTE_METADATA, note_ptr, RECIPIENT, note_idx]
 
     # emit event to signal that a new note is created
     emit.NOTE_AFTER_CREATED_EVENT
 
     # set the metadata for the output note
     dup.4
-    # => [note_ptr, NOTE_METADATA_HEADER, note_ptr, RECIPIENT, note_idx]
+    # => [note_ptr, NOTE_METADATA, note_ptr, RECIPIENT, note_idx]
 
-    exec.memory::set_output_note_metadata_header dropw
+    exec.memory::set_output_note_metadata dropw
     # => [note_ptr, RECIPIENT, note_idx]
 
     # set the RECIPIENT for the output note
@@ -447,20 +447,20 @@ proc validate_attachment
     # OS => [num_words]
 end
 
-#! Builds the provided inputs into the NOTE_METADATA_HEADER word.
+#! Builds the provided inputs into the NOTE_METADATA word.
 #!
 #! - The sender ID is set to the native account's ID.
 #! - Attachment num_words and schemes are initialized to 0 (no attachments).
 #!
 #! Inputs:  [tag, note_type]
-#! Outputs: [NOTE_METADATA_HEADER]
+#! Outputs: [NOTE_METADATA]
 #!
 #! Where:
 #! - tag is the note tag which can be used by the recipient(s) to identify notes intended for them.
 #! - note_type is the type of the note, which defines how the note is to be stored (e.g., on-chain
 #!   or off-chain).
-#! - NOTE_METADATA_HEADER is the metadata associated with a note.
-pub proc build_metadata_header
+#! - NOTE_METADATA is the metadata associated with a note.
+pub proc build_metadata
     # Validate that note type is private (0) or public (1).
     # --------------------------------------------------------------------------------------------
 
@@ -472,7 +472,7 @@ pub proc build_metadata_header
     # Validate the note tag fits into a u32.
     # --------------------------------------------------------------------------------------------
 
-    # this implies the upper 32 bits are zero (which are reserved)
+    # this implies the upper 32 bits are zero, which initializes the attachment num_words to 0
     u32assert.err=ERR_NOTE_TAG_MUST_BE_U32
     # => [attachment_num_words_and_tag, note_type]
 
@@ -488,16 +488,16 @@ pub proc build_metadata_header
     movup.3 mul.16 add.NOTE_METADATA_VERSION_1 add
     # => [sender_id_suffix_type_version, sender_id_prefix, tag]
 
-    # Build metadata header.
+    # Build metadata.
     # --------------------------------------------------------------------------------------------
 
     # push default absent attachment schemes (four u16 zeros encoded into a zero felt)
     push.ATTACHMENT_DEFAULT_SCHEMES movdn.3
-    # => [sender_id_suffix_type_version, sender_id_prefix, tag, attachment_schemes]
-    # => [NOTE_METADATA_HEADER]
+    # => [sender_id_suffix_type_version, sender_id_prefix, attachment_num_words_and_tag, attachment_schemes]
+    # => [NOTE_METADATA]
 end
 
-#! Sets an output note's attachment scheme in the note metadata header.
+#! Sets an output note's attachment scheme in the note metadata.
 #!
 #! WARNING: The attachment scheme must be valid.
 #!
@@ -528,11 +528,11 @@ proc set_attachment_schemes
     mul.16 pow2 mul
     # => [attachment_scheme_shifted, note_ptr]
 
-    # Fetch and update metadata header.
+    # Fetch and update metadata.
     # --------------------------------------------------------------------------------------------
 
-    dup.1 exec.memory::get_output_note_metadata_header
-    # => [METADATA_HEADER, attachment_scheme_shifted, note_ptr]
+    dup.1 exec.memory::get_output_note_metadata
+    # => [METADATA, attachment_scheme_shifted, note_ptr]
     # => [
     #   [sender_id_suffix_type_version, sender_id_prefix, tag, attachment_schemes],
     #   attachment_scheme_shifted, note_ptr
@@ -544,9 +544,9 @@ proc set_attachment_schemes
     movup.3 movup.4
     add movdn.3
     # => [[sender_id_suffix_type_version, sender_id_prefix, tag, new_attachment_schemes], note_ptr]
-    # => [METADATA_HEADER, note_ptr]
+    # => [METADATA, note_ptr]
 
-    movup.4 exec.memory::set_output_note_metadata_header dropw
+    movup.4 exec.memory::set_output_note_metadata dropw
     # => []
 end
 

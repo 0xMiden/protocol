@@ -11,11 +11,11 @@ use miden_protocol::note::{
     NoteAssets,
     NoteAttachment,
     NoteAttachmentScheme,
-    NoteMetadata,
     NoteRecipient,
     NoteStorage,
     NoteTag,
     NoteType,
+    PartialNoteMetadata,
 };
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
@@ -110,9 +110,9 @@ async fn test_active_note_get_metadata() -> anyhow::Result<()> {
 
             # get the metadata of the active note
             exec.active_note::get_metadata
-            # => [METADATA_HEADER]
+            # => [METADATA]
 
-            push.{METADATA_HEADER}
+            push.{METADATA}
             assert_eqw.err="note 0 has incorrect metadata"
             # => []
 
@@ -120,8 +120,7 @@ async fn test_active_note_get_metadata() -> anyhow::Result<()> {
             swapw dropw
         end
         "#,
-        METADATA_HEADER =
-            tx_context.input_notes().get_note(0).note().metadata_header().to_metadata_word(),
+        METADATA = tx_context.input_notes().get_note(0).note().metadata().to_metadata_word(),
     );
 
     tx_context.execute_code(&code).await?;
@@ -201,7 +200,7 @@ async fn test_active_note_get_note_type(#[case] note_type: NoteType) -> anyhow::
             dropw dropw dropw dropw
 
             exec.active_note::get_metadata
-            # => [METADATA_HEADER]
+            # => [METADATA]
 
             exec.note::metadata_into_note_type
             # => [note_type]
@@ -222,15 +221,15 @@ async fn test_active_note_get_note_type(#[case] note_type: NoteType) -> anyhow::
 
 #[tokio::test]
 async fn test_metadata_into_tag() -> anyhow::Result<()> {
-    use miden_protocol::note::{NoteAttachments, NoteMetadataHeader};
+    use miden_protocol::note::{NoteAttachments, NoteMetadata};
 
     use crate::executor::CodeExecutor;
 
     let sender_id: AccountId = ACCOUNT_ID_SENDER.try_into()?;
     let tag = NoteTag::new(0xabcd_1234);
-    let metadata = NoteMetadata::new(sender_id, NoteType::Public).with_tag(tag);
-    let metadata_header = NoteMetadataHeader::new(metadata, &NoteAttachments::default());
-    let metadata_word = metadata_header.to_metadata_word();
+    let partial_metadata = PartialNoteMetadata::new(sender_id, NoteType::Public).with_tag(tag);
+    let metadata = NoteMetadata::new(partial_metadata, &NoteAttachments::default());
+    let metadata_word = metadata.to_metadata_word();
 
     let code = "
         use miden::protocol::note
@@ -505,7 +504,7 @@ async fn test_active_note_get_exactly_8_inputs() -> anyhow::Result<()> {
     // prepare note data
     let serial_num = RandomCoin::new(Word::from([4u32; 4])).draw_word();
     let tag = NoteTag::with_account_target(target_id);
-    let metadata = NoteMetadata::new(sender_id, NoteType::Public).with_tag(tag);
+    let metadata = PartialNoteMetadata::new(sender_id, NoteType::Public).with_tag(tag);
     let vault = NoteAssets::new(vec![]).context("failed to create input note assets")?;
     let note_script = CodeBuilder::default()
         .compile_note_script(DEFAULT_NOTE_SCRIPT)

@@ -8,13 +8,13 @@ use miden_protocol::note::{
     Note,
     NoteAssets,
     NoteAttachments,
-    NoteMetadata,
     NoteRecipient,
     NoteScript,
     NoteScriptRoot,
     NoteStorage,
     NoteTag,
     NoteType,
+    PartialNoteMetadata,
 };
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, MAX_NOTE_STORAGE_ITEMS, Word};
@@ -105,7 +105,7 @@ impl MintNote {
 
         let tag = NoteTag::with_account_target(faucet_id);
 
-        let metadata = NoteMetadata::new(sender, note_type).with_tag(tag);
+        let metadata = PartialNoteMetadata::new(sender, note_type).with_tag(tag);
         let assets = NoteAssets::new(vec![])?; // MINT notes have no assets
         let recipient = NoteRecipient::new(serial_num, note_script, storage);
 
