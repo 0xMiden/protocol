@@ -7,7 +7,16 @@ use miden_protocol::account::AccountId;
 use miden_protocol::crypto::SequentialCommit;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
-use miden_protocol::note::{Note, NoteAssets, NoteMetadata, NoteRecipient, NoteStorage, NoteType};
+use miden_protocol::note::{
+    Note,
+    NoteAssets,
+    NoteAttachment,
+    NoteAttachments,
+    NoteMetadata,
+    NoteRecipient,
+    NoteStorage,
+    NoteType,
+};
 use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 
 use crate::utils::Keccak256Output;
@@ -182,14 +191,13 @@ pub fn create_claim_note<R: FeltRng>(
     let note_storage = NoteStorage::try_from(storage.clone())?;
 
     let attachment = NetworkAccountTarget::new(target_bridge_id, NoteExecutionHint::Always)
-        .map_err(|e| NoteError::other(e.to_string()))?
-        .into();
+        .map_err(|e| NoteError::other(e.to_string()))?;
+    let attachments = NoteAttachments::from(NoteAttachment::from(attachment));
 
-    let metadata =
-        NoteMetadata::new(sender_account_id, NoteType::Public).with_attachment(attachment);
+    let metadata = NoteMetadata::new(sender_account_id, NoteType::Public);
 
     let recipient = NoteRecipient::new(rng.draw_word(), claim_script(), note_storage);
     let assets = NoteAssets::new(vec![])?;
 
-    Ok(Note::new(assets, metadata, recipient))
+    Ok(Note::with_attachments(assets, metadata, recipient, attachments))
 }

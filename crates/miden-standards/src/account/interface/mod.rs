@@ -2,7 +2,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use miden_protocol::account::{AccountId, AccountType};
-use miden_protocol::note::{NoteAttachmentContent, PartialNote};
+use miden_protocol::note::PartialNote;
 use miden_protocol::transaction::TransactionScript;
 use thiserror::Error;
 
@@ -168,13 +168,13 @@ impl AccountInterface {
             note_creation_source,
         );
 
-        // Add attachment array entries to the code builder's advice map.
-        // For NoteAttachmentContent::Array, the commitment (to_word) is used as key
-        // and the array elements as value.
+        // Add attachment entries to the code builder's advice map.
+        // The commitment is used as key and the elements as value.
         let mut code_builder = CodeBuilder::new();
         for note in output_notes {
-            if let NoteAttachmentContent::Array(array) = note.metadata().attachment().content() {
-                code_builder.add_advice_map_entry(array.commitment(), array.as_slice().to_vec());
+            for attachment in note.attachments().iter() {
+                code_builder
+                    .add_advice_map_entry(attachment.to_commitment(), attachment.to_elements());
             }
         }
 

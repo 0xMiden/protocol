@@ -3,7 +3,6 @@
 //! This module provides helpers for creating B2AGG (Bridge to AggLayer) notes,
 //! which are used to bridge assets out from Miden to the AggLayer network.
 
-use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use miden_assembly::Library;
@@ -16,6 +15,7 @@ use miden_protocol::note::{
     Note,
     NoteAssets,
     NoteAttachment,
+    NoteAttachments,
     NoteMetadata,
     NoteRecipient,
     NoteScript,
@@ -98,17 +98,17 @@ impl B2AggNote {
     ) -> Result<Note, NoteError> {
         let note_storage = build_note_storage(destination_network, destination_address)?;
 
-        let attachment = NoteAttachment::from(
-            NetworkAccountTarget::new(target_account_id, NoteExecutionHint::Always)
-                .map_err(|e| NoteError::other(e.to_string()))?,
-        );
+        let attachment = NetworkAccountTarget::new(target_account_id, NoteExecutionHint::Always)
+            .map_err(|error| {
+                NoteError::other_with_source("failed to create b2agg network account target", error)
+            })?;
+        let attachments = NoteAttachments::from(NoteAttachment::from(attachment));
 
-        let metadata =
-            NoteMetadata::new(sender_account_id, NoteType::Public).with_attachment(attachment);
+        let metadata = NoteMetadata::new(sender_account_id, NoteType::Public);
 
         let recipient = NoteRecipient::new(rng.draw_word(), Self::script(), note_storage);
 
-        Ok(Note::new(assets, metadata, recipient))
+        Ok(Note::with_attachments(assets, metadata, recipient, attachments))
     }
 }
 

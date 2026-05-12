@@ -268,21 +268,29 @@ impl AccountComponentInterface {
                 },
             }
 
-            body.push_str(&format!(
-                "
-                push.{ATTACHMENT}
-                push.{attachment_kind}
+            for attachment in partial_note.attachments().iter() {
+                let attachment_scheme = attachment.attachment_scheme().as_u16();
+                let attachment_commitment = attachment.content().to_commitment();
+
+                body.push_str(&format!(
+                    "
+                dup
+                push.{attachment_commitment}
                 push.{attachment_scheme}
-                movup.6
-                # => [note_idx, attachment_scheme, attachment_kind, ATTACHMENT, pad(16)]
-                exec.::miden::protocol::output_note::set_attachment
+                # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx, note_idx, pad(16)]
+                exec.::miden::protocol::output_note::add_attachment
+                # => [note_idx, pad(16)]
+            ",
+                ));
+            }
+
+            body.push_str(
+                "
+                # drop the note idx
+                drop
                 # => [pad(16)]
             ",
-                ATTACHMENT = partial_note.metadata().to_attachment_word(),
-                attachment_scheme =
-                    partial_note.metadata().attachment().attachment_scheme().as_u32(),
-                attachment_kind = partial_note.metadata().attachment().attachment_kind().as_u8(),
-            ));
+            );
         }
 
         Ok(body)

@@ -365,10 +365,10 @@ pub const NOTE_MEM_SIZE: MemoryAddress = 1024;
 // Each nullifier occupies a single word. A data section for each note consists of exactly 1024
 // elements and is laid out like so:
 //
-// ┌──────┬────────┬────────┬─────────┬────────────┬───────────┬──────────┬────────────┬───────┬
-// │ NOTE │ SERIAL │ SCRIPT │ STORAGE │   ASSETS   │ RECIPIENT │ METADATA │ ATTACHMENT │ NOTE  │
-// │  ID  │  NUM   │  ROOT  │  COMM   │ COMMITMENT │           │  HEADER  │            │ ARGS  │
-// ├──────┼────────┼────────┼─────────┼────────────┼───────────┼──────────┼────────────┼───────┼
+// ┌──────┬────────┬────────┬─────────┬────────────┬───────────┬──────────┬─────────────┬───────┬
+// │ NOTE │ SERIAL │ SCRIPT │ STORAGE │   ASSETS   │ RECIPIENT │ METADATA │ ATTACHMENTS │ NOTE  │
+// │  ID  │  NUM   │  ROOT  │  COMM   │ COMMITMENT │           │  HEADER  │ COMMITMENT  │ ARGS  │
+// ├──────┼────────┼────────┼─────────┼────────────┼───────────┼──────────┼─────────────┼───────┼
 // 0      4        8        12        16           20          24         28           32
 //
 // ┬─────────┬────────┬───────┬─────────┬─────┬────────┬─────────┬─────────┐
@@ -430,17 +430,23 @@ pub const INPUT_NOTE_ASSETS_OFFSET: MemoryOffset = 44;
 // The total number of output notes for a transaction is stored in the bookkeeping section of the
 // memory. Data section of each note is laid out like so:
 //
-// ┌──────┬──────────┬────────────┬───────────┬────────────┬────────┬───────┬
-// │ NOTE │ METADATA │  METADATA  │ RECIPIENT │   ASSETS   │  NUM   │ DIRTY │
-// │  ID  │  HEADER  │ ATTACHMENT │           │ COMMITMENT │ ASSETS │ FLAG  │
-// ├──────┼──────────┼────────────┼───────────┼────────────┼────────┼───────┼
-// 0      4          8            12          16           20       21
+// ┌──────┬──────────┬───────────┬───────────────────────────────────────────┬
+// │ NOTE │ METADATA │           │ [dirty_flag, num_assets,                  │
+// │  ID  │  HEADER  │ RECIPIENT │  num_attachments, total_attachment_words] │
+// ├──────┼──────────┼───────────┼───────────────────────────────────────────┼
+// 0      4          8           12
+//
+// ┬────────────┬────────────┬────────────┬────────────┬────────────┬
+// │ ATTACHMENT │ ATTACHMENT │ ATTACHMENT │ ATTACHMENT │   ASSETS   │
+// │      0     │      1     │      2     │      3     │ COMMITMENT │
+// ┼────────────┼────────────┼────────────┼────────────┼────────────┼
+// 16           20           24           28           32
 //
 // ┬───────┬─────────┬─────┬────────┬─────────┬─────────┐
 // │ ASSET │  ASSET  │ ... │ ASSET  │  ASSET  │ PADDING │
 // │ KEY 0 │ VALUE 0 │     │ KEY n  │ VALUE n │         │
 // ┼───────┼─────────┼─────┼────────┼─────────┼─────────┘
-// 24      28              24 + 8n  28 + 8n
+// 36      40              36 + 8n  40 + 8n
 //
 // The DIRTY_FLAG is the binary flag which specifies whether the assets commitment stored in this
 // note is outdated. It holds 1 if some changes were made to the note assets since the last
@@ -455,12 +461,17 @@ pub const OUTPUT_NOTE_SECTION_OFFSET: MemoryOffset = 16_777_216;
 /// The offsets at which data of an output note is stored relative to the start of its data segment.
 pub const OUTPUT_NOTE_ID_OFFSET: MemoryOffset = 0;
 pub const OUTPUT_NOTE_METADATA_HEADER_OFFSET: MemoryOffset = 4;
-pub const OUTPUT_NOTE_ATTACHMENT_OFFSET: MemoryOffset = 8;
-pub const OUTPUT_NOTE_RECIPIENT_OFFSET: MemoryOffset = 12;
-pub const OUTPUT_NOTE_ASSET_COMMITMENT_OFFSET: MemoryOffset = 16;
-pub const OUTPUT_NOTE_NUM_ASSETS_OFFSET: MemoryOffset = 20;
-pub const OUTPUT_NOTE_DIRTY_FLAG_OFFSET: MemoryOffset = 21;
-pub const OUTPUT_NOTE_ASSETS_OFFSET: MemoryOffset = 24;
+pub const OUTPUT_NOTE_RECIPIENT_OFFSET: MemoryOffset = 8;
+pub const OUTPUT_NOTE_DIRTY_FLAG_OFFSET: MemoryOffset = 12;
+pub const OUTPUT_NOTE_NUM_ASSETS_OFFSET: MemoryOffset = 13;
+pub const OUTPUT_NOTE_NUM_ATTACHMENTS_OFFSET: MemoryOffset = 14;
+pub const OUTPUT_NOTE_TOTAL_ATTACHMENT_WORDS_OFFSET: MemoryOffset = 15;
+pub const OUTPUT_NOTE_ATTACHMENT_0_OFFSET: MemoryOffset = 16;
+pub const OUTPUT_NOTE_ATTACHMENT_1_OFFSET: MemoryOffset = 20;
+pub const OUTPUT_NOTE_ATTACHMENT_2_OFFSET: MemoryOffset = 24;
+pub const OUTPUT_NOTE_ATTACHMENT_3_OFFSET: MemoryOffset = 28;
+pub const OUTPUT_NOTE_ASSET_COMMITMENT_OFFSET: MemoryOffset = 32;
+pub const OUTPUT_NOTE_ASSETS_OFFSET: MemoryOffset = 36;
 
 // ASSETS
 // ------------------------------------------------------------------------------------------------

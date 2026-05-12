@@ -972,7 +972,7 @@ impl MockChain {
                     created_note.id(),
                     MockChainNote::Private(
                         created_note.id(),
-                        created_note.metadata().clone(),
+                        *created_note.metadata(),
                         note_inclusion_proof,
                     ),
                 );
