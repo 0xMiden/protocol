@@ -1,9 +1,9 @@
 //! Tests for `assert_execution_error!` and `assert_transaction_executor_error!`.
 //!
-//! - Sync tests build errors directly to exercise the macro grammar
-//!   (each arm + `#[should_panic]` for failure paths).
-//! - Async tests run small MASM programs on `FastProcessor` to cover real
-//!   `ExecutionError` variants end-to-end.
+//! - Sync tests build errors directly to exercise the macro grammar (each arm + `#[should_panic]`
+//!   for failure paths).
+//! - Async tests run small MASM programs on `FastProcessor` to cover real `ExecutionError` variants
+//!   end-to-end.
 
 extern crate alloc;
 

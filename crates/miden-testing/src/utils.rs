@@ -21,12 +21,11 @@ use rand::rngs::SmallRng;
 /// Asserts that a `Result<_, ExecError>` failed as expected.
 ///
 /// Three forms:
-/// - `..., matches <pat> [if <guard>]` — matches the inner `ExecutionError`
-///   against `<pat>`. Use this for variants other than `FailedAssertion`,
-///   or to assert on a specific `err_code`.
+/// - `..., matches <pat> [if <guard>]` — matches the inner `ExecutionError` against `<pat>`. Use
+///   this for variants other than `FailedAssertion`, or to assert on a specific `err_code`.
 /// - `..., any` — succeeds on any `Err`.
-/// - `..., $expected` — delegates to `ExpectedExecutionError::matches`
-///   (e.g. a `MasmError` error code).
+/// - `..., $expected` — delegates to `ExpectedExecutionError::matches` (e.g. a `MasmError` error
+///   code).
 #[macro_export]
 macro_rules! assert_execution_error {
     ($execution_result:expr, matches $pat:pat $(if $guard:expr)? $(,)?) => {
