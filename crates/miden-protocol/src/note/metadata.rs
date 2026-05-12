@@ -371,8 +371,6 @@ fn merge_schemes(headers: [NoteAttachmentHeader; NoteAttachments::MAX_COUNT]) ->
 #[cfg(test)]
 mod tests {
 
-    use alloc::string::ToString;
-
     use super::*;
     use crate::note::{NoteAttachment, NoteAttachmentScheme};
     use crate::testing::account_id::ACCOUNT_ID_MAX_ONES;
