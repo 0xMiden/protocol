@@ -707,8 +707,7 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
     let recipient = p2id_mint_output_note.recipient().digest();
 
     // Create the MINT note using the helper function
-    let mint_storage =
-        MintNoteStorage::new_private(recipient, mint_asset, output_note_tag.into());
+    let mint_storage = MintNoteStorage::new_private(recipient, mint_asset, output_note_tag.into());
 
     let mut rng = RandomCoin::new([Felt::from(42u32); 4].into());
     let mint_note = MintNote::create(

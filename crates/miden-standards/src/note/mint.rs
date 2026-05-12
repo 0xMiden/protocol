@@ -1,8 +1,8 @@
 use alloc::vec::Vec;
 
 use miden_protocol::account::AccountId;
-use miden_protocol::asset::Asset;
 use miden_protocol::assembly::Path;
+use miden_protocol::asset::Asset;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
@@ -130,11 +130,11 @@ impl MintNote {
 
 /// Represents the different storage formats for MINT notes.
 ///
-/// - Private: Creates a private output note using a precomputed recipient digest
-///   (13 MINT note storage items: RECIPIENT + ASSET_KEY + ASSET_VALUE + tag).
+/// - Private: Creates a private output note using a precomputed recipient digest (13 MINT note
+///   storage items: RECIPIENT + ASSET_KEY + ASSET_VALUE + tag).
 /// - Public: Creates a public output note by providing script root, serial number, and
-///   variable-length storage (20+ MINT note storage items: 20 fixed + variable output note
-///   storage items, with the variable section word-aligned at offset 20).
+///   variable-length storage (20+ MINT note storage items: 20 fixed + variable output note storage
+///   items, with the variable section word-aligned at offset 20).
 ///
 /// The asset (`ASSET_KEY` + `ASSET_VALUE`, 8 felts) is embedded in storage so that the
 /// faucet executing the MINT note can be checked against the asset's faucet ID at mint time.
