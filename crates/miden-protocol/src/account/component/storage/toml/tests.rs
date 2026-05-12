@@ -603,7 +603,7 @@ fn extensive_schema_metadata_and_init_toml_example() {
         description = "Token metadata: max_supply, symbol, decimals, reserved."
         type = [
             { type = "u32", name = "max_supply", description = "Maximum supply (base units)" },
-            { type = "miden::standards::fungible_faucets::metadata::token_symbol", name = "symbol", default-value = "TST" },
+            { type = "miden::standards::faucets::fungible::token_symbol", name = "symbol", default-value = "TST" },
             { type = "u8", name = "decimals", description = "Token decimals" },
             { type = "void" },
         ]
@@ -707,7 +707,7 @@ fn extensive_schema_metadata_and_init_toml_example() {
         .expect("symbol should be reported with a default value");
     assert_eq!(
         symbol_requirement.r#type,
-        SchemaType::new("miden::standards::fungible_faucets::metadata::token_symbol").unwrap()
+        SchemaType::new("miden::standards::faucets::fungible::token_symbol").unwrap()
     );
     assert_eq!(symbol_requirement.default_value.as_deref(), Some("TST"));
     assert!(
@@ -917,7 +917,7 @@ fn typed_map_supports_non_numeric_value_types() {
         [[storage.slots]]
         name = "demo::symbol_map"
         type.key = "word"
-        type.value = "miden::standards::fungible_faucets::metadata::token_symbol"
+        type.value = "miden::standards::faucets::fungible::token_symbol"
     "#;
 
     let metadata = AccountComponentMetadata::from_toml(metadata_toml).unwrap();

@@ -8,14 +8,14 @@ use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
     Note,
     NoteAssets,
-    NoteAttachment,
-    NoteMetadata,
+    NoteAttachments,
     NoteRecipient,
     NoteScript,
     NoteScriptRoot,
     NoteStorage,
     NoteTag,
     NoteType,
+    PartialNoteMetadata,
 };
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
@@ -79,7 +79,7 @@ impl P2idNote {
         target: AccountId,
         assets: Vec<Asset>,
         note_type: NoteType,
-        attachment: NoteAttachment,
+        attachments: NoteAttachments,
         rng: &mut R,
     ) -> Result<Note, NoteError> {
         let serial_num = rng.draw_word();
@@ -87,11 +87,10 @@ impl P2idNote {
 
         let tag = NoteTag::with_account_target(target);
 
-        let metadata =
-            NoteMetadata::new(sender, note_type).with_tag(tag).with_attachment(attachment);
+        let metadata = PartialNoteMetadata::new(sender, note_type).with_tag(tag);
         let vault = NoteAssets::new(assets)?;
 
-        Ok(Note::new(vault, metadata, recipient))
+        Ok(Note::with_attachments(vault, metadata, recipient, attachments))
     }
 }
 

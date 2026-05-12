@@ -188,7 +188,7 @@ impl From<&ExecutedTransaction> for TransactionHeader {
             tx.initial_account().initial_commitment(),
             tx.final_account().to_commitment(),
             tx.input_notes().to_commitments(),
-            tx.output_notes().iter().map(|n| n.header().clone()).collect(),
+            tx.output_notes().iter().map(|n| *n.header()).collect(),
             tx.fee(),
         )
     }

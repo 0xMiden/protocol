@@ -11,15 +11,15 @@ use miden_protocol::note::{Note, NoteScript};
 use crate::AuthMethod;
 use crate::account::components::{
     StandardAccountComponent,
-    basic_fungible_faucet_library,
     basic_wallet_library,
-    fungible_token_metadata_library,
+    fungible_faucet_library,
     guarded_multisig_library,
     multisig_library,
     multisig_smart_library,
     network_account_auth_library,
-    network_fungible_faucet_library,
     no_auth_library,
+    ownable2step_library,
+    rbac_library,
     singlesig_acl_library,
     singlesig_library,
 };
@@ -95,19 +95,16 @@ impl AccountInterfaceExt for AccountInterface {
                     component_proc_digests
                         .extend(basic_wallet_library().mast_forest().procedure_digests());
                 },
-                AccountComponentInterface::FungibleTokenMetadata => {
-                    component_proc_digests.extend(
-                        fungible_token_metadata_library().mast_forest().procedure_digests(),
-                    );
-                },
-                AccountComponentInterface::BasicFungibleFaucet => {
+                AccountComponentInterface::FungibleFaucet => {
                     component_proc_digests
-                        .extend(basic_fungible_faucet_library().mast_forest().procedure_digests());
+                        .extend(fungible_faucet_library().mast_forest().procedure_digests());
                 },
-                AccountComponentInterface::NetworkFungibleFaucet => {
-                    component_proc_digests.extend(
-                        network_fungible_faucet_library().mast_forest().procedure_digests(),
-                    );
+                AccountComponentInterface::Ownable2Step => {
+                    component_proc_digests
+                        .extend(ownable2step_library().mast_forest().procedure_digests());
+                },
+                AccountComponentInterface::RoleBasedAccessControl => {
+                    component_proc_digests.extend(rbac_library().mast_forest().procedure_digests());
                 },
                 AccountComponentInterface::AuthSingleSig => {
                     component_proc_digests

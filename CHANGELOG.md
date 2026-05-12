@@ -7,6 +7,14 @@
 - [BREAKING] Renamed `native_asset_id` to `fee_faucet_id` ([#2718](https://github.com/0xMiden/protocol/pull/2718)).
 - [BREAKING] Removed redundant outputs from kernel procedures: `note::write_assets_to_memory`, `active_note::get_assets`, `input_note::get_assets`, `output_note::get_assets`, `active_note::get_storage`, and `faucet::mint` no longer return values identical to their inputs ([#2523](https://github.com/0xMiden/protocol/issues/2523)).
 - Added PSWAP (partial swap) note for decentralized partial-fill asset exchange with remainder note re-creation ([#2636](https://github.com/0xMiden/protocol/pull/2636)).
+- [BREAKING] Replaced `metadata_into_attachment_info` with `metadata_into_attachment_schemes` in `miden::protocol::note` ([#2795](https://github.com/0xMiden/protocol/pull/2795), [#2849](https://github.com/0xMiden/protocol/pull/2849)).
+- [BREAKING] All `get_metadata` procedures (`active_note`, `input_note`, `output_note`) no longer return attachments ([#2795](https://github.com/0xMiden/protocol/pull/2795), [#2849](https://github.com/0xMiden/protocol/pull/2849)).
+- Added `metadata_into_tag` helper for extracting the tag from metadata. This should be used instead of extracting the tag manually from the header ([#2871](https://github.com/0xMiden/protocol/pull/2871)).
+- [BREAKING] Add support for multiple attachments per note ([#2795](https://github.com/0xMiden/protocol/pull/2795), [#2849](https://github.com/0xMiden/protocol/pull/2849)):
+- [BREAKING] Renamed `set_attachment` to `add_attachment`, `set_word_attachment` to `add_word_attachment`, and `set_array_attachment` to `add_array_attachment` in `miden::protocol::output_note` ([#2795](https://github.com/0xMiden/protocol/pull/2795), [#2849](https://github.com/0xMiden/protocol/pull/2849)).
+
+### Changes
+
 - Added a FungibleTokenMetadata ([#2439](https://github.com/0xMiden/miden-base/pull/2439)) component supporting name, description, logo URI, and external links, along with MASM procedures for retrieving token metadata (get_token_metadata, get_max_supply, get_decimals, get_token_symbol). Also aligned fungible faucet token metadata with the standard by using the canonical storage slot, enabling compatibility with MASM metadata getters.
 - Added validation of leaf type on CLAIM note processing to prevent message leaves from being processed as asset claims ([#2730](https://github.com/0xMiden/protocol/pull/2730)).
 - [BREAKING] Reduced `MAX_ASSETS_PER_NOTE` from 255 to 64 and `NOTE_MEM_SIZE` from 3072 to 1024 ([#2741](https://github.com/0xMiden/protocol/issues/2741)).
@@ -35,7 +43,10 @@
 - [BREAKING] Added `NoteScriptRoot` newtype wrapping note script roots ([#2851](https://github.com/0xMiden/protocol/pull/2851)).
 - Re-exported `MIN_STACK_DEPTH` from `miden-processor` ([#2856](https://github.com/0xMiden/protocol/pull/2856)).
 - [BREAKING] Renamed `note::build_recipient_hash` to `note::compute_recipient` and `note::build_recipient` to `note::compute_and_store_recipient` ([#2875](https://github.com/0xMiden/protocol/issues/2875)).
+- [BREAKING] Merged `BasicFungibleFaucet` and `NetworkFungibleFaucet` ([#2890](https://github.com/0xMiden/protocol/pull/2890)).
+- [BREAKING] Renamed `NoteMetadata` to `PartialNoteMetadata` and renamed `NoteMetadataHeader` to `NoteMetadata` ([#2887](https://github.com/0xMiden/protocol/pull/2887)).
 - [BREAKING] Renamed account ID version 0 to version 1 and made encoded version 0 invalid ([#2842](https://github.com/0xMiden/protocol/issues/2842)).
+- [BREAKING] Changed note metadata version 1 to encode as `1`, leaving encoded version `0` invalid.
 - Documented the `miden::protocol::account_id` module in the protocol library docs ([#2607](https://github.com/0xMiden/protocol/issues/2607)).
 
 ### Fixes
