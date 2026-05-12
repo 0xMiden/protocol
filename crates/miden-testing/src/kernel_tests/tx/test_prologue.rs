@@ -42,7 +42,7 @@ use miden_protocol::transaction::memory::{
     INPUT_NOTE_ARGS_OFFSET,
     INPUT_NOTE_ASSETS_COMMITMENT_OFFSET,
     INPUT_NOTE_ASSETS_OFFSET,
-    INPUT_NOTE_ATTACHMENT_OFFSET,
+    INPUT_NOTE_ATTACHMENTS_COMMITMENT_OFFSET,
     INPUT_NOTE_DETAILS_COMMITMENT_OFFSET,
     INPUT_NOTE_METADATA_OFFSET,
     INPUT_NOTE_NULLIFIER_SECTION_PTR,
@@ -494,7 +494,7 @@ fn input_notes_memory_assertions(
         );
 
         assert_eq!(
-            exec_output.get_note_mem_word(note_idx, INPUT_NOTE_ATTACHMENT_OFFSET),
+            exec_output.get_note_mem_word(note_idx, INPUT_NOTE_ATTACHMENTS_COMMITMENT_OFFSET),
             note.attachments().to_commitment(),
             "note attachment should be stored at the correct offset"
         );

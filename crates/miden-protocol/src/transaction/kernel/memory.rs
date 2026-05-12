@@ -409,7 +409,7 @@ pub const INPUT_NOTE_STORAGE_COMMITMENT_OFFSET: MemoryOffset = 12;
 pub const INPUT_NOTE_ASSETS_COMMITMENT_OFFSET: MemoryOffset = 16;
 pub const INPUT_NOTE_RECIPIENT_OFFSET: MemoryOffset = 20;
 pub const INPUT_NOTE_METADATA_OFFSET: MemoryOffset = 24;
-pub const INPUT_NOTE_ATTACHMENT_OFFSET: MemoryOffset = 28;
+pub const INPUT_NOTE_ATTACHMENTS_COMMITMENT_OFFSET: MemoryOffset = 28;
 pub const INPUT_NOTE_ARGS_OFFSET: MemoryOffset = 32;
 pub const INPUT_NOTE_NUM_STORAGE_ITEMS_OFFSET: MemoryOffset = 36;
 pub const INPUT_NOTE_NUM_ASSETS_OFFSET: MemoryOffset = 40;
@@ -470,7 +470,7 @@ pub const OUTPUT_NOTE_ATTACHMENT_0_OFFSET: MemoryOffset = 16;
 pub const OUTPUT_NOTE_ATTACHMENT_1_OFFSET: MemoryOffset = 20;
 pub const OUTPUT_NOTE_ATTACHMENT_2_OFFSET: MemoryOffset = 24;
 pub const OUTPUT_NOTE_ATTACHMENT_3_OFFSET: MemoryOffset = 28;
-pub const OUTPUT_NOTE_ASSET_COMMITMENT_OFFSET: MemoryOffset = 32;
+pub const OUTPUT_NOTE_ASSETS_COMMITMENT_OFFSET: MemoryOffset = 32;
 pub const OUTPUT_NOTE_ASSETS_OFFSET: MemoryOffset = 36;
 
 // ASSETS

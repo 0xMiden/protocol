@@ -21,7 +21,7 @@ use miden_protocol::testing::account_id::{
 use miden_protocol::testing::storage::MOCK_VALUE_SLOT0;
 use miden_protocol::transaction::memory::{
     NOTE_MEM_SIZE,
-    OUTPUT_NOTE_ASSET_COMMITMENT_OFFSET,
+    OUTPUT_NOTE_ASSETS_COMMITMENT_OFFSET,
     OUTPUT_NOTE_SECTION_OFFSET,
 };
 use miden_protocol::transaction::{RawOutputNote, RawOutputNotes, TransactionOutputs};
@@ -229,7 +229,7 @@ async fn test_compute_output_note_details_commitment() -> anyhow::Result<()> {
             exec_output.get_kernel_mem_word(
                 OUTPUT_NOTE_SECTION_OFFSET
                     + i * NOTE_MEM_SIZE
-                    + OUTPUT_NOTE_ASSET_COMMITMENT_OFFSET
+                    + OUTPUT_NOTE_ASSETS_COMMITMENT_OFFSET
             ),
             "ASSET_COMMITMENT didn't match expected value",
         );
