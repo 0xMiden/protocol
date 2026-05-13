@@ -345,7 +345,7 @@ fn generate_agglayer_constants(
                 MintPolicyConfig::OwnerOnly,
                 BurnPolicyConfig::OwnerOnly,
             )
-            .with_allowed_burn_policy(BurnAllowAll::root());
+            .with_allowed_burn_policy(BurnAllowAll::root().as_word());
 
             components.extend(token_policy_manager);
             components.push(BurnAllowAll.into());
