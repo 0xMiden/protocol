@@ -22,24 +22,14 @@ use miden_protocol::account::{
     StorageSlot,
     StorageSlotName,
 };
-use miden_protocol::assembly::Library;
-use miden_protocol::utils::serde::Deserializable;
 use miden_protocol::utils::sync::LazyLock;
 
 use super::PolicyAuthority;
 use super::burn::BurnPolicyConfig;
 use super::mint::MintPolicyConfig;
+use crate::account::account_component_code;
 
-// Initialize the Token Policy Manager component code only once.
-static POLICY_MANAGER_CODE: LazyLock<AccountComponentCode> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(
-        env!("OUT_DIR"),
-        "/assets/account_components/faucets/policies/policy_manager.masl"
-    ));
-    let library = Library::read_from_bytes(bytes)
-        .expect("Shipped Token Policy Manager library is well-formed");
-    AccountComponentCode::from(library)
-});
+account_component_code!(POLICY_MANAGER_CODE, "faucets/policies/policy_manager.masl");
 
 // STORAGE SLOT NAMES
 // ================================================================================================

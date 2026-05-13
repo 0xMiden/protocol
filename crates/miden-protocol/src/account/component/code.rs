@@ -46,7 +46,7 @@ impl AccountComponentCode {
     }
 
     /// Returns the [`AccountProcedureRoot`] of the procedure with the specified path, or `None`
-    /// if it was not found in this component's library or its library path is malformed.
+    /// if it was not found in this component's library.
     pub fn get_procedure_root_by_path(
         &self,
         proc_name: impl AsRef<Path>,
@@ -143,6 +143,10 @@ mod tests {
         );
         let component_code = AccountComponentCode::from(library);
 
+        // The test library exports exactly one procedure.
+        assert_eq!(component_code.procedure_roots().count(), 1);
+        let expected = component_code.procedure_roots().next().expect("one procedure exported");
+
         let library_namespace = component_code
             .as_library()
             .module_infos()
@@ -155,8 +159,6 @@ mod tests {
         let root = component_code
             .get_procedure_root_by_path(proc_path.as_str())
             .expect("test_proc should be present");
-        let expected: AccountProcedureRoot =
-            component_code.procedure_roots().next().expect("one procedure exported");
         assert_eq!(root, expected);
 
         assert!(component_code.get_procedure_root_by_path("bogus::missing").is_none());

@@ -14,18 +14,11 @@ use miden_protocol::account::{
     StorageSlot,
     StorageSlotName,
 };
-use miden_protocol::assembly::Library;
-use miden_protocol::utils::serde::Deserializable;
 use miden_protocol::utils::sync::LazyLock;
 
-// Initialize the RoleBasedAccessControl component code only once.
-static RBAC_CODE: LazyLock<AccountComponentCode> = LazyLock::new(|| {
-    let bytes =
-        include_bytes!(concat!(env!("OUT_DIR"), "/assets/account_components/access/rbac.masl"));
-    let library = Library::read_from_bytes(bytes)
-        .expect("Shipped RoleBasedAccessControl library is well-formed");
-    AccountComponentCode::from(library)
-});
+use crate::account::account_component_code;
+
+account_component_code!(RBAC_CODE, "access/rbac.masl");
 
 static ROLE_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::access::rbac::role_config")

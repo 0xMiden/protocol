@@ -18,23 +18,13 @@ use miden_protocol::account::{
     StorageSlot,
     StorageSlotName,
 };
-use miden_protocol::assembly::Library;
 use miden_protocol::errors::AccountError;
-use miden_protocol::utils::serde::Deserializable;
 use miden_protocol::utils::sync::LazyLock;
 
 use super::multisig::{AuthMultisig, AuthMultisigConfig};
+use crate::account::account_component_code;
 
-// Initialize the Guarded Multisig component code only once.
-static GUARDED_MULTISIG_CODE: LazyLock<AccountComponentCode> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(
-        env!("OUT_DIR"),
-        "/assets/account_components/auth/guarded_multisig.masl"
-    ));
-    let library =
-        Library::read_from_bytes(bytes).expect("Shipped Guarded Multisig library is well-formed");
-    AccountComponentCode::from(library)
-});
+account_component_code!(GUARDED_MULTISIG_CODE, "auth/guarded_multisig.masl");
 
 // CONSTANTS
 // ================================================================================================
@@ -345,7 +335,7 @@ impl From<AuthGuardedMultisig> for AccountComponent {
 
         AccountComponent::new(AuthGuardedMultisig::code().clone(), storage_slots, metadata).expect(
             "Guarded multisig auth component should satisfy the requirements of a valid \
-                 account component",
+             account component",
         )
     }
 }

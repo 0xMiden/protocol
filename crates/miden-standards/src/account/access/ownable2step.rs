@@ -13,22 +13,13 @@ use miden_protocol::account::{
     StorageSlot,
     StorageSlotName,
 };
-use miden_protocol::assembly::Library;
 use miden_protocol::errors::AccountIdError;
-use miden_protocol::utils::serde::Deserializable;
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
-// Initialize the Ownable2Step component code only once.
-static OWNABLE2STEP_CODE: LazyLock<AccountComponentCode> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(
-        env!("OUT_DIR"),
-        "/assets/account_components/access/ownable2step.masl"
-    ));
-    let library =
-        Library::read_from_bytes(bytes).expect("Shipped Ownable2Step library is well-formed");
-    AccountComponentCode::from(library)
-});
+use crate::account::account_component_code;
+
+account_component_code!(OWNABLE2STEP_CODE, "access/ownable2step.masl");
 
 static OWNER_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::access::ownable2step::owner_config")

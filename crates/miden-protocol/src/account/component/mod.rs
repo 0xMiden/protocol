@@ -210,7 +210,7 @@ impl AccountComponent {
     }
 
     /// Returns the [`AccountProcedureRoot`] of the procedure with the specified path, or `None`
-    /// if it was not found in this component's library or its library path is malformed.
+    /// if it was not found in this component's library.
     pub fn get_procedure_root_by_path(
         &self,
         proc_name: impl AsRef<Path>,

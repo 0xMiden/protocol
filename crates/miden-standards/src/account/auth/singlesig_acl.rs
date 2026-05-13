@@ -19,22 +19,13 @@ use miden_protocol::account::{
     StorageSlot,
     StorageSlotName,
 };
-use miden_protocol::assembly::Library;
 use miden_protocol::errors::AccountError;
-use miden_protocol::utils::serde::Deserializable;
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
-// Initialize the Singlesig ACL component code only once.
-static SINGLESIG_ACL_CODE: LazyLock<AccountComponentCode> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(
-        env!("OUT_DIR"),
-        "/assets/account_components/auth/singlesig_acl.masl"
-    ));
-    let library =
-        Library::read_from_bytes(bytes).expect("Shipped Singlesig ACL library is well-formed");
-    AccountComponentCode::from(library)
-});
+use crate::account::account_component_code;
+
+account_component_code!(SINGLESIG_ACL_CODE, "auth/singlesig_acl.masl");
 
 // CONSTANTS
 // ================================================================================================
@@ -357,7 +348,7 @@ mod tests {
     fn get_basic_wallet_procedures() -> Vec<AccountProcedureRoot> {
         // Get the two trigger procedures from BasicWallet: `receive_asset`, `move_asset_to_note`.
         let procedures: Vec<AccountProcedureRoot> =
-            StandardAccountComponent::BasicWallet.procedure_digests().collect();
+            StandardAccountComponent::BasicWallet.procedure_roots().collect();
 
         assert_eq!(procedures.len(), 2);
         procedures

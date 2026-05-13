@@ -1,26 +1,18 @@
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{AccountComponent, AccountProcedureRoot, AccountType};
-use miden_protocol::assembly::Library;
-use miden_protocol::utils::serde::Deserializable;
-use miden_protocol::utils::sync::LazyLock;
 
-use crate::procedure_digest;
+use crate::account::account_component_code;
+use crate::procedure_root;
 
 // OWNER-ONLY MINT POLICY
 // ================================================================================================
 
-// Initialize the `owner_only` Mint Policy component code only once.
-static OWNER_ONLY_MINT_POLICY_CODE: LazyLock<AccountComponentCode> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(
-        env!("OUT_DIR"),
-        "/assets/account_components/faucets/policies/mint/owner_controlled/owner_only.masl"
-    ));
-    let library = Library::read_from_bytes(bytes)
-        .expect("Shipped `owner_only` Mint Policy library is well-formed");
-    AccountComponentCode::from(library)
-});
+account_component_code!(
+    OWNER_ONLY_MINT_POLICY_CODE,
+    "faucets/policies/mint/owner_controlled/owner_only.masl"
+);
 
-procedure_digest!(
+procedure_root!(
     OWNER_ONLY_POLICY_ROOT,
     MintOwnerOnly::NAME,
     MintOwnerOnly::PROC_NAME,

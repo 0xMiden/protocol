@@ -23,18 +23,12 @@ use miden_protocol::account::{
     StorageSlot,
     StorageSlotName,
 };
-use miden_protocol::assembly::Library;
 use miden_protocol::errors::AccountError;
-use miden_protocol::utils::serde::Deserializable;
 use miden_protocol::utils::sync::LazyLock;
 
-// Initialize the Multisig component code only once.
-static MULTISIG_CODE: LazyLock<AccountComponentCode> = LazyLock::new(|| {
-    let bytes =
-        include_bytes!(concat!(env!("OUT_DIR"), "/assets/account_components/auth/multisig.masl"));
-    let library = Library::read_from_bytes(bytes).expect("Shipped Multisig library is well-formed");
-    AccountComponentCode::from(library)
-});
+use crate::account::account_component_code;
+
+account_component_code!(MULTISIG_CODE, "auth/multisig.masl");
 
 // CONSTANTS
 // ================================================================================================

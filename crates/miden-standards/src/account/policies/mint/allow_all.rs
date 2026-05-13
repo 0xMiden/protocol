@@ -1,26 +1,15 @@
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{AccountComponent, AccountProcedureRoot, AccountType};
-use miden_protocol::assembly::Library;
-use miden_protocol::utils::serde::Deserializable;
-use miden_protocol::utils::sync::LazyLock;
 
-use crate::procedure_digest;
+use crate::account::account_component_code;
+use crate::procedure_root;
 
 // ALLOW-ALL MINT POLICY
 // ================================================================================================
 
-// Initialize the `allow_all` Mint Policy component code only once.
-static ALLOW_ALL_MINT_POLICY_CODE: LazyLock<AccountComponentCode> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(
-        env!("OUT_DIR"),
-        "/assets/account_components/faucets/policies/mint/allow_all.masl"
-    ));
-    let library = Library::read_from_bytes(bytes)
-        .expect("Shipped `allow_all` Mint Policy library is well-formed");
-    AccountComponentCode::from(library)
-});
+account_component_code!(ALLOW_ALL_MINT_POLICY_CODE, "faucets/policies/mint/allow_all.masl");
 
-procedure_digest!(
+procedure_root!(
     ALLOW_ALL_POLICY_ROOT,
     MintAllowAll::NAME,
     MintAllowAll::PROC_NAME,

@@ -8,23 +8,12 @@ use miden_protocol::account::component::{
     StorageSlotSchema,
 };
 use miden_protocol::account::{AccountComponent, AccountType, StorageSlotName};
-use miden_protocol::assembly::Library;
 use miden_protocol::note::NoteScriptRoot;
-use miden_protocol::utils::serde::Deserializable;
-use miden_protocol::utils::sync::LazyLock;
 
 use super::{NetworkAccountNoteAllowlist, NetworkAccountNoteAllowlistError};
+use crate::account::account_component_code;
 
-// Initialize the AuthNetworkAccount component code only once.
-static NETWORK_ACCOUNT_AUTH_CODE: LazyLock<AccountComponentCode> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(
-        env!("OUT_DIR"),
-        "/assets/account_components/auth/network_account.masl"
-    ));
-    let library =
-        Library::read_from_bytes(bytes).expect("Shipped AuthNetworkAccount library is well-formed");
-    AccountComponentCode::from(library)
-});
+account_component_code!(NETWORK_ACCOUNT_AUTH_CODE, "auth/network_account.masl");
 
 // AUTH NETWORK ACCOUNT
 // ================================================================================================
@@ -105,7 +94,7 @@ impl From<AuthNetworkAccount> for AccountComponent {
 
         AccountComponent::new(AuthNetworkAccount::code().clone(), storage_slots, metadata).expect(
             "AuthNetworkAccount component should satisfy the requirements of a valid \
-                 account component",
+             account component",
         )
     }
 }

@@ -9,32 +9,21 @@ use miden_protocol::account::{
     AccountStorageMode,
     AccountType,
 };
-use miden_protocol::assembly::Library;
 use miden_protocol::errors::AccountError;
-use miden_protocol::utils::serde::Deserializable;
-use miden_protocol::utils::sync::LazyLock;
 use thiserror::Error;
 
 use super::AuthMethod;
+use crate::account::account_component_code;
 use crate::account::auth::{AuthMultisig, AuthMultisigConfig, AuthSingleSig};
-use crate::procedure_digest;
+use crate::procedure_root;
 
 // BASIC WALLET
 // ================================================================================================
 
-// Initialize the Basic Wallet component code only once.
-static BASIC_WALLET_CODE: LazyLock<AccountComponentCode> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(
-        env!("OUT_DIR"),
-        "/assets/account_components/wallets/basic_wallet.masl"
-    ));
-    let library =
-        Library::read_from_bytes(bytes).expect("Shipped Basic Wallet library is well-formed");
-    AccountComponentCode::from(library)
-});
+account_component_code!(BASIC_WALLET_CODE, "wallets/basic_wallet.masl");
 
 // Initialize the procedure root of the `receive_asset` procedure of the Basic Wallet only once.
-procedure_digest!(
+procedure_root!(
     BASIC_WALLET_RECEIVE_ASSET,
     BasicWallet::NAME,
     BasicWallet::RECEIVE_ASSET_PROC_NAME,
@@ -43,7 +32,7 @@ procedure_digest!(
 
 // Initialize the procedure root of the `move_asset_to_note` procedure of the Basic Wallet only
 // once.
-procedure_digest!(
+procedure_root!(
     BASIC_WALLET_MOVE_ASSET_TO_NOTE,
     BasicWallet::NAME,
     BasicWallet::MOVE_ASSET_TO_NOTE_PROC_NAME,
@@ -227,7 +216,7 @@ mod tests {
         assert_eq!(wallet, deserialized_wallet);
     }
 
-    /// Check that the obtaining of the basic wallet procedure digests does not panic.
+    /// Check that the obtaining of the basic wallet procedure roots does not panic.
     #[test]
     fn get_faucet_procedures() {
         let _receive_asset_root = BasicWallet::receive_asset_root();

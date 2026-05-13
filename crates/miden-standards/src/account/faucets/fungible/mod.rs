@@ -19,9 +19,7 @@ use miden_protocol::account::{
     StorageSlot,
     StorageSlotName,
 };
-use miden_protocol::assembly::Library;
 use miden_protocol::asset::{AssetAmount, TokenSymbol};
-use miden_protocol::utils::serde::Deserializable;
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
@@ -35,10 +33,11 @@ use super::{
     TokenName,
 };
 use crate::account::access::AccessControl;
+use crate::account::account_component_code;
 use crate::account::auth::{AuthSingleSigAcl, AuthSingleSigAclConfig, NoAuth};
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
 use crate::account::policies::TokenPolicyManager;
-use crate::{AuthMethod, procedure_digest};
+use crate::{AuthMethod, procedure_root};
 
 mod builder;
 pub use builder::FungibleFaucetBuilder;
@@ -62,19 +61,10 @@ const TOKEN_SYMBOL_TYPE: &str = "miden::standards::faucets::fungible::token_symb
 // FUNGIBLE FAUCET ACCOUNT COMPONENT
 // ================================================================================================
 
-// Initialize the Basic Fungible Faucet component code only once.
-static FUNGIBLE_FAUCET_CODE: LazyLock<AccountComponentCode> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(
-        env!("OUT_DIR"),
-        "/assets/account_components/faucets/fungible_faucet.masl"
-    ));
-    let library = Library::read_from_bytes(bytes)
-        .expect("Shipped Basic Fungible Faucet library is well-formed");
-    AccountComponentCode::from(library)
-});
+account_component_code!(FUNGIBLE_FAUCET_CODE, "faucets/fungible_faucet.masl");
 
 // Initialize the procedure root of the `mint_and_send` procedure of the Fungible Faucet only once.
-procedure_digest!(
+procedure_root!(
     FUNGIBLE_FAUCET_MINT_AND_SEND,
     FungibleFaucet::NAME,
     FungibleFaucet::MINT_PROC_NAME,
@@ -83,7 +73,7 @@ procedure_digest!(
 
 // Initialize the procedure root of the `receive_and_burn` procedure of the Fungible Faucet only
 // once.
-procedure_digest!(
+procedure_root!(
     FUNGIBLE_FAUCET_RECEIVE_AND_BURN,
     FungibleFaucet::NAME,
     FungibleFaucet::RECEIVE_AND_BURN_PROC_NAME,

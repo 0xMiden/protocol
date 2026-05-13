@@ -37,7 +37,7 @@ pub enum StandardAccountComponent {
 impl StandardAccountComponent {
     /// Returns the iterator over the [`AccountProcedureRoot`]s of all procedures exported from
     /// the component.
-    pub fn procedure_digests(&self) -> impl Iterator<Item = AccountProcedureRoot> {
+    pub fn procedure_roots(&self) -> impl Iterator<Item = AccountProcedureRoot> {
         let code = match self {
             Self::BasicWallet => BasicWallet::code(),
             Self::FungibleFaucet => FungibleFaucet::code(),
@@ -63,9 +63,9 @@ impl StandardAccountComponent {
         component_interface_vec: &mut Vec<AccountComponentInterface>,
     ) {
         // Determine if this component should be extracted based on procedure matching
-        if self.procedure_digests().all(|proc_root| procedures_set.contains(&proc_root)) {
+        if self.procedure_roots().all(|proc_root| procedures_set.contains(&proc_root)) {
             // Remove the procedure root of any matching procedure.
-            self.procedure_digests().for_each(|component_procedure| {
+            self.procedure_roots().for_each(|component_procedure| {
                 procedures_set.remove(&component_procedure);
             });
 

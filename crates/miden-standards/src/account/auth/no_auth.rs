@@ -1,16 +1,9 @@
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{AccountComponent, AccountType};
-use miden_protocol::assembly::Library;
-use miden_protocol::utils::serde::Deserializable;
-use miden_protocol::utils::sync::LazyLock;
 
-// Initialize the NoAuth component code only once.
-static NO_AUTH_CODE: LazyLock<AccountComponentCode> = LazyLock::new(|| {
-    let bytes =
-        include_bytes!(concat!(env!("OUT_DIR"), "/assets/account_components/auth/no_auth.masl"));
-    let library = Library::read_from_bytes(bytes).expect("Shipped NoAuth library is well-formed");
-    AccountComponentCode::from(library)
-});
+use crate::account::account_component_code;
+
+account_component_code!(NO_AUTH_CODE, "auth/no_auth.masl");
 
 /// An [`AccountComponent`] implementing a no-authentication scheme.
 ///
