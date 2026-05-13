@@ -22,6 +22,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _classify import matches  # noqa: E402
+from _hookutils import repo_root  # noqa: E402
 
 TARGET = ("git", ["push"])
 
@@ -56,8 +57,8 @@ def main() -> None:
     if not matches(command, *TARGET):
         sys.exit(0)
 
-    repo_root = _repo_root()
-    if repo_root is None:
+    root = repo_root()
+    if root is None:
         sys.stderr.write("Pre-push: not inside a git worktree, skipping.\n")
         sys.exit(0)
 
@@ -97,17 +98,6 @@ def main() -> None:
         sys.exit(2)
     sys.stderr.write("\nPre-push: all checks passed.\n")
     sys.exit(0)
-
-
-def _repo_root() -> Path | None:
-    result = subprocess.run(
-        ["git", "rev-parse", "--show-toplevel"],
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        return None
-    return Path(result.stdout.strip())
 
 
 def _diff_base() -> str:

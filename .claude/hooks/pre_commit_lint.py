@@ -13,6 +13,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _classify import matches  # noqa: E402
+from _hookutils import makefile_has_target, repo_root  # noqa: E402
 
 # Imported by tests to verify the hook routes correctly.
 TARGET = ("git", ["commit"])
@@ -27,16 +28,16 @@ def main() -> None:
     if not matches(command, *TARGET):
         sys.exit(0)
 
-    repo_root = _repo_root()
-    if repo_root is None:
+    root = repo_root()
+    if root is None:
         sys.exit(0)
-    if not (repo_root / "Cargo.toml").is_file():
+    if not (root / "Cargo.toml").is_file():
         sys.exit(0)
-    if not _makefile_has_target(repo_root / "Makefile", "lint"):
+    if not makefile_has_target(root / "Makefile", "lint"):
         sys.exit(0)
 
     result = subprocess.run(
-        ["make", "-C", str(repo_root), "lint"],
+        ["make", "-C", str(root), "lint"],
         capture_output=True,
         text=True,
     )
@@ -46,25 +47,6 @@ def main() -> None:
         sys.stderr.write(result.stderr)
         sys.exit(2)
     sys.exit(0)
-
-
-def _repo_root() -> Path | None:
-    result = subprocess.run(
-        ["git", "rev-parse", "--show-toplevel"],
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        return None
-    return Path(result.stdout.strip())
-
-
-def _makefile_has_target(makefile: Path, target: str) -> bool:
-    try:
-        text = makefile.read_text()
-    except OSError:
-        return False
-    return any(line.startswith(f"{target}:") for line in text.splitlines())
 
 
 if __name__ == "__main__":
