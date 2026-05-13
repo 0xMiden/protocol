@@ -39,9 +39,6 @@ use crate::account::interface::{AccountComponentInterface, AccountInterface, Acc
 use crate::account::policies::TokenPolicyManager;
 use crate::{AuthMethod, procedure_root};
 
-mod builder;
-pub use builder::FungibleFaucetBuilder;
-
 #[cfg(test)]
 mod tests;
 
@@ -114,6 +111,75 @@ pub struct FungibleFaucet {
     metadata: TokenMetadata,
 }
 
+#[bon::bon]
+impl FungibleFaucet {
+    /// Returns a builder for [`FungibleFaucet`].
+    ///
+    /// Required setters: [`name`], [`symbol`], [`decimals`], [`max_supply`].
+    /// Optional fields default to `None` (string fields) or `false` (mutability flags); the initial
+    /// token supply defaults to zero.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use miden_protocol::asset::{AssetAmount, TokenSymbol};
+    /// # use miden_standards::account::faucets::FungibleFaucet;
+    /// # use miden_standards::account::faucets::{Description, LogoURI, TokenName};
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let faucet = FungibleFaucet::builder()
+    ///     .name(TokenName::new("My Token")?)
+    ///     .symbol(TokenSymbol::new("MTK")?)
+    ///     .decimals(8)
+    ///     .max_supply(AssetAmount::new(1_000_000)?)
+    ///     .token_supply(AssetAmount::new(100)?)
+    ///     .description(Description::new("A test token")?)
+    ///     .logo_uri(LogoURI::new("https://example.com/logo.png")?)
+    ///     .build()?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// [`name`]: FungibleFaucetBuilder::name
+    /// [`symbol`]: FungibleFaucetBuilder::symbol
+    /// [`decimals`]: FungibleFaucetBuilder::decimals
+    /// [`max_supply`]: FungibleFaucetBuilder::max_supply
+    #[builder]
+    pub fn new(
+        name: TokenName,
+        symbol: TokenSymbol,
+        decimals: u8,
+        max_supply: AssetAmount,
+        #[builder(default)] token_supply: AssetAmount,
+        description: Option<Description>,
+        logo_uri: Option<LogoURI>,
+        external_link: Option<ExternalLink>,
+        #[builder(default)] is_description_mutable: bool,
+        #[builder(default)] is_logo_uri_mutable: bool,
+        #[builder(default)] is_external_link_mutable: bool,
+        #[builder(default)] is_max_supply_mutable: bool,
+    ) -> Result<FungibleFaucet, FungibleFaucetError> {
+        let mut metadata = TokenMetadata::new(name);
+        if let Some(desc) = description {
+            metadata = metadata.with_description(desc, is_description_mutable);
+        } else {
+            metadata = metadata.with_description_mutable(is_description_mutable);
+        }
+        if let Some(uri) = logo_uri {
+            metadata = metadata.with_logo_uri(uri, is_logo_uri_mutable);
+        } else {
+            metadata = metadata.with_logo_uri_mutable(is_logo_uri_mutable);
+        }
+        if let Some(link) = external_link {
+            metadata = metadata.with_external_link(link, is_external_link_mutable);
+        } else {
+            metadata = metadata.with_external_link_mutable(is_external_link_mutable);
+        }
+        metadata = metadata.with_max_supply_mutable(is_max_supply_mutable);
+
+        Self::new_validated(symbol, decimals, max_supply, token_supply, metadata)
+    }
+}
+
 impl FungibleFaucet {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
@@ -129,27 +195,6 @@ impl FungibleFaucet {
 
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
-
-    /// Returns a builder for [`FungibleFaucet`] with the required fields set.
-    ///
-    /// This is the main entry point for constructing a faucet; optional fields and the initial
-    /// token supply can be set via the builder before calling
-    /// [`FungibleFaucetBuilder::build`].
-    ///
-    /// # Parameters
-    ///
-    /// - `name`: display name (at most 32 UTF-8 bytes).
-    /// - `symbol`: token symbol.
-    /// - `decimals`: decimal precision (0–12).
-    /// - `max_supply`: maximum token supply, as a validated [`AssetAmount`].
-    pub fn builder(
-        name: TokenName,
-        symbol: TokenSymbol,
-        decimals: u8,
-        max_supply: AssetAmount,
-    ) -> FungibleFaucetBuilder {
-        FungibleFaucetBuilder::new(name, symbol, decimals, max_supply)
-    }
 
     /// Validates all fields and constructs a [`FungibleFaucet`].
     ///
