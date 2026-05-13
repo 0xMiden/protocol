@@ -40,7 +40,11 @@ fn faucet_contract_creation() {
 
     let token_name = TokenName::new(token_name_string).unwrap();
     let description = Description::new(description_string).unwrap();
-    let faucet = FungibleFaucet::builder(token_name, token_symbol.clone(), decimals, max_supply)
+    let faucet = FungibleFaucet::builder()
+        .name(token_name)
+        .symbol(token_symbol.clone())
+        .decimals(decimals)
+        .max_supply(max_supply)
         .description(description)
         .build()
         .unwrap();
@@ -75,7 +79,7 @@ fn faucet_contract_creation() {
     );
 
     // The procedure root map should contain the mint_and_send procedure root.
-    let mint_root = FungibleFaucet::mint_and_send_digest();
+    let mint_root = FungibleFaucet::mint_and_send_root();
     assert_eq!(
         faucet_account
             .storage()
@@ -84,7 +88,7 @@ fn faucet_contract_creation() {
                 [Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ZERO].into()
             )
             .unwrap(),
-        mint_root
+        mint_root.as_word()
     );
 
     // Check that faucet metadata was initialized to the given values.
@@ -122,14 +126,13 @@ fn faucet_create_from_account() {
 
     // valid account
     let token_symbol = TokenSymbol::new("POL").expect("invalid token symbol");
-    let faucet = FungibleFaucet::builder(
-        TokenName::new("POL").unwrap(),
-        token_symbol,
-        10,
-        AssetAmount::new(100).unwrap(),
-    )
-    .build()
-    .expect("failed to create faucet");
+    let faucet = FungibleFaucet::builder()
+        .name(TokenName::new("POL").unwrap())
+        .symbol(token_symbol)
+        .decimals(10)
+        .max_supply(AssetAmount::new(100).unwrap())
+        .build()
+        .expect("failed to create faucet");
 
     let faucet_account = AccountBuilder::new(mock_seed)
         .account_type(AccountType::FungibleFaucet)
@@ -155,9 +158,9 @@ fn faucet_create_from_account() {
     assert_matches!(err, FungibleFaucetError::MissingFungibleFaucetInterface);
 }
 
-/// Check that the obtaining of the fungible faucet procedure digests does not panic.
+/// Check that the obtaining of the fungible faucet procedure roots does not panic.
 #[test]
 fn get_faucet_procedures() {
-    let _mint_and_send_digest = FungibleFaucet::mint_and_send_digest();
-    let _receive_and_burn_digest = FungibleFaucet::receive_and_burn_digest();
+    let _mint_and_send_root = FungibleFaucet::mint_and_send_root();
+    let _receive_and_burn_root = FungibleFaucet::receive_and_burn_root();
 }
