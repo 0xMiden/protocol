@@ -3,6 +3,7 @@ use alloc::vec::Vec;
 use miden_protocol::Word;
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 use miden_protocol::account::component::{
+    AccountComponentCode,
     AccountComponentMetadata,
     SchemaType,
     StorageSchema,
@@ -29,8 +30,10 @@ use super::super::multisig::{
     THRESHOLD_CONFIG_SLOT_NAME,
 };
 use super::ProcedurePolicy;
+use crate::account::account_component_code;
 use crate::account::auth::AuthMultisig;
-use crate::account::components::multisig_smart_library;
+
+account_component_code!(MULTISIG_SMART_CODE, "auth/multisig_smart.masl");
 
 // CONSTANTS
 // ================================================================================================
@@ -140,6 +143,11 @@ pub struct AuthMultisigSmart {
 impl AuthMultisigSmart {
     /// The name of the component.
     pub const NAME: &'static str = "miden::standards::components::auth::multisig_smart";
+
+    /// Returns the [`AccountComponentCode`] of this component.
+    pub fn code() -> &'static AccountComponentCode {
+        &MULTISIG_SMART_CODE
+    }
 
     /// Creates a new [`AuthMultisigSmart`] component from the provided configuration.
     pub fn new(config: AuthMultisigSmartConfig) -> Result<Self, AccountError> {
@@ -256,7 +264,7 @@ impl From<AuthMultisigSmart> for AccountComponent {
             .with_description("Multisig smart authentication component")
             .with_storage_schema(storage_schema);
 
-        AccountComponent::new(multisig_smart_library(), storage_slots, metadata).expect(
+        AccountComponent::new(AuthMultisigSmart::code().clone(), storage_slots, metadata).expect(
             "multisig smart component should satisfy the requirements of a valid account component",
         )
     }
@@ -287,7 +295,7 @@ mod tests {
         let config = AuthMultisigSmartConfig::new(approvers.clone(), default_threshold)
             .expect("invalid multisig smart config")
             .with_proc_policies(vec![(
-                BasicWallet::receive_asset_digest(),
+                BasicWallet::receive_asset_root().as_word(),
                 ProcedurePolicy::with_immediate_threshold(receive_asset_immediate_threshold)
                     .expect("procedure policy should be valid"),
             )])
@@ -312,7 +320,7 @@ mod tests {
             .storage()
             .get_map_item(
                 AuthMultisigSmart::procedure_policies_slot(),
-                BasicWallet::receive_asset_digest(),
+                BasicWallet::receive_asset_root().as_word(),
             )
             .expect("receive_asset policy should be present");
         assert_eq!(

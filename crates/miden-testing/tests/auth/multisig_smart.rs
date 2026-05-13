@@ -18,7 +18,6 @@ use miden_standards::account::auth::multisig_smart::{
     ProcedurePolicyNoteRestriction,
 };
 use miden_standards::account::auth::{AuthMultisigSmart, AuthMultisigSmartConfig};
-use miden_standards::account::components::multisig_smart_library;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
@@ -73,7 +72,7 @@ fn create_multisig_smart_account(
 /// the wrapper-exported procedures.
 fn compile_multisig_smart_tx_script(script: impl AsRef<str>) -> anyhow::Result<TransactionScript> {
     Ok(CodeBuilder::default()
-        .with_dynamically_linked_library(multisig_smart_library())?
+        .with_dynamically_linked_library(AuthMultisigSmart::code())?
         .compile_tx_script(script.as_ref())?)
 }
 
@@ -95,7 +94,7 @@ async fn test_multisig_smart_receive_asset_policy_overrides_default_three_of_thr
 
     let receive_asset_one_signature_policy = ProcedurePolicy::with_immediate_threshold(1)?;
     let proc_policy_map =
-        vec![(BasicWallet::receive_asset_digest(), receive_asset_one_signature_policy)];
+        vec![(BasicWallet::receive_asset_root().as_word(), receive_asset_one_signature_policy)];
 
     let mut multisig_account =
         create_multisig_smart_account(3, &public_keys, auth_scheme, 10, proc_policy_map)?;
@@ -171,7 +170,7 @@ async fn test_multisig_smart_enforces_note_restrictions_on_tx_with_input_notes(
         AuthScheme::EcdsaK256Keccak,
         100,
         vec![(
-            BasicWallet::receive_asset_digest(),
+            BasicWallet::receive_asset_root().as_word(),
             ProcedurePolicy::with_immediate_threshold(1)?.with_note_restriction(restriction),
         )],
     )?;
@@ -244,7 +243,7 @@ async fn test_multisig_smart_enforces_note_restrictions_on_tx_with_output_notes(
         AuthScheme::EcdsaK256Keccak,
         100,
         vec![(
-            BasicWallet::move_asset_to_note_digest(),
+            BasicWallet::move_asset_to_note_root().as_word(),
             ProcedurePolicy::with_immediate_threshold(1)?.with_note_restriction(restriction),
         )],
     )?;
@@ -422,7 +421,7 @@ async fn test_multisig_smart_set_procedure_policy(
     let mock_chain =
         MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
 
-    let receive_asset_root = BasicWallet::receive_asset_digest();
+    let receive_asset_root = BasicWallet::receive_asset_root().as_word();
     let immediate_threshold = 1u32;
     let delayed_threshold = 0u32;
     let note_restrictions = ProcedurePolicyNoteRestriction::NoInputNotes;

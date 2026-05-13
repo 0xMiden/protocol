@@ -1706,13 +1706,12 @@ async fn test_faucet_has_callbacks(
     #[case] callback_slots: Vec<StorageSlot>,
     #[case] expected_has_callbacks: bool,
 ) -> anyhow::Result<()> {
-    let faucet = FungibleFaucet::builder(
-        TokenName::new("").expect("empty string is a valid token name"),
-        "CBK".try_into()?,
-        8,
-        AssetAmount::new(1_000_000)?,
-    )
-    .build()?;
+    let faucet = FungibleFaucet::builder()
+        .name(TokenName::new("").expect("empty string is a valid token name"))
+        .symbol("CBK".try_into()?)
+        .decimals(8)
+        .max_supply(AssetAmount::new(1_000_000)?)
+        .build()?;
 
     let account = AccountBuilder::new([1u8; 32])
         .storage_mode(AccountStorageMode::Public)

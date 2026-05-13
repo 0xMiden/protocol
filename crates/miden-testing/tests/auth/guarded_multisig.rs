@@ -3,6 +3,7 @@ use miden_protocol::account::{
     Account,
     AccountBuilder,
     AccountId,
+    AccountProcedureRoot,
     AccountStorageMode,
     AccountType,
 };
@@ -27,7 +28,6 @@ use miden_standards::account::auth::{
     AuthGuardedMultisigConfig,
     GuardianConfig,
 };
-use miden_standards::account::components::guarded_multisig_library;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
@@ -141,7 +141,7 @@ fn create_guarded_multisig_account(
     approvers: &[(PublicKey, AuthScheme)],
     guardian: GuardianConfig,
     asset_amount: u64,
-    proc_threshold_map: Vec<(Word, u32)>,
+    proc_threshold_map: Vec<(AccountProcedureRoot, u32)>,
 ) -> anyhow::Result<Account> {
     let approvers = approvers
         .iter()
@@ -319,7 +319,7 @@ async fn test_guarded_multisig_update_guardian_public_key(
     let new_guardian_key_word: Word = new_guardian_public_key.to_commitment().into();
     let new_guardian_scheme_id = new_guardian_auth_scheme as u32;
     let update_guardian_script = CodeBuilder::new()
-        .with_dynamically_linked_library(guarded_multisig_library())?
+        .with_dynamically_linked_library(AuthGuardedMultisig::code())?
         .compile_tx_script(format!(
             "begin\n    push.{new_guardian_key_word}\n    push.{new_guardian_scheme_id}\n    call.::miden::standards::components::auth::guarded_multisig::update_guardian_public_key\n    drop\n    dropw\nend"
         ))?;
@@ -467,7 +467,7 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
     let new_guardian_key_word: Word = new_guardian_public_key.to_commitment().into();
     let new_guardian_scheme_id = new_guardian_auth_scheme as u32;
     let update_guardian_script = CodeBuilder::new()
-        .with_dynamically_linked_library(guarded_multisig_library())?
+        .with_dynamically_linked_library(AuthGuardedMultisig::code())?
         .compile_tx_script(format!(
             "begin\n    push.{new_guardian_key_word}\n    push.{new_guardian_scheme_id}\n    call.::miden::standards::components::auth::guarded_multisig::update_guardian_public_key\n    drop\n    dropw\nend"
         ))?;
@@ -552,7 +552,7 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
     let new_guardian_key_word: Word = new_guardian_public_key.to_commitment().into();
     let new_guardian_scheme_id = new_guardian_auth_scheme as u32;
     let update_guardian_with_output_script = CodeBuilder::new()
-        .with_dynamically_linked_library(guarded_multisig_library())?
+        .with_dynamically_linked_library(AuthGuardedMultisig::code())?
         .compile_tx_script(format!(
             "use miden::protocol::output_note\nbegin\n    push.{recipient}\n    push.{note_type}\n    push.{tag}\n    exec.output_note::create\n    swapdw\n    dropw\n    dropw\n    push.{new_guardian_key_word}\n    push.{new_guardian_scheme_id}\n    call.::miden::standards::components::auth::guarded_multisig::update_guardian_public_key\n    drop\n    dropw\nend",
             recipient = output_note.recipient().digest(),
@@ -674,7 +674,7 @@ async fn test_guarded_multisig_update_guardian_enforces_no_notes(
         output_note.as_ref(),
     );
     let update_guardian_script = CodeBuilder::new()
-        .with_dynamically_linked_library(guarded_multisig_library())?
+        .with_dynamically_linked_library(AuthGuardedMultisig::code())?
         .compile_tx_script(script_source)?;
 
     // Optional no-op input note seeded into the chain so the multisig account can consume it
