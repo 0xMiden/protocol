@@ -58,24 +58,6 @@ impl TransferPolicy {
         }
     }
 
-    /// Whether the manager should register the protocol's `on_before_asset_added_to_*` callbacks
-    /// when this variant is installed for either the send or the receive kind.
-    ///
-    /// For [`Self::AllowAll`] there is no enforcement to perform, so callbacks are skipped.
-    /// Beyond the dispatch overhead this also affects the asset value word — a faucet with
-    /// callback slots populated mints assets that carry `AssetCallbackFlag::Enabled`, which
-    /// would change the asset commitment for any consumer that constructs the expected asset
-    /// without a flag.
-    ///
-    /// `Custom` is treated as enforcement-bearing — if you opt into a custom policy, you opt
-    /// into callback dispatch.
-    pub(crate) fn requires_callbacks(self) -> bool {
-        match self {
-            Self::AllowAll => false,
-            Self::Blocklist | Self::Custom(_) => true,
-        }
-    }
-
     /// Returns the [`AccountComponent`]s that must accompany this transfer policy variant.
     ///
     /// For [`Self::Blocklist`] this is a [`BasicBlocklist`] component with no initial blocked

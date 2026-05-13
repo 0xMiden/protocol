@@ -32,7 +32,7 @@ use miden_protocol::utils::sync::LazyLock;
 
 use super::burn::BurnPolicyConfig;
 use super::mint::MintPolicyConfig;
-use super::transfer::TransferPolicy;
+use super::transfer::{TransferAllowAll, TransferPolicy};
 use super::{PolicyAuthority, PolicyRegistration};
 use crate::account::account_component_code;
 
@@ -110,13 +110,15 @@ enum PolicyKind {
 
 /// Internal entry stored inside [`TokenPolicyManager::policies`] for every registered policy
 /// procedure root. Captures the companion components the policy needs installed on the
-/// account, whether the policy needs the protocol's asset-callback slots populated, and the
-/// set of policy kinds the root is registered under (the same root may serve more than one
-/// kind, e.g. a transfer policy active for both send and receive).
+/// account and the set of policy kinds the root is registered under (the same root may serve
+/// more than one kind, e.g. a transfer policy active for both send and receive).
+///
+/// Whether the policy needs the protocol's asset-callback slots populated is derived at
+/// storage-construction time by comparing the root against [`TransferAllowAll::root`] — all
+/// non-`AllowAll` transfer policies require callbacks.
 #[derive(Debug, Clone)]
 struct PolicyConfig {
     components: Vec<AccountComponent>,
-    requires_callbacks: bool,
     kinds: BTreeSet<PolicyKind>,
 }
 
@@ -222,7 +224,7 @@ impl TokenPolicyManager {
             );
             self.active_mint_policy_root = root;
         }
-        self.insert_policy(root, policy.into_components(), false, PolicyKind::Mint);
+        self.insert_policy(root, policy.into_components(), PolicyKind::Mint);
         self
     }
 
@@ -243,7 +245,7 @@ impl TokenPolicyManager {
             );
             self.active_burn_policy_root = root;
         }
-        self.insert_policy(root, policy.into_components(), false, PolicyKind::Burn);
+        self.insert_policy(root, policy.into_components(), PolicyKind::Burn);
         self
     }
 
@@ -258,7 +260,6 @@ impl TokenPolicyManager {
         registration: PolicyRegistration,
     ) -> Self {
         let root = policy.root();
-        let requires_callbacks = policy.requires_callbacks();
         if registration == PolicyRegistration::Active {
             assert!(
                 self.active_send_policy_root == Word::default(),
@@ -266,7 +267,7 @@ impl TokenPolicyManager {
             );
             self.active_send_policy_root = root;
         }
-        self.insert_policy(root, policy.into_components(), requires_callbacks, PolicyKind::Send);
+        self.insert_policy(root, policy.into_components(), PolicyKind::Send);
         self
     }
 
@@ -281,7 +282,6 @@ impl TokenPolicyManager {
         registration: PolicyRegistration,
     ) -> Self {
         let root = policy.root();
-        let requires_callbacks = policy.requires_callbacks();
         if registration == PolicyRegistration::Active {
             assert!(
                 self.active_receive_policy_root == Word::default(),
@@ -289,21 +289,15 @@ impl TokenPolicyManager {
             );
             self.active_receive_policy_root = root;
         }
-        self.insert_policy(root, policy.into_components(), requires_callbacks, PolicyKind::Receive);
+        self.insert_policy(root, policy.into_components(), PolicyKind::Receive);
         self
     }
 
     /// Inserts (or merges, if the root is already present) a policy entry into the unified
     /// `policies` map. The new kind is appended to the entry's kind set; the first call wins
-    /// for the components and `requires_callbacks` flag, which guarantees a given root's
-    /// companion components are not duplicated across kinds.
-    fn insert_policy(
-        &mut self,
-        root: Word,
-        components: Vec<AccountComponent>,
-        requires_callbacks: bool,
-        kind: PolicyKind,
-    ) {
+    /// for the components, which guarantees a given root's companion components are not
+    /// duplicated across kinds.
+    fn insert_policy(&mut self, root: Word, components: Vec<AccountComponent>, kind: PolicyKind) {
         self.policies
             .entry(root)
             .and_modify(|cfg| {
@@ -312,7 +306,7 @@ impl TokenPolicyManager {
             .or_insert_with(|| {
                 let mut kinds = BTreeSet::new();
                 kinds.insert(kind);
-                PolicyConfig { components, requires_callbacks, kinds }
+                PolicyConfig { components, kinds }
             });
     }
 
@@ -534,8 +528,12 @@ impl TokenPolicyManager {
         // With the flattened policy dispatch, the protocol callback slots hold the active
         // policy proc root directly (no manager-side wrapper), so we initialize them to the
         // active send / receive policy roots.
-        let needs_callbacks = self.policies.values().any(|cfg| {
-            cfg.requires_callbacks
+        // `AllowAll` is the only built-in transfer policy that does not enforce anything, so its
+        // root acts as the "no callback needed" sentinel. Anything else (Blocklist or any
+        // `Custom` root) is treated as enforcement-bearing.
+        let allow_all_root = TransferAllowAll::root();
+        let needs_callbacks = self.policies.iter().any(|(root, cfg)| {
+            *root != allow_all_root
                 && (cfg.kinds.contains(&PolicyKind::Send)
                     || cfg.kinds.contains(&PolicyKind::Receive))
         });
