@@ -50,6 +50,7 @@
 
 ### Fixes
 
+- Fixed `LocalTransactionProver` accumulating `MastForest` entries across `prove()` calls, causing `capacity_overflow` panics in WASM environments where linear memory fragmentation prevents subsequent allocations ([#2918](https://github.com/0xMiden/protocol/pull/2918)).
 - Made deserialization of `AccountCode` more robust ([#2788](https://github.com/0xMiden/protocol/pull/2788)).
 - Validated `PartialBlockchain` invariants on deserialization ([#2888](https://github.com/0xMiden/protocol/pull/2888)).
 - Fixed `output_note::add_asset` and `output_note::set_attachment` to no longer accept invalid note indices ([#2824](https://github.com/0xMiden/protocol/pull/2824)).
