@@ -323,7 +323,7 @@ fn generate_agglayer_constants(
 
         // The faucet account includes Ownable2Step and OwnerControlled components for mint and burn
         // policies alongside the agglayer faucet component, since
-        // network_fungible::mint_and_send requires these for access control.
+        // fungible::mint_and_send requires these for access control.
         let mut components: Vec<AccountComponent> =
             vec![AccountComponent::from(NoAuth), agglayer_component];
         if lib_name == "faucet" {

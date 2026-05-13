@@ -25,7 +25,7 @@ use miden_protocol::account::{
     AccountType,
     StorageSlot,
 };
-use miden_protocol::asset::{Asset, FungibleAsset, TokenSymbol};
+use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset, TokenSymbol};
 use miden_protocol::block::account_tree::AccountTree;
 use miden_protocol::block::nullifier_tree::NullifierTree;
 use miden_protocol::block::{
@@ -42,14 +42,13 @@ use miden_protocol::block::{
 };
 use miden_protocol::crypto::merkle::smt::Smt;
 use miden_protocol::errors::NoteError;
-use miden_protocol::note::{Note, NoteAttachment, NoteDetails, NoteType};
+use miden_protocol::note::{Note, NoteDetails, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_FEE_FAUCET;
 use miden_protocol::testing::random_secret_key::random_secret_key;
 use miden_protocol::transaction::{OrderedTransactionHeaders, RawOutputNote, TransactionKernel};
 use miden_protocol::{MAX_OUTPUT_NOTES_PER_BATCH, Word};
 use miden_standards::account::access::AccessControl;
-use miden_standards::account::faucets::BasicFungibleFaucet;
-use miden_standards::account::metadata::TokenName;
+use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::TokenPolicyManager;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::note::{P2idNote, P2ideNote, P2ideNoteStorage, SwapNote};
@@ -313,7 +312,7 @@ impl MockChainBuilder {
         self.add_account_from_builder(auth_method, account_builder, AccountState::Exists)
     }
 
-    /// Creates a new public [`BasicFungibleFaucet`] account and registers the authenticator (if
+    /// Creates a new public [`FungibleFaucet`] account and registers the authenticator (if
     /// any) for it.
     ///
     /// This does not add the account to the chain state, but it can still be used to call
@@ -321,7 +320,7 @@ impl MockChainBuilder {
     pub fn create_new_fungible_faucet(
         &mut self,
         auth_method: Auth,
-        faucet: BasicFungibleFaucet,
+        faucet: FungibleFaucet,
         storage_mode: AccountStorageMode,
         access_control: AccessControl,
         token_policy_manager: TokenPolicyManager,
@@ -353,7 +352,7 @@ impl MockChainBuilder {
     pub fn add_existing_fungible_faucet(
         &mut self,
         auth_method: Auth,
-        faucet: BasicFungibleFaucet,
+        faucet: FungibleFaucet,
         storage_mode: AccountStorageMode,
         access_control: AccessControl,
         token_policy_manager: TokenPolicyManager,
@@ -373,7 +372,7 @@ impl MockChainBuilder {
     /// [`Self::add_existing_fungible_faucet`].
     ///
     /// For full control over the faucet's metadata, decimals, and policies, construct a
-    /// [`BasicFungibleFaucet`] manually and call [`Self::add_existing_fungible_faucet`].
+    /// [`FungibleFaucet`] manually and call [`Self::add_existing_fungible_faucet`].
     pub fn add_existing_basic_faucet(
         &mut self,
         auth_method: Auth,
@@ -387,11 +386,12 @@ impl MockChainBuilder {
         let name = TokenName::new(token_symbol)?;
         let symbol = TokenSymbol::new(token_symbol)
             .with_context(|| format!("invalid token symbol: {token_symbol}"))?;
-        let faucet =
-            BasicFungibleFaucet::builder(name, symbol, DEFAULT_FAUCET_DECIMALS, max_supply)
-                .token_supply(token_supply)
-                .build()
-                .context("failed to build BasicFungibleFaucet")?;
+        let max_supply = AssetAmount::new(max_supply).context("invalid max_supply")?;
+        let token_supply = AssetAmount::new(token_supply).context("invalid token_supply")?;
+        let faucet = FungibleFaucet::builder(name, symbol, DEFAULT_FAUCET_DECIMALS, max_supply)
+            .token_supply(token_supply)
+            .build()
+            .context("failed to build FungibleFaucet")?;
 
         let token_policy_manager =
             TokenPolicyManager::new(MintPolicyConfig::AllowAll, BurnPolicyConfig::AllowAll);
@@ -423,11 +423,12 @@ impl MockChainBuilder {
         let name = TokenName::new(token_symbol)?;
         let symbol = TokenSymbol::new(token_symbol)
             .with_context(|| format!("invalid token symbol: {token_symbol}"))?;
-        let faucet =
-            BasicFungibleFaucet::builder(name, symbol, DEFAULT_FAUCET_DECIMALS, max_supply)
-                .token_supply(token_supply)
-                .build()
-                .context("failed to build BasicFungibleFaucet")?;
+        let max_supply = AssetAmount::new(max_supply).context("invalid max_supply")?;
+        let token_supply = AssetAmount::new(token_supply).context("invalid token_supply")?;
+        let faucet = FungibleFaucet::builder(name, symbol, DEFAULT_FAUCET_DECIMALS, max_supply)
+            .token_supply(token_supply)
+            .build()
+            .context("failed to build FungibleFaucet")?;
 
         let token_policy_manager = TokenPolicyManager::new(mint_policy, BurnPolicyConfig::AllowAll);
 
@@ -446,7 +447,7 @@ impl MockChainBuilder {
     pub fn add_existing_network_faucet_with_metadata(
         &mut self,
         owner_account_id: AccountId,
-        faucet: BasicFungibleFaucet,
+        faucet: FungibleFaucet,
     ) -> anyhow::Result<Account> {
         use miden_standards::account::policies::{BurnPolicyConfig, MintPolicyConfig};
 
@@ -475,10 +476,10 @@ impl MockChainBuilder {
         let name = TokenName::new(token_symbol)?;
         let symbol = TokenSymbol::new(token_symbol)
             .with_context(|| format!("invalid token symbol: {token_symbol}"))?;
-        let faucet =
-            BasicFungibleFaucet::builder(name, symbol, DEFAULT_FAUCET_DECIMALS, max_supply)
-                .build()
-                .context("failed to build BasicFungibleFaucet")?;
+        let max_supply = AssetAmount::new(max_supply).context("invalid max_supply")?;
+        let faucet = FungibleFaucet::builder(name, symbol, DEFAULT_FAUCET_DECIMALS, max_supply)
+            .build()
+            .context("failed to build FungibleFaucet")?;
 
         let token_policy_manager =
             TokenPolicyManager::new(MintPolicyConfig::AllowAll, BurnPolicyConfig::AllowAll);
@@ -652,7 +653,7 @@ impl MockChainBuilder {
             target_account_id,
             asset.to_vec(),
             note_type,
-            NoteAttachment::default(),
+            Default::default(),
             &mut self.rng,
         )?;
         self.add_output_note(RawOutputNote::Full(note.clone()));
@@ -703,7 +704,7 @@ impl MockChainBuilder {
             offered_asset,
             requested_asset,
             NoteType::Public,
-            NoteAttachment::default(),
+            Default::default(),
             payback_note_type,
             &mut self.rng,
         )?;

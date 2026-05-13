@@ -546,7 +546,7 @@ impl From<&InputNote> for InputNoteCommitment {
             },
             InputNote::Unauthenticated { note } => Self {
                 nullifier: note.nullifier(),
-                header: Some(note.header().clone()),
+                header: Some(*note.header()),
             },
         }
     }
@@ -583,7 +583,7 @@ impl Deserializable for InputNoteCommitment {
         let nullifier = Nullifier::read_from(source)?;
         let header = <Option<NoteHeader>>::read_from(source)?;
 
-        Ok(Self { nullifier, header })
+        Ok(Self::from_parts_unchecked(nullifier, header))
     }
 }
 

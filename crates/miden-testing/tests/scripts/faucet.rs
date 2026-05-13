@@ -14,24 +14,23 @@ use miden_protocol::account::{
     AccountType,
 };
 use miden_protocol::assembly::DefaultSourceManager;
-use miden_protocol::asset::{Asset, FungibleAsset, TokenSymbol};
+use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset, TokenSymbol};
 use miden_protocol::note::{
     Note,
     NoteAssets,
-    NoteAttachment,
+    NoteAttachments,
     NoteId,
-    NoteMetadata,
     NoteRecipient,
     NoteStorage,
     NoteTag,
     NoteType,
+    PartialNoteMetadata,
 };
 use miden_protocol::testing::account_id::ACCOUNT_ID_PRIVATE_SENDER;
 use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote};
 use miden_protocol::{Felt, Word};
-use miden_standards::account::access::{Authority, Ownable2Step};
-use miden_standards::account::faucets::BasicFungibleFaucet;
-use miden_standards::account::metadata::TokenName;
+use miden_standards::account::access::Ownable2Step;
+use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
     BurnAllowAll,
     BurnOwnerOnly,
@@ -55,6 +54,7 @@ use miden_testing::{
     Auth,
     MockChain,
     MockChainBuilder,
+    assert_note_created,
     assert_transaction_executor_error,
 };
 use rand::Rng;
@@ -86,7 +86,7 @@ pub fn create_mint_script_code(params: &FaucetTestParams) -> String {
                 push.{amount}
                 # => [amount, tag, note_type, RECIPIENT, pad(9)]
 
-                call.::miden::standards::faucets::basic_fungible::mint_and_send
+                call.::miden::standards::faucets::fungible::mint_and_send
                 # => [note_idx, pad(15)]
 
                 # truncate the stack
@@ -134,8 +134,8 @@ pub fn verify_minted_output_note(
 
     assert_eq!(output_note.id(), id);
     assert_eq!(
-        output_note.metadata(),
-        &NoteMetadata::new(faucet.id(), params.note_type).with_tag(params.tag)
+        output_note.metadata().partial_metadata(),
+        &PartialNoteMetadata::new(faucet.id(), params.note_type).with_tag(params.tag)
     );
 
     Ok(())
@@ -196,7 +196,9 @@ fn build_network_faucet_with_burn_switching(
 ) -> anyhow::Result<Account> {
     let name = TokenName::new(token_symbol)?;
     let symbol = TokenSymbol::new(token_symbol)?;
-    let metadata = BasicFungibleFaucet::builder(name, symbol, 10, max_supply)
+    let max_supply = AssetAmount::new(max_supply)?;
+    let token_supply = AssetAmount::new(token_supply)?;
+    let faucet = FungibleFaucet::builder(name, symbol, 10, max_supply)
         .token_supply(token_supply)
         .build()?;
 
@@ -205,9 +207,8 @@ fn build_network_faucet_with_burn_switching(
 
     let account_builder = AccountBuilder::new(builder.rng_mut().random())
         .storage_mode(AccountStorageMode::Network)
-        .with_component(metadata)
+        .with_component(faucet)
         .with_component(Ownable2Step::new(owner))
-        .with_component(Authority::OwnerControlled)
         .with_components(token_policy_manager)
         .with_component(BurnOwnerOnly)
         .account_type(AccountType::FungibleFaucet);
@@ -278,7 +279,7 @@ async fn faucet_contract_mint_fungible_asset_fails_exceeds_max_supply() -> anyho
                 push.{amount}
                 # => [amount, tag, note_type, RECIPIENT, pad(9)]
 
-                call.::miden::standards::faucets::basic_fungible::mint_and_send
+                call.::miden::standards::faucets::fungible::mint_and_send
                 # => [note_idx, pad(15)]
 
                 # truncate the stack
@@ -361,7 +362,7 @@ async fn prove_burning_fungible_asset_on_existing_faucet_succeeds() -> anyhow::R
             dropw
             # => []
 
-            call.::miden::standards::faucets::basic_fungible::receive_and_burn
+            call.::miden::standards::faucets::fungible::receive_and_burn
             # => [pad(16)]
         end
         ";
@@ -371,7 +372,7 @@ async fn prove_burning_fungible_asset_on_existing_faucet_succeeds() -> anyhow::R
     builder.add_output_note(RawOutputNote::Full(note.clone()));
     let mock_chain = builder.build()?;
 
-    let token_metadata = BasicFungibleFaucet::try_from(faucet.storage())?;
+    let token_metadata = FungibleFaucet::try_from(faucet.storage())?;
 
     // Check that max_supply at the word's index 0 is 200. The remainder of the word is initialized
     // with the metadata of the faucet which we don't need to check.
@@ -425,7 +426,7 @@ async fn faucet_burn_fungible_asset_fails_amount_exceeds_token_supply() -> anyho
             dropw
             # => []
 
-            call.::miden::standards::faucets::basic_fungible::receive_and_burn
+            call.::miden::standards::faucets::fungible::receive_and_burn
             # => [pad(16)]
         end
         ";
@@ -499,7 +500,7 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
     let output_script_root = note_recipient.script().root();
 
     let asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?;
-    let metadata = NoteMetadata::new(faucet.id(), note_type).with_tag(tag);
+    let metadata = PartialNoteMetadata::new(faucet.id(), note_type).with_tag(tag);
     let expected_note = Note::new(NoteAssets::new(vec![asset.into()])?, metadata, note_recipient);
 
     let trigger_note_script_code = format!(
@@ -536,7 +537,7 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
                 push.{amount}
                 # => [amount, tag, note_type, RECIPIENT]
 
-                call.::miden::standards::faucets::basic_fungible::mint_and_send
+                call.::miden::standards::faucets::fungible::mint_and_send
                 # => [note_idx, pad(15)]
 
                 # Truncate the stack
@@ -580,28 +581,20 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
         .execute()
         .await?;
 
-    // Verify that a PUBLIC note was created
     assert_eq!(executed_transaction.output_notes().num_notes(), 1);
-    let output_note = executed_transaction.output_notes().get_note(0);
+    assert_note_created!(
+        executed_transaction,
+        note_type: NoteType::Public,
+        sender: faucet.id(),
+        assets: [FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?],
+    );
 
-    // Extract the full note from the OutputNote enum
+    let output_note = executed_transaction.output_notes().get_note(0);
     let full_note = match output_note {
         RawOutputNote::Full(note) => note,
         _ => panic!("Expected OutputNote::Full variant"),
     };
 
-    // Verify the output note is public
-    assert_eq!(full_note.metadata().note_type(), NoteType::Public);
-
-    // Verify the output note contains the minted fungible asset
-    let expected_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?;
-    let expected_asset_obj = Asset::from(expected_asset);
-    assert!(full_note.assets().iter().any(|asset| asset == &expected_asset_obj));
-
-    // Verify the note was created by the faucet
-    assert_eq!(full_note.metadata().sender(), faucet.id());
-
-    // Verify the note storage commitment matches the expected commitment
     assert_eq!(
         full_note.recipient().storage().commitment(),
         note_storage.commitment(),
@@ -652,7 +645,7 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
     let mut target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
 
     // Check the Network Fungible Faucet's max supply.
-    let actual_max_supply = BasicFungibleFaucet::try_from(faucet.storage())?.max_supply();
+    let actual_max_supply = FungibleFaucet::try_from(faucet.storage())?.max_supply();
     assert_eq!(actual_max_supply.as_canonical_u64(), max_supply);
 
     // Check that the creator account ID is stored in the ownership slot.
@@ -668,7 +661,7 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
 
     // Check that the faucet's token supply has been correctly initialized.
     // The already issued amount should be 50.
-    let initial_token_supply = BasicFungibleFaucet::try_from(faucet.storage())?.token_supply();
+    let initial_token_supply = FungibleFaucet::try_from(faucet.storage())?.token_supply();
     assert_eq!(initial_token_supply.as_canonical_u64(), token_supply);
 
     // CREATE MINT NOTE USING STANDARD NOTE
@@ -698,7 +691,7 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
         faucet.id(),
         faucet_owner_account_id,
         mint_storage,
-        NoteAttachment::default(),
+        NoteAttachments::default(),
         &mut rng,
     )?;
 
@@ -790,7 +783,7 @@ async fn test_network_faucet_owner_can_mint() -> anyhow::Result<()> {
         faucet.id(),
         owner_account_id,
         mint_inputs,
-        NoteAttachment::default(),
+        NoteAttachments::default(),
         &mut rng,
     )?;
 
@@ -824,7 +817,7 @@ async fn test_network_faucet_set_policy_rejects_non_allowed_root() -> anyhow::Re
     let mock_chain = builder.build()?;
 
     // This root exists in account code, but is not in the mint policy allowlist.
-    let invalid_policy_root = BasicFungibleFaucet::mint_and_send_digest();
+    let invalid_policy_root = FungibleFaucet::mint_and_send_digest();
     let set_policy_note_script = format!(
         r#"
         use miden::standards::faucets::policies::policy_manager
@@ -875,7 +868,7 @@ async fn test_network_faucet_set_burn_policy_rejects_non_allowed_root() -> anyho
     let mock_chain = builder.build()?;
 
     // This root exists in account code, but is not in the burn policy allowlist.
-    let invalid_policy_root = BasicFungibleFaucet::receive_and_burn_digest();
+    let invalid_policy_root = FungibleFaucet::receive_and_burn_digest();
     let set_policy_note_script = create_set_burn_policy_note_script(invalid_policy_root);
 
     let result = execute_faucet_note_script(
@@ -942,7 +935,7 @@ async fn test_network_faucet_non_owner_cannot_mint() -> anyhow::Result<()> {
         faucet.id(),
         non_owner_account_id,
         mint_inputs,
-        NoteAttachment::default(),
+        NoteAttachments::default(),
         &mut rng,
     )?;
 
@@ -1041,7 +1034,7 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
         faucet.id(),
         initial_owner_account_id,
         mint_inputs.clone(),
-        NoteAttachment::default(),
+        NoteAttachments::default(),
         &mut rng,
     )?;
 
@@ -1344,8 +1337,8 @@ fn test_faucet_burn_procedures_are_identical() {
     // Both faucet types must export the same burn procedure with identical MAST roots
     // so that a single BURN note script can work with either faucet type
     assert_eq!(
-        BasicFungibleFaucet::receive_and_burn_digest(),
-        BasicFungibleFaucet::receive_and_burn_digest(),
+        FungibleFaucet::receive_and_burn_digest(),
+        FungibleFaucet::receive_and_burn_digest(),
         "Basic and network fungible faucets must have the same burn procedure digest"
     );
 }
@@ -1408,7 +1401,7 @@ async fn network_faucet_burn() -> anyhow::Result<()> {
         faucet_owner_account_id,
         faucet.id(),
         fungible_asset.into(),
-        NoteAttachment::default(),
+        NoteAttachments::default(),
         &mut rng,
     )?;
 
@@ -1417,7 +1410,7 @@ async fn network_faucet_burn() -> anyhow::Result<()> {
     mock_chain.prove_next_block()?;
 
     // Check the initial token issuance before burning
-    let initial_token_supply = BasicFungibleFaucet::try_from(faucet.storage())?.token_supply();
+    let initial_token_supply = FungibleFaucet::try_from(faucet.storage())?.token_supply();
     assert_eq!(initial_token_supply, Felt::new(100));
 
     // EXECUTE BURN NOTE AGAINST NETWORK FAUCET
@@ -1434,7 +1427,7 @@ async fn network_faucet_burn() -> anyhow::Result<()> {
 
     // Apply the delta to the faucet account and verify the token issuance decreased
     faucet.apply_delta(executed_transaction.account_delta())?;
-    let final_token_supply = BasicFungibleFaucet::try_from(faucet.storage())?.token_supply();
+    let final_token_supply = FungibleFaucet::try_from(faucet.storage())?.token_supply();
     assert_eq!(
         final_token_supply,
         Felt::new(initial_token_supply.as_canonical_u64() - burn_amount)
@@ -1484,7 +1477,7 @@ async fn test_network_faucet_non_owner_cannot_burn_when_owner_only_policy_active
         non_owner_account_id,
         faucet.id(),
         fungible_asset.into(),
-        NoteAttachment::default(),
+        NoteAttachments::default(),
         &mut rng,
     )?;
     builder.add_output_note(RawOutputNote::Full(set_policy_note.clone()));
@@ -1542,7 +1535,7 @@ async fn test_network_faucet_owner_can_burn_when_owner_only_policy_active() -> a
         owner_account_id,
         faucet.id(),
         fungible_asset.into(),
-        NoteAttachment::default(),
+        NoteAttachments::default(),
         &mut rng,
     )?;
     builder.add_output_note(RawOutputNote::Full(set_policy_note.clone()));
@@ -1634,7 +1627,7 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
         faucet.id(),
         faucet_owner_account_id,
         mint_storage.clone(),
-        NoteAttachment::default(),
+        NoteAttachments::default(),
         &mut rng,
     )?;
 
@@ -1718,7 +1711,7 @@ async fn multiple_mints_in_single_tx_produce_correct_amounts() -> anyhow::Result
                 push.{amount_1}
                 # => [amount_1, tag, note_type, RECIPIENT_1, pad(9)]
 
-                call.::miden::standards::faucets::basic_fungible::mint_and_send
+                call.::miden::standards::faucets::fungible::mint_and_send
                 # => [note_idx, pad(15)]
 
                 # clean up the stack before the second call
@@ -1733,7 +1726,7 @@ async fn multiple_mints_in_single_tx_produce_correct_amounts() -> anyhow::Result
                 push.{amount_2}
                 # => [amount_2, tag, note_type, RECIPIENT_2, pad(9)]
 
-                call.::miden::standards::faucets::basic_fungible::mint_and_send
+                call.::miden::standards::faucets::fungible::mint_and_send
                 # => [note_idx, pad(15)]
 
                 # truncate the stack

@@ -3,7 +3,7 @@
 //! [`TokenMetadata`] is a builder-pattern struct used to manage the token name and optional
 //! fields (description, logo_uri, external_link) along with their mutability flags. It is meant
 //! to be embedded inside a token-bearing component such as
-//! [`BasicFungibleFaucet`][crate::account::faucets::BasicFungibleFaucet], not used as a
+//! [`FungibleFaucet`][crate::account::faucets::FungibleFaucet], not used as a
 //! standalone account component.
 //!
 //! Owner-gated mutators (`set_description`, `set_logo_uri`, `set_external_link`,
@@ -14,14 +14,14 @@
 //!
 //! | Slot name | Contents |
 //! |-----------|----------|
-//! | `faucets::fungible::token_name_0` | first 4 felts of name |
-//! | `faucets::fungible::token_name_1` | last 4 felts of name |
-//! | `faucets::fungible::mutability_config` | `[is_desc_mutable, is_logo_mutable, is_extlink_mutable, is_max_supply_mutable]` |
-//! | `faucets::fungible::token_description_0..=6` | description (7 Words, max 195 bytes) |
-//! | `faucets::fungible::logo_uri_0..=6` | logo URI (7 Words, max 195 bytes) |
-//! | `faucets::fungible::external_link_0..=6` | external link (7 Words, max 195 bytes) |
+//! | `faucets::token_name_0` | first 4 felts of name |
+//! | `faucets::token_name_1` | last 4 felts of name |
+//! | `faucets::mutability_config` | `[is_desc_mutable, is_logo_mutable, is_extlink_mutable, is_max_supply_mutable]` |
+//! | `faucets::token_description_0..=6` | description (7 Words, max 195 bytes) |
+//! | `faucets::logo_uri_0..=6` | logo URI (7 Words, max 195 bytes) |
+//! | `faucets::external_link_0..=6` | external link (7 Words, max 195 bytes) |
 //!
-//! Layout sync: the same layout is defined in MASM at `asm/standards/faucets/fungible.masm`.
+//! Layout sync: the same layout is defined in MASM at `asm/standards/faucets/mod.masm`.
 //! Any change to slot names must be applied in both Rust and MASM.
 //!
 //! ## String encoding (UTF-8)
@@ -35,6 +35,7 @@
 
 use alloc::vec::Vec;
 
+use miden_protocol::account::component::{FeltSchema, StorageSlotSchema};
 use miden_protocol::account::{AccountStorage, StorageSlot, StorageSlotName};
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
@@ -46,78 +47,69 @@ use crate::utils::{FixedWidthString, FixedWidthStringError};
 // ================================================================================================
 
 /// Token name (2 Words = 8 felts), split across 2 slots.
-pub(crate) static NAME_SLOTS: LazyLock<[StorageSlotName; 2]> = LazyLock::new(|| {
+static NAME_SLOTS: LazyLock<[StorageSlotName; 2]> = LazyLock::new(|| {
     [
-        StorageSlotName::new("miden::standards::faucets::fungible::token_name_0")
-            .expect("valid slot name"),
-        StorageSlotName::new("miden::standards::faucets::fungible::token_name_1")
-            .expect("valid slot name"),
+        StorageSlotName::new("miden::standards::faucets::token_name_0").expect("valid slot name"),
+        StorageSlotName::new("miden::standards::faucets::token_name_1").expect("valid slot name"),
     ]
 });
 
 /// Mutability config slot: `[is_desc_mutable, is_logo_mutable, is_extlink_mutable,
 /// is_max_supply_mutable]`.
-pub(crate) static MUTABILITY_CONFIG_SLOT: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::faucets::fungible::mutability_config")
+static MUTABILITY_CONFIG_SLOT: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::faucets::mutability_config")
         .expect("storage slot name should be valid")
 });
 
 /// Description (7 Words), split across 7 slots.
-pub(crate) static DESCRIPTION_SLOTS: LazyLock<[StorageSlotName; 7]> = LazyLock::new(|| {
+static DESCRIPTION_SLOTS: LazyLock<[StorageSlotName; 7]> = LazyLock::new(|| {
     [
-        StorageSlotName::new("miden::standards::faucets::fungible::token_description_0")
+        StorageSlotName::new("miden::standards::faucets::token_description_0")
             .expect("valid slot name"),
-        StorageSlotName::new("miden::standards::faucets::fungible::token_description_1")
+        StorageSlotName::new("miden::standards::faucets::token_description_1")
             .expect("valid slot name"),
-        StorageSlotName::new("miden::standards::faucets::fungible::token_description_2")
+        StorageSlotName::new("miden::standards::faucets::token_description_2")
             .expect("valid slot name"),
-        StorageSlotName::new("miden::standards::faucets::fungible::token_description_3")
+        StorageSlotName::new("miden::standards::faucets::token_description_3")
             .expect("valid slot name"),
-        StorageSlotName::new("miden::standards::faucets::fungible::token_description_4")
+        StorageSlotName::new("miden::standards::faucets::token_description_4")
             .expect("valid slot name"),
-        StorageSlotName::new("miden::standards::faucets::fungible::token_description_5")
+        StorageSlotName::new("miden::standards::faucets::token_description_5")
             .expect("valid slot name"),
-        StorageSlotName::new("miden::standards::faucets::fungible::token_description_6")
+        StorageSlotName::new("miden::standards::faucets::token_description_6")
             .expect("valid slot name"),
     ]
 });
 
 /// Logo URI (7 Words), split across 7 slots.
-pub(crate) static LOGO_URI_SLOTS: LazyLock<[StorageSlotName; 7]> = LazyLock::new(|| {
+static LOGO_URI_SLOTS: LazyLock<[StorageSlotName; 7]> = LazyLock::new(|| {
     [
-        StorageSlotName::new("miden::standards::faucets::fungible::logo_uri_0")
-            .expect("valid slot name"),
-        StorageSlotName::new("miden::standards::faucets::fungible::logo_uri_1")
-            .expect("valid slot name"),
-        StorageSlotName::new("miden::standards::faucets::fungible::logo_uri_2")
-            .expect("valid slot name"),
-        StorageSlotName::new("miden::standards::faucets::fungible::logo_uri_3")
-            .expect("valid slot name"),
-        StorageSlotName::new("miden::standards::faucets::fungible::logo_uri_4")
-            .expect("valid slot name"),
-        StorageSlotName::new("miden::standards::faucets::fungible::logo_uri_5")
-            .expect("valid slot name"),
-        StorageSlotName::new("miden::standards::faucets::fungible::logo_uri_6")
-            .expect("valid slot name"),
+        StorageSlotName::new("miden::standards::faucets::logo_uri_0").expect("valid slot name"),
+        StorageSlotName::new("miden::standards::faucets::logo_uri_1").expect("valid slot name"),
+        StorageSlotName::new("miden::standards::faucets::logo_uri_2").expect("valid slot name"),
+        StorageSlotName::new("miden::standards::faucets::logo_uri_3").expect("valid slot name"),
+        StorageSlotName::new("miden::standards::faucets::logo_uri_4").expect("valid slot name"),
+        StorageSlotName::new("miden::standards::faucets::logo_uri_5").expect("valid slot name"),
+        StorageSlotName::new("miden::standards::faucets::logo_uri_6").expect("valid slot name"),
     ]
 });
 
 /// External link (7 Words), split across 7 slots.
-pub(crate) static EXTERNAL_LINK_SLOTS: LazyLock<[StorageSlotName; 7]> = LazyLock::new(|| {
+static EXTERNAL_LINK_SLOTS: LazyLock<[StorageSlotName; 7]> = LazyLock::new(|| {
     [
-        StorageSlotName::new("miden::standards::faucets::fungible::external_link_0")
+        StorageSlotName::new("miden::standards::faucets::external_link_0")
             .expect("valid slot name"),
-        StorageSlotName::new("miden::standards::faucets::fungible::external_link_1")
+        StorageSlotName::new("miden::standards::faucets::external_link_1")
             .expect("valid slot name"),
-        StorageSlotName::new("miden::standards::faucets::fungible::external_link_2")
+        StorageSlotName::new("miden::standards::faucets::external_link_2")
             .expect("valid slot name"),
-        StorageSlotName::new("miden::standards::faucets::fungible::external_link_3")
+        StorageSlotName::new("miden::standards::faucets::external_link_3")
             .expect("valid slot name"),
-        StorageSlotName::new("miden::standards::faucets::fungible::external_link_4")
+        StorageSlotName::new("miden::standards::faucets::external_link_4")
             .expect("valid slot name"),
-        StorageSlotName::new("miden::standards::faucets::fungible::external_link_5")
+        StorageSlotName::new("miden::standards::faucets::external_link_5")
             .expect("valid slot name"),
-        StorageSlotName::new("miden::standards::faucets::fungible::external_link_6")
+        StorageSlotName::new("miden::standards::faucets::external_link_6")
             .expect("valid slot name"),
     ]
 });
@@ -271,7 +263,7 @@ impl ExternalLink {
 /// A helper that stores name, mutability config, and optional fields in fixed value slots.
 ///
 /// Designed to be embedded in
-/// [`BasicFungibleFaucet`][crate::account::faucets::BasicFungibleFaucet] (or other token-bearing
+/// [`FungibleFaucet`][crate::account::faucets::FungibleFaucet] (or other token-bearing
 /// account components) to avoid duplication. Slot names are referenced via
 /// [`TokenMetadata::name_chunk_0_slot`] and friends.
 #[derive(Debug, Clone)]
@@ -409,6 +401,55 @@ impl TokenMetadata {
     /// Returns the [`StorageSlotName`] for an external link chunk by index (0..=6).
     pub fn external_link_slot(index: usize) -> &'static StorageSlotName {
         &EXTERNAL_LINK_SLOTS[index]
+    }
+
+    /// Returns the storage slot schema entries describing the token metadata layout
+    /// (name chunks, mutability config, description, logo URI, external link).
+    ///
+    /// Embedding components should call this and extend their own schema with the result.
+    pub fn storage_schema() -> Vec<(StorageSlotName, StorageSlotSchema)> {
+        let mut entries: Vec<(StorageSlotName, StorageSlotSchema)> = Vec::new();
+
+        for (i, slot) in NAME_SLOTS.iter().enumerate() {
+            entries.push((
+                slot.clone(),
+                StorageSlotSchema::value(
+                    alloc::format!("Name chunk {i}"),
+                    core::array::from_fn(|j| FeltSchema::felt(alloc::format!("data_{j}"))),
+                ),
+            ));
+        }
+
+        entries.push((
+            MUTABILITY_CONFIG_SLOT.clone(),
+            StorageSlotSchema::value(
+                "Mutability config",
+                [
+                    FeltSchema::bool("is_description_mutable"),
+                    FeltSchema::bool("is_logo_uri_mutable"),
+                    FeltSchema::bool("is_external_link_mutable"),
+                    FeltSchema::bool("is_max_supply_mutable"),
+                ],
+            ),
+        ));
+
+        for (label, slots) in [
+            ("Description", DESCRIPTION_SLOTS.as_slice()),
+            ("Logo URI", LOGO_URI_SLOTS.as_slice()),
+            ("External link", EXTERNAL_LINK_SLOTS.as_slice()),
+        ] {
+            for (i, slot) in slots.iter().enumerate() {
+                entries.push((
+                    slot.clone(),
+                    StorageSlotSchema::value(
+                        alloc::format!("{label} chunk {i}"),
+                        core::array::from_fn(|j| FeltSchema::felt(alloc::format!("data_{j}"))),
+                    ),
+                ));
+            }
+        }
+
+        entries
     }
 
     // STORAGE

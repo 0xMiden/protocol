@@ -1,4 +1,4 @@
-use miden::standards::faucets::basic_fungible->faucet
+use miden::standards::faucets::fungible->faucet
 
 #! BURN script: burns the asset from the note by calling the faucet's `receive_and_burn`
 #! procedure. This note is intended to be executed against a fungible faucet account.
@@ -10,7 +10,7 @@ use miden::standards::faucets::basic_fungible->faucet
 #! - Ensuring the amount to burn doesn't exceed the outstanding supply
 #!
 #! Requires that the account exposes:
-#! - `miden::standards::faucets::basic_fungible::receive_and_burn` procedure.
+#! - `miden::standards::faucets::fungible::receive_and_burn` procedure.
 #!
 #! Inputs:  [ARGS, pad(12)]
 #! Outputs: [pad(16)]

@@ -6,7 +6,7 @@ use miden_crypto::merkle::SparseMerklePath;
 use crate::batch::BatchNoteTree;
 use crate::crypto::merkle::MerkleError;
 use crate::crypto::merkle::smt::{LeafIndex, SimpleSmt};
-use crate::note::{NoteId, NoteMetadata, compute_note_commitment};
+use crate::note::NoteHeader;
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -34,7 +34,7 @@ impl BlockNoteTree {
     /// Returns a new [`BlockNoteTree`] instantiated with entries set as specified by the provided
     /// entries.
     ///
-    /// Entry format: (note_index, note_id, note_metadata).
+    /// Entry format: (note_index, note_header).
     ///
     /// Value of each leaf is computed as: `hash(note_id || note_metadata_commitment)`.
     /// All leaves omitted from the entries list are set to [crate::EMPTY_WORD].
@@ -43,12 +43,12 @@ impl BlockNoteTree {
     /// Returns an error if:
     /// - The number of entries exceeds the maximum notes tree capacity, that is 2^16.
     /// - The provided entries contain multiple values for the same key.
-    pub fn with_entries<'metadata>(
-        entries: impl IntoIterator<Item = (BlockNoteIndex, NoteId, &'metadata NoteMetadata)>,
+    pub fn with_entries<'a>(
+        entries: impl IntoIterator<Item = (BlockNoteIndex, &'a NoteHeader)>,
     ) -> Result<Self, MerkleError> {
-        let leaves = entries.into_iter().map(|(index, note_id, metadata)| {
-            (index.leaf_index_value() as u64, compute_note_commitment(note_id, metadata))
-        });
+        let leaves = entries
+            .into_iter()
+            .map(|(index, header)| (index.leaf_index_value() as u64, header.to_commitment()));
 
         SimpleSmt::with_leaves(leaves).map(Self)
     }

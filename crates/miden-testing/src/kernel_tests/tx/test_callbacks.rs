@@ -20,6 +20,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::{
     Asset,
+    AssetAmount,
     AssetCallbackFlag,
     AssetCallbacks,
     FungibleAsset,
@@ -32,8 +33,7 @@ use miden_protocol::note::{NoteTag, NoteType};
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 use miden_standards::account::access::Authority;
-use miden_standards::account::faucets::BasicFungibleFaucet;
-use miden_standards::account::metadata::TokenName;
+use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{BurnPolicyConfig, MintPolicyConfig, TokenPolicyManager};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::procedure_digest;
@@ -755,11 +755,11 @@ fn add_faucet_with_callbacks(
         callbacks = callbacks.on_before_asset_added_to_note(proc_root);
     }
 
-    let faucet = BasicFungibleFaucet::builder(
+    let faucet = FungibleFaucet::builder(
         TokenName::new("").expect("empty string is a valid token name"),
         "SYM".try_into()?,
         8,
-        1_000_000u64,
+        AssetAmount::new(1_000_000)?,
     )
     .build()?;
 

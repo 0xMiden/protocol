@@ -12,8 +12,8 @@ use crate::AuthMethod;
 use crate::account::components::{
     StandardAccountComponent,
     authority_library,
-    basic_fungible_faucet_library,
     basic_wallet_library,
+    fungible_faucet_library,
     guarded_multisig_library,
     multisig_library,
     network_account_auth_library,
@@ -95,9 +95,9 @@ impl AccountInterfaceExt for AccountInterface {
                     component_proc_digests
                         .extend(basic_wallet_library().mast_forest().procedure_digests());
                 },
-                AccountComponentInterface::BasicFungibleFaucet => {
+                AccountComponentInterface::FungibleFaucet => {
                     component_proc_digests
-                        .extend(basic_fungible_faucet_library().mast_forest().procedure_digests());
+                        .extend(fungible_faucet_library().mast_forest().procedure_digests());
                 },
                 AccountComponentInterface::Authority => {
                     component_proc_digests

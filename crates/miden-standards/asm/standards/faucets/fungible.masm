@@ -1,145 +1,91 @@
 # miden::standards::faucets::fungible
 #
-# Storage layout and accessors for fungible faucet accounts: token config (supply, decimals,
-# symbol), name, optional fields (description, logo_uri, external_link), and authority-gated
-# setters. The setters delegate authorization to the account-wide `Authority` component via
-# `authority::assert_authorized`.
+# Fungible faucet logic: token config slot (supply, max_supply, decimals, symbol) and its
+# accessors, owner-gated max_supply setter, and the `mint_and_send` / `receive_and_burn`
+# procedures wrapping the active mint/burn policies from the `TokenPolicyManager`.
+#
+# Shared token metadata (name, description, logo_uri, external_link) and the associated
+# mutability config word live in the parent `miden::standards::faucets` namespace.
 
-use miden::core::mem
 use miden::protocol::active_account
+use miden::protocol::active_note
+use miden::protocol::faucet
 use miden::protocol::native_account
-use miden::standards::access::authority
+use miden::protocol::output_note
+use miden::protocol::asset
+use miden::protocol::asset::FUNGIBLE_ASSET_MAX_AMOUNT
+use miden::standards::access::ownable2step
+use miden::standards::faucets::policies::policy_manager
+use miden::standards::faucets::MUTABILITY_CONFIG_SLOT
 
 # =================================================================================================
 # CONSTANTS — slot names
 # =================================================================================================
 
 pub const TOKEN_CONFIG_SLOT = word("miden::standards::faucets::fungible::token_config")
-const TOKEN_NAME_0_SLOT = word("miden::standards::faucets::fungible::token_name_0")
-const TOKEN_NAME_1_SLOT = word("miden::standards::faucets::fungible::token_name_1")
-const MUTABILITY_CONFIG_SLOT = word("miden::standards::faucets::fungible::mutability_config")
 
-const TOKEN_DESCRIPTION_0_SLOT = word("miden::standards::faucets::fungible::token_description_0")
-const TOKEN_DESCRIPTION_1_SLOT = word("miden::standards::faucets::fungible::token_description_1")
-const TOKEN_DESCRIPTION_2_SLOT = word("miden::standards::faucets::fungible::token_description_2")
-const TOKEN_DESCRIPTION_3_SLOT = word("miden::standards::faucets::fungible::token_description_3")
-const TOKEN_DESCRIPTION_4_SLOT = word("miden::standards::faucets::fungible::token_description_4")
-const TOKEN_DESCRIPTION_5_SLOT = word("miden::standards::faucets::fungible::token_description_5")
-const TOKEN_DESCRIPTION_6_SLOT = word("miden::standards::faucets::fungible::token_description_6")
+# =================================================================================================
+# CONSTANTS — memory & errors
+# =================================================================================================
 
-const LOGO_URI_0_SLOT = word("miden::standards::faucets::fungible::logo_uri_0")
-const LOGO_URI_1_SLOT = word("miden::standards::faucets::fungible::logo_uri_1")
-const LOGO_URI_2_SLOT = word("miden::standards::faucets::fungible::logo_uri_2")
-const LOGO_URI_3_SLOT = word("miden::standards::faucets::fungible::logo_uri_3")
-const LOGO_URI_4_SLOT = word("miden::standards::faucets::fungible::logo_uri_4")
-const LOGO_URI_5_SLOT = word("miden::standards::faucets::fungible::logo_uri_5")
-const LOGO_URI_6_SLOT = word("miden::standards::faucets::fungible::logo_uri_6")
+# The local memory address at which the token config slot content is stored.
+const TOKEN_CONFIG_SLOT_LOCAL = 0
+const ASSET_PTR = 0
 
-const EXTERNAL_LINK_0_SLOT = word("miden::standards::faucets::fungible::external_link_0")
-const EXTERNAL_LINK_1_SLOT = word("miden::standards::faucets::fungible::external_link_1")
-const EXTERNAL_LINK_2_SLOT = word("miden::standards::faucets::fungible::external_link_2")
-const EXTERNAL_LINK_3_SLOT = word("miden::standards::faucets::fungible::external_link_3")
-const EXTERNAL_LINK_4_SLOT = word("miden::standards::faucets::fungible::external_link_4")
-const EXTERNAL_LINK_5_SLOT = word("miden::standards::faucets::fungible::external_link_5")
-const EXTERNAL_LINK_6_SLOT = word("miden::standards::faucets::fungible::external_link_6")
-
-const FIELD_0_LOC = 0
-const FIELD_1_LOC = 4
-const FIELD_2_LOC = 8
-const FIELD_3_LOC = 12
-const FIELD_4_LOC = 16
-const FIELD_5_LOC = 20
-const FIELD_6_LOC = 24
-
-const ERR_DESCRIPTION_NOT_MUTABLE = "description is not mutable"
-const ERR_LOGO_URI_NOT_MUTABLE = "logo URI is not mutable"
-const ERR_EXTERNAL_LINK_NOT_MUTABLE = "external link is not mutable"
 const ERR_MAX_SUPPLY_NOT_MUTABLE = "max supply is not mutable"
 const ERR_NEW_MAX_SUPPLY_BELOW_TOKEN_SUPPLY = "new max supply is less than current token supply"
 
+const ERR_FUNGIBLE_ASSET_TOKEN_SUPPLY_EXCEEDS_MAX_SUPPLY = "token supply exceeds max supply"
+const ERR_FUNGIBLE_ASSET_MAX_SUPPLY_EXCEEDS_FUNGIBLE_ASSET_MAX_AMOUNT = "max supply exceeds maximum representable fungible asset amount"
+const ERR_FUNGIBLE_ASSET_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY = "token_supply plus the amount passed to distribute would exceed the maximum supply"
+const ERR_FAUCET_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY = "asset amount to burn exceeds the existing token supply"
+const ERR_BASIC_FUNGIBLE_BURN_WRONG_NUMBER_OF_ASSETS = "burn requires exactly 1 note asset"
+
 # =================================================================================================
-# PRIVATE HELPERS — single source of truth for slot access
+# PRIVATE HELPERS — token config slot access
 # =================================================================================================
 
-#! Loads token metadata word from storage.
+#! Loads the token config word from storage.
 #!
 #! Inputs:  []
 #! Outputs: [token_supply, max_supply, decimals, token_symbol]
 #!
 #! Where:
-#! - token_supply, max_supply, decimals, token_symbol are the fields of the metadata word
+#! - token_supply, max_supply, decimals, token_symbol are the fields of the token config word
 #!   (word[0] on top, little-endian).
 #!
 #! Invocation: exec
-proc get_token_metadata_internal
+proc get_token_config_internal
     push.TOKEN_CONFIG_SLOT[0..2]
     exec.active_account::get_item
 end
 
-#! Loads name chunk 0 (1 Word).
+#! Extracts the is_max_supply_mutable flag from the mutability config word.
 #!
 #! Inputs:  []
-#! Outputs: [NAME_CHUNK_0]
+#! Outputs: [is_max_supply_mutable]
 #!
 #! Invocation: exec
-proc get_name_chunk_0
-    push.TOKEN_NAME_0_SLOT[0..2]
-    exec.active_account::get_item
-end
-
-#! Loads name chunk 1 (1 Word).
-#!
-#! Inputs:  []
-#! Outputs: [NAME_CHUNK_1]
-#!
-#! Invocation: exec
-proc get_name_chunk_1
-    push.TOKEN_NAME_1_SLOT[0..2]
-    exec.active_account::get_item
-end
-
-#! Loads the mutability config word.
-#!
-#! Inputs:  []
-#! Outputs: [is_description_mutable, is_logo_uri_mutable, is_external_link_mutable, is_max_supply_mutable]
-#!
-#! Where:
-#! - is_description_mutable, is_logo_uri_mutable, is_external_link_mutable, is_max_supply_mutable are boolean flags
-#!   (word[0] on top after get_item, little-endian).
-#!
-#! Invocation: exec
-proc get_mutability_config_word
+proc is_max_supply_mutable_internal
     push.MUTABILITY_CONFIG_SLOT[0..2]
     exec.active_account::get_item
-end
-
-#! Pipes 28 felts (7 words) from the advice stack into write_ptr and asserts the hash
-#! matches COMMITMENT. adv.push_mapval must be called before this procedure to load
-#! the data onto the advice stack.
-#!
-#! Inputs:  [write_ptr, COMMITMENT]
-#! Outputs: []
-#!
-#! Invocation: exec
-proc pipe_to_memory
-    push.7
-    exec.mem::pipe_preimage_to_memory
-    # => [write_ptr']
-    drop
+    # => [is_description_mutable, is_logo_uri_mutable, is_external_link_mutable, is_max_supply_mutable]
+    drop drop drop
+    # => [is_max_supply_mutable]
 end
 
 # =================================================================================================
-# PUBLIC API — TOKEN METADATA
+# PUBLIC API — TOKEN CONFIG
 # =================================================================================================
 
-#! Returns the token metadata (token_supply, max_supply, decimals, token_symbol).
+#! Returns the token config (token_supply, max_supply, decimals, token_symbol).
 #!
 #! Inputs:  [pad(16)]
 #! Outputs: [token_supply, max_supply, decimals, token_symbol, pad(12)]
 #!
 #! Invocation: call
-pub proc get_token_metadata
-    exec.get_token_metadata_internal
+pub proc get_token_config
+    exec.get_token_config_internal
     swapw dropw
     # => [token_supply, max_supply, decimals, token_symbol, pad(12)]
 end
@@ -151,7 +97,7 @@ end
 #!
 #! Invocation: call
 pub proc get_max_supply
-    exec.get_token_metadata_internal
+    exec.get_token_config_internal
     # => [token_supply, max_supply, decimals, token_symbol, pad(16)]
     swap movdn.4 dropw
     # => [max_supply, pad(15)]
@@ -164,7 +110,7 @@ end
 #!
 #! Invocation: call
 pub proc get_decimals
-    exec.get_token_metadata_internal
+    exec.get_token_config_internal
     # => [token_supply, max_supply, decimals, token_symbol, pad(16)]
     movup.2 movdn.4 dropw
     # => [decimals, pad(15)]
@@ -177,7 +123,7 @@ end
 #!
 #! Invocation: call
 pub proc get_token_symbol
-    exec.get_token_metadata_internal
+    exec.get_token_config_internal
     # => [token_supply, max_supply, decimals, token_symbol, pad(16)]
     movup.3 movdn.4 dropw
     # => [token_symbol, pad(15)]
@@ -190,142 +136,10 @@ end
 #!
 #! Invocation: call
 pub proc get_token_supply
-    exec.get_token_metadata_internal
+    exec.get_token_config_internal
     # => [token_supply, max_supply, decimals, token_symbol, pad(16)]
     movdn.4 dropw
     # => [token_supply, pad(15)]
-end
-
-# =================================================================================================
-# NAME (2 words)
-# =================================================================================================
-
-#! Returns the token name.
-#!
-#! Inputs:  [pad(16)]
-#! Outputs: [NAME_CHUNK_0, NAME_CHUNK_1, pad(8)]
-#!
-#! Invocation: call
-pub proc get_name
-    exec.get_name_chunk_1
-    exec.get_name_chunk_0
-    swapdw dropw dropw
-    # => [NAME_CHUNK_0, NAME_CHUNK_1, pad(8)]
-end
-
-# =================================================================================================
-# MUTABILITY CONFIG — [is_description_mutable, is_logo_uri_mutable, is_external_link_mutable, is_max_supply_mutable]
-# =================================================================================================
-
-#! Returns the mutability config word.
-#!
-#! Inputs:  [pad(16)]
-#! Outputs: [is_description_mutable, is_logo_uri_mutable, is_external_link_mutable, is_max_supply_mutable, pad(12)]
-#!
-#! Invocation: call
-pub proc get_mutability_config
-    exec.get_mutability_config_word
-    # => [is_description_mutable, is_logo_uri_mutable, is_external_link_mutable, is_max_supply_mutable, pad(16)]
-    swapw dropw
-    # => [is_description_mutable, is_logo_uri_mutable, is_external_link_mutable, is_max_supply_mutable, pad(12)]
-end
-
-# =================================================================================================
-# MUTABILITY CHECKS — read mutability_config
-# =================================================================================================
-
-# Private helpers — load the mutability config word and extract a single flag.
-# Used by both the public is_* procedures and the set_* procedures.
-
-#! Extracts the is_description_mutable flag from the mutability config word.
-#!
-#! Inputs:  []
-#! Outputs: [is_description_mutable]
-#!
-#! Invocation: exec
-proc is_description_mutable_inner
-    exec.get_mutability_config_word
-    # => [is_description_mutable, is_logo_uri_mutable, is_external_link_mutable, is_max_supply_mutable]
-    movdn.3 drop drop drop
-    # => [is_description_mutable]
-end
-
-#! Extracts the is_logo_uri_mutable flag from the mutability config word.
-#!
-#! Inputs:  []
-#! Outputs: [is_logo_uri_mutable]
-#!
-#! Invocation: exec
-proc is_logo_uri_mutable_inner
-    exec.get_mutability_config_word
-    # => [is_description_mutable, is_logo_uri_mutable, is_external_link_mutable, is_max_supply_mutable]
-    drop movdn.2 drop drop
-    # => [is_logo_uri_mutable]
-end
-
-#! Extracts the is_external_link_mutable flag from the mutability config word.
-#!
-#! Inputs:  []
-#! Outputs: [is_external_link_mutable]
-#!
-#! Invocation: exec
-proc is_external_link_mutable_inner
-    exec.get_mutability_config_word
-    # => [is_description_mutable, is_logo_uri_mutable, is_external_link_mutable, is_max_supply_mutable]
-    drop drop swap drop
-    # => [is_external_link_mutable]
-end
-
-#! Extracts the is_max_supply_mutable flag from the mutability config word.
-#!
-#! Inputs:  []
-#! Outputs: [is_max_supply_mutable]
-#!
-#! Invocation: exec
-proc is_max_supply_mutable_inner
-    exec.get_mutability_config_word
-    # => [is_description_mutable, is_logo_uri_mutable, is_external_link_mutable, is_max_supply_mutable]
-    drop drop drop
-    # => [is_max_supply_mutable]
-end
-
-#! Returns 1 if description is mutable, and 0 otherwise.
-#!
-#! Inputs:  [pad(16)]
-#! Outputs: [is_description_mutable, pad(15)]
-#!
-#! Invocation: call
-pub proc is_description_mutable
-    exec.is_description_mutable_inner
-    # => [is_description_mutable, pad(16)]
-    swap drop
-    # => [is_description_mutable, pad(15)]
-end
-
-#! Returns 1 if logo URI is mutable, and 0 otherwise.
-#!
-#! Inputs:  [pad(16)]
-#! Outputs: [is_logo_uri_mutable, pad(15)]
-#!
-#! Invocation: call
-pub proc is_logo_uri_mutable
-    exec.is_logo_uri_mutable_inner
-    # => [is_logo_uri_mutable, pad(16)]
-    swap drop
-    # => [is_logo_uri_mutable, pad(15)]
-end
-
-#! Returns 1 if external link is mutable, and 0 otherwise.
-#!
-#! Inputs:  [pad(16)]
-#! Outputs: [is_external_link_mutable, pad(15)]
-#!
-#! Invocation: call
-pub proc is_external_link_mutable
-    exec.is_external_link_mutable_inner
-    # => [is_external_link_mutable, pad(16)]
-    swap drop
-    # => [is_external_link_mutable, pad(15)]
 end
 
 #! Returns 1 if max supply is mutable, and 0 otherwise.
@@ -335,239 +149,10 @@ end
 #!
 #! Invocation: call
 pub proc is_max_supply_mutable
-    exec.is_max_supply_mutable_inner
+    exec.is_max_supply_mutable_internal
     # => [is_max_supply_mutable, pad(16)]
     swap drop
     # => [is_max_supply_mutable, pad(15)]
-end
-
-# =================================================================================================
-# SET DESCRIPTION (owner-only when is_description_mutable == 1)
-# =================================================================================================
-
-#! Updates the description (7 Words) if the description mutability flag is 1
-#! and the note sender is the owner.
-#!
-#! The caller passes the Poseidon hash of the new description on the stack and provides
-#! the actual 7 Words in the advice map under that hash. The hash is verified against
-#! the preimage during loading.
-#!
-#! Inputs:
-#!   Operand stack: [DESCRIPTION_HASH, pad(12)]
-#!   Advice map: {
-#!     DESCRIPTION_HASH: [description_elements],
-#!   }
-#! Outputs:
-#!   Operand stack: [pad(16)]
-#!
-#! Where:
-#! - description_elements are 28 felts (7 Words) encoding the description.
-#!
-#! Panics if:
-#! - the description mutability flag is not 1.
-#! - the note sender is not the owner.
-#! - the preimage does not match DESCRIPTION_HASH.
-#!
-#! Invocation: call
-@locals(28)
-pub proc set_description
-    # Check mutability; verify owner.
-    # => [DESCRIPTION_HASH, pad(12)]
-
-    exec.is_description_mutable_inner
-    # => [is_description_mutable, DESCRIPTION_HASH, pad(12)]
-    assert.err=ERR_DESCRIPTION_NOT_MUTABLE
-    # => [DESCRIPTION_HASH, pad(12)]
-
-    exec.authority::assert_authorized
-    # => [DESCRIPTION_HASH, pad(12)]
-
-    # Pipe 7 words from advice map into local words 0–6, validating the hash.
-    adv.push_mapval
-    locaddr.0
-    # => [locaddr.0, DESCRIPTION_HASH, pad(16)]
-    exec.pipe_to_memory
-    # => [pad(16)]
-
-    loc_loadw_le.0
-    push.TOKEN_DESCRIPTION_0_SLOT[0..2]
-    exec.native_account::set_item dropw
-
-    loc_loadw_le.4
-    push.TOKEN_DESCRIPTION_1_SLOT[0..2]
-    exec.native_account::set_item dropw
-
-    loc_loadw_le.8
-    push.TOKEN_DESCRIPTION_2_SLOT[0..2]
-    exec.native_account::set_item dropw
-
-    loc_loadw_le.12
-    push.TOKEN_DESCRIPTION_3_SLOT[0..2]
-    exec.native_account::set_item dropw
-
-    loc_loadw_le.16
-    push.TOKEN_DESCRIPTION_4_SLOT[0..2]
-    exec.native_account::set_item dropw
-
-    loc_loadw_le.20
-    push.TOKEN_DESCRIPTION_5_SLOT[0..2]
-    exec.native_account::set_item dropw
-
-    loc_loadw_le.24
-    push.TOKEN_DESCRIPTION_6_SLOT[0..2]
-    exec.native_account::set_item dropw
-end
-
-# =================================================================================================
-# SET LOGO URI (owner-only when is_logo_uri_mutable == 1)
-# =================================================================================================
-
-#! Updates the logo URI (7 Words) if the logo URI mutability flag is 1
-#! and the note sender is the owner.
-#!
-#! The caller passes the Poseidon hash of the new logo URI on the stack and provides
-#! the actual 7 Words in the advice map under that hash. The hash is verified against
-#! the preimage during loading.
-#!
-#! Inputs:
-#!   Operand stack: [LOGO_URI_HASH, pad(12)]
-#!   Advice map: {
-#!     LOGO_URI_HASH: [logo_uri_elements],
-#!   }
-#! Outputs:
-#!   Operand stack: [pad(16)]
-#!
-#! Where:
-#! - logo_uri_elements are 28 felts (7 Words) encoding the logo URI.
-#!
-#! Panics if:
-#! - the logo URI mutability flag is not 1.
-#! - the note sender is not the owner.
-#! - the preimage does not match LOGO_URI_HASH.
-#!
-#! Invocation: call
-@locals(28)
-pub proc set_logo_uri
-    # Check mutability; verify owner.
-    # => [LOGO_URI_HASH, pad(12)]
-
-    exec.is_logo_uri_mutable_inner
-    # => [is_logo_uri_mutable, LOGO_URI_HASH, pad(12)]
-    assert.err=ERR_LOGO_URI_NOT_MUTABLE
-    # => [LOGO_URI_HASH, pad(12)]
-
-    exec.authority::assert_authorized
-    # => [LOGO_URI_HASH, pad(12)]
-
-    adv.push_mapval
-    locaddr.0
-    # => [locaddr.0, LOGO_URI_HASH, pad(16)]
-    exec.pipe_to_memory
-    # => [pad(16)]
-
-    loc_loadw_le.0
-    push.LOGO_URI_0_SLOT[0..2]
-    exec.native_account::set_item dropw
-
-    loc_loadw_le.4
-    push.LOGO_URI_1_SLOT[0..2]
-    exec.native_account::set_item dropw
-
-    loc_loadw_le.8
-    push.LOGO_URI_2_SLOT[0..2]
-    exec.native_account::set_item dropw
-
-    loc_loadw_le.12
-    push.LOGO_URI_3_SLOT[0..2]
-    exec.native_account::set_item dropw
-
-    loc_loadw_le.16
-    push.LOGO_URI_4_SLOT[0..2]
-    exec.native_account::set_item dropw
-
-    loc_loadw_le.20
-    push.LOGO_URI_5_SLOT[0..2]
-    exec.native_account::set_item dropw
-
-    loc_loadw_le.24
-    push.LOGO_URI_6_SLOT[0..2]
-    exec.native_account::set_item dropw
-end
-
-# =================================================================================================
-# SET EXTERNAL LINK (owner-only when is_external_link_mutable == 1)
-# =================================================================================================
-
-#! Updates the external link (7 Words) if the external link mutability flag is 1
-#! and the note sender is the owner.
-#!
-#! The caller passes the Poseidon hash of the new external link on the stack and provides
-#! the actual 7 Words in the advice map under that hash. The hash is verified against
-#! the preimage during loading.
-#!
-#! Inputs:
-#!   Operand stack: [EXTERNAL_LINK_HASH, pad(12)]
-#!   Advice map: {
-#!     EXTERNAL_LINK_HASH: [external_link_elements],
-#!   }
-#! Outputs:
-#!   Operand stack: [pad(16)]
-#!
-#! Where:
-#! - external_link_elements are 28 felts (7 Words) encoding the external link.
-#!
-#! Panics if:
-#! - the external link mutability flag is not 1.
-#! - the note sender is not the owner.
-#! - the preimage does not match EXTERNAL_LINK_HASH.
-#!
-#! Invocation: call
-@locals(28)
-pub proc set_external_link
-    # Check mutability; verify owner.
-    # => [EXTERNAL_LINK_HASH, pad(12)]
-
-    exec.is_external_link_mutable_inner
-    # => [is_external_link_mutable, EXTERNAL_LINK_HASH, pad(12)]
-    assert.err=ERR_EXTERNAL_LINK_NOT_MUTABLE
-    # => [EXTERNAL_LINK_HASH, pad(12)]
-
-    exec.authority::assert_authorized
-    # => [EXTERNAL_LINK_HASH, pad(12)]
-
-    adv.push_mapval
-    locaddr.0
-    # => [locaddr.0, EXTERNAL_LINK_HASH, pad(16)]
-    exec.pipe_to_memory
-    # => [pad(16)]
-
-    loc_loadw_le.0
-    push.EXTERNAL_LINK_0_SLOT[0..2]
-    exec.native_account::set_item dropw
-
-    loc_loadw_le.4
-    push.EXTERNAL_LINK_1_SLOT[0..2]
-    exec.native_account::set_item dropw
-
-    loc_loadw_le.8
-    push.EXTERNAL_LINK_2_SLOT[0..2]
-    exec.native_account::set_item dropw
-
-    loc_loadw_le.12
-    push.EXTERNAL_LINK_3_SLOT[0..2]
-    exec.native_account::set_item dropw
-
-    loc_loadw_le.16
-    push.EXTERNAL_LINK_4_SLOT[0..2]
-    exec.native_account::set_item dropw
-
-    loc_loadw_le.20
-    push.EXTERNAL_LINK_5_SLOT[0..2]
-    exec.native_account::set_item dropw
-
-    loc_loadw_le.24
-    push.EXTERNAL_LINK_6_SLOT[0..2]
-    exec.native_account::set_item dropw
 end
 
 # =================================================================================================
@@ -588,16 +173,16 @@ end
 #! Invocation: call
 pub proc set_max_supply
     # 1. Check max supply mutability
-    exec.is_max_supply_mutable_inner
+    exec.is_max_supply_mutable_internal
     # => [is_max_supply_mutable, new_max_supply, pad(15)]
     assert.err=ERR_MAX_SUPPLY_NOT_MUTABLE
 
     # 2. Verify note sender is the owner
-    exec.authority::assert_authorized
+    exec.ownable2step::assert_sender_is_owner
     # => [new_max_supply, pad(15)]
 
-    # 3. Read current metadata word
-    exec.get_token_metadata_internal
+    # 3. Read current token config word
+    exec.get_token_config_internal
     # => [token_supply, max_supply, decimals, token_symbol, new_max_supply, pad(15)]
 
     # 4. Validate: token_supply <= new_max_supply
@@ -609,9 +194,222 @@ pub proc set_max_supply
     movup.4 swap movup.2 drop
     # => [token_supply, new_max_supply, decimals, token_symbol, pad(15)]
 
-    # 6. Write updated metadata word back to storage
+    # 6. Write updated token config word back to storage
     push.TOKEN_CONFIG_SLOT[0..2]
     exec.native_account::set_item
     dropw
+    # => [pad(16)]
+end
+
+# =================================================================================================
+# MINT AND SEND
+# =================================================================================================
+
+#! Mints fungible assets to the provided recipient by creating a note.
+#!
+#! This procedure first executes the active mint policy configured via the `TokenPolicyManager`
+#! and then mints the asset and creates an output note with that asset for the recipient.
+#!
+#! Inputs:  [amount, tag, note_type, RECIPIENT, pad(9)]
+#! Outputs: [note_idx, pad(15)]
+#!
+#! Where:
+#! - amount is the amount to be minted and sent.
+#! - tag is the tag to be included in the note.
+#! - note_type is the type of the note that holds the asset.
+#! - RECIPIENT is the recipient of the asset, i.e.,
+#!   hash(hash(hash(serial_num, [0; 4]), script_root), storage_commitment).
+#! - note_idx is the index of the created note.
+#!
+#! Panics if:
+#! - active mint policy validation fails.
+#! - the transaction is being executed against an account that is not a fungible asset faucet.
+#! - the token supply exceeds the maximum supply.
+#! - the maximum supply exceeds the maximum representable fungible asset amount.
+#! - the token supply after minting is greater than the maximum allowed supply.
+#!
+#! Invocation: call
+@locals(4)
+pub proc mint_and_send
+    exec.policy_manager::execute_mint_policy
+    # => [new_amount, new_tag, new_note_type, NEW_RECIPIENT, pad(9)]
+
+    # Get the configured max supply and the token supply (= current supply).
+    # ---------------------------------------------------------------------------------------------
+
+    push.TOKEN_CONFIG_SLOT[0..2] exec.active_account::get_item
+    # => [token_supply, max_supply, decimals, token_symbol, amount, tag, note_type, RECIPIENT]
+
+    # store a copy of the current slot content for the token_supply update later
+    loc_storew_le.TOKEN_CONFIG_SLOT_LOCAL
+    swap movup.2 drop movup.2 drop
+    # => [max_supply, token_supply, amount, tag, note_type, RECIPIENT]
+
+    # Assert that minting does not violate any supply constraints.
+    #
+    # To make sure we cannot mint more than intended, we need to check:
+    # 1) (max_supply - token_supply) <= max_supply, i.e. the subtraction does not wrap around
+    # 2) amount + token_supply does not exceed max_supply
+    # 3) amount + token_supply is less than FUNGIBLE_ASSET_MAX_AMOUNT
+    #
+    # This is done with the following concrete assertions:
+    # - assert token_supply <= max_supply which ensures 1)
+    # - assert max_supply <= FUNGIBLE_ASSET_MAX_AMOUNT to help ensure 3)
+    # - assert amount <= max_mint_amount to ensure 2) as well as 3)
+    #   - this ensures 3) because token_supply + max_mint_amount at most ends up being equal to
+    #     max_supply and we already asserted that max_supply does not exceed
+    #     FUNGIBLE_ASSET_MAX_AMOUNT
+    # ---------------------------------------------------------------------------------------------
+
+    dup.1 dup.1
+    # => [max_supply, token_supply, max_supply, token_supply, amount, tag, note_type, RECIPIENT]
+
+    # assert that token_supply <= max_supply
+    lte assert.err=ERR_FUNGIBLE_ASSET_TOKEN_SUPPLY_EXCEEDS_MAX_SUPPLY
+    # => [max_supply, token_supply, amount, tag, note_type, RECIPIENT]
+
+    # assert max_supply <= FUNGIBLE_ASSET_MAX_AMOUNT
+    dup lte.FUNGIBLE_ASSET_MAX_AMOUNT
+    assert.err=ERR_FUNGIBLE_ASSET_MAX_SUPPLY_EXCEEDS_FUNGIBLE_ASSET_MAX_AMOUNT
+    # => [max_supply, token_supply, amount, tag, note_type, RECIPIENT]
+
+    dup.2 swap dup.2
+    # => [token_supply, max_supply, amount, token_supply, amount, tag, note_type, RECIPIENT]
+
+    # compute maximum amount that can be minted, max_mint_amount = max_supply - token_supply
+    sub
+    # => [max_mint_amount, amount, token_supply, amount, tag, note_type, RECIPIENT]
+
+    # assert amount <= max_mint_amount
+    lte assert.err=ERR_FUNGIBLE_ASSET_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY
+    # => [token_supply, amount, tag, note_type, RECIPIENT]
+
+    # Compute the new token_supply and update in storage.
+    # ---------------------------------------------------------------------------------------------
+
+    dup.1 add
+    # => [new_token_supply, amount, tag, note_type, RECIPIENT]
+
+    padw loc_loadw_le.TOKEN_CONFIG_SLOT_LOCAL
+    # => [[token_supply, max_supply, decimals, token_symbol], new_token_supply, amount, tag, note_type, RECIPIENT]
+
+    drop movup.3
+    # => [[new_token_supply, max_supply, decimals, token_symbol], amount, tag, note_type, RECIPIENT]
+
+    # update the token config slot with the new supply
+    push.TOKEN_CONFIG_SLOT[0..2] exec.native_account::set_item dropw
+    # => [amount, tag, note_type, RECIPIENT]
+
+    # Create a new note.
+    # ---------------------------------------------------------------------------------------------
+
+    movdn.6 exec.output_note::create
+    # => [note_idx, amount]
+
+    dup movup.2
+    # => [amount, note_idx, note_idx]
+
+    # Mint the asset.
+    # ---------------------------------------------------------------------------------------------
+
+    # creating the asset
+    exec.faucet::create_fungible_asset
+    # => [ASSET_KEY, ASSET_VALUE, note_idx, note_idx]
+
+    dupw.1 dupw.1
+    # => [ASSET_KEY, ASSET_VALUE, ASSET_KEY, ASSET_VALUE, note_idx, note_idx]
+
+    # mint the asset; this is needed to satisfy asset preservation logic.
+    # this ensures that the asset's faucet ID matches the native account's ID.
+    # this is ensured because create_fungible_asset creates the asset with the native account's ID
+    exec.faucet::mint
+    # => [ASSET_KEY, ASSET_VALUE, note_idx, note_idx]
+
+    # Add the asset to the note.
+    # ---------------------------------------------------------------------------------------------
+
+    exec.output_note::add_asset
+    # => [note_idx]
+end
+
+# =================================================================================================
+# RECEIVE AND BURN
+# =================================================================================================
+
+#! Receives a fungible asset from the active note and burns it.
+#!
+#! Burning the asset removes it from circulation and reduces the token_supply by the asset's amount.
+#!
+#! This procedure retrieves the asset from the active note, executes the active burn policy
+#! against it, and burns it. The note must contain exactly one asset, which must be a fungible
+#! asset issued by this faucet.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - active burn policy validation fails.
+#! - the procedure is not called from a note context (active_note::get_assets will fail).
+#! - the note does not contain exactly one asset.
+#! - the transaction is executed against an account which is not a fungible asset faucet.
+#! - the transaction is executed against a faucet which is not the origin of the specified asset.
+#! - the amount about to be burned is greater than the token_supply of the faucet.
+#!
+#! Invocation: call
+pub proc receive_and_burn
+    # Get the asset from the note.
+    # ---------------------------------------------------------------------------------------------
+
+    # this will fail if not called from a note context.
+    push.ASSET_PTR exec.active_note::get_assets
+    # => [num_assets, pad(16)]
+
+    # Verify we have exactly one asset
+    assert.err=ERR_BASIC_FUNGIBLE_BURN_WRONG_NUMBER_OF_ASSETS
+    # => [pad(16)]
+
+    push.ASSET_PTR exec.asset::load
+    # => [ASSET_KEY, ASSET_VALUE, pad(16)]
+
+    dupw.1 dupw.1
+    # => [ASSET_KEY, ASSET_VALUE, ASSET_KEY, ASSET_VALUE, pad(16)]
+
+    exec.policy_manager::execute_burn_policy
+    # => [ASSET_KEY, ASSET_VALUE, pad(16)]
+
+    # Burn the asset from the transaction vault
+    # ---------------------------------------------------------------------------------------------
+
+    exec.asset::fungible_to_amount movdn.8
+    # => [ASSET_KEY, ASSET_VALUE, amount, pad(16)]
+
+    # burn the asset
+    # this ensures we only burn assets that were issued by this faucet (which implies they are
+    # fungible)
+    exec.faucet::burn
+    # => [amount, pad(16)]
+
+    # Subtract burnt amount from current token_supply in storage.
+    # ---------------------------------------------------------------------------------------------
+
+    push.TOKEN_CONFIG_SLOT[0..2] exec.active_account::get_item
+    # => [token_supply, max_supply, decimals, token_symbol, amount, pad(16)]
+
+    dup.4 dup.1
+    # => [token_supply, amount, token_supply, max_supply, decimals, token_symbol, amount, pad(16)]
+
+    # assert that amount <= token_supply
+    lte assert.err=ERR_FAUCET_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY
+    # => [token_supply, max_supply, decimals, token_symbol, amount, pad(16)]
+
+    movup.4
+    # => [amount, token_supply, max_supply, decimals, token_symbol, pad(16)]
+
+    # compute new_token_supply = token_supply - amount
+    sub
+    # => [new_token_supply, max_supply, decimals, token_symbol, pad(16)]
+
+    # update the token config slot with the new supply
+    push.TOKEN_CONFIG_SLOT[0..2] exec.native_account::set_item dropw
     # => [pad(16)]
 end

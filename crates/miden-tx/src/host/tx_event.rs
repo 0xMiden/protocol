@@ -13,22 +13,20 @@ use miden_protocol::account::{
 use miden_protocol::asset::{Asset, AssetVault, AssetVaultKey, FungibleAsset};
 use miden_protocol::note::{
     NoteAttachment,
-    NoteAttachmentArray,
     NoteAttachmentContent,
-    NoteAttachmentKind,
     NoteAttachmentScheme,
     NoteId,
-    NoteMetadata,
     NoteRecipient,
     NoteScript,
     NoteStorage,
     NoteTag,
     NoteType,
+    PartialNoteMetadata,
 };
 use miden_protocol::transaction::memory::{NOTE_MEM_SIZE, OUTPUT_NOTE_SECTION_OFFSET};
 use miden_protocol::transaction::{TransactionEventId, TransactionSummary};
 use miden_protocol::vm::EventId;
-use miden_protocol::{Felt, Hasher, Word};
+use miden_protocol::{Felt, Hasher, WORD_SIZE, Word};
 
 use crate::host::{TransactionBaseHost, TransactionKernelProcess};
 use crate::{LinkMap, TransactionKernelError};
@@ -123,7 +121,7 @@ pub(crate) enum TransactionEvent {
         /// The note index extracted from the stack.
         note_idx: usize,
         /// The note metadata extracted from the stack.
-        metadata: NoteMetadata,
+        metadata: PartialNoteMetadata,
         /// The recipient data extracted from the advice inputs.
         recipient_data: RecipientData,
     },
@@ -135,10 +133,10 @@ pub(crate) enum TransactionEvent {
         asset: Asset,
     },
 
-    NoteBeforeSetAttachment {
-        /// The note index on which the attachment is set.
+    NoteBeforeAddAttachment {
+        /// The note index to which the attachment is appended.
         note_idx: usize,
-        /// The attachment that is set.
+        /// The attachment that is appended to the output note.
         attachment: NoteAttachment,
     },
 
@@ -425,26 +423,23 @@ impl TransactionEvent {
 
             TransactionEventId::NoteAfterAddAsset => None,
 
-            TransactionEventId::NoteBeforeSetAttachment => {
+            TransactionEventId::NoteBeforeAddAttachment => {
                 // Expected stack state: [
-                //     event, attachment_scheme, attachment_kind,
-                //     note_ptr, note_ptr, ATTACHMENT
+                //     event, num_attachments, note_ptr, attachment_scheme, ATTACHMENT_COMMITMENT
                 // ]
 
-                let attachment_scheme = process.get_stack_item(1);
-                let attachment_kind = process.get_stack_item(2);
-                let note_ptr = process.get_stack_item(3);
-                let attachment = process.get_stack_word(5);
+                let note_ptr = process.get_stack_item(2);
+                let attachment_scheme = process.get_stack_item(3);
+                let attachment_commitment = process.get_stack_word(4);
 
                 let (note_idx, attachment) = extract_note_attachment(
                     attachment_scheme,
-                    attachment_kind,
-                    attachment,
+                    attachment_commitment,
                     note_ptr,
                     process.advice_provider(),
                 )?;
 
-                Some(TransactionEvent::NoteBeforeSetAttachment { note_idx, attachment })
+                Some(TransactionEvent::NoteBeforeAddAttachment { note_idx, attachment })
             },
 
             TransactionEventId::AuthRequest => {
@@ -716,7 +711,7 @@ fn build_note_metadata(
     sender: AccountId,
     note_type: Felt,
     tag: Felt,
-) -> Result<NoteMetadata, TransactionKernelError> {
+) -> Result<PartialNoteMetadata, TransactionKernelError> {
     let note_type = u8::try_from(note_type.as_canonical_u64())
         .map_err(|_| TransactionKernelError::other("failed to decode note_type into u8"))
         .and_then(|note_type_byte| {
@@ -732,71 +727,69 @@ fn build_note_metadata(
         .map_err(|_| TransactionKernelError::other("failed to decode note tag into u32"))
         .map(NoteTag::new)?;
 
-    Ok(NoteMetadata::new(sender, note_type).with_tag(tag))
+    Ok(PartialNoteMetadata::new(sender, note_type).with_tag(tag))
 }
 
 fn extract_note_attachment(
     attachment_scheme: Felt,
-    attachment_kind: Felt,
-    attachment: Word,
+    attachment_commitment: Word,
     note_ptr: Felt,
     advice_provider: &AdviceProvider,
 ) -> Result<(usize, NoteAttachment), TransactionKernelError> {
     let note_idx = note_ptr_to_idx(note_ptr)?;
 
-    let attachment_kind = u8::try_from(attachment_kind.as_canonical_u64())
-        .map_err(|_| TransactionKernelError::other("failed to convert attachment kind to u8"))
-        .and_then(|attachment_kind| {
-            NoteAttachmentKind::try_from(attachment_kind).map_err(|source| {
+    let attachment_scheme = u16::try_from(attachment_scheme.as_canonical_u64())
+        .map_err(|_| TransactionKernelError::other("failed to convert attachment scheme to u16"))
+        .and_then(|scheme| {
+            NoteAttachmentScheme::try_from(scheme).map_err(|source| {
                 TransactionKernelError::other_with_source(
-                    "failed to convert u8 to attachment kind",
+                    "failed to convert u16 to attachment scheme",
                     source,
                 )
             })
         })?;
 
-    let attachment_scheme = u32::try_from(attachment_scheme.as_canonical_u64())
-        .map_err(|_| TransactionKernelError::other("failed to convert attachment scheme to u32"))
-        .map(NoteAttachmentScheme::new)?;
+    // Fetch the raw elements from the advice provider.
+    let elements = advice_provider.get_mapped_values(&attachment_commitment).ok_or_else(|| {
+        TransactionKernelError::other(
+            "elements of a note attachment commitment must be present in the advice provider",
+        )
+    })?;
 
-    let attachment_content = match attachment_kind {
-        NoteAttachmentKind::None => {
-            if !attachment.is_empty() {
-                return Err(TransactionKernelError::NoteAttachmentNoneIsNotEmpty);
-            }
-            NoteAttachmentContent::None
-        },
-        NoteAttachmentKind::Word => NoteAttachmentContent::Word(attachment),
-        NoteAttachmentKind::Array => {
-            let elements = advice_provider.get_mapped_values(&attachment).ok_or_else(|| {
-              TransactionKernelError::other(
-                  "elements of a note attachment commitment must be present in the advice provider",
-              )
-            })?;
+    if elements.is_empty() {
+        return Err(TransactionKernelError::other(
+            "num elements in attachment advice map value must not be empty",
+        ));
+    }
 
-            let commitment_attachment =
-                NoteAttachmentArray::new(elements.to_vec()).map_err(|source| {
-                    TransactionKernelError::other_with_source(
-                        "failed to construct note attachment commitment",
-                        source,
-                    )
-                })?;
+    if !elements.len().is_multiple_of(WORD_SIZE) {
+        return Err(TransactionKernelError::other(
+            "num elements in attachment advice map value must be multiple of word size",
+        ));
+    }
 
-            if commitment_attachment.commitment() != attachment {
-                return Err(TransactionKernelError::NoteAttachmentArrayMismatch {
-                    actual: commitment_attachment.commitment(),
-                    provided: attachment,
-                });
-            }
+    let words: Vec<Word> = elements
+        .chunks_exact(WORD_SIZE)
+        .map(|chunk| Word::from([chunk[0], chunk[1], chunk[2], chunk[3]]))
+        .collect();
 
-            NoteAttachmentContent::Array(commitment_attachment)
-        },
-    };
+    let content = NoteAttachmentContent::new(words).map_err(|source| {
+        TransactionKernelError::other_with_source(
+            "failed to construct note attachment content",
+            source,
+        )
+    })?;
+    let attachment = NoteAttachment::new(attachment_scheme, content);
 
-    let attachment =
-        NoteAttachment::new(attachment_scheme, attachment_content).map_err(|source| {
-            TransactionKernelError::other_with_source("failed to extract note attachment", source)
-        })?;
+    let actual_commitment = attachment.to_commitment();
+
+    // Check the actual commitment of the advice data matches the declared commitment.
+    if actual_commitment != attachment_commitment {
+        return Err(TransactionKernelError::NoteAttachmentCommitmentMismatch {
+            actual: actual_commitment,
+            provided: attachment_commitment,
+        });
+    }
 
     Ok((note_idx as usize, attachment))
 }
