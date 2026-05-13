@@ -13,7 +13,7 @@ Every public MASM procedure should have a doc comment block using `#!` prefix wi
 2. **Inputs/Outputs** - Stack state before/after
 3. **Where** - Explanation of each stack item (omit when the Description already names every item)
 4. **Panics if** - Error conditions (when applicable)
-5. **Invocation** - How the procedure is called (`exec`, `call`, `syscall`, or `dyncall`)
+5. **Invocation** - How the procedure is called (`exec`, `call`, or `dyncall`; omitted for syscall-invoked kernel procedures)
 
 ## Required Format
 
@@ -195,13 +195,12 @@ Omit the "Panics if:" section entirely if the procedure cannot panic.
 
 ## Invocation Types
 
-Always specify how the procedure should be invoked. The value matches the MASM instruction that callers use to enter the procedure:
+Specify how the procedure should be invoked. The value matches the MASM instruction that user-code callers use to enter the procedure:
 
 | Value | Used by callers as | When to use |
 |---|---|---|
 | `exec` | `exec.<proc>` | Standard inline call. Shares the caller's stack; no padding requirement. |
 | `call` | `call.<proc>` | Cross-context call (e.g. into another account). Enters at stack depth 16 — Inputs/Outputs must show `pad(N)` to total 16 (see masm-padding). |
-| `syscall` | `syscall.<proc>` | Kernel procedure invoked from user code. Canonical for procs under `crates/miden-protocol/asm/kernels/`. |
 | `dyncall` | `dyncall` from a script | Entry point of a note script or transaction script. Stack-depth-16 floor applies on entry. |
 
 ```masm
@@ -213,14 +212,14 @@ Always specify how the procedure should be invoked. The value matches the MASM i
 ```
 
 ```masm
-#! Invocation: syscall
-```
-
-```masm
 #! Invocation: dyncall
 ```
 
-For existing procedures, pick the value that matches how callers invoke them: `call` when invoked via `call.<procedure_name>`, `exec` for `exec.<procedure_name>`, `syscall` for kernel procs invoked via `syscall.<procedure_name>`, `dyncall` for note-script and transaction-script entry points.
+For existing procedures, pick the value that matches how callers invoke them: `call` when invoked via `call.<procedure_name>`, `exec` for `exec.<procedure_name>`, `dyncall` for note-script and transaction-script entry points.
+
+### Kernel procedures (syscall-invoked) are exempt
+
+Kernel procedures under `crates/miden-protocol/asm/kernels/` are invoked by the VM via `syscall.<proc>` from user code. They do not carry an `Invocation:` line — the `syscall` invocation model is implied by the procedure's location in a kernel module. Omit the `Invocation:` line entirely for these procs.
 
 ## Validation Checklist
 
@@ -230,5 +229,5 @@ For existing procedures, pick the value that matches how callers invoke them: `c
 - [ ] Words are UPPERCASE, felts are lowercase
 - [ ] Panics section lists direct asserts and propagated errors
 - [ ] Complex panic propagation uses "if <procedure> fails to verify" shorthand
-- [ ] Invocation type specified: `exec`, `call`, `syscall`, or `dyncall`
+- [ ] Invocation type specified: `exec`, `call`, or `dyncall`. Kernel (syscall-invoked) procedures are exempt — no `Invocation:` line.
 - [ ] For `call` and `dyncall`: padding shown in Inputs/Outputs (see masm-padding skill)
