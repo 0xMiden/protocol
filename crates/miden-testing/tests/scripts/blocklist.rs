@@ -66,13 +66,12 @@ fn add_faucet_with_owner_blocklist_transfer(
     builder: &mut MockChainBuilder,
     owner_id: AccountId,
 ) -> anyhow::Result<Account> {
-    let faucet = FungibleFaucet::builder(
-        TokenName::new("SYM")?,
-        "SYM".try_into()?,
-        8,
-        AssetAmount::new(1_000_000)?,
-    )
-    .build()?;
+    let faucet = FungibleFaucet::builder()
+        .name(TokenName::new("SYM")?)
+        .symbol("SYM".try_into()?)
+        .decimals(8)
+        .max_supply(AssetAmount::new(1_000_000)?)
+        .build()?;
 
     let account_builder = AccountBuilder::new([43u8; 32])
         .storage_mode(AccountStorageMode::Public)

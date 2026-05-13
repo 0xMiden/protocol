@@ -1795,7 +1795,11 @@ fn build_network_faucet_with_blocklist_transfer(
     let symbol = TokenSymbol::new(token_symbol)?;
     let max_supply = AssetAmount::new(max_supply)?;
     let token_supply = AssetAmount::new(token_supply)?;
-    let faucet = FungibleFaucet::builder(name, symbol, 10, max_supply)
+    let faucet = FungibleFaucet::builder()
+        .name(name)
+        .symbol(symbol)
+        .decimals(10)
+        .max_supply(max_supply)
         .token_supply(token_supply)
         .build()?;
 
