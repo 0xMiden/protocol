@@ -157,7 +157,7 @@ impl AssetVaultKey {
     ///
     /// Hashing the raw key ensures a uniform distribution across SMT leaves. In particular it
     /// prevents non-fungible assets issued by the same faucet from sharing a leaf: their raw
-    /// vault keys share their third element (the faucet ID suffix), which the SMT uses to
+    /// vault keys share their fourth element (the faucet ID prefix), which the SMT uses to
     /// determine leaf membership.
     pub fn to_smt_key(&self) -> Word {
         Hasher::hash_elements(self.to_word().as_elements())

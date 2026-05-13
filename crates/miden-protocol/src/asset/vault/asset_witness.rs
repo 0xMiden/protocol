@@ -77,14 +77,30 @@ impl AssetWitness {
     ///
     /// Prefer [`AssetWitness::new`] whenever possible. See the type-level docs for the invariants
     /// callers must uphold.
+    ///
+    /// # Caller precondition
+    ///
+    /// For each `(key, value)` pair, `proof.get(&key.to_smt_key())` must return `Some(value)`.
+    /// In other words, each provided pair must agree with what the proof asserts at the hashed
+    /// key. Passing a mismatched pair lets downstream consumers of [`Self::find`] /
+    /// [`Self::assets`] disagree with consumers of the underlying [`SmtProof`]. This
+    /// precondition is checked in debug builds via [`debug_assert!`].
     pub fn new_unchecked(
         proof: SmtProof,
         key_values: impl IntoIterator<Item = (AssetVaultKey, Word)>,
     ) -> Self {
-        Self {
-            proof,
-            entries: key_values.into_iter().collect(),
+        let entries: BTreeMap<AssetVaultKey, Word> = key_values.into_iter().collect();
+
+        #[cfg(debug_assertions)]
+        for (key, value) in &entries {
+            debug_assert_eq!(
+                proof.get(&key.to_smt_key()),
+                Some(*value),
+                "AssetWitness::new_unchecked: (key, value) pair does not match the proof",
+            );
         }
+
+        Self { proof, entries }
     }
 
     // PUBLIC ACCESSORS

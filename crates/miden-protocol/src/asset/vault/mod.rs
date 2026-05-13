@@ -41,7 +41,7 @@ pub use asset_id::AssetId;
 /// Merkle Tree, keyed by the hash of the [`AssetVaultKey`] (see [`AssetVaultKey::to_smt_key`]).
 /// Hashing the raw key gives a uniform leaf distribution: in particular it prevents non-fungible
 /// assets issued by the same faucet from sharing a leaf, which would otherwise happen because
-/// their raw vault keys share their third element (the faucet ID suffix) - the element the SMT
+/// their raw vault keys share their fourth element (the faucet ID prefix) - the element the SMT
 /// uses to determine leaf membership.
 ///
 /// The raw (unhashed) [`AssetVaultKey`]s are retained alongside the SMT to allow iteration and
@@ -77,10 +77,14 @@ impl AssetVault {
         )
         .map_err(AssetVaultError::DuplicateAsset)?;
 
-        // `Smt::with_entries` already errored on duplicate keys, so collecting into a `BTreeMap`
-        // here cannot silently drop assets.
-        let entries =
-            assets.iter().map(|asset| (asset.vault_key(), asset.to_value_word())).collect();
+        // Filter empty values so the `entries` map stays in sync with the SMT, which treats
+        // empty values as no-ops. `Smt::with_entries` above already errored on duplicate keys,
+        // so collecting into a `BTreeMap` here cannot silently drop assets.
+        let entries = assets
+            .iter()
+            .filter(|asset| !asset.to_value_word().is_empty())
+            .map(|asset| (asset.vault_key(), asset.to_value_word()))
+            .collect();
 
         Ok(Self { asset_tree, entries })
     }
@@ -430,8 +434,8 @@ mod tests {
         assert_matches!(err, AssetVaultError::FungibleAssetNotFound(_));
     }
 
-    /// Two non-fungible assets issued by the same faucet share their third raw-key element (the
-    /// faucet ID suffix), which historically caused them to land in the same SMT leaf because the
+    /// Two non-fungible assets issued by the same faucet share their fourth raw-key element (the
+    /// faucet ID prefix), which historically caused them to land in the same SMT leaf because the
     /// SMT uses element 3 for leaf membership. Hashing the vault key before insertion fixes that:
     /// the assets must end up in different leaves.
     ///
@@ -446,7 +450,7 @@ mod tests {
         assert_eq!(asset0.vault_key().faucet_id(), asset1.vault_key().faucet_id());
         assert_ne!(asset0.vault_key(), asset1.vault_key());
 
-        // Without hashing, both raw vault keys would share their element-3 (the faucet ID suffix)
+        // Without hashing, both raw vault keys would share their element-3 (the faucet ID prefix)
         // and the SMT would route them into a single leaf. Sanity-check that pre-condition.
         assert_eq!(asset0.vault_key().to_word()[2], asset1.vault_key().to_word()[2]);
         assert_eq!(asset0.vault_key().to_word()[3], asset1.vault_key().to_word()[3]);
