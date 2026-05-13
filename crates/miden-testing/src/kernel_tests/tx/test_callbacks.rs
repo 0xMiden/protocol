@@ -42,7 +42,7 @@ use miden_standards::account::policies::{
     TransferPolicy,
 };
 use miden_standards::code_builder::CodeBuilder;
-use miden_standards::procedure_digest;
+use miden_standards::procedure_root;
 use miden_standards::testing::account_component::MockFaucetComponent;
 
 use crate::{AccountState, Auth, MockChain, MockChainBuilder, assert_transaction_executor_error};
@@ -141,18 +141,18 @@ static BLOCK_LIST_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
         .expect("storage slot name should be valid")
 });
 
-procedure_digest!(
+procedure_root!(
     BLOCK_LIST_ON_BEFORE_ASSET_ADDED_TO_ACCOUNT,
     BlockList::NAME,
     BlockList::ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_PROC_NAME,
-    || { BLOCK_LIST_COMPONENT_CODE.as_library() }
+    &BLOCK_LIST_COMPONENT_CODE
 );
 
-procedure_digest!(
+procedure_root!(
     BLOCK_LIST_ON_BEFORE_ASSET_ADDED_TO_NOTE,
     BlockList::NAME,
     BlockList::ON_BEFORE_ASSET_ADDED_TO_NOTE_PROC_NAME,
-    || { BLOCK_LIST_COMPONENT_CODE.as_library() }
+    &BLOCK_LIST_COMPONENT_CODE
 );
 
 // BLOCK LIST
@@ -181,12 +181,12 @@ impl BlockList {
 
     /// Returns the digest of the `on_before_asset_added_to_account` procedure.
     pub fn on_before_asset_added_to_account_digest() -> Word {
-        *BLOCK_LIST_ON_BEFORE_ASSET_ADDED_TO_ACCOUNT
+        (*BLOCK_LIST_ON_BEFORE_ASSET_ADDED_TO_ACCOUNT).as_word()
     }
 
     /// Returns the digest of the `on_before_asset_added_to_note` procedure.
     pub fn on_before_asset_added_to_note_digest() -> Word {
-        *BLOCK_LIST_ON_BEFORE_ASSET_ADDED_TO_NOTE
+        (*BLOCK_LIST_ON_BEFORE_ASSET_ADDED_TO_NOTE).as_word()
     }
 }
 

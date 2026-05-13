@@ -36,8 +36,8 @@ impl BurnPolicyConfig {
     /// Returns the procedure root of the policy this variant resolves to.
     pub fn root(self) -> Word {
         match self {
-            Self::AllowAll => BurnAllowAll::root(),
-            Self::OwnerOnly => BurnOwnerOnly::root(),
+            Self::AllowAll => BurnAllowAll::root().as_word(),
+            Self::OwnerOnly => BurnOwnerOnly::root().as_word(),
             Self::Custom(root) => root,
         }
     }

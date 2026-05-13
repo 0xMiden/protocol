@@ -1,21 +1,30 @@
 use alloc::collections::BTreeSet;
 
 use miden_protocol::Word;
-use miden_protocol::account::component::{AccountComponentMetadata, StorageSchema};
+use miden_protocol::account::component::{
+    AccountComponentCode,
+    AccountComponentMetadata,
+    StorageSchema,
+};
 use miden_protocol::account::{AccountComponent, AccountId, AccountType, StorageSlot};
 
-use crate::account::components::basic_blocklist_transfer_policy_library;
+use crate::account::account_component_code;
 use crate::account::policies::transfer::blocklist::BlocklistStorage;
-use crate::procedure_digest;
+use crate::procedure_root;
 
 // BASIC BLOCKLIST TRANSFER POLICY
 // ================================================================================================
 
-procedure_digest!(
-    BASIC_BLOCKLIST_POLICY_ROOT,
+account_component_code!(
+    BASIC_BLOCKLIST_TRANSFER_POLICY_CODE,
+    "faucets/policies/transfer/basic_blocklist.masl"
+);
+
+procedure_root!(
+    BASIC_BLOCKLIST_TRANSFER_POLICY_ROOT,
     BasicBlocklist::NAME,
     BasicBlocklist::PROC_NAME,
-    basic_blocklist_transfer_policy_library
+    BasicBlocklist::code()
 );
 
 /// The basic blocklist transfer policy account component.
@@ -57,9 +66,14 @@ impl BasicBlocklist {
         &self.0
     }
 
-    /// Returns the MAST root of the basic blocklist transfer policy procedure.
+    /// Returns the [`AccountComponentCode`] of this component.
+    pub fn code() -> &'static AccountComponentCode {
+        &BASIC_BLOCKLIST_TRANSFER_POLICY_CODE
+    }
+
+    /// Returns the MAST root word of the basic blocklist transfer policy procedure.
     pub fn root() -> Word {
-        *BASIC_BLOCKLIST_POLICY_ROOT
+        (*BASIC_BLOCKLIST_TRANSFER_POLICY_ROOT).as_word()
     }
 }
 
@@ -85,7 +99,7 @@ impl From<BasicBlocklist> for AccountComponent {
         .with_storage_schema(storage_schema);
 
         AccountComponent::new(
-            basic_blocklist_transfer_policy_library(),
+            BasicBlocklist::code().clone(),
             vec![blocked_accounts_slot],
             metadata,
         )

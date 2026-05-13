@@ -1,18 +1,20 @@
 use miden_protocol::Word;
-use miden_protocol::account::component::AccountComponentMetadata;
+use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{AccountComponent, AccountType};
 
-use crate::account::components::allow_all_transfer_policy_library;
-use crate::procedure_digest;
+use crate::account::account_component_code;
+use crate::procedure_root;
 
 // ALLOW-ALL TRANSFER POLICY
 // ================================================================================================
 
-procedure_digest!(
-    ALLOW_ALL_POLICY_ROOT,
+account_component_code!(ALLOW_ALL_TRANSFER_POLICY_CODE, "faucets/policies/transfer/allow_all.masl");
+
+procedure_root!(
+    ALLOW_ALL_TRANSFER_POLICY_ROOT,
     TransferAllowAll::NAME,
     TransferAllowAll::PROC_NAME,
-    allow_all_transfer_policy_library
+    TransferAllowAll::code()
 );
 
 /// The storage-free `allow_all` transfer policy account component.
@@ -29,9 +31,14 @@ impl TransferAllowAll {
 
     pub(crate) const PROC_NAME: &str = "check_policy";
 
-    /// Returns the MAST root of the `allow_all` transfer policy procedure.
+    /// Returns the [`AccountComponentCode`] of this component.
+    pub fn code() -> &'static AccountComponentCode {
+        &ALLOW_ALL_TRANSFER_POLICY_CODE
+    }
+
+    /// Returns the procedure root word of the `allow_all` transfer policy procedure.
     pub fn root() -> Word {
-        *ALLOW_ALL_POLICY_ROOT
+        (*ALLOW_ALL_TRANSFER_POLICY_ROOT).as_word()
     }
 }
 
@@ -43,7 +50,7 @@ impl From<TransferAllowAll> for AccountComponent {
         )
         .with_description("`allow_all` transfer policy for callback-enabled faucets");
 
-        AccountComponent::new(allow_all_transfer_policy_library(), vec![], metadata).expect(
+        AccountComponent::new(TransferAllowAll::code().clone(), vec![], metadata).expect(
             "`allow_all` transfer policy component should satisfy the requirements of a valid account component",
         )
     }

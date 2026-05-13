@@ -34,7 +34,9 @@ use super::burn::BurnPolicyConfig;
 use super::mint::MintPolicyConfig;
 use super::transfer::TransferPolicy;
 use super::{PolicyAuthority, PolicyRegistration};
-use crate::account::components::policy_manager_library;
+use crate::account::account_component_code;
+
+account_component_code!(POLICY_MANAGER_CODE, "faucets/policies/policy_manager.masl");
 
 // STORAGE SLOT NAMES
 // ================================================================================================
@@ -566,7 +568,7 @@ impl TokenPolicyManager {
     fn to_manager_component(&self) -> AccountComponent {
         let storage_slots = self.manager_storage_slots();
         AccountComponent::new(
-            policy_manager_library(),
+            POLICY_MANAGER_CODE.clone(),
             storage_slots,
             Self::component_metadata(),
         )
