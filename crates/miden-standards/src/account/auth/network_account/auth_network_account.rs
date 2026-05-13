@@ -7,7 +7,12 @@ use miden_protocol::account::component::{
     StorageSchema,
     StorageSlotSchema,
 };
-use miden_protocol::account::{AccountComponent, AccountType, StorageSlotName};
+use miden_protocol::account::{
+    AccountComponent,
+    AccountComponentName,
+    AccountType,
+    StorageSlotName,
+};
 use miden_protocol::note::NoteScriptRoot;
 
 use super::{NetworkAccountNoteAllowlist, NetworkAccountNoteAllowlistError};
@@ -42,6 +47,11 @@ pub struct AuthNetworkAccount {
 impl AuthNetworkAccount {
     /// The name of the component.
     pub const NAME: &'static str = "miden::standards::auth::network_account";
+
+    /// Returns the canonical [`AccountComponentName`] of this component.
+    pub const fn name() -> AccountComponentName {
+        AccountComponentName::from_static_str(Self::NAME)
+    }
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {

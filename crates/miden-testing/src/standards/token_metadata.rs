@@ -554,7 +554,7 @@ fn verify_faucet_with_max_name_and_description(
 
     // Verify roundtrip via try_from
     let restored = FungibleFaucet::try_from(account.storage()).unwrap();
-    assert_eq!(restored.name().as_str(), max_name);
+    assert_eq!(restored.token_name().as_str(), max_name);
     assert_eq!(restored.description().map(|d| d.as_str()), Some(desc_text.as_str()));
     assert_eq!(restored.max_supply().as_canonical_u64(), u64::from(max_supply));
 }

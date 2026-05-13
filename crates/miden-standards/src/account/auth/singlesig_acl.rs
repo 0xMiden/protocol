@@ -12,6 +12,7 @@ use miden_protocol::account::component::{
 use miden_protocol::account::{
     AccountCode,
     AccountComponent,
+    AccountComponentName,
     AccountProcedureRoot,
     AccountType,
     StorageMap,
@@ -162,6 +163,11 @@ pub struct AuthSingleSigAcl {
 impl AuthSingleSigAcl {
     /// The name of the component.
     pub const NAME: &'static str = "miden::standards::components::auth::singlesig_acl";
+
+    /// Returns the canonical [`AccountComponentName`] of this component.
+    pub const fn name() -> AccountComponentName {
+        AccountComponentName::from_static_str(Self::NAME)
+    }
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
