@@ -2,9 +2,8 @@
 // ================================================================================================
 use alloc::vec::Vec;
 
-use miden_protocol::Word;
-use miden_protocol::account::AccountComponent;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, PublicKeyCommitment};
+use miden_protocol::account::{AccountComponent, AccountProcedureRoot};
 use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
 use miden_standards::account::auth::{
     AuthGuardedMultisig,
@@ -35,7 +34,7 @@ pub enum Auth {
     Multisig {
         threshold: u32,
         approvers: Vec<(PublicKeyCommitment, AuthScheme)>,
-        proc_threshold_map: Vec<(Word, u32)>,
+        proc_threshold_map: Vec<(AccountProcedureRoot, u32)>,
     },
 
     /// Guarded multisig.
@@ -43,14 +42,14 @@ pub enum Auth {
         threshold: u32,
         approvers: Vec<(PublicKeyCommitment, AuthScheme)>,
         guardian_config: GuardianConfig,
-        proc_threshold_map: Vec<(Word, u32)>,
+        proc_threshold_map: Vec<(AccountProcedureRoot, u32)>,
     },
 
     /// Creates a secret key for the account, and creates a [BasicAuthenticator] used to
     /// authenticate the account with [AuthSingleSigAcl]. Authentication will only be
     /// triggered if any of the procedures specified in the list are called during execution.
     Acl {
-        auth_trigger_procedures: Vec<Word>,
+        auth_trigger_procedures: Vec<AccountProcedureRoot>,
         allow_unauthorized_output_notes: bool,
         allow_unauthorized_input_notes: bool,
         auth_scheme: AuthScheme,

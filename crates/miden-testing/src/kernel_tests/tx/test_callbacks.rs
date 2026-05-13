@@ -11,6 +11,7 @@ use miden_protocol::account::{
     AccountComponent,
     AccountComponentCode,
     AccountId,
+    AccountProcedureRoot,
     AccountStorageMode,
     AccountType,
     StorageMap,
@@ -40,7 +41,7 @@ use miden_standards::account::policies::{
     TokenPolicyManager,
 };
 use miden_standards::code_builder::CodeBuilder;
-use miden_standards::procedure_digest;
+use miden_standards::procedure_root;
 use miden_standards::testing::account_component::MockFaucetComponent;
 
 use crate::{AccountState, Auth, MockChain, MockChainBuilder, assert_transaction_executor_error};
@@ -139,18 +140,18 @@ static BLOCK_LIST_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
         .expect("storage slot name should be valid")
 });
 
-procedure_digest!(
+procedure_root!(
     BLOCK_LIST_ON_BEFORE_ASSET_ADDED_TO_ACCOUNT,
     BlockList::NAME,
     BlockList::ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_PROC_NAME,
-    || { BLOCK_LIST_COMPONENT_CODE.as_library() }
+    &BLOCK_LIST_COMPONENT_CODE
 );
 
-procedure_digest!(
+procedure_root!(
     BLOCK_LIST_ON_BEFORE_ASSET_ADDED_TO_NOTE,
     BlockList::NAME,
     BlockList::ON_BEFORE_ASSET_ADDED_TO_NOTE_PROC_NAME,
-    || { BLOCK_LIST_COMPONENT_CODE.as_library() }
+    &BLOCK_LIST_COMPONENT_CODE
 );
 
 // BLOCK LIST
@@ -177,13 +178,13 @@ impl BlockList {
         Self { blocked_accounts }
     }
 
-    /// Returns the digest of the `on_before_asset_added_to_account` procedure.
-    pub fn on_before_asset_added_to_account_digest() -> Word {
+    /// Returns the procedure root of the `on_before_asset_added_to_account` procedure.
+    pub fn on_before_asset_added_to_account_root() -> AccountProcedureRoot {
         *BLOCK_LIST_ON_BEFORE_ASSET_ADDED_TO_ACCOUNT
     }
 
-    /// Returns the digest of the `on_before_asset_added_to_note` procedure.
-    pub fn on_before_asset_added_to_note_digest() -> Word {
+    /// Returns the procedure root of the `on_before_asset_added_to_note` procedure.
+    pub fn on_before_asset_added_to_note_root() -> AccountProcedureRoot {
         *BLOCK_LIST_ON_BEFORE_ASSET_ADDED_TO_NOTE
     }
 }
@@ -211,9 +212,11 @@ impl From<BlockList> for AccountComponent {
         storage_slots.extend(
             AssetCallbacks::new()
                 .on_before_asset_added_to_account(
-                    BlockList::on_before_asset_added_to_account_digest(),
+                    BlockList::on_before_asset_added_to_account_root().as_word(),
                 )
-                .on_before_asset_added_to_note(BlockList::on_before_asset_added_to_note_digest())
+                .on_before_asset_added_to_note(
+                    BlockList::on_before_asset_added_to_note_root().as_word(),
+                )
                 .into_storage_slots(),
         );
         let metadata = AccountComponentMetadata::new(

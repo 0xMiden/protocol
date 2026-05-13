@@ -3,30 +3,29 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use miden_processor::mast::MastNodeExt;
-use miden_protocol::Word;
+use miden_protocol::account::component::AccountComponentCode;
 use miden_protocol::account::{Account, AccountCode, AccountId, AccountProcedureRoot};
 use miden_protocol::assembly::mast::{MastForest, MastNode, MastNodeId};
 use miden_protocol::note::{Note, NoteScript};
 
 use crate::AuthMethod;
-use crate::account::components::{
-    StandardAccountComponent,
-    basic_wallet_library,
-    fungible_faucet_library,
-    guarded_multisig_library,
-    multisig_library,
-    network_account_auth_library,
-    no_auth_library,
-    ownable2step_library,
-    rbac_library,
-    singlesig_acl_library,
-    singlesig_library,
+use crate::account::access::{Ownable2Step, RoleBasedAccessControl};
+use crate::account::auth::{
+    AuthGuardedMultisig,
+    AuthMultisig,
+    AuthNetworkAccount,
+    AuthSingleSig,
+    AuthSingleSigAcl,
+    NoAuth,
 };
+use crate::account::components::StandardAccountComponent;
+use crate::account::faucets::FungibleFaucet;
 use crate::account::interface::{
     AccountComponentInterface,
     AccountInterface,
     NoteAccountCompatibility,
 };
+use crate::account::wallets::BasicWallet;
 use crate::note::StandardNote;
 
 // ACCOUNT INTERFACE EXTENSION TRAIT
@@ -45,8 +44,8 @@ pub trait AccountInterfaceExt {
     /// current [AccountInterface], and [NoteAccountCompatibility::No] otherwise.
     fn is_compatible_with(&self, note: &Note) -> NoteAccountCompatibility;
 
-    /// Returns the set of digests of all procedures from all account component interfaces.
-    fn get_procedure_digests(&self) -> BTreeSet<Word>;
+    /// Returns the set of procedure roots of all procedures from all account component interfaces.
+    fn get_procedure_roots(&self) -> BTreeSet<AccountProcedureRoot>;
 }
 
 impl AccountInterfaceExt for AccountInterface {
@@ -82,61 +81,38 @@ impl AccountInterfaceExt for AccountInterface {
                 NoteAccountCompatibility::No
             }
         } else {
-            verify_note_script_compatibility(note.script(), self.get_procedure_digests())
+            verify_note_script_compatibility(note.script(), self.get_procedure_roots())
         }
     }
 
-    fn get_procedure_digests(&self) -> BTreeSet<Word> {
-        let mut component_proc_digests = BTreeSet::new();
+    fn get_procedure_roots(&self) -> BTreeSet<AccountProcedureRoot> {
+        let mut procedure_roots = BTreeSet::new();
         for component in self.components.iter() {
-            match component {
-                AccountComponentInterface::BasicWallet => {
-                    component_proc_digests
-                        .extend(basic_wallet_library().mast_forest().procedure_digests());
-                },
-                AccountComponentInterface::FungibleFaucet => {
-                    component_proc_digests
-                        .extend(fungible_faucet_library().mast_forest().procedure_digests());
-                },
-                AccountComponentInterface::Ownable2Step => {
-                    component_proc_digests
-                        .extend(ownable2step_library().mast_forest().procedure_digests());
-                },
+            let code: Option<&'static AccountComponentCode> = match component {
+                AccountComponentInterface::BasicWallet => Some(BasicWallet::code()),
+                AccountComponentInterface::FungibleFaucet => Some(FungibleFaucet::code()),
+                AccountComponentInterface::Ownable2Step => Some(Ownable2Step::code()),
                 AccountComponentInterface::RoleBasedAccessControl => {
-                    component_proc_digests.extend(rbac_library().mast_forest().procedure_digests());
+                    Some(RoleBasedAccessControl::code())
                 },
-                AccountComponentInterface::AuthSingleSig => {
-                    component_proc_digests
-                        .extend(singlesig_library().mast_forest().procedure_digests());
-                },
-                AccountComponentInterface::AuthSingleSigAcl => {
-                    component_proc_digests
-                        .extend(singlesig_acl_library().mast_forest().procedure_digests());
-                },
-                AccountComponentInterface::AuthMultisig => {
-                    component_proc_digests
-                        .extend(multisig_library().mast_forest().procedure_digests());
-                },
-                AccountComponentInterface::AuthGuardedMultisig => {
-                    component_proc_digests
-                        .extend(guarded_multisig_library().mast_forest().procedure_digests());
-                },
-                AccountComponentInterface::AuthNoAuth => {
-                    component_proc_digests
-                        .extend(no_auth_library().mast_forest().procedure_digests());
-                },
-                AccountComponentInterface::AuthNetworkAccount => {
-                    component_proc_digests
-                        .extend(network_account_auth_library().mast_forest().procedure_digests());
-                },
+                AccountComponentInterface::AuthSingleSig => Some(AuthSingleSig::code()),
+                AccountComponentInterface::AuthSingleSigAcl => Some(AuthSingleSigAcl::code()),
+                AccountComponentInterface::AuthMultisig => Some(AuthMultisig::code()),
+                AccountComponentInterface::AuthGuardedMultisig => Some(AuthGuardedMultisig::code()),
+                AccountComponentInterface::AuthNoAuth => Some(NoAuth::code()),
+                AccountComponentInterface::AuthNetworkAccount => Some(AuthNetworkAccount::code()),
                 AccountComponentInterface::Custom(custom_procs) => {
-                    component_proc_digests
-                        .extend(custom_procs.iter().map(|info| *info.mast_root()));
+                    procedure_roots.extend(custom_procs.iter().copied());
+                    None
                 },
+            };
+
+            if let Some(code) = code {
+                procedure_roots.extend(code.procedure_roots());
             }
         }
 
-        component_proc_digests
+        procedure_roots
     }
 }
 
@@ -187,7 +163,7 @@ impl AccountComponentInterfaceExt for AccountComponentInterface {
 /// from note scripts, while kernel procedures are `sycall`ed.
 fn verify_note_script_compatibility(
     note_script: &NoteScript,
-    account_procedures: BTreeSet<Word>,
+    account_procedures: BTreeSet<AccountProcedureRoot>,
 ) -> NoteAccountCompatibility {
     // collect call branches of the note script
     let branches = collect_call_branches(note_script);
@@ -202,7 +178,7 @@ fn verify_note_script_compatibility(
 
 /// Collect call branches by recursively traversing through program execution branches and
 /// accumulating call targets.
-fn collect_call_branches(note_script: &NoteScript) -> Vec<BTreeSet<Word>> {
+fn collect_call_branches(note_script: &NoteScript) -> Vec<BTreeSet<AccountProcedureRoot>> {
     let mut branches = vec![BTreeSet::new()];
 
     let entry_node = note_script.entrypoint();
@@ -213,7 +189,7 @@ fn collect_call_branches(note_script: &NoteScript) -> Vec<BTreeSet<Word>> {
 /// Generates a list of calls invoked in each execution branch of the provided code block.
 fn recursively_collect_call_branches(
     mast_node_id: MastNodeId,
-    branches: &mut Vec<BTreeSet<Word>>,
+    branches: &mut Vec<BTreeSet<AccountProcedureRoot>>,
     note_script_forest: &Arc<MastForest>,
 ) {
     let mast_node = &note_script_forest[mast_node_id];
@@ -249,7 +225,7 @@ fn recursively_collect_call_branches(
             branches
                 .last_mut()
                 .expect("at least one execution branch")
-                .insert(callee_digest);
+                .insert(AccountProcedureRoot::from_raw(callee_digest));
         },
         MastNode::Dyn(_) => {},
         MastNode::External(_) => {},
