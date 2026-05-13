@@ -159,7 +159,7 @@ impl From<Ownable2Step> for AccountComponent {
         let storage_slot = ownership.to_storage_slot();
         let metadata = Ownable2Step::component_metadata();
 
-        AccountComponent::new(OWNABLE2STEP_CODE.clone(), vec![storage_slot], metadata).expect(
+        AccountComponent::new(Ownable2Step::code().clone(), vec![storage_slot], metadata).expect(
             "Ownable2Step component should satisfy the requirements of a valid account component",
         )
     }
