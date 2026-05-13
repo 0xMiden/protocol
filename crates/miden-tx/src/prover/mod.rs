@@ -1,4 +1,3 @@
-use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use miden_protocol::account::delta::AccountUpdateDetails;
@@ -30,8 +29,11 @@ pub use mast_store::TransactionMastStore;
 // ------------------------------------------------------------------------------------------------
 
 /// Local Transaction prover is a stateless component which is responsible for proving transactions.
+///
+/// Each `prove()` call creates a fresh [`TransactionMastStore`] loaded with only the current
+/// transaction's account code, ensuring no state accumulates across calls. This is important
+/// in WASM environments where accumulated MAST forests fragment the linear memory.
 pub struct LocalTransactionProver {
-    mast_store: Arc<TransactionMastStore>,
     proof_options: ProvingOptions,
 }
 
@@ -39,7 +41,6 @@ impl LocalTransactionProver {
     /// Creates a new [LocalTransactionProver] instance.
     pub fn new(proof_options: ProvingOptions) -> Self {
         Self {
-            mast_store: Arc::new(TransactionMastStore::new()),
             proof_options,
         }
     }
@@ -176,7 +177,6 @@ impl LocalTransactionProver {
 impl Default for LocalTransactionProver {
     fn default() -> Self {
         Self {
-            mast_store: Arc::new(TransactionMastStore::new()),
             proof_options: Default::default(),
         }
     }

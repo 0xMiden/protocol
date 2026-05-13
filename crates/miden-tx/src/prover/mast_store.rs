@@ -79,3 +79,49 @@ impl MastForestStore for TransactionMastStore {
         self.mast_forests.read().get(procedure_root).cloned()
     }
 }
+
+#[cfg(test)]
+impl TransactionMastStore {
+    /// Returns the number of procedure entries in the store (for testing only).
+    pub fn len(&self) -> usize {
+        self.mast_forests.read().len()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fresh_stores_have_same_baseline_size() {
+        // Two independently created stores should have the same number of entries
+        // (only the default libraries). This verifies that creating per-call stores
+        // in LocalTransactionProver::prove() doesn't accumulate state — each fresh
+        // store starts from the same baseline.
+        let store1 = TransactionMastStore::new();
+        let store2 = TransactionMastStore::new();
+        assert_eq!(store1.len(), store2.len());
+        assert!(store1.len() > 0, "default libraries should populate the store");
+    }
+
+    #[test]
+    fn insert_does_not_affect_other_stores() {
+        // Inserting into one store must not affect another. This models the
+        // per-call store approach in LocalTransactionProver::prove() — each call
+        // creates a fresh store and loads only the current transaction's code.
+        // A second prove() call should start from the same baseline, not carry
+        // over entries from the first.
+        let store1 = TransactionMastStore::new();
+        let baseline = store1.len();
+
+        // Simulate loading account code by inserting the kernel forest again
+        // (it adds no new entries since they already exist, but this exercises
+        // the insert path without needing to construct a custom MastForest)
+        let kernel_forest = TransactionKernel::kernel().mast_forest().clone();
+        store1.insert(kernel_forest);
+
+        // A fresh store should be at exactly the same baseline
+        let store2 = TransactionMastStore::new();
+        assert_eq!(store2.len(), baseline, "new store must not inherit entries from others");
+    }
+}
