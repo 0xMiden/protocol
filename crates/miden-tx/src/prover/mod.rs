@@ -111,13 +111,16 @@ impl LocalTransactionProver {
         let tx_inputs = tx_inputs.into();
         let (stack_inputs, advice_inputs) = TransactionKernel::prepare_inputs(&tx_inputs);
 
-        // Clear account-specific MAST forests from prior prove calls to prevent
-        // monotonic memory growth. In WASM, accumulated forests fragment the
-        // linear memory and cause capacity_overflow panics on subsequent proves.
-        self.mast_store.clear_account_code();
-        self.mast_store.load_account_code(tx_inputs.account().code());
+        // Create a per-call MAST store to avoid accumulating forests across prove
+        // calls. Using the shared self.mast_store would grow monotonically (each
+        // call adds account code that is never removed), fragmenting WASM linear
+        // memory and eventually causing capacity_overflow panics. A per-call store
+        // also avoids races: prove() takes &self, so concurrent calls would
+        // conflict on a shared mutable store.
+        let mast_store = TransactionMastStore::new();
+        mast_store.load_account_code(tx_inputs.account().code());
         for account_code in tx_inputs.foreign_account_code() {
-            self.mast_store.load_account_code(account_code);
+            mast_store.load_account_code(account_code);
         }
 
         let script_mast_store = ScriptMastForestStore::new(
@@ -133,7 +136,7 @@ impl LocalTransactionProver {
         let mut host = TransactionProverHost::new(
             &partial_account,
             input_notes,
-            self.mast_store.as_ref(),
+            &mast_store,
             script_mast_store,
             account_procedure_index_map,
         );
