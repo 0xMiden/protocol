@@ -3,6 +3,7 @@ use miden_assembly::library::ProcedureExport;
 use miden_processor::mast::{MastForest, MastNodeExt};
 
 use crate::account::AccountProcedureRoot;
+use crate::assembly::Path;
 use crate::vm::AdviceMap;
 
 // ACCOUNT COMPONENT CODE
@@ -42,6 +43,15 @@ impl AccountComponentCode {
     /// Returns the procedure exports of this component.
     pub fn exports(&self) -> impl Iterator<Item = &ProcedureExport> + '_ {
         self.0.exports().filter_map(|export| export.as_procedure())
+    }
+
+    /// Returns the [`AccountProcedureRoot`] of the procedure with the specified path, or `None`
+    /// if it was not found in this component's library.
+    pub fn get_procedure_root_by_path(
+        &self,
+        proc_name: impl AsRef<Path>,
+    ) -> Option<AccountProcedureRoot> {
+        self.0.get_procedure_root_by_path(proc_name).map(AccountProcedureRoot::from_raw)
     }
 
     /// Returns a new [AccountComponentCode] with the provided advice map entries merged into the
@@ -84,6 +94,7 @@ impl From<AccountComponentCode> for Library {
 
 #[cfg(test)]
 mod tests {
+    use alloc::string::ToString;
     use alloc::sync::Arc;
 
     use miden_core::{Felt, Word};
@@ -120,5 +131,36 @@ mod tests {
         let mast = component_code.mast_forest();
         let stored = mast.advice_map().get(&key).expect("entry should be present");
         assert_eq!(stored.as_ref(), value.as_slice());
+    }
+
+    #[test]
+    fn test_get_procedure_root_by_path() {
+        let assembler = Assembler::default();
+        let library = Arc::unwrap_or_clone(
+            assembler
+                .assemble_library(["pub proc test_proc nop end"])
+                .expect("failed to assemble library"),
+        );
+        let component_code = AccountComponentCode::from(library);
+
+        // The test library exports exactly one procedure.
+        assert_eq!(component_code.procedure_roots().count(), 1);
+        let expected = component_code.procedure_roots().next().expect("one procedure exported");
+
+        let library_namespace = component_code
+            .as_library()
+            .module_infos()
+            .next()
+            .expect("library should have one module")
+            .path()
+            .to_string();
+        let proc_path = alloc::format!("{library_namespace}::test_proc");
+
+        let root = component_code
+            .get_procedure_root_by_path(proc_path.as_str())
+            .expect("test_proc should be present");
+        assert_eq!(root, expected);
+
+        assert!(component_code.get_procedure_root_by_path("bogus::missing").is_none());
     }
 }
