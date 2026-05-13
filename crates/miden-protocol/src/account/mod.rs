@@ -39,6 +39,9 @@ pub use code::procedure::AccountProcedureRoot;
 pub mod component;
 pub use component::{AccountComponent, AccountComponentCode, AccountComponentMetadata};
 
+pub mod interface;
+pub use interface::AccountComponentName;
+
 pub mod delta;
 pub use delta::{
     AccountDelta,

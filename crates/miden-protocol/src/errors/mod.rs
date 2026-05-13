@@ -259,6 +259,31 @@ pub enum StorageSlotNameError {
     TooLong,
 }
 
+// ACCOUNT COMPONENT NAME ERROR
+// ================================================================================================
+
+#[derive(Debug, Error)]
+pub enum AccountComponentNameError {
+    #[error(
+        "component name must only contain characters a..z, A..Z, 0..9, double colon or underscore"
+    )]
+    InvalidCharacter,
+    #[error("component names must be separated by double colons")]
+    UnexpectedColon,
+    #[error("component name components must not start with an underscore")]
+    UnexpectedUnderscore,
+    #[error(
+        "component names must contain at least {} components separated by double colons",
+        StorageSlotName::MIN_NUM_COMPONENTS
+    )]
+    TooShort,
+    #[error(
+        "component names must contain at most {} characters",
+        StorageSlotName::MAX_LENGTH
+    )]
+    TooLong,
+}
+
 // ACCOUNT TREE ERROR
 // ================================================================================================
 
