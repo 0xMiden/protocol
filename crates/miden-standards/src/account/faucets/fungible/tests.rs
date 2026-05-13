@@ -43,8 +43,7 @@ fn faucet_contract_creation() {
         init_seed,
         faucet,
         storage_mode,
-        auth_method,
-        AccessControl::AuthControlled,
+        AccessControl::AuthControlled { auth: Some(auth_method) },
         TokenPolicyManager::new(MintPolicyConfig::AllowAll, BurnPolicyConfig::AllowAll),
     )
     .unwrap();

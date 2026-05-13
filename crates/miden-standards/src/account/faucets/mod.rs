@@ -59,6 +59,10 @@ pub enum FungibleFaucetError {
     MissingFungibleFaucetInterface,
     #[error("unsupported authentication method: {0}")]
     UnsupportedAuthMethod(String),
+    #[error(
+        "AccessControl::AuthControlled requires an explicit AuthMethod for fungible faucet creation"
+    )]
+    AuthMethodRequired,
     #[error("account creation failed")]
     AccountError(#[source] AccountError),
     #[error("account is not a fungible faucet account")]

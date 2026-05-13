@@ -134,9 +134,10 @@ impl TryFrom<Word> for Authority {
     type Error = AuthorityError;
 
     fn try_from(word: Word) -> Result<Self, Self::Error> {
-        let authority: u8 = word[0].as_canonical_u64().try_into().map_err(|_| {
-            AuthorityError::InvalidAuthority(word[0].as_canonical_u64())
-        })?;
+        let authority: u8 = word[0]
+            .as_canonical_u64()
+            .try_into()
+            .map_err(|_| AuthorityError::InvalidAuthority(word[0].as_canonical_u64()))?;
         match authority {
             AUTH_CONTROLLED => Ok(Self::AuthControlled),
             OWNER_CONTROLLED => Ok(Self::OwnerControlled),

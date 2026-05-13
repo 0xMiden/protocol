@@ -400,7 +400,7 @@ impl MockChainBuilder {
             auth_method,
             faucet,
             AccountStorageMode::Public,
-            AccessControl::AuthControlled,
+            AccessControl::AuthControlled { auth: None },
             token_policy_manager,
         )
     }
@@ -488,7 +488,7 @@ impl MockChainBuilder {
             auth_method,
             faucet,
             AccountStorageMode::Public,
-            AccessControl::AuthControlled,
+            AccessControl::AuthControlled { auth: None },
             token_policy_manager,
         )
     }

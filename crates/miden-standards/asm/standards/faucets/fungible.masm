@@ -14,7 +14,7 @@ use miden::protocol::native_account
 use miden::protocol::output_note
 use miden::protocol::asset
 use miden::protocol::asset::FUNGIBLE_ASSET_MAX_AMOUNT
-use miden::standards::access::ownable2step
+use miden::standards::access::authority
 use miden::standards::faucets::policies::policy_manager
 use miden::standards::faucets::MUTABILITY_CONFIG_SLOT
 
@@ -160,14 +160,14 @@ end
 # =================================================================================================
 
 #! Updates the max supply if the max supply mutability flag is 1
-#! and the note sender is the owner.
+#! and the caller satisfies the account-wide authority configuration.
 #!
 #! Inputs:  [new_max_supply, pad(15)]
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
 #! - the max supply mutability flag is not 1.
-#! - the note sender is not the owner.
+#! - the caller is not authorized per the installed [`Authority`].
 #! - the new max supply is less than the current token supply.
 #!
 #! Invocation: call
@@ -177,8 +177,8 @@ pub proc set_max_supply
     # => [is_max_supply_mutable, new_max_supply, pad(15)]
     assert.err=ERR_MAX_SUPPLY_NOT_MUTABLE
 
-    # 2. Verify note sender is the owner
-    exec.ownable2step::assert_sender_is_owner
+    # 2. Verify the caller satisfies the account-wide authority configuration
+    exec.authority::assert_authorized
     # => [new_max_supply, pad(15)]
 
     # 3. Read current token config word
