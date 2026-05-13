@@ -11,9 +11,9 @@ Every public MASM procedure should have a doc comment block using `#!` prefix wi
 
 1. **Description** - What the procedure does
 2. **Inputs/Outputs** - Stack state before/after
-3. **Where** - Explanation of each stack item
+3. **Where** - Explanation of each stack item (omit when the Description already names every item)
 4. **Panics if** - Error conditions (when applicable)
-5. **Invocation** - How the procedure is called (`exec` or `call`)
+5. **Invocation** - How the procedure is called (`exec`, `call`, `syscall`, or `dyncall`)
 
 ## Required Format
 
@@ -79,9 +79,9 @@ Use empty brackets for no inputs or outputs:
 #! Outputs: [foreign_procedure_outputs(16)]
 ```
 
-### Padding (for `call` procedures only)
+### Padding (for `call` and `dyncall` procedures)
 
-Include explicit padding for `call` procedures (see masm-padding skill):
+Procedures entered at the stack-depth-16 floor (`call` and `dyncall`) must show explicit padding so Inputs and Outputs each sum to 16 elements (see masm-padding skill):
 
 ```masm
 #! Inputs:  [ASSET, pad(12)]
@@ -107,6 +107,24 @@ Define every item from Inputs and Outputs:
 - Start descriptions lowercase (continues the sentence)
 - End each line with a period
 - Group related items (e.g., all inputs, then all outputs)
+
+### When `Where:` may be omitted
+
+Omit the `Where:` section entirely when the Description already names every Inputs/Outputs item and adding bullets would just repeat that information. Common case: trivial accessor procedures.
+
+```masm
+#! Returns the maximum supply.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [max_supply, pad(15)]
+#!
+#! Invocation: call
+pub proc get_max_supply
+```
+
+No `Where:` is needed: the single named output `max_supply` is already identified by the Description. If you would otherwise write `#! - max_supply is the maximum supply.`, skip it.
+
+Add `Where:` whenever any item needs description beyond what the Description line conveys — different name, additional constraint, composition (`ASSET = [faucet_id_prefix, faucet_id_suffix, 0, amount]`), or anything non-obvious.
 
 ## Panics Section
 
@@ -177,28 +195,40 @@ Omit the "Panics if:" section entirely if the procedure cannot panic.
 
 ## Invocation Types
 
-Always specify how the procedure should be invoked:
+Always specify how the procedure should be invoked. The value matches the MASM instruction that callers use to enter the procedure:
+
+| Value | Used by callers as | When to use |
+|---|---|---|
+| `exec` | `exec.<proc>` | Standard inline call. Shares the caller's stack; no padding requirement. |
+| `call` | `call.<proc>` | Cross-context call (e.g. into another account). Enters at stack depth 16 — Inputs/Outputs must show `pad(N)` to total 16 (see masm-padding). |
+| `syscall` | `syscall.<proc>` | Kernel procedure invoked from user code. Canonical for procs under `crates/miden-protocol/asm/kernels/`. |
+| `dyncall` | `dyncall` from a script | Entry point of a note script or transaction script. Stack-depth-16 floor applies on entry. |
 
 ```masm
 #! Invocation: exec
 ```
 
-or
-
 ```masm
 #! Invocation: call
 ```
 
-For existing procedures, a good rule of thumb is to use `call` when other procedures invoke this procedure via `call.<procedure_name>`, and `exec` if the procedure is invoked via `exec.<procedure_name>`.
-There is also `dyncall` or `syscall` but they are not commonly used and should be handled by the programmer.
+```masm
+#! Invocation: syscall
+```
+
+```masm
+#! Invocation: dyncall
+```
+
+For existing procedures, pick the value that matches how callers invoke them: `call` when invoked via `call.<procedure_name>`, `exec` for `exec.<procedure_name>`, `syscall` for kernel procs invoked via `syscall.<procedure_name>`, `dyncall` for note-script and transaction-script entry points.
 
 ## Validation Checklist
 
 - [ ] Description starts with a capitalized present-tense verb and the first sentence ends with a period. Canonical verbs observed in protocol source: `Returns`, `Gets`, `Computes`, `Burns`, `Creates`, `Increments`, `Copies`, `Asserts`, `Verifies`, `Hashes`, `Adds`, `Removes`.
 - [ ] Inputs and Outputs use correct stack notation
-- [ ] All stack items defined in Where section
+- [ ] Where section defines every stack item that needs description beyond the Description line, and is omitted entirely when the Description alone covers every item
 - [ ] Words are UPPERCASE, felts are lowercase
 - [ ] Panics section lists direct asserts and propagated errors
 - [ ] Complex panic propagation uses "if <procedure> fails to verify" shorthand
-- [ ] Invocation type specified (exec or call)
-- [ ] For `call`: padding shown in Inputs/Outputs (see masm-padding skill)
+- [ ] Invocation type specified: `exec`, `call`, `syscall`, or `dyncall`
+- [ ] For `call` and `dyncall`: padding shown in Inputs/Outputs (see masm-padding skill)
