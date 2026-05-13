@@ -11,6 +11,19 @@
 
 set -uo pipefail
 
+# Claude Code wires this hook under `if: Bash(*git push*)` in settings.json,
+# but that matcher does not reliably filter — observed in practice firing on
+# unrelated Bash calls (grep surveys, ls, etc.) and spawning two reviewer
+# agents per call. Re-check the command from the hook's stdin (PreToolUse
+# JSON contract) and exit 0 unless this is actually a `git push`.
+if [ ! -t 0 ]; then
+  INPUT=$(cat)
+  COMMAND=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null || true)
+  if [ -n "$COMMAND" ] && ! printf '%s' "$COMMAND" | grep -qE '(^|[[:space:]])git[[:space:]]+push([[:space:]]|$)'; then
+    exit 0
+  fi
+fi
+
 REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || true)
 if [ -z "$REPO_ROOT" ]; then
   echo "Pre-push: not inside a git worktree, skipping." >&2
@@ -76,6 +89,10 @@ count_blocking_findings() {
       }
       next
     }
+    # Skip absence markers like "- None." or "- N/A" that reviewers use to
+    # explicitly indicate no findings in a section; otherwise we count them
+    # as findings and block the push spuriously.
+    in_block && /^[[:space:]]*[-*][[:space:]]+(None|N\/A|n\/a)\.?[[:space:]]*$/ { next }
     in_block && /^[[:space:]]*[-*][[:space:]]+./ { count++ }
     END { print count }
   ' "$1"
