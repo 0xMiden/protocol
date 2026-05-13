@@ -40,7 +40,11 @@ fn faucet_contract_creation() {
 
     let token_name = TokenName::new(token_name_string).unwrap();
     let description = Description::new(description_string).unwrap();
-    let faucet = FungibleFaucet::builder(token_name, token_symbol.clone(), decimals, max_supply)
+    let faucet = FungibleFaucet::builder()
+        .name(token_name)
+        .symbol(token_symbol.clone())
+        .decimals(decimals)
+        .max_supply(max_supply)
         .description(description)
         .build()
         .unwrap();
@@ -122,14 +126,13 @@ fn faucet_create_from_account() {
 
     // valid account
     let token_symbol = TokenSymbol::new("POL").expect("invalid token symbol");
-    let faucet = FungibleFaucet::builder(
-        TokenName::new("POL").unwrap(),
-        token_symbol,
-        10,
-        AssetAmount::new(100).unwrap(),
-    )
-    .build()
-    .expect("failed to create faucet");
+    let faucet = FungibleFaucet::builder()
+        .name(TokenName::new("POL").unwrap())
+        .symbol(token_symbol)
+        .decimals(10)
+        .max_supply(AssetAmount::new(100).unwrap())
+        .build()
+        .expect("failed to create faucet");
 
     let faucet_account = AccountBuilder::new(mock_seed)
         .account_type(AccountType::FungibleFaucet)
