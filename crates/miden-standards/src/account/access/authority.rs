@@ -27,6 +27,13 @@ static AUTHORITY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
         .expect("storage slot name should be valid")
 });
 
+/// Authority value written to the storage slot for [`Authority::AuthControlled`].
+const AUTH_CONTROLLED: u8 = 0;
+/// Authority value written to the storage slot for [`Authority::OwnerControlled`].
+const OWNER_CONTROLLED: u8 = 1;
+/// Authority value written to the storage slot for [`Authority::RbacControlled`].
+const RBAC_CONTROLLED: u8 = 2;
+
 // AUTHORITY
 // ================================================================================================
 
@@ -39,15 +46,16 @@ static AUTHORITY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// account thus selects the gating mode for *all* such procedures in one place.
 ///
 /// Storage layout: `[authority, role_symbol_or_zero, 0, 0]` — single Word.
+#[repr(u8)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Authority {
     /// Authority is the account's auth component; no extra check is performed by
     /// `authority::assert_authorized`.
-    AuthControlled,
+    AuthControlled = AUTH_CONTROLLED,
     /// Authority is the [`Ownable2Step`][crate::account::access::Ownable2Step] owner; the call
     /// must be sent by the registered owner.
-    OwnerControlled,
+    OwnerControlled = OWNER_CONTROLLED,
     /// Authority is membership in a specific RBAC role. The call must be sent by an account that
     /// holds `role` in the
     /// [`RoleBasedAccessControl`][crate::account::access::RoleBasedAccessControl] component.
@@ -55,19 +63,12 @@ pub enum Authority {
     /// Requires the [`RoleBasedAccessControl`][crate::account::access::RoleBasedAccessControl]
     /// component to be installed on the account; the MASM helper calls into
     /// `rbac::assert_sender_has_role` and will fail to link otherwise.
-    RbacControlled { role: RoleSymbol },
+    RbacControlled { role: RoleSymbol } = RBAC_CONTROLLED,
 }
 
 impl Authority {
     /// The name of the component.
     pub const NAME: &'static str = "miden::standards::components::access::authority";
-
-    /// Authority value written to the storage slot for [`Authority::AuthControlled`].
-    const AUTH_CONTROLLED: u8 = 0;
-    /// Authority value written to the storage slot for [`Authority::OwnerControlled`].
-    const OWNER_CONTROLLED: u8 = 1;
-    /// Authority value written to the storage slot for [`Authority::RbacControlled`].
-    const RBAC_CONTROLLED: u8 = 2;
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
@@ -116,24 +117,15 @@ impl Authority {
 impl From<Authority> for Word {
     fn from(value: Authority) -> Self {
         match value {
-            Authority::AuthControlled => Word::new([
-                Felt::from(Authority::AUTH_CONTROLLED),
-                Felt::ZERO,
-                Felt::ZERO,
-                Felt::ZERO,
-            ]),
-            Authority::OwnerControlled => Word::new([
-                Felt::from(Authority::OWNER_CONTROLLED),
-                Felt::ZERO,
-                Felt::ZERO,
-                Felt::ZERO,
-            ]),
-            Authority::RbacControlled { role } => Word::new([
-                Felt::from(Authority::RBAC_CONTROLLED),
-                role.into(),
-                Felt::ZERO,
-                Felt::ZERO,
-            ]),
+            Authority::AuthControlled => {
+                Word::new([Felt::from(AUTH_CONTROLLED), Felt::ZERO, Felt::ZERO, Felt::ZERO])
+            },
+            Authority::OwnerControlled => {
+                Word::new([Felt::from(OWNER_CONTROLLED), Felt::ZERO, Felt::ZERO, Felt::ZERO])
+            },
+            Authority::RbacControlled { role } => {
+                Word::new([Felt::from(RBAC_CONTROLLED), role.into(), Felt::ZERO, Felt::ZERO])
+            },
         }
     }
 }
@@ -142,16 +134,18 @@ impl TryFrom<Word> for Authority {
     type Error = AuthorityError;
 
     fn try_from(word: Word) -> Result<Self, Self::Error> {
-        let authority = word[0].as_canonical_u64();
+        let authority: u8 = word[0].as_canonical_u64().try_into().map_err(|_| {
+            AuthorityError::InvalidAuthority(word[0].as_canonical_u64())
+        })?;
         match authority {
-            v if v == Authority::AUTH_CONTROLLED as u64 => Ok(Self::AuthControlled),
-            v if v == Authority::OWNER_CONTROLLED as u64 => Ok(Self::OwnerControlled),
-            v if v == Authority::RBAC_CONTROLLED as u64 => {
+            AUTH_CONTROLLED => Ok(Self::AuthControlled),
+            OWNER_CONTROLLED => Ok(Self::OwnerControlled),
+            RBAC_CONTROLLED => {
                 let role =
                     RoleSymbol::try_from(word[1]).map_err(AuthorityError::InvalidRoleSymbol)?;
                 Ok(Self::RbacControlled { role })
             },
-            v => Err(AuthorityError::InvalidAuthority(v)),
+            other => Err(AuthorityError::InvalidAuthority(other.into())),
         }
     }
 }

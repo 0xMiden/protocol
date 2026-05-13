@@ -22,8 +22,7 @@ pub enum AccountComponentInterface {
     /// [`FungibleFaucet`][crate::account::faucets::FungibleFaucet] module.
     FungibleFaucet,
     /// Exposes procedures from the
-    /// [`Authority`][crate::account::access::Authority] access component (account-wide
-    /// authority discriminator consulted by `set_*` procedures).
+    /// [`Authority`][crate::account::access::Authority] access component.
     Authority,
     /// Exposes procedures from the
     /// [`Ownable2Step`][crate::account::access::Ownable2Step] access component.

@@ -25,23 +25,6 @@ const ERR_UNSUPPORTED_AUTHORITY = "authority is not supported"
 # PUBLIC PROCEDURES
 # =================================================================================================
 
-#! Returns the authority value stored on the account.
-#!
-#! Inputs:  []
-#! Outputs: [authority]
-#!
-#! Where:
-#! - authority is a single Felt: 0 = AuthControlled, 1 = OwnerControlled, 2 = RbacControlled.
-#!
-#! Invocation: exec
-pub proc get_authority
-    push.AUTHORITY_SLOT[0..2] exec.active_account::get_item
-    # => [authority, role_symbol, 0, 0]
-
-    movdn.3 drop drop drop
-    # => [authority]
-end
-
 #! Asserts the caller is authorized to invoke an authority-gated procedure.
 #!
 #! - AuthControlled (0)  → no-op (the account's auth component already gated the call).
@@ -61,6 +44,8 @@ end
 #!
 #! Invocation: exec
 pub proc assert_authorized
+    # Note: invariant — role_symbol felt is 0 unless authority == RBAC_CONTROLLED.
+    # Enforced by `From<Authority> for Word` in Rust.
     push.AUTHORITY_SLOT[0..2] exec.active_account::get_item
     # => [authority, role_symbol, 0, 0]
 

@@ -1,7 +1,31 @@
-# The MASM code of the Authority Account Component.
+# Authority Account Component.
 #
-# See the `Authority` Rust type's documentation for more details. This component owns the single
-# authority discriminator slot consulted by procedures that gate state-mutating operations.
+# Owns the single authority storage slot consulted by procedures that gate
+# state-mutating operations. The actual authorization check (`assert_authorized`) lives at
+# `miden::standards::access::authority` and is `exec`'d inline by gating procedures within
+# the active account's context. This component exposes `get_authority` as a call-padded
+# accessor so other accounts can read this account's authority.
 
-pub use ::miden::standards::access::authority::get_authority
-pub use ::miden::standards::access::authority::assert_authorized
+use miden::protocol::active_account
+
+const AUTHORITY_SLOT = word("miden::standards::access::authority::authority")
+
+#! Returns the authority discriminator stored on the account.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [authority, pad(15)]
+#!
+#! Where:
+#! - authority is a single Felt: 0 = AuthControlled, 1 = OwnerControlled, 2 = RbacControlled.
+#!
+#! Invocation: call
+pub proc get_authority
+    push.AUTHORITY_SLOT[0..2] exec.active_account::get_item
+    # => [authority, role_symbol, 0, 0, pad(16)]
+
+    movdn.3 drop drop drop
+    # => [authority, pad(16)]
+
+    swap drop
+    # => [authority, pad(15)]
+end
