@@ -72,12 +72,12 @@ An inline `# => [...]` tracker uses the same item names, capitalization, and `(N
 - Word names stay UPPERCASE: `ASSET`, `RECIPIENT`.
 - `(N)` spans stay lowercase: `pad(12)`, `foreign_procedure_inputs(15)`.
 
-Composite names like `account_id_{prefix,suffix}` are a doc-block shorthand for a group of felts. In inline trackers they decompose into their individual felts since each felt occupies one stack slot:
+Composite names like `account_id_{suffix,prefix}` are a doc-block shorthand for a group of felts. In inline trackers they decompose into their individual felts since each felt occupies one stack slot:
 
 ```masm
-#! Inputs:  [account_id_{prefix,suffix}, amount]
+#! Inputs:  [account_id_{suffix,prefix}, amount]
 pub proc transfer
-    # => [account_id_prefix, account_id_suffix, amount]
+    # => [account_id_suffix, account_id_prefix, amount]
     ...
 end
 ```

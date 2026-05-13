@@ -112,7 +112,7 @@ const ERR_BRIDGE_NOT_MAINNET = "bridge not mainnet"
 const ERR_UNAUTHORIZED = "unauthorized"
 const ERR_NOTE_NOT_FOUND = "note not found"
 
-# PROCEDURES
+# PUBLIC INTERFACE
 # =================================================================================================
 
 pub proc validate_note
