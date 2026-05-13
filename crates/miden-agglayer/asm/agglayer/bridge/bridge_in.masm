@@ -62,14 +62,20 @@ const CGI_CHAIN_HASH_HI_SLOT_NAME = word("agglayer::bridge::cgi_chain_hash_hi")
 const CLAIM_PROOF_DATA_WORD_LEN = 134
 const CLAIM_LEAF_DATA_WORD_LEN = 8
 
-# MINT note storage layout (public mode, 22 felts total):
+# MINT note storage layout (public mode, 22 felts total). The full 22-felt window is
+# hashed into the MINT note's storage commitment, so any non-zero drift at [17..19] would
+# change RECIPIENT and break consumption. The padding cells at [17..19] are NOT explicitly
+# written by `write_mint_note_storage`; they rely on the VM's zero-initialised memory at
+# addresses MINT_NOTE_STORAGE_MEM_ADDR_0 + 17..19, and on no other code path writing to
+# that range. If the MINT_NOTE_STORAGE_* base or surrounding writes are ever changed,
+# either preserve that invariant or `push.0 mem_store` explicitly at those offsets.
 # - P2ID_SCRIPT_ROOT  [0..3]   : 4 felts
 # - SERIAL_NUM        [4..7]   : 4 felts
 # - ASSET_KEY         [8..11]  : 4 felts (vault key of the fungible asset to mint)
 # - ASSET_VALUE       [12..15] : 4 felts (value word of the asset; [amount, 0, 0, 0])
 # - tag               [16]     : 1 felt
-# - 0                 [17]     : 1 felt (padding)
-# - 0                 [18]     : 1 felt (padding)
+# - 0                 [17]     : 1 felt (padding; relies on VM zero-init, see note above)
+# - 0                 [18]     : 1 felt (padding; relies on VM zero-init, see note above)
 # - 0                 [19]     : 1 felt (padding so the P2ID storage below is word-aligned)
 # - account_id_suffix [20]     : 1 felt
 # - account_id_prefix [21]     : 1 felt
@@ -171,7 +177,7 @@ const CLAIM_DEST_ID_SUFFIX_LOCAL = 1
 #! looks up the faucet account ID from the token registry using the origin token address from
 #! the leaf data, and creates a MINT note targeting the AggLayer Faucet.
 #!
-#! The MINT note uses the standard MINT note pattern (public mode) with 18 storage items.
+#! The MINT note uses the standard MINT note pattern (public mode) with 22 storage items.
 #! See `write_mint_note_storage` for the full storage layout.
 #!
 #! Inputs:  [PROOF_DATA_KEY, LEAF_DATA_KEY, faucet_mint_amount, pad(7)]
@@ -871,7 +877,7 @@ end
 #!
 #! Invocation: exec
 proc write_mint_note_storage
-    # Write P2ID destination first so we can consume destination_id_prefix for the tag.
+    # write P2ID destination first so we can consume destination_id_prefix for the tag.
     # destination_id_suffix [20]
     dup mem_store.MINT_NOTE_STORAGE_OUTPUT_NOTE_SUFFIX
     # destination_id_prefix [21]
@@ -881,14 +887,14 @@ proc write_mint_note_storage
     drop
     # => [destination_id_prefix, faucet_id_suffix, faucet_id_prefix]
 
-    # Compute and write the destination tag [16] (consumes destination_id_prefix)
+    # compute and write the destination tag [16] (consumes destination_id_prefix)
     exec.note_tag::create_account_target
     # => [dest_tag, faucet_id_suffix, faucet_id_prefix]
 
     mem_store.MINT_NOTE_STORAGE_DEST_TAG
     # => [faucet_id_suffix, faucet_id_prefix]
 
-    # Build ASSET_KEY + ASSET_VALUE for the faucet's fungible asset at the resolved
+    # build ASSET_KEY + ASSET_VALUE for the faucet's fungible asset at the resolved
     # native amount. Duplicate faucet_id so the original stays on the stack as
     # `write_mint_note_storage`'s output contract.
     dup.1 dup.1
@@ -897,7 +903,7 @@ proc write_mint_note_storage
     mem_load.CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT
     # => [native_amount, faucet_id_suffix, faucet_id_prefix, faucet_id_suffix(orig), faucet_id_prefix(orig)]
 
-    # Reorder to feed asset::create_fungible_asset:
+    # reorder to feed asset::create_fungible_asset:
     #   [enable_callbacks, faucet_id_suffix, faucet_id_prefix, amount]
     movdn.2
     # => [faucet_id_suffix, faucet_id_prefix, native_amount, faucet_id_suffix(orig), faucet_id_prefix(orig)]
@@ -907,22 +913,22 @@ proc write_mint_note_storage
     exec.asset::create_fungible_asset
     # => [ASSET_KEY, ASSET_VALUE, faucet_id_suffix(orig), faucet_id_prefix(orig)]
 
-    # Write ASSET_KEY [8..11]
+    # write ASSET_KEY [8..11]
     mem_storew_le.MINT_NOTE_STORAGE_ASSET_KEY dropw
     # => [ASSET_VALUE, faucet_id_suffix(orig), faucet_id_prefix(orig)]
 
-    # Write ASSET_VALUE [12..15]
+    # write ASSET_VALUE [12..15]
     mem_storew_le.MINT_NOTE_STORAGE_ASSET_VALUE dropw
     # => [faucet_id_suffix(orig), faucet_id_prefix(orig)]
 
-    # Write P2ID_SCRIPT_ROOT to MINT note storage [0..3]
+    # write P2ID_SCRIPT_ROOT to MINT note storage [0..3]
     procref.::miden::standards::notes::p2id::main
     # => [P2ID_SCRIPT_ROOT, faucet_id_suffix(orig), faucet_id_prefix(orig)]
 
     mem_storew_le.MINT_NOTE_STORAGE_OUTPUT_SCRIPT_ROOT dropw
     # => [faucet_id_suffix(orig), faucet_id_prefix(orig)]
 
-    # Write SERIAL_NUM (PROOF_DATA_KEY) to MINT note storage [4..7]
+    # write SERIAL_NUM (PROOF_DATA_KEY) to MINT note storage [4..7]
     padw mem_loadw_be.CLAIM_PROOF_DATA_KEY_MEM_ADDR
     # => [SERIAL_NUM, faucet_id_suffix(orig), faucet_id_prefix(orig)]
 
@@ -961,8 +967,11 @@ end
 
 #! Creates the MINT output note and sets the NetworkAccountTarget attachment on it.
 #!
-#! Creates a public output note with no assets, and sets the attachment so only the target faucet
-#! can consume the note.
+#! Creates a public output note with no assets, and sets the `NetworkAccountTarget`
+#! attachment so the network routes the note to the target faucet. The attachment is for
+#! routing only; the consume-side security bind is enforced by the kernel `faucet::mint`
+#! syscall inside `fungible::mint_and_send`, which panics if the MINT note's stored
+#! `ASSET_KEY`'s faucet ID does not equal the active account.
 #!
 #! Inputs:  [MINT_RECIPIENT, faucet_id_suffix, faucet_id_prefix]
 #! Outputs: []
@@ -984,8 +993,9 @@ proc create_mint_note_with_attachment
     movdn.2
     # => [faucet_id_suffix, faucet_id_prefix, note_idx]
 
-    # Set the attachment on the MINT note to target the faucet account
-    # NetworkAccountTarget attachment: targets the faucet so only it can consume the note
+    # set the attachment on the MINT note so the network routes it to the target faucet.
+    # the consume-side security bind is the kernel `faucet::mint` syscall (see
+    # `fungible::mint_and_send`), not this attachment.
     # network_account_target::new expects [suffix, prefix, exec_hint]
     # and returns [attachment_scheme, ATTACHMENT]
     push.ALWAYS # exec_hint = ALWAYS

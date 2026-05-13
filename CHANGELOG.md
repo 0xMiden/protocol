@@ -57,6 +57,7 @@
 - Fixed `output_note::add_asset` and `output_note::set_attachment` to no longer accept invalid note indices ([#2824](https://github.com/0xMiden/protocol/pull/2824)).
 - Fixed auth components to use initial storage state for authentication ([#2677](https://github.com/0xMiden/protocol/issues/2677)).
 - Renamed the AggLayer faucet registry flag constant for clarity ([#2812](https://github.com/0xMiden/protocol/issues/2812)).
+- Bound AggLayer MINT notes to the resolved asset's faucet via asset-in-storage so a claim for one token cannot be minted by a different faucet on the same bridge ([#2798](https://github.com/0xMiden/protocol/issues/2798), [#2911](https://github.com/0xMiden/protocol/pull/2911)).
 
 ## 0.14.6 (2026-05-09)
 
