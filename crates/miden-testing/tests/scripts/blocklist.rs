@@ -1,6 +1,6 @@
 //! Tests for the [`miden_standards::account::policies::BasicBlocklist`] transfer policy
 //! component (storage + `check_policy` predicate) and the
-//! [`miden_standards::account::policies::OwnerManagedBlocklist`] owner-controlled admin
+//! [`miden_standards::account::policies::OwnerControlledBlocklist`] owner-controlled admin
 //! component, dispatched directly by the protocol callback slots via
 //! [`miden_standards::account::policies::TokenPolicyManager`].
 
@@ -29,7 +29,7 @@ use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
     BurnPolicyConfig,
     MintPolicyConfig,
-    OwnerManagedBlocklist,
+    OwnerControlledBlocklist,
     PolicyAuthority,
     PolicyRegistration,
     TokenPolicyManager,
@@ -47,11 +47,6 @@ use miden_testing::{
 
 const ERR_ACCOUNT_IS_BLOCKED: MasmError = MasmError::from_static_str("account is blocked");
 
-const ERR_ACCOUNT_ALREADY_BLOCKED: MasmError =
-    MasmError::from_static_str("account is already blocked");
-
-const ERR_ACCOUNT_NOT_BLOCKED: MasmError = MasmError::from_static_str("account is not blocked");
-
 // HELPERS
 // ================================================================================================
 
@@ -65,7 +60,7 @@ fn dummy_owner() -> AccountId {
 }
 
 /// Builds a fungible faucet with [`TransferPolicy::Blocklist`] on both send and receive,
-/// plus the [`OwnerManagedBlocklist`] component (gated by `Ownable2Step::new(owner_id)`)
+/// plus the [`OwnerControlledBlocklist`] component (gated by `Ownable2Step::new(owner_id)`)
 /// so that the owner can invoke `block_account` / `unblock_account` via owner-authored notes.
 fn add_faucet_with_owner_blocklist_transfer(
     builder: &mut MockChainBuilder,
@@ -91,7 +86,7 @@ fn add_faucet_with_owner_blocklist_transfer(
                 .with_send_policy(TransferPolicy::Blocklist, PolicyRegistration::Active)
                 .with_receive_policy(TransferPolicy::Blocklist, PolicyRegistration::Active),
         )
-        .with_component(OwnerManagedBlocklist);
+        .with_component(OwnerControlledBlocklist);
 
     builder.add_account_from_builder(
         Auth::BasicAuth {
@@ -108,7 +103,7 @@ fn account_id_felts(account_id: AccountId) -> (Felt, Felt) {
 }
 
 /// Builds an owner-authored note whose script invokes
-/// `owner_managed::{block_account|unblock_account}` on the given target account.
+/// `owner_controlled::{block_account|unblock_account}` on the given target account.
 fn build_owner_admin_note(
     owner_id: AccountId,
     target_id: AccountId,
@@ -118,7 +113,7 @@ fn build_owner_admin_note(
     let (prefix, suffix) = account_id_felts(target_id);
     let script_code = format!(
         r#"
-        use miden::standards::faucets::policies::transfer::blocklist::owner_managed
+        use miden::standards::faucets::policies::transfer::blocklist::owner_controlled
 
         @note_script
         pub proc main
@@ -126,7 +121,7 @@ fn build_owner_admin_note(
 
             push.{prefix}
             push.{suffix}
-            call.owner_managed::{proc}
+            call.owner_controlled::{proc}
 
             dropw dropw dropw dropw
         end
@@ -327,7 +322,7 @@ async fn block_then_unblock_then_receive_succeeds() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn block_already_blocked_fails() -> anyhow::Result<()> {
+async fn block_already_blocked_is_noop() -> anyhow::Result<()> {
     let owner_id = dummy_owner();
     let mut builder = MockChain::builder();
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
@@ -343,20 +338,14 @@ async fn block_already_blocked_fails() -> anyhow::Result<()> {
 
     consume_admin_note(&mut mock_chain, faucet.id(), &block_note_1).await?;
 
-    // Second block on the same user must fail with ERR_ACCOUNT_ALREADY_BLOCKED.
-    let result = mock_chain
-        .build_tx_context(faucet.id(), &[block_note_2.id()], &[])?
-        .build()?
-        .execute()
-        .await;
-
-    assert_transaction_executor_error!(result, ERR_ACCOUNT_ALREADY_BLOCKED);
+    // Second block on the same already-blocked user is a noop — succeeds silently.
+    consume_admin_note(&mut mock_chain, faucet.id(), &block_note_2).await?;
 
     Ok(())
 }
 
 #[tokio::test]
-async fn unblock_when_not_blocked_fails() -> anyhow::Result<()> {
+async fn unblock_when_not_blocked_is_noop() -> anyhow::Result<()> {
     let owner_id = dummy_owner();
     let mut builder = MockChain::builder();
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
@@ -368,13 +357,8 @@ async fn unblock_when_not_blocked_fails() -> anyhow::Result<()> {
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
-    let result = mock_chain
-        .build_tx_context(faucet.id(), &[unblock_note.id()], &[])?
-        .build()?
-        .execute()
-        .await;
-
-    assert_transaction_executor_error!(result, ERR_ACCOUNT_NOT_BLOCKED);
+    // Unblocking a non-blocked account is a noop — succeeds silently.
+    consume_admin_note(&mut mock_chain, faucet.id(), &unblock_note).await?;
 
     Ok(())
 }

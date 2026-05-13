@@ -171,14 +171,14 @@ static BASIC_BLOCKLIST_TRANSFER_POLICY_LIBRARY: LazyLock<Library> = LazyLock::ne
         .expect("Shipped basic blocklist Transfer Policy library is well-formed")
 });
 
-// Initialize the owner-managed Blocklist admin library only once.
-static BLOCKLIST_OWNER_MANAGED_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+// Initialize the owner-controlled Blocklist admin library only once.
+static BLOCKLIST_OWNER_CONTROLLED_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     let bytes = include_bytes!(concat!(
         env!("OUT_DIR"),
-        "/assets/account_components/faucets/policies/transfer/blocklist/owner_managed.masl"
+        "/assets/account_components/faucets/policies/transfer/blocklist/owner_controlled.masl"
     ));
     Library::read_from_bytes(bytes)
-        .expect("Shipped owner-managed Blocklist admin library is well-formed")
+        .expect("Shipped owner-controlled Blocklist admin library is well-formed")
 });
 
 // METADATA LIBRARIES
@@ -239,9 +239,9 @@ pub fn basic_blocklist_transfer_policy_library() -> Library {
     BASIC_BLOCKLIST_TRANSFER_POLICY_LIBRARY.clone()
 }
 
-/// Returns the owner-managed Blocklist admin library.
-pub fn blocklist_owner_managed_library() -> Library {
-    BLOCKLIST_OWNER_MANAGED_LIBRARY.clone()
+/// Returns the owner-controlled Blocklist admin library.
+pub fn blocklist_owner_controlled_library() -> Library {
+    BLOCKLIST_OWNER_CONTROLLED_LIBRARY.clone()
 }
 
 /// Returns the Singlesig Library.

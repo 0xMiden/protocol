@@ -1,6 +1,6 @@
-# miden::standards::faucets::policies::transfer::blocklist::owner_managed
+# miden::standards::faucets::policies::transfer::blocklist::owner_controlled
 #
-# Owner-managed blocklist admin: wraps the `Invocation: exec` helpers from
+# Owner-controlled blocklist admin: wraps the `Invocation: exec` helpers from
 # `miden::standards::faucets::policies::transfer::blocklist` with an Ownable2Step authorization
 # check.
 #
@@ -22,7 +22,6 @@ use miden::standards::faucets::policies::transfer::blocklist
 #!
 #! Panics if:
 #! - the sender is not the account owner.
-#! - the account is already blocked.
 #!
 #! Invocation: call
 pub proc block_account
@@ -40,7 +39,6 @@ end
 #!
 #! Panics if:
 #! - the sender is not the account owner.
-#! - the account is not currently blocked.
 #!
 #! Invocation: call
 pub proc unblock_account

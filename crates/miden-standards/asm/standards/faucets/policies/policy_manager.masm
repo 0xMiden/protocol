@@ -133,7 +133,7 @@ proc get_mint_policy_root
     # => [MINT_POLICY_ROOT]
 end
 
-#! Validates mint policy root before use.
+#! Validates a mint policy root at config time.
 #!
 #! Inputs:  [MINT_POLICY_ROOT]
 #! Outputs: [MINT_POLICY_ROOT]
@@ -187,7 +187,7 @@ proc get_burn_policy_root
     # => [BURN_POLICY_ROOT]
 end
 
-#! Validates burn policy root before use.
+#! Validates a burn policy root at config time.
 #!
 #! Inputs:  [BURN_POLICY_ROOT]
 #! Outputs: [BURN_POLICY_ROOT]
@@ -230,7 +230,7 @@ end
 # SEND INTERNAL PROCEDURES
 # ================================================================================================
 
-#! Validates send policy root before use.
+#! Validates a send policy root at config time.
 #!
 #! Inputs:  [SEND_POLICY_ROOT]
 #! Outputs: [SEND_POLICY_ROOT]
@@ -273,7 +273,7 @@ end
 # RECEIVE INTERNAL PROCEDURES
 # ================================================================================================
 
-#! Validates receive policy root before use.
+#! Validates a receive policy root at config time.
 #!
 #! Inputs:  [RECEIVE_POLICY_ROOT]
 #! Outputs: [RECEIVE_POLICY_ROOT]
@@ -322,19 +322,15 @@ end
 #! Outputs: [amount, tag, note_type, RECIPIENT]
 #!
 #! Panics if:
-#! - mint policy root is invalid.
-#! - active policy predicate fails.
+#! - active mint policy predicate fails.
+#!
+#! The active policy root is validated at config time (in `set_mint_policy` and on initial
+#! storage construction) so we trust it here without re-checking existence / allowed-ness.
 #!
 #! Invocation: exec
 @locals(4)
 pub proc execute_mint_policy
     exec.get_mint_policy_root
-    # => [MINT_POLICY_ROOT, amount, tag, note_type, RECIPIENT]
-
-    exec.assert_existing_mint_policy_root
-    # => [MINT_POLICY_ROOT, amount, tag, note_type, RECIPIENT]
-
-    exec.assert_allowed_mint_policy_root
     # => [MINT_POLICY_ROOT, amount, tag, note_type, RECIPIENT]
 
     loc_storew_le.POLICY_PROC_ROOT_PTR dropw
@@ -393,19 +389,15 @@ end
 #! Outputs: []
 #!
 #! Panics if:
-#! - burn policy root is invalid.
-#! - active burn policy validation fails.
+#! - active burn policy predicate fails.
+#!
+#! The active policy root is validated at config time (in `set_burn_policy` and on initial
+#! storage construction) so we trust it here without re-checking existence / allowed-ness.
 #!
 #! Invocation: exec
 @locals(4)
 pub proc execute_burn_policy
     exec.get_burn_policy_root
-    # => [BURN_POLICY_ROOT, ASSET_KEY, ASSET_VALUE]
-
-    exec.assert_existing_burn_policy_root
-    # => [BURN_POLICY_ROOT, ASSET_KEY, ASSET_VALUE]
-
-    exec.assert_allowed_burn_policy_root
     # => [BURN_POLICY_ROOT, ASSET_KEY, ASSET_VALUE]
 
     loc_storew_le.POLICY_PROC_ROOT_PTR dropw

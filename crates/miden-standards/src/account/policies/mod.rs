@@ -26,18 +26,18 @@
 
 use miden_protocol::Word;
 
-pub mod burn;
+mod burn;
 mod manager;
-pub mod mint;
-pub mod transfer;
+mod mint;
+mod transfer;
 
 pub use burn::{BurnAllowAll, BurnOwnerOnly, BurnPolicyConfig};
-pub use manager::{PolicyConfig, TokenPolicyManager};
+pub use manager::TokenPolicyManager;
 pub use mint::{MintAllowAll, MintOwnerOnly, MintPolicyConfig};
 pub use transfer::{
     BasicBlocklist,
-    Blocklist,
-    OwnerManagedBlocklist,
+    BlocklistStorage,
+    OwnerControlledBlocklist,
     TransferAllowAll,
     TransferPolicy,
 };

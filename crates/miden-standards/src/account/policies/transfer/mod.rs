@@ -5,7 +5,7 @@
 //! - File at the root (e.g. `allow_all`, `basic_blocklist`) = a transfer policy variant. Each
 //!   exports a `check_policy` procedure that the kernel invokes via `call` through the
 //!   protocol-reserved callback slots.
-//! - Folder at the root (e.g. [`blocklist`]) = a primitive bundle: storage namespace + helpers
+//! - Folder at the root (e.g. `blocklist`) = a primitive bundle: storage namespace + helpers
 //!   + auth-gated admin component(s) that maintain the storage. Primitives are not transfer
 //!     policies by themselves; they are consumed by policy variants.
 
@@ -16,11 +16,11 @@ use miden_protocol::account::AccountComponent;
 
 mod allow_all;
 mod basic_blocklist;
-pub mod blocklist;
+mod blocklist;
 
 pub use allow_all::TransferAllowAll;
 pub use basic_blocklist::BasicBlocklist;
-pub use blocklist::{Blocklist, OwnerManagedBlocklist};
+pub use blocklist::{BlocklistStorage, OwnerControlledBlocklist};
 
 // TRANSFER POLICY
 // ================================================================================================
@@ -37,8 +37,10 @@ pub enum TransferPolicy {
     /// Active policy = [`TransferAllowAll::root`] (the callback predicate accepts unconditionally).
     #[default]
     AllowAll,
-    /// Active policy = [`BasicBlocklist::root`]. The policy component installs the
-    /// `blocked_accounts` storage map alongside its predicate procedure.
+    /// Active policy = [`BasicBlocklist::root`]. Resolves into a [`BasicBlocklist`] component
+    /// with an empty initial blocklist; to seed initial entries, install [`BasicBlocklist`]
+    /// explicitly via [`BasicBlocklist::with_blocked_accounts`] and select the policy via
+    /// [`TransferPolicy::Custom`] with [`BasicBlocklist::root`].
     Blocklist,
     /// Active policy = the provided root. The corresponding component(s) must be installed by
     /// the caller separately; resolving this variant into built-in components yields an empty
@@ -76,13 +78,13 @@ impl TransferPolicy {
 
     /// Returns the [`AccountComponent`]s that must accompany this transfer policy variant.
     ///
-    /// For [`Self::Blocklist`] this is the policy component, which installs both the predicate
-    /// procedure and the `blocked_accounts` storage map. For [`Self::Custom`] this is empty —
-    /// the caller installs whatever the chosen root requires.
+    /// For [`Self::Blocklist`] this is a [`BasicBlocklist`] component with no initial blocked
+    /// accounts. For [`Self::Custom`] this is empty — the caller installs whatever the chosen
+    /// root requires.
     pub(crate) fn into_components(self) -> Vec<AccountComponent> {
         match self {
             Self::AllowAll => vec![TransferAllowAll.into()],
-            Self::Blocklist => vec![BasicBlocklist.into()],
+            Self::Blocklist => vec![BasicBlocklist::default().into()],
             Self::Custom(_) => Vec::new(),
         }
     }

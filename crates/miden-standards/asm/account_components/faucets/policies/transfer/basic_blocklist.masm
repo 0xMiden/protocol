@@ -3,6 +3,6 @@
 # Exposes the `check_policy` procedure so its MAST root can be registered as the active
 # (or allowed) transfer policy on a `TokenPolicyManager`. Installs the `blocked_accounts`
 # storage map (defined by the sibling `blocklist` primitive); admin updates go through a
-# companion auth-gated component (see `blocklist/owner_managed.masm`).
+# companion auth-gated component (see `blocklist/owner_controlled.masm`).
 
 pub use ::miden::standards::faucets::policies::transfer::basic_blocklist::check_policy

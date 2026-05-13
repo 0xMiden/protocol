@@ -7,7 +7,7 @@
 # - Storage: `blocked_accounts` map keyed by account ID; entry word `[1, 0, 0, 0]` means blocked.
 # - Helpers (`block_account` / `unblock_account` / `is_blocked` / `assert_not_blocked`) perform
 #   NO authorization — they are low-level building blocks meant to be called by
-#   `Invocation: call` wrappers in auth-checking account components (see `owner_managed.masm`).
+#   `Invocation: call` wrappers in auth-checking account components (see `owner_controlled.masm`).
 #   Tx scripts cannot invoke them directly — they go through the wrapper component installed on
 #   the faucet.
 
@@ -30,10 +30,6 @@ const UNBLOCKED_WORD = [0, 0, 0, 0]
 # ================================================================================================
 
 const ERR_ACCOUNT_IS_BLOCKED = "account is blocked"
-
-const ERR_ACCOUNT_ALREADY_BLOCKED = "account is already blocked"
-
-const ERR_ACCOUNT_NOT_BLOCKED = "account is not blocked"
 
 # PUBLIC HELPERS
 # ================================================================================================
@@ -62,7 +58,7 @@ pub proc is_blocked
     # => [is_blocked]
 end
 
-#! Adds the given account to the blocklist. Fails if it is already blocked.
+#! Adds the given account to the blocklist. If the account is already blocked, this is a noop.
 #!
 #! This procedure performs NO authorization. Wrappers running in `Invocation: call` mode add
 #! the auth check (e.g. `ownable2step::assert_sender_is_owner`) before delegating here via
@@ -71,32 +67,15 @@ end
 #! Inputs:  [account_id_suffix, account_id_prefix]
 #! Outputs: []
 #!
-#! Panics if:
-#! - the account is already blocked.
-#!
 #! Invocation: exec
 pub proc block_account
-    # copy the ID to check it is not already blocked.
-    dup.1 dup.1
-    # => [account_id_suffix, account_id_prefix, account_id_suffix, account_id_prefix]
-
-    exec.is_blocked
-    # => [is_blocked, account_id_suffix, account_id_prefix]
-
-    not assert.err=ERR_ACCOUNT_ALREADY_BLOCKED
-    # => [account_id_suffix, account_id_prefix]
-
     exec.build_blocked_accounts_map_key
     # => [KEY]
 
+    push.BLOCKED_WORD swapw
+    # => [KEY, BLOCKED_WORD]
+
     push.BLOCKED_ACCOUNTS_SLOT[0..2]
-    # => [slot_suffix, slot_prefix, KEY]
-
-    push.BLOCKED_WORD
-    # => [BLOCKED_WORD, slot_suffix, slot_prefix, KEY]
-
-    # set_map_item expects: [slot_suffix, slot_prefix, KEY, VALUE]
-    movdnw.2
     # => [slot_suffix, slot_prefix, KEY, BLOCKED_WORD]
 
     exec.native_account::set_map_item
@@ -106,37 +85,21 @@ pub proc block_account
     # => []
 end
 
-#! Removes the given account from the blocklist. Fails if it is not currently blocked. See
-#! [`block_account`] for the same authorization caveats.
+#! Removes the given account from the blocklist. If the account is not currently blocked, this
+#! is a noop. See [`block_account`] for the same authorization caveats.
 #!
 #! Inputs:  [account_id_suffix, account_id_prefix]
 #! Outputs: []
 #!
-#! Panics if:
-#! - the account is not currently blocked.
-#!
 #! Invocation: exec
 pub proc unblock_account
-    # copy the ID to check it is currently blocked.
-    dup.1 dup.1
-    # => [account_id_suffix, account_id_prefix, account_id_suffix, account_id_prefix]
-
-    exec.is_blocked
-    # => [is_blocked, account_id_suffix, account_id_prefix]
-
-    assert.err=ERR_ACCOUNT_NOT_BLOCKED
-    # => [account_id_suffix, account_id_prefix]
-
     exec.build_blocked_accounts_map_key
     # => [KEY]
 
+    push.UNBLOCKED_WORD swapw
+    # => [KEY, UNBLOCKED_WORD]
+
     push.BLOCKED_ACCOUNTS_SLOT[0..2]
-    # => [slot_suffix, slot_prefix, KEY]
-
-    push.UNBLOCKED_WORD
-    # => [UNBLOCKED_WORD, slot_suffix, slot_prefix, KEY]
-
-    movdnw.2
     # => [slot_suffix, slot_prefix, KEY, UNBLOCKED_WORD]
 
     exec.native_account::set_map_item
@@ -185,8 +148,7 @@ end
 #!
 #! Invocation: exec
 proc build_blocked_accounts_map_key
-    # => [account_id_suffix, account_id_prefix]
-
     push.0.0
-    # => [0, 0, account_id_suffix, account_id_prefix] = KEY
+    # => [0, 0, account_id_suffix, account_id_prefix]
+    # => [KEY]
 end

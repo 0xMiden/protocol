@@ -1,9 +1,11 @@
+use alloc::collections::BTreeSet;
+
 use miden_protocol::Word;
 use miden_protocol::account::component::{AccountComponentMetadata, StorageSchema};
-use miden_protocol::account::{AccountComponent, AccountType, StorageMap, StorageSlot};
+use miden_protocol::account::{AccountComponent, AccountId, AccountType, StorageSlot};
 
 use crate::account::components::basic_blocklist_transfer_policy_library;
-use crate::account::policies::transfer::blocklist::Blocklist;
+use crate::account::policies::transfer::blocklist::BlocklistStorage;
 use crate::procedure_digest;
 
 // BASIC BLOCKLIST TRANSFER POLICY
@@ -18,18 +20,22 @@ procedure_digest!(
 
 /// The basic blocklist transfer policy account component.
 ///
-/// Installs the per-faucet `blocked_accounts` storage map (defined by [`Blocklist`]) plus the
-/// `check_policy` predicate procedure. Pair with a
+/// Installs the per-faucet `blocked_accounts` storage map (defined by [`BlocklistStorage`])
+/// plus the `check_policy` predicate procedure. Pair with a
 /// [`crate::account::policies::TokenPolicyManager`] whose send / receive policy maps include
 /// [`BasicBlocklist::root`]. When active, transfers fail if the native account (asset
 /// recipient or note creator) is currently blocked on the issuing faucet.
 ///
+/// The wrapped [`BTreeSet<AccountId>`] captures the initial blocklist contents (it can be
+/// empty for a faucet that starts unblocked). Use [`Default`] for an empty blocklist or
+/// [`Self::with_blocked_accounts`] to seed the storage map at component construction time.
+///
 /// Block / unblock administration is intentionally not part of this component. The
 /// `block_account` / `unblock_account` procedures live in the standards library and require an
-/// auth-wrapped admin component (see [`super::OwnerManagedBlocklist`]) to be safely exposed on
-/// a production faucet.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct BasicBlocklist;
+/// auth-wrapped admin component (see [`super::OwnerControlledBlocklist`]) to be safely exposed
+/// on a production faucet.
+#[derive(Debug, Clone, Default)]
+pub struct BasicBlocklist(BTreeSet<AccountId>);
 
 impl BasicBlocklist {
     /// The name of the component.
@@ -38,6 +44,19 @@ impl BasicBlocklist {
 
     pub(crate) const PROC_NAME: &str = "check_policy";
 
+    /// Creates a basic blocklist with the given initial blocked accounts.
+    pub fn with_blocked_accounts<I>(blocked_accounts: I) -> Self
+    where
+        I: IntoIterator<Item = AccountId>,
+    {
+        Self(blocked_accounts.into_iter().collect())
+    }
+
+    /// Returns the initial blocked accounts captured in this component.
+    pub fn blocked_accounts(&self) -> &BTreeSet<AccountId> {
+        &self.0
+    }
+
     /// Returns the MAST root of the basic blocklist transfer policy procedure.
     pub fn root() -> Word {
         *BASIC_BLOCKLIST_POLICY_ROOT
@@ -45,13 +64,14 @@ impl BasicBlocklist {
 }
 
 impl From<BasicBlocklist> for AccountComponent {
-    fn from(_: BasicBlocklist) -> Self {
+    fn from(blocklist: BasicBlocklist) -> Self {
+        let storage = BlocklistStorage::with_blocked_accounts(blocklist.0);
         let blocked_accounts_slot = StorageSlot::with_map(
-            Blocklist::blocked_accounts_slot().clone(),
-            StorageMap::default(),
+            BlocklistStorage::blocked_accounts_slot().clone(),
+            storage.build_storage_map(),
         );
 
-        let storage_schema = StorageSchema::new([Blocklist::blocked_accounts_slot_schema()])
+        let storage_schema = StorageSchema::new([BlocklistStorage::blocked_accounts_slot_schema()])
             .expect("storage schema should be valid");
 
         let metadata = AccountComponentMetadata::new(
