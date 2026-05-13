@@ -83,6 +83,7 @@ impl MastForestStore for TransactionMastStore {
 #[cfg(test)]
 impl TransactionMastStore {
     /// Returns the number of procedure entries in the store (for testing only).
+    #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> usize {
         self.mast_forests.read().len()
     }
