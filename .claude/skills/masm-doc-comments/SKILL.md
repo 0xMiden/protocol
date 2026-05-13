@@ -100,7 +100,7 @@ Define every item from Inputs and Outputs:
 #! Where:
 #! - note_index is the index of the input note.
 #! - sender_{suffix,prefix} are the suffix and prefix felts of the sender ID.
-#! - ASSET is the asset word [faucet_id_prefix, faucet_id_suffix, 0, amount].
+#! - ASSET_KEY is the vault key of the asset [0, 0, faucet_id_suffix, faucet_id_prefix].
 #! - balance is the fungible asset balance in the vault.
 ```
 
