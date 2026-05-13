@@ -145,6 +145,11 @@ pub fn create_basic_wallet(
                 "basic wallets cannot be created with NoAuth authentication method".into(),
             ));
         },
+        AuthMethod::NetworkAccount { .. } => {
+            return Err(BasicWalletError::UnsupportedAuthMethod(
+                "basic wallets cannot be created with NetworkAccount authentication method".into(),
+            ));
+        },
         AuthMethod::Unknown => {
             return Err(BasicWalletError::UnsupportedAuthMethod(
                 "basic wallets cannot be created with Unknown authentication method".into(),
