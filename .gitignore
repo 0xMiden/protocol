@@ -12,6 +12,11 @@
 .claude/settings.local.json
 .claude/worktrees/
 
+# Python bytecode caches (e.g. from .claude/hooks/ pytest runs)
+__pycache__/
+*.pyc
+*.pyo
+
 # Docs platform ignores
 .vscode
 .code
