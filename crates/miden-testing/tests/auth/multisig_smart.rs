@@ -494,3 +494,121 @@ async fn test_multisig_smart_set_procedure_policy(
 
     Ok(())
 }
+
+/// Regression test for the per-procedure contribution semantic of `compute_called_proc_policy`:
+/// a transaction that mixes a low-policy procedure (receive_asset = 1) with an unpolicied
+/// procedure (set_procedure_policy) must require `max(policy, default) = default` signatures,
+/// not just the low policy threshold. Without per-proc-contribute this is a privilege escalation
+/// — the unpolicied call would be silently authorized at the receive_asset threshold of 1.
+#[tokio::test]
+async fn test_multisig_smart_unpolicied_proc_call_requires_default_threshold() -> anyhow::Result<()>
+{
+    let auth_scheme = AuthScheme::EcdsaK256Keccak;
+    let default_threshold = 3u32;
+    let (_secret_keys, _auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(
+            default_threshold as usize,
+            default_threshold as usize,
+            auth_scheme,
+        )?;
+
+    // receive_asset configured with a low policy (1 sig), update_signers and
+    // set_procedure_policy intentionally left unpolicied.
+    let receive_policy = ProcedurePolicy::with_immediate_threshold(1)?;
+    let proc_policy_map = vec![(BasicWallet::receive_asset_root().as_word(), receive_policy)];
+    let multisig_account = create_multisig_smart_account(
+        default_threshold,
+        &public_keys,
+        auth_scheme,
+        10,
+        proc_policy_map,
+    )?;
+
+    // Tx-script calls the unpolicied `set_procedure_policy` proc. The tx also consumes a P2ID
+    // note (which calls the policied receive_asset). With per-proc-contribute, set_procedure_policy
+    // contributes `default_threshold` to the max.
+    let target_root = BasicWallet::move_asset_to_note_root().as_word();
+    let set_policy_script = compile_multisig_smart_tx_script(format!(
+        "
+        begin
+            push.{root}
+            push.0     # note_restrictions
+            push.0     # delayed_threshold
+            push.1     # immediate_threshold
+            call.::miden::standards::components::auth::multisig_smart::set_procedure_policy
+            drop drop drop
+            dropw
+        end
+        ",
+        root = target_root,
+    ))?;
+
+    let mut chain_builder = MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap();
+    let note = chain_builder.add_p2id_note(
+        multisig_account.id(),
+        multisig_account.id(),
+        &[FungibleAsset::mock(1)],
+        NoteType::Public,
+    )?;
+    let mock_chain = chain_builder.build()?;
+
+    let salt = Word::from([Felt::new(42); 4]);
+
+    // Dry-run to capture the tx summary.
+    let tx_summary = match mock_chain
+        .build_tx_context(multisig_account.id(), &[note.id()], &[])?
+        .tx_script(set_policy_script.clone())
+        .auth_args(salt)
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+    {
+        TransactionExecutorError::Unauthorized(tx_summary) => tx_summary,
+        error => panic!("expected dry-run abort with tx summary: {error:?}"),
+    };
+
+    let msg = tx_summary.as_ref().to_commitment();
+    let signing = SigningInputs::TransactionSummary(tx_summary);
+    let sig_0 = authenticators[0]
+        .get_signature(public_keys[0].to_commitment(), &signing)
+        .await?;
+    let sig_1 = authenticators[1]
+        .get_signature(public_keys[1].to_commitment(), &signing)
+        .await?;
+    let sig_2 = authenticators[2]
+        .get_signature(public_keys[2].to_commitment(), &signing)
+        .await?;
+
+    // With only 1 signature (matching the low receive_asset policy), the tx must fail because
+    // the unpolicied set_procedure_policy call contributes `default_threshold = 3`.
+    let one_sig_result = mock_chain
+        .build_tx_context(multisig_account.id(), &[note.id()], &[])?
+        .tx_script(set_policy_script.clone())
+        .auth_args(salt)
+        .add_signature(public_keys[0].to_commitment(), msg, sig_0.clone())
+        .build()?
+        .execute()
+        .await;
+    match one_sig_result {
+        Err(TransactionExecutorError::Unauthorized(_)) => {},
+        other => {
+            panic!("expected Unauthorized with 1 sig (escalation would let it pass): {other:?}")
+        },
+    }
+
+    // With all 3 signatures the unpolicied default contribution is met and the tx succeeds.
+    let three_sig_result = mock_chain
+        .build_tx_context(multisig_account.id(), &[note.id()], &[])?
+        .tx_script(set_policy_script)
+        .auth_args(salt)
+        .add_signature(public_keys[0].to_commitment(), msg, sig_0)
+        .add_signature(public_keys[1].to_commitment(), msg, sig_1)
+        .add_signature(public_keys[2].to_commitment(), msg, sig_2)
+        .build()?
+        .execute()
+        .await;
+    three_sig_result.expect("3 signatures should satisfy the default-threshold contribution");
+
+    Ok(())
+}
