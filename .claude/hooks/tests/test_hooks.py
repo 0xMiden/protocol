@@ -27,8 +27,17 @@ HOOK_NAMES = [
 # Per-hook routing cases. The format is `(hook_module, command, should_fire)`.
 # We rely on the cases referencing actual hook module names so a typo here
 # blows up at collection time instead of silently skipping coverage.
+#
+# Some hooks intentionally share a TARGET with another hook
+# (see PAIRED_TARGETS below). For each pair, only ONE hook appears in
+# the table; routing for the partner is guaranteed identical because
+# both delegate to `_classify.matches` with the same arguments.
+# `test_paired_hooks_share_target` enforces that contract — if anyone
+# changes one hook's TARGET without the other, that test fails and the
+# missing per-hook coverage is restored.
 HOOK_CASES: list[tuple[str, str, bool]] = [
     # pre_push_review — every must-run / must-not-run case for `git push`.
+    # Routing for pre_push_test (same TARGET) is covered transitively.
     ("pre_push_review", "git push", True),
     ("pre_push_review", "git push origin main", True),
     ("pre_push_review", "git -C . push", True),
@@ -41,13 +50,6 @@ HOOK_CASES: list[tuple[str, str, bool]] = [
     ("pre_push_review", "git status", False),
     ("pre_push_review", "git --version", False),
     ("pre_push_review", "git push-graph", False),
-    # pre_push_test shares the same target as pre_push_review. Replay the
-    # most distinctive cases so a divergence between the two hooks would
-    # also fail here.
-    ("pre_push_test", "git push", True),
-    ("pre_push_test", "git -C . push", True),
-    ("pre_push_test", "echo git push", False),
-    ("pre_push_test", "git status", False),
     # pre_commit_lint — `git commit`.
     ("pre_commit_lint", "git commit -m hello", True),
     ("pre_commit_lint", 'git -c commit.gpgsign=false commit -m "x"', True),
@@ -56,6 +58,7 @@ HOOK_CASES: list[tuple[str, str, bool]] = [
     ("pre_commit_lint", "git status", False),
     ("pre_commit_lint", "git push", False),
     # pre_pr_draft — `gh pr create`.
+    # Routing for post_pr_create_changelog (same TARGET) is covered transitively.
     ("pre_pr_draft", "gh pr create", True),
     ("pre_pr_draft", "gh --repo 0xMiden/miden-base pr create", True),
     ("pre_pr_draft", "gh -R 0xMiden/miden-base pr create --draft", True),
@@ -64,10 +67,15 @@ HOOK_CASES: list[tuple[str, str, bool]] = [
     ("pre_pr_draft", 'echo "gh pr create"', False),
     ("pre_pr_draft", "gh pr list", False),
     ("pre_pr_draft", "gh issue create", False),
-    # post_pr_create_changelog shares the same target as pre_pr_draft.
-    ("post_pr_create_changelog", "gh pr create", True),
-    ("post_pr_create_changelog", "gh -R 0xMiden/miden-base pr create", True),
-    ("post_pr_create_changelog", "echo gh pr create", False),
+]
+
+
+# Pairs of hooks that intentionally share the same TARGET. The first
+# hook in each pair is the one whose routing cases appear in HOOK_CASES;
+# the second's coverage rides on the assertion that the targets match.
+PAIRED_TARGETS: list[tuple[str, str]] = [
+    ("pre_push_review", "pre_push_test"),
+    ("pre_pr_draft", "post_pr_create_changelog"),
 ]
 
 
@@ -109,3 +117,25 @@ def test_all_hooks_export_target(hooks: dict[str, object]) -> None:
         assert all(isinstance(x, str) and x for x in subcommand), (
             f"{name}.TARGET[1] must be a list of non-empty strings"
         )
+
+
+@pytest.mark.parametrize("pair", PAIRED_TARGETS, ids=lambda p: f"{p[0]}_vs_{p[1]}")
+def test_paired_hooks_share_target(
+    hooks: dict[str, object], pair: tuple[str, str]
+) -> None:
+    """For documented pairs, verify both hooks export the same TARGET.
+
+    Lets us skip replaying the parametrized routing cases for the
+    second hook — its behavior is identical to the first by virtue of
+    routing through `_classify.matches` with the same arguments. If
+    this test ever fails, either re-align the targets or split the
+    pair and add explicit per-hook cases for both.
+    """
+    a, b = pair
+    target_a = hooks[a].TARGET  # type: ignore[attr-defined]
+    target_b = hooks[b].TARGET  # type: ignore[attr-defined]
+    assert target_a == target_b, (
+        f"{a}.TARGET ({target_a!r}) differs from {b}.TARGET ({target_b!r}). "
+        f"Either re-align or remove the entry from PAIRED_TARGETS and add "
+        f"explicit per-hook routing cases for both."
+    )
