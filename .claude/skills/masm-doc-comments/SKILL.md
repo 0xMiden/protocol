@@ -51,9 +51,7 @@ pub proc my_procedure
 | Multi-felt (2-3) | lowercase with `{parts}` suffix | `account_id_{prefix,suffix}` |
 | All-zero Word | `EMPTY_WORD` | `[..., EMPTY_WORD, ...]` |
 
-`EMPTY_WORD` is a naming convention used in stack trackers, `Where:` bullets, and prose comments to denote the all-zero Word `[0, 0, 0, 0]`. It is not a defined constant; the point is to convey *meaning* (absence of data) rather than the literal numeric value.
-
-Brace spacing (`{suffix,prefix}` vs `{suffix, prefix}`) and part order (`{suffix,prefix}` vs `{prefix,suffix}`) are inconsistent in source. Match the surrounding file; do not reformat existing braces.
+`EMPTY_WORD` is a naming convention used in stack trackers, `Where:` bullets, and prose comments to denote the all-zero Word `[0, 0, 0, 0]`.
 
 ### Stack Order
 
@@ -77,14 +75,8 @@ Use empty brackets for no inputs or outputs:
 `(N)` after an item name denotes a span of N felts (not a Word). Spans stay lowercase; Words stay UPPERCASE and never take `(N)`. `pad(N)` (see masm-padding skill) is one member of this family; other spans appear in protocol code:
 
 ```masm
-#! Inputs:  [pad(16), foreign_procedure_inputs(15)]
+#! Inputs:  [first_element, foreign_procedure_inputs(15)]
 #! Outputs: [foreign_procedure_outputs(16)]
-```
-
-For variable-length remainders, use a trailing `, ...`:
-
-```masm
-#! Inputs:  [note_idx, ...]
 ```
 
 ### Padding (for `call` procedures only)

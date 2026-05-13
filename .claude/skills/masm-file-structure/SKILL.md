@@ -89,7 +89,7 @@ end
 
 - **Imports**: One `use` per line; group by module. No blank lines between imports.
 - **Type aliases**: Define shared types (e.g. `DoubleWord`, `MemoryAddress`) before constants or procedures.
-- **Constants**: Follow the masm-constants skill—non-error constants grouped by topic; `ERR_*` in a dedicated errors subsection.
+- **Constants**: Follow the masm-constants skill.
 - **Public interface**: Only `pub proc`; these are the module’s API. Order by importance or call flow.
 - **Helper procedures**: Non-pub procedures that support the public interface. May include `pub proc` helpers (e.g. `get_leaf_value`) if they are used internally or re-exported, or used for unit tests.
 
