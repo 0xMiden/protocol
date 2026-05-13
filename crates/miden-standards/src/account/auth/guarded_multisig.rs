@@ -3,6 +3,7 @@ use alloc::vec::Vec;
 use miden_protocol::Word;
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 use miden_protocol::account::component::{
+    AccountComponentCode,
     AccountComponentMetadata,
     SchemaType,
     StorageSchema,
@@ -10,17 +11,30 @@ use miden_protocol::account::component::{
 };
 use miden_protocol::account::{
     AccountComponent,
+    AccountProcedureRoot,
     AccountType,
     StorageMap,
     StorageMapKey,
     StorageSlot,
     StorageSlotName,
 };
+use miden_protocol::assembly::Library;
 use miden_protocol::errors::AccountError;
+use miden_protocol::utils::serde::Deserializable;
 use miden_protocol::utils::sync::LazyLock;
 
 use super::multisig::{AuthMultisig, AuthMultisigConfig};
-use crate::account::components::guarded_multisig_library;
+
+// Initialize the Guarded Multisig component code only once.
+static GUARDED_MULTISIG_CODE: LazyLock<AccountComponentCode> = LazyLock::new(|| {
+    let bytes = include_bytes!(concat!(
+        env!("OUT_DIR"),
+        "/assets/account_components/auth/guarded_multisig.masl"
+    ));
+    let library =
+        Library::read_from_bytes(bytes).expect("Shipped Guarded Multisig library is well-formed");
+    AccountComponentCode::from(library)
+});
 
 // CONSTANTS
 // ================================================================================================
@@ -150,7 +164,7 @@ impl AuthGuardedMultisigConfig {
     /// at most the number of approvers.
     pub fn with_proc_thresholds(
         mut self,
-        proc_thresholds: Vec<(Word, u32)>,
+        proc_thresholds: Vec<(AccountProcedureRoot, u32)>,
     ) -> Result<Self, AccountError> {
         self.multisig = self.multisig.with_proc_thresholds(proc_thresholds)?;
         Ok(self)
@@ -164,7 +178,7 @@ impl AuthGuardedMultisigConfig {
         self.multisig.default_threshold()
     }
 
-    pub fn proc_thresholds(&self) -> &[(Word, u32)] {
+    pub fn proc_thresholds(&self) -> &[(AccountProcedureRoot, u32)] {
         self.multisig.proc_thresholds()
     }
 
@@ -195,6 +209,11 @@ pub struct AuthGuardedMultisig {
 impl AuthGuardedMultisig {
     /// The name of the component.
     pub const NAME: &'static str = "miden::standards::components::auth::guarded_multisig";
+
+    /// Returns the [`AccountComponentCode`] of this component.
+    pub fn code() -> &'static AccountComponentCode {
+        &GUARDED_MULTISIG_CODE
+    }
 
     /// Creates a new [`AuthGuardedMultisig`] component from the provided configuration.
     pub fn new(config: AuthGuardedMultisigConfig) -> Result<Self, AccountError> {
@@ -324,9 +343,9 @@ impl From<AuthGuardedMultisig> for AccountComponent {
         .with_version(multisig_component.metadata().version().clone())
         .with_storage_schema(storage_schema);
 
-        AccountComponent::new(guarded_multisig_library(), storage_slots, metadata).expect(
-            "Guarded multisig auth component should satisfy the requirements of a valid account \
-             component",
+        AccountComponent::new(AuthGuardedMultisig::code().clone(), storage_slots, metadata).expect(
+            "Guarded multisig auth component should satisfy the requirements of a valid \
+                 account component",
         )
     }
 }

@@ -2,15 +2,29 @@ use alloc::collections::BTreeSet;
 use alloc::vec;
 
 use miden_protocol::account::component::{
+    AccountComponentCode,
     AccountComponentMetadata,
     StorageSchema,
     StorageSlotSchema,
 };
 use miden_protocol::account::{AccountComponent, AccountType, StorageSlotName};
+use miden_protocol::assembly::Library;
 use miden_protocol::note::NoteScriptRoot;
+use miden_protocol::utils::serde::Deserializable;
+use miden_protocol::utils::sync::LazyLock;
 
 use super::{NetworkAccountNoteAllowlist, NetworkAccountNoteAllowlistError};
-use crate::account::components::network_account_auth_library;
+
+// Initialize the AuthNetworkAccount component code only once.
+static NETWORK_ACCOUNT_AUTH_CODE: LazyLock<AccountComponentCode> = LazyLock::new(|| {
+    let bytes = include_bytes!(concat!(
+        env!("OUT_DIR"),
+        "/assets/account_components/auth/network_account.masl"
+    ));
+    let library =
+        Library::read_from_bytes(bytes).expect("Shipped AuthNetworkAccount library is well-formed");
+    AccountComponentCode::from(library)
+});
 
 // AUTH NETWORK ACCOUNT
 // ================================================================================================
@@ -39,6 +53,11 @@ pub struct AuthNetworkAccount {
 impl AuthNetworkAccount {
     /// The name of the component.
     pub const NAME: &'static str = "miden::standards::auth::network_account";
+
+    /// Returns the [`AccountComponentCode`] of this component.
+    pub fn code() -> &'static AccountComponentCode {
+        &NETWORK_ACCOUNT_AUTH_CODE
+    }
 
     /// Creates a new [`AuthNetworkAccount`] component with the provided list of allowed
     /// input-note script roots.
@@ -84,7 +103,7 @@ impl From<AuthNetworkAccount> for AccountComponent {
         let storage_slots = vec![component.allowlist.into_storage_slot()];
         let metadata = AuthNetworkAccount::component_metadata();
 
-        AccountComponent::new(network_account_auth_library(), storage_slots, metadata).expect(
+        AccountComponent::new(AuthNetworkAccount::code().clone(), storage_slots, metadata).expect(
             "AuthNetworkAccount component should satisfy the requirements of a valid \
                  account component",
         )

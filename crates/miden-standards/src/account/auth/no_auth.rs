@@ -1,7 +1,16 @@
-use miden_protocol::account::component::AccountComponentMetadata;
+use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{AccountComponent, AccountType};
+use miden_protocol::assembly::Library;
+use miden_protocol::utils::serde::Deserializable;
+use miden_protocol::utils::sync::LazyLock;
 
-use crate::account::components::no_auth_library;
+// Initialize the NoAuth component code only once.
+static NO_AUTH_CODE: LazyLock<AccountComponentCode> = LazyLock::new(|| {
+    let bytes =
+        include_bytes!(concat!(env!("OUT_DIR"), "/assets/account_components/auth/no_auth.masl"));
+    let library = Library::read_from_bytes(bytes).expect("Shipped NoAuth library is well-formed");
+    AccountComponentCode::from(library)
+});
 
 /// An [`AccountComponent`] implementing a no-authentication scheme.
 ///
@@ -22,6 +31,11 @@ pub struct NoAuth;
 impl NoAuth {
     /// The name of the component.
     pub const NAME: &'static str = "miden::standards::components::auth::no_auth";
+
+    /// Returns the [`AccountComponentCode`] of this component.
+    pub fn code() -> &'static AccountComponentCode {
+        &NO_AUTH_CODE
+    }
 
     /// Creates a new [`NoAuth`] component.
     pub fn new() -> Self {
@@ -45,7 +59,7 @@ impl From<NoAuth> for AccountComponent {
     fn from(_: NoAuth) -> Self {
         let metadata = NoAuth::component_metadata();
 
-        AccountComponent::new(no_auth_library(), vec![], metadata)
+        AccountComponent::new(NoAuth::code().clone(), vec![], metadata)
             .expect("NoAuth component should satisfy the requirements of a valid account component")
     }
 }

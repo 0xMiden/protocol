@@ -1,39 +1,53 @@
 use alloc::string::String;
 
-use miden_protocol::Word;
-use miden_protocol::account::component::AccountComponentMetadata;
+use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{
     Account,
     AccountBuilder,
     AccountComponent,
+    AccountProcedureRoot,
     AccountStorageMode,
     AccountType,
 };
+use miden_protocol::assembly::Library;
 use miden_protocol::errors::AccountError;
+use miden_protocol::utils::serde::Deserializable;
+use miden_protocol::utils::sync::LazyLock;
 use thiserror::Error;
 
 use super::AuthMethod;
 use crate::account::auth::{AuthMultisig, AuthMultisigConfig, AuthSingleSig};
-use crate::account::components::basic_wallet_library;
 use crate::procedure_digest;
 
 // BASIC WALLET
 // ================================================================================================
 
-// Initialize the digest of the `receive_asset` procedure of the Basic Wallet only once.
+// Initialize the Basic Wallet component code only once.
+static BASIC_WALLET_CODE: LazyLock<AccountComponentCode> = LazyLock::new(|| {
+    let bytes = include_bytes!(concat!(
+        env!("OUT_DIR"),
+        "/assets/account_components/wallets/basic_wallet.masl"
+    ));
+    let library =
+        Library::read_from_bytes(bytes).expect("Shipped Basic Wallet library is well-formed");
+    AccountComponentCode::from(library)
+});
+
+// Initialize the procedure root of the `receive_asset` procedure of the Basic Wallet only once.
 procedure_digest!(
     BASIC_WALLET_RECEIVE_ASSET,
     BasicWallet::NAME,
     BasicWallet::RECEIVE_ASSET_PROC_NAME,
-    basic_wallet_library
+    BasicWallet::code()
 );
 
-// Initialize the digest of the `move_asset_to_note` procedure of the Basic Wallet only once.
+// Initialize the procedure root of the `move_asset_to_note` procedure of the Basic Wallet only
+// once.
 procedure_digest!(
     BASIC_WALLET_MOVE_ASSET_TO_NOTE,
     BasicWallet::NAME,
     BasicWallet::MOVE_ASSET_TO_NOTE_PROC_NAME,
-    basic_wallet_library
+    BasicWallet::code()
 );
 
 /// An [`AccountComponent`] implementing a basic wallet.
@@ -67,13 +81,18 @@ impl BasicWallet {
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns the digest of the `receive_asset` wallet procedure.
-    pub fn receive_asset_digest() -> Word {
+    /// Returns the [`AccountComponentCode`] of this component.
+    pub fn code() -> &'static AccountComponentCode {
+        &BASIC_WALLET_CODE
+    }
+
+    /// Returns the procedure root of the `receive_asset` wallet procedure.
+    pub fn receive_asset_digest() -> AccountProcedureRoot {
         *BASIC_WALLET_RECEIVE_ASSET
     }
 
-    /// Returns the digest of the `move_asset_to_note` wallet procedure.
-    pub fn move_asset_to_note_digest() -> Word {
+    /// Returns the procedure root of the `move_asset_to_note` wallet procedure.
+    pub fn move_asset_to_note_digest() -> AccountProcedureRoot {
         *BASIC_WALLET_MOVE_ASSET_TO_NOTE
     }
 
@@ -88,7 +107,7 @@ impl From<BasicWallet> for AccountComponent {
     fn from(_: BasicWallet) -> Self {
         let metadata = BasicWallet::component_metadata();
 
-        AccountComponent::new(basic_wallet_library(), vec![], metadata).expect(
+        AccountComponent::new(BasicWallet::code().clone(), vec![], metadata).expect(
             "basic wallet component should satisfy the requirements of a valid account component",
         )
     }

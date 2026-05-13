@@ -1,18 +1,30 @@
-use miden_protocol::Word;
-use miden_protocol::account::component::AccountComponentMetadata;
-use miden_protocol::account::{AccountComponent, AccountType};
+use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
+use miden_protocol::account::{AccountComponent, AccountProcedureRoot, AccountType};
+use miden_protocol::assembly::Library;
+use miden_protocol::utils::serde::Deserializable;
+use miden_protocol::utils::sync::LazyLock;
 
-use crate::account::components::owner_only_burn_policy_library;
 use crate::procedure_digest;
 
 // OWNER-ONLY BURN POLICY
 // ================================================================================================
 
+// Initialize the `owner_only` Burn Policy component code only once.
+static OWNER_ONLY_BURN_POLICY_CODE: LazyLock<AccountComponentCode> = LazyLock::new(|| {
+    let bytes = include_bytes!(concat!(
+        env!("OUT_DIR"),
+        "/assets/account_components/faucets/policies/burn/owner_controlled/owner_only.masl"
+    ));
+    let library = Library::read_from_bytes(bytes)
+        .expect("Shipped `owner_only` Burn Policy library is well-formed");
+    AccountComponentCode::from(library)
+});
+
 procedure_digest!(
     OWNER_ONLY_POLICY_ROOT,
     BurnOwnerOnly::NAME,
     BurnOwnerOnly::PROC_NAME,
-    owner_only_burn_policy_library
+    BurnOwnerOnly::code()
 );
 
 /// The storage-free `owner_only` burn policy account component (owner-controlled family).
@@ -30,8 +42,13 @@ impl BurnOwnerOnly {
 
     pub(crate) const PROC_NAME: &str = "check_policy";
 
-    /// Returns the MAST root of the `owner_only` burn policy procedure.
-    pub fn root() -> Word {
+    /// Returns the [`AccountComponentCode`] of this component.
+    pub fn code() -> &'static AccountComponentCode {
+        &OWNER_ONLY_BURN_POLICY_CODE
+    }
+
+    /// Returns the procedure root of the `owner_only` burn policy procedure.
+    pub fn root() -> AccountProcedureRoot {
         *OWNER_ONLY_POLICY_ROOT
     }
 }
@@ -44,7 +61,7 @@ impl From<BurnOwnerOnly> for AccountComponent {
                     "`owner_only` burn policy (owner-controlled family) for fungible faucets",
                 );
 
-        AccountComponent::new(owner_only_burn_policy_library(), vec![], metadata).expect(
+        AccountComponent::new(BurnOwnerOnly::code().clone(), vec![], metadata).expect(
             "`owner_only` burn policy component should satisfy the requirements of a valid account component",
         )
     }

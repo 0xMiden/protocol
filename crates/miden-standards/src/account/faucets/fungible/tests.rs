@@ -84,7 +84,7 @@ fn faucet_contract_creation() {
                 [Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ZERO].into()
             )
             .unwrap(),
-        mint_root
+        mint_root.as_word()
     );
 
     // Check that faucet metadata was initialized to the given values.

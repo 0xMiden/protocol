@@ -7,6 +7,7 @@ use alloc::vec::Vec;
 
 use miden_protocol::Word;
 use miden_protocol::account::component::{
+    AccountComponentCode,
     AccountComponentMetadata,
     FeltSchema,
     SchemaType,
@@ -21,12 +22,24 @@ use miden_protocol::account::{
     StorageSlot,
     StorageSlotName,
 };
+use miden_protocol::assembly::Library;
+use miden_protocol::utils::serde::Deserializable;
 use miden_protocol::utils::sync::LazyLock;
 
 use super::PolicyAuthority;
 use super::burn::BurnPolicyConfig;
 use super::mint::MintPolicyConfig;
-use crate::account::components::policy_manager_library;
+
+// Initialize the Token Policy Manager component code only once.
+static POLICY_MANAGER_CODE: LazyLock<AccountComponentCode> = LazyLock::new(|| {
+    let bytes = include_bytes!(concat!(
+        env!("OUT_DIR"),
+        "/assets/account_components/faucets/policies/policy_manager.masl"
+    ));
+    let library = Library::read_from_bytes(bytes)
+        .expect("Shipped Token Policy Manager library is well-formed");
+    AccountComponentCode::from(library)
+});
 
 // STORAGE SLOT NAMES
 // ================================================================================================
@@ -111,6 +124,11 @@ impl TokenPolicyManager {
 
     /// Component description used in [`AccountComponentMetadata`].
     pub const DESCRIPTION: &'static str = "Token policy manager for fungible faucets";
+
+    /// Returns the [`AccountComponentCode`] of this component.
+    pub fn code() -> &'static AccountComponentCode {
+        &POLICY_MANAGER_CODE
+    }
 
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
@@ -313,7 +331,7 @@ impl TokenPolicyManager {
     fn into_manager_component(self) -> AccountComponent {
         let storage_slots = self.manager_storage_slots();
         AccountComponent::new(
-            policy_manager_library(),
+            TokenPolicyManager::code().clone(),
             storage_slots,
             Self::component_metadata(),
         )

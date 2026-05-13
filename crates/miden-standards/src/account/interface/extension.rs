@@ -4,29 +4,29 @@ use alloc::vec::Vec;
 
 use miden_processor::mast::MastNodeExt;
 use miden_protocol::Word;
+use miden_protocol::account::component::AccountComponentCode;
 use miden_protocol::account::{Account, AccountCode, AccountId, AccountProcedureRoot};
 use miden_protocol::assembly::mast::{MastForest, MastNode, MastNodeId};
 use miden_protocol::note::{Note, NoteScript};
 
 use crate::AuthMethod;
-use crate::account::components::{
-    StandardAccountComponent,
-    basic_wallet_library,
-    fungible_faucet_library,
-    guarded_multisig_library,
-    multisig_library,
-    network_account_auth_library,
-    no_auth_library,
-    ownable2step_library,
-    rbac_library,
-    singlesig_acl_library,
-    singlesig_library,
+use crate::account::access::{Ownable2Step, RoleBasedAccessControl};
+use crate::account::auth::{
+    AuthGuardedMultisig,
+    AuthMultisig,
+    AuthNetworkAccount,
+    AuthSingleSig,
+    AuthSingleSigAcl,
+    NoAuth,
 };
+use crate::account::components::StandardAccountComponent;
+use crate::account::faucets::FungibleFaucet;
 use crate::account::interface::{
     AccountComponentInterface,
     AccountInterface,
     NoteAccountCompatibility,
 };
+use crate::account::wallets::BasicWallet;
 use crate::note::StandardNote;
 
 // ACCOUNT INTERFACE EXTENSION TRAIT
@@ -89,50 +89,28 @@ impl AccountInterfaceExt for AccountInterface {
     fn get_procedure_digests(&self) -> BTreeSet<Word> {
         let mut component_proc_digests = BTreeSet::new();
         for component in self.components.iter() {
-            match component {
-                AccountComponentInterface::BasicWallet => {
-                    component_proc_digests
-                        .extend(basic_wallet_library().mast_forest().procedure_digests());
-                },
-                AccountComponentInterface::FungibleFaucet => {
-                    component_proc_digests
-                        .extend(fungible_faucet_library().mast_forest().procedure_digests());
-                },
-                AccountComponentInterface::Ownable2Step => {
-                    component_proc_digests
-                        .extend(ownable2step_library().mast_forest().procedure_digests());
-                },
+            let code: Option<&'static AccountComponentCode> = match component {
+                AccountComponentInterface::BasicWallet => Some(BasicWallet::code()),
+                AccountComponentInterface::FungibleFaucet => Some(FungibleFaucet::code()),
+                AccountComponentInterface::Ownable2Step => Some(Ownable2Step::code()),
                 AccountComponentInterface::RoleBasedAccessControl => {
-                    component_proc_digests.extend(rbac_library().mast_forest().procedure_digests());
+                    Some(RoleBasedAccessControl::code())
                 },
-                AccountComponentInterface::AuthSingleSig => {
-                    component_proc_digests
-                        .extend(singlesig_library().mast_forest().procedure_digests());
-                },
-                AccountComponentInterface::AuthSingleSigAcl => {
-                    component_proc_digests
-                        .extend(singlesig_acl_library().mast_forest().procedure_digests());
-                },
-                AccountComponentInterface::AuthMultisig => {
-                    component_proc_digests
-                        .extend(multisig_library().mast_forest().procedure_digests());
-                },
-                AccountComponentInterface::AuthGuardedMultisig => {
-                    component_proc_digests
-                        .extend(guarded_multisig_library().mast_forest().procedure_digests());
-                },
-                AccountComponentInterface::AuthNoAuth => {
-                    component_proc_digests
-                        .extend(no_auth_library().mast_forest().procedure_digests());
-                },
-                AccountComponentInterface::AuthNetworkAccount => {
-                    component_proc_digests
-                        .extend(network_account_auth_library().mast_forest().procedure_digests());
-                },
+                AccountComponentInterface::AuthSingleSig => Some(AuthSingleSig::code()),
+                AccountComponentInterface::AuthSingleSigAcl => Some(AuthSingleSigAcl::code()),
+                AccountComponentInterface::AuthMultisig => Some(AuthMultisig::code()),
+                AccountComponentInterface::AuthGuardedMultisig => Some(AuthGuardedMultisig::code()),
+                AccountComponentInterface::AuthNoAuth => Some(NoAuth::code()),
+                AccountComponentInterface::AuthNetworkAccount => Some(AuthNetworkAccount::code()),
                 AccountComponentInterface::Custom(custom_procs) => {
                     component_proc_digests
                         .extend(custom_procs.iter().map(|info| *info.mast_root()));
+                    None
                 },
+            };
+
+            if let Some(code) = code {
+                component_proc_digests.extend(code.mast_forest().procedure_digests());
             }
         }
 

@@ -3,6 +3,7 @@ use miden_assembly::library::ProcedureExport;
 use miden_processor::mast::{MastForest, MastNodeExt};
 
 use crate::account::AccountProcedureRoot;
+use crate::assembly::Path;
 use crate::vm::AdviceMap;
 
 // ACCOUNT COMPONENT CODE
@@ -42,6 +43,15 @@ impl AccountComponentCode {
     /// Returns the procedure exports of this component.
     pub fn exports(&self) -> impl Iterator<Item = &ProcedureExport> + '_ {
         self.0.exports().filter_map(|export| export.as_procedure())
+    }
+
+    /// Returns the [`AccountProcedureRoot`] of the procedure with the specified path, or `None`
+    /// if it was not found in this component's library or its library path is malformed.
+    pub fn get_procedure_root_by_path(
+        &self,
+        proc_name: impl AsRef<Path>,
+    ) -> Option<AccountProcedureRoot> {
+        self.0.get_procedure_root_by_path(proc_name).map(AccountProcedureRoot::from_raw)
     }
 
     /// Returns a new [AccountComponentCode] with the provided advice map entries merged into the

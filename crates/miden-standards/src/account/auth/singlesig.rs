@@ -1,16 +1,26 @@
 use miden_protocol::Word;
 use miden_protocol::account::auth::{AuthScheme, PublicKey, PublicKeyCommitment};
 use miden_protocol::account::component::{
+    AccountComponentCode,
     AccountComponentMetadata,
     SchemaType,
     StorageSchema,
     StorageSlotSchema,
 };
 use miden_protocol::account::{AccountComponent, AccountType, StorageSlot, StorageSlotName};
+use miden_protocol::assembly::Library;
 use miden_protocol::crypto::dsa::{ecdsa_k256_keccak, falcon512_poseidon2};
+use miden_protocol::utils::serde::Deserializable;
 use miden_protocol::utils::sync::LazyLock;
 
-use crate::account::components::singlesig_library;
+// Initialize the Singlesig component code only once.
+static SINGLESIG_CODE: LazyLock<AccountComponentCode> = LazyLock::new(|| {
+    let bytes =
+        include_bytes!(concat!(env!("OUT_DIR"), "/assets/account_components/auth/singlesig.masl"));
+    let library =
+        Library::read_from_bytes(bytes).expect("Shipped Singlesig library is well-formed");
+    AccountComponentCode::from(library)
+});
 
 // CONSTANTS
 // ================================================================================================
@@ -47,6 +57,11 @@ pub struct AuthSingleSig {
 impl AuthSingleSig {
     /// The name of the component.
     pub const NAME: &'static str = "miden::standards::components::auth::singlesig";
+
+    /// Returns the [`AccountComponentCode`] of this component.
+    pub fn code() -> &'static AccountComponentCode {
+        &SINGLESIG_CODE
+    }
 
     /// Creates a new [`AuthSingleSig`] component with the given `public_key`.
     pub fn new(pub_key: PublicKeyCommitment, auth_scheme: AuthScheme) -> Self {
@@ -139,7 +154,7 @@ impl From<AuthSingleSig> for AccountComponent {
             ),
         ];
 
-        AccountComponent::new(singlesig_library(), storage_slots, metadata).expect(
+        AccountComponent::new(AuthSingleSig::code().clone(), storage_slots, metadata).expect(
             "singlesig component should satisfy the requirements of a valid account component",
         )
     }

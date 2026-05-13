@@ -2,6 +2,7 @@ use alloc::vec::Vec;
 
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 use miden_protocol::account::component::{
+    AccountComponentCode,
     AccountComponentMetadata,
     FeltSchema,
     SchemaType,
@@ -11,17 +12,29 @@ use miden_protocol::account::component::{
 use miden_protocol::account::{
     AccountCode,
     AccountComponent,
+    AccountProcedureRoot,
     AccountType,
     StorageMap,
     StorageMapKey,
     StorageSlot,
     StorageSlotName,
 };
+use miden_protocol::assembly::Library;
 use miden_protocol::errors::AccountError;
+use miden_protocol::utils::serde::Deserializable;
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
-use crate::account::components::singlesig_acl_library;
+// Initialize the Singlesig ACL component code only once.
+static SINGLESIG_ACL_CODE: LazyLock<AccountComponentCode> = LazyLock::new(|| {
+    let bytes = include_bytes!(concat!(
+        env!("OUT_DIR"),
+        "/assets/account_components/auth/singlesig_acl.masl"
+    ));
+    let library =
+        Library::read_from_bytes(bytes).expect("Shipped Singlesig ACL library is well-formed");
+    AccountComponentCode::from(library)
+});
 
 // CONSTANTS
 // ================================================================================================
@@ -50,7 +63,7 @@ static TRIGGER_PROCEDURE_ROOT_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::n
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AuthSingleSigAclConfig {
     /// List of procedure roots that require authentication when called.
-    pub auth_trigger_procedures: Vec<Word>,
+    pub auth_trigger_procedures: Vec<AccountProcedureRoot>,
     /// When `false`, creating output notes (sending notes to other accounts) requires
     /// authentication. When `true`, output notes can be created without authentication.
     pub allow_unauthorized_output_notes: bool,
@@ -71,7 +84,7 @@ impl AuthSingleSigAclConfig {
     }
 
     /// Sets the list of procedure roots that require authentication when called.
-    pub fn with_auth_trigger_procedures(mut self, procedures: Vec<Word>) -> Self {
+    pub fn with_auth_trigger_procedures(mut self, procedures: Vec<AccountProcedureRoot>) -> Self {
         self.auth_trigger_procedures = procedures;
         self
     }
@@ -158,6 +171,12 @@ pub struct AuthSingleSigAcl {
 impl AuthSingleSigAcl {
     /// The name of the component.
     pub const NAME: &'static str = "miden::standards::components::auth::singlesig_acl";
+
+    /// Returns the [`AccountComponentCode`] of this component.
+    pub fn code() -> &'static AccountComponentCode {
+        &SINGLESIG_ACL_CODE
+    }
+
     /// Creates a new [`AuthSingleSigAcl`] component with the given `public_key` and
     /// configuration.
     ///
@@ -291,12 +310,10 @@ impl From<AuthSingleSigAcl> for AccountComponent {
         // Trigger procedure roots slot
         // We add the map even if there are no trigger procedures, to always maintain the same
         // storage layout.
-        let map_entries = singlesig_acl
-            .config
-            .auth_trigger_procedures
-            .iter()
-            .enumerate()
-            .map(|(i, proc_root)| (StorageMapKey::from_index(i as u32), *proc_root));
+        let map_entries =
+            singlesig_acl.config.auth_trigger_procedures.iter().enumerate().map(
+                |(i, proc_root)| (StorageMapKey::from_index(i as u32), Word::from(*proc_root)),
+            );
 
         // Safe to unwrap because we know that the map keys are unique.
         storage_slots.push(StorageSlot::with_map(
@@ -306,7 +323,7 @@ impl From<AuthSingleSigAcl> for AccountComponent {
 
         let metadata = AuthSingleSigAcl::component_metadata();
 
-        AccountComponent::new(singlesig_acl_library(), storage_slots, metadata).expect(
+        AccountComponent::new(AuthSingleSigAcl::code().clone(), storage_slots, metadata).expect(
             "singlesig ACL component should satisfy the requirements of a valid account component",
         )
     }
@@ -337,9 +354,9 @@ mod tests {
     }
 
     /// Helper function to get the basic wallet procedures for testing
-    fn get_basic_wallet_procedures() -> Vec<Word> {
+    fn get_basic_wallet_procedures() -> Vec<AccountProcedureRoot> {
         // Get the two trigger procedures from BasicWallet: `receive_asset`, `move_asset_to_note`.
-        let procedures: Vec<Word> =
+        let procedures: Vec<AccountProcedureRoot> =
             StandardAccountComponent::BasicWallet.procedure_digests().collect();
 
         assert_eq!(procedures.len(), 2);
@@ -356,7 +373,7 @@ mod tests {
             .with_allow_unauthorized_output_notes(config.allow_unauthorized_output_notes)
             .with_allow_unauthorized_input_notes(config.allow_unauthorized_input_notes);
 
-        let auth_trigger_procedures = if config.with_procedures {
+        let auth_trigger_procedures: Vec<AccountProcedureRoot> = if config.with_procedures {
             let procedures = get_basic_wallet_procedures();
             acl_config = acl_config.with_auth_trigger_procedures(procedures.clone());
             procedures
@@ -398,7 +415,7 @@ mod tests {
                         Word::from([i as u32, 0, 0, 0]),
                     )
                     .expect("storage map access failed");
-                assert_eq!(proc_root, *expected_proc_root);
+                assert_eq!(proc_root, Word::from(*expected_proc_root));
             }
         } else {
             // When no procedures, the map should return empty for key [0,0,0,0]

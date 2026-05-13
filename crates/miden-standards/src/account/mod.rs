@@ -11,10 +11,10 @@ pub mod wallets;
 
 pub use metadata::AccountBuilderSchemaCommitmentExt;
 
-/// Macro to simplify the creation of static procedure digest constants.
+/// Macro to simplify the creation of static procedure root constants.
 ///
-/// This macro generates a `LazyLock<Word>` static variable that lazily initializes
-/// the digest of a procedure from a library.
+/// This macro generates a `LazyLock<AccountProcedureRoot>` static variable that lazily initializes
+/// the procedure root of a procedure from an [`AccountComponentCode`].
 ///
 /// The full procedure path is constructed by concatenating `$component_name` and `$proc_name`
 /// with `::` as separator (i.e. `"{component_name}::{proc_name}"`).
@@ -26,7 +26,10 @@ pub use metadata::AccountBuilderSchemaCommitmentExt;
 /// * `$name` - The name of the static variable to create
 /// * `$component_name` - The name of the component (e.g. `BasicWallet::NAME`)
 /// * `$proc_name` - The short name of the procedure (e.g. `"receive_asset"`)
-/// * `$library_fn` - The function that returns the library containing the procedure
+/// * `$component_code` - An expression evaluating to `&AccountComponentCode` (typically the
+///   component's `code()` accessor)
+///
+/// [`AccountComponentCode`]: miden_protocol::account::AccountComponentCode
 ///
 /// # Example
 /// ```ignore
@@ -34,18 +37,20 @@ pub use metadata::AccountBuilderSchemaCommitmentExt;
 ///     BASIC_WALLET_RECEIVE_ASSET,
 ///     BasicWallet::NAME,
 ///     BasicWallet::RECEIVE_ASSET_PROC_NAME,
-///     basic_wallet_library
+///     BasicWallet::code()
 /// );
 /// ```
 #[macro_export]
 macro_rules! procedure_digest {
-    ($name:ident, $component_name:expr, $proc_name:expr, $library_fn:expr) => {
-        static $name: miden_protocol::utils::sync::LazyLock<miden_protocol::Word> =
-            miden_protocol::utils::sync::LazyLock::new(|| {
-                let full_path = alloc::format!("{}::{}", $component_name, $proc_name);
-                $library_fn().get_procedure_root_by_path(full_path.as_str()).unwrap_or_else(|| {
-                    panic!("{} should contain '{}' procedure", stringify!($library_fn), full_path)
-                })
-            });
+    ($name:ident, $component_name:expr, $proc_name:expr, $component_code:expr) => {
+        static $name: miden_protocol::utils::sync::LazyLock<
+            miden_protocol::account::AccountProcedureRoot,
+        > = miden_protocol::utils::sync::LazyLock::new(|| {
+            let full_path = alloc::format!("{}::{}", $component_name, $proc_name);
+            let code: &miden_protocol::account::AccountComponentCode = $component_code;
+            code.get_procedure_root_by_path(full_path.as_str()).unwrap_or_else(|| {
+                panic!("component '{}' should contain procedure '{}'", $component_name, full_path)
+            })
+        });
     };
 }

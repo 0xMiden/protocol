@@ -208,7 +208,7 @@ fn build_network_faucet_with_burn_switching(
         mint_policy,
         BurnPolicyConfig::AllowAll,
     )
-    .with_allowed_burn_policy(BurnOwnerOnly::root());
+    .with_allowed_burn_policy(BurnOwnerOnly::root().as_word());
 
     let account_builder = AccountBuilder::new(builder.rng_mut().random())
         .storage_mode(AccountStorageMode::Network)
@@ -822,7 +822,7 @@ async fn test_network_faucet_set_policy_rejects_non_allowed_root() -> anyhow::Re
     let mock_chain = builder.build()?;
 
     // This root exists in account code, but is not in the mint policy allowlist.
-    let invalid_policy_root = FungibleFaucet::mint_and_send_digest();
+    let invalid_policy_root = FungibleFaucet::mint_and_send_digest().as_word();
     let set_policy_note_script = format!(
         r#"
         use miden::standards::faucets::policies::policy_manager
@@ -873,7 +873,7 @@ async fn test_network_faucet_set_burn_policy_rejects_non_allowed_root() -> anyho
     let mock_chain = builder.build()?;
 
     // This root exists in account code, but is not in the burn policy allowlist.
-    let invalid_policy_root = FungibleFaucet::receive_and_burn_digest();
+    let invalid_policy_root = FungibleFaucet::receive_and_burn_digest().as_word();
     let set_policy_note_script = create_set_burn_policy_note_script(invalid_policy_root);
 
     let result = execute_faucet_note_script(
@@ -1370,7 +1370,7 @@ fn test_network_faucet_contains_default_burn_policy_root() -> anyhow::Result<()>
 
     let stored_root = faucet.storage().get_item(TokenPolicyManager::active_burn_policy_slot())?;
 
-    assert_eq!(stored_root, BurnAllowAll::root());
+    assert_eq!(stored_root, BurnAllowAll::root().as_word());
     assert!(faucet.code().has_procedure(stored_root));
 
     Ok(())
@@ -1469,7 +1469,8 @@ async fn test_network_faucet_non_owner_cannot_burn_when_owner_only_policy_active
         100,
         MintPolicyConfig::OwnerOnly,
     )?;
-    let set_policy_note_script = create_set_burn_policy_note_script(BurnOwnerOnly::root());
+    let set_policy_note_script =
+        create_set_burn_policy_note_script(BurnOwnerOnly::root().as_word());
     let mut rng = RandomCoin::new([Felt::from(500u32); 4].into());
     let set_policy_note = NoteBuilder::new(owner_account_id, &mut rng)
         .note_type(NoteType::Private)
@@ -1527,7 +1528,8 @@ async fn test_network_faucet_owner_can_burn_when_owner_only_policy_active() -> a
         100,
         MintPolicyConfig::OwnerOnly,
     )?;
-    let set_policy_note_script = create_set_burn_policy_note_script(BurnOwnerOnly::root());
+    let set_policy_note_script =
+        create_set_burn_policy_note_script(BurnOwnerOnly::root().as_word());
     let mut rng = RandomCoin::new([Felt::from(510u32); 4].into());
     let set_policy_note = NoteBuilder::new(owner_account_id, &mut rng)
         .note_type(NoteType::Private)
