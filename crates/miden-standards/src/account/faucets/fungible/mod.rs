@@ -204,12 +204,12 @@ impl FungibleFaucet {
     }
 
     /// Returns the procedure root of the `mint_and_send` account procedure.
-    pub fn mint_and_send_digest() -> AccountProcedureRoot {
+    pub fn mint_and_send_root() -> AccountProcedureRoot {
         *FUNGIBLE_FAUCET_MINT_AND_SEND
     }
 
     /// Returns the procedure root of the `receive_and_burn` account procedure.
-    pub fn receive_and_burn_digest() -> AccountProcedureRoot {
+    pub fn receive_and_burn_root() -> AccountProcedureRoot {
         *FUNGIBLE_FAUCET_RECEIVE_AND_BURN
     }
 
@@ -486,7 +486,7 @@ pub fn create_fungible_faucet(
     access_control: AccessControl,
     token_policy_manager: TokenPolicyManager,
 ) -> Result<Account, FungibleFaucetError> {
-    let mint_proc_root = FungibleFaucet::mint_and_send_digest();
+    let mint_proc_root = FungibleFaucet::mint_and_send_root();
 
     let auth_component: AccountComponent = match auth_method {
         AuthMethod::SingleSig { approver: (pub_key, auth_scheme) } => AuthSingleSigAcl::new(

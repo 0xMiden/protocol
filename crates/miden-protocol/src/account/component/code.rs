@@ -94,6 +94,7 @@ impl From<AccountComponentCode> for Library {
 
 #[cfg(test)]
 mod tests {
+    use alloc::string::ToString;
     use alloc::sync::Arc;
 
     use miden_core::{Felt, Word};
@@ -130,5 +131,34 @@ mod tests {
         let mast = component_code.mast_forest();
         let stored = mast.advice_map().get(&key).expect("entry should be present");
         assert_eq!(stored.as_ref(), value.as_slice());
+    }
+
+    #[test]
+    fn test_get_procedure_root_by_path() {
+        let assembler = Assembler::default();
+        let library = Arc::unwrap_or_clone(
+            assembler
+                .assemble_library(["pub proc test_proc nop end"])
+                .expect("failed to assemble library"),
+        );
+        let component_code = AccountComponentCode::from(library);
+
+        let library_namespace = component_code
+            .as_library()
+            .module_infos()
+            .next()
+            .expect("library should have one module")
+            .path()
+            .to_string();
+        let proc_path = alloc::format!("{library_namespace}::test_proc");
+
+        let root = component_code
+            .get_procedure_root_by_path(proc_path.as_str())
+            .expect("test_proc should be present");
+        let expected: AccountProcedureRoot =
+            component_code.procedure_roots().next().expect("one procedure exported");
+        assert_eq!(root, expected);
+
+        assert!(component_code.get_procedure_root_by_path("bogus::missing").is_none());
     }
 }

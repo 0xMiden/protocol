@@ -888,7 +888,7 @@ async fn test_multisig_update_signers_rejects_unreachable_proc_thresholds(
     // Configure a procedure override that is valid for the initial signer set (3-of-3),
     // but invalid after updating to 2 signers.
     let multisig_account =
-        create_multisig_account(2, &approvers, 10, vec![(BasicWallet::receive_asset_digest(), 3)])?;
+        create_multisig_account(2, &approvers, 10, vec![(BasicWallet::receive_asset_root(), 3)])?;
 
     let mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])
         .unwrap()
@@ -1109,7 +1109,7 @@ async fn test_multisig_proc_threshold_overrides(
     let (_secret_keys, auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
 
-    let proc_threshold_map = vec![(BasicWallet::receive_asset_digest(), 1)];
+    let proc_threshold_map = vec![(BasicWallet::receive_asset_root(), 1)];
 
     let approvers = public_keys
         .iter()
@@ -1295,7 +1295,7 @@ async fn test_multisig_set_procedure_threshold(
         NoteType::Public,
     )?;
     let mut mock_chain = mock_chain_builder.build().unwrap();
-    let proc_root = BasicWallet::receive_asset_digest().as_word();
+    let proc_root = BasicWallet::receive_asset_root().as_word();
 
     let set_script_code = format!(
         r#"
@@ -1476,7 +1476,7 @@ async fn test_multisig_set_procedure_threshold_rejects_exceeding_approvers(
         .collect::<Vec<_>>();
 
     let multisig_account = create_multisig_account(2, &approvers, 10, vec![])?;
-    let proc_root = BasicWallet::receive_asset_digest().as_word();
+    let proc_root = BasicWallet::receive_asset_root().as_word();
 
     let script_code = format!(
         r#"

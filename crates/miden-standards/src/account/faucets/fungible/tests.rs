@@ -75,7 +75,7 @@ fn faucet_contract_creation() {
     );
 
     // The procedure root map should contain the mint_and_send procedure root.
-    let mint_root = FungibleFaucet::mint_and_send_digest();
+    let mint_root = FungibleFaucet::mint_and_send_root();
     assert_eq!(
         faucet_account
             .storage()
@@ -158,6 +158,6 @@ fn faucet_create_from_account() {
 /// Check that the obtaining of the fungible faucet procedure digests does not panic.
 #[test]
 fn get_faucet_procedures() {
-    let _mint_and_send_digest = FungibleFaucet::mint_and_send_digest();
-    let _receive_and_burn_digest = FungibleFaucet::receive_and_burn_digest();
+    let _mint_and_send_root = FungibleFaucet::mint_and_send_root();
+    let _receive_and_burn_root = FungibleFaucet::receive_and_burn_root();
 }

@@ -146,30 +146,28 @@ impl StandardNote {
             return true;
         }
 
-        let interface_proc_digests = account_interface.get_procedure_digests();
+        let interface_proc_roots = account_interface.get_procedure_roots();
         match self {
             Self::P2ID | &Self::P2IDE => {
                 // To consume P2ID and P2IDE notes, the `receive_asset` procedure must be present in
                 // the provided account interface.
-                interface_proc_digests.contains(&BasicWallet::receive_asset_digest().as_word())
+                interface_proc_roots.contains(&BasicWallet::receive_asset_root())
             },
             Self::SWAP | Self::PSWAP => {
                 // To consume SWAP/PSWAP notes, the `receive_asset` and `move_asset_to_note`
                 // procedures must be present in the provided account interface.
-                interface_proc_digests.contains(&BasicWallet::receive_asset_digest().as_word())
-                    && interface_proc_digests
-                        .contains(&BasicWallet::move_asset_to_note_digest().as_word())
+                interface_proc_roots.contains(&BasicWallet::receive_asset_root())
+                    && interface_proc_roots.contains(&BasicWallet::move_asset_to_note_root())
             },
             Self::MINT => {
                 // MINT notes invoke the faucet's `mint_and_send` procedure. The note-based
                 // mint flow is intended for network-style faucets where the active mint policy
                 // gates minting via owner verification.
-                interface_proc_digests.contains(&FungibleFaucet::mint_and_send_digest().as_word())
+                interface_proc_roots.contains(&FungibleFaucet::mint_and_send_root())
             },
             Self::BURN => {
                 // BURN notes invoke the faucet's `receive_and_burn` procedure.
-                interface_proc_digests
-                    .contains(&FungibleFaucet::receive_and_burn_digest().as_word())
+                interface_proc_roots.contains(&FungibleFaucet::receive_and_burn_root())
             },
         }
     }

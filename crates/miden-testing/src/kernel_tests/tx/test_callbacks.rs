@@ -179,12 +179,12 @@ impl BlockList {
     }
 
     /// Returns the procedure root of the `on_before_asset_added_to_account` procedure.
-    pub fn on_before_asset_added_to_account_digest() -> AccountProcedureRoot {
+    pub fn on_before_asset_added_to_account_root() -> AccountProcedureRoot {
         *BLOCK_LIST_ON_BEFORE_ASSET_ADDED_TO_ACCOUNT
     }
 
     /// Returns the procedure root of the `on_before_asset_added_to_note` procedure.
-    pub fn on_before_asset_added_to_note_digest() -> AccountProcedureRoot {
+    pub fn on_before_asset_added_to_note_root() -> AccountProcedureRoot {
         *BLOCK_LIST_ON_BEFORE_ASSET_ADDED_TO_NOTE
     }
 }
@@ -212,10 +212,10 @@ impl From<BlockList> for AccountComponent {
         storage_slots.extend(
             AssetCallbacks::new()
                 .on_before_asset_added_to_account(
-                    BlockList::on_before_asset_added_to_account_digest().as_word(),
+                    BlockList::on_before_asset_added_to_account_root().as_word(),
                 )
                 .on_before_asset_added_to_note(
-                    BlockList::on_before_asset_added_to_note_digest().as_word(),
+                    BlockList::on_before_asset_added_to_note_root().as_word(),
                 )
                 .into_storage_slots(),
         );

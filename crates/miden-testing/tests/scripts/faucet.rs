@@ -822,7 +822,7 @@ async fn test_network_faucet_set_policy_rejects_non_allowed_root() -> anyhow::Re
     let mock_chain = builder.build()?;
 
     // This root exists in account code, but is not in the mint policy allowlist.
-    let invalid_policy_root = FungibleFaucet::mint_and_send_digest().as_word();
+    let invalid_policy_root = FungibleFaucet::mint_and_send_root().as_word();
     let set_policy_note_script = format!(
         r#"
         use miden::standards::faucets::policies::policy_manager
@@ -873,7 +873,7 @@ async fn test_network_faucet_set_burn_policy_rejects_non_allowed_root() -> anyho
     let mock_chain = builder.build()?;
 
     // This root exists in account code, but is not in the burn policy allowlist.
-    let invalid_policy_root = FungibleFaucet::receive_and_burn_digest().as_word();
+    let invalid_policy_root = FungibleFaucet::receive_and_burn_root().as_word();
     let set_policy_note_script = create_set_burn_policy_note_script(invalid_policy_root);
 
     let result = execute_faucet_note_script(
@@ -1342,8 +1342,8 @@ fn test_faucet_burn_procedures_are_identical() {
     // Both faucet types must export the same burn procedure with identical MAST roots
     // so that a single BURN note script can work with either faucet type
     assert_eq!(
-        FungibleFaucet::receive_and_burn_digest(),
-        FungibleFaucet::receive_and_burn_digest(),
+        FungibleFaucet::receive_and_burn_root(),
+        FungibleFaucet::receive_and_burn_root(),
         "Basic and network fungible faucets must have the same burn procedure digest"
     );
 }

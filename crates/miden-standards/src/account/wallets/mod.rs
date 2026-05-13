@@ -87,12 +87,12 @@ impl BasicWallet {
     }
 
     /// Returns the procedure root of the `receive_asset` wallet procedure.
-    pub fn receive_asset_digest() -> AccountProcedureRoot {
+    pub fn receive_asset_root() -> AccountProcedureRoot {
         *BASIC_WALLET_RECEIVE_ASSET
     }
 
     /// Returns the procedure root of the `move_asset_to_note` wallet procedure.
-    pub fn move_asset_to_note_digest() -> AccountProcedureRoot {
+    pub fn move_asset_to_note_root() -> AccountProcedureRoot {
         *BASIC_WALLET_MOVE_ASSET_TO_NOTE
     }
 
@@ -154,7 +154,7 @@ pub fn create_basic_wallet(
         AuthMethod::Multisig { threshold, approvers } => {
             let config = AuthMultisigConfig::new(approvers, threshold)
                 .and_then(|cfg| {
-                    cfg.with_proc_thresholds(vec![(BasicWallet::receive_asset_digest(), 1)])
+                    cfg.with_proc_thresholds(vec![(BasicWallet::receive_asset_root(), 1)])
                 })
                 .map_err(BasicWalletError::AccountError)?;
             AuthMultisig::new(config).map_err(BasicWalletError::AccountError)?.into()
@@ -230,7 +230,7 @@ mod tests {
     /// Check that the obtaining of the basic wallet procedure digests does not panic.
     #[test]
     fn get_faucet_procedures() {
-        let _receive_asset_digest = BasicWallet::receive_asset_digest();
-        let _move_asset_to_note_digest = BasicWallet::move_asset_to_note_digest();
+        let _receive_asset_root = BasicWallet::receive_asset_root();
+        let _move_asset_to_note_root = BasicWallet::move_asset_to_note_root();
     }
 }
