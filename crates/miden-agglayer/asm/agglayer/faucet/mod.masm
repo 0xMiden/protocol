@@ -159,7 +159,7 @@ end
 #! Invocation: call
 pub use ::miden::standards::faucets::fungible::receive_and_burn
 
-#! Re-export the network fungible faucet's `mint_and_send` procedure.
+#! Re-export the fungible faucet's `mint_and_send` procedure.
 #!
 #! See `miden::standards::faucets::fungible::mint_and_send` for more details.
 #!

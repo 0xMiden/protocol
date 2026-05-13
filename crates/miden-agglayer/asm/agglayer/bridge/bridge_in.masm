@@ -63,20 +63,21 @@ const CLAIM_PROOF_DATA_WORD_LEN = 134
 const CLAIM_LEAF_DATA_WORD_LEN = 8
 
 # MINT note storage layout (public mode, 22 felts total). The full 22-felt window is
-# hashed into the MINT note's storage commitment, so any non-zero drift at [17..19] would
-# change RECIPIENT and break consumption. The padding cells at [17..19] are NOT explicitly
-# written by `write_mint_note_storage`; they rely on the VM's zero-initialised memory at
-# addresses MINT_NOTE_STORAGE_MEM_ADDR_0 + 17..19, and on no other code path writing to
-# that range. If the MINT_NOTE_STORAGE_* base or surrounding writes are ever changed,
-# either preserve that invariant or `push.0 mem_store` explicitly at those offsets.
+# inserted into the advice provider by `note::compute_and_store_recipient` and feeds the
+# storage commitment; any drift at [17..19] would change the MINT note's RECIPIENT (and
+# therefore the note's ID, which off-chain indexers precompute). The padding cells at
+# absolute addresses 817-819 are NOT explicitly written by `write_mint_note_storage`;
+# they rely on the VM's zero-initialised memory at those addresses, and on no other code
+# path writing to that range. If the MINT_NOTE_STORAGE_* base or surrounding writes are
+# ever changed, either preserve that invariant or write zeros explicitly at 817-819.
 # - P2ID_SCRIPT_ROOT  [0..3]   : 4 felts
 # - SERIAL_NUM        [4..7]   : 4 felts
 # - ASSET_KEY         [8..11]  : 4 felts (vault key of the fungible asset to mint)
 # - ASSET_VALUE       [12..15] : 4 felts (value word of the asset; [amount, 0, 0, 0])
 # - tag               [16]     : 1 felt
-# - 0                 [17]     : 1 felt (padding; relies on VM zero-init, see note above)
-# - 0                 [18]     : 1 felt (padding; relies on VM zero-init, see note above)
-# - 0                 [19]     : 1 felt (padding so the P2ID storage below is word-aligned)
+# - 0                 [17]     : 1 felt (padding; VM zero-init, see note above)
+# - 0                 [18]     : 1 felt (padding; VM zero-init, see note above)
+# - 0                 [19]     : 1 felt (padding; VM zero-init; keeps P2ID storage word-aligned)
 # - account_id_suffix [20]     : 1 felt
 # - account_id_prefix [21]     : 1 felt
 const MINT_NOTE_NUM_STORAGE_ITEMS = 22

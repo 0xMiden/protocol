@@ -367,7 +367,7 @@ This is a re-export of `miden::standards::faucets::basic_fungible::burn`. It bur
 | `agglayer::faucet::metadata_hash_hi` | Value | Upper word of the metadata hash | Metadata hash high word (4 u32 felts) |
 
 **Companion component storage slots:** The faucet account also includes storage from
-companion components required by `network_fungible::mint_and_send`:
+companion components required by `fungible::mint_and_send`:
 
 - `Ownable2Step` owner config slot: stores the bridge account ID as owner.
 - `OwnerControlled` slots (3): `active_policy_proc_root`, `allowed_policy_proc_roots`,
@@ -763,7 +763,7 @@ bind passes, the minted asset is attached to the P2ID output note via
 | Role | Enforcement |
 |------|------------|
 | **Issuer** | Bridge account only -- **enforced** by faucet's `owner_only` mint policy via `Ownable2Step` (asserts note sender is the faucet's owner, i.e. the bridge) |
-| **Consumer** | Target faucet only -- **enforced** by the kernel `faucet::mint` syscall, which panics if the stored `ASSET_KEY`'s faucet ID does not equal the active account. The `NetworkAccountTarget` attachment is retained for network routing but is no longer security-load-bearing |
+| **Consumer** | Target faucet only -- **enforced** by the kernel `faucet::mint` syscall, which panics if the stored `ASSET_KEY`'s faucet ID does not equal the active account. The `NetworkAccountTarget` attachment is retained as the network-routing primitive but is no longer the sole consume-side bind |
 
 ---
 
