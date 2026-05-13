@@ -5,7 +5,7 @@ test_hooks.py.
 
 import pytest
 
-from _classify import matches, pipeline_segments, strip_assignments
+from _classify import match_args, matches, pipeline_segments, strip_assignments
 
 
 # ---------------------------------------------------------------------------
@@ -225,3 +225,44 @@ def test_unbalanced_quotes_segment_dropped():
 def test_pipe_with_unrelated_first_command():
     # First segment is `cat`, second is `grep`. Neither is `git push`.
     assert matches("cat file | grep foo", "git", ["push"]) is False
+
+
+# ---------------------------------------------------------------------------
+# match_args — used by pre_pr_draft to scope flag inspection to the
+# matched `gh pr create` segment rather than the raw command string.
+# ---------------------------------------------------------------------------
+
+
+def test_match_args_no_args():
+    assert match_args("gh pr create", "gh", ["pr", "create"]) == []
+
+
+def test_match_args_with_simple_args():
+    assert match_args("gh pr create --draft", "gh", ["pr", "create"]) == ["--draft"]
+
+
+def test_match_args_walks_past_global_flags():
+    assert match_args(
+        "gh -R foo/bar pr create --title x", "gh", ["pr", "create"]
+    ) == ["--title", "x"]
+
+
+def test_match_args_returns_only_matched_segment():
+    # The `&& echo --draft` segment must NOT pollute the args.
+    assert (
+        match_args("gh pr create && echo --draft", "gh", ["pr", "create"]) == []
+    )
+
+
+def test_match_args_no_match_returns_none():
+    assert match_args("echo gh pr create --draft", "gh", ["pr", "create"]) is None
+    assert match_args("git push", "gh", ["pr", "create"]) is None
+
+
+def test_match_args_picks_first_matching_segment():
+    # If two segments would match (unusual), return the first.
+    assert match_args(
+        "gh pr create --draft && gh pr create --title y",
+        "gh",
+        ["pr", "create"],
+    ) == ["--draft"]

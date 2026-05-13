@@ -195,8 +195,29 @@ def matches(command: str, binary: str, subcommand: list[str]) -> bool:
     >>> matches("gh pr list", "gh", ["pr", "create"])
     False
     """
+    return match_args(command, binary, subcommand) is not None
+
+
+def match_args(command: str, binary: str, subcommand: list[str]) -> list[str] | None:
+    """Return the tokens that follow `subcommand` in the FIRST pipeline
+    segment that invokes `binary` with `subcommand`. Returns None if no
+    segment matches.
+
+    Used by hooks that need to inspect just the matched invocation's
+    args — e.g. `pre_pr_draft` checking for `--draft` only on the
+    actual `gh pr create` segment, not anywhere in the raw command.
+
+    >>> match_args("gh pr create --draft", "gh", ["pr", "create"])
+    ['--draft']
+    >>> match_args("gh -R foo/bar pr create --title x", "gh", ["pr", "create"])
+    ['--title', 'x']
+    >>> match_args("gh pr create && echo --draft", "gh", ["pr", "create"])
+    []
+    >>> match_args("echo gh pr create --draft", "gh", ["pr", "create"]) is None
+    True
+    """
     if not subcommand:
-        return False
+        return None
     for tokens in pipeline_segments(command):
         tokens = strip_assignments(tokens)
         if not tokens or tokens[0] != binary:
@@ -204,5 +225,5 @@ def matches(command: str, binary: str, subcommand: list[str]) -> bool:
         i = _walk_past_global_flags(tokens, binary, 1)
         # Subcommand chain must appear contiguously starting at `i`.
         if tokens[i : i + len(subcommand)] == list(subcommand):
-            return True
-    return False
+            return tokens[i + len(subcommand) :]
+    return None
