@@ -146,7 +146,11 @@ impl AggLayerFaucet {
                     max: AssetAmount::MAX,
                 }
             })?;
-        let faucet = FungibleFaucet::builder(name, symbol, decimals, max_supply_amount)
+        let faucet = FungibleFaucet::builder()
+            .name(name)
+            .symbol(symbol)
+            .decimals(decimals)
+            .max_supply(max_supply_amount)
             .token_supply(token_supply_amount)
             .build()?;
         Ok(Self {
