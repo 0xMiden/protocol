@@ -301,10 +301,12 @@ impl From<AuthSingleSigAcl> for AccountComponent {
         // Trigger procedure roots slot
         // We add the map even if there are no trigger procedures, to always maintain the same
         // storage layout.
-        let map_entries =
-            singlesig_acl.config.auth_trigger_procedures.iter().enumerate().map(
-                |(i, proc_root)| (StorageMapKey::from_index(i as u32), Word::from(*proc_root)),
-            );
+        let map_entries = singlesig_acl
+            .config
+            .auth_trigger_procedures
+            .iter()
+            .enumerate()
+            .map(|(i, proc_root)| (StorageMapKey::from_index(i as u32), proc_root.as_word()));
 
         // Safe to unwrap because we know that the map keys are unique.
         storage_slots.push(StorageSlot::with_map(
@@ -406,7 +408,7 @@ mod tests {
                         Word::from([i as u32, 0, 0, 0]),
                     )
                     .expect("storage map access failed");
-                assert_eq!(proc_root, Word::from(*expected_proc_root));
+                assert_eq!(proc_root, expected_proc_root.as_word());
             }
         } else {
             // When no procedures, the map should return empty for key [0,0,0,0]

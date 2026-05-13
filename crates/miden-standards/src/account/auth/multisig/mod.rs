@@ -311,10 +311,7 @@ impl From<AuthMultisig> for AccountComponent {
         // Procedure thresholds slot (map: PROC_ROOT -> threshold)
         let proc_threshold_roots = StorageMap::with_entries(
             multisig.config.proc_thresholds().iter().map(|(proc_root, threshold)| {
-                (
-                    StorageMapKey::from_raw(Word::from(*proc_root)),
-                    Word::from([*threshold, 0, 0, 0]),
-                )
+                (StorageMapKey::from_raw(proc_root.as_word()), Word::from([*threshold, 0, 0, 0]))
             }),
         )
         .unwrap();

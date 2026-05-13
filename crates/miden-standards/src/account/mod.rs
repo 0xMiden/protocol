@@ -70,11 +70,7 @@ macro_rules! procedure_root {
 ///
 /// # Example
 /// ```ignore
-/// account_component_code!(
-///     BASIC_WALLET_CODE,
-///     "wallets/basic_wallet.masl",
-///     "Basic Wallet"
-/// );
+/// account_component_code!(BASIC_WALLET_CODE, "wallets/basic_wallet.masl");
 /// ```
 macro_rules! account_component_code {
     ($name:ident, $relative_path:expr) => {
