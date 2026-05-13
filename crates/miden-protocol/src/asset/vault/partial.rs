@@ -86,6 +86,37 @@ impl PartialVault {
         PartialVault::new(vault.root())
     }
 
+    /// Constructs a [`PartialVault`] from a [`PartialSmt`] and the raw [`AssetVaultKey`]s whose
+    /// values are looked up from the SMT.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - any key's hashed form is not present in the partial SMT.
+    /// - any of the resulting `(vault_key, value)` pairs does not form a valid asset.
+    fn from_partial_smt_and_keys(
+        partial_smt: PartialSmt,
+        keys: impl IntoIterator<Item = AssetVaultKey>,
+    ) -> Result<Self, PartialAssetVaultError> {
+        let mut entries = BTreeMap::new();
+
+        for key in keys {
+            let value = partial_smt
+                .get_value(&key.hash().as_word())
+                .map_err(PartialAssetVaultError::UntrackedAsset)?;
+
+            if !value.is_empty() {
+                Asset::from_key_value(key, value).map_err(|source| {
+                    PartialAssetVaultError::InvalidAssetForKey { key, value, source }
+                })?;
+            }
+
+            entries.insert(key, value);
+        }
+
+        Ok(Self { partial_smt, entries })
+    }
+
     // ACCESSORS
     // --------------------------------------------------------------------------------------------
 
@@ -123,7 +154,7 @@ impl PartialVault {
     pub fn open(&self, vault_key: AssetVaultKey) -> Result<AssetWitness, PartialAssetVaultError> {
         let smt_proof = self
             .partial_smt
-            .open(&vault_key.to_smt_key())
+            .open(&vault_key.hash().as_word())
             .map_err(PartialAssetVaultError::UntrackedAsset)?;
         let value = self.entries.get(&vault_key).copied().unwrap_or_default();
 
@@ -141,7 +172,7 @@ impl PartialVault {
     /// Returns an error if:
     /// - the key is not tracked by this partial SMT.
     pub fn get(&self, vault_key: AssetVaultKey) -> Result<Option<Asset>, MerkleError> {
-        let value = self.partial_smt.get_value(&vault_key.to_smt_key())?;
+        let value = self.partial_smt.get_value(&vault_key.hash().as_word())?;
         if value.is_empty() {
             Ok(None)
         } else {
@@ -188,26 +219,12 @@ impl Deserializable for PartialVault {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let partial_smt: PartialSmt = source.read()?;
         let num_entries: usize = source.read()?;
-        let mut entries = BTreeMap::new();
+        let keys = source
+            .read_many_iter::<AssetVaultKey>(num_entries)?
+            .collect::<Result<alloc::vec::Vec<_>, _>>()?;
 
-        for _ in 0..num_entries {
-            let key: AssetVaultKey = source.read()?;
-            let value = partial_smt.get_value(&key.to_smt_key()).map_err(|err| {
-                DeserializationError::InvalidValue(alloc::format!(
-                    "failed to find vault key {key} in partial SMT: {err}"
-                ))
-            })?;
-
-            // Validate the (key, value) pair forms a valid asset (or is empty).
-            if !value.is_empty() {
-                Asset::from_key_value(key, value)
-                    .map_err(|err| DeserializationError::InvalidValue(err.to_string()))?;
-            }
-
-            entries.insert(key, value);
-        }
-
-        Ok(PartialVault { partial_smt, entries })
+        Self::from_partial_smt_and_keys(partial_smt, keys)
+            .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
     }
 }
 

@@ -10,9 +10,7 @@ use $kernel::non_fungible_asset
 
 #! Hashes the raw asset vault key into the key used by the asset vault SMT.
 #!
-#! See [`AssetVaultKey::to_smt_key`] in Rust for the rationale: hashing the raw key gives a uniform
-#! distribution across SMT leaves and in particular prevents non-fungible assets issued by the same
-#! faucet from sharing a leaf.
+#! See [`AssetVaultKey::hash`] in Rust for the rationale.
 #!
 #! Inputs:  [ASSET_KEY]
 #! Outputs: [HASHED_ASSET_KEY]

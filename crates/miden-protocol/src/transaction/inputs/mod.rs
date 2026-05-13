@@ -354,7 +354,7 @@ impl TransactionInputs {
         let smt_leaf = SmtLeaf::try_from_elements(smt_leaf_elements, smt_index)?;
 
         // Find the asset in the SMT leaf. Leaves are keyed by the hashed form of the vault key.
-        let hashed_key = asset_key.to_smt_key();
+        let hashed_key = asset_key.hash().as_word();
         let asset = smt_leaf
             .entries()
             .iter()

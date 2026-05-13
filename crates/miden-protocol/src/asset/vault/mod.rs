@@ -27,7 +27,7 @@ mod asset_witness;
 pub use asset_witness::AssetWitness;
 
 mod vault_key;
-pub use vault_key::AssetVaultKey;
+pub use vault_key::{AssetVaultKey, AssetVaultKeyHash};
 
 mod asset_id;
 pub use asset_id::AssetId;
@@ -38,7 +38,7 @@ pub use asset_id::AssetId;
 /// A container for an unlimited number of assets.
 ///
 /// An asset vault can contain an unlimited number of assets. The assets are stored in a Sparse
-/// Merkle Tree, keyed by the hash of the [`AssetVaultKey`] (see [`AssetVaultKey::to_smt_key`]).
+/// Merkle Tree, keyed by the hash of the [`AssetVaultKey`] (see [`AssetVaultKey::hash`]).
 /// Hashing the raw key gives a uniform leaf distribution: in particular it prevents non-fungible
 /// assets issued by the same faucet from sharing a leaf, which would otherwise happen because
 /// their raw vault keys share their fourth element (the faucet ID prefix) - the element the SMT
@@ -73,7 +73,7 @@ impl AssetVault {
         let asset_tree = Smt::with_entries(
             assets
                 .iter()
-                .map(|asset| (asset.vault_key().to_smt_key(), asset.to_value_word())),
+                .map(|asset| (asset.vault_key().hash().as_word(), asset.to_value_word())),
         )
         .map_err(AssetVaultError::DuplicateAsset)?;
 
@@ -153,7 +153,7 @@ impl AssetVault {
     ///
     /// The `vault_key` can be obtained with [`Asset::vault_key`].
     pub fn open(&self, vault_key: AssetVaultKey) -> AssetWitness {
-        let smt_proof = self.asset_tree.open(&vault_key.to_smt_key());
+        let smt_proof = self.asset_tree.open(&vault_key.hash().as_word());
         let value = self.entries.get(&vault_key).copied().unwrap_or_default();
 
         // SAFETY: The key-value pair is guaranteed to be present in the proof since we open its
@@ -380,7 +380,7 @@ impl AssetVault {
         }
 
         self.asset_tree
-            .insert(vault_key.to_smt_key(), value)
+            .insert(vault_key.hash().into(), value)
             .map_err(AssetVaultError::MaxLeafEntriesExceeded)
     }
 }

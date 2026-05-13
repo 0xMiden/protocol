@@ -31,7 +31,14 @@ mod asset_callbacks_flag;
 pub use asset_callbacks_flag::AssetCallbackFlag;
 
 mod vault;
-pub use vault::{AssetId, AssetVault, AssetVaultKey, AssetWitness, PartialVault};
+pub use vault::{
+    AssetId,
+    AssetVault,
+    AssetVaultKey,
+    AssetVaultKeyHash,
+    AssetWitness,
+    PartialVault,
+};
 
 // ASSET
 // ================================================================================================

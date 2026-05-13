@@ -57,8 +57,9 @@ impl AssetWitness {
         let mut entries = BTreeMap::new();
 
         for key in keys {
-            let value =
-                proof.get(&key.to_smt_key()).ok_or(AssetError::AssetWitnessMissingKey { key })?;
+            let value = proof
+                .get(&key.hash().as_word())
+                .ok_or(AssetError::AssetWitnessMissingKey { key })?;
 
             // Validate that the (key, value) pair forms a valid asset (and skip empty entries).
             if !value.is_empty() {
@@ -80,7 +81,7 @@ impl AssetWitness {
     ///
     /// # Caller precondition
     ///
-    /// For each `(key, value)` pair, `proof.get(&key.to_smt_key())` must return `Some(value)`.
+    /// For each `(key, value)` pair, `proof.get(&key.hash().as_word())` must return `Some(value)`.
     /// In other words, each provided pair must agree with what the proof asserts at the hashed
     /// key. Passing a mismatched pair lets downstream consumers of [`Self::find`] /
     /// [`Self::assets`] disagree with consumers of the underlying [`SmtProof`]. This
@@ -94,7 +95,7 @@ impl AssetWitness {
         #[cfg(debug_assertions)]
         for (key, value) in &entries {
             debug_assert_eq!(
-                proof.get(&key.to_smt_key()),
+                proof.get(&key.hash().as_word()),
                 Some(*value),
                 "AssetWitness::new_unchecked: (key, value) pair does not match the proof",
             );
@@ -145,7 +146,7 @@ impl AssetWitness {
     }
 
     /// Returns an iterator over the raw `(vault_key, value)` pairs tracked by this witness.
-    pub fn entries(&self) -> impl Iterator<Item = (&AssetVaultKey, &Word)> {
+    pub(super) fn entries(&self) -> impl Iterator<Item = (&AssetVaultKey, &Word)> {
         self.entries.iter()
     }
 
@@ -208,10 +209,10 @@ mod tests {
         // Manually build a proof at the fungible asset's hashed key but with a non-fungible value.
         let fungible_key = fungible_asset.vault_key();
         let inconsistent_smt = miden_crypto::merkle::smt::Smt::with_entries([(
-            fungible_key.to_smt_key(),
+            fungible_key.hash().as_word(),
             non_fungible_asset.to_value_word(),
         )])?;
-        let proof = inconsistent_smt.open(&fungible_key.to_smt_key());
+        let proof = inconsistent_smt.open(&fungible_key.hash().as_word());
 
         let err = AssetWitness::new(proof, [fungible_key]).unwrap_err();
 

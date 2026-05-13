@@ -600,8 +600,13 @@ pub enum AssetVaultError {
 
 #[derive(Debug, Error)]
 pub enum PartialAssetVaultError {
-    #[error("provided SMT entry {entry} is not a valid asset")]
-    InvalidAssetInSmt { entry: Word, source: AssetError },
+    #[error("partial vault contains invalid asset value {value} at key {key}")]
+    InvalidAssetForKey {
+        key: AssetVaultKey,
+        value: Word,
+        #[source]
+        source: AssetError,
+    },
     #[error("failed to add asset proof")]
     FailedToAddProof(#[source] MerkleError),
     #[error("asset is not tracked in the partial vault")]

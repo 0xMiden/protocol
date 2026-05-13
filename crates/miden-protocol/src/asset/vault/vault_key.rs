@@ -1,8 +1,9 @@
 use alloc::boxed::Box;
-use alloc::string::ToString;
+use alloc::string::{String, ToString};
 use core::fmt;
 
 use miden_crypto::merkle::smt::LeafIndex;
+use miden_crypto_derive::WordWrapper;
 
 use crate::account::AccountId;
 use crate::account::AccountType::{self};
@@ -31,9 +32,9 @@ use crate::{Felt, Hasher, Word};
 /// ]
 /// ```
 ///
-/// This raw key is hashed via [`Self::to_smt_key`] before being used as the key in the asset
-/// vault's underlying SMT. Hashing ensures a uniform distribution across leaves regardless of how
-/// faucet IDs or asset IDs are chosen.
+/// Use [`AssetVaultKey::hash`] to produce the corresponding [`AssetVaultKeyHash`] that is used as
+/// the key in the asset vault's underlying SMT. Hashing ensures a uniform distribution across
+/// leaves regardless of how faucet IDs or asset IDs are chosen.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct AssetVaultKey {
     /// The asset ID of the vault key.
@@ -153,19 +154,50 @@ impl AssetVaultKey {
         }
     }
 
-    /// Returns the hashed [`Word`] used as the key in the asset vault's underlying SMT.
+    /// Hashes this raw vault key to produce the [`AssetVaultKeyHash`] used as the key in the asset
+    /// vault's underlying SMT.
     ///
     /// Hashing the raw key ensures a uniform distribution across SMT leaves. In particular it
     /// prevents non-fungible assets issued by the same faucet from sharing a leaf: their raw
     /// vault keys share their fourth element (the faucet ID prefix), which the SMT uses to
     /// determine leaf membership.
-    pub fn to_smt_key(&self) -> Word {
-        Hasher::hash_elements(self.to_word().as_elements())
+    pub fn hash(&self) -> AssetVaultKeyHash {
+        AssetVaultKeyHash::from_raw(Hasher::hash_elements(self.to_word().as_elements()))
     }
 
     /// Returns the leaf index of a vault key in the asset vault's underlying SMT.
     pub fn to_leaf_index(&self) -> LeafIndex<SMT_DEPTH> {
-        LeafIndex::<SMT_DEPTH>::from(self.to_smt_key())
+        self.hash().to_leaf_index()
+    }
+}
+
+// ASSET VAULT KEY HASH
+// ================================================================================================
+
+/// A hashed [`AssetVaultKey`].
+///
+/// This is produced by hashing an [`AssetVaultKey`] and is used as the actual key in the
+/// underlying SMT. Wrapping the hashed key in a distinct type prevents accidentally using a raw
+/// key where a hashed key is expected and vice-versa.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, WordWrapper)]
+pub struct AssetVaultKeyHash(Word);
+
+impl AssetVaultKeyHash {
+    /// Returns the leaf index in the SMT for this hashed key.
+    pub fn to_leaf_index(&self) -> LeafIndex<SMT_DEPTH> {
+        self.0.into()
+    }
+}
+
+impl From<AssetVaultKeyHash> for Word {
+    fn from(key: AssetVaultKeyHash) -> Self {
+        key.0
+    }
+}
+
+impl From<AssetVaultKey> for AssetVaultKeyHash {
+    fn from(key: AssetVaultKey) -> Self {
+        key.hash()
     }
 }
 
