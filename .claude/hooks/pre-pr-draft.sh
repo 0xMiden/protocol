@@ -25,6 +25,14 @@ if [ -z "$COMMAND" ]; then
   exit 0
 fi
 
+# Defensive: only act on actual `gh pr create` invocations. The settings.json
+# `if: Bash(*gh pr create*)` matcher does not reliably filter (see
+# pre-push-review.sh fix for the full rationale) — without this guard the
+# hook denied unrelated Bash commands.
+if ! printf '%s' "$COMMAND" | grep -qE '(^|[[:space:]])gh[[:space:]]+pr[[:space:]]+create([[:space:]]|$)'; then
+  exit 0
+fi
+
 # Allow if --draft is already present.
 if printf '%s' "$COMMAND" | grep -qE '(^|[[:space:]])--draft([[:space:]=]|$)'; then
   exit 0

@@ -17,6 +17,16 @@ set -uo pipefail
 
 INPUT=$(cat)
 
+# Defensive: only act on actual `gh pr create` invocations. The settings.json
+# `if: Bash(*gh pr create*)` matcher does not reliably filter (see
+# pre-push-review.sh fix for the full rationale) — without this guard the
+# hook could spawn the changelog agent on any Bash command whose output
+# happens to contain a GitHub pull URL.
+COMMAND=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null || true)
+if [ -n "$COMMAND" ] && ! printf '%s' "$COMMAND" | grep -qE '(^|[[:space:]])gh[[:space:]]+pr[[:space:]]+create([[:space:]]|$)'; then
+  exit 0
+fi
+
 PR_URL=$(printf '%s' "$INPUT" | jq -r '.tool_response // empty' \
           | grep -oE 'https://github\.com/[^\s"]+/pull/[0-9]+' | head -1)
 PR_NUMBER=$(printf '%s' "$PR_URL" | grep -oE '[0-9]+$')

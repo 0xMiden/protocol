@@ -2,6 +2,17 @@
 # Pre-push hook: runs `make test` before allowing push.
 # Exit 0 = allow, Exit 2 = block (reason on stderr).
 
+# Defensive command check — see pre-push-review.sh for the rationale.
+# settings.json wires this under `if: Bash(*git push*)` but that matcher
+# does not reliably filter, so re-check stdin for `git push` ourselves.
+if [ ! -t 0 ]; then
+  INPUT=$(cat)
+  COMMAND=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null || true)
+  if [ -n "$COMMAND" ] && ! printf '%s' "$COMMAND" | grep -qE '(^|[[:space:]])git[[:space:]]+push([[:space:]]|$)'; then
+    exit 0
+  fi
+fi
+
 REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
 if [ -z "$REPO_ROOT" ]; then
   exit 0
