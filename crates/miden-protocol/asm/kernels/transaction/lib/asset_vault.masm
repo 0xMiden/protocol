@@ -6,11 +6,9 @@ use $kernel::fungible_asset
 use $kernel::non_fungible_asset
 
 # ASSET KEY HASHING
-# =================================================================================================
-
 #! Hashes the raw asset vault key into the key used by the asset vault SMT.
 #!
-#! See [`AssetVaultKey::hash`] in Rust for the rationale.
+#! See [`AssetVaultKey::to_smt_key`] in Rust for the rationale.
 #!
 #! Inputs:  [ASSET_KEY]
 #! Outputs: [HASHED_ASSET_KEY]
