@@ -13,7 +13,6 @@ Severity policy (single source of truth, not the agent prompts):
 from __future__ import annotations
 
 import concurrent.futures
-import json
 import re
 import subprocess
 import sys
@@ -22,7 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _classify import matches  # noqa: E402
-from _hookutils import repo_root  # noqa: E402
+from _hookutils import read_command, repo_root  # noqa: E402
 
 TARGET = ("git", ["push"])
 
@@ -49,12 +48,8 @@ class ReviewerResult:
 
 
 def main() -> None:
-    try:
-        payload = json.loads(sys.stdin.read())
-    except (json.JSONDecodeError, ValueError):
-        sys.exit(0)
-    command = payload.get("tool_input", {}).get("command", "") or ""
-    if not matches(command, *TARGET):
+    command = read_command()
+    if command is None or not matches(command, *TARGET):
         sys.exit(0)
 
     root = repo_root()

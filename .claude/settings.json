@@ -6,22 +6,22 @@
         "hooks": [
           {
             "type": "command",
-            "if": "Bash(*git*)",
+            "if": "Bash(*git *)",
             "command": ".claude/hooks/pre_commit_lint.py"
           },
           {
             "type": "command",
-            "if": "Bash(*git*)",
+            "if": "Bash(*git *)",
             "command": ".claude/hooks/pre_push_test.py"
           },
           {
             "type": "command",
-            "if": "Bash(*git*)",
+            "if": "Bash(*git *)",
             "command": ".claude/hooks/pre_push_review.py"
           },
           {
             "type": "command",
-            "if": "Bash(*gh*)",
+            "if": "Bash(*gh *)",
             "command": ".claude/hooks/pre_pr_draft.py"
           }
         ]
@@ -33,7 +33,7 @@
         "hooks": [
           {
             "type": "command",
-            "if": "Bash(*gh*)",
+            "if": "Bash(*gh *)",
             "command": ".claude/hooks/post_pr_create_changelog.py"
           }
         ]

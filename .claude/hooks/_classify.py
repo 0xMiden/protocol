@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import re
 import shlex
+from typing import Iterator
 
 # Used for env-var assignment detection in strip_assignments.
 
@@ -184,6 +185,9 @@ def matches(command: str, binary: str, subcommand: list[str]) -> bool:
     assignments and known global flags between `binary` and the first
     subcommand component.
 
+    Thin wrapper around `iter_match_args` — see also `match_args`
+    (first segment only) for callers that need to inspect args.
+
     >>> matches("git push", "git", ["push"])
     True
     >>> matches("git -C . push", "git", ["push"])
@@ -195,17 +199,44 @@ def matches(command: str, binary: str, subcommand: list[str]) -> bool:
     >>> matches("gh pr list", "gh", ["pr", "create"])
     False
     """
-    return match_args(command, binary, subcommand) is not None
+    return next(iter_match_args(command, binary, subcommand), None) is not None
+
+
+def iter_match_args(
+    command: str, binary: str, subcommand: list[str]
+) -> Iterator[list[str]]:
+    """Yield the args of EVERY pipeline segment in `command` that
+    invokes `binary` with `subcommand`. Each yielded list is the
+    tokens that follow the subcommand chain in one matching segment.
+
+    Use this when the hook's invariant is per-invocation (e.g.
+    "no `gh pr create` should be non-draft") rather than per-command.
+    `gh pr create --draft && gh pr create` has two matching segments;
+    iterating lets the hook inspect both and deny if any lacks the
+    required flag.
+
+    >>> list(iter_match_args("gh pr create --draft && gh pr create", "gh", ["pr", "create"]))
+    [['--draft'], []]
+    >>> list(iter_match_args("git status", "git", ["push"]))
+    []
+    """
+    if not subcommand:
+        return
+    for tokens in pipeline_segments(command):
+        tokens = strip_assignments(tokens)
+        if not tokens or tokens[0] != binary:
+            continue
+        i = _walk_past_global_flags(tokens, binary, 1)
+        # Subcommand chain must appear contiguously starting at `i`.
+        if tokens[i : i + len(subcommand)] == list(subcommand):
+            yield tokens[i + len(subcommand) :]
 
 
 def match_args(command: str, binary: str, subcommand: list[str]) -> list[str] | None:
-    """Return the tokens that follow `subcommand` in the FIRST pipeline
-    segment that invokes `binary` with `subcommand`. Returns None if no
-    segment matches.
-
-    Used by hooks that need to inspect just the matched invocation's
-    args — e.g. `pre_pr_draft` checking for `--draft` only on the
-    actual `gh pr create` segment, not anywhere in the raw command.
+    """Return the args of the FIRST matching pipeline segment, or None
+    if no segment matches. Convenience for callers that don't care
+    about chained invocations; prefer `iter_match_args` if the hook's
+    invariant is per-invocation.
 
     >>> match_args("gh pr create --draft", "gh", ["pr", "create"])
     ['--draft']
@@ -216,14 +247,4 @@ def match_args(command: str, binary: str, subcommand: list[str]) -> list[str] | 
     >>> match_args("echo gh pr create --draft", "gh", ["pr", "create"]) is None
     True
     """
-    if not subcommand:
-        return None
-    for tokens in pipeline_segments(command):
-        tokens = strip_assignments(tokens)
-        if not tokens or tokens[0] != binary:
-            continue
-        i = _walk_past_global_flags(tokens, binary, 1)
-        # Subcommand chain must appear contiguously starting at `i`.
-        if tokens[i : i + len(subcommand)] == list(subcommand):
-            return tokens[i + len(subcommand) :]
-    return None
+    return next(iter_match_args(command, binary, subcommand), None)

@@ -9,8 +9,11 @@ importable via the `sys.path` shim in each hook.
 
 from __future__ import annotations
 
+import json
 import subprocess
+import sys
 from pathlib import Path
+from typing import Any
 
 
 def repo_root() -> Path | None:
@@ -41,3 +44,42 @@ def makefile_has_target(makefile: Path, target: str) -> bool:
         return False
     needle = f"{target}:"
     return any(line.startswith(needle) for line in text.splitlines())
+
+
+def read_payload(stdin: Any = None) -> dict | None:
+    """Parse the Claude Code hook payload from stdin and return the
+    top-level dict, or None on any malformed input. `stdin` defaults
+    to `sys.stdin`; pass a file-like object to make this unit-testable.
+    """
+    source = stdin if stdin is not None else sys.stdin
+    try:
+        payload = json.loads(source.read())
+    except (json.JSONDecodeError, ValueError, OSError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    return payload
+
+
+def command_from_payload(payload: Any) -> str | None:
+    """Return `payload["tool_input"]["command"]` as a string, or None
+    on any unexpected shape. Defensive against missing keys, non-dict
+    `tool_input`, non-string `command`.
+    """
+    if not isinstance(payload, dict):
+        return None
+    tool_input = payload.get("tool_input")
+    if not isinstance(tool_input, dict):
+        return None
+    command = tool_input.get("command", "")
+    if not isinstance(command, str):
+        return None
+    return command
+
+
+def read_command(stdin: Any = None) -> str | None:
+    """Read the hook payload from stdin and return its
+    `tool_input.command` field as a string, or None on any malformed
+    input (so the hook can fail open with `sys.exit(0)`).
+    """
+    return command_from_payload(read_payload(stdin))

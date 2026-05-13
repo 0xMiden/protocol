@@ -18,6 +18,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _classify import matches  # noqa: E402
+from _hookutils import command_from_payload, read_payload  # noqa: E402
 
 TARGET = ("gh", ["pr", "create"])
 
@@ -25,13 +26,12 @@ _PR_URL_RE = re.compile(r"https://github\.com/[^\s\"]+/pull/(\d+)")
 
 
 def main() -> None:
-    try:
-        payload = json.loads(sys.stdin.read())
-    except (json.JSONDecodeError, ValueError):
+    payload = read_payload()
+    command = command_from_payload(payload)
+    if command is None or not matches(command, *TARGET):
         sys.exit(0)
-    command = payload.get("tool_input", {}).get("command", "") or ""
-    if not matches(command, *TARGET):
-        sys.exit(0)
+    # mypy hint: command_from_payload returns None unless payload is a dict
+    assert payload is not None  # nosec - guarded by command check above
 
     tool_response = payload.get("tool_response", "") or ""
     if not isinstance(tool_response, str):
@@ -39,7 +39,7 @@ def main() -> None:
         # to text by JSON-dumping so the URL regex still works.
         tool_response = json.dumps(tool_response)
     cwd = payload.get("cwd", "") or ""
-    if not cwd:
+    if not isinstance(cwd, str) or not cwd:
         sys.exit(0)
 
     match = _PR_URL_RE.search(tool_response)

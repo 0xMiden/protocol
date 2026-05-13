@@ -5,7 +5,13 @@ test_hooks.py.
 
 import pytest
 
-from _classify import match_args, matches, pipeline_segments, strip_assignments
+from _classify import (
+    iter_match_args,
+    match_args,
+    matches,
+    pipeline_segments,
+    strip_assignments,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -266,3 +272,46 @@ def test_match_args_picks_first_matching_segment():
         "gh",
         ["pr", "create"],
     ) == ["--draft"]
+
+
+# ---------------------------------------------------------------------------
+# iter_match_args — yields args for every matching segment, so callers
+# whose invariant is per-invocation can fold over all of them.
+# ---------------------------------------------------------------------------
+
+
+def test_iter_match_args_no_match():
+    assert list(iter_match_args("git status", "gh", ["pr", "create"])) == []
+
+
+def test_iter_match_args_single_segment():
+    assert list(iter_match_args("gh pr create --draft", "gh", ["pr", "create"])) == [
+        ["--draft"]
+    ]
+
+
+def test_iter_match_args_two_matching_segments():
+    # Both segments match; both args lists are yielded in order.
+    assert list(
+        iter_match_args(
+            "gh pr create --draft && gh pr create",
+            "gh",
+            ["pr", "create"],
+        )
+    ) == [["--draft"], []]
+
+
+def test_iter_match_args_mixed_segments():
+    # First segment matches, second is `gh pr list` (different subcommand).
+    assert list(
+        iter_match_args(
+            "gh pr create --draft && gh pr list",
+            "gh",
+            ["pr", "create"],
+        )
+    ) == [["--draft"]]
+
+
+def test_iter_match_args_empty_subcommand():
+    # An empty subcommand is meaningless; yield nothing.
+    assert list(iter_match_args("gh", "gh", [])) == []
