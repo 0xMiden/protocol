@@ -33,6 +33,7 @@ pub use mast_store::TransactionMastStore;
 /// Each `prove()` call creates a fresh [`TransactionMastStore`] loaded with only the current
 /// transaction's account code, ensuring no state accumulates across calls. This is important
 /// in WASM environments where accumulated MAST forests fragment the linear memory.
+#[derive(Default)]
 pub struct LocalTransactionProver {
     proof_options: ProvingOptions,
 }
@@ -40,9 +41,7 @@ pub struct LocalTransactionProver {
 impl LocalTransactionProver {
     /// Creates a new [LocalTransactionProver] instance.
     pub fn new(proof_options: ProvingOptions) -> Self {
-        Self {
-            proof_options,
-        }
+        Self { proof_options }
     }
 
     fn build_proven_transaction(
@@ -171,14 +170,6 @@ impl LocalTransactionProver {
             ref_block.commitment(),
             proof,
         )
-    }
-}
-
-impl Default for LocalTransactionProver {
-    fn default() -> Self {
-        Self {
-            proof_options: Default::default(),
-        }
     }
 }
 
