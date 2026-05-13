@@ -48,10 +48,12 @@
 - [BREAKING] Renamed account ID version 0 to version 1 and made encoded version 0 invalid ([#2842](https://github.com/0xMiden/protocol/issues/2842)).
 - [BREAKING] Changed note metadata version 1 to encode as `1`, leaving encoded version `0` invalid.
 - Documented the `miden::protocol::account_id` module in the protocol library docs ([#2607](https://github.com/0xMiden/protocol/issues/2607)).
+- [BREAKING] Replaced the `FungibleFaucetBuilder` with a `bon` builder on `FungibleFaucet` ([#2916](https://github.com/0xMiden/protocol/pull/2916)).
 
 ### Fixes
 
 - Made deserialization of `AccountCode` more robust ([#2788](https://github.com/0xMiden/protocol/pull/2788)).
+- Validated `PartialBlockchain` invariants on deserialization ([#2888](https://github.com/0xMiden/protocol/pull/2888)).
 - Fixed `output_note::add_asset` and `output_note::set_attachment` to no longer accept invalid note indices ([#2824](https://github.com/0xMiden/protocol/pull/2824)).
 - Fixed auth components to use initial storage state for authentication ([#2677](https://github.com/0xMiden/protocol/issues/2677)).
 - Renamed the AggLayer faucet registry flag constant for clarity ([#2812](https://github.com/0xMiden/protocol/issues/2812)).
