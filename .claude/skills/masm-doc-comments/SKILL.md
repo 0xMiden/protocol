@@ -109,6 +109,9 @@ Define every item from Inputs and Outputs:
 - Start descriptions lowercase (continues the sentence)
 - End each line with a period
 - Group related items (e.g., all inputs, then all outputs)
+- Avoid including low-level details, e.g. how a value is computed.
+    - Good: NOTE_DETAILS_COMMITMENT is the commitment to the note's details.
+    - Avoid: NOTE_DETAILS_COMMITMENT is the commitment to the note's details computed as `hash(RECIPIENT_DIGEST || ASSETS_COMMITMENT)`.
 
 ### When `Where:` may be omitted
 
