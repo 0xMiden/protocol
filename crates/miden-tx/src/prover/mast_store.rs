@@ -69,6 +69,19 @@ impl TransactionMastStore {
     pub fn load_account_code(&self, code: &AccountCode) {
         self.insert(code.mast().clone());
     }
+
+    /// Removes all account-specific MAST forests, keeping only the default
+    /// libraries (kernel, core, protocol, standards).
+    ///
+    /// This should be called between prove calls on long-lived prover instances
+    /// to prevent monotonic memory growth. In WASM environments, accumulated
+    /// forests fragment the linear memory and can cause `capacity_overflow`
+    /// panics when the prover cannot allocate contiguous memory for the next
+    /// execution trace.
+    pub fn clear_account_code(&self) {
+        let fresh = Self::new();
+        *self.mast_forests.write() = fresh.mast_forests.into_inner();
+    }
 }
 
 // MAST FOREST STORE IMPLEMENTATION
