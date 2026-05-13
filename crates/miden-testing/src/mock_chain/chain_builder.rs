@@ -392,7 +392,11 @@ impl MockChainBuilder {
         let name = TokenName::new(token_symbol)?;
         let symbol = TokenSymbol::new(token_symbol)
             .with_context(|| format!("invalid token symbol: {token_symbol}"))?;
-        let faucet = FungibleFaucet::builder(name, symbol, DEFAULT_FAUCET_DECIMALS, max_supply)
+        let faucet = FungibleFaucet::builder()
+            .name(name)
+            .symbol(symbol)
+            .decimals(DEFAULT_FAUCET_DECIMALS)
+            .max_supply(max_supply)
             .token_supply(token_supply)
             .build()
             .context("failed to build FungibleFaucet")?;
@@ -431,7 +435,11 @@ impl MockChainBuilder {
         let name = TokenName::new(token_symbol)?;
         let symbol = TokenSymbol::new(token_symbol)
             .with_context(|| format!("invalid token symbol: {token_symbol}"))?;
-        let faucet = FungibleFaucet::builder(name, symbol, DEFAULT_FAUCET_DECIMALS, max_supply)
+        let faucet = FungibleFaucet::builder()
+            .name(name)
+            .symbol(symbol)
+            .decimals(DEFAULT_FAUCET_DECIMALS)
+            .max_supply(max_supply)
             .token_supply(token_supply)
             .build()
             .context("failed to build FungibleFaucet")?;
@@ -487,7 +495,11 @@ impl MockChainBuilder {
         let name = TokenName::new(token_symbol)?;
         let symbol = TokenSymbol::new(token_symbol)
             .with_context(|| format!("invalid token symbol: {token_symbol}"))?;
-        let faucet = FungibleFaucet::builder(name, symbol, DEFAULT_FAUCET_DECIMALS, max_supply)
+        let faucet = FungibleFaucet::builder()
+            .name(name)
+            .symbol(symbol)
+            .decimals(DEFAULT_FAUCET_DECIMALS)
+            .max_supply(max_supply)
             .build()
             .context("failed to build FungibleFaucet")?;
 
