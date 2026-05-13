@@ -13,10 +13,10 @@ pub use storage::*;
 mod code;
 pub use code::AccountComponentCode;
 
+use crate::MastForest;
 use crate::account::{AccountProcedureRoot, AccountType, StorageSlot};
 use crate::assembly::Path;
 use crate::errors::AccountError;
-use crate::{MastForest, Word};
 
 /// The attribute name used to mark the authentication procedure in an account component.
 const AUTH_SCRIPT_ATTRIBUTE: &str = "auth_script";
@@ -209,10 +209,13 @@ impl AccountComponent {
         })
     }
 
-    /// Returns the digest of the procedure with the specified path, or `None` if it was not found
-    /// in this component's library or its library path is malformed.
-    pub fn get_procedure_root_by_path(&self, proc_name: impl AsRef<Path>) -> Option<Word> {
-        self.code.as_library().get_procedure_root_by_path(proc_name)
+    /// Returns the [`AccountProcedureRoot`] of the procedure with the specified path, or `None`
+    /// if it was not found in this component's library.
+    pub fn get_procedure_root_by_path(
+        &self,
+        proc_name: impl AsRef<Path>,
+    ) -> Option<AccountProcedureRoot> {
+        self.code.get_procedure_root_by_path(proc_name)
     }
 }
 
