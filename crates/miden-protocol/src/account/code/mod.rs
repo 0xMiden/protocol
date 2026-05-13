@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 
 use miden_core::mast::MastForest;
 use miden_core::prettier::PrettyPrint;
-
+use alloc::collections::BTreeSet;
 use super::{
     AccountError,
     ByteReader,
@@ -285,11 +285,12 @@ impl Deserializable for AccountCode {
             )));
         }
 
+        let mut seen = BTreeSet::new();
         let procedures = source
             .read_many_iter(num_procedures)?
-            .collect::<Result<Vec<AccountProcedureRoot>, _>>()?;
-
-        // make sure that all account procedures are in the MAST forest
+            .collect::<Result<Vec, _>>()?;
+        
+        // make sure that all account procedures are in the MAST forest and are unique
         for procedure in procedures.iter() {
             if mast.find_procedure_root(procedure.as_word()).is_none() {
                 return Err(DeserializationError::InvalidValue(format!(
@@ -297,8 +298,14 @@ impl Deserializable for AccountCode {
                     procedure.as_word()
                 )));
             }
+            if !seen.insert(procedure.as_word()) {
+                return Err(DeserializationError::InvalidValue(format!(
+                    "duplicate procedure root {} in account code",
+                    procedure.as_word()
+                )));
+            }
         }
-
+        
         Ok(Self::from_parts(mast, procedures))
     }
 }
