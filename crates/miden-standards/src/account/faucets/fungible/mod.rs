@@ -1,6 +1,7 @@
 use alloc::vec::Vec;
 
 use miden_protocol::account::component::{
+    AccountComponentCode,
     AccountComponentMetadata,
     FeltSchema,
     SchemaType,
@@ -11,6 +12,7 @@ use miden_protocol::account::{
     Account,
     AccountBuilder,
     AccountComponent,
+    AccountProcedureRoot,
     AccountStorage,
     AccountStorageMode,
     AccountType,
@@ -31,11 +33,11 @@ use super::{
     TokenName,
 };
 use crate::account::access::AccessControl;
+use crate::account::account_component_code;
 use crate::account::auth::{AuthSingleSigAcl, AuthSingleSigAclConfig, NoAuth};
-use crate::account::components::fungible_faucet_library;
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
 use crate::account::policies::TokenPolicyManager;
-use crate::{AuthMethod, procedure_digest};
+use crate::{AuthMethod, procedure_root};
 
 #[cfg(test)]
 mod tests;
@@ -56,20 +58,23 @@ const TOKEN_SYMBOL_TYPE: &str = "miden::standards::faucets::fungible::token_symb
 // FUNGIBLE FAUCET ACCOUNT COMPONENT
 // ================================================================================================
 
-// Initialize the digest of the `mint_and_send` procedure of the Fungible Faucet only once.
-procedure_digest!(
+account_component_code!(FUNGIBLE_FAUCET_CODE, "faucets/fungible_faucet.masl");
+
+// Initialize the procedure root of the `mint_and_send` procedure of the Fungible Faucet only once.
+procedure_root!(
     FUNGIBLE_FAUCET_MINT_AND_SEND,
     FungibleFaucet::NAME,
     FungibleFaucet::MINT_PROC_NAME,
-    fungible_faucet_library
+    FungibleFaucet::code()
 );
 
-// Initialize the digest of the `receive_and_burn` procedure of the Fungible Faucet only once.
-procedure_digest!(
+// Initialize the procedure root of the `receive_and_burn` procedure of the Fungible Faucet only
+// once.
+procedure_root!(
     FUNGIBLE_FAUCET_RECEIVE_AND_BURN,
     FungibleFaucet::NAME,
     FungibleFaucet::RECEIVE_AND_BURN_PROC_NAME,
-    fungible_faucet_library
+    FungibleFaucet::code()
 );
 
 /// An [`AccountComponent`] implementing a fungible faucet.
@@ -228,13 +233,18 @@ impl FungibleFaucet {
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns the digest of the `mint_and_send` account procedure.
-    pub fn mint_and_send_digest() -> Word {
+    /// Returns the [`AccountComponentCode`] of this component.
+    pub fn code() -> &'static AccountComponentCode {
+        &FUNGIBLE_FAUCET_CODE
+    }
+
+    /// Returns the procedure root of the `mint_and_send` account procedure.
+    pub fn mint_and_send_root() -> AccountProcedureRoot {
         *FUNGIBLE_FAUCET_MINT_AND_SEND
     }
 
-    /// Returns the digest of the `receive_and_burn` account procedure.
-    pub fn receive_and_burn_digest() -> Word {
+    /// Returns the procedure root of the `receive_and_burn` account procedure.
+    pub fn receive_and_burn_root() -> AccountProcedureRoot {
         *FUNGIBLE_FAUCET_RECEIVE_AND_BURN
     }
 
@@ -439,7 +449,7 @@ impl From<FungibleFaucet> for AccountComponent {
         let component_metadata = FungibleFaucet::component_metadata();
         let storage_slots = faucet.into_storage_slots();
 
-        AccountComponent::new(fungible_faucet_library(), storage_slots, component_metadata)
+        AccountComponent::new(FungibleFaucet::code().clone(), storage_slots, component_metadata)
             .expect("fungible faucet component should satisfy the requirements of a valid account component")
     }
 }
@@ -511,7 +521,7 @@ pub fn create_fungible_faucet(
     access_control: AccessControl,
     token_policy_manager: TokenPolicyManager,
 ) -> Result<Account, FungibleFaucetError> {
-    let mint_proc_root = FungibleFaucet::mint_and_send_digest();
+    let mint_proc_root = FungibleFaucet::mint_and_send_root();
 
     let auth_component: AccountComponent = match auth_method {
         AuthMethod::SingleSig { approver: (pub_key, auth_scheme) } => AuthSingleSigAcl::new(

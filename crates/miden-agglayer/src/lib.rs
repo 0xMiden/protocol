@@ -252,7 +252,7 @@ fn create_agglayer_faucet_builder(
         MintPolicyConfig::OwnerOnly,
         BurnPolicyConfig::OwnerOnly,
     )
-    .with_allowed_burn_policy(BurnAllowAll::root());
+    .with_allowed_burn_policy(BurnAllowAll::root().as_word());
 
     Account::builder(seed.into())
         .account_type(AccountType::FungibleFaucet)

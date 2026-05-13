@@ -2,6 +2,7 @@ use alloc::collections::BTreeSet;
 use alloc::vec;
 
 use miden_protocol::account::component::{
+    AccountComponentCode,
     AccountComponentMetadata,
     StorageSchema,
     StorageSlotSchema,
@@ -10,7 +11,9 @@ use miden_protocol::account::{AccountComponent, AccountType, StorageSlotName};
 use miden_protocol::note::NoteScriptRoot;
 
 use super::{NetworkAccountNoteAllowlist, NetworkAccountNoteAllowlistError};
-use crate::account::components::network_account_auth_library;
+use crate::account::account_component_code;
+
+account_component_code!(NETWORK_ACCOUNT_AUTH_CODE, "auth/network_account.masl");
 
 // AUTH NETWORK ACCOUNT
 // ================================================================================================
@@ -39,6 +42,11 @@ pub struct AuthNetworkAccount {
 impl AuthNetworkAccount {
     /// The name of the component.
     pub const NAME: &'static str = "miden::standards::auth::network_account";
+
+    /// Returns the [`AccountComponentCode`] of this component.
+    pub fn code() -> &'static AccountComponentCode {
+        &NETWORK_ACCOUNT_AUTH_CODE
+    }
 
     /// Creates a new [`AuthNetworkAccount`] component with the provided list of allowed
     /// input-note script roots.
@@ -84,9 +92,9 @@ impl From<AuthNetworkAccount> for AccountComponent {
         let storage_slots = vec![component.allowlist.into_storage_slot()];
         let metadata = AuthNetworkAccount::component_metadata();
 
-        AccountComponent::new(network_account_auth_library(), storage_slots, metadata).expect(
+        AccountComponent::new(AuthNetworkAccount::code().clone(), storage_slots, metadata).expect(
             "AuthNetworkAccount component should satisfy the requirements of a valid \
-                 account component",
+             account component",
         )
     }
 }

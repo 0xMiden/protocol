@@ -35,8 +35,8 @@ impl MintPolicyConfig {
     /// Returns the procedure root of the active policy this config resolves to.
     pub fn root(self) -> Word {
         match self {
-            Self::AllowAll => MintAllowAll::root(),
-            Self::OwnerOnly => MintOwnerOnly::root(),
+            Self::AllowAll => MintAllowAll::root().as_word(),
+            Self::OwnerOnly => MintOwnerOnly::root().as_word(),
             Self::Custom(root) => root,
         }
     }
