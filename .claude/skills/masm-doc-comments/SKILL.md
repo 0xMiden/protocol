@@ -48,10 +48,12 @@ pub proc my_procedure
 |------|-------|---------|
 | Single felt | lowercase with underscores | `note_index`, `amount`, `balance` |
 | Word (4 felts) | UPPERCASE with underscores | `ASSET`, `RECIPIENT`, `SCRIPT_ROOT` |
-| Multi-felt (2-3) | lowercase with `{parts}` suffix | `account_id_{prefix,suffix}` |
+| Multi-felt (2-3) | lowercase with `{parts}` suffix | `account_id_{suffix,prefix}` |
 | All-zero Word | `EMPTY_WORD` | `[..., EMPTY_WORD, ...]` |
 
 `EMPTY_WORD` is a naming convention used in stack trackers, `Where:` bullets, and prose comments to denote the all-zero Word `[0, 0, 0, 0]`.
+
+In composite braces, list parts in **stack-top-first order, no spaces inside the braces**: `account_id_{suffix,prefix}` because the suffix sits on top of the stack and the prefix below it. The same rule applies to other split-128-bit IDs (`sender_{suffix,prefix}`, `faucet_id_{suffix,prefix}`, etc.).
 
 ### Stack Order
 
@@ -97,7 +99,7 @@ Define every item from Inputs and Outputs:
 ```masm
 #! Where:
 #! - note_index is the index of the input note.
-#! - sender_{prefix,suffix} are the prefix and suffix felts of the sender ID.
+#! - sender_{suffix,prefix} are the suffix and prefix felts of the sender ID.
 #! - ASSET is the asset word [faucet_id_prefix, faucet_id_suffix, 0, amount].
 #! - balance is the fungible asset balance in the vault.
 ```
