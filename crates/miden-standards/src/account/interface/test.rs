@@ -55,14 +55,13 @@ fn test_basic_wallet_default_notes() {
         .account_type(AccountType::FungibleFaucet)
         .with_auth_component(get_mock_falcon_auth_component())
         .with_component(
-            FungibleFaucet::builder(
-                TokenName::new("POL").unwrap(),
-                TokenSymbol::new("POL").expect("invalid token symbol"),
-                10,
-                AssetAmount::new(100).unwrap(),
-            )
-            .build()
-            .expect("failed to create faucet"),
+            FungibleFaucet::builder()
+                .name(TokenName::new("POL").unwrap())
+                .symbol(TokenSymbol::new("POL").expect("invalid token symbol"))
+                .decimals(10)
+                .max_supply(AssetAmount::new(100).unwrap())
+                .build()
+                .expect("failed to create faucet"),
         )
         .build_existing()
         .expect("failed to create wallet account");
@@ -322,14 +321,13 @@ fn test_fungible_faucet_custom_notes() {
         .account_type(AccountType::FungibleFaucet)
         .with_auth_component(get_mock_falcon_auth_component())
         .with_component(
-            FungibleFaucet::builder(
-                TokenName::new("POL").unwrap(),
-                TokenSymbol::new("POL").expect("invalid token symbol"),
-                10,
-                AssetAmount::new(100).unwrap(),
-            )
-            .build()
-            .expect("failed to create faucet"),
+            FungibleFaucet::builder()
+                .name(TokenName::new("POL").unwrap())
+                .symbol(TokenSymbol::new("POL").expect("invalid token symbol"))
+                .decimals(10)
+                .max_supply(AssetAmount::new(100).unwrap())
+                .build()
+                .expect("failed to create faucet"),
         )
         .build_existing()
         .expect("failed to create wallet account");

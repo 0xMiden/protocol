@@ -5,6 +5,7 @@ use miden_protocol::account::{
     Account,
     AccountBuilder,
     AccountId,
+    AccountProcedureRoot,
     AccountStorageMode,
     AccountType,
 };
@@ -18,7 +19,6 @@ use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::vm::AdviceMap;
 use miden_protocol::{Felt, Hasher, Word};
 use miden_standards::account::auth::AuthMultisig;
-use miden_standards::account::components::multisig_library;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::P2idNote;
@@ -83,7 +83,7 @@ fn create_multisig_account(
     threshold: u32,
     approvers: &[(PublicKey, AuthScheme)],
     asset_amount: u64,
-    proc_threshold_map: Vec<(Word, u32)>,
+    proc_threshold_map: Vec<(AccountProcedureRoot, u32)>,
 ) -> anyhow::Result<Account> {
     let approvers = approvers
         .iter()
@@ -371,7 +371,7 @@ async fn test_multisig_update_signers() -> anyhow::Result<()> {
     ";
 
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(multisig_library())?
+        .with_dynamically_linked_library(AuthMultisig::code())?
         .compile_tx_script(tx_script_code)?;
 
     let advice_inputs = AdviceInputs {
@@ -626,7 +626,7 @@ async fn test_multisig_update_signers_remove_owner() -> anyhow::Result<()> {
 
     // Create transaction script
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(multisig_library())?
+        .with_dynamically_linked_library(AuthMultisig::code())?
         .compile_tx_script("begin\n    call.::miden::standards::components::auth::multisig::update_signers_and_threshold\nend")?;
 
     let advice_inputs = AdviceInputs { map: advice_map, ..Default::default() };
@@ -845,7 +845,7 @@ async fn test_multisig_new_approvers_cannot_sign_before_update() -> anyhow::Resu
     ";
 
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(multisig_library())?
+        .with_dynamically_linked_library(AuthMultisig::code())?
         .compile_tx_script(tx_script_code)?;
 
     let advice_inputs = AdviceInputs {
