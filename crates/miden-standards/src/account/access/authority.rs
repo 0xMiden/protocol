@@ -1,4 +1,5 @@
 use miden_protocol::account::component::{
+    AccountComponentCode,
     AccountComponentMetadata,
     FeltSchema,
     StorageSchema,
@@ -17,10 +18,12 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 use thiserror::Error;
 
-use crate::account::components::authority_library;
+use crate::account::account_component_code;
 
 // CONSTANTS
 // ================================================================================================
+
+account_component_code!(AUTHORITY_CODE, "access/authority.masl");
 
 static AUTHORITY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::access::authority::authority")
@@ -69,6 +72,11 @@ pub enum Authority {
 impl Authority {
     /// The name of the component.
     pub const NAME: &'static str = "miden::standards::components::access::authority";
+
+    /// Returns the [`AccountComponentCode`] of this component.
+    pub fn code() -> &'static AccountComponentCode {
+        &AUTHORITY_CODE
+    }
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
@@ -154,10 +162,12 @@ impl TryFrom<Word> for Authority {
 impl From<Authority> for AccountComponent {
     fn from(value: Authority) -> Self {
         let slot = StorageSlot::with_value(AUTHORITY_SLOT_NAME.clone(), Word::from(value));
-        AccountComponent::new(authority_library(), vec![slot], Authority::component_metadata())
-            .expect(
-                "authority component should satisfy the requirements of a valid account component",
-            )
+        AccountComponent::new(
+            Authority::code().clone(),
+            vec![slot],
+            Authority::component_metadata(),
+        )
+        .expect("authority component should satisfy the requirements of a valid account component")
     }
 }
 

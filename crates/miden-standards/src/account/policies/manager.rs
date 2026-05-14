@@ -9,6 +9,7 @@ use alloc::vec::Vec;
 
 use miden_protocol::Word;
 use miden_protocol::account::component::{
+    AccountComponentCode,
     AccountComponentMetadata,
     SchemaType,
     StorageSchema,
@@ -26,7 +27,9 @@ use miden_protocol::utils::sync::LazyLock;
 
 use super::burn::BurnPolicyConfig;
 use super::mint::MintPolicyConfig;
-use crate::account::components::policy_manager_library;
+use crate::account::account_component_code;
+
+account_component_code!(POLICY_MANAGER_CODE, "faucets/policies/policy_manager.masl");
 
 // STORAGE SLOT NAMES
 // ================================================================================================
@@ -102,6 +105,11 @@ impl TokenPolicyManager {
 
     /// Component description used in [`AccountComponentMetadata`].
     pub const DESCRIPTION: &'static str = "Token policy manager for fungible faucets";
+
+    /// Returns the [`AccountComponentCode`] of this component.
+    pub fn code() -> &'static AccountComponentCode {
+        &POLICY_MANAGER_CODE
+    }
 
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
@@ -279,7 +287,7 @@ impl TokenPolicyManager {
     fn into_manager_component(self) -> AccountComponent {
         let storage_slots = self.manager_storage_slots();
         AccountComponent::new(
-            policy_manager_library(),
+            TokenPolicyManager::code().clone(),
             storage_slots,
             Self::component_metadata(),
         )
