@@ -509,7 +509,7 @@ fn faucet_with_metadata_storage_layout() {
 
     // Verify roundtrip via try_from
     let restored = FungibleFaucet::try_from(account.storage()).unwrap();
-    assert_eq!(restored.token_supply(), AssetAmount::zero());
+    assert_eq!(restored.token_supply(), AssetAmount::ZERO);
     assert_eq!(restored.max_supply().as_u64(), 1_000_000);
     assert_eq!(restored.decimals(), 8);
     assert_eq!(restored.description().map(|d| d.as_str()), Some(desc_text));
@@ -950,7 +950,7 @@ async fn set_max_supply_mutable_owner_succeeds() -> anyhow::Result<()> {
     assert_eq!(restored.max_supply().as_u64(), new_max_supply, "max_supply should be updated");
     assert_eq!(
         restored.token_supply(),
-        AssetAmount::zero(),
+        AssetAmount::ZERO,
         "token_supply should remain unchanged"
     );
 

@@ -533,9 +533,8 @@ async fn b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
 
     // CREATE B2AGG NOTE WITH USER ACCOUNT AS SENDER
     // --------------------------------------------------------------------------------------------
-    let amount = Felt::new(50);
-    let bridge_asset: Asset =
-        FungibleAsset::new(faucet.id(), amount.as_canonical_u64()).unwrap().into();
+    let amount = AssetAmount::from(50_u32);
+    let bridge_asset: Asset = FungibleAsset::new(faucet.id(), amount.as_u64()).unwrap().into();
 
     let destination_network = 1u32;
     let destination_address = "0x1234567890abcdef1122334455667788990011aa";
@@ -558,7 +557,7 @@ async fn b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
 
     // Store the initial asset balance of the user account
     let initial_balance =
-        user_account.vault().get_balance(faucet.id()).unwrap_or(AssetAmount::zero());
+        user_account.vault().get_balance(faucet.id()).unwrap_or(AssetAmount::ZERO);
 
     // EXECUTE B2AGG NOTE WITH THE SAME USER ACCOUNT (RECLAIM SCENARIO)
     // --------------------------------------------------------------------------------------------
@@ -580,11 +579,10 @@ async fn b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
 
     // VERIFY ASSETS WERE ADDED BACK TO THE ACCOUNT
     // --------------------------------------------------------------------------------------------
-    let final_balance =
-        user_account.vault().get_balance(faucet.id()).unwrap_or(AssetAmount::zero());
+    let final_balance = user_account.vault().get_balance(faucet.id()).unwrap_or(AssetAmount::ZERO);
     assert_eq!(
-        final_balance.as_u64(),
-        initial_balance.as_u64() + amount.as_canonical_u64(),
+        final_balance,
+        (initial_balance + amount).unwrap(),
         "User account should have received the assets back from the B2AGG note"
     );
 

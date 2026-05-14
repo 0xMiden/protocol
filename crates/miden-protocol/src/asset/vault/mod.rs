@@ -313,7 +313,7 @@ impl AssetVault {
                 .expect("asset vault should store valid assets");
 
         // If the asset's amount is 0, we consider it absent from the vault.
-        if current_asset.amount() == AssetAmount::zero() {
+        if current_asset.amount() == AssetAmount::ZERO {
             return Err(AssetVaultError::FungibleAssetNotFound(other_asset));
         }
 
@@ -326,7 +326,7 @@ impl AssetVault {
         // leaf.
         #[cfg(debug_assertions)]
         {
-            if new_asset.amount() == AssetAmount::zero() {
+            if new_asset.amount() == AssetAmount::ZERO {
                 assert!(new_asset.to_value_word().is_empty())
             }
         }

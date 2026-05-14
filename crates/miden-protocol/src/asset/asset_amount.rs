@@ -29,6 +29,9 @@ impl AssetAmount {
     /// negative value in a field element.
     pub const MAX: u64 = 2u64.pow(63) - 2u64.pow(31);
 
+    /// The zero amount.
+    pub const ZERO: Self = Self(0);
+
     /// Returns a new `AssetAmount` if `amount` does not exceed [`Self::MAX`].
     ///
     /// # Errors
@@ -39,11 +42,6 @@ impl AssetAmount {
             return Err(AssetError::FungibleAssetAmountTooBig(amount));
         }
         Ok(Self(amount))
-    }
-
-    /// Returns an `AssetAmount` of zero.
-    pub const fn zero() -> Self {
-        Self(0)
     }
 
     /// Returns the underlying `u64` value.
