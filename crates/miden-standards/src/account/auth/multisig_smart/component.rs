@@ -114,6 +114,17 @@ fn validate_proc_policies(
     num_approvers: u32,
     proc_policies: &[(Word, ProcedurePolicy)],
 ) -> Result<(), AccountError> {
+    // Reject duplicate procedure roots. Catching it here turns the failure into a regular
+    // `AccountError` returned from `with_proc_policies` / `AuthMultisigSmart::new`.
+    let mut policy_roots = alloc::collections::BTreeSet::new();
+    for (proc_root, _) in proc_policies {
+        if !policy_roots.insert(*proc_root) {
+            return Err(AccountError::other(
+                "duplicate procedure roots are not allowed in the procedure policy map",
+            ));
+        }
+    }
+
     for (_, policy) in proc_policies {
         if let Some(immediate_threshold) = policy.immediate_threshold()
             && immediate_threshold > num_approvers
@@ -343,6 +354,36 @@ mod tests {
                 .unwrap_err()
                 .to_string()
                 .contains("threshold cannot be greater than number of approvers")
+        );
+    }
+
+    #[test]
+    fn test_multisig_smart_component_rejects_duplicate_procedure_roots() {
+        let sec_key_1 = AuthSecretKey::new_ecdsa_k256_keccak();
+        let sec_key_2 = AuthSecretKey::new_ecdsa_k256_keccak();
+        let approvers = vec![
+            (sec_key_1.public_key().to_commitment(), sec_key_1.auth_scheme()),
+            (sec_key_2.public_key().to_commitment(), sec_key_2.auth_scheme()),
+        ];
+
+        let receive_asset_root = BasicWallet::receive_asset_root().as_word();
+        let policy_one =
+            ProcedurePolicy::with_immediate_threshold(1).expect("procedure policy should be valid");
+        let policy_two =
+            ProcedurePolicy::with_immediate_threshold(2).expect("procedure policy should be valid");
+
+        let result = AuthMultisigSmartConfig::new(approvers, 2)
+            .expect("base config should be valid")
+            .with_proc_policies(vec![
+                (receive_asset_root, policy_one),
+                (receive_asset_root, policy_two),
+            ]);
+
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("duplicate procedure roots are not allowed in the procedure policy map")
         );
     }
 
