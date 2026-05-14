@@ -139,8 +139,8 @@ static LET_NUM_LEAVES_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// - [`Self::cgi_chain_hash_lo_slot_name`]: Stores the lower 128 bits of the CGI chain hash.
 /// - [`Self::cgi_chain_hash_hi_slot_name`]: Stores the upper 128 bits of the CGI chain hash.
 /// - [`Self::let_frontier_slot_name`]: Stores the Local Exit Tree (LET) frontier.
-/// - [`Self::let_root_lo_slot_name`]: Stores the lower 32 bits of the LET root.
-/// - [`Self::let_root_hi_slot_name`]: Stores the upper 32 bits of the LET root.
+/// - [`Self::let_root_lo_slot_name`]: Stores the lower 128 bits of the LET root.
+/// - [`Self::let_root_hi_slot_name`]: Stores the upper 128 bits of the LET root.
 /// - [`Self::let_num_leaves_slot_name`]: Stores the number of leaves in the LET frontier.
 ///
 /// The bridge starts with an empty faucet registry; faucets are registered at runtime via
@@ -279,10 +279,10 @@ impl AggLayerBridge {
     /// - the provided account is not an [`AggLayerBridge`] account.
     pub fn is_ger_registered(
         ger: ExitRoot,
-        bridge_account: Account,
+        bridge_account: &Account,
     ) -> Result<bool, AgglayerBridgeError> {
         // check that the provided account is a bridge account
-        Self::assert_bridge_account(&bridge_account)?;
+        Self::assert_bridge_account(bridge_account)?;
 
         // Compute the expected GER hash: poseidon2::merge(GER_LOWER, GER_UPPER)
         let ger_lower: Word = ger.to_elements()[0..4].try_into().unwrap();
