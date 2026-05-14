@@ -32,7 +32,7 @@ mod mint;
 mod transfer;
 
 pub use burn::{BurnAllowAll, BurnOwnerOnly, BurnPolicyConfig};
-pub use manager::TokenPolicyManager;
+pub use manager::{TokenPolicyManager, TokenPolicyManagerError};
 pub use mint::{MintAllowAll, MintOwnerOnly, MintPolicyConfig};
 pub use transfer::{
     BasicBlocklist,

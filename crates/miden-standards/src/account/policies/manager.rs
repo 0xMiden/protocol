@@ -154,9 +154,10 @@ struct PolicyConfig {
 /// ([`Self::with_mint_policy`] / [`Self::with_burn_policy`] / [`Self::with_send_policy`] /
 /// [`Self::with_receive_policy`]). Each accepts a typed config plus a [`PolicyRegistration`]
 /// flag to register the policy as either the active one or as a reserved alternative for
-/// runtime switching via the matching `set_*_policy` procedure. Calling a `with_*_policy`
-/// builder with [`PolicyRegistration::Active`] more than once for the same kind panics — at
-/// most one active policy per kind is permitted.
+/// runtime switching via the matching `set_*_policy` procedure. Each builder returns
+/// `Result<Self, TokenPolicyManagerError>` — registering more than one
+/// [`PolicyRegistration::Active`] entry per kind returns
+/// [`TokenPolicyManagerError::DuplicateActivePolicy`].
 ///
 /// Pass the manager directly to [`miden_protocol::account::AccountBuilder::with_components`]
 /// (the type implements [`IntoIterator<Item = AccountComponent>`]). Iteration yields the
