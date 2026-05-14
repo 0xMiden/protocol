@@ -235,7 +235,7 @@ async fn test_compute_output_note_details_commitment() -> anyhow::Result<()> {
         );
 
         assert_eq!(
-            note.commitment().as_word(),
+            note.details_commitment().as_word(),
             exec_output.get_kernel_mem_word(OUTPUT_NOTE_SECTION_OFFSET + i * NOTE_MEM_SIZE),
             "note details commitment didn't match kernel output note offset 0",
         );

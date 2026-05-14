@@ -72,7 +72,7 @@ pub async fn prove_send_swap_note() -> anyhow::Result<()> {
         create_swap_note_tx
             .output_notes()
             .iter()
-            .any(|n| n.commitment() == swap_note.commitment())
+            .any(|n| n.details_commitment() == swap_note.details_commitment())
     );
     assert_eq!(
         sender_account.vault().assets().count(),

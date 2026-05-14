@@ -32,11 +32,11 @@ impl NoteHeader {
     ///
     /// The [NoteId] commits to both the note details and the note metadata.
     pub fn id(&self) -> NoteId {
-        NoteId::new(self.commitment(), self.metadata())
+        NoteId::new(self.details_commitment(), self.metadata())
     }
 
     /// Returns the commitment to the note details, excluding metadata.
-    pub fn commitment(&self) -> NoteDetailsCommitment {
+    pub fn details_commitment(&self) -> NoteDetailsCommitment {
         self.details_commitment
     }
 

@@ -453,7 +453,7 @@ fn input_notes_memory_assertions(
 
         assert_eq!(
             exec_output.get_note_mem_word(note_idx, INPUT_NOTE_DETAILS_COMMITMENT_OFFSET),
-            note.commitment().as_word(),
+            note.details_commitment().as_word(),
             "note details commitment should be computed and stored at INPUT_NOTE_DETAILS_COMMITMENT_OFFSET"
         );
 

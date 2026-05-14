@@ -60,8 +60,8 @@ impl PartialNote {
     }
 
     /// Returns the commitment to the note details, excluding metadata.
-    pub fn commitment(&self) -> NoteDetailsCommitment {
-        self.header.commitment()
+    pub fn details_commitment(&self) -> NoteDetailsCommitment {
+        self.header.details_commitment()
     }
 
     /// Returns a reference to the [`NoteMetadata`] of this note.

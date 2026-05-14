@@ -124,7 +124,7 @@ where
 
         let mut elements: Vec<Felt> = Vec::with_capacity(notes.len() * 8);
         for note_header in notes {
-            elements.extend_from_slice(note_header.commitment().as_elements());
+            elements.extend_from_slice(note_header.details_commitment().as_elements());
             elements.extend_from_slice(note_header.metadata().to_commitment().as_elements());
         }
 
@@ -215,10 +215,10 @@ impl RawOutputNote {
     }
 
     /// Returns a commitment to the note details, excluding metadata.
-    pub fn commitment(&self) -> NoteDetailsCommitment {
+    pub fn details_commitment(&self) -> NoteDetailsCommitment {
         match self {
-            Self::Full(note) => note.commitment(),
-            Self::Partial(note) => note.commitment(),
+            Self::Full(note) => note.details_commitment(),
+            Self::Partial(note) => note.details_commitment(),
         }
     }
 
@@ -263,7 +263,7 @@ impl RawOutputNote {
     pub fn into_output_note(self) -> Result<OutputNote, OutputNoteError> {
         match self {
             Self::Full(note) if note.metadata().is_private() => {
-                let details_commitment = note.commitment();
+                let details_commitment = note.details_commitment();
                 let (_, metadata, _, attachments) = note.into_parts();
                 let note_header = NoteHeader::new(details_commitment, metadata);
                 Ok(OutputNote::Private(PrivateOutputNote::new(note_header, attachments)?))
@@ -380,10 +380,10 @@ impl OutputNote {
     }
 
     /// Returns a commitment to the note details, excluding metadata.
-    pub fn commitment(&self) -> NoteDetailsCommitment {
+    pub fn details_commitment(&self) -> NoteDetailsCommitment {
         match self {
-            Self::Public(note) => note.commitment(),
-            Self::Private(header) => header.commitment(),
+            Self::Public(note) => note.details_commitment(),
+            Self::Private(header) => header.details_commitment(),
         }
     }
 
@@ -512,8 +512,8 @@ impl PublicOutputNote {
     }
 
     /// Returns a commitment to the note details, excluding metadata.
-    pub fn commitment(&self) -> NoteDetailsCommitment {
-        self.0.commitment()
+    pub fn details_commitment(&self) -> NoteDetailsCommitment {
+        self.0.details_commitment()
     }
 
     /// Returns the note's metadata.
@@ -606,8 +606,8 @@ impl PrivateOutputNote {
     }
 
     /// Returns a commitment to the note details, excluding metadata.
-    pub fn commitment(&self) -> NoteDetailsCommitment {
-        self.header.commitment()
+    pub fn details_commitment(&self) -> NoteDetailsCommitment {
+        self.header.details_commitment()
     }
 
     /// Returns a reference to the underlying note header.

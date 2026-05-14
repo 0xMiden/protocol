@@ -143,8 +143,8 @@ impl Note {
     }
 
     /// Returns a commitment to the note's details, excluding metadata.
-    pub fn commitment(&self) -> NoteDetailsCommitment {
-        self.header.commitment()
+    pub fn details_commitment(&self) -> NoteDetailsCommitment {
+        self.header.details_commitment()
     }
 
     /// Returns the note's assets.
