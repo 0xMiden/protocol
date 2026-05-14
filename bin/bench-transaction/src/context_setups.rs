@@ -2,12 +2,12 @@ use anyhow::Result;
 pub use miden_agglayer::testing::ClaimDataSource;
 use miden_agglayer::{
     B2AggNote,
+    ClaimNote,
     ClaimNoteStorage,
     ConfigAggBridgeNote,
     EthAddress,
     MetadataHash,
     UpdateGerNote,
-    create_claim_note,
     create_existing_agglayer_faucet,
     create_existing_bridge_account,
 };
@@ -233,7 +233,7 @@ pub async fn tx_consume_claim_note(data_source: ClaimDataSource) -> Result<Trans
         miden_claim_amount,
     };
 
-    let claim_note = create_claim_note(
+    let claim_note = ClaimNote::create(
         claim_inputs,
         bridge_account.id(),
         sender_account.id(),

@@ -10,6 +10,7 @@ use miden_agglayer::errors::{
 };
 use miden_agglayer::{
     AggLayerBridge,
+    ClaimNote,
     ClaimNoteStorage,
     ConfigAggBridgeNote,
     EthEmbeddedAccountId,
@@ -18,7 +19,6 @@ use miden_agglayer::{
     SmtNode,
     UpdateGerNote,
     agglayer_library,
-    create_claim_note,
     create_existing_agglayer_faucet,
     create_existing_bridge_account,
 };
@@ -245,7 +245,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
         miden_claim_amount,
     };
 
-    let claim_note = create_claim_note(
+    let claim_note = ClaimNote::create(
         claim_inputs,
         bridge_account.id(), // Target the bridge, not the faucet
         sender_account.id(),
@@ -530,7 +530,7 @@ async fn test_mint_cannot_be_consumed_by_unrelated_faucet() -> anyhow::Result<()
         miden_claim_amount,
     };
 
-    let claim_note = create_claim_note(
+    let claim_note = ClaimNote::create(
         claim_inputs,
         bridge_account.id(),
         sender_account.id(),
@@ -675,7 +675,7 @@ async fn test_claim_rejects_wrong_destination_network() -> anyhow::Result<()> {
 
     // CREATE CLAIM NOTE (targets the bridge)
     // --------------------------------------------------------------------------------------------
-    let claim_note = create_claim_note(
+    let claim_note = ClaimNote::create(
         ClaimNoteStorage {
             proof_data,
             leaf_data,
@@ -806,7 +806,7 @@ async fn test_duplicate_claim_note_rejected() -> anyhow::Result<()> {
         miden_claim_amount,
     };
 
-    let claim_note_1 = create_claim_note(
+    let claim_note_1 = ClaimNote::create(
         claim_inputs_1,
         bridge_account.id(),
         bridge_admin.id(),
@@ -821,7 +821,7 @@ async fn test_duplicate_claim_note_rejected() -> anyhow::Result<()> {
         miden_claim_amount,
     };
 
-    let claim_note_2 = create_claim_note(
+    let claim_note_2 = ClaimNote::create(
         claim_inputs_2,
         bridge_account.id(),
         bridge_admin.id(),
