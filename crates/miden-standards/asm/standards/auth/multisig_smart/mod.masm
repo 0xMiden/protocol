@@ -310,16 +310,11 @@ end
 #! - DEFAULT_THRESHOLD_LOC: default_threshold
 @locals(2)
 proc compute_called_proc_policy(execution_mode: u32, default_threshold: u32)
-    loc_store.EXECUTION_MODE_LOC
+    loc_store.EXECUTION_MODE_LOC 
     loc_store.DEFAULT_THRESHOLD_LOC
     # => []
 
-    # Stack layout maintained across the loop is:
-    # [proc_index, threshold_acc, requires_delay_acc, restrictions_acc]
-    # proc_index starts at num_procedures and counts down to 0 in the loop. Procedure index 0 is
-    # the auth procedure and is skipped (see the `dup neq.0 if.true ... end` guard below).
-    push.0 push.0 push.0
-    exec.active_account::get_num_procedures
+    push.0 push.0 push.0 exec.active_account::get_num_procedures
     # => [proc_index, threshold_acc=0, requires_delay_acc=0, restrictions_acc=0]
 
     dup neq.0
@@ -328,8 +323,6 @@ proc compute_called_proc_policy(execution_mode: u32, default_threshold: u32)
         sub.1
         # => [proc_index, threshold_acc, requires_delay_acc, restrictions_acc]
 
-        # Skip combining "auth procedure" and "not called" checks:
-        # should_process = (proc_index != 0) AND was_procedure_called(proc_root).
         # Procedure index 0 is the auth procedure and must never contribute to the policy
         # threshold, even if it appears as a called procedure during the auth flow itself.
         dup neq.0
@@ -345,8 +338,6 @@ proc compute_called_proc_policy(execution_mode: u32, default_threshold: u32)
         # => [should_process, proc_index, threshold_acc, requires_delay_acc, restrictions_acc]
 
         if.true
-            # Re-fetch PROC_ROOT to read this procedure's policy (cheaper than threading the
-            # word through the early-skip computation above).
             dup exec.active_account::get_procedure_root
             # => [PROC_ROOT, proc_index, threshold_acc, requires_delay_acc, restrictions_acc]
 
@@ -354,13 +345,11 @@ proc compute_called_proc_policy(execution_mode: u32, default_threshold: u32)
             # => [immediate, delayed, restr_proc, proc_index, threshold_acc, requires_delay_acc, restrictions_acc]
 
             # Fold per-proc note_restrictions into the accumulator via OR.
-            # ProcedurePolicyNoteRestriction is bit-encoded (0=None, 1=NoIn, 2=NoOut, 3=Both),
-            # so bitwise OR is the union of constraints: e.g. NoIn (0b01) ∪ NoOut (0b10) = Both (0b11).
+            # ProcedurePolicyNoteRestriction is bit-encoded (0=None, 1=NoInput, 2=NoOutput, 3=Both),
+            # so bitwise OR is the union of constraints: e.g. NoInput (0b01) ∪ NoOutput (0b10) = Both (0b11).
             movup.6 movup.3 u32or movdn.5
             # => [immediate, delayed, proc_index, threshold_acc, requires_delay_acc, new_restrictions]
 
-            # Inject execution_mode at depth 2 and default_threshold at depth 3 to match the
-            # helper's expected input signature: [immediate, delayed, execution_mode, default_threshold].
             loc_load.EXECUTION_MODE_LOC movdn.2
             loc_load.DEFAULT_THRESHOLD_LOC movdn.3
             # => [immediate, delayed, execution_mode, default_threshold, proc_index, threshold_acc, requires_delay_acc, new_restrictions]
@@ -376,7 +365,6 @@ proc compute_called_proc_policy(execution_mode: u32, default_threshold: u32)
             swap movup.3 or
             # => [new_requires_delay, new_threshold, proc_index, new_restrictions]
 
-            # Restore the loop invariant ordering: [proc_index, threshold_acc, requires_delay_acc, restrictions_acc].
             swap movup.2
             # => [proc_index, new_threshold, new_requires_delay, new_restrictions]
         end
@@ -385,7 +373,6 @@ proc compute_called_proc_policy(execution_mode: u32, default_threshold: u32)
         # => [should_continue, proc_index, threshold_acc, requires_delay_acc, restrictions_acc]
     end
 
-    # proc_index is 0 here; drop it to leave only the accumulators.
     drop
     # => [threshold_acc, requires_delay_acc, restrictions_acc]
 end
