@@ -249,13 +249,13 @@ impl<ContainerId: Copy> InputOutputNoteTracker<ContainerId> {
             // Check if the notes with the same ID have differing hashes.
             // This could happen if the metadata of the notes is different, which we consider an
             // error.
-            let input_commitment = input_note_header.id().as_word();
-            let output_commitment = output_note.id().as_word();
-            if output_commitment != input_commitment {
+            let input_note_id = input_note_header.id().as_word();
+            let output_note_id = output_note.id().as_word();
+            if output_note_id != input_note_id {
                 return Err(InputOutputNoteTrackerError::NoteCommitmentMismatch {
                     id,
-                    input_commitment,
-                    output_commitment,
+                    input_commitment: input_note_id,
+                    output_commitment: output_note_id,
                 });
             }
 
@@ -291,10 +291,10 @@ impl<ContainerId: Copy> InputOutputNoteTracker<ContainerId> {
         };
 
         let note_index = proof.location().block_note_tree_index().into();
-        let note_commitment = note_header.id().as_word();
+        let note_id = note_header.id().as_word();
         proof
             .note_path()
-            .verify(note_index, note_commitment, &note_block_header.note_root())
+            .verify(note_index, note_id, &note_block_header.note_root())
             .map_err(|source| {
                 InputOutputNoteTrackerError::UnauthenticatedNoteAuthenticationFailed {
                     note_id: note_header.id(),

@@ -77,8 +77,8 @@ where
 
     /// Returns the commitment to the output notes.
     ///
-    /// The commitment is computed as a sequential hash of (note ID, metadata commitment) tuples
-    /// for the notes created in a transaction.
+    /// The commitment is computed as a sequential hash of `(note_details_commitment,
+    /// metadata_commitment)` tuples for the notes created in a transaction.
     pub fn commitment(&self) -> Word {
         self.commitment
     }

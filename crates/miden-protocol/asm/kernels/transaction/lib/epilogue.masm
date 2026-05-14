@@ -74,7 +74,7 @@ const ESTIMATED_AFTER_COMPUTE_FEE_CYCLES=NUM_POST_COMPUTE_FEE_CYCLES+SMT_SET_ADD
 #!   }
 #!
 #! Where:
-#! - OUTPUT_NOTES_COMMITMENT is the note commitment computed from note's id and metadata.
+#! - OUTPUT_NOTES_COMMITMENT is the note commitment computed from note's details and metadata.
 #! - output_note_ptr is the start boundary of the output notes section.
 #! - output_notes_end_ptr is the end boundary of the output notes section.
 #! - mem[i] is the memory value stored at some address i.
