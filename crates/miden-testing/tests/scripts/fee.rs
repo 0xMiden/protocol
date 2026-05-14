@@ -30,7 +30,7 @@ async fn prove_account_creation_with_fees() -> anyhow::Result<()> {
         .context("failed to execute account-creating transaction")?;
 
     let expected_fee = tx.compute_fee();
-    assert_eq!(expected_fee, tx.fee().amount());
+    assert_eq!(expected_fee, tx.fee().amount().as_u64());
 
     // We expect that the new account contains the amount minus the paid fee.
     let added_asset = FungibleAsset::new(chain.fee_faucet_id(), amount)?.sub(tx.fee())?;

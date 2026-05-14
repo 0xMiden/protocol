@@ -19,7 +19,7 @@ use miden_crypto::rand::FeltRng;
 use miden_protocol::Felt;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{AccountId, AccountIdVersion, AccountStorageMode, AccountType};
-use miden_protocol::asset::{Asset, FungibleAsset};
+use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
 use miden_protocol::note::{NoteAssets, NoteType};
 use miden_protocol::transaction::RawOutputNote;
 use miden_standards::account::faucets::FungibleFaucet;
@@ -238,7 +238,7 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
     let initial_token_supply = FungibleFaucet::try_from(faucet.storage())?.token_supply();
     assert_eq!(
         initial_token_supply,
-        Felt::new(total_burned),
+        AssetAmount::new(total_burned)?,
         "Initial issuance should match all pending burns"
     );
 
@@ -262,7 +262,7 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
     let final_token_supply = FungibleFaucet::try_from(faucet.storage())?.token_supply();
     assert_eq!(
         final_token_supply,
-        Felt::new(initial_token_supply.as_canonical_u64() - total_burned),
+        AssetAmount::new(initial_token_supply.as_u64() - total_burned)?,
         "Token supply should decrease by the sum of 32 bridged amounts"
     );
 
@@ -557,7 +557,8 @@ async fn b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
     let mut mock_chain = builder.build()?;
 
     // Store the initial asset balance of the user account
-    let initial_balance = user_account.vault().get_balance(faucet.id()).unwrap_or(0u64);
+    let initial_balance =
+        user_account.vault().get_balance(faucet.id()).unwrap_or(AssetAmount::zero());
 
     // EXECUTE B2AGG NOTE WITH THE SAME USER ACCOUNT (RECLAIM SCENARIO)
     // --------------------------------------------------------------------------------------------
@@ -579,10 +580,11 @@ async fn b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
 
     // VERIFY ASSETS WERE ADDED BACK TO THE ACCOUNT
     // --------------------------------------------------------------------------------------------
-    let final_balance = user_account.vault().get_balance(faucet.id()).unwrap_or(0u64);
+    let final_balance =
+        user_account.vault().get_balance(faucet.id()).unwrap_or(AssetAmount::zero());
     assert_eq!(
-        final_balance,
-        initial_balance + amount.as_canonical_u64(),
+        final_balance.as_u64(),
+        initial_balance.as_u64() + amount.as_canonical_u64(),
         "User account should have received the assets back from the B2AGG note"
     );
 
