@@ -447,12 +447,10 @@ impl TryFrom<&Account> for FungibleFaucet {
 /// combination of arguments passed in:
 /// - `storage_mode`: typically [`AccountStorageMode::Public`] for basic faucets, or
 ///   [`AccountStorageMode::Network`] for network-style faucets.
-/// - `access_control`: selects the gating policy AND the account's own auth component.
-///   - [`AccessControl::AuthControlled { auth }`] installs `auth` (typically
-///     [`AuthMethod::SingleSig`]) as the gate on `set_*` procedures.
-///   - [`AccessControl::Ownable2Step`] / [`AccessControl::Rbac`] gate via the access components and
-///     install [`AuthMethod::NoAuth`] as the faucet's own auth (state changes are implicitly
-///     authorized by the gated call).
+/// - `auth_method`: typically [`AuthMethod::SingleSig`] for basic faucets, or
+///   [`AuthMethod::NoAuth`] for network-style faucets.
+/// - `access_control`: [`AccessControl::AuthControlled`] for auth-only faucets, or
+///   [`AccessControl::Ownable2Step`] / [`AccessControl::Rbac`] for owner-controlled faucets.
 /// - `token_policy_manager`: the unified [`TokenPolicyManager`] holding both mint and burn policy.
 ///
 /// The faucet itself, including all token metadata, is provided in the `faucet` parameter (see
@@ -461,13 +459,12 @@ pub fn create_fungible_faucet(
     init_seed: [u8; 32],
     faucet: FungibleFaucet,
     storage_mode: AccountStorageMode,
+    auth_method: AuthMethod,
     access_control: AccessControl,
     token_policy_manager: TokenPolicyManager,
 ) -> Result<Account, FungibleFaucetError> {
     let mint_proc_root = FungibleFaucet::mint_and_send_digest();
 
-    let auth_method =
-        access_control.auth_method().ok_or(FungibleFaucetError::AuthMethodRequired)?;
     let auth_component: AccountComponent = match auth_method {
         AuthMethod::SingleSig { approver: (pub_key, auth_scheme) } => AuthSingleSigAcl::new(
             pub_key,
