@@ -781,10 +781,10 @@ fn add_faucet_with_callbacks(
         .with_component(faucet)
         .with_components(
             TokenPolicyManager::new(PolicyAuthority::AuthControlled)
-                .with_mint_policy(MintPolicyConfig::AllowAll, PolicyRegistration::Active)
-                .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)
-                .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)
-                .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active),
+                .with_mint_policy(MintPolicyConfig::AllowAll, PolicyRegistration::Active)?
+                .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)?
+                .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?
+                .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?,
         )
         .with_component(callback_component);
 

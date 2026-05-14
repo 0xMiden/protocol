@@ -402,10 +402,10 @@ impl MockChainBuilder {
             .context("failed to build FungibleFaucet")?;
 
         let token_policy_manager = TokenPolicyManager::new(PolicyAuthority::AuthControlled)
-            .with_mint_policy(MintPolicyConfig::AllowAll, PolicyRegistration::Active)
-            .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)
-            .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)
-            .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active);
+            .with_mint_policy(MintPolicyConfig::AllowAll, PolicyRegistration::Active)?
+            .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)?
+            .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?
+            .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?;
 
         self.add_existing_fungible_faucet(
             auth_method,
@@ -445,10 +445,10 @@ impl MockChainBuilder {
             .context("failed to build FungibleFaucet")?;
 
         let token_policy_manager = TokenPolicyManager::new(PolicyAuthority::OwnerControlled)
-            .with_mint_policy(mint_policy, PolicyRegistration::Active)
-            .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)
-            .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)
-            .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active);
+            .with_mint_policy(mint_policy, PolicyRegistration::Active)?
+            .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)?
+            .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?
+            .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?;
 
         self.add_existing_fungible_faucet(
             Auth::IncrNonce,
@@ -468,10 +468,10 @@ impl MockChainBuilder {
         faucet: FungibleFaucet,
     ) -> anyhow::Result<Account> {
         let token_policy_manager = TokenPolicyManager::new(PolicyAuthority::OwnerControlled)
-            .with_mint_policy(MintPolicyConfig::OwnerOnly, PolicyRegistration::Active)
-            .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)
-            .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)
-            .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active);
+            .with_mint_policy(MintPolicyConfig::OwnerOnly, PolicyRegistration::Active)?
+            .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)?
+            .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?
+            .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?;
 
         self.add_existing_fungible_faucet(
             Auth::IncrNonce,
@@ -504,10 +504,10 @@ impl MockChainBuilder {
             .context("failed to build FungibleFaucet")?;
 
         let token_policy_manager = TokenPolicyManager::new(PolicyAuthority::AuthControlled)
-            .with_mint_policy(MintPolicyConfig::AllowAll, PolicyRegistration::Active)
-            .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)
-            .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)
-            .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active);
+            .with_mint_policy(MintPolicyConfig::AllowAll, PolicyRegistration::Active)?
+            .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)?
+            .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?
+            .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?;
 
         self.create_new_fungible_faucet(
             auth_method,

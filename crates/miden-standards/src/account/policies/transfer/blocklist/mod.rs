@@ -1,8 +1,11 @@
+use alloc::collections::BTreeSet;
+use alloc::vec;
 use alloc::vec::Vec;
 
 use miden_protocol::Word;
 use miden_protocol::account::component::{SchemaType, StorageSlotSchema};
-use miden_protocol::account::{AccountId, StorageMap, StorageMapKey, StorageSlotName};
+use miden_protocol::account::{AccountId, StorageMap, StorageMapKey, StorageSlot, StorageSlotName};
+use miden_protocol::block::account_tree::AccountIdKey;
 use miden_protocol::utils::sync::LazyLock;
 
 mod owner_controlled;
@@ -40,7 +43,7 @@ static BLOCKED_ACCOUNTS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| 
 ///   blocked.
 #[derive(Debug, Clone, Default)]
 pub struct BlocklistStorage {
-    blocked_accounts: Vec<AccountId>,
+    blocked_accounts: BTreeSet<AccountId>,
 }
 
 impl BlocklistStorage {
@@ -49,7 +52,9 @@ impl BlocklistStorage {
         Self::default()
     }
 
-    /// Creates a [`BlocklistStorage`] pre-populated with the given blocked accounts.
+    /// Creates a [`BlocklistStorage`] with the given blocked accounts.
+    ///
+    /// Duplicate account IDs are deduplicated by the underlying set.
     pub fn with_blocked_accounts<I>(blocked_accounts: I) -> Self
     where
         I: IntoIterator<Item = AccountId>,
@@ -60,7 +65,7 @@ impl BlocklistStorage {
     }
 
     /// Returns the initial blocked accounts captured in this storage.
-    pub fn blocked_accounts(&self) -> &[AccountId] {
+    pub fn blocked_accounts(&self) -> &BTreeSet<AccountId> {
         &self.blocked_accounts
     }
 
@@ -85,20 +90,20 @@ impl BlocklistStorage {
     /// account ID's map entry with the `[1, 0, 0, 0]` blocked-flag word.
     pub fn build_storage_map(&self) -> StorageMap {
         let blocked_word = Word::from([1u32, 0, 0, 0]);
-        let entries: Vec<_> = self
-            .blocked_accounts
-            .iter()
-            .map(|id| (account_id_to_map_key(*id), blocked_word))
-            .collect();
-        StorageMap::with_entries(entries).expect("initial blocked accounts should have unique IDs")
+        StorageMap::with_entries(
+            self.blocked_accounts
+                .iter()
+                .map(|id| (StorageMapKey::new(AccountIdKey::from(*id).as_word()), blocked_word)),
+        )
+        .expect("initial blocked accounts should have unique IDs")
     }
-}
 
-/// Builds the `blocked_accounts` map key for the given account ID. Mirrors the MASM
-/// `build_blocked_accounts_map_key` helper which pushes `[0, 0, account_id_suffix,
-/// account_id_prefix]`.
-pub(crate) fn account_id_to_map_key(id: AccountId) -> StorageMapKey {
-    use miden_protocol::Felt;
-    let key = Word::from([Felt::ZERO, Felt::ZERO, id.suffix(), id.prefix().as_felt()]);
-    StorageMapKey::from_raw(key)
+    /// Consumes the storage and returns the [`StorageSlot`]s it contributes to an account
+    /// component. Currently a single slot — the `blocked_accounts` map populated with the
+    /// initial entries.
+    pub fn into_slots(self) -> Vec<StorageSlot> {
+        let slot =
+            StorageSlot::with_map(BLOCKED_ACCOUNTS_SLOT_NAME.clone(), self.build_storage_map());
+        vec![slot]
+    }
 }

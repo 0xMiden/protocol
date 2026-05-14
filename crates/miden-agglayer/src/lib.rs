@@ -251,10 +251,15 @@ fn create_agglayer_faucet_builder(
     // via `set_burn_policy`.
     let token_policy_manager = TokenPolicyManager::new(PolicyAuthority::OwnerControlled)
         .with_mint_policy(MintPolicyConfig::OwnerOnly, PolicyRegistration::Active)
+        .expect("active mint policy is registered exactly once")
         .with_burn_policy(BurnPolicyConfig::OwnerOnly, PolicyRegistration::Active)
+        .expect("active burn policy is registered exactly once")
         .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Reserved)
+        .expect("reserved burn policy registration does not conflict")
         .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)
-        .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active);
+        .expect("active send policy is registered exactly once")
+        .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)
+        .expect("active receive policy is registered exactly once");
 
     Account::builder(seed.into())
         .account_type(AccountType::FungibleFaucet)

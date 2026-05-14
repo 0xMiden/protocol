@@ -29,12 +29,25 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::AssetCallbacks;
 use miden_protocol::utils::sync::LazyLock;
+use thiserror::Error;
 
 use super::burn::BurnPolicyConfig;
 use super::mint::MintPolicyConfig;
 use super::transfer::{TransferAllowAll, TransferPolicy};
 use super::{PolicyAuthority, PolicyRegistration};
 use crate::account::account_component_code;
+
+// ERRORS
+// ================================================================================================
+
+/// Errors returned when building a [`TokenPolicyManager`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum TokenPolicyManagerError {
+    /// Returned when [`PolicyRegistration::Active`] is supplied for a kind that already has an
+    /// active policy registered. At most one active policy per kind is permitted.
+    #[error("token policy manager: more than one active {kind} policy registered")]
+    DuplicateActivePolicy { kind: &'static str },
+}
 
 account_component_code!(POLICY_MANAGER_CODE, "faucets/policies/policy_manager.masl");
 
@@ -209,88 +222,92 @@ impl TokenPolicyManager {
     /// active one (written to `active_mint_policy_proc_root`) or a reserved alternative (added
     /// to the `allowed_mint_policy_proc_roots` map for runtime switching via `set_mint_policy`).
     ///
-    /// Panics if `registration` is [`PolicyRegistration::Active`] and an active mint policy is
-    /// already registered (at most one active policy per kind is permitted).
+    /// # Errors
+    ///
+    /// Returns [`TokenPolicyManagerError::DuplicateActivePolicy`] if `registration` is
+    /// [`PolicyRegistration::Active`] and an active mint policy is already registered.
     pub fn with_mint_policy(
         mut self,
         policy: MintPolicyConfig,
         registration: PolicyRegistration,
-    ) -> Self {
+    ) -> Result<Self, TokenPolicyManagerError> {
         let root = policy.root();
         if registration == PolicyRegistration::Active {
-            assert!(
-                self.active_mint_policy_root == Word::default(),
-                "token policy manager: more than one active mint policy registered",
-            );
+            if self.active_mint_policy_root != Word::default() {
+                return Err(TokenPolicyManagerError::DuplicateActivePolicy { kind: "mint" });
+            }
             self.active_mint_policy_root = root;
         }
         self.insert_policy(root, policy.into_components(), PolicyKind::Mint);
-        self
+        Ok(self)
     }
 
     /// Registers a burn policy. See [`Self::with_mint_policy`] for `registration` semantics.
     ///
-    /// Panics if `registration` is [`PolicyRegistration::Active`] and an active burn policy is
-    /// already registered.
+    /// # Errors
+    ///
+    /// Returns [`TokenPolicyManagerError::DuplicateActivePolicy`] if `registration` is
+    /// [`PolicyRegistration::Active`] and an active burn policy is already registered.
     pub fn with_burn_policy(
         mut self,
         policy: BurnPolicyConfig,
         registration: PolicyRegistration,
-    ) -> Self {
+    ) -> Result<Self, TokenPolicyManagerError> {
         let root = policy.root();
         if registration == PolicyRegistration::Active {
-            assert!(
-                self.active_burn_policy_root == Word::default(),
-                "token policy manager: more than one active burn policy registered",
-            );
+            if self.active_burn_policy_root != Word::default() {
+                return Err(TokenPolicyManagerError::DuplicateActivePolicy { kind: "burn" });
+            }
             self.active_burn_policy_root = root;
         }
         self.insert_policy(root, policy.into_components(), PolicyKind::Burn);
-        self
+        Ok(self)
     }
 
     /// Registers a send policy (fired by the `on_before_asset_added_to_note` callback). See
     /// [`Self::with_mint_policy`] for `registration` semantics.
     ///
-    /// Panics if `registration` is [`PolicyRegistration::Active`] and an active send policy is
-    /// already registered.
+    /// # Errors
+    ///
+    /// Returns [`TokenPolicyManagerError::DuplicateActivePolicy`] if `registration` is
+    /// [`PolicyRegistration::Active`] and an active send policy is already registered.
     pub fn with_send_policy(
         mut self,
         policy: TransferPolicy,
         registration: PolicyRegistration,
-    ) -> Self {
+    ) -> Result<Self, TokenPolicyManagerError> {
         let root = policy.root();
         if registration == PolicyRegistration::Active {
-            assert!(
-                self.active_send_policy_root == Word::default(),
-                "token policy manager: more than one active send policy registered",
-            );
+            if self.active_send_policy_root != Word::default() {
+                return Err(TokenPolicyManagerError::DuplicateActivePolicy { kind: "send" });
+            }
             self.active_send_policy_root = root;
         }
         self.insert_policy(root, policy.into_components(), PolicyKind::Send);
-        self
+        Ok(self)
     }
 
     /// Registers a receive policy (fired by the `on_before_asset_added_to_account` callback).
     /// See [`Self::with_mint_policy`] for `registration` semantics.
     ///
-    /// Panics if `registration` is [`PolicyRegistration::Active`] and an active receive policy
-    /// is already registered.
+    /// # Errors
+    ///
+    /// Returns [`TokenPolicyManagerError::DuplicateActivePolicy`] if `registration` is
+    /// [`PolicyRegistration::Active`] and an active receive policy is already registered.
     pub fn with_receive_policy(
         mut self,
         policy: TransferPolicy,
         registration: PolicyRegistration,
-    ) -> Self {
+    ) -> Result<Self, TokenPolicyManagerError> {
         let root = policy.root();
         if registration == PolicyRegistration::Active {
-            assert!(
-                self.active_receive_policy_root == Word::default(),
-                "token policy manager: more than one active receive policy registered",
-            );
+            if self.active_receive_policy_root != Word::default() {
+                return Err(TokenPolicyManagerError::DuplicateActivePolicy { kind: "receive" });
+            }
             self.active_receive_policy_root = root;
         }
         self.insert_policy(root, policy.into_components(), PolicyKind::Receive);
-        self
+        Ok(self)
     }
 
     /// Inserts (or merges, if the root is already present) a policy entry into the unified
@@ -318,44 +335,29 @@ impl TokenPolicyManager {
         self.authority
     }
 
-    /// Returns the active mint policy procedure root. Panics if no active mint policy has been
-    /// registered.
-    pub fn active_mint_policy(&self) -> Word {
-        assert!(
-            self.active_mint_policy_root != Word::default(),
-            "token policy manager: no active mint policy registered",
-        );
-        self.active_mint_policy_root
-    }
-
-    /// Returns the active burn policy procedure root. Panics if no active burn policy has
+    /// Returns the active mint policy procedure root, or [`None`] if no active mint policy has
     /// been registered.
-    pub fn active_burn_policy(&self) -> Word {
-        assert!(
-            self.active_burn_policy_root != Word::default(),
-            "token policy manager: no active burn policy registered",
-        );
-        self.active_burn_policy_root
+    pub fn active_mint_policy(&self) -> Option<Word> {
+        (self.active_mint_policy_root != Word::default()).then_some(self.active_mint_policy_root)
     }
 
-    /// Returns the active send policy procedure root. Panics if no active send policy has
+    /// Returns the active burn policy procedure root, or [`None`] if no active burn policy has
     /// been registered.
-    pub fn active_send_policy(&self) -> Word {
-        assert!(
-            self.active_send_policy_root != Word::default(),
-            "token policy manager: no active send policy registered",
-        );
-        self.active_send_policy_root
+    pub fn active_burn_policy(&self) -> Option<Word> {
+        (self.active_burn_policy_root != Word::default()).then_some(self.active_burn_policy_root)
     }
 
-    /// Returns the active receive policy procedure root. Panics if no active receive policy
-    /// has been registered.
-    pub fn active_receive_policy(&self) -> Word {
-        assert!(
-            self.active_receive_policy_root != Word::default(),
-            "token policy manager: no active receive policy registered",
-        );
-        self.active_receive_policy_root
+    /// Returns the active send policy procedure root, or [`None`] if no active send policy has
+    /// been registered.
+    pub fn active_send_policy(&self) -> Option<Word> {
+        (self.active_send_policy_root != Word::default()).then_some(self.active_send_policy_root)
+    }
+
+    /// Returns the active receive policy procedure root, or [`None`] if no active receive
+    /// policy has been registered.
+    pub fn active_receive_policy(&self) -> Option<Word> {
+        (self.active_receive_policy_root != Word::default())
+            .then_some(self.active_receive_policy_root)
     }
 
     /// Returns all allowed mint policy procedure roots (active + reserved).
@@ -491,15 +493,19 @@ impl TokenPolicyManager {
     }
 
     fn manager_storage_slots(&self) -> Vec<StorageSlot> {
+        // Raw active-root fields are written directly: an unset (default) root corresponds to
+        // the zero word, which the MASM treats as "no policy installed" and will trap on at
+        // first invocation. Callers that want a build-time check can inspect the
+        // `active_*_policy()` accessors before passing the manager to `AccountBuilder`.
         let mut slots = vec![
             StorageSlot::with_value(POLICY_AUTHORITY_SLOT_NAME.clone(), self.authority.into()),
             StorageSlot::with_value(
                 ACTIVE_MINT_POLICY_PROC_ROOT_SLOT_NAME.clone(),
-                self.active_mint_policy(),
+                self.active_mint_policy_root,
             ),
             StorageSlot::with_value(
                 ACTIVE_BURN_POLICY_PROC_ROOT_SLOT_NAME.clone(),
-                self.active_burn_policy(),
+                self.active_burn_policy_root,
             ),
             StorageSlot::with_map(
                 ALLOWED_MINT_POLICY_PROC_ROOTS_SLOT_NAME.clone(),
@@ -539,8 +545,8 @@ impl TokenPolicyManager {
         });
         if needs_callbacks {
             let callback_slots = AssetCallbacks::new()
-                .on_before_asset_added_to_account(self.active_receive_policy())
-                .on_before_asset_added_to_note(self.active_send_policy())
+                .on_before_asset_added_to_account(self.active_receive_policy_root)
+                .on_before_asset_added_to_note(self.active_send_policy_root)
                 .into_storage_slots();
             slots.extend(callback_slots);
         }

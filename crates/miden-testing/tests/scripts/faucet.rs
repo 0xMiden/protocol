@@ -210,11 +210,11 @@ fn build_network_faucet_with_burn_switching(
         .build()?;
 
     let token_policy_manager = TokenPolicyManager::new(PolicyAuthority::OwnerControlled)
-        .with_mint_policy(mint_policy, PolicyRegistration::Active)
-        .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)
-        .with_burn_policy(BurnPolicyConfig::OwnerOnly, PolicyRegistration::Reserved)
-        .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)
-        .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active);
+        .with_mint_policy(mint_policy, PolicyRegistration::Active)?
+        .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)?
+        .with_burn_policy(BurnPolicyConfig::OwnerOnly, PolicyRegistration::Reserved)?
+        .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?
+        .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?;
 
     let account_builder = AccountBuilder::new(builder.rng_mut().random())
         .storage_mode(AccountStorageMode::Network)
@@ -1806,10 +1806,10 @@ fn build_network_faucet_with_blocklist_transfer(
         .build()?;
 
     let token_policy_manager = TokenPolicyManager::new(PolicyAuthority::OwnerControlled)
-        .with_mint_policy(MintPolicyConfig::OwnerOnly, PolicyRegistration::Active)
-        .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)
-        .with_send_policy(TransferPolicy::Blocklist, PolicyRegistration::Active)
-        .with_receive_policy(TransferPolicy::Blocklist, PolicyRegistration::Active);
+        .with_mint_policy(MintPolicyConfig::OwnerOnly, PolicyRegistration::Active)?
+        .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)?
+        .with_send_policy(TransferPolicy::Blocklist, PolicyRegistration::Active)?
+        .with_receive_policy(TransferPolicy::Blocklist, PolicyRegistration::Active)?;
 
     let account_builder = AccountBuilder::new(builder.rng_mut().random())
         .storage_mode(AccountStorageMode::Network)

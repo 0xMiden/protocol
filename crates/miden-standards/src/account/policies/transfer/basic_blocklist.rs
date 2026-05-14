@@ -6,7 +6,7 @@ use miden_protocol::account::component::{
     AccountComponentMetadata,
     StorageSchema,
 };
-use miden_protocol::account::{AccountComponent, AccountId, AccountType, StorageSlot};
+use miden_protocol::account::{AccountComponent, AccountId, AccountType};
 
 use crate::account::account_component_code;
 use crate::account::policies::transfer::blocklist::BlocklistStorage;
@@ -80,11 +80,6 @@ impl BasicBlocklist {
 impl From<BasicBlocklist> for AccountComponent {
     fn from(blocklist: BasicBlocklist) -> Self {
         let storage = BlocklistStorage::with_blocked_accounts(blocklist.0);
-        let blocked_accounts_slot = StorageSlot::with_map(
-            BlocklistStorage::blocked_accounts_slot().clone(),
-            storage.build_storage_map(),
-        );
-
         let storage_schema = StorageSchema::new([BlocklistStorage::blocked_accounts_slot_schema()])
             .expect("storage schema should be valid");
 
@@ -98,13 +93,9 @@ impl From<BasicBlocklist> for AccountComponent {
         )
         .with_storage_schema(storage_schema);
 
-        AccountComponent::new(
-            BasicBlocklist::code().clone(),
-            vec![blocked_accounts_slot],
-            metadata,
-        )
-        .expect(
-            "basic blocklist transfer policy component should satisfy the requirements of a valid account component",
-        )
+        AccountComponent::new(BasicBlocklist::code().clone(), storage.into_slots(), metadata)
+            .expect(
+                "basic blocklist transfer policy component should satisfy the requirements of a valid account component",
+            )
     }
 }

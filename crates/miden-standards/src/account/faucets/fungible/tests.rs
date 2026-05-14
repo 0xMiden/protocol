@@ -58,9 +58,13 @@ fn faucet_contract_creation() {
         AccessControl::AuthControlled,
         TokenPolicyManager::new(PolicyAuthority::AuthControlled)
             .with_mint_policy(MintPolicyConfig::AllowAll, PolicyRegistration::Active)
+            .unwrap()
             .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)
+            .unwrap()
             .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)
-            .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active),
+            .unwrap()
+            .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)
+            .unwrap(),
     )
     .unwrap();
 

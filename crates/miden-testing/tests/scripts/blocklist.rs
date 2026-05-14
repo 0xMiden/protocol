@@ -80,10 +80,10 @@ fn add_faucet_with_owner_blocklist_transfer(
         .with_component(Ownable2Step::new(owner_id))
         .with_components(
             TokenPolicyManager::new(PolicyAuthority::OwnerControlled)
-                .with_mint_policy(MintPolicyConfig::AllowAll, PolicyRegistration::Active)
-                .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)
-                .with_send_policy(TransferPolicy::Blocklist, PolicyRegistration::Active)
-                .with_receive_policy(TransferPolicy::Blocklist, PolicyRegistration::Active),
+                .with_mint_policy(MintPolicyConfig::AllowAll, PolicyRegistration::Active)?
+                .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)?
+                .with_send_policy(TransferPolicy::Blocklist, PolicyRegistration::Active)?
+                .with_receive_policy(TransferPolicy::Blocklist, PolicyRegistration::Active)?,
         )
         .with_component(OwnerControlledBlocklist);
 
