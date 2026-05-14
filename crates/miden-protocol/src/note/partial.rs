@@ -43,7 +43,8 @@ impl PartialNote {
         assets: NoteAssets,
         attachments: NoteAttachments,
     ) -> Self {
-        let details_commitment = NoteDetailsCommitment::new(recipient_digest, assets.commitment());
+        let details_commitment =
+            NoteDetailsCommitment::merge(recipient_digest, assets.commitment());
         let metadata = NoteMetadata::new(partial_metadata, &attachments);
         let header = NoteHeader::new(details_commitment, metadata);
         Self {

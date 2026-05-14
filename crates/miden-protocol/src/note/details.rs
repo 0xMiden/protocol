@@ -32,11 +32,11 @@ impl NoteDetails {
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns the commitment to the note details, excluding metadata.
+    /// Returns the commitment of this [`NoteDetails`].
     ///
     /// This value is used as part of the note's public identifier.
     pub fn commitment(&self) -> NoteDetailsCommitment {
-        NoteDetailsCommitment::from(self)
+        NoteDetailsCommitment::new(self.recipient(), self.assets())
     }
 
     /// Returns the note's assets.
