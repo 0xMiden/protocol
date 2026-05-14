@@ -1,7 +1,6 @@
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
-use crate::Word;
 use crate::batch::{BatchId, ProvenBatch};
 use crate::block::{BlockHeader, BlockNumber};
 use crate::crypto::merkle::MerkleError;
@@ -210,7 +209,7 @@ impl<ContainerId: Copy> InputOutputNoteTracker<ContainerId> {
             match input_note_commitment.header() {
                 Some(input_note_header) => {
                     let is_output_note =
-                        Self::remove_output_note(input_note_header, &mut self.output_notes)?;
+                        Self::remove_output_note(input_note_header, &mut self.output_notes);
 
                     // If the unauthenticated note is also created as an output note we erase it by
                     // adding it to the erased notes and, crucially, not adding it to the
@@ -234,35 +233,11 @@ impl<ContainerId: Copy> InputOutputNoteTracker<ContainerId> {
     ///
     /// Returns `true` if the given note existed in the output note set and was removed from it,
     /// `false` otherwise.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - the given note has a corresponding note in the output note set with the same [`NoteId`]
-    ///   but their hashes differ (i.e. their metadata is different).
     fn remove_output_note(
         input_note_header: &NoteHeader,
         output_notes: &mut BTreeMap<NoteId, (ContainerId, OutputNote)>,
-    ) -> Result<bool, InputOutputNoteTrackerError<ContainerId>> {
-        let id = input_note_header.id();
-        if let Some((_, output_note)) = output_notes.remove(&id) {
-            // Check if the notes with the same ID have differing hashes.
-            // This could happen if the metadata of the notes is different, which we consider an
-            // error.
-            let input_note_id = input_note_header.id().as_word();
-            let output_note_id = output_note.id().as_word();
-            if output_note_id != input_note_id {
-                return Err(InputOutputNoteTrackerError::NoteCommitmentMismatch {
-                    id,
-                    input_commitment: input_note_id,
-                    output_commitment: output_note_id,
-                });
-            }
-
-            return Ok(true);
-        }
-
-        Ok(false)
+    ) -> bool {
+        output_notes.remove(&input_note_header.id()).is_some()
     }
 
     /// Verifies the note inclusion proof for the given input note commitment parts (nullifier and
@@ -324,11 +299,6 @@ enum InputOutputNoteTrackerError<ContainerId: Copy> {
         first_container_id: ContainerId,
         second_container_id: ContainerId,
     },
-    NoteCommitmentMismatch {
-        id: NoteId,
-        input_commitment: Word,
-        output_commitment: Word,
-    },
     UnauthenticatedInputNoteBlockNotInPartialBlockchain {
         block_number: BlockNumber,
         note_id: NoteId,
@@ -360,15 +330,6 @@ impl From<InputOutputNoteTrackerError<BatchId>> for ProposedBlockError {
                 note_id,
                 first_batch_id: first_container_id,
                 second_batch_id: second_container_id,
-            },
-            InputOutputNoteTrackerError::NoteCommitmentMismatch {
-                id,
-                input_commitment,
-                output_commitment,
-            } => ProposedBlockError::NoteCommitmentMismatch {
-                id,
-                input_commitment,
-                output_commitment,
             },
             InputOutputNoteTrackerError::UnauthenticatedInputNoteBlockNotInPartialBlockchain {
                 block_number,
@@ -410,15 +371,6 @@ impl From<InputOutputNoteTrackerError<TransactionId>> for ProposedBatchError {
                 note_id,
                 first_transaction_id: first_container_id,
                 second_transaction_id: second_container_id,
-            },
-            InputOutputNoteTrackerError::NoteCommitmentMismatch {
-                id,
-                input_commitment,
-                output_commitment,
-            } => ProposedBatchError::NoteCommitmentMismatch {
-                id,
-                input_commitment,
-                output_commitment,
             },
             InputOutputNoteTrackerError::UnauthenticatedInputNoteBlockNotInPartialBlockchain {
                 block_number,
