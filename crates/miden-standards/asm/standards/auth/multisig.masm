@@ -45,15 +45,15 @@ const DEFAULT_THRESHOLD_LOC=0
 # number of approvers are stored as:
 # [default_threshold, num_approvers, 0, 0].
 # The threshold is guaranteed to be less than or equal to num_approvers.
-const THRESHOLD_CONFIG_SLOT = word("miden::standards::auth::multisig::threshold_config")
+pub const THRESHOLD_CONFIG_SLOT = word("miden::standards::auth::multisig::threshold_config")
 
 # The slot in this component's storage layout where the public keys map is stored.
 # Map entries: [key_index, 0, 0, 0] => APPROVER_PUBLIC_KEY
-const APPROVER_PUBLIC_KEYS_SLOT = word("miden::standards::auth::multisig::approver_public_keys")
+pub const APPROVER_PUBLIC_KEYS_SLOT = word("miden::standards::auth::multisig::approver_public_keys")
 
 # The slot in this component's storage layout where the scheme id for the corresponding public keys map is stored.
 # Map entries: [key_index, 0, 0, 0] => [scheme_id, 0, 0, 0]
-const APPROVER_SCHEME_ID_SLOT = word("miden::standards::auth::multisig::approver_schemes")
+pub const APPROVER_SCHEME_ID_SLOT = word("miden::standards::auth::multisig::approver_schemes")
 
 # The slot in this component's storage layout where executed transactions are stored.
 # Map entries: transaction_message => [is_executed, 0, 0, 0]

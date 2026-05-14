@@ -3,25 +3,14 @@ use miden::protocol::native_account
 use miden::protocol::auth::AUTH_UNAUTHORIZED_EVENT
 use miden::standards::auth
 use miden::standards::auth::multisig
+use miden::standards::auth::multisig::APPROVER_PUBLIC_KEYS_SLOT
+use miden::standards::auth::multisig::APPROVER_SCHEME_ID_SLOT
+use miden::standards::auth::multisig::THRESHOLD_CONFIG_SLOT
 use miden::standards::auth::signature
 use miden::standards::auth::tx_policy
 
-# CONSTANTS
-# =================================================================================================
-
-# The slot in this component's storage layout where the public keys map is stored.
-# Map entries: [key_index, 0, 0, 0] => APPROVER_PUBLIC_KEY
-const APPROVER_PUBLIC_KEYS_SLOT = word("miden::standards::auth::multisig::approver_public_keys")
-
-# The slot in this component's storage layout where signature schemes are stored.
-# Map entries: [key_index, 0, 0, 0] => [scheme_id, 0, 0, 0]
-const APPROVER_SCHEME_ID_SLOT = word("miden::standards::auth::multisig::approver_schemes")
-
 # STORAGE SLOTS
 # =================================================================================================
-
-# [default_threshold, num_approvers, 0, 0] — shared with [`multisig`] threshold config.
-const THRESHOLD_CONFIG_SLOT = word("miden::standards::auth::multisig::threshold_config")
 
 # Map: PROC_ROOT => smart per-procedure policy word.
 const PROCEDURE_POLICIES_SLOT = word("miden::standards::auth::multisig_smart::procedure_policies")
@@ -76,6 +65,12 @@ const ERR_INSUFFICIENT_SIGNATURES = "insufficient number of signatures"
 const IMMEDIATE_THRESHOLD_LOC = 0
 const DELAYED_THRESHOLD_LOC = 1
 const NOTE_RESTRICTIONS_LOC = 2
+
+# LOCAL ADDRESSES (compute_called_proc_policy)
+# =================================================================================================
+
+const EXECUTION_MODE_LOC = 0
+const DEFAULT_THRESHOLD_LOC = 1
 
 #! Gets the procedure policy entry for PROC_ROOT from the account's initial state.
 #!
@@ -242,12 +237,12 @@ end
 #! Invocation: exec
 #!
 #! Locals:
-#! 0: execution_mode
-#! 1: default_threshold
+#! - EXECUTION_MODE_LOC: execution_mode
+#! - DEFAULT_THRESHOLD_LOC: default_threshold
 @locals(2)
 proc compute_called_proc_policy(execution_mode: u32, default_threshold: u32)
-    loc_store.0
-    loc_store.1
+    loc_store.EXECUTION_MODE_LOC
+    loc_store.DEFAULT_THRESHOLD_LOC
     # => []
 
     # Stack layout maintained across the loop is:
@@ -290,7 +285,7 @@ proc compute_called_proc_policy(execution_mode: u32, default_threshold: u32)
                 dup dup.2
                 # => [delayed, immediate, immediate, delayed, proc_index, threshold_acc, requires_delay_acc, new_restrictions]
 
-                loc_load.0
+                loc_load.EXECUTION_MODE_LOC
                 # => [execution_mode, delayed, immediate, immediate, delayed, proc_index, threshold_acc, requires_delay_acc, new_restrictions]
 
                 # delayed mode (execution_mode=1) → keeps delayed; immediate mode (execution_mode=0) → keeps immediate.
@@ -318,7 +313,7 @@ proc compute_called_proc_policy(execution_mode: u32, default_threshold: u32)
                         drop drop
                         # => [proc_index, threshold_acc, requires_delay_acc, new_restrictions]
 
-                        swap loc_load.1 u32max swap
+                        swap loc_load.DEFAULT_THRESHOLD_LOC u32max swap
                         # => [proc_index, new_threshold, requires_delay_acc, new_restrictions]
                     else
                         # Mode misuse: policy exists but is configured for the other execution
@@ -340,7 +335,7 @@ proc compute_called_proc_policy(execution_mode: u32, default_threshold: u32)
 
                     # requires_delay_acc = requires_delay_acc OR execution_mode
                     # (execution_mode is 1 for delayed mode, 0 for immediate mode).
-                    loc_load.0
+                    loc_load.EXECUTION_MODE_LOC
                     # => [execution_mode, proc_index, new_threshold, requires_delay_acc, new_restrictions]
 
                     movup.3 or
@@ -431,9 +426,6 @@ proc enforce_procedure_policy(default_threshold: u32)
     # => [policy_threshold]
 end
 
-# PUBLIC INTERFACE
-# =================================================================================================
-
 #! Asserts that all configured smart per-procedure policies are valid for num_approvers.
 #!
 #! Inputs:  [num_approvers]
@@ -499,6 +491,9 @@ proc assert_proc_policies_lte_num_approvers
     drop drop
     # => []
 end
+
+# PUBLIC INTERFACE
+# =================================================================================================
 
 #! Sets or clears a smart per-procedure policy.
 #!
@@ -755,10 +750,10 @@ pub proc auth_tx(salt: word)
 
     # ------ Computing transaction summary ------
     exec.auth::create_tx_summary
-    # => [SALT, OUTPUT_NOTES_COMMITMENT, INPUT_NOTES_COMMITMENT, ACCOUNT_DELTA_COMMITMENT]
+    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT]
 
     adv.insert_hqword
-    # => [SALT, OUTPUT_NOTES_COMMITMENT, INPUT_NOTES_COMMITMENT, ACCOUNT_DELTA_COMMITMENT]
+    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT]
 
     exec.auth::hash_tx_summary
     # => [TX_SUMMARY_COMMITMENT]
