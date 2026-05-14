@@ -474,8 +474,7 @@ end
 #!   Advice stack: []
 #!
 #! Where:
-#! - NOTE_ID is the ID of the input note computed as
-#!   `hash(NOTE_DETAILS_COMMITMENT || NOTE_METADATA_COMMITMENT)`.
+#! - NOTE_ID is the ID of the input note.
 #! - block_num is the leaf position in the MMR chain of the block which created the input note.
 #! - BLOCK_SUB_COMMITMENT is the sub_commitment of the block which created the input note.
 #! - NOTE_ROOT is the merkle root of the notes tree containing the input note.

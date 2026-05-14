@@ -16,7 +16,7 @@ use crate::{Hasher, Word, WordError};
 // NOTE ID
 // ================================================================================================
 
-/// A unique identifier of a note.
+/// The unique identifier of a note.
 ///
 /// The note ID is computed as:
 ///

@@ -59,7 +59,7 @@ impl PartialNote {
         self.header.id()
     }
 
-    /// Returns the commitment to the note details, excluding metadata.
+    /// Returns the commitment to the note's details, excluding metadata.
     pub fn details_commitment(&self) -> NoteDetailsCommitment {
         self.header.details_commitment()
     }

@@ -35,7 +35,7 @@ impl NoteHeader {
         NoteId::new(self.details_commitment(), self.metadata())
     }
 
-    /// Returns the commitment to the note details, excluding metadata.
+    /// Returns the commitment to the note's details, excluding metadata.
     pub fn details_commitment(&self) -> NoteDetailsCommitment {
         self.details_commitment
     }

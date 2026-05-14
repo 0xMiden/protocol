@@ -214,7 +214,7 @@ impl RawOutputNote {
         }
     }
 
-    /// Returns a commitment to the note details, excluding metadata.
+    /// Returns the commitment to the note's details, excluding metadata.
     pub fn details_commitment(&self) -> NoteDetailsCommitment {
         match self {
             Self::Full(note) => note.details_commitment(),
@@ -379,7 +379,7 @@ impl OutputNote {
         }
     }
 
-    /// Returns a commitment to the note details, excluding metadata.
+    /// Returns the commitment to the note's details, excluding metadata.
     pub fn details_commitment(&self) -> NoteDetailsCommitment {
         match self {
             Self::Public(note) => note.details_commitment(),
@@ -511,7 +511,7 @@ impl PublicOutputNote {
         self.0.id()
     }
 
-    /// Returns a commitment to the note details, excluding metadata.
+    /// Returns the commitment to the note's details, excluding metadata.
     pub fn details_commitment(&self) -> NoteDetailsCommitment {
         self.0.details_commitment()
     }
@@ -605,7 +605,7 @@ impl PrivateOutputNote {
         &self.attachments
     }
 
-    /// Returns a commitment to the note details, excluding metadata.
+    /// Returns the commitment to the note's details, excluding metadata.
     pub fn details_commitment(&self) -> NoteDetailsCommitment {
         self.header.details_commitment()
     }

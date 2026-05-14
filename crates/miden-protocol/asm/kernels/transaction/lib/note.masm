@@ -181,8 +181,7 @@ end
 #!
 #! Where:
 #! - note_data_ptr is a pointer to the data section of the output note.
-#! - NOTE_DETAILS_COMMITMENT is the commitment to the note's details computed as
-#!   `hash(RECIPIENT_DIGEST || ASSETS_COMMITMENT)`.
+#! - NOTE_DETAILS_COMMITMENT is the commitment to the note's details.
 proc compute_output_note_details_commitment
     # compute assets commitment
     dup exec.compute_output_note_assets_commitment

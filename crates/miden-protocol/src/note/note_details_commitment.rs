@@ -18,8 +18,11 @@ use crate::utils::serde::{
 
 /// A commitment to a note's details, without note metadata.
 ///
-/// This value commits to the note's recipient and assets. Together with the note metadata
-/// commitment it is used to derive the note's [`super::NoteId`].
+/// This commitment is computed as:
+/// > hash(NOTE_RECIPIENT_DIGEST || NOTE_ASSETS_COMMITMENT)
+///
+/// Together with the note metadata commitment it is used to derive the note's
+/// [`NoteId`](super::NoteId).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, WordWrapper)]
 pub struct NoteDetailsCommitment(Word);
 
