@@ -663,7 +663,7 @@ async fn test_faucet_with_callback_calls_itself() -> anyhow::Result<()> {
             push.{amount}
             # => [amount, tag, note_type, RECIPIENT, pad(9)]
 
-            call.::miden::standards::faucets::basic_fungible::mint_and_send
+            call.::miden::standards::faucets::fungible::mint_and_send
             # => [note_idx, pad(15)]
 
             # truncate the stack

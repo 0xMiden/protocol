@@ -39,7 +39,7 @@ const ERR_FUNGIBLE_ASSET_TOKEN_SUPPLY_EXCEEDS_MAX_SUPPLY = "token supply exceeds
 const ERR_FUNGIBLE_ASSET_MAX_SUPPLY_EXCEEDS_FUNGIBLE_ASSET_MAX_AMOUNT = "max supply exceeds maximum representable fungible asset amount"
 const ERR_FUNGIBLE_ASSET_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY = "token_supply plus the amount passed to distribute would exceed the maximum supply"
 const ERR_FAUCET_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY = "asset amount to burn exceeds the existing token supply"
-const ERR_BASIC_FUNGIBLE_BURN_WRONG_NUMBER_OF_ASSETS = "burn requires exactly 1 note asset"
+const ERR_FUNGIBLE_BURN_WRONG_NUMBER_OF_ASSETS = "burn requires exactly 1 note asset"
 
 # =================================================================================================
 # PRIVATE HELPERS — token config slot access
@@ -365,7 +365,7 @@ pub proc receive_and_burn
     # => [num_assets, pad(16)]
 
     # Verify we have exactly one asset
-    assert.err=ERR_BASIC_FUNGIBLE_BURN_WRONG_NUMBER_OF_ASSETS
+    assert.err=ERR_FUNGIBLE_BURN_WRONG_NUMBER_OF_ASSETS
     # => [pad(16)]
 
     push.ASSET_PTR exec.asset::load

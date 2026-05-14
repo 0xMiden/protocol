@@ -341,7 +341,7 @@ Converts a Miden-native asset amount to the origin chain's U256 representation:
 
 #### `agglayer_faucet::burn`
 
-This is a re-export of `miden::standards::faucets::basic_fungible::burn`. It burns the fungible asset from the active note, decreasing the faucet's token supply.
+This is a re-export of `miden::standards::faucets::fungible::burn`. It burns the fungible asset from the active note, decreasing the faucet's token supply.
 
 | | |
 |-|-|
