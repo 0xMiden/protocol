@@ -246,7 +246,7 @@ end
 pub proc mint_and_send
     # Stash ASSET_KEY in locals. The kernel `faucet::mint` call at the end of this procedure
     # panics if the stashed key's faucet ID does not equal the active account, which is the
-    # root-cause bind for #2798.
+    # bind that prevents a MINT note for one faucet from being consumed by another.
     loc_storew_le.MINT_ASSET_KEY_LOCAL dropw
     # => [ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
 

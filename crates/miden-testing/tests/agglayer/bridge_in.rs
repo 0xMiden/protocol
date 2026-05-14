@@ -431,8 +431,8 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     Ok(())
 }
 
-/// Regression test for issue #2798: a MINT note produced by `claim` for faucet A cannot be
-/// consumed by a different same-bridge faucet B.
+/// Asserts that a MINT note produced by `claim` for faucet A cannot be consumed by a
+/// different same-bridge faucet B.
 ///
 /// The MINT note now embeds the full `ASSET` (`ASSET_KEY` + `ASSET_VALUE`) in its storage. When
 /// `fungible::mint_and_send` runs, it feeds the stored `ASSET_KEY` (carrying faucet A's ID) to
@@ -590,10 +590,9 @@ async fn test_mint_cannot_be_consumed_by_unrelated_faucet() -> anyhow::Result<()
 
     // ATTACK: try to consume the MINT note against faucet_B (wrong faucet).
     //
-    // Before #2798's fix the MINT carried only `amount`, so faucet_B would happily mint its own
-    // wrapped asset and ship it via the P2ID output note. With the asset embedded in the MINT
-    // note's storage, faucet_B feeds faucet_A's `ASSET_KEY` into the kernel's `faucet::mint`,
-    // and the kernel rejects it because the active account is faucet_B, not faucet_A.
+    // With the asset embedded in the MINT note's storage, faucet_B feeds faucet_A's
+    // `ASSET_KEY` into the kernel's `faucet::mint`, and the kernel rejects it because the
+    // active account is faucet_B, not faucet_A.
     let attack_tx_context = mock_chain
         .build_tx_context(faucet_b.id(), &[mint_output_note.id()], &[])?
         .add_note_script(P2idNote::script())
