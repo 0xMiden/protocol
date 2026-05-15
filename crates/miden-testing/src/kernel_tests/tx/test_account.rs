@@ -1091,7 +1091,8 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
     let initial_balance = account
         .vault()
         .get_balance(faucet_existing_asset)
-        .expect("faucet_id should be a fungible faucet ID");
+        .expect("faucet_id should be a fungible faucet ID")
+        .as_u64();
 
     let add_existing_source = format!(
         r#"
@@ -1123,7 +1124,7 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
         suffix = faucet_existing_asset.suffix(),
         prefix = faucet_existing_asset.prefix().as_felt(),
         final_balance =
-            initial_balance + fungible_asset_for_note_existing.unwrap_fungible().amount(),
+            initial_balance + fungible_asset_for_note_existing.unwrap_fungible().amount().as_u64(),
     );
 
     let tx_script = CodeBuilder::default().compile_tx_script(add_existing_source)?;
@@ -1145,7 +1146,8 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
     let initial_balance = account
         .vault()
         .get_balance(faucet_new_asset)
-        .expect("faucet_id should be a fungible faucet ID");
+        .expect("faucet_id should be a fungible faucet ID")
+        .as_u64();
 
     let add_new_source = format!(
         r#"
@@ -1176,7 +1178,8 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
     "#,
         suffix = faucet_new_asset.suffix(),
         prefix = faucet_new_asset.prefix().as_felt(),
-        final_balance = initial_balance + fungible_asset_for_note_new.unwrap_fungible().amount(),
+        final_balance =
+            initial_balance + fungible_asset_for_note_new.unwrap_fungible().amount().as_u64(),
     );
 
     let tx_script = CodeBuilder::default().compile_tx_script(add_new_source)?;
@@ -1223,7 +1226,8 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
     let initial_balance = account
         .vault()
         .get_balance(faucet_existing_asset)
-        .expect("faucet_id should be a fungible faucet ID");
+        .expect("faucet_id should be a fungible faucet ID")
+        .as_u64();
 
     let expected_output_note =
         create_public_p2any_note(ACCOUNT_ID_SENDER.try_into()?, [fungible_asset_for_note_existing]);
@@ -1271,7 +1275,7 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
         suffix = faucet_existing_asset.suffix(),
         prefix = faucet_existing_asset.prefix().as_felt(),
         final_balance =
-            initial_balance - fungible_asset_for_note_existing.unwrap_fungible().amount(),
+            initial_balance - fungible_asset_for_note_existing.unwrap_fungible().amount().as_u64(),
     );
 
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(remove_existing_source)?;
@@ -1710,7 +1714,7 @@ async fn test_faucet_has_callbacks(
         .name(TokenName::new("").expect("empty string is a valid token name"))
         .symbol("CBK".try_into()?)
         .decimals(8)
-        .max_supply(AssetAmount::new(1_000_000)?)
+        .max_supply(AssetAmount::from(1_000_000u32))
         .build()?;
 
     let account = AccountBuilder::new([1u8; 32])

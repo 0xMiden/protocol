@@ -59,7 +59,7 @@ fn test_basic_wallet_default_notes() {
                 .name(TokenName::new("POL").unwrap())
                 .symbol(TokenSymbol::new("POL").expect("invalid token symbol"))
                 .decimals(10)
-                .max_supply(AssetAmount::new(100).unwrap())
+                .max_supply(AssetAmount::from(100u32))
                 .build()
                 .expect("failed to create faucet"),
         )
@@ -325,7 +325,7 @@ fn test_fungible_faucet_custom_notes() {
                 .name(TokenName::new("POL").unwrap())
                 .symbol(TokenSymbol::new("POL").expect("invalid token symbol"))
                 .decimals(10)
-                .max_supply(AssetAmount::new(100).unwrap())
+                .max_supply(AssetAmount::from(100u32))
                 .build()
                 .expect("failed to create faucet"),
         )
