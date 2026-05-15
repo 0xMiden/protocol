@@ -41,6 +41,7 @@ jobs:
   upload-artifacts:
     name: upload pre-built miden-protocol library artifacts
     if: ${{ github.repository_owner == '0xMiden' }}
+    runs-on: ubuntu-latest
     permissions:
       contents: write
       id-token: write
