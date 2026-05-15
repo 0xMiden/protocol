@@ -75,7 +75,7 @@ impl NetworkAccount {
     }
 
     /// Returns the [`NetworkAccountNoteAllowlist`] decoded from the underlying account's storage.
-    pub fn allowlist(&self) -> &NetworkAccountNoteAllowlist {
+    pub fn allowed_notes(&self) -> &NetworkAccountNoteAllowlist {
         &self.allowlist
     }
 }
@@ -121,7 +121,7 @@ mod tests {
 
         let network_account = NetworkAccount::new(account).expect("should be a network account");
         let actual: BTreeSet<NoteScriptRoot> =
-            network_account.allowlist().allowed_script_roots().iter().copied().collect();
+            network_account.allowed_notes().allowed_script_roots().iter().copied().collect();
         assert_eq!(actual, roots);
     }
 
