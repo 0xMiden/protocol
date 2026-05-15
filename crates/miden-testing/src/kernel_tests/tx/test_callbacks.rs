@@ -38,7 +38,9 @@ use miden_standards::account::policies::{
     BurnPolicyConfig,
     MintPolicyConfig,
     PolicyAuthority,
+    PolicyRegistration,
     TokenPolicyManager,
+    TransferPolicy,
 };
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::procedure_root;
@@ -766,7 +768,7 @@ fn add_faucet_with_callbacks(
         .name(TokenName::new("").expect("empty string is a valid token name"))
         .symbol("SYM".try_into()?)
         .decimals(8)
-        .max_supply(AssetAmount::new(1_000_000)?)
+        .max_supply(AssetAmount::from(1_000_000u32))
         .build()?;
 
     let callback_storage_slots = callbacks.into_storage_slots();
@@ -780,11 +782,13 @@ fn add_faucet_with_callbacks(
         .storage_mode(AccountStorageMode::Public)
         .account_type(AccountType::FungibleFaucet)
         .with_component(faucet)
-        .with_components(TokenPolicyManager::new(
-            PolicyAuthority::AuthControlled,
-            MintPolicyConfig::AllowAll,
-            BurnPolicyConfig::AllowAll,
-        ))
+        .with_components(
+            TokenPolicyManager::new(PolicyAuthority::AuthControlled)
+                .with_mint_policy(MintPolicyConfig::AllowAll, PolicyRegistration::Active)?
+                .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)?
+                .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?
+                .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?,
+        )
         .with_component(callback_component);
 
     builder.add_account_from_builder(
