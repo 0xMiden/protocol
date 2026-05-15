@@ -653,7 +653,7 @@ async fn test_guarded_multisig_update_guardian_enforces_no_notes(
 
     // Optional output note (no-op script — doesn't trigger any account procedure).
     let output_note = if include_output_note {
-        let serial = Word::from([Felt::new_unchecked(1), Felt::new_unchecked(2), Felt::new_unchecked(3), Felt::new_unchecked(4)]);
+        let serial = Word::from([1_u32, 2_u32, 3_u32, 4_u32]);
         let recipient = NoteRecipient::new(
             serial,
             CodeBuilder::default().compile_note_script(DEFAULT_NOTE_SCRIPT)?,
@@ -682,7 +682,7 @@ async fn test_guarded_multisig_update_guardian_enforces_no_notes(
     // without invoking any non-auth procedure (DEFAULT_NOTE_SCRIPT is a single `nop`).
     let mut chain_builder = MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap();
     let input_note = if include_input_note {
-        let serial = Word::from([Felt::new_unchecked(5), Felt::new_unchecked(6), Felt::new_unchecked(7), Felt::new_unchecked(8)]);
+        let serial = Word::from([5_u32, 6_u32, 7_u32, 8_u32]);
         let recipient = NoteRecipient::new(
             serial,
             CodeBuilder::default().compile_note_script(DEFAULT_NOTE_SCRIPT)?,

@@ -389,8 +389,7 @@ async fn test_multisig_smart_update_signers_and_thresholds(
 
     // Verify each new public key is stored at its expected map index.
     for (i, expected_key) in new_public_keys.iter().enumerate() {
-        let storage_key =
-            Word::from([Felt::new_unchecked(i as u64), Felt::new_unchecked(0), Felt::new_unchecked(0), Felt::new_unchecked(0)]);
+        let storage_key = Word::from([i as u32, 0, 0, 0]);
         let stored_pub_key = multisig_account
             .storage()
             .get_map_item(AuthMultisigSmart::approver_public_keys_slot(), storage_key)

@@ -1315,7 +1315,7 @@ async fn test_network_faucet_renounce_ownership() -> anyhow::Result<()> {
 
     // Check stored value before renouncing
     let stored_owner_before = faucet.storage().get_item(Ownable2Step::slot_name())?;
-    assert_eq!(stored_owner_before[0], Felt::new_unchecked(owner_account_id.suffix().as_canonical_u64()));
+    assert_eq!(stored_owner_before[0], owner_account_id.suffix());
     assert_eq!(stored_owner_before[1], owner_account_id.prefix().as_felt());
 
     let source_manager = Arc::new(DefaultSourceManager::default());
