@@ -2,6 +2,7 @@ extern crate alloc;
 
 use alloc::sync::Arc;
 use core::slice;
+use std::collections::BTreeSet;
 
 use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::auth::AuthScheme;
@@ -1825,13 +1826,19 @@ fn build_network_faucet_with_blocklist_transfer(
         .with_receive_policy(TransferPolicy::Blocklist, PolicyRegistration::Active)?;
 
     let account_builder = AccountBuilder::new(builder.rng_mut().random())
-        .storage_mode(AccountStorageMode::Network)
+        .storage_mode(AccountStorageMode::Public)
         .with_component(faucet)
         .with_component(Ownable2Step::new(owner))
         .with_components(token_policy_manager)
         .account_type(AccountType::FungibleFaucet);
 
-    builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
+    builder.add_account_from_builder(
+        Auth::NetworkAccount {
+            allowed_script_roots: BTreeSet::from([MintNote::script_root()]),
+        },
+        account_builder,
+        AccountState::Exists,
+    )
 }
 
 /// Verifies that the network-faucet mint pattern works when `TokenPolicyManager` installs
