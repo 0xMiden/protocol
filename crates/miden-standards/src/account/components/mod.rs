@@ -7,6 +7,7 @@ use crate::account::access::{Authority, Ownable2Step, RoleBasedAccessControl};
 use crate::account::auth::{
     AuthGuardedMultisig,
     AuthMultisig,
+    AuthMultisigSmart,
     AuthNetworkAccount,
     AuthSingleSig,
     AuthSingleSigAcl,
@@ -30,6 +31,7 @@ pub enum StandardAccountComponent {
     AuthSingleSig,
     AuthSingleSigAcl,
     AuthMultisig,
+    AuthMultisigSmart,
     AuthGuardedMultisig,
     AuthNoAuth,
     AuthNetworkAccount,
@@ -48,6 +50,7 @@ impl StandardAccountComponent {
             Self::AuthSingleSig => AuthSingleSig::code(),
             Self::AuthSingleSigAcl => AuthSingleSigAcl::code(),
             Self::AuthMultisig => AuthMultisig::code(),
+            Self::AuthMultisigSmart => AuthMultisigSmart::code(),
             Self::AuthGuardedMultisig => AuthGuardedMultisig::code(),
             Self::AuthNoAuth => NoAuth::code(),
             Self::AuthNetworkAccount => AuthNetworkAccount::code(),
@@ -97,6 +100,9 @@ impl StandardAccountComponent {
                 Self::AuthMultisig => {
                     component_interface_vec.push(AccountComponentInterface::AuthMultisig)
                 },
+                Self::AuthMultisigSmart => {
+                    component_interface_vec.push(AccountComponentInterface::AuthMultisigSmart)
+                },
                 Self::AuthGuardedMultisig => {
                     component_interface_vec.push(AccountComponentInterface::AuthGuardedMultisig)
                 },
@@ -125,6 +131,7 @@ impl StandardAccountComponent {
         Self::AuthSingleSigAcl.extract_component(procedures_set, component_interface_vec);
         Self::AuthGuardedMultisig.extract_component(procedures_set, component_interface_vec);
         Self::AuthMultisig.extract_component(procedures_set, component_interface_vec);
+        Self::AuthMultisigSmart.extract_component(procedures_set, component_interface_vec);
         Self::AuthNoAuth.extract_component(procedures_set, component_interface_vec);
         Self::AuthNetworkAccount.extract_component(procedures_set, component_interface_vec);
     }

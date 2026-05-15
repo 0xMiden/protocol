@@ -366,7 +366,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
 
     // Verify minted amount matches expected scaled value
     assert_eq!(
-        Felt::new(p2id_asset.amount()),
+        Felt::from(p2id_asset.amount()),
         miden_claim_amount,
         "asset amount does not match"
     );
@@ -422,7 +422,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
 
         let balance = destination_account.vault().get_balance(agglayer_faucet.id())?;
         assert_eq!(
-            balance,
+            balance.as_u64(),
             miden_claim_amount.as_canonical_u64(),
             "destination account balance does not match"
         );

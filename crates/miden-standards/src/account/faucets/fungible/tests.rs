@@ -9,7 +9,13 @@ use crate::AuthMethod;
 use crate::account::access::AccessControl;
 use crate::account::auth::{AuthSingleSig, AuthSingleSigAcl};
 use crate::account::faucets::{Description, FungibleFaucetError, TokenMetadata, TokenName};
-use crate::account::policies::{BurnPolicyConfig, MintPolicyConfig, TokenPolicyManager};
+use crate::account::policies::{
+    BurnPolicyConfig,
+    MintPolicyConfig,
+    PolicyRegistration,
+    TokenPolicyManager,
+    TransferPolicy,
+};
 use crate::account::wallets::BasicWallet;
 
 #[test]
@@ -25,7 +31,7 @@ fn faucet_contract_creation() {
         204, 149, 90, 166, 68, 100, 73, 106, 168, 125, 237, 138, 16,
     ];
 
-    let max_supply = AssetAmount::new(123).unwrap();
+    let max_supply = AssetAmount::from(123u32);
     let token_symbol_string = "POL";
     let token_symbol = TokenSymbol::try_from(token_symbol_string).unwrap();
     let token_name_string = "polygon";
@@ -49,7 +55,15 @@ fn faucet_contract_creation() {
         storage_mode,
         auth_method,
         AccessControl::AuthControlled,
-        TokenPolicyManager::new(MintPolicyConfig::AllowAll, BurnPolicyConfig::AllowAll),
+        TokenPolicyManager::new()
+            .with_mint_policy(MintPolicyConfig::AllowAll, PolicyRegistration::Active)
+            .unwrap()
+            .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)
+            .unwrap()
+            .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)
+            .unwrap()
+            .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)
+            .unwrap(),
     )
     .unwrap();
 
@@ -121,7 +135,7 @@ fn faucet_create_from_account() {
         .name(TokenName::new("POL").unwrap())
         .symbol(token_symbol)
         .decimals(10)
-        .max_supply(AssetAmount::new(100).unwrap())
+        .max_supply(AssetAmount::from(100u32))
         .build()
         .expect("failed to create faucet");
 

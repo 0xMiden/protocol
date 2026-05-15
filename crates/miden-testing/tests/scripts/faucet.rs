@@ -36,7 +36,9 @@ use miden_standards::account::policies::{
     BurnOwnerOnly,
     BurnPolicyConfig,
     MintPolicyConfig,
+    PolicyRegistration,
     TokenPolicyManager,
+    TransferPolicy,
 };
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
@@ -206,8 +208,12 @@ fn build_network_faucet_with_burn_switching(
         .token_supply(token_supply)
         .build()?;
 
-    let token_policy_manager = TokenPolicyManager::new(mint_policy, BurnPolicyConfig::AllowAll)
-        .with_allowed_burn_policy(BurnOwnerOnly::root().as_word());
+    let token_policy_manager = TokenPolicyManager::new()
+        .with_mint_policy(mint_policy, PolicyRegistration::Active)?
+        .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)?
+        .with_burn_policy(BurnPolicyConfig::OwnerOnly, PolicyRegistration::Reserved)?
+        .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?
+        .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?;
 
     let account_builder = AccountBuilder::new(builder.rng_mut().random())
         .storage_mode(AccountStorageMode::Network)
@@ -215,7 +221,6 @@ fn build_network_faucet_with_burn_switching(
         .with_component(Ownable2Step::new(owner))
         .with_component(Authority::OwnerControlled)
         .with_components(token_policy_manager)
-        .with_component(BurnOwnerOnly)
         .account_type(AccountType::FungibleFaucet);
 
     builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
@@ -381,11 +386,11 @@ async fn prove_burning_fungible_asset_on_existing_faucet_succeeds() -> anyhow::R
 
     // Check that max_supply at the word's index 0 is 200. The remainder of the word is initialized
     // with the metadata of the faucet which we don't need to check.
-    assert_eq!(token_metadata.max_supply(), Felt::from(max_supply));
+    assert_eq!(token_metadata.max_supply(), AssetAmount::from(max_supply));
 
     // Check that the faucet's token supply has been correctly initialized.
     // The already issued amount should be 100.
-    assert_eq!(token_metadata.token_supply(), Felt::from(token_supply));
+    assert_eq!(token_metadata.token_supply(), AssetAmount::from(token_supply));
 
     // CONSTRUCT AND EXECUTE TX (Success)
     // --------------------------------------------------------------------------------------------
@@ -651,7 +656,7 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
 
     // Check the Network Fungible Faucet's max supply.
     let actual_max_supply = FungibleFaucet::try_from(faucet.storage())?.max_supply();
-    assert_eq!(actual_max_supply.as_canonical_u64(), max_supply);
+    assert_eq!(actual_max_supply.as_u64(), max_supply);
 
     // Check that the creator account ID is stored in the ownership slot.
     // Word: [owner_suffix, owner_prefix, nominated_suffix, nominated_prefix]
@@ -667,7 +672,7 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
     // Check that the faucet's token supply has been correctly initialized.
     // The already issued amount should be 50.
     let initial_token_supply = FungibleFaucet::try_from(faucet.storage())?.token_supply();
-    assert_eq!(initial_token_supply.as_canonical_u64(), token_supply);
+    assert_eq!(initial_token_supply.as_u64(), token_supply);
 
     // CREATE MINT NOTE USING STANDARD NOTE
     // --------------------------------------------------------------------------------------------
@@ -738,7 +743,7 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
 
     // Verify the account's vault now contains the expected fungible asset
     let balance = target_account.vault().get_balance(faucet.id())?;
-    assert_eq!(balance, expected_asset.amount(),);
+    assert_eq!(balance, expected_asset.amount());
 
     Ok(())
 }
@@ -1335,19 +1340,6 @@ async fn test_network_faucet_renounce_ownership() -> anyhow::Result<()> {
 // TESTS FOR FAUCET PROCEDURE COMPATIBILITY
 // ================================================================================================
 
-/// Tests that basic and network fungible faucets have the same burn procedure digest.
-/// This is required for BURN notes to work with both faucet types.
-#[test]
-fn test_faucet_burn_procedures_are_identical() {
-    // Both faucet types must export the same burn procedure with identical MAST roots
-    // so that a single BURN note script can work with either faucet type
-    assert_eq!(
-        FungibleFaucet::receive_and_burn_root(),
-        FungibleFaucet::receive_and_burn_root(),
-        "Basic and network fungible faucets must have the same burn procedure digest"
-    );
-}
-
 /// Tests that the default network faucet burn policy root is exported by the account code.
 #[test]
 fn test_network_faucet_contains_default_burn_policy_root() -> anyhow::Result<()> {
@@ -1416,7 +1408,7 @@ async fn network_faucet_burn() -> anyhow::Result<()> {
 
     // Check the initial token issuance before burning
     let initial_token_supply = FungibleFaucet::try_from(faucet.storage())?.token_supply();
-    assert_eq!(initial_token_supply, Felt::new(100));
+    assert_eq!(initial_token_supply, AssetAmount::from(100u32));
 
     // EXECUTE BURN NOTE AGAINST NETWORK FAUCET
     // --------------------------------------------------------------------------------------------
@@ -1435,7 +1427,7 @@ async fn network_faucet_burn() -> anyhow::Result<()> {
     let final_token_supply = FungibleFaucet::try_from(faucet.storage())?.token_supply();
     assert_eq!(
         final_token_supply,
-        Felt::new(initial_token_supply.as_canonical_u64() - burn_amount)
+        AssetAmount::new(initial_token_supply.as_u64() - burn_amount).unwrap()
     );
 
     Ok(())
@@ -1772,5 +1764,118 @@ async fn multiple_mints_in_single_tx_produce_correct_amounts() -> anyhow::Result
     let expected_id_2 = NoteId::new(recipient_2, assets_2.commitment());
     assert_eq!(output_note_2.id(), expected_id_2);
 
+    Ok(())
+}
+
+// NetworkFungibleFaucet + TransferPolicy::Blocklist (post-#2879 happy path)
+// ================================================================================================
+
+/// Builds a network faucet with [`TransferPolicy::Blocklist`] on both send and receive,
+/// so the manager populates the asset-callback slots and callbacks dispatch to the
+/// basic blocklist predicate.
+fn build_network_faucet_with_blocklist_transfer(
+    builder: &mut MockChainBuilder,
+    token_symbol: &str,
+    max_supply: u64,
+    owner: AccountId,
+    token_supply: u64,
+) -> anyhow::Result<Account> {
+    let name = TokenName::new(token_symbol)?;
+    let symbol = TokenSymbol::new(token_symbol)?;
+    let max_supply = AssetAmount::new(max_supply)?;
+    let token_supply = AssetAmount::new(token_supply)?;
+    let faucet = FungibleFaucet::builder()
+        .name(name)
+        .symbol(symbol)
+        .decimals(10)
+        .max_supply(max_supply)
+        .token_supply(token_supply)
+        .build()?;
+
+    let token_policy_manager = TokenPolicyManager::new()
+        .with_mint_policy(MintPolicyConfig::OwnerOnly, PolicyRegistration::Active)?
+        .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)?
+        .with_send_policy(TransferPolicy::Blocklist, PolicyRegistration::Active)?
+        .with_receive_policy(TransferPolicy::Blocklist, PolicyRegistration::Active)?;
+
+    let account_builder = AccountBuilder::new(builder.rng_mut().random())
+        .storage_mode(AccountStorageMode::Network)
+        .with_component(faucet)
+        .with_component(Ownable2Step::new(owner))
+        .with_component(Authority::OwnerControlled)
+        .with_components(token_policy_manager)
+        .account_type(AccountType::FungibleFaucet);
+
+    builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
+}
+
+/// Verifies that the network-faucet mint pattern works when `TokenPolicyManager` installs
+/// asset-callback slots (here via [`TransferPolicy::Blocklist`]).
+///
+/// Before the protocol fix in 0xMiden/protocol#2879 the kernel rejected this with
+/// `ERR_FOREIGN_ACCOUNT_CONTEXT_AGAINST_NATIVE_ACCOUNT` because the issuing faucet was also
+/// the native account during the mint-note flow. The fix short-circuits callback dispatch
+/// when the issuer equals the native account, so this test now succeeds.
+#[tokio::test]
+async fn network_faucet_mint_with_blocklist() -> anyhow::Result<()> {
+    let max_supply = 1000u64;
+    let token_supply = 50u64;
+
+    let mut builder = MockChain::builder();
+
+    let faucet_owner_account_id = AccountId::dummy(
+        [1; 15],
+        AccountIdVersion::Version1,
+        AccountType::RegularAccountImmutableCode,
+        AccountStorageMode::Private,
+    );
+
+    let faucet = build_network_faucet_with_blocklist_transfer(
+        &mut builder,
+        "NET",
+        max_supply,
+        faucet_owner_account_id,
+        token_supply,
+    )?;
+
+    let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
+
+    let amount = Felt::new(75);
+    let mint_asset: Asset =
+        FungibleAsset::new(faucet.id(), amount.as_canonical_u64()).unwrap().into();
+    let serial_num = Word::default();
+
+    let output_note_tag = NoteTag::with_account_target(target_account.id());
+    let p2id_mint_output_note = create_p2id_note_exact(
+        faucet.id(),
+        target_account.id(),
+        vec![mint_asset],
+        NoteType::Private,
+        serial_num,
+    )
+    .unwrap();
+    let recipient = p2id_mint_output_note.recipient().digest();
+
+    let mint_storage = MintNoteStorage::new_private(recipient, amount, output_note_tag.into());
+
+    let mut rng = RandomCoin::new([Felt::from(42u32); 4].into());
+    let mint_note = MintNote::create(
+        faucet.id(),
+        faucet_owner_account_id,
+        mint_storage,
+        NoteAttachments::default(),
+        &mut rng,
+    )?;
+
+    builder.add_output_note(RawOutputNote::Full(mint_note.clone()));
+    let mock_chain = builder.build()?;
+
+    let executed = mock_chain
+        .build_tx_context(faucet.id(), &[mint_note.id()], &[])?
+        .build()?
+        .execute()
+        .await?;
+
+    assert_eq!(executed.output_notes().num_notes(), 1);
     Ok(())
 }
