@@ -12,7 +12,6 @@ use crate::account::faucets::{Description, FungibleFaucetError, TokenMetadata, T
 use crate::account::policies::{
     BurnPolicyConfig,
     MintPolicyConfig,
-    PolicyAuthority,
     PolicyRegistration,
     TokenPolicyManager,
     TransferPolicy,
@@ -56,7 +55,7 @@ fn faucet_contract_creation() {
         storage_mode,
         auth_method,
         AccessControl::AuthControlled,
-        TokenPolicyManager::new(PolicyAuthority::AuthControlled)
+        TokenPolicyManager::new()
             .with_mint_policy(MintPolicyConfig::AllowAll, PolicyRegistration::Active)
             .unwrap()
             .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)

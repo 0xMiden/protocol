@@ -17,11 +17,11 @@ use miden_protocol::account::{
 };
 use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::transaction::TransactionKernel;
+use miden_standards::account::access::Authority;
 use miden_standards::account::auth::AuthNetworkAccount;
 use miden_standards::account::policies::{
     BurnPolicyConfig,
     MintPolicyConfig,
-    PolicyAuthority,
     PolicyRegistration,
     TokenPolicyManager,
     TransferPolicy,
@@ -344,13 +344,14 @@ fn generate_agglayer_constants(
             components.push(AccountComponent::from(
                 miden_standards::account::access::Ownable2Step::new(dummy_owner),
             ));
+            components.push(AccountComponent::from(Authority::OwnerControlled));
             // Mirror the component order used by `create_agglayer_faucet_builder` in lib.rs so
             // the compile-time code commitment matches the one computed at runtime.
             //
             // Burn policy manager: active = `owner_only` (burns locked by default), `allow_all`
             // is registered as Reserved so the owner can open burns at runtime via
             // `set_burn_policy`.
-            let token_policy_manager = TokenPolicyManager::new(PolicyAuthority::OwnerControlled)
+            let token_policy_manager = TokenPolicyManager::new()
                 .with_mint_policy(MintPolicyConfig::OwnerOnly, PolicyRegistration::Active)
                 .expect("active mint policy is registered exactly once")
                 .with_burn_policy(BurnPolicyConfig::OwnerOnly, PolicyRegistration::Active)

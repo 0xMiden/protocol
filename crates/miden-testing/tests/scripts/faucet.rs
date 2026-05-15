@@ -33,14 +33,13 @@ use miden_protocol::note::{
 use miden_protocol::testing::account_id::ACCOUNT_ID_PRIVATE_SENDER;
 use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote};
 use miden_protocol::{Felt, Word};
-use miden_standards::account::access::Ownable2Step;
+use miden_standards::account::access::{Authority, Ownable2Step};
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
     BurnAllowAll,
     BurnOwnerOnly,
     BurnPolicyConfig,
     MintPolicyConfig,
-    PolicyAuthority,
     PolicyRegistration,
     TokenPolicyManager,
     TransferPolicy,
@@ -221,7 +220,7 @@ fn build_network_faucet_with_burn_switching(
         .token_supply(token_supply)
         .build()?;
 
-    let token_policy_manager = TokenPolicyManager::new(PolicyAuthority::OwnerControlled)
+    let token_policy_manager = TokenPolicyManager::new()
         .with_mint_policy(mint_policy, PolicyRegistration::Active)?
         .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)?
         .with_burn_policy(BurnPolicyConfig::OwnerOnly, PolicyRegistration::Reserved)?
@@ -232,6 +231,7 @@ fn build_network_faucet_with_burn_switching(
         .storage_mode(AccountStorageMode::Public)
         .with_component(faucet)
         .with_component(Ownable2Step::new(owner))
+        .with_component(Authority::OwnerControlled)
         .with_components(token_policy_manager)
         .account_type(AccountType::FungibleFaucet);
 
@@ -1831,7 +1831,7 @@ fn build_network_faucet_with_blocklist_transfer(
         .token_supply(token_supply)
         .build()?;
 
-    let token_policy_manager = TokenPolicyManager::new(PolicyAuthority::OwnerControlled)
+    let token_policy_manager = TokenPolicyManager::new()
         .with_mint_policy(MintPolicyConfig::OwnerOnly, PolicyRegistration::Active)?
         .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)?
         .with_send_policy(TransferPolicy::Blocklist, PolicyRegistration::Active)?
@@ -1841,6 +1841,7 @@ fn build_network_faucet_with_blocklist_transfer(
         .storage_mode(AccountStorageMode::Public)
         .with_component(faucet)
         .with_component(Ownable2Step::new(owner))
+        .with_component(Authority::OwnerControlled)
         .with_components(token_policy_manager)
         .account_type(AccountType::FungibleFaucet);
 

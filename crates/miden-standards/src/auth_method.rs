@@ -5,6 +5,7 @@ use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 use miden_protocol::note::NoteScriptRoot;
 
 /// Defines standard authentication methods supported by account auth components.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AuthMethod {
     /// A minimal authentication method that provides no cryptographic authentication.
     ///

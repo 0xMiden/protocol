@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 
 use miden_protocol::account::AccountProcedureRoot;
 
-use crate::account::access::{Ownable2Step, RoleBasedAccessControl};
+use crate::account::access::{Authority, Ownable2Step, RoleBasedAccessControl};
 use crate::account::auth::{
     AuthGuardedMultisig,
     AuthMultisig,
@@ -25,6 +25,7 @@ use crate::account::wallets::BasicWallet;
 pub enum StandardAccountComponent {
     BasicWallet,
     FungibleFaucet,
+    Authority,
     Ownable2Step,
     RoleBasedAccessControl,
     AuthSingleSig,
@@ -43,6 +44,7 @@ impl StandardAccountComponent {
         let code = match self {
             Self::BasicWallet => BasicWallet::code(),
             Self::FungibleFaucet => FungibleFaucet::code(),
+            Self::Authority => Authority::code(),
             Self::Ownable2Step => Ownable2Step::code(),
             Self::RoleBasedAccessControl => RoleBasedAccessControl::code(),
             Self::AuthSingleSig => AuthSingleSig::code(),
@@ -79,6 +81,9 @@ impl StandardAccountComponent {
                 },
                 Self::FungibleFaucet => {
                     component_interface_vec.push(AccountComponentInterface::FungibleFaucet)
+                },
+                Self::Authority => {
+                    component_interface_vec.push(AccountComponentInterface::Authority)
                 },
                 Self::Ownable2Step => {
                     component_interface_vec.push(AccountComponentInterface::Ownable2Step)
@@ -119,6 +124,7 @@ impl StandardAccountComponent {
     ) {
         Self::BasicWallet.extract_component(procedures_set, component_interface_vec);
         Self::FungibleFaucet.extract_component(procedures_set, component_interface_vec);
+        Self::Authority.extract_component(procedures_set, component_interface_vec);
         Self::RoleBasedAccessControl.extract_component(procedures_set, component_interface_vec);
         Self::Ownable2Step.extract_component(procedures_set, component_interface_vec);
         Self::AuthSingleSig.extract_component(procedures_set, component_interface_vec);

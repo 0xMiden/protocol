@@ -33,7 +33,7 @@ fn create_rbac_account_with_owner(owner: AccountId) -> anyhow::Result<Account> {
     let account = AccountBuilder::new([9; 32])
         .storage_mode(AccountStorageMode::Public)
         .with_auth_component(Auth::IncrNonce)
-        .with_components(AccessControl::Rbac { owner })
+        .with_components(AccessControl::Rbac { owner, authority_role: None })
         .build_existing()?;
 
     Ok(account)

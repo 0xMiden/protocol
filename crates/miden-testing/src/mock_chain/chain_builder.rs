@@ -52,7 +52,6 @@ use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
     BurnPolicyConfig,
     MintPolicyConfig,
-    PolicyAuthority,
     PolicyRegistration,
     TokenPolicyManager,
     TransferPolicy,
@@ -347,14 +346,15 @@ impl MockChainBuilder {
     ///
     /// The behaviour of the faucet (basic vs network-style) is determined entirely by the
     /// combination of arguments:
-    /// - `storage_mode`: typically [`AccountStorageMode::Public`] for basic faucets, or
-    ///   [`AccountStorageMode::Network`] for network-style faucets.
+    /// - `storage_mode`: [`AccountStorageMode::Public`] for basic faucets, or
+    ///   [`AccountStorageMode::Private`] for off-chain accounts.
     /// - `auth_method`: typically a [`Auth::BasicAuth`] for basic faucets, or [`Auth::IncrNonce`]
     ///   for network-style faucets.
     /// - `access_control`: [`AccessControl::AuthControlled`] for basic faucets;
     ///   [`AccessControl::Ownable2Step`] / [`AccessControl::Rbac`] for owner-controlled faucets.
+    ///   The matching `Authority` component is auto-installed by `AccessControl`.
     /// - `token_policy_manager`: the unified [`TokenPolicyManager`] holding both mint and burn
-    ///   policy plus the shared `PolicyAuthority`.
+    ///   policy.
     fn add_existing_fungible_faucet(
         &mut self,
         auth_method: Auth,
@@ -374,10 +374,11 @@ impl MockChainBuilder {
     }
 
     /// Convenience: builds a basic auth-controlled fungible faucet from a token-symbol shorthand
-    /// using default decimals and `AllowAll` policies, then adds it to the chain.
+    /// using default decimals and `AllowAll` policies, then adds it via
+    /// `Self::add_existing_fungible_faucet`.
     ///
     /// For full control over the faucet's metadata, decimals, and policies, construct a
-    /// [`FungibleFaucet`] manually and add it via a more specific helper.
+    /// [`FungibleFaucet`] manually and call `Self::add_existing_fungible_faucet`.
     pub fn add_existing_basic_faucet(
         &mut self,
         auth_method: Auth,
@@ -385,13 +386,12 @@ impl MockChainBuilder {
         max_supply: u64,
         token_supply: Option<u64>,
     ) -> anyhow::Result<Account> {
-        let token_supply = AssetAmount::new(token_supply.unwrap_or(0))
-            .context("token supply exceeds AssetAmount::MAX")?;
-        let max_supply =
-            AssetAmount::new(max_supply).context("max supply exceeds AssetAmount::MAX")?;
+        let token_supply = token_supply.unwrap_or(0);
         let name = TokenName::new(token_symbol)?;
         let symbol = TokenSymbol::new(token_symbol)
             .with_context(|| format!("invalid token symbol: {token_symbol}"))?;
+        let max_supply = AssetAmount::new(max_supply).context("invalid max_supply")?;
+        let token_supply = AssetAmount::new(token_supply).context("invalid token_supply")?;
         let faucet = FungibleFaucet::builder()
             .name(name)
             .symbol(symbol)
@@ -401,7 +401,7 @@ impl MockChainBuilder {
             .build()
             .context("failed to build FungibleFaucet")?;
 
-        let token_policy_manager = TokenPolicyManager::new(PolicyAuthority::AuthControlled)
+        let token_policy_manager = TokenPolicyManager::new()
             .with_mint_policy(MintPolicyConfig::AllowAll, PolicyRegistration::Active)?
             .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)?
             .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?
@@ -435,13 +435,12 @@ impl MockChainBuilder {
         mint_policy: MintPolicyConfig,
         allowed_script_roots: impl IntoIterator<Item = NoteScriptRoot>,
     ) -> anyhow::Result<Account> {
-        let token_supply = AssetAmount::new(token_supply.unwrap_or(0))
-            .context("token supply exceeds AssetAmount::MAX")?;
-        let max_supply =
-            AssetAmount::new(max_supply).context("max supply exceeds AssetAmount::MAX")?;
+        let token_supply = token_supply.unwrap_or(0);
         let name = TokenName::new(token_symbol)?;
         let symbol = TokenSymbol::new(token_symbol)
             .with_context(|| format!("invalid token symbol: {token_symbol}"))?;
+        let max_supply = AssetAmount::new(max_supply).context("invalid max_supply")?;
+        let token_supply = AssetAmount::new(token_supply).context("invalid token_supply")?;
         let faucet = FungibleFaucet::builder()
             .name(name)
             .symbol(symbol)
@@ -451,7 +450,7 @@ impl MockChainBuilder {
             .build()
             .context("failed to build FungibleFaucet")?;
 
-        let token_policy_manager = TokenPolicyManager::new(PolicyAuthority::OwnerControlled)
+        let token_policy_manager = TokenPolicyManager::new()
             .with_mint_policy(mint_policy, PolicyRegistration::Active)?
             .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)?
             .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?
@@ -483,7 +482,7 @@ impl MockChainBuilder {
         faucet: FungibleFaucet,
         allowed_script_roots: impl IntoIterator<Item = NoteScriptRoot>,
     ) -> anyhow::Result<Account> {
-        let token_policy_manager = TokenPolicyManager::new(PolicyAuthority::OwnerControlled)
+        let token_policy_manager = TokenPolicyManager::new()
             .with_mint_policy(MintPolicyConfig::OwnerOnly, PolicyRegistration::Active)?
             .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)?
             .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?
@@ -511,11 +510,10 @@ impl MockChainBuilder {
         token_symbol: &str,
         max_supply: u64,
     ) -> anyhow::Result<Account> {
-        let max_supply =
-            AssetAmount::new(max_supply).context("max supply exceeds AssetAmount::MAX")?;
         let name = TokenName::new(token_symbol)?;
         let symbol = TokenSymbol::new(token_symbol)
             .with_context(|| format!("invalid token symbol: {token_symbol}"))?;
+        let max_supply = AssetAmount::new(max_supply).context("invalid max_supply")?;
         let faucet = FungibleFaucet::builder()
             .name(name)
             .symbol(symbol)
@@ -524,7 +522,7 @@ impl MockChainBuilder {
             .build()
             .context("failed to build FungibleFaucet")?;
 
-        let token_policy_manager = TokenPolicyManager::new(PolicyAuthority::AuthControlled)
+        let token_policy_manager = TokenPolicyManager::new()
             .with_mint_policy(MintPolicyConfig::AllowAll, PolicyRegistration::Active)?
             .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)?
             .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?
@@ -728,7 +726,7 @@ impl MockChainBuilder {
             storage,
             asset.to_vec(),
             note_type,
-            Default::default(),
+            NoteAttachments::default(),
             &mut self.rng,
         )?;
 

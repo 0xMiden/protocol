@@ -14,13 +14,12 @@ use miden_protocol::account::{
     AccountType,
 };
 use miden_protocol::asset::TokenSymbol;
-use miden_standards::account::access::Ownable2Step;
+use miden_standards::account::access::{Authority, Ownable2Step};
 use miden_standards::account::auth::AuthNetworkAccount;
 use miden_standards::account::policies::{
     BurnAllowAll,
     BurnPolicyConfig,
     MintPolicyConfig,
-    PolicyAuthority,
     PolicyRegistration,
     TokenPolicyManager,
     TransferPolicy,
@@ -239,7 +238,7 @@ fn create_agglayer_faucet_builder(
 
     // `allow_all` is explicitly registered as Reserved so the owner can open burns at runtime
     // via `set_burn_policy`.
-    let token_policy_manager = TokenPolicyManager::new(PolicyAuthority::OwnerControlled)
+    let token_policy_manager = TokenPolicyManager::new()
         .with_mint_policy(MintPolicyConfig::OwnerOnly, PolicyRegistration::Active)
         .expect("active mint policy is registered exactly once")
         .with_burn_policy(BurnPolicyConfig::OwnerOnly, PolicyRegistration::Active)
@@ -256,6 +255,7 @@ fn create_agglayer_faucet_builder(
         .storage_mode(AccountStorageMode::Public)
         .with_component(agglayer_component)
         .with_component(Ownable2Step::new(bridge_account_id))
+        .with_component(Authority::OwnerControlled)
         .with_components(token_policy_manager)
         .with_component(BurnAllowAll)
         .with_auth_component(

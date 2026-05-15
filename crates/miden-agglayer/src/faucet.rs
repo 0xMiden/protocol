@@ -19,7 +19,7 @@ use miden_protocol::account::{
 use miden_protocol::asset::{AssetAmount, TokenSymbol};
 use miden_protocol::errors::AccountIdError;
 use miden_protocol::note::NoteScriptRoot;
-use miden_standards::account::access::Ownable2Step;
+use miden_standards::account::access::{Authority, Ownable2Step};
 use miden_standards::account::faucets::{FungibleFaucet, FungibleFaucetError, TokenName};
 use miden_standards::account::policies::TokenPolicyManager;
 use miden_standards::note::{BurnNote, MintNote};
@@ -412,7 +412,7 @@ impl AggLayerFaucet {
             &*METADATA_HASH_HI_SLOT_NAME,
             FungibleFaucet::token_config_slot(),
             Ownable2Step::slot_name(),
-            TokenPolicyManager::policy_authority_slot(),
+            Authority::authority_slot(),
             TokenPolicyManager::active_mint_policy_slot(),
             TokenPolicyManager::active_burn_policy_slot(),
             TokenPolicyManager::allowed_mint_policies_slot(),
