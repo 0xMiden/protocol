@@ -131,8 +131,8 @@ pub proc get_input_notes_commitment
     # => [INPUT_NOTES_COMMITMENT]
 end
 
-#! Returns the output notes commitment. This is computed as a sequential hash of (note_id, note_metadata)
-#! tuples over all output notes.
+#! Returns the output notes commitment. This is computed as a sequential hash of
+#! (note_details_commitment, note_metadata_commitment) tuples over all output notes.
 #!
 #! Inputs:  [0, 0, 0, 0]
 #! Outputs: [OUTPUT_NOTES_COMMITMENT]
