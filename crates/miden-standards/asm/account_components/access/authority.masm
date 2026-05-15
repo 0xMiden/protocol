@@ -7,8 +7,7 @@
 # accessor so other accounts can read this account's authority.
 
 use miden::protocol::active_account
-
-const AUTHORITY_SLOT = word("miden::standards::access::authority::authority")
+use miden::standards::access::authority::AUTHORITY_SLOT
 
 #! Returns the authority discriminator stored on the account.
 #!
@@ -23,9 +22,6 @@ pub proc get_authority
     push.AUTHORITY_SLOT[0..2] exec.active_account::get_item
     # => [authority, role_symbol, 0, 0, pad(16)]
 
-    movdn.3 drop drop drop
-    # => [authority, pad(16)]
-
-    swap drop
+    movdn.4 dropw
     # => [authority, pad(15)]
 end

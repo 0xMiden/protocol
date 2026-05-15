@@ -156,7 +156,7 @@ pub proc is_max_supply_mutable
 end
 
 # =================================================================================================
-# SET MAX SUPPLY (owner-only when is_max_supply_mutable == 1)
+# SET MAX SUPPLY
 # =================================================================================================
 
 #! Updates the max supply if the max supply mutability flag is 1

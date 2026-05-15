@@ -412,7 +412,7 @@ impl AggLayerFaucet {
             &*METADATA_HASH_HI_SLOT_NAME,
             FungibleFaucet::token_config_slot(),
             Ownable2Step::slot_name(),
-            Authority::slot_name(),
+            Authority::authority_slot(),
             TokenPolicyManager::active_mint_policy_slot(),
             TokenPolicyManager::active_burn_policy_slot(),
             TokenPolicyManager::allowed_mint_policies_slot(),

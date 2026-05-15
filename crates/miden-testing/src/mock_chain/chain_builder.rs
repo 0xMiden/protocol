@@ -42,7 +42,7 @@ use miden_protocol::block::{
 };
 use miden_protocol::crypto::merkle::smt::Smt;
 use miden_protocol::errors::NoteError;
-use miden_protocol::note::{Note, NoteDetails, NoteScriptRoot, NoteType};
+use miden_protocol::note::{Note, NoteAttachments, NoteDetails, NoteScriptRoot, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_FEE_FAUCET;
 use miden_protocol::testing::random_secret_key::random_secret_key;
 use miden_protocol::transaction::{OrderedTransactionHeaders, RawOutputNote, TransactionKernel};
@@ -323,7 +323,7 @@ impl MockChainBuilder {
     ///
     /// This does not add the account to the chain state, but it can still be used to call
     /// [`MockChain::build_tx_context`] to automatically add the authenticator.
-    pub fn create_new_fungible_faucet(
+    fn create_new_fungible_faucet(
         &mut self,
         auth_method: Auth,
         faucet: FungibleFaucet,
@@ -355,7 +355,7 @@ impl MockChainBuilder {
     ///   The matching `Authority` component is auto-installed by `AccessControl`.
     /// - `token_policy_manager`: the unified [`TokenPolicyManager`] holding both mint and burn
     ///   policy.
-    pub fn add_existing_fungible_faucet(
+    fn add_existing_fungible_faucet(
         &mut self,
         auth_method: Auth,
         faucet: FungibleFaucet,
@@ -386,8 +386,6 @@ impl MockChainBuilder {
         max_supply: u64,
         token_supply: Option<u64>,
     ) -> anyhow::Result<Account> {
-        use miden_standards::account::policies::{BurnPolicyConfig, MintPolicyConfig};
-
         let token_supply = token_supply.unwrap_or(0);
         let name = TokenName::new(token_symbol)?;
         let symbol = TokenSymbol::new(token_symbol)
@@ -437,8 +435,6 @@ impl MockChainBuilder {
         mint_policy: MintPolicyConfig,
         allowed_script_roots: impl IntoIterator<Item = NoteScriptRoot>,
     ) -> anyhow::Result<Account> {
-        use miden_standards::account::policies::BurnPolicyConfig;
-
         let token_supply = token_supply.unwrap_or(0);
         let name = TokenName::new(token_symbol)?;
         let symbol = TokenSymbol::new(token_symbol)
@@ -514,8 +510,6 @@ impl MockChainBuilder {
         token_symbol: &str,
         max_supply: u64,
     ) -> anyhow::Result<Account> {
-        use miden_standards::account::policies::{BurnPolicyConfig, MintPolicyConfig};
-
         let name = TokenName::new(token_symbol)?;
         let symbol = TokenSymbol::new(token_symbol)
             .with_context(|| format!("invalid token symbol: {token_symbol}"))?;
@@ -703,7 +697,7 @@ impl MockChainBuilder {
             target_account_id,
             asset.to_vec(),
             note_type,
-            Default::default(),
+            NoteAttachments::default(),
             &mut self.rng,
         )?;
         self.add_output_note(RawOutputNote::Full(note.clone()));
@@ -732,7 +726,7 @@ impl MockChainBuilder {
             storage,
             asset.to_vec(),
             note_type,
-            Default::default(),
+            NoteAttachments::default(),
             &mut self.rng,
         )?;
 
@@ -754,7 +748,7 @@ impl MockChainBuilder {
             offered_asset,
             requested_asset,
             NoteType::Public,
-            Default::default(),
+            NoteAttachments::default(),
             payback_note_type,
             &mut self.rng,
         )?;

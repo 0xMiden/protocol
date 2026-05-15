@@ -11,7 +11,7 @@ use miden::standards::access::rbac
 # CONSTANTS
 # =================================================================================================
 
-const AUTHORITY_SLOT = word("miden::standards::access::authority::authority")
+pub const AUTHORITY_SLOT = word("miden::standards::access::authority")
 
 const AUTH_CONTROLLED = 0
 const OWNER_CONTROLLED = 1

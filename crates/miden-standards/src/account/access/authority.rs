@@ -13,7 +13,7 @@ use miden_protocol::account::{
     StorageSlot,
     StorageSlotName,
 };
-use miden_protocol::errors::RoleSymbolError;
+use miden_protocol::errors::{AccountError, RoleSymbolError};
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 use thiserror::Error;
@@ -26,7 +26,7 @@ use crate::account::account_component_code;
 account_component_code!(AUTHORITY_CODE, "access/authority.masl");
 
 static AUTHORITY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::access::authority::authority")
+    StorageSlotName::new("miden::standards::access::authority")
         .expect("storage slot name should be valid")
 });
 
@@ -82,15 +82,15 @@ impl Authority {
     // --------------------------------------------------------------------------------------------
 
     /// Returns the [`StorageSlotName`] holding the authority configuration.
-    pub fn slot_name() -> &'static StorageSlotName {
+    pub fn authority_slot() -> &'static StorageSlotName {
         &AUTHORITY_SLOT_NAME
     }
 
     /// Reads the authority configuration from account storage.
     pub fn try_from_storage(storage: &AccountStorage) -> Result<Self, AuthorityError> {
         let word = storage
-            .get_item(Self::slot_name())
-            .map_err(|err| AuthorityError::StorageLookupFailed(alloc::format!("{err}")))?;
+            .get_item(Self::authority_slot())
+            .map_err(AuthorityError::MissingStorageSlot)?;
         Self::try_from(word)
     }
 
@@ -181,6 +181,6 @@ pub enum AuthorityError {
     InvalidAuthority(u64),
     #[error("invalid role symbol in authority slot")]
     InvalidRoleSymbol(#[source] RoleSymbolError),
-    #[error("failed to read authority slot from storage: {0}")]
-    StorageLookupFailed(alloc::string::String),
+    #[error("failed to read authority slot from storage")]
+    MissingStorageSlot(#[source] AccountError),
 }
