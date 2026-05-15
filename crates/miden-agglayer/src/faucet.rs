@@ -135,20 +135,23 @@ impl AggLayerFaucet {
         // Use the symbol as the display name; AggLayer faucets do not use a separate token name.
         let name = TokenName::new(symbol.to_string().as_str())
             .expect("symbol fits within token name capacity");
-        let max_supply_amount = AssetAmount::new(max_supply.as_canonical_u64()).map_err(|_| {
+        let max_supply_amount = AssetAmount::try_from(max_supply).map_err(|_| {
             FungibleFaucetError::MaxSupplyTooLarge {
                 actual: max_supply.as_canonical_u64(),
                 max: AssetAmount::MAX,
             }
         })?;
-        let token_supply_amount =
-            AssetAmount::new(token_supply.as_canonical_u64()).map_err(|_| {
-                FungibleFaucetError::MaxSupplyTooLarge {
-                    actual: token_supply.as_canonical_u64(),
-                    max: AssetAmount::MAX,
-                }
-            })?;
-        let faucet = FungibleFaucet::builder(name, symbol, decimals, max_supply_amount)
+        let token_supply_amount = AssetAmount::try_from(token_supply).map_err(|_| {
+            FungibleFaucetError::MaxSupplyTooLarge {
+                actual: token_supply.as_canonical_u64(),
+                max: AssetAmount::MAX,
+            }
+        })?;
+        let faucet = FungibleFaucet::builder()
+            .name(name)
+            .symbol(symbol)
+            .decimals(decimals)
+            .max_supply(max_supply_amount)
             .token_supply(token_supply_amount)
             .build()?;
         Ok(Self {
@@ -165,7 +168,13 @@ impl AggLayerFaucet {
     /// # Errors
     /// Returns an error if the token supply exceeds the max supply.
     pub fn with_token_supply(mut self, token_supply: Felt) -> Result<Self, FungibleFaucetError> {
-        self.faucet = self.faucet.with_token_supply(token_supply)?;
+        let token_supply_amount = AssetAmount::try_from(token_supply).map_err(|_| {
+            FungibleFaucetError::MaxSupplyTooLarge {
+                actual: token_supply.as_canonical_u64(),
+                max: AssetAmount::MAX,
+            }
+        })?;
+        self.faucet = self.faucet.with_token_supply(token_supply_amount)?;
         Ok(self)
     }
 

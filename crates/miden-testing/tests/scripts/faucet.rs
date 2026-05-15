@@ -204,7 +204,11 @@ fn build_network_faucet_with_burn_switching(
     let symbol = TokenSymbol::new(token_symbol)?;
     let max_supply = AssetAmount::new(max_supply)?;
     let token_supply = AssetAmount::new(token_supply)?;
-    let faucet = FungibleFaucet::builder(name, symbol, 10, max_supply)
+    let faucet = FungibleFaucet::builder()
+        .name(name)
+        .symbol(symbol)
+        .decimals(10)
+        .max_supply(max_supply)
         .token_supply(token_supply)
         .build()?;
 
@@ -213,7 +217,7 @@ fn build_network_faucet_with_burn_switching(
         mint_policy,
         BurnPolicyConfig::AllowAll,
     )
-    .with_allowed_burn_policy(BurnOwnerOnly::root());
+    .with_allowed_burn_policy(BurnOwnerOnly::root().as_word());
 
     let account_builder = AccountBuilder::new(builder.rng_mut().random())
         .storage_mode(AccountStorageMode::Public)
@@ -386,11 +390,11 @@ async fn prove_burning_fungible_asset_on_existing_faucet_succeeds() -> anyhow::R
 
     // Check that max_supply at the word's index 0 is 200. The remainder of the word is initialized
     // with the metadata of the faucet which we don't need to check.
-    assert_eq!(token_metadata.max_supply(), Felt::from(max_supply));
+    assert_eq!(token_metadata.max_supply(), AssetAmount::from(max_supply));
 
     // Check that the faucet's token supply has been correctly initialized.
     // The already issued amount should be 100.
-    assert_eq!(token_metadata.token_supply(), Felt::from(token_supply));
+    assert_eq!(token_metadata.token_supply(), AssetAmount::from(token_supply));
 
     // CONSTRUCT AND EXECUTE TX (Success)
     // --------------------------------------------------------------------------------------------
@@ -657,7 +661,7 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
 
     // Check the Network Fungible Faucet's max supply.
     let actual_max_supply = FungibleFaucet::try_from(faucet.storage())?.max_supply();
-    assert_eq!(actual_max_supply.as_canonical_u64(), max_supply);
+    assert_eq!(actual_max_supply.as_u64(), max_supply);
 
     // Check that the creator account ID is stored in the ownership slot.
     // Word: [owner_suffix, owner_prefix, nominated_suffix, nominated_prefix]
@@ -673,7 +677,7 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
     // Check that the faucet's token supply has been correctly initialized.
     // The already issued amount should be 50.
     let initial_token_supply = FungibleFaucet::try_from(faucet.storage())?.token_supply();
-    assert_eq!(initial_token_supply.as_canonical_u64(), token_supply);
+    assert_eq!(initial_token_supply.as_u64(), token_supply);
 
     // CREATE MINT NOTE USING STANDARD NOTE
     // --------------------------------------------------------------------------------------------
@@ -744,7 +748,7 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
 
     // Verify the account's vault now contains the expected fungible asset
     let balance = target_account.vault().get_balance(faucet.id())?;
-    assert_eq!(balance, expected_asset.amount(),);
+    assert_eq!(balance, expected_asset.amount());
 
     Ok(())
 }
@@ -820,7 +824,7 @@ async fn test_network_faucet_set_policy_rejects_non_allowed_root() -> anyhow::Re
     );
 
     // This root exists in account code, but is not in the mint policy allowlist.
-    let invalid_policy_root = FungibleFaucet::mint_and_send_digest();
+    let invalid_policy_root = FungibleFaucet::mint_and_send_root().as_word();
     let set_policy_note_script = compile_note_script(&format!(
         r#"
         use miden::standards::faucets::policies::policy_manager
@@ -872,7 +876,7 @@ async fn test_network_faucet_set_burn_policy_rejects_non_allowed_root() -> anyho
     );
 
     // This root exists in account code, but is not in the burn policy allowlist.
-    let invalid_policy_root = FungibleFaucet::receive_and_burn_digest();
+    let invalid_policy_root = FungibleFaucet::receive_and_burn_root().as_word();
     let set_policy_note_script =
         compile_note_script(&create_set_burn_policy_note_script(invalid_policy_root))?;
 
@@ -1365,8 +1369,8 @@ fn test_faucet_burn_procedures_are_identical() {
     // Both faucet types must export the same burn procedure with identical MAST roots
     // so that a single BURN note script can work with either faucet type
     assert_eq!(
-        FungibleFaucet::receive_and_burn_digest(),
-        FungibleFaucet::receive_and_burn_digest(),
+        FungibleFaucet::receive_and_burn_root(),
+        FungibleFaucet::receive_and_burn_root(),
         "Basic and network fungible faucets must have the same burn procedure digest"
     );
 }
@@ -1394,7 +1398,7 @@ fn test_network_faucet_contains_default_burn_policy_root() -> anyhow::Result<()>
 
     let stored_root = faucet.storage().get_item(TokenPolicyManager::active_burn_policy_slot())?;
 
-    assert_eq!(stored_root, BurnAllowAll::root());
+    assert_eq!(stored_root, BurnAllowAll::root().as_word());
     assert!(faucet.code().has_procedure(stored_root));
 
     Ok(())
@@ -1441,7 +1445,7 @@ async fn network_faucet_burn() -> anyhow::Result<()> {
 
     // Check the initial token issuance before burning
     let initial_token_supply = FungibleFaucet::try_from(faucet.storage())?.token_supply();
-    assert_eq!(initial_token_supply, Felt::new(100));
+    assert_eq!(initial_token_supply, AssetAmount::from(100u32));
 
     // EXECUTE BURN NOTE AGAINST NETWORK FAUCET
     // --------------------------------------------------------------------------------------------
@@ -1460,7 +1464,7 @@ async fn network_faucet_burn() -> anyhow::Result<()> {
     let final_token_supply = FungibleFaucet::try_from(faucet.storage())?.token_supply();
     assert_eq!(
         final_token_supply,
-        Felt::new(initial_token_supply.as_canonical_u64() - burn_amount)
+        AssetAmount::new(initial_token_supply.as_u64() - burn_amount).unwrap()
     );
 
     Ok(())
@@ -1494,7 +1498,8 @@ async fn test_network_faucet_non_owner_cannot_burn_when_owner_only_policy_active
         100,
         MintPolicyConfig::OwnerOnly,
     )?;
-    let set_policy_note_script = create_set_burn_policy_note_script(BurnOwnerOnly::root());
+    let set_policy_note_script =
+        create_set_burn_policy_note_script(BurnOwnerOnly::root().as_word());
     let mut rng = RandomCoin::new([Felt::from(500u32); 4].into());
     let set_policy_note = NoteBuilder::new(owner_account_id, &mut rng)
         .note_type(NoteType::Private)
@@ -1552,7 +1557,8 @@ async fn test_network_faucet_owner_can_burn_when_owner_only_policy_active() -> a
         100,
         MintPolicyConfig::OwnerOnly,
     )?;
-    let set_policy_note_script = create_set_burn_policy_note_script(BurnOwnerOnly::root());
+    let set_policy_note_script =
+        create_set_burn_policy_note_script(BurnOwnerOnly::root().as_word());
     let mut rng = RandomCoin::new([Felt::from(510u32); 4].into());
     let set_policy_note = NoteBuilder::new(owner_account_id, &mut rng)
         .note_type(NoteType::Private)

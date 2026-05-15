@@ -5,6 +5,7 @@ use miden_protocol::account::{
     Account,
     AccountBuilder,
     AccountId,
+    AccountProcedureRoot,
     AccountStorageMode,
     AccountType,
 };
@@ -18,7 +19,6 @@ use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::vm::AdviceMap;
 use miden_protocol::{Felt, Hasher, Word};
 use miden_standards::account::auth::AuthMultisig;
-use miden_standards::account::components::multisig_library;
 use miden_standards::account::interface::{AccountInterface, AccountInterfaceExt};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
@@ -40,11 +40,11 @@ use rstest::rstest;
 // HELPER FUNCTIONS
 // ================================================================================================
 
-type MultisigTestSetup =
+pub(super) type MultisigTestSetup =
     (Vec<AuthSecretKey>, Vec<AuthScheme>, Vec<PublicKey>, Vec<BasicAuthenticator>);
 
 /// Sets up secret keys, public keys, and authenticators for multisig testing for the given scheme.
-fn setup_keys_and_authenticators_with_scheme(
+pub(super) fn setup_keys_and_authenticators_with_scheme(
     num_approvers: usize,
     threshold: usize,
     auth_scheme: AuthScheme,
@@ -81,12 +81,40 @@ fn setup_keys_and_authenticators_with_scheme(
     Ok((secret_keys, auth_schemes, public_keys, authenticators))
 }
 
+/// Layout expected by `update_signers_and_threshold` when looking up the new multisig config in
+/// the advice map: `[threshold, num_approvers, 0, 0, (PUB_KEY, SCHEME_WORD) for each approver]`.
+/// Public keys are appended in reverse so the procedure pops them in ascending index order.
+pub(super) fn build_update_signers_config_vector(
+    threshold: u64,
+    num_of_approvers: u64,
+    public_keys: &[PublicKey],
+    auth_scheme: AuthScheme,
+) -> Vec<Felt> {
+    let mut config_and_pubkeys_vector = Vec::new();
+    config_and_pubkeys_vector.extend_from_slice(&[
+        Felt::new(threshold),
+        Felt::new(num_of_approvers),
+        Felt::ZERO,
+        Felt::ZERO,
+    ]);
+
+    let scheme_word = [Felt::from(auth_scheme.as_u8()), Felt::ZERO, Felt::ZERO, Felt::ZERO];
+
+    for public_key in public_keys.iter().rev() {
+        let key_word: Word = public_key.to_commitment().into();
+        config_and_pubkeys_vector.extend_from_slice(key_word.as_elements());
+        config_and_pubkeys_vector.extend_from_slice(&scheme_word);
+    }
+
+    config_and_pubkeys_vector
+}
+
 /// Creates a multisig account with the specified configuration
 fn create_multisig_account(
     threshold: u32,
     approvers: &[(PublicKey, AuthScheme)],
     asset_amount: u64,
-    proc_threshold_map: Vec<(Word, u32)>,
+    proc_threshold_map: Vec<(AccountProcedureRoot, u32)>,
 ) -> anyhow::Result<Account> {
     let approvers = approvers
         .iter()
@@ -201,8 +229,9 @@ async fn test_multisig_2_of_2_with_note_creation(
     assert_eq!(
         multisig_account
             .vault()
-            .get_balance(AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?)?,
-        multisig_starting_balance - output_note_asset.unwrap_fungible().amount()
+            .get_balance(AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?)?
+            .as_u64(),
+        multisig_starting_balance - output_note_asset.unwrap_fungible().amount().as_u64()
     );
 
     Ok(())
@@ -438,32 +467,13 @@ async fn test_multisig_update_signers(#[case] auth_scheme: AuthScheme) -> anyhow
     let threshold = 3u64;
     let num_of_approvers = 4u64;
 
-    // Create vector with threshold config and public keys (4 field elements each)
-    let mut config_and_pubkeys_vector = Vec::new();
-    config_and_pubkeys_vector.extend_from_slice(&[
-        Felt::new(threshold),
-        Felt::new(num_of_approvers),
-        Felt::new(0),
-        Felt::new(0),
-    ]);
-
-    // Add each public key to the vector
-    for public_key in new_public_keys.iter().rev() {
-        let key_word: Word = public_key.to_commitment().into();
-        config_and_pubkeys_vector.extend_from_slice(key_word.as_elements());
-
-        config_and_pubkeys_vector.extend_from_slice(&[
-            Felt::new(auth_scheme as u64),
-            Felt::new(0),
-            Felt::new(0),
-            Felt::new(0),
-        ]);
-    }
-
-    // Hash the vector to create config hash
+    let config_and_pubkeys_vector = build_update_signers_config_vector(
+        threshold,
+        num_of_approvers,
+        &new_public_keys,
+        auth_scheme,
+    );
     let multisig_config_hash = Hasher::hash_elements(&config_and_pubkeys_vector);
-
-    // Insert config and public keys into advice map
     advice_map.insert(multisig_config_hash, config_and_pubkeys_vector);
 
     // Create a transaction script that calls the update_signers procedure
@@ -474,7 +484,7 @@ async fn test_multisig_update_signers(#[case] auth_scheme: AuthScheme) -> anyhow
     ";
 
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(multisig_library())?
+        .with_dynamically_linked_library(AuthMultisig::code())?
         .compile_tx_script(tx_script_code)?;
 
     let advice_inputs = AdviceInputs {
@@ -708,31 +718,19 @@ async fn test_multisig_update_signers_remove_owner(
     let threshold = 1u64;
     let num_of_approvers = 2u64;
 
-    // Create multisig config vector
-    let mut config_and_pubkeys_vector =
-        vec![Felt::new(threshold), Felt::new(num_of_approvers), Felt::new(0), Felt::new(0)];
-
-    // Add each public key to the vector
-    for public_key in new_public_keys.iter().rev() {
-        let key_word: Word = public_key.to_commitment().into();
-        config_and_pubkeys_vector.extend_from_slice(key_word.as_elements());
-
-        config_and_pubkeys_vector.extend_from_slice(&[
-            Felt::new(auth_scheme as u64),
-            Felt::new(0),
-            Felt::new(0),
-            Felt::new(0),
-        ]);
-    }
-
-    // Create config hash and advice map
+    let config_and_pubkeys_vector = build_update_signers_config_vector(
+        threshold,
+        num_of_approvers,
+        new_public_keys,
+        auth_scheme,
+    );
     let multisig_config_hash = Hasher::hash_elements(&config_and_pubkeys_vector);
     let mut advice_map = AdviceMap::default();
     advice_map.insert(multisig_config_hash, config_and_pubkeys_vector);
 
     // Create transaction script
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(multisig_library())?
+        .with_dynamically_linked_library(AuthMultisig::code())?
         .compile_tx_script("begin\n    call.::miden::standards::components::auth::multisig::update_signers_and_threshold\nend")?;
 
     let advice_inputs = AdviceInputs { map: advice_map, ..Default::default() };
@@ -888,7 +886,7 @@ async fn test_multisig_update_signers_rejects_unreachable_proc_thresholds(
     // Configure a procedure override that is valid for the initial signer set (3-of-3),
     // but invalid after updating to 2 signers.
     let multisig_account =
-        create_multisig_account(2, &approvers, 10, vec![(BasicWallet::receive_asset_digest(), 3)])?;
+        create_multisig_account(2, &approvers, 10, vec![(BasicWallet::receive_asset_root(), 3)])?;
 
     let mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])
         .unwrap()
@@ -899,26 +897,18 @@ async fn test_multisig_update_signers_rejects_unreachable_proc_thresholds(
     let threshold = 2u64;
     let num_of_approvers = 2u64;
 
-    let mut config_and_pubkeys_vector =
-        vec![Felt::new(threshold), Felt::new(num_of_approvers), Felt::new(0), Felt::new(0)];
-
-    for public_key in new_public_keys.iter().rev() {
-        let key_word: Word = public_key.to_commitment().into();
-        config_and_pubkeys_vector.extend_from_slice(key_word.as_elements());
-        config_and_pubkeys_vector.extend_from_slice(&[
-            Felt::new(auth_scheme as u64),
-            Felt::new(0),
-            Felt::new(0),
-            Felt::new(0),
-        ]);
-    }
-
+    let config_and_pubkeys_vector = build_update_signers_config_vector(
+        threshold,
+        num_of_approvers,
+        new_public_keys,
+        auth_scheme,
+    );
     let multisig_config_hash = Hasher::hash_elements(&config_and_pubkeys_vector);
     let mut advice_map = AdviceMap::default();
     advice_map.insert(multisig_config_hash, config_and_pubkeys_vector);
 
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(multisig_library())?
+        .with_dynamically_linked_library(AuthMultisig::code())?
         .compile_tx_script("begin\n    call.::miden::standards::components::auth::multisig::update_signers_and_threshold\nend")?;
 
     let advice_inputs = AdviceInputs { map: advice_map, ..Default::default() };
@@ -991,32 +981,13 @@ async fn test_multisig_new_approvers_cannot_sign_before_update(
     let threshold = 3u64;
     let num_of_approvers = 4u64;
 
-    // Create vector with threshold config and public keys (4 field elements each)
-    let mut config_and_pubkeys_vector = Vec::new();
-    config_and_pubkeys_vector.extend_from_slice(&[
-        Felt::new(threshold),
-        Felt::new(num_of_approvers),
-        Felt::new(0),
-        Felt::new(0),
-    ]);
-
-    // Add each public key to the vector
-    for public_key in new_public_keys.iter().rev() {
-        let key_word: Word = public_key.to_commitment().into();
-        config_and_pubkeys_vector.extend_from_slice(key_word.as_elements());
-
-        config_and_pubkeys_vector.extend_from_slice(&[
-            Felt::new(auth_scheme as u64),
-            Felt::new(0),
-            Felt::new(0),
-            Felt::new(0),
-        ]);
-    }
-
-    // Hash the vector to create config hash
+    let config_and_pubkeys_vector = build_update_signers_config_vector(
+        threshold,
+        num_of_approvers,
+        &new_public_keys,
+        auth_scheme,
+    );
     let multisig_config_hash = Hasher::hash_elements(&config_and_pubkeys_vector);
-
-    // Insert config and public keys into advice map
     advice_map.insert(multisig_config_hash, config_and_pubkeys_vector);
 
     // Create a transaction script that calls the update_signers procedure
@@ -1027,7 +998,7 @@ async fn test_multisig_new_approvers_cannot_sign_before_update(
     ";
 
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(multisig_library())?
+        .with_dynamically_linked_library(AuthMultisig::code())?
         .compile_tx_script(tx_script_code)?;
 
     let advice_inputs = AdviceInputs {
@@ -1109,7 +1080,7 @@ async fn test_multisig_proc_threshold_overrides(
     let (_secret_keys, auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
 
-    let proc_threshold_map = vec![(BasicWallet::receive_asset_digest(), 1)];
+    let proc_threshold_map = vec![(BasicWallet::receive_asset_root(), 1)];
 
     let approvers = public_keys
         .iter()
@@ -1257,7 +1228,7 @@ async fn test_multisig_proc_threshold_overrides(
     mock_chain.add_pending_executed_transaction(&result.unwrap())?;
     mock_chain.prove_next_block()?;
 
-    assert_eq!(multisig_account.vault().get_balance(FungibleAsset::mock_issuer())?, 6);
+    assert_eq!(multisig_account.vault().get_balance(FungibleAsset::mock_issuer())?.as_u64(), 6);
 
     Ok(())
 }
@@ -1295,7 +1266,7 @@ async fn test_multisig_set_procedure_threshold(
         NoteType::Public,
     )?;
     let mut mock_chain = mock_chain_builder.build().unwrap();
-    let proc_root = BasicWallet::receive_asset_digest();
+    let proc_root = BasicWallet::receive_asset_root().as_word();
 
     let set_script_code = format!(
         r#"
@@ -1309,7 +1280,7 @@ async fn test_multisig_set_procedure_threshold(
         "#
     );
     let set_script = CodeBuilder::default()
-        .with_dynamically_linked_library(multisig_library())?
+        .with_dynamically_linked_library(AuthMultisig::code())?
         .compile_tx_script(set_script_code)?;
 
     // 1) Set override to 1 (requires default 2 signatures).
@@ -1389,7 +1360,7 @@ async fn test_multisig_set_procedure_threshold(
         "#
     );
     let clear_script = CodeBuilder::default()
-        .with_dynamically_linked_library(multisig_library())?
+        .with_dynamically_linked_library(AuthMultisig::code())?
         .compile_tx_script(clear_script_code)?;
     let clear_salt = Word::from([Felt::new(52); 4]);
 
@@ -1476,7 +1447,7 @@ async fn test_multisig_set_procedure_threshold_rejects_exceeding_approvers(
         .collect::<Vec<_>>();
 
     let multisig_account = create_multisig_account(2, &approvers, 10, vec![])?;
-    let proc_root = BasicWallet::receive_asset_digest();
+    let proc_root = BasicWallet::receive_asset_root().as_word();
 
     let script_code = format!(
         r#"
@@ -1488,7 +1459,7 @@ async fn test_multisig_set_procedure_threshold_rejects_exceeding_approvers(
         "#
     );
     let script = CodeBuilder::default()
-        .with_dynamically_linked_library(multisig_library())?
+        .with_dynamically_linked_library(AuthMultisig::code())?
         .compile_tx_script(script_code)?;
 
     let mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])

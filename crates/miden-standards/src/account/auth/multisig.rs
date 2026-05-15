@@ -1,12 +1,10 @@
-#[allow(dead_code)]
-pub(crate) mod procedure_policies;
-
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use miden_protocol::Word;
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 use miden_protocol::account::component::{
+    AccountComponentCode,
     AccountComponentMetadata,
     FeltSchema,
     SchemaType,
@@ -15,6 +13,7 @@ use miden_protocol::account::component::{
 };
 use miden_protocol::account::{
     AccountComponent,
+    AccountProcedureRoot,
     AccountType,
     StorageMap,
     StorageMapKey,
@@ -24,30 +23,33 @@ use miden_protocol::account::{
 use miden_protocol::errors::AccountError;
 use miden_protocol::utils::sync::LazyLock;
 
-use crate::account::components::multisig_library;
+use crate::account::account_component_code;
+
+account_component_code!(MULTISIG_CODE, "auth/multisig.masl");
 
 // CONSTANTS
 // ================================================================================================
 
-static THRESHOLD_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+pub(super) static THRESHOLD_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::auth::multisig::threshold_config")
         .expect("storage slot name should be valid")
 });
 
-static APPROVER_PUBKEYS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+pub(super) static APPROVER_PUBKEYS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::auth::multisig::approver_public_keys")
         .expect("storage slot name should be valid")
 });
 
-static APPROVER_SCHEME_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+pub(super) static APPROVER_SCHEME_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::auth::multisig::approver_schemes")
         .expect("storage slot name should be valid")
 });
 
-static EXECUTED_TRANSACTIONS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::auth::multisig::executed_transactions")
-        .expect("storage slot name should be valid")
-});
+pub(super) static EXECUTED_TRANSACTIONS_SLOT_NAME: LazyLock<StorageSlotName> =
+    LazyLock::new(|| {
+        StorageSlotName::new("miden::standards::auth::multisig::executed_transactions")
+            .expect("storage slot name should be valid")
+    });
 
 static PROCEDURE_THRESHOLDS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::auth::multisig::procedure_thresholds")
@@ -62,7 +64,7 @@ static PROCEDURE_THRESHOLDS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new
 pub struct AuthMultisigConfig {
     approvers: Vec<(PublicKeyCommitment, AuthScheme)>,
     default_threshold: u32,
-    proc_thresholds: Vec<(Word, u32)>,
+    proc_thresholds: Vec<(AccountProcedureRoot, u32)>,
 }
 
 impl AuthMultisigConfig {
@@ -100,7 +102,7 @@ impl AuthMultisigConfig {
     /// at most the number of approvers.
     pub fn with_proc_thresholds(
         mut self,
-        proc_thresholds: Vec<(Word, u32)>,
+        proc_thresholds: Vec<(AccountProcedureRoot, u32)>,
     ) -> Result<Self, AccountError> {
         for (_, threshold) in &proc_thresholds {
             if *threshold == 0 {
@@ -124,7 +126,7 @@ impl AuthMultisigConfig {
         self.default_threshold
     }
 
-    pub fn proc_thresholds(&self) -> &[(Word, u32)] {
+    pub fn proc_thresholds(&self) -> &[(AccountProcedureRoot, u32)] {
         &self.proc_thresholds
     }
 }
@@ -146,6 +148,11 @@ pub struct AuthMultisig {
 impl AuthMultisig {
     /// The name of the component.
     pub const NAME: &'static str = "miden::standards::components::auth::multisig";
+
+    /// Returns the [`AccountComponentCode`] of this component.
+    pub fn code() -> &'static AccountComponentCode {
+        &MULTISIG_CODE
+    }
 
     /// Creates a new [`AuthMultisig`] component from the provided configuration.
     pub fn new(config: AuthMultisigConfig) -> Result<Self, AccountError> {
@@ -302,7 +309,7 @@ impl From<AuthMultisig> for AccountComponent {
         // Procedure thresholds slot (map: PROC_ROOT -> threshold)
         let proc_threshold_roots = StorageMap::with_entries(
             multisig.config.proc_thresholds().iter().map(|(proc_root, threshold)| {
-                (StorageMapKey::from_raw(*proc_root), Word::from([*threshold, 0, 0, 0]))
+                (StorageMapKey::from_raw(proc_root.as_word()), Word::from([*threshold, 0, 0, 0]))
             }),
         )
         .unwrap();
@@ -313,7 +320,7 @@ impl From<AuthMultisig> for AccountComponent {
 
         let metadata = AuthMultisig::component_metadata();
 
-        AccountComponent::new(multisig_library(), storage_slots, metadata).expect(
+        AccountComponent::new(AuthMultisig::code().clone(), storage_slots, metadata).expect(
             "Multisig auth component should satisfy the requirements of a valid account component",
         )
     }

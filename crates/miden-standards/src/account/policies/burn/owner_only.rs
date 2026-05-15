@@ -1,18 +1,22 @@
-use miden_protocol::Word;
-use miden_protocol::account::component::AccountComponentMetadata;
-use miden_protocol::account::{AccountComponent, AccountType};
+use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
+use miden_protocol::account::{AccountComponent, AccountProcedureRoot, AccountType};
 
-use crate::account::components::owner_only_burn_policy_library;
-use crate::procedure_digest;
+use crate::account::account_component_code;
+use crate::procedure_root;
 
 // OWNER-ONLY BURN POLICY
 // ================================================================================================
 
-procedure_digest!(
+account_component_code!(
+    OWNER_ONLY_BURN_POLICY_CODE,
+    "faucets/policies/burn/owner_controlled/owner_only.masl"
+);
+
+procedure_root!(
     OWNER_ONLY_POLICY_ROOT,
     BurnOwnerOnly::NAME,
     BurnOwnerOnly::PROC_NAME,
-    owner_only_burn_policy_library
+    BurnOwnerOnly::code()
 );
 
 /// The storage-free `owner_only` burn policy account component (owner-controlled family).
@@ -30,8 +34,13 @@ impl BurnOwnerOnly {
 
     pub(crate) const PROC_NAME: &str = "check_policy";
 
-    /// Returns the MAST root of the `owner_only` burn policy procedure.
-    pub fn root() -> Word {
+    /// Returns the [`AccountComponentCode`] of this component.
+    pub fn code() -> &'static AccountComponentCode {
+        &OWNER_ONLY_BURN_POLICY_CODE
+    }
+
+    /// Returns the procedure root of the `owner_only` burn policy procedure.
+    pub fn root() -> AccountProcedureRoot {
         *OWNER_ONLY_POLICY_ROOT
     }
 }
@@ -44,7 +53,7 @@ impl From<BurnOwnerOnly> for AccountComponent {
                     "`owner_only` burn policy (owner-controlled family) for fungible faucets",
                 );
 
-        AccountComponent::new(owner_only_burn_policy_library(), vec![], metadata).expect(
+        AccountComponent::new(BurnOwnerOnly::code().clone(), vec![], metadata).expect(
             "`owner_only` burn policy component should satisfy the requirements of a valid account component",
         )
     }

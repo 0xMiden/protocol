@@ -1,6 +1,7 @@
 use alloc::vec::Vec;
 
 use miden_protocol::account::component::{
+    AccountComponentCode,
     AccountComponentMetadata,
     FeltSchema,
     SchemaType,
@@ -11,6 +12,7 @@ use miden_protocol::account::{
     Account,
     AccountBuilder,
     AccountComponent,
+    AccountProcedureRoot,
     AccountStorage,
     AccountStorageMode,
     AccountType,
@@ -31,14 +33,11 @@ use super::{
     TokenName,
 };
 use crate::account::access::AccessControl;
+use crate::account::account_component_code;
 use crate::account::auth::{AuthNetworkAccount, AuthSingleSigAcl, AuthSingleSigAclConfig, NoAuth};
-use crate::account::components::fungible_faucet_library;
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
 use crate::account::policies::TokenPolicyManager;
-use crate::{AuthMethod, procedure_digest};
-
-mod builder;
-pub use builder::FungibleFaucetBuilder;
+use crate::{AuthMethod, procedure_root};
 
 #[cfg(test)]
 mod tests;
@@ -59,20 +58,23 @@ const TOKEN_SYMBOL_TYPE: &str = "miden::standards::faucets::fungible::token_symb
 // FUNGIBLE FAUCET ACCOUNT COMPONENT
 // ================================================================================================
 
-// Initialize the digest of the `mint_and_send` procedure of the Fungible Faucet only once.
-procedure_digest!(
+account_component_code!(FUNGIBLE_FAUCET_CODE, "faucets/fungible_faucet.masl");
+
+// Initialize the procedure root of the `mint_and_send` procedure of the Fungible Faucet only once.
+procedure_root!(
     FUNGIBLE_FAUCET_MINT_AND_SEND,
     FungibleFaucet::NAME,
     FungibleFaucet::MINT_PROC_NAME,
-    fungible_faucet_library
+    FungibleFaucet::code()
 );
 
-// Initialize the digest of the `receive_and_burn` procedure of the Fungible Faucet only once.
-procedure_digest!(
+// Initialize the procedure root of the `receive_and_burn` procedure of the Fungible Faucet only
+// once.
+procedure_root!(
     FUNGIBLE_FAUCET_RECEIVE_AND_BURN,
     FungibleFaucet::NAME,
     FungibleFaucet::RECEIVE_AND_BURN_PROC_NAME,
-    fungible_faucet_library
+    FungibleFaucet::code()
 );
 
 /// An [`AccountComponent`] implementing a fungible faucet.
@@ -101,12 +103,81 @@ procedure_digest!(
 /// [`TokenPolicyManager`]: crate::account::policies::TokenPolicyManager
 #[derive(Debug, Clone)]
 pub struct FungibleFaucet {
-    token_supply: Felt,
-    max_supply: Felt,
+    token_supply: AssetAmount,
+    max_supply: AssetAmount,
     decimals: u8,
     symbol: TokenSymbol,
     /// Embeds name, optional fields, and mutability flags.
     metadata: TokenMetadata,
+}
+
+#[bon::bon]
+impl FungibleFaucet {
+    /// Returns a builder for [`FungibleFaucet`].
+    ///
+    /// Required setters: [`name`], [`symbol`], [`decimals`], [`max_supply`].
+    /// Optional fields default to `None` (string fields) or `false` (mutability flags); the initial
+    /// token supply defaults to zero.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use miden_protocol::asset::{AssetAmount, TokenSymbol};
+    /// # use miden_standards::account::faucets::FungibleFaucet;
+    /// # use miden_standards::account::faucets::{Description, LogoURI, TokenName};
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let faucet = FungibleFaucet::builder()
+    ///     .name(TokenName::new("My Token")?)
+    ///     .symbol(TokenSymbol::new("MTK")?)
+    ///     .decimals(8)
+    ///     .max_supply(AssetAmount::from(1_000_000u32))
+    ///     .token_supply(AssetAmount::from(100u32))
+    ///     .description(Description::new("A test token")?)
+    ///     .logo_uri(LogoURI::new("https://example.com/logo.png")?)
+    ///     .build()?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// [`name`]: FungibleFaucetBuilder::name
+    /// [`symbol`]: FungibleFaucetBuilder::symbol
+    /// [`decimals`]: FungibleFaucetBuilder::decimals
+    /// [`max_supply`]: FungibleFaucetBuilder::max_supply
+    #[builder]
+    pub fn new(
+        name: TokenName,
+        symbol: TokenSymbol,
+        decimals: u8,
+        max_supply: AssetAmount,
+        #[builder(default)] token_supply: AssetAmount,
+        description: Option<Description>,
+        logo_uri: Option<LogoURI>,
+        external_link: Option<ExternalLink>,
+        #[builder(default)] is_description_mutable: bool,
+        #[builder(default)] is_logo_uri_mutable: bool,
+        #[builder(default)] is_external_link_mutable: bool,
+        #[builder(default)] is_max_supply_mutable: bool,
+    ) -> Result<FungibleFaucet, FungibleFaucetError> {
+        let mut metadata = TokenMetadata::new(name);
+        if let Some(desc) = description {
+            metadata = metadata.with_description(desc, is_description_mutable);
+        } else {
+            metadata = metadata.with_description_mutable(is_description_mutable);
+        }
+        if let Some(uri) = logo_uri {
+            metadata = metadata.with_logo_uri(uri, is_logo_uri_mutable);
+        } else {
+            metadata = metadata.with_logo_uri_mutable(is_logo_uri_mutable);
+        }
+        if let Some(link) = external_link {
+            metadata = metadata.with_external_link(link, is_external_link_mutable);
+        } else {
+            metadata = metadata.with_external_link_mutable(is_external_link_mutable);
+        }
+        metadata = metadata.with_max_supply_mutable(is_max_supply_mutable);
+
+        Self::new_validated(symbol, decimals, max_supply, token_supply, metadata)
+    }
 }
 
 impl FungibleFaucet {
@@ -124,27 +195,6 @@ impl FungibleFaucet {
 
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
-
-    /// Returns a builder for [`FungibleFaucet`] with the required fields set.
-    ///
-    /// This is the main entry point for constructing a faucet; optional fields and the initial
-    /// token supply can be set via the builder before calling
-    /// [`FungibleFaucetBuilder::build`].
-    ///
-    /// # Parameters
-    ///
-    /// - `name`: display name (at most 32 UTF-8 bytes).
-    /// - `symbol`: token symbol.
-    /// - `decimals`: decimal precision (0–12).
-    /// - `max_supply`: maximum token supply, as a validated [`AssetAmount`].
-    pub fn builder(
-        name: TokenName,
-        symbol: TokenSymbol,
-        decimals: u8,
-        max_supply: AssetAmount,
-    ) -> FungibleFaucetBuilder {
-        FungibleFaucetBuilder::new(name, symbol, decimals, max_supply)
-    }
 
     /// Validates all fields and constructs a [`FungibleFaucet`].
     ///
@@ -164,16 +214,16 @@ impl FungibleFaucet {
             });
         }
 
-        if u64::from(token_supply) > u64::from(max_supply) {
+        if token_supply > max_supply {
             return Err(FungibleFaucetError::TokenSupplyExceedsMaxSupply {
-                token_supply: u64::from(token_supply),
-                max_supply: u64::from(max_supply),
+                token_supply: token_supply.as_u64(),
+                max_supply: max_supply.as_u64(),
             });
         }
 
         Ok(Self {
-            token_supply: token_supply.into(),
-            max_supply: max_supply.into(),
+            token_supply,
+            max_supply,
             decimals,
             symbol,
             metadata,
@@ -183,13 +233,18 @@ impl FungibleFaucet {
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns the digest of the `mint_and_send` account procedure.
-    pub fn mint_and_send_digest() -> Word {
+    /// Returns the [`AccountComponentCode`] of this component.
+    pub fn code() -> &'static AccountComponentCode {
+        &FUNGIBLE_FAUCET_CODE
+    }
+
+    /// Returns the procedure root of the `mint_and_send` account procedure.
+    pub fn mint_and_send_root() -> AccountProcedureRoot {
         *FUNGIBLE_FAUCET_MINT_AND_SEND
     }
 
-    /// Returns the digest of the `receive_and_burn` account procedure.
-    pub fn receive_and_burn_digest() -> Word {
+    /// Returns the procedure root of the `receive_and_burn` account procedure.
+    pub fn receive_and_burn_root() -> AccountProcedureRoot {
         *FUNGIBLE_FAUCET_RECEIVE_AND_BURN
     }
 
@@ -200,12 +255,12 @@ impl FungibleFaucet {
     }
 
     /// Returns the current token supply (amount issued).
-    pub fn token_supply(&self) -> Felt {
+    pub fn token_supply(&self) -> AssetAmount {
         self.token_supply
     }
 
     /// Returns the maximum token supply.
-    pub fn max_supply(&self) -> Felt {
+    pub fn max_supply(&self) -> AssetAmount {
         self.max_supply
     }
 
@@ -283,8 +338,8 @@ impl FungibleFaucet {
     /// Returns the single storage slot for the token config word.
     fn token_config_slot_value(&self) -> StorageSlot {
         let word = Word::new([
-            self.token_supply,
-            self.max_supply,
+            self.token_supply.into(),
+            self.max_supply.into(),
             Felt::from(self.decimals),
             self.symbol.clone().into(),
         ]);
@@ -300,11 +355,14 @@ impl FungibleFaucet {
     ///
     /// Returns an error if:
     /// - the token supply exceeds the max supply.
-    pub fn with_token_supply(mut self, token_supply: Felt) -> Result<Self, FungibleFaucetError> {
-        if token_supply.as_canonical_u64() > self.max_supply.as_canonical_u64() {
+    pub fn with_token_supply(
+        mut self,
+        token_supply: AssetAmount,
+    ) -> Result<Self, FungibleFaucetError> {
+        if token_supply > self.max_supply {
             return Err(FungibleFaucetError::TokenSupplyExceedsMaxSupply {
-                token_supply: token_supply.as_canonical_u64(),
-                max_supply: self.max_supply.as_canonical_u64(),
+                token_supply: token_supply.as_u64(),
+                max_supply: self.max_supply.as_u64(),
             });
         }
 
@@ -367,17 +425,15 @@ impl FungibleFaucet {
                 max: Self::MAX_DECIMALS,
             }
         })?;
-        let max_supply_raw = max_supply.as_canonical_u64();
-        let max_supply = AssetAmount::new(max_supply_raw).map_err(|_| {
+        let max_supply = AssetAmount::try_from(max_supply).map_err(|_| {
             FungibleFaucetError::MaxSupplyTooLarge {
-                actual: max_supply_raw,
+                actual: max_supply.as_canonical_u64(),
                 max: AssetAmount::MAX,
             }
         })?;
-        let token_supply_raw = token_supply.as_canonical_u64();
-        let token_supply = AssetAmount::new(token_supply_raw).map_err(|_| {
+        let token_supply = AssetAmount::try_from(token_supply).map_err(|_| {
             FungibleFaucetError::MaxSupplyTooLarge {
-                actual: token_supply_raw,
+                actual: token_supply.as_canonical_u64(),
                 max: AssetAmount::MAX,
             }
         })?;
@@ -394,7 +450,7 @@ impl From<FungibleFaucet> for AccountComponent {
         let component_metadata = FungibleFaucet::component_metadata();
         let storage_slots = faucet.into_storage_slots();
 
-        AccountComponent::new(fungible_faucet_library(), storage_slots, component_metadata)
+        AccountComponent::new(FungibleFaucet::code().clone(), storage_slots, component_metadata)
             .expect("fungible faucet component should satisfy the requirements of a valid account component")
     }
 }
@@ -466,7 +522,7 @@ pub fn create_fungible_faucet(
     access_control: AccessControl,
     token_policy_manager: TokenPolicyManager,
 ) -> Result<Account, FungibleFaucetError> {
-    let mint_proc_root = FungibleFaucet::mint_and_send_digest();
+    let mint_proc_root = FungibleFaucet::mint_and_send_root();
 
     let auth_component: AccountComponent = match auth_method {
         AuthMethod::SingleSig { approver: (pub_key, auth_scheme) } => AuthSingleSigAcl::new(

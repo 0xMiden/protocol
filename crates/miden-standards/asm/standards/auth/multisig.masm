@@ -6,6 +6,7 @@ use miden::protocol::active_account
 use miden::protocol::auth::AUTH_UNAUTHORIZED_EVENT
 use miden::protocol::native_account
 use miden::standards::auth
+use miden::standards::auth::signature
 use miden::core::word
 
 # Local Memory Addresses
@@ -44,15 +45,15 @@ const DEFAULT_THRESHOLD_LOC=0
 # number of approvers are stored as:
 # [default_threshold, num_approvers, 0, 0].
 # The threshold is guaranteed to be less than or equal to num_approvers.
-const THRESHOLD_CONFIG_SLOT = word("miden::standards::auth::multisig::threshold_config")
+pub const THRESHOLD_CONFIG_SLOT = word("miden::standards::auth::multisig::threshold_config")
 
 # The slot in this component's storage layout where the public keys map is stored.
 # Map entries: [key_index, 0, 0, 0] => APPROVER_PUBLIC_KEY
-const APPROVER_PUBLIC_KEYS_SLOT = word("miden::standards::auth::multisig::approver_public_keys")
+pub const APPROVER_PUBLIC_KEYS_SLOT = word("miden::standards::auth::multisig::approver_public_keys")
 
 # The slot in this component's storage layout where the scheme id for the corresponding public keys map is stored.
 # Map entries: [key_index, 0, 0, 0] => [scheme_id, 0, 0, 0]
-const APPROVER_SCHEME_ID_SLOT = word("miden::standards::auth::multisig::approver_schemes")
+pub const APPROVER_SCHEME_ID_SLOT = word("miden::standards::auth::multisig::approver_schemes")
 
 # The slot in this component's storage layout where executed transactions are stored.
 # Map entries: transaction_message => [is_executed, 0, 0, 0]
@@ -113,7 +114,7 @@ proc cleanup_pubkey_and_scheme_id_mapping(init_num_of_approvers: u32, new_num_of
         # => [i-1, new_num_of_approvers]
 
         # clear scheme id at APPROVER_MAP_KEY(i-1)
-        dup exec.create_approver_map_key
+        dup exec.signature::create_approver_map_key
         # => [APPROVER_MAP_KEY, i-1, new_num_of_approvers]
 
         padw swapw
@@ -129,7 +130,7 @@ proc cleanup_pubkey_and_scheme_id_mapping(init_num_of_approvers: u32, new_num_of
         # => [i-1, new_num_of_approvers]
 
         # clear public key at APPROVER_MAP_KEY(i-1)
-        dup exec.create_approver_map_key
+        dup exec.signature::create_approver_map_key
         # => [APPROVER_MAP_KEY, i-1, new_num_of_approvers]
 
         padw swapw
@@ -152,18 +153,8 @@ proc cleanup_pubkey_and_scheme_id_mapping(init_num_of_approvers: u32, new_num_of
     drop drop
 end
 
-#! Builds the storage map key for a signer index.
-#!
-#! Inputs: [key_index]
-#! Outputs: [APPROVER_MAP_KEY]
-proc create_approver_map_key
-    push.0.0.0 movup.3
-    # => [[key_index, 0, 0, 0]]
-    # => [APPROVER_MAP_KEY]
-end
-
-#! Asserts that all configured per-procedure threshold overrides are less than or equal to 
-#! number of approvers 
+#! Asserts that all configured per-procedure threshold overrides are less than or equal to
+#! number of approvers.
 #!
 #! Inputs:  [num_approvers]
 #! Outputs: []
@@ -178,31 +169,34 @@ proc assert_proc_thresholds_lte_num_approvers(num_approvers: u32)
     # => [should_continue, num_procedures, num_approvers]
     while.true
         sub.1 dup
-        # => [proc_index, proc_index, num_approvers]
+        # => [num_procedures-1, num_procedures-1, num_approvers]
 
         exec.active_account::get_procedure_root
-        # => [PROC_ROOT, proc_index, num_approvers]
+        # => [PROC_ROOT, num_procedures-1, num_approvers]
 
         push.PROC_THRESHOLD_ROOTS_SLOT[0..2]
-        # => [proc_roots_slot_suffix, proc_roots_slot_prefix, PROC_ROOT, proc_index, num_approvers]
+        # => [proc_roots_slot_suffix, proc_roots_slot_prefix, PROC_ROOT, num_procedures-1, num_approvers]
 
-        exec.active_account::get_initial_map_item
-        # => [[proc_threshold, 0, 0, 0], proc_index, num_approvers]
+        # Use the *current* policy state, not the initial one; otherwise a `set_proc_threshold`
+        # call earlier in the same transaction that raised a threshold above the new num_approvers
+        # would be missed and the multisig could end up with an unreachable threshold.
+        exec.active_account::get_map_item
+        # => [[proc_threshold, 0, 0, 0], num_procedures-1, num_approvers]
 
         movdn.3 drop drop drop
-        # => [proc_threshold, proc_index, num_approvers]
+        # => [proc_threshold, num_procedures-1, num_approvers]
 
         dup.2
-        # => [num_approvers, proc_threshold, proc_index, num_approvers]
+        # => [num_approvers, proc_threshold, num_procedures-1, num_approvers]
 
         u32assert2.err=ERR_PROC_THRESHOLD_NOT_U32
         u32gt assertz.err=ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS
-        # => [proc_index, num_approvers]
+        # => [num_procedures-1, num_approvers]
 
         dup neq.0
-        # => [should_continue, proc_index, num_approvers]
+        # => [should_continue, num_procedures-1, num_approvers]
     end
-    # => [proc_index, num_approvers]
+    # => [num_procedures-1, num_approvers]
 
     drop drop
     # => []
@@ -288,7 +282,7 @@ pub proc update_signers_and_threshold(multisig_config_hash: word)
         sub.1
         # => [i-1, pad(12)]
 
-        dup exec.create_approver_map_key
+        dup exec.signature::create_approver_map_key
         # => [APPROVER_MAP_KEY, i-1, pad(12)]
 
         padw adv_loadw
@@ -311,7 +305,7 @@ pub proc update_signers_and_threshold(multisig_config_hash: word)
         exec.auth::signature::assert_supported_scheme_word
         # => [SCHEME_ID_WORD, i-1, pad(12)]
 
-        dup.4 exec.create_approver_map_key
+        dup.4 exec.signature::create_approver_map_key
         # => [APPROVER_MAP_KEY, SCHEME_ID_WORD, i-1, pad(12)]
 
         push.APPROVER_SCHEME_ID_SLOT[0..2]
@@ -345,16 +339,32 @@ end
 # overrides stored in PROC_THRESHOLD_ROOTS_SLOT. Falls back to default_threshold if no
 # overrides apply.
 #
+# Each called non-auth procedure contributes a threshold to a max accumulator:
+# - if the procedure has a stored override, its override value is the contribution.
+# - if the procedure has no override, `default_threshold` is the contribution so a procedure
+#   without a policy cannot be authorized at a lower threshold by being called alongside a
+#   low-override procedure (e.g. `receive_asset` configured at 1) in the same transaction.
+#
+# The auth procedure (procedure index 0) is skipped — it is the auth flow itself, not a
+# user-callable account procedure, and counting it would make `transaction_threshold` always
+# include `default_threshold`.
+#
+# When no non-auth procedure was called, `transaction_threshold` stays 0 and is reverted to
+# `default_threshold` at the end.
+#
 #! Inputs:  [default_threshold]
 #! Outputs: [transaction_threshold]
 @locals(1)
 proc compute_transaction_threshold(default_threshold: u32) -> u32
     # 1. initialize transaction_threshold = 0
-    # 2. iterate through all account procedures
+    # 2. iterate through all non-auth account procedures
     #   a. check if the procedure was called during the transaction
     #   b. if called, get the override threshold of that procedure from the config map
-    #   c. if proc_threshold > transaction_threshold, set transaction_threshold = proc_threshold
-    # 3. if transaction_threshold == 0 at the end, revert to using default_threshold
+    #   c. if the procedure has no override (proc_threshold == 0), contribute default_threshold
+    #      instead so the unpolicied call is still constrained
+    #   d. if contribution > transaction_threshold, set transaction_threshold = contribution
+    # 3. if transaction_threshold == 0 at the end (no non-auth proc was called), revert to
+    #    using default_threshold
 
     # store default_threshold for later
     loc_store.DEFAULT_THRESHOLD_LOC
@@ -372,46 +382,60 @@ proc compute_transaction_threshold(default_threshold: u32) -> u32
     dup neq.0
     # => [should_continue, num_procedures, transaction_threshold]
     while.true
-        sub.1 dup
-        # => [num_procedures-1, num_procedures-1, transaction_threshold]
+        sub.1
+        # => [num_procedures-1, transaction_threshold]
 
-        # get procedure root of the procedure with index i
-        exec.active_account::get_procedure_root dupw
-        # => [PROC_ROOT, PROC_ROOT, num_procedures-1, transaction_threshold]
-
-        # 2a. check if this procedure has been called in the transaction
-        exec.native_account::was_procedure_called
-        # => [was_called, PROC_ROOT, num_procedures-1, transaction_threshold]
-
-        # if it has been called, get the override threshold of that procedure
+        # Skip the auth procedure at index 0 — it is the auth flow itself, not a user-callable
+        # account procedure. Counting it would make transaction_threshold always include
+        # default_threshold and break the override-down semantic for single-proc transactions.
+        dup neq.0
+        # => [is_non_auth, num_procedures-1, transaction_threshold]
         if.true
-            # => [PROC_ROOT, num_procedures-1, transaction_threshold]
+            # get procedure root of the procedure with index i
+            dup exec.active_account::get_procedure_root dupw
+            # => [PROC_ROOT, PROC_ROOT, num_procedures-1, transaction_threshold]
 
-            push.PROC_THRESHOLD_ROOTS_SLOT[0..2]
-            # => [proc_roots_slot_suffix, proc_roots_slot_prefix, PROC_ROOT, num_procedures-1, transaction_threshold]
+            # 2a. check if this procedure has been called in the transaction
+            exec.native_account::was_procedure_called
+            # => [was_called, PROC_ROOT, num_procedures-1, transaction_threshold]
 
-            # 2b. get the override proc_threshold of that procedure
-            # if the procedure has no override threshold, the returned map item will be [0, 0, 0, 0]
-            exec.active_account::get_initial_map_item
-            # => [[proc_threshold, 0, 0, 0], num_procedures-1, transaction_threshold]
+            # if it has been called, compute and apply its threshold contribution
+            if.true
+                # => [PROC_ROOT, num_procedures-1, transaction_threshold]
 
-            movdn.3 drop drop drop dup dup.3
-            # => [transaction_threshold, proc_threshold, proc_threshold, num_procedures-1, transaction_threshold]
+                push.PROC_THRESHOLD_ROOTS_SLOT[0..2]
+                # => [proc_roots_slot_suffix, proc_roots_slot_prefix, PROC_ROOT, num_procedures-1, transaction_threshold]
 
-            u32assert2.err="transaction threshold or procedure threshold are not u32"
-            u32gt
-            # => [is_gt, proc_threshold, num_procedures-1, transaction_threshold]
-            # 2c. if proc_threshold > transaction_threshold, update transaction_threshold
-            movup.2 movdn.3
-            # => [is_gt, proc_threshold, transaction_threshold, num_procedures-1]
-            cdrop
-            # => [updated_transaction_threshold, num_procedures-1]
-            swap
-            # => [num_procedures-1, updated_transaction_threshold]
-        # if it has not been called during this transaction, nothing to do, move to the next procedure
-        else
-            dropw
-            # => [num_procedures-1, transaction_threshold]
+                # 2b. get the override proc_threshold of that procedure
+                # if the procedure has no override threshold, the returned map item will be [0, 0, 0, 0]
+                exec.active_account::get_initial_map_item
+                # => [[proc_threshold, 0, 0, 0], num_procedures-1, transaction_threshold]
+
+                movdn.3 drop drop drop
+                # => [proc_threshold, num_procedures-1, transaction_threshold]
+
+                # 2c. if the procedure has no override (proc_threshold == 0), contribute
+                # default_threshold instead so the unpolicied call cannot be silently authorized
+                # at a lower threshold by being called alongside a low-override procedure
+                # (e.g. `receive_asset` configured at 1) in the same transaction.
+                dup eq.0
+                if.true
+                    drop
+                    loc_load.DEFAULT_THRESHOLD_LOC
+                end
+                # => [contribution, num_procedures-1, transaction_threshold]
+
+                # 2d. transaction_threshold = max(transaction_threshold, contribution)
+                movup.2 u32max
+                # => [new_transaction_threshold, num_procedures-1]
+
+                swap
+                # => [num_procedures-1, new_transaction_threshold]
+            # if it has not been called during this transaction, nothing to do, move to the next procedure
+            else
+                dropw
+                # => [num_procedures-1, transaction_threshold]
+            end
         end
 
         dup neq.0
@@ -424,7 +448,7 @@ proc compute_transaction_threshold(default_threshold: u32) -> u32
     loc_load.DEFAULT_THRESHOLD_LOC
     # => [default_threshold, transaction_threshold]
 
-    # 3. if transaction_threshold == 0 at the end, revert to using default_threshold
+    # 3. if no non-auth proc was called, transaction_threshold is 0; fall back to default_threshold
     dup.1 eq.0
     # => [is_zero, default_threshold, transaction_threshold]
 
@@ -510,7 +534,7 @@ pub proc get_signer_at
     dup
     # => [index, index]
 
-    exec.create_approver_map_key
+    exec.signature::create_approver_map_key
     # => [APPROVER_MAP_KEY, index]
 
     push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
@@ -522,7 +546,7 @@ pub proc get_signer_at
     movup.4
     # => [index, PUB_KEY]
 
-    exec.create_approver_map_key
+    exec.signature::create_approver_map_key
     # => [APPROVER_MAP_KEY, PUB_KEY]
 
     push.APPROVER_SCHEME_ID_SLOT[0..2]
@@ -573,7 +597,7 @@ pub proc is_signer(pub_key: word) -> felt
         dup loc_store.CURRENT_SIGNER_INDEX_LOC
         # => [i-1, PUB_KEY]
 
-        exec.create_approver_map_key
+        exec.signature::create_approver_map_key
         # => [APPROVER_MAP_KEY, PUB_KEY]
 
         push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
