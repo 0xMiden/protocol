@@ -66,6 +66,10 @@ lint: ## Runs all linting tasks at once (Clippy, fixing, formatting, typos)
 	@$(BUILD_GENERATED_FILES_IN_SRC) $(MAKE) toml
 	@$(BUILD_GENERATED_FILES_IN_SRC) $(MAKE) shear
 
+.PHONY: hooks-test
+hooks-test: ## Runs the pytest suite for the python hooks under .claude/hooks/
+	python3 -m pytest .claude/hooks/tests/
+
 # --- docs ----------------------------------------------------------------------------------------
 
 .PHONY: doc
