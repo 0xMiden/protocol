@@ -9,7 +9,14 @@ use miden_protocol::batch::ProposedBatch;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::merkle::MerkleError;
 use miden_protocol::errors::{BatchAccountUpdateError, ProposedBatchError};
-use miden_protocol::note::{Note, NoteTag, NoteType};
+use miden_protocol::note::{
+    Note,
+    NoteAssets,
+    NoteAttachments,
+    NoteTag,
+    NoteType,
+    PartialNoteMetadata,
+};
 use miden_protocol::testing::account_id::AccountIdBuilder;
 use miden_protocol::transaction::{
     InputNote,
@@ -18,6 +25,7 @@ use miden_protocol::transaction::{
     PartialBlockchain,
     RawOutputNote,
 };
+use miden_standards::note::P2idNoteStorage;
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::note::NoteBuilder;
 use rand::rngs::SmallRng;
@@ -167,6 +175,51 @@ fn same_details_different_metadata_not_erased_from_batch() -> anyhow::Result<()>
         vec![InputNoteCommitment::from(&InputNote::unauthenticated(input_note))],
     );
     assert_eq!(batch.output_notes()[0], output_note_proven);
+
+    Ok(())
+}
+
+/// Two standards P2ID output notes with identical details but different metadata should both appear
+/// in the batch.
+#[test]
+fn two_p2id_outputs_same_details_different_metadata_in_same_batch() -> anyhow::Result<()> {
+    let TestSetup { mut chain, account1, account2, .. } = setup_chain();
+    let block1 = chain.block_header(1);
+    let block2 = chain.prove_next_block()?;
+
+    let serial_num = Word::from([11, 22, 33, 44u32]);
+    let recipient = P2idNoteStorage::new(account2.id()).into_recipient(serial_num);
+
+    let note_300 = Note::with_attachments(
+        NoteAssets::default(),
+        PartialNoteMetadata::new(account1.id(), NoteType::Public).with_tag(NoteTag::from(300)),
+        recipient.clone(),
+        NoteAttachments::default(),
+    );
+    let note_301 = Note::with_attachments(
+        NoteAssets::default(),
+        PartialNoteMetadata::new(account1.id(), NoteType::Public).with_tag(NoteTag::from(301)),
+        recipient,
+        NoteAttachments::default(),
+    );
+
+    let output_note_300 = RawOutputNote::Full(note_300).into_output_note()?;
+    let output_note_301 = RawOutputNote::Full(note_301).into_output_note()?;
+
+    let tx =
+        MockProvenTxBuilder::with_account(account1.id(), Word::empty(), account1.to_commitment())
+            .ref_block_commitment(block1.commitment())
+            .output_notes(vec![output_note_300.clone(), output_note_301.clone()])
+            .build()?;
+
+    let batch = ProposedBatch::new(
+        vec![Arc::new(tx)],
+        block2.header().clone(),
+        chain.latest_partial_blockchain(),
+        BTreeMap::default(),
+    )?;
+
+    assert_eq!(batch.output_notes().len(), 2);
 
     Ok(())
 }
