@@ -346,8 +346,8 @@ impl MockChainBuilder {
     ///
     /// The behaviour of the faucet (basic vs network-style) is determined entirely by the
     /// combination of arguments:
-    /// - `storage_mode`: typically [`AccountStorageMode::Public`] for basic faucets, or
-    ///   [`AccountStorageMode::Network`] for network-style faucets.
+    /// - `storage_mode`: [`AccountStorageMode::Public`] for basic faucets, or
+    ///   [`AccountStorageMode::Private`] for off-chain accounts.
     /// - `auth_method`: typically a [`Auth::BasicAuth`] for basic faucets, or [`Auth::IncrNonce`]
     ///   for network-style faucets.
     /// - `access_control`: [`AccessControl::AuthControlled`] for basic faucets;
