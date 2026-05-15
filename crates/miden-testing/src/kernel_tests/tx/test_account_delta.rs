@@ -961,7 +961,7 @@ async fn delta_for_new_account_retains_empty_value_storage_slots() -> anyhow::Re
     let slot_value2 = Word::from([1, 2, 3, 4u32]);
     let mut account = AccountBuilder::new(rand::random())
         .account_type(AccountType::RegularAccountUpdatableCode)
-        .storage_mode(AccountStorageMode::Network)
+        .storage_mode(AccountStorageMode::Public)
         .with_component(MockAccountComponent::with_slots(vec![
             StorageSlot::with_empty_value(slot_name0.clone()),
             StorageSlot::with_value(slot_name1.clone(), slot_value2),
@@ -1014,7 +1014,7 @@ async fn delta_for_new_account_retains_empty_map_storage_slots() -> anyhow::Resu
 
     let mut account = AccountBuilder::new(rand::random())
         .account_type(AccountType::RegularAccountUpdatableCode)
-        .storage_mode(AccountStorageMode::Network)
+        .storage_mode(AccountStorageMode::Public)
         .with_component(MockAccountComponent::with_slots(vec![StorageSlot::with_empty_map(
             slot_name0.clone(),
         )]))

@@ -29,7 +29,6 @@ use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::crypto::SequentialCommit;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::note::NoteType;
-use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
 use miden_protocol::transaction::RawOutputNote;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
@@ -196,25 +195,16 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
         .into_account_id();
 
     // For mainnet and rollup fixtures, create the destination account so we can consume the P2ID
-    // note.
-    let destination_account = if matches!(
-        data_source,
-        ClaimDataSource::L1ToMiden | ClaimDataSource::L2ToMiden
-    ) {
-        let dest =
-            Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE, IncrNonceAuthComponent);
-        // Ensure the mock account ID matches the destination embedded in the JSON test vector,
-        // since the claim note targets this account ID.
-        assert_eq!(
-            dest.id(),
-            destination_account_id,
-            "mock destination account ID must match the destination_account_id from the claim data"
-        );
-        builder.add_account(dest.clone())?;
-        Some(dest)
-    } else {
-        None
-    };
+    // note. The mock account is built from the destination ID encoded in the JSON test vector,
+    // since the claim note targets this account ID.
+    let destination_account =
+        if matches!(data_source, ClaimDataSource::L1ToMiden | ClaimDataSource::L2ToMiden) {
+            let dest = Account::mock(u128::from(destination_account_id), IncrNonceAuthComponent);
+            builder.add_account(dest.clone())?;
+            Some(dest)
+        } else {
+            None
+        };
 
     // CREATE SENDER ACCOUNT (for creating the claim note)
     // --------------------------------------------------------------------------------------------
@@ -406,10 +396,11 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
         mock_chain.add_pending_executed_transaction(&mint_executed)?;
         mock_chain.prove_next_block()?;
 
-        // Execute the consume transaction for the destination account
+        // Execute the consume transaction for the destination account. Pass the account
+        // directly since the JSON-encoded destination decodes to a private account ID.
         let consume_tx_context = mock_chain
             .build_tx_context(
-                destination_account.id(),
+                destination_account.clone(),
                 &[],
                 slice::from_ref(&expected_output_p2id_note),
             )?

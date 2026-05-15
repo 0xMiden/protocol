@@ -13,6 +13,7 @@ use crate::account::auth::{
     AuthMultisigSmart,
     AuthSingleSig,
     AuthSingleSigAcl,
+    NetworkAccountNoteAllowlist,
 };
 use crate::account::interface::AccountInterfaceError;
 
@@ -154,7 +155,9 @@ impl AccountComponentInterface {
                 )]
             },
             AccountComponentInterface::AuthNoAuth => vec![AuthMethod::NoAuth],
-            AccountComponentInterface::AuthNetworkAccount => vec![AuthMethod::NoAuth],
+            AccountComponentInterface::AuthNetworkAccount => {
+                vec![extract_network_account_auth_method(storage)]
+            },
             _ => vec![], // Non-auth components return empty vector
         }
     }
@@ -393,4 +396,14 @@ fn extract_multisig_auth_method(
     }
 
     AuthMethod::Multisig { threshold, approvers }
+}
+
+/// Extracts authentication method from a network-account component.
+fn extract_network_account_auth_method(storage: &AccountStorage) -> AuthMethod {
+    let allowlist = NetworkAccountNoteAllowlist::try_from(storage)
+        .expect("network account allowlist slot should be present and valid");
+
+    AuthMethod::NetworkAccount {
+        allowed_script_roots: allowlist.into_allowed_script_roots(),
+    }
 }

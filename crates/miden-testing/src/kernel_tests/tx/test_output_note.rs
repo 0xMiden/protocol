@@ -31,12 +31,12 @@ use miden_protocol::note::{
     PartialNoteMetadata,
 };
 use miden_protocol::testing::account_id::{
-    ACCOUNT_ID_NETWORK_NON_FUNGIBLE_FAUCET,
     ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
     ACCOUNT_ID_PRIVATE_SENDER,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2,
+    ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET,
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
     ACCOUNT_ID_SENDER,
@@ -1465,7 +1465,7 @@ async fn test_set_network_target_account_attachment() -> anyhow::Result<()> {
     let account = Account::mock(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET, Auth::IncrNonce);
     let rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
     let attachment = NetworkAccountTarget::new(
-        ACCOUNT_ID_NETWORK_NON_FUNGIBLE_FAUCET.try_into()?,
+        ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET.try_into()?,
         NoteExecutionHint::on_block_slot(5, 32, 3),
     )?;
     let output_note = NoteBuilder::new(account.id(), rng)
@@ -1498,7 +1498,7 @@ async fn test_network_note() -> anyhow::Result<()> {
     let mut rng = RandomCoin::new(Word::from([9, 8, 7, 6u32]));
 
     // --- Valid network note ---
-    let target_id = AccountId::try_from(ACCOUNT_ID_NETWORK_NON_FUNGIBLE_FAUCET)?;
+    let target_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET)?;
     let attachment = NetworkAccountTarget::new(target_id, NoteExecutionHint::Always)?;
 
     let note = NoteBuilder::new(sender.id(), &mut rng)

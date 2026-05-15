@@ -35,7 +35,6 @@ use miden_protocol::asset::{Asset, AssetAmount, AssetCallbacks, FungibleAsset};
 use miden_protocol::errors::tx_kernel::{
     ERR_ACCOUNT_ID_SUFFIX_LEAST_SIGNIFICANT_BYTE_MUST_BE_ZERO,
     ERR_ACCOUNT_ID_SUFFIX_MOST_SIGNIFICANT_BIT_MUST_BE_ZERO,
-    ERR_ACCOUNT_ID_UNKNOWN_STORAGE_MODE,
     ERR_ACCOUNT_ID_UNKNOWN_VERSION,
     ERR_ACCOUNT_NONCE_AT_MAX,
     ERR_ACCOUNT_NONCE_CAN_ONLY_BE_INCREMENTED_ONCE,
@@ -243,11 +242,6 @@ async fn test_account_validate_id() -> anyhow::Result<()> {
             // Set most significant bit to `1`.
             ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET | (0x80 << 56),
             Some(ERR_ACCOUNT_ID_SUFFIX_MOST_SIGNIFICANT_BIT_MUST_BE_ZERO),
-        ),
-        (
-            // Set storage mode to an unknown value (0b11).
-            ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE | (0b11 << (64 + 6)),
-            Some(ERR_ACCOUNT_ID_UNKNOWN_STORAGE_MODE),
         ),
         (
             // Set lower 8 bits to a non-zero value (1).
