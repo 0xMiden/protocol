@@ -234,6 +234,10 @@ end
 #! - the non-fungible asset already exists in the note.
 #! - the total number of ASSETs exceeds the maximum of 64.
 pub proc add_asset
+    # reject assets with a Custom composition; only None and Fungible are supported today
+    exec.asset::assert_supported_composition
+    # => [ASSET_KEY, ASSET_VALUE, note_idx]
+
     # validate the asset
     exec.asset::validate
     # => [ASSET_KEY, ASSET_VALUE, note_idx]
