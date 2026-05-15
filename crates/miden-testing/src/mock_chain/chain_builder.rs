@@ -375,10 +375,10 @@ impl MockChainBuilder {
 
     /// Convenience: builds a basic auth-controlled fungible faucet from a token-symbol shorthand
     /// using default decimals and `AllowAll` policies, then adds it via
-    /// [`Self::add_existing_fungible_faucet`].
+    /// `Self::add_existing_fungible_faucet`.
     ///
     /// For full control over the faucet's metadata, decimals, and policies, construct a
-    /// [`FungibleFaucet`] manually and call [`Self::add_existing_fungible_faucet`].
+    /// [`FungibleFaucet`] manually and call `Self::add_existing_fungible_faucet`.
     pub fn add_existing_basic_faucet(
         &mut self,
         auth_method: Auth,
