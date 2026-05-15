@@ -16,7 +16,6 @@ use crate::account::account_id::account_type::{
     REGULAR_ACCOUNT_IMMUTABLE_CODE,
     REGULAR_ACCOUNT_UPDATABLE_CODE,
 };
-use crate::account::account_id::storage_mode::{NETWORK, PRIVATE, PUBLIC};
 use crate::account::{AccountIdVersion, AccountStorageMode, AccountType};
 use crate::address::AddressType;
 use crate::errors::{AccountError, AccountIdError, Bech32Error};
@@ -62,9 +61,9 @@ impl AccountIdV1 {
     /// The least significant nibble determines the account version.
     const VERSION_MASK: u64 = 0b1111;
 
-    /// The higher two bits of the second least significant nibble encode the account storage
-    /// mode.
-    pub(crate) const STORAGE_MODE_MASK: u8 = 0b11 << Self::STORAGE_MODE_SHIFT;
+    /// The second most significant bit of the prefix's least significant byte encodes the account
+    /// storage mode.
+    pub(crate) const STORAGE_MODE_MASK: u8 = 0b1 << Self::STORAGE_MODE_SHIFT;
     pub(crate) const STORAGE_MODE_SHIFT: u64 = 6;
 
     /// The element index in the seed digest that becomes the account ID suffix (after
@@ -202,7 +201,6 @@ impl AccountIdV1 {
     /// See [`AccountId::storage_mode`](super::AccountId::storage_mode) for details.
     pub fn storage_mode(&self) -> AccountStorageMode {
         extract_storage_mode(self.prefix().as_u64())
-            .expect("account ID should have been constructed with a valid storage mode")
     }
 
     /// See [`AccountId::is_public`](super::AccountId::is_public) for details.
@@ -434,15 +432,13 @@ impl Deserializable for AccountIdV1 {
 // HELPER FUNCTIONS
 // ================================================================================================
 
-/// Checks that the prefix:
-/// - has known values for metadata (storage mode, type and version).
+/// Checks that the prefix has a known value for the version.
 pub(crate) fn validate_prefix(
     prefix: Felt,
 ) -> Result<(AccountType, AccountStorageMode, AccountIdVersion), AccountIdError> {
     let prefix = prefix.as_canonical_u64();
 
-    // Validate storage bits.
-    let storage_mode = extract_storage_mode(prefix)?;
+    let storage_mode = extract_storage_mode(prefix);
 
     // Validate version bits.
     let version = extract_version(prefix)?;
@@ -471,14 +467,13 @@ fn validate_suffix(suffix: Felt) -> Result<(), AccountIdError> {
     Ok(())
 }
 
-pub(crate) fn extract_storage_mode(prefix: u64) -> Result<AccountStorageMode, AccountIdError> {
+pub(crate) fn extract_storage_mode(prefix: u64) -> AccountStorageMode {
     let bits = (prefix & AccountIdV1::STORAGE_MODE_MASK as u64) >> AccountIdV1::STORAGE_MODE_SHIFT;
     // SAFETY: `STORAGE_MODE_MASK` is u8 so casting bits is lossless
     match bits as u8 {
-        PUBLIC => Ok(AccountStorageMode::Public),
-        NETWORK => Ok(AccountStorageMode::Network),
-        PRIVATE => Ok(AccountStorageMode::Private),
-        _ => Err(AccountIdError::UnknownAccountStorageMode(format!("0b{bits:b}").into())),
+        AccountStorageMode::PRIVATE => AccountStorageMode::Private,
+        AccountStorageMode::PUBLIC => AccountStorageMode::Public,
+        _ => unreachable!("storage mode mask is 1 bit so every value is covered above"),
     }
 }
 
@@ -567,11 +562,11 @@ mod tests {
     #[test]
     fn account_id_from_felts_with_max_pop_count() {
         let valid_suffix = Felt::try_from(0x7fff_ffff_ffff_ff00u64).unwrap();
-        let valid_prefix = Felt::try_from(0x7fff_ffff_ffff_ff71u64).unwrap();
+        let valid_prefix = Felt::try_from(0x7fff_ffff_ffff_fff1u64).unwrap();
 
         let id1 = AccountIdV1::new_unchecked([valid_prefix, valid_suffix]);
         assert_eq!(id1.account_type(), AccountType::NonFungibleFaucet);
-        assert_eq!(id1.storage_mode(), AccountStorageMode::Network);
+        assert_eq!(id1.storage_mode(), AccountStorageMode::Public);
         assert_eq!(id1.version(), AccountIdVersion::Version1);
     }
 

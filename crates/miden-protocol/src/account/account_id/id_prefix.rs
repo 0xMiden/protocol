@@ -119,20 +119,9 @@ impl AccountIdPrefix {
         }
     }
 
-    /// Returns `true` if the full state of the account is public on chain, i.e. if the modes are
-    /// [`AccountStorageMode::Public`] or [`AccountStorageMode::Network`], `false` otherwise.
-    pub fn has_public_state(&self) -> bool {
-        self.storage_mode().has_public_state()
-    }
-
     /// Returns `true` if the storage mode is [`AccountStorageMode::Public`], `false` otherwise.
     pub fn is_public(&self) -> bool {
         self.storage_mode().is_public()
-    }
-
-    /// Returns `true` if the storage mode is [`AccountStorageMode::Network`], `false` otherwise.
-    pub fn is_network(&self) -> bool {
-        self.storage_mode().is_network()
     }
 
     /// Returns `true` if self is a private account, `false` otherwise.

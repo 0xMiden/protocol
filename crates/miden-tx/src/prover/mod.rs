@@ -1,4 +1,3 @@
-use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use miden_processor::ExecutionOptions;
@@ -31,18 +30,19 @@ pub use mast_store::TransactionMastStore;
 // ------------------------------------------------------------------------------------------------
 
 /// Local Transaction prover is a stateless component which is responsible for proving transactions.
+///
+/// Each `prove()` call creates a fresh [`TransactionMastStore`] loaded with only the current
+/// transaction's account code, ensuring no state accumulates across calls. This is important
+/// in WASM environments where accumulated MAST forests fragment the linear memory.
+#[derive(Default)]
 pub struct LocalTransactionProver {
-    mast_store: Arc<TransactionMastStore>,
     proof_options: ProvingOptions,
 }
 
 impl LocalTransactionProver {
     /// Creates a new [LocalTransactionProver] instance.
     pub fn new(proof_options: ProvingOptions) -> Self {
-        Self {
-            mast_store: Arc::new(TransactionMastStore::new()),
-            proof_options,
-        }
+        Self { proof_options }
     }
 
     fn build_proven_transaction(
@@ -77,7 +77,7 @@ impl LocalTransactionProver {
             .remove_asset(Asset::from(fee))
             .map_err(TransactionProverError::RemoveFeeAssetFromDelta)?;
 
-        let account_update_details = if account.has_public_state() {
+        let account_update_details = if account.id().is_public() {
             AccountUpdateDetails::Delta(post_fee_account_delta)
         } else {
             AccountUpdateDetails::Private
@@ -112,9 +112,16 @@ impl LocalTransactionProver {
         let tx_inputs = tx_inputs.into();
         let (stack_inputs, advice_inputs) = TransactionKernel::prepare_inputs(&tx_inputs);
 
-        self.mast_store.load_account_code(tx_inputs.account().code());
+        // Create a per-call MAST store to avoid accumulating forests across prove
+        // calls. Using the shared self.mast_store would grow monotonically (each
+        // call adds account code that is never removed), fragmenting WASM linear
+        // memory and eventually causing capacity_overflow panics. A per-call store
+        // also avoids races: prove() takes &self, so concurrent calls would
+        // conflict on a shared mutable store.
+        let mast_store = TransactionMastStore::new();
+        mast_store.load_account_code(tx_inputs.account().code());
         for account_code in tx_inputs.foreign_account_code() {
-            self.mast_store.load_account_code(account_code);
+            mast_store.load_account_code(account_code);
         }
 
         let script_mast_store = ScriptMastForestStore::new(
@@ -130,7 +137,7 @@ impl LocalTransactionProver {
         let mut host = TransactionProverHost::new(
             &partial_account,
             input_notes,
-            self.mast_store.as_ref(),
+            &mast_store,
             script_mast_store,
             account_procedure_index_map,
         );
@@ -165,15 +172,6 @@ impl LocalTransactionProver {
             ref_block.commitment(),
             proof,
         )
-    }
-}
-
-impl Default for LocalTransactionProver {
-    fn default() -> Self {
-        Self {
-            mast_store: Arc::new(TransactionMastStore::new()),
-            proof_options: Default::default(),
-        }
     }
 }
 

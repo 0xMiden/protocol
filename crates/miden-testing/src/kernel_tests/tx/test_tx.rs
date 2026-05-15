@@ -26,6 +26,7 @@ use miden_protocol::note::{
     NoteAttachment,
     NoteAttachmentScheme,
     NoteAttachments,
+    NoteDetailsCommitment,
     NoteId,
     NoteRecipient,
     NoteStorage,
@@ -380,7 +381,11 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
     let resulting_output_note_1 = executed_transaction.output_notes().get_note(0);
 
     let expected_note_assets_1 = NoteAssets::new(vec![combined_asset])?;
-    let expected_note_id_1 = NoteId::new(recipient_1, expected_note_assets_1.commitment());
+    let details_commitment_1 = NoteDetailsCommitment::from_raw_commitments(
+        recipient_1,
+        expected_note_assets_1.commitment(),
+    );
+    let expected_note_id_1 = NoteId::new(details_commitment_1, resulting_output_note_1.metadata());
     assert_eq!(resulting_output_note_1.id(), expected_note_id_1);
 
     // assert that the expected output note 2 is present
@@ -548,6 +553,9 @@ async fn tx_summary_commitment_is_signed_by_falcon_auth() -> anyhow::Result<()> 
         AuthMethod::Multisig { .. } => {
             panic!("Expected SingleSig auth scheme, got Multisig")
         },
+        AuthMethod::NetworkAccount { .. } => {
+            panic!("Expected SingleSig auth scheme, got NetworkAccount")
+        },
         AuthMethod::Unknown => panic!("Expected SingleSig auth scheme, got Unknown"),
     };
 
@@ -606,6 +614,9 @@ async fn tx_summary_commitment_is_signed_by_ecdsa_auth() -> anyhow::Result<()> {
         AuthMethod::NoAuth => panic!("Expected SingleSig auth scheme, got NoAuth"),
         AuthMethod::Multisig { .. } => {
             panic!("Expected SingleSig auth scheme, got Multisig")
+        },
+        AuthMethod::NetworkAccount { .. } => {
+            panic!("Expected SingleSig auth scheme, got NetworkAccount")
         },
         AuthMethod::Unknown => panic!("Expected SingleSig auth scheme, got Unknown"),
     };

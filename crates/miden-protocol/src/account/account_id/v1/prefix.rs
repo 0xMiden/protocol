@@ -95,7 +95,6 @@ impl AccountIdPrefixV1 {
     /// details.
     pub fn storage_mode(&self) -> AccountStorageMode {
         v1::extract_storage_mode(self.prefix.as_canonical_u64())
-            .expect("account ID prefix should have been constructed with a valid storage mode")
     }
 
     /// See [`AccountIdPrefix::is_public`](crate::account::AccountIdPrefix::is_public) for details.
