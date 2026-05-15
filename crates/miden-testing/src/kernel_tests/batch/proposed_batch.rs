@@ -9,7 +9,7 @@ use miden_protocol::batch::ProposedBatch;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::merkle::MerkleError;
 use miden_protocol::errors::{BatchAccountUpdateError, ProposedBatchError};
-use miden_protocol::note::{Note, NoteType};
+use miden_protocol::note::{Note, NoteTag, NoteType};
 use miden_protocol::testing::account_id::AccountIdBuilder;
 use miden_protocol::transaction::{
     InputNote,
@@ -114,6 +114,59 @@ fn note_created_and_consumed_in_same_batch() -> anyhow::Result<()> {
 
     assert_eq!(batch.input_notes().num_notes(), 0);
     assert_eq!(batch.output_notes().len(), 0);
+
+    Ok(())
+}
+
+/// Notes with the same details but different metadata are not considered the same for batch
+/// erasure.
+#[test]
+fn same_details_different_metadata_not_erased_from_batch() -> anyhow::Result<()> {
+    let TestSetup { mut chain, account1, account2, .. } = setup_chain();
+    let block1 = chain.block_header(1);
+    let block2 = chain.prove_next_block()?;
+
+    // create two notes with identical details (recipient, assets, attachments) but different
+    // metadata, so they have distinct note IDs
+
+    let output_note = NoteBuilder::new(mock_account_id(7), SmallRng::from_seed([7; 32]))
+        .serial_number([1, 2, 3, 4u32].into())
+        .tag(100)
+        .note_type(NoteType::Public)
+        .build()?;
+
+    let input_note = Note::with_attachments(
+        output_note.assets().clone(),
+        output_note.metadata().partial_metadata().with_tag(NoteTag::from(200)),
+        output_note.recipient().clone(),
+        output_note.attachments().clone(),
+    );
+
+    let output_note_proven = RawOutputNote::Full(output_note.clone()).into_output_note().unwrap();
+
+    let tx1 =
+        MockProvenTxBuilder::with_account(account1.id(), Word::empty(), account1.to_commitment())
+            .ref_block_commitment(block1.commitment())
+            .output_notes(vec![output_note_proven.clone()])
+            .build()?;
+    let tx2 =
+        MockProvenTxBuilder::with_account(account2.id(), Word::empty(), account2.to_commitment())
+            .ref_block_commitment(block1.commitment())
+            .unauthenticated_notes(vec![input_note.clone()])
+            .build()?;
+
+    let batch = ProposedBatch::new(
+        [tx1, tx2].into_iter().map(Arc::new).collect(),
+        block2.header().clone(),
+        chain.latest_partial_blockchain(),
+        BTreeMap::default(),
+    )?;
+
+    assert_eq!(
+        batch.input_notes().clone().into_vec(),
+        vec![InputNoteCommitment::from(&InputNote::unauthenticated(input_note))],
+    );
+    assert_eq!(batch.output_notes()[0], output_note_proven);
 
     Ok(())
 }

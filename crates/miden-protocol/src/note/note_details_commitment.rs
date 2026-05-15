@@ -28,12 +28,12 @@ pub struct NoteDetailsCommitment(Word);
 impl NoteDetailsCommitment {
     /// Returns a new [`NoteDetailsCommitment`] instantiated from the provided note components.
     pub fn new(recipient: &NoteRecipient, assets: &NoteAssets) -> Self {
-        Self::merge(recipient.digest(), assets.commitment())
+        Self::from_raw_commitments(recipient.digest(), assets.commitment())
     }
 
     /// Returns a new [`NoteDetailsCommitment`] by merging the provided recipient and asset
     /// commitments.
-    pub fn merge(recipient: Word, asset_commitment: Word) -> Self {
+    pub fn from_raw_commitments(recipient: Word, asset_commitment: Word) -> Self {
         Self(Hasher::merge(&[recipient, asset_commitment]))
     }
 }
