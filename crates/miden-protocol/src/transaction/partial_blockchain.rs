@@ -187,7 +187,7 @@ impl PartialBlockchain {
     /// Panics if:
     /// - The `block_header.block_num` is not equal to the current chain length (i.e., the provided
     ///   block header is not the next block in the chain).
-    /// - The the chain length exceeds [Forest::MAX_LEAVES].
+    /// - The the chain length exceeds [miden_crypto::merkle::mmr::Forest::MAX_LEAVES].
     pub fn add_block(&mut self, block_header: &BlockHeader, track: bool) {
         assert_eq!(block_header.block_num(), self.chain_length());
         self.mmr
