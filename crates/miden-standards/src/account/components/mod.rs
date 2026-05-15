@@ -1,233 +1,21 @@
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
-use miden_processor::mast::MastNodeExt;
-use miden_protocol::Word;
 use miden_protocol::account::AccountProcedureRoot;
-use miden_protocol::assembly::{Library, LibraryExport};
-use miden_protocol::utils::serde::Deserializable;
-use miden_protocol::utils::sync::LazyLock;
 
+use crate::account::access::{Ownable2Step, RoleBasedAccessControl};
+use crate::account::auth::{
+    AuthGuardedMultisig,
+    AuthMultisig,
+    AuthMultisigSmart,
+    AuthNetworkAccount,
+    AuthSingleSig,
+    AuthSingleSigAcl,
+    NoAuth,
+};
+use crate::account::faucets::FungibleFaucet;
 use crate::account::interface::AccountComponentInterface;
-
-// WALLET LIBRARIES
-// ================================================================================================
-
-// Initialize the Basic Wallet library only once.
-static BASIC_WALLET_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(
-        env!("OUT_DIR"),
-        "/assets/account_components/wallets/basic_wallet.masl"
-    ));
-    Library::read_from_bytes(bytes).expect("Shipped Basic Wallet library is well-formed")
-});
-
-// ACCESS LIBRARIES
-// ================================================================================================
-
-// Initialize the Ownable2Step library only once.
-static OWNABLE2STEP_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(
-        env!("OUT_DIR"),
-        "/assets/account_components/access/ownable2step.masl"
-    ));
-    Library::read_from_bytes(bytes).expect("Shipped Ownable2Step library is well-formed")
-});
-
-// Initialize the RoleBasedAccessControl library only once.
-static RBAC_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
-    let bytes =
-        include_bytes!(concat!(env!("OUT_DIR"), "/assets/account_components/access/rbac.masl"));
-    Library::read_from_bytes(bytes).expect("Shipped RoleBasedAccessControl library is well-formed")
-});
-
-// AUTH LIBRARIES
-// ================================================================================================
-
-/// Initialize the ECDSA K256 Keccak library only once.
-static SINGLESIG_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
-    let bytes =
-        include_bytes!(concat!(env!("OUT_DIR"), "/assets/account_components/auth/singlesig.masl"));
-    Library::read_from_bytes(bytes).expect("Shipped Singlesig library is well-formed")
-});
-
-// Initialize the ECDSA K256 Keccak ACL library only once.
-static SINGLESIG_ACL_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(
-        env!("OUT_DIR"),
-        "/assets/account_components/auth/singlesig_acl.masl"
-    ));
-    Library::read_from_bytes(bytes).expect("Shipped Singlesig ACL library is well-formed")
-});
-
-/// Initialize the Multisig library only once.
-static MULTISIG_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
-    let bytes =
-        include_bytes!(concat!(env!("OUT_DIR"), "/assets/account_components/auth/multisig.masl"));
-    Library::read_from_bytes(bytes).expect("Shipped Multisig library is well-formed")
-});
-
-/// Initialize the Guarded Multisig library only once.
-static GUARDED_MULTISIG_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(
-        env!("OUT_DIR"),
-        "/assets/account_components/auth/guarded_multisig.masl"
-    ));
-    Library::read_from_bytes(bytes).expect("Shipped Guarded Multisig library is well-formed")
-});
-
-// Initialize the NoAuth library only once.
-static NO_AUTH_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
-    let bytes =
-        include_bytes!(concat!(env!("OUT_DIR"), "/assets/account_components/auth/no_auth.masl"));
-    Library::read_from_bytes(bytes).expect("Shipped NoAuth library is well-formed")
-});
-
-// Initialize the AuthNetworkAccount library only once.
-static NETWORK_ACCOUNT_AUTH_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(
-        env!("OUT_DIR"),
-        "/assets/account_components/auth/network_account.masl"
-    ));
-    Library::read_from_bytes(bytes).expect("Shipped AuthNetworkAccount library is well-formed")
-});
-
-// FAUCET LIBRARIES
-// ================================================================================================
-
-// Initialize the Basic Fungible Faucet library only once.
-static FUNGIBLE_FAUCET_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(
-        env!("OUT_DIR"),
-        "/assets/account_components/faucets/fungible_faucet.masl"
-    ));
-    Library::read_from_bytes(bytes).expect("Shipped Basic Fungible Faucet library is well-formed")
-});
-
-// Initialize the Token Policy Manager library only once.
-static POLICY_MANAGER_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(
-        env!("OUT_DIR"),
-        "/assets/account_components/faucets/policies/policy_manager.masl"
-    ));
-    Library::read_from_bytes(bytes).expect("Shipped Token Policy Manager library is well-formed")
-});
-
-// Initialize the `allow_all` Mint Policy library only once.
-static ALLOW_ALL_MINT_POLICY_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(
-        env!("OUT_DIR"),
-        "/assets/account_components/faucets/policies/mint/allow_all.masl"
-    ));
-    Library::read_from_bytes(bytes).expect("Shipped `allow_all` Mint Policy library is well-formed")
-});
-
-// Initialize the `owner_only` Mint Policy library only once.
-static OWNER_ONLY_MINT_POLICY_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(
-        env!("OUT_DIR"),
-        "/assets/account_components/faucets/policies/mint/owner_controlled/owner_only.masl"
-    ));
-    Library::read_from_bytes(bytes)
-        .expect("Shipped `owner_only` Mint Policy library is well-formed")
-});
-
-// Initialize the `allow_all` Burn Policy library only once.
-static ALLOW_ALL_BURN_POLICY_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(
-        env!("OUT_DIR"),
-        "/assets/account_components/faucets/policies/burn/allow_all.masl"
-    ));
-    Library::read_from_bytes(bytes).expect("Shipped `allow_all` Burn Policy library is well-formed")
-});
-
-// Initialize the `owner_only` Burn Policy library only once.
-static OWNER_ONLY_BURN_POLICY_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(
-        env!("OUT_DIR"),
-        "/assets/account_components/faucets/policies/burn/owner_controlled/owner_only.masl"
-    ));
-    Library::read_from_bytes(bytes)
-        .expect("Shipped `owner_only` Burn Policy library is well-formed")
-});
-
-// METADATA LIBRARIES
-// ================================================================================================
-
-/// Returns the Basic Wallet Library.
-pub fn basic_wallet_library() -> Library {
-    BASIC_WALLET_LIBRARY.clone()
-}
-
-/// Returns the Ownable2Step Library.
-pub fn ownable2step_library() -> Library {
-    OWNABLE2STEP_LIBRARY.clone()
-}
-
-/// Returns the RoleBasedAccessControl Library.
-pub fn rbac_library() -> Library {
-    RBAC_LIBRARY.clone()
-}
-
-/// Returns the Basic Fungible Faucet Library.
-pub fn fungible_faucet_library() -> Library {
-    FUNGIBLE_FAUCET_LIBRARY.clone()
-}
-
-/// Returns the Token Policy Manager Library.
-pub fn policy_manager_library() -> Library {
-    POLICY_MANAGER_LIBRARY.clone()
-}
-
-/// Returns the `allow_all` Mint Policy Library.
-pub fn allow_all_mint_policy_library() -> Library {
-    ALLOW_ALL_MINT_POLICY_LIBRARY.clone()
-}
-
-/// Returns the `owner_only` Mint Policy Library.
-pub fn owner_only_mint_policy_library() -> Library {
-    OWNER_ONLY_MINT_POLICY_LIBRARY.clone()
-}
-
-/// Returns the `allow_all` Burn Policy Library.
-pub fn allow_all_burn_policy_library() -> Library {
-    ALLOW_ALL_BURN_POLICY_LIBRARY.clone()
-}
-
-/// Returns the `owner_only` Burn Policy Library.
-pub fn owner_only_burn_policy_library() -> Library {
-    OWNER_ONLY_BURN_POLICY_LIBRARY.clone()
-}
-
-/// Returns the Singlesig Library.
-pub fn singlesig_library() -> Library {
-    SINGLESIG_LIBRARY.clone()
-}
-
-/// Returns the Singlesig ACL Library.
-pub fn singlesig_acl_library() -> Library {
-    SINGLESIG_ACL_LIBRARY.clone()
-}
-
-/// Returns the Multisig Library.
-pub fn multisig_library() -> Library {
-    MULTISIG_LIBRARY.clone()
-}
-
-/// Returns the Guarded Multisig Library.
-pub fn guarded_multisig_library() -> Library {
-    GUARDED_MULTISIG_LIBRARY.clone()
-}
-
-/// Returns the NoAuth Library.
-pub fn no_auth_library() -> Library {
-    NO_AUTH_LIBRARY.clone()
-}
-
-/// Returns the AuthNetworkAccount Library.
-pub fn network_account_auth_library() -> Library {
-    NETWORK_ACCOUNT_AUTH_LIBRARY.clone()
-}
+use crate::account::wallets::BasicWallet;
 
 // STANDARD ACCOUNT COMPONENTS
 // ================================================================================================
@@ -242,37 +30,31 @@ pub enum StandardAccountComponent {
     AuthSingleSig,
     AuthSingleSigAcl,
     AuthMultisig,
+    AuthMultisigSmart,
     AuthGuardedMultisig,
     AuthNoAuth,
     AuthNetworkAccount,
 }
 
 impl StandardAccountComponent {
-    /// Returns the iterator over digests of all procedures exported from the component.
-    pub fn procedure_digests(&self) -> impl Iterator<Item = Word> {
-        let library = match self {
-            Self::BasicWallet => BASIC_WALLET_LIBRARY.as_ref(),
-            Self::FungibleFaucet => FUNGIBLE_FAUCET_LIBRARY.as_ref(),
-            Self::Ownable2Step => OWNABLE2STEP_LIBRARY.as_ref(),
-            Self::RoleBasedAccessControl => RBAC_LIBRARY.as_ref(),
-            Self::AuthSingleSig => SINGLESIG_LIBRARY.as_ref(),
-            Self::AuthSingleSigAcl => SINGLESIG_ACL_LIBRARY.as_ref(),
-            Self::AuthMultisig => MULTISIG_LIBRARY.as_ref(),
-            Self::AuthGuardedMultisig => GUARDED_MULTISIG_LIBRARY.as_ref(),
-            Self::AuthNoAuth => NO_AUTH_LIBRARY.as_ref(),
-            Self::AuthNetworkAccount => NETWORK_ACCOUNT_AUTH_LIBRARY.as_ref(),
+    /// Returns the iterator over the [`AccountProcedureRoot`]s of all procedures exported from
+    /// the component.
+    pub fn procedure_roots(&self) -> impl Iterator<Item = AccountProcedureRoot> {
+        let code = match self {
+            Self::BasicWallet => BasicWallet::code(),
+            Self::FungibleFaucet => FungibleFaucet::code(),
+            Self::Ownable2Step => Ownable2Step::code(),
+            Self::RoleBasedAccessControl => RoleBasedAccessControl::code(),
+            Self::AuthSingleSig => AuthSingleSig::code(),
+            Self::AuthSingleSigAcl => AuthSingleSigAcl::code(),
+            Self::AuthMultisig => AuthMultisig::code(),
+            Self::AuthMultisigSmart => AuthMultisigSmart::code(),
+            Self::AuthGuardedMultisig => AuthGuardedMultisig::code(),
+            Self::AuthNoAuth => NoAuth::code(),
+            Self::AuthNetworkAccount => AuthNetworkAccount::code(),
         };
 
-        library
-            .exports()
-            .filter(|export| matches!(export, LibraryExport::Procedure(_)))
-            .map(|proc_export| {
-                library
-                    .mast_forest()
-                    .get_node_by_id(proc_export.unwrap_procedure().node)
-                    .expect("export node not in the forest")
-                    .digest()
-            })
+        code.procedure_roots()
     }
 
     /// Checks whether procedures from the current component are present in the procedures map
@@ -284,12 +66,10 @@ impl StandardAccountComponent {
         component_interface_vec: &mut Vec<AccountComponentInterface>,
     ) {
         // Determine if this component should be extracted based on procedure matching
-        if self.procedure_digests().all(|proc_digest| {
-            procedures_set.contains(&AccountProcedureRoot::from_raw(proc_digest))
-        }) {
+        if self.procedure_roots().all(|proc_root| procedures_set.contains(&proc_root)) {
             // Remove the procedure root of any matching procedure.
-            self.procedure_digests().for_each(|component_procedure| {
-                procedures_set.remove(&AccountProcedureRoot::from_raw(component_procedure));
+            self.procedure_roots().for_each(|component_procedure| {
+                procedures_set.remove(&component_procedure);
             });
 
             // Create the appropriate component interface
@@ -314,6 +94,9 @@ impl StandardAccountComponent {
                 },
                 Self::AuthMultisig => {
                     component_interface_vec.push(AccountComponentInterface::AuthMultisig)
+                },
+                Self::AuthMultisigSmart => {
+                    component_interface_vec.push(AccountComponentInterface::AuthMultisigSmart)
                 },
                 Self::AuthGuardedMultisig => {
                     component_interface_vec.push(AccountComponentInterface::AuthGuardedMultisig)
@@ -342,6 +125,7 @@ impl StandardAccountComponent {
         Self::AuthSingleSigAcl.extract_component(procedures_set, component_interface_vec);
         Self::AuthGuardedMultisig.extract_component(procedures_set, component_interface_vec);
         Self::AuthMultisig.extract_component(procedures_set, component_interface_vec);
+        Self::AuthMultisigSmart.extract_component(procedures_set, component_interface_vec);
         Self::AuthNoAuth.extract_component(procedures_set, component_interface_vec);
         Self::AuthNetworkAccount.extract_component(procedures_set, component_interface_vec);
     }

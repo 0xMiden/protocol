@@ -60,7 +60,7 @@ async fn get_balance_returns_correct_amount() -> anyhow::Result<()> {
 
     assert_eq!(
         exec_output.get_stack_element(0).as_canonical_u64(),
-        tx_context.account().vault().get_balance(faucet_id).unwrap()
+        tx_context.account().vault().get_balance(faucet_id).unwrap().as_u64()
     );
 
     Ok(())

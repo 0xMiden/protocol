@@ -42,12 +42,6 @@ pub const ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE_ON_CHAIN_2: u128 = ac
     AccountStorageMode::Public,
     0xeeff_ccdd,
 );
-// REGULAR ACCOUNTS - NETWORK
-pub const ACCOUNT_ID_REGULAR_NETWORK_ACCOUNT_IMMUTABLE_CODE: u128 = account_id(
-    AccountType::RegularAccountImmutableCode,
-    AccountStorageMode::Network,
-    0xaacc_bbdd,
-);
 
 // These faucet IDs all have a unique prefix and suffix felts. This is to ensure that when they
 // are used to issue an asset they don't cause us to run into the "multiple leaf" case when
@@ -69,9 +63,6 @@ pub const ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2: u128 =
     account_id(AccountType::FungibleFaucet, AccountStorageMode::Public, 0xccdb_eefa);
 pub const ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_3: u128 =
     account_id(AccountType::FungibleFaucet, AccountStorageMode::Public, 0xeeff_cc99);
-// FUNGIBLE TOKENS - NETWORK
-pub const ACCOUNT_ID_NETWORK_FUNGIBLE_FAUCET: u128 =
-    account_id(AccountType::FungibleFaucet, AccountStorageMode::Network, 0xaabc_bcdf);
 
 // NON-FUNGIBLE TOKENS - PRIVATE
 pub const ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET: u128 =
@@ -81,9 +72,6 @@ pub const ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET: u128 =
     account_id(AccountType::NonFungibleFaucet, AccountStorageMode::Public, 0xbcca_ddef);
 pub const ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET_1: u128 =
     account_id(AccountType::NonFungibleFaucet, AccountStorageMode::Public, 0xccdf_eefa);
-// NON-FUNGIBLE TOKENS - NETWORK
-pub const ACCOUNT_ID_NETWORK_NON_FUNGIBLE_FAUCET: u128 =
-    account_id(AccountType::NonFungibleFaucet, AccountStorageMode::Network, 0xabbc_ffde);
 
 // TEST ACCOUNT IDs WITH CERTAIN PROPERTIES
 /// The Account Id with the maximum possible one bits.

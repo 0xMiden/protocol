@@ -11,7 +11,7 @@ use crate::executor::CodeExecutor;
 #[tokio::test]
 async fn network_account_target_into_target_id() -> anyhow::Result<()> {
     let target_id = AccountIdBuilder::new()
-        .storage_mode(AccountStorageMode::Network)
+        .storage_mode(AccountStorageMode::Public)
         .build_with_rng(&mut rand::rng());
     let exec_hint = NoteExecutionHint::Always;
 
@@ -52,7 +52,7 @@ async fn network_account_target_into_target_id() -> anyhow::Result<()> {
 #[tokio::test]
 async fn network_account_target_new_attachment() -> anyhow::Result<()> {
     let target_id = AccountIdBuilder::new()
-        .storage_mode(AccountStorageMode::Network)
+        .storage_mode(AccountStorageMode::Public)
         .build_with_rng(&mut rand::rng());
     let exec_hint = NoteExecutionHint::Always;
 
@@ -96,7 +96,7 @@ async fn network_account_target_new_attachment() -> anyhow::Result<()> {
 #[tokio::test]
 async fn network_account_target_attachment_round_trip() -> anyhow::Result<()> {
     let target_id = AccountIdBuilder::new()
-        .storage_mode(AccountStorageMode::Network)
+        .storage_mode(AccountStorageMode::Public)
         .build_with_rng(&mut rand::rng());
     let exec_hint = NoteExecutionHint::Always;
 

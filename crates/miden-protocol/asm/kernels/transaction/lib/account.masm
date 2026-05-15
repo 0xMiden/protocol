@@ -63,8 +63,6 @@ const ERR_FOREIGN_ACCOUNT_INVALID_COMMITMENT="commitment of the foreign account 
 
 const ERR_ACCOUNT_ID_UNKNOWN_VERSION="unknown version in account ID"
 
-const ERR_ACCOUNT_ID_UNKNOWN_STORAGE_MODE="unknown account storage mode in account ID"
-
 const ERR_ACCOUNT_READING_MAP_VALUE_FROM_NON_MAP_SLOT="failed to read an account map item from a non-map storage slot"
 
 const ERR_FOREIGN_ACCOUNT_ID_MISMATCH="foreign account ID provided with advice map doesn't match the ID provided by the operand stack"
@@ -92,17 +90,17 @@ const ACCOUNT_VERSION_MASK_U32=0x0f # 0b1111
 # to determine the account type.
 const ACCOUNT_ID_TYPE_MASK_U32=0x30 # 0b11_0000
 
-# Given the least significant 32 bits of an account ID's first felt, this mask defines the bits used
+# Given the least significant 32 bits of an account ID's first felt, this mask defines the bit used
 # to determine the account storage mode.
-const ACCOUNT_ID_STORAGE_MODE_MASK_U32=0xC0 # 0b1100_0000
-
-# Given the least significant 32 bits of an account ID's first felt with the storage mode mask
-# applied, this value defines the public storage mode.
-const ACCOUNT_ID_STORAGE_MODE_PUBLIC_U32=0 # 0b0000_0000
+const ACCOUNT_ID_STORAGE_MODE_MASK_U32=0x40 # 0b0100_0000
 
 # Given the least significant 32 bits of an account ID's first felt with the storage mode mask
 # applied, this value defines the private storage mode.
-const ACCOUNT_ID_STORAGE_MODE_PRIVATE_U32=0x80 # 0b1000_0000
+const ACCOUNT_ID_STORAGE_MODE_PRIVATE_U32=0 # 0b0000_0000
+
+# Given the least significant 32 bits of an account ID's first felt with the storage mode mask
+# applied, this value defines the public storage mode.
+const ACCOUNT_ID_STORAGE_MODE_PUBLIC_U32=0x40 # 0b0100_0000
 
 # Bit pattern for an account w/ immutable code, after the account type mask has been applied.
 const REGULAR_ACCOUNT_IMMUTABLE_CODE=0 # 0b00_0000

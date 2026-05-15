@@ -224,8 +224,8 @@ async fn pswap_note_alice_reconstructs_and_consumes_p2id() -> anyhow::Result<()>
         "remainder aux should carry amt_payout matching the Rust-side calc",
     );
 
-    let remaining_offered = offered_asset.amount() - amt_payout_from_attachment;
-    let remaining_requested = requested_asset.amount() - fill_amount_from_aux;
+    let remaining_offered = offered_asset.amount().as_u64() - amt_payout_from_attachment;
+    let remaining_requested = requested_asset.amount().as_u64() - fill_amount_from_aux;
 
     let remainder_storage = PswapNoteStorage::builder()
         .requested_asset(FungibleAsset::new(eth_faucet.id(), remaining_requested)?)
@@ -441,7 +441,7 @@ async fn pswap_fill_test(
         let network_consumer = builder.add_account_from_builder(
             BASIC_AUTH,
             Account::builder(seed)
-                .storage_mode(AccountStorageMode::Network)
+                .storage_mode(AccountStorageMode::Public)
                 .with_component(BasicWallet)
                 .with_assets([FungibleAsset::new(eth_faucet.id(), fill_amount)?.into()]),
             miden_testing::AccountState::Exists,

@@ -128,7 +128,8 @@ pub proc verify_signature(msg: word)
         exec.tx_policy::assert_only_one_non_auth_procedure_called
         # => [MSG]
 
-        exec.tx_policy::assert_no_input_or_output_notes
+        exec.tx_policy::assert_no_input_notes
+        exec.tx_policy::assert_no_output_notes
         # => [MSG]
 
         dropw

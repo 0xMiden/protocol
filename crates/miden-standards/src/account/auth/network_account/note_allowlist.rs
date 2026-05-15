@@ -72,6 +72,11 @@ impl NetworkAccountNoteAllowlist {
         &self.allowed_script_roots
     }
 
+    /// Returns the allowed input-note script roots in this allowlist.
+    pub fn into_allowed_script_roots(self) -> BTreeSet<NoteScriptRoot> {
+        self.allowed_script_roots
+    }
+
     /// Returns the schema entry for the allowlist slot.
     pub fn slot_schema() -> (StorageSlotName, StorageSlotSchema) {
         (
