@@ -20,7 +20,9 @@ use miden_protocol::note::{
     Note,
     NoteAssets,
     NoteAttachments,
+    NoteDetailsCommitment,
     NoteId,
+    NoteMetadata,
     NoteRecipient,
     NoteScript,
     NoteStorage,
@@ -130,18 +132,22 @@ pub fn verify_minted_output_note(
     faucet: &Account,
     params: &FaucetTestParams,
 ) -> anyhow::Result<()> {
+    let output_note = executed_transaction.output_notes().get_note(0).clone();
+
     let fungible_asset: Asset =
         FungibleAsset::new(faucet.id(), params.amount.as_canonical_u64())?.into();
-
-    let output_note = executed_transaction.output_notes().get_note(0).clone();
     let assets = NoteAssets::new(vec![fungible_asset])?;
-    let id = NoteId::new(params.recipient, assets.commitment());
+
+    let partial_metadata =
+        PartialNoteMetadata::new(faucet.id(), params.note_type).with_tag(params.tag);
+    let metadata = NoteMetadata::new(partial_metadata, &NoteAttachments::default());
+    let details_commitment =
+        NoteDetailsCommitment::from_raw_commitments(params.recipient, assets.commitment());
+
+    let id = NoteId::new(details_commitment, &metadata);
 
     assert_eq!(output_note.id(), id);
-    assert_eq!(
-        output_note.metadata().partial_metadata(),
-        &PartialNoteMetadata::new(faucet.id(), params.note_type).with_tag(params.tag)
-    );
+    assert_eq!(output_note.metadata().partial_metadata(), &partial_metadata);
 
     Ok(())
 }
@@ -728,7 +734,9 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
     // Verify the output note contains the minted fungible asset
     let expected_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?;
     let assets = NoteAssets::new(vec![expected_asset.into()])?;
-    let expected_note_id = NoteId::new(recipient, assets.commitment());
+    let details_commitment =
+        NoteDetailsCommitment::from_raw_commitments(recipient, assets.commitment());
+    let expected_note_id = NoteId::new(details_commitment, output_note.metadata());
 
     assert_eq!(output_note.id(), expected_note_id);
     assert_eq!(output_note.metadata().sender(), faucet.id());
@@ -1781,14 +1789,18 @@ async fn multiple_mints_in_single_tx_produce_correct_amounts() -> anyhow::Result
     let expected_asset_1: Asset = FungibleAsset::new(faucet.id(), amount_1)?.into();
     let output_note_1 = executed_transaction.output_notes().get_note(0);
     let assets_1 = NoteAssets::new(vec![expected_asset_1])?;
-    let expected_id_1 = NoteId::new(recipient_1, assets_1.commitment());
+    let details_commitment_1 =
+        NoteDetailsCommitment::from_raw_commitments(recipient_1, assets_1.commitment());
+    let expected_id_1 = NoteId::new(details_commitment_1, output_note_1.metadata());
     assert_eq!(output_note_1.id(), expected_id_1);
 
     // Verify second note has exactly amount_2 tokens.
     let expected_asset_2: Asset = FungibleAsset::new(faucet.id(), amount_2)?.into();
     let output_note_2 = executed_transaction.output_notes().get_note(1);
     let assets_2 = NoteAssets::new(vec![expected_asset_2])?;
-    let expected_id_2 = NoteId::new(recipient_2, assets_2.commitment());
+    let details_commitment_2 =
+        NoteDetailsCommitment::from_raw_commitments(recipient_2, assets_2.commitment());
+    let expected_id_2 = NoteId::new(details_commitment_2, output_note_2.metadata());
     assert_eq!(output_note_2.id(), expected_id_2);
 
     Ok(())

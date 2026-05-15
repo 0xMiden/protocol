@@ -10,7 +10,8 @@ use super::{
 };
 use crate::block::BlockNumber;
 use crate::crypto::merkle::InnerNodeInfo;
-use crate::{MAX_BATCHES_PER_BLOCK, MAX_OUTPUT_NOTES_PER_BATCH, Word};
+use crate::note::NoteId;
+use crate::{MAX_BATCHES_PER_BLOCK, MAX_OUTPUT_NOTES_PER_BATCH};
 
 /// Contains information about the location of a note.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -85,15 +86,12 @@ impl NoteInclusionProof {
         &self.note_path
     }
 
-    /// Returns an iterator over inner nodes of this proof assuming that `note_commitment` is the
-    /// value of the node to which this proof opens.
-    pub fn authenticated_nodes(
-        &self,
-        note_commitment: Word,
-    ) -> impl Iterator<Item = InnerNodeInfo> {
+    /// Returns an iterator over inner nodes of this proof assuming that `note_id` is the value of
+    /// the node to which this proof opens.
+    pub fn authenticated_nodes(&self, note_id: NoteId) -> impl Iterator<Item = InnerNodeInfo> {
         // SAFETY: expect() is fine here because we check index consistency in the constructor
         self.note_path
-            .authenticated_nodes(self.location.block_note_tree_index().into(), note_commitment)
+            .authenticated_nodes(self.location.block_note_tree_index().into(), note_id.as_word())
             .expect("note index is not out of bounds")
     }
 }

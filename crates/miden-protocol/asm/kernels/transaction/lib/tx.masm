@@ -58,7 +58,7 @@ pub use memory::get_blk_timestamp->get_block_timestamp
 pub use memory::get_input_notes_commitment
 
 #! Returns the output notes commitment hash. This is computed as a sequential hash of
-#! (note_id, note_metadata) tuples over all output notes.
+#! (note_details_commitment, note_metadata_commitment) tuples over all output notes.
 #!
 #! Inputs:  []
 #! Outputs: [OUTPUT_NOTES_COMMITMENT]

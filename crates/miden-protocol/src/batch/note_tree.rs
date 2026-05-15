@@ -14,7 +14,8 @@ use crate::{BATCH_NOTE_TREE_DEPTH, EMPTY_WORD, Word};
 
 /// Wrapper over [SimpleSmt<BATCH_NOTE_TREE_DEPTH>] for batch note tree.
 ///
-/// Value of each leaf is computed as: `hash(note_id || note_metadata_commitment)`.
+/// Value of each leaf is the note ID, computed as
+/// `hash(note_details_commitment || note_metadata_commitment)`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BatchNoteTree(SimpleSmt<BATCH_NOTE_TREE_DEPTH>);
 
@@ -28,7 +29,7 @@ impl BatchNoteTree {
     pub fn with_contiguous_leaves<'a>(
         entries: impl IntoIterator<Item = &'a NoteHeader>,
     ) -> Result<Self, MerkleError> {
-        let leaves = entries.into_iter().map(NoteHeader::to_commitment);
+        let leaves = entries.into_iter().map(|header| header.id().as_word());
 
         SimpleSmt::with_contiguous_leaves(leaves).map(Self)
     }
