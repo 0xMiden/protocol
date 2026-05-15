@@ -11,8 +11,7 @@
 
 use alloc::vec::Vec;
 
-use miden_protocol::Word;
-use miden_protocol::account::AccountComponent;
+use miden_protocol::account::{AccountComponent, AccountProcedureRoot};
 
 mod allow_all;
 mod basic_blocklist;
@@ -45,12 +44,12 @@ pub enum TransferPolicy {
     /// Active policy = the provided root. The corresponding component(s) must be installed by
     /// the caller separately; resolving this variant into built-in components yields an empty
     /// list.
-    Custom(Word),
+    Custom(AccountProcedureRoot),
 }
 
 impl TransferPolicy {
     /// Returns the procedure root of the policy this variant resolves to.
-    pub fn root(self) -> Word {
+    pub fn root(self) -> AccountProcedureRoot {
         match self {
             Self::AllowAll => TransferAllowAll::root(),
             Self::Blocklist => BasicBlocklist::root(),

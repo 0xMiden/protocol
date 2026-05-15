@@ -1,12 +1,11 @@
 use alloc::collections::BTreeSet;
 
-use miden_protocol::Word;
 use miden_protocol::account::component::{
     AccountComponentCode,
     AccountComponentMetadata,
     StorageSchema,
 };
-use miden_protocol::account::{AccountComponent, AccountId, AccountType};
+use miden_protocol::account::{AccountComponent, AccountId, AccountProcedureRoot, AccountType};
 
 use crate::account::account_component_code;
 use crate::account::policies::transfer::blocklist::BlocklistStorage;
@@ -71,9 +70,9 @@ impl BasicBlocklist {
         &BASIC_BLOCKLIST_TRANSFER_POLICY_CODE
     }
 
-    /// Returns the MAST root word of the basic blocklist transfer policy procedure.
-    pub fn root() -> Word {
-        (*BASIC_BLOCKLIST_TRANSFER_POLICY_ROOT).as_word()
+    /// Returns the MAST root of the basic blocklist transfer policy procedure.
+    pub fn root() -> AccountProcedureRoot {
+        *BASIC_BLOCKLIST_TRANSFER_POLICY_ROOT
     }
 }
 
@@ -93,7 +92,7 @@ impl From<BasicBlocklist> for AccountComponent {
         )
         .with_storage_schema(storage_schema);
 
-        AccountComponent::new(BasicBlocklist::code().clone(), storage.into_slots(), metadata)
+        AccountComponent::new(BasicBlocklist::code().clone(), vec![storage.into_slot()], metadata)
             .expect(
                 "basic blocklist transfer policy component should satisfy the requirements of a valid account component",
             )

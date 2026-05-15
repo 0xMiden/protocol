@@ -13,6 +13,7 @@ use alloc::vec::Vec;
 
 use miden_protocol::Word;
 use miden_protocol::account::component::{
+    AccountComponentCode,
     AccountComponentMetadata,
     FeltSchema,
     SchemaType,
@@ -21,6 +22,7 @@ use miden_protocol::account::component::{
 };
 use miden_protocol::account::{
     AccountComponent,
+    AccountProcedureRoot,
     AccountType,
     StorageMap,
     StorageMapKey,
@@ -183,11 +185,11 @@ struct PolicyConfig {
 #[derive(Debug, Clone)]
 pub struct TokenPolicyManager {
     authority: PolicyAuthority,
-    active_mint_policy_root: Word,
-    active_burn_policy_root: Word,
-    active_send_policy_root: Word,
-    active_receive_policy_root: Word,
-    policies: BTreeMap<Word, PolicyConfig>,
+    active_mint_policy_root: AccountProcedureRoot,
+    active_burn_policy_root: AccountProcedureRoot,
+    active_send_policy_root: AccountProcedureRoot,
+    active_receive_policy_root: AccountProcedureRoot,
+    policies: BTreeMap<AccountProcedureRoot, PolicyConfig>,
 }
 
 impl TokenPolicyManager {
@@ -206,15 +208,16 @@ impl TokenPolicyManager {
     /// Creates an empty token policy manager. Use the per-kind builders (`with_mint_policy`,
     /// `with_burn_policy`, `with_send_policy`, `with_receive_policy`) to register policies.
     ///
-    /// Every kind must end up with exactly one [`PolicyRegistration::Active`] entry by the time
-    /// the manager is converted into account components; missing kinds panic at conversion.
+    /// Every kind should end up with exactly one [`PolicyRegistration::Active`] entry by the
+    /// time the manager is converted into account components. Missing active entries leave the
+    /// corresponding `active_*_policy_proc_root` storage slot at the zero word.
     pub fn new(authority: PolicyAuthority) -> Self {
         Self {
             authority,
-            active_mint_policy_root: Word::default(),
-            active_burn_policy_root: Word::default(),
-            active_send_policy_root: Word::default(),
-            active_receive_policy_root: Word::default(),
+            active_mint_policy_root: AccountProcedureRoot::from_raw(Word::empty()),
+            active_burn_policy_root: AccountProcedureRoot::from_raw(Word::empty()),
+            active_send_policy_root: AccountProcedureRoot::from_raw(Word::empty()),
+            active_receive_policy_root: AccountProcedureRoot::from_raw(Word::empty()),
             policies: BTreeMap::new(),
         }
     }
@@ -232,9 +235,9 @@ impl TokenPolicyManager {
         policy: MintPolicyConfig,
         registration: PolicyRegistration,
     ) -> Result<Self, TokenPolicyManagerError> {
-        let root = policy.root();
+        let root = AccountProcedureRoot::from_raw(policy.root());
         if registration == PolicyRegistration::Active {
-            if self.active_mint_policy_root != Word::default() {
+            if !self.active_mint_policy_root.as_word().is_empty() {
                 return Err(TokenPolicyManagerError::DuplicateActivePolicy { kind: "mint" });
             }
             self.active_mint_policy_root = root;
@@ -254,9 +257,9 @@ impl TokenPolicyManager {
         policy: BurnPolicyConfig,
         registration: PolicyRegistration,
     ) -> Result<Self, TokenPolicyManagerError> {
-        let root = policy.root();
+        let root = AccountProcedureRoot::from_raw(policy.root());
         if registration == PolicyRegistration::Active {
-            if self.active_burn_policy_root != Word::default() {
+            if !self.active_burn_policy_root.as_word().is_empty() {
                 return Err(TokenPolicyManagerError::DuplicateActivePolicy { kind: "burn" });
             }
             self.active_burn_policy_root = root;
@@ -279,7 +282,7 @@ impl TokenPolicyManager {
     ) -> Result<Self, TokenPolicyManagerError> {
         let root = policy.root();
         if registration == PolicyRegistration::Active {
-            if self.active_send_policy_root != Word::default() {
+            if !self.active_send_policy_root.as_word().is_empty() {
                 return Err(TokenPolicyManagerError::DuplicateActivePolicy { kind: "send" });
             }
             self.active_send_policy_root = root;
@@ -302,7 +305,7 @@ impl TokenPolicyManager {
     ) -> Result<Self, TokenPolicyManagerError> {
         let root = policy.root();
         if registration == PolicyRegistration::Active {
-            if self.active_receive_policy_root != Word::default() {
+            if !self.active_receive_policy_root.as_word().is_empty() {
                 return Err(TokenPolicyManagerError::DuplicateActivePolicy { kind: "receive" });
             }
             self.active_receive_policy_root = root;
@@ -312,10 +315,15 @@ impl TokenPolicyManager {
     }
 
     /// Inserts (or merges, if the root is already present) a policy entry into the unified
-    /// `policies` map. The new kind is appended to the entry's kind set; the first call wins
+    /// `policies` map. The new kind is appended to the entry's kind set. The first call wins
     /// for the components, which guarantees a given root's companion components are not
     /// duplicated across kinds.
-    fn insert_policy(&mut self, root: Word, components: Vec<AccountComponent>, kind: PolicyKind) {
+    fn insert_policy(
+        &mut self,
+        root: AccountProcedureRoot,
+        components: Vec<AccountComponent>,
+        kind: PolicyKind,
+    ) {
         self.policies
             .entry(root)
             .and_modify(|cfg| {
@@ -338,50 +346,50 @@ impl TokenPolicyManager {
 
     /// Returns the active mint policy procedure root, or [`None`] if no active mint policy has
     /// been registered.
-    pub fn active_mint_policy(&self) -> Option<Word> {
-        (self.active_mint_policy_root != Word::default()).then_some(self.active_mint_policy_root)
+    pub fn active_mint_policy(&self) -> Option<AccountProcedureRoot> {
+        (!self.active_mint_policy_root.as_word().is_empty()).then_some(self.active_mint_policy_root)
     }
 
     /// Returns the active burn policy procedure root, or [`None`] if no active burn policy has
     /// been registered.
-    pub fn active_burn_policy(&self) -> Option<Word> {
-        (self.active_burn_policy_root != Word::default()).then_some(self.active_burn_policy_root)
+    pub fn active_burn_policy(&self) -> Option<AccountProcedureRoot> {
+        (!self.active_burn_policy_root.as_word().is_empty()).then_some(self.active_burn_policy_root)
     }
 
     /// Returns the active send policy procedure root, or [`None`] if no active send policy has
     /// been registered.
-    pub fn active_send_policy(&self) -> Option<Word> {
-        (self.active_send_policy_root != Word::default()).then_some(self.active_send_policy_root)
+    pub fn active_send_policy(&self) -> Option<AccountProcedureRoot> {
+        (!self.active_send_policy_root.as_word().is_empty()).then_some(self.active_send_policy_root)
     }
 
     /// Returns the active receive policy procedure root, or [`None`] if no active receive
     /// policy has been registered.
-    pub fn active_receive_policy(&self) -> Option<Word> {
-        (self.active_receive_policy_root != Word::default())
+    pub fn active_receive_policy(&self) -> Option<AccountProcedureRoot> {
+        (!self.active_receive_policy_root.as_word().is_empty())
             .then_some(self.active_receive_policy_root)
     }
 
     /// Returns all allowed mint policy procedure roots (active + reserved).
-    pub fn allowed_mint_policies(&self) -> Vec<Word> {
+    pub fn allowed_mint_policies(&self) -> Vec<AccountProcedureRoot> {
         self.roots_of_kind(PolicyKind::Mint)
     }
 
     /// Returns all allowed burn policy procedure roots (active + reserved).
-    pub fn allowed_burn_policies(&self) -> Vec<Word> {
+    pub fn allowed_burn_policies(&self) -> Vec<AccountProcedureRoot> {
         self.roots_of_kind(PolicyKind::Burn)
     }
 
     /// Returns all allowed send policy procedure roots (active + reserved).
-    pub fn allowed_send_policies(&self) -> Vec<Word> {
+    pub fn allowed_send_policies(&self) -> Vec<AccountProcedureRoot> {
         self.roots_of_kind(PolicyKind::Send)
     }
 
     /// Returns all allowed receive policy procedure roots (active + reserved).
-    pub fn allowed_receive_policies(&self) -> Vec<Word> {
+    pub fn allowed_receive_policies(&self) -> Vec<AccountProcedureRoot> {
         self.roots_of_kind(PolicyKind::Receive)
     }
 
-    fn roots_of_kind(&self, kind: PolicyKind) -> Vec<Word> {
+    fn roots_of_kind(&self, kind: PolicyKind) -> Vec<AccountProcedureRoot> {
         self.policies
             .iter()
             .filter(|(_, cfg)| cfg.kinds.contains(&kind))
@@ -422,6 +430,11 @@ impl TokenPolicyManager {
     /// Returns the [`StorageSlotName`] where allowed receive policy roots are stored.
     pub fn allowed_receive_policies_slot() -> &'static StorageSlotName {
         &ALLOWED_RECEIVE_POLICY_PROC_ROOTS_SLOT_NAME
+    }
+
+    /// Returns the [`AccountComponentCode`] of this component.
+    pub fn code() -> &'static AccountComponentCode {
+        &POLICY_MANAGER_CODE
     }
 
     /// Returns the [`AccountComponentMetadata`] for this component.
@@ -502,11 +515,11 @@ impl TokenPolicyManager {
             StorageSlot::with_value(POLICY_AUTHORITY_SLOT_NAME.clone(), self.authority.into()),
             StorageSlot::with_value(
                 ACTIVE_MINT_POLICY_PROC_ROOT_SLOT_NAME.clone(),
-                self.active_mint_policy_root,
+                self.active_mint_policy_root.as_word(),
             ),
             StorageSlot::with_value(
                 ACTIVE_BURN_POLICY_PROC_ROOT_SLOT_NAME.clone(),
-                self.active_burn_policy_root,
+                self.active_burn_policy_root.as_word(),
             ),
             StorageSlot::with_map(
                 ALLOWED_MINT_POLICY_PROC_ROOTS_SLOT_NAME.clone(),
@@ -546,8 +559,8 @@ impl TokenPolicyManager {
         });
         if needs_callbacks {
             let callback_slots = AssetCallbacks::new()
-                .on_before_asset_added_to_account(self.active_receive_policy_root)
-                .on_before_asset_added_to_note(self.active_send_policy_root)
+                .on_before_asset_added_to_account(self.active_receive_policy_root.as_word())
+                .on_before_asset_added_to_note(self.active_send_policy_root.as_word())
                 .into_storage_slots();
             slots.extend(callback_slots);
         }
@@ -565,7 +578,7 @@ impl TokenPolicyManager {
             .policies
             .iter()
             .filter(|(_, cfg)| cfg.kinds.contains(&kind))
-            .map(|(root, _)| (StorageMapKey::from_raw(*root), allowed_flag))
+            .map(|(root, _)| (StorageMapKey::new(root.as_word()), allowed_flag))
             .collect();
         StorageMap::with_entries(entries).expect("allowed policy roots should have unique keys")
     }
@@ -573,7 +586,7 @@ impl TokenPolicyManager {
     fn to_manager_component(&self) -> AccountComponent {
         let storage_slots = self.manager_storage_slots();
         AccountComponent::new(
-            POLICY_MANAGER_CODE.clone(),
+            Self::code().clone(),
             storage_slots,
             Self::component_metadata(),
         )

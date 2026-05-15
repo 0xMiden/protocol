@@ -164,7 +164,7 @@ fn faucet_create_from_account() {
     assert_matches!(err, FungibleFaucetError::MissingFungibleFaucetInterface);
 }
 
-/// Check that the obtaining of the fungible faucet procedure digests does not panic.
+/// Check that the obtaining of the fungible faucet procedure roots does not panic.
 #[test]
 fn get_faucet_procedures() {
     let _mint_and_send_root = FungibleFaucet::mint_and_send_root();

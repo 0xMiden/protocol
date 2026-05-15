@@ -20,13 +20,13 @@ use miden_protocol::account::{
 };
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::asset::{Asset, AssetAmount, AssetCallbackFlag, FungibleAsset};
-use miden_protocol::errors::MasmError;
 use miden_protocol::note::{Note, NoteTag, NoteType};
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
 use miden_standards::account::access::Ownable2Step;
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
+    BasicBlocklist,
     BurnPolicyConfig,
     MintPolicyConfig,
     OwnerControlledBlocklist,
@@ -36,6 +36,7 @@ use miden_standards::account::policies::{
     TransferPolicy,
 };
 use miden_standards::code_builder::CodeBuilder;
+use miden_standards::errors::standards::ERR_ACCOUNT_IS_BLOCKED;
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{
     AccountState,
@@ -44,8 +45,6 @@ use miden_testing::{
     MockChainBuilder,
     assert_transaction_executor_error,
 };
-
-const ERR_ACCOUNT_IS_BLOCKED: MasmError = MasmError::from_static_str("account is blocked");
 
 // HELPERS
 // ================================================================================================
@@ -66,12 +65,27 @@ fn add_faucet_with_owner_blocklist_transfer(
     builder: &mut MockChainBuilder,
     owner_id: AccountId,
 ) -> anyhow::Result<Account> {
+    add_faucet_with_owner_blocklist_transfer_initialized(builder, owner_id, [])
+}
+
+/// Same as [`add_faucet_with_owner_blocklist_transfer`] but seeds the `blocked_accounts`
+/// storage map with the given accounts at deploy time via
+/// [`BasicBlocklist::with_blocked_accounts`]. The transfer policy is wired up through
+/// [`TransferPolicy::Custom`] so the manager does not also install an empty `BasicBlocklist`
+/// (which would conflict with the seeded one).
+fn add_faucet_with_owner_blocklist_transfer_initialized(
+    builder: &mut MockChainBuilder,
+    owner_id: AccountId,
+    initial_blocked: impl IntoIterator<Item = AccountId>,
+) -> anyhow::Result<Account> {
     let faucet = FungibleFaucet::builder()
         .name(TokenName::new("SYM")?)
         .symbol("SYM".try_into()?)
         .decimals(8)
         .max_supply(AssetAmount::new(1_000_000)?)
         .build()?;
+
+    let basic_blocklist = BasicBlocklist::with_blocked_accounts(initial_blocked);
 
     let account_builder = AccountBuilder::new([43u8; 32])
         .storage_mode(AccountStorageMode::Public)
@@ -82,9 +96,16 @@ fn add_faucet_with_owner_blocklist_transfer(
             TokenPolicyManager::new(PolicyAuthority::OwnerControlled)
                 .with_mint_policy(MintPolicyConfig::AllowAll, PolicyRegistration::Active)?
                 .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)?
-                .with_send_policy(TransferPolicy::Blocklist, PolicyRegistration::Active)?
-                .with_receive_policy(TransferPolicy::Blocklist, PolicyRegistration::Active)?,
+                .with_send_policy(
+                    TransferPolicy::Custom(BasicBlocklist::root()),
+                    PolicyRegistration::Active,
+                )?
+                .with_receive_policy(
+                    TransferPolicy::Custom(BasicBlocklist::root()),
+                    PolicyRegistration::Active,
+                )?,
         )
+        .with_component(basic_blocklist)
         .with_component(OwnerControlledBlocklist);
 
     builder.add_account_from_builder(
@@ -182,6 +203,43 @@ async fn block_receive_asset_succeeds_when_not_blocked() -> anyhow::Result<()> {
         .build()?
         .execute()
         .await?;
+
+    Ok(())
+}
+
+/// Seeds [`BasicBlocklist`] with the recipient at deploy time and confirms the asset transfer
+/// fails immediately — no `block_account` admin call is needed because the account starts in
+/// the `blocked_accounts` map.
+#[tokio::test]
+async fn block_receive_asset_fails_when_account_pre_blocked() -> anyhow::Result<()> {
+    let owner_id = dummy_owner();
+    let mut builder = MockChain::builder();
+    let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
+    let faucet = add_faucet_with_owner_blocklist_transfer_initialized(
+        &mut builder,
+        owner_id,
+        [target_account.id()],
+    )?;
+
+    let asset = FungibleAsset::new(faucet.id(), 100)?.with_callbacks(AssetCallbackFlag::Enabled);
+    let p2id_note = builder.add_p2id_note(
+        faucet.id(),
+        target_account.id(),
+        &[Asset::Fungible(asset)],
+        NoteType::Public,
+    )?;
+
+    let mock_chain = builder.build()?;
+    let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
+
+    let result = mock_chain
+        .build_tx_context(target_account.id(), &[p2id_note.id()], &[])?
+        .foreign_accounts(vec![faucet_inputs])
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_ACCOUNT_IS_BLOCKED);
 
     Ok(())
 }

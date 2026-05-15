@@ -1,6 +1,5 @@
-use miden_protocol::Word;
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
-use miden_protocol::account::{AccountComponent, AccountType};
+use miden_protocol::account::{AccountComponent, AccountProcedureRoot, AccountType};
 
 use crate::account::account_component_code;
 use crate::procedure_root;
@@ -36,9 +35,9 @@ impl TransferAllowAll {
         &ALLOW_ALL_TRANSFER_POLICY_CODE
     }
 
-    /// Returns the procedure root word of the `allow_all` transfer policy procedure.
-    pub fn root() -> Word {
-        (*ALLOW_ALL_TRANSFER_POLICY_ROOT).as_word()
+    /// Returns the procedure root of the `allow_all` transfer policy procedure.
+    pub fn root() -> AccountProcedureRoot {
+        *ALLOW_ALL_TRANSFER_POLICY_ROOT
     }
 }
 

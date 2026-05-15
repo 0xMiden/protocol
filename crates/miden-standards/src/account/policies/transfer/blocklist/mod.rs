@@ -1,6 +1,4 @@
 use alloc::collections::BTreeSet;
-use alloc::vec;
-use alloc::vec::Vec;
 
 use miden_protocol::Word;
 use miden_protocol::account::component::{SchemaType, StorageSlotSchema};
@@ -55,10 +53,7 @@ impl BlocklistStorage {
     /// Creates a [`BlocklistStorage`] with the given blocked accounts.
     ///
     /// Duplicate account IDs are deduplicated by the underlying set.
-    pub fn with_blocked_accounts<I>(blocked_accounts: I) -> Self
-    where
-        I: IntoIterator<Item = AccountId>,
-    {
+    pub fn with_blocked_accounts(blocked_accounts: impl IntoIterator<Item = AccountId>) -> Self {
         Self {
             blocked_accounts: blocked_accounts.into_iter().collect(),
         }
@@ -98,12 +93,9 @@ impl BlocklistStorage {
         .expect("initial blocked accounts should have unique IDs")
     }
 
-    /// Consumes the storage and returns the [`StorageSlot`]s it contributes to an account
-    /// component. Currently a single slot — the `blocked_accounts` map populated with the
-    /// initial entries.
-    pub fn into_slots(self) -> Vec<StorageSlot> {
-        let slot =
-            StorageSlot::with_map(BLOCKED_ACCOUNTS_SLOT_NAME.clone(), self.build_storage_map());
-        vec![slot]
+    /// Consumes the storage and returns the [`StorageSlot`] it contributes to an account
+    /// component. The `blocked_accounts` map populated with the initial entries.
+    pub fn into_slot(self) -> StorageSlot {
+        StorageSlot::with_map(BLOCKED_ACCOUNTS_SLOT_NAME.clone(), self.build_storage_map())
     }
 }

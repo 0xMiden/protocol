@@ -1340,19 +1340,6 @@ async fn test_network_faucet_renounce_ownership() -> anyhow::Result<()> {
 // TESTS FOR FAUCET PROCEDURE COMPATIBILITY
 // ================================================================================================
 
-/// Tests that basic and network fungible faucets have the same burn procedure digest.
-/// This is required for BURN notes to work with both faucet types.
-#[test]
-fn test_faucet_burn_procedures_are_identical() {
-    // Both faucet types must export the same burn procedure with identical MAST roots
-    // so that a single BURN note script can work with either faucet type
-    assert_eq!(
-        FungibleFaucet::receive_and_burn_root().as_word(),
-        FungibleFaucet::receive_and_burn_root().as_word(),
-        "Basic and network fungible faucets must have the same burn procedure digest"
-    );
-}
-
 /// Tests that the default network faucet burn policy root is exported by the account code.
 #[test]
 fn test_network_faucet_contains_default_burn_policy_root() -> anyhow::Result<()> {
