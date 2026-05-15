@@ -55,10 +55,10 @@ pub struct NoteBuilder {
 impl NoteBuilder {
     pub fn new<T: Rng>(sender: AccountId, mut rng: T) -> Self {
         let serial_num = Word::from([
-            Felt::new(rng.random()),
-            Felt::new(rng.random()),
-            Felt::new(rng.random()),
-            Felt::new(rng.random()),
+            Felt::new_unchecked(rng.random()),
+            Felt::new_unchecked(rng.random()),
+            Felt::new_unchecked(rng.random()),
+            Felt::new_unchecked(rng.random()),
         ]);
 
         Self {

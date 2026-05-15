@@ -246,7 +246,7 @@ async fn minting_fungible_asset_on_existing_faucet_succeeds() -> anyhow::Result<
         recipient: Word::from([0, 1, 2, 3u32]),
         tag: NoteTag::default(),
         note_type: NoteType::Private,
-        amount: Felt::new(100),
+        amount: Felt::new_unchecked(100),
     };
 
     let executed_transaction =
@@ -273,8 +273,8 @@ async fn faucet_contract_mint_fungible_asset_fails_exceeds_max_supply() -> anyho
     let mock_chain = builder.build()?;
 
     let recipient = Word::from([0, 1, 2, 3u32]);
-    let tag = Felt::new(4);
-    let amount = Felt::new(250);
+    let tag = Felt::new_unchecked(4);
+    let amount = Felt::new_unchecked(250);
 
     let tx_script_code = format!(
         "
@@ -332,7 +332,7 @@ async fn minting_fungible_asset_on_new_faucet_succeeds() -> anyhow::Result<()> {
         recipient: Word::from([0, 1, 2, 3u32]),
         tag: NoteTag::default(),
         note_type: NoteType::Private,
-        amount: Felt::new(100),
+        amount: Felt::new_unchecked(100),
     };
 
     let executed_transaction =
@@ -403,7 +403,7 @@ async fn prove_burning_fungible_asset_on_existing_faucet_succeeds() -> anyhow::R
     // Prove, serialize/deserialize and verify the transaction
     prove_and_verify_transaction(executed_transaction.clone()).await?;
 
-    assert_eq!(executed_transaction.account_delta().nonce_delta(), Felt::new(1));
+    assert_eq!(executed_transaction.account_delta().nonce_delta(), Felt::ONE);
     assert_eq!(executed_transaction.input_notes().get_note(0).id(), note.id());
     Ok(())
 }
@@ -477,7 +477,7 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
 
     // Parameters for the PUBLIC note that will be created by the faucet
     let recipient_account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER)?;
-    let amount = Felt::new(75);
+    let amount = Felt::new_unchecked(75);
     let tag = NoteTag::default();
     let note_type = NoteType::Public;
 
@@ -496,11 +496,11 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
     let note_storage = NoteStorage::new(vec![
         target_account_suffix,
         target_account_prefix,
-        Felt::new(0),
-        Felt::new(0),
-        Felt::new(0),
-        Felt::new(1),
-        Felt::new(0),
+        Felt::ZERO,
+        Felt::ZERO,
+        Felt::ZERO,
+        Felt::ONE,
+        Felt::ZERO,
     ])?;
 
     let note_recipient =
@@ -619,7 +619,7 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
     assert_eq!(full_note.id(), expected_note.id());
 
     // Verify nonce was incremented
-    assert_eq!(executed_transaction.account_delta().nonce_delta(), Felt::new(1));
+    assert_eq!(executed_transaction.account_delta().nonce_delta(), Felt::ONE);
 
     Ok(())
 }
@@ -662,11 +662,11 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
     let stored_owner_id = faucet.storage().get_item(Ownable2Step::slot_name()).unwrap();
     assert_eq!(
         stored_owner_id[0],
-        Felt::new(faucet_owner_account_id.suffix().as_canonical_u64())
+        Felt::new_unchecked(faucet_owner_account_id.suffix().as_canonical_u64())
     );
     assert_eq!(stored_owner_id[1], faucet_owner_account_id.prefix().as_felt());
-    assert_eq!(stored_owner_id[2], Felt::new(0)); // no nominated owner
-    assert_eq!(stored_owner_id[3], Felt::new(0));
+    assert_eq!(stored_owner_id[2], Felt::ZERO); // no nominated owner
+    assert_eq!(stored_owner_id[3], Felt::ZERO);
 
     // Check that the faucet's token supply has been correctly initialized.
     // The already issued amount should be 50.
@@ -676,7 +676,7 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
     // CREATE MINT NOTE USING STANDARD NOTE
     // --------------------------------------------------------------------------------------------
 
-    let amount = Felt::new(75);
+    let amount = Felt::new_unchecked(75);
     let mint_asset: Asset =
         FungibleAsset::new(faucet.id(), amount.as_canonical_u64()).unwrap().into();
     let serial_num = Word::default();
@@ -772,7 +772,7 @@ async fn test_network_faucet_owner_can_mint() -> anyhow::Result<()> {
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
     let mock_chain = builder.build()?;
 
-    let amount = Felt::new(75);
+    let amount = Felt::new_unchecked(75);
     let mint_asset: Asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?.into();
 
     let output_note_tag = NoteTag::with_account_target(target_account.id());
@@ -923,7 +923,7 @@ async fn test_network_faucet_non_owner_cannot_mint() -> anyhow::Result<()> {
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
     let mock_chain = builder.build()?;
 
-    let amount = Felt::new(75);
+    let amount = Felt::new_unchecked(75);
     let mint_asset: Asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?.into();
 
     let output_note_tag = NoteTag::with_account_target(target_account.id());
@@ -983,10 +983,13 @@ async fn test_network_faucet_owner_storage() -> anyhow::Result<()> {
     let stored_owner = faucet.storage().get_item(Ownable2Step::slot_name())?;
 
     // Word: [owner_suffix, owner_prefix, nominated_suffix, nominated_prefix]
-    assert_eq!(stored_owner[0], Felt::new(owner_account_id.suffix().as_canonical_u64()));
+    assert_eq!(
+        stored_owner[0],
+        Felt::new_unchecked(owner_account_id.suffix().as_canonical_u64())
+    );
     assert_eq!(stored_owner[1], owner_account_id.prefix().as_felt());
-    assert_eq!(stored_owner[2], Felt::new(0)); // no nominated owner
-    assert_eq!(stored_owner[3], Felt::new(0));
+    assert_eq!(stored_owner[2], Felt::ZERO); // no nominated owner
+    assert_eq!(stored_owner[3], Felt::ZERO);
 
     Ok(())
 }
@@ -1022,7 +1025,7 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
     )?;
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
 
-    let amount = Felt::new(75);
+    let amount = Felt::new_unchecked(75);
     let mint_asset: Asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?.into();
 
     let output_note_tag = NoteTag::with_account_target(target_account.id());
@@ -1062,7 +1065,7 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
         end
         "#,
         new_owner_prefix = new_owner_account_id.prefix().as_felt(),
-        new_owner_suffix = Felt::new(new_owner_account_id.suffix().as_canonical_u64()),
+        new_owner_suffix = Felt::new_unchecked(new_owner_account_id.suffix().as_canonical_u64()),
     );
 
     let source_manager = Arc::new(DefaultSourceManager::default());
@@ -1134,10 +1137,13 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
     // Verify that owner changed to new_owner and nominated was cleared
     // Word: [owner_suffix, owner_prefix, nominated_suffix, nominated_prefix]
     let stored_owner = final_faucet.storage().get_item(Ownable2Step::slot_name())?;
-    assert_eq!(stored_owner[0], Felt::new(new_owner_account_id.suffix().as_canonical_u64()));
+    assert_eq!(
+        stored_owner[0],
+        Felt::new_unchecked(new_owner_account_id.suffix().as_canonical_u64())
+    );
     assert_eq!(stored_owner[1], new_owner_account_id.prefix().as_felt());
-    assert_eq!(stored_owner[2], Felt::new(0)); // nominated cleared
-    assert_eq!(stored_owner[3], Felt::new(0));
+    assert_eq!(stored_owner[2], Felt::ZERO); // nominated cleared
+    assert_eq!(stored_owner[3], Felt::ZERO);
 
     Ok(())
 }
@@ -1192,7 +1198,7 @@ async fn test_network_faucet_only_owner_can_transfer() -> anyhow::Result<()> {
         end
         "#,
         new_owner_prefix = new_owner_account_id.prefix().as_felt(),
-        new_owner_suffix = Felt::new(new_owner_account_id.suffix().as_canonical_u64()),
+        new_owner_suffix = Felt::new_unchecked(new_owner_account_id.suffix().as_canonical_u64()),
     );
 
     let source_manager = Arc::new(DefaultSourceManager::default());
@@ -1246,7 +1252,10 @@ async fn test_network_faucet_renounce_ownership() -> anyhow::Result<()> {
 
     // Check stored value before renouncing
     let stored_owner_before = faucet.storage().get_item(Ownable2Step::slot_name())?;
-    assert_eq!(stored_owner_before[0], Felt::new(owner_account_id.suffix().as_canonical_u64()));
+    assert_eq!(
+        stored_owner_before[0],
+        Felt::new_unchecked(owner_account_id.suffix().as_canonical_u64())
+    );
     assert_eq!(stored_owner_before[1], owner_account_id.prefix().as_felt());
 
     // Create renounce_ownership note script
@@ -1278,7 +1287,7 @@ async fn test_network_faucet_renounce_ownership() -> anyhow::Result<()> {
         end
         "#,
         new_owner_prefix = new_owner_account_id.prefix().as_felt(),
-        new_owner_suffix = Felt::new(new_owner_account_id.suffix().as_canonical_u64()),
+        new_owner_suffix = Felt::new_unchecked(new_owner_account_id.suffix().as_canonical_u64()),
     );
 
     let mut rng = RandomCoin::new([Felt::from(200u32); 4].into());
@@ -1317,10 +1326,10 @@ async fn test_network_faucet_renounce_ownership() -> anyhow::Result<()> {
 
     // Check stored value after renouncing - should be zero
     let stored_owner_after = updated_faucet.storage().get_item(Ownable2Step::slot_name())?;
-    assert_eq!(stored_owner_after[0], Felt::new(0));
-    assert_eq!(stored_owner_after[1], Felt::new(0));
-    assert_eq!(stored_owner_after[2], Felt::new(0));
-    assert_eq!(stored_owner_after[3], Felt::new(0));
+    assert_eq!(stored_owner_after[0], Felt::ZERO);
+    assert_eq!(stored_owner_after[1], Felt::ZERO);
+    assert_eq!(stored_owner_after[2], Felt::ZERO);
+    assert_eq!(stored_owner_after[3], Felt::ZERO);
 
     // Try to transfer ownership - should fail because there's no owner
     mock_chain.prove_next_block()?;
@@ -1431,7 +1440,7 @@ async fn network_faucet_burn() -> anyhow::Result<()> {
     assert_eq!(executed_transaction.output_notes().num_notes(), 0);
 
     // Verify the transaction was executed successfully
-    assert_eq!(executed_transaction.account_delta().nonce_delta(), Felt::new(1));
+    assert_eq!(executed_transaction.account_delta().nonce_delta(), Felt::ONE);
     assert_eq!(executed_transaction.input_notes().get_note(0).id(), note.id());
 
     // Apply the delta to the faucet account and verify the token issuance decreased
@@ -1567,7 +1576,7 @@ async fn test_network_faucet_owner_can_burn_when_owner_only_policy_active() -> a
     let executed_transaction = tx_context.execute().await?;
 
     assert_eq!(executed_transaction.output_notes().num_notes(), 0);
-    assert_eq!(executed_transaction.account_delta().nonce_delta(), Felt::new(1));
+    assert_eq!(executed_transaction.account_delta().nonce_delta(), Felt::ONE);
 
     Ok(())
 }
@@ -1600,7 +1609,7 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
     )?;
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
 
-    let amount = Felt::new(75);
+    let amount = Felt::new_unchecked(75);
     let mint_asset: Asset =
         FungibleAsset::new(faucet.id(), amount.as_canonical_u64()).unwrap().into();
     let serial_num = Word::from([1, 2, 3, 4u32]);

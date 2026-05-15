@@ -414,7 +414,7 @@ mod tests {
     /// Tests that an address with encryption key can be created and used.
     #[test]
     fn address_with_encryption_key() -> anyhow::Result<()> {
-        use crate::crypto::dsa::eddsa_25519_sha512::SecretKey;
+        use crate::crypto::dsa::eddsa_25519_sha512::KeyExchangeKey;
         use crate::crypto::ies::{SealingKey, UnsealingKey};
 
         let rng = &mut rand::rng();
@@ -423,7 +423,7 @@ mod tests {
             .build_with_rng(rng);
 
         // Create keypair using rand::rng()
-        let secret_key = SecretKey::with_rng(rng);
+        let secret_key = KeyExchangeKey::with_rng(rng);
         let public_key = secret_key.public_key();
         let sealing_key = SealingKey::X25519XChaCha20Poly1305(public_key.clone());
         let unsealing_key = UnsealingKey::X25519XChaCha20Poly1305(secret_key.clone());
@@ -453,7 +453,7 @@ mod tests {
     /// Tests that an address with encryption key can be encoded/decoded.
     #[test]
     fn address_encryption_key_encode_decode() -> anyhow::Result<()> {
-        use crate::crypto::dsa::eddsa_25519_sha512::SecretKey;
+        use crate::crypto::dsa::eddsa_25519_sha512::KeyExchangeKey;
 
         let rng = &mut rand::rng();
         // Use a local account type (RegularAccountImmutableCode) instead of network
@@ -464,7 +464,7 @@ mod tests {
             .build_with_rng(rng);
 
         // Create keypair
-        let secret_key = SecretKey::with_rng(rng);
+        let secret_key = KeyExchangeKey::with_rng(rng);
         let public_key = secret_key.public_key();
         let sealing_key = SealingKey::X25519XChaCha20Poly1305(public_key);
 

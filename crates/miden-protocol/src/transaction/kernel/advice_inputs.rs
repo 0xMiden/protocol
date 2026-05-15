@@ -227,7 +227,7 @@ impl TransactionAdviceInputs {
 
         // insert MMR peaks info into the advice map
         let peaks = mmr.peaks();
-        let mut elements = vec![Felt::new(peaks.num_leaves() as u64), ZERO, ZERO, ZERO];
+        let mut elements = vec![Felt::new_unchecked(peaks.num_leaves() as u64), ZERO, ZERO, ZERO];
         elements.extend(peaks.flatten_and_pad_peaks());
         self.add_map_entry(peaks.hash_peaks(), elements);
     }

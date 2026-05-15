@@ -258,7 +258,7 @@ impl From<&NoteScript> for Vec<Felt> {
 
         // Push the length, this is used to remove the padding later
         result.push(Felt::from(u32::from(script.entrypoint)));
-        result.push(Felt::new(len as u64));
+        result.push(Felt::new_unchecked(len as u64));
 
         // A Felt can not represent all u64 values, so the data is encoded using u32.
         let mut encoded: &[u8] = &bytes;
@@ -266,7 +266,7 @@ impl From<&NoteScript> for Vec<Felt> {
             let (data, rest) =
                 encoded.split_first_chunk::<4>().expect("The length has been checked");
             let number = u32::from_le_bytes(*data);
-            result.push(Felt::new(number.into()));
+            result.push(Felt::new_unchecked(number.into()));
 
             encoded = rest;
         }
@@ -434,7 +434,7 @@ mod tests {
 
         // Non-empty advice map should add entries
         let key = Word::from([5u32, 6, 7, 8]);
-        let value = vec![Felt::new(100)];
+        let value = vec![Felt::new_unchecked(100)];
         let mut advice_map = AdviceMap::default();
         advice_map.insert(key, value.clone());
 

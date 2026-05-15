@@ -99,7 +99,7 @@ end
 #! Where:
 #! - note_ptr is a pointer to the data section of the output note.
 #! - ATTACHMENTS_COMMITMENT is the commitment of the note's attachments.
-proc compute_attachments_commitment
+pub proc compute_attachments_commitment
     dup exec.memory::get_output_note_num_attachments
     # => [num_attachments, note_ptr]
 

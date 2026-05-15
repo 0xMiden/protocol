@@ -24,9 +24,9 @@ async fn test_auth_procedure_args() -> anyhow::Result<()> {
         Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, ConditionalAuthComponent);
 
     let auth_args = [
-        Felt::new(97),
-        Felt::new(98),
-        Felt::new(99),
+        Felt::new_unchecked(97),
+        Felt::new_unchecked(98),
+        Felt::new_unchecked(99),
         ONE, // incr_nonce = true
     ];
 
@@ -50,9 +50,9 @@ async fn test_auth_procedure_args_wrong_inputs() -> anyhow::Result<()> {
     // The auth script expects [99, 98, 97, nonce_increment_flag]
     let auth_args = [
         ONE, // incr_nonce = true
-        Felt::new(103),
-        Felt::new(102),
-        Felt::new(101),
+        Felt::new_unchecked(103),
+        Felt::new_unchecked(102),
+        Felt::new_unchecked(101),
     ];
 
     let tx_context = TransactionContextBuilder::new(account).auth_args(auth_args.into()).build()?;

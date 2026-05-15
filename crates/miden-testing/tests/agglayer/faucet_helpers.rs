@@ -33,8 +33,8 @@ fn test_faucet_helper_methods() -> anyhow::Result<()> {
 
     let token_symbol = "AGG";
     let decimals = 8u8;
-    let max_supply = Felt::new(FungibleAsset::MAX_AMOUNT);
-    let token_supply = Felt::new(123_456);
+    let max_supply = Felt::new_unchecked(FungibleAsset::MAX_AMOUNT);
+    let token_supply = Felt::new_unchecked(123_456);
 
     let origin_token_address = EthAddress::from_hex("0x0102030405060708090a0b0c0d0e0f1011121314")
         .expect("invalid token address");

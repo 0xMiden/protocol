@@ -51,7 +51,7 @@ async fn test_scale_up_helper(
         .to_elements()
         .into_iter()
         .rev()
-        .map(|f| Felt::new((f.as_canonical_u64() as u32).swap_bytes() as u64))
+        .map(|f| Felt::new_unchecked((f.as_canonical_u64() as u32).swap_bytes() as u64))
         .collect();
 
     assert_eq!(actual_felts, expected_felts);
@@ -62,13 +62,12 @@ async fn test_scale_up_helper(
 #[tokio::test]
 async fn test_scale_up_basic_examples() -> anyhow::Result<()> {
     // Test case 1: amount=1, no scaling (scale_exponent=0)
-    test_scale_up_helper(Felt::new(1), Felt::new(0), EthAmount::from_uint_str("1").unwrap())
-        .await?;
+    test_scale_up_helper(Felt::ONE, Felt::ZERO, EthAmount::from_uint_str("1").unwrap()).await?;
 
     // Test case 2: amount=1, scale to 1e18 (scale_exponent=18)
     test_scale_up_helper(
-        Felt::new(1),
-        Felt::new(18),
+        Felt::ONE,
+        Felt::new_unchecked(18),
         EthAmount::from_uint_str("1000000000000000000").unwrap(),
     )
     .await?;
@@ -80,16 +79,16 @@ async fn test_scale_up_basic_examples() -> anyhow::Result<()> {
 async fn test_scale_up_realistic_amounts() -> anyhow::Result<()> {
     // 100 units base 1e6, scale to 1e18
     test_scale_up_helper(
-        Felt::new(100_000_000),
-        Felt::new(12),
+        Felt::new_unchecked(100_000_000),
+        Felt::new_unchecked(12),
         EthAmount::from_uint_str("100000000000000000000").unwrap(),
     )
     .await?;
 
     // Large amount: 1e18 units scaled by 8
     test_scale_up_helper(
-        Felt::new(1000000000000000000),
-        Felt::new(8),
+        Felt::new_unchecked(1000000000000000000),
+        Felt::new_unchecked(8),
         EthAmount::from_uint_str("100000000000000000000000000").unwrap(),
     )
     .await?;
@@ -378,14 +377,14 @@ async fn test_scale_down_high_limb_subtraction() -> anyhow::Result<()> {
 #[test]
 fn test_felts_to_u256_bytes_sequential_values() {
     let limbs = [
-        Felt::new(1),
-        Felt::new(2),
-        Felt::new(3),
-        Felt::new(4),
-        Felt::new(5),
-        Felt::new(6),
-        Felt::new(7),
-        Felt::new(8),
+        Felt::ONE,
+        Felt::new_unchecked(2),
+        Felt::new_unchecked(3),
+        Felt::new_unchecked(4),
+        Felt::new_unchecked(5),
+        Felt::new_unchecked(6),
+        Felt::new_unchecked(7),
+        Felt::new_unchecked(8),
     ];
     let result = packed_u32_elements_to_bytes(&limbs);
     assert_eq!(result.len(), 32);
@@ -401,13 +400,13 @@ fn test_felts_to_u256_bytes_sequential_values() {
 #[test]
 fn test_felts_to_u256_bytes_edge_cases() {
     // Test case 1: All zeros (minimum)
-    let limbs = [Felt::new(0); 8];
+    let limbs = [Felt::ZERO; 8];
     let result = packed_u32_elements_to_bytes(&limbs);
     assert_eq!(result.len(), 32);
     assert!(result.iter().all(|&b| b == 0));
 
     // Test case 2: All max u32 values (maximum)
-    let limbs = [Felt::new(u32::MAX as u64); 8];
+    let limbs = [Felt::new_unchecked(u32::MAX as u64); 8];
     let result = packed_u32_elements_to_bytes(&limbs);
     assert_eq!(result.len(), 32);
     assert!(result.iter().all(|&b| b == 255));

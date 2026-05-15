@@ -145,7 +145,7 @@ impl AccountIdV1 {
         suffix_bytes[..7].copy_from_slice(&bytes[8..]);
 
         // If the value is too large modular reduction is performed, which is fine here.
-        let mut suffix = Felt::new(u64::from_be_bytes(suffix_bytes));
+        let mut suffix = Felt::new_unchecked(u64::from_be_bytes(suffix_bytes));
 
         // Clear the most significant bit of the suffix.
         suffix = Felt::try_from(suffix.as_canonical_u64() & 0x7fff_ffff_ffff_ffff)

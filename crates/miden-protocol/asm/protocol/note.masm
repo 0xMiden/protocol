@@ -103,7 +103,7 @@ pub proc write_attachment_commitments_to_memory
     # SAFETY: if the provided num_elements is invalid, the commitment check would fail in
     # pipe_preimage_to_memory so we assume validity and only do basic checks to protect against
     # invalid advice inputs.
-    adv_push.1 u32assert.err="invalid attachment num_elements advice input"
+    adv_push u32assert.err="invalid attachment num_elements advice input"
     u32divmod.WORD_NUM_ELEMENTS
     # OS => [remainder, num_words, ATTACHMENTS_COMMITMENT, dest_ptr]
     # AS => [[ATTACHMENT_COMMITMENT]]
@@ -147,7 +147,7 @@ pub proc write_attachment_to_memory
     # SAFETY: if the provided num_elements is invalid, the commitment check would fail in
     # pipe_preimage_to_memory so we assume validity and only do basic checks to protect against
     # invalid advice inputs.
-    adv_push.1 u32assert.err="invalid attachment num_elements advice input"
+    adv_push u32assert.err="invalid attachment num_elements advice input"
     u32divmod.WORD_NUM_ELEMENTS
     # OS => [remainder, num_words, ATTACHMENT_COMMITMENT, dest_ptr]
     # AS => [[ATTACHMENT_ELEMENTS]]

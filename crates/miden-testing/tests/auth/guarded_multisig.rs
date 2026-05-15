@@ -160,7 +160,7 @@ async fn test_guarded_multisig_signature_required(
     let input_note = mock_chain_builder.add_spawn_note([&output_note])?;
     let mut mock_chain = mock_chain_builder.build().unwrap();
 
-    let salt = Word::from([Felt::new(777); 4]);
+    let salt = Word::from([Felt::new_unchecked(777); 4]);
     let tx_context_init = mock_chain
         .build_tx_context(multisig_account.id(), &[input_note.id()], &[])?
         .extend_expected_output_notes(vec![RawOutputNote::Full(output_note.clone())])
@@ -276,7 +276,7 @@ async fn test_guarded_multisig_update_guardian_public_key(
             "begin\n    push.{new_guardian_key_word}\n    push.{new_guardian_scheme_id}\n    call.::miden::standards::components::auth::guarded_multisig::update_guardian_public_key\n    drop\n    dropw\nend"
         ))?;
 
-    let update_salt = Word::from([Felt::new(991); 4]);
+    let update_salt = Word::from([Felt::new_unchecked(991); 4]);
     let tx_context_init = mock_chain
         .build_tx_context(multisig_account.id(), &[], &[])?
         .tx_script(update_guardian_script.clone())
@@ -328,7 +328,7 @@ async fn test_guarded_multisig_update_guardian_public_key(
 
     // Build one tx summary after key update. Old GUARDIAN must fail and new GUARDIAN must pass on
     // this same transaction.
-    let next_salt = Word::from([Felt::new(992); 4]);
+    let next_salt = Word::from([Felt::new_unchecked(992); 4]);
     let tx_context_init_next = mock_chain
         .build_tx_context(updated_multisig_account.id(), &[], &[])?
         .auth_args(next_salt)
@@ -434,7 +434,7 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
     )?;
     let mock_chain = mock_chain_builder.build().unwrap();
 
-    let salt = Word::from([Felt::new(993); 4]);
+    let salt = Word::from([Felt::new_unchecked(993); 4]);
     let tx_context_init = mock_chain
         .build_tx_context(multisig_account.id(), &[receive_asset_note.id()], &[])?
         .tx_script(update_guardian_script.clone())
@@ -492,7 +492,7 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
     // Also reject rotation transactions that touch notes even when no other account procedure is
     // called.
     let note_script = CodeBuilder::default().compile_note_script(DEFAULT_NOTE_SCRIPT)?;
-    let note_serial_num = Word::from([Felt::new(1), Felt::new(2), Felt::new(3), Felt::new(4)]);
+    let note_serial_num = Word::from([1_u32, 2_u32, 3_u32, 4_u32]);
     let note_recipient =
         NoteRecipient::new(note_serial_num, note_script.clone(), NoteStorage::default());
     let output_note = Note::new(
@@ -517,7 +517,7 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
         .build()
         .unwrap();
 
-    let salt = Word::from([Felt::new(994); 4]);
+    let salt = Word::from([Felt::new_unchecked(994); 4]);
     let tx_context_init = mock_chain
         .build_tx_context(multisig_account.id(), &[], &[])?
         .tx_script(update_guardian_with_output_script.clone())

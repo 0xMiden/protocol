@@ -50,7 +50,9 @@ fn test_basic_wallet_default_notes() {
 
     let wallet_account_interface = AccountInterface::from_account(&wallet_account);
 
-    let mock_seed = Word::from([Felt::new(4), Felt::new(5), Felt::new(6), Felt::new(7)]).as_bytes();
+    let mock_seed =
+        Word::from([Felt::from(4_u32), Felt::from(5_u32), Felt::from(6_u32), Felt::from(7_u32)])
+            .as_bytes();
     let faucet_account = AccountBuilder::new(mock_seed)
         .account_type(AccountType::FungibleFaucet)
         .with_auth_component(get_mock_falcon_auth_component())
@@ -316,7 +318,9 @@ fn test_basic_wallet_custom_notes() {
 
 #[test]
 fn test_fungible_faucet_custom_notes() {
-    let mock_seed = Word::from([Felt::new(4), Felt::new(5), Felt::new(6), Felt::new(7)]).as_bytes();
+    let mock_seed =
+        Word::from([Felt::from(4_u32), Felt::from(5_u32), Felt::from(6_u32), Felt::from(7_u32)])
+            .as_bytes();
     let faucet_account = AccountBuilder::new(mock_seed)
         .account_type(AccountType::FungibleFaucet)
         .with_auth_component(get_mock_falcon_auth_component())

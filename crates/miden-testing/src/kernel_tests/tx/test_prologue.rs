@@ -322,7 +322,7 @@ fn partial_blockchain_memory_assertions(
 
     assert_eq!(
         exec_output.get_kernel_mem_word(PARTIAL_BLOCKCHAIN_NUM_LEAVES_PTR)[0],
-        Felt::new(partial_blockchain.chain_length().as_u64()),
+        Felt::from(partial_blockchain.chain_length()),
         "The number of leaves should be stored at the PARTIAL_BLOCKCHAIN_NUM_LEAVES_PTR"
     );
 
@@ -552,11 +552,11 @@ async fn create_simple_account() -> anyhow::Result<()> {
         .await
         .context("failed to execute account-creating transaction")?;
 
-    assert_eq!(tx.account_delta().nonce_delta(), Felt::new(1));
+    assert_eq!(tx.account_delta().nonce_delta(), Felt::ONE);
     // except for the nonce, the delta should be empty
     assert!(tx.account_delta().storage().is_empty());
     assert!(tx.account_delta().vault().is_empty());
-    assert_eq!(tx.final_account().nonce(), Felt::new(1));
+    assert_eq!(tx.final_account().nonce(), Felt::ONE);
     // account commitment should not be the empty word
     assert_ne!(tx.account_delta().to_commitment(), EMPTY_WORD);
 

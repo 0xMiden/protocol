@@ -19,7 +19,7 @@ use crate::{Felt, ONE, ZERO};
 // ================================================================================================
 
 /// The domain for the assets in the delta commitment.
-const DOMAIN_ASSET: Felt = Felt::new(1);
+const DOMAIN_ASSET: Felt = Felt::ONE;
 
 /// [AccountVaultDelta] stores the difference between the initial and final account vault states.
 ///

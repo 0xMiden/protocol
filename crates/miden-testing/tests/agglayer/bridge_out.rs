@@ -103,8 +103,8 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
         builder.rng_mut().draw_word(),
         &vectors.token_symbol,
         vectors.token_decimals,
-        Felt::new(FungibleAsset::MAX_AMOUNT),
-        Felt::new(total_burned),
+        Felt::new_unchecked(FungibleAsset::MAX_AMOUNT),
+        Felt::new_unchecked(total_burned),
         bridge_account.id(),
         &origin_token_address,
         origin_network,
@@ -313,8 +313,8 @@ async fn test_bridge_out_fails_with_unregistered_faucet() -> anyhow::Result<()> 
         builder.rng_mut().draw_word(),
         &vectors.token_symbol,
         vectors.token_decimals,
-        Felt::new(FungibleAsset::MAX_AMOUNT),
-        Felt::new(100),
+        Felt::new_unchecked(FungibleAsset::MAX_AMOUNT),
+        Felt::new_unchecked(100),
         bridge_account.id(),
         &origin_token_address,
         0, // origin_network
@@ -325,7 +325,7 @@ async fn test_bridge_out_fails_with_unregistered_faucet() -> anyhow::Result<()> 
 
     // CREATE B2AGG NOTE WITH ASSETS FROM THE UNREGISTERED FAUCET
     // --------------------------------------------------------------------------------------------
-    let amount = Felt::new(100);
+    let amount = Felt::new_unchecked(100);
     let bridge_asset: Asset =
         FungibleAsset::new(faucet.id(), amount.as_canonical_u64()).unwrap().into();
 
@@ -402,8 +402,8 @@ async fn test_bridge_out_fails_when_destination_is_miden_network() -> anyhow::Re
         builder.rng_mut().draw_word(),
         &vectors.token_symbol,
         vectors.token_decimals,
-        Felt::new(FungibleAsset::MAX_AMOUNT),
-        Felt::new(100),
+        Felt::new_unchecked(FungibleAsset::MAX_AMOUNT),
+        Felt::new_unchecked(100),
         bridge_account.id(),
         &origin_token_address,
         64u32,
@@ -427,7 +427,7 @@ async fn test_bridge_out_fails_when_destination_is_miden_network() -> anyhow::Re
     // Set destination_network to exactly `AggLayerBridge::MIDEN_NETWORK_ID` so `bridge_out`
     // fails immediately.
     // --------------------------------------------------------------------------------------------
-    let amount = Felt::new(100);
+    let amount = Felt::new_unchecked(100);
     let bridge_asset: Asset =
         FungibleAsset::new(faucet.id(), amount.as_canonical_u64()).unwrap().into();
     let eth_address =
@@ -659,7 +659,7 @@ async fn b2agg_note_non_target_account_cannot_consume() -> anyhow::Result<()> {
 
     // CREATE B2AGG NOTE
     // --------------------------------------------------------------------------------------------
-    let amount = Felt::new(50);
+    let amount = Felt::new_unchecked(50);
     let bridge_asset: Asset =
         FungibleAsset::new(faucet.id(), amount.as_canonical_u64()).unwrap().into();
 

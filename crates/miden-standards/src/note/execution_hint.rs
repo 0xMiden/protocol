@@ -19,7 +19,7 @@ use miden_protocol::errors::NoteError;
 /// [24 zero bits | payload (32 bits) | tag (8 bits)]
 /// ```
 ///
-/// This way, hints such as [NoteExecutionHint::Always], are represented by `Felt::new(1)`.
+/// This way, hints such as [NoteExecutionHint::Always], are represented by `Felt::ONE`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NoteExecutionHint {
     /// Unspecified note execution hint. Implies it is not known under which conditions the note
@@ -168,7 +168,7 @@ impl NoteExecutionHint {
 impl From<NoteExecutionHint> for Felt {
     fn from(value: NoteExecutionHint) -> Self {
         let int_representation: u64 = value.into();
-        Felt::new(int_representation)
+        Felt::new_unchecked(int_representation)
     }
 }
 

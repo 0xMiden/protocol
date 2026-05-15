@@ -7,4 +7,4 @@
 # =================================================================================================
 
 # AggLayer-assigned network ID for this Miden chain.
-const MIDEN_NETWORK_ID = 77
+pub const MIDEN_NETWORK_ID = 77

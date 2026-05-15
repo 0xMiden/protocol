@@ -178,8 +178,8 @@ impl AccountStorageDelta {
     /// Appends the storage slots delta to the given `elements` from which the delta commitment will
     /// be computed.
     pub(super) fn append_delta_elements(&self, elements: &mut Vec<Felt>) {
-        const DOMAIN_VALUE: Felt = Felt::new(2);
-        const DOMAIN_MAP: Felt = Felt::new(3);
+        const DOMAIN_VALUE: Felt = Felt::new_unchecked(2);
+        const DOMAIN_MAP: Felt = Felt::new_unchecked(3);
 
         for (slot_name, slot_delta) in self.deltas.iter() {
             let slot_id = slot_name.id();

@@ -101,7 +101,7 @@ async fn delta_nonce() -> anyhow::Result<()> {
         .await
         .context("failed to execute transaction")?;
 
-    assert_eq!(executed_tx.account_delta().nonce_delta(), Felt::new(1));
+    assert_eq!(executed_tx.account_delta().nonce_delta(), Felt::ONE);
 
     Ok(())
 }
@@ -775,7 +775,7 @@ async fn asset_and_storage_delta() -> anyhow::Result<()> {
     // nonce delta
     // --------------------------------------------------------------------------------------------
 
-    assert_eq!(executed_transaction.account_delta().nonce_delta(), Felt::new(1));
+    assert_eq!(executed_transaction.account_delta().nonce_delta(), Felt::ONE);
 
     // storage delta
     // --------------------------------------------------------------------------------------------

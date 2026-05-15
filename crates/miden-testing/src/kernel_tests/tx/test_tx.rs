@@ -244,9 +244,10 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
         Note::with_attachments(vault_2, metadata_2, recipient_2, attachments_2);
 
     // Create the expected output note for Note 3 which is public
-    let serial_num_3 = Word::from([Felt::new(5), Felt::new(6), Felt::new(7), Felt::new(8)]);
+    let serial_num_3 =
+        Word::from([Felt::from(5_u32), Felt::from(6_u32), Felt::from(7_u32), Felt::from(8_u32)]);
     let note_script_3 = CodeBuilder::default().compile_note_script(DEFAULT_NOTE_SCRIPT)?;
-    let inputs_3 = NoteStorage::new(vec![ONE, Felt::new(2)])?;
+    let inputs_3 = NoteStorage::new(vec![ONE, Felt::from(2_u32)])?;
     let metadata_3 = PartialNoteMetadata::new(account_id, note_type3).with_tag(tag3);
     let vault_3 = NoteAssets::new(vec![])?;
     let recipient_3 = NoteRecipient::new(serial_num_3, note_script_3, inputs_3);
@@ -666,7 +667,7 @@ async fn execute_tx_view_script() -> anyhow::Result<()> {
         .execute_tx_view_script(account_id, block_ref, tx_script, advice_inputs)
         .await?;
 
-    assert_eq!(stack_outputs[..3], [Felt::new(7), Felt::new(2), ONE]);
+    assert_eq!(stack_outputs[..3], [Felt::new_unchecked(7), Felt::new_unchecked(2), ONE]);
 
     Ok(())
 }
@@ -867,7 +868,7 @@ async fn inputs_created_correctly() -> anyhow::Result<()> {
         AssetVault::mock(),
         AccountStorage::mock(),
         account_code,
-        Felt::new(1u64),
+        Felt::new_unchecked(1u64),
     );
     let tx_context = crate::TransactionContextBuilder::new(account).tx_script(tx_script).build()?;
     _ = tx_context.execute().await?;

@@ -848,7 +848,7 @@ end
 #! - the procedure root is not part of the account code.
 pub proc authenticate_and_track_procedure
     # load procedure index
-    emit.ACCOUNT_PUSH_PROCEDURE_INDEX_EVENT adv_push.1
+    emit.ACCOUNT_PUSH_PROCEDURE_INDEX_EVENT adv_push
     # => [index, PROC_ROOT]
 
     dup movdn.5 exec.get_procedure_root
@@ -1187,7 +1187,7 @@ pub proc save_account_storage_data
 
     # push the length of the storage slot data onto the operand stack and compute the number of
     # storage slots from it
-    adv_push.1 div.ACCOUNT_STORAGE_SLOT_DATA_LENGTH
+    adv_push div.ACCOUNT_STORAGE_SLOT_DATA_LENGTH
     # OS => [num_storage_slots, STORAGE_COMMITMENT]
     # AS => [[STORAGE_SLOT_DATA]]
 
@@ -1257,7 +1257,7 @@ pub proc save_account_procedure_data
 
     # push the length of the account procedure data onto the operand stack and compute the number of
     # procedures from it
-    adv_push.1 div.ACCOUNT_PROCEDURE_DATA_LENGTH
+    adv_push div.ACCOUNT_PROCEDURE_DATA_LENGTH
     # OS => [num_procs, CODE_COMMITMENT]
     # AS => [[ACCOUNT_PROCEDURE_DATA]]
 
@@ -1386,7 +1386,7 @@ proc insert_and_validate_storage_map
     # OS => [slot_ptr, MAP_ROOT]
     # AS => [num_elements, [MAP_ENTRIES]]
 
-    adv_push.1
+    adv_push
     # OS => [num_elements, slot_ptr, MAP_ROOT]
     # AS => [[MAP_ENTRIES]]
 
@@ -1769,7 +1769,7 @@ end
 #!
 #! Panics if:
 #! - the procedure index is out of bounds.
-proc get_procedure_root
+pub proc get_procedure_root
     dup exec.memory::get_num_account_procedures
     u32assert2.err=ERR_ACCOUNT_PROC_INDEX_OUT_OF_BOUNDS
     u32lt assert.err=ERR_ACCOUNT_PROC_INDEX_OUT_OF_BOUNDS
@@ -1972,7 +1972,7 @@ end
 #! - the procedure root is not part of the account code.
 pub proc was_procedure_called
     # load procedure index
-    emit.ACCOUNT_PUSH_PROCEDURE_INDEX_EVENT adv_push.1
+    emit.ACCOUNT_PUSH_PROCEDURE_INDEX_EVENT adv_push
     # => [index, PROC_ROOT]
 
     dup movdn.5

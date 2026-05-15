@@ -762,7 +762,7 @@ fn extensive_schema_metadata_and_init_toml_example() {
     };
     assert_eq!(
         static_word,
-        &Word::from([Felt::new(1), Felt::new(2), Felt::new(3), Felt::new(4)])
+        &Word::from([Felt::ONE, Felt::from(2_u32), Felt::from(3_u32), Felt::from(4_u32)])
     );
 
     let legacy_word_name = StorageSlotName::new("demo::legacy_word").unwrap();
@@ -784,7 +784,7 @@ fn extensive_schema_metadata_and_init_toml_example() {
     );
     assert_eq!(
         static_map.get(&StorageMapKey::from_array([0, 0, 0, 2])),
-        Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::new(32)])
+        Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::new_unchecked(32)])
     );
 
     let typed_map_new_slot = slots.iter().find(|s| s.name() == &typed_map_new_name).unwrap();
@@ -831,7 +831,7 @@ fn extensive_schema_metadata_and_init_toml_example() {
 
     assert_eq!(
         typed_map_new_contents.get(&StorageMapKey::from_array([1, 2, 0, 0])),
-        Word::from([Felt::new(16), Felt::ZERO, Felt::ZERO, Felt::ZERO])
+        Word::from([Felt::new_unchecked(16), Felt::ZERO, Felt::ZERO, Felt::ZERO])
     );
 
     let token_metadata_slot =
@@ -861,7 +861,7 @@ fn extensive_schema_metadata_and_init_toml_example() {
     );
     assert_eq!(
         static_map.get(&StorageMapKey::from_array([0, 0, 0, 2])),
-        Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::new(32)])
+        Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::new_unchecked(32)])
     );
     assert_eq!(
         static_map.get(&StorageMapKey::from_raw(Word::parse("0x3").unwrap())),

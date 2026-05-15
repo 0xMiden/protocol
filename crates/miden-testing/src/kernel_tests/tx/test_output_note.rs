@@ -155,7 +155,7 @@ async fn test_create_note() -> anyhow::Result<()> {
 async fn test_create_note_with_invalid_tag() -> anyhow::Result<()> {
     let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
 
-    let invalid_tag = Felt::new((NoteType::Public as u64) << 62);
+    let invalid_tag = Felt::new_unchecked((NoteType::Public as u64) << 62);
     let valid_tag: Felt = NoteTag::default().into();
 
     // Test invalid tag
@@ -787,7 +787,7 @@ async fn test_compute_recipient() -> anyhow::Result<()> {
     let output_serial_no = Word::from([0, 1, 2, 3u32]);
     let tag = NoteTag::new(42 << 16 | 42);
     let single_input = 2;
-    let storage = NoteStorage::new(vec![Felt::new(single_input)]).unwrap();
+    let storage = NoteStorage::new(vec![Felt::new_unchecked(single_input)]).unwrap();
     let storage_commitment = storage.commitment();
 
     let recipient = NoteRecipient::new(output_serial_no, input_note_1.script().clone(), storage);

@@ -239,9 +239,10 @@ fn parse_numeric_constants_from_constants_masm(masm_path: &Path) -> Result<Vec<(
         .into_diagnostic()
         .wrap_err_with(|| format!("failed to read {}", masm_path.display()))?;
 
-    // One line per match: optional leading space, `const`, identifier (no leading digit), `=`,
-    // decimal digits only. `(?m)^` makes `^` match after newlines so we skip comment-only lines.
-    let re = Regex::new(r"(?m)^\s*const\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(\d+)\s*$")
+    // One line per match: optional leading space, optional `pub` visibility, `const`, identifier
+    // (no leading digit), `=`, decimal digits only. `(?m)^` makes `^` match after newlines so we
+    // skip comment-only lines.
+    let re = Regex::new(r"(?m)^\s*(?:pub\s+)?const\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(\d+)\s*$")
         .expect("constants.masm parse regex should compile");
 
     // `out` preserves declaration order; `seen` rejects duplicate const names in the same file.
@@ -368,10 +369,10 @@ fn generate_agglayer_constants(
         writeln!(
             file_contents,
             "pub const {}_CODE_COMMITMENT: Word = Word::new([
-    Felt::new({}),
-    Felt::new({}),
-    Felt::new({}),
-    Felt::new({}),
+    Felt::new_unchecked({}),
+    Felt::new_unchecked({}),
+    Felt::new_unchecked({}),
+    Felt::new_unchecked({}),
 ]);",
             lib_name.to_uppercase(),
             code_commitment[0],

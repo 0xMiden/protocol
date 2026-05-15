@@ -6,7 +6,7 @@ use alloc::vec::Vec;
 use miden_processor::advice::AdviceMutation;
 use miden_processor::event::EventError;
 use miden_processor::mast::MastForest;
-use miden_processor::{FutureMaybeSend, Host, ProcessorState};
+use miden_processor::{BaseHost, FutureMaybeSend, Host, ProcessorState};
 use miden_protocol::account::auth::PublicKeyCommitment;
 use miden_protocol::account::{
     AccountCode,
@@ -472,7 +472,7 @@ where
 // HOST IMPLEMENTATION
 // ================================================================================================
 
-impl<STORE, AUTH> Host for TransactionExecutorHost<'_, '_, STORE, AUTH>
+impl<STORE, AUTH> BaseHost for TransactionExecutorHost<'_, '_, STORE, AUTH>
 where
     STORE: DataStore + Sync,
     AUTH: TransactionAuthenticator + Sync,
@@ -487,6 +487,16 @@ where
         (span, maybe_file)
     }
 
+    fn resolve_event(&self, event_id: EventId) -> Option<&EventName> {
+        self.base_host.resolve_event(event_id)
+    }
+}
+
+impl<STORE, AUTH> Host for TransactionExecutorHost<'_, '_, STORE, AUTH>
+where
+    STORE: DataStore + Sync,
+    AUTH: TransactionAuthenticator + Sync,
+{
     fn get_mast_forest(&self, node_digest: &Word) -> impl FutureMaybeSend<Option<Arc<MastForest>>> {
         let mast_forest = self.base_host.get_mast_forest(node_digest);
         async move { mast_forest }
@@ -699,10 +709,6 @@ where
 
             result.map_err(EventError::from)
         }
-    }
-
-    fn resolve_event(&self, event_id: EventId) -> Option<&EventName> {
-        self.base_host.resolve_event(event_id)
     }
 }
 

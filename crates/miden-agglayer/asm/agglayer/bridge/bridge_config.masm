@@ -83,7 +83,7 @@ end
 #! - the GER is not found in storage.
 #!
 #! Invocation: exec
-proc assert_valid_ger
+pub proc assert_valid_ger
     # compute hash(GER)
     exec.poseidon2::merge
     # => [GER_HASH]
@@ -181,7 +181,7 @@ end
 #! - the faucet is not registered in the faucet registry.
 #!
 #! Invocation: exec
-proc assert_faucet_registered
+pub proc assert_faucet_registered
     # Build KEY = [0, 0, faucet_id_suffix, faucet_id_prefix]
     push.0.0
     # => [0, 0, faucet_id_suffix, faucet_id_prefix]
@@ -206,7 +206,7 @@ end
 #! - the token address is not registered in the token registry.
 #!
 #! Invocation: exec
-proc lookup_faucet_by_token_address
+pub proc lookup_faucet_by_token_address
     # Hash the token address
     exec.hash_token_address
     # => [TOKEN_ADDR_HASH]

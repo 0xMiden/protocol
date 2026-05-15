@@ -45,10 +45,10 @@ const TX_EXPIRATION_BLOCK_NUM_PTR = 2
 const NATIVE_ACCT_STORAGE_COMMITMENT_DIRTY_FLAG_PTR = 3
 
 # The memory address at which the input vault root is stored.
-const INPUT_VAULT_ROOT_PTR = 4
+pub const INPUT_VAULT_ROOT_PTR = 4
 
 # The memory address at which the output vault root is stored.
-const OUTPUT_VAULT_ROOT_PTR = 8
+pub const OUTPUT_VAULT_ROOT_PTR = 8
 
 # Pointer to the prefix and suffix of the ID of the foreign account which will be loaded during the
 # upcoming FPI call. This ID is updated during the `prepare_fpi_call` kernel procedure.
@@ -59,11 +59,11 @@ const UPCOMING_FOREIGN_ACCOUNT_PREFIX_PTR = UPCOMING_FOREIGN_ACCOUNT_SUFFIX_PTR 
 # during the upcoming FPI call. This "buffer" value helps to work around the 15 value limitation of
 # the `exec_kernel_proc` kernel procedure, so that any account procedure, even if it has 16 input
 # values, could be executed as foreign.
-const UPCOMING_FOREIGN_PROC_INPUT_VALUE_15_PTR = 14
+pub const UPCOMING_FOREIGN_PROC_INPUT_VALUE_15_PTR = 14
 
 # Pointer to the root of the foreign procedure which will be executed during the upcoming FPI call.
 # This root is updated during the `prepare_fpi_call` kernel procedure.
-const UPCOMING_FOREIGN_PROCEDURE_PTR = 16
+pub const UPCOMING_FOREIGN_PROCEDURE_PTR = 16
 
 # The memory address at which the pointer to the account stack element containing the pointer to the
 # currently accessing account (active account) data is stored.
@@ -105,7 +105,7 @@ const INIT_NATIVE_ACCOUNT_STORAGE_COMMITMENT_PTR=420
 const INPUT_NOTES_COMMITMENT_PTR=424
 
 # The memory address at which the transaction script mast root is stored.
-const TX_SCRIPT_ROOT_PTR=428
+pub const TX_SCRIPT_ROOT_PTR=428
 
 # The memory address at which the transaction script arguments are stored.
 const TX_SCRIPT_ARGS_PTR=432
@@ -117,7 +117,7 @@ const AUTH_ARGS_PTR=436
 # -------------------------------------------------------------------------------------------------
 
 # The memory address at which the block data section begins
-const BLOCK_DATA_SECTION_OFFSET=800
+pub const BLOCK_DATA_SECTION_OFFSET=800
 
 # The memory address at which the previous block commitment is stored
 const PREV_BLOCK_COMMITMENT_PTR=800
@@ -162,7 +162,7 @@ const NOTE_ROOT_PTR=840
 # -------------------------------------------------------------------------------------------------
 
 # The memory address at which the chain data section begins
-const PARTIAL_BLOCKCHAIN_PTR=1200
+pub const PARTIAL_BLOCKCHAIN_PTR=1200
 
 # The memory address at which the total number of leaves in the partial blockchain is stored
 const PARTIAL_BLOCKCHAIN_NUM_LEAVES_PTR=1200
@@ -177,7 +177,7 @@ const PARTIAL_BLOCKCHAIN_PEAKS_PTR=1204
 const NUM_KERNEL_PROCEDURES_PTR=1600
 
 # The memory address at which the hashes of kernel procedures begin.
-const KERNEL_PROCEDURES_PTR=1604
+pub const KERNEL_PROCEDURES_PTR=1604
 
 # ACCOUNT DATA
 # -------------------------------------------------------------------------------------------------
@@ -185,22 +185,22 @@ const KERNEL_PROCEDURES_PTR=1604
 # The largest memory address which can be used to load the foreign account data.
 # It is computed as `2048 * 64 * 4` -- this is the memory address where the data block of the 64th
 # account starts.
-const MAX_FOREIGN_ACCOUNT_PTR=524288
+pub const MAX_FOREIGN_ACCOUNT_PTR=524288
 
 # The memory address at which the native account data is stored.
-const NATIVE_ACCOUNT_DATA_PTR=8192
+pub const NATIVE_ACCOUNT_DATA_PTR=8192
 const NATIVE_ACCOUNT_ID_SUFFIX_PTR = NATIVE_ACCOUNT_DATA_PTR + ACCT_ID_SUFFIX_OFFSET
 const NATIVE_ACCOUNT_ID_PREFIX_PTR = NATIVE_ACCOUNT_DATA_PTR + ACCT_ID_PREFIX_OFFSET
 const NATIVE_ACCOUNT_NUM_STORAGE_SLOTS_PTR = NATIVE_ACCOUNT_DATA_PTR + ACCT_NUM_STORAGE_SLOTS_OFFSET
 
 # The length of the memory interval that the account data occupies.
-const ACCOUNT_DATA_LENGTH=8192
+pub const ACCOUNT_DATA_LENGTH=8192
 
 # The offsets at which the account data is stored relative to the start of the account data segment.
-const ACCT_NONCE_OFFSET=0
-const ACCT_ID_AND_NONCE_OFFSET=0
-const ACCT_ID_SUFFIX_OFFSET=2
-const ACCT_ID_PREFIX_OFFSET=3
+pub const ACCT_NONCE_OFFSET=0
+pub const ACCT_ID_AND_NONCE_OFFSET=0
+pub const ACCT_ID_SUFFIX_OFFSET=2
+pub const ACCT_ID_PREFIX_OFFSET=3
 const ACCT_VAULT_ROOT_OFFSET=4
 const ACCT_STORAGE_COMMITMENT_OFFSET=8
 const ACCT_CODE_COMMITMENT_OFFSET=12
@@ -265,7 +265,7 @@ const INPUT_NOTE_ASSETS_OFFSET=44
 # -------------------------------------------------------------------------------------------------
 
 # The memory address at which the output notes section begins.
-const OUTPUT_NOTE_SECTION_OFFSET=16777216
+pub const OUTPUT_NOTE_SECTION_OFFSET=16777216
 
 # The offsets at which data of an output note is stored relative to the start of its data segment.
 const OUTPUT_NOTE_ID_OFFSET=0
@@ -288,21 +288,21 @@ const OUTPUT_NOTE_ASSETS_OFFSET=36
 # The inclusive start of the link map dynamic memory region.
 # Chosen as a number greater than 2^25 such that all entry pointers are multiples of
 # LINK_MAP_ENTRY_SIZE. That enables a simpler check in assert_entry_ptr_is_valid.
-const LINK_MAP_REGION_START_PTR=33554448
+pub const LINK_MAP_REGION_START_PTR=33554448
 
 # The non-inclusive end of the link map dynamic memory region.
 # This happens to be 2^26, but if it is changed, it should be chosen as a number such that
 # LINK_MAP_REGION_END_PTR - LINK_MAP_REGION_START_PTR is a multiple of LINK_MAP_ENTRY_SIZE,
 # because that enables checking whether a newly allocated entry pointer is at the end of the range
 # using equality rather than lt/gt in link_map_malloc.
-const LINK_MAP_REGION_END_PTR=67108864
+pub const LINK_MAP_REGION_END_PTR=67108864
 
 # LINK_MAP_REGION_START_PTR + the currently used size stored at this pointer defines the next
 # entry pointer that will be allocated.
 const LINK_MAP_USED_MEMORY_SIZE=33554432
 
 # The size of each map entry, i.e. four words.
-const LINK_MAP_ENTRY_SIZE=16
+pub const LINK_MAP_ENTRY_SIZE=16
 
 # MEMORY PROCEDURES
 # =================================================================================================
