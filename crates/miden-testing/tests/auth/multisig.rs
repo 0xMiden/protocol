@@ -40,11 +40,11 @@ use rstest::rstest;
 // HELPER FUNCTIONS
 // ================================================================================================
 
-type MultisigTestSetup =
+pub(super) type MultisigTestSetup =
     (Vec<AuthSecretKey>, Vec<AuthScheme>, Vec<PublicKey>, Vec<BasicAuthenticator>);
 
 /// Sets up secret keys, public keys, and authenticators for multisig testing for the given scheme.
-fn setup_keys_and_authenticators_with_scheme(
+pub(super) fn setup_keys_and_authenticators_with_scheme(
     num_approvers: usize,
     threshold: usize,
     auth_scheme: AuthScheme,
@@ -79,6 +79,34 @@ fn setup_keys_and_authenticators_with_scheme(
     }
 
     Ok((secret_keys, auth_schemes, public_keys, authenticators))
+}
+
+/// Layout expected by `update_signers_and_threshold` when looking up the new multisig config in
+/// the advice map: `[threshold, num_approvers, 0, 0, (PUB_KEY, SCHEME_WORD) for each approver]`.
+/// Public keys are appended in reverse so the procedure pops them in ascending index order.
+pub(super) fn build_update_signers_config_vector(
+    threshold: u64,
+    num_of_approvers: u64,
+    public_keys: &[PublicKey],
+    auth_scheme: AuthScheme,
+) -> Vec<Felt> {
+    let mut config_and_pubkeys_vector = Vec::new();
+    config_and_pubkeys_vector.extend_from_slice(&[
+        Felt::new(threshold),
+        Felt::new(num_of_approvers),
+        Felt::ZERO,
+        Felt::ZERO,
+    ]);
+
+    let scheme_word = [Felt::from(auth_scheme.as_u8()), Felt::ZERO, Felt::ZERO, Felt::ZERO];
+
+    for public_key in public_keys.iter().rev() {
+        let key_word: Word = public_key.to_commitment().into();
+        config_and_pubkeys_vector.extend_from_slice(key_word.as_elements());
+        config_and_pubkeys_vector.extend_from_slice(&scheme_word);
+    }
+
+    config_and_pubkeys_vector
 }
 
 /// Creates a multisig account with the specified configuration
@@ -439,32 +467,13 @@ async fn test_multisig_update_signers(#[case] auth_scheme: AuthScheme) -> anyhow
     let threshold = 3u64;
     let num_of_approvers = 4u64;
 
-    // Create vector with threshold config and public keys (4 field elements each)
-    let mut config_and_pubkeys_vector = Vec::new();
-    config_and_pubkeys_vector.extend_from_slice(&[
-        Felt::new(threshold),
-        Felt::new(num_of_approvers),
-        Felt::new(0),
-        Felt::new(0),
-    ]);
-
-    // Add each public key to the vector
-    for public_key in new_public_keys.iter().rev() {
-        let key_word: Word = public_key.to_commitment().into();
-        config_and_pubkeys_vector.extend_from_slice(key_word.as_elements());
-
-        config_and_pubkeys_vector.extend_from_slice(&[
-            Felt::new(auth_scheme as u64),
-            Felt::new(0),
-            Felt::new(0),
-            Felt::new(0),
-        ]);
-    }
-
-    // Hash the vector to create config hash
+    let config_and_pubkeys_vector = build_update_signers_config_vector(
+        threshold,
+        num_of_approvers,
+        &new_public_keys,
+        auth_scheme,
+    );
     let multisig_config_hash = Hasher::hash_elements(&config_and_pubkeys_vector);
-
-    // Insert config and public keys into advice map
     advice_map.insert(multisig_config_hash, config_and_pubkeys_vector);
 
     // Create a transaction script that calls the update_signers procedure
@@ -709,24 +718,12 @@ async fn test_multisig_update_signers_remove_owner(
     let threshold = 1u64;
     let num_of_approvers = 2u64;
 
-    // Create multisig config vector
-    let mut config_and_pubkeys_vector =
-        vec![Felt::new(threshold), Felt::new(num_of_approvers), Felt::new(0), Felt::new(0)];
-
-    // Add each public key to the vector
-    for public_key in new_public_keys.iter().rev() {
-        let key_word: Word = public_key.to_commitment().into();
-        config_and_pubkeys_vector.extend_from_slice(key_word.as_elements());
-
-        config_and_pubkeys_vector.extend_from_slice(&[
-            Felt::new(auth_scheme as u64),
-            Felt::new(0),
-            Felt::new(0),
-            Felt::new(0),
-        ]);
-    }
-
-    // Create config hash and advice map
+    let config_and_pubkeys_vector = build_update_signers_config_vector(
+        threshold,
+        num_of_approvers,
+        new_public_keys,
+        auth_scheme,
+    );
     let multisig_config_hash = Hasher::hash_elements(&config_and_pubkeys_vector);
     let mut advice_map = AdviceMap::default();
     advice_map.insert(multisig_config_hash, config_and_pubkeys_vector);
@@ -900,20 +897,12 @@ async fn test_multisig_update_signers_rejects_unreachable_proc_thresholds(
     let threshold = 2u64;
     let num_of_approvers = 2u64;
 
-    let mut config_and_pubkeys_vector =
-        vec![Felt::new(threshold), Felt::new(num_of_approvers), Felt::new(0), Felt::new(0)];
-
-    for public_key in new_public_keys.iter().rev() {
-        let key_word: Word = public_key.to_commitment().into();
-        config_and_pubkeys_vector.extend_from_slice(key_word.as_elements());
-        config_and_pubkeys_vector.extend_from_slice(&[
-            Felt::new(auth_scheme as u64),
-            Felt::new(0),
-            Felt::new(0),
-            Felt::new(0),
-        ]);
-    }
-
+    let config_and_pubkeys_vector = build_update_signers_config_vector(
+        threshold,
+        num_of_approvers,
+        new_public_keys,
+        auth_scheme,
+    );
     let multisig_config_hash = Hasher::hash_elements(&config_and_pubkeys_vector);
     let mut advice_map = AdviceMap::default();
     advice_map.insert(multisig_config_hash, config_and_pubkeys_vector);
@@ -992,32 +981,13 @@ async fn test_multisig_new_approvers_cannot_sign_before_update(
     let threshold = 3u64;
     let num_of_approvers = 4u64;
 
-    // Create vector with threshold config and public keys (4 field elements each)
-    let mut config_and_pubkeys_vector = Vec::new();
-    config_and_pubkeys_vector.extend_from_slice(&[
-        Felt::new(threshold),
-        Felt::new(num_of_approvers),
-        Felt::new(0),
-        Felt::new(0),
-    ]);
-
-    // Add each public key to the vector
-    for public_key in new_public_keys.iter().rev() {
-        let key_word: Word = public_key.to_commitment().into();
-        config_and_pubkeys_vector.extend_from_slice(key_word.as_elements());
-
-        config_and_pubkeys_vector.extend_from_slice(&[
-            Felt::new(auth_scheme as u64),
-            Felt::new(0),
-            Felt::new(0),
-            Felt::new(0),
-        ]);
-    }
-
-    // Hash the vector to create config hash
+    let config_and_pubkeys_vector = build_update_signers_config_vector(
+        threshold,
+        num_of_approvers,
+        &new_public_keys,
+        auth_scheme,
+    );
     let multisig_config_hash = Hasher::hash_elements(&config_and_pubkeys_vector);
-
-    // Insert config and public keys into advice map
     advice_map.insert(multisig_config_hash, config_and_pubkeys_vector);
 
     // Create a transaction script that calls the update_signers procedure

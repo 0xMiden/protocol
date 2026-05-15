@@ -13,6 +13,7 @@ use crate::account::access::{Ownable2Step, RoleBasedAccessControl};
 use crate::account::auth::{
     AuthGuardedMultisig,
     AuthMultisig,
+    AuthMultisigSmart,
     AuthNetworkAccount,
     AuthSingleSig,
     AuthSingleSigAcl,
@@ -98,6 +99,7 @@ impl AccountInterfaceExt for AccountInterface {
                 AccountComponentInterface::AuthSingleSig => Some(AuthSingleSig::code()),
                 AccountComponentInterface::AuthSingleSigAcl => Some(AuthSingleSigAcl::code()),
                 AccountComponentInterface::AuthMultisig => Some(AuthMultisig::code()),
+                AccountComponentInterface::AuthMultisigSmart => Some(AuthMultisigSmart::code()),
                 AccountComponentInterface::AuthGuardedMultisig => Some(AuthGuardedMultisig::code()),
                 AccountComponentInterface::AuthNoAuth => Some(NoAuth::code()),
                 AccountComponentInterface::AuthNetworkAccount => Some(AuthNetworkAccount::code()),
