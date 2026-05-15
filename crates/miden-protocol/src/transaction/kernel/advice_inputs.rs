@@ -227,7 +227,9 @@ impl TransactionAdviceInputs {
 
         // insert MMR peaks info into the advice map
         let peaks = mmr.peaks();
-        let mut elements = vec![Felt::new_unchecked(peaks.num_leaves() as u64), ZERO, ZERO, ZERO];
+        let num_leaves = Felt::try_from(peaks.num_leaves() as u64)
+            .expect("number of blocks in chain should not exceed BlockNumber::MAX");
+        let mut elements = vec![num_leaves, ZERO, ZERO, ZERO];
         elements.extend(peaks.flatten_and_pad_peaks());
         self.add_map_entry(peaks.hash_peaks(), elements);
     }

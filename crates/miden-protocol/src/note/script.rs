@@ -266,7 +266,7 @@ impl From<&NoteScript> for Vec<Felt> {
             let (data, rest) =
                 encoded.split_first_chunk::<4>().expect("The length has been checked");
             let number = u32::from_le_bytes(*data);
-            result.push(Felt::new_unchecked(number.into()));
+            result.push(Felt::from(number));
 
             encoded = rest;
         }

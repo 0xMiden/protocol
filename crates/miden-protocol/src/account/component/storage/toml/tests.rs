@@ -784,7 +784,7 @@ fn extensive_schema_metadata_and_init_toml_example() {
     );
     assert_eq!(
         static_map.get(&StorageMapKey::from_array([0, 0, 0, 2])),
-        Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::new_unchecked(32)])
+        Word::from([0_u32, 0_u32, 0_u32, 32_u32])
     );
 
     let typed_map_new_slot = slots.iter().find(|s| s.name() == &typed_map_new_name).unwrap();
@@ -831,7 +831,7 @@ fn extensive_schema_metadata_and_init_toml_example() {
 
     assert_eq!(
         typed_map_new_contents.get(&StorageMapKey::from_array([1, 2, 0, 0])),
-        Word::from([Felt::new_unchecked(16), Felt::ZERO, Felt::ZERO, Felt::ZERO])
+        Word::from([16_u32, 0, 0, 0])
     );
 
     let token_metadata_slot =
@@ -861,7 +861,7 @@ fn extensive_schema_metadata_and_init_toml_example() {
     );
     assert_eq!(
         static_map.get(&StorageMapKey::from_array([0, 0, 0, 2])),
-        Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::new_unchecked(32)])
+        Word::from([0_u32, 0_u32, 0_u32, 32_u32])
     );
     assert_eq!(
         static_map.get(&StorageMapKey::from_raw(Word::parse("0x3").unwrap())),

@@ -375,17 +375,8 @@ fn generate_agglayer_constants(
 
         writeln!(
             file_contents,
-            "pub const {}_CODE_COMMITMENT: Word = Word::new([
-    Felt::new_unchecked({}),
-    Felt::new_unchecked({}),
-    Felt::new_unchecked({}),
-    Felt::new_unchecked({}),
-]);",
+            "pub const {}_CODE_COMMITMENT: Word = miden_protocol::word!(\"{code_commitment}\");",
             lib_name.to_uppercase(),
-            code_commitment[0],
-            code_commitment[1],
-            code_commitment[2],
-            code_commitment[3],
         )
         .unwrap();
     }

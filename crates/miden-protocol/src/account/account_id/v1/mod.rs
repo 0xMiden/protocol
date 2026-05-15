@@ -143,12 +143,10 @@ impl AccountIdV1 {
         // shape_suffix anyway).
         suffix_bytes[..7].copy_from_slice(&bytes[8..]);
 
-        // If the value is too large modular reduction is performed, which is fine here.
-        let mut suffix = Felt::new_unchecked(u64::from_be_bytes(suffix_bytes));
-
-        // Clear the most significant bit of the suffix.
-        suffix = Felt::try_from(suffix.as_canonical_u64() & 0x7fff_ffff_ffff_ffff)
-            .expect("no bits were set so felt should still be valid");
+        // Clear the most significant bit of the suffix to make sure we get a valid felt
+        let suffix = u64::from_be_bytes(suffix_bytes) & 0x7fff_ffff_ffff_ffff;
+        let mut suffix =
+            Felt::try_from(suffix).expect("no bits were set so felt should still be valid");
 
         suffix = shape_suffix(suffix);
 
