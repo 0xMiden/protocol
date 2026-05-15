@@ -144,11 +144,6 @@ impl PartialAccount {
         }
     }
 
-    /// Returns `true` if the full state of the account is public on chain, and `false` otherwise.
-    pub fn has_public_state(&self) -> bool {
-        self.id.has_public_state()
-    }
-
     /// Consumes self and returns the underlying parts of the partial account.
     pub fn into_parts(
         self,

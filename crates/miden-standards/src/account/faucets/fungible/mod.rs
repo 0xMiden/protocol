@@ -34,7 +34,7 @@ use super::{
 };
 use crate::account::access::AccessControl;
 use crate::account::account_component_code;
-use crate::account::auth::{AuthSingleSigAcl, AuthSingleSigAclConfig, NoAuth};
+use crate::account::auth::{AuthNetworkAccount, AuthSingleSigAcl, AuthSingleSigAclConfig, NoAuth};
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
 use crate::account::policies::TokenPolicyManager;
 use crate::{AuthMethod, procedure_root};
@@ -501,10 +501,10 @@ impl TryFrom<&Account> for FungibleFaucet {
 ///
 /// The behaviour of the resulting faucet (basic vs network-style) is determined entirely by the
 /// combination of arguments passed in:
-/// - `storage_mode`: typically [`AccountStorageMode::Public`] for basic faucets, or
-///   [`AccountStorageMode::Network`] for network-style faucets.
+/// - `storage_mode`: typically [`AccountStorageMode::Public`] for basic or network faucets.
 /// - `auth_method`: typically [`AuthMethod::SingleSig`] for basic faucets, or
-///   [`AuthMethod::NoAuth`] for network-style faucets.
+///   [`AuthMethod::NetworkAccount`] for network-style faucets. [`AuthMethod::NoAuth`] is also
+///   accepted for unauthenticated faucets.
 /// - `access_control`: [`AccessControl::AuthControlled`] for auth-only faucets, or
 ///   [`AccessControl::Ownable2Step`] / [`AccessControl::Rbac`] for owner-controlled faucets.
 /// - `token_policy_manager`: the unified [`TokenPolicyManager`] holding both mint and burn policy
@@ -535,6 +535,15 @@ pub fn create_fungible_faucet(
         .map_err(FungibleFaucetError::AccountError)?
         .into(),
         AuthMethod::NoAuth => NoAuth::new().into(),
+        AuthMethod::NetworkAccount { allowed_script_roots } => {
+            AuthNetworkAccount::with_allowlist(allowed_script_roots)
+                .map_err(|err| {
+                    FungibleFaucetError::UnsupportedAuthMethod(alloc::format!(
+                        "invalid network account allowlist: {err}"
+                    ))
+                })?
+                .into()
+        },
         AuthMethod::Unknown => {
             return Err(FungibleFaucetError::UnsupportedAuthMethod(
                 "fungible faucets cannot be created with Unknown authentication method".into(),

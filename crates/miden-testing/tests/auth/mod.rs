@@ -5,6 +5,8 @@ mod multisig;
 
 mod hybrid_multisig;
 
+mod multisig_smart;
+
 mod guarded_multisig;
 
 mod network_account;

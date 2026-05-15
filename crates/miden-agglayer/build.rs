@@ -19,11 +19,12 @@ use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::transaction::TransactionKernel;
 use miden_standards::account::auth::AuthNetworkAccount;
 use miden_standards::account::policies::{
-    BurnAllowAll,
     BurnPolicyConfig,
     MintPolicyConfig,
     PolicyAuthority,
+    PolicyRegistration,
     TokenPolicyManager,
+    TransferPolicy,
 };
 use regex::Regex;
 
@@ -337,7 +338,7 @@ fn generate_agglayer_constants(
         if lib_name == "faucet" {
             // Use a dummy owner for commitment computation - the actual owner is set at runtime
             let dummy_owner = miden_protocol::account::AccountId::try_from(
-                miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_NETWORK_ACCOUNT_IMMUTABLE_CODE,
+                miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
             )
             .unwrap();
             components.push(AccountComponent::from(
@@ -347,16 +348,21 @@ fn generate_agglayer_constants(
             // the compile-time code commitment matches the one computed at runtime.
             //
             // Burn policy manager: active = `owner_only` (burns locked by default), `allow_all`
-            // is explicitly allowed so the owner can open burns at runtime via `set_burn_policy`.
-            let token_policy_manager = TokenPolicyManager::new(
-                PolicyAuthority::OwnerControlled,
-                MintPolicyConfig::OwnerOnly,
-                BurnPolicyConfig::OwnerOnly,
-            )
-            .with_allowed_burn_policy(BurnAllowAll::root().as_word());
+            // is registered as Reserved so the owner can open burns at runtime via
+            // `set_burn_policy`.
+            let token_policy_manager = TokenPolicyManager::new(PolicyAuthority::OwnerControlled)
+                .with_mint_policy(MintPolicyConfig::OwnerOnly, PolicyRegistration::Active)
+                .expect("active mint policy is registered exactly once")
+                .with_burn_policy(BurnPolicyConfig::OwnerOnly, PolicyRegistration::Active)
+                .expect("active burn policy is registered exactly once")
+                .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Reserved)
+                .expect("reserved burn policy registration does not conflict")
+                .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)
+                .expect("active send policy is registered exactly once")
+                .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)
+                .expect("active receive policy is registered exactly once");
 
             components.extend(token_policy_manager);
-            components.push(BurnAllowAll.into());
         }
 
         // use `AccountCode` to merge codes of agglayer and authentication components

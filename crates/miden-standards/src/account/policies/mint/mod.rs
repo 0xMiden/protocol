@@ -1,6 +1,8 @@
 //! Mint policy components and the mint policy configuration enum used by
 //! [`super::TokenPolicyManager`].
 
+use alloc::vec::Vec;
+
 use miden_protocol::Word;
 use miden_protocol::account::AccountComponent;
 
@@ -13,26 +15,25 @@ pub use owner_only::MintOwnerOnly;
 // CONFIG
 // ================================================================================================
 
-/// Selects which mint policy is active when the [`super::TokenPolicyManager`] is first installed.
+/// Selects which mint policy is registered with a [`super::TokenPolicyManager`].
 ///
-/// Only the chosen policy is registered as allowed by default; runtime switching to another policy
-/// requires explicit opt-in via [`super::TokenPolicyManager::with_allowed_mint_policy`] plus
-/// installing the matching policy component.
+/// Pass to [`super::TokenPolicyManager::with_mint_policy`] together with a
+/// [`super::PolicyRegistration`] to register the policy as either active or as a reserved
+/// alternative.
 #[derive(Debug, Clone, Copy, Default)]
 pub enum MintPolicyConfig {
-    /// Active policy = [`MintAllowAll::root`] (mint open to anyone).
+    /// Policy root = [`MintAllowAll::root`] (mint open to anyone).
     AllowAll,
-    /// Active policy = [`MintOwnerOnly::root`] (mint gated by the account owner).
+    /// Policy root = [`MintOwnerOnly::root`] (mint gated by the account owner).
     #[default]
     OwnerOnly,
-    /// Active policy = the provided root. The corresponding component must be installed by the
-    /// caller separately; resolving this variant into a built-in component panics because there
-    /// is no library known to this enum.
+    /// Policy root = the provided word. The corresponding component must be installed by the
+    /// caller separately; resolving this variant into built-in components yields an empty list.
     Custom(Word),
 }
 
 impl MintPolicyConfig {
-    /// Returns the procedure root of the active policy this config resolves to.
+    /// Returns the procedure root of the policy this variant resolves to.
     pub fn root(self) -> Word {
         match self {
             Self::AllowAll => MintAllowAll::root().as_word(),
@@ -41,13 +42,15 @@ impl MintPolicyConfig {
         }
     }
 
-    /// Returns the [`AccountComponent`] corresponding to the active policy, or [`None`] for
-    /// [`Self::Custom`] — custom policies must be installed by the caller directly.
-    pub(crate) fn into_component(self) -> Option<AccountComponent> {
+    /// Returns the [`AccountComponent`]s that must accompany this mint policy variant.
+    ///
+    /// For [`Self::Custom`] this is empty — the caller installs whatever the chosen root
+    /// requires.
+    pub(crate) fn into_components(self) -> Vec<AccountComponent> {
         match self {
-            Self::AllowAll => Some(MintAllowAll.into()),
-            Self::OwnerOnly => Some(MintOwnerOnly.into()),
-            Self::Custom(_) => None,
+            Self::AllowAll => vec![MintAllowAll.into()],
+            Self::OwnerOnly => vec![MintOwnerOnly.into()],
+            Self::Custom(_) => Vec::new(),
         }
     }
 }

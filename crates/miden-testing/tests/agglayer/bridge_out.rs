@@ -506,6 +506,7 @@ async fn b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
         faucet_owner_account_id,
         Some(100),
         MintPolicyConfig::OwnerOnly,
+        [],
     )?;
 
     // Create a bridge admin account
@@ -624,6 +625,7 @@ async fn b2agg_note_non_target_account_cannot_consume() -> anyhow::Result<()> {
         faucet_owner_account_id,
         Some(100),
         MintPolicyConfig::OwnerOnly,
+        [],
     )?;
 
     // Create a bridge admin account

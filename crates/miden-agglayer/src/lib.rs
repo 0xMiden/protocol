@@ -21,7 +21,9 @@ use miden_standards::account::policies::{
     BurnPolicyConfig,
     MintPolicyConfig,
     PolicyAuthority,
+    PolicyRegistration,
     TokenPolicyManager,
+    TransferPolicy,
 };
 use miden_utils_sync::LazyLock;
 
@@ -163,7 +165,7 @@ fn create_bridge_account_builder(
     ger_manager_id: AccountId,
 ) -> AccountBuilder {
     Account::builder(seed.into())
-        .storage_mode(AccountStorageMode::Network)
+        .storage_mode(AccountStorageMode::Public)
         .with_component(AggLayerBridge::new(bridge_admin_id, ger_manager_id))
         .with_auth_component(
             AuthNetworkAccount::with_allowlist(AggLayerBridge::allowed_notes())
@@ -235,18 +237,23 @@ fn create_agglayer_faucet_builder(
         metadata_hash,
     );
 
-    // `allow_all` is explicitly registered in the allowed list so the owner can open burns at
-    // runtime via `set_burn_policy`.
-    let token_policy_manager = TokenPolicyManager::new(
-        PolicyAuthority::OwnerControlled,
-        MintPolicyConfig::OwnerOnly,
-        BurnPolicyConfig::OwnerOnly,
-    )
-    .with_allowed_burn_policy(BurnAllowAll::root().as_word());
+    // `allow_all` is explicitly registered as Reserved so the owner can open burns at runtime
+    // via `set_burn_policy`.
+    let token_policy_manager = TokenPolicyManager::new(PolicyAuthority::OwnerControlled)
+        .with_mint_policy(MintPolicyConfig::OwnerOnly, PolicyRegistration::Active)
+        .expect("active mint policy is registered exactly once")
+        .with_burn_policy(BurnPolicyConfig::OwnerOnly, PolicyRegistration::Active)
+        .expect("active burn policy is registered exactly once")
+        .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Reserved)
+        .expect("reserved burn policy registration does not conflict")
+        .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)
+        .expect("active send policy is registered exactly once")
+        .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)
+        .expect("active receive policy is registered exactly once");
 
     Account::builder(seed.into())
         .account_type(AccountType::FungibleFaucet)
-        .storage_mode(AccountStorageMode::Network)
+        .storage_mode(AccountStorageMode::Public)
         .with_component(agglayer_component)
         .with_component(Ownable2Step::new(bridge_account_id))
         .with_components(token_policy_manager)

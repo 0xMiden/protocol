@@ -13,6 +13,8 @@
 - Added `metadata_into_tag` helper for extracting the tag from metadata. This should be used instead of extracting the tag manually from the header ([#2871](https://github.com/0xMiden/protocol/pull/2871)).
 - [BREAKING] Add support for multiple attachments per note ([#2795](https://github.com/0xMiden/protocol/pull/2795), [#2849](https://github.com/0xMiden/protocol/pull/2849)):
 - [BREAKING] Renamed `set_attachment` to `add_attachment`, `set_word_attachment` to `add_word_attachment`, and `set_array_attachment` to `add_array_attachment` in `miden::protocol::output_note` ([#2795](https://github.com/0xMiden/protocol/pull/2795), [#2849](https://github.com/0xMiden/protocol/pull/2849)).
+- [BREAKING] Remove `AccountStorageMode::Network`; network accounts are now identified via `NetworkAccountNoteAllowlist` ([#2900](https://github.com/0xMiden/protocol/pull/2900)).
+- [BREAKING] Add `NetworkAccount` wrapper for convenient network account identification ([#2915](https://github.com/0xMiden/protocol/pull/2915)).
 
 ### Changes
 
@@ -35,11 +37,13 @@
 - [BREAKING] Added cycle counts to notes returned by `NoteConsumptionInfo` and removed public fields from related types ([#2772](https://github.com/0xMiden/miden-base/issues/2772)).
 - [BREAKING] Removed unused `payback_attachment` from `SwapNoteStorage` and `attachment` from `MintNoteStorage` ([#2789](https://github.com/0xMiden/protocol/pull/2789)).
 - Automatically enable `concurrent` feature in `miden-tx` for `std` context ([#2791](https://github.com/0xMiden/protocol/pull/2791)).
+- Added foundations for `AuthMultisigSmart` ([#2806](https://github.com/0xMiden/protocol/pull/2806)).
 - Added `AuthNetworkAccount` auth component that rejects transactions which execute a tx script or consume input notes outside of a fixed allowlist of note script roots ([#2817](https://github.com/0xMiden/protocol/pull/2817)).
 - Added standardized `NetworkAccountNoteAllowlist` slot for detecting network accounts ([#2883](https://github.com/0xMiden/protocol/pull/2883)).
 - Added trace row counts to `bench-tx.json` ([#2794](https://github.com/0xMiden/protocol/pull/2794)).
 - Added `tx::get_tx_script_root` kernel procedure returning the root of the executed transaction script (empty word if no script was executed) ([#2816](https://github.com/0xMiden/protocol/pull/2816)).
 - Added `TransactionScript::from_package()` method to create `TransactionScript` from `miden-mast-package::Package` ([#2779](https://github.com/0xMiden/protocol/pull/2779)).
+- Added basic blocklist transfer policy with owner-managed admin (`block_account`/`unblock_account`) and runtime policy switching via the protocol-reserved asset callback slots ([#2820])(https://github.com/0xMiden/protocol/pull/2820).
 - [BREAKING] Added `NoteScriptRoot` newtype wrapping note script roots ([#2851](https://github.com/0xMiden/protocol/pull/2851)).
 - Re-exported `MIN_STACK_DEPTH` from `miden-processor` ([#2856](https://github.com/0xMiden/protocol/pull/2856)).
 - [BREAKING] Renamed `note::build_recipient_hash` to `note::compute_recipient` and `note::build_recipient` to `note::compute_and_store_recipient` ([#2875](https://github.com/0xMiden/protocol/issues/2875)).
@@ -48,9 +52,11 @@
 - [BREAKING] Renamed account ID version 0 to version 1 and made encoded version 0 invalid ([#2842](https://github.com/0xMiden/protocol/issues/2842)).
 - [BREAKING] Changed note metadata version 1 to encode as `1`, leaving encoded version `0` invalid.
 - Documented the `miden::protocol::account_id` module in the protocol library docs ([#2607](https://github.com/0xMiden/protocol/issues/2607)).
+- [BREAKING] Remove `StandardNote::is_compatible_with` and `AccountInterfaceExt::is_compatible_with` ([#2920](https://github.com/0xMiden/protocol/issues/2920)).
 - [BREAKING] Renamed `procedure_digest!` to `procedure_root!` and return `AccountProcedureRoot` instead of `Word` ([#2621](https://github.com/0xMiden/protocol/issues/2621)).
 - [BREAKING] Replaced the `FungibleFaucetBuilder` with a `bon` builder on `FungibleFaucet` ([#2916](https://github.com/0xMiden/protocol/pull/2916)).
 - [BREAKING] `FungibleAsset::amount()` and `AssetVault::get_balance()` now return `AssetAmount` ([#2928](https://github.com/0xMiden/protocol/pull/2928)).
+- Derive `Hash` implementation for `StorageMapKey` and `StorageMapKeyHash` to allow using those values as keys in containers ([#2843](https://github.com/0xMiden/protocol/issues/2843)).
 
 ### Fixes
 

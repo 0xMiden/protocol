@@ -611,9 +611,7 @@ pub async fn create_multiple_accounts_test(storage_mode: AccountStorageMode) -> 
 pub async fn create_accounts_with_all_storage_modes() -> anyhow::Result<()> {
     create_multiple_accounts_test(AccountStorageMode::Private).await?;
 
-    create_multiple_accounts_test(AccountStorageMode::Public).await?;
-
-    create_multiple_accounts_test(AccountStorageMode::Network).await
+    create_multiple_accounts_test(AccountStorageMode::Public).await
 }
 
 /// Tests that supplying an invalid seed causes account creation to fail.

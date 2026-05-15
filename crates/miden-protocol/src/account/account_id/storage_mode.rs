@@ -7,41 +7,30 @@ use crate::errors::AccountIdError;
 // ACCOUNT STORAGE MODE
 // ================================================================================================
 
-// This leaves room for an ENCRYPTED = 0b11.
-// This way, the storage modes where the full state is public on-chain do not have the first
-// bit set, which may be useful as a way to group the storage modes.
-pub(super) const PUBLIC: u8 = 0b00;
-pub(super) const NETWORK: u8 = 0b01;
-pub(super) const PRIVATE: u8 = 0b10;
-
 /// Describes where the state of the account is stored.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 #[repr(u8)]
 pub enum AccountStorageMode {
-    /// The account's full state is stored on-chain.
-    Public = PUBLIC,
-    /// The account's full state is stored on-chain. Additionally, the network monitors this account
-    /// and creates network transactions against it. It is otherwise the same as [`Self::Public`].
-    Network = NETWORK,
+    #[default]
     /// The account's state is stored off-chain, and only a commitment to it is stored on-chain.
-    Private = PRIVATE,
+    Private = Self::PRIVATE,
+
+    /// The account's full state is stored on-chain.
+    Public = Self::PUBLIC,
 }
 
 impl AccountStorageMode {
-    /// Returns `true` if the full state of the account is public on chain, i.e. if the modes are
-    /// [`Self::Public`] or [`Self::Network`], `false` otherwise.
-    pub fn has_public_state(&self) -> bool {
-        matches!(self, Self::Public | Self::Network)
+    pub(crate) const PRIVATE: u8 = 0;
+    pub(crate) const PUBLIC: u8 = 1;
+
+    /// Returns the storage mode encoded to a 1-bit flag, where private is 0 and public is 1.
+    pub const fn as_u8(self) -> u8 {
+        self as u8
     }
 
     /// Returns `true` if the storage mode is [`Self::Public`], `false` otherwise.
     pub fn is_public(&self) -> bool {
         matches!(self, Self::Public)
-    }
-
-    /// Returns `true` if the storage mode is [`Self::Network`], `false` otherwise.
-    pub fn is_network(&self) -> bool {
-        matches!(self, Self::Network)
     }
 
     /// Returns `true` if the storage mode is [`Self::Private`], `false` otherwise.
@@ -53,9 +42,8 @@ impl AccountStorageMode {
 impl fmt::Display for AccountStorageMode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            AccountStorageMode::Public => write!(f, "public"),
-            AccountStorageMode::Network => write!(f, "network"),
             AccountStorageMode::Private => write!(f, "private"),
+            AccountStorageMode::Public => write!(f, "public"),
         }
     }
 }
@@ -65,9 +53,8 @@ impl TryFrom<&str> for AccountStorageMode {
 
     fn try_from(value: &str) -> Result<Self, AccountIdError> {
         match value.to_lowercase().as_str() {
-            "public" => Ok(AccountStorageMode::Public),
-            "network" => Ok(AccountStorageMode::Network),
             "private" => Ok(AccountStorageMode::Private),
+            "public" => Ok(AccountStorageMode::Public),
             _ => Err(AccountIdError::UnknownAccountStorageMode(value.into())),
         }
     }
@@ -93,10 +80,9 @@ impl FromStr for AccountStorageMode {
 impl rand::distr::Distribution<AccountStorageMode> for rand::distr::StandardUniform {
     /// Samples a uniformly random [`AccountStorageMode`] from the given `rng`.
     fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> AccountStorageMode {
-        match rng.random_range(0..3) {
-            0 => AccountStorageMode::Public,
-            1 => AccountStorageMode::Network,
-            2 => AccountStorageMode::Private,
+        match rng.random_range(0..2) {
+            0 => AccountStorageMode::Private,
+            1 => AccountStorageMode::Public,
             _ => unreachable!("gen_range should not produce higher values"),
         }
     }
