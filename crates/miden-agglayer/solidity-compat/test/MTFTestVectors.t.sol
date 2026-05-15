@@ -95,7 +95,7 @@ contract MTFTestVectors is Test, DepositContractV2 {
      *
      *         Output file: test-vectors/merkle_tree_frontier_vectors.json
      */
-    function test_generateVectors() public {
+    function test_generate_MTF_vectors() public {
         bytes32[] memory leaves = new bytes32[](32);
         bytes32[] memory roots = new bytes32[](32);
         uint256[] memory counts = new uint256[](32);

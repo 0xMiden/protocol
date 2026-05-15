@@ -14,11 +14,17 @@ use miden_protocol::account::{
     AccountType,
 };
 use miden_protocol::asset::TokenSymbol;
-use miden_protocol::note::NoteScript;
-use miden_protocol::vm::Program;
 use miden_standards::account::access::Ownable2Step;
-use miden_standards::account::auth::NoAuth;
-use miden_standards::account::mint_policies::OwnerControlled;
+use miden_standards::account::auth::AuthNetworkAccount;
+use miden_standards::account::policies::{
+    BurnAllowAll,
+    BurnPolicyConfig,
+    MintPolicyConfig,
+    PolicyAuthority,
+    PolicyRegistration,
+    TokenPolicyManager,
+    TransferPolicy,
+};
 use miden_utils_sync::LazyLock;
 
 pub mod b2agg_note;
@@ -28,6 +34,8 @@ pub mod config_note;
 pub mod errors;
 pub mod eth_types;
 pub mod faucet;
+#[cfg(feature = "testing")]
+pub mod testing;
 pub mod update_ger_note;
 pub mod utils;
 
@@ -35,13 +43,13 @@ pub use b2agg_note::B2AggNote;
 pub use bridge::{AggLayerBridge, AgglayerBridgeError};
 pub use claim_note::{
     CgiChainHash,
+    ClaimNote,
     ClaimNoteStorage,
     ExitRoot,
     LeafData,
     LeafValue,
     ProofData,
     SmtNode,
-    create_claim_note,
 };
 pub use config_note::ConfigAggBridgeNote;
 #[cfg(any(test, feature = "testing"))]
@@ -58,21 +66,6 @@ pub use eth_types::{
 pub use faucet::{AggLayerFaucet, AgglayerFaucetError};
 pub use update_ger_note::UpdateGerNote;
 pub use utils::Keccak256Output;
-
-// AGGLAYER NOTE SCRIPTS
-// ================================================================================================
-
-// Initialize the CLAIM note script only once
-static CLAIM_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/claim.masb"));
-    let program = Program::read_from_bytes(bytes).expect("shipped CLAIM script is well-formed");
-    NoteScript::new(program)
-});
-
-/// Returns the CLAIM (Bridge from AggLayer) note script.
-pub fn claim_script() -> NoteScript {
-    CLAIM_SCRIPT.clone()
-}
 
 // AGGLAYER ACCOUNT COMPONENTS
 // ================================================================================================
@@ -163,14 +156,21 @@ fn create_agglayer_faucet_component(
 ///
 /// The bridge starts with an empty faucet registry. Faucets are registered at runtime
 /// via CONFIG_AGG_BRIDGE notes that call `bridge_config::register_faucet`.
+///
+/// The builder is pre-wired with the [`AuthNetworkAccount`] auth component, initialized with
+/// [`AggLayerBridge::allowed_notes()`] so the bridge only accepts its sanctioned input notes.
 fn create_bridge_account_builder(
     seed: Word,
     bridge_admin_id: AccountId,
     ger_manager_id: AccountId,
 ) -> AccountBuilder {
     Account::builder(seed.into())
-        .storage_mode(AccountStorageMode::Network)
+        .storage_mode(AccountStorageMode::Public)
         .with_component(AggLayerBridge::new(bridge_admin_id, ger_manager_id))
+        .with_auth_component(
+            AuthNetworkAccount::with_allowlist(AggLayerBridge::allowed_notes())
+                .expect("bridge note allowlist is non-empty"),
+        )
 }
 
 /// Creates a new bridge account with the standard configuration.
@@ -182,7 +182,6 @@ pub fn create_bridge_account(
     ger_manager_id: AccountId,
 ) -> Account {
     create_bridge_account_builder(seed, bridge_admin_id, ger_manager_id)
-        .with_auth_component(AccountComponent::from(NoAuth))
         .build()
         .expect("bridge account should be valid")
 }
@@ -197,7 +196,6 @@ pub fn create_existing_bridge_account(
     ger_manager_id: AccountId,
 ) -> Account {
     create_bridge_account_builder(seed, bridge_admin_id, ger_manager_id)
-        .with_auth_component(AccountComponent::from(NoAuth))
         .build_existing()
         .expect("bridge account should be valid")
 }
@@ -207,8 +205,14 @@ pub fn create_existing_bridge_account(
 /// The builder includes:
 /// - The `AggLayerFaucet` component (conversion metadata + token metadata).
 /// - The `Ownable2Step` component (bridge account ID as owner for mint authorization).
-/// - The `OwnerControlled` component (mint policy management required by
-///   `network_fungible::mint_and_send`).
+/// - A [`TokenPolicyManager`] (owner-controlled) configured with `MintPolicyConfig::OwnerOnly` and
+///   `BurnPolicyConfig::OwnerOnly`. The manager additionally registers `BurnAllowAll::root()` as an
+///   allowed burn policy so the owner can open burns at runtime via `set_burn_policy`. The active
+///   mint policy component (`MintOwnerOnly`) and burn policy component (`BurnOwnerOnly`) are
+///   produced by the manager; `BurnAllowAll` is installed separately as the additional allowed burn
+///   policy procedure.
+/// - The [`AuthNetworkAccount`] auth component, initialized with
+///   [`AggLayerFaucet::allowed_notes()`] so the faucet only accepts MINT and BURN notes.
 #[allow(clippy::too_many_arguments)]
 fn create_agglayer_faucet_builder(
     seed: Word,
@@ -233,12 +237,31 @@ fn create_agglayer_faucet_builder(
         metadata_hash,
     );
 
+    // `allow_all` is explicitly registered as Reserved so the owner can open burns at runtime
+    // via `set_burn_policy`.
+    let token_policy_manager = TokenPolicyManager::new(PolicyAuthority::OwnerControlled)
+        .with_mint_policy(MintPolicyConfig::OwnerOnly, PolicyRegistration::Active)
+        .expect("active mint policy is registered exactly once")
+        .with_burn_policy(BurnPolicyConfig::OwnerOnly, PolicyRegistration::Active)
+        .expect("active burn policy is registered exactly once")
+        .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Reserved)
+        .expect("reserved burn policy registration does not conflict")
+        .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)
+        .expect("active send policy is registered exactly once")
+        .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)
+        .expect("active receive policy is registered exactly once");
+
     Account::builder(seed.into())
         .account_type(AccountType::FungibleFaucet)
-        .storage_mode(AccountStorageMode::Network)
+        .storage_mode(AccountStorageMode::Public)
         .with_component(agglayer_component)
         .with_component(Ownable2Step::new(bridge_account_id))
-        .with_component(OwnerControlled::owner_only())
+        .with_components(token_policy_manager)
+        .with_component(BurnAllowAll)
+        .with_auth_component(
+            AuthNetworkAccount::with_allowlist(AggLayerFaucet::allowed_notes())
+                .expect("faucet note allowlist is non-empty"),
+        )
 }
 
 /// Creates a new agglayer faucet account with the specified configuration.
@@ -268,7 +291,6 @@ pub fn create_agglayer_faucet(
         scale,
         metadata_hash,
     )
-    .with_auth_component(AccountComponent::from(NoAuth))
     .build()
     .expect("agglayer faucet account should be valid")
 }
@@ -302,7 +324,6 @@ pub fn create_existing_agglayer_faucet(
         scale,
         metadata_hash,
     )
-    .with_auth_component(AccountComponent::from(NoAuth))
     .build_existing()
     .expect("agglayer faucet account should be valid")
 }

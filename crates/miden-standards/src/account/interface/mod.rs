@@ -2,7 +2,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use miden_protocol::account::{AccountId, AccountType};
-use miden_protocol::note::{NoteAttachmentContent, PartialNote};
+use miden_protocol::note::PartialNote;
 use miden_protocol::transaction::TransactionScript;
 use thiserror::Error;
 
@@ -23,9 +23,6 @@ pub use extension::{AccountComponentInterfaceExt, AccountInterfaceExt};
 // ================================================================================================
 
 /// An [`AccountInterface`] describes the exported, callable procedures of an account.
-///
-/// A note script's compatibility with this interface can be inspected to check whether the note may
-/// result in a successful execution against this account.
 pub struct AccountInterface {
     account_id: AccountId,
     auth: Vec<AuthMethod>,
@@ -46,6 +43,13 @@ impl AccountInterface {
         components: Vec<AccountComponentInterface>,
     ) -> Self {
         Self { account_id, auth, components }
+    }
+
+    /// Returns `true` if the account installs an [`AccountComponentInterface::Ownable2Step`]
+    /// access component. Since [`AccountComponentInterface::RoleBasedAccessControl`] always
+    /// includes Ownable2Step, this also covers RBAC-controlled accounts.
+    pub fn is_owner_controlled(&self) -> bool {
+        self.components.contains(&AccountComponentInterface::Ownable2Step)
     }
 
     // PUBLIC ACCESSORS
@@ -71,14 +75,6 @@ impl AccountInterface {
         self.account_id.is_regular_account()
     }
 
-    /// Returns `true` if the full state of the account is public on chain, i.e. if the modes are
-    /// [`AccountStorageMode::Public`](miden_protocol::account::AccountStorageMode::Public) or
-    /// [`AccountStorageMode::Network`](miden_protocol::account::AccountStorageMode::Network),
-    /// `false` otherwise.
-    pub fn has_public_state(&self) -> bool {
-        self.account_id.has_public_state()
-    }
-
     /// Returns `true` if the reference account is a private account, `false` otherwise.
     pub fn is_private(&self) -> bool {
         self.account_id.is_private()
@@ -87,11 +83,6 @@ impl AccountInterface {
     /// Returns true if the reference account is a public account, `false` otherwise.
     pub fn is_public(&self) -> bool {
         self.account_id.is_public()
-    }
-
-    /// Returns true if the reference account is a network account, `false` otherwise.
-    pub fn is_network(&self) -> bool {
-        self.account_id.is_network()
     }
 
     /// Returns a reference to the vector of used authentication methods.
@@ -118,10 +109,10 @@ impl AccountInterface {
     /// considered expired and cannot be included into the chain.
     ///
     /// Currently only [`AccountComponentInterface::BasicWallet`] and
-    /// [`AccountComponentInterface::BasicFungibleFaucet`] interfaces are supported for the
+    /// [`AccountComponentInterface::FungibleFaucet`] interfaces are supported for the
     /// `send_note` script creation. Attempt to generate the script using some other interface will
     /// lead to an error. In case both supported interfaces are available in the account, the script
-    /// will be generated for the [`AccountComponentInterface::BasicFungibleFaucet`] interface.
+    /// will be generated for the [`AccountComponentInterface::FungibleFaucet`] interface.
     ///
     /// # Example
     ///
@@ -134,7 +125,7 @@ impl AccountInterface {
     ///     push.{note information}
     ///
     ///     push.{asset amount}
-    ///     call.::miden::standards::faucets::basic_fungible::mint_and_send dropw dropw drop
+    ///     call.::miden::standards::faucets::fungible::mint_and_send dropw dropw drop
     /// end
     /// ```
     ///
@@ -147,7 +138,7 @@ impl AccountInterface {
     /// - a faucet tries to mint an asset with a different faucet ID.
     ///
     /// [wallet]: crate::account::interface::AccountComponentInterface::BasicWallet
-    /// [faucet]: crate::account::interface::AccountComponentInterface::BasicFungibleFaucet
+    /// [faucet]: crate::account::interface::AccountComponentInterface::FungibleFaucet
     pub fn build_send_notes_script(
         &self,
         output_notes: &[PartialNote],
@@ -161,13 +152,13 @@ impl AccountInterface {
             note_creation_source,
         );
 
-        // Add attachment array entries to the code builder's advice map.
-        // For NoteAttachmentContent::Array, the commitment (to_word) is used as key
-        // and the array elements as value.
+        // Add attachment entries to the code builder's advice map.
+        // The commitment is used as key and the elements as value.
         let mut code_builder = CodeBuilder::new();
         for note in output_notes {
-            if let NoteAttachmentContent::Array(array) = note.metadata().attachment().content() {
-                code_builder.add_advice_map_entry(array.commitment(), array.as_slice().to_vec());
+            for attachment in note.attachments().iter() {
+                code_builder
+                    .add_advice_map_entry(attachment.to_commitment(), attachment.to_elements());
             }
         }
 
@@ -194,18 +185,16 @@ impl AccountInterface {
         &self,
         output_notes: &[PartialNote],
     ) -> Result<String, AccountInterfaceError> {
-        if let Some(basic_fungible_faucet) = self.components().iter().find(|component_interface| {
-            matches!(component_interface, AccountComponentInterface::BasicFungibleFaucet)
+        if let Some(fungible_faucet) = self.components().iter().find(|component_interface| {
+            matches!(component_interface, AccountComponentInterface::FungibleFaucet)
         }) {
-            basic_fungible_faucet.send_note_body(*self.id(), output_notes)
-        } else if let Some(_network_fungible_faucet) =
-            self.components().iter().find(|component_interface| {
-                matches!(component_interface, AccountComponentInterface::NetworkFungibleFaucet)
-            })
-        {
-            // Network fungible faucet doesn't support send_note_body, because minting
-            // is done via a MINT note.
-            Err(AccountInterfaceError::UnsupportedAccountInterface)
+            // Owner-controlled faucets (network-style) mint exclusively via MINT notes; refuse to
+            // generate a tx-script `send_note` flow that would fail at runtime under the
+            // OwnerOnly mint policy.
+            if self.is_owner_controlled() {
+                return Err(AccountInterfaceError::UnsupportedAccountInterface);
+            }
+            fungible_faucet.send_note_body(*self.id(), output_notes)
         } else if self.components().contains(&AccountComponentInterface::BasicWallet) {
             AccountComponentInterface::BasicWallet.send_note_body(*self.id(), output_notes)
         } else {
@@ -223,24 +212,6 @@ impl AccountInterface {
             String::new()
         }
     }
-}
-
-// NOTE ACCOUNT COMPATIBILITY
-// ================================================================================================
-
-/// Describes whether a note is compatible with a specific account.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum NoteAccountCompatibility {
-    /// A note is incompatible with an account.
-    ///
-    /// The account interface does not have procedures for being able to execute at least one of
-    /// the program execution branches.
-    No,
-    /// The account has all necessary procedures of one execution branch of the note script. This
-    /// means the note may be able to be consumed by the account if that branch is executed.
-    Maybe,
-    /// A note could be successfully executed and consumed by the account.
-    Yes,
 }
 
 // ACCOUNT INTERFACE ERROR

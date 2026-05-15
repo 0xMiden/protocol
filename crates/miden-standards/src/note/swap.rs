@@ -1,5 +1,6 @@
 use alloc::vec::Vec;
 
+use miden_protocol::Word;
 use miden_protocol::account::AccountId;
 use miden_protocol::assembly::Path;
 use miden_protocol::asset::Asset;
@@ -8,17 +9,17 @@ use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
     Note,
     NoteAssets,
-    NoteAttachment,
+    NoteAttachments,
     NoteDetails,
-    NoteMetadata,
     NoteRecipient,
     NoteScript,
+    NoteScriptRoot,
     NoteStorage,
     NoteTag,
     NoteType,
+    PartialNoteMetadata,
 };
 use miden_protocol::utils::sync::LazyLock;
-use miden_protocol::{Felt, Word};
 
 use crate::StandardsLib;
 use crate::note::P2idNoteStorage;
@@ -59,7 +60,7 @@ impl SwapNote {
     }
 
     /// Returns the SWAP note script root.
-    pub fn script_root() -> Word {
+    pub fn script_root() -> NoteScriptRoot {
         SWAP_SCRIPT.root()
     }
 
@@ -80,9 +81,8 @@ impl SwapNote {
         offered_asset: Asset,
         requested_asset: Asset,
         swap_note_type: NoteType,
-        swap_note_attachment: NoteAttachment,
+        swap_note_attachments: NoteAttachments,
         payback_note_type: NoteType,
-        payback_note_attachment: NoteAttachment,
         rng: &mut R,
     ) -> Result<(Note, NoteDetails), NoteError> {
         if requested_asset == offered_asset {
@@ -91,13 +91,8 @@ impl SwapNote {
 
         let payback_serial_num = rng.draw_word();
 
-        let swap_storage = SwapNoteStorage::new(
-            sender,
-            requested_asset,
-            payback_note_type,
-            payback_note_attachment,
-            payback_serial_num,
-        );
+        let swap_storage =
+            SwapNoteStorage::new(sender, requested_asset, payback_note_type, payback_serial_num);
 
         let serial_num = rng.draw_word();
         let recipient = swap_storage.into_recipient(serial_num);
@@ -106,11 +101,9 @@ impl SwapNote {
         let tag = Self::build_tag(swap_note_type, &offered_asset, &requested_asset);
 
         // build the outgoing note
-        let metadata = NoteMetadata::new(sender, swap_note_type)
-            .with_tag(tag)
-            .with_attachment(swap_note_attachment);
+        let metadata = PartialNoteMetadata::new(sender, swap_note_type).with_tag(tag);
         let assets = NoteAssets::new(vec![offered_asset])?;
-        let note = Note::new(assets, metadata, recipient);
+        let note = Note::with_attachments(assets, metadata, recipient, swap_note_attachments);
 
         // build the payback note details
         let payback_recipient = P2idNoteStorage::new(sender).into_recipient(payback_serial_num);
@@ -172,7 +165,6 @@ impl SwapNote {
 pub struct SwapNoteStorage {
     payback_note_type: NoteType,
     payback_tag: NoteTag,
-    payback_attachment: NoteAttachment,
     requested_asset: Asset,
     payback_recipient_digest: Word,
 }
@@ -182,7 +174,7 @@ impl SwapNoteStorage {
     // --------------------------------------------------------------------------------------------
 
     /// Expected number of storage items of the SWAP note.
-    pub const NUM_ITEMS: usize = 20;
+    pub const NUM_ITEMS: usize = 14;
 
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
@@ -192,7 +184,6 @@ impl SwapNoteStorage {
         sender: AccountId,
         requested_asset: Asset,
         payback_note_type: NoteType,
-        payback_attachment: NoteAttachment,
         payback_serial_number: Word,
     ) -> Self {
         let payback_recipient = P2idNoteStorage::new(sender).into_recipient(payback_serial_number);
@@ -201,7 +192,6 @@ impl SwapNoteStorage {
         Self::from_parts(
             payback_note_type,
             payback_tag,
-            payback_attachment,
             requested_asset,
             payback_recipient.digest(),
         )
@@ -211,14 +201,12 @@ impl SwapNoteStorage {
     pub fn from_parts(
         payback_note_type: NoteType,
         payback_tag: NoteTag,
-        payback_attachment: NoteAttachment,
         requested_asset: Asset,
         payback_recipient_digest: Word,
     ) -> Self {
         Self {
             payback_note_type,
             payback_tag,
-            payback_attachment,
             requested_asset,
             payback_recipient_digest,
         }
@@ -232,11 +220,6 @@ impl SwapNoteStorage {
     /// Returns the payback note tag.
     pub fn payback_tag(&self) -> NoteTag {
         self.payback_tag
-    }
-
-    /// Returns the payback note attachment.
-    pub fn payback_attachment(&self) -> &NoteAttachment {
-        &self.payback_attachment
     }
 
     /// Returns the requested asset.
@@ -260,28 +243,16 @@ impl SwapNoteStorage {
 
 impl From<SwapNoteStorage> for NoteStorage {
     fn from(storage: SwapNoteStorage) -> Self {
-        let attachment_scheme = Felt::from(storage.payback_attachment.attachment_scheme().as_u32());
-        let attachment_kind = Felt::from(storage.payback_attachment.attachment_kind().as_u8());
-        let attachment = storage.payback_attachment.content().to_word();
-
         let mut storage_values = Vec::with_capacity(SwapNoteStorage::NUM_ITEMS);
-        storage_values.extend_from_slice(&[
-            storage.payback_note_type.into(),
-            storage.payback_tag.into(),
-            attachment_scheme,
-            attachment_kind,
-        ]);
-        storage_values.extend_from_slice(attachment.as_elements());
         storage_values.extend_from_slice(&storage.requested_asset.as_elements());
         storage_values.extend_from_slice(storage.payback_recipient_digest.as_elements());
+        storage_values
+            .extend_from_slice(&[storage.payback_note_type.into(), storage.payback_tag.into()]);
 
         NoteStorage::new(storage_values)
             .expect("number of storage items should not exceed max storage items")
     }
 }
-
-// NOTE: TryFrom<&[Felt]> for SwapNoteStorage is not implemented because
-// array attachment content cannot be reconstructed from storage alone. See https://github.com/0xMiden/protocol/issues/2555
 
 // TESTS
 // ================================================================================================
@@ -291,7 +262,7 @@ mod tests {
     use miden_protocol::Felt;
     use miden_protocol::account::{AccountIdVersion, AccountStorageMode, AccountType};
     use miden_protocol::asset::{FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
-    use miden_protocol::note::{NoteAttachment, NoteStorage, NoteTag, NoteType};
+    use miden_protocol::note::{NoteStorage, NoteTag, NoteType};
     use miden_protocol::testing::account_id::{
         ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
         ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET,
@@ -321,7 +292,6 @@ mod tests {
     fn swap_note_storage() {
         let payback_note_type = NoteType::Private;
         let payback_tag = NoteTag::new(0x12345678);
-        let payback_attachment = NoteAttachment::default();
         let requested_asset = fungible_asset();
         let payback_recipient_digest =
             Word::new([Felt::new(1), Felt::new(2), Felt::new(3), Felt::new(4)]);
@@ -329,14 +299,12 @@ mod tests {
         let storage = SwapNoteStorage::from_parts(
             payback_note_type,
             payback_tag,
-            payback_attachment.clone(),
             requested_asset,
             payback_recipient_digest,
         );
 
         assert_eq!(storage.payback_note_type(), payback_note_type);
         assert_eq!(storage.payback_tag(), payback_tag);
-        assert_eq!(storage.payback_attachment(), &payback_attachment);
         assert_eq!(storage.requested_asset(), requested_asset);
         assert_eq!(storage.payback_recipient_digest(), payback_recipient_digest);
 
@@ -349,7 +317,6 @@ mod tests {
     fn swap_note_storage_with_non_fungible_asset() {
         let payback_note_type = NoteType::Public;
         let payback_tag = NoteTag::new(0xaabbccdd);
-        let payback_attachment = NoteAttachment::default();
         let requested_asset = non_fungible_asset();
         let payback_recipient_digest =
             Word::new([Felt::new(10), Felt::new(20), Felt::new(30), Felt::new(40)]);
@@ -357,7 +324,6 @@ mod tests {
         let storage = SwapNoteStorage::from_parts(
             payback_note_type,
             payback_tag,
-            payback_attachment,
             requested_asset,
             payback_recipient_digest,
         );
@@ -385,7 +351,7 @@ mod tests {
             FungibleAsset::new(
                 AccountId::dummy(
                     fungible_faucet_id_bytes,
-                    AccountIdVersion::Version0,
+                    AccountIdVersion::Version1,
                     AccountType::FungibleFaucet,
                     AccountStorageMode::Public,
                 ),
@@ -399,7 +365,7 @@ mod tests {
                 &NonFungibleAssetDetails::new(
                     AccountId::dummy(
                         non_fungible_faucet_id_bytes,
-                        AccountIdVersion::Version0,
+                        AccountIdVersion::Version1,
                         AccountType::NonFungibleFaucet,
                         AccountStorageMode::Public,
                     ),

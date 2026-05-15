@@ -1,11 +1,11 @@
 use alloc::string::String;
 
-use miden_protocol::Word;
-use miden_protocol::account::component::AccountComponentMetadata;
+use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
 use miden_protocol::account::{
     Account,
     AccountBuilder,
     AccountComponent,
+    AccountProcedureRoot,
     AccountStorageMode,
     AccountType,
 };
@@ -13,27 +13,30 @@ use miden_protocol::errors::AccountError;
 use thiserror::Error;
 
 use super::AuthMethod;
+use crate::account::account_component_code;
 use crate::account::auth::{AuthMultisig, AuthMultisigConfig, AuthSingleSig};
-use crate::account::components::basic_wallet_library;
-use crate::procedure_digest;
+use crate::procedure_root;
 
 // BASIC WALLET
 // ================================================================================================
 
-// Initialize the digest of the `receive_asset` procedure of the Basic Wallet only once.
-procedure_digest!(
+account_component_code!(BASIC_WALLET_CODE, "wallets/basic_wallet.masl");
+
+// Initialize the procedure root of the `receive_asset` procedure of the Basic Wallet only once.
+procedure_root!(
     BASIC_WALLET_RECEIVE_ASSET,
     BasicWallet::NAME,
     BasicWallet::RECEIVE_ASSET_PROC_NAME,
-    basic_wallet_library
+    BasicWallet::code()
 );
 
-// Initialize the digest of the `move_asset_to_note` procedure of the Basic Wallet only once.
-procedure_digest!(
+// Initialize the procedure root of the `move_asset_to_note` procedure of the Basic Wallet only
+// once.
+procedure_root!(
     BASIC_WALLET_MOVE_ASSET_TO_NOTE,
     BasicWallet::NAME,
     BasicWallet::MOVE_ASSET_TO_NOTE_PROC_NAME,
-    basic_wallet_library
+    BasicWallet::code()
 );
 
 /// An [`AccountComponent`] implementing a basic wallet.
@@ -67,13 +70,18 @@ impl BasicWallet {
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns the digest of the `receive_asset` wallet procedure.
-    pub fn receive_asset_digest() -> Word {
+    /// Returns the [`AccountComponentCode`] of this component.
+    pub fn code() -> &'static AccountComponentCode {
+        &BASIC_WALLET_CODE
+    }
+
+    /// Returns the procedure root of the `receive_asset` wallet procedure.
+    pub fn receive_asset_root() -> AccountProcedureRoot {
         *BASIC_WALLET_RECEIVE_ASSET
     }
 
-    /// Returns the digest of the `move_asset_to_note` wallet procedure.
-    pub fn move_asset_to_note_digest() -> Word {
+    /// Returns the procedure root of the `move_asset_to_note` wallet procedure.
+    pub fn move_asset_to_note_root() -> AccountProcedureRoot {
         *BASIC_WALLET_MOVE_ASSET_TO_NOTE
     }
 
@@ -88,7 +96,7 @@ impl From<BasicWallet> for AccountComponent {
     fn from(_: BasicWallet) -> Self {
         let metadata = BasicWallet::component_metadata();
 
-        AccountComponent::new(basic_wallet_library(), vec![], metadata).expect(
+        AccountComponent::new(BasicWallet::code().clone(), vec![], metadata).expect(
             "basic wallet component should satisfy the requirements of a valid account component",
         )
     }
@@ -135,7 +143,7 @@ pub fn create_basic_wallet(
         AuthMethod::Multisig { threshold, approvers } => {
             let config = AuthMultisigConfig::new(approvers, threshold)
                 .and_then(|cfg| {
-                    cfg.with_proc_thresholds(vec![(BasicWallet::receive_asset_digest(), 1)])
+                    cfg.with_proc_thresholds(vec![(BasicWallet::receive_asset_root(), 1)])
                 })
                 .map_err(BasicWalletError::AccountError)?;
             AuthMultisig::new(config).map_err(BasicWalletError::AccountError)?.into()
@@ -143,6 +151,11 @@ pub fn create_basic_wallet(
         AuthMethod::NoAuth => {
             return Err(BasicWalletError::UnsupportedAuthMethod(
                 "basic wallets cannot be created with NoAuth authentication method".into(),
+            ));
+        },
+        AuthMethod::NetworkAccount { .. } => {
+            return Err(BasicWalletError::UnsupportedAuthMethod(
+                "basic wallets cannot be created with NetworkAccount authentication method".into(),
             ));
         },
         AuthMethod::Unknown => {
@@ -208,10 +221,10 @@ mod tests {
         assert_eq!(wallet, deserialized_wallet);
     }
 
-    /// Check that the obtaining of the basic wallet procedure digests does not panic.
+    /// Check that the obtaining of the basic wallet procedure roots does not panic.
     #[test]
     fn get_faucet_procedures() {
-        let _receive_asset_digest = BasicWallet::receive_asset_digest();
-        let _move_asset_to_note_digest = BasicWallet::move_asset_to_note_digest();
+        let _receive_asset_root = BasicWallet::receive_asset_root();
+        let _move_asset_to_note_root = BasicWallet::move_asset_to_note_root();
     }
 }

@@ -1,5 +1,8 @@
 use miden::core::word
 use $kernel::memory
+use $kernel::memory::LINK_MAP_ENTRY_SIZE
+use $kernel::memory::LINK_MAP_REGION_END_PTR
+use $kernel::memory::LINK_MAP_REGION_START_PTR
 
 # A link map is a map data structure based on a sorted linked list.
 #
@@ -156,11 +159,17 @@ const INSERT_OPERATION_UPDATE=0
 # The value of the InsertAtHead operation for a set event.
 const INSERT_OPERATION_AT_HEAD=1
 
+# The value of the InsertAfterEntry operation for a set event.
+const INSERT_OPERATION_AFTER_ENTRY=2
+
 # The value of the Found operation for a get event.
 const GET_OPERATION_FOUND=0
 
 # The value of the AbsentAtHead operation for a get event.
 const GET_OPERATION_ABSENT_AT_HEAD=1
+
+# The value of the AbsentAfterEntry operation for a get event.
+const GET_OPERATION_ABSENT_AFTER_ENTRY=2
 
 # EVENTS
 # =================================================================================================
@@ -480,7 +489,7 @@ proc insert_at_head
     # => []
 end
 
-#! Updates the VALUE0 in the given entry.
+#! Updates the VALUE0 and VALUE1 in the given entry.
 #!
 #! Inputs:  [entry_ptr, KEY, VALUE0, VALUE1]
 #! Outputs: []
@@ -550,7 +559,7 @@ proc insert_after_entry
 
     # set entry_ptr.prev_entry = prev_entry_ptr
     exec.set_prev_entry_ptr
-    # => [entry_ptr, next_entry_ptr, entry_ptr]
+    # => [next_entry_ptr, entry_ptr]
 
     dup eq.0 not
     # => [has_next_entry, next_entry_ptr, entry_ptr]
@@ -924,7 +933,7 @@ proc assert_entry_ptr_is_valid
     u32assert.err=ERR_LINK_MAP_ENTRY_PTR_IS_OUTSIDE_VALID_MEMORY_REGION
     # => [entry_ptr, map_ptr]
 
-    exec.memory::get_link_map_region_start_ptr dup.1
+    push.LINK_MAP_REGION_START_PTR dup.1
     # => [entry_ptr, region_start_ptr, entry_ptr, map_ptr]
 
     # compute region_start_ptr <= entry_ptr
@@ -932,7 +941,7 @@ proc assert_entry_ptr_is_valid
     u32lte
     # => [is_entry_ptr_gt_start, entry_ptr, map_ptr]
 
-    dup.1 exec.memory::get_link_map_region_end_ptr
+    dup.1 push.LINK_MAP_REGION_END_PTR
     # => [region_end_ptr, entry_ptr, is_entry_ptr_gt_start, entry_ptr, map_ptr]
 
     # compute entry_ptr < region_end_ptr
@@ -950,7 +959,7 @@ proc assert_entry_ptr_is_valid
     # any valid entry pointer is a multiple of LINK_MAP_ENTRY_SIZE. So to check validity,
     # we assert that entry_ptr % LINK_MAP_ENTRY_SIZE == 0.
     # note: we previously asserted that entry_ptr fits in a u32
-    dup exec.memory::get_link_map_entry_size u32mod eq.0
+    dup push.LINK_MAP_ENTRY_SIZE u32mod eq.0
     # => [is_entry_ptr_aligned, entry_ptr, map_ptr]
 
     assert.err=ERR_LINK_MAP_ENTRY_PTR_IS_NOT_ENTRY_ALIGNED

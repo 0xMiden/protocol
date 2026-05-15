@@ -1,3 +1,4 @@
+use std::collections::{BTreeSet, HashSet};
 use std::env;
 use std::fmt::Write;
 use std::path::Path;
@@ -5,8 +6,8 @@ use std::sync::Arc;
 
 use fs_err as fs;
 use miden_assembly::diagnostics::{IntoDiagnostic, NamedSource, Result, WrapErr};
-use miden_assembly::serde::Serializable;
 use miden_assembly::{Assembler, Library, Report};
+use miden_core::Word;
 use miden_crypto::hash::keccak::{Keccak256, Keccak256Digest};
 use miden_protocol::account::{
     AccountCode,
@@ -14,9 +15,18 @@ use miden_protocol::account::{
     AccountComponentMetadata,
     AccountType,
 };
+use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::transaction::TransactionKernel;
-use miden_standards::account::auth::NoAuth;
-use miden_standards::account::mint_policies::OwnerControlled;
+use miden_standards::account::auth::AuthNetworkAccount;
+use miden_standards::account::policies::{
+    BurnPolicyConfig,
+    MintPolicyConfig,
+    PolicyAuthority,
+    PolicyRegistration,
+    TokenPolicyManager,
+    TransferPolicy,
+};
+use regex::Regex;
 
 // CONSTANTS
 // ================================================================================================
@@ -26,6 +36,7 @@ const ASM_DIR: &str = "asm";
 const ASM_NOTE_SCRIPTS_DIR: &str = "note_scripts";
 const ASM_AGGLAYER_DIR: &str = "agglayer";
 const ASM_AGGLAYER_BRIDGE_DIR: &str = "agglayer/bridge";
+const ASM_AGGLAYER_CONSTANTS_MASM: &str = "agglayer/common/constants.masm";
 const ASM_COMPONENTS_DIR: &str = "components";
 
 const AGGLAYER_ERRORS_RS_FILE: &str = "agglayer_errors.rs";
@@ -38,7 +49,7 @@ const AGGLAYER_GLOBAL_CONSTANTS_FILE_NAME: &str = "agglayer_constants.rs";
 /// Read and parse the contents from `./asm`.
 /// - Compiles the contents of asm/agglayer directory into a single agglayer.masl library.
 /// - Compiles the contents of asm/components directory into individual per-component .masl files.
-/// - Compiles the contents of asm/note_scripts directory into individual .masb files.
+/// - Compiles the contents of asm/note_scripts directory into individual `.masl` libraries.
 fn main() -> Result<()> {
     // re-build when the MASM code changes
     println!("cargo::rerun-if-changed={ASM_DIR}/");
@@ -80,7 +91,12 @@ fn main() -> Result<()> {
 
     // generate agglayer specific constants
     let constants_out_path = Path::new(&build_dir).join(AGGLAYER_GLOBAL_CONSTANTS_FILE_NAME);
-    generate_agglayer_constants(constants_out_path, component_libraries)?;
+    let agglayer_constants_masm_path = crate_path.join(ASM_DIR).join(ASM_AGGLAYER_CONSTANTS_MASM);
+    generate_agglayer_constants(
+        constants_out_path,
+        component_libraries,
+        &agglayer_constants_masm_path,
+    )?;
 
     generate_error_constants(&source_dir, &build_dir)?;
 
@@ -115,16 +131,15 @@ fn compile_agglayer_lib(
 // COMPILE EXECUTABLE MODULES
 // ================================================================================================
 
-/// Reads all MASM files from the "{source_dir}", complies each file individually into a MASB
-/// file, and stores the compiled files into the "{target_dir}".
-///
-/// The source files are expected to contain executable programs.
+/// Reads all MASM files from `{source_dir}`, compiles each file as a note script library with
+/// [`Assembler::assemble_library`], and writes the serialized library as `.masl` via
+/// [`Library::write_to_file`].
 fn compile_note_scripts(
     source_dir: &Path,
-    target_dir: &Path,
+    note_scripts_target_dir: &Path,
     mut assembler: Assembler,
 ) -> Result<()> {
-    fs::create_dir_all(target_dir)
+    fs::create_dir_all(note_scripts_target_dir)
         .into_diagnostic()
         .wrap_err("failed to create note_scripts directory")?;
 
@@ -132,22 +147,22 @@ fn compile_note_scripts(
     let standards_lib = miden_standards::StandardsLib::default();
     assembler.link_static_library(standards_lib)?;
 
-    for masm_file_path in shared::get_masm_files(source_dir).unwrap() {
-        // read the MASM file, parse it, and serialize the parsed AST to bytes
-        let code = assembler.clone().assemble_program(masm_file_path.clone())?;
+    for note_file_path in shared::get_masm_files(source_dir).unwrap() {
+        // compile the note script library from the provided MASM file
+        let note_library = assembler.clone().assemble_library([note_file_path.clone()])?;
 
-        let bytes = code.to_bytes();
-
-        let masm_file_name = masm_file_path
+        let note_file_name = note_file_path
             .file_name()
             .expect("file name should exist")
             .to_str()
             .ok_or_else(|| Report::msg("failed to convert file name to &str"))?;
-        let mut masb_file_path = target_dir.join(masm_file_name);
+        let mut masl_file_path = note_scripts_target_dir.join(note_file_name);
+        masl_file_path.set_extension(Library::LIBRARY_EXTENSION);
 
-        // write the binary MASB to the output dir
-        masb_file_path.set_extension("masb");
-        fs::write(masb_file_path, bytes).unwrap();
+        // write the note script library to the output dir
+        note_library
+            .write_to_file(&masl_file_path)
+            .map_err(|e| Report::msg(format!("{e:#}")))?;
     }
     Ok(())
 }
@@ -207,14 +222,77 @@ fn compile_account_components(
 // GENERATE AGGLAYER CONSTANTS
 // ================================================================================================
 
+/// Parses every decimal `u32` constant from `asm/agglayer/common/constants.masm`.
+///
+/// Recognized lines (whitespace-flexible, one definition per line, `#` comments ignored by the
+/// regex):
+///
+/// ```text
+/// const SOME_NAME = 123
+/// ```
+///
+/// Each match is emitted to `agglayer_constants.rs` as `pub const SOME_NAME: u32`.
+/// Duplicate `const` names in the same file are a build error. Non-decimal values (e.g. `word(...)`
+/// or array literals) are not parsed here; add support in this function when needed.
+fn parse_numeric_constants_from_constants_masm(masm_path: &Path) -> Result<Vec<(String, u32)>> {
+    // Read the full `constants.masm` text; parsing is line-based so we need the whole file.
+    let contents = fs::read_to_string(masm_path)
+        .into_diagnostic()
+        .wrap_err_with(|| format!("failed to read {}", masm_path.display()))?;
+
+    // One line per match: optional leading space, `const`, identifier (no leading digit), `=`,
+    // decimal digits only. `(?m)^` makes `^` match after newlines so we skip comment-only lines.
+    let re = Regex::new(r"(?m)^\s*const\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(\d+)\s*$")
+        .expect("constants.masm parse regex should compile");
+
+    // `out` preserves declaration order; `seen` rejects duplicate const names in the same file.
+    let mut out = Vec::new();
+    let mut seen = HashSet::new();
+
+    for caps in re.captures_iter(&contents) {
+        let name = caps.get(1).expect("group 1").as_str();
+
+        // Require each identifier at most once so generated Rust names are unique.
+        if !seen.insert(name.to_string()) {
+            return Err(Report::msg(format!(
+                "duplicate `const {name}` in {}",
+                masm_path.display()
+            )));
+        }
+
+        // Right-hand side must fit `u32` (same range we emit in Rust).
+        let raw = caps.get(2).expect("group 2").as_str();
+        let value = raw.parse::<u32>().map_err(|_| {
+            Report::msg(format!(
+                "`const {name}` value `{raw}` is not a valid u32 in {}",
+                masm_path.display()
+            ))
+        })?;
+
+        out.push((name.to_string(), value));
+    }
+
+    // Empty match set is almost certainly a misconfigured or mistyped `constants.masm`.
+    if out.is_empty() {
+        return Err(Report::msg(format!(
+            "{} does not contain any constants to parse",
+            masm_path.display()
+        )));
+    }
+
+    Ok(out)
+}
+
 /// Generates a Rust file containing AggLayer specific constants.
 ///
-/// At the moment, this file contains the following constants:
+/// This file contains:
+/// - All the constants listed in the `constants.masm` file.
 /// - AggLayer Bridge code commitment.
 /// - AggLayer Faucet code commitment.
 fn generate_agglayer_constants(
     target_file: impl AsRef<Path>,
     component_libraries: Vec<(String, Library)>,
+    constants_masm_path: &Path,
 ) -> Result<()> {
     let mut file_contents = String::new();
 
@@ -232,6 +310,11 @@ fn generate_agglayer_constants(
     )
     .unwrap();
 
+    let masm_constants = parse_numeric_constants_from_constants_masm(constants_masm_path)?;
+    for (name, value) in &masm_constants {
+        writeln!(file_contents, "pub const {name}: u32 = {value};\n").unwrap();
+    }
+
     // Create a dummy metadata to be able to create components. We only interested in the resulting
     // code commitment, so it doesn't matter what does this metadata holds.
     let dummy_metadata = AccountComponentMetadata::new("dummy", AccountType::all());
@@ -241,21 +324,45 @@ fn generate_agglayer_constants(
         let agglayer_component =
             AccountComponent::new(content_library, vec![], dummy_metadata.clone()).unwrap();
 
-        // The faucet account includes Ownable2Step and OwnerControlled components
-        // alongside the agglayer faucet component, since network_fungible::mint_and_send
-        // requires these for access control.
+        // The faucet account includes Ownable2Step and OwnerControlled components for mint and burn
+        // policies alongside the agglayer faucet component, since
+        // fungible::mint_and_send requires these for access control.
+        //
+        // The allowlist lives in storage, not code, and here we only care about the code commitment
+        // of the accounts, so we can init the allowlists with dummy values.
+        let placeholder_allowlist = BTreeSet::from([NoteScriptRoot::from_raw(Word::default())]);
+        let auth_component = AuthNetworkAccount::with_allowlist(placeholder_allowlist)
+            .expect("placeholder allowlist is non-empty");
         let mut components: Vec<AccountComponent> =
-            vec![AccountComponent::from(NoAuth), agglayer_component];
+            vec![AccountComponent::from(auth_component), agglayer_component];
         if lib_name == "faucet" {
             // Use a dummy owner for commitment computation - the actual owner is set at runtime
             let dummy_owner = miden_protocol::account::AccountId::try_from(
-                miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_NETWORK_ACCOUNT_IMMUTABLE_CODE,
+                miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
             )
             .unwrap();
             components.push(AccountComponent::from(
                 miden_standards::account::access::Ownable2Step::new(dummy_owner),
             ));
-            components.push(AccountComponent::from(OwnerControlled::owner_only()));
+            // Mirror the component order used by `create_agglayer_faucet_builder` in lib.rs so
+            // the compile-time code commitment matches the one computed at runtime.
+            //
+            // Burn policy manager: active = `owner_only` (burns locked by default), `allow_all`
+            // is registered as Reserved so the owner can open burns at runtime via
+            // `set_burn_policy`.
+            let token_policy_manager = TokenPolicyManager::new(PolicyAuthority::OwnerControlled)
+                .with_mint_policy(MintPolicyConfig::OwnerOnly, PolicyRegistration::Active)
+                .expect("active mint policy is registered exactly once")
+                .with_burn_policy(BurnPolicyConfig::OwnerOnly, PolicyRegistration::Active)
+                .expect("active burn policy is registered exactly once")
+                .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Reserved)
+                .expect("reserved burn policy registration does not conflict")
+                .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)
+                .expect("active send policy is registered exactly once")
+                .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)
+                .expect("active receive policy is registered exactly once");
+
+            components.extend(token_policy_manager);
         }
 
         // use `AccountCode` to merge codes of agglayer and authentication components

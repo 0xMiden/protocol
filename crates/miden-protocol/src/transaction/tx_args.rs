@@ -4,9 +4,11 @@ use alloc::vec::Vec;
 
 use miden_core::mast::MastNodeExt;
 use miden_crypto::merkle::InnerNodeInfo;
+use miden_mast_package::Package;
 
 use super::{Felt, Hasher, Word};
 use crate::account::auth::{PublicKeyCommitment, Signature};
+use crate::errors::TransactionScriptError;
 use crate::note::{NoteId, NoteRecipient};
 use crate::utils::serde::{
     ByteReader,
@@ -167,15 +169,16 @@ impl TransactionArgs {
         let script_encoded: Vec<Felt> = script.into();
 
         // Build the advice map entries
+        let script_root: Word = script.root().into();
         let sn_hash = Hasher::merge(&[note_recipient.serial_num(), Word::empty()]);
-        let sn_script_hash = Hasher::merge(&[sn_hash, script.root()]);
+        let sn_script_hash = Hasher::merge(&[sn_hash, script_root]);
 
         let new_elements = vec![
             (sn_hash, concat_words(note_recipient.serial_num(), Word::empty())),
-            (sn_script_hash, concat_words(sn_hash, script.root())),
+            (sn_script_hash, concat_words(sn_hash, script_root)),
             (note_recipient.digest(), concat_words(sn_script_hash, storage.commitment())),
             (storage.commitment(), storage.to_elements()),
-            (script.root(), script_encoded),
+            (script_root, script_encoded),
         ];
 
         self.advice_inputs.extend(AdviceInputs::default().with_map(new_elements));
@@ -306,6 +309,20 @@ impl TransactionScript {
         assert!(mast.get_node_by_id(entrypoint).is_some());
 
         Self { mast, entrypoint }
+    }
+
+    /// Creates a [TransactionScript] from a [`Package`].
+    ///
+    /// The package must be an executable (i.e., its target type must be
+    /// [`TargetType::Executable`](miden_mast_package::TargetType::Executable)).
+    ///
+    /// # Errors
+    /// Returns an error if the package cannot be converted to an executable program.
+    pub fn from_package(package: &Package) -> Result<Self, TransactionScriptError> {
+        let program =
+            package.try_into_program().map_err(TransactionScriptError::PackageNotProgram)?;
+
+        Ok(TransactionScript::new(program))
     }
 
     // PUBLIC ACCESSORS

@@ -12,11 +12,11 @@ use miden_protocol::field::PrimeField64;
 use miden_protocol::note::{
     Note,
     NoteAssets,
-    NoteMetadata,
     NoteRecipient,
     NoteStorage,
     NoteTag,
     NoteType,
+    PartialNoteMetadata,
 };
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
@@ -155,7 +155,7 @@ async fn check_note_consumability_partial_success() -> anyhow::Result<()> {
         sender,
         ChaCha20Rng::from_seed(ChaCha20Rng::from_seed([0_u8; 32]).random()),
     )
-    .code("begin push.1 drop push.0 div end")
+    .code("@note_script pub proc main push.1 drop push.0 div end")
     .dynamically_linked_libraries([TransactionKernel::library()])
     .build()?;
 
@@ -163,7 +163,7 @@ async fn check_note_consumability_partial_success() -> anyhow::Result<()> {
         sender,
         ChaCha20Rng::from_seed(ChaCha20Rng::from_seed([0_u8; 32]).random()),
     )
-    .code("begin push.2 drop push.0 div end")
+    .code("@note_script pub proc main push.2 drop push.0 div end")
     .dynamically_linked_libraries([TransactionKernel::library()])
     .build()?;
 
@@ -320,14 +320,14 @@ async fn check_note_consumability_epilogue_failure_with_new_combination() -> any
         sender,
         ChaCha20Rng::from_seed(ChaCha20Rng::from_seed([0_u8; 32]).random()),
     )
-    .code("begin push.1 drop push.1 div end")
+    .code("@note_script pub proc main push.1 drop push.1 div end")
     .dynamically_linked_libraries([TransactionKernel::library()])
     .build()?;
     let failing_note_1 = NoteBuilder::new(
         sender,
         ChaCha20Rng::from_seed(ChaCha20Rng::from_seed([0_u8; 32]).random()),
     )
-    .code("begin push.1 drop push.0 div end")
+    .code("@note_script pub proc main push.1 drop push.0 div end")
     .dynamically_linked_libraries([TransactionKernel::library()])
     .build()?;
 
@@ -790,7 +790,7 @@ fn create_p2ide_note_with_storage(
     );
 
     let tag = NoteTag::with_account_target(sender);
-    let metadata = NoteMetadata::new(sender, NoteType::Public).with_tag(tag);
+    let metadata = PartialNoteMetadata::new(sender, NoteType::Public).with_tag(tag);
 
     Note::new(NoteAssets::default(), metadata, recipient)
 }

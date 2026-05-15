@@ -1,6 +1,7 @@
 use $kernel::constants::ACCOUNT_PROCEDURE_DATA_LENGTH
 use $kernel::constants::MAX_ASSETS_PER_NOTE
 use $kernel::constants::NOTE_MEM_SIZE
+use $kernel::constants::WORD_NUM_ELEMENTS
 # use $kernel::types::AccountId
 use miden::core::mem
 
@@ -143,16 +144,16 @@ const VALIDATOR_KEY_COMMITMENT_PTR=824
 const BLOCK_METADATA_PTR=828
 
 # The memory address at which the fee parameters are stored. These occupy a double word.
-# [0, verification_base_fee, native_asset_id_suffix, native_asset_id_prefix]
+# [0, verification_base_fee, fee_faucet_id_suffix, fee_faucet_id_prefix]
 # [0, 0, 0, 0]
 const FEE_PARAMETERS_PTR=832
 
 # The memory address at which the verification base fee is stored.
 const VERIFICATION_BASE_FEE_PTR = FEE_PARAMETERS_PTR + 1
 
-# The memory address at which the native asset ID is stored.
-const NATIVE_ASSET_ID_SUFFIX_PTR = FEE_PARAMETERS_PTR + 2
-const NATIVE_ASSET_ID_PREFIX_PTR = FEE_PARAMETERS_PTR + 3
+# The memory address at which the fee faucet ID is stored.
+const FEE_FAUCET_ID_SUFFIX_PTR = FEE_PARAMETERS_PTR + 2
+const FEE_FAUCET_ID_PREFIX_PTR = FEE_PARAMETERS_PTR + 3
 
 # The memory address at which the note root is stored
 const NOTE_ROOT_PTR=840
@@ -190,6 +191,7 @@ const MAX_FOREIGN_ACCOUNT_PTR=524288
 const NATIVE_ACCOUNT_DATA_PTR=8192
 const NATIVE_ACCOUNT_ID_SUFFIX_PTR = NATIVE_ACCOUNT_DATA_PTR + ACCT_ID_SUFFIX_OFFSET
 const NATIVE_ACCOUNT_ID_PREFIX_PTR = NATIVE_ACCOUNT_DATA_PTR + ACCT_ID_PREFIX_OFFSET
+const NATIVE_ACCOUNT_NUM_STORAGE_SLOTS_PTR = NATIVE_ACCOUNT_DATA_PTR + ACCT_NUM_STORAGE_SLOTS_OFFSET
 
 # The length of the memory interval that the account data occupies.
 const ACCOUNT_DATA_LENGTH=8192
@@ -252,8 +254,8 @@ const INPUT_NOTE_SCRIPT_ROOT_OFFSET=8
 const INPUT_NOTE_STORAGE_COMMITMENT_OFFSET=12
 const INPUT_NOTE_ASSETS_COMMITMENT_OFFSET=16
 const INPUT_NOTE_RECIPIENT_OFFSET=20
-const INPUT_NOTE_METADATA_HEADER_OFFSET=24
-const INPUT_NOTE_ATTACHMENT_OFFSET=28
+const INPUT_NOTE_METADATA_OFFSET=24
+const INPUT_NOTE_ATTACHMENTS_COMMITMENT_OFFSET=28
 const INPUT_NOTE_ARGS_OFFSET=32
 const INPUT_NOTE_NUM_STORAGE_ITEMS_OFFSET=36
 const INPUT_NOTE_NUM_ASSETS_OFFSET=40
@@ -267,14 +269,18 @@ const OUTPUT_NOTE_SECTION_OFFSET=16777216
 
 # The offsets at which data of an output note is stored relative to the start of its data segment.
 const OUTPUT_NOTE_ID_OFFSET=0
-const OUTPUT_NOTE_METADATA_HEADER_OFFSET=4
-const OUTPUT_NOTE_METADATA_ATTACHMENT_KIND_SCHEME_OFFSET=OUTPUT_NOTE_METADATA_HEADER_OFFSET + 3
-const OUTPUT_NOTE_ATTACHMENT_OFFSET=8
-const OUTPUT_NOTE_RECIPIENT_OFFSET=12
-const OUTPUT_NOTE_ASSETS_COMMITMENT_OFFSET=16
-const OUTPUT_NOTE_NUM_ASSETS_OFFSET=20
-const OUTPUT_NOTE_DIRTY_FLAG_OFFSET=21
-const OUTPUT_NOTE_ASSETS_OFFSET=24
+const OUTPUT_NOTE_METADATA_OFFSET=4
+const OUTPUT_NOTE_RECIPIENT_OFFSET=8
+const OUTPUT_NOTE_DIRTY_FLAG_OFFSET=12
+const OUTPUT_NOTE_NUM_ASSETS_OFFSET=13
+const OUTPUT_NOTE_NUM_ATTACHMENTS_OFFSET=14
+const OUTPUT_NOTE_TOTAL_ATTACHMENT_WORDS_OFFSET=15
+const OUTPUT_NOTE_ATTACHMENT_0_OFFSET=16
+const OUTPUT_NOTE_ATTACHMENT_1_OFFSET=20
+const OUTPUT_NOTE_ATTACHMENT_2_OFFSET=24
+const OUTPUT_NOTE_ATTACHMENT_3_OFFSET=28
+const OUTPUT_NOTE_ASSETS_COMMITMENT_OFFSET=32
+const OUTPUT_NOTE_ASSETS_OFFSET=36
 
 # LINK MAP MEMORY
 # -------------------------------------------------------------------------------------------------
@@ -348,18 +354,6 @@ pub proc set_active_input_note_ptr
     mem_store.ACTIVE_INPUT_NOTE_PTR
 end
 
-#! Returns the pointer to the memory address at which the input vault root is stored.
-#!
-#! Inputs:  []
-#! Outputs: [input_vault_root_ptr]
-#!
-#! Where:
-#! - input_vault_root_ptr is a pointer to the memory address at which the input vault root is
-#!   stored.
-pub proc get_input_vault_root_ptr
-    push.INPUT_VAULT_ROOT_PTR
-end
-
 #! Returns the input vault root.
 #!
 #! Inputs:  []
@@ -380,18 +374,6 @@ end
 #! - INPUT_VAULT_ROOT is the input vault root.
 pub proc set_input_vault_root
     mem_storew_le.INPUT_VAULT_ROOT_PTR
-end
-
-#! Returns the pointer to the memory address at which the output vault root is stored.
-#!
-#! Inputs:  []
-#! Outputs: [output_vault_root_ptr]
-#!
-#! Where:
-#! - output_vault_root_ptr is the pointer to the memory address at which the output vault root is
-#!   stored.
-pub proc get_output_vault_root_ptr
-    push.OUTPUT_VAULT_ROOT_PTR
 end
 
 #! Returns the output vault root.
@@ -638,17 +620,6 @@ pub proc set_nullifier_commitment
     mem_storew_le.INPUT_NOTES_COMMITMENT_PTR
 end
 
-#! Returns the memory address of the transaction script root.
-#!
-#! Inputs:  []
-#! Outputs: [tx_script_root_ptr]
-#!
-#! Where:
-#! - tx_script_root_ptr is the pointer to the memory where transaction script root is stored.
-pub proc get_tx_script_root_ptr
-    push.TX_SCRIPT_ROOT_PTR
-end
-
 #! Sets the transaction script root.
 #!
 #! Inputs:  [TX_SCRIPT_ROOT]
@@ -658,6 +629,18 @@ end
 #! - TX_SCRIPT_ROOT is the transaction script root.
 pub proc set_tx_script_root
     mem_storew_le.TX_SCRIPT_ROOT_PTR
+end
+
+#! Returns the transaction script root.
+#!
+#! Inputs:  []
+#! Outputs: [TX_SCRIPT_ROOT]
+#!
+#! Where:
+#! - TX_SCRIPT_ROOT is the transaction script root, or the empty word if no transaction script was
+#!   executed.
+pub proc get_tx_script_root
+    padw mem_loadw_le.TX_SCRIPT_ROOT_PTR
 end
 
 #! Returns the transaction script arguments.
@@ -709,17 +692,6 @@ end
 # BLOCK DATA
 # -------------------------------------------------------------------------------------------------
 
-#! Returns a pointer to the block data section.
-#!
-#! Inputs:  []
-#! Outputs: [ptr]
-#!
-#! Where:
-#! - ptr is a pointer to the block data section.
-pub proc get_block_data_ptr
-    push.BLOCK_DATA_SECTION_OFFSET
-end
-
 #! Returns the previous block commitment of the transaction reference block.
 #!
 #! Inputs:  []
@@ -766,18 +738,18 @@ pub proc get_blk_timestamp
     mem_load.BLOCK_METADATA_TIMESTAMP_PTR
 end
 
-#! Returns the faucet ID of the native asset as defined in the transaction's reference block.
+#! Returns the faucet ID of the fee asset as defined in the transaction's reference block.
 #!
 #! Inputs:  []
-#! Outputs: [native_asset_id_suffix, native_asset_id_prefix]
+#! Outputs: [fee_faucet_id_suffix, fee_faucet_id_prefix]
 #!
 #! Where:
-#! - native_asset_id_{prefix,suffix} are the prefix and suffix felts of the faucet ID that defines
-#!   the native asset.
-pub proc get_native_asset_id
-    mem_load.NATIVE_ASSET_ID_PREFIX_PTR
-    mem_load.NATIVE_ASSET_ID_SUFFIX_PTR
-    # => [native_asset_id_suffix, native_asset_id_prefix]
+#! - fee_faucet_id_{prefix,suffix} are the prefix and suffix felts of the faucet ID that defines
+#!   the fee asset.
+pub proc get_fee_faucet_id
+    mem_load.FEE_FAUCET_ID_PREFIX_PTR
+    mem_load.FEE_FAUCET_ID_SUFFIX_PTR
+    # => [fee_faucet_id_suffix, fee_faucet_id_prefix]
 end
 
 #! Returns the verification base fee from the transaction's reference block.
@@ -883,17 +855,6 @@ end
 # CHAIN DATA
 # -------------------------------------------------------------------------------------------------
 
-#! Returns a pointer to the partial blockchain section.
-#!
-#! Inputs:  []
-#! Outputs: [ptr]
-#!
-#! Where:
-#! - ptr is the pointer to the partial blockchain section.
-pub proc get_partial_blockchain_ptr
-    push.PARTIAL_BLOCKCHAIN_PTR
-end
-
 #! Sets the number of leaves in the partial blockchain.
 #!
 #! Inputs:  [num_leaves]
@@ -905,53 +866,8 @@ pub proc set_partial_blockchain_num_leaves
     mem_store.PARTIAL_BLOCKCHAIN_NUM_LEAVES_PTR
 end
 
-#! Returns a pointer to start of the partial blockchain peaks section.
-#!
-#! Inputs:  []
-#! Outputs: [ptr]
-#!
-#! Where:
-#! - ptr is the pointer to the start of the partial blockchain peaks section.
-pub proc get_partial_blockchain_peaks_ptr
-    push.PARTIAL_BLOCKCHAIN_PEAKS_PTR
-end
-
 # ACCOUNT DATA
 # -------------------------------------------------------------------------------------------------
-
-#! Returns the memory pointer at which the native account data is stored.
-#!
-#! Inputs:  []
-#! Outputs: [ptr]
-#!
-#! Where:
-#! - ptr is the memory address at which the native account data is stored.
-pub proc get_native_account_data_ptr
-    push.NATIVE_ACCOUNT_DATA_PTR
-end
-
-#! Returns the length of the memory interval that the account data occupies.
-#!
-#! Inputs:  []
-#! Outputs: [account_data_length]
-#!
-#! Where:
-#! - account_data_length is the length of the memory interval that the account data occupies.
-pub proc get_account_data_length
-    push.ACCOUNT_DATA_LENGTH
-end
-
-#! Returns the largest memory address which can be used to load the foreign account data.
-#!
-#! Inputs:  []
-#! Outputs: [max_foreign_account_ptr]
-#!
-#! Where:
-#! - max_foreign_account_ptr is the largest memory address which can be used to load the foreign
-#!   account data.
-pub proc get_max_foreign_account_ptr
-    push.MAX_FOREIGN_ACCOUNT_PTR
-end
 
 #! Sets the memory pointer of the active account data to the native account (8192).
 #!
@@ -960,7 +876,7 @@ end
 pub proc set_active_account_data_ptr_to_native_account
     # store the native account data pointer into the first account stack element.
     push.NATIVE_ACCOUNT_DATA_PTR mem_store.MIN_ACCOUNT_STACK_PTR
-    # => [native_acct_stack_ptr, account_stack_top_ptr]
+    # => []
 
     # store the pointer to the first account stack element into the account stack top pointer.
     push.MIN_ACCOUNT_STACK_PTR mem_store.ACCOUNT_STACK_TOP_PTR
@@ -1423,6 +1339,17 @@ pub proc get_num_storage_slots
     mem_load
 end
 
+#! Returns the number of storage slots contained in the native account's storage.
+#!
+#! Inputs:  []
+#! Outputs: [num_storage_slots]
+#!
+#! Where:
+#! - num_storage_slots is the number of storage slots contained in the native account's storage.
+pub proc get_native_num_storage_slots
+    mem_load.NATIVE_ACCOUNT_NUM_STORAGE_SLOTS_PTR
+end
+
 #! Sets the number of storage slots contained in the account storage.
 #!
 #! Inputs:  [num_storage_slots]
@@ -1454,7 +1381,7 @@ end
 #! Where:
 #! - storage_slots_section_ptr is the memory pointer to the native account's storage slots section.
 pub proc get_native_account_active_storage_slots_ptr
-    exec.get_native_account_data_ptr add.ACCT_ACTIVE_STORAGE_SLOTS_SECTION_OFFSET
+    push.NATIVE_ACCOUNT_DATA_PTR add.ACCT_ACTIVE_STORAGE_SLOTS_SECTION_OFFSET
 end
 
 #! Returns the memory pointer to the initial storage slots of the native account.
@@ -1465,7 +1392,7 @@ end
 #! Where:
 #! - account_initial_storage_slots_ptr is the memory pointer to the initial storage slot values.
 pub proc get_native_account_initial_storage_slots_ptr
-  exec.get_native_account_data_ptr add.ACCT_INITIAL_STORAGE_SLOTS_SECTION_OFFSET
+  push.NATIVE_ACCOUNT_DATA_PTR add.ACCT_INITIAL_STORAGE_SLOTS_SECTION_OFFSET
 end
 
 #! Returns the memory pointer to the initial storage slots of the active account.
@@ -1660,54 +1587,54 @@ end
 #! Returns the metadata of an input note located at the specified memory address.
 #!
 #! Inputs:  [note_ptr]
-#! Outputs: [NOTE_METADATA_HEADER]
+#! Outputs: [NOTE_METADATA]
 #!
 #! Where:
 #! - note_ptr is the memory address at which the input note data begins.
-#! - NOTE_METADATA_HEADER is the metadata header of the input note.
-pub proc get_input_note_metadata_header
+#! - NOTE_METADATA is the metadata of the input note.
+pub proc get_input_note_metadata
     padw
-    movup.4 add.INPUT_NOTE_METADATA_HEADER_OFFSET
+    movup.4 add.INPUT_NOTE_METADATA_OFFSET
     mem_loadw_le
 end
 
 #! Sets the metadata for an input note located at the specified memory address.
 #!
-#! Inputs:  [note_ptr, NOTE_METADATA_HEADER]
-#! Outputs: [NOTE_METADATA_HEADER]
+#! Inputs:  [note_ptr, NOTE_METADATA]
+#! Outputs: [NOTE_METADATA]
 #!
 #! Where:
 #! - note_ptr is the memory address at which the input note data begins.
-#! - NOTE_METADATA_HEADER is the metadata header of the input note.
-pub proc set_input_note_metadata_header
-    add.INPUT_NOTE_METADATA_HEADER_OFFSET
+#! - NOTE_METADATA is the metadata of the input note.
+pub proc set_input_note_metadata
+    add.INPUT_NOTE_METADATA_OFFSET
     mem_storew_le
 end
 
 #! Returns the attachment of an input note located at the specified memory address.
 #!
 #! Inputs:  [note_ptr]
-#! Outputs: [NOTE_ATTACHMENT]
+#! Outputs: [NOTE_ATTACHMENTS_COMMITMENT]
 #!
 #! Where:
 #! - note_ptr is the memory address at which the input note data begins.
-#! - NOTE_ATTACHMENT is the attachment of the input note.
-pub proc get_input_note_attachment
+#! - NOTE_ATTACHMENTS_COMMITMENT is the commitment to all attachments of the input note.
+pub proc get_input_note_attachments_commitment
     padw
-    movup.4 add.INPUT_NOTE_ATTACHMENT_OFFSET
+    movup.4 add.INPUT_NOTE_ATTACHMENTS_COMMITMENT_OFFSET
     mem_loadw_le
 end
 
 #! Sets the attachment for an input note located at the specified memory address.
 #!
-#! Inputs:  [note_ptr, NOTE_ATTACHMENT]
-#! Outputs: [NOTE_ATTACHMENT]
+#! Inputs:  [note_ptr, NOTE_ATTACHMENTS_COMMITMENT]
+#! Outputs: [NOTE_ATTACHMENTS_COMMITMENT]
 #!
 #! Where:
 #! - note_ptr is the memory address at which the input note data begins.
-#! - NOTE_ATTACHMENT is the attachment of the input note.
-pub proc set_input_note_attachment
-    add.INPUT_NOTE_ATTACHMENT_OFFSET
+#! - NOTE_ATTACHMENTS_COMMITMENT is the commitment to all attachments of the input note.
+pub proc set_input_note_attachments_commitment
+    add.INPUT_NOTE_ATTACHMENTS_COMMITMENT_OFFSET
     mem_storew_le
 end
 
@@ -1861,17 +1788,6 @@ end
 # OUTPUT NOTES
 # -------------------------------------------------------------------------------------------------
 
-#! Returns the offset of the output note data segment.
-#!
-#! Inputs:  []
-#! Outputs: [offset]
-#!
-#! Where:
-#! - offset is the offset of the output note data segment.
-pub proc get_output_note_data_offset
-    push.OUTPUT_NOTE_SECTION_OFFSET
-end
-
 #! Computes a pointer to the memory address at which the data associated with an output note with
 #! index `i` is stored.
 #!
@@ -1915,73 +1831,135 @@ end
 #! Returns the output note's metadata.
 #!
 #! Inputs:  [note_ptr]
-#! Outputs: [METADATA_HEADER]
+#! Outputs: [METADATA]
 #!
 #! Where:
-#! - METADATA_HEADER is the note metadata header.
+#! - METADATA is the note metadata.
 #! - note_ptr is the memory address at which the output note data begins.
-pub proc get_output_note_metadata_header
+pub proc get_output_note_metadata
     padw
     # => [0, 0, 0, 0, note_ptr]
-    movup.4 add.OUTPUT_NOTE_METADATA_HEADER_OFFSET
+    movup.4 add.OUTPUT_NOTE_METADATA_OFFSET
     # => [(note_ptr + offset), 0, 0, 0, 0]
     mem_loadw_le
-    # => [METADATA_HEADER]
+    # => [METADATA]
 end
 
-#! Sets the output note's metadata header.
+#! Sets the output note's metadata.
 #!
-#! Inputs:  [note_ptr, METADATA_HEADER]
-#! Outputs: [METADATA_HEADER]
+#! Inputs:  [note_ptr, METADATA]
+#! Outputs: [METADATA]
 #!
 #! Where:
-#! - METADATA_HEADER is the note metadata header.
+#! - METADATA is the note metadata.
 #! - note_ptr is the memory address at which the output note data begins.
-pub proc set_output_note_metadata_header
-    add.OUTPUT_NOTE_METADATA_HEADER_OFFSET
+pub proc set_output_note_metadata
+    add.OUTPUT_NOTE_METADATA_OFFSET
     mem_storew_le
 end
 
-#! Sets the output note's attachment kind and scheme in the metadata header.
+#! Returns the output note's attachment commitment at the given attachment index.
 #!
-#! Inputs:  [note_ptr, attachment_kind_scheme]
-#! Outputs: []
+#! This is the commitment to the raw attachment data in the advice inputs.
+#!
+#! WARNING: Does not check the attachment_idx is within bounds.
+#!
+#! Inputs:  [note_ptr, attachment_idx]
+#! Outputs: [ATTACHMENT_COMMITMENT]
 #!
 #! Where:
-#! - attachment_kind_scheme is the type information of the attachment that will be overwritten.
 #! - note_ptr is the memory address at which the output note data begins.
-pub proc set_output_note_attachment_kind_scheme
-    add.OUTPUT_NOTE_METADATA_ATTACHMENT_KIND_SCHEME_OFFSET
-    mem_store
+#! - attachment_idx is the index of the attachment in the note.
+#! - ATTACHMENT_COMMITMENT is the note attachment commitment.
+pub proc get_output_note_attachment_commitment
+    add.OUTPUT_NOTE_ATTACHMENT_0_OFFSET
+    # => [note_ptr + attachment_0_offset, attachment_idx]
+
+    swap mul.WORD_NUM_ELEMENTS add
+    # => [attachment_ptr]
+
+    padw movup.4 mem_loadw_le
+    # => [ATTACHMENT_COMMITMENT]
 end
 
-#! Returns the output note's attachment.
+#! Returns a pointer to the start of the attachment data region for the output note.
 #!
 #! Inputs:  [note_ptr]
-#! Outputs: [ATTACHMENT]
+#! Outputs: [attachment_data_ptr]
 #!
 #! Where:
-#! - ATTACHMENT is the note attachment.
 #! - note_ptr is the memory address at which the output note data begins.
-pub proc get_output_note_attachment
-    padw
-    movup.4 add.OUTPUT_NOTE_ATTACHMENT_OFFSET
-    mem_loadw_le
-    # => [ATTACHMENT]
+#! - attachment_data_ptr is the memory address of the first attachment slot.
+pub proc get_output_note_attachment_commitment_ptr
+    add.OUTPUT_NOTE_ATTACHMENT_0_OFFSET
 end
 
-#! Sets the output note's attachment.
+#! Sets the output note's attachment at the given slot index.
 #!
-#! Inputs:  [note_ptr, ATTACHMENT]
+#! Inputs:  [note_ptr, attachment_idx, ATTACHMENT_COMMITMENT]
 #! Outputs: []
 #!
 #! Where:
-#! - ATTACHMENT is the note attachment.
 #! - note_ptr is the memory address at which the output note data begins.
-pub proc set_output_note_attachment
-    add.OUTPUT_NOTE_ATTACHMENT_OFFSET
-    mem_storew_le
-    dropw
+#! - attachment_idx is the index of the attachment slot (0..3).
+#! - ATTACHMENT_COMMITMENT is the note attachment word.
+pub proc set_output_note_attachment_commitment
+    add.OUTPUT_NOTE_ATTACHMENT_0_OFFSET
+    # => [note_ptr + base_offset, attachment_idx, ATTACHMENT_COMMITMENT]
+
+    swap mul.WORD_NUM_ELEMENTS add
+    # => [attachment_ptr, ATTACHMENT_COMMITMENT]
+
+    mem_storew_le dropw
+    # => []
+end
+
+#! Returns the number of attachments for the output note.
+#!
+#! Inputs:  [note_ptr]
+#! Outputs: [num_attachments]
+#!
+#! Where:
+#! - note_ptr is the memory address at which the output note data begins.
+#! - num_attachments is the number of attachments in the output note.
+pub proc get_output_note_num_attachments
+    add.OUTPUT_NOTE_NUM_ATTACHMENTS_OFFSET mem_load
+end
+
+#! Sets the number of attachments for the output note.
+#!
+#! Inputs:  [note_ptr, num_attachments]
+#! Outputs: []
+#!
+#! Where:
+#! - note_ptr is the memory address at which the output note data begins.
+#! - num_attachments is the number of attachments in the output note.
+pub proc set_output_note_num_attachments
+    add.OUTPUT_NOTE_NUM_ATTACHMENTS_OFFSET mem_store
+end
+
+#! Returns the total number of attachment words for the output note.
+#!
+#! Inputs:  [note_ptr]
+#! Outputs: [total_num_attachment_words]
+#!
+#! Where:
+#! - note_ptr is the memory address at which the output note data begins.
+#! - total_num_attachment_words is the total number of words across all attachments.
+pub proc get_output_note_total_attachment_words
+    add.OUTPUT_NOTE_TOTAL_ATTACHMENT_WORDS_OFFSET mem_load
+end
+
+#! Sets the total number of attachment words for the output note.
+#!
+#! Inputs:  [note_ptr, total_num_attachment_words]
+#! Outputs: []
+#!
+#! Where:
+#! - note_ptr is the memory address at which the output note data begins.
+#! - total_num_attachment_words is the total number of words across all attachments.
+pub proc set_output_note_total_attachment_words
+    add.OUTPUT_NOTE_TOTAL_ATTACHMENT_WORDS_OFFSET mem_store
 end
 
 #! Returns the number of assets in the output note.
@@ -2130,44 +2108,8 @@ pub proc get_num_kernel_procedures
     mem_load.NUM_KERNEL_PROCEDURES_PTR
 end
 
-#! Returns a pointer to the memory where hashes of the kernel procedures are stored.
-#!
-#! Inputs:  []
-#! Outputs: [kernel_procedures_ptr]
-#!
-#! Where:
-#! - kernel_procedures_ptr is the memory address where the hashes of the kernel procedures are
-#!   stored.
-pub proc get_kernel_procedures_ptr
-    push.KERNEL_PROCEDURES_PTR
-end
-
 # LINK MAP
 # -------------------------------------------------------------------------------------------------
-
-#! Returns the link map memory start ptr constant.
-#!
-#! Inputs:  []
-#! Outputs: [start_ptr]
-pub proc get_link_map_region_start_ptr
-    push.LINK_MAP_REGION_START_PTR
-end
-
-#! Returns the link map memory end ptr constant.
-#!
-#! Inputs:  []
-#! Outputs: [end_ptr]
-pub proc get_link_map_region_end_ptr
-    push.LINK_MAP_REGION_END_PTR
-end
-
-#! Returns the link map entry size constant.
-#!
-#! Inputs:  []
-#! Outputs: [entry_size]
-pub proc get_link_map_entry_size
-    push.LINK_MAP_ENTRY_SIZE
-end
 
 #! Returns the next pointer to an empty link map entry.
 #!

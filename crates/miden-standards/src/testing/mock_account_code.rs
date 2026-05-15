@@ -8,10 +8,10 @@ const MOCK_FAUCET_CODE: &str = "
     use miden::protocol::faucet
 
     #! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
-    #! Outputs: [NEW_ASSET_VALUE, pad(12)]
+    #! Outputs: [pad(16)]
     pub proc mint
         exec.faucet::mint
-        # => [NEW_ASSET_VALUE, pad(12)]
+        # => [pad(16)]
     end
 
     #! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]

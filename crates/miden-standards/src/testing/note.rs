@@ -11,15 +11,16 @@ use miden_protocol::note::{
     Note,
     NoteAssets,
     NoteAttachment,
-    NoteMetadata,
+    NoteAttachments,
     NoteRecipient,
     NoteScript,
     NoteStorage,
     NoteTag,
     NoteType,
+    PartialNoteMetadata,
 };
-use miden_protocol::testing::note::DEFAULT_NOTE_CODE;
-use miden_protocol::vm::Package;
+use miden_protocol::testing::note::DEFAULT_NOTE_SCRIPT;
+use miden_protocol::vm::{AdviceMap, Package};
 use miden_protocol::{Felt, Word};
 use rand::Rng;
 
@@ -35,6 +36,7 @@ enum SourceCodeOrigin {
         source_manager: Arc<dyn SourceManagerSync>,
     },
     Package(Arc<Package>),
+    Script(NoteScript),
 }
 
 #[derive(Debug, Clone)]
@@ -46,7 +48,8 @@ pub struct NoteBuilder {
     serial_num: Word,
     tag: NoteTag,
     code: String,
-    attachment: NoteAttachment,
+    attachments: NoteAttachments,
+    advice_map: AdviceMap,
     source_code: SourceCodeOrigin,
 }
 
@@ -67,8 +70,9 @@ impl NoteBuilder {
             serial_num,
             // The note tag is not under test, so we choose a value that is always valid.
             tag: NoteTag::with_account_target(sender),
-            code: DEFAULT_NOTE_CODE.to_string(),
-            attachment: NoteAttachment::default(),
+            code: DEFAULT_NOTE_SCRIPT.to_string(),
+            attachments: NoteAttachments::default(),
+            advice_map: AdviceMap::default(),
             source_code: SourceCodeOrigin::Masm {
                 dyn_libraries: Vec::new(),
                 source_manager: Arc::new(DefaultSourceManager::default()),
@@ -114,9 +118,18 @@ impl NoteBuilder {
         self
     }
 
-    /// Overwrites the attachment.
+    /// Appends an attachment to the existing attachments.
     pub fn attachment(mut self, attachment: impl Into<NoteAttachment>) -> Self {
-        self.attachment = attachment.into();
+        let mut attachments = core::mem::take(&mut self.attachments).into_vec();
+        attachments.push(attachment.into());
+        self.attachments =
+            NoteAttachments::new(attachments).expect("number of attachments exceeds maximum");
+        self
+    }
+
+    /// Sets the advice map entries that will be added to the compiled note script.
+    pub fn advice_map(mut self, advice_map: AdviceMap) -> Self {
+        self.advice_map = advice_map;
         self
     }
 
@@ -133,6 +146,9 @@ impl NoteBuilder {
             SourceCodeOrigin::Package(_) => {
                 panic!("dynamic libraries cannot be set on a package")
             },
+            SourceCodeOrigin::Script(_) => {
+                panic!("dynamic libraries cannot be set on a precompiled script")
+            },
         }
         self
     }
@@ -145,6 +161,9 @@ impl NoteBuilder {
             SourceCodeOrigin::Package(_) => {
                 panic!("source manager cannot be set on a package")
             },
+            SourceCodeOrigin::Script(_) => {
+                panic!("source manager cannot be set on a precompiled script")
+            },
         }
         self
     }
@@ -152,6 +171,12 @@ impl NoteBuilder {
     /// Sets the source code origin to a  package.
     pub fn package(mut self, package: Package) -> Self {
         self.source_code = SourceCodeOrigin::Package(Arc::new(package));
+        self
+    }
+
+    /// Sets the note script to a precompiled [`NoteScript`], skipping compilation in `build`.
+    pub fn script(mut self, script: NoteScript) -> Self {
+        self.source_code = SourceCodeOrigin::Script(script);
         self
     }
 
@@ -184,15 +209,16 @@ impl NoteBuilder {
                     .expect("note script should compile")
             },
             SourceCodeOrigin::Package(package) => NoteScript::from_package(&package)?,
+            SourceCodeOrigin::Script(script) => script,
         };
 
+        let note_script = note_script.with_advice_map(self.advice_map);
+
         let vault = NoteAssets::new(self.assets)?;
-        let metadata = NoteMetadata::new(self.sender, self.note_type)
-            .with_tag(self.tag)
-            .with_attachment(self.attachment);
+        let metadata = PartialNoteMetadata::new(self.sender, self.note_type).with_tag(self.tag);
         let storage = NoteStorage::new(self.storage)?;
         let recipient = NoteRecipient::new(self.serial_num, note_script, storage);
 
-        Ok(Note::new(vault, metadata, recipient))
+        Ok(Note::with_attachments(vault, metadata, recipient, self.attachments))
     }
 }

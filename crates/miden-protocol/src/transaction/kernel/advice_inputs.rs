@@ -6,7 +6,6 @@ use crate::account::{AccountHeader, PartialAccount};
 use crate::block::account_tree::{AccountIdKey, AccountWitness};
 use crate::crypto::SequentialCommit;
 use crate::crypto::merkle::InnerNodeInfo;
-use crate::note::NoteAttachmentContent;
 use crate::transaction::{
     AccountInputs,
     InputNote,
@@ -144,7 +143,7 @@ impl TransactionAdviceInputs {
     ///     TX_KERNEL_COMMITMENT
     ///     VALIDATOR_KEY_COMMITMENT,
     ///     [block_num, version, timestamp, 0],
-    ///     [0, verification_base_fee, native_asset_id_suffix, native_asset_id_prefix]
+    ///     [0, verification_base_fee, fee_faucet_id_suffix, fee_faucet_id_prefix]
     ///     [0, 0, 0, 0]
     ///     NOTE_ROOT,
     ///     kernel_version
@@ -177,8 +176,8 @@ impl TransactionAdviceInputs {
         self.extend_stack([
             ZERO,
             Felt::from(header.fee_parameters().verification_base_fee()),
-            header.fee_parameters().native_asset_id().suffix(),
-            header.fee_parameters().native_asset_id().prefix().as_felt(),
+            header.fee_parameters().fee_faucet_id().suffix(),
+            header.fee_parameters().fee_faucet_id().prefix().as_felt(),
         ]);
         self.extend_stack([ZERO, ZERO, ZERO, ZERO]);
         self.extend_stack(header.note_root());
@@ -339,24 +338,33 @@ impl TransactionAdviceInputs {
             self.add_map_entry(recipient.storage().commitment(), recipient.storage().to_elements());
             // assets commitments
             self.add_map_entry(assets.commitment(), assets.to_elements());
-            // array attachments
-            if let NoteAttachmentContent::Array(array_attachment) =
-                note.metadata().attachment().content()
-            {
-                self.add_map_entry(
-                    array_attachment.commitment(),
-                    array_attachment.as_slice().to_vec(),
-                );
+
+            // ATTACHMENTS_COMMITMENT |-> [[ATTACHMENT_COMMITMENTS]]
+            self.add_map_entry(
+                note.attachments().to_commitment(),
+                note.attachments()
+                    .commitments()
+                    .iter()
+                    .flat_map(Word::as_elements)
+                    .copied()
+                    .collect(),
+            );
+
+            // ATTACHMENT_COMMITMENT |-> [ATTACHMENT_ELEMENTS] for each attachment
+            for attachment in note.attachments().iter() {
+                let commitment = attachment.content().to_commitment();
+                let elements = attachment.content().to_elements();
+                self.add_map_entry(commitment, elements);
             }
 
             // note details / metadata
             note_data.extend(recipient.serial_num());
-            note_data.extend(*recipient.script().root());
+            note_data.extend(Word::from(recipient.script().root()));
             note_data.extend(*recipient.storage().commitment());
             note_data.extend(*assets.commitment());
             note_data.extend(*note_arg);
-            note_data.extend(note.metadata().to_attachment_word());
-            note_data.extend(note.metadata().to_header_word());
+            note_data.extend(note.attachments().to_commitment());
+            note_data.extend(note.metadata().to_metadata_word());
             note_data.push(Felt::from(recipient.storage().num_items()));
             note_data.push(Felt::from(assets.num_assets() as u32));
             note_data.extend(assets.to_elements());

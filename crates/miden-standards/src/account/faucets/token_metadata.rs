@@ -1,348 +1,633 @@
+//! Generic token metadata helper.
+//!
+//! [`TokenMetadata`] is a builder-pattern struct used to manage the token name and optional
+//! fields (description, logo_uri, external_link) along with their mutability flags. It is meant
+//! to be embedded inside a token-bearing component such as
+//! [`FungibleFaucet`][crate::account::faucets::FungibleFaucet], not used as a
+//! standalone account component.
+//!
+//! Owner-gated mutators (`set_description`, `set_logo_uri`, `set_external_link`,
+//! `set_max_supply`) are exposed through the embedding component's MASM library and rely on
+//! the `Ownable2Step` access component for ownership checks.
+//!
+//! ## Storage layout (per-component, see embedding component for absolute slot order)
+//!
+//! | Slot name | Contents |
+//! |-----------|----------|
+//! | `faucets::token_name_0` | first 4 felts of name |
+//! | `faucets::token_name_1` | last 4 felts of name |
+//! | `faucets::mutability_config` | `[is_desc_mutable, is_logo_mutable, is_extlink_mutable, is_max_supply_mutable]` |
+//! | `faucets::token_description_0..=6` | description (7 Words, max 195 bytes) |
+//! | `faucets::logo_uri_0..=6` | logo URI (7 Words, max 195 bytes) |
+//! | `faucets::external_link_0..=6` | external link (7 Words, max 195 bytes) |
+//!
+//! Layout sync: the same layout is defined in MASM at `asm/standards/faucets/mod.masm`.
+//! Any change to slot names must be applied in both Rust and MASM.
+//!
+//! ## String encoding (UTF-8)
+//!
+//! All string fields use **7-bytes-per-felt, length-prefixed** encoding. The N felts are
+//! serialized into a flat buffer of N × 7 bytes; byte 0 is the string length, followed by
+//! UTF-8 content, zero-padded. Each 7-byte chunk is stored as a LE u64 with the high byte
+//! always zero, so it always fits in a Goldilocks field element.
+//!
+//! The name slots hold 2 Words (8 felts, capacity 55 bytes, capped at 32).
+
+use alloc::vec::Vec;
+
+use miden_protocol::account::component::{FeltSchema, StorageSlotSchema};
 use miden_protocol::account::{AccountStorage, StorageSlot, StorageSlotName};
-use miden_protocol::asset::{FungibleAsset, TokenSymbol};
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
-use super::FungibleFaucetError;
+use crate::account::faucets::TokenMetadataError;
+use crate::utils::{FixedWidthString, FixedWidthStringError};
 
-// CONSTANTS
+// SLOT NAMES — canonical layout (sync with asm/standards/faucets/fungible.masm)
 // ================================================================================================
 
-static METADATA_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::fungible_faucets::metadata")
+/// Token name (2 Words = 8 felts), split across 2 slots.
+static NAME_SLOTS: LazyLock<[StorageSlotName; 2]> = LazyLock::new(|| {
+    [
+        StorageSlotName::new("miden::standards::faucets::token_name_0").expect("valid slot name"),
+        StorageSlotName::new("miden::standards::faucets::token_name_1").expect("valid slot name"),
+    ]
+});
+
+/// Mutability config slot: `[is_desc_mutable, is_logo_mutable, is_extlink_mutable,
+/// is_max_supply_mutable]`.
+static MUTABILITY_CONFIG_SLOT: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::faucets::mutability_config")
         .expect("storage slot name should be valid")
 });
+
+/// Description (7 Words), split across 7 slots.
+static DESCRIPTION_SLOTS: LazyLock<[StorageSlotName; 7]> = LazyLock::new(|| {
+    [
+        StorageSlotName::new("miden::standards::faucets::token_description_0")
+            .expect("valid slot name"),
+        StorageSlotName::new("miden::standards::faucets::token_description_1")
+            .expect("valid slot name"),
+        StorageSlotName::new("miden::standards::faucets::token_description_2")
+            .expect("valid slot name"),
+        StorageSlotName::new("miden::standards::faucets::token_description_3")
+            .expect("valid slot name"),
+        StorageSlotName::new("miden::standards::faucets::token_description_4")
+            .expect("valid slot name"),
+        StorageSlotName::new("miden::standards::faucets::token_description_5")
+            .expect("valid slot name"),
+        StorageSlotName::new("miden::standards::faucets::token_description_6")
+            .expect("valid slot name"),
+    ]
+});
+
+/// Logo URI (7 Words), split across 7 slots.
+static LOGO_URI_SLOTS: LazyLock<[StorageSlotName; 7]> = LazyLock::new(|| {
+    [
+        StorageSlotName::new("miden::standards::faucets::logo_uri_0").expect("valid slot name"),
+        StorageSlotName::new("miden::standards::faucets::logo_uri_1").expect("valid slot name"),
+        StorageSlotName::new("miden::standards::faucets::logo_uri_2").expect("valid slot name"),
+        StorageSlotName::new("miden::standards::faucets::logo_uri_3").expect("valid slot name"),
+        StorageSlotName::new("miden::standards::faucets::logo_uri_4").expect("valid slot name"),
+        StorageSlotName::new("miden::standards::faucets::logo_uri_5").expect("valid slot name"),
+        StorageSlotName::new("miden::standards::faucets::logo_uri_6").expect("valid slot name"),
+    ]
+});
+
+/// External link (7 Words), split across 7 slots.
+static EXTERNAL_LINK_SLOTS: LazyLock<[StorageSlotName; 7]> = LazyLock::new(|| {
+    [
+        StorageSlotName::new("miden::standards::faucets::external_link_0")
+            .expect("valid slot name"),
+        StorageSlotName::new("miden::standards::faucets::external_link_1")
+            .expect("valid slot name"),
+        StorageSlotName::new("miden::standards::faucets::external_link_2")
+            .expect("valid slot name"),
+        StorageSlotName::new("miden::standards::faucets::external_link_3")
+            .expect("valid slot name"),
+        StorageSlotName::new("miden::standards::faucets::external_link_4")
+            .expect("valid slot name"),
+        StorageSlotName::new("miden::standards::faucets::external_link_5")
+            .expect("valid slot name"),
+        StorageSlotName::new("miden::standards::faucets::external_link_6")
+            .expect("valid slot name"),
+    ]
+});
+
+/// Returns the [`StorageSlotName`] for the mutability config Word.
+pub(crate) fn mutability_config_slot() -> &'static StorageSlotName {
+    &MUTABILITY_CONFIG_SLOT
+}
+
+/// Maximum length of a name in bytes when using the UTF-8 encoding (capped at 32).
+pub(crate) const NAME_UTF8_MAX_BYTES: usize = 32;
+
+// TOKEN NAME
+// ================================================================================================
+
+/// Token display name (max 32 bytes UTF-8), stored in 2 Words.
+///
+/// The maximum is intentionally capped at 32 bytes even though the 2-Word encoding could
+/// hold up to 55 bytes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TokenName(FixedWidthString<2>);
+
+impl TokenName {
+    /// Maximum byte length for a token name (capped at 32, below the 55-byte capacity).
+    pub const MAX_BYTES: usize = NAME_UTF8_MAX_BYTES;
+
+    /// Creates a token name from a UTF-8 string (at most 32 bytes).
+    pub fn new(s: &str) -> Result<Self, FixedWidthStringError> {
+        if s.len() > Self::MAX_BYTES {
+            return Err(FixedWidthStringError::TooLong { max: Self::MAX_BYTES, actual: s.len() });
+        }
+        Ok(Self(FixedWidthString::new(s).expect("length already validated above")))
+    }
+
+    /// Returns the name as a string slice.
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+
+    /// Encodes the name into 2 Words for storage.
+    pub fn to_words(&self) -> Vec<Word> {
+        self.0.to_words()
+    }
+
+    /// Decodes a token name from a 2-Word slice.
+    pub fn try_from_words(words: &[Word]) -> Result<Self, FixedWidthStringError> {
+        let inner = FixedWidthString::<2>::try_from_words(words)?;
+        if inner.as_str().len() > Self::MAX_BYTES {
+            return Err(FixedWidthStringError::TooLong {
+                max: Self::MAX_BYTES,
+                actual: inner.as_str().len(),
+            });
+        }
+        Ok(Self(inner))
+    }
+}
+
+// FIELD TYPES
+// ================================================================================================
+
+/// Token description (max 195 bytes UTF-8), stored in 7 Words.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Description(FixedWidthString<7>);
+
+impl Description {
+    /// Maximum byte length for a description (7 Words × 4 felts × 7 bytes − 1 length byte).
+    pub const MAX_BYTES: usize = FixedWidthString::<7>::CAPACITY;
+
+    /// Creates a description from a UTF-8 string.
+    pub fn new(s: &str) -> Result<Self, FixedWidthStringError> {
+        FixedWidthString::<7>::new(s).map(Self)
+    }
+
+    /// Returns the description as a string slice.
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+
+    /// Encodes the description into 7 Words for storage.
+    pub fn to_words(&self) -> Vec<Word> {
+        self.0.to_words()
+    }
+
+    /// Decodes a description from a 7-Word slice.
+    pub fn try_from_words(words: &[Word]) -> Result<Self, FixedWidthStringError> {
+        FixedWidthString::<7>::try_from_words(words).map(Self)
+    }
+}
+
+/// Token logo URI (max 195 bytes UTF-8), stored in 7 Words.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LogoURI(FixedWidthString<7>);
+
+impl LogoURI {
+    /// Maximum byte length for a logo URI (7 Words × 4 felts × 7 bytes − 1 length byte).
+    pub const MAX_BYTES: usize = FixedWidthString::<7>::CAPACITY;
+
+    /// Creates a logo URI from a UTF-8 string.
+    pub fn new(s: &str) -> Result<Self, FixedWidthStringError> {
+        FixedWidthString::<7>::new(s).map(Self)
+    }
+
+    /// Returns the logo URI as a string slice.
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+
+    /// Encodes the logo URI into 7 Words for storage.
+    pub fn to_words(&self) -> Vec<Word> {
+        self.0.to_words()
+    }
+
+    /// Decodes a logo URI from a 7-Word slice.
+    pub fn try_from_words(words: &[Word]) -> Result<Self, FixedWidthStringError> {
+        FixedWidthString::<7>::try_from_words(words).map(Self)
+    }
+}
+
+/// Token external link (max 195 bytes UTF-8), stored in 7 Words.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExternalLink(FixedWidthString<7>);
+
+impl ExternalLink {
+    /// Maximum byte length for an external link (7 Words × 4 felts × 7 bytes − 1 length byte).
+    pub const MAX_BYTES: usize = FixedWidthString::<7>::CAPACITY;
+
+    /// Creates an external link from a UTF-8 string.
+    pub fn new(s: &str) -> Result<Self, FixedWidthStringError> {
+        FixedWidthString::<7>::new(s).map(Self)
+    }
+
+    /// Returns the external link as a string slice.
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+
+    /// Encodes the external link into 7 Words for storage.
+    pub fn to_words(&self) -> Vec<Word> {
+        self.0.to_words()
+    }
+
+    /// Decodes an external link from a 7-Word slice.
+    pub fn try_from_words(words: &[Word]) -> Result<Self, FixedWidthStringError> {
+        FixedWidthString::<7>::try_from_words(words).map(Self)
+    }
+}
 
 // TOKEN METADATA
 // ================================================================================================
 
-/// Token metadata for fungible faucet accounts.
+/// A helper that stores name, mutability config, and optional fields in fixed value slots.
 ///
-/// This struct encapsulates the metadata associated with a fungible token faucet:
-/// - `token_supply`: The current amount of tokens issued by the faucet.
-/// - `max_supply`: The maximum amount of tokens that can be issued.
-/// - `decimals`: The number of decimal places for token amounts.
-/// - `symbol`: The token symbol.
-///
-/// The metadata is stored in a single storage slot as:
-/// `[token_supply, max_supply, decimals, symbol]`
+/// Designed to be embedded in
+/// [`FungibleFaucet`][crate::account::faucets::FungibleFaucet] (or other token-bearing
+/// account components) to avoid duplication. Slot names are referenced via
+/// [`TokenMetadata::name_chunk_0_slot`] and friends.
 #[derive(Debug, Clone)]
 pub struct TokenMetadata {
-    token_supply: Felt,
-    max_supply: Felt,
-    decimals: u8,
-    symbol: TokenSymbol,
+    name: TokenName,
+    description: Option<Description>,
+    logo_uri: Option<LogoURI>,
+    external_link: Option<ExternalLink>,
+    is_description_mutable: bool,
+    is_logo_uri_mutable: bool,
+    is_external_link_mutable: bool,
+    is_max_supply_mutable: bool,
 }
 
 impl TokenMetadata {
-    // CONSTANTS
+    /// Creates a new token metadata with the given name (all optional fields absent, all flags
+    /// false).
+    pub fn new(name: TokenName) -> Self {
+        Self {
+            name,
+            description: None,
+            logo_uri: None,
+            external_link: None,
+            is_description_mutable: false,
+            is_logo_uri_mutable: false,
+            is_external_link_mutable: false,
+            is_max_supply_mutable: false,
+        }
+    }
+
+    // BUILDERS
     // --------------------------------------------------------------------------------------------
 
-    /// The maximum number of decimals supported.
-    pub const MAX_DECIMALS: u8 = 12;
+    /// Sets the description and its mutability flag together.
+    pub fn with_description(mut self, description: Description, mutable: bool) -> Self {
+        self.description = Some(description);
+        self.is_description_mutable = mutable;
+        self
+    }
 
-    // CONSTRUCTORS
+    /// Sets whether the description can be updated by the owner.
+    pub fn with_description_mutable(mut self, mutable: bool) -> Self {
+        self.is_description_mutable = mutable;
+        self
+    }
+
+    /// Sets the logo URI and its mutability flag together.
+    pub fn with_logo_uri(mut self, logo_uri: LogoURI, mutable: bool) -> Self {
+        self.logo_uri = Some(logo_uri);
+        self.is_logo_uri_mutable = mutable;
+        self
+    }
+
+    /// Sets whether the logo URI can be updated by the owner.
+    pub fn with_logo_uri_mutable(mut self, mutable: bool) -> Self {
+        self.is_logo_uri_mutable = mutable;
+        self
+    }
+
+    /// Sets the external link and its mutability flag together.
+    pub fn with_external_link(mut self, external_link: ExternalLink, mutable: bool) -> Self {
+        self.external_link = Some(external_link);
+        self.is_external_link_mutable = mutable;
+        self
+    }
+
+    /// Sets whether the external link can be updated by the owner.
+    pub fn with_external_link_mutable(mut self, mutable: bool) -> Self {
+        self.is_external_link_mutable = mutable;
+        self
+    }
+
+    /// Sets whether the max supply can be updated by the owner.
+    pub fn with_max_supply_mutable(mut self, mutable: bool) -> Self {
+        self.is_max_supply_mutable = mutable;
+        self
+    }
+
+    // ACCESSORS
     // --------------------------------------------------------------------------------------------
 
-    /// Creates a new [`TokenMetadata`] with the specified metadata and zero token supply.
-    ///
-    /// # Errors
-    /// Returns an error if:
-    /// - The decimals parameter exceeds [`Self::MAX_DECIMALS`].
-    /// - The max supply parameter exceeds [`FungibleAsset::MAX_AMOUNT`].
-    pub fn new(
-        symbol: TokenSymbol,
-        decimals: u8,
-        max_supply: Felt,
-    ) -> Result<Self, FungibleFaucetError> {
-        Self::with_supply(symbol, decimals, max_supply, Felt::ZERO)
+    /// Returns the token name.
+    pub fn name(&self) -> &TokenName {
+        &self.name
     }
 
-    /// Creates a new [`TokenMetadata`] with the specified metadata and token supply.
-    ///
-    /// # Errors
-    /// Returns an error if:
-    /// - The decimals parameter exceeds [`Self::MAX_DECIMALS`].
-    /// - The max supply parameter exceeds [`FungibleAsset::MAX_AMOUNT`].
-    /// - The token supply exceeds the max supply.
-    pub fn with_supply(
-        symbol: TokenSymbol,
-        decimals: u8,
-        max_supply: Felt,
-        token_supply: Felt,
-    ) -> Result<Self, FungibleFaucetError> {
-        if decimals > Self::MAX_DECIMALS {
-            return Err(FungibleFaucetError::TooManyDecimals {
-                actual: decimals as u64,
-                max: Self::MAX_DECIMALS,
-            });
-        }
-
-        if max_supply.as_canonical_u64() > FungibleAsset::MAX_AMOUNT {
-            return Err(FungibleFaucetError::MaxSupplyTooLarge {
-                actual: max_supply.as_canonical_u64(),
-                max: FungibleAsset::MAX_AMOUNT,
-            });
-        }
-
-        if token_supply.as_canonical_u64() > max_supply.as_canonical_u64() {
-            return Err(FungibleFaucetError::TokenSupplyExceedsMaxSupply {
-                token_supply: token_supply.as_canonical_u64(),
-                max_supply: max_supply.as_canonical_u64(),
-            });
-        }
-
-        Ok(Self {
-            token_supply,
-            max_supply,
-            decimals,
-            symbol,
-        })
+    /// Returns the description if set.
+    pub fn description(&self) -> Option<&Description> {
+        self.description.as_ref()
     }
 
-    // PUBLIC ACCESSORS
+    /// Returns the logo URI if set.
+    pub fn logo_uri(&self) -> Option<&LogoURI> {
+        self.logo_uri.as_ref()
+    }
+
+    /// Returns the external link if set.
+    pub fn external_link(&self) -> Option<&ExternalLink> {
+        self.external_link.as_ref()
+    }
+
+    /// Returns whether the max supply is configured as mutable.
+    pub fn is_max_supply_mutable(&self) -> bool {
+        self.is_max_supply_mutable
+    }
+
+    // STATIC SLOT NAME ACCESSORS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns the [`StorageSlotName`] where the token metadata is stored.
-    pub fn metadata_slot() -> &'static StorageSlotName {
-        &METADATA_SLOT_NAME
+    /// Returns the [`StorageSlotName`] for name chunk 0.
+    pub fn name_chunk_0_slot() -> &'static StorageSlotName {
+        &NAME_SLOTS[0]
     }
 
-    /// Returns the current token supply (amount issued).
-    pub fn token_supply(&self) -> Felt {
-        self.token_supply
+    /// Returns the [`StorageSlotName`] for name chunk 1.
+    pub fn name_chunk_1_slot() -> &'static StorageSlotName {
+        &NAME_SLOTS[1]
     }
 
-    /// Returns the maximum token supply.
-    pub fn max_supply(&self) -> Felt {
-        self.max_supply
+    /// Returns the [`StorageSlotName`] for the mutability config Word.
+    pub fn mutability_config_slot() -> &'static StorageSlotName {
+        mutability_config_slot()
     }
 
-    /// Returns the number of decimals.
-    pub fn decimals(&self) -> u8 {
-        self.decimals
+    /// Returns the [`StorageSlotName`] for a description chunk by index (0..=6).
+    pub fn description_slot(index: usize) -> &'static StorageSlotName {
+        &DESCRIPTION_SLOTS[index]
     }
 
-    /// Returns the token symbol.
-    pub fn symbol(&self) -> &TokenSymbol {
-        &self.symbol
+    /// Returns the [`StorageSlotName`] for a logo URI chunk by index (0..=6).
+    pub fn logo_uri_slot(index: usize) -> &'static StorageSlotName {
+        &LOGO_URI_SLOTS[index]
     }
 
-    // MUTATORS
-    // --------------------------------------------------------------------------------------------
+    /// Returns the [`StorageSlotName`] for an external link chunk by index (0..=6).
+    pub fn external_link_slot(index: usize) -> &'static StorageSlotName {
+        &EXTERNAL_LINK_SLOTS[index]
+    }
 
-    /// Sets the token_supply (in base units).
+    /// Returns the storage slot schema entries describing the token metadata layout
+    /// (name chunks, mutability config, description, logo URI, external link).
     ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - the token supply exceeds the max supply.
-    pub fn with_token_supply(mut self, token_supply: Felt) -> Result<Self, FungibleFaucetError> {
-        if token_supply.as_canonical_u64() > self.max_supply.as_canonical_u64() {
-            return Err(FungibleFaucetError::TokenSupplyExceedsMaxSupply {
-                token_supply: token_supply.as_canonical_u64(),
-                max_supply: self.max_supply.as_canonical_u64(),
-            });
+    /// Embedding components should call this and extend their own schema with the result.
+    pub fn storage_schema() -> Vec<(StorageSlotName, StorageSlotSchema)> {
+        let mut entries: Vec<(StorageSlotName, StorageSlotSchema)> = Vec::new();
+
+        for (i, slot) in NAME_SLOTS.iter().enumerate() {
+            entries.push((
+                slot.clone(),
+                StorageSlotSchema::value(
+                    alloc::format!("Name chunk {i}"),
+                    core::array::from_fn(|j| FeltSchema::felt(alloc::format!("data_{j}"))),
+                ),
+            ));
         }
 
-        self.token_supply = token_supply;
+        entries.push((
+            MUTABILITY_CONFIG_SLOT.clone(),
+            StorageSlotSchema::value(
+                "Mutability config",
+                [
+                    FeltSchema::bool("is_description_mutable"),
+                    FeltSchema::bool("is_logo_uri_mutable"),
+                    FeltSchema::bool("is_external_link_mutable"),
+                    FeltSchema::bool("is_max_supply_mutable"),
+                ],
+            ),
+        ));
 
-        Ok(self)
-    }
-}
-
-// TRAIT IMPLEMENTATIONS
-// ================================================================================================
-
-impl TryFrom<Word> for TokenMetadata {
-    type Error = FungibleFaucetError;
-
-    /// Parses token metadata from a Word.
-    ///
-    /// The Word is expected to be in the format: `[token_supply, max_supply, decimals, symbol]`
-    fn try_from(word: Word) -> Result<Self, Self::Error> {
-        let [token_supply, max_supply, decimals, token_symbol] = *word;
-
-        let symbol =
-            TokenSymbol::try_from(token_symbol).map_err(FungibleFaucetError::InvalidTokenSymbol)?;
-
-        let decimals = decimals.as_canonical_u64().try_into().map_err(|_| {
-            FungibleFaucetError::TooManyDecimals {
-                actual: decimals.as_canonical_u64(),
-                max: Self::MAX_DECIMALS,
+        for (label, slots) in [
+            ("Description", DESCRIPTION_SLOTS.as_slice()),
+            ("Logo URI", LOGO_URI_SLOTS.as_slice()),
+            ("External link", EXTERNAL_LINK_SLOTS.as_slice()),
+        ] {
+            for (i, slot) in slots.iter().enumerate() {
+                entries.push((
+                    slot.clone(),
+                    StorageSlotSchema::value(
+                        alloc::format!("{label} chunk {i}"),
+                        core::array::from_fn(|j| FeltSchema::felt(alloc::format!("data_{j}"))),
+                    ),
+                ));
             }
-        })?;
+        }
 
-        Self::with_supply(symbol, decimals, max_supply, token_supply)
+        entries
     }
-}
 
-impl From<TokenMetadata> for Word {
-    fn from(metadata: TokenMetadata) -> Self {
-        // Storage layout: [token_supply, max_supply, decimals, symbol]
-        Word::new([
-            metadata.token_supply,
-            metadata.max_supply,
-            Felt::from(metadata.decimals),
-            metadata.symbol.as_element(),
+    // STORAGE
+    // --------------------------------------------------------------------------------------------
+
+    /// Converts a single [`Felt`] at the given `index` in the mutability config word to a `bool`.
+    ///
+    /// Returns `Err` if the value is neither `0` nor `1`.
+    fn felt_to_bool(felt: Felt, index: usize) -> Result<bool, TokenMetadataError> {
+        match felt.as_canonical_u64() {
+            0 => Ok(false),
+            1 => Ok(true),
+            value => Err(TokenMetadataError::InvalidMutabilityFlag { index, value }),
+        }
+    }
+
+    /// Decodes the mutability config [`Word`] into its four boolean flags.
+    ///
+    /// The word layout is `[is_desc_mutable, is_logo_mutable, is_extlink_mutable,
+    /// is_max_supply_mutable]`. Each element must be exactly `0` or `1`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TokenMetadataError::InvalidMutabilityFlag`] if any element is not `0` or `1`.
+    fn mutability_flags_from_word(
+        word: Word,
+    ) -> Result<(bool, bool, bool, bool), TokenMetadataError> {
+        Ok((
+            Self::felt_to_bool(word[0], 0)?,
+            Self::felt_to_bool(word[1], 1)?,
+            Self::felt_to_bool(word[2], 2)?,
+            Self::felt_to_bool(word[3], 3)?,
+        ))
+    }
+
+    /// Returns the mutability config word for this metadata.
+    fn mutability_config_word(&self) -> Word {
+        Word::from([
+            Felt::from(self.is_description_mutable as u32),
+            Felt::from(self.is_logo_uri_mutable as u32),
+            Felt::from(self.is_external_link_mutable as u32),
+            Felt::from(self.is_max_supply_mutable as u32),
         ])
     }
-}
 
-impl From<TokenMetadata> for StorageSlot {
-    fn from(metadata: TokenMetadata) -> Self {
-        StorageSlot::with_value(TokenMetadata::metadata_slot().clone(), metadata.into())
-    }
-}
-
-impl TryFrom<&StorageSlot> for TokenMetadata {
-    type Error = FungibleFaucetError;
-
-    /// Tries to create [`TokenMetadata`] from a storage slot.
+    /// Constructs a [`TokenMetadata`] by reading all relevant name, optional-field, and
+    /// mutability config slots from account storage.
     ///
     /// # Errors
-    /// Returns an error if:
-    /// - The slot name does not match the expected metadata slot name.
-    /// - The slot value cannot be parsed as valid token metadata.
-    fn try_from(slot: &StorageSlot) -> Result<Self, Self::Error> {
-        if slot.name() != Self::metadata_slot() {
-            return Err(FungibleFaucetError::SlotNameMismatch {
-                expected: Self::metadata_slot().clone(),
-                actual: slot.name().clone(),
-            });
-        }
-        TokenMetadata::try_from(slot.value())
-    }
-}
-
-impl TryFrom<&AccountStorage> for TokenMetadata {
-    type Error = FungibleFaucetError;
-
-    /// Tries to create [`TokenMetadata`] from account storage.
-    fn try_from(storage: &AccountStorage) -> Result<Self, Self::Error> {
-        let metadata_word = storage.get_item(TokenMetadata::metadata_slot()).map_err(|err| {
-            FungibleFaucetError::StorageLookupFailed {
-                slot_name: TokenMetadata::metadata_slot().clone(),
+    ///
+    /// Returns [`TokenMetadataError`] if any storage lookup fails, a mutability flag is invalid,
+    /// or a string field cannot be decoded.
+    pub fn try_from_storage(storage: &AccountStorage) -> Result<Self, TokenMetadataError> {
+        let chunk_0 = storage.get_item(TokenMetadata::name_chunk_0_slot()).map_err(|err| {
+            TokenMetadataError::StorageLookupFailed {
+                slot_name: TokenMetadata::name_chunk_0_slot().clone(),
                 source: err,
             }
         })?;
+        let chunk_1 = storage.get_item(TokenMetadata::name_chunk_1_slot()).map_err(|err| {
+            TokenMetadataError::StorageLookupFailed {
+                slot_name: TokenMetadata::name_chunk_1_slot().clone(),
+                source: err,
+            }
+        })?;
+        let name_words: [Word; 2] = [chunk_0, chunk_1];
+        let name = TokenName::try_from_words(&name_words)
+            .map_err(|err| TokenMetadataError::InvalidStringField { field: "name", source: err })?;
 
-        TokenMetadata::try_from(metadata_word)
-    }
-}
+        let read_slots = |slots: &[StorageSlotName; 7]| -> Result<[Word; 7], TokenMetadataError> {
+            let mut field = [Word::default(); 7];
+            for (i, slot) in slots.iter().enumerate() {
+                field[i] = storage.get_item(slot).map_err(|err| {
+                    TokenMetadataError::StorageLookupFailed { slot_name: slot.clone(), source: err }
+                })?;
+            }
+            Ok(field)
+        };
 
-// TESTS
-// ================================================================================================
+        let description_words = read_slots(&DESCRIPTION_SLOTS)?;
+        let description = Description::try_from_words(&description_words).map_err(|err| {
+            TokenMetadataError::InvalidStringField { field: "description", source: err }
+        })?;
+        let description = if description.as_str().is_empty() {
+            None
+        } else {
+            Some(description)
+        };
 
-#[cfg(test)]
-mod tests {
-    use miden_protocol::asset::TokenSymbol;
-    use miden_protocol::{Felt, Word};
+        let logo_words = read_slots(&LOGO_URI_SLOTS)?;
+        let logo_uri = LogoURI::try_from_words(&logo_words).map_err(|err| {
+            TokenMetadataError::InvalidStringField { field: "logo_uri", source: err }
+        })?;
+        let logo_uri = if logo_uri.as_str().is_empty() {
+            None
+        } else {
+            Some(logo_uri)
+        };
 
-    use super::*;
+        let link_words = read_slots(&EXTERNAL_LINK_SLOTS)?;
+        let external_link = ExternalLink::try_from_words(&link_words).map_err(|err| {
+            TokenMetadataError::InvalidStringField { field: "external_link", source: err }
+        })?;
+        let external_link = if external_link.as_str().is_empty() {
+            None
+        } else {
+            Some(external_link)
+        };
 
-    #[test]
-    fn token_metadata_new() {
-        let symbol = TokenSymbol::new("TEST").unwrap();
-        let decimals = 8u8;
-        let max_supply = Felt::new(1_000_000);
+        let mutability_word = storage.get_item(mutability_config_slot()).map_err(|err| {
+            TokenMetadataError::StorageLookupFailed {
+                slot_name: mutability_config_slot().clone(),
+                source: err,
+            }
+        })?;
+        let (is_desc_mutable, is_logo_mutable, is_extlink_mutable, is_max_supply_mutable) =
+            TokenMetadata::mutability_flags_from_word(mutability_word)?;
 
-        let metadata = TokenMetadata::new(symbol.clone(), decimals, max_supply).unwrap();
+        let mut meta = TokenMetadata::new(name);
+        if let Some(d) = description {
+            meta = meta.with_description(d, is_desc_mutable);
+        }
+        meta = meta.with_description_mutable(is_desc_mutable);
+        if let Some(l) = logo_uri {
+            meta = meta.with_logo_uri(l, is_logo_mutable);
+        }
+        meta = meta.with_logo_uri_mutable(is_logo_mutable);
+        if let Some(e) = external_link {
+            meta = meta.with_external_link(e, is_extlink_mutable);
+        }
+        meta = meta.with_external_link_mutable(is_extlink_mutable);
+        meta = meta.with_max_supply_mutable(is_max_supply_mutable);
 
-        assert_eq!(metadata.symbol(), &symbol);
-        assert_eq!(metadata.decimals(), decimals);
-        assert_eq!(metadata.max_supply(), max_supply);
-        assert_eq!(metadata.token_supply(), Felt::ZERO);
-    }
-
-    #[test]
-    fn token_metadata_with_supply() {
-        let symbol = TokenSymbol::new("TEST").unwrap();
-        let decimals = 8u8;
-        let max_supply = Felt::new(1_000_000);
-        let token_supply = Felt::new(500_000);
-
-        let metadata =
-            TokenMetadata::with_supply(symbol.clone(), decimals, max_supply, token_supply).unwrap();
-
-        assert_eq!(metadata.symbol(), &symbol);
-        assert_eq!(metadata.decimals(), decimals);
-        assert_eq!(metadata.max_supply(), max_supply);
-        assert_eq!(metadata.token_supply(), token_supply);
-    }
-
-    #[test]
-    fn token_metadata_too_many_decimals() {
-        let symbol = TokenSymbol::new("TEST").unwrap();
-        let decimals = 13u8; // exceeds MAX_DECIMALS
-        let max_supply = Felt::new(1_000_000);
-
-        let result = TokenMetadata::new(symbol, decimals, max_supply);
-        assert!(matches!(result, Err(FungibleFaucetError::TooManyDecimals { .. })));
-    }
-
-    #[test]
-    fn token_metadata_max_supply_too_large() {
-        use miden_protocol::asset::FungibleAsset;
-
-        let symbol = TokenSymbol::new("TEST").unwrap();
-        let decimals = 8u8;
-        // FungibleAsset::MAX_AMOUNT is 2^63 - 1, so we use MAX_AMOUNT + 1 to exceed it
-        let max_supply = Felt::new(FungibleAsset::MAX_AMOUNT + 1);
-
-        let result = TokenMetadata::new(symbol, decimals, max_supply);
-        assert!(matches!(result, Err(FungibleFaucetError::MaxSupplyTooLarge { .. })));
-    }
-
-    #[test]
-    fn token_metadata_to_word() {
-        let symbol = TokenSymbol::new("POL").unwrap();
-        let symbol_felt = symbol.as_element();
-        let decimals = 2u8;
-        let max_supply = Felt::new(123);
-
-        let metadata = TokenMetadata::new(symbol, decimals, max_supply).unwrap();
-        let word: Word = metadata.into();
-
-        // Storage layout: [token_supply, max_supply, decimals, symbol]
-        assert_eq!(word[0], Felt::ZERO); // token_supply
-        assert_eq!(word[1], max_supply);
-        assert_eq!(word[2], Felt::from(decimals));
-        assert_eq!(word[3], symbol_felt);
+        Ok(meta)
     }
 
-    #[test]
-    fn token_metadata_from_storage_slot() {
-        let symbol = TokenSymbol::new("POL").unwrap();
-        let decimals = 2u8;
-        let max_supply = Felt::new(123);
+    /// Consumes `self` and returns the storage slots for this metadata (name, mutability config,
+    /// and all fields). Absent optional fields are encoded as empty strings (all-zero words).
+    pub fn into_storage_slots(self) -> Vec<StorageSlot> {
+        let mut slots: Vec<StorageSlot> = Vec::new();
 
-        let original = TokenMetadata::new(symbol.clone(), decimals, max_supply).unwrap();
-        let slot: StorageSlot = original.into();
+        let name_words = self.name.to_words();
+        slots.push(StorageSlot::with_value(
+            TokenMetadata::name_chunk_0_slot().clone(),
+            name_words[0],
+        ));
+        slots.push(StorageSlot::with_value(
+            TokenMetadata::name_chunk_1_slot().clone(),
+            name_words[1],
+        ));
 
-        let restored = TokenMetadata::try_from(&slot).unwrap();
+        slots.push(StorageSlot::with_value(
+            mutability_config_slot().clone(),
+            self.mutability_config_word(),
+        ));
 
-        assert_eq!(restored.symbol(), &symbol);
-        assert_eq!(restored.decimals(), decimals);
-        assert_eq!(restored.max_supply(), max_supply);
-        assert_eq!(restored.token_supply(), Felt::ZERO);
-    }
+        let description = self
+            .description
+            .unwrap_or_else(|| Description::new("").expect("empty description should be valid"));
+        for (i, word) in description.to_words().iter().enumerate() {
+            slots.push(StorageSlot::with_value(TokenMetadata::description_slot(i).clone(), *word));
+        }
 
-    #[test]
-    fn token_metadata_roundtrip_with_supply() {
-        let symbol = TokenSymbol::new("POL").unwrap();
-        let decimals = 2u8;
-        let max_supply = Felt::new(1000);
-        let token_supply = Felt::new(500);
+        let logo_uri = self
+            .logo_uri
+            .unwrap_or_else(|| LogoURI::new("").expect("empty logo URI should be valid"));
+        for (i, word) in logo_uri.to_words().iter().enumerate() {
+            slots.push(StorageSlot::with_value(TokenMetadata::logo_uri_slot(i).clone(), *word));
+        }
 
-        let original =
-            TokenMetadata::with_supply(symbol.clone(), decimals, max_supply, token_supply).unwrap();
-        let word: Word = original.into();
-        let restored = TokenMetadata::try_from(word).unwrap();
+        let external_link = self
+            .external_link
+            .unwrap_or_else(|| ExternalLink::new("").expect("empty external link should be valid"));
+        for (i, word) in external_link.to_words().iter().enumerate() {
+            slots
+                .push(StorageSlot::with_value(TokenMetadata::external_link_slot(i).clone(), *word));
+        }
 
-        assert_eq!(restored.symbol(), &symbol);
-        assert_eq!(restored.decimals(), decimals);
-        assert_eq!(restored.max_supply(), max_supply);
-        assert_eq!(restored.token_supply(), token_supply);
+        slots
     }
 }

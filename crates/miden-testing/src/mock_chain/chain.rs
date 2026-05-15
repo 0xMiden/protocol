@@ -434,12 +434,12 @@ impl MockChain {
     }
 
     /// Returns the [`AccountId`] of the faucet whose assets are accepted for fee payments in the
-    /// transaction kernel, or in other words, the native asset of the blockchain.
+    /// transaction kernel, or in other words, the fee faucet of the blockchain.
     ///
     /// This value is taken from the genesis block because it is assumed not to change throughout
     /// the chain's lifecycle.
-    pub fn native_asset_id(&self) -> AccountId {
-        self.genesis_block_header().fee_parameters().native_asset_id()
+    pub fn fee_faucet_id(&self) -> AccountId {
+        self.genesis_block_header().fee_parameters().fee_faucet_id()
     }
 
     /// Returns a reference to the nullifier tree.
@@ -452,6 +452,24 @@ impl MockChain {
     /// These notes are committed for authenticated consumption.
     pub fn committed_notes(&self) -> &BTreeMap<NoteId, MockChainNote> {
         &self.committed_notes
+    }
+
+    /// Returns `true` if a note with the given ID is recorded in committed notes.
+    pub fn is_note_committed(&self, note_id: &NoteId) -> bool {
+        self.committed_notes.contains_key(note_id)
+    }
+
+    /// Returns `true` if the nullifier has been recorded on-chain (note was consumed).
+    pub fn is_note_consumed(&self, nullifier: &Nullifier) -> bool {
+        self.nullifier_tree.get_block_num(nullifier).is_some()
+    }
+
+    /// Returns `true` if the nullifier is not yet on-chain.
+    ///
+    /// A nullifier can be unspent without the chain having seen the underlying note. Pair with
+    /// [`Self::is_note_committed`] when both conditions matter.
+    pub fn is_note_unspent(&self, nullifier: &Nullifier) -> bool {
+        !self.is_note_consumed(nullifier)
     }
 
     /// Returns an [`InputNote`] for the given note ID. If the note does not exist or is not
@@ -954,7 +972,7 @@ impl MockChain {
                     created_note.id(),
                     MockChainNote::Private(
                         created_note.id(),
-                        created_note.metadata().clone(),
+                        *created_note.metadata(),
                         note_inclusion_proof,
                     ),
                 );

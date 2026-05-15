@@ -103,7 +103,7 @@ end
 #! Inputs:  [RATE0, RATE1, CAPACITY]
 #! Outputs: [RATE0, RATE1, CAPACITY]
 proc update_storage_delta
-    exec.memory::get_num_storage_slots movdn.12
+    exec.memory::get_native_num_storage_slots movdn.12
     # => [RATE0, RATE1, CAPACITY, num_storage_slots]
 
     push.0 movdn.12
@@ -317,6 +317,10 @@ end
 #!
 #! Inputs:  [RATE0, RATE1, CAPACITY]
 #! Outputs: [RATE0, RATE1, CAPACITY]
+#!
+#! Locals:
+#! - 0: has_next
+#! - 1: iter
 @locals(2)
 proc update_fungible_asset_delta
     push.ACCOUNT_DELTA_FUNGIBLE_ASSET_PTR
@@ -394,6 +398,10 @@ end
 #!
 #! Inputs:  [RATE0, RATE1, CAPACITY]
 #! Outputs: [RATE0, RATE1, CAPACITY]
+#!
+#! Locals:
+#! - 0: has_next
+#! - 1: iter
 @locals(2)
 proc update_non_fungible_asset_delta
     push.ACCOUNT_DELTA_NON_FUNGIBLE_ASSET_PTR

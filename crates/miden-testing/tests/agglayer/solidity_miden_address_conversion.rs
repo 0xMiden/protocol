@@ -20,6 +20,8 @@ use miden_protocol::address::NetworkId;
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PRIVATE_SENDER,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
+    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
+    ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET,
     AccountIdBuilder,
 };
 use miden_protocol::transaction::TransactionKernel;
@@ -60,29 +62,22 @@ fn test_account_id_to_ethereum_roundtrip() {
 }
 
 #[test]
-fn test_bech32_to_ethereum_roundtrip() {
-    let test_addresses = [
-        "mtst1azcw08rget79fqp8ymr0zqkv5v5lj466",
-        "mtst1arxmxavamh7lqyp79mexktt4vgxv40mp",
-        "mtst1ar2phe0pa0ln75plsczxr8ryws4s8zyp",
+fn test_account_id_to_ethereum_roundtrip2() {
+    let account_ids = [
+        AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap(),
+        AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1).unwrap(),
+        AccountId::try_from(ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET).unwrap(),
     ];
 
-    let evm_addresses = [
-        "0x00000000b0e79c68cafc54802726c6f102cca300",
-        "0x00000000cdb3759dddfdf0103e2ef26b2d756200",
-        "0x00000000d41be5e1ebff3f503f8604619c647400",
-    ];
-
-    for (bech32, expected_evm) in test_addresses.iter().zip(evm_addresses.iter()) {
-        let (network_id, account_id) = AccountId::from_bech32(bech32).unwrap();
-
+    for account_id in account_ids {
         let eth = EthEmbeddedAccountId::from_account_id(account_id);
         let recovered = eth.into_account_id();
-        let recovered_bech32 = recovered.to_bech32(network_id);
 
-        assert_eq!(&account_id, &recovered);
-        assert_eq!(*expected_evm, eth.to_string());
-        assert_eq!(*bech32, recovered_bech32);
+        assert_eq!(account_id, recovered);
+        assert_eq!(
+            eth.to_string(),
+            format!("0x00000000{}00", account_id.to_hex().strip_prefix("0x").unwrap())
+        );
     }
 }
 

@@ -472,13 +472,17 @@ async fn fungible_asset_delta() -> anyhow::Result<()> {
         .account_delta()
         .vault()
         .added_assets()
-        .map(|asset| (asset.unwrap_fungible().faucet_id(), asset.unwrap_fungible().amount()))
+        .map(|asset| {
+            (asset.unwrap_fungible().faucet_id(), asset.unwrap_fungible().amount().as_u64())
+        })
         .collect::<BTreeMap<_, _>>();
     let mut removed_assets = executed_tx
         .account_delta()
         .vault()
         .removed_assets()
-        .map(|asset| (asset.unwrap_fungible().faucet_id(), asset.unwrap_fungible().amount()))
+        .map(|asset| {
+            (asset.unwrap_fungible().faucet_id(), asset.unwrap_fungible().amount().as_u64())
+        })
         .collect::<BTreeMap<_, _>>();
 
     assert_eq!(added_assets.len(), 2);
@@ -486,17 +490,20 @@ async fn fungible_asset_delta() -> anyhow::Result<()> {
 
     assert_eq!(
         added_assets.remove(&original_asset2.faucet_id()).unwrap(),
-        added_asset2.amount() - removed_asset2.amount()
+        added_asset2.amount().as_u64() - removed_asset2.amount().as_u64()
     );
-    assert_eq!(added_assets.remove(&added_asset4.faucet_id()).unwrap(), added_asset4.amount());
+    assert_eq!(
+        added_assets.remove(&added_asset4.faucet_id()).unwrap(),
+        added_asset4.amount().as_u64()
+    );
 
     assert_eq!(
         removed_assets.remove(&original_asset0.faucet_id()).unwrap(),
-        removed_asset0.amount() - added_asset0.amount()
+        removed_asset0.amount().as_u64() - added_asset0.amount().as_u64()
     );
     assert_eq!(
         removed_assets.remove(&original_asset3.faucet_id()).unwrap(),
-        removed_asset3.amount()
+        removed_asset3.amount().as_u64()
     );
 
     Ok(())
@@ -954,7 +961,7 @@ async fn delta_for_new_account_retains_empty_value_storage_slots() -> anyhow::Re
     let slot_value2 = Word::from([1, 2, 3, 4u32]);
     let mut account = AccountBuilder::new(rand::random())
         .account_type(AccountType::RegularAccountUpdatableCode)
-        .storage_mode(AccountStorageMode::Network)
+        .storage_mode(AccountStorageMode::Public)
         .with_component(MockAccountComponent::with_slots(vec![
             StorageSlot::with_empty_value(slot_name0.clone()),
             StorageSlot::with_value(slot_name1.clone(), slot_value2),
@@ -1007,7 +1014,7 @@ async fn delta_for_new_account_retains_empty_map_storage_slots() -> anyhow::Resu
 
     let mut account = AccountBuilder::new(rand::random())
         .account_type(AccountType::RegularAccountUpdatableCode)
-        .storage_mode(AccountStorageMode::Network)
+        .storage_mode(AccountStorageMode::Public)
         .with_component(MockAccountComponent::with_slots(vec![StorageSlot::with_empty_map(
             slot_name0.clone(),
         )]))

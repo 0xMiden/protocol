@@ -1,6 +1,7 @@
 use miden_protocol::Word;
 use miden_protocol::account::auth::{AuthScheme, PublicKey, PublicKeyCommitment};
 use miden_protocol::account::component::{
+    AccountComponentCode,
     AccountComponentMetadata,
     SchemaType,
     StorageSchema,
@@ -10,7 +11,9 @@ use miden_protocol::account::{AccountComponent, AccountType, StorageSlot, Storag
 use miden_protocol::crypto::dsa::{ecdsa_k256_keccak, falcon512_poseidon2};
 use miden_protocol::utils::sync::LazyLock;
 
-use crate::account::components::singlesig_library;
+use crate::account::account_component_code;
+
+account_component_code!(SINGLESIG_CODE, "auth/singlesig.masl");
 
 // CONSTANTS
 // ================================================================================================
@@ -47,6 +50,11 @@ pub struct AuthSingleSig {
 impl AuthSingleSig {
     /// The name of the component.
     pub const NAME: &'static str = "miden::standards::components::auth::singlesig";
+
+    /// Returns the [`AccountComponentCode`] of this component.
+    pub fn code() -> &'static AccountComponentCode {
+        &SINGLESIG_CODE
+    }
 
     /// Creates a new [`AuthSingleSig`] component with the given `public_key`.
     pub fn new(pub_key: PublicKeyCommitment, auth_scheme: AuthScheme) -> Self {
@@ -139,7 +147,7 @@ impl From<AuthSingleSig> for AccountComponent {
             ),
         ];
 
-        AccountComponent::new(singlesig_library(), storage_slots, metadata).expect(
+        AccountComponent::new(AuthSingleSig::code().clone(), storage_slots, metadata).expect(
             "singlesig component should satisfy the requirements of a valid account component",
         )
     }

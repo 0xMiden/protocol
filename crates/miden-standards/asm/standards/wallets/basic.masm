@@ -75,10 +75,10 @@ pub proc add_assets_to_account
     # we have allocated ASSET_SIZE * MAX_ASSETS_PER_NOTE number of locals so all assets should fit
     # since the asset memory will be overwritten, we don't have to initialize the locals to zero
     locaddr.0 exec.active_note::get_assets
-    # => [num_of_assets, ptr = 0]
+    # => [num_of_assets]
 
     # compute the pointer at which we should stop iterating
-    mul.ASSET_SIZE dup.1 add
+    mul.ASSET_SIZE locaddr.0 dup movdn.2 add
     # => [end_ptr, ptr]
 
     # pad the stack and move the pointer to the top

@@ -83,7 +83,7 @@ pub fn setup_mixed_notes_benchmark(config: MixedNotesConfig) -> anyhow::Result<M
     for i in 0..config.failing_note_count {
         let mut rng = RandomCoin::new([i as u32, 0, 0, 0].into());
         let failing_note = NoteBuilder::new(sender, &mut rng)
-            .code("begin push.0 div end") // Division by zero - will fail.
+            .code("@note_script pub proc main push.0 div end") // Division by zero - will fail.
             .build()?;
         failing_notes.push(failing_note);
     }

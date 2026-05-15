@@ -1,4 +1,5 @@
 use alloc::collections::BTreeMap;
+use alloc::string::ToString;
 use alloc::vec::Vec;
 use core::ops::RangeTo;
 
@@ -264,7 +265,8 @@ impl Deserializable for PartialBlockchain {
     ) -> Result<Self, miden_crypto::utils::DeserializationError> {
         let mmr = PartialMmr::read_from(source)?;
         let blocks = BTreeMap::<BlockNumber, BlockHeader>::read_from(source)?;
-        Ok(Self { mmr, blocks })
+        Self::new(mmr, blocks.into_values())
+            .map_err(|err| miden_crypto::utils::DeserializationError::InvalidValue(err.to_string()))
     }
 }
 
@@ -292,7 +294,7 @@ mod tests {
     use crate::crypto::merkle::mmr::{Mmr, PartialMmr};
     use crate::errors::PartialBlockchainError;
     use crate::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
-    use crate::utils::serde::{Deserializable, Serializable};
+    use crate::utils::serde::{Deserializable, DeserializationError, Serializable};
 
     #[test]
     fn test_partial_blockchain_add() {
@@ -379,6 +381,39 @@ mod tests {
     }
 
     #[test]
+    fn partial_blockchain_deserialization_on_invalid_header_fails() {
+        let block_header0 = int_to_block_header(0);
+        let block_header1 = int_to_block_header(1);
+        let block_header2 = int_to_block_header(2);
+
+        let mut mmr = Mmr::default();
+        mmr.add(block_header0.commitment());
+        mmr.add(block_header1.commitment());
+        mmr.add(block_header2.commitment());
+
+        let mut partial_mmr = PartialMmr::from_peaks(mmr.peaks());
+        for i in 0..3 {
+            partial_mmr
+                .track(i, mmr.get(i).unwrap(), mmr.open(i).unwrap().merkle_path())
+                .unwrap();
+        }
+
+        let fake_block_header2 = BlockHeader::mock(2, None, None, &[], Word::empty());
+
+        assert_ne!(block_header2.commitment(), fake_block_header2.commitment());
+
+        let forged_partial_blockchain = PartialBlockchain::new_unchecked(
+            partial_mmr,
+            vec![block_header0, block_header1, fake_block_header2],
+        )
+        .unwrap();
+        let bytes = forged_partial_blockchain.to_bytes();
+
+        let err = PartialBlockchain::read_from_bytes(&bytes).unwrap_err();
+        assert_matches!(err, DeserializationError::InvalidValue(_));
+    }
+
+    #[test]
     fn partial_blockchain_new_on_block_number_exceeding_chain_length_fails() {
         let block_header0 = int_to_block_header(0);
         let mmr = Mmr::default();
@@ -434,7 +469,7 @@ mod tests {
     fn int_to_block_header(block_num: impl Into<BlockNumber>) -> BlockHeader {
         let fee_parameters =
             FeeParameters::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap(), 500)
-                .expect("native asset ID should be a fungible faucet ID");
+                .expect("fee faucet ID should be a fungible faucet ID");
         let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
         let validator_key = SecretKey::with_rng(&mut rng).public_key();
 

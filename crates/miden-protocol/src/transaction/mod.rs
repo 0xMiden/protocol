@@ -23,7 +23,7 @@ pub use outputs::{
     OutputNote,
     OutputNoteCollection,
     OutputNotes,
-    PrivateNoteHeader,
+    PrivateOutputNote,
     PublicOutputNote,
     RawOutputNote,
     RawOutputNotes,

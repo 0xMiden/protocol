@@ -8,13 +8,14 @@ use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
     Note,
     NoteAssets,
-    NoteAttachment,
-    NoteMetadata,
+    NoteAttachments,
     NoteRecipient,
     NoteScript,
+    NoteScriptRoot,
     NoteStorage,
     NoteTag,
     NoteType,
+    PartialNoteMetadata,
 };
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
@@ -56,7 +57,7 @@ impl P2idNote {
     }
 
     /// Returns the P2ID (Pay-to-ID) note script root.
-    pub fn script_root() -> Word {
+    pub fn script_root() -> NoteScriptRoot {
         P2ID_SCRIPT.root()
     }
 
@@ -78,7 +79,7 @@ impl P2idNote {
         target: AccountId,
         assets: Vec<Asset>,
         note_type: NoteType,
-        attachment: NoteAttachment,
+        attachments: NoteAttachments,
         rng: &mut R,
     ) -> Result<Note, NoteError> {
         let serial_num = rng.draw_word();
@@ -86,11 +87,10 @@ impl P2idNote {
 
         let tag = NoteTag::with_account_target(target);
 
-        let metadata =
-            NoteMetadata::new(sender, note_type).with_tag(tag).with_attachment(attachment);
+        let metadata = PartialNoteMetadata::new(sender, note_type).with_tag(tag);
         let vault = NoteAssets::new(assets)?;
 
-        Ok(Note::new(vault, metadata, recipient))
+        Ok(Note::with_attachments(vault, metadata, recipient, attachments))
     }
 }
 
@@ -172,7 +172,7 @@ mod tests {
     fn try_from_valid_storage_succeeds() {
         let target = AccountId::dummy(
             [1u8; 15],
-            AccountIdVersion::Version0,
+            AccountIdVersion::Version1,
             AccountType::FungibleFaucet,
             AccountStorageMode::Private,
         );

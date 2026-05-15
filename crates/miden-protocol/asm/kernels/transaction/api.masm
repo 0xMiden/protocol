@@ -7,10 +7,10 @@ use $kernel::input_note
 use $kernel::memory
 use $kernel::output_note
 use $kernel::tx
-# use $kernel::types::AccountId
 
 use $kernel::memory::UPCOMING_FOREIGN_PROCEDURE_PTR
 use $kernel::memory::UPCOMING_FOREIGN_PROC_INPUT_VALUE_15_PTR
+use $kernel::memory::KERNEL_PROCEDURES_PTR
 
 use miden::core::word
 
@@ -41,6 +41,8 @@ const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_STORAGE_WHILE_NO_NOTE_BEING_PROCESSED="fai
 const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_SCRIPT_ROOT_WHILE_NO_NOTE_BEING_PROCESSED="failed to access note script root of active note because no note is currently being processed"
 
 const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_SERIAL_NUMBER_WHILE_NO_NOTE_BEING_PROCESSED="failed to access note serial number of active note because no note is currently being processed"
+
+const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_ATTACHMENTS_WHILE_NO_NOTE_BEING_PROCESSED="failed to access note attachments of active note because no note is currently being processed"
 
 const ERR_FOREIGN_ACCOUNT_PROCEDURE_ROOT_IS_ZERO="root of the provided foreign procedure equals zero indicating that tx_prepare_fpi was not called"
 
@@ -172,7 +174,8 @@ end
 #! Where:
 #! - is_native is a boolean flag that indicates whether the account ID was requested for the native
 #!   or the active account.
-#! - account_id_{prefix,suffix} are the prefix and suffix felts of the ID of the active account.
+#! - account_id_{prefix,suffix} are the prefix and suffix felts of the ID of the requested account
+#!   (native or active, depending on the is_native flag).
 #!
 #! Invocation: dynexec
 pub proc account_get_id
@@ -741,14 +744,11 @@ end
 #! Mint an asset from the faucet the transaction is being executed against.
 #!
 #! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
-#! Outputs: [NEW_ASSET_VALUE, pad(12)]
+#! Outputs: [pad(16)]
 #!
 #! Where:
 #! - ASSET_KEY is the vault key of the asset to mint.
-#! - ASSET_VALUE is the value of the asset that was minted.
-#! - NEW_ASSET_VALUE is:
-#!   - For fungible assets: the ASSET_VALUE merged with the existing vault asset value, if any.
-#!   - For non-fungible assets: identical to ASSET_VALUE.
+#! - ASSET_VALUE is the value of the asset to mint.
 #!
 #! Panics if:
 #! - the transaction is not being executed against a faucet.
@@ -773,7 +773,7 @@ pub proc faucet_mint_asset
 
     # mint the asset
     exec.faucet::mint
-    # => [NEW_ASSET_VALUE, pad(12)]
+    # => [pad(16)]
 end
 
 #! Burn an asset from the faucet the transaction is being executed against.
@@ -874,7 +874,7 @@ end
 
 #! Returns the recipient of the specified input note.
 #!
-#! Inputs:  [is_active_note, note_index, pad(15)]
+#! Inputs:  [is_active_note, note_index, pad(14)]
 #! Outputs: [RECIPIENT, pad(12)]
 #!
 #! Where:
@@ -913,15 +913,14 @@ end
 #! Returns the metadata of the specified input note.
 #!
 #! Inputs:  [is_active_note, note_index, pad(14)]
-#! Outputs: [NOTE_ATTACHMENT, METADATA_HEADER, pad(8)]
+#! Outputs: [METADATA, pad(12)]
 #!
 #! Where:
 #! - is_active_note is the boolean flag indicating whether we should return the metadata from
 #!   the active note or from the note with the specified index.
 #! - note_index is the index of the input note whose metadata should be returned. Notice that if
 #!   is_active_note is 1, note_index is ignored.
-#! - METADATA_HEADER is the metadata header of the specified input note.
-#! - NOTE_ATTACHMENT is the attachment of the specified input note.
+#! - METADATA is the metadata of the specified input note.
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of input notes.
@@ -930,7 +929,7 @@ end
 #!
 #! Invocation: dynexec
 pub proc input_note_get_metadata
-    # get the input note pointer depending on whether the requested note is current or it was 
+    # get the input note pointer depending on whether the requested note is current or it was
     # requested by index.
     exec.get_requested_note_ptr
     # => [input_note_ptr, pad(15)]
@@ -945,16 +944,12 @@ pub proc input_note_get_metadata
     # => [input_note_ptr, pad(16)]
 
     # get the metadata
-    dup exec.memory::get_input_note_metadata_header
-    # => [METADATA_HEADER, input_note_ptr, pad(16)]
-
-    # get the attachment
-    movup.4 exec.memory::get_input_note_attachment
-    # => [NOTE_ATTACHMENT, METADATA_HEADER, pad(16)]
+    exec.memory::get_input_note_metadata
+    # => [METADATA, pad(16)]
 
     # truncate the stack
-    swapdw dropw dropw
-    # => [NOTE_ATTACHMENT, METADATA_HEADER, pad(8)]
+    swapw dropw
+    # => [METADATA, pad(12)]
 end
 
 #! Returns the serial number of the specified input note.
@@ -1082,6 +1077,46 @@ pub proc input_note_get_script_root
     # => [SCRIPT_ROOT, pad(12)]
 end
 
+#! Returns the attachments commitment of the specified input note.
+#!
+#! Inputs:  [is_active_note, note_index, pad(14)]
+#! Outputs: [ATTACHMENTS_COMMITMENT, pad(12)]
+#!
+#! Where:
+#! - is_active_note is the boolean flag indicating whether we should return the attachments
+#!   commitment from the active note or from the note with the specified index.
+#! - note_index is the index of the input note whose attachments commitment should be returned.
+#!   Notice that if is_active_note is 1, note_index is ignored.
+#! - ATTACHMENTS_COMMITMENT is the commitment to all attachments of the specified input note.
+#!
+#! Panics if:
+#! - the note index is greater or equal to the total number of input notes.
+#! - is_active_note is 1 and no input note is not being processed (attempted to access note
+#!   attachments from incorrect context).
+#!
+#! Invocation: dynexec
+pub proc input_note_get_attachments_commitment
+    # get the input note pointer depending on whether the requested note is current or it was
+    # requested by index.
+    exec.get_requested_note_ptr
+    # => [input_note_ptr, pad(15)]
+
+    # assert the pointer is not zero - this would suggest the procedure has been called from an
+    # incorrect context
+    dup neq.0 assert.err=ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_ATTACHMENTS_WHILE_NO_NOTE_BEING_PROCESSED
+    # => [input_note_ptr, pad(15)]
+
+    # get the attachments commitment
+    exec.memory::get_input_note_attachments_commitment
+    # => [ATTACHMENTS_COMMITMENT, pad(15)]
+
+    # truncate the stack
+    repeat.3
+        movup.4 drop
+    end
+    # => [ATTACHMENTS_COMMITMENT, pad(12)]
+end
+
 # OUTPUT NOTE
 # -------------------------------------------------------------------------------------------------
 
@@ -1118,6 +1153,7 @@ end
 #!
 #! Panics if:
 #! - the procedure is called when the active account is not the native one.
+#! - the note index points to a non-existent output note.
 #!
 #! Invocation: dynexec
 pub proc output_note_add_asset
@@ -1125,34 +1161,41 @@ pub proc output_note_add_asset
     exec.memory::assert_native_account
     # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
 
+    dup.8 exec.output_note::assert_note_index_in_bounds drop
+    # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
+
     exec.output_note::add_asset
     # => [pad(16)]
 end
 
-#! Sets the attachment of the note specified by the index.
+#! Adds an attachment to the note specified by the index.
 #!
-#! Inputs:  [note_idx, attachment_scheme, attachment_kind, ATTACHMENT, pad(9)]
+#! Inputs:  [attachment_scheme, ATTACHMENT, note_idx, pad(9)]
 #! Outputs: [pad(16)]
 #!
 #! Where:
-#! - note_idx is the index of the note on which the attachment is set.
 #! - attachment_scheme is the user-defined scheme of the attachment.
-#! - attachment_kind is the kind of the attachment content.
-#! - ATTACHMENT is the attachment to be set.
+#! - ATTACHMENT is the attachment word to store.
+#! - note_idx is the index of the note to which the attachment is added.
 #!
 #! Panics if:
 #! - the procedure is called when the active account is not the native one.
 #! - the note index points to a non-existent output note.
-#! - the attachment kind or scheme does not fit into a u32.
-#! - the attachment kind is an unknown variant.
+#! - the attachment scheme is 0 or exceeds 65534.
+#! - the attachment num_words exceeds 256 or is zero.
+#! - the note already has 4 attachments.
 #!
 #! Invocation: dynexec
-pub proc output_note_set_attachment
+pub proc output_note_add_attachment
+    # assert that the provided note index is less than the total number of output notes
+    dup.5 exec.output_note::assert_note_index_in_bounds drop
+    # => [attachment_scheme, ATTACHMENT, note_idx, pad(9)]
+
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
-    # => [note_idx, attachment_scheme, attachment_kind, ATTACHMENT, pad(9)]
+    # => [attachment_scheme, ATTACHMENT, note_idx, pad(9)]
 
-    exec.output_note::set_attachment
+    exec.output_note::add_attachment
     # => [pad(16)]
 end
 
@@ -1184,6 +1227,33 @@ pub proc output_note_get_assets_info
         movup.5 drop
     end
     # => [ASSETS_COMMITMENT, num_assets, pad(11)]
+end
+
+#! Returns the commitment over all attachments.
+#!
+#! Inputs:  [note_index, pad(15)]
+#! Outputs: [ATTACHMENTS_COMMITMENT, pad(12)]
+#!
+#! Where:
+#! - note_index is the index of the output note whose attachments commitment should be returned.
+#! - ATTACHMENTS_COMMITMENT is the commitment to all attachments of the note.
+#!
+#! Panics if:
+#! - the note index is greater or equal to the total number of output notes.
+#!
+#! Invocation: dynexec
+pub proc output_note_get_attachments_commitment
+    # assert that the provided note index is less than the total number of output notes
+    exec.output_note::assert_note_index_in_bounds
+    # => [note_index, pad(15)]
+
+    # get the attachments commitment
+    exec.output_note::get_attachments_commitment
+    # => [ATTACHMENTS_COMMITMENT, pad(16)]
+
+    # truncate the stack
+    swapw dropw
+    # => [ATTACHMENTS_COMMITMENT, pad(12)]
 end
 
 #! Returns the recipient of the output note with the specified index.
@@ -1220,12 +1290,11 @@ end
 #! Returns the metadata of the output note with the specified index.
 #!
 #! Inputs:  [note_index, pad(15)]
-#! Outputs: [NOTE_ATTACHMENT, METADATA_HEADER, pad(8)]
+#! Outputs: [METADATA, pad(12)]
 #!
 #! Where:
 #! - note_index is the index of the output note whose metadata should be returned.
-#! - METADATA_HEADER is the metadata header of the specified output note.
-#! - NOTE_ATTACHMENT is the attachment of the specified output note.
+#! - METADATA is the metadata of the specified output note.
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of output notes.
@@ -1240,21 +1309,13 @@ pub proc output_note_get_metadata
     exec.memory::get_output_note_ptr
     # => [note_ptr, pad(15)]
 
-    # make stack truncation at the end of the procedure easier
-    push.0 swap
-    # => [note_ptr, pad(16)]
-
     # get the metadata
-    dup exec.memory::get_output_note_metadata_header
-    # => [METADATA_HEADER, note_ptr, pad(16)]
-
-    # get the attachment
-    movup.4 exec.memory::get_output_note_attachment
-    # => [NOTE_ATTACHMENT, METADATA_HEADER, pad(16)]
+    exec.memory::get_output_note_metadata
+    # => [METADATA, pad(15)]
 
     # truncate the stack
-    swapdw dropw dropw
-    # => [NOTE_ATTACHMENT, METADATA_HEADER, pad(8)]
+    swapw drop drop drop movdn.4
+    # => [METADATA, pad(12)]
 end
 
 # TRANSACTION
@@ -1321,6 +1382,26 @@ pub proc tx_get_num_input_notes
     # truncate the stack
     swap drop
     # => [num_input_notes, pad(15)]
+end
+
+#! Returns the transaction script root.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [TX_SCRIPT_ROOT, pad(12)]
+#!
+#! Where:
+#! - TX_SCRIPT_ROOT is the transaction script root, or the empty word if no transaction script was
+#!   executed.
+#!
+#! Invocation: dynexec
+pub proc tx_get_tx_script_root
+    # get the tx script root
+    exec.tx::get_tx_script_root
+    # => [TX_SCRIPT_ROOT, pad(16)]
+
+    # truncate the stack
+    swapw dropw
+    # => [TX_SCRIPT_ROOT, pad(12)]
 end
 
 #! Returns the current number of output notes created in this transaction.
@@ -1565,7 +1646,7 @@ pub proc exec_kernel_proc
     # => [procedure_offset, <procedure_inputs>, <pad>]
 
     # compute the memory pointer at which desired procedure is stored
-    mul.4 exec.memory::get_kernel_procedures_ptr add
+    mul.4 push.KERNEL_PROCEDURES_PTR add
     # => [procedure_pointer, <procedure_inputs>, <pad>]
 
     # execute loaded procedure

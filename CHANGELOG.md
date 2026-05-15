@@ -4,9 +4,20 @@
 
 ### Features
 
+- [BREAKING] Renamed `native_asset_id` to `fee_faucet_id` ([#2718](https://github.com/0xMiden/protocol/pull/2718)).
+- [BREAKING] Removed redundant outputs from kernel procedures: `note::write_assets_to_memory`, `active_note::get_assets`, `input_note::get_assets`, `output_note::get_assets`, `active_note::get_storage`, and `faucet::mint` no longer return values identical to their inputs ([#2523](https://github.com/0xMiden/protocol/issues/2523)).
 - Added PSWAP (partial swap) note for decentralized partial-fill asset exchange with remainder note re-creation ([#2636](https://github.com/0xMiden/protocol/pull/2636)).
+- [BREAKING] Replaced `metadata_into_attachment_info` with `metadata_into_attachment_schemes` in `miden::protocol::note` ([#2795](https://github.com/0xMiden/protocol/pull/2795), [#2849](https://github.com/0xMiden/protocol/pull/2849)).
+- [BREAKING] All `get_metadata` procedures (`active_note`, `input_note`, `output_note`) no longer return attachments ([#2795](https://github.com/0xMiden/protocol/pull/2795), [#2849](https://github.com/0xMiden/protocol/pull/2849)).
+- Added `metadata_into_tag` helper for extracting the tag from metadata. This should be used instead of extracting the tag manually from the header ([#2871](https://github.com/0xMiden/protocol/pull/2871)).
+- [BREAKING] Add support for multiple attachments per note ([#2795](https://github.com/0xMiden/protocol/pull/2795), [#2849](https://github.com/0xMiden/protocol/pull/2849)):
+- [BREAKING] Renamed `set_attachment` to `add_attachment`, `set_word_attachment` to `add_word_attachment`, and `set_array_attachment` to `add_array_attachment` in `miden::protocol::output_note` ([#2795](https://github.com/0xMiden/protocol/pull/2795), [#2849](https://github.com/0xMiden/protocol/pull/2849)).
+- [BREAKING] Remove `AccountStorageMode::Network`; network accounts are now identified via `NetworkAccountNoteAllowlist` ([#2900](https://github.com/0xMiden/protocol/pull/2900)).
+- [BREAKING] Add `NetworkAccount` wrapper for convenient network account identification ([#2915](https://github.com/0xMiden/protocol/pull/2915)).
+
 ### Changes
 
+- Added a FungibleTokenMetadata ([#2439](https://github.com/0xMiden/miden-base/pull/2439)) component supporting name, description, logo URI, and external links, along with MASM procedures for retrieving token metadata (get_token_metadata, get_max_supply, get_decimals, get_token_symbol). Also aligned fungible faucet token metadata with the standard by using the canonical storage slot, enabling compatibility with MASM metadata getters.
 - Added validation of leaf type on CLAIM note processing to prevent message leaves from being processed as asset claims ([#2730](https://github.com/0xMiden/protocol/pull/2730)).
 - [BREAKING] Reduced `MAX_ASSETS_PER_NOTE` from 255 to 64 and `NOTE_MEM_SIZE` from 3072 to 1024 ([#2741](https://github.com/0xMiden/protocol/issues/2741)).
 - Added `metadata_into_note_type` procedure to `note.masm` for extracting note type from metadata header ([#2738](https://github.com/0xMiden/protocol/pull/2738)).
@@ -14,18 +25,61 @@
 - Updated `SwapNote::build_tag` to use 1-bit `NoteType` encoding, increasing script root bits from 14 to 15 ([#2758](https://github.com/0xMiden/protocol/pull/2758)).
 - Added `AssetAmount` wrapper type for validated fungible asset amounts ([#2721](https://github.com/0xMiden/protocol/pull/2721)).
 - [BREAKING] Renamed `ProvenBatch::new` to `new_unchecked` ([#2687](https://github.com/0xMiden/miden-base/issues/2687)).
+- Added `ShortCapitalString` type and related `TokenSymbol` and `RoleSymbol` types. ([#2690](https://github.com/0xMiden/protocol/pull/2690)).
 - Added `ShortCapitalString` type and related `TokenSymbol` and `RoleSymbol` types ([#2690](https://github.com/0xMiden/protocol/pull/2690)).
 - [BREAKING] Renamed the guarded multisig component-facing APIs from `multisig_guardian` / `AuthMultisigGuardian` to `guarded_multisig` / `AuthGuardedMultisig`, while retaining the `guardian` auth namespace and guardian-specific procedures.
 - Added shared `ProcedurePolicy` for AuthMultisig ([#2670](https://github.com/0xMiden/protocol/pull/2670)).
 - [BREAKING] Changed `NoteType` encoding from 2 bits to 1 and makes `NoteType::Private` the default ([#2691](https://github.com/0xMiden/miden-base/issues/2691)).
 - Added `BlockNumber::saturating_sub()` ([#2660](https://github.com/0xMiden/protocol/issues/2660)).
+- Use number of storage slots from native account in account delta commitment computation ([#2770](https://github.com/0xMiden/protocol/pull/2770)).
+- [BREAKING] Stored `origin_network` in LE-packed format in AggLayer faucet storage ([#2745](https://github.com/0xMiden/protocol/pull/2745)).
 - [BREAKING] Added cycle counts to notes returned by `NoteConsumptionInfo` and removed public fields from related types ([#2772](https://github.com/0xMiden/miden-base/issues/2772)).
+- [BREAKING] Removed unused `payback_attachment` from `SwapNoteStorage` and `attachment` from `MintNoteStorage` ([#2789](https://github.com/0xMiden/protocol/pull/2789)).
 - Automatically enable `concurrent` feature in `miden-tx` for `std` context ([#2791](https://github.com/0xMiden/protocol/pull/2791)).
+- Added foundations for `AuthMultisigSmart` ([#2806](https://github.com/0xMiden/protocol/pull/2806)).
+- Added `AuthNetworkAccount` auth component that rejects transactions which execute a tx script or consume input notes outside of a fixed allowlist of note script roots ([#2817](https://github.com/0xMiden/protocol/pull/2817)).
+- Added standardized `NetworkAccountNoteAllowlist` slot for detecting network accounts ([#2883](https://github.com/0xMiden/protocol/pull/2883)).
+- Added trace row counts to `bench-tx.json` ([#2794](https://github.com/0xMiden/protocol/pull/2794)).
+- Added `tx::get_tx_script_root` kernel procedure returning the root of the executed transaction script (empty word if no script was executed) ([#2816](https://github.com/0xMiden/protocol/pull/2816)).
+- Added `TransactionScript::from_package()` method to create `TransactionScript` from `miden-mast-package::Package` ([#2779](https://github.com/0xMiden/protocol/pull/2779)).
+- Added basic blocklist transfer policy with owner-managed admin (`block_account`/`unblock_account`) and runtime policy switching via the protocol-reserved asset callback slots ([#2820])(https://github.com/0xMiden/protocol/pull/2820).
+- [BREAKING] Added `NoteScriptRoot` newtype wrapping note script roots ([#2851](https://github.com/0xMiden/protocol/pull/2851)).
+- Re-exported `MIN_STACK_DEPTH` from `miden-processor` ([#2856](https://github.com/0xMiden/protocol/pull/2856)).
+- [BREAKING] Renamed `note::build_recipient_hash` to `note::compute_recipient` and `note::build_recipient` to `note::compute_and_store_recipient` ([#2875](https://github.com/0xMiden/protocol/issues/2875)).
+- [BREAKING] Merged `BasicFungibleFaucet` and `NetworkFungibleFaucet` ([#2890](https://github.com/0xMiden/protocol/pull/2890)).
+- [BREAKING] Renamed `NoteMetadata` to `PartialNoteMetadata` and renamed `NoteMetadataHeader` to `NoteMetadata` ([#2887](https://github.com/0xMiden/protocol/pull/2887)).
+- [BREAKING] Renamed account ID version 0 to version 1 and made encoded version 0 invalid ([#2842](https://github.com/0xMiden/protocol/issues/2842)).
+- [BREAKING] Changed note metadata version 1 to encode as `1`, leaving encoded version `0` invalid.
+- Documented the `miden::protocol::account_id` module in the protocol library docs ([#2607](https://github.com/0xMiden/protocol/issues/2607)).
+- [BREAKING] Remove `StandardNote::is_compatible_with` and `AccountInterfaceExt::is_compatible_with` ([#2920](https://github.com/0xMiden/protocol/issues/2920)).
+- [BREAKING] Renamed `procedure_digest!` to `procedure_root!` and return `AccountProcedureRoot` instead of `Word` ([#2621](https://github.com/0xMiden/protocol/issues/2621)).
+- [BREAKING] Replaced the `FungibleFaucetBuilder` with a `bon` builder on `FungibleFaucet` ([#2916](https://github.com/0xMiden/protocol/pull/2916)).
+- [BREAKING] `FungibleAsset::amount()` and `AssetVault::get_balance()` now return `AssetAmount` ([#2928](https://github.com/0xMiden/protocol/pull/2928)).
 - Derive `Hash` implementation for `StorageMapKey` and `StorageMapKeyHash` to allow using those values as keys in containers ([#2843](https://github.com/0xMiden/protocol/issues/2843)).
 
 ### Fixes
 
+- Fixed `LocalTransactionProver` accumulating `MastForest` entries across `prove()` calls, causing `capacity_overflow` panics in WASM environments where linear memory fragmentation prevents subsequent allocations ([#2918](https://github.com/0xMiden/protocol/pull/2918)).
 - Made deserialization of `AccountCode` more robust ([#2788](https://github.com/0xMiden/protocol/pull/2788)).
+- Validated `PartialBlockchain` invariants on deserialization ([#2888](https://github.com/0xMiden/protocol/pull/2888)).
+- Fixed `output_note::add_asset` and `output_note::set_attachment` to no longer accept invalid note indices ([#2824](https://github.com/0xMiden/protocol/pull/2824)).
+- Fixed auth components to use initial storage state for authentication ([#2677](https://github.com/0xMiden/protocol/issues/2677)).
+- Renamed the AggLayer faucet registry flag constant for clarity ([#2812](https://github.com/0xMiden/protocol/issues/2812)).
+- [BREAKING] Replaced `NoAuth` with the new `AuthNetworkAccount` auth component on the AggLayer bridge and AggLayer faucet, closing the forged-MINT attack surface where any transaction against the bridge could emit a bridge-authored MINT note ([#2797](https://github.com/0xMiden/protocol/issues/2797), [#2818](https://github.com/0xMiden/protocol/pull/2818)).
+
+## 0.14.6 (2026-05-05)
+
+## 0.14.6 (2026-05-09)
+
+- Fixed asset callback against native account panicking ([#2868](https://github.com/0xMiden/protocol/pull/2868)).
+
+## 0.14.5 (2026-04-23)
+
+- Fixed note script compilation: all note scripts are now compiled as libraries ([#2822](https://github.com/0xMiden/protocol/pull/2822)).
+
+## 0.14.4 (2026-04-09)
+
+- Fixed AggLayer `write_mint_note_storage` stack padding before loading the mint serial number ([#2749](https://github.com/0xMiden/protocol/pull/2749)).
 
 ## 0.14.3 (2026-04-07)
 
@@ -71,6 +125,8 @@
 - Added `ProgramExecutor` hooks to support DAP and other custom transaction program executors ([#2574](https://github.com/0xMiden/protocol/pull/2574)).
 - Added `create_fungible_key` for construction of fungible asset keys ([#2575](https://github.com/0xMiden/protocol/pull/2575)).
 - Added metadata hash storage to AggLayer faucet and FPI retrieval during bridge-out leaf construction ([#2583](https://github.com/0xMiden/protocol/pull/2583)).
+- Added `BurnPolicyConfig` for flexible burning policy execution ([#2664](https://github.com/0xMiden/protocol/pull/2664))
+
 - Added `SwapNoteStorage` for typed serialization/deserialization of SWAP note storage ([#2585](https://github.com/0xMiden/protocol/pull/2585)).
 - Added `InputNoteCommitment::from_parts()` for construction of input note commitments from a nullifier and optional note header ([#2588](https://github.com/0xMiden/protocol/pull/2588)).
 - Added `bool` schema type to the type registry and updated ACL auth component to use it for boolean config fields ([#2591](https://github.com/0xMiden/protocol/pull/2591)).
@@ -79,6 +135,8 @@
 - [BREAKING] Changed `native_account::remove_asset` to return the asset value remaining in the vault instead of the removed value ([#2626](https://github.com/0xMiden/protocol/pull/2626)).
 - Implemented `TransactionEventId::event_name` and `Host::resolve_event` for better VM diagnostics during even handler failures ([#2628](https://github.com/0xMiden/protocol/pull/2628)).
 - Added `FixedWidthString` for fixed-width UTF-8 string storage in `miden-standards` (`miden::standards::utils::string`). ([#2633](https://github.com/0xMiden/protocol/pull/2633))
+- [BREAKING] Extracted mint and burn policy management into a unified `TokenPolicyManager` account component ([#2821](https://github.com/0xMiden/protocol/pull/2821))
+- Added `AccountBuilder::with_components` for installing iterators of components in order as part of ([#2821](https://github.com/0xMiden/protocol/pull/2821)).
 
 ### Changes
 

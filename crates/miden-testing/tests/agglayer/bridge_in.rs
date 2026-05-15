@@ -4,8 +4,13 @@ use alloc::slice;
 use alloc::string::String;
 
 use anyhow::Context;
-use miden_agglayer::errors::ERR_CLAIM_ALREADY_SPENT;
+use miden_agglayer::errors::{
+    ERR_CLAIM_ALREADY_SPENT,
+    ERR_CLAIM_LEAF_DESTINATION_NETWORK_MISMATCH,
+};
 use miden_agglayer::{
+    AggLayerBridge,
+    ClaimNote,
     ClaimNoteStorage,
     ConfigAggBridgeNote,
     EthEmbeddedAccountId,
@@ -14,7 +19,6 @@ use miden_agglayer::{
     SmtNode,
     UpdateGerNote,
     agglayer_library,
-    create_claim_note,
     create_existing_agglayer_faucet,
     create_existing_bridge_account,
 };
@@ -25,7 +29,6 @@ use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::crypto::SequentialCommit;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::note::NoteType;
-use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
 use miden_protocol::transaction::RawOutputNote;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
@@ -33,7 +36,13 @@ use miden_standards::note::P2idNote;
 use miden_standards::testing::account_component::IncrNonceAuthComponent;
 use miden_standards::testing::mock_account::MockAccountExt;
 use miden_testing::utils::create_p2id_note_exact;
-use miden_testing::{AccountState, Auth, MockChain, TransactionContextBuilder};
+use miden_testing::{
+    AccountState,
+    Auth,
+    MockChain,
+    TransactionContextBuilder,
+    assert_transaction_executor_error,
+};
 use miden_tx::utils::hex_to_bytes;
 use rand::Rng;
 
@@ -42,6 +51,13 @@ use super::test_utils::{
     MerkleProofVerificationFile,
     SOLIDITY_MERKLE_PROOF_VECTORS,
 };
+
+// CONSTANTS
+// ================================================================================================
+
+/// Maximum allowed cycle count for CLAIM note processing.
+/// Current observed values: ~25,662 (real/simulated), ~40,485 (rollup).
+const MAX_CLAIM_NOTE_PROCESSING_CYCLES: usize = 64_000;
 
 // HELPER FUNCTIONS
 // ================================================================================================
@@ -100,24 +116,21 @@ fn merkle_proof_verification_code(
 /// TX1: UPDATE_GER → bridge (stores GER)
 /// TX2: CLAIM → bridge (validates proof, creates MINT note)
 /// TX3: MINT → aggfaucet (mints asset, creates P2ID note)
-/// TX4: P2ID → destination (simulated case only)
+/// TX4: P2ID → destination (runs for both `Mainnet` and `Rollup` simulated cases)
 ///
 /// Parameterized over two claim data sources:
-/// - [`ClaimDataSource::Real`]: uses real [`ProofData`] and [`LeafData`] from
-///   `claim_asset_vectors_real_tx.json`, captured from an actual on-chain `claimAsset` transaction.
-/// - [`ClaimDataSource::Simulated`]: uses locally generated [`ProofData`] and [`LeafData`] from
-///   `claim_asset_vectors_local_tx.json`, produced by simulating a `bridgeAsset()` call.
+/// - [`ClaimDataSource::L1ToMiden`]: uses locally generated [`ProofData`] and [`LeafData`] from
+///   `claim_asset_vectors_l1_tx.json`, produced by simulating a `bridgeAsset()` call.
+/// - [`ClaimDataSource::L2ToMiden`]: uses rollup deposit data from
+///   `claim_asset_vectors_l2_tx.json`, produced by simulating a rollup deposit.
 ///
 /// Note: Modifying anything in the real test vectors would invalidate the Merkle proof,
 /// as the proof was computed for the original leaf data including the original destination.
 #[rstest::rstest]
-#[case::real(ClaimDataSource::Real)]
-#[case::simulated(ClaimDataSource::Simulated)]
-#[case::rollup(ClaimDataSource::Rollup)]
+#[case::simulated_l1_to_miden(ClaimDataSource::L1ToMiden)]
+#[case::simulated_l2_to_miden(ClaimDataSource::L2ToMiden)]
 #[tokio::test]
 async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> anyhow::Result<()> {
-    use miden_agglayer::AggLayerBridge;
-
     let mut builder = MockChain::builder();
 
     // CREATE BRIDGE ADMIN ACCOUNT (sends CONFIG_AGG_BRIDGE notes)
@@ -142,6 +155,11 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     // GET CLAIM DATA FROM JSON (source depends on the test case)
     // --------------------------------------------------------------------------------------------
     let (proof_data, leaf_data, ger, cgi_chain_hash) = data_source.get_data();
+    assert_eq!(
+        leaf_data.destination_network,
+        AggLayerBridge::MIDEN_NETWORK_ID,
+        "test vectors must target Miden as destination (MIDEN_NETWORK_ID)"
+    );
 
     // CREATE AGGLAYER FAUCET ACCOUNT (with agglayer_faucet component)
     // Use the origin token address and network from the claim data.
@@ -176,25 +194,17 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
         .expect("destination address is not an embedded Miden AccountId")
         .into_account_id();
 
-    // For the simulated/rollup case, create the destination account so we can consume the P2ID note
-    let destination_account = if matches!(
-        data_source,
-        ClaimDataSource::Simulated | ClaimDataSource::Rollup
-    ) {
-        let dest =
-            Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE, IncrNonceAuthComponent);
-        // Ensure the mock account ID matches the destination embedded in the JSON test vector,
-        // since the claim note targets this account ID.
-        assert_eq!(
-            dest.id(),
-            destination_account_id,
-            "mock destination account ID must match the destination_account_id from the claim data"
-        );
-        builder.add_account(dest.clone())?;
-        Some(dest)
-    } else {
-        None
-    };
+    // For mainnet and rollup fixtures, create the destination account so we can consume the P2ID
+    // note. The mock account is built from the destination ID encoded in the JSON test vector,
+    // since the claim note targets this account ID.
+    let destination_account =
+        if matches!(data_source, ClaimDataSource::L1ToMiden | ClaimDataSource::L2ToMiden) {
+            let dest = Account::mock(u128::from(destination_account_id), IncrNonceAuthComponent);
+            builder.add_account(dest.clone())?;
+            Some(dest)
+        } else {
+            None
+        };
 
     // CREATE SENDER ACCOUNT (for creating the claim note)
     // --------------------------------------------------------------------------------------------
@@ -224,7 +234,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
         miden_claim_amount,
     };
 
-    let claim_note = create_claim_note(
+    let claim_note = ClaimNote::create(
         claim_inputs,
         bridge_account.id(), // Target the bridge, not the faucet
         sender_account.id(),
@@ -298,6 +308,12 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
 
     assert_eq!(cgi_chain_hash, actual_cgi_chain_hash);
 
+    let claim_cycles = claim_executed.measurements().notes_processing;
+    assert!(
+        claim_cycles <= MAX_CLAIM_NOTE_PROCESSING_CYCLES,
+        "CLAIM note processing exceeded cycle budget: {claim_cycles} > {MAX_CLAIM_NOTE_PROCESSING_CYCLES}"
+    );
+
     // VERIFY MINT NOTE WAS CREATED BY THE BRIDGE
     // --------------------------------------------------------------------------------------------
     assert_eq!(claim_executed.output_notes().num_notes(), 1);
@@ -340,7 +356,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
 
     // Verify minted amount matches expected scaled value
     assert_eq!(
-        Felt::new(p2id_asset.amount()),
+        Felt::from(p2id_asset.amount()),
         miden_claim_amount,
         "asset amount does not match"
     );
@@ -370,9 +386,9 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
 
     assert_eq!(RawOutputNote::Full(expected_output_p2id_note.clone()), *output_note);
 
-    // TX4: CONSUME THE P2ID NOTE WITH THE DESTINATION ACCOUNT (simulated case only)
+    // TX4: CONSUME THE P2ID NOTE WITH THE DESTINATION ACCOUNT (mainnet and rollup fixtures)
     // --------------------------------------------------------------------------------------------
-    // For the simulated case, we control the destination account and can verify the full
+    // The harness owns the destination account from the JSON vectors, so we can verify the full
     // end-to-end flow including P2ID consumption and balance updates.
     if let Some(destination_account) = destination_account {
         // Add the faucet transaction to the chain and prove the next block so the P2ID note is
@@ -380,10 +396,11 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
         mock_chain.add_pending_executed_transaction(&mint_executed)?;
         mock_chain.prove_next_block()?;
 
-        // Execute the consume transaction for the destination account
+        // Execute the consume transaction for the destination account. Pass the account
+        // directly since the JSON-encoded destination decodes to a private account ID.
         let consume_tx_context = mock_chain
             .build_tx_context(
-                destination_account.id(),
+                destination_account.clone(),
                 &[],
                 slice::from_ref(&expected_output_p2id_note),
             )?
@@ -396,11 +413,143 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
 
         let balance = destination_account.vault().get_balance(agglayer_faucet.id())?;
         assert_eq!(
-            balance,
+            balance.as_u64(),
             miden_claim_amount.as_canonical_u64(),
             "destination account balance does not match"
         );
     }
+    Ok(())
+}
+
+/// CLAIM must reject a leaf whose `destination_network` does not match the global Miden
+/// AggLayer network ID (`MIDEN_NETWORK_ID` in `constants.masm`), even when the rest of the proof
+/// data is unchanged.
+#[tokio::test]
+async fn test_claim_rejects_wrong_destination_network() -> anyhow::Result<()> {
+    let data_source = ClaimDataSource::L1ToMiden;
+    let mut builder = MockChain::builder();
+
+    // CREATE BRIDGE ADMIN ACCOUNT (sends CONFIG_AGG_BRIDGE notes)
+    // --------------------------------------------------------------------------------------------
+    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    // CREATE GER MANAGER ACCOUNT (sends the UPDATE_GER note)
+    // --------------------------------------------------------------------------------------------
+    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    // CREATE BRIDGE ACCOUNT
+    // --------------------------------------------------------------------------------------------
+    let bridge_seed = builder.rng_mut().draw_word();
+    let bridge_account =
+        create_existing_bridge_account(bridge_seed, bridge_admin.id(), ger_manager.id());
+    builder.add_account(bridge_account.clone())?;
+
+    // GET CLAIM DATA FROM JSON
+    // --------------------------------------------------------------------------------------------
+    let (proof_data, mut leaf_data, ger, _cgi) = data_source.get_data();
+
+    // Override destination_network so it no longer matches the bridge's MIDEN_NETWORK_ID.
+    // Proof data is unchanged; the bridge should fail before Merkle verification.
+    // --------------------------------------------------------------------------------------------
+    leaf_data.destination_network = AggLayerBridge::MIDEN_NETWORK_ID.saturating_add(1);
+
+    // CREATE AGGLAYER FAUCET ACCOUNT (with agglayer_faucet component)
+    // Use the origin token address and network from the claim data.
+    // --------------------------------------------------------------------------------------------
+    let token_symbol = "AGG";
+    let decimals = 8u8;
+    let max_supply = Felt::new(FungibleAsset::MAX_AMOUNT);
+    let agglayer_faucet_seed = builder.rng_mut().draw_word();
+    let origin_token_address = leaf_data.origin_token_address;
+    let origin_network = leaf_data.origin_network;
+    let scale = 10u8;
+
+    let agglayer_faucet = create_existing_agglayer_faucet(
+        agglayer_faucet_seed,
+        token_symbol,
+        decimals,
+        max_supply,
+        Felt::ZERO,
+        bridge_account.id(),
+        &origin_token_address,
+        origin_network,
+        scale,
+        leaf_data.metadata_hash,
+    );
+    builder.add_account(agglayer_faucet.clone())?;
+
+    // Calculate the scaled-down Miden amount
+    // --------------------------------------------------------------------------------------------
+    let miden_claim_amount = leaf_data
+        .amount
+        .scale_to_token_amount(scale as u32)
+        .expect("amount should scale successfully");
+
+    // CREATE CLAIM NOTE (targets the bridge)
+    // --------------------------------------------------------------------------------------------
+    let claim_note = ClaimNote::create(
+        ClaimNoteStorage {
+            proof_data,
+            leaf_data,
+            miden_claim_amount,
+        },
+        bridge_account.id(),
+        bridge_admin.id(),
+        builder.rng_mut(),
+    )?;
+    builder.add_output_note(RawOutputNote::Full(claim_note.clone()));
+
+    // CREATE CONFIG_AGG_BRIDGE NOTE (registers faucet + token address in bridge)
+    // --------------------------------------------------------------------------------------------
+    let config_note = ConfigAggBridgeNote::create(
+        agglayer_faucet.id(),
+        &origin_token_address,
+        bridge_admin.id(),
+        bridge_account.id(),
+        builder.rng_mut(),
+    )?;
+    builder.add_output_note(RawOutputNote::Full(config_note.clone()));
+
+    // CREATE UPDATE_GER NOTE WITH GLOBAL EXIT ROOT
+    // --------------------------------------------------------------------------------------------
+    let update_ger_note =
+        UpdateGerNote::create(ger, ger_manager.id(), bridge_account.id(), builder.rng_mut())?;
+    builder.add_output_note(RawOutputNote::Full(update_ger_note.clone()));
+
+    // BUILD MOCK CHAIN WITH ALL ACCOUNTS
+    // --------------------------------------------------------------------------------------------
+    let mut mock_chain = builder.clone().build()?;
+
+    // TX0: EXECUTE CONFIG_AGG_BRIDGE NOTE TO REGISTER FAUCET IN BRIDGE
+    // --------------------------------------------------------------------------------------------
+    let config_tx_context = mock_chain
+        .build_tx_context(bridge_account.id(), &[config_note.id()], &[])?
+        .build()?;
+    mock_chain.add_pending_executed_transaction(&config_tx_context.execute().await?)?;
+    mock_chain.prove_next_block()?;
+
+    // TX1: EXECUTE UPDATE_GER NOTE TO STORE GER IN BRIDGE ACCOUNT
+    // --------------------------------------------------------------------------------------------
+    let update_ger_tx_context = mock_chain
+        .build_tx_context(bridge_account.id(), &[update_ger_note.id()], &[])?
+        .build()?;
+    mock_chain.add_pending_executed_transaction(&update_ger_tx_context.execute().await?)?;
+    mock_chain.prove_next_block()?;
+
+    // TX2: EXECUTE CLAIM NOTE AGAINST BRIDGE (must fail: wrong destination_network)
+    // --------------------------------------------------------------------------------------------
+    let faucet_foreign_inputs = mock_chain.get_foreign_account_inputs(agglayer_faucet.id())?;
+    let claim_tx_context = mock_chain
+        .build_tx_context(bridge_account.id(), &[], &[claim_note])?
+        .foreign_accounts(vec![faucet_foreign_inputs])
+        .build()?;
+    let result = claim_tx_context.execute().await;
+    assert_transaction_executor_error!(result, ERR_CLAIM_LEAF_DESTINATION_NETWORK_MISMATCH);
+
     Ok(())
 }
 
@@ -414,7 +563,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
 ///    been spent"
 #[tokio::test]
 async fn test_duplicate_claim_note_rejected() -> anyhow::Result<()> {
-    let data_source = ClaimDataSource::Simulated;
+    let data_source = ClaimDataSource::L1ToMiden;
     let mut builder = MockChain::builder();
 
     // CREATE BRIDGE ADMIN ACCOUNT
@@ -473,7 +622,7 @@ async fn test_duplicate_claim_note_rejected() -> anyhow::Result<()> {
         miden_claim_amount,
     };
 
-    let claim_note_1 = create_claim_note(
+    let claim_note_1 = ClaimNote::create(
         claim_inputs_1,
         bridge_account.id(),
         bridge_admin.id(),
@@ -488,7 +637,7 @@ async fn test_duplicate_claim_note_rejected() -> anyhow::Result<()> {
         miden_claim_amount,
     };
 
-    let claim_note_2 = create_claim_note(
+    let claim_note_2 = ClaimNote::create(
         claim_inputs_2,
         bridge_account.id(),
         bridge_admin.id(),
