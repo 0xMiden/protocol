@@ -35,8 +35,8 @@ static IS_PAUSED_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 ///
 /// ## Storage
 ///
-/// - [`Self::is_paused_slot()`]: single word; all zeros means unpaused, `[1, 0, 0, 0]`
-///   means paused (see MASM `miden::standards::utils::pausable`).
+/// - [`Self::is_paused_slot()`]: single word; all zeros means unpaused, `[1, 0, 0, 0]` means paused
+///   (see MASM `miden::standards::utils::pausable`).
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Pausable {
     initial_state: bool,

@@ -41,10 +41,10 @@ procedure_digest!(
 ///
 /// ## Companion components required
 ///
-/// - [`crate::account::access::Ownable2Step`] — provides the owner storage slot the auth
-///   check reads.
-/// - [`crate::account::pausable::Pausable`] — provides the `is_paused` storage slot that
-///   pause / unpause write to.
+/// - [`crate::account::access::Ownable2Step`] — provides the owner storage slot the auth check
+///   reads.
+/// - [`crate::account::pausable::Pausable`] — provides the `is_paused` storage slot that pause /
+///   unpause write to.
 ///
 /// This component itself contributes no storage slots; both companion components must be
 /// installed alongside it.

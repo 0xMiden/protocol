@@ -15,7 +15,6 @@ extern crate alloc;
 use alloc::string::String;
 
 use miden_processor::crypto::random::RandomCoin;
-use miden_protocol::Word;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
     Account,
@@ -25,6 +24,7 @@ use miden_protocol::account::{
     AccountIdVersion,
     AccountStorageMode,
     AccountType,
+    RoleSymbol,
 };
 use miden_protocol::asset::{
     Asset,
@@ -37,12 +37,14 @@ use miden_protocol::asset::{
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::{Note, NoteType};
 use miden_protocol::transaction::RawOutputNote;
-use miden_protocol::{Felt, utils::sync::LazyLock};
+use miden_protocol::utils::sync::LazyLock;
+use miden_protocol::{Felt, Word};
 use miden_standards::account::access::AccessControl;
 use miden_standards::account::faucets::BasicFungibleFaucet;
 use miden_standards::account::metadata::{FungibleTokenMetadataBuilder, TokenName};
 use miden_standards::account::pausable::Pausable;
 use miden_standards::account::pausable_owner::PausableOwner;
+use miden_standards::account::pausable_rbac::PausableRbac;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::MockFaucetComponent;
 use miden_standards::testing::note::NoteBuilder;
@@ -59,8 +61,10 @@ const ERR_PAUSABLE_ENFORCED_PAUSE: MasmError = MasmError::from_static_str("the c
 const ERR_PAUSABLE_EXPECTED_PAUSE: MasmError =
     MasmError::from_static_str("the contract is not paused");
 
-const ERR_SENDER_NOT_OWNER: MasmError =
-    MasmError::from_static_str("note sender is not the owner");
+const ERR_SENDER_NOT_OWNER: MasmError = MasmError::from_static_str("note sender is not the owner");
+
+const ERR_SENDER_LACKS_ROLE: MasmError =
+    MasmError::from_static_str("note sender does not hold the required role");
 
 /// Stable deterministic owner ID used for tests. Distinct from `non_owner_id`.
 static OWNER_ID: LazyLock<AccountId> = LazyLock::new(|| test_account_id(11));
@@ -564,6 +568,342 @@ async fn pausable_owner_unpause_fails_when_sender_not_owner() -> anyhow::Result<
         .await;
 
     assert_transaction_executor_error!(result, ERR_SENDER_NOT_OWNER);
+
+    Ok(())
+}
+
+// TESTS — PAUSABLE RBAC
+// ================================================================================================
+
+/// Adds a fungible faucet with the storage-only `Pausable`, RBAC (`AccessControl::Rbac` —
+/// which also installs `Ownable2Step` with `owner` as the top-level authority), the
+/// `PausableRbac` admin wrapper, and the asset-callback gating component.
+fn add_faucet_with_pausable_rbac(
+    builder: &mut MockChainBuilder,
+    owner: AccountId,
+) -> anyhow::Result<Account> {
+    let faucet_metadata = FungibleTokenMetadataBuilder::new(
+        TokenName::new("SYM")?,
+        "SYM".try_into()?,
+        8,
+        1_000_000u64,
+    )
+    .build()?;
+
+    let account_builder = AccountBuilder::new([43u8; 32])
+        .storage_mode(AccountStorageMode::Public)
+        .account_type(AccountType::FungibleFaucet)
+        .with_component(faucet_metadata)
+        .with_component(BasicFungibleFaucet)
+        .with_component(Pausable::default())
+        .with_components(AccessControl::Rbac { owner })
+        .with_component(PausableRbac)
+        .with_component(pausable_callbacks_component()?);
+
+    builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
+}
+
+/// Builds a note (sender = `owner`) that calls `rbac::grant_role` to add `member` to `role`.
+fn build_grant_role_note(
+    owner: AccountId,
+    role: RoleSymbol,
+    member: AccountId,
+) -> anyhow::Result<Note> {
+    let code = format!(
+        r#"
+        use miden::standards::access::rbac
+
+        @note_script
+        pub proc main
+            repeat.13 push.0 end
+            push.{member_prefix}
+            push.{member_suffix}
+            push.{role}
+            call.rbac::grant_role
+            dropw dropw dropw dropw
+        end
+        "#,
+        member_prefix = member.prefix().as_felt(),
+        member_suffix = member.suffix(),
+        role = Felt::from(&role),
+    );
+    build_note(owner, code)
+}
+
+/// Builds a note (sender = `sender`) that calls `pausable_rbac::pause`.
+fn build_pause_rbac_note(sender: AccountId) -> anyhow::Result<Note> {
+    build_note(
+        sender,
+        r#"
+        use miden::standards::utils::pausable_rbac
+
+        @note_script
+        pub proc main
+            repeat.16 push.0 end
+            call.pausable_rbac::pause
+            dropw dropw dropw dropw
+        end
+        "#,
+    )
+}
+
+/// Builds a note (sender = `sender`) that calls `pausable_rbac::unpause`.
+fn build_unpause_rbac_note(sender: AccountId) -> anyhow::Result<Note> {
+    build_note(
+        sender,
+        r#"
+        use miden::standards::utils::pausable_rbac
+
+        @note_script
+        pub proc main
+            repeat.16 push.0 end
+            call.pausable_rbac::unpause
+            dropw dropw dropw dropw
+        end
+        "#,
+    )
+}
+
+#[tokio::test]
+async fn pausable_rbac_pause_succeeds_when_sender_has_pauser_role() -> anyhow::Result<()> {
+    let owner = *OWNER_ID;
+    let pauser = test_account_id(21);
+
+    let mut builder = MockChain::builder();
+    let faucet = add_faucet_with_pausable_rbac(&mut builder, owner)?;
+
+    let grant_pauser_note = build_grant_role_note(owner, PausableRbac::pauser_role(), pauser)?;
+    let pause_note = build_pause_rbac_note(pauser)?;
+    builder.add_output_note(RawOutputNote::Full(grant_pauser_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(pause_note.clone()));
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    // Owner grants PAUSER role to pauser_account.
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &grant_pauser_note).await?;
+
+    // pauser_account pauses the faucet — should succeed.
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &pause_note).await?;
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn pausable_rbac_pause_fails_when_sender_lacks_pauser_role() -> anyhow::Result<()> {
+    let owner = *OWNER_ID;
+    let attacker = *NON_OWNER_ID;
+
+    let mut builder = MockChain::builder();
+    let faucet = add_faucet_with_pausable_rbac(&mut builder, owner)?;
+
+    // Attacker has no roles granted; pause attempt should panic on the role assertion.
+    let attacker_note = build_pause_rbac_note(attacker)?;
+    builder.add_output_note(RawOutputNote::Full(attacker_note.clone()));
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let result = mock_chain
+        .build_tx_context(faucet.id(), &[attacker_note.id()], &[])?
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_SENDER_LACKS_ROLE);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn pausable_rbac_unpause_succeeds_when_sender_has_unpauser_role() -> anyhow::Result<()> {
+    let owner = *OWNER_ID;
+    let pauser = test_account_id(21);
+    let unpauser = test_account_id(22);
+
+    let mut builder = MockChain::builder();
+    let faucet = add_faucet_with_pausable_rbac(&mut builder, owner)?;
+
+    let grant_pauser_note = build_grant_role_note(owner, PausableRbac::pauser_role(), pauser)?;
+    let grant_unpauser_note =
+        build_grant_role_note(owner, PausableRbac::unpauser_role(), unpauser)?;
+    let pause_note = build_pause_rbac_note(pauser)?;
+    let unpause_note = build_unpause_rbac_note(unpauser)?;
+    builder.add_output_note(RawOutputNote::Full(grant_pauser_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(grant_unpauser_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(pause_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(unpause_note.clone()));
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &grant_pauser_note).await?;
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &grant_unpauser_note).await?;
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &pause_note).await?;
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &unpause_note).await?;
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn pausable_rbac_separation_of_duties() -> anyhow::Result<()> {
+    // pauser has only PAUSER, unpauser has only UNPAUSER. Each role should be limited to
+    // its own action: pauser cannot unpause, unpauser cannot pause.
+    let owner = *OWNER_ID;
+    let pauser = test_account_id(21);
+    let unpauser = test_account_id(22);
+
+    let mut builder = MockChain::builder();
+    let faucet = add_faucet_with_pausable_rbac(&mut builder, owner)?;
+
+    let grant_pauser_note = build_grant_role_note(owner, PausableRbac::pauser_role(), pauser)?;
+    let grant_unpauser_note =
+        build_grant_role_note(owner, PausableRbac::unpauser_role(), unpauser)?;
+    // pauser tries to also unpause — should fail.
+    let pauser_unpause_attempt = build_unpause_rbac_note(pauser)?;
+    // Legitimate pause by pauser so the unpause attempt can reach the role assertion.
+    let legitimate_pause_note = build_pause_rbac_note(pauser)?;
+    // unpauser tries to pause — should fail.
+    let unpauser_pause_attempt = build_pause_rbac_note(unpauser)?;
+    builder.add_output_note(RawOutputNote::Full(grant_pauser_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(grant_unpauser_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(legitimate_pause_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(pauser_unpause_attempt.clone()));
+    builder.add_output_note(RawOutputNote::Full(unpauser_pause_attempt.clone()));
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &grant_pauser_note).await?;
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &grant_unpauser_note).await?;
+
+    // unpauser attempting to pause — denied.
+    let pause_attempt_result = mock_chain
+        .build_tx_context(faucet.id(), &[unpauser_pause_attempt.id()], &[])?
+        .build()?
+        .execute()
+        .await;
+    assert_transaction_executor_error!(pause_attempt_result, ERR_SENDER_LACKS_ROLE);
+
+    // pauser legitimately pauses so the next assertion can be reached.
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &legitimate_pause_note).await?;
+
+    // pauser attempting to unpause — denied (lacks UNPAUSER).
+    let unpause_attempt_result = mock_chain
+        .build_tx_context(faucet.id(), &[pauser_unpause_attempt.id()], &[])?
+        .build()?
+        .execute()
+        .await;
+    assert_transaction_executor_error!(unpause_attempt_result, ERR_SENDER_LACKS_ROLE);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn pausable_rbac_paused_state_blocks_asset_receive() -> anyhow::Result<()> {
+    // Integration: PausableRbac pause flows through to the asset callback guard, so an
+    // unpaused faucet's outgoing P2ID cannot be received once the role-gated pause fires.
+    let owner = *OWNER_ID;
+    let pauser = test_account_id(21);
+
+    let mut builder = MockChain::builder();
+    let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
+    let faucet = add_faucet_with_pausable_rbac(&mut builder, owner)?;
+
+    let fungible_asset =
+        FungibleAsset::new(faucet.id(), 100)?.with_callbacks(AssetCallbackFlag::Enabled);
+    let p2id_note = builder.add_p2id_note(
+        faucet.id(),
+        target_account.id(),
+        &[Asset::Fungible(fungible_asset)],
+        NoteType::Public,
+    )?;
+
+    let grant_pauser_note = build_grant_role_note(owner, PausableRbac::pauser_role(), pauser)?;
+    let pause_note = build_pause_rbac_note(pauser)?;
+    builder.add_output_note(RawOutputNote::Full(grant_pauser_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(pause_note.clone()));
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &grant_pauser_note).await?;
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &pause_note).await?;
+
+    let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
+
+    let result = mock_chain
+        .build_tx_context(target_account.id(), &[p2id_note.id()], &[])?
+        .foreign_accounts(vec![faucet_inputs])
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_PAUSABLE_ENFORCED_PAUSE);
+
+    Ok(())
+}
+
+// TESTS — COEXISTENCE OF PAUSABLE_OWNER AND PAUSABLE_RBAC
+// ================================================================================================
+
+/// Adds a faucet with BOTH `PausableOwner` and `PausableRbac` installed alongside the
+/// shared `Pausable` storage. Useful for verifying that the two admin wrappers can coexist
+/// on the same account and operate independently against the same pause flag.
+fn add_faucet_with_pausable_owner_and_rbac(
+    builder: &mut MockChainBuilder,
+    owner: AccountId,
+) -> anyhow::Result<Account> {
+    let faucet_metadata = FungibleTokenMetadataBuilder::new(
+        TokenName::new("SYM")?,
+        "SYM".try_into()?,
+        8,
+        1_000_000u64,
+    )
+    .build()?;
+
+    let account_builder = AccountBuilder::new([43u8; 32])
+        .storage_mode(AccountStorageMode::Public)
+        .account_type(AccountType::FungibleFaucet)
+        .with_component(faucet_metadata)
+        .with_component(BasicFungibleFaucet)
+        .with_component(Pausable::default())
+        .with_components(AccessControl::Rbac { owner })
+        .with_component(PausableOwner)
+        .with_component(PausableRbac)
+        .with_component(pausable_callbacks_component()?);
+
+    builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
+}
+
+#[tokio::test]
+async fn pausable_owner_and_rbac_coexist() -> anyhow::Result<()> {
+    // Owner pauses (via PausableOwner), then unpauser unpauses (via PausableRbac), then
+    // owner pauses again. Both wrappers share the same `is_paused` storage; either path
+    // can flip the flag and the other observes the new state.
+    let owner = *OWNER_ID;
+    let unpauser = test_account_id(22);
+
+    let mut builder = MockChain::builder();
+    let faucet = add_faucet_with_pausable_owner_and_rbac(&mut builder, owner)?;
+
+    let grant_unpauser_note =
+        build_grant_role_note(owner, PausableRbac::unpauser_role(), unpauser)?;
+    let owner_pause_note = build_pause_note(owner)?;
+    let rbac_unpause_note = build_unpause_rbac_note(unpauser)?;
+    let owner_pause_again_note = build_pause_note(owner)?;
+    builder.add_output_note(RawOutputNote::Full(grant_unpauser_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(owner_pause_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(rbac_unpause_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(owner_pause_again_note.clone()));
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &grant_unpauser_note).await?;
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &owner_pause_note).await?;
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &rbac_unpause_note).await?;
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &owner_pause_again_note).await?;
 
     Ok(())
 }

@@ -129,6 +129,15 @@ static PAUSABLE_OWNER_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     Library::read_from_bytes(bytes).expect("Shipped PausableOwner library is well-formed")
 });
 
+// Initialize the PausableRbac library only once.
+static PAUSABLE_RBAC_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+    let bytes = include_bytes!(concat!(
+        env!("OUT_DIR"),
+        "/assets/account_components/utils/pausable_rbac.masl"
+    ));
+    Library::read_from_bytes(bytes).expect("Shipped PausableRbac library is well-formed")
+});
+
 // Initialize the Fungible Token Metadata library only once.
 static FUNGIBLE_TOKEN_METADATA_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     let bytes = include_bytes!(concat!(
@@ -221,6 +230,11 @@ pub fn pausable_library() -> Library {
 /// Returns the PausableOwner component library.
 pub fn pausable_owner_library() -> Library {
     PAUSABLE_OWNER_LIBRARY.clone()
+}
+
+/// Returns the PausableRbac component library.
+pub fn pausable_rbac_library() -> Library {
+    PAUSABLE_RBAC_LIBRARY.clone()
 }
 
 /// Returns the Fungible Token Metadata Library.
