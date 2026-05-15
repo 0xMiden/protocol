@@ -148,7 +148,7 @@ fn build_faucet_metadata() -> FungibleFaucet {
         .name(TokenName::new("T").unwrap())
         .symbol("TST".try_into().unwrap())
         .decimals(2)
-        .max_supply(AssetAmount::new(1_000).unwrap())
+        .max_supply(AssetAmount::from(1_000u32))
         .build()
         .unwrap()
 }
@@ -160,7 +160,7 @@ fn build_pol_faucet_metadata() -> FungibleFaucet {
         .name(TokenName::new("Polygon Token").unwrap())
         .symbol(TokenSymbol::new("POL").unwrap())
         .decimals(8)
-        .max_supply(AssetAmount::new(1_000_000).unwrap())
+        .max_supply(AssetAmount::from(1_000_000u32))
         .build()
         .unwrap()
 }
@@ -220,7 +220,7 @@ async fn get_name_from_masm() -> anyhow::Result<()> {
         .name(token_name)
         .symbol("TST".try_into().unwrap())
         .decimals(2)
-        .max_supply(AssetAmount::new(1_000).unwrap())
+        .max_supply(AssetAmount::from(1_000u32))
         .build()
         .unwrap();
 
@@ -256,7 +256,7 @@ async fn get_name_zeros_returns_empty() -> anyhow::Result<()> {
         .name(TokenName::new("").expect("empty string is a valid token name"))
         .symbol("TST".try_into().unwrap())
         .decimals(2)
-        .max_supply(AssetAmount::new(1_000).unwrap())
+        .max_supply(AssetAmount::from(1_000u32))
         .build()
         .unwrap();
 
@@ -411,7 +411,7 @@ async fn get_mutability_config() -> anyhow::Result<()> {
         .name(TokenName::new("T").unwrap())
         .symbol("TST".try_into().unwrap())
         .decimals(2)
-        .max_supply(AssetAmount::new(1_000).unwrap())
+        .max_supply(AssetAmount::from(1_000u32))
         .description(Description::new("test").unwrap())
         .is_description_mutable(true)
         .is_max_supply_mutable(true)
@@ -494,7 +494,7 @@ fn faucet_with_metadata_storage_layout() {
         .name(token_name)
         .symbol("TST".try_into().unwrap())
         .decimals(8)
-        .max_supply(AssetAmount::new(1_000_000).unwrap())
+        .max_supply(AssetAmount::from(1_000_000u32))
         .description(description)
         .build()
         .unwrap();
@@ -509,8 +509,8 @@ fn faucet_with_metadata_storage_layout() {
 
     // Verify roundtrip via try_from
     let restored = FungibleFaucet::try_from(account.storage()).unwrap();
-    assert_eq!(restored.token_supply(), Felt::ZERO);
-    assert_eq!(restored.max_supply().as_canonical_u64(), 1_000_000);
+    assert_eq!(restored.token_supply(), AssetAmount::ZERO);
+    assert_eq!(restored.max_supply().as_u64(), 1_000_000);
     assert_eq!(restored.decimals(), 8);
     assert_eq!(restored.description().map(|d| d.as_str()), Some(desc_text));
 }
@@ -556,7 +556,7 @@ fn verify_faucet_with_max_name_and_description(
     let restored = FungibleFaucet::try_from(account.storage()).unwrap();
     assert_eq!(restored.name().as_str(), max_name);
     assert_eq!(restored.description().map(|d| d.as_str()), Some(desc_text.as_str()));
-    assert_eq!(restored.max_supply().as_canonical_u64(), u64::from(max_supply));
+    assert_eq!(restored.max_supply(), max_supply);
 }
 
 #[test]
@@ -947,12 +947,12 @@ async fn set_max_supply_mutable_owner_succeeds() -> anyhow::Result<()> {
     updated_faucet.apply_delta(executed.account_delta())?;
 
     let restored = FungibleFaucet::try_from(updated_faucet.storage())?;
+    assert_eq!(restored.max_supply().as_u64(), new_max_supply, "max_supply should be updated");
     assert_eq!(
-        restored.max_supply().as_canonical_u64(),
-        new_max_supply,
-        "max_supply should be updated"
+        restored.token_supply(),
+        AssetAmount::ZERO,
+        "token_supply should remain unchanged"
     );
-    assert_eq!(restored.token_supply(), Felt::ZERO, "token_supply should remain unchanged");
 
     Ok(())
 }

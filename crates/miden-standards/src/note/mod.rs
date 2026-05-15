@@ -6,10 +6,6 @@ use miden_protocol::account::AccountId;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::note::{Note, NoteScript, NoteScriptRoot};
 
-use crate::account::faucets::FungibleFaucet;
-use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
-use crate::account::wallets::BasicWallet;
-
 mod burn;
 pub use burn::BurnNote;
 
@@ -136,39 +132,6 @@ impl StandardNote {
             Self::PSWAP => PswapNote::script_root(),
             Self::MINT => MintNote::script_root(),
             Self::BURN => BurnNote::script_root(),
-        }
-    }
-
-    /// Returns a boolean value indicating whether this [StandardNote] is compatible with the
-    /// provided [AccountInterface].
-    pub fn is_compatible_with(&self, account_interface: &AccountInterface) -> bool {
-        if account_interface.components().contains(&AccountComponentInterface::BasicWallet) {
-            return true;
-        }
-
-        let interface_proc_roots = account_interface.get_procedure_roots();
-        match self {
-            Self::P2ID | &Self::P2IDE => {
-                // To consume P2ID and P2IDE notes, the `receive_asset` procedure must be present in
-                // the provided account interface.
-                interface_proc_roots.contains(&BasicWallet::receive_asset_root())
-            },
-            Self::SWAP | Self::PSWAP => {
-                // To consume SWAP/PSWAP notes, the `receive_asset` and `move_asset_to_note`
-                // procedures must be present in the provided account interface.
-                interface_proc_roots.contains(&BasicWallet::receive_asset_root())
-                    && interface_proc_roots.contains(&BasicWallet::move_asset_to_note_root())
-            },
-            Self::MINT => {
-                // MINT notes invoke the faucet's `mint_and_send` procedure. The note-based
-                // mint flow is intended for network-style faucets where the active mint policy
-                // gates minting via owner verification.
-                interface_proc_roots.contains(&FungibleFaucet::mint_and_send_root())
-            },
-            Self::BURN => {
-                // BURN notes invoke the faucet's `receive_and_burn` procedure.
-                interface_proc_roots.contains(&FungibleFaucet::receive_and_burn_root())
-            },
         }
     }
 

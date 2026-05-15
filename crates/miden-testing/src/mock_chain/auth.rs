@@ -2,14 +2,18 @@
 // ================================================================================================
 use alloc::vec::Vec;
 
+use miden_protocol::Word;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, PublicKeyCommitment};
 use miden_protocol::account::{AccountComponent, AccountProcedureRoot};
 use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
+use miden_standards::account::auth::multisig_smart::ProcedurePolicy;
 use miden_standards::account::auth::{
     AuthGuardedMultisig,
     AuthGuardedMultisigConfig,
     AuthMultisig,
     AuthMultisigConfig,
+    AuthMultisigSmart,
+    AuthMultisigSmartConfig,
     AuthSingleSig,
     AuthSingleSigAcl,
     AuthSingleSigAclConfig,
@@ -43,6 +47,13 @@ pub enum Auth {
         approvers: Vec<(PublicKeyCommitment, AuthScheme)>,
         guardian_config: GuardianConfig,
         proc_threshold_map: Vec<(AccountProcedureRoot, u32)>,
+    },
+
+    /// Multisig with smart per-procedure policy configuration.
+    MultisigSmart {
+        threshold: u32,
+        approvers: Vec<(PublicKeyCommitment, AuthScheme)>,
+        proc_policy_map: Vec<(Word, ProcedurePolicy)>,
     },
 
     /// Creates a secret key for the account, and creates a [BasicAuthenticator] used to
@@ -107,6 +118,17 @@ impl Auth {
                         .expect("invalid guarded multisig config");
                 let component = AuthGuardedMultisig::new(config)
                     .expect("guarded multisig component creation failed")
+                    .into();
+
+                (component, None)
+            },
+            Auth::MultisigSmart { threshold, approvers, proc_policy_map } => {
+                let config = AuthMultisigSmartConfig::new(approvers.clone(), *threshold)
+                    .and_then(|cfg| cfg.with_proc_policies(proc_policy_map.clone()))
+                    .expect("invalid multisig smart config");
+
+                let component = AuthMultisigSmart::new(config)
+                    .expect("multisig smart component creation failed")
                     .into();
 
                 (component, None)
