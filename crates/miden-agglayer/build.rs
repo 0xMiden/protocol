@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::env;
 use std::fmt::Write;
 use std::path::Path;
@@ -7,6 +7,7 @@ use std::sync::Arc;
 use fs_err as fs;
 use miden_assembly::diagnostics::{IntoDiagnostic, NamedSource, Result, WrapErr};
 use miden_assembly::{Assembler, Library, Report};
+use miden_core::Word;
 use miden_crypto::hash::keccak::{Keccak256, Keccak256Digest};
 use miden_protocol::account::{
     AccountCode,
@@ -14,8 +15,9 @@ use miden_protocol::account::{
     AccountComponentMetadata,
     AccountType,
 };
+use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::transaction::TransactionKernel;
-use miden_standards::account::auth::NoAuth;
+use miden_standards::account::auth::AuthNetworkAccount;
 use miden_standards::account::policies::{
     BurnAllowAll,
     BurnPolicyConfig,
@@ -324,8 +326,14 @@ fn generate_agglayer_constants(
         // The faucet account includes Ownable2Step and OwnerControlled components for mint and burn
         // policies alongside the agglayer faucet component, since
         // fungible::mint_and_send requires these for access control.
+        //
+        // The allowlist lives in storage, not code, and here we only care about the code commitment
+        // of the accounts, so we can init the allowlists with dummy values.
+        let placeholder_allowlist = BTreeSet::from([NoteScriptRoot::from_raw(Word::default())]);
+        let auth_component = AuthNetworkAccount::with_allowlist(placeholder_allowlist)
+            .expect("placeholder allowlist is non-empty");
         let mut components: Vec<AccountComponent> =
-            vec![AccountComponent::from(NoAuth), agglayer_component];
+            vec![AccountComponent::from(auth_component), agglayer_component];
         if lib_name == "faucet" {
             // Use a dummy owner for commitment computation - the actual owner is set at runtime
             let dummy_owner = miden_protocol::account::AccountId::try_from(
@@ -345,7 +353,7 @@ fn generate_agglayer_constants(
                 MintPolicyConfig::OwnerOnly,
                 BurnPolicyConfig::OwnerOnly,
             )
-            .with_allowed_burn_policy(BurnAllowAll::root());
+            .with_allowed_burn_policy(BurnAllowAll::root().as_word());
 
             components.extend(token_policy_manager);
             components.push(BurnAllowAll.into());

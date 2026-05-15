@@ -1,5 +1,6 @@
 extern crate alloc;
 
+use alloc::collections::BTreeSet;
 use alloc::string::ToString;
 use alloc::vec;
 use alloc::vec::Vec;
@@ -17,9 +18,11 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::{AssetAmount, TokenSymbol};
 use miden_protocol::errors::AccountIdError;
+use miden_protocol::note::NoteScriptRoot;
 use miden_standards::account::access::Ownable2Step;
 use miden_standards::account::faucets::{FungibleFaucet, FungibleFaucetError, TokenName};
 use miden_standards::account::policies::TokenPolicyManager;
+use miden_standards::note::{BurnNote, MintNote};
 use miden_utils_sync::LazyLock;
 use thiserror::Error;
 
@@ -41,7 +44,6 @@ pub use crate::{
     ProofData,
     SmtNode,
     UpdateGerNote,
-    create_claim_note,
 };
 
 // CONSTANTS
@@ -133,20 +135,23 @@ impl AggLayerFaucet {
         // Use the symbol as the display name; AggLayer faucets do not use a separate token name.
         let name = TokenName::new(symbol.to_string().as_str())
             .expect("symbol fits within token name capacity");
-        let max_supply_amount = AssetAmount::new(max_supply.as_canonical_u64()).map_err(|_| {
+        let max_supply_amount = AssetAmount::try_from(max_supply).map_err(|_| {
             FungibleFaucetError::MaxSupplyTooLarge {
                 actual: max_supply.as_canonical_u64(),
                 max: AssetAmount::MAX,
             }
         })?;
-        let token_supply_amount =
-            AssetAmount::new(token_supply.as_canonical_u64()).map_err(|_| {
-                FungibleFaucetError::MaxSupplyTooLarge {
-                    actual: token_supply.as_canonical_u64(),
-                    max: AssetAmount::MAX,
-                }
-            })?;
-        let faucet = FungibleFaucet::builder(name, symbol, decimals, max_supply_amount)
+        let token_supply_amount = AssetAmount::try_from(token_supply).map_err(|_| {
+            FungibleFaucetError::MaxSupplyTooLarge {
+                actual: token_supply.as_canonical_u64(),
+                max: AssetAmount::MAX,
+            }
+        })?;
+        let faucet = FungibleFaucet::builder()
+            .name(name)
+            .symbol(symbol)
+            .decimals(decimals)
+            .max_supply(max_supply_amount)
             .token_supply(token_supply_amount)
             .build()?;
         Ok(Self {
@@ -163,7 +168,13 @@ impl AggLayerFaucet {
     /// # Errors
     /// Returns an error if the token supply exceeds the max supply.
     pub fn with_token_supply(mut self, token_supply: Felt) -> Result<Self, FungibleFaucetError> {
-        self.faucet = self.faucet.with_token_supply(token_supply)?;
+        let token_supply_amount = AssetAmount::try_from(token_supply).map_err(|_| {
+            FungibleFaucetError::MaxSupplyTooLarge {
+                actual: token_supply.as_canonical_u64(),
+                max: AssetAmount::MAX,
+            }
+        })?;
+        self.faucet = self.faucet.with_token_supply(token_supply_amount)?;
         Ok(self)
     }
 
@@ -199,6 +210,19 @@ impl AggLayerFaucet {
     /// [`Ownable2Step`] companion component.
     pub fn owner_config_slot() -> &'static StorageSlotName {
         Ownable2Step::slot_name()
+    }
+
+    // ALLOWED NOTES
+    // --------------------------------------------------------------------------------------------
+
+    /// Returns the set of input-note script roots that AggLayer faucet accounts accept.
+    ///
+    /// The faucet's [`AuthNetworkAccount`] component is initialized with this allowlist so only
+    /// MINT and BURN notes can drive the faucet.
+    ///
+    /// [`AuthNetworkAccount`]: miden_standards::account::auth::AuthNetworkAccount
+    pub fn allowed_notes() -> BTreeSet<NoteScriptRoot> {
+        BTreeSet::from([MintNote::script_root(), BurnNote::script_root()])
     }
 
     /// Extracts the underlying [`FungibleFaucet`] component (which holds the token metadata)

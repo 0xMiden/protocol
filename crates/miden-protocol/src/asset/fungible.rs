@@ -124,8 +124,8 @@ impl FungibleAsset {
     }
 
     /// Returns the amount of this asset.
-    pub fn amount(&self) -> u64 {
-        self.amount.into()
+    pub fn amount(&self) -> AssetAmount {
+        self.amount
     }
 
     /// Returns true if this and the other asset were issued from the same faucet.
@@ -151,13 +151,7 @@ impl FungibleAsset {
 
     /// Returns the asset's value encoded to a [`Word`].
     pub fn to_value_word(&self) -> Word {
-        Word::new([
-            Felt::try_from(u64::from(self.amount))
-                .expect("fungible asset should only allow amounts that fit into a felt"),
-            Felt::ZERO,
-            Felt::ZERO,
-            Felt::ZERO,
-        ])
+        Word::new([Felt::from(self.amount), Felt::ZERO, Felt::ZERO, Felt::ZERO])
     }
 
     // OPERATIONS
@@ -233,13 +227,13 @@ impl Serializable for FungibleAsset {
         // All assets should serialize their faucet ID at the first position to allow them to be
         // distinguishable during deserialization.
         target.write(self.faucet_id);
-        target.write(u64::from(self.amount));
+        target.write(self.amount.as_u64());
         target.write(self.callbacks);
     }
 
     fn get_size_hint(&self) -> usize {
         self.faucet_id.get_size_hint()
-            + u64::from(self.amount).get_size_hint()
+            + self.amount.as_u64().get_size_hint()
             + self.callbacks.get_size_hint()
     }
 }

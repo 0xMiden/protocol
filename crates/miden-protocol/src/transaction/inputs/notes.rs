@@ -221,11 +221,11 @@ fn build_input_note_commitment<T: ToInputNoteCommitments>(notes: &[T]) -> Word {
     let mut elements: Vec<Felt> = Vec::with_capacity(notes.len() * 2);
     for commitment_data in notes {
         let nullifier = commitment_data.nullifier();
-        let empty_word_or_note_commitment =
+        let empty_word_or_note_id =
             &commitment_data.note_id().map_or(Word::empty(), |note_id| note_id.as_word());
 
         elements.extend_from_slice(nullifier.as_elements());
-        elements.extend_from_slice(empty_word_or_note_commitment.as_elements());
+        elements.extend_from_slice(empty_word_or_note_id.as_elements());
     }
     Hasher::hash_elements(&elements)
 }

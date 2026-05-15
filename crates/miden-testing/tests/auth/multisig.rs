@@ -5,6 +5,7 @@ use miden_protocol::account::{
     Account,
     AccountBuilder,
     AccountId,
+    AccountProcedureRoot,
     AccountStorageMode,
     AccountType,
 };
@@ -18,7 +19,6 @@ use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::vm::AdviceMap;
 use miden_protocol::{Felt, Hasher, Word};
 use miden_standards::account::auth::AuthMultisig;
-use miden_standards::account::components::multisig_library;
 use miden_standards::account::interface::{AccountInterface, AccountInterfaceExt};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
@@ -86,7 +86,7 @@ fn create_multisig_account(
     threshold: u32,
     approvers: &[(PublicKey, AuthScheme)],
     asset_amount: u64,
-    proc_threshold_map: Vec<(Word, u32)>,
+    proc_threshold_map: Vec<(AccountProcedureRoot, u32)>,
 ) -> anyhow::Result<Account> {
     let approvers = approvers
         .iter()
@@ -201,8 +201,9 @@ async fn test_multisig_2_of_2_with_note_creation(
     assert_eq!(
         multisig_account
             .vault()
-            .get_balance(AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?)?,
-        multisig_starting_balance - output_note_asset.unwrap_fungible().amount()
+            .get_balance(AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?)?
+            .as_u64(),
+        multisig_starting_balance - output_note_asset.unwrap_fungible().amount().as_u64()
     );
 
     Ok(())
@@ -474,7 +475,7 @@ async fn test_multisig_update_signers(#[case] auth_scheme: AuthScheme) -> anyhow
     ";
 
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(multisig_library())?
+        .with_dynamically_linked_library(AuthMultisig::code())?
         .compile_tx_script(tx_script_code)?;
 
     let advice_inputs = AdviceInputs {
@@ -732,7 +733,7 @@ async fn test_multisig_update_signers_remove_owner(
 
     // Create transaction script
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(multisig_library())?
+        .with_dynamically_linked_library(AuthMultisig::code())?
         .compile_tx_script("begin\n    call.::miden::standards::components::auth::multisig::update_signers_and_threshold\nend")?;
 
     let advice_inputs = AdviceInputs { map: advice_map, ..Default::default() };
@@ -888,7 +889,7 @@ async fn test_multisig_update_signers_rejects_unreachable_proc_thresholds(
     // Configure a procedure override that is valid for the initial signer set (3-of-3),
     // but invalid after updating to 2 signers.
     let multisig_account =
-        create_multisig_account(2, &approvers, 10, vec![(BasicWallet::receive_asset_digest(), 3)])?;
+        create_multisig_account(2, &approvers, 10, vec![(BasicWallet::receive_asset_root(), 3)])?;
 
     let mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])
         .unwrap()
@@ -918,7 +919,7 @@ async fn test_multisig_update_signers_rejects_unreachable_proc_thresholds(
     advice_map.insert(multisig_config_hash, config_and_pubkeys_vector);
 
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(multisig_library())?
+        .with_dynamically_linked_library(AuthMultisig::code())?
         .compile_tx_script("begin\n    call.::miden::standards::components::auth::multisig::update_signers_and_threshold\nend")?;
 
     let advice_inputs = AdviceInputs { map: advice_map, ..Default::default() };
@@ -1027,7 +1028,7 @@ async fn test_multisig_new_approvers_cannot_sign_before_update(
     ";
 
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(multisig_library())?
+        .with_dynamically_linked_library(AuthMultisig::code())?
         .compile_tx_script(tx_script_code)?;
 
     let advice_inputs = AdviceInputs {
@@ -1109,7 +1110,7 @@ async fn test_multisig_proc_threshold_overrides(
     let (_secret_keys, auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
 
-    let proc_threshold_map = vec![(BasicWallet::receive_asset_digest(), 1)];
+    let proc_threshold_map = vec![(BasicWallet::receive_asset_root(), 1)];
 
     let approvers = public_keys
         .iter()
@@ -1257,7 +1258,7 @@ async fn test_multisig_proc_threshold_overrides(
     mock_chain.add_pending_executed_transaction(&result.unwrap())?;
     mock_chain.prove_next_block()?;
 
-    assert_eq!(multisig_account.vault().get_balance(FungibleAsset::mock_issuer())?, 6);
+    assert_eq!(multisig_account.vault().get_balance(FungibleAsset::mock_issuer())?.as_u64(), 6);
 
     Ok(())
 }
@@ -1295,7 +1296,7 @@ async fn test_multisig_set_procedure_threshold(
         NoteType::Public,
     )?;
     let mut mock_chain = mock_chain_builder.build().unwrap();
-    let proc_root = BasicWallet::receive_asset_digest();
+    let proc_root = BasicWallet::receive_asset_root().as_word();
 
     let set_script_code = format!(
         r#"
@@ -1309,7 +1310,7 @@ async fn test_multisig_set_procedure_threshold(
         "#
     );
     let set_script = CodeBuilder::default()
-        .with_dynamically_linked_library(multisig_library())?
+        .with_dynamically_linked_library(AuthMultisig::code())?
         .compile_tx_script(set_script_code)?;
 
     // 1) Set override to 1 (requires default 2 signatures).
@@ -1389,7 +1390,7 @@ async fn test_multisig_set_procedure_threshold(
         "#
     );
     let clear_script = CodeBuilder::default()
-        .with_dynamically_linked_library(multisig_library())?
+        .with_dynamically_linked_library(AuthMultisig::code())?
         .compile_tx_script(clear_script_code)?;
     let clear_salt = Word::from([Felt::new(52); 4]);
 
@@ -1476,7 +1477,7 @@ async fn test_multisig_set_procedure_threshold_rejects_exceeding_approvers(
         .collect::<Vec<_>>();
 
     let multisig_account = create_multisig_account(2, &approvers, 10, vec![])?;
-    let proc_root = BasicWallet::receive_asset_digest();
+    let proc_root = BasicWallet::receive_asset_root().as_word();
 
     let script_code = format!(
         r#"
@@ -1488,7 +1489,7 @@ async fn test_multisig_set_procedure_threshold_rejects_exceeding_approvers(
         "#
     );
     let script = CodeBuilder::default()
-        .with_dynamically_linked_library(multisig_library())?
+        .with_dynamically_linked_library(AuthMultisig::code())?
         .compile_tx_script(script_code)?;
 
     let mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])

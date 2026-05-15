@@ -564,7 +564,7 @@ impl ToInputNoteCommitments for InputNoteCommitment {
     }
 
     fn note_id(&self) -> Option<NoteId> {
-        self.header.as_ref().map(|header| header.id())
+        self.header.as_ref().map(NoteHeader::id)
     }
 }
 
