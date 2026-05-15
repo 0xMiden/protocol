@@ -53,7 +53,9 @@ use miden_standards::account::policies::{
     BurnPolicyConfig,
     MintPolicyConfig,
     PolicyAuthority,
+    PolicyRegistration,
     TokenPolicyManager,
+    TransferPolicy,
 };
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::note::{BurnNote, MintNote, P2idNote, P2ideNote, P2ideNoteStorage, SwapNote};
@@ -399,11 +401,11 @@ impl MockChainBuilder {
             .build()
             .context("failed to build FungibleFaucet")?;
 
-        let token_policy_manager = TokenPolicyManager::new(
-            PolicyAuthority::AuthControlled,
-            MintPolicyConfig::AllowAll,
-            BurnPolicyConfig::AllowAll,
-        );
+        let token_policy_manager = TokenPolicyManager::new(PolicyAuthority::AuthControlled)
+            .with_mint_policy(MintPolicyConfig::AllowAll, PolicyRegistration::Active)?
+            .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)?
+            .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?
+            .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?;
 
         self.add_existing_fungible_faucet(
             auth_method,
@@ -449,11 +451,11 @@ impl MockChainBuilder {
             .build()
             .context("failed to build FungibleFaucet")?;
 
-        let token_policy_manager = TokenPolicyManager::new(
-            PolicyAuthority::OwnerControlled,
-            mint_policy,
-            BurnPolicyConfig::AllowAll,
-        );
+        let token_policy_manager = TokenPolicyManager::new(PolicyAuthority::OwnerControlled)
+            .with_mint_policy(mint_policy, PolicyRegistration::Active)?
+            .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)?
+            .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?
+            .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?;
 
         let allowed_script_roots = allowed_script_roots
             .into_iter()
@@ -481,11 +483,11 @@ impl MockChainBuilder {
         faucet: FungibleFaucet,
         allowed_script_roots: impl IntoIterator<Item = NoteScriptRoot>,
     ) -> anyhow::Result<Account> {
-        let token_policy_manager = TokenPolicyManager::new(
-            PolicyAuthority::OwnerControlled,
-            MintPolicyConfig::OwnerOnly,
-            BurnPolicyConfig::AllowAll,
-        );
+        let token_policy_manager = TokenPolicyManager::new(PolicyAuthority::OwnerControlled)
+            .with_mint_policy(MintPolicyConfig::OwnerOnly, PolicyRegistration::Active)?
+            .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)?
+            .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?
+            .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?;
 
         let allowed_script_roots = allowed_script_roots
             .into_iter()
@@ -522,11 +524,11 @@ impl MockChainBuilder {
             .build()
             .context("failed to build FungibleFaucet")?;
 
-        let token_policy_manager = TokenPolicyManager::new(
-            PolicyAuthority::AuthControlled,
-            MintPolicyConfig::AllowAll,
-            BurnPolicyConfig::AllowAll,
-        );
+        let token_policy_manager = TokenPolicyManager::new(PolicyAuthority::AuthControlled)
+            .with_mint_policy(MintPolicyConfig::AllowAll, PolicyRegistration::Active)?
+            .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)?
+            .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?
+            .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?;
 
         self.create_new_fungible_faucet(
             auth_method,
