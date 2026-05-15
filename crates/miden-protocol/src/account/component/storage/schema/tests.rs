@@ -11,12 +11,7 @@ fn map_slot_schema_default_values_returns_map() {
     let mut default_values = BTreeMap::new();
     default_values.insert(
         Word::from([Felt::ONE, Felt::ZERO, Felt::ZERO, Felt::ZERO]),
-        Word::from([
-            Felt::from(10_u32),
-            Felt::from(11_u32),
-            Felt::from(12_u32),
-            Felt::from(13_u32),
-        ]),
+        Word::from([10_u32, 11_u32, 12_u32, 13_u32]),
     );
     let slot = MapSlotSchema::new(
         Some("static map".into()),
@@ -28,12 +23,7 @@ fn map_slot_schema_default_values_returns_map() {
     let mut expected = BTreeMap::new();
     expected.insert(
         Word::from([Felt::ONE, Felt::ZERO, Felt::ZERO, Felt::ZERO]),
-        Word::from([
-            Felt::from(10_u32),
-            Felt::from(11_u32),
-            Felt::from(12_u32),
-            Felt::from(13_u32),
-        ]),
+        Word::from([10_u32, 11_u32, 12_u32, 13_u32]),
     );
 
     assert_eq!(slot.default_values(), Some(expected));
@@ -145,12 +135,7 @@ fn map_slot_schema_accepts_typed_map_init_value() {
     let built = slot.try_build_map(&init_data, &slot_name).unwrap();
     let expected = StorageMap::with_entries([(
         StorageMapKey::from_array([1, 0, 0, 0]),
-        Word::from([
-            Felt::from(10_u32),
-            Felt::from(11_u32),
-            Felt::from(12_u32),
-            Felt::from(13_u32),
-        ]),
+        Word::from([10_u32, 11_u32, 12_u32, 13_u32]),
     )])
     .unwrap();
     assert_eq!(built, expected);
