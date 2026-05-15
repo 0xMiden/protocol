@@ -51,23 +51,24 @@ pub proc assert_authorized
 
     dup eq.AUTH_CONTROLLED
     if.true
-        # AuthControlled — auth component already gated the call. Word intact;
-        # drop everything in one step.
+        # AuthControlled — auth component already gated the call.
         dropw
+        # => []
     else
         dup eq.OWNER_CONTROLLED
         if.true
-            # OwnerControlled — `assert_sender_is_owner` consumes 0 elements; word intact.
             exec.ownable2step::assert_sender_is_owner
+            # => [authority, role_symbol, 0, 0]
             dropw
+            # => []
         else
             eq.RBAC_CONTROLLED
             if.true
-                # RbacControlled — `eq` consumed the authority. Stack: [role_symbol, 0, 0].
-                # `rbac::assert_sender_has_role` consumes the role symbol.
+                # => [role_symbol, 0, 0]
                 exec.rbac::assert_sender_has_role
-                # Stack: [0, 0]
+                # => [0, 0]
                 drop drop
+                # => []
             else
                 # Unknown authority — panic. Stack state irrelevant.
                 push.0 assert.err=ERR_UNSUPPORTED_AUTHORITY
