@@ -269,12 +269,6 @@ impl Account {
         self.id.is_regular_account()
     }
 
-    /// Returns `true` if the full state of the account is public on chain, i.e. if the modes are
-    /// [`AccountStorageMode::Public`] or [`AccountStorageMode::Network`], `false` otherwise.
-    pub fn has_public_state(&self) -> bool {
-        self.id().has_public_state()
-    }
-
     /// Returns `true` if the storage mode is [`AccountStorageMode::Public`], `false` otherwise.
     pub fn is_public(&self) -> bool {
         self.id().is_public()
@@ -283,11 +277,6 @@ impl Account {
     /// Returns `true` if the storage mode is [`AccountStorageMode::Private`], `false` otherwise.
     pub fn is_private(&self) -> bool {
         self.id().is_private()
-    }
-
-    /// Returns `true` if the storage mode is [`AccountStorageMode::Network`], `false` otherwise.
-    pub fn is_network(&self) -> bool {
-        self.id().is_network()
     }
 
     /// Returns `true` if the account is new, `false` otherwise.
@@ -568,7 +557,7 @@ mod tests {
         AccountStorageDelta,
         AccountVaultDelta,
     };
-    use crate::account::AccountStorageMode::Network;
+    use crate::account::AccountStorageMode::Public;
     use crate::account::component::AccountComponentMetadata;
     use crate::account::{
         Account,
@@ -846,7 +835,7 @@ mod tests {
         let other_seed = AccountId::compute_account_seed(
             [9; 32],
             AccountType::FungibleFaucet,
-            Network,
+            Public,
             AccountIdVersion::Version1,
             code.commitment(),
             storage.to_commitment(),

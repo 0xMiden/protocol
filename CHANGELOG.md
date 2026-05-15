@@ -12,6 +12,8 @@
 - Added `metadata_into_tag` helper for extracting the tag from metadata. This should be used instead of extracting the tag manually from the header ([#2871](https://github.com/0xMiden/protocol/pull/2871)).
 - [BREAKING] Add support for multiple attachments per note ([#2795](https://github.com/0xMiden/protocol/pull/2795), [#2849](https://github.com/0xMiden/protocol/pull/2849)):
 - [BREAKING] Renamed `set_attachment` to `add_attachment`, `set_word_attachment` to `add_word_attachment`, and `set_array_attachment` to `add_array_attachment` in `miden::protocol::output_note` ([#2795](https://github.com/0xMiden/protocol/pull/2795), [#2849](https://github.com/0xMiden/protocol/pull/2849)).
+- [BREAKING] Remove `AccountStorageMode::Network`; network accounts are now identified via `NetworkAccountNoteAllowlist` ([#2900](https://github.com/0xMiden/protocol/pull/2900)).
+- [BREAKING] Add `NetworkAccount` wrapper for convenient network account identification ([#2915](https://github.com/0xMiden/protocol/pull/2915)).
 
 ### Changes
 

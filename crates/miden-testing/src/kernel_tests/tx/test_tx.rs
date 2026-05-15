@@ -547,6 +547,9 @@ async fn tx_summary_commitment_is_signed_by_falcon_auth() -> anyhow::Result<()> 
         AuthMethod::Multisig { .. } => {
             panic!("Expected SingleSig auth scheme, got Multisig")
         },
+        AuthMethod::NetworkAccount { .. } => {
+            panic!("Expected SingleSig auth scheme, got NetworkAccount")
+        },
         AuthMethod::Unknown => panic!("Expected SingleSig auth scheme, got Unknown"),
     };
 
@@ -605,6 +608,9 @@ async fn tx_summary_commitment_is_signed_by_ecdsa_auth() -> anyhow::Result<()> {
         AuthMethod::NoAuth => panic!("Expected SingleSig auth scheme, got NoAuth"),
         AuthMethod::Multisig { .. } => {
             panic!("Expected SingleSig auth scheme, got Multisig")
+        },
+        AuthMethod::NetworkAccount { .. } => {
+            panic!("Expected SingleSig auth scheme, got NetworkAccount")
         },
         AuthMethod::Unknown => panic!("Expected SingleSig auth scheme, got Unknown"),
     };

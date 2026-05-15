@@ -1,6 +1,8 @@
+use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
+use miden_protocol::note::NoteScriptRoot;
 
 /// Defines standard authentication methods supported by account auth components.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -23,6 +25,14 @@ pub enum AuthMethod {
         threshold: u32,
         approvers: Vec<(PublicKeyCommitment, AuthScheme)>,
     },
+    /// An authentication method intended for network-owned accounts.
+    ///
+    /// It restricts the account to consuming only notes whose script roots are in
+    /// `allowed_script_roots`, and forbids transaction scripts from running against the account.
+    /// The allowlist must be non-empty.
+    NetworkAccount {
+        allowed_script_roots: BTreeSet<NoteScriptRoot>,
+    },
     /// A non-standard authentication method.
     Unknown,
 }
@@ -38,6 +48,7 @@ impl AuthMethod {
             AuthMethod::Multisig { approvers, .. } => {
                 approvers.iter().map(|(pub_key, _)| *pub_key).collect()
             },
+            AuthMethod::NetworkAccount { .. } => Vec::new(),
             AuthMethod::Unknown => Vec::new(),
         }
     }

@@ -164,7 +164,7 @@ fn create_bridge_account_builder(
     ger_manager_id: AccountId,
 ) -> AccountBuilder {
     Account::builder(seed.into())
-        .storage_mode(AccountStorageMode::Network)
+        .storage_mode(AccountStorageMode::Public)
         .with_component(AggLayerBridge::new(bridge_admin_id, ger_manager_id))
         .with_auth_component(
             AuthNetworkAccount::with_allowlist(AggLayerBridge::allowed_notes())
@@ -252,7 +252,7 @@ fn create_agglayer_faucet_builder(
 
     Account::builder(seed.into())
         .account_type(AccountType::FungibleFaucet)
-        .storage_mode(AccountStorageMode::Network)
+        .storage_mode(AccountStorageMode::Public)
         .with_component(agglayer_component)
         .with_component(Ownable2Step::new(bridge_account_id))
         .with_component(Authority::OwnerControlled)
