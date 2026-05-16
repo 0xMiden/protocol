@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.14.6 (2026-05-09)
+
+- Fixed asset callback against native account panicking ([#2868](https://github.com/0xMiden/protocol/pull/2868)).
+
 ## 0.14.5 (2026-04-23)
 
 - Fixed note script compilation: all note scripts are now compiled as libraries ([#2822](https://github.com/0xMiden/protocol/pull/2822)).
