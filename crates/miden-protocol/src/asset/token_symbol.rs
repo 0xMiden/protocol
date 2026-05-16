@@ -181,7 +181,8 @@ mod test {
         let invalid_encoded_symbol_u64 = Felt::from(encoded_symbol).as_canonical_u64() - 3;
 
         // check that decoding returns an error for a token with invalid length
-        let err = TokenSymbol::try_from(Felt::new(invalid_encoded_symbol_u64)).unwrap_err();
+        let err =
+            TokenSymbol::try_from(Felt::new_unchecked(invalid_encoded_symbol_u64)).unwrap_err();
         assert_matches!(err, TokenSymbolError::DataNotFullyDecoded);
     }
 

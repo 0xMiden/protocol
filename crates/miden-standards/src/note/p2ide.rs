@@ -278,7 +278,7 @@ mod tests {
 
     #[test]
     fn try_from_invalid_account_id_fails() {
-        let storage = vec![Felt::new(999u64), Felt::new(888u64), Felt::ZERO, Felt::ZERO];
+        let storage = vec![Felt::from(999_u32), Felt::from(888_u32), Felt::ZERO, Felt::ZERO];
 
         let err = P2ideNoteStorage::try_from(storage.as_slice())
             .expect_err("invalid account id encoding must fail");
@@ -291,7 +291,7 @@ mod tests {
         let target = dummy_account();
 
         // > u32::MAX
-        let overflow = Felt::new(u64::from(u32::MAX) + 1);
+        let overflow = Felt::new_unchecked(u64::from(u32::MAX) + 1);
 
         let storage = vec![target.suffix(), target.prefix().as_felt(), overflow, Felt::ZERO];
 
@@ -305,7 +305,7 @@ mod tests {
     fn try_from_timelock_height_overflow_fails() {
         let target = dummy_account();
 
-        let overflow = Felt::new(u64::from(u32::MAX) + 10);
+        let overflow = Felt::new_unchecked(u64::from(u32::MAX) + 10);
 
         let storage = vec![target.suffix(), target.prefix().as_felt(), Felt::ZERO, overflow];
 

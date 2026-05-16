@@ -12,7 +12,6 @@ use crate::account::faucets::{Description, FungibleFaucetError, TokenMetadata, T
 use crate::account::policies::{
     BurnPolicyConfig,
     MintPolicyConfig,
-    PolicyAuthority,
     PolicyRegistration,
     TokenPolicyManager,
     TransferPolicy,
@@ -56,7 +55,7 @@ fn faucet_contract_creation() {
         storage_mode,
         auth_method,
         AccessControl::AuthControlled,
-        TokenPolicyManager::new(PolicyAuthority::AuthControlled)
+        TokenPolicyManager::new()
             .with_mint_policy(MintPolicyConfig::AllowAll, PolicyRegistration::Active)
             .unwrap()
             .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)
@@ -101,7 +100,7 @@ fn faucet_contract_creation() {
     // Storage layout: [token_supply, max_supply, decimals, symbol]
     assert_eq!(
         faucet_account.storage().get_item(FungibleFaucet::token_config_slot()).unwrap(),
-        [Felt::ZERO, Felt::new(123), Felt::new(2), token_symbol.into()].into()
+        [Felt::ZERO, Felt::from(123_u32), Felt::from(2_u32), token_symbol.into()].into()
     );
 
     // Check that name was stored

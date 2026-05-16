@@ -101,7 +101,7 @@ async fn delta_nonce() -> anyhow::Result<()> {
         .await
         .context("failed to execute transaction")?;
 
-    assert_eq!(executed_tx.account_delta().nonce_delta(), Felt::new(1));
+    assert_eq!(executed_tx.account_delta().nonce_delta(), Felt::ONE);
 
     Ok(())
 }
@@ -412,17 +412,17 @@ async fn fungible_asset_delta() -> anyhow::Result<()> {
     let original_asset0 = FungibleAsset::new(faucet0, 300)?;
     let original_asset1 = FungibleAsset::new(faucet1, 200)?;
     let original_asset2 = FungibleAsset::new(faucet2, 100)?;
-    let original_asset3 = FungibleAsset::new(faucet3, FungibleAsset::MAX_AMOUNT)?;
+    let original_asset3 = FungibleAsset::new(faucet3, FungibleAsset::MAX_AMOUNT.as_u64())?;
 
     let added_asset0 = FungibleAsset::new(faucet0, 100)?;
     let added_asset1 = FungibleAsset::new(faucet1, 100)?;
     let added_asset2 = FungibleAsset::new(faucet2, 200)?;
-    let added_asset4 = FungibleAsset::new(faucet4, FungibleAsset::MAX_AMOUNT)?;
+    let added_asset4 = FungibleAsset::new(faucet4, FungibleAsset::MAX_AMOUNT.as_u64())?;
 
     let removed_asset0 = FungibleAsset::new(faucet0, 200)?;
     let removed_asset1 = FungibleAsset::new(faucet1, 100)?;
     let removed_asset2 = FungibleAsset::new(faucet2, 100)?;
-    let removed_asset3 = FungibleAsset::new(faucet3, FungibleAsset::MAX_AMOUNT)?;
+    let removed_asset3 = FungibleAsset::new(faucet3, FungibleAsset::MAX_AMOUNT.as_u64())?;
 
     let TestSetup { mock_chain, account_id, notes } = setup_test(
         [],
@@ -775,7 +775,7 @@ async fn asset_and_storage_delta() -> anyhow::Result<()> {
     // nonce delta
     // --------------------------------------------------------------------------------------------
 
-    assert_eq!(executed_transaction.account_delta().nonce_delta(), Felt::new(1));
+    assert_eq!(executed_transaction.account_delta().nonce_delta(), Felt::ONE);
 
     // storage delta
     // --------------------------------------------------------------------------------------------

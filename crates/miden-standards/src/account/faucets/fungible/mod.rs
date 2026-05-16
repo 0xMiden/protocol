@@ -428,13 +428,13 @@ impl FungibleFaucet {
         let max_supply = AssetAmount::try_from(max_supply).map_err(|_| {
             FungibleFaucetError::MaxSupplyTooLarge {
                 actual: max_supply.as_canonical_u64(),
-                max: AssetAmount::MAX,
+                max: AssetAmount::MAX.as_u64(),
             }
         })?;
         let token_supply = AssetAmount::try_from(token_supply).map_err(|_| {
             FungibleFaucetError::MaxSupplyTooLarge {
                 actual: token_supply.as_canonical_u64(),
-                max: AssetAmount::MAX,
+                max: AssetAmount::MAX.as_u64(),
             }
         })?;
 
@@ -507,13 +507,10 @@ impl TryFrom<&Account> for FungibleFaucet {
 ///   accepted for unauthenticated faucets.
 /// - `access_control`: [`AccessControl::AuthControlled`] for auth-only faucets, or
 ///   [`AccessControl::Ownable2Step`] / [`AccessControl::Rbac`] for owner-controlled faucets.
-/// - `token_policy_manager`: the unified [`TokenPolicyManager`] holding both mint and burn policy
-///   plus the shared [`PolicyAuthority`].
+/// - `token_policy_manager`: the unified [`TokenPolicyManager`] holding both mint and burn policy.
 ///
 /// The faucet itself, including all token metadata, is provided in the `faucet` parameter (see
 /// [`FungibleFaucet::builder`]).
-///
-/// [`PolicyAuthority`]: crate::account::policies::PolicyAuthority
 pub fn create_fungible_faucet(
     init_seed: [u8; 32],
     faucet: FungibleFaucet,

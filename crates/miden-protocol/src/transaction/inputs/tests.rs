@@ -40,7 +40,7 @@ fn test_read_foreign_account_inputs_missing_data() {
     let partial_vault = PartialVault::new(Word::default());
     let partial_account = PartialAccount::new(
         native_account_id,
-        Felt::new(10),
+        Felt::new_unchecked(10),
         code,
         partial_storage,
         partial_vault,
@@ -83,7 +83,7 @@ fn test_read_foreign_account_inputs_with_storage_data() {
     let partial_vault = PartialVault::new(Word::default());
     let partial_account = PartialAccount::new(
         native_account_id,
-        Felt::new(10),
+        Felt::new_unchecked(10),
         code.clone(),
         partial_storage,
         partial_vault,
@@ -94,9 +94,9 @@ fn test_read_foreign_account_inputs_with_storage_data() {
     // Create foreign account header and storage data.
     let foreign_header = AccountHeader::new(
         foreign_account_id,
-        Felt::new(5),
+        Felt::new_unchecked(5),
         Word::default(),
-        Word::new([Felt::new(1), Felt::new(2), Felt::new(3), Felt::new(4)]),
+        Word::new([Felt::ONE, Felt::from(2_u32), Felt::from(3_u32), Felt::from(4_u32)]),
         code.commitment(),
     );
 
@@ -106,12 +106,12 @@ fn test_read_foreign_account_inputs_with_storage_data() {
     let slot1 = StorageSlotHeader::new(
         slot_name1,
         StorageSlotType::Value,
-        Word::new([Felt::new(10), Felt::new(20), Felt::new(30), Felt::new(40)]),
+        Word::new([Felt::from(10_u32), Felt::from(20_u32), Felt::from(30_u32), Felt::from(40_u32)]),
     );
     let slot2 = StorageSlotHeader::new(
         slot_name2,
         StorageSlotType::Map,
-        Word::new([Felt::new(50), Felt::new(60), Felt::new(70), Felt::new(80)]),
+        Word::new([Felt::from(50_u32), Felt::from(60_u32), Felt::from(70_u32), Felt::from(80_u32)]),
     );
 
     let mut slots = vec![slot1, slot2];
@@ -147,7 +147,7 @@ fn test_read_foreign_account_inputs_with_storage_data() {
     // Should succeed and create partial account with proper storage.
     let account_inputs = tx_inputs.read_foreign_account_inputs(foreign_account_id).unwrap();
     assert_eq!(account_inputs.id(), foreign_account_id);
-    assert_eq!(account_inputs.account().nonce(), Felt::new(5));
+    assert_eq!(account_inputs.account().nonce(), Felt::new_unchecked(5));
 
     // Verify storage was properly reconstructed.
     let storage = account_inputs.account().storage();
@@ -187,7 +187,7 @@ fn test_read_foreign_account_inputs_with_proper_witness() {
     let partial_vault = PartialVault::new(Word::default());
     let native_account = PartialAccount::new(
         native_account_id,
-        Felt::new(10),
+        Felt::new_unchecked(10),
         code.clone(),
         partial_storage,
         partial_vault,
@@ -198,9 +198,9 @@ fn test_read_foreign_account_inputs_with_proper_witness() {
     // Create a foreign account with proper commitment.
     let foreign_header = AccountHeader::new(
         foreign_account_id,
-        Felt::new(5),
+        Felt::new_unchecked(5),
         Word::default(),
-        Word::new([Felt::new(1), Felt::new(2), Felt::new(3), Felt::new(4)]),
+        Word::new([Felt::ONE, Felt::from(2_u32), Felt::from(3_u32), Felt::from(4_u32)]),
         code.commitment(),
     );
 
@@ -217,7 +217,7 @@ fn test_read_foreign_account_inputs_with_proper_witness() {
     // Insert foreign account.
     let _foreign_partial_account = PartialAccount::new(
         foreign_account_id,
-        Felt::new(5),
+        Felt::new_unchecked(5),
         code.clone(),
         PartialStorage::new(foreign_storage_header.clone(), []).unwrap(),
         PartialVault::new(Word::default()),
@@ -270,7 +270,7 @@ fn test_read_foreign_account_inputs_with_proper_witness() {
     // Should succeed and create proper witness.
     let account_inputs = tx_inputs.read_foreign_account_inputs(foreign_account_id).unwrap();
     assert_eq!(account_inputs.id(), foreign_account_id);
-    assert_eq!(account_inputs.account().nonce(), Felt::new(5));
+    assert_eq!(account_inputs.account().nonce(), Felt::new_unchecked(5));
 
     // Verify witness data.
     let witness = account_inputs.witness();
@@ -333,7 +333,7 @@ fn test_transaction_inputs_serialization_with_foreign_slot_names() {
     let partial_vault = PartialVault::new(Word::default());
     let partial_account = PartialAccount::new(
         native_account_id,
-        Felt::new(10),
+        Felt::new_unchecked(10),
         code,
         partial_storage,
         partial_vault,

@@ -207,7 +207,10 @@ async fn proposed_block_fails_on_partial_blockchain_and_prev_block_inconsistency
 
     // Add an invalid value making the chain length equal to block2's number, but resulting in a
     // different chain commitment.
-    partial_blockchain.partial_mmr_mut().add(block2.header().nullifier_root(), true);
+    partial_blockchain
+        .partial_mmr_mut()
+        .add(block2.header().nullifier_root(), true)
+        .expect("partial mmr leaf count exceeds forest leaf bound");
 
     let block_inputs = BlockInputs::new(
         block2.header().clone(),

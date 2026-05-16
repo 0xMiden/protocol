@@ -101,7 +101,7 @@ impl ShortCapitalString {
         // Append the original length so decoding is unambiguous.
         let char_len = self.0.chars().count() as u64;
         encoded_value = encoded_value * alphabet_len + char_len;
-        Ok(Felt::new(encoded_value))
+        Ok(Felt::new_unchecked(encoded_value))
     }
 
     /// Decodes an encoded [`Felt`] value into a [`ShortCapitalString`].

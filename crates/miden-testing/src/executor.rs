@@ -1,7 +1,7 @@
 #[cfg(test)]
 use miden_processor::DefaultHost;
 use miden_processor::advice::AdviceInputs;
-use miden_processor::{ExecutionOutput, FastProcessor, Host, Program, StackInputs};
+use miden_processor::{ExecutionError, ExecutionOutput, FastProcessor, Host, Program, StackInputs};
 #[cfg(test)]
 use miden_protocol::assembly::Assembler;
 
@@ -68,6 +68,8 @@ impl<H: Host> CodeExecutor<H> {
 
         let processor = FastProcessor::new(stack_inputs)
             .with_advice(self.advice_inputs)
+            .map_err(ExecutionError::advice_error_no_context)
+            .map_err(ExecError::new)?
             .with_debugging(true);
 
         let execution_output =

@@ -335,7 +335,7 @@ async fn faucet_get_token_supply() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn faucet_get_max_supply() -> anyhow::Result<()> {
-    let expected = Felt::new(1_000_000).as_canonical_u64();
+    let expected = 1_000_000_u64;
     execute_tx_script(
         build_pol_faucet_account(),
         format!(
@@ -355,8 +355,8 @@ async fn faucet_get_max_supply() -> anyhow::Result<()> {
 async fn faucet_get_token_config() -> anyhow::Result<()> {
     let symbol = TokenSymbol::new("POL").unwrap();
     let expected_symbol = Felt::from(symbol).as_canonical_u64();
-    let expected_decimals = Felt::from(8u8).as_canonical_u64();
-    let expected_max_supply = Felt::new(1_000_000).as_canonical_u64();
+    let expected_decimals = 8_u64;
+    let expected_max_supply = 1_000_000_u64;
 
     execute_tx_script(
         build_pol_faucet_account(),
@@ -378,9 +378,9 @@ async fn faucet_get_token_config() -> anyhow::Result<()> {
 #[tokio::test]
 async fn faucet_get_decimals_symbol_and_max_supply() -> anyhow::Result<()> {
     let symbol = TokenSymbol::new("POL").unwrap();
-    let expected_decimals = Felt::from(8u8).as_canonical_u64();
+    let expected_decimals = 8_u64;
     let expected_symbol = Felt::from(symbol).as_canonical_u64();
-    let expected_max_supply = Felt::new(1_000_000).as_canonical_u64();
+    let expected_max_supply = 1_000_000_u64;
 
     execute_tx_script(
         build_pol_faucet_account(),
