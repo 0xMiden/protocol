@@ -190,7 +190,7 @@ pub async fn tx_consume_claim_note(data_source: ClaimDataSource) -> Result<Trans
     // CREATE AGGLAYER FAUCET ACCOUNT
     let token_symbol = "AGG";
     let decimals = 8u8;
-    let max_supply = Felt::new_unchecked(FungibleAsset::MAX_AMOUNT);
+    let max_supply: Felt = FungibleAsset::MAX_AMOUNT.into();
     let agglayer_faucet_seed = builder.rng_mut().draw_word();
 
     let origin_token_address = leaf_data.origin_token_address;
@@ -335,7 +335,7 @@ pub async fn tx_consume_b2agg_note() -> Result<TransactionContext> {
         builder.rng_mut().draw_word(),
         "AGG",
         8,
-        Felt::new_unchecked(FungibleAsset::MAX_AMOUNT),
+        FungibleAsset::MAX_AMOUNT.into(),
         Felt::new_unchecked(bridge_amount),
         bridge_account.id(),
         &origin_token_address,

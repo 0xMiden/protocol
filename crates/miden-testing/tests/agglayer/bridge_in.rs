@@ -166,7 +166,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     // --------------------------------------------------------------------------------------------
     let token_symbol = "AGG";
     let decimals = 8u8;
-    let max_supply = Felt::new_unchecked(FungibleAsset::MAX_AMOUNT);
+    let max_supply: Felt = FungibleAsset::MAX_AMOUNT.into();
     let agglayer_faucet_seed = builder.rng_mut().draw_word();
 
     let origin_token_address = leaf_data.origin_token_address;
@@ -462,7 +462,7 @@ async fn test_claim_rejects_wrong_destination_network() -> anyhow::Result<()> {
     // --------------------------------------------------------------------------------------------
     let token_symbol = "AGG";
     let decimals = 8u8;
-    let max_supply = Felt::new_unchecked(FungibleAsset::MAX_AMOUNT);
+    let max_supply: Felt = FungibleAsset::MAX_AMOUNT.into();
     let agglayer_faucet_seed = builder.rng_mut().draw_word();
     let origin_token_address = leaf_data.origin_token_address;
     let origin_network = leaf_data.origin_network;
@@ -588,7 +588,7 @@ async fn test_duplicate_claim_note_rejected() -> anyhow::Result<()> {
     // CREATE AGGLAYER FAUCET ACCOUNT
     let token_symbol = "AGG";
     let decimals = 8u8;
-    let max_supply = Felt::new_unchecked(FungibleAsset::MAX_AMOUNT);
+    let max_supply: Felt = FungibleAsset::MAX_AMOUNT.into();
     let agglayer_faucet_seed = builder.rng_mut().draw_word();
 
     let origin_token_address = leaf_data.origin_token_address;

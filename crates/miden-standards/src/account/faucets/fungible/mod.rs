@@ -428,13 +428,13 @@ impl FungibleFaucet {
         let max_supply = AssetAmount::try_from(max_supply).map_err(|_| {
             FungibleFaucetError::MaxSupplyTooLarge {
                 actual: max_supply.as_canonical_u64(),
-                max: AssetAmount::MAX,
+                max: AssetAmount::MAX.as_u64(),
             }
         })?;
         let token_supply = AssetAmount::try_from(token_supply).map_err(|_| {
             FungibleFaucetError::MaxSupplyTooLarge {
                 actual: token_supply.as_canonical_u64(),
-                max: AssetAmount::MAX,
+                max: AssetAmount::MAX.as_u64(),
             }
         })?;
 

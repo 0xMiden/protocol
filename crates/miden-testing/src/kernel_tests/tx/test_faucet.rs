@@ -209,7 +209,7 @@ async fn test_mint_fungible_asset_fails_when_amount_exceeds_max_representable_am
         end
     ",
         ASSET_KEY = FungibleAsset::mock(0).to_key_word(),
-        max_amount_plus_1 = FungibleAsset::MAX_AMOUNT + 1,
+        max_amount_plus_1 = FungibleAsset::MAX_AMOUNT.as_u64() + 1,
     );
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(code)?;
 

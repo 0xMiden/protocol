@@ -198,7 +198,7 @@ async fn test_scale_down_realistic_scenarios_fuzzing() -> anyhow::Result<()> {
 
     let min_x = U256::from(10_000_000_000_000u64); // 1e13
     let desired_max_x = U256::from_dec_str("1000000000000000000000000").unwrap(); // 1e24
-    let max_y = U256::from(FungibleAsset::MAX_AMOUNT); // 2^63 - 2^31
+    let max_y = U256::from(FungibleAsset::MAX_AMOUNT.as_u64()); // 2^63 - 2^31
 
     for scale in 0..=MAX_SCALE {
         let scale_factor = U256::from(10u64).pow(U256::from(scale));

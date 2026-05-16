@@ -606,8 +606,8 @@ mod tests {
     #[case::empty_neg(0, -50, Some(-50))]
     #[case::nullify_pos_neg(100, -100, Some(0))]
     #[case::nullify_neg_pos(-100, 100, Some(0))]
-    #[case::overflow(FungibleAsset::MAX_AMOUNT as i64, FungibleAsset::MAX_AMOUNT as i64, None)]
-    #[case::underflow(-(FungibleAsset::MAX_AMOUNT as i64), -(FungibleAsset::MAX_AMOUNT as i64), None)]
+    #[case::overflow(FungibleAsset::MAX_AMOUNT.as_i64(), FungibleAsset::MAX_AMOUNT.as_i64(), None)]
+    #[case::underflow(-(FungibleAsset::MAX_AMOUNT.as_i64()), -(FungibleAsset::MAX_AMOUNT.as_i64()), None)]
     #[test]
     fn merge_fungible_aggregation(#[case] x: i64, #[case] y: i64, #[case] expected: Option<i64>) {
         /// Creates an [AccountVaultDelta] with a single [FungibleAsset] delta. This delta will
