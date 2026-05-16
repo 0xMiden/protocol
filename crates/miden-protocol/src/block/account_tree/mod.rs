@@ -205,6 +205,7 @@ where
     /// Returns an error if:
     /// - an insertion of an account ID would violate the uniqueness of account ID prefixes in the
     ///   tree.
+    /// - the list of provided account updates contains duplicates.
     pub fn compute_mutations(
         &self,
         account_commitments: impl IntoIterator<Item = (AccountId, Word)>,

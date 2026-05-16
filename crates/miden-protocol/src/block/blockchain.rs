@@ -89,7 +89,12 @@ impl Blockchain {
     ///
     /// Returns an error if the specified `block` exceeds the number of blocks in the chain.
     pub fn peaks_at(&self, checkpoint: BlockNumber) -> Result<MmrPeaks, MmrError> {
-        self.mmr.peaks_at(Forest::new(checkpoint.as_usize()))
+        let forest =
+            Forest::new(checkpoint.as_usize()).map_err(|_| MmrError::ForestSizeExceeded {
+                requested: checkpoint.as_usize(),
+                max: Forest::MAX_LEAVES,
+            })?;
+        self.mmr.peaks_at(forest)
     }
 
     /// Returns an [`MmrProof`] for the `block` with the given number.
@@ -115,7 +120,12 @@ impl Blockchain {
         block: BlockNumber,
         checkpoint: BlockNumber,
     ) -> Result<MmrProof, MmrError> {
-        self.mmr.open_at(block.as_usize(), Forest::new(checkpoint.as_usize()))
+        let forest =
+            Forest::new(checkpoint.as_usize()).map_err(|_| MmrError::ForestSizeExceeded {
+                requested: checkpoint.as_usize(),
+                max: Forest::MAX_LEAVES,
+            })?;
+        self.mmr.open_at(block.as_usize(), forest)
     }
 
     /// Returns a reference to the underlying [`Mmr`].
@@ -164,8 +174,14 @@ impl Blockchain {
     /// Adds a block commitment to the MMR.
     ///
     /// The caller must ensure that this commitent is the one for the next block in the chain.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the number of blocks in the chain exceeds [Forest::MAX_LEAVES].
     pub fn push(&mut self, block_commitment: Word) {
-        self.mmr.add(block_commitment);
+        self.mmr
+            .add(block_commitment)
+            .expect("mmr leaf count exceeds forest leaf bound");
     }
 }
 

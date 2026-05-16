@@ -78,7 +78,7 @@ impl Nullifier {
 
     #[cfg(any(feature = "testing", test))]
     pub fn dummy(n: u64) -> Self {
-        Self(Word::new([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::new(n)]))
+        Self(Word::new([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::new_unchecked(n)]))
     }
 }
 

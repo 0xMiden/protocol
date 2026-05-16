@@ -19,7 +19,7 @@ use miden_protocol::block::{
     ProposedBlock,
     ProvenBlock,
 };
-use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SecretKey;
+use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
 use miden_protocol::note::{Note, NoteHeader, NoteId, NoteInclusionProof, Nullifier};
 use miden_protocol::transaction::{
     ExecutedTransaction,
@@ -206,7 +206,7 @@ pub struct MockChain {
     account_authenticators: BTreeMap<AccountId, AccountAuthenticator>,
 
     /// Validator secret key used for signing blocks.
-    validator_secret_key: SecretKey,
+    validator_secret_key: SigningKey,
 }
 
 impl MockChain {
@@ -238,7 +238,7 @@ impl MockChain {
         genesis_block: ProvenBlock,
         account_tree: AccountTree,
         account_authenticators: BTreeMap<AccountId, AccountAuthenticator>,
-        secret_key: SecretKey,
+        secret_key: SigningKey,
         genesis_notes: Vec<Note>,
     ) -> anyhow::Result<Self> {
         let mut chain = MockChain {
@@ -1096,7 +1096,7 @@ impl Deserializable for MockChain {
         let committed_notes = BTreeMap::<NoteId, MockChainNote>::read_from(source)?;
         let account_authenticators =
             BTreeMap::<AccountId, AccountAuthenticator>::read_from(source)?;
-        let secret_key = SecretKey::read_from(source)?;
+        let secret_key = SigningKey::read_from(source)?;
 
         Ok(Self {
             chain,

@@ -766,8 +766,8 @@ async fn pswap_note_creator_reclaim_test() -> anyhow::Result<()> {
 #[case::fill_exceeds_requested(30, 0, ERR_PSWAP_FILL_EXCEEDS_REQUESTED)]
 #[case::fill_sum_u64_overflow(1u64 << 63, 1u64 << 63, ERR_PSWAP_FILL_SUM_OVERFLOW)]
 #[case::fill_sum_exceeds_max_asset_amount(
-    FungibleAsset::MAX_AMOUNT,
-    FungibleAsset::MAX_AMOUNT,
+    FungibleAsset::MAX_AMOUNT.as_u64(),
+    FungibleAsset::MAX_AMOUNT.as_u64(),
     ERR_PSWAP_NOT_VALID_ASSET_AMOUNT
 )]
 #[tokio::test]

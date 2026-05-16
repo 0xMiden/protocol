@@ -40,6 +40,7 @@ impl ProgramExecutor for FastProcessor {
         options: ExecutionOptions,
     ) -> Self {
         FastProcessor::new_with_options(stack_inputs, advice_inputs, options)
+            .expect("constructing FastProcessor failed due to invalid advice inputs")
     }
 
     fn execute<H: Host + Send>(

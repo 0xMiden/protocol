@@ -128,7 +128,7 @@ proc process_kernel_data
 
     # move the number of felt elements in the [KERNEL_PROCEDURE_ROOTS] array to the stack and get
     # the number of procedures from it (which is essentially the number of words)
-    adv_push.1 div.4
+    adv_push div.4
     # OS => [num_kernel_procedures, TX_KERNEL_COMMITMENT]
     # AS => [[KERNEL_PROCEDURE_ROOTS]]
 
@@ -484,7 +484,7 @@ proc authenticate_note
     # Load the BLOCK_COMMITMENT from the PARTIAL_BLOCKCHAIN
     # ---------------------------------------------------------------------------------------------
 
-    push.PARTIAL_BLOCKCHAIN_PTR adv_push.1
+    push.PARTIAL_BLOCKCHAIN_PTR adv_push
     # => [block_num, partial_blockchain_ptr, NOTE_ID]
 
     exec.mmr::get
@@ -515,7 +515,7 @@ proc authenticate_note
     # => [NOTE_ID, NOTE_ROOT]
 
     # load the index of the note
-    adv_push.1 movdn.4
+    adv_push movdn.4
     # => [NOTE_ID, note_index, NOTE_ROOT]
 
     # get the depth of the note tree
@@ -617,7 +617,7 @@ end
 #! - num_storage_items is the note's number of storage items.
 proc process_note_num_storage_items
     # move the number of storage items from the advice stack to the operand stack
-    adv_push.1
+    adv_push
     # => [num_storage_items, note_ptr]
 
     # validate the number of storage items
@@ -647,7 +647,7 @@ proc process_note_assets
     # Validate num_assets and setup commitment computation.
     # ---------------------------------------------------------------------------------------------
 
-    adv_push.1
+    adv_push
     # => [num_assets, note_ptr]
 
     dup lte.MAX_ASSETS_PER_NOTE
@@ -885,7 +885,7 @@ proc process_input_note
     exec.poseidon2::merge
     # => [NOTE_ID, NULLIFIER, CAPACITY]
 
-    adv_push.1
+    adv_push
     # => [is_authenticated, NOTE_ID, NULLIFIER, CAPACITY]
 
     if.true
@@ -929,7 +929,7 @@ end
 #! - NOTE_DATA is the input notes' details, for format see `prologue::process_input_note`.
 proc process_input_notes_data
     # get the number of input notes from the advice stack
-    adv_push.1
+    adv_push
     # => [num_notes]
 
     # assert the number of input notes is within limits; since max number of input notes is

@@ -369,7 +369,12 @@ mod tests {
             (
                 MOCK_VALUE_SLOT1.clone(),
                 StorageSlotType::Value,
-                Word::from([Felt::new(5), Felt::new(6), Felt::new(7), Felt::new(8)]),
+                Word::from([
+                    Felt::from(5_u32),
+                    Felt::from(6_u32),
+                    Felt::from(7_u32),
+                    Felt::from(8_u32),
+                ]),
             ),
             (MOCK_MAP_SLOT.clone(), StorageSlotType::Map, storage_map.root()),
         ];
@@ -415,7 +420,7 @@ mod tests {
         let slot1 = StorageSlotHeader::new(
             slot_name1,
             StorageSlotType::Value,
-            Word::new([Felt::new(1), Felt::new(2), Felt::new(3), Felt::new(4)]),
+            Word::new([Felt::ONE, Felt::from(2_u32), Felt::from(3_u32), Felt::from(4_u32)]),
         );
 
         let single_slot_header = AccountStorageHeader::new(vec![slot1.clone()]).unwrap();
@@ -438,12 +443,17 @@ mod tests {
         let slot2 = StorageSlotHeader::new(
             slot_name2,
             StorageSlotType::Map,
-            Word::new([Felt::new(5), Felt::new(6), Felt::new(7), Felt::new(8)]),
+            Word::new([Felt::from(5_u32), Felt::from(6_u32), Felt::from(7_u32), Felt::from(8_u32)]),
         );
         let slot3 = StorageSlotHeader::new(
             slot_name3,
             StorageSlotType::Value,
-            Word::new([Felt::new(9), Felt::new(10), Felt::new(11), Felt::new(12)]),
+            Word::new([
+                Felt::from(9_u32),
+                Felt::from(10_u32),
+                Felt::from(11_u32),
+                Felt::from(12_u32),
+            ]),
         );
 
         let mut slots = vec![slot2, slot3];
@@ -465,7 +475,7 @@ mod tests {
     #[test]
     fn test_from_elements_errors() {
         // Test with invalid length (not divisible by 8).
-        let invalid_elements = vec![Felt::new(1), Felt::new(2), Felt::new(3)];
+        let invalid_elements = vec![Felt::ONE, Felt::new_unchecked(2), Felt::new_unchecked(3)];
         let empty_slot_names = BTreeMap::new();
         assert!(
             AccountStorageHeader::try_from_elements(&invalid_elements, &empty_slot_names).is_err()
@@ -473,7 +483,7 @@ mod tests {
 
         // Test with invalid slot type.
         let mut invalid_type_elements = vec![crate::ZERO; 8];
-        invalid_type_elements[1] = Felt::new(5); // Invalid slot type.
+        invalid_type_elements[1] = Felt::new_unchecked(5); // Invalid slot type.
         assert!(
             AccountStorageHeader::try_from_elements(&invalid_type_elements, &empty_slot_names)
                 .is_err()
@@ -489,7 +499,7 @@ mod tests {
         let slot1 = StorageSlotHeader::new(
             slot_name1.clone(),
             StorageSlotType::Value,
-            Word::new([Felt::new(1), Felt::new(2), Felt::new(3), Felt::new(4)]),
+            Word::new([Felt::ONE, Felt::from(2_u32), Felt::from(3_u32), Felt::from(4_u32)]),
         );
 
         // Serialize the single slot to elements
