@@ -72,7 +72,7 @@ Notes are recorded in an append-only accumulator, a [Merkle Mountain Range](http
 
 Using a Merkle Mountain Range (append-only accumulator) is important for two reasons:
 
-1. Membership witnesses (that a note exists in the database) against such an accumulator needs to be updated very infrequently.
+1. Membership witnesses (that a note exists in the database) against such an accumulator need to be updated very infrequently.
 2. Old membership witnesses can be extended to a new accumulator value, but this extension does not need to be done by the original witness holder.
  
 Both of these properties are needed for supporting local transactions using client-side proofs and privacy. In an append-only data structure, witness data does not become stale when the data structure is updated. That means users can generate valid proofs even if they don’t have the latest `State` of this database; so there is no need to query the operator on a constantly changing `State`.
