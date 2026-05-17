@@ -6,10 +6,6 @@ use miden_protocol::account::AccountId;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::note::{Note, NoteScript, NoteScriptRoot};
 
-use crate::account::faucets::{BasicFungibleFaucet, NetworkFungibleFaucet};
-use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
-use crate::account::wallets::BasicWallet;
-
 mod burn;
 pub use burn::BurnNote;
 
@@ -136,43 +132,6 @@ impl StandardNote {
             Self::PSWAP => PswapNote::script_root(),
             Self::MINT => MintNote::script_root(),
             Self::BURN => BurnNote::script_root(),
-        }
-    }
-
-    /// Returns a boolean value indicating whether this [StandardNote] is compatible with the
-    /// provided [AccountInterface].
-    pub fn is_compatible_with(&self, account_interface: &AccountInterface) -> bool {
-        if account_interface.components().contains(&AccountComponentInterface::BasicWallet) {
-            return true;
-        }
-
-        let interface_proc_digests = account_interface.get_procedure_digests();
-        match self {
-            Self::P2ID | &Self::P2IDE => {
-                // To consume P2ID and P2IDE notes, the `receive_asset` procedure must be present in
-                // the provided account interface.
-                interface_proc_digests.contains(&BasicWallet::receive_asset_digest())
-            },
-            Self::SWAP | Self::PSWAP => {
-                // To consume SWAP/PSWAP notes, the `receive_asset` and `move_asset_to_note`
-                // procedures must be present in the provided account interface.
-                interface_proc_digests.contains(&BasicWallet::receive_asset_digest())
-                    && interface_proc_digests.contains(&BasicWallet::move_asset_to_note_digest())
-            },
-            Self::MINT => {
-                // MINT notes work only with network fungible faucets. The network faucet uses
-                // note-based authentication (checking if the note sender equals the faucet owner)
-                // to authorize minting, while basic faucets have different mint procedures that
-                // are not compatible with MINT notes.
-                interface_proc_digests.contains(&NetworkFungibleFaucet::mint_and_send_digest())
-            },
-            Self::BURN => {
-                // BURN notes work with both basic and network fungible faucets because both
-                // faucet types export the same `burn` procedure with identical MAST roots.
-                // This allows a single BURN note script to work with either faucet type.
-                interface_proc_digests.contains(&BasicFungibleFaucet::burn_digest())
-                    || interface_proc_digests.contains(&NetworkFungibleFaucet::burn_digest())
-            },
         }
     }
 

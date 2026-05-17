@@ -10,6 +10,7 @@ use super::super::utils::serde::{
     DeserializationError,
     Serializable,
 };
+use crate::Felt;
 
 // ASSET AMOUNT
 // ================================================================================================
@@ -28,6 +29,9 @@ impl AssetAmount {
     /// negative value in a field element.
     pub const MAX: u64 = 2u64.pow(63) - 2u64.pow(31);
 
+    /// The zero amount.
+    pub const ZERO: Self = Self(0);
+
     /// Returns a new `AssetAmount` if `amount` does not exceed [`Self::MAX`].
     ///
     /// # Errors
@@ -39,15 +43,27 @@ impl AssetAmount {
         }
         Ok(Self(amount))
     }
+
+    /// Returns the underlying `u64` value.
+    pub const fn as_u64(&self) -> u64 {
+        self.0
+    }
+
+    /// Returns the underlying value as an `i64`.
+    ///
+    /// SAFETY: this cast never truncates or wraps because [`Self::MAX`] (`2^63 - 2^31`) is
+    /// strictly less than [`i64::MAX`] (`2^63 - 1`), so every valid `AssetAmount` fits in a
+    /// non-negative `i64`.
+    pub const fn as_i64(&self) -> i64 {
+        self.0 as i64
+    }
 }
 
 impl Add for AssetAmount {
     type Output = Result<Self, AssetError>;
 
     fn add(self, other: Self) -> Self::Output {
-        let raw = u64::from(self)
-            .checked_add(u64::from(other))
-            .expect("even MAX + MAX should not overflow u64");
+        let raw = self.0.checked_add(other.0).expect("even MAX + MAX should not overflow u64");
         Self::new(raw)
     }
 }
@@ -56,12 +72,13 @@ impl Sub for AssetAmount {
     type Output = Result<Self, AssetError>;
 
     fn sub(self, other: Self) -> Self::Output {
-        let raw = u64::from(self).checked_sub(u64::from(other)).ok_or(
-            AssetError::FungibleAssetAmountNotSufficient {
-                minuend: u64::from(self),
-                subtrahend: u64::from(other),
-            },
-        )?;
+        let raw =
+            self.0
+                .checked_sub(other.0)
+                .ok_or(AssetError::FungibleAssetAmountNotSufficient {
+                    minuend: self.0,
+                    subtrahend: other.0,
+                })?;
         Ok(Self(raw))
     }
 }
@@ -95,9 +112,23 @@ impl TryFrom<u64> for AssetAmount {
     }
 }
 
+impl TryFrom<Felt> for AssetAmount {
+    type Error = AssetError;
+
+    fn try_from(value: Felt) -> Result<Self, Self::Error> {
+        Self::new(value.as_canonical_u64())
+    }
+}
+
 impl From<AssetAmount> for u64 {
     fn from(amount: AssetAmount) -> Self {
         amount.0
+    }
+}
+
+impl From<AssetAmount> for Felt {
+    fn from(amount: AssetAmount) -> Self {
+        Felt::try_from(amount.0).expect("asset amount should guarantee felt validity")
     }
 }
 

@@ -31,11 +31,10 @@ use miden_protocol::account::{
 use miden_protocol::assembly::diagnostics::NamedSource;
 use miden_protocol::assembly::diagnostics::reporting::PrintDiagnostic;
 use miden_protocol::assembly::{DefaultSourceManager, Library};
-use miden_protocol::asset::{Asset, AssetCallbacks, FungibleAsset};
+use miden_protocol::asset::{Asset, AssetAmount, AssetCallbacks, FungibleAsset};
 use miden_protocol::errors::tx_kernel::{
     ERR_ACCOUNT_ID_SUFFIX_LEAST_SIGNIFICANT_BYTE_MUST_BE_ZERO,
     ERR_ACCOUNT_ID_SUFFIX_MOST_SIGNIFICANT_BIT_MUST_BE_ZERO,
-    ERR_ACCOUNT_ID_UNKNOWN_STORAGE_MODE,
     ERR_ACCOUNT_ID_UNKNOWN_VERSION,
     ERR_ACCOUNT_NONCE_AT_MAX,
     ERR_ACCOUNT_NONCE_CAN_ONLY_BE_INCREMENTED_ONCE,
@@ -54,8 +53,7 @@ use miden_protocol::testing::account_id::{
 use miden_protocol::testing::storage::{MOCK_MAP_SLOT, MOCK_VALUE_SLOT0, MOCK_VALUE_SLOT1};
 use miden_protocol::transaction::{RawOutputNote, TransactionKernel};
 use miden_protocol::utils::sync::LazyLock;
-use miden_standards::account::faucets::BasicFungibleFaucet;
-use miden_standards::account::metadata::{FungibleTokenMetadataBuilder, TokenName};
+use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::mock_account::MockAccountExt;
@@ -244,11 +242,6 @@ async fn test_account_validate_id() -> anyhow::Result<()> {
             // Set most significant bit to `1`.
             ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET | (0x80 << 56),
             Some(ERR_ACCOUNT_ID_SUFFIX_MOST_SIGNIFICANT_BIT_MUST_BE_ZERO),
-        ),
-        (
-            // Set storage mode to an unknown value (0b11).
-            ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE | (0b11 << (64 + 6)),
-            Some(ERR_ACCOUNT_ID_UNKNOWN_STORAGE_MODE),
         ),
         (
             // Set lower 8 bits to a non-zero value (1).
@@ -1092,7 +1085,8 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
     let initial_balance = account
         .vault()
         .get_balance(faucet_existing_asset)
-        .expect("faucet_id should be a fungible faucet ID");
+        .expect("faucet_id should be a fungible faucet ID")
+        .as_u64();
 
     let add_existing_source = format!(
         r#"
@@ -1124,7 +1118,7 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
         suffix = faucet_existing_asset.suffix(),
         prefix = faucet_existing_asset.prefix().as_felt(),
         final_balance =
-            initial_balance + fungible_asset_for_note_existing.unwrap_fungible().amount(),
+            initial_balance + fungible_asset_for_note_existing.unwrap_fungible().amount().as_u64(),
     );
 
     let tx_script = CodeBuilder::default().compile_tx_script(add_existing_source)?;
@@ -1146,7 +1140,8 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
     let initial_balance = account
         .vault()
         .get_balance(faucet_new_asset)
-        .expect("faucet_id should be a fungible faucet ID");
+        .expect("faucet_id should be a fungible faucet ID")
+        .as_u64();
 
     let add_new_source = format!(
         r#"
@@ -1177,7 +1172,8 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
     "#,
         suffix = faucet_new_asset.suffix(),
         prefix = faucet_new_asset.prefix().as_felt(),
-        final_balance = initial_balance + fungible_asset_for_note_new.unwrap_fungible().amount(),
+        final_balance =
+            initial_balance + fungible_asset_for_note_new.unwrap_fungible().amount().as_u64(),
     );
 
     let tx_script = CodeBuilder::default().compile_tx_script(add_new_source)?;
@@ -1224,7 +1220,8 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
     let initial_balance = account
         .vault()
         .get_balance(faucet_existing_asset)
-        .expect("faucet_id should be a fungible faucet ID");
+        .expect("faucet_id should be a fungible faucet ID")
+        .as_u64();
 
     let expected_output_note =
         create_public_p2any_note(ACCOUNT_ID_SENDER.try_into()?, [fungible_asset_for_note_existing]);
@@ -1272,7 +1269,7 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
         suffix = faucet_existing_asset.suffix(),
         prefix = faucet_existing_asset.prefix().as_felt(),
         final_balance =
-            initial_balance - fungible_asset_for_note_existing.unwrap_fungible().amount(),
+            initial_balance - fungible_asset_for_note_existing.unwrap_fungible().amount().as_u64(),
     );
 
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(remove_existing_source)?;
@@ -1707,19 +1704,17 @@ async fn test_faucet_has_callbacks(
     #[case] callback_slots: Vec<StorageSlot>,
     #[case] expected_has_callbacks: bool,
 ) -> anyhow::Result<()> {
-    let faucet_metadata = FungibleTokenMetadataBuilder::new(
-        TokenName::new("").expect("empty string is a valid token name"),
-        "CBK".try_into()?,
-        8,
-        1_000_000u64,
-    )
-    .build()?;
+    let faucet = FungibleFaucet::builder()
+        .name(TokenName::new("").expect("empty string is a valid token name"))
+        .symbol("CBK".try_into()?)
+        .decimals(8)
+        .max_supply(AssetAmount::from(1_000_000u32))
+        .build()?;
 
     let account = AccountBuilder::new([1u8; 32])
         .storage_mode(AccountStorageMode::Public)
         .account_type(AccountType::FungibleFaucet)
-        .with_component(faucet_metadata)
-        .with_component(BasicFungibleFaucet)
+        .with_component(faucet)
         .with_component(MockAccountComponent::with_slots(callback_slots))
         .with_auth_component(Auth::IncrNonce)
         .build_existing()?;

@@ -44,7 +44,7 @@ use miden_protocol::transaction::memory::{
     INPUT_NOTE_ASSETS_OFFSET,
     INPUT_NOTE_ATTACHMENT_OFFSET,
     INPUT_NOTE_ID_OFFSET,
-    INPUT_NOTE_METADATA_HEADER_OFFSET,
+    INPUT_NOTE_METADATA_OFFSET,
     INPUT_NOTE_NULLIFIER_SECTION_PTR,
     INPUT_NOTE_NUM_ASSETS_OFFSET,
     INPUT_NOTE_RECIPIENT_OFFSET,
@@ -488,14 +488,14 @@ fn input_notes_memory_assertions(
         );
 
         assert_eq!(
-            exec_output.get_note_mem_word(note_idx, INPUT_NOTE_METADATA_HEADER_OFFSET),
-            note.metadata().to_header_word(),
-            "note metadata header should be stored at the correct offset"
+            exec_output.get_note_mem_word(note_idx, INPUT_NOTE_METADATA_OFFSET),
+            note.metadata().to_metadata_word(),
+            "note metadata should be stored at the correct offset"
         );
 
         assert_eq!(
             exec_output.get_note_mem_word(note_idx, INPUT_NOTE_ATTACHMENT_OFFSET),
-            note.metadata().to_attachment_word(),
+            note.attachments().to_commitment(),
             "note attachment should be stored at the correct offset"
         );
 
@@ -611,9 +611,7 @@ pub async fn create_multiple_accounts_test(storage_mode: AccountStorageMode) -> 
 pub async fn create_accounts_with_all_storage_modes() -> anyhow::Result<()> {
     create_multiple_accounts_test(AccountStorageMode::Private).await?;
 
-    create_multiple_accounts_test(AccountStorageMode::Public).await?;
-
-    create_multiple_accounts_test(AccountStorageMode::Network).await
+    create_multiple_accounts_test(AccountStorageMode::Public).await
 }
 
 /// Tests that supplying an invalid seed causes account creation to fail.

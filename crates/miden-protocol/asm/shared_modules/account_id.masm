@@ -5,11 +5,7 @@ const ERR_ACCOUNT_ID_UNKNOWN_VERSION="unknown version in account ID"
 
 const ERR_ACCOUNT_ID_SUFFIX_MOST_SIGNIFICANT_BIT_MUST_BE_ZERO="most significant bit of the account ID suffix must be zero"
 
-const ERR_ACCOUNT_ID_UNKNOWN_STORAGE_MODE="unknown account storage mode in account ID"
-
 const ERR_ACCOUNT_ID_SUFFIX_LEAST_SIGNIFICANT_BYTE_MUST_BE_ZERO="least significant byte of the account ID suffix must be zero"
-
-const ERR_ACCOUNT_ID_NON_PUBLIC_NETWORK_ACCOUNT="the account ID must have storage mode public if the network flag is set"
 
 # CONSTANTS
 # =================================================================================================
@@ -38,15 +34,12 @@ const ACCOUNT_ID_TYPE_MASK_U32=0x30 # 0b11_0000
 # to determine the account version.
 const ACCOUNT_VERSION_MASK_U32=0x0f # 0b1111
 
+# Version 1 of the account ID.
 const VERSION_1=1
 
-# Given the least significant 32 bits of an account ID's prefix, this mask defines the bits used
+# Given the least significant 32 bits of an account ID's prefix, this mask defines the bit used
 # to determine the account storage mode.
-const ACCOUNT_ID_STORAGE_MODE_MASK_U32=0xC0 # 0b1100_0000
-
-# Given the least significant 32 bits of an account ID's first felt with the storage mode mask
-# applied, this value defines the non-existent, invalid storage mode.
-const ACCOUNT_ID_STORAGE_MODE_INVALID_U32=0xc0 # 0b1100_0000
+const ACCOUNT_ID_STORAGE_MODE_MASK_U32=0x40 # 0b0100_0000
 
 # PROCEDURES
 # =================================================================================================
@@ -137,8 +130,11 @@ pub proc is_immutable_account
     # => [is_immutable_account]
 end
 
-#! Validates an account ID. Note that this does not validate anything about the account type,
-#! since any 2-bit pattern is a valid account type.
+#! Validates an account ID.
+#!
+#! Note that this does not validate anything about the account type or
+#! storage mode, since any 2-bit pattern is a valid account type and any 1-bit pattern is a valid
+#! storage mode.
 #!
 #! Inputs:  [account_id_suffix, account_id_prefix]
 #! Outputs: []
@@ -148,7 +144,6 @@ end
 #!
 #! Panics if:
 #! - account_id_prefix does not contain version one.
-#! - account_id_prefix does not contain either the public, network or private storage mode.
 #! - account_id_suffix does not have its most significant bit set to zero.
 #! - account_id_suffix does not have its lower 8 bits set to zero.
 pub proc validate
@@ -173,26 +168,11 @@ pub proc validate
     # Validate version in prefix. For now only version 1 is supported.
     # ---------------------------------------------------------------------------------------------
 
-    dup exec.id_version
-    # => [id_version, account_id_prefix]
+    exec.id_version
+    # => [id_version]
     eq.VERSION_1
-    # => [is_supported_version, account_id_prefix]
+    # => [is_supported_version]
     assert.err=ERR_ACCOUNT_ID_UNKNOWN_VERSION
-    # => [account_id_prefix]
-
-    # Validate storage mode in prefix.
-    # ---------------------------------------------------------------------------------------------
-
-    # there are 3 valid and 1 invalid storage mode
-    # instead of checking the presence of any of the valid modes, we check the absence of the
-    # invalid mode
-    u32split swap drop
-    # => [account_id_prefix_lo]
-    u32and.ACCOUNT_ID_STORAGE_MODE_MASK_U32
-    # => [id_storage_mode_masked]
-    eq.ACCOUNT_ID_STORAGE_MODE_INVALID_U32
-    # => [is_storage_mode_invalid]
-    assertz.err=ERR_ACCOUNT_ID_UNKNOWN_STORAGE_MODE
     # => []
 end
 

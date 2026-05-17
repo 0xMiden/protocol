@@ -9,13 +9,14 @@ use miden_protocol::note::{
     NoteAssets,
     NoteAttachment,
     NoteAttachmentScheme,
-    NoteMetadata,
+    NoteAttachments,
     NoteRecipient,
     NoteScript,
     NoteScriptRoot,
     NoteStorage,
     NoteTag,
     NoteType,
+    PartialNoteMetadata,
 };
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, ONE, Word, ZERO};
@@ -116,7 +117,7 @@ impl PswapNoteStorage {
 
     /// Returns the requested token amount.
     pub fn requested_asset_amount(&self) -> u64 {
-        self.requested_asset.amount()
+        self.requested_asset.amount().as_u64()
     }
 }
 
@@ -128,8 +129,7 @@ impl From<PswapNoteStorage> for NoteStorage {
             Felt::from(storage.requested_asset.callbacks().as_u8()),
             storage.requested_asset.faucet_id().suffix(),
             storage.requested_asset.faucet_id().prefix().as_felt(),
-            Felt::try_from(storage.requested_asset.amount())
-                .expect("asset amount should fit in a felt"),
+            Felt::from(storage.requested_asset.amount()),
             // Payback note type [4]
             Felt::from(storage.payback_note_type.as_u8()),
             // Creator ID [5-6]
@@ -215,8 +215,7 @@ pub struct PswapNote {
 
     offered_asset: FungibleAsset,
 
-    #[builder(default)]
-    attachment: NoteAttachment,
+    attachment: Option<NoteAttachment>,
 }
 
 impl<S: pswap_note_builder::State> PswapNoteBuilder<S>
@@ -316,13 +315,13 @@ impl PswapNote {
         &self.offered_asset
     }
 
-    /// Returns a reference to the note attachment.
+    /// Returns a reference to the note attachments.
     ///
     /// For notes targeting a network account, this may contain a
     /// [`NetworkAccountTarget`](crate::note::NetworkAccountTarget) with scheme = 1.
-    /// For local-only notes, this is typically `NoteAttachmentScheme::none()`.
-    pub fn attachment(&self) -> &NoteAttachment {
-        &self.attachment
+    /// For local-only notes, this is typically empty.
+    pub fn attachments(&self) -> Option<&NoteAttachment> {
+        self.attachment.as_ref()
     }
 
     // INSTANCE METHODS
@@ -381,9 +380,9 @@ impl PswapNote {
                 ));
             },
         };
-        let fill_amount = payback_asset.amount();
+        let fill_amount = payback_asset.amount().as_u64();
 
-        let total_offered_amount = self.offered_asset.amount();
+        let total_offered_amount = self.offered_asset.amount().as_u64();
         let requested_faucet_id = self.storage.requested_faucet_id();
         let total_requested_amount = self.storage.requested_asset_amount();
 
@@ -403,8 +402,8 @@ impl PswapNote {
         // MASM which calls calculate_tokens_offered_for_requested twice. This is necessary
         // because the account fill portion goes to the consumer's vault while the total
         // determines the remainder note's offered amount.
-        let account_fill_amount = account_fill_asset.as_ref().map_or(0, |a| a.amount());
-        let note_fill_amount = note_fill_asset.as_ref().map_or(0, |a| a.amount());
+        let account_fill_amount = account_fill_asset.as_ref().map_or(0, |a| a.amount().as_u64());
+        let note_fill_amount = note_fill_asset.as_ref().map_or(0, |a| a.amount().as_u64());
         let payout_for_account_fill = Self::calculate_output_amount(
             total_offered_amount,
             total_requested_amount,
@@ -456,7 +455,7 @@ impl PswapNote {
     /// Returns an error if the calculated payout is not a valid asset amount.
     pub fn calculate_offered_for_requested(&self, fill_amount: u64) -> Result<u64, NoteError> {
         let total_requested = self.storage.requested_asset_amount();
-        let total_offered = self.offered_asset.amount();
+        let total_offered = self.offered_asset.amount().as_u64();
 
         Self::calculate_output_amount(total_offered, total_requested, fill_amount)
     }
@@ -536,7 +535,7 @@ impl PswapNote {
             ZERO,
             ZERO,
         ]);
-        Ok(NoteAttachment::new_word(NoteAttachmentScheme::none(), word))
+        Ok(NoteAttachment::with_word(NoteAttachmentScheme::none(), word))
     }
 
     /// Creates a [`NoteAttachment`] for a remainder PSWAP note.
@@ -552,7 +551,7 @@ impl PswapNote {
             ZERO,
             ZERO,
         ]);
-        Ok(NoteAttachment::new_word(NoteAttachmentScheme::none(), word))
+        Ok(NoteAttachment::with_word(NoteAttachmentScheme::none(), word))
     }
 
     /// Builds a payback note (P2ID) that delivers the filled assets to the swap creator.
@@ -585,11 +584,16 @@ impl PswapNote {
         let attachment = Self::payback_attachment(fill_amount)?;
 
         let p2id_assets = NoteAssets::new(vec![Asset::Fungible(payback_asset)])?;
-        let p2id_metadata = NoteMetadata::new(consumer_account_id, self.storage.payback_note_type)
-            .with_tag(payback_note_tag)
-            .with_attachment(attachment);
+        let p2id_metadata =
+            PartialNoteMetadata::new(consumer_account_id, self.storage.payback_note_type)
+                .with_tag(payback_note_tag);
 
-        Ok(Note::new(p2id_assets, p2id_metadata, recipient))
+        Ok(Note::with_attachments(
+            p2id_assets,
+            p2id_metadata,
+            recipient,
+            NoteAttachments::from(attachment),
+        ))
     }
 
     /// Builds a remainder PSWAP note carrying the unfilled portion of the swap.
@@ -623,14 +627,14 @@ impl PswapNote {
 
         let attachment = Self::remainder_attachment(offered_amount_for_fill)?;
 
-        Ok(PswapNote {
-            sender: consumer_account_id,
-            storage: new_storage,
-            serial_number: remainder_serial_num,
-            note_type: self.note_type,
-            offered_asset: remaining_offered_asset,
-            attachment,
-        })
+        PswapNote::builder()
+            .sender(consumer_account_id)
+            .storage(new_storage)
+            .serial_number(remainder_serial_num)
+            .note_type(self.note_type)
+            .offered_asset(remaining_offered_asset)
+            .attachment(attachment)
+            .build()
     }
 }
 
@@ -651,11 +655,11 @@ impl From<PswapNote> for Note {
         let assets = NoteAssets::new(vec![Asset::Fungible(pswap.offered_asset)])
             .expect("single fungible asset should be valid");
 
-        let metadata = NoteMetadata::new(pswap.sender, pswap.note_type)
-            .with_tag(tag)
-            .with_attachment(pswap.attachment);
+        let metadata = PartialNoteMetadata::new(pswap.sender, pswap.note_type).with_tag(tag);
 
-        Note::new(assets, metadata, recipient)
+        let attachments = pswap.attachment.map(NoteAttachments::from).unwrap_or_default();
+
+        Note::with_attachments(assets, metadata, recipient, attachments)
     }
 }
 
@@ -680,14 +684,22 @@ impl TryFrom<&Note> for PswapNote {
             },
         };
 
-        Ok(Self {
-            sender: note.metadata().sender(),
-            storage,
-            serial_number: note.recipient().serial_num(),
-            note_type: note.metadata().note_type(),
-            offered_asset,
-            attachment: note.metadata().attachment().clone(),
-        })
+        let attachment = match note.attachments().num_attachments() {
+            0 => None,
+            1 => {
+                Some(note.attachments().get(0).expect("length should have been validated").clone())
+            },
+            _ => return Err(NoteError::other("pswap note supports only one attachment")),
+        };
+
+        PswapNote::builder()
+            .sender(note.metadata().sender())
+            .storage(storage)
+            .serial_number(note.recipient().serial_num())
+            .note_type(note.metadata().note_type())
+            .offered_asset(offered_asset)
+            .maybe_attachment(attachment)
+            .build()
     }
 }
 
@@ -860,7 +872,7 @@ mod tests {
             Felt::from(requested_asset.callbacks().as_u8()),
             requested_asset.faucet_id().suffix(),
             requested_asset.faucet_id().prefix().as_felt(),
-            Felt::try_from(requested_asset.amount()).unwrap(),
+            Felt::from(requested_asset.amount()),
             Felt::from(NoteType::Private.as_u8()), // payback_note_type
             creator_id.prefix().as_felt(),
             creator_id.suffix(),
@@ -918,13 +930,13 @@ mod tests {
             panic!("expected fungible payback asset");
         };
         assert_eq!(fa.faucet_id(), requested_faucet);
-        assert_eq!(fa.amount(), 30);
+        assert_eq!(fa.amount().as_u64(), 30);
 
         // Remainder must exist with the unfilled 50 - 30 = 20 of requested, and the
         // offered amount reduced proportionally (100 - 30*2 = 40).
         let remainder = remainder.expect("partial fill should produce remainder");
         assert_eq!(remainder.storage().requested_asset_amount(), 20);
-        assert_eq!(remainder.offered_asset().amount(), 40);
+        assert_eq!(remainder.offered_asset().amount().as_u64(), 40);
         assert_eq!(remainder.storage().creator_account_id(), creator_id);
     }
 
@@ -956,7 +968,7 @@ mod tests {
             panic!("expected fungible payback asset");
         };
         assert_eq!(fa.faucet_id(), requested_faucet);
-        assert_eq!(fa.amount(), 50);
+        assert_eq!(fa.amount().as_u64(), 50);
 
         // Full fill → no remainder note.
         assert!(remainder.is_none(), "full fill must not produce a remainder");

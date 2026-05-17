@@ -48,7 +48,7 @@ end
 #! Outputs: [scale]
 #!
 #! Invocation: exec
-proc get_scale_inner
+proc get_scale_internal
     push.CONVERSION_INFO_2_SLOT[0..2]
     exec.active_account::get_item
     # => [addr4, origin_network, scale, 0]
@@ -93,7 +93,7 @@ end
 #!
 #! Invocation: call
 pub proc get_scale
-    exec.get_scale_inner
+    exec.get_scale_internal
     # => [scale, pad(16)]
 
     swap drop
@@ -121,7 +121,7 @@ pub proc asset_to_origin_asset
     # => [amount, pad(15)]
 
     # Step 1: Get scale from storage
-    exec.get_scale_inner swap
+    exec.get_scale_internal swap
     # => [amount, scale, pad(15)]
 
     # Step 2: Scale amount to U256
@@ -157,14 +157,14 @@ end
 #! - the amount about to be burned is greater than the outstanding supply of the asset.
 #!
 #! Invocation: call
-pub use ::miden::standards::faucets::basic_fungible::burn
+pub use ::miden::standards::faucets::fungible::receive_and_burn
 
 #! Re-export the network fungible faucet's `mint_and_send` procedure.
 #!
-#! See `miden::standards::faucets::network_fungible::mint_and_send` for more details.
+#! See `miden::standards::faucets::fungible::mint_and_send` for more details.
 #!
 #! Inputs:  [amount, tag, note_type, RECIPIENT, pad(9)]
 #! Outputs: [note_idx, pad(15)]
 #!
 #! Invocation: call
-pub use ::miden::standards::faucets::network_fungible::mint_and_send
+pub use ::miden::standards::faucets::fungible::mint_and_send

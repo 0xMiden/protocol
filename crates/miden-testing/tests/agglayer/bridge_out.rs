@@ -19,12 +19,12 @@ use miden_crypto::rand::FeltRng;
 use miden_protocol::Felt;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{AccountId, AccountIdVersion, AccountStorageMode, AccountType};
-use miden_protocol::asset::{Asset, FungibleAsset};
+use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
 use miden_protocol::note::{NoteAssets, NoteType};
 use miden_protocol::transaction::RawOutputNote;
-use miden_standards::account::faucets::TokenMetadata;
+use miden_standards::account::faucets::FungibleFaucet;
 use miden_standards::account::policies::MintPolicyConfig;
-use miden_standards::note::StandardNote;
+use miden_standards::note::{NetworkAccountTarget, StandardNote};
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 use miden_tx::utils::hex_to_bytes;
 
@@ -195,8 +195,12 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
             NoteType::Public,
             "BURN note should be public"
         );
-        let attachment = burn_note.metadata().attachment();
-        let network_target = miden_standards::note::NetworkAccountTarget::try_from(attachment)
+        assert_eq!(
+            burn_note.attachments().num_attachments(),
+            1,
+            "BURN note should have one attachment"
+        );
+        let network_target = NetworkAccountTarget::try_from(burn_note.attachments())
             .expect("BURN note attachment should be a valid NetworkAccountTarget");
         assert_eq!(
             network_target.target_id(),
@@ -231,10 +235,10 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
 
     // STEP 3: CONSUME ALL BURN NOTES WITH THE AGGLAYER FAUCET
     // --------------------------------------------------------------------------------------------
-    let initial_token_supply = TokenMetadata::try_from(faucet.storage())?.token_supply();
+    let initial_token_supply = FungibleFaucet::try_from(faucet.storage())?.token_supply();
     assert_eq!(
         initial_token_supply,
-        Felt::new(total_burned),
+        AssetAmount::new(total_burned)?,
         "Initial issuance should match all pending burns"
     );
 
@@ -255,10 +259,10 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
         mock_chain.prove_next_block()?;
     }
 
-    let final_token_supply = TokenMetadata::try_from(faucet.storage())?.token_supply();
+    let final_token_supply = FungibleFaucet::try_from(faucet.storage())?.token_supply();
     assert_eq!(
         final_token_supply,
-        Felt::new(initial_token_supply.as_canonical_u64() - total_burned),
+        AssetAmount::new(initial_token_supply.as_u64() - total_burned)?,
         "Token supply should decrease by the sum of 32 bridged amounts"
     );
 
@@ -502,6 +506,7 @@ async fn b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
         faucet_owner_account_id,
         Some(100),
         MintPolicyConfig::OwnerOnly,
+        [],
     )?;
 
     // Create a bridge admin account
@@ -529,9 +534,8 @@ async fn b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
 
     // CREATE B2AGG NOTE WITH USER ACCOUNT AS SENDER
     // --------------------------------------------------------------------------------------------
-    let amount = Felt::new(50);
-    let bridge_asset: Asset =
-        FungibleAsset::new(faucet.id(), amount.as_canonical_u64()).unwrap().into();
+    let amount = AssetAmount::from(50_u32);
+    let bridge_asset: Asset = FungibleAsset::new(faucet.id(), amount.as_u64()).unwrap().into();
 
     let destination_network = 1u32;
     let destination_address = "0x1234567890abcdef1122334455667788990011aa";
@@ -553,7 +557,8 @@ async fn b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
     let mut mock_chain = builder.build()?;
 
     // Store the initial asset balance of the user account
-    let initial_balance = user_account.vault().get_balance(faucet.id()).unwrap_or(0u64);
+    let initial_balance =
+        user_account.vault().get_balance(faucet.id()).unwrap_or(AssetAmount::ZERO);
 
     // EXECUTE B2AGG NOTE WITH THE SAME USER ACCOUNT (RECLAIM SCENARIO)
     // --------------------------------------------------------------------------------------------
@@ -575,10 +580,10 @@ async fn b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
 
     // VERIFY ASSETS WERE ADDED BACK TO THE ACCOUNT
     // --------------------------------------------------------------------------------------------
-    let final_balance = user_account.vault().get_balance(faucet.id()).unwrap_or(0u64);
+    let final_balance = user_account.vault().get_balance(faucet.id()).unwrap_or(AssetAmount::ZERO);
     assert_eq!(
         final_balance,
-        initial_balance + amount.as_canonical_u64(),
+        (initial_balance + amount).unwrap(),
         "User account should have received the assets back from the B2AGG note"
     );
 
@@ -620,6 +625,7 @@ async fn b2agg_note_non_target_account_cannot_consume() -> anyhow::Result<()> {
         faucet_owner_account_id,
         Some(100),
         MintPolicyConfig::OwnerOnly,
+        [],
     )?;
 
     // Create a bridge admin account

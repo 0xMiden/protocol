@@ -1,6 +1,7 @@
 use alloc::vec;
 
 use miden_protocol::account::component::{
+    AccountComponentCode,
     AccountComponentMetadata,
     SchemaType,
     StorageSchema,
@@ -15,7 +16,9 @@ use miden_protocol::account::{
 };
 use miden_protocol::utils::sync::LazyLock;
 
-use crate::account::components::rbac_library;
+use crate::account::account_component_code;
+
+account_component_code!(RBAC_CODE, "access/rbac.masl");
 
 static ROLE_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::access::rbac::role_config")
@@ -109,6 +112,11 @@ pub struct RoleBasedAccessControl;
 impl RoleBasedAccessControl {
     pub const NAME: &'static str = "miden::standards::components::access::rbac";
 
+    /// Returns the [`AccountComponentCode`] of this component.
+    pub fn code() -> &'static AccountComponentCode {
+        &RBAC_CODE
+    }
+
     /// Returns an empty RBAC component. Roles are populated at runtime via the
     /// `grant_role`, `set_role_admin`, etc. procedures exposed by the component.
     pub fn empty() -> Self {
@@ -175,7 +183,7 @@ impl From<RoleBasedAccessControl> for AccountComponent {
         );
 
         AccountComponent::new(
-            rbac_library(),
+            RoleBasedAccessControl::code().clone(),
             vec![role_config_slot, role_membership_slot],
             RoleBasedAccessControl::component_metadata(),
         )
