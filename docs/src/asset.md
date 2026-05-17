@@ -80,7 +80,7 @@ Two assets issued by the same faucet with _different_ callback flags are conside
 
 It is recommended that faucets issue all of their assets with the same flag to ensure all assets issued by a faucet are treated as one type of asset. This is ensured when using `faucet::create_fungible_asset` or `faucet::create_non_fungible_asset`.
 
-**Faucet callback procedures.** A faucet registers callbacks by storing the procedure root (hash) of one if its public account procedures in a well-known storage slot. Two callbacks are supported:
+**Faucet callback procedures.** A faucet registers callbacks by storing the procedure root (hash) of one of its public account procedures in a well-known storage slot. Two callbacks are supported:
 
 | Callback | Storage slot name | Triggered when |
 |---|---|---|
