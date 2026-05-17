@@ -4,7 +4,7 @@ sidebar_position: 8
 
 # Miden Protocol Library
 
-The Miden protocol library provides a set of procedures that wrap transaction kernel procedures to provide a more convenient interface for common operations. These can be invoked by account code, note scripts, and transaction scripts, though some have restriction from where they can be called. The procedures are organized into modules corresponding to different functional areas.
+The Miden protocol library provides a set of procedures that wrap transaction kernel procedures to provide a more convenient interface for common operations. These can be invoked by account code, note scripts, and transaction scripts, though some have restrictions from where they can be called. The procedures are organized into modules corresponding to different functional areas.
 
 ## Contexts
 
