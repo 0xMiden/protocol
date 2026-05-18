@@ -10,22 +10,15 @@ use miden::standards::wallets::basic->wallet
 const SWAP_NOTE_NUM_STORAGE_ITEMS=11
 
 # Note storage layout (11 felts, loaded at STORAGE_PTR by get_storage):
-# - requested_asset_key   [0..3]  : 4 felts
-# - requested_asset_value [4..7]  : 4 felts
-# - payback_note_type     [8]     : 1 felt
-# - creator_id_prefix     [9]     : 1 felt
-# - creator_id_suffix     [10]    : 1 felt
+# - requested_asset_key   [0..3]
+# - requested_asset_value [4..7]
+# - payback_note_type     [8]
+# - creator_id_prefix     [9]
+# - creator_id_suffix     [10]
 #
-# The payback note is a P2ID note paying the requested asset back to the SWAP's creator. The
-# creator account ID is embedded explicitly in storage (slots 9-10). 
-# The Rust constructor sets `creator_id = sender`; the MASM trusts the
-# embedded value and does not cross-check against the active note's metadata sender.
-#
-# The payback recipient is derived deterministically:
-# - script: well-known P2ID script root (resolved by `p2id::new` via `procref` at runtime)
-# - inputs: creator account id (loaded from storage slots 9-10)
-# - serial: SWAP's own serial with the least significant element incremented by 1
-# - tag:    derived from creator account id prefix via `note_tag::create_account_target`
+# The payback P2ID recipient is derived at consume time from this storage. The MASM
+# trusts the embedded creator id by constructor convention (sender == creator) and does
+# not cross-check it against the active note's metadata sender.
 const STORAGE_PTR=0
 const REQUESTED_ASSET_PTR=0
 const PAYBACK_NOTE_TYPE_PTR=8
@@ -87,8 +80,8 @@ pub proc main
     mem_load.PAYBACK_NOTE_TYPE_PTR
     # => [note_type, s0', s1, s2, s3]
 
-    # Load the creator id (= SWAP sender, by constructor convention) from storage. Loading prefix
-    # first then suffix leaves suffix on top, matching `active_note::get_sender`'s stack shape.
+    # Load creator id (prefix then suffix) so the stack ends with suffix on top, matching
+    # `active_note::get_sender`'s output shape.
     mem_load.CREATOR_PREFIX_PTR
     mem_load.CREATOR_SUFFIX_PTR
     # => [creator_suffix, creator_prefix, note_type, s0', s1, s2, s3]
