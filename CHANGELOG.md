@@ -69,6 +69,7 @@
 - Fixed auth components to use initial storage state for authentication ([#2677](https://github.com/0xMiden/protocol/issues/2677)).
 - Renamed the AggLayer faucet registry flag constant for clarity ([#2812](https://github.com/0xMiden/protocol/issues/2812)).
 - [BREAKING] Replaced `NoAuth` with the new `AuthNetworkAccount` auth component on the AggLayer bridge and AggLayer faucet, closing the forged-MINT attack surface where any transaction against the bridge could emit a bridge-authored MINT note ([#2797](https://github.com/0xMiden/protocol/issues/2797), [#2818](https://github.com/0xMiden/protocol/pull/2818)).
+- Fixed `TokenPolicyManager::manager_storage_slots` to register the protocol-reserved asset-callback storage slots whenever any transfer policy is configured (including `TransferAllowAll`), so every minted asset carries `AssetCallbackFlag::Enabled` and future `set_send_policy` / `set_receive_policy` switches apply uniformly to the entire circulating supply ([#2946](https://github.com/0xMiden/protocol/pull/2946)).
 
 ## 0.14.6 (2026-05-05)
 
