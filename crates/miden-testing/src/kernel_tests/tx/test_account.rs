@@ -993,7 +993,6 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
     let initial_balance = account
         .vault()
         .get_balance(faucet_existing_asset, AssetCallbackFlag::Disabled)
-        .expect("faucet_id should be a fungible faucet ID")
         .as_u64();
 
     let asset_key = AssetVaultKey::new_fungible(faucet_existing_asset, AssetCallbackFlag::Disabled);
@@ -1046,7 +1045,6 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
     let initial_balance = account
         .vault()
         .get_balance(faucet_new_asset, AssetCallbackFlag::Disabled)
-        .expect("faucet_id should be a fungible faucet ID")
         .as_u64();
 
     let asset_key = AssetVaultKey::new_fungible(faucet_new_asset, AssetCallbackFlag::Disabled);
@@ -1124,7 +1122,6 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
     let initial_balance = account
         .vault()
         .get_balance(faucet_existing_asset, AssetCallbackFlag::Disabled)
-        .expect("faucet_id should be a fungible faucet ID")
         .as_u64();
 
     let expected_output_note =

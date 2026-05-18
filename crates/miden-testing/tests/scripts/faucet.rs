@@ -753,7 +753,7 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
     target_account.apply_delta(consume_executed_transaction.account_delta())?;
 
     // Verify the account's vault now contains the expected fungible asset
-    let balance = target_account.vault().get_balance(faucet.id(), AssetCallbackFlag::Disabled)?;
+    let balance = target_account.vault().get_balance(faucet.id(), AssetCallbackFlag::Disabled);
     assert_eq!(balance, expected_asset.amount());
 
     Ok(())
@@ -1631,9 +1631,7 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
     target_account_mut.apply_delta(consume_executed_transaction.account_delta())?;
 
     let expected_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?;
-    let balance = target_account_mut
-        .vault()
-        .get_balance(faucet.id(), AssetCallbackFlag::Disabled)?;
+    let balance = target_account_mut.vault().get_balance(faucet.id(), AssetCallbackFlag::Disabled);
     assert_eq!(balance, expected_asset.amount());
 
     Ok(())

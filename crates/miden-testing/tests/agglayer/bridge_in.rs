@@ -413,7 +413,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
 
         let balance = destination_account
             .vault()
-            .get_balance(agglayer_faucet.id(), AssetCallbackFlag::Disabled)?;
+            .get_balance(agglayer_faucet.id(), AssetCallbackFlag::Disabled);
         assert_eq!(
             balance.as_u64(),
             miden_claim_amount.as_canonical_u64(),

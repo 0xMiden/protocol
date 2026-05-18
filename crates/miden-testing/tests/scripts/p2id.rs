@@ -297,14 +297,14 @@ async fn test_create_consume_multiple_notes() -> anyhow::Result<()> {
     assert_eq!(
         account
             .vault()
-            .get_balance(input_note_faucet_id, AssetCallbackFlag::Disabled)?
+            .get_balance(input_note_faucet_id, AssetCallbackFlag::Disabled)
             .as_u64(),
         111
     );
     assert_eq!(
         account
             .vault()
-            .get_balance(FungibleAsset::mock_issuer(), AssetCallbackFlag::Disabled)?
+            .get_balance(FungibleAsset::mock_issuer(), AssetCallbackFlag::Disabled)
             .as_u64(),
         5
     );

@@ -272,7 +272,7 @@ async fn test_guarded_multisig_signature_required(
             .get_balance(
                 AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?,
                 AssetCallbackFlag::Disabled,
-            )?
+            )
             .as_u64(),
         10 - output_note_asset.unwrap_fungible().amount().as_u64()
     );

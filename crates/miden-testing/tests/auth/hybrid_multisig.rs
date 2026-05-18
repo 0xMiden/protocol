@@ -196,7 +196,7 @@ async fn test_multisig_2_of_2_with_note_creation() -> anyhow::Result<()> {
             .get_balance(
                 AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?,
                 AssetCallbackFlag::Disabled,
-            )?
+            )
             .as_u64(),
         multisig_starting_balance - output_note_asset.unwrap_fungible().amount().as_u64()
     );

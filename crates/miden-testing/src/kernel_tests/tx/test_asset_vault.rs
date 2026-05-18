@@ -63,7 +63,7 @@ async fn get_balance_returns_correct_amount() -> anyhow::Result<()> {
         tx_context
             .account()
             .vault()
-            .get_balance(faucet_id, AssetCallbackFlag::Disabled)?
+            .get_balance(faucet_id, AssetCallbackFlag::Disabled)
             .as_u64()
     );
 

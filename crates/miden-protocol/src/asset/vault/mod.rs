@@ -105,17 +105,20 @@ impl AssetVault {
 
     /// Returns the balance of the asset issued by the specified faucet with the given
     /// [`AssetCallbackFlag`]. If the vault does not contain such an asset, zero is returned.
+    ///
+    /// The asset is assumed to have
+    /// [`AssetComposition::Fungible`](crate::asset::AssetComposition::Fungible).
     pub fn get_balance(
         &self,
         faucet_id: AccountId,
         callback_flag: AssetCallbackFlag,
-    ) -> Result<AssetAmount, AssetVaultError> {
+    ) -> AssetAmount {
         let vault_key = AssetVaultKey::new_fungible(faucet_id, callback_flag);
         let asset_value = self.asset_tree.get_value(&vault_key.to_word());
         let asset = FungibleAsset::from_key_value(vault_key, asset_value)
             .expect("asset vault should only store valid assets");
 
-        Ok(asset.amount())
+        asset.amount()
     }
 
     /// Returns an iterator over the assets stored in the vault.
