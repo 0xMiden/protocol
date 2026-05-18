@@ -74,6 +74,13 @@ impl SwapNote {
     /// that is willing to consume the note. The consumer will receive the `offered_asset` and
     /// will create a new P2ID note with `sender` as target, containing the `requested_asset`.
     ///
+    /// The shape of the SWAP note storage depends on `payback_note_type`:
+    /// - [`NoteType::Private`]: the payback recipient digest is precomputed off-chain and
+    ///   embedded as an opaque value, so the SWAP consumer cannot learn who the payback targets
+    ///   from the storage alone.
+    /// - [`NoteType::Public`]: the creator id is embedded in plaintext so that any consumer of
+    ///   the payback note can reconstruct its recipient at consume time.
+    ///
     /// # Errors
     /// Returns an error if deserialization or compilation of the `SWAP` script fails.
     pub fn create<R: FeltRng>(
@@ -89,9 +96,24 @@ impl SwapNote {
             return Err(NoteError::other("requested asset same as offered asset"));
         }
 
-        let swap_storage = SwapNoteStorage::new(requested_asset, payback_note_type, sender);
-
         let serial_num = rng.draw_word();
+
+        // The payback recipient is P2ID(sender) with serial = swap_serial + 1, in both modes.
+        let payback_serial_num = payback_serial_from_swap(serial_num);
+        let payback_recipient = P2idNoteStorage::new(sender).into_recipient(payback_serial_num);
+        let payback_assets = NoteAssets::new(vec![requested_asset])?;
+        let payback_note = NoteDetails::new(payback_assets, payback_recipient.clone());
+
+        let payback_tag = NoteTag::with_account_target(sender);
+        let swap_storage = match payback_note_type {
+            NoteType::Private => SwapNoteStorage::new_private(
+                requested_asset,
+                payback_recipient.digest(),
+                payback_tag,
+            ),
+            NoteType::Public => SwapNoteStorage::new_public(requested_asset, sender, payback_tag),
+        };
+
         let recipient = swap_storage.into_recipient(serial_num);
 
         // build the tag for the SWAP use case
@@ -101,12 +123,6 @@ impl SwapNote {
         let metadata = PartialNoteMetadata::new(sender, swap_note_type).with_tag(tag);
         let assets = NoteAssets::new(vec![offered_asset])?;
         let note = Note::with_attachments(assets, metadata, recipient, swap_note_attachments);
-
-        // build the payback note details
-        let payback_serial_num = payback_serial_from_swap(serial_num);
-        let payback_recipient = P2idNoteStorage::new(sender).into_recipient(payback_serial_num);
-        let payback_assets = NoteAssets::new(vec![requested_asset])?;
-        let payback_note = NoteDetails::new(payback_assets, payback_recipient);
 
         Ok((note, payback_note))
     }
@@ -156,21 +172,44 @@ impl SwapNote {
 
 /// Canonical storage representation for a SWAP note.
 ///
-/// Maps to the 11-element [`NoteStorage`] layout consumed by the on-chain MASM script:
+/// Maps to the 16-element [`NoteStorage`] layout consumed by the on-chain MASM script:
 ///
-/// | Slot     | Field |
-/// |----------|-------|
-/// | `[0-7]`  | Requested asset (key + value) |
-/// | `[8]`    | Payback note type (0 = private, 1 = public) |
-/// | `[9-10]` | Creator account ID (prefix, suffix) |
+/// | Slot      | Field |
+/// |-----------|-------|
+/// | `[0..7]`  | Requested asset (key + value) |
+/// | `[8..11]` | Payback recipient digest (private mode; zero in public mode) |
+/// | `[12]`    | Payback note type |
+/// | `[13]`    | Payback note tag |
+/// | `[14]`    | Creator account ID prefix (public mode; zero in private mode) |
+/// | `[15]`    | Creator account ID suffix (public mode; zero in private mode) |
 ///
-/// The payback note tag is derived at runtime from the creator account ID
-/// (via `note_tag::create_account_target` in MASM).
+/// In private mode the payback recipient digest is stored as an opaque value, so the consumer of
+/// the SWAP cannot learn who the payback targets from the storage alone. In public mode the
+/// creator id is stored in plaintext so the MASM can derive the payback recipient at consume time
+/// via `p2id::new`. The payback note tag is stored explicitly in both modes; the creator is
+/// responsible for picking one that targets the payback receiver when the payback is public.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SwapNoteStorage {
-    payback_note_type: NoteType,
     requested_asset: Asset,
-    creator_account_id: AccountId,
+    payback_tag: NoteTag,
+    payback: SwapPayback,
+}
+
+/// Mode-specific payback data embedded in [`SwapNoteStorage`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SwapPayback {
+    /// Private payback: the recipient digest is precomputed off-chain by the creator and stored
+    /// as an opaque value.
+    Private {
+        /// Precomputed P2ID recipient digest for the payback note.
+        recipient: Word,
+    },
+    /// Public payback: the creator id is stored in plaintext so the consumer can reconstruct
+    /// the payback recipient at consume time.
+    Public {
+        /// Account ID of the SWAP creator (the payback receiver).
+        creator_account_id: AccountId,
+    },
 }
 
 impl SwapNoteStorage {
@@ -178,27 +217,53 @@ impl SwapNoteStorage {
     // --------------------------------------------------------------------------------------------
 
     /// Expected number of storage items of the SWAP note.
-    pub const NUM_ITEMS: usize = 11;
+    pub const NUM_ITEMS: usize = 16;
 
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
-    /// Creates new SWAP note storage with the specified parameters.
-    pub fn new(
+    /// Creates a new SWAP note storage for a private payback.
+    ///
+    /// `payback_recipient` is the precomputed P2ID recipient digest for the payback note and
+    /// `payback_tag` is the tag that the payback note will be created with.
+    pub fn new_private(
         requested_asset: Asset,
-        payback_note_type: NoteType,
-        creator_account_id: AccountId,
+        payback_recipient: Word,
+        payback_tag: NoteTag,
     ) -> Self {
         Self {
-            payback_note_type,
             requested_asset,
-            creator_account_id,
+            payback_tag,
+            payback: SwapPayback::Private { recipient: payback_recipient },
         }
     }
 
-    /// Returns the payback note type.
+    /// Creates a new SWAP note storage for a public payback.
+    ///
+    /// `creator_account_id` is embedded in plaintext so the consumer can reconstruct the payback
+    /// recipient. `payback_tag` is the tag attached to the payback note; it should target the
+    /// payback receiver so the network can route the note to it.
+    pub fn new_public(
+        requested_asset: Asset,
+        creator_account_id: AccountId,
+        payback_tag: NoteTag,
+    ) -> Self {
+        Self {
+            requested_asset,
+            payback_tag,
+            payback: SwapPayback::Public { creator_account_id },
+        }
+    }
+
+    // PUBLIC ACCESSORS
+    // --------------------------------------------------------------------------------------------
+
+    /// Returns the payback note type implied by the payback variant.
     pub fn payback_note_type(&self) -> NoteType {
-        self.payback_note_type
+        match self.payback {
+            SwapPayback::Private { .. } => NoteType::Private,
+            SwapPayback::Public { .. } => NoteType::Public,
+        }
     }
 
     /// Returns the requested asset.
@@ -206,9 +271,14 @@ impl SwapNoteStorage {
         self.requested_asset
     }
 
-    /// Returns the creator account ID embedded in the SWAP storage.
-    pub fn creator_account_id(&self) -> AccountId {
-        self.creator_account_id
+    /// Returns the tag attached to the payback note.
+    pub fn payback_tag(&self) -> NoteTag {
+        self.payback_tag
+    }
+
+    /// Returns the payback variant of this storage.
+    pub fn payback(&self) -> &SwapPayback {
+        &self.payback
     }
 
     /// Consumes the storage and returns a SWAP [`NoteRecipient`] with the provided serial number.
@@ -223,17 +293,40 @@ impl SwapNoteStorage {
 impl From<SwapNoteStorage> for NoteStorage {
     fn from(storage: SwapNoteStorage) -> Self {
         let mut storage_values = Vec::with_capacity(SwapNoteStorage::NUM_ITEMS);
+
+        // [0..7] requested asset
         storage_values.extend_from_slice(&storage.requested_asset.as_elements());
-        storage_values.push(Felt::from(storage.payback_note_type.as_u8()));
-        storage_values.push(storage.creator_account_id.prefix().as_felt());
-        storage_values.push(storage.creator_account_id.suffix());
+
+        match storage.payback {
+            SwapPayback::Private { recipient } => {
+                // [8..11] payback recipient digest
+                storage_values.extend_from_slice(recipient.as_elements());
+                // [12] payback note type
+                storage_values.push(Felt::from(NoteType::Private.as_u8()));
+                // [13] payback tag
+                storage_values.push(Felt::from(storage.payback_tag.as_u32()));
+                // [14..15] creator id (zero in private mode)
+                storage_values.extend_from_slice(&[Felt::ZERO; 2]);
+            },
+            SwapPayback::Public { creator_account_id } => {
+                // [8..11] payback recipient (zero in public mode)
+                storage_values.extend_from_slice(&[Felt::ZERO; 4]);
+                // [12] payback note type
+                storage_values.push(Felt::from(NoteType::Public.as_u8()));
+                // [13] payback tag
+                storage_values.push(Felt::from(storage.payback_tag.as_u32()));
+                // [14..15] creator id (prefix, suffix)
+                storage_values.push(creator_account_id.prefix().as_felt());
+                storage_values.push(creator_account_id.suffix());
+            },
+        }
 
         NoteStorage::new(storage_values)
             .expect("number of storage items should not exceed max storage items")
     }
 }
 
-/// Deserializes [`SwapNoteStorage`] from a slice of exactly 11 [`Felt`]s.
+/// Deserializes [`SwapNoteStorage`] from a slice of exactly 16 [`Felt`]s.
 impl TryFrom<&[Felt]> for SwapNoteStorage {
     type Error = NoteError;
 
@@ -251,22 +344,59 @@ impl TryFrom<&[Felt]> for SwapNoteStorage {
         let requested_asset = Asset::from_key_value_words(key, value)
             .map_err(|e| NoteError::other_with_source("failed to parse requested asset", e))?;
 
-        // [8] = payback_note_type
+        // [12] = payback_note_type
         let payback_note_type = NoteType::try_from(
-            u8::try_from(note_storage[8].as_canonical_u64())
+            u8::try_from(note_storage[12].as_canonical_u64())
                 .map_err(|_| NoteError::other("payback_note_type exceeds u8"))?,
         )
         .map_err(|e| NoteError::other_with_source("failed to parse payback note type", e))?;
 
-        // [9..10] = creator account ID (prefix, suffix)
-        let creator_account_id = AccountId::try_from_elements(note_storage[10], note_storage[9])
-            .map_err(|e| NoteError::other_with_source("failed to parse creator account ID", e))?;
+        // [13] = payback tag (used in both modes)
+        let payback_tag_u32 = u32::try_from(note_storage[13].as_canonical_u64())
+            .map_err(|_| NoteError::other("SWAP payback_tag exceeds u32"))?;
+        let payback_tag = NoteTag::new(payback_tag_u32);
 
-        Ok(Self {
-            payback_note_type,
-            requested_asset,
-            creator_account_id,
-        })
+        let payback = match payback_note_type {
+            NoteType::Private => {
+                // [14..15] must be zero so a private SWAP cannot leak a creator id.
+                if note_storage[14].as_canonical_u64() != 0
+                    || note_storage[15].as_canonical_u64() != 0
+                {
+                    return Err(NoteError::other(
+                        "SWAP private payback must have creator id slots cleared",
+                    ));
+                }
+
+                // [8..11] payback recipient digest
+                let recipient = Word::new([
+                    note_storage[8],
+                    note_storage[9],
+                    note_storage[10],
+                    note_storage[11],
+                ]);
+
+                SwapPayback::Private { recipient }
+            },
+            NoteType::Public => {
+                // [8..11] must be zero so the storage shape is unambiguous.
+                for slot in 8..=11 {
+                    if note_storage[slot].as_canonical_u64() != 0 {
+                        return Err(NoteError::other(
+                            "SWAP public payback must have recipient slots cleared",
+                        ));
+                    }
+                }
+
+                let creator_account_id =
+                    AccountId::try_from_elements(note_storage[15], note_storage[14]).map_err(
+                        |e| NoteError::other_with_source("failed to parse creator account ID", e),
+                    )?;
+
+                SwapPayback::Public { creator_account_id }
+            },
+        };
+
+        Ok(Self { requested_asset, payback_tag, payback })
     }
 }
 
@@ -323,39 +453,112 @@ mod tests {
         )
     }
 
+    fn dummy_recipient_digest() -> Word {
+        Word::new([Felt::from(7u32), Felt::from(11u32), Felt::from(13u32), Felt::from(17u32)])
+    }
+
+    fn dummy_payback_tag() -> NoteTag {
+        NoteTag::new(0xabcd1234)
+    }
+
     #[test]
-    fn swap_note_storage_round_trip_fungible() {
-        let creator = dummy_creator_id();
-        let storage = SwapNoteStorage::new(fungible_asset(), NoteType::Private, creator);
+    fn swap_note_storage_round_trip_fungible_private() {
+        let storage = SwapNoteStorage::new_private(
+            fungible_asset(),
+            dummy_recipient_digest(),
+            dummy_payback_tag(),
+        );
 
         let note_storage = NoteStorage::from(storage.clone());
         assert_eq!(note_storage.num_items() as usize, SwapNoteStorage::NUM_ITEMS);
         assert_eq!(storage.payback_note_type(), NoteType::Private);
         assert_eq!(storage.requested_asset(), fungible_asset());
-        assert_eq!(storage.creator_account_id(), creator);
+        assert_eq!(storage.payback_tag(), dummy_payback_tag());
+        match storage.payback() {
+            SwapPayback::Private { recipient } => {
+                assert_eq!(*recipient, dummy_recipient_digest());
+            },
+            SwapPayback::Public { .. } => panic!("expected private payback"),
+        }
     }
 
     #[test]
     fn swap_note_storage_round_trip_non_fungible_public() {
         let creator = dummy_creator_id();
-        let storage = SwapNoteStorage::new(non_fungible_asset(), NoteType::Public, creator);
+        let storage =
+            SwapNoteStorage::new_public(non_fungible_asset(), creator, dummy_payback_tag());
 
         let note_storage = NoteStorage::from(storage.clone());
         assert_eq!(note_storage.num_items() as usize, SwapNoteStorage::NUM_ITEMS);
         assert_eq!(storage.payback_note_type(), NoteType::Public);
         assert_eq!(storage.requested_asset(), non_fungible_asset());
-        assert_eq!(storage.creator_account_id(), creator);
+        assert_eq!(storage.payback_tag(), dummy_payback_tag());
+        match storage.payback() {
+            SwapPayback::Public { creator_account_id } => {
+                assert_eq!(*creator_account_id, creator);
+            },
+            SwapPayback::Private { .. } => panic!("expected public payback"),
+        }
     }
 
     #[test]
-    fn swap_note_storage_try_from_round_trip() {
-        let original = SwapNoteStorage::new(fungible_asset(), NoteType::Public, dummy_creator_id());
+    fn swap_note_storage_try_from_round_trip_public() {
+        let original = SwapNoteStorage::new_public(
+            fungible_asset(),
+            dummy_creator_id(),
+            dummy_payback_tag(),
+        );
         let note_storage = NoteStorage::from(original.clone());
 
         let parsed =
             SwapNoteStorage::try_from(note_storage.items()).expect("round trip should succeed");
 
         assert_eq!(parsed, original);
+    }
+
+    #[test]
+    fn swap_note_storage_try_from_round_trip_private() {
+        let original = SwapNoteStorage::new_private(
+            fungible_asset(),
+            dummy_recipient_digest(),
+            dummy_payback_tag(),
+        );
+        let note_storage = NoteStorage::from(original.clone());
+
+        let parsed =
+            SwapNoteStorage::try_from(note_storage.items()).expect("round trip should succeed");
+
+        assert_eq!(parsed, original);
+    }
+
+    #[test]
+    fn swap_note_storage_private_rejects_dirty_creator_slots() {
+        let mut items: Vec<Felt> = NoteStorage::from(SwapNoteStorage::new_private(
+            fungible_asset(),
+            dummy_recipient_digest(),
+            dummy_payback_tag(),
+        ))
+        .items()
+        .to_vec();
+
+        // Inject a non-zero creator prefix in the slot that must stay clear for private payback.
+        items[14] = Felt::from(1u32);
+        assert!(SwapNoteStorage::try_from(items.as_slice()).is_err());
+    }
+
+    #[test]
+    fn swap_note_storage_public_rejects_dirty_private_slots() {
+        let mut items: Vec<Felt> = NoteStorage::from(SwapNoteStorage::new_public(
+            fungible_asset(),
+            dummy_creator_id(),
+            dummy_payback_tag(),
+        ))
+        .items()
+        .to_vec();
+
+        // Inject a non-zero recipient felt in the slot that must stay clear for public payback.
+        items[8] = Felt::from(1u32);
+        assert!(SwapNoteStorage::try_from(items.as_slice()).is_err());
     }
 
     #[test]
