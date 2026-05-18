@@ -351,7 +351,7 @@ impl TryFrom<&[Felt]> for SwapNoteStorage {
         )
         .map_err(|e| NoteError::other_with_source("failed to parse payback note type", e))?;
 
-        // [13] = payback tag (used in both modes)
+        // [13] = payback tag
         let payback_tag_u32 = u32::try_from(note_storage[13].as_canonical_u64())
             .map_err(|_| NoteError::other("SWAP payback_tag exceeds u32"))?;
         let payback_tag = NoteTag::new(payback_tag_u32);

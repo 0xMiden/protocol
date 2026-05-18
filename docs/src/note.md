@@ -228,14 +228,16 @@ The SWAP note script implements atomic asset swapping functionality.
 **Key characteristics:**
 
 - **Purpose:** Atomic asset exchange between two parties
-- **Storage:** Requires exactly 11 storage items specifying:
-  - Requested asset
+- **Storage:** Requires exactly 16 storage items, laid out as:
+  - Requested asset (8 felts)
+  - Payback recipient digest (4 felts; used for private payback, zero for public)
   - Payback note type
-  - Creator account ID prefix
-  - Creator account ID suffix
+  - Payback tag
+  - Creator account ID prefix (used for public payback, zero for private)
+  - Creator account ID suffix (used for public payback, zero for private)
 - **Assets:** Must contain exactly 1 asset to be swapped
 - **Mechanism:**
-  1. Creates a payback note containing the requested asset for the original note issuer
+  1. Creates a payback P2ID note containing the requested asset for the original note issuer. For private payback, the precomputed recipient digest is loaded from storage and used directly. For public payback, the recipient is reconstructed on-chain from the creator account ID and a serial derived as `swap_serial + 1`, which also registers the preimage in the advice map so the public note can be validated.
   2. Adds the note's asset to the consuming account's vault
 - **Requirements:** Account must expose both:
   - `miden::standards::wallets::basic::receive_asset` procedure
