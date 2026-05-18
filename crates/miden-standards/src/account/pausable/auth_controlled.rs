@@ -45,7 +45,7 @@ procedure_root!(
 /// [`super::PausableRoleControlled`].
 ///
 /// Companion components required:
-/// - [`crate::account::policies::transfer::BasicPausable`] (or another component that installs the
+/// - [`crate::account::policies::BasicPausable`] (or another component that installs the
 ///   [`crate::account::pausable::PausableStorage`] slot) — provides the `is_paused` storage slot
 ///   that pause / unpause write to.
 #[derive(Debug, Clone, Copy, Default)]

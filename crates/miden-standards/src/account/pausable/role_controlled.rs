@@ -75,8 +75,8 @@ procedure_root!(
 /// Companion components required:
 /// - [`crate::account::access::RoleBasedAccessControl`] — provides role membership storage and the
 ///   `assert_sender_has_role` procedure used to validate the sender.
-/// - [`super::BasicPausable`] — provides the `is_paused` storage slot that pause / unpause write
-///   to.
+/// - [`crate::account::policies::BasicPausable`] — provides the `is_paused` storage slot that pause
+///   / unpause write to.
 ///
 /// ## Storage
 ///

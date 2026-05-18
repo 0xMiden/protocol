@@ -23,8 +23,9 @@ static IS_PAUSED_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 ///
 /// `PausableStorage` exposes the slot name and schema for the `is_paused` flag word plus an
 /// optional initial pause state. It is **not** an installable account component on its own —
-/// the policy component that installs the storage slot (typically [`BasicPausable`]) reads
-/// the slot name and the initial state from here.
+/// the policy component that installs the storage slot (typically
+/// [`crate::account::policies::BasicPausable`]) reads the slot name and the initial state from
+/// here.
 ///
 /// The low-level `pause` / `unpause` / `is_paused` / `assert_not_paused` / `assert_paused`
 /// procedures live in the standards library at `miden::standards::utils::pausable` as

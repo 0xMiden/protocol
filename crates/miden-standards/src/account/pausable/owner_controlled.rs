@@ -43,8 +43,8 @@ procedure_root!(
 /// Companion components required:
 /// - [`crate::account::access::Ownable2Step`] — provides the owner storage slot the auth check
 ///   reads.
-/// - [`super::BasicPausable`] — provides the `is_paused` storage slot that pause / unpause write
-///   to.
+/// - [`crate::account::policies::BasicPausable`] — provides the `is_paused` storage slot that pause
+///   / unpause write to.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct PausableOwnerControlled;
 
