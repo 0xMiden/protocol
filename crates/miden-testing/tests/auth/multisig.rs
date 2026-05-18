@@ -1489,10 +1489,9 @@ async fn test_multisig_set_procedure_threshold_rejects_exceeding_approvers(
 }
 
 /// Tests that `set_procedure_threshold` validates against the *current* num_approvers, not the
-/// transaction-initial one. If `update_signers_and_threshold` reduces num_approvers earlier in the
+/// initial one. If `update_signers_and_threshold` reduces num_approvers earlier in the
 /// same transaction, a subsequent `set_procedure_threshold` must use the post-update num_approvers
-/// for its bound check — otherwise a stored override could become unreachable and permanently
-/// DoS the targeted procedure (signature verification is bounded by num_approvers).
+/// for its bound check.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[case::falcon(AuthScheme::Falcon512Poseidon2)]
