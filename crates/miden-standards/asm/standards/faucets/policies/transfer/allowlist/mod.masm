@@ -1,0 +1,154 @@
+# miden::standards::faucets::policies::transfer::allowlist
+#
+# Per-faucet allowlist primitive: storage slot plus low-level `Invocation: exec` helpers.
+# This is the core component — it does NOT implement the transfer policy itself; that lives
+# in a sibling policy file (e.g. `basic_allowlist.masm`) that consumes these helpers.
+#
+# - Storage: `allowed_accounts` map keyed by account ID; entry word `[1, 0, 0, 0]` means allowed.
+#   The default (unset) entry is the zero word, which means NOT allowed — this is the opposite
+#   default from the blocklist primitive.
+# - Helpers (`allow_account` / `disallow_account` / `is_allowed` / `assert_allowed`) perform
+#   NO authorization — they are low-level building blocks meant to be called by
+#   `Invocation: call` wrappers in auth-checking account components (see `owner_controlled.masm`).
+#   Tx scripts cannot invoke them directly — they go through the wrapper component installed on
+#   the faucet.
+
+use miden::core::word
+use miden::protocol::active_account
+use miden::protocol::native_account
+
+# CONSTANTS
+# ================================================================================================
+
+# Slot holding the per-faucet map of allowed accounts.
+# Map entries: [0, 0, account_id_suffix, account_id_prefix] => [is_allowed, 0, 0, 0]
+const ALLOWED_ACCOUNTS_SLOT = word("miden::standards::faucets::policies::transfer::allowlist::allowed_accounts")
+
+const ALLOWED_WORD = [1, 0, 0, 0]
+
+const DISALLOWED_WORD = [0, 0, 0, 0]
+
+# ERRORS
+# ================================================================================================
+
+const ERR_ACCOUNT_IS_NOT_ALLOWED = "account is not allowed"
+
+# PUBLIC HELPERS
+# ================================================================================================
+
+#! Returns whether the given account is currently allowed on this faucet.
+#!
+#! Reads [`ALLOWED_ACCOUNTS_SLOT`] on the active account at the key derived from the account ID.
+#! Returns `1` if the stored word is non-zero (allowed) or `0` if it is the zero word
+#! (not allowed, including the default for never-set entries).
+#!
+#! Inputs:  [account_id_suffix, account_id_prefix]
+#! Outputs: [is_allowed]
+#!
+#! Invocation: exec
+pub proc is_allowed
+    exec.build_allowed_accounts_map_key
+    # => [KEY]
+
+    push.ALLOWED_ACCOUNTS_SLOT[0..2]
+    # => [slot_suffix, slot_prefix, KEY]
+
+    exec.active_account::get_map_item
+    # => [VALUE]
+
+    exec.word::eqz not
+    # => [is_allowed]
+end
+
+#! Adds the given account to the allowlist. If the account is already allowed, this is a noop.
+#!
+#! This procedure performs NO authorization. Wrappers running in `Invocation: call` mode add
+#! the auth check (e.g. `ownable2step::assert_sender_is_owner`) before delegating here via
+#! `exec.allowlist::allow_account`.
+#!
+#! Inputs:  [account_id_suffix, account_id_prefix]
+#! Outputs: []
+#!
+#! Invocation: exec
+pub proc allow_account
+    exec.build_allowed_accounts_map_key
+    # => [KEY]
+
+    push.ALLOWED_WORD swapw
+    # => [KEY, ALLOWED_WORD]
+
+    push.ALLOWED_ACCOUNTS_SLOT[0..2]
+    # => [slot_suffix, slot_prefix, KEY, ALLOWED_WORD]
+
+    exec.native_account::set_map_item
+    # => [OLD_VALUE]
+
+    dropw
+    # => []
+end
+
+#! Removes the given account from the allowlist. If the account is not currently allowed, this
+#! is a noop. See [`allow_account`] for the same authorization caveats.
+#!
+#! Inputs:  [account_id_suffix, account_id_prefix]
+#! Outputs: []
+#!
+#! Invocation: exec
+pub proc disallow_account
+    exec.build_allowed_accounts_map_key
+    # => [KEY]
+
+    push.DISALLOWED_WORD swapw
+    # => [KEY, DISALLOWED_WORD]
+
+    push.ALLOWED_ACCOUNTS_SLOT[0..2]
+    # => [slot_suffix, slot_prefix, KEY, DISALLOWED_WORD]
+
+    exec.native_account::set_map_item
+    # => [OLD_VALUE]
+
+    dropw
+    # => []
+end
+
+#! Requires the given account to be allowed.
+#!
+#! Delegates to [`is_allowed`]. If the account is not allowed, panics with
+#! [`ERR_ACCOUNT_IS_NOT_ALLOWED`].
+#!
+#! Use from other modules or transaction scripts to guard logic that must not run for
+#! non-allowed accounts. In asset callback foreign context, the active account is the issuing
+#! faucet.
+#!
+#! Inputs:  [account_id_suffix, account_id_prefix]
+#! Outputs: []
+#!
+#! Panics if:
+#! - the stored entry for this account is the zero word.
+#!
+#! Invocation: exec
+pub proc assert_allowed
+    exec.is_allowed
+    # => [is_allowed]
+
+    assert.err=ERR_ACCOUNT_IS_NOT_ALLOWED
+    # => []
+end
+
+# HELPER PROCEDURES
+# ================================================================================================
+
+#! Builds the allowed-accounts map key for the given account ID.
+#!
+#! Inputs:  [account_id_suffix, account_id_prefix]
+#! Outputs: [KEY]
+#!
+#! Where:
+#! - KEY is [0, 0, account_id_suffix, account_id_prefix].
+#!
+#! Invocation: exec
+proc build_allowed_accounts_map_key
+    push.0.0
+    # => [0, 0, account_id_suffix, account_id_prefix]
+    # => [KEY]
+end

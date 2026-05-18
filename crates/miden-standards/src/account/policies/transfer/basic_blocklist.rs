@@ -40,7 +40,7 @@ procedure_root!(
 ///
 /// Block / unblock administration is intentionally not part of this component. The
 /// `block_account` / `unblock_account` procedures live in the standards library and require an
-/// auth-wrapped admin component (see [`super::OwnerControlledBlocklist`]) to be safely exposed
+/// auth-wrapped admin component (see [`super::BlocklistOwnerControlled`]) to be safely exposed
 /// on a production faucet.
 #[derive(Debug, Clone, Default)]
 pub struct BasicBlocklist(BTreeSet<AccountId>);

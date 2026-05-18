@@ -2,24 +2,28 @@
 //! [`super::TokenPolicyManager`] for both the send and receive policy kinds.
 //!
 //! Layout convention inside this module:
-//! - File at the root (e.g. `allow_all`, `basic_blocklist`) = a transfer policy variant. Each
-//!   exports a `check_policy` procedure that the kernel invokes via `call` through the
-//!   protocol-reserved callback slots.
-//! - Folder at the root (e.g. `blocklist`) = a primitive bundle: storage namespace + helpers
-//!   + auth-gated admin component(s) that maintain the storage. Primitives are not transfer
-//!     policies by themselves; they are consumed by policy variants.
+//! - File at the root (e.g. `allow_all`, `basic_blocklist`, `basic_allowlist`) = a transfer policy
+//!   variant. Each exports a `check_policy` procedure that the kernel invokes via `call` through
+//!   the protocol-reserved callback slots.
+//! - Folder at the root (e.g. `blocklist`, `allowlist`) = a primitive bundle: storage namespace +
+//!   helpers + auth-gated admin component(s) that maintain the storage. Primitives are not transfer
+//!   policies by themselves; they are consumed by policy variants.
 
 use alloc::vec::Vec;
 
 use miden_protocol::account::{AccountComponent, AccountProcedureRoot};
 
 mod allow_all;
+mod allowlist;
+mod basic_allowlist;
 mod basic_blocklist;
 mod blocklist;
 
 pub use allow_all::TransferAllowAll;
+pub use allowlist::{AllowlistOwnerControlled, AllowlistStorage};
+pub use basic_allowlist::BasicAllowlist;
 pub use basic_blocklist::BasicBlocklist;
-pub use blocklist::{BlocklistStorage, OwnerControlledBlocklist};
+pub use blocklist::{BlocklistOwnerControlled, BlocklistStorage};
 
 // TRANSFER POLICY
 // ================================================================================================
@@ -41,6 +45,12 @@ pub enum TransferPolicy {
     /// explicitly via [`BasicBlocklist::with_blocked_accounts`] and select the policy via
     /// [`TransferPolicy::Custom`] with [`BasicBlocklist::root`].
     Blocklist,
+    /// Active policy = [`BasicAllowlist::root`]. Resolves into a [`BasicAllowlist`] component
+    /// with an empty initial allowlist; because the allowlist default-denies, an empty
+    /// allowlist rejects every transfer. To seed initial entries, install [`BasicAllowlist`]
+    /// explicitly via [`BasicAllowlist::with_allowed_accounts`] and select the policy via
+    /// [`TransferPolicy::Custom`] with [`BasicAllowlist::root`].
+    Allowlist,
     /// Active policy = the provided root. The corresponding component(s) must be installed by
     /// the caller separately; resolving this variant into built-in components yields an empty
     /// list.
@@ -53,6 +63,7 @@ impl TransferPolicy {
         match self {
             Self::AllowAll => TransferAllowAll::root(),
             Self::Blocklist => BasicBlocklist::root(),
+            Self::Allowlist => BasicAllowlist::root(),
             Self::Custom(root) => root,
         }
     }
@@ -60,12 +71,16 @@ impl TransferPolicy {
     /// Returns the [`AccountComponent`]s that must accompany this transfer policy variant.
     ///
     /// For [`Self::Blocklist`] this is a [`BasicBlocklist`] component with no initial blocked
-    /// accounts. For [`Self::Custom`] this is empty — the caller installs whatever the chosen
-    /// root requires.
+    /// accounts. For [`Self::Allowlist`] this is a [`BasicAllowlist`] component with no
+    /// initial allowed accounts (which default-denies every transfer — callers seeding an
+    /// initial set should use [`Self::Custom`] with [`BasicAllowlist::root`] and install the
+    /// seeded [`BasicAllowlist`] explicitly). For [`Self::Custom`] this is empty — the caller
+    /// installs whatever the chosen root requires.
     pub(crate) fn into_components(self) -> Vec<AccountComponent> {
         match self {
             Self::AllowAll => vec![TransferAllowAll.into()],
             Self::Blocklist => vec![BasicBlocklist::default().into()],
+            Self::Allowlist => vec![BasicAllowlist::default().into()],
             Self::Custom(_) => Vec::new(),
         }
     }
