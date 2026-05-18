@@ -1,7 +1,7 @@
 # ERRORS
 # =================================================================================================
 
-const ERR_VAULT_ASSET_METADATA_NOT_U32 = "asset metadata is not a u32"
+const ERR_VAULT_ASSET_METADATA_NOT_U8 = "asset metadata is not a u8"
 
 const ERR_VAULT_ASSET_METADATA_NON_ZERO_RESERVED_BITS = "reserved asset metadata bits are non-zero"
 
@@ -50,7 +50,7 @@ pub const COMPOSITION_CUSTOM = 2
 const COMPOSITION_INVALID = 3
 
 #! The mask for the reserved bits in the asset metadata.
-const METADATA_RESERVED_MASK = 248 # 0b11111000
+const METADATA_RESERVED_MASK = 248 # 0b1111_1000
 
 # PROCEDURES
 # =================================================================================================
@@ -359,13 +359,13 @@ end
 #! - has reserved bits 3-7 set.
 #! - encodes an unknown asset composition.
 pub proc validate_metadata
-    # assert that the metadata fits in a u32 (i.e. the high 32 bits are zero) using u32split +
-    # eq+assert so the failure is reported as a FailedAssertion rather than as a u32 op error.
-    # u32split outputs [lo, hi] with lo on top, so swap to check hi against zero while keeping
-    # lo (== the original metadata, since it fits in u32) on top for subsequent checks.
+    # assert that the metadata fits in a u8
     u32split swap
     # => [hi, asset_metadata]
-    eq.0 assert.err=ERR_VAULT_ASSET_METADATA_NOT_U32
+    eq.0 assert.err=ERR_VAULT_ASSET_METADATA_NOT_U8
+    # => [asset_metadata]
+
+    dup u32lte.0xff assert.err=ERR_VAULT_ASSET_METADATA_NOT_U8
     # => [asset_metadata]
 
     # assert the reserved bits are all zero
