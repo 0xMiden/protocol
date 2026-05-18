@@ -35,6 +35,7 @@ async fn get_balance_returns_correct_amount() -> anyhow::Result<()> {
     let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
 
     let faucet_id: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap();
+    let asset_key = AssetVaultKey::new_fungible(faucet_id).unwrap();
     let code = format!(
         r#"
         use $kernel::prologue
@@ -43,8 +44,7 @@ async fn get_balance_returns_correct_amount() -> anyhow::Result<()> {
         begin
             exec.prologue::prepare_transaction
 
-            push.{prefix}
-            push.{suffix}
+            push.{ASSET_KEY}
             exec.active_account::get_balance
             # => [balance]
 
@@ -52,8 +52,7 @@ async fn get_balance_returns_correct_amount() -> anyhow::Result<()> {
             swap drop
         end
             "#,
-        prefix = faucet_id.prefix().as_felt(),
-        suffix = faucet_id.suffix(),
+        ASSET_KEY = asset_key.to_word(),
     );
 
     let exec_output = tx_context.execute_code(&code).await?;
@@ -120,6 +119,8 @@ async fn test_get_balance_non_fungible_fails() -> anyhow::Result<()> {
         .build()?;
 
     let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET).unwrap();
+    let non_fungible_asset =
+        NonFungibleAsset::new(&NonFungibleAssetDetails::new(faucet_id, vec![1, 2, 3])?)?;
     let code = format!(
         "
         use $kernel::prologue
@@ -127,12 +128,11 @@ async fn test_get_balance_non_fungible_fails() -> anyhow::Result<()> {
 
         begin
             exec.prologue::prepare_transaction
-            push.{prefix} push.{suffix}
+            push.{ASSET_KEY}
             exec.active_account::get_balance
         end
         ",
-        prefix = faucet_id.prefix().as_felt(),
-        suffix = faucet_id.suffix(),
+        ASSET_KEY = non_fungible_asset.to_key_word(),
     );
 
     let exec_result = tx_context.execute_code(&code).await;

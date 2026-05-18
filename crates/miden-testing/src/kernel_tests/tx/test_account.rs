@@ -31,7 +31,7 @@ use miden_protocol::account::{
 use miden_protocol::assembly::diagnostics::NamedSource;
 use miden_protocol::assembly::diagnostics::reporting::PrintDiagnostic;
 use miden_protocol::assembly::{DefaultSourceManager, Library};
-use miden_protocol::asset::{Asset, AssetAmount, AssetCallbacks, FungibleAsset};
+use miden_protocol::asset::{Asset, AssetAmount, AssetCallbacks, AssetVaultKey, FungibleAsset};
 use miden_protocol::errors::tx_kernel::{
     ERR_ACCOUNT_ID_SUFFIX_LEAST_SIGNIFICANT_BYTE_MUST_BE_ZERO,
     ERR_ACCOUNT_ID_SUFFIX_MOST_SIGNIFICANT_BIT_MUST_BE_ZERO,
@@ -1088,25 +1088,24 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
         .expect("faucet_id should be a fungible faucet ID")
         .as_u64();
 
+    let asset_key = AssetVaultKey::new_fungible(faucet_existing_asset).unwrap();
     let add_existing_source = format!(
         r#"
         use miden::protocol::active_account
 
         begin
-            # push faucet ID prefix and suffix
-            push.{prefix}.{suffix}
-            # => [faucet_id_suffix, faucet_id_prefix]
-
             # get the current asset balance
-            dup.1 dup.1 exec.active_account::get_balance
-            # => [final_balance, faucet_id_suffix, faucet_id_prefix]
+            push.{ASSET_KEY}
+            exec.active_account::get_balance
+            # => [final_balance]
 
             # assert final balance is correct
             push.{final_balance}
             assert_eq.err="final balance is incorrect"
-            # => [faucet_id_suffix, faucet_id_prefix]
+            # => []
 
             # get the initial asset balance
+            push.{ASSET_KEY}
             exec.active_account::get_initial_balance
             # => [init_balance]
 
@@ -1115,8 +1114,7 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
             assert_eq.err="initial balance is incorrect"
         end
     "#,
-        suffix = faucet_existing_asset.suffix(),
-        prefix = faucet_existing_asset.prefix().as_felt(),
+        ASSET_KEY = asset_key.to_word(),
         final_balance =
             initial_balance + fungible_asset_for_note_existing.unwrap_fungible().amount().as_u64(),
     );
@@ -1143,25 +1141,24 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
         .expect("faucet_id should be a fungible faucet ID")
         .as_u64();
 
+    let asset_key = AssetVaultKey::new_fungible(faucet_new_asset).unwrap();
     let add_new_source = format!(
         r#"
         use miden::protocol::active_account
 
         begin
-            # push faucet ID prefix and suffix
-            push.{prefix}.{suffix}
-            # => [faucet_id_suffix, faucet_id_prefix]
-
             # get the current asset balance
-            dup.1 dup.1 exec.active_account::get_balance
-            # => [final_balance, faucet_id_suffix, faucet_id_prefix]
+            push.{ASSET_KEY}
+            exec.active_account::get_balance
+            # => [final_balance]
 
             # assert final balance is correct
             push.{final_balance}
             assert_eq.err="final balance is incorrect"
-            # => [faucet_id_suffix, faucet_id_prefix]
+            # => []
 
             # get the initial asset balance
+            push.{ASSET_KEY}
             exec.active_account::get_initial_balance
             # => [init_balance]
 
@@ -1170,8 +1167,7 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
             assert_eq.err="initial balance is incorrect"
         end
     "#,
-        suffix = faucet_new_asset.suffix(),
-        prefix = faucet_new_asset.prefix().as_felt(),
+        ASSET_KEY = asset_key.to_word(),
         final_balance =
             initial_balance + fungible_asset_for_note_new.unwrap_fungible().amount().as_u64(),
     );
@@ -1226,6 +1222,7 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
     let expected_output_note =
         create_public_p2any_note(ACCOUNT_ID_SENDER.try_into()?, [fungible_asset_for_note_existing]);
 
+    let asset_key = AssetVaultKey::new_fungible(faucet_existing_asset).unwrap();
     let remove_existing_source = format!(
         r#"
         use miden::protocol::active_account
@@ -1242,20 +1239,18 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
             exec.util::move_asset_to_note
             # => []
 
-            # push faucet ID prefix and suffix
-            push.{prefix}.{suffix}
-            # => [faucet_id_suffix, faucet_id_prefix]
-
             # get the current asset balance
-            dup.1 dup.1 exec.active_account::get_balance
-            # => [final_balance, faucet_id_suffix, faucet_id_prefix]
+            push.{ASSET_KEY}
+            exec.active_account::get_balance
+            # => [final_balance]
 
             # assert final balance is correct
             push.{final_balance}
             assert_eq.err="final balance is incorrect"
-            # => [faucet_id_suffix, faucet_id_prefix]
+            # => []
 
             # get the initial asset balance
+            push.{ASSET_KEY}
             exec.active_account::get_initial_balance
             # => [init_balance]
 
@@ -1266,8 +1261,7 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
     "#,
         REMOVED_ASSET_KEY = fungible_asset_for_note_existing.to_key_word(),
         REMOVED_ASSET_VALUE = fungible_asset_for_note_existing.to_value_word(),
-        suffix = faucet_existing_asset.suffix(),
-        prefix = faucet_existing_asset.prefix().as_felt(),
+        ASSET_KEY = asset_key.to_word(),
         final_balance =
             initial_balance - fungible_asset_for_note_existing.unwrap_fungible().amount().as_u64(),
     );
