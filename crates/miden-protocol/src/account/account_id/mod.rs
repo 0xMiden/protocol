@@ -6,9 +6,6 @@ pub use id_prefix::AccountIdPrefix;
 
 mod seed;
 
-mod account_type;
-pub use account_type::AccountType;
-
 mod storage_mode;
 pub use storage_mode::AccountStorageMode;
 

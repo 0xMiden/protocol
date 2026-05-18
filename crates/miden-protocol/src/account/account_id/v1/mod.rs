@@ -10,13 +10,7 @@ use miden_crypto::utils::hex_to_bytes;
 pub use prefix::AccountIdPrefixV1;
 
 use crate::account::account_id::NetworkId;
-use crate::account::account_id::account_type::{
-    FUNGIBLE_FAUCET,
-    NON_FUNGIBLE_FAUCET,
-    REGULAR_ACCOUNT_IMMUTABLE_CODE,
-    REGULAR_ACCOUNT_UPDATABLE_CODE,
-};
-use crate::account::{AccountIdVersion, AccountStorageMode, AccountType};
+use crate::account::{AccountIdVersion, AccountStorageMode};
 use crate::address::AddressType;
 use crate::errors::{AccountError, AccountIdError, Bech32Error};
 use crate::utils::serde::{
@@ -53,10 +47,6 @@ impl AccountIdV1 {
 
     /// The serialized size of an [`AccountIdV1`] in bytes.
     const SERIALIZED_SIZE: usize = 15;
-
-    /// The lower two bits of the second least significant nibble encode the account type.
-    pub(crate) const TYPE_MASK: u8 = 0b11 << Self::TYPE_SHIFT;
-    pub(crate) const TYPE_SHIFT: u64 = 4;
 
     /// The least significant nibble determines the account version.
     const VERSION_MASK: u64 = 0b1111;
@@ -410,7 +400,7 @@ impl Deserializable for AccountIdV1 {
 /// Checks that the prefix has a known value for the version.
 pub(crate) fn validate_prefix(
     prefix: Felt,
-) -> Result<(AccountType, AccountStorageMode, AccountIdVersion), AccountIdError> {
+) -> Result<(AccountStorageMode, AccountIdVersion), AccountIdError> {
     let prefix = prefix.as_canonical_u64();
 
     let storage_mode = extract_storage_mode(prefix);
@@ -418,9 +408,7 @@ pub(crate) fn validate_prefix(
     // Validate version bits.
     let version = extract_version(prefix)?;
 
-    let account_type = extract_type(prefix);
-
-    Ok((account_type, storage_mode, version))
+    Ok((storage_mode, version))
 }
 
 /// Checks that the suffix:
@@ -457,21 +445,6 @@ pub(crate) fn extract_version(prefix: u64) -> Result<AccountIdVersion, AccountId
     // u8 is safe.
     let version = (prefix & AccountIdV1::VERSION_MASK) as u8;
     AccountIdVersion::try_from(version)
-}
-
-pub(crate) const fn extract_type(prefix: u64) -> AccountType {
-    let bits = (prefix & (AccountIdV1::TYPE_MASK as u64)) >> AccountIdV1::TYPE_SHIFT;
-    // SAFETY: `TYPE_MASK` is u8 so casting bits is lossless
-    match bits as u8 {
-        REGULAR_ACCOUNT_UPDATABLE_CODE => AccountType::RegularAccountUpdatableCode,
-        REGULAR_ACCOUNT_IMMUTABLE_CODE => AccountType::RegularAccountImmutableCode,
-        FUNGIBLE_FAUCET => AccountType::FungibleFaucet,
-        NON_FUNGIBLE_FAUCET => AccountType::NonFungibleFaucet,
-        _ => {
-            // SAFETY: type mask contains only 2 bits and we've covered all 4 possible options.
-            panic!("type mask contains only 2 bits and we've covered all 4 possible options")
-        },
-    }
 }
 
 /// Shapes the suffix so it meets the requirements of the account ID, by setting the lower 8 bits to

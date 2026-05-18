@@ -21,7 +21,6 @@ pub use account_id::{
     AccountIdV1,
     AccountIdVersion,
     AccountStorageMode,
-    AccountType,
 };
 
 pub mod auth;
