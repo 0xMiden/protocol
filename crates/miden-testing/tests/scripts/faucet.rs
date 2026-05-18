@@ -709,15 +709,14 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
     // --------------------------------------------------------------------------------------------
 
     let amount = Felt::new_unchecked(75);
-    let mint_asset: Asset =
-        FungibleAsset::new(faucet.id(), amount.as_canonical_u64()).unwrap().into();
+    let mint_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64()).unwrap();
     let serial_num = Word::default();
 
     let output_note_tag = NoteTag::with_account_target(target_account.id());
     let p2id_mint_output_note = create_p2id_note_exact(
         faucet.id(),
         target_account.id(),
-        vec![mint_asset],
+        vec![mint_asset.into()],
         NoteType::Private,
         serial_num,
     )
@@ -808,13 +807,13 @@ async fn test_network_faucet_owner_can_mint() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
 
     let amount = Felt::new_unchecked(75);
-    let mint_asset: Asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?.into();
+    let mint_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?;
 
     let output_note_tag = NoteTag::with_account_target(target_account.id());
     let p2id_note = create_p2id_note_exact(
         faucet.id(),
         target_account.id(),
-        vec![mint_asset],
+        vec![mint_asset.into()],
         NoteType::Private,
         Word::default(),
     )?;
@@ -963,13 +962,13 @@ async fn test_network_faucet_non_owner_cannot_mint() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
 
     let amount = Felt::new_unchecked(75);
-    let mint_asset: Asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?.into();
+    let mint_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?;
 
     let output_note_tag = NoteTag::with_account_target(target_account.id());
     let p2id_note = create_p2id_note_exact(
         faucet.id(),
         target_account.id(),
-        vec![mint_asset],
+        vec![mint_asset.into()],
         NoteType::Private,
         Word::default(),
     )?;
@@ -1100,13 +1099,13 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
 
     let amount = Felt::new_unchecked(75);
-    let mint_asset: Asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?.into();
+    let mint_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?;
 
     let output_note_tag = NoteTag::with_account_target(target_account.id());
     let p2id_note = create_p2id_note_exact(
         faucet.id(),
         target_account.id(),
-        vec![mint_asset],
+        vec![mint_asset.into()],
         NoteType::Private,
         Word::default(),
     )?;
@@ -1648,15 +1647,14 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
 
     let amount = Felt::new_unchecked(75);
-    let mint_asset: Asset =
-        FungibleAsset::new(faucet.id(), amount.as_canonical_u64()).unwrap().into();
+    let mint_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64()).unwrap();
     let serial_num = Word::from([1, 2, 3, 4u32]);
 
     // Create the expected P2ID output note
     let p2id_mint_output_note = create_p2id_note_exact(
         faucet.id(),
         target_account.id(),
-        vec![mint_asset],
+        vec![mint_asset.into()],
         note_type,
         serial_num,
     )
@@ -1920,15 +1918,14 @@ async fn network_faucet_mint_with_blocklist() -> anyhow::Result<()> {
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
 
     let amount = Felt::new_unchecked(75);
-    let mint_asset: Asset =
-        FungibleAsset::new(faucet.id(), amount.as_canonical_u64()).unwrap().into();
+    let mint_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64()).unwrap();
     let serial_num = Word::default();
 
     let output_note_tag = NoteTag::with_account_target(target_account.id());
     let p2id_mint_output_note = create_p2id_note_exact(
         faucet.id(),
         target_account.id(),
-        vec![mint_asset],
+        vec![mint_asset.into()],
         NoteType::Private,
         serial_num,
     )

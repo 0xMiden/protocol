@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 
 use miden_protocol::account::AccountId;
 use miden_protocol::assembly::Path;
-use miden_protocol::asset::Asset;
+use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
@@ -55,7 +55,7 @@ impl MintNote {
     ///
     /// Layout: SCRIPT_ROOT(4) + SERIAL_NUM(4) + ASSET_KEY(4) + ASSET_VALUE(4) + tag(1) +
     /// padding(3) + variable output-note storage. The variable portion starts at offset 20
-    /// (word-aligned) and must contain at least zero items.
+    /// (word-aligned) and may contain zero or more items.
     pub const MIN_NUM_STORAGE_ITEMS_PUBLIC: usize = 20;
 
     // PUBLIC ACCESSORS
@@ -89,15 +89,16 @@ impl MintNote {
     /// is automatically set to the faucet's account ID for proper routing.
     ///
     /// # Parameters
-    /// - `faucet_id`: The account ID of the network faucet that will mint the asset. Must equal
-    ///   `mint_storage.asset().faucet_id()` or minting will fail at consumption time.
+    /// - `faucet_id`: The account ID of the network faucet that will mint the asset. Must equal the
+    ///   faucet ID of the asset embedded in `mint_storage`.
     /// - `sender`: The account ID of the note creator (must be the faucet owner)
     /// - `mint_storage`: The storage configuration specifying private or public output mode
     /// - `attachments`: The [`NoteAttachments`] of the MINT note
     /// - `rng`: Random number generator for creating the serial number
     ///
     /// # Errors
-    /// Returns an error if note creation fails.
+    /// Returns an error if `faucet_id` does not match the faucet of the embedded asset, or if
+    /// note creation fails.
     pub fn create<R: FeltRng>(
         faucet_id: AccountId,
         sender: AccountId,
@@ -105,6 +106,12 @@ impl MintNote {
         attachments: NoteAttachments,
         rng: &mut R,
     ) -> Result<Note, NoteError> {
+        if faucet_id != mint_storage.asset().faucet_id() {
+            return Err(NoteError::other(
+                "faucet_id must equal the faucet ID of the asset embedded in mint_storage",
+            ));
+        }
+
         let note_script = Self::script();
         let serial_num = rng.draw_word();
 
@@ -141,24 +148,24 @@ impl MintNote {
 pub enum MintNoteStorage {
     Private {
         recipient_digest: Word,
-        asset: Asset,
+        asset: FungibleAsset,
         tag: Felt,
     },
     Public {
         recipient: NoteRecipient,
-        asset: Asset,
+        asset: FungibleAsset,
         tag: Felt,
     },
 }
 
 impl MintNoteStorage {
-    pub fn new_private(recipient_digest: Word, asset: Asset, tag: Felt) -> Self {
+    pub fn new_private(recipient_digest: Word, asset: FungibleAsset, tag: Felt) -> Self {
         Self::Private { recipient_digest, asset, tag }
     }
 
     pub fn new_public(
         recipient: NoteRecipient,
-        asset: Asset,
+        asset: FungibleAsset,
         tag: Felt,
     ) -> Result<Self, NoteError> {
         let total_storage_items =
@@ -172,7 +179,7 @@ impl MintNoteStorage {
     }
 
     /// Returns the asset that will be minted on consumption.
-    pub fn asset(&self) -> Asset {
+    pub fn asset(&self) -> FungibleAsset {
         match self {
             Self::Private { asset, .. } | Self::Public { asset, .. } => *asset,
         }
@@ -185,7 +192,7 @@ impl From<MintNoteStorage> for NoteStorage {
             MintNoteStorage::Private { recipient_digest, asset, tag } => {
                 let mut storage_values = Vec::with_capacity(MintNote::NUM_STORAGE_ITEMS_PRIVATE);
                 storage_values.extend_from_slice(recipient_digest.as_elements());
-                storage_values.extend_from_slice(&asset.as_elements());
+                storage_values.extend_from_slice(&Asset::from(asset).as_elements());
                 storage_values.push(tag);
                 NoteStorage::new(storage_values)
                     .expect("number of storage items should not exceed max storage items")
@@ -194,7 +201,7 @@ impl From<MintNoteStorage> for NoteStorage {
                 let mut storage_values = Vec::new();
                 storage_values.extend_from_slice(recipient.script().root().as_elements());
                 storage_values.extend_from_slice(recipient.serial_num().as_elements());
-                storage_values.extend_from_slice(&asset.as_elements());
+                storage_values.extend_from_slice(&Asset::from(asset).as_elements());
                 // tag followed by 3 padding felts so the variable storage that follows starts at
                 // a word-aligned offset (20).
                 storage_values.extend_from_slice(&[tag, Felt::ZERO, Felt::ZERO, Felt::ZERO]);

@@ -967,9 +967,8 @@ end
 #!
 #! Creates a public output note with no assets, and sets the `NetworkAccountTarget`
 #! attachment so the network routes the note to the target faucet. The attachment is for
-#! routing only; the consume-side security bind is enforced by the kernel `faucet::mint`
-#! syscall inside `fungible::mint_and_send`, which panics if the MINT note's stored
-#! `ASSET_KEY`'s faucet ID does not equal the active account.
+#! routing only; the consume-side security bind is `fungible::mint_and_send`, which rejects
+#! the MINT note if its stored `ASSET_KEY` does not belong to the consuming faucet.
 #!
 #! Inputs:  [MINT_RECIPIENT, faucet_id_suffix, faucet_id_prefix]
 #! Outputs: []
@@ -992,8 +991,8 @@ proc create_mint_note_with_attachment
     # => [faucet_id_suffix, faucet_id_prefix, note_idx]
 
     # set the attachment on the MINT note so the network routes it to the target faucet.
-    # the consume-side security bind is the kernel `faucet::mint` syscall (see
-    # `fungible::mint_and_send`), not this attachment.
+    # the consume-side security bind is `fungible::mint_and_send` (it rejects an asset that
+    # does not belong to the consuming faucet), not this attachment.
     # network_account_target::new expects [suffix, prefix, exec_hint]
     # and returns [attachment_scheme, ATTACHMENT]
     push.ALWAYS # exec_hint = ALWAYS

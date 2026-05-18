@@ -302,8 +302,8 @@ recipient. Requires the faucet's owner (the bridge account) to be the creator of
 (the bridge is stored in `Ownable2Step` storage slot as the owner; the faucet's
 `mint_and_send` executes the current access policy via
 `exec.policy_manager::execute_mint_policy`). `mint_and_send` then derives the asset to mint
-for the active faucet and panics if its key does not equal the stored `ASSET_KEY`, which
-binds the MINT note to its resolved faucet (see §4.7).
+for the active faucet and panics if the stored `ASSET_KEY` does not belong to that faucet,
+which binds the MINT note to its resolved faucet (see §4.7).
 
 #### `agglayer_faucet::get_metadata_hash`
 
@@ -751,8 +751,8 @@ the P2ID storage at `[20..21]`, and calls the faucet's `mint_and_send` procedure
 (`owner_controlled::owner_only` for AggLayer faucets, which asserts the MINT note's sender
 is the faucet's owner -- the bridge account, set via `Ownable2Step` at account creation),
 and creates the skeleton P2ID output note via `output_note::create`. It then derives the
-asset to mint for the active faucet and panics if its key does not equal the stored
-`ASSET_KEY`, which binds the MINT note to its issuing faucet: a MINT note whose `ASSET_KEY`
+asset to mint for the active faucet and panics if the stored `ASSET_KEY` does not belong to
+that faucet, which binds the MINT note to its issuing faucet: a MINT note whose `ASSET_KEY`
 was resolved for faucet A cannot be consumed by any other faucet B even if both share the
 bridge as owner. Once the bind passes, the minted asset is attached to the P2ID output
 note via `output_note::add_asset`.
@@ -762,7 +762,7 @@ note via `output_note::add_asset`.
 | Role | Enforcement |
 |------|------------|
 | **Issuer** | Bridge account only -- **enforced** by faucet's `owner_only` mint policy via `Ownable2Step` (asserts note sender is the faucet's owner, i.e. the bridge) |
-| **Consumer** | Target faucet only -- **enforced** by `mint_and_send`, which panics if the asset derived for the active faucet does not match the stored `ASSET_KEY`. The `NetworkAccountTarget` attachment is retained as the network-routing primitive but is no longer the sole consume-side bind |
+| **Consumer** | Target faucet only -- **enforced** by `mint_and_send`, which panics if the stored `ASSET_KEY` does not belong to the consuming faucet. The `NetworkAccountTarget` attachment is retained as the network-routing primitive but is no longer the sole consume-side bind |
 
 ---
 
