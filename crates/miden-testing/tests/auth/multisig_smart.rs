@@ -1,12 +1,6 @@
 use miden_processor::advice::AdviceInputs;
 use miden_protocol::account::auth::{AuthScheme, PublicKey};
-use miden_protocol::account::{
-    Account,
-    AccountBuilder,
-    AccountId,
-    AccountStorageMode,
-    AccountType,
-};
+use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountStorageMode};
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::note::NoteType;
 use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
@@ -60,7 +54,6 @@ fn create_multisig_smart_account(
     let multisig_account = AccountBuilder::new([0; 32])
         .with_auth_component(AuthMultisigSmart::new(config)?)
         .with_component(BasicWallet)
-        .account_type(AccountType::RegularAccountUpdatableCode)
         .storage_mode(AccountStorageMode::Public)
         .with_assets(core::iter::once(asset.into()))
         .build_existing()?;

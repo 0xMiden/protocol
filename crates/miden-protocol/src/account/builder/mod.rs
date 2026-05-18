@@ -11,7 +11,6 @@ use crate::account::{
     AccountIdVersion,
     AccountStorage,
     AccountStorageMode,
-    AccountType,
 };
 use crate::asset::AssetVault;
 use crate::errors::AccountError;
@@ -57,7 +56,6 @@ pub struct AccountBuilder {
     nonce: Option<Felt>,
     components: Vec<AccountComponent>,
     auth_component: Option<AccountComponent>,
-    account_type: AccountType,
     storage_mode: AccountStorageMode,
     init_seed: [u8; 32],
     id_version: AccountIdVersion,
@@ -77,7 +75,6 @@ impl AccountBuilder {
             components: vec![],
             auth_component: None,
             init_seed,
-            account_type: AccountType::RegularAccountImmutableCode,
             storage_mode: AccountStorageMode::Private,
             id_version: AccountIdVersion::Version1,
         }
@@ -86,12 +83,6 @@ impl AccountBuilder {
     /// Sets the [`AccountIdVersion`] of the account ID.
     pub fn version(mut self, version: AccountIdVersion) -> Self {
         self.id_version = version;
-        self
-    }
-
-    /// Sets the type of the account.
-    pub fn account_type(mut self, account_type: AccountType) -> Self {
-        self.account_type = account_type;
         self
     }
 

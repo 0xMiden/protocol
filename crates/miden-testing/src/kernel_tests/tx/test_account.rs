@@ -18,7 +18,6 @@ use miden_protocol::account::{
     AccountId,
     AccountStorage,
     AccountStorageMode,
-    AccountType,
     StorageMap,
     StorageMapKey,
     StorageSlot,
@@ -1606,7 +1605,6 @@ async fn test_faucet_has_callbacks(
 
     let account = AccountBuilder::new([1u8; 32])
         .storage_mode(AccountStorageMode::Public)
-        .account_type(AccountType::FungibleFaucet)
         .with_component(faucet)
         .with_component(MockAccountComponent::with_slots(callback_slots))
         .with_auth_component(Auth::IncrNonce)

@@ -608,7 +608,6 @@ mod tests {
         AccountIdVersion,
         AccountStorageDelta,
         AccountStorageMode,
-        AccountType,
         AccountVaultDelta,
         StorageMapDelta,
         StorageMapKey,
@@ -648,7 +647,6 @@ mod tests {
     fn account_update_size_limit_not_exceeded() -> anyhow::Result<()> {
         // A small account's delta does not exceed the limit.
         let account = Account::builder([9; 32])
-            .account_type(AccountType::RegularAccountUpdatableCode)
             .storage_mode(AccountStorageMode::Public)
             .with_auth_component(NoopAuthComponent)
             .with_component(AddComponent)

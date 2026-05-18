@@ -1,7 +1,7 @@
 use core::slice;
 
 use miden_protocol::Word;
-use miden_protocol::account::{Account, AccountBuilder, AccountStorageMode, AccountType};
+use miden_protocol::account::{Account, AccountBuilder, AccountStorageMode};
 use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::transaction::RawOutputNote;
 use miden_standards::account::auth::AuthNetworkAccount;
@@ -35,7 +35,6 @@ fn build_allowlist_account(allowed_script_roots: Vec<Word>) -> anyhow::Result<Ac
     Ok(AccountBuilder::new([0; 32])
         .with_auth_component(auth_component)
         .with_component(BasicWallet)
-        .account_type(AccountType::RegularAccountUpdatableCode)
         .storage_mode(AccountStorageMode::Public)
         .build_existing()?)
 }

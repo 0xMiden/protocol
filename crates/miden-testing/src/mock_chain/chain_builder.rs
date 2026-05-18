@@ -22,7 +22,6 @@ use miden_protocol::account::{
     AccountDelta,
     AccountId,
     AccountStorageMode,
-    AccountType,
     StorageSlot,
 };
 use miden_protocol::asset::{Asset, AssetAmount, AssetCallbackFlag, FungibleAsset, TokenSymbol};
@@ -374,7 +373,6 @@ impl MockChainBuilder {
     ) -> anyhow::Result<Account> {
         let account_builder = AccountBuilder::new(self.rng.random())
             .storage_mode(storage_mode)
-            .account_type(AccountType::FungibleFaucet)
             .with_component(faucet)
             .with_components(access_control)
             .with_components(token_policy_manager);

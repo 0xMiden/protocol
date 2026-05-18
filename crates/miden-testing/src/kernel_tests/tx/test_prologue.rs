@@ -10,7 +10,6 @@ use miden_protocol::account::{
     AccountHeader,
     AccountProcedureRoot,
     AccountStorageMode,
-    AccountType,
     StorageSlot,
     StorageSlotName,
 };
@@ -611,7 +610,6 @@ pub async fn create_account_invalid_seed() -> anyhow::Result<()> {
     mock_chain.prove_next_block()?;
 
     let account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
-        .account_type(AccountType::RegularAccountUpdatableCode)
         .with_auth_component(Auth::IncrNonce)
         .with_component(BasicWallet)
         .build()?;

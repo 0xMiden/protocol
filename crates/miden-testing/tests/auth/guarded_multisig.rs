@@ -5,7 +5,6 @@ use miden_protocol::account::{
     AccountId,
     AccountProcedureRoot,
     AccountStorageMode,
-    AccountType,
 };
 use miden_protocol::asset::{AssetCallbackFlag, FungibleAsset};
 use miden_protocol::note::{
@@ -152,10 +151,9 @@ fn create_guarded_multisig_account(
         .with_proc_thresholds(proc_threshold_map)?;
 
     let multisig_account = AccountBuilder::new([0; 32])
+        .storage_mode(AccountStorageMode::Public)
         .with_auth_component(AuthGuardedMultisig::new(config)?)
         .with_component(BasicWallet)
-        .account_type(AccountType::RegularAccountUpdatableCode)
-        .storage_mode(AccountStorageMode::Public)
         .with_assets(vec![FungibleAsset::mock(asset_amount)])
         .build_existing()?;
 

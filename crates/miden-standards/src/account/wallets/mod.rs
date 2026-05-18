@@ -166,7 +166,6 @@ pub fn create_basic_wallet(
     };
 
     let account = AccountBuilder::new(init_seed)
-        .account_type(account_type)
         .storage_mode(account_storage_mode)
         .with_auth_component(auth_component)
         .with_component(BasicWallet)

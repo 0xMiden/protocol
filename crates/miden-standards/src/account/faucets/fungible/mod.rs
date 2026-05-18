@@ -15,7 +15,6 @@ use miden_protocol::account::{
     AccountProcedureRoot,
     AccountStorage,
     AccountStorageMode,
-    AccountType,
     StorageSlot,
     StorageSlotName,
 };
@@ -554,7 +553,6 @@ pub fn create_fungible_faucet(
     };
 
     let account = AccountBuilder::new(init_seed)
-        .account_type(AccountType::FungibleFaucet)
         .storage_mode(storage_mode)
         .with_auth_component(auth_component)
         .with_component(faucet)
