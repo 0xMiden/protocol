@@ -4,7 +4,7 @@ use core::fmt;
 use super::v1;
 use crate::Felt;
 use crate::account::account_id::AccountIdPrefixV1;
-use crate::account::{AccountIdVersion, AccountStorageMode, AccountType};
+use crate::account::{AccountIdVersion, AccountStorageMode};
 use crate::errors::AccountIdError;
 use crate::utils::serde::{
     ByteReader,
@@ -92,13 +92,6 @@ impl AccountIdPrefix {
     pub fn as_u64(&self) -> u64 {
         match self {
             AccountIdPrefix::V1(id_prefix) => id_prefix.as_u64(),
-        }
-    }
-
-    /// Returns the type of this account ID.
-    pub fn account_type(&self) -> AccountType {
-        match self {
-            AccountIdPrefix::V1(id_prefix) => id_prefix.account_type(),
         }
     }
 

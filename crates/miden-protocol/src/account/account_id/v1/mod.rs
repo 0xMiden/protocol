@@ -118,12 +118,8 @@ impl AccountIdV1 {
     /// See [`AccountId::dummy`](super::AccountId::dummy) for details.
     #[cfg(any(feature = "testing", test))]
     pub fn dummy(mut bytes: [u8; 15], storage_mode: AccountStorageMode) -> AccountIdV1 {
-        // TODO(asset_composition): Remove eventually.
-        let account_type = AccountType::RegularAccountUpdatableCode;
         let version = AccountIdVersion::Version1 as u8;
-        let low_nibble = ((storage_mode as u8) << Self::STORAGE_MODE_SHIFT)
-            | ((account_type as u8) << Self::TYPE_SHIFT)
-            | version;
+        let low_nibble = ((storage_mode as u8) << Self::STORAGE_MODE_SHIFT) | version;
 
         // Set least significant byte.
         bytes[7] = low_nibble;
@@ -151,7 +147,6 @@ impl AccountIdV1 {
         let account_id = Self::try_from_elements(suffix, prefix)
             .expect("we should have shaped the felts to produce a valid id");
 
-        debug_assert_eq!(account_id.account_type(), account_type);
         debug_assert_eq!(account_id.storage_mode(), storage_mode);
 
         account_id
@@ -177,11 +172,6 @@ impl AccountIdV1 {
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
-
-    /// See [`AccountId::account_type`](super::AccountId::account_type) for details.
-    pub fn account_type(&self) -> AccountType {
-        extract_type(self.prefix.as_canonical_u64())
-    }
 
     /// See [`AccountId::storage_mode`](super::AccountId::storage_mode) for details.
     pub fn storage_mode(&self) -> AccountStorageMode {

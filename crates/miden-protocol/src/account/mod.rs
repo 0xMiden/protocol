@@ -223,11 +223,6 @@ impl Account {
         self.id
     }
 
-    /// Returns the account type
-    pub fn account_type(&self) -> AccountType {
-        self.id.account_type()
-    }
-
     /// Returns a reference to the vault of this account.
     pub fn vault(&self) -> &AssetVault {
         &self.vault

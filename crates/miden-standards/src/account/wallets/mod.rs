@@ -7,7 +7,6 @@ use miden_protocol::account::{
     AccountComponent,
     AccountProcedureRoot,
     AccountStorageMode,
-    AccountType,
 };
 use miden_protocol::errors::AccountError;
 use thiserror::Error;
@@ -127,15 +126,8 @@ pub enum BasicWalletError {
 pub fn create_basic_wallet(
     init_seed: [u8; 32],
     auth_method: AuthMethod,
-    account_type: AccountType,
     account_storage_mode: AccountStorageMode,
 ) -> Result<Account, BasicWalletError> {
-    if matches!(account_type, AccountType::FungibleFaucet | AccountType::NonFungibleFaucet) {
-        return Err(BasicWalletError::AccountError(AccountError::other(
-            "basic wallet accounts cannot have a faucet account type",
-        )));
-    }
-
     let auth_component: AccountComponent = match auth_method {
         AuthMethod::SingleSig { approver: (pub_key, auth_scheme) } => {
             AuthSingleSig::new(pub_key, auth_scheme).into()
@@ -184,7 +176,7 @@ mod tests {
     use miden_protocol::utils::serde::{Deserializable, Serializable};
     use miden_protocol::{ONE, Word};
 
-    use super::{Account, AccountStorageMode, AccountType, AuthMethod, create_basic_wallet};
+    use super::{Account, AccountStorageMode, AuthMethod, create_basic_wallet};
     use crate::account::wallets::BasicWallet;
 
     #[test]
@@ -194,7 +186,6 @@ mod tests {
         let wallet = create_basic_wallet(
             [1; 32],
             AuthMethod::SingleSig { approver: (pub_key, auth_scheme) },
-            AccountType::RegularAccountImmutableCode,
             AccountStorageMode::Public,
         );
 
@@ -210,7 +201,6 @@ mod tests {
         let wallet = create_basic_wallet(
             [1; 32],
             AuthMethod::SingleSig { approver: (pub_key, auth_scheme) },
-            AccountType::RegularAccountImmutableCode,
             AccountStorageMode::Public,
         )
         .unwrap();

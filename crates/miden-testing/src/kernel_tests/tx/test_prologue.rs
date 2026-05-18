@@ -586,9 +586,8 @@ pub async fn create_multiple_accounts_test(storage_mode: AccountStorageMode) -> 
     accounts.push(account);
 
     for account in accounts {
-        let account_type = account.account_type();
         create_account_test(account).await.context(format!(
-            "create_multiple_accounts_test test failed for account type {account_type}"
+            "create_multiple_accounts_test test failed for account storage mode {storage_mode}"
         ))?;
     }
 

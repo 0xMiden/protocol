@@ -221,13 +221,6 @@ impl AccountId {
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns the type of this account ID.
-    pub fn account_type(&self) -> AccountType {
-        match self {
-            AccountId::V1(account_id) => account_id.account_type(),
-        }
-    }
-
     /// Returns the storage mode of this account ID.
     pub fn storage_mode(&self) -> AccountStorageMode {
         match self {
@@ -490,7 +483,7 @@ mod tests {
     use bech32::{Bech32, Bech32m, NoChecksum};
 
     use super::*;
-    use crate::account::account_id::v1::{extract_storage_mode, extract_type, extract_version};
+    use crate::account::account_id::v1::{extract_storage_mode, extract_version};
     use crate::address::{AddressType, CustomNetworkId};
     use crate::errors::Bech32Error;
     use crate::testing::account_id::{
@@ -566,7 +559,6 @@ mod tests {
 
                 // Raw bech32 data should contain the metadata byte at index 8.
                 assert_eq!(extract_version(data[8] as u64).unwrap(), account_id.version());
-                assert_eq!(extract_type(data[8] as u64), account_id.account_type());
                 assert_eq!(extract_storage_mode(data[8] as u64), account_id.storage_mode());
             }
         }
