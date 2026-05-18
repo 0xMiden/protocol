@@ -75,11 +75,11 @@ impl SwapNote {
     /// will create a new P2ID note with `sender` as target, containing the `requested_asset`.
     ///
     /// The shape of the SWAP note storage depends on `payback_note_type`:
-    /// - [`NoteType::Private`]: the payback recipient digest is precomputed off-chain and
-    ///   embedded as an opaque value, so the SWAP consumer cannot learn who the payback targets
-    ///   from the storage alone.
-    /// - [`NoteType::Public`]: the creator id is embedded in plaintext so that any consumer of
-    ///   the payback note can reconstruct its recipient at consume time.
+    /// - [`NoteType::Private`]: the payback recipient digest is precomputed off-chain and embedded
+    ///   as an opaque value, so the SWAP consumer cannot learn who the payback targets from the
+    ///   storage alone.
+    /// - [`NoteType::Public`]: the creator id is embedded in plaintext so that any consumer of the
+    ///   payback note can reconstruct its recipient at consume time.
     ///
     /// # Errors
     /// Returns an error if deserialization or compilation of the `SWAP` script fails.
@@ -379,12 +379,10 @@ impl TryFrom<&[Felt]> for SwapNoteStorage {
             },
             NoteType::Public => {
                 // [8..11] must be zero so the storage shape is unambiguous.
-                for slot in 8..=11 {
-                    if note_storage[slot].as_canonical_u64() != 0 {
-                        return Err(NoteError::other(
-                            "SWAP public payback must have recipient slots cleared",
-                        ));
-                    }
+                if note_storage[8..=11].iter().any(|f| f.as_canonical_u64() != 0) {
+                    return Err(NoteError::other(
+                        "SWAP public payback must have recipient slots cleared",
+                    ));
                 }
 
                 let creator_account_id =
@@ -503,11 +501,8 @@ mod tests {
 
     #[test]
     fn swap_note_storage_try_from_round_trip_public() {
-        let original = SwapNoteStorage::new_public(
-            fungible_asset(),
-            dummy_creator_id(),
-            dummy_payback_tag(),
-        );
+        let original =
+            SwapNoteStorage::new_public(fungible_asset(), dummy_creator_id(), dummy_payback_tag());
         let note_storage = NoteStorage::from(original.clone());
 
         let parsed =
