@@ -70,7 +70,7 @@ impl AssetVaultKey {
     pub(in crate::asset) const CALLBACK_FLAG_SHIFT: u8 = 2;
 
     /// Bits 3-7 of the metadata byte are reserved and must be zero.
-    pub(in crate::asset) const RESERVED_BITS_MASK: u8 = 0b1111_1000;
+    pub(in crate::asset) const METADATA_RESERVED_MASK: u8 = 0b1111_1000;
 
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
@@ -211,7 +211,7 @@ impl TryFrom<Word> for AssetVaultKey {
         let metadata_byte = (raw & Self::METADATA_BYTE_MASK as u64) as u8;
 
         // Make sure the reserved bits of the metadata are zero.
-        if metadata_byte & Self::RESERVED_BITS_MASK != 0 {
+        if metadata_byte & Self::METADATA_RESERVED_MASK != 0 {
             return Err(AssetError::ReservedAssetMetadata(metadata_byte));
         }
 
@@ -331,7 +331,7 @@ mod tests {
         let key = FungibleAsset::mock(42).vault_key();
         let valid_metadata = asset_metadata(key);
         // Set the reserved bits so the reserved-bits check fires.
-        let word = set_asset_metadata(key, valid_metadata | AssetVaultKey::RESERVED_BITS_MASK);
+        let word = set_asset_metadata(key, valid_metadata | AssetVaultKey::METADATA_RESERVED_MASK);
 
         let err = AssetVaultKey::try_from(word).unwrap_err();
         assert_matches!(err, AssetError::ReservedAssetMetadata(_));
