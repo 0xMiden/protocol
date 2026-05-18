@@ -2,15 +2,7 @@ use alloc::string::ToString;
 use core::fmt;
 
 use super::vault::AssetVaultKey;
-use super::{
-    AccountType,
-    Asset,
-    AssetAmount,
-    AssetCallbackFlag,
-    AssetComposition,
-    AssetError,
-    Word,
-};
+use super::{Asset, AssetAmount, AssetCallbackFlag, AssetComposition, AssetError, Word};
 use crate::Felt;
 use crate::account::AccountId;
 use crate::asset::AssetId;
@@ -64,13 +56,9 @@ impl FungibleAsset {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The faucet ID is not a valid fungible faucet ID.
     /// - The provided amount is greater than [`FungibleAsset::MAX_AMOUNT`].
     pub fn new(faucet_id: AccountId, amount: u64) -> Result<Self, AssetError> {
-        if !matches!(faucet_id.account_type(), AccountType::FungibleFaucet) {
-            return Err(AssetError::FungibleFaucetIdTypeMismatch(faucet_id));
-        }
-
+        // TODO: Take AssetAmount as input, then make the function infallible.
         let amount = AssetAmount::new(amount)?;
 
         Ok(Self {

@@ -456,12 +456,6 @@ pub enum AssetError {
     #[error("faucet account ID in asset is invalid")]
     InvalidFaucetAccountId(#[source] Box<dyn Error + Send + Sync + 'static>),
     #[error(
-      "faucet id {0} of type {id_type} must be of type {expected_ty} for fungible assets",
-      id_type = .0.account_type(),
-      expected_ty = AccountType::FungibleFaucet
-    )]
-    FungibleFaucetIdTypeMismatch(AccountId),
-    #[error(
         "asset ID prefix and suffix in a non-fungible asset's vault key must match indices 0 and 1 in the value, but asset ID was {asset_id} and value was {value}"
     )]
     NonFungibleAssetIdMustMatchValue { asset_id: AssetId, value: Word },
