@@ -517,13 +517,13 @@ async fn test_active_note_get_exactly_8_inputs() -> anyhow::Result<()> {
         note_script,
         NoteStorage::new(vec![
             ONE,
-            Felt::new(2),
-            Felt::new(3),
-            Felt::new(4),
-            Felt::new(5),
-            Felt::new(6),
-            Felt::new(7),
-            Felt::new(8),
+            Felt::new_unchecked(2),
+            Felt::new_unchecked(3),
+            Felt::new_unchecked(4),
+            Felt::new_unchecked(5),
+            Felt::new_unchecked(6),
+            Felt::new_unchecked(7),
+            Felt::new_unchecked(8),
         ])
         .context("failed to create note storage")?,
     );

@@ -45,17 +45,17 @@ miden-tx              = { default-features = false, path = "crates/miden-tx", ve
 miden-tx-batch-prover = { default-features = false, path = "crates/miden-tx-batch-prover", version = "0.15" }
 
 # Miden dependencies
-miden-assembly        = { default-features = false, version = "0.22" }
-miden-assembly-syntax = { default-features = false, version = "0.22" }
-miden-core            = { default-features = false, version = "0.22" }
-miden-core-lib        = { default-features = false, version = "0.22" }
-miden-crypto          = { default-features = false, version = "0.23" }
-miden-crypto-derive   = { default-features = false, version = "0.23" }
-miden-mast-package    = { default-features = false, version = "0.22" }
-miden-processor       = { default-features = false, version = "0.22" }
-miden-prover          = { default-features = false, version = "0.22" }
-miden-utils-sync      = { default-features = false, version = "0.22" }
-miden-verifier        = { default-features = false, version = "0.22" }
+miden-assembly        = { default-features = false, version = "0.23" }
+miden-assembly-syntax = { default-features = false, version = "0.23" }
+miden-core            = { default-features = false, version = "0.23" }
+miden-core-lib        = { default-features = false, version = "0.23" }
+miden-crypto          = { default-features = false, version = "0.25" }
+miden-crypto-derive   = { default-features = false, version = "0.25" }
+miden-mast-package    = { default-features = false, version = "0.23" }
+miden-processor       = { default-features = false, version = "0.23" }
+miden-prover          = { default-features = false, version = "0.23" }
+miden-utils-sync      = { default-features = false, version = "0.23" }
+miden-verifier        = { default-features = false, version = "0.23" }
 
 # External dependencies
 alloy-sol-types = { default-features = false, version = "1.5" }

@@ -223,9 +223,9 @@ impl AuthSingleSigAcl {
             StorageSlotSchema::value(
                 "ACL configuration",
                 [
-                    FeltSchema::u32("num_trigger_procs").with_default(Felt::new(0)),
-                    FeltSchema::bool("allow_unauthorized_output_notes").with_default(Felt::new(0)),
-                    FeltSchema::bool("allow_unauthorized_input_notes").with_default(Felt::new(0)),
+                    FeltSchema::u32("num_trigger_procs").with_default(Felt::ZERO),
+                    FeltSchema::bool("allow_unauthorized_output_notes").with_default(Felt::ZERO),
+                    FeltSchema::bool("allow_unauthorized_input_notes").with_default(Felt::ZERO),
                     FeltSchema::new_void(),
                 ],
             ),

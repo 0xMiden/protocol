@@ -343,7 +343,7 @@ async fn test_is_faucet_procedure() -> anyhow::Result<()> {
         let is_faucet = account_id.is_faucet();
         assert_eq!(
             exec_output.get_stack_element(0),
-            Felt::new(is_faucet as u64),
+            Felt::new_unchecked(is_faucet as u64),
             "Rust and MASM is_faucet diverged for account_id {account_id}"
         );
     }
@@ -921,7 +921,7 @@ async fn prove_account_creation_with_non_empty_storage() -> anyhow::Result<()> {
         .await
         .context("failed to execute account-creating transaction")?;
 
-    assert_eq!(tx.account_delta().nonce_delta(), Felt::new(1));
+    assert_eq!(tx.account_delta().nonce_delta(), Felt::ONE);
 
     assert_matches!(
         tx.account_delta().storage().get(&slot_name0).unwrap(),
@@ -944,7 +944,7 @@ async fn prove_account_creation_with_non_empty_storage() -> anyhow::Result<()> {
     );
 
     assert!(tx.account_delta().vault().is_empty());
-    assert_eq!(tx.final_account().nonce(), Felt::new(1));
+    assert_eq!(tx.final_account().nonce(), Felt::ONE);
 
     let proven_tx = LocalTransactionProver::default().prove(tx.clone()).await?;
 
@@ -1582,7 +1582,7 @@ async fn transaction_executor_account_code_using_custom_library() -> anyhow::Res
     let executed_tx = tx_context.execute().await?;
 
     // Account's initial nonce of 1 should have been incremented by 1.
-    assert_eq!(executed_tx.account_delta().nonce_delta(), Felt::new(1));
+    assert_eq!(executed_tx.account_delta().nonce_delta(), Felt::ONE);
 
     // Make sure that account storage has been updated as per the tx script call.
     assert_eq!(executed_tx.account_delta().storage().values().count(), 1);
@@ -1964,7 +1964,7 @@ async fn incrementing_nonce_overflow_fails() -> anyhow::Result<()> {
         .context("failed to build account")?;
     // Increment the nonce to the maximum felt value. The nonce is already 1, so we increment by
     // modulus - 2.
-    account.increment_nonce(Felt::new(Felt::ORDER_U64 - 2))?;
+    account.increment_nonce(Felt::new_unchecked(Felt::ORDER_U64 - 2))?;
 
     let result = TransactionContextBuilder::new(account).build()?.execute().await;
 

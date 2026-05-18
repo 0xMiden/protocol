@@ -4,6 +4,7 @@
 
 ### Features
 
+- [BREAKING] Renamed `NoteId` to `NoteDetailsCommitment`, new `NoteId` struct now includes the NoteMetadata ([#1731](https://github.com/0xMiden/protocol/issues/1731)).
 - [BREAKING] Renamed `native_asset_id` to `fee_faucet_id` ([#2718](https://github.com/0xMiden/protocol/pull/2718)).
 - [BREAKING] Removed redundant outputs from kernel procedures: `note::write_assets_to_memory`, `active_note::get_assets`, `input_note::get_assets`, `output_note::get_assets`, `active_note::get_storage`, and `faucet::mint` no longer return values identical to their inputs ([#2523](https://github.com/0xMiden/protocol/issues/2523)).
 - Added PSWAP (partial swap) note for decentralized partial-fill asset exchange with remainder note re-creation ([#2636](https://github.com/0xMiden/protocol/pull/2636)).
@@ -52,10 +53,12 @@
 - [BREAKING] Renamed account ID version 0 to version 1 and made encoded version 0 invalid ([#2842](https://github.com/0xMiden/protocol/issues/2842)).
 - [BREAKING] Changed note metadata version 1 to encode as `1`, leaving encoded version `0` invalid.
 - Documented the `miden::protocol::account_id` module in the protocol library docs ([#2607](https://github.com/0xMiden/protocol/issues/2607)).
+- Added `Authority` account component ([#2925](https://github.com/0xMiden/protocol/pull/2925)).
 - [BREAKING] Remove `StandardNote::is_compatible_with` and `AccountInterfaceExt::is_compatible_with` ([#2920](https://github.com/0xMiden/protocol/issues/2920)).
 - [BREAKING] Renamed `procedure_digest!` to `procedure_root!` and return `AccountProcedureRoot` instead of `Word` ([#2621](https://github.com/0xMiden/protocol/issues/2621)).
 - [BREAKING] Replaced the `FungibleFaucetBuilder` with a `bon` builder on `FungibleFaucet` ([#2916](https://github.com/0xMiden/protocol/pull/2916)).
 - [BREAKING] `FungibleAsset::amount()` and `AssetVault::get_balance()` now return `AssetAmount` ([#2928](https://github.com/0xMiden/protocol/pull/2928)).
+- [BREAKING] Upgraded `miden-vm` to v0.23 and `miden-crypto` to v0.25. Notable downstream changes: dropped the immediate form of `adv_push` in kernel and standards MASM, marked cross-module-referenced MASM constants and procedures `pub`, migrated to the split `Host`/`BaseHost` trait surface, renamed `Felt::new` call sites to the preserved-behavior `Felt::new_unchecked`, switched `ecdsa_k256_keccak`/`eddsa_25519_sha512` `SecretKey` references to the new `SigningKey`/`KeyExchangeKey` types, and recomputed the kernel's `EMPTY_SMT_ROOT` constant for the Plonky3-aligned Poseidon2 and domain-separated `SmtLeaf::hash` ([#2931](https://github.com/0xMiden/protocol/pull/2931)).
 - Derive `Hash` implementation for `StorageMapKey` and `StorageMapKeyHash` to allow using those values as keys in containers ([#2843](https://github.com/0xMiden/protocol/issues/2843)).
 
 ### Fixes

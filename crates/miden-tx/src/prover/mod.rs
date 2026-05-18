@@ -1,5 +1,6 @@
 use alloc::vec::Vec;
 
+use miden_processor::ExecutionOptions;
 use miden_protocol::account::delta::AccountUpdateDetails;
 use miden_protocol::account::{AccountDelta, PartialAccount};
 use miden_protocol::asset::Asset;
@@ -148,6 +149,7 @@ impl LocalTransactionProver {
             stack_inputs,
             advice_inputs.clone(),
             &mut host,
+            ExecutionOptions::default(),
             self.proof_options.clone(),
         )
         .await

@@ -584,7 +584,7 @@ mod tests {
 
     #[test]
     fn test_serde_account() {
-        let init_nonce = Felt::new(1);
+        let init_nonce = Felt::from(1_u32);
         let asset_0 = FungibleAsset::mock(99);
         let word = Word::from([1, 2, 3, 4u32]);
         let storage_slot = StorageSlotContent::Value(word);
@@ -598,7 +598,7 @@ mod tests {
     #[test]
     fn test_serde_account_delta() {
         let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
-        let nonce_delta = Felt::new(2);
+        let nonce_delta = Felt::from(2_u32);
         let asset_0 = FungibleAsset::mock(15);
         let asset_1 = NonFungibleAsset::mock(&[5, 5, 5]);
         let storage_delta = AccountStorageDelta::new()
@@ -621,7 +621,7 @@ mod tests {
     fn valid_account_delta_is_correctly_applied() {
         // build account
         let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
-        let init_nonce = Felt::new(1);
+        let init_nonce = Felt::from(1_u32);
         let asset_0 = FungibleAsset::mock(100);
         let asset_1 = NonFungibleAsset::mock(&[1, 2, 3]);
 
@@ -631,16 +631,11 @@ mod tests {
         let mut storage_map = StorageMap::with_entries([
             (
                 StorageMapKey::from_array([101, 102, 103, 104]),
-                Word::from([
-                    Felt::new(1_u64),
-                    Felt::new(2_u64),
-                    Felt::new(3_u64),
-                    Felt::new(4_u64),
-                ]),
+                Word::from([1_u32, 2_u32, 3_u32, 4_u32]),
             ),
             (
                 StorageMapKey::from_array([105, 106, 107, 108]),
-                Word::new([Felt::new(5_u64), Felt::new(6_u64), Felt::new(7_u64), Felt::new(8_u64)]),
+                Word::from([5_u32, 6_u32, 7_u32, 8_u32]),
             ),
         ])
         .unwrap();
@@ -660,7 +655,7 @@ mod tests {
         storage_map.insert(key, value).unwrap();
 
         // build account delta
-        let final_nonce = Felt::new(2);
+        let final_nonce = Felt::from(2_u32);
         let storage_delta = AccountStorageDelta::new()
             .add_cleared_items([StorageSlotName::mock(0)])
             .add_updated_values([(StorageSlotName::mock(1), Word::from([1, 2, 3, 4u32]))])
@@ -695,7 +690,7 @@ mod tests {
     fn valid_account_delta_with_unchanged_nonce() {
         // build account
         let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
-        let init_nonce = Felt::new(1);
+        let init_nonce = Felt::from(1_u32);
         let asset = FungibleAsset::mock(110);
         let mut account =
             build_account(vec![asset], init_nonce, vec![StorageSlotContent::Value(Word::empty())]);
@@ -716,13 +711,13 @@ mod tests {
     fn valid_account_delta_with_decremented_nonce() {
         // build account
         let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
-        let init_nonce = Felt::new(2);
+        let init_nonce = Felt::from(2_u32);
         let asset = FungibleAsset::mock(100);
         let mut account =
             build_account(vec![asset], init_nonce, vec![StorageSlotContent::Value(Word::empty())]);
 
         // build account delta
-        let final_nonce = Felt::new(1);
+        let final_nonce = Felt::from(1_u32);
         let storage_delta = AccountStorageDelta::new()
             .add_cleared_items([StorageSlotName::mock(0)])
             .add_updated_values([(StorageSlotName::mock(1), Word::from([1, 2, 3, 4u32]))]);
@@ -737,13 +732,13 @@ mod tests {
     fn empty_account_delta_with_incremented_nonce() {
         // build account
         let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
-        let init_nonce = Felt::new(1);
+        let init_nonce = Felt::from(1_u32);
         let word = Word::from([1, 2, 3, 4u32]);
         let storage_slot = StorageSlotContent::Value(word);
         let mut account = build_account(vec![], init_nonce, vec![storage_slot]);
 
         // build account delta
-        let nonce_delta = Felt::new(1);
+        let nonce_delta = Felt::from(1_u32);
         let account_delta = AccountDelta::new(
             account_id,
             AccountStorageDelta::new(),

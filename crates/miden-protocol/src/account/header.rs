@@ -254,7 +254,7 @@ mod tests {
 
     #[test]
     fn test_serde_account_storage() {
-        let init_nonce = Felt::new(1);
+        let init_nonce = Felt::from(1_u32);
         let asset_0 = FungibleAsset::mock(99);
         let word = Word::from([1, 2, 3, 4u32]);
         let storage_slot = StorageSlotContent::Value(word);

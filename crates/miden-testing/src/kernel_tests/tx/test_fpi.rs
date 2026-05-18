@@ -995,7 +995,7 @@ async fn test_nested_fpi_cyclic_invocation() -> anyhow::Result<()> {
             padw adv_loadw
 
             # push the foreign account ID from the advice stack
-            adv_push.2
+            adv_push adv_push
             # => [foreign_account_id_suffix, foreign_account_id_prefix, FOREIGN_PROC_ROOT,
             #     slot_id_suffix, slot_id_prefix, pad(8)]
 
@@ -1055,7 +1055,7 @@ async fn test_nested_fpi_cyclic_invocation() -> anyhow::Result<()> {
             padw adv_loadw
 
             # push the ID of the second foreign account from the advice stack
-            adv_push.2
+            adv_push adv_push
             # => [foreign_account_id_suffix, foreign_account_id_prefix, FOREIGN_PROC_ROOT, storage_item_index, pad(14)]
 
             exec.tx::execute_foreign_procedure
@@ -1546,7 +1546,7 @@ async fn test_nested_fpi_native_account_invocation() -> anyhow::Result<()> {
             padw adv_loadw
 
             # push the ID of the native account from the advice stack
-            adv_push.2
+            adv_push adv_push
             # => [native_account_id_suffix, native_account_id_prefix, NATIVE_PROC_ROOT, pad(15)]
 
             exec.tx::execute_foreign_procedure

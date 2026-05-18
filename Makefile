@@ -66,6 +66,10 @@ lint: ## Runs all linting tasks at once (Clippy, fixing, formatting, typos)
 	@$(BUILD_GENERATED_FILES_IN_SRC) $(MAKE) toml
 	@$(BUILD_GENERATED_FILES_IN_SRC) $(MAKE) shear
 
+.PHONY: hooks-test
+hooks-test: ## Runs the pytest suite for the python hooks under .claude/hooks/
+	python3 -m pytest .claude/hooks/tests/
+
 # --- docs ----------------------------------------------------------------------------------------
 
 .PHONY: doc
@@ -180,8 +184,8 @@ check-tools: ## Checks if development tools are installed
 	@command -v cargo-shear >/dev/null 2>&1 && echo "[OK] cargo-shear is installed" || echo "[MISSING] cargo-shear is not installed (run: make install-tools)"
 
 .PHONY: install-tools
-install-tools: ## Installs development tools required by the Makefile (mdbook, typos, nextest, taplo)
-	@echo "Installing development tools...""
+install-tools: ## Installs development tools required by the Makefile (mdbook, typos, nextest, taplo, shear)
+	@echo "Installing development tools..."
 	@if ! command -v node >/dev/null 2>&1; then \
 		echo "Node.js not found. Please install Node.js from https://nodejs.org/ or using your package manager"; \
 		echo "On macOS: brew install node"; \
