@@ -255,16 +255,6 @@ impl Account {
         self.seed
     }
 
-    /// Returns true if this account can issue assets.
-    pub fn is_faucet(&self) -> bool {
-        self.id.is_faucet()
-    }
-
-    /// Returns true if this is a regular account.
-    pub fn is_regular_account(&self) -> bool {
-        self.id.is_regular_account()
-    }
-
     /// Returns `true` if the storage mode is [`AccountStorageMode::Public`], `false` otherwise.
     pub fn is_public(&self) -> bool {
         self.id().is_public()

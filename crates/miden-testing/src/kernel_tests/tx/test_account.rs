@@ -670,16 +670,13 @@ async fn test_set_map_item() -> anyhow::Result<()> {
 /// Tests that we can successfully create regular and faucet accounts with empty storage.
 #[tokio::test]
 async fn create_account_with_empty_storage_slots() -> anyhow::Result<()> {
-    for account_type in [AccountType::FungibleFaucet, AccountType::RegularAccountUpdatableCode] {
-        let account = AccountBuilder::new([5; 32])
-            .account_type(account_type)
-            .with_auth_component(Auth::IncrNonce)
-            .with_component(MockAccountComponent::with_empty_slots())
-            .build()
-            .context("failed to build account")?;
+    let account = AccountBuilder::new([5; 32])
+        .with_auth_component(Auth::IncrNonce)
+        .with_component(MockAccountComponent::with_empty_slots())
+        .build()
+        .context("failed to build account")?;
 
-        TransactionContextBuilder::new(account).build()?.execute().await?;
-    }
+    TransactionContextBuilder::new(account).build()?.execute().await?;
 
     Ok(())
 }

@@ -39,7 +39,6 @@ fn wallet_creation() {
     .unwrap();
     let expected_code_commitment = expected_code.commitment();
 
-    assert!(wallet.is_regular_account());
     assert_eq!(wallet.code().commitment(), expected_code_commitment);
     assert_eq!(
         wallet.storage().get_item(AuthSingleSig::public_key_slot()).unwrap(),
@@ -80,7 +79,6 @@ fn wallet_creation_2() {
     .unwrap();
     let expected_code_commitment = expected_code.commitment();
 
-    assert!(wallet.is_regular_account());
     assert_eq!(wallet.code().commitment(), expected_code_commitment);
     assert_eq!(
         wallet.storage().get_item(AuthSingleSig::public_key_slot()).unwrap(),

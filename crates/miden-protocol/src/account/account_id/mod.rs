@@ -230,16 +230,6 @@ impl AccountId {
         }
     }
 
-    /// Returns `true` if an account with this ID is a faucet which can issue assets.
-    pub fn is_faucet(&self) -> bool {
-        self.account_type().is_faucet()
-    }
-
-    /// Returns `true` if an account with this ID is a regular account.
-    pub fn is_regular_account(&self) -> bool {
-        self.account_type().is_regular_account()
-    }
-
     /// Returns the storage mode of this account ID.
     pub fn storage_mode(&self) -> AccountStorageMode {
         match self {

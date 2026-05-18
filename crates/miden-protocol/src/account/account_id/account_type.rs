@@ -29,16 +29,6 @@ pub enum AccountType {
 }
 
 impl AccountType {
-    /// Returns `true` if the account is a faucet.
-    pub fn is_faucet(&self) -> bool {
-        matches!(self, Self::FungibleFaucet | Self::NonFungibleFaucet)
-    }
-
-    /// Returns `true` if the account is a regular account.
-    pub fn is_regular_account(&self) -> bool {
-        matches!(self, Self::RegularAccountImmutableCode | Self::RegularAccountUpdatableCode)
-    }
-
     /// Returns the string representation of the [`AccountType`].
     fn as_str(&self) -> &'static str {
         match self {

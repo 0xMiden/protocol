@@ -574,27 +574,17 @@ pub async fn create_account_test(
 pub async fn create_multiple_accounts_test(storage_mode: AccountStorageMode) -> anyhow::Result<()> {
     let mut accounts = Vec::new();
 
-    for account_type in [
-        AccountType::RegularAccountImmutableCode,
-        AccountType::RegularAccountUpdatableCode,
-        AccountType::FungibleFaucet,
-        AccountType::NonFungibleFaucet,
-    ] {
-        let account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
-            .account_type(account_type)
-            .storage_mode(storage_mode)
-            .with_auth_component(Auth::IncrNonce)
-            .with_component(MockAccountComponent::with_slots(vec![StorageSlot::with_value(
-                StorageSlotName::mock(0),
-                Word::from([255u32; WORD_SIZE]),
-            )]))
-            .build()
-            .with_context(|| {
-                format!("account build for {account_type} and {storage_mode} failed")
-            })?;
+    let account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
+        .storage_mode(storage_mode)
+        .with_auth_component(Auth::IncrNonce)
+        .with_component(MockAccountComponent::with_slots(vec![StorageSlot::with_value(
+            StorageSlotName::mock(0),
+            Word::from([255u32; WORD_SIZE]),
+        )]))
+        .build()
+        .with_context(|| format!("account build storage mode {storage_mode} failed"))?;
 
-        accounts.push(account);
-    }
+    accounts.push(account);
 
     for account in accounts {
         let account_type = account.account_type();

@@ -4,7 +4,6 @@ use miden_protocol::account::{
     AccountComponent,
     AccountId,
     AccountStorage,
-    AccountType,
 };
 use miden_protocol::asset::AssetVault;
 use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
@@ -34,7 +33,6 @@ pub trait MockAccountExt {
     /// Creates a mock account with fungible faucet storage and the given account ID.
     fn mock_fungible_faucet(account_id: u128) -> Account {
         let account_id = AccountId::try_from(account_id).unwrap();
-        assert_eq!(account_id.account_type(), AccountType::FungibleFaucet);
 
         let account = AccountBuilder::new([1; 32])
             .account_type(account_id.account_type())
@@ -50,7 +48,6 @@ pub trait MockAccountExt {
     /// Creates a mock account with non-fungible faucet storage and the given account ID.
     fn mock_non_fungible_faucet(account_id: u128) -> Account {
         let account_id = AccountId::try_from(account_id).unwrap();
-        assert_eq!(account_id.account_type(), AccountType::NonFungibleFaucet);
 
         let account = AccountBuilder::new([1; 32])
             .account_type(account_id.account_type())

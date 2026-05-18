@@ -13,7 +13,6 @@ use miden_protocol::account::{
     AccountId,
     AccountProcedureRoot,
     AccountStorageMode,
-    AccountType,
     StorageMap,
     StorageMapKey,
     StorageSlot,
@@ -24,6 +23,7 @@ use miden_protocol::asset::{
     AssetAmount,
     AssetCallbackFlag,
     AssetCallbacks,
+    AssetComposition,
     FungibleAsset,
     NonFungibleAsset,
     NonFungibleAssetDetails,
@@ -235,13 +235,13 @@ impl From<BlockList> for AccountComponent {
 /// Tests that consuming a callbacks-enabled asset succeeds even when the issuing faucet does not
 /// have the callback storage slot or when the callback storage slot contains the empty word.
 #[rstest::rstest]
-#[case::fungible_empty_storage(AccountType::FungibleFaucet, true)]
-#[case::fungible_no_storage(AccountType::FungibleFaucet, false)]
-#[case::non_fungible_empty_storage(AccountType::NonFungibleFaucet, true)]
-#[case::non_fungible_no_storage(AccountType::NonFungibleFaucet, false)]
+#[case::fungible_empty_storage(AssetComposition::Fungible, true)]
+#[case::fungible_no_storage(AssetComposition::Fungible, false)]
+#[case::non_fungible_empty_storage(AssetComposition::None, true)]
+#[case::non_fungible_no_storage(AssetComposition::None, false)]
 #[tokio::test]
 async fn test_faucet_without_callback_slot_skips_callback(
-    #[case] account_type: AccountType,
+    #[case] asset_composition: AssetComposition,
     #[case] has_empty_callback_proc_root: bool,
 ) -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
@@ -251,7 +251,6 @@ async fn test_faucet_without_callback_slot_skips_callback(
     // Create a faucet WITHOUT any AssetCallbacks component.
     let mut account_builder = AccountBuilder::new([45u8; 32])
         .storage_mode(AccountStorageMode::Public)
-        .account_type(account_type)
         .with_component(MockFaucetComponent);
 
     // If callback proc roots should be empty, add the empty storage slots.
@@ -276,12 +275,12 @@ async fn test_faucet_without_callback_slot_skips_callback(
 
     // Create a P2ID note with a callbacks-enabled asset from this faucet.
     // The faucet does not have the callback slot, but the asset has callbacks enabled.
-    let asset = match account_type {
-        AccountType::FungibleFaucet => Asset::from(FungibleAsset::new(faucet.id(), 100)?),
-        AccountType::NonFungibleFaucet => {
+    let asset = match asset_composition {
+        AssetComposition::Fungible => Asset::from(FungibleAsset::new(faucet.id(), 100)?),
+        AssetComposition::None => {
             Asset::from(NonFungibleAsset::new(&NonFungibleAssetDetails::new(faucet.id(), vec![1])))
         },
-        _ => unreachable!("test only uses faucet account types"),
+        _ => unreachable!("test does not use custom composition"),
     }
     .with_callbacks(AssetCallbackFlag::Enabled);
 
@@ -387,13 +386,11 @@ async fn test_on_before_asset_added_to_account_callback_receives_correct_inputs(
 /// Tests that a blocked account cannot receive an asset with callbacks enabled.
 #[rstest::rstest]
 #[case::fungible(
-    AccountType::FungibleFaucet,
     |faucet_id| {
         Ok(FungibleAsset::new(faucet_id, 100)?.with_callbacks(AssetCallbackFlag::Enabled).into())
     }
 )]
 #[case::non_fungible(
-    AccountType::NonFungibleFaucet,
     |faucet_id| {
         let details = NonFungibleAssetDetails::new(faucet_id, vec![1, 2, 3, 4]);
         Ok(NonFungibleAsset::new(&details).with_callbacks(AssetCallbackFlag::Enabled).into())
@@ -401,13 +398,12 @@ async fn test_on_before_asset_added_to_account_callback_receives_correct_inputs(
 )]
 #[tokio::test]
 async fn test_blocked_account_cannot_receive_asset(
-    #[case] account_type: AccountType,
     #[case] create_asset: impl FnOnce(AccountId) -> anyhow::Result<Asset>,
 ) -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
-    let faucet = add_faucet_with_block_list(&mut builder, account_type, [target_account.id()])?;
+    let faucet = add_faucet_with_block_list(&mut builder, [target_account.id()])?;
 
     let note = builder.add_p2id_note(
         faucet.id(),
@@ -439,13 +435,11 @@ async fn test_blocked_account_cannot_receive_asset(
 /// Tests that a blocked account cannot add a callbacks-enabled asset to an output note.
 #[rstest::rstest]
 #[case::fungible(
-    AccountType::FungibleFaucet,
     |faucet_id| {
         Ok(FungibleAsset::new(faucet_id, 100)?.with_callbacks(AssetCallbackFlag::Enabled).into())
     }
 )]
 #[case::non_fungible(
-    AccountType::NonFungibleFaucet,
     |faucet_id| {
         let details = NonFungibleAssetDetails::new(faucet_id, vec![1, 2, 3, 4]);
         Ok(NonFungibleAsset::new(&details).with_callbacks(AssetCallbackFlag::Enabled).into())
@@ -453,13 +447,12 @@ async fn test_blocked_account_cannot_receive_asset(
 )]
 #[tokio::test]
 async fn test_blocked_account_cannot_add_asset_to_note(
-    #[case] account_type: AccountType,
     #[case] create_asset: impl FnOnce(AccountId) -> anyhow::Result<Asset>,
 ) -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
-    let faucet = add_faucet_with_block_list(&mut builder, account_type, [target_account.id()])?;
+    let faucet = add_faucet_with_block_list(&mut builder, [target_account.id()])?;
     let asset = create_asset(faucet.id())?;
 
     let mut mock_chain = builder.build()?;
@@ -699,18 +692,12 @@ async fn test_faucet_with_callback_calls_itself() -> anyhow::Result<()> {
 /// native account is in the block list and panics if so.
 fn add_faucet_with_block_list(
     builder: &mut MockChainBuilder,
-    account_type: AccountType,
     blocked_accounts: impl IntoIterator<Item = AccountId>,
 ) -> anyhow::Result<Account> {
     let block_list = BlockList::new(blocked_accounts.into_iter().collect());
 
-    if !account_type.is_faucet() {
-        anyhow::bail!("account type must be of type faucet")
-    }
-
     let account_builder = AccountBuilder::new([42u8; 32])
         .storage_mode(AccountStorageMode::Public)
-        .account_type(account_type)
         .with_component(MockFaucetComponent)
         .with_component(block_list);
 
@@ -776,7 +763,6 @@ fn add_faucet_with_callbacks(
 
     let account_builder = AccountBuilder::new([42; 32])
         .storage_mode(AccountStorageMode::Public)
-        .account_type(AccountType::FungibleFaucet)
         .with_component(faucet)
         .with_component(Authority::AuthControlled)
         .with_components(

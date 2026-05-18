@@ -184,16 +184,6 @@ impl AccountIdV1 {
         extract_type(self.prefix.as_canonical_u64())
     }
 
-    /// See [`AccountId::is_faucet`](super::AccountId::is_faucet) for details.
-    pub fn is_faucet(&self) -> bool {
-        self.account_type().is_faucet()
-    }
-
-    /// See [`AccountId::is_regular_account`](super::AccountId::is_regular_account) for details.
-    pub fn is_regular_account(&self) -> bool {
-        self.account_type().is_regular_account()
-    }
-
     /// See [`AccountId::storage_mode`](super::AccountId::storage_mode) for details.
     pub fn storage_mode(&self) -> AccountStorageMode {
         extract_storage_mode(self.prefix().as_u64())
@@ -561,7 +551,6 @@ mod tests {
         let valid_prefix = Felt::try_from(0x7fff_ffff_ffff_fff1u64).unwrap();
 
         let id1 = AccountIdV1::new_unchecked([valid_prefix, valid_suffix]);
-        assert_eq!(id1.account_type(), AccountType::NonFungibleFaucet);
         assert_eq!(id1.storage_mode(), AccountStorageMode::Public);
         assert_eq!(id1.version(), AccountIdVersion::Version1);
     }
@@ -627,29 +616,21 @@ mod tests {
     }
 
     #[test]
-    fn test_account_id_tag_identifiers() {
+    fn test_account_id_accessors() {
         let account_id = AccountIdV1::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE)
             .expect("valid account ID");
-        assert!(account_id.is_regular_account());
-        assert_eq!(account_id.account_type(), AccountType::RegularAccountImmutableCode);
         assert!(account_id.is_public());
 
         let account_id = AccountIdV1::try_from(ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE)
             .expect("valid account ID");
-        assert!(account_id.is_regular_account());
-        assert_eq!(account_id.account_type(), AccountType::RegularAccountUpdatableCode);
         assert!(!account_id.is_public());
 
         let account_id =
             AccountIdV1::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).expect("valid account ID");
-        assert!(account_id.is_faucet());
-        assert_eq!(account_id.account_type(), AccountType::FungibleFaucet);
         assert!(account_id.is_public());
 
         let account_id = AccountIdV1::try_from(ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET)
             .expect("valid account ID");
-        assert!(account_id.is_faucet());
-        assert_eq!(account_id.account_type(), AccountType::NonFungibleFaucet);
         assert!(!account_id.is_public());
     }
 }

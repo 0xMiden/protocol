@@ -80,17 +80,6 @@ impl AccountIdPrefixV1 {
         v1::extract_type(self.prefix.as_canonical_u64())
     }
 
-    /// See [`AccountIdPrefix::is_faucet`](crate::account::AccountIdPrefix::is_faucet) for details.
-    pub fn is_faucet(&self) -> bool {
-        self.account_type().is_faucet()
-    }
-
-    /// See [`AccountIdPrefix::is_regular_account`](crate::account::AccountIdPrefix::is_regular_account) for
-    /// details.
-    pub fn is_regular_account(&self) -> bool {
-        self.account_type().is_regular_account()
-    }
-
     /// See [`AccountIdPrefix::storage_mode`](crate::account::AccountIdPrefix::storage_mode) for
     /// details.
     pub fn storage_mode(&self) -> AccountStorageMode {

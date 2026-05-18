@@ -65,16 +65,6 @@ impl AccountInterface {
         self.account_id.account_type()
     }
 
-    /// Returns true if the reference account can issue assets.
-    pub fn is_faucet(&self) -> bool {
-        self.account_id.is_faucet()
-    }
-
-    /// Returns true if the reference account is a regular.
-    pub fn is_regular_account(&self) -> bool {
-        self.account_id.is_regular_account()
-    }
-
     /// Returns `true` if the reference account is a private account, `false` otherwise.
     pub fn is_private(&self) -> bool {
         self.account_id.is_private()

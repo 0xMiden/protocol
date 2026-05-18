@@ -14,7 +14,6 @@ use miden_protocol::account::{
     AccountId,
     AccountIdVersion,
     AccountStorageMode,
-    AccountType,
     StorageSlotName,
 };
 use miden_protocol::assembly::DefaultSourceManager;
@@ -157,7 +156,6 @@ fn build_pol_faucet_metadata() -> FungibleFaucet {
 /// Build a basic faucet account with POL metadata.
 fn build_pol_faucet_account() -> Account {
     AccountBuilder::new([4u8; 32])
-        .account_type(AccountType::FungibleFaucet)
         .storage_mode(AccountStorageMode::Public)
         .with_auth_component(NoAuth)
         .with_component(build_pol_faucet_metadata())
@@ -214,7 +212,6 @@ async fn get_name_from_masm() -> anyhow::Result<()> {
         .unwrap();
 
     let account = AccountBuilder::new([1u8; 32])
-        .account_type(AccountType::FungibleFaucet)
         .with_auth_component(NoAuth)
         .with_component(faucet)
         .build()?;
@@ -250,7 +247,6 @@ async fn get_name_zeros_returns_empty() -> anyhow::Result<()> {
         .unwrap();
 
     let account = AccountBuilder::new([1u8; 32])
-        .account_type(AccountType::FungibleFaucet)
         .with_auth_component(NoAuth)
         .with_component(faucet)
         .build()?;
@@ -408,7 +404,6 @@ async fn get_mutability_config() -> anyhow::Result<()> {
         .unwrap();
 
     let account = AccountBuilder::new([1u8; 32])
-        .account_type(AccountType::FungibleFaucet)
         .with_auth_component(NoAuth)
         .with_component(faucet)
         .build()?;
@@ -451,7 +446,6 @@ async fn is_field_mutable_checks(
     #[case] expected: u8,
 ) -> anyhow::Result<()> {
     let account = AccountBuilder::new([1u8; 32])
-        .account_type(AccountType::FungibleFaucet)
         .with_auth_component(NoAuth)
         .with_component(faucet)
         .build()?;
@@ -489,7 +483,6 @@ fn faucet_with_metadata_storage_layout() {
         .unwrap();
 
     let account = AccountBuilder::new([1u8; 32])
-        .account_type(AccountType::FungibleFaucet)
         .storage_mode(AccountStorageMode::Public)
         .with_auth_component(NoAuth)
         .with_component(faucet)
@@ -530,7 +523,6 @@ fn verify_faucet_with_max_name_and_description(
         .unwrap();
 
     let mut builder = AccountBuilder::new(seed)
-        .account_type(AccountType::FungibleFaucet)
         .storage_mode(storage_mode)
         .with_auth_component(NoAuth)
         .with_component(faucet);

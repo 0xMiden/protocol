@@ -12,7 +12,6 @@ use miden_protocol::account::{
     AccountId,
     AccountIdVersion,
     AccountStorageMode,
-    AccountType,
 };
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::asset::{Asset, AssetAmount, AssetCallbackFlag, FungibleAsset, TokenSymbol};
@@ -232,8 +231,7 @@ fn build_network_faucet_with_burn_switching(
         .with_component(faucet)
         .with_component(Ownable2Step::new(owner))
         .with_component(Authority::OwnerControlled)
-        .with_components(token_policy_manager)
-        .account_type(AccountType::FungibleFaucet);
+        .with_components(token_policy_manager);
 
     builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
 }
@@ -1768,8 +1766,7 @@ fn build_network_faucet_with_blocklist_transfer(
         .with_component(faucet)
         .with_component(Ownable2Step::new(owner))
         .with_component(Authority::OwnerControlled)
-        .with_components(token_policy_manager)
-        .account_type(AccountType::FungibleFaucet);
+        .with_components(token_policy_manager);
 
     builder.add_account_from_builder(
         Auth::NetworkAccount {

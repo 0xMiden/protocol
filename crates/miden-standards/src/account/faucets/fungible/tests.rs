@@ -114,10 +114,6 @@ fn faucet_contract_creation() {
         assert_eq!(chunk, *expected);
     }
 
-    assert!(faucet_account.is_faucet());
-
-    assert_eq!(faucet_account.account_type(), AccountType::FungibleFaucet);
-
     // Verify the faucet component can be extracted
     let _faucet_component = FungibleFaucet::try_from(faucet_account.clone()).unwrap();
 }
