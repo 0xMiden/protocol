@@ -252,47 +252,6 @@ async fn test_account_validate_id() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn test_is_faucet_procedure() -> anyhow::Result<()> {
-    let test_cases = [
-        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
-        ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
-        ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
-        ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET,
-    ];
-
-    for account_id in test_cases.iter() {
-        let account_id = AccountId::try_from(*account_id).unwrap();
-
-        let code = format!(
-            "
-            use $kernel::account_id
-
-            begin
-                push.{prefix}
-                exec.account_id::is_faucet
-                # => [is_faucet, account_id_prefix]
-
-                # truncate the stack
-                swap drop
-            end
-            ",
-            prefix = account_id.prefix().as_felt(),
-        );
-
-        let exec_output = CodeExecutor::with_default_host().run(&code).await?;
-
-        let is_faucet = account_id.is_faucet();
-        assert_eq!(
-            exec_output.get_stack_element(0),
-            Felt::new_unchecked(is_faucet as u64),
-            "Rust and MASM is_faucet diverged for account_id {account_id}"
-        );
-    }
-
-    Ok(())
-}
-
 // ACCOUNT CODE TESTS
 // ================================================================================================
 

@@ -1,6 +1,6 @@
-use miden::protocol::account_id
 use miden::protocol::asset
 use miden::protocol::asset::COMPOSITION_FUNGIBLE
+use miden::protocol::asset::COMPOSITION_NONE
 use miden::protocol::kernel_proc_offsets::ACCOUNT_GET_ID_OFFSET
 use miden::protocol::kernel_proc_offsets::ACCOUNT_GET_NONCE_OFFSET
 use miden::protocol::kernel_proc_offsets::ACCOUNT_GET_INITIAL_COMMITMENT_OFFSET
@@ -565,11 +565,10 @@ end
 #!
 #! Invocation: exec
 pub proc has_non_fungible_asset
-    # => [faucet_id_prefix, faucet_id_suffix, asset_id_prefix, asset_id_suffix]
-
     # assert that the faucet id is a non-fungible faucet
-    dup.3 exec.account_id::is_non_fungible_faucet
-    assert.err=ERR_VAULT_HAS_NON_FUNGIBLE_ASSET_PROC_CAN_BE_CALLED_ONLY_WITH_NON_FUNGIBLE_ASSET
+    exec.asset::key_to_composition
+    push.COMPOSITION_NONE
+    assert_eq.err=ERR_VAULT_HAS_NON_FUNGIBLE_ASSET_PROC_CAN_BE_CALLED_ONLY_WITH_NON_FUNGIBLE_ASSET
     # => [ASSET_KEY]
 
     exec.get_asset
