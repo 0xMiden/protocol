@@ -252,8 +252,7 @@ impl MockChainBuilder {
         let tx_commitment = transactions.commitment();
         let tx_kernel_commitment = TransactionKernel.to_commitment();
         let timestamp = MockChain::TIMESTAMP_START_SECS;
-        let fee_parameters = FeeParameters::new(self.fee_faucet_id, self.verification_base_fee)
-            .context("failed to construct fee parameters")?;
+        let fee_parameters = FeeParameters::new(self.fee_faucet_id, self.verification_base_fee);
         let validator_secret_key = random_secret_key();
         let validator_public_key = validator_secret_key.public_key();
 

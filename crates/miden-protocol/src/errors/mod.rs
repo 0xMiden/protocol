@@ -21,7 +21,6 @@ use crate::account::{
     AccountCode,
     AccountIdPrefix,
     AccountStorage,
-    AccountType,
     StorageMapKey,
     StorageSlotId,
     StorageSlotName,
@@ -1217,15 +1216,6 @@ pub enum ProposedBlockError {
 
     #[error("nullifier witness has a different root than the current nullifier tree root")]
     NullifierWitnessRootMismatch(NullifierTreeError),
-}
-
-// FEE ERROR
-// ================================================================================================
-
-#[derive(Debug, Error)]
-pub enum FeeError {
-    #[error("fee faucet of the chain must be a fungible faucet but was of type {account_type}")]
-    FeeFaucetIdNotFungible { account_type: AccountType },
 }
 
 // NULLIFIER TREE ERROR
