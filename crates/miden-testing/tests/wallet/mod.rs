@@ -32,10 +32,10 @@ fn wallet_creation() {
 
     let wallet = create_basic_wallet(init_seed, auth_method, account_type, storage_mode).unwrap();
 
-    let expected_code = AccountCode::from_components(
-        &[AuthSingleSig::new(pub_key, auth_scheme).into(), BasicWallet.into()],
-        AccountType::RegularAccountUpdatableCode,
-    )
+    let expected_code = AccountCode::from_components(&[
+        AuthSingleSig::new(pub_key, auth_scheme).into(),
+        BasicWallet.into(),
+    ])
     .unwrap();
     let expected_code_commitment = expected_code.commitment();
 
@@ -73,10 +73,10 @@ fn wallet_creation_2() {
 
     let wallet = create_basic_wallet(init_seed, auth_method, account_type, storage_mode).unwrap();
 
-    let expected_code = AccountCode::from_components(
-        &[AuthSingleSig::new(pub_key, auth_scheme).into(), BasicWallet.into()],
-        AccountType::RegularAccountUpdatableCode,
-    )
+    let expected_code = AccountCode::from_components(&[
+        AuthSingleSig::new(pub_key, auth_scheme).into(),
+        BasicWallet.into(),
+    ])
     .unwrap();
     let expected_code_commitment = expected_code.commitment();
 

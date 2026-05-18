@@ -12,7 +12,6 @@ use miden_protocol::account::component::{
 use miden_protocol::account::{
     AccountComponent,
     AccountProcedureRoot,
-    AccountType,
     StorageMap,
     StorageMapKey,
     StorageSlot,
@@ -297,7 +296,7 @@ impl AuthGuardedMultisig {
         ])
         .expect("storage schema should be valid");
 
-        AccountComponentMetadata::new(Self::NAME, AccountType::all())
+        AccountComponentMetadata::new(Self::NAME)
             .with_description(
                 "Guarded multisig authentication component integrated \
                  with a state guardian using hybrid signature schemes",
@@ -325,13 +324,10 @@ impl From<AuthGuardedMultisig> for AccountComponent {
         let storage_schema =
             StorageSchema::new(slot_schemas).expect("storage schema should be valid");
 
-        let metadata = AccountComponentMetadata::new(
-            AuthGuardedMultisig::NAME,
-            multisig_component.supported_types().clone(),
-        )
-        .with_description(multisig_component.metadata().description())
-        .with_version(multisig_component.metadata().version().clone())
-        .with_storage_schema(storage_schema);
+        let metadata = AccountComponentMetadata::new(AuthGuardedMultisig::NAME)
+            .with_description(multisig_component.metadata().description())
+            .with_version(multisig_component.metadata().version().clone())
+            .with_storage_schema(storage_schema);
 
         AccountComponent::new(AuthGuardedMultisig::code().clone(), storage_slots, metadata).expect(
             "Guarded multisig auth component should satisfy the requirements of a valid \

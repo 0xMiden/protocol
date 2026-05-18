@@ -221,11 +221,8 @@ impl From<BlockList> for AccountComponent {
                 )
                 .into_storage_slots(),
         );
-        let metadata = AccountComponentMetadata::new(
-            BlockList::NAME,
-            [AccountType::FungibleFaucet, AccountType::NonFungibleFaucet],
-        )
-        .with_description("block list callback component for testing");
+        let metadata = AccountComponentMetadata::new(BlockList::NAME)
+            .with_description("block list callback component for testing");
 
         AccountComponent::new(BLOCK_LIST_COMPONENT_CODE.clone(), storage_slots, metadata)
             .expect("block list should satisfy the requirements of a valid account component")
@@ -772,9 +769,8 @@ fn add_faucet_with_callbacks(
         .build()?;
 
     let callback_storage_slots = callbacks.into_storage_slots();
-    let callback_metadata =
-        AccountComponentMetadata::new(component_name, [AccountType::FungibleFaucet])
-            .with_description("callback component for testing");
+    let callback_metadata = AccountComponentMetadata::new(component_name)
+        .with_description("callback component for testing");
     let callback_component =
         AccountComponent::new(callback_code, callback_storage_slots, callback_metadata)?;
 

@@ -319,7 +319,7 @@ impl FungibleFaucet {
         let storage_schema =
             StorageSchema::new(schema_entries).expect("storage schema should be valid");
 
-        AccountComponentMetadata::new(Self::NAME, [AccountType::FungibleFaucet])
+        AccountComponentMetadata::new(Self::NAME)
             .with_description(
                 "Fungible faucet component bundling minting, burning, and token metadata",
             )

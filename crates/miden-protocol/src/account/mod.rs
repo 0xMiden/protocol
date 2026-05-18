@@ -167,7 +167,6 @@ impl Account {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - Any of the components does not support `account_type`.
     /// - The number of procedures in all merged libraries is 0 or exceeds
     ///   [`AccountCode::MAX_NUM_PROCEDURES`].
     /// - Two or more libraries export a procedure with the same MAST root.
@@ -176,11 +175,8 @@ impl Account {
     /// - The number of [`StorageSlot`]s of all components exceeds 255.
     /// - [`MastForest::merge`](miden_processor::MastForest::merge) fails on all libraries.
     pub(super) fn initialize_from_components(
-        account_type: AccountType,
         components: Vec<AccountComponent>,
     ) -> Result<(AccountCode, AccountStorage), AccountError> {
-        validate_components_support_account_type(&components, account_type)?;
-
         let code = AccountCode::from_components_unchecked(&components)?;
         let storage = AccountStorage::from_components(components)?;
 
@@ -519,33 +515,14 @@ pub(super) fn validate_account_seed(
     }
 }
 
-/// Validates that all `components` support the given `account_type`.
-fn validate_components_support_account_type(
-    components: &[AccountComponent],
-    account_type: AccountType,
-) -> Result<(), AccountError> {
-    for (component_index, component) in components.iter().enumerate() {
-        if !component.supports_type(account_type) {
-            return Err(AccountError::UnsupportedComponentForAccountType {
-                account_type,
-                component_index,
-            });
-        }
-    }
-
-    Ok(())
-}
-
 // TESTS
 // ================================================================================================
 
 #[cfg(test)]
 mod tests {
-    use alloc::sync::Arc;
     use alloc::vec::Vec;
 
     use assert_matches::assert_matches;
-    use miden_assembly::Assembler;
     use miden_crypto::utils::{Deserializable, Serializable};
     use miden_crypto::{Felt, Word};
 
@@ -558,11 +535,9 @@ mod tests {
         AccountVaultDelta,
     };
     use crate::account::AccountStorageMode::Public;
-    use crate::account::component::AccountComponentMetadata;
     use crate::account::{
         Account,
         AccountBuilder,
-        AccountComponent,
         AccountIdVersion,
         AccountType,
         PartialAccount,
@@ -781,40 +756,6 @@ mod tests {
         let storage = AccountStorage::new(slots).unwrap();
 
         Account::new_existing(id, vault, storage, code, nonce)
-    }
-
-    /// Tests that initializing code and storage from a component which does not support the given
-    /// account type returns an error.
-    #[test]
-    fn test_account_unsupported_component_type() {
-        let code1 = "pub proc foo add end";
-        let library1 =
-            Arc::unwrap_or_clone(Assembler::default().assemble_library([code1]).unwrap());
-
-        // This component support all account types except the regular account with updatable code.
-        let metadata = AccountComponentMetadata::new(
-            "test::component1",
-            [
-                AccountType::FungibleFaucet,
-                AccountType::NonFungibleFaucet,
-                AccountType::RegularAccountImmutableCode,
-            ],
-        );
-        let component1 = AccountComponent::new(library1, vec![], metadata).unwrap();
-
-        let err = Account::initialize_from_components(
-            AccountType::RegularAccountUpdatableCode,
-            vec![component1],
-        )
-        .unwrap_err();
-
-        assert!(matches!(
-            err,
-            AccountError::UnsupportedComponentForAccountType {
-                account_type: AccountType::RegularAccountUpdatableCode,
-                component_index: 0
-            }
-        ))
     }
 
     /// Tests all cases of account ID seed validation.

@@ -11,7 +11,6 @@ use miden_protocol::account::{
     AccountComponent,
     AccountId,
     AccountStorageMode,
-    AccountType,
     StorageSlot,
 };
 use miden_protocol::assembly::DefaultSourceManager;
@@ -54,7 +53,7 @@ fn create_ownable_account(
         .storage_mode(AccountStorageMode::Public)
         .with_auth_component(Auth::IncrNonce)
         .with_component({
-            let metadata = AccountComponentMetadata::new("test::ownable", AccountType::all());
+            let metadata = AccountComponentMetadata::new("test::ownable");
             AccountComponent::new(component_code_obj, storage_slots, metadata)?
         })
         .build_existing()?;

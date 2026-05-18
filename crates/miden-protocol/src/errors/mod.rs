@@ -169,13 +169,6 @@ pub enum AccountError {
     #[error("number of storage slots is {0} but max possible number is {max}", max = AccountStorage::MAX_NUM_STORAGE_SLOTS)]
     StorageTooManySlots(u64),
     #[error(
-        "account component at index {component_index} is incompatible with account of type {account_type}"
-    )]
-    UnsupportedComponentForAccountType {
-        account_type: AccountType,
-        component_index: usize,
-    },
-    #[error(
         "failed to apply full state delta to existing account; full state deltas can be converted to accounts directly"
     )]
     ApplyFullStateDeltaToAccount,

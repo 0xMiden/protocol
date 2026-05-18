@@ -169,13 +169,12 @@ impl AccountBuilder {
         let mut components = vec![auth_component];
         components.append(&mut self.components);
 
-        let (code, storage) = Account::initialize_from_components(self.account_type, components)
-            .map_err(|err| {
-                AccountError::BuildError(
-                    "account components failed to build".into(),
-                    Some(Box::new(err)),
-                )
-            })?;
+        let (code, storage) = Account::initialize_from_components(components).map_err(|err| {
+            AccountError::BuildError(
+                "account components failed to build".into(),
+                Some(Box::new(err)),
+            )
+        })?;
 
         Ok((vault, code, storage))
     }
@@ -367,8 +366,7 @@ mod tests {
             let mut value = Word::empty();
             value[0] = Felt::from(custom.slot0);
 
-            let metadata =
-                AccountComponentMetadata::new("test::custom_component1", AccountType::all());
+            let metadata = AccountComponentMetadata::new("test::custom_component1");
             AccountComponent::new(
                 CUSTOM_LIBRARY1.clone(),
                 vec![StorageSlot::with_value(CUSTOM_COMPONENT1_SLOT_NAME.clone(), value)],
@@ -389,8 +387,7 @@ mod tests {
             let mut value1 = Word::empty();
             value1[3] = Felt::from(custom.slot1);
 
-            let metadata =
-                AccountComponentMetadata::new("test::custom_component2", AccountType::all());
+            let metadata = AccountComponentMetadata::new("test::custom_component2");
             AccountComponent::new(
                 CUSTOM_LIBRARY2.clone(),
                 vec![

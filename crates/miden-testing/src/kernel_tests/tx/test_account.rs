@@ -1274,11 +1274,8 @@ async fn test_get_init_asset() -> anyhow::Result<()> {
 async fn test_authenticate_and_track_procedure() -> anyhow::Result<()> {
     let mock_component = MockAccountComponent::with_empty_slots();
 
-    let account_code = AccountCode::from_components(
-        &[Auth::IncrNonce.into(), mock_component.into()],
-        AccountType::RegularAccountUpdatableCode,
-    )
-    .unwrap();
+    let account_code =
+        AccountCode::from_components(&[Auth::IncrNonce.into(), mock_component.into()]).unwrap();
 
     let tc_0 = *account_code.procedures()[1].mast_root();
     let tc_1 = *account_code.procedures()[2].mast_root();
