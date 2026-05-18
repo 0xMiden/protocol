@@ -59,6 +59,12 @@ pub enum FungibleFaucetError {
     MissingFungibleFaucetInterface,
     #[error("unsupported authentication method: {0}")]
     UnsupportedAuthMethod(String),
+    #[error(
+        "AccessControl::AuthControlled is incompatible with the chosen auth method: {0}. \
+         Under AuthControlled the auth component is the sole gate for authority-protected \
+         setters. It must authenticate every authority-gated setter root."
+    )]
+    IncompatibleAuthControlledAuth(String),
     #[error("account creation failed")]
     AccountError(#[source] AccountError),
     #[error("account is not a fungible faucet account")]

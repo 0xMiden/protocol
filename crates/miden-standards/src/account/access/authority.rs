@@ -48,13 +48,28 @@ const RBAC_CONTROLLED: u8 = 2;
 /// the MASM helper `authority::assert_authorized`. Installing the [`Authority`] component on an
 /// account thus selects the gating mode for *all* such procedures in one place.
 ///
+/// # Safety invariant for [`Authority::AuthControlled`]
+///
+/// Because `assert_authorized` is a no-op under `AuthControlled`, the account's auth component
+/// is the **sole** gate for every authority-gated setter. The auth component MUST therefore
+/// authenticate every such setter root, otherwise the setters become permissionless. Factories
+/// that compose accounts under this variant enforce this invariant (see
+/// [`create_fungible_faucet`][crate::account::faucets::create_fungible_faucet], which rejects
+/// [`AuthMethod::NoAuth`][crate::AuthMethod::NoAuth] under
+/// [`AccessControl::AuthControlled`][crate::account::access::AccessControl::AuthControlled] and
+/// installs [`AuthSingleSigAcl`][crate::account::auth::AuthSingleSigAcl] with the complete
+/// authority-gated trigger list for [`AuthMethod::SingleSig`][crate::AuthMethod::SingleSig]).
+/// Custom account assemblies that install `Authority::AuthControlled` directly bear the same
+/// responsibility.
+///
 /// Storage layout: `[authority, role_symbol_or_zero, 0, 0]` — single Word.
 #[repr(u8)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Authority {
     /// Authority is the account's auth component; no extra check is performed by
-    /// `authority::assert_authorized`.
+    /// `authority::assert_authorized`. See the type-level docs for the safety invariant the
+    /// auth component must uphold.
     AuthControlled = AUTH_CONTROLLED,
     /// Authority is the [`Ownable2Step`][crate::account::access::Ownable2Step] owner; the call
     /// must be sent by the registered owner.

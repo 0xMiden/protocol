@@ -1,3 +1,5 @@
+use alloc::collections::BTreeSet;
+
 use assert_matches::assert_matches;
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 use miden_protocol::account::{AccountBuilder, AccountStorageMode, AccountType};
@@ -18,10 +20,53 @@ use crate::account::policies::{
 };
 use crate::account::wallets::BasicWallet;
 
+/// Builds a minimal policy manager with AllowAll on every kind, used by the construction tests.
+fn allow_all_policy_manager() -> TokenPolicyManager {
+    TokenPolicyManager::new()
+        .with_mint_policy(MintPolicyConfig::AllowAll, PolicyRegistration::Active)
+        .unwrap()
+        .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)
+        .unwrap()
+        .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)
+        .unwrap()
+        .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)
+        .unwrap()
+}
+
+/// Builds a sample `FungibleFaucet` shared by construction tests.
+fn sample_faucet() -> FungibleFaucet {
+    FungibleFaucet::builder()
+        .name(TokenName::new("polygon").unwrap())
+        .symbol(TokenSymbol::try_from("POL").unwrap())
+        .decimals(2)
+        .max_supply(AssetAmount::from(123u32))
+        .description(Description::new("A polygon token").unwrap())
+        .build()
+        .unwrap()
+}
+
+/// Reads every trigger-procedure-root map entry from `0..num` and returns the set.
+fn read_trigger_procedure_roots(
+    account: &miden_protocol::account::Account,
+    num: u32,
+) -> BTreeSet<Word> {
+    (0..num)
+        .map(|i| {
+            account
+                .storage()
+                .get_map_item(
+                    AuthSingleSigAcl::trigger_procedure_roots_slot(),
+                    [Felt::from(i), Felt::ZERO, Felt::ZERO, Felt::ZERO].into(),
+                )
+                .unwrap()
+        })
+        .collect()
+}
+
 #[test]
 fn faucet_contract_creation() {
     let pub_key_word = Word::new([Felt::ONE; 4]);
-    let auth_method: AuthMethod = AuthMethod::SingleSig {
+    let auth = AuthMethod::SingleSig {
         approver: (pub_key_word.into(), AuthScheme::Falcon512Poseidon2),
     };
 
@@ -31,39 +76,18 @@ fn faucet_contract_creation() {
         204, 149, 90, 166, 68, 100, 73, 106, 168, 125, 237, 138, 16,
     ];
 
-    let max_supply = AssetAmount::from(123u32);
     let token_symbol_string = "POL";
     let token_symbol = TokenSymbol::try_from(token_symbol_string).unwrap();
     let token_name_string = "polygon";
     let description_string = "A polygon token";
-    let decimals = 2u8;
-    let storage_mode = AccountStorageMode::Private;
 
-    let token_name = TokenName::new(token_name_string).unwrap();
-    let description = Description::new(description_string).unwrap();
-    let faucet = FungibleFaucet::builder()
-        .name(token_name)
-        .symbol(token_symbol.clone())
-        .decimals(decimals)
-        .max_supply(max_supply)
-        .description(description)
-        .build()
-        .unwrap();
+    let faucet = sample_faucet();
     let faucet_account = create_fungible_faucet(
         init_seed,
         faucet,
-        storage_mode,
-        auth_method,
-        AccessControl::AuthControlled,
-        TokenPolicyManager::new()
-            .with_mint_policy(MintPolicyConfig::AllowAll, PolicyRegistration::Active)
-            .unwrap()
-            .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)
-            .unwrap()
-            .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)
-            .unwrap()
-            .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)
-            .unwrap(),
+        AccessControl::AuthControlled { auth },
+        allow_all_policy_manager(),
+        AccountStorageMode::Private,
     )
     .unwrap();
 
@@ -76,25 +100,31 @@ fn faucet_contract_creation() {
     // The config slot of the auth component stores:
     // [num_trigger_procs, allow_unauthorized_output_notes, allow_unauthorized_input_notes, 0].
     //
-    // With 1 trigger procedure (mint_and_send), allow_unauthorized_output_notes=false, and
-    // allow_unauthorized_input_notes=true, this should be [1, 0, 1, 0].
+    // With 9 authority-gated trigger procedures (mint_and_send + 4 token metadata setters +
+    // 4 policy setters), allow_unauthorized_output_notes=false, and
+    // allow_unauthorized_input_notes=true, this should be [9, 0, 1, 0].
     assert_eq!(
         faucet_account.storage().get_item(AuthSingleSigAcl::config_slot()).unwrap(),
-        [Felt::ONE, Felt::ZERO, Felt::ONE, Felt::ZERO].into()
+        [Felt::from(9_u32), Felt::ZERO, Felt::ONE, Felt::ZERO].into()
     );
 
-    // The procedure root map should contain the mint_and_send procedure root.
-    let mint_root = FungibleFaucet::mint_and_send_root();
-    assert_eq!(
-        faucet_account
-            .storage()
-            .get_map_item(
-                AuthSingleSigAcl::trigger_procedure_roots_slot(),
-                [Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ZERO].into()
-            )
-            .unwrap(),
-        mint_root.as_word()
-    );
+    // The trigger procedure root map should contain every authority-gated setter root.
+    let stored_roots = read_trigger_procedure_roots(&faucet_account, 9);
+    let expected_roots: BTreeSet<Word> = [
+        FungibleFaucet::mint_and_send_root(),
+        FungibleFaucet::set_max_supply_root(),
+        FungibleFaucet::set_description_root(),
+        FungibleFaucet::set_logo_uri_root(),
+        FungibleFaucet::set_external_link_root(),
+        TokenPolicyManager::set_mint_policy_root(),
+        TokenPolicyManager::set_burn_policy_root(),
+        TokenPolicyManager::set_send_policy_root(),
+        TokenPolicyManager::set_receive_policy_root(),
+    ]
+    .into_iter()
+    .map(|root| root.as_word())
+    .collect();
+    assert_eq!(stored_roots, expected_roots);
 
     // Check that faucet metadata was initialized to the given values.
     // Storage layout: [token_supply, max_supply, decimals, symbol]
@@ -120,6 +150,75 @@ fn faucet_contract_creation() {
 
     // Verify the faucet component can be extracted
     let _faucet_component = FungibleFaucet::try_from(faucet_account.clone()).unwrap();
+}
+
+/// `AccessControl::AuthControlled { auth: NoAuth }` must be rejected: under AuthControlled the
+/// auth component is the sole gate for authority-gated setters, so a NoAuth pairing would
+/// leave them permissionless.
+#[test]
+fn auth_controlled_rejects_no_auth() {
+    let err = create_fungible_faucet(
+        [7u8; 32],
+        sample_faucet(),
+        AccessControl::AuthControlled { auth: AuthMethod::NoAuth },
+        allow_all_policy_manager(),
+        AccountStorageMode::Private,
+    )
+    .expect_err("AuthControlled+NoAuth should be rejected");
+    assert_matches!(err, FungibleFaucetError::IncompatibleAuthControlledAuth(_));
+}
+
+/// `AccessControl::AuthControlled { auth: Multisig | Unknown }` must be rejected — both are
+/// already unsupported for fungible faucets, and the merge surfaces the rejection at the
+/// type level.
+#[test]
+fn auth_controlled_rejects_multisig_and_unknown() {
+    let multisig_err = create_fungible_faucet(
+        [7u8; 32],
+        sample_faucet(),
+        AccessControl::AuthControlled {
+            auth: AuthMethod::Multisig {
+                threshold: 1,
+                approvers: alloc::vec::Vec::new(),
+            },
+        },
+        allow_all_policy_manager(),
+        AccountStorageMode::Private,
+    )
+    .expect_err("AuthControlled+Multisig should be rejected");
+    assert_matches!(multisig_err, FungibleFaucetError::UnsupportedAuthMethod(_));
+
+    let unknown_err = create_fungible_faucet(
+        [7u8; 32],
+        sample_faucet(),
+        AccessControl::AuthControlled { auth: AuthMethod::Unknown },
+        allow_all_policy_manager(),
+        AccountStorageMode::Private,
+    )
+    .expect_err("AuthControlled+Unknown should be rejected");
+    assert_matches!(unknown_err, FungibleFaucetError::UnsupportedAuthMethod(_));
+}
+
+/// `Ownable2Step + NoAuth` is a valid configuration: the setter gate is enforced
+/// in-procedure (`assert_sender_is_owner`), so the account-level auth can legitimately be
+/// NoAuth (typical for network-style faucets driven by allowlisted note scripts).
+#[test]
+fn ownable2step_with_no_auth_is_accepted() {
+    use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
+
+    let owner = miden_protocol::account::AccountId::try_from(
+        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
+    )
+    .unwrap();
+
+    let _account = create_fungible_faucet(
+        [7u8; 32],
+        sample_faucet(),
+        AccessControl::Ownable2Step { owner, auth: AuthMethod::NoAuth },
+        allow_all_policy_manager(),
+        AccountStorageMode::Public,
+    )
+    .expect("Ownable2Step+NoAuth should be accepted");
 }
 
 #[test]
@@ -168,4 +267,12 @@ fn faucet_create_from_account() {
 fn get_faucet_procedures() {
     let _mint_and_send_root = FungibleFaucet::mint_and_send_root();
     let _receive_and_burn_root = FungibleFaucet::receive_and_burn_root();
+    let _set_max_supply_root = FungibleFaucet::set_max_supply_root();
+    let _set_description_root = FungibleFaucet::set_description_root();
+    let _set_logo_uri_root = FungibleFaucet::set_logo_uri_root();
+    let _set_external_link_root = FungibleFaucet::set_external_link_root();
+    let _set_mint_policy_root = TokenPolicyManager::set_mint_policy_root();
+    let _set_burn_policy_root = TokenPolicyManager::set_burn_policy_root();
+    let _set_send_policy_root = TokenPolicyManager::set_send_policy_root();
+    let _set_receive_policy_root = TokenPolicyManager::set_receive_policy_root();
 }
