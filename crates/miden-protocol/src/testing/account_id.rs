@@ -54,7 +54,7 @@ pub const ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET_1: u128 =
 pub const ACCOUNT_ID_MAX_ONES: u128 =
     account_id(AccountStorageMode::Public, 0) | 0x7fff_ffff_ffff_ff00_7fff_ffff_ffff_ff00;
 /// The Account Id with the maximum possible zero bits.
-pub const ACCOUNT_ID_MAX_ZEROES: u128 = account_id(AccountStorageMode::Private, 0x001f_0000);
+pub const ACCOUNT_ID_MAX_ZEROES: u128 = account_id(AccountStorageMode::Private, 0x0000_0000);
 
 // UTILITIES
 // --------------------------------------------------------------------------------------------

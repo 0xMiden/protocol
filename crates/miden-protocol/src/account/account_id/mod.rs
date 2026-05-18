@@ -484,6 +484,7 @@ mod tests {
     use crate::address::{AddressType, CustomNetworkId};
     use crate::errors::Bech32Error;
     use crate::testing::account_id::{
+        ACCOUNT_ID_MAX_ZEROES,
         ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET,
         ACCOUNT_ID_PRIVATE_SENDER,
         ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
@@ -502,6 +503,7 @@ mod tests {
             ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET,
             ACCOUNT_ID_PRIVATE_SENDER,
             ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET,
+            ACCOUNT_ID_MAX_ZEROES,
         ]
         .into_iter()
         .enumerate()
