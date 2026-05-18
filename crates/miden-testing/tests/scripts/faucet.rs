@@ -15,7 +15,7 @@ use miden_protocol::account::{
     AccountType,
 };
 use miden_protocol::assembly::DefaultSourceManager;
-use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset, TokenSymbol};
+use miden_protocol::asset::{Asset, AssetAmount, AssetCallbackFlag, FungibleAsset, TokenSymbol};
 use miden_protocol::note::{
     Note,
     NoteAssets,
@@ -133,8 +133,9 @@ pub fn verify_minted_output_note(
 ) -> anyhow::Result<()> {
     let output_note = executed_transaction.output_notes().get_note(0).clone();
 
-    let fungible_asset: Asset =
-        FungibleAsset::new(faucet.id(), params.amount.as_canonical_u64())?.into();
+    let fungible_asset: Asset = FungibleAsset::new(faucet.id(), params.amount.as_canonical_u64())?
+        .with_callbacks(AssetCallbackFlag::Enabled)
+        .into();
     let assets = NoteAssets::new(vec![fungible_asset])?;
 
     let partial_metadata =
@@ -521,7 +522,8 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
 
     let output_script_root = note_recipient.script().root();
 
-    let asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?;
+    let asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?
+        .with_callbacks(AssetCallbackFlag::Enabled);
     let metadata = PartialNoteMetadata::new(faucet.id(), note_type).with_tag(tag);
     let expected_note = Note::new(NoteAssets::new(vec![asset.into()])?, metadata, note_recipient);
 
@@ -608,7 +610,8 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
         executed_transaction,
         note_type: NoteType::Public,
         sender: faucet.id(),
-        assets: [FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?],
+        assets: [FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?
+            .with_callbacks(AssetCallbackFlag::Enabled)],
     );
 
     let output_note = executed_transaction.output_notes().get_note(0);
@@ -691,8 +694,10 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
     // --------------------------------------------------------------------------------------------
 
     let amount = Felt::new_unchecked(75);
-    let mint_asset: Asset =
-        FungibleAsset::new(faucet.id(), amount.as_canonical_u64()).unwrap().into();
+    let mint_asset: Asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())
+        .unwrap()
+        .with_callbacks(AssetCallbackFlag::Enabled)
+        .into();
     let serial_num = Word::default();
 
     let output_note_tag = NoteTag::with_account_target(target_account.id());
@@ -732,7 +737,8 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
     let output_note = executed_transaction.output_notes().get_note(0);
 
     // Verify the output note contains the minted fungible asset
-    let expected_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?;
+    let expected_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?
+        .with_callbacks(AssetCallbackFlag::Enabled);
     let assets = NoteAssets::new(vec![expected_asset.into()])?;
     let details_commitment =
         NoteDetailsCommitment::from_raw_commitments(recipient, assets.commitment());
@@ -747,18 +753,28 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
 
     // CONSUME THE OUTPUT NOTE WITH TARGET ACCOUNT
     // --------------------------------------------------------------------------------------------
-    // Execute transaction to consume the output note with the target account
+    // Execute transaction to consume the output note with the target account. The faucet must
+    // be supplied as a foreign account so the kernel can dispatch the receive callback on it
+    // when the asset is added to the target account's vault.
+    let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
     let consume_tx_context = mock_chain
         .build_tx_context(target_account.id(), &[], slice::from_ref(&p2id_mint_output_note))?
+        .foreign_accounts(vec![faucet_inputs])
         .build()?;
     let consume_executed_transaction = consume_tx_context.execute().await?;
 
     // Apply the delta to the target account and verify the asset was added to the account's vault
     target_account.apply_delta(consume_executed_transaction.account_delta())?;
 
-    // Verify the account's vault now contains the expected fungible asset
-    let balance = target_account.vault().get_balance(faucet.id())?;
-    assert_eq!(balance, expected_asset.amount());
+    // Verify the account's vault now contains the expected fungible asset. The asset is
+    // stored under its full vault key (which encodes the callback flag), so we look it up
+    // via `vault().get(...)` rather than `get_balance`, which always queries the
+    // callback-disabled key.
+    let stored_asset = target_account
+        .vault()
+        .get(expected_asset.vault_key())
+        .expect("vault should contain the minted asset");
+    assert_eq!(stored_asset.unwrap_fungible().amount(), expected_asset.amount());
 
     Ok(())
 }
@@ -1630,8 +1646,10 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
 
     let amount = Felt::new_unchecked(75);
-    let mint_asset: Asset =
-        FungibleAsset::new(faucet.id(), amount.as_canonical_u64()).unwrap().into();
+    let mint_asset: Asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())
+        .unwrap()
+        .with_callbacks(AssetCallbackFlag::Enabled)
+        .into();
     let serial_num = Word::from([1, 2, 3, 4u32]);
 
     // Create the expected P2ID output note
@@ -1701,18 +1719,26 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
     mock_chain.add_pending_executed_transaction(&executed_transaction)?;
     mock_chain.prove_next_block()?;
 
-    // Consume the output note with target account
+    // Consume the output note with target account. The issuing faucet must be supplied as a
+    // foreign account so the kernel can dispatch the receive callback on it when the asset is
+    // added to the target account's vault.
     let mut target_account_mut = target_account.clone();
+    let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
     let consume_tx_context = mock_chain
         .build_tx_context(target_account.id(), &[], slice::from_ref(&p2id_mint_output_note))?
+        .foreign_accounts(vec![faucet_inputs])
         .build()?;
     let consume_executed_transaction = consume_tx_context.execute().await?;
 
     target_account_mut.apply_delta(consume_executed_transaction.account_delta())?;
 
-    let expected_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?;
-    let balance = target_account_mut.vault().get_balance(faucet.id())?;
-    assert_eq!(balance, expected_asset.amount());
+    let expected_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?
+        .with_callbacks(AssetCallbackFlag::Enabled);
+    let stored_asset = target_account_mut
+        .vault()
+        .get(expected_asset.vault_key())
+        .expect("vault should contain the minted asset");
+    assert_eq!(stored_asset.unwrap_fungible().amount(), expected_asset.amount());
 
     Ok(())
 }
@@ -1792,7 +1818,9 @@ async fn multiple_mints_in_single_tx_produce_correct_amounts() -> anyhow::Result
     assert_eq!(executed_transaction.output_notes().num_notes(), 2);
 
     // Verify first note has exactly amount_1 tokens.
-    let expected_asset_1: Asset = FungibleAsset::new(faucet.id(), amount_1)?.into();
+    let expected_asset_1: Asset = FungibleAsset::new(faucet.id(), amount_1)?
+        .with_callbacks(AssetCallbackFlag::Enabled)
+        .into();
     let output_note_1 = executed_transaction.output_notes().get_note(0);
     let assets_1 = NoteAssets::new(vec![expected_asset_1])?;
     let details_commitment_1 =
@@ -1801,7 +1829,9 @@ async fn multiple_mints_in_single_tx_produce_correct_amounts() -> anyhow::Result
     assert_eq!(output_note_1.id(), expected_id_1);
 
     // Verify second note has exactly amount_2 tokens.
-    let expected_asset_2: Asset = FungibleAsset::new(faucet.id(), amount_2)?.into();
+    let expected_asset_2: Asset = FungibleAsset::new(faucet.id(), amount_2)?
+        .with_callbacks(AssetCallbackFlag::Enabled)
+        .into();
     let output_note_2 = executed_transaction.output_notes().get_note(1);
     let assets_2 = NoteAssets::new(vec![expected_asset_2])?;
     let details_commitment_2 =

@@ -25,7 +25,7 @@ use miden_agglayer::{
 use miden_protocol::Felt;
 use miden_protocol::account::Account;
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::asset::{Asset, FungibleAsset};
+use miden_protocol::asset::{Asset, AssetCallbackFlag, FungibleAsset};
 use miden_protocol::crypto::SequentialCommit;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::note::NoteType;
@@ -374,6 +374,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     let expected_asset: Asset =
         FungibleAsset::new(agglayer_faucet.id(), miden_claim_amount.as_canonical_u64())
             .unwrap()
+            .with_callbacks(AssetCallbackFlag::Enabled)
             .into();
     let expected_output_p2id_note = create_p2id_note_exact(
         agglayer_faucet.id(),
@@ -397,23 +398,33 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
         mock_chain.prove_next_block()?;
 
         // Execute the consume transaction for the destination account. Pass the account
-        // directly since the JSON-encoded destination decodes to a private account ID.
+        // directly since the JSON-encoded destination decodes to a private account ID. The
+        // issuing faucet must be supplied as a foreign account so the kernel can dispatch
+        // the receive callback on it when the asset is added to the destination vault.
+        let agglayer_faucet_inputs = mock_chain.get_foreign_account_inputs(agglayer_faucet.id())?;
         let consume_tx_context = mock_chain
             .build_tx_context(
                 destination_account.clone(),
                 &[],
                 slice::from_ref(&expected_output_p2id_note),
             )?
+            .foreign_accounts(vec![agglayer_faucet_inputs])
             .build()?;
         let consume_executed_transaction = consume_tx_context.execute().await?;
 
-        // Verify the destination account received the minted asset
+        // Verify the destination account received the minted asset. The asset is stored
+        // under its full vault key (which encodes the callback flag), so look it up via
+        // `vault().get(...)` rather than `get_balance`, which always queries the
+        // callback-disabled key.
         let mut destination_account = destination_account.clone();
         destination_account.apply_delta(consume_executed_transaction.account_delta())?;
 
-        let balance = destination_account.vault().get_balance(agglayer_faucet.id())?;
+        let stored_asset = destination_account
+            .vault()
+            .get(expected_asset.unwrap_fungible().vault_key())
+            .expect("destination vault should contain the bridged asset");
         assert_eq!(
-            balance.as_u64(),
+            stored_asset.unwrap_fungible().amount().as_u64(),
             miden_claim_amount.as_canonical_u64(),
             "destination account balance does not match"
         );

@@ -40,7 +40,6 @@ use miden_standards::account::policies::{
     MintPolicyConfig,
     PolicyRegistration,
     TokenPolicyManager,
-    TransferPolicy,
 };
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::procedure_root;
@@ -786,9 +785,7 @@ fn add_faucet_with_callbacks(
         .with_components(
             TokenPolicyManager::new()
                 .with_mint_policy(MintPolicyConfig::AllowAll, PolicyRegistration::Active)?
-                .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)?
-                .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?
-                .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?,
+                .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)?,
         )
         .with_component(callback_component);
 

@@ -35,7 +35,7 @@ use thiserror::Error;
 use super::PolicyRegistration;
 use super::burn::BurnPolicyConfig;
 use super::mint::MintPolicyConfig;
-use super::transfer::{TransferAllowAll, TransferPolicy};
+use super::transfer::TransferPolicy;
 use crate::account::account_component_code;
 
 // ERRORS
@@ -121,10 +121,6 @@ enum PolicyKind {
 /// procedure root. Captures the companion components the policy needs installed on the
 /// account and the set of policy kinds the root is registered under (the same root may serve
 /// more than one kind, e.g. a transfer policy active for both send and receive).
-///
-/// Whether the policy needs the protocol's asset-callback slots populated is derived at
-/// storage-construction time by comparing the root against [`TransferAllowAll::root`] — all
-/// non-`AllowAll` transfer policies require callbacks.
 #[derive(Debug, Clone)]
 struct PolicyConfig {
     components: Vec<AccountComponent>,
@@ -170,8 +166,11 @@ struct PolicyConfig {
 /// - [`Self::allowed_receive_policies_slot`]: map of allowed receive policy roots.
 /// - Asset-callback storage slots (registered via [`AssetCallbacks`]) hold the active send and
 ///   receive policy procedure roots directly so the kernel dispatches to them via `call`. They are
-///   installed only when at least one of the send / receive policies needs callbacks (built-in
-///   `AllowAll` does not).
+///   installed whenever any transfer policy is registered with this manager — including `AllowAll`
+///   — so that every minted asset carries
+///   [`AssetCallbackFlag::Enabled`][miden_protocol::asset::AssetCallbackFlag::Enabled] uniformly
+///   and future policy switches via `set_send_policy` / `set_receive_policy` apply to the entire
+///   circulating supply rather than only to assets minted after the switch.
 #[derive(Debug, Clone)]
 pub struct TokenPolicyManager {
     active_mint_policy_root: AccountProcedureRoot,
@@ -498,25 +497,30 @@ impl TokenPolicyManager {
             ),
         ];
 
-        // Only register the asset-callback slots when at least one of the send / receive
-        // policies actually performs enforcement. Beyond saving slots and dispatch overhead
-        // for no-op `AllowAll`, this also keeps the minted asset value word free of
-        // `AssetCallbackFlag::Enabled` — `protocol::faucet::create_fungible_asset` reads the
-        // callback slots and stamps the flag on every minted asset when they are populated.
+        // Register the protocol-reserved asset-callback slots whenever any transfer policy is
+        // configured on this manager (active or reserved alternative, including `AllowAll`).
+        // With the flattened policy dispatch the kernel reads these slots directly and
+        // dispatches via `call`, so writing the active roots (including `AllowAll`, which is a
+        // no-op `dropw`) wires up the dispatch path uniformly.
         //
-        // With the flattened policy dispatch, the protocol callback slots hold the active
-        // policy proc root directly (no manager-side wrapper), so we initialize them to the
-        // active send / receive policy roots.
-        // `AllowAll` is the only built-in transfer policy that does not enforce anything, so its
-        // root acts as the "no callback needed" sentinel. Anything else (Blocklist or any
-        // `Custom` root) is treated as enforcement-bearing.
-        let allow_all_root = TransferAllowAll::root();
-        let needs_callbacks = self.policies.iter().any(|(root, cfg)| {
-            *root != allow_all_root
-                && (cfg.kinds.contains(&PolicyKind::Send)
-                    || cfg.kinds.contains(&PolicyKind::Receive))
+        // Registering the slots whenever transfer policies are present stamps
+        // `AssetCallbackFlag::Enabled` on every asset minted by this faucet (see
+        // `protocol::faucet::create_fungible_asset`, which gates the flag on the callback slots
+        // being populated). Without this, a faucet that ships with `AllowAll` for transfer
+        // would mint callback-less assets that are permanently exempt from any policy
+        // installed later via `set_send_policy` / `set_receive_policy` — fragmenting the
+        // circulating supply into enforceable and exempt subsets and defeating
+        // post-deployment compliance upgrades.
+        //
+        // The "only when transfer policies are configured" guard exists so callers who use
+        // this manager solely for mint / burn policies and want to install a separate
+        // component that owns the protocol callback slots (e.g. kernel-level callback tests)
+        // can do so without colliding with this manager. Production faucet builders always
+        // register `AllowAll` for both transfer kinds, so the bug fix is in effect for them.
+        let has_transfer_policy = self.policies.iter().any(|(_, cfg)| {
+            cfg.kinds.contains(&PolicyKind::Send) || cfg.kinds.contains(&PolicyKind::Receive)
         });
-        if needs_callbacks {
+        if has_transfer_policy {
             let callback_slots = AssetCallbacks::new()
                 .on_before_asset_added_to_account(self.active_receive_policy_root.as_word())
                 .on_before_asset_added_to_note(self.active_send_policy_root.as_word())
@@ -585,5 +589,105 @@ impl IntoIterator for TokenPolicyManager {
             components.extend(policy.components);
         }
         components.into_iter()
+    }
+}
+
+// TESTS
+// ================================================================================================
+
+#[cfg(test)]
+mod tests {
+    use miden_protocol::asset::AssetCallbacks;
+
+    use super::*;
+    use crate::account::policies::transfer::TransferAllowAll;
+
+    /// Returns the manager component's storage slot for the given slot name, or `None` if the
+    /// component does not register a slot with that name.
+    fn find_slot<'a>(
+        component: &'a AccountComponent,
+        slot_name: &StorageSlotName,
+    ) -> Option<&'a StorageSlot> {
+        component.storage_slots().iter().find(|slot| slot.name() == slot_name)
+    }
+
+    /// Regression test for "Enabling transfer callbacks after minting permanently exempts
+    /// earlier assets from send/receive policy enforcement".
+    ///
+    /// A faucet deployed with only `TransferAllowAll` (no reserved alternative) must still
+    /// register the protocol-reserved asset-callback slots, populated with `TransferAllowAll`'s
+    /// procedure root. The protocol stamps `AssetCallbackFlag::Enabled` on every minted asset
+    /// whenever those slots are populated — without this, a later policy switch could not
+    /// retroactively apply to assets minted under `AllowAll`.
+    ///
+    /// Pre-fix, `manager_storage_slots` omitted the callback slots in this configuration via
+    /// the `needs_callbacks` predicate (it considered `AllowAll` a "no enforcement, no
+    /// callbacks" case). This test pins the new contract: registering any transfer policy —
+    /// `AllowAll` included — populates the protocol callback slots.
+    #[test]
+    fn allow_all_transfer_policy_registers_protocol_callback_slots() {
+        let manager = TokenPolicyManager::new()
+            .with_mint_policy(MintPolicyConfig::AllowAll, PolicyRegistration::Active)
+            .unwrap()
+            .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)
+            .unwrap()
+            .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)
+            .unwrap()
+            .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)
+            .unwrap();
+
+        let manager_component = manager.to_manager_component();
+
+        let allow_all_root = TransferAllowAll::root().as_word();
+
+        let on_account_slot =
+            find_slot(&manager_component, AssetCallbacks::on_before_asset_added_to_account_slot())
+                .expect(
+                    "AllowAll receive policy must register the on_before_asset_added_to_account \
+             protocol callback slot",
+                );
+        let on_note_slot =
+            find_slot(&manager_component, AssetCallbacks::on_before_asset_added_to_note_slot())
+                .expect(
+                    "AllowAll send policy must register the on_before_asset_added_to_note protocol \
+             callback slot",
+                );
+
+        // Both slots must hold the AllowAll procedure root (not zero). The protocol stamps
+        // the callback flag on minted assets whenever these slots are non-empty.
+        assert_eq!(on_account_slot.value(), allow_all_root);
+        assert_eq!(on_note_slot.value(), allow_all_root);
+    }
+
+    /// A manager configured without any send / receive policy (e.g. used purely for mint /
+    /// burn policy storage, with a custom callback component owning the protocol slots)
+    /// must NOT register the protocol callback slots — otherwise it would collide with the
+    /// custom component on the same slot names.
+    ///
+    /// This pairs with [`allow_all_transfer_policy_registers_protocol_callback_slots`]: the
+    /// guard "register iff a transfer policy is configured" is what keeps kernel-level
+    /// callback test helpers working after the fix.
+    #[test]
+    fn manager_without_transfer_policies_omits_protocol_callback_slots() {
+        let manager = TokenPolicyManager::new()
+            .with_mint_policy(MintPolicyConfig::AllowAll, PolicyRegistration::Active)
+            .unwrap()
+            .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)
+            .unwrap();
+
+        let manager_component = manager.to_manager_component();
+
+        assert!(
+            find_slot(&manager_component, AssetCallbacks::on_before_asset_added_to_account_slot(),)
+                .is_none(),
+            "without a receive policy, the manager must leave the on_before_asset_added_to_account \
+             slot to a separate component",
+        );
+        assert!(
+            find_slot(&manager_component, AssetCallbacks::on_before_asset_added_to_note_slot())
+                .is_none(),
+            "without a send policy, the manager must leave the on_before_asset_added_to_note slot \
+             to a separate component",
+        );
     }
 }
