@@ -59,10 +59,12 @@
 - [BREAKING] `FungibleAsset::amount()` and `AssetVault::get_balance()` now return `AssetAmount` ([#2928](https://github.com/0xMiden/protocol/pull/2928)).
 - [BREAKING] Upgraded `miden-vm` to v0.23 and `miden-crypto` to v0.25. Notable downstream changes: dropped the immediate form of `adv_push` in kernel and standards MASM, marked cross-module-referenced MASM constants and procedures `pub`, migrated to the split `Host`/`BaseHost` trait surface, renamed `Felt::new` call sites to the preserved-behavior `Felt::new_unchecked`, switched `ecdsa_k256_keccak`/`eddsa_25519_sha512` `SecretKey` references to the new `SigningKey`/`KeyExchangeKey` types, and recomputed the kernel's `EMPTY_SMT_ROOT` constant for the Plonky3-aligned Poseidon2 and domain-separated `SmtLeaf::hash` ([#2931](https://github.com/0xMiden/protocol/pull/2931)).
 - Derive `Hash` implementation for `StorageMapKey` and `StorageMapKeyHash` to allow using those values as keys in containers ([#2843](https://github.com/0xMiden/protocol/issues/2843)).
+- [BREAKING] Merged `AuthMethod` into `AccessControl` so every variant (`AuthControlled`, `Ownable2Step`, `Rbac`) now includes an `auth: AuthMethod` field. ([#2944](https://github.com/0xMiden/protocol/pull/2944)).
 
 ### Fixes
 
 - Fixed `LocalTransactionProver` accumulating `MastForest` entries across `prove()` calls, causing `capacity_overflow` panics in WASM environments where linear memory fragmentation prevents subsequent allocations ([#2918](https://github.com/0xMiden/protocol/pull/2918)).
+- Fixed `create_fungible_faucet` leaving authority-gated setters unauthenticated under `AccessControl::AuthControlled` ([#2943](https://github.com/0xMiden/protocol/issues/2943), [#2944](https://github.com/0xMiden/protocol/pull/2944)).
 - Made deserialization of `AccountCode` more robust ([#2788](https://github.com/0xMiden/protocol/pull/2788)).
 - Validated `PartialBlockchain` invariants on deserialization ([#2888](https://github.com/0xMiden/protocol/pull/2888)).
 - Fixed `output_note::add_asset` and `output_note::set_attachment` to no longer accept invalid note indices ([#2824](https://github.com/0xMiden/protocol/pull/2824)).
