@@ -117,11 +117,9 @@ impl AccountIdV1 {
 
     /// See [`AccountId::dummy`](super::AccountId::dummy) for details.
     #[cfg(any(feature = "testing", test))]
-    pub fn dummy(
-        mut bytes: [u8; 15],
-        account_type: AccountType,
-        storage_mode: AccountStorageMode,
-    ) -> AccountIdV1 {
+    pub fn dummy(mut bytes: [u8; 15], storage_mode: AccountStorageMode) -> AccountIdV1 {
+        // TODO(asset_composition): Remove eventually.
+        let account_type = AccountType::RegularAccountUpdatableCode;
         let version = AccountIdVersion::Version1 as u8;
         let low_nibble = ((storage_mode as u8) << Self::STORAGE_MODE_SHIFT)
             | ((account_type as u8) << Self::TYPE_SHIFT)
@@ -575,23 +573,15 @@ mod tests {
         // Use the lowest possible input to check whether the constructor produces valid IDs with
         // all-zeroes input.
         for input in [[0xff; 15], [0; 15]] {
-            for account_type in [
-                AccountType::FungibleFaucet,
-                AccountType::NonFungibleFaucet,
-                AccountType::RegularAccountImmutableCode,
-                AccountType::RegularAccountUpdatableCode,
-            ] {
-                for storage_mode in [AccountStorageMode::Private, AccountStorageMode::Public] {
-                    let id = AccountIdV1::dummy(input, account_type, storage_mode);
-                    assert_eq!(id.account_type(), account_type);
-                    assert_eq!(id.storage_mode(), storage_mode);
-                    assert_eq!(id.version(), AccountIdVersion::Version1);
+            for storage_mode in [AccountStorageMode::Private, AccountStorageMode::Public] {
+                let id = AccountIdV1::dummy(input, storage_mode);
+                assert_eq!(id.storage_mode(), storage_mode);
+                assert_eq!(id.version(), AccountIdVersion::Version1);
 
-                    // Do a serialization roundtrip to ensure validity.
-                    let serialized_id = id.to_bytes();
-                    AccountIdV1::read_from_bytes(&serialized_id).unwrap();
-                    assert_eq!(serialized_id.len(), AccountIdV1::SERIALIZED_SIZE);
-                }
+                // Do a serialization roundtrip to ensure validity.
+                let serialized_id = id.to_bytes();
+                AccountIdV1::read_from_bytes(&serialized_id).unwrap();
+                assert_eq!(serialized_id.len(), AccountIdV1::SERIALIZED_SIZE);
             }
         }
     }

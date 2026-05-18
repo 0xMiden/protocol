@@ -187,13 +187,10 @@ impl AccountId {
     pub fn dummy(
         bytes: [u8; 15],
         version: AccountIdVersion,
-        account_type: AccountType,
         storage_mode: AccountStorageMode,
     ) -> AccountId {
         match version {
-            AccountIdVersion::Version1 => {
-                Self::V1(AccountIdV1::dummy(bytes, account_type, storage_mode))
-            },
+            AccountIdVersion::Version1 => Self::V1(AccountIdV1::dummy(bytes, storage_mode)),
         }
     }
 

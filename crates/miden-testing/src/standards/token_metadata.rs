@@ -124,21 +124,11 @@ fn new_field_data() -> [Word; 7] {
 }
 
 fn owner_account_id() -> AccountId {
-    AccountId::dummy(
-        [1; 15],
-        AccountIdVersion::Version1,
-        AccountType::RegularAccountImmutableCode,
-        AccountStorageMode::Private,
-    )
+    AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountStorageMode::Private)
 }
 
 fn non_owner_account_id() -> AccountId {
-    AccountId::dummy(
-        [2; 15],
-        AccountIdVersion::Version1,
-        AccountType::RegularAccountImmutableCode,
-        AccountStorageMode::Private,
-    )
+    AccountId::dummy([2; 15], AccountIdVersion::Version1, AccountStorageMode::Private)
 }
 
 /// Build a minimal faucet metadata (no optional fields).

@@ -163,6 +163,7 @@ impl AccountIdBuilder {
 
     /// Sets the [`AccountType`] of the generated [`AccountId`] to the provided value.
     pub fn account_type(mut self, account_type: AccountType) -> Self {
+        // TODO(asset_composition): Remove this method and field.
         self.account_type = Some(account_type);
         self
     }
@@ -178,17 +179,12 @@ impl AccountIdBuilder {
     /// If no [`AccountType`] or [`AccountStorageMode`] were previously set, random ones are
     /// generated.
     pub fn build_with_rng<R: rand::Rng + ?Sized>(self, rng: &mut R) -> AccountId {
-        let account_type = match self.account_type {
-            Some(account_type) => account_type,
-            None => rng.random(),
-        };
-
         let storage_mode = match self.storage_mode {
             Some(storage_mode) => storage_mode,
             None => rng.random(),
         };
 
-        AccountId::dummy(rng.random(), AccountIdVersion::Version1, account_type, storage_mode)
+        AccountId::dummy(rng.random(), AccountIdVersion::Version1, storage_mode)
     }
 
     /// Builds an [`AccountId`] using the provided seed as input for an RNG implemented in

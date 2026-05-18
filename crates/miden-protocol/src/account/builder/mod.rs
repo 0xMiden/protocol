@@ -288,12 +288,7 @@ impl AccountBuilder {
         let account_id = {
             let bytes = <[u8; 15]>::try_from(&self.init_seed[0..15])
                 .expect("we should have sliced exactly 15 bytes off");
-            AccountId::dummy(
-                bytes,
-                AccountIdVersion::Version1,
-                self.account_type,
-                self.storage_mode,
-            )
+            AccountId::dummy(bytes, AccountIdVersion::Version1, self.storage_mode)
         };
 
         // Use the nonce value set by the Self::nonce method or Felt::ONE as a default.

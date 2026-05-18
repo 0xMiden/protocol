@@ -18,7 +18,7 @@ use miden_agglayer::{
 use miden_crypto::rand::FeltRng;
 use miden_protocol::Felt;
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::account::{AccountId, AccountIdVersion, AccountStorageMode, AccountType};
+use miden_protocol::account::{AccountId, AccountIdVersion, AccountStorageMode};
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
 use miden_protocol::note::{NoteAssets, NoteType};
 use miden_protocol::transaction::RawOutputNote;
@@ -492,12 +492,8 @@ async fn b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     // Create a network faucet owner account
-    let faucet_owner_account_id = AccountId::dummy(
-        [1; 15],
-        AccountIdVersion::Version1,
-        AccountType::RegularAccountImmutableCode,
-        AccountStorageMode::Private,
-    );
+    let faucet_owner_account_id =
+        AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountStorageMode::Private);
 
     // Create a network faucet to provide assets for the B2AGG note
     let faucet = builder.add_existing_network_faucet(
@@ -611,12 +607,8 @@ async fn b2agg_note_non_target_account_cannot_consume() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     // Create a network faucet owner account
-    let faucet_owner_account_id = AccountId::dummy(
-        [1; 15],
-        AccountIdVersion::Version1,
-        AccountType::RegularAccountImmutableCode,
-        AccountStorageMode::Private,
-    );
+    let faucet_owner_account_id =
+        AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountStorageMode::Private);
 
     // Create a network faucet to provide assets for the B2AGG note
     let faucet = builder.add_existing_network_faucet(

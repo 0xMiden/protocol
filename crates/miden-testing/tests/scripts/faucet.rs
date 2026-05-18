@@ -648,12 +648,8 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
 
     let mut builder = MockChain::builder();
 
-    let faucet_owner_account_id = AccountId::dummy(
-        [1; 15],
-        AccountIdVersion::Version1,
-        AccountType::RegularAccountImmutableCode,
-        AccountStorageMode::Private,
-    );
+    let faucet_owner_account_id =
+        AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountStorageMode::Private);
 
     let faucet = builder.add_existing_network_faucet(
         "NET",
@@ -771,12 +767,8 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
 async fn test_network_faucet_owner_can_mint() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
-    let owner_account_id = AccountId::dummy(
-        [1; 15],
-        AccountIdVersion::Version1,
-        AccountType::RegularAccountImmutableCode,
-        AccountStorageMode::Private,
-    );
+    let owner_account_id =
+        AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountStorageMode::Private);
 
     let faucet = builder.add_existing_network_faucet(
         "NET",
@@ -826,12 +818,8 @@ async fn test_network_faucet_owner_can_mint() -> anyhow::Result<()> {
 async fn test_network_faucet_set_policy_rejects_non_allowed_root() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
-    let owner_account_id = AccountId::dummy(
-        [1; 15],
-        AccountIdVersion::Version1,
-        AccountType::RegularAccountImmutableCode,
-        AccountStorageMode::Private,
-    );
+    let owner_account_id =
+        AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountStorageMode::Private);
 
     // This root exists in account code, but is not in the mint policy allowlist.
     let invalid_policy_root = FungibleFaucet::mint_and_send_root().as_word();
@@ -878,12 +866,8 @@ async fn test_network_faucet_set_policy_rejects_non_allowed_root() -> anyhow::Re
 async fn test_network_faucet_set_burn_policy_rejects_non_allowed_root() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
-    let owner_account_id = AccountId::dummy(
-        [1; 15],
-        AccountIdVersion::Version1,
-        AccountType::RegularAccountImmutableCode,
-        AccountStorageMode::Private,
-    );
+    let owner_account_id =
+        AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountStorageMode::Private);
 
     // This root exists in account code, but is not in the burn policy allowlist.
     let invalid_policy_root = FungibleFaucet::receive_and_burn_root().as_word();
@@ -919,19 +903,11 @@ async fn test_network_faucet_set_burn_policy_rejects_non_allowed_root() -> anyho
 async fn test_network_faucet_non_owner_cannot_mint() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
-    let owner_account_id = AccountId::dummy(
-        [1; 15],
-        AccountIdVersion::Version1,
-        AccountType::RegularAccountImmutableCode,
-        AccountStorageMode::Private,
-    );
+    let owner_account_id =
+        AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountStorageMode::Private);
 
-    let non_owner_account_id = AccountId::dummy(
-        [2; 15],
-        AccountIdVersion::Version1,
-        AccountType::RegularAccountImmutableCode,
-        AccountStorageMode::Private,
-    );
+    let non_owner_account_id =
+        AccountId::dummy([2; 15], AccountIdVersion::Version1, AccountStorageMode::Private);
 
     let faucet = builder.add_existing_network_faucet(
         "NET",
@@ -984,12 +960,8 @@ async fn test_network_faucet_non_owner_cannot_mint() -> anyhow::Result<()> {
 async fn test_network_faucet_owner_storage() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
-    let owner_account_id = AccountId::dummy(
-        [1; 15],
-        AccountIdVersion::Version1,
-        AccountType::RegularAccountImmutableCode,
-        AccountStorageMode::Private,
-    );
+    let owner_account_id =
+        AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountStorageMode::Private);
 
     let faucet = builder.add_existing_network_faucet(
         "NET",
@@ -1024,19 +996,11 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     // Setup: Create initial owner and new owner accounts
-    let initial_owner_account_id = AccountId::dummy(
-        [1; 15],
-        AccountIdVersion::Version1,
-        AccountType::RegularAccountImmutableCode,
-        AccountStorageMode::Private,
-    );
+    let initial_owner_account_id =
+        AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountStorageMode::Private);
 
-    let new_owner_account_id = AccountId::dummy(
-        [2; 15],
-        AccountIdVersion::Version1,
-        AccountType::RegularAccountImmutableCode,
-        AccountStorageMode::Private,
-    );
+    let new_owner_account_id =
+        AccountId::dummy([2; 15], AccountIdVersion::Version1, AccountStorageMode::Private);
 
     // Step 1: Create transfer_ownership note script to nominate new owner
     let transfer_note_script_code = format!(
@@ -1179,26 +1143,14 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
 async fn test_network_faucet_only_owner_can_transfer() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
-    let owner_account_id = AccountId::dummy(
-        [1; 15],
-        AccountIdVersion::Version1,
-        AccountType::RegularAccountImmutableCode,
-        AccountStorageMode::Private,
-    );
+    let owner_account_id =
+        AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountStorageMode::Private);
 
-    let non_owner_account_id = AccountId::dummy(
-        [2; 15],
-        AccountIdVersion::Version1,
-        AccountType::RegularAccountImmutableCode,
-        AccountStorageMode::Private,
-    );
+    let non_owner_account_id =
+        AccountId::dummy([2; 15], AccountIdVersion::Version1, AccountStorageMode::Private);
 
-    let new_owner_account_id = AccountId::dummy(
-        [3; 15],
-        AccountIdVersion::Version1,
-        AccountType::RegularAccountImmutableCode,
-        AccountStorageMode::Private,
-    );
+    let new_owner_account_id =
+        AccountId::dummy([3; 15], AccountIdVersion::Version1, AccountStorageMode::Private);
 
     // Create transfer ownership note script
     let transfer_note_script_code = format!(
@@ -1257,19 +1209,11 @@ async fn test_network_faucet_only_owner_can_transfer() -> anyhow::Result<()> {
 async fn test_network_faucet_renounce_ownership() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
-    let owner_account_id = AccountId::dummy(
-        [1; 15],
-        AccountIdVersion::Version1,
-        AccountType::RegularAccountImmutableCode,
-        AccountStorageMode::Private,
-    );
+    let owner_account_id =
+        AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountStorageMode::Private);
 
-    let new_owner_account_id = AccountId::dummy(
-        [2; 15],
-        AccountIdVersion::Version1,
-        AccountType::RegularAccountImmutableCode,
-        AccountStorageMode::Private,
-    );
+    let new_owner_account_id =
+        AccountId::dummy([2; 15], AccountIdVersion::Version1, AccountStorageMode::Private);
 
     // Create renounce_ownership note script
     let renounce_note_script_code = r#"
@@ -1383,12 +1327,8 @@ async fn test_network_faucet_renounce_ownership() -> anyhow::Result<()> {
 fn test_network_faucet_contains_default_burn_policy_root() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
-    let owner_account_id = AccountId::dummy(
-        [1; 15],
-        AccountIdVersion::Version1,
-        AccountType::RegularAccountImmutableCode,
-        AccountStorageMode::Private,
-    );
+    let owner_account_id =
+        AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountStorageMode::Private);
 
     let faucet = builder.add_existing_network_faucet(
         "NET",
@@ -1412,12 +1352,8 @@ fn test_network_faucet_contains_default_burn_policy_root() -> anyhow::Result<()>
 async fn network_faucet_burn() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
-    let faucet_owner_account_id = AccountId::dummy(
-        [1; 15],
-        AccountIdVersion::Version1,
-        AccountType::RegularAccountImmutableCode,
-        AccountStorageMode::Private,
-    );
+    let faucet_owner_account_id =
+        AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountStorageMode::Private);
 
     let mut faucet = builder.add_existing_network_faucet(
         "NET",
@@ -1479,19 +1415,11 @@ async fn test_network_faucet_non_owner_cannot_burn_when_owner_only_policy_active
 -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
-    let owner_account_id = AccountId::dummy(
-        [1; 15],
-        AccountIdVersion::Version1,
-        AccountType::RegularAccountImmutableCode,
-        AccountStorageMode::Private,
-    );
+    let owner_account_id =
+        AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountStorageMode::Private);
 
-    let non_owner_account_id = AccountId::dummy(
-        [2; 15],
-        AccountIdVersion::Version1,
-        AccountType::RegularAccountImmutableCode,
-        AccountStorageMode::Private,
-    );
+    let non_owner_account_id =
+        AccountId::dummy([2; 15], AccountIdVersion::Version1, AccountStorageMode::Private);
 
     let faucet = build_network_faucet_with_burn_switching(
         &mut builder,
@@ -1545,12 +1473,8 @@ async fn test_network_faucet_non_owner_cannot_burn_when_owner_only_policy_active
 async fn test_network_faucet_owner_can_burn_when_owner_only_policy_active() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
-    let owner_account_id = AccountId::dummy(
-        [1; 15],
-        AccountIdVersion::Version1,
-        AccountType::RegularAccountImmutableCode,
-        AccountStorageMode::Private,
-    );
+    let owner_account_id =
+        AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountStorageMode::Private);
 
     let faucet = build_network_faucet_with_burn_switching(
         &mut builder,
@@ -1612,12 +1536,8 @@ async fn test_network_faucet_owner_can_burn_when_owner_only_policy_active() -> a
 async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
-    let faucet_owner_account_id = AccountId::dummy(
-        [1; 15],
-        AccountIdVersion::Version1,
-        AccountType::RegularAccountImmutableCode,
-        AccountStorageMode::Private,
-    );
+    let faucet_owner_account_id =
+        AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountStorageMode::Private);
 
     let faucet = builder.add_existing_network_faucet(
         "NET",
@@ -1874,12 +1794,8 @@ async fn network_faucet_mint_with_blocklist() -> anyhow::Result<()> {
 
     let mut builder = MockChain::builder();
 
-    let faucet_owner_account_id = AccountId::dummy(
-        [1; 15],
-        AccountIdVersion::Version1,
-        AccountType::RegularAccountImmutableCode,
-        AccountStorageMode::Private,
-    );
+    let faucet_owner_account_id =
+        AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountStorageMode::Private);
 
     let faucet = build_network_faucet_with_blocklist_transfer(
         &mut builder,

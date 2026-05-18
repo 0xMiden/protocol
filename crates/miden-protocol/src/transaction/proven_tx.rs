@@ -705,12 +705,8 @@ mod tests {
 
     #[test]
     fn test_proven_tx_serde_roundtrip() -> anyhow::Result<()> {
-        let account_id = AccountId::dummy(
-            [1; 15],
-            AccountIdVersion::Version1,
-            AccountType::FungibleFaucet,
-            AccountStorageMode::Private,
-        );
+        let account_id =
+            AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountStorageMode::Private);
         let initial_account_commitment =
             [2; 32].try_into().expect("failed to create initial account commitment");
         let final_account_commitment =

@@ -49,12 +49,7 @@ use miden_testing::{
 // ================================================================================================
 
 fn dummy_owner() -> AccountId {
-    AccountId::dummy(
-        [9; 15],
-        AccountIdVersion::Version1,
-        AccountType::RegularAccountImmutableCode,
-        AccountStorageMode::Private,
-    )
+    AccountId::dummy([9; 15], AccountIdVersion::Version1, AccountStorageMode::Private)
 }
 
 /// Builds a fungible faucet with [`TransferPolicy::Blocklist`] on both send and receive,
