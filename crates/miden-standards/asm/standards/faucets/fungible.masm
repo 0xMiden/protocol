@@ -7,6 +7,7 @@
 # Shared token metadata (name, description, logo_uri, external_link) and the associated
 # mutability config word live in the parent `miden::standards::faucets` namespace.
 
+use miden::protocol::account_id
 use miden::protocol::active_account
 use miden::protocol::active_note
 use miden::protocol::faucet
@@ -31,8 +32,8 @@ pub const TOKEN_CONFIG_SLOT = word("miden::standards::faucets::fungible::token_c
 # The local memory address at which the token config slot content is stored.
 const TOKEN_CONFIG_SLOT_LOCAL = 0
 # The local memory address at which the MINT note's ASSET_KEY is held across the mint policy
-# and supply checks in `mint_and_send`. It is compared against the asset derived for the
-# active faucet to bind the mint to the faucet the MINT note was created for.
+# and supply checks in `mint_and_send`. Its faucet ID is checked against the active account
+# to bind the mint to the faucet the MINT note was created for.
 const MINT_ASSET_KEY_LOCAL = 4
 const ASSET_PTR = 0
 
@@ -213,9 +214,9 @@ end
 #! Mints the asset stored in the MINT note to the provided recipient by creating a note.
 #!
 #! The active mint policy runs on the asset amount, the token supply is updated, and an
-#! output note carrying the asset is created for the recipient. The minted asset is derived
-#! for the active faucet; its key must match the `ASSET_KEY` stored in the MINT note, so a
-#! MINT note created for one faucet cannot be minted by another faucet.
+#! output note carrying the asset is created for the recipient. The asset minted is derived
+#! for the active faucet; the `ASSET_KEY` stored in the MINT note must belong to that faucet,
+#! so a MINT note created for one faucet cannot be minted by another faucet.
 #!
 #! Inputs:  [ASSET_KEY, ASSET_VALUE, tag, note_type, RECIPIENT, pad(2)]
 #! Outputs: [note_idx, pad(15)]
@@ -243,7 +244,7 @@ end
 @locals(8)
 pub proc mint_and_send
     # save the MINT note's ASSET_KEY in a local so it survives the mint policy and supply
-    # checks; it is compared against the derived asset's key before minting
+    # checks; its faucet ID is checked against the active account before minting
     loc_storew_le.MINT_ASSET_KEY_LOCAL dropw
     # => [ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
 
@@ -336,12 +337,15 @@ pub proc mint_and_send
     exec.faucet::create_fungible_asset
     # => [ASSET_KEY, ASSET_VALUE, note_idx, note_idx]
 
-    # bind the mint to the faucet the MINT note was created for: the derived asset's key must
-    # equal the ASSET_KEY stored in the MINT note
-    padw loc_loadw_le.MINT_ASSET_KEY_LOCAL
-    # => [NOTE_ASSET_KEY, ASSET_KEY, ASSET_VALUE, note_idx, note_idx]
+    # bind the mint to the faucet the MINT note was created for: the ASSET_KEY stored in the
+    # MINT note must have been issued by the active faucet
+    padw loc_loadw_le.MINT_ASSET_KEY_LOCAL exec.asset::key_into_faucet_id
+    # => [note_faucet_id_suffix, note_faucet_id_prefix, ASSET_KEY, ASSET_VALUE, note_idx, note_idx]
 
-    dupw.1 assert_eqw.err=ERR_FUNGIBLE_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET
+    exec.active_account::get_id
+    # => [id_suffix, id_prefix, note_faucet_id_suffix, note_faucet_id_prefix, ASSET_KEY, ASSET_VALUE, note_idx, note_idx]
+
+    exec.account_id::is_equal assert.err=ERR_FUNGIBLE_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET
     # => [ASSET_KEY, ASSET_VALUE, note_idx, note_idx]
 
     dupw.1 dupw.1
