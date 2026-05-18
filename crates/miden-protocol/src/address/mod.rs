@@ -215,7 +215,7 @@ mod tests {
     use bech32::{Bech32, Bech32m, NoChecksum};
 
     use super::*;
-    use crate::account::{AccountId, AccountStorageMode};
+    use crate::account::{AccountId, AccountType};
     use crate::address::CustomNetworkId;
     use crate::errors::{AccountIdError, Bech32Error};
     use crate::testing::account_id::{ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET, AccountIdBuilder};
@@ -236,12 +236,8 @@ mod tests {
             NetworkId::Custom(Box::new(CustomNetworkId::from_str(longest_possible_hrp).unwrap())),
         ] {
             for (idx, account_id) in [
-                AccountIdBuilder::new()
-                    .storage_mode(AccountStorageMode::Private)
-                    .build_with_rng(rng),
-                AccountIdBuilder::new()
-                    .storage_mode(AccountStorageMode::Public)
-                    .build_with_rng(rng),
+                AccountIdBuilder::new().account_type(AccountType::Private).build_with_rng(rng),
+                AccountIdBuilder::new().account_type(AccountType::Public).build_with_rng(rng),
             ]
             .into_iter()
             .enumerate()
@@ -381,8 +377,8 @@ mod tests {
     fn address_serialization() -> anyhow::Result<()> {
         let rng = &mut rand::rng();
 
-        for storage_mode in [AccountStorageMode::Private, AccountStorageMode::Public].into_iter() {
-            let account_id = AccountIdBuilder::new().storage_mode(storage_mode).build_with_rng(rng);
+        for account_type in [AccountType::Private, AccountType::Public].into_iter() {
+            let account_id = AccountIdBuilder::new().account_type(account_type).build_with_rng(rng);
             let address = Address::new(account_id).with_routing_parameters(
                 RoutingParameters::new(AddressInterface::BasicWallet)
                     .with_note_tag_len(NoteTag::MAX_ACCOUNT_TARGET_TAG_LENGTH)?,
@@ -439,9 +435,8 @@ mod tests {
         use crate::crypto::dsa::eddsa_25519_sha512::KeyExchangeKey;
 
         let rng = &mut rand::rng();
-        let account_id = AccountIdBuilder::new()
-            .storage_mode(AccountStorageMode::Public)
-            .build_with_rng(rng);
+        let account_id =
+            AccountIdBuilder::new().account_type(AccountType::Public).build_with_rng(rng);
 
         // Create keypair
         let secret_key = KeyExchangeKey::with_rng(rng);

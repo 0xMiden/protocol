@@ -215,8 +215,8 @@ pub enum AccountIdError {
     AccountIdInvalidPrefixFieldElement(#[source] DeserializationError),
     #[error("failed to convert bytes into account ID suffix field element")]
     AccountIdInvalidSuffixFieldElement(#[source] DeserializationError),
-    #[error("`{0}` is not a known account storage mode")]
-    UnknownAccountStorageMode(Box<str>),
+    #[error("`{0}` is not a known account type")]
+    UnknownAccountType(Box<str>),
     #[error("failed to parse hex string into account ID")]
     AccountIdHexParseError(#[source] HexParseError),
     #[error("`{0}` is not a known account ID version")]

@@ -1,6 +1,6 @@
 use assert_matches::assert_matches;
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
-use miden_protocol::account::{AccountBuilder, AccountStorageMode};
+use miden_protocol::account::{AccountBuilder, AccountType};
 use miden_protocol::asset::{AssetAmount, TokenSymbol};
 use miden_protocol::{Felt, Word};
 
@@ -37,7 +37,7 @@ fn faucet_contract_creation() {
     let token_name_string = "polygon";
     let description_string = "A polygon token";
     let decimals = 2u8;
-    let storage_mode = AccountStorageMode::Private;
+    let account_type = AccountType::Private;
 
     let token_name = TokenName::new(token_name_string).unwrap();
     let description = Description::new(description_string).unwrap();
@@ -52,7 +52,7 @@ fn faucet_contract_creation() {
     let faucet_account = create_fungible_faucet(
         init_seed,
         faucet,
-        storage_mode,
+        account_type,
         auth_method,
         AccessControl::AuthControlled,
         TokenPolicyManager::new()

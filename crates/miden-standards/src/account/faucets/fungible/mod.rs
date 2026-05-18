@@ -14,7 +14,7 @@ use miden_protocol::account::{
     AccountComponent,
     AccountProcedureRoot,
     AccountStorage,
-    AccountStorageMode,
+    AccountType,
     StorageSlot,
     StorageSlotName,
 };
@@ -81,7 +81,7 @@ procedure_root!(
 /// This component bundles the asset minting/burning procedures and the token metadata
 /// (name, description, logo URI, external link) together. Whether the faucet behaves like a
 /// "basic" public faucet or a network-style faucet is a function of the surrounding account
-/// configuration (storage mode, auth component, access control component, and policy manager
+/// configuration (account type, auth component, access control component, and policy manager
 /// configuration), not of the faucet component itself.
 ///
 /// It re-exports the procedures from `miden::standards::faucets::fungible`. When linking
@@ -498,7 +498,7 @@ impl TryFrom<&Account> for FungibleFaucet {
 ///
 /// The behaviour of the resulting faucet (basic vs network-style) is determined entirely by the
 /// combination of arguments passed in:
-/// - `storage_mode`: typically [`AccountStorageMode::Public`] for basic or network faucets.
+/// - `account_type`: typically [`AccountType::Public`] for basic or network faucets.
 /// - `auth_method`: typically [`AuthMethod::SingleSig`] for basic faucets, or
 ///   [`AuthMethod::NetworkAccount`] for network-style faucets. [`AuthMethod::NoAuth`] is also
 ///   accepted for unauthenticated faucets.
@@ -511,7 +511,7 @@ impl TryFrom<&Account> for FungibleFaucet {
 pub fn create_fungible_faucet(
     init_seed: [u8; 32],
     faucet: FungibleFaucet,
-    storage_mode: AccountStorageMode,
+    account_type: AccountType,
     auth_method: AuthMethod,
     access_control: AccessControl,
     token_policy_manager: TokenPolicyManager,
@@ -551,7 +551,7 @@ pub fn create_fungible_faucet(
     };
 
     let account = AccountBuilder::new(init_seed)
-        .storage_mode(storage_mode)
+        .account_type(account_type)
         .with_auth_component(auth_component)
         .with_component(faucet)
         .with_components(access_control)

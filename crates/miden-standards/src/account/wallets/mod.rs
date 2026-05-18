@@ -6,7 +6,7 @@ use miden_protocol::account::{
     AccountBuilder,
     AccountComponent,
     AccountProcedureRoot,
-    AccountStorageMode,
+    AccountType,
 };
 use miden_protocol::errors::AccountError;
 use thiserror::Error;
@@ -124,7 +124,7 @@ pub enum BasicWalletError {
 pub fn create_basic_wallet(
     init_seed: [u8; 32],
     auth_method: AuthMethod,
-    account_storage_mode: AccountStorageMode,
+    account_storage_mode: AccountType,
 ) -> Result<Account, BasicWalletError> {
     let auth_component: AccountComponent = match auth_method {
         AuthMethod::SingleSig { approver: (pub_key, auth_scheme) } => {
@@ -156,7 +156,7 @@ pub fn create_basic_wallet(
     };
 
     let account = AccountBuilder::new(init_seed)
-        .storage_mode(account_storage_mode)
+        .account_type(account_storage_mode)
         .with_auth_component(auth_component)
         .with_component(BasicWallet)
         .build()
@@ -174,7 +174,7 @@ mod tests {
     use miden_protocol::utils::serde::{Deserializable, Serializable};
     use miden_protocol::{ONE, Word};
 
-    use super::{Account, AccountStorageMode, AuthMethod, create_basic_wallet};
+    use super::{Account, AccountType, AuthMethod, create_basic_wallet};
     use crate::account::wallets::BasicWallet;
 
     #[test]
@@ -184,7 +184,7 @@ mod tests {
         let wallet = create_basic_wallet(
             [1; 32],
             AuthMethod::SingleSig { approver: (pub_key, auth_scheme) },
-            AccountStorageMode::Public,
+            AccountType::Public,
         );
 
         wallet.unwrap_or_else(|err| {
@@ -199,7 +199,7 @@ mod tests {
         let wallet = create_basic_wallet(
             [1; 32],
             AuthMethod::SingleSig { approver: (pub_key, auth_scheme) },
-            AccountStorageMode::Public,
+            AccountType::Public,
         )
         .unwrap();
 

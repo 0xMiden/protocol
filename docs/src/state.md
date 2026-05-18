@@ -46,7 +46,7 @@ This is done using an authenticated data structure, a sparse Merkle tree.
     <img src={require('./img/state/account-db.png').default} style={{width: '70%'}} alt="Account DB"/>
 </p>
 
-As described in the [account ID section](account/id#account-storage-mode), accounts can have different storage modes:
+As described in the [account ID section](account/id#account-type), accounts can have different account types:
 
 - **Public & Network accounts:** where all account data is stored on-chain.
 - **Private accounts:** where only the commitments to the account are stored on-chain.

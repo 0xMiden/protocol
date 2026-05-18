@@ -9,7 +9,7 @@ use miden_protocol::account::{
     AccountBuilder,
     AccountComponent,
     AccountStorage,
-    AccountStorageMode,
+    AccountType,
 };
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::Note;
@@ -41,7 +41,7 @@ fn setup_singlesig_with_mock_component(
     let account = AccountBuilder::new([0; 32])
         .with_auth_component(auth_component)
         .with_component(mock_component)
-        .storage_mode(AccountStorageMode::Public)
+        .account_type(AccountType::Public)
         .build_existing()?;
 
     let mut builder = MockChain::builder();
