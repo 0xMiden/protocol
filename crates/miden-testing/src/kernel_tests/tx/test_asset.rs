@@ -298,13 +298,15 @@ async fn test_validate_asset_metadata(
 }
 
 #[rstest::rstest]
-#[case::without_callbacks(AssetCallbackFlag::Disabled)]
-#[case::with_callbacks(AssetCallbackFlag::Enabled)]
+#[case::fungible_without_callbacks(AssetComposition::Fungible, AssetCallbackFlag::Disabled)]
+#[case::non_fungible_with_callbacks(AssetComposition::None, AssetCallbackFlag::Enabled)]
 #[tokio::test]
-async fn test_key_to_asset_metadata(#[case] callbacks: AssetCallbackFlag) -> anyhow::Result<()> {
+async fn test_key_to_asset_metadata(
+    #[case] composition: AssetComposition,
+    #[case] callbacks: AssetCallbackFlag,
+) -> anyhow::Result<()> {
     let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?;
-    let vault_key =
-        AssetVaultKey::new(AssetId::default(), faucet_id, AssetComposition::Fungible, callbacks)?;
+    let vault_key = AssetVaultKey::new(AssetId::default(), faucet_id, composition, callbacks)?;
 
     let code = format!(
         "
@@ -315,9 +317,16 @@ async fn test_key_to_asset_metadata(#[case] callbacks: AssetCallbackFlag) -> any
             exec.asset::key_to_callbacks_enabled
             # => [callbacks_enabled, ASSET_KEY]
 
+            movdn.4
+            exec.asset::key_to_composition
+            # => [asset_composition, ASSET_KEY, callbacks_enabled]
+
+            movdn.4 dropw
+            # => [asset_composition, callbacks_enabled]
+
             # truncate stack
-            swapw dropw swap drop
-            # => [callbacks_enabled]
+            swapw dropw
+            # => [asset_composition, callbacks_enabled]
         end
         ",
         ASSET_KEY = vault_key.to_word(),
@@ -327,8 +336,13 @@ async fn test_key_to_asset_metadata(#[case] callbacks: AssetCallbackFlag) -> any
 
     assert_eq!(
         exec_output.get_stack_element(0).as_canonical_u64(),
+        composition.as_u8() as u64,
+        "MASM asset::key_to_composition returned wrong value for {composition:?}"
+    );
+    assert_eq!(
+        exec_output.get_stack_element(1).as_canonical_u64(),
         callbacks.as_u8() as u64,
-        "MASM key_to_asset_category returned wrong value for {callbacks:?}"
+        "MASM asset::key_to_callbacks_enabled returned wrong value for {callbacks:?}"
     );
 
     Ok(())
