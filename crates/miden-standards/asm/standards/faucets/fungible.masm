@@ -30,10 +30,9 @@ pub const TOKEN_CONFIG_SLOT = word("miden::standards::faucets::fungible::token_c
 
 # The local memory address at which the token config slot content is stored.
 const TOKEN_CONFIG_SLOT_LOCAL = 0
-# The local memory address at which the MINT note's stored ASSET_KEY is stashed across the
-# mint policy and supply checks (`mint_and_send`). Used to enforce the faucet-bind at
-# `faucet::mint` time: the kernel panics if the stashed key's faucet ID does not equal
-# the active account.
+# The local memory address at which the MINT note's ASSET_KEY is held across the mint policy
+# and supply checks in `mint_and_send`. It is compared against the asset derived for the
+# active faucet to bind the mint to the faucet the MINT note was created for.
 const MINT_ASSET_KEY_LOCAL = 4
 const ASSET_PTR = 0
 
@@ -43,6 +42,7 @@ const ERR_NEW_MAX_SUPPLY_BELOW_TOKEN_SUPPLY = "new max supply is less than curre
 const ERR_FUNGIBLE_ASSET_TOKEN_SUPPLY_EXCEEDS_MAX_SUPPLY = "token supply exceeds max supply"
 const ERR_FUNGIBLE_ASSET_MAX_SUPPLY_EXCEEDS_FUNGIBLE_ASSET_MAX_AMOUNT = "max supply exceeds maximum representable fungible asset amount"
 const ERR_FUNGIBLE_ASSET_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY = "token_supply plus the amount passed to distribute would exceed the maximum supply"
+const ERR_FUNGIBLE_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET = "the asset stored in the MINT note does not belong to this faucet"
 const ERR_FAUCET_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY = "asset amount to burn exceeds the existing token supply"
 const ERR_FUNGIBLE_BURN_WRONG_NUMBER_OF_ASSETS = "burn requires exactly 1 note asset"
 
@@ -210,13 +210,12 @@ end
 # MINT AND SEND
 # =================================================================================================
 
-#! Mints the asset stored in the MINT note and sends it to the provided recipient.
+#! Mints the asset stored in the MINT note to the provided recipient by creating a note.
 #!
-#! This procedure first stashes the asset's vault key, then extracts the amount from
-#! `ASSET_VALUE` for the supply checks. It runs the active mint policy and then asks the
-#! kernel to mint the asset via `faucet::mint`, which panics if the stashed `ASSET_KEY`'s
-#! faucet ID does not match the active account. This is the load-bearing bind: a MINT note
-#! carrying an asset for faucet A cannot be minted by faucet B even if both share an owner.
+#! The active mint policy runs on the asset amount, the token supply is updated, and an
+#! output note carrying the asset is created for the recipient. The minted asset is derived
+#! for the active faucet; its key must match the `ASSET_KEY` stored in the MINT note, so a
+#! MINT note created for one faucet cannot be minted by another faucet.
 #!
 #! Inputs:  [ASSET_KEY, ASSET_VALUE, tag, note_type, RECIPIENT, pad(2)]
 #! Outputs: [note_idx, pad(15)]
@@ -238,15 +237,13 @@ end
 #! - the token supply exceeds the maximum supply.
 #! - the maximum supply exceeds the maximum representable fungible asset amount.
 #! - the token supply after minting is greater than the maximum allowed supply.
-#! - the stashed ASSET_KEY's faucet ID does not match the active account (enforced by the
-#!   kernel `faucet::mint` syscall).
+#! - the asset stored in the MINT note does not belong to this faucet.
 #!
 #! Invocation: call
 @locals(8)
 pub proc mint_and_send
-    # Stash ASSET_KEY in locals. The kernel `faucet::mint` call at the end of this procedure
-    # panics if the stashed key's faucet ID does not equal the active account, which is the
-    # bind that prevents a MINT note for one faucet from being consumed by another.
+    # save the MINT note's ASSET_KEY in a local so it survives the mint policy and supply
+    # checks; it is compared against the derived asset's key before minting
     loc_storew_le.MINT_ASSET_KEY_LOCAL dropw
     # => [ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
 
@@ -332,24 +329,24 @@ pub proc mint_and_send
     # Mint the asset.
     # ---------------------------------------------------------------------------------------------
 
-    # Rebuild ASSET_VALUE = [amount, 0, 0, 0] from the (possibly policy-adjusted) amount so that
-    # what we mint matches what the supply update accounted for.
     dup movup.2
     # => [amount, note_idx, note_idx]
 
-    push.0 push.0 push.0 movup.3
-    # => [ASSET_VALUE, note_idx, note_idx]
+    # derive the asset to mint for the active faucet from the (possibly policy-adjusted) amount
+    exec.faucet::create_fungible_asset
+    # => [ASSET_KEY, ASSET_VALUE, note_idx, note_idx]
 
-    # Load the stashed ASSET_KEY on top of ASSET_VALUE. We use the *stored* key (not a freshly
-    # derived one) so that the kernel `faucet::mint` below can verify the faucet binding.
+    # bind the mint to the faucet the MINT note was created for: the derived asset's key must
+    # equal the ASSET_KEY stored in the MINT note
     padw loc_loadw_le.MINT_ASSET_KEY_LOCAL
+    # => [NOTE_ASSET_KEY, ASSET_KEY, ASSET_VALUE, note_idx, note_idx]
+
+    dupw.1 assert_eqw.err=ERR_FUNGIBLE_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET
     # => [ASSET_KEY, ASSET_VALUE, note_idx, note_idx]
 
     dupw.1 dupw.1
     # => [ASSET_KEY, ASSET_VALUE, ASSET_KEY, ASSET_VALUE, note_idx, note_idx]
 
-    # Kernel-enforced faucet bind: panics if the stashed ASSET_KEY's faucet ID does not equal
-    # the active account. Also performs the asset preservation update.
     exec.faucet::mint
     # => [ASSET_KEY, ASSET_VALUE, note_idx, note_idx]
 
