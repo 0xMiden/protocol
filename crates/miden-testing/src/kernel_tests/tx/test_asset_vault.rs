@@ -2,6 +2,7 @@ use assert_matches::assert_matches;
 use miden_protocol::account::AccountId;
 use miden_protocol::asset::{
     Asset,
+    AssetCallbackFlag,
     AssetVaultKey,
     FungibleAsset,
     NonFungibleAsset,
@@ -35,7 +36,7 @@ async fn get_balance_returns_correct_amount() -> anyhow::Result<()> {
     let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
 
     let faucet_id: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap();
-    let asset_key = AssetVaultKey::new_fungible(faucet_id);
+    let asset_key = AssetVaultKey::new_fungible(faucet_id, AssetCallbackFlag::Disabled);
     let code = format!(
         r#"
         use $kernel::prologue
@@ -59,7 +60,11 @@ async fn get_balance_returns_correct_amount() -> anyhow::Result<()> {
 
     assert_eq!(
         exec_output.get_stack_element(0).as_canonical_u64(),
-        tx_context.account().vault().get_balance(faucet_id).unwrap().as_u64()
+        tx_context
+            .account()
+            .vault()
+            .get_balance(faucet_id, AssetCallbackFlag::Disabled)?
+            .as_u64()
     );
 
     Ok(())
@@ -70,7 +75,7 @@ async fn get_balance_returns_correct_amount() -> anyhow::Result<()> {
 async fn peek_asset_returns_correct_asset() -> anyhow::Result<()> {
     let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
     let faucet_id: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap();
-    let asset_key = AssetVaultKey::new_fungible(faucet_id);
+    let asset_key = AssetVaultKey::new_fungible(faucet_id, AssetCallbackFlag::Disabled);
 
     let code = format!(
         r#"

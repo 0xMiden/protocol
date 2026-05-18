@@ -25,7 +25,7 @@ use miden_protocol::account::{
     AccountType,
     StorageSlot,
 };
-use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset, TokenSymbol};
+use miden_protocol::asset::{Asset, AssetAmount, AssetCallbackFlag, FungibleAsset, TokenSymbol};
 use miden_protocol::block::account_tree::AccountTree;
 use miden_protocol::block::nullifier_tree::NullifierTree;
 use miden_protocol::block::{
@@ -116,6 +116,7 @@ pub struct MockChainBuilder {
     rng: RandomCoin,
     // Fee parameters.
     fee_faucet_id: AccountId,
+    fee_asset_callback_flag: AssetCallbackFlag,
     verification_base_fee: u32,
 }
 
@@ -138,6 +139,7 @@ impl MockChainBuilder {
             notes: Vec::new(),
             rng: RandomCoin::new(Default::default()),
             fee_faucet_id,
+            fee_asset_callback_flag: AssetCallbackFlag::Disabled,
             verification_base_fee: 0,
         }
     }
@@ -169,6 +171,15 @@ impl MockChainBuilder {
     /// by the transaction kernel.
     pub fn fee_faucet_id(mut self, fee_faucet_id: AccountId) -> Self {
         self.fee_faucet_id = fee_faucet_id;
+        self
+    }
+
+    /// Sets the fee faucet ID of the chain.
+    ///
+    /// This must be a fungible faucet [`AccountId`] and is the asset in which fees will be accepted
+    /// by the transaction kernel.
+    pub fn fee_asset_callback_flag(mut self, fee_asset_callback_flag: AssetCallbackFlag) -> Self {
+        self.fee_asset_callback_flag = fee_asset_callback_flag;
         self
     }
 

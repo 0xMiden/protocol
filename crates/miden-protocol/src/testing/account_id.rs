@@ -151,21 +151,13 @@ pub const fn account_id(
 /// assert_eq!(random_id2.storage_mode(), AccountStorageMode::Private);
 /// ```
 pub struct AccountIdBuilder {
-    account_type: Option<AccountType>,
     storage_mode: Option<AccountStorageMode>,
 }
 
 impl AccountIdBuilder {
     /// Creates a new [`AccountIdBuilder`].
     pub fn new() -> Self {
-        Self { account_type: None, storage_mode: None }
-    }
-
-    /// Sets the [`AccountType`] of the generated [`AccountId`] to the provided value.
-    pub fn account_type(mut self, account_type: AccountType) -> Self {
-        // TODO(asset_composition): Remove this method and field.
-        self.account_type = Some(account_type);
-        self
+        Self { storage_mode: None }
     }
 
     /// Sets the [`AccountStorageMode`] of the generated [`AccountId`] to the provided value.

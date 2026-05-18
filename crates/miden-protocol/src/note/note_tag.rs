@@ -227,10 +227,12 @@ mod tests {
         for account_id in private_accounts.iter().chain(public_accounts.iter()) {
             let tag = NoteTag::with_account_target(*account_id);
             assert_eq!(tag.as_u32() << 16, 0, "16 least significant bits should be zero");
-            let expected = ((account_id.prefix().as_u64() >> 32) as u32) >> 16;
-            let actual = tag.as_u32() >> 16;
+            // The expected tag is the account ID prefix with the 18 least significant bits masked
+            // out, leaving the 14 most significant bits.
+            let expected = ((account_id.prefix().as_u64() >> 32) as u32)
+                & 0b1111_1111_1111_1100_0000_0000_0000_0000;
 
-            assert_eq!(actual, expected, "14 most significant bits should match");
+            assert_eq!(tag.as_u32(), expected);
         }
     }
 

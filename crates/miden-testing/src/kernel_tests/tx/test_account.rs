@@ -31,7 +31,14 @@ use miden_protocol::account::{
 use miden_protocol::assembly::diagnostics::NamedSource;
 use miden_protocol::assembly::diagnostics::reporting::PrintDiagnostic;
 use miden_protocol::assembly::{DefaultSourceManager, Library};
-use miden_protocol::asset::{Asset, AssetAmount, AssetCallbacks, AssetVaultKey, FungibleAsset};
+use miden_protocol::asset::{
+    Asset,
+    AssetAmount,
+    AssetCallbackFlag,
+    AssetCallbacks,
+    AssetVaultKey,
+    FungibleAsset,
+};
 use miden_protocol::errors::tx_kernel::{
     ERR_ACCOUNT_ID_SUFFIX_LEAST_SIGNIFICANT_BYTE_MUST_BE_ZERO,
     ERR_ACCOUNT_ID_SUFFIX_MOST_SIGNIFICANT_BIT_MUST_BE_ZERO,
@@ -985,11 +992,11 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
 
     let initial_balance = account
         .vault()
-        .get_balance(faucet_existing_asset)
+        .get_balance(faucet_existing_asset, AssetCallbackFlag::Disabled)
         .expect("faucet_id should be a fungible faucet ID")
         .as_u64();
 
-    let asset_key = AssetVaultKey::new_fungible(faucet_existing_asset);
+    let asset_key = AssetVaultKey::new_fungible(faucet_existing_asset, AssetCallbackFlag::Disabled);
     let add_existing_source = format!(
         r#"
         use miden::protocol::active_account
@@ -1038,11 +1045,11 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
 
     let initial_balance = account
         .vault()
-        .get_balance(faucet_new_asset)
+        .get_balance(faucet_new_asset, AssetCallbackFlag::Disabled)
         .expect("faucet_id should be a fungible faucet ID")
         .as_u64();
 
-    let asset_key = AssetVaultKey::new_fungible(faucet_new_asset);
+    let asset_key = AssetVaultKey::new_fungible(faucet_new_asset, AssetCallbackFlag::Disabled);
     let add_new_source = format!(
         r#"
         use miden::protocol::active_account
@@ -1116,14 +1123,14 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
 
     let initial_balance = account
         .vault()
-        .get_balance(faucet_existing_asset)
+        .get_balance(faucet_existing_asset, AssetCallbackFlag::Disabled)
         .expect("faucet_id should be a fungible faucet ID")
         .as_u64();
 
     let expected_output_note =
         create_public_p2any_note(ACCOUNT_ID_SENDER.try_into()?, [fungible_asset_for_note_existing]);
 
-    let asset_key = AssetVaultKey::new_fungible(faucet_existing_asset);
+    let asset_key = AssetVaultKey::new_fungible(faucet_existing_asset, AssetCallbackFlag::Disabled);
     let remove_existing_source = format!(
         r#"
         use miden::protocol::active_account

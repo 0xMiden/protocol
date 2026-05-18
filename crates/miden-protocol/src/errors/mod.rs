@@ -578,8 +578,6 @@ pub enum AssetVaultError {
     DuplicateNonFungibleAsset(NonFungibleAsset),
     #[error("fungible asset {0} does not exist in the vault")]
     FungibleAssetNotFound(FungibleAsset),
-    #[error("faucet id {0} is not a fungible faucet id")]
-    NotAFungibleFaucetId(AccountId),
     #[error("non fungible asset {0} does not exist in the vault")]
     NonFungibleAssetNotFound(NonFungibleAsset),
     #[error("subtracting fungible asset amounts would underflow")]

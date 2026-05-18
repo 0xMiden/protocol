@@ -4,9 +4,9 @@ use alloc::vec::Vec;
 use miden_crypto::merkle::InnerNodeInfo;
 
 use super::{
-    AccountType,
     Asset,
     AssetAmount,
+    AssetCallbackFlag,
     ByteReader,
     ByteWriter,
     Deserializable,
@@ -103,18 +103,14 @@ impl AssetVault {
         }
     }
 
-    /// Returns the balance of the asset issued by the specified faucet. If the vault does not
-    /// contain such an asset, zero is returned.
-    ///
-    /// # Errors
-    /// Returns an error if the specified ID is not an ID of a fungible asset faucet.
-    pub fn get_balance(&self, faucet_id: AccountId) -> Result<AssetAmount, AssetVaultError> {
-        if !matches!(faucet_id.account_type(), AccountType::FungibleFaucet) {
-            return Err(AssetVaultError::NotAFungibleFaucetId(faucet_id));
-        }
-
-        // TODO
-        let vault_key = AssetVaultKey::new_fungible(faucet_id);
+    /// Returns the balance of the asset issued by the specified faucet with the given
+    /// [`AssetCallbackFlag`]. If the vault does not contain such an asset, zero is returned.
+    pub fn get_balance(
+        &self,
+        faucet_id: AccountId,
+        callback_flag: AssetCallbackFlag,
+    ) -> Result<AssetAmount, AssetVaultError> {
+        let vault_key = AssetVaultKey::new_fungible(faucet_id, callback_flag);
         let asset_value = self.asset_tree.get_value(&vault_key.to_word());
         let asset = FungibleAsset::from_key_value(vault_key, asset_value)
             .expect("asset vault should only store valid assets");

@@ -8,7 +8,7 @@ pub use miden_processor::{ExecutionOptions, MastForestStore};
 use miden_protocol::account::AccountId;
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::assembly::debuginfo::SourceManagerSync;
-use miden_protocol::asset::{Asset, AssetVaultKey};
+use miden_protocol::asset::{Asset, AssetCallbackFlag, AssetVaultKey};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::transaction::{
     ExecutedTransaction,
@@ -44,6 +44,13 @@ pub use notes_checker::{
 
 mod program_executor;
 pub use program_executor::ProgramExecutor;
+
+/// TODO: Decide whether to allow fee assets to have callbacks.
+///
+/// Since fee removal is a way of transferring assets, but we do not have a fee-removal callback,
+/// using a callback-enabled asset allows bypassing the callbacks. For now, assume fee assets are
+/// callback-disabled.
+const FEE_ASSET_CALLBACK_FLAG: AssetCallbackFlag = AssetCallbackFlag::Disabled;
 
 // TRANSACTION EXECUTOR
 // ================================================================================================
@@ -307,8 +314,10 @@ where
             .map_err(TransactionExecutorError::FetchTransactionInputsFailed)?;
 
         let native_account_vault_root = account.vault().root();
-        let fee_asset_vault_key =
-            AssetVaultKey::new_fungible(block_header.fee_parameters().fee_faucet_id());
+        let fee_asset_vault_key = AssetVaultKey::new_fungible(
+            block_header.fee_parameters().fee_faucet_id(),
+            FEE_ASSET_CALLBACK_FLAG,
+        );
 
         let mut tx_inputs = TransactionInputs::new(account, block_header, blockchain, input_notes)
             .map_err(TransactionExecutorError::InvalidTransactionInputs)?
@@ -363,8 +372,11 @@ where
 
         let initial_fee_asset_balance = {
             let vault_root = tx_inputs.account().vault().root();
-            let fee_faucet_id = tx_inputs.block_header().fee_parameters().fee_faucet_id();
-            let fee_asset_vault_key = AssetVaultKey::new_fungible(fee_faucet_id);
+            let fee_parameters = tx_inputs.block_header().fee_parameters();
+            let fee_asset_vault_key = AssetVaultKey::new_fungible(
+                fee_parameters.fee_faucet_id(),
+                FEE_ASSET_CALLBACK_FLAG,
+            );
 
             let fee_asset = tx_inputs
                 .read_vault_asset(vault_root, fee_asset_vault_key)

@@ -19,7 +19,7 @@ use miden_crypto::rand::FeltRng;
 use miden_protocol::Felt;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{AccountId, AccountIdVersion, AccountStorageMode};
-use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
+use miden_protocol::asset::{Asset, AssetAmount, AssetCallbackFlag, FungibleAsset};
 use miden_protocol::note::{NoteAssets, NoteType};
 use miden_protocol::transaction::RawOutputNote;
 use miden_standards::account::faucets::FungibleFaucet;
@@ -553,8 +553,10 @@ async fn b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
     let mut mock_chain = builder.build()?;
 
     // Store the initial asset balance of the user account
-    let initial_balance =
-        user_account.vault().get_balance(faucet.id()).unwrap_or(AssetAmount::ZERO);
+    let initial_balance = user_account
+        .vault()
+        .get_balance(faucet.id(), AssetCallbackFlag::Disabled)
+        .unwrap_or(AssetAmount::ZERO);
 
     // EXECUTE B2AGG NOTE WITH THE SAME USER ACCOUNT (RECLAIM SCENARIO)
     // --------------------------------------------------------------------------------------------
@@ -576,7 +578,10 @@ async fn b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
 
     // VERIFY ASSETS WERE ADDED BACK TO THE ACCOUNT
     // --------------------------------------------------------------------------------------------
-    let final_balance = user_account.vault().get_balance(faucet.id()).unwrap_or(AssetAmount::ZERO);
+    let final_balance = user_account
+        .vault()
+        .get_balance(faucet.id(), AssetCallbackFlag::Disabled)
+        .unwrap_or(AssetAmount::ZERO);
     assert_eq!(
         final_balance,
         (initial_balance + amount).unwrap(),

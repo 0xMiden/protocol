@@ -1,4 +1,3 @@
-use super::account::AccountType;
 use super::errors::{AssetError, TokenSymbolError};
 use super::utils::serde::{
     ByteReader,

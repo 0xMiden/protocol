@@ -215,7 +215,7 @@ mod tests {
     use bech32::{Bech32, Bech32m, NoChecksum};
 
     use super::*;
-    use crate::account::{AccountId, AccountStorageMode, AccountType};
+    use crate::account::{AccountId, AccountStorageMode};
     use crate::address::CustomNetworkId;
     use crate::errors::{AccountIdError, Bech32Error};
     use crate::testing::account_id::{ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET, AccountIdBuilder};
@@ -237,16 +237,10 @@ mod tests {
         ] {
             for (idx, account_id) in [
                 AccountIdBuilder::new()
-                    .account_type(AccountType::FungibleFaucet)
+                    .storage_mode(AccountStorageMode::Private)
                     .build_with_rng(rng),
                 AccountIdBuilder::new()
-                    .account_type(AccountType::NonFungibleFaucet)
-                    .build_with_rng(rng),
-                AccountIdBuilder::new()
-                    .account_type(AccountType::RegularAccountImmutableCode)
-                    .build_with_rng(rng),
-                AccountIdBuilder::new()
-                    .account_type(AccountType::RegularAccountUpdatableCode)
+                    .storage_mode(AccountStorageMode::Public)
                     .build_with_rng(rng),
             ]
             .into_iter()
@@ -294,9 +288,7 @@ mod tests {
 
     #[test]
     fn address_decoding_fails_on_trailing_separator() -> anyhow::Result<()> {
-        let id = AccountIdBuilder::new()
-            .account_type(AccountType::FungibleFaucet)
-            .build_with_rng(&mut rand::rng());
+        let id = AccountIdBuilder::new().build_with_rng(&mut rand::rng());
 
         let address = Address::new(id);
         let mut encoded_address = address.encode(NetworkId::Devnet);
@@ -389,15 +381,8 @@ mod tests {
     fn address_serialization() -> anyhow::Result<()> {
         let rng = &mut rand::rng();
 
-        for account_type in [
-            AccountType::FungibleFaucet,
-            AccountType::NonFungibleFaucet,
-            AccountType::RegularAccountImmutableCode,
-            AccountType::RegularAccountUpdatableCode,
-        ]
-        .into_iter()
-        {
-            let account_id = AccountIdBuilder::new().account_type(account_type).build_with_rng(rng);
+        for storage_mode in [AccountStorageMode::Private, AccountStorageMode::Public].into_iter() {
+            let account_id = AccountIdBuilder::new().storage_mode(storage_mode).build_with_rng(rng);
             let address = Address::new(account_id).with_routing_parameters(
                 RoutingParameters::new(AddressInterface::BasicWallet)
                     .with_note_tag_len(NoteTag::MAX_ACCOUNT_TARGET_TAG_LENGTH)?,
@@ -418,9 +403,7 @@ mod tests {
         use crate::crypto::ies::{SealingKey, UnsealingKey};
 
         let rng = &mut rand::rng();
-        let account_id = AccountIdBuilder::new()
-            .account_type(AccountType::FungibleFaucet)
-            .build_with_rng(rng);
+        let account_id = AccountIdBuilder::new().build_with_rng(rng);
 
         // Create keypair using rand::rng()
         let secret_key = KeyExchangeKey::with_rng(rng);
@@ -456,10 +439,7 @@ mod tests {
         use crate::crypto::dsa::eddsa_25519_sha512::KeyExchangeKey;
 
         let rng = &mut rand::rng();
-        // Use a local account type (RegularAccountImmutableCode) instead of network
-        // (FungibleFaucet)
         let account_id = AccountIdBuilder::new()
-            .account_type(AccountType::RegularAccountImmutableCode)
             .storage_mode(AccountStorageMode::Public)
             .build_with_rng(rng);
 
@@ -493,9 +473,7 @@ mod tests {
 
     #[test]
     fn address_allows_max_note_tag_len() -> anyhow::Result<()> {
-        let account_id = AccountIdBuilder::new()
-            .account_type(AccountType::RegularAccountImmutableCode)
-            .build_with_rng(&mut rand::rng());
+        let account_id = AccountIdBuilder::new().build_with_rng(&mut rand::rng());
 
         let address = Address::new(account_id).with_routing_parameters(
             RoutingParameters::new(AddressInterface::BasicWallet)

@@ -25,7 +25,7 @@ use miden_agglayer::{
 use miden_protocol::Felt;
 use miden_protocol::account::Account;
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::asset::{Asset, FungibleAsset};
+use miden_protocol::asset::{Asset, AssetCallbackFlag, FungibleAsset};
 use miden_protocol::crypto::SequentialCommit;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::note::NoteType;
@@ -411,7 +411,9 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
         let mut destination_account = destination_account.clone();
         destination_account.apply_delta(consume_executed_transaction.account_delta())?;
 
-        let balance = destination_account.vault().get_balance(agglayer_faucet.id())?;
+        let balance = destination_account
+            .vault()
+            .get_balance(agglayer_faucet.id(), AssetCallbackFlag::Disabled)?;
         assert_eq!(
             balance.as_u64(),
             miden_claim_amount.as_canonical_u64(),

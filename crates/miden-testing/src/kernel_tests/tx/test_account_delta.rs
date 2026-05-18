@@ -394,20 +394,14 @@ async fn fungible_asset_delta() -> anyhow::Result<()> {
     // Test with random IDs to make sure the ordering in the MASM and Rust implementations
     // matches.
     let faucet0: AccountId = AccountIdBuilder::new()
-        .account_type(AccountType::FungibleFaucet)
+        .storage_mode(AccountStorageMode::Private)
         .build_with_seed(rand::random());
     let faucet1: AccountId = AccountIdBuilder::new()
-        .account_type(AccountType::FungibleFaucet)
+        .storage_mode(AccountStorageMode::Public)
         .build_with_seed(rand::random());
-    let faucet2: AccountId = AccountIdBuilder::new()
-        .account_type(AccountType::FungibleFaucet)
-        .build_with_seed(rand::random());
-    let faucet3: AccountId = AccountIdBuilder::new()
-        .account_type(AccountType::FungibleFaucet)
-        .build_with_seed(rand::random());
-    let faucet4: AccountId = AccountIdBuilder::new()
-        .account_type(AccountType::FungibleFaucet)
-        .build_with_seed(rand::random());
+    let faucet2: AccountId = AccountIdBuilder::new().build_with_seed(rand::random());
+    let faucet3: AccountId = AccountIdBuilder::new().build_with_seed(rand::random());
+    let faucet4: AccountId = AccountIdBuilder::new().build_with_seed(rand::random());
 
     let original_asset0 = FungibleAsset::new(faucet0, 300)?;
     let original_asset1 = FungibleAsset::new(faucet1, 200)?;
@@ -519,17 +513,13 @@ async fn non_fungible_asset_delta() -> anyhow::Result<()> {
     let mut rng = rand::rng();
     // Test with random IDs to make sure the ordering in the MASM and Rust implementations
     // matches.
-    let faucet0: AccountId = AccountIdBuilder::new()
-        .account_type(AccountType::NonFungibleFaucet)
-        .build_with_seed(rng.random());
-    let faucet1: AccountId = AccountIdBuilder::new()
-        .account_type(AccountType::NonFungibleFaucet)
-        .build_with_seed(rng.random());
+    let faucet0: AccountId = AccountIdBuilder::new().build_with_seed(rng.random());
+    let faucet1: AccountId = AccountIdBuilder::new().build_with_seed(rng.random());
     let faucet2: AccountId = AccountIdBuilder::new()
-        .account_type(AccountType::NonFungibleFaucet)
+        .storage_mode(AccountStorageMode::Public)
         .build_with_seed(rng.random());
     let faucet3: AccountId = AccountIdBuilder::new()
-        .account_type(AccountType::NonFungibleFaucet)
+        .storage_mode(AccountStorageMode::Private)
         .build_with_seed(rng.random());
 
     let asset0 = NonFungibleAsset::new(&NonFungibleAssetDetails::new(

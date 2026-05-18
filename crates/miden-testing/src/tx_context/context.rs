@@ -15,7 +15,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::assembly::debuginfo::{SourceLanguage, Uri};
 use miden_protocol::assembly::{Assembler, SourceManager, SourceManagerSync};
-use miden_protocol::asset::{Asset, AssetVaultKey, AssetWitness};
+use miden_protocol::asset::{Asset, AssetCallbackFlag, AssetVaultKey, AssetWitness};
 use miden_protocol::block::account_tree::AccountWitness;
 use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::note::{Note, NoteScript, NoteScriptRoot};
@@ -90,10 +90,6 @@ impl TransactionContext {
             .iter()
             .flat_map(|note| note.note().assets().iter().map(Asset::vault_key))
             .collect::<BTreeSet<_>>();
-        let fee_asset_vault_key = AssetVaultKey::new_fungible(
-            self.tx_inputs().block_header().fee_parameters().fee_faucet_id(),
-        );
-        asset_vault_keys.extend([fee_asset_vault_key]);
 
         let (account, block_header, _blockchain) = self
             .get_transaction_inputs(
@@ -105,8 +101,11 @@ impl TransactionContext {
 
         // Add the vault key for the fee asset to the list of asset vault keys which may need to be
         // accessed at the end of the transaction.
-        let fee_asset_vault_key =
-            AssetVaultKey::new_fungible(block_header.fee_parameters().fee_faucet_id());
+        let fee_asset_vault_key = AssetVaultKey::new_fungible(
+            block_header.fee_parameters().fee_faucet_id(),
+            // Assume fee asset is callback-disabled.
+            AssetCallbackFlag::Disabled,
+        );
         asset_vault_keys.insert(fee_asset_vault_key);
 
         // Fetch the witnesses for all asset vault keys.
