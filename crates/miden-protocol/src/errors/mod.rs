@@ -217,8 +217,6 @@ pub enum AccountIdError {
     AccountIdInvalidSuffixFieldElement(#[source] DeserializationError),
     #[error("`{0}` is not a known account storage mode")]
     UnknownAccountStorageMode(Box<str>),
-    #[error(r#"`{0}` is not a known account type, expected one of "FungibleFaucet", "NonFungibleFaucet", "RegularAccountImmutableCode" or "RegularAccountUpdatableCode""#)]
-    UnknownAccountType(Box<str>),
     #[error("failed to parse hex string into account ID")]
     AccountIdHexParseError(#[source] HexParseError),
     #[error("`{0}` is not a known account ID version")]

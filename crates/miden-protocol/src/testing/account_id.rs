@@ -103,20 +103,18 @@ pub const fn account_id(storage_mode: AccountStorageMode, random: u32) -> u128 {
 /// # Example
 ///
 /// ```
-/// # use miden_protocol::account::{AccountType, AccountStorageMode, AccountId};
+/// # use miden_protocol::account::{AccountStorageMode, AccountId};
 /// # use miden_protocol::testing::account_id::{AccountIdBuilder};
 ///
 /// let mut rng = rand::rng();
 ///
-/// // A random AccountId with random AccountType and AccountStorageMode.
+/// // A random AccountId with a random AccountStorageMode.
 /// let random_id1: AccountId = AccountIdBuilder::new().build_with_rng(&mut rng);
 ///
-/// // A random AccountId with the given AccountType and AccountStorageMode.
+/// // A random AccountId with the given AccountStorageMode.
 /// let random_id2: AccountId = AccountIdBuilder::new()
-///     .account_type(AccountType::FungibleFaucet)
 ///     .storage_mode(AccountStorageMode::Private)
 ///     .build_with_rng(&mut rng);
-/// assert_eq!(random_id2.account_type(), AccountType::FungibleFaucet);
 /// assert_eq!(random_id2.storage_mode(), AccountStorageMode::Private);
 /// ```
 pub struct AccountIdBuilder {
