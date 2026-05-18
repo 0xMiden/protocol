@@ -9,6 +9,7 @@ use miden_protocol::asset::{
     NonFungibleAssetDetails,
 };
 use miden_protocol::errors::MasmError;
+use miden_protocol::errors::protocol::ERR_VAULT_ASSET_METADATA_NON_ZERO_RESERVED_BITS;
 use miden_protocol::errors::tx_kernel::{
     ERR_FUNGIBLE_ASSET_AMOUNT_EXCEEDS_MAX_AMOUNT,
     ERR_FUNGIBLE_ASSET_KEY_ACCOUNT_ID_MUST_BE_FUNGIBLE,
@@ -17,7 +18,6 @@ use miden_protocol::errors::tx_kernel::{
     ERR_NON_FUNGIBLE_ASSET_ID_PREFIX_MUST_MATCH_HASH1,
     ERR_NON_FUNGIBLE_ASSET_ID_SUFFIX_MUST_MATCH_HASH0,
     ERR_NON_FUNGIBLE_ASSET_KEY_ACCOUNT_ID_MUST_BE_NON_FUNGIBLE,
-    ERR_VAULT_ASSET_METADATA_NON_ZERO_RESERVED_BITS,
     ERR_VAULT_ASSET_METADATA_NOT_U32,
     ERR_VAULT_ASSET_METADATA_UNKNOWN_COMPOSITION,
 };
@@ -263,6 +263,8 @@ async fn test_validate_fungible_asset(
 #[case::valid_callbacks_enabled((AssetCallbackFlag::Enabled as u64) << 2, None)]
 // Metadata is not a valid u32 (does not fit in 32 bits).
 #[case::not_u32(u32::MAX as u64 + 1, Some(ERR_VAULT_ASSET_METADATA_NOT_U32))]
+// Metadata is not a valid byte.
+#[case::not_u8(u16::MAX as u64, Some(ERR_VAULT_ASSET_METADATA_NON_ZERO_RESERVED_BITS))]
 // Reserved bit 3 is set.
 #[case::reserved_bits_set(0b1000, Some(ERR_VAULT_ASSET_METADATA_NON_ZERO_RESERVED_BITS))]
 // Composition value 3 is the unused bit pattern within the 2-bit field.
