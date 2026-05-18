@@ -14,7 +14,7 @@ use miden::protocol::native_account
 use miden::protocol::output_note
 use miden::protocol::asset
 use miden::protocol::asset::FUNGIBLE_ASSET_MAX_AMOUNT
-use miden::standards::access::ownable2step
+use miden::standards::access::authority
 use miden::standards::faucets::policies::policy_manager
 use miden::standards::faucets::MUTABILITY_CONFIG_SLOT
 
@@ -44,7 +44,7 @@ const ERR_FUNGIBLE_ASSET_TOKEN_SUPPLY_EXCEEDS_MAX_SUPPLY = "token supply exceeds
 const ERR_FUNGIBLE_ASSET_MAX_SUPPLY_EXCEEDS_FUNGIBLE_ASSET_MAX_AMOUNT = "max supply exceeds maximum representable fungible asset amount"
 const ERR_FUNGIBLE_ASSET_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY = "token_supply plus the amount passed to distribute would exceed the maximum supply"
 const ERR_FAUCET_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY = "asset amount to burn exceeds the existing token supply"
-const ERR_BASIC_FUNGIBLE_BURN_WRONG_NUMBER_OF_ASSETS = "burn requires exactly 1 note asset"
+const ERR_FUNGIBLE_BURN_WRONG_NUMBER_OF_ASSETS = "burn requires exactly 1 note asset"
 
 # =================================================================================================
 # PRIVATE HELPERS — token config slot access
@@ -161,18 +161,18 @@ pub proc is_max_supply_mutable
 end
 
 # =================================================================================================
-# SET MAX SUPPLY (owner-only when is_max_supply_mutable == 1)
+# SET MAX SUPPLY
 # =================================================================================================
 
 #! Updates the max supply if the max supply mutability flag is 1
-#! and the note sender is the owner.
+#! and the caller satisfies the account-wide authority configuration.
 #!
 #! Inputs:  [new_max_supply, pad(15)]
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
 #! - the max supply mutability flag is not 1.
-#! - the note sender is not the owner.
+#! - the caller is not authorized per the installed [`Authority`].
 #! - the new max supply is less than the current token supply.
 #!
 #! Invocation: call
@@ -182,8 +182,8 @@ pub proc set_max_supply
     # => [is_max_supply_mutable, new_max_supply, pad(15)]
     assert.err=ERR_MAX_SUPPLY_NOT_MUTABLE
 
-    # 2. Verify note sender is the owner
-    exec.ownable2step::assert_sender_is_owner
+    # 2. Verify the caller satisfies the account-wide authority configuration
+    exec.authority::assert_authorized
     # => [new_max_supply, pad(15)]
 
     # 3. Read current token config word
@@ -393,7 +393,7 @@ pub proc receive_and_burn
     # => [num_assets, pad(16)]
 
     # Verify we have exactly one asset
-    assert.err=ERR_BASIC_FUNGIBLE_BURN_WRONG_NUMBER_OF_ASSETS
+    assert.err=ERR_FUNGIBLE_BURN_WRONG_NUMBER_OF_ASSETS
     # => [pad(16)]
 
     push.ASSET_PTR exec.asset::load

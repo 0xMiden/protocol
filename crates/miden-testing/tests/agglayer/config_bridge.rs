@@ -49,7 +49,7 @@ async fn test_config_agg_bridge_registers_faucet() -> anyhow::Result<()> {
         [42; 15],
         AccountIdVersion::Version1,
         AccountType::FungibleFaucet,
-        AccountStorageMode::Network,
+        AccountStorageMode::Public,
     );
 
     // Verify the faucet is NOT in the registry before registration

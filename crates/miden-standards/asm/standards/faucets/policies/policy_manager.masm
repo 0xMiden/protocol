@@ -1,14 +1,20 @@
 use miden::core::word
 use miden::protocol::active_account
 use miden::protocol::native_account
-use miden::standards::access::ownable2step
+use miden::standards::access::authority
 
 # DEPENDENCY NOTE
-# This manager owns mint and burn policy state in a single component. It supports two
-# policy-authority modes (shared between mint and burn):
-# - 0: auth_controlled: no Ownable2Step dependency.
-# - 1: owner_controlled: requires Ownable2Step component (`ownable2step::assert_sender_is_owner`)
-#   for `set_mint_policy` and `set_burn_policy`.
+# This manager owns mint, burn, send, and receive policy state in a single component. The
+# `set_*_policy` procedures consult the account-wide [`Authority`] component (installed
+# separately) via `exec.authority::assert_authorized`, which dispatches between
+# `AuthControlled`, `OwnerControlled`, and `RbacControlled` modes. The manager itself stores no
+# authority discriminator.
+#
+# Mint and burn policies are dispatched internally via `dynexec` from `execute_mint_policy` /
+# `execute_burn_policy`. Send and receive policies are flattened: the active policy root is
+# written directly into the protocol-reserved callback slots
+# (`miden::protocol::faucet::callback::on_before_asset_added_to_account` and
+# `..._to_note`) and the kernel invokes them via `call`.
 
 # CONSTANTS
 # ================================================================================================
@@ -19,17 +25,25 @@ const ACTIVE_MINT_POLICY_PROC_ROOT_SLOT=word("miden::standards::faucets::policie
 # Active burn policy root slot. Layout: [PROC_ROOT]
 const ACTIVE_BURN_POLICY_PROC_ROOT_SLOT=word("miden::standards::faucets::policies::policy_manager::active_burn_policy_proc_root")
 
+# Protocol-reserved callback slot holding the active receive policy proc root. Written by
+# `set_receive_policy`, read by the kernel when dispatching `on_before_asset_added_to_account`.
+const ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_SLOT=word("miden::protocol::faucet::callback::on_before_asset_added_to_account")
+
+# Protocol-reserved callback slot holding the active send policy proc root. Written by
+# `set_send_policy`, read by the kernel when dispatching `on_before_asset_added_to_note`.
+const ON_BEFORE_ASSET_ADDED_TO_NOTE_SLOT=word("miden::protocol::faucet::callback::on_before_asset_added_to_note")
+
 # Allowlist map slot for mint policy roots. Map entries: [PROC_ROOT] -> [1, 0, 0, 0]
 const ALLOWED_MINT_POLICY_PROC_ROOTS_SLOT=word("miden::standards::faucets::policies::policy_manager::allowed_mint_policy_proc_roots")
 
 # Allowlist map slot for burn policy roots. Map entries: [PROC_ROOT] -> [1, 0, 0, 0]
 const ALLOWED_BURN_POLICY_PROC_ROOTS_SLOT=word("miden::standards::faucets::policies::policy_manager::allowed_burn_policy_proc_roots")
 
-# Shared policy authority slot. Layout: [policy_authority, 0, 0, 0]
-# - POLICY_AUTHORITY = 0: policy authority rely on `auth_controlled`.
-# - POLICY_AUTHORITY = 1: `set_*_policy` requires Ownable2Step owner check.
-const POLICY_AUTHORITY_SLOT=word("miden::standards::faucets::policies::policy_manager::policy_authority")
-const POLICY_AUTHORITY_OWNER_CONTROLLED=1
+# Allowlist map slot for send policy roots. Map entries: [PROC_ROOT] -> [1, 0, 0, 0]
+const ALLOWED_SEND_POLICY_PROC_ROOTS_SLOT=word("miden::standards::faucets::policies::policy_manager::allowed_send_policy_proc_roots")
+
+# Allowlist map slot for receive policy roots. Map entries: [PROC_ROOT] -> [1, 0, 0, 0]
+const ALLOWED_RECEIVE_POLICY_PROC_ROOTS_SLOT=word("miden::standards::faucets::policies::policy_manager::allowed_receive_policy_proc_roots")
 
 # Local memory pointer used to pass a policy root to `dynexec`.
 const POLICY_PROC_ROOT_PTR=0
@@ -45,51 +59,13 @@ const ERR_BURN_POLICY_ROOT_IS_ZERO="burn policy root is zero"
 const ERR_BURN_POLICY_ROOT_NOT_IN_ACCOUNT="burn policy root is not a procedure of this account"
 const ERR_BURN_POLICY_ROOT_NOT_ALLOWED="burn policy root is not allowed"
 
-# SHARED INTERNAL PROCEDURES
-# ================================================================================================
+const ERR_SEND_POLICY_ROOT_IS_ZERO="send policy root is zero"
+const ERR_SEND_POLICY_ROOT_NOT_IN_ACCOUNT="send policy root is not a procedure of this account"
+const ERR_SEND_POLICY_ROOT_NOT_ALLOWED="send policy root is not allowed"
 
-#! Reads policy authority mode.
-#! - 0 = `auth_controlled`
-#! - 1 = `owner_controlled`
-#!
-#! Inputs:  []
-#! Outputs: [policy_authority]
-#!
-#! Invocation: exec
-proc get_policy_authority
-    push.POLICY_AUTHORITY_SLOT[0..2] exec.active_account::get_item
-    # => [policy_authority, 0, 0, 0]
-
-    movdn.3
-    # => [0, 0, 0, policy_authority]
-
-    drop drop drop
-    # => [policy_authority]
-end
-
-#! Authorizes policy update based on policy authority mode.
-#!
-#! `OwnerControlled` uses Ownable2Step directly rather than delegating authorization to the
-#! active policy through dynexec. Delegating to the active policy would allow a permissive
-#! policy (e.g. allow-all) to let any caller change which policy root is active.
-#!
-#! Inputs:  [NEW_POLICY_ROOT]
-#! Outputs: [NEW_POLICY_ROOT]
-#!
-#! Panics if:
-#! - POLICY_AUTHORITY = 1 and the sender is not owner.
-#!
-#! Invocation: exec
-proc assert_can_set_policy
-    exec.get_policy_authority
-    # => [policy_authority, NEW_POLICY_ROOT]
-
-    eq.POLICY_AUTHORITY_OWNER_CONTROLLED
-    if.true
-        exec.ownable2step::assert_sender_is_owner
-        # => [NEW_POLICY_ROOT]
-    end
-end
+const ERR_RECEIVE_POLICY_ROOT_IS_ZERO="receive policy root is zero"
+const ERR_RECEIVE_POLICY_ROOT_NOT_IN_ACCOUNT="receive policy root is not a procedure of this account"
+const ERR_RECEIVE_POLICY_ROOT_NOT_ALLOWED="receive policy root is not allowed"
 
 # MINT INTERNAL PROCEDURES
 # ================================================================================================
@@ -105,7 +81,7 @@ proc get_mint_policy_root
     # => [MINT_POLICY_ROOT]
 end
 
-#! Validates mint policy root before use.
+#! Validates a mint policy root at config time.
 #!
 #! Inputs:  [MINT_POLICY_ROOT]
 #! Outputs: [MINT_POLICY_ROOT]
@@ -159,7 +135,7 @@ proc get_burn_policy_root
     # => [BURN_POLICY_ROOT]
 end
 
-#! Validates burn policy root before use.
+#! Validates a burn policy root at config time.
 #!
 #! Inputs:  [BURN_POLICY_ROOT]
 #! Outputs: [BURN_POLICY_ROOT]
@@ -199,6 +175,92 @@ proc assert_allowed_burn_policy_root
     # => [BURN_POLICY_ROOT]
 end
 
+# SEND INTERNAL PROCEDURES
+# ================================================================================================
+
+#! Validates a send policy root at config time.
+#!
+#! Inputs:  [SEND_POLICY_ROOT]
+#! Outputs: [SEND_POLICY_ROOT]
+#!
+#! Panics if:
+#! - policy root is zero.
+#! - policy root is not present in this account's procedures.
+#!
+#! Invocation: exec
+proc assert_existing_send_policy_root
+    exec.word::testz
+    assertz.err=ERR_SEND_POLICY_ROOT_IS_ZERO
+    # => [SEND_POLICY_ROOT]
+
+    dupw exec.active_account::has_procedure
+    assert.err=ERR_SEND_POLICY_ROOT_NOT_IN_ACCOUNT
+    # => [SEND_POLICY_ROOT]
+end
+
+#! Validates that the send policy root is one of the allowed send policy roots.
+#!
+#! Inputs:  [SEND_POLICY_ROOT]
+#! Outputs: [SEND_POLICY_ROOT]
+#!
+#! Panics if:
+#! - policy root is not in the allowed send policy roots map.
+#!
+#! Invocation: exec
+proc assert_allowed_send_policy_root
+    dupw
+    push.ALLOWED_SEND_POLICY_PROC_ROOTS_SLOT[0..2]
+    exec.active_account::get_map_item
+    # => [ALLOWED_FLAG, SEND_POLICY_ROOT]
+
+    exec.word::eqz
+    assertz.err=ERR_SEND_POLICY_ROOT_NOT_ALLOWED
+    # => [SEND_POLICY_ROOT]
+end
+
+# RECEIVE INTERNAL PROCEDURES
+# ================================================================================================
+
+#! Validates a receive policy root at config time.
+#!
+#! Inputs:  [RECEIVE_POLICY_ROOT]
+#! Outputs: [RECEIVE_POLICY_ROOT]
+#!
+#! Panics if:
+#! - policy root is zero.
+#! - policy root is not present in this account's procedures.
+#!
+#! Invocation: exec
+proc assert_existing_receive_policy_root
+    exec.word::testz
+    assertz.err=ERR_RECEIVE_POLICY_ROOT_IS_ZERO
+    # => [RECEIVE_POLICY_ROOT]
+
+    dupw exec.active_account::has_procedure
+    assert.err=ERR_RECEIVE_POLICY_ROOT_NOT_IN_ACCOUNT
+    # => [RECEIVE_POLICY_ROOT]
+end
+
+#! Validates that the receive policy root is one of the allowed receive policy roots.
+#!
+#! Inputs:  [RECEIVE_POLICY_ROOT]
+#! Outputs: [RECEIVE_POLICY_ROOT]
+#!
+#! Panics if:
+#! - policy root is not in the allowed receive policy roots map.
+#!
+#! Invocation: exec
+proc assert_allowed_receive_policy_root
+    dupw
+    push.ALLOWED_RECEIVE_POLICY_PROC_ROOTS_SLOT[0..2]
+    exec.active_account::get_map_item
+    # => [ALLOWED_FLAG, RECEIVE_POLICY_ROOT]
+
+    exec.word::eqz
+    assertz.err=ERR_RECEIVE_POLICY_ROOT_NOT_ALLOWED
+    # => [RECEIVE_POLICY_ROOT]
+end
+
 # MINT PUBLIC INTERFACE
 # ================================================================================================
 
@@ -208,19 +270,15 @@ end
 #! Outputs: [amount, tag, note_type, RECIPIENT]
 #!
 #! Panics if:
-#! - mint policy root is invalid.
-#! - active policy predicate fails.
+#! - active mint policy predicate fails.
+#!
+#! The active policy root is validated at config time (in `set_mint_policy` and on initial
+#! storage construction) so we trust it here without re-checking existence / allowed-ness.
 #!
 #! Invocation: exec
 @locals(4)
 pub proc execute_mint_policy
     exec.get_mint_policy_root
-    # => [MINT_POLICY_ROOT, amount, tag, note_type, RECIPIENT]
-
-    exec.assert_existing_mint_policy_root
-    # => [MINT_POLICY_ROOT, amount, tag, note_type, RECIPIENT]
-
-    exec.assert_allowed_mint_policy_root
     # => [MINT_POLICY_ROOT, amount, tag, note_type, RECIPIENT]
 
     loc_storew_le.POLICY_PROC_ROOT_PTR dropw
@@ -250,14 +308,14 @@ end
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
-#! - POLICY_AUTHORITY = 1 and the sender is not owner.
+#! - the caller is not authorized per the installed [`Authority`].
 #! - NEW_POLICY_ROOT is zero.
 #! - NEW_POLICY_ROOT is not a procedure of this account.
 #! - NEW_POLICY_ROOT is not in the allowed roots map.
 #!
 #! Invocation: call
 pub proc set_mint_policy
-    exec.assert_can_set_policy
+    exec.authority::assert_authorized
     # => [NEW_POLICY_ROOT, pad(12)]
 
     exec.assert_existing_mint_policy_root
@@ -279,19 +337,15 @@ end
 #! Outputs: []
 #!
 #! Panics if:
-#! - burn policy root is invalid.
-#! - active burn policy validation fails.
+#! - active burn policy predicate fails.
+#!
+#! The active policy root is validated at config time (in `set_burn_policy` and on initial
+#! storage construction) so we trust it here without re-checking existence / allowed-ness.
 #!
 #! Invocation: exec
 @locals(4)
 pub proc execute_burn_policy
     exec.get_burn_policy_root
-    # => [BURN_POLICY_ROOT, ASSET_KEY, ASSET_VALUE]
-
-    exec.assert_existing_burn_policy_root
-    # => [BURN_POLICY_ROOT, ASSET_KEY, ASSET_VALUE]
-
-    exec.assert_allowed_burn_policy_root
     # => [BURN_POLICY_ROOT, ASSET_KEY, ASSET_VALUE]
 
     loc_storew_le.POLICY_PROC_ROOT_PTR dropw
@@ -321,14 +375,14 @@ end
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
-#! - POLICY_AUTHORITY = 1 and the sender is not owner.
+#! - the caller is not authorized per the installed [`Authority`].
 #! - NEW_POLICY_ROOT is zero.
 #! - NEW_POLICY_ROOT is not a procedure of this account.
 #! - NEW_POLICY_ROOT is not in the allowed roots map.
 #!
 #! Invocation: call
 pub proc set_burn_policy
-    exec.assert_can_set_policy
+    exec.authority::assert_authorized
     # => [NEW_POLICY_ROOT, pad(12)]
 
     exec.assert_existing_burn_policy_root
@@ -338,5 +392,91 @@ pub proc set_burn_policy
     # => [NEW_POLICY_ROOT, pad(12)]
 
     push.ACTIVE_BURN_POLICY_PROC_ROOT_SLOT[0..2] exec.native_account::set_item dropw
+    # => [pad(16)]
+end
+
+# SEND PUBLIC INTERFACE
+# ================================================================================================
+
+#! Returns active send policy root (reads the protocol-reserved callback slot).
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [SEND_POLICY_ROOT, pad(12)]
+#!
+#! Invocation: call
+pub proc get_send_policy
+    push.ON_BEFORE_ASSET_ADDED_TO_NOTE_SLOT[0..2] exec.active_account::get_item
+    # => [SEND_POLICY_ROOT, pad(12)]
+end
+
+#! Sets active send policy root by writing directly into the protocol-reserved callback slot
+#! `miden::protocol::faucet::callback::on_before_asset_added_to_note`. The kernel will dispatch
+#! to whatever root is stored there via `call` the next time an asset with the callback flag is
+#! added to an output note.
+#!
+#! Inputs:  [NEW_POLICY_ROOT, pad(12)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the caller is not authorized per the installed [`Authority`].
+#! - NEW_POLICY_ROOT is zero.
+#! - NEW_POLICY_ROOT is not a procedure of this account.
+#! - NEW_POLICY_ROOT is not in the allowed roots map.
+#!
+#! Invocation: call
+pub proc set_send_policy
+    exec.authority::assert_authorized
+    # => [NEW_POLICY_ROOT, pad(12)]
+
+    exec.assert_existing_send_policy_root
+    # => [NEW_POLICY_ROOT, pad(12)]
+
+    exec.assert_allowed_send_policy_root
+    # => [NEW_POLICY_ROOT, pad(12)]
+
+    push.ON_BEFORE_ASSET_ADDED_TO_NOTE_SLOT[0..2] exec.native_account::set_item dropw
+    # => [pad(16)]
+end
+
+# RECEIVE PUBLIC INTERFACE
+# ================================================================================================
+
+#! Returns active receive policy root (reads the protocol-reserved callback slot).
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [RECEIVE_POLICY_ROOT, pad(12)]
+#!
+#! Invocation: call
+pub proc get_receive_policy
+    push.ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_SLOT[0..2] exec.active_account::get_item
+    # => [RECEIVE_POLICY_ROOT, pad(12)]
+end
+
+#! Sets active receive policy root by writing directly into the protocol-reserved callback slot
+#! `miden::protocol::faucet::callback::on_before_asset_added_to_account`. The kernel will
+#! dispatch to whatever root is stored there via `call` the next time an asset with the callback
+#! flag is added to an account vault.
+#!
+#! Inputs:  [NEW_POLICY_ROOT, pad(12)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the caller is not authorized per the installed [`Authority`].
+#! - NEW_POLICY_ROOT is zero.
+#! - NEW_POLICY_ROOT is not a procedure of this account.
+#! - NEW_POLICY_ROOT is not in the allowed roots map.
+#!
+#! Invocation: call
+pub proc set_receive_policy
+    exec.authority::assert_authorized
+    # => [NEW_POLICY_ROOT, pad(12)]
+
+    exec.assert_existing_receive_policy_root
+    # => [NEW_POLICY_ROOT, pad(12)]
+
+    exec.assert_allowed_receive_policy_root
+    # => [NEW_POLICY_ROOT, pad(12)]
+
+    push.ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_SLOT[0..2] exec.native_account::set_item dropw
     # => [pad(16)]
 end

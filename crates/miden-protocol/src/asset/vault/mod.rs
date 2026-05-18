@@ -6,6 +6,7 @@ use miden_crypto::merkle::InnerNodeInfo;
 use super::{
     AccountType,
     Asset,
+    AssetAmount,
     ByteReader,
     ByteWriter,
     Deserializable,
@@ -103,11 +104,11 @@ impl AssetVault {
     }
 
     /// Returns the balance of the asset issued by the specified faucet. If the vault does not
-    /// contain such an asset, 0 is returned.
+    /// contain such an asset, zero is returned.
     ///
     /// # Errors
     /// Returns an error if the specified ID is not an ID of a fungible asset faucet.
-    pub fn get_balance(&self, faucet_id: AccountId) -> Result<u64, AssetVaultError> {
+    pub fn get_balance(&self, faucet_id: AccountId) -> Result<AssetAmount, AssetVaultError> {
         if !matches!(faucet_id.account_type(), AccountType::FungibleFaucet) {
             return Err(AssetVaultError::NotAFungibleFaucetId(faucet_id));
         }
@@ -312,7 +313,7 @@ impl AssetVault {
                 .expect("asset vault should store valid assets");
 
         // If the asset's amount is 0, we consider it absent from the vault.
-        if current_asset.amount() == 0 {
+        if current_asset.amount() == AssetAmount::ZERO {
             return Err(AssetVaultError::FungibleAssetNotFound(other_asset));
         }
 
@@ -325,7 +326,7 @@ impl AssetVault {
         // leaf.
         #[cfg(debug_assertions)]
         {
-            if new_asset.amount() == 0 {
+            if new_asset.amount() == AssetAmount::ZERO {
                 assert!(new_asset.to_value_word().is_empty())
             }
         }

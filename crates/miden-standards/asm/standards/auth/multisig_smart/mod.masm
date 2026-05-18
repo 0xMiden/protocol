@@ -1,0 +1,818 @@
+use miden::protocol::active_account
+use miden::protocol::native_account
+use miden::protocol::auth::AUTH_UNAUTHORIZED_EVENT
+use miden::standards::auth
+use miden::standards::auth::multisig
+use miden::standards::auth::multisig::APPROVER_PUBLIC_KEYS_SLOT
+use miden::standards::auth::multisig::APPROVER_SCHEME_ID_SLOT
+use miden::standards::auth::multisig::THRESHOLD_CONFIG_SLOT
+use miden::standards::auth::signature
+use miden::standards::auth::tx_policy
+
+# STORAGE SLOTS
+# =================================================================================================
+
+# Map: PROC_ROOT => smart per-procedure policy word.
+const PROCEDURE_POLICIES_SLOT = word("miden::standards::auth::multisig_smart::procedure_policies")
+
+# EXECUTION MODES
+# =================================================================================================
+
+# Execution mode value passed to procedure-policy helpers when the transaction runs the immediate
+# (direct call) path.
+const IMMEDIATE_EXECUTION_MODE = 0
+
+# Execution mode value when the transaction runs the delayed (timelocked execute) path.
+const DELAYED_EXECUTION_MODE = 1
+
+# NOTE RESTRICTIONS
+# =================================================================================================
+
+# Bit-encoded ProcedurePolicyNoteRestriction enum:
+#   0b00 = None, 0b01 = NoInputNotes, 0b10 = NoOutputNotes, 0b11 = NoInputOrOutputNotes.
+# The bit-encoding lets us OR per-procedure restrictions together to compute their union.
+const NOTE_RESTRICTION_INPUT_NOTES_MASK = 1
+
+const NOTE_RESTRICTION_OUTPUT_NOTES_MASK = 2
+
+# Highest valid note restriction enum value (NoInputOrOutputNotes = 0b11).
+const NOTE_RESTRICTION_MAX = 3
+
+# ERRORS
+# =================================================================================================
+
+const ERR_MALFORMED_MULTISIG_CONFIG = "number of approvers must be equal to or greater than threshold"
+
+const ERR_ZERO_IN_MULTISIG_CONFIG = "number of approvers or threshold must not be zero"
+
+const ERR_PROC_POLICY_INVALID_MODE = "called procedures do not support the selected execution mode"
+
+const ERR_DELAYED_THRESHOLD_EXCEEDS_IMMEDIATE = "delayed threshold cannot exceed immediate threshold"
+
+const ERR_NOTE_RESTRICTIONS_REQUIRE_THRESHOLD = "procedure policy note restrictions require an immediate or delayed threshold"
+
+const ERR_NUM_APPROVERS_OR_PROC_THRESHOLD_NOT_U32 = "number of approvers and procedure threshold must be u32"
+
+const ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS = "procedure threshold exceeds new number of approvers"
+
+const ERR_INVALID_NOTE_RESTRICTIONS = "procedure policy note restrictions must be between 0 and 3"
+
+const ERR_INSUFFICIENT_SIGNATURES = "insufficient number of signatures"
+
+# LOCAL ADDRESSES (set_procedure_policy)
+# =================================================================================================
+
+const IMMEDIATE_THRESHOLD_LOC = 0
+const DELAYED_THRESHOLD_LOC = 1
+const NOTE_RESTRICTIONS_LOC = 2
+
+# LOCAL ADDRESSES (compute_called_proc_policy)
+# =================================================================================================
+
+const EXECUTION_MODE_LOC = 0
+const DEFAULT_THRESHOLD_LOC = 1
+
+#! Gets the procedure policy entry for PROC_ROOT from the account's initial state.
+#!
+#! Inputs:  [PROC_ROOT]
+#! Outputs: [immediate_threshold, delayed_threshold, note_restrictions]
+#!
+#! Where:
+#! - PROC_ROOT is the root of the account procedure whose smart policy is being read.
+#! - immediate_threshold is the threshold for direct execution, or 0 when disabled.
+#! - delayed_threshold is the threshold for delayed execution, or 0 when disabled.
+#! - note_restrictions is the note restriction enum value in the 0..=NOTE_RESTRICTION_MAX range.
+#!
+#! Invocation: exec
+pub proc get_procedure_policy
+    push.PROCEDURE_POLICIES_SLOT[0..2]
+    exec.active_account::get_initial_map_item
+    # => [immediate_threshold, delayed_threshold, note_restrictions, 0]
+
+    movup.3 drop
+    # => [immediate_threshold, delayed_threshold, note_restrictions]
+end
+
+#! Validates that note_restrictions is within the supported range.
+#!
+#! Inputs:  [note_restrictions]
+#! Outputs: []
+#!
+#! Where:
+#! - note_restrictions is the policy enum value to validate.
+#!
+#! Panics if:
+#! - note_restrictions is not a u32 value.
+#! - note_restrictions is greater than NOTE_RESTRICTION_MAX.
+#!
+#! Invocation: exec
+proc assert_valid_note_restrictions
+    u32assert.err=ERR_INVALID_NOTE_RESTRICTIONS
+    # => [note_restrictions]
+
+    u32lte.NOTE_RESTRICTION_MAX
+    # => [is_valid_note_restrictions]
+
+    assert.err=ERR_INVALID_NOTE_RESTRICTIONS
+    # => []
+end
+
+# HELPER PROCEDURES
+# =================================================================================================
+
+#! Returns the current number of approvers after any in-transaction signer update has been applied.
+#!
+#! Inputs:  []
+#! Outputs: [num_approvers]
+#!
+#! Where:
+#! - num_approvers is the current number of signers configured in the threshold config.
+#!
+#! Invocation: exec
+proc get_current_num_approvers
+    push.THRESHOLD_CONFIG_SLOT[0..2]
+    exec.active_account::get_item
+    # => [threshold, num_approvers, 0, 0]
+
+    movup.2 drop movup.2 drop
+    # => [threshold, num_approvers]
+
+    drop
+    # => [num_approvers]
+end
+
+#! Extracts the `num_approvers` field out of a MULTISIG_CONFIG word.
+#!
+#! MULTISIG_CONFIG layout: [threshold, num_approvers, 0, 0].
+#!
+#! Inputs:  [MULTISIG_CONFIG]
+#! Outputs: [num_approvers, MULTISIG_CONFIG]
+#!
+#! Where:
+#! - MULTISIG_CONFIG is the multisig configuration word.
+#! - num_approvers is the second felt of MULTISIG_CONFIG.
+#!
+#! Invocation: exec
+proc multisig_config_to_num_approvers
+    dup.1
+    # => [num_approvers, MULTISIG_CONFIG]
+end
+
+#! Computes the effective transaction threshold.
+#!
+#! Used as a fallback layer on top of `compute_called_proc_policy`: when no non-auth procedure was
+#! called (policy_threshold is 0), the tx still needs to require at least `default_threshold`
+#! signatures. When any non-auth procedure was called, `compute_called_proc_policy` has already
+#! folded `default_threshold` into the max for every unpolicied procedure, so `policy_threshold`
+#! alone reflects the correct requirement and is returned as-is.
+#!
+#! Inputs:  [default_threshold, policy_threshold]
+#! Outputs: [transaction_threshold]
+#!
+#! Where:
+#! - policy_threshold is the max contribution across all called non-auth procedures (each
+#!   contributes either its policy-selected threshold or `default_threshold` when unpolicied);
+#!   it is 0 only when no non-auth procedure was called.
+#! - default_threshold is the account's configured default multisig threshold.
+#! - transaction_threshold is the effective minimum number of signatures required.
+#!
+#! Invocation: exec
+proc compute_tx_threshold(default_threshold: u32, policy_threshold: u32) -> u32
+    dup.1 eq.0
+    # => [is_policy_zero, default_threshold, policy_threshold]
+
+    cdrop
+    # => [effective_transaction_threshold]
+end
+
+#! Computes a single procedure's contribution to the threshold max-accumulator and the
+#! `requires_delay` flag, given that procedure's policy thresholds and the active execution mode.
+#!
+#! Inputs:  [immediate, delayed, execution_mode, default_threshold]
+#! Outputs: [contribution, requires_delay]
+#!
+#! Where:
+#! - immediate is the procedure's immediate-mode policy threshold (0 = not configured).
+#! - delayed is the procedure's delayed-mode policy threshold (0 = not configured).
+#! - execution_mode is IMMEDIATE_EXECUTION_MODE (0) or DELAYED_EXECUTION_MODE (1).
+#! - default_threshold is the account's configured default multisig threshold.
+#! - contribution is the policy-selected threshold when the procedure has a policy for the active
+#!   mode, or default_threshold when it has no policy at all.
+#! - requires_delay is execution_mode when the contribution came from policy, or 0 when it came
+#!   from default_threshold (a default contribution does not flip the delay flag).
+#!
+#! Panics if:
+#! - the procedure's policy exists but is configured for the opposite execution mode.
+#!
+#! Invocation: exec
+proc compute_proc_policy_contribution
+    # selected = (execution_mode == DELAYED_EXECUTION_MODE) ? delayed : immediate
+    dup dup.2
+    # => [delayed, immediate, immediate, delayed, execution_mode, default_threshold]
+
+    dup.4
+    # => [execution_mode, delayed, immediate, immediate, delayed, execution_mode, default_threshold]
+
+    # delayed mode (1) keeps `delayed`; immediate mode (0) keeps `immediate`.
+    cdrop
+    # => [selected, immediate, delayed, execution_mode, default_threshold]
+
+    dup eq.0
+    # => [is_selected_zero, selected, immediate, delayed, execution_mode, default_threshold]
+
+    if.true
+        # Selected threshold is zero. Either there is no policy at all (both thresholds are zero)
+        # or the policy is configured for the opposite execution mode (the other threshold is
+        # non-zero). The two cases are distinguished by inspecting `immediate OR delayed`.
+        drop
+        # => [immediate, delayed, execution_mode, default_threshold]
+
+        dup dup.2 u32or eq.0
+        # => [is_no_policy, immediate, delayed, execution_mode, default_threshold]
+
+        if.true
+            # No policy for this procedure → contribute default_threshold; requires_delay = 0.
+            drop drop drop
+            # => [default_threshold]
+
+            push.0 swap
+            # => [default_threshold, 0]
+        else
+            # Mode misuse: policy exists but is configured for the opposite execution mode.
+            # Panic so the caller learns about the misconfiguration explicitly.
+            push.0 assert.err=ERR_PROC_POLICY_INVALID_MODE
+        end
+    else
+        # Selected threshold is non-zero → contribute it; requires_delay = execution_mode.
+        # => [selected, immediate, delayed, execution_mode, default_threshold]
+
+        movdn.2 drop drop
+        # => [selected, execution_mode, default_threshold]
+
+        movup.2 drop
+        # => [selected, execution_mode]
+    end
+end
+
+#! Computes the effective per-procedure policy for all called procedures.
+#!
+#! Iterates over all account procedures, and for those that were called in this transaction
+#! accumulates:
+#! - the highest required threshold (max),
+#! - the union of their note restrictions (so if one proc forbids input notes and another forbids
+#!   output notes, the transaction ends up forbidding both),
+#! - whether any called procedure requires the delayed execution mode.
+#!
+#! Inputs:  [execution_mode, default_threshold]
+#! Outputs: [policy_threshold, policy_requires_delay, note_restrictions]
+#!
+#! Where:
+#! - execution_mode is IMMEDIATE_EXECUTION_MODE (0) or DELAYED_EXECUTION_MODE (1).
+#! - default_threshold is the account's configured default multisig threshold; used as the
+#!   per-procedure contribution for any *called* procedure that has no stored policy. This makes
+#!   procedures-without-a-policy visible in the max accumulation, which closes a privilege
+#!   escalation where a tx mixing a low-policy proc (e.g. receive_asset = 1) with an unpolicied
+#!   high-impact proc (e.g. update_signers) could otherwise be authorized at the lower threshold.
+#! - policy_threshold is the max across all called non-auth procedures, where each called
+#!   procedure contributes either its policy-selected threshold or default_threshold (no policy).
+#! - policy_requires_delay is 1 when any called procedure's policy explicitly requires the
+#!   delayed execution mode (a default contribution does not flip this).
+#! - note_restrictions is the combined (union) note restriction enum across all called procedures.
+#!
+#! The auth procedure (procedure index 0) is excluded — it is the auth flow itself, not a
+#! user-callable account procedure, and counting it would make `policy_threshold` always include
+#! `default_threshold`, breaking the override-down semantic for single-proc transactions.
+#!
+#! Panics if:
+#! - any called procedure's policy does not support the active execution mode.
+#!
+#! Example (default_threshold = 3, immediate execution mode):
+#!
+#!   receive_asset → ProcedurePolicy { immediate_threshold = 1 }
+#!   update_signers_and_threshold → (no policy)
+#!
+#! A. Only `receive_asset` is called:
+#!    - receive_asset:  policied → contribute 1
+#!    - update_signers: not called → no contribution
+#!    - threshold_acc = max(0, 1) = 1
+#!    - Result: 1 signature required (override-down works for single-proc tx).
+#!
+#! B. Both `receive_asset` and `update_signers_and_threshold` are called:
+#!    - receive_asset:  policied → contribute 1
+#!    - update_signers: called, no policy → contribute default_threshold = 3
+#!    - threshold_acc = max(0, 1, 3) = 3
+#!    - Result: 3 signatures required (privilege escalation prevented).
+#!
+#! Invocation: exec
+#!
+#! Locals:
+#! - EXECUTION_MODE_LOC: execution_mode
+#! - DEFAULT_THRESHOLD_LOC: default_threshold
+@locals(2)
+proc compute_called_proc_policy(execution_mode: u32, default_threshold: u32)
+    loc_store.EXECUTION_MODE_LOC 
+    loc_store.DEFAULT_THRESHOLD_LOC
+    # => []
+
+    push.0 push.0 push.0 exec.active_account::get_num_procedures
+    # => [proc_index, threshold_acc=0, requires_delay_acc=0, restrictions_acc=0]
+
+    dup neq.0
+    # => [should_continue, proc_index, threshold_acc, requires_delay_acc, restrictions_acc]
+    while.true
+        sub.1
+        # => [proc_index, threshold_acc, requires_delay_acc, restrictions_acc]
+
+        # Procedure index 0 is the auth procedure and must never contribute to the policy
+        # threshold, even if it appears as a called procedure during the auth flow itself.
+        dup neq.0
+        # => [is_non_auth, proc_index, threshold_acc, requires_delay_acc, restrictions_acc]
+
+        dup.1 exec.active_account::get_procedure_root
+        # => [PROC_ROOT, is_non_auth, proc_index, threshold_acc, requires_delay_acc, restrictions_acc]
+
+        exec.native_account::was_procedure_called
+        # => [was_called, is_non_auth, proc_index, threshold_acc, requires_delay_acc, restrictions_acc]
+
+        and
+        # => [should_process, proc_index, threshold_acc, requires_delay_acc, restrictions_acc]
+
+        if.true
+            dup exec.active_account::get_procedure_root
+            # => [PROC_ROOT, proc_index, threshold_acc, requires_delay_acc, restrictions_acc]
+
+            exec.get_procedure_policy
+            # => [immediate, delayed, restr_proc, proc_index, threshold_acc, requires_delay_acc, restrictions_acc]
+
+            # Fold per-proc note_restrictions into the accumulator via OR.
+            # ProcedurePolicyNoteRestriction is bit-encoded (0=None, 1=NoInput, 2=NoOutput, 3=Both),
+            # so bitwise OR is the union of constraints: e.g. NoInput (0b01) ∪ NoOutput (0b10) = Both (0b11).
+            movup.6 movup.3 u32or movdn.5
+            # => [immediate, delayed, proc_index, threshold_acc, requires_delay_acc, new_restrictions]
+
+            loc_load.EXECUTION_MODE_LOC movdn.2
+            loc_load.DEFAULT_THRESHOLD_LOC movdn.3
+            # => [immediate, delayed, execution_mode, default_threshold, proc_index, threshold_acc, requires_delay_acc, new_restrictions]
+
+            exec.compute_proc_policy_contribution
+            # => [contribution, requires_delay, proc_index, threshold_acc, requires_delay_acc, new_restrictions]
+
+            # threshold_acc' = max(threshold_acc, contribution)
+            movup.3 u32max
+            # => [new_threshold, requires_delay, proc_index, requires_delay_acc, new_restrictions]
+
+            # requires_delay_acc' = requires_delay_acc OR requires_delay
+            swap movup.3 or
+            # => [new_requires_delay, new_threshold, proc_index, new_restrictions]
+
+            swap movup.2
+            # => [proc_index, new_threshold, new_requires_delay, new_restrictions]
+        end
+
+        dup neq.0
+        # => [should_continue, proc_index, threshold_acc, requires_delay_acc, restrictions_acc]
+    end
+
+    drop
+    # => [threshold_acc, requires_delay_acc, restrictions_acc]
+end
+
+#! Enforces note_restrictions against the current transaction.
+#!
+#! `note_restrictions` is treated as a bit set (see `NOTE_RESTRICTION_*_MASK`):
+#! - bit 0 (mask 1) → forbid input notes
+#! - bit 1 (mask 2) → forbid output notes
+#!
+#! Inputs:  [note_restrictions]
+#! Outputs: []
+#!
+#! Invocation: exec
+pub proc enforce_note_restrictions
+    dup u32and.NOTE_RESTRICTION_INPUT_NOTES_MASK eq.NOTE_RESTRICTION_INPUT_NOTES_MASK
+    # => [has_input_note_restriction, note_restrictions]
+
+    if.true
+        exec.tx_policy::assert_no_input_notes
+    end
+    # => [note_restrictions]
+
+    u32and.NOTE_RESTRICTION_OUTPUT_NOTES_MASK eq.NOTE_RESTRICTION_OUTPUT_NOTES_MASK
+    # => [has_output_note_restriction]
+
+    if.true
+        exec.tx_policy::assert_no_output_notes
+    end
+    # => []
+end
+
+#! Enforces the procedure-policy for the current transaction:
+#! - asserts each called procedure supports the active execution mode,
+#! - asserts the union of note restrictions against the transaction's input/output notes,
+#! - returns the effective threshold required by the called procedure policies.
+#!
+#! Always uses IMMEDIATE_EXECUTION_MODE; procedures whose policies require the delayed mode
+#! panic via [`compute_called_proc_policy`] because this component has no timelock.
+#!
+#! Inputs:  [default_threshold]
+#! Outputs: [policy_threshold]
+#!
+#! Where:
+#! - default_threshold is forwarded to [`compute_called_proc_policy`] as the per-procedure
+#!   contribution for any called procedure without an explicit policy.
+#!
+#! Invocation: exec
+#!
+#! NOTE: This procedure is a temporary form. Once the TimelockedAccount feature lands, the
+#! hardcoded IMMEDIATE_EXECUTION_MODE push will be replaced with a call to
+#! `timelock_controller::execution_mode`, and the procedure will also expose
+#! `policy_requires_delay` for downstream enforcement.
+proc enforce_procedure_policy(default_threshold: u32)
+    push.IMMEDIATE_EXECUTION_MODE
+    # => [execution_mode, default_threshold]
+
+    exec.compute_called_proc_policy
+    # => [policy_threshold, policy_requires_delay, note_restrictions]
+
+    # policy_requires_delay is always 0 on IMMEDIATE_EXECUTION_MODE; drop it.
+    swap drop
+    # => [policy_threshold, note_restrictions]
+
+    swap
+    # => [note_restrictions, policy_threshold]
+
+    exec.enforce_note_restrictions
+    # => [policy_threshold]
+end
+
+#! Asserts that all configured smart per-procedure policies are valid for num_approvers.
+#!
+#! Inputs:  [num_approvers]
+#! Outputs: []
+#!
+#! Where:
+#! - num_approvers is the number of approvers that all stored policies must remain reachable with.
+#!
+#! Panics if:
+#! - any stored immediate or delayed threshold is not a u32 value.
+#! - any stored immediate or delayed threshold exceeds num_approvers.
+#!
+#! Invocation: exec
+proc assert_proc_policies_lte_num_approvers
+    exec.active_account::get_num_procedures
+    # => [num_procedures, num_approvers]
+
+    dup neq.0
+    # => [should_continue, num_procedures, num_approvers]
+    while.true
+        sub.1 dup
+        # => [proc_index, proc_index, num_approvers]
+
+        exec.active_account::get_procedure_root
+        # => [PROC_ROOT, proc_index, num_approvers]
+
+        push.PROCEDURE_POLICIES_SLOT[0..2]
+        # => [policy_slot_suffix, policy_slot_prefix, PROC_ROOT, proc_index, num_approvers]
+
+        # Use the *current* policy state, not the initial one. A `set_procedure_policy` earlier
+        # in this transaction that raised a threshold above the new num_approvers would otherwise
+        # be missed and the multisig could end up with an unreachable threshold.
+        exec.active_account::get_map_item
+        # => [immediate_threshold, delayed_threshold, note_restrictions, 0, proc_index, num_approvers]
+
+        # Drop the trailing 0 (depth 3) without disturbing the three policy fields above it.
+        movup.3 drop
+        # => [immediate_threshold, delayed_threshold, note_restrictions, proc_index, num_approvers]
+
+        # immediate_threshold <= num_approvers
+        dup.4
+        # => [num_approvers, immediate_threshold, delayed_threshold, note_restrictions, proc_index, num_approvers]
+
+        u32assert2.err=ERR_NUM_APPROVERS_OR_PROC_THRESHOLD_NOT_U32
+        u32gt assertz.err=ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS
+        # => [delayed_threshold, note_restrictions, proc_index, num_approvers]
+
+        # delayed_threshold <= num_approvers
+        dup.3
+        # => [num_approvers, delayed_threshold, note_restrictions, proc_index, num_approvers]
+
+        u32assert2.err=ERR_NUM_APPROVERS_OR_PROC_THRESHOLD_NOT_U32
+        u32gt assertz.err=ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS
+        # => [note_restrictions, proc_index, num_approvers]
+
+        drop
+        # => [proc_index, num_approvers]
+
+        dup neq.0
+        # => [should_continue, proc_index, num_approvers]
+    end
+
+    drop drop
+    # => []
+end
+
+# PUBLIC INTERFACE
+# =================================================================================================
+
+#! Sets or clears a smart per-procedure policy.
+#!
+#! Inputs:  [immediate_threshold, delayed_threshold, note_restrictions, PROC_ROOT]
+#! Outputs: []
+#!
+#! Where:
+#! - immediate_threshold is the threshold for direct execution, or 0 when disabled.
+#! - delayed_threshold is the threshold for delayed execution, or 0 when disabled.
+#! - note_restrictions is the note restriction enum value in the 0..=NOTE_RESTRICTION_MAX range.
+#! - PROC_ROOT is the root of the account procedure whose policy is being updated.
+#!
+#! Panics if:
+#! - immediate_threshold or delayed_threshold is not a u32 value.
+#! - note_restrictions is outside the supported range.
+#! - either threshold exceeds the current number of approvers.
+#! - delayed_threshold exceeds immediate_threshold when immediate_threshold is non-zero.
+#! - note_restrictions is non-zero while both thresholds are zero.
+#!
+#! Invocation: call
+@locals(3)
+pub proc set_procedure_policy
+    loc_store.IMMEDIATE_THRESHOLD_LOC
+    # => [delayed_threshold, note_restrictions, PROC_ROOT]
+
+    loc_store.DELAYED_THRESHOLD_LOC
+    # => [note_restrictions, PROC_ROOT]
+
+    loc_store.NOTE_RESTRICTIONS_LOC
+    # => [PROC_ROOT]
+
+    # ----- Validate immediate_threshold <= num_approvers (preserving num_approvers for the
+    # delayed check that follows). -----
+    exec.get_current_num_approvers
+    # => [num_approvers, PROC_ROOT]
+
+    dup loc_load.IMMEDIATE_THRESHOLD_LOC swap
+    # => [num_approvers, immediate_threshold, num_approvers, PROC_ROOT]
+
+    u32assert2.err=ERR_NUM_APPROVERS_OR_PROC_THRESHOLD_NOT_U32
+    u32gt assertz.err=ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS
+    # => [num_approvers, PROC_ROOT]
+
+    # ----- Validate delayed_threshold <= num_approvers (consumes num_approvers). -----
+    loc_load.DELAYED_THRESHOLD_LOC swap
+    # => [num_approvers, delayed_threshold, PROC_ROOT]
+
+    u32assert2.err=ERR_NUM_APPROVERS_OR_PROC_THRESHOLD_NOT_U32
+    u32gt assertz.err=ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS
+    # => [PROC_ROOT]
+
+    # ----- Validate note_restrictions is in 0..=NOTE_RESTRICTION_MAX. -----
+    loc_load.NOTE_RESTRICTIONS_LOC
+    exec.assert_valid_note_restrictions
+    # => [PROC_ROOT]
+
+    # ----- Validate (immediate, delayed, note_restrictions) shape. -----
+    # `if.true` consumes its boolean condition, so the body branches operate on `[PROC_ROOT]`
+    # without any leading `drop`.
+    loc_load.IMMEDIATE_THRESHOLD_LOC eq.0
+    # => [is_immediate_threshold_zero, PROC_ROOT]
+
+    if.true
+        # immediate is zero. If delayed is also zero, note_restrictions must be zero, otherwise
+        # the policy would forbid notes for a procedure that has no threshold to authorize them.
+        loc_load.DELAYED_THRESHOLD_LOC eq.0
+        # => [is_delayed_threshold_zero, PROC_ROOT]
+
+        if.true
+            # `eq.0 assert` produces the proper error when note_restrictions is non-zero;
+            # `assertz` would surface a generic "binary value expected" error for values 2 or 3.
+            loc_load.NOTE_RESTRICTIONS_LOC eq.0 assert.err=ERR_NOTE_RESTRICTIONS_REQUIRE_THRESHOLD
+            # => [PROC_ROOT]
+        end
+    else
+        # immediate is non-zero. Validate delayed_threshold <= immediate_threshold.
+        loc_load.DELAYED_THRESHOLD_LOC loc_load.IMMEDIATE_THRESHOLD_LOC
+        # => [immediate_threshold, delayed_threshold, PROC_ROOT]
+
+        u32assert2.err=ERR_NUM_APPROVERS_OR_PROC_THRESHOLD_NOT_U32
+        u32gt assertz.err=ERR_DELAYED_THRESHOLD_EXCEEDS_IMMEDIATE
+        # => [PROC_ROOT]
+    end
+
+    # ----- Write [immediate, delayed, note_restrictions, 0] to PROCEDURE_POLICIES_SLOT[PROC_ROOT].
+    push.0
+    loc_load.NOTE_RESTRICTIONS_LOC
+    loc_load.DELAYED_THRESHOLD_LOC
+    loc_load.IMMEDIATE_THRESHOLD_LOC
+    # => [immediate_threshold, delayed_threshold, note_restrictions, 0, PROC_ROOT]
+
+    swapw
+    # => [PROC_ROOT, immediate_threshold, delayed_threshold, note_restrictions, 0]
+
+    push.PROCEDURE_POLICIES_SLOT[0..2]
+    # => [procedure_policies_slot_suffix, procedure_policies_slot_prefix, PROC_ROOT, POLICY_WORD]
+
+    exec.native_account::set_map_item
+    # => [OLD_POLICY_WORD]
+
+    dropw
+    # => []
+end
+
+#! Updates threshold config, approvers, and approver scheme ids for smart multisig accounts.
+#!
+#! Same advice map and config layout as [`multisig::update_signers_and_threshold`]. Differs by
+#! validating smart procedure policies ([`assert_proc_policies_lte_num_approvers`]) instead
+#! of per-procedure threshold overrides.
+#!
+#! Inputs:
+#!   Operand stack: [MULTISIG_CONFIG_COMMITMENT, pad(12)]
+#! Outputs:
+#!   Operand stack: []
+#!
+#! Panics if:
+#! - the new threshold exceeds the new number of approvers.
+#! - the new threshold or number of approvers is zero.
+#! - any existing smart procedure policy becomes unreachable under the new number of approvers.
+#! - any provided scheme identifier word is malformed.
+#!
+#! Locals:
+#! 0: new_num_of_approvers
+#! 1: init_num_of_approvers
+#!
+#! Invocation: call
+@locals(2)
+pub proc update_signers_and_threshold(multisig_config_commitment: word)
+    adv.push_mapval
+    # => [MULTISIG_CONFIG_COMMITMENT, pad(12)]
+
+    adv_loadw
+    # => [MULTISIG_CONFIG, pad(12)]
+
+    # store new_num_of_approvers for later
+    exec.multisig_config_to_num_approvers loc_store.0
+    # => [MULTISIG_CONFIG, pad(12)]
+
+    dup dup.2
+    # => [num_approvers, threshold, MULTISIG_CONFIG, pad(12)]
+
+    u32assert2.err=ERR_MALFORMED_MULTISIG_CONFIG
+    u32gt assertz.err=ERR_MALFORMED_MULTISIG_CONFIG
+    # => [MULTISIG_CONFIG, pad(12)]
+
+    dup dup.2
+    # => [num_approvers, threshold, MULTISIG_CONFIG, pad(12)]
+
+    eq.0 assertz.err=ERR_ZERO_IN_MULTISIG_CONFIG
+    eq.0 assertz.err=ERR_ZERO_IN_MULTISIG_CONFIG
+    # => [MULTISIG_CONFIG, pad(12)]
+
+    loc_load.0
+    # => [num_approvers, MULTISIG_CONFIG, pad(12)]
+
+    exec.assert_proc_policies_lte_num_approvers
+    # => [MULTISIG_CONFIG, pad(12)]
+
+    push.THRESHOLD_CONFIG_SLOT[0..2]
+    # => [config_slot_suffix, config_slot_prefix, MULTISIG_CONFIG, pad(12)]
+
+    exec.native_account::set_item
+    # => [OLD_THRESHOLD_CONFIG, pad(12)]
+
+    # Save the old num_of_approvers for the post-loop scheme/pubkey cleanup, then drop the rest
+    # of OLD_THRESHOLD_CONFIG.
+    drop loc_store.1 drop drop
+    # => [pad(12)]
+
+    loc_load.0
+    # => [num_approvers, pad(12)]
+
+    dup neq.0
+    while.true
+        sub.1
+        # => [i-1, pad(12)]
+
+        dup exec.signature::create_approver_map_key
+        # => [APPROVER_MAP_KEY, i-1, pad(12)]
+
+        padw adv_loadw
+        # => [PUB_KEY, APPROVER_MAP_KEY, i-1, pad(12)]
+
+        swapw
+        # => [APPROVER_MAP_KEY, PUB_KEY, i-1, pad(12)]
+
+        push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
+        # => [pub_key_slot_suffix, pub_key_slot_prefix, APPROVER_MAP_KEY, PUB_KEY, i-1, pad(12)]
+
+        exec.native_account::set_map_item
+        # => [OLD_VALUE, i-1, pad(12)]
+
+        adv_loadw
+        # => [SCHEME_ID_WORD, i-1, pad(12)]
+
+        exec.auth::signature::assert_supported_scheme_word
+        # => [SCHEME_ID_WORD, i-1, pad(12)]
+
+        dup.4 exec.signature::create_approver_map_key
+        # => [APPROVER_MAP_KEY, SCHEME_ID_WORD, i-1, pad(12)]
+
+        push.APPROVER_SCHEME_ID_SLOT[0..2]
+        # => [scheme_id_slot_id_suffix, scheme_id_slot_id_prefix, APPROVER_MAP_KEY, SCHEME_ID_WORD, i-1, pad(12)]
+
+        exec.native_account::set_map_item
+        # => [OLD_VALUE, i-1, pad(12)]
+
+        dropw
+        # => [i-1, pad(12)]
+
+        dup neq.0
+        # => [is_non_zero, i-1, pad(12)]
+    end
+    # => [pad(13)]
+
+    drop
+    # => [pad(12)]
+
+    loc_load.0 loc_load.1
+    # => [init_num_of_approvers, new_num_of_approvers, pad(12)]
+
+    exec.multisig::cleanup_pubkey_and_scheme_id_mapping
+    # => [pad(12)]
+end
+
+#! Authenticate a transaction using multisig smart-policy rules.
+#!
+#! Inputs:
+#!   Operand stack: [SALT]
+#! Outputs:
+#!   Operand stack: [TX_SUMMARY_COMMITMENT]
+#!
+#! Locals:
+#! 0: policy_threshold
+#! 1: default_threshold
+#!
+#! Invocation: call
+#!
+#! NOTE: This procedure is a temporary form covering signer verification and
+#! per-procedure policy enforcement. The following sections will be added:
+#! - Spending Limits + Amount-Based Thresholds: a prologue that calls
+#!   `exec.spending_limits::compute_spending_policy` to derive a spending-derived threshold and
+#!   `spending_requires_delay` flag, and combines it via `u32max` with `policy_threshold` before
+#!   the final `compute_tx_threshold` fallback.
+#! - TimelockedAccount: after signature verification, assert the execute-path vs.
+#!   `policy_requires_delay`/`spending_requires_delay` consistency (restoring
+#!   `ERR_EXECUTE_PATH_MISMATCH`), then call
+#!   `exec.timelock_controller::finalize_timelock_proposals` to advance any pending
+#!   propose/cancel/execute state.
+@locals(2)
+pub proc auth_tx(salt: word)
+    exec.native_account::incr_nonce drop
+    # => [SALT]
+
+    # ------ Computing transaction summary ------
+    exec.auth::create_tx_summary
+    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT]
+
+    adv.insert_hqword
+    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT]
+
+    exec.auth::hash_tx_summary
+    # => [TX_SUMMARY_COMMITMENT]
+
+    # ------ Reading threshold config (default + num_approvers) ------
+    exec.multisig::get_threshold_and_num_approvers
+    # => [default_threshold, num_of_approvers, TX_SUMMARY_COMMITMENT]
+
+    # Save default_threshold for the procedure-policy enforcement and the final tx-threshold
+    # fallback below.
+    dup loc_store.1
+    # => [default_threshold, num_of_approvers, TX_SUMMARY_COMMITMENT]
+
+    # ------ Enforcing procedure policy (consumes default_threshold) ------
+    exec.enforce_procedure_policy
+    # => [policy_threshold, num_of_approvers, TX_SUMMARY_COMMITMENT]
+
+    loc_store.0
+    # => [num_of_approvers, TX_SUMMARY_COMMITMENT]
+
+    # ------ Verifying approver signatures ------
+    push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
+    push.APPROVER_SCHEME_ID_SLOT[0..2]
+    exec.::miden::standards::auth::signature::verify_signatures
+    # => [num_verified_signatures, TX_SUMMARY_COMMITMENT]
+
+    # ------ Computing final transaction threshold ------
+    # If no non-auth procedure was called, `policy_threshold` is 0 and `compute_tx_threshold`
+    # falls back to `default_threshold`; otherwise it returns the policy max directly.
+    loc_load.0
+    loc_load.1
+    # => [default_threshold, policy_threshold, num_verified_signatures, TX_SUMMARY_COMMITMENT]
+
+    exec.compute_tx_threshold
+    # => [transaction_threshold, num_verified_signatures, TX_SUMMARY_COMMITMENT]
+
+    u32assert2 u32lt
+    # => [is_unauthorized, TX_SUMMARY_COMMITMENT]
+
+    if.true
+        emit.AUTH_UNAUTHORIZED_EVENT
+        push.0 assert.err=ERR_INSUFFICIENT_SIGNATURES
+    end
+end

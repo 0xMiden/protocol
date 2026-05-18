@@ -24,9 +24,7 @@ use crate::{
 
 /// Wrapper over [SimpleSmt<BLOCK_NOTE_TREE_DEPTH>] for notes tree.
 ///
-/// Each note is stored as two adjacent leaves: odd leaf for id, even leaf for metadata hash.
-/// ID's leaf index is calculated as [(batch_idx * MAX_NOTES_PER_BATCH + note_idx_in_batch) * 2].
-/// Metadata hash leaf is stored the next after id leaf: [id_index + 1].
+/// Each note leaf is the note ID: `hash(note_details_commitment || metadata_commitment)`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlockNoteTree(SimpleSmt<BLOCK_NOTE_TREE_DEPTH>);
 
@@ -36,7 +34,8 @@ impl BlockNoteTree {
     ///
     /// Entry format: (note_index, note_header).
     ///
-    /// Value of each leaf is computed as: `hash(note_id || note_metadata_commitment)`.
+    /// Value of each leaf is computed as:
+    /// `hash(note_details_commitment || note_metadata_commitment)`.
     /// All leaves omitted from the entries list are set to [crate::EMPTY_WORD].
     ///
     /// # Errors
@@ -48,7 +47,7 @@ impl BlockNoteTree {
     ) -> Result<Self, MerkleError> {
         let leaves = entries
             .into_iter()
-            .map(|(index, header)| (index.leaf_index_value() as u64, header.to_commitment()));
+            .map(|(index, header)| (index.leaf_index_value() as u64, header.id().as_word()));
 
         SimpleSmt::with_leaves(leaves).map(Self)
     }

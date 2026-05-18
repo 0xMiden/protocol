@@ -1,32 +1,11 @@
 use alloc::collections::BTreeSet;
-use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use miden_processor::mast::MastNodeExt;
-use miden_protocol::account::component::AccountComponentCode;
 use miden_protocol::account::{Account, AccountCode, AccountId, AccountProcedureRoot};
-use miden_protocol::assembly::mast::{MastForest, MastNode, MastNodeId};
-use miden_protocol::note::{Note, NoteScript};
 
 use crate::AuthMethod;
-use crate::account::access::{Ownable2Step, RoleBasedAccessControl};
-use crate::account::auth::{
-    AuthGuardedMultisig,
-    AuthMultisig,
-    AuthNetworkAccount,
-    AuthSingleSig,
-    AuthSingleSigAcl,
-    NoAuth,
-};
 use crate::account::components::StandardAccountComponent;
-use crate::account::faucets::FungibleFaucet;
-use crate::account::interface::{
-    AccountComponentInterface,
-    AccountInterface,
-    NoteAccountCompatibility,
-};
-use crate::account::wallets::BasicWallet;
-use crate::note::StandardNote;
+use crate::account::interface::{AccountComponentInterface, AccountInterface};
 
 // ACCOUNT INTERFACE EXTENSION TRAIT
 // ================================================================================================
@@ -39,13 +18,6 @@ pub trait AccountInterfaceExt {
 
     /// Creates a new [`AccountInterface`] instance from the provided [`Account`].
     fn from_account(account: &Account) -> Self;
-
-    /// Returns [NoteAccountCompatibility::Maybe] if the provided note is compatible with the
-    /// current [AccountInterface], and [NoteAccountCompatibility::No] otherwise.
-    fn is_compatible_with(&self, note: &Note) -> NoteAccountCompatibility;
-
-    /// Returns the set of procedure roots of all procedures from all account component interfaces.
-    fn get_procedure_roots(&self) -> BTreeSet<AccountProcedureRoot>;
 }
 
 impl AccountInterfaceExt for AccountInterface {
@@ -69,50 +41,6 @@ impl AccountInterfaceExt for AccountInterface {
         }
 
         Self::new(account.id(), auth, components)
-    }
-
-    /// Returns [NoteAccountCompatibility::Maybe] if the provided note is compatible with the
-    /// current [AccountInterface], and [NoteAccountCompatibility::No] otherwise.
-    fn is_compatible_with(&self, note: &Note) -> NoteAccountCompatibility {
-        if let Some(standard_note) = StandardNote::from_script_root(note.script().root()) {
-            if standard_note.is_compatible_with(self) {
-                NoteAccountCompatibility::Maybe
-            } else {
-                NoteAccountCompatibility::No
-            }
-        } else {
-            verify_note_script_compatibility(note.script(), self.get_procedure_roots())
-        }
-    }
-
-    fn get_procedure_roots(&self) -> BTreeSet<AccountProcedureRoot> {
-        let mut procedure_roots = BTreeSet::new();
-        for component in self.components.iter() {
-            let code: Option<&'static AccountComponentCode> = match component {
-                AccountComponentInterface::BasicWallet => Some(BasicWallet::code()),
-                AccountComponentInterface::FungibleFaucet => Some(FungibleFaucet::code()),
-                AccountComponentInterface::Ownable2Step => Some(Ownable2Step::code()),
-                AccountComponentInterface::RoleBasedAccessControl => {
-                    Some(RoleBasedAccessControl::code())
-                },
-                AccountComponentInterface::AuthSingleSig => Some(AuthSingleSig::code()),
-                AccountComponentInterface::AuthSingleSigAcl => Some(AuthSingleSigAcl::code()),
-                AccountComponentInterface::AuthMultisig => Some(AuthMultisig::code()),
-                AccountComponentInterface::AuthGuardedMultisig => Some(AuthGuardedMultisig::code()),
-                AccountComponentInterface::AuthNoAuth => Some(NoAuth::code()),
-                AccountComponentInterface::AuthNetworkAccount => Some(AuthNetworkAccount::code()),
-                AccountComponentInterface::Custom(custom_procs) => {
-                    procedure_roots.extend(custom_procs.iter().copied());
-                    None
-                },
-            };
-
-            if let Some(code) = code {
-                procedure_roots.extend(code.procedure_roots());
-            }
-        }
-
-        procedure_roots
     }
 }
 
@@ -148,86 +76,5 @@ impl AccountComponentInterfaceExt for AccountComponentInterface {
             .push(AccountComponentInterface::Custom(procedures.into_iter().collect()));
 
         component_interface_vec
-    }
-}
-
-// HELPER FUNCTIONS
-// ------------------------------------------------------------------------------------------------
-
-/// Verifies that the provided note script is compatible with the target account interfaces.
-///
-/// This is achieved by checking that at least one execution branch in the note script is compatible
-/// with the account procedures vector.
-///
-/// This check relies on the fact that account procedures are the only procedures that are `call`ed
-/// from note scripts, while kernel procedures are `sycall`ed.
-fn verify_note_script_compatibility(
-    note_script: &NoteScript,
-    account_procedures: BTreeSet<AccountProcedureRoot>,
-) -> NoteAccountCompatibility {
-    // collect call branches of the note script
-    let branches = collect_call_branches(note_script);
-
-    // if none of the branches are compatible with the target account, return a `CheckResult::No`
-    if !branches.iter().any(|call_targets| call_targets.is_subset(&account_procedures)) {
-        return NoteAccountCompatibility::No;
-    }
-
-    NoteAccountCompatibility::Maybe
-}
-
-/// Collect call branches by recursively traversing through program execution branches and
-/// accumulating call targets.
-fn collect_call_branches(note_script: &NoteScript) -> Vec<BTreeSet<AccountProcedureRoot>> {
-    let mut branches = vec![BTreeSet::new()];
-
-    let entry_node = note_script.entrypoint();
-    recursively_collect_call_branches(entry_node, &mut branches, &note_script.mast());
-    branches
-}
-
-/// Generates a list of calls invoked in each execution branch of the provided code block.
-fn recursively_collect_call_branches(
-    mast_node_id: MastNodeId,
-    branches: &mut Vec<BTreeSet<AccountProcedureRoot>>,
-    note_script_forest: &Arc<MastForest>,
-) {
-    let mast_node = &note_script_forest[mast_node_id];
-
-    match mast_node {
-        MastNode::Block(_) => {},
-        MastNode::Join(join_node) => {
-            recursively_collect_call_branches(join_node.first(), branches, note_script_forest);
-            recursively_collect_call_branches(join_node.second(), branches, note_script_forest);
-        },
-        MastNode::Split(split_node) => {
-            let current_branch = branches.last().expect("at least one execution branch").clone();
-            recursively_collect_call_branches(split_node.on_false(), branches, note_script_forest);
-
-            // If the previous branch had additional calls we need to create a new branch
-            if branches.last().expect("at least one execution branch").len() > current_branch.len()
-            {
-                branches.push(current_branch);
-            }
-
-            recursively_collect_call_branches(split_node.on_true(), branches, note_script_forest);
-        },
-        MastNode::Loop(loop_node) => {
-            recursively_collect_call_branches(loop_node.body(), branches, note_script_forest);
-        },
-        MastNode::Call(call_node) => {
-            if call_node.is_syscall() {
-                return;
-            }
-
-            let callee_digest = note_script_forest[call_node.callee()].digest();
-
-            branches
-                .last_mut()
-                .expect("at least one execution branch")
-                .insert(AccountProcedureRoot::from_raw(callee_digest));
-        },
-        MastNode::Dyn(_) => {},
-        MastNode::External(_) => {},
     }
 }

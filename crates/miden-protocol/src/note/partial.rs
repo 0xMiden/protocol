@@ -5,6 +5,7 @@ use super::{
     DeserializationError,
     NoteAssets,
     NoteAttachments,
+    NoteDetailsCommitment,
     NoteHeader,
     NoteId,
     NoteMetadata,
@@ -42,9 +43,10 @@ impl PartialNote {
         assets: NoteAssets,
         attachments: NoteAttachments,
     ) -> Self {
-        let note_id = NoteId::new(recipient_digest, assets.commitment());
+        let details_commitment =
+            NoteDetailsCommitment::from_raw_commitments(recipient_digest, assets.commitment());
         let metadata = NoteMetadata::new(partial_metadata, &attachments);
-        let header = NoteHeader::new(note_id, metadata);
+        let header = NoteHeader::new(details_commitment, metadata);
         Self {
             header,
             recipient_digest,
@@ -55,7 +57,12 @@ impl PartialNote {
 
     /// Returns the ID corresponding to this note.
     pub fn id(&self) -> NoteId {
-        NoteId::new(self.recipient_digest, self.assets.commitment())
+        self.header.id()
+    }
+
+    /// Returns the commitment to the note's details, excluding metadata.
+    pub fn details_commitment(&self) -> NoteDetailsCommitment {
+        self.header.details_commitment()
     }
 
     /// Returns a reference to the [`NoteMetadata`] of this note.

@@ -120,8 +120,8 @@ mod tests {
     use crate::Word;
     use crate::asset::{AssetVault, FungibleAsset, NonFungibleAsset};
     use crate::testing::account_id::{
-        ACCOUNT_ID_NETWORK_FUNGIBLE_FAUCET,
         ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
+        ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_3,
     };
 
     /// Tests that constructing an asset witness fails if any asset in the smt proof is invalid.
@@ -165,7 +165,7 @@ mod tests {
     #[test]
     fn asset_witness_authenticates_asset_vault_key() -> anyhow::Result<()> {
         let fungible_asset0 =
-            FungibleAsset::new(ACCOUNT_ID_NETWORK_FUNGIBLE_FAUCET.try_into()?, 200)?;
+            FungibleAsset::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_3.try_into()?, 200)?;
         let fungible_asset1 =
             FungibleAsset::new(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET.try_into()?, 100)?;
 

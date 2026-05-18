@@ -19,7 +19,7 @@ use miden_protocol::account::{
 use miden_protocol::asset::{AssetAmount, TokenSymbol};
 use miden_protocol::errors::AccountIdError;
 use miden_protocol::note::NoteScriptRoot;
-use miden_standards::account::access::Ownable2Step;
+use miden_standards::account::access::{Authority, Ownable2Step};
 use miden_standards::account::faucets::{FungibleFaucet, FungibleFaucetError, TokenName};
 use miden_standards::account::policies::TokenPolicyManager;
 use miden_standards::note::{BurnNote, MintNote};
@@ -135,19 +135,18 @@ impl AggLayerFaucet {
         // Use the symbol as the display name; AggLayer faucets do not use a separate token name.
         let name = TokenName::new(symbol.to_string().as_str())
             .expect("symbol fits within token name capacity");
-        let max_supply_amount = AssetAmount::new(max_supply.as_canonical_u64()).map_err(|_| {
+        let max_supply_amount = AssetAmount::try_from(max_supply).map_err(|_| {
             FungibleFaucetError::MaxSupplyTooLarge {
                 actual: max_supply.as_canonical_u64(),
-                max: AssetAmount::MAX,
+                max: AssetAmount::MAX.as_u64(),
             }
         })?;
-        let token_supply_amount =
-            AssetAmount::new(token_supply.as_canonical_u64()).map_err(|_| {
-                FungibleFaucetError::MaxSupplyTooLarge {
-                    actual: token_supply.as_canonical_u64(),
-                    max: AssetAmount::MAX,
-                }
-            })?;
+        let token_supply_amount = AssetAmount::try_from(token_supply).map_err(|_| {
+            FungibleFaucetError::MaxSupplyTooLarge {
+                actual: token_supply.as_canonical_u64(),
+                max: AssetAmount::MAX.as_u64(),
+            }
+        })?;
         let faucet = FungibleFaucet::builder()
             .name(name)
             .symbol(symbol)
@@ -169,7 +168,13 @@ impl AggLayerFaucet {
     /// # Errors
     /// Returns an error if the token supply exceeds the max supply.
     pub fn with_token_supply(mut self, token_supply: Felt) -> Result<Self, FungibleFaucetError> {
-        self.faucet = self.faucet.with_token_supply(token_supply)?;
+        let token_supply_amount = AssetAmount::try_from(token_supply).map_err(|_| {
+            FungibleFaucetError::MaxSupplyTooLarge {
+                actual: token_supply.as_canonical_u64(),
+                max: AssetAmount::MAX.as_u64(),
+            }
+        })?;
+        self.faucet = self.faucet.with_token_supply(token_supply_amount)?;
         Ok(self)
     }
 
@@ -407,11 +412,13 @@ impl AggLayerFaucet {
             &*METADATA_HASH_HI_SLOT_NAME,
             FungibleFaucet::token_config_slot(),
             Ownable2Step::slot_name(),
-            TokenPolicyManager::policy_authority_slot(),
+            Authority::authority_slot(),
             TokenPolicyManager::active_mint_policy_slot(),
             TokenPolicyManager::active_burn_policy_slot(),
             TokenPolicyManager::allowed_mint_policies_slot(),
             TokenPolicyManager::allowed_burn_policies_slot(),
+            TokenPolicyManager::allowed_send_policies_slot(),
+            TokenPolicyManager::allowed_receive_policies_slot(),
         ]
     }
 }

@@ -22,7 +22,6 @@ use miden_protocol::asset::{AssetAmount, TokenSymbol};
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::{NoteTag, NoteType};
 use miden_protocol::{Felt, Word};
-use miden_standards::account::access::Ownable2Step;
 use miden_standards::account::auth::NoAuth;
 use miden_standards::account::faucets::{
     Description,
@@ -148,7 +147,7 @@ fn build_faucet_metadata() -> FungibleFaucet {
         .name(TokenName::new("T").unwrap())
         .symbol("TST".try_into().unwrap())
         .decimals(2)
-        .max_supply(AssetAmount::new(1_000).unwrap())
+        .max_supply(AssetAmount::from(1_000u32))
         .build()
         .unwrap()
 }
@@ -160,7 +159,7 @@ fn build_pol_faucet_metadata() -> FungibleFaucet {
         .name(TokenName::new("Polygon Token").unwrap())
         .symbol(TokenSymbol::new("POL").unwrap())
         .decimals(8)
-        .max_supply(AssetAmount::new(1_000_000).unwrap())
+        .max_supply(AssetAmount::from(1_000_000u32))
         .build()
         .unwrap()
 }
@@ -220,7 +219,7 @@ async fn get_name_from_masm() -> anyhow::Result<()> {
         .name(token_name)
         .symbol("TST".try_into().unwrap())
         .decimals(2)
-        .max_supply(AssetAmount::new(1_000).unwrap())
+        .max_supply(AssetAmount::from(1_000u32))
         .build()
         .unwrap();
 
@@ -256,7 +255,7 @@ async fn get_name_zeros_returns_empty() -> anyhow::Result<()> {
         .name(TokenName::new("").expect("empty string is a valid token name"))
         .symbol("TST".try_into().unwrap())
         .decimals(2)
-        .max_supply(AssetAmount::new(1_000).unwrap())
+        .max_supply(AssetAmount::from(1_000u32))
         .build()
         .unwrap();
 
@@ -336,7 +335,7 @@ async fn faucet_get_token_supply() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn faucet_get_max_supply() -> anyhow::Result<()> {
-    let expected = Felt::new(1_000_000).as_canonical_u64();
+    let expected = 1_000_000_u64;
     execute_tx_script(
         build_pol_faucet_account(),
         format!(
@@ -356,8 +355,8 @@ async fn faucet_get_max_supply() -> anyhow::Result<()> {
 async fn faucet_get_token_config() -> anyhow::Result<()> {
     let symbol = TokenSymbol::new("POL").unwrap();
     let expected_symbol = Felt::from(symbol).as_canonical_u64();
-    let expected_decimals = Felt::from(8u8).as_canonical_u64();
-    let expected_max_supply = Felt::new(1_000_000).as_canonical_u64();
+    let expected_decimals = 8_u64;
+    let expected_max_supply = 1_000_000_u64;
 
     execute_tx_script(
         build_pol_faucet_account(),
@@ -379,9 +378,9 @@ async fn faucet_get_token_config() -> anyhow::Result<()> {
 #[tokio::test]
 async fn faucet_get_decimals_symbol_and_max_supply() -> anyhow::Result<()> {
     let symbol = TokenSymbol::new("POL").unwrap();
-    let expected_decimals = Felt::from(8u8).as_canonical_u64();
+    let expected_decimals = 8_u64;
     let expected_symbol = Felt::from(symbol).as_canonical_u64();
-    let expected_max_supply = Felt::new(1_000_000).as_canonical_u64();
+    let expected_max_supply = 1_000_000_u64;
 
     execute_tx_script(
         build_pol_faucet_account(),
@@ -411,7 +410,7 @@ async fn get_mutability_config() -> anyhow::Result<()> {
         .name(TokenName::new("T").unwrap())
         .symbol("TST".try_into().unwrap())
         .decimals(2)
-        .max_supply(AssetAmount::new(1_000).unwrap())
+        .max_supply(AssetAmount::from(1_000u32))
         .description(Description::new("test").unwrap())
         .is_description_mutable(true)
         .is_max_supply_mutable(true)
@@ -494,7 +493,7 @@ fn faucet_with_metadata_storage_layout() {
         .name(token_name)
         .symbol("TST".try_into().unwrap())
         .decimals(8)
-        .max_supply(AssetAmount::new(1_000_000).unwrap())
+        .max_supply(AssetAmount::from(1_000_000u32))
         .description(description)
         .build()
         .unwrap();
@@ -509,8 +508,8 @@ fn faucet_with_metadata_storage_layout() {
 
     // Verify roundtrip via try_from
     let restored = FungibleFaucet::try_from(account.storage()).unwrap();
-    assert_eq!(restored.token_supply(), Felt::ZERO);
-    assert_eq!(restored.max_supply().as_canonical_u64(), 1_000_000);
+    assert_eq!(restored.token_supply(), AssetAmount::ZERO);
+    assert_eq!(restored.max_supply().as_u64(), 1_000_000);
     assert_eq!(restored.decimals(), 8);
     assert_eq!(restored.description().map(|d| d.as_str()), Some(desc_text));
 }
@@ -556,7 +555,7 @@ fn verify_faucet_with_max_name_and_description(
     let restored = FungibleFaucet::try_from(account.storage()).unwrap();
     assert_eq!(restored.name().as_str(), max_name);
     assert_eq!(restored.description().map(|d| d.as_str()), Some(desc_text.as_str()));
-    assert_eq!(restored.max_supply().as_canonical_u64(), u64::from(max_supply));
+    assert_eq!(restored.max_supply(), max_supply);
 }
 
 #[test]
@@ -567,17 +566,6 @@ fn basic_faucet_with_max_name_and_full_description() {
         1_000_000,
         AccountStorageMode::Public,
         vec![],
-    );
-}
-
-#[test]
-fn network_faucet_with_max_name_and_full_description() {
-    verify_faucet_with_max_name_and_description(
-        [6u8; 32],
-        "NET",
-        2_000_000,
-        AccountStorageMode::Network,
-        vec![Ownable2Step::new(owner_account_id()).into()],
     );
 }
 
@@ -636,7 +624,7 @@ async fn test_field_setter_immutable_fails(
         args.logo_uri,
         args.external_link,
     )?;
-    let faucet_account = builder.add_existing_network_faucet_with_metadata(owner, faucet)?;
+    let faucet_account = builder.add_existing_network_faucet_with_metadata(owner, faucet, [])?;
     let mock_chain = builder.build()?;
 
     let tx_script_code = format!(
@@ -681,8 +669,6 @@ async fn test_field_setter_owner_succeeds(
         args.logo_uri,
         args.external_link,
     )?;
-    let faucet_account = builder.add_existing_network_faucet_with_metadata(owner, faucet)?;
-    let mock_chain = builder.build()?;
 
     let hash = compute_field_hash(&new_data);
 
@@ -699,6 +685,11 @@ async fn test_field_setter_owner_succeeds(
 "#,
     );
 
+    let note_script = CodeBuilder::default().compile_note_script(&note_script_code)?;
+    let faucet_account =
+        builder.add_existing_network_faucet_with_metadata(owner, faucet, [note_script.root()])?;
+    let mock_chain = builder.build()?;
+
     let source_manager = Arc::new(DefaultSourceManager::default());
 
     let mut rng = RandomCoin::new([Felt::from(42u32); 4].into());
@@ -706,7 +697,7 @@ async fn test_field_setter_owner_succeeds(
         .note_type(NoteType::Private)
         .tag(NoteTag::default().into())
         .serial_number(Word::from([7, 8, 9, 10u32]))
-        .code(&note_script_code)
+        .script(note_script)
         .build()?;
 
     let tx_context = mock_chain
@@ -744,8 +735,6 @@ async fn test_field_setter_non_owner_fails(
         args.logo_uri,
         args.external_link,
     )?;
-    let faucet_account = builder.add_existing_network_faucet_with_metadata(owner, faucet)?;
-    let mock_chain = builder.build()?;
 
     // Auth check fires before data is touched, so no hash push is needed.
     let note_script_code = format!(
@@ -759,6 +748,11 @@ async fn test_field_setter_non_owner_fails(
         proc_name = proc_name,
     );
 
+    let note_script = CodeBuilder::default().compile_note_script(&note_script_code)?;
+    let faucet_account =
+        builder.add_existing_network_faucet_with_metadata(owner, faucet, [note_script.root()])?;
+    let mock_chain = builder.build()?;
+
     let source_manager = Arc::new(DefaultSourceManager::default());
 
     let mut rng = RandomCoin::new([Felt::from(99u32); 4].into());
@@ -766,7 +760,7 @@ async fn test_field_setter_non_owner_fails(
         .note_type(NoteType::Private)
         .tag(NoteTag::default().into())
         .serial_number(Word::from([11, 12, 13, 14u32]))
-        .code(&note_script_code)
+        .script(note_script)
         .build()?;
 
     let tx_context = mock_chain
@@ -880,7 +874,7 @@ async fn set_max_supply_immutable_fails() -> anyhow::Result<()> {
     let owner = owner_account_id();
 
     let faucet = network_faucet_metadata("MSM", 1000, Some(0), false, None, None, None)?;
-    let faucet_account = builder.add_existing_network_faucet_with_metadata(owner, faucet)?;
+    let faucet_account = builder.add_existing_network_faucet_with_metadata(owner, faucet, [])?;
     let mock_chain = builder.build()?;
 
     let tx_script_code = r#"
@@ -913,8 +907,6 @@ async fn set_max_supply_mutable_owner_succeeds() -> anyhow::Result<()> {
     let new_max_supply: u64 = 2000;
 
     let faucet = network_faucet_metadata("MSM", 1000, Some(0), true, None, None, None)?;
-    let faucet_account = builder.add_existing_network_faucet_with_metadata(owner, faucet)?;
-    let mock_chain = builder.build()?;
 
     let note_script_code = format!(
         r#"
@@ -927,6 +919,11 @@ async fn set_max_supply_mutable_owner_succeeds() -> anyhow::Result<()> {
     "#
     );
 
+    let note_script = CodeBuilder::default().compile_note_script(&note_script_code)?;
+    let faucet_account =
+        builder.add_existing_network_faucet_with_metadata(owner, faucet, [note_script.root()])?;
+    let mock_chain = builder.build()?;
+
     let source_manager = Arc::new(DefaultSourceManager::default());
 
     let mut rng = RandomCoin::new([Felt::from(42u32); 4].into());
@@ -934,7 +931,7 @@ async fn set_max_supply_mutable_owner_succeeds() -> anyhow::Result<()> {
         .note_type(NoteType::Private)
         .tag(NoteTag::default().into())
         .serial_number(Word::from([20, 21, 22, 23u32]))
-        .code(&note_script_code)
+        .script(note_script)
         .build()?;
 
     let tx_context = mock_chain
@@ -947,12 +944,12 @@ async fn set_max_supply_mutable_owner_succeeds() -> anyhow::Result<()> {
     updated_faucet.apply_delta(executed.account_delta())?;
 
     let restored = FungibleFaucet::try_from(updated_faucet.storage())?;
+    assert_eq!(restored.max_supply().as_u64(), new_max_supply, "max_supply should be updated");
     assert_eq!(
-        restored.max_supply().as_canonical_u64(),
-        new_max_supply,
-        "max_supply should be updated"
+        restored.token_supply(),
+        AssetAmount::ZERO,
+        "token_supply should remain unchanged"
     );
-    assert_eq!(restored.token_supply(), Felt::ZERO, "token_supply should remain unchanged");
 
     Ok(())
 }
@@ -964,8 +961,6 @@ async fn set_max_supply_mutable_non_owner_fails() -> anyhow::Result<()> {
     let non_owner = non_owner_account_id();
 
     let faucet = network_faucet_metadata("MSM", 1000, Some(0), true, None, None, None)?;
-    let faucet_account = builder.add_existing_network_faucet_with_metadata(owner, faucet)?;
-    let mock_chain = builder.build()?;
 
     // Auth check fires before data is touched, so no arguments needed.
     let note_script_code = "
@@ -975,6 +970,11 @@ async fn set_max_supply_mutable_non_owner_fails() -> anyhow::Result<()> {
         end
     ";
 
+    let note_script = CodeBuilder::default().compile_note_script(note_script_code)?;
+    let faucet_account =
+        builder.add_existing_network_faucet_with_metadata(owner, faucet, [note_script.root()])?;
+    let mock_chain = builder.build()?;
+
     let source_manager = Arc::new(DefaultSourceManager::default());
 
     let mut rng = RandomCoin::new([Felt::from(99u32); 4].into());
@@ -982,7 +982,7 @@ async fn set_max_supply_mutable_non_owner_fails() -> anyhow::Result<()> {
         .note_type(NoteType::Private)
         .tag(NoteTag::default().into())
         .serial_number(Word::from([30, 31, 32, 33u32]))
-        .code(note_script_code)
+        .script(note_script)
         .build()?;
 
     let tx_context = mock_chain

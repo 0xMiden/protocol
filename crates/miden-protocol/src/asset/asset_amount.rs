@@ -27,7 +27,10 @@ impl AssetAmount {
     ///
     /// Equal to 2^63 - 2^31. This was chosen so that the amount fits as both a positive and
     /// negative value in a field element.
-    pub const MAX: u64 = 2u64.pow(63) - 2u64.pow(31);
+    pub const MAX: Self = Self(2u64.pow(63) - 2u64.pow(31));
+
+    /// The zero amount.
+    pub const ZERO: Self = Self(0);
 
     /// Returns a new `AssetAmount` if `amount` does not exceed [`Self::MAX`].
     ///
@@ -35,10 +38,24 @@ impl AssetAmount {
     ///
     /// Returns an error if `amount` is greater than [`Self::MAX`].
     pub fn new(amount: u64) -> Result<Self, AssetError> {
-        if amount > Self::MAX {
+        if amount > Self::MAX.0 {
             return Err(AssetError::FungibleAssetAmountTooBig(amount));
         }
         Ok(Self(amount))
+    }
+
+    /// Returns the underlying `u64` value.
+    pub const fn as_u64(&self) -> u64 {
+        self.0
+    }
+
+    /// Returns the underlying value as an `i64`.
+    ///
+    /// SAFETY: this cast never truncates or wraps because [`Self::MAX`] (`2^63 - 2^31`) is
+    /// strictly less than [`i64::MAX`] (`2^63 - 1`), so every valid `AssetAmount` fits in a
+    /// non-negative `i64`.
+    pub const fn as_i64(&self) -> i64 {
+        self.0 as i64
     }
 }
 
@@ -46,9 +63,7 @@ impl Add for AssetAmount {
     type Output = Result<Self, AssetError>;
 
     fn add(self, other: Self) -> Self::Output {
-        let raw = u64::from(self)
-            .checked_add(u64::from(other))
-            .expect("even MAX + MAX should not overflow u64");
+        let raw = self.0.checked_add(other.0).expect("even MAX + MAX should not overflow u64");
         Self::new(raw)
     }
 }
@@ -57,12 +72,13 @@ impl Sub for AssetAmount {
     type Output = Result<Self, AssetError>;
 
     fn sub(self, other: Self) -> Self::Output {
-        let raw = u64::from(self).checked_sub(u64::from(other)).ok_or(
-            AssetError::FungibleAssetAmountNotSufficient {
-                minuend: u64::from(self),
-                subtrahend: u64::from(other),
-            },
-        )?;
+        let raw =
+            self.0
+                .checked_sub(other.0)
+                .ok_or(AssetError::FungibleAssetAmountNotSufficient {
+                    minuend: self.0,
+                    subtrahend: other.0,
+                })?;
         Ok(Self(raw))
     }
 }
@@ -93,6 +109,14 @@ impl TryFrom<u64> for AssetAmount {
 
     fn try_from(value: u64) -> Result<Self, Self::Error> {
         Self::new(value)
+    }
+}
+
+impl TryFrom<Felt> for AssetAmount {
+    type Error = AssetError;
+
+    fn try_from(value: Felt) -> Result<Self, Self::Error> {
+        Self::new(value.as_canonical_u64())
     }
 }
 
@@ -150,13 +174,13 @@ mod tests {
         assert_eq!(val, 0);
         let val: u64 = AssetAmount::new(1000).unwrap().into();
         assert_eq!(val, 1000);
-        let val: u64 = AssetAmount::new(AssetAmount::MAX).unwrap().into();
-        assert_eq!(val, AssetAmount::MAX);
+        let val: u64 = AssetAmount::new(AssetAmount::MAX.0).unwrap().into();
+        assert_eq!(val, AssetAmount::MAX.0);
     }
 
     #[test]
     fn exceeds_max() {
-        assert!(AssetAmount::new(AssetAmount::MAX + 1).is_err());
+        assert!(AssetAmount::new(AssetAmount::MAX.0 + 1).is_err());
         assert!(AssetAmount::new(u64::MAX).is_err());
     }
 
@@ -178,8 +202,8 @@ mod tests {
     #[test]
     fn try_from_u64() {
         assert!(AssetAmount::try_from(0u64).is_ok());
-        assert!(AssetAmount::try_from(AssetAmount::MAX).is_ok());
-        assert!(AssetAmount::try_from(AssetAmount::MAX + 1).is_err());
+        assert!(AssetAmount::try_from(AssetAmount::MAX.0).is_ok());
+        assert!(AssetAmount::try_from(AssetAmount::MAX.0 + 1).is_err());
     }
 
     #[test]
@@ -204,7 +228,7 @@ mod tests {
 
     #[test]
     fn add_overflow() {
-        let max = AssetAmount::new(AssetAmount::MAX).unwrap();
+        let max = AssetAmount::new(AssetAmount::MAX.0).unwrap();
         let one = AssetAmount::new(1).unwrap();
         assert!((max + one).is_err());
     }

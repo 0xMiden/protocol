@@ -1,15 +1,22 @@
 // AUTH
 // ================================================================================================
+use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
+use miden_protocol::Word;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, PublicKeyCommitment};
 use miden_protocol::account::{AccountComponent, AccountProcedureRoot};
+use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
+use miden_standards::account::auth::multisig_smart::ProcedurePolicy;
 use miden_standards::account::auth::{
     AuthGuardedMultisig,
     AuthGuardedMultisigConfig,
     AuthMultisig,
     AuthMultisigConfig,
+    AuthMultisigSmart,
+    AuthMultisigSmartConfig,
+    AuthNetworkAccount,
     AuthSingleSig,
     AuthSingleSigAcl,
     AuthSingleSigAclConfig,
@@ -45,6 +52,13 @@ pub enum Auth {
         proc_threshold_map: Vec<(AccountProcedureRoot, u32)>,
     },
 
+    /// Multisig with smart per-procedure policy configuration.
+    MultisigSmart {
+        threshold: u32,
+        approvers: Vec<(PublicKeyCommitment, AuthScheme)>,
+        proc_policy_map: Vec<(Word, ProcedurePolicy)>,
+    },
+
     /// Creates a secret key for the account, and creates a [BasicAuthenticator] used to
     /// authenticate the account with [AuthSingleSigAcl]. Authentication will only be
     /// triggered if any of the procedures specified in the list are called during execution.
@@ -67,6 +81,12 @@ pub enum Auth {
     /// The auth procedure expects the first three arguments as [99, 98, 97] to succeed.
     /// In case it succeeds, it conditionally increments the nonce based on the fourth argument.
     Conditional,
+
+    /// Network-account authentication that restricts the account to consuming only notes whose
+    /// script roots appear in `allowed_script_roots`. Must be non-empty.
+    NetworkAccount {
+        allowed_script_roots: BTreeSet<NoteScriptRoot>,
+    },
 }
 
 impl Auth {
@@ -111,6 +131,17 @@ impl Auth {
 
                 (component, None)
             },
+            Auth::MultisigSmart { threshold, approvers, proc_policy_map } => {
+                let config = AuthMultisigSmartConfig::new(approvers.clone(), *threshold)
+                    .and_then(|cfg| cfg.with_proc_policies(proc_policy_map.clone()))
+                    .expect("invalid multisig smart config");
+
+                let component = AuthMultisigSmart::new(config)
+                    .expect("multisig smart component creation failed")
+                    .into();
+
+                (component, None)
+            },
             Auth::Acl {
                 auth_trigger_procedures,
                 allow_unauthorized_output_notes,
@@ -139,6 +170,12 @@ impl Auth {
             Auth::IncrNonce => (IncrNonceAuthComponent.into(), None),
             Auth::Noop => (NoopAuthComponent.into(), None),
             Auth::Conditional => (ConditionalAuthComponent.into(), None),
+            Auth::NetworkAccount { allowed_script_roots } => {
+                let component = AuthNetworkAccount::with_allowlist(allowed_script_roots.clone())
+                    .expect("network account allowlist must be non-empty")
+                    .into();
+                (component, None)
+            },
         }
     }
 }

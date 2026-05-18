@@ -310,14 +310,14 @@ mod test {
     #[test]
     fn serialize_deserialize_signing_inputs_arbitrary() {
         let elements = vec![
-            Felt::new(0),
-            Felt::new(1),
-            Felt::new(2),
-            Felt::new(3),
-            Felt::new(4),
-            Felt::new(5),
-            Felt::new(6),
-            Felt::new(7),
+            Felt::ZERO,
+            Felt::ONE,
+            Felt::new_unchecked(2),
+            Felt::new_unchecked(3),
+            Felt::new_unchecked(4),
+            Felt::new_unchecked(5),
+            Felt::new_unchecked(6),
+            Felt::new_unchecked(7),
         ];
         let inputs = SigningInputs::Arbitrary(elements.clone());
         let bytes = inputs.to_bytes();
@@ -333,7 +333,7 @@ mod test {
 
     #[test]
     fn serialize_deserialize_signing_inputs_blind() {
-        let word = Word::from([Felt::new(10), Felt::new(20), Felt::new(30), Felt::new(40)]);
+        let word = Word::from([10_u32, 20_u32, 30_u32, 40_u32]);
         let inputs = SigningInputs::Blind(word);
         let bytes = inputs.to_bytes();
         let decoded = SigningInputs::read_from_bytes(&bytes).unwrap();
