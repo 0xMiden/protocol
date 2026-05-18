@@ -389,7 +389,9 @@ pub enum AccountDeltaError {
         increment: Felt,
         new: Felt,
     },
-    #[error("account ID {0} in fungible asset delta is not of type fungible faucet")]
+    #[error(
+        "asset issued by faucet {0} in fungible asset delta does not have fungible composition"
+    )]
     NotAFungibleFaucetId(AccountId),
     #[error("cannot merge two full state deltas")]
     MergingFullStateDeltas,

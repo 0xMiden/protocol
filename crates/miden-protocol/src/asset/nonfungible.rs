@@ -130,7 +130,7 @@ impl NonFungibleAsset {
         let asset_id = AssetId::new(asset_id_suffix, asset_id_prefix);
 
         AssetVaultKey::new(asset_id, self.faucet_id, AssetComposition::None, self.callbacks)
-            .expect("constructors should ensure account ID is of type non-fungible faucet")
+            .expect("non-fungible composition is always valid")
     }
 
     /// Returns the ID of the faucet which issued this asset.

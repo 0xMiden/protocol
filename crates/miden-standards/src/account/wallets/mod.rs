@@ -51,8 +51,6 @@ procedure_root!(
 /// All methods require authentication. Thus, this component must be combined with a component
 /// providing authentication.
 ///
-/// This component supports all account types.
-///
 /// [builder]: crate::code_builder::CodeBuilder
 pub struct BasicWallet;
 

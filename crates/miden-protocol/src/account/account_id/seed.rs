@@ -6,7 +6,7 @@ use crate::account::{AccountIdV1, AccountStorageMode};
 use crate::errors::AccountError;
 use crate::{Felt, Word};
 
-/// Finds and returns a seed suitable for creating an account ID for the specified account type
+/// Finds and returns a seed suitable for creating an account ID for the specified storage mode
 /// using the provided initial seed as a starting point.
 ///
 /// This currently always uses a single thread. This method used to either use a single- or
@@ -47,8 +47,8 @@ fn compute_account_seed_single(
 
     // loop until we have a seed that satisfies the specified account parameters.
     loop {
-        // Check if the seed satisfies the specified type, storage mode and version. Additionally,
-        // the most significant bit of the suffix must be zero to ensure felt validity.
+        // Check if the seed satisfies the specified storage mode and version. Additionally, the
+        // most significant bit of the suffix must be zero to ensure felt validity.
         let suffix = current_digest[AccountIdV1::SEED_DIGEST_SUFFIX_ELEMENT_IDX];
         let prefix = current_digest[AccountIdV1::SEED_DIGEST_PREFIX_ELEMENT_IDX];
         let is_suffix_msb_zero = suffix.as_canonical_u64() >> 63 == 0;

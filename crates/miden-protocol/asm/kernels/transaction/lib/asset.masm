@@ -6,7 +6,6 @@ use $kernel::util::asset->util_asset
 # ERRORS
 # =================================================================================================
 
-const ERR_VAULT_ASSET_KEY_ACCOUNT_ID_MUST_BE_FAUCET="account ID in asset vault key must be either of type fungible or non-fungible faucet"
 const ERR_VAULT_UNSUPPORTED_ASSET_COMPOSITION="asset composition Custom is not yet supported"
 
 # CONSTANT ACCESSORS

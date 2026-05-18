@@ -59,7 +59,7 @@ pub const ACCOUNT_ID_MAX_ZEROES: u128 = account_id(AccountStorageMode::Private, 
 // UTILITIES
 // --------------------------------------------------------------------------------------------
 
-/// Produces a valid account ID with the given account type and storage mode.
+/// Produces a valid account ID with the given storage mode.
 ///
 /// - Version is set to 1.
 ///

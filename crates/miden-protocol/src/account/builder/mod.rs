@@ -22,8 +22,7 @@ use crate::{Felt, Word};
 /// This will build a valid new account with these properties:
 /// - An empty [`AssetVault`].
 /// - The nonce set to [`Felt::ZERO`].
-/// - A seed which results in an [`AccountId`] valid for the configured account type and storage
-///   mode.
+/// - A seed which results in an [`AccountId`] valid for the configured storage mode.
 ///
 /// By default, the builder is initialized with:
 /// - The `storage_mode` set to [`AccountStorageMode::Private`].
@@ -196,7 +195,6 @@ impl AccountBuilder {
     ///
     /// Returns an error if:
     /// - The init seed is not set.
-    /// - Any of the components does not support the set account type.
     /// - The number of procedures in all merged components is 0 or exceeds
     ///   [`AccountCode::MAX_NUM_PROCEDURES`](crate::account::AccountCode::MAX_NUM_PROCEDURES).
     /// - Two or more libraries export a procedure with the same MAST root.
