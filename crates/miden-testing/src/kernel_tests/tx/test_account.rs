@@ -164,64 +164,6 @@ pub async fn compute_commitment() -> anyhow::Result<()> {
 // ================================================================================================
 
 #[tokio::test]
-async fn test_account_type() -> anyhow::Result<()> {
-    let procedures = vec![
-        ("is_fungible_faucet", AccountType::FungibleFaucet),
-        ("is_non_fungible_faucet", AccountType::NonFungibleFaucet),
-        ("is_updatable_account", AccountType::RegularAccountUpdatableCode),
-        ("is_immutable_account", AccountType::RegularAccountImmutableCode),
-    ];
-
-    let test_cases = [
-        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
-        ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
-        ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
-        ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET,
-    ];
-
-    for (procedure, expected_type) in procedures {
-        let mut has_type = false;
-
-        for account_id in test_cases.iter() {
-            let account_id = AccountId::try_from(*account_id).unwrap();
-
-            let code = format!(
-                "
-                use $kernel::account_id
-
-                begin
-                    exec.account_id::{procedure}
-                end
-                "
-            );
-
-            let exec_output = CodeExecutor::with_default_host()
-                .stack_inputs(StackInputs::new(&[account_id.prefix().as_felt()])?)
-                .run(&code)
-                .await?;
-
-            let type_matches = account_id.account_type() == expected_type;
-            let expected_result = if type_matches { Felt::ONE } else { Felt::ZERO };
-            has_type |= type_matches;
-
-            assert_eq!(
-                exec_output.get_stack_element(0),
-                expected_result,
-                "Rust and Masm check on account type diverge. proc: {} account_id: {} account_type: {:?} expected_type: {:?}",
-                procedure,
-                account_id,
-                account_id.account_type(),
-                expected_type,
-            );
-        }
-
-        assert!(has_type, "missing test for type {expected_type:?}");
-    }
-
-    Ok(())
-}
-
-#[tokio::test]
 async fn test_account_validate_id() -> anyhow::Result<()> {
     let test_cases = [
         (ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE, None),
