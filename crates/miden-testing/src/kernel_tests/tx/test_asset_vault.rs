@@ -120,7 +120,7 @@ async fn test_get_balance_non_fungible_fails() -> anyhow::Result<()> {
 
     let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET).unwrap();
     let non_fungible_asset =
-        NonFungibleAsset::new(&NonFungibleAssetDetails::new(faucet_id, vec![1, 2, 3])?)?;
+        NonFungibleAsset::new(&NonFungibleAssetDetails::new(faucet_id, vec![1, 2, 3]));
     let code = format!(
         "
         use $kernel::prologue
@@ -260,8 +260,8 @@ async fn test_add_non_fungible_asset_success() -> anyhow::Result<()> {
     let faucet_id: AccountId = ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET.try_into()?;
     let mut account_vault = tx_context.account().vault().clone();
     let add_non_fungible_asset = Asset::NonFungible(NonFungibleAsset::new(
-        &NonFungibleAssetDetails::new(faucet_id, vec![1, 2, 3, 4, 5, 6, 7, 8]).unwrap(),
-    )?);
+        &NonFungibleAssetDetails::new(faucet_id, vec![1, 2, 3, 4, 5, 6, 7, 8]),
+    ));
 
     let code = format!(
         "
@@ -303,9 +303,8 @@ async fn test_add_non_fungible_asset_fail_duplicate() -> anyhow::Result<()> {
     let faucet_id: AccountId = ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET.try_into().unwrap();
     let mut account_vault = tx_context.account().vault().clone();
     let non_fungible_asset_details =
-        NonFungibleAssetDetails::new(faucet_id, NON_FUNGIBLE_ASSET_DATA.to_vec()).unwrap();
-    let non_fungible_asset =
-        Asset::NonFungible(NonFungibleAsset::new(&non_fungible_asset_details).unwrap());
+        NonFungibleAssetDetails::new(faucet_id, NON_FUNGIBLE_ASSET_DATA.to_vec());
+    let non_fungible_asset = Asset::NonFungible(NonFungibleAsset::new(&non_fungible_asset_details));
 
     let code = format!(
         "
@@ -458,8 +457,8 @@ async fn test_remove_inexisting_non_fungible_asset_fails() -> anyhow::Result<()>
     let mut account_vault = tx_context.account().vault().clone();
 
     let non_fungible_asset_details =
-        NonFungibleAssetDetails::new(faucet_id, NON_FUNGIBLE_ASSET_DATA.to_vec()).unwrap();
-    let nonfungible = NonFungibleAsset::new(&non_fungible_asset_details).unwrap();
+        NonFungibleAssetDetails::new(faucet_id, NON_FUNGIBLE_ASSET_DATA.to_vec());
+    let nonfungible = NonFungibleAsset::new(&non_fungible_asset_details);
     let non_existent_non_fungible_asset = Asset::NonFungible(nonfungible);
 
     assert_matches!(
@@ -502,9 +501,8 @@ async fn test_remove_non_fungible_asset_success() -> anyhow::Result<()> {
     let faucet_id: AccountId = ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET.try_into().unwrap();
     let mut account_vault = tx_context.account().vault().clone();
     let non_fungible_asset_details =
-        NonFungibleAssetDetails::new(faucet_id, NON_FUNGIBLE_ASSET_DATA.to_vec()).unwrap();
-    let non_fungible_asset =
-        Asset::NonFungible(NonFungibleAsset::new(&non_fungible_asset_details).unwrap());
+        NonFungibleAssetDetails::new(faucet_id, NON_FUNGIBLE_ASSET_DATA.to_vec());
+    let non_fungible_asset = Asset::NonFungible(NonFungibleAsset::new(&non_fungible_asset_details));
 
     let code = format!(
         "

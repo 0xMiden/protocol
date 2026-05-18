@@ -76,8 +76,8 @@ async fn test_create_non_fungible_asset_succeeds() -> anyhow::Result<()> {
     let non_fungible_asset_details = NonFungibleAssetDetails::new(
         NonFungibleAsset::mock_issuer(),
         NON_FUNGIBLE_ASSET_DATA.to_vec(),
-    )?;
-    let non_fungible_asset = NonFungibleAsset::new(&non_fungible_asset_details)?;
+    );
+    let non_fungible_asset = NonFungibleAsset::new(&non_fungible_asset_details);
 
     let code = format!(
         "

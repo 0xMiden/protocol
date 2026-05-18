@@ -88,7 +88,6 @@ impl FungibleAsset {
     /// - The provided key does not contain a valid faucet ID.
     /// - The provided key's does not have [`AssetComposition::Fungible`] set.
     /// - The provided key's asset ID limbs are not zero.
-    /// - The faucet ID is not a fungible faucet ID.
     /// - The provided value's amount is greater than [`FungibleAsset::MAX_AMOUNT`] or its three
     ///   most significant elements are not zero.
     pub fn from_key_value(key: AssetVaultKey, value: Word) -> Result<Self, AssetError> {
@@ -121,7 +120,6 @@ impl FungibleAsset {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The provided key does not contain a valid faucet ID.
     /// - [`Self::from_key_value`] fails.
     pub fn from_key_value_words(key: Word, value: Word) -> Result<Self, AssetError> {
         let vault_key = AssetVaultKey::try_from(key)?;

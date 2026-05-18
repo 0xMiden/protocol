@@ -535,19 +535,19 @@ async fn non_fungible_asset_delta() -> anyhow::Result<()> {
     let asset0 = NonFungibleAsset::new(&NonFungibleAssetDetails::new(
         faucet0,
         rng.random::<[u8; 32]>().to_vec(),
-    )?)?;
+    ));
     let asset1 = NonFungibleAsset::new(&NonFungibleAssetDetails::new(
         faucet1,
         rng.random::<[u8; 32]>().to_vec(),
-    )?)?;
+    ));
     let asset2 = NonFungibleAsset::new(&NonFungibleAssetDetails::new(
         faucet2,
         rng.random::<[u8; 32]>().to_vec(),
-    )?)?;
+    ));
     let asset3 = NonFungibleAsset::new(&NonFungibleAssetDetails::new(
         faucet3,
         rng.random::<[u8; 32]>().to_vec(),
-    )?)?;
+    ));
 
     let TestSetup { mock_chain, account_id, notes } =
         setup_test([], [asset1, asset3].map(Asset::from), [asset0, asset2].map(Asset::from))?;

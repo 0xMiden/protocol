@@ -654,11 +654,9 @@ mod tests {
             account_id: AccountId,
             added: Option<bool>,
         ) -> AccountVaultDelta {
-            let asset: Asset = NonFungibleAsset::new(
-                &NonFungibleAssetDetails::new(account_id, vec![1, 2, 3]).unwrap(),
-            )
-            .unwrap()
-            .into();
+            let asset: Asset =
+                NonFungibleAsset::new(&NonFungibleAssetDetails::new(account_id, vec![1, 2, 3]))
+                    .into();
 
             match added {
                 Some(true) => AccountVaultDelta::from_iters([asset], []),

@@ -278,9 +278,9 @@ async fn test_faucet_without_callback_slot_skips_callback(
     // The faucet does not have the callback slot, but the asset has callbacks enabled.
     let asset = match account_type {
         AccountType::FungibleFaucet => Asset::from(FungibleAsset::new(faucet.id(), 100)?),
-        AccountType::NonFungibleFaucet => Asset::from(NonFungibleAsset::new(
-            &NonFungibleAssetDetails::new(faucet.id(), vec![1])?,
-        )?),
+        AccountType::NonFungibleFaucet => {
+            Asset::from(NonFungibleAsset::new(&NonFungibleAssetDetails::new(faucet.id(), vec![1])))
+        },
         _ => unreachable!("test only uses faucet account types"),
     }
     .with_callbacks(AssetCallbackFlag::Enabled);
@@ -395,8 +395,8 @@ async fn test_on_before_asset_added_to_account_callback_receives_correct_inputs(
 #[case::non_fungible(
     AccountType::NonFungibleFaucet,
     |faucet_id| {
-        let details = NonFungibleAssetDetails::new(faucet_id, vec![1, 2, 3, 4])?;
-        Ok(NonFungibleAsset::new(&details)?.with_callbacks(AssetCallbackFlag::Enabled).into())
+        let details = NonFungibleAssetDetails::new(faucet_id, vec![1, 2, 3, 4]);
+        Ok(NonFungibleAsset::new(&details).with_callbacks(AssetCallbackFlag::Enabled).into())
     }
 )]
 #[tokio::test]
@@ -447,8 +447,8 @@ async fn test_blocked_account_cannot_receive_asset(
 #[case::non_fungible(
     AccountType::NonFungibleFaucet,
     |faucet_id| {
-        let details = NonFungibleAssetDetails::new(faucet_id, vec![1, 2, 3, 4])?;
-        Ok(NonFungibleAsset::new(&details)?.with_callbacks(AssetCallbackFlag::Enabled).into())
+        let details = NonFungibleAssetDetails::new(faucet_id, vec![1, 2, 3, 4]);
+        Ok(NonFungibleAsset::new(&details).with_callbacks(AssetCallbackFlag::Enabled).into())
     }
 )]
 #[tokio::test]

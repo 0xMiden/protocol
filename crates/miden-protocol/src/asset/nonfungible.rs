@@ -1,9 +1,8 @@
-use alloc::string::ToString;
 use alloc::vec::Vec;
 use core::fmt;
 
 use super::vault::AssetVaultKey;
-use super::{AccountType, Asset, AssetCallbackFlag, AssetComposition, AssetError, Word};
+use super::{Asset, AssetCallbackFlag, AssetComposition, AssetError, Word};
 use crate::Hasher;
 use crate::account::AccountId;
 use crate::asset::vault::AssetId;
@@ -51,10 +50,7 @@ impl NonFungibleAsset {
     // --------------------------------------------------------------------------------------------
 
     /// Returns a non-fungible asset created from the specified asset details.
-    ///
-    /// # Errors
-    /// Returns an error if the provided faucet ID is not for a non-fungible asset faucet.
-    pub fn new(details: &NonFungibleAssetDetails) -> Result<Self, AssetError> {
+    pub fn new(details: &NonFungibleAssetDetails) -> Self {
         let data_hash = Hasher::hash(details.asset_data());
         Self::from_parts(details.faucet_id(), data_hash)
     }
@@ -64,19 +60,12 @@ impl NonFungibleAsset {
     ///
     /// Hash of the asset's data is expected to be computed from the binary representation of the
     /// asset's data.
-    ///
-    /// # Errors
-    /// Returns an error if the provided faucet ID is not for a non-fungible asset faucet.
-    pub fn from_parts(faucet_id: AccountId, value: Word) -> Result<Self, AssetError> {
-        if !matches!(faucet_id.account_type(), AccountType::NonFungibleFaucet) {
-            return Err(AssetError::NonFungibleFaucetIdTypeMismatch(faucet_id));
-        }
-
-        Ok(Self {
+    pub fn from_parts(faucet_id: AccountId, value: Word) -> Self {
+        Self {
             faucet_id,
             value,
             callbacks: AssetCallbackFlag::default(),
-        })
+        }
     }
 
     /// Creates a non-fungible asset from the provided key and value.
@@ -84,8 +73,7 @@ impl NonFungibleAsset {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The provided key does not contain a valid faucet ID.
-    /// - The provided key's does not have [`AssetComposition::None`] set.
+    /// - The provided key does not have [`AssetComposition::None`] set.
     /// - The provided key's asset ID limbs are not equal to the provided value's first and second
     ///   element.
     /// - The faucet ID is not a non-fungible faucet ID.
@@ -105,7 +93,7 @@ impl NonFungibleAsset {
             });
         }
 
-        let mut asset = Self::from_parts(key.faucet_id(), value)?;
+        let mut asset = Self::from_parts(key.faucet_id(), value);
         asset.callbacks = key.callback_flag();
 
         Ok(asset)
@@ -118,7 +106,6 @@ impl NonFungibleAsset {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The provided key does not contain a valid faucet ID.
     /// - [`Self::from_key_value`] fails.
     pub fn from_key_value_words(key: Word, value: Word) -> Result<Self, AssetError> {
         let vault_key = AssetVaultKey::try_from(key)?;
@@ -222,9 +209,7 @@ impl NonFungibleAsset {
         let value: Word = source.read()?;
         let callbacks: AssetCallbackFlag = source.read()?;
 
-        NonFungibleAsset::from_parts(faucet_id, value)
-            .map(|asset| asset.with_callbacks(callbacks))
-            .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
+        Ok(NonFungibleAsset::from_parts(faucet_id, value).with_callbacks(callbacks))
     }
 }
 
@@ -242,15 +227,8 @@ pub struct NonFungibleAssetDetails {
 
 impl NonFungibleAssetDetails {
     /// Returns asset details instantiated from the specified faucet ID and asset data.
-    ///
-    /// # Errors
-    /// Returns an error if the provided faucet ID is not for a non-fungible asset faucet.
-    pub fn new(faucet_id: AccountId, asset_data: Vec<u8>) -> Result<Self, AssetError> {
-        if !matches!(faucet_id.account_type(), AccountType::NonFungibleFaucet) {
-            return Err(AssetError::NonFungibleFaucetIdTypeMismatch(faucet_id));
-        }
-
-        Ok(Self { faucet_id, asset_data })
+    pub fn new(faucet_id: AccountId, asset_data: Vec<u8>) -> Self {
+        Self { faucet_id, asset_data }
     }
 
     /// Returns ID of the faucet which issued this asset.
@@ -323,8 +301,8 @@ mod tests {
             ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET_1,
         ] {
             let account_id = AccountId::try_from(non_fungible_account_id).unwrap();
-            let details = NonFungibleAssetDetails::new(account_id, vec![1, 2, 3]).unwrap();
-            let non_fungible_asset = NonFungibleAsset::new(&details).unwrap();
+            let details = NonFungibleAssetDetails::new(account_id, vec![1, 2, 3]);
+            let non_fungible_asset = NonFungibleAsset::new(&details);
             assert_eq!(
                 non_fungible_asset,
                 NonFungibleAsset::read_from_bytes(&non_fungible_asset.to_bytes()).unwrap()
@@ -341,8 +319,8 @@ mod tests {
         }
 
         let account = AccountId::try_from(ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET).unwrap();
-        let details = NonFungibleAssetDetails::new(account, vec![4, 5, 6, 7]).unwrap();
-        let asset = NonFungibleAsset::new(&details).unwrap();
+        let details = NonFungibleAssetDetails::new(account, vec![4, 5, 6, 7]);
+        let asset = NonFungibleAsset::new(&details);
         let mut asset_bytes = asset.to_bytes();
 
         let fungible_faucet_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET).unwrap();

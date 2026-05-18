@@ -283,9 +283,8 @@ mod tests {
     }
 
     fn non_fungible_asset() -> Asset {
-        let details =
-            NonFungibleAssetDetails::new(non_fungible_faucet(), vec![0xaa, 0xbb]).unwrap();
-        Asset::NonFungible(NonFungibleAsset::new(&details).unwrap())
+        let details = NonFungibleAssetDetails::new(non_fungible_faucet(), vec![0xaa, 0xbb]);
+        Asset::NonFungible(NonFungibleAsset::new(&details))
     }
 
     #[test]
@@ -358,21 +357,16 @@ mod tests {
             .unwrap(),
         );
 
-        let requested_asset = Asset::NonFungible(
-            NonFungibleAsset::new(
-                &NonFungibleAssetDetails::new(
-                    AccountId::dummy(
-                        non_fungible_faucet_id_bytes,
-                        AccountIdVersion::Version1,
-                        AccountType::NonFungibleFaucet,
-                        AccountStorageMode::Public,
-                    ),
-                    vec![0xaa, 0xbb, 0xcc, 0xdd],
-                )
-                .unwrap(),
-            )
-            .unwrap(),
-        );
+        let requested_asset =
+            Asset::NonFungible(NonFungibleAsset::new(&NonFungibleAssetDetails::new(
+                AccountId::dummy(
+                    non_fungible_faucet_id_bytes,
+                    AccountIdVersion::Version1,
+                    AccountType::NonFungibleFaucet,
+                    AccountStorageMode::Public,
+                ),
+                vec![0xaa, 0xbb, 0xcc, 0xdd],
+            )));
 
         // The fungible ID starts with 0xcdb1.
         // The non fungible ID starts with 0xabec.

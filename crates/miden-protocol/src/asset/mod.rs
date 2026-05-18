@@ -328,8 +328,8 @@ mod tests {
             ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET_1,
         ] {
             let account_id = AccountId::try_from(non_fungible_account_id).unwrap();
-            let details = NonFungibleAssetDetails::new(account_id, vec![1, 2, 3]).unwrap();
-            let non_fungible_asset: Asset = NonFungibleAsset::new(&details).unwrap().into();
+            let details = NonFungibleAssetDetails::new(account_id, vec![1, 2, 3]);
+            let non_fungible_asset: Asset = NonFungibleAsset::new(&details).into();
             assert_eq!(
                 non_fungible_asset,
                 Asset::read_from_bytes(&non_fungible_asset.to_bytes()).unwrap()

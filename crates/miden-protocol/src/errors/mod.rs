@@ -471,12 +471,6 @@ pub enum AssetError {
         "the three most significant elements in a fungible asset's value must be zero but provided value was {0}"
     )]
     FungibleAssetValueMostSignificantElementsMustBeZero(Word),
-    #[error(
-      "faucet id {0} of type {id_type} must be of type {expected_ty} for non fungible assets",
-      id_type = .0.account_type(),
-      expected_ty = AccountType::NonFungibleFaucet
-    )]
-    NonFungibleFaucetIdTypeMismatch(AccountId),
     #[error("smt proof in asset witness contains invalid key or value")]
     AssetWitnessInvalid(#[source] Box<AssetError>),
     #[error("unknown native asset callbacks encoding: {0}")]

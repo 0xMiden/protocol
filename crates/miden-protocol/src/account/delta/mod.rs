@@ -703,17 +703,13 @@ mod tests {
             )],
         );
 
-        let non_fungible: Asset = NonFungibleAsset::new(
-            &NonFungibleAssetDetails::new(
-                AccountIdBuilder::new()
-                    .account_type(AccountType::NonFungibleFaucet)
-                    .storage_mode(AccountStorageMode::Public)
-                    .build_with_rng(&mut rand::rng()),
-                vec![6],
-            )
-            .unwrap(),
-        )
-        .unwrap()
+        let non_fungible: Asset = NonFungibleAsset::new(&NonFungibleAssetDetails::new(
+            AccountIdBuilder::new()
+                .account_type(AccountType::NonFungibleFaucet)
+                .storage_mode(AccountStorageMode::Public)
+                .build_with_rng(&mut rand::rng()),
+            vec![6],
+        ))
         .into();
         let fungible_2: Asset = FungibleAsset::new(
             AccountIdBuilder::new()
