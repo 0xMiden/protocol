@@ -1,5 +1,14 @@
 use crate::account::AccountId;
-use crate::asset::{Asset, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
+use crate::asset::{
+    Asset,
+    AssetCallbackFlag,
+    AssetComposition,
+    AssetId,
+    AssetVaultKey,
+    FungibleAsset,
+    NonFungibleAsset,
+    NonFungibleAssetDetails,
+};
 use crate::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET,
@@ -38,5 +47,18 @@ impl FungibleAsset {
     /// Returns a mocked asset account ID ([ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET]).
     pub fn mock_issuer() -> AccountId {
         AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap()
+    }
+}
+
+impl AssetVaultKey {
+    /// Constructs a fungible asset's key from a faucet ID with callbacks disabled.
+    pub fn new_fungible(faucet_id: AccountId) -> Self {
+        Self::new(
+            AssetId::default(),
+            faucet_id,
+            AssetComposition::Fungible,
+            AssetCallbackFlag::Disabled,
+        )
+        .expect("we should have account type fungible faucet")
     }
 }

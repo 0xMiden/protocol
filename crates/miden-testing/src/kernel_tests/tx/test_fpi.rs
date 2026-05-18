@@ -749,7 +749,7 @@ async fn foreign_account_can_get_balance_and_presence_of_asset() -> anyhow::Resu
     let non_fungible_asset = Asset::NonFungible(NonFungibleAsset::new(
         &NonFungibleAssetDetails::new(non_fungible_faucet_id, vec![1, 2, 3]),
     ));
-    let fungible_asset_key = AssetVaultKey::new_fungible(fungible_faucet_id).unwrap();
+    let fungible_asset_key = AssetVaultKey::new_fungible(fungible_faucet_id);
 
     let foreign_account_code_source = format!(
         "
@@ -862,7 +862,7 @@ async fn foreign_account_can_get_balance_and_presence_of_asset() -> anyhow::Resu
 async fn foreign_account_get_initial_balance() -> anyhow::Result<()> {
     let fungible_faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)?;
     let fungible_asset = Asset::Fungible(FungibleAsset::new(fungible_faucet_id, 10)?);
-    let fungible_asset_key = AssetVaultKey::new_fungible(fungible_faucet_id).unwrap();
+    let fungible_asset_key = AssetVaultKey::new_fungible(fungible_faucet_id);
 
     let foreign_account_code_source = format!(
         "

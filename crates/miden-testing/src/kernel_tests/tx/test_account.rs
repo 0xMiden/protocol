@@ -989,7 +989,7 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
         .expect("faucet_id should be a fungible faucet ID")
         .as_u64();
 
-    let asset_key = AssetVaultKey::new_fungible(faucet_existing_asset).unwrap();
+    let asset_key = AssetVaultKey::new_fungible(faucet_existing_asset);
     let add_existing_source = format!(
         r#"
         use miden::protocol::active_account
@@ -1042,7 +1042,7 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
         .expect("faucet_id should be a fungible faucet ID")
         .as_u64();
 
-    let asset_key = AssetVaultKey::new_fungible(faucet_new_asset).unwrap();
+    let asset_key = AssetVaultKey::new_fungible(faucet_new_asset);
     let add_new_source = format!(
         r#"
         use miden::protocol::active_account
@@ -1123,7 +1123,7 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
     let expected_output_note =
         create_public_p2any_note(ACCOUNT_ID_SENDER.try_into()?, [fungible_asset_for_note_existing]);
 
-    let asset_key = AssetVaultKey::new_fungible(faucet_existing_asset).unwrap();
+    let asset_key = AssetVaultKey::new_fungible(faucet_existing_asset);
     let remove_existing_source = format!(
         r#"
         use miden::protocol::active_account

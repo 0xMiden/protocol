@@ -113,8 +113,8 @@ impl AssetVault {
             return Err(AssetVaultError::NotAFungibleFaucetId(faucet_id));
         }
 
-        let vault_key =
-            AssetVaultKey::new_fungible(faucet_id).expect("faucet ID should be of type fungible");
+        // TODO
+        let vault_key = AssetVaultKey::new_fungible(faucet_id);
         let asset_value = self.asset_tree.get_value(&vault_key.to_word());
         let asset = FungibleAsset::from_key_value(vault_key, asset_value)
             .expect("asset vault should only store valid assets");

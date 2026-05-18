@@ -5,7 +5,6 @@ use core::fmt;
 use miden_crypto::merkle::smt::LeafIndex;
 
 use crate::account::AccountId;
-use crate::account::AccountType::{self};
 use crate::asset::vault::AssetId;
 use crate::asset::{Asset, AssetCallbackFlag, AssetComposition, FungibleAsset, NonFungibleAsset};
 use crate::crypto::merkle::smt::SMT_DEPTH;
@@ -76,63 +75,24 @@ impl AssetVaultKey {
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
-    /// Creates an [`AssetVaultKey`] for a native asset with callbacks disabled.
-    ///
-    /// The [`AssetComposition`] is inferred from the faucet's account type.
-    ///
-    /// # Errors
-    ///
-    /// See [`Self::new`] for the error conditions.
-    pub fn new_native(
-        asset_id: AssetId,
-        faucet_id: AccountId,
-        composition: AssetComposition,
-    ) -> Result<Self, AssetError> {
-        Self::new(asset_id, faucet_id, composition, AssetCallbackFlag::Disabled)
-    }
-
     /// Creates an [`AssetVaultKey`] from its parts with the given [`AssetComposition`] and
     /// [`AssetCallbackFlag`].
     ///
     /// # Errors
     ///
     /// Returns an error if:
-    /// - the provided ID is not of type
-    ///   [`AccountType::FungibleFaucet`](crate::account::AccountType::FungibleFaucet) or
-    ///   [`AccountType::NonFungibleFaucet`](crate::account::AccountType::NonFungibleFaucet).
     /// - the asset ID limbs are not zero when `composition` is [`AssetComposition::Fungible`].
-    /// - the composition is inconsistent with the faucet's account type (except for
-    ///   [`AssetComposition::Custom`], which is allowed for either faucet type).
+    /// - the composition is [`AssetComposition::Custom`], which is disallowed until its support is
+    ///   enabled in the tx kernel.
     pub fn new(
         asset_id: AssetId,
         faucet_id: AccountId,
         composition: AssetComposition,
         callback_flag: AssetCallbackFlag,
     ) -> Result<Self, AssetError> {
-        if !faucet_id.is_faucet() {
-            return Err(AssetError::InvalidFaucetAccountId(Box::from(format!(
-                "expected account ID of type faucet, found account type {}",
-                faucet_id.account_type()
-            ))));
-        }
-
         // For now, reject custom composition.
         if composition.is_custom() {
             return Err(AssetError::UnsupportedAssetComposition(AssetComposition::Custom));
-        }
-
-        // TODO(asset_composition): This will go away once we remove account type.
-        let expected = match faucet_id.account_type() {
-            AccountType::FungibleFaucet => AssetComposition::Fungible,
-            AccountType::NonFungibleFaucet => AssetComposition::None,
-            _ => unreachable!("checked above that the account is a faucet"),
-        };
-        if composition != expected && !composition.is_custom() {
-            return Err(AssetError::AssetCompositionMismatch {
-                faucet_id,
-                expected,
-                actual: composition,
-            });
         }
 
         if composition.is_fungible() && !asset_id.is_empty() {
@@ -196,22 +156,6 @@ impl AssetVaultKey {
         self.composition
     }
 
-    /// Constructs a fungible asset's key from a faucet ID.
-    ///
-    /// Returns `None` if the provided ID is not of type
-    /// [`AccountType::FungibleFaucet`](crate::account::AccountType::FungibleFaucet)
-    pub fn new_fungible(faucet_id: AccountId) -> Option<Self> {
-        if matches!(faucet_id.account_type(), AccountType::FungibleFaucet) {
-            let asset_id = AssetId::new(Felt::ZERO, Felt::ZERO);
-            Some(
-                Self::new_native(asset_id, faucet_id, AssetComposition::Fungible)
-                    .expect("we should have account type fungible faucet"),
-            )
-        } else {
-            None
-        }
-    }
-
     /// Returns the leaf index of a vault key.
     pub fn to_leaf_index(&self) -> LeafIndex<SMT_DEPTH> {
         LeafIndex::<SMT_DEPTH>::from(self.to_word())
@@ -248,12 +192,9 @@ impl TryFrom<Word> for AssetVaultKey {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - the faucet ID in the key is invalid or not of a faucet type.
-    /// - the asset ID limbs are not zero when `faucet_id` is of type
-    ///   [`AccountType::FungibleFaucet`](crate::account::AccountType::FungibleFaucet).
+    /// - the asset ID limbs are not zero when asset composition is [`AssetComposition::Fungible`].
     /// - the metadata byte has reserved bits set.
     /// - the composition encoded in the metadata byte is invalid.
-    /// - the composition is inconsistent with the faucet's account type.
     fn try_from(key: Word) -> Result<Self, Self::Error> {
         let asset_id_suffix = key[0];
         let asset_id_prefix = key[1];

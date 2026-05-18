@@ -35,7 +35,7 @@ async fn get_balance_returns_correct_amount() -> anyhow::Result<()> {
     let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
 
     let faucet_id: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap();
-    let asset_key = AssetVaultKey::new_fungible(faucet_id).unwrap();
+    let asset_key = AssetVaultKey::new_fungible(faucet_id);
     let code = format!(
         r#"
         use $kernel::prologue
@@ -70,7 +70,7 @@ async fn get_balance_returns_correct_amount() -> anyhow::Result<()> {
 async fn peek_asset_returns_correct_asset() -> anyhow::Result<()> {
     let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
     let faucet_id: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap();
-    let asset_key = AssetVaultKey::new_fungible(faucet_id).unwrap();
+    let asset_key = AssetVaultKey::new_fungible(faucet_id);
 
     let code = format!(
         r#"

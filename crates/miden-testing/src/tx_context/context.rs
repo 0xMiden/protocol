@@ -92,8 +92,7 @@ impl TransactionContext {
             .collect::<BTreeSet<_>>();
         let fee_asset_vault_key = AssetVaultKey::new_fungible(
             self.tx_inputs().block_header().fee_parameters().fee_faucet_id(),
-        )
-        .expect("fee asset should be a fungible asset");
+        );
         asset_vault_keys.extend([fee_asset_vault_key]);
 
         let (account, block_header, _blockchain) = self
@@ -107,8 +106,7 @@ impl TransactionContext {
         // Add the vault key for the fee asset to the list of asset vault keys which may need to be
         // accessed at the end of the transaction.
         let fee_asset_vault_key =
-            AssetVaultKey::new_fungible(block_header.fee_parameters().fee_faucet_id())
-                .expect("fee asset should be a fungible asset");
+            AssetVaultKey::new_fungible(block_header.fee_parameters().fee_faucet_id());
         asset_vault_keys.insert(fee_asset_vault_key);
 
         // Fetch the witnesses for all asset vault keys.

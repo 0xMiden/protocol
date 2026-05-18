@@ -252,9 +252,8 @@ mod tests {
     use super::*;
     use crate::Felt;
     use crate::account::AccountId;
-    use crate::asset::tests::set_asset_metadata;
+    use crate::asset::FungibleAsset;
     use crate::testing::account_id::{
-        ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
         ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET,
         ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET,
         ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET_1,
@@ -263,15 +262,16 @@ mod tests {
     #[test]
     fn non_fungible_asset_from_key_value_words_fails_on_invalid_composition() -> anyhow::Result<()>
     {
-        let asset = NonFungibleAsset::mock(&[42]);
-        // Set the composition bits to an unsupported value (Fungible on a non-fungible asset).
-        let asset_key = set_asset_metadata(asset.vault_key(), AssetComposition::Fungible.as_u8());
+        // Use a fungible asset's key-value words where the the composition is set to `Fungible`.
+        let asset = FungibleAsset::mock(20);
 
         let err =
-            NonFungibleAsset::from_key_value_words(asset_key, asset.to_value_word()).unwrap_err();
+            NonFungibleAsset::from_key_value_words(asset.to_key_word(), asset.to_value_word())
+                .unwrap_err();
         assert_matches!(err, AssetError::AssetCompositionMismatch {
-                faucet_id: _, expected, actual: _
+                faucet_id: _, expected, actual,
             } => {
+                assert_eq!(actual, AssetComposition::Fungible);
                 assert_eq!(expected, AssetComposition::None);
         });
 
@@ -280,10 +280,11 @@ mod tests {
 
     #[test]
     fn fungible_asset_from_key_value_fails_on_invalid_asset_id() -> anyhow::Result<()> {
-        let invalid_key = AssetVaultKey::new_native(
+        let invalid_key = AssetVaultKey::new(
             AssetId::new(Felt::from(1u32), Felt::from(2u32)),
             ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET.try_into()?,
             AssetComposition::None,
+            AssetCallbackFlag::Disabled,
         )?;
         let err =
             NonFungibleAsset::from_key_value(invalid_key, Word::from([4, 5, 6, 7u32])).unwrap_err();
@@ -318,22 +319,11 @@ mod tests {
             )
         }
 
-        let account = AccountId::try_from(ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET).unwrap();
-        let details = NonFungibleAssetDetails::new(account, vec![4, 5, 6, 7]);
-        let asset = NonFungibleAsset::new(&details);
-        let mut asset_bytes = asset.to_bytes();
-
-        let fungible_faucet_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET).unwrap();
-
-        // Overwrite the faucet ID (which now follows the composition byte) with a fungible
-        // faucet ID. The composition byte at offset 0 still declares the asset as non-fungible,
-        // so deserialization should reject it once the inner check runs.
-        let faucet_id_start = AssetComposition::SERIALIZED_SIZE;
-        let faucet_id_end = faucet_id_start + AccountId::SERIALIZED_SIZE;
-        asset_bytes[faucet_id_start..faucet_id_end].copy_from_slice(&fungible_faucet_id.to_bytes());
-
-        let err = NonFungibleAsset::read_from_bytes(&asset_bytes).unwrap_err();
-        assert_matches!(err, DeserializationError::InvalidValue(msg) if msg.contains("must be of type NonFungibleFaucet"));
+        let fungible_asset = FungibleAsset::mock(42);
+        let err = NonFungibleAsset::read_from_bytes(&fungible_asset.to_bytes()).unwrap_err();
+        assert_matches!(err, DeserializationError::InvalidValue(msg) => {
+            assert!(msg.contains("expected non-fungible asset composition but found Fungible"));
+        });
 
         Ok(())
     }

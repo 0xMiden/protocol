@@ -288,10 +288,10 @@ mod tests {
 
     use super::*;
     use crate::account::AccountId;
+    use crate::asset::NonFungibleAsset;
     use crate::asset::tests::set_asset_metadata;
     use crate::testing::account_id::{
         ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
-        ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET,
         ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
         ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
         ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2,
@@ -374,24 +374,11 @@ mod tests {
             )
         }
 
-        let account_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_3).unwrap();
-        let asset = FungibleAsset::new(account_id, 50).unwrap();
-        let mut asset_bytes = asset.to_bytes();
-        assert_eq!(asset_bytes.len(), asset.get_size_hint());
-        assert_eq!(asset.get_size_hint(), FungibleAsset::SERIALIZED_SIZE);
-
-        let non_fungible_faucet_id =
-            AccountId::try_from(ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET).unwrap();
-
-        // Overwrite the faucet ID with a non-fungible faucet ID. The composition byte at offset 0
-        // still declares the asset as fungible, so deserialization should reject it once the inner
-        // check runs.
-        let faucet_id_start = AssetComposition::SERIALIZED_SIZE;
-        let faucet_id_end = faucet_id_start + AccountId::SERIALIZED_SIZE;
-        asset_bytes[faucet_id_start..faucet_id_end]
-            .copy_from_slice(&non_fungible_faucet_id.to_bytes());
-        let err = FungibleAsset::read_from_bytes(&asset_bytes).unwrap_err();
-        assert!(matches!(err, DeserializationError::InvalidValue(_)));
+        let non_fungible_asset = NonFungibleAsset::mock(&[4]);
+        let err = FungibleAsset::read_from_bytes(&non_fungible_asset.to_bytes()).unwrap_err();
+        assert_matches!(err, DeserializationError::InvalidValue(msg) => {
+            assert!(msg.contains("expected fungible asset composition but found None"));
+        });
 
         Ok(())
     }
