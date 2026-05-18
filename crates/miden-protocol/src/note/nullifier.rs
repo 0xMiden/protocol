@@ -12,11 +12,12 @@ use super::{
     DeserializationError,
     Felt,
     Hasher,
-    NoteDetails,
+    Note,
     Serializable,
     Word,
     ZERO,
 };
+use crate::note::{NoteDetails, NoteMetadata};
 
 // CONSTANTS
 // ================================================================================================
@@ -30,30 +31,44 @@ const NULLIFIER_PREFIX_SHIFT: u8 = 48;
 ///
 /// A note's nullifier is computed as:
 ///
-/// > hash(serial_num, script_root, storage_commitment, asset_commitment).
+/// > hash(serial_num, script_root, storage_commitment, asset_commitment,
+/// > metadata_commitment, EMPTY_WORD).
 ///
 /// This achieves the following properties:
 /// - Every note can be reduced to a single unique nullifier.
 /// - We cannot derive a note's commitment from its nullifier, or a note's nullifier from its hash.
 /// - To compute the nullifier we must know all components of the note: serial_num, script_root,
-///   storage_commitment and asset_commitment.
+///   storage_commitment, asset_commitment and metadata_commitment.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, WordWrapper)]
 pub struct Nullifier(Word);
 
 impl Nullifier {
-    /// Returns a new note [Nullifier] instantiated from the provided digest.
+    /// Returns a new note [Nullifier] instantiated from the provided note components.
     pub fn new(
         script_root: Word,
         storage_commitment: Word,
         asset_commitment: Word,
         serial_num: Word,
+        metadata_commitment: Word,
     ) -> Self {
-        let mut elements = [ZERO; 4 * WORD_SIZE];
+        let mut elements = [ZERO; 6 * WORD_SIZE];
         elements[..4].copy_from_slice(serial_num.as_elements());
         elements[4..8].copy_from_slice(script_root.as_elements());
         elements[8..12].copy_from_slice(storage_commitment.as_elements());
-        elements[12..].copy_from_slice(asset_commitment.as_elements());
+        elements[12..16].copy_from_slice(asset_commitment.as_elements());
+        elements[16..20].copy_from_slice(metadata_commitment.as_elements());
         Self(Hasher::hash_elements(&elements))
+    }
+
+    /// Returns a new note [Nullifier] instantiated from the provided note details and metadata.
+    pub fn from_details_and_metadata(details: &NoteDetails, metadata: &NoteMetadata) -> Self {
+        Self::new(
+            details.script().root().into(),
+            details.storage().commitment(),
+            details.assets().commitment(),
+            details.serial_num(),
+            metadata.to_commitment(),
+        )
     }
 
     /// Returns the most significant felt (the last element in array)
@@ -97,13 +112,14 @@ impl Debug for Nullifier {
 // CONVERSIONS INTO NULLIFIER
 // ================================================================================================
 
-impl From<&NoteDetails> for Nullifier {
-    fn from(note: &NoteDetails) -> Self {
+impl From<&Note> for Nullifier {
+    fn from(note: &Note) -> Self {
         Self::new(
             note.script().root().into(),
             note.storage().commitment(),
             note.assets().commitment(),
             note.serial_num(),
+            note.metadata().to_commitment(),
         )
     }
 }

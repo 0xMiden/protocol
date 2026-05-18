@@ -5,6 +5,7 @@
 ### Features
 
 - [BREAKING] Renamed `NoteId` to `NoteDetailsCommitment`, new `NoteId` struct now includes the NoteMetadata ([#1731](https://github.com/0xMiden/protocol/issues/1731)).
+- [BREAKING] Updated note nullifiers to include the note metadata commitment ([#1731](https://github.com/0xMiden/protocol/issues/1731)).
 - [BREAKING] Renamed `native_asset_id` to `fee_faucet_id` ([#2718](https://github.com/0xMiden/protocol/pull/2718)).
 - [BREAKING] Removed redundant outputs from kernel procedures: `note::write_assets_to_memory`, `active_note::get_assets`, `input_note::get_assets`, `output_note::get_assets`, `active_note::get_storage`, and `faucet::mint` no longer return values identical to their inputs ([#2523](https://github.com/0xMiden/protocol/issues/2523)).
 - Added PSWAP (partial swap) note for decentralized partial-fill asset exchange with remainder note re-creation ([#2636](https://github.com/0xMiden/protocol/pull/2636)).

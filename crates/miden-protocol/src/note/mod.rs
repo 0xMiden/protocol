@@ -122,7 +122,7 @@ impl Note {
         let details = NoteDetails::new(assets, recipient);
         let metadata = NoteMetadata::new(partial_metadata, &attachments);
         let header = NoteHeader::new(details.commitment(), metadata);
-        let nullifier = details.nullifier();
+        let nullifier = Nullifier::from_details_and_metadata(&details, &metadata);
 
         Self { header, details, attachments, nullifier }
     }

@@ -167,14 +167,14 @@ For a practical example, refer to the [SWAP note script](https://github.com/0xMi
 The `Note` nullifier, computed as:
 
 ```arduino
-hash(serial_num, script_root, storage_commitment, vault_hash)
+hash(serial_num, script_root, storage_commitment, vault_hash, metadata_commitment, EMPTY_WORD)
 ```
 
 This achieves the following properties:
 
 - Every `Note` can be reduced to a single unique nullifier.
 - One cannot derive a note's hash from its nullifier.
-- To compute the nullifier, one must know all components of the `Note`: serial_num, script_root, storage_commitment, and vault_hash.
+- To compute the nullifier, one must know all components of the `Note`: serial_num, script_root, storage_commitment, vault_hash, and metadata_commitment.
 
 That means if a `Note` is private and the operator stores only the note's hash, only those with the `Note` details know if this `Note` has been consumed already. Zcash first [introduced](https://zcash.github.io/orchard/design/nullifiers.html#nullifiers) this approach.
 
