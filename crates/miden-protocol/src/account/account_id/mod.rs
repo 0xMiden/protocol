@@ -39,7 +39,7 @@ use crate::utils::serde::{
 /// second is called the suffix. It is laid out as follows:
 ///
 /// ```text
-/// prefix: [hash (57 bits) | storage mode (1 bit) | type (2 bits) | version (4 bits)]
+/// prefix: [hash (59 bits) | storage mode (1 bit) | version (4 bits)]
 /// suffix: [zero bit | hash (55 bits) | 8 zero bits]
 /// ```
 ///
@@ -56,8 +56,8 @@ use crate::utils::serde::{
 /// derive exactly from the hash, while only the first 56 bits of the suffix are derived from the
 /// hash.
 ///
-/// In total, due to requiring specific bits for storage mode, type, version and the most
-/// significant bit in the suffix, generating an ID requires 8 bits of Proof-of-Work.
+/// In total, due to requiring specific bits for storage mode, version and the most significant bit
+/// in the suffix, generating an ID requires 6 bits of Proof-of-Work.
 ///
 /// # Constraints
 ///

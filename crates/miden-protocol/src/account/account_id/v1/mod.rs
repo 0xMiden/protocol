@@ -54,7 +54,7 @@ impl AccountIdV1 {
     /// The second most significant bit of the prefix's least significant byte encodes the account
     /// storage mode.
     pub(crate) const STORAGE_MODE_MASK: u8 = 0b1 << Self::STORAGE_MODE_SHIFT;
-    pub(crate) const STORAGE_MODE_SHIFT: u64 = 6;
+    pub(crate) const STORAGE_MODE_SHIFT: u64 = 4;
 
     /// The element index in the seed digest that becomes the account ID suffix (after
     /// [`shape_suffix`]).
