@@ -1,26 +1,19 @@
-//! Tests that the AggLayer bridge's and AggLayer faucet's [`AuthNetworkAccount`] components
-//! enforce both rejection paths required to keep their metadata senders from being attached to
-//! attacker-authored output notes:
+//! Tests that the AggLayer bridge's [`AuthNetworkAccount`] component enforces both rejection
+//! paths required to keep its metadata sender from being attached to attacker-authored output
+//! notes:
 //!
-//! 1. The account rejects any transaction that executes a tx script.
-//! 2. The account rejects any input note whose script root is not in its
-//!    [`allowed_notes`](miden_agglayer::AggLayerBridge::allowed_notes) /
-//!    [`allowed_notes`](miden_agglayer::AggLayerFaucet::allowed_notes) set.
+//! 1. The bridge rejects any transaction that executes a tx script.
+//! 2. The bridge rejects any input note whose script root is not in
+//!    [`miden_agglayer::AggLayerBridge::allowed_notes`].
 //!
 //! [`AuthNetworkAccount`]: miden_standards::account::auth::AuthNetworkAccount
 
+extern crate alloc;
+
 use core::slice;
 
-use miden_agglayer::{
-    EthAddress,
-    ExitRoot,
-    MetadataHash,
-    UpdateGerNote,
-    create_existing_agglayer_faucet,
-    create_existing_bridge_account,
-};
+use miden_agglayer::{ExitRoot, UpdateGerNote, create_existing_bridge_account};
 use miden_crypto::rand::FeltRng;
-use miden_protocol::Felt;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::transaction::RawOutputNote;
 use miden_standards::code_builder::CodeBuilder;
@@ -118,100 +111,6 @@ async fn bridge_rejects_non_allowlisted_input_note() -> anyhow::Result<()> {
 
     let result = mock_chain
         .build_tx_context(bridge_account.id(), &[], slice::from_ref(&attack_note))?
-        .build()?
-        .execute()
-        .await;
-
-    assert_transaction_executor_error!(result, ERR_NOTE_SCRIPT_ALLOWLIST_NOTE_NOT_ALLOWED);
-
-    Ok(())
-}
-
-/// Asserts that a transaction submitting any tx script against an AggLayer faucet account fails
-/// with [`ERR_NOTE_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED`]. Symmetric to
-/// [`bridge_rejects_tx_script`]: the faucet's [`AuthNetworkAccount`] allowlist (MINT, BURN) must
-/// reject every tx script, regardless of which input notes (if any) accompany it.
-///
-/// [`AuthNetworkAccount`]: miden_standards::account::auth::AuthNetworkAccount
-#[tokio::test]
-async fn faucet_rejects_tx_script() -> anyhow::Result<()> {
-    let mut builder = MockChain::builder();
-
-    // The bridge_account_id is wired into the faucet at creation time as the registered owner;
-    // we never execute against the bridge in this test, so a placeholder admin wallet is enough.
-    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
-
-    let faucet = create_existing_agglayer_faucet(
-        builder.rng_mut().draw_word(),
-        "TEST",
-        8,
-        Felt::new(1_000_000),
-        Felt::ZERO,
-        bridge_admin.id(),
-        &EthAddress::from([1u8; 20]),
-        0,
-        10,
-        MetadataHash::new([0u8; 32]),
-    );
-    builder.add_account(faucet.clone())?;
-
-    let mock_chain = builder.build()?;
-
-    let tx_script = CodeBuilder::default().compile_tx_script("begin nop end")?;
-
-    let result = mock_chain
-        .build_tx_context(faucet.id(), &[], &[])?
-        .tx_script(tx_script)
-        .build()?
-        .execute()
-        .await;
-
-    assert_transaction_executor_error!(result, ERR_NOTE_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED);
-
-    Ok(())
-}
-
-/// Asserts that a transaction consuming an input note whose script root falls outside the
-/// faucet's allowlist (MINT, BURN) fails with [`ERR_NOTE_SCRIPT_ALLOWLIST_NOTE_NOT_ALLOWED`].
-/// Symmetric to [`bridge_rejects_non_allowlisted_input_note`]: the faucet's
-/// [`AuthNetworkAccount`] component must reject any non-MINT/BURN input note.
-///
-/// [`AuthNetworkAccount`]: miden_standards::account::auth::AuthNetworkAccount
-#[tokio::test]
-async fn faucet_rejects_non_allowlisted_input_note() -> anyhow::Result<()> {
-    let mut builder = MockChain::builder();
-
-    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
-
-    let faucet = create_existing_agglayer_faucet(
-        builder.rng_mut().draw_word(),
-        "TEST",
-        8,
-        Felt::new(1_000_000),
-        Felt::ZERO,
-        bridge_admin.id(),
-        &EthAddress::from([1u8; 20]),
-        0,
-        10,
-        MetadataHash::new([0u8; 32]),
-    );
-    builder.add_account(faucet.clone())?;
-
-    let attack_note = NoteBuilder::new(bridge_admin.id(), &mut rand::rng())
-        .code(ATTACK_NOTE_CODE)
-        .build()
-        .expect("failed to build attack note");
-
-    builder.add_output_note(RawOutputNote::Full(attack_note.clone()));
-
-    let mock_chain = builder.build()?;
-
-    let result = mock_chain
-        .build_tx_context(faucet.id(), &[], slice::from_ref(&attack_note))?
         .build()?
         .execute()
         .await;

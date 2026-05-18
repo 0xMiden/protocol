@@ -30,6 +30,7 @@ use miden_protocol::crypto::SequentialCommit;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::tx_kernel::ERR_FUNGIBLE_ASSET_FAUCET_IS_NOT_ORIGIN;
 use miden_protocol::note::NoteType;
+use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
 use miden_protocol::transaction::RawOutputNote;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
@@ -451,7 +452,7 @@ async fn test_mint_cannot_be_consumed_by_unrelated_faucet() -> anyhow::Result<()
     let token_symbol_a = "AGGA";
     let token_symbol_b = "AGGB";
     let decimals = 8u8;
-    let max_supply = Felt::new(FungibleAsset::MAX_AMOUNT);
+    let max_supply: Felt = FungibleAsset::MAX_AMOUNT.into();
     let scale = 10u8;
 
     // faucet_A is the bridge's registered faucet for the claim's origin token address.
