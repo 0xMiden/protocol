@@ -137,8 +137,7 @@ impl AccountIdBuilder {
 
     /// Builds an [`AccountId`] using the provided [`rand::Rng`].
     ///
-    /// If no [`AccountType`] or [`AccountStorageMode`] were previously set, random ones are
-    /// generated.
+    /// If no [`AccountStorageMode`] was previously set, a random one is generated.
     pub fn build_with_rng<R: rand::Rng + ?Sized>(self, rng: &mut R) -> AccountId {
         let storage_mode = match self.storage_mode {
             Some(storage_mode) => storage_mode,
@@ -151,8 +150,7 @@ impl AccountIdBuilder {
     /// Builds an [`AccountId`] using the provided seed as input for an RNG implemented in
     /// [`rand_xoshiro`].
     ///
-    /// If no [`AccountType`] or [`AccountStorageMode`] were previously set, random ones are
-    /// generated.
+    /// If no [`AccountStorageMode`] was previously set, a random one is generated.
     pub fn build_with_seed(self, rng_seed: [u8; 32]) -> AccountId {
         // Match the implementation of rand::rngs::SmallRng and use different RNGs depending on the
         // platform.

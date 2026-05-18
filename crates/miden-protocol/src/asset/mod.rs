@@ -44,10 +44,8 @@ pub use vault::{AssetId, AssetVault, AssetVaultKey, AssetWitness, PartialVault};
 /// (4 elements). This makes it is easy to determine the type of an asset both inside and outside
 /// Miden VM. Specifically:
 ///
-/// The vault key of an asset contains the [`AccountId`] of the faucet that issues the asset. It can
-/// be used to distinguish assets based on the encoded [`AccountId::account_type`]. In the vault
-/// keys of assets, the account type bits at index 4 and 5 determine whether the asset is fungible
-/// or non-fungible.
+/// The vault key of an asset contains the [`AssetComposition`] which describes how assets compose,
+/// meaning whether they can be merged or split.
 ///
 /// This property guarantees that there can never be a collision between a fungible and a
 /// non-fungible asset.

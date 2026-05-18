@@ -26,7 +26,6 @@ use crate::{Felt, Word};
 ///   mode.
 ///
 /// By default, the builder is initialized with:
-/// - The `account_type` set to [`AccountType::RegularAccountUpdatableCode`].
 /// - The `storage_mode` set to [`AccountStorageMode::Private`].
 /// - The `version` set to [`AccountIdVersion::Version1`].
 ///
@@ -41,13 +40,12 @@ use crate::{Felt, Word};
 /// - Add assets to the account's vault; this only succeeds when using
 ///   `AccountBuilder::build_existing`.
 ///
-/// **Storage Slot Order**
+/// **Account Procedure Order**
 ///
-/// Note that the components are merged together in the same order as `with_component` is called,
-/// except for the auth component. It is always moved to the first position, due to the requirement
-/// that the auth procedure must be at procedure index 0 within an [`AccountCode`]. That also
-/// affects the storage slot order and means the auth component's storage comes first, if it has any
-/// storage.
+/// Note that the procedure in each components code are merged together in the same order as
+/// `with_component` is called, except for the auth component. The auth procedure is always moved to
+/// the first position, since the tx kernel assume procedure index 0 is the auth procedure within an
+/// [`AccountCode`].
 #[derive(Debug, Clone)]
 pub struct AccountBuilder {
     #[cfg(any(feature = "testing", test))]

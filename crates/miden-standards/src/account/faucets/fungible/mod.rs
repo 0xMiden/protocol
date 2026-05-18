@@ -96,8 +96,6 @@ procedure_root!(
 /// [`TokenPolicyManager`]. `receive_and_burn` can only be called from a note script and is gated
 /// by the active burn policy.
 ///
-/// This component supports accounts of type [`AccountType::FungibleFaucet`].
-///
 /// [builder]: crate::code_builder::CodeBuilder
 /// [`TokenPolicyManager`]: crate::account::policies::TokenPolicyManager
 #[derive(Debug, Clone)]

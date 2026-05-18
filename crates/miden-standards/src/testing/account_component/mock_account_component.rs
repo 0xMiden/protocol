@@ -14,9 +14,6 @@ use crate::testing::mock_account_code::MockAccountCodeExt;
 /// arbitrary number of storage slots (within the overall limit) so anything can be set for testing
 /// purposes.
 ///
-/// This component supports all [`AccountType`](miden_protocol::account::AccountType)s for testing
-/// purposes.
-///
 /// [account_lib]: crate::testing::mock_account_code::MockAccountCodeExt::mock_account_library
 pub struct MockAccountComponent {
     storage_slots: Vec<StorageSlot>,

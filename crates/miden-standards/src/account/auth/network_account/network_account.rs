@@ -26,11 +26,6 @@ use crate::account::auth::network_account::{
 /// The allowlist slot is the shared abstraction across every network-account component, so
 /// off-chain services can identify a network account by inspecting its storage for this slot
 /// without needing to know which specific component the account uses.
-///
-/// The account's [`AccountType`](miden_protocol::account::AccountType) is intentionally
-/// unconstrained: both regular accounts and faucets may be network accounts, matching the fact
-/// that the [`AuthNetworkAccount`](crate::account::auth::network_account::AuthNetworkAccount)
-/// component supports all account types.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NetworkAccount {
     account: Account,
