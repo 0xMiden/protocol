@@ -456,12 +456,7 @@ proc compute_transaction_threshold(default_threshold: u32) -> u32
     # => [effective_transaction_threshold]
 end
 
-#! Returns the transaction-initial default_threshold and num_approvers from `THRESHOLD_CONFIG_SLOT`,
-#! i.e. the values as they were at the beginning of the transaction.
-#!
-#! Used internally for auth-time reads (signature verification, signer membership) which must
-#! operate on the state that was signed over. External callers that need the live values must use
-#! `get_threshold_and_num_approvers` instead.
+#! Returns the initial threshold and num_approvers from `THRESHOLD_CONFIG_SLOT`.
 #!
 #! Inputs: []
 #! Outputs: [default_threshold, num_approvers]
@@ -476,13 +471,7 @@ pub proc get_initial_threshold_and_num_approvers
     # => [default_threshold, num_approvers]
 end
 
-#! Returns the *current* default_threshold and num_approvers from `THRESHOLD_CONFIG_SLOT`,
-#! reflecting any in-transaction updates (e.g. an earlier `update_signers_and_threshold` call in
-#! the same transaction).
-#!
-#! This is the externally callable accessor. Setters that must enforce invariants against the
-#! latest state should `exec` this. Auth-time reads must use
-#! `get_initial_threshold_and_num_approvers` instead.
+#! Returns the current threshold and num_approvers from `THRESHOLD_CONFIG_SLOT`.
 #!
 #! Inputs: []
 #! Outputs: [default_threshold, num_approvers]
@@ -515,10 +504,6 @@ end
 #!
 #! Invocation: call
 pub proc set_procedure_threshold
-    # Use the *current* num_approvers so that an `update_signers_and_threshold` call earlier in the
-    # same transaction (which may have reduced num_approvers) is reflected here. Reading the initial
-    # value would let a caller store an unreachable override and permanently DoS the targeted
-    # procedure.
     exec.get_threshold_and_num_approvers
     # => [default_threshold, num_approvers, proc_threshold, PROC_ROOT]
 
