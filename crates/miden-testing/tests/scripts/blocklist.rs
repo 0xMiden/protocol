@@ -473,15 +473,21 @@ async fn mint_and_send_on_blocklist_basic_faucet() -> anyhow::Result<()> {
     let tag = NoteTag::default();
     let note_type = NoteType::Private;
 
+    // `mint_and_send` takes the full asset (ASSET_KEY + ASSET_VALUE) the MINT note carries.
+    let asset = FungibleAsset::new(faucet.id(), amount)?.with_callbacks(AssetCallbackFlag::Enabled);
+    let asset_key = asset.to_key_word();
+    let asset_value = asset.to_value_word();
+
     let tx_script_code = format!(
         r#"
         begin
-            padw padw push.0
+            push.0.0
 
             push.{recipient}
             push.{note_type}
             push.{tag}
-            push.{amount}
+            push.{asset_value}
+            push.{asset_key}
 
             call.::miden::standards::faucets::fungible::mint_and_send
 
@@ -491,7 +497,8 @@ async fn mint_and_send_on_blocklist_basic_faucet() -> anyhow::Result<()> {
         recipient = recipient,
         note_type = note_type as u8,
         tag = u32::from(tag),
-        amount = amount,
+        asset_value = asset_value,
+        asset_key = asset_key,
     );
 
     let tx_script = CodeBuilder::default().compile_tx_script(&tx_script_code)?;
