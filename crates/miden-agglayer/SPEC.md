@@ -294,16 +294,16 @@ modules in `asm/agglayer/common/`.
 | **Inputs** | `[ASSET_KEY, ASSET_VALUE, tag, note_type, RECIPIENT, pad(2)]` |
 | **Outputs** | `[note_idx, pad(15)]` |
 | **Context** | Consuming a `MINT` note on the faucet account |
-| **Panics** | Faucet owner verification fails; minting exceeds supply; kernel `faucet::mint` rejects the call because `ASSET_KEY`'s faucet ID does not equal the active account |
+| **Panics** | Faucet owner verification fails; minting exceeds supply; the asset stored in the MINT note does not belong to the consuming faucet |
 
 Re-export of `miden::standards::faucets::fungible::mint_and_send`. Mints the asset
 identified by `ASSET_KEY` / `ASSET_VALUE` and creates an output note with the given
 recipient. Requires the faucet's owner (the bridge account) to be the creator of this note
 (the bridge is stored in `Ownable2Step` storage slot as the owner; the faucet's
 `mint_and_send` executes the current access policy via
-`exec.policy_manager::execute_mint_policy`). The kernel `faucet::mint` syscall then panics
-if `ASSET_KEY`'s faucet ID does not equal the active account, which binds the MINT note to
-its resolved faucet (see §4.7).
+`exec.policy_manager::execute_mint_policy`). `mint_and_send` then derives the asset to mint
+for the active faucet and panics if its key does not equal the stored `ASSET_KEY`, which
+binds the MINT note to its resolved faucet (see §4.7).
 
 #### `agglayer_faucet::get_metadata_hash`
 
@@ -747,23 +747,22 @@ the P2ID storage at `[20..21]`, and calls the faucet's `mint_and_send` procedure
 (re-exported from `fungible::mint_and_send`) with the stored `ASSET_KEY`, `ASSET_VALUE`,
 `dest_tag`, and `RECIPIENT`.
 
-`mint_and_send` stashes the supplied `ASSET_KEY` in locals, runs the active mint policy
+`mint_and_send` saves the supplied `ASSET_KEY` in a local, runs the active mint policy
 (`owner_controlled::owner_only` for AggLayer faucets, which asserts the MINT note's sender
 is the faucet's owner -- the bridge account, set via `Ownable2Step` at account creation),
-creates the skeleton P2ID output note via `output_note::create`, and then invokes the
-kernel `faucet::mint` syscall with the stashed `ASSET_KEY`. The kernel panics if
-`ASSET_KEY`'s faucet ID does not equal the active account, which binds the MINT note to
-its issuing faucet: a MINT note whose `ASSET_KEY` was resolved for faucet A cannot be
-consumed by any other faucet B even if both share the bridge as owner. Once the kernel
-bind passes, the minted asset is attached to the P2ID output note via
-`output_note::add_asset`.
+and creates the skeleton P2ID output note via `output_note::create`. It then derives the
+asset to mint for the active faucet and panics if its key does not equal the stored
+`ASSET_KEY`, which binds the MINT note to its issuing faucet: a MINT note whose `ASSET_KEY`
+was resolved for faucet A cannot be consumed by any other faucet B even if both share the
+bridge as owner. Once the bind passes, the minted asset is attached to the P2ID output
+note via `output_note::add_asset`.
 
 #### Permissions
 
 | Role | Enforcement |
 |------|------------|
 | **Issuer** | Bridge account only -- **enforced** by faucet's `owner_only` mint policy via `Ownable2Step` (asserts note sender is the faucet's owner, i.e. the bridge) |
-| **Consumer** | Target faucet only -- **enforced** by the kernel `faucet::mint` syscall, which panics if the stored `ASSET_KEY`'s faucet ID does not equal the active account. The `NetworkAccountTarget` attachment is retained as the network-routing primitive but is no longer the sole consume-side bind |
+| **Consumer** | Target faucet only -- **enforced** by `mint_and_send`, which panics if the asset derived for the active faucet does not match the stored `ASSET_KEY`. The `NetworkAccountTarget` attachment is retained as the network-routing primitive but is no longer the sole consume-side bind |
 
 ---
 

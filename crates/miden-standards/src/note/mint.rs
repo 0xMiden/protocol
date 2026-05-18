@@ -78,10 +78,9 @@ impl MintNote {
     /// embedded in its storage.
     ///
     /// The MINT script reads the asset (`ASSET_KEY` + `ASSET_VALUE`) directly from the note's
-    /// storage and passes it to the faucet's `mint_and_send` procedure. The kernel's
-    /// `faucet::mint` syscall (invoked inside `mint_and_send`) panics if the stored asset's
-    /// faucet ID does not equal the active account, so a MINT note bound to faucet A cannot
-    /// be redirected to faucet B even when both share an owner.
+    /// storage and passes it to the faucet's `mint_and_send` procedure, which rejects an asset
+    /// that does not belong to the consuming faucet. A MINT note bound to faucet A therefore
+    /// cannot be redirected to faucet B even when both share an owner.
     ///
     /// MINT notes are always PUBLIC (for network execution). Output notes can be either PRIVATE
     /// or PUBLIC depending on the [`MintNoteStorage`] variant used.
@@ -91,7 +90,7 @@ impl MintNote {
     ///
     /// # Parameters
     /// - `faucet_id`: The account ID of the network faucet that will mint the asset. Must equal
-    ///   `mint_storage.asset().faucet_id()` or `faucet::mint` will panic at consumption time.
+    ///   `mint_storage.asset().faucet_id()` or minting will fail at consumption time.
     /// - `sender`: The account ID of the note creator (must be the faucet owner)
     /// - `mint_storage`: The storage configuration specifying private or public output mode
     /// - `attachments`: The [`NoteAttachments`] of the MINT note

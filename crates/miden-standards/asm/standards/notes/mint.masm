@@ -32,9 +32,9 @@ const PUBLIC_OUTPUT_NOTE_STORAGE_PTR = STORAGE_PTR + 20
 const ERR_MINT_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS="MINT script expects exactly 13 storage items for private or 20+ storage items for public output notes"
 
 #! Network Faucet MINT script: mints the asset stored in the note by calling the network
-#! faucet's mint_and_send function. The asset's faucet ID is verified against the active
-#! account inside mint_and_send (via the kernel's faucet::mint syscall), so this script
-#! cannot be redirected to mint against an unrelated faucet.
+#! faucet's mint_and_send function. mint_and_send rejects an asset that does not belong to
+#! the consuming faucet, so this script cannot be redirected to mint against an unrelated
+#! faucet.
 #!
 #! This note is intended to be executed against a network fungible faucet account.
 #!
@@ -67,8 +67,7 @@ const ERR_MINT_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS="MINT script expects exactly 1
 #! - account does not expose mint_and_send procedure.
 #! - the number of storage items is not exactly 13 for private or less than 20 for public output
 #!   notes.
-#! - the ASSET_KEY's faucet ID does not match the active account (enforced inside
-#!   `mint_and_send` via the kernel's `faucet::mint` syscall).
+#! - the asset stored in the note does not belong to the consuming faucet.
 @note_script
 pub proc main
     dropw
