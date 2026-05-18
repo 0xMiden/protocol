@@ -173,7 +173,7 @@ hash(serial_num, script_root, storage_commitment, vault_hash)
 This achieves the following properties:
 
 - Every `Note` can be reduced to a single unique nullifier.
-- One cannot derive a note's hash from its nullifier.
+- One cannot derive a note's ID from its nullifier.
 - To compute the nullifier, one must know all components of the `Note`: serial_num, script_root, storage_commitment, and vault_hash.
 
 That means if a `Note` is private and the operator stores only the note's hash, only those with the `Note` details know if this `Note` has been consumed already. Zcash first [introduced](https://zcash.github.io/orchard/design/nullifiers.html#nullifiers) this approach.
