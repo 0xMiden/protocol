@@ -1,4 +1,4 @@
-# miden::standards::utils::pausable_rbac
+# miden::standards::utils::pausable::role_controlled
 #
 # Role-gated wrapper around `pausable::pause` / `pausable::unpause` / `pausable::is_paused`.
 # Pause and unpause are gated by separate roles (`PAUSER` and `UNPAUSER`) in
@@ -24,7 +24,7 @@ use miden::protocol::active_account
 # ================================================================================================
 
 # Named storage slot holding the role-symbols word.
-const ROLES_SLOT = word("miden::standards::components::utils::pausable_rbac::roles")
+const ROLES_SLOT = word("miden::standards::components::utils::pausable::role_controlled::roles")
 
 # PUBLIC INTERFACE
 # ================================================================================================

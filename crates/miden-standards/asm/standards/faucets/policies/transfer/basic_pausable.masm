@@ -1,0 +1,33 @@
+# miden::standards::faucets::policies::transfer::basic_pausable
+#
+# Basic pausable transfer policy: rejects transfers while the issuing faucet is paused.
+# Delegates the per-account pause state to the sibling `pausable` primitive (storage + helpers).
+
+use miden::standards::utils::pausable
+
+# POLICY PROCEDURES
+# ================================================================================================
+
+#! Transfer policy that rejects transfers while the issuing faucet is paused.
+#!
+#! Invoked as the active send or receive policy via `TokenPolicyManager`. Reads the issuing
+#! faucet's `is_paused` flag and panics with `ERR_PAUSABLE_ENFORCED_PAUSE` if it is non-zero.
+#!
+#! The same procedure root is reusable as both send and receive policy because it only
+#! consumes the top eight felts (`ASSET_KEY`, `ASSET_VALUE`) and leaves the rest of the call
+#! frame untouched — any `note_idx` carried in the send signature passes through unchanged.
+#!
+#! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
+#! Outputs: [ASSET_VALUE, pad(12)]
+#!
+#! Panics if:
+#! - the issuing faucet is currently paused.
+#!
+#! Invocation: call
+pub proc check_policy
+    exec.pausable::assert_not_paused
+    # => [ASSET_KEY, ASSET_VALUE, pad(8)]
+
+    dropw
+    # => [ASSET_VALUE, pad(12)]
+end

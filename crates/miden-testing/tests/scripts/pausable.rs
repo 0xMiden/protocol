@@ -28,6 +28,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::{
     Asset,
+    AssetAmount,
     AssetCallbackFlag,
     AssetCallbacks,
     FungibleAsset,
@@ -40,11 +41,22 @@ use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 use miden_standards::account::access::AccessControl;
-use miden_standards::account::faucets::BasicFungibleFaucet;
-use miden_standards::account::metadata::{FungibleTokenMetadataBuilder, TokenName};
-use miden_standards::account::pausable::Pausable;
-use miden_standards::account::pausable_owner::PausableOwner;
-use miden_standards::account::pausable_rbac::PausableRbac;
+use miden_standards::account::faucets::{FungibleFaucet, TokenName};
+use miden_standards::account::pausable::{
+    PausableAuthControlled,
+    PausableOwnerControlled,
+    PausableRoleControlled,
+};
+use miden_standards::account::policies::{
+    BasicPausable,
+    BurnPolicyConfig,
+    MintPolicyConfig,
+    PausableBlocklist,
+    PolicyAuthority,
+    PolicyRegistration,
+    TokenPolicyManager,
+    TransferPolicy,
+};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::MockFaucetComponent;
 use miden_standards::testing::note::NoteBuilder;
@@ -151,22 +163,20 @@ fn add_faucet_with_pausable_owner(
     builder: &mut MockChainBuilder,
     owner: AccountId,
 ) -> anyhow::Result<Account> {
-    let faucet_metadata = FungibleTokenMetadataBuilder::new(
-        TokenName::new("SYM")?,
-        "SYM".try_into()?,
-        8,
-        1_000_000u64,
-    )
-    .build()?;
+    let faucet = FungibleFaucet::builder()
+        .name(TokenName::new("SYM")?)
+        .symbol("SYM".try_into()?)
+        .decimals(8)
+        .max_supply(AssetAmount::new(1_000_000)?)
+        .build()?;
 
     let account_builder = AccountBuilder::new([43u8; 32])
         .storage_mode(AccountStorageMode::Public)
         .account_type(AccountType::FungibleFaucet)
-        .with_component(faucet_metadata)
-        .with_component(BasicFungibleFaucet)
-        .with_component(Pausable::default())
+        .with_component(faucet)
+        .with_component(BasicPausable::default())
         .with_components(AccessControl::Ownable2Step { owner })
-        .with_component(PausableOwner)
+        .with_component(PausableOwnerControlled)
         .with_component(pausable_callbacks_component()?);
 
     builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
@@ -185,14 +195,13 @@ fn add_faucet_with_pausable_owner_for_account_type(
 
     let faucet_components: Vec<AccountComponent> = match account_type {
         AccountType::FungibleFaucet => {
-            let faucet_metadata = FungibleTokenMetadataBuilder::new(
-                TokenName::new("SYM")?,
-                "SYM".try_into()?,
-                8,
-                1_000_000u64,
-            )
-            .build()?;
-            vec![faucet_metadata.into(), BasicFungibleFaucet.into()]
+            let faucet = FungibleFaucet::builder()
+                .name(TokenName::new("SYM")?)
+                .symbol("SYM".try_into()?)
+                .decimals(8)
+                .max_supply(AssetAmount::new(1_000_000)?)
+                .build()?;
+            vec![faucet.into()]
         },
         AccountType::NonFungibleFaucet => vec![MockFaucetComponent.into()],
         _ => anyhow::bail!("pausable tests only use fungible or non-fungible faucet account types"),
@@ -205,43 +214,43 @@ fn add_faucet_with_pausable_owner_for_account_type(
         account_builder = account_builder.with_component(component);
     }
     account_builder = account_builder
-        .with_component(Pausable::default())
+        .with_component(BasicPausable::default())
         .with_components(AccessControl::Ownable2Step { owner })
-        .with_component(PausableOwner)
+        .with_component(PausableOwnerControlled)
         .with_component(pausable_callbacks_component()?);
 
     builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
 }
 
-/// Builds a private note whose `main` proc calls `pausable_owner::pause`. The note's sender
-/// is the value passed in, which is what the Ownable2Step auth check reads.
+/// Builds a private note whose `main` proc calls `pausable::owner_controlled::pause`. The note's
+/// sender is the value passed in, which is what the Ownable2Step auth check reads.
 fn build_pause_note(sender: AccountId) -> anyhow::Result<Note> {
     build_note(
         sender,
         r#"
-        use miden::standards::utils::pausable_owner
+        use miden::standards::utils::pausable::owner_controlled
 
         @note_script
         pub proc main
             repeat.16 push.0 end
-            call.pausable_owner::pause
+            call.owner_controlled::pause
             dropw dropw dropw dropw
         end
         "#,
     )
 }
 
-/// Builds a private note whose `main` proc calls `pausable_owner::unpause`.
+/// Builds a private note whose `main` proc calls `pausable::owner_controlled::unpause`.
 fn build_unpause_note(sender: AccountId) -> anyhow::Result<Note> {
     build_note(
         sender,
         r#"
-        use miden::standards::utils::pausable_owner
+        use miden::standards::utils::pausable::owner_controlled
 
         @note_script
         pub proc main
             repeat.16 push.0 end
-            call.pausable_owner::unpause
+            call.owner_controlled::unpause
             dropw dropw dropw dropw
         end
         "#,
@@ -524,7 +533,7 @@ async fn pausable_owner_pause_fails_when_sender_not_owner() -> anyhow::Result<()
     let _wallet = builder.add_existing_wallet(Auth::IncrNonce)?;
     let faucet = add_faucet_with_pausable_owner(&mut builder, *OWNER_ID)?;
 
-    // Note sender is NOT_OWNER, but pausable_owner::pause asserts sender == owner.
+    // Note sender is NOT_OWNER, but pausable::owner_controlled::pause asserts sender == owner.
     let attacker_note = build_pause_note(*NON_OWNER_ID)?;
     builder.add_output_note(RawOutputNote::Full(attacker_note.clone()));
 
@@ -582,22 +591,20 @@ fn add_faucet_with_pausable_rbac(
     builder: &mut MockChainBuilder,
     owner: AccountId,
 ) -> anyhow::Result<Account> {
-    let faucet_metadata = FungibleTokenMetadataBuilder::new(
-        TokenName::new("SYM")?,
-        "SYM".try_into()?,
-        8,
-        1_000_000u64,
-    )
-    .build()?;
+    let faucet = FungibleFaucet::builder()
+        .name(TokenName::new("SYM")?)
+        .symbol("SYM".try_into()?)
+        .decimals(8)
+        .max_supply(AssetAmount::new(1_000_000)?)
+        .build()?;
 
     let account_builder = AccountBuilder::new([43u8; 32])
         .storage_mode(AccountStorageMode::Public)
         .account_type(AccountType::FungibleFaucet)
-        .with_component(faucet_metadata)
-        .with_component(BasicFungibleFaucet)
-        .with_component(Pausable::default())
+        .with_component(faucet)
+        .with_component(BasicPausable::default())
         .with_components(AccessControl::Rbac { owner })
-        .with_component(PausableRbac)
+        .with_component(PausableRoleControlled)
         .with_component(pausable_callbacks_component()?);
 
     builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
@@ -630,34 +637,34 @@ fn build_grant_role_note(
     build_note(owner, code)
 }
 
-/// Builds a note (sender = `sender`) that calls `pausable_rbac::pause`.
+/// Builds a note (sender = `sender`) that calls `pausable::role_controlled::pause`.
 fn build_pause_rbac_note(sender: AccountId) -> anyhow::Result<Note> {
     build_note(
         sender,
         r#"
-        use miden::standards::utils::pausable_rbac
+        use miden::standards::utils::pausable::role_controlled
 
         @note_script
         pub proc main
             repeat.16 push.0 end
-            call.pausable_rbac::pause
+            call.role_controlled::pause
             dropw dropw dropw dropw
         end
         "#,
     )
 }
 
-/// Builds a note (sender = `sender`) that calls `pausable_rbac::unpause`.
+/// Builds a note (sender = `sender`) that calls `pausable::role_controlled::unpause`.
 fn build_unpause_rbac_note(sender: AccountId) -> anyhow::Result<Note> {
     build_note(
         sender,
         r#"
-        use miden::standards::utils::pausable_rbac
+        use miden::standards::utils::pausable::role_controlled
 
         @note_script
         pub proc main
             repeat.16 push.0 end
-            call.pausable_rbac::unpause
+            call.role_controlled::unpause
             dropw dropw dropw dropw
         end
         "#,
@@ -672,7 +679,8 @@ async fn pausable_rbac_pause_succeeds_when_sender_has_pauser_role() -> anyhow::R
     let mut builder = MockChain::builder();
     let faucet = add_faucet_with_pausable_rbac(&mut builder, owner)?;
 
-    let grant_pauser_note = build_grant_role_note(owner, PausableRbac::pauser_role(), pauser)?;
+    let grant_pauser_note =
+        build_grant_role_note(owner, PausableRoleControlled::pauser_role(), pauser)?;
     let pause_note = build_pause_rbac_note(pauser)?;
     builder.add_output_note(RawOutputNote::Full(grant_pauser_note.clone()));
     builder.add_output_note(RawOutputNote::Full(pause_note.clone()));
@@ -724,9 +732,10 @@ async fn pausable_rbac_unpause_succeeds_when_sender_has_unpauser_role() -> anyho
     let mut builder = MockChain::builder();
     let faucet = add_faucet_with_pausable_rbac(&mut builder, owner)?;
 
-    let grant_pauser_note = build_grant_role_note(owner, PausableRbac::pauser_role(), pauser)?;
+    let grant_pauser_note =
+        build_grant_role_note(owner, PausableRoleControlled::pauser_role(), pauser)?;
     let grant_unpauser_note =
-        build_grant_role_note(owner, PausableRbac::unpauser_role(), unpauser)?;
+        build_grant_role_note(owner, PausableRoleControlled::unpauser_role(), unpauser)?;
     let pause_note = build_pause_rbac_note(pauser)?;
     let unpause_note = build_unpause_rbac_note(unpauser)?;
     builder.add_output_note(RawOutputNote::Full(grant_pauser_note.clone()));
@@ -756,9 +765,10 @@ async fn pausable_rbac_separation_of_duties() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let faucet = add_faucet_with_pausable_rbac(&mut builder, owner)?;
 
-    let grant_pauser_note = build_grant_role_note(owner, PausableRbac::pauser_role(), pauser)?;
+    let grant_pauser_note =
+        build_grant_role_note(owner, PausableRoleControlled::pauser_role(), pauser)?;
     let grant_unpauser_note =
-        build_grant_role_note(owner, PausableRbac::unpauser_role(), unpauser)?;
+        build_grant_role_note(owner, PausableRoleControlled::unpauser_role(), unpauser)?;
     // pauser tries to also unpause — should fail.
     let pauser_unpause_attempt = build_unpause_rbac_note(pauser)?;
     // Legitimate pause by pauser so the unpause attempt can reach the role assertion.
@@ -819,7 +829,8 @@ async fn pausable_rbac_paused_state_blocks_asset_receive() -> anyhow::Result<()>
         NoteType::Public,
     )?;
 
-    let grant_pauser_note = build_grant_role_note(owner, PausableRbac::pauser_role(), pauser)?;
+    let grant_pauser_note =
+        build_grant_role_note(owner, PausableRoleControlled::pauser_role(), pauser)?;
     let pause_note = build_pause_rbac_note(pauser)?;
     builder.add_output_note(RawOutputNote::Full(grant_pauser_note.clone()));
     builder.add_output_note(RawOutputNote::Full(pause_note.clone()));
@@ -854,23 +865,21 @@ fn add_faucet_with_pausable_owner_and_rbac(
     builder: &mut MockChainBuilder,
     owner: AccountId,
 ) -> anyhow::Result<Account> {
-    let faucet_metadata = FungibleTokenMetadataBuilder::new(
-        TokenName::new("SYM")?,
-        "SYM".try_into()?,
-        8,
-        1_000_000u64,
-    )
-    .build()?;
+    let faucet = FungibleFaucet::builder()
+        .name(TokenName::new("SYM")?)
+        .symbol("SYM".try_into()?)
+        .decimals(8)
+        .max_supply(AssetAmount::new(1_000_000)?)
+        .build()?;
 
     let account_builder = AccountBuilder::new([43u8; 32])
         .storage_mode(AccountStorageMode::Public)
         .account_type(AccountType::FungibleFaucet)
-        .with_component(faucet_metadata)
-        .with_component(BasicFungibleFaucet)
-        .with_component(Pausable::default())
+        .with_component(faucet)
+        .with_component(BasicPausable::default())
         .with_components(AccessControl::Rbac { owner })
-        .with_component(PausableOwner)
-        .with_component(PausableRbac)
+        .with_component(PausableOwnerControlled)
+        .with_component(PausableRoleControlled)
         .with_component(pausable_callbacks_component()?);
 
     builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
@@ -878,9 +887,9 @@ fn add_faucet_with_pausable_owner_and_rbac(
 
 #[tokio::test]
 async fn pausable_owner_and_rbac_coexist() -> anyhow::Result<()> {
-    // Owner pauses (via PausableOwner), then unpauser unpauses (via PausableRbac), then
-    // owner pauses again. Both wrappers share the same `is_paused` storage; either path
-    // can flip the flag and the other observes the new state.
+    // Owner pauses (via PausableOwnerControlled), then unpauser unpauses (via
+    // PausableRoleControlled), then owner pauses again. Both wrappers share the same
+    // `is_paused` storage; either path can flip the flag and the other observes the new state.
     let owner = *OWNER_ID;
     let unpauser = test_account_id(22);
 
@@ -888,7 +897,7 @@ async fn pausable_owner_and_rbac_coexist() -> anyhow::Result<()> {
     let faucet = add_faucet_with_pausable_owner_and_rbac(&mut builder, owner)?;
 
     let grant_unpauser_note =
-        build_grant_role_note(owner, PausableRbac::unpauser_role(), unpauser)?;
+        build_grant_role_note(owner, PausableRoleControlled::unpauser_role(), unpauser)?;
     let owner_pause_note = build_pause_note(owner)?;
     let rbac_unpause_note = build_unpause_rbac_note(unpauser)?;
     let owner_pause_again_note = build_pause_note(owner)?;
@@ -904,6 +913,325 @@ async fn pausable_owner_and_rbac_coexist() -> anyhow::Result<()> {
     execute_note_on_faucet(&mut mock_chain, faucet.id(), &owner_pause_note).await?;
     execute_note_on_faucet(&mut mock_chain, faucet.id(), &rbac_unpause_note).await?;
     execute_note_on_faucet(&mut mock_chain, faucet.id(), &owner_pause_again_note).await?;
+
+    Ok(())
+}
+
+// TESTS — BASIC PAUSABLE TRANSFER POLICY
+// ================================================================================================
+
+const ERR_ACCOUNT_IS_BLOCKED: MasmError = MasmError::from_static_str("account is blocked");
+
+/// Adds a fungible faucet wired with the [`BasicPausable`] transfer policy as the active
+/// send/receive policy. `PausableAuthControlled` is installed so any tx the account's auth
+/// scheme accepts can pause / unpause.
+fn add_faucet_with_pausable_policy(
+    builder: &mut MockChainBuilder,
+    initial_state: bool,
+) -> anyhow::Result<Account> {
+    let faucet = FungibleFaucet::builder()
+        .name(TokenName::new("SYM")?)
+        .symbol("SYM".try_into()?)
+        .decimals(8)
+        .max_supply(AssetAmount::new(1_000_000)?)
+        .build()?;
+
+    let account_builder = AccountBuilder::new([43u8; 32])
+        .storage_mode(AccountStorageMode::Public)
+        .account_type(AccountType::FungibleFaucet)
+        .with_component(faucet)
+        .with_component(BasicPausable::new(initial_state))
+        .with_components(
+            TokenPolicyManager::new(PolicyAuthority::AuthControlled)
+                .with_mint_policy(MintPolicyConfig::AllowAll, PolicyRegistration::Active)?
+                .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)?
+                .with_send_policy(
+                    TransferPolicy::Custom(BasicPausable::root()),
+                    PolicyRegistration::Active,
+                )?
+                .with_receive_policy(
+                    TransferPolicy::Custom(BasicPausable::root()),
+                    PolicyRegistration::Active,
+                )?,
+        )
+        .with_component(PausableAuthControlled);
+
+    builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
+}
+
+/// Builds a note (any sender) that invokes `pausable::auth_controlled::pause`.
+fn build_auth_pause_note(sender: AccountId) -> anyhow::Result<Note> {
+    build_note(
+        sender,
+        r#"
+        use miden::standards::utils::pausable::auth_controlled
+
+        @note_script
+        pub proc main
+            repeat.16 push.0 end
+            call.auth_controlled::pause
+            dropw dropw dropw dropw
+        end
+        "#,
+    )
+}
+
+#[tokio::test]
+async fn basic_pausable_policy_allows_receive_when_unpaused() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
+    let faucet = add_faucet_with_pausable_policy(&mut builder, false)?;
+
+    let asset = FungibleAsset::new(faucet.id(), 100)?.with_callbacks(AssetCallbackFlag::Enabled);
+    let note = builder.add_p2id_note(
+        faucet.id(),
+        target_account.id(),
+        &[Asset::Fungible(asset)],
+        NoteType::Public,
+    )?;
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
+
+    mock_chain
+        .build_tx_context(target_account.id(), &[note.id()], &[])?
+        .foreign_accounts(vec![faucet_inputs])
+        .build()?
+        .execute()
+        .await?;
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn basic_pausable_policy_blocks_receive_when_initially_paused() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
+    // Faucet starts paused: the policy's check_policy must reject the transfer.
+    let faucet = add_faucet_with_pausable_policy(&mut builder, true)?;
+
+    let asset = FungibleAsset::new(faucet.id(), 100)?.with_callbacks(AssetCallbackFlag::Enabled);
+    let note = builder.add_p2id_note(
+        faucet.id(),
+        target_account.id(),
+        &[Asset::Fungible(asset)],
+        NoteType::Public,
+    )?;
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
+
+    let result = mock_chain
+        .build_tx_context(target_account.id(), &[note.id()], &[])?
+        .foreign_accounts(vec![faucet_inputs])
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_PAUSABLE_ENFORCED_PAUSE);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn basic_pausable_policy_blocks_receive_after_auth_pause() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
+    let faucet = add_faucet_with_pausable_policy(&mut builder, false)?;
+
+    let asset = FungibleAsset::new(faucet.id(), 100)?.with_callbacks(AssetCallbackFlag::Enabled);
+    let note = builder.add_p2id_note(
+        faucet.id(),
+        target_account.id(),
+        &[Asset::Fungible(asset)],
+        NoteType::Public,
+    )?;
+
+    // Stage an auth-controlled pause note (sender = arbitrary, since Auth::IncrNonce accepts).
+    let pause_note = build_auth_pause_note(*OWNER_ID)?;
+    builder.add_output_note(RawOutputNote::Full(pause_note.clone()));
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &pause_note).await?;
+
+    let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
+
+    let result = mock_chain
+        .build_tx_context(target_account.id(), &[note.id()], &[])?
+        .foreign_accounts(vec![faucet_inputs])
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_PAUSABLE_ENFORCED_PAUSE);
+
+    Ok(())
+}
+
+// TESTS — BASIC PAUSABLE-BLOCKLIST COMBINED TRANSFER POLICY
+// ================================================================================================
+
+/// Adds a fungible faucet wired with the [`PausableBlocklist`] composite transfer policy
+/// as the active send/receive policy. The policy enforces both `assert_not_paused` and
+/// `assert_not_blocked` on each transfer.
+fn add_faucet_with_pausable_blocklist_policy(
+    builder: &mut MockChainBuilder,
+    initial_pause_state: bool,
+    initial_blocked: impl IntoIterator<Item = AccountId>,
+) -> anyhow::Result<Account> {
+    let faucet = FungibleFaucet::builder()
+        .name(TokenName::new("SYM")?)
+        .symbol("SYM".try_into()?)
+        .decimals(8)
+        .max_supply(AssetAmount::new(1_000_000)?)
+        .build()?;
+
+    let composite = PausableBlocklist::new()
+        .with_initial_pause_state(initial_pause_state)
+        .with_initial_blocked_accounts(initial_blocked);
+
+    let account_builder = AccountBuilder::new([44u8; 32])
+        .storage_mode(AccountStorageMode::Public)
+        .account_type(AccountType::FungibleFaucet)
+        .with_component(faucet)
+        .with_component(composite)
+        .with_components(
+            TokenPolicyManager::new(PolicyAuthority::AuthControlled)
+                .with_mint_policy(MintPolicyConfig::AllowAll, PolicyRegistration::Active)?
+                .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)?
+                .with_send_policy(
+                    TransferPolicy::Custom(PausableBlocklist::root()),
+                    PolicyRegistration::Active,
+                )?
+                .with_receive_policy(
+                    TransferPolicy::Custom(PausableBlocklist::root()),
+                    PolicyRegistration::Active,
+                )?,
+        );
+
+    builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
+}
+
+#[tokio::test]
+async fn pausable_blocklist_policy_allows_when_unrestricted() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
+    let faucet = add_faucet_with_pausable_blocklist_policy(&mut builder, false, [])?;
+
+    let asset = FungibleAsset::new(faucet.id(), 100)?.with_callbacks(AssetCallbackFlag::Enabled);
+    let note = builder.add_p2id_note(
+        faucet.id(),
+        target_account.id(),
+        &[Asset::Fungible(asset)],
+        NoteType::Public,
+    )?;
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
+
+    mock_chain
+        .build_tx_context(target_account.id(), &[note.id()], &[])?
+        .foreign_accounts(vec![faucet_inputs])
+        .build()?
+        .execute()
+        .await?;
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn pausable_blocklist_policy_blocks_when_paused() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
+    // Combined policy with pause set; blocklist empty. Pause guard should fire first.
+    let faucet = add_faucet_with_pausable_blocklist_policy(&mut builder, true, [])?;
+
+    let asset = FungibleAsset::new(faucet.id(), 100)?.with_callbacks(AssetCallbackFlag::Enabled);
+    let note = builder.add_p2id_note(
+        faucet.id(),
+        target_account.id(),
+        &[Asset::Fungible(asset)],
+        NoteType::Public,
+    )?;
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
+
+    let result = mock_chain
+        .build_tx_context(target_account.id(), &[note.id()], &[])?
+        .foreign_accounts(vec![faucet_inputs])
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_PAUSABLE_ENFORCED_PAUSE);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn pausable_blocklist_policy_blocks_when_recipient_blocked() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
+    // Combined policy with empty pause + target pre-blocked. Blocklist guard should fire.
+    let faucet =
+        add_faucet_with_pausable_blocklist_policy(&mut builder, false, [target_account.id()])?;
+
+    let asset = FungibleAsset::new(faucet.id(), 100)?.with_callbacks(AssetCallbackFlag::Enabled);
+    let note = builder.add_p2id_note(
+        faucet.id(),
+        target_account.id(),
+        &[Asset::Fungible(asset)],
+        NoteType::Public,
+    )?;
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
+
+    let result = mock_chain
+        .build_tx_context(target_account.id(), &[note.id()], &[])?
+        .foreign_accounts(vec![faucet_inputs])
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_ACCOUNT_IS_BLOCKED);
+
+    Ok(())
+}
+
+// TESTS — PAUSABLE AUTH CONTROLLED
+// ================================================================================================
+
+#[tokio::test]
+async fn pausable_auth_controlled_pause_succeeds_for_any_signed_tx() -> anyhow::Result<()> {
+    // With Auth::IncrNonce + PausableAuthControlled, any sender that the account accepts can
+    // call pause — there is no explicit owner / role check at the wrapper level.
+    let mut builder = MockChain::builder();
+    let _wallet = builder.add_existing_wallet(Auth::IncrNonce)?;
+    let faucet = add_faucet_with_pausable_policy(&mut builder, false)?;
+
+    let pause_note = build_auth_pause_note(*NON_OWNER_ID)?;
+    builder.add_output_note(RawOutputNote::Full(pause_note.clone()));
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    // Even a non-owner sender succeeds because PausableAuthControlled defers entirely to the
+    // account's own auth component (Auth::IncrNonce accepts everything in tests).
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &pause_note).await?;
 
     Ok(())
 }

@@ -1,6 +1,6 @@
 //! Tests for the [`miden_standards::account::policies::BasicBlocklist`] transfer policy
 //! component (storage + `check_policy` predicate) and the
-//! [`miden_standards::account::policies::OwnerControlledBlocklist`] owner-controlled admin
+//! [`miden_standards::account::policies::BlocklistOwnerControlled`] owner-controlled admin
 //! component, dispatched directly by the protocol callback slots via
 //! [`miden_standards::account::policies::TokenPolicyManager`].
 
@@ -27,9 +27,9 @@ use miden_standards::account::access::Ownable2Step;
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
     BasicBlocklist,
+    BlocklistOwnerControlled,
     BurnPolicyConfig,
     MintPolicyConfig,
-    OwnerControlledBlocklist,
     PolicyAuthority,
     PolicyRegistration,
     TokenPolicyManager,
@@ -59,7 +59,7 @@ fn dummy_owner() -> AccountId {
 }
 
 /// Builds a fungible faucet with [`TransferPolicy::Blocklist`] on both send and receive,
-/// plus the [`OwnerControlledBlocklist`] component (gated by `Ownable2Step::new(owner_id)`)
+/// plus the [`BlocklistOwnerControlled`] component (gated by `Ownable2Step::new(owner_id)`)
 /// so that the owner can invoke `block_account` / `unblock_account` via owner-authored notes.
 fn add_faucet_with_owner_blocklist_transfer(
     builder: &mut MockChainBuilder,
@@ -106,7 +106,7 @@ fn add_faucet_with_owner_blocklist_transfer_initialized(
                 )?,
         )
         .with_component(basic_blocklist)
-        .with_component(OwnerControlledBlocklist);
+        .with_component(BlocklistOwnerControlled);
 
     builder.add_account_from_builder(
         Auth::BasicAuth {

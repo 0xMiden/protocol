@@ -1,0 +1,55 @@
+# miden::standards::utils::pausable::auth_controlled
+#
+# Auth-controlled pause admin wrapper. Exposes `pause` / `unpause` / `is_paused` as
+# `Invocation: call` procedures with NO explicit authorization check. Authorization is
+# delegated entirely to the account's own auth component (e.g. `AuthSingleSig`,
+# `AuthMultisig`, `NoAuth`, `AuthNetworkAccount`) — whoever the account's auth scheme lets
+# sign a transaction can call these procedures.
+#
+# Use this variant when pause/unpause should be available to anyone whose tx the account
+# accepts (i.e. paired with [`AccessControl::AuthControlled`]). For owner- or role-gated
+# variants see `pausable::owner_controlled` and `pausable::role_controlled`.
+
+use miden::standards::utils::pausable
+
+# PUBLIC INTERFACE
+# ================================================================================================
+
+#! Pause the account. Authorization is delegated to the account's auth component.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the account is already paused.
+#!
+#! Invocation: call
+pub proc pause
+    exec.pausable::pause
+    # => [pad(16)]
+end
+
+#! Unpause the account. Authorization is delegated to the account's auth component.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the account is not paused.
+#!
+#! Invocation: call
+pub proc unpause
+    exec.pausable::unpause
+    # => [pad(16)]
+end
+
+#! Returns whether the account is currently paused. No authorization is required.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [is_paused, pad(15)]
+#!
+#! Invocation: call
+pub proc is_paused
+    exec.pausable::is_paused
+    # => [is_paused, pad(15)]
+end

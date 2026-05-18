@@ -1,0 +1,11 @@
+# Basic pausable transfer policy component.
+#
+# Installs the `is_paused` storage slot (via the `PausableStorage` helper on the Rust side)
+# plus the `check_policy` transfer predicate that rejects transfers when the issuing faucet
+# is paused.
+#
+# Pair with a `TokenPolicyManager` whose send / receive policy maps include
+# [`BasicPausable::root()`]; or install standalone for the storage and use the wrapper
+# components to drive `pause` / `unpause` from outside the policy pipeline.
+
+pub use ::miden::standards::faucets::policies::transfer::basic_pausable::check_policy

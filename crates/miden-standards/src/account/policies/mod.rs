@@ -36,8 +36,10 @@ pub use manager::{TokenPolicyManager, TokenPolicyManagerError};
 pub use mint::{MintAllowAll, MintOwnerOnly, MintPolicyConfig};
 pub use transfer::{
     BasicBlocklist,
+    BasicPausable,
+    BlocklistOwnerControlled,
     BlocklistStorage,
-    OwnerControlledBlocklist,
+    PausableBlocklist,
     TransferAllowAll,
     TransferPolicy,
 };

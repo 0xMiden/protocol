@@ -1,0 +1,12 @@
+# Owner-controlled pause admin component.
+#
+# Wraps `pausable::pause` / `pausable::unpause` with an `Ownable2Step::assert_sender_is_owner`
+# check, and forwards `is_paused` as a read-only view.
+#
+# Companion components required:
+# - `Ownable2Step`  : provides the owner storage slot the auth check reads.
+# - `BasicPausable` : provides the `is_paused` storage slot that pause/unpause writes to.
+
+pub use ::miden::standards::utils::pausable::owner_controlled::pause
+pub use ::miden::standards::utils::pausable::owner_controlled::unpause
+pub use ::miden::standards::utils::pausable::owner_controlled::is_paused

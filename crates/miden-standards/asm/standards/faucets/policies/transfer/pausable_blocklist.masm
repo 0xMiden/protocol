@@ -1,0 +1,41 @@
+# miden::standards::faucets::policies::transfer::pausable_blocklist
+#
+# Composite transfer policy: rejects a transfer when EITHER the issuing faucet is paused OR
+# the native account is currently blocked on the issuing faucet. Delegates per-account
+# state to the sibling `pausable` and `blocklist` primitives (storage + helpers).
+
+use miden::protocol::native_account
+use miden::standards::utils::pausable
+use miden::standards::faucets::policies::transfer::blocklist
+
+# POLICY PROCEDURES
+# ================================================================================================
+
+#! Transfer policy combining the pause and blocklist guards. Rejects transfers when the
+#! issuing faucet is paused OR when the native account (asset recipient or note creator)
+#! is currently blocked on the issuing faucet.
+#!
+#! Invoked as the active send or receive policy via `TokenPolicyManager`. Both guards apply
+#! to send and receive uniformly.
+#!
+#! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
+#! Outputs: [ASSET_VALUE, pad(12)]
+#!
+#! Panics if:
+#! - the issuing faucet is currently paused (`ERR_PAUSABLE_ENFORCED_PAUSE`).
+#! - the native account is blocked on the issuing faucet (`ERR_ACCOUNT_IS_BLOCKED`).
+#!
+#! Invocation: call
+pub proc check_policy
+    exec.pausable::assert_not_paused
+    # => [ASSET_KEY, ASSET_VALUE, pad(8)]
+
+    exec.native_account::get_id
+    # => [acct_suffix, acct_prefix, ASSET_KEY, ASSET_VALUE, pad(8)]
+
+    exec.blocklist::assert_not_blocked
+    # => [ASSET_KEY, ASSET_VALUE, pad(8)]
+
+    dropw
+    # => [ASSET_VALUE, pad(12)]
+end

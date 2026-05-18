@@ -1,0 +1,10 @@
+# Composite pause + blocklist transfer policy component.
+#
+# Installs BOTH the `is_paused` storage slot (via `PausableStorage`) and the
+# `blocked_accounts` storage map (via `BlocklistStorage`), plus the `check_policy`
+# predicate that combines `assert_not_paused` and `assert_not_blocked`.
+#
+# Pair with a `TokenPolicyManager` whose send / receive policy maps include
+# [`PausableBlocklist::root()`].
+
+pub use ::miden::standards::faucets::policies::transfer::pausable_blocklist::check_policy

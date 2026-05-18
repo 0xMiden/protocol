@@ -21,9 +21,9 @@ account_component_code!(
 /// - A component that installs the `blocked_accounts` storage slot — typically
 ///   [`crate::account::policies::BasicBlocklist`].
 #[derive(Debug, Clone, Copy, Default)]
-pub struct OwnerControlledBlocklist;
+pub struct BlocklistOwnerControlled;
 
-impl OwnerControlledBlocklist {
+impl BlocklistOwnerControlled {
     /// The name of the component.
     pub const NAME: &'static str =
         "miden::standards::components::faucets::policies::transfer::blocklist::owner_controlled";
@@ -46,10 +46,10 @@ impl OwnerControlledBlocklist {
     }
 }
 
-impl From<OwnerControlledBlocklist> for AccountComponent {
-    fn from(_: OwnerControlledBlocklist) -> Self {
-        let metadata = OwnerControlledBlocklist::component_metadata();
-        AccountComponent::new(OwnerControlledBlocklist::code().clone(), vec![], metadata)
+impl From<BlocklistOwnerControlled> for AccountComponent {
+    fn from(_: BlocklistOwnerControlled) -> Self {
+        let metadata = BlocklistOwnerControlled::component_metadata();
+        AccountComponent::new(BlocklistOwnerControlled::code().clone(), vec![], metadata)
             .expect("owner-controlled blocklist admin component should be valid")
     }
 }

@@ -11,9 +11,9 @@
 # Companion components required:
 # - `RoleBasedAccessControl` : provides role membership storage and the
 #   `assert_sender_has_role` procedure used to validate the sender.
-# - `Pausable`               : provides the `is_paused` storage slot that
+# - `BasicPausable`          : provides the `is_paused` storage slot that
 #   pause/unpause write to.
 
-pub use ::miden::standards::utils::pausable_rbac::pause
-pub use ::miden::standards::utils::pausable_rbac::unpause
-pub use ::miden::standards::utils::pausable_rbac::is_paused
+pub use ::miden::standards::utils::pausable::role_controlled::pause
+pub use ::miden::standards::utils::pausable::role_controlled::unpause
+pub use ::miden::standards::utils::pausable::role_controlled::is_paused
