@@ -28,12 +28,11 @@ use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::crypto::SequentialCommit;
 use miden_protocol::crypto::rand::FeltRng;
-use miden_protocol::errors::tx_kernel::ERR_FUNGIBLE_ASSET_FAUCET_IS_NOT_ORIGIN;
 use miden_protocol::note::NoteType;
-use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
 use miden_protocol::transaction::RawOutputNote;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
+use miden_standards::errors::standards::ERR_FUNGIBLE_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET;
 use miden_standards::note::P2idNote;
 use miden_standards::testing::account_component::IncrNonceAuthComponent;
 use miden_standards::testing::mock_account::MockAccountExt;
@@ -426,10 +425,13 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
 /// Asserts that a MINT note produced by `claim` for faucet A cannot be consumed by a
 /// different same-bridge faucet B.
 ///
-/// The MINT note now embeds the full `ASSET` (`ASSET_KEY` + `ASSET_VALUE`) in its storage. When
-/// `fungible::mint_and_send` runs, it feeds the stored `ASSET_KEY` (carrying faucet A's ID) to
-/// the kernel `faucet::mint` syscall. If the active account is faucet B, the kernel's
-/// `validate_origin` panics with `ERR_FUNGIBLE_ASSET_FAUCET_IS_NOT_ORIGIN`.
+/// Both faucets are registered in the bridge, so the only thing preventing faucet B from
+/// consuming faucet A's MINT note is the faucet bind itself. The MINT note embeds the full
+/// `ASSET` (`ASSET_KEY` + `ASSET_VALUE`) in its storage; `fungible::mint_and_send` derives the
+/// asset for the consuming faucet and rejects it with
+/// `ERR_FUNGIBLE_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET` when its key does not match the stored
+/// `ASSET_KEY`. Before this fix the MINT note carried only the amount, so faucet B would mint its
+/// own token and the cross-faucet consumption would succeed.
 #[tokio::test]
 async fn test_mint_cannot_be_consumed_by_unrelated_faucet() -> anyhow::Result<()> {
     let data_source = ClaimDataSource::L1ToMiden;
@@ -498,9 +500,7 @@ async fn test_mint_cannot_be_consumed_by_unrelated_faucet() -> anyhow::Result<()
     let destination_account_id = EthEmbeddedAccountId::try_from(leaf_data.destination_address)
         .expect("destination address is not an embedded Miden AccountId")
         .into_account_id();
-    let dest =
-        Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE, IncrNonceAuthComponent);
-    assert_eq!(dest.id(), destination_account_id);
+    let dest = Account::mock(u128::from(destination_account_id), IncrNonceAuthComponent);
     builder.add_account(dest)?;
 
     let sender_account_builder =
@@ -530,7 +530,7 @@ async fn test_mint_cannot_be_consumed_by_unrelated_faucet() -> anyhow::Result<()
     )?;
     builder.add_output_note(RawOutputNote::Full(claim_note.clone()));
 
-    // Register faucet_A (only) in the bridge for the claim's origin token address.
+    // Register faucet_A in the bridge for the claim's origin token address.
     let config_note = ConfigAggBridgeNote::create(
         faucet_a.id(),
         &leaf_data.origin_token_address,
@@ -540,15 +540,26 @@ async fn test_mint_cannot_be_consumed_by_unrelated_faucet() -> anyhow::Result<()
     )?;
     builder.add_output_note(RawOutputNote::Full(config_note.clone()));
 
+    // Register faucet_B too: it is a fully legitimate same-bridge faucet, so the attack below
+    // fails only because of the faucet bind, not because faucet_B is unknown to the bridge.
+    let config_note_b = ConfigAggBridgeNote::create(
+        faucet_b.id(),
+        &other_token_address,
+        bridge_admin.id(),
+        bridge_account.id(),
+        builder.rng_mut(),
+    )?;
+    builder.add_output_note(RawOutputNote::Full(config_note_b.clone()));
+
     let update_ger_note =
         UpdateGerNote::create(ger, ger_manager.id(), bridge_account.id(), builder.rng_mut())?;
     builder.add_output_note(RawOutputNote::Full(update_ger_note.clone()));
 
     let mut mock_chain = builder.clone().build()?;
 
-    // TX0: register faucet_A.
+    // TX0: register faucet_A and faucet_B.
     let config_executed = mock_chain
-        .build_tx_context(bridge_account.id(), &[config_note.id()], &[])?
+        .build_tx_context(bridge_account.id(), &[config_note.id(), config_note_b.id()], &[])?
         .build()?
         .execute()
         .await?;
@@ -582,16 +593,19 @@ async fn test_mint_cannot_be_consumed_by_unrelated_faucet() -> anyhow::Result<()
 
     // ATTACK: try to consume the MINT note against faucet_B (wrong faucet).
     //
-    // With the asset embedded in the MINT note's storage, faucet_B feeds faucet_A's
-    // `ASSET_KEY` into the kernel's `faucet::mint`, and the kernel rejects it because the
-    // active account is faucet_B, not faucet_A.
+    // The MINT note's stored `ASSET_KEY` carries faucet_A's ID. faucet_B's `mint_and_send`
+    // derives the asset for faucet_B, finds its key differs from the stored one, and rejects
+    // the consumption.
     let attack_tx_context = mock_chain
         .build_tx_context(faucet_b.id(), &[mint_output_note.id()], &[])?
         .add_note_script(P2idNote::script())
         .build()?;
 
     let attack_result = attack_tx_context.execute().await;
-    assert_transaction_executor_error!(attack_result, ERR_FUNGIBLE_ASSET_FAUCET_IS_NOT_ORIGIN);
+    assert_transaction_executor_error!(
+        attack_result,
+        ERR_FUNGIBLE_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET
+    );
 
     Ok(())
 }
