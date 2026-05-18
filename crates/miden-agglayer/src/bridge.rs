@@ -1,5 +1,6 @@
 extern crate alloc;
 
+use alloc::collections::BTreeSet;
 use alloc::vec;
 use alloc::vec::Vec;
 
@@ -15,6 +16,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::block::account_tree::AccountIdKey;
 use miden_protocol::crypto::hash::poseidon2::Poseidon2;
+use miden_protocol::note::NoteScriptRoot;
 use miden_utils_sync::LazyLock;
 use thiserror::Error;
 
@@ -247,6 +249,25 @@ impl AggLayerBridge {
     /// Storage slot name for the number of leaves in the LET frontier.
     pub fn let_num_leaves_slot_name() -> &'static StorageSlotName {
         &LET_NUM_LEAVES_SLOT_NAME
+    }
+
+    // ALLOWED NOTES
+    // --------------------------------------------------------------------------------------------
+
+    /// Returns the set of input-note script roots that AggLayer bridge accounts accept.
+    ///
+    /// The bridge's [`AuthNetworkAccount`] component is initialized with this allowlist, which
+    /// means any transaction consuming a note outside this set is rejected before reaching
+    /// `output_note::create`.
+    ///
+    /// [`AuthNetworkAccount`]: miden_standards::account::auth::AuthNetworkAccount
+    pub fn allowed_notes() -> BTreeSet<NoteScriptRoot> {
+        BTreeSet::from([
+            crate::claim_script_root(),
+            B2AggNote::script_root(),
+            ConfigAggBridgeNote::script_root(),
+            UpdateGerNote::script_root(),
+        ])
     }
 
     /// Returns a boolean indicating whether the provided GER is present in storage of the provided

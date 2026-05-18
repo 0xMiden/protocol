@@ -14,10 +14,10 @@ use miden_protocol::account::{
     AccountType,
 };
 use miden_protocol::asset::TokenSymbol;
-use miden_protocol::note::NoteScript;
+use miden_protocol::note::{NoteScript, NoteScriptRoot};
 use miden_protocol::vm::Program;
 use miden_standards::account::access::Ownable2Step;
-use miden_standards::account::auth::NoAuth;
+use miden_standards::account::auth::AuthNetworkAccount;
 use miden_standards::account::mint_policies::OwnerControlled;
 use miden_utils_sync::LazyLock;
 
@@ -74,6 +74,11 @@ static CLAIM_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 /// Returns the CLAIM (Bridge from AggLayer) note script.
 pub fn claim_script() -> NoteScript {
     CLAIM_SCRIPT.clone()
+}
+
+/// Returns the CLAIM (Bridge from AggLayer) note script root.
+pub fn claim_script_root() -> NoteScriptRoot {
+    CLAIM_SCRIPT.root()
 }
 
 // AGGLAYER ACCOUNT COMPONENTS
@@ -144,6 +149,9 @@ fn create_agglayer_faucet_component(
 ///
 /// The bridge starts with an empty faucet registry. Faucets are registered at runtime
 /// via CONFIG_AGG_BRIDGE notes that call `bridge_config::register_faucet`.
+///
+/// The builder is pre-wired with the [`AuthNetworkAccount`] auth component, initialized with
+/// [`AggLayerBridge::allowed_notes()`] so the bridge only accepts its sanctioned input notes.
 fn create_bridge_account_builder(
     seed: Word,
     bridge_admin_id: AccountId,
@@ -152,6 +160,10 @@ fn create_bridge_account_builder(
     Account::builder(seed.into())
         .storage_mode(AccountStorageMode::Network)
         .with_component(AggLayerBridge::new(bridge_admin_id, ger_manager_id))
+        .with_auth_component(
+            AuthNetworkAccount::with_allowlist(AggLayerBridge::allowed_notes())
+                .expect("bridge note allowlist is non-empty"),
+        )
 }
 
 /// Creates a new bridge account with the standard configuration.
@@ -163,7 +175,6 @@ pub fn create_bridge_account(
     ger_manager_id: AccountId,
 ) -> Account {
     create_bridge_account_builder(seed, bridge_admin_id, ger_manager_id)
-        .with_auth_component(AccountComponent::from(NoAuth))
         .build()
         .expect("bridge account should be valid")
 }
@@ -178,7 +189,6 @@ pub fn create_existing_bridge_account(
     ger_manager_id: AccountId,
 ) -> Account {
     create_bridge_account_builder(seed, bridge_admin_id, ger_manager_id)
-        .with_auth_component(AccountComponent::from(NoAuth))
         .build_existing()
         .expect("bridge account should be valid")
 }
@@ -190,6 +200,8 @@ pub fn create_existing_bridge_account(
 /// - The `Ownable2Step` component (bridge account ID as owner for mint authorization).
 /// - The `OwnerControlled` component (mint policy management required by
 ///   `network_fungible::mint_and_send`).
+/// - The [`AuthNetworkAccount`] auth component, initialized with
+///   [`AggLayerFaucet::allowed_notes()`] so the faucet only accepts MINT and BURN notes.
 fn create_agglayer_faucet_builder(
     seed: Word,
     token_symbol: &str,
@@ -207,6 +219,10 @@ fn create_agglayer_faucet_builder(
         .with_component(agglayer_component)
         .with_component(Ownable2Step::new(bridge_account_id))
         .with_component(OwnerControlled::owner_only())
+        .with_auth_component(
+            AuthNetworkAccount::with_allowlist(AggLayerFaucet::allowed_notes())
+                .expect("faucet note allowlist is non-empty"),
+        )
 }
 
 /// Creates a new agglayer faucet account with the specified configuration.
@@ -227,7 +243,6 @@ pub fn create_agglayer_faucet(
         Felt::ZERO,
         bridge_account_id,
     )
-    .with_auth_component(AccountComponent::from(NoAuth))
     .build()
     .expect("agglayer faucet account should be valid")
 }
@@ -252,7 +267,6 @@ pub fn create_existing_agglayer_faucet(
         token_supply,
         bridge_account_id,
     )
-    .with_auth_component(AccountComponent::from(NoAuth))
     .build_existing()
     .expect("agglayer faucet account should be valid")
 }
