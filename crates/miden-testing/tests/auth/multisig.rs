@@ -1487,3 +1487,84 @@ async fn test_multisig_set_procedure_threshold_rejects_exceeding_approvers(
 
     Ok(())
 }
+
+/// Tests that `set_procedure_threshold` validates against the *current* num_approvers, not the
+/// transaction-initial one. If `update_signers_and_threshold` reduces num_approvers earlier in the
+/// same transaction, a subsequent `set_procedure_threshold` must use the post-update num_approvers
+/// for its bound check — otherwise a stored override could become unreachable and permanently
+/// DoS the targeted procedure (signature verification is bounded by num_approvers).
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[tokio::test]
+async fn test_multisig_set_procedure_threshold_uses_current_num_approvers(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    // Start with 3 approvers, threshold 2.
+    let (_secret_keys, auth_schemes, public_keys, _authenticators) =
+        setup_keys_and_authenticators_with_scheme(3, 2, auth_scheme)?;
+
+    let approvers = public_keys
+        .iter()
+        .zip(auth_schemes.iter())
+        .map(|(pk, scheme)| (pk.clone(), *scheme))
+        .collect::<Vec<_>>();
+
+    let multisig_account = create_multisig_account(2, &approvers, 10, vec![])?;
+    let proc_root = BasicWallet::receive_asset_root().as_word();
+
+    // Build a new config that reduces num_approvers to 1 (and threshold to 1).
+    let mut advice_map = AdviceMap::default();
+    let (_new_sec, _new_schemes, new_public_keys, _new_auth) =
+        setup_keys_and_authenticators_with_scheme(1, 1, auth_scheme)?;
+
+    let new_threshold = 1u64;
+    let new_num_of_approvers = 1u64;
+    let config_and_pubkeys_vector = build_update_signers_config_vector(
+        new_threshold,
+        new_num_of_approvers,
+        &new_public_keys,
+        auth_scheme,
+    );
+    let multisig_config_hash = Hasher::hash_elements(&config_and_pubkeys_vector);
+    advice_map.insert(multisig_config_hash, config_and_pubkeys_vector);
+    let advice_inputs = AdviceInputs { map: advice_map, ..Default::default() };
+
+    // Same transaction: first reduce num_approvers to 1, then try to set a per-procedure
+    // override of 2 — which exceeds the *current* num_approvers and must be rejected.
+    let script_code = format!(
+        r#"
+        begin
+            call.::miden::standards::components::auth::multisig::update_signers_and_threshold
+            push.{proc_root}
+            push.2
+            call.::miden::standards::components::auth::multisig::set_procedure_threshold
+            dropw
+            drop
+        end
+        "#
+    );
+    let script = CodeBuilder::default()
+        .with_dynamically_linked_library(AuthMultisig::code())?
+        .compile_tx_script(script_code)?;
+
+    let mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])
+        .unwrap()
+        .build()
+        .unwrap();
+    let salt = Word::from([Felt::new_unchecked(55); 4]);
+
+    let tx_context = mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .tx_script(script)
+        .tx_script_args(multisig_config_hash)
+        .extend_advice_inputs(advice_inputs)
+        .auth_args(salt)
+        .build()?;
+
+    let result = tx_context.execute().await;
+
+    assert_transaction_executor_error!(result, ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS);
+
+    Ok(())
+}

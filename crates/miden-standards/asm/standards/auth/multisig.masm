@@ -456,19 +456,45 @@ proc compute_transaction_threshold(default_threshold: u32) -> u32
     # => [effective_transaction_threshold]
 end
 
-#! Returns current num_approvers and the threshold `THRESHOLD_CONFIG_SLOT`
+#! Returns the transaction-initial default_threshold and num_approvers from `THRESHOLD_CONFIG_SLOT`,
+#! i.e. the values as they were at the beginning of the transaction.
+#!
+#! Used internally for auth-time reads (signature verification, signer membership) which must
+#! operate on the state that was signed over. External callers that need the live values must use
+#! `get_threshold_and_num_approvers` instead.
 #!
 #! Inputs: []
-#! Outputs: [threshold, num_approvers]
+#! Outputs: [default_threshold, num_approvers]
+#!
+#! Invocation: exec
+pub proc get_initial_threshold_and_num_approvers
+    push.THRESHOLD_CONFIG_SLOT[0..2]
+    exec.active_account::get_initial_item
+    # => [default_threshold, num_approvers, 0, 0]
+
+    movup.2 drop movup.2 drop
+    # => [default_threshold, num_approvers]
+end
+
+#! Returns the *current* default_threshold and num_approvers from `THRESHOLD_CONFIG_SLOT`,
+#! reflecting any in-transaction updates (e.g. an earlier `update_signers_and_threshold` call in
+#! the same transaction).
+#!
+#! This is the externally callable accessor. Setters that must enforce invariants against the
+#! latest state should `exec` this. Auth-time reads must use
+#! `get_initial_threshold_and_num_approvers` instead.
+#!
+#! Inputs: []
+#! Outputs: [default_threshold, num_approvers]
 #!
 #! Invocation: call
 pub proc get_threshold_and_num_approvers
     push.THRESHOLD_CONFIG_SLOT[0..2]
-    exec.active_account::get_initial_item
-    # => [threshold, num_approvers, 0, 0]
+    exec.active_account::get_item
+    # => [default_threshold, num_approvers, 0, 0]
 
     movup.2 drop movup.2 drop
-    # => [threshold, num_approvers]
+    # => [default_threshold, num_approvers]
 end
 
 #! Sets or clears a per-procedure threshold override.
@@ -489,6 +515,10 @@ end
 #!
 #! Invocation: call
 pub proc set_procedure_threshold
+    # Use the *current* num_approvers so that an `update_signers_and_threshold` call earlier in the
+    # same transaction (which may have reduced num_approvers) is reflected here. Reading the initial
+    # value would let a caller store an unreachable override and permanently DoS the targeted
+    # procedure.
     exec.get_threshold_and_num_approvers
     # => [default_threshold, num_approvers, proc_threshold, PROC_ROOT]
 
@@ -578,7 +608,7 @@ pub proc is_signer(pub_key: word) -> felt
     push.0 loc_store.IS_SIGNER_FOUND_LOC
     # => [PUB_KEY]
 
-    exec.get_threshold_and_num_approvers
+    exec.get_initial_threshold_and_num_approvers
     # => [threshold, num_approvers, PUB_KEY]
 
     drop
@@ -717,7 +747,7 @@ pub proc auth_tx(salt: word)
 
     # ------ Verifying approver signatures ------
 
-    exec.get_threshold_and_num_approvers
+    exec.get_initial_threshold_and_num_approvers
     # => [default_threshold, num_of_approvers, TX_SUMMARY_COMMITMENT]
 
     movdn.5
