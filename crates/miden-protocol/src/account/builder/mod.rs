@@ -77,7 +77,7 @@ impl AccountBuilder {
             components: vec![],
             auth_component: None,
             init_seed,
-            account_type: AccountType::RegularAccountUpdatableCode,
+            account_type: AccountType::RegularAccountImmutableCode,
             storage_mode: AccountStorageMode::Private,
             id_version: AccountIdVersion::Version1,
         }
@@ -189,7 +189,6 @@ impl AccountBuilder {
     ) -> Result<Word, AccountError> {
         let seed = AccountIdV1::compute_account_seed(
             init_seed,
-            self.account_type,
             self.storage_mode,
             version,
             code_commitment,
@@ -245,7 +244,6 @@ impl AccountBuilder {
         )
         .expect("get_account_seed should provide a suitable seed");
 
-        debug_assert_eq!(account_id.account_type(), self.account_type);
         debug_assert_eq!(account_id.storage_mode(), self.storage_mode);
 
         // SAFETY: The account ID was derived from the seed and the seed is provided, so it is safe

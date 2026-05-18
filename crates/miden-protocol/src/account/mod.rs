@@ -524,12 +524,11 @@ mod tests {
         AccountStorageDelta,
         AccountVaultDelta,
     };
-    use crate::account::AccountStorageMode::Public;
     use crate::account::{
         Account,
         AccountBuilder,
         AccountIdVersion,
-        AccountType,
+        AccountStorageMode,
         PartialAccount,
         StorageMap,
         StorageMapDelta,
@@ -760,8 +759,7 @@ mod tests {
 
         let other_seed = AccountId::compute_account_seed(
             [9; 32],
-            AccountType::FungibleFaucet,
-            Public,
+            AccountStorageMode::Public,
             AccountIdVersion::Version1,
             code.commitment(),
             storage.to_commitment(),

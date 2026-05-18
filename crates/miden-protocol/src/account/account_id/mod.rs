@@ -202,7 +202,6 @@ impl AccountId {
     /// generated from a cryptographically secure source.
     pub fn compute_account_seed(
         init_seed: [u8; 32],
-        account_type: AccountType,
         storage_mode: AccountStorageMode,
         version: AccountIdVersion,
         code_commitment: Word,
@@ -211,7 +210,6 @@ impl AccountId {
         match version {
             AccountIdVersion::Version1 => AccountIdV1::compute_account_seed(
                 init_seed,
-                account_type,
                 storage_mode,
                 version,
                 code_commitment,

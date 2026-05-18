@@ -14,7 +14,6 @@ use crate::{Felt, Word};
 /// implementation was removed in commit dab6159318832fc537bb35abf251870a9129ac8c in PR 1061.
 pub(super) fn compute_account_seed(
     init_seed: [u8; 32],
-    account_type: AccountType,
     storage_mode: AccountStorageMode,
     version: AccountIdVersion,
     code_commitment: Word,
@@ -22,7 +21,6 @@ pub(super) fn compute_account_seed(
 ) -> Result<Word, AccountError> {
     compute_account_seed_single(
         init_seed,
-        account_type,
         storage_mode,
         version,
         code_commitment,
@@ -32,7 +30,6 @@ pub(super) fn compute_account_seed(
 
 fn compute_account_seed_single(
     init_seed: [u8; 32],
-    account_type: AccountType,
     storage_mode: AccountStorageMode,
     version: AccountIdVersion,
     code_commitment: Word,
@@ -58,8 +55,8 @@ fn compute_account_seed_single(
 
         if let Ok((computed_account_type, computed_storage_mode, computed_version)) =
             validate_prefix(prefix)
-            && computed_account_type == account_type
             && computed_storage_mode == storage_mode
+            && computed_account_type == AccountType::RegularAccountImmutableCode
             && computed_version == version
             && is_suffix_msb_zero
         {
