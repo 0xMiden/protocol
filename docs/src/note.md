@@ -68,21 +68,23 @@ Every note includes metadata:
 - the account ID of the sender, i.e. the creator of the note.
 - its note type, i.e. private or public.
 - the [note tag](#note-discovery) that aids in discovery of the note.
-- an optional [note attachment](#attachment).
+- optional [note attachments](#attachments) (up to 4).
 
 Regardless of [storage mode](#note-storage-mode), these metadata fields are always public.
 
-### Attachment
+### Attachments
 
-An attachment is a variable-size part of a note's metadata:
-- It can either be absent (`None`), store a single `Word` or an `Array` of field elements. These are the three _kinds_ of attachments.
-- The _scheme_ of an attachment is an optional, 32-bit user-defined value that can be used to detect the presence of certain standardized attachments.
+A note can have up to 4 attachments. Each attachment is a variable-size, _public_ extension to the note's metadata consisting of:
+- **Content**: Between 1 and 256 words of data (up to 8 KB per attachment, 16 KB total across all attachments). The content of an individual attachment is committed to via a sequential hash over its field elements. The full attachment contents are publicly stored on-chain, even for private notes.
+- **Scheme**: A 16-bit (limited to 65534) user-defined value that identifies the kind of attachment. This allows consumers to detect the presence of certain standardized attachments. For untyped attachments, the `none = 1` scheme can be used.
+
+The note commits to all of its attachments via a sequential hash over the individual attachment commitments (the attachments commitment). The attachment schemes are encoded in the note's metadata. When the note is consumed, the actual attachment content is provided via the advice provider.
 
 Example use cases for attachments are:
 - Communicate the note details of a private note in encrypted form. This means the encrypted note is attached publicly to the otherwise private note.
 - For [network transactions](./transaction.md#network-transaction), encode the ID of the network account that should
-  consume the note. This is a standardized attachment scheme in miden-standards called `NetworkAccountTarget`.
-- Communicate the details of a _private_ note to the receiver so they can derive the note. For example, the payback note of a partially fillable swap note can be private and the receiver already knows a few details: It is a P2ID note, the serial number is derived from the SWAP note's serial number and the note storage is the account ID of the receiver. The receiver only needs to now the exact amount that was filled to derive the full note for consumption. This amount can be encoded in the public attachment of the payback note, which allows this use case to work with private notes and still not require a side-channel.
+  consume the note. This is a standardized attachment scheme in `miden-standards` called `NetworkAccountTarget`.
+- Communicate the details of a _private_ note to the receiver so they can derive the note. For example, the payback note of a partially fillable swap note can be private and the receiver already knows a few details: It is a P2ID note, the serial number is derived from the SWAP note's serial number and the note storage is the account ID of the receiver. The receiver only needs to know the exact amount that was filled to derive the full note for consumption. This amount can be encoded in a public attachment of the payback note, which allows this use case to work with private notes and still not require a side-channel.
 
 ## Note Lifecycle
 

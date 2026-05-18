@@ -8,14 +8,14 @@ use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
     Note,
     NoteAssets,
-    NoteAttachment,
-    NoteMetadata,
+    NoteAttachments,
     NoteRecipient,
     NoteScript,
     NoteScriptRoot,
     NoteStorage,
     NoteTag,
     NoteType,
+    PartialNoteMetadata,
 };
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
@@ -79,7 +79,7 @@ impl P2idNote {
         target: AccountId,
         assets: Vec<Asset>,
         note_type: NoteType,
-        attachment: NoteAttachment,
+        attachments: NoteAttachments,
         rng: &mut R,
     ) -> Result<Note, NoteError> {
         let serial_num = rng.draw_word();
@@ -87,11 +87,10 @@ impl P2idNote {
 
         let tag = NoteTag::with_account_target(target);
 
-        let metadata =
-            NoteMetadata::new(sender, note_type).with_tag(tag).with_attachment(attachment);
+        let metadata = PartialNoteMetadata::new(sender, note_type).with_tag(tag);
         let vault = NoteAssets::new(assets)?;
 
-        Ok(Note::new(vault, metadata, recipient))
+        Ok(Note::with_attachments(vault, metadata, recipient, attachments))
     }
 }
 
@@ -173,7 +172,7 @@ mod tests {
     fn try_from_valid_storage_succeeds() {
         let target = AccountId::dummy(
             [1u8; 15],
-            AccountIdVersion::Version0,
+            AccountIdVersion::Version1,
             AccountType::FungibleFaucet,
             AccountStorageMode::Private,
         );
@@ -204,7 +203,7 @@ mod tests {
 
     #[test]
     fn try_from_invalid_storage_contents_returns_error() {
-        let storage = vec![Felt::new(999u64), Felt::new(888u64)];
+        let storage = vec![Felt::new_unchecked(999_u64), Felt::new_unchecked(888_u64)];
 
         let err = P2idNoteStorage::try_from(storage.as_slice())
             .expect_err("should fail due to invalid account id encoding");

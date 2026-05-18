@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::env;
 use std::fmt::Write;
 use std::path::Path;
@@ -7,6 +7,7 @@ use std::sync::Arc;
 use fs_err as fs;
 use miden_assembly::diagnostics::{IntoDiagnostic, NamedSource, Result, WrapErr};
 use miden_assembly::{Assembler, Library, Report};
+use miden_core::Word;
 use miden_crypto::hash::keccak::{Keccak256, Keccak256Digest};
 use miden_protocol::account::{
     AccountCode,
@@ -14,14 +15,16 @@ use miden_protocol::account::{
     AccountComponentMetadata,
     AccountType,
 };
+use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::transaction::TransactionKernel;
-use miden_standards::account::auth::NoAuth;
+use miden_standards::account::access::Authority;
+use miden_standards::account::auth::AuthNetworkAccount;
 use miden_standards::account::policies::{
-    BurnAllowAll,
     BurnPolicyConfig,
     MintPolicyConfig,
-    PolicyAuthority,
+    PolicyRegistration,
     TokenPolicyManager,
+    TransferPolicy,
 };
 use regex::Regex;
 
@@ -237,9 +240,10 @@ fn parse_numeric_constants_from_constants_masm(masm_path: &Path) -> Result<Vec<(
         .into_diagnostic()
         .wrap_err_with(|| format!("failed to read {}", masm_path.display()))?;
 
-    // One line per match: optional leading space, `const`, identifier (no leading digit), `=`,
-    // decimal digits only. `(?m)^` makes `^` match after newlines so we skip comment-only lines.
-    let re = Regex::new(r"(?m)^\s*const\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(\d+)\s*$")
+    // One line per match: optional leading space, optional `pub` visibility, `const`, identifier
+    // (no leading digit), `=`, decimal digits only. `(?m)^` makes `^` match after newlines so we
+    // skip comment-only lines.
+    let re = Regex::new(r"(?m)^\s*(?:pub\s+)?const\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(\d+)\s*$")
         .expect("constants.masm parse regex should compile");
 
     // `out` preserves declaration order; `seen` rejects duplicate const names in the same file.
@@ -323,32 +327,44 @@ fn generate_agglayer_constants(
 
         // The faucet account includes Ownable2Step and OwnerControlled components for mint and burn
         // policies alongside the agglayer faucet component, since
-        // network_fungible::mint_and_send requires these for access control.
+        // fungible::mint_and_send requires these for access control.
+        //
+        // The allowlist lives in storage, not code, and here we only care about the code commitment
+        // of the accounts, so we can init the allowlists with dummy values.
+        let placeholder_allowlist = BTreeSet::from([NoteScriptRoot::from_raw(Word::default())]);
+        let auth_component = AuthNetworkAccount::with_allowlist(placeholder_allowlist)
+            .expect("placeholder allowlist is non-empty");
         let mut components: Vec<AccountComponent> =
-            vec![AccountComponent::from(NoAuth), agglayer_component];
+            vec![AccountComponent::from(auth_component), agglayer_component];
         if lib_name == "faucet" {
             // Use a dummy owner for commitment computation - the actual owner is set at runtime
             let dummy_owner = miden_protocol::account::AccountId::try_from(
-                miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_NETWORK_ACCOUNT_IMMUTABLE_CODE,
+                miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
             )
             .unwrap();
             components.push(AccountComponent::from(
                 miden_standards::account::access::Ownable2Step::new(dummy_owner),
             ));
+            components.push(AccountComponent::from(Authority::OwnerControlled));
             // Mirror the component order used by `create_agglayer_faucet_builder` in lib.rs so
             // the compile-time code commitment matches the one computed at runtime.
             //
             // Burn policy manager: active = `owner_only` (burns locked by default), `allow_all`
-            // is explicitly allowed so the owner can open burns at runtime via `set_burn_policy`.
-            let token_policy_manager = TokenPolicyManager::new(
-                PolicyAuthority::OwnerControlled,
-                MintPolicyConfig::OwnerOnly,
-                BurnPolicyConfig::OwnerOnly,
-            )
-            .with_allowed_burn_policy(BurnAllowAll::root());
+            // is registered as Reserved so the owner can open burns at runtime via
+            // `set_burn_policy`.
+            let token_policy_manager = TokenPolicyManager::new()
+                .with_mint_policy(MintPolicyConfig::OwnerOnly, PolicyRegistration::Active)
+                .expect("active mint policy is registered exactly once")
+                .with_burn_policy(BurnPolicyConfig::OwnerOnly, PolicyRegistration::Active)
+                .expect("active burn policy is registered exactly once")
+                .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Reserved)
+                .expect("reserved burn policy registration does not conflict")
+                .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)
+                .expect("active send policy is registered exactly once")
+                .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)
+                .expect("active receive policy is registered exactly once");
 
             components.extend(token_policy_manager);
-            components.push(BurnAllowAll.into());
         }
 
         // use `AccountCode` to merge codes of agglayer and authentication components
@@ -359,17 +375,8 @@ fn generate_agglayer_constants(
 
         writeln!(
             file_contents,
-            "pub const {}_CODE_COMMITMENT: Word = Word::new([
-    Felt::new({}),
-    Felt::new({}),
-    Felt::new({}),
-    Felt::new({}),
-]);",
+            "pub const {}_CODE_COMMITMENT: Word = miden_protocol::word!(\"{code_commitment}\");",
             lib_name.to_uppercase(),
-            code_commitment[0],
-            code_commitment[1],
-            code_commitment[2],
-            code_commitment[3],
         )
         .unwrap();
     }

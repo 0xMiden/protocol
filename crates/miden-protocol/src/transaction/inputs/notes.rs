@@ -21,10 +21,10 @@ use crate::{Felt, Hasher, MAX_INPUT_NOTES_PER_TX, Word};
 /// The commitment is composed of:
 ///
 /// - nullifier, which prevents double spend and provides unlinkability.
-/// - an optional note commitment, which allows for delayed note authentication.
+/// - an optional note ID, which allows for delayed note authentication.
 pub trait ToInputNoteCommitments {
     fn nullifier(&self) -> Nullifier;
-    fn note_commitment(&self) -> Option<Word>;
+    fn note_id(&self) -> Option<NoteId>;
 }
 
 // INPUT NOTES
@@ -221,11 +221,11 @@ fn build_input_note_commitment<T: ToInputNoteCommitments>(notes: &[T]) -> Word {
     let mut elements: Vec<Felt> = Vec::with_capacity(notes.len() * 2);
     for commitment_data in notes {
         let nullifier = commitment_data.nullifier();
-        let empty_word_or_note_commitment =
-            &commitment_data.note_commitment().map_or(Word::empty(), |note_id| note_id);
+        let empty_word_or_note_id =
+            &commitment_data.note_id().map_or(Word::empty(), |note_id| note_id.as_word());
 
         elements.extend_from_slice(nullifier.as_elements());
-        elements.extend_from_slice(empty_word_or_note_commitment.as_elements());
+        elements.extend_from_slice(empty_word_or_note_id.as_elements());
     }
     Hasher::hash_elements(&elements)
 }
@@ -310,10 +310,10 @@ impl ToInputNoteCommitments for InputNote {
         self.note().nullifier()
     }
 
-    fn note_commitment(&self) -> Option<Word> {
+    fn note_id(&self) -> Option<NoteId> {
         match self {
             InputNote::Authenticated { .. } => None,
-            InputNote::Unauthenticated { note } => Some(note.commitment()),
+            InputNote::Unauthenticated { note } => Some(note.id()),
         }
     }
 }
@@ -323,8 +323,8 @@ impl ToInputNoteCommitments for &InputNote {
         (*self).nullifier()
     }
 
-    fn note_commitment(&self) -> Option<Word> {
-        (*self).note_commitment()
+    fn note_id(&self) -> Option<NoteId> {
+        (*self).note_id()
     }
 }
 

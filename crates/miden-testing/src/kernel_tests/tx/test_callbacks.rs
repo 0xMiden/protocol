@@ -11,6 +11,7 @@ use miden_protocol::account::{
     AccountComponent,
     AccountComponentCode,
     AccountId,
+    AccountProcedureRoot,
     AccountStorageMode,
     AccountType,
     StorageMap,
@@ -20,6 +21,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::{
     Asset,
+    AssetAmount,
     AssetCallbackFlag,
     AssetCallbacks,
     FungibleAsset,
@@ -31,10 +33,17 @@ use miden_protocol::errors::MasmError;
 use miden_protocol::note::{NoteTag, NoteType};
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
-use miden_standards::account::faucets::BasicFungibleFaucet;
-use miden_standards::account::metadata::{FungibleTokenMetadataBuilder, TokenName};
+use miden_standards::account::access::Authority;
+use miden_standards::account::faucets::{FungibleFaucet, TokenName};
+use miden_standards::account::policies::{
+    BurnPolicyConfig,
+    MintPolicyConfig,
+    PolicyRegistration,
+    TokenPolicyManager,
+    TransferPolicy,
+};
 use miden_standards::code_builder::CodeBuilder;
-use miden_standards::procedure_digest;
+use miden_standards::procedure_root;
 use miden_standards::testing::account_component::MockFaucetComponent;
 
 use crate::{AccountState, Auth, MockChain, MockChainBuilder, assert_transaction_executor_error};
@@ -133,18 +142,18 @@ static BLOCK_LIST_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
         .expect("storage slot name should be valid")
 });
 
-procedure_digest!(
+procedure_root!(
     BLOCK_LIST_ON_BEFORE_ASSET_ADDED_TO_ACCOUNT,
     BlockList::NAME,
     BlockList::ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_PROC_NAME,
-    || { BLOCK_LIST_COMPONENT_CODE.as_library() }
+    &BLOCK_LIST_COMPONENT_CODE
 );
 
-procedure_digest!(
+procedure_root!(
     BLOCK_LIST_ON_BEFORE_ASSET_ADDED_TO_NOTE,
     BlockList::NAME,
     BlockList::ON_BEFORE_ASSET_ADDED_TO_NOTE_PROC_NAME,
-    || { BLOCK_LIST_COMPONENT_CODE.as_library() }
+    &BLOCK_LIST_COMPONENT_CODE
 );
 
 // BLOCK LIST
@@ -171,13 +180,13 @@ impl BlockList {
         Self { blocked_accounts }
     }
 
-    /// Returns the digest of the `on_before_asset_added_to_account` procedure.
-    pub fn on_before_asset_added_to_account_digest() -> Word {
+    /// Returns the procedure root of the `on_before_asset_added_to_account` procedure.
+    pub fn on_before_asset_added_to_account_root() -> AccountProcedureRoot {
         *BLOCK_LIST_ON_BEFORE_ASSET_ADDED_TO_ACCOUNT
     }
 
-    /// Returns the digest of the `on_before_asset_added_to_note` procedure.
-    pub fn on_before_asset_added_to_note_digest() -> Word {
+    /// Returns the procedure root of the `on_before_asset_added_to_note` procedure.
+    pub fn on_before_asset_added_to_note_root() -> AccountProcedureRoot {
         *BLOCK_LIST_ON_BEFORE_ASSET_ADDED_TO_NOTE
     }
 }
@@ -205,9 +214,11 @@ impl From<BlockList> for AccountComponent {
         storage_slots.extend(
             AssetCallbacks::new()
                 .on_before_asset_added_to_account(
-                    BlockList::on_before_asset_added_to_account_digest(),
+                    BlockList::on_before_asset_added_to_account_root().as_word(),
                 )
-                .on_before_asset_added_to_note(BlockList::on_before_asset_added_to_note_digest())
+                .on_before_asset_added_to_note(
+                    BlockList::on_before_asset_added_to_note_root().as_word(),
+                )
                 .into_storage_slots(),
         );
         let metadata = AccountComponentMetadata::new(
@@ -612,6 +623,75 @@ async fn test_on_before_asset_added_to_note_callback_receives_correct_inputs() -
     Ok(())
 }
 
+/// Tests that consuming a callbacks-enabled asset succeeds when the issuing faucet is itself the
+/// target of the callback.
+///
+/// This is a regression test for https://github.com/0xMiden/protocol/issues/2864.
+#[tokio::test]
+async fn test_faucet_with_callback_calls_itself() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let account_callback_masm = r#"
+    #! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
+    #! Outputs: [ASSET_VALUE, pad(12)]
+    pub proc on_before_asset_added_to_account
+        dropw
+        # => [ASSET_VALUE, pad(12)]
+    end
+    "#;
+
+    let note_callback_masm = r#"
+    #! Inputs:  [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
+    #! Outputs: [ASSET_VALUE, pad(12)]
+    pub proc on_before_asset_added_to_note
+        dropw movup.4 drop
+        # => [ASSET_VALUE, pad(12)]
+    end
+    "#;
+
+    // Build an account that has both callbacks set to no-ops.
+    let faucet = add_faucet_with_callbacks(
+        &mut builder,
+        Some(account_callback_masm),
+        Some(note_callback_masm),
+    )?;
+
+    let recipient = Word::from([0, 1, 2, 3u32]);
+    let tag = 0u32;
+    let amount = 100u64;
+
+    let tx_script_code = format!(
+        "
+        begin
+            push.{recipient}
+            push.{note_type}
+            push.{tag}
+            push.{amount}
+            # => [amount, tag, note_type, RECIPIENT, pad(9)]
+
+            call.::miden::standards::faucets::fungible::mint_and_send
+            # => [note_idx, pad(15)]
+
+            # truncate the stack
+            dropw dropw dropw dropw
+        end
+        ",
+        note_type = NoteType::Private as u8,
+    );
+
+    let tx_script = CodeBuilder::default().compile_tx_script(tx_script_code)?;
+
+    let mock_chain = builder.build()?;
+    mock_chain
+        .build_tx_context(faucet.id(), &[], &[])?
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await?;
+
+    Ok(())
+}
+
 // HELPERS
 // ================================================================================================
 
@@ -684,13 +764,12 @@ fn add_faucet_with_callbacks(
         callbacks = callbacks.on_before_asset_added_to_note(proc_root);
     }
 
-    let faucet_metadata = FungibleTokenMetadataBuilder::new(
-        TokenName::new("").expect("empty string is a valid token name"),
-        "SYM".try_into()?,
-        8,
-        1_000_000u64,
-    )
-    .build()?;
+    let faucet = FungibleFaucet::builder()
+        .name(TokenName::new("").expect("empty string is a valid token name"))
+        .symbol("SYM".try_into()?)
+        .decimals(8)
+        .max_supply(AssetAmount::from(1_000_000u32))
+        .build()?;
 
     let callback_storage_slots = callbacks.into_storage_slots();
     let callback_metadata =
@@ -702,8 +781,15 @@ fn add_faucet_with_callbacks(
     let account_builder = AccountBuilder::new([42; 32])
         .storage_mode(AccountStorageMode::Public)
         .account_type(AccountType::FungibleFaucet)
-        .with_component(faucet_metadata)
-        .with_component(BasicFungibleFaucet)
+        .with_component(faucet)
+        .with_component(Authority::AuthControlled)
+        .with_components(
+            TokenPolicyManager::new()
+                .with_mint_policy(MintPolicyConfig::AllowAll, PolicyRegistration::Active)?
+                .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)?
+                .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?
+                .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?,
+        )
         .with_component(callback_component);
 
     builder.add_account_from_builder(

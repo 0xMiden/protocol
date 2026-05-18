@@ -1,0 +1,28 @@
+# The MASM code of the Basic Fungible Faucet Account Component.
+#
+# See the `FungibleFaucet` Rust type's documentation for more details. This component
+# bundles the fungible-faucet asset minting/burning procedures and the token metadata accessors
+# (name, description, logo URI, external link, mutability config) into a single component.
+
+# Fungible token minting and burning
+pub use ::miden::standards::faucets::fungible::mint_and_send
+pub use ::miden::standards::faucets::fungible::receive_and_burn
+
+# Fungible token configuration
+pub use ::miden::standards::faucets::fungible::get_decimals
+pub use ::miden::standards::faucets::fungible::get_token_symbol
+pub use ::miden::standards::faucets::fungible::get_token_supply
+pub use ::miden::standards::faucets::fungible::get_max_supply
+pub use ::miden::standards::faucets::fungible::set_max_supply
+pub use ::miden::standards::faucets::fungible::is_max_supply_mutable
+pub use ::miden::standards::faucets::fungible::get_token_config
+
+# Token metadata: mandatory name + optional description, logo, external link.
+pub use ::miden::standards::faucets::get_name
+pub use ::miden::standards::faucets::get_mutability_config
+pub use ::miden::standards::faucets::is_description_mutable
+pub use ::miden::standards::faucets::is_logo_uri_mutable
+pub use ::miden::standards::faucets::is_external_link_mutable
+pub use ::miden::standards::faucets::set_description
+pub use ::miden::standards::faucets::set_logo_uri
+pub use ::miden::standards::faucets::set_external_link

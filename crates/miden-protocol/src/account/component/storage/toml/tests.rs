@@ -603,7 +603,7 @@ fn extensive_schema_metadata_and_init_toml_example() {
         description = "Token metadata: max_supply, symbol, decimals, reserved."
         type = [
             { type = "u32", name = "max_supply", description = "Maximum supply (base units)" },
-            { type = "miden::standards::fungible_faucets::metadata::token_symbol", name = "symbol", default-value = "TST" },
+            { type = "miden::standards::faucets::fungible::token_symbol", name = "symbol", default-value = "TST" },
             { type = "u8", name = "decimals", description = "Token decimals" },
             { type = "void" },
         ]
@@ -707,7 +707,7 @@ fn extensive_schema_metadata_and_init_toml_example() {
         .expect("symbol should be reported with a default value");
     assert_eq!(
         symbol_requirement.r#type,
-        SchemaType::new("miden::standards::fungible_faucets::metadata::token_symbol").unwrap()
+        SchemaType::new("miden::standards::faucets::fungible::token_symbol").unwrap()
     );
     assert_eq!(symbol_requirement.default_value.as_deref(), Some("TST"));
     assert!(
@@ -762,7 +762,7 @@ fn extensive_schema_metadata_and_init_toml_example() {
     };
     assert_eq!(
         static_word,
-        &Word::from([Felt::new(1), Felt::new(2), Felt::new(3), Felt::new(4)])
+        &Word::from([Felt::ONE, Felt::from(2_u32), Felt::from(3_u32), Felt::from(4_u32)])
     );
 
     let legacy_word_name = StorageSlotName::new("demo::legacy_word").unwrap();
@@ -784,7 +784,7 @@ fn extensive_schema_metadata_and_init_toml_example() {
     );
     assert_eq!(
         static_map.get(&StorageMapKey::from_array([0, 0, 0, 2])),
-        Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::new(32)])
+        Word::from([0_u32, 0_u32, 0_u32, 32_u32])
     );
 
     let typed_map_new_slot = slots.iter().find(|s| s.name() == &typed_map_new_name).unwrap();
@@ -831,7 +831,7 @@ fn extensive_schema_metadata_and_init_toml_example() {
 
     assert_eq!(
         typed_map_new_contents.get(&StorageMapKey::from_array([1, 2, 0, 0])),
-        Word::from([Felt::new(16), Felt::ZERO, Felt::ZERO, Felt::ZERO])
+        Word::from([16_u32, 0, 0, 0])
     );
 
     let token_metadata_slot =
@@ -861,7 +861,7 @@ fn extensive_schema_metadata_and_init_toml_example() {
     );
     assert_eq!(
         static_map.get(&StorageMapKey::from_array([0, 0, 0, 2])),
-        Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::new(32)])
+        Word::from([0_u32, 0_u32, 0_u32, 32_u32])
     );
     assert_eq!(
         static_map.get(&StorageMapKey::from_raw(Word::parse("0x3").unwrap())),
@@ -917,7 +917,7 @@ fn typed_map_supports_non_numeric_value_types() {
         [[storage.slots]]
         name = "demo::symbol_map"
         type.key = "word"
-        type.value = "miden::standards::fungible_faucets::metadata::token_symbol"
+        type.value = "miden::standards::faucets::fungible::token_symbol"
     "#;
 
     let metadata = AccountComponentMetadata::from_toml(metadata_toml).unwrap();

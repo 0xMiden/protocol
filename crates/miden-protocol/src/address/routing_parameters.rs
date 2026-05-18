@@ -541,8 +541,8 @@ mod tests {
 
         // Test X25519XChaCha20Poly1305
         {
-            use crate::crypto::dsa::eddsa_25519_sha512::SecretKey;
-            let secret_key = SecretKey::with_rng(&mut rand::rng());
+            use crate::crypto::dsa::eddsa_25519_sha512::KeyExchangeKey;
+            let secret_key = KeyExchangeKey::with_rng(&mut rand::rng());
             let public_key = secret_key.public_key();
             let encryption_key = SealingKey::X25519XChaCha20Poly1305(public_key);
             test_encryption_key_roundtrip(encryption_key)?;
@@ -550,8 +550,8 @@ mod tests {
 
         // Test K256XChaCha20Poly1305
         {
-            use crate::crypto::dsa::ecdsa_k256_keccak::SecretKey;
-            let secret_key = SecretKey::with_rng(&mut rand::rng());
+            use crate::crypto::dsa::ecdsa_k256_keccak::KeyExchangeKey;
+            let secret_key = KeyExchangeKey::with_rng(&mut rand::rng());
             let public_key = secret_key.public_key();
             let encryption_key = SealingKey::K256XChaCha20Poly1305(public_key);
             test_encryption_key_roundtrip(encryption_key)?;
@@ -559,8 +559,8 @@ mod tests {
 
         // Test X25519AeadPoseidon2
         {
-            use crate::crypto::dsa::eddsa_25519_sha512::SecretKey;
-            let secret_key = SecretKey::with_rng(&mut rand::rng());
+            use crate::crypto::dsa::eddsa_25519_sha512::KeyExchangeKey;
+            let secret_key = KeyExchangeKey::with_rng(&mut rand::rng());
             let public_key = secret_key.public_key();
             let encryption_key = SealingKey::X25519AeadPoseidon2(public_key);
             test_encryption_key_roundtrip(encryption_key)?;
@@ -568,8 +568,8 @@ mod tests {
 
         // Test K256AeadPoseidon2
         {
-            use crate::crypto::dsa::ecdsa_k256_keccak::SecretKey;
-            let secret_key = SecretKey::with_rng(&mut rand::rng());
+            use crate::crypto::dsa::ecdsa_k256_keccak::KeyExchangeKey;
+            let secret_key = KeyExchangeKey::with_rng(&mut rand::rng());
             let public_key = secret_key.public_key();
             let encryption_key = SealingKey::K256AeadPoseidon2(public_key);
             test_encryption_key_roundtrip(encryption_key)?;

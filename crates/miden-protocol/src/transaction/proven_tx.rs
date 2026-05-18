@@ -8,7 +8,7 @@ use crate::account::delta::AccountUpdateDetails;
 use crate::asset::FungibleAsset;
 use crate::block::BlockNumber;
 use crate::errors::ProvenTransactionError;
-use crate::note::NoteHeader;
+use crate::note::{NoteHeader, NoteId};
 use crate::transaction::{
     AccountId,
     InputNotes,
@@ -546,7 +546,7 @@ impl From<&InputNote> for InputNoteCommitment {
             },
             InputNote::Unauthenticated { note } => Self {
                 nullifier: note.nullifier(),
-                header: Some(note.header().clone()),
+                header: Some(*note.header()),
             },
         }
     }
@@ -563,8 +563,8 @@ impl ToInputNoteCommitments for InputNoteCommitment {
         self.nullifier
     }
 
-    fn note_commitment(&self) -> Option<Word> {
-        self.header.as_ref().map(NoteHeader::to_commitment)
+    fn note_id(&self) -> Option<NoteId> {
+        self.header.as_ref().map(NoteHeader::id)
     }
 }
 
@@ -583,7 +583,7 @@ impl Deserializable for InputNoteCommitment {
         let nullifier = Nullifier::read_from(source)?;
         let header = <Option<NoteHeader>>::read_from(source)?;
 
-        Ok(Self { nullifier, header })
+        Ok(Self::from_parts_unchecked(nullifier, header))
     }
 }
 
@@ -707,7 +707,7 @@ mod tests {
     fn test_proven_tx_serde_roundtrip() -> anyhow::Result<()> {
         let account_id = AccountId::dummy(
             [1; 15],
-            AccountIdVersion::Version0,
+            AccountIdVersion::Version1,
             AccountType::FungibleFaucet,
             AccountStorageMode::Private,
         );

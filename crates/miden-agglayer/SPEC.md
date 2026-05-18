@@ -341,7 +341,7 @@ Converts a Miden-native asset amount to the origin chain's U256 representation:
 
 #### `agglayer_faucet::burn`
 
-This is a re-export of `miden::standards::faucets::basic_fungible::burn`. It burns the fungible asset from the active note, decreasing the faucet's token supply.
+This is a re-export of `miden::standards::faucets::fungible::burn`. It burns the fungible asset from the active note, decreasing the faucet's token supply.
 
 | | |
 |-|-|
@@ -775,7 +775,7 @@ between them, as implemented in Rust (`eth_types/address.rs`) and MASM
 
 ### 6.1 Background
 
-Miden's `AccountId` (version 0) consists of two Goldilocks field elements:
+Miden's `AccountId` (version 1) consists of two Goldilocks field elements:
 
 ```text
 prefix: [hash (56 bits) | storage_mode (2 bits) | type (2 bits) | version (4 bits)]

@@ -186,7 +186,7 @@ async fn test_validate_non_fungible_asset(
 #[case::amount_exceeds_max(
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into()?,
     AssetId::default(),
-    Word::try_from([FungibleAsset::MAX_AMOUNT + 1, 0, 0, 0])?,
+    Word::try_from([FungibleAsset::MAX_AMOUNT.as_u64() + 1, 0, 0, 0])?,
     ERR_FUNGIBLE_ASSET_AMOUNT_EXCEEDS_MAX_AMOUNT
 )]
 #[tokio::test]

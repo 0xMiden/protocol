@@ -7,7 +7,14 @@ use miden_protocol::note::PartialNote;
 use miden_protocol::{Felt, Word};
 
 use crate::AuthMethod;
-use crate::account::auth::{AuthGuardedMultisig, AuthMultisig, AuthSingleSig, AuthSingleSigAcl};
+use crate::account::auth::{
+    AuthGuardedMultisig,
+    AuthMultisig,
+    AuthMultisigSmart,
+    AuthSingleSig,
+    AuthSingleSigAcl,
+    NetworkAccountNoteAllowlist,
+};
 use crate::account::interface::AccountInterfaceError;
 
 // ACCOUNT COMPONENT INTERFACE
@@ -19,14 +26,18 @@ pub enum AccountComponentInterface {
     /// Exposes procedures from the [`BasicWallet`][crate::account::wallets::BasicWallet] module.
     BasicWallet,
     /// Exposes procedures from the
-    /// [`FungibleTokenMetadata`][crate::account::metadata::FungibleTokenMetadata] module.
-    FungibleTokenMetadata,
+    /// [`FungibleFaucet`][crate::account::faucets::FungibleFaucet] module.
+    FungibleFaucet,
     /// Exposes procedures from the
-    /// [`BasicFungibleFaucet`][crate::account::faucets::BasicFungibleFaucet] module.
-    BasicFungibleFaucet,
+    /// [`Authority`][crate::account::access::Authority] access component.
+    Authority,
     /// Exposes procedures from the
-    /// [`NetworkFungibleFaucet`][crate::account::faucets::NetworkFungibleFaucet] module.
-    NetworkFungibleFaucet,
+    /// [`Ownable2Step`][crate::account::access::Ownable2Step] access component.
+    Ownable2Step,
+    /// Exposes procedures from the
+    /// [`RoleBasedAccessControl`][crate::account::access::RoleBasedAccessControl] access
+    /// component.
+    RoleBasedAccessControl,
     /// Exposes procedures from the
     /// [`AuthSingleSig`][crate::account::auth::AuthSingleSig] module.
     AuthSingleSig,
@@ -36,6 +47,9 @@ pub enum AccountComponentInterface {
     /// Exposes procedures from the
     /// [`AuthMultisig`][crate::account::auth::AuthMultisig] module.
     AuthMultisig,
+    /// Exposes procedures from the
+    /// [`AuthMultisigSmart`][crate::account::auth::AuthMultisigSmart] module.
+    AuthMultisigSmart,
     /// Exposes procedures from the
     /// [`AuthGuardedMultisig`][crate::account::auth::AuthGuardedMultisig] module.
     AuthGuardedMultisig,
@@ -67,16 +81,16 @@ impl AccountComponentInterface {
     pub fn name(&self) -> String {
         match self {
             AccountComponentInterface::BasicWallet => "Basic Wallet".to_string(),
-            AccountComponentInterface::FungibleTokenMetadata => {
-                "Fungible Token Metadata".to_string()
-            },
-            AccountComponentInterface::BasicFungibleFaucet => "Basic Fungible Faucet".to_string(),
-            AccountComponentInterface::NetworkFungibleFaucet => {
-                "Network Fungible Faucet".to_string()
+            AccountComponentInterface::FungibleFaucet => "Fungible Faucet".to_string(),
+            AccountComponentInterface::Authority => "Authority".to_string(),
+            AccountComponentInterface::Ownable2Step => "Ownable2Step".to_string(),
+            AccountComponentInterface::RoleBasedAccessControl => {
+                "Role Based Access Control".to_string()
             },
             AccountComponentInterface::AuthSingleSig => "SingleSig".to_string(),
             AccountComponentInterface::AuthSingleSigAcl => "SingleSig ACL".to_string(),
             AccountComponentInterface::AuthMultisig => "Multisig".to_string(),
+            AccountComponentInterface::AuthMultisigSmart => "Multisig Smart".to_string(),
             AccountComponentInterface::AuthGuardedMultisig => "Guarded Multisig".to_string(),
             AccountComponentInterface::AuthNoAuth => "No Auth".to_string(),
             AccountComponentInterface::AuthNetworkAccount => "Network Account Auth".to_string(),
@@ -100,6 +114,7 @@ impl AccountComponentInterface {
             AccountComponentInterface::AuthSingleSig
                 | AccountComponentInterface::AuthSingleSigAcl
                 | AccountComponentInterface::AuthMultisig
+                | AccountComponentInterface::AuthMultisigSmart
                 | AccountComponentInterface::AuthGuardedMultisig
                 | AccountComponentInterface::AuthNoAuth
                 | AccountComponentInterface::AuthNetworkAccount
@@ -135,8 +150,18 @@ impl AccountComponentInterface {
                     AuthGuardedMultisig::approver_scheme_ids_slot(),
                 )]
             },
+            AccountComponentInterface::AuthMultisigSmart => {
+                vec![extract_multisig_auth_method(
+                    storage,
+                    AuthMultisigSmart::threshold_config_slot(),
+                    AuthMultisigSmart::approver_public_keys_slot(),
+                    AuthMultisigSmart::approver_scheme_ids_slot(),
+                )]
+            },
             AccountComponentInterface::AuthNoAuth => vec![AuthMethod::NoAuth],
-            AccountComponentInterface::AuthNetworkAccount => vec![AuthMethod::NoAuth],
+            AccountComponentInterface::AuthNetworkAccount => {
+                vec![extract_network_account_auth_method(storage)]
+            },
             _ => vec![], // Non-auth components return empty vector
         }
     }
@@ -164,13 +189,13 @@ impl AccountComponentInterface {
     ///     dropw dropw dropw drop
     /// ```
     ///
-    /// Example script for the [`AccountComponentInterface::BasicFungibleFaucet`] with one note:
+    /// Example script for the [`AccountComponentInterface::FungibleFaucet`] with one note:
     ///
     /// ```masm
     ///     push.{note information}
     ///
     ///     push.{asset amount}
-    ///     call.::miden::standards::faucets::basic_fungible::mint_and_send dropw dropw drop
+    ///     call.::miden::standards::faucets::fungible::mint_and_send dropw dropw drop
     /// ```
     ///
     /// # Errors:
@@ -206,7 +231,7 @@ impl AccountComponentInterface {
             ));
 
             match self {
-                AccountComponentInterface::BasicFungibleFaucet => {
+                AccountComponentInterface::FungibleFaucet => {
                     if partial_note.assets().num_assets() != 1 {
                         return Err(AccountInterfaceError::FaucetNoteWithoutAsset);
                     }
@@ -224,7 +249,7 @@ impl AccountComponentInterface {
                     body.push_str(&format!(
                         "
                         push.{amount}
-                        call.::miden::standards::faucets::basic_fungible::mint_and_send
+                        call.::miden::standards::faucets::fungible::mint_and_send
                         # => [note_idx, pad(25)]
                         swapdw dropw dropw swap drop
                         # => [note_idx, pad(16)]\n
@@ -269,21 +294,29 @@ impl AccountComponentInterface {
                 },
             }
 
-            body.push_str(&format!(
-                "
-                push.{ATTACHMENT}
-                push.{attachment_kind}
+            for attachment in partial_note.attachments().iter() {
+                let attachment_scheme = attachment.attachment_scheme().as_u16();
+                let attachment_commitment = attachment.content().to_commitment();
+
+                body.push_str(&format!(
+                    "
+                dup
+                push.{attachment_commitment}
                 push.{attachment_scheme}
-                movup.6
-                # => [note_idx, attachment_scheme, attachment_kind, ATTACHMENT, pad(16)]
-                exec.::miden::protocol::output_note::set_attachment
+                # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx, note_idx, pad(16)]
+                exec.::miden::protocol::output_note::add_attachment
+                # => [note_idx, pad(16)]
+            ",
+                ));
+            }
+
+            body.push_str(
+                "
+                # drop the note idx
+                drop
                 # => [pad(16)]
             ",
-                ATTACHMENT = partial_note.metadata().to_attachment_word(),
-                attachment_scheme =
-                    partial_note.metadata().attachment().attachment_scheme().as_u32(),
-                attachment_kind = partial_note.metadata().attachment().attachment_kind().as_u8(),
-            ));
+            );
         }
 
         Ok(body)
@@ -367,4 +400,14 @@ fn extract_multisig_auth_method(
     }
 
     AuthMethod::Multisig { threshold, approvers }
+}
+
+/// Extracts authentication method from a network-account component.
+fn extract_network_account_auth_method(storage: &AccountStorage) -> AuthMethod {
+    let allowlist = NetworkAccountNoteAllowlist::try_from(storage)
+        .expect("network account allowlist slot should be present and valid");
+
+    AuthMethod::NetworkAccount {
+        allowed_script_roots: allowlist.into_allowed_script_roots(),
+    }
 }

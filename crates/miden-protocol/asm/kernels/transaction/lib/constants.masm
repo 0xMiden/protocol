@@ -1,8 +1,7 @@
 # CONSTANTS
 # =================================================================================================
 
-# The number of elements in a Word
-pub const WORD_SIZE = 4
+pub use $kernel::util::constants::WORD_NUM_ELEMENTS
 
 # The maximum number of storage items associated with a single note.
 pub const MAX_NOTE_STORAGE_ITEMS = 1024
@@ -29,7 +28,7 @@ pub const ACCOUNT_PROCEDURE_DATA_LENGTH = 4
 # =================================================================================================
 
 # Root of an empty Sparse Merkle Tree
-pub const EMPTY_SMT_ROOT = [11569107685829756166, 7187477731240244145, 8326334713638926095, 2239973196746300865]
+pub const EMPTY_SMT_ROOT = [3975378004049472045, 2532873049833957132, 2640800763532531478, 11158234471980764993]
 
 # Type of storage slot item in the account storage
 pub const STORAGE_SLOT_TYPE_VALUE = 0

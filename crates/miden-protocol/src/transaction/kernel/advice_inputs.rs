@@ -6,7 +6,6 @@ use crate::account::{AccountHeader, PartialAccount};
 use crate::block::account_tree::{AccountIdKey, AccountWitness};
 use crate::crypto::SequentialCommit;
 use crate::crypto::merkle::InnerNodeInfo;
-use crate::note::NoteAttachmentContent;
 use crate::transaction::{
     AccountInputs,
     InputNote,
@@ -228,7 +227,9 @@ impl TransactionAdviceInputs {
 
         // insert MMR peaks info into the advice map
         let peaks = mmr.peaks();
-        let mut elements = vec![Felt::new(peaks.num_leaves() as u64), ZERO, ZERO, ZERO];
+        let num_leaves = Felt::try_from(peaks.num_leaves() as u64)
+            .expect("number of blocks in chain should not exceed BlockNumber::MAX");
+        let mut elements = vec![num_leaves, ZERO, ZERO, ZERO];
         elements.extend(peaks.flatten_and_pad_peaks());
         self.add_map_entry(peaks.hash_peaks(), elements);
     }
@@ -339,14 +340,23 @@ impl TransactionAdviceInputs {
             self.add_map_entry(recipient.storage().commitment(), recipient.storage().to_elements());
             // assets commitments
             self.add_map_entry(assets.commitment(), assets.to_elements());
-            // array attachments
-            if let NoteAttachmentContent::Array(array_attachment) =
-                note.metadata().attachment().content()
-            {
-                self.add_map_entry(
-                    array_attachment.commitment(),
-                    array_attachment.as_slice().to_vec(),
-                );
+
+            // ATTACHMENTS_COMMITMENT |-> [[ATTACHMENT_COMMITMENTS]]
+            self.add_map_entry(
+                note.attachments().to_commitment(),
+                note.attachments()
+                    .commitments()
+                    .iter()
+                    .flat_map(Word::as_elements)
+                    .copied()
+                    .collect(),
+            );
+
+            // ATTACHMENT_COMMITMENT |-> [ATTACHMENT_ELEMENTS] for each attachment
+            for attachment in note.attachments().iter() {
+                let commitment = attachment.content().to_commitment();
+                let elements = attachment.content().to_elements();
+                self.add_map_entry(commitment, elements);
             }
 
             // note details / metadata
@@ -355,8 +365,8 @@ impl TransactionAdviceInputs {
             note_data.extend(*recipient.storage().commitment());
             note_data.extend(*assets.commitment());
             note_data.extend(*note_arg);
-            note_data.extend(note.metadata().to_attachment_word());
-            note_data.extend(note.metadata().to_header_word());
+            note_data.extend(note.attachments().to_commitment());
+            note_data.extend(note.metadata().to_metadata_word());
             note_data.push(Felt::from(recipient.storage().num_items()));
             note_data.push(Felt::from(assets.num_assets() as u32));
             note_data.extend(assets.to_elements());
@@ -368,7 +378,7 @@ impl TransactionAdviceInputs {
                     note_data.push(Felt::ONE);
 
                     // Merkle path
-                    self.extend_merkle_store(proof.authenticated_nodes(note.commitment()));
+                    self.extend_merkle_store(proof.authenticated_nodes(note.id()));
 
                     let block_num = proof.location().block_num();
                     let block_header = if block_num == tx_inputs.block_header().block_num() {

@@ -1,4 +1,5 @@
 use miden_protocol::account::component::{
+    AccountComponentCode,
     AccountComponentMetadata,
     FeltSchema,
     StorageSchema,
@@ -16,7 +17,9 @@ use miden_protocol::errors::AccountIdError;
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
-use crate::account::components::ownable2step_library;
+use crate::account::account_component_code;
+
+account_component_code!(OWNABLE2STEP_CODE, "access/ownable2step.masl");
 
 static OWNER_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::access::ownable2step::owner_config")
@@ -46,6 +49,11 @@ pub struct Ownable2Step {
 impl Ownable2Step {
     /// The name of the component.
     pub const NAME: &'static str = "miden::standards::access::ownable2step";
+
+    /// Returns the [`AccountComponentCode`] of this component.
+    pub fn code() -> &'static AccountComponentCode {
+        &OWNABLE2STEP_CODE
+    }
 
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
@@ -151,7 +159,7 @@ impl From<Ownable2Step> for AccountComponent {
         let storage_slot = ownership.to_storage_slot();
         let metadata = Ownable2Step::component_metadata();
 
-        AccountComponent::new(ownable2step_library(), vec![storage_slot], metadata).expect(
+        AccountComponent::new(Ownable2Step::code().clone(), vec![storage_slot], metadata).expect(
             "Ownable2Step component should satisfy the requirements of a valid account component",
         )
     }

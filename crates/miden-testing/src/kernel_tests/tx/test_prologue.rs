@@ -42,9 +42,9 @@ use miden_protocol::transaction::memory::{
     INPUT_NOTE_ARGS_OFFSET,
     INPUT_NOTE_ASSETS_COMMITMENT_OFFSET,
     INPUT_NOTE_ASSETS_OFFSET,
-    INPUT_NOTE_ATTACHMENT_OFFSET,
-    INPUT_NOTE_ID_OFFSET,
-    INPUT_NOTE_METADATA_HEADER_OFFSET,
+    INPUT_NOTE_ATTACHMENTS_COMMITMENT_OFFSET,
+    INPUT_NOTE_DETAILS_COMMITMENT_OFFSET,
+    INPUT_NOTE_METADATA_OFFSET,
     INPUT_NOTE_NULLIFIER_SECTION_PTR,
     INPUT_NOTE_NUM_ASSETS_OFFSET,
     INPUT_NOTE_RECIPIENT_OFFSET,
@@ -322,7 +322,7 @@ fn partial_blockchain_memory_assertions(
 
     assert_eq!(
         exec_output.get_kernel_mem_word(PARTIAL_BLOCKCHAIN_NUM_LEAVES_PTR)[0],
-        Felt::new(partial_blockchain.chain_length().as_u64()),
+        Felt::from(partial_blockchain.chain_length()),
         "The number of leaves should be stored at the PARTIAL_BLOCKCHAIN_NUM_LEAVES_PTR"
     );
 
@@ -452,9 +452,9 @@ fn input_notes_memory_assertions(
         );
 
         assert_eq!(
-            exec_output.get_note_mem_word(note_idx, INPUT_NOTE_ID_OFFSET),
-            note.id().as_word(),
-            "ID hash should be computed and stored at the correct offset"
+            exec_output.get_note_mem_word(note_idx, INPUT_NOTE_DETAILS_COMMITMENT_OFFSET),
+            note.details_commitment().as_word(),
+            "note details commitment should be computed and stored at INPUT_NOTE_DETAILS_COMMITMENT_OFFSET"
         );
 
         assert_eq!(
@@ -488,14 +488,14 @@ fn input_notes_memory_assertions(
         );
 
         assert_eq!(
-            exec_output.get_note_mem_word(note_idx, INPUT_NOTE_METADATA_HEADER_OFFSET),
-            note.metadata().to_header_word(),
-            "note metadata header should be stored at the correct offset"
+            exec_output.get_note_mem_word(note_idx, INPUT_NOTE_METADATA_OFFSET),
+            note.metadata().to_metadata_word(),
+            "note metadata should be stored at the correct offset"
         );
 
         assert_eq!(
-            exec_output.get_note_mem_word(note_idx, INPUT_NOTE_ATTACHMENT_OFFSET),
-            note.metadata().to_attachment_word(),
+            exec_output.get_note_mem_word(note_idx, INPUT_NOTE_ATTACHMENTS_COMMITMENT_OFFSET),
+            note.attachments().to_commitment(),
             "note attachment should be stored at the correct offset"
         );
 
@@ -552,11 +552,11 @@ async fn create_simple_account() -> anyhow::Result<()> {
         .await
         .context("failed to execute account-creating transaction")?;
 
-    assert_eq!(tx.account_delta().nonce_delta(), Felt::new(1));
+    assert_eq!(tx.account_delta().nonce_delta(), Felt::ONE);
     // except for the nonce, the delta should be empty
     assert!(tx.account_delta().storage().is_empty());
     assert!(tx.account_delta().vault().is_empty());
-    assert_eq!(tx.final_account().nonce(), Felt::new(1));
+    assert_eq!(tx.final_account().nonce(), Felt::ONE);
     // account commitment should not be the empty word
     assert_ne!(tx.account_delta().to_commitment(), EMPTY_WORD);
 
@@ -611,9 +611,7 @@ pub async fn create_multiple_accounts_test(storage_mode: AccountStorageMode) -> 
 pub async fn create_accounts_with_all_storage_modes() -> anyhow::Result<()> {
     create_multiple_accounts_test(AccountStorageMode::Private).await?;
 
-    create_multiple_accounts_test(AccountStorageMode::Public).await?;
-
-    create_multiple_accounts_test(AccountStorageMode::Network).await
+    create_multiple_accounts_test(AccountStorageMode::Public).await
 }
 
 /// Tests that supplying an invalid seed causes account creation to fail.
