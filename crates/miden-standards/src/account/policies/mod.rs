@@ -15,6 +15,11 @@
 //! for send and receive policies reside directly in the protocol-reserved
 //! callback slots so the kernel dispatches to them via `call`.
 //!
+//! Authority for switching policies is provided by the separate
+//! [`Authority`][crate::account::access::Authority] component, which must be installed on the
+//! account alongside the policy manager. The masm helper `authority::assert_authorized` is
+//! `exec`'d from `set_*_policy` to gate runtime policy changes.
+//!
 //! Storage-free policy components (e.g. [`MintAllowAll`], [`BurnOwnerOnly`],
 //! [`TransferAllowAll`]) install a specific policy procedure on the account so that the
 //! manager's `dynexec` can dispatch to it.
@@ -23,8 +28,6 @@
 //! [`TokenPolicyManager::with_mint_policy`] / [`TokenPolicyManager::with_burn_policy`] /
 //! [`TokenPolicyManager::with_send_policy`] / [`TokenPolicyManager::with_receive_policy`] and
 //! passes it directly to [`miden_protocol::account::AccountBuilder::with_components`].
-
-use miden_protocol::Word;
 
 mod burn;
 mod manager;
@@ -43,29 +46,6 @@ pub use transfer::{
     TransferAllowAll,
     TransferPolicy,
 };
-
-// POLICY AUTHORITY
-// ================================================================================================
-
-/// Identifies which authority is allowed to manage policies for a faucet.
-///
-/// Shared across all policy kinds — the manager stores a single value that gates
-/// `set_mint_policy`, `set_burn_policy`, `set_send_policy`, and `set_receive_policy`.
-#[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum PolicyAuthority {
-    /// Policy changes are authorized by the account's authentication component logic.
-    AuthControlled = 0,
-    /// Policy changes are authorized by the external account owner.
-    OwnerControlled = 1,
-}
-
-impl From<PolicyAuthority> for Word {
-    fn from(value: PolicyAuthority) -> Self {
-        Word::from([value as u8, 0, 0, 0])
-    }
-}
 
 // POLICY REGISTRATION
 // ================================================================================================

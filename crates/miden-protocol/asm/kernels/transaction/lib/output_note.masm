@@ -410,7 +410,7 @@ proc validate_attachment
     # AS => [num_elements, [ATTACHMENT_ELEMENTS]]
 
     # derive num_words from num_elements
-    adv_push.1 u32assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_MAX_EXCEEDED
+    adv_push u32assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_MAX_EXCEEDED
     u32divmod.WORD_NUM_ELEMENTS
     # OS => [remainder, num_words, ATTACHMENT_COMMITMENT]
     # AS => [[ATTACHMENT_ELEMENTS]]

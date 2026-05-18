@@ -259,7 +259,7 @@ impl From<SwapNoteStorage> for NoteStorage {
 
 #[cfg(test)]
 mod tests {
-    use miden_protocol::Felt;
+
     use miden_protocol::account::{AccountIdVersion, AccountStorageMode, AccountType};
     use miden_protocol::asset::{FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
     use miden_protocol::note::{NoteStorage, NoteTag, NoteType};
@@ -293,8 +293,7 @@ mod tests {
         let payback_note_type = NoteType::Private;
         let payback_tag = NoteTag::new(0x12345678);
         let requested_asset = fungible_asset();
-        let payback_recipient_digest =
-            Word::new([Felt::new(1), Felt::new(2), Felt::new(3), Felt::new(4)]);
+        let payback_recipient_digest = Word::from([1_u32, 2_u32, 3_u32, 4_u32]);
 
         let storage = SwapNoteStorage::from_parts(
             payback_note_type,
@@ -318,8 +317,7 @@ mod tests {
         let payback_note_type = NoteType::Public;
         let payback_tag = NoteTag::new(0xaabbccdd);
         let requested_asset = non_fungible_asset();
-        let payback_recipient_digest =
-            Word::new([Felt::new(10), Felt::new(20), Felt::new(30), Felt::new(40)]);
+        let payback_recipient_digest = Word::from([10_u32, 20_u32, 30_u32, 40_u32]);
 
         let storage = SwapNoteStorage::from_parts(
             payback_note_type,

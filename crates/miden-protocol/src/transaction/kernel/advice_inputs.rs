@@ -227,7 +227,9 @@ impl TransactionAdviceInputs {
 
         // insert MMR peaks info into the advice map
         let peaks = mmr.peaks();
-        let mut elements = vec![Felt::new(peaks.num_leaves() as u64), ZERO, ZERO, ZERO];
+        let num_leaves = Felt::try_from(peaks.num_leaves() as u64)
+            .expect("number of blocks in chain should not exceed BlockNumber::MAX");
+        let mut elements = vec![num_leaves, ZERO, ZERO, ZERO];
         elements.extend(peaks.flatten_and_pad_peaks());
         self.add_map_entry(peaks.hash_peaks(), elements);
     }
@@ -376,7 +378,7 @@ impl TransactionAdviceInputs {
                     note_data.push(Felt::ONE);
 
                     // Merkle path
-                    self.extend_merkle_store(proof.authenticated_nodes(note.commitment()));
+                    self.extend_merkle_store(proof.authenticated_nodes(note.id()));
 
                     let block_num = proof.location().block_num();
                     let block_header = if block_num == tx_inputs.block_header().block_num() {

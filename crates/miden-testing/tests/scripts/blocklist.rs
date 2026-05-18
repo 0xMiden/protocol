@@ -23,14 +23,13 @@ use miden_protocol::asset::{Asset, AssetAmount, AssetCallbackFlag, FungibleAsset
 use miden_protocol::note::{Note, NoteTag, NoteType};
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
-use miden_standards::account::access::Ownable2Step;
+use miden_standards::account::access::{Authority, Ownable2Step};
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
     BasicBlocklist,
     BlocklistOwnerControlled,
     BurnPolicyConfig,
     MintPolicyConfig,
-    PolicyAuthority,
     PolicyRegistration,
     TokenPolicyManager,
     TransferPolicy,
@@ -92,8 +91,9 @@ fn add_faucet_with_owner_blocklist_transfer_initialized(
         .account_type(AccountType::FungibleFaucet)
         .with_component(faucet)
         .with_component(Ownable2Step::new(owner_id))
+        .with_component(Authority::OwnerControlled)
         .with_components(
-            TokenPolicyManager::new(PolicyAuthority::OwnerControlled)
+            TokenPolicyManager::new()
                 .with_mint_policy(MintPolicyConfig::AllowAll, PolicyRegistration::Active)?
                 .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)?
                 .with_send_policy(

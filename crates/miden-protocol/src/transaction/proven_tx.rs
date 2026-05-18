@@ -8,7 +8,7 @@ use crate::account::delta::AccountUpdateDetails;
 use crate::asset::FungibleAsset;
 use crate::block::BlockNumber;
 use crate::errors::ProvenTransactionError;
-use crate::note::NoteHeader;
+use crate::note::{NoteHeader, NoteId};
 use crate::transaction::{
     AccountId,
     InputNotes,
@@ -563,8 +563,8 @@ impl ToInputNoteCommitments for InputNoteCommitment {
         self.nullifier
     }
 
-    fn note_commitment(&self) -> Option<Word> {
-        self.header.as_ref().map(NoteHeader::to_commitment)
+    fn note_id(&self) -> Option<NoteId> {
+        self.header.as_ref().map(NoteHeader::id)
     }
 }
 

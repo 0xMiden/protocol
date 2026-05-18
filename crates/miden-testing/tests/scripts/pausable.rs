@@ -52,7 +52,6 @@ use miden_standards::account::policies::{
     BurnPolicyConfig,
     MintPolicyConfig,
     PausableBlocklist,
-    PolicyAuthority,
     PolicyRegistration,
     TokenPolicyManager,
     TransferPolicy,
@@ -259,7 +258,7 @@ fn build_unpause_note(sender: AccountId) -> anyhow::Result<Note> {
 
 fn build_note(sender: AccountId, code: impl Into<String>) -> anyhow::Result<Note> {
     let seed: [u64; 4] = rand::random();
-    let mut rng = RandomCoin::new(Word::from(seed.map(Felt::new)));
+    let mut rng = RandomCoin::new(Word::from(seed.map(Felt::new_unchecked)));
     Ok(NoteBuilder::new(sender, &mut rng)
         .note_type(NoteType::Private)
         .code(code.into())
@@ -603,7 +602,7 @@ fn add_faucet_with_pausable_rbac(
         .account_type(AccountType::FungibleFaucet)
         .with_component(faucet)
         .with_component(BasicPausable::default())
-        .with_components(AccessControl::Rbac { owner })
+        .with_components(AccessControl::Rbac { owner, authority_role: None })
         .with_component(PausableRoleControlled)
         .with_component(pausable_callbacks_component()?);
 
@@ -877,7 +876,7 @@ fn add_faucet_with_pausable_owner_and_rbac(
         .account_type(AccountType::FungibleFaucet)
         .with_component(faucet)
         .with_component(BasicPausable::default())
-        .with_components(AccessControl::Rbac { owner })
+        .with_components(AccessControl::Rbac { owner, authority_role: None })
         .with_component(PausableOwnerControlled)
         .with_component(PausableRoleControlled)
         .with_component(pausable_callbacks_component()?);
@@ -942,7 +941,7 @@ fn add_faucet_with_pausable_policy(
         .with_component(faucet)
         .with_component(BasicPausable::new(initial_state))
         .with_components(
-            TokenPolicyManager::new(PolicyAuthority::AuthControlled)
+            TokenPolicyManager::new()
                 .with_mint_policy(MintPolicyConfig::AllowAll, PolicyRegistration::Active)?
                 .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)?
                 .with_send_policy(
@@ -1102,7 +1101,7 @@ fn add_faucet_with_pausable_blocklist_policy(
         .with_component(faucet)
         .with_component(composite)
         .with_components(
-            TokenPolicyManager::new(PolicyAuthority::AuthControlled)
+            TokenPolicyManager::new()
                 .with_mint_policy(MintPolicyConfig::AllowAll, PolicyRegistration::Active)?
                 .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)?
                 .with_send_policy(

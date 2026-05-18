@@ -15,7 +15,6 @@ use miden_protocol::Word;
 use miden_protocol::account::component::{
     AccountComponentCode,
     AccountComponentMetadata,
-    FeltSchema,
     SchemaType,
     StorageSchema,
     StorageSlotSchema,
@@ -33,10 +32,10 @@ use miden_protocol::asset::AssetCallbacks;
 use miden_protocol::utils::sync::LazyLock;
 use thiserror::Error;
 
+use super::PolicyRegistration;
 use super::burn::BurnPolicyConfig;
 use super::mint::MintPolicyConfig;
 use super::transfer::{TransferAllowAll, TransferPolicy};
-use super::{PolicyAuthority, PolicyRegistration};
 use crate::account::account_component_code;
 
 // ERRORS
@@ -55,11 +54,6 @@ account_component_code!(POLICY_MANAGER_CODE, "faucets/policies/policy_manager.ma
 
 // STORAGE SLOT NAMES
 // ================================================================================================
-
-static POLICY_AUTHORITY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::faucets::policies::policy_manager::policy_authority")
-        .expect("storage slot name should be valid")
-});
 
 static ACTIVE_MINT_POLICY_PROC_ROOT_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new(
@@ -145,12 +139,9 @@ struct PolicyConfig {
 ///
 /// The component exposes `set_*_policy`, `get_*_policy`, and `execute_*_policy` procedures for
 /// each kind, plus the protocol-level `on_before_asset_added_to_*` asset callbacks (which
-/// dispatch to the active send / receive policy). The shared [`PolicyAuthority`] mode controls
-/// who can change any policy:
-/// - [`PolicyAuthority::AuthControlled`]: changes are gated by the account's authentication
-///   component.
-/// - [`PolicyAuthority::OwnerControlled`]: changes require the account owner (verified through the
-///   `Ownable2Step` companion component).
+/// dispatch to the active send / receive policy). Authorization for switching the active policies
+/// is delegated to the account-wide [`Authority`][crate::account::access::Authority] component,
+/// which must be installed alongside this manager.
 ///
 /// Construct via [`Self::new`] and chain the per-kind builders
 /// ([`Self::with_mint_policy`] / [`Self::with_burn_policy`] / [`Self::with_send_policy`] /
@@ -171,7 +162,6 @@ struct PolicyConfig {
 ///
 /// ## Storage layout
 ///
-/// - [`Self::policy_authority_slot`]: shared authority mode.
 /// - [`Self::active_mint_policy_slot`]: procedure root of the active mint policy.
 /// - [`Self::active_burn_policy_slot`]: procedure root of the active burn policy.
 /// - [`Self::allowed_mint_policies_slot`]: map of allowed mint policy roots.
@@ -184,7 +174,6 @@ struct PolicyConfig {
 ///   `AllowAll` does not).
 #[derive(Debug, Clone)]
 pub struct TokenPolicyManager {
-    authority: PolicyAuthority,
     active_mint_policy_root: AccountProcedureRoot,
     active_burn_policy_root: AccountProcedureRoot,
     active_send_policy_root: AccountProcedureRoot,
@@ -211,15 +200,8 @@ impl TokenPolicyManager {
     /// Every kind should end up with exactly one [`PolicyRegistration::Active`] entry by the
     /// time the manager is converted into account components. Missing active entries leave the
     /// corresponding `active_*_policy_proc_root` storage slot at the zero word.
-    pub fn new(authority: PolicyAuthority) -> Self {
-        Self {
-            authority,
-            active_mint_policy_root: AccountProcedureRoot::from_raw(Word::empty()),
-            active_burn_policy_root: AccountProcedureRoot::from_raw(Word::empty()),
-            active_send_policy_root: AccountProcedureRoot::from_raw(Word::empty()),
-            active_receive_policy_root: AccountProcedureRoot::from_raw(Word::empty()),
-            policies: BTreeMap::new(),
-        }
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Registers a mint policy. The `registration` flag decides whether the policy becomes the
@@ -339,11 +321,6 @@ impl TokenPolicyManager {
     // ACCESSORS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns the authority used by this manager.
-    pub fn authority(&self) -> PolicyAuthority {
-        self.authority
-    }
-
     /// Returns the active mint policy procedure root, or [`None`] if no active mint policy has
     /// been registered.
     pub fn active_mint_policy(&self) -> Option<AccountProcedureRoot> {
@@ -397,11 +374,6 @@ impl TokenPolicyManager {
             .collect()
     }
 
-    /// Returns the [`StorageSlotName`] containing the policy authority mode.
-    pub fn policy_authority_slot() -> &'static StorageSlotName {
-        &POLICY_AUTHORITY_SLOT_NAME
-    }
-
     /// Returns the [`StorageSlotName`] where the active mint policy procedure root is stored.
     pub fn active_mint_policy_slot() -> &'static StorageSlotName {
         &ACTIVE_MINT_POLICY_PROC_ROOT_SLOT_NAME
@@ -440,18 +412,6 @@ impl TokenPolicyManager {
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
         let storage_schema = StorageSchema::new(vec![
-            (
-                POLICY_AUTHORITY_SLOT_NAME.clone(),
-                StorageSlotSchema::value(
-                    "Token policy authority",
-                    [
-                        FeltSchema::u8("policy_authority"),
-                        FeltSchema::new_void(),
-                        FeltSchema::new_void(),
-                        FeltSchema::new_void(),
-                    ],
-                ),
-            ),
             (
                 ACTIVE_MINT_POLICY_PROC_ROOT_SLOT_NAME.clone(),
                 StorageSlotSchema::value(
@@ -512,7 +472,6 @@ impl TokenPolicyManager {
         // first invocation. Callers that want a build-time check can inspect the
         // `active_*_policy()` accessors before passing the manager to `AccountBuilder`.
         let mut slots = vec![
-            StorageSlot::with_value(POLICY_AUTHORITY_SLOT_NAME.clone(), self.authority.into()),
             StorageSlot::with_value(
                 ACTIVE_MINT_POLICY_PROC_ROOT_SLOT_NAME.clone(),
                 self.active_mint_policy_root.as_word(),
@@ -593,6 +552,18 @@ impl TokenPolicyManager {
         .expect(
             "token policy manager component should satisfy the requirements of a valid account component",
         )
+    }
+}
+
+impl Default for TokenPolicyManager {
+    fn default() -> Self {
+        Self {
+            active_mint_policy_root: AccountProcedureRoot::from_raw(Word::empty()),
+            active_burn_policy_root: AccountProcedureRoot::from_raw(Word::empty()),
+            active_send_policy_root: AccountProcedureRoot::from_raw(Word::empty()),
+            active_receive_policy_root: AccountProcedureRoot::from_raw(Word::empty()),
+            policies: BTreeMap::new(),
+        }
     }
 }
 

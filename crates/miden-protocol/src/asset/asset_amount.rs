@@ -27,7 +27,7 @@ impl AssetAmount {
     ///
     /// Equal to 2^63 - 2^31. This was chosen so that the amount fits as both a positive and
     /// negative value in a field element.
-    pub const MAX: u64 = 2u64.pow(63) - 2u64.pow(31);
+    pub const MAX: Self = Self(2u64.pow(63) - 2u64.pow(31));
 
     /// The zero amount.
     pub const ZERO: Self = Self(0);
@@ -38,7 +38,7 @@ impl AssetAmount {
     ///
     /// Returns an error if `amount` is greater than [`Self::MAX`].
     pub fn new(amount: u64) -> Result<Self, AssetError> {
-        if amount > Self::MAX {
+        if amount > Self::MAX.0 {
             return Err(AssetError::FungibleAssetAmountTooBig(amount));
         }
         Ok(Self(amount))
@@ -174,13 +174,13 @@ mod tests {
         assert_eq!(val, 0);
         let val: u64 = AssetAmount::new(1000).unwrap().into();
         assert_eq!(val, 1000);
-        let val: u64 = AssetAmount::new(AssetAmount::MAX).unwrap().into();
-        assert_eq!(val, AssetAmount::MAX);
+        let val: u64 = AssetAmount::new(AssetAmount::MAX.0).unwrap().into();
+        assert_eq!(val, AssetAmount::MAX.0);
     }
 
     #[test]
     fn exceeds_max() {
-        assert!(AssetAmount::new(AssetAmount::MAX + 1).is_err());
+        assert!(AssetAmount::new(AssetAmount::MAX.0 + 1).is_err());
         assert!(AssetAmount::new(u64::MAX).is_err());
     }
 
@@ -202,8 +202,8 @@ mod tests {
     #[test]
     fn try_from_u64() {
         assert!(AssetAmount::try_from(0u64).is_ok());
-        assert!(AssetAmount::try_from(AssetAmount::MAX).is_ok());
-        assert!(AssetAmount::try_from(AssetAmount::MAX + 1).is_err());
+        assert!(AssetAmount::try_from(AssetAmount::MAX.0).is_ok());
+        assert!(AssetAmount::try_from(AssetAmount::MAX.0 + 1).is_err());
     }
 
     #[test]
@@ -228,7 +228,7 @@ mod tests {
 
     #[test]
     fn add_overflow() {
-        let max = AssetAmount::new(AssetAmount::MAX).unwrap();
+        let max = AssetAmount::new(AssetAmount::MAX.0).unwrap();
         let one = AssetAmount::new(1).unwrap();
         assert!((max + one).is_err());
     }

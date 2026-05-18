@@ -412,7 +412,7 @@ mod tests {
 
         // Non-empty advice map should add entries
         let key = Word::from([1u32, 2, 3, 4]);
-        let value = vec![Felt::new(42), Felt::new(43)];
+        let value = vec![Felt::new_unchecked(42), Felt::new_unchecked(43)];
         let mut advice_map = AdviceMap::default();
         advice_map.insert(key, value.clone());
 

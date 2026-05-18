@@ -66,7 +66,7 @@ async fn p2id_script_multiple_assets() -> anyhow::Result<()> {
         AssetVault::new(&[fungible_asset_1, fungible_asset_2]).unwrap(),
         target_account.storage().clone(),
         target_account.code().clone(),
-        Felt::new(2),
+        Felt::new_unchecked(2),
     );
 
     assert_eq!(
@@ -132,7 +132,7 @@ async fn prove_consume_note_with_new_account() -> anyhow::Result<()> {
         AssetVault::new(&[fungible_asset]).unwrap(),
         target_account.storage().clone(),
         target_account.code().clone(),
-        Felt::new(1),
+        Felt::ONE,
     );
 
     assert_eq!(

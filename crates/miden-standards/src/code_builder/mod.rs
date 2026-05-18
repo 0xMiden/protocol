@@ -728,7 +728,7 @@ mod tests {
     #[test]
     fn test_code_builder_with_advice_map_entry() -> anyhow::Result<()> {
         let key = Word::from([1u32, 2, 3, 4]);
-        let value = vec![Felt::new(42), Felt::new(43)];
+        let value = vec![Felt::new_unchecked(42), Felt::new_unchecked(43)];
 
         let script = CodeBuilder::default()
             .with_advice_map_entry(key, value.clone())
@@ -748,8 +748,8 @@ mod tests {
         let key2 = Word::from([2u32, 0, 0, 0]);
 
         let mut advice_map = AdviceMap::default();
-        advice_map.insert(key1, vec![Felt::new(1)]);
-        advice_map.insert(key2, vec![Felt::new(2)]);
+        advice_map.insert(key1, vec![Felt::ONE]);
+        advice_map.insert(key2, vec![Felt::new_unchecked(2)]);
 
         let script = CodeBuilder::default()
             .with_extended_advice_map(advice_map)
@@ -766,7 +766,7 @@ mod tests {
     #[test]
     fn test_code_builder_advice_map_in_note_script() -> anyhow::Result<()> {
         let key = Word::from([5u32, 6, 7, 8]);
-        let value = vec![Felt::new(100)];
+        let value = vec![Felt::new_unchecked(100)];
 
         let script = CodeBuilder::default()
             .with_advice_map_entry(key, value.clone())
@@ -786,7 +786,7 @@ mod tests {
     #[test]
     fn test_code_builder_advice_map_in_component_code() -> anyhow::Result<()> {
         let key = Word::from([11u32, 22, 33, 44]);
-        let value = vec![Felt::new(500)];
+        let value = vec![Felt::new_unchecked(500)];
 
         let component_code = CodeBuilder::default()
             .with_advice_map_entry(key, value.clone())

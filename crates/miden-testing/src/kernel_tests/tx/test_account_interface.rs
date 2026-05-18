@@ -786,7 +786,7 @@ fn create_p2ide_note_with_storage(
     let recipient = NoteRecipient::new(
         serial_num,
         note_script,
-        NoteStorage::new(storage.into_iter().map(Felt::new).collect()).unwrap(),
+        NoteStorage::new(storage.into_iter().map(Felt::new_unchecked).collect()).unwrap(),
     );
 
     let tag = NoteTag::with_account_target(sender);
