@@ -80,7 +80,7 @@ mod tests {
 
     #[test]
     fn test_compile() {
-        let path = Path::new("::miden::standards::faucets::basic_fungible::mint_and_send");
+        let path = Path::new("::miden::standards::faucets::fungible::mint_and_send");
         let miden = StandardsLib::default();
         let exists = miden.0.module_infos().any(|module| {
             module

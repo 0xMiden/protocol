@@ -11,7 +11,7 @@ use alloc::vec::Vec;
 
 use miden_assembly::Library;
 use miden_assembly::serde::Deserializable;
-use miden_core::{Felt, Word};
+use miden_core::Felt;
 use miden_protocol::account::AccountId;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
@@ -19,11 +19,13 @@ use miden_protocol::note::{
     Note,
     NoteAssets,
     NoteAttachment,
-    NoteMetadata,
+    NoteAttachments,
     NoteRecipient,
     NoteScript,
+    NoteScriptRoot,
     NoteStorage,
     NoteType,
+    PartialNoteMetadata,
 };
 use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 use miden_utils_sync::LazyLock;
@@ -68,7 +70,7 @@ impl ConfigAggBridgeNote {
     }
 
     /// Returns the CONFIG_AGG_BRIDGE note script root.
-    pub fn script_root() -> Word {
+    pub fn script_root() -> NoteScriptRoot {
         CONFIG_AGG_BRIDGE_SCRIPT.root()
     }
 
@@ -112,16 +114,14 @@ impl ConfigAggBridgeNote {
 
         let recipient = NoteRecipient::new(serial_num, Self::script(), note_storage);
 
-        let attachment = NoteAttachment::from(
-            NetworkAccountTarget::new(target_account_id, NoteExecutionHint::Always)
-                .map_err(|e| NoteError::other(e.to_string()))?,
-        );
-        let metadata =
-            NoteMetadata::new(sender_account_id, NoteType::Public).with_attachment(attachment);
+        let attachment = NetworkAccountTarget::new(target_account_id, NoteExecutionHint::Always)
+            .map_err(|e| NoteError::other(e.to_string()))?;
+        let attachments = NoteAttachments::from(NoteAttachment::from(attachment));
+        let metadata = PartialNoteMetadata::new(sender_account_id, NoteType::Public);
 
         // CONFIG_AGG_BRIDGE notes don't carry assets
         let assets = NoteAssets::new(vec![])?;
 
-        Ok(Note::new(assets, metadata, recipient))
+        Ok(Note::with_attachments(assets, metadata, recipient, attachments))
     }
 }

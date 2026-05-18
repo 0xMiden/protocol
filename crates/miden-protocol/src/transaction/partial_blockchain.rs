@@ -1,4 +1,5 @@
 use alloc::collections::BTreeMap;
+use alloc::string::ToString;
 use alloc::vec::Vec;
 use core::ops::RangeTo;
 
@@ -182,11 +183,16 @@ impl PartialBlockchain {
     /// retrieval.
     ///
     /// # Panics
-    /// Panics if the `block_header.block_num` is not equal to the current chain length (i.e., the
-    /// provided block header is not the next block in the chain).
+    ///
+    /// Panics if:
+    /// - The `block_header.block_num` is not equal to the current chain length (i.e., the provided
+    ///   block header is not the next block in the chain).
+    /// - The the chain length exceeds [miden_crypto::merkle::mmr::Forest::MAX_LEAVES].
     pub fn add_block(&mut self, block_header: &BlockHeader, track: bool) {
         assert_eq!(block_header.block_num(), self.chain_length());
-        self.mmr.add(block_header.commitment(), track);
+        self.mmr
+            .add(block_header.commitment(), track)
+            .expect("partial mmr leaf count exceeds forest leaf bound");
         if track {
             self.blocks.insert(block_header.block_num(), block_header.clone());
         }
@@ -264,7 +270,8 @@ impl Deserializable for PartialBlockchain {
     ) -> Result<Self, miden_crypto::utils::DeserializationError> {
         let mmr = PartialMmr::read_from(source)?;
         let blocks = BTreeMap::<BlockNumber, BlockHeader>::read_from(source)?;
-        Ok(Self { mmr, blocks })
+        Self::new(mmr, blocks.into_values())
+            .map_err(|err| miden_crypto::utils::DeserializationError::InvalidValue(err.to_string()))
     }
 }
 
@@ -288,11 +295,11 @@ mod tests {
     use crate::Word;
     use crate::alloc::vec::Vec;
     use crate::block::{BlockHeader, BlockNumber, FeeParameters};
-    use crate::crypto::dsa::ecdsa_k256_keccak::SecretKey;
+    use crate::crypto::dsa::ecdsa_k256_keccak::SigningKey;
     use crate::crypto::merkle::mmr::{Mmr, PartialMmr};
     use crate::errors::PartialBlockchainError;
     use crate::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
-    use crate::utils::serde::{Deserializable, Serializable};
+    use crate::utils::serde::{Deserializable, DeserializationError, Serializable};
 
     #[test]
     fn test_partial_blockchain_add() {
@@ -300,7 +307,8 @@ mod tests {
         let mut mmr = Mmr::default();
         for i in 0..3 {
             let block_header = int_to_block_header(i);
-            mmr.add(block_header.commitment());
+            mmr.add(block_header.commitment())
+                .expect("mmr leaf count exceeds forest leaf bound");
         }
         let partial_mmr: PartialMmr = mmr.peaks().into();
         let mut partial_blockchain = PartialBlockchain::new(partial_mmr, Vec::new()).unwrap();
@@ -308,7 +316,8 @@ mod tests {
         // add a new block to the partial blockchain, this reduces the number of peaks to 1
         let block_num = 3;
         let block_header = int_to_block_header(block_num);
-        mmr.add(block_header.commitment());
+        mmr.add(block_header.commitment())
+            .expect("mmr leaf count exceeds forest leaf bound");
         partial_blockchain.add_block(&block_header, true);
 
         assert_eq!(
@@ -319,7 +328,8 @@ mod tests {
         // add one more block to the partial blockchain, the number of peaks is again 2
         let block_num = 4;
         let block_header = int_to_block_header(block_num);
-        mmr.add(block_header.commitment());
+        mmr.add(block_header.commitment())
+            .expect("mmr leaf count exceeds forest leaf bound");
         partial_blockchain.add_block(&block_header, true);
 
         assert_eq!(
@@ -330,7 +340,8 @@ mod tests {
         // add one more block to the partial blockchain, the number of peaks is still 2
         let block_num = 5;
         let block_header = int_to_block_header(block_num);
-        mmr.add(block_header.commitment());
+        mmr.add(block_header.commitment())
+            .expect("mmr leaf count exceeds forest leaf bound");
         partial_blockchain.add_block(&block_header, true);
 
         assert_eq!(
@@ -346,9 +357,9 @@ mod tests {
         let block_header2 = int_to_block_header(2);
 
         let mut mmr = Mmr::default();
-        mmr.add(block_header0.commitment());
-        mmr.add(block_header1.commitment());
-        mmr.add(block_header2.commitment());
+        mmr.add(block_header0.commitment()).unwrap();
+        mmr.add(block_header1.commitment()).unwrap();
+        mmr.add(block_header2.commitment()).unwrap();
 
         let mut partial_mmr = PartialMmr::from_peaks(mmr.peaks());
         for i in 0..3 {
@@ -379,6 +390,39 @@ mod tests {
     }
 
     #[test]
+    fn partial_blockchain_deserialization_on_invalid_header_fails() {
+        let block_header0 = int_to_block_header(0);
+        let block_header1 = int_to_block_header(1);
+        let block_header2 = int_to_block_header(2);
+
+        let mut mmr = Mmr::default();
+        mmr.add(block_header0.commitment()).unwrap();
+        mmr.add(block_header1.commitment()).unwrap();
+        mmr.add(block_header2.commitment()).unwrap();
+
+        let mut partial_mmr = PartialMmr::from_peaks(mmr.peaks());
+        for i in 0..3 {
+            partial_mmr
+                .track(i, mmr.get(i).unwrap(), mmr.open(i).unwrap().merkle_path())
+                .unwrap();
+        }
+
+        let fake_block_header2 = BlockHeader::mock(2, None, None, &[], Word::empty());
+
+        assert_ne!(block_header2.commitment(), fake_block_header2.commitment());
+
+        let forged_partial_blockchain = PartialBlockchain::new_unchecked(
+            partial_mmr,
+            vec![block_header0, block_header1, fake_block_header2],
+        )
+        .unwrap();
+        let bytes = forged_partial_blockchain.to_bytes();
+
+        let err = PartialBlockchain::read_from_bytes(&bytes).unwrap_err();
+        assert_matches!(err, DeserializationError::InvalidValue(_));
+    }
+
+    #[test]
     fn partial_blockchain_new_on_block_number_exceeding_chain_length_fails() {
         let block_header0 = int_to_block_header(0);
         let mmr = Mmr::default();
@@ -398,8 +442,8 @@ mod tests {
         let block_header1 = int_to_block_header(1);
 
         let mut mmr = Mmr::default();
-        mmr.add(block_header0.commitment());
-        mmr.add(block_header1.commitment());
+        mmr.add(block_header0.commitment()).unwrap();
+        mmr.add(block_header1.commitment()).unwrap();
 
         let mut partial_mmr = PartialMmr::from_peaks(mmr.peaks());
         partial_mmr
@@ -420,7 +464,7 @@ mod tests {
         let mut mmr = Mmr::default();
         for i in 0..3 {
             let block_header = int_to_block_header(i);
-            mmr.add(block_header.commitment());
+            mmr.add(block_header.commitment()).unwrap();
         }
         let partial_mmr: PartialMmr = mmr.peaks().into();
         let partial_blockchain = PartialBlockchain::new(partial_mmr, Vec::new()).unwrap();
@@ -434,9 +478,9 @@ mod tests {
     fn int_to_block_header(block_num: impl Into<BlockNumber>) -> BlockHeader {
         let fee_parameters =
             FeeParameters::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap(), 500)
-                .expect("native asset ID should be a fungible faucet ID");
+                .expect("fee faucet ID should be a fungible faucet ID");
         let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
-        let validator_key = SecretKey::with_rng(&mut rng).public_key();
+        let validator_key = SigningKey::with_rng(&mut rng).public_key();
 
         BlockHeader::new(
             0,
@@ -463,7 +507,7 @@ mod tests {
         let mut headers = Vec::new();
         for i in 0..total_blocks {
             let h = int_to_block_header(i);
-            full_mmr.add(h.commitment());
+            full_mmr.add(h.commitment()).unwrap();
             headers.push(h);
         }
         let mut partial_mmr: PartialMmr = full_mmr.peaks().into();

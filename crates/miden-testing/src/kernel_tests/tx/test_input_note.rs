@@ -121,20 +121,15 @@ async fn test_get_recipient_and_metadata() -> anyhow::Result<()> {
             # get the metadata from the requested input note
             push.0
             exec.input_note::get_metadata
-            # => [NOTE_ATTACHMENT, METADATA_HEADER]
+            # => [METADATA]
 
-            push.{NOTE_ATTACHMENT}
-            assert_eqw.err="note 0 has incorrect note attachment"
-            # => [METADATA_HEADER]
-
-            push.{METADATA_HEADER}
-            assert_eqw.err="note 0 has incorrect metadata header"
+            push.{METADATA}
+            assert_eqw.err="note 0 has incorrect metadata"
             # => []
         end
     "#,
         RECIPIENT = p2id_note_1_asset.recipient().digest(),
-        METADATA_HEADER = p2id_note_1_asset.metadata().to_header_word(),
-        NOTE_ATTACHMENT = p2id_note_1_asset.metadata().to_attachment_word(),
+        METADATA = p2id_note_1_asset.metadata().to_metadata_word(),
     );
 
     let tx_script = CodeBuilder::default().compile_tx_script(code)?;

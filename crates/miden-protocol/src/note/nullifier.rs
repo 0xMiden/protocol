@@ -78,7 +78,7 @@ impl Nullifier {
 
     #[cfg(any(feature = "testing", test))]
     pub fn dummy(n: u64) -> Self {
-        Self(Word::new([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::new(n)]))
+        Self(Word::new([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::new_unchecked(n)]))
     }
 }
 
@@ -100,7 +100,7 @@ impl Debug for Nullifier {
 impl From<&NoteDetails> for Nullifier {
     fn from(note: &NoteDetails) -> Self {
         Self::new(
-            note.script().root(),
+            note.script().root().into(),
             note.storage().commitment(),
             note.assets().commitment(),
             note.serial_num(),

@@ -1,6 +1,7 @@
 use $kernel::tx
 use $kernel::asset
 use $kernel::account
+use $kernel::account_id
 use miden::core::word
 
 # CONSTANTS
@@ -108,55 +109,66 @@ end
 #!   ASSET_VALUE if no callback is configured.
 @locals(4)
 proc invoke_callback
-    exec.start_foreign_callback_context
-    # => [should_invoke, PROC_ROOT, ASSET_KEY, ASSET_VALUE, custom_data]
+    exec.maybe_start_faucet_callback_context
+    # => [was_foreign_context_started, should_invoke_callback, PROC_ROOT, ASSET_KEY, ASSET_VALUE, custom_data]
+
+    # store was_foreign_context_started flag for later
+    movdn.14
+    # => [should_invoke_callback, PROC_ROOT, ASSET_KEY, ASSET_VALUE, custom_data, was_foreign_context_started]
 
     # only invoke the callback if the procedure root is not the empty word
     if.true
         # prepare for dyncall by storing procedure root in local memory
         loc_storew_le.CALLBACK_PROC_ROOT_LOC dropw
-        # => [ASSET_KEY, ASSET_VALUE, custom_data]
+        # => [ASSET_KEY, ASSET_VALUE, custom_data, was_foreign_context_started]
 
         # pad the stack to 16 for the call
         repeat.7 push.0 movdn.9 end
-        # => [ASSET_KEY, ASSET_VALUE, custom_data, pad(7)]
+        # => [ASSET_KEY, ASSET_VALUE, custom_data, pad(7), was_foreign_context_started]
 
         # invoke the callback
         locaddr.CALLBACK_PROC_ROOT_LOC
         dyncall
-        # => [PROCESSED_ASSET_VALUE, pad(12)]
+        # => [PROCESSED_ASSET_VALUE, pad(12), was_foreign_context_started]
 
         # truncate the stack after the call
         swapdw dropw dropw swapw dropw
-        # => [PROCESSED_ASSET_VALUE]
+        # => [PROCESSED_ASSET_VALUE, was_foreign_context_started]
     else
         # drop proc root, asset key and custom_data
         dropw dropw movup.4 drop
-        # => [ASSET_VALUE]
+        # => [ASSET_VALUE, was_foreign_context_started]
     end
-    # => [PROCESSED_ASSET_VALUE]
+    # => [PROCESSED_ASSET_VALUE, was_foreign_context_started]
 
-    exec.end_foreign_callback_context
+    movup.4
+    # => [was_foreign_context_started, PROCESSED_ASSET_VALUE]
+
+    exec.maybe_end_faucet_callback_context
     # => [PROCESSED_ASSET_VALUE]
 end
 
-#! Prepares the invocation of a faucet callback by starting a foreign context against the faucet
-#! identified by the asset key's faucet ID, looking up the callback procedure root from the
-#! faucet's storage, and computing whether the callback should be invoked.
+#! Prepares the invocation of a faucet callback.
 #!
-#! The callback should be invoked if the storage slot exists and contains a non-empty procedure
-#! root.
+#! The account on which the callback should be invoked is identified by the asset key's faucet ID.
+#! If it is the active account, no foreign context is started, if it is, a foreign context is
+#! started against the faucet.
+#!
+#! The callback procedure root is fetched from the faucet's storage and a flag is computed that
+#! signals whether the callback should be invoked. The callback should be invoked if the storage
+#! slot exists and contains a non-empty procedure root.
 #!
 #! Inputs:  [slot_id_suffix, slot_id_prefix, ASSET_KEY, ASSET_VALUE]
-#! Outputs: [should_invoke, PROC_ROOT, ASSET_KEY, ASSET_VALUE]
+#! Outputs: [was_foreign_context_started, should_invoke_callback, PROC_ROOT, ASSET_KEY, ASSET_VALUE]
 #!
 #! Where:
 #! - slot_id_suffix and slot_id_prefix identify the storage slot containing the callback procedure root.
 #! - ASSET_KEY is the vault key of the asset being added.
 #! - ASSET_VALUE is the value of the asset being added.
-#! - should_invoke is 1 if the callback should be invoked, 0 otherwise.
+#! - should_invoke_callback is 1 if the callback should be invoked, 0 otherwise.
 #! - PROC_ROOT is the procedure root of the callback, or the empty word if not found.
-proc start_foreign_callback_context
+#! - was_foreign_context_started is 1 if the faucet is not the active account, 0 otherwise.
+proc maybe_start_faucet_callback_context
     # move slot IDs past ASSET_KEY and ASSET_VALUE
     movdn.9 movdn.9
     # => [ASSET_KEY, ASSET_VALUE, slot_id_suffix, slot_id_prefix]
@@ -164,34 +176,74 @@ proc start_foreign_callback_context
     exec.asset::key_to_faucet_id
     # => [faucet_id_suffix, faucet_id_prefix, ASSET_KEY, ASSET_VALUE, slot_id_suffix, slot_id_prefix]
 
-    # start a foreign context against the faucet
-    exec.tx::start_foreign_context
-    # => [ASSET_KEY, ASSET_VALUE, slot_id_suffix, slot_id_prefix]
+    # check if the faucet is the active account
+    dup.1 dup.1 exec.should_start_foreign_context
+    # => [should_start_foreign_context, faucet_id_suffix, faucet_id_prefix, ASSET_KEY, ASSET_VALUE,
+    #     slot_id_suffix, slot_id_prefix]
+
+    # store the flag for return as was_foreign_context_started
+    dup movdn.13
+    # => [should_start_foreign_context, faucet_id_suffix, faucet_id_prefix, ASSET_KEY, ASSET_VALUE,
+    #     slot_id_suffix, slot_id_prefix, was_foreign_context_started]
+
+    if.true
+        # if the faucet is not the active account, start a context against the faucet
+        exec.tx::start_foreign_context
+        # => [ASSET_KEY, ASSET_VALUE, slot_id_suffix, slot_id_prefix, was_foreign_context_started]
+    else
+        # if the faucet is the active account, the account context is already the issuing faucet's context
+        drop drop
+        # => [ASSET_KEY, ASSET_VALUE, slot_id_suffix, slot_id_prefix, was_foreign_context_started]
+    end
 
     # bring slot IDs back to top
     movup.9 movup.9
-    # => [slot_id_suffix, slot_id_prefix, ASSET_KEY, ASSET_VALUE]
+    # => [slot_id_suffix, slot_id_prefix, ASSET_KEY, ASSET_VALUE, was_foreign_context_started]
 
     # try to find the callback procedure root in the faucet's storage
     exec.account::find_item
-    # => [is_found, PROC_ROOT, ASSET_KEY, ASSET_VALUE]
+    # => [is_found, PROC_ROOT, ASSET_KEY, ASSET_VALUE, was_foreign_context_started]
 
     movdn.4 exec.word::testz not
-    # => [is_non_empty_word, PROC_ROOT, is_found, ASSET_KEY, ASSET_VALUE]
+    # => [is_non_empty_word, PROC_ROOT, is_found, ASSET_KEY, ASSET_VALUE, was_foreign_context_started]
 
-    # should_invoke = is_found && is_non_empty_word
+    # should_invoke_callback = is_found && is_non_empty_word
     movup.5 and
-    # => [should_invoke, PROC_ROOT, ASSET_KEY, ASSET_VALUE]
+    # => [should_invoke_callback, PROC_ROOT, ASSET_KEY, ASSET_VALUE, was_foreign_context_started]
+
+    movup.13
+    # => [was_foreign_context_started, should_invoke_callback, PROC_ROOT, ASSET_KEY, ASSET_VALUE]
 end
 
-#! Ends a foreign callback context.
+#! Ends a callback context against the faucet if a foreign context was previously started.
 #!
 #! This pops the top of the account stack, making the previous account the active account.
 #!
-#! This wrapper exists only for uniformity with start_foreign_callback_context.
+#! This wrapper exists only for uniformity with maybe_start_faucet_callback_context.
 #!
-#! Inputs:  []
+#! Inputs:  [was_foreign_context_started]
 #! Outputs: []
-proc end_foreign_callback_context
-    exec.tx::end_foreign_context
+#!
+#! Where:
+#! - was_foreign_context_started is 1 if a foreign context was started, 0 otherwise.
+proc maybe_end_faucet_callback_context
+    # if a foreign context was started, end it
+    if.true
+        exec.tx::end_foreign_context
+    end
+end
+
+#! Returns 1 if the provided faucet ID is not the ID of the active account and a foreign context
+#! should be started, 0 otherwise.
+#!
+#! Inputs:  [faucet_id_suffix, faucet_id_prefix]
+#! Outputs: [should_start_foreign_context]
+proc should_start_foreign_context
+    exec.account::get_id
+    # => [active_account_id_suffix, active_account_id_prefix, faucet_id_suffix, faucet_id_prefix]
+
+    # start a foreign context if the IDs are *not* equal
+    exec.account_id::is_equal
+    not
+    # => [should_start_foreign_context]
 end

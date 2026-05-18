@@ -5,7 +5,7 @@
 use miden_protocol::account::{AccountId, AccountStorage, StorageMapKey, StorageSlotDelta};
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::testing::account_id::{
-    ACCOUNT_ID_NATIVE_ASSET_FAUCET,
+    ACCOUNT_ID_FEE_FAUCET,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2,
 };
@@ -28,7 +28,7 @@ async fn adding_fungible_assets_with_lazy_loading_succeeds() -> anyhow::Result<(
     let faucet_id2: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2.try_into().unwrap();
 
     let fungible_asset1 =
-        FungibleAsset::new(faucet_id1, FungibleAsset::MAX_AMOUNT - FUNGIBLE_ASSET_AMOUNT)?;
+        FungibleAsset::new(faucet_id1, FungibleAsset::MAX_AMOUNT.as_u64() - FUNGIBLE_ASSET_AMOUNT)?;
     let fungible_asset2 = FungibleAsset::new(faucet_id2, FUNGIBLE_ASSET_AMOUNT)?;
 
     // Build a note that adds the assets to the input vault of the transaction. This is necessary
@@ -85,7 +85,7 @@ async fn removing_fungible_assets_with_lazy_loading_succeeds() -> anyhow::Result
     let faucet_id2: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2.try_into().unwrap();
 
     let fungible_asset1 =
-        FungibleAsset::new(faucet_id1, FungibleAsset::MAX_AMOUNT - FUNGIBLE_ASSET_AMOUNT)?;
+        FungibleAsset::new(faucet_id1, FungibleAsset::MAX_AMOUNT.as_u64() - FUNGIBLE_ASSET_AMOUNT)?;
     let fungible_asset2 = FungibleAsset::new(faucet_id2, FUNGIBLE_ASSET_AMOUNT)?;
 
     let code = format!(
@@ -161,8 +161,7 @@ async fn removing_fungible_assets_with_lazy_loading_succeeds() -> anyhow::Result
 /// merkle paths for an empty vault by default, and so there would be nothing to load.
 #[tokio::test]
 async fn loading_fee_asset_succeeds() -> anyhow::Result<()> {
-    let mut builder =
-        MockChain::builder().native_asset_id(ACCOUNT_ID_NATIVE_ASSET_FAUCET.try_into()?);
+    let mut builder = MockChain::builder().fee_faucet_id(ACCOUNT_ID_FEE_FAUCET.try_into()?);
     let account = builder.add_existing_mock_account_with_assets(
         Auth::IncrNonce,
         [

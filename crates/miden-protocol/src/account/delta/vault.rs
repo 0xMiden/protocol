@@ -19,7 +19,7 @@ use crate::{Felt, ONE, ZERO};
 // ================================================================================================
 
 /// The domain for the assets in the delta commitment.
-const DOMAIN_ASSET: Felt = Felt::new(1);
+const DOMAIN_ASSET: Felt = Felt::ONE;
 
 /// [AccountVaultDelta] stores the difference between the initial and final account vault states.
 ///
@@ -216,7 +216,7 @@ impl FungibleAssetDelta {
     /// # Errors
     /// Returns an error if the delta would overflow.
     pub fn add(&mut self, asset: FungibleAsset) -> Result<(), AccountDeltaError> {
-        let amount: i64 = asset.amount().try_into().expect("Amount it too high");
+        let amount: i64 = asset.amount().as_i64();
         self.add_delta(asset.vault_key(), amount)
     }
 
@@ -225,7 +225,7 @@ impl FungibleAssetDelta {
     /// # Errors
     /// Returns an error if the delta would overflow.
     pub fn remove(&mut self, asset: FungibleAsset) -> Result<(), AccountDeltaError> {
-        let amount: i64 = asset.amount().try_into().expect("Amount it too high");
+        let amount: i64 = asset.amount().as_i64();
         self.add_delta(asset.vault_key(), -amount)
     }
 
@@ -606,8 +606,8 @@ mod tests {
     #[case::empty_neg(0, -50, Some(-50))]
     #[case::nullify_pos_neg(100, -100, Some(0))]
     #[case::nullify_neg_pos(-100, 100, Some(0))]
-    #[case::overflow(FungibleAsset::MAX_AMOUNT as i64, FungibleAsset::MAX_AMOUNT as i64, None)]
-    #[case::underflow(-(FungibleAsset::MAX_AMOUNT as i64), -(FungibleAsset::MAX_AMOUNT as i64), None)]
+    #[case::overflow(FungibleAsset::MAX_AMOUNT.as_i64(), FungibleAsset::MAX_AMOUNT.as_i64(), None)]
+    #[case::underflow(-(FungibleAsset::MAX_AMOUNT.as_i64()), -(FungibleAsset::MAX_AMOUNT.as_i64()), None)]
     #[test]
     fn merge_fungible_aggregation(#[case] x: i64, #[case] y: i64, #[case] expected: Option<i64>) {
         /// Creates an [AccountVaultDelta] with a single [FungibleAsset] delta. This delta will

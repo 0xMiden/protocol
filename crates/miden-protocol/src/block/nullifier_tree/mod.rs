@@ -124,6 +124,7 @@ where
     ///
     /// Returns an error if:
     /// - a nullifier in the provided iterator was already spent.
+    /// - the list of provided nullifiers contains duplicates.
     pub fn compute_mutations<I>(
         &self,
         nullifiers: impl IntoIterator<Item = (Nullifier, BlockNumber), IntoIter = I>,
@@ -380,10 +381,8 @@ mod tests {
 
         let mut tree = NullifierTree::with_entries([(nullifier1, block1)]).unwrap();
 
-        // Check that passing nullifier2 twice with different values will use the last value.
-        let mutations = tree
-            .compute_mutations([(nullifier2, block1), (nullifier3, block3), (nullifier2, block2)])
-            .unwrap();
+        let mutations =
+            tree.compute_mutations([(nullifier2, block2), (nullifier3, block3)]).unwrap();
 
         tree.apply_mutations(mutations).unwrap();
 

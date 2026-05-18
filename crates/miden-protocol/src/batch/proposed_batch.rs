@@ -449,7 +449,8 @@ mod tests {
         let mut mmr = Mmr::default();
         for i in 0..3 {
             let block_header = BlockHeader::mock(i, None, None, &[], Word::empty());
-            mmr.add(block_header.commitment());
+            mmr.add(block_header.commitment())
+                .expect("mmr leaf count exceeds forest leaf bound");
         }
         let partial_mmr: PartialMmr = mmr.peaks().into();
         let partial_blockchain = PartialBlockchain::new(partial_mmr, Vec::new()).unwrap();
@@ -467,7 +468,7 @@ mod tests {
 
         let account_id = AccountId::dummy(
             [1; 15],
-            AccountIdVersion::Version0,
+            AccountIdVersion::Version1,
             AccountType::FungibleFaucet,
             AccountStorageMode::Private,
         );
