@@ -74,3 +74,24 @@ serde_json      = { default-features = false, version = "1.0" }
 thiserror       = { default-features = false, version = "2.0" }
 tokio           = { default-features = false, features = ["sync"], version = "1" }
 walkdir         = { version = "2.5" }
+
+# Temporary: points at miden-vm experimental branch that sequentializes
+# rayon in trace generation. See PR description for rationale and
+# benchmark numbers. To be removed once the upstream change ships in a
+# miden-vm 0.23.x release.
+[patch.crates-io]
+miden-air               = { branch = "mmagician-claude/reduce-cross-crate-monomorphization", git = "https://github.com/0xMiden/miden-vm.git" }
+miden-assembly          = { branch = "mmagician-claude/reduce-cross-crate-monomorphization", git = "https://github.com/0xMiden/miden-vm.git" }
+miden-assembly-syntax   = { branch = "mmagician-claude/reduce-cross-crate-monomorphization", git = "https://github.com/0xMiden/miden-vm.git" }
+miden-core              = { branch = "mmagician-claude/reduce-cross-crate-monomorphization", git = "https://github.com/0xMiden/miden-vm.git" }
+miden-core-lib          = { branch = "mmagician-claude/reduce-cross-crate-monomorphization", git = "https://github.com/0xMiden/miden-vm.git" }
+miden-debug-types       = { branch = "mmagician-claude/reduce-cross-crate-monomorphization", git = "https://github.com/0xMiden/miden-vm.git" }
+miden-mast-package      = { branch = "mmagician-claude/reduce-cross-crate-monomorphization", git = "https://github.com/0xMiden/miden-vm.git" }
+miden-package-registry  = { branch = "mmagician-claude/reduce-cross-crate-monomorphization", git = "https://github.com/0xMiden/miden-vm.git" }
+miden-processor         = { branch = "mmagician-claude/reduce-cross-crate-monomorphization", git = "https://github.com/0xMiden/miden-vm.git" }
+miden-project           = { branch = "mmagician-claude/reduce-cross-crate-monomorphization", git = "https://github.com/0xMiden/miden-vm.git" }
+miden-prover            = { branch = "mmagician-claude/reduce-cross-crate-monomorphization", git = "https://github.com/0xMiden/miden-vm.git" }
+miden-utils-diagnostics = { branch = "mmagician-claude/reduce-cross-crate-monomorphization", git = "https://github.com/0xMiden/miden-vm.git" }
+miden-utils-indexing    = { branch = "mmagician-claude/reduce-cross-crate-monomorphization", git = "https://github.com/0xMiden/miden-vm.git" }
+miden-utils-sync        = { branch = "mmagician-claude/reduce-cross-crate-monomorphization", git = "https://github.com/0xMiden/miden-vm.git" }
+miden-verifier          = { branch = "mmagician-claude/reduce-cross-crate-monomorphization", git = "https://github.com/0xMiden/miden-vm.git" }
