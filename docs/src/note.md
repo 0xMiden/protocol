@@ -150,17 +150,15 @@ Upon successful verification of the transaction:
 
 #### Note recipient restricting consumption
 
-Consumption of a `Note` can be restricted to certain accounts or entities. For instance, the P2ID and P2IDE `Note` scripts target a specific account ID. Alternatively, Miden defines a RECIPIENT (represented as 32 bytes) computed as:
+Every `Note` has a RECIPIENT, represented as 32 bytes, that commits to the data defining the conditions under which the note can be consumed. The RECIPIENT is computed as:
 
 ```arduino
 hash(hash(hash(serial_num, [0; 4]), script_root), storage_commitment)
 ```
 
-Only those who know the RECIPIENT’s pre-image can consume the `Note`. For private notes, this ensures an additional layer of control and privacy, as only parties with the correct data can claim the `Note`.
+The RECIPIENT is not necessarily just an account address. Its pre-image consists of the note's serial number, script, and storage. To consume a note, the transaction must provide this data so the [transaction prologue](transaction) can recompute the RECIPIENT and verify that it matches the committed note details.
 
-The [transaction prologue](transaction) requires all necessary data to compute the `Note` hash. This setup allows scenario-specific restrictions on who may consume a `Note`.
-
-For a practical example, refer to the [SWAP note script](https://github.com/0xMiden/protocol/blob/next/crates/miden-standards/asm/standards/notes/swap.masm), where the RECIPIENT ensures that only a defined target can consume the swapped asset.
+The note script and storage determine the actual consumption conditions. For example, the [P2ID](https://github.com/0xMiden/protocol/blob/next/crates/miden-standards/asm/standards/notes/p2id.masm) and [P2IDE](https://github.com/0xMiden/protocol/blob/next/crates/miden-standards/asm/standards/notes/p2ide.masm) note scripts specify the target account ID as part of the note's storage. In a [SWAP](https://github.com/0xMiden/protocol/blob/next/crates/miden-standards/asm/standards/notes/swap.masm) note, consumption is only possible if the consumer provides the asset expected in return for the asset being offered. For private notes, keeping the RECIPIENT pre-image private ensures that only parties with the required note data can attempt to consume the note.
 
 #### Note nullifier ensuring private consumption
 
