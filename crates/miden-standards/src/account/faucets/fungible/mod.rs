@@ -590,7 +590,10 @@ fn all_authority_gated_setter_roots() -> Vec<AccountProcedureRoot> {
 /// account-level [`AuthMethod`] used for transaction authentication:
 /// - [`AccessControl::AuthControlled { auth }`] — auth-only faucets.
 ///   - With [`AuthMethod::SingleSig`], an [`AuthSingleSigAcl`] is installed whose trigger procedure
-///     list contains **every** authority-gated setter (see [`all_authority_gated_setter_roots`]).
+///     list contains **every** authority-gated setter exported by the faucet and policy-manager
+///     components (`mint_and_send`, `set_max_supply`, `set_description`, `set_logo_uri`,
+///     `set_external_link`, `set_mint_policy`, `set_burn_policy`, `set_send_policy`,
+///     `set_receive_policy`).
 ///   - With [`AuthMethod::NetworkAccount`], an [`AuthNetworkAccount`] is installed. The caller is
 ///     responsible for choosing `allowed_script_roots` that prevent unauthorized setter
 ///     invocations.
