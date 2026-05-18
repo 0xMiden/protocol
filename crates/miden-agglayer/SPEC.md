@@ -762,7 +762,7 @@ note via `output_note::add_asset`.
 | Role | Enforcement |
 |------|------------|
 | **Issuer** | Bridge account only -- **enforced** by faucet's `owner_only` mint policy via `Ownable2Step` (asserts note sender is the faucet's owner, i.e. the bridge) |
-| **Consumer** | Target faucet only -- **enforced** by `mint_and_send`, which panics if the stored `ASSET_KEY` does not belong to the consuming faucet. The `NetworkAccountTarget` attachment is retained as the network-routing primitive but is no longer the sole consume-side bind |
+| **Consumer** | Target faucet only -- **enforced** by `mint_and_send`, which panics if the stored `ASSET_KEY` does not belong to the consuming faucet. The `NetworkAccountTarget` attachment is retained as the network-routing primitive and is not a consume-side bind |
 
 ---
 
