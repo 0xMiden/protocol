@@ -158,6 +158,58 @@ async fn consume_swap_note_private_payback_note() -> anyhow::Result<()> {
     Ok(())
 }
 
+// Consumes a SWAP note with a public payback without any off-band advice. The executor materializes
+// the payback recipient from the creator account ID embedded in SWAP storage and the SWAP's own
+// serial number, then registers it with the advice provider via `p2id::new ->
+// note::build_recipient`.
+#[tokio::test]
+async fn consume_swap_note_public_payback_note_no_advice() -> anyhow::Result<()> {
+    let payback_note_type = NoteType::Public;
+    let SwapTestSetup {
+        mock_chain,
+        mut sender_account,
+        mut target_account,
+        offered_asset,
+        requested_asset,
+        swap_note,
+        payback_note,
+    } = setup_swap_test(payback_note_type)?;
+
+    let consume_swap_note_tx = mock_chain
+        .build_tx_context(target_account.id(), &[swap_note.id()], &[])
+        .context("failed to build tx context")?
+        .build()?
+        .execute()
+        .await?;
+
+    target_account.apply_delta(consume_swap_note_tx.account_delta())?;
+
+    let output_payback_note = consume_swap_note_tx.output_notes().iter().next().unwrap().clone();
+    assert_eq!(output_payback_note.id(), payback_note.id());
+    assert_eq!(output_payback_note.assets().iter().next().unwrap(), &requested_asset);
+
+    assert_eq!(target_account.vault().assets().count(), 1);
+    assert!(target_account.vault().assets().any(|asset| asset == offered_asset));
+
+    let full_payback_note = Note::new(
+        payback_note.assets().clone(),
+        output_payback_note.metadata().clone(),
+        payback_note.recipient().clone(),
+    );
+
+    let consume_payback_tx = mock_chain
+        .build_tx_context(sender_account.id(), &[], &[full_payback_note])
+        .context("failed to build tx context")?
+        .build()?
+        .execute()
+        .await?;
+
+    sender_account.apply_delta(consume_payback_tx.account_delta())?;
+    assert!(sender_account.vault().assets().any(|asset| asset == requested_asset));
+
+    Ok(())
+}
+
 // Creates a swap note with a public payback note, then consumes it to complete the swap
 // The target account receives the offered asset and creates a public payback note for the sender
 #[tokio::test]

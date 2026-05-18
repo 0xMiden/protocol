@@ -226,10 +226,11 @@ The SWAP note script implements atomic asset swapping functionality.
 **Key characteristics:**
 
 - **Purpose:** Atomic asset exchange between two parties
-- **Storage:** Requires exactly 16 storage items specifying:
-  - Requested asset details
-  - Payback note recipient information
-  - Note creation parameters (type, tag, attachment)
+- **Storage:** Requires exactly 11 storage items specifying:
+  - Requested asset
+  - Payback note type
+  - Creator account ID prefix
+  - Creator account ID suffix
 - **Assets:** Must contain exactly 1 asset to be swapped
 - **Mechanism:**
   1. Creates a payback note containing the requested asset for the original note issuer
