@@ -986,12 +986,9 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
     // case 1: existing asset was added to the account
     // ------------------------------------------
 
-    let initial_balance = account
-        .vault()
-        .get_balance(faucet_existing_asset, AssetCallbackFlag::Disabled)
-        .as_u64();
-
     let asset_key = AssetVaultKey::new_fungible(faucet_existing_asset, AssetCallbackFlag::Disabled);
+    let initial_balance = account.vault().get_balance(asset_key)?.as_u64();
+
     let add_existing_source = format!(
         r#"
         use miden::protocol::active_account
@@ -1038,12 +1035,9 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
     // case 2: new asset was added to the account
     // ------------------------------------------
 
-    let initial_balance = account
-        .vault()
-        .get_balance(faucet_new_asset, AssetCallbackFlag::Disabled)
-        .as_u64();
-
     let asset_key = AssetVaultKey::new_fungible(faucet_new_asset, AssetCallbackFlag::Disabled);
+    let initial_balance = account.vault().get_balance(asset_key)?.as_u64();
+
     let add_new_source = format!(
         r#"
         use miden::protocol::active_account
@@ -1115,15 +1109,12 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
-    let initial_balance = account
-        .vault()
-        .get_balance(faucet_existing_asset, AssetCallbackFlag::Disabled)
-        .as_u64();
+    let asset_key = AssetVaultKey::new_fungible(faucet_existing_asset, AssetCallbackFlag::Disabled);
+    let initial_balance = account.vault().get_balance(asset_key)?.as_u64();
 
     let expected_output_note =
         create_public_p2any_note(ACCOUNT_ID_SENDER.try_into()?, [fungible_asset_for_note_existing]);
 
-    let asset_key = AssetVaultKey::new_fungible(faucet_existing_asset, AssetCallbackFlag::Disabled);
     let remove_existing_source = format!(
         r#"
         use miden::protocol::active_account

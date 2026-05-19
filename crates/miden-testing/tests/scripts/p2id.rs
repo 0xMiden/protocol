@@ -1,6 +1,6 @@
 use miden_protocol::account::Account;
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::asset::{Asset, AssetCallbackFlag, AssetVault, FungibleAsset};
+use miden_protocol::asset::{Asset, AssetVault, FungibleAsset};
 use miden_protocol::crypto::rand::RandomCoin;
 use miden_protocol::note::{NoteAttachments, NoteTag, NoteType};
 use miden_protocol::testing::account_id::{
@@ -294,20 +294,9 @@ async fn test_create_consume_multiple_notes() -> anyhow::Result<()> {
 
     account.apply_delta(executed_transaction.account_delta())?;
 
-    assert_eq!(
-        account
-            .vault()
-            .get_balance(input_note_faucet_id, AssetCallbackFlag::Disabled)
-            .as_u64(),
-        111
-    );
-    assert_eq!(
-        account
-            .vault()
-            .get_balance(FungibleAsset::mock_issuer(), AssetCallbackFlag::Disabled)
-            .as_u64(),
-        5
-    );
+    assert_eq!(account.vault().get_balance(input_note_asset_1.vault_key())?.as_u64(), 111);
+    assert_eq!(account.vault().get_balance(asset_1.vault_key())?.as_u64(), 5);
+
     Ok(())
 }
 
