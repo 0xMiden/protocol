@@ -16,6 +16,7 @@
 - [BREAKING] Remove `AccountStorageMode::Network`; network accounts are now identified via `NetworkAccountNoteAllowlist` ([#2900](https://github.com/0xMiden/protocol/pull/2900)).
 - [BREAKING] Add `NetworkAccount` wrapper for convenient network account identification ([#2915](https://github.com/0xMiden/protocol/pull/2915)).
 - [BREAKING] Introduced `AssetComposition` and encoded composition in the asset vault key's metadata byte ([#2631](https://github.com/0xMiden/protocol/issues/2631)).
+- Exposed `token_config_slot_value` on `FungibleFaucet` to allow reading the token config word directly from the account storage ([#2954](https://github.com/0xMiden/protocol/pull/2954)).
 
 ### Changes
 
