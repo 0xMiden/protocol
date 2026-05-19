@@ -206,6 +206,9 @@ pub enum SwapPayback {
     },
     /// Public payback: the creator id is stored in plaintext so the consumer can reconstruct
     /// the payback recipient at consume time.
+    ///
+    /// Stored explicitly rather than derived from the SWAP sender to leave room for
+    /// third-party paybacks in the future.
     Public {
         /// Account ID of the SWAP creator (the payback receiver).
         creator_account_id: AccountId,
