@@ -29,12 +29,11 @@ The procedures maintain the same security and context restrictions as the underl
 
 ## Account ID Procedures (`miden::protocol::account_id`)
 
-Account ID procedures can be used to validate account IDs and inspect their account type.
+Account ID procedures can be used to validate and compare account IDs.
 
 | Procedure                 | Description                                                                                                                                                                                                                   | Context |
 | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
 | `is_equal`                | Returns whether two account IDs are equal.<br/><br/>**Inputs:** `[account_id_suffix, account_id_prefix, other_account_id_suffix, other_account_id_prefix]`<br/>**Outputs:** `[is_id_equal]`                                  | Any     |
-| `is_faucet`               | Returns whether the account ID prefix belongs to a faucet account.<br/><br/>**Inputs:** `[account_id_prefix]`<br/>**Outputs:** `[is_faucet]`                                                                                 | Any     |
 | `validate`                | Validates the provided account ID.<br/><br/>**Inputs:** `[account_id_suffix, account_id_prefix]`<br/>**Outputs:** `[]`                                                                                                       | Any     |
 | `shape_suffix`            | Shapes a digest suffix into an account ID suffix by clearing the lower 8 bits.<br/><br/>**Inputs:** `[seed_digest_suffix]`<br/>**Outputs:** `[account_id_suffix]`                                                            | Any     |
 

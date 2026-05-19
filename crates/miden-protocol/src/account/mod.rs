@@ -20,7 +20,7 @@ pub use account_id::{
     AccountIdPrefixV1,
     AccountIdV1,
     AccountIdVersion,
-    AccountStorageMode,
+    AccountType,
 };
 
 pub mod auth;
@@ -249,12 +249,12 @@ impl Account {
         self.seed
     }
 
-    /// Returns `true` if the storage mode is [`AccountStorageMode::Public`], `false` otherwise.
+    /// Returns `true` if the account type is [`AccountType::Public`], `false` otherwise.
     pub fn is_public(&self) -> bool {
         self.id().is_public()
     }
 
-    /// Returns `true` if the storage mode is [`AccountStorageMode::Private`], `false` otherwise.
+    /// Returns `true` if the account type is [`AccountType::Private`], `false` otherwise.
     pub fn is_private(&self) -> bool {
         self.id().is_private()
     }
@@ -522,7 +522,7 @@ mod tests {
         Account,
         AccountBuilder,
         AccountIdVersion,
-        AccountStorageMode,
+        AccountType,
         PartialAccount,
         StorageMap,
         StorageMapDelta,
@@ -753,7 +753,7 @@ mod tests {
 
         let other_seed = AccountId::compute_account_seed(
             [9; 32],
-            AccountStorageMode::Public,
+            AccountType::Public,
             AccountIdVersion::Version1,
             code.commitment(),
             storage.to_commitment(),

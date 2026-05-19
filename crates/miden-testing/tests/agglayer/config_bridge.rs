@@ -8,7 +8,7 @@ use miden_agglayer::{
 };
 use miden_protocol::Felt;
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::account::{AccountId, AccountIdVersion, AccountStorageMode};
+use miden_protocol::account::{AccountId, AccountIdVersion, AccountType};
 use miden_protocol::block::account_tree::AccountIdKey;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::transaction::RawOutputNote;
@@ -46,7 +46,7 @@ async fn test_config_agg_bridge_registers_faucet() -> anyhow::Result<()> {
 
     // Use a dummy faucet ID to register (any valid AccountId will do)
     let faucet_to_register =
-        AccountId::dummy([42; 15], AccountIdVersion::Version1, AccountStorageMode::Public);
+        AccountId::dummy([42; 15], AccountIdVersion::Version1, AccountType::Public);
 
     // Verify the faucet is NOT in the registry before registration
     let registry_slot_name = AggLayerBridge::faucet_registry_map_slot_name();

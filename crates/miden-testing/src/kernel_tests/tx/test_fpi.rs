@@ -13,7 +13,7 @@ use miden_protocol::account::{
     AccountId,
     AccountProcedureRoot,
     AccountStorage,
-    AccountStorageMode,
+    AccountType,
     StorageSlot,
 };
 use miden_protocol::assembly::DefaultSourceManager;
@@ -108,7 +108,7 @@ async fn test_fpi_memory_single_account() -> anyhow::Result<()> {
     let native_account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
         .with_auth_component(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_slots(vec![AccountStorage::mock_map_slot()]))
-        .storage_mode(AccountStorageMode::Public)
+        .account_type(AccountType::Public)
         .build_existing()?;
 
     let mut mock_chain =
@@ -383,7 +383,7 @@ async fn test_fpi_memory_two_accounts() -> anyhow::Result<()> {
     let native_account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
         .with_auth_component(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_empty_slots())
-        .storage_mode(AccountStorageMode::Public)
+        .account_type(AccountType::Public)
         .build_existing()?;
 
     let mut mock_chain = MockChainBuilder::with_accounts([
@@ -610,7 +610,7 @@ async fn test_fpi_execute_foreign_procedure() -> anyhow::Result<()> {
     let native_account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
         .with_auth_component(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_empty_slots())
-        .storage_mode(AccountStorageMode::Public)
+        .account_type(AccountType::Public)
         .build_existing()?;
 
     let mut mock_chain =
@@ -798,7 +798,7 @@ async fn foreign_account_can_get_balance_and_presence_of_asset() -> anyhow::Resu
     let native_account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
         .with_auth_component(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_empty_slots())
-        .storage_mode(AccountStorageMode::Public)
+        .account_type(AccountType::Public)
         .build_existing()?;
 
     let mut mock_chain =
@@ -904,7 +904,7 @@ async fn foreign_account_get_initial_balance() -> anyhow::Result<()> {
     let native_account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
         .with_auth_component(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_empty_slots())
-        .storage_mode(AccountStorageMode::Public)
+        .account_type(AccountType::Public)
         .build_existing()?;
 
     let mut mock_chain =
@@ -1111,7 +1111,7 @@ async fn test_nested_fpi_cyclic_invocation() -> anyhow::Result<()> {
     let native_account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
         .with_auth_component(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_empty_slots())
-        .storage_mode(AccountStorageMode::Public)
+        .account_type(AccountType::Public)
         .build_existing()?;
 
     let mut mock_chain = MockChainBuilder::with_accounts([
@@ -1288,7 +1288,7 @@ async fn test_prove_fpi_two_foreign_accounts_chain() -> anyhow::Result<()> {
     let native_account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
         .with_auth_component(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_empty_slots())
-        .storage_mode(AccountStorageMode::Public)
+        .account_type(AccountType::Public)
         .build_existing()?;
 
     let mut mock_chain = MockChainBuilder::with_accounts([
@@ -1471,7 +1471,7 @@ async fn test_nested_fpi_stack_overflow() -> anyhow::Result<()> {
     let native_account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
         .with_auth_component(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_empty_slots())
-        .storage_mode(AccountStorageMode::Public)
+        .account_type(AccountType::Public)
         .build_existing()
         .unwrap();
 
@@ -1581,7 +1581,7 @@ async fn test_nested_fpi_native_account_invocation() -> anyhow::Result<()> {
     let native_account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
         .with_auth_component(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_empty_slots())
-        .storage_mode(AccountStorageMode::Public)
+        .account_type(AccountType::Public)
         .build_existing()?;
 
     let mut mock_chain =
@@ -1787,7 +1787,7 @@ async fn test_fpi_get_account_id() -> anyhow::Result<()> {
     let native_account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
         .with_auth_component(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_empty_slots())
-        .storage_mode(AccountStorageMode::Public)
+        .account_type(AccountType::Public)
         .build_existing()?;
 
     let mut mock_chain =
@@ -1870,7 +1870,7 @@ async fn test_get_initial_item_and_get_initial_map_item_with_foreign_account() -
     let native_account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
         .with_auth_component(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_empty_slots())
-        .storage_mode(AccountStorageMode::Public)
+        .account_type(AccountType::Public)
         .build_existing()?;
 
     let mock_value_slot0 = AccountStorage::mock_value_slot0();

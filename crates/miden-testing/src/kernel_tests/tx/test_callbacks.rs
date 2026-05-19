@@ -12,7 +12,7 @@ use miden_protocol::account::{
     AccountComponentCode,
     AccountId,
     AccountProcedureRoot,
-    AccountStorageMode,
+    AccountType,
     StorageMap,
     StorageMapKey,
     StorageSlot,
@@ -250,7 +250,7 @@ async fn test_faucet_without_callback_slot_skips_callback(
 
     // Create a faucet WITHOUT any AssetCallbacks component.
     let mut account_builder = AccountBuilder::new([45u8; 32])
-        .storage_mode(AccountStorageMode::Public)
+        .account_type(AccountType::Public)
         .with_component(MockFaucetComponent);
 
     // If callback proc roots should be empty, add the empty storage slots.
@@ -697,7 +697,7 @@ fn add_faucet_with_block_list(
     let block_list = BlockList::new(blocked_accounts.into_iter().collect());
 
     let account_builder = AccountBuilder::new([42u8; 32])
-        .storage_mode(AccountStorageMode::Public)
+        .account_type(AccountType::Public)
         .with_component(MockFaucetComponent)
         .with_component(block_list);
 
@@ -762,7 +762,7 @@ fn add_faucet_with_callbacks(
         AccountComponent::new(callback_code, callback_storage_slots, callback_metadata)?;
 
     let account_builder = AccountBuilder::new([42; 32])
-        .storage_mode(AccountStorageMode::Public)
+        .account_type(AccountType::Public)
         .with_component(faucet)
         .with_component(Authority::AuthControlled)
         .with_components(

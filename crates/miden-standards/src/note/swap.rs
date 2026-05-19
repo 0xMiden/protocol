@@ -260,7 +260,7 @@ impl From<SwapNoteStorage> for NoteStorage {
 #[cfg(test)]
 mod tests {
 
-    use miden_protocol::account::{AccountIdVersion, AccountStorageMode};
+    use miden_protocol::account::{AccountIdVersion, AccountType};
     use miden_protocol::asset::{FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
     use miden_protocol::note::{NoteStorage, NoteTag, NoteType};
     use miden_protocol::testing::account_id::{
@@ -349,7 +349,7 @@ mod tests {
                 AccountId::dummy(
                     fungible_faucet_id_bytes,
                     AccountIdVersion::Version1,
-                    AccountStorageMode::Public,
+                    AccountType::Public,
                 ),
                 2500,
             )
@@ -361,7 +361,7 @@ mod tests {
                 AccountId::dummy(
                     non_fungible_faucet_id_bytes,
                     AccountIdVersion::Version1,
-                    AccountStorageMode::Public,
+                    AccountType::Public,
                 ),
                 vec![0xaa, 0xbb, 0xcc, 0xdd],
             )));

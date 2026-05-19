@@ -39,8 +39,6 @@ static SCHEME_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// assembler (which also implies availability of `miden::protocol`). This is the case when using
 /// [`CodeBuilder`][builder].
 ///
-/// This component supports all account types.
-///
 /// [builder]: crate::code_builder::CodeBuilder
 pub struct AuthSingleSig {
     pub_key: PublicKeyCommitment,

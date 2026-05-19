@@ -1,7 +1,7 @@
 use anyhow::Context;
 use miden_protocol::Felt;
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::account::{Account, AccountId, AccountStorageMode};
+use miden_protocol::account::{Account, AccountId, AccountType};
 use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset};
 use miden_protocol::note::{Note, NoteDetails, NoteId, NoteType};
 use miden_protocol::testing::account_id::{
@@ -328,7 +328,7 @@ struct SwapTestSetup {
 
 fn setup_swap_test(payback_note_type: NoteType) -> anyhow::Result<SwapTestSetup> {
     let faucet_id = AccountIdBuilder::new()
-        .storage_mode(AccountStorageMode::Private)
+        .account_type(AccountType::Private)
         .build_with_seed([5; 32]);
 
     let offered_asset = FungibleAsset::new(faucet_id, 2000)?.into();

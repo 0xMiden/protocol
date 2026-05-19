@@ -13,7 +13,7 @@ use miden_protocol::account::{
     AccountComponent,
     AccountId,
     AccountIdVersion,
-    AccountStorageMode,
+    AccountType,
     StorageSlotName,
 };
 use miden_protocol::assembly::DefaultSourceManager;
@@ -123,11 +123,11 @@ fn new_field_data() -> [Word; 7] {
 }
 
 fn owner_account_id() -> AccountId {
-    AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountStorageMode::Private)
+    AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountType::Private)
 }
 
 fn non_owner_account_id() -> AccountId {
-    AccountId::dummy([2; 15], AccountIdVersion::Version1, AccountStorageMode::Private)
+    AccountId::dummy([2; 15], AccountIdVersion::Version1, AccountType::Private)
 }
 
 /// Build a minimal faucet metadata (no optional fields).
@@ -156,7 +156,7 @@ fn build_pol_faucet_metadata() -> FungibleFaucet {
 /// Build a basic faucet account with POL metadata.
 fn build_pol_faucet_account() -> Account {
     AccountBuilder::new([4u8; 32])
-        .storage_mode(AccountStorageMode::Public)
+        .account_type(AccountType::Public)
         .with_auth_component(NoAuth)
         .with_component(build_pol_faucet_metadata())
         .build()
@@ -483,7 +483,7 @@ fn faucet_with_metadata_storage_layout() {
         .unwrap();
 
     let account = AccountBuilder::new([1u8; 32])
-        .storage_mode(AccountStorageMode::Public)
+        .account_type(AccountType::Public)
         .with_auth_component(NoAuth)
         .with_component(faucet)
         .build()
@@ -505,7 +505,7 @@ fn verify_faucet_with_max_name_and_description(
     seed: [u8; 32],
     symbol: &str,
     max_supply: u64,
-    storage_mode: AccountStorageMode,
+    account_type: AccountType,
     extra_components: Vec<AccountComponent>,
 ) {
     let max_name = "a".repeat(TokenName::MAX_BYTES);
@@ -523,7 +523,7 @@ fn verify_faucet_with_max_name_and_description(
         .unwrap();
 
     let mut builder = AccountBuilder::new(seed)
-        .storage_mode(storage_mode)
+        .account_type(account_type)
         .with_auth_component(NoAuth)
         .with_component(faucet);
 
@@ -546,7 +546,7 @@ fn basic_faucet_with_max_name_and_full_description() {
         [5u8; 32],
         "MAX",
         1_000_000,
-        AccountStorageMode::Public,
+        AccountType::Public,
         vec![],
     );
 }

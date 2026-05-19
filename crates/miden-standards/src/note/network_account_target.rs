@@ -41,7 +41,7 @@ impl NetworkAccountTarget {
     ///
     /// Returns an error if:
     /// - the provided `target_id` does not have
-    ///   [`AccountStorageMode::Public`](miden_protocol::account::AccountStorageMode::Public).
+    ///   [`AccountType::Public`](miden_protocol::account::AccountType::Public).
     pub fn new(
         target_id: AccountId,
         exec_hint: NoteExecutionHint,
@@ -130,7 +130,7 @@ impl TryFrom<&NoteAttachment> for NetworkAccountTarget {
 pub enum NetworkAccountTargetError {
     #[error("note attachments do not contain a network account target scheme")]
     MissingAttachmentScheme,
-    #[error("target account ID must have public storage mode")]
+    #[error("target account ID must have public account type")]
     TargetNotPublic(AccountId),
     #[error(
         "attachment scheme {0} did not match expected type {expected}",
@@ -153,7 +153,7 @@ pub enum NetworkAccountTargetError {
 #[cfg(test)]
 mod tests {
     use assert_matches::assert_matches;
-    use miden_protocol::account::AccountStorageMode;
+    use miden_protocol::account::AccountType;
     use miden_protocol::testing::account_id::AccountIdBuilder;
 
     use super::*;
@@ -161,7 +161,7 @@ mod tests {
     #[test]
     fn network_account_target_serde() -> anyhow::Result<()> {
         let id = AccountIdBuilder::new()
-            .storage_mode(AccountStorageMode::Public)
+            .account_type(AccountType::Public)
             .build_with_rng(&mut rand::rng());
         let network_account_target = NetworkAccountTarget::new(id, NoteExecutionHint::Always)?;
         assert_eq!(
@@ -175,7 +175,7 @@ mod tests {
     #[test]
     fn network_account_target_fails_on_private_target_account() -> anyhow::Result<()> {
         let id = AccountIdBuilder::new()
-            .storage_mode(AccountStorageMode::Private)
+            .account_type(AccountType::Private)
             .build_with_rng(&mut rand::rng());
         let err = NetworkAccountTarget::new(id, NoteExecutionHint::Always).unwrap_err();
 

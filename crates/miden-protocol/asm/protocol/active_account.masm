@@ -565,7 +565,7 @@ end
 #!
 #! Invocation: exec
 pub proc has_non_fungible_asset
-    # assert that the faucet id is a non-fungible faucet
+    # assert that the asset's composition is non-fungible
     exec.asset::key_to_composition
     push.COMPOSITION_NONE
     assert_eq.err=ERR_VAULT_HAS_NON_FUNGIBLE_ASSET_PROC_CAN_BE_CALLED_ONLY_WITH_NON_FUNGIBLE_ASSET

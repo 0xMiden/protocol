@@ -9,7 +9,7 @@ use miden_protocol::account::{
     AccountBuilder,
     AccountHeader,
     AccountProcedureRoot,
-    AccountStorageMode,
+    AccountType,
     StorageSlot,
     StorageSlotName,
 };
@@ -540,7 +540,7 @@ fn input_notes_memory_assertions(
 #[tokio::test]
 async fn create_simple_account() -> anyhow::Result<()> {
     let account = AccountBuilder::new([6; 32])
-        .storage_mode(AccountStorageMode::Public)
+        .account_type(AccountType::Public)
         .with_auth_component(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_empty_slots())
         .build()?;
@@ -570,36 +570,36 @@ pub async fn create_account_test(
     TransactionContextBuilder::new(account).build().unwrap().execute().await
 }
 
-pub async fn create_multiple_accounts_test(storage_mode: AccountStorageMode) -> anyhow::Result<()> {
+pub async fn create_multiple_accounts_test(account_type: AccountType) -> anyhow::Result<()> {
     let mut accounts = Vec::new();
 
     let account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
-        .storage_mode(storage_mode)
+        .account_type(account_type)
         .with_auth_component(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_slots(vec![StorageSlot::with_value(
             StorageSlotName::mock(0),
             Word::from([255u32; WORD_SIZE]),
         )]))
         .build()
-        .with_context(|| format!("account build storage mode {storage_mode} failed"))?;
+        .with_context(|| format!("account build with account type {account_type} failed"))?;
 
     accounts.push(account);
 
     for account in accounts {
         create_account_test(account).await.context(format!(
-            "create_multiple_accounts_test test failed for account storage mode {storage_mode}"
+            "create_multiple_accounts_test test failed for account type {account_type}"
         ))?;
     }
 
     Ok(())
 }
 
-/// Tests that a valid account of each storage mode can be created successfully.
+/// Tests that a valid account of each account type can be created successfully.
 #[tokio::test]
 pub async fn create_accounts_with_all_storage_modes() -> anyhow::Result<()> {
-    create_multiple_accounts_test(AccountStorageMode::Private).await?;
+    create_multiple_accounts_test(AccountType::Private).await?;
 
-    create_multiple_accounts_test(AccountStorageMode::Public).await
+    create_multiple_accounts_test(AccountType::Public).await
 }
 
 /// Tests that supplying an invalid seed causes account creation to fail.

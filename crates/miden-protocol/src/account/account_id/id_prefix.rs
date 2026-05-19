@@ -4,7 +4,7 @@ use core::fmt;
 use super::v1;
 use crate::Felt;
 use crate::account::account_id::AccountIdPrefixV1;
-use crate::account::{AccountIdVersion, AccountStorageMode};
+use crate::account::{AccountIdVersion, AccountType};
 use crate::errors::AccountIdError;
 use crate::utils::serde::{
     ByteReader,
@@ -95,21 +95,21 @@ impl AccountIdPrefix {
         }
     }
 
-    /// Returns the storage mode of this account ID.
-    pub fn storage_mode(&self) -> AccountStorageMode {
+    /// Returns the account type of this account ID.
+    pub fn account_type(&self) -> AccountType {
         match self {
-            AccountIdPrefix::V1(id_prefix) => id_prefix.storage_mode(),
+            AccountIdPrefix::V1(id_prefix) => id_prefix.account_type(),
         }
     }
 
-    /// Returns `true` if the storage mode is [`AccountStorageMode::Public`], `false` otherwise.
+    /// Returns `true` if the account type is [`AccountType::Public`], `false` otherwise.
     pub fn is_public(&self) -> bool {
-        self.storage_mode().is_public()
+        self.account_type().is_public()
     }
 
     /// Returns `true` if self is a private account, `false` otherwise.
     pub fn is_private(&self) -> bool {
-        self.storage_mode().is_private()
+        self.account_type().is_private()
     }
 
     /// Returns the version of this account ID.

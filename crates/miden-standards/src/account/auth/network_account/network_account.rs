@@ -90,16 +90,16 @@ impl TryFrom<Account> for NetworkAccount {
 mod tests {
     use alloc::collections::BTreeSet;
 
-    use miden_protocol::account::{AccountBuilder, AccountStorageMode};
+    use miden_protocol::account::{AccountBuilder, AccountType};
     use miden_protocol::note::NoteScriptRoot;
 
     use super::*;
     use crate::account::auth::network_account::AuthNetworkAccount;
     use crate::account::wallets::BasicWallet;
 
-    fn build_account(storage_mode: AccountStorageMode, roots: BTreeSet<NoteScriptRoot>) -> Account {
+    fn build_account(account_type: AccountType, roots: BTreeSet<NoteScriptRoot>) -> Account {
         AccountBuilder::new([0; 32])
-            .storage_mode(storage_mode)
+            .account_type(account_type)
             .with_auth_component(
                 AuthNetworkAccount::with_allowlist(roots).expect("non-empty allowlist"),
             )
@@ -112,7 +112,7 @@ mod tests {
     fn public_account_with_allowlist_is_a_network_account() {
         let root = NoteScriptRoot::from_array([1, 2, 3, 4]);
         let roots = BTreeSet::from_iter([root]);
-        let account = build_account(AccountStorageMode::Public, roots.clone());
+        let account = build_account(AccountType::Public, roots.clone());
 
         let network_account = NetworkAccount::new(account).expect("should be a network account");
         let actual: BTreeSet<NoteScriptRoot> =
@@ -123,7 +123,7 @@ mod tests {
     #[test]
     fn private_account_is_rejected_even_with_allowlist() {
         let root = NoteScriptRoot::from_array([1, 2, 3, 4]);
-        let account = build_account(AccountStorageMode::Private, BTreeSet::from_iter([root]));
+        let account = build_account(AccountType::Private, BTreeSet::from_iter([root]));
 
         let id = account.id();
         let err = NetworkAccount::new(account).expect_err("private account must be rejected");
@@ -136,7 +136,7 @@ mod tests {
     #[test]
     fn public_account_without_allowlist_is_not_a_network_account() {
         let account = AccountBuilder::new([0; 32])
-            .storage_mode(AccountStorageMode::Public)
+            .account_type(AccountType::Public)
             .with_auth_component(crate::account::auth::NoAuth)
             .with_component(BasicWallet)
             .build()

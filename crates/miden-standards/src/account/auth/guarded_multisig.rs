@@ -187,8 +187,6 @@ impl AuthGuardedMultisigConfig {
 /// combined with guardian authorization, so operations require both multisig approval and a valid
 /// guardian signature. This substantially mitigates low-threshold state-withholding scenarios
 /// since the guardian is expected to forward state updates to other approvers.
-///
-/// This component supports all account types.
 #[derive(Debug)]
 pub struct AuthGuardedMultisig {
     multisig: AuthMultisig,
