@@ -8,7 +8,7 @@ use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountIdVersion, AccountType};
 use miden_protocol::assembly::DefaultSourceManager;
-use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset, TokenSymbol};
+use miden_protocol::asset::{Asset, AssetAmount, AssetCallbackFlag, FungibleAsset, TokenSymbol};
 use miden_protocol::note::{
     Note,
     NoteAssets,
@@ -1825,7 +1825,12 @@ async fn network_faucet_mint_with_blocklist() -> anyhow::Result<()> {
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
 
     let amount = Felt::new_unchecked(75);
-    let mint_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64()).unwrap();
+    // The blocklist faucet has asset callbacks enabled, so the asset embedded in the MINT
+    // note must carry the matching callback flag: `mint_and_send` binds the mint to the
+    // full ASSET_KEY derived for the faucet, which encodes that flag.
+    let mint_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())
+        .unwrap()
+        .with_callbacks(AssetCallbackFlag::Enabled);
     let serial_num = Word::default();
 
     let output_note_tag = NoteTag::with_account_target(target_account.id());

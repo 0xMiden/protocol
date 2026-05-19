@@ -7,7 +7,6 @@
 # Shared token metadata (name, description, logo_uri, external_link) and the associated
 # mutability config word live in the parent `miden::standards::faucets` namespace.
 
-use miden::protocol::account_id
 use miden::protocol::active_account
 use miden::protocol::active_note
 use miden::protocol::faucet
@@ -244,7 +243,7 @@ end
 @locals(8)
 pub proc mint_and_send
     # save the MINT note's ASSET_KEY in a local so it survives the mint policy and supply
-    # checks; its faucet ID is checked against the active account before minting
+    # checks; it is compared against the asset derived for the active faucet before minting
     loc_storew_le.MINT_ASSET_KEY_LOCAL dropw
     # => [ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
 
@@ -337,15 +336,14 @@ pub proc mint_and_send
     exec.faucet::create_fungible_asset
     # => [ASSET_KEY, ASSET_VALUE, note_idx, note_idx]
 
-    # bind the mint to the faucet the MINT note was created for: the ASSET_KEY stored in the
-    # MINT note must have been issued by the active faucet
-    padw loc_loadw_le.MINT_ASSET_KEY_LOCAL exec.asset::key_into_faucet_id
-    # => [note_faucet_id_suffix, note_faucet_id_prefix, ASSET_KEY, ASSET_VALUE, note_idx, note_idx]
+    # bind the mint to the faucet the MINT note was created for: the asset derived for the
+    # active faucet must equal the asset stored in the MINT note. The key encodes the faucet
+    # ID and the faucet's asset-callbacks bit, so a MINT note created for a different faucet
+    # is rejected.
+    padw loc_loadw_le.MINT_ASSET_KEY_LOCAL dupw.1
+    # => [ASSET_KEY, NOTE_ASSET_KEY, ASSET_KEY, ASSET_VALUE, note_idx, note_idx]
 
-    exec.active_account::get_id
-    # => [id_suffix, id_prefix, note_faucet_id_suffix, note_faucet_id_prefix, ASSET_KEY, ASSET_VALUE, note_idx, note_idx]
-
-    exec.account_id::is_equal assert.err=ERR_FUNGIBLE_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET
+    assert_eqw.err=ERR_FUNGIBLE_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET
     # => [ASSET_KEY, ASSET_VALUE, note_idx, note_idx]
 
     dupw.1 dupw.1
