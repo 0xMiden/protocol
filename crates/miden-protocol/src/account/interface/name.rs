@@ -113,77 +113,13 @@ impl From<AccountComponentName> for String {
 
 #[cfg(test)]
 mod tests {
-    use alloc::string::ToString;
-
-    use assert_matches::assert_matches;
-    use rstest::rstest;
+    //! Note: Most tests live in crate::account::name_validation.
 
     use super::*;
-    use crate::account::StorageSlotName;
-
-    // VALIDITY
-    // --------------------------------------------------------------------------------------------
-
-    #[rstest]
-    #[case::min_components("miden::component")]
-    #[case::many_components("miden::faucet0::fungible_1::b4sic::metadata")]
-    #[case::alphanum_underscore("Foo_42::Bar_99")]
-    fn valid_component_names(#[case] name: &str) {
-        AccountComponentName::new(name.to_string()).unwrap();
-    }
-
-    #[rstest]
-    #[case::empty("", AccountComponentNameError::TooShort)]
-    #[case::single_component("single_component", AccountComponentNameError::TooShort)]
-    #[case::leading_colon(":one::two", AccountComponentNameError::UnexpectedColon)]
-    #[case::leading_underscore("_one::two", AccountComponentNameError::UnexpectedUnderscore)]
-    #[case::component_leading_underscore(
-        "one::_two",
-        AccountComponentNameError::UnexpectedUnderscore
-    )]
-    #[case::single_colon("one::two:three", AccountComponentNameError::UnexpectedColon)]
-    #[case::invalid_char("na#me::second", AccountComponentNameError::InvalidCharacter)]
-    fn invalid_component_names(#[case] name: &str, #[case] expected: AccountComponentNameError) {
-        let actual = AccountComponentName::new(name.to_string()).unwrap_err();
-        assert_eq!(core::mem::discriminant(&actual), core::mem::discriminant(&expected));
-    }
-
-    #[test]
-    fn too_long_component_name_is_rejected() {
-        let mut s = String::from("miden::");
-        s.extend(core::iter::repeat_n('a', name_validation::MAX_LENGTH - "miden::".len() + 1));
-        let err = AccountComponentName::new(s).unwrap_err();
-        assert_matches!(err, AccountComponentNameError::TooLong);
-    }
 
     #[test]
     #[should_panic(expected = "invalid AccountComponentName")]
     fn from_static_str_panics_on_invalid_input() {
-        let _ = AccountComponentName::from_static_str("not_two_components");
-    }
-
-    #[test]
-    fn from_static_str_accepts_valid_input() {
-        let name = AccountComponentName::from_static_str("miden::component");
-        assert_eq!(name.as_str(), "miden::component");
-    }
-
-    // SHARED VALIDATION PARITY
-    // --------------------------------------------------------------------------------------------
-
-    /// Confirms that both `StorageSlotName::new` and `AccountComponentName::new` reject the same
-    /// inputs through the shared validator. Guards against the extraction silently dropping a
-    /// check.
-    #[rstest]
-    #[case("")]
-    #[case("single")]
-    #[case(":leading_colon::ok")]
-    #[case("_leading_underscore::ok")]
-    #[case("ok::_leading_underscore")]
-    #[case("ok::bad#char")]
-    #[case("triple:::colon::ok")]
-    fn shared_validation_parity(#[case] name: &str) {
-        assert!(StorageSlotName::new(name.to_string()).is_err());
-        assert!(AccountComponentName::new(name.to_string()).is_err());
+        AccountComponentName::from_static_str("not_two_components");
     }
 }

@@ -188,159 +188,11 @@ impl Deserializable for StorageSlotName {
     }
 }
 
-// TESTS
-// ================================================================================================
-
 #[cfg(test)]
 mod tests {
-    use std::borrow::ToOwned;
-
-    use assert_matches::assert_matches;
+    //! Note: Most tests live in crate::account::name_validation.
 
     use super::*;
-
-    // A string containing all allowed characters of a slot name.
-    const FULL_ALPHABET: &str = "abcdefghijklmnopqrstuvwxyz_ABCDEFGHIJKLMNOPQRSTUVWXYZ_0123456789";
-
-    // Invalid colon or underscore tests
-    // --------------------------------------------------------------------------------------------
-
-    #[test]
-    fn slot_name_fails_on_invalid_colon_placement() {
-        // Single colon.
-        assert_matches!(
-            StorageSlotName::new(":").unwrap_err(),
-            StorageSlotNameError::UnexpectedColon
-        );
-        assert_matches!(
-            StorageSlotName::new("0::1:").unwrap_err(),
-            StorageSlotNameError::UnexpectedColon
-        );
-        assert_matches!(
-            StorageSlotName::new(":0::1").unwrap_err(),
-            StorageSlotNameError::UnexpectedColon
-        );
-        assert_matches!(
-            StorageSlotName::new("0::1:2").unwrap_err(),
-            StorageSlotNameError::UnexpectedColon
-        );
-
-        // Double colon (placed invalidly).
-        assert_matches!(
-            StorageSlotName::new("::").unwrap_err(),
-            StorageSlotNameError::UnexpectedColon
-        );
-        assert_matches!(
-            StorageSlotName::new("1::2::").unwrap_err(),
-            StorageSlotNameError::UnexpectedColon
-        );
-        assert_matches!(
-            StorageSlotName::new("::1::2").unwrap_err(),
-            StorageSlotNameError::UnexpectedColon
-        );
-
-        // Triple colon.
-        assert_matches!(
-            StorageSlotName::new(":::").unwrap_err(),
-            StorageSlotNameError::UnexpectedColon
-        );
-        assert_matches!(
-            StorageSlotName::new("1::2:::").unwrap_err(),
-            StorageSlotNameError::UnexpectedColon
-        );
-        assert_matches!(
-            StorageSlotName::new(":::1::2").unwrap_err(),
-            StorageSlotNameError::UnexpectedColon
-        );
-        assert_matches!(
-            StorageSlotName::new("1::2:::3").unwrap_err(),
-            StorageSlotNameError::UnexpectedColon
-        );
-    }
-
-    #[test]
-    fn slot_name_fails_on_invalid_underscore_placement() {
-        assert_matches!(
-            StorageSlotName::new("_one::two").unwrap_err(),
-            StorageSlotNameError::UnexpectedUnderscore
-        );
-        assert_matches!(
-            StorageSlotName::new("one::_two").unwrap_err(),
-            StorageSlotNameError::UnexpectedUnderscore
-        );
-    }
-
-    // Length validation tests
-    // --------------------------------------------------------------------------------------------
-
-    #[test]
-    fn slot_name_fails_on_empty_string() {
-        assert_matches!(StorageSlotName::new("").unwrap_err(), StorageSlotNameError::TooShort);
-    }
-
-    #[test]
-    fn slot_name_fails_on_single_component() {
-        assert_matches!(
-            StorageSlotName::new("single_component").unwrap_err(),
-            StorageSlotNameError::TooShort
-        );
-    }
-
-    #[test]
-    fn slot_name_fails_on_string_whose_length_exceeds_max_length() {
-        let mut string = get_max_length_slot_name();
-        string.push('a');
-        assert_matches!(StorageSlotName::new(string).unwrap_err(), StorageSlotNameError::TooLong);
-    }
-
-    // Alphabet validation tests
-    // --------------------------------------------------------------------------------------------
-
-    #[test]
-    fn slot_name_allows_ascii_alphanumeric_and_underscore() -> anyhow::Result<()> {
-        let name = format!("{FULL_ALPHABET}::second");
-        let slot_name = StorageSlotName::new(name.clone())?;
-        assert_eq!(slot_name.as_str(), name);
-
-        Ok(())
-    }
-
-    #[test]
-    fn slot_name_fails_on_invalid_character() {
-        assert_matches!(
-            StorageSlotName::new("na#me::second").unwrap_err(),
-            StorageSlotNameError::InvalidCharacter
-        );
-        assert_matches!(
-            StorageSlotName::new("first_entry::secönd").unwrap_err(),
-            StorageSlotNameError::InvalidCharacter
-        );
-        assert_matches!(
-            StorageSlotName::new("first::sec::th!rd").unwrap_err(),
-            StorageSlotNameError::InvalidCharacter
-        );
-    }
-
-    // Valid slot name tests
-    // --------------------------------------------------------------------------------------------
-
-    #[test]
-    fn slot_name_with_min_components_is_valid() -> anyhow::Result<()> {
-        StorageSlotName::new("miden::component")?;
-        Ok(())
-    }
-
-    #[test]
-    fn slot_name_with_many_components_is_valid() -> anyhow::Result<()> {
-        StorageSlotName::new("miden::faucet0::fungible_1::b4sic::metadata")?;
-        Ok(())
-    }
-
-    #[test]
-    fn slot_name_with_max_length_is_valid() -> anyhow::Result<()> {
-        StorageSlotName::new(get_max_length_slot_name())?;
-        Ok(())
-    }
 
     // Serialization tests
     // --------------------------------------------------------------------------------------------
@@ -354,20 +206,8 @@ mod tests {
 
     #[test]
     fn serde_max_length_slot_name() -> anyhow::Result<()> {
-        let slot_name = StorageSlotName::new(get_max_length_slot_name())?;
+        let slot_name = StorageSlotName::new(name_validation::tests::get_max_length_name())?;
         assert_eq!(slot_name, StorageSlotName::read_from_bytes(&slot_name.to_bytes())?);
         Ok(())
-    }
-
-    // Test helpers
-    // --------------------------------------------------------------------------------------------
-
-    fn get_max_length_slot_name() -> String {
-        const MIDEN_STR: &str = "miden::";
-        let remainder = ['a'; StorageSlotName::MAX_LENGTH - MIDEN_STR.len()];
-        let mut string = MIDEN_STR.to_owned();
-        string.extend(remainder);
-        assert_eq!(string.len(), StorageSlotName::MAX_LENGTH);
-        string
     }
 }
