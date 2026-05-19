@@ -12,7 +12,7 @@ use miden_crypto::utils::HexParseError;
 use thiserror::Error;
 
 use super::account::{AccountId, RoleSymbol};
-use super::asset::{AssetVaultKey, FungibleAsset, NonFungibleAsset, TokenSymbol};
+use super::asset::{AssetComposition, AssetVaultKey, FungibleAsset, NonFungibleAsset, TokenSymbol};
 use super::crypto::merkle::MerkleError;
 use super::note::NoteId;
 use super::{MAX_BATCHES_PER_BLOCK, MAX_OUTPUT_NOTES_PER_BATCH, Word};
@@ -486,8 +486,22 @@ pub enum AssetError {
     NonFungibleFaucetIdTypeMismatch(AccountId),
     #[error("smt proof in asset witness contains invalid key or value")]
     AssetWitnessInvalid(#[source] Box<AssetError>),
-    #[error("invalid native asset callbacks encoding: {0}")]
-    InvalidAssetCallbackFlag(u8),
+    #[error("unknown native asset callbacks encoding: {0}")]
+    UnknownAssetCallbackFlag(u8),
+    #[error("unknown asset composition encoding: {0}")]
+    UnknownAssetComposition(u8),
+    #[error("asset composition {0:?} is not supported at this operational site")]
+    UnsupportedAssetComposition(AssetComposition),
+    #[error(
+        "asset composition mismatch for faucet {faucet_id}: expected {expected:?}, found {actual:?}"
+    )]
+    AssetCompositionMismatch {
+        faucet_id: AccountId,
+        expected: AssetComposition,
+        actual: AssetComposition,
+    },
+    #[error("asset metadata byte 0x{0:02x} has reserved bits set to non-zero values")]
+    ReservedAssetMetadata(u8),
 }
 
 // TOKEN SYMBOL ERROR

@@ -30,6 +30,9 @@ pub use asset_callbacks::AssetCallbacks;
 mod asset_callbacks_flag;
 pub use asset_callbacks_flag::AssetCallbackFlag;
 
+mod asset_composition;
+pub use asset_composition::AssetComposition;
+
 mod vault;
 pub use vault::{AssetId, AssetVault, AssetVaultKey, AssetWitness, PartialVault};
 
@@ -104,10 +107,16 @@ impl Asset {
     /// Returns an error if:
     /// - [`FungibleAsset::from_key_value`] or [`NonFungibleAsset::from_key_value`] fails.
     pub fn from_key_value(key: AssetVaultKey, value: Word) -> Result<Self, AssetError> {
-        if matches!(key.faucet_id().account_type(), AccountType::FungibleFaucet) {
-            FungibleAsset::from_key_value(key, value).map(Asset::Fungible)
-        } else {
-            NonFungibleAsset::from_key_value(key, value).map(Asset::NonFungible)
+        match key.composition() {
+            AssetComposition::Fungible => {
+                FungibleAsset::from_key_value(key, value).map(Asset::Fungible)
+            },
+            AssetComposition::None => {
+                NonFungibleAsset::from_key_value(key, value).map(Asset::NonFungible)
+            },
+            AssetComposition::Custom => {
+                Err(AssetError::UnsupportedAssetComposition(AssetComposition::Custom))
+            },
         }
     }
 
@@ -238,20 +247,15 @@ impl Serializable for Asset {
 
 impl Deserializable for Asset {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        // Both asset types have their faucet ID as the first element, so we can use it to inspect
-        // what type of asset it is.
-        let faucet_id: AccountId = source.read()?;
-
-        match faucet_id.account_type() {
-            AccountType::FungibleFaucet => {
-                FungibleAsset::deserialize_with_faucet_id(faucet_id, source).map(Asset::from)
-            },
-            AccountType::NonFungibleFaucet => {
-                NonFungibleAsset::deserialize_with_faucet_id(faucet_id, source).map(Asset::from)
-            },
-            other_type => Err(DeserializationError::InvalidValue(format!(
-                "failed to deserialize asset: expected an account ID prefix of type faucet, found {other_type}"
-            ))),
+        // All assets have their composition serialized as the first byte, so we can use it to
+        // inspect what type of asset it is.
+        let composition: AssetComposition = source.read()?;
+        match composition {
+            AssetComposition::Fungible => FungibleAsset::deserialize_body(source).map(Asset::from),
+            AssetComposition::None => NonFungibleAsset::deserialize_body(source).map(Asset::from),
+            AssetComposition::Custom => Err(DeserializationError::InvalidValue(
+                "Custom asset composition is not supported".into(),
+            )),
         }
     }
 }
@@ -262,10 +266,15 @@ impl Deserializable for Asset {
 #[cfg(test)]
 mod tests {
 
+    use assert_matches::assert_matches;
+    use miden_core::Word;
     use miden_crypto::utils::{Deserializable, Serializable};
 
     use super::{Asset, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
+    use crate::Felt;
     use crate::account::AccountId;
+    use crate::asset::{AssetCallbackFlag, AssetComposition, AssetId, AssetVaultKey};
+    use crate::errors::AssetError;
     use crate::testing::account_id::{
         ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
         ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET,
@@ -276,6 +285,20 @@ mod tests {
         ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET,
         ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET_1,
     };
+
+    /// Returns the metadata byte encoded in a vault-key word.
+    pub(super) fn asset_metadata(key: AssetVaultKey) -> u8 {
+        (key.to_word()[2].as_canonical_u64() & AssetVaultKey::METADATA_BYTE_MASK as u64) as u8
+    }
+
+    /// Overwrites the metadata byte of the third element of a key word.
+    pub(super) fn set_asset_metadata(key: AssetVaultKey, byte: u8) -> Word {
+        let mut key = key.to_word();
+        let raw = key[2].as_canonical_u64();
+        let new_raw = (raw & !(AssetVaultKey::METADATA_BYTE_MASK as u64)) | byte as u64;
+        key[2] = Felt::try_from(new_raw).expect("clearing lower bits should produce a valid felt");
+        key
+    }
 
     /// Tests the serialization roundtrip for assets for assets <-> bytes and assets <-> words.
     #[test]
@@ -323,15 +346,31 @@ mod tests {
         Ok(())
     }
 
-    /// This test asserts that account ID's is serialized in the first felt of assets.
-    /// Asset deserialization relies on that fact and if this changes the serialization must
-    /// be updated.
+    /// Asserts that every fully-serialized asset leads with an [`AssetComposition`] byte that
+    /// reflects the asset variant. Asset deserialization relies on this discriminator.
     #[test]
-    fn test_account_id_is_serialized_first() {
-        for asset in [FungibleAsset::mock(300), NonFungibleAsset::mock(&[0xaa, 0xbb])] {
-            let serialized_asset = asset.to_bytes();
-            let prefix = AccountId::read_from_bytes(&serialized_asset).unwrap();
-            assert_eq!(prefix, asset.faucet_id());
-        }
+    fn test_composition_byte_is_serialized_first() {
+        let fungible_bytes = FungibleAsset::mock(300).to_bytes();
+        assert_eq!(fungible_bytes[0], AssetComposition::Fungible.as_u8());
+
+        let non_fungible_bytes = NonFungibleAsset::mock(&[0xaa, 0xbb]).to_bytes();
+        assert_eq!(non_fungible_bytes[0], AssetComposition::None.as_u8());
+    }
+
+    /// `Asset::from_key_value` must reject a [`AssetComposition::Custom`] key with
+    /// `UnsupportedAssetComposition`.
+    #[test]
+    fn test_from_key_value_rejects_custom_composition() -> anyhow::Result<()> {
+        let err = AssetVaultKey::new(
+            AssetId::default(),
+            ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET.try_into()?,
+            AssetComposition::Custom,
+            AssetCallbackFlag::Disabled,
+        )
+        .unwrap_err();
+
+        assert_matches!(err, AssetError::UnsupportedAssetComposition(AssetComposition::Custom));
+
+        Ok(())
     }
 }
