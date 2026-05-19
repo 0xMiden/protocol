@@ -36,7 +36,7 @@ const NULLIFIER_PREFIX_SHIFT: u8 = 48;
 ///
 /// This achieves the following properties:
 /// - Every note can be reduced to a single unique nullifier.
-/// - We cannot derive a note's commitment from its nullifier, or a note's nullifier from its hash.
+/// - We cannot derive a note's ID from its nullifier, or a note's nullifier from its ID.
 /// - To compute the nullifier we must know all components of the note: serial_num, script_root,
 ///   storage_commitment, asset_commitment and metadata_commitment.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, WordWrapper)]
