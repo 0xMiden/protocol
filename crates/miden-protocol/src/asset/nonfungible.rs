@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 use core::fmt;
 
 use super::vault::AssetVaultKey;
-use super::{AccountType, Asset, AssetCallbackFlag, AssetError, Word};
+use super::{AccountType, Asset, AssetCallbackFlag, AssetComposition, AssetError, Word};
 use crate::Hasher;
 use crate::account::AccountId;
 use crate::asset::vault::AssetId;
@@ -40,9 +40,12 @@ impl NonFungibleAsset {
 
     /// The serialized size of a [`NonFungibleAsset`] in bytes.
     ///
-    /// An account ID (15 bytes) plus a word (32 bytes) plus a callbacks flag (1 byte).
-    pub const SERIALIZED_SIZE: usize =
-        AccountId::SERIALIZED_SIZE + Word::SERIALIZED_SIZE + AssetCallbackFlag::SERIALIZED_SIZE;
+    /// A composition byte (u8) plus an account ID (15 bytes) plus a word (32 bytes) plus a
+    /// callbacks flag (1 byte).
+    pub const SERIALIZED_SIZE: usize = AssetComposition::SERIALIZED_SIZE
+        + AccountId::SERIALIZED_SIZE
+        + Word::SERIALIZED_SIZE
+        + AssetCallbackFlag::SERIALIZED_SIZE;
 
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
@@ -82,10 +85,19 @@ impl NonFungibleAsset {
     ///
     /// Returns an error if:
     /// - The provided key does not contain a valid faucet ID.
+    /// - The provided key's does not have [`AssetComposition::None`] set.
     /// - The provided key's asset ID limbs are not equal to the provided value's first and second
     ///   element.
     /// - The faucet ID is not a non-fungible faucet ID.
     pub fn from_key_value(key: AssetVaultKey, value: Word) -> Result<Self, AssetError> {
+        if !key.composition().is_none() {
+            return Err(AssetError::AssetCompositionMismatch {
+                faucet_id: key.faucet_id(),
+                expected: AssetComposition::None,
+                actual: key.composition(),
+            });
+        }
+
         if key.asset_id().suffix() != value[0] || key.asset_id().prefix() != value[1] {
             return Err(AssetError::NonFungibleAssetIdMustMatchValue {
                 asset_id: key.asset_id(),
@@ -130,7 +142,7 @@ impl NonFungibleAsset {
         let asset_id_prefix = self.value[1];
         let asset_id = AssetId::new(asset_id_suffix, asset_id_prefix);
 
-        AssetVaultKey::new(asset_id, self.faucet_id, self.callbacks)
+        AssetVaultKey::new(asset_id, self.faucet_id, AssetComposition::None, self.callbacks)
             .expect("constructors should ensure account ID is of type non-fungible faucet")
     }
 
@@ -173,34 +185,40 @@ impl From<NonFungibleAsset> for Asset {
 
 impl Serializable for NonFungibleAsset {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        // All assets should serialize their faucet ID at the first position to allow them to be
-        // easily distinguishable during deserialization.
+        // Lead with the asset composition byte to distinguish asset types on the wire.
+        target.write(AssetComposition::None);
         target.write(self.faucet_id());
         target.write(self.value);
         target.write(self.callbacks);
     }
 
     fn get_size_hint(&self) -> usize {
-        self.faucet_id.get_size_hint() + self.value.get_size_hint() + self.callbacks.get_size_hint()
+        AssetComposition::SERIALIZED_SIZE
+            + self.faucet_id.get_size_hint()
+            + self.value.get_size_hint()
+            + self.callbacks.get_size_hint()
     }
 }
 
 impl Deserializable for NonFungibleAsset {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let faucet_id: AccountId = source.read()?;
-
-        Self::deserialize_with_faucet_id(faucet_id, source)
-            .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
+        let composition: AssetComposition = source.read()?;
+        if !composition.is_none() {
+            return Err(DeserializationError::InvalidValue(format!(
+                "expected non-fungible asset composition but found {composition:?}"
+            )));
+        }
+        NonFungibleAsset::deserialize_body(source)
     }
 }
 
 impl NonFungibleAsset {
-    /// Deserializes a [`NonFungibleAsset`] from an [`AccountId`] and the remaining data from the
-    /// given `source`.
-    pub(super) fn deserialize_with_faucet_id<R: ByteReader>(
-        faucet_id: AccountId,
+    /// Reads the remaining body of a non-fungible asset, after the leading composition byte has
+    /// already been consumed.
+    pub(super) fn deserialize_body<R: ByteReader>(
         source: &mut R,
     ) -> Result<Self, DeserializationError> {
+        let faucet_id: AccountId = source.read()?;
         let value: Word = source.read()?;
         let callbacks: AssetCallbackFlag = source.read()?;
 
@@ -256,6 +274,7 @@ mod tests {
     use super::*;
     use crate::Felt;
     use crate::account::AccountId;
+    use crate::asset::tests::set_asset_metadata;
     use crate::testing::account_id::{
         ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
         ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET,
@@ -264,10 +283,29 @@ mod tests {
     };
 
     #[test]
+    fn non_fungible_asset_from_key_value_words_fails_on_invalid_composition() -> anyhow::Result<()>
+    {
+        let asset = NonFungibleAsset::mock(&[42]);
+        // Set the composition bits to an unsupported value (Fungible on a non-fungible asset).
+        let asset_key = set_asset_metadata(asset.vault_key(), AssetComposition::Fungible.as_u8());
+
+        let err =
+            NonFungibleAsset::from_key_value_words(asset_key, asset.to_value_word()).unwrap_err();
+        assert_matches!(err, AssetError::AssetCompositionMismatch {
+                faucet_id: _, expected, actual: _
+            } => {
+                assert_eq!(expected, AssetComposition::None);
+        });
+
+        Ok(())
+    }
+
+    #[test]
     fn fungible_asset_from_key_value_fails_on_invalid_asset_id() -> anyhow::Result<()> {
         let invalid_key = AssetVaultKey::new_native(
             AssetId::new(Felt::from(1u32), Felt::from(2u32)),
             ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET.try_into()?,
+            AssetComposition::None,
         )?;
         let err =
             NonFungibleAsset::from_key_value(invalid_key, Word::from([4, 5, 6, 7u32])).unwrap_err();
@@ -309,8 +347,12 @@ mod tests {
 
         let fungible_faucet_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET).unwrap();
 
-        // Set invalid faucet ID.
-        asset_bytes[0..AccountId::SERIALIZED_SIZE].copy_from_slice(&fungible_faucet_id.to_bytes());
+        // Overwrite the faucet ID (which now follows the composition byte) with a fungible
+        // faucet ID. The composition byte at offset 0 still declares the asset as non-fungible,
+        // so deserialization should reject it once the inner check runs.
+        let faucet_id_start = AssetComposition::SERIALIZED_SIZE;
+        let faucet_id_end = faucet_id_start + AccountId::SERIALIZED_SIZE;
+        asset_bytes[faucet_id_start..faucet_id_end].copy_from_slice(&fungible_faucet_id.to_bytes());
 
         let err = NonFungibleAsset::read_from_bytes(&asset_bytes).unwrap_err();
         assert_matches!(err, DeserializationError::InvalidValue(msg) if msg.contains("must be of type NonFungibleFaucet"));

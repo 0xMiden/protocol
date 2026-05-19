@@ -1,7 +1,11 @@
 # ERRORS
 # =================================================================================================
 
-const ERR_VAULT_INVALID_ENABLE_CALLBACKS = "enable_callbacks must be 0 or 1"
+const ERR_VAULT_ASSET_METADATA_NOT_U32 = "asset metadata is not a u32"
+
+const ERR_VAULT_ASSET_METADATA_NON_ZERO_RESERVED_BITS = "reserved asset metadata bits are non-zero"
+
+const ERR_VAULT_ASSET_METADATA_UNKNOWN_COMPOSITION = "unknown asset metadata composition value"
 
 # CONSTANTS
 # =================================================================================================
@@ -17,11 +21,36 @@ pub const ASSET_SIZE = 8
 # The offset of the asset value in an asset stored in memory.
 pub const ASSET_VALUE_MEMORY_OFFSET = 4
 
+#! The mask for the callback bits in the asset metadata.
+const CALLBACKS_MASK = 4 # 0b100
+
+#! The number of bits by which the callback bits must be shifted to the right to get the encoded
+#! value.
+const CALLBACKS_SHIFT = 2
+
 # The flag representing disabled callbacks.
 pub const CALLBACKS_DISABLED = 0
 
 # The flag representing enabled callbacks.
 pub const CALLBACKS_ENABLED = 1
+
+#! The mask for the composition bits in the asset metadata.
+const COMPOSITION_MASK = 3 # 0b11
+
+# The flag representing the AssetComposition::None composition.
+pub const COMPOSITION_NONE = 0
+
+# The flag representing the AssetComposition::Fungible composition.
+pub const COMPOSITION_FUNGIBLE = 1
+
+# The flag representing the AssetComposition::Custom composition.
+pub const COMPOSITION_CUSTOM = 2
+
+#! The composition value that is not valid.
+const COMPOSITION_INVALID = 3
+
+#! The u32 mask for the reserved bits in the asset metadata.
+const METADATA_RESERVED_MASK = 0xfffffff8 # lower 8 bits: 0b1111_1000
 
 # PROCEDURES
 # =================================================================================================
@@ -202,10 +231,14 @@ end
 #! - ASSET_KEY is the vault key for the fungible asset.
 #!
 #! Panics if:
-#! - enable_callbacks is not 0 or 1.
+#! - the resulting metadata byte is not well-formed.
 #!
 #! Invocation: exec
 pub proc create_fungible_key
+    # push the fungible composition for create_metadata
+    push.COMPOSITION_FUNGIBLE
+    # => [asset_composition, enable_callbacks, faucet_id_suffix, faucet_id_prefix]
+
     exec.create_metadata
     # => [asset_metadata, faucet_id_suffix, faucet_id_prefix]
 
@@ -265,10 +298,14 @@ end
 #! - ASSET_VALUE is the value of the created non-fungible asset, which is identical to DATA_HASH.
 #!
 #! Panics if:
-#! - enable_callbacks is not 0 or 1.
+#! - the resulting metadata byte is not well-formed.
 #!
 #! Invocation: exec
 pub proc create_non_fungible_asset_unchecked
+    # push the non-fungible (None) composition for create_metadata
+    push.COMPOSITION_NONE
+    # => [asset_composition, enable_callbacks, faucet_id_suffix, faucet_id_prefix, DATA_HASH]
+
     exec.create_metadata
     # => [asset_metadata, faucet_id_suffix, faucet_id_prefix, DATA_HASH]
 
@@ -318,27 +355,47 @@ end
 #! Outputs: []
 #!
 #! Panics if:
-#! - asset_metadata is not a valid u32 or exceeds CALLBACKS_ENABLED.
+#! - asset_metadata is not a valid u32
+#! - has reserved bits 3-7 set.
+#! - encodes an unknown asset composition.
 pub proc validate_metadata
-    u32assert.err=ERR_VAULT_INVALID_ENABLE_CALLBACKS
-    u32lte.CALLBACKS_ENABLED
-    assert.err=ERR_VAULT_INVALID_ENABLE_CALLBACKS
+    # assert that the metadata fits in a u8
+    u32split swap
+    # => [hi, asset_metadata]
+    eq.0 assert.err=ERR_VAULT_ASSET_METADATA_NOT_U32
+    # => [asset_metadata]
+
+    # assert the reserved bits are all zero (bits 3..32)
+    dup u32and.METADATA_RESERVED_MASK
+    eq.0 assert.err=ERR_VAULT_ASSET_METADATA_NON_ZERO_RESERVED_BITS
+    # => [asset_metadata]
+
+    exec.metadata_into_composition
+    # => [asset_composition]
+
+    # assert the value is NOT the invalid composition, which implies it must be one of the valid
+    # ones
+    neq.COMPOSITION_INVALID assert.err=ERR_VAULT_ASSET_METADATA_UNKNOWN_COMPOSITION
     # => []
 end
 
 #! Creates asset metadata from the provided inputs.
 #!
-#! Inputs:  [enable_callbacks]
+#! Inputs:  [asset_composition, enable_callbacks]
 #! Outputs: [asset_metadata]
 #!
 #! Where:
+#! - asset_composition is the composition value (see COMPOSITION_* constants).
 #! - enable_callbacks is a flag (0 or 1) indicating whether the asset callbacks flag should be set.
 #! - asset_metadata is the asset metadata.
 #!
 #! Panics if:
-#! - enable_callbacks is not 0 or 1.
+#! - the resulting metadata byte has invalid reserved bits set.
 proc create_metadata
-    # for now, enable_callbacks is identical to asset_metadata
+    # merge (enable_callbacks << 2) | asset_composition
+    swap u32shl.CALLBACKS_SHIFT u32or
+    # => [asset_metadata]
+
     dup exec.validate_metadata
     # => [asset_metadata]
 end
@@ -354,7 +411,44 @@ end
 #! - asset_metadata is the asset metadata.
 #! - callbacks_enabled is 1 if callbacks are enabled and 0 if disabled.
 proc metadata_into_callbacks_enabled
-    # extract the least significant bit of the metadata
-    u32and.1
+    # extract callback bit from the metadata
+    u32and.CALLBACKS_MASK u32shr.CALLBACKS_SHIFT
     # => [callbacks_enabled]
+end
+
+#! Extracts the asset composition from asset metadata.
+#!
+#! WARNING: asset_metadata is assumed to be a byte (in particular a valid u32)
+#!
+#! Inputs:  [asset_metadata]
+#! Outputs: [asset_composition]
+#!
+#! Where:
+#! - asset_metadata is the asset metadata.
+#! - asset_composition is the composition value (see COMPOSITION_* constants).
+proc metadata_into_composition
+    # extract composition bits from the metadata
+    u32and.COMPOSITION_MASK
+    # => [asset_composition]
+end
+
+#! Returns the asset composition from an asset vault key.
+#!
+#! Inputs:  [ASSET_KEY]
+#! Outputs: [asset_composition, ASSET_KEY]
+#!
+#! Where:
+#! - ASSET_KEY is the vault key from which to extract the composition.
+#! - asset_composition is the composition value (see COMPOSITION_* constants).
+pub proc key_to_composition
+    # => [asset_id_suffix, asset_id_prefix, faucet_id_suffix_and_metadata, faucet_id_prefix]
+
+    dup.2
+    # => [faucet_id_suffix_and_metadata, ASSET_KEY]
+
+    exec.split_suffix_and_metadata swap drop
+    # => [asset_metadata, ASSET_KEY]
+
+    exec.metadata_into_composition
+    # => [asset_composition, ASSET_KEY]
 end

@@ -2,7 +2,15 @@ use alloc::string::ToString;
 use core::fmt;
 
 use super::vault::AssetVaultKey;
-use super::{AccountType, Asset, AssetAmount, AssetCallbackFlag, AssetError, Word};
+use super::{
+    AccountType,
+    Asset,
+    AssetAmount,
+    AssetCallbackFlag,
+    AssetComposition,
+    AssetError,
+    Word,
+};
 use crate::Felt;
 use crate::account::AccountId;
 use crate::asset::AssetId;
@@ -41,8 +49,10 @@ impl FungibleAsset {
 
     /// The serialized size of a [`FungibleAsset`] in bytes.
     ///
-    /// An account ID (15 bytes) plus an amount (u64) plus a callbacks flag (u8).
-    pub const SERIALIZED_SIZE: usize = AccountId::SERIALIZED_SIZE
+    /// A composition byte (u8) plus an account ID (15 bytes) plus an amount (u64) plus a
+    /// callbacks flag (u8).
+    pub const SERIALIZED_SIZE: usize = AssetComposition::SERIALIZED_SIZE
+        + AccountId::SERIALIZED_SIZE
         + core::mem::size_of::<u64>()
         + AssetCallbackFlag::SERIALIZED_SIZE;
 
@@ -76,11 +86,20 @@ impl FungibleAsset {
     ///
     /// Returns an error if:
     /// - The provided key does not contain a valid faucet ID.
+    /// - The provided key's does not have [`AssetComposition::Fungible`] set.
     /// - The provided key's asset ID limbs are not zero.
     /// - The faucet ID is not a fungible faucet ID.
     /// - The provided value's amount is greater than [`FungibleAsset::MAX_AMOUNT`] or its three
     ///   most significant elements are not zero.
     pub fn from_key_value(key: AssetVaultKey, value: Word) -> Result<Self, AssetError> {
+        if !key.composition().is_fungible() {
+            return Err(AssetError::AssetCompositionMismatch {
+                faucet_id: key.faucet_id(),
+                expected: AssetComposition::Fungible,
+                actual: key.composition(),
+            });
+        }
+
         if !key.asset_id().is_empty() {
             return Err(AssetError::FungibleAssetIdMustBeZero(key.asset_id()));
         }
@@ -140,8 +159,13 @@ impl FungibleAsset {
 
     /// Returns the key which is used to store this asset in the account vault.
     pub fn vault_key(&self) -> AssetVaultKey {
-        AssetVaultKey::new(AssetId::default(), self.faucet_id, self.callbacks)
-            .expect("faucet ID should be of type fungible")
+        AssetVaultKey::new(
+            AssetId::default(),
+            self.faucet_id,
+            AssetComposition::Fungible,
+            self.callbacks,
+        )
+        .expect("faucet ID should be of type fungible")
     }
 
     /// Returns the asset's key encoded to a [`Word`].
@@ -224,15 +248,16 @@ impl fmt::Display for FungibleAsset {
 
 impl Serializable for FungibleAsset {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        // All assets should serialize their faucet ID at the first position to allow them to be
-        // distinguishable during deserialization.
+        // Lead with the asset composition byte to distinguish asset types on the wire.
+        target.write(AssetComposition::Fungible);
         target.write(self.faucet_id);
         target.write(self.amount.as_u64());
         target.write(self.callbacks);
     }
 
     fn get_size_hint(&self) -> usize {
-        self.faucet_id.get_size_hint()
+        AssetComposition::SERIALIZED_SIZE
+            + self.faucet_id.get_size_hint()
             + self.amount.as_u64().get_size_hint()
             + self.callbacks.get_size_hint()
     }
@@ -240,18 +265,23 @@ impl Serializable for FungibleAsset {
 
 impl Deserializable for FungibleAsset {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let faucet_id: AccountId = source.read()?;
-        FungibleAsset::deserialize_with_faucet_id(faucet_id, source)
+        let composition: AssetComposition = source.read()?;
+        if !composition.is_fungible() {
+            return Err(DeserializationError::InvalidValue(format!(
+                "expected fungible asset composition but found {composition:?}"
+            )));
+        }
+        FungibleAsset::deserialize_body(source)
     }
 }
 
 impl FungibleAsset {
-    /// Deserializes a [`FungibleAsset`] from an [`AccountId`] and the remaining data from the given
-    /// `source`.
-    pub(super) fn deserialize_with_faucet_id<R: ByteReader>(
-        faucet_id: AccountId,
+    /// Reads the remaining body of a fungible asset, after the leading composition byte has
+    /// already been consumed.
+    pub(super) fn deserialize_body<R: ByteReader>(
         source: &mut R,
     ) -> Result<Self, DeserializationError> {
+        let faucet_id: AccountId = source.read()?;
         let amount: u64 = source.read()?;
         let callbacks = source.read()?;
 
@@ -272,6 +302,7 @@ mod tests {
 
     use super::*;
     use crate::account::AccountId;
+    use crate::asset::tests::set_asset_metadata;
     use crate::testing::account_id::{
         ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
         ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET,
@@ -282,20 +313,38 @@ mod tests {
     };
 
     #[test]
+    fn fungible_asset_from_key_value_words_fails_on_invalid_composition() -> anyhow::Result<()> {
+        let asset_key =
+            set_asset_metadata(FungibleAsset::mock(25).vault_key(), AssetComposition::None.as_u8());
+
+        let err =
+            FungibleAsset::from_key_value_words(asset_key, FungibleAsset::mock(5).to_value_word())
+                .unwrap_err();
+        assert_matches!(err, AssetError::AssetCompositionMismatch {
+                faucet_id: _, expected, actual: _
+            } => {
+                assert_eq!(expected, AssetComposition::Fungible);
+        });
+
+        Ok(())
+    }
+
+    #[test]
     fn fungible_asset_from_key_value_words_fails_on_invalid_asset_id() -> anyhow::Result<()> {
         let faucet_id: AccountId = ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET.try_into()?;
-        let invalid_key = Word::from([
-            Felt::from(1u32),
-            Felt::from(2u32),
-            faucet_id.suffix(),
-            faucet_id.prefix().as_felt(),
-        ]);
+        let mut asset_key = AssetVaultKey::new(
+            AssetId::default(),
+            faucet_id,
+            AssetComposition::Fungible,
+            AssetCallbackFlag::Disabled,
+        )?
+        .to_word();
+        asset_key[0] = Felt::from(1u32);
+        asset_key[1] = Felt::from(2u32);
 
-        let err = FungibleAsset::from_key_value_words(
-            invalid_key,
-            FungibleAsset::mock(5).to_value_word(),
-        )
-        .unwrap_err();
+        let err =
+            FungibleAsset::from_key_value_words(asset_key, FungibleAsset::mock(5).to_value_word())
+                .unwrap_err();
         assert_matches!(err, AssetError::FungibleAssetIdMustBeZero(_));
 
         Ok(())
@@ -348,8 +397,13 @@ mod tests {
         let non_fungible_faucet_id =
             AccountId::try_from(ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET).unwrap();
 
-        // Set invalid Faucet ID.
-        asset_bytes[0..15].copy_from_slice(&non_fungible_faucet_id.to_bytes());
+        // Overwrite the faucet ID with a non-fungible faucet ID. The composition byte at offset 0
+        // still declares the asset as fungible, so deserialization should reject it once the inner
+        // check runs.
+        let faucet_id_start = AssetComposition::SERIALIZED_SIZE;
+        let faucet_id_end = faucet_id_start + AccountId::SERIALIZED_SIZE;
+        asset_bytes[faucet_id_start..faucet_id_end]
+            .copy_from_slice(&non_fungible_faucet_id.to_bytes());
         let err = FungibleAsset::read_from_bytes(&asset_bytes).unwrap_err();
         assert!(matches!(err, DeserializationError::InvalidValue(_)));
 

@@ -181,6 +181,7 @@ pub proc bridge_out
     swapw dropw
     # => [ASSET_KEY, pad(16)]
 
+    # extract the faucet ID from the asset key
     exec.asset::key_into_faucet_id
     # => [faucet_id_suffix, faucet_id_prefix, pad(16)]
 
