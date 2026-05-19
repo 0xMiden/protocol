@@ -11,9 +11,8 @@ impl NonFungibleAsset {
         let non_fungible_asset_details = NonFungibleAssetDetails::new(
             AccountId::try_from(ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET).unwrap(),
             asset_data.to_vec(),
-        )
-        .unwrap();
-        let non_fungible_asset = NonFungibleAsset::new(&non_fungible_asset_details).unwrap();
+        );
+        let non_fungible_asset = NonFungibleAsset::new(&non_fungible_asset_details);
         Asset::NonFungible(non_fungible_asset)
     }
 

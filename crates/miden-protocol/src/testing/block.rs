@@ -32,8 +32,7 @@ impl BlockHeader {
         let acct_db = AccountTree::new(smt).expect("failed to create account tree");
         let account_root = acct_db.root();
         let fee_parameters =
-            FeeParameters::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap(), 500)
-                .expect("fee faucet ID should be a fungible faucet ID");
+            FeeParameters::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap(), 500);
         let validator_key = random_secret_key();
 
         #[cfg(not(target_family = "wasm"))]

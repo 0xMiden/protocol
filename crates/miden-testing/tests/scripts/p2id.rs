@@ -294,8 +294,9 @@ async fn test_create_consume_multiple_notes() -> anyhow::Result<()> {
 
     account.apply_delta(executed_transaction.account_delta())?;
 
-    assert_eq!(account.vault().get_balance(input_note_faucet_id)?.as_u64(), 111);
-    assert_eq!(account.vault().get_balance(FungibleAsset::mock_issuer())?.as_u64(), 5);
+    assert_eq!(account.vault().get_balance(input_note_asset_1.vault_key())?.as_u64(), 111);
+    assert_eq!(account.vault().get_balance(asset_1.vault_key())?.as_u64(), 5);
+
     Ok(())
 }
 

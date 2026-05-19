@@ -1,5 +1,5 @@
+use miden_protocol::account::AccountComponent;
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
-use miden_protocol::account::{AccountComponent, AccountType};
 
 use crate::account::account_component_code;
 
@@ -35,11 +35,7 @@ impl OwnerControlledBlocklist {
 
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        AccountComponentMetadata::new(
-            Self::NAME,
-            [AccountType::FungibleFaucet, AccountType::NonFungibleFaucet],
-        )
-        .with_description(
+        AccountComponentMetadata::new(Self::NAME).with_description(
             "Owner-controlled blocklist admin: wraps `blocklist::block_account` / \
              `unblock_account` with Ownable2Step authorization.",
         )

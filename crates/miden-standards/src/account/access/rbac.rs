@@ -7,13 +7,7 @@ use miden_protocol::account::component::{
     StorageSchema,
     StorageSlotSchema,
 };
-use miden_protocol::account::{
-    AccountComponent,
-    AccountType,
-    StorageMap,
-    StorageSlot,
-    StorageSlotName,
-};
+use miden_protocol::account::{AccountComponent, StorageMap, StorageSlot, StorageSlotName};
 use miden_protocol::utils::sync::LazyLock;
 
 use crate::account::account_component_code;
@@ -165,7 +159,7 @@ impl RoleBasedAccessControl {
         ])
         .expect("storage schema should be valid");
 
-        AccountComponentMetadata::new(Self::NAME, AccountType::all())
+        AccountComponentMetadata::new(Self::NAME)
             .with_description("Role-based access control component")
             .with_storage_schema(storage_schema)
     }

@@ -1,7 +1,7 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use miden_protocol::account::{AccountId, AccountType};
+use miden_protocol::account::AccountId;
 use miden_protocol::note::PartialNote;
 use miden_protocol::transaction::TransactionScript;
 use thiserror::Error;
@@ -58,21 +58,6 @@ impl AccountInterface {
     /// Returns a reference to the account ID.
     pub fn id(&self) -> &AccountId {
         &self.account_id
-    }
-
-    /// Returns the type of the reference account.
-    pub fn account_type(&self) -> AccountType {
-        self.account_id.account_type()
-    }
-
-    /// Returns true if the reference account can issue assets.
-    pub fn is_faucet(&self) -> bool {
-        self.account_id.is_faucet()
-    }
-
-    /// Returns true if the reference account is a regular.
-    pub fn is_regular_account(&self) -> bool {
-        self.account_id.is_regular_account()
     }
 
     /// Returns `true` if the reference account is a private account, `false` otherwise.

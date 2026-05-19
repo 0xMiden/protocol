@@ -477,8 +477,7 @@ mod tests {
 
     fn int_to_block_header(block_num: impl Into<BlockNumber>) -> BlockHeader {
         let fee_parameters =
-            FeeParameters::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap(), 500)
-                .expect("fee faucet ID should be a fungible faucet ID");
+            FeeParameters::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap(), 500);
         let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
         let validator_key = SigningKey::with_rng(&mut rng).public_key();
 
