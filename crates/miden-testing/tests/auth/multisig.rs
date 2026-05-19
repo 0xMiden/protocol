@@ -1551,7 +1551,7 @@ async fn test_multisig_set_procedure_threshold_uses_current_num_approvers(
         .unwrap()
         .build()
         .unwrap();
-    let salt = Word::from([Felt::new_unchecked(55); 4]);
+    let salt = Word::from([Felt::from_u8(55); 4]);
 
     let tx_context = mock_chain
         .build_tx_context(multisig_account.id(), &[], &[])?
