@@ -11,31 +11,31 @@ use miden::standards::wallets::basic->wallet
 const SWAP_NOTE_NUM_STORAGE_ITEMS=16
 
 # Note storage layout (16 felts, loaded at STORAGE_PTR by get_storage):
-# - requested_asset_key   [0..3]
-# - requested_asset_value [4..7]
-# - payback_recipient     [8..11]   (private mode only; zero in public mode)
-# - payback_note_type     [12]
-# - payback_tag           [13]
-# - creator_id_prefix     [14]      (public mode only; zero in private mode)
-# - creator_id_suffix     [15]      (public mode only; zero in private mode)
+# - requested_asset_key      [0..3]
+# - requested_asset_value    [4..7]
+# - payback_recipient        [8..11]  (private mode only; zero in public mode)
+# - payback_note_type        [12]
+# - payback_tag              [13]
+# - payback_target_prefix    [14]     (public mode only; zero in private mode)
+# - payback_target_suffix    [15]     (public mode only; zero in private mode)
 #
 # In private mode, the recipient digest and tag are precomputed off-chain by the creator and
 # embedded as opaque values; the consumer of the SWAP cannot learn who the payback targets from
 # storage alone. In public mode, the recipient must be reconstructible by any consumer, so the
-# creator id is embedded in plaintext and the MASM derives the recipient at consume time. The
-# payback tag is stored explicitly in both modes; the creator is responsible for picking a tag
-# that targets the payback receiver in public mode.
+# payback target account id is embedded in plaintext and the MASM derives the recipient at
+# consume time. The payback tag is stored explicitly in both modes; the creator is responsible
+# for picking a tag that targets the payback receiver in public mode.
 #
-# The creator id could be derived from `active_note::get_sender` since today creator == sender,
-# but it's stored explicitly because this slot is meant to represent an arbitrary payback target
-# (not necessarily the creator) in a future iteration.
+# The payback target id could be derived from `active_note::get_sender` since today the target
+# equals the SWAP sender, but it's stored explicitly because this slot is meant to represent an
+# arbitrary payback target (not necessarily the creator) in a future iteration.
 const STORAGE_PTR=0
 const REQUESTED_ASSET_PTR=0
 const PAYBACK_RECIPIENT_PTR=8
 const PAYBACK_NOTE_TYPE_PTR=12
 const PAYBACK_TAG_PTR=13
-const CREATOR_PREFIX_PTR=14
-const CREATOR_SUFFIX_PTR=15
+const PAYBACK_TARGET_PREFIX_PTR=14
+const PAYBACK_TARGET_SUFFIX_PTR=15
 
 # Storage is exactly 16 felts = 4 words, so the asset region starts right after.
 const ASSET_PTR=16
@@ -51,7 +51,8 @@ const ERR_SWAP_WRONG_NUMBER_OF_ASSETS="SWAP script requires exactly 1 note asset
 #! P2ID payback note addressed to the creator carrying the requested asset.
 #!
 #! The payback note type (selected by the creator) determines how the payback recipient is
-#! derived: private uses an opaque precomputed digest, public derives it from the creator id.
+#! derived: private uses an opaque precomputed digest, public derives it from the payback target
+#! account id stored in plaintext.
 #!
 #! Requires that the account exposes:
 #! - miden::standards::wallets::basic::receive_asset procedure.
@@ -110,11 +111,11 @@ pub proc main
         mem_load.PAYBACK_TAG_PTR
         # => [tag, note_type, s0', s1, s2, s3]
 
-        # Load creator id (prefix then suffix) to match `p2id::new`'s signature
+        # Load payback target id (prefix then suffix) to match `p2id::new`'s signature
         # [target_id_suffix, target_id_prefix, tag, note_type, SERIAL_NUM].
-        mem_load.CREATOR_PREFIX_PTR
-        mem_load.CREATOR_SUFFIX_PTR
-        # => [creator_suffix, creator_prefix, tag, note_type, s0', s1, s2, s3]
+        mem_load.PAYBACK_TARGET_PREFIX_PTR
+        mem_load.PAYBACK_TARGET_SUFFIX_PTR
+        # => [target_suffix, target_prefix, tag, note_type, s0', s1, s2, s3]
 
         exec.p2id::new
         # => [note_idx]
