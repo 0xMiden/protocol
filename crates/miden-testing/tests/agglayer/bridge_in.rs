@@ -398,9 +398,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
         mock_chain.prove_next_block()?;
 
         // Execute the consume transaction for the destination account. Pass the account
-        // directly since the JSON-encoded destination decodes to a private account ID. The
-        // issuing faucet must be supplied as a foreign account so the kernel can dispatch
-        // the receive callback on it when the asset is added to the destination vault.
+        // directly since the JSON-encoded destination decodes to a private account ID.
         let agglayer_faucet_inputs = mock_chain.get_foreign_account_inputs(agglayer_faucet.id())?;
         let consume_tx_context = mock_chain
             .build_tx_context(
@@ -412,19 +410,13 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
             .build()?;
         let consume_executed_transaction = consume_tx_context.execute().await?;
 
-        // Verify the destination account received the minted asset. The asset is stored
-        // under its full vault key (which encodes the callback flag), so look it up via
-        // `vault().get(...)` rather than `get_balance`, which always queries the
-        // callback-disabled key.
+        // Verify the destination account received the minted asset
         let mut destination_account = destination_account.clone();
         destination_account.apply_delta(consume_executed_transaction.account_delta())?;
 
-        let stored_asset = destination_account
-            .vault()
-            .get(expected_asset.unwrap_fungible().vault_key())
-            .expect("destination vault should contain the bridged asset");
+        let balance = destination_account.vault().get_balance_enabled(agglayer_faucet.id())?;
         assert_eq!(
-            stored_asset.unwrap_fungible().amount().as_u64(),
+            balance.as_u64(),
             miden_claim_amount.as_canonical_u64(),
             "destination account balance does not match"
         );

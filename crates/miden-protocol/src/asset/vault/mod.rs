@@ -7,6 +7,7 @@ use super::{
     AccountType,
     Asset,
     AssetAmount,
+    AssetCallbackFlag,
     ByteReader,
     ByteWriter,
     Deserializable,
@@ -15,10 +16,10 @@ use super::{
     NonFungibleAsset,
     Serializable,
 };
-use crate::Word;
 use crate::account::{AccountId, AccountVaultDelta, NonFungibleDeltaAction};
 use crate::crypto::merkle::smt::{SMT_DEPTH, Smt};
 use crate::errors::AssetVaultError;
+use crate::{Felt, Word};
 
 mod partial;
 pub use partial::PartialVault;
@@ -115,6 +116,32 @@ impl AssetVault {
 
         let vault_key =
             AssetVaultKey::new_fungible(faucet_id).expect("faucet ID should be of type fungible");
+        let asset_value = self.asset_tree.get_value(&vault_key.to_word());
+        let asset = FungibleAsset::from_key_value(vault_key, asset_value)
+            .expect("asset vault should only store valid assets");
+
+        Ok(asset.amount())
+    }
+
+    /// Returns the balance of the callback-enabled fungible asset issued by the specified
+    /// faucet.
+    ///
+    /// # Errors
+    /// Returns an error if the specified ID is not an ID of a fungible asset faucet.
+    pub fn get_balance_enabled(
+        &self,
+        faucet_id: AccountId,
+    ) -> Result<AssetAmount, AssetVaultError> {
+        if !matches!(faucet_id.account_type(), AccountType::FungibleFaucet) {
+            return Err(AssetVaultError::NotAFungibleFaucetId(faucet_id));
+        }
+
+        let vault_key = AssetVaultKey::new(
+            AssetId::new(Felt::ZERO, Felt::ZERO),
+            faucet_id,
+            AssetCallbackFlag::Enabled,
+        )
+        .expect("faucet ID should be of type fungible");
         let asset_value = self.asset_tree.get_value(&vault_key.to_word());
         let asset = FungibleAsset::from_key_value(vault_key, asset_value)
             .expect("asset vault should only store valid assets");

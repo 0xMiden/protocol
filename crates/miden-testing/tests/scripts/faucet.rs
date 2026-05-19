@@ -753,9 +753,7 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
 
     // CONSUME THE OUTPUT NOTE WITH TARGET ACCOUNT
     // --------------------------------------------------------------------------------------------
-    // Execute transaction to consume the output note with the target account. The faucet must
-    // be supplied as a foreign account so the kernel can dispatch the receive callback on it
-    // when the asset is added to the target account's vault.
+    // Execute transaction to consume the output note with the target account
     let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
     let consume_tx_context = mock_chain
         .build_tx_context(target_account.id(), &[], slice::from_ref(&p2id_mint_output_note))?
@@ -766,15 +764,9 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
     // Apply the delta to the target account and verify the asset was added to the account's vault
     target_account.apply_delta(consume_executed_transaction.account_delta())?;
 
-    // Verify the account's vault now contains the expected fungible asset. The asset is
-    // stored under its full vault key (which encodes the callback flag), so we look it up
-    // via `vault().get(...)` rather than `get_balance`, which always queries the
-    // callback-disabled key.
-    let stored_asset = target_account
-        .vault()
-        .get(expected_asset.vault_key())
-        .expect("vault should contain the minted asset");
-    assert_eq!(stored_asset.unwrap_fungible().amount(), expected_asset.amount());
+    // Verify the account's vault now contains the expected fungible asset.
+    let balance = target_account.vault().get_balance_enabled(faucet.id())?;
+    assert_eq!(balance, expected_asset.amount());
 
     Ok(())
 }
@@ -1719,9 +1711,7 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
     mock_chain.add_pending_executed_transaction(&executed_transaction)?;
     mock_chain.prove_next_block()?;
 
-    // Consume the output note with target account. The issuing faucet must be supplied as a
-    // foreign account so the kernel can dispatch the receive callback on it when the asset is
-    // added to the target account's vault.
+    // Consume the output note with target account
     let mut target_account_mut = target_account.clone();
     let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
     let consume_tx_context = mock_chain
@@ -1732,13 +1722,9 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
 
     target_account_mut.apply_delta(consume_executed_transaction.account_delta())?;
 
-    let expected_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?
-        .with_callbacks(AssetCallbackFlag::Enabled);
-    let stored_asset = target_account_mut
-        .vault()
-        .get(expected_asset.vault_key())
-        .expect("vault should contain the minted asset");
-    assert_eq!(stored_asset.unwrap_fungible().amount(), expected_asset.amount());
+    let expected_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?;
+    let balance = target_account_mut.vault().get_balance_enabled(faucet.id())?;
+    assert_eq!(balance, expected_asset.amount());
 
     Ok(())
 }

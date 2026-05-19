@@ -498,25 +498,16 @@ impl TokenPolicyManager {
         ];
 
         // Register the protocol-reserved asset-callback slots whenever any transfer policy is
-        // configured on this manager (active or reserved alternative, including `AllowAll`).
-        // With the flattened policy dispatch the kernel reads these slots directly and
-        // dispatches via `call`, so writing the active roots (including `AllowAll`, which is a
-        // no-op `dropw`) wires up the dispatch path uniformly.
+        // configured on this manager.
         //
         // Registering the slots whenever transfer policies are present stamps
-        // `AssetCallbackFlag::Enabled` on every asset minted by this faucet (see
-        // `protocol::faucet::create_fungible_asset`, which gates the flag on the callback slots
-        // being populated). Without this, a faucet that ships with `AllowAll` for transfer
-        // would mint callback-less assets that are permanently exempt from any policy
-        // installed later via `set_send_policy` / `set_receive_policy` — fragmenting the
-        // circulating supply into enforceable and exempt subsets and defeating
-        // post-deployment compliance upgrades.
+        // `AssetCallbackFlag::Enabled` on every asset minted by this faucet. Without this, a
+        // faucet that ships with `AllowAll` for transfer would mint callback-less assets that
+        // are permanently exempt from any transfer policy installed later. This would fragment
+        // the circulating supply into enforceable and exempt asset sets.
         //
-        // The "only when transfer policies are configured" guard exists so callers who use
-        // this manager solely for mint / burn policies and want to install a separate
-        // component that owns the protocol callback slots (e.g. kernel-level callback tests)
-        // can do so without colliding with this manager. Production faucet builders always
-        // register `AllowAll` for both transfer kinds, so the bug fix is in effect for them.
+        // When no transfer policy is set, the callback slots are not added, meaning all minted
+        // assets have callbacks disabled.
         let has_transfer_policy = self.policies.iter().any(|(_, cfg)| {
             cfg.kinds.contains(&PolicyKind::Send) || cfg.kinds.contains(&PolicyKind::Receive)
         });
@@ -611,19 +602,9 @@ mod tests {
         component.storage_slots().iter().find(|slot| slot.name() == slot_name)
     }
 
-    /// Regression test for "Enabling transfer callbacks after minting permanently exempts
-    /// earlier assets from send/receive policy enforcement".
-    ///
-    /// A faucet deployed with only `TransferAllowAll` (no reserved alternative) must still
-    /// register the protocol-reserved asset-callback slots, populated with `TransferAllowAll`'s
-    /// procedure root. The protocol stamps `AssetCallbackFlag::Enabled` on every minted asset
-    /// whenever those slots are populated — without this, a later policy switch could not
-    /// retroactively apply to assets minted under `AllowAll`.
-    ///
-    /// Pre-fix, `manager_storage_slots` omitted the callback slots in this configuration via
-    /// the `needs_callbacks` predicate (it considered `AllowAll` a "no enforcement, no
-    /// callbacks" case). This test pins the new contract: registering any transfer policy —
-    /// `AllowAll` included — populates the protocol callback slots.
+    /// Checks that a manager configured with `TransferAllowAll` for both transfer kinds
+    /// registers the protocol-reserved asset-callback slots, populated with
+    /// `TransferAllowAll`'s procedure root.
     #[test]
     fn allow_all_transfer_policy_registers_protocol_callback_slots() {
         let manager = TokenPolicyManager::new()
@@ -653,20 +634,14 @@ mod tests {
              callback slot",
                 );
 
-        // Both slots must hold the AllowAll procedure root (not zero). The protocol stamps
-        // the callback flag on minted assets whenever these slots are non-empty.
+        // Both slots must hold the AllowAll procedure root (not zero).
         assert_eq!(on_account_slot.value(), allow_all_root);
         assert_eq!(on_note_slot.value(), allow_all_root);
     }
 
-    /// A manager configured without any send / receive policy (e.g. used purely for mint /
-    /// burn policy storage, with a custom callback component owning the protocol slots)
-    /// must NOT register the protocol callback slots — otherwise it would collide with the
-    /// custom component on the same slot names.
-    ///
-    /// This pairs with [`allow_all_transfer_policy_registers_protocol_callback_slots`]: the
-    /// guard "register iff a transfer policy is configured" is what keeps kernel-level
-    /// callback test helpers working after the fix.
+    /// A manager configured without any send / receive policy must NOT register the
+    /// protocol callback slots — otherwise it would always needlessly mint assets with
+    /// callbacks enabled.
     #[test]
     fn manager_without_transfer_policies_omits_protocol_callback_slots() {
         let manager = TokenPolicyManager::new()
