@@ -64,9 +64,11 @@ const CLAIM_LEAF_DATA_WORD_LEN = 8
 
 # MINT note storage layout (public mode, 22 felts total). The full 22-felt window is
 # inserted into the advice provider by `note::compute_and_store_recipient` and feeds the
-# storage commitment, so every cell must match what the Rust `MintNoteStorage::Public`
-# layout writes. `write_mint_note_storage` writes the padding cells at [17..19] explicitly
-# as zeros (as part of the tag word) so the window does not depend on memory zero-init.
+# storage commitment, so every element must match what the Rust `MintNoteStorage::Public`
+# layout writes. The padding at [17..19] aligns the P2ID storage at [20..21] to a word
+# boundary, which `note::compute_and_store_recipient` requires for the output note.
+# `write_mint_note_storage` writes those padding elements explicitly as zeros (as part of
+# the tag word) so the window does not depend on memory zero-init.
 # - P2ID_SCRIPT_ROOT  [0..3]   : 4 felts
 # - SERIAL_NUM        [4..7]   : 4 felts
 # - ASSET_KEY         [8..11]  : 4 felts (vault key of the fungible asset to mint)
@@ -74,7 +76,7 @@ const CLAIM_LEAF_DATA_WORD_LEN = 8
 # - tag               [16]     : 1 felt
 # - 0                 [17]     : 1 felt (padding; explicitly zeroed)
 # - 0                 [18]     : 1 felt (padding; explicitly zeroed)
-# - 0                 [19]     : 1 felt (padding; explicitly zeroed; keeps P2ID storage word-aligned)
+# - 0                 [19]     : 1 felt (padding; explicitly zeroed; aligns the P2ID storage)
 # - account_id_suffix [20]     : 1 felt
 # - account_id_prefix [21]     : 1 felt
 const MINT_NOTE_NUM_STORAGE_ITEMS = 22
@@ -890,7 +892,7 @@ proc write_mint_note_storage
     # => [dest_tag, faucet_id_suffix, faucet_id_prefix]
 
     # write the tag word [16..19] as [dest_tag, 0, 0, 0]: the tag at [16] plus explicit zeros
-    # at the padding cells [17..19] that keep the P2ID storage word-aligned
+    # at the padding elements [17..19] that keep the P2ID storage word-aligned
     push.0 push.0 push.0 movup.3
     # => [dest_tag, 0, 0, 0, faucet_id_suffix, faucet_id_prefix]
 
