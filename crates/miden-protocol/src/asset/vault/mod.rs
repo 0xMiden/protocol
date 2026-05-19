@@ -6,7 +6,7 @@ use miden_crypto::merkle::InnerNodeInfo;
 use super::{
     Asset,
     AssetAmount,
-    AssetCallbackFlag,
+    AssetComposition,
     ByteReader,
     ByteWriter,
     Deserializable,
@@ -16,9 +16,9 @@ use super::{
     Serializable,
 };
 use crate::Word;
-use crate::account::{AccountId, AccountVaultDelta, NonFungibleDeltaAction};
+use crate::account::{AccountVaultDelta, NonFungibleDeltaAction};
 use crate::crypto::merkle::smt::{SMT_DEPTH, Smt};
-use crate::errors::AssetVaultError;
+use crate::errors::{AssetError, AssetVaultError};
 
 mod partial;
 pub use partial::PartialVault;
@@ -103,22 +103,27 @@ impl AssetVault {
         }
     }
 
-    /// Returns the balance of the asset issued by the specified faucet with the given
-    /// [`AssetCallbackFlag`]. If the vault does not contain such an asset, zero is returned.
+    /// Returns the balance of the fungible asset identified by `vault_key`.
     ///
-    /// The asset is assumed to have
-    /// [`AssetComposition::Fungible`](crate::asset::AssetComposition::Fungible).
-    pub fn get_balance(
-        &self,
-        faucet_id: AccountId,
-        callback_flag: AssetCallbackFlag,
-    ) -> AssetAmount {
-        let vault_key = AssetVaultKey::new_fungible(faucet_id, callback_flag);
+    /// If the vault does not contain the asset, zero is returned.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `vault_key`'s composition is not [`AssetComposition::Fungible`].
+    pub fn get_balance(&self, vault_key: AssetVaultKey) -> Result<AssetAmount, AssetError> {
+        if !vault_key.composition().is_fungible() {
+            return Err(AssetError::AssetCompositionMismatch {
+                faucet_id: vault_key.faucet_id(),
+                expected: AssetComposition::Fungible,
+                actual: vault_key.composition(),
+            });
+        }
+
         let asset_value = self.asset_tree.get_value(&vault_key.to_word());
         let asset = FungibleAsset::from_key_value(vault_key, asset_value)
             .expect("asset vault should only store valid assets");
 
-        asset.amount()
+        Ok(asset.amount())
     }
 
     /// Returns an iterator over the assets stored in the vault.

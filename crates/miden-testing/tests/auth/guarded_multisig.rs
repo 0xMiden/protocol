@@ -1,12 +1,6 @@
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, PublicKey};
-use miden_protocol::account::{
-    Account,
-    AccountBuilder,
-    AccountId,
-    AccountProcedureRoot,
-    AccountType,
-};
-use miden_protocol::asset::{AssetCallbackFlag, FungibleAsset};
+use miden_protocol::account::{Account, AccountBuilder, AccountProcedureRoot, AccountType};
+use miden_protocol::asset::FungibleAsset;
 use miden_protocol::note::{
     Note,
     NoteAssets,
@@ -15,10 +9,7 @@ use miden_protocol::note::{
     NoteType,
     PartialNoteMetadata,
 };
-use miden_protocol::testing::account_id::{
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
-    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
-};
+use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
 use miden_protocol::testing::note::DEFAULT_NOTE_SCRIPT;
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
@@ -265,13 +256,7 @@ async fn test_guarded_multisig_signature_required(
     mock_chain.prove_next_block()?;
 
     assert_eq!(
-        multisig_account
-            .vault()
-            .get_balance(
-                AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?,
-                AssetCallbackFlag::Disabled,
-            )
-            .as_u64(),
+        multisig_account.vault().get_balance(output_note_asset.vault_key())?.as_u64(),
         10 - output_note_asset.unwrap_fungible().amount().as_u64()
     );
 

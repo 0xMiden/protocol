@@ -55,41 +55,47 @@ pub use vault::{AssetId, AssetVault, AssetVaultKey, AssetWitness, PartialVault};
 /// # Fungible assets
 ///
 /// - A fungible asset's value layout is: `[amount, 0, 0, 0]`.
-/// - A fungible asset's vault key layout is: `[0, 0, faucet_id_suffix, faucet_id_prefix]`.
+/// - A fungible asset's vault key layout is: `[0, 0, faucet_id_suffix_and_metadata,
+///   faucet_id_prefix]`.
 ///
-/// The most significant elements of a fungible asset's key are set to the prefix
-/// (`faucet_id_prefix`) and suffix (`faucet_id_suffix`) of the ID of the faucet which issues the
-/// asset. The asset ID limbs are set to zero, which means two instances of the same fungible asset
-/// have the same asset key and will be merged together when stored in the same account's vault.
-///
-/// The least significant element of the value is set to the amount of the asset and the remaining
-/// felts are zero. This amount cannot be greater than [`FungibleAsset::MAX_AMOUNT`] and thus fits
-/// into a felt.
+/// Where:
+/// - `amount` is the [`AssetAmount`] that the asset holds and cannot be greater than
+///   [`AssetAmount::MAX`] and thus fits into a felt.
+/// - the remaining elements in the value word must be zero.
+/// - `faucet_id_prefix` is the prefix of the faucet ID which issues the asset.
+/// - `faucet_id_suffix_and_metadata` is the suffix of the faucet ID which issues the asset and the
+///   asset metadata ([`AssetCallbackFlag`] and [`AssetComposition`]). See [`AssetVaultKey`] for
+///   more details on the key's layout.
+/// - the asset ID limbs must be zero, which means two instances of the same fungible asset have the
+///   same asset key and will be merged together when stored in the same account's vault.
 ///
 /// It is impossible to find a collision between two fungible assets issued by different faucets as
-/// the faucet ID is included in the description of the asset and this is guaranteed to be different
-/// for each faucet as per the faucet creation logic.
+/// the faucet ID is part of the asset's vault key and this is guaranteed to be different for each
+/// faucet as per the faucet creation logic.
 ///
 /// # Non-fungible assets
 ///
 /// - A non-fungible asset's data layout is:      `[hash0, hash1, hash2, hash3]`.
-/// - A non-fungible asset's vault key layout is: `[hash0, hash1, faucet_id_suffix,
+/// - A non-fungible asset's vault key layout is: `[hash0, hash1, faucet_id_suffix_and_metadata,
 ///   faucet_id_prefix]`.
 ///
-/// The 4 elements of non-fungible assets are computed by hashing the asset data. This compresses an
-/// asset of an arbitrary length to 4 field elements: `[hash0, hash1, hash2, hash3]`.
+/// Where:
+/// - the 4 elements of non-fungible asset values are computed by hashing the asset data. This
+///   compresses an asset of an arbitrary length to 4 field elements.
+/// - `faucet_id_prefix` is the prefix of the faucet ID which issues the asset.
+/// - `faucet_id_suffix_and_metadata` is the suffix of the faucet ID which issues the asset and the
+///   asset metadata ([`AssetCallbackFlag`] and [`AssetComposition`]). See [`AssetVaultKey`] for
+///   more details on the key's layout.
+/// - The asset ID limbs are set to hashes from the asset's value (`hash0` and `hash1`).
 ///
 /// It is impossible to find a collision between two non-fungible assets issued by different faucets
-/// as the faucet ID is included in the description of the non-fungible asset and this is guaranteed
-/// to be different as per the faucet creation logic.
+/// as the faucet ID is part of the asset's vault key and this is guaranteed to be different as per
+/// the faucet creation logic.
 ///
-/// The most significant elements of a non-fungible asset's key are set to the prefix
-/// (`faucet_id_prefix`) and suffix (`faucet_id_suffix`) of the ID of the faucet which issues the
-/// asset. The asset ID limbs are set to hashes from the asset's value. This means the collision
-/// resistance of non-fungible assets issued by the same faucet is ~2^64, due to the 128-bit asset
-/// ID that is unique per non-fungible asset. In other words, two non-fungible assets issued by the
-/// same faucet are very unlikely to have the same asset key and thus should not collide when stored
-/// in the same account's vault.
+/// The collision resistance of non-fungible assets issued by the same faucet is ~2^64, due to the
+/// 128-bit asset ID that is unique per non-fungible asset. In other words, two non-fungible assets
+/// issued by the same faucet are very unlikely to have the same asset key and thus should not
+/// collide when stored in the same account's vault.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Asset {
     Fungible(FungibleAsset),

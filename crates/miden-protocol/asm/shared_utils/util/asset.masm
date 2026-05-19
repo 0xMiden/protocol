@@ -248,7 +248,7 @@ end
 
 #! Creates a fungible asset for the specified fungible faucet and amount.
 #!
-#! WARNING: Does not validate the faucet ID or amount.
+#! WARNING: Does not validate the amount.
 #!
 #! Inputs:  [enable_callbacks, faucet_id_suffix, faucet_id_prefix, amount]
 #! Outputs: [ASSET_KEY, ASSET_VALUE]
@@ -279,8 +279,6 @@ end
 #! Creates a non fungible asset for the specified non-fungible faucet.
 #!
 #! The provided asset key will be created with asset composition set to COMPOSITION_NONE.
-#!
-#! WARNING: Does not validate the provided faucet ID.
 #!
 #! Inputs:  [enable_callbacks, faucet_id_suffix, faucet_id_prefix, DATA_HASH]
 #! Outputs: [ASSET_KEY, ASSET_VALUE]

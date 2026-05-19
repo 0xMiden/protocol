@@ -8,7 +8,7 @@ use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountIdVersion, AccountType};
 use miden_protocol::assembly::DefaultSourceManager;
-use miden_protocol::asset::{Asset, AssetAmount, AssetCallbackFlag, FungibleAsset, TokenSymbol};
+use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset, TokenSymbol};
 use miden_protocol::note::{
     Note,
     NoteAssets,
@@ -745,8 +745,8 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
     target_account.apply_delta(consume_executed_transaction.account_delta())?;
 
     // Verify the account's vault now contains the expected fungible asset
-    let balance = target_account.vault().get_balance(faucet.id(), AssetCallbackFlag::Disabled);
-    assert_eq!(balance, expected_asset.amount());
+    let actual_asset = target_account.vault().get(expected_asset.vault_key()).unwrap();
+    assert_eq!(actual_asset, Asset::from(expected_asset));
 
     Ok(())
 }
@@ -1623,7 +1623,7 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
     target_account_mut.apply_delta(consume_executed_transaction.account_delta())?;
 
     let expected_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?;
-    let balance = target_account_mut.vault().get_balance(faucet.id(), AssetCallbackFlag::Disabled);
+    let balance = target_account_mut.vault().get_balance(expected_asset.vault_key())?;
     assert_eq!(balance, expected_asset.amount());
 
     Ok(())

@@ -327,13 +327,13 @@ impl Deserializable for BlockHeader {
 /// The fee-related parameters of a block.
 ///
 /// This defines how to compute the fees of a transaction and which asset fees can be paid in.
+///
+/// The fee asset is assumed to be a fungible asset
+/// ([`AssetComposition::Fungible`](crate::asset::AssetComposition::Fungible)).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FeeParameters {
     /// The [`AccountId`] of the faucet whose assets are accepted for fee payments in the
     /// transaction kernel, or in other words, the fee faucet of the blockchain.
-    ///
-    /// The asset is assumed to have
-    /// [`AssetComposition::Fungible`](crate::asset::AssetComposition::Fungible).
     fee_faucet_id: AccountId,
 
     /// The base fee (in base units) capturing the cost for the verification of a transaction.

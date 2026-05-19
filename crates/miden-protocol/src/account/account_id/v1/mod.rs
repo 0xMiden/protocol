@@ -496,6 +496,8 @@ pub(crate) fn compute_digest(seed: Word, code_commitment: Word, storage_commitme
 #[cfg(test)]
 mod tests {
 
+    use rstest::rstest;
+
     use super::*;
     use crate::account::AccountIdPrefix;
     use crate::testing::account_id::{
@@ -516,24 +518,28 @@ mod tests {
         assert_eq!(id1.version(), AccountIdVersion::Version1);
     }
 
-    #[test]
-    fn account_id_dummy_construction() {
+    #[rstest]
+    fn account_id_serde_roundtrip(
         // Use the highest possible input to check if the constructed id is a valid Felt in that
         // scenario.
         // Use the lowest possible input to check whether the constructor produces valid IDs with
         // all-zeroes input.
-        for input in [[0xff; 15], [0; 15]] {
-            for account_type in [AccountType::Private, AccountType::Public] {
-                let id = AccountIdV1::dummy(input, account_type);
-                assert_eq!(id.account_type(), account_type);
-                assert_eq!(id.version(), AccountIdVersion::Version1);
+        #[values([0xff; 15], [0; 15])] input: [u8; 15],
+        #[values(AccountType::Private, AccountType::Public)]
+        account_type: AccountType,
+    ) {
+        let id = AccountIdV1::dummy(input, account_type);
+        assert_eq!(id.account_type(), account_type);
+        assert_eq!(id.version(), AccountIdVersion::Version1);
 
-                // Do a serialization roundtrip to ensure validity.
-                let serialized_id = id.to_bytes();
-                AccountIdV1::read_from_bytes(&serialized_id).unwrap();
-                assert_eq!(serialized_id.len(), AccountIdV1::SERIALIZED_SIZE);
-            }
-        }
+        // Do a serialization roundtrip to ensure validity.
+        let serialized_id = id.to_bytes();
+        AccountIdV1::read_from_bytes(&serialized_id).unwrap();
+        assert_eq!(serialized_id.len(), AccountIdV1::SERIALIZED_SIZE);
+
+        let serialized_prefix = id.prefix().to_bytes();
+        AccountIdPrefix::read_from_bytes(&serialized_prefix).unwrap();
+        assert_eq!(serialized_prefix.len(), AccountIdPrefix::SERIALIZED_SIZE);
     }
 
     #[test]
