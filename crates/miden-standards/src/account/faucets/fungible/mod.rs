@@ -15,7 +15,6 @@ use miden_protocol::account::{
     AccountProcedureRoot,
     AccountStorage,
     AccountStorageMode,
-    AccountType,
     StorageSlot,
     StorageSlotName,
 };
@@ -96,8 +95,6 @@ procedure_root!(
 /// The `mint_and_send` procedure is gated by the active mint policy from the associated
 /// [`TokenPolicyManager`]. `receive_and_burn` can only be called from a note script and is gated
 /// by the active burn policy.
-///
-/// This component supports accounts of type [`AccountType::FungibleFaucet`].
 ///
 /// [builder]: crate::code_builder::CodeBuilder
 /// [`TokenPolicyManager`]: crate::account::policies::TokenPolicyManager
@@ -319,7 +316,7 @@ impl FungibleFaucet {
         let storage_schema =
             StorageSchema::new(schema_entries).expect("storage schema should be valid");
 
-        AccountComponentMetadata::new(Self::NAME, [AccountType::FungibleFaucet])
+        AccountComponentMetadata::new(Self::NAME)
             .with_description(
                 "Fungible faucet component bundling minting, burning, and token metadata",
             )
@@ -554,7 +551,6 @@ pub fn create_fungible_faucet(
     };
 
     let account = AccountBuilder::new(init_seed)
-        .account_type(AccountType::FungibleFaucet)
         .storage_mode(storage_mode)
         .with_auth_component(auth_component)
         .with_component(faucet)

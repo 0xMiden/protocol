@@ -28,13 +28,7 @@ use miden_agglayer::{
 };
 use miden_protocol::Felt;
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::account::{
-    Account,
-    AccountId,
-    AccountIdVersion,
-    AccountStorageMode,
-    AccountType,
-};
+use miden_protocol::account::{Account, AccountId, AccountIdVersion, AccountStorageMode};
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
 use miden_protocol::crypto::SequentialCommit;
 use miden_protocol::crypto::rand::FeltRng;
@@ -419,7 +413,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
         let mut destination_account = destination_account.clone();
         destination_account.apply_delta(consume_executed_transaction.account_delta())?;
 
-        let balance = destination_account.vault().get_balance(agglayer_faucet.id())?;
+        let balance = destination_account.vault().get_balance(expected_asset.vault_key())?;
         assert_eq!(
             balance.as_u64(),
             miden_claim_amount.as_canonical_u64(),
@@ -773,12 +767,8 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
     let miden_claim_amount_u64 = miden_claim_amount.as_canonical_u64();
 
     // Native faucet: use the network-faucet pattern (bridge is not the owner).
-    let faucet_owner_account_id = AccountId::dummy(
-        [3; 15],
-        AccountIdVersion::Version1,
-        AccountType::RegularAccountImmutableCode,
-        AccountStorageMode::Private,
-    );
+    let faucet_owner_account_id =
+        AccountId::dummy([3; 15], AccountIdVersion::Version1, AccountStorageMode::Private);
     let native_faucet = builder.add_existing_network_faucet(
         "NATIVE",
         miden_claim_amount_u64.saturating_mul(4),
@@ -884,7 +874,7 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
     );
     bridge_account.apply_delta(lock_executed.account_delta())?;
     assert_eq!(
-        bridge_account.vault().get_balance(native_faucet.id())?,
+        bridge_account.vault().get_balance(bridge_asset.vault_key())?,
         AssetAmount::new(miden_claim_amount_u64)?,
         "Bridge vault should hold the locked native asset before the claim"
     );
@@ -966,7 +956,7 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
     // Bridge vault is drained after the unlock.
     bridge_account.apply_delta(claim_executed.account_delta())?;
     assert_eq!(
-        bridge_account.vault().get_balance(native_faucet.id())?,
+        bridge_account.vault().get_balance(expected_asset.vault_key())?,
         AssetAmount::ZERO,
         "Bridge vault should be empty after the unlock"
     );
@@ -985,7 +975,7 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
     let mut destination_account = destination_account;
     destination_account.apply_delta(consume_executed.account_delta())?;
     assert_eq!(
-        destination_account.vault().get_balance(native_faucet.id())?,
+        destination_account.vault().get_balance(expected_asset.vault_key())?,
         AssetAmount::new(miden_claim_amount_u64)?,
         "Destination account should receive the unlocked asset from the P2ID"
     );
@@ -1033,12 +1023,8 @@ async fn bridge_in_unlock_native_duplicate_rejected() -> anyhow::Result<()> {
     // Seed the native faucet and the lock sender with enough supply to cover two unlocks. If the
     // nullifier check is ever weakened, the second claim would otherwise succeed and drain the
     // vault a second time.
-    let faucet_owner_account_id = AccountId::dummy(
-        [3; 15],
-        AccountIdVersion::Version1,
-        AccountType::RegularAccountImmutableCode,
-        AccountStorageMode::Private,
-    );
+    let faucet_owner_account_id =
+        AccountId::dummy([3; 15], AccountIdVersion::Version1, AccountStorageMode::Private);
     let native_faucet = builder.add_existing_network_faucet(
         "NATIVE",
         miden_claim_amount_u64.saturating_mul(4),
@@ -1151,7 +1137,7 @@ async fn bridge_in_unlock_native_duplicate_rejected() -> anyhow::Result<()> {
         .await?;
     bridge_account.apply_delta(lock_executed.account_delta())?;
     assert_eq!(
-        bridge_account.vault().get_balance(native_faucet.id())?,
+        bridge_account.vault().get_balance(bridge_asset.vault_key())?,
         AssetAmount::new(miden_claim_amount_u64.saturating_mul(2))?,
     );
     mock_chain.add_pending_executed_transaction(&lock_executed)?;
@@ -1176,7 +1162,7 @@ async fn bridge_in_unlock_native_duplicate_rejected() -> anyhow::Result<()> {
     assert_eq!(claim_executed_1.output_notes().num_notes(), 1);
     bridge_account.apply_delta(claim_executed_1.account_delta())?;
     assert_eq!(
-        bridge_account.vault().get_balance(native_faucet.id())?,
+        bridge_account.vault().get_balance(bridge_asset.vault_key())?,
         AssetAmount::new(miden_claim_amount_u64)?,
         "Bridge vault should hold exactly the remaining half after the first unlock"
     );

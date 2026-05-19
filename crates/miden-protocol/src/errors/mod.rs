@@ -21,7 +21,6 @@ use crate::account::{
     AccountCode,
     AccountIdPrefix,
     AccountStorage,
-    AccountType,
     StorageMapKey,
     StorageSlotId,
     StorageSlotName,
@@ -169,13 +168,6 @@ pub enum AccountError {
     #[error("number of storage slots is {0} but max possible number is {max}", max = AccountStorage::MAX_NUM_STORAGE_SLOTS)]
     StorageTooManySlots(u64),
     #[error(
-        "account component at index {component_index} is incompatible with account of type {account_type}"
-    )]
-    UnsupportedComponentForAccountType {
-        account_type: AccountType,
-        component_index: usize,
-    },
-    #[error(
         "failed to apply full state delta to existing account; full state deltas can be converted to accounts directly"
     )]
     ApplyFullStateDeltaToAccount,
@@ -225,8 +217,6 @@ pub enum AccountIdError {
     AccountIdInvalidSuffixFieldElement(#[source] DeserializationError),
     #[error("`{0}` is not a known account storage mode")]
     UnknownAccountStorageMode(Box<str>),
-    #[error(r#"`{0}` is not a known account type, expected one of "FungibleFaucet", "NonFungibleFaucet", "RegularAccountImmutableCode" or "RegularAccountUpdatableCode""#)]
-    UnknownAccountType(Box<str>),
     #[error("failed to parse hex string into account ID")]
     AccountIdHexParseError(#[source] HexParseError),
     #[error("`{0}` is not a known account ID version")]
@@ -463,12 +453,6 @@ pub enum AssetError {
     #[error("faucet account ID in asset is invalid")]
     InvalidFaucetAccountId(#[source] Box<dyn Error + Send + Sync + 'static>),
     #[error(
-      "faucet id {0} of type {id_type} must be of type {expected_ty} for fungible assets",
-      id_type = .0.account_type(),
-      expected_ty = AccountType::FungibleFaucet
-    )]
-    FungibleFaucetIdTypeMismatch(AccountId),
-    #[error(
         "asset ID prefix and suffix in a non-fungible asset's vault key must match indices 0 and 1 in the value, but asset ID was {asset_id} and value was {value}"
     )]
     NonFungibleAssetIdMustMatchValue { asset_id: AssetId, value: Word },
@@ -478,12 +462,6 @@ pub enum AssetError {
         "the three most significant elements in a fungible asset's value must be zero but provided value was {0}"
     )]
     FungibleAssetValueMostSignificantElementsMustBeZero(Word),
-    #[error(
-      "faucet id {0} of type {id_type} must be of type {expected_ty} for non fungible assets",
-      id_type = .0.account_type(),
-      expected_ty = AccountType::NonFungibleFaucet
-    )]
-    NonFungibleFaucetIdTypeMismatch(AccountId),
     #[error("smt proof in asset witness contains invalid key or value")]
     AssetWitnessInvalid(#[source] Box<AssetError>),
     #[error("unknown native asset callbacks encoding: {0}")]
@@ -597,8 +575,6 @@ pub enum AssetVaultError {
     DuplicateNonFungibleAsset(NonFungibleAsset),
     #[error("fungible asset {0} does not exist in the vault")]
     FungibleAssetNotFound(FungibleAsset),
-    #[error("faucet id {0} is not a fungible faucet id")]
-    NotAFungibleFaucetId(AccountId),
     #[error("non fungible asset {0} does not exist in the vault")]
     NonFungibleAssetNotFound(NonFungibleAsset),
     #[error("subtracting fungible asset amounts would underflow")]
@@ -1238,15 +1214,6 @@ pub enum ProposedBlockError {
 
     #[error("nullifier witness has a different root than the current nullifier tree root")]
     NullifierWitnessRootMismatch(NullifierTreeError),
-}
-
-// FEE ERROR
-// ================================================================================================
-
-#[derive(Debug, Error)]
-pub enum FeeError {
-    #[error("fee faucet of the chain must be a fungible faucet but was of type {account_type}")]
-    FeeFaucetIdNotFungible { account_type: AccountType },
 }
 
 // NULLIFIER TREE ERROR

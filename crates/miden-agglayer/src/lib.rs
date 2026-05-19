@@ -11,7 +11,6 @@ use miden_protocol::account::{
     AccountComponent,
     AccountId,
     AccountStorageMode,
-    AccountType,
 };
 use miden_protocol::asset::TokenSymbol;
 use miden_standards::account::access::{Authority, Ownable2Step};
@@ -217,7 +216,6 @@ fn create_agglayer_faucet_builder(
         .expect("active receive policy is registered exactly once");
 
     Account::builder(seed.into())
-        .account_type(AccountType::FungibleFaucet)
         .storage_mode(AccountStorageMode::Public)
         .with_component(agglayer_component)
         .with_component(Ownable2Step::new(bridge_account_id))

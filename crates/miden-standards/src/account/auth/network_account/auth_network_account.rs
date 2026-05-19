@@ -7,7 +7,7 @@ use miden_protocol::account::component::{
     StorageSchema,
     StorageSlotSchema,
 };
-use miden_protocol::account::{AccountComponent, AccountType, StorageSlotName};
+use miden_protocol::account::{AccountComponent, StorageSlotName};
 use miden_protocol::note::NoteScriptRoot;
 
 use super::{NetworkAccountNoteAllowlist, NetworkAccountNoteAllowlistError};
@@ -78,7 +78,7 @@ impl AuthNetworkAccount {
         let storage_schema = StorageSchema::new(vec![NetworkAccountNoteAllowlist::slot_schema()])
             .expect("storage schema should be valid");
 
-        AccountComponentMetadata::new(Self::NAME, AccountType::all())
+        AccountComponentMetadata::new(Self::NAME)
             .with_description(
                 "Authentication component that restricts input notes to a fixed allowlist of \
                  note script roots and forbids tx scripts",

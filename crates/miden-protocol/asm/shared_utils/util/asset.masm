@@ -28,12 +28,6 @@ const CALLBACKS_MASK = 4 # 0b100
 #! value.
 const CALLBACKS_SHIFT = 2
 
-# The flag representing disabled callbacks.
-pub const CALLBACKS_DISABLED = 0
-
-# The flag representing enabled callbacks.
-pub const CALLBACKS_ENABLED = 1
-
 #! The mask for the composition bits in the asset metadata.
 const COMPOSITION_MASK = 3 # 0b11
 
@@ -254,7 +248,7 @@ end
 
 #! Creates a fungible asset for the specified fungible faucet and amount.
 #!
-#! WARNING: Does not validate the faucet ID or amount.
+#! WARNING: Does not validate the amount.
 #!
 #! Inputs:  [enable_callbacks, faucet_id_suffix, faucet_id_prefix, amount]
 #! Outputs: [ASSET_KEY, ASSET_VALUE]
@@ -284,7 +278,7 @@ end
 
 #! Creates a non fungible asset for the specified non-fungible faucet.
 #!
-#! WARNING: Does not validate its inputs.
+#! The provided asset key will be created with asset composition set to COMPOSITION_NONE.
 #!
 #! Inputs:  [enable_callbacks, faucet_id_suffix, faucet_id_prefix, DATA_HASH]
 #! Outputs: [ASSET_KEY, ASSET_VALUE]

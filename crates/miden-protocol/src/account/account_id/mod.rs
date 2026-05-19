@@ -6,9 +6,6 @@ pub use id_prefix::AccountIdPrefix;
 
 mod seed;
 
-mod account_type;
-pub use account_type::AccountType;
-
 mod storage_mode;
 pub use storage_mode::AccountStorageMode;
 
@@ -187,13 +184,10 @@ impl AccountId {
     pub fn dummy(
         bytes: [u8; 15],
         version: AccountIdVersion,
-        account_type: AccountType,
         storage_mode: AccountStorageMode,
     ) -> AccountId {
         match version {
-            AccountIdVersion::Version1 => {
-                Self::V1(AccountIdV1::dummy(bytes, account_type, storage_mode))
-            },
+            AccountIdVersion::Version1 => Self::V1(AccountIdV1::dummy(bytes, storage_mode)),
         }
     }
 
@@ -205,7 +199,6 @@ impl AccountId {
     /// generated from a cryptographically secure source.
     pub fn compute_account_seed(
         init_seed: [u8; 32],
-        account_type: AccountType,
         storage_mode: AccountStorageMode,
         version: AccountIdVersion,
         code_commitment: Word,
@@ -214,7 +207,6 @@ impl AccountId {
         match version {
             AccountIdVersion::Version1 => AccountIdV1::compute_account_seed(
                 init_seed,
-                account_type,
                 storage_mode,
                 version,
                 code_commitment,
@@ -225,23 +217,6 @@ impl AccountId {
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
-
-    /// Returns the type of this account ID.
-    pub fn account_type(&self) -> AccountType {
-        match self {
-            AccountId::V1(account_id) => account_id.account_type(),
-        }
-    }
-
-    /// Returns `true` if an account with this ID is a faucet which can issue assets.
-    pub fn is_faucet(&self) -> bool {
-        self.account_type().is_faucet()
-    }
-
-    /// Returns `true` if an account with this ID is a regular account.
-    pub fn is_regular_account(&self) -> bool {
-        self.account_type().is_regular_account()
-    }
 
     /// Returns the storage mode of this account ID.
     pub fn storage_mode(&self) -> AccountStorageMode {
@@ -505,10 +480,11 @@ mod tests {
     use bech32::{Bech32, Bech32m, NoChecksum};
 
     use super::*;
-    use crate::account::account_id::v1::{extract_storage_mode, extract_type, extract_version};
+    use crate::account::account_id::v1::{extract_storage_mode, extract_version};
     use crate::address::{AddressType, CustomNetworkId};
     use crate::errors::Bech32Error;
     use crate::testing::account_id::{
+        ACCOUNT_ID_MAX_ZEROES,
         ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET,
         ACCOUNT_ID_PRIVATE_SENDER,
         ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
@@ -527,6 +503,7 @@ mod tests {
             ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET,
             ACCOUNT_ID_PRIVATE_SENDER,
             ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET,
+            ACCOUNT_ID_MAX_ZEROES,
         ]
         .into_iter()
         .enumerate()
@@ -581,7 +558,6 @@ mod tests {
 
                 // Raw bech32 data should contain the metadata byte at index 8.
                 assert_eq!(extract_version(data[8] as u64).unwrap(), account_id.version());
-                assert_eq!(extract_type(data[8] as u64), account_id.account_type());
                 assert_eq!(extract_storage_mode(data[8] as u64), account_id.storage_mode());
             }
         }

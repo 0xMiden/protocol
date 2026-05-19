@@ -1,6 +1,6 @@
 use assert_matches::assert_matches;
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
-use miden_protocol::account::{AccountBuilder, AccountStorageMode, AccountType};
+use miden_protocol::account::{AccountBuilder, AccountStorageMode};
 use miden_protocol::asset::{AssetAmount, TokenSymbol};
 use miden_protocol::{Felt, Word};
 
@@ -114,10 +114,6 @@ fn faucet_contract_creation() {
         assert_eq!(chunk, *expected);
     }
 
-    assert!(faucet_account.is_faucet());
-
-    assert_eq!(faucet_account.account_type(), AccountType::FungibleFaucet);
-
     // Verify the faucet component can be extracted
     let _faucet_component = FungibleFaucet::try_from(faucet_account.clone()).unwrap();
 }
@@ -140,7 +136,6 @@ fn faucet_create_from_account() {
         .expect("failed to create faucet");
 
     let faucet_account = AccountBuilder::new(mock_seed)
-        .account_type(AccountType::FungibleFaucet)
         .with_component(faucet)
         .with_auth_component(AuthSingleSig::new(mock_public_key, AuthScheme::Falcon512Poseidon2))
         .build_existing()
@@ -151,7 +146,6 @@ fn faucet_create_from_account() {
 
     // invalid account: fungible faucet component is missing
     let invalid_faucet_account = AccountBuilder::new(mock_seed)
-        .account_type(AccountType::FungibleFaucet)
         .with_auth_component(AuthSingleSig::new(mock_public_key, AuthScheme::Falcon512Poseidon2))
         // we need to add some other component so the builder doesn't fail
         .with_component(BasicWallet)

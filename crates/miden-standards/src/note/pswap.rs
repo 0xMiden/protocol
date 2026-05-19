@@ -708,7 +708,7 @@ impl TryFrom<&Note> for PswapNote {
 
 #[cfg(test)]
 mod tests {
-    use miden_protocol::account::{AccountId, AccountIdVersion, AccountStorageMode, AccountType};
+    use miden_protocol::account::{AccountId, AccountIdVersion, AccountStorageMode};
     use miden_protocol::asset::FungibleAsset;
     use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
 
@@ -720,30 +720,15 @@ mod tests {
     fn dummy_faucet_id(byte: u8) -> AccountId {
         let mut bytes = [0; 15];
         bytes[0] = byte;
-        AccountId::dummy(
-            bytes,
-            AccountIdVersion::Version1,
-            AccountType::FungibleFaucet,
-            AccountStorageMode::Public,
-        )
+        AccountId::dummy(bytes, AccountIdVersion::Version1, AccountStorageMode::Public)
     }
 
     fn dummy_creator_id() -> AccountId {
-        AccountId::dummy(
-            [1; 15],
-            AccountIdVersion::Version1,
-            AccountType::RegularAccountImmutableCode,
-            AccountStorageMode::Public,
-        )
+        AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountStorageMode::Public)
     }
 
     fn dummy_consumer_id() -> AccountId {
-        AccountId::dummy(
-            [2; 15],
-            AccountIdVersion::Version1,
-            AccountType::RegularAccountImmutableCode,
-            AccountStorageMode::Public,
-        )
+        AccountId::dummy([2; 15], AccountIdVersion::Version1, AccountStorageMode::Public)
     }
 
     fn build_pswap_note(
@@ -827,7 +812,6 @@ mod tests {
             AccountId::dummy(
                 offered_faucet_bytes,
                 AccountIdVersion::Version1,
-                AccountType::FungibleFaucet,
                 AccountStorageMode::Public,
             ),
             100,
@@ -837,7 +821,6 @@ mod tests {
             AccountId::dummy(
                 requested_faucet_bytes,
                 AccountIdVersion::Version1,
-                AccountType::FungibleFaucet,
                 AccountStorageMode::Public,
             ),
             200,

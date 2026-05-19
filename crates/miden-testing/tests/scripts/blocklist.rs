@@ -16,7 +16,6 @@ use miden_protocol::account::{
     AccountId,
     AccountIdVersion,
     AccountStorageMode,
-    AccountType,
 };
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::asset::{Asset, AssetAmount, AssetCallbackFlag, FungibleAsset};
@@ -49,12 +48,7 @@ use miden_testing::{
 // ================================================================================================
 
 fn dummy_owner() -> AccountId {
-    AccountId::dummy(
-        [9; 15],
-        AccountIdVersion::Version1,
-        AccountType::RegularAccountImmutableCode,
-        AccountStorageMode::Private,
-    )
+    AccountId::dummy([9; 15], AccountIdVersion::Version1, AccountStorageMode::Private)
 }
 
 /// Builds a fungible faucet with [`TransferPolicy::Blocklist`] on both send and receive,
@@ -88,7 +82,6 @@ fn add_faucet_with_owner_blocklist_transfer_initialized(
 
     let account_builder = AccountBuilder::new([43u8; 32])
         .storage_mode(AccountStorageMode::Public)
-        .account_type(AccountType::FungibleFaucet)
         .with_component(faucet)
         .with_component(Ownable2Step::new(owner_id))
         .with_component(Authority::OwnerControlled)

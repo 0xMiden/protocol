@@ -6,14 +6,7 @@ use alloc::vec::Vec;
 
 use miden_core::{Felt, ONE, Word, ZERO};
 use miden_protocol::account::component::AccountComponentMetadata;
-use miden_protocol::account::{
-    Account,
-    AccountComponent,
-    AccountId,
-    AccountType,
-    StorageSlot,
-    StorageSlotName,
-};
+use miden_protocol::account::{Account, AccountComponent, AccountId, StorageSlot, StorageSlotName};
 use miden_protocol::block::account_tree::AccountIdKey;
 use miden_protocol::crypto::hash::poseidon2::Poseidon2;
 use miden_protocol::note::NoteScriptRoot;
@@ -513,7 +506,7 @@ pub enum AgglayerBridgeError {
 /// Creates an AggLayer Bridge component with the specified storage slots.
 fn bridge_component(storage_slots: Vec<StorageSlot>) -> AccountComponent {
     let library = agglayer_bridge_component_library();
-    let metadata = AccountComponentMetadata::new("agglayer::bridge", AccountType::all())
+    let metadata = AccountComponentMetadata::new("agglayer::bridge")
         .with_description("Bridge component for AggLayer");
 
     AccountComponent::new(library, storage_slots, metadata)

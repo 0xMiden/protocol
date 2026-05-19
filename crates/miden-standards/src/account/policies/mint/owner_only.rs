@@ -1,5 +1,5 @@
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
-use miden_protocol::account::{AccountComponent, AccountProcedureRoot, AccountType};
+use miden_protocol::account::{AccountComponent, AccountProcedureRoot};
 
 use crate::account::account_component_code;
 use crate::procedure_root;
@@ -47,11 +47,9 @@ impl MintOwnerOnly {
 
 impl From<MintOwnerOnly> for AccountComponent {
     fn from(_: MintOwnerOnly) -> Self {
-        let metadata =
-            AccountComponentMetadata::new(MintOwnerOnly::NAME, [AccountType::FungibleFaucet])
-                .with_description(
-                    "`owner_only` mint policy (owner-controlled family) for fungible faucets",
-                );
+        let metadata = AccountComponentMetadata::new(MintOwnerOnly::NAME).with_description(
+            "`owner_only` mint policy (owner-controlled family) for fungible faucets",
+        );
 
         AccountComponent::new(MintOwnerOnly::code().clone(), vec![], metadata).expect(
             "`owner_only` mint policy component should satisfy the requirements of a valid account component",

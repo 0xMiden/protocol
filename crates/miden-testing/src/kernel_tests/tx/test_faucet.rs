@@ -1,7 +1,7 @@
 use alloc::sync::Arc;
 
 use miden_protocol::Felt;
-use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountId, AccountType};
+use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountId};
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::asset::{
     AssetCallbackFlag,
@@ -696,13 +696,9 @@ fn setup_non_faucet_account() -> anyhow::Result<Account> {
         "pub use ::miden::protocol::faucet::mint
          pub use ::miden::protocol::faucet::burn",
     )?;
-    let metadata = AccountComponentMetadata::new(
-        "test::non_faucet_component",
-        [AccountType::RegularAccountUpdatableCode],
-    );
+    let metadata = AccountComponentMetadata::new("test::non_faucet_component");
     let faucet_component = AccountComponent::new(faucet_code, vec![], metadata)?;
     Ok(AccountBuilder::new([4; 32])
-        .account_type(AccountType::RegularAccountUpdatableCode)
         .with_auth_component(NoopAuthComponent)
         .with_component(faucet_component)
         .build_existing()?)

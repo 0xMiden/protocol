@@ -9,7 +9,6 @@ use miden_protocol::account::{
     AccountComponent,
     AccountId,
     AccountStorage,
-    AccountType,
     StorageSlot,
     StorageSlotName,
 };
@@ -148,7 +147,7 @@ impl Ownable2Step {
         let storage_schema =
             StorageSchema::new([Self::slot_schema()]).expect("storage schema should be valid");
 
-        AccountComponentMetadata::new(Self::NAME, AccountType::all())
+        AccountComponentMetadata::new(Self::NAME)
             .with_description("Two-step ownership management component")
             .with_storage_schema(storage_schema)
     }

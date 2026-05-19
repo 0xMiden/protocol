@@ -13,7 +13,6 @@ use miden_protocol::account::{
     AccountCode,
     AccountComponent,
     AccountProcedureRoot,
-    AccountType,
     StorageMap,
     StorageMapKey,
     StorageSlot,
@@ -262,7 +261,7 @@ impl AuthSingleSigAcl {
         ])
         .expect("storage schema should be valid");
 
-        AccountComponentMetadata::new(Self::NAME, AccountType::all())
+        AccountComponentMetadata::new(Self::NAME)
             .with_description(
                 "Authentication component with procedure-based ACL using ECDSA K256 Keccak or Falcon512 Poseidon2 signature scheme",
             )

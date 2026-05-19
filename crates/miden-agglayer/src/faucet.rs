@@ -7,14 +7,7 @@ use alloc::vec::Vec;
 
 use miden_core::{Felt, Word};
 use miden_protocol::account::component::AccountComponentMetadata;
-use miden_protocol::account::{
-    Account,
-    AccountComponent,
-    AccountId,
-    AccountType,
-    StorageSlot,
-    StorageSlotName,
-};
+use miden_protocol::account::{Account, AccountComponent, AccountId, StorageSlot, StorageSlotName};
 use miden_protocol::asset::{AssetAmount, TokenSymbol};
 use miden_protocol::errors::AccountIdError;
 use miden_protocol::note::NoteScriptRoot;
@@ -314,7 +307,7 @@ pub enum AgglayerFaucetError {
 /// Creates an Agglayer Faucet component with the specified storage slots.
 fn agglayer_faucet_component(storage_slots: Vec<StorageSlot>) -> AccountComponent {
     let library = agglayer_faucet_component_library();
-    let metadata = AccountComponentMetadata::new("agglayer::faucet", [AccountType::FungibleFaucet])
+    let metadata = AccountComponentMetadata::new("agglayer::faucet")
         .with_description("AggLayer faucet component");
 
     AccountComponent::new(library, storage_slots, metadata).expect(

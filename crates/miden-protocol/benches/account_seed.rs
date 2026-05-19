@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use miden_protocol::Word;
-use miden_protocol::account::{AccountId, AccountIdVersion, AccountStorageMode, AccountType};
+use miden_protocol::account::{AccountId, AccountIdVersion, AccountStorageMode};
 use rand::{Rng, SeedableRng};
 
 /// Running this benchmark with --no-default-features will use the single-threaded account seed
@@ -35,7 +35,6 @@ fn grind_account_seed(c: &mut Criterion) {
         bench.iter(|| {
             AccountId::compute_account_seed(
                 rng.random(),
-                AccountType::RegularAccountImmutableCode,
                 AccountStorageMode::Public,
                 AccountIdVersion::Version1,
                 Word::empty(),
