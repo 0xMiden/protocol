@@ -137,8 +137,6 @@ impl AuthMultisigConfig {
 /// should be used with caution for private multisig accounts; without a guardian, a single
 /// approver may advance state and withhold updates from other approvers, effectively locking
 /// them out.
-///
-/// This component supports all account types.
 #[derive(Debug)]
 pub struct AuthMultisig {
     config: AuthMultisigConfig,

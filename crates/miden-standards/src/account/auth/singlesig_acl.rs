@@ -150,8 +150,6 @@ impl Default for AuthSingleSigAclConfig {
 /// state or kernel APIs may not be detected as "called" even if they were executed during
 /// the transaction. This is an important limitation to consider when designing trigger
 /// procedures for authentication.
-///
-/// This component supports all account types.
 pub struct AuthSingleSigAcl {
     pub_key: PublicKeyCommitment,
     auth_scheme: AuthScheme,

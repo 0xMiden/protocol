@@ -17,8 +17,6 @@ account_component_code!(NO_AUTH_CODE, "auth/no_auth.masl");
 /// - Checks if the account state has changed by comparing initial and final commitments
 /// - Only increments the nonce if the account state has actually changed
 /// - Provides no cryptographic authentication
-///
-/// This component supports all account types.
 pub struct NoAuth;
 
 impl NoAuth {

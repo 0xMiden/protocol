@@ -10,7 +10,7 @@ use crate::account::{
     AccountIdV1,
     AccountIdVersion,
     AccountStorage,
-    AccountStorageMode,
+    AccountType,
 };
 use crate::asset::AssetVault;
 use crate::errors::AccountError;
@@ -22,11 +22,10 @@ use crate::{Felt, Word};
 /// This will build a valid new account with these properties:
 /// - An empty [`AssetVault`].
 /// - The nonce set to [`Felt::ZERO`].
-/// - A seed which results in an [`AccountId`] valid for the configured account type and storage
-///   mode.
+/// - A seed which results in an [`AccountId`] valid for the configured account type.
 ///
 /// By default, the builder is initialized with:
-/// - The `storage_mode` set to [`AccountStorageMode::Private`].
+/// - The `account_type` set to [`AccountType::Private`].
 /// - The `version` set to [`AccountIdVersion::Version1`].
 ///
 /// The methods that are required to be called are:
@@ -54,7 +53,7 @@ pub struct AccountBuilder {
     nonce: Option<Felt>,
     components: Vec<AccountComponent>,
     auth_component: Option<AccountComponent>,
-    storage_mode: AccountStorageMode,
+    account_type: AccountType,
     init_seed: [u8; 32],
     id_version: AccountIdVersion,
 }
@@ -73,7 +72,7 @@ impl AccountBuilder {
             components: vec![],
             auth_component: None,
             init_seed,
-            storage_mode: AccountStorageMode::Private,
+            account_type: AccountType::Private,
             id_version: AccountIdVersion::Version1,
         }
     }
@@ -84,9 +83,9 @@ impl AccountBuilder {
         self
     }
 
-    /// Sets the storage mode of the account.
-    pub fn storage_mode(mut self, storage_mode: AccountStorageMode) -> Self {
-        self.storage_mode = storage_mode;
+    /// Sets the account type of the account.
+    pub fn account_type(mut self, account_type: AccountType) -> Self {
+        self.account_type = account_type;
         self
     }
 
@@ -178,7 +177,7 @@ impl AccountBuilder {
     ) -> Result<Word, AccountError> {
         let seed = AccountIdV1::compute_account_seed(
             init_seed,
-            self.storage_mode,
+            self.account_type,
             version,
             code_commitment,
             storage_commitment,
@@ -196,7 +195,6 @@ impl AccountBuilder {
     ///
     /// Returns an error if:
     /// - The init seed is not set.
-    /// - Any of the components does not support the set account type.
     /// - The number of procedures in all merged components is 0 or exceeds
     ///   [`AccountCode::MAX_NUM_PROCEDURES`](crate::account::AccountCode::MAX_NUM_PROCEDURES).
     /// - Two or more libraries export a procedure with the same MAST root.
@@ -233,7 +231,7 @@ impl AccountBuilder {
         )
         .expect("get_account_seed should provide a suitable seed");
 
-        debug_assert_eq!(account_id.storage_mode(), self.storage_mode);
+        debug_assert_eq!(account_id.account_type(), self.account_type);
 
         // SAFETY: The account ID was derived from the seed and the seed is provided, so it is safe
         // to bypass the checks of `Account::new`.
@@ -275,7 +273,7 @@ impl AccountBuilder {
         let account_id = {
             let bytes = <[u8; 15]>::try_from(&self.init_seed[0..15])
                 .expect("we should have sliced exactly 15 bytes off");
-            AccountId::dummy(bytes, AccountIdVersion::Version1, self.storage_mode)
+            AccountId::dummy(bytes, AccountIdVersion::Version1, self.account_type)
         };
 
         // Use the nonce value set by the Self::nonce method or Felt::ONE as a default.

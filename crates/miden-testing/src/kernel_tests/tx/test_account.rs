@@ -17,7 +17,7 @@ use miden_protocol::account::{
     AccountComponent,
     AccountId,
     AccountStorage,
-    AccountStorageMode,
+    AccountType,
     StorageMap,
     StorageMapKey,
     StorageSlot,
@@ -810,7 +810,7 @@ async fn prove_account_creation_with_non_empty_storage() -> anyhow::Result<()> {
         StorageSlot::with_map(slot_name2.clone(), StorageMap::with_entries(map_entries.clone())?);
 
     let account = AccountBuilder::new([6; 32])
-        .storage_mode(AccountStorageMode::Public)
+        .account_type(AccountType::Public)
         .with_auth_component(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_slots(vec![
             slot0.clone(),
@@ -1595,7 +1595,7 @@ async fn test_faucet_has_callbacks(
         .build()?;
 
     let account = AccountBuilder::new([1u8; 32])
-        .storage_mode(AccountStorageMode::Public)
+        .account_type(AccountType::Public)
         .with_component(faucet)
         .with_component(MockAccountComponent::with_slots(callback_slots))
         .with_auth_component(Auth::IncrNonce)

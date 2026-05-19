@@ -1,5 +1,5 @@
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, PublicKey};
-use miden_protocol::account::{Account, AccountBuilder, AccountProcedureRoot, AccountStorageMode};
+use miden_protocol::account::{Account, AccountBuilder, AccountProcedureRoot, AccountType};
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::note::{
     Note,
@@ -142,7 +142,7 @@ fn create_guarded_multisig_account(
         .with_proc_thresholds(proc_threshold_map)?;
 
     let multisig_account = AccountBuilder::new([0; 32])
-        .storage_mode(AccountStorageMode::Public)
+        .account_type(AccountType::Public)
         .with_auth_component(AuthGuardedMultisig::new(config)?)
         .with_component(BasicWallet)
         .with_assets(vec![FungibleAsset::mock(asset_amount)])

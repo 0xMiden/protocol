@@ -1,7 +1,7 @@
 //! Tests for the `miden::standards::attachments::network_account_target` module.
 
 use miden_protocol::Felt;
-use miden_protocol::account::AccountStorageMode;
+use miden_protocol::account::AccountType;
 use miden_protocol::note::NoteAttachment;
 use miden_protocol::testing::account_id::AccountIdBuilder;
 use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
@@ -11,7 +11,7 @@ use crate::executor::CodeExecutor;
 #[tokio::test]
 async fn network_account_target_into_target_id() -> anyhow::Result<()> {
     let target_id = AccountIdBuilder::new()
-        .storage_mode(AccountStorageMode::Public)
+        .account_type(AccountType::Public)
         .build_with_rng(&mut rand::rng());
     let exec_hint = NoteExecutionHint::Always;
 
@@ -52,7 +52,7 @@ async fn network_account_target_into_target_id() -> anyhow::Result<()> {
 #[tokio::test]
 async fn network_account_target_new_attachment() -> anyhow::Result<()> {
     let target_id = AccountIdBuilder::new()
-        .storage_mode(AccountStorageMode::Public)
+        .account_type(AccountType::Public)
         .build_with_rng(&mut rand::rng());
     let exec_hint = NoteExecutionHint::Always;
 
@@ -96,7 +96,7 @@ async fn network_account_target_new_attachment() -> anyhow::Result<()> {
 #[tokio::test]
 async fn network_account_target_attachment_round_trip() -> anyhow::Result<()> {
     let target_id = AccountIdBuilder::new()
-        .storage_mode(AccountStorageMode::Public)
+        .account_type(AccountType::Public)
         .build_with_rng(&mut rand::rng());
     let exec_hint = NoteExecutionHint::Always;
 

@@ -607,7 +607,7 @@ mod tests {
         AccountId,
         AccountIdVersion,
         AccountStorageDelta,
-        AccountStorageMode,
+        AccountType,
         AccountVaultDelta,
         StorageMapDelta,
         StorageMapKey,
@@ -647,7 +647,7 @@ mod tests {
     fn account_update_size_limit_not_exceeded() -> anyhow::Result<()> {
         // A small account's delta does not exceed the limit.
         let account = Account::builder([9; 32])
-            .storage_mode(AccountStorageMode::Public)
+            .account_type(AccountType::Public)
             .with_auth_component(NoopAuthComponent)
             .with_component(AddComponent)
             .build_existing()?;
@@ -704,7 +704,7 @@ mod tests {
     #[test]
     fn test_proven_tx_serde_roundtrip() -> anyhow::Result<()> {
         let account_id =
-            AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountStorageMode::Private);
+            AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountType::Private);
         let initial_account_commitment =
             [2; 32].try_into().expect("failed to create initial account commitment");
         let final_account_commitment =

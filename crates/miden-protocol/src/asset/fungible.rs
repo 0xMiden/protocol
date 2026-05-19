@@ -151,7 +151,7 @@ impl FungibleAsset {
             AssetComposition::Fungible,
             self.callbacks,
         )
-        .expect("faucet ID should be of type fungible")
+        .expect("default asset id should be valid for fungible composition")
     }
 
     /// Returns the asset's key encoded to a [`Word`].

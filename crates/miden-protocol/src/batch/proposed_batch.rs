@@ -439,7 +439,7 @@ mod tests {
     use super::*;
     use crate::Word;
     use crate::account::delta::AccountUpdateDetails;
-    use crate::account::{AccountIdVersion, AccountStorageMode};
+    use crate::account::{AccountIdVersion, AccountType};
     use crate::asset::FungibleAsset;
     use crate::transaction::{InputNoteCommitment, OutputNote, ProvenTransaction, TxAccountUpdate};
 
@@ -467,7 +467,7 @@ mod tests {
         );
 
         let account_id =
-            AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountStorageMode::Private);
+            AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountType::Private);
         let initial_account_commitment =
             [2; 32].try_into().expect("failed to create initial account commitment");
         let final_account_commitment =

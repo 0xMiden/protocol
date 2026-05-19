@@ -176,7 +176,7 @@ impl Deserializable for NoteTag {
 mod tests {
 
     use super::NoteTag;
-    use crate::account::{AccountId, AccountStorageMode};
+    use crate::account::{AccountId, AccountType};
     use crate::testing::account_id::{
         ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
         ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET,
@@ -205,7 +205,7 @@ mod tests {
             AccountId::try_from(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET).unwrap(),
             AccountId::try_from(ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET).unwrap(),
             AccountIdBuilder::new()
-                .storage_mode(AccountStorageMode::Private)
+                .account_type(AccountType::Private)
                 .build_with_seed([2; 32]),
         ];
         let public_accounts = [
@@ -221,7 +221,7 @@ mod tests {
             AccountId::try_from(ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET).unwrap(),
             AccountId::try_from(ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET_1).unwrap(),
             AccountIdBuilder::new()
-                .storage_mode(AccountStorageMode::Public)
+                .account_type(AccountType::Public)
                 .build_with_seed([3; 32]),
         ];
         for account_id in private_accounts.iter().chain(public_accounts.iter()) {

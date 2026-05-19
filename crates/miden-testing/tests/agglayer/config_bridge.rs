@@ -11,7 +11,7 @@ use miden_agglayer::{
     create_existing_bridge_account,
 };
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::account::{AccountId, AccountIdVersion, AccountStorageMode};
+use miden_protocol::account::{AccountId, AccountIdVersion, AccountType};
 use miden_protocol::block::account_tree::AccountIdKey;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::transaction::RawOutputNote;
@@ -61,7 +61,7 @@ async fn test_config_agg_bridge_registers_faucet() -> anyhow::Result<()> {
 
     // Use a dummy faucet ID to register (any valid AccountId will do)
     let faucet_to_register =
-        AccountId::dummy([42; 15], AccountIdVersion::Version1, AccountStorageMode::Public);
+        AccountId::dummy([42; 15], AccountIdVersion::Version1, AccountType::Public);
 
     // Verify the faucet is NOT in the registry before registration
     let registry_slot_name = AggLayerBridge::faucet_registry_map_slot_name();
@@ -150,9 +150,9 @@ async fn test_config_agg_bridge_distinguishes_origin_network() -> anyhow::Result
     // Two distinct faucet IDs that both share the same origin token address but live on
     // different origin networks.
     let faucet_network_1 =
-        AccountId::dummy([11; 15], AccountIdVersion::Version1, AccountStorageMode::Public);
+        AccountId::dummy([11; 15], AccountIdVersion::Version1, AccountType::Public);
     let faucet_network_2 =
-        AccountId::dummy([22; 15], AccountIdVersion::Version1, AccountStorageMode::Public);
+        AccountId::dummy([22; 15], AccountIdVersion::Version1, AccountType::Public);
 
     let origin_token_address =
         EthAddress::from_hex("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48").unwrap();

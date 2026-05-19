@@ -28,7 +28,7 @@ use miden_agglayer::{
 };
 use miden_protocol::Felt;
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::account::{Account, AccountId, AccountIdVersion, AccountStorageMode};
+use miden_protocol::account::{Account, AccountId, AccountIdVersion, AccountType};
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
 use miden_protocol::crypto::SequentialCommit;
 use miden_protocol::crypto::rand::FeltRng;
@@ -768,7 +768,7 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
 
     // Native faucet: use the network-faucet pattern (bridge is not the owner).
     let faucet_owner_account_id =
-        AccountId::dummy([3; 15], AccountIdVersion::Version1, AccountStorageMode::Private);
+        AccountId::dummy([3; 15], AccountIdVersion::Version1, AccountType::Private);
     let native_faucet = builder.add_existing_network_faucet(
         "NATIVE",
         miden_claim_amount_u64.saturating_mul(4),
@@ -1024,7 +1024,7 @@ async fn bridge_in_unlock_native_duplicate_rejected() -> anyhow::Result<()> {
     // nullifier check is ever weakened, the second claim would otherwise succeed and drain the
     // vault a second time.
     let faucet_owner_account_id =
-        AccountId::dummy([3; 15], AccountIdVersion::Version1, AccountStorageMode::Private);
+        AccountId::dummy([3; 15], AccountIdVersion::Version1, AccountType::Private);
     let native_faucet = builder.add_existing_network_faucet(
         "NATIVE",
         miden_claim_amount_u64.saturating_mul(4),

@@ -1221,7 +1221,7 @@ impl From<Account> for TxContextInput {
 #[cfg(test)]
 mod tests {
     use miden_protocol::account::auth::AuthScheme;
-    use miden_protocol::account::{AccountBuilder, AccountStorageMode};
+    use miden_protocol::account::{AccountBuilder, AccountType};
     use miden_protocol::asset::{Asset, FungibleAsset};
     use miden_protocol::note::NoteType;
     use miden_protocol::testing::account_id::{
@@ -1248,7 +1248,7 @@ mod tests {
     async fn private_account_state_update() -> anyhow::Result<()> {
         let faucet_id = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into()?;
         let account_builder = AccountBuilder::new([4; 32])
-            .storage_mode(AccountStorageMode::Private)
+            .account_type(AccountType::Private)
             .with_component(BasicWallet);
 
         let mut builder = MockChain::builder();
