@@ -7,7 +7,7 @@ use miden_protocol::account::component::{
     StorageSchema,
     StorageSlotSchema,
 };
-use miden_protocol::account::{AccountComponent, AccountType, StorageSlot, StorageSlotName};
+use miden_protocol::account::{AccountComponent, StorageSlot, StorageSlotName};
 use miden_protocol::crypto::dsa::{ecdsa_k256_keccak, falcon512_poseidon2};
 use miden_protocol::utils::sync::LazyLock;
 
@@ -38,8 +38,6 @@ static SCHEME_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// When linking against this component, the `miden::standards` library must be available to the
 /// assembler (which also implies availability of `miden::protocol`). This is the case when using
 /// [`CodeBuilder`][builder].
-///
-/// This component supports all account types.
 ///
 /// [builder]: crate::code_builder::CodeBuilder
 pub struct AuthSingleSig {
@@ -124,7 +122,7 @@ impl AuthSingleSig {
         ])
         .expect("storage schema should be valid");
 
-        AccountComponentMetadata::new(Self::NAME, AccountType::all())
+        AccountComponentMetadata::new(Self::NAME)
             .with_description(
                 "Authentication component using ECDSA K256 Keccak or Falcon512 Poseidon2 signature scheme",
             )

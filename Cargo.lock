@@ -2030,7 +2030,6 @@ dependencies = [
  "fs-err",
  "miden-assembly",
  "miden-core-lib",
- "miden-processor",
  "miden-protocol",
  "miden-standards",
  "rand 0.9.4",

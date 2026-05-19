@@ -206,8 +206,8 @@ mod tests {
             .map(|i| {
                 // Use the index bytes to create unique asset data.
                 let data = (i as u64).to_le_bytes().to_vec();
-                let details = NonFungibleAssetDetails::new(faucet_id, data).unwrap();
-                Asset::NonFungible(NonFungibleAsset::new(&details).unwrap())
+                let details = NonFungibleAssetDetails::new(faucet_id, data);
+                Asset::NonFungible(NonFungibleAsset::new(&details))
             })
             .collect()
     }
@@ -217,11 +217,11 @@ mod tests {
         let faucet_id_1 = AccountId::try_from(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET).unwrap();
         let faucet_id_2 = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap();
         let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET).unwrap();
-        let details = NonFungibleAssetDetails::new(account_id, vec![1, 2, 3]).unwrap();
+        let details = NonFungibleAssetDetails::new(account_id, vec![1, 2, 3]);
 
         let asset1 = Asset::Fungible(FungibleAsset::new(faucet_id_1, 100).unwrap());
         let asset2 = Asset::Fungible(FungibleAsset::new(faucet_id_2, 50).unwrap());
-        let non_fungible_asset = Asset::NonFungible(NonFungibleAsset::new(&details).unwrap());
+        let non_fungible_asset = Asset::NonFungible(NonFungibleAsset::new(&details));
 
         // Create NoteAsset from assets
         let assets = NoteAssets::new([asset1, asset2, non_fungible_asset].to_vec()).unwrap();

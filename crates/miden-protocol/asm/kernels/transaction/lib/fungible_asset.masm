@@ -17,7 +17,7 @@ pub use $kernel::util::asset::fungible_value_into_amount->value_into_amount
 
 const ERR_VAULT_FUNGIBLE_MAX_AMOUNT_EXCEEDED="adding the fungible asset to the vault would exceed the max amount"
 
-const ERR_FUNGIBLE_ASSET_KEY_ACCOUNT_ID_MUST_BE_FUNGIBLE = "fungible asset vault key's account ID must be of type fungible faucet"
+const ERR_FUNGIBLE_ASSET_KEY_COMPOSITION_MUST_BE_FUNGIBLE = "fungible asset vault key's composition must be fungible"
 
 const ERR_FUNGIBLE_ASSET_FAUCET_IS_NOT_ORIGIN="the origin of the fungible asset is not this faucet"
 
@@ -149,13 +149,13 @@ end
 #! Panics if:
 #! - the asset key's account ID is not valid.
 #! - the asset key's metadata is not valid.
-#! - the asset key's faucet ID is not a fungible one.
+#! - the asset key's composition is not fungible.
 pub proc validate_key
     exec.asset::validate_issuer
     # => [ASSET_KEY]
 
     exec.asset::is_fungible_asset_key
-    assert.err=ERR_FUNGIBLE_ASSET_KEY_ACCOUNT_ID_MUST_BE_FUNGIBLE
+    assert.err=ERR_FUNGIBLE_ASSET_KEY_COMPOSITION_MUST_BE_FUNGIBLE
     # => [ASSET_KEY]
 
     exec.asset::key_to_asset_id

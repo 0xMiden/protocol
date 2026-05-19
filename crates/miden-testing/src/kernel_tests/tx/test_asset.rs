@@ -1,6 +1,7 @@
 use miden_protocol::account::AccountId;
 use miden_protocol::asset::{
     AssetCallbackFlag,
+    AssetComposition,
     AssetId,
     AssetVaultKey,
     FungibleAsset,
@@ -8,14 +9,17 @@ use miden_protocol::asset::{
     NonFungibleAssetDetails,
 };
 use miden_protocol::errors::MasmError;
+use miden_protocol::errors::protocol::ERR_VAULT_ASSET_METADATA_NON_ZERO_RESERVED_BITS;
 use miden_protocol::errors::tx_kernel::{
     ERR_FUNGIBLE_ASSET_AMOUNT_EXCEEDS_MAX_AMOUNT,
-    ERR_FUNGIBLE_ASSET_KEY_ACCOUNT_ID_MUST_BE_FUNGIBLE,
     ERR_FUNGIBLE_ASSET_KEY_ASSET_ID_MUST_BE_ZERO,
+    ERR_FUNGIBLE_ASSET_KEY_COMPOSITION_MUST_BE_FUNGIBLE,
     ERR_FUNGIBLE_ASSET_VALUE_MOST_SIGNIFICANT_ELEMENTS_MUST_BE_ZERO,
     ERR_NON_FUNGIBLE_ASSET_ID_PREFIX_MUST_MATCH_HASH1,
     ERR_NON_FUNGIBLE_ASSET_ID_SUFFIX_MUST_MATCH_HASH0,
-    ERR_NON_FUNGIBLE_ASSET_KEY_ACCOUNT_ID_MUST_BE_NON_FUNGIBLE,
+    ERR_NON_FUNGIBLE_ASSET_KEY_COMPOSITION_MUST_BE_NON_FUNGIBLE,
+    ERR_VAULT_ASSET_METADATA_NOT_U32,
+    ERR_VAULT_ASSET_METADATA_UNKNOWN_COMPOSITION,
 };
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
@@ -72,8 +76,8 @@ async fn test_create_non_fungible_asset_succeeds() -> anyhow::Result<()> {
     let non_fungible_asset_details = NonFungibleAssetDetails::new(
         NonFungibleAsset::mock_issuer(),
         NON_FUNGIBLE_ASSET_DATA.to_vec(),
-    )?;
-    let non_fungible_asset = NonFungibleAsset::new(&non_fungible_asset_details)?;
+    );
+    let non_fungible_asset = NonFungibleAsset::new(&non_fungible_asset_details);
 
     let code = format!(
         "
@@ -102,26 +106,40 @@ async fn test_create_non_fungible_asset_succeeds() -> anyhow::Result<()> {
     Ok(())
 }
 
+const METADATA_BYTE_NONE: u64 = 0;
+const METADATA_BYTE_FUNGIBLE: u64 = AssetComposition::Fungible as u64;
+
+/// Returns the third element of a synthesised asset key, packing the faucet ID suffix with the
+/// given metadata byte (lower 8 bits).
+fn key_suffix_with_metadata(account_id: AccountId, metadata_byte: u64) -> Felt {
+    Felt::try_from(account_id.suffix().as_canonical_u64() | metadata_byte)
+        .expect("metadata byte only occupies the lower 8 bits")
+}
+
 #[rstest::rstest]
 #[case::account_is_not_non_fungible_faucet(
     ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE.try_into()?,
     AssetId::default(),
-    ERR_NON_FUNGIBLE_ASSET_KEY_ACCOUNT_ID_MUST_BE_NON_FUNGIBLE
+    METADATA_BYTE_FUNGIBLE,
+    ERR_NON_FUNGIBLE_ASSET_KEY_COMPOSITION_MUST_BE_NON_FUNGIBLE
 )]
 #[case::asset_id_suffix_mismatch(
     ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET.try_into()?,
     AssetId::new(Felt::from(0u32), Felt::from(3u32)),
+    METADATA_BYTE_NONE,
     ERR_NON_FUNGIBLE_ASSET_ID_SUFFIX_MUST_MATCH_HASH0
 )]
 #[case::asset_id_prefix_mismatch(
     ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET.try_into()?,
     AssetId::new(Felt::from(2u32), Felt::from(0u32)),
+    METADATA_BYTE_NONE,
     ERR_NON_FUNGIBLE_ASSET_ID_PREFIX_MUST_MATCH_HASH1
 )]
 #[tokio::test]
 async fn test_validate_non_fungible_asset(
     #[case] account_id: AccountId,
     #[case] asset_id: AssetId,
+    #[case] metadata_byte: u64,
     #[case] expected_err: MasmError,
 ) -> anyhow::Result<()> {
     let code = format!(
@@ -147,7 +165,7 @@ async fn test_validate_non_fungible_asset(
         ",
         asset_id_suffix = asset_id.suffix(),
         asset_id_prefix = asset_id.prefix(),
-        account_id_suffix = account_id.suffix(),
+        account_id_suffix = key_suffix_with_metadata(account_id, metadata_byte),
         account_id_prefix = account_id.prefix().as_felt(),
     );
 
@@ -163,30 +181,35 @@ async fn test_validate_non_fungible_asset(
     ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE.try_into()?,
     AssetId::default(),
     Word::empty(),
-    ERR_FUNGIBLE_ASSET_KEY_ACCOUNT_ID_MUST_BE_FUNGIBLE
+    METADATA_BYTE_NONE,
+    ERR_FUNGIBLE_ASSET_KEY_COMPOSITION_MUST_BE_FUNGIBLE
 )]
 #[case::asset_id_suffix_is_non_zero(
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into()?,
     AssetId::new(Felt::from(1u32), Felt::from(0u32)),
     Word::empty(),
+    METADATA_BYTE_FUNGIBLE,
     ERR_FUNGIBLE_ASSET_KEY_ASSET_ID_MUST_BE_ZERO
 )]
 #[case::asset_id_prefix_is_non_zero(
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into()?,
     AssetId::new(Felt::from(0u32), Felt::from(1u32)),
     Word::empty(),
+    METADATA_BYTE_FUNGIBLE,
     ERR_FUNGIBLE_ASSET_KEY_ASSET_ID_MUST_BE_ZERO
 )]
 #[case::non_amount_value_is_non_zero(
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into()?,
     AssetId::default(),
     Word::from([0, 1, 0, 0u32]),
+    METADATA_BYTE_FUNGIBLE,
     ERR_FUNGIBLE_ASSET_VALUE_MOST_SIGNIFICANT_ELEMENTS_MUST_BE_ZERO
 )]
 #[case::amount_exceeds_max(
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into()?,
     AssetId::default(),
     Word::try_from([FungibleAsset::MAX_AMOUNT.as_u64() + 1, 0, 0, 0])?,
+    METADATA_BYTE_FUNGIBLE,
     ERR_FUNGIBLE_ASSET_AMOUNT_EXCEEDS_MAX_AMOUNT
 )]
 #[tokio::test]
@@ -194,6 +217,7 @@ async fn test_validate_fungible_asset(
     #[case] account_id: AccountId,
     #[case] asset_id: AssetId,
     #[case] asset_value: Word,
+    #[case] metadata_byte: u64,
     #[case] expected_err: MasmError,
 ) -> anyhow::Result<()> {
     let code = format!(
@@ -216,7 +240,7 @@ async fn test_validate_fungible_asset(
         ",
         asset_id_suffix = asset_id.suffix(),
         asset_id_prefix = asset_id.prefix(),
-        account_id_suffix = account_id.suffix(),
+        account_id_suffix = key_suffix_with_metadata(account_id, metadata_byte),
         account_id_prefix = account_id.prefix().as_felt(),
         ASSET_VALUE = asset_value,
     );
@@ -229,12 +253,60 @@ async fn test_validate_fungible_asset(
 }
 
 #[rstest::rstest]
-#[case::without_callbacks(AssetCallbackFlag::Disabled)]
-#[case::with_callbacks(AssetCallbackFlag::Enabled)]
+// Valid: composition=None, callbacks=disabled.
+#[case::valid_none(0, None)]
+// Valid: composition=Fungible, callbacks=disabled.
+#[case::valid_fungible(METADATA_BYTE_FUNGIBLE, None)]
+// Valid: composition=Custom, callbacks=disabled.
+#[case::valid_custom(AssetComposition::Custom as u64, None)]
+// Valid: composition=None, callbacks=enabled (bit 2 set).
+#[case::valid_callbacks_enabled((AssetCallbackFlag::Enabled as u64) << 2, None)]
+// Metadata is not a valid u32 (does not fit in 32 bits).
+#[case::not_u32(u32::MAX as u64 + 1, Some(ERR_VAULT_ASSET_METADATA_NOT_U32))]
+// Metadata is not a valid byte.
+#[case::not_u8(u16::MAX as u64, Some(ERR_VAULT_ASSET_METADATA_NON_ZERO_RESERVED_BITS))]
+// Reserved bit 3 is set.
+#[case::reserved_bits_set(0b1000, Some(ERR_VAULT_ASSET_METADATA_NON_ZERO_RESERVED_BITS))]
+// Composition value 3 is the unused bit pattern within the 2-bit field.
+#[case::unknown_composition(0b011, Some(ERR_VAULT_ASSET_METADATA_UNKNOWN_COMPOSITION))]
 #[tokio::test]
-async fn test_key_to_asset_metadata(#[case] callbacks: AssetCallbackFlag) -> anyhow::Result<()> {
+async fn test_validate_asset_metadata(
+    #[case] asset_metadata: u64,
+    #[case] expected_err: Option<MasmError>,
+) -> anyhow::Result<()> {
+    let code = format!(
+        "
+        use $kernel::asset
+
+        begin
+            push.{asset_metadata}
+            exec.asset::validate_metadata
+        end
+        "
+    );
+
+    let exec_result = CodeExecutor::with_default_host().run(&code).await;
+
+    match expected_err {
+        Some(err) => assert_execution_error!(exec_result, err),
+        None => {
+            exec_result.expect("validate_metadata should accept valid metadata");
+        },
+    }
+
+    Ok(())
+}
+
+#[rstest::rstest]
+#[case::fungible_without_callbacks(AssetComposition::Fungible, AssetCallbackFlag::Disabled)]
+#[case::non_fungible_with_callbacks(AssetComposition::None, AssetCallbackFlag::Enabled)]
+#[tokio::test]
+async fn test_key_to_asset_metadata(
+    #[case] composition: AssetComposition,
+    #[case] callbacks: AssetCallbackFlag,
+) -> anyhow::Result<()> {
     let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?;
-    let vault_key = AssetVaultKey::new(AssetId::default(), faucet_id, callbacks)?;
+    let vault_key = AssetVaultKey::new(AssetId::default(), faucet_id, composition, callbacks)?;
 
     let code = format!(
         "
@@ -245,9 +317,16 @@ async fn test_key_to_asset_metadata(#[case] callbacks: AssetCallbackFlag) -> any
             exec.asset::key_to_callbacks_enabled
             # => [callbacks_enabled, ASSET_KEY]
 
+            movdn.4
+            exec.asset::key_to_composition
+            # => [asset_composition, ASSET_KEY, callbacks_enabled]
+
+            movdn.4 dropw
+            # => [asset_composition, callbacks_enabled]
+
             # truncate stack
-            swapw dropw swap drop
-            # => [callbacks_enabled]
+            swapw dropw
+            # => [asset_composition, callbacks_enabled]
         end
         ",
         ASSET_KEY = vault_key.to_word(),
@@ -257,8 +336,13 @@ async fn test_key_to_asset_metadata(#[case] callbacks: AssetCallbackFlag) -> any
 
     assert_eq!(
         exec_output.get_stack_element(0).as_canonical_u64(),
+        composition.as_u8() as u64,
+        "MASM asset::key_to_composition returned wrong value for {composition:?}"
+    );
+    assert_eq!(
+        exec_output.get_stack_element(1).as_canonical_u64(),
         callbacks.as_u8() as u64,
-        "MASM key_to_asset_category returned wrong value for {callbacks:?}"
+        "MASM asset::key_to_callbacks_enabled returned wrong value for {callbacks:?}"
     );
 
     Ok(())

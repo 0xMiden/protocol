@@ -185,10 +185,9 @@ pub proc bridge_out
     exec.asset::load
     swapw dropw
     # => [ASSET_KEY, PROC_MAST_ROOT, pad(16)]
-    # ASSET_KEY layout: [0, 0, faucet_id_suffix, faucet_id_prefix]
 
-    # Extract faucet ID, drop padding and amount
-    drop drop
+    # extract the faucet ID from the asset key
+    exec.asset::key_into_faucet_id
     # => [faucet_id_suffix, faucet_id_prefix, PROC_MAST_ROOT, pad(16)]
 
     exec.tx::execute_foreign_procedure

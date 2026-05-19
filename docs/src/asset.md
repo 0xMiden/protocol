@@ -32,15 +32,15 @@ Native assets adhere to the Miden `Asset` model (encoding, issuance, storage). E
 
 ### Issuance
 
-:::note
-Only [faucet](./account/id#account-type) accounts can issue assets.
-:::
-
-Faucets can issue either fungible or non-fungible assets as defined at account creation. The faucet's code specifies the `Asset` minting conditions: i.e., how, when, and by whom these assets can be minted. Once minted, they can be transferred to other accounts using notes.
+Accounts that issue assets are referred to as faucets. They can issue either fungible or non-fungible assets as defined at asset creation. The faucet's code specifies the `Asset` minting conditions: i.e., how, when, and by whom these assets can be minted. Once minted, they can be transferred to other accounts using notes.
 
 <p style={{textAlign: 'center'}}>
     <img src={require('./img/asset/asset-issuance.png').default} style={{width: '70%'}} alt="Asset issuance"/>
 </p>
+
+:::tip
+An account can technically issue different types of assets simultaneously, for example, both a fungible asset with callbacks disabled and a non-fungible asset with callbacks enabled. It is highly recommended that accounts issue only one type of asset, in order to have a simple 1-to-1 relationship between faucets and asset types.
+:::
 
 ### Type
 
