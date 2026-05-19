@@ -7,9 +7,8 @@ use miden_protocol::account::{
     AccountId,
     AccountProcedureRoot,
     AccountStorageMode,
-    AccountType,
 };
-use miden_protocol::asset::FungibleAsset;
+use miden_protocol::asset::{AssetCallbackFlag, AssetVaultKey, FungibleAsset};
 use miden_protocol::note::NoteType;
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
@@ -124,7 +123,6 @@ fn create_multisig_account(
     let multisig_account = AccountBuilder::new([0; 32])
         .with_auth_component(Auth::Multisig { threshold, approvers, proc_threshold_map })
         .with_component(BasicWallet)
-        .account_type(AccountType::RegularAccountUpdatableCode)
         .storage_mode(AccountStorageMode::Public)
         .with_assets(vec![FungibleAsset::mock(asset_amount)])
         .build_existing()?;
@@ -229,7 +227,10 @@ async fn test_multisig_2_of_2_with_note_creation(
     assert_eq!(
         multisig_account
             .vault()
-            .get_balance(AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?)?
+            .get_balance(AssetVaultKey::new_fungible(
+                AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?,
+                AssetCallbackFlag::Disabled,
+            ))?
             .as_u64(),
         multisig_starting_balance - output_note_asset.unwrap_fungible().amount().as_u64()
     );
@@ -1157,10 +1158,11 @@ async fn test_multisig_proc_threshold_overrides(
     let salt2 = Word::from([Felt::new_unchecked(2); 4]);
 
     // Create output note to send 5 units from the account
+    let asset = FungibleAsset::mock(5);
     let output_note = P2idNote::create(
         multisig_account.id(),
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap(),
-        vec![FungibleAsset::mock(5)],
+        vec![asset],
         NoteType::Public,
         Default::default(),
         &mut RandomCoin::new(Word::from([Felt::new_unchecked(42); 4])),
@@ -1235,7 +1237,7 @@ async fn test_multisig_proc_threshold_overrides(
     mock_chain.add_pending_executed_transaction(&result.unwrap())?;
     mock_chain.prove_next_block()?;
 
-    assert_eq!(multisig_account.vault().get_balance(FungibleAsset::mock_issuer())?.as_u64(), 6);
+    assert_eq!(multisig_account.vault().get_balance(asset.vault_key())?.as_u64(), 6);
 
     Ok(())
 }

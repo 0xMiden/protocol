@@ -1,5 +1,5 @@
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
-use miden_protocol::account::{AccountComponent, AccountProcedureRoot, AccountType};
+use miden_protocol::account::{AccountComponent, AccountProcedureRoot};
 
 use crate::account::account_component_code;
 use crate::procedure_root;
@@ -44,9 +44,8 @@ impl BurnAllowAll {
 
 impl From<BurnAllowAll> for AccountComponent {
     fn from(_: BurnAllowAll) -> Self {
-        let metadata =
-            AccountComponentMetadata::new(BurnAllowAll::NAME, [AccountType::FungibleFaucet])
-                .with_description("`allow_all` burn policy for fungible faucets");
+        let metadata = AccountComponentMetadata::new(BurnAllowAll::NAME)
+            .with_description("`allow_all` burn policy for fungible faucets");
 
         AccountComponent::new(BurnAllowAll::code().clone(), vec![], metadata).expect(
             "`allow_all` burn policy component should satisfy the requirements of a valid account component",

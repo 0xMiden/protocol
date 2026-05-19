@@ -22,7 +22,6 @@ use miden_protocol::account::component::{
 use miden_protocol::account::{
     AccountComponent,
     AccountProcedureRoot,
-    AccountType,
     StorageMap,
     StorageMapKey,
     StorageSlot,
@@ -461,7 +460,7 @@ impl TokenPolicyManager {
         ])
         .expect("storage schema should be valid");
 
-        AccountComponentMetadata::new(Self::NAME, [AccountType::FungibleFaucet])
+        AccountComponentMetadata::new(Self::NAME)
             .with_description(Self::DESCRIPTION)
             .with_storage_schema(storage_schema)
     }

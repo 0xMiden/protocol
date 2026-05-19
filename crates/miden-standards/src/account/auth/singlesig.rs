@@ -7,7 +7,7 @@ use miden_protocol::account::component::{
     StorageSchema,
     StorageSlotSchema,
 };
-use miden_protocol::account::{AccountComponent, AccountType, StorageSlot, StorageSlotName};
+use miden_protocol::account::{AccountComponent, StorageSlot, StorageSlotName};
 use miden_protocol::crypto::dsa::{ecdsa_k256_keccak, falcon512_poseidon2};
 use miden_protocol::utils::sync::LazyLock;
 
@@ -124,7 +124,7 @@ impl AuthSingleSig {
         ])
         .expect("storage schema should be valid");
 
-        AccountComponentMetadata::new(Self::NAME, AccountType::all())
+        AccountComponentMetadata::new(Self::NAME)
             .with_description(
                 "Authentication component using ECDSA K256 Keccak or Falcon512 Poseidon2 signature scheme",
             )

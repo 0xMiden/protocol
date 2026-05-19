@@ -1,4 +1,3 @@
-use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use miden_mast_package::Package;
@@ -14,7 +13,7 @@ mod code;
 pub use code::AccountComponentCode;
 
 use crate::MastForest;
-use crate::account::{AccountProcedureRoot, AccountType, StorageSlot};
+use crate::account::{AccountProcedureRoot, StorageSlot};
 use crate::assembly::Path;
 use crate::errors::AccountError;
 
@@ -33,12 +32,6 @@ const AUTH_SCRIPT_ATTRIBUTE: &str = "auth_script";
 /// Each component is independent of other components and can only access its own storage slots.
 /// Each component defines its own storage layout starting at index 0 up to the length of the
 /// storage slots vector.
-///
-/// Components define the [`AccountType`]s they support, meaning whether the component can be used
-/// to instantiate an account of that type. For example, a component implementing a fungible faucet
-/// would only specify support for [`AccountType::FungibleFaucet`]. Using it to instantiate a
-/// regular account would fail. By default, the set of supported types is empty, so each component
-/// is forced to explicitly define what it supports.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AccountComponent {
     pub(super) code: AccountComponentCode,
@@ -179,16 +172,6 @@ impl AccountComponent {
         self.metadata.storage_schema()
     }
 
-    /// Returns a reference to the supported [`AccountType`]s.
-    pub fn supported_types(&self) -> &BTreeSet<AccountType> {
-        self.metadata.supported_types()
-    }
-
-    /// Returns `true` if this component supports the given `account_type`, `false` otherwise.
-    pub fn supports_type(&self, account_type: AccountType) -> bool {
-        self.metadata.supported_types().contains(&account_type)
-    }
-
     /// Returns an iterator over ([`AccountProcedureRoot`], is_auth) for all procedures in this
     /// component.
     ///
@@ -244,12 +227,9 @@ mod tests {
         let library = Assembler::default().assemble_library([CODE]).unwrap();
 
         // Test with metadata
-        let metadata = AccountComponentMetadata::new(
-            "test_component",
-            [AccountType::RegularAccountImmutableCode],
-        )
-        .with_description("A test component")
-        .with_version(Version::new(1, 0, 0));
+        let metadata = AccountComponentMetadata::new("test_component")
+            .with_description("A test component")
+            .with_version(Version::new(1, 0, 0));
 
         let metadata_bytes = metadata.to_bytes();
         let package_with_metadata = Package {
@@ -268,11 +248,6 @@ mod tests {
         let extracted_metadata =
             AccountComponentMetadata::try_from(&package_with_metadata).unwrap();
         assert_eq!(extracted_metadata.name(), "test_component");
-        assert!(
-            extracted_metadata
-                .supported_types()
-                .contains(&AccountType::RegularAccountImmutableCode)
-        );
 
         // Test without metadata - should fail
         let package_without_metadata = Package {
@@ -298,7 +273,7 @@ mod tests {
         let component_code = AccountComponentCode::from(Arc::unwrap_or_clone(library.clone()));
 
         // Create metadata for the component
-        let metadata = AccountComponentMetadata::new("test_component", AccountType::regular())
+        let metadata = AccountComponentMetadata::new("test_component")
             .with_description("A test component")
             .with_version(Version::new(1, 0, 0));
 
@@ -310,9 +285,6 @@ mod tests {
 
         // Verify the component was created correctly
         assert_eq!(component.storage_size(), 0);
-        assert!(component.supports_type(AccountType::RegularAccountImmutableCode));
-        assert!(component.supports_type(AccountType::RegularAccountUpdatableCode));
-        assert!(!component.supports_type(AccountType::FungibleFaucet));
 
         // Test without metadata - should fail
         let package_without_metadata = Package {

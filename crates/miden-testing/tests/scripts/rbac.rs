@@ -10,7 +10,6 @@ use miden_protocol::account::{
     AccountId,
     AccountIdVersion,
     AccountStorageMode,
-    AccountType,
     RoleSymbol,
 };
 use miden_protocol::errors::AccountIdError;
@@ -48,12 +47,7 @@ fn create_rbac_chain(owner: AccountId) -> anyhow::Result<(Account, MockChain)> {
 }
 
 fn test_account_id(seed: u8) -> AccountId {
-    AccountId::dummy(
-        [seed; 15],
-        AccountIdVersion::Version1,
-        AccountType::RegularAccountImmutableCode,
-        AccountStorageMode::Private,
-    )
+    AccountId::dummy([seed; 15], AccountIdVersion::Version1, AccountStorageMode::Private)
 }
 
 fn role(name: &str) -> RoleSymbol {

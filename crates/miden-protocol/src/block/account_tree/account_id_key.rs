@@ -73,15 +73,11 @@ mod tests {
     use miden_core::ZERO;
 
     use super::{AccountId, *};
-    use crate::account::{AccountIdVersion, AccountStorageMode, AccountType};
+    use crate::account::{AccountIdVersion, AccountStorageMode};
     #[test]
     fn test_as_word_layout() {
-        let id = AccountId::dummy(
-            [1u8; 15],
-            AccountIdVersion::Version1,
-            AccountType::RegularAccountImmutableCode,
-            AccountStorageMode::Private,
-        );
+        let id =
+            AccountId::dummy([1u8; 15], AccountIdVersion::Version1, AccountStorageMode::Private);
         let key = AccountIdKey::from(id);
         let word = key.as_word();
 
@@ -93,12 +89,8 @@ mod tests {
 
     #[test]
     fn test_roundtrip_word_conversion() {
-        let id = AccountId::dummy(
-            [1u8; 15],
-            AccountIdVersion::Version1,
-            AccountType::RegularAccountImmutableCode,
-            AccountStorageMode::Private,
-        );
+        let id =
+            AccountId::dummy([1u8; 15], AccountIdVersion::Version1, AccountStorageMode::Private);
 
         let key = AccountIdKey::from(id);
         let recovered =
@@ -109,12 +101,8 @@ mod tests {
 
     #[test]
     fn test_leaf_index_consistency() {
-        let id = AccountId::dummy(
-            [1u8; 15],
-            AccountIdVersion::Version1,
-            AccountType::RegularAccountImmutableCode,
-            AccountStorageMode::Private,
-        );
+        let id =
+            AccountId::dummy([1u8; 15], AccountIdVersion::Version1, AccountStorageMode::Private);
         let key = AccountIdKey::from(id);
 
         let idx1 = key.to_leaf_index();
@@ -125,12 +113,8 @@ mod tests {
 
     #[test]
     fn test_from_conversion() {
-        let id = AccountId::dummy(
-            [1u8; 15],
-            AccountIdVersion::Version1,
-            AccountType::RegularAccountImmutableCode,
-            AccountStorageMode::Private,
-        );
+        let id =
+            AccountId::dummy([1u8; 15], AccountIdVersion::Version1, AccountStorageMode::Private);
         let key: AccountIdKey = id.into();
 
         assert_eq!(key.account_id(), id);
@@ -142,7 +126,6 @@ mod tests {
             let id = AccountId::dummy(
                 [1u8; 15],
                 AccountIdVersion::Version1,
-                AccountType::RegularAccountImmutableCode,
                 AccountStorageMode::Private,
             );
             let key = AccountIdKey::from(id);

@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 
 use crate::account::account_id::AccountIdVersion;
 use crate::account::account_id::v1::{compute_digest, validate_prefix};
-use crate::account::{AccountIdV1, AccountStorageMode, AccountType};
+use crate::account::{AccountIdV1, AccountStorageMode};
 use crate::errors::AccountError;
 use crate::{Felt, Word};
 
@@ -14,7 +14,6 @@ use crate::{Felt, Word};
 /// implementation was removed in commit dab6159318832fc537bb35abf251870a9129ac8c in PR 1061.
 pub(super) fn compute_account_seed(
     init_seed: [u8; 32],
-    account_type: AccountType,
     storage_mode: AccountStorageMode,
     version: AccountIdVersion,
     code_commitment: Word,
@@ -22,7 +21,6 @@ pub(super) fn compute_account_seed(
 ) -> Result<Word, AccountError> {
     compute_account_seed_single(
         init_seed,
-        account_type,
         storage_mode,
         version,
         code_commitment,
@@ -32,7 +30,6 @@ pub(super) fn compute_account_seed(
 
 fn compute_account_seed_single(
     init_seed: [u8; 32],
-    account_type: AccountType,
     storage_mode: AccountStorageMode,
     version: AccountIdVersion,
     code_commitment: Word,
@@ -48,7 +45,7 @@ fn compute_account_seed_single(
     ]);
     let mut current_digest = compute_digest(current_seed, code_commitment, storage_commitment);
 
-    // loop until we have a seed that satisfies the specified account type.
+    // loop until we have a seed that satisfies the specified account parameters.
     loop {
         // Check if the seed satisfies the specified type, storage mode and version. Additionally,
         // the most significant bit of the suffix must be zero to ensure felt validity.
@@ -56,9 +53,7 @@ fn compute_account_seed_single(
         let prefix = current_digest[AccountIdV1::SEED_DIGEST_PREFIX_ELEMENT_IDX];
         let is_suffix_msb_zero = suffix.as_canonical_u64() >> 63 == 0;
 
-        if let Ok((computed_account_type, computed_storage_mode, computed_version)) =
-            validate_prefix(prefix)
-            && computed_account_type == account_type
+        if let Ok((computed_storage_mode, computed_version)) = validate_prefix(prefix)
             && computed_storage_mode == storage_mode
             && computed_version == version
             && is_suffix_msb_zero

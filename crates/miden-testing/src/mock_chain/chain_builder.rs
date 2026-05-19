@@ -22,7 +22,6 @@ use miden_protocol::account::{
     AccountDelta,
     AccountId,
     AccountStorageMode,
-    AccountType,
     StorageSlot,
 };
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset, TokenSymbol};
@@ -241,8 +240,7 @@ impl MockChainBuilder {
         let tx_commitment = transactions.commitment();
         let tx_kernel_commitment = TransactionKernel.to_commitment();
         let timestamp = MockChain::TIMESTAMP_START_SECS;
-        let fee_parameters = FeeParameters::new(self.fee_faucet_id, self.verification_base_fee)
-            .context("failed to construct fee parameters")?;
+        let fee_parameters = FeeParameters::new(self.fee_faucet_id, self.verification_base_fee);
         let validator_secret_key = random_secret_key();
         let validator_public_key = validator_secret_key.public_key();
 
@@ -333,7 +331,6 @@ impl MockChainBuilder {
     ) -> anyhow::Result<Account> {
         let account_builder = AccountBuilder::new(self.rng.random())
             .storage_mode(storage_mode)
-            .account_type(AccountType::FungibleFaucet)
             .with_component(faucet)
             .with_components(access_control)
             .with_components(token_policy_manager);
@@ -365,7 +362,6 @@ impl MockChainBuilder {
     ) -> anyhow::Result<Account> {
         let account_builder = AccountBuilder::new(self.rng.random())
             .storage_mode(storage_mode)
-            .account_type(AccountType::FungibleFaucet)
             .with_component(faucet)
             .with_components(access_control)
             .with_components(token_policy_manager);

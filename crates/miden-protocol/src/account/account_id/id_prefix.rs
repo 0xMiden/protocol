@@ -4,7 +4,7 @@ use core::fmt;
 use super::v1;
 use crate::Felt;
 use crate::account::account_id::AccountIdPrefixV1;
-use crate::account::{AccountIdVersion, AccountStorageMode, AccountType};
+use crate::account::{AccountIdVersion, AccountStorageMode};
 use crate::errors::AccountIdError;
 use crate::utils::serde::{
     ByteReader,
@@ -93,23 +93,6 @@ impl AccountIdPrefix {
         match self {
             AccountIdPrefix::V1(id_prefix) => id_prefix.as_u64(),
         }
-    }
-
-    /// Returns the type of this account ID.
-    pub fn account_type(&self) -> AccountType {
-        match self {
-            AccountIdPrefix::V1(id_prefix) => id_prefix.account_type(),
-        }
-    }
-
-    /// Returns true if an account with this ID is a faucet (can issue assets).
-    pub fn is_faucet(&self) -> bool {
-        self.account_type().is_faucet()
-    }
-
-    /// Returns true if an account with this ID is a regular account.
-    pub fn is_regular_account(&self) -> bool {
-        self.account_type().is_regular_account()
     }
 
     /// Returns the storage mode of this account ID.
@@ -278,43 +261,5 @@ impl Deserializable for AccountIdPrefix {
         <[u8; 8]>::read_from(source)?
             .try_into()
             .map_err(|err: AccountIdError| DeserializationError::InvalidValue(err.to_string()))
-    }
-}
-
-// TESTS
-// ================================================================================================
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::account::AccountIdV1;
-
-    #[test]
-    fn account_id_prefix_construction() {
-        // Use the highest possible input to check if the constructed id is a valid Felt in that
-        // scenario.
-        // Use the lowest possible input to check whether the constructor produces valid IDs with
-        // all-zeroes input.
-        for input in [[0xff; 15], [0; 15]] {
-            for account_type in [
-                AccountType::FungibleFaucet,
-                AccountType::NonFungibleFaucet,
-                AccountType::RegularAccountImmutableCode,
-                AccountType::RegularAccountUpdatableCode,
-            ] {
-                for storage_mode in [AccountStorageMode::Private, AccountStorageMode::Public] {
-                    let id = AccountIdV1::dummy(input, account_type, storage_mode);
-                    let prefix = id.prefix();
-                    assert_eq!(prefix.account_type(), account_type);
-                    assert_eq!(prefix.storage_mode(), storage_mode);
-                    assert_eq!(prefix.version(), AccountIdVersion::Version1);
-
-                    // Do a serialization roundtrip to ensure validity.
-                    let serialized_prefix = prefix.to_bytes();
-                    AccountIdPrefix::read_from_bytes(&serialized_prefix).unwrap();
-                    assert_eq!(serialized_prefix.len(), AccountIdPrefix::SERIALIZED_SIZE);
-                }
-            }
-        }
     }
 }
