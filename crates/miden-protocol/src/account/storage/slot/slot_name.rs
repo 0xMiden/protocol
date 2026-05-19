@@ -3,8 +3,8 @@ use alloc::sync::Arc;
 use core::fmt::Display;
 use core::str::FromStr;
 
+use crate::account::name_validation::{self, NameValidationError};
 use crate::account::storage::slot::StorageSlotId;
-use crate::account::storage::slot::name_validation::{self, NameValidationError};
 use crate::errors::StorageSlotNameError;
 use crate::utils::serde::{
     ByteReader,

@@ -24,6 +24,8 @@ pub use account_id::{
     AccountType,
 };
 
+pub(crate) mod name_validation;
+
 pub mod auth;
 
 mod access;

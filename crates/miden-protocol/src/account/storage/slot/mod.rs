@@ -1,5 +1,3 @@
-pub(crate) mod name_validation;
-
 mod slot_name;
 pub use slot_name::StorageSlotName;
 

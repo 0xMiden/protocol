@@ -3,7 +3,7 @@ use alloc::string::String;
 use core::fmt::Display;
 use core::str::FromStr;
 
-use crate::account::storage::slot::name_validation::{self, NameValidationError};
+use crate::account::name_validation::{self, NameValidationError};
 use crate::errors::AccountComponentNameError;
 
 /// The canonical name of an account component.
