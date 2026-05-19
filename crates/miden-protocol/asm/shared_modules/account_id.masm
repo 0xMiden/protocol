@@ -41,8 +41,8 @@ end
 
 #! Validates an account ID.
 #!
-#! Note that this does not validate anything about the storage mode, since any 1-bit pattern is a
-#! valid storage mode.
+#! Note that this does not validate anything about the account type, since any 1-bit pattern is a
+#! valid account type.
 #!
 #! Inputs:  [account_id_suffix, account_id_prefix]
 #! Outputs: []

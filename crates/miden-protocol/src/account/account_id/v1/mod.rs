@@ -525,8 +525,7 @@ mod tests {
         // Use the lowest possible input to check whether the constructor produces valid IDs with
         // all-zeroes input.
         #[values([0xff; 15], [0; 15])] input: [u8; 15],
-        #[values(AccountType::Private, AccountType::Public)]
-        account_type: AccountType,
+        #[values(AccountType::Private, AccountType::Public)] account_type: AccountType,
     ) {
         let id = AccountIdV1::dummy(input, account_type);
         assert_eq!(id.account_type(), account_type);

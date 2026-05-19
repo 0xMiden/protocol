@@ -70,7 +70,7 @@ Every note includes metadata:
 - the [note tag](#note-discovery) that aids in discovery of the note.
 - optional [note attachments](#attachments) (up to 4).
 
-Regardless of [storage mode](#note-storage-mode), these metadata fields are always public.
+Regardless of [note type](#note-type), these metadata fields are always public.
 
 ### Attachments
 
@@ -101,7 +101,7 @@ Accounts can create notes in a transaction. The `Note` exists if it is included 
 - **Users:** Executing local or network transactions.
 - **Miden operators:** Facilitating on-chain actions, e.g. such as executing user notes against a DEX or other contracts.
 
-#### Note storage mode
+#### Note Type
 
 As with [accounts](account/index.md), notes can be stored either publicly or privately:
 

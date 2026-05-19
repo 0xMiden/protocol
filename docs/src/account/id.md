@@ -17,7 +17,7 @@ The account type is chosen at account creation time and cannot be changed later.
 
 ### Account type
 
-Users can choose whether their accounts are stored publicly or privately. The preference is encoded in the third and fourth most significant bits of the account's ID:
+Users can choose whether their accounts are stored publicly or privately. The preference is encoded in the account's ID:
 
 - **Private Accounts:**
   Only a commitment (hash) to the account's state is stored on-chain. This mode is suitable for users who prioritize privacy or plan to store a large amount of data in their `Account`. To interact with a private `Account`, a user must have knowledge of its interface.
