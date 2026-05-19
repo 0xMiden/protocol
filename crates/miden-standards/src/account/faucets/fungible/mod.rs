@@ -35,7 +35,7 @@ use super::{
 };
 use crate::account::access::AccessControl;
 use crate::account::account_component_code;
-use crate::account::auth::{AuthSingleSigAcl, AuthSingleSigAclConfig, NoAuth};
+use crate::account::auth::{AuthNetworkAccount, AuthSingleSigAcl, AuthSingleSigAclConfig, NoAuth};
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
 use crate::account::policies::TokenPolicyManager;
 use crate::{AuthMethod, procedure_root};
@@ -104,8 +104,8 @@ procedure_root!(
 /// [`TokenPolicyManager`]: crate::account::policies::TokenPolicyManager
 #[derive(Debug, Clone)]
 pub struct FungibleFaucet {
-    token_supply: Felt,
-    max_supply: Felt,
+    token_supply: AssetAmount,
+    max_supply: AssetAmount,
     decimals: u8,
     symbol: TokenSymbol,
     /// Embeds name, optional fields, and mutability flags.
@@ -131,8 +131,8 @@ impl FungibleFaucet {
     ///     .name(TokenName::new("My Token")?)
     ///     .symbol(TokenSymbol::new("MTK")?)
     ///     .decimals(8)
-    ///     .max_supply(AssetAmount::new(1_000_000)?)
-    ///     .token_supply(AssetAmount::new(100)?)
+    ///     .max_supply(AssetAmount::from(1_000_000u32))
+    ///     .token_supply(AssetAmount::from(100u32))
     ///     .description(Description::new("A test token")?)
     ///     .logo_uri(LogoURI::new("https://example.com/logo.png")?)
     ///     .build()?;
@@ -220,16 +220,16 @@ impl FungibleFaucet {
             });
         }
 
-        if u64::from(token_supply) > u64::from(max_supply) {
+        if token_supply > max_supply {
             return Err(FungibleFaucetError::TokenSupplyExceedsMaxSupply {
-                token_supply: u64::from(token_supply),
-                max_supply: u64::from(max_supply),
+                token_supply: token_supply.as_u64(),
+                max_supply: max_supply.as_u64(),
             });
         }
 
         Ok(Self {
-            token_supply: token_supply.into(),
-            max_supply: max_supply.into(),
+            token_supply,
+            max_supply,
             decimals,
             symbol,
             metadata,
@@ -261,12 +261,12 @@ impl FungibleFaucet {
     }
 
     /// Returns the current token supply (amount issued).
-    pub fn token_supply(&self) -> Felt {
+    pub fn token_supply(&self) -> AssetAmount {
         self.token_supply
     }
 
     /// Returns the maximum token supply.
-    pub fn max_supply(&self) -> Felt {
+    pub fn max_supply(&self) -> AssetAmount {
         self.max_supply
     }
 
@@ -344,8 +344,8 @@ impl FungibleFaucet {
     /// Returns the single storage slot for the token config word.
     fn token_config_slot_value(&self) -> StorageSlot {
         let word = Word::new([
-            self.token_supply,
-            self.max_supply,
+            self.token_supply.into(),
+            self.max_supply.into(),
             Felt::from(self.decimals),
             self.symbol.clone().into(),
         ]);
@@ -361,11 +361,14 @@ impl FungibleFaucet {
     ///
     /// Returns an error if:
     /// - the token supply exceeds the max supply.
-    pub fn with_token_supply(mut self, token_supply: Felt) -> Result<Self, FungibleFaucetError> {
-        if token_supply.as_canonical_u64() > self.max_supply.as_canonical_u64() {
+    pub fn with_token_supply(
+        mut self,
+        token_supply: AssetAmount,
+    ) -> Result<Self, FungibleFaucetError> {
+        if token_supply > self.max_supply {
             return Err(FungibleFaucetError::TokenSupplyExceedsMaxSupply {
-                token_supply: token_supply.as_canonical_u64(),
-                max_supply: self.max_supply.as_canonical_u64(),
+                token_supply: token_supply.as_u64(),
+                max_supply: self.max_supply.as_u64(),
             });
         }
 
@@ -428,18 +431,16 @@ impl FungibleFaucet {
                 max: Self::MAX_DECIMALS,
             }
         })?;
-        let max_supply_raw = max_supply.as_canonical_u64();
-        let max_supply = AssetAmount::new(max_supply_raw).map_err(|_| {
+        let max_supply = AssetAmount::try_from(max_supply).map_err(|_| {
             FungibleFaucetError::MaxSupplyTooLarge {
-                actual: max_supply_raw,
-                max: AssetAmount::MAX,
+                actual: max_supply.as_canonical_u64(),
+                max: AssetAmount::MAX.as_u64(),
             }
         })?;
-        let token_supply_raw = token_supply.as_canonical_u64();
-        let token_supply = AssetAmount::new(token_supply_raw).map_err(|_| {
+        let token_supply = AssetAmount::try_from(token_supply).map_err(|_| {
             FungibleFaucetError::MaxSupplyTooLarge {
-                actual: token_supply_raw,
-                max: AssetAmount::MAX,
+                actual: token_supply.as_canonical_u64(),
+                max: AssetAmount::MAX.as_u64(),
             }
         })?;
 
@@ -506,19 +507,16 @@ impl TryFrom<&Account> for FungibleFaucet {
 ///
 /// The behaviour of the resulting faucet (basic vs network-style) is determined entirely by the
 /// combination of arguments passed in:
-/// - `storage_mode`: typically [`AccountStorageMode::Public`] for basic faucets, or
-///   [`AccountStorageMode::Network`] for network-style faucets.
+/// - `storage_mode`: typically [`AccountStorageMode::Public`] for basic or network faucets.
 /// - `auth_method`: typically [`AuthMethod::SingleSig`] for basic faucets, or
-///   [`AuthMethod::NoAuth`] for network-style faucets.
+///   [`AuthMethod::NetworkAccount`] for network-style faucets. [`AuthMethod::NoAuth`] is also
+///   accepted for unauthenticated faucets.
 /// - `access_control`: [`AccessControl::AuthControlled`] for auth-only faucets, or
 ///   [`AccessControl::Ownable2Step`] / [`AccessControl::Rbac`] for owner-controlled faucets.
-/// - `token_policy_manager`: the unified [`TokenPolicyManager`] holding both mint and burn policy
-///   plus the shared [`PolicyAuthority`].
+/// - `token_policy_manager`: the unified [`TokenPolicyManager`] holding both mint and burn policy.
 ///
 /// The faucet itself, including all token metadata, is provided in the `faucet` parameter (see
 /// [`FungibleFaucet::builder`]).
-///
-/// [`PolicyAuthority`]: crate::account::policies::PolicyAuthority
 pub fn create_fungible_faucet(
     init_seed: [u8; 32],
     faucet: FungibleFaucet,
@@ -540,6 +538,15 @@ pub fn create_fungible_faucet(
         .map_err(FungibleFaucetError::AccountError)?
         .into(),
         AuthMethod::NoAuth => NoAuth::new().into(),
+        AuthMethod::NetworkAccount { allowed_script_roots } => {
+            AuthNetworkAccount::with_allowlist(allowed_script_roots)
+                .map_err(|err| {
+                    FungibleFaucetError::UnsupportedAuthMethod(alloc::format!(
+                        "invalid network account allowlist: {err}"
+                    ))
+                })?
+                .into()
+        },
         AuthMethod::Unknown => {
             return Err(FungibleFaucetError::UnsupportedAuthMethod(
                 "fungible faucets cannot be created with Unknown authentication method".into(),

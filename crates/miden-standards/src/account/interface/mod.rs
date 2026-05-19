@@ -23,9 +23,6 @@ pub use extension::{AccountComponentInterfaceExt, AccountInterfaceExt};
 // ================================================================================================
 
 /// An [`AccountInterface`] describes the exported, callable procedures of an account.
-///
-/// A note script's compatibility with this interface can be inspected to check whether the note may
-/// result in a successful execution against this account.
 pub struct AccountInterface {
     account_id: AccountId,
     auth: Vec<AuthMethod>,
@@ -78,14 +75,6 @@ impl AccountInterface {
         self.account_id.is_regular_account()
     }
 
-    /// Returns `true` if the full state of the account is public on chain, i.e. if the modes are
-    /// [`AccountStorageMode::Public`](miden_protocol::account::AccountStorageMode::Public) or
-    /// [`AccountStorageMode::Network`](miden_protocol::account::AccountStorageMode::Network),
-    /// `false` otherwise.
-    pub fn has_public_state(&self) -> bool {
-        self.account_id.has_public_state()
-    }
-
     /// Returns `true` if the reference account is a private account, `false` otherwise.
     pub fn is_private(&self) -> bool {
         self.account_id.is_private()
@@ -94,11 +83,6 @@ impl AccountInterface {
     /// Returns true if the reference account is a public account, `false` otherwise.
     pub fn is_public(&self) -> bool {
         self.account_id.is_public()
-    }
-
-    /// Returns true if the reference account is a network account, `false` otherwise.
-    pub fn is_network(&self) -> bool {
-        self.account_id.is_network()
     }
 
     /// Returns a reference to the vector of used authentication methods.
@@ -228,24 +212,6 @@ impl AccountInterface {
             String::new()
         }
     }
-}
-
-// NOTE ACCOUNT COMPATIBILITY
-// ================================================================================================
-
-/// Describes whether a note is compatible with a specific account.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum NoteAccountCompatibility {
-    /// A note is incompatible with an account.
-    ///
-    /// The account interface does not have procedures for being able to execute at least one of
-    /// the program execution branches.
-    No,
-    /// The account has all necessary procedures of one execution branch of the note script. This
-    /// means the note may be able to be consumed by the account if that branch is executed.
-    Maybe,
-    /// A note could be successfully executed and consumed by the account.
-    Yes,
 }
 
 // ACCOUNT INTERFACE ERROR

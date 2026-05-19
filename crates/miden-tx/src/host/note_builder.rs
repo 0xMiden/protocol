@@ -138,10 +138,10 @@ impl OutputNoteBuilder {
         Ok(())
     }
 
-    /// Converts this builder to an [OutputNote].
+    /// Converts this builder to an [RawOutputNote].
     ///
-    /// Depending on the available information, this may result in [`OutputNote::Full`] or
-    /// [`OutputNote::Partial`] notes.
+    /// Depending on the available information, this may result in [`RawOutputNote::Full`] or
+    /// [`RawOutputNote::Partial`] notes.
     pub fn build(self) -> RawOutputNote {
         let assets = NoteAssets::new(self.assets)
             .expect("assets should be valid since add_asset validates them");

@@ -2,12 +2,12 @@ use anyhow::Result;
 pub use miden_agglayer::testing::ClaimDataSource;
 use miden_agglayer::{
     B2AggNote,
+    ClaimNote,
     ClaimNoteStorage,
     ConfigAggBridgeNote,
     EthAddress,
     MetadataHash,
     UpdateGerNote,
-    create_claim_note,
     create_existing_agglayer_faucet,
     create_existing_bridge_account,
 };
@@ -190,7 +190,7 @@ pub async fn tx_consume_claim_note(data_source: ClaimDataSource) -> Result<Trans
     // CREATE AGGLAYER FAUCET ACCOUNT
     let token_symbol = "AGG";
     let decimals = 8u8;
-    let max_supply = Felt::new(FungibleAsset::MAX_AMOUNT);
+    let max_supply: Felt = FungibleAsset::MAX_AMOUNT.into();
     let agglayer_faucet_seed = builder.rng_mut().draw_word();
 
     let origin_token_address = leaf_data.origin_token_address;
@@ -233,7 +233,7 @@ pub async fn tx_consume_claim_note(data_source: ClaimDataSource) -> Result<Trans
         miden_claim_amount,
     };
 
-    let claim_note = create_claim_note(
+    let claim_note = ClaimNote::create(
         claim_inputs,
         bridge_account.id(),
         sender_account.id(),
@@ -335,8 +335,8 @@ pub async fn tx_consume_b2agg_note() -> Result<TransactionContext> {
         builder.rng_mut().draw_word(),
         "AGG",
         8,
-        Felt::new(FungibleAsset::MAX_AMOUNT),
-        Felt::new(bridge_amount),
+        FungibleAsset::MAX_AMOUNT.into(),
+        Felt::new_unchecked(bridge_amount),
         bridge_account.id(),
         &origin_token_address,
         origin_network,

@@ -178,8 +178,6 @@ mod tests {
     use super::NoteTag;
     use crate::account::{AccountId, AccountStorageMode};
     use crate::testing::account_id::{
-        ACCOUNT_ID_NETWORK_FUNGIBLE_FAUCET,
-        ACCOUNT_ID_NETWORK_NON_FUNGIBLE_FAUCET,
         ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
         ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET,
         ACCOUNT_ID_PRIVATE_SENDER,
@@ -189,7 +187,6 @@ mod tests {
         ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_3,
         ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET,
         ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET_1,
-        ACCOUNT_ID_REGULAR_NETWORK_ACCOUNT_IMMUTABLE_CODE,
         ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2,
@@ -227,20 +224,7 @@ mod tests {
                 .storage_mode(AccountStorageMode::Public)
                 .build_with_seed([3; 32]),
         ];
-        let network_accounts = [
-            AccountId::try_from(ACCOUNT_ID_REGULAR_NETWORK_ACCOUNT_IMMUTABLE_CODE).unwrap(),
-            AccountId::try_from(ACCOUNT_ID_NETWORK_FUNGIBLE_FAUCET).unwrap(),
-            AccountId::try_from(ACCOUNT_ID_NETWORK_NON_FUNGIBLE_FAUCET).unwrap(),
-            AccountIdBuilder::new()
-                .storage_mode(AccountStorageMode::Network)
-                .build_with_seed([4; 32]),
-        ];
-
-        for account_id in private_accounts
-            .iter()
-            .chain(public_accounts.iter())
-            .chain(network_accounts.iter())
-        {
+        for account_id in private_accounts.iter().chain(public_accounts.iter()) {
             let tag = NoteTag::with_account_target(*account_id);
             assert_eq!(tag.as_u32() << 16, 0, "16 least significant bits should be zero");
             let expected = ((account_id.prefix().as_u64() >> 32) as u32) >> 16;

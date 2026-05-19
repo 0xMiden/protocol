@@ -360,12 +360,12 @@ mod tests {
     });
 
     struct CustomComponent1 {
-        slot0: u64,
+        slot0: u32,
     }
     impl From<CustomComponent1> for AccountComponent {
         fn from(custom: CustomComponent1) -> Self {
             let mut value = Word::empty();
-            value[0] = Felt::new(custom.slot0);
+            value[0] = Felt::from(custom.slot0);
 
             let metadata =
                 AccountComponentMetadata::new("test::custom_component1", AccountType::all());
@@ -379,15 +379,15 @@ mod tests {
     }
 
     struct CustomComponent2 {
-        slot0: u64,
-        slot1: u64,
+        slot0: u32,
+        slot1: u32,
     }
     impl From<CustomComponent2> for AccountComponent {
         fn from(custom: CustomComponent2) -> Self {
             let mut value0 = Word::empty();
-            value0[3] = Felt::new(custom.slot0);
+            value0[3] = Felt::from(custom.slot0);
             let mut value1 = Word::empty();
-            value1[3] = Felt::new(custom.slot1);
+            value1[3] = Felt::from(custom.slot1);
 
             let metadata =
                 AccountComponentMetadata::new("test::custom_component2", AccountType::all());
@@ -446,15 +446,15 @@ mod tests {
 
         assert_eq!(
             account.storage().get_item(&CUSTOM_COMPONENT1_SLOT_NAME).unwrap(),
-            [Felt::new(storage_slot0), Felt::new(0), Felt::new(0), Felt::new(0)].into()
+            Word::from([Felt::from(storage_slot0), Felt::ZERO, Felt::ZERO, Felt::ZERO])
         );
         assert_eq!(
             account.storage().get_item(&CUSTOM_COMPONENT2_SLOT_NAME0).unwrap(),
-            [Felt::new(0), Felt::new(0), Felt::new(0), Felt::new(storage_slot1)].into()
+            Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::from(storage_slot1)])
         );
         assert_eq!(
             account.storage().get_item(&CUSTOM_COMPONENT2_SLOT_NAME1).unwrap(),
-            [Felt::new(0), Felt::new(0), Felt::new(0), Felt::new(storage_slot2)].into()
+            Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::from(storage_slot2)])
         );
     }
 

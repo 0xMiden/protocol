@@ -224,8 +224,8 @@ async fn pswap_note_alice_reconstructs_and_consumes_p2id() -> anyhow::Result<()>
         "remainder aux should carry amt_payout matching the Rust-side calc",
     );
 
-    let remaining_offered = offered_asset.amount() - amt_payout_from_attachment;
-    let remaining_requested = requested_asset.amount() - fill_amount_from_aux;
+    let remaining_offered = offered_asset.amount().as_u64() - amt_payout_from_attachment;
+    let remaining_requested = requested_asset.amount().as_u64() - fill_amount_from_aux;
 
     let remainder_storage = PswapNoteStorage::builder()
         .requested_asset(FungibleAsset::new(eth_faucet.id(), remaining_requested)?)
@@ -441,7 +441,7 @@ async fn pswap_fill_test(
         let network_consumer = builder.add_account_from_builder(
             BASIC_AUTH,
             Account::builder(seed)
-                .storage_mode(AccountStorageMode::Network)
+                .storage_mode(AccountStorageMode::Public)
                 .with_component(BasicWallet)
                 .with_assets([FungibleAsset::new(eth_faucet.id(), fill_amount)?.into()]),
             miden_testing::AccountState::Exists,
@@ -766,8 +766,8 @@ async fn pswap_note_creator_reclaim_test() -> anyhow::Result<()> {
 #[case::fill_exceeds_requested(30, 0, ERR_PSWAP_FILL_EXCEEDS_REQUESTED)]
 #[case::fill_sum_u64_overflow(1u64 << 63, 1u64 << 63, ERR_PSWAP_FILL_SUM_OVERFLOW)]
 #[case::fill_sum_exceeds_max_asset_amount(
-    FungibleAsset::MAX_AMOUNT,
-    FungibleAsset::MAX_AMOUNT,
+    FungibleAsset::MAX_AMOUNT.as_u64(),
+    FungibleAsset::MAX_AMOUNT.as_u64(),
     ERR_PSWAP_NOT_VALID_ASSET_AMOUNT
 )]
 #[tokio::test]

@@ -1,6 +1,3 @@
-#[allow(dead_code)]
-pub(crate) mod procedure_policies;
-
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
@@ -34,25 +31,26 @@ account_component_code!(MULTISIG_CODE, "auth/multisig.masl");
 // CONSTANTS
 // ================================================================================================
 
-static THRESHOLD_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+pub(super) static THRESHOLD_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::auth::multisig::threshold_config")
         .expect("storage slot name should be valid")
 });
 
-static APPROVER_PUBKEYS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+pub(super) static APPROVER_PUBKEYS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::auth::multisig::approver_public_keys")
         .expect("storage slot name should be valid")
 });
 
-static APPROVER_SCHEME_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+pub(super) static APPROVER_SCHEME_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::auth::multisig::approver_schemes")
         .expect("storage slot name should be valid")
 });
 
-static EXECUTED_TRANSACTIONS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::auth::multisig::executed_transactions")
-        .expect("storage slot name should be valid")
-});
+pub(super) static EXECUTED_TRANSACTIONS_SLOT_NAME: LazyLock<StorageSlotName> =
+    LazyLock::new(|| {
+        StorageSlotName::new("miden::standards::auth::multisig::executed_transactions")
+            .expect("storage slot name should be valid")
+    });
 
 static PROCEDURE_THRESHOLDS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::auth::multisig::procedure_thresholds")

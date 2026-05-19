@@ -205,7 +205,7 @@ async fn proven_block_success() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Tests that an unauthenticated note is erased when it is created in the same block.
+/// Tests that an unauthenticated note is erased when it is consumed in the same block.
 ///
 /// The high level test setup is that there are four transactions split in two batches:
 /// tx0 (batch0): consume note0 -> create output_note0.
