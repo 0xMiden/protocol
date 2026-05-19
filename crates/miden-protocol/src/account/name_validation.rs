@@ -28,7 +28,7 @@ pub(crate) const MIN_NUM_COMPONENTS: usize = 2;
 /// The maximum number of bytes a name may contain.
 pub(crate) const MAX_LENGTH: usize = u8::MAX as usize;
 
-/// validates a name against the shared rules.
+/// Validates a name against the shared rules.
 ///
 /// We must check validity against the raw bytes of the UTF-8 string because typical character APIs
 /// are not available in a const context. We can do this because any byte in a UTF-8 string that is
