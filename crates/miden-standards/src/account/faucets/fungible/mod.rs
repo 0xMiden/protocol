@@ -333,7 +333,7 @@ impl FungibleFaucet {
     }
 
     /// Returns the single storage slot for the token config word.
-    fn token_config_slot_value(&self) -> StorageSlot {
+    pub fn token_config_slot_value(&self) -> StorageSlot {
         let word = Word::new([
             self.token_supply.into(),
             self.max_supply.into(),
