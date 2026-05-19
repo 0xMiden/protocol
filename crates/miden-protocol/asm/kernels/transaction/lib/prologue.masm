@@ -920,7 +920,7 @@ end
 
 #! Process the input notes data provided via the advice provider. This involves reading the data
 #! from the advice provider and storing it at the appropriate memory addresses. As each note is
-#! processed its hash and nullifier are computed. The transaction input notes commitment is
+#! processed its ID and nullifier are computed. The transaction input notes commitment is
 #! computed via a sequential hash of all (NULLIFIER, EMPTY_WORD_OR_NOTE_ID) pairs for all input
 #! notes.
 #!
@@ -937,7 +937,8 @@ end
 #! Where:
 #! - num_notes is the number of input notes.
 #! - INPUT_NOTES_COMMITMENT, see `transaction::api::get_input_notes_commitment`.
-#! - NOTE_DATA is the input notes' details, for format see `prologue::process_input_note`.
+#! - NOTE_DATA is the input notes' args, nullifier preimages, assets, and authentication data; for
+#!   format see `prologue::process_input_note`.
 proc process_input_notes_data
     # get the number of input notes from the advice stack
     adv_push
@@ -1164,7 +1165,8 @@ end
 #! - TX_SCRIPT_ROOT is the transaction's script root.
 #! - TX_SCRIPT_ARGS are the arguments provided to the stack, see prologue::process_tx_script_data.
 #! - MMR_PEAKS is the MMR peak data, see process_chain_data.
-#! - NOTE_DATA is the input notes' details, for format see prologue::process_input_note.
+#! - NOTE_DATA is the input notes' args, nullifier preimages, assets, and authentication data; for
+#!   format see prologue::process_input_note.
 #!
 #! Panics if:
 #! - data provided by the advice provider does not match global inputs.
