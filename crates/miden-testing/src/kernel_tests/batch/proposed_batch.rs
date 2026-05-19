@@ -182,7 +182,7 @@ fn same_details_different_metadata_not_erased_from_batch() -> anyhow::Result<()>
 /// Two standards P2ID output notes with identical details but different metadata should both appear
 /// in the batch.
 #[test]
-fn two_p2id_outputs_same_details_different_metadata_in_same_batch() -> anyhow::Result<()> {
+fn two_p2id_inputs_same_details_different_metadata_in_same_batch() -> anyhow::Result<()> {
     let TestSetup { mut chain, account1, account2, .. } = setup_chain();
     let block1 = chain.block_header(1);
     let block2 = chain.prove_next_block()?;
@@ -203,13 +203,16 @@ fn two_p2id_outputs_same_details_different_metadata_in_same_batch() -> anyhow::R
         NoteAttachments::default(),
     );
 
-    let output_note_300 = RawOutputNote::Full(note_300).into_output_note()?;
-    let output_note_301 = RawOutputNote::Full(note_301).into_output_note()?;
+    // Only metadata should be different.
+    assert_eq!(note_300.assets(), note_301.assets());
+    assert_ne!(note_300.metadata(), note_301.metadata());
+    assert_eq!(note_300.recipient(), note_301.recipient());
+    assert_eq!(note_300.attachments(), note_301.attachments());
 
     let tx =
         MockProvenTxBuilder::with_account(account1.id(), Word::empty(), account1.to_commitment())
             .ref_block_commitment(block1.commitment())
-            .output_notes(vec![output_note_300.clone(), output_note_301.clone()])
+            .authenticated_notes(vec![note_300.clone(), note_301.clone()])
             .build()?;
 
     let batch = ProposedBatch::new(
@@ -219,7 +222,7 @@ fn two_p2id_outputs_same_details_different_metadata_in_same_batch() -> anyhow::R
         BTreeMap::default(),
     )?;
 
-    assert_eq!(batch.output_notes().len(), 2);
+    assert_eq!(batch.input_notes().num_notes(), 2);
 
     Ok(())
 }
