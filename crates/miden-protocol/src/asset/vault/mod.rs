@@ -104,7 +104,9 @@ impl AssetVault {
     }
 
     /// Returns the balance of the asset issued by the specified faucet with the given
-    /// [`AssetCallbackFlag`]. If the vault does not contain such an asset, zero is returned.
+    /// [`AssetCallbackFlag`].
+    ///
+    /// If the vault does not contain the asset or the asset does not exist, zero is returned.
     ///
     /// The asset is assumed to have
     /// [`AssetComposition::Fungible`](crate::asset::AssetComposition::Fungible).

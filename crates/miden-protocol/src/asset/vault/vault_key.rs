@@ -109,8 +109,9 @@ impl AssetVaultKey {
 
     /// Constructs a fungible asset's key from a faucet ID.
     pub fn new_fungible(faucet_id: AccountId, callback_flag: AssetCallbackFlag) -> Self {
-        Self::new(AssetId::default(), faucet_id, AssetComposition::Fungible, callback_flag)
-            .expect("we should have account type fungible faucet")
+        Self::new(AssetId::default(), faucet_id, AssetComposition::Fungible, callback_flag).expect(
+            "passing AssetComposition::Fungible together with AssetId::default should be valid",
+        )
     }
 
     // PUBLIC ACCESSORS
