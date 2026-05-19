@@ -77,8 +77,8 @@ pub use file::NoteFile;
 /// into a recipient object.
 ///
 /// Note details can be reduced to a [NoteDetailsCommitment]. Together with the note metadata,
-/// this commitment determines the public [NoteId]. Full note details can also be reduced to a
-/// [Nullifier], which is known only to entities which have access to full note details.
+/// this commitment determines the public [NoteId]. Full note details and metadata can also be
+/// reduced to a [Nullifier], which is known only to entities which have access to full note data.
 ///
 /// Fungible and non-fungible asset transfers are done by moving assets to the note's assets. The
 /// note's script determines the conditions required for the note consumption, i.e. the target
