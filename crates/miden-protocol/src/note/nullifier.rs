@@ -16,12 +16,7 @@ use super::{
     Word,
     ZERO,
 };
-use crate::note::{NoteDetails, NoteMetadata};
-
-// CONSTANTS
-// ================================================================================================
-
-const NULLIFIER_PREFIX_SHIFT: u8 = 48;
+use crate::note::{NoteDetails, NoteMetadata, NoteScriptRoot};
 
 // NULLIFIER
 // ================================================================================================
@@ -44,7 +39,7 @@ pub struct Nullifier(Word);
 impl Nullifier {
     /// Returns a new note [Nullifier] instantiated from the provided note components.
     pub fn new(
-        script_root: Word,
+        script_root: NoteScriptRoot,
         storage_commitment: Word,
         asset_commitment: Word,
         serial_num: Word,
@@ -64,25 +59,13 @@ impl Nullifier {
     /// Returns a new note [Nullifier] instantiated from the provided note details and metadata.
     pub fn from_details_and_metadata(details: &NoteDetails, metadata: &NoteMetadata) -> Self {
         Self::new(
-            details.script().root().into(),
+            details.script().root(),
             details.storage().commitment(),
             details.assets().commitment(),
             details.serial_num(),
             metadata.to_metadata_word(),
             metadata.attachments_commitment(),
         )
-    }
-
-    /// Returns the most significant felt (the last element in array)
-    pub fn most_significant_felt(&self) -> Felt {
-        self.as_elements()[3]
-    }
-
-    /// Returns the prefix of this nullifier.
-    ///
-    /// Nullifier prefix is defined as the 16 most significant bits of the nullifier value.
-    pub fn prefix(&self) -> u16 {
-        (self.as_word()[3].as_canonical_u64() >> NULLIFIER_PREFIX_SHIFT) as u16
     }
 
     /// Creates a Nullifier from a hex string. Assumes that the string starts with "0x" and

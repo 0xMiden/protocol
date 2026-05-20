@@ -1531,6 +1531,18 @@ pub proc get_input_note_nullifier
     mul.4 padw movup.4 add.INPUT_NOTE_NULLIFIER_SECTION_PTR mem_loadw_le
 end
 
+#! Stores the nullifier of the input note with `idx` in the nullifier memory section.
+#!
+#! Inputs:  [idx, NULLIFIER]
+#! Outputs: [NULLIFIER]
+#!
+#! Where:
+#! - idx is the index of the input note.
+#! - NULLIFIER is the nullifier of the input note.
+pub proc set_input_note_nullifier
+    mul.4 add.INPUT_NOTE_NULLIFIER_SECTION_PTR mem_storew_le
+end
+
 #! Returns a pointer to the start of the input note core data segment for the note located at the
 #! specified memory address.
 #!

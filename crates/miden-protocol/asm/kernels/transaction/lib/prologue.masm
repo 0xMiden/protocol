@@ -528,8 +528,9 @@ proc authenticate_note
     # => []
 end
 
-#! Copies the input note's nullifier preimage from the advice stack to memory and computes its
-#! nullifier.
+#! Copies the input note's nullifier preimage from the advice stack into the note's core data
+#! in memory, computes the nullifier, stores it in the nullifier memory section, and returns it
+#! on the operand stack.
 #!
 #! Inputs:
 #!   Operand stack: [idx]
@@ -572,7 +573,7 @@ proc process_input_note_details
     # => [NULLIFIER, idx]
 
     # save NULLIFIER to memory
-    movup.4 exec.memory::get_input_note_nullifier_ptr mem_storew_le
+    movup.4 exec.memory::set_input_note_nullifier
     # => [NULLIFIER]
 end
 
@@ -870,28 +871,28 @@ proc process_input_note
     dup exec.add_input_note_assets_to_vault
     # => [note_ptr, NULLIFIER, CAPACITY]
 
-    # note details commitment
-    # ---------------------------------------------------------------------------------------------
-
-    dup exec.compute_input_note_details_commitment
-    # => [NOTE_DETAILS_COMMITMENT, note_ptr, NULLIFIER, CAPACITY]
-
-    # save note details commitment to memory
-    dup.4 exec.memory::set_input_note_details_commitment
-    # => [NOTE_DETAILS_COMMITMENT, note_ptr, NULLIFIER, CAPACITY]
-
     # note metadata commitment
     # ---------------------------------------------------------------------------------------------
 
     # compute NOTE_METADATA_COMMITMENT
-    movup.4 exec.compute_note_metadata_commitment
-    # => [NOTE_METADATA_COMMITMENT, NOTE_DETAILS_COMMITMENT, NULLIFIER, CAPACITY]
+    dup exec.compute_note_metadata_commitment
+    # => [NOTE_METADATA_COMMITMENT, note_ptr, NULLIFIER, CAPACITY]
+
+    # note details commitment
+    # ---------------------------------------------------------------------------------------------
+
+    dup.4 exec.compute_input_note_details_commitment
+    # => [NOTE_DETAILS_COMMITMENT, NOTE_METADATA_COMMITMENT, note_ptr, NULLIFIER, CAPACITY]
+
+    # save note details commitment to memory
+    movup.8 exec.memory::set_input_note_details_commitment
+    # => [NOTE_DETAILS_COMMITMENT, NOTE_METADATA_COMMITMENT, note_ptr, NULLIFIER, CAPACITY]
 
     # note authentication
     # ---------------------------------------------------------------------------------------------
 
     # NOTE_ID: `hash(NOTE_DETAILS_COMMITMENT || NOTE_METADATA_COMMITMENT)`
-    swapw exec.poseidon2::merge
+    exec.poseidon2::merge
     # => [NOTE_ID, NULLIFIER, CAPACITY]
 
     adv_push

@@ -5,8 +5,8 @@
 ### Features
 
 - Added lock/unlock path for Miden-native tokens in the AggLayer bridge: `is_native` flag in `faucet_registry_map`, bridge-local `faucet_metadata_map` (replacing FPI to faucets for conversion data), and `lock_asset` / `unlock_and_send` procedures so the bridge holds native assets in its own vault instead of burn/mint via a faucet ([#2771](https://github.com/0xMiden/protocol/pull/2771)).
-- [BREAKING] Renamed `NoteId` to `NoteDetailsCommitment`, new `NoteId` struct now includes the NoteMetadata ([#1731](https://github.com/0xMiden/protocol/issues/1731)).
-- [BREAKING] Updated note nullifiers to include note metadata and attachments commitment ([#1731](https://github.com/0xMiden/protocol/issues/1731)).
+- [BREAKING] Renamed `NoteId` to `NoteDetailsCommitment`, new `NoteId` struct now includes the NoteMetadata ([#2861](https://github.com/0xMiden/protocol/pull/2861)).
+- [BREAKING] Updated note nullifiers to include note metadata and attachments commitment ([#2953](https://github.com/0xMiden/protocol/pull/2953)).
 - [BREAKING] Renamed `native_asset_id` to `fee_faucet_id` ([#2718](https://github.com/0xMiden/protocol/pull/2718)).
 - [BREAKING] Removed redundant outputs from kernel procedures: `note::write_assets_to_memory`, `active_note::get_assets`, `input_note::get_assets`, `output_note::get_assets`, `active_note::get_storage`, and `faucet::mint` no longer return values identical to their inputs ([#2523](https://github.com/0xMiden/protocol/issues/2523)).
 - Added PSWAP (partial swap) note for decentralized partial-fill asset exchange with remainder note re-creation ([#2636](https://github.com/0xMiden/protocol/pull/2636)).
