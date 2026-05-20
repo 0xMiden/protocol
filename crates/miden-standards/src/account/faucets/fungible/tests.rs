@@ -66,7 +66,7 @@ fn read_trigger_procedure_roots(
 #[test]
 fn faucet_contract_creation() {
     let pub_key_word = Word::new([Felt::ONE; 4]);
-    let auth = AuthMethod::SingleSig {
+    let auth_method = AuthMethod::SingleSig {
         approver: (pub_key_word.into(), AuthScheme::Falcon512Poseidon2),
     };
 
@@ -85,9 +85,10 @@ fn faucet_contract_creation() {
     let faucet_account = create_fungible_faucet(
         init_seed,
         faucet,
-        AccessControl::AuthControlled { auth },
-        allow_all_policy_manager(),
         AccountType::Private,
+        auth_method,
+        AccessControl::AuthControlled,
+        allow_all_policy_manager(),
     )
     .unwrap();
 
@@ -148,51 +149,21 @@ fn faucet_contract_creation() {
     let _faucet_component = FungibleFaucet::try_from(faucet_account.clone()).unwrap();
 }
 
-/// `AccessControl::AuthControlled { auth: NoAuth }` must be rejected: under AuthControlled the
-/// auth component is the sole gate for authority-gated setters, so a NoAuth pairing would
+/// `(AccessControl::AuthControlled, AuthMethod::NoAuth)` must be rejected: under AuthControlled
+/// the auth component is the sole gate for authority-gated setters, so a NoAuth pairing would
 /// leave them permissionless.
 #[test]
 fn auth_controlled_rejects_no_auth() {
     let err = create_fungible_faucet(
         [7u8; 32],
         sample_faucet(),
-        AccessControl::AuthControlled { auth: AuthMethod::NoAuth },
-        allow_all_policy_manager(),
         AccountType::Private,
+        AuthMethod::NoAuth,
+        AccessControl::AuthControlled,
+        allow_all_policy_manager(),
     )
     .expect_err("AuthControlled+NoAuth should be rejected");
     assert_matches!(err, FungibleFaucetError::IncompatibleAuthControlledAuth(_));
-}
-
-/// `AccessControl::AuthControlled { auth: Multisig | Unknown }` must be rejected — both are
-/// already unsupported for fungible faucets, and the merge surfaces the rejection at the
-/// type level.
-#[test]
-fn auth_controlled_rejects_multisig_and_unknown() {
-    let multisig_err = create_fungible_faucet(
-        [7u8; 32],
-        sample_faucet(),
-        AccessControl::AuthControlled {
-            auth: AuthMethod::Multisig {
-                threshold: 1,
-                approvers: alloc::vec::Vec::new(),
-            },
-        },
-        allow_all_policy_manager(),
-        AccountType::Private,
-    )
-    .expect_err("AuthControlled+Multisig should be rejected");
-    assert_matches!(multisig_err, FungibleFaucetError::UnsupportedAuthMethod(_));
-
-    let unknown_err = create_fungible_faucet(
-        [7u8; 32],
-        sample_faucet(),
-        AccessControl::AuthControlled { auth: AuthMethod::Unknown },
-        allow_all_policy_manager(),
-        AccountType::Private,
-    )
-    .expect_err("AuthControlled+Unknown should be rejected");
-    assert_matches!(unknown_err, FungibleFaucetError::UnsupportedAuthMethod(_));
 }
 
 /// `Ownable2Step + NoAuth` is a valid configuration: the setter gate is enforced
@@ -210,9 +181,10 @@ fn ownable2step_with_no_auth_is_accepted() {
     let _account = create_fungible_faucet(
         [7u8; 32],
         sample_faucet(),
-        AccessControl::Ownable2Step { owner, auth: AuthMethod::NoAuth },
-        allow_all_policy_manager(),
         AccountType::Public,
+        AuthMethod::NoAuth,
+        AccessControl::Ownable2Step { owner },
+        allow_all_policy_manager(),
     )
     .expect("Ownable2Step+NoAuth should be accepted");
 }

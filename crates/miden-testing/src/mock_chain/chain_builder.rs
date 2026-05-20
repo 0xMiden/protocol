@@ -46,7 +46,6 @@ use miden_protocol::testing::account_id::ACCOUNT_ID_FEE_FAUCET;
 use miden_protocol::testing::random_secret_key::random_secret_key;
 use miden_protocol::transaction::{OrderedTransactionHeaders, RawOutputNote, TransactionKernel};
 use miden_protocol::{MAX_OUTPUT_NOTES_PER_BATCH, Word};
-use miden_standards::AuthMethod;
 use miden_standards::account::access::AccessControl;
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
@@ -404,17 +403,11 @@ impl MockChainBuilder {
             .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?
             .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?;
 
-        // The `auth` field on AccessControl is a placeholder in chain_builder: the real auth
-        // component is built from `auth_method: Auth` by `add_account_from_builder` and
-        // installed via `with_auth_component`. `AccessControl::IntoIterator` only yields the
-        // setter-gate components, so the placeholder is not used to construct components — it
-        // only satisfies the type. Tests that exercise factory-level validation should call
-        // `create_fungible_faucet` directly instead.
         self.add_existing_fungible_faucet(
             auth_method,
             faucet,
             AccountType::Public,
-            AccessControl::AuthControlled { auth: AuthMethod::NoAuth },
+            AccessControl::AuthControlled,
             token_policy_manager,
         )
     }
@@ -459,22 +452,16 @@ impl MockChainBuilder {
             .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?
             .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?;
 
-        let allowed_script_roots: alloc::collections::BTreeSet<NoteScriptRoot> =
-            allowed_script_roots
-                .into_iter()
-                .chain([MintNote::script_root(), BurnNote::script_root()])
-                .collect();
+        let allowed_script_roots = allowed_script_roots
+            .into_iter()
+            .chain([MintNote::script_root(), BurnNote::script_root()])
+            .collect();
 
         self.add_existing_fungible_faucet(
-            Auth::NetworkAccount {
-                allowed_script_roots: allowed_script_roots.clone(),
-            },
+            Auth::NetworkAccount { allowed_script_roots },
             faucet,
             AccountType::Public,
-            AccessControl::Ownable2Step {
-                owner: owner_account_id,
-                auth: AuthMethod::NetworkAccount { allowed_script_roots },
-            },
+            AccessControl::Ownable2Step { owner: owner_account_id },
             token_policy_manager,
         )
     }
@@ -497,22 +484,16 @@ impl MockChainBuilder {
             .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?
             .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?;
 
-        let allowed_script_roots: alloc::collections::BTreeSet<NoteScriptRoot> =
-            allowed_script_roots
-                .into_iter()
-                .chain([MintNote::script_root(), BurnNote::script_root()])
-                .collect();
+        let allowed_script_roots = allowed_script_roots
+            .into_iter()
+            .chain([MintNote::script_root(), BurnNote::script_root()])
+            .collect();
 
         self.add_existing_fungible_faucet(
-            Auth::NetworkAccount {
-                allowed_script_roots: allowed_script_roots.clone(),
-            },
+            Auth::NetworkAccount { allowed_script_roots },
             faucet,
             AccountType::Public,
-            AccessControl::Ownable2Step {
-                owner: owner_account_id,
-                auth: AuthMethod::NetworkAccount { allowed_script_roots },
-            },
+            AccessControl::Ownable2Step { owner: owner_account_id },
             token_policy_manager,
         )
     }
@@ -543,12 +524,11 @@ impl MockChainBuilder {
             .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?
             .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?;
 
-        // See note on `add_existing_basic_faucet` re: the placeholder auth field.
         self.create_new_fungible_faucet(
             auth_method,
             faucet,
             AccountType::Public,
-            AccessControl::AuthControlled { auth: AuthMethod::NoAuth },
+            AccessControl::AuthControlled,
             token_policy_manager,
         )
     }
