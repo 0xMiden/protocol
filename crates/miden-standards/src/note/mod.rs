@@ -25,7 +25,7 @@ mod pswap;
 pub use pswap::{PswapNote, PswapNoteStorage};
 
 mod swap;
-pub use swap::{SwapNote, SwapNoteStorage, payback_serial_from_swap};
+pub use swap::{SwapNote, SwapNoteStorage, SwapPayback, payback_serial_from_swap};
 
 mod network_account_target;
 pub use network_account_target::{NetworkAccountTarget, NetworkAccountTargetError};
