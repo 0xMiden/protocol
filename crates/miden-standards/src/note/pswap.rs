@@ -248,11 +248,7 @@ impl PswapNote {
     pub const NUM_STORAGE_ITEMS: usize = PswapNoteStorage::NUM_STORAGE_ITEMS;
 
     /// Attachment scheme stamped on both PSWAP output notes (the payback P2ID and the
-    /// remainder PSWAP). Carries the word `[amount, order_id, depth, 0]`.
-    ///
-    /// The source of truth is [`StandardNoteAttachment::PswapAttachment`]; the matching
-    /// `PSWAP_ATTACHMENT_SCHEME` constant in `pswap.masm` mirrors this Rust value and
-    /// `pswap_attachment_layout_matches_masm_test` cross-checks they stay in sync.
+    /// remainder PSWAP).
     pub const PSWAP_ATTACHMENT_SCHEME: NoteAttachmentScheme =
         StandardNoteAttachment::PswapAttachment.attachment_scheme();
 
