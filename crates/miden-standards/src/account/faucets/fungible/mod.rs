@@ -12,6 +12,7 @@ use miden_protocol::account::{
     Account,
     AccountBuilder,
     AccountComponent,
+    AccountComponentName,
     AccountProcedureRoot,
     AccountStorage,
     AccountType,
@@ -184,6 +185,11 @@ impl FungibleFaucet {
     /// The name of the component.
     pub const NAME: &'static str = "miden::standards::components::faucets::fungible_faucet";
 
+    /// Returns the canonical [`AccountComponentName`] of this component.
+    pub const fn name() -> AccountComponentName {
+        AccountComponentName::from_static_str(Self::NAME)
+    }
+
     /// The maximum number of decimals supported.
     pub const MAX_DECIMALS: u8 = 12;
 
@@ -272,7 +278,7 @@ impl FungibleFaucet {
     }
 
     /// Returns the token name.
-    pub fn name(&self) -> &TokenName {
+    pub fn token_name(&self) -> &TokenName {
         self.metadata.name()
     }
 

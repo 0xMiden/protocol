@@ -23,6 +23,8 @@ pub use account_id::{
     AccountType,
 };
 
+pub(crate) mod name_validation;
+
 pub mod auth;
 
 mod access;
@@ -37,6 +39,9 @@ pub use code::procedure::AccountProcedureRoot;
 
 pub mod component;
 pub use component::{AccountComponent, AccountComponentCode, AccountComponentMetadata};
+
+pub mod interface;
+pub use interface::AccountComponentName;
 
 pub mod delta;
 pub use delta::{

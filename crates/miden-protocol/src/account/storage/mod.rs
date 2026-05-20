@@ -15,7 +15,7 @@ use super::{
 use crate::account::AccountComponent;
 use crate::crypto::SequentialCommit;
 
-mod slot;
+pub(crate) mod slot;
 pub use slot::{StorageSlot, StorageSlotContent, StorageSlotId, StorageSlotName, StorageSlotType};
 
 mod map;
