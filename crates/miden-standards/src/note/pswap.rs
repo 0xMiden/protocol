@@ -413,7 +413,8 @@ impl PswapNote {
         let total_requested_amount = self.storage.requested_asset_amount();
 
         let fill_asset = FungibleAsset::new(requested_faucet_id, total_requested_amount)
-            .map_err(|e| NoteError::other_with_source("failed to create full fill asset", e))?;
+            .map_err(|e| NoteError::other_with_source("failed to create full fill asset", e))?
+            .with_callbacks(self.storage.requested_asset().callbacks());
 
         self.create_payback_note(consumer_account_id, fill_asset, total_requested_amount)
     }
@@ -499,14 +500,21 @@ impl PswapNote {
             let remaining_requested = total_requested_amount - fill_amount;
 
             let remaining_offered_asset =
-                FungibleAsset::new(self.offered_asset.faucet_id(), remaining_offered).map_err(
-                    |e| NoteError::other_with_source("failed to create remainder asset", e),
-                )?;
+                FungibleAsset::new(self.offered_asset.faucet_id(), remaining_offered)
+                    .map_err(|e| {
+                        NoteError::other_with_source("failed to create remainder asset", e)
+                    })?
+                    .with_callbacks(self.offered_asset.callbacks());
 
             let remaining_requested_asset =
-                FungibleAsset::new(requested_faucet_id, remaining_requested).map_err(|e| {
-                    NoteError::other_with_source("failed to create remaining requested asset", e)
-                })?;
+                FungibleAsset::new(requested_faucet_id, remaining_requested)
+                    .map_err(|e| {
+                        NoteError::other_with_source(
+                            "failed to create remaining requested asset",
+                            e,
+                        )
+                    })?
+                    .with_callbacks(self.storage.requested_asset().callbacks());
 
             Some(self.create_remainder_pswap_note(
                 consumer_account_id,
@@ -571,7 +579,8 @@ impl PswapNote {
 
         let fill_asset =
             FungibleAsset::new(self.storage.requested_faucet_id(), u64::from(attachment.amount()))
-                .map_err(|e| NoteError::other_with_source("invalid fill amount", e))?;
+                .map_err(|e| NoteError::other_with_source("invalid fill amount", e))?
+                .with_callbacks(self.storage.requested_asset().callbacks());
         let assets = NoteAssets::new(vec![fill_asset.into()])?;
 
         let metadata =
@@ -624,12 +633,12 @@ impl PswapNote {
 
         let requested_asset =
             FungibleAsset::new(self.storage.requested_faucet_id(), u64::from(remaining_requested))
-                .map_err(|e| {
-                    NoteError::other_with_source("invalid remaining_requested amount", e)
-                })?;
+                .map_err(|e| NoteError::other_with_source("invalid remaining_requested amount", e))?
+                .with_callbacks(self.storage.requested_asset().callbacks());
         let offered_asset =
             FungibleAsset::new(self.offered_asset.faucet_id(), u64::from(remaining_offered))
-                .map_err(|e| NoteError::other_with_source("invalid remaining_offered amount", e))?;
+                .map_err(|e| NoteError::other_with_source("invalid remaining_offered amount", e))?
+                .with_callbacks(self.offered_asset.callbacks());
 
         let new_storage = PswapNoteStorage::builder()
             .requested_asset(requested_asset)
@@ -1137,5 +1146,82 @@ mod tests {
 
         // Full fill → no remainder note.
         assert!(remainder.is_none(), "full fill must not produce a remainder");
+    }
+
+    /// Regression for the silent `AssetCallbackFlag` drop: when the PSWAP's requested or
+    /// offered asset carries `Enabled` callbacks, the on-chain MASM preserves that flag
+    /// on every output note's asset. The Rust-side `execute`, `payback_note`, and
+    /// `remainder_note` must do the same — otherwise the reconstructed `Note::commitment`
+    /// diverges from the on-chain leaf and the unauthenticated consume path fails.
+    #[test]
+    fn pswap_output_assets_preserve_callback_flag() {
+        let creator_id = dummy_creator_id();
+        let consumer_id = dummy_consumer_id();
+        let offered_faucet = dummy_faucet_id(0xaa);
+        let requested_faucet = dummy_faucet_id(0xbb);
+
+        let offered_asset = FungibleAsset::new(offered_faucet, 100)
+            .unwrap()
+            .with_callbacks(AssetCallbackFlag::Enabled);
+        let requested_asset = FungibleAsset::new(requested_faucet, 50)
+            .unwrap()
+            .with_callbacks(AssetCallbackFlag::Enabled);
+        let (pswap, _) = build_pswap_note(offered_asset, requested_asset, creator_id);
+
+        // --- execute() (partial fill) ---
+        let account_fill = FungibleAsset::new(requested_faucet, 20)
+            .unwrap()
+            .with_callbacks(AssetCallbackFlag::Enabled);
+        let (payback, remainder) = pswap.execute(consumer_id, Some(account_fill), None).unwrap();
+
+        let Asset::Fungible(fa) = payback.assets().iter().next().unwrap() else {
+            panic!("expected fungible payback asset");
+        };
+        assert_eq!(fa.callbacks(), AssetCallbackFlag::Enabled);
+
+        let remainder = remainder.expect("partial fill should produce remainder");
+        assert_eq!(
+            remainder.offered_asset().callbacks(),
+            AssetCallbackFlag::Enabled,
+            "remainder offered asset must inherit callbacks",
+        );
+        assert_eq!(
+            remainder.storage().requested_asset().callbacks(),
+            AssetCallbackFlag::Enabled,
+            "remainder storage's requested asset must inherit callbacks",
+        );
+
+        // --- payback_note() reconstruction ---
+        let payback_attachment =
+            PswapNoteAttachment::new(AssetAmount::new(20).unwrap(), pswap.order_id(), 1);
+        let reconstructed_payback = pswap.payback_note(consumer_id, &payback_attachment).unwrap();
+        let Asset::Fungible(fa) = reconstructed_payback.assets().iter().next().unwrap() else {
+            panic!("expected fungible payback asset");
+        };
+        assert_eq!(
+            fa.callbacks(),
+            AssetCallbackFlag::Enabled,
+            "payback_note must preserve requested asset's callback flag",
+        );
+
+        // --- remainder_note() reconstruction ---
+        let remainder_attachment =
+            PswapNoteAttachment::new(AssetAmount::new(40).unwrap(), pswap.order_id(), 1);
+        let reconstructed_remainder = pswap
+            .remainder_note(
+                consumer_id,
+                &remainder_attachment,
+                AssetAmount::new(60).unwrap(),
+                AssetAmount::new(30).unwrap(),
+            )
+            .unwrap();
+        let Asset::Fungible(fa) = reconstructed_remainder.assets().iter().next().unwrap() else {
+            panic!("expected fungible remainder asset");
+        };
+        assert_eq!(
+            fa.callbacks(),
+            AssetCallbackFlag::Enabled,
+            "remainder_note must preserve offered asset's callback flag",
+        );
     }
 }
