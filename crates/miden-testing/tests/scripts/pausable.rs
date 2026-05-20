@@ -22,19 +22,10 @@ use miden_protocol::account::{
     AccountComponent,
     AccountId,
     AccountIdVersion,
-    AccountStorageMode,
     AccountType,
     RoleSymbol,
 };
-use miden_protocol::asset::{
-    Asset,
-    AssetAmount,
-    AssetCallbackFlag,
-    AssetCallbacks,
-    FungibleAsset,
-    NonFungibleAsset,
-    NonFungibleAssetDetails,
-};
+use miden_protocol::asset::{Asset, AssetAmount, AssetCallbackFlag, AssetCallbacks, FungibleAsset};
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::{Note, NoteType};
 use miden_protocol::transaction::RawOutputNote;
@@ -57,7 +48,6 @@ use miden_standards::account::policies::{
     TransferPolicy,
 };
 use miden_standards::code_builder::CodeBuilder;
-use miden_standards::testing::account_component::MockFaucetComponent;
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{
     AccountState,
@@ -84,12 +74,7 @@ static OWNER_ID: LazyLock<AccountId> = LazyLock::new(|| test_account_id(11));
 static NON_OWNER_ID: LazyLock<AccountId> = LazyLock::new(|| test_account_id(99));
 
 fn test_account_id(seed: u8) -> AccountId {
-    AccountId::dummy(
-        [seed; 15],
-        AccountIdVersion::Version1,
-        AccountType::RegularAccountImmutableCode,
-        AccountStorageMode::Private,
-    )
+    AccountId::dummy([seed; 15], AccountIdVersion::Version1, AccountType::Private)
 }
 
 /// Test-only [`AccountComponent`] that gates asset transfers on the pause flag.
@@ -144,11 +129,7 @@ fn pausable_callbacks_component() -> anyhow::Result<AccountComponent> {
         .on_before_asset_added_to_note(on_note_root)
         .into_storage_slots();
 
-    let metadata = AccountComponentMetadata::new(
-        COMPONENT_NAME,
-        [AccountType::FungibleFaucet, AccountType::NonFungibleFaucet],
-    )
-    .with_description(
+    let metadata = AccountComponentMetadata::new(COMPONENT_NAME).with_description(
         "Test-only callbacks that gate asset transfers via pausable::assert_not_paused",
     );
 
@@ -170,49 +151,8 @@ fn add_faucet_with_pausable_owner(
         .build()?;
 
     let account_builder = AccountBuilder::new([43u8; 32])
-        .storage_mode(AccountStorageMode::Public)
-        .account_type(AccountType::FungibleFaucet)
+        .account_type(AccountType::Public)
         .with_component(faucet)
-        .with_component(BasicPausable::default())
-        .with_components(AccessControl::Ownable2Step { owner })
-        .with_component(PausableOwnerControlled)
-        .with_component(pausable_callbacks_component()?);
-
-    builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
-}
-
-/// Adds either a fungible or non-fungible faucet with the same pause/owner wiring as
-/// [`add_faucet_with_pausable_owner`], parameterised by `account_type`.
-fn add_faucet_with_pausable_owner_for_account_type(
-    builder: &mut MockChainBuilder,
-    account_type: AccountType,
-    owner: AccountId,
-) -> anyhow::Result<Account> {
-    if !account_type.is_faucet() {
-        anyhow::bail!("account type must be a faucet");
-    }
-
-    let faucet_components: Vec<AccountComponent> = match account_type {
-        AccountType::FungibleFaucet => {
-            let faucet = FungibleFaucet::builder()
-                .name(TokenName::new("SYM")?)
-                .symbol("SYM".try_into()?)
-                .decimals(8)
-                .max_supply(AssetAmount::new(1_000_000)?)
-                .build()?;
-            vec![faucet.into()]
-        },
-        AccountType::NonFungibleFaucet => vec![MockFaucetComponent.into()],
-        _ => anyhow::bail!("pausable tests only use fungible or non-fungible faucet account types"),
-    };
-
-    let mut account_builder = AccountBuilder::new([43u8; 32])
-        .storage_mode(AccountStorageMode::Public)
-        .account_type(account_type);
-    for component in faucet_components {
-        account_builder = account_builder.with_component(component);
-    }
-    account_builder = account_builder
         .with_component(BasicPausable::default())
         .with_components(AccessControl::Ownable2Step { owner })
         .with_component(PausableOwnerControlled)
@@ -285,35 +225,18 @@ async fn execute_note_on_faucet(
 // TESTS — ASSET TRANSFER GATING
 // ================================================================================================
 
-#[rstest::rstest]
-#[case::fungible(
-    AccountType::FungibleFaucet,
-    |faucet_id| {
-        Ok(FungibleAsset::new(faucet_id, 100)?.with_callbacks(AssetCallbackFlag::Enabled).into())
-    }
-)]
-#[case::non_fungible(
-    AccountType::NonFungibleFaucet,
-    |faucet_id| {
-        let details = NonFungibleAssetDetails::new(faucet_id, vec![1, 2, 3, 4])?;
-        Ok(NonFungibleAsset::new(&details)?.with_callbacks(AssetCallbackFlag::Enabled).into())
-    }
-)]
 #[tokio::test]
-async fn pausable_receive_asset_succeeds_when_unpaused(
-    #[case] account_type: AccountType,
-    #[case] create_asset: impl FnOnce(AccountId) -> anyhow::Result<Asset>,
-) -> anyhow::Result<()> {
+async fn pausable_receive_asset_succeeds_when_unpaused() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
 
-    let faucet =
-        add_faucet_with_pausable_owner_for_account_type(&mut builder, account_type, *OWNER_ID)?;
+    let faucet = add_faucet_with_pausable_owner(&mut builder, *OWNER_ID)?;
 
+    let asset = FungibleAsset::new(faucet.id(), 100)?.with_callbacks(AssetCallbackFlag::Enabled);
     let note = builder.add_p2id_note(
         faucet.id(),
         target_account.id(),
-        &[create_asset(faucet.id())?],
+        &[Asset::Fungible(asset)],
         NoteType::Public,
     )?;
 
@@ -332,35 +255,18 @@ async fn pausable_receive_asset_succeeds_when_unpaused(
     Ok(())
 }
 
-#[rstest::rstest]
-#[case::fungible(
-    AccountType::FungibleFaucet,
-    |faucet_id| {
-        Ok(FungibleAsset::new(faucet_id, 100)?.with_callbacks(AssetCallbackFlag::Enabled).into())
-    }
-)]
-#[case::non_fungible(
-    AccountType::NonFungibleFaucet,
-    |faucet_id| {
-        let details = NonFungibleAssetDetails::new(faucet_id, vec![1, 2, 3, 4])?;
-        Ok(NonFungibleAsset::new(&details)?.with_callbacks(AssetCallbackFlag::Enabled).into())
-    }
-)]
 #[tokio::test]
-async fn pausable_receive_asset_fails_when_paused(
-    #[case] account_type: AccountType,
-    #[case] create_asset: impl FnOnce(AccountId) -> anyhow::Result<Asset>,
-) -> anyhow::Result<()> {
+async fn pausable_receive_asset_fails_when_paused() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
 
-    let faucet =
-        add_faucet_with_pausable_owner_for_account_type(&mut builder, account_type, *OWNER_ID)?;
+    let faucet = add_faucet_with_pausable_owner(&mut builder, *OWNER_ID)?;
 
+    let asset = FungibleAsset::new(faucet.id(), 100)?.with_callbacks(AssetCallbackFlag::Enabled);
     let note = builder.add_p2id_note(
         faucet.id(),
         target_account.id(),
-        &[create_asset(faucet.id())?],
+        &[Asset::Fungible(asset)],
         NoteType::Public,
     )?;
 
@@ -386,32 +292,16 @@ async fn pausable_receive_asset_fails_when_paused(
     Ok(())
 }
 
-#[rstest::rstest]
-#[case::fungible(
-    AccountType::FungibleFaucet,
-    |faucet_id| {
-        Ok(FungibleAsset::new(faucet_id, 100)?.with_callbacks(AssetCallbackFlag::Enabled).into())
-    }
-)]
-#[case::non_fungible(
-    AccountType::NonFungibleFaucet,
-    |faucet_id| {
-        let details = NonFungibleAssetDetails::new(faucet_id, vec![1, 2, 3, 4])?;
-        Ok(NonFungibleAsset::new(&details)?.with_callbacks(AssetCallbackFlag::Enabled).into())
-    }
-)]
 #[tokio::test]
-async fn pausable_add_asset_to_note_fails_when_paused(
-    #[case] account_type: AccountType,
-    #[case] create_asset: impl FnOnce(AccountId) -> anyhow::Result<Asset>,
-) -> anyhow::Result<()> {
+async fn pausable_add_asset_to_note_fails_when_paused() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
 
-    let faucet =
-        add_faucet_with_pausable_owner_for_account_type(&mut builder, account_type, *OWNER_ID)?;
+    let faucet = add_faucet_with_pausable_owner(&mut builder, *OWNER_ID)?;
 
-    let asset = create_asset(faucet.id())?;
+    let asset: Asset = FungibleAsset::new(faucet.id(), 100)?
+        .with_callbacks(AssetCallbackFlag::Enabled)
+        .into();
 
     let pause_note = build_pause_note(*OWNER_ID)?;
     builder.add_output_note(RawOutputNote::Full(pause_note.clone()));
@@ -598,8 +488,7 @@ fn add_faucet_with_pausable_rbac(
         .build()?;
 
     let account_builder = AccountBuilder::new([43u8; 32])
-        .storage_mode(AccountStorageMode::Public)
-        .account_type(AccountType::FungibleFaucet)
+        .account_type(AccountType::Public)
         .with_component(faucet)
         .with_component(BasicPausable::default())
         .with_components(AccessControl::Rbac { owner, authority_role: None })
@@ -872,8 +761,7 @@ fn add_faucet_with_pausable_owner_and_rbac(
         .build()?;
 
     let account_builder = AccountBuilder::new([43u8; 32])
-        .storage_mode(AccountStorageMode::Public)
-        .account_type(AccountType::FungibleFaucet)
+        .account_type(AccountType::Public)
         .with_component(faucet)
         .with_component(BasicPausable::default())
         .with_components(AccessControl::Rbac { owner, authority_role: None })
@@ -936,8 +824,7 @@ fn add_faucet_with_pausable_policy(
         .build()?;
 
     let account_builder = AccountBuilder::new([43u8; 32])
-        .storage_mode(AccountStorageMode::Public)
-        .account_type(AccountType::FungibleFaucet)
+        .account_type(AccountType::Public)
         .with_component(faucet)
         .with_component(BasicPausable::new(initial_state))
         .with_components(
@@ -1096,8 +983,7 @@ fn add_faucet_with_pausable_blocklist_policy(
         .with_initial_blocked_accounts(initial_blocked);
 
     let account_builder = AccountBuilder::new([44u8; 32])
-        .storage_mode(AccountStorageMode::Public)
-        .account_type(AccountType::FungibleFaucet)
+        .account_type(AccountType::Public)
         .with_component(faucet)
         .with_component(composite)
         .with_components(

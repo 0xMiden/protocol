@@ -777,7 +777,7 @@ pub proc auth_tx(salt: word)
     # => [TX_SUMMARY_COMMITMENT]
 
     # ------ Reading threshold config (default + num_approvers) ------
-    exec.multisig::get_threshold_and_num_approvers
+    exec.multisig::get_initial_threshold_and_num_approvers
     # => [default_threshold, num_of_approvers, TX_SUMMARY_COMMITMENT]
 
     # Save default_threshold for the procedure-policy enforcement and the final tx-threshold

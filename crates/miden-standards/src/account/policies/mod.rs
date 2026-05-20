@@ -38,6 +38,9 @@ pub use burn::{BurnAllowAll, BurnOwnerOnly, BurnPolicyConfig};
 pub use manager::{TokenPolicyManager, TokenPolicyManagerError};
 pub use mint::{MintAllowAll, MintOwnerOnly, MintPolicyConfig};
 pub use transfer::{
+    AllowlistOwnerControlled,
+    AllowlistStorage,
+    BasicAllowlist,
     BasicBlocklist,
     BasicPausable,
     BlocklistOwnerControlled,

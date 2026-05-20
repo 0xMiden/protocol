@@ -8,7 +8,7 @@ use rand_chacha::rand_core::SeedableRng;
 #[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn wallet_creation() {
-    use miden_protocol::account::{AccountCode, AccountStorageMode, AccountType, auth};
+    use miden_protocol::account::{AccountCode, AccountType, auth};
     use miden_standards::account::auth::AuthSingleSig;
     use miden_standards::account::wallets::BasicWallet;
 
@@ -27,19 +27,17 @@ fn wallet_creation() {
         204, 149, 90, 166, 68, 100, 73, 106, 168, 125, 237, 138, 16,
     ];
 
-    let account_type = AccountType::RegularAccountImmutableCode;
-    let storage_mode = AccountStorageMode::Private;
+    let account_type = AccountType::Private;
 
-    let wallet = create_basic_wallet(init_seed, auth_method, account_type, storage_mode).unwrap();
+    let wallet = create_basic_wallet(init_seed, auth_method, account_type).unwrap();
 
-    let expected_code = AccountCode::from_components(
-        &[AuthSingleSig::new(pub_key, auth_scheme).into(), BasicWallet.into()],
-        AccountType::RegularAccountUpdatableCode,
-    )
+    let expected_code = AccountCode::from_components(&[
+        AuthSingleSig::new(pub_key, auth_scheme).into(),
+        BasicWallet.into(),
+    ])
     .unwrap();
     let expected_code_commitment = expected_code.commitment();
 
-    assert!(wallet.is_regular_account());
     assert_eq!(wallet.code().commitment(), expected_code_commitment);
     assert_eq!(
         wallet.storage().get_item(AuthSingleSig::public_key_slot()).unwrap(),
@@ -50,7 +48,7 @@ fn wallet_creation() {
 #[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn wallet_creation_2() {
-    use miden_protocol::account::{AccountCode, AccountStorageMode, AccountType, auth};
+    use miden_protocol::account::{AccountCode, AccountType, auth};
     use miden_standards::account::auth::AuthSingleSig;
     use miden_standards::account::wallets::BasicWallet;
 
@@ -68,19 +66,17 @@ fn wallet_creation_2() {
         204, 149, 90, 166, 68, 100, 73, 106, 168, 125, 237, 138, 16,
     ];
 
-    let account_type = AccountType::RegularAccountImmutableCode;
-    let storage_mode = AccountStorageMode::Private;
+    let account_type = AccountType::Private;
 
-    let wallet = create_basic_wallet(init_seed, auth_method, account_type, storage_mode).unwrap();
+    let wallet = create_basic_wallet(init_seed, auth_method, account_type).unwrap();
 
-    let expected_code = AccountCode::from_components(
-        &[AuthSingleSig::new(pub_key, auth_scheme).into(), BasicWallet.into()],
-        AccountType::RegularAccountUpdatableCode,
-    )
+    let expected_code = AccountCode::from_components(&[
+        AuthSingleSig::new(pub_key, auth_scheme).into(),
+        BasicWallet.into(),
+    ])
     .unwrap();
     let expected_code_commitment = expected_code.commitment();
 
-    assert!(wallet.is_regular_account());
     assert_eq!(wallet.code().commitment(), expected_code_commitment);
     assert_eq!(
         wallet.storage().get_item(AuthSingleSig::public_key_slot()).unwrap(),

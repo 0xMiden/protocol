@@ -1,7 +1,7 @@
 use alloc::vec;
 
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
-use miden_protocol::account::{AccountComponent, AccountProcedureRoot, AccountType};
+use miden_protocol::account::{AccountComponent, AccountProcedureRoot};
 
 use crate::account::account_component_code;
 use crate::procedure_root;
@@ -81,7 +81,7 @@ impl PausableAuthControlled {
 
     /// Returns the [`AccountComponentMetadata`] describing this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        AccountComponentMetadata::new(Self::NAME, AccountType::all()).with_description(
+        AccountComponentMetadata::new(Self::NAME).with_description(
             "Auth-controlled pause admin: exposes `pausable::pause` / `unpause` / `is_paused` \
              as call procedures with no explicit auth gate (the account's own auth component \
              is the only authorization).",

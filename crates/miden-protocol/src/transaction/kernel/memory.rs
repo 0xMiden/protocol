@@ -365,11 +365,11 @@ pub const NOTE_MEM_SIZE: MemoryAddress = 1024;
 // Each nullifier occupies a single word. A data section for each note consists of exactly 1024
 // elements and is laid out like so:
 //
-// ┌──────┬────────┬────────┬─────────┬────────────┬───────────┬──────────┬─────────────┬───────┬
-// │ NOTE │ SERIAL │ SCRIPT │ STORAGE │   ASSETS   │ RECIPIENT │ METADATA │ ATTACHMENTS │ NOTE  │
-// │  ID  │  NUM   │  ROOT  │  COMM   │ COMMITMENT │           │          │ COMMITMENT  │ ARGS  │
-// ├──────┼────────┼────────┼─────────┼────────────┼───────────┼──────────┼─────────────┼───────┼
-// 0      4        8        12        16           20          24         28           32
+// ┌──────┬────────┬────────┬────────────┬────────────┬──────────┬─────────────┬───────────┬───────┬
+// │ NOTE │ SERIAL │ SCRIPT │  STORAGE   │   ASSETS   │ METADATA │ ATTACHMENTS │ RECIPIENT │ NOTE  │
+// │  ID  │  NUM   │  ROOT  │ COMMITMENT │ COMMITMENT │          │  COMMITMENT │           │ ARGS  │
+// ├──────┼────────┼────────┼────────────┼────────────┼──────────┼─────────────┼───────────┼───────┼
+// 0      4        8        12           16           20         24            28          32
 //
 // ┬─────────┬────────┬───────┬─────────┬─────┬────────┬─────────┬─────────┐
 // │ STORAGE │  NUM   │ ASSET │  ASSET  │ ... │ ASSET  │  ASSET  │ PADDING │
@@ -407,9 +407,9 @@ pub const INPUT_NOTE_SERIAL_NUM_OFFSET: MemoryOffset = 4;
 pub const INPUT_NOTE_SCRIPT_ROOT_OFFSET: MemoryOffset = 8;
 pub const INPUT_NOTE_STORAGE_COMMITMENT_OFFSET: MemoryOffset = 12;
 pub const INPUT_NOTE_ASSETS_COMMITMENT_OFFSET: MemoryOffset = 16;
-pub const INPUT_NOTE_RECIPIENT_OFFSET: MemoryOffset = 20;
-pub const INPUT_NOTE_METADATA_OFFSET: MemoryOffset = 24;
-pub const INPUT_NOTE_ATTACHMENTS_COMMITMENT_OFFSET: MemoryOffset = 28;
+pub const INPUT_NOTE_METADATA_OFFSET: MemoryOffset = 20;
+pub const INPUT_NOTE_ATTACHMENTS_COMMITMENT_OFFSET: MemoryOffset = 24;
+pub const INPUT_NOTE_RECIPIENT_OFFSET: MemoryOffset = 28;
 pub const INPUT_NOTE_ARGS_OFFSET: MemoryOffset = 32;
 pub const INPUT_NOTE_NUM_STORAGE_ITEMS_OFFSET: MemoryOffset = 36;
 pub const INPUT_NOTE_NUM_ASSETS_OFFSET: MemoryOffset = 40;

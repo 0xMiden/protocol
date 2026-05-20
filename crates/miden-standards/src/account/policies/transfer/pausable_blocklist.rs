@@ -5,7 +5,7 @@ use miden_protocol::account::component::{
     AccountComponentMetadata,
     StorageSchema,
 };
-use miden_protocol::account::{AccountComponent, AccountId, AccountProcedureRoot, AccountType};
+use miden_protocol::account::{AccountComponent, AccountId, AccountProcedureRoot};
 
 use crate::account::account_component_code;
 use crate::account::pausable::PausableStorage;
@@ -95,25 +95,6 @@ impl PausableBlocklist {
     pub fn root() -> AccountProcedureRoot {
         *PAUSABLE_BLOCKLIST_TRANSFER_POLICY_ROOT
     }
-
-    /// Returns the [`AccountComponentMetadata`] describing this component.
-    pub fn component_metadata() -> AccountComponentMetadata {
-        let storage_schema = StorageSchema::new([
-            PausableStorage::is_paused_slot_schema(),
-            BlocklistStorage::blocked_accounts_slot_schema(),
-        ])
-        .expect("storage schema should be valid");
-
-        AccountComponentMetadata::new(
-            Self::NAME,
-            [AccountType::FungibleFaucet, AccountType::NonFungibleFaucet],
-        )
-        .with_description(
-            "Composite pause-and-blocklist transfer policy: `check_policy` predicate plus \
-             the `is_paused` flag and `blocked_accounts` map it reads",
-        )
-        .with_storage_schema(storage_schema)
-    }
 }
 
 impl From<PausableBlocklist> for AccountComponent {
@@ -122,7 +103,18 @@ impl From<PausableBlocklist> for AccountComponent {
         let blocked_slot =
             BlocklistStorage::with_blocked_accounts(combo.initial_blocked_accounts).into_slot();
 
-        let metadata = PausableBlocklist::component_metadata();
+        let storage_schema = StorageSchema::new([
+            PausableStorage::is_paused_slot_schema(),
+            BlocklistStorage::blocked_accounts_slot_schema(),
+        ])
+        .expect("storage schema should be valid");
+
+        let metadata = AccountComponentMetadata::new(PausableBlocklist::NAME)
+            .with_description(
+                "Composite pause-and-blocklist transfer policy: `check_policy` predicate plus \
+                 the `is_paused` flag and `blocked_accounts` map it reads",
+            )
+            .with_storage_schema(storage_schema);
 
         AccountComponent::new(
             PausableBlocklist::code().clone(),

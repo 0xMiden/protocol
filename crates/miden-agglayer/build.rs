@@ -9,12 +9,7 @@ use miden_assembly::diagnostics::{IntoDiagnostic, NamedSource, Result, WrapErr};
 use miden_assembly::{Assembler, Library, Report};
 use miden_core::Word;
 use miden_crypto::hash::keccak::{Keccak256, Keccak256Digest};
-use miden_protocol::account::{
-    AccountCode,
-    AccountComponent,
-    AccountComponentMetadata,
-    AccountType,
-};
+use miden_protocol::account::{AccountCode, AccountComponent, AccountComponentMetadata};
 use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::transaction::TransactionKernel;
 use miden_standards::account::access::Authority;
@@ -318,7 +313,7 @@ fn generate_agglayer_constants(
 
     // Create a dummy metadata to be able to create components. We only interested in the resulting
     // code commitment, so it doesn't matter what does this metadata holds.
-    let dummy_metadata = AccountComponentMetadata::new("dummy", AccountType::all());
+    let dummy_metadata = AccountComponentMetadata::new("dummy");
 
     // iterate over the AggLayer Bridge and AggLayer Faucet libraries
     for (lib_name, content_library) in component_libraries {
@@ -368,8 +363,8 @@ fn generate_agglayer_constants(
         }
 
         // use `AccountCode` to merge codes of agglayer and authentication components
-        let account_code = AccountCode::from_components(&components, AccountType::FungibleFaucet)
-            .expect("account code creation failed");
+        let account_code =
+            AccountCode::from_components(&components).expect("account code creation failed");
 
         let code_commitment = account_code.commitment();
 

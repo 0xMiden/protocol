@@ -3,7 +3,7 @@ use miden_protocol::account::component::{
     AccountComponentMetadata,
     StorageSchema,
 };
-use miden_protocol::account::{AccountComponent, AccountProcedureRoot, AccountType};
+use miden_protocol::account::{AccountComponent, AccountProcedureRoot};
 
 use crate::account::account_component_code;
 use crate::account::pausable::PausableStorage;
@@ -82,28 +82,20 @@ impl BasicPausable {
     pub fn root() -> AccountProcedureRoot {
         *BASIC_PAUSABLE_TRANSFER_POLICY_ROOT
     }
-
-    /// Returns the [`AccountComponentMetadata`] describing this component.
-    pub fn component_metadata() -> AccountComponentMetadata {
-        let storage_schema = StorageSchema::new([PausableStorage::is_paused_slot_schema()])
-            .expect("storage schema should be valid");
-
-        AccountComponentMetadata::new(
-            Self::NAME,
-            [AccountType::FungibleFaucet, AccountType::NonFungibleFaucet],
-        )
-        .with_description(
-            "Basic pausable transfer policy: `check_policy` predicate plus the `is_paused` \
-             storage slot it reads",
-        )
-        .with_storage_schema(storage_schema)
-    }
 }
 
 impl From<BasicPausable> for AccountComponent {
     fn from(pausable: BasicPausable) -> Self {
         let storage = PausableStorage::with_initial_state(pausable.initial_state);
-        let metadata = BasicPausable::component_metadata();
+        let storage_schema = StorageSchema::new([PausableStorage::is_paused_slot_schema()])
+            .expect("storage schema should be valid");
+
+        let metadata = AccountComponentMetadata::new(BasicPausable::NAME)
+            .with_description(
+                "Basic pausable transfer policy: `check_policy` predicate plus the `is_paused` \
+                 storage slot it reads",
+            )
+            .with_storage_schema(storage_schema);
 
         AccountComponent::new(BasicPausable::code().clone(), vec![storage.into_slot()], metadata)
             .expect(

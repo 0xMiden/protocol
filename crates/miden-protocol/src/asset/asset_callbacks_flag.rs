@@ -45,7 +45,7 @@ impl TryFrom<u8> for AssetCallbackFlag {
         match value {
             Self::DISABLED => Ok(Self::Disabled),
             Self::ENABLED => Ok(Self::Enabled),
-            _ => Err(AssetError::InvalidAssetCallbackFlag(value)),
+            _ => Err(AssetError::UnknownAssetCallbackFlag(value)),
         }
     }
 }

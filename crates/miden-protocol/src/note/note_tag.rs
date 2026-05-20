@@ -176,7 +176,7 @@ impl Deserializable for NoteTag {
 mod tests {
 
     use super::NoteTag;
-    use crate::account::{AccountId, AccountStorageMode};
+    use crate::account::{AccountId, AccountType};
     use crate::testing::account_id::{
         ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
         ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET,
@@ -205,7 +205,7 @@ mod tests {
             AccountId::try_from(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET).unwrap(),
             AccountId::try_from(ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET).unwrap(),
             AccountIdBuilder::new()
-                .storage_mode(AccountStorageMode::Private)
+                .account_type(AccountType::Private)
                 .build_with_seed([2; 32]),
         ];
         let public_accounts = [
@@ -221,16 +221,18 @@ mod tests {
             AccountId::try_from(ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET).unwrap(),
             AccountId::try_from(ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET_1).unwrap(),
             AccountIdBuilder::new()
-                .storage_mode(AccountStorageMode::Public)
+                .account_type(AccountType::Public)
                 .build_with_seed([3; 32]),
         ];
         for account_id in private_accounts.iter().chain(public_accounts.iter()) {
             let tag = NoteTag::with_account_target(*account_id);
-            assert_eq!(tag.as_u32() << 16, 0, "16 least significant bits should be zero");
-            let expected = ((account_id.prefix().as_u64() >> 32) as u32) >> 16;
-            let actual = tag.as_u32() >> 16;
+            assert_eq!(tag.as_u32() << 14, 0, "18 least significant bits should be zero");
+            // The expected tag is the account ID prefix with the 18 least significant bits masked
+            // out, leaving the 14 most significant bits.
+            let expected = ((account_id.prefix().as_u64() >> 32) as u32)
+                & 0b1111_1111_1111_1100_0000_0000_0000_0000;
 
-            assert_eq!(actual, expected, "14 most significant bits should match");
+            assert_eq!(tag.as_u32(), expected);
         }
     }
 

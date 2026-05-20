@@ -11,7 +11,6 @@ use miden_protocol::account::component::{
 use miden_protocol::account::{
     AccountComponent,
     AccountProcedureRoot,
-    AccountType,
     RoleSymbol,
     StorageSlot,
     StorageSlotName,
@@ -156,7 +155,7 @@ impl PausableRoleControlled {
         let storage_schema = StorageSchema::new([Self::roles_slot_schema()])
             .expect("storage schema should be valid");
 
-        AccountComponentMetadata::new(Self::NAME, AccountType::all())
+        AccountComponentMetadata::new(Self::NAME)
             .with_description(
                 "Role-controlled pause admin: wraps `pausable::pause` / `unpause` with \
                  separate `PAUSER` and `UNPAUSER` role checks via \
