@@ -8,6 +8,11 @@ pub mod rbac;
 
 /// Access control configuration for account components.
 ///
+/// Each variant expands into the set of [`AccountComponent`]s that implement that access
+/// control choice **plus** the matching [`Authority`] component. The [`Authority`] is
+/// auto-yielded so callers don't need to remember to install it separately and so that the
+/// authority discriminator stays in sync with the chosen access mode.
+///
 /// - [`AccessControl::AuthControlled`] yields just [`Authority::AuthControlled`].
 /// - [`AccessControl::Ownable2Step`] yields [`Ownable2Step`] + [`Authority::OwnerControlled`].
 /// - [`AccessControl::Rbac`] yields [`Ownable2Step`] + [`RoleBasedAccessControl`] + an
@@ -15,6 +20,23 @@ pub mod rbac;
 ///   - `None` → [`Authority::OwnerControlled`] (the top-level owner gates `set_*` operations).
 ///   - `Some(role)` → [`Authority::RbacControlled { role }`] (any holder of `role` gates `set_*`
 ///     operations).
+///
+/// Pass to
+/// [`AccountBuilder::with_components`][miden_protocol::account::AccountBuilder::with_components]
+/// to install the access control components on the account:
+///
+/// ```no_run
+/// use miden_protocol::account::AccountBuilder;
+/// use miden_standards::account::access::AccessControl;
+/// # let owner: miden_protocol::account::AccountId = unimplemented!();
+/// # let init_seed = [0u8; 32];
+/// AccountBuilder::new(init_seed)
+///     .with_components(AccessControl::Rbac { owner, authority_role: None });
+/// ```
+///
+/// For accounts that don't use the [`AccessControl`] convenience but want to install the
+/// [`Authority`] component directly, the [`Authority`] enum can be passed via
+/// [`AccountBuilder::with_component`][miden_protocol::account::AccountBuilder::with_component].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AccessControl {
     /// No external access control component is installed; access decisions are gated solely
@@ -23,7 +45,7 @@ pub enum AccessControl {
     /// Two-step ownership transfer with the provided initial owner. Authority for `set_*`
     /// operations is fixed to the registered owner.
     Ownable2Step { owner: AccountId },
-    /// Role-based access control. Includes [`Ownable2Step`] internally, the provided `owner`
+    /// Role-based access control. Includes [`Ownable2Step`] internally; the provided `owner`
     /// becomes the top-level RBAC authority (the account's owner).
     ///
     /// `authority_role` controls which authority is installed alongside RBAC:

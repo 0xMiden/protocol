@@ -58,13 +58,19 @@ const RBAC_CONTROLLED: u8 = 2;
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Authority {
-    /// Authority is the account's auth component.
+    /// Authority is the account's auth component; no extra check is performed by
+    /// `authority::assert_authorized`.
     AuthControlled = AUTH_CONTROLLED,
-    /// Authority is the [`Ownable2Step`][crate::account::access::Ownable2Step] owner.
+    /// Authority is the [`Ownable2Step`][crate::account::access::Ownable2Step] owner; the call
+    /// must be sent by the registered owner.
     OwnerControlled = OWNER_CONTROLLED,
     /// Authority is membership in a specific RBAC role. The call must be sent by an account that
     /// holds `role` in the
     /// [`RoleBasedAccessControl`][crate::account::access::RoleBasedAccessControl] component.
+    ///
+    /// Requires the [`RoleBasedAccessControl`][crate::account::access::RoleBasedAccessControl]
+    /// component to be installed on the account; the MASM helper calls into
+    /// `rbac::assert_sender_has_role` and will fail to link otherwise.
     RbacControlled { role: RoleSymbol } = RBAC_CONTROLLED,
 }
 

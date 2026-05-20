@@ -283,25 +283,22 @@ impl FungibleFaucet {
         *FUNGIBLE_FAUCET_RECEIVE_AND_BURN
     }
 
-    /// Returns the procedure root of the `set_max_supply` account procedure. This is an
-    /// authority-gated setter; under
-    /// [`AccessControl::AuthControlled`][crate::account::access::AccessControl::AuthControlled]
-    /// it must appear in the auth component's trigger procedure list.
+    /// Returns the procedure root of the `set_max_supply` account procedure.
     pub fn set_max_supply_root() -> AccountProcedureRoot {
         *FUNGIBLE_FAUCET_SET_MAX_SUPPLY
     }
 
-    /// Returns the procedure root of the `set_description` account procedure. Authority-gated.
+    /// Returns the procedure root of the `set_description` account procedure.
     pub fn set_description_root() -> AccountProcedureRoot {
         *FUNGIBLE_FAUCET_SET_DESCRIPTION
     }
 
-    /// Returns the procedure root of the `set_logo_uri` account procedure. Authority-gated.
+    /// Returns the procedure root of the `set_logo_uri` account procedure.
     pub fn set_logo_uri_root() -> AccountProcedureRoot {
         *FUNGIBLE_FAUCET_SET_LOGO_URI
     }
 
-    /// Returns the procedure root of the `set_external_link` account procedure. Authority-gated.
+    /// Returns the procedure root of the `set_external_link` account procedure.
     pub fn set_external_link_root() -> AccountProcedureRoot {
         *FUNGIBLE_FAUCET_SET_EXTERNAL_LINK
     }
@@ -555,17 +552,10 @@ impl TryFrom<&Account> for FungibleFaucet {
 // FACTORY
 // ================================================================================================
 
-/// Returns every authority-gated setter procedure root exported by a fungible faucet account.
-///
-/// Under [`AccessControl::AuthControlled`] the auth component must authenticate calls to all
-/// of these procedures, otherwise the setters become permissionless. This list is the single
-/// source of truth used by [`create_fungible_faucet`] when configuring
-/// [`AuthSingleSigAcl`]'s trigger procedure list.
-///
-/// Includes `mint_and_send` so that minting always requires a signature regardless of access
-/// control configuration. `receive_and_burn` is intentionally **excluded**: it is only
-/// invoked from a note context (i.e., by an incoming burn note), and faucets accept those
-/// without a signature.
+/// Every authority-gated procedure root that must require a signature when
+/// [`AccessControl::AuthControlled`] is paired with [`AuthMethod::SingleSig`]. Includes
+/// `mint_and_send` so that minting always requires a signature regardless of the access
+/// control variant.
 fn all_authority_gated_setter_roots() -> Vec<AccountProcedureRoot> {
     vec![
         FungibleFaucet::mint_and_send_root(),
@@ -624,10 +614,7 @@ pub fn create_fungible_faucet(
         AuthMethod::NoAuth => {
             if is_auth_controlled {
                 return Err(FungibleFaucetError::IncompatibleAuthControlledAuth(
-                    "NoAuth cannot authenticate authority-gated setters under AuthControlled; \
-                     use AccessControl::Ownable2Step or AccessControl::Rbac for owner-gated \
-                     faucets, or pair AuthControlled with SingleSig / NetworkAccount."
-                        .into(),
+                    "NoAuth cannot authenticate authority-gated setters".into(),
                 ));
             }
             NoAuth::new().into()

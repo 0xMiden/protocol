@@ -149,9 +149,6 @@ fn faucet_contract_creation() {
     let _faucet_component = FungibleFaucet::try_from(faucet_account.clone()).unwrap();
 }
 
-/// `(AccessControl::AuthControlled, AuthMethod::NoAuth)` must be rejected: under AuthControlled
-/// the auth component is the sole gate for authority-gated setters, so a NoAuth pairing would
-/// leave them permissionless.
 #[test]
 fn auth_controlled_rejects_no_auth() {
     let err = create_fungible_faucet(
@@ -166,9 +163,6 @@ fn auth_controlled_rejects_no_auth() {
     assert_matches!(err, FungibleFaucetError::IncompatibleAuthControlledAuth(_));
 }
 
-/// `Ownable2Step + NoAuth` is a valid configuration: the setter gate is enforced
-/// in-procedure (`assert_sender_is_owner`), so the account-level auth can legitimately be
-/// NoAuth (typical for network-style faucets driven by allowlisted note scripts).
 #[test]
 fn ownable2step_with_no_auth_is_accepted() {
     use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;

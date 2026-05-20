@@ -56,10 +56,8 @@ account_component_code!(POLICY_MANAGER_CODE, "faucets/policies/policy_manager.ma
 // PROCEDURE ROOTS
 // ================================================================================================
 
-/// MASL library namespace that backs the component code installed on faucet accounts. Used
-/// for procedure-root lookups. This is `miden::standards::components::*` and is distinct from
-/// [`TokenPolicyManager::NAME`], which is a human-readable identifier mirroring the
-/// standards-side MASM module path used for documentation and storage slot prefixes.
+/// MASL library namespace used for procedure-root lookups. Distinct from
+/// [`TokenPolicyManager::NAME`], which mirrors the standards-side MASM module path.
 const POLICY_MANAGER_LIBRARY_PATH: &str =
     "miden::standards::components::faucets::policies::policy_manager";
 
@@ -423,25 +421,22 @@ impl TokenPolicyManager {
             .collect()
     }
 
-    /// Returns the procedure root of the `set_mint_policy` account procedure. This is an
-    /// authority-gated setter; under
-    /// [`AccessControl::AuthControlled`][crate::account::access::AccessControl::AuthControlled]
-    /// it must appear in the auth component's trigger procedure list.
+    /// Returns the procedure root of the `set_mint_policy` account procedure.
     pub fn set_mint_policy_root() -> AccountProcedureRoot {
         *POLICY_MANAGER_SET_MINT_POLICY
     }
 
-    /// Returns the procedure root of the `set_burn_policy` account procedure. Authority-gated.
+    /// Returns the procedure root of the `set_burn_policy` account procedure.
     pub fn set_burn_policy_root() -> AccountProcedureRoot {
         *POLICY_MANAGER_SET_BURN_POLICY
     }
 
-    /// Returns the procedure root of the `set_send_policy` account procedure. Authority-gated.
+    /// Returns the procedure root of the `set_send_policy` account procedure.
     pub fn set_send_policy_root() -> AccountProcedureRoot {
         *POLICY_MANAGER_SET_SEND_POLICY
     }
 
-    /// Returns the procedure root of the `set_receive_policy` account procedure. Authority-gated.
+    /// Returns the procedure root of the `set_receive_policy` account procedure.
     pub fn set_receive_policy_root() -> AccountProcedureRoot {
         *POLICY_MANAGER_SET_RECEIVE_POLICY
     }
