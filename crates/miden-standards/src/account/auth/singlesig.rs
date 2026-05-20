@@ -7,7 +7,12 @@ use miden_protocol::account::component::{
     StorageSchema,
     StorageSlotSchema,
 };
-use miden_protocol::account::{AccountComponent, StorageSlot, StorageSlotName};
+use miden_protocol::account::{
+    AccountComponent,
+    AccountComponentName,
+    StorageSlot,
+    StorageSlotName,
+};
 use miden_protocol::crypto::dsa::{ecdsa_k256_keccak, falcon512_poseidon2};
 use miden_protocol::utils::sync::LazyLock;
 
@@ -48,6 +53,11 @@ pub struct AuthSingleSig {
 impl AuthSingleSig {
     /// The name of the component.
     pub const NAME: &'static str = "miden::standards::components::auth::singlesig";
+
+    /// Returns the canonical [`AccountComponentName`] of this component.
+    pub const fn name() -> AccountComponentName {
+        AccountComponentName::from_static_str(Self::NAME)
+    }
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {

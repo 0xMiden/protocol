@@ -1,5 +1,5 @@
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
-use miden_protocol::account::{AccountComponent, AccountProcedureRoot};
+use miden_protocol::account::{AccountComponent, AccountComponentName, AccountProcedureRoot};
 
 use crate::account::account_component_code;
 use crate::procedure_root;
@@ -30,6 +30,11 @@ impl BurnAllowAll {
         "miden::standards::components::faucets::policies::burn::allow_all";
 
     pub(crate) const PROC_NAME: &str = "check_policy";
+
+    /// Returns the canonical [`AccountComponentName`] of this component.
+    pub const fn name() -> AccountComponentName {
+        AccountComponentName::from_static_str(Self::NAME)
+    }
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
