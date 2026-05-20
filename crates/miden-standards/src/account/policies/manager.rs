@@ -21,8 +21,8 @@ use miden_protocol::account::component::{
 };
 use miden_protocol::account::{
     AccountComponent,
+    AccountComponentName,
     AccountProcedureRoot,
-    AccountType,
     StorageMap,
     StorageMapKey,
     StorageSlot,
@@ -190,6 +190,11 @@ impl TokenPolicyManager {
 
     /// Component description used in [`AccountComponentMetadata`].
     pub const DESCRIPTION: &'static str = "Token policy manager for fungible faucets";
+
+    /// Returns the canonical [`AccountComponentName`] of this component.
+    pub const fn name() -> AccountComponentName {
+        AccountComponentName::from_static_str(Self::NAME)
+    }
 
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
@@ -461,7 +466,7 @@ impl TokenPolicyManager {
         ])
         .expect("storage schema should be valid");
 
-        AccountComponentMetadata::new(Self::NAME, [AccountType::FungibleFaucet])
+        AccountComponentMetadata::new(Self::NAME)
             .with_description(Self::DESCRIPTION)
             .with_storage_schema(storage_schema)
     }

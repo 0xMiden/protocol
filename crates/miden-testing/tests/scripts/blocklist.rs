@@ -10,14 +10,7 @@ use std::sync::Arc;
 
 use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::account::{
-    Account,
-    AccountBuilder,
-    AccountId,
-    AccountIdVersion,
-    AccountStorageMode,
-    AccountType,
-};
+use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountIdVersion, AccountType};
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::asset::{Asset, AssetAmount, AssetCallbackFlag, FungibleAsset};
 use miden_protocol::note::{Note, NoteTag, NoteType};
@@ -49,12 +42,7 @@ use miden_testing::{
 // ================================================================================================
 
 fn dummy_owner() -> AccountId {
-    AccountId::dummy(
-        [9; 15],
-        AccountIdVersion::Version1,
-        AccountType::RegularAccountImmutableCode,
-        AccountStorageMode::Private,
-    )
+    AccountId::dummy([9; 15], AccountIdVersion::Version1, AccountType::Private)
 }
 
 /// Builds a fungible faucet with [`TransferPolicy::Blocklist`] on both send and receive,
@@ -87,8 +75,7 @@ fn add_faucet_with_owner_blocklist_transfer_initialized(
     let basic_blocklist = BasicBlocklist::with_blocked_accounts(initial_blocked);
 
     let account_builder = AccountBuilder::new([43u8; 32])
-        .storage_mode(AccountStorageMode::Public)
-        .account_type(AccountType::FungibleFaucet)
+        .account_type(AccountType::Public)
         .with_component(faucet)
         .with_component(Ownable2Step::new(owner_id))
         .with_component(Authority::OwnerControlled)

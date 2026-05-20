@@ -7,9 +7,9 @@ use miden_protocol::account::component::{
 };
 use miden_protocol::account::{
     AccountComponent,
+    AccountComponentName,
     AccountId,
     AccountStorage,
-    AccountType,
     StorageSlot,
     StorageSlotName,
 };
@@ -49,6 +49,11 @@ pub struct Ownable2Step {
 impl Ownable2Step {
     /// The name of the component.
     pub const NAME: &'static str = "miden::standards::access::ownable2step";
+
+    /// Returns the canonical [`AccountComponentName`] of this component.
+    pub const fn name() -> AccountComponentName {
+        AccountComponentName::from_static_str(Self::NAME)
+    }
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
@@ -148,7 +153,7 @@ impl Ownable2Step {
         let storage_schema =
             StorageSchema::new([Self::slot_schema()]).expect("storage schema should be valid");
 
-        AccountComponentMetadata::new(Self::NAME, AccountType::all())
+        AccountComponentMetadata::new(Self::NAME)
             .with_description("Two-step ownership management component")
             .with_storage_schema(storage_schema)
     }

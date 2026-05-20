@@ -5,7 +5,7 @@ use miden_protocol::account::component::{
     AccountComponentMetadata,
     StorageSchema,
 };
-use miden_protocol::account::{AccountComponent, AccountId, AccountProcedureRoot, AccountType};
+use miden_protocol::account::{AccountComponent, AccountId, AccountProcedureRoot};
 
 use crate::account::account_component_code;
 use crate::account::policies::transfer::blocklist::BlocklistStorage;
@@ -82,15 +82,12 @@ impl From<BasicBlocklist> for AccountComponent {
         let storage_schema = StorageSchema::new([BlocklistStorage::blocked_accounts_slot_schema()])
             .expect("storage schema should be valid");
 
-        let metadata = AccountComponentMetadata::new(
-            BasicBlocklist::NAME,
-            [AccountType::FungibleFaucet, AccountType::NonFungibleFaucet],
-        )
-        .with_description(
-            "Basic blocklist transfer policy: predicate procedure plus the `blocked_accounts` \
-             storage map it reads",
-        )
-        .with_storage_schema(storage_schema);
+        let metadata = AccountComponentMetadata::new(BasicBlocklist::NAME)
+            .with_description(
+                "Basic blocklist transfer policy: predicate procedure plus the `blocked_accounts` \
+                 storage map it reads",
+            )
+            .with_storage_schema(storage_schema);
 
         AccountComponent::new(BasicBlocklist::code().clone(), vec![storage.into_slot()], metadata)
             .expect(

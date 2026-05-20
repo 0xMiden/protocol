@@ -312,10 +312,10 @@ impl TransactionAdviceInputs {
     /// The advice provider is populated with:
     ///
     /// - For each note:
-    ///     - The note's details (serial number, script root, and its storage / assets commitment).
     ///     - The note's private arguments.
-    ///     - The note's public metadata (sender account ID, note type, note tag, attachment kind /
-    ///       scheme and the attachment content).
+    ///     - The note's details (serial number, script root, and its storage / assets commitment).
+    ///     - The note's public metadata (sender account ID, note type, note tag, attachment
+    ///       schemes).
     ///     - The note's storage (unpadded).
     ///     - The note's assets (key and value words).
     ///     - For authenticated notes (determined by the `is_authenticated` flag):
@@ -359,14 +359,14 @@ impl TransactionAdviceInputs {
                 self.add_map_entry(commitment, elements);
             }
 
-            // note details / metadata
+            // note metadata / details
+            note_data.extend(*note_arg);
             note_data.extend(recipient.serial_num());
             note_data.extend(Word::from(recipient.script().root()));
             note_data.extend(*recipient.storage().commitment());
             note_data.extend(*assets.commitment());
-            note_data.extend(*note_arg);
-            note_data.extend(note.attachments().to_commitment());
             note_data.extend(note.metadata().to_metadata_word());
+            note_data.extend(note.attachments().to_commitment());
             note_data.push(Felt::from(recipient.storage().num_items()));
             note_data.push(Felt::from(assets.num_assets() as u32));
             note_data.extend(assets.to_elements());
