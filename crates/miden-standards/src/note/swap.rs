@@ -404,7 +404,7 @@ pub fn payback_serial_from_swap(swap_serial: Word) -> Word {
 #[cfg(test)]
 mod tests {
 
-    use miden_protocol::account::{AccountIdVersion, AccountStorageMode, AccountType};
+    use miden_protocol::account::{AccountIdVersion, AccountType};
     use miden_protocol::asset::{FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
     use miden_protocol::note::{NoteStorage, NoteType};
     use miden_protocol::testing::account_id::{
@@ -427,9 +427,8 @@ mod tests {
     }
 
     fn non_fungible_asset() -> Asset {
-        let details =
-            NonFungibleAssetDetails::new(non_fungible_faucet(), vec![0xaa, 0xbb]).unwrap();
-        Asset::NonFungible(NonFungibleAsset::new(&details).unwrap())
+        let details = NonFungibleAssetDetails::new(non_fungible_faucet(), vec![0xaa, 0xbb]);
+        Asset::NonFungible(NonFungibleAsset::new(&details))
     }
 
     fn dummy_target_id() -> AccountId {
@@ -563,29 +562,22 @@ mod tests {
                 AccountId::dummy(
                     fungible_faucet_id_bytes,
                     AccountIdVersion::Version1,
-                    AccountType::FungibleFaucet,
-                    AccountStorageMode::Public,
+                    AccountType::Public,
                 ),
                 2500,
             )
             .unwrap(),
         );
 
-        let requested_asset = Asset::NonFungible(
-            NonFungibleAsset::new(
-                &NonFungibleAssetDetails::new(
-                    AccountId::dummy(
-                        non_fungible_faucet_id_bytes,
-                        AccountIdVersion::Version1,
-                        AccountType::NonFungibleFaucet,
-                        AccountStorageMode::Public,
-                    ),
-                    vec![0xaa, 0xbb, 0xcc, 0xdd],
-                )
-                .unwrap(),
-            )
-            .unwrap(),
-        );
+        let requested_asset =
+            Asset::NonFungible(NonFungibleAsset::new(&NonFungibleAssetDetails::new(
+                AccountId::dummy(
+                    non_fungible_faucet_id_bytes,
+                    AccountIdVersion::Version1,
+                    AccountType::Public,
+                ),
+                vec![0xaa, 0xbb, 0xcc, 0xdd],
+            )));
 
         // The fungible ID starts with 0xcdb1.
         // The non fungible ID starts with 0xabec.

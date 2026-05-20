@@ -10,7 +10,6 @@ use crate::account::{
     AccountIdV1,
     AccountIdVersion,
     AccountStorage,
-    AccountStorageMode,
     AccountType,
 };
 use crate::asset::AssetVault;
@@ -23,12 +22,10 @@ use crate::{Felt, Word};
 /// This will build a valid new account with these properties:
 /// - An empty [`AssetVault`].
 /// - The nonce set to [`Felt::ZERO`].
-/// - A seed which results in an [`AccountId`] valid for the configured account type and storage
-///   mode.
+/// - A seed which results in an [`AccountId`] valid for the configured account type.
 ///
 /// By default, the builder is initialized with:
-/// - The `account_type` set to [`AccountType::RegularAccountUpdatableCode`].
-/// - The `storage_mode` set to [`AccountStorageMode::Private`].
+/// - The `account_type` set to [`AccountType::Private`].
 /// - The `version` set to [`AccountIdVersion::Version1`].
 ///
 /// The methods that are required to be called are:
@@ -42,13 +39,12 @@ use crate::{Felt, Word};
 /// - Add assets to the account's vault; this only succeeds when using
 ///   `AccountBuilder::build_existing`.
 ///
-/// **Storage Slot Order**
+/// **Account Procedure Order**
 ///
-/// Note that the components are merged together in the same order as `with_component` is called,
-/// except for the auth component. It is always moved to the first position, due to the requirement
-/// that the auth procedure must be at procedure index 0 within an [`AccountCode`]. That also
-/// affects the storage slot order and means the auth component's storage comes first, if it has any
-/// storage.
+/// Note that the procedure in each components code are merged together in the same order as
+/// `with_component` is called, except for the auth component. The auth procedure is always moved to
+/// the first position, since the tx kernel assume procedure index 0 is the auth procedure within an
+/// [`AccountCode`].
 #[derive(Debug, Clone)]
 pub struct AccountBuilder {
     #[cfg(any(feature = "testing", test))]
@@ -58,7 +54,6 @@ pub struct AccountBuilder {
     components: Vec<AccountComponent>,
     auth_component: Option<AccountComponent>,
     account_type: AccountType,
-    storage_mode: AccountStorageMode,
     init_seed: [u8; 32],
     id_version: AccountIdVersion,
 }
@@ -77,8 +72,7 @@ impl AccountBuilder {
             components: vec![],
             auth_component: None,
             init_seed,
-            account_type: AccountType::RegularAccountUpdatableCode,
-            storage_mode: AccountStorageMode::Private,
+            account_type: AccountType::Private,
             id_version: AccountIdVersion::Version1,
         }
     }
@@ -89,15 +83,9 @@ impl AccountBuilder {
         self
     }
 
-    /// Sets the type of the account.
+    /// Sets the account type of the account.
     pub fn account_type(mut self, account_type: AccountType) -> Self {
         self.account_type = account_type;
-        self
-    }
-
-    /// Sets the storage mode of the account.
-    pub fn storage_mode(mut self, storage_mode: AccountStorageMode) -> Self {
-        self.storage_mode = storage_mode;
         self
     }
 
@@ -169,13 +157,12 @@ impl AccountBuilder {
         let mut components = vec![auth_component];
         components.append(&mut self.components);
 
-        let (code, storage) = Account::initialize_from_components(self.account_type, components)
-            .map_err(|err| {
-                AccountError::BuildError(
-                    "account components failed to build".into(),
-                    Some(Box::new(err)),
-                )
-            })?;
+        let (code, storage) = Account::initialize_from_components(components).map_err(|err| {
+            AccountError::BuildError(
+                "account components failed to build".into(),
+                Some(Box::new(err)),
+            )
+        })?;
 
         Ok((vault, code, storage))
     }
@@ -191,7 +178,6 @@ impl AccountBuilder {
         let seed = AccountIdV1::compute_account_seed(
             init_seed,
             self.account_type,
-            self.storage_mode,
             version,
             code_commitment,
             storage_commitment,
@@ -209,7 +195,6 @@ impl AccountBuilder {
     ///
     /// Returns an error if:
     /// - The init seed is not set.
-    /// - Any of the components does not support the set account type.
     /// - The number of procedures in all merged components is 0 or exceeds
     ///   [`AccountCode::MAX_NUM_PROCEDURES`](crate::account::AccountCode::MAX_NUM_PROCEDURES).
     /// - Two or more libraries export a procedure with the same MAST root.
@@ -247,7 +232,6 @@ impl AccountBuilder {
         .expect("get_account_seed should provide a suitable seed");
 
         debug_assert_eq!(account_id.account_type(), self.account_type);
-        debug_assert_eq!(account_id.storage_mode(), self.storage_mode);
 
         // SAFETY: The account ID was derived from the seed and the seed is provided, so it is safe
         // to bypass the checks of `Account::new`.
@@ -289,12 +273,7 @@ impl AccountBuilder {
         let account_id = {
             let bytes = <[u8; 15]>::try_from(&self.init_seed[0..15])
                 .expect("we should have sliced exactly 15 bytes off");
-            AccountId::dummy(
-                bytes,
-                AccountIdVersion::Version1,
-                self.account_type,
-                self.storage_mode,
-            )
+            AccountId::dummy(bytes, AccountIdVersion::Version1, self.account_type)
         };
 
         // Use the nonce value set by the Self::nonce method or Felt::ONE as a default.
@@ -367,8 +346,7 @@ mod tests {
             let mut value = Word::empty();
             value[0] = Felt::from(custom.slot0);
 
-            let metadata =
-                AccountComponentMetadata::new("test::custom_component1", AccountType::all());
+            let metadata = AccountComponentMetadata::new("test::custom_component1");
             AccountComponent::new(
                 CUSTOM_LIBRARY1.clone(),
                 vec![StorageSlot::with_value(CUSTOM_COMPONENT1_SLOT_NAME.clone(), value)],
@@ -389,8 +367,7 @@ mod tests {
             let mut value1 = Word::empty();
             value1[3] = Felt::from(custom.slot1);
 
-            let metadata =
-                AccountComponentMetadata::new("test::custom_component2", AccountType::all());
+            let metadata = AccountComponentMetadata::new("test::custom_component2");
             AccountComponent::new(
                 CUSTOM_LIBRARY2.clone(),
                 vec![

@@ -1,0 +1,50 @@
+# miden::standards::faucets::policies::transfer::allowlist::owner_controlled
+#
+# Owner-controlled allowlist admin: wraps the `Invocation: exec` helpers from
+# `miden::standards::faucets::policies::transfer::allowlist` with an Ownable2Step authorization
+# check.
+#
+# Companion components required on the faucet:
+# - `Ownable2Step` — provides the owner storage slot the auth check reads.
+# - `BasicAllowlist` (or any other component that installs the `allowed_accounts` storage slot)
+#   — provides the storage that `allow_account` / `disallow_account` write to.
+
+use miden::standards::access::ownable2step
+use miden::standards::faucets::policies::transfer::allowlist
+
+# PUBLIC INTERFACE
+# ================================================================================================
+
+#! Allow an account, gated by the Ownable2Step owner.
+#!
+#! Inputs:  [account_id_suffix, account_id_prefix, pad(14)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the sender is not the account owner.
+#!
+#! Invocation: call
+pub proc allow_account
+    exec.ownable2step::assert_sender_is_owner
+    # => [account_id_suffix, account_id_prefix, pad(14)]
+
+    exec.allowlist::allow_account
+    # => [pad(14)]
+end
+
+#! Disallow an account, gated by the Ownable2Step owner.
+#!
+#! Inputs:  [account_id_suffix, account_id_prefix, pad(14)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the sender is not the account owner.
+#!
+#! Invocation: call
+pub proc disallow_account
+    exec.ownable2step::assert_sender_is_owner
+    # => [account_id_suffix, account_id_prefix, pad(14)]
+
+    exec.allowlist::disallow_account
+    # => [pad(14)]
+end

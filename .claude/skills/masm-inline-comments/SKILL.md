@@ -82,6 +82,14 @@ pub proc transfer
 end
 ```
 
+### 5. Reuse existing terminology
+
+Use the vocabulary already established in the surrounding code and doc comments. Do not coin new terms or colloquialisms for a concept that already has a name — a value written to a local is "stored", not "stashed". This applies to inline comments and to constant-header comments.
+
+### 6. Comment the code, not the change
+
+Inline comments explain what the code does for a future reader, not why a particular PR made a change. Avoid PR narrative and framing such as "this is the X that prevents Y"; describe the operation and its purpose as the code stands.
+
 ## Examples
 
 **Good:**

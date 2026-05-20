@@ -16,8 +16,6 @@ use super::{
 };
 use crate::Word;
 use crate::account::AccountComponent;
-#[cfg(any(feature = "testing", test))]
-use crate::account::AccountType;
 
 pub mod procedure;
 use procedure::{AccountProcedureRoot, PrintableProcedure};
@@ -83,11 +81,7 @@ impl AccountCode {
     ///
     /// For testing use only.
     #[cfg(any(feature = "testing", test))]
-    pub fn from_components(
-        components: &[AccountComponent],
-        account_type: AccountType,
-    ) -> Result<Self, AccountError> {
-        super::validate_components_support_account_type(components, account_type)?;
+    pub fn from_components(components: &[AccountComponent]) -> Result<Self, AccountError> {
         Self::from_components_unchecked(components)
     }
 
@@ -425,9 +419,9 @@ mod tests {
     use miden_assembly::Assembler;
 
     use super::{AccountCode, Deserializable, Serializable};
+    use crate::account::AccountComponent;
     use crate::account::code::build_procedure_commitment;
     use crate::account::component::AccountComponentMetadata;
-    use crate::account::{AccountComponent, AccountType};
     use crate::errors::AccountError;
     use crate::testing::account_code::CODE;
     use crate::testing::noop_auth_component::NoopAuthComponent;
@@ -449,11 +443,7 @@ mod tests {
 
     #[test]
     fn test_account_code_only_auth_component() {
-        let err = AccountCode::from_components(
-            &[NoopAuthComponent.into()],
-            AccountType::RegularAccountUpdatableCode,
-        )
-        .unwrap_err();
+        let err = AccountCode::from_components(&[NoopAuthComponent.into()]).unwrap_err();
 
         assert_matches!(err, AccountError::AccountCodeNoProcedures);
     }
@@ -461,23 +451,19 @@ mod tests {
     #[test]
     fn test_account_code_no_auth_component() {
         let library = Arc::unwrap_or_clone(Assembler::default().assemble_library([CODE]).unwrap());
-        let metadata = AccountComponentMetadata::new("test::no_auth", AccountType::all());
+        let metadata = AccountComponentMetadata::new("test::no_auth");
         let component = AccountComponent::new(library, vec![], metadata).unwrap();
 
-        let err =
-            AccountCode::from_components(&[component], AccountType::RegularAccountUpdatableCode)
-                .unwrap_err();
+        let err = AccountCode::from_components(&[component]).unwrap_err();
 
         assert_matches!(err, AccountError::AccountCodeNoAuthComponent);
     }
 
     #[test]
     fn test_account_code_multiple_auth_components() {
-        let err = AccountCode::from_components(
-            &[NoopAuthComponent.into(), NoopAuthComponent.into()],
-            AccountType::RegularAccountUpdatableCode,
-        )
-        .unwrap_err();
+        let err =
+            AccountCode::from_components(&[NoopAuthComponent.into(), NoopAuthComponent.into()])
+                .unwrap_err();
 
         assert_matches!(err, AccountError::AccountCodeMultipleAuthComponents);
     }
@@ -501,12 +487,10 @@ mod tests {
         let library = Arc::unwrap_or_clone(
             Assembler::default().assemble_library([code_with_multiple_auth]).unwrap(),
         );
-        let metadata = AccountComponentMetadata::new("test::multiple_auth", AccountType::all());
+        let metadata = AccountComponentMetadata::new("test::multiple_auth");
         let component = AccountComponent::new(library, vec![], metadata).unwrap();
 
-        let err =
-            AccountCode::from_components(&[component], AccountType::RegularAccountUpdatableCode)
-                .unwrap_err();
+        let err = AccountCode::from_components(&[component]).unwrap_err();
 
         assert_matches!(err, AccountError::AccountComponentMultipleAuthProcedures);
     }

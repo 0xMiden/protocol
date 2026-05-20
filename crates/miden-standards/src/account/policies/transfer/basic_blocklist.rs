@@ -5,7 +5,7 @@ use miden_protocol::account::component::{
     AccountComponentMetadata,
     StorageSchema,
 };
-use miden_protocol::account::{AccountComponent, AccountId, AccountProcedureRoot, AccountType};
+use miden_protocol::account::{AccountComponent, AccountId, AccountProcedureRoot};
 
 use crate::account::account_component_code;
 use crate::account::policies::transfer::blocklist::BlocklistStorage;
@@ -40,7 +40,7 @@ procedure_root!(
 ///
 /// Block / unblock administration is intentionally not part of this component. The
 /// `block_account` / `unblock_account` procedures live in the standards library and require an
-/// auth-wrapped admin component (see [`super::OwnerControlledBlocklist`]) to be safely exposed
+/// auth-wrapped admin component (see [`super::BlocklistOwnerControlled`]) to be safely exposed
 /// on a production faucet.
 #[derive(Debug, Clone, Default)]
 pub struct BasicBlocklist(BTreeSet<AccountId>);
@@ -82,15 +82,12 @@ impl From<BasicBlocklist> for AccountComponent {
         let storage_schema = StorageSchema::new([BlocklistStorage::blocked_accounts_slot_schema()])
             .expect("storage schema should be valid");
 
-        let metadata = AccountComponentMetadata::new(
-            BasicBlocklist::NAME,
-            [AccountType::FungibleFaucet, AccountType::NonFungibleFaucet],
-        )
-        .with_description(
-            "Basic blocklist transfer policy: predicate procedure plus the `blocked_accounts` \
-             storage map it reads",
-        )
-        .with_storage_schema(storage_schema);
+        let metadata = AccountComponentMetadata::new(BasicBlocklist::NAME)
+            .with_description(
+                "Basic blocklist transfer policy: predicate procedure plus the `blocked_accounts` \
+                 storage map it reads",
+            )
+            .with_storage_schema(storage_schema);
 
         AccountComponent::new(BasicBlocklist::code().clone(), vec![storage.into_slot()], metadata)
             .expect(

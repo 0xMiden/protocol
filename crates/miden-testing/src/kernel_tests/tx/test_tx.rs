@@ -11,7 +11,6 @@ use miden_protocol::account::{
     AccountCode,
     AccountComponent,
     AccountStorage,
-    AccountStorageMode,
     AccountType,
     StorageSlot,
     StorageSlotName,
@@ -463,7 +462,7 @@ async fn user_code_can_abort_transaction_with_summary() -> anyhow::Result<()> {
     .context("failed to parse auth component")?;
 
     let account = AccountBuilder::new([42; 32])
-        .storage_mode(AccountStorageMode::Private)
+        .account_type(AccountType::Private)
         .with_auth_component(auth_component)
         .with_component(BasicWallet)
         .build_existing()
@@ -842,10 +841,8 @@ async fn inputs_created_correctly() -> anyhow::Result<()> {
         AccountComponentMetadata::mock("test::adv_map_component"),
     )?;
 
-    let account_code = AccountCode::from_components(
-        &[IncrNonceAuthComponent.into(), component.clone()],
-        AccountType::RegularAccountUpdatableCode,
-    )?;
+    let account_code =
+        AccountCode::from_components(&[IncrNonceAuthComponent.into(), component.clone()])?;
 
     let script = r#"
             adv_map A([1,2,3,4]) = [5,6,7,8]

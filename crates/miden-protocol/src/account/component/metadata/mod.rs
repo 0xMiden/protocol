@@ -1,11 +1,11 @@
-use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::collections::BTreeMap;
 use alloc::string::{String, ToString};
 use core::str::FromStr;
 
 use miden_mast_package::{Package, SectionId};
 use semver::Version;
 
-use super::{AccountType, SchemaRequirement, StorageSchema, StorageValueName};
+use super::{SchemaRequirement, StorageSchema, StorageValueName};
 use crate::errors::AccountError;
 use crate::utils::serde::{
     ByteReader,
@@ -41,6 +41,7 @@ use crate::utils::serde::{
 /// ```
 /// use std::collections::BTreeMap;
 ///
+/// use miden_protocol::account::StorageSlotName;
 /// use miden_protocol::account::component::{
 ///     AccountComponentMetadata,
 ///     FeltSchema,
@@ -53,7 +54,6 @@ use crate::utils::serde::{
 ///     WordSchema,
 ///     WordValue,
 /// };
-/// use miden_protocol::account::{AccountType, StorageSlotName};
 ///
 /// let slot_name = StorageSlotName::new("demo::test_value")?;
 ///
@@ -69,7 +69,7 @@ use crate::utils::serde::{
 ///     StorageSlotSchema::Value(ValueSlotSchema::new(Some("demo slot".into()), word)),
 /// )])?;
 ///
-/// let metadata = AccountComponentMetadata::new("test name", AccountType::all())
+/// let metadata = AccountComponentMetadata::new("test name")
 ///     .with_description("description of the component")
 ///     .with_storage_schema(storage_schema);
 ///
@@ -96,16 +96,13 @@ pub struct AccountComponentMetadata {
     /// This can be used to track and manage component upgrades.
     version: Version,
 
-    /// A set of supported target account types for this component.
-    supported_types: BTreeSet<AccountType>,
-
     /// Storage schema defining the component's storage layout, defaults, and init-supplied values.
     #[cfg_attr(feature = "std", serde(rename = "storage"))]
     storage_schema: StorageSchema,
 }
 
 impl AccountComponentMetadata {
-    /// Create a new [AccountComponentMetadata] with the given name and supported account types.
+    /// Create a new [AccountComponentMetadata] with the given name.
     ///
     /// Other fields are initialized to sensible defaults:
     /// - `description`: empty string
@@ -113,15 +110,11 @@ impl AccountComponentMetadata {
     /// - `storage_schema`: default (empty)
     ///
     /// Use the `with_*` mutator methods to customize these fields.
-    pub fn new(
-        name: impl Into<String>,
-        supported_types: impl IntoIterator<Item = AccountType>,
-    ) -> Self {
+    pub fn new(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
             description: String::new(),
             version: Version::new(1, 0, 0),
-            supported_types: supported_types.into_iter().collect(),
             storage_schema: StorageSchema::default(),
         }
     }
@@ -169,11 +162,6 @@ impl AccountComponentMetadata {
         &self.version
     }
 
-    /// Returns the account types supported by the component.
-    pub fn supported_types(&self) -> &BTreeSet<AccountType> {
-        &self.supported_types
-    }
-
     /// Returns the storage schema of the component.
     pub fn storage_schema(&self) -> &StorageSchema {
         &self.storage_schema
@@ -214,7 +202,6 @@ impl Serializable for AccountComponentMetadata {
         self.name.write_into(target);
         self.description.write_into(target);
         self.version.to_string().write_into(target);
-        self.supported_types.write_into(target);
         self.storage_schema.write_into(target);
     }
 }
@@ -230,14 +217,12 @@ impl Deserializable for AccountComponentMetadata {
         }
         let version = semver::Version::from_str(&String::read_from(source)?)
             .map_err(|err: semver::Error| DeserializationError::InvalidValue(err.to_string()))?;
-        let supported_types = BTreeSet::<AccountType>::read_from(source)?;
         let storage_schema = StorageSchema::read_from(source)?;
 
         Ok(Self {
             name,
             description,
             version,
-            supported_types,
             storage_schema,
         })
     }
