@@ -27,12 +27,6 @@ static ALLOWED_ACCOUNTS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| 
 /// its own — the policy component that installs the storage map (typically
 /// [`super::BasicAllowlist`]) reads the slot name and the initial entries from here.
 ///
-/// The low-level `allow_account` / `disallow_account` / `is_allowed` / `assert_allowed`
-/// procedures live in the standards library at
-/// `miden::standards::faucets::policies::transfer::allowlist` as `Invocation: exec` helpers —
-/// they perform no authorization and must be wrapped by an auth-checking admin component (see
-/// [`AllowlistOwnerControlled`]) before being exposed on a faucet.
-///
 /// ## Storage
 ///
 /// - [`Self::allowed_accounts_slot()`]: storage map keyed by account ID (word layout `[0, 0,

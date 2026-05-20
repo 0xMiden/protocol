@@ -34,7 +34,7 @@ pub use blocklist::{BlocklistOwnerControlled, BlocklistStorage};
 /// The same variants apply to both send (`on_before_asset_added_to_note`) and receive
 /// (`on_before_asset_added_to_account`) callbacks — the policy procedure receives no direction
 /// parameter and reads the relevant account context via `native_account::get_id`.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 #[non_exhaustive]
 pub enum TransferPolicy {
     /// Active policy = [`TransferAllowAll::root`] (the callback predicate accepts unconditionally).
@@ -45,12 +45,9 @@ pub enum TransferPolicy {
     /// explicitly via [`BasicBlocklist::with_blocked_accounts`] and select the policy via
     /// [`TransferPolicy::Custom`] with [`BasicBlocklist::root`].
     Blocklist,
-    /// Active policy = [`BasicAllowlist::root`]. Resolves into a [`BasicAllowlist`] component
-    /// with an empty initial allowlist; because the allowlist default-denies, an empty
-    /// allowlist rejects every transfer. To seed initial entries, install [`BasicAllowlist`]
-    /// explicitly via [`BasicAllowlist::with_allowed_accounts`] and select the policy via
-    /// [`TransferPolicy::Custom`] with [`BasicAllowlist::root`].
-    Allowlist,
+    /// Active policy = [`BasicAllowlist::root`]. Carries the [`AllowlistStorage`] used to seed
+    /// the per-faucet `allowed_accounts` map at component-construction time.
+    Allowlist { allow_list: AllowlistStorage },
     /// Active policy = the provided root. The corresponding component(s) must be installed by
     /// the caller separately; resolving this variant into built-in components yields an empty
     /// list.
@@ -59,28 +56,26 @@ pub enum TransferPolicy {
 
 impl TransferPolicy {
     /// Returns the procedure root of the policy this variant resolves to.
-    pub fn root(self) -> AccountProcedureRoot {
+    pub fn root(&self) -> AccountProcedureRoot {
         match self {
             Self::AllowAll => TransferAllowAll::root(),
             Self::Blocklist => BasicBlocklist::root(),
-            Self::Allowlist => BasicAllowlist::root(),
-            Self::Custom(root) => root,
+            Self::Allowlist { .. } => BasicAllowlist::root(),
+            Self::Custom(root) => *root,
         }
     }
 
     /// Returns the [`AccountComponent`]s that must accompany this transfer policy variant.
     ///
     /// For [`Self::Blocklist`] this is a [`BasicBlocklist`] component with no initial blocked
-    /// accounts. For [`Self::Allowlist`] this is a [`BasicAllowlist`] component with no
-    /// initial allowed accounts (which default-denies every transfer — callers seeding an
-    /// initial set should use [`Self::Custom`] with [`BasicAllowlist::root`] and install the
-    /// seeded [`BasicAllowlist`] explicitly). For [`Self::Custom`] this is empty — the caller
+    /// accounts. For [`Self::Allowlist`] this is a [`BasicAllowlist`] component built from
+    /// the carried [`AllowlistStorage`]. For [`Self::Custom`] this is empty — the caller
     /// installs whatever the chosen root requires.
     pub(crate) fn into_components(self) -> Vec<AccountComponent> {
         match self {
             Self::AllowAll => vec![TransferAllowAll.into()],
             Self::Blocklist => vec![BasicBlocklist::default().into()],
-            Self::Allowlist => vec![BasicAllowlist::default().into()],
+            Self::Allowlist { allow_list } => vec![BasicAllowlist::from(allow_list).into()],
             Self::Custom(_) => Vec::new(),
         }
     }

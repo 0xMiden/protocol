@@ -10,14 +10,7 @@ use std::sync::Arc;
 
 use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::account::{
-    Account,
-    AccountBuilder,
-    AccountId,
-    AccountIdVersion,
-    AccountStorageMode,
-    AccountType,
-};
+use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountIdVersion, AccountType};
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::asset::{Asset, AssetAmount, AssetCallbackFlag, FungibleAsset};
 use miden_protocol::note::{Note, NoteTag, NoteType};
@@ -27,7 +20,7 @@ use miden_standards::account::access::{Authority, Ownable2Step};
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
     AllowlistOwnerControlled,
-    BasicAllowlist,
+    AllowlistStorage,
     BurnPolicyConfig,
     MintPolicyConfig,
     PolicyRegistration,
@@ -49,12 +42,7 @@ use miden_testing::{
 // ================================================================================================
 
 fn dummy_owner() -> AccountId {
-    AccountId::dummy(
-        [9; 15],
-        AccountIdVersion::Version1,
-        AccountType::RegularAccountImmutableCode,
-        AccountStorageMode::Private,
-    )
+    AccountId::dummy([9; 15], AccountIdVersion::Version1, AccountType::Private)
 }
 
 /// Builds a fungible faucet with [`TransferPolicy::Allowlist`] on both send and receive,
@@ -71,10 +59,7 @@ fn add_faucet_with_owner_allowlist_transfer(
 }
 
 /// Same as [`add_faucet_with_owner_allowlist_transfer`] but seeds the `allowed_accounts`
-/// storage map with the given accounts at deploy time via
-/// [`BasicAllowlist::with_allowed_accounts`]. The transfer policy is wired up through
-/// [`TransferPolicy::Custom`] so the manager does not also install an empty `BasicAllowlist`
-/// (which would conflict with the seeded one).
+/// storage map with the given accounts.
 fn add_faucet_with_owner_allowlist_transfer_initialized(
     builder: &mut MockChainBuilder,
     owner_id: AccountId,
@@ -87,11 +72,10 @@ fn add_faucet_with_owner_allowlist_transfer_initialized(
         .max_supply(AssetAmount::new(1_000_000)?)
         .build()?;
 
-    let basic_allowlist = BasicAllowlist::with_allowed_accounts(initial_allowed);
+    let allow_list = AllowlistStorage::with_allowed_accounts(initial_allowed);
 
     let account_builder = AccountBuilder::new([43u8; 32])
-        .storage_mode(AccountStorageMode::Public)
-        .account_type(AccountType::FungibleFaucet)
+        .account_type(AccountType::Public)
         .with_component(faucet)
         .with_component(Ownable2Step::new(owner_id))
         .with_component(Authority::OwnerControlled)
@@ -100,15 +84,14 @@ fn add_faucet_with_owner_allowlist_transfer_initialized(
                 .with_mint_policy(MintPolicyConfig::AllowAll, PolicyRegistration::Active)?
                 .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)?
                 .with_send_policy(
-                    TransferPolicy::Custom(BasicAllowlist::root()),
+                    TransferPolicy::Allowlist { allow_list: allow_list.clone() },
                     PolicyRegistration::Active,
                 )?
                 .with_receive_policy(
-                    TransferPolicy::Custom(BasicAllowlist::root()),
+                    TransferPolicy::Allowlist { allow_list },
                     PolicyRegistration::Active,
                 )?,
         )
-        .with_component(basic_allowlist)
         .with_component(AllowlistOwnerControlled);
 
     builder.add_account_from_builder(
