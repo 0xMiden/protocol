@@ -252,8 +252,7 @@ impl PswapNote {
     pub const PSWAP_ATTACHMENT_SCHEME: NoteAttachmentScheme =
         StandardNoteAttachment::PswapAttachment.attachment_scheme();
 
-    /// Offset of the `depth` field within the [`Self::PSWAP_ATTACHMENT_SCHEME`] word
-    /// `[amount, order_id, depth, 0]`. Mirrors `PARENT_ATTACHMENT_DEPTH` in `pswap.masm`.
+    /// Offset of the `depth` field within the [`Self::PSWAP_ATTACHMENT_SCHEME`] word.
     const ATTACHMENT_DEPTH_INDEX: usize = 2;
 
     // PUBLIC ACCESSORS
