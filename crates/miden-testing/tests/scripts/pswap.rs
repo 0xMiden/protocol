@@ -3,7 +3,7 @@ use std::slice;
 
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountId, AccountType, AccountVaultDelta};
-use miden_protocol::asset::{Asset, FungibleAsset};
+use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
 use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::{Note, NoteAttachments, NoteType};
@@ -15,7 +15,7 @@ use miden_standards::errors::standards::{
     ERR_PSWAP_FILL_SUM_OVERFLOW,
     ERR_PSWAP_NOT_VALID_ASSET_AMOUNT,
 };
-use miden_standards::note::{PswapNote, PswapNoteStorage};
+use miden_standards::note::{PswapNote, PswapNoteAttachment, PswapNoteStorage};
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain, MockChainBuilder, assert_transaction_executor_error};
 use rand::SeedableRng;
@@ -150,7 +150,7 @@ async fn pswap_note_alice_reconstructs_and_consumes_p2id(
 
     let offered_asset = FungibleAsset::new(usdc_faucet.id(), 50)?;
     let requested_asset = FungibleAsset::new(eth_faucet.id(), 25)?;
-    let is_partial = fill_amount < requested_asset.amount();
+    let is_partial = fill_amount < u64::from(requested_asset.amount());
 
     let mut rng = RandomCoin::new(Word::default());
     let serial_number = rng.draw_word();
@@ -217,8 +217,10 @@ async fn pswap_note_alice_reconstructs_and_consumes_p2id(
     );
 
     // Depth = 1 (first fill). Consumer comes from the on-chain payback's metadata sender.
+    let payback_attachment =
+        PswapNoteAttachment::new(AssetAmount::new(fill_amount_from_aux)?, pswap.order_id(), 1);
     let reconstructed_payback =
-        pswap.payback_note(output_p2id.metadata().sender(), 1, fill_amount_from_aux)?;
+        pswap.payback_note(output_p2id.metadata().sender(), &payback_attachment)?;
 
     assert_eq!(
         reconstructed_payback.recipient().digest(),
@@ -239,13 +241,19 @@ async fn pswap_note_alice_reconstructs_and_consumes_p2id(
             "remainder aux should carry amt_payout matching the Rust-side calc",
         );
 
-        let remaining_requested = requested_asset.amount() - fill_amount_from_aux;
-        let remaining_offered = pswap.offered_asset().amount() - amt_payout_from_attachment;
+        let remaining_requested =
+            (requested_asset.amount() - AssetAmount::new(fill_amount_from_aux)?)?;
+        let remaining_offered =
+            (pswap.offered_asset().amount() - AssetAmount::new(amt_payout_from_attachment)?)?;
 
+        let remainder_attachment = PswapNoteAttachment::new(
+            AssetAmount::new(amt_payout_from_attachment)?,
+            pswap.order_id(),
+            1,
+        );
         let reconstructed_remainder = pswap.remainder_note(
             output_remainder.metadata().sender(),
-            1,
-            amt_payout_from_attachment,
+            &remainder_attachment,
             remaining_offered,
             remaining_requested,
         )?;
@@ -261,8 +269,8 @@ async fn pswap_note_alice_reconstructs_and_consumes_p2id(
         );
 
         assert_eq!(
-            reconstructed_remainder.commitment(),
-            output_remainder.commitment(),
+            reconstructed_remainder.details_commitment(),
+            output_remainder.details_commitment(),
             "reconstructed remainder commitment must match on-chain leaf",
         );
     }
@@ -1509,7 +1517,7 @@ async fn pswap_creator_reconstructs_lineage_from_attachments() -> anyhow::Result
     let mut current_requested = initial_requested;
 
     for (idx, fill_amount) in fills.iter().copied().enumerate() {
-        let depth = (idx + 1) as u64;
+        let depth = (idx + 1) as u32;
 
         // --- Bob fills the current PSWAP ---
         let payout_amount = current_pswap.calculate_offered_for_requested(fill_amount)?;
@@ -1555,14 +1563,16 @@ async fn pswap_creator_reconstructs_lineage_from_attachments() -> anyhow::Result
             "round {depth}: attachment fill amount mismatch",
         );
 
-        let reconstructed_payback = original_pswap.payback_note(
-            on_chain_payback.metadata().sender(),
+        let payback_attachment = PswapNoteAttachment::new(
+            AssetAmount::new(fill_from_attachment)?,
+            original_pswap.order_id(),
             depth,
-            fill_from_attachment,
-        )?;
+        );
+        let reconstructed_payback = original_pswap
+            .payback_note(on_chain_payback.metadata().sender(), &payback_attachment)?;
         assert_eq!(
-            reconstructed_payback.commitment(),
-            on_chain_payback.commitment(),
+            reconstructed_payback.details_commitment(),
+            on_chain_payback.details_commitment(),
             "round {depth}: reconstructed payback commitment must match on-chain leaf",
         );
 
@@ -1572,16 +1582,20 @@ async fn pswap_creator_reconstructs_lineage_from_attachments() -> anyhow::Result
             let remainder_attachment_word = first_attachment_word(on_chain_remainder.attachments());
             let payout_from_attachment = remainder_attachment_word[0].as_canonical_u64();
 
+            let remainder_attachment = PswapNoteAttachment::new(
+                AssetAmount::new(payout_from_attachment)?,
+                original_pswap.order_id(),
+                depth,
+            );
             let reconstructed_remainder = original_pswap.remainder_note(
                 on_chain_remainder.metadata().sender(),
-                depth,
-                payout_from_attachment,
-                remaining_offered,
-                remaining_requested,
+                &remainder_attachment,
+                AssetAmount::new(remaining_offered)?,
+                AssetAmount::new(remaining_requested)?,
             )?;
             assert_eq!(
-                reconstructed_remainder.commitment(),
-                on_chain_remainder.commitment(),
+                reconstructed_remainder.details_commitment(),
+                on_chain_remainder.details_commitment(),
                 "round {depth}: reconstructed remainder commitment must match on-chain leaf",
             );
         }
