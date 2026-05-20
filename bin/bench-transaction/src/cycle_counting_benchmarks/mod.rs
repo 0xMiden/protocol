@@ -12,6 +12,8 @@ pub enum ExecutionBenchmark {
     ConsumeClaimNoteL1ToMiden,
     ConsumeClaimNoteL2ToMiden,
     ConsumeB2AggNote,
+    ConsumeB2AggNotePopulated2p31,
+    ConsumeB2AggNotePopulated2p31m1,
 }
 
 impl fmt::Display for ExecutionBenchmark {
@@ -28,6 +30,12 @@ impl fmt::Display for ExecutionBenchmark {
             },
             ExecutionBenchmark::ConsumeB2AggNote => {
                 write!(f, "consume B2AGG note (bridge-out)")
+            },
+            ExecutionBenchmark::ConsumeB2AggNotePopulated2p31 => {
+                write!(f, "consume B2AGG note (bridge-out, 2^31 leaves)")
+            },
+            ExecutionBenchmark::ConsumeB2AggNotePopulated2p31m1 => {
+                write!(f, "consume B2AGG note (bridge-out, 2^31-1 leaves)")
             },
         }
     }

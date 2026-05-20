@@ -1,0 +1,41 @@
+# miden::standards::faucets::policies::transfer::basic_allowlist
+#
+# Basic allowlist transfer policy: rejects transfers whose native account is not allowed on the
+# issuing faucet. Delegates the per-account state to the sibling `allowlist` primitive
+# (storage + helpers).
+
+use miden::protocol::native_account
+use miden::standards::faucets::policies::transfer::allowlist
+
+# POLICY PROCEDURES
+# ================================================================================================
+
+#! Transfer policy that rejects transfers whose native account is not allowed on the issuing
+#! faucet.
+#!
+#! Invoked as the active send or receive policy via `TokenPolicyManager`. Reads the native
+#! account ID (asset recipient when invoked from `on_before_asset_added_to_account`, note
+#! creator when invoked from `on_before_asset_added_to_note`) and asserts it is allowed
+#! against the issuing faucet's `allowed_accounts` storage.
+#!
+#! The same procedure root is reusable as both send and receive policy because it only
+#! consumes the top eight felts (`ASSET_KEY`, `ASSET_VALUE`) and leaves the rest of the call
+#! frame untouched — any `note_idx` carried in the send signature passes through unchanged.
+#!
+#! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
+#! Outputs: [ASSET_VALUE, pad(12)]
+#!
+#! Panics if:
+#! - the native account is not allowed on the issuing faucet.
+#!
+#! Invocation: call
+pub proc check_policy
+    exec.native_account::get_id
+    # => [account_id_suffix, account_id_prefix, ASSET_KEY, ASSET_VALUE, pad(8)]
+
+    exec.allowlist::assert_allowed
+    # => [ASSET_KEY, ASSET_VALUE, pad(8)]
+
+    dropw
+    # => [ASSET_VALUE, pad(12)]
+end
