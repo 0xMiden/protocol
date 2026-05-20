@@ -546,12 +546,12 @@ impl PswapNote {
     // --------------------------------------------------------------------------------------------
 
     /// Reconstructs the depth-`d` payback P2ID [`Note`], byte-identical to the on-chain
-    /// body (matching both [`Note::id`] and [`Note::commitment`]) so the creator can
-    /// consume it as an unauthenticated input note.
+    /// body (matching both [`Note::id`] and [`Note::details_commitment`]) so the creator
+    /// can consume it as an unauthenticated input note.
     ///
     /// `consumer_account_id` must be the account that consumed the parent PSWAP in round
     /// `depth`: the MASM stamps it as the payback's metadata sender, which feeds into
-    /// [`Note::commitment`].
+    /// [`Note::details_commitment`].
     ///
     /// # Errors
     ///
@@ -1151,7 +1151,7 @@ mod tests {
     /// Regression for the silent `AssetCallbackFlag` drop: when the PSWAP's requested or
     /// offered asset carries `Enabled` callbacks, the on-chain MASM preserves that flag
     /// on every output note's asset. The Rust-side `execute`, `payback_note`, and
-    /// `remainder_note` must do the same — otherwise the reconstructed `Note::commitment`
+    /// `remainder_note` must do the same — otherwise the reconstructed `Note::details_commitment`
     /// diverges from the on-chain leaf and the unauthenticated consume path fails.
     #[test]
     fn pswap_output_assets_preserve_callback_flag() {
