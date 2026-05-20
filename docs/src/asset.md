@@ -77,12 +77,10 @@ The transaction kernel needs two pieces of information to work with assets:
 1. _Whether_ an asset need to be merged or split with another instance. This comes down to whether two assets have the same _identity_.
 2. If so, _how_ do these two instances compose, if at all? This comes down to the `composition` defined by the asset.
 
-The first question comes up when an asset is added or removed from an account's vault:
+When an asset is added or removed from an account's vault or added to a note, the transaction kernel may have to compose assets:
 - If 10 USDC are added to an account vault that already contains 20 USDC, then these two instances must be _merged_.
 - If 10 USDC are removed from an account vault that contains 20 USDC, then 10 USDC must be _split_ off the 20 USDC.
 - If 10 USDC are added to an empty account vault, then the asset can be written directly into the vault without needing to merge or split anything.
-
-The same applies whenever an asset is added to a note.
 
 #### Identity
 
@@ -102,7 +100,7 @@ The asset ID can be used by asset creators to ensure this. Let's look at the nat
 
 #### Composition
 
-Now that the transaction kernel knows _whether_ two assets need to compose, it also needs to know _how_ these instances compose. This is where the `composition` comes into play. It can fall into one of three categories:
+Now that the transaction kernel knows _whether_ two assets need to compose, it also needs to know _how_ these instances compose. This is where the `composition` flag comes into play. It can fall into one of three categories:
 
 - `None`: Instances do not compose. Used by non-fungible assets.
 - `Fungible`: Instances compose according to the native fungible asset, by summing their amounts, up to the maximum supply.
@@ -114,7 +112,7 @@ If the transaction kernel encounters two assets that need to be merged and their
 
 The `Fungible` composition is a specialization of the transaction kernel for native fungible assets. The advantage of this built-in way of composing assets is that the issuing faucet does not need to be called.
 
-On the other hand, `Custom` would involve invoking `merge` and `split` implementations defined by the issuing faucet via foreign procedure invocation.
+On the other hand, `Custom` would involve invoking `merge` and `split` implementations defined by the issuing faucet via a callback.
 
 ### Fungible Assets
 
@@ -126,7 +124,7 @@ The native fungible asset has the following vault key and value layout:
 - Value: `[amount, 0, 0, 0]`.
   - The amount is always $2^{63}-2^{31}$ or smaller, representing the maximum supply for any fungible `Asset`.
 
-Note how `Fungible` together with the asset ID limbs set to zero ensures that instances of fungible assets can always be merged and split.
+Note how the `Fungible` composition variant together with the asset ID limbs set to zero, ensure that instances of fungible assets can always be merged and split.
 
 Examples of such assets include ETH and various stablecoins (e.g. DAI, USDT, USDC).
 
@@ -139,7 +137,7 @@ The native non-fungible asset is encoded by hashing arbitrary data into 32 bytes
   - Its `composition` must be set to `None`.
 - Value: `[hash0, hash1, hash2, hash3]`.
 
-Note how `None` together with the asset ID limbs set to hashes from the asset value ensures that instances of non-fungible assets are never attempted to be merged or split by the transaction kernel.
+Note how the `None` composition variant together with the asset ID limbs set to hashes from the asset value, ensure that instances of non-fungible assets are never attempted to be merged or split by the transaction kernel.
 
 Examples of such assets include NFTs like a DevCon ticket.
 
