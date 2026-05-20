@@ -21,6 +21,7 @@ use miden_protocol::account::component::{
 };
 use miden_protocol::account::{
     AccountComponent,
+    AccountComponentName,
     AccountProcedureRoot,
     StorageMap,
     StorageMapKey,
@@ -189,6 +190,11 @@ impl TokenPolicyManager {
 
     /// Component description used in [`AccountComponentMetadata`].
     pub const DESCRIPTION: &'static str = "Token policy manager for fungible faucets";
+
+    /// Returns the canonical [`AccountComponentName`] of this component.
+    pub const fn name() -> AccountComponentName {
+        AccountComponentName::from_static_str(Self::NAME)
+    }
 
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------

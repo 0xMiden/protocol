@@ -12,9 +12,7 @@
 use core::slice;
 
 use miden_agglayer::{
-    EthAddress,
     ExitRoot,
-    MetadataHash,
     UpdateGerNote,
     create_existing_agglayer_faucet,
     create_existing_bridge_account,
@@ -150,10 +148,6 @@ async fn faucet_rejects_tx_script() -> anyhow::Result<()> {
         Felt::new(1_000_000).unwrap(),
         Felt::ZERO,
         bridge_admin.id(),
-        &EthAddress::from([1u8; 20]),
-        0,
-        10,
-        MetadataHash::new([0u8; 32]),
     );
     builder.add_account(faucet.clone())?;
 
@@ -194,10 +188,6 @@ async fn faucet_rejects_non_allowlisted_input_note() -> anyhow::Result<()> {
         Felt::new(1_000_000).unwrap(),
         Felt::ZERO,
         bridge_admin.id(),
-        &EthAddress::from([1u8; 20]),
-        0,
-        10,
-        MetadataHash::new([0u8; 32]),
     );
     builder.add_account(faucet.clone())?;
 

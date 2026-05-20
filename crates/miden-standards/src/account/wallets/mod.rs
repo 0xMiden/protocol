@@ -5,6 +5,7 @@ use miden_protocol::account::{
     Account,
     AccountBuilder,
     AccountComponent,
+    AccountComponentName,
     AccountProcedureRoot,
     AccountType,
 };
@@ -63,6 +64,11 @@ impl BasicWallet {
 
     const RECEIVE_ASSET_PROC_NAME: &str = "receive_asset";
     const MOVE_ASSET_TO_NOTE_PROC_NAME: &str = "move_asset_to_note";
+
+    /// Returns the canonical [`AccountComponentName`] of this component.
+    pub const fn name() -> AccountComponentName {
+        AccountComponentName::from_static_str(Self::NAME)
+    }
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
