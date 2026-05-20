@@ -62,21 +62,17 @@ const CGI_CHAIN_HASH_HI_SLOT_NAME = word("agglayer::bridge::cgi_chain_hash_hi")
 const CLAIM_PROOF_DATA_WORD_LEN = 134
 const CLAIM_LEAF_DATA_WORD_LEN = 8
 
-# MINT note storage layout (public mode, 22 felts total). The full 22-felt window is
-# inserted into the advice provider by `note::compute_and_store_recipient` and feeds the
-# storage commitment, so every element must match what the Rust `MintNoteStorage::Public`
-# layout writes. The padding at [17..19] aligns the P2ID storage at [20..21] to a word
-# boundary, which `note::compute_and_store_recipient` requires for the output note.
-# `write_mint_note_storage` writes those padding elements explicitly as zeros (as part of
-# the tag word) so the window does not depend on memory zero-init.
+# MINT note storage layout (public mode, 22 felts total). The full window feeds the
+# storage commitment via `note::compute_and_store_recipient`, so it must match
+# `MintNoteStorage::Public` exactly. The padding at [17..19] keeps the P2ID storage
+# at [20..21] word-aligned and is written as explicit zeros rather than relying on
+# memory zero-init.
 # - P2ID_SCRIPT_ROOT  [0..3]   : 4 felts
 # - SERIAL_NUM        [4..7]   : 4 felts
-# - ASSET_KEY         [8..11]  : 4 felts (vault key of the fungible asset to mint)
-# - ASSET_VALUE       [12..15] : 4 felts (value word of the asset; [amount, 0, 0, 0])
+# - ASSET_KEY         [8..11]  : 4 felts (vault key of asset to mint)
+# - ASSET_VALUE       [12..15] : 4 felts (asset value word; [amount, 0, 0, 0])
 # - tag               [16]     : 1 felt
-# - 0                 [17]     : 1 felt (padding; explicitly zeroed)
-# - 0                 [18]     : 1 felt (padding; explicitly zeroed)
-# - 0                 [19]     : 1 felt (padding; explicitly zeroed; aligns the P2ID storage)
+# - padding           [17..19] : 3 felts (word-aligns P2ID; explicitly zeroed)
 # - account_id_suffix [20]     : 1 felt
 # - account_id_prefix [21]     : 1 felt
 const MINT_NOTE_NUM_STORAGE_ITEMS = 22
@@ -868,9 +864,6 @@ end
 #! - [17..19]: padding (so the P2ID storage below stays word-aligned at [20..21])
 #! - [20]:     account_id_suffix (destination account suffix)
 #! - [21]:     account_id_prefix (destination account prefix)
-#!
-#! AggLayer fungible faucets do not declare callbacks, so `enable_callbacks = 0` is passed
-#! to `asset::create_fungible_asset` when assembling the ASSET word pair.
 #!
 #! Inputs:  [destination_id_suffix, destination_id_prefix, faucet_id_suffix, faucet_id_prefix]
 #! Outputs: [faucet_id_suffix, faucet_id_prefix]
