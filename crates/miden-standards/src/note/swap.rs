@@ -432,12 +432,7 @@ mod tests {
     }
 
     fn dummy_target_id() -> AccountId {
-        AccountId::dummy(
-            [1; 15],
-            AccountIdVersion::Version1,
-            AccountType::RegularAccountImmutableCode,
-            AccountStorageMode::Public,
-        )
+        AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountType::Public)
     }
 
     fn dummy_recipient_digest() -> Word {
