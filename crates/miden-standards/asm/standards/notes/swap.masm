@@ -102,7 +102,6 @@ pub proc main
     else
         # --- PUBLIC PAYBACK ---
         # Derive P2ID serial = SWAP_SERIAL with the least significant element +1.
-        # The creator can recompute this offline from SWAP's own serial number.
         exec.active_note::get_serial_number
         add.1
         # => [s0', s1, s2, s3]

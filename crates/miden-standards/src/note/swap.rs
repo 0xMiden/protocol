@@ -19,10 +19,10 @@ use miden_protocol::note::{
     PartialNoteMetadata,
 };
 use miden_protocol::utils::sync::LazyLock;
-use miden_protocol::{Felt, ONE, Word};
+use miden_protocol::{Felt, Word, ONE};
 
-use crate::StandardsLib;
 use crate::note::P2idNoteStorage;
+use crate::StandardsLib;
 
 // NOTE SCRIPT
 // ================================================================================================
@@ -74,12 +74,7 @@ impl SwapNote {
     /// that is willing to consume the note. The consumer will receive the `offered_asset` and
     /// will create a new P2ID note with `sender` as target, containing the `requested_asset`.
     ///
-    /// The shape of the SWAP note storage depends on `payback_note_type`:
-    /// - [`NoteType::Private`]: the payback recipient digest is precomputed off-chain and embedded
-    ///   as an opaque value, so the SWAP consumer cannot learn who the payback targets from the
-    ///   storage alone.
-    /// - [`NoteType::Public`]: the payback target account id is embedded in plaintext so that any
-    ///   consumer of the payback note can reconstruct its recipient at consume time.
+    /// See [`SwapPayback`] for how the two payback modes shape the SWAP note storage.
     ///
     /// # Errors
     /// Returns an error if deserialization or compilation of the `SWAP` script fails.
@@ -183,12 +178,7 @@ impl SwapNote {
 /// | `[14]`    | Payback target account ID prefix (public mode; zero in private mode) |
 /// | `[15]`    | Payback target account ID suffix (public mode; zero in private mode) |
 ///
-/// In private mode the payback recipient digest is stored as an opaque value, so the consumer of
-/// the SWAP cannot learn who the payback targets from the storage alone. In public mode the
-/// payback target account id is stored in plaintext so the MASM can derive the payback recipient
-/// at consume time via `p2id::new`. The payback note tag is stored explicitly in both modes; the
-/// creator is responsible for picking one that targets the payback receiver when the payback is
-/// public.
+/// See [`SwapPayback`] for the rationale behind the per-mode shape.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SwapNoteStorage {
     requested_asset: Asset,
@@ -197,19 +187,18 @@ pub struct SwapNoteStorage {
 }
 
 /// Mode-specific payback data embedded in [`SwapNoteStorage`].
+///
+/// The variant determines how the payback recipient is materialized at consume time:
+/// - [`SwapPayback::Private`] embeds the precomputed P2ID recipient digest as an opaque value, so
+///   the SWAP storage alone does not reveal who the payback targets.
+/// - [`SwapPayback::Public`] embeds the payback target account id in plaintext, so any consumer
+///   can reconstruct the payback recipient at consume time via `p2id::new`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SwapPayback {
-    /// Private payback: the recipient digest is precomputed off-chain by the creator and stored
-    /// as an opaque value.
     Private {
         /// Precomputed P2ID recipient digest for the payback note.
         recipient: Word,
     },
-    /// Public payback: the payback target account id is stored in plaintext so the consumer can
-    /// reconstruct the payback recipient at consume time.
-    ///
-    /// Stored explicitly rather than derived from the SWAP sender to leave room for
-    /// third-party paybacks in the future.
     Public {
         /// Account ID of the payback receiver. Today this is the SWAP creator by convention, but
         /// the script does not enforce it: it can be any account in a future iteration.
@@ -228,9 +217,6 @@ impl SwapNoteStorage {
     // --------------------------------------------------------------------------------------------
 
     /// Creates a new SWAP note storage for a private payback.
-    ///
-    /// `payback_recipient` is the precomputed P2ID recipient digest for the payback note and
-    /// `payback_tag` is the tag that the payback note will be created with.
     pub fn new_private(
         requested_asset: Asset,
         payback_recipient: Word,
@@ -244,10 +230,6 @@ impl SwapNoteStorage {
     }
 
     /// Creates a new SWAP note storage for a public payback.
-    ///
-    /// `payback_target_id` is embedded in plaintext so the consumer can reconstruct the payback
-    /// recipient. `payback_tag` is the tag attached to the payback note; it should target the
-    /// payback receiver so the network can route the note to it.
     pub fn new_public(
         requested_asset: Asset,
         payback_target_id: AccountId,
