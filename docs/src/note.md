@@ -165,14 +165,14 @@ The note script and storage determine the actual consumption conditions. For exa
 The `Note` nullifier, computed as:
 
 ```arduino
-hash(serial_num, script_root, storage_commitment, vault_hash)
+hash(SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT, ASSET_COMMITMENT, METADATA, ATTACHMENTS_COMMITMENT)
 ```
 
 This achieves the following properties:
 
 - Every `Note` can be reduced to a single unique nullifier.
 - One cannot derive a note's ID from its nullifier.
-- To compute the nullifier, one must know all components of the `Note`: serial_num, script_root, storage_commitment, and vault_hash.
+- To compute the nullifier, one must know all components of the `Note`: serial_num, script_root, storage_commitment, assets_commitment, metadata, and attachments_commitment.
 
 That means if a `Note` is private and the operator stores only the note's hash, only those with the `Note` details know if this `Note` has been consumed already. Zcash first [introduced](https://zcash.github.io/orchard/design/nullifiers.html#nullifiers) this approach.
 
