@@ -8,7 +8,6 @@ use miden_protocol::account::component::{
 use miden_protocol::account::{
     AccountComponent,
     AccountStorage,
-    AccountType,
     RoleSymbol,
     StorageSlot,
     StorageSlotName,
@@ -52,35 +51,20 @@ const RBAC_CONTROLLED: u8 = 2;
 ///
 /// Because `assert_authorized` is a no-op under `AuthControlled`, the account's auth component
 /// is the **sole** gate for every authority-gated setter. The auth component MUST therefore
-/// authenticate every such setter root, otherwise the setters become permissionless. Factories
-/// that compose accounts under this variant enforce this invariant (see
-/// [`create_fungible_faucet`][crate::account::faucets::create_fungible_faucet], which rejects
-/// [`AuthMethod::NoAuth`][crate::AuthMethod::NoAuth] under
-/// [`AccessControl::AuthControlled`][crate::account::access::AccessControl::AuthControlled] and
-/// installs [`AuthSingleSigAcl`][crate::account::auth::AuthSingleSigAcl] with the complete
-/// authority-gated trigger list for [`AuthMethod::SingleSig`][crate::AuthMethod::SingleSig]).
-/// Custom account assemblies that install `Authority::AuthControlled` directly bear the same
-/// responsibility.
+/// authenticate every such setter root, otherwise the setters become permissionless.
 ///
 /// Storage layout: `[authority, role_symbol_or_zero, 0, 0]` — single Word.
 #[repr(u8)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Authority {
-    /// Authority is the account's auth component; no extra check is performed by
-    /// `authority::assert_authorized`. See the type-level docs for the safety invariant the
-    /// auth component must uphold.
+    /// Authority is the account's auth component.
     AuthControlled = AUTH_CONTROLLED,
-    /// Authority is the [`Ownable2Step`][crate::account::access::Ownable2Step] owner; the call
-    /// must be sent by the registered owner.
+    /// Authority is the [`Ownable2Step`][crate::account::access::Ownable2Step] owner.
     OwnerControlled = OWNER_CONTROLLED,
     /// Authority is membership in a specific RBAC role. The call must be sent by an account that
     /// holds `role` in the
     /// [`RoleBasedAccessControl`][crate::account::access::RoleBasedAccessControl] component.
-    ///
-    /// Requires the [`RoleBasedAccessControl`][crate::account::access::RoleBasedAccessControl]
-    /// component to be installed on the account; the MASM helper calls into
-    /// `rbac::assert_sender_has_role` and will fail to link otherwise.
     RbacControlled { role: RoleSymbol } = RBAC_CONTROLLED,
 }
 
@@ -125,7 +109,7 @@ impl Authority {
         )])
         .expect("storage schema should be valid");
 
-        AccountComponentMetadata::new(Self::NAME, AccountType::all())
+        AccountComponentMetadata::new(Self::NAME)
             .with_description(
                 "Account-wide authority shared by procedures that gate state-mutating \
                  operations behind auth-only, owner-based, or RBAC role-based checks",

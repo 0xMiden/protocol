@@ -163,19 +163,14 @@ impl TryFrom<&[Felt]> for P2idNoteStorage {
 #[cfg(test)]
 mod tests {
     use miden_protocol::Felt;
-    use miden_protocol::account::{AccountId, AccountIdVersion, AccountStorageMode, AccountType};
+    use miden_protocol::account::{AccountId, AccountIdVersion, AccountType};
     use miden_protocol::errors::NoteError;
 
     use super::*;
 
     #[test]
     fn try_from_valid_storage_succeeds() {
-        let target = AccountId::dummy(
-            [1u8; 15],
-            AccountIdVersion::Version1,
-            AccountType::FungibleFaucet,
-            AccountStorageMode::Private,
-        );
+        let target = AccountId::dummy([1u8; 15], AccountIdVersion::Version1, AccountType::Private);
 
         let storage = vec![target.suffix(), target.prefix().as_felt()];
 

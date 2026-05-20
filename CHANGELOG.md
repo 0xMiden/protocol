@@ -5,6 +5,7 @@
 ### Features
 
 - [BREAKING] Renamed `NoteId` to `NoteDetailsCommitment`, new `NoteId` struct now includes the NoteMetadata ([#1731](https://github.com/0xMiden/protocol/issues/1731)).
+- [BREAKING] Updated note nullifiers to include note metadata and attachments commitment ([#1731](https://github.com/0xMiden/protocol/issues/1731)).
 - [BREAKING] Renamed `native_asset_id` to `fee_faucet_id` ([#2718](https://github.com/0xMiden/protocol/pull/2718)).
 - [BREAKING] Removed redundant outputs from kernel procedures: `note::write_assets_to_memory`, `active_note::get_assets`, `input_note::get_assets`, `output_note::get_assets`, `active_note::get_storage`, and `faucet::mint` no longer return values identical to their inputs ([#2523](https://github.com/0xMiden/protocol/issues/2523)).
 - Added PSWAP (partial swap) note for decentralized partial-fill asset exchange with remainder note re-creation ([#2636](https://github.com/0xMiden/protocol/pull/2636)).
@@ -15,6 +16,8 @@
 - [BREAKING] Renamed `set_attachment` to `add_attachment`, `set_word_attachment` to `add_word_attachment`, and `set_array_attachment` to `add_array_attachment` in `miden::protocol::output_note` ([#2795](https://github.com/0xMiden/protocol/pull/2795), [#2849](https://github.com/0xMiden/protocol/pull/2849)).
 - [BREAKING] Remove `AccountStorageMode::Network`; network accounts are now identified via `NetworkAccountNoteAllowlist` ([#2900](https://github.com/0xMiden/protocol/pull/2900)).
 - [BREAKING] Add `NetworkAccount` wrapper for convenient network account identification ([#2915](https://github.com/0xMiden/protocol/pull/2915)).
+- [BREAKING] Introduced `AssetComposition` and encoded composition in the asset vault key's metadata byte ([#2631](https://github.com/0xMiden/protocol/issues/2631)).
+- Exposed `token_config_slot_value` on `FungibleFaucet` to allow reading the token config word directly from the account storage ([#2954](https://github.com/0xMiden/protocol/pull/2954)).
 
 ### Changes
 
@@ -56,10 +59,12 @@
 - [BREAKING] Remove `StandardNote::is_compatible_with` and `AccountInterfaceExt::is_compatible_with` ([#2920](https://github.com/0xMiden/protocol/issues/2920)).
 - [BREAKING] Renamed `procedure_digest!` to `procedure_root!` and return `AccountProcedureRoot` instead of `Word` ([#2621](https://github.com/0xMiden/protocol/issues/2621)).
 - [BREAKING] Replaced the `FungibleFaucetBuilder` with a `bon` builder on `FungibleFaucet` ([#2916](https://github.com/0xMiden/protocol/pull/2916)).
+- [BREAKING] Introduced `AccountComponentName` string wrapper ([#2621](https://github.com/0xMiden/protocol/pull/2621)).
 - [BREAKING] `FungibleAsset::amount()` and `AssetVault::get_balance()` now return `AssetAmount` ([#2928](https://github.com/0xMiden/protocol/pull/2928)).
 - [BREAKING] Upgraded `miden-vm` to v0.23 and `miden-crypto` to v0.25. Notable downstream changes: dropped the immediate form of `adv_push` in kernel and standards MASM, marked cross-module-referenced MASM constants and procedures `pub`, migrated to the split `Host`/`BaseHost` trait surface, renamed `Felt::new` call sites to the preserved-behavior `Felt::new_unchecked`, switched `ecdsa_k256_keccak`/`eddsa_25519_sha512` `SecretKey` references to the new `SigningKey`/`KeyExchangeKey` types, and recomputed the kernel's `EMPTY_SMT_ROOT` constant for the Plonky3-aligned Poseidon2 and domain-separated `SmtLeaf::hash` ([#2931](https://github.com/0xMiden/protocol/pull/2931)).
 - Derive `Hash` implementation for `StorageMapKey` and `StorageMapKeyHash` to allow using those values as keys in containers ([#2843](https://github.com/0xMiden/protocol/issues/2843)).
 - [BREAKING] Merged `AuthMethod` into `AccessControl` so every variant (`AuthControlled`, `Ownable2Step`, `Rbac`) now includes an `auth: AuthMethod` field. ([#2944](https://github.com/0xMiden/protocol/pull/2944)).
+- [BREAKING] Removed `AccountType` and renamed `AccountStorageMode` to `AccountType` ([#2939](https://github.com/0xMiden/protocol/pull/2939), [#2942](https://github.com/0xMiden/protocol/pull/2942)).
 
 ### Fixes
 
@@ -71,6 +76,7 @@
 - Fixed auth components to use initial storage state for authentication ([#2677](https://github.com/0xMiden/protocol/issues/2677)).
 - Renamed the AggLayer faucet registry flag constant for clarity ([#2812](https://github.com/0xMiden/protocol/issues/2812)).
 - [BREAKING] Replaced `NoAuth` with the new `AuthNetworkAccount` auth component on the AggLayer bridge and AggLayer faucet, closing the forged-MINT attack surface where any transaction against the bridge could emit a bridge-authored MINT note ([#2797](https://github.com/0xMiden/protocol/issues/2797), [#2818](https://github.com/0xMiden/protocol/pull/2818)).
+- Fixed `set_procedure_threshold` in the multisig auth component validating per-procedure overrides against initial `num_approvers`.
 
 ## 0.14.6 (2026-05-05)
 

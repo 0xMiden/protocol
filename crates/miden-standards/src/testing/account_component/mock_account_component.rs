@@ -1,13 +1,7 @@
 use alloc::vec::Vec;
 
 use miden_protocol::account::component::AccountComponentMetadata;
-use miden_protocol::account::{
-    AccountCode,
-    AccountComponent,
-    AccountStorage,
-    AccountType,
-    StorageSlot,
-};
+use miden_protocol::account::{AccountCode, AccountComponent, AccountStorage, StorageSlot};
 
 use crate::testing::mock_account_code::MockAccountCodeExt;
 
@@ -18,9 +12,6 @@ use crate::testing::mock_account_code::MockAccountCodeExt;
 ///
 /// It uses the [`MockAccountCodeExt::mock_account_library`][account_lib] and allows for an
 /// arbitrary number of storage slots (within the overall limit) so anything can be set for testing
-/// purposes.
-///
-/// This component supports all [`AccountType`](miden_protocol::account::AccountType)s for testing
 /// purposes.
 ///
 /// [account_lib]: crate::testing::mock_account_code::MockAccountCodeExt::mock_account_library
@@ -61,9 +52,8 @@ impl MockAccountComponent {
 
 impl From<MockAccountComponent> for AccountComponent {
     fn from(mock_component: MockAccountComponent) -> Self {
-        let metadata =
-            AccountComponentMetadata::new("miden::testing::mock_account", AccountType::all())
-                .with_description("Mock account component for testing");
+        let metadata = AccountComponentMetadata::new("miden::testing::mock_account")
+            .with_description("Mock account component for testing");
 
         AccountComponent::new(
             AccountCode::mock_account_library(),

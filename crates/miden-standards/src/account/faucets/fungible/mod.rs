@@ -12,9 +12,9 @@ use miden_protocol::account::{
     Account,
     AccountBuilder,
     AccountComponent,
+    AccountComponentName,
     AccountProcedureRoot,
     AccountStorage,
-    AccountStorageMode,
     AccountType,
     StorageSlot,
     StorageSlotName,
@@ -116,7 +116,7 @@ procedure_root!(
 /// This component bundles the asset minting/burning procedures and the token metadata
 /// (name, description, logo URI, external link) together. Whether the faucet behaves like a
 /// "basic" public faucet or a network-style faucet is a function of the surrounding account
-/// configuration (storage mode, auth component, access control component, and policy manager
+/// configuration (account type, auth component, access control component, and policy manager
 /// configuration), not of the faucet component itself.
 ///
 /// It re-exports the procedures from `miden::standards::faucets::fungible`. When linking
@@ -130,8 +130,6 @@ procedure_root!(
 /// The `mint_and_send` procedure is gated by the active mint policy from the associated
 /// [`TokenPolicyManager`]. `receive_and_burn` can only be called from a note script and is gated
 /// by the active burn policy.
-///
-/// This component supports accounts of type [`AccountType::FungibleFaucet`].
 ///
 /// [builder]: crate::code_builder::CodeBuilder
 /// [`TokenPolicyManager`]: crate::account::policies::TokenPolicyManager
@@ -220,6 +218,11 @@ impl FungibleFaucet {
 
     /// The name of the component.
     pub const NAME: &'static str = "miden::standards::components::faucets::fungible_faucet";
+
+    /// Returns the canonical [`AccountComponentName`] of this component.
+    pub const fn name() -> AccountComponentName {
+        AccountComponentName::from_static_str(Self::NAME)
+    }
 
     /// The maximum number of decimals supported.
     pub const MAX_DECIMALS: u8 = 12;
@@ -336,7 +339,7 @@ impl FungibleFaucet {
     }
 
     /// Returns the token name.
-    pub fn name(&self) -> &TokenName {
+    pub fn token_name(&self) -> &TokenName {
         self.metadata.name()
     }
 
@@ -380,7 +383,7 @@ impl FungibleFaucet {
         let storage_schema =
             StorageSchema::new(schema_entries).expect("storage schema should be valid");
 
-        AccountComponentMetadata::new(Self::NAME, [AccountType::FungibleFaucet])
+        AccountComponentMetadata::new(Self::NAME)
             .with_description(
                 "Fungible faucet component bundling minting, burning, and token metadata",
             )
@@ -397,7 +400,7 @@ impl FungibleFaucet {
     }
 
     /// Returns the single storage slot for the token config word.
-    fn token_config_slot_value(&self) -> StorageSlot {
+    pub fn token_config_slot_value(&self) -> StorageSlot {
         let word = Word::new([
             self.token_supply.into(),
             self.max_supply.into(),
@@ -583,24 +586,15 @@ fn all_authority_gated_setter_roots() -> Vec<AccountProcedureRoot> {
     ]
 }
 
-/// Creates a new fungible faucet account by composing the required components.
+/// Creates a new fungible faucet account.
 ///
-/// The behaviour of the resulting faucet is determined entirely by the
-/// `access_control` argument, which carries both the setter-access policy and the
-/// account-level [`AuthMethod`] used for transaction authentication:
-/// - [`AccessControl::AuthControlled { auth }`] — auth-only faucets.
-///   - With [`AuthMethod::SingleSig`], an [`AuthSingleSigAcl`] is installed whose trigger procedure
-///     list contains **every** authority-gated setter exported by the faucet and policy-manager
-///     components (`mint_and_send`, `set_max_supply`, `set_description`, `set_logo_uri`,
-///     `set_external_link`, `set_mint_policy`, `set_burn_policy`, `set_send_policy`,
-///     `set_receive_policy`).
-///   - With [`AuthMethod::NetworkAccount`], an [`AuthNetworkAccount`] is installed. The caller is
-///     responsible for choosing `allowed_script_roots` that prevent unauthorized setter
-///     invocations.
-/// - [`AccessControl::Ownable2Step { owner, auth }`] / [`AccessControl::Rbac { .., auth }`] —
-///   owner- or role-controlled faucets. The setter gate enforces `sender == owner` or RBAC role
-///   membership in-procedure, so the auth component only governs the faucet's own transaction
-///   authentication; any [`AuthMethod`] (including [`AuthMethod::NoAuth`]) is permitted.
+/// `access_control` carries both the setter access gate and the account's [`AuthMethod`]:
+///
+/// - [`AccessControl::AuthControlled { auth }`] — `auth` is the sole gate for authority-gated
+///   setters. For [`AuthMethod::NetworkAccount`], the caller is responsible for choosing
+///   `allowed_script_roots` that exclude unauthorized setter invocations.
+/// - [`AccessControl::Ownable2Step`] / [`AccessControl::Rbac`] — setter gate is enforced
+///   in-procedure (owner / role check), so any [`AuthMethod`] is accepted.
 ///
 /// The faucet itself, including all token metadata, is provided in the `faucet` parameter (see
 /// [`FungibleFaucet::builder`]).
@@ -609,13 +603,12 @@ pub fn create_fungible_faucet(
     faucet: FungibleFaucet,
     access_control: AccessControl,
     token_policy_manager: TokenPolicyManager,
-    storage_mode: AccountStorageMode,
+    account_type: AccountType,
 ) -> Result<Account, FungibleFaucetError> {
     let auth_component = build_auth_component(&access_control)?;
 
     let account = AccountBuilder::new(init_seed)
-        .account_type(AccountType::FungibleFaucet)
-        .storage_mode(storage_mode)
+        .account_type(account_type)
         .with_auth_component(auth_component)
         .with_component(faucet)
         .with_components(access_control)
@@ -627,20 +620,7 @@ pub fn create_fungible_faucet(
 }
 
 /// Builds the account-level auth component from the [`AuthMethod`] embedded in
-/// `access_control`. The construction is variant-specific:
-///
-/// - Under [`AccessControl::AuthControlled`], [`AuthSingleSig`] is wrapped in an
-///   [`AuthSingleSigAcl`] whose trigger procedure list contains every authority-gated setter root,
-///   ensuring the auth component authenticates every privileged state mutation.
-/// - Under [`AccessControl::Ownable2Step`] / [`AccessControl::Rbac`], the setter gate is handled
-///   in-procedure by `authority::assert_authorized`, so the auth component only needs to
-///   authenticate the account's own transactions. A plain [`AuthSingleSig`] is installed for
-///   [`AuthMethod::SingleSig`].
-///
-/// Rejects [`AuthMethod::Multisig`] / [`AuthMethod::Unknown`] for all variants (faucets do
-/// not support Multisig today), and rejects [`AuthMethod::NoAuth`] specifically under
-/// [`AccessControl::AuthControlled`] because it would leave authority-gated setters
-/// permissionless.
+/// `access_control`.
 fn build_auth_component(
     access_control: &AccessControl,
 ) -> Result<AccountComponent, FungibleFaucetError> {
