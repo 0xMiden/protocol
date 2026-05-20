@@ -528,6 +528,7 @@ proc get_current_depth
         drop push.0
         # => [0]
     end
+    # => [parent_depth]
 
     add.1
     # => [current_depth]
