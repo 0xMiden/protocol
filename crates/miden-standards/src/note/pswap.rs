@@ -547,10 +547,7 @@ impl PswapNote {
     /// Reconstructs the depth-`d` remainder PSWAP [`Note`] in this lineage.
     ///
     /// Called on the original PSWAP, this returns the full Note for the remainder produced
-    /// in round `d`. The returned Note matches the on-chain body byte-for-byte — both
-    /// [`Note::id`] and [`Note::commitment`] equal the on-chain values — so it can be fed
-    /// as an unauthenticated input note and authenticated against the on-chain leaf by
-    /// block proposal.
+    /// in round `depth`. The returned Note matches the created note exactly.
     ///
     /// All four runtime parameters mirror what the on-chain MASM stamps when minting the
     /// remainder:
