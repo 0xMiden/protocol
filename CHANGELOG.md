@@ -78,11 +78,10 @@
 - Fixed `output_note::add_asset` and `output_note::set_attachment` to no longer accept invalid note indices ([#2824](https://github.com/0xMiden/protocol/pull/2824)).
 - Fixed auth components to use initial storage state for authentication ([#2677](https://github.com/0xMiden/protocol/issues/2677)).
 - Renamed the AggLayer faucet registry flag constant for clarity ([#2812](https://github.com/0xMiden/protocol/issues/2812)).
+- Bound MINT notes to their faucet ([#2911](https://github.com/0xMiden/protocol/pull/2911)).
 - [BREAKING] Replaced `NoAuth` with the new `AuthNetworkAccount` auth component on the AggLayer bridge and AggLayer faucet, closing the forged-MINT attack surface where any transaction against the bridge could emit a bridge-authored MINT note ([#2797](https://github.com/0xMiden/protocol/issues/2797), [#2818](https://github.com/0xMiden/protocol/pull/2818)).
 - [BREAKING] Keyed the AggLayer faucet token registry by `(origin_token_address, origin_network)` instead of `origin_token_address` alone, preventing same-address cross-network mint collisions on CLAIM ([#2860](https://github.com/0xMiden/protocol/pull/2860)).
 - Fixed `set_procedure_threshold` in the multisig auth component validating per-procedure overrides against initial `num_approvers`.
-
-## 0.14.6 (2026-05-05)
 
 ## 0.14.6 (2026-05-09)
 

@@ -138,7 +138,7 @@ const CLAIM_DEST_ID_SUFFIX_LOCAL = 1
 #! origin_network) pair from the leaf data, and creates a MINT note targeting the AggLayer
 #! Faucet.
 #!
-#! The MINT note uses the standard MINT note pattern (public mode) with 18 storage items.
+#! The MINT note uses the standard MINT note pattern (public mode) with 22 storage items.
 #! See `write_mint_note_storage` for the full storage layout.
 #!
 #! Inputs:  [PROOF_DATA_KEY, LEAF_DATA_KEY, faucet_mint_amount, pad(7)]
