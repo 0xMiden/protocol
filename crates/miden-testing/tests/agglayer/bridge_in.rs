@@ -189,17 +189,9 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
         .expect("destination address is not an embedded Miden AccountId")
         .into_account_id();
 
-    // For mainnet and rollup fixtures, create the destination account so we can consume the P2ID
-    // note. The mock account is built from the destination ID encoded in the JSON test vector,
-    // since the claim note targets this account ID.
     let destination_account =
-        if matches!(data_source, ClaimDataSource::L1ToMiden | ClaimDataSource::L2ToMiden) {
-            let dest = Account::mock(u128::from(destination_account_id), IncrNonceAuthComponent);
-            builder.add_account(dest.clone())?;
-            Some(dest)
-        } else {
-            None
-        };
+        Account::mock(u128::from(destination_account_id), IncrNonceAuthComponent);
+    builder.add_account(destination_account.clone())?;
 
     // CREATE SENDER ACCOUNT (for creating the claim note)
     // --------------------------------------------------------------------------------------------
@@ -388,38 +380,34 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
 
     assert_eq!(RawOutputNote::Full(expected_output_p2id_note.clone()), *output_note);
 
-    // TX4: CONSUME THE P2ID NOTE WITH THE DESTINATION ACCOUNT (simulated case only)
+    // TX4: CONSUME THE P2ID NOTE WITH THE DESTINATION ACCOUNT
     // --------------------------------------------------------------------------------------------
-    // For the simulated case, we control the destination account and can verify the full
-    // end-to-end flow including P2ID consumption and balance updates.
-    if let Some(destination_account) = destination_account {
-        // Add the faucet transaction to the chain and prove the next block so the P2ID note is
-        // committed and can be consumed.
-        mock_chain.add_pending_executed_transaction(&mint_executed)?;
-        mock_chain.prove_next_block()?;
+    // Add the faucet transaction to the chain and prove the next block so the P2ID note is
+    // committed and can be consumed.
+    mock_chain.add_pending_executed_transaction(&mint_executed)?;
+    mock_chain.prove_next_block()?;
 
-        // Execute the consume transaction for the destination account. Pass the account
-        // directly since the JSON-encoded destination decodes to a private account ID.
-        let consume_tx_context = mock_chain
-            .build_tx_context(
-                destination_account.clone(),
-                &[],
-                slice::from_ref(&expected_output_p2id_note),
-            )?
-            .build()?;
-        let consume_executed_transaction = consume_tx_context.execute().await?;
+    // Execute the consume transaction for the destination account. Pass the account
+    // directly since the JSON-encoded destination decodes to a private account ID.
+    let consume_tx_context = mock_chain
+        .build_tx_context(
+            destination_account.clone(),
+            &[],
+            slice::from_ref(&expected_output_p2id_note),
+        )?
+        .build()?;
+    let consume_executed_transaction = consume_tx_context.execute().await?;
 
-        // Verify the destination account received the minted asset
-        let mut destination_account = destination_account.clone();
-        destination_account.apply_delta(consume_executed_transaction.account_delta())?;
+    // Verify the destination account received the minted asset
+    let mut destination_account = destination_account;
+    destination_account.apply_delta(consume_executed_transaction.account_delta())?;
 
-        let balance = destination_account.vault().get_balance(expected_asset.vault_key())?;
-        assert_eq!(
-            balance.as_u64(),
-            miden_claim_amount.as_canonical_u64(),
-            "destination account balance does not match"
-        );
-    }
+    let balance = destination_account.vault().get_balance(expected_asset.vault_key())?;
+    assert_eq!(
+        balance.as_u64(),
+        miden_claim_amount.as_canonical_u64(),
+        "destination account balance does not match"
+    );
     Ok(())
 }
 
