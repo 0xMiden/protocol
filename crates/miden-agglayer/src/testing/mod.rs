@@ -16,7 +16,7 @@ use miden_protocol::utils::hex_to_bytes;
 use miden_protocol::utils::sync::LazyLock;
 use serde::Deserialize;
 
-use crate::claim_note::{ProofData, SmtNode};
+use crate::types::{ProofData, SmtNode};
 use crate::{CgiChainHash, EthAddress, EthAmount, ExitRoot, GlobalIndex, LeafData, MetadataHash};
 
 // EMBEDDED TEST VECTOR JSON FILES

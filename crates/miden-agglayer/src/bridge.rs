@@ -14,7 +14,7 @@ use miden_utils_sync::LazyLock;
 use thiserror::Error;
 
 use super::agglayer_bridge_component_library;
-use crate::claim_note::CgiChainHash;
+use crate::types::CgiChainHash;
 pub use crate::{
     B2AggNote,
     ClaimNote,

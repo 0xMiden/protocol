@@ -28,21 +28,14 @@ pub mod eth_types;
 pub mod faucet;
 #[cfg(feature = "testing")]
 pub mod testing;
+pub mod types;
 pub mod update_ger_note;
 pub mod utils;
 
 pub use b2agg_note::B2AggNote;
 pub use bridge::{AggLayerBridge, AgglayerBridgeError};
-pub use claim_note::{
-    CgiChainHash,
-    ClaimNote,
-    ClaimNoteStorage,
-    ExitRoot,
-    LeafData,
-    LeafValue,
-    ProofData,
-    SmtNode,
-};
+pub use claim_note::{ClaimNote, ClaimNoteStorage};
+pub use types::{CgiChainHash, ExitRoot, LeafData, LeafValue, ProofData, SmtNode};
 pub use config_note::{ConfigAggBridgeNote, ConversionMetadata};
 #[cfg(any(test, feature = "testing"))]
 pub use eth_types::GlobalIndexExt;
