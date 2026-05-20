@@ -1,4 +1,4 @@
-use super::{NoteAssets, NoteDetailsCommitment, NoteRecipient, NoteScript, NoteStorage, Nullifier};
+use super::{NoteAssets, NoteDetailsCommitment, NoteRecipient, NoteScript, NoteStorage};
 use crate::Word;
 use crate::utils::serde::{
     ByteReader,
@@ -62,13 +62,6 @@ impl NoteDetails {
     /// Returns the note's recipient.
     pub fn recipient(&self) -> &NoteRecipient {
         &self.recipient
-    }
-
-    /// Returns the note's nullifier.
-    ///
-    /// This is public data, used to prevent double spend.
-    pub fn nullifier(&self) -> Nullifier {
-        Nullifier::from(self)
     }
 
     // MUTATORS
