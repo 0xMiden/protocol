@@ -1506,31 +1506,6 @@ pub proc set_input_note_details_commitment
     mem_storew_le
 end
 
-#! Computes a pointer to the memory address at which the nullifier associated a note with `idx` is
-#! stored.
-#!
-#! Inputs:  [idx]
-#! Outputs: [nullifier_ptr]
-#!
-#! Where:
-#! - idx is the index of the input note.
-#! - nullifier_ptr is the memory address of the nullifier for note idx.
-pub proc get_input_note_nullifier_ptr
-    mul.4 add.INPUT_NOTE_NULLIFIER_SECTION_PTR
-end
-
-#! Returns the nullifier of an input note with `idx`.
-#!
-#! Inputs:  [idx]
-#! Outputs: [nullifier]
-#!
-#! Where:
-#! - idx is the index of the input note.
-#! - nullifier is the nullifier of the input note.
-pub proc get_input_note_nullifier
-    mul.4 padw movup.4 add.INPUT_NOTE_NULLIFIER_SECTION_PTR mem_loadw_le
-end
-
 #! Stores the nullifier of the input note with `idx` in the nullifier memory section.
 #!
 #! Inputs:  [idx, NULLIFIER]
