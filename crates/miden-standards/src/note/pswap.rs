@@ -552,7 +552,7 @@ impl PswapNote {
     /// All four runtime parameters mirror what the on-chain MASM stamps when minting the
     /// remainder:
     /// - `consumer_account_id` — the account that consumed the parent PSWAP in round `d`, used as
-    ///   the remainder's metadata sender.
+    ///   the remainder's sender.
     /// - `payout_amount` — the offered-asset units the consumer received this round, i.e.
     ///   `calculate_offered_for_requested(fill_amount)` evaluated against the *parent* PSWAP's
     ///   offered/requested ratio. Carried in the attachment word as `[payout_amount, order_id,
