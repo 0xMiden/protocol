@@ -68,7 +68,7 @@
 ### Fixes
 
 - Fixed `LocalTransactionProver` accumulating `MastForest` entries across `prove()` calls, causing `capacity_overflow` panics in WASM environments where linear memory fragmentation prevents subsequent allocations ([#2918](https://github.com/0xMiden/protocol/pull/2918)).
-- Fixed `create_fungible_faucet` leaving authority-gated setters unauthenticated under `AccessControl::AuthControlled`: the `AuthSingleSigAcl` trigger list now contains every authority-gated setter root (`set_max_supply`, `set_description`, `set_logo_uri`, `set_external_link`, `set_mint_policy`, `set_burn_policy`, `set_send_policy`, `set_receive_policy`) in addition to `mint_and_send`.
+- Fixed `create_fungible_faucet` leaving authority-gated setters unauthenticated under `AccessControl::AuthControlled`: the `AuthSingleSigAcl` trigger list now contains every authority-gated setter root (`set_max_supply`, `set_description`, `set_logo_uri`, `set_external_link`, `set_mint_policy`, `set_burn_policy`, `set_send_policy`, `set_receive_policy`) in addition to `mint_and_send`. ([#2958](https://github.com/0xMiden/protocol/pull/2958)).
 - Made deserialization of `AccountCode` more robust ([#2788](https://github.com/0xMiden/protocol/pull/2788)).
 - Validated `PartialBlockchain` invariants on deserialization ([#2888](https://github.com/0xMiden/protocol/pull/2888)).
 - Fixed `output_note::add_asset` and `output_note::set_attachment` to no longer accept invalid note indices ([#2824](https://github.com/0xMiden/protocol/pull/2824)).
