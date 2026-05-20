@@ -21,7 +21,6 @@ use miden_protocol::account::{
     AccountComponent,
     AccountDelta,
     AccountId,
-    AccountStorageMode,
     AccountType,
     StorageSlot,
 };
@@ -241,8 +240,7 @@ impl MockChainBuilder {
         let tx_commitment = transactions.commitment();
         let tx_kernel_commitment = TransactionKernel.to_commitment();
         let timestamp = MockChain::TIMESTAMP_START_SECS;
-        let fee_parameters = FeeParameters::new(self.fee_faucet_id, self.verification_base_fee)
-            .context("failed to construct fee parameters")?;
+        let fee_parameters = FeeParameters::new(self.fee_faucet_id, self.verification_base_fee);
         let validator_secret_key = random_secret_key();
         let validator_public_key = validator_secret_key.public_key();
 
@@ -291,7 +289,7 @@ impl MockChainBuilder {
     /// [`MockChain::build_tx_context`] to automatically add the authenticator.
     pub fn create_new_wallet(&mut self, auth_method: Auth) -> anyhow::Result<Account> {
         let account_builder = AccountBuilder::new(self.rng.random())
-            .storage_mode(AccountStorageMode::Public)
+            .account_type(AccountType::Public)
             .with_component(BasicWallet);
 
         self.add_account_from_builder(auth_method, account_builder, AccountState::New)
@@ -311,7 +309,7 @@ impl MockChainBuilder {
         assets: impl IntoIterator<Item = Asset>,
     ) -> anyhow::Result<Account> {
         let account_builder = Account::builder(self.rng.random())
-            .storage_mode(AccountStorageMode::Public)
+            .account_type(AccountType::Public)
             .with_component(BasicWallet)
             .with_assets(assets);
 
@@ -327,13 +325,12 @@ impl MockChainBuilder {
         &mut self,
         auth_method: Auth,
         faucet: FungibleFaucet,
-        storage_mode: AccountStorageMode,
+        account_type: AccountType,
         access_control: AccessControl,
         token_policy_manager: TokenPolicyManager,
     ) -> anyhow::Result<Account> {
         let account_builder = AccountBuilder::new(self.rng.random())
-            .storage_mode(storage_mode)
-            .account_type(AccountType::FungibleFaucet)
+            .account_type(account_type)
             .with_component(faucet)
             .with_components(access_control)
             .with_components(token_policy_manager);
@@ -346,8 +343,8 @@ impl MockChainBuilder {
     ///
     /// The behaviour of the faucet (basic vs network-style) is determined entirely by the
     /// combination of arguments:
-    /// - `storage_mode`: [`AccountStorageMode::Public`] for basic faucets, or
-    ///   [`AccountStorageMode::Private`] for off-chain accounts.
+    /// - `account_type`: [`AccountType::Public`] for basic faucets, or [`AccountType::Private`] for
+    ///   off-chain accounts.
     /// - `auth_method`: typically a [`Auth::BasicAuth`] for basic faucets, or [`Auth::IncrNonce`]
     ///   for network-style faucets.
     /// - `access_control`: [`AccessControl::AuthControlled`] for basic faucets;
@@ -359,13 +356,12 @@ impl MockChainBuilder {
         &mut self,
         auth_method: Auth,
         faucet: FungibleFaucet,
-        storage_mode: AccountStorageMode,
+        account_type: AccountType,
         access_control: AccessControl,
         token_policy_manager: TokenPolicyManager,
     ) -> anyhow::Result<Account> {
         let account_builder = AccountBuilder::new(self.rng.random())
-            .storage_mode(storage_mode)
-            .account_type(AccountType::FungibleFaucet)
+            .account_type(account_type)
             .with_component(faucet)
             .with_components(access_control)
             .with_components(token_policy_manager);
@@ -410,7 +406,7 @@ impl MockChainBuilder {
         self.add_existing_fungible_faucet(
             auth_method,
             faucet,
-            AccountStorageMode::Public,
+            AccountType::Public,
             AccessControl::AuthControlled,
             token_policy_manager,
         )
@@ -419,7 +415,7 @@ impl MockChainBuilder {
     /// Convenience: builds an owner-controlled (network-style) fungible faucet from a
     /// token-symbol shorthand using default decimals, the given `mint_policy`, and `BurnAllowAll`.
     ///
-    /// The faucet is added with [`AccountStorageMode::Public`] and [`Auth::IncrNonce`].
+    /// The faucet is added with [`AccountType::Public`] and [`Auth::IncrNonce`].
     ///
     /// `mint_policy` selects the initial active mint policy on the faucet. The installed
     /// [`TokenPolicyManager`] is always owner-controlled.
@@ -464,7 +460,7 @@ impl MockChainBuilder {
         self.add_existing_fungible_faucet(
             Auth::NetworkAccount { allowed_script_roots },
             faucet,
-            AccountStorageMode::Public,
+            AccountType::Public,
             AccessControl::Ownable2Step { owner: owner_account_id },
             token_policy_manager,
         )
@@ -496,7 +492,7 @@ impl MockChainBuilder {
         self.add_existing_fungible_faucet(
             Auth::NetworkAccount { allowed_script_roots },
             faucet,
-            AccountStorageMode::Public,
+            AccountType::Public,
             AccessControl::Ownable2Step { owner: owner_account_id },
             token_policy_manager,
         )
@@ -531,7 +527,7 @@ impl MockChainBuilder {
         self.create_new_fungible_faucet(
             auth_method,
             faucet,
-            AccountStorageMode::Public,
+            AccountType::Public,
             AccessControl::AuthControlled,
             token_policy_manager,
         )
@@ -541,7 +537,7 @@ impl MockChainBuilder {
     /// authenticator (if any).
     pub fn create_new_mock_account(&mut self, auth_method: Auth) -> anyhow::Result<Account> {
         let account_builder = Account::builder(self.rng.random())
-            .storage_mode(AccountStorageMode::Public)
+            .account_type(AccountType::Public)
             .with_component(MockAccountComponent::with_empty_slots());
 
         self.add_account_from_builder(auth_method, account_builder, AccountState::New)
@@ -582,7 +578,7 @@ impl MockChainBuilder {
         assets: impl IntoIterator<Item = Asset>,
     ) -> anyhow::Result<Account> {
         let account_builder = Account::builder(self.rng.random())
-            .storage_mode(AccountStorageMode::Public)
+            .account_type(AccountType::Public)
             .with_component(MockAccountComponent::with_slots(slots.into_iter().collect()))
             .with_assets(assets);
 
@@ -631,7 +627,7 @@ impl MockChainBuilder {
         components: impl IntoIterator<Item = AccountComponent>,
     ) -> anyhow::Result<Account> {
         let mut account_builder =
-            Account::builder(rand::rng().random()).storage_mode(AccountStorageMode::Public);
+            Account::builder(rand::rng().random()).account_type(AccountType::Public);
 
         for component in components {
             account_builder = account_builder.with_component(component);

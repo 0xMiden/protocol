@@ -1,4 +1,4 @@
-use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::collections::BTreeMap;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
@@ -17,9 +17,9 @@ use super::super::{
     WordSchema,
     WordValue,
 };
+use crate::account::StorageSlotName;
 use crate::account::component::storage::type_registry::SCHEMA_TYPE_REGISTRY;
 use crate::account::component::{AccountComponentMetadata, SchemaType};
-use crate::account::{AccountType, StorageSlotName};
 use crate::errors::ComponentMetadataError;
 
 mod init_storage_data;
@@ -37,7 +37,6 @@ struct RawAccountComponentMetadata {
     name: String,
     description: String,
     version: Version,
-    supported_types: BTreeSet<AccountType>,
     #[serde(rename = "storage")]
     #[serde(default)]
     storage: RawStorageSchema,
@@ -69,7 +68,7 @@ impl AccountComponentMetadata {
         }
 
         let storage_schema = StorageSchema::new(fields)?;
-        Ok(Self::new(raw.name, raw.supported_types)
+        Ok(Self::new(raw.name)
             .with_description(raw.description)
             .with_version(raw.version)
             .with_storage_schema(storage_schema))

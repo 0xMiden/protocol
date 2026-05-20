@@ -1,5 +1,5 @@
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
-use miden_protocol::account::{AccountComponent, AccountProcedureRoot, AccountType};
+use miden_protocol::account::{AccountComponent, AccountProcedureRoot};
 
 use crate::account::account_component_code;
 use crate::procedure_root;
@@ -47,11 +47,9 @@ impl BurnOwnerOnly {
 
 impl From<BurnOwnerOnly> for AccountComponent {
     fn from(_: BurnOwnerOnly) -> Self {
-        let metadata =
-            AccountComponentMetadata::new(BurnOwnerOnly::NAME, [AccountType::FungibleFaucet])
-                .with_description(
-                    "`owner_only` burn policy (owner-controlled family) for fungible faucets",
-                );
+        let metadata = AccountComponentMetadata::new(BurnOwnerOnly::NAME).with_description(
+            "`owner_only` burn policy (owner-controlled family) for fungible faucets",
+        );
 
         AccountComponent::new(BurnOwnerOnly::code().clone(), vec![], metadata).expect(
             "`owner_only` burn policy component should satisfy the requirements of a valid account component",

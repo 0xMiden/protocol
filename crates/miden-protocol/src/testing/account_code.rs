@@ -6,7 +6,7 @@ use alloc::sync::Arc;
 use miden_assembly::Assembler;
 
 use crate::account::component::AccountComponentMetadata;
-use crate::account::{AccountCode, AccountComponent, AccountType};
+use crate::account::{AccountCode, AccountComponent};
 use crate::testing::noop_auth_component::NoopAuthComponent;
 
 pub const CODE: &str = "
@@ -27,13 +27,9 @@ impl AccountCode {
                 .assemble_library([CODE])
                 .expect("mock account component should assemble"),
         );
-        let metadata = AccountComponentMetadata::new("miden::testing::mock", AccountType::all());
+        let metadata = AccountComponentMetadata::new("miden::testing::mock");
         let component = AccountComponent::new(library, vec![], metadata).unwrap();
 
-        Self::from_components(
-            &[NoopAuthComponent.into(), component],
-            AccountType::RegularAccountUpdatableCode,
-        )
-        .unwrap()
+        Self::from_components(&[NoopAuthComponent.into(), component]).unwrap()
     }
 }
