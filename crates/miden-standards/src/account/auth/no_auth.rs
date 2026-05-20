@@ -1,5 +1,5 @@
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
-use miden_protocol::account::{AccountComponent, AccountComponentName, AccountType};
+use miden_protocol::account::{AccountComponent, AccountComponentName};
 
 use crate::account::account_component_code;
 
@@ -17,8 +17,6 @@ account_component_code!(NO_AUTH_CODE, "auth/no_auth.masl");
 /// - Checks if the account state has changed by comparing initial and final commitments
 /// - Only increments the nonce if the account state has actually changed
 /// - Provides no cryptographic authentication
-///
-/// This component supports all account types.
 pub struct NoAuth;
 
 impl NoAuth {
@@ -42,8 +40,7 @@ impl NoAuth {
 
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        AccountComponentMetadata::new(Self::NAME, AccountType::all())
-            .with_description("No authentication component")
+        AccountComponentMetadata::new(Self::NAME).with_description("No authentication component")
     }
 }
 

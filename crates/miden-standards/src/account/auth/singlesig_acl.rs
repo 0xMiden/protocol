@@ -14,7 +14,6 @@ use miden_protocol::account::{
     AccountComponent,
     AccountComponentName,
     AccountProcedureRoot,
-    AccountType,
     StorageMap,
     StorageMapKey,
     StorageSlot,
@@ -152,8 +151,6 @@ impl Default for AuthSingleSigAclConfig {
 /// state or kernel APIs may not be detected as "called" even if they were executed during
 /// the transaction. This is an important limitation to consider when designing trigger
 /// procedures for authentication.
-///
-/// This component supports all account types.
 pub struct AuthSingleSigAcl {
     pub_key: PublicKeyCommitment,
     auth_scheme: AuthScheme,
@@ -268,7 +265,7 @@ impl AuthSingleSigAcl {
         ])
         .expect("storage schema should be valid");
 
-        AccountComponentMetadata::new(Self::NAME, AccountType::all())
+        AccountComponentMetadata::new(Self::NAME)
             .with_description(
                 "Authentication component with procedure-based ACL using ECDSA K256 Keccak or Falcon512 Poseidon2 signature scheme",
             )

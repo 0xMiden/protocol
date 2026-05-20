@@ -214,19 +214,14 @@ impl TryFrom<&[Felt]> for P2ideNoteStorage {
 #[cfg(test)]
 mod tests {
     use miden_protocol::Felt;
-    use miden_protocol::account::{AccountId, AccountIdVersion, AccountStorageMode, AccountType};
+    use miden_protocol::account::{AccountId, AccountIdVersion, AccountType};
     use miden_protocol::block::BlockNumber;
     use miden_protocol::errors::NoteError;
 
     use super::*;
 
     fn dummy_account() -> AccountId {
-        AccountId::dummy(
-            [3u8; 15],
-            AccountIdVersion::Version1,
-            AccountType::FungibleFaucet,
-            AccountStorageMode::Private,
-        )
+        AccountId::dummy([3u8; 15], AccountIdVersion::Version1, AccountType::Private)
     }
 
     #[test]

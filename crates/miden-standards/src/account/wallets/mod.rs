@@ -7,7 +7,6 @@ use miden_protocol::account::{
     AccountComponent,
     AccountComponentName,
     AccountProcedureRoot,
-    AccountStorageMode,
     AccountType,
 };
 use miden_protocol::errors::AccountError;
@@ -53,8 +52,6 @@ procedure_root!(
 /// All methods require authentication. Thus, this component must be combined with a component
 /// providing authentication.
 ///
-/// This component supports all account types.
-///
 /// [builder]: crate::code_builder::CodeBuilder
 pub struct BasicWallet;
 
@@ -93,7 +90,7 @@ impl BasicWallet {
 
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        AccountComponentMetadata::new(Self::NAME, AccountType::all())
+        AccountComponentMetadata::new(Self::NAME)
             .with_description("Basic wallet component for receiving and sending assets")
     }
 }
@@ -133,15 +130,8 @@ pub enum BasicWalletError {
 pub fn create_basic_wallet(
     init_seed: [u8; 32],
     auth_method: AuthMethod,
-    account_type: AccountType,
-    account_storage_mode: AccountStorageMode,
+    account_storage_mode: AccountType,
 ) -> Result<Account, BasicWalletError> {
-    if matches!(account_type, AccountType::FungibleFaucet | AccountType::NonFungibleFaucet) {
-        return Err(BasicWalletError::AccountError(AccountError::other(
-            "basic wallet accounts cannot have a faucet account type",
-        )));
-    }
-
     let auth_component: AccountComponent = match auth_method {
         AuthMethod::SingleSig { approver: (pub_key, auth_scheme) } => {
             AuthSingleSig::new(pub_key, auth_scheme).into()
@@ -172,8 +162,7 @@ pub fn create_basic_wallet(
     };
 
     let account = AccountBuilder::new(init_seed)
-        .account_type(account_type)
-        .storage_mode(account_storage_mode)
+        .account_type(account_storage_mode)
         .with_auth_component(auth_component)
         .with_component(BasicWallet)
         .build()
@@ -191,7 +180,7 @@ mod tests {
     use miden_protocol::utils::serde::{Deserializable, Serializable};
     use miden_protocol::{ONE, Word};
 
-    use super::{Account, AccountStorageMode, AccountType, AuthMethod, create_basic_wallet};
+    use super::{Account, AccountType, AuthMethod, create_basic_wallet};
     use crate::account::wallets::BasicWallet;
 
     #[test]
@@ -201,8 +190,7 @@ mod tests {
         let wallet = create_basic_wallet(
             [1; 32],
             AuthMethod::SingleSig { approver: (pub_key, auth_scheme) },
-            AccountType::RegularAccountImmutableCode,
-            AccountStorageMode::Public,
+            AccountType::Public,
         );
 
         wallet.unwrap_or_else(|err| {
@@ -217,8 +205,7 @@ mod tests {
         let wallet = create_basic_wallet(
             [1; 32],
             AuthMethod::SingleSig { approver: (pub_key, auth_scheme) },
-            AccountType::RegularAccountImmutableCode,
-            AccountStorageMode::Public,
+            AccountType::Public,
         )
         .unwrap();
 

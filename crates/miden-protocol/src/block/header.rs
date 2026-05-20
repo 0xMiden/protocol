@@ -1,10 +1,8 @@
-use alloc::string::ToString;
 use alloc::vec::Vec;
 
-use crate::account::{AccountId, AccountType};
+use crate::account::AccountId;
 use crate::block::BlockNumber;
 use crate::crypto::dsa::ecdsa_k256_keccak::PublicKey;
-use crate::errors::FeeError;
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -329,11 +327,15 @@ impl Deserializable for BlockHeader {
 /// The fee-related parameters of a block.
 ///
 /// This defines how to compute the fees of a transaction and which asset fees can be paid in.
+///
+/// The fee asset is assumed to be a fungible asset
+/// ([`AssetComposition::Fungible`](crate::asset::AssetComposition::Fungible)).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FeeParameters {
-    /// The [`AccountId`] of the fungible faucet whose assets are accepted for fee payments in the
+    /// The [`AccountId`] of the faucet whose assets are accepted for fee payments in the
     /// transaction kernel, or in other words, the fee faucet of the blockchain.
     fee_faucet_id: AccountId,
+
     /// The base fee (in base units) capturing the cost for the verification of a transaction.
     verification_base_fee: u32,
 }
@@ -342,20 +344,9 @@ impl FeeParameters {
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
-    /// Creates a new [`FeeParameters`] from the provided inputs.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - the provided fee faucet ID is not an ID of the fungible faucet.
-    pub fn new(fee_faucet_id: AccountId, verification_base_fee: u32) -> Result<Self, FeeError> {
-        if !matches!(fee_faucet_id.account_type(), AccountType::FungibleFaucet) {
-            return Err(FeeError::FeeFaucetIdNotFungible {
-                account_type: fee_faucet_id.account_type(),
-            });
-        }
-
-        Ok(Self { fee_faucet_id, verification_base_fee })
+    /// Creates [`FeeParameters`] from the provided inputs.
+    pub fn new(fee_faucet_id: AccountId, verification_base_fee: u32) -> Self {
+        Self { fee_faucet_id, verification_base_fee }
     }
 
     // PUBLIC ACCESSORS
@@ -388,8 +379,7 @@ impl Deserializable for FeeParameters {
         let fee_faucet_id = source.read()?;
         let verification_base_fee = source.read()?;
 
-        Self::new(fee_faucet_id, verification_base_fee)
-            .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
+        Ok(Self::new(fee_faucet_id, verification_base_fee))
     }
 }
 
@@ -398,12 +388,10 @@ impl Deserializable for FeeParameters {
 
 #[cfg(test)]
 mod tests {
-    use assert_matches::assert_matches;
     use miden_core::Word;
     use miden_crypto::rand::test_utils::rand_value;
 
     use super::*;
-    use crate::testing::account_id::ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET;
 
     #[test]
     fn test_serde() {
@@ -421,16 +409,5 @@ mod tests {
         let deserialized = BlockHeader::read_from_bytes(&serialized).unwrap();
 
         assert_eq!(deserialized, header);
-    }
-
-    /// Tests that the fee parameters constructor fails when the provided account ID is not a
-    /// fungible faucet.
-    #[test]
-    fn fee_parameters_fail_when_fee_faucet_is_not_fungible() {
-        assert_matches!(
-            FeeParameters::new(ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET.try_into().unwrap(), 0)
-                .unwrap_err(),
-            FeeError::FeeFaucetIdNotFungible { .. }
-        );
     }
 }

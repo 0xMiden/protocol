@@ -10,7 +10,6 @@ use miden_protocol::account::component::{
 use miden_protocol::account::{
     AccountComponent,
     AccountComponentName,
-    AccountType,
     StorageMap,
     StorageSlot,
     StorageSlotName,
@@ -171,7 +170,7 @@ impl RoleBasedAccessControl {
         ])
         .expect("storage schema should be valid");
 
-        AccountComponentMetadata::new(Self::NAME, AccountType::all())
+        AccountComponentMetadata::new(Self::NAME)
             .with_description("Role-based access control component")
             .with_storage_schema(storage_schema)
     }

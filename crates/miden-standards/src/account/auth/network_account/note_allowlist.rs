@@ -158,7 +158,7 @@ pub enum NetworkAccountNoteAllowlistError {
         NetworkAccountNoteAllowlist::slot_name()
     )]
     UnexpectedSlotType,
-    #[error("network account must have public storage mode, but account {0} does not")]
+    #[error("network account must have public account type, but account {0} does not")]
     AccountNotPublic(AccountId),
 }
 

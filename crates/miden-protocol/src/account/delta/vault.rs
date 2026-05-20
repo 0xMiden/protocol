@@ -11,7 +11,6 @@ use super::{
     DeserializationError,
     Serializable,
 };
-use crate::account::AccountType;
 use crate::asset::{Asset, AssetVaultKey, FungibleAsset, NonFungibleAsset};
 use crate::{Felt, ONE, ZERO};
 
@@ -205,10 +204,9 @@ impl FungibleAssetDelta {
     /// # Errors
     /// Returns an error if the delta does not pass the validation.
     pub fn new(map: BTreeMap<AssetVaultKey, i64>) -> Result<Self, AccountDeltaError> {
-        let delta = Self(map);
-        delta.validate()?;
+        Self::validate(&map)?;
 
-        Ok(delta)
+        Ok(Self(map))
     }
 
     /// Adds a new fungible asset to the delta.
@@ -309,9 +307,9 @@ impl FungibleAssetDelta {
     ///
     /// # Errors
     /// Returns an error if one or more fungible assets' faucet IDs are invalid.
-    fn validate(&self) -> Result<(), AccountDeltaError> {
-        for vault_key in self.0.keys() {
-            if !matches!(vault_key.faucet_id().account_type(), AccountType::FungibleFaucet) {
+    fn validate(map: &BTreeMap<AssetVaultKey, i64>) -> Result<(), AccountDeltaError> {
+        for vault_key in map.keys() {
+            if !vault_key.composition().is_fungible() {
                 return Err(AccountDeltaError::NotAFungibleFaucetId(vault_key.faucet_id()));
             }
         }
@@ -656,11 +654,9 @@ mod tests {
             account_id: AccountId,
             added: Option<bool>,
         ) -> AccountVaultDelta {
-            let asset: Asset = NonFungibleAsset::new(
-                &NonFungibleAssetDetails::new(account_id, vec![1, 2, 3]).unwrap(),
-            )
-            .unwrap()
-            .into();
+            let asset: Asset =
+                NonFungibleAsset::new(&NonFungibleAssetDetails::new(account_id, vec![1, 2, 3]))
+                    .into();
 
             match added {
                 Some(true) => AccountVaultDelta::from_iters([asset], []),
