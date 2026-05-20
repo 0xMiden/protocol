@@ -19,10 +19,10 @@ use miden_protocol::note::{
     PartialNoteMetadata,
 };
 use miden_protocol::utils::sync::LazyLock;
-use miden_protocol::{Felt, Word, ONE};
+use miden_protocol::{Felt, ONE, Word};
 
-use crate::note::P2idNoteStorage;
 use crate::StandardsLib;
+use crate::note::P2idNoteStorage;
 
 // NOTE SCRIPT
 // ================================================================================================
@@ -191,8 +191,8 @@ pub struct SwapNoteStorage {
 /// The variant determines how the payback recipient is materialized at consume time:
 /// - [`SwapPayback::Private`] embeds the precomputed P2ID recipient digest as an opaque value, so
 ///   the SWAP storage alone does not reveal who the payback targets.
-/// - [`SwapPayback::Public`] embeds the payback target account id in plaintext, so any consumer
-///   can reconstruct the payback recipient at consume time via `p2id::new`.
+/// - [`SwapPayback::Public`] embeds the payback target account id in plaintext, so any consumer can
+///   reconstruct the payback recipient at consume time via `p2id::new`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SwapPayback {
     Private {
