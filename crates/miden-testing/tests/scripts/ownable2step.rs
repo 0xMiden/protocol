@@ -10,7 +10,6 @@ use miden_protocol::account::{
     AccountBuilder,
     AccountComponent,
     AccountId,
-    AccountStorageMode,
     AccountType,
     StorageSlot,
 };
@@ -51,10 +50,10 @@ fn create_ownable_account(
     storage_slots.push(Ownable2Step::new(owner).to_storage_slot());
 
     let account = AccountBuilder::new([1; 32])
-        .storage_mode(AccountStorageMode::Public)
+        .account_type(AccountType::Public)
         .with_auth_component(Auth::IncrNonce)
         .with_component({
-            let metadata = AccountComponentMetadata::new("test::ownable", AccountType::all());
+            let metadata = AccountComponentMetadata::new("test::ownable");
             AccountComponent::new(component_code_obj, storage_slots, metadata)?
         })
         .build_existing()?;

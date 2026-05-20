@@ -11,7 +11,6 @@ use miden_protocol::account::component::{
 };
 use miden_protocol::account::{
     AccountComponent,
-    AccountType,
     StorageMap,
     StorageMapKey,
     StorageSlot,
@@ -271,7 +270,7 @@ impl From<AuthMultisigSmart> for AccountComponent {
         ])
         .expect("storage schema should be valid");
 
-        let metadata = AccountComponentMetadata::new(AuthMultisigSmart::NAME, AccountType::all())
+        let metadata = AccountComponentMetadata::new(AuthMultisigSmart::NAME)
             .with_description("Multisig smart authentication component")
             .with_storage_schema(storage_schema);
 

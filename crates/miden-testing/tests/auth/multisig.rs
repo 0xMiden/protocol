@@ -6,10 +6,9 @@ use miden_protocol::account::{
     AccountBuilder,
     AccountId,
     AccountProcedureRoot,
-    AccountStorageMode,
     AccountType,
 };
-use miden_protocol::asset::FungibleAsset;
+use miden_protocol::asset::{AssetCallbackFlag, AssetVaultKey, FungibleAsset};
 use miden_protocol::note::NoteType;
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
@@ -124,8 +123,7 @@ fn create_multisig_account(
     let multisig_account = AccountBuilder::new([0; 32])
         .with_auth_component(Auth::Multisig { threshold, approvers, proc_threshold_map })
         .with_component(BasicWallet)
-        .account_type(AccountType::RegularAccountUpdatableCode)
-        .storage_mode(AccountStorageMode::Public)
+        .account_type(AccountType::Public)
         .with_assets(vec![FungibleAsset::mock(asset_amount)])
         .build_existing()?;
 
@@ -229,7 +227,10 @@ async fn test_multisig_2_of_2_with_note_creation(
     assert_eq!(
         multisig_account
             .vault()
-            .get_balance(AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?)?
+            .get_balance(AssetVaultKey::new_fungible(
+                AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?,
+                AssetCallbackFlag::Disabled,
+            ))?
             .as_u64(),
         multisig_starting_balance - output_note_asset.unwrap_fungible().amount().as_u64()
     );
@@ -1157,10 +1158,11 @@ async fn test_multisig_proc_threshold_overrides(
     let salt2 = Word::from([Felt::new_unchecked(2); 4]);
 
     // Create output note to send 5 units from the account
+    let asset = FungibleAsset::mock(5);
     let output_note = P2idNote::create(
         multisig_account.id(),
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap(),
-        vec![FungibleAsset::mock(5)],
+        vec![asset],
         NoteType::Public,
         Default::default(),
         &mut RandomCoin::new(Word::from([Felt::new_unchecked(42); 4])),
@@ -1235,7 +1237,7 @@ async fn test_multisig_proc_threshold_overrides(
     mock_chain.add_pending_executed_transaction(&result.unwrap())?;
     mock_chain.prove_next_block()?;
 
-    assert_eq!(multisig_account.vault().get_balance(FungibleAsset::mock_issuer())?.as_u64(), 6);
+    assert_eq!(multisig_account.vault().get_balance(asset.vault_key())?.as_u64(), 6);
 
     Ok(())
 }
@@ -1482,6 +1484,86 @@ async fn test_multisig_set_procedure_threshold_rejects_exceeding_approvers(
         .build()?;
 
     let result = tx_context_init.execute().await;
+
+    assert_transaction_executor_error!(result, ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS);
+
+    Ok(())
+}
+
+/// Tests that `set_procedure_threshold` validates against the *current* num_approvers, not the
+/// initial one. If `update_signers_and_threshold` reduces num_approvers earlier in the
+/// same transaction, a subsequent `set_procedure_threshold` must use the post-update num_approvers
+/// for its bound check.
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[tokio::test]
+async fn test_multisig_set_procedure_threshold_uses_current_num_approvers(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    // Start with 3 approvers, threshold 2.
+    let (_secret_keys, auth_schemes, public_keys, _authenticators) =
+        setup_keys_and_authenticators_with_scheme(3, 2, auth_scheme)?;
+
+    let approvers = public_keys
+        .iter()
+        .zip(auth_schemes.iter())
+        .map(|(pk, scheme)| (pk.clone(), *scheme))
+        .collect::<Vec<_>>();
+
+    let multisig_account = create_multisig_account(2, &approvers, 10, vec![])?;
+    let proc_root = BasicWallet::receive_asset_root().as_word();
+
+    // Build a new config that reduces num_approvers to 1 (and threshold to 1).
+    let mut advice_map = AdviceMap::default();
+    let (_new_sec, _new_schemes, new_public_keys, _new_auth) =
+        setup_keys_and_authenticators_with_scheme(1, 1, auth_scheme)?;
+
+    let new_threshold = 1u64;
+    let new_num_of_approvers = 1u64;
+    let config_and_pubkeys_vector = build_update_signers_config_vector(
+        new_threshold,
+        new_num_of_approvers,
+        &new_public_keys,
+        auth_scheme,
+    );
+    let multisig_config_hash = Hasher::hash_elements(&config_and_pubkeys_vector);
+    advice_map.insert(multisig_config_hash, config_and_pubkeys_vector);
+    let advice_inputs = AdviceInputs { map: advice_map, ..Default::default() };
+
+    // Same transaction: first reduce num_approvers to 1, then try to set a per-procedure
+    // override of 2 — which exceeds the *current* num_approvers and must be rejected.
+    let script_code = format!(
+        r#"
+        begin
+            call.::miden::standards::components::auth::multisig::update_signers_and_threshold
+            push.{proc_root}
+            push.2
+            call.::miden::standards::components::auth::multisig::set_procedure_threshold
+            dropw
+            drop
+        end
+        "#
+    );
+    let script = CodeBuilder::default()
+        .with_dynamically_linked_library(AuthMultisig::code())?
+        .compile_tx_script(script_code)?;
+
+    let mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])
+        .unwrap()
+        .build()
+        .unwrap();
+    let salt = Word::from([Felt::from_u8(55); 4]);
+
+    let tx_context = mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .tx_script(script)
+        .tx_script_args(multisig_config_hash)
+        .extend_advice_inputs(advice_inputs)
+        .auth_args(salt)
+        .build()?;
+
+    let result = tx_context.execute().await;
 
     assert_transaction_executor_error!(result, ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS);
 

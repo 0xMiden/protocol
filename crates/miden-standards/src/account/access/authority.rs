@@ -8,7 +8,6 @@ use miden_protocol::account::component::{
 use miden_protocol::account::{
     AccountComponent,
     AccountStorage,
-    AccountType,
     RoleSymbol,
     StorageSlot,
     StorageSlotName,
@@ -110,7 +109,7 @@ impl Authority {
         )])
         .expect("storage schema should be valid");
 
-        AccountComponentMetadata::new(Self::NAME, AccountType::all())
+        AccountComponentMetadata::new(Self::NAME)
             .with_description(
                 "Account-wide authority shared by procedures that gate state-mutating \
                  operations behind auth-only, owner-based, or RBAC role-based checks",
