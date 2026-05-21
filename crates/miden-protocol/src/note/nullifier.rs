@@ -16,7 +16,7 @@ use super::{
     Word,
     ZERO,
 };
-use crate::note::{NoteDetails, NoteMetadata};
+use crate::note::{NoteDetails, NoteMetadata, NoteScriptRoot};
 
 // CONSTANTS
 // ================================================================================================
@@ -44,7 +44,7 @@ pub struct Nullifier(Word);
 impl Nullifier {
     /// Returns a new note [Nullifier] instantiated from the provided note components.
     pub fn new(
-        script_root: Word,
+        script_root: NoteScriptRoot,
         storage_commitment: Word,
         asset_commitment: Word,
         serial_num: Word,
@@ -64,7 +64,7 @@ impl Nullifier {
     /// Returns a new note [Nullifier] instantiated from the provided note details and metadata.
     pub fn from_details_and_metadata(details: &NoteDetails, metadata: &NoteMetadata) -> Self {
         Self::new(
-            details.script().root().into(),
+            details.script().root(),
             details.storage().commitment(),
             details.assets().commitment(),
             details.serial_num(),

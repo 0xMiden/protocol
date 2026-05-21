@@ -226,6 +226,22 @@ For existing procedures, pick the value that matches how callers invoke them: `c
 
 Kernel procedures under `crates/miden-protocol/asm/kernels/` are invoked by the VM via `syscall.<proc>` from user code. They do not carry an `Invocation:` line — the `syscall` invocation model is implied by the procedure's location in a kernel module. Omit the `Invocation:` line entirely for these procs.
 
+## Prose Conventions
+
+Doc comments are read by people unfamiliar with the change that introduced them. Keep the prose general, accurate, and consistent with the rest of the codebase.
+
+### Reuse existing terminology
+
+Use the vocabulary already established in surrounding modules and doc comments. Do not coin new terms or borrow colloquialisms for a concept that already has a name. For example, a value written to a local is "stored" or "saved" (matching `loc_storew`), not "stashed"; describe what code does plainly rather than labelling it ("load-bearing", "the real check", and similar).
+
+### Document the procedure, not the change
+
+Describe the procedure as it currently behaves, for a reader who has never seen the PR that added or modified it. Avoid PR narrative, rationale for a recent fix, and framing such as "this is the X that prevents Y". State what the procedure does and what it guarantees.
+
+### Stay at this layer's abstraction
+
+Describe behavior in terms of this procedure and its inputs and outputs. Do not explain how a lower layer (for example the kernel, or a specific syscall) implements or enforces something — that is an implementation detail that may change. Panic bullets in particular state the condition in domain terms ("the asset does not belong to this faucet"), not the mechanism or which layer raises it.
+
 ## Validation Checklist
 
 - [ ] Description starts with a capitalized present-tense verb and the first sentence ends with a period. Canonical verbs observed in protocol source: `Returns`, `Gets`, `Computes`, `Burns`, `Creates`, `Increments`, `Copies`, `Asserts`, `Verifies`, `Hashes`, `Adds`, `Removes`.
@@ -236,3 +252,6 @@ Kernel procedures under `crates/miden-protocol/asm/kernels/` are invoked by the 
 - [ ] Complex panic propagation uses "if <procedure> fails to verify" shorthand
 - [ ] Invocation type specified: `exec`, `call`, or `dyncall`. Kernel (syscall-invoked) procedures are exempt — no `Invocation:` line.
 - [ ] For `call` and `dyncall`: padding shown in Inputs/Outputs (see masm-padding skill)
+- [ ] Prose reuses existing terminology; no coined terms or colloquialisms
+- [ ] Describes the procedure's current behavior, not the change that introduced it
+- [ ] No lower-layer (kernel/syscall) implementation details; panic bullets describe conditions in domain terms
