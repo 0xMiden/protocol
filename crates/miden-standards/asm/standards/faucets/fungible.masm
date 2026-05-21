@@ -31,6 +31,10 @@ pub const TOKEN_CONFIG_SLOT = word("miden::standards::faucets::fungible::token_c
 
 # The local memory address at which the token config slot content is stored.
 const TOKEN_CONFIG_SLOT_LOCAL = 0
+# The local memory address at which the MINT note's ASSET_KEY is held across the mint policy
+# and supply checks in `mint_and_send`. Its faucet ID is checked against the active account
+# to bind the mint to the faucet the MINT note was created for.
+const MINT_ASSET_KEY_LOCAL = 4
 const ASSET_PTR = 0
 
 const ERR_MAX_SUPPLY_NOT_MUTABLE = "max supply is not mutable"
@@ -39,6 +43,7 @@ const ERR_NEW_MAX_SUPPLY_BELOW_TOKEN_SUPPLY = "new max supply is less than curre
 const ERR_FUNGIBLE_ASSET_TOKEN_SUPPLY_EXCEEDS_MAX_SUPPLY = "token supply exceeds max supply"
 const ERR_FUNGIBLE_ASSET_MAX_SUPPLY_EXCEEDS_FUNGIBLE_ASSET_MAX_AMOUNT = "max supply exceeds maximum representable fungible asset amount"
 const ERR_FUNGIBLE_ASSET_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY = "token_supply plus the amount passed to distribute would exceed the maximum supply"
+const ERR_FUNGIBLE_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET = "the asset stored in the MINT note does not belong to this faucet"
 const ERR_FAUCET_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY = "asset amount to burn exceeds the existing token supply"
 const ERR_FUNGIBLE_BURN_WRONG_NUMBER_OF_ASSETS = "burn requires exactly 1 note asset"
 
@@ -210,18 +215,23 @@ end
 # MINT AND SEND
 # =================================================================================================
 
-#! Mints fungible assets to the provided recipient by creating a note.
+#! Mints the asset stored in the MINT note to the provided recipient by creating a note.
 #!
-#! This procedure first executes the active mint policy configured via the `TokenPolicyManager`
-#! and then mints the asset and creates an output note with that asset for the recipient.
+#! The active mint policy runs on the asset amount, the token supply is updated, and an
+#! output note carrying the asset is created for the recipient. The asset minted is derived
+#! for the active faucet; the `ASSET_KEY` stored in the MINT note must belong to that faucet,
+#! so a MINT note created for one faucet cannot be minted by another faucet.
 #!
-#! Inputs:  [amount, tag, note_type, RECIPIENT, pad(9)]
+#! Inputs:  [ASSET_KEY, ASSET_VALUE, tag, note_type, RECIPIENT, pad(2)]
 #! Outputs: [note_idx, pad(15)]
 #!
 #! Where:
-#! - amount is the amount to be minted and sent.
-#! - tag is the tag to be included in the note.
-#! - note_type is the type of the note that holds the asset.
+#! - ASSET_KEY is the vault key of the asset to mint. Its faucet ID must equal the active
+#!   account.
+#! - ASSET_VALUE is the value word of the asset to mint. For fungible assets it is
+#!   `[amount, 0, 0, 0]`; the amount is what the supply checks operate on.
+#! - tag is the tag to be included in the output note.
+#! - note_type is the type of the output note that holds the asset.
 #! - RECIPIENT is the recipient of the asset, i.e.,
 #!   hash(hash(hash(serial_num, [0; 4]), script_root), storage_commitment).
 #! - note_idx is the index of the created note.
@@ -232,10 +242,20 @@ end
 #! - the token supply exceeds the maximum supply.
 #! - the maximum supply exceeds the maximum representable fungible asset amount.
 #! - the token supply after minting is greater than the maximum allowed supply.
+#! - the asset stored in the MINT note does not belong to this faucet.
 #!
 #! Invocation: call
-@locals(4)
+@locals(8)
 pub proc mint_and_send
+    # save the MINT note's ASSET_KEY in a local so it survives the mint policy and supply
+    # checks; it is compared against the asset derived for the active faucet before minting
+    loc_storew_le.MINT_ASSET_KEY_LOCAL dropw
+    # => [ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
+
+    # ASSET_VALUE for a fungible asset is `[amount, 0, 0, 0]`. Keep amount, drop the rest.
+    movdn.3 drop drop drop
+    # => [amount, tag, note_type, RECIPIENT, pad(9)]
+
     exec.policy_manager::execute_mint_policy
     # => [new_amount, new_tag, new_note_type, NEW_RECIPIENT, pad(9)]
 
@@ -311,22 +331,29 @@ pub proc mint_and_send
     movdn.6 exec.output_note::create
     # => [note_idx, amount]
 
-    dup movup.2
-    # => [amount, note_idx, note_idx]
-
     # Mint the asset.
     # ---------------------------------------------------------------------------------------------
 
-    # creating the asset
+    dup movup.2
+    # => [amount, note_idx, note_idx]
+
+    # derive the asset to mint for the active faucet from the (possibly policy-adjusted) amount
     exec.faucet::create_fungible_asset
+    # => [ASSET_KEY, ASSET_VALUE, note_idx, note_idx]
+
+    # bind the mint to the faucet the MINT note was created for: the asset derived for the
+    # active faucet must equal the asset stored in the MINT note. The key encodes the faucet
+    # ID and the faucet's asset-callbacks bit, so a MINT note created for a different faucet
+    # is rejected.
+    padw loc_loadw_le.MINT_ASSET_KEY_LOCAL dupw.1
+    # => [ASSET_KEY, NOTE_ASSET_KEY, ASSET_KEY, ASSET_VALUE, note_idx, note_idx]
+
+    assert_eqw.err=ERR_FUNGIBLE_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET
     # => [ASSET_KEY, ASSET_VALUE, note_idx, note_idx]
 
     dupw.1 dupw.1
     # => [ASSET_KEY, ASSET_VALUE, ASSET_KEY, ASSET_VALUE, note_idx, note_idx]
 
-    # mint the asset; this is needed to satisfy asset preservation logic.
-    # this ensures that the asset's faucet ID matches the native account's ID.
-    # this is ensured because create_fungible_asset creates the asset with the native account's ID
     exec.faucet::mint
     # => [ASSET_KEY, ASSET_VALUE, note_idx, note_idx]
 
