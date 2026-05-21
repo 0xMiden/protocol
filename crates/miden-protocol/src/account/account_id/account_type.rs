@@ -1,70 +1,78 @@
+use alloc::string::String;
 use core::fmt;
 use core::str::FromStr;
 
 use crate::errors::AccountIdError;
-use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
 
 // ACCOUNT TYPE
 // ================================================================================================
 
-pub(super) const FUNGIBLE_FAUCET: u8 = 0b10;
-pub(super) const NON_FUNGIBLE_FAUCET: u8 = 0b11;
-pub(super) const REGULAR_ACCOUNT_IMMUTABLE_CODE: u8 = 0b00;
-pub(super) const REGULAR_ACCOUNT_UPDATABLE_CODE: u8 = 0b01;
-
-/// Represents the different account types recognized by the protocol.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+/// The type of an account, which determines where the account state is stored.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 #[repr(u8)]
 pub enum AccountType {
-    FungibleFaucet = FUNGIBLE_FAUCET,
-    NonFungibleFaucet = NON_FUNGIBLE_FAUCET,
-    RegularAccountImmutableCode = REGULAR_ACCOUNT_IMMUTABLE_CODE,
-    RegularAccountUpdatableCode = REGULAR_ACCOUNT_UPDATABLE_CODE,
+    #[default]
+    /// The account's state is stored off-chain, and only a commitment to it is stored on-chain.
+    Private = Self::PRIVATE,
+
+    /// The account's full state is stored on-chain.
+    Public = Self::PUBLIC,
 }
 
 impl AccountType {
-    /// Returns all account types.
-    pub fn all() -> [AccountType; 4] {
-        [
-            AccountType::FungibleFaucet,
-            AccountType::NonFungibleFaucet,
-            AccountType::RegularAccountImmutableCode,
-            AccountType::RegularAccountUpdatableCode,
-        ]
+    pub(crate) const PRIVATE: u8 = 0;
+    pub(crate) const PUBLIC: u8 = 1;
+
+    /// Returns the account type encoded to a 1-bit flag, where private is 0 and public is 1.
+    pub const fn as_u8(self) -> u8 {
+        self as u8
     }
 
-    /// Returns the regular account types (immutable and updatable code).
-    pub fn regular() -> [AccountType; 2] {
-        [
-            AccountType::RegularAccountImmutableCode,
-            AccountType::RegularAccountUpdatableCode,
-        ]
+    /// Returns `true` if the account type is [`Self::Public`], `false` otherwise.
+    pub fn is_public(&self) -> bool {
+        matches!(self, Self::Public)
     }
 
-    /// Returns `true` if the account is a faucet.
-    pub fn is_faucet(&self) -> bool {
-        matches!(self, Self::FungibleFaucet | Self::NonFungibleFaucet)
+    /// Returns `true` if the account type is [`Self::Private`], `false` otherwise.
+    pub fn is_private(&self) -> bool {
+        matches!(self, Self::Private)
     }
+}
 
-    /// Returns `true` if the account is a regular account.
-    pub fn is_regular_account(&self) -> bool {
-        matches!(self, Self::RegularAccountImmutableCode | Self::RegularAccountUpdatableCode)
-    }
-
-    /// Returns the string representation of the [`AccountType`].
-    fn as_str(&self) -> &'static str {
+impl fmt::Display for AccountType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            AccountType::FungibleFaucet => "FungibleFaucet",
-            AccountType::NonFungibleFaucet => "NonFungibleFaucet",
-            AccountType::RegularAccountImmutableCode => "RegularAccountImmutableCode",
-            AccountType::RegularAccountUpdatableCode => "RegularAccountUpdatableCode",
+            AccountType::Private => write!(f, "private"),
+            AccountType::Public => write!(f, "public"),
         }
+    }
+}
+
+impl TryFrom<&str> for AccountType {
+    type Error = AccountIdError;
+
+    fn try_from(value: &str) -> Result<Self, AccountIdError> {
+        match value.to_lowercase().as_str() {
+            "private" => Ok(AccountType::Private),
+            "public" => Ok(AccountType::Public),
+            _ => Err(AccountIdError::UnknownAccountType(value.into())),
+        }
+    }
+}
+
+impl TryFrom<String> for AccountType {
+    type Error = AccountIdError;
+
+    fn try_from(value: String) -> Result<Self, AccountIdError> {
+        AccountType::from_str(&value)
+    }
+}
+
+impl FromStr for AccountType {
+    type Err = AccountIdError;
+
+    fn from_str(input: &str) -> Result<AccountType, AccountIdError> {
+        AccountType::try_from(input)
     }
 }
 
@@ -72,99 +80,10 @@ impl AccountType {
 impl rand::distr::Distribution<AccountType> for rand::distr::StandardUniform {
     /// Samples a uniformly random [`AccountType`] from the given `rng`.
     fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> AccountType {
-        match rng.random_range(0..4) {
-            0 => AccountType::RegularAccountImmutableCode,
-            1 => AccountType::RegularAccountUpdatableCode,
-            2 => AccountType::FungibleFaucet,
-            3 => AccountType::NonFungibleFaucet,
+        match rng.random_range(0..2) {
+            0 => AccountType::Private,
+            1 => AccountType::Public,
             _ => unreachable!("gen_range should not produce higher values"),
         }
-    }
-}
-
-// SERIALIZATION
-// ================================================================================================
-
-impl Serializable for AccountType {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        target.write_u8(*self as u8);
-    }
-}
-
-impl Deserializable for AccountType {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let num: u8 = source.read()?;
-        match num {
-            FUNGIBLE_FAUCET => Ok(AccountType::FungibleFaucet),
-            NON_FUNGIBLE_FAUCET => Ok(AccountType::NonFungibleFaucet),
-            REGULAR_ACCOUNT_IMMUTABLE_CODE => Ok(AccountType::RegularAccountImmutableCode),
-            REGULAR_ACCOUNT_UPDATABLE_CODE => Ok(AccountType::RegularAccountUpdatableCode),
-            _ => Err(DeserializationError::InvalidValue(format!("invalid account type: {num}"))),
-        }
-    }
-}
-
-impl FromStr for AccountType {
-    type Err = AccountIdError;
-
-    fn from_str(string: &str) -> Result<Self, Self::Err> {
-        match string {
-            "FungibleFaucet" => Ok(AccountType::FungibleFaucet),
-            "NonFungibleFaucet" => Ok(AccountType::NonFungibleFaucet),
-            "RegularAccountImmutableCode" => Ok(AccountType::RegularAccountImmutableCode),
-            "RegularAccountUpdatableCode" => Ok(AccountType::RegularAccountUpdatableCode),
-            other => Err(AccountIdError::UnknownAccountType(other.into())),
-        }
-    }
-}
-
-impl core::fmt::Display for AccountType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-#[cfg(feature = "std")]
-impl serde::Serialize for AccountType {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        serializer.serialize_str(self.as_str())
-    }
-}
-
-#[cfg(feature = "std")]
-impl<'de> serde::Deserialize<'de> for AccountType {
-    fn deserialize<D>(deserializer: D) -> Result<AccountType, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        use alloc::string::String;
-
-        use serde::de::Error;
-
-        let string: String = serde::Deserialize::deserialize(deserializer)?;
-        string.parse().map_err(D::Error::custom)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// The following test ensure there is a bit available to identify an account as a faucet or
-    /// normal.
-    #[test]
-    fn test_account_id_faucet_bit() {
-        const ACCOUNT_IS_FAUCET_MASK: u8 = 0b10;
-
-        // faucets have a bit set
-        assert_ne!((FUNGIBLE_FAUCET) & ACCOUNT_IS_FAUCET_MASK, 0);
-        assert_ne!((NON_FUNGIBLE_FAUCET) & ACCOUNT_IS_FAUCET_MASK, 0);
-
-        // normal accounts do not have the faucet bit set
-        assert_eq!((REGULAR_ACCOUNT_IMMUTABLE_CODE) & ACCOUNT_IS_FAUCET_MASK, 0);
-        assert_eq!((REGULAR_ACCOUNT_UPDATABLE_CODE) & ACCOUNT_IS_FAUCET_MASK, 0);
     }
 }

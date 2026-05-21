@@ -61,7 +61,18 @@ async fn main() -> Result<()> {
             tx_consume_claim_note(ClaimDataSource::L2ToMiden).await?,
         )
         .await?,
-        run_scenario(ExecutionBenchmark::ConsumeB2AggNote, tx_consume_b2agg_note().await?).await?,
+        run_scenario(ExecutionBenchmark::ConsumeB2AggNote, tx_consume_b2agg_note(None).await?)
+            .await?,
+        run_scenario(
+            ExecutionBenchmark::ConsumeB2AggNotePopulated2p31,
+            tx_consume_b2agg_note(Some(1 << 31)).await?,
+        )
+        .await?,
+        run_scenario(
+            ExecutionBenchmark::ConsumeB2AggNotePopulated2p31m1,
+            tx_consume_b2agg_note(Some((1u32 << 31) - 1)).await?,
+        )
+        .await?,
     ];
 
     // store benchmark results in the JSON file

@@ -167,6 +167,10 @@ end
 #!   allowed.
 #! - For non-fungible faucets if the non-fungible asset being minted already exists.
 pub proc mint
+    # reject assets with a Custom composition; only None and Fungible are supported today
+    exec.asset::assert_supported_composition
+    # => [ASSET_KEY, ASSET_VALUE]
+
     # check if the asset is a fungible asset
     exec.asset::is_fungible_asset_key
     # => [is_fungible_asset, ASSET_KEY, ASSET_VALUE]
@@ -201,6 +205,10 @@ end
 #! - For non-fungible faucets if the non-fungible asset being burned does not exist or was not
 #!   provided as input to the transaction via a note or the accounts vault.
 pub proc burn
+    # reject assets with a Custom composition; only None and Fungible are supported today
+    exec.asset::assert_supported_composition
+    # => [ASSET_KEY, ASSET_VALUE]
+
     # check if the asset is a fungible asset
     exec.asset::is_fungible_asset_key
     # => [is_fungible_asset, ASSET_KEY, ASSET_VALUE]

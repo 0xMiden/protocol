@@ -1,5 +1,5 @@
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
-use miden_protocol::account::{AccountComponent, AccountProcedureRoot, AccountType};
+use miden_protocol::account::{AccountComponent, AccountComponentName, AccountProcedureRoot};
 
 use crate::account::account_component_code;
 use crate::procedure_root;
@@ -31,6 +31,11 @@ impl BurnAllowAll {
 
     pub(crate) const PROC_NAME: &str = "check_policy";
 
+    /// Returns the canonical [`AccountComponentName`] of this component.
+    pub const fn name() -> AccountComponentName {
+        AccountComponentName::from_static_str(Self::NAME)
+    }
+
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
         &ALLOW_ALL_BURN_POLICY_CODE
@@ -44,9 +49,8 @@ impl BurnAllowAll {
 
 impl From<BurnAllowAll> for AccountComponent {
     fn from(_: BurnAllowAll) -> Self {
-        let metadata =
-            AccountComponentMetadata::new(BurnAllowAll::NAME, [AccountType::FungibleFaucet])
-                .with_description("`allow_all` burn policy for fungible faucets");
+        let metadata = AccountComponentMetadata::new(BurnAllowAll::NAME)
+            .with_description("`allow_all` burn policy for fungible faucets");
 
         AccountComponent::new(BurnAllowAll::code().clone(), vec![], metadata).expect(
             "`allow_all` burn policy component should satisfy the requirements of a valid account component",
