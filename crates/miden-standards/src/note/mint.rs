@@ -76,9 +76,9 @@ impl MintNote {
     ///
     /// This script enables the creation of a PUBLIC note that, when consumed by a network faucet,
     /// will mint the specified amount of fungible assets and create either a PRIVATE or PUBLIC
-    /// output note depending on the input configuration. Consumption is bound to `faucet_id`:
-    /// the script panics if the consuming account does not match the recorded faucet, so a
-    /// different fungible faucet cannot race to consume the note and mint its own asset.
+    /// output note depending on the input configuration. The MINT note uses note-based
+    /// authentication, checking if the note sender equals the faucet owner to authorize
+    /// minting.
     ///
     /// MINT notes are always PUBLIC (for network execution). Output notes can be either PRIVATE
     /// or PUBLIC depending on the MintNoteStorage variant used.
@@ -87,8 +87,7 @@ impl MintNote {
     /// is automatically set to the faucet's account ID for proper routing.
     ///
     /// # Parameters
-    /// - `faucet_id`: The account ID of the network faucet that will mint the assets. Embedded into
-    ///   the note storage and enforced at consumption time.
+    /// - `faucet_id`: The account ID of the network faucet that will mint the assets.
     /// - `sender`: The account ID of the note creator (must be the faucet owner)
     /// - `mint_storage`: The storage configuration specifying private or public output mode
     /// - `attachment`: The [`NoteAttachments`] of the MINT note
@@ -109,8 +108,7 @@ impl MintNote {
         // MINT notes are always public for network execution
         let note_type = NoteType::Public;
 
-        // Convert MintNoteStorage to NoteStorage, embedding the intended faucet ID so the script
-        // can refuse consumption by any other account.
+        // Convert MintNoteStorage to NoteStorage
         let storage = mint_storage.into_note_storage(faucet_id);
 
         let tag = NoteTag::with_account_target(faucet_id);
@@ -169,8 +167,6 @@ impl MintNoteStorage {
         Ok(Self::Public { recipient, amount, tag })
     }
 
-    /// Serializes the storage to a [`NoteStorage`], embedding the intended `faucet_id` so the
-    /// MINT script can verify the consuming account at execution time.
     pub(crate) fn into_note_storage(self, faucet_id: AccountId) -> NoteStorage {
         let faucet_id_suffix = Felt::new_unchecked(faucet_id.suffix().as_canonical_u64());
         let faucet_id_prefix = faucet_id.prefix().as_felt();

@@ -66,13 +66,6 @@ const ERR_MINT_WRONG_FAUCET="MINT script consuming account does not match the fa
 #! - [STORAGE]: Variable-length storage for the output note (Vec<Felt>)
 #!              The number of output note storage items = num_mint_note_storage_items - 12
 #!
-#! The faucet_id slot at indices 10-11 of public storage also acts as the word-alignment padding
-#! that note::compute_and_store_recipient expects for the output note storage_ptr at index 12.
-#!
-#! The script binds consumption to the recorded faucet by asserting that the active account ID
-#! equals (faucet_id_prefix, faucet_id_suffix) before invoking mint_and_send. This prevents a
-#! different fungible faucet from consuming the note and minting its own asset to the recipient.
-#!
 #! Panics if:
 #! - account does not expose mint_and_send procedure.
 #! - the number of storage items is not exactly 8 for private or less than 12 for public output notes.
@@ -104,7 +97,7 @@ pub proc main
 
         exec.account_id::is_equal
         # => [is_id_equal, num_storage_items, pad(16)]
-        
+
         assert.err=ERR_MINT_WRONG_FAUCET
         # => [num_storage_items, pad(16)]
 

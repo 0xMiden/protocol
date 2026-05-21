@@ -19,8 +19,8 @@ use miden::standards::note::execution_hint::ALWAYS
 # - SERIAL_NUM        [4..7]   : 4 felts
 # - tag               [8]      : 1 felt
 # - amount            [9]      : 1 felt
-# - faucet_id_suffix  [10]     : 1 felt (binds MINT consumption to this faucet)
-# - faucet_id_prefix  [11]     : 1 felt (binds MINT consumption to this faucet)
+# - faucet_id_suffix  [10]     : 1 felt
+# - faucet_id_prefix  [11]     : 1 felt
 # - account_id_suffix [12]     : 1 felt
 # - account_id_prefix [13]     : 1 felt
 const MINT_NOTE_NUM_STORAGE_ITEMS = 14
@@ -161,10 +161,7 @@ end
 # MINT-PATH HELPERS (used only by build_mint_output_note)
 # =================================================================================================
 
-#! Writes the destination/output portion of the MINT note storage to global memory.
-#!
-#! The faucet_id at [10..11] is written separately by the caller (see `build_mint_output_note`)
-#! because this procedure does not have it on its top-of-stack inputs.
+#! Writes all 14 MINT note storage items to global memory.
 #!
 #! Storage layout:
 #! - [0-3]: P2ID_SCRIPT_ROOT (script root of the P2ID note)
