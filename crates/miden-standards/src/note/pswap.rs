@@ -723,21 +723,18 @@ impl PswapNote {
     /// Builds the [`NoteAttachment`] carried by both PSWAP output notes (payback and
     /// remainder).
     ///
-    /// The attachment word is `[amount, order_id, depth, 0]` under
-    /// [`Self::PSWAP_ATTACHMENT_SCHEME`]. `amount` is the round's transferred amount on
-    /// the relevant side of the trade — requested-asset units for the payback,
-    /// offered-asset units for the remainder.
+    /// `amount` is the round's transferred amount on the relevant side of the trade —
+    /// requested-asset units for the payback, offered-asset units for the remainder.
     fn pswap_output_attachment(
         amount: u64,
         order_id: Felt,
         depth: u64,
     ) -> Result<NoteAttachment, NoteError> {
-        let amount = Felt::try_from(amount)
-            .map_err(|e| NoteError::other_with_source("amount does not fit in a felt", e))?;
-        let depth = Felt::try_from(depth)
-            .map_err(|e| NoteError::other_with_source("depth does not fit in a felt", e))?;
-        let word = Word::from([amount, order_id, depth, ZERO]);
-        Ok(NoteAttachment::with_word(Self::PSWAP_ATTACHMENT_SCHEME, word))
+        let amount = AssetAmount::new(amount)
+            .map_err(|e| NoteError::other_with_source("amount is not a valid asset amount", e))?;
+        let depth = u32::try_from(depth)
+            .map_err(|_| NoteError::other("PSWAP depth does not fit in u32"))?;
+        Ok(PswapNoteAttachment::new(amount, order_id, depth).into())
     }
 
     /// Builds a payback note (P2ID) that delivers the filled assets to the swap creator.
