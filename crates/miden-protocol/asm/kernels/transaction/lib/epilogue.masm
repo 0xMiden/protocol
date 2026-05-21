@@ -39,22 +39,36 @@ const EPILOGUE_AUTH_PROC_START_EVENT=event("miden::protocol::epilogue::auth_proc
 # Event emitted to signal that an execution of the authentication procedure has ended.
 const EPILOGUE_AUTH_PROC_END_EVENT=event("miden::protocol::epilogue::auth_proc_end")
 
-# An additional number of cyclces to account for the number of cycles that smt::set will take when
+# An additional number of cycles to account for the number of cycles that smt::set will take when
 # removing the computed fee from the asset vault.
 # Theoretically, this can safely be set to worst_case_cycles - best_case_cycles of smt::set. That's
 # because we can assume that the measured number of cycles already contains at least the best case
 # number of cycles, and so we only need to add the difference.
 const SMT_SET_ADDITIONAL_CYCLES=250
 
+# An upper-bound estimate of the cycles needed to hash the asset vault key before the fee-removing
+# smt::set. This cost is incurred only when a fee is actually removed from the asset vault, and is
+# kept separate from SMT_SET_ADDITIONAL_CYCLES (which models smt::set's own best/worst-case spread).
+# It is additive rather than double-counted: the lowest-observed NUM_POST_COMPUTE_FEE_CYCLES below
+# comes from a zero-fee transaction that skips fee removal entirely, and so excludes this hashing.
+const VAULT_KEY_HASH_CYCLES=50
+
 # The number of cycles the epilogue is estimated to take after compute_fee has been executed,
 # including an unknown cycle number of the above-mentioned call to smt::set. It is safe to assume
 # that this includes at least smt::set's best case number of cycles.
 # This can be _estimated_ using the transaction measurements on ExecutedTransaction and can be set
-# to the lowest observed value.
+# to the lowest observed value (which comes from a zero-fee transaction that skips fee removal).
 const NUM_POST_COMPUTE_FEE_CYCLES=608
 
-# The number of cycles the epilogue is estimated to take after compute_fee has been executed.
-const ESTIMATED_AFTER_COMPUTE_FEE_CYCLES=NUM_POST_COMPUTE_FEE_CYCLES+SMT_SET_ADDITIONAL_CYCLES
+# The number of cycles the epilogue is estimated to take after compute_fee has been executed. This
+# must remain an upper bound on the real post-compute_fee cycle count, otherwise the verification
+# fee is undercharged. The most recently observed worst case is 863 cycles, leaving 45 cycles of
+# margin against this 908-cycle budget; the margin is empirical, so re-measure when the epilogue or
+# smt::set changes. The fee-removal smt::set cost cannot be inflated by an adversary: vault keys are
+# hashed before insertion (see AssetVaultKey::hash), so leaf indices are uniformly distributed and
+# entries cannot be concentrated into the fee asset's leaf without breaking the hash's collision
+# resistance. The multi-leaf smt::set worst case is not yet exercised (see test_fee.rs TODO).
+const ESTIMATED_AFTER_COMPUTE_FEE_CYCLES=NUM_POST_COMPUTE_FEE_CYCLES+SMT_SET_ADDITIONAL_CYCLES+VAULT_KEY_HASH_CYCLES
 
 # OUTPUT NOTES PROCEDURES
 # =================================================================================================
