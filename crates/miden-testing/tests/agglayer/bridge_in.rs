@@ -37,6 +37,7 @@ use miden_protocol::transaction::RawOutputNote;
 use miden_standards::account::policies::MintPolicyConfig;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
+use miden_standards::errors::standards::ERR_FUNGIBLE_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET;
 use miden_standards::note::P2idNote;
 use miden_standards::testing::account_component::IncrNonceAuthComponent;
 use miden_standards::testing::mock_account::MockAccountExt;
@@ -189,17 +190,9 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
         .expect("destination address is not an embedded Miden AccountId")
         .into_account_id();
 
-    // For mainnet and rollup fixtures, create the destination account so we can consume the P2ID
-    // note. The mock account is built from the destination ID encoded in the JSON test vector,
-    // since the claim note targets this account ID.
     let destination_account =
-        if matches!(data_source, ClaimDataSource::L1ToMiden | ClaimDataSource::L2ToMiden) {
-            let dest = Account::mock(u128::from(destination_account_id), IncrNonceAuthComponent);
-            builder.add_account(dest.clone())?;
-            Some(dest)
-        } else {
-            None
-        };
+        Account::mock(u128::from(destination_account_id), IncrNonceAuthComponent);
+    builder.add_account(destination_account.clone())?;
 
     // CREATE SENDER ACCOUNT (for creating the claim note)
     // --------------------------------------------------------------------------------------------
@@ -388,38 +381,226 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
 
     assert_eq!(RawOutputNote::Full(expected_output_p2id_note.clone()), *output_note);
 
-    // TX4: CONSUME THE P2ID NOTE WITH THE DESTINATION ACCOUNT (simulated case only)
+    // TX4: CONSUME THE P2ID NOTE WITH THE DESTINATION ACCOUNT
     // --------------------------------------------------------------------------------------------
-    // For the simulated case, we control the destination account and can verify the full
-    // end-to-end flow including P2ID consumption and balance updates.
-    if let Some(destination_account) = destination_account {
-        // Add the faucet transaction to the chain and prove the next block so the P2ID note is
-        // committed and can be consumed.
-        mock_chain.add_pending_executed_transaction(&mint_executed)?;
-        mock_chain.prove_next_block()?;
+    // Add the faucet transaction to the chain and prove the next block so the P2ID note is
+    // committed and can be consumed.
+    mock_chain.add_pending_executed_transaction(&mint_executed)?;
+    mock_chain.prove_next_block()?;
 
-        // Execute the consume transaction for the destination account. Pass the account
-        // directly since the JSON-encoded destination decodes to a private account ID.
-        let consume_tx_context = mock_chain
-            .build_tx_context(
-                destination_account.clone(),
-                &[],
-                slice::from_ref(&expected_output_p2id_note),
-            )?
-            .build()?;
-        let consume_executed_transaction = consume_tx_context.execute().await?;
+    // Execute the consume transaction for the destination account. Pass the account
+    // directly since the JSON-encoded destination decodes to a private account ID.
+    let consume_tx_context = mock_chain
+        .build_tx_context(
+            destination_account.clone(),
+            &[],
+            slice::from_ref(&expected_output_p2id_note),
+        )?
+        .build()?;
+    let consume_executed_transaction = consume_tx_context.execute().await?;
 
-        // Verify the destination account received the minted asset
-        let mut destination_account = destination_account.clone();
-        destination_account.apply_delta(consume_executed_transaction.account_delta())?;
+    // Verify the destination account received the minted asset
+    let mut destination_account = destination_account;
+    destination_account.apply_delta(consume_executed_transaction.account_delta())?;
 
-        let balance = destination_account.vault().get_balance(expected_asset.vault_key())?;
-        assert_eq!(
-            balance.as_u64(),
-            miden_claim_amount.as_canonical_u64(),
-            "destination account balance does not match"
-        );
-    }
+    let balance = destination_account.vault().get_balance(expected_asset.vault_key())?;
+    assert_eq!(
+        balance.as_u64(),
+        miden_claim_amount.as_canonical_u64(),
+        "destination account balance does not match"
+    );
+    Ok(())
+}
+
+/// Asserts that a MINT note produced by `claim` for faucet A cannot be consumed by a
+/// different same-bridge faucet B.
+///
+/// Both faucets are registered in the bridge, so the only thing preventing faucet B from
+/// consuming faucet A's MINT note is the faucet bind itself. The MINT note embeds the full
+/// `ASSET` (`ASSET_KEY` + `ASSET_VALUE`) in its storage; `fungible::mint_and_send` derives the
+/// asset for the consuming faucet and rejects it with
+/// `ERR_FUNGIBLE_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET` when its key does not match the stored
+/// `ASSET_KEY`. Before this fix the MINT note carried only the amount, so faucet B would mint its
+/// own token and the cross-faucet consumption would succeed.
+#[tokio::test]
+async fn test_mint_cannot_be_consumed_by_unrelated_faucet() -> anyhow::Result<()> {
+    let data_source = ClaimDataSource::L1ToMiden;
+    let mut builder = MockChain::builder();
+
+    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    let bridge_seed = builder.rng_mut().draw_word();
+    let bridge_account =
+        create_existing_bridge_account(bridge_seed, bridge_admin.id(), ger_manager.id());
+    builder.add_account(bridge_account.clone())?;
+
+    let (proof_data, leaf_data, ger, _cgi_chain_hash) = data_source.get_data();
+
+    let token_symbol_a = "AGGA";
+    let token_symbol_b = "AGGB";
+    let decimals = 8u8;
+    let max_supply: Felt = FungibleAsset::MAX_AMOUNT.into();
+    let scale = 10u8;
+
+    // faucet_A is the bridge's registered faucet for the claim's origin token address.
+    let faucet_a_seed = builder.rng_mut().draw_word();
+    let faucet_a = create_existing_agglayer_faucet(
+        faucet_a_seed,
+        token_symbol_a,
+        decimals,
+        max_supply,
+        Felt::ZERO,
+        bridge_account.id(),
+    );
+    builder.add_account(faucet_a.clone())?;
+
+    // faucet_B is owned by the same bridge but tied to a different origin token. It is the
+    // attacker's target: the claimant tries to direct faucet_A's MINT note here.
+    let faucet_b_seed = builder.rng_mut().draw_word();
+    // Flip one byte of the address so the new EthAddress is distinct from faucet_A's.
+    let mut other_bytes = leaf_data.origin_token_address.into_bytes();
+    other_bytes[0] ^= 0x01;
+    let other_token_address = EthAddress::new(other_bytes);
+    let faucet_b = create_existing_agglayer_faucet(
+        faucet_b_seed,
+        token_symbol_b,
+        decimals,
+        max_supply,
+        Felt::ZERO,
+        bridge_account.id(),
+    );
+    builder.add_account(faucet_b.clone())?;
+
+    assert_ne!(faucet_a.id(), faucet_b.id(), "test setup: faucet IDs must differ");
+
+    // The destination is also baked into the fixture; create it so the bridge claim succeeds.
+    let destination_account_id = EthEmbeddedAccountId::try_from(leaf_data.destination_address)
+        .expect("destination address is not an embedded Miden AccountId")
+        .into_account_id();
+    let dest = Account::mock(u128::from(destination_account_id), IncrNonceAuthComponent);
+    builder.add_account(dest)?;
+
+    let sender_account_builder =
+        Account::builder(builder.rng_mut().random()).with_component(BasicWallet);
+    let sender_account = builder.add_account_from_builder(
+        Auth::IncrNonce,
+        sender_account_builder,
+        AccountState::Exists,
+    )?;
+
+    let miden_claim_amount = leaf_data
+        .amount
+        .scale_to_token_amount(scale as u32)
+        .expect("amount should scale successfully");
+
+    let claim_inputs = ClaimNoteStorage {
+        proof_data,
+        leaf_data: leaf_data.clone(),
+        miden_claim_amount,
+    };
+
+    let claim_note = ClaimNote::create(
+        claim_inputs,
+        bridge_account.id(),
+        sender_account.id(),
+        builder.rng_mut(),
+    )?;
+    builder.add_output_note(RawOutputNote::Full(claim_note.clone()));
+
+    // Register faucet_A in the bridge for the claim's origin token address.
+    let config_note = ConfigAggBridgeNote::create(
+        ConversionMetadata {
+            faucet_account_id: faucet_a.id(),
+            origin_token_address: leaf_data.origin_token_address,
+            scale,
+            origin_network: leaf_data.origin_network,
+            is_native: false,
+            metadata_hash: leaf_data.metadata_hash,
+        },
+        bridge_admin.id(),
+        bridge_account.id(),
+        builder.rng_mut(),
+    )?;
+    builder.add_output_note(RawOutputNote::Full(config_note.clone()));
+
+    // Register faucet_B too: it is a fully legitimate same-bridge faucet, so the attack below
+    // fails only because of the faucet bind, not because faucet_B is unknown to the bridge.
+    let config_note_b = ConfigAggBridgeNote::create(
+        ConversionMetadata {
+            faucet_account_id: faucet_b.id(),
+            origin_token_address: other_token_address,
+            scale,
+            origin_network: leaf_data.origin_network,
+            is_native: false,
+            metadata_hash: leaf_data.metadata_hash,
+        },
+        bridge_admin.id(),
+        bridge_account.id(),
+        builder.rng_mut(),
+    )?;
+    builder.add_output_note(RawOutputNote::Full(config_note_b.clone()));
+
+    let update_ger_note =
+        UpdateGerNote::create(ger, ger_manager.id(), bridge_account.id(), builder.rng_mut())?;
+    builder.add_output_note(RawOutputNote::Full(update_ger_note.clone()));
+
+    let mut mock_chain = builder.clone().build()?;
+
+    // TX0: register faucet_A and faucet_B.
+    let config_executed = mock_chain
+        .build_tx_context(bridge_account.id(), &[config_note.id(), config_note_b.id()], &[])?
+        .build()?
+        .execute()
+        .await?;
+    mock_chain.add_pending_executed_transaction(&config_executed)?;
+    mock_chain.prove_next_block()?;
+
+    // TX1: store GER.
+    let update_ger_executed = mock_chain
+        .build_tx_context(bridge_account.id(), &[update_ger_note.id()], &[])?
+        .build()?
+        .execute()
+        .await?;
+    mock_chain.add_pending_executed_transaction(&update_ger_executed)?;
+    mock_chain.prove_next_block()?;
+
+    // TX2: claim → produces MINT note bound to faucet_A's asset.
+    let faucet_a_foreign_inputs = mock_chain.get_foreign_account_inputs(faucet_a.id())?;
+    let claim_executed = mock_chain
+        .build_tx_context(bridge_account.id(), &[], &[claim_note])?
+        .foreign_accounts(vec![faucet_a_foreign_inputs])
+        .build()?
+        .execute()
+        .await
+        .context("CLAIM execution should succeed")?;
+
+    assert_eq!(claim_executed.output_notes().num_notes(), 1);
+    let mint_output_note = claim_executed.output_notes().get_note(0);
+
+    mock_chain.add_pending_executed_transaction(&claim_executed)?;
+    mock_chain.prove_next_block()?;
+
+    // ATTACK: try to consume the MINT note against faucet_B (wrong faucet).
+    //
+    // The MINT note's stored `ASSET_KEY` carries faucet_A's ID. faucet_B's `mint_and_send`
+    // derives the asset for faucet_B, finds its key differs from the stored one, and rejects
+    // the consumption.
+    let attack_tx_context = mock_chain
+        .build_tx_context(faucet_b.id(), &[mint_output_note.id()], &[])?
+        .add_note_script(P2idNote::script())
+        .build()?;
+
+    let attack_result = attack_tx_context.execute().await;
+    assert_transaction_executor_error!(
+        attack_result,
+        ERR_FUNGIBLE_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET
+    );
+
     Ok(())
 }
 

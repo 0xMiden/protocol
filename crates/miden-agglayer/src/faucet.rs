@@ -273,8 +273,7 @@ impl AggLayerFaucet {
 impl From<AggLayerFaucet> for AccountComponent {
     fn from(agglayer_faucet: AggLayerFaucet) -> Self {
         // Bring in all of the FungibleFaucet's storage slots (token config + name +
-        // mutability + description + logo URI + external link). Conversion metadata lives on
-        // the bridge, so the faucet adds no bridge-specific slots.
+        // mutability + description + logo URI + external link).
         agglayer_faucet_component(agglayer_faucet.faucet.into_storage_slots())
     }
 }
