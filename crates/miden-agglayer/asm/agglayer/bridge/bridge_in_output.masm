@@ -19,8 +19,8 @@ use miden::standards::note::execution_hint::ALWAYS
 # - SERIAL_NUM        [4..7]   : 4 felts
 # - tag               [8]      : 1 felt
 # - amount            [9]      : 1 felt
-# - 0                 [10]     : 1 felt (padding)
-# - 0                 [11]     : 1 felt (padding)
+# - faucet_id_suffix  [10]     : 1 felt (binds MINT consumption to this faucet)
+# - faucet_id_prefix  [11]     : 1 felt (binds MINT consumption to this faucet)
 # - account_id_suffix [12]     : 1 felt
 # - account_id_prefix [13]     : 1 felt
 const MINT_NOTE_NUM_STORAGE_ITEMS = 14
@@ -31,7 +31,8 @@ const MINT_NOTE_STORAGE_OUTPUT_SCRIPT_ROOT = 800
 const MINT_NOTE_STORAGE_OUTPUT_SERIAL_NUM = 804
 const MINT_NOTE_STORAGE_DEST_TAG = 808
 const MINT_NOTE_STORAGE_NATIVE_AMOUNT = 809
-# padding at 810, 811
+const MINT_NOTE_STORAGE_FAUCET_ID_SUFFIX = 810
+const MINT_NOTE_STORAGE_FAUCET_ID_PREFIX = 811
 const MINT_NOTE_STORAGE_OUTPUT_NOTE_SUFFIX = 812
 const MINT_NOTE_STORAGE_OUTPUT_NOTE_PREFIX = 813
 
@@ -58,6 +59,10 @@ const UNLOCK_DEST_PREFIX_LOC = 9
 #!
 #! Invocation: exec
 pub proc build_mint_output_note
+    dup.2 mem_store.MINT_NOTE_STORAGE_FAUCET_ID_SUFFIX
+    dup.3 mem_store.MINT_NOTE_STORAGE_FAUCET_ID_PREFIX
+    # => [destination_id_suffix, destination_id_prefix, faucet_id_suffix, faucet_id_prefix]
+
     # Step 1: Write all MINT note storage items to global memory
     exec.write_mint_note_storage
     # => [faucet_id_suffix, faucet_id_prefix]
@@ -156,15 +161,18 @@ end
 # MINT-PATH HELPERS (used only by build_mint_output_note)
 # =================================================================================================
 
-#! Writes all 14 MINT note storage items to global memory.
+#! Writes the destination/output portion of the MINT note storage to global memory.
+#!
+#! The faucet_id at [10..11] is written separately by the caller (see `build_mint_output_note`)
+#! because this procedure does not have it on its top-of-stack inputs.
 #!
 #! Storage layout:
 #! - [0-3]: P2ID_SCRIPT_ROOT (script root of the P2ID note)
 #! - [4-7]: SERIAL_NUM (serial number for the P2ID note, derived from PROOF_DATA_KEY)
 #! - [8]: tag (note tag for the P2ID output note, targeting the destination account)
 #! - [9]: amount (the scaled-down Miden amount to mint)
-#! - [10]: 0 (padding)
-#! - [11]: 0 (padding)
+#! - [10]: faucet_id_suffix (written by the caller)
+#! - [11]: faucet_id_prefix (written by the caller)
 #! - [12]: account_id_suffix (destination account suffix)
 #! - [13]: account_id_prefix (destination account prefix)
 #!

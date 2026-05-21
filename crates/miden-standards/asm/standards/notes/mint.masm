@@ -1,3 +1,5 @@
+use miden::protocol::account_id
+use miden::protocol::active_account
 use miden::protocol::active_note
 use miden::protocol::note
 use miden::standards::faucets::fungible->faucet
@@ -5,7 +7,7 @@ use miden::standards::faucets::fungible->faucet
 # CONSTANTS
 # =================================================================================================
 
-const MINT_NOTE_NUM_STORAGE_ITEMS_PRIVATE=6
+const MINT_NOTE_NUM_STORAGE_ITEMS_PRIVATE=8
 const MINT_NOTE_MIN_NUM_STORAGE_ITEMS_PUBLIC=12
 
 use miden::protocol::note::NOTE_TYPE_PUBLIC
@@ -16,18 +18,23 @@ const STORAGE_PTR = 0
 const PRIVATE_RECIPIENT_PTR = STORAGE_PTR
 const PRIVATE_TAG_PTR = STORAGE_PTR + 4
 const PRIVATE_AMOUNT_PTR = STORAGE_PTR + 5
+const PRIVATE_FAUCET_ID_SUFFIX_PTR = STORAGE_PTR + 6
+const PRIVATE_FAUCET_ID_PREFIX_PTR = STORAGE_PTR + 7
 
 # Memory addresses of MINT note storage (public mode)
 const PUBLIC_SCRIPT_ROOT_PTR = STORAGE_PTR
 const PUBLIC_SERIAL_NUM_PTR = STORAGE_PTR + 4
 const PUBLIC_TAG_PTR = STORAGE_PTR + 8
 const PUBLIC_AMOUNT_PTR = STORAGE_PTR + 9
+const PUBLIC_FAUCET_ID_SUFFIX_PTR = STORAGE_PTR + 10
+const PUBLIC_FAUCET_ID_PREFIX_PTR = STORAGE_PTR + 11
 const PUBLIC_OUTPUT_NOTE_STORAGE_PTR = STORAGE_PTR + 12
 
 # ERRORS
 # =================================================================================================
 
-const ERR_MINT_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS="MINT script expects exactly 6 storage items for private or 12+ storage items for public output notes"
+const ERR_MINT_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS="MINT script expects exactly 8 storage items for private or 12+ storage items for public output notes"
+const ERR_MINT_WRONG_FAUCET="MINT script consuming account does not match the faucet recorded in note storage"
 
 #! Network Faucet MINT script: mints assets by calling the network faucet's mint_and_send
 #! function.
@@ -42,26 +49,34 @@ const ERR_MINT_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS="MINT script expects exactly 6
 #! Note storage supports two modes. Depending on the number of note storage items,
 #! a private or public note is created on consumption of the MINT note:
 #!
-#! Private mode (6 storage items) - creates a private note:
+#! Private mode (8 storage items) - creates a private note:
 #! - RECIPIENT: The recipient digest (4 elements)
 #! - tag: Note tag for the output note
 #! - amount: The amount to mint
+#! - faucet_id_suffix: Suffix felt of the intended faucet account ID
+#! - faucet_id_prefix: Prefix felt of the intended faucet account ID
 #!
 #! Public mode (12+ storage items) - creates a public note with variable-length storage:
 #! - SCRIPT_ROOT: Script root of the output note (4 elements)
 #! - SERIAL_NUM: Serial number of the output note (4 elements)
 #! - tag: Note tag for the output note
 #! - amount: The amount to mint
-#! - padding
-#! - padding
+#! - faucet_id_suffix: Suffix felt of the intended faucet account ID
+#! - faucet_id_prefix: Prefix felt of the intended faucet account ID
 #! - [STORAGE]: Variable-length storage for the output note (Vec<Felt>)
 #!              The number of output note storage items = num_mint_note_storage_items - 12
 #!
-#! The padding is necessary since note::compute_and_store_recipient expects a word-aligned storage_ptr.
+#! The faucet_id slot at indices 10-11 of public storage also acts as the word-alignment padding
+#! that note::compute_and_store_recipient expects for the output note storage_ptr at index 12.
+#!
+#! The script binds consumption to the recorded faucet by asserting that the active account ID
+#! equals (faucet_id_prefix, faucet_id_suffix) before invoking mint_and_send. This prevents a
+#! different fungible faucet from consuming the note and minting its own asset to the recipient.
 #!
 #! Panics if:
 #! - account does not expose mint_and_send procedure.
-#! - the number of storage items is not exactly 6 for private or less than 12 for public output notes.
+#! - the number of storage items is not exactly 8 for private or less than 12 for public output notes.
+#! - the active account ID is not equal to the faucet ID recorded in note storage.
 @note_script
 pub proc main
     dropw
@@ -79,6 +94,18 @@ pub proc main
 
     if.true
         # public output note creation
+        # => [num_storage_items, pad(16)]
+
+        mem_load.PUBLIC_FAUCET_ID_PREFIX_PTR mem_load.PUBLIC_FAUCET_ID_SUFFIX_PTR
+        # => [exp_faucet_id_suffix, exp_faucet_id_prefix, num_storage_items, pad(16)]
+
+        exec.active_account::get_id
+        # => [account_id_suffix, account_id_prefix, exp_faucet_id_suffix, exp_faucet_id_prefix, num_storage_items, pad(16)]
+
+        exec.account_id::is_equal
+        # => [is_id_equal, num_storage_items, pad(16)]
+        
+        assert.err=ERR_MINT_WRONG_FAUCET
         # => [num_storage_items, pad(16)]
 
         movdn.8
@@ -108,6 +135,18 @@ pub proc main
         # private output note creation
 
         eq.MINT_NOTE_NUM_STORAGE_ITEMS_PRIVATE assert.err=ERR_MINT_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+        # => [pad(16)]
+
+        mem_load.PRIVATE_FAUCET_ID_PREFIX_PTR mem_load.PRIVATE_FAUCET_ID_SUFFIX_PTR
+        # => [exp_faucet_id_suffix, exp_faucet_id_prefix, pad(16)]
+
+        exec.active_account::get_id
+        # => [account_id_suffix, account_id_prefix, exp_faucet_id_suffix, exp_faucet_id_prefix, pad(16)]
+
+        exec.account_id::is_equal
+        # => [is_id_equal, pad(16)]
+
+        assert.err=ERR_MINT_WRONG_FAUCET
         # => [pad(16)]
 
         mem_loadw_le.PRIVATE_RECIPIENT_PTR

@@ -46,7 +46,15 @@ impl MintNote {
     // --------------------------------------------------------------------------------------------
 
     /// Expected number of storage items of the MINT note (private mode).
-    pub const NUM_STORAGE_ITEMS_PRIVATE: usize = 6;
+    ///
+    /// Layout: 4 felts RECIPIENT, 1 felt tag, 1 felt amount, 2 felts intended faucet ID.
+    pub const NUM_STORAGE_ITEMS_PRIVATE: usize = 8;
+
+    /// Minimum number of fixed storage items of the MINT note (public mode).
+    ///
+    /// Layout: 4 felts SCRIPT_ROOT, 4 felts SERIAL_NUM, 1 felt tag, 1 felt amount, 2 felts
+    /// intended faucet ID. Variable-length output note storage follows from index 12 onward.
+    pub const FIXED_NUM_STORAGE_ITEMS_PUBLIC: usize = 12;
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
@@ -68,9 +76,9 @@ impl MintNote {
     ///
     /// This script enables the creation of a PUBLIC note that, when consumed by a network faucet,
     /// will mint the specified amount of fungible assets and create either a PRIVATE or PUBLIC
-    /// output note depending on the input configuration. The MINT note uses note-based
-    /// authentication, checking if the note sender equals the faucet owner to authorize
-    /// minting.
+    /// output note depending on the input configuration. Consumption is bound to `faucet_id`:
+    /// the script panics if the consuming account does not match the recorded faucet, so a
+    /// different fungible faucet cannot race to consume the note and mint its own asset.
     ///
     /// MINT notes are always PUBLIC (for network execution). Output notes can be either PRIVATE
     /// or PUBLIC depending on the MintNoteStorage variant used.
@@ -79,7 +87,8 @@ impl MintNote {
     /// is automatically set to the faucet's account ID for proper routing.
     ///
     /// # Parameters
-    /// - `faucet_id`: The account ID of the network faucet that will mint the assets
+    /// - `faucet_id`: The account ID of the network faucet that will mint the assets. Embedded into
+    ///   the note storage and enforced at consumption time.
     /// - `sender`: The account ID of the note creator (must be the faucet owner)
     /// - `mint_storage`: The storage configuration specifying private or public output mode
     /// - `attachment`: The [`NoteAttachments`] of the MINT note
@@ -100,8 +109,9 @@ impl MintNote {
         // MINT notes are always public for network execution
         let note_type = NoteType::Public;
 
-        // Convert MintNoteStorage to NoteStorage
-        let storage = NoteStorage::from(mint_storage);
+        // Convert MintNoteStorage to NoteStorage, embedding the intended faucet ID so the script
+        // can refuse consumption by any other account.
+        let storage = mint_storage.into_note_storage(faucet_id);
 
         let tag = NoteTag::with_account_target(faucet_id);
 
@@ -147,11 +157,10 @@ impl MintNoteStorage {
         tag: Felt,
     ) -> Result<Self, NoteError> {
         // Calculate total number of storage items that will be created:
-        // 12 fixed items (SCRIPT_ROOT, SERIAL_NUM, tag, amount, 2 padding) + variable recipient
-        // number of storage items
-        const FIXED_PUBLIC_STORAGE_ITEMS: usize = 12;
+        // FIXED_NUM_STORAGE_ITEMS_PUBLIC fixed items (SCRIPT_ROOT, SERIAL_NUM, tag, amount,
+        // intended faucet ID) + variable output-note storage items.
         let total_storage_items =
-            FIXED_PUBLIC_STORAGE_ITEMS + recipient.storage().num_items() as usize;
+            MintNote::FIXED_NUM_STORAGE_ITEMS_PUBLIC + recipient.storage().num_items() as usize;
 
         if total_storage_items > MAX_NOTE_STORAGE_ITEMS {
             return Err(NoteError::TooManyStorageItems(total_storage_items));
@@ -159,15 +168,22 @@ impl MintNoteStorage {
 
         Ok(Self::Public { recipient, amount, tag })
     }
-}
 
-impl From<MintNoteStorage> for NoteStorage {
-    fn from(mint_storage: MintNoteStorage) -> Self {
-        match mint_storage {
+    /// Serializes the storage to a [`NoteStorage`], embedding the intended `faucet_id` so the
+    /// MINT script can verify the consuming account at execution time.
+    pub(crate) fn into_note_storage(self, faucet_id: AccountId) -> NoteStorage {
+        let faucet_id_suffix = Felt::new_unchecked(faucet_id.suffix().as_canonical_u64());
+        let faucet_id_prefix = faucet_id.prefix().as_felt();
+        match self {
             MintNoteStorage::Private { recipient_digest, amount, tag } => {
                 let mut storage_values = Vec::with_capacity(MintNote::NUM_STORAGE_ITEMS_PRIVATE);
                 storage_values.extend_from_slice(recipient_digest.as_elements());
-                storage_values.extend_from_slice(&[tag, amount]);
+                storage_values.extend_from_slice(&[
+                    tag,
+                    amount,
+                    faucet_id_suffix,
+                    faucet_id_prefix,
+                ]);
                 NoteStorage::new(storage_values)
                     .expect("number of storage items should not exceed max storage items")
             },
@@ -175,7 +191,12 @@ impl From<MintNoteStorage> for NoteStorage {
                 let mut storage_values = Vec::new();
                 storage_values.extend_from_slice(recipient.script().root().as_elements());
                 storage_values.extend_from_slice(recipient.serial_num().as_elements());
-                storage_values.extend_from_slice(&[tag, amount, Felt::ZERO, Felt::ZERO]);
+                storage_values.extend_from_slice(&[
+                    tag,
+                    amount,
+                    faucet_id_suffix,
+                    faucet_id_prefix,
+                ]);
                 storage_values.extend_from_slice(recipient.storage().items());
                 NoteStorage::new(storage_values)
                     .expect("number of storage items should not exceed max storage items")
