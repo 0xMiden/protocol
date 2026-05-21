@@ -1,21 +1,5 @@
 //! Tests for the `Pausable` storage component, `PausableManager` admin wrapper, and the
-//! transversal pause integration (mint / burn / transfer / metadata setters).
-//!
-//! Architecture under test:
-//! - `Pausable` is the opt-in storage component holding the `is_paused` flag and the call-invokable
-//!   `is_paused` view procedure.
-//! - `PausableManager` exposes `pause` / `unpause` as `Invocation: call` admin procedures gated by
-//!   the account-wide `Authority` component (installed by the `AccessControl` enum). A single
-//!   manager works uniformly with all three Authority variants (AuthControlled, OwnerControlled,
-//!   RbacControlled).
-//! - Transversal pause checks are baked into:
-//!   - `TokenPolicyManager::execute_mint_policy` / `execute_burn_policy` (dispatch layer).
-//!   - Every transfer policy's `check_policy` (`allow_all`, `basic_blocklist`, `basic_allowlist`).
-//!   - `FungibleFaucet` metadata setters (`set_max_supply`, `set_description`, `set_logo_uri`,
-//!     `set_external_link`).
-//! - `FungibleFaucet` auto-installs the `is_paused` storage slot (initial: unpaused) so existing
-//!   faucet / blocklist / allowlist tests continue to work unchanged. Non-faucet accounts that want
-//!   pause functionality install `Pausable` explicitly.
+//! pause integration (mint / burn / transfer / metadata setters).
 //!
 //! A single `pause()` call by an authorized sender blocks mint, burn, transfer, and metadata
 //! updates uniformly until a matching `unpause()` call.
@@ -82,9 +66,6 @@ fn add_faucet_with_pause(
         .max_supply(AssetAmount::new(1_000_000)?)
         .build()?;
 
-    // FungibleFaucet auto-installs the `is_paused` storage slot (initial: unpaused), so we do not
-    // install the standalone `Pausable` component here — it would duplicate the slot. We still
-    // install `PausableManager` to expose pause / unpause as admin procedures gated by Authority.
     let account_builder = AccountBuilder::new([43u8; 32])
         .account_type(AccountType::Public)
         .with_component(faucet)
@@ -314,12 +295,8 @@ fn pausable_storage_paused_writes_canonical_word() {
     assert_eq!(storage.build_word(), Word::from([1u32, 0, 0, 0]));
 }
 
-// TESTS — TRANSVERSAL PAUSE (mint / burn / transfer policies)
+// TESTS — PAUSE (mint / burn / transfer policies)
 // ================================================================================================
-
-/// Builds a faucet wired with TokenPolicyManager (AllowAll for mint/burn/send/receive). The
-/// transversal pause checks baked into `execute_mint_policy`, `execute_burn_policy` and the
-/// `check_policy` of `TransferAllowAll` will fire when paused.
 fn add_faucet_with_pause_and_policies(
     builder: &mut MockChainBuilder,
     owner: AccountId,
@@ -331,11 +308,6 @@ fn add_faucet_with_pause_and_policies(
         .max_supply(AssetAmount::new(1_000_000)?)
         .build()?;
 
-    // We use Blocklist (with empty initial blocklist) for the transfer policy instead of
-    // AllowAll because TokenPolicyManager treats AllowAll as "no callback needed" and skips
-    // installing the protocol callback slots — which would short-circuit the pause check on
-    // transfers. With Blocklist, the callback fires, the (empty) blocklist passes, and the
-    // pause check runs uniformly on every transfer.
     let account_builder = AccountBuilder::new([44u8; 32])
         .account_type(AccountType::Public)
         .with_component(faucet)
@@ -624,13 +596,10 @@ async fn pausable_set_max_supply_fails_when_paused() -> anyhow::Result<()> {
     Ok(())
 }
 
-// TESTS — PAUSABLEMANAGER WITH AUTH-CONTROLLED ACCESS CONTROL
+// TESTS — PAUSABLE MANAGER WITH AUTH-CONTROLLED ACCESS CONTROL
 // ================================================================================================
 
-/// Same as `add_faucet_with_pause` but uses `AccessControl::AuthControlled` instead of
-/// `Ownable2Step`. With `Authority::AuthControlled`, `assert_authorized` is a no-op (the account's
-/// own auth scheme is the only gate). For Auth::IncrNonce that means anyone can call pause /
-/// unpause — useful to verify the Authority pattern dispatches uniformly across all variants.
+/// Same as `add_faucet_with_pause` but uses `AccessControl::AuthControlled`.
 fn add_faucet_with_pause_auth_controlled(
     builder: &mut MockChainBuilder,
 ) -> anyhow::Result<Account> {
