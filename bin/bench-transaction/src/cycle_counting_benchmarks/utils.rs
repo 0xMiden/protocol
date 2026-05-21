@@ -201,7 +201,7 @@ mod tests {
 
     const COMMITTED_SCENARIO_EXPECTATIONS: &[ScenarioExpectation] = &[
         ScenarioExpectation {
-            name: "consume single P2ID note",
+            name: "consume single P2ID note with Falcon signing",
             padded_core_side: 131_072,
             padded_chiplets: 131_072,
         },
