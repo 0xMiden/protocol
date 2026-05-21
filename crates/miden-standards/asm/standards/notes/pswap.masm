@@ -474,12 +474,11 @@ proc handle_reclaim
     # => []
 end
 
-#! Returns the lineage's order_id, lifted from the active note's serial[1].
+#! Returns the order_id, taken from the active note's serial[1].
 #!
-#! serial[1] is stable across every payback and remainder in the chain because
-#! the payback bumps serial[0] and the remainder bumps serial[3], so the
-#! creator's serial[1] flows through every note in the lineage
-#! unchanged.
+#! serial[1] is stable across every payback and remainder in the PSWAP note chain:
+#! the payback bumps serial[0] and the remainder bumps serial[3], so the creator's
+#! serial[1] carries through every note in the chain unchanged.
 #!
 #! Inputs:  []
 #! Outputs: [order_id]
