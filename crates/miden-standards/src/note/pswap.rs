@@ -545,9 +545,8 @@ impl PswapNote {
     // LINEAGE DISCOVERY
     // --------------------------------------------------------------------------------------------
 
-    /// Reconstructs the depth-`d` payback P2ID [`Note`], byte-identical to the on-chain
-    /// body (matching both [`Note::id`] and [`Note::details_commitment`]) so the creator
-    /// can consume it as an unauthenticated input note.
+    /// Reconstructs the depth-`d` payback P2ID [`Note`], so the creator can consume it as an
+    /// unauthenticated input note.
     ///
     /// `consumer_account_id` must be the account that consumed the parent PSWAP in round
     /// `depth`: the MASM stamps it as the payback's metadata sender, which feeds into
