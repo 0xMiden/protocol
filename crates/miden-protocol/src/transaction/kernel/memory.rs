@@ -365,11 +365,11 @@ pub const NOTE_MEM_SIZE: MemoryAddress = 1024;
 // Each nullifier occupies a single word. A data section for each note consists of exactly 1024
 // elements and is laid out like so:
 //
-// ┌──────┬────────┬────────┬────────────┬────────────┬──────────┬─────────────┬───────────┬───────┬
-// │ NOTE │ SERIAL │ SCRIPT │  STORAGE   │   ASSETS   │ METADATA │ ATTACHMENTS │ RECIPIENT │ NOTE  │
-// │  ID  │  NUM   │  ROOT  │ COMMITMENT │ COMMITMENT │          │  COMMITMENT │           │ ARGS  │
-// ├──────┼────────┼────────┼────────────┼────────────┼──────────┼─────────────┼───────────┼───────┼
-// 0      4        8        12           16           20         24            28          32
+// ┌──────────────┬────────┬────────┬────────────┬────────────┬──────────┬─────────────┬───────────┬───────┬
+// │ NOTE DETAILS │ SERIAL │ SCRIPT │  STORAGE   │   ASSETS   │ METADATA │ ATTACHMENTS │ RECIPIENT │ NOTE  │
+// │  COMMITMENT  │  NUM   │  ROOT  │ COMMITMENT │ COMMITMENT │          │  COMMITMENT │           │ ARGS  │
+// ├──────────────┼────────┼────────┼────────────┼────────────┼──────────┼─────────────┼───────────┼───────┼
+// 0              4        8        12           16           20         24            28          32
 //
 // ┬─────────┬────────┬───────┬─────────┬─────┬────────┬─────────┬─────────┐
 // │ STORAGE │  NUM   │ ASSET │  ASSET  │ ... │ ASSET  │  ASSET  │ PADDING │

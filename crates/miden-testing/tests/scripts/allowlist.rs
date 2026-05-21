@@ -472,12 +472,14 @@ async fn mint_and_send_on_allowlist_basic_faucet() -> anyhow::Result<()> {
     let tx_script_code = format!(
         r#"
         begin
-            padw padw push.0
+            push.0 push.0
 
             push.{recipient}
             push.{note_type}
             push.{tag}
             push.{amount}
+
+            exec.::miden::protocol::faucet::create_fungible_asset
 
             call.::miden::standards::faucets::fungible::mint_and_send
 
