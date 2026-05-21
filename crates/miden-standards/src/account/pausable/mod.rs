@@ -121,20 +121,11 @@ impl PausableStorage {
 // PAUSABLE COMPONENT
 // ================================================================================================
 
-/// Account component that installs the [`PausableStorage`] slot and exposes the call-invokable
-/// `is_paused` view procedure.
-///
-/// This component is the **opt-in entry point** for global / emergency pause functionality.
-/// Consumers (TokenPolicyManager dispatch for mint / burn / send / receive, asset callbacks,
-/// FungibleFaucet metadata setters) read the pause flag transversally via
-/// `exec.pausable::assert_not_paused` — a no-op when this component is NOT installed (the slot
-/// returns the zero word) and an enforced guard when it IS installed.
+/// Account component that installs the [`PausableStorage`] slot and exposes `is_paused`
+/// view procedure.
 ///
 /// Pair with [`PausableManager`] to expose `pause` / `unpause` admin procedures gated by the
 /// account-wide [`crate::account::access::Authority`] component.
-///
-/// The wrapped initial state captures whether the account starts paused. Use [`Default`] for an
-/// unpaused start, or [`Self::paused`] / [`Self::unpaused`] for explicit literals.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Pausable {
     initial_state: bool,
@@ -185,10 +176,8 @@ impl From<Pausable> for AccountComponent {
 
         let metadata = AccountComponentMetadata::new(Pausable::NAME)
             .with_description(
-                "Pausable: installs the `is_paused` storage slot and exposes the call-invokable \
-                 `is_paused` view. Consumers (TokenPolicyManager, asset callbacks, metadata \
-                 setters) read the flag transversally via `assert_not_paused`. Pair with \
-                 PausableManager to gate pause / unpause admin via the Authority component.",
+                "Pausable: installs the `is_paused` storage slot and exposes \
+                 `is_paused` view.",
             )
             .with_storage_schema(storage_schema);
 

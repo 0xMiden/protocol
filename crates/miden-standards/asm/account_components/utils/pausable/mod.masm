@@ -1,10 +1,5 @@
-# Pausable component shim.
-#
-# Installs the per-account `is_paused` storage slot (via `PausableStorage` on the Rust side)
-# and exposes the call-invokable `is_paused` view procedure for tx-script-level queries.
-#
-# Pause / unpause administration is delegated to the [`PausableManager`] companion component;
-# transversal pause checks (mint, burn, transfer, metadata setters) are handled by
+# Pause / unpause administration is delegated to the [`PausableManager`] component.
+# Pause checks (mint, burn, transfer, metadata setters) are handled by
 # [`TokenPolicyManager`] and the metadata setter procedures themselves, both of which use the
 # `assert_not_paused` exec helper from `miden::standards::utils::pausable` directly.
 
