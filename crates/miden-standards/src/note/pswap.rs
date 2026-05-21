@@ -565,7 +565,7 @@ impl PswapNote {
         if depth == 0 {
             return Err(NoteError::other("depth must be >= 1"));
         }
-        let parent_depth_felt = Felt::from(depth - 1);
+        let parent_depth = Felt::from(depth - 1);
         let p2id_serial = Word::from([
             self.serial_number[0] + ONE,
             self.serial_number[1],
