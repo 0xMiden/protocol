@@ -570,7 +570,7 @@ impl PswapNote {
             self.serial_number[0] + ONE,
             self.serial_number[1],
             self.serial_number[2],
-            self.serial_number[3] + parent_depth_felt,
+            self.serial_number[3] + parent_depth,
         ]);
 
         let recipient =
