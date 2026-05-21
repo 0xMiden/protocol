@@ -10,7 +10,6 @@ use miden_protocol::account::{
     AccountBuilder,
     AccountComponent,
     AccountId,
-    AccountStorageMode,
     AccountType,
     StorageSlot,
 };
@@ -51,10 +50,10 @@ fn create_ownable_account(
     storage_slots.push(Ownable2Step::new(owner).to_storage_slot());
 
     let account = AccountBuilder::new([1; 32])
-        .storage_mode(AccountStorageMode::Public)
+        .account_type(AccountType::Public)
         .with_auth_component(Auth::IncrNonce)
         .with_component({
-            let metadata = AccountComponentMetadata::new("test::ownable", AccountType::all());
+            let metadata = AccountComponentMetadata::new("test::ownable");
             AccountComponent::new(component_code_obj, storage_slots, metadata)?
         })
         .build_existing()?;
@@ -90,7 +89,7 @@ fn create_transfer_note(
         end
     "#,
         new_owner_prefix = new_owner.prefix().as_felt(),
-        new_owner_suffix = Felt::new(new_owner.suffix().as_canonical_u64()),
+        new_owner_suffix = Felt::new_unchecked(new_owner.suffix().as_canonical_u64()),
     );
 
     let note = NoteBuilder::new(sender, rng)
@@ -510,7 +509,7 @@ async fn test_transfer_ownership_fails_with_invalid_account_id() -> anyhow::Resu
     builder.add_account(account.clone())?;
 
     let invalid_prefix = owner.prefix().as_felt();
-    let invalid_suffix = Felt::new(1);
+    let invalid_suffix = Felt::ONE;
 
     let script = format!(
         r#"

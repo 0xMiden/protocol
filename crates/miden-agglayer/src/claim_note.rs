@@ -1,7 +1,8 @@
-use alloc::string::ToString;
 use alloc::vec;
 use alloc::vec::Vec;
 
+use miden_assembly::Library;
+use miden_assembly::serde::Deserializable;
 use miden_core::{Felt, Word};
 use miden_protocol::account::AccountId;
 use miden_protocol::crypto::SequentialCommit;
@@ -13,14 +14,89 @@ use miden_protocol::note::{
     NoteAttachment,
     NoteAttachments,
     NoteRecipient,
+    NoteScript,
+    NoteScriptRoot,
     NoteStorage,
     NoteType,
     PartialNoteMetadata,
 };
 use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
+use miden_utils_sync::LazyLock;
 
 use crate::utils::Keccak256Output;
-use crate::{EthAddress, EthAmount, GlobalIndex, MetadataHash, claim_script};
+use crate::{EthAddress, EthAmount, GlobalIndex, MetadataHash};
+
+// NOTE SCRIPT
+// ================================================================================================
+
+// Initialize the CLAIM note script only once
+static CLAIM_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
+    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/claim.masl"));
+    let library =
+        Library::read_from_bytes(bytes).expect("shipped CLAIM script library is well-formed");
+    NoteScript::from_library(&library).expect("shipped CLAIM script is well-formed")
+});
+
+// CLAIM NOTE
+// ================================================================================================
+
+/// CLAIM (Bridge from AggLayer) note.
+///
+/// This note instructs the AggLayer bridge to validate a claim against its registered GERs and
+/// emit a corresponding MINT note for the AggLayer faucet. CLAIM notes are always public.
+pub struct ClaimNote;
+
+impl ClaimNote {
+    // PUBLIC ACCESSORS
+    // --------------------------------------------------------------------------------------------
+
+    /// Returns the CLAIM (Bridge from AggLayer) note script.
+    pub fn script() -> NoteScript {
+        CLAIM_SCRIPT.clone()
+    }
+
+    /// Returns the CLAIM note script root.
+    pub fn script_root() -> NoteScriptRoot {
+        CLAIM_SCRIPT.root()
+    }
+
+    // BUILDERS
+    // --------------------------------------------------------------------------------------------
+
+    /// Creates a CLAIM note — a note that instructs the bridge to validate a claim and create
+    /// a MINT note for the AggLayer Faucet. CLAIM notes are always public.
+    ///
+    /// # Parameters
+    /// - `storage`: The core storage for creating the CLAIM note
+    /// - `target_bridge_id`: The account ID of the bridge that should consume this note. Encoded as
+    ///   a `NetworkAccountTarget` attachment on the note metadata.
+    /// - `sender_account_id`: The account ID of the CLAIM note creator
+    /// - `rng`: Random number generator for creating the CLAIM note serial number
+    ///
+    /// # Errors
+    /// Returns an error if note creation fails.
+    pub fn create<R: FeltRng>(
+        storage: ClaimNoteStorage,
+        target_bridge_id: AccountId,
+        sender_account_id: AccountId,
+        rng: &mut R,
+    ) -> Result<Note, NoteError> {
+        let note_storage = NoteStorage::try_from(storage)?;
+
+        let attachment = NetworkAccountTarget::new(target_bridge_id, NoteExecutionHint::Always)
+            .map_err(|error| {
+                NoteError::other_with_source("failed to create claim network account target", error)
+            })?;
+        let attachments = NoteAttachments::from(NoteAttachment::from(attachment));
+
+        let metadata = PartialNoteMetadata::new(sender_account_id, NoteType::Public);
+
+        let recipient = NoteRecipient::new(rng.draw_word(), Self::script(), note_storage);
+        let assets = NoteAssets::new(vec![])?;
+
+        Ok(Note::with_attachments(assets, metadata, recipient, attachments))
+    }
+}
 
 // CLAIM NOTE TYPE ALIASES
 // ================================================================================================
@@ -165,39 +241,4 @@ impl TryFrom<ClaimNoteStorage> for NoteStorage {
 
         NoteStorage::new(claim_storage)
     }
-}
-
-// CLAIM NOTE CREATION
-// ================================================================================================
-
-/// Generates a CLAIM note - a note that instructs the bridge to validate a claim and create
-/// a MINT note for the AggLayer Faucet.
-///
-/// # Parameters
-/// - `storage`: The core storage for creating the CLAIM note
-/// - `target_bridge_id`: The account ID of the bridge that should consume this note. Encoded as a
-///   `NetworkAccountTarget` attachment on the note metadata.
-/// - `sender_account_id`: The account ID of the CLAIM note creator
-/// - `rng`: Random number generator for creating the CLAIM note serial number
-///
-/// # Errors
-/// Returns an error if note creation fails.
-pub fn create_claim_note<R: FeltRng>(
-    storage: ClaimNoteStorage,
-    target_bridge_id: AccountId,
-    sender_account_id: AccountId,
-    rng: &mut R,
-) -> Result<Note, NoteError> {
-    let note_storage = NoteStorage::try_from(storage.clone())?;
-
-    let attachment = NetworkAccountTarget::new(target_bridge_id, NoteExecutionHint::Always)
-        .map_err(|e| NoteError::other(e.to_string()))?;
-    let attachments = NoteAttachments::from(NoteAttachment::from(attachment));
-
-    let metadata = PartialNoteMetadata::new(sender_account_id, NoteType::Public);
-
-    let recipient = NoteRecipient::new(rng.draw_word(), claim_script(), note_storage);
-    let assets = NoteAssets::new(vec![])?;
-
-    Ok(Note::with_attachments(assets, metadata, recipient, attachments))
 }

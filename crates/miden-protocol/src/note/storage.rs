@@ -148,9 +148,9 @@ mod tests {
     #[test]
     fn test_storage_item_ordering() {
         // storage items are provided in reverse stack order
-        let storage_items = vec![Felt::new(1), Felt::new(2), Felt::new(3)];
+        let storage_items = vec![Felt::ONE, Felt::new_unchecked(2), Felt::new_unchecked(3)];
         // we expect the storage items to remain in reverse stack order.
-        let expected_ordering = vec![Felt::new(1), Felt::new(2), Felt::new(3)];
+        let expected_ordering = vec![Felt::ONE, Felt::new_unchecked(2), Felt::new_unchecked(3)];
 
         let note_storage = NoteStorage::new(storage_items).expect("note created should succeed");
         assert_eq!(&expected_ordering, note_storage.items());
@@ -158,7 +158,7 @@ mod tests {
 
     #[test]
     fn test_storage_serialization() {
-        let storage_items = vec![Felt::new(1), Felt::new(2), Felt::new(3)];
+        let storage_items = vec![Felt::ONE, Felt::new_unchecked(2), Felt::new_unchecked(3)];
         let note_storage = NoteStorage::new(storage_items).unwrap();
 
         let bytes = note_storage.to_bytes();

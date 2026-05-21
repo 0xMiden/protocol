@@ -117,7 +117,7 @@ impl PswapNoteStorage {
 
     /// Returns the requested token amount.
     pub fn requested_asset_amount(&self) -> u64 {
-        self.requested_asset.amount()
+        self.requested_asset.amount().as_u64()
     }
 }
 
@@ -129,8 +129,7 @@ impl From<PswapNoteStorage> for NoteStorage {
             Felt::from(storage.requested_asset.callbacks().as_u8()),
             storage.requested_asset.faucet_id().suffix(),
             storage.requested_asset.faucet_id().prefix().as_felt(),
-            Felt::try_from(storage.requested_asset.amount())
-                .expect("asset amount should fit in a felt"),
+            Felt::from(storage.requested_asset.amount()),
             // Payback note type [4]
             Felt::from(storage.payback_note_type.as_u8()),
             // Creator ID [5-6]
@@ -381,9 +380,9 @@ impl PswapNote {
                 ));
             },
         };
-        let fill_amount = payback_asset.amount();
+        let fill_amount = payback_asset.amount().as_u64();
 
-        let total_offered_amount = self.offered_asset.amount();
+        let total_offered_amount = self.offered_asset.amount().as_u64();
         let requested_faucet_id = self.storage.requested_faucet_id();
         let total_requested_amount = self.storage.requested_asset_amount();
 
@@ -403,8 +402,8 @@ impl PswapNote {
         // MASM which calls calculate_tokens_offered_for_requested twice. This is necessary
         // because the account fill portion goes to the consumer's vault while the total
         // determines the remainder note's offered amount.
-        let account_fill_amount = account_fill_asset.as_ref().map_or(0, |a| a.amount());
-        let note_fill_amount = note_fill_asset.as_ref().map_or(0, |a| a.amount());
+        let account_fill_amount = account_fill_asset.as_ref().map_or(0, |a| a.amount().as_u64());
+        let note_fill_amount = note_fill_asset.as_ref().map_or(0, |a| a.amount().as_u64());
         let payout_for_account_fill = Self::calculate_output_amount(
             total_offered_amount,
             total_requested_amount,
@@ -456,7 +455,7 @@ impl PswapNote {
     /// Returns an error if the calculated payout is not a valid asset amount.
     pub fn calculate_offered_for_requested(&self, fill_amount: u64) -> Result<u64, NoteError> {
         let total_requested = self.storage.requested_asset_amount();
-        let total_offered = self.offered_asset.amount();
+        let total_offered = self.offered_asset.amount().as_u64();
 
         Self::calculate_output_amount(total_offered, total_requested, fill_amount)
     }
@@ -709,7 +708,7 @@ impl TryFrom<&Note> for PswapNote {
 
 #[cfg(test)]
 mod tests {
-    use miden_protocol::account::{AccountId, AccountIdVersion, AccountStorageMode, AccountType};
+    use miden_protocol::account::{AccountId, AccountIdVersion, AccountType};
     use miden_protocol::asset::FungibleAsset;
     use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
 
@@ -721,30 +720,15 @@ mod tests {
     fn dummy_faucet_id(byte: u8) -> AccountId {
         let mut bytes = [0; 15];
         bytes[0] = byte;
-        AccountId::dummy(
-            bytes,
-            AccountIdVersion::Version1,
-            AccountType::FungibleFaucet,
-            AccountStorageMode::Public,
-        )
+        AccountId::dummy(bytes, AccountIdVersion::Version1, AccountType::Public)
     }
 
     fn dummy_creator_id() -> AccountId {
-        AccountId::dummy(
-            [1; 15],
-            AccountIdVersion::Version1,
-            AccountType::RegularAccountImmutableCode,
-            AccountStorageMode::Public,
-        )
+        AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountType::Public)
     }
 
     fn dummy_consumer_id() -> AccountId {
-        AccountId::dummy(
-            [2; 15],
-            AccountIdVersion::Version1,
-            AccountType::RegularAccountImmutableCode,
-            AccountStorageMode::Public,
-        )
+        AccountId::dummy([2; 15], AccountIdVersion::Version1, AccountType::Public)
     }
 
     fn build_pswap_note(
@@ -825,12 +809,7 @@ mod tests {
         requested_faucet_bytes[1] = 0xec;
 
         let offered_asset = FungibleAsset::new(
-            AccountId::dummy(
-                offered_faucet_bytes,
-                AccountIdVersion::Version1,
-                AccountType::FungibleFaucet,
-                AccountStorageMode::Public,
-            ),
+            AccountId::dummy(offered_faucet_bytes, AccountIdVersion::Version1, AccountType::Public),
             100,
         )
         .unwrap();
@@ -838,8 +817,7 @@ mod tests {
             AccountId::dummy(
                 requested_faucet_bytes,
                 AccountIdVersion::Version1,
-                AccountType::FungibleFaucet,
-                AccountStorageMode::Public,
+                AccountType::Public,
             ),
             200,
         )
@@ -873,7 +851,7 @@ mod tests {
             Felt::from(requested_asset.callbacks().as_u8()),
             requested_asset.faucet_id().suffix(),
             requested_asset.faucet_id().prefix().as_felt(),
-            Felt::try_from(requested_asset.amount()).unwrap(),
+            Felt::from(requested_asset.amount()),
             Felt::from(NoteType::Private.as_u8()), // payback_note_type
             creator_id.prefix().as_felt(),
             creator_id.suffix(),
@@ -931,13 +909,13 @@ mod tests {
             panic!("expected fungible payback asset");
         };
         assert_eq!(fa.faucet_id(), requested_faucet);
-        assert_eq!(fa.amount(), 30);
+        assert_eq!(fa.amount().as_u64(), 30);
 
         // Remainder must exist with the unfilled 50 - 30 = 20 of requested, and the
         // offered amount reduced proportionally (100 - 30*2 = 40).
         let remainder = remainder.expect("partial fill should produce remainder");
         assert_eq!(remainder.storage().requested_asset_amount(), 20);
-        assert_eq!(remainder.offered_asset().amount(), 40);
+        assert_eq!(remainder.offered_asset().amount().as_u64(), 40);
         assert_eq!(remainder.storage().creator_account_id(), creator_id);
     }
 
@@ -969,7 +947,7 @@ mod tests {
             panic!("expected fungible payback asset");
         };
         assert_eq!(fa.faucet_id(), requested_faucet);
-        assert_eq!(fa.amount(), 50);
+        assert_eq!(fa.amount().as_u64(), 50);
 
         // Full fill → no remainder note.
         assert!(remainder.is_none(), "full fill must not produce a remainder");

@@ -3,7 +3,6 @@
 use std::sync::Arc;
 
 use anyhow::{Context as _, Result};
-use miden_core::program::ProgramInfo;
 use miden_processor::FastProcessor;
 use miden_processor::trace::{TraceLenSummary, build_trace};
 use miden_protocol::transaction::{TransactionInputs, TransactionKernel, TransactionMeasurements};
@@ -69,14 +68,13 @@ async fn build_trace_summary(tx_inputs: TransactionInputs) -> Result<TraceLenSum
     let program = TransactionKernel::main();
 
     let processor =
-        FastProcessor::new_with_options(stack_inputs, advice_inputs, ExecutionOptions::default());
-    let (execution_output, trace_generation_context) = processor
-        .execute_for_trace(&program, &mut host)
+        FastProcessor::new_with_options(stack_inputs, advice_inputs, ExecutionOptions::default())
+            .context("failed to construct FastProcessor for trace capture")?;
+    let trace_inputs = processor
+        .execute_trace_inputs(&program, &mut host)
         .await
         .context("failed to execute transaction kernel for trace")?;
-    let program_info = ProgramInfo::from(program.clone());
-    let trace = build_trace(execution_output, trace_generation_context, program_info)
-        .context("failed to build trace from execution output")?;
+    let trace = build_trace(trace_inputs).context("failed to build trace from execution output")?;
 
     Ok(*trace.trace_len_summary())
 }

@@ -1,6 +1,3 @@
-#[allow(dead_code)]
-pub(crate) mod procedure_policies;
-
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
@@ -16,8 +13,8 @@ use miden_protocol::account::component::{
 };
 use miden_protocol::account::{
     AccountComponent,
+    AccountComponentName,
     AccountProcedureRoot,
-    AccountType,
     StorageMap,
     StorageMapKey,
     StorageSlot,
@@ -33,25 +30,26 @@ account_component_code!(MULTISIG_CODE, "auth/multisig.masl");
 // CONSTANTS
 // ================================================================================================
 
-static THRESHOLD_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+pub(super) static THRESHOLD_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::auth::multisig::threshold_config")
         .expect("storage slot name should be valid")
 });
 
-static APPROVER_PUBKEYS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+pub(super) static APPROVER_PUBKEYS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::auth::multisig::approver_public_keys")
         .expect("storage slot name should be valid")
 });
 
-static APPROVER_SCHEME_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+pub(super) static APPROVER_SCHEME_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::auth::multisig::approver_schemes")
         .expect("storage slot name should be valid")
 });
 
-static EXECUTED_TRANSACTIONS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::auth::multisig::executed_transactions")
-        .expect("storage slot name should be valid")
-});
+pub(super) static EXECUTED_TRANSACTIONS_SLOT_NAME: LazyLock<StorageSlotName> =
+    LazyLock::new(|| {
+        StorageSlotName::new("miden::standards::auth::multisig::executed_transactions")
+            .expect("storage slot name should be valid")
+    });
 
 static PROCEDURE_THRESHOLDS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::auth::multisig::procedure_thresholds")
@@ -140,8 +138,6 @@ impl AuthMultisigConfig {
 /// should be used with caution for private multisig accounts; without a guardian, a single
 /// approver may advance state and withhold updates from other approvers, effectively locking
 /// them out.
-///
-/// This component supports all account types.
 #[derive(Debug)]
 pub struct AuthMultisig {
     config: AuthMultisigConfig,
@@ -150,6 +146,11 @@ pub struct AuthMultisig {
 impl AuthMultisig {
     /// The name of the component.
     pub const NAME: &'static str = "miden::standards::components::auth::multisig";
+
+    /// Returns the canonical [`AccountComponentName`] of this component.
+    pub const fn name() -> AccountComponentName {
+        AccountComponentName::from_static_str(Self::NAME)
+    }
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
@@ -261,7 +262,7 @@ impl AuthMultisig {
         ])
         .expect("storage schema should be valid");
 
-        AccountComponentMetadata::new(Self::NAME, AccountType::all())
+        AccountComponentMetadata::new(Self::NAME)
             .with_description("Multisig authentication component using hybrid signature schemes")
             .with_storage_schema(storage_schema)
     }

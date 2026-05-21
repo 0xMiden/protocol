@@ -163,19 +163,14 @@ impl TryFrom<&[Felt]> for P2idNoteStorage {
 #[cfg(test)]
 mod tests {
     use miden_protocol::Felt;
-    use miden_protocol::account::{AccountId, AccountIdVersion, AccountStorageMode, AccountType};
+    use miden_protocol::account::{AccountId, AccountIdVersion, AccountType};
     use miden_protocol::errors::NoteError;
 
     use super::*;
 
     #[test]
     fn try_from_valid_storage_succeeds() {
-        let target = AccountId::dummy(
-            [1u8; 15],
-            AccountIdVersion::Version1,
-            AccountType::FungibleFaucet,
-            AccountStorageMode::Private,
-        );
+        let target = AccountId::dummy([1u8; 15], AccountIdVersion::Version1, AccountType::Private);
 
         let storage = vec![target.suffix(), target.prefix().as_felt()];
 
@@ -203,7 +198,7 @@ mod tests {
 
     #[test]
     fn try_from_invalid_storage_contents_returns_error() {
-        let storage = vec![Felt::new(999u64), Felt::new(888u64)];
+        let storage = vec![Felt::new_unchecked(999_u64), Felt::new_unchecked(888_u64)];
 
         let err = P2idNoteStorage::try_from(storage.as_slice())
             .expect_err("should fail due to invalid account id encoding");

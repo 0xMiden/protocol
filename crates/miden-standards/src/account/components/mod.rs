@@ -3,10 +3,11 @@ use alloc::vec::Vec;
 
 use miden_protocol::account::AccountProcedureRoot;
 
-use crate::account::access::{Ownable2Step, RoleBasedAccessControl};
+use crate::account::access::{Authority, Ownable2Step, RoleBasedAccessControl};
 use crate::account::auth::{
     AuthGuardedMultisig,
     AuthMultisig,
+    AuthMultisigSmart,
     AuthNetworkAccount,
     AuthSingleSig,
     AuthSingleSigAcl,
@@ -24,11 +25,13 @@ use crate::account::wallets::BasicWallet;
 pub enum StandardAccountComponent {
     BasicWallet,
     FungibleFaucet,
+    Authority,
     Ownable2Step,
     RoleBasedAccessControl,
     AuthSingleSig,
     AuthSingleSigAcl,
     AuthMultisig,
+    AuthMultisigSmart,
     AuthGuardedMultisig,
     AuthNoAuth,
     AuthNetworkAccount,
@@ -41,11 +44,13 @@ impl StandardAccountComponent {
         let code = match self {
             Self::BasicWallet => BasicWallet::code(),
             Self::FungibleFaucet => FungibleFaucet::code(),
+            Self::Authority => Authority::code(),
             Self::Ownable2Step => Ownable2Step::code(),
             Self::RoleBasedAccessControl => RoleBasedAccessControl::code(),
             Self::AuthSingleSig => AuthSingleSig::code(),
             Self::AuthSingleSigAcl => AuthSingleSigAcl::code(),
             Self::AuthMultisig => AuthMultisig::code(),
+            Self::AuthMultisigSmart => AuthMultisigSmart::code(),
             Self::AuthGuardedMultisig => AuthGuardedMultisig::code(),
             Self::AuthNoAuth => NoAuth::code(),
             Self::AuthNetworkAccount => AuthNetworkAccount::code(),
@@ -77,6 +82,9 @@ impl StandardAccountComponent {
                 Self::FungibleFaucet => {
                     component_interface_vec.push(AccountComponentInterface::FungibleFaucet)
                 },
+                Self::Authority => {
+                    component_interface_vec.push(AccountComponentInterface::Authority)
+                },
                 Self::Ownable2Step => {
                     component_interface_vec.push(AccountComponentInterface::Ownable2Step)
                 },
@@ -91,6 +99,9 @@ impl StandardAccountComponent {
                 },
                 Self::AuthMultisig => {
                     component_interface_vec.push(AccountComponentInterface::AuthMultisig)
+                },
+                Self::AuthMultisigSmart => {
+                    component_interface_vec.push(AccountComponentInterface::AuthMultisigSmart)
                 },
                 Self::AuthGuardedMultisig => {
                     component_interface_vec.push(AccountComponentInterface::AuthGuardedMultisig)
@@ -113,12 +124,14 @@ impl StandardAccountComponent {
     ) {
         Self::BasicWallet.extract_component(procedures_set, component_interface_vec);
         Self::FungibleFaucet.extract_component(procedures_set, component_interface_vec);
+        Self::Authority.extract_component(procedures_set, component_interface_vec);
         Self::RoleBasedAccessControl.extract_component(procedures_set, component_interface_vec);
         Self::Ownable2Step.extract_component(procedures_set, component_interface_vec);
         Self::AuthSingleSig.extract_component(procedures_set, component_interface_vec);
         Self::AuthSingleSigAcl.extract_component(procedures_set, component_interface_vec);
         Self::AuthGuardedMultisig.extract_component(procedures_set, component_interface_vec);
         Self::AuthMultisig.extract_component(procedures_set, component_interface_vec);
+        Self::AuthMultisigSmart.extract_component(procedures_set, component_interface_vec);
         Self::AuthNoAuth.extract_component(procedures_set, component_interface_vec);
         Self::AuthNetworkAccount.extract_component(procedures_set, component_interface_vec);
     }

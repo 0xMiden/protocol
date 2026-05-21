@@ -253,6 +253,10 @@ end
 #! - the total value of two fungible assets is greater than FUNGIBLE_ASSET_MAX_AMOUNT.
 #! - the vault already contains the same non-fungible asset.
 pub proc add_asset
+    # reject assets with a Custom composition; only None and Fungible are supported today
+    exec.asset::assert_supported_composition
+    # => [ASSET_KEY, ASSET_VALUE, vault_root_ptr]
+
     # check if the asset is a fungible asset
     exec.asset::is_fungible_asset_key
     # => [is_fungible_asset, ASSET_KEY, ASSET_VALUE, vault_root_ptr]
@@ -412,6 +416,10 @@ end
 #! - the amount of the fungible asset in the vault is less than the amount to be removed.
 #! - the non-fungible asset is not found in the vault.
 pub proc remove_asset
+    # reject assets with a Custom composition; only None and Fungible are supported today
+    exec.asset::assert_supported_composition
+    # => [ASSET_KEY, ASSET_VALUE, vault_root_ptr]
+
     # check if the asset is a fungible asset
     exec.asset::is_fungible_asset_key
     # => [is_fungible_asset, ASSET_KEY, ASSET_VALUE, vault_root_ptr]

@@ -41,14 +41,13 @@ impl NetworkAccountTarget {
     ///
     /// Returns an error if:
     /// - the provided `target_id` does not have
-    ///   [`AccountStorageMode::Network`](miden_protocol::account::AccountStorageMode::Network).
+    ///   [`AccountType::Public`](miden_protocol::account::AccountType::Public).
     pub fn new(
         target_id: AccountId,
         exec_hint: NoteExecutionHint,
     ) -> Result<Self, NetworkAccountTargetError> {
-        // TODO: Once AccountStorageMode::Network is removed, this should check is_public.
-        if !target_id.is_network() {
-            return Err(NetworkAccountTargetError::TargetNotNetwork(target_id));
+        if !target_id.is_public() {
+            return Err(NetworkAccountTargetError::TargetNotPublic(target_id));
         }
 
         Ok(Self { target_id, exec_hint })
@@ -129,10 +128,10 @@ impl TryFrom<&NoteAttachment> for NetworkAccountTarget {
 
 #[derive(Debug, thiserror::Error)]
 pub enum NetworkAccountTargetError {
-    #[error("target account ID must be of type network account")]
-    TargetNotNetwork(AccountId),
     #[error("note attachments do not contain a network account target scheme")]
     MissingAttachmentScheme,
+    #[error("target account ID must have public account type")]
+    TargetNotPublic(AccountId),
     #[error(
         "attachment scheme {0} did not match expected type {expected}",
         expected = NetworkAccountTarget::ATTACHMENT_SCHEME
@@ -154,7 +153,7 @@ pub enum NetworkAccountTargetError {
 #[cfg(test)]
 mod tests {
     use assert_matches::assert_matches;
-    use miden_protocol::account::AccountStorageMode;
+    use miden_protocol::account::AccountType;
     use miden_protocol::testing::account_id::AccountIdBuilder;
 
     use super::*;
@@ -162,7 +161,7 @@ mod tests {
     #[test]
     fn network_account_target_serde() -> anyhow::Result<()> {
         let id = AccountIdBuilder::new()
-            .storage_mode(AccountStorageMode::Network)
+            .account_type(AccountType::Public)
             .build_with_rng(&mut rand::rng());
         let network_account_target = NetworkAccountTarget::new(id, NoteExecutionHint::Always)?;
         assert_eq!(
@@ -174,15 +173,15 @@ mod tests {
     }
 
     #[test]
-    fn network_account_target_fails_on_private_network_target_account() -> anyhow::Result<()> {
+    fn network_account_target_fails_on_private_target_account() -> anyhow::Result<()> {
         let id = AccountIdBuilder::new()
-            .storage_mode(AccountStorageMode::Private)
+            .account_type(AccountType::Private)
             .build_with_rng(&mut rand::rng());
         let err = NetworkAccountTarget::new(id, NoteExecutionHint::Always).unwrap_err();
 
         assert_matches!(
             err,
-            NetworkAccountTargetError::TargetNotNetwork(account_id) if account_id == id
+            NetworkAccountTargetError::TargetNotPublic(account_id) if account_id == id
         );
 
         Ok(())

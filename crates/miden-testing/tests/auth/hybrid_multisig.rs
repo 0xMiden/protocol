@@ -1,20 +1,10 @@
 use miden_processor::advice::AdviceInputs;
 use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, PublicKey};
-use miden_protocol::account::{
-    Account,
-    AccountBuilder,
-    AccountId,
-    AccountProcedureRoot,
-    AccountStorageMode,
-    AccountType,
-};
+use miden_protocol::account::{Account, AccountBuilder, AccountProcedureRoot, AccountType};
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::note::NoteType;
-use miden_protocol::testing::account_id::{
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
-    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
-};
+use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::vm::AdviceMap;
 use miden_protocol::{Felt, Hasher, Word};
@@ -93,8 +83,7 @@ fn create_multisig_account(
     let multisig_account = AccountBuilder::new([0; 32])
         .with_auth_component(Auth::Multisig { threshold, approvers, proc_threshold_map })
         .with_component(BasicWallet)
-        .account_type(AccountType::RegularAccountUpdatableCode)
-        .storage_mode(AccountStorageMode::Public)
+        .account_type(AccountType::Public)
         .with_assets(vec![FungibleAsset::mock(asset_amount)])
         .build_existing()?;
 
@@ -149,7 +138,7 @@ async fn test_multisig_2_of_2_with_note_creation() -> anyhow::Result<()> {
 
     let mut mock_chain = mock_chain_builder.build().unwrap();
 
-    let salt = Word::from([Felt::new(1); 4]);
+    let salt = Word::from([Felt::ONE; 4]);
 
     // Execute transaction without signatures - should fail
     let tx_context_init = mock_chain
@@ -191,10 +180,8 @@ async fn test_multisig_2_of_2_with_note_creation() -> anyhow::Result<()> {
     mock_chain.prove_next_block()?;
 
     assert_eq!(
-        multisig_account
-            .vault()
-            .get_balance(AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?)?,
-        multisig_starting_balance - output_note_asset.unwrap_fungible().amount()
+        multisig_account.vault().get_balance(output_note_asset.vault_key())?.as_u64(),
+        multisig_starting_balance - output_note_asset.unwrap_fungible().amount().as_u64()
     );
 
     Ok(())
@@ -239,7 +226,7 @@ async fn test_multisig_2_of_4_all_signer_combinations() -> anyhow::Result<()> {
     ];
 
     for (i, (signer1_idx, signer2_idx)) in signer_combinations.iter().enumerate() {
-        let salt = Word::from([Felt::new(10 + i as u64); 4]);
+        let salt = Word::from([Felt::new_unchecked(10 + i as u64); 4]);
 
         // Execute transaction without signatures first to get tx summary
         let tx_context_init = mock_chain
@@ -325,7 +312,7 @@ async fn test_multisig_update_signers() -> anyhow::Result<()> {
 
     let mut mock_chain = mock_chain_builder.clone().build().unwrap();
 
-    let salt = Word::from([Felt::new(3); 4]);
+    let salt = Word::from([3_u32; 4]);
 
     // Setup new signers
     let mut advice_map = AdviceMap::default();
@@ -338,10 +325,10 @@ async fn test_multisig_update_signers() -> anyhow::Result<()> {
     // Create vector with threshold config and public keys (4 field elements each)
     let mut config_and_pubkeys_vector = Vec::new();
     config_and_pubkeys_vector.extend_from_slice(&[
-        Felt::new(threshold),
-        Felt::new(num_of_approvers),
-        Felt::new(0),
-        Felt::new(0),
+        Felt::new_unchecked(threshold),
+        Felt::new_unchecked(num_of_approvers),
+        Felt::ZERO,
+        Felt::ZERO,
     ]);
 
     for (public_key, auth_scheme) in new_public_keys.iter().rev().zip(new_auth_schemes.iter().rev())
@@ -350,10 +337,10 @@ async fn test_multisig_update_signers() -> anyhow::Result<()> {
         config_and_pubkeys_vector.extend_from_slice(key_word.as_elements());
 
         config_and_pubkeys_vector.extend_from_slice(&[
-            Felt::new(*auth_scheme as u64),
-            Felt::new(0),
-            Felt::new(0),
-            Felt::new(0),
+            Felt::new_unchecked(*auth_scheme as u64),
+            Felt::ZERO,
+            Felt::ZERO,
+            Felt::ZERO,
         ]);
     }
 
@@ -422,7 +409,7 @@ async fn test_multisig_update_signers() -> anyhow::Result<()> {
         .unwrap();
 
     // Verify the transaction executed successfully
-    assert_eq!(update_approvers_tx.account_delta().nonce_delta(), Felt::new(1));
+    assert_eq!(update_approvers_tx.account_delta().nonce_delta(), Felt::ONE);
 
     mock_chain.add_pending_executed_transaction(&update_approvers_tx)?;
     mock_chain.prove_next_block()?;
@@ -433,7 +420,8 @@ async fn test_multisig_update_signers() -> anyhow::Result<()> {
 
     // Verify that the public keys were actually updated in storage
     for (i, expected_key) in new_public_keys.iter().enumerate() {
-        let storage_key = [Felt::new(i as u64), Felt::new(0), Felt::new(0), Felt::new(0)].into();
+        let storage_key =
+            [Felt::new_unchecked(i as u64), Felt::ZERO, Felt::ZERO, Felt::ZERO].into();
         let storage_item = updated_multisig_account
             .storage()
             .get_map_item(AuthMultisig::approver_public_keys_slot(), storage_key)
@@ -452,12 +440,12 @@ async fn test_multisig_update_signers() -> anyhow::Result<()> {
 
     assert_eq!(
         threshold_config_storage[0],
-        Felt::new(threshold),
+        Felt::new_unchecked(threshold),
         "Threshold was not updated correctly"
     );
     assert_eq!(
         threshold_config_storage[1],
-        Felt::new(num_of_approvers),
+        Felt::new_unchecked(num_of_approvers),
         "Num approvers was not updated correctly"
     );
 
@@ -511,7 +499,7 @@ async fn test_multisig_update_signers() -> anyhow::Result<()> {
     // Create a new spawn note for the second transaction
     let input_note_new = create_spawn_note([&output_note_new])?;
 
-    let salt_new = Word::from([Felt::new(4); 4]);
+    let salt_new = Word::from([Felt::new_unchecked(4); 4]);
 
     // Build the new mock chain with the updated account and notes
     let mut new_mock_chain_builder =
@@ -561,7 +549,7 @@ async fn test_multisig_update_signers() -> anyhow::Result<()> {
         .await?;
 
     // Verify the transaction executed successfully with new signers
-    assert_eq!(tx_context_execute_new.account_delta().nonce_delta(), Felt::new(1));
+    assert_eq!(tx_context_execute_new.account_delta().nonce_delta(), Felt::ONE);
 
     Ok(())
 }
@@ -602,8 +590,12 @@ async fn test_multisig_update_signers_remove_owner() -> anyhow::Result<()> {
     let num_of_approvers = 2u64;
 
     // Create multisig config vector
-    let mut config_and_pubkeys_vector =
-        vec![Felt::new(threshold), Felt::new(num_of_approvers), Felt::new(0), Felt::new(0)];
+    let mut config_and_pubkeys_vector = vec![
+        Felt::new_unchecked(threshold),
+        Felt::new_unchecked(num_of_approvers),
+        Felt::ZERO,
+        Felt::ZERO,
+    ];
 
     // Add each public key to the vector
     for (public_key, auth_scheme) in new_public_keys.iter().rev().zip(new_auth_schemes.iter().rev())
@@ -612,10 +604,10 @@ async fn test_multisig_update_signers_remove_owner() -> anyhow::Result<()> {
         config_and_pubkeys_vector.extend_from_slice(key_word.as_elements());
 
         config_and_pubkeys_vector.extend_from_slice(&[
-            Felt::new(*auth_scheme as u64),
-            Felt::new(0),
-            Felt::new(0),
-            Felt::new(0),
+            Felt::new_unchecked(*auth_scheme as u64),
+            Felt::ZERO,
+            Felt::ZERO,
+            Felt::ZERO,
         ]);
     }
 
@@ -631,7 +623,7 @@ async fn test_multisig_update_signers_remove_owner() -> anyhow::Result<()> {
 
     let advice_inputs = AdviceInputs { map: advice_map, ..Default::default() };
 
-    let salt = Word::from([Felt::new(3); 4]);
+    let salt = Word::from([Felt::new_unchecked(3); 4]);
 
     // Execute without signatures to get tx summary
     let tx_context_init = mock_chain
@@ -681,7 +673,7 @@ async fn test_multisig_update_signers_remove_owner() -> anyhow::Result<()> {
         .unwrap();
 
     // Verify transaction success
-    assert_eq!(update_approvers_tx.account_delta().nonce_delta(), Felt::new(1));
+    assert_eq!(update_approvers_tx.account_delta().nonce_delta(), Felt::ONE);
 
     mock_chain.add_pending_executed_transaction(&update_approvers_tx)?;
     mock_chain.prove_next_block()?;
@@ -692,7 +684,8 @@ async fn test_multisig_update_signers_remove_owner() -> anyhow::Result<()> {
 
     // Verify public keys were updated
     for (i, expected_key) in new_public_keys.iter().enumerate() {
-        let storage_key = [Felt::new(i as u64), Felt::new(0), Felt::new(0), Felt::new(0)].into();
+        let storage_key =
+            [Felt::new_unchecked(i as u64), Felt::ZERO, Felt::ZERO, Felt::ZERO].into();
         let storage_item = updated_multisig_account
             .storage()
             .get_map_item(AuthMultisig::approver_public_keys_slot(), storage_key)
@@ -706,8 +699,12 @@ async fn test_multisig_update_signers_remove_owner() -> anyhow::Result<()> {
         .storage()
         .get_item(AuthMultisig::threshold_config_slot())
         .unwrap();
-    assert_eq!(threshold_config[0], Felt::new(threshold), "Threshold not updated");
-    assert_eq!(threshold_config[1], Felt::new(num_of_approvers), "Num approvers not updated");
+    assert_eq!(threshold_config[0], Felt::new_unchecked(threshold), "Threshold not updated");
+    assert_eq!(
+        threshold_config[1],
+        Felt::new_unchecked(num_of_approvers),
+        "Num approvers not updated"
+    );
 
     // Verify extracted public keys
     let extracted_pub_keys = get_public_keys_from_account(&updated_multisig_account);
@@ -724,7 +721,7 @@ async fn test_multisig_update_signers_remove_owner() -> anyhow::Result<()> {
     // Verify removed owners' slots are empty (indices 2, 3, and 4 should be cleared)
     for removed_idx in 2..5 {
         let removed_owner_key =
-            [Felt::new(removed_idx), Felt::new(0), Felt::new(0), Felt::new(0)].into();
+            [Felt::new_unchecked(removed_idx), Felt::ZERO, Felt::ZERO, Felt::ZERO].into();
         let removed_owner_slot = updated_multisig_account
             .storage()
             .get_map_item(AuthMultisig::approver_public_keys_slot(), removed_owner_key)
@@ -740,7 +737,8 @@ async fn test_multisig_update_signers_remove_owner() -> anyhow::Result<()> {
     // Verify only 2 non-empty keys remain (at indices 0 and 1)
     let mut non_empty_count = 0;
     for i in 0..5 {
-        let storage_key = [Felt::new(i as u64), Felt::new(0), Felt::new(0), Felt::new(0)].into();
+        let storage_key =
+            [Felt::new_unchecked(i as u64), Felt::ZERO, Felt::ZERO, Felt::ZERO].into();
         let storage_item = updated_multisig_account
             .storage()
             .get_map_item(AuthMultisig::approver_public_keys_slot(), storage_key)
@@ -793,7 +791,7 @@ async fn test_multisig_new_approvers_cannot_sign_before_update() -> anyhow::Resu
         .build()
         .unwrap();
 
-    let salt = Word::from([Felt::new(5); 4]);
+    let salt = Word::from([Felt::new_unchecked(5); 4]);
 
     // SECTION 2: Prepare a signer update transaction with new approvers
     // ================================================================================
@@ -811,10 +809,10 @@ async fn test_multisig_new_approvers_cannot_sign_before_update() -> anyhow::Resu
     // Create vector with threshold config and public keys (4 field elements each)
     let mut config_and_pubkeys_vector = Vec::new();
     config_and_pubkeys_vector.extend_from_slice(&[
-        Felt::new(threshold),
-        Felt::new(num_of_approvers),
-        Felt::new(0),
-        Felt::new(0),
+        Felt::new_unchecked(threshold),
+        Felt::new_unchecked(num_of_approvers),
+        Felt::ZERO,
+        Felt::ZERO,
     ]);
 
     // Add each public key to the vector
@@ -824,10 +822,10 @@ async fn test_multisig_new_approvers_cannot_sign_before_update() -> anyhow::Resu
         config_and_pubkeys_vector.extend_from_slice(key_word.as_elements());
 
         config_and_pubkeys_vector.extend_from_slice(&[
-            Felt::new(*auth_scheme as u64),
-            Felt::new(0),
-            Felt::new(0),
-            Felt::new(0),
+            Felt::new_unchecked(*auth_scheme as u64),
+            Felt::ZERO,
+            Felt::ZERO,
+            Felt::ZERO,
         ]);
     }
 

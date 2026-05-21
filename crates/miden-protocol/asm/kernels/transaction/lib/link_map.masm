@@ -208,7 +208,7 @@ const LINK_MAP_GET_EVENT=event("miden::protocol::link_map::get")
 #!   update_entry, insert_at_head, insert_after_entry and assert_empty_map_op_is_at_head.
 pub proc set
     emit.LINK_MAP_SET_EVENT
-    adv_push.2
+    adv_push adv_push
     # => [operation, entry_ptr, map_ptr, KEY, VALUE0, VALUE1]
 
     dup eq.INSERT_OPERATION_UPDATE swap eq.INSERT_OPERATION_AT_HEAD
@@ -284,7 +284,7 @@ end
 #!   assert_empty_map_op_is_at_head.
 pub proc get
     emit.LINK_MAP_GET_EVENT
-    adv_push.2
+    adv_push adv_push
     # => [get_operation, entry_ptr, map_ptr, KEY]
 
     dup eq.GET_OPERATION_FOUND swap eq.GET_OPERATION_ABSENT_AT_HEAD

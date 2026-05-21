@@ -21,7 +21,6 @@ use miden_protocol::account::{
     AccountComponent,
     AccountDelta,
     AccountId,
-    AccountStorageMode,
     AccountType,
     StorageSlot,
 };
@@ -42,7 +41,7 @@ use miden_protocol::block::{
 };
 use miden_protocol::crypto::merkle::smt::Smt;
 use miden_protocol::errors::NoteError;
-use miden_protocol::note::{Note, NoteAttachments, NoteDetails, NoteType};
+use miden_protocol::note::{Note, NoteAttachments, NoteDetails, NoteScriptRoot, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_FEE_FAUCET;
 use miden_protocol::testing::random_secret_key::random_secret_key;
 use miden_protocol::transaction::{OrderedTransactionHeaders, RawOutputNote, TransactionKernel};
@@ -52,11 +51,12 @@ use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
     BurnPolicyConfig,
     MintPolicyConfig,
-    PolicyAuthority,
+    PolicyRegistration,
     TokenPolicyManager,
+    TransferPolicy,
 };
 use miden_standards::account::wallets::BasicWallet;
-use miden_standards::note::{P2idNote, P2ideNote, P2ideNoteStorage, SwapNote};
+use miden_standards::note::{BurnNote, MintNote, P2idNote, P2ideNote, P2ideNoteStorage, SwapNote};
 use miden_standards::testing::account_component::MockAccountComponent;
 use rand::Rng;
 
@@ -240,8 +240,7 @@ impl MockChainBuilder {
         let tx_commitment = transactions.commitment();
         let tx_kernel_commitment = TransactionKernel.to_commitment();
         let timestamp = MockChain::TIMESTAMP_START_SECS;
-        let fee_parameters = FeeParameters::new(self.fee_faucet_id, self.verification_base_fee)
-            .context("failed to construct fee parameters")?;
+        let fee_parameters = FeeParameters::new(self.fee_faucet_id, self.verification_base_fee);
         let validator_secret_key = random_secret_key();
         let validator_public_key = validator_secret_key.public_key();
 
@@ -290,7 +289,7 @@ impl MockChainBuilder {
     /// [`MockChain::build_tx_context`] to automatically add the authenticator.
     pub fn create_new_wallet(&mut self, auth_method: Auth) -> anyhow::Result<Account> {
         let account_builder = AccountBuilder::new(self.rng.random())
-            .storage_mode(AccountStorageMode::Public)
+            .account_type(AccountType::Public)
             .with_component(BasicWallet);
 
         self.add_account_from_builder(auth_method, account_builder, AccountState::New)
@@ -310,7 +309,7 @@ impl MockChainBuilder {
         assets: impl IntoIterator<Item = Asset>,
     ) -> anyhow::Result<Account> {
         let account_builder = Account::builder(self.rng.random())
-            .storage_mode(AccountStorageMode::Public)
+            .account_type(AccountType::Public)
             .with_component(BasicWallet)
             .with_assets(assets);
 
@@ -326,13 +325,12 @@ impl MockChainBuilder {
         &mut self,
         auth_method: Auth,
         faucet: FungibleFaucet,
-        storage_mode: AccountStorageMode,
+        account_type: AccountType,
         access_control: AccessControl,
         token_policy_manager: TokenPolicyManager,
     ) -> anyhow::Result<Account> {
         let account_builder = AccountBuilder::new(self.rng.random())
-            .storage_mode(storage_mode)
-            .account_type(AccountType::FungibleFaucet)
+            .account_type(account_type)
             .with_component(faucet)
             .with_components(access_control)
             .with_components(token_policy_manager);
@@ -345,25 +343,25 @@ impl MockChainBuilder {
     ///
     /// The behaviour of the faucet (basic vs network-style) is determined entirely by the
     /// combination of arguments:
-    /// - `storage_mode`: typically [`AccountStorageMode::Public`] for basic faucets, or
-    ///   [`AccountStorageMode::Network`] for network-style faucets.
+    /// - `account_type`: [`AccountType::Public`] for basic faucets, or [`AccountType::Private`] for
+    ///   off-chain accounts.
     /// - `auth_method`: typically a [`Auth::BasicAuth`] for basic faucets, or [`Auth::IncrNonce`]
     ///   for network-style faucets.
     /// - `access_control`: [`AccessControl::AuthControlled`] for basic faucets;
     ///   [`AccessControl::Ownable2Step`] / [`AccessControl::Rbac`] for owner-controlled faucets.
+    ///   The matching `Authority` component is auto-installed by `AccessControl`.
     /// - `token_policy_manager`: the unified [`TokenPolicyManager`] holding both mint and burn
-    ///   policy plus the shared `PolicyAuthority`.
+    ///   policy.
     fn add_existing_fungible_faucet(
         &mut self,
         auth_method: Auth,
         faucet: FungibleFaucet,
-        storage_mode: AccountStorageMode,
+        account_type: AccountType,
         access_control: AccessControl,
         token_policy_manager: TokenPolicyManager,
     ) -> anyhow::Result<Account> {
         let account_builder = AccountBuilder::new(self.rng.random())
-            .storage_mode(storage_mode)
-            .account_type(AccountType::FungibleFaucet)
+            .account_type(account_type)
             .with_component(faucet)
             .with_components(access_control)
             .with_components(token_policy_manager);
@@ -372,10 +370,11 @@ impl MockChainBuilder {
     }
 
     /// Convenience: builds a basic auth-controlled fungible faucet from a token-symbol shorthand
-    /// using default decimals and `AllowAll` policies, then adds it to the chain.
+    /// using default decimals and `AllowAll` policies, then adds it via
+    /// `Self::add_existing_fungible_faucet`.
     ///
     /// For full control over the faucet's metadata, decimals, and policies, construct a
-    /// [`FungibleFaucet`] manually and add it via a more specific helper.
+    /// [`FungibleFaucet`] manually and call `Self::add_existing_fungible_faucet`.
     pub fn add_existing_basic_faucet(
         &mut self,
         auth_method: Auth,
@@ -383,13 +382,12 @@ impl MockChainBuilder {
         max_supply: u64,
         token_supply: Option<u64>,
     ) -> anyhow::Result<Account> {
-        let token_supply = AssetAmount::new(token_supply.unwrap_or(0))
-            .context("token supply exceeds AssetAmount::MAX")?;
-        let max_supply =
-            AssetAmount::new(max_supply).context("max supply exceeds AssetAmount::MAX")?;
+        let token_supply = token_supply.unwrap_or(0);
         let name = TokenName::new(token_symbol)?;
         let symbol = TokenSymbol::new(token_symbol)
             .with_context(|| format!("invalid token symbol: {token_symbol}"))?;
+        let max_supply = AssetAmount::new(max_supply).context("invalid max_supply")?;
+        let token_supply = AssetAmount::new(token_supply).context("invalid token_supply")?;
         let faucet = FungibleFaucet::builder()
             .name(name)
             .symbol(symbol)
@@ -399,16 +397,16 @@ impl MockChainBuilder {
             .build()
             .context("failed to build FungibleFaucet")?;
 
-        let token_policy_manager = TokenPolicyManager::new(
-            PolicyAuthority::AuthControlled,
-            MintPolicyConfig::AllowAll,
-            BurnPolicyConfig::AllowAll,
-        );
+        let token_policy_manager = TokenPolicyManager::new()
+            .with_mint_policy(MintPolicyConfig::AllowAll, PolicyRegistration::Active)?
+            .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)?
+            .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?
+            .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?;
 
         self.add_existing_fungible_faucet(
             auth_method,
             faucet,
-            AccountStorageMode::Public,
+            AccountType::Public,
             AccessControl::AuthControlled,
             token_policy_manager,
         )
@@ -417,7 +415,13 @@ impl MockChainBuilder {
     /// Convenience: builds an owner-controlled (network-style) fungible faucet from a
     /// token-symbol shorthand using default decimals, the given `mint_policy`, and `BurnAllowAll`.
     ///
-    /// The faucet is added with [`AccountStorageMode::Network`] and [`Auth::IncrNonce`].
+    /// The faucet is added with [`AccountType::Public`] and [`Auth::IncrNonce`].
+    ///
+    /// `mint_policy` selects the initial active mint policy on the faucet. The installed
+    /// [`TokenPolicyManager`] is always owner-controlled.
+    ///
+    /// The [`MintNote`] and [`BurnNote`] script roots are always added to `allowed_script_roots`,
+    /// so callers only need to provide any additional roots their test scripts require.
     pub fn add_existing_network_faucet(
         &mut self,
         token_symbol: &str,
@@ -425,14 +429,14 @@ impl MockChainBuilder {
         owner_account_id: AccountId,
         token_supply: Option<u64>,
         mint_policy: MintPolicyConfig,
+        allowed_script_roots: impl IntoIterator<Item = NoteScriptRoot>,
     ) -> anyhow::Result<Account> {
-        let token_supply = AssetAmount::new(token_supply.unwrap_or(0))
-            .context("token supply exceeds AssetAmount::MAX")?;
-        let max_supply =
-            AssetAmount::new(max_supply).context("max supply exceeds AssetAmount::MAX")?;
+        let token_supply = token_supply.unwrap_or(0);
         let name = TokenName::new(token_symbol)?;
         let symbol = TokenSymbol::new(token_symbol)
             .with_context(|| format!("invalid token symbol: {token_symbol}"))?;
+        let max_supply = AssetAmount::new(max_supply).context("invalid max_supply")?;
+        let token_supply = AssetAmount::new(token_supply).context("invalid token_supply")?;
         let faucet = FungibleFaucet::builder()
             .name(name)
             .symbol(symbol)
@@ -442,16 +446,21 @@ impl MockChainBuilder {
             .build()
             .context("failed to build FungibleFaucet")?;
 
-        let token_policy_manager = TokenPolicyManager::new(
-            PolicyAuthority::OwnerControlled,
-            mint_policy,
-            BurnPolicyConfig::AllowAll,
-        );
+        let token_policy_manager = TokenPolicyManager::new()
+            .with_mint_policy(mint_policy, PolicyRegistration::Active)?
+            .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)?
+            .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?
+            .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?;
+
+        let allowed_script_roots = allowed_script_roots
+            .into_iter()
+            .chain([MintNote::script_root(), BurnNote::script_root()])
+            .collect();
 
         self.add_existing_fungible_faucet(
-            Auth::IncrNonce,
+            Auth::NetworkAccount { allowed_script_roots },
             faucet,
-            AccountStorageMode::Network,
+            AccountType::Public,
             AccessControl::Ownable2Step { owner: owner_account_id },
             token_policy_manager,
         )
@@ -460,21 +469,30 @@ impl MockChainBuilder {
     /// Convenience: adds an existing owner-controlled (network-style) fungible faucet whose token
     /// metadata is fully provided by the caller. Uses `OwnerOnly` mint policy and `AllowAll`
     /// burn policy by default.
+    ///
+    /// The [`MintNote`] and [`BurnNote`] script roots are always added to `allowed_script_roots`,
+    /// so callers only need to provide any additional roots their test scripts require.
     pub fn add_existing_network_faucet_with_metadata(
         &mut self,
         owner_account_id: AccountId,
         faucet: FungibleFaucet,
+        allowed_script_roots: impl IntoIterator<Item = NoteScriptRoot>,
     ) -> anyhow::Result<Account> {
-        let token_policy_manager = TokenPolicyManager::new(
-            PolicyAuthority::OwnerControlled,
-            MintPolicyConfig::OwnerOnly,
-            BurnPolicyConfig::AllowAll,
-        );
+        let token_policy_manager = TokenPolicyManager::new()
+            .with_mint_policy(MintPolicyConfig::OwnerOnly, PolicyRegistration::Active)?
+            .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)?
+            .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?
+            .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?;
+
+        let allowed_script_roots = allowed_script_roots
+            .into_iter()
+            .chain([MintNote::script_root(), BurnNote::script_root()])
+            .collect();
 
         self.add_existing_fungible_faucet(
-            Auth::IncrNonce,
+            Auth::NetworkAccount { allowed_script_roots },
             faucet,
-            AccountStorageMode::Network,
+            AccountType::Public,
             AccessControl::Ownable2Step { owner: owner_account_id },
             token_policy_manager,
         )
@@ -488,11 +506,10 @@ impl MockChainBuilder {
         token_symbol: &str,
         max_supply: u64,
     ) -> anyhow::Result<Account> {
-        let max_supply =
-            AssetAmount::new(max_supply).context("max supply exceeds AssetAmount::MAX")?;
         let name = TokenName::new(token_symbol)?;
         let symbol = TokenSymbol::new(token_symbol)
             .with_context(|| format!("invalid token symbol: {token_symbol}"))?;
+        let max_supply = AssetAmount::new(max_supply).context("invalid max_supply")?;
         let faucet = FungibleFaucet::builder()
             .name(name)
             .symbol(symbol)
@@ -501,16 +518,16 @@ impl MockChainBuilder {
             .build()
             .context("failed to build FungibleFaucet")?;
 
-        let token_policy_manager = TokenPolicyManager::new(
-            PolicyAuthority::AuthControlled,
-            MintPolicyConfig::AllowAll,
-            BurnPolicyConfig::AllowAll,
-        );
+        let token_policy_manager = TokenPolicyManager::new()
+            .with_mint_policy(MintPolicyConfig::AllowAll, PolicyRegistration::Active)?
+            .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)?
+            .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?
+            .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?;
 
         self.create_new_fungible_faucet(
             auth_method,
             faucet,
-            AccountStorageMode::Public,
+            AccountType::Public,
             AccessControl::AuthControlled,
             token_policy_manager,
         )
@@ -520,7 +537,7 @@ impl MockChainBuilder {
     /// authenticator (if any).
     pub fn create_new_mock_account(&mut self, auth_method: Auth) -> anyhow::Result<Account> {
         let account_builder = Account::builder(self.rng.random())
-            .storage_mode(AccountStorageMode::Public)
+            .account_type(AccountType::Public)
             .with_component(MockAccountComponent::with_empty_slots());
 
         self.add_account_from_builder(auth_method, account_builder, AccountState::New)
@@ -561,7 +578,7 @@ impl MockChainBuilder {
         assets: impl IntoIterator<Item = Asset>,
     ) -> anyhow::Result<Account> {
         let account_builder = Account::builder(self.rng.random())
-            .storage_mode(AccountStorageMode::Public)
+            .account_type(AccountType::Public)
             .with_component(MockAccountComponent::with_slots(slots.into_iter().collect()))
             .with_assets(assets);
 
@@ -610,7 +627,7 @@ impl MockChainBuilder {
         components: impl IntoIterator<Item = AccountComponent>,
     ) -> anyhow::Result<Account> {
         let mut account_builder =
-            Account::builder(rand::rng().random()).storage_mode(AccountStorageMode::Public);
+            Account::builder(rand::rng().random()).account_type(AccountType::Public);
 
         for component in components {
             account_builder = account_builder.with_component(component);
@@ -705,7 +722,7 @@ impl MockChainBuilder {
             storage,
             asset.to_vec(),
             note_type,
-            Default::default(),
+            NoteAttachments::default(),
             &mut self.rng,
         )?;
 

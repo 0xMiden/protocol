@@ -36,6 +36,7 @@ enum SourceCodeOrigin {
         source_manager: Arc<dyn SourceManagerSync>,
     },
     Package(Arc<Package>),
+    Script(NoteScript),
 }
 
 #[derive(Debug, Clone)]
@@ -55,10 +56,10 @@ pub struct NoteBuilder {
 impl NoteBuilder {
     pub fn new<T: Rng>(sender: AccountId, mut rng: T) -> Self {
         let serial_num = Word::from([
-            Felt::new(rng.random()),
-            Felt::new(rng.random()),
-            Felt::new(rng.random()),
-            Felt::new(rng.random()),
+            Felt::new_unchecked(rng.random()),
+            Felt::new_unchecked(rng.random()),
+            Felt::new_unchecked(rng.random()),
+            Felt::new_unchecked(rng.random()),
         ]);
 
         Self {
@@ -145,6 +146,9 @@ impl NoteBuilder {
             SourceCodeOrigin::Package(_) => {
                 panic!("dynamic libraries cannot be set on a package")
             },
+            SourceCodeOrigin::Script(_) => {
+                panic!("dynamic libraries cannot be set on a precompiled script")
+            },
         }
         self
     }
@@ -157,6 +161,9 @@ impl NoteBuilder {
             SourceCodeOrigin::Package(_) => {
                 panic!("source manager cannot be set on a package")
             },
+            SourceCodeOrigin::Script(_) => {
+                panic!("source manager cannot be set on a precompiled script")
+            },
         }
         self
     }
@@ -164,6 +171,12 @@ impl NoteBuilder {
     /// Sets the source code origin to a  package.
     pub fn package(mut self, package: Package) -> Self {
         self.source_code = SourceCodeOrigin::Package(Arc::new(package));
+        self
+    }
+
+    /// Sets the note script to a precompiled [`NoteScript`], skipping compilation in `build`.
+    pub fn script(mut self, script: NoteScript) -> Self {
+        self.source_code = SourceCodeOrigin::Script(script);
         self
     }
 
@@ -196,6 +209,7 @@ impl NoteBuilder {
                     .expect("note script should compile")
             },
             SourceCodeOrigin::Package(package) => NoteScript::from_package(&package)?,
+            SourceCodeOrigin::Script(script) => script,
         };
 
         let note_script = note_script.with_advice_map(self.advice_map);

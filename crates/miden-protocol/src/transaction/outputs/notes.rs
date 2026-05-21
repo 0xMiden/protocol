@@ -9,6 +9,7 @@ use crate::note::{
     Note,
     NoteAssets,
     NoteAttachments,
+    NoteDetailsCommitment,
     NoteHeader,
     NoteId,
     NoteMetadata,
@@ -76,8 +77,8 @@ where
 
     /// Returns the commitment to the output notes.
     ///
-    /// The commitment is computed as a sequential hash of (note ID, metadata commitment) tuples
-    /// for the notes created in a transaction.
+    /// The commitment is computed as a sequential hash of `(note_details_commitment,
+    /// metadata_commitment)` tuples for the notes created in a transaction.
     pub fn commitment(&self) -> Word {
         self.commitment
     }
@@ -111,9 +112,9 @@ where
     /// Computes a commitment to output notes.
     ///
     /// - For an empty list, [`Word::empty`] is returned.
-    /// - For a non-empty list of notes, this is a sequential hash of (note_id, metadata_commitment)
-    ///   tuples for the notes created in a transaction, where `metadata_commitment` is the return
-    ///   value of [`NoteMetadata::to_commitment`].
+    /// - For a non-empty list of notes, this is a sequential hash of `(note_details_commitment,
+    ///   metadata_commitment)` tuples for the notes created in a transaction, where
+    ///   `metadata_commitment` is the return value of [`NoteMetadata::to_commitment`].
     pub(crate) fn compute_commitment<'header>(
         notes: impl ExactSizeIterator<Item = &'header NoteHeader>,
     ) -> Word {
@@ -123,7 +124,7 @@ where
 
         let mut elements: Vec<Felt> = Vec::with_capacity(notes.len() * 8);
         for note_header in notes {
-            elements.extend_from_slice(note_header.id().as_elements());
+            elements.extend_from_slice(note_header.details_commitment().as_elements());
             elements.extend_from_slice(note_header.metadata().to_commitment().as_elements());
         }
 
@@ -205,11 +206,19 @@ impl RawOutputNote {
 
     /// Unique note identifier.
     ///
-    /// This value is both an unique identifier and a commitment to the note.
+    /// This value commits to the note details and metadata.
     pub fn id(&self) -> NoteId {
         match self {
             Self::Full(note) => note.id(),
             Self::Partial(note) => note.id(),
+        }
+    }
+
+    /// Returns the commitment to the note's details, excluding metadata.
+    pub fn details_commitment(&self) -> NoteDetailsCommitment {
+        match self {
+            Self::Full(note) => note.details_commitment(),
+            Self::Partial(note) => note.details_commitment(),
         }
     }
 
@@ -254,9 +263,9 @@ impl RawOutputNote {
     pub fn into_output_note(self) -> Result<OutputNote, OutputNoteError> {
         match self {
             Self::Full(note) if note.metadata().is_private() => {
-                let note_id = note.id();
+                let details_commitment = note.details_commitment();
                 let (_, metadata, _, attachments) = note.into_parts();
-                let note_header = NoteHeader::new(note_id, metadata);
+                let note_header = NoteHeader::new(details_commitment, metadata);
                 Ok(OutputNote::Private(PrivateOutputNote::new(note_header, attachments)?))
             },
             Self::Full(note) => Ok(OutputNote::Public(PublicOutputNote::new(note)?)),
@@ -281,13 +290,6 @@ impl RawOutputNote {
             Self::Full(note) => note.attachments(),
             Self::Partial(note) => note.attachments(),
         }
-    }
-
-    /// Returns a commitment to the note and its metadata.
-    ///
-    /// > hash(NOTE_ID || NOTE_METADATA_COMMITMENT)
-    pub fn commitment(&self) -> Word {
-        self.header().to_commitment()
     }
 }
 
@@ -369,11 +371,19 @@ impl OutputNote {
 
     /// Unique note identifier.
     ///
-    /// This value is both an unique identifier and a commitment to the note.
+    /// This value commits to the note details and metadata.
     pub fn id(&self) -> NoteId {
         match self {
             Self::Public(note) => note.id(),
             Self::Private(header) => header.id(),
+        }
+    }
+
+    /// Returns the commitment to the note's details, excluding metadata.
+    pub fn details_commitment(&self) -> NoteDetailsCommitment {
+        match self {
+            Self::Public(note) => note.details_commitment(),
+            Self::Private(header) => header.details_commitment(),
         }
     }
 
@@ -390,13 +400,6 @@ impl OutputNote {
     /// Returns the note's metadata.
     pub fn metadata(&self) -> &NoteMetadata {
         <&NoteHeader>::from(self).metadata()
-    }
-
-    /// Returns a commitment to the note and its metadata.
-    ///
-    /// > hash(NOTE_ID || NOTE_METADATA_COMMITMENT)
-    pub fn to_commitment(&self) -> Word {
-        <&NoteHeader>::from(self).to_commitment()
     }
 
     /// Returns the recipient of the public note, if this is a public note.
@@ -508,6 +511,11 @@ impl PublicOutputNote {
         self.0.id()
     }
 
+    /// Returns the commitment to the note's details, excluding metadata.
+    pub fn details_commitment(&self) -> NoteDetailsCommitment {
+        self.0.details_commitment()
+    }
+
     /// Returns the note's metadata.
     pub fn metadata(&self) -> &NoteMetadata {
         self.0.metadata()
@@ -582,7 +590,7 @@ impl PrivateOutputNote {
 
     /// Returns the note's identifier.
     ///
-    /// The [NoteId] value is both an unique identifier and a commitment to the note.
+    /// The [NoteId] commits to both note details and metadata.
     pub fn id(&self) -> NoteId {
         self.header.id()
     }
@@ -597,14 +605,9 @@ impl PrivateOutputNote {
         &self.attachments
     }
 
-    /// Returns a commitment to the note and its metadata.
-    ///
-    /// > hash(NOTE_ID || NOTE_METADATA_COMMITMENT)
-    ///
-    /// This value is used primarily for authenticating notes consumed when they are consumed
-    /// in a transaction.
-    pub fn commitment(&self) -> Word {
-        self.header.to_commitment()
+    /// Returns the commitment to the note's details, excluding metadata.
+    pub fn details_commitment(&self) -> NoteDetailsCommitment {
+        self.header.details_commitment()
     }
 
     /// Returns a reference to the underlying note header.

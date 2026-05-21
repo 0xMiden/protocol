@@ -46,9 +46,9 @@ This is done using an authenticated data structure, a sparse Merkle tree.
     <img src={require('./img/state/account-db.png').default} style={{width: '70%'}} alt="Account DB"/>
 </p>
 
-As described in the [account ID section](account/id#account-storage-mode), accounts can have different storage modes:
+As described in the [account ID section](account/id#account-type), accounts can have different account types:
 
-- **Public & Network accounts:** where all account data is stored on-chain.
+- **Public accounts:** where all account data is stored on-chain.
 - **Private accounts:** where only the commitments to the account are stored on-chain.
 
 Private accounts significantly reduce storage overhead. A private account contributes only 40 bytes to the global `State` (15 bytes for the account ID + 32 bytes for the account commitment + 4 bytes for the block number). For example, 1 billion private accounts take up only 47.47 GB of `State`.
