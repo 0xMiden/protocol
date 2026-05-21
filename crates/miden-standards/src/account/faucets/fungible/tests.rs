@@ -163,6 +163,33 @@ fn auth_controlled_rejects_no_auth() {
     assert_matches!(err, FungibleFaucetError::IncompatibleAuthControlledAuth(_));
 }
 
+/// `(Ownable2Step / Rbac, SingleSig)` must be rejected: SingleSig is intended for
+/// user-account faucets gated by `AuthControlled`; under owner/role-gated faucets it
+/// duplicates the setter check with a per-tx signature that doesn't add security.
+#[test]
+fn ownable2step_rejects_single_sig() {
+    use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
+
+    let owner = miden_protocol::account::AccountId::try_from(
+        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
+    )
+    .unwrap();
+    let auth_method = AuthMethod::SingleSig {
+        approver: (Word::new([Felt::ONE; 4]).into(), AuthScheme::Falcon512Poseidon2),
+    };
+
+    let err = create_fungible_faucet(
+        [7u8; 32],
+        sample_faucet(),
+        AccountType::Public,
+        auth_method,
+        AccessControl::Ownable2Step { owner },
+        allow_all_policy_manager(),
+    )
+    .expect_err("Ownable2Step+SingleSig should be rejected");
+    assert_matches!(err, FungibleFaucetError::UnsupportedAccessControlAuthCombination(_));
+}
+
 #[test]
 fn ownable2step_with_no_auth_is_accepted() {
     use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;

@@ -572,18 +572,22 @@ fn all_authority_gated_setter_roots() -> Vec<AccountProcedureRoot> {
 
 /// Creates a new fungible faucet account by composing the required components.
 ///
-/// The behaviour of the resulting faucet (basic vs network-style) is determined entirely by the
-/// combination of arguments passed in:
-/// - `account_type`: typically [`AccountType::Public`] for basic or network faucets.
-/// - `auth_method`: typically [`AuthMethod::SingleSig`] for basic faucets, or
-///   [`AuthMethod::NetworkAccount`] for network-style faucets. [`AuthMethod::NoAuth`] is also
-///   accepted for unauthenticated faucets.
-/// - `access_control`: [`AccessControl::AuthControlled`] for auth-only faucets, or
-///   [`AccessControl::Ownable2Step`] / [`AccessControl::Rbac`] for owner-controlled faucets.
-/// - `token_policy_manager`: the unified [`TokenPolicyManager`] holding both mint and burn policy.
+/// Only specific `(access_control, auth_method)` combinations are supported; everything else
+/// is rejected at the factory level. The valid combinations are:
 ///
-/// The faucet itself, including all token metadata, is provided in the `faucet` parameter (see
-/// [`FungibleFaucet::builder`]).
+/// - [`AccessControl::AuthControlled`] + [`AuthMethod::SingleSig`] — user-account faucet whose auth
+///   component is the sole gate for every authority-protected setter.
+/// - [`AccessControl::AuthControlled`] + [`AuthMethod::NetworkAccount`] — the caller is responsible
+///   for choosing `allowed_script_roots` that prevent unauthorized setter invocations.
+/// - [`AccessControl::Ownable2Step`] / [`AccessControl::Rbac`] + [`AuthMethod::NetworkAccount`] or
+///   [`AuthMethod::NoAuth`] — network-style faucet whose setter gate is enforced in-procedure by
+///   the owner/role check.
+///
+/// All other pairings return a typed error:
+/// [`FungibleFaucetError::IncompatibleAuthControlledAuth`] for `AuthControlled + NoAuth` and
+/// [`FungibleFaucetError::UnsupportedAccessControlAuthCombination`] for
+/// `Ownable2Step`/`Rbac` + `SingleSig`. `Multisig` and `Unknown` remain rejected for every
+/// variant via [`FungibleFaucetError::UnsupportedAuthMethod`].
 pub fn create_fungible_faucet(
     init_seed: [u8; 32],
     faucet: FungibleFaucet,
@@ -592,53 +596,7 @@ pub fn create_fungible_faucet(
     access_control: AccessControl,
     token_policy_manager: TokenPolicyManager,
 ) -> Result<Account, FungibleFaucetError> {
-    let is_auth_controlled = matches!(access_control, AccessControl::AuthControlled);
-
-    let auth_component: AccountComponent = match auth_method {
-        AuthMethod::SingleSig { approver: (pub_key, auth_scheme) } => {
-            let trigger_procedures = if is_auth_controlled {
-                all_authority_gated_setter_roots()
-            } else {
-                vec![FungibleFaucet::mint_and_send_root()]
-            };
-            AuthSingleSigAcl::new(
-                pub_key,
-                auth_scheme,
-                AuthSingleSigAclConfig::new()
-                    .with_auth_trigger_procedures(trigger_procedures)
-                    .with_allow_unauthorized_input_notes(true),
-            )
-            .map_err(FungibleFaucetError::AccountError)?
-            .into()
-        },
-        AuthMethod::NoAuth => {
-            if is_auth_controlled {
-                return Err(FungibleFaucetError::IncompatibleAuthControlledAuth(
-                    "NoAuth cannot authenticate authority-gated setters".into(),
-                ));
-            }
-            NoAuth::new().into()
-        },
-        AuthMethod::NetworkAccount { allowed_script_roots } => {
-            AuthNetworkAccount::with_allowlist(allowed_script_roots)
-                .map_err(|err| {
-                    FungibleFaucetError::UnsupportedAuthMethod(alloc::format!(
-                        "invalid network account allowlist: {err}"
-                    ))
-                })?
-                .into()
-        },
-        AuthMethod::Unknown => {
-            return Err(FungibleFaucetError::UnsupportedAuthMethod(
-                "fungible faucets cannot be created with Unknown authentication method".into(),
-            ));
-        },
-        AuthMethod::Multisig { .. } => {
-            return Err(FungibleFaucetError::UnsupportedAuthMethod(
-                "fungible faucets do not support Multisig authentication".into(),
-            ));
-        },
-    };
+    let auth_component = build_auth_component(&access_control, auth_method)?;
 
     let account = AccountBuilder::new(init_seed)
         .account_type(account_type)
@@ -650,4 +608,89 @@ pub fn create_fungible_faucet(
         .map_err(FungibleFaucetError::AccountError)?;
 
     Ok(account)
+}
+
+/// Builds the account-level auth component, validating the `(access_control, auth_method)`
+/// pair. See [`create_fungible_faucet`] for the list of supported combinations.
+fn build_auth_component(
+    access_control: &AccessControl,
+    auth_method: AuthMethod,
+) -> Result<AccountComponent, FungibleFaucetError> {
+    match (access_control, auth_method) {
+        // AuthControlled + SingleSig: the auth component is the sole setter gate, so it
+        // must authenticate every authority-gated setter root.
+        (
+            AccessControl::AuthControlled,
+            AuthMethod::SingleSig { approver: (pub_key, auth_scheme) },
+        ) => Ok(AuthSingleSigAcl::new(
+            pub_key,
+            auth_scheme,
+            AuthSingleSigAclConfig::new()
+                .with_auth_trigger_procedures(all_authority_gated_setter_roots())
+                .with_allow_unauthorized_input_notes(true),
+        )
+        .map_err(FungibleFaucetError::AccountError)?
+        .into()),
+
+        // AuthControlled + NetworkAccount: accepted; allowed_script_roots is the caller's
+        // responsibility (must not include scripts that can invoke authority-gated setters).
+        (AccessControl::AuthControlled, AuthMethod::NetworkAccount { allowed_script_roots }) => {
+            Ok(AuthNetworkAccount::with_allowlist(allowed_script_roots)
+                .map_err(|err| {
+                    FungibleFaucetError::UnsupportedAuthMethod(alloc::format!(
+                        "invalid network account allowlist: {err}"
+                    ))
+                })?
+                .into())
+        },
+
+        // AuthControlled + NoAuth: rejected. NoAuth cannot authenticate setters; under
+        // AuthControlled the auth component is the sole gate, so this would leave every
+        // authority-gated setter permissionless.
+        (AccessControl::AuthControlled, AuthMethod::NoAuth) => {
+            Err(FungibleFaucetError::IncompatibleAuthControlledAuth(
+                "NoAuth cannot authenticate authority-gated setters".into(),
+            ))
+        },
+
+        // Ownable2Step / Rbac + NetworkAccount: typical network-style faucet. Setter gating
+        // is enforced in-procedure; the auth component restricts which note scripts can be
+        // consumed against the faucet.
+        (
+            AccessControl::Ownable2Step { .. } | AccessControl::Rbac { .. },
+            AuthMethod::NetworkAccount { allowed_script_roots },
+        ) => Ok(AuthNetworkAccount::with_allowlist(allowed_script_roots)
+            .map_err(|err| {
+                FungibleFaucetError::UnsupportedAuthMethod(alloc::format!(
+                    "invalid network account allowlist: {err}"
+                ))
+            })?
+            .into()),
+
+        // Ownable2Step / Rbac + NoAuth: valid; the setter gate is the in-procedure owner /
+        // role check, so the account-level auth can legitimately be NoAuth.
+        (AccessControl::Ownable2Step { .. } | AccessControl::Rbac { .. }, AuthMethod::NoAuth) => {
+            Ok(NoAuth::new().into())
+        },
+
+        // Ownable2Step / Rbac + SingleSig: rejected. SingleSig is for user-account faucets
+        // (AuthControlled); under owner/role-gated faucets it duplicates the setter check
+        // with a per-tx signature that doesn't add security.
+        (
+            AccessControl::Ownable2Step { .. } | AccessControl::Rbac { .. },
+            AuthMethod::SingleSig { .. },
+        ) => Err(FungibleFaucetError::UnsupportedAccessControlAuthCombination(
+            "SingleSig is only supported with AccessControl::AuthControlled; pair \
+             Ownable2Step / Rbac with NetworkAccount or NoAuth instead"
+                .into(),
+        )),
+
+        // Multisig and Unknown are not supported for any access control variant.
+        (_, AuthMethod::Multisig { .. }) => Err(FungibleFaucetError::UnsupportedAuthMethod(
+            "fungible faucets do not support Multisig authentication".into(),
+        )),
+        (_, AuthMethod::Unknown) => Err(FungibleFaucetError::UnsupportedAuthMethod(
+            "fungible faucets cannot be created with Unknown authentication method".into(),
+        )),
+    }
 }
