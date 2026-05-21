@@ -8,10 +8,6 @@
 //! - Folder at the root (e.g. `blocklist`, `allowlist`) = a primitive bundle: storage namespace +
 //!   helpers + auth-gated admin component(s) that maintain the storage. Primitives are not transfer
 //!   policies by themselves; they are consumed by policy variants.
-//!
-//! Pause is **not** a transfer policy variant: it is handled transversally by
-//! [`super::TokenPolicyManager`] dispatch (see `execute_send_policy` / `execute_receive_policy`),
-//! triggered when the [`crate::account::pausable::Pausable`] component is installed.
 
 use alloc::vec::Vec;
 

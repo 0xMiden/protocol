@@ -187,7 +187,6 @@ pub proc set_max_supply
     exec.authority::assert_authorized
     # => [new_max_supply, pad(15)]
 
-    # 2b. Transversal pause guard (Pausable component required for FungibleFaucet).
     exec.pausable::assert_not_paused
     # => [new_max_supply, pad(15)]
 

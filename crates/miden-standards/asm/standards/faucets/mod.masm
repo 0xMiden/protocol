@@ -265,7 +265,6 @@ pub proc set_description
     exec.authority::assert_authorized
     # => [DESCRIPTION_HASH, pad(12)]
 
-    # Transversal pause guard (Pausable component required for FungibleFaucet).
     exec.pausable::assert_not_paused
     # => [DESCRIPTION_HASH, pad(12)]
 
@@ -346,7 +345,6 @@ pub proc set_logo_uri
     exec.authority::assert_authorized
     # => [LOGO_URI_HASH, pad(12)]
 
-    # Transversal pause guard (Pausable component required for FungibleFaucet).
     exec.pausable::assert_not_paused
     # => [LOGO_URI_HASH, pad(12)]
 
@@ -426,7 +424,6 @@ pub proc set_external_link
     exec.authority::assert_authorized
     # => [EXTERNAL_LINK_HASH, pad(12)]
 
-    # Transversal pause guard (Pausable component required for FungibleFaucet).
     exec.pausable::assert_not_paused
     # => [EXTERNAL_LINK_HASH, pad(12)]
 

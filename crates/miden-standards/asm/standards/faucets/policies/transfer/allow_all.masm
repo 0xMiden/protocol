@@ -7,16 +7,10 @@ use miden::standards::utils::pausable
 
 #! Transfer policy that accepts every non-paused transfer.
 #!
-#! Invoked as the active send or receive policy via `TokenPolicyManager`. The procedure root is
-#! reusable as both send and receive policy because it only consumes the top eight felts
-#! (`ASSET_KEY`, `ASSET_VALUE`) and leaves the rest of the call frame untouched — any `note_idx`
-#! carried in the send signature passes through unchanged.
-#!
-#! ## Transversal pause check
+#! Invoked as the active send or receive policy via `TokenPolicyManager`.
 #!
 #! Calls `exec.pausable::assert_not_paused` before allowing the transfer. The `Pausable` component
-#! is REQUIRED on accounts using TokenPolicyManager — the slot lookup panics if it is not
-#! installed.
+#! is REQUIRED on accounts using TokenPolicyManager.
 #!
 #! Inputs:  [ASSET_KEY, ASSET_VALUE]
 #! Outputs: [ASSET_VALUE]
