@@ -234,6 +234,10 @@ end
 #! - the non-fungible asset already exists in the note.
 #! - the total number of ASSETs exceeds the maximum of 64.
 pub proc add_asset
+    # reject assets with a Custom composition; only None and Fungible are supported today
+    exec.asset::assert_supported_composition
+    # => [ASSET_KEY, ASSET_VALUE, note_idx]
+
     # validate the asset
     exec.asset::validate
     # => [ASSET_KEY, ASSET_VALUE, note_idx]
@@ -410,7 +414,7 @@ proc validate_attachment
     # AS => [num_elements, [ATTACHMENT_ELEMENTS]]
 
     # derive num_words from num_elements
-    adv_push.1 u32assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_MAX_EXCEEDED
+    adv_push u32assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_MAX_EXCEEDED
     u32divmod.WORD_NUM_ELEMENTS
     # OS => [remainder, num_words, ATTACHMENT_COMMITMENT]
     # AS => [[ATTACHMENT_ELEMENTS]]

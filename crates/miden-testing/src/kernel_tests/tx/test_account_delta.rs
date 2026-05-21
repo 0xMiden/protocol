@@ -11,7 +11,6 @@ use miden_protocol::account::{
     AccountDelta,
     AccountId,
     AccountStorage,
-    AccountStorageMode,
     AccountType,
     StorageMap,
     StorageMapKey,
@@ -101,7 +100,7 @@ async fn delta_nonce() -> anyhow::Result<()> {
         .await
         .context("failed to execute transaction")?;
 
-    assert_eq!(executed_tx.account_delta().nonce_delta(), Felt::new(1));
+    assert_eq!(executed_tx.account_delta().nonce_delta(), Felt::ONE);
 
     Ok(())
 }
@@ -394,35 +393,29 @@ async fn fungible_asset_delta() -> anyhow::Result<()> {
     // Test with random IDs to make sure the ordering in the MASM and Rust implementations
     // matches.
     let faucet0: AccountId = AccountIdBuilder::new()
-        .account_type(AccountType::FungibleFaucet)
+        .account_type(AccountType::Private)
         .build_with_seed(rand::random());
     let faucet1: AccountId = AccountIdBuilder::new()
-        .account_type(AccountType::FungibleFaucet)
+        .account_type(AccountType::Public)
         .build_with_seed(rand::random());
-    let faucet2: AccountId = AccountIdBuilder::new()
-        .account_type(AccountType::FungibleFaucet)
-        .build_with_seed(rand::random());
-    let faucet3: AccountId = AccountIdBuilder::new()
-        .account_type(AccountType::FungibleFaucet)
-        .build_with_seed(rand::random());
-    let faucet4: AccountId = AccountIdBuilder::new()
-        .account_type(AccountType::FungibleFaucet)
-        .build_with_seed(rand::random());
+    let faucet2: AccountId = AccountIdBuilder::new().build_with_seed(rand::random());
+    let faucet3: AccountId = AccountIdBuilder::new().build_with_seed(rand::random());
+    let faucet4: AccountId = AccountIdBuilder::new().build_with_seed(rand::random());
 
     let original_asset0 = FungibleAsset::new(faucet0, 300)?;
     let original_asset1 = FungibleAsset::new(faucet1, 200)?;
     let original_asset2 = FungibleAsset::new(faucet2, 100)?;
-    let original_asset3 = FungibleAsset::new(faucet3, FungibleAsset::MAX_AMOUNT)?;
+    let original_asset3 = FungibleAsset::new(faucet3, FungibleAsset::MAX_AMOUNT.as_u64())?;
 
     let added_asset0 = FungibleAsset::new(faucet0, 100)?;
     let added_asset1 = FungibleAsset::new(faucet1, 100)?;
     let added_asset2 = FungibleAsset::new(faucet2, 200)?;
-    let added_asset4 = FungibleAsset::new(faucet4, FungibleAsset::MAX_AMOUNT)?;
+    let added_asset4 = FungibleAsset::new(faucet4, FungibleAsset::MAX_AMOUNT.as_u64())?;
 
     let removed_asset0 = FungibleAsset::new(faucet0, 200)?;
     let removed_asset1 = FungibleAsset::new(faucet1, 100)?;
     let removed_asset2 = FungibleAsset::new(faucet2, 100)?;
-    let removed_asset3 = FungibleAsset::new(faucet3, FungibleAsset::MAX_AMOUNT)?;
+    let removed_asset3 = FungibleAsset::new(faucet3, FungibleAsset::MAX_AMOUNT.as_u64())?;
 
     let TestSetup { mock_chain, account_id, notes } = setup_test(
         [],
@@ -519,35 +512,31 @@ async fn non_fungible_asset_delta() -> anyhow::Result<()> {
     let mut rng = rand::rng();
     // Test with random IDs to make sure the ordering in the MASM and Rust implementations
     // matches.
-    let faucet0: AccountId = AccountIdBuilder::new()
-        .account_type(AccountType::NonFungibleFaucet)
-        .build_with_seed(rng.random());
-    let faucet1: AccountId = AccountIdBuilder::new()
-        .account_type(AccountType::NonFungibleFaucet)
-        .build_with_seed(rng.random());
+    let faucet0: AccountId = AccountIdBuilder::new().build_with_seed(rng.random());
+    let faucet1: AccountId = AccountIdBuilder::new().build_with_seed(rng.random());
     let faucet2: AccountId = AccountIdBuilder::new()
-        .account_type(AccountType::NonFungibleFaucet)
+        .account_type(AccountType::Public)
         .build_with_seed(rng.random());
     let faucet3: AccountId = AccountIdBuilder::new()
-        .account_type(AccountType::NonFungibleFaucet)
+        .account_type(AccountType::Private)
         .build_with_seed(rng.random());
 
     let asset0 = NonFungibleAsset::new(&NonFungibleAssetDetails::new(
         faucet0,
         rng.random::<[u8; 32]>().to_vec(),
-    )?)?;
+    ));
     let asset1 = NonFungibleAsset::new(&NonFungibleAssetDetails::new(
         faucet1,
         rng.random::<[u8; 32]>().to_vec(),
-    )?)?;
+    ));
     let asset2 = NonFungibleAsset::new(&NonFungibleAssetDetails::new(
         faucet2,
         rng.random::<[u8; 32]>().to_vec(),
-    )?)?;
+    ));
     let asset3 = NonFungibleAsset::new(&NonFungibleAssetDetails::new(
         faucet3,
         rng.random::<[u8; 32]>().to_vec(),
-    )?)?;
+    ));
 
     let TestSetup { mock_chain, account_id, notes } =
         setup_test([], [asset1, asset3].map(Asset::from), [asset0, asset2].map(Asset::from))?;
@@ -775,7 +764,7 @@ async fn asset_and_storage_delta() -> anyhow::Result<()> {
     // nonce delta
     // --------------------------------------------------------------------------------------------
 
-    assert_eq!(executed_transaction.account_delta().nonce_delta(), Felt::new(1));
+    assert_eq!(executed_transaction.account_delta().nonce_delta(), Felt::ONE);
 
     // storage delta
     // --------------------------------------------------------------------------------------------
@@ -858,7 +847,7 @@ async fn proven_tx_storage_maps_matches_executed_tx_for_new_account() -> anyhow:
 
     // Build a public account so the proven transaction includes the account update.
     let account = AccountBuilder::new([1; 32])
-        .storage_mode(AccountStorageMode::Public)
+        .account_type(AccountType::Public)
         .with_auth_component(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_slots(vec![
             AccountStorage::mock_value_slot0(),
@@ -960,8 +949,7 @@ async fn delta_for_new_account_retains_empty_value_storage_slots() -> anyhow::Re
 
     let slot_value2 = Word::from([1, 2, 3, 4u32]);
     let mut account = AccountBuilder::new(rand::random())
-        .account_type(AccountType::RegularAccountUpdatableCode)
-        .storage_mode(AccountStorageMode::Public)
+        .account_type(AccountType::Public)
         .with_component(MockAccountComponent::with_slots(vec![
             StorageSlot::with_empty_value(slot_name0.clone()),
             StorageSlot::with_value(slot_name1.clone(), slot_value2),
@@ -1013,8 +1001,7 @@ async fn delta_for_new_account_retains_empty_map_storage_slots() -> anyhow::Resu
     let slot_name0 = StorageSlotName::mock(0);
 
     let mut account = AccountBuilder::new(rand::random())
-        .account_type(AccountType::RegularAccountUpdatableCode)
-        .storage_mode(AccountStorageMode::Public)
+        .account_type(AccountType::Public)
         .with_component(MockAccountComponent::with_slots(vec![StorageSlot::with_empty_map(
             slot_name0.clone(),
         )]))

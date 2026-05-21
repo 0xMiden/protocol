@@ -1,6 +1,6 @@
 use assert_matches::assert_matches;
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
-use miden_protocol::account::{AccountBuilder, AccountStorageMode, AccountType};
+use miden_protocol::account::{AccountBuilder, AccountType};
 use miden_protocol::asset::{AssetAmount, TokenSymbol};
 use miden_protocol::{Felt, Word};
 
@@ -12,7 +12,6 @@ use crate::account::faucets::{Description, FungibleFaucetError, TokenMetadata, T
 use crate::account::policies::{
     BurnPolicyConfig,
     MintPolicyConfig,
-    PolicyAuthority,
     PolicyRegistration,
     TokenPolicyManager,
     TransferPolicy,
@@ -38,7 +37,7 @@ fn faucet_contract_creation() {
     let token_name_string = "polygon";
     let description_string = "A polygon token";
     let decimals = 2u8;
-    let storage_mode = AccountStorageMode::Private;
+    let account_type = AccountType::Private;
 
     let token_name = TokenName::new(token_name_string).unwrap();
     let description = Description::new(description_string).unwrap();
@@ -53,10 +52,10 @@ fn faucet_contract_creation() {
     let faucet_account = create_fungible_faucet(
         init_seed,
         faucet,
-        storage_mode,
+        account_type,
         auth_method,
         AccessControl::AuthControlled,
-        TokenPolicyManager::new(PolicyAuthority::AuthControlled)
+        TokenPolicyManager::new()
             .with_mint_policy(MintPolicyConfig::AllowAll, PolicyRegistration::Active)
             .unwrap()
             .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)
@@ -101,7 +100,7 @@ fn faucet_contract_creation() {
     // Storage layout: [token_supply, max_supply, decimals, symbol]
     assert_eq!(
         faucet_account.storage().get_item(FungibleFaucet::token_config_slot()).unwrap(),
-        [Felt::ZERO, Felt::new(123), Felt::new(2), token_symbol.into()].into()
+        [Felt::ZERO, Felt::from(123_u32), Felt::from(2_u32), token_symbol.into()].into()
     );
 
     // Check that name was stored
@@ -114,10 +113,6 @@ fn faucet_contract_creation() {
         let chunk = faucet_account.storage().get_item(TokenMetadata::description_slot(i)).unwrap();
         assert_eq!(chunk, *expected);
     }
-
-    assert!(faucet_account.is_faucet());
-
-    assert_eq!(faucet_account.account_type(), AccountType::FungibleFaucet);
 
     // Verify the faucet component can be extracted
     let _faucet_component = FungibleFaucet::try_from(faucet_account.clone()).unwrap();
@@ -141,7 +136,6 @@ fn faucet_create_from_account() {
         .expect("failed to create faucet");
 
     let faucet_account = AccountBuilder::new(mock_seed)
-        .account_type(AccountType::FungibleFaucet)
         .with_component(faucet)
         .with_auth_component(AuthSingleSig::new(mock_public_key, AuthScheme::Falcon512Poseidon2))
         .build_existing()
@@ -152,7 +146,6 @@ fn faucet_create_from_account() {
 
     // invalid account: fungible faucet component is missing
     let invalid_faucet_account = AccountBuilder::new(mock_seed)
-        .account_type(AccountType::FungibleFaucet)
         .with_auth_component(AuthSingleSig::new(mock_public_key, AuthScheme::Falcon512Poseidon2))
         // we need to add some other component so the builder doesn't fail
         .with_component(BasicWallet)

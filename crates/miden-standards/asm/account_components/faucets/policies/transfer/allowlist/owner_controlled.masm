@@ -1,0 +1,12 @@
+# Owner-controlled allowlist admin component.
+#
+# Re-exports `allow_account` and `disallow_account` from
+# `miden::standards::faucets::policies::transfer::allowlist::owner_controlled`, which wraps the
+# underlying `Invocation: exec` helpers with an Ownable2Step authorization check.
+#
+# Pair with the [`Ownable2Step`] component (which provides the owner storage slot) and a
+# component that installs the `allowed_accounts` storage slot — typically the basic allowlist
+# transfer policy component.
+
+pub use ::miden::standards::faucets::policies::transfer::allowlist::owner_controlled::allow_account
+pub use ::miden::standards::faucets::policies::transfer::allowlist::owner_controlled::disallow_account

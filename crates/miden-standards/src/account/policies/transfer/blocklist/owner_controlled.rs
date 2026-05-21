@@ -1,5 +1,5 @@
+use miden_protocol::account::AccountComponent;
 use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
-use miden_protocol::account::{AccountComponent, AccountType};
 
 use crate::account::account_component_code;
 
@@ -21,9 +21,9 @@ account_component_code!(
 /// - A component that installs the `blocked_accounts` storage slot — typically
 ///   [`crate::account::policies::BasicBlocklist`].
 #[derive(Debug, Clone, Copy, Default)]
-pub struct OwnerControlledBlocklist;
+pub struct BlocklistOwnerControlled;
 
-impl OwnerControlledBlocklist {
+impl BlocklistOwnerControlled {
     /// The name of the component.
     pub const NAME: &'static str =
         "miden::standards::components::faucets::policies::transfer::blocklist::owner_controlled";
@@ -35,21 +35,17 @@ impl OwnerControlledBlocklist {
 
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        AccountComponentMetadata::new(
-            Self::NAME,
-            [AccountType::FungibleFaucet, AccountType::NonFungibleFaucet],
-        )
-        .with_description(
+        AccountComponentMetadata::new(Self::NAME).with_description(
             "Owner-controlled blocklist admin: wraps `blocklist::block_account` / \
              `unblock_account` with Ownable2Step authorization.",
         )
     }
 }
 
-impl From<OwnerControlledBlocklist> for AccountComponent {
-    fn from(_: OwnerControlledBlocklist) -> Self {
-        let metadata = OwnerControlledBlocklist::component_metadata();
-        AccountComponent::new(OwnerControlledBlocklist::code().clone(), vec![], metadata)
+impl From<BlocklistOwnerControlled> for AccountComponent {
+    fn from(_: BlocklistOwnerControlled) -> Self {
+        let metadata = BlocklistOwnerControlled::component_metadata();
+        AccountComponent::new(BlocklistOwnerControlled::code().clone(), vec![], metadata)
             .expect("owner-controlled blocklist admin component should be valid")
     }
 }

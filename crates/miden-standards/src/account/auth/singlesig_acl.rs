@@ -12,8 +12,8 @@ use miden_protocol::account::component::{
 use miden_protocol::account::{
     AccountCode,
     AccountComponent,
+    AccountComponentName,
     AccountProcedureRoot,
-    AccountType,
     StorageMap,
     StorageMapKey,
     StorageSlot,
@@ -151,8 +151,6 @@ impl Default for AuthSingleSigAclConfig {
 /// state or kernel APIs may not be detected as "called" even if they were executed during
 /// the transaction. This is an important limitation to consider when designing trigger
 /// procedures for authentication.
-///
-/// This component supports all account types.
 pub struct AuthSingleSigAcl {
     pub_key: PublicKeyCommitment,
     auth_scheme: AuthScheme,
@@ -162,6 +160,11 @@ pub struct AuthSingleSigAcl {
 impl AuthSingleSigAcl {
     /// The name of the component.
     pub const NAME: &'static str = "miden::standards::components::auth::singlesig_acl";
+
+    /// Returns the canonical [`AccountComponentName`] of this component.
+    pub const fn name() -> AccountComponentName {
+        AccountComponentName::from_static_str(Self::NAME)
+    }
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
@@ -223,9 +226,9 @@ impl AuthSingleSigAcl {
             StorageSlotSchema::value(
                 "ACL configuration",
                 [
-                    FeltSchema::u32("num_trigger_procs").with_default(Felt::new(0)),
-                    FeltSchema::bool("allow_unauthorized_output_notes").with_default(Felt::new(0)),
-                    FeltSchema::bool("allow_unauthorized_input_notes").with_default(Felt::new(0)),
+                    FeltSchema::u32("num_trigger_procs").with_default(Felt::ZERO),
+                    FeltSchema::bool("allow_unauthorized_output_notes").with_default(Felt::ZERO),
+                    FeltSchema::bool("allow_unauthorized_input_notes").with_default(Felt::ZERO),
                     FeltSchema::new_void(),
                 ],
             ),
@@ -262,7 +265,7 @@ impl AuthSingleSigAcl {
         ])
         .expect("storage schema should be valid");
 
-        AccountComponentMetadata::new(Self::NAME, AccountType::all())
+        AccountComponentMetadata::new(Self::NAME)
             .with_description(
                 "Authentication component with procedure-based ACL using ECDSA K256 Keccak or Falcon512 Poseidon2 signature scheme",
             )

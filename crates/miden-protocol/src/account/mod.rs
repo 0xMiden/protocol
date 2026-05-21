@@ -20,9 +20,10 @@ pub use account_id::{
     AccountIdPrefixV1,
     AccountIdV1,
     AccountIdVersion,
-    AccountStorageMode,
     AccountType,
 };
+
+pub(crate) mod name_validation;
 
 pub mod auth;
 
@@ -38,6 +39,9 @@ pub use code::procedure::AccountProcedureRoot;
 
 pub mod component;
 pub use component::{AccountComponent, AccountComponentCode, AccountComponentMetadata};
+
+pub mod interface;
+pub use interface::AccountComponentName;
 
 pub mod delta;
 pub use delta::{
@@ -167,7 +171,6 @@ impl Account {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - Any of the components does not support `account_type`.
     /// - The number of procedures in all merged libraries is 0 or exceeds
     ///   [`AccountCode::MAX_NUM_PROCEDURES`].
     /// - Two or more libraries export a procedure with the same MAST root.
@@ -176,11 +179,8 @@ impl Account {
     /// - The number of [`StorageSlot`]s of all components exceeds 255.
     /// - [`MastForest::merge`](miden_processor::MastForest::merge) fails on all libraries.
     pub(super) fn initialize_from_components(
-        account_type: AccountType,
         components: Vec<AccountComponent>,
     ) -> Result<(AccountCode, AccountStorage), AccountError> {
-        validate_components_support_account_type(&components, account_type)?;
-
         let code = AccountCode::from_components_unchecked(&components)?;
         let storage = AccountStorage::from_components(components)?;
 
@@ -227,11 +227,6 @@ impl Account {
         self.id
     }
 
-    /// Returns the account type
-    pub fn account_type(&self) -> AccountType {
-        self.id.account_type()
-    }
-
     /// Returns a reference to the vault of this account.
     pub fn vault(&self) -> &AssetVault {
         &self.vault
@@ -259,22 +254,12 @@ impl Account {
         self.seed
     }
 
-    /// Returns true if this account can issue assets.
-    pub fn is_faucet(&self) -> bool {
-        self.id.is_faucet()
-    }
-
-    /// Returns true if this is a regular account.
-    pub fn is_regular_account(&self) -> bool {
-        self.id.is_regular_account()
-    }
-
-    /// Returns `true` if the storage mode is [`AccountStorageMode::Public`], `false` otherwise.
+    /// Returns `true` if the account type is [`AccountType::Public`], `false` otherwise.
     pub fn is_public(&self) -> bool {
         self.id().is_public()
     }
 
-    /// Returns `true` if the storage mode is [`AccountStorageMode::Private`], `false` otherwise.
+    /// Returns `true` if the account type is [`AccountType::Private`], `false` otherwise.
     pub fn is_private(&self) -> bool {
         self.id().is_private()
     }
@@ -519,33 +504,14 @@ pub(super) fn validate_account_seed(
     }
 }
 
-/// Validates that all `components` support the given `account_type`.
-fn validate_components_support_account_type(
-    components: &[AccountComponent],
-    account_type: AccountType,
-) -> Result<(), AccountError> {
-    for (component_index, component) in components.iter().enumerate() {
-        if !component.supports_type(account_type) {
-            return Err(AccountError::UnsupportedComponentForAccountType {
-                account_type,
-                component_index,
-            });
-        }
-    }
-
-    Ok(())
-}
-
 // TESTS
 // ================================================================================================
 
 #[cfg(test)]
 mod tests {
-    use alloc::sync::Arc;
     use alloc::vec::Vec;
 
     use assert_matches::assert_matches;
-    use miden_assembly::Assembler;
     use miden_crypto::utils::{Deserializable, Serializable};
     use miden_crypto::{Felt, Word};
 
@@ -557,12 +523,9 @@ mod tests {
         AccountStorageDelta,
         AccountVaultDelta,
     };
-    use crate::account::AccountStorageMode::Public;
-    use crate::account::component::AccountComponentMetadata;
     use crate::account::{
         Account,
         AccountBuilder,
-        AccountComponent,
         AccountIdVersion,
         AccountType,
         PartialAccount,
@@ -584,7 +547,7 @@ mod tests {
 
     #[test]
     fn test_serde_account() {
-        let init_nonce = Felt::new(1);
+        let init_nonce = Felt::from(1_u32);
         let asset_0 = FungibleAsset::mock(99);
         let word = Word::from([1, 2, 3, 4u32]);
         let storage_slot = StorageSlotContent::Value(word);
@@ -598,7 +561,7 @@ mod tests {
     #[test]
     fn test_serde_account_delta() {
         let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
-        let nonce_delta = Felt::new(2);
+        let nonce_delta = Felt::from(2_u32);
         let asset_0 = FungibleAsset::mock(15);
         let asset_1 = NonFungibleAsset::mock(&[5, 5, 5]);
         let storage_delta = AccountStorageDelta::new()
@@ -621,7 +584,7 @@ mod tests {
     fn valid_account_delta_is_correctly_applied() {
         // build account
         let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
-        let init_nonce = Felt::new(1);
+        let init_nonce = Felt::from(1_u32);
         let asset_0 = FungibleAsset::mock(100);
         let asset_1 = NonFungibleAsset::mock(&[1, 2, 3]);
 
@@ -631,16 +594,11 @@ mod tests {
         let mut storage_map = StorageMap::with_entries([
             (
                 StorageMapKey::from_array([101, 102, 103, 104]),
-                Word::from([
-                    Felt::new(1_u64),
-                    Felt::new(2_u64),
-                    Felt::new(3_u64),
-                    Felt::new(4_u64),
-                ]),
+                Word::from([1_u32, 2_u32, 3_u32, 4_u32]),
             ),
             (
                 StorageMapKey::from_array([105, 106, 107, 108]),
-                Word::new([Felt::new(5_u64), Felt::new(6_u64), Felt::new(7_u64), Felt::new(8_u64)]),
+                Word::from([5_u32, 6_u32, 7_u32, 8_u32]),
             ),
         ])
         .unwrap();
@@ -660,7 +618,7 @@ mod tests {
         storage_map.insert(key, value).unwrap();
 
         // build account delta
-        let final_nonce = Felt::new(2);
+        let final_nonce = Felt::from(2_u32);
         let storage_delta = AccountStorageDelta::new()
             .add_cleared_items([StorageSlotName::mock(0)])
             .add_updated_values([(StorageSlotName::mock(1), Word::from([1, 2, 3, 4u32]))])
@@ -695,7 +653,7 @@ mod tests {
     fn valid_account_delta_with_unchanged_nonce() {
         // build account
         let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
-        let init_nonce = Felt::new(1);
+        let init_nonce = Felt::from(1_u32);
         let asset = FungibleAsset::mock(110);
         let mut account =
             build_account(vec![asset], init_nonce, vec![StorageSlotContent::Value(Word::empty())]);
@@ -716,13 +674,13 @@ mod tests {
     fn valid_account_delta_with_decremented_nonce() {
         // build account
         let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
-        let init_nonce = Felt::new(2);
+        let init_nonce = Felt::from(2_u32);
         let asset = FungibleAsset::mock(100);
         let mut account =
             build_account(vec![asset], init_nonce, vec![StorageSlotContent::Value(Word::empty())]);
 
         // build account delta
-        let final_nonce = Felt::new(1);
+        let final_nonce = Felt::from(1_u32);
         let storage_delta = AccountStorageDelta::new()
             .add_cleared_items([StorageSlotName::mock(0)])
             .add_updated_values([(StorageSlotName::mock(1), Word::from([1, 2, 3, 4u32]))]);
@@ -737,13 +695,13 @@ mod tests {
     fn empty_account_delta_with_incremented_nonce() {
         // build account
         let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
-        let init_nonce = Felt::new(1);
+        let init_nonce = Felt::from(1_u32);
         let word = Word::from([1, 2, 3, 4u32]);
         let storage_slot = StorageSlotContent::Value(word);
         let mut account = build_account(vec![], init_nonce, vec![storage_slot]);
 
         // build account delta
-        let nonce_delta = Felt::new(1);
+        let nonce_delta = Felt::from(1_u32);
         let account_delta = AccountDelta::new(
             account_id,
             AccountStorageDelta::new(),
@@ -788,40 +746,6 @@ mod tests {
         Account::new_existing(id, vault, storage, code, nonce)
     }
 
-    /// Tests that initializing code and storage from a component which does not support the given
-    /// account type returns an error.
-    #[test]
-    fn test_account_unsupported_component_type() {
-        let code1 = "pub proc foo add end";
-        let library1 =
-            Arc::unwrap_or_clone(Assembler::default().assemble_library([code1]).unwrap());
-
-        // This component support all account types except the regular account with updatable code.
-        let metadata = AccountComponentMetadata::new(
-            "test::component1",
-            [
-                AccountType::FungibleFaucet,
-                AccountType::NonFungibleFaucet,
-                AccountType::RegularAccountImmutableCode,
-            ],
-        );
-        let component1 = AccountComponent::new(library1, vec![], metadata).unwrap();
-
-        let err = Account::initialize_from_components(
-            AccountType::RegularAccountUpdatableCode,
-            vec![component1],
-        )
-        .unwrap_err();
-
-        assert!(matches!(
-            err,
-            AccountError::UnsupportedComponentForAccountType {
-                account_type: AccountType::RegularAccountUpdatableCode,
-                component_index: 0
-            }
-        ))
-    }
-
     /// Tests all cases of account ID seed validation.
     #[test]
     fn seed_validation() -> anyhow::Result<()> {
@@ -834,8 +758,7 @@ mod tests {
 
         let other_seed = AccountId::compute_account_seed(
             [9; 32],
-            AccountType::FungibleFaucet,
-            Public,
+            AccountType::Public,
             AccountIdVersion::Version1,
             code.commitment(),
             storage.to_commitment(),

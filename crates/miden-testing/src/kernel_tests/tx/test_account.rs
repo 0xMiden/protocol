@@ -17,7 +17,6 @@ use miden_protocol::account::{
     AccountComponent,
     AccountId,
     AccountStorage,
-    AccountStorageMode,
     AccountType,
     StorageMap,
     StorageMapKey,
@@ -31,7 +30,14 @@ use miden_protocol::account::{
 use miden_protocol::assembly::diagnostics::NamedSource;
 use miden_protocol::assembly::diagnostics::reporting::PrintDiagnostic;
 use miden_protocol::assembly::{DefaultSourceManager, Library};
-use miden_protocol::asset::{Asset, AssetAmount, AssetCallbacks, FungibleAsset};
+use miden_protocol::asset::{
+    Asset,
+    AssetAmount,
+    AssetCallbackFlag,
+    AssetCallbacks,
+    AssetVaultKey,
+    FungibleAsset,
+};
 use miden_protocol::errors::tx_kernel::{
     ERR_ACCOUNT_ID_SUFFIX_LEAST_SIGNIFICANT_BYTE_MUST_BE_ZERO,
     ERR_ACCOUNT_ID_SUFFIX_MOST_SIGNIFICANT_BIT_MUST_BE_ZERO,
@@ -164,64 +170,6 @@ pub async fn compute_commitment() -> anyhow::Result<()> {
 // ================================================================================================
 
 #[tokio::test]
-async fn test_account_type() -> anyhow::Result<()> {
-    let procedures = vec![
-        ("is_fungible_faucet", AccountType::FungibleFaucet),
-        ("is_non_fungible_faucet", AccountType::NonFungibleFaucet),
-        ("is_updatable_account", AccountType::RegularAccountUpdatableCode),
-        ("is_immutable_account", AccountType::RegularAccountImmutableCode),
-    ];
-
-    let test_cases = [
-        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
-        ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
-        ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
-        ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET,
-    ];
-
-    for (procedure, expected_type) in procedures {
-        let mut has_type = false;
-
-        for account_id in test_cases.iter() {
-            let account_id = AccountId::try_from(*account_id).unwrap();
-
-            let code = format!(
-                "
-                use $kernel::account_id
-
-                begin
-                    exec.account_id::{procedure}
-                end
-                "
-            );
-
-            let exec_output = CodeExecutor::with_default_host()
-                .stack_inputs(StackInputs::new(&[account_id.prefix().as_felt()])?)
-                .run(&code)
-                .await?;
-
-            let type_matches = account_id.account_type() == expected_type;
-            let expected_result = if type_matches { Felt::ONE } else { Felt::ZERO };
-            has_type |= type_matches;
-
-            assert_eq!(
-                exec_output.get_stack_element(0),
-                expected_result,
-                "Rust and Masm check on account type diverge. proc: {} account_id: {} account_type: {:?} expected_type: {:?}",
-                procedure,
-                account_id,
-                account_id.account_type(),
-                expected_type,
-            );
-        }
-
-        assert!(has_type, "missing test for type {expected_type:?}");
-    }
-
-    Ok(())
-}
-
-#[tokio::test]
 async fn test_account_validate_id() -> anyhow::Result<()> {
     let test_cases = [
         (ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE, None),
@@ -305,47 +253,6 @@ async fn test_account_validate_id() -> anyhow::Result<()> {
                 ));
             },
         }
-    }
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_is_faucet_procedure() -> anyhow::Result<()> {
-    let test_cases = [
-        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
-        ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
-        ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
-        ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET,
-    ];
-
-    for account_id in test_cases.iter() {
-        let account_id = AccountId::try_from(*account_id).unwrap();
-
-        let code = format!(
-            "
-            use $kernel::account_id
-
-            begin
-                push.{prefix}
-                exec.account_id::is_faucet
-                # => [is_faucet, account_id_prefix]
-
-                # truncate the stack
-                swap drop
-            end
-            ",
-            prefix = account_id.prefix().as_felt(),
-        );
-
-        let exec_output = CodeExecutor::with_default_host().run(&code).await?;
-
-        let is_faucet = account_id.is_faucet();
-        assert_eq!(
-            exec_output.get_stack_element(0),
-            Felt::new(is_faucet as u64),
-            "Rust and MASM is_faucet diverged for account_id {account_id}"
-        );
     }
 
     Ok(())
@@ -762,16 +669,13 @@ async fn test_set_map_item() -> anyhow::Result<()> {
 /// Tests that we can successfully create regular and faucet accounts with empty storage.
 #[tokio::test]
 async fn create_account_with_empty_storage_slots() -> anyhow::Result<()> {
-    for account_type in [AccountType::FungibleFaucet, AccountType::RegularAccountUpdatableCode] {
-        let account = AccountBuilder::new([5; 32])
-            .account_type(account_type)
-            .with_auth_component(Auth::IncrNonce)
-            .with_component(MockAccountComponent::with_empty_slots())
-            .build()
-            .context("failed to build account")?;
+    let account = AccountBuilder::new([5; 32])
+        .with_auth_component(Auth::IncrNonce)
+        .with_component(MockAccountComponent::with_empty_slots())
+        .build()
+        .context("failed to build account")?;
 
-        TransactionContextBuilder::new(account).build()?.execute().await?;
-    }
+    TransactionContextBuilder::new(account).build()?.execute().await?;
 
     Ok(())
 }
@@ -906,7 +810,7 @@ async fn prove_account_creation_with_non_empty_storage() -> anyhow::Result<()> {
         StorageSlot::with_map(slot_name2.clone(), StorageMap::with_entries(map_entries.clone())?);
 
     let account = AccountBuilder::new([6; 32])
-        .storage_mode(AccountStorageMode::Public)
+        .account_type(AccountType::Public)
         .with_auth_component(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_slots(vec![
             slot0.clone(),
@@ -921,7 +825,7 @@ async fn prove_account_creation_with_non_empty_storage() -> anyhow::Result<()> {
         .await
         .context("failed to execute account-creating transaction")?;
 
-    assert_eq!(tx.account_delta().nonce_delta(), Felt::new(1));
+    assert_eq!(tx.account_delta().nonce_delta(), Felt::ONE);
 
     assert_matches!(
         tx.account_delta().storage().get(&slot_name0).unwrap(),
@@ -944,7 +848,7 @@ async fn prove_account_creation_with_non_empty_storage() -> anyhow::Result<()> {
     );
 
     assert!(tx.account_delta().vault().is_empty());
-    assert_eq!(tx.final_account().nonce(), Felt::new(1));
+    assert_eq!(tx.final_account().nonce(), Felt::ONE);
 
     let proven_tx = LocalTransactionProver::default().prove(tx.clone()).await?;
 
@@ -1082,31 +986,26 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
     // case 1: existing asset was added to the account
     // ------------------------------------------
 
-    let initial_balance = account
-        .vault()
-        .get_balance(faucet_existing_asset)
-        .expect("faucet_id should be a fungible faucet ID")
-        .as_u64();
+    let asset_key = AssetVaultKey::new_fungible(faucet_existing_asset, AssetCallbackFlag::Disabled);
+    let initial_balance = account.vault().get_balance(asset_key)?.as_u64();
 
     let add_existing_source = format!(
         r#"
         use miden::protocol::active_account
 
         begin
-            # push faucet ID prefix and suffix
-            push.{prefix}.{suffix}
-            # => [faucet_id_suffix, faucet_id_prefix]
-
             # get the current asset balance
-            dup.1 dup.1 exec.active_account::get_balance
-            # => [final_balance, faucet_id_suffix, faucet_id_prefix]
+            push.{ASSET_KEY}
+            exec.active_account::get_balance
+            # => [final_balance]
 
             # assert final balance is correct
             push.{final_balance}
             assert_eq.err="final balance is incorrect"
-            # => [faucet_id_suffix, faucet_id_prefix]
+            # => []
 
             # get the initial asset balance
+            push.{ASSET_KEY}
             exec.active_account::get_initial_balance
             # => [init_balance]
 
@@ -1115,8 +1014,7 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
             assert_eq.err="initial balance is incorrect"
         end
     "#,
-        suffix = faucet_existing_asset.suffix(),
-        prefix = faucet_existing_asset.prefix().as_felt(),
+        ASSET_KEY = asset_key.to_word(),
         final_balance =
             initial_balance + fungible_asset_for_note_existing.unwrap_fungible().amount().as_u64(),
     );
@@ -1137,31 +1035,26 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
     // case 2: new asset was added to the account
     // ------------------------------------------
 
-    let initial_balance = account
-        .vault()
-        .get_balance(faucet_new_asset)
-        .expect("faucet_id should be a fungible faucet ID")
-        .as_u64();
+    let asset_key = AssetVaultKey::new_fungible(faucet_new_asset, AssetCallbackFlag::Disabled);
+    let initial_balance = account.vault().get_balance(asset_key)?.as_u64();
 
     let add_new_source = format!(
         r#"
         use miden::protocol::active_account
 
         begin
-            # push faucet ID prefix and suffix
-            push.{prefix}.{suffix}
-            # => [faucet_id_suffix, faucet_id_prefix]
-
             # get the current asset balance
-            dup.1 dup.1 exec.active_account::get_balance
-            # => [final_balance, faucet_id_suffix, faucet_id_prefix]
+            push.{ASSET_KEY}
+            exec.active_account::get_balance
+            # => [final_balance]
 
             # assert final balance is correct
             push.{final_balance}
             assert_eq.err="final balance is incorrect"
-            # => [faucet_id_suffix, faucet_id_prefix]
+            # => []
 
             # get the initial asset balance
+            push.{ASSET_KEY}
             exec.active_account::get_initial_balance
             # => [init_balance]
 
@@ -1170,8 +1063,7 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
             assert_eq.err="initial balance is incorrect"
         end
     "#,
-        suffix = faucet_new_asset.suffix(),
-        prefix = faucet_new_asset.prefix().as_felt(),
+        ASSET_KEY = asset_key.to_word(),
         final_balance =
             initial_balance + fungible_asset_for_note_new.unwrap_fungible().amount().as_u64(),
     );
@@ -1217,11 +1109,8 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
-    let initial_balance = account
-        .vault()
-        .get_balance(faucet_existing_asset)
-        .expect("faucet_id should be a fungible faucet ID")
-        .as_u64();
+    let asset_key = AssetVaultKey::new_fungible(faucet_existing_asset, AssetCallbackFlag::Disabled);
+    let initial_balance = account.vault().get_balance(asset_key)?.as_u64();
 
     let expected_output_note =
         create_public_p2any_note(ACCOUNT_ID_SENDER.try_into()?, [fungible_asset_for_note_existing]);
@@ -1242,20 +1131,18 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
             exec.util::move_asset_to_note
             # => []
 
-            # push faucet ID prefix and suffix
-            push.{prefix}.{suffix}
-            # => [faucet_id_suffix, faucet_id_prefix]
-
             # get the current asset balance
-            dup.1 dup.1 exec.active_account::get_balance
-            # => [final_balance, faucet_id_suffix, faucet_id_prefix]
+            push.{ASSET_KEY}
+            exec.active_account::get_balance
+            # => [final_balance]
 
             # assert final balance is correct
             push.{final_balance}
             assert_eq.err="final balance is incorrect"
-            # => [faucet_id_suffix, faucet_id_prefix]
+            # => []
 
             # get the initial asset balance
+            push.{ASSET_KEY}
             exec.active_account::get_initial_balance
             # => [init_balance]
 
@@ -1266,8 +1153,7 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
     "#,
         REMOVED_ASSET_KEY = fungible_asset_for_note_existing.to_key_word(),
         REMOVED_ASSET_VALUE = fungible_asset_for_note_existing.to_value_word(),
-        suffix = faucet_existing_asset.suffix(),
-        prefix = faucet_existing_asset.prefix().as_felt(),
+        ASSET_KEY = asset_key.to_word(),
         final_balance =
             initial_balance - fungible_asset_for_note_existing.unwrap_fungible().amount().as_u64(),
     );
@@ -1379,11 +1265,8 @@ async fn test_get_init_asset() -> anyhow::Result<()> {
 async fn test_authenticate_and_track_procedure() -> anyhow::Result<()> {
     let mock_component = MockAccountComponent::with_empty_slots();
 
-    let account_code = AccountCode::from_components(
-        &[Auth::IncrNonce.into(), mock_component.into()],
-        AccountType::RegularAccountUpdatableCode,
-    )
-    .unwrap();
+    let account_code =
+        AccountCode::from_components(&[Auth::IncrNonce.into(), mock_component.into()]).unwrap();
 
     let tc_0 = *account_code.procedures()[1].mast_root();
     let tc_1 = *account_code.procedures()[2].mast_root();
@@ -1582,7 +1465,7 @@ async fn transaction_executor_account_code_using_custom_library() -> anyhow::Res
     let executed_tx = tx_context.execute().await?;
 
     // Account's initial nonce of 1 should have been incremented by 1.
-    assert_eq!(executed_tx.account_delta().nonce_delta(), Felt::new(1));
+    assert_eq!(executed_tx.account_delta().nonce_delta(), Felt::ONE);
 
     // Make sure that account storage has been updated as per the tx script call.
     assert_eq!(executed_tx.account_delta().storage().values().count(), 1);
@@ -1712,8 +1595,7 @@ async fn test_faucet_has_callbacks(
         .build()?;
 
     let account = AccountBuilder::new([1u8; 32])
-        .storage_mode(AccountStorageMode::Public)
-        .account_type(AccountType::FungibleFaucet)
+        .account_type(AccountType::Public)
         .with_component(faucet)
         .with_component(MockAccountComponent::with_slots(callback_slots))
         .with_auth_component(Auth::IncrNonce)
@@ -1964,7 +1846,7 @@ async fn incrementing_nonce_overflow_fails() -> anyhow::Result<()> {
         .context("failed to build account")?;
     // Increment the nonce to the maximum felt value. The nonce is already 1, so we increment by
     // modulus - 2.
-    account.increment_nonce(Felt::new(Felt::ORDER_U64 - 2))?;
+    account.increment_nonce(Felt::new_unchecked(Felt::ORDER_U64 - 2))?;
 
     let result = TransactionContextBuilder::new(account).build()?.execute().await;
 

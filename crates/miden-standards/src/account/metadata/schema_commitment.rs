@@ -20,7 +20,6 @@ use miden_protocol::account::{
     Account,
     AccountBuilder,
     AccountComponent,
-    AccountType,
     StorageSlot,
     StorageSlotName,
 };
@@ -106,7 +105,7 @@ impl AccountSchemaCommitment {
         )])
         .expect("storage schema should be valid");
 
-        AccountComponentMetadata::new(Self::NAME, AccountType::all())
+        AccountComponentMetadata::new(Self::NAME)
             .with_description("Component exposing the account storage schema commitment")
             .with_storage_schema(storage_schema)
     }
@@ -213,7 +212,6 @@ mod tests {
             name = "Component A"
             description = "Component A schema"
             version = "0.1.0"
-            supported-types = []
 
             [[storage.slots]]
             name = "test::slot_a"
@@ -224,7 +222,6 @@ mod tests {
             name = "Component B"
             description = "Component B schema"
             version = "0.1.0"
-            supported-types = []
 
             [[storage.slots]]
             name = "test::slot_b"

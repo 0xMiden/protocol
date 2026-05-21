@@ -1,23 +1,26 @@
 use anyhow::Result;
 pub use miden_agglayer::testing::ClaimDataSource;
 use miden_agglayer::{
+    AggLayerBridge,
     B2AggNote,
     ClaimNote,
     ClaimNoteStorage,
     ConfigAggBridgeNote,
+    ConversionMetadata,
     EthAddress,
     MetadataHash,
     UpdateGerNote,
     create_existing_agglayer_faucet,
     create_existing_bridge_account,
 };
-use miden_protocol::Felt;
 use miden_protocol::account::auth::AuthScheme;
+use miden_protocol::account::{Account, StorageMapKey};
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::note::{NoteAssets, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_SENDER;
 use miden_protocol::transaction::RawOutputNote;
+use miden_protocol::{Felt, Word};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::StandardNote;
 use miden_testing::{Auth, MockChain, TransactionContext};
@@ -190,7 +193,7 @@ pub async fn tx_consume_claim_note(data_source: ClaimDataSource) -> Result<Trans
     // CREATE AGGLAYER FAUCET ACCOUNT
     let token_symbol = "AGG";
     let decimals = 8u8;
-    let max_supply = Felt::new(FungibleAsset::MAX_AMOUNT);
+    let max_supply: Felt = FungibleAsset::MAX_AMOUNT.into();
     let agglayer_faucet_seed = builder.rng_mut().draw_word();
 
     let origin_token_address = leaf_data.origin_token_address;
@@ -204,10 +207,6 @@ pub async fn tx_consume_claim_note(data_source: ClaimDataSource) -> Result<Trans
         max_supply,
         Felt::ZERO,
         bridge_account.id(),
-        &origin_token_address,
-        origin_network,
-        scale,
-        leaf_data.metadata_hash,
     );
     builder.add_account(agglayer_faucet.clone())?;
 
@@ -227,6 +226,7 @@ pub async fn tx_consume_claim_note(data_source: ClaimDataSource) -> Result<Trans
         .scale_to_token_amount(scale as u32)
         .expect("amount should scale successfully");
 
+    let config_metadata_hash = leaf_data.metadata_hash;
     let claim_inputs = ClaimNoteStorage {
         proof_data,
         leaf_data,
@@ -244,8 +244,14 @@ pub async fn tx_consume_claim_note(data_source: ClaimDataSource) -> Result<Trans
 
     // CREATE CONFIG_AGG_BRIDGE NOTE
     let config_note = ConfigAggBridgeNote::create(
-        agglayer_faucet.id(),
-        &origin_token_address,
+        ConversionMetadata {
+            faucet_account_id: agglayer_faucet.id(),
+            origin_token_address,
+            scale,
+            origin_network,
+            is_native: false,
+            metadata_hash: config_metadata_hash,
+        },
         bridge_admin.id(),
         bridge_account.id(),
         builder.rng_mut(),
@@ -292,6 +298,71 @@ pub async fn tx_consume_claim_note(data_source: ClaimDataSource) -> Result<Trans
 // B2AGG NOTE SETUPS
 // ================================================================================================
 
+/// Pre-populates the bridge account's LET (Local Exit Tree) frontier with dummy values,
+/// simulating a tree that already has `num_leaves` entries.
+///
+/// This allows benchmarking bridge-out with different frontier occupancy levels without
+/// performing actual sequential insertions. The frontier values are deterministic but not
+/// cryptographically valid - cycle counts are independent of stored values.
+fn populate_let_frontier(bridge: &mut Account, num_leaves: u32) {
+    let zero = Felt::ZERO;
+
+    // Set num_leaves
+    bridge
+        .storage_mut()
+        .set_item(
+            AggLayerBridge::let_num_leaves_slot_name(),
+            Word::new([Felt::new_unchecked(num_leaves as u64), zero, zero, zero]),
+        )
+        .expect("should set LET num_leaves");
+
+    // Populate all 32 frontier double-word entries with dummy values.
+    // The double_word_array stores each entry under two map keys:
+    //   Word 0: key [h, 0, 0, 0]
+    //   Word 1: key [h, 1, 0, 0]
+    for h in 0u32..32 {
+        let key0 = StorageMapKey::from_array([h, 0, 0, 0]);
+        let val0 = Word::new([
+            Felt::new_unchecked(h as u64 + 1),
+            Felt::new_unchecked(2),
+            Felt::new_unchecked(3),
+            Felt::new_unchecked(4),
+        ]);
+        bridge
+            .storage_mut()
+            .set_map_item(AggLayerBridge::let_frontier_slot_name(), key0, val0)
+            .expect("should set frontier word 0");
+
+        let key1 = StorageMapKey::from_array([h, 1, 0, 0]);
+        let val1 = Word::new([
+            Felt::new_unchecked(5),
+            Felt::new_unchecked(6),
+            Felt::new_unchecked(7),
+            Felt::new_unchecked(h as u64 + 8),
+        ]);
+        bridge
+            .storage_mut()
+            .set_map_item(AggLayerBridge::let_frontier_slot_name(), key1, val1)
+            .expect("should set frontier word 1");
+    }
+
+    // Set dummy root values (not used by the append logic, but stored for completeness)
+    bridge
+        .storage_mut()
+        .set_item(
+            AggLayerBridge::let_root_lo_slot_name(),
+            Word::new([Felt::new_unchecked(0xdead), zero, zero, zero]),
+        )
+        .expect("should set LET root lo");
+    bridge
+        .storage_mut()
+        .set_item(
+            AggLayerBridge::let_root_hi_slot_name(),
+            Word::new([Felt::new_unchecked(0xbeef), zero, zero, zero]),
+        )
+        .expect("should set LET root hi");
+}
+
 /// Sets up and returns the transaction context for executing a B2AGG (bridge-out) note against
 /// the bridge account.
 ///
@@ -299,9 +370,13 @@ pub async fn tx_consume_claim_note(data_source: ClaimDataSource) -> Result<Trans
 /// the faucet in the bridge. Only the returned B2AGG transaction context is benchmarked — the
 /// prerequisite CONFIG_AGG_BRIDGE transaction is not included in cycle/time measurements.
 ///
+/// When `pre_populate_leaves` is `Some(n)`, the bridge account's LET frontier is pre-populated
+/// with dummy values for `n` leaves before building the B2AGG transaction context. This allows
+/// benchmarking with different frontier occupancy levels.
+///
 /// The setup uses the first entry from the MTF (Merkle Tree Frontier) test vectors for destination
 /// data.
-pub async fn tx_consume_b2agg_note() -> Result<TransactionContext> {
+pub async fn tx_consume_b2agg_note(pre_populate_leaves: Option<u32>) -> Result<TransactionContext> {
     let vectors = &*miden_agglayer::testing::SOLIDITY_MTF_VECTORS;
 
     let mut builder = MockChain::builder();
@@ -317,11 +392,17 @@ pub async fn tx_consume_b2agg_note() -> Result<TransactionContext> {
     })?;
 
     // CREATE BRIDGE ACCOUNT
-    let bridge_account = create_existing_bridge_account(
+    let mut bridge_account = create_existing_bridge_account(
         builder.rng_mut().draw_word(),
         bridge_admin.id(),
         ger_manager.id(),
     );
+
+    // Pre-populate frontier before adding the account to the mock chain
+    if let Some(num_leaves) = pre_populate_leaves {
+        populate_let_frontier(&mut bridge_account, num_leaves);
+    }
+
     builder.add_account(bridge_account.clone())?;
 
     // CREATE AGGLAYER FAUCET ACCOUNT (with conversion metadata for FPI)
@@ -335,20 +416,23 @@ pub async fn tx_consume_b2agg_note() -> Result<TransactionContext> {
         builder.rng_mut().draw_word(),
         "AGG",
         8,
-        Felt::new(FungibleAsset::MAX_AMOUNT),
-        Felt::new(bridge_amount),
+        FungibleAsset::MAX_AMOUNT.into(),
+        Felt::new_unchecked(bridge_amount),
         bridge_account.id(),
-        &origin_token_address,
-        origin_network,
-        scale,
-        MetadataHash::from_token_info("AGG", "AGG", 8),
     );
     builder.add_account(faucet.clone())?;
 
     // CREATE CONFIG_AGG_BRIDGE NOTE (registers faucet + token address in bridge)
+    let metadata_hash = MetadataHash::from_token_info("AGG", "AGG", 8);
     let config_note = ConfigAggBridgeNote::create(
-        faucet.id(),
-        &origin_token_address,
+        ConversionMetadata {
+            faucet_account_id: faucet.id(),
+            origin_token_address,
+            scale,
+            origin_network,
+            is_native: false,
+            metadata_hash,
+        },
         bridge_admin.id(),
         bridge_account.id(),
         builder.rng_mut(),

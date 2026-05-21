@@ -61,7 +61,7 @@ fn output_note_size_hint_matches_serialized_length() -> anyhow::Result<()> {
         .with_tag(NoteTag::with_account_target(sender_id));
 
     // Build storage with at least two values.
-    let storage = NoteStorage::new(vec![Felt::new(1), Felt::new(2)])?;
+    let storage = NoteStorage::new(vec![Felt::ONE, Felt::new_unchecked(2)])?;
 
     let serial_num = Word::empty();
     let script = NoteScript::mock();

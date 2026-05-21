@@ -40,14 +40,21 @@ asset and the destination network/address. The bridge account consumes this note
 
 1. Validates that the asset's faucet is registered in the faucet registry, and that the
    destination network is not Miden's AggLayer network ID.
-2. FPIs to the faucet (`agglayer_faucet::asset_to_origin_asset`) to obtain the scaled
-   U256 amount, origin token address, and origin network.
-3. FPIs to the faucet (`agglayer_faucet::get_metadata_hash`) to obtain the metadata hash.
+2. Reads conversion metadata (origin token address, origin network, scale) for the asset's
+   faucet from the bridge's local `faucet_metadata_map`. No FPI into the faucet is required;
+   metadata was written to the map at registration time.
+3. Reads the precomputed metadata hash for the same faucet from `faucet_metadata_map`.
 4. Constructs a leaf-data structure (leaf type, origin network, origin token address,
    destination network, destination address, amount, metadata hash).
 5. Computes the Keccak-256 leaf value and appends it to the Local Exit Tree (LET).
-6. Creates a public [`BURN`](#45-burn-generated) note targeting the faucet, which burns the asset and
-   decreases the faucet's token supply.
+6. Dispatches on the faucet's `is_native` flag (also read from the registry):
+   - **Wrapped faucet (`is_native = false`):** the bridge does not hold the asset onchain; it
+     emits a public [`BURN`](#45-burn-generated) note targeting the faucet, which the faucet
+     consumes to burn the asset and decrement the faucet's token supply.
+   - **Miden-native faucet (`is_native = true`):** the bridge does not hold mint/burn authority
+     for the faucet, so it cannot emit a `BURN`. Instead it locks the asset by adding it to
+     the bridge's own vault (`native_account::add_asset`); a later bridge-in claim for the
+     same token can pay out from this locked balance.
 
 The leaf appended to the LET can later be included in a Merkle proof on any
 AggLayer-connected chain to claim the bridged asset.
@@ -73,12 +80,18 @@ The `CLAIM` note is consumed by the bridge account:
 4. Updates the claimed global index (CGI) chain hash:
    `NEW_CGI = Keccak256(OLD_CGI, Keccak256(GLOBAL_INDEX, LEAF_VALUE))`.
 5. Checks and sets the claim nullifier to prevent double-claiming.
-6. Looks up the faucet from the origin token address via the token registry.
+6. Looks up the faucet from the `(origin_token_address, origin_network)` pair via the token
+   registry.
 7. Verifies the claim amount against the leaf's U256 amount and the faucet's scale factor.
-8. Creates a [`MINT`](#47-mint-generated) note targeting the faucet.
-
-The faucet consumes the `MINT` note, mints the specified amount, and creates a [`P2ID`](#46-p2id-generated) note
-that delivers the minted assets to the recipient's Miden account.
+8. Dispatches on the faucet's `is_native` flag:
+   - **Wrapped faucet (`is_native = false`):** the bridge emits a [`MINT`](#47-mint-generated)
+     note targeting the faucet. The faucet consumes the `MINT` note, mints the specified amount,
+     and creates a [`P2ID`](#46-p2id-generated) note delivering the minted assets to the
+     recipient's Miden account.
+   - **Miden-native faucet (`is_native = true`):** the bridge cannot mint via the faucet, so
+     it removes the asset from its own vault (`native_account::remove_asset`) and emits a
+     `P2ID` note targeted at the recipient directly. The asset must have been previously
+     locked into the bridge by a prior bridge-out for the same token.
 
 Inside `bridge_in::claim`, immediately after proof and leaf data are piped into memory, the bridge asserts the leaf's `destination_network` equals the global MASM constant `MIDEN_NETWORK_ID` in `asm/agglayer/common/constants.masm` (after `swap_u32_bytes` on the LE-packed memory limb). The same value is exposed to Rust as `AggLayerBridge::MIDEN_NETWORK_ID`, matching Solidity test vectors.
 This mirrors Solidity `claimAsset` destination-network checks.
@@ -117,11 +130,22 @@ TODO: Duplicate GER insertions are silently accepted
 
 ![Faucet registration flow](diagrams/faucet-registration.png)
 
-Each bridged token requires a dedicated AggLayer faucet on Miden. The Bridge Operator
-creates [`CONFIG_AGG_BRIDGE`](#43-config_agg_bridge) notes to register faucets. The bridge consumes these notes,
-asserting the sender is the bridge admin, then registers the faucet in both the faucet
-registry and the token registry. For a detailed description of the faucet and token
-registries, see [Section 7](#7-faucet-registry).
+Each bridged token (wrapped or Miden-native) requires registration in the bridge's
+registries. The Bridge Operator creates [`CONFIG_AGG_BRIDGE`](#43-config_agg_bridge) notes
+carrying the faucet's account ID, the origin token address, the origin network, the scale
+factor, the metadata hash, and an `is_native` flag. The bridge consumes the note (asserting
+the sender is the bridge admin) and runs two calls back-to-back:
+
+- `bridge_config::register_faucet` writes the registration flag plus `is_native` into
+  `faucet_registry_map`, the conversion metadata into `faucet_metadata_map` (sub-keys 0 and
+  1), and the `(origin_token_address, origin_network) → faucet_id` mapping into
+  `token_registry_map`.
+- `bridge_config::store_faucet_metadata_hash` writes the precomputed metadata hash into
+  `faucet_metadata_map` (sub-keys 2 and 3).
+
+The split is necessary because the 16-element MASM stack cannot fit all 18 registration
+felts at once. For a detailed description of the registries, see
+[Section 7](#7-faucet-registry).
 
 TODO: Faucet registrations are permanent; no remapping or deregistration is supported
 ([#2704](https://github.com/0xMiden/protocol/issues/2704),
@@ -187,7 +211,7 @@ Bridges an asset out of Miden into the AggLayer:
 | | |
 |-|-|
 | **Invocation** | `call` |
-| **Inputs** | `[origin_token_addr(5), faucet_id_suffix, faucet_id_prefix, pad(9)]` |
+| **Inputs** | `[origin_token_addr(5), origin_network, faucet_id_suffix, faucet_id_prefix, pad(8)]` |
 | **Outputs** | `[pad(16)]` |
 | **Context** | Consuming a `CONFIG_AGG_BRIDGE` note on the bridge account |
 | **Panics** | Note sender is not the bridge admin |
@@ -197,9 +221,13 @@ Asserts the note sender matches the bridge admin stored in
 
 1. Writes `[0, 0, faucet_id_suffix, faucet_id_prefix] -> [1, 0, 0, 0]` into the
    `faucet_registry_map` map slot.
-2. Hashes `origin_token_addr` (5 felts) using `Poseidon2::hash_elements` and writes
-   `hash(origin_token_addr) -> [0, 0, faucet_id_suffix, faucet_id_prefix]` into the
-   `token_registry_map` map slot.
+2. Hashes `origin_token_addr` (5 felts) together with `origin_network` (1 felt) using
+   `Poseidon2::hash_elements` and writes
+   `hash(origin_token_addr, origin_network) -> [0, 0, faucet_id_suffix, faucet_id_prefix]`
+   into the `token_registry_map` map slot. The `(origin_network, origin_token_address)`
+   pair is the canonical asset identity (matching the Solidity `tokenInfoHash`); keying on
+   the address alone would let a CLAIM bound to one origin network resolve to the faucet of
+   the same address on another network.
 
 #### `bridge_config::update_ger`
 
@@ -224,7 +252,7 @@ Asserts the note sender matches the GER manager stored in
 | **Inputs** | `[PROOF_DATA_KEY, LEAF_DATA_KEY, faucet_mint_amount, pad(7)]` on the operand stack; proof data and leaf data in the advice map keyed by `PROOF_DATA_KEY` and `LEAF_DATA_KEY` respectively |
 | **Outputs** | `[pad(16)]` |
 | **Context** | Consuming a `CLAIM` note on the bridge account |
-| **Panics** | Leaf `destination_network` does not match `agglayer::common::constants::MIDEN_NETWORK_ID`; invalid leaf type; GER not known; global index invalid; Merkle proof verification failed; origin token address not in token registry; claim already spent; amount conversion mismatch |
+| **Panics** | Leaf `destination_network` does not match `agglayer::common::constants::MIDEN_NETWORK_ID`; invalid leaf type; GER not known; global index invalid; Merkle proof verification failed; (origin token address, origin network) pair not in token registry; claim already spent; amount conversion mismatch |
 
 Validates a bridge-in claim and creates a MINT note targeting the faucet:
 
@@ -245,8 +273,10 @@ Validates a bridge-in claim and creates a MINT note targeting the faucet:
    `Poseidon2::hash_elements(leaf_index, source_bridge_network)` to prevent
    double-claiming. For mainnet deposits, `source_bridge_network = 0`. For rollup
    deposits, `source_bridge_network = rollup_index + 1`.
-6. Looks up the faucet account ID from the origin token address via
-   `bridge_config::lookup_faucet_by_token_address`.
+6. Looks up the faucet account ID from the `(origin_token_address, origin_network)` pair via
+   `bridge_config::lookup_faucet_by_token_address`. Resolving by the full pair (rather than the
+   address alone) prevents same-address cross-network collisions where a CLAIM proven on one
+   origin network could resolve to a faucet registered on another.
 7. Verifies the `faucet_mint_amount` against the leaf data's U256 amount and the
    faucet's scale factor (via FPI to `agglayer_faucet::get_scale`), using
    `asset_conversion::verify_u256_to_native_amount_conversion`.
@@ -262,7 +292,7 @@ Validates a bridge-in claim and creates a MINT note targeting the faucet:
 | `agglayer::bridge::let_root_hi` | Value | -- | Upper word of the LET root | LET root high word (Keccak-256 upper 16 bytes) |
 | `agglayer::bridge::let_num_leaves` | Value | -- | `[count, 0, 0, 0]` | Number of leaves appended to the LET |
 | `agglayer::bridge::faucet_registry_map` | Map | `[0, 0, faucet_id_suffix, faucet_id_prefix]` | `[1, 0, 0, 0]` if registered | Registered faucet lookup |
-| `agglayer::bridge::token_registry_map` | Map | `Poseidon2::hash_elements(origin_token_addr[5])` | `[0, 0, faucet_id_suffix, faucet_id_prefix]` | Origin token address to faucet ID lookup |
+| `agglayer::bridge::token_registry_map` | Map | `Poseidon2::hash_elements(origin_token_addr[5] \|\| origin_network)` | `[0, 0, faucet_id_suffix, faucet_id_prefix]` | (Origin token address, origin network) to faucet ID lookup |
 | `agglayer::bridge::claim_nullifiers` | Map | `Poseidon2::hash_elements(leaf_index, source_bridge_network)` | `[1, 0, 0, 0]` if claimed | Prevents double-claiming of bridge-in deposits |
 | `agglayer::bridge::cgi_chain_hash_lo` | Value | -- | Lower word of the CGI chain hash | CGI chain hash low word (Keccak-256 lower 16 bytes) |
 | `agglayer::bridge::cgi_chain_hash_hi` | Value | -- | Upper word of the CGI chain hash | CGI chain hash high word (Keccak-256 upper 16 bytes) |
@@ -291,14 +321,19 @@ modules in `asm/agglayer/common/`.
 | | |
 |-|-|
 | **Invocation** | `call` |
-| **Inputs** | `[amount, tag, note_type, RECIPIENT, pad(9)]` |
+| **Inputs** | `[ASSET_KEY, ASSET_VALUE, tag, note_type, RECIPIENT, pad(2)]` |
 | **Outputs** | `[note_idx, pad(15)]` |
 | **Context** | Consuming a `MINT` note on the faucet account |
-| **Panics** | Faucet owner verification fails; minting exceeds supply |
+| **Panics** | Faucet owner verification fails; minting exceeds supply; the asset stored in the MINT note does not belong to the consuming faucet |
 
-Re-export of `miden::standards::faucets::network_fungible::mint_and_send`. Mints the
-specified amount and creates an output note with the given recipient. Requires the
-faucet's owner (the bridge account) to be the creator of this note (the bridge is stored in `Ownable2Step` storage slot as the owner; the faucet's `mint_and_send` executes the current access policy via `exec.policy_manager::execute_mint_policy`).
+Re-export of `miden::standards::faucets::fungible::mint_and_send`. Mints the asset
+identified by `ASSET_KEY` / `ASSET_VALUE` and creates an output note with the given
+recipient. Requires the faucet's owner (the bridge account) to be the creator of this note
+(the bridge is stored in `Ownable2Step` storage slot as the owner; the faucet's
+`mint_and_send` executes the current access policy via
+`exec.policy_manager::execute_mint_policy`). `mint_and_send` then derives the asset to mint
+for the active faucet and panics if the stored `ASSET_KEY` does not belong to that faucet,
+which binds the MINT note to its resolved faucet (see §4.7).
 
 #### `agglayer_faucet::get_metadata_hash`
 
@@ -341,7 +376,7 @@ Converts a Miden-native asset amount to the origin chain's U256 representation:
 
 #### `agglayer_faucet::burn`
 
-This is a re-export of `miden::standards::faucets::basic_fungible::burn`. It burns the fungible asset from the active note, decreasing the faucet's token supply.
+This is a re-export of `miden::standards::faucets::fungible::burn`. It burns the fungible asset from the active note, decreasing the faucet's token supply.
 
 | | |
 |-|-|
@@ -362,7 +397,7 @@ This is a re-export of `miden::standards::faucets::basic_fungible::burn`. It bur
 | `agglayer::faucet::metadata_hash_hi` | Value | Upper word of the metadata hash | Metadata hash high word (4 u32 felts) |
 
 **Companion component storage slots:** The faucet account also includes storage from
-companion components required by `network_fungible::mint_and_send`:
+companion components required by `fungible::mint_and_send`:
 
 - `Ownable2Step` owner config slot: stores the bridge account ID as owner.
 - `OwnerControlled` slots (3): `active_policy_proc_root`, `allowed_policy_proc_roots`,
@@ -534,15 +569,16 @@ The storage is divided into three logical regions: proof data (felts 0-535), lea
 |-------|-------|
 | `serial_num` | Random (`rng.draw_word()`) |
 | `script` | `config_agg_bridge.masm` |
-| `storage` | 7 felts -- see layout below |
+| `storage` | 8 felts -- see layout below |
 
-**Storage layout (7 felts):**
+**Storage layout (8 felts):**
 
 | Index | Field | Encoding |
 |-------|-------|----------|
 | 0-4 | `origin_token_addr` | 5 x u32 felts (20-byte Ethereum address) |
-| 5 | `faucet_id_suffix` | Felt (AccountId suffix) |
-| 6 | `faucet_id_prefix` | Felt (AccountId prefix) |
+| 5 | `origin_network` | Felt (LE-packed u32 origin network identifier) |
+| 6 | `faucet_id_suffix` | Felt (AccountId suffix) |
+| 7 | `faucet_id_prefix` | Felt (AccountId prefix) |
 
 **Consumption:** Script validates attachment target, loads storage, and calls
 `bridge_config::register_faucet` (which asserts sender is bridge admin and performs
@@ -719,44 +755,45 @@ to mint and distribute assets to the recipient.
 |-------|-------|
 | `serial_num` | Derived from `PROOF_DATA_KEY` (Poseidon2 hash of the CLAIM proof data) |
 | `script` | Standard MINT script (`miden::standards::notes::mint::main`) |
-| `storage` | 18 felts -- see layout below |
+| `storage` | 22 felts -- see layout below |
 
-**Storage layout (18 felts):**
+**Storage layout (22 felts):**
 
 | Index | Field | Encoding |
 |-------|-------|----------|
-| 0 | `tag` | Note tag for the P2ID output note (targeting the destination account) |
-| 1 | `amount` | Scaled-down Miden token amount to mint |
-| 2 | `attachment_kind` | 0 (none - the inner P2ID note has no attachment) |
-| 3 | `attachment_scheme` | 0 (none) |
-| 4-7 | `attachment` | `[0, 0, 0, 0]` (empty) |
-| 8-11 | `p2id_script_root` | Script root of the P2ID note |
-| 12-15 | `serial_num` | Serial number for the P2ID note (same as PROOF_DATA_KEY) |
-| 16 | `account_id_suffix` | Destination account suffix |
-| 17 | `account_id_prefix` | Destination account prefix |
+| 0-3 | `P2ID_SCRIPT_ROOT` | Script root of the P2ID output note |
+| 4-7 | `SERIAL_NUM` | Serial number for the P2ID note (same as PROOF_DATA_KEY) |
+| 8-11 | `ASSET_KEY` | Vault key of the fungible asset to mint (faucet ID baked in) |
+| 12-15 | `ASSET_VALUE` | Value word of the asset: `[native_amount, 0, 0, 0]` |
+| 16 | `dest_tag` | Note tag for the P2ID output note (targeting the destination account) |
+| 17-19 | padding | Zeros so the P2ID storage below stays word-aligned |
+| 20 | `account_id_suffix` | Destination account suffix |
+| 21 | `account_id_prefix` | Destination account prefix |
 
 **Consumption:**
 
-The standard MINT script for public note creation loads the 18 storage items from the MINT note note storage and calls the faucet's
-`mint_and_send` procedure (re-exported from `network_fungible::mint_and_send`).
+The standard MINT script for public note creation loads the 22 storage items from the MINT
+note storage, reconstructs the P2ID `RECIPIENT` from `P2ID_SCRIPT_ROOT`, `SERIAL_NUM`, and
+the P2ID storage at `[20..21]`, and calls the faucet's `mint_and_send` procedure
+(re-exported from `fungible::mint_and_send`) with the stored `ASSET_KEY`, `ASSET_VALUE`,
+`dest_tag`, and `RECIPIENT`.
 
-Before minting, `mint_and_send` executes the active mint policy via
-`policy_manager::execute_mint_policy`. For AggLayer faucets, the active policy is
-`owner_controlled::owner_only`, which calls `ownable2step::assert_sender_is_owner`. This
-asserts that the MINT note's sender matches the faucet's owner (the bridge account, set
-via the `Ownable2Step` companion component at account creation time). This ensures only
-the bridge can trigger minting on the faucet.
-
-After the policy check passes, `mint_and_send` mints the specified amount and creates a
-P2ID output note for the recipient using the storage items (script root, serial number,
-destination account ID, tag).
+`mint_and_send` saves the supplied `ASSET_KEY` in a local, runs the active mint policy
+(`owner_controlled::owner_only` for AggLayer faucets, which asserts the MINT note's sender
+is the faucet's owner -- the bridge account, set via `Ownable2Step` at account creation),
+and creates the skeleton P2ID output note via `output_note::create`. It then derives the
+asset to mint for the active faucet and panics if the stored `ASSET_KEY` does not belong to
+that faucet, which binds the MINT note to its issuing faucet: a MINT note whose `ASSET_KEY`
+was resolved for faucet A cannot be consumed by any other faucet B even if both share the
+bridge as owner. Once the bind passes, the minted asset is attached to the P2ID output
+note via `output_note::add_asset`.
 
 #### Permissions
 
 | Role | Enforcement |
 |------|------------|
 | **Issuer** | Bridge account only -- **enforced** by faucet's `owner_only` mint policy via `Ownable2Step` (asserts note sender is the faucet's owner, i.e. the bridge) |
-| **Consumer** | Target faucet only -- **enforced** via `NetworkAccountTarget` attachment |
+| **Consumer** | Target faucet only -- **enforced** by `mint_and_send`, which panics if the stored `ASSET_KEY` does not belong to the consuming faucet. The `NetworkAccountTarget` attachment is retained as the network-routing primitive and is not a consume-side bind |
 
 ---
 
@@ -991,60 +1028,110 @@ Terminology:
   deployed wrapped ERC20 contract.
 
 A faucet must be registered in the [Bridge Contract](#31-bridge-account-component) before it can participate in bridging. The
-bridge maintains two registry maps:
+bridge maintains three registry maps, all keyed by faucet account ID and populated atomically
+by `bridge_config::register_faucet` during the [`CONFIG_AGG_BRIDGE`](#43-config_agg_bridge) note
+consumption:
 
 - **Faucet registry** (`agglayer::bridge::faucet_registry_map`): maps faucet account IDs
-  to a registration flag. Used during bridge-out to verify an asset's faucet is authorized
-  (see `bridge_config::assert_faucet_registered`).
+  to a registration value `[1, is_native, 0, 0]`. Used during bridge-out to verify an
+  asset's faucet is authorized (`bridge_config::assert_faucet_registered`) and, via the
+  `is_native` flag, to branch between burn/lock on bridge-out and mint/unlock on bridge-in.
 - **Token registry** (`agglayer::bridge::token_registry_map`): maps Poseidon2 hashes of
-  native token addresses to faucet account IDs. Used during bridge-in to look up the
-  correct faucet for a given origin token (see
-  `bridge_config::lookup_faucet_by_token_address`).
+  the `(origin_token_address, origin_network)` pair to faucet account IDs. Used during
+  bridge-in to look up the correct faucet for a given origin asset
+  (`bridge_config::lookup_faucet_by_token_address`). Keying on the pair (rather than the
+  address alone) matches the canonical asset identity used by Solidity's
+  `tokenInfoHash = keccak256(abi.encodePacked(originNetwork, originTokenAddress))` and
+  prevents same-address cross-network collisions.
+- **Faucet metadata map** (`agglayer::bridge::faucet_metadata_map`): stores all conversion
+  metadata — origin address, origin network, scale, and the precomputed
+  `keccak256(abi.encode(name, symbol, decimals))` metadata hash — for every registered
+  faucet. A single map with four sub-keys per faucet ID is enough to hold the full set:
 
-Both registries are populated atomically by `bridge_config::register_faucet` during the [`CONFIG_AGG_BRIDGE`](#43-config_agg_bridge) note consumption.
+  | Sub-key                                    | Value                                          |
+  | ------------------------------------------ | ---------------------------------------------- |
+  | `[0, 0, faucet_id_suffix, faucet_id_prefix]` | `[addr0, addr1, addr2, addr3]`                 |
+  | `[1, 0, faucet_id_suffix, faucet_id_prefix]` | `[addr4, origin_network, scale, 0]`            |
+  | `[2, 0, faucet_id_suffix, faucet_id_prefix]` | `[mh_lo0, mh_lo1, mh_lo2, mh_lo3]`             |
+  | `[3, 0, faucet_id_suffix, faucet_id_prefix]` | `[mh_hi0, mh_hi1, mh_hi2, mh_hi3]`             |
 
-### 7.1 Bridging-in: Registering non-native faucets on Miden
+  The metadata map lets `bridge_out` and `bridge_in` read conversion data from bridge-local
+  storage rather than issuing foreign-procedure-invocation (FPI) calls into the faucet; this
+  is required for native-token support, where the faucet is not under the bridge's control
+  and does not necessarily expose any AggLayer-specific procedures.
 
-When a new ERC20 token is bridged to Miden for the first time, a corresponding AggLayer
-faucet account must be created and registered. The faucet serves as the mint/burn
-authority for the wrapped token on Miden.
+### 7.1 Registering faucets on Miden
 
-The `AggLayerFaucet` struct (Rust, `src/faucet.rs`) captures the faucet-specific
-configuration:
+Every faucet that participates in bridging — whether it represents a wrapped foreign token
+or a Miden-native token — must be registered in the bridge's three registries before it can
+be referenced by a `B2AGG` (bridge-out) or `CLAIM` (bridge-in) note. Registration is the
+same flow for both kinds; the `is_native` flag in the `CONFIG_AGG_BRIDGE` note storage tells
+the bridge which dispatch path to take for each future bridge operation against that faucet.
 
-- Token metadata: symbol, decimals, max_supply, token_supply (TODO Missing information about the token name ([#2585](https://github.com/0xMiden/protocol/issues/2585)))
-- Origin token address: the ERC20 contract address on the origin chain
-- Origin network: the chain ID of the origin chain
-- Scale factor: the exponent used to convert between EVM U256 amounts and Field elements on Miden
-- Metadata hash: `keccak256(abi.encode(name, symbol, decimals))`. This is precomputed by the bridge admin at faucet creation time and is currently not verified onchain (TODO Verify metadata hash onchain ([#2586](https://github.com/0xMiden/protocol/issues/2586)))
+The `AggLayerFaucet` Rust struct (`src/faucet.rs`) holds only
+token metadata — symbol, decimals, max supply, and token supply
+(TODO Missing token name ([#2585](https://github.com/0xMiden/protocol/issues/2585))).
+Conversion metadata (origin address, origin network, scale, and metadata hash) is
+*not* stored on the faucet; it is carried by the `CONFIG_AGG_BRIDGE` note at registration
+time and written directly into the bridge's `faucet_metadata_map`. The metadata hash is
+precomputed by the bridge admin and is currently not verified onchain
+(TODO Verify metadata hash onchain ([#2586](https://github.com/0xMiden/protocol/issues/2586))).
 
 Registration is performed via [`CONFIG_AGG_BRIDGE`](#43-config_agg_bridge) notes. The bridge
-operator creates a `CONFIG_AGG_BRIDGE` note containing the faucet's account ID and the
-origin token address, then sends it to the bridge account. On consumption, the note
-script calls `bridge_config::register_faucet`, which performs a two-step registration:
+operator creates a `CONFIG_AGG_BRIDGE` note carrying the faucet's account ID, origin token
+address, origin network, scale, metadata hash, and the `is_native` flag, then sends it to
+the bridge. On consumption, the note script calls `bridge_config::register_faucet` (plus
+`store_faucet_metadata_hash` for the metadata hash — split into two calls because the
+16-element MASM stack cannot fit all 18 registration felts at once). These procedures
+perform the following writes:
 
-1. Writes a registration flag under the faucet ID key in the `faucet_registry_map`:
-   `[0, 0, faucet_id_suffix, faucet_id_prefix]` -> `[1, 0, 0, 0]`.
-2. Hashes the origin token address using Poseidon2 and writes
-   the mapping into the `token_registry_map`:
-   `hash(origin_token_addr)` -> `[0, 0, faucet_id_suffix, faucet_id_prefix]`.
+1. `faucet_registry_map`: `[0, 0, faucet_id_suffix, faucet_id_prefix]` → `[1, is_native, 0, 0]`.
+2. `faucet_metadata_map`: origin-address + origin-network + scale under sub-keys
+   `[0, 0, fid_s, fid_p]` and `[1, 0, fid_s, fid_p]`; metadata hash (lo/hi) under
+   `[2, 0, fid_s, fid_p]` and `[3, 0, fid_s, fid_p]`.
+3. `token_registry_map`: `Poseidon2(origin_token_addr, origin_network)` → `[0, 0, fid_s, fid_p]`.
+   Keying on the pair (not the address alone) matches Solidity's `tokenInfoHash` and
+   prevents same-address cross-network collisions.
 
-The token registry enables the bridge to resolve which Miden-side faucet corresponds to a given
-origin token address during CLAIM note processing. When the bridge
-processes a [`CLAIM`](#42-claim) note, it reads the origin token address from the leaf data and calls
-`bridge_config::lookup_faucet_by_token_address` to find the registered faucet. This
-lookup hashes the address with Poseidon2 and retrieves the faucet ID from the token
-registry map. If the token address is not registered, the `CLAIM` note consumption will fail.
+The token registry enables the bridge to resolve which Miden-side faucet corresponds to a
+given origin asset during CLAIM note processing. When the bridge processes a
+[`CLAIM`](#42-claim) note, it reads the origin token address and origin network from the leaf
+data and calls `bridge_config::lookup_faucet_by_token_address` to find the registered
+faucet. If the `(origin_token_address, origin_network)` pair is not registered, the `CLAIM`
+note consumption will fail.
 
-This means that the bridge admin must register the faucet on the Miden side before the corresponding tokens can be bridged in.
+The bridge admin is a trusted role, and is the sole entity that can register faucets on
+the Miden side (enforced by the caller restriction on
+[`bridge_config::register_faucet`](#bridge_configregister_faucet)).
 
-The bridge admin is a trusted role, and is the sole entity that can register faucets on the Miden side (due to the caller restriction on [`bridge_config::register_faucet`](#bridge_configregister_faucet)).
+#### Wrapped (`is_native = false`) vs Miden-native (`is_native = true`) faucets
 
-### 7.2 Bridging-out: How Miden-native tokens are registered on other chains
+The difference between the two kinds is what they represent and how the bridge dispatches
+operations against them — *not* how they are registered.
 
-When an asset is bridged out from Miden, [`bridge_out::bridge_out`](#bridge_outbridge_out) constructs a leaf for
-the Local Exit Tree. The leaf includes the metadata hash, which the bridge fetches from
-the faucet via FPI (`agglayer_faucet::get_metadata_hash`), as well as the other leaf data fields, including origin network and origin token address.
+- **Wrapped faucets** represent a foreign ERC20 token bridged into Miden. The bridge holds
+  mint/burn authority for the faucet, so a bridge-in CLAIM emits a `MINT` note that the
+  faucet consumes to mint the wrapped asset, and a bridge-out B2AGG emits a `BURN` note that
+  the faucet consumes to destroy it. For these faucets, `origin_token_address` is the
+  foreign EVM token address.
+- **Miden-native faucets** represent a Miden-native fungible asset that is being made
+  bridgeable. The bridge does *not* own the faucet and cannot mint or burn through it, so it
+  uses lock/unlock semantics instead: bridge-out adds the asset to the bridge's own vault
+  (`lock_asset`), and bridge-in claims the same token by removing the asset from the vault
+  and emitting a `P2ID` note directly (`unlock_and_send`). For these faucets,
+  `origin_token_address` is the faucet's own `AccountId` in the [Embedded
+  Format](#62-embedded-format), and `origin_network` is Miden's own network ID.
+
+In both cases the bridge admin drives registration via the same `CONFIG_AGG_BRIDGE` note;
+the bridge admin is responsible for setting `is_native` correctly for the faucet at hand.
+
+### 7.2 Bridging-out: How tokens are registered on other chains
+
+When an asset is bridged out from Miden, [`bridge_out::bridge_out`](#bridge_outbridge_out)
+constructs a leaf for the Local Exit Tree. The metadata hash, origin token address, origin
+network, and scale factor are all read from the bridge's local `faucet_metadata_map`
+(`bridge_config::get_faucet_conversion_info` and `bridge_config::get_faucet_metadata_hash`).
+No FPI into the faucet is required — the bridge is fully self-contained for conversion data.
 
 On the EVM destination chain, when a user claims the bridged asset via
 `PolygonZkEVMBridgeV2.claimAsset()`, the wrapped token is deployed lazily on first claim.
@@ -1054,22 +1141,35 @@ as a parameter to `claimAsset()`. The EVM bridge verifies that
 no wrapped token exists yet, the bridge deploys a new `TokenWrapped` ERC20 using the
 decoded name, symbol, and decimals from the metadata bytes.
 
-#### Miden-native faucets
-
-A Miden-native faucet uses the same storage
-layout and registration flow as a wrapped faucet. The key difference is what values are
-stored in the conversion metadata:
+For Miden-native faucets, the registered metadata uses:
 
 - `origin_token_address`: the faucet's own `AccountId` as per the [Embedded Format](#62-embedded-format).
 - `origin_network`: Miden's network ID as assigned by AggLayer (currently unassigned).
-- `metadata_hash`: `keccak256(abi.encode(name, symbol, decimals))` - same as for wrapped
+- `metadata_hash`: `keccak256(abi.encode(name, symbol, decimals))` — same as for wrapped
   faucets.
 
-On the EVM side, `claimAsset()` sees `originNetwork != networkID` (foreign asset), so it
-follows the wrapped token path: computes
+On the EVM side, `claimAsset()` sees `originNetwork != networkID` (foreign asset) for a
+Miden-native token, so it follows the wrapped token path: computes
 `tokenInfoHash = keccak256(abi.encodePacked(originNetwork, originTokenAddress))`, and
 deploys a new `TokenWrapped` ERC20 via `CREATE2` on first claim, minting on subsequent
-claims. The `CREATE2` salt is `tokenInfoHash`, so the wrapper address is deterministic
-from the `(originNetwork, originTokenAddress)` pair. The metadata bytes provided by the
-claimer (which must hash to the leaf's `metadataHash`) are used to initialize the wrapped
-token's name, symbol, and decimals.
+claims.
+
+### 7.3 Native vs non-native paths on the Miden side
+
+The `is_native` flag recorded in `faucet_registry_map` splits the bridge's own Miden-side
+behavior on both directions:
+
+| Direction    | `is_native = false` (wrapped / foreign)                                      | `is_native = true` (Miden-native)                                                        |
+| ------------ | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Bridge-out   | `bridge_out::create_burn_note` — emits a BURN note consumed by the faucet.   | `bridge_out::lock_asset` — `native_account::add_asset` locks the asset in the bridge vault. No BURN note is emitted. |
+| Bridge-in    | `bridge_in_output::build_mint_output_note` — emits a MINT note consumed by the faucet. | `bridge_in_output::unlock_and_send` — `native_account::remove_asset` unlocks from the vault, then emits a P2ID note directly to the recipient. No MINT note is emitted. |
+
+The LET leaf is constructed identically in both bridge-out branches. The native branch
+does not require the bridge to be the faucet's owner, and `ownable2step::assert_sender_is_owner`
+is not invoked on the native path. The P2ID note emitted by `unlock_and_send` uses the
+`PROOF_DATA_KEY` as its serial number, which makes the note commitment deterministic for
+a given claim and prevents double-spend within the same claim.
+
+This mirrors `PolygonZkEVMBridgeV2.claimAsset()`'s handling of
+`originNetwork == networkID`: the EVM bridge transfers native tokens from / to its own
+balance instead of minting / burning them via the token contract.

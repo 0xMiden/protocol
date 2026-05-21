@@ -48,8 +48,10 @@ async fn execute_program_with_default_host(
     let stack_inputs = StackInputs::new(&[]).unwrap();
     let advice_inputs = AdviceInputs::default();
 
-    let processor =
-        FastProcessor::new(stack_inputs).with_advice(advice_inputs).with_debugging(true);
+    let processor = FastProcessor::new(stack_inputs)
+        .with_advice(advice_inputs)
+        .map_err(ExecutionError::advice_error_no_context)?
+        .with_debugging(true);
     processor.execute(&program, &mut host).await
 }
 

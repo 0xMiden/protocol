@@ -51,7 +51,7 @@ async fn p2ide_script_success_without_reclaim_or_timelock() -> anyhow::Result<()
         AssetVault::new(&[fungible_asset])?,
         target_account.storage().clone(),
         target_account.code().clone(),
-        Felt::new(2),
+        Felt::new_unchecked(2),
     );
     assert_eq!(
         executed_transaction_2.final_account().to_commitment(),
@@ -89,7 +89,7 @@ async fn p2ide_script_success_timelock_unlock_before_reclaim_height() -> anyhow:
         AssetVault::new(&[fungible_asset])?,
         target_account.storage().clone(),
         target_account.code().clone(),
-        Felt::new(2),
+        Felt::new_unchecked(2),
     );
     assert_eq!(
         executed_transaction_1.final_account().to_commitment(),
@@ -165,7 +165,7 @@ async fn p2ide_script_timelocked_reclaim_disabled() -> anyhow::Result<()> {
         AssetVault::new(&[fungible_asset])?,
         target_account.storage().clone(),
         target_account.code().clone(),
-        Felt::new(2),
+        Felt::new_unchecked(2),
     );
 
     assert_eq!(final_tx.final_account().to_commitment(), target_after.to_commitment());
@@ -216,7 +216,7 @@ async fn p2ide_script_reclaim_fails_before_timelock_expiry() -> anyhow::Result<(
         AssetVault::new(&[fungible_asset])?,
         sender_account.storage().clone(),
         sender_account.code().clone(),
-        Felt::new(2),
+        Felt::new_unchecked(2),
     );
 
     assert_eq!(
@@ -300,7 +300,7 @@ async fn p2ide_script_reclaimable_timelockable() -> anyhow::Result<()> {
         AssetVault::new(&[fungible_asset])?,
         target_account.storage().clone(),
         target_account.code().clone(),
-        Felt::new(2),
+        Felt::new_unchecked(2),
     );
 
     assert_eq!(final_tx.final_account().to_commitment(), target_after.to_commitment());
@@ -346,7 +346,7 @@ async fn p2ide_script_reclaim_success_after_timelock() -> anyhow::Result<()> {
         AssetVault::new(&[fungible_asset])?,
         sender_account.storage().clone(),
         sender_account.code().clone(),
-        Felt::new(2),
+        Felt::new_unchecked(2),
     );
 
     assert_eq!(final_tx.final_account().to_commitment(), sender_after.to_commitment());

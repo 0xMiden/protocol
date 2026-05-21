@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::account::{Account, AccountId, AccountStorageMode, AccountVaultDelta};
+use miden_protocol::account::{Account, AccountId, AccountType, AccountVaultDelta};
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
 use miden_protocol::errors::MasmError;
@@ -441,7 +441,7 @@ async fn pswap_fill_test(
         let network_consumer = builder.add_account_from_builder(
             BASIC_AUTH,
             Account::builder(seed)
-                .storage_mode(AccountStorageMode::Public)
+                .account_type(AccountType::Public)
                 .with_component(BasicWallet)
                 .with_assets([FungibleAsset::new(eth_faucet.id(), fill_amount)?.into()]),
             miden_testing::AccountState::Exists,
@@ -766,8 +766,8 @@ async fn pswap_note_creator_reclaim_test() -> anyhow::Result<()> {
 #[case::fill_exceeds_requested(30, 0, ERR_PSWAP_FILL_EXCEEDS_REQUESTED)]
 #[case::fill_sum_u64_overflow(1u64 << 63, 1u64 << 63, ERR_PSWAP_FILL_SUM_OVERFLOW)]
 #[case::fill_sum_exceeds_max_asset_amount(
-    FungibleAsset::MAX_AMOUNT,
-    FungibleAsset::MAX_AMOUNT,
+    FungibleAsset::MAX_AMOUNT.as_u64(),
+    FungibleAsset::MAX_AMOUNT.as_u64(),
     ERR_PSWAP_NOT_VALID_ASSET_AMOUNT
 )]
 #[tokio::test]

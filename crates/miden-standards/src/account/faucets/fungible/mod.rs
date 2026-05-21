@@ -12,9 +12,9 @@ use miden_protocol::account::{
     Account,
     AccountBuilder,
     AccountComponent,
+    AccountComponentName,
     AccountProcedureRoot,
     AccountStorage,
-    AccountStorageMode,
     AccountType,
     StorageSlot,
     StorageSlotName,
@@ -82,7 +82,7 @@ procedure_root!(
 /// This component bundles the asset minting/burning procedures and the token metadata
 /// (name, description, logo URI, external link) together. Whether the faucet behaves like a
 /// "basic" public faucet or a network-style faucet is a function of the surrounding account
-/// configuration (storage mode, auth component, access control component, and policy manager
+/// configuration (account type, auth component, access control component, and policy manager
 /// configuration), not of the faucet component itself.
 ///
 /// It re-exports the procedures from `miden::standards::faucets::fungible`. When linking
@@ -96,8 +96,6 @@ procedure_root!(
 /// The `mint_and_send` procedure is gated by the active mint policy from the associated
 /// [`TokenPolicyManager`]. `receive_and_burn` can only be called from a note script and is gated
 /// by the active burn policy.
-///
-/// This component supports accounts of type [`AccountType::FungibleFaucet`].
 ///
 /// [builder]: crate::code_builder::CodeBuilder
 /// [`TokenPolicyManager`]: crate::account::policies::TokenPolicyManager
@@ -187,6 +185,11 @@ impl FungibleFaucet {
     /// The name of the component.
     pub const NAME: &'static str = "miden::standards::components::faucets::fungible_faucet";
 
+    /// Returns the canonical [`AccountComponentName`] of this component.
+    pub const fn name() -> AccountComponentName {
+        AccountComponentName::from_static_str(Self::NAME)
+    }
+
     /// The maximum number of decimals supported.
     pub const MAX_DECIMALS: u8 = 12;
 
@@ -275,7 +278,7 @@ impl FungibleFaucet {
     }
 
     /// Returns the token name.
-    pub fn name(&self) -> &TokenName {
+    pub fn token_name(&self) -> &TokenName {
         self.metadata.name()
     }
 
@@ -319,7 +322,7 @@ impl FungibleFaucet {
         let storage_schema =
             StorageSchema::new(schema_entries).expect("storage schema should be valid");
 
-        AccountComponentMetadata::new(Self::NAME, [AccountType::FungibleFaucet])
+        AccountComponentMetadata::new(Self::NAME)
             .with_description(
                 "Fungible faucet component bundling minting, burning, and token metadata",
             )
@@ -336,7 +339,7 @@ impl FungibleFaucet {
     }
 
     /// Returns the single storage slot for the token config word.
-    fn token_config_slot_value(&self) -> StorageSlot {
+    pub fn token_config_slot_value(&self) -> StorageSlot {
         let word = Word::new([
             self.token_supply.into(),
             self.max_supply.into(),
@@ -428,13 +431,13 @@ impl FungibleFaucet {
         let max_supply = AssetAmount::try_from(max_supply).map_err(|_| {
             FungibleFaucetError::MaxSupplyTooLarge {
                 actual: max_supply.as_canonical_u64(),
-                max: AssetAmount::MAX,
+                max: AssetAmount::MAX.as_u64(),
             }
         })?;
         let token_supply = AssetAmount::try_from(token_supply).map_err(|_| {
             FungibleFaucetError::MaxSupplyTooLarge {
                 actual: token_supply.as_canonical_u64(),
-                max: AssetAmount::MAX,
+                max: AssetAmount::MAX.as_u64(),
             }
         })?;
 
@@ -501,23 +504,20 @@ impl TryFrom<&Account> for FungibleFaucet {
 ///
 /// The behaviour of the resulting faucet (basic vs network-style) is determined entirely by the
 /// combination of arguments passed in:
-/// - `storage_mode`: typically [`AccountStorageMode::Public`] for basic or network faucets.
+/// - `account_type`: typically [`AccountType::Public`] for basic or network faucets.
 /// - `auth_method`: typically [`AuthMethod::SingleSig`] for basic faucets, or
 ///   [`AuthMethod::NetworkAccount`] for network-style faucets. [`AuthMethod::NoAuth`] is also
 ///   accepted for unauthenticated faucets.
 /// - `access_control`: [`AccessControl::AuthControlled`] for auth-only faucets, or
 ///   [`AccessControl::Ownable2Step`] / [`AccessControl::Rbac`] for owner-controlled faucets.
-/// - `token_policy_manager`: the unified [`TokenPolicyManager`] holding both mint and burn policy
-///   plus the shared [`PolicyAuthority`].
+/// - `token_policy_manager`: the unified [`TokenPolicyManager`] holding both mint and burn policy.
 ///
 /// The faucet itself, including all token metadata, is provided in the `faucet` parameter (see
 /// [`FungibleFaucet::builder`]).
-///
-/// [`PolicyAuthority`]: crate::account::policies::PolicyAuthority
 pub fn create_fungible_faucet(
     init_seed: [u8; 32],
     faucet: FungibleFaucet,
-    storage_mode: AccountStorageMode,
+    account_type: AccountType,
     auth_method: AuthMethod,
     access_control: AccessControl,
     token_policy_manager: TokenPolicyManager,
@@ -557,8 +557,7 @@ pub fn create_fungible_faucet(
     };
 
     let account = AccountBuilder::new(init_seed)
-        .account_type(AccountType::FungibleFaucet)
-        .storage_mode(storage_mode)
+        .account_type(account_type)
         .with_auth_component(auth_component)
         .with_component(faucet)
         .with_components(access_control)

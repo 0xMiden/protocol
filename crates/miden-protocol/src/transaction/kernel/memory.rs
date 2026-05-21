@@ -365,11 +365,11 @@ pub const NOTE_MEM_SIZE: MemoryAddress = 1024;
 // Each nullifier occupies a single word. A data section for each note consists of exactly 1024
 // elements and is laid out like so:
 //
-// ┌──────┬────────┬────────┬─────────┬────────────┬───────────┬──────────┬─────────────┬───────┬
-// │ NOTE │ SERIAL │ SCRIPT │ STORAGE │   ASSETS   │ RECIPIENT │ METADATA │ ATTACHMENTS │ NOTE  │
-// │  ID  │  NUM   │  ROOT  │  COMM   │ COMMITMENT │           │          │ COMMITMENT  │ ARGS  │
-// ├──────┼────────┼────────┼─────────┼────────────┼───────────┼──────────┼─────────────┼───────┼
-// 0      4        8        12        16           20          24         28           32
+// ┌──────────────┬────────┬────────┬────────────┬────────────┬──────────┬─────────────┬───────────┬───────┬
+// │ NOTE DETAILS │ SERIAL │ SCRIPT │  STORAGE   │   ASSETS   │ METADATA │ ATTACHMENTS │ RECIPIENT │ NOTE  │
+// │  COMMITMENT  │  NUM   │  ROOT  │ COMMITMENT │ COMMITMENT │          │  COMMITMENT │           │ ARGS  │
+// ├──────────────┼────────┼────────┼────────────┼────────────┼──────────┼─────────────┼───────────┼───────┼
+// 0              4        8        12           16           20         24            28          32
 //
 // ┬─────────┬────────┬───────┬─────────┬─────┬────────┬─────────┬─────────┐
 // │ STORAGE │  NUM   │ ASSET │  ASSET  │ ... │ ASSET  │  ASSET  │ PADDING │
@@ -402,14 +402,14 @@ pub const INPUT_NOTE_DATA_SECTION_OFFSET: MemoryAddress = 4_259_840;
 pub const NUM_INPUT_NOTES_PTR: MemoryAddress = INPUT_NOTE_SECTION_PTR;
 
 /// The offsets at which data of an input note is stored relative to the start of its data segment.
-pub const INPUT_NOTE_ID_OFFSET: MemoryOffset = 0;
+pub const INPUT_NOTE_DETAILS_COMMITMENT_OFFSET: MemoryOffset = 0;
 pub const INPUT_NOTE_SERIAL_NUM_OFFSET: MemoryOffset = 4;
 pub const INPUT_NOTE_SCRIPT_ROOT_OFFSET: MemoryOffset = 8;
 pub const INPUT_NOTE_STORAGE_COMMITMENT_OFFSET: MemoryOffset = 12;
 pub const INPUT_NOTE_ASSETS_COMMITMENT_OFFSET: MemoryOffset = 16;
-pub const INPUT_NOTE_RECIPIENT_OFFSET: MemoryOffset = 20;
-pub const INPUT_NOTE_METADATA_OFFSET: MemoryOffset = 24;
-pub const INPUT_NOTE_ATTACHMENT_OFFSET: MemoryOffset = 28;
+pub const INPUT_NOTE_METADATA_OFFSET: MemoryOffset = 20;
+pub const INPUT_NOTE_ATTACHMENTS_COMMITMENT_OFFSET: MemoryOffset = 24;
+pub const INPUT_NOTE_RECIPIENT_OFFSET: MemoryOffset = 28;
 pub const INPUT_NOTE_ARGS_OFFSET: MemoryOffset = 32;
 pub const INPUT_NOTE_NUM_STORAGE_ITEMS_OFFSET: MemoryOffset = 36;
 pub const INPUT_NOTE_NUM_ASSETS_OFFSET: MemoryOffset = 40;
@@ -430,10 +430,10 @@ pub const INPUT_NOTE_ASSETS_OFFSET: MemoryOffset = 44;
 // The total number of output notes for a transaction is stored in the bookkeeping section of the
 // memory. Data section of each note is laid out like so:
 //
-// ┌──────┬──────────┬───────────┬───────────────────────────────────────────┬
-// │ NOTE │          │           │ [dirty_flag, num_assets,                  │
-// │  ID  │ METADATA │ RECIPIENT │  num_attachments, total_attachment_words] │
-// ├──────┼──────────┼───────────┼───────────────────────────────────────────┼
+// ┌──────────────┬──────────┬───────────┬───────────────────────────────────────────┬
+// │ NOTE DETAILS │ METADATA │ RECIPIENT │ [dirty_flag, num_assets,                  │
+// │  COMMITMENT  │          │           │  num_attachments, total_attachment_words] │
+// ├──────────────┼──────────┼───────────┼───────────────────────────────────────────┼
 // 0      4          8           12
 //
 // ┬────────────┬────────────┬────────────┬────────────┬────────────┬
@@ -459,7 +459,7 @@ pub const INPUT_NOTE_ASSETS_OFFSET: MemoryOffset = 44;
 pub const OUTPUT_NOTE_SECTION_OFFSET: MemoryOffset = 16_777_216;
 
 /// The offsets at which data of an output note is stored relative to the start of its data segment.
-pub const OUTPUT_NOTE_ID_OFFSET: MemoryOffset = 0;
+pub const OUTPUT_NOTE_DETAILS_COMMITMENT_OFFSET: MemoryOffset = 0;
 pub const OUTPUT_NOTE_METADATA_OFFSET: MemoryOffset = 4;
 pub const OUTPUT_NOTE_RECIPIENT_OFFSET: MemoryOffset = 8;
 pub const OUTPUT_NOTE_DIRTY_FLAG_OFFSET: MemoryOffset = 12;
@@ -470,7 +470,7 @@ pub const OUTPUT_NOTE_ATTACHMENT_0_OFFSET: MemoryOffset = 16;
 pub const OUTPUT_NOTE_ATTACHMENT_1_OFFSET: MemoryOffset = 20;
 pub const OUTPUT_NOTE_ATTACHMENT_2_OFFSET: MemoryOffset = 24;
 pub const OUTPUT_NOTE_ATTACHMENT_3_OFFSET: MemoryOffset = 28;
-pub const OUTPUT_NOTE_ASSET_COMMITMENT_OFFSET: MemoryOffset = 32;
+pub const OUTPUT_NOTE_ASSETS_COMMITMENT_OFFSET: MemoryOffset = 32;
 pub const OUTPUT_NOTE_ASSETS_OFFSET: MemoryOffset = 36;
 
 // ASSETS

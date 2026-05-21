@@ -1,12 +1,6 @@
 use miden_processor::advice::AdviceInputs;
 use miden_protocol::account::auth::{AuthScheme, PublicKey};
-use miden_protocol::account::{
-    Account,
-    AccountBuilder,
-    AccountId,
-    AccountStorageMode,
-    AccountType,
-};
+use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountType};
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::note::NoteType;
 use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
@@ -60,8 +54,7 @@ fn create_multisig_smart_account(
     let multisig_account = AccountBuilder::new([0; 32])
         .with_auth_component(AuthMultisigSmart::new(config)?)
         .with_component(BasicWallet)
-        .account_type(AccountType::RegularAccountUpdatableCode)
-        .storage_mode(AccountStorageMode::Public)
+        .account_type(AccountType::Public)
         .with_assets(core::iter::once(asset.into()))
         .build_existing()?;
 
@@ -109,7 +102,7 @@ async fn test_multisig_smart_receive_asset_policy_overrides_default_three_of_thr
     )?;
     let mut mock_chain = mock_chain_builder.build()?;
 
-    let salt = Word::from([Felt::new(1); 4]);
+    let salt = Word::from([Felt::new_unchecked(1); 4]);
     let tx_summary = match mock_chain
         .build_tx_context(multisig_account.id(), &[note.id()], &[])?
         .auth_args(salt)
@@ -187,7 +180,7 @@ async fn test_multisig_smart_enforces_note_restrictions_on_tx_with_input_notes(
 
     let result = mock_chain
         .build_tx_context(multisig_account.id(), &[note.id()], &[])?
-        .auth_args(Word::from([Felt::new(2); 4]))
+        .auth_args(Word::from([Felt::new_unchecked(2); 4]))
         .build()?
         .execute()
         .await;
@@ -254,7 +247,7 @@ async fn test_multisig_smart_enforces_note_restrictions_on_tx_with_output_notes(
         vec![FungibleAsset::mock(5)],
         NoteType::Public,
         Default::default(),
-        &mut RandomCoin::new(Word::from([Felt::new(7); 4])),
+        &mut RandomCoin::new(Word::from([Felt::new_unchecked(7); 4])),
     )?;
 
     let send_note_script = AccountInterface::from_account(&multisig_account)
@@ -267,7 +260,7 @@ async fn test_multisig_smart_enforces_note_restrictions_on_tx_with_output_notes(
         .build_tx_context(multisig_account.id(), &[], &[])?
         .extend_expected_output_notes(vec![RawOutputNote::Full(output_note)])
         .tx_script(send_note_script)
-        .auth_args(Word::from([Felt::new(2); 4]))
+        .auth_args(Word::from([Felt::new_unchecked(2); 4]))
         .build()?
         .execute()
         .await;
@@ -338,7 +331,7 @@ async fn test_multisig_smart_update_signers_and_thresholds(
         ",
     )?;
 
-    let salt = Word::from([Felt::new(3); 4]);
+    let salt = Word::from([Felt::new_unchecked(3); 4]);
 
     // Dry-run to obtain the tx summary that the current approvers must sign.
     let tx_summary = match mock_chain
@@ -384,13 +377,12 @@ async fn test_multisig_smart_update_signers_and_thresholds(
         .storage()
         .get_item(AuthMultisigSmart::threshold_config_slot())
         .expect("threshold config slot should be present");
-    assert_eq!(threshold_config[0], Felt::new(new_threshold));
-    assert_eq!(threshold_config[1], Felt::new(new_num_approvers));
+    assert_eq!(threshold_config[0], Felt::new_unchecked(new_threshold));
+    assert_eq!(threshold_config[1], Felt::new_unchecked(new_num_approvers));
 
     // Verify each new public key is stored at its expected map index.
     for (i, expected_key) in new_public_keys.iter().enumerate() {
-        let storage_key =
-            Word::from([Felt::new(i as u64), Felt::new(0), Felt::new(0), Felt::new(0)]);
+        let storage_key = Word::from([i as u32, 0, 0, 0]);
         let stored_pub_key = multisig_account
             .storage()
             .get_map_item(AuthMultisigSmart::approver_public_keys_slot(), storage_key)
@@ -445,7 +437,7 @@ async fn test_multisig_smart_set_procedure_policy(
         immediate_threshold = immediate_threshold,
     ))?;
 
-    let salt = Word::from([Felt::new(4); 4]);
+    let salt = Word::from([Felt::new_unchecked(4); 4]);
 
     // Dry-run to obtain the tx summary that the approvers must sign.
     let tx_summary = match mock_chain
@@ -552,7 +544,7 @@ async fn test_multisig_smart_unpolicied_proc_call_requires_default_threshold() -
     )?;
     let mock_chain = chain_builder.build()?;
 
-    let salt = Word::from([Felt::new(42); 4]);
+    let salt = Word::from([Felt::new_unchecked(42); 4]);
 
     // Dry-run to capture the tx summary.
     let tx_summary = match mock_chain

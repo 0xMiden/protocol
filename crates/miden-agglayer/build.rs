@@ -9,19 +9,14 @@ use miden_assembly::diagnostics::{IntoDiagnostic, NamedSource, Result, WrapErr};
 use miden_assembly::{Assembler, Library, Report};
 use miden_core::Word;
 use miden_crypto::hash::keccak::{Keccak256, Keccak256Digest};
-use miden_protocol::account::{
-    AccountCode,
-    AccountComponent,
-    AccountComponentMetadata,
-    AccountType,
-};
+use miden_protocol::account::{AccountCode, AccountComponent, AccountComponentMetadata};
 use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::transaction::TransactionKernel;
+use miden_standards::account::access::Authority;
 use miden_standards::account::auth::AuthNetworkAccount;
 use miden_standards::account::policies::{
     BurnPolicyConfig,
     MintPolicyConfig,
-    PolicyAuthority,
     PolicyRegistration,
     TokenPolicyManager,
     TransferPolicy,
@@ -240,9 +235,10 @@ fn parse_numeric_constants_from_constants_masm(masm_path: &Path) -> Result<Vec<(
         .into_diagnostic()
         .wrap_err_with(|| format!("failed to read {}", masm_path.display()))?;
 
-    // One line per match: optional leading space, `const`, identifier (no leading digit), `=`,
-    // decimal digits only. `(?m)^` makes `^` match after newlines so we skip comment-only lines.
-    let re = Regex::new(r"(?m)^\s*const\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(\d+)\s*$")
+    // One line per match: optional leading space, optional `pub` visibility, `const`, identifier
+    // (no leading digit), `=`, decimal digits only. `(?m)^` makes `^` match after newlines so we
+    // skip comment-only lines.
+    let re = Regex::new(r"(?m)^\s*(?:pub\s+)?const\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(\d+)\s*$")
         .expect("constants.masm parse regex should compile");
 
     // `out` preserves declaration order; `seen` rejects duplicate const names in the same file.
@@ -317,7 +313,7 @@ fn generate_agglayer_constants(
 
     // Create a dummy metadata to be able to create components. We only interested in the resulting
     // code commitment, so it doesn't matter what does this metadata holds.
-    let dummy_metadata = AccountComponentMetadata::new("dummy", AccountType::all());
+    let dummy_metadata = AccountComponentMetadata::new("dummy");
 
     // iterate over the AggLayer Bridge and AggLayer Faucet libraries
     for (lib_name, content_library) in component_libraries {
@@ -344,13 +340,14 @@ fn generate_agglayer_constants(
             components.push(AccountComponent::from(
                 miden_standards::account::access::Ownable2Step::new(dummy_owner),
             ));
+            components.push(AccountComponent::from(Authority::OwnerControlled));
             // Mirror the component order used by `create_agglayer_faucet_builder` in lib.rs so
             // the compile-time code commitment matches the one computed at runtime.
             //
             // Burn policy manager: active = `owner_only` (burns locked by default), `allow_all`
             // is registered as Reserved so the owner can open burns at runtime via
             // `set_burn_policy`.
-            let token_policy_manager = TokenPolicyManager::new(PolicyAuthority::OwnerControlled)
+            let token_policy_manager = TokenPolicyManager::new()
                 .with_mint_policy(MintPolicyConfig::OwnerOnly, PolicyRegistration::Active)
                 .expect("active mint policy is registered exactly once")
                 .with_burn_policy(BurnPolicyConfig::OwnerOnly, PolicyRegistration::Active)
@@ -366,24 +363,15 @@ fn generate_agglayer_constants(
         }
 
         // use `AccountCode` to merge codes of agglayer and authentication components
-        let account_code = AccountCode::from_components(&components, AccountType::FungibleFaucet)
-            .expect("account code creation failed");
+        let account_code =
+            AccountCode::from_components(&components).expect("account code creation failed");
 
         let code_commitment = account_code.commitment();
 
         writeln!(
             file_contents,
-            "pub const {}_CODE_COMMITMENT: Word = Word::new([
-    Felt::new({}),
-    Felt::new({}),
-    Felt::new({}),
-    Felt::new({}),
-]);",
+            "pub const {}_CODE_COMMITMENT: Word = miden_protocol::word!(\"{code_commitment}\");",
             lib_name.to_uppercase(),
-            code_commitment[0],
-            code_commitment[1],
-            code_commitment[2],
-            code_commitment[3],
         )
         .unwrap();
     }

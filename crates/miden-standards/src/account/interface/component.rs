@@ -29,6 +29,9 @@ pub enum AccountComponentInterface {
     /// [`FungibleFaucet`][crate::account::faucets::FungibleFaucet] module.
     FungibleFaucet,
     /// Exposes procedures from the
+    /// [`Authority`][crate::account::access::Authority] access component.
+    Authority,
+    /// Exposes procedures from the
     /// [`Ownable2Step`][crate::account::access::Ownable2Step] access component.
     Ownable2Step,
     /// Exposes procedures from the
@@ -79,6 +82,7 @@ impl AccountComponentInterface {
         match self {
             AccountComponentInterface::BasicWallet => "Basic Wallet".to_string(),
             AccountComponentInterface::FungibleFaucet => "Fungible Faucet".to_string(),
+            AccountComponentInterface::Authority => "Authority".to_string(),
             AccountComponentInterface::Ownable2Step => "Ownable2Step".to_string(),
             AccountComponentInterface::RoleBasedAccessControl => {
                 "Role Based Access Control".to_string()
@@ -190,8 +194,9 @@ impl AccountComponentInterface {
     /// ```masm
     ///     push.{note information}
     ///
-    ///     push.{asset amount}
-    ///     call.::miden::standards::faucets::fungible::mint_and_send dropw dropw drop
+    ///     push.{ASSET_VALUE} push.{ASSET_KEY}
+    ///     call.::miden::standards::faucets::fungible::mint_and_send
+    ///     swapdw dropw dropw swapdw dropw dropw
     /// ```
     ///
     /// # Errors:
@@ -244,13 +249,18 @@ impl AccountComponentInterface {
 
                     body.push_str(&format!(
                         "
-                        push.{amount}
+                        push.{ASSET_VALUE}
+                        push.{ASSET_KEY}
+                        # => [ASSET_KEY, ASSET_VALUE, tag, note_type, RECIPIENT, pad(16)]
+
                         call.::miden::standards::faucets::fungible::mint_and_send
-                        # => [note_idx, pad(25)]
-                        swapdw dropw dropw swap drop
-                        # => [note_idx, pad(16)]\n
+                        # => [note_idx, pad(29)]
+
+                        swapdw dropw dropw swapdw dropw dropw
+                        # => [note_idx, pad(13)]\n
                         ",
-                        amount = asset.unwrap_fungible().amount()
+                        ASSET_KEY = asset.to_key_word(),
+                        ASSET_VALUE = asset.to_value_word(),
                     ));
                 },
                 AccountComponentInterface::BasicWallet => {

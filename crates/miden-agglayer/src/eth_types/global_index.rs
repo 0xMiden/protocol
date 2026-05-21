@@ -194,7 +194,7 @@ mod tests {
             assert_eq!(elements[0..5], [Felt::ZERO; 5]);
 
             // mainnet flag: BE value 1 → LE-packed as 0x01000000
-            assert_eq!(elements[5], Felt::new(u32::from_le_bytes(1u32.to_be_bytes()) as u64));
+            assert_eq!(elements[5], Felt::from(u32::from_le_bytes(1_u32.to_be_bytes())));
 
             // rollup index
             assert_eq!(elements[6], Felt::ZERO);
@@ -202,7 +202,7 @@ mod tests {
             // leaf index: BE value → LE-packed
             assert_eq!(
                 elements[7],
-                Felt::new(u32::from_le_bytes(expected_leaf_index.to_be_bytes()) as u64)
+                Felt::from(u32::from_le_bytes(expected_leaf_index.to_be_bytes()))
             );
         }
     }

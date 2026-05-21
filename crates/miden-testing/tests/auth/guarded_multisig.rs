@@ -1,12 +1,5 @@
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, PublicKey};
-use miden_protocol::account::{
-    Account,
-    AccountBuilder,
-    AccountId,
-    AccountProcedureRoot,
-    AccountStorageMode,
-    AccountType,
-};
+use miden_protocol::account::{Account, AccountBuilder, AccountProcedureRoot, AccountType};
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::note::{
     Note,
@@ -16,10 +9,7 @@ use miden_protocol::note::{
     NoteType,
     PartialNoteMetadata,
 };
-use miden_protocol::testing::account_id::{
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
-    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
-};
+use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
 use miden_protocol::testing::note::DEFAULT_NOTE_SCRIPT;
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
@@ -152,10 +142,9 @@ fn create_guarded_multisig_account(
         .with_proc_thresholds(proc_threshold_map)?;
 
     let multisig_account = AccountBuilder::new([0; 32])
+        .account_type(AccountType::Public)
         .with_auth_component(AuthGuardedMultisig::new(config)?)
         .with_component(BasicWallet)
-        .account_type(AccountType::RegularAccountUpdatableCode)
-        .storage_mode(AccountStorageMode::Public)
         .with_assets(vec![FungibleAsset::mock(asset_amount)])
         .build_existing()?;
 
@@ -209,7 +198,7 @@ async fn test_guarded_multisig_signature_required(
     let input_note = mock_chain_builder.add_spawn_note([&output_note])?;
     let mut mock_chain = mock_chain_builder.build().unwrap();
 
-    let salt = Word::from([Felt::new(777); 4]);
+    let salt = Word::from([Felt::new_unchecked(777); 4]);
     let tx_context_init = mock_chain
         .build_tx_context(multisig_account.id(), &[input_note.id()], &[])?
         .extend_expected_output_notes(vec![RawOutputNote::Full(output_note.clone())])
@@ -267,10 +256,7 @@ async fn test_guarded_multisig_signature_required(
     mock_chain.prove_next_block()?;
 
     assert_eq!(
-        multisig_account
-            .vault()
-            .get_balance(AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?)?
-            .as_u64(),
+        multisig_account.vault().get_balance(output_note_asset.vault_key())?.as_u64(),
         10 - output_note_asset.unwrap_fungible().amount().as_u64()
     );
 
@@ -325,7 +311,7 @@ async fn test_guarded_multisig_update_guardian_public_key(
             "begin\n    push.{new_guardian_key_word}\n    push.{new_guardian_scheme_id}\n    call.::miden::standards::components::auth::guarded_multisig::update_guardian_public_key\n    drop\n    dropw\nend"
         ))?;
 
-    let update_salt = Word::from([Felt::new(991); 4]);
+    let update_salt = Word::from([Felt::new_unchecked(991); 4]);
     let tx_context_init = mock_chain
         .build_tx_context(multisig_account.id(), &[], &[])?
         .tx_script(update_guardian_script.clone())
@@ -377,7 +363,7 @@ async fn test_guarded_multisig_update_guardian_public_key(
 
     // Build one tx summary after key update. Old GUARDIAN must fail and new GUARDIAN must pass on
     // this same transaction.
-    let next_salt = Word::from([Felt::new(992); 4]);
+    let next_salt = Word::from([Felt::new_unchecked(992); 4]);
     let tx_context_init_next = mock_chain
         .build_tx_context(updated_multisig_account.id(), &[], &[])?
         .auth_args(next_salt)
@@ -483,7 +469,7 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
     )?;
     let mock_chain = mock_chain_builder.build().unwrap();
 
-    let salt = Word::from([Felt::new(993); 4]);
+    let salt = Word::from([Felt::new_unchecked(993); 4]);
     let tx_context_init = mock_chain
         .build_tx_context(multisig_account.id(), &[receive_asset_note.id()], &[])?
         .tx_script(update_guardian_script.clone())
@@ -541,7 +527,7 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
     // Also reject rotation transactions that touch notes even when no other account procedure is
     // called.
     let note_script = CodeBuilder::default().compile_note_script(DEFAULT_NOTE_SCRIPT)?;
-    let note_serial_num = Word::from([Felt::new(1), Felt::new(2), Felt::new(3), Felt::new(4)]);
+    let note_serial_num = Word::from([1_u32, 2_u32, 3_u32, 4_u32]);
     let note_recipient =
         NoteRecipient::new(note_serial_num, note_script.clone(), NoteStorage::default());
     let output_note = Note::new(
@@ -566,7 +552,7 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
         .build()
         .unwrap();
 
-    let salt = Word::from([Felt::new(994); 4]);
+    let salt = Word::from([Felt::new_unchecked(994); 4]);
     let tx_context_init = mock_chain
         .build_tx_context(multisig_account.id(), &[], &[])?
         .tx_script(update_guardian_with_output_script.clone())
@@ -653,7 +639,7 @@ async fn test_guarded_multisig_update_guardian_enforces_no_notes(
 
     // Optional output note (no-op script — doesn't trigger any account procedure).
     let output_note = if include_output_note {
-        let serial = Word::from([Felt::new(1), Felt::new(2), Felt::new(3), Felt::new(4)]);
+        let serial = Word::from([1_u32, 2_u32, 3_u32, 4_u32]);
         let recipient = NoteRecipient::new(
             serial,
             CodeBuilder::default().compile_note_script(DEFAULT_NOTE_SCRIPT)?,
@@ -682,7 +668,7 @@ async fn test_guarded_multisig_update_guardian_enforces_no_notes(
     // without invoking any non-auth procedure (DEFAULT_NOTE_SCRIPT is a single `nop`).
     let mut chain_builder = MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap();
     let input_note = if include_input_note {
-        let serial = Word::from([Felt::new(5), Felt::new(6), Felt::new(7), Felt::new(8)]);
+        let serial = Word::from([5_u32, 6_u32, 7_u32, 8_u32]);
         let recipient = NoteRecipient::new(
             serial,
             CodeBuilder::default().compile_note_script(DEFAULT_NOTE_SCRIPT)?,
@@ -701,7 +687,7 @@ async fn test_guarded_multisig_update_guardian_enforces_no_notes(
     let mock_chain = chain_builder.build()?;
 
     let input_ids: Vec<_> = input_note.as_ref().map(|n| vec![n.id()]).unwrap_or_default();
-    let salt = Word::from([Felt::new(995); 4]);
+    let salt = Word::from([Felt::new_unchecked(995); 4]);
 
     // Dry-run to obtain the tx summary the signers must sign.
     let mut init_ctx = mock_chain

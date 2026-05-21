@@ -20,7 +20,8 @@ use super::eth_address::{AddressConversionError, EthAddress};
 /// - suffix = bytes[12..20] as a big-endian u64
 ///
 /// Note: prefix/suffix are *conceptual* 64-bit words; when converting to [`Felt`], we must ensure
-/// `Felt::new(u64)` does not reduce mod p (checked explicitly in [`Self::try_from_eth_address`]).
+/// `Felt::new_unchecked(u64)` does not reduce mod p (checked explicitly in
+/// [`Self::try_from_eth_address`]).
 ///
 /// This type is used by integrators (Gateway, claim managers) to convert between Miden AccountIds
 /// and the Ethereum address format when constructing CLAIM notes or calling the AggLayer Bridge

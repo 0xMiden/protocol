@@ -240,7 +240,6 @@ fn metadata_from_toml_parses_named_storage_schema() {
         name = "Test Component"
         description = "Test description"
         version = "0.1.0"
-        supported-types = []
 
         [[storage.slots]]
         name = "demo::test_value"
@@ -265,7 +264,6 @@ fn metadata_from_toml_rejects_non_ascii_component_description() {
         name = "Test Component"
         description = "Invalid \u00e9"
         version = "0.1.0"
-        supported-types = []
     "#;
 
     assert_matches::assert_matches!(
@@ -280,7 +278,6 @@ fn metadata_from_toml_rejects_non_ascii_slot_description() {
         name = "Test Component"
         description = "Test description"
         version = "0.1.0"
-        supported-types = []
 
         [[storage.slots]]
         name = "demo::test_value"
@@ -300,7 +297,6 @@ fn metadata_schema_commitment_ignores_defaults_and_ordering() {
         name = "Commitment Test"
         description = "Schema commitments are equal regardless of defaults and ordering"
         version = "0.1.0"
-        supported-types = []
 
         [[storage.slots]]
         name = "demo::first"
@@ -328,7 +324,6 @@ fn metadata_schema_commitment_ignores_defaults_and_ordering() {
         name = "Commitment Test"
         description = ""
         version = "0.1.0"
-        supported-types = []
 
         [[storage.slots]]
         name = "demo::map"
@@ -368,7 +363,6 @@ fn metadata_schema_commitment_includes_descriptions() {
         name = "Commitment Test"
         description = "Component description"
         version = "0.1.0"
-        supported-types = []
 
         [[storage.slots]]
         name = "demo::value"
@@ -380,7 +374,6 @@ fn metadata_schema_commitment_includes_descriptions() {
         name = "Commitment Test"
         description = "Component description"
         version = "0.1.0"
-        supported-types = []
 
         [[storage.slots]]
         name = "demo::value"
@@ -392,7 +385,6 @@ fn metadata_schema_commitment_includes_descriptions() {
         name = "Commitment Test"
         description = "Component description"
         version = "0.1.0"
-        supported-types = []
 
         [[storage.slots]]
         name = "demo::bad_value"
@@ -422,7 +414,6 @@ fn metadata_from_toml_rejects_typed_fields_in_static_map_values() {
         name = "Test Component"
         description = "Test description"
         version = "0.1.0"
-        supported-types = []
 
         [[storage.slots]]
         name = "demo::my_map"
@@ -444,7 +435,6 @@ fn metadata_toml_round_trip_value_and_map_slots() {
         name = "round trip"
         description = "test round-trip"
         version = "0.1.0"
-        supported-types = []
 
         [[storage.slots]]
         name = "demo::single_value"
@@ -475,7 +465,6 @@ fn metadata_toml_round_trip_composed_slot_with_typed_fields() {
         name = "round trip typed fields"
         description = "test composed slot typed fields"
         version = "0.1.0"
-        supported-types = []
 
         [[storage.slots]]
         name = "demo::composed"
@@ -513,7 +502,6 @@ fn metadata_toml_round_trip_typed_slots() {
         name = "typed components"
         description = "test typed slots"
         version = "0.1.0"
-        supported-types = []
 
         [[storage.slots]]
         name = "demo::typed_value"
@@ -595,7 +583,6 @@ fn extensive_schema_metadata_and_init_toml_example() {
         name = "Extensive Example"
         description = "Exercises composite slots, simple typed slots, static maps, optional init maps, and map typing."
         version = "0.1.0"
-        supported-types = ["FungibleFaucet", "RegularAccountImmutableCode"]
 
         # composed slot schema expressed via `type = [...]`
         [[storage.slots]]
@@ -762,7 +749,7 @@ fn extensive_schema_metadata_and_init_toml_example() {
     };
     assert_eq!(
         static_word,
-        &Word::from([Felt::new(1), Felt::new(2), Felt::new(3), Felt::new(4)])
+        &Word::from([Felt::ONE, Felt::from(2_u32), Felt::from(3_u32), Felt::from(4_u32)])
     );
 
     let legacy_word_name = StorageSlotName::new("demo::legacy_word").unwrap();
@@ -784,7 +771,7 @@ fn extensive_schema_metadata_and_init_toml_example() {
     );
     assert_eq!(
         static_map.get(&StorageMapKey::from_array([0, 0, 0, 2])),
-        Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::new(32)])
+        Word::from([0_u32, 0_u32, 0_u32, 32_u32])
     );
 
     let typed_map_new_slot = slots.iter().find(|s| s.name() == &typed_map_new_name).unwrap();
@@ -831,7 +818,7 @@ fn extensive_schema_metadata_and_init_toml_example() {
 
     assert_eq!(
         typed_map_new_contents.get(&StorageMapKey::from_array([1, 2, 0, 0])),
-        Word::from([Felt::new(16), Felt::ZERO, Felt::ZERO, Felt::ZERO])
+        Word::from([16_u32, 0, 0, 0])
     );
 
     let token_metadata_slot =
@@ -861,7 +848,7 @@ fn extensive_schema_metadata_and_init_toml_example() {
     );
     assert_eq!(
         static_map.get(&StorageMapKey::from_array([0, 0, 0, 2])),
-        Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::new(32)])
+        Word::from([0_u32, 0_u32, 0_u32, 32_u32])
     );
     assert_eq!(
         static_map.get(&StorageMapKey::from_raw(Word::parse("0x3").unwrap())),
@@ -875,7 +862,6 @@ fn typed_map_init_entries_are_validated() {
         name = "typed map validation"
         description = "validates init-provided map entries against type.key/type.value"
         version = "0.1.0"
-        supported-types = []
 
         [[storage.slots]]
         name = "demo::typed_map"
@@ -912,7 +898,6 @@ fn typed_map_supports_non_numeric_value_types() {
         name = "typed map token_symbol"
         description = "parses typed map values using slot-level type.value"
         version = "0.1.0"
-        supported-types = []
 
         [[storage.slots]]
         name = "demo::symbol_map"

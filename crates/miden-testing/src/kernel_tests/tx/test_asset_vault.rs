@@ -2,6 +2,7 @@ use assert_matches::assert_matches;
 use miden_protocol::account::AccountId;
 use miden_protocol::asset::{
     Asset,
+    AssetCallbackFlag,
     AssetVaultKey,
     FungibleAsset,
     NonFungibleAsset,
@@ -35,6 +36,7 @@ async fn get_balance_returns_correct_amount() -> anyhow::Result<()> {
     let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
 
     let faucet_id: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap();
+    let asset_key = AssetVaultKey::new_fungible(faucet_id, AssetCallbackFlag::Disabled);
     let code = format!(
         r#"
         use $kernel::prologue
@@ -43,8 +45,7 @@ async fn get_balance_returns_correct_amount() -> anyhow::Result<()> {
         begin
             exec.prologue::prepare_transaction
 
-            push.{prefix}
-            push.{suffix}
+            push.{ASSET_KEY}
             exec.active_account::get_balance
             # => [balance]
 
@@ -52,15 +53,14 @@ async fn get_balance_returns_correct_amount() -> anyhow::Result<()> {
             swap drop
         end
             "#,
-        prefix = faucet_id.prefix().as_felt(),
-        suffix = faucet_id.suffix(),
+        ASSET_KEY = asset_key.to_word(),
     );
 
     let exec_output = tx_context.execute_code(&code).await?;
 
     assert_eq!(
         exec_output.get_stack_element(0).as_canonical_u64(),
-        tx_context.account().vault().get_balance(faucet_id).unwrap().as_u64()
+        tx_context.account().vault().get_balance(asset_key)?.as_u64()
     );
 
     Ok(())
@@ -71,7 +71,7 @@ async fn get_balance_returns_correct_amount() -> anyhow::Result<()> {
 async fn peek_asset_returns_correct_asset() -> anyhow::Result<()> {
     let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
     let faucet_id: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap();
-    let asset_key = AssetVaultKey::new_fungible(faucet_id).unwrap();
+    let asset_key = AssetVaultKey::new_fungible(faucet_id, AssetCallbackFlag::Disabled);
 
     let code = format!(
         r#"
@@ -120,6 +120,8 @@ async fn test_get_balance_non_fungible_fails() -> anyhow::Result<()> {
         .build()?;
 
     let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET).unwrap();
+    let non_fungible_asset =
+        NonFungibleAsset::new(&NonFungibleAssetDetails::new(faucet_id, vec![1, 2, 3]));
     let code = format!(
         "
         use $kernel::prologue
@@ -127,12 +129,11 @@ async fn test_get_balance_non_fungible_fails() -> anyhow::Result<()> {
 
         begin
             exec.prologue::prepare_transaction
-            push.{prefix} push.{suffix}
+            push.{ASSET_KEY}
             exec.active_account::get_balance
         end
         ",
-        prefix = faucet_id.prefix().as_felt(),
-        suffix = faucet_id.suffix(),
+        ASSET_KEY = non_fungible_asset.to_key_word(),
     );
 
     let exec_result = tx_context.execute_code(&code).await;
@@ -180,7 +181,7 @@ async fn test_add_fungible_asset_success() -> anyhow::Result<()> {
     let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
     let mut account_vault = tx_context.account().vault().clone();
     let faucet_id: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap();
-    let amount = FungibleAsset::MAX_AMOUNT - FUNGIBLE_ASSET_AMOUNT;
+    let amount = FungibleAsset::MAX_AMOUNT.as_u64() - FUNGIBLE_ASSET_AMOUNT;
     let add_fungible_asset = FungibleAsset::new(faucet_id, amount)?;
 
     let code = format!(
@@ -226,7 +227,7 @@ async fn test_add_non_fungible_asset_fail_overflow() -> anyhow::Result<()> {
     let mut account_vault = tx_context.account().vault().clone();
 
     let faucet_id: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap();
-    let amount = FungibleAsset::MAX_AMOUNT - FUNGIBLE_ASSET_AMOUNT + 1;
+    let amount = FungibleAsset::MAX_AMOUNT.as_u64() - FUNGIBLE_ASSET_AMOUNT + 1;
     let add_fungible_asset = FungibleAsset::new(faucet_id, amount)?;
 
     let code = format!(
@@ -260,8 +261,8 @@ async fn test_add_non_fungible_asset_success() -> anyhow::Result<()> {
     let faucet_id: AccountId = ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET.try_into()?;
     let mut account_vault = tx_context.account().vault().clone();
     let add_non_fungible_asset = Asset::NonFungible(NonFungibleAsset::new(
-        &NonFungibleAssetDetails::new(faucet_id, vec![1, 2, 3, 4, 5, 6, 7, 8]).unwrap(),
-    )?);
+        &NonFungibleAssetDetails::new(faucet_id, vec![1, 2, 3, 4, 5, 6, 7, 8]),
+    ));
 
     let code = format!(
         "
@@ -303,9 +304,8 @@ async fn test_add_non_fungible_asset_fail_duplicate() -> anyhow::Result<()> {
     let faucet_id: AccountId = ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET.try_into().unwrap();
     let mut account_vault = tx_context.account().vault().clone();
     let non_fungible_asset_details =
-        NonFungibleAssetDetails::new(faucet_id, NON_FUNGIBLE_ASSET_DATA.to_vec()).unwrap();
-    let non_fungible_asset =
-        Asset::NonFungible(NonFungibleAsset::new(&non_fungible_asset_details).unwrap());
+        NonFungibleAssetDetails::new(faucet_id, NON_FUNGIBLE_ASSET_DATA.to_vec());
+    let non_fungible_asset = Asset::NonFungible(NonFungibleAsset::new(&non_fungible_asset_details));
 
     let code = format!(
         "
@@ -458,8 +458,8 @@ async fn test_remove_inexisting_non_fungible_asset_fails() -> anyhow::Result<()>
     let mut account_vault = tx_context.account().vault().clone();
 
     let non_fungible_asset_details =
-        NonFungibleAssetDetails::new(faucet_id, NON_FUNGIBLE_ASSET_DATA.to_vec()).unwrap();
-    let nonfungible = NonFungibleAsset::new(&non_fungible_asset_details).unwrap();
+        NonFungibleAssetDetails::new(faucet_id, NON_FUNGIBLE_ASSET_DATA.to_vec());
+    let nonfungible = NonFungibleAsset::new(&non_fungible_asset_details);
     let non_existent_non_fungible_asset = Asset::NonFungible(nonfungible);
 
     assert_matches!(
@@ -502,9 +502,8 @@ async fn test_remove_non_fungible_asset_success() -> anyhow::Result<()> {
     let faucet_id: AccountId = ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET.try_into().unwrap();
     let mut account_vault = tx_context.account().vault().clone();
     let non_fungible_asset_details =
-        NonFungibleAssetDetails::new(faucet_id, NON_FUNGIBLE_ASSET_DATA.to_vec()).unwrap();
-    let non_fungible_asset =
-        Asset::NonFungible(NonFungibleAsset::new(&non_fungible_asset_details).unwrap());
+        NonFungibleAssetDetails::new(faucet_id, NON_FUNGIBLE_ASSET_DATA.to_vec());
+    let non_fungible_asset = Asset::NonFungible(NonFungibleAsset::new(&non_fungible_asset_details));
 
     let code = format!(
         "
@@ -545,7 +544,7 @@ async fn test_remove_non_fungible_asset_success() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_merge_fungible_asset_success() -> anyhow::Result<()> {
     let asset0 = FungibleAsset::mock(FUNGIBLE_ASSET_AMOUNT);
-    let asset1 = FungibleAsset::mock(FungibleAsset::MAX_AMOUNT - FUNGIBLE_ASSET_AMOUNT);
+    let asset1 = FungibleAsset::mock(FungibleAsset::MAX_AMOUNT.as_u64() - FUNGIBLE_ASSET_AMOUNT);
     let merged_asset = asset0.unwrap_fungible().add(asset1.unwrap_fungible())?;
 
     // Check merging is commutative by checking asset0 + asset1 = asset1 + asset0.
@@ -581,7 +580,8 @@ async fn test_merge_fungible_asset_success() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_merge_fungible_asset_fails_when_max_amount_exceeded() -> anyhow::Result<()> {
     let asset0 = FungibleAsset::mock(FUNGIBLE_ASSET_AMOUNT);
-    let asset1 = FungibleAsset::mock(FungibleAsset::MAX_AMOUNT + 1 - FUNGIBLE_ASSET_AMOUNT);
+    let asset1 =
+        FungibleAsset::mock(FungibleAsset::MAX_AMOUNT.as_u64() + 1 - FUNGIBLE_ASSET_AMOUNT);
 
     // Check merging fails for both asset0 + asset1 and asset1 + asset0.
     for (asset_a, asset_b) in [(asset0, asset1), (asset1, asset0)] {
