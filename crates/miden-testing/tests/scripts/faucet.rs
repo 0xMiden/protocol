@@ -1848,11 +1848,8 @@ async fn network_faucet_mint_with_blocklist() -> anyhow::Result<()> {
 /// permissive mint policy can race to consume the note and mint its OWN asset to the recipient,
 /// nullifying the MINT note (request DoS) and delivering a wrong-asset to the recipient.
 ///
-/// Both `MintNoteStorage` variants (private and public output) are exercised because each takes
+/// Both `MintNoteStorage` variants (private and public output) are tested because each takes
 /// a separate `if` branch in the MINT script with its own faucet_id offset.
-///
-/// Happy-path consumption (intended faucet, both variants) is already covered by
-/// `test_mint_note_output_note_types`.
 #[rstest::rstest]
 #[case::private_output(NoteType::Private)]
 #[case::public_output(NoteType::Public)]
