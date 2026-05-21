@@ -1842,16 +1842,24 @@ async fn network_faucet_mint_with_blocklist() -> anyhow::Result<()> {
 // TESTS FOR MINT NOTE FAUCET BINDING
 // ================================================================================================
 
-/// Regression test: a MINT note must only be consumable by the faucet recorded in its storage.
+/// A MINT note must only be consumable by the faucet recorded in its storage.
 ///
 /// Without the binding, a different fungible faucet that exposes `mint_and_send` and has a
 /// permissive mint policy can race to consume the note and mint its OWN asset to the recipient,
 /// nullifying the MINT note (request DoS) and delivering a wrong-asset to the recipient.
 ///
-/// The MINT script now embeds `faucet_id` into note storage and asserts that the consuming
-/// account ID matches it (see `ERR_MINT_WRONG_FAUCET`).
+/// Both `MintNoteStorage` variants (private and public output) are exercised because each takes
+/// a separate `if` branch in the MINT script with its own faucet_id offset.
+///
+/// Happy-path consumption (intended faucet, both variants) is already covered by
+/// `test_mint_note_output_note_types`.
+#[rstest::rstest]
+#[case::private_output(NoteType::Private)]
+#[case::public_output(NoteType::Public)]
 #[tokio::test]
-async fn mint_note_consumption_is_bound_to_intended_faucet() -> anyhow::Result<()> {
+async fn mint_note_rejects_unintended_faucet(
+    #[case] output_note_type: NoteType,
+) -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     let faucet_a_owner =
@@ -1879,22 +1887,34 @@ async fn mint_note_consumption_is_bound_to_intended_faucet() -> anyhow::Result<(
 
     let recipient_account = builder.add_existing_wallet(Auth::IncrNonce)?;
 
-    // Construct a MINT note that records Faucet A as the intended faucet.
     let amount = Felt::new_unchecked(75);
     let intended_asset: Asset =
         FungibleAsset::new(faucet_a.id(), amount.as_canonical_u64())?.into();
-    let serial_num = Word::default();
+    let serial_num = Word::from([1, 2, 3, 4u32]);
     let output_note_tag = NoteTag::with_account_target(recipient_account.id());
 
     let p2id_note = create_p2id_note_exact(
         faucet_a.id(),
         recipient_account.id(),
         vec![intended_asset],
-        NoteType::Private,
+        output_note_type,
         serial_num,
     )?;
-    let mint_recipient = p2id_note.recipient().digest();
-    let mint_storage = MintNoteStorage::new_private(mint_recipient, amount, output_note_tag.into());
+
+    let mint_storage = match output_note_type {
+        NoteType::Private => {
+            let mint_recipient = p2id_note.recipient().digest();
+            MintNoteStorage::new_private(mint_recipient, amount, output_note_tag.into())
+        },
+        NoteType::Public => {
+            let p2id_script = StandardNote::P2ID.script();
+            let p2id_storage =
+                vec![recipient_account.id().suffix(), recipient_account.id().prefix().as_felt()];
+            let note_storage = NoteStorage::new(p2id_storage)?;
+            let recipient = NoteRecipient::new(serial_num, p2id_script, note_storage);
+            MintNoteStorage::new_public(recipient, amount, output_note_tag.into())?
+        },
+    };
 
     let mut rng = RandomCoin::new([Felt::from(7u32); 4].into());
     let mint_note = MintNote::create(
@@ -1916,117 +1936,5 @@ async fn mint_note_consumption_is_bound_to_intended_faucet() -> anyhow::Result<(
 
     assert_transaction_executor_error!(result, ERR_MINT_WRONG_FAUCET);
 
-    Ok(())
-}
-
-/// Same as [`mint_note_consumption_is_bound_to_intended_faucet`] but exercises the public
-/// output variant, which has a different storage layout and a separate `if` branch in the
-/// MINT script.
-#[tokio::test]
-async fn mint_note_consumption_is_bound_to_intended_faucet_public() -> anyhow::Result<()> {
-    let mut builder = MockChain::builder();
-
-    let faucet_a_owner =
-        AccountId::dummy([4; 15], AccountIdVersion::Version1, AccountType::Private);
-    let faucet_b_owner =
-        AccountId::dummy([5; 15], AccountIdVersion::Version1, AccountType::Private);
-
-    let faucet_a = builder.add_existing_network_faucet(
-        "CCC",
-        1000,
-        faucet_a_owner,
-        Some(0),
-        MintPolicyConfig::AllowAll,
-        [],
-    )?;
-    let faucet_b = builder.add_existing_network_faucet(
-        "DDD",
-        1000,
-        faucet_b_owner,
-        Some(0),
-        MintPolicyConfig::AllowAll,
-        [],
-    )?;
-
-    let recipient_account = builder.add_existing_wallet(Auth::IncrNonce)?;
-
-    let amount = Felt::new_unchecked(50);
-    let serial_num = Word::from([1, 2, 3, 4u32]);
-    let output_note_tag = NoteTag::with_account_target(recipient_account.id());
-
-    let p2id_script = StandardNote::P2ID.script();
-    let p2id_storage =
-        vec![recipient_account.id().suffix(), recipient_account.id().prefix().as_felt()];
-    let note_storage = NoteStorage::new(p2id_storage)?;
-    let recipient = NoteRecipient::new(serial_num, p2id_script, note_storage);
-    let mint_storage = MintNoteStorage::new_public(recipient, amount, output_note_tag.into())?;
-
-    let mut rng = RandomCoin::new([Felt::from(11u32); 4].into());
-    let mint_note = MintNote::create(
-        faucet_a.id(),
-        faucet_a_owner,
-        mint_storage,
-        NoteAttachments::default(),
-        &mut rng,
-    )?;
-
-    let mock_chain = builder.build()?;
-
-    // Attack: try to consume Faucet A's MINT note with Faucet B.
-    let result = mock_chain
-        .build_tx_context(faucet_b.id(), &[], &[mint_note])?
-        .build()?
-        .execute()
-        .await;
-
-    assert_transaction_executor_error!(result, ERR_MINT_WRONG_FAUCET);
-
-    Ok(())
-}
-
-/// Sanity test: a MINT note must remain consumable by its intended faucet after the binding
-/// is in place (private output variant).
-#[tokio::test]
-async fn mint_note_consumed_by_intended_faucet_still_succeeds_private() -> anyhow::Result<()> {
-    let mut builder = MockChain::builder();
-
-    let owner = AccountId::dummy([3; 15], AccountIdVersion::Version1, AccountType::Private);
-    let faucet = builder.add_existing_network_faucet(
-        "OKK",
-        1000,
-        owner,
-        Some(0),
-        MintPolicyConfig::AllowAll,
-        [],
-    )?;
-    let recipient_account = builder.add_existing_wallet(Auth::IncrNonce)?;
-
-    let amount = Felt::new_unchecked(50);
-    let mint_asset: Asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?.into();
-    let output_note_tag = NoteTag::with_account_target(recipient_account.id());
-
-    let p2id_note = create_p2id_note_exact(
-        faucet.id(),
-        recipient_account.id(),
-        vec![mint_asset],
-        NoteType::Private,
-        Word::default(),
-    )?;
-    let mint_recipient = p2id_note.recipient().digest();
-    let mint_storage = MintNoteStorage::new_private(mint_recipient, amount, output_note_tag.into());
-
-    let mut rng = RandomCoin::new([Felt::from(9u32); 4].into());
-    let mint_note =
-        MintNote::create(faucet.id(), owner, mint_storage, NoteAttachments::default(), &mut rng)?;
-
-    let mock_chain = builder.build()?;
-
-    let executed = mock_chain
-        .build_tx_context(faucet.id(), &[], &[mint_note])?
-        .build()?
-        .execute()
-        .await?;
-
-    assert_eq!(executed.output_notes().num_notes(), 1);
     Ok(())
 }
