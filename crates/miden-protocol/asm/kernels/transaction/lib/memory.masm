@@ -1506,29 +1506,16 @@ pub proc set_input_note_details_commitment
     mem_storew_le
 end
 
-#! Computes a pointer to the memory address at which the nullifier associated a note with `idx` is
-#! stored.
+#! Stores the nullifier of the input note with `idx` in the nullifier memory section.
 #!
-#! Inputs:  [idx]
-#! Outputs: [nullifier_ptr]
-#!
-#! Where:
-#! - idx is the index of the input note.
-#! - nullifier_ptr is the memory address of the nullifier for note idx.
-pub proc get_input_note_nullifier_ptr
-    mul.4 add.INPUT_NOTE_NULLIFIER_SECTION_PTR
-end
-
-#! Returns the nullifier of an input note with `idx`.
-#!
-#! Inputs:  [idx]
-#! Outputs: [nullifier]
+#! Inputs:  [idx, NULLIFIER]
+#! Outputs: [NULLIFIER]
 #!
 #! Where:
 #! - idx is the index of the input note.
-#! - nullifier is the nullifier of the input note.
-pub proc get_input_note_nullifier
-    mul.4 padw movup.4 add.INPUT_NOTE_NULLIFIER_SECTION_PTR mem_loadw_le
+#! - NULLIFIER is the nullifier of the input note.
+pub proc set_input_note_nullifier
+    mul.4 add.INPUT_NOTE_NULLIFIER_SECTION_PTR mem_storew_le
 end
 
 #! Returns a pointer to the start of the input note core data segment for the note located at the
@@ -1598,19 +1585,6 @@ pub proc get_input_note_metadata
     mem_loadw_le
 end
 
-#! Sets the metadata for an input note located at the specified memory address.
-#!
-#! Inputs:  [note_ptr, NOTE_METADATA]
-#! Outputs: [NOTE_METADATA]
-#!
-#! Where:
-#! - note_ptr is the memory address at which the input note data begins.
-#! - NOTE_METADATA is the metadata of the input note.
-pub proc set_input_note_metadata
-    add.INPUT_NOTE_METADATA_OFFSET
-    mem_storew_le
-end
-
 #! Returns the attachment of an input note located at the specified memory address.
 #!
 #! Inputs:  [note_ptr]
@@ -1623,19 +1597,6 @@ pub proc get_input_note_attachments_commitment
     padw
     movup.4 add.INPUT_NOTE_ATTACHMENTS_COMMITMENT_OFFSET
     mem_loadw_le
-end
-
-#! Sets the attachment for an input note located at the specified memory address.
-#!
-#! Inputs:  [note_ptr, NOTE_ATTACHMENTS_COMMITMENT]
-#! Outputs: [NOTE_ATTACHMENTS_COMMITMENT]
-#!
-#! Where:
-#! - note_ptr is the memory address at which the input note data begins.
-#! - NOTE_ATTACHMENTS_COMMITMENT is the commitment to all attachments of the input note.
-pub proc set_input_note_attachments_commitment
-    add.INPUT_NOTE_ATTACHMENTS_COMMITMENT_OFFSET
-    mem_storew_le
 end
 
 #! Returns the note's args.
