@@ -700,10 +700,9 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
     // --------------------------------------------------------------------------------------------
 
     let amount = Felt::new_unchecked(75);
-    let mint_asset: Asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())
+    let mint_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())
         .unwrap()
-        .with_callbacks(AssetCallbackFlag::Enabled)
-        .into();
+        .with_callbacks(AssetCallbackFlag::Enabled);
     let serial_num = Word::default();
 
     let output_note_tag = NoteTag::with_account_target(target_account.id());
@@ -1568,10 +1567,9 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
 
     let amount = Felt::new_unchecked(75);
-    let mint_asset: Asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())
+    let mint_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())
         .unwrap()
-        .with_callbacks(AssetCallbackFlag::Enabled)
-        .into();
+        .with_callbacks(AssetCallbackFlag::Enabled);
     let serial_num = Word::from([1, 2, 3, 4u32]);
 
     // Create the expected P2ID output note
