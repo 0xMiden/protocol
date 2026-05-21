@@ -2,6 +2,7 @@ use miden::core::word
 use miden::protocol::active_account
 use miden::protocol::native_account
 use miden::standards::access::authority
+use miden::standards::utils::pausable
 
 # DEPENDENCY NOTE
 # This manager owns mint, burn, send, and receive policy state in a single component. The
@@ -270,6 +271,9 @@ end
 #! Outputs: [amount, tag, note_type, RECIPIENT]
 #!
 #! Panics if:
+#! - the account is paused (`exec.pausable::assert_not_paused` — TokenPolicyManager requires the
+#!   [`Pausable`] component to be installed; the slot lookup panics on accounts that did not
+#!   install it).
 #! - active mint policy predicate fails.
 #!
 #! The active policy root is validated at config time (in `set_mint_policy` and on initial
@@ -278,6 +282,9 @@ end
 #! Invocation: exec
 @locals(4)
 pub proc execute_mint_policy
+    exec.pausable::assert_not_paused
+    # => [amount, tag, note_type, RECIPIENT]
+
     exec.get_mint_policy_root
     # => [MINT_POLICY_ROOT, amount, tag, note_type, RECIPIENT]
 
@@ -337,6 +344,7 @@ end
 #! Outputs: []
 #!
 #! Panics if:
+#! - the account is paused.
 #! - active burn policy predicate fails.
 #!
 #! The active policy root is validated at config time (in `set_burn_policy` and on initial
@@ -345,6 +353,9 @@ end
 #! Invocation: exec
 @locals(4)
 pub proc execute_burn_policy
+    exec.pausable::assert_not_paused
+    # => [ASSET_KEY, ASSET_VALUE]
+
     exec.get_burn_policy_root
     # => [BURN_POLICY_ROOT, ASSET_KEY, ASSET_VALUE]
 

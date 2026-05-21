@@ -1,37 +1,50 @@
-use miden_protocol::account::component::{FeltSchema, StorageSlotSchema};
-use miden_protocol::account::{StorageSlot, StorageSlotName};
+use miden_protocol::account::component::{
+    AccountComponentCode,
+    AccountComponentMetadata,
+    FeltSchema,
+    StorageSchema,
+    StorageSlotSchema,
+};
+use miden_protocol::account::{
+    AccountComponent,
+    AccountProcedureRoot,
+    StorageSlot,
+    StorageSlotName,
+};
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
-pub mod auth_controlled;
-pub mod owner_controlled;
-pub mod role_controlled;
+use crate::account::account_component_code;
+use crate::procedure_root;
 
-pub use auth_controlled::PausableAuthControlled;
-pub use owner_controlled::PausableOwnerControlled;
-pub use role_controlled::PausableRoleControlled;
+mod manager;
+pub use manager::PausableManager;
 
 // IS_PAUSED STORAGE
 // ================================================================================================
+
+account_component_code!(PAUSABLE_CODE, "utils/pausable/mod.masl");
 
 static IS_PAUSED_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::utils::pausable::is_paused")
         .expect("storage slot name should be valid")
 });
 
-/// Storage backing the pause flag for a single account.
+procedure_root!(
+    PAUSABLE_IS_PAUSED_ROOT,
+    Pausable::NAME,
+    Pausable::IS_PAUSED_PROC_NAME,
+    Pausable::code()
+);
+
+/// Storage helper backing the pause flag for a single account.
 ///
 /// `PausableStorage` exposes the slot name and schema for the `is_paused` flag word plus an
 /// optional initial pause state. It is **not** an installable account component on its own —
-/// the policy component that installs the storage slot (typically
-/// [`crate::account::policies::BasicPausable`]) reads the slot name and the initial state from
-/// here.
-///
-/// The low-level `pause` / `unpause` / `is_paused` / `assert_not_paused` / `assert_paused`
-/// procedures live in the standards library at `miden::standards::utils::pausable` as
-/// `Invocation: exec` helpers — they perform no authorization and must be wrapped by an
-/// auth-checking admin component (see [`PausableOwnerControlled`] / [`PausableRoleControlled`])
-/// before being exposed on a production account.
+/// the [`Pausable`] component installs the storage slot, and any consumer (TokenPolicyManager
+/// dispatch, asset callbacks, metadata setters) reads via `exec.pausable::assert_not_paused` /
+/// `assert_paused` exec helpers from the standards library at
+/// `miden::standards::utils::pausable`.
 ///
 /// ## Storage
 ///
@@ -102,5 +115,85 @@ impl PausableStorage {
     /// component. The slot is initialized with the captured pause state.
     pub fn into_slot(self) -> StorageSlot {
         StorageSlot::with_value(Self::is_paused_slot().clone(), self.build_word())
+    }
+}
+
+// PAUSABLE COMPONENT
+// ================================================================================================
+
+/// Account component that installs the [`PausableStorage`] slot and exposes the call-invokable
+/// `is_paused` view procedure.
+///
+/// This component is the **opt-in entry point** for global / emergency pause functionality.
+/// Consumers (TokenPolicyManager dispatch for mint / burn / send / receive, asset callbacks,
+/// FungibleFaucet metadata setters) read the pause flag transversally via
+/// `exec.pausable::assert_not_paused` — a no-op when this component is NOT installed (the slot
+/// returns the zero word) and an enforced guard when it IS installed.
+///
+/// Pair with [`PausableManager`] to expose `pause` / `unpause` admin procedures gated by the
+/// account-wide [`crate::account::access::Authority`] component.
+///
+/// The wrapped initial state captures whether the account starts paused. Use [`Default`] for an
+/// unpaused start, or [`Self::paused`] / [`Self::unpaused`] for explicit literals.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Pausable {
+    initial_state: bool,
+}
+
+impl Pausable {
+    /// The name of the component.
+    pub const NAME: &'static str = "miden::standards::components::utils::pausable";
+
+    pub const IS_PAUSED_PROC_NAME: &'static str = "is_paused";
+
+    /// Creates a [`Pausable`] component with the given initial pause state.
+    pub const fn new(initial_state: bool) -> Self {
+        Self { initial_state }
+    }
+
+    /// Creates a [`Pausable`] component that starts in the paused state.
+    pub const fn paused() -> Self {
+        Self::new(true)
+    }
+
+    /// Creates a [`Pausable`] component that starts in the unpaused state.
+    pub const fn unpaused() -> Self {
+        Self::new(false)
+    }
+
+    /// Returns the initial pause state captured in this component.
+    pub fn initial_state(&self) -> bool {
+        self.initial_state
+    }
+
+    /// Returns the [`AccountComponentCode`] of this component.
+    pub fn code() -> &'static AccountComponentCode {
+        &PAUSABLE_CODE
+    }
+
+    /// Returns the procedure root of the `is_paused` call procedure exposed by this component.
+    pub fn is_paused_root() -> AccountProcedureRoot {
+        *PAUSABLE_IS_PAUSED_ROOT
+    }
+}
+
+impl From<Pausable> for AccountComponent {
+    fn from(pausable: Pausable) -> Self {
+        let storage = PausableStorage::with_initial_state(pausable.initial_state);
+        let storage_schema = StorageSchema::new([PausableStorage::is_paused_slot_schema()])
+            .expect("storage schema should be valid");
+
+        let metadata = AccountComponentMetadata::new(Pausable::NAME)
+            .with_description(
+                "Pausable: installs the `is_paused` storage slot and exposes the call-invokable \
+                 `is_paused` view. Consumers (TokenPolicyManager, asset callbacks, metadata \
+                 setters) read the flag transversally via `assert_not_paused`. Pair with \
+                 PausableManager to gate pause / unpause admin via the Authority component.",
+            )
+            .with_storage_schema(storage_schema);
+
+        AccountComponent::new(Pausable::code().clone(), vec![storage.into_slot()], metadata).expect(
+            "pausable component should satisfy the requirements of a valid account component",
+        )
     }
 }

@@ -6,6 +6,7 @@
 
 use miden::protocol::native_account
 use miden::standards::faucets::policies::transfer::allowlist
+use miden::standards::utils::pausable
 
 # POLICY PROCEDURES
 # ================================================================================================
@@ -26,10 +27,14 @@ use miden::standards::faucets::policies::transfer::allowlist
 #! Outputs: [ASSET_VALUE, pad(12)]
 #!
 #! Panics if:
+#! - the account is paused (`Pausable` component required).
 #! - the native account is not allowed on the issuing faucet.
 #!
 #! Invocation: call
 pub proc check_policy
+    exec.pausable::assert_not_paused
+    # => [ASSET_KEY, ASSET_VALUE, pad(8)]
+
     exec.native_account::get_id
     # => [account_id_suffix, account_id_prefix, ASSET_KEY, ASSET_VALUE, pad(8)]
 

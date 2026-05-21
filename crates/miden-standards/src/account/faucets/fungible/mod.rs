@@ -330,11 +330,18 @@ impl FungibleFaucet {
     }
 
     /// Returns the storage slots produced by this faucet (token config word + name + mutability
-    /// config + description + logo URI + external link).
+    /// config + description + logo URI + external link + Pausable's `is_paused` flag).
+    ///
+    /// The `is_paused` slot is installed by FungibleFaucet itself (initial value: unpaused, zero
+    /// word) so that the transversal pause guards baked into `execute_mint_policy`,
+    /// `execute_burn_policy`, `check_policy` (allow_all / blocklist / allowlist) and the metadata
+    /// setters can read it without panicking. Pause / unpause administration is exposed by the
+    /// optional [`crate::account::pausable::PausableManager`] component.
     pub fn into_storage_slots(self) -> Vec<StorageSlot> {
         let mut slots: Vec<StorageSlot> = Vec::new();
         slots.push(self.token_config_slot_value());
         slots.extend(self.metadata.into_storage_slots());
+        slots.push(crate::account::pausable::PausableStorage::default().into_slot());
         slots
     }
 

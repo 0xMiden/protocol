@@ -8,6 +8,10 @@
 //! - Folder at the root (e.g. `blocklist`, `allowlist`) = a primitive bundle: storage namespace +
 //!   helpers + auth-gated admin component(s) that maintain the storage. Primitives are not transfer
 //!   policies by themselves; they are consumed by policy variants.
+//!
+//! Pause is **not** a transfer policy variant: it is handled transversally by
+//! [`super::TokenPolicyManager`] dispatch (see `execute_send_policy` / `execute_receive_policy`),
+//! triggered when the [`crate::account::pausable::Pausable`] component is installed.
 
 use alloc::vec::Vec;
 
@@ -17,17 +21,13 @@ mod allow_all;
 mod allowlist;
 mod basic_allowlist;
 mod basic_blocklist;
-mod basic_pausable;
 mod blocklist;
-mod pausable_blocklist;
 
 pub use allow_all::TransferAllowAll;
 pub use allowlist::{AllowlistOwnerControlled, AllowlistStorage};
 pub use basic_allowlist::BasicAllowlist;
 pub use basic_blocklist::BasicBlocklist;
-pub use basic_pausable::BasicPausable;
 pub use blocklist::{BlocklistOwnerControlled, BlocklistStorage};
-pub use pausable_blocklist::PausableBlocklist;
 
 // TRANSFER POLICY
 // ================================================================================================
@@ -52,18 +52,6 @@ pub enum TransferPolicy {
     /// Active policy = [`BasicAllowlist::root`]. Carries the [`AllowlistStorage`] used to seed
     /// the per-faucet `allowed_accounts` map at component-construction time.
     Allowlist { allow_list: AllowlistStorage },
-    /// Active policy = [`BasicPausable::root`]. Resolves into a [`BasicPausable`] component that
-    /// starts unpaused; to seed an initial paused state, install [`BasicPausable`] explicitly
-    /// via [`BasicPausable::paused`] and select the policy via [`TransferPolicy::Custom`] with
-    /// [`BasicPausable::root`].
-    Pausable,
-    /// Active policy = [`PausableBlocklist::root`]. Resolves into a [`PausableBlocklist`]
-    /// component that starts unpaused and with no initially blocked accounts; to seed either
-    /// state, install [`PausableBlocklist`] explicitly via
-    /// [`PausableBlocklist::with_initial_pause_state`] /
-    /// [`PausableBlocklist::with_initial_blocked_accounts`] and select the policy via
-    /// [`TransferPolicy::Custom`] with [`PausableBlocklist::root`].
-    PausableBlocklist,
     /// Active policy = the provided root. The corresponding component(s) must be installed by
     /// the caller separately; resolving this variant into built-in components yields an empty
     /// list.
@@ -77,8 +65,6 @@ impl TransferPolicy {
             Self::AllowAll => TransferAllowAll::root(),
             Self::Blocklist => BasicBlocklist::root(),
             Self::Allowlist { .. } => BasicAllowlist::root(),
-            Self::Pausable => BasicPausable::root(),
-            Self::PausableBlocklist => PausableBlocklist::root(),
             Self::Custom(root) => *root,
         }
     }
@@ -87,18 +73,13 @@ impl TransferPolicy {
     ///
     /// For [`Self::Blocklist`] this is a [`BasicBlocklist`] component with no initial blocked
     /// accounts. For [`Self::Allowlist`] this is a [`BasicAllowlist`] component built from
-    /// the carried [`AllowlistStorage`]. For [`Self::Pausable`] this is a [`BasicPausable`]
-    /// component that starts unpaused; for [`Self::PausableBlocklist`] this is a
-    /// [`PausableBlocklist`] component that starts unpaused and with no initially blocked
-    /// accounts. For [`Self::Custom`] this is empty — the caller installs whatever the chosen
-    /// root requires.
+    /// the carried [`AllowlistStorage`]. For [`Self::Custom`] this is empty — the caller
+    /// installs whatever the chosen root requires.
     pub(crate) fn into_components(self) -> Vec<AccountComponent> {
         match self {
             Self::AllowAll => vec![TransferAllowAll.into()],
             Self::Blocklist => vec![BasicBlocklist::default().into()],
             Self::Allowlist { allow_list } => vec![BasicAllowlist::from(allow_list).into()],
-            Self::Pausable => vec![BasicPausable::default().into()],
-            Self::PausableBlocklist => vec![PausableBlocklist::default().into()],
             Self::Custom(_) => Vec::new(),
         }
     }

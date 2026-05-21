@@ -42,10 +42,8 @@ pub use transfer::{
     AllowlistStorage,
     BasicAllowlist,
     BasicBlocklist,
-    BasicPausable,
     BlocklistOwnerControlled,
     BlocklistStorage,
-    PausableBlocklist,
     TransferAllowAll,
     TransferPolicy,
 };

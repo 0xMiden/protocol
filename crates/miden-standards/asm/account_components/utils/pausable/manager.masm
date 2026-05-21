@@ -1,0 +1,12 @@
+# PausableManager component shim.
+#
+# Exposes `pause` and `unpause` as `Invocation: call` admin procedures, gated by the account-wide
+# `Authority` component via `exec.authority::assert_authorized`.
+#
+# Companion components required:
+# - `Authority` (installed via `AccessControl::Ownable2Step` / `AccessControl::Rbac` /
+#   `AccessControl::AuthControlled`).
+# - `Pausable` — provides the `is_paused` storage slot.
+
+pub use ::miden::standards::utils::pausable::manager::pause
+pub use ::miden::standards::utils::pausable::manager::unpause

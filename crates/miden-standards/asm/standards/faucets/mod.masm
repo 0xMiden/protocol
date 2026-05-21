@@ -11,6 +11,7 @@ use miden::core::mem
 use miden::protocol::active_account
 use miden::protocol::native_account
 use miden::standards::access::authority
+use miden::standards::utils::pausable
 
 # =================================================================================================
 # CONSTANTS — slot names
@@ -264,6 +265,10 @@ pub proc set_description
     exec.authority::assert_authorized
     # => [DESCRIPTION_HASH, pad(12)]
 
+    # Transversal pause guard (Pausable component required for FungibleFaucet).
+    exec.pausable::assert_not_paused
+    # => [DESCRIPTION_HASH, pad(12)]
+
     # Pipe 7 words from advice map into local words 0–6, validating the hash.
     adv.push_mapval
     locaddr.0
@@ -341,6 +346,10 @@ pub proc set_logo_uri
     exec.authority::assert_authorized
     # => [LOGO_URI_HASH, pad(12)]
 
+    # Transversal pause guard (Pausable component required for FungibleFaucet).
+    exec.pausable::assert_not_paused
+    # => [LOGO_URI_HASH, pad(12)]
+
     adv.push_mapval
     locaddr.0
     # => [locaddr.0, LOGO_URI_HASH, pad(16)]
@@ -415,6 +424,10 @@ pub proc set_external_link
     # => [EXTERNAL_LINK_HASH, pad(12)]
 
     exec.authority::assert_authorized
+    # => [EXTERNAL_LINK_HASH, pad(12)]
+
+    # Transversal pause guard (Pausable component required for FungibleFaucet).
+    exec.pausable::assert_not_paused
     # => [EXTERNAL_LINK_HASH, pad(12)]
 
     adv.push_mapval

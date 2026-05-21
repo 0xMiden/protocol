@@ -1,11 +1,12 @@
 # miden::standards::utils::pausable
 #
-# Minimal pause flag storage and helpers. Pause/unpause procedures do not perform authorization.
-# Compose with ownable2step or role-based access control in a higher layer (e.g. the
-# `pausable_owner` or `pausable_rbac` wrapper components).
+# Pause primitive: storage slot + low-level helpers. The mutation helpers (`pause`, `unpause`)
+# perform NO authorization — they are exec building blocks consumed by auth-checking wrappers
+# such as [`pausable::manager`]. The read view (`is_paused`) is also exposed call-invokably so
+# tx scripts can query the flag through the Pausable component shim.
 #
-# Downstream components compose `assert_not_paused` / `assert_paused` to gate their own logic
-# (e.g. asset callbacks, custom procedures). This module itself does not register any callbacks.
+# Consumers (asset callbacks, custom procedures, TokenPolicyManager mint/burn/transfer dispatch)
+# compose `assert_not_paused` / `assert_paused` (exec) to gate their own logic.
 
 use miden::core::word
 use miden::protocol::active_account
@@ -37,23 +38,27 @@ const ERR_PAUSABLE_EXPECTED_PAUSE = "the contract is not paused"
 #! Reads [`IS_PAUSED_SLOT`] on the active account and returns `1` if the stored word is non-zero
 #! (paused) or `0` if it is the zero word (unpaused).
 #!
-#! Inputs:  []
-#! Outputs: [is_paused]
+#! Inputs:  [pad(16)]
+#! Outputs: [is_paused, pad(15)]
 #!
-#! Invocation: exec
+#! Invocation: call
 pub proc is_paused
     push.IS_PAUSED_SLOT[0..2]
     exec.active_account::get_item
-    # => [is_paused, 0, 0, 0]
+    # => [is_paused, 0, 0, 0, pad(16)]
 
     exec.word::eqz not
-    # => [is_paused]
+    # => [is_paused, pad(16)]
+
+    swap drop
+    # => [is_paused, pad(15)]
 end
 
 #! Sets the paused flag. Fails if already paused.
 #!
 #! This procedure does not verify the caller. Compose with access control in a wrapper component
-#! (e.g. `pausable_owner` or `pausable_rbac`) so only privileged accounts can pause.
+#! (e.g. `pausable::manager` via Authority::assert_authorized) so only privileged accounts can
+#! pause.
 #!
 #! Inputs:  []
 #! Outputs: []
@@ -106,8 +111,11 @@ end
 #! Reads [`IS_PAUSED_SLOT`] on the active account and applies [`word::eqz`]. If the stored word
 #! is non-zero (paused), panics with [`ERR_PAUSABLE_ENFORCED_PAUSE`].
 #!
-#! Use from other modules or transaction scripts to guard logic that must not run while paused.
-#! In asset callback foreign context, the active account is the issuing faucet.
+#! Opt-in semantic: if the `IS_PAUSED_SLOT` is not installed on the account, `active_account::
+#! get_item` returns the zero word, which is treated as "unpaused" — so the assertion is a no-op
+#! for accounts that did not install the Pausable component. This is the canonical way for
+#! cross-cutting consumers (TokenPolicyManager dispatch, asset callbacks, metadata setters) to
+#! gate their logic on pause state without making Pausable a hard dependency.
 #!
 #! Inputs:  []
 #! Outputs: []
