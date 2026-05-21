@@ -92,12 +92,8 @@ const EXEC_OFFERED_FAUCET_PREFIX = 7
 const EXEC_AMT_REQUESTED_ACCOUNT_FILL = 8
 const EXEC_AMT_REQUESTED_NOTE_FILL = 9
 
-# get_current_depth locals — scratch buffer for the parent's PswapAttachment word as
-# written by active_note::write_attachment_to_memory. The on-chain attachment word is
-# laid out as [amount, order_id, depth, 0]; only BASE (= 0, passed to write_to_memory
-# as the destination pointer) and DEPTH (= 2, the felt we read back) are referenced.
-# The other two slots (order_id at 1, reserved at 3) are written by the kernel but
-# not consumed here.
+# Local memory for the parent's PswapAttachment word [amount, order_id, depth, 0]:
+# write the word at BASE, read back only DEPTH.
 const PARENT_ATTACHMENT_BASE = 0
 const PARENT_ATTACHMENT_DEPTH = 2
 
