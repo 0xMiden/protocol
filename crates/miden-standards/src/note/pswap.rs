@@ -296,7 +296,7 @@ impl PswapNote {
         StandardNoteAttachment::PswapAttachment.attachment_scheme();
 
     /// Offset of the `depth` field within the [`Self::PSWAP_ATTACHMENT_SCHEME`] word.
-    const ATTACHMENT_DEPTH_INDEX: usize = 2;
+    const PARENT_ATTACHMENT_DEPTH_OFFSET: usize = 2;
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
@@ -371,8 +371,8 @@ impl PswapNote {
     /// For notes targeting a network account, this may contain a
     /// [`NetworkAccountTarget`](crate::note::NetworkAccountTarget) with scheme = 2. For a
     /// remainder PSWAP this contains the [`Self::PSWAP_ATTACHMENT_SCHEME`] word
-    /// `[amt_payout, order_id, depth, 0]`. For local-only originals, this is typically
-    /// empty.
+    /// `[amt_payout, order_id, depth, 0]`. For an original PSWAP (no prior fill),
+    /// this is typically empty.
     pub fn attachments(&self) -> Option<&NoteAttachment> {
         self.attachment.as_ref()
     }
@@ -386,13 +386,13 @@ impl PswapNote {
     /// or 0 if the note has no such attachment (i.e., it is the original PSWAP, not a
     /// remainder produced by an earlier fill).
     ///
-    /// Mirrors the on-chain `get_current_depth` logic that the MASM script uses to derive
-    /// the next round's depth as `parent_depth + 1`.
+    /// The next round's `current_depth` is computed as `parent_depth() + 1`, matching the
+    /// on-chain `get_current_depth` MASM procedure.
     pub fn parent_depth(&self) -> u64 {
         match self.attachment.as_ref() {
             Some(att) if att.attachment_scheme() == Self::PSWAP_ATTACHMENT_SCHEME => {
                 let attachment_word = att.content().as_words()[0];
-                attachment_word[Self::ATTACHMENT_DEPTH_INDEX].as_canonical_u64()
+                attachment_word[Self::PARENT_ATTACHMENT_DEPTH_OFFSET].as_canonical_u64()
             },
             _ => 0,
         }
@@ -622,12 +622,11 @@ impl PswapNote {
         if depth == 0 {
             return Err(NoteError::other("depth must be >= 1"));
         }
-        let depth_felt = Felt::from(depth);
         let remainder_serial = Word::from([
             self.serial_number[0],
             self.serial_number[1],
             self.serial_number[2],
-            self.serial_number[3] + depth_felt,
+            self.serial_number[3] + Felt::from(depth),
         ]);
 
         let requested_asset =
@@ -725,19 +724,19 @@ impl PswapNote {
     /// remainder).
     ///
     /// The attachment word is `[amount, order_id, depth, 0]` under
-    /// [`Self::PSWAP_ATTACHMENT_SCHEME`], matching the on-chain MASM. `amount` is the
-    /// round's transferred amount on the relevant side of the trade — requested-asset units
-    /// for the payback, offered-asset units for the remainder.
+    /// [`Self::PSWAP_ATTACHMENT_SCHEME`]. `amount` is the round's transferred amount on
+    /// the relevant side of the trade — requested-asset units for the payback,
+    /// offered-asset units for the remainder.
     fn pswap_output_attachment(
         amount: u64,
         order_id: Felt,
         depth: u64,
     ) -> Result<NoteAttachment, NoteError> {
-        let amount_felt = Felt::try_from(amount)
+        let amount = Felt::try_from(amount)
             .map_err(|e| NoteError::other_with_source("amount does not fit in a felt", e))?;
-        let depth_felt = Felt::try_from(depth)
+        let depth = Felt::try_from(depth)
             .map_err(|e| NoteError::other_with_source("depth does not fit in a felt", e))?;
-        let word = Word::from([amount_felt, order_id, depth_felt, ZERO]);
+        let word = Word::from([amount, order_id, depth, ZERO]);
         Ok(NoteAttachment::with_word(Self::PSWAP_ATTACHMENT_SCHEME, word))
     }
 
@@ -748,8 +747,8 @@ impl PswapNote {
     /// serial number (`serial[0] + 1`).
     ///
     /// The attachment carries `[fill_amount, order_id, current_depth, 0]` under
-    /// [`Self::PSWAP_ATTACHMENT_SCHEME`], matching the on-chain MASM. `current_depth` is
-    /// `parent_depth + 1` — i.e., the round number that produced this payback (1-indexed).
+    /// [`Self::PSWAP_ATTACHMENT_SCHEME`]. `current_depth` is `parent_depth + 1` — i.e.,
+    /// the round number that produced this payback (1-indexed).
     fn create_payback_note(
         &self,
         consumer_account_id: AccountId,
@@ -789,12 +788,12 @@ impl PswapNote {
     /// Builds a remainder PSWAP note carrying the unfilled portion of the swap.
     ///
     /// The remainder inherits the original creator, tags, and note type, with an updated
-    /// serial number (`serial[3] + 1`) matching the MASM-side derivation.
+    /// serial number (`serial[3] + 1`).
     ///
     /// The attachment carries `[offered_amount_for_fill, order_id, current_depth, 0]` under
-    /// [`Self::PSWAP_ATTACHMENT_SCHEME`], matching the on-chain MASM. The remainder must
-    /// carry this attachment so that when *it* is later consumed as a parent, the
-    /// on-chain `get_current_depth` reads the right scheme and increments depth correctly.
+    /// [`Self::PSWAP_ATTACHMENT_SCHEME`]. The remainder must carry this attachment so that
+    /// when *it* is later consumed as a parent, `get_current_depth` reads the right scheme
+    /// and increments depth correctly.
     fn create_remainder_pswap_note(
         &self,
         consumer_account_id: AccountId,

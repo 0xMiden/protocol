@@ -93,9 +93,9 @@ const EXEC_AMT_REQUESTED_ACCOUNT_FILL = 8
 const EXEC_AMT_REQUESTED_NOTE_FILL = 9
 
 # Local memory for the parent's PswapAttachment word [amount, order_id, depth, 0]:
-# write the word at BASE, read back only DEPTH.
-const PARENT_ATTACHMENT_BASE = 0
-const PARENT_ATTACHMENT_DEPTH = 2
+# write the word at PARENT_ATTACHMENT_PTR, read back only the depth at DEPTH_OFFSET.
+const PARENT_ATTACHMENT_PTR = 0
+const PARENT_ATTACHMENT_DEPTH_OFFSET = 2
 
 # ERRORS
 # =================================================================================================
@@ -493,7 +493,7 @@ proc get_order_id
 end
 
 #! Returns current_depth = parent_depth + 1, where parent_depth is the depth carried in the
-#! consumed PSWAP note's PswapAttachment word at offset PARENT_ATTACHMENT_DEPTH if such an
+#! consumed PSWAP note's PswapAttachment word at offset PARENT_ATTACHMENT_DEPTH_OFFSET if such an
 #! attachment exists, or 0 if not (i.e., the parent is the original PSWAP, with scheme none()
 #! or NetworkAccountTarget).
 #!
@@ -508,7 +508,7 @@ proc get_current_depth
     # => [is_found, attachment_idx]
 
     if.true
-        locaddr.PARENT_ATTACHMENT_BASE
+        locaddr.PARENT_ATTACHMENT_PTR
         # => [dest_ptr, attachment_idx]
 
         exec.active_note::write_attachment_to_memory
@@ -517,7 +517,7 @@ proc get_current_depth
         drop
         # => []
 
-        loc_load.PARENT_ATTACHMENT_DEPTH
+        loc_load.PARENT_ATTACHMENT_DEPTH_OFFSET
         # => [parent_depth]
     else
         drop push.0
