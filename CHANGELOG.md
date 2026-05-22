@@ -19,6 +19,7 @@
 - [BREAKING] Add `NetworkAccount` wrapper for convenient network account identification ([#2915](https://github.com/0xMiden/protocol/pull/2915)).
 - [BREAKING] Introduced `AssetComposition` and encoded composition in the asset vault key's metadata byte ([#2631](https://github.com/0xMiden/protocol/issues/2631)).
 - Exposed `token_config_slot_value` on `FungibleFaucet` to allow reading the token config word directly from the account storage ([#2954](https://github.com/0xMiden/protocol/pull/2954)).
+- Added `PswapAttachment` scheme and `PswapNote::payback_note` / `remainder_note` discovery helpers so creators can reconstruct private paybacks from on-chain commitments ([#2909](https://github.com/0xMiden/protocol/pull/2909)).
 
 ### Changes
 
