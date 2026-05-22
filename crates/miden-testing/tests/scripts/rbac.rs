@@ -455,7 +455,6 @@ async fn test_rbac_grant_existing_member_is_noop() -> anyhow::Result<()> {
     let regrant_note = build_note(owner, grant_minter_to_member)?;
     let regranted = execute_note_and_apply(&mock_chain, &granted, &regrant_note).await?;
 
-    // Member count must remain at 1; granting an existing member is idempotent.
     let (member_count, _) = get_role_config(&regranted, &minter)?;
     assert_eq!(member_count, Felt::from(1u32));
     assert!(is_role_member(&regranted, &minter, member)?);
