@@ -82,8 +82,13 @@ pub fn create_mint_script_code(params: &FaucetTestParams, faucet_id: AccountId) 
                 push.{amount}
                 push.{faucet_id_prefix}
                 push.{faucet_id_suffix}
-                push.0
-                # => [enable_callbacks=0, faucet_id_suffix, faucet_id_prefix, amount, tag, note_type, RECIPIENT, ...]
+                push.1
+                # => [enable_callbacks=1, faucet_id_suffix, faucet_id_prefix, amount, tag, note_type, RECIPIENT, ...]
+                # `enable_callbacks=1` matches the faucet's storage state under the M-01 fix:
+                # AllowAll transfer policies register the protocol callback slots, so
+                # `fungible::mint_and_send` derives the asset with `has_callbacks=true` and
+                # the input ASSET_KEY must carry the same flag for the binding check (#2911)
+                # to pass.
 
                 exec.::miden::protocol::asset::create_fungible_asset
                 # => [ASSET_KEY, ASSET_VALUE, tag, note_type, RECIPIENT, ...]
@@ -524,8 +529,9 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
 
     let output_script_root = note_recipient.script().root();
 
-    let asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?
-        .with_callbacks(AssetCallbackFlag::Enabled);
+    let callbacks_flag = AssetCallbackFlag::Enabled;
+    let asset =
+        FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?.with_callbacks(callbacks_flag);
     let metadata = PartialNoteMetadata::new(faucet.id(), note_type).with_tag(tag);
     let expected_note = Note::new(NoteAssets::new(vec![asset.into()])?, metadata, note_recipient);
 
@@ -563,8 +569,8 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
                 push.{amount}
                 push.{faucet_id_prefix}
                 push.{faucet_id_suffix}
-                push.0
-                # => [0, faucet_id_suffix, faucet_id_prefix, amount, tag, note_type, RECIPIENT]
+                push.{callbacks_flag}
+                # => [callbacks_flag, faucet_id_suffix, faucet_id_prefix, amount, tag, note_type, RECIPIENT]
 
                 exec.::miden::protocol::asset::create_fungible_asset
                 # => [ASSET_KEY, ASSET_VALUE, tag, note_type, RECIPIENT]
@@ -590,6 +596,7 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
         amount = amount,
         faucet_id_suffix = faucet.id().suffix(),
         faucet_id_prefix = faucet.id().prefix().as_felt(),
+        callbacks_flag = callbacks_flag as u8,
     );
 
     // Create the trigger note that will call mint
@@ -700,9 +707,8 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
     // --------------------------------------------------------------------------------------------
 
     let amount = Felt::new_unchecked(75);
-    // The faucet has `TransferPolicy::AllowAll` configured, which registers the protocol
-    // callback slots under the M-01 fix. The asset embedded in the MINT note must carry the
-    // matching callback flag for `mint_and_send`'s binding check (#2911) to pass.
+    // The faucet has callbacks configured via `TransferPolicy::AllowAll`, so the asset to mint
+    // must match on the callback flag.
     let mint_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())
         .unwrap()
         .with_callbacks(AssetCallbackFlag::Enabled);
@@ -802,7 +808,8 @@ async fn test_network_faucet_owner_can_mint() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
 
     let amount = Felt::new_unchecked(75);
-    let mint_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?;
+    let mint_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?
+        .with_callbacks(AssetCallbackFlag::Enabled);
 
     let output_note_tag = NoteTag::with_account_target(target_account.id());
     let p2id_note = create_p2id_note_exact(
@@ -941,7 +948,8 @@ async fn test_network_faucet_non_owner_cannot_mint() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
 
     let amount = Felt::new_unchecked(75);
-    let mint_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?;
+    let mint_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?
+        .with_callbacks(AssetCallbackFlag::Enabled);
 
     let output_note_tag = NoteTag::with_account_target(target_account.id());
     let p2id_note = create_p2id_note_exact(
@@ -1066,7 +1074,8 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
 
     let amount = Felt::new_unchecked(75);
-    let mint_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?;
+    let mint_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?
+        .with_callbacks(AssetCallbackFlag::Enabled);
 
     let output_note_tag = NoteTag::with_account_target(target_account.id());
     let p2id_note = create_p2id_note_exact(
@@ -1570,9 +1579,8 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
 
     let amount = Felt::new_unchecked(75);
-    // The faucet has `TransferPolicy::AllowAll` configured, which registers the protocol
-    // callback slots under the M-01 fix. The asset embedded in the MINT note must carry the
-    // matching callback flag for `mint_and_send`'s binding check (#2911) to pass.
+    // The faucet has callbacks configured via `TransferPolicy::AllowAll`, so the asset to mint
+    // must match on the callback flag.
     let mint_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())
         .unwrap()
         .with_callbacks(AssetCallbackFlag::Enabled);
@@ -1696,8 +1704,8 @@ async fn multiple_mints_in_single_tx_produce_correct_amounts() -> anyhow::Result
                 push.{amount_1}
                 push.{faucet_id_prefix}
                 push.{faucet_id_suffix}
-                push.0
-                # => [0, faucet_id_suffix, faucet_id_prefix, amount_1, tag, note_type, RECIPIENT_1]
+                push.1
+                # => [enable_callbacks=1, faucet_id_suffix, faucet_id_prefix, amount_1, tag, note_type, RECIPIENT_1]
 
                 exec.::miden::protocol::asset::create_fungible_asset
                 # => [ASSET_KEY, ASSET_VALUE, tag, note_type, RECIPIENT_1]
@@ -1715,8 +1723,8 @@ async fn multiple_mints_in_single_tx_produce_correct_amounts() -> anyhow::Result
                 push.{amount_2}
                 push.{faucet_id_prefix}
                 push.{faucet_id_suffix}
-                push.0
-                # => [0, faucet_id_suffix, faucet_id_prefix, amount_2, tag, note_type, RECIPIENT_2]
+                push.1
+                # => [enable_callbacks=1, faucet_id_suffix, faucet_id_prefix, amount_2, tag, note_type, RECIPIENT_2]
 
                 exec.::miden::protocol::asset::create_fungible_asset
                 # => [ASSET_KEY, ASSET_VALUE, tag, note_type, RECIPIENT_2]

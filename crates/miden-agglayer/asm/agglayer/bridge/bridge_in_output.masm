@@ -215,13 +215,8 @@ proc write_mint_note_storage
     # => [native_amount, faucet_id_suffix, faucet_id_prefix, faucet_id_suffix, faucet_id_prefix]
 
     # prepare stack for asset::create_fungible_asset: [enable_callbacks, suffix, prefix, amount]
-    # TODO(#2963): callbacks bit is hardcoded to 0. The consuming faucet re-derives the
-    # asset for itself in `fungible::mint_and_send` using its own callbacks bit. If a
-    # bridge-owned faucet enables callbacks, the stored ASSET_KEY here will not match
-    # the faucet-derived one and every MINT note will be rejected with
-    # ERR_FUNGIBLE_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET.
-    movdn.2 push.0
-    # => [0, faucet_id_suffix, faucet_id_prefix, native_amount, faucet_id_suffix, faucet_id_prefix]
+    movdn.2 push.1
+    # => [1, faucet_id_suffix, faucet_id_prefix, native_amount, faucet_id_suffix, faucet_id_prefix]
 
     exec.asset::create_fungible_asset
     # => [ASSET_KEY, ASSET_VALUE, faucet_id_suffix, faucet_id_prefix]
