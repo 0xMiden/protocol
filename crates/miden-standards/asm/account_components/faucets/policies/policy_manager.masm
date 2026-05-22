@@ -3,10 +3,12 @@
 # Owns one `active_*_policy` slot per mint / burn kind (send and receive policy roots live
 # directly in the protocol-reserved callback slots
 # `miden::protocol::faucet::callback::on_before_asset_added_to_*`), plus one
-# `allowed_*_policies` map slot per kind for set-time validation, and — when at least one of
-# the send / receive policies requires enforcement — the protocol-level asset-callback storage
-# slots populated with the initial active send / receive policy roots. Pair with policy
-# components whose procedure roots are registered in the relevant allowed-policies map.
+# `allowed_*_policies` map slot per kind for set-time validation. When any transfer policy is
+# registered (including `AllowAll`), the protocol-level asset-callback storage slots are also
+# installed and populated with the initial active send / receive policy roots, so every minted
+# asset carries the callback flag and future `set_send_policy` / `set_receive_policy` switches
+# apply uniformly to the whole circulating supply. Pair with policy components whose procedure
+# roots are registered in the relevant allowed-policies map.
 #
 # `execute_*_policy` procedures are intentionally not exposed here: they are `exec`-invocation
 # helpers used inline by other MASM (e.g. `faucets::fungible::mint_and_send`), which `use`
