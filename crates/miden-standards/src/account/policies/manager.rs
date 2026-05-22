@@ -37,6 +37,7 @@ use super::burn::BurnPolicyConfig;
 use super::mint::MintPolicyConfig;
 use super::transfer::TransferPolicy;
 use crate::account::account_component_code;
+use crate::procedure_root;
 
 // ERRORS
 // ================================================================================================
@@ -51,6 +52,42 @@ pub enum TokenPolicyManagerError {
 }
 
 account_component_code!(POLICY_MANAGER_CODE, "faucets/policies/policy_manager.masl");
+
+// PROCEDURE ROOTS
+// ================================================================================================
+
+/// MASL library namespace used for procedure-root lookups. Distinct from
+/// [`TokenPolicyManager::NAME`], which mirrors the standards-side MASM module path.
+const POLICY_MANAGER_LIBRARY_PATH: &str =
+    "miden::standards::components::faucets::policies::policy_manager";
+
+procedure_root!(
+    POLICY_MANAGER_SET_MINT_POLICY,
+    POLICY_MANAGER_LIBRARY_PATH,
+    TokenPolicyManager::SET_MINT_POLICY_PROC_NAME,
+    TokenPolicyManager::code()
+);
+
+procedure_root!(
+    POLICY_MANAGER_SET_BURN_POLICY,
+    POLICY_MANAGER_LIBRARY_PATH,
+    TokenPolicyManager::SET_BURN_POLICY_PROC_NAME,
+    TokenPolicyManager::code()
+);
+
+procedure_root!(
+    POLICY_MANAGER_SET_SEND_POLICY,
+    POLICY_MANAGER_LIBRARY_PATH,
+    TokenPolicyManager::SET_SEND_POLICY_PROC_NAME,
+    TokenPolicyManager::code()
+);
+
+procedure_root!(
+    POLICY_MANAGER_SET_RECEIVE_POLICY,
+    POLICY_MANAGER_LIBRARY_PATH,
+    TokenPolicyManager::SET_RECEIVE_POLICY_PROC_NAME,
+    TokenPolicyManager::code()
+);
 
 // STORAGE SLOT NAMES
 // ================================================================================================
@@ -189,6 +226,11 @@ impl TokenPolicyManager {
 
     /// Component description used in [`AccountComponentMetadata`].
     pub const DESCRIPTION: &'static str = "Token policy manager for fungible faucets";
+
+    const SET_MINT_POLICY_PROC_NAME: &'static str = "set_mint_policy";
+    const SET_BURN_POLICY_PROC_NAME: &'static str = "set_burn_policy";
+    const SET_SEND_POLICY_PROC_NAME: &'static str = "set_send_policy";
+    const SET_RECEIVE_POLICY_PROC_NAME: &'static str = "set_receive_policy";
 
     /// Returns the canonical [`AccountComponentName`] of this component.
     pub const fn name() -> AccountComponentName {
@@ -376,6 +418,26 @@ impl TokenPolicyManager {
             .filter(|(_, cfg)| cfg.kinds.contains(&kind))
             .map(|(root, _)| *root)
             .collect()
+    }
+
+    /// Returns the procedure root of the `set_mint_policy` account procedure.
+    pub fn set_mint_policy_root() -> AccountProcedureRoot {
+        *POLICY_MANAGER_SET_MINT_POLICY
+    }
+
+    /// Returns the procedure root of the `set_burn_policy` account procedure.
+    pub fn set_burn_policy_root() -> AccountProcedureRoot {
+        *POLICY_MANAGER_SET_BURN_POLICY
+    }
+
+    /// Returns the procedure root of the `set_send_policy` account procedure.
+    pub fn set_send_policy_root() -> AccountProcedureRoot {
+        *POLICY_MANAGER_SET_SEND_POLICY
+    }
+
+    /// Returns the procedure root of the `set_receive_policy` account procedure.
+    pub fn set_receive_policy_root() -> AccountProcedureRoot {
+        *POLICY_MANAGER_SET_RECEIVE_POLICY
     }
 
     /// Returns the [`StorageSlotName`] where the active mint policy procedure root is stored.
