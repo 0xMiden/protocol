@@ -11,7 +11,7 @@ use miden::core::mem
 use miden::protocol::active_account
 use miden::protocol::native_account
 use miden::standards::access::authority
-use miden::standards::utils::pausable
+use miden::standards::access::pausable
 
 # =================================================================================================
 # CONSTANTS — slot names

@@ -9,16 +9,16 @@ extern crate alloc;
 use alloc::string::String;
 
 use miden_processor::crypto::random::RandomCoin;
+use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountIdVersion, AccountType};
 use miden_protocol::asset::{Asset, AssetAmount, AssetCallbackFlag, FungibleAsset};
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::{Note, NoteTag, NoteType};
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::utils::sync::LazyLock;
-use miden_protocol::{Felt, Word};
 use miden_standards::account::access::AccessControl;
+use miden_standards::account::access::pausable::{PausableManager, PausableStorage};
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
-use miden_standards::account::pausable::{PausableManager, PausableStorage};
 use miden_standards::account::policies::{
     BurnPolicyConfig,
     MintPolicyConfig,
@@ -35,7 +35,7 @@ use miden_testing::{
     assert_transaction_executor_error,
 };
 
-const ERR_PAUSABLE_ENFORCED_PAUSE: MasmError = MasmError::from_static_str("the contract is paused");
+const ERR_PAUSABLE_IS_PAUSED: MasmError = MasmError::from_static_str("the contract is paused");
 
 const ERR_PAUSABLE_EXPECTED_PAUSE: MasmError =
     MasmError::from_static_str("the contract is not paused");
@@ -79,8 +79,8 @@ fn add_faucet_with_pause(
 // ================================================================================================
 
 fn build_note(sender: AccountId, code: impl Into<String>) -> anyhow::Result<Note> {
-    let seed: [u64; 4] = rand::random();
-    let mut rng = RandomCoin::new(Word::from(seed.map(Felt::new_unchecked)));
+    let seed: [u32; 4] = rand::random();
+    let mut rng = RandomCoin::new(Word::from(seed));
     Ok(NoteBuilder::new(sender, &mut rng)
         .note_type(NoteType::Private)
         .code(code.into())
@@ -92,7 +92,7 @@ fn build_pause_note(sender: AccountId) -> anyhow::Result<Note> {
     build_note(
         sender,
         r#"
-        use miden::standards::utils::pausable::manager
+        use miden::standards::access::pausable::manager
 
         @note_script
         pub proc main
@@ -109,7 +109,7 @@ fn build_unpause_note(sender: AccountId) -> anyhow::Result<Note> {
     build_note(
         sender,
         r#"
-        use miden::standards::utils::pausable::manager
+        use miden::standards::access::pausable::manager
 
         @note_script
         pub proc main
@@ -140,7 +140,7 @@ async fn execute_note_on_faucet(
 // ================================================================================================
 
 #[tokio::test]
-async fn pausable_manager_pause_succeeds_when_owner_signs() -> anyhow::Result<()> {
+async fn pausable_manager_pause_succeeds_when_sender_is_owner() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let faucet = add_faucet_with_pause(&mut builder, *OWNER_ID)?;
 
@@ -273,7 +273,7 @@ async fn pausable_manager_pause_while_paused_fails() -> anyhow::Result<()> {
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_PAUSABLE_ENFORCED_PAUSE);
+    assert_transaction_executor_error!(result, ERR_PAUSABLE_IS_PAUSED);
 
     Ok(())
 }
@@ -384,7 +384,7 @@ async fn pausable_transfer_fails_when_paused() -> anyhow::Result<()> {
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_PAUSABLE_ENFORCED_PAUSE);
+    assert_transaction_executor_error!(result, ERR_PAUSABLE_IS_PAUSED);
 
     Ok(())
 }
@@ -474,7 +474,7 @@ async fn pausable_mint_fails_when_paused() -> anyhow::Result<()> {
         .await;
 
     // execute_mint_policy calls exec.pausable::assert_not_paused before dispatch → panic.
-    assert_transaction_executor_error!(result, ERR_PAUSABLE_ENFORCED_PAUSE);
+    assert_transaction_executor_error!(result, ERR_PAUSABLE_IS_PAUSED);
 
     Ok(())
 }
@@ -495,8 +495,7 @@ async fn pausable_burn_fails_when_paused() -> anyhow::Result<()> {
     "#;
     let burn_note_script = miden_standards::code_builder::CodeBuilder::default()
         .compile_note_script(burn_note_script_code)?;
-    let mut rng =
-        RandomCoin::new(Word::from([1u32, 2, 3, 4].map(|v| Felt::new_unchecked(v as u64))));
+    let mut rng = RandomCoin::new(Word::from([1u32, 2, 3, 4]));
     let burn_note = NoteBuilder::new(faucet.id(), &mut rng)
         .note_type(NoteType::Private)
         .add_assets([Asset::Fungible(burn_asset)])
@@ -519,7 +518,7 @@ async fn pausable_burn_fails_when_paused() -> anyhow::Result<()> {
         .await;
 
     // execute_burn_policy → exec.pausable::assert_not_paused → panic.
-    assert_transaction_executor_error!(result, ERR_PAUSABLE_ENFORCED_PAUSE);
+    assert_transaction_executor_error!(result, ERR_PAUSABLE_IS_PAUSED);
 
     Ok(())
 }
@@ -566,8 +565,7 @@ async fn pausable_set_max_supply_fails_when_paused() -> anyhow::Result<()> {
     );
     let set_max_supply_note_script = miden_standards::code_builder::CodeBuilder::default()
         .compile_note_script(&set_max_supply_note_code)?;
-    let mut rng =
-        RandomCoin::new(Word::from([9u32, 8, 7, 6].map(|v| Felt::new_unchecked(v as u64))));
+    let mut rng = RandomCoin::new(Word::from([9u32, 8, 7, 6]));
     let set_max_supply_note = NoteBuilder::new(*OWNER_ID, &mut rng)
         .note_type(NoteType::Private)
         .script(set_max_supply_note_script)
@@ -591,7 +589,7 @@ async fn pausable_set_max_supply_fails_when_paused() -> anyhow::Result<()> {
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_PAUSABLE_ENFORCED_PAUSE);
+    assert_transaction_executor_error!(result, ERR_PAUSABLE_IS_PAUSED);
 
     Ok(())
 }

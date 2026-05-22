@@ -7,7 +7,7 @@ use crate::procedure_root;
 // PAUSABLE MANAGER COMPONENT
 // ================================================================================================
 
-account_component_code!(PAUSABLE_MANAGER_CODE, "utils/pausable/manager.masl");
+account_component_code!(PAUSABLE_MANAGER_CODE, "access/pausable/manager.masl");
 
 procedure_root!(
     PAUSABLE_MANAGER_PAUSE,
@@ -46,7 +46,7 @@ pub struct PausableManager;
 
 impl PausableManager {
     /// The name of the component.
-    pub const NAME: &'static str = "miden::standards::components::utils::pausable::manager";
+    pub const NAME: &'static str = "miden::standards::components::access::pausable::manager";
 
     pub const PAUSE_PROC_NAME: &'static str = "pause";
     pub const UNPAUSE_PROC_NAME: &'static str = "unpause";

@@ -1,6 +1,6 @@
 # Generic transfer policy procedures shared by policy manager flows.
 
-use miden::standards::utils::pausable
+use miden::standards::access::pausable
 
 # POLICY PROCEDURES
 # ================================================================================================

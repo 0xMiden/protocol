@@ -1,4 +1,4 @@
-# miden::standards::utils::pausable
+# miden::standards::access::pausable
 #
 # Pause primitive: storage slot + low-level helpers. The mutation helpers (`pause`, `unpause`)
 # perform NO authorization — they are exec building blocks consumed by auth-checking wrappers
@@ -17,7 +17,7 @@ use miden::protocol::native_account
 
 # The slot where the paused flag is stored as a single word.
 # Unpaused: [0, 0, 0, 0]. Paused: [1, 0, 0, 0].
-const IS_PAUSED_SLOT = word("miden::standards::utils::pausable::is_paused")
+const IS_PAUSED_SLOT = word("miden::standards::access::pausable::is_paused")
 
 const PAUSED_WORD = [1, 0, 0, 0]
 
@@ -26,7 +26,7 @@ const UNPAUSED_WORD = [0, 0, 0, 0]
 # ERRORS
 # ================================================================================================
 
-const ERR_PAUSABLE_ENFORCED_PAUSE = "the contract is paused"
+const ERR_PAUSABLE_IS_PAUSED = "the contract is paused"
 
 const ERR_PAUSABLE_EXPECTED_PAUSE = "the contract is not paused"
 
@@ -109,7 +109,7 @@ end
 #! Requires the contract to be unpaused (storage word is the zero word).
 #!
 #! Reads [`IS_PAUSED_SLOT`] on the active account and applies [`word::eqz`]. If the stored word
-#! is non-zero (paused), panics with [`ERR_PAUSABLE_ENFORCED_PAUSE`].
+#! is non-zero (paused), panics with [`ERR_PAUSABLE_IS_PAUSED`].
 #!
 #! If the `IS_PAUSED_SLOT` is not installed on the account, `active_account:: get_item` 
 #! returns the zero word, which is treated as "unpaused" — so the assertion is a no-op
@@ -132,7 +132,7 @@ pub proc assert_not_paused
     exec.word::eqz
     # => [is_unpaused]
 
-    assert.err=ERR_PAUSABLE_ENFORCED_PAUSE
+    assert.err=ERR_PAUSABLE_IS_PAUSED
     # => []
 end
 

@@ -6,7 +6,6 @@ pub mod components;
 pub mod faucets;
 pub mod interface;
 pub mod metadata;
-pub mod pausable;
 pub mod policies;
 pub mod wallets;
 

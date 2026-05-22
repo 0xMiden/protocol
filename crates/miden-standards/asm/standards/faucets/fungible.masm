@@ -17,7 +17,7 @@ use miden::protocol::asset::FUNGIBLE_ASSET_MAX_AMOUNT
 use miden::standards::access::authority
 use miden::standards::faucets::policies::policy_manager
 use miden::standards::faucets::MUTABILITY_CONFIG_SLOT
-use miden::standards::utils::pausable
+use miden::standards::access::pausable
 
 # =================================================================================================
 # CONSTANTS — slot names

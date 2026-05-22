@@ -1,4 +1,4 @@
-# miden::standards::utils::pausable::manager
+# miden::standards::access::pausable::manager
 #
 # Pause admin manager. Exposes `pause` and `unpause` as `Invocation: call` procedures gated by
 # the account-wide `Authority` component via `exec.authority::assert_authorized` — the same
@@ -12,7 +12,7 @@
 # - `Pausable` — provides the `is_paused` storage slot that pause / unpause write to.
 
 use miden::standards::access::authority
-use miden::standards::utils::pausable
+use miden::standards::access::pausable
 
 # PUBLIC INTERFACE
 # ================================================================================================

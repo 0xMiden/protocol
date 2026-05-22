@@ -8,5 +8,5 @@
 #   `AccessControl::AuthControlled`).
 # - `Pausable` — provides the `is_paused` storage slot.
 
-pub use ::miden::standards::utils::pausable::manager::pause
-pub use ::miden::standards::utils::pausable::manager::unpause
+pub use ::miden::standards::access::pausable::manager::pause
+pub use ::miden::standards::access::pausable::manager::unpause

@@ -6,7 +6,7 @@
 
 use miden::protocol::native_account
 use miden::standards::faucets::policies::transfer::blocklist
-use miden::standards::utils::pausable
+use miden::standards::access::pausable
 
 # POLICY PROCEDURES
 # ================================================================================================
