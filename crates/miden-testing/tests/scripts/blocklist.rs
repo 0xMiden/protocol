@@ -21,8 +21,8 @@ use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
     BasicBlocklist,
     BlocklistOwnerControlled,
-    BurnPolicyConfig,
-    MintPolicyConfig,
+    BurnPolicy,
+    MintPolicy,
     PolicyRegistration,
     TokenPolicyManager,
     TransferPolicy,
@@ -45,7 +45,7 @@ fn dummy_owner() -> AccountId {
     AccountId::dummy([9; 15], AccountIdVersion::Version1, AccountType::Private)
 }
 
-/// Builds a fungible faucet with [`TransferPolicy::Blocklist`] on both send and receive,
+/// Builds a fungible faucet with the basic blocklist transfer policy on both send and receive,
 /// plus the [`BlocklistOwnerControlled`] component (gated by `Ownable2Step::new(owner_id)`)
 /// so that the owner can invoke `block_account` / `unblock_account` via owner-authored notes.
 fn add_faucet_with_owner_blocklist_transfer(
@@ -58,7 +58,7 @@ fn add_faucet_with_owner_blocklist_transfer(
 /// Same as [`add_faucet_with_owner_blocklist_transfer`] but seeds the `blocked_accounts`
 /// storage map with the given accounts at deploy time via
 /// [`BasicBlocklist::with_blocked_accounts`]. The transfer policy is wired up through
-/// [`TransferPolicy::Custom`] so the manager does not also install an empty `BasicBlocklist`
+/// [`TransferPolicy::custom`] so the manager does not also install an empty `BasicBlocklist`
 /// (which would conflict with the seeded one).
 fn add_faucet_with_owner_blocklist_transfer_initialized(
     builder: &mut MockChainBuilder,
@@ -81,16 +81,16 @@ fn add_faucet_with_owner_blocklist_transfer_initialized(
         .with_component(Authority::OwnerControlled)
         .with_components(
             TokenPolicyManager::new()
-                .with_mint_policy(MintPolicyConfig::AllowAll, PolicyRegistration::Active)?
-                .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)?
+                .with_mint_policy(MintPolicy::allow_all(), PolicyRegistration::Active)
+                .with_burn_policy(BurnPolicy::allow_all(), PolicyRegistration::Active)
                 .with_send_policy(
-                    TransferPolicy::Custom(BasicBlocklist::root()),
+                    TransferPolicy::custom(BasicBlocklist::root()),
                     PolicyRegistration::Active,
-                )?
+                )
                 .with_receive_policy(
-                    TransferPolicy::Custom(BasicBlocklist::root()),
+                    TransferPolicy::custom(BasicBlocklist::root()),
                     PolicyRegistration::Active,
-                )?,
+                ),
         )
         .with_component(basic_blocklist)
         .with_component(BlocklistOwnerControlled);
@@ -447,7 +447,7 @@ async fn block_does_not_affect_other_accounts() -> anyhow::Result<()> {
 }
 
 /// Verifies that `mint_and_send` works on a `BasicFungibleFaucet` whose `TokenPolicyManager`
-/// installs the asset-callback slots (here via [`TransferPolicy::Blocklist`]).
+/// installs the asset-callback slots (here via the basic blocklist transfer policy).
 #[tokio::test]
 async fn mint_and_send_on_blocklist_basic_faucet() -> anyhow::Result<()> {
     let owner_id = dummy_owner();

@@ -36,8 +36,8 @@ use miden_protocol::{Felt, Word};
 use miden_standards::account::access::Authority;
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
-    BurnPolicyConfig,
-    MintPolicyConfig,
+    BurnPolicy,
+    MintPolicy,
     PolicyRegistration,
     TokenPolicyManager,
 };
@@ -774,8 +774,8 @@ fn add_faucet_with_callbacks(
         .with_component(Authority::AuthControlled)
         .with_components(
             TokenPolicyManager::new()
-                .with_mint_policy(MintPolicyConfig::AllowAll, PolicyRegistration::Active)?
-                .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)?,
+                .with_mint_policy(MintPolicy::allow_all(), PolicyRegistration::Active)
+                .with_burn_policy(BurnPolicy::allow_all(), PolicyRegistration::Active),
         )
         .with_component(callback_component);
 

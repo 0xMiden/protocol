@@ -15,8 +15,8 @@ use miden_protocol::transaction::TransactionKernel;
 use miden_standards::account::access::Authority;
 use miden_standards::account::auth::AuthNetworkAccount;
 use miden_standards::account::policies::{
-    BurnPolicyConfig,
-    MintPolicyConfig,
+    BurnPolicy,
+    MintPolicy,
     PolicyRegistration,
     TokenPolicyManager,
     TransferPolicy,
@@ -348,16 +348,11 @@ fn generate_agglayer_constants(
             // is registered as Reserved so the owner can open burns at runtime via
             // `set_burn_policy`.
             let token_policy_manager = TokenPolicyManager::new()
-                .with_mint_policy(MintPolicyConfig::OwnerOnly, PolicyRegistration::Active)
-                .expect("active mint policy is registered exactly once")
-                .with_burn_policy(BurnPolicyConfig::OwnerOnly, PolicyRegistration::Active)
-                .expect("active burn policy is registered exactly once")
-                .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Reserved)
-                .expect("reserved burn policy registration does not conflict")
-                .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)
-                .expect("active send policy is registered exactly once")
-                .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)
-                .expect("active receive policy is registered exactly once");
+                .with_mint_policy(MintPolicy::owner_only(), PolicyRegistration::Active)
+                .with_burn_policy(BurnPolicy::owner_only(), PolicyRegistration::Active)
+                .with_burn_policy(BurnPolicy::allow_all(), PolicyRegistration::Reserved)
+                .with_send_policy(TransferPolicy::allow_all(), PolicyRegistration::Active)
+                .with_receive_policy(TransferPolicy::allow_all(), PolicyRegistration::Active);
 
             components.extend(token_policy_manager);
         }

@@ -1,10 +1,9 @@
-//! Burn policy components and the burn policy configuration enum used by
+//! Burn policy components and the burn policy descriptor used by
 //! [`super::TokenPolicyManager`].
 
 use alloc::vec::Vec;
 
-use miden_protocol::Word;
-use miden_protocol::account::AccountComponent;
+use miden_protocol::account::{AccountComponent, AccountProcedureRoot};
 
 mod allow_all;
 mod owner_only;
@@ -12,45 +11,65 @@ mod owner_only;
 pub use allow_all::BurnAllowAll;
 pub use owner_only::BurnOwnerOnly;
 
-// CONFIG
+// BURN POLICY
 // ================================================================================================
 
-/// Selects which burn policy is registered with a [`super::TokenPolicyManager`].
+/// Descriptor for the burn policy registered with a [`super::TokenPolicyManager`].
 ///
-/// Pass to [`super::TokenPolicyManager::with_burn_policy`] together with a
-/// [`super::PolicyRegistration`] to register the policy as either active or as a reserved
-/// alternative.
-#[derive(Debug, Clone, Copy, Default)]
-pub enum BurnPolicyConfig {
-    /// Policy root = [`BurnAllowAll::root`] (burns open to anyone).
-    #[default]
-    AllowAll,
-    /// Policy root = [`BurnOwnerOnly::root`] (burns gated by the account owner).
-    OwnerOnly,
-    /// Policy root = the provided word. The corresponding component must be installed by the
-    /// caller separately; resolving this variant into built-in components yields an empty list.
-    Custom(Word),
+/// Binds the procedure root the manager dispatches to (via `dynexec`) with any companion
+/// [`AccountComponent`]s that must be installed for the procedure to work.
+///
+/// Construct via [`Self::allow_all`], [`Self::owner_only`], [`Self::custom`], or
+/// [`Self::from_components`]. Pass to [`super::TokenPolicyManager::with_burn_policy`].
+#[derive(Debug, Clone)]
+pub struct BurnPolicy {
+    root: AccountProcedureRoot,
+    components: Vec<AccountComponent>,
 }
 
-impl BurnPolicyConfig {
-    /// Returns the procedure root of the policy this variant resolves to.
-    pub fn root(self) -> Word {
-        match self {
-            Self::AllowAll => BurnAllowAll::root().as_word(),
-            Self::OwnerOnly => BurnOwnerOnly::root().as_word(),
-            Self::Custom(root) => root,
+impl BurnPolicy {
+    /// Returns a burn policy that accepts every burn unconditionally.
+    pub fn allow_all() -> Self {
+        Self {
+            root: BurnAllowAll::root(),
+            components: vec![BurnAllowAll.into()],
         }
     }
 
-    /// Returns the [`AccountComponent`]s that must accompany this burn policy variant.
-    ///
-    /// For [`Self::Custom`] this is empty — the caller installs whatever the chosen root
-    /// requires.
-    pub(crate) fn into_components(self) -> Vec<AccountComponent> {
-        match self {
-            Self::AllowAll => vec![BurnAllowAll.into()],
-            Self::OwnerOnly => vec![BurnOwnerOnly.into()],
-            Self::Custom(_) => Vec::new(),
+    /// Returns a burn policy gated by the account owner.
+    pub fn owner_only() -> Self {
+        Self {
+            root: BurnOwnerOnly::root(),
+            components: vec![BurnOwnerOnly.into()],
         }
+    }
+
+    /// Returns a burn policy resolving to the provided procedure root. The corresponding
+    /// component(s) must be installed by the caller separately — this descriptor carries no
+    /// companion components.
+    pub fn custom(root: AccountProcedureRoot) -> Self {
+        Self { root, components: Vec::new() }
+    }
+
+    /// Returns a burn policy resolving to the provided procedure root and shipping the provided
+    /// companion components.
+    pub fn from_components(root: AccountProcedureRoot, components: Vec<AccountComponent>) -> Self {
+        Self { root, components }
+    }
+
+    /// Returns the procedure root of the policy this descriptor resolves to.
+    pub fn root(&self) -> AccountProcedureRoot {
+        self.root
+    }
+
+    /// Returns the [`AccountComponent`]s that must accompany this burn policy.
+    pub(crate) fn into_components(self) -> Vec<AccountComponent> {
+        self.components
+    }
+}
+
+impl Default for BurnPolicy {
+    fn default() -> Self {
+        Self::allow_all()
     }
 }

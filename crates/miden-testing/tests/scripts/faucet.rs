@@ -31,8 +31,8 @@ use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
     BurnAllowAll,
     BurnOwnerOnly,
-    BurnPolicyConfig,
-    MintPolicyConfig,
+    BurnPolicy,
+    MintPolicy,
     PolicyRegistration,
     TokenPolicyManager,
     TransferPolicy,
@@ -210,7 +210,7 @@ fn build_network_faucet_with_burn_switching(
     max_supply: u64,
     owner: AccountId,
     token_supply: u64,
-    mint_policy: MintPolicyConfig,
+    mint_policy: MintPolicy,
 ) -> anyhow::Result<Account> {
     let name = TokenName::new(token_symbol)?;
     let symbol = TokenSymbol::new(token_symbol)?;
@@ -225,11 +225,11 @@ fn build_network_faucet_with_burn_switching(
         .build()?;
 
     let token_policy_manager = TokenPolicyManager::new()
-        .with_mint_policy(mint_policy, PolicyRegistration::Active)?
-        .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)?
-        .with_burn_policy(BurnPolicyConfig::OwnerOnly, PolicyRegistration::Reserved)?
-        .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?
-        .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?;
+        .with_mint_policy(mint_policy, PolicyRegistration::Active)
+        .with_burn_policy(BurnPolicy::allow_all(), PolicyRegistration::Active)
+        .with_burn_policy(BurnPolicy::owner_only(), PolicyRegistration::Reserved)
+        .with_send_policy(TransferPolicy::allow_all(), PolicyRegistration::Active)
+        .with_receive_policy(TransferPolicy::allow_all(), PolicyRegistration::Active);
 
     let account_builder = AccountBuilder::new(builder.rng_mut().random())
         .account_type(AccountType::Public)
@@ -676,7 +676,7 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
         max_supply,
         faucet_owner_account_id,
         Some(token_supply),
-        MintPolicyConfig::OwnerOnly,
+        MintPolicy::owner_only(),
         [],
     )?;
 
@@ -707,7 +707,7 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
     // --------------------------------------------------------------------------------------------
 
     let amount = Felt::new_unchecked(75);
-    // The faucet has callbacks configured via `TransferPolicy::AllowAll`, so the asset to mint
+    // The faucet has callbacks configured via [`TransferPolicy::allow_all`], so the asset to mint
     // must match on the callback flag.
     let mint_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())
         .unwrap()
@@ -801,7 +801,7 @@ async fn test_network_faucet_owner_can_mint() -> anyhow::Result<()> {
         1000,
         owner_account_id,
         Some(50),
-        MintPolicyConfig::OwnerOnly,
+        MintPolicy::owner_only(),
         [],
     )?;
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
@@ -869,7 +869,7 @@ async fn test_network_faucet_set_policy_rejects_non_allowed_root() -> anyhow::Re
         1000,
         owner_account_id,
         Some(0),
-        MintPolicyConfig::OwnerOnly,
+        MintPolicy::owner_only(),
         [set_policy_note_script.root()],
     )?;
     let mock_chain = builder.build()?;
@@ -906,7 +906,7 @@ async fn test_network_faucet_set_burn_policy_rejects_non_allowed_root() -> anyho
         1000,
         owner_account_id,
         Some(0),
-        MintPolicyConfig::OwnerOnly,
+        MintPolicy::owner_only(),
         [set_policy_note_script.root()],
     )?;
     let mock_chain = builder.build()?;
@@ -941,7 +941,7 @@ async fn test_network_faucet_non_owner_cannot_mint() -> anyhow::Result<()> {
         1000,
         owner_account_id,
         Some(50),
-        MintPolicyConfig::OwnerOnly,
+        MintPolicy::owner_only(),
         [],
     )?;
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
@@ -996,7 +996,7 @@ async fn test_network_faucet_owner_storage() -> anyhow::Result<()> {
         1000,
         owner_account_id,
         Some(50),
-        MintPolicyConfig::OwnerOnly,
+        MintPolicy::owner_only(),
         [],
     )?;
     let _mock_chain = builder.build()?;
@@ -1068,7 +1068,7 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
         1000,
         initial_owner_account_id,
         Some(50),
-        MintPolicyConfig::OwnerOnly,
+        MintPolicy::owner_only(),
         [transfer_script.root(), accept_script.root()],
     )?;
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
@@ -1206,7 +1206,7 @@ async fn test_network_faucet_only_owner_can_transfer() -> anyhow::Result<()> {
         1000,
         owner_account_id,
         Some(50),
-        MintPolicyConfig::OwnerOnly,
+        MintPolicy::owner_only(),
         [transfer_script.root()],
     )?;
     let mock_chain = builder.build()?;
@@ -1282,7 +1282,7 @@ async fn test_network_faucet_renounce_ownership() -> anyhow::Result<()> {
         1000,
         owner_account_id,
         Some(50),
-        MintPolicyConfig::OwnerOnly,
+        MintPolicy::owner_only(),
         [renounce_script.root(), transfer_script.root()],
     )?;
 
@@ -1364,7 +1364,7 @@ fn test_network_faucet_contains_default_burn_policy_root() -> anyhow::Result<()>
         200,
         owner_account_id,
         Some(100),
-        MintPolicyConfig::OwnerOnly,
+        MintPolicy::owner_only(),
         [],
     )?;
 
@@ -1389,7 +1389,7 @@ async fn network_faucet_burn() -> anyhow::Result<()> {
         200,
         faucet_owner_account_id,
         Some(100),
-        MintPolicyConfig::OwnerOnly,
+        MintPolicy::owner_only(),
         [],
     )?;
 
@@ -1456,7 +1456,7 @@ async fn test_network_faucet_non_owner_cannot_burn_when_owner_only_policy_active
         200,
         owner_account_id,
         100,
-        MintPolicyConfig::OwnerOnly,
+        MintPolicy::owner_only(),
     )?;
     let set_policy_note_script =
         create_set_burn_policy_note_script(BurnOwnerOnly::root().as_word());
@@ -1511,7 +1511,7 @@ async fn test_network_faucet_owner_can_burn_when_owner_only_policy_active() -> a
         200,
         owner_account_id,
         100,
-        MintPolicyConfig::OwnerOnly,
+        MintPolicy::owner_only(),
     )?;
     let set_policy_note_script =
         create_set_burn_policy_note_script(BurnOwnerOnly::root().as_word());
@@ -1573,13 +1573,13 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
         1000,
         faucet_owner_account_id,
         Some(50),
-        MintPolicyConfig::OwnerOnly,
+        MintPolicy::owner_only(),
         [],
     )?;
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
 
     let amount = Felt::new_unchecked(75);
-    // The faucet has callbacks configured via `TransferPolicy::AllowAll`, so the asset to mint
+    // The faucet has callbacks configured via [`TransferPolicy::allow_all`], so the asset to mint
     // must match on the callback flag.
     let mint_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())
         .unwrap()
@@ -1781,10 +1781,10 @@ async fn multiple_mints_in_single_tx_produce_correct_amounts() -> anyhow::Result
     Ok(())
 }
 
-// NetworkFungibleFaucet + TransferPolicy::Blocklist (post-#2879 happy path)
+// NetworkFungibleFaucet + TransferPolicy::basic_blocklist (post-#2879 happy path)
 // ================================================================================================
 
-/// Builds a network faucet with [`TransferPolicy::Blocklist`] on both send and receive,
+/// Builds a network faucet with [`TransferPolicy::basic_blocklist`] on both send and receive,
 /// so the manager populates the asset-callback slots and callbacks dispatch to the
 /// basic blocklist predicate.
 fn build_network_faucet_with_blocklist_transfer(
@@ -1807,10 +1807,10 @@ fn build_network_faucet_with_blocklist_transfer(
         .build()?;
 
     let token_policy_manager = TokenPolicyManager::new()
-        .with_mint_policy(MintPolicyConfig::OwnerOnly, PolicyRegistration::Active)?
-        .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)?
-        .with_send_policy(TransferPolicy::Blocklist, PolicyRegistration::Active)?
-        .with_receive_policy(TransferPolicy::Blocklist, PolicyRegistration::Active)?;
+        .with_mint_policy(MintPolicy::owner_only(), PolicyRegistration::Active)
+        .with_burn_policy(BurnPolicy::allow_all(), PolicyRegistration::Active)
+        .with_send_policy(TransferPolicy::basic_blocklist(), PolicyRegistration::Active)
+        .with_receive_policy(TransferPolicy::basic_blocklist(), PolicyRegistration::Active);
 
     let account_builder = AccountBuilder::new(builder.rng_mut().random())
         .account_type(AccountType::Public)
@@ -1829,7 +1829,7 @@ fn build_network_faucet_with_blocklist_transfer(
 }
 
 /// Verifies that the network-faucet mint pattern works when `TokenPolicyManager` installs
-/// asset-callback slots (here via [`TransferPolicy::Blocklist`]).
+/// asset-callback slots (here via [`TransferPolicy::basic_blocklist`]).
 ///
 /// Before the protocol fix in 0xMiden/protocol#2879 the kernel rejected this with
 /// `ERR_FOREIGN_ACCOUNT_CONTEXT_AGAINST_NATIVE_ACCOUNT` because the issuing faucet was also

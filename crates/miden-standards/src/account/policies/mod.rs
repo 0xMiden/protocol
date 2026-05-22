@@ -34,9 +34,9 @@ mod manager;
 mod mint;
 mod transfer;
 
-pub use burn::{BurnAllowAll, BurnOwnerOnly, BurnPolicyConfig};
-pub use manager::{TokenPolicyManager, TokenPolicyManagerError};
-pub use mint::{MintAllowAll, MintOwnerOnly, MintPolicyConfig};
+pub use burn::{BurnAllowAll, BurnOwnerOnly, BurnPolicy};
+pub use manager::TokenPolicyManager;
+pub use mint::{MintAllowAll, MintOwnerOnly, MintPolicy};
 pub use transfer::{
     AllowlistOwnerControlled,
     AllowlistStorage,

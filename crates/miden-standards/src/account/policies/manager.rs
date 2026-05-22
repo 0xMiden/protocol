@@ -30,26 +30,13 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::AssetCallbacks;
 use miden_protocol::utils::sync::LazyLock;
-use thiserror::Error;
 
 use super::PolicyRegistration;
-use super::burn::BurnPolicyConfig;
-use super::mint::MintPolicyConfig;
+use super::burn::BurnPolicy;
+use super::mint::MintPolicy;
 use super::transfer::TransferPolicy;
 use crate::account::account_component_code;
 use crate::procedure_root;
-
-// ERRORS
-// ================================================================================================
-
-/// Errors returned when building a [`TokenPolicyManager`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
-pub enum TokenPolicyManagerError {
-    /// Returned when [`PolicyRegistration::Active`] is supplied for a kind that already has an
-    /// active policy registered. At most one active policy per kind is permitted.
-    #[error("token policy manager: more than one active {kind} policy registered")]
-    DuplicateActivePolicy { kind: &'static str },
-}
 
 account_component_code!(POLICY_MANAGER_CODE, "faucets/policies/policy_manager.masl");
 
@@ -176,21 +163,21 @@ struct PolicyConfig {
 /// is delegated to the account-wide [`Authority`][crate::account::access::Authority] component,
 /// which must be installed alongside this manager.
 ///
-/// Construct via [`Self::new`] and chain the per-kind builders
-/// ([`Self::with_mint_policy`] / [`Self::with_burn_policy`] / [`Self::with_send_policy`] /
-/// [`Self::with_receive_policy`]). Each accepts a typed config plus a [`PolicyRegistration`]
-/// flag to register the policy as either the active one or as a reserved alternative for
-/// runtime switching via the matching `set_*_policy` procedure. Each builder returns
-/// `Result<Self, TokenPolicyManagerError>` — registering more than one
-/// [`PolicyRegistration::Active`] entry per kind returns
-/// [`TokenPolicyManagerError::DuplicateActivePolicy`].
+/// Construct via [`Self::new`] and chain the per-kind builders ([`Self::with_mint_policy`] /
+/// [`Self::with_burn_policy`] / [`Self::with_send_policy`] / [`Self::with_receive_policy`]).
+/// Each accepts a typed policy descriptor plus a [`PolicyRegistration`] flag to register the
+/// policy as either the active one or as a reserved alternative for runtime switching via the
+/// matching `set_*_policy` procedure. If [`PolicyRegistration::Active`] is supplied more than
+/// once for the same kind, the most recent registration wins for the active slot — earlier
+/// `Active` calls of that kind become reserved entries.
 ///
 /// Pass the manager directly to [`miden_protocol::account::AccountBuilder::with_components`]
 /// (the type implements [`IntoIterator<Item = AccountComponent>`]). Iteration yields the
 /// manager itself plus the companion components contributed by every registered policy
 /// (deduplicated by procedure root — a policy installed under both send and receive only
-/// contributes its companion components once). `Custom` variants on any kind contribute no
-/// built-in components — the caller installs the matching components on the account
+/// contributes its companion components once). Descriptors built via
+/// [`MintPolicy::custom`], [`BurnPolicy::custom`], or [`TransferPolicy::custom`] contribute no
+/// companion components — the caller installs the matching components on the account
 /// separately.
 ///
 /// ## Storage layout
@@ -240,112 +227,85 @@ impl TokenPolicyManager {
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
-    /// Creates an empty token policy manager. Use the per-kind builders (`with_mint_policy`,
-    /// `with_burn_policy`, `with_send_policy`, `with_receive_policy`) to register policies.
-    ///
-    /// Every kind should end up with exactly one [`PolicyRegistration::Active`] entry by the
-    /// time the manager is converted into account components. Missing active entries leave the
-    /// corresponding `active_*_policy_proc_root` storage slot at the zero word.
+    /// Returns an empty token policy manager. Use the chained [`Self::with_mint_policy`] /
+    /// [`Self::with_burn_policy`] / [`Self::with_send_policy`] / [`Self::with_receive_policy`]
+    /// methods to register policies, then pass the manager directly to
+    /// [`miden_protocol::account::AccountBuilder::with_components`].
     pub fn new() -> Self {
         Self::default()
     }
+
+    // BUILDER METHODS
+    // --------------------------------------------------------------------------------------------
 
     /// Registers a mint policy. The `registration` flag decides whether the policy becomes the
     /// active one (written to `active_mint_policy_proc_root`) or a reserved alternative (added
     /// to the `allowed_mint_policy_proc_roots` map for runtime switching via `set_mint_policy`).
     ///
-    /// # Errors
-    ///
-    /// Returns [`TokenPolicyManagerError::DuplicateActivePolicy`] if `registration` is
-    /// [`PolicyRegistration::Active`] and an active mint policy is already registered.
+    /// If [`PolicyRegistration::Active`] is supplied more than once for this kind, the most
+    /// recent call wins — earlier active entries are demoted to reserved (they remain in the
+    /// `allowed_*_policy_proc_roots` map).
     pub fn with_mint_policy(
         mut self,
-        policy: MintPolicyConfig,
+        policy: MintPolicy,
         registration: PolicyRegistration,
-    ) -> Result<Self, TokenPolicyManagerError> {
-        let root = AccountProcedureRoot::from_raw(policy.root());
+    ) -> Self {
+        let root = policy.root();
         if registration == PolicyRegistration::Active {
-            if !self.active_mint_policy_root.as_word().is_empty() {
-                return Err(TokenPolicyManagerError::DuplicateActivePolicy { kind: "mint" });
-            }
             self.active_mint_policy_root = root;
         }
         self.insert_policy(root, policy.into_components(), PolicyKind::Mint);
-        Ok(self)
+        self
     }
 
     /// Registers a burn policy. See [`Self::with_mint_policy`] for `registration` semantics.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`TokenPolicyManagerError::DuplicateActivePolicy`] if `registration` is
-    /// [`PolicyRegistration::Active`] and an active burn policy is already registered.
     pub fn with_burn_policy(
         mut self,
-        policy: BurnPolicyConfig,
+        policy: BurnPolicy,
         registration: PolicyRegistration,
-    ) -> Result<Self, TokenPolicyManagerError> {
-        let root = AccountProcedureRoot::from_raw(policy.root());
+    ) -> Self {
+        let root = policy.root();
         if registration == PolicyRegistration::Active {
-            if !self.active_burn_policy_root.as_word().is_empty() {
-                return Err(TokenPolicyManagerError::DuplicateActivePolicy { kind: "burn" });
-            }
             self.active_burn_policy_root = root;
         }
         self.insert_policy(root, policy.into_components(), PolicyKind::Burn);
-        Ok(self)
+        self
     }
 
     /// Registers a send policy (fired by the `on_before_asset_added_to_note` callback). See
     /// [`Self::with_mint_policy`] for `registration` semantics.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`TokenPolicyManagerError::DuplicateActivePolicy`] if `registration` is
-    /// [`PolicyRegistration::Active`] and an active send policy is already registered.
     pub fn with_send_policy(
         mut self,
         policy: TransferPolicy,
         registration: PolicyRegistration,
-    ) -> Result<Self, TokenPolicyManagerError> {
+    ) -> Self {
         let root = policy.root();
         if registration == PolicyRegistration::Active {
-            if !self.active_send_policy_root.as_word().is_empty() {
-                return Err(TokenPolicyManagerError::DuplicateActivePolicy { kind: "send" });
-            }
             self.active_send_policy_root = root;
         }
         self.insert_policy(root, policy.into_components(), PolicyKind::Send);
-        Ok(self)
+        self
     }
 
     /// Registers a receive policy (fired by the `on_before_asset_added_to_account` callback).
     /// See [`Self::with_mint_policy`] for `registration` semantics.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`TokenPolicyManagerError::DuplicateActivePolicy`] if `registration` is
-    /// [`PolicyRegistration::Active`] and an active receive policy is already registered.
     pub fn with_receive_policy(
         mut self,
         policy: TransferPolicy,
         registration: PolicyRegistration,
-    ) -> Result<Self, TokenPolicyManagerError> {
+    ) -> Self {
         let root = policy.root();
         if registration == PolicyRegistration::Active {
-            if !self.active_receive_policy_root.as_word().is_empty() {
-                return Err(TokenPolicyManagerError::DuplicateActivePolicy { kind: "receive" });
-            }
             self.active_receive_policy_root = root;
         }
         self.insert_policy(root, policy.into_components(), PolicyKind::Receive);
-        Ok(self)
+        self
     }
 
     /// Inserts (or merges, if the root is already present) a policy entry into the unified
     /// `policies` map. The new kind is appended to the entry's kind set. The first call wins
-    /// for the components, which guarantees a given root's companion components are not
-    /// duplicated across kinds.
+    /// for the companion components, which guarantees a given root's companion components are
+    /// not duplicated across kinds.
     fn insert_policy(
         &mut self,
         root: AccountProcedureRoot,
@@ -617,6 +577,27 @@ impl TokenPolicyManager {
     }
 }
 
+impl IntoIterator for TokenPolicyManager {
+    type Item = AccountComponent;
+    type IntoIter = alloc::vec::IntoIter<AccountComponent>;
+
+    /// Yields the [`AccountComponent`]s implementing this token policy configuration: the
+    /// manager itself first, then the companion components contributed by every registered
+    /// policy. Deduplication by procedure root is implicit (the manager's internal `policies`
+    /// map is keyed by root), so a policy installed under both send and receive only
+    /// contributes its companion components once. Descriptors built via [`MintPolicy::custom`],
+    /// [`BurnPolicy::custom`], or [`TransferPolicy::custom`] contribute no companion components
+    /// — the caller installs the matching components on the account separately.
+    fn into_iter(self) -> Self::IntoIter {
+        let manager_component = self.to_manager_component();
+        let mut components = vec![manager_component];
+        for (_, policy) in self.policies {
+            components.extend(policy.components);
+        }
+        components.into_iter()
+    }
+}
+
 impl Default for TokenPolicyManager {
     fn default() -> Self {
         Self {
@@ -626,27 +607,6 @@ impl Default for TokenPolicyManager {
             active_receive_policy_root: AccountProcedureRoot::from_raw(Word::empty()),
             policies: BTreeMap::new(),
         }
-    }
-}
-
-impl IntoIterator for TokenPolicyManager {
-    type Item = AccountComponent;
-    type IntoIter = alloc::vec::IntoIter<AccountComponent>;
-
-    /// Yields the [`AccountComponent`]s implementing this token policy configuration: the
-    /// manager itself first, then the companion components contributed by every registered
-    /// policy. Deduplication by procedure root is implicit (the manager's internal `policies`
-    /// map is keyed by root), so a policy installed under both send and receive only
-    /// contributes its companion components once. `Custom` variants on any kind contribute no
-    /// built-in components — the caller installs the matching components on the account
-    /// separately.
-    fn into_iter(self) -> Self::IntoIter {
-        let manager_component = self.to_manager_component();
-        let mut components = vec![manager_component];
-        for (_, policy) in self.policies {
-            components.extend(policy.components);
-        }
-        components.into_iter()
     }
 }
 
@@ -675,14 +635,10 @@ mod tests {
     #[test]
     fn allow_all_transfer_policy_registers_protocol_callback_slots() {
         let manager = TokenPolicyManager::new()
-            .with_mint_policy(MintPolicyConfig::AllowAll, PolicyRegistration::Active)
-            .unwrap()
-            .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)
-            .unwrap()
-            .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)
-            .unwrap()
-            .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)
-            .unwrap();
+            .with_mint_policy(MintPolicy::allow_all(), PolicyRegistration::Active)
+            .with_burn_policy(BurnPolicy::allow_all(), PolicyRegistration::Active)
+            .with_send_policy(TransferPolicy::allow_all(), PolicyRegistration::Active)
+            .with_receive_policy(TransferPolicy::allow_all(), PolicyRegistration::Active);
 
         let manager_component = manager.to_manager_component();
 
@@ -712,10 +668,8 @@ mod tests {
     #[test]
     fn manager_without_transfer_policies_omits_protocol_callback_slots() {
         let manager = TokenPolicyManager::new()
-            .with_mint_policy(MintPolicyConfig::AllowAll, PolicyRegistration::Active)
-            .unwrap()
-            .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)
-            .unwrap();
+            .with_mint_policy(MintPolicy::allow_all(), PolicyRegistration::Active)
+            .with_burn_policy(BurnPolicy::allow_all(), PolicyRegistration::Active);
 
         let manager_component = manager.to_manager_component();
 
@@ -731,5 +685,20 @@ mod tests {
             "without a send policy, the manager must leave the on_before_asset_added_to_note slot \
              to a separate component",
         );
+    }
+
+    /// When `Active` is supplied twice for the same kind the most recent call wins for the
+    /// active slot, and the earlier root is retained as a reserved allowed entry.
+    #[test]
+    fn last_active_registration_wins_for_kind() {
+        let manager = TokenPolicyManager::new()
+            .with_mint_policy(MintPolicy::allow_all(), PolicyRegistration::Active)
+            .with_mint_policy(MintPolicy::owner_only(), PolicyRegistration::Active);
+
+        assert_eq!(manager.active_mint_policy(), Some(MintPolicy::owner_only().root()));
+
+        let allowed = manager.allowed_mint_policies();
+        assert!(allowed.contains(&MintPolicy::allow_all().root()));
+        assert!(allowed.contains(&MintPolicy::owner_only().root()));
     }
 }

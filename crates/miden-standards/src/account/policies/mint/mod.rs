@@ -1,10 +1,9 @@
-//! Mint policy components and the mint policy configuration enum used by
+//! Mint policy components and the mint policy descriptor used by
 //! [`super::TokenPolicyManager`].
 
 use alloc::vec::Vec;
 
-use miden_protocol::Word;
-use miden_protocol::account::AccountComponent;
+use miden_protocol::account::{AccountComponent, AccountProcedureRoot};
 
 mod allow_all;
 mod owner_only;
@@ -12,45 +11,65 @@ mod owner_only;
 pub use allow_all::MintAllowAll;
 pub use owner_only::MintOwnerOnly;
 
-// CONFIG
+// MINT POLICY
 // ================================================================================================
 
-/// Selects which mint policy is registered with a [`super::TokenPolicyManager`].
+/// Descriptor for the mint policy registered with a [`super::TokenPolicyManager`].
 ///
-/// Pass to [`super::TokenPolicyManager::with_mint_policy`] together with a
-/// [`super::PolicyRegistration`] to register the policy as either active or as a reserved
-/// alternative.
-#[derive(Debug, Clone, Copy, Default)]
-pub enum MintPolicyConfig {
-    /// Policy root = [`MintAllowAll::root`] (mint open to anyone).
-    AllowAll,
-    /// Policy root = [`MintOwnerOnly::root`] (mint gated by the account owner).
-    #[default]
-    OwnerOnly,
-    /// Policy root = the provided word. The corresponding component must be installed by the
-    /// caller separately; resolving this variant into built-in components yields an empty list.
-    Custom(Word),
+/// Binds the procedure root the manager dispatches to (via `dynexec`) with any companion
+/// [`AccountComponent`]s that must be installed for the procedure to work.
+///
+/// Construct via [`Self::allow_all`], [`Self::owner_only`], [`Self::custom`], or
+/// [`Self::from_components`]. Pass to [`super::TokenPolicyManager::with_mint_policy`].
+#[derive(Debug, Clone)]
+pub struct MintPolicy {
+    root: AccountProcedureRoot,
+    components: Vec<AccountComponent>,
 }
 
-impl MintPolicyConfig {
-    /// Returns the procedure root of the policy this variant resolves to.
-    pub fn root(self) -> Word {
-        match self {
-            Self::AllowAll => MintAllowAll::root().as_word(),
-            Self::OwnerOnly => MintOwnerOnly::root().as_word(),
-            Self::Custom(root) => root,
+impl MintPolicy {
+    /// Returns a mint policy that accepts every mint unconditionally.
+    pub fn allow_all() -> Self {
+        Self {
+            root: MintAllowAll::root(),
+            components: vec![MintAllowAll.into()],
         }
     }
 
-    /// Returns the [`AccountComponent`]s that must accompany this mint policy variant.
-    ///
-    /// For [`Self::Custom`] this is empty — the caller installs whatever the chosen root
-    /// requires.
-    pub(crate) fn into_components(self) -> Vec<AccountComponent> {
-        match self {
-            Self::AllowAll => vec![MintAllowAll.into()],
-            Self::OwnerOnly => vec![MintOwnerOnly.into()],
-            Self::Custom(_) => Vec::new(),
+    /// Returns a mint policy gated by the account owner.
+    pub fn owner_only() -> Self {
+        Self {
+            root: MintOwnerOnly::root(),
+            components: vec![MintOwnerOnly.into()],
         }
+    }
+
+    /// Returns a mint policy resolving to the provided procedure root. The corresponding
+    /// component(s) must be installed by the caller separately — this descriptor carries no
+    /// companion components.
+    pub fn custom(root: AccountProcedureRoot) -> Self {
+        Self { root, components: Vec::new() }
+    }
+
+    /// Returns a mint policy resolving to the provided procedure root and shipping the provided
+    /// companion components.
+    pub fn from_components(root: AccountProcedureRoot, components: Vec<AccountComponent>) -> Self {
+        Self { root, components }
+    }
+
+    /// Returns the procedure root of the policy this descriptor resolves to.
+    pub fn root(&self) -> AccountProcedureRoot {
+        self.root
+    }
+
+    /// Returns the [`AccountComponent`]s that must accompany this mint policy.
+    pub(crate) fn into_components(self) -> Vec<AccountComponent> {
+        self.components
+    }
+}
+
+impl Default for MintPolicy {
+    fn default() -> Self {
+        Self::owner_only()
     }
 }
