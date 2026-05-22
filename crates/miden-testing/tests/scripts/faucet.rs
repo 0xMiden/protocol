@@ -702,9 +702,8 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
     // --------------------------------------------------------------------------------------------
 
     let amount = Felt::new_unchecked(75);
-    // The faucet has `TransferPolicy::AllowAll` configured, which registers the protocol
-    // callback slots under the M-01 fix. The asset embedded in the MINT note must carry the
-    // matching callback flag for `mint_and_send`'s binding check (#2911) to pass.
+    // The faucet has callbacks configured via `TransferPolicy::AllowAll`, so the asset to mint
+    // must match on the callback flag.
     let mint_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())
         .unwrap()
         .with_callbacks(AssetCallbackFlag::Enabled);
@@ -1573,9 +1572,8 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
 
     let amount = Felt::new_unchecked(75);
-    // The faucet has `TransferPolicy::AllowAll` configured, which registers the protocol
-    // callback slots under the M-01 fix. The asset embedded in the MINT note must carry the
-    // matching callback flag for `mint_and_send`'s binding check (#2911) to pass.
+    // The faucet has callbacks configured via `TransferPolicy::AllowAll`, so the asset to mint
+    // must match on the callback flag.
     let mint_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())
         .unwrap()
         .with_callbacks(AssetCallbackFlag::Enabled);
