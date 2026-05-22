@@ -577,17 +577,15 @@ fn all_authority_gated_setter_roots() -> Vec<AccountProcedureRoot> {
 ///
 /// - [`AccessControl::AuthControlled`] + [`AuthMethod::SingleSig`] — user-account faucet whose auth
 ///   component is the sole gate for every authority-protected setter.
-/// - [`AccessControl::AuthControlled`] + [`AuthMethod::NetworkAccount`] — the caller is responsible
-///   for choosing `allowed_script_roots` that prevent unauthorized setter invocations.
 /// - [`AccessControl::Ownable2Step`] / [`AccessControl::Rbac`] + [`AuthMethod::NetworkAccount`] or
 ///   [`AuthMethod::NoAuth`] — network-style faucet whose setter gate is enforced in-procedure by
 ///   the owner/role check.
 ///
 /// All other pairings return a typed error:
-/// [`FungibleFaucetError::IncompatibleAuthControlledAuth`] for `AuthControlled + NoAuth` and
-/// [`FungibleFaucetError::UnsupportedAccessControlAuthCombination`] for
-/// `Ownable2Step`/`Rbac` + `SingleSig`. `Multisig` and `Unknown` remain rejected for every
-/// variant via [`FungibleFaucetError::UnsupportedAuthMethod`].
+/// [`FungibleFaucetError::IncompatibleAuthControlledAuth`] for `AuthControlled + NoAuth`, and
+/// [`FungibleFaucetError::UnsupportedAccessControlAuthCombination`] for `AuthControlled +
+/// NetworkAccount` and for `Ownable2Step`/`Rbac` + `SingleSig`. `Multisig` and `Unknown`
+/// remain rejected for every variant via [`FungibleFaucetError::UnsupportedAuthMethod`].
 pub fn create_fungible_faucet(
     init_seed: [u8; 32],
     faucet: FungibleFaucet,
@@ -632,16 +630,13 @@ fn build_auth_component(
         .map_err(FungibleFaucetError::AccountError)?
         .into()),
 
-        // AuthControlled + NetworkAccount: accepted; allowed_script_roots is the caller's
-        // responsibility (must not include scripts that can invoke authority-gated setters).
-        (AccessControl::AuthControlled, AuthMethod::NetworkAccount { allowed_script_roots }) => {
-            Ok(AuthNetworkAccount::with_allowlist(allowed_script_roots)
-                .map_err(|err| {
-                    FungibleFaucetError::UnsupportedAuthMethod(alloc::format!(
-                        "invalid network account allowlist: {err}"
-                    ))
-                })?
-                .into())
+        // AuthControlled + NetworkAccount: rejected.
+        (AccessControl::AuthControlled, AuthMethod::NetworkAccount { .. }) => {
+            Err(FungibleFaucetError::UnsupportedAccessControlAuthCombination(
+                "NetworkAccount is only supported with AccessControl::Ownable2Step or \
+                 AccessControl::Rbac (network-style faucets)"
+                    .into(),
+            ))
         },
 
         // AuthControlled + NoAuth: rejected. NoAuth cannot authenticate setters; under

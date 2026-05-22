@@ -190,6 +190,27 @@ fn ownable2step_rejects_single_sig() {
     assert_matches!(err, FungibleFaucetError::UnsupportedAccessControlAuthCombination(_));
 }
 
+/// `(AuthControlled, NetworkAccount)` must be rejected: `NetworkAccount` is the auth scheme
+/// for network-style faucets, which pair with owner / role-based setter gating
+/// (`Ownable2Step` / `Rbac`), not the auth-component-as-gate model of `AuthControlled`.
+#[test]
+fn auth_controlled_rejects_network_account() {
+    use alloc::collections::BTreeSet;
+
+    let allowed_script_roots: BTreeSet<miden_protocol::note::NoteScriptRoot> = BTreeSet::new();
+
+    let err = create_fungible_faucet(
+        [7u8; 32],
+        sample_faucet(),
+        AccountType::Private,
+        AuthMethod::NetworkAccount { allowed_script_roots },
+        AccessControl::AuthControlled,
+        allow_all_policy_manager(),
+    )
+    .expect_err("AuthControlled+NetworkAccount should be rejected");
+    assert_matches!(err, FungibleFaucetError::UnsupportedAccessControlAuthCombination(_));
+}
+
 #[test]
 fn ownable2step_with_no_auth_is_accepted() {
     use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
