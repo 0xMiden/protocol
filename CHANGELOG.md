@@ -4,6 +4,8 @@
 
 ### Features
 
+- Added benchmark for ECDSA signed transaction ([#2967](https://github.com/0xMiden/protocol/pull/2967)).
+- [BREAKING] Renamed `NoteId` to `NoteDetailsCommitment`, new `NoteId` struct now includes the NoteMetadata ([#1731](https://github.com/0xMiden/protocol/issues/1731)).
 - Added lock/unlock path for Miden-native tokens in the AggLayer bridge: `is_native` flag in `faucet_registry_map`, bridge-local `faucet_metadata_map` (replacing FPI to faucets for conversion data), and `lock_asset` / `unlock_and_send` procedures so the bridge holds native assets in its own vault instead of burn/mint via a faucet ([#2771](https://github.com/0xMiden/protocol/pull/2771)).
 - [BREAKING] Renamed `NoteId` to `NoteDetailsCommitment`, new `NoteId` struct now includes the NoteMetadata ([#2861](https://github.com/0xMiden/protocol/pull/2861)).
 - [BREAKING] Updated note nullifiers to include note metadata and attachments commitment ([#2953](https://github.com/0xMiden/protocol/pull/2953)).
