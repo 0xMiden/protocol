@@ -48,7 +48,7 @@ pub enum TransactionEventId {
     NoteBeforeAddAsset = NOTE_BEFORE_ADD_ASSET_ID,
     NoteAfterAddAsset = NOTE_AFTER_ADD_ASSET_ID,
 
-    NoteBeforeSetAttachment = NOTE_BEFORE_SET_ATTACHMENT_ID,
+    NoteBeforeAddAttachment = NOTE_BEFORE_ADD_ATTACHMENT_ID,
 
     AuthRequest = AUTH_REQUEST_ID,
 
@@ -113,7 +113,7 @@ impl TransactionEventId {
             Self::NoteAfterCreated => &NOTE_AFTER_CREATED_NAME,
             Self::NoteBeforeAddAsset => &NOTE_BEFORE_ADD_ASSET_NAME,
             Self::NoteAfterAddAsset => &NOTE_AFTER_ADD_ASSET_NAME,
-            Self::NoteBeforeSetAttachment => &NOTE_BEFORE_SET_ATTACHMENT_NAME,
+            Self::NoteBeforeAddAttachment => &NOTE_BEFORE_ADD_ATTACHMENT_NAME,
             Self::AuthRequest => &AUTH_REQUEST_NAME,
             Self::PrologueStart => &PROLOGUE_START_NAME,
             Self::PrologueEnd => &PROLOGUE_END_NAME,
@@ -194,7 +194,7 @@ impl TryFrom<EventId> for TransactionEventId {
             NOTE_BEFORE_ADD_ASSET_ID => Ok(TransactionEventId::NoteBeforeAddAsset),
             NOTE_AFTER_ADD_ASSET_ID => Ok(TransactionEventId::NoteAfterAddAsset),
 
-            NOTE_BEFORE_SET_ATTACHMENT_ID => Ok(TransactionEventId::NoteBeforeSetAttachment),
+            NOTE_BEFORE_ADD_ATTACHMENT_ID => Ok(TransactionEventId::NoteBeforeAddAttachment),
 
             AUTH_REQUEST_ID => Ok(TransactionEventId::AuthRequest),
 

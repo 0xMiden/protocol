@@ -386,7 +386,8 @@ impl CodeBuilder {
     /// The parsed script will have access to all modules that have been added to this builder.
     ///
     /// # Arguments
-    /// * `program` - The note script source code
+    /// - `source` - the note script source code which is expected to have a single public procedure
+    ///   marked with the @note_script attribute.
     ///
     /// # Errors
     /// Returns an error if:
@@ -394,11 +395,20 @@ impl CodeBuilder {
     pub fn compile_note_script(self, source: impl Parse) -> Result<NoteScript, CodeBuilderError> {
         let CodeBuilder { assembler, advice_map, .. } = self;
 
-        let program = assembler.assemble_program(source).map_err(|err| {
-            CodeBuilderError::build_error_with_report("failed to parse note script", err)
+        let note_script_lib = assembler.assemble_library([source]).map_err(|err| {
+            CodeBuilderError::build_error_with_report("failed to parse note script library", err)
         })?;
 
-        Ok(NoteScript::new(Self::apply_advice_map(advice_map, program)))
+        NoteScript::from_library(&Self::apply_advice_map_to_library(
+            advice_map,
+            Arc::unwrap_or_clone(note_script_lib),
+        ))
+        .map_err(|err| {
+            CodeBuilderError::build_error_with_source(
+                "failed to create note script from library",
+                err,
+            )
+        })
     }
 
     // ACCESSORS
@@ -501,6 +511,7 @@ impl From<CodeBuilder> for Assembler {
 mod tests {
     use anyhow::Context;
     use miden_protocol::assembly::diagnostics::NamedSource;
+    use miden_protocol::testing::note::DEFAULT_NOTE_SCRIPT;
 
     use super::*;
 
@@ -717,7 +728,7 @@ mod tests {
     #[test]
     fn test_code_builder_with_advice_map_entry() -> anyhow::Result<()> {
         let key = Word::from([1u32, 2, 3, 4]);
-        let value = vec![Felt::new(42), Felt::new(43)];
+        let value = vec![Felt::new_unchecked(42), Felt::new_unchecked(43)];
 
         let script = CodeBuilder::default()
             .with_advice_map_entry(key, value.clone())
@@ -737,8 +748,8 @@ mod tests {
         let key2 = Word::from([2u32, 0, 0, 0]);
 
         let mut advice_map = AdviceMap::default();
-        advice_map.insert(key1, vec![Felt::new(1)]);
-        advice_map.insert(key2, vec![Felt::new(2)]);
+        advice_map.insert(key1, vec![Felt::ONE]);
+        advice_map.insert(key2, vec![Felt::new_unchecked(2)]);
 
         let script = CodeBuilder::default()
             .with_extended_advice_map(advice_map)
@@ -755,11 +766,11 @@ mod tests {
     #[test]
     fn test_code_builder_advice_map_in_note_script() -> anyhow::Result<()> {
         let key = Word::from([5u32, 6, 7, 8]);
-        let value = vec![Felt::new(100)];
+        let value = vec![Felt::new_unchecked(100)];
 
         let script = CodeBuilder::default()
             .with_advice_map_entry(key, value.clone())
-            .compile_note_script("begin nop end")
+            .compile_note_script(DEFAULT_NOTE_SCRIPT)
             .context("failed to compile note script with advice map")?;
 
         let mast = script.mast();
@@ -775,7 +786,7 @@ mod tests {
     #[test]
     fn test_code_builder_advice_map_in_component_code() -> anyhow::Result<()> {
         let key = Word::from([11u32, 22, 33, 44]);
-        let value = vec![Felt::new(500)];
+        let value = vec![Felt::new_unchecked(500)];
 
         let component_code = CodeBuilder::default()
             .with_advice_map_entry(key, value.clone())

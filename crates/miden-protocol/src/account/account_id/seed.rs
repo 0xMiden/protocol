@@ -1,8 +1,8 @@
 use alloc::vec::Vec;
 
 use crate::account::account_id::AccountIdVersion;
-use crate::account::account_id::v0::{compute_digest, validate_prefix};
-use crate::account::{AccountIdV0, AccountStorageMode, AccountType};
+use crate::account::account_id::v1::{compute_digest, validate_prefix};
+use crate::account::{AccountIdV1, AccountType};
 use crate::errors::AccountError;
 use crate::{Felt, Word};
 
@@ -15,7 +15,6 @@ use crate::{Felt, Word};
 pub(super) fn compute_account_seed(
     init_seed: [u8; 32],
     account_type: AccountType,
-    storage_mode: AccountStorageMode,
     version: AccountIdVersion,
     code_commitment: Word,
     storage_commitment: Word,
@@ -23,7 +22,6 @@ pub(super) fn compute_account_seed(
     compute_account_seed_single(
         init_seed,
         account_type,
-        storage_mode,
         version,
         code_commitment,
         storage_commitment,
@@ -33,7 +31,6 @@ pub(super) fn compute_account_seed(
 fn compute_account_seed_single(
     init_seed: [u8; 32],
     account_type: AccountType,
-    storage_mode: AccountStorageMode,
     version: AccountIdVersion,
     code_commitment: Word,
     storage_commitment: Word,
@@ -41,25 +38,23 @@ fn compute_account_seed_single(
     let init_seed: Vec<[u8; 8]> =
         init_seed.chunks(8).map(|chunk| chunk.try_into().unwrap()).collect();
     let mut current_seed: Word = Word::from([
-        Felt::new(u64::from_le_bytes(init_seed[0])),
-        Felt::new(u64::from_le_bytes(init_seed[1])),
-        Felt::new(u64::from_le_bytes(init_seed[2])),
-        Felt::new(u64::from_le_bytes(init_seed[3])),
+        Felt::new_unchecked(u64::from_le_bytes(init_seed[0])),
+        Felt::new_unchecked(u64::from_le_bytes(init_seed[1])),
+        Felt::new_unchecked(u64::from_le_bytes(init_seed[2])),
+        Felt::new_unchecked(u64::from_le_bytes(init_seed[3])),
     ]);
     let mut current_digest = compute_digest(current_seed, code_commitment, storage_commitment);
 
-    // loop until we have a seed that satisfies the specified account type.
+    // loop until we have a seed that satisfies the specified account parameters.
     loop {
-        // Check if the seed satisfies the specified type, storage mode and version. Additionally,
-        // the most significant bit of the suffix must be zero to ensure felt validity.
-        let suffix = current_digest[AccountIdV0::SEED_DIGEST_SUFFIX_ELEMENT_IDX];
-        let prefix = current_digest[AccountIdV0::SEED_DIGEST_PREFIX_ELEMENT_IDX];
+        // Check if the seed satisfies the specified account type and version. Additionally, the
+        // most significant bit of the suffix must be zero to ensure felt validity.
+        let suffix = current_digest[AccountIdV1::SEED_DIGEST_SUFFIX_ELEMENT_IDX];
+        let prefix = current_digest[AccountIdV1::SEED_DIGEST_PREFIX_ELEMENT_IDX];
         let is_suffix_msb_zero = suffix.as_canonical_u64() >> 63 == 0;
 
-        if let Ok((computed_account_type, computed_storage_mode, computed_version)) =
-            validate_prefix(prefix)
+        if let Ok((computed_account_type, computed_version)) = validate_prefix(prefix)
             && computed_account_type == account_type
-            && computed_storage_mode == storage_mode
             && computed_version == version
             && is_suffix_msb_zero
         {

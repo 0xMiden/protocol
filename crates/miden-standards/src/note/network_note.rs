@@ -1,5 +1,5 @@
 use miden_protocol::account::AccountId;
-use miden_protocol::note::{Note, NoteAttachment, NoteMetadata, NoteType};
+use miden_protocol::note::{Note, NoteAttachments, NoteMetadata, NoteType};
 
 use crate::note::{NetworkAccountTarget, NetworkAccountTargetError, NoteExecutionHint};
 
@@ -27,7 +27,8 @@ impl AccountTargetNetworkNote {
         }
 
         // Validate that the attachment is a valid NetworkAccountTarget.
-        NetworkAccountTarget::try_from(note.metadata().attachment())?;
+        NetworkAccountTarget::try_from(note.attachments())?;
+
         Ok(Self { note })
     }
 
@@ -53,7 +54,7 @@ impl AccountTargetNetworkNote {
 
     /// Returns the decoded [`NetworkAccountTarget`] attachment.
     pub fn target(&self) -> NetworkAccountTarget {
-        NetworkAccountTarget::try_from(self.note.metadata().attachment())
+        NetworkAccountTarget::try_from(self.note.attachments())
             .expect("AccountTargetNetworkNote guarantees valid NetworkAccountTarget attachment")
     }
 
@@ -62,9 +63,9 @@ impl AccountTargetNetworkNote {
         self.target().execution_hint()
     }
 
-    /// Returns the raw [`NoteAttachment`] from the note metadata.
-    pub fn attachment(&self) -> &NoteAttachment {
-        self.metadata().attachment()
+    /// Returns the raw [`NoteAttachments`] from the note's attachments.
+    pub fn attachments(&self) -> &NoteAttachments {
+        self.note.attachments()
     }
 
     /// Returns the [`NoteType`] of the underlying note.
@@ -89,7 +90,7 @@ pub trait NetworkNoteExt {
 impl NetworkNoteExt for Note {
     fn is_network_note(&self) -> bool {
         self.metadata().note_type() == NoteType::Public
-            && NetworkAccountTarget::try_from(self.metadata().attachment()).is_ok()
+            && NetworkAccountTarget::try_from(self.attachments()).is_ok()
     }
 
     fn into_account_target_network_note(

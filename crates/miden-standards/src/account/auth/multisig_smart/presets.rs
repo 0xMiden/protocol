@@ -1,51 +1,51 @@
 use alloc::vec::Vec;
 
 use miden_protocol::Word;
+use miden_protocol::account::AccountProcedureRoot;
 
 use super::{AuthMultisigSmart, ProcedurePolicy, ProcedurePolicyNoteRestriction};
-use crate::account::components::multisig_smart_library;
-use crate::procedure_digest;
+use crate::procedure_root;
 
-procedure_digest!(
+procedure_root!(
     MULTISIG_SMART_UPDATE_SIGNERS_AND_THRESHOLD,
     AuthMultisigSmart::NAME,
-    "update_signers_and_threshold",
-    multisig_smart_library
+    AuthMultisigSmart::UPDATE_SIGNERS_AND_THRESHOLD_PROC_NAME,
+    AuthMultisigSmart::code()
 );
 
-procedure_digest!(
+procedure_root!(
     MULTISIG_SMART_UPDATE_THRESHOLD_CONFIG,
     AuthMultisigSmart::NAME,
-    "update_threshold_config",
-    multisig_smart_library
+    AuthMultisigSmart::UPDATE_THRESHOLD_CONFIG_PROC_NAME,
+    AuthMultisigSmart::code()
 );
 
-procedure_digest!(
+procedure_root!(
     MULTISIG_SMART_UPDATE_SPENDING_LIMITS,
     AuthMultisigSmart::NAME,
-    "update_spending_limits",
-    multisig_smart_library
+    AuthMultisigSmart::UPDATE_SPENDING_LIMITS_PROC_NAME,
+    AuthMultisigSmart::code()
 );
 
-procedure_digest!(
+procedure_root!(
     MULTISIG_SMART_UPDATE_ORACLE_CONFIG,
     AuthMultisigSmart::NAME,
-    "update_oracle_config_and_proc_root",
-    multisig_smart_library
+    AuthMultisigSmart::UPDATE_ORACLE_CONFIG_PROC_NAME,
+    AuthMultisigSmart::code()
 );
 
-procedure_digest!(
+procedure_root!(
     MULTISIG_SMART_UPDATE_GET_PRICE_UNTRACKED_POLICY,
     AuthMultisigSmart::NAME,
-    "update_get_price_untracked_policy",
-    multisig_smart_library
+    AuthMultisigSmart::UPDATE_GET_PRICE_UNTRACKED_POLICY_PROC_NAME,
+    AuthMultisigSmart::code()
 );
 
-procedure_digest!(
+procedure_root!(
     MULTISIG_SMART_UPDATE_TIMELOCK_CONTROLLER,
     AuthMultisigSmart::NAME,
-    "update_timelock_controller",
-    multisig_smart_library
+    AuthMultisigSmart::UPDATE_TIMELOCK_CONTROLLER_PROC_NAME,
+    AuthMultisigSmart::code()
 );
 
 /// Opinionated smart-multisig policy presets.
@@ -125,27 +125,27 @@ impl AuthMultisigSmartPresets {
     }
 
     pub fn update_signers_and_threshold() -> Word {
-        *MULTISIG_SMART_UPDATE_SIGNERS_AND_THRESHOLD
+        AccountProcedureRoot::from(*MULTISIG_SMART_UPDATE_SIGNERS_AND_THRESHOLD).as_word()
     }
 
     pub fn update_threshold_config() -> Word {
-        *MULTISIG_SMART_UPDATE_THRESHOLD_CONFIG
+        AccountProcedureRoot::from(*MULTISIG_SMART_UPDATE_THRESHOLD_CONFIG).as_word()
     }
 
     pub fn update_spending_limits() -> Word {
-        *MULTISIG_SMART_UPDATE_SPENDING_LIMITS
+        AccountProcedureRoot::from(*MULTISIG_SMART_UPDATE_SPENDING_LIMITS).as_word()
     }
 
     pub fn update_oracle_config_and_proc_root() -> Word {
-        *MULTISIG_SMART_UPDATE_ORACLE_CONFIG
+        AccountProcedureRoot::from(*MULTISIG_SMART_UPDATE_ORACLE_CONFIG).as_word()
     }
 
     pub fn update_get_price_untracked_policy() -> Word {
-        *MULTISIG_SMART_UPDATE_GET_PRICE_UNTRACKED_POLICY
+        AccountProcedureRoot::from(*MULTISIG_SMART_UPDATE_GET_PRICE_UNTRACKED_POLICY).as_word()
     }
 
     pub fn update_timelock_controller() -> Word {
-        *MULTISIG_SMART_UPDATE_TIMELOCK_CONTROLLER
+        AccountProcedureRoot::from(*MULTISIG_SMART_UPDATE_TIMELOCK_CONTROLLER).as_word()
     }
 }
 

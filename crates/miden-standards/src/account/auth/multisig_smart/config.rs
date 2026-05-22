@@ -116,6 +116,6 @@ impl OracleReaderConfig {
 
 impl Default for OracleReaderConfig {
     fn default() -> Self {
-        Self::new(OracleId::new(Felt::new(0), Felt::new(0)), Word::empty())
+        Self::new(OracleId::new(Felt::ZERO, Felt::ZERO), Word::empty())
     }
 }

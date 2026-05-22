@@ -15,3 +15,11 @@ pub use multisig_smart::{AuthMultisigSmart, AuthMultisigSmartConfig, AuthMultisi
 
 mod guarded_multisig;
 pub use guarded_multisig::{AuthGuardedMultisig, AuthGuardedMultisigConfig, GuardianConfig};
+
+mod network_account;
+pub use network_account::{
+    AuthNetworkAccount,
+    NetworkAccount,
+    NetworkAccountNoteAllowlist,
+    NetworkAccountNoteAllowlistError,
+};

@@ -1,7 +1,7 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use miden_protocol_macros::WordWrapper;
+use miden_crypto_derive::WordWrapper;
 
 use crate::account::AccountId;
 use crate::transaction::{ProvenTransaction, TransactionId};

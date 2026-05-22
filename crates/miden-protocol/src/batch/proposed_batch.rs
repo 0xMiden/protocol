@@ -439,7 +439,7 @@ mod tests {
     use super::*;
     use crate::Word;
     use crate::account::delta::AccountUpdateDetails;
-    use crate::account::{AccountIdVersion, AccountStorageMode, AccountType};
+    use crate::account::{AccountIdVersion, AccountType};
     use crate::asset::FungibleAsset;
     use crate::transaction::{InputNoteCommitment, OutputNote, ProvenTransaction, TxAccountUpdate};
 
@@ -449,7 +449,8 @@ mod tests {
         let mut mmr = Mmr::default();
         for i in 0..3 {
             let block_header = BlockHeader::mock(i, None, None, &[], Word::empty());
-            mmr.add(block_header.commitment());
+            mmr.add(block_header.commitment())
+                .expect("mmr leaf count exceeds forest leaf bound");
         }
         let partial_mmr: PartialMmr = mmr.peaks().into();
         let partial_blockchain = PartialBlockchain::new(partial_mmr, Vec::new()).unwrap();
@@ -465,12 +466,8 @@ mod tests {
             tx_kernel_commitment,
         );
 
-        let account_id = AccountId::dummy(
-            [1; 15],
-            AccountIdVersion::Version0,
-            AccountType::FungibleFaucet,
-            AccountStorageMode::Private,
-        );
+        let account_id =
+            AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountType::Private);
         let initial_account_commitment =
             [2; 32].try_into().expect("failed to create initial account commitment");
         let final_account_commitment =

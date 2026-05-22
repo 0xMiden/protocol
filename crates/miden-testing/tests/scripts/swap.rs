@@ -1,9 +1,9 @@
 use anyhow::Context;
 use miden_protocol::Felt;
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::account::{Account, AccountId, AccountStorageMode, AccountType};
+use miden_protocol::account::{Account, AccountId, AccountType};
 use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset};
-use miden_protocol::note::{Note, NoteDetails, NoteType};
+use miden_protocol::note::{Note, NoteDetails, NoteId, NoteType};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
@@ -72,7 +72,7 @@ pub async fn prove_send_swap_note() -> anyhow::Result<()> {
         create_swap_note_tx
             .output_notes()
             .iter()
-            .any(|n| n.commitment() == swap_note.commitment())
+            .any(|n| n.details_commitment() == swap_note.details_commitment())
     );
     assert_eq!(
         sender_account.vault().assets().count(),
@@ -119,7 +119,10 @@ async fn consume_swap_note_private_payback_note() -> anyhow::Result<()> {
         .context("failed to apply delta to target account")?;
 
     let output_payback_note = consume_swap_note_tx.output_notes().iter().next().unwrap().clone();
-    assert!(output_payback_note.id() == payback_note.id());
+    assert_eq!(
+        output_payback_note.id(),
+        NoteId::new(payback_note.commitment(), output_payback_note.metadata())
+    );
     assert_eq!(output_payback_note.assets().iter().next().unwrap(), &requested_asset);
 
     assert!(target_account.vault().assets().count() == 1);
@@ -130,7 +133,7 @@ async fn consume_swap_note_private_payback_note() -> anyhow::Result<()> {
 
     let full_payback_note = Note::new(
         payback_note.assets().clone(),
-        output_payback_note.metadata().clone(),
+        *output_payback_note.metadata().partial_metadata(),
         payback_note.recipient().clone(),
     );
 
@@ -199,7 +202,10 @@ async fn consume_swap_note_public_payback_note() -> anyhow::Result<()> {
     target_account.apply_delta(consume_swap_note_tx.account_delta())?;
 
     let output_payback_note = consume_swap_note_tx.output_notes().iter().next().unwrap().clone();
-    assert!(output_payback_note.id() == payback_note.id());
+    assert_eq!(
+        output_payback_note.id(),
+        NoteId::new(payback_note.commitment(), output_payback_note.metadata())
+    );
     assert_eq!(output_payback_note.assets().iter().next().unwrap(), &requested_asset);
 
     assert!(target_account.vault().assets().count() == 1);
@@ -210,7 +216,7 @@ async fn consume_swap_note_public_payback_note() -> anyhow::Result<()> {
 
     let full_payback_note = Note::new(
         payback_note.assets().clone(),
-        output_payback_note.metadata().clone(),
+        *output_payback_note.metadata().partial_metadata(),
         payback_note.recipient().clone(),
     );
 
@@ -294,11 +300,11 @@ async fn settle_coincidence_of_wants() -> anyhow::Result<()> {
     // Find payback notes by matching their IDs
     let output_payback_1 = output_notes
         .iter()
-        .find(|note| note.id() == payback_note_1.id())
+        .find(|note| note.id() == NoteId::new(payback_note_1.commitment(), note.metadata()))
         .expect("Payback note 1 not found");
     let output_payback_2 = output_notes
         .iter()
-        .find(|note| note.id() == payback_note_2.id())
+        .find(|note| note.id() == NoteId::new(payback_note_2.commitment(), note.metadata()))
         .expect("Payback note 2 not found");
 
     // Verify payback note 1 contains exactly the initially requested asset B for account 1
@@ -322,8 +328,7 @@ struct SwapTestSetup {
 
 fn setup_swap_test(payback_note_type: NoteType) -> anyhow::Result<SwapTestSetup> {
     let faucet_id = AccountIdBuilder::new()
-        .account_type(AccountType::FungibleFaucet)
-        .storage_mode(AccountStorageMode::Private)
+        .account_type(AccountType::Private)
         .build_with_seed([5; 32]);
 
     let offered_asset = FungibleAsset::new(faucet_id, 2000)?.into();

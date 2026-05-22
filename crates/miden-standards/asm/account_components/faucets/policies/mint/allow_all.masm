@@ -1,0 +1,6 @@
+# The MASM code of the `allow_all` Mint Policy Account Component (auth-controlled family).
+#
+# Exposes the `check_policy` procedure so its MAST root can be registered as the active
+# (or allowed) policy on a `MintPolicyManager`. Storage-free.
+
+pub use ::miden::standards::faucets::policies::mint::allow_all::check_policy

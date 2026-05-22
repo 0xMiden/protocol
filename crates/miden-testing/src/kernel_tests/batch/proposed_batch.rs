@@ -4,12 +4,19 @@ use std::collections::BTreeMap;
 use anyhow::Context;
 use assert_matches::assert_matches;
 use miden_protocol::Word;
-use miden_protocol::account::{Account, AccountId, AccountStorageMode};
+use miden_protocol::account::{Account, AccountId, AccountType};
 use miden_protocol::batch::ProposedBatch;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::merkle::MerkleError;
 use miden_protocol::errors::{BatchAccountUpdateError, ProposedBatchError};
-use miden_protocol::note::{Note, NoteType};
+use miden_protocol::note::{
+    Note,
+    NoteAssets,
+    NoteAttachments,
+    NoteTag,
+    NoteType,
+    PartialNoteMetadata,
+};
 use miden_protocol::testing::account_id::AccountIdBuilder;
 use miden_protocol::transaction::{
     InputNote,
@@ -18,6 +25,7 @@ use miden_protocol::transaction::{
     PartialBlockchain,
     RawOutputNote,
 };
+use miden_standards::note::P2idNoteStorage;
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::note::NoteBuilder;
 use rand::rngs::SmallRng;
@@ -62,7 +70,7 @@ fn setup_chain() -> TestSetup {
 
 fn generate_account(chain: &mut MockChainBuilder) -> Account {
     let account_builder = Account::builder(rand::rng().random())
-        .storage_mode(AccountStorageMode::Private)
+        .account_type(AccountType::Private)
         .with_component(MockAccountComponent::with_empty_slots());
     chain
         .add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
@@ -114,6 +122,107 @@ fn note_created_and_consumed_in_same_batch() -> anyhow::Result<()> {
 
     assert_eq!(batch.input_notes().num_notes(), 0);
     assert_eq!(batch.output_notes().len(), 0);
+
+    Ok(())
+}
+
+/// Notes with the same details but different metadata are not considered the same for batch
+/// erasure.
+#[test]
+fn same_details_different_metadata_not_erased_from_batch() -> anyhow::Result<()> {
+    let TestSetup { mut chain, account1, account2, .. } = setup_chain();
+    let block1 = chain.block_header(1);
+    let block2 = chain.prove_next_block()?;
+
+    // create two notes with identical details (recipient, assets, attachments) but different
+    // metadata, so they have distinct note IDs
+
+    let output_note = NoteBuilder::new(mock_account_id(7), SmallRng::from_seed([7; 32]))
+        .serial_number([1, 2, 3, 4u32].into())
+        .tag(100)
+        .note_type(NoteType::Public)
+        .build()?;
+
+    let input_note = Note::with_attachments(
+        output_note.assets().clone(),
+        output_note.metadata().partial_metadata().with_tag(NoteTag::from(200)),
+        output_note.recipient().clone(),
+        output_note.attachments().clone(),
+    );
+
+    let output_note_proven = RawOutputNote::Full(output_note.clone()).into_output_note().unwrap();
+
+    let tx1 =
+        MockProvenTxBuilder::with_account(account1.id(), Word::empty(), account1.to_commitment())
+            .ref_block_commitment(block1.commitment())
+            .output_notes(vec![output_note_proven.clone()])
+            .build()?;
+    let tx2 =
+        MockProvenTxBuilder::with_account(account2.id(), Word::empty(), account2.to_commitment())
+            .ref_block_commitment(block1.commitment())
+            .unauthenticated_notes(vec![input_note.clone()])
+            .build()?;
+
+    let batch = ProposedBatch::new(
+        [tx1, tx2].into_iter().map(Arc::new).collect(),
+        block2.header().clone(),
+        chain.latest_partial_blockchain(),
+        BTreeMap::default(),
+    )?;
+
+    assert_eq!(
+        batch.input_notes().clone().into_vec(),
+        vec![InputNoteCommitment::from(&InputNote::unauthenticated(input_note))],
+    );
+    assert_eq!(batch.output_notes()[0], output_note_proven);
+
+    Ok(())
+}
+
+/// Two standards P2ID output notes with identical details but different metadata should both appear
+/// in the batch.
+#[test]
+fn two_p2id_inputs_same_details_different_metadata_in_same_batch() -> anyhow::Result<()> {
+    let TestSetup { mut chain, account1, account2, .. } = setup_chain();
+    let block1 = chain.block_header(1);
+    let block2 = chain.prove_next_block()?;
+
+    let serial_num = Word::from([11, 22, 33, 44u32]);
+    let recipient = P2idNoteStorage::new(account2.id()).into_recipient(serial_num);
+
+    let note_300 = Note::with_attachments(
+        NoteAssets::default(),
+        PartialNoteMetadata::new(account1.id(), NoteType::Public).with_tag(NoteTag::from(300)),
+        recipient.clone(),
+        NoteAttachments::default(),
+    );
+    let note_301 = Note::with_attachments(
+        NoteAssets::default(),
+        PartialNoteMetadata::new(account1.id(), NoteType::Public).with_tag(NoteTag::from(301)),
+        recipient,
+        NoteAttachments::default(),
+    );
+
+    // Only metadata should be different.
+    assert_eq!(note_300.assets(), note_301.assets());
+    assert_ne!(note_300.metadata(), note_301.metadata());
+    assert_eq!(note_300.recipient(), note_301.recipient());
+    assert_eq!(note_300.attachments(), note_301.attachments());
+
+    let tx =
+        MockProvenTxBuilder::with_account(account1.id(), Word::empty(), account1.to_commitment())
+            .ref_block_commitment(block1.commitment())
+            .authenticated_notes(vec![note_300.clone(), note_301.clone()])
+            .build()?;
+
+    let batch = ProposedBatch::new(
+        vec![Arc::new(tx)],
+        block2.header().clone(),
+        chain.latest_partial_blockchain(),
+        BTreeMap::default(),
+    )?;
+
+    assert_eq!(batch.input_notes().num_notes(), 2);
 
     Ok(())
 }
@@ -306,17 +415,11 @@ async fn unauthenticated_note_converted_to_authenticated() -> anyhow::Result<()>
         "block 1 should contain note1 and note2"
     );
     assert!(
-        block1
-            .body()
-            .output_notes()
-            .any(|(_, note)| note.to_commitment() == note1.commitment()),
+        block1.body().output_notes().any(|(_, note)| note.id() == note1.id()),
         "block 1 should contain note1"
     );
     assert!(
-        block1
-            .body()
-            .output_notes()
-            .any(|(_, note)| note.to_commitment() == note2.commitment()),
+        block1.body().output_notes().any(|(_, note)| note.id() == note2.id()),
         "block 1 should contain note2"
     );
 
@@ -474,7 +577,7 @@ fn multiple_transactions_against_same_account() -> anyhow::Result<()> {
     .build()?;
 
     // Use some random hash as the final state commitment of tx2.
-    let final_state_commitment = mock_note(10).commitment();
+    let final_state_commitment = mock_note(10).id().as_word();
     let tx2 = MockProvenTxBuilder::with_account(
         account1.id(),
         account1.to_commitment(),

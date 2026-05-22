@@ -1,30 +1,36 @@
 use alloc::string::String;
 
 use anyhow::Context;
-use miden_protocol::account::Account;
 use miden_protocol::account::auth::AuthScheme;
+use miden_protocol::account::{Account, AccountId};
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
 use miden_protocol::errors::tx_kernel::ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_METADATA_WHILE_NO_NOTE_BEING_PROCESSED;
 use miden_protocol::note::{
     Note,
     NoteAssets,
-    NoteMetadata,
+    NoteAttachment,
+    NoteAttachmentScheme,
     NoteRecipient,
     NoteStorage,
     NoteTag,
     NoteType,
+    PartialNoteMetadata,
 };
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
     ACCOUNT_ID_SENDER,
 };
+use miden_protocol::testing::note::DEFAULT_NOTE_SCRIPT;
 use miden_protocol::transaction::memory::{ASSET_SIZE, ASSET_VALUE_OFFSET};
 use miden_protocol::{EMPTY_WORD, Felt, ONE, WORD_SIZE, Word};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::mock_account::MockAccountExt;
+use miden_standards::testing::note::NoteBuilder;
+use rstest::rstest;
 
+use super::StackInputs;
 use crate::kernel_tests::tx::ExecutionOutputExt;
 use crate::utils::create_public_p2any_note;
 use crate::{
@@ -104,13 +110,9 @@ async fn test_active_note_get_metadata() -> anyhow::Result<()> {
 
             # get the metadata of the active note
             exec.active_note::get_metadata
-            # => [NOTE_ATTACHMENT, METADATA_HEADER]
+            # => [METADATA]
 
-            push.{NOTE_ATTACHMENT}
-            assert_eqw.err="note 0 has incorrect note attachment"
-            # => [METADATA_HEADER]
-
-            push.{METADATA_HEADER}
+            push.{METADATA}
             assert_eqw.err="note 0 has incorrect metadata"
             # => []
 
@@ -118,9 +120,7 @@ async fn test_active_note_get_metadata() -> anyhow::Result<()> {
             swapw dropw
         end
         "#,
-        METADATA_HEADER = tx_context.input_notes().get_note(0).note().metadata().to_header_word(),
-        NOTE_ATTACHMENT =
-            tx_context.input_notes().get_note(0).note().metadata().to_attachment_word()
+        METADATA = tx_context.input_notes().get_note(0).note().metadata().to_metadata_word(),
     );
 
     tx_context.execute_code(&code).await?;
@@ -164,6 +164,87 @@ async fn test_active_note_get_sender() -> anyhow::Result<()> {
     let sender = tx_context.input_notes().get_note(0).note().metadata().sender();
     assert_eq!(exec_output.get_stack_element(0), sender.suffix());
     assert_eq!(exec_output.get_stack_element(1), sender.prefix().as_felt());
+
+    Ok(())
+}
+
+#[rstest::rstest]
+#[case(NoteType::Public)]
+#[case(NoteType::Private)]
+#[tokio::test]
+async fn test_active_note_get_note_type(#[case] note_type: NoteType) -> anyhow::Result<()> {
+    let tx_context = {
+        let account =
+            Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
+        let mut rng = miden_protocol::crypto::rand::RandomCoin::new(Word::default());
+        let input_note = crate::utils::create_p2any_note(
+            ACCOUNT_ID_SENDER.try_into().unwrap(),
+            note_type,
+            [FungibleAsset::mock(100)],
+            &mut rng,
+        );
+        TransactionContextBuilder::new(account)
+            .extend_input_notes(vec![input_note])
+            .build()?
+    };
+
+    let code = "
+        use $kernel::prologue
+        use $kernel::note->note_internal
+        use miden::protocol::active_note
+        use miden::protocol::note
+
+        begin
+            exec.prologue::prepare_transaction
+            exec.note_internal::prepare_note
+            dropw dropw dropw dropw
+
+            exec.active_note::get_metadata
+            # => [METADATA]
+
+            exec.note::metadata_into_note_type
+            # => [note_type]
+
+            # truncate the stack
+            swapw dropw
+        end
+        ";
+
+    let exec_output = tx_context.execute_code(code).await?;
+
+    let actual_note_type = NoteType::try_from(exec_output.get_stack_element(0))
+        .expect("stack element should be a valid note type");
+    assert_eq!(actual_note_type, note_type);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_metadata_into_tag() -> anyhow::Result<()> {
+    use miden_protocol::note::{NoteAttachments, NoteMetadata};
+
+    use crate::executor::CodeExecutor;
+
+    let sender_id: AccountId = ACCOUNT_ID_SENDER.try_into()?;
+    let tag = NoteTag::new(0xabcd_1234);
+    let partial_metadata = PartialNoteMetadata::new(sender_id, NoteType::Public).with_tag(tag);
+    let metadata = NoteMetadata::new(partial_metadata, &NoteAttachments::default());
+    let metadata_word = metadata.to_metadata_word();
+
+    let code = "
+        use miden::protocol::note
+
+        begin
+            exec.note::metadata_into_tag
+        end
+        ";
+
+    let exec_output = CodeExecutor::with_default_host()
+        .stack_inputs(StackInputs::new(metadata_word.as_slice())?)
+        .run(code)
+        .await?;
+
+    assert_eq!(exec_output.get_stack_element(0), Felt::from(tag.as_u32()));
 
     Ok(())
 }
@@ -247,8 +328,8 @@ async fn test_active_note_get_assets() -> anyhow::Result<()> {
             # assert the number of assets is correct
             eq.{note_0_num_assets} assert.err="unexpected num assets for note 0"
 
-            # assert the pointer is returned
-            dup eq.{DEST_POINTER_NOTE_0} assert.err="unexpected dest ptr for note 0"
+            # push the dest pointer for asset assertions
+            push.{DEST_POINTER_NOTE_0}
 
             # asset memory assertions
             {NOTE_0_ASSET_ASSERTIONS}
@@ -270,8 +351,8 @@ async fn test_active_note_get_assets() -> anyhow::Result<()> {
             # assert the number of assets is correct
             eq.{note_1_num_assets} assert.err="unexpected num assets for note 1"
 
-            # assert the pointer is returned
-            dup eq.{DEST_POINTER_NOTE_1} assert.err="unexpected dest ptr for note 1"
+            # push the dest pointer for asset assertions
+            push.{DEST_POINTER_NOTE_1}
 
             # asset memory assertions
             {NOTE_1_ASSET_ASSERTIONS}
@@ -377,12 +458,13 @@ async fn test_active_note_get_storage() -> anyhow::Result<()> {
             # => []
 
             push.{NOTE_0_PTR} exec.active_note::get_storage
-            # => [num_storage_items, dest_ptr]
+            # => [num_storage_items]
 
             eq.{num_storage_items} assert.err="unexpected num_storage_items"
-            # => [dest_ptr]
+            # => []
 
-            dup eq.{NOTE_0_PTR} assert.err="unexpected dest ptr"
+            # push the dest pointer for storage assertions
+            push.{NOTE_0_PTR}
             # => [dest_ptr]
 
             # apply note 1 storage assertions
@@ -422,10 +504,10 @@ async fn test_active_note_get_exactly_8_inputs() -> anyhow::Result<()> {
     // prepare note data
     let serial_num = RandomCoin::new(Word::from([4u32; 4])).draw_word();
     let tag = NoteTag::with_account_target(target_id);
-    let metadata = NoteMetadata::new(sender_id, NoteType::Public).with_tag(tag);
+    let metadata = PartialNoteMetadata::new(sender_id, NoteType::Public).with_tag(tag);
     let vault = NoteAssets::new(vec![]).context("failed to create input note assets")?;
     let note_script = CodeBuilder::default()
-        .compile_note_script("begin nop end")
+        .compile_note_script(DEFAULT_NOTE_SCRIPT)
         .context("failed to parse note script")?;
 
     // create a recipient with note storage, which number divides by 8. For simplicity create 8
@@ -435,13 +517,13 @@ async fn test_active_note_get_exactly_8_inputs() -> anyhow::Result<()> {
         note_script,
         NoteStorage::new(vec![
             ONE,
-            Felt::new(2),
-            Felt::new(3),
-            Felt::new(4),
-            Felt::new(5),
-            Felt::new(6),
-            Felt::new(7),
-            Felt::new(8),
+            Felt::new_unchecked(2),
+            Felt::new_unchecked(3),
+            Felt::new_unchecked(4),
+            Felt::new_unchecked(5),
+            Felt::new_unchecked(6),
+            Felt::new_unchecked(7),
+            Felt::new_unchecked(8),
         ])
         .context("failed to create note storage")?,
     );
@@ -554,6 +636,130 @@ async fn test_active_note_get_script_root() -> anyhow::Result<()> {
     let exec_output = tx_context.execute_code(code).await?;
 
     let script_root = tx_context.input_notes().get_note(0).note().script().root();
-    assert_eq!(exec_output.get_stack_word(0), script_root);
+    assert_eq!(exec_output.get_stack_word(0), script_root.into());
+    Ok(())
+}
+
+/// Tests `{input_note, active_note}::find_attachment` for both the found and not-found cases.
+///
+/// Setup: create an input note with two word attachments (schemes 10 and 20), then call
+/// `find_attachment` on the active/input note.
+///
+/// - `found`:     search for scheme 10 → is_found=1, attachment_idx=0.
+/// - `not_found`: search for scheme 99 → is_found=0.
+#[rstest]
+#[case::active_note_scheme_found(None, "active_note", 20, true)]
+#[case::active_note_scheme_not_found(None, "active_note", 99, false)]
+// uses note index 1
+#[case::input_note_scheme_found(Some(1), "input_note", 20, true)]
+// uses note index 1
+#[case::input_note_scheme_not_found(Some(1), "input_note", 99, false)]
+#[tokio::test]
+async fn test_note_find_attachment(
+    #[case] note_idx: Option<u8>,
+    #[case] module_under_test: &str,
+    #[case] search_scheme: u16,
+    #[case] expected_found: bool,
+) -> anyhow::Result<()> {
+    let word_0 = Word::from([3, 4, 5, 6u32]);
+    let word_1 = Word::from([7, 8, 9, 10u32]);
+    let scheme_0 = NoteAttachmentScheme::new(10)?;
+    let scheme_1 = NoteAttachmentScheme::new(20)?;
+
+    let tx_context = {
+        let account =
+            Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
+
+        let mut rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
+        // Add a random first note so we test with note_index != 0.
+        let input_note0 = NoteBuilder::new(account.id(), &mut rng).build()?;
+        let input_note1 = NoteBuilder::new(account.id(), &mut rng)
+            .note_type(NoteType::Public)
+            .attachment(NoteAttachment::with_word(scheme_0, word_0))
+            .attachment(NoteAttachment::with_word(scheme_1, word_1))
+            .build()?;
+
+        TransactionContextBuilder::new(account)
+            .extend_input_notes(vec![input_note0, input_note1])
+            .build()?
+    };
+    assert_eq!(tx_context.tx_inputs().input_notes().num_notes(), 2);
+
+    let setup_find_attachment = match note_idx {
+        Some(idx) => format!("push.{idx}"),
+        // for active_note module, we don't need to push anything
+        None => "".into(),
+    };
+
+    // Setup stack for write_attachment_to_memory based on whether note_idx is needed.
+    // active_note needs [dest_ptr, attachment_idx]
+    // input_note needs [dest_ptr, attachment_idx, note_index]
+    let setup_write_stack = match note_idx {
+        Some(idx) => format!("push.{idx} swap push.DEST_PTR"),
+        None => "push.DEST_PTR".into(),
+    };
+
+    let code = format!(
+        r#"
+        use $kernel::prologue
+        use $kernel::note->note_internal
+        use miden::protocol::active_note
+        use miden::protocol::input_note
+
+        const DEST_PTR = 0x1000
+
+        begin
+            exec.prologue::prepare_transaction
+            exec.note_internal::increment_active_input_note_ptr drop
+            # prepare note 1
+            exec.note_internal::prepare_note
+            dropw dropw dropw dropw
+
+            # push note index, if any
+            {setup_find_attachment}
+            # search for the target scheme on the active note
+            push.{search_scheme}
+            # => [attachment_scheme]
+            exec.{module_under_test}::find_attachment
+            # => [is_found, attachment_idx]
+
+            # assert is_found matches expectation
+            push.{expected_found}
+            assert_eq.err="is_found mismatch"
+            # => [attachment_idx]
+
+            push.{expected_found}
+            if.true
+                # found path: write attachment to memory using returned index
+                {setup_write_stack}
+                exec.{module_under_test}::write_attachment_to_memory
+                # => [num_words]
+
+                eq.1 assert.err="expected num_words=1"
+                # => []
+
+                # read the word from memory and assert it matches
+                padw push.DEST_PTR mem_loadw_le
+                # => [ATTACHMENT_WORD]
+
+                push.{EXPECTED_WORD}
+                assert_eqw.err="attachment data mismatch"
+                # => []
+            else
+                # not-found path: drop the (undefined) attachment_idx
+                drop
+                # => []
+            end
+
+            # truncate the stack
+            swapw dropw
+        end
+        "#,
+        expected_found = expected_found as u8,
+        EXPECTED_WORD = word_1,
+    );
+
+    tx_context.execute_code(&code).await?;
+
     Ok(())
 }

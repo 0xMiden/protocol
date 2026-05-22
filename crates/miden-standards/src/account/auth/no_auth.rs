@@ -1,7 +1,9 @@
-use miden_protocol::account::component::AccountComponentMetadata;
-use miden_protocol::account::{AccountComponent, AccountType};
+use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
+use miden_protocol::account::{AccountComponent, AccountComponentName};
 
-use crate::account::components::no_auth_library;
+use crate::account::account_component_code;
+
+account_component_code!(NO_AUTH_CODE, "auth/no_auth.masl");
 
 /// An [`AccountComponent`] implementing a no-authentication scheme.
 ///
@@ -15,13 +17,21 @@ use crate::account::components::no_auth_library;
 /// - Checks if the account state has changed by comparing initial and final commitments
 /// - Only increments the nonce if the account state has actually changed
 /// - Provides no cryptographic authentication
-///
-/// This component supports all account types.
 pub struct NoAuth;
 
 impl NoAuth {
     /// The name of the component.
     pub const NAME: &'static str = "miden::standards::components::auth::no_auth";
+
+    /// Returns the canonical [`AccountComponentName`] of this component.
+    pub const fn name() -> AccountComponentName {
+        AccountComponentName::from_static_str(Self::NAME)
+    }
+
+    /// Returns the [`AccountComponentCode`] of this component.
+    pub fn code() -> &'static AccountComponentCode {
+        &NO_AUTH_CODE
+    }
 
     /// Creates a new [`NoAuth`] component.
     pub fn new() -> Self {
@@ -30,8 +40,7 @@ impl NoAuth {
 
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        AccountComponentMetadata::new(Self::NAME, AccountType::all())
-            .with_description("No authentication component")
+        AccountComponentMetadata::new(Self::NAME).with_description("No authentication component")
     }
 }
 
@@ -45,7 +54,7 @@ impl From<NoAuth> for AccountComponent {
     fn from(_: NoAuth) -> Self {
         let metadata = NoAuth::component_metadata();
 
-        AccountComponent::new(no_auth_library(), vec![], metadata)
+        AccountComponent::new(NoAuth::code().clone(), vec![], metadata)
             .expect("NoAuth component should satisfy the requirements of a valid account component")
     }
 }

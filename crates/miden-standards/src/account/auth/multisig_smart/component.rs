@@ -2,6 +2,7 @@ use alloc::vec::Vec;
 
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 use miden_protocol::account::component::{
+    AccountComponentCode,
     AccountComponentMetadata,
     FeltSchema,
     SchemaType,
@@ -10,7 +11,6 @@ use miden_protocol::account::component::{
 };
 use miden_protocol::account::{
     AccountComponent,
-    AccountType,
     StorageMap,
     StorageMapKey,
     StorageSlot,
@@ -23,7 +23,9 @@ use miden_protocol::{Felt, Word};
 use super::ProcedurePolicy;
 use super::config::{OracleReaderConfig, SpendingPolicyConfig, TimelockControllerConfig};
 use super::types::{AmountLimits, OracleId, TierThresholds};
-use crate::account::components::multisig_smart_library;
+use crate::account::account_component_code;
+
+account_component_code!(MULTISIG_SMART_CODE, "auth/multisig_smart.masl");
 
 // CONSTANTS
 // ================================================================================================
@@ -293,6 +295,19 @@ pub struct AuthMultisigSmart {
 impl AuthMultisigSmart {
     /// The name of the component.
     pub const NAME: &'static str = "miden::standards::components::auth::multisig_smart";
+
+    pub const UPDATE_SIGNERS_AND_THRESHOLD_PROC_NAME: &'static str = "update_signers_and_threshold";
+    pub const UPDATE_THRESHOLD_CONFIG_PROC_NAME: &'static str = "update_threshold_config";
+    pub const UPDATE_SPENDING_LIMITS_PROC_NAME: &'static str = "update_spending_limits";
+    pub const UPDATE_ORACLE_CONFIG_PROC_NAME: &'static str = "update_oracle_config_and_proc_root";
+    pub const UPDATE_GET_PRICE_UNTRACKED_POLICY_PROC_NAME: &'static str =
+        "update_get_price_untracked_policy";
+    pub const UPDATE_TIMELOCK_CONTROLLER_PROC_NAME: &'static str = "update_timelock_controller";
+
+    /// Returns the [`AccountComponentCode`] of this component.
+    pub fn code() -> &'static AccountComponentCode {
+        &MULTISIG_SMART_CODE
+    }
 
     /// Creates a new [`AuthMultisigSmart`] component from the provided configuration.
     pub fn new(config: AuthMultisigSmartConfig) -> Result<Self, AccountError> {
@@ -692,7 +707,7 @@ impl From<AuthMultisigSmart> for AccountComponent {
         ));
         storage_slots.push(StorageSlot::with_value(
             AuthMultisigSmart::oracle_config_slot().clone(),
-            Word::from([oracle_id.prefix(), oracle_id.suffix(), Felt::new(0), Felt::new(0)]),
+            Word::from([oracle_id.prefix(), oracle_id.suffix(), Felt::ZERO, Felt::ZERO]),
         ));
         storage_slots.push(StorageSlot::with_value(
             AuthMultisigSmart::get_price_proc_root_slot().clone(),
@@ -740,11 +755,11 @@ impl From<AuthMultisigSmart> for AccountComponent {
         ])
         .expect("storage schema should be valid");
 
-        let metadata = AccountComponentMetadata::new(AuthMultisigSmart::NAME, AccountType::all())
+        let metadata = AccountComponentMetadata::new(AuthMultisigSmart::NAME)
             .with_description("Multisig smart authentication component")
             .with_storage_schema(storage_schema);
 
-        AccountComponent::new(multisig_smart_library(), storage_slots, metadata).expect(
+        AccountComponent::new(AuthMultisigSmart::code().clone(), storage_slots, metadata).expect(
             "multisig smart component should satisfy the requirements of a valid account component",
         )
     }
@@ -793,7 +808,7 @@ mod tests {
             ))
             .with_timelock_controller_config(TimelockControllerConfig::new(30, 3))
             .with_oracle_reader(OracleReaderConfig::new(
-                OracleId::new(Felt::new(1), Felt::new(2)),
+                OracleId::new(Felt::from(1u32), Felt::from(2u32)),
                 Word::from([7u32, 8, 9, 10]),
             ));
 

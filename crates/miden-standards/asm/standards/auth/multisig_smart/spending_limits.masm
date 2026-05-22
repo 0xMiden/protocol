@@ -1,8 +1,8 @@
 use miden::protocol::active_account
 use miden::protocol::asset
+use miden::protocol::asset::COMPOSITION_FUNGIBLE
 use miden::protocol::native_account
 use miden::protocol::output_note
-use miden::protocol::account_id
 use miden::core::word
 use miden::protocol::tx
 use miden::standards::auth::multisig
@@ -480,7 +480,12 @@ proc compute_spending_amount
             loc_load.1 add.8 loc_store.1
             # => [ASSET_VALUE, ASSET_KEY, remaining, note_index_keep]
 
-            dup.7 exec.account_id::is_fungible_faucet
+            # Duplicate ASSET_KEY (positions 4..=7), extract its composition, then drop the
+            # duplicate copy so we keep the original ASSET_KEY in place for downstream code.
+            dupw.1 exec.asset::key_to_composition movdn.4 dropw
+            # => [composition, ASSET_VALUE, ASSET_KEY, remaining, note_index_keep]
+
+            eq.COMPOSITION_FUNGIBLE
             # => [is_fungible, ASSET_VALUE, ASSET_KEY, remaining, note_index_keep]
 
             if.true
