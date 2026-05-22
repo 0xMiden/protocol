@@ -174,7 +174,7 @@ pub fn create_existing_bridge_account(
 /// Creates a complete agglayer faucet account builder with the specified configuration.
 ///
 /// The builder includes:
-/// - The `AggLayerFaucet` component (token metadata only; conversion metadata lives on the bridge).
+/// - The `AggLayerFaucet` component (token metadata only).
 /// - The `Ownable2Step` component (bridge account ID as owner for mint authorization).
 /// - A [`TokenPolicyManager`] (owner-controlled) configured with `MintPolicyConfig::OwnerOnly` and
 ///   `BurnPolicyConfig::OwnerOnly`. The manager additionally registers `BurnAllowAll::root()` as an

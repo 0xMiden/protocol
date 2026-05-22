@@ -5,8 +5,8 @@
 ### Features
 
 - Added lock/unlock path for Miden-native tokens in the AggLayer bridge: `is_native` flag in `faucet_registry_map`, bridge-local `faucet_metadata_map` (replacing FPI to faucets for conversion data), and `lock_asset` / `unlock_and_send` procedures so the bridge holds native assets in its own vault instead of burn/mint via a faucet ([#2771](https://github.com/0xMiden/protocol/pull/2771)).
-- [BREAKING] Renamed `NoteId` to `NoteDetailsCommitment`, new `NoteId` struct now includes the NoteMetadata ([#1731](https://github.com/0xMiden/protocol/issues/1731)).
-- [BREAKING] Updated note nullifiers to include note metadata and attachments commitment ([#1731](https://github.com/0xMiden/protocol/issues/1731)).
+- [BREAKING] Renamed `NoteId` to `NoteDetailsCommitment`, new `NoteId` struct now includes the NoteMetadata ([#2861](https://github.com/0xMiden/protocol/pull/2861)).
+- [BREAKING] Updated note nullifiers to include note metadata and attachments commitment ([#2953](https://github.com/0xMiden/protocol/pull/2953)).
 - [BREAKING] Renamed `native_asset_id` to `fee_faucet_id` ([#2718](https://github.com/0xMiden/protocol/pull/2718)).
 - [BREAKING] Removed redundant outputs from kernel procedures: `note::write_assets_to_memory`, `active_note::get_assets`, `input_note::get_assets`, `output_note::get_assets`, `active_note::get_storage`, and `faucet::mint` no longer return values identical to their inputs ([#2523](https://github.com/0xMiden/protocol/issues/2523)).
 - Added PSWAP (partial swap) note for decentralized partial-fill asset exchange with remainder note re-creation ([#2636](https://github.com/0xMiden/protocol/pull/2636)).
@@ -19,6 +19,7 @@
 - [BREAKING] Add `NetworkAccount` wrapper for convenient network account identification ([#2915](https://github.com/0xMiden/protocol/pull/2915)).
 - [BREAKING] Introduced `AssetComposition` and encoded composition in the asset vault key's metadata byte ([#2631](https://github.com/0xMiden/protocol/issues/2631)).
 - Exposed `token_config_slot_value` on `FungibleFaucet` to allow reading the token config word directly from the account storage ([#2954](https://github.com/0xMiden/protocol/pull/2954)).
+- Added `PswapAttachment` scheme and `PswapNote::payback_note` / `remainder_note` discovery helpers so creators can reconstruct private paybacks from on-chain commitments ([#2909](https://github.com/0xMiden/protocol/pull/2909)).
 
 ### Changes
 
@@ -73,16 +74,17 @@
 ### Fixes
 
 - Fixed `LocalTransactionProver` accumulating `MastForest` entries across `prove()` calls, causing `capacity_overflow` panics in WASM environments where linear memory fragmentation prevents subsequent allocations ([#2918](https://github.com/0xMiden/protocol/pull/2918)).
+- Fixed `create_fungible_faucet` leaving authority-gated setters unauthenticated under `AccessControl::AuthControlled`: the `AuthSingleSigAcl` trigger list now contains every authority-gated setter root (`set_max_supply`, `set_description`, `set_logo_uri`, `set_external_link`, `set_mint_policy`, `set_burn_policy`, `set_send_policy`, `set_receive_policy`) in addition to `mint_and_send`. ([#2958](https://github.com/0xMiden/protocol/pull/2958)).
 - Made deserialization of `AccountCode` more robust ([#2788](https://github.com/0xMiden/protocol/pull/2788)).
 - Validated `PartialBlockchain` invariants on deserialization ([#2888](https://github.com/0xMiden/protocol/pull/2888)).
 - Fixed `output_note::add_asset` and `output_note::set_attachment` to no longer accept invalid note indices ([#2824](https://github.com/0xMiden/protocol/pull/2824)).
 - Fixed auth components to use initial storage state for authentication ([#2677](https://github.com/0xMiden/protocol/issues/2677)).
 - Renamed the AggLayer faucet registry flag constant for clarity ([#2812](https://github.com/0xMiden/protocol/issues/2812)).
+- Bound MINT notes to their faucet ([#2911](https://github.com/0xMiden/protocol/pull/2911)).
 - [BREAKING] Replaced `NoAuth` with the new `AuthNetworkAccount` auth component on the AggLayer bridge and AggLayer faucet, closing the forged-MINT attack surface where any transaction against the bridge could emit a bridge-authored MINT note ([#2797](https://github.com/0xMiden/protocol/issues/2797), [#2818](https://github.com/0xMiden/protocol/pull/2818)).
+- Fixed `TokenPolicyManager::manager_storage_slots` to register the protocol-reserved asset-callback storage slots whenever any transfer policy is configured (including `TransferAllowAll`), so every minted asset carries `AssetCallbackFlag::Enabled` and future `set_send_policy` / `set_receive_policy` switches apply uniformly to the entire circulating supply ([#2946](https://github.com/0xMiden/protocol/pull/2946)).
 - [BREAKING] Keyed the AggLayer faucet token registry by `(origin_token_address, origin_network)` instead of `origin_token_address` alone, preventing same-address cross-network mint collisions on CLAIM ([#2860](https://github.com/0xMiden/protocol/pull/2860)).
 - Fixed `set_procedure_threshold` in the multisig auth component validating per-procedure overrides against initial `num_approvers`.
-
-## 0.14.6 (2026-05-05)
 
 ## 0.14.6 (2026-05-09)
 
