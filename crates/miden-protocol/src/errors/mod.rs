@@ -1050,11 +1050,21 @@ pub enum ProposedBatchError {
     InconsistentChainRoot { expected: Word, actual: Word },
 
     #[error(
-        "block {block_reference} referenced by transaction {transaction_id} is not in the partial blockchain"
+        "block {block_num} referenced by transaction {transaction_id} is not in the partial blockchain"
     )]
-    MissingTransactionBlockReference {
-        block_reference: Word,
+    MissingTransactionReferenceBlock {
         transaction_id: TransactionId,
+        block_num: BlockNumber,
+    },
+
+    #[error(
+        "transaction {transaction_id} references block {block_num} with commitment {actual_block_commitment}, but the block in the chain with the same number has commitment {expected_block_commitment}"
+    )]
+    TransactionReferenceBlockCommitmentMismatch {
+        transaction_id: TransactionId,
+        block_num: BlockNumber,
+        expected_block_commitment: Word,
+        actual_block_commitment: Word,
     },
 }
 
