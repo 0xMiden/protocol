@@ -524,8 +524,9 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
 
     let output_script_root = note_recipient.script().root();
 
-    let asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?
-        .with_callbacks(AssetCallbackFlag::Enabled);
+    let callbacks_flag = AssetCallbackFlag::Enabled;
+    let asset =
+        FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?.with_callbacks(callbacks_flag);
     let metadata = PartialNoteMetadata::new(faucet.id(), note_type).with_tag(tag);
     let expected_note = Note::new(NoteAssets::new(vec![asset.into()])?, metadata, note_recipient);
 
@@ -563,8 +564,8 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
                 push.{amount}
                 push.{faucet_id_prefix}
                 push.{faucet_id_suffix}
-                push.0
-                # => [0, faucet_id_suffix, faucet_id_prefix, amount, tag, note_type, RECIPIENT]
+                push.{callbacks_flag}
+                # => [callbacks_flag, faucet_id_suffix, faucet_id_prefix, amount, tag, note_type, RECIPIENT]
 
                 exec.::miden::protocol::asset::create_fungible_asset
                 # => [ASSET_KEY, ASSET_VALUE, tag, note_type, RECIPIENT]
@@ -590,6 +591,7 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
         amount = amount,
         faucet_id_suffix = faucet.id().suffix(),
         faucet_id_prefix = faucet.id().prefix().as_felt(),
+        callbacks_flag = callbacks_flag as u8,
     );
 
     // Create the trigger note that will call mint
@@ -1066,7 +1068,8 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
 
     let amount = Felt::new_unchecked(75);
-    let mint_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?;
+    let mint_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?
+        .with_callbacks(AssetCallbackFlag::Enabled);
 
     let output_note_tag = NoteTag::with_account_target(target_account.id());
     let p2id_note = create_p2id_note_exact(
