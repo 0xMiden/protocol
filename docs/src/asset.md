@@ -39,7 +39,7 @@ Accounts that issue assets are referred to as faucets. They can issue either fun
 </p>
 
 :::tip
-An account can technically issue different types of assets simultaneously, for example, both a fungible asset with callbacks disabled and a non-fungible asset with callbacks enabled. It is highly recommended that accounts issue only one type of asset, in order to have a simple 1-to-1 relationship between faucets and asset types.
+An account can technically issue different types of assets simultaneously, for example, both a fungible asset with [callbacks](#callbacks) disabled and a non-fungible asset with callbacks enabled. It is highly recommended that accounts issue only one type of asset, in order to have a simple 1-to-1 relationship between faucets and asset types.
 :::
 
 ### Encoding
@@ -57,8 +57,8 @@ While the asset value is unique to each type of asset, the vault key has a commo
 ]
 ```
 
-- `faucet_id_suffix` and `faucet_id_prefix` is the ID of the faucet which issues the asset. The transaction kernel ensures that a given account can only issues assets when the faucet ID matches its own ID.
-- `asset_id_suffix` and `asset_id_prefix` is and ID that determines if two assets issued by the same faucet are considered to be the same asset. It is set by the asset creator arbitrarily - see [identity](#identity) for more.
+- `faucet_id_suffix` and `faucet_id_prefix` is the ID of the faucet which issues the asset. The transaction kernel ensures that a given account can only issue assets when the faucet ID matches its own ID.
+- `asset_id_suffix` and `asset_id_prefix` is an ID that determines if two assets issued by the same faucet are considered to be the same asset. It is set by the asset creator arbitrarily - see [identity](#identity) for more.
 - `callback_flag` is the flag that determines whether callbacks are enabled (see also [callbacks](#callbacks)).
 - `composition` describes how assets compose. Read on for more details.
 - `reserved` bits are reserved for future use and should be assumed to be undefined and therefore not relied upon.
