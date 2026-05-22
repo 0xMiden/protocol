@@ -32,7 +32,7 @@ use super::{
     TokenMetadataError,
     TokenName,
 };
-use crate::account::access::AccessControl;
+use crate::account::access::{AccessControl, PausableManager};
 use crate::account::account_component_code;
 use crate::account::auth::{AuthNetworkAccount, AuthSingleSigAcl, AuthSingleSigAclConfig, NoAuth};
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
@@ -388,7 +388,8 @@ impl FungibleFaucet {
     /// word) so that the transversal pause guards baked into `execute_mint_policy`,
     /// `execute_burn_policy`, `check_policy` (allow_all / blocklist / allowlist) and the metadata
     /// setters can read it without panicking. Pause / unpause administration is exposed by the
-    /// optional [`crate::account::access::pausable::PausableManager`] component.
+    /// [`crate::account::access::pausable::PausableManager`] component, which is bundled by
+    /// [`create_fungible_faucet`] alongside this faucet so the slot is always actionable.
     pub fn into_storage_slots(self) -> Vec<StorageSlot> {
         let mut slots: Vec<StorageSlot> = Vec::new();
         slots.push(self.token_config_slot_value());
@@ -574,10 +575,17 @@ fn all_authority_gated_setter_roots() -> Vec<AccountProcedureRoot> {
         TokenPolicyManager::set_burn_policy_root(),
         TokenPolicyManager::set_send_policy_root(),
         TokenPolicyManager::set_receive_policy_root(),
+        PausableManager::pause_root(),
+        PausableManager::unpause_root(),
     ]
 }
 
 /// Creates a new fungible faucet account by composing the required components.
+///
+/// In addition to the explicit parameters, [`PausableManager`] is always bundled so the
+/// `is_paused` slot installed by [`FungibleFaucet::into_storage_slots`] is actionable via
+/// `pause` / `unpause` admin procedures (gated by the same `Authority` component installed by
+/// `access_control`).
 ///
 /// Only specific `(access_control, auth_method)` combinations are supported; everything else
 /// is rejected at the factory level. The valid combinations are:
@@ -609,6 +617,7 @@ pub fn create_fungible_faucet(
         .with_component(faucet)
         .with_components(access_control)
         .with_components(token_policy_manager)
+        .with_component(PausableManager)
         .build()
         .map_err(FungibleFaucetError::AccountError)?;
 

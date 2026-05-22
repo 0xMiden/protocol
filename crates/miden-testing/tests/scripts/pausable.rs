@@ -37,9 +37,6 @@ use miden_testing::{
 
 const ERR_PAUSABLE_IS_PAUSED: MasmError = MasmError::from_static_str("the contract is paused");
 
-const ERR_PAUSABLE_EXPECTED_PAUSE: MasmError =
-    MasmError::from_static_str("the contract is not paused");
-
 const ERR_SENDER_NOT_OWNER: MasmError = MasmError::from_static_str("note sender is not the owner");
 
 static OWNER_ID: LazyLock<AccountId> = LazyLock::new(|| test_account_id(11));
@@ -229,7 +226,7 @@ async fn pausable_manager_pause_then_unpause_then_pause_again() -> anyhow::Resul
 }
 
 #[tokio::test]
-async fn pausable_manager_unpause_while_unpaused_fails() -> anyhow::Result<()> {
+async fn pausable_manager_unpause_while_unpaused_is_noop() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let faucet = add_faucet_with_pause(&mut builder, *OWNER_ID)?;
 
@@ -239,19 +236,13 @@ async fn pausable_manager_unpause_while_unpaused_fails() -> anyhow::Result<()> {
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
-    let result = mock_chain
-        .build_tx_context(faucet.id(), &[unpause_note.id()], &[])?
-        .build()?
-        .execute()
-        .await;
-
-    assert_transaction_executor_error!(result, ERR_PAUSABLE_EXPECTED_PAUSE);
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &unpause_note).await?;
 
     Ok(())
 }
 
 #[tokio::test]
-async fn pausable_manager_pause_while_paused_fails() -> anyhow::Result<()> {
+async fn pausable_manager_pause_while_paused_is_noop() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let faucet = add_faucet_with_pause(&mut builder, *OWNER_ID)?;
 
@@ -264,16 +255,7 @@ async fn pausable_manager_pause_while_paused_fails() -> anyhow::Result<()> {
     mock_chain.prove_next_block()?;
 
     execute_note_on_faucet(&mut mock_chain, faucet.id(), &pause_note_1).await?;
-
-    // Second pause attempt fails because `exec.pausable::pause` body asserts the account is
-    // NOT currently paused before flipping the flag.
-    let result = mock_chain
-        .build_tx_context(faucet.id(), &[pause_note_2.id()], &[])?
-        .build()?
-        .execute()
-        .await;
-
-    assert_transaction_executor_error!(result, ERR_PAUSABLE_IS_PAUSED);
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &pause_note_2).await?;
 
     Ok(())
 }

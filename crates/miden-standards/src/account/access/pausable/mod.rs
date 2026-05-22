@@ -1,7 +1,6 @@
 use miden_protocol::account::component::{
     AccountComponentCode,
     AccountComponentMetadata,
-    FeltSchema,
     StorageSchema,
     StorageSlotSchema,
 };
@@ -87,12 +86,7 @@ impl PausableStorage {
             Self::is_paused_slot().clone(),
             StorageSlotSchema::value(
                 "Pause flag word; zero is unpaused, canonical paused encoding is [1,0,0,0]",
-                [
-                    FeltSchema::felt("w0").with_default(Felt::ZERO),
-                    FeltSchema::felt("w1").with_default(Felt::ZERO),
-                    FeltSchema::felt("w2").with_default(Felt::ZERO),
-                    FeltSchema::felt("w3").with_default(Felt::ZERO),
-                ],
+                [Felt::ZERO; 4],
             ),
         )
     }

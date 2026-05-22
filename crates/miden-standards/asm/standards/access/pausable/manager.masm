@@ -24,7 +24,6 @@ use miden::standards::access::pausable
 #!
 #! Panics if:
 #! - the caller is not authorized per the installed `Authority` component.
-#! - the account is already paused.
 #!
 #! Invocation: call
 pub proc pause
@@ -42,7 +41,6 @@ end
 #!
 #! Panics if:
 #! - the caller is not authorized per the installed `Authority` component.
-#! - the account is not paused.
 #!
 #! Invocation: call
 pub proc unpause

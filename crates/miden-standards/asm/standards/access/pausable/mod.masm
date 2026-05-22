@@ -54,7 +54,7 @@ pub proc is_paused
     # => [is_paused, pad(15)]
 end
 
-#! Sets the paused flag. Fails if already paused.
+#! Sets the paused flag.
 #!
 #! This procedure does not verify the caller. Compose with access control in a wrapper component
 #! (e.g. `pausable::manager` via Authority::assert_authorized) so only privileged accounts can
@@ -65,9 +65,6 @@ end
 #!
 #! Invocation: exec
 pub proc pause
-    exec.assert_not_paused
-    # => []
-
     push.PAUSED_WORD
     # => [1, 0, 0, 0]
 
@@ -81,7 +78,7 @@ pub proc pause
     # => []
 end
 
-#! Clears the paused flag. Fails if not paused.
+#! Clears the paused flag.
 #!
 #! This procedure does not verify the caller.
 #!
@@ -90,9 +87,6 @@ end
 #!
 #! Invocation: exec
 pub proc unpause
-    exec.assert_paused
-    # => []
-
     push.UNPAUSED_WORD
     # => [0, 0, 0, 0]
 
