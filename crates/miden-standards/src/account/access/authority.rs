@@ -47,6 +47,12 @@ const RBAC_CONTROLLED: u8 = 2;
 /// the MASM helper `authority::assert_authorized`. Installing the [`Authority`] component on an
 /// account thus selects the gating mode for *all* such procedures in one place.
 ///
+/// # Safety invariant for [`Authority::AuthControlled`]
+///
+/// Because `assert_authorized` is a no-op under `AuthControlled`, the account's auth component
+/// is the **sole** gate for every authority-gated setter. The auth component MUST therefore
+/// authenticate every such setter root, otherwise the setters become permissionless.
+///
 /// Storage layout: `[authority, role_symbol_or_zero, 0, 0]` — single Word.
 #[repr(u8)]
 #[derive(Debug, Clone, PartialEq, Eq)]
