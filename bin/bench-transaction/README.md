@@ -6,7 +6,8 @@ Below we describe how to benchmark Miden transactions.
 
 The following transactions are benchmarked:
 
-- **P2ID notes**: Consume single/two P2ID notes, create single P2ID note
+- **P2ID notes**: Consume single P2ID notes with Falcon or ECDSA signing, consume two P2ID
+  notes, create single P2ID note
 - **CLAIM notes (agglayer bridge-in)**: Consume CLAIM note for L1-to-Miden bridging and L2-to-Miden bridging
 - **B2AGG note (agglayer bridge-out)**: Consume B2AGG note for Miden-to-AggLayer bridging
 
@@ -45,7 +46,7 @@ Each of the above transactions is measured in two groups:
 
   This group uses the [Criterion.rs](https://github.com/bheisler/criterion.rs) to collect the elapsed time. Results of this benchmark group are printed to the terminal and look like so:
   ```zsh
-  Execute transaction/Execute transaction which consumes single P2ID note
+  Execute transaction/Execute transaction which consumes single P2ID note with Falcon signing
                         time:   [7.2611 ms 7.2772 ms 7.2929 ms]
                         change: [−0.9131% −0.5837% −0.3058%] (p = 0.00 < 0.05)
                         Change within noise threshold.
@@ -54,7 +55,7 @@ Each of the above transactions is measured in two groups:
                         change: [−1.2256% −0.7611% −0.3355%] (p = 0.00 < 0.05)
                         Change within noise threshold.
 
-  Execute and prove transaction/Execute and prove transaction which consumes single P2ID note
+  Execute and prove transaction/Execute and prove transaction which consumes single P2ID note with Falcon signing
                         time:   [698.96 ms 703.92 ms 708.70 ms]
                         change: [−2.3061% −0.4274% +0.9653%] (p = 0.70 > 0.05)
                         No change in performance detected.
