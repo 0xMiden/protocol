@@ -1,0 +1,157 @@
+# miden::standards::access::pausable
+#
+# Pause primitive: storage slot + low-level helpers. The mutation helpers (`pause`, `unpause`)
+# perform NO authorization — they are exec building blocks consumed by auth-checking wrappers
+# such as [`pausable::manager`]. The read view (`is_paused`) is also exposed call-invokably so
+# tx scripts can query the flag through the Pausable component shim.
+#
+# Consumers (asset callbacks, custom procedures, TokenPolicyManager mint/burn/transfer dispatch)
+# compose `assert_not_paused` / `assert_paused` (exec) to gate their own logic.
+
+use miden::core::word
+use miden::protocol::active_account
+use miden::protocol::native_account
+
+# CONSTANTS
+# ================================================================================================
+
+# The slot where the paused flag is stored as a single word.
+# Unpaused: [0, 0, 0, 0]. Paused: [1, 0, 0, 0].
+const IS_PAUSED_SLOT = word("miden::standards::access::pausable::is_paused")
+
+const PAUSED_WORD = [1, 0, 0, 0]
+
+const UNPAUSED_WORD = [0, 0, 0, 0]
+
+# ERRORS
+# ================================================================================================
+
+const ERR_PAUSABLE_IS_PAUSED = "the contract is paused"
+
+const ERR_PAUSABLE_EXPECTED_PAUSE = "the contract is not paused"
+
+# PUBLIC INTERFACE
+# ================================================================================================
+
+#! Returns whether the account is currently paused.
+#!
+#! Reads [`IS_PAUSED_SLOT`] on the active account and returns `1` if the stored word is non-zero
+#! (paused) or `0` if it is the zero word (unpaused).
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [is_paused, pad(15)]
+#!
+#! Invocation: call
+pub proc is_paused
+    push.IS_PAUSED_SLOT[0..2]
+    exec.active_account::get_item
+    # => [is_paused, 0, 0, 0, pad(16)]
+
+    exec.word::eqz not
+    # => [is_paused, pad(16)]
+
+    swap drop
+    # => [is_paused, pad(15)]
+end
+
+#! Sets the paused flag.
+#!
+#! This procedure does not verify the caller. Compose with access control in a wrapper component
+#! (e.g. `pausable::manager` via Authority::assert_authorized) so only privileged accounts can
+#! pause.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Invocation: exec
+pub proc pause
+    push.PAUSED_WORD
+    # => [1, 0, 0, 0]
+
+    push.IS_PAUSED_SLOT[0..2]
+    # => [slot_suffix, slot_prefix, 1, 0, 0, 0]
+
+    exec.native_account::set_item
+    # => [OLD_WORD]
+
+    dropw
+    # => []
+end
+
+#! Clears the paused flag.
+#!
+#! This procedure does not verify the caller.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Invocation: exec
+pub proc unpause
+    push.UNPAUSED_WORD
+    # => [0, 0, 0, 0]
+
+    push.IS_PAUSED_SLOT[0..2]
+    # => [slot_suffix, slot_prefix, 0, 0, 0, 0]
+
+    exec.native_account::set_item
+    # => [OLD_WORD]
+
+    dropw
+    # => []
+end
+
+#! Requires the contract to be unpaused (storage word is the zero word).
+#!
+#! Reads [`IS_PAUSED_SLOT`] on the active account and applies [`word::eqz`]. If the stored word
+#! is non-zero (paused), panics with [`ERR_PAUSABLE_IS_PAUSED`].
+#!
+#! If the `IS_PAUSED_SLOT` is not installed on the account, `active_account:: get_item` 
+#! returns the zero word, which is treated as "unpaused" — so the assertion is a no-op
+#! for accounts that did not install the Pausable component. This is the canonical way for
+#! cross-cutting consumers (TokenPolicyManager dispatch, asset callbacks, metadata setters) to
+#! gate their logic on pause state without making Pausable a hard dependency.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Panics if:
+#! - the paused-state word is not the zero word.
+#!
+#! Invocation: exec
+pub proc assert_not_paused
+    push.IS_PAUSED_SLOT[0..2]
+    exec.active_account::get_item
+    # => [is_paused, 0, 0, 0]
+
+    exec.word::eqz
+    # => [is_unpaused]
+
+    assert.err=ERR_PAUSABLE_IS_PAUSED
+    # => []
+end
+
+#! Requires the contract to be paused (storage word is not the zero word).
+#!
+#! Reads [`IS_PAUSED_SLOT`] on the active account, then [`word::eqz`] and inverts. If the
+#! stored word is zero (unpaused), panics with [`ERR_PAUSABLE_EXPECTED_PAUSE`].
+#!
+#! Typical use: guard `unpause` so clearing the flag only happens from a paused state.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Panics if:
+#! - the paused-state word is the zero word.
+#!
+#! Invocation: exec
+pub proc assert_paused
+    push.IS_PAUSED_SLOT[0..2]
+    exec.active_account::get_item
+    # => [is_paused, 0, 0, 0]
+
+    exec.word::eqz not
+    # => [is_paused]
+
+    assert.err=ERR_PAUSABLE_EXPECTED_PAUSE
+    # => []
+end

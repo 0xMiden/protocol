@@ -40,7 +40,6 @@ The component metadata can be defined using TOML. Below is an example specificat
 name = "Fungible Faucet"
 description = "This component showcases the component schema format, and the different ways of providing valid values to it."
 version = "1.0.0"
-supported-types = ["FungibleFaucet"]
 
 [[storage.slots]]
 name = "demo::token_metadata"
@@ -79,12 +78,11 @@ type = { key = "word", value = "u16" }
 
 #### Header
 
-The metadata header specifies four fields:
+The metadata header specifies three fields:
 
 - `name`: The component schema's name
 - `description` (optional): A brief description of the component schema and its functionality
 - `version`: A semantic version of this component schema
-- `supported-types`: Specifies the types of accounts on which the component can be used. Valid values are `FungibleFaucet`, `NonFungibleFaucet`, `RegularAccountUpdatableCode` and `RegularAccountImmutableCode`
 
 #### Storage entries
 

@@ -31,7 +31,7 @@ forge install
 forge test -vv --match-test test_generateCanonicalZeros
 
 # Generate Merkle Tree Frontier vectors (test-vectors/merkle_tree_frontier_vectors.json)
-forge test -vv --match-test test_generateVectors
+forge test -vv --match-test test_generate_MTF_vectors
 ```
 
 ## Generated Files
@@ -46,7 +46,7 @@ The canonical zeros should match the constants in:
 
 ### Merkle Tree Frontier Vectors
 
-The `test_generateVectors` adds 32 leaves and outputs the root after each addition.
+The `test_generate_MTF_vectors` adds 32 leaves and outputs the root after each addition.
 Each leaf uses:
 
 - `amounts[i] = i + 1`

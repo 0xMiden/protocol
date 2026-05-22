@@ -22,7 +22,7 @@ use miden_protocol::errors::{
     TransactionInputsExtractionError,
     TransactionOutputError,
 };
-use miden_protocol::note::{NoteId, NoteMetadata};
+use miden_protocol::note::{NoteId, PartialNoteMetadata};
 use miden_protocol::transaction::TransactionSummary;
 use miden_protocol::{Felt, Word};
 use miden_verifier::VerificationError;
@@ -50,12 +50,23 @@ pub(crate) enum TransactionCheckerError {
     TransactionPreparation(#[source] TransactionExecutorError),
     #[error("transaction execution prologue failed: {0}")]
     PrologueExecution(#[source] TransactionExecutorError),
-    #[error("transaction execution epilogue failed: {0}")]
-    EpilogueExecution(#[source] TransactionExecutorError),
+    #[error("transaction execution epilogue failed: {error}")]
+    EpilogueExecution {
+        error: TransactionExecutorError,
+        /// Cycle counts for notes that executed successfully before the epilogue failed.
+        successful_notes_cycle_counts: Vec<usize>,
+    },
     #[error("transaction note execution failed on note index {failed_note_index}: {error}")]
     NoteExecution {
         failed_note_index: usize,
         error: TransactionExecutorError,
+        /// Cycle counts for notes that executed successfully before the failed note.
+        successful_notes_cycle_counts: Vec<usize>,
+        /// The number of cycles consumed by the failed note before it errored.
+        ///
+        /// This is `Some` when the failure was due to exceeding the cycle limit, and `None`
+        /// for other error types where the cycle count is not meaningful.
+        failed_note_cycle_count: Option<usize>,
     },
 }
 
@@ -64,7 +75,7 @@ impl From<TransactionCheckerError> for TransactionExecutorError {
         match error {
             TransactionCheckerError::TransactionPreparation(error) => error,
             TransactionCheckerError::PrologueExecution(error) => error,
-            TransactionCheckerError::EpilogueExecution(error) => error,
+            TransactionCheckerError::EpilogueExecution { error, .. } => error,
             TransactionCheckerError::NoteExecution { error, .. } => error,
         }
     }
@@ -114,7 +125,7 @@ pub enum TransactionExecutorError {
     #[error("expected account nonce delta to be {expected}, found {actual}")]
     InconsistentAccountNonceDelta { expected: Felt, actual: Felt },
     #[error(
-        "native asset amount {account_balance} in the account vault is not sufficient to cover the transaction fee of {tx_fee}"
+        "fee asset amount {account_balance} in the account vault is not sufficient to cover the transaction fee of {tx_fee}"
     )]
     InsufficientFee { account_balance: u64, tx_fee: u64 },
     #[error("account witness provided for account ID {0} is invalid")]
@@ -246,13 +257,11 @@ pub enum TransactionKernelError {
     #[error(
         "public note with metadata {0:?} and recipient digest {1} is missing details in the advice provider"
     )]
-    PublicNoteMissingDetails(NoteMetadata, Word),
-    #[error("attachment provided to set_attachment must be empty when attachment kind is None")]
-    NoteAttachmentNoneIsNotEmpty,
+    PublicNoteMissingDetails(PartialNoteMetadata, Word),
     #[error(
-        "commitment of note attachment {actual} does not match attachment {provided} provided to set_attachment"
+        "commitment of note attachment advice data is {actual} which does not match commitment {provided} provided to add_attachment"
     )]
-    NoteAttachmentArrayMismatch { actual: Word, provided: Word },
+    NoteAttachmentCommitmentMismatch { actual: Word, provided: Word },
     #[error(
         "note storage in advice provider contains fewer items ({actual}) than specified ({specified}) by its number of storage items"
     )]
@@ -295,7 +304,7 @@ pub enum TransactionKernelError {
         source: DataStoreError,
     },
     #[error(
-        "native asset amount {account_balance} in the account vault is not sufficient to cover the transaction fee of {tx_fee}"
+        "fee asset amount {account_balance} in the account vault is not sufficient to cover the transaction fee of {tx_fee}"
     )]
     InsufficientFee { account_balance: u64, tx_fee: u64 },
     /// This variant signals that a signature over the contained commitments is required, but

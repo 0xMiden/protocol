@@ -1,0 +1,70 @@
+# The MASM code of the AuthNetworkAccount authentication component.
+#
+# See the `AuthNetworkAccount` Rust type's documentation for more details.
+
+use miden::protocol::active_account
+use miden::protocol::native_account
+use miden::core::word
+use miden::standards::auth::note_script_allowlist
+
+# CONSTANTS
+# =================================================================================================
+
+# The slot holding the map of allowed input-note script roots. Keys are note script roots
+# (defined as Word); any non-empty value marks a root as allowed.
+const ALLOWED_NOTE_SCRIPTS_SLOT = word("miden::standards::auth::network_account::allowed_note_scripts")
+
+# AUTH PROCEDURE
+# =================================================================================================
+
+#! Authenticates a transaction against an `AuthNetworkAccount` component.
+#!
+#! Enforces two invariants:
+#! 1. No transaction script was executed in this transaction.
+#! 2. Every consumed input note must have a script root present in the allowlist stored at
+#!    `ALLOWED_NOTE_SCRIPTS_SLOT`.
+#!
+#! If both checks pass, the nonce is incremented when the account state changed or the account is
+#! new, matching the behavior of the NoAuth and SingleSig components.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [pad(16)]
+#!
+#! Invocation: call
+@auth_script
+pub proc auth_network_transaction(auth_args: word)
+    dropw
+    # => [pad(16)]
+
+    # ---- Reject transactions that executed a tx script ----
+    exec.note_script_allowlist::assert_no_tx_script
+    # => [pad(16)]
+
+    # ---- Reject any input note whose script root is not allowlisted ----
+    push.ALLOWED_NOTE_SCRIPTS_SLOT[0..2]
+    # => [slot_id_suffix, slot_id_prefix, pad(16)]
+
+    exec.note_script_allowlist::assert_all_input_notes_allowed
+    # => [pad(16)]
+
+    # ---- Increment nonce iff the account state changed or the account is new ----
+    exec.active_account::get_initial_commitment
+    # => [INITIAL_COMMITMENT, pad(16)]
+
+    exec.active_account::compute_commitment
+    # => [CURRENT_COMMITMENT, INITIAL_COMMITMENT, pad(16)]
+
+    exec.word::eq not
+    # => [has_account_state_changed, pad(16)]
+
+    exec.active_account::get_nonce eq.0
+    # => [is_new_account, has_account_state_changed, pad(16)]
+
+    or
+    # => [should_increment_nonce, pad(16)]
+
+    if.true
+        exec.native_account::incr_nonce drop
+    end
+    # => [pad(16)]
+end

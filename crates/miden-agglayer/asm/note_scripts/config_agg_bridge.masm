@@ -1,0 +1,140 @@
+use agglayer::bridge::bridge_config
+use agglayer::common::utils
+use miden::protocol::active_note
+use miden::standards::attachments::network_account_target
+
+# CONSTANTS
+# =================================================================================================
+
+const CONFIG_AGG_BRIDGE_NUM_STORAGE_ITEMS = 18
+
+const STORAGE_START_PTR = 0
+
+const ORIGIN_TOKEN_ADDR_0 = 0
+const ORIGIN_TOKEN_ADDR_1 = 1
+const ORIGIN_TOKEN_ADDR_2 = 2
+const ORIGIN_TOKEN_ADDR_3 = 3
+const ORIGIN_TOKEN_ADDR_4 = 4
+const FAUCET_ID_SUFFIX = 5
+const FAUCET_ID_PREFIX = 6
+const SCALE = 7
+const ORIGIN_NETWORK = 8
+const IS_NATIVE = 9
+const METADATA_HASH_LO_0 = 10
+const METADATA_HASH_LO_1 = 11
+const METADATA_HASH_LO_2 = 12
+const METADATA_HASH_LO_3 = 13
+const METADATA_HASH_HI_0 = 14
+const METADATA_HASH_HI_1 = 15
+const METADATA_HASH_HI_2 = 16
+const METADATA_HASH_HI_3 = 17
+
+# ERRORS
+# =================================================================================================
+
+const ERR_CONFIG_AGG_BRIDGE_UNEXPECTED_STORAGE_ITEMS = "CONFIG_AGG_BRIDGE expects exactly 18 note storage items"
+const ERR_CONFIG_AGG_BRIDGE_TARGET_ACCOUNT_MISMATCH = "CONFIG_AGG_BRIDGE note attachment target account does not match consuming account"
+
+#! Agglayer Bridge CONFIG_AGG_BRIDGE script: registers a faucet in the bridge's faucet registry,
+#! token registry, and faucet metadata map.
+#!
+#! This note can only be consumed by the Agglayer Bridge account that is targeted by the note
+#! attachment, and only if the note was sent by the bridge admin.
+#! Upon consumption, it registers the faucet ID, origin token address mapping, scale factor,
+#! origin network, is_native flag, and metadata hash in the bridge.
+#!
+#! The registration is split into two calls due to the 16-element stack limit:
+#! 1. register_faucet: stores address, scale, origin_network, is_native, and registry entries
+#! 2. store_faucet_metadata_hash: stores the metadata hash
+#!
+#! Requires that the account exposes:
+#! - agglayer::bridge_config::register_faucet procedure.
+#! - agglayer::bridge_config::store_faucet_metadata_hash procedure.
+#!
+#! Inputs:  [ARGS, pad(12)]
+#! Outputs: [pad(16)]
+#!
+#! NoteStorage layout (18 felts total):
+#! - origin_token_addr_0 [0]  : 1 felt
+#! - origin_token_addr_1 [1]  : 1 felt
+#! - origin_token_addr_2 [2]  : 1 felt
+#! - origin_token_addr_3 [3]  : 1 felt
+#! - origin_token_addr_4 [4]  : 1 felt
+#! - faucet_id_suffix    [5]  : 1 felt
+#! - faucet_id_prefix    [6]  : 1 felt
+#! - scale               [7]  : 1 felt
+#! - origin_network      [8]  : 1 felt (LE-packed u32, paired with origin_token_addr in the
+#!                                      token-registry key per agglayer #2860)
+#! - is_native           [9]  : 1 felt
+#! - metadata_hash_lo    [10] : 4 felts
+#! - metadata_hash_hi    [14] : 4 felts
+#!
+#! Panics if:
+#! - The note attachment target account does not match the consuming bridge account.
+#! - The note does not contain exactly 18 storage items.
+#! - The account does not expose the register_faucet or store_faucet_metadata_hash procedures.
+@note_script
+pub proc main
+    dropw
+    # => [pad(16)]
+
+    # Ensure note attachment targets the consuming bridge account.
+    exec.network_account_target::active_account_matches_target_account
+    assert.err=ERR_CONFIG_AGG_BRIDGE_TARGET_ACCOUNT_MISMATCH
+    # => [pad(16)]
+
+    # Load note storage to memory
+    push.STORAGE_START_PTR exec.active_note::get_storage
+    # => [num_storage_items, pad(16)]
+
+    # Validate the number of storage items
+    push.CONFIG_AGG_BRIDGE_NUM_STORAGE_ITEMS assert_eq.err=ERR_CONFIG_AGG_BRIDGE_UNEXPECTED_STORAGE_ITEMS
+    # => [pad(16)]
+
+    # --- Call 1: register_faucet ---
+    # Expects: [addr0, addr1, addr2, addr3, addr4, faucet_id_suffix, faucet_id_prefix, scale, origin_network, is_native, pad(6)]
+
+    # Push the call's 6 trailing pad zeros first, then build the 10 args on top.
+    padw push.0.0
+    # => [pad(6), pad(16)]
+
+    mem_load.IS_NATIVE
+    mem_load.ORIGIN_NETWORK
+    mem_load.SCALE
+    mem_load.FAUCET_ID_PREFIX
+    mem_load.FAUCET_ID_SUFFIX
+    mem_load.ORIGIN_TOKEN_ADDR_4
+    # => [addr4, faucet_id_suffix, faucet_id_prefix, scale, origin_network, is_native, pad(6), pad(16)]
+
+    mem_load.ORIGIN_TOKEN_ADDR_3
+    mem_load.ORIGIN_TOKEN_ADDR_2
+    mem_load.ORIGIN_TOKEN_ADDR_1
+    mem_load.ORIGIN_TOKEN_ADDR_0
+    # => [addr0, addr1, addr2, addr3, addr4, faucet_id_suffix, faucet_id_prefix, scale, origin_network, is_native, pad(6), pad(16)]
+
+    call.bridge_config::register_faucet
+    # => [pad(32)]
+
+    # --- Call 2: store_faucet_metadata_hash ---
+    # Expects: [faucet_id_suffix, faucet_id_prefix, MH_LO, MH_HI, pad(6)]
+
+    # Push the call's 6 trailing pad zeros first, then build the 10 args on top.
+    padw push.0.0
+    # => [pad(6), pad(32)]
+
+    push.METADATA_HASH_LO_0 exec.utils::mem_load_double_word_unaligned
+    # => [MH_LO, MH_HI, pad(6), pad(32)]
+
+    mem_load.FAUCET_ID_PREFIX
+    mem_load.FAUCET_ID_SUFFIX
+    # => [faucet_id_suffix, faucet_id_prefix, MH_LO, MH_HI, pad(6), pad(32)]
+
+    call.bridge_config::store_faucet_metadata_hash
+    # => [pad(48)]
+
+    # Drop 32 to bring sdepth back to the 16-minimum.
+    repeat.8
+        dropw
+    end
+    # => [pad(16)]
+end

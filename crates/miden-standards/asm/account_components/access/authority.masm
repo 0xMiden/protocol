@@ -1,0 +1,27 @@
+# Authority Account Component.
+#
+# Owns the single authority storage slot consulted by procedures that gate
+# state-mutating operations. The actual authorization check (`assert_authorized`) lives at
+# `miden::standards::access::authority` and is `exec`'d inline by gating procedures within
+# the active account's context. This component exposes `get_authority` as a call-padded
+# accessor so other accounts can read this account's authority.
+
+use miden::protocol::active_account
+use miden::standards::access::authority::AUTHORITY_SLOT
+
+#! Returns the authority discriminator stored on the account.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [authority, pad(15)]
+#!
+#! Where:
+#! - authority is a single Felt: 0 = AuthControlled, 1 = OwnerControlled, 2 = RbacControlled.
+#!
+#! Invocation: call
+pub proc get_authority
+    push.AUTHORITY_SLOT[0..2] exec.active_account::get_item
+    # => [authority, role_symbol, 0, 0, pad(16)]
+
+    movdn.4 dropw
+    # => [authority, pad(15)]
+end

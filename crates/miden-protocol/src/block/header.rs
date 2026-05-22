@@ -1,10 +1,8 @@
-use alloc::string::ToString;
 use alloc::vec::Vec;
 
-use crate::account::{AccountId, AccountType};
+use crate::account::AccountId;
 use crate::block::BlockNumber;
 use crate::crypto::dsa::ecdsa_k256_keccak::PublicKey;
-use crate::errors::FeeError;
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -33,7 +31,7 @@ use crate::{Felt, Hasher, Word, ZERO};
 ///   block.
 /// - `tx_kernel_commitment` a commitment to all transaction kernels supported by this block.
 /// - `validator_key` is the public key of the validator that is expected to sign the block.
-/// - `fee_parameters` are the parameters defining the base fees and the native asset, see
+/// - `fee_parameters` are the parameters defining the base fees and the fee faucet ID, see
 ///   [`FeeParameters`] for more details.
 /// - `timestamp` is the time when the block was created, in seconds since UNIX epoch. Current
 ///   representation is sufficient to represent time up to year 2106.
@@ -218,7 +216,7 @@ impl BlockHeader {
     /// The sub commitment is computed as a sequential hash of the following fields:
     /// `prev_block_commitment`, `chain_commitment`, `account_root`, `nullifier_root`, `note_root`,
     /// `tx_commitment`, `tx_kernel_commitment`, `validator_key_commitment`, `version`, `timestamp`,
-    /// `block_num`, `native_asset_id`, `verification_base_fee` (all fields except the `note_root`).
+    /// `block_num`, `fee_faucet_id`, `verification_base_fee` (all fields except the `note_root`).
     #[allow(clippy::too_many_arguments)]
     fn compute_sub_commitment(
         version: u32,
@@ -245,8 +243,8 @@ impl BlockHeader {
         elements.extend([
             ZERO,
             Felt::from(fee_parameters.verification_base_fee()),
-            fee_parameters.native_asset_id().suffix(),
-            fee_parameters.native_asset_id().prefix().as_felt(),
+            fee_parameters.fee_faucet_id().suffix(),
+            fee_parameters.fee_faucet_id().prefix().as_felt(),
         ]);
         elements.extend([ZERO, ZERO, ZERO, ZERO]);
         Hasher::hash_elements(&elements)
@@ -329,11 +327,15 @@ impl Deserializable for BlockHeader {
 /// The fee-related parameters of a block.
 ///
 /// This defines how to compute the fees of a transaction and which asset fees can be paid in.
+///
+/// The fee asset is assumed to be a fungible asset
+/// ([`AssetComposition::Fungible`](crate::asset::AssetComposition::Fungible)).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FeeParameters {
-    /// The [`AccountId`] of the fungible faucet whose assets are accepted for fee payments in the
-    /// transaction kernel, or in other words, the native asset of the blockchain.
-    native_asset_id: AccountId,
+    /// The [`AccountId`] of the faucet whose assets are accepted for fee payments in the
+    /// transaction kernel, or in other words, the fee faucet of the blockchain.
+    fee_faucet_id: AccountId,
+
     /// The base fee (in base units) capturing the cost for the verification of a transaction.
     verification_base_fee: u32,
 }
@@ -342,29 +344,18 @@ impl FeeParameters {
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
-    /// Creates a new [`FeeParameters`] from the provided inputs.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - the provided native asset ID is not a fungible faucet account ID.
-    pub fn new(native_asset_id: AccountId, verification_base_fee: u32) -> Result<Self, FeeError> {
-        if !matches!(native_asset_id.account_type(), AccountType::FungibleFaucet) {
-            return Err(FeeError::NativeAssetIdNotFungible {
-                account_type: native_asset_id.account_type(),
-            });
-        }
-
-        Ok(Self { native_asset_id, verification_base_fee })
+    /// Creates [`FeeParameters`] from the provided inputs.
+    pub fn new(fee_faucet_id: AccountId, verification_base_fee: u32) -> Self {
+        Self { fee_faucet_id, verification_base_fee }
     }
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
     /// Returns the [`AccountId`] of the faucet whose assets are accepted for fee payments in the
-    /// transaction kernel, or in other words, the native asset of the blockchain.
-    pub fn native_asset_id(&self) -> AccountId {
-        self.native_asset_id
+    /// transaction kernel, or in other words, the fee faucet of the blockchain.
+    pub fn fee_faucet_id(&self) -> AccountId {
+        self.fee_faucet_id
     }
 
     /// Returns the base fee capturing the cost for the verification of a transaction.
@@ -378,18 +369,17 @@ impl FeeParameters {
 
 impl Serializable for FeeParameters {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.native_asset_id.write_into(target);
+        self.fee_faucet_id.write_into(target);
         self.verification_base_fee.write_into(target);
     }
 }
 
 impl Deserializable for FeeParameters {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let native_asset_id = source.read()?;
+        let fee_faucet_id = source.read()?;
         let verification_base_fee = source.read()?;
 
-        Self::new(native_asset_id, verification_base_fee)
-            .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
+        Ok(Self::new(fee_faucet_id, verification_base_fee))
     }
 }
 
@@ -398,12 +388,10 @@ impl Deserializable for FeeParameters {
 
 #[cfg(test)]
 mod tests {
-    use assert_matches::assert_matches;
     use miden_core::Word;
     use miden_crypto::rand::test_utils::rand_value;
 
     use super::*;
-    use crate::testing::account_id::ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET;
 
     #[test]
     fn test_serde() {
@@ -421,16 +409,5 @@ mod tests {
         let deserialized = BlockHeader::read_from_bytes(&serialized).unwrap();
 
         assert_eq!(deserialized, header);
-    }
-
-    /// Tests that the fee parameters constructor fails when the provided account ID is not a
-    /// fungible faucet.
-    #[test]
-    fn fee_parameters_fail_when_native_asset_is_not_fungible() {
-        assert_matches!(
-            FeeParameters::new(ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET.try_into().unwrap(), 0)
-                .unwrap_err(),
-            FeeError::NativeAssetIdNotFungible { .. }
-        );
     }
 }

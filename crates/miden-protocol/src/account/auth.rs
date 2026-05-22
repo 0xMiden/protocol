@@ -115,7 +115,7 @@ impl Deserializable for AuthScheme {
 #[repr(u8)]
 pub enum AuthSecretKey {
     Falcon512Poseidon2(falcon512_poseidon2::SecretKey) = FALCON512_POSEIDON2,
-    EcdsaK256Keccak(ecdsa_k256_keccak::SecretKey) = ECDSA_K256_KECCAK,
+    EcdsaK256Keccak(ecdsa_k256_keccak::SigningKey) = ECDSA_K256_KECCAK,
 }
 
 impl AuthSecretKey {
@@ -133,12 +133,12 @@ impl AuthSecretKey {
     /// Generates an EcdsaK256Keccak secret key from the OS-provided randomness.
     #[cfg(feature = "std")]
     pub fn new_ecdsa_k256_keccak() -> Self {
-        Self::EcdsaK256Keccak(ecdsa_k256_keccak::SecretKey::new())
+        Self::EcdsaK256Keccak(ecdsa_k256_keccak::SigningKey::new())
     }
 
     /// Generates an EcdsaK256Keccak secret key using the provided random number generator.
     pub fn new_ecdsa_k256_keccak_with_rng<R: Rng + CryptoRng>(rng: &mut R) -> Self {
-        Self::EcdsaK256Keccak(ecdsa_k256_keccak::SecretKey::with_rng(rng))
+        Self::EcdsaK256Keccak(ecdsa_k256_keccak::SigningKey::with_rng(rng))
     }
 
     /// Generates a new secret key for the specified authentication scheme using the provided
@@ -214,7 +214,7 @@ impl Deserializable for AuthSecretKey {
                 Ok(AuthSecretKey::Falcon512Poseidon2(secret_key))
             },
             AuthScheme::EcdsaK256Keccak => {
-                let secret_key = ecdsa_k256_keccak::SecretKey::read_from(source)?;
+                let secret_key = ecdsa_k256_keccak::SigningKey::read_from(source)?;
                 Ok(AuthSecretKey::EcdsaK256Keccak(secret_key))
             },
         }
@@ -236,6 +236,12 @@ impl core::fmt::Display for PublicKeyCommitment {
 
 impl From<falcon512_poseidon2::PublicKey> for PublicKeyCommitment {
     fn from(value: falcon512_poseidon2::PublicKey) -> Self {
+        Self(value.to_commitment())
+    }
+}
+
+impl From<ecdsa_k256_keccak::PublicKey> for PublicKeyCommitment {
+    fn from(value: ecdsa_k256_keccak::PublicKey) -> Self {
         Self(value.to_commitment())
     }
 }

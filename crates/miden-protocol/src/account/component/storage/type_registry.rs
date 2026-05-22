@@ -8,6 +8,7 @@ use core::str::FromStr;
 use miden_core::{Felt, Word};
 use thiserror::Error;
 
+use crate::account::RoleSymbol;
 use crate::account::auth::{AuthScheme, PublicKey};
 use crate::asset::TokenSymbol;
 use crate::utils::serde::{
@@ -32,6 +33,7 @@ pub static SCHEMA_TYPE_REGISTRY: LazyLock<SchemaTypeRegistry> = LazyLock::new(||
     registry.register_felt_type::<Bool>();
     registry.register_felt_type::<Felt>();
     registry.register_felt_type::<TokenSymbol>();
+    registry.register_felt_type::<RoleSymbol>();
     registry.register_felt_type::<AuthScheme>();
     registry.register_word_type::<Word>();
     registry.register_word_type::<PublicKey>();
@@ -181,8 +183,13 @@ impl SchemaType {
 
     /// Returns the schema type for fungible faucet token symbols.
     pub fn token_symbol() -> SchemaType {
-        SchemaType::new("miden::standards::fungible_faucets::metadata::token_symbol")
+        SchemaType::new("miden::standards::faucets::fungible::token_symbol")
             .expect("type is well formed")
+    }
+
+    /// Returns the schema type for RBAC role symbols.
+    pub fn role_symbol() -> SchemaType {
+        SchemaType::new("miden::standards::access::role_symbol").expect("type is well formed")
     }
 
     /// Returns a reference to the inner string.
@@ -280,11 +287,11 @@ where
 
     fn parse_str(input: &str) -> Result<Word, SchemaTypeError> {
         let felt = <T as FeltType>::parse_str(input)?;
-        Ok(Word::from([felt, Felt::new(0), Felt::new(0), Felt::new(0)]))
+        Ok(Word::from([felt, Felt::ZERO, Felt::ZERO, Felt::ZERO]))
     }
 
     fn display_word(value: Word) -> Result<String, SchemaTypeError> {
-        if value[1] != Felt::new(0) || value[2] != Felt::new(0) || value[3] != Felt::new(0) {
+        if value[1] != Felt::ZERO || value[2] != Felt::ZERO || value[3] != Felt::ZERO {
             return Err(SchemaTypeError::ConversionError(format!(
                 "expected a word of the form [<felt>, 0, 0, 0] for type `{}`",
                 Self::type_name()
@@ -307,8 +314,8 @@ impl FeltType for Bool {
 
     fn parse_str(input: &str) -> Result<Felt, SchemaTypeError> {
         match input {
-            "true" | "1" => Ok(Felt::new(1)),
-            "false" | "0" => Ok(Felt::new(0)),
+            "true" | "1" => Ok(Felt::ONE),
+            "false" | "0" => Ok(Felt::ZERO),
             _ => Err(SchemaTypeError::ConversionError(format!(
                 "invalid bool value `{input}`: expected `true`, `false`, `1`, or `0`"
             ))),
@@ -336,14 +343,14 @@ impl FeltType for Void {
 
     fn parse_str(input: &str) -> Result<Felt, SchemaTypeError> {
         let parsed = <Felt as FeltType>::parse_str(input)?;
-        if parsed != Felt::new(0) {
+        if parsed != Felt::ZERO {
             return Err(SchemaTypeError::ConversionError("void values must be zero".to_string()));
         }
-        Ok(Felt::new(0))
+        Ok(Felt::ZERO)
     }
 
     fn display_felt(value: Felt) -> Result<String, SchemaTypeError> {
-        if value != Felt::new(0) {
+        if value != Felt::ZERO {
             return Err(SchemaTypeError::ConversionError("void values must be zero".to_string()));
         }
         Ok("0".into())
@@ -485,6 +492,29 @@ impl FeltType for TokenSymbol {
             ))
         })?;
         Ok(token.to_string())
+    }
+}
+
+impl FeltType for RoleSymbol {
+    fn type_name() -> SchemaType {
+        SchemaType::role_symbol()
+    }
+
+    fn parse_str(input: &str) -> Result<Felt, SchemaTypeError> {
+        let role_symbol = RoleSymbol::new(input).map_err(|err| {
+            SchemaTypeError::parse(input.to_string(), <Self as FeltType>::type_name(), err)
+        })?;
+        Ok(Felt::from(role_symbol))
+    }
+
+    fn display_felt(value: Felt) -> Result<String, SchemaTypeError> {
+        let role_symbol = RoleSymbol::try_from(value).map_err(|err| {
+            SchemaTypeError::ConversionError(format!(
+                "invalid role_symbol value `{}`: {err}",
+                value.as_canonical_u64()
+            ))
+        })?;
+        Ok(role_symbol.to_string())
     }
 }
 
@@ -737,7 +767,7 @@ impl SchemaTypeRegistry {
         // Treat any registered felt type as a word type by zero-padding the remaining felts.
         if let Some(converter) = self.felt.get(type_name) {
             let felt = converter(value)?;
-            return Ok(Word::from([felt, Felt::new(0), Felt::new(0), Felt::new(0)]));
+            return Ok(Word::from([felt, Felt::ZERO, Felt::ZERO, Felt::ZERO]));
         }
 
         Err(SchemaTypeError::WordTypeNotFound(type_name.clone()))
@@ -808,15 +838,24 @@ mod tests {
         // Bool type parses "true"/"false"/"1"/"0" and rejects everything else.
         let bool_type = SchemaType::bool();
 
-        assert_eq!(SCHEMA_TYPE_REGISTRY.try_parse_felt(&bool_type, "true").unwrap(), Felt::new(1));
-        assert_eq!(SCHEMA_TYPE_REGISTRY.try_parse_felt(&bool_type, "false").unwrap(), Felt::new(0));
-        assert_eq!(SCHEMA_TYPE_REGISTRY.try_parse_felt(&bool_type, "1").unwrap(), Felt::new(1));
-        assert_eq!(SCHEMA_TYPE_REGISTRY.try_parse_felt(&bool_type, "0").unwrap(), Felt::new(0));
-        assert_eq!(SCHEMA_TYPE_REGISTRY.display_felt(&bool_type, Felt::new(0)), "false");
-        assert_eq!(SCHEMA_TYPE_REGISTRY.display_felt(&bool_type, Felt::new(1)), "true");
+        assert_eq!(SCHEMA_TYPE_REGISTRY.try_parse_felt(&bool_type, "true").unwrap(), Felt::ONE);
+        assert_eq!(SCHEMA_TYPE_REGISTRY.try_parse_felt(&bool_type, "false").unwrap(), Felt::ZERO);
+        assert_eq!(SCHEMA_TYPE_REGISTRY.try_parse_felt(&bool_type, "1").unwrap(), Felt::ONE);
+        assert_eq!(SCHEMA_TYPE_REGISTRY.try_parse_felt(&bool_type, "0").unwrap(), Felt::ZERO);
+        assert_eq!(SCHEMA_TYPE_REGISTRY.display_felt(&bool_type, Felt::ZERO), "false");
+        assert_eq!(SCHEMA_TYPE_REGISTRY.display_felt(&bool_type, Felt::ONE), "true");
 
         assert!(SCHEMA_TYPE_REGISTRY.try_parse_felt(&bool_type, "yes").is_err());
         assert!(SCHEMA_TYPE_REGISTRY.try_parse_felt(&bool_type, "2").is_err());
-        assert!(SCHEMA_TYPE_REGISTRY.validate_felt_value(&bool_type, Felt::new(2)).is_err());
+        assert!(SCHEMA_TYPE_REGISTRY.validate_felt_value(&bool_type, Felt::from(2_u32)).is_err());
+
+        let role_symbol_type = SchemaType::role_symbol();
+        let role_symbol =
+            SCHEMA_TYPE_REGISTRY.try_parse_felt(&role_symbol_type, "MINTER_ADMIN").unwrap();
+        assert_eq!(
+            SCHEMA_TYPE_REGISTRY.display_felt(&role_symbol_type, role_symbol),
+            "MINTER_ADMIN"
+        );
+        assert!(SCHEMA_TYPE_REGISTRY.try_parse_felt(&role_symbol_type, "minter").is_err());
     }
 }

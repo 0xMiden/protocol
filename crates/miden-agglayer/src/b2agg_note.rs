@@ -3,12 +3,11 @@
 //! This module provides helpers for creating B2AGG (Bridge to AggLayer) notes,
 //! which are used to bridge assets out from Miden to the AggLayer network.
 
-use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use miden_assembly::Library;
 use miden_assembly::serde::Deserializable;
-use miden_core::{Felt, Word};
+use miden_core::Felt;
 use miden_protocol::account::AccountId;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
@@ -16,11 +15,13 @@ use miden_protocol::note::{
     Note,
     NoteAssets,
     NoteAttachment,
-    NoteMetadata,
+    NoteAttachments,
     NoteRecipient,
     NoteScript,
+    NoteScriptRoot,
     NoteStorage,
     NoteType,
+    PartialNoteMetadata,
 };
 use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 use miden_utils_sync::LazyLock;
@@ -32,7 +33,7 @@ use crate::EthAddress;
 
 // Initialize the B2AGG note script only once
 static B2AGG_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/B2AGG.masl"));
+    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/b2agg.masl"));
     let library =
         Library::read_from_bytes(bytes).expect("shipped B2AGG script library is well-formed");
     NoteScript::from_library(&library).expect("shipped B2AGG script is well-formed")
@@ -64,7 +65,7 @@ impl B2AggNote {
     }
 
     /// Returns the B2AGG note script root.
-    pub fn script_root() -> Word {
+    pub fn script_root() -> NoteScriptRoot {
         B2AGG_SCRIPT.root()
     }
 
@@ -97,17 +98,17 @@ impl B2AggNote {
     ) -> Result<Note, NoteError> {
         let note_storage = build_note_storage(destination_network, destination_address)?;
 
-        let attachment = NoteAttachment::from(
-            NetworkAccountTarget::new(target_account_id, NoteExecutionHint::Always)
-                .map_err(|e| NoteError::other(e.to_string()))?,
-        );
+        let attachment = NetworkAccountTarget::new(target_account_id, NoteExecutionHint::Always)
+            .map_err(|error| {
+                NoteError::other_with_source("failed to create b2agg network account target", error)
+            })?;
+        let attachments = NoteAttachments::from(NoteAttachment::from(attachment));
 
-        let metadata =
-            NoteMetadata::new(sender_account_id, NoteType::Public).with_attachment(attachment);
+        let metadata = PartialNoteMetadata::new(sender_account_id, NoteType::Public);
 
         let recipient = NoteRecipient::new(rng.draw_word(), Self::script(), note_storage);
 
-        Ok(Note::new(assets, metadata, recipient))
+        Ok(Note::with_attachments(assets, metadata, recipient, attachments))
     }
 }
 

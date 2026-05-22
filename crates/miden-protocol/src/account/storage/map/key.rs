@@ -1,7 +1,7 @@
 use alloc::string::String;
 
 use miden_crypto::merkle::smt::{LeafIndex, SMT_DEPTH};
-use miden_protocol_macros::WordWrapper;
+use miden_crypto_derive::WordWrapper;
 
 use crate::utils::serde::{
     ByteReader,
@@ -22,7 +22,7 @@ use crate::{Felt, Hasher, Word};
 ///
 /// Use [`StorageMapKey::hash`] to produce the corresponding [`StorageMapKeyHash`] that is used
 /// in the SMT.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, WordWrapper)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, WordWrapper)]
 pub struct StorageMapKey(Word);
 
 impl StorageMapKey {
@@ -102,7 +102,7 @@ impl Deserializable for StorageMapKey {
 /// This is produced by hashing a [`StorageMapKey`] and is used as the actual key in the
 /// underlying SMT. Wrapping the hashed key in a distinct type prevents accidentally using a raw
 /// key where a hashed key is expected and vice-versa.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, WordWrapper)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, WordWrapper)]
 pub struct StorageMapKeyHash(Word);
 
 impl StorageMapKeyHash {

@@ -7,7 +7,8 @@ use miden_protocol::account::AccountId;
 use miden_protocol::asset::Asset;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
-use miden_protocol::note::{Note, NoteAssets, NoteMetadata, NoteTag, NoteType};
+use miden_protocol::note::{Note, NoteAssets, NoteTag, NoteType, PartialNoteMetadata};
+use miden_protocol::vm::AdviceMap;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::P2idNoteStorage;
 use miden_standards::testing::note::NoteBuilder;
@@ -138,10 +139,12 @@ pub fn create_p2any_note(
         @note_script
         pub proc main
             # fetch pointer & number of assets
-            push.0 exec.active_note::get_assets     # [num_assets, dest_ptr]
+            push.0 exec.active_note::get_assets     # [num_assets]
 
             # runtime-check we got the expected count
-            push.{num_assets} assert_eq.err="unexpected number of assets"             # [dest_ptr]
+            push.{num_assets} assert_eq.err="unexpected number of assets"             # []
+
+            push.0                                                       # [dest_ptr]
 
             {code_body}
             dropw dropw dropw dropw
@@ -187,21 +190,24 @@ where
         .metadata()
         .sender();
 
-    let note_code = note_script_that_creates_notes(sender_id, output_notes)?;
+    let (note_code, advice_map) = note_script_that_creates_notes(sender_id, output_notes)?;
 
     let note = NoteBuilder::new(sender_id, SmallRng::from_os_rng())
         .code(note_code)
+        .advice_map(advice_map)
         .dynamically_linked_libraries(CodeBuilder::mock_libraries())
         .build()?;
 
     Ok(note)
 }
 
-/// Returns the code for a note that creates all notes in `output_notes`
+/// Returns the code for a note that creates all notes in `output_notes`, along with an
+/// advice map containing the elements for any attachments keyed by their commitment.
 fn note_script_that_creates_notes<'note>(
     sender_id: AccountId,
     output_notes: impl Iterator<Item = &'note Note>,
-) -> anyhow::Result<String> {
+) -> anyhow::Result<(String, AdviceMap)> {
+    let mut advice_map = AdviceMap::default();
     let mut out = String::from("use miden::protocol::output_note\n\n@note_script\npub proc main\n");
 
     for (idx, note) in output_notes.into_iter().enumerate() {
@@ -239,20 +245,24 @@ fn note_script_that_creates_notes<'note>(
             tag = note.metadata().tag(),
         ));
 
-        out.push_str(&format!(
-            "
-          push.{ATTACHMENT}
-          push.{attachment_scheme}
-          push.{attachment_kind}
-          dup.6
-          # => [note_idx, attachment_kind, attachment_scheme, ATTACHMENT, note_idx]
-          exec.output_note::set_attachment
-          # => [note_idx]
-        ",
-            ATTACHMENT = note.metadata().to_attachment_word(),
-            attachment_scheme = note.metadata().attachment().attachment_scheme().as_u32(),
-            attachment_kind = note.metadata().attachment().content().attachment_kind().as_u8(),
-        ));
+        for attachment in note.attachments().iter() {
+            let attachment_scheme = attachment.attachment_scheme().as_u16();
+            let commitment = attachment.content().to_commitment();
+
+            out.push_str(&format!(
+                "
+                      dup
+                      push.{commitment}
+                      push.{attachment_scheme}
+                      # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx, note_idx]
+                      exec.output_note::add_attachment
+                      # => [note_idx]
+                    ",
+            ));
+
+            // Add the elements to the advice map keyed by the commitment.
+            advice_map.insert(commitment, attachment.content().to_elements());
+        }
 
         for asset in note.assets().iter() {
             out.push_str(&format!(
@@ -271,7 +281,7 @@ fn note_script_that_creates_notes<'note>(
 
     out.push_str("repeat.5 dropw end\nend");
 
-    Ok(out)
+    Ok((out, advice_map))
 }
 
 /// Generates a P2ID note - Pay-to-ID note with an exact serial number
@@ -286,7 +296,7 @@ pub fn create_p2id_note_exact(
 
     let tag = NoteTag::with_account_target(target);
 
-    let metadata = NoteMetadata::new(sender, note_type).with_tag(tag);
+    let metadata = PartialNoteMetadata::new(sender, note_type).with_tag(tag);
     let vault = NoteAssets::new(assets)?;
 
     Ok(Note::new(vault, metadata, recipient))

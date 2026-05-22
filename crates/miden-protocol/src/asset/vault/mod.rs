@@ -4,8 +4,9 @@ use alloc::vec::Vec;
 use miden_crypto::merkle::InnerNodeInfo;
 
 use super::{
-    AccountType,
     Asset,
+    AssetAmount,
+    AssetComposition,
     ByteReader,
     ByteWriter,
     Deserializable,
@@ -15,9 +16,9 @@ use super::{
     Serializable,
 };
 use crate::Word;
-use crate::account::{AccountId, AccountVaultDelta, NonFungibleDeltaAction};
+use crate::account::{AccountVaultDelta, NonFungibleDeltaAction};
 use crate::crypto::merkle::smt::{SMT_DEPTH, Smt};
-use crate::errors::AssetVaultError;
+use crate::errors::{AssetError, AssetVaultError};
 
 mod partial;
 pub use partial::PartialVault;
@@ -102,18 +103,22 @@ impl AssetVault {
         }
     }
 
-    /// Returns the balance of the asset issued by the specified faucet. If the vault does not
-    /// contain such an asset, 0 is returned.
+    /// Returns the balance of the fungible asset identified by `vault_key`.
+    ///
+    /// If the vault does not contain the asset, zero is returned.
     ///
     /// # Errors
-    /// Returns an error if the specified ID is not an ID of a fungible asset faucet.
-    pub fn get_balance(&self, faucet_id: AccountId) -> Result<u64, AssetVaultError> {
-        if !matches!(faucet_id.account_type(), AccountType::FungibleFaucet) {
-            return Err(AssetVaultError::NotAFungibleFaucetId(faucet_id));
+    ///
+    /// Returns an error if `vault_key`'s composition is not [`AssetComposition::Fungible`].
+    pub fn get_balance(&self, vault_key: AssetVaultKey) -> Result<AssetAmount, AssetError> {
+        if !vault_key.composition().is_fungible() {
+            return Err(AssetError::AssetCompositionMismatch {
+                faucet_id: vault_key.faucet_id(),
+                expected: AssetComposition::Fungible,
+                actual: vault_key.composition(),
+            });
         }
 
-        let vault_key =
-            AssetVaultKey::new_fungible(faucet_id).expect("faucet ID should be of type fungible");
         let asset_value = self.asset_tree.get_value(&vault_key.to_word());
         let asset = FungibleAsset::from_key_value(vault_key, asset_value)
             .expect("asset vault should only store valid assets");
@@ -312,7 +317,7 @@ impl AssetVault {
                 .expect("asset vault should store valid assets");
 
         // If the asset's amount is 0, we consider it absent from the vault.
-        if current_asset.amount() == 0 {
+        if current_asset.amount() == AssetAmount::ZERO {
             return Err(AssetVaultError::FungibleAssetNotFound(other_asset));
         }
 
@@ -325,7 +330,7 @@ impl AssetVault {
         // leaf.
         #[cfg(debug_assertions)]
         {
-            if new_asset.amount() == 0 {
+            if new_asset.amount() == AssetAmount::ZERO {
                 assert!(new_asset.to_value_word().is_empty())
             }
         }

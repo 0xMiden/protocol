@@ -1,15 +1,24 @@
 use miden_protocol::Word;
-use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
+use miden_protocol::account::auth::{AuthScheme, PublicKey, PublicKeyCommitment};
 use miden_protocol::account::component::{
+    AccountComponentCode,
     AccountComponentMetadata,
     SchemaType,
     StorageSchema,
     StorageSlotSchema,
 };
-use miden_protocol::account::{AccountComponent, AccountType, StorageSlot, StorageSlotName};
+use miden_protocol::account::{
+    AccountComponent,
+    AccountComponentName,
+    StorageSlot,
+    StorageSlotName,
+};
+use miden_protocol::crypto::dsa::{ecdsa_k256_keccak, falcon512_poseidon2};
 use miden_protocol::utils::sync::LazyLock;
 
-use crate::account::components::singlesig_library;
+use crate::account::account_component_code;
+
+account_component_code!(SINGLESIG_CODE, "auth/singlesig.masl");
 
 // CONSTANTS
 // ================================================================================================
@@ -35,8 +44,6 @@ static SCHEME_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// assembler (which also implies availability of `miden::protocol`). This is the case when using
 /// [`CodeBuilder`][builder].
 ///
-/// This component supports all account types.
-///
 /// [builder]: crate::code_builder::CodeBuilder
 pub struct AuthSingleSig {
     pub_key: PublicKeyCommitment,
@@ -47,9 +54,49 @@ impl AuthSingleSig {
     /// The name of the component.
     pub const NAME: &'static str = "miden::standards::components::auth::singlesig";
 
+    /// Returns the canonical [`AccountComponentName`] of this component.
+    pub const fn name() -> AccountComponentName {
+        AccountComponentName::from_static_str(Self::NAME)
+    }
+
+    /// Returns the [`AccountComponentCode`] of this component.
+    pub fn code() -> &'static AccountComponentCode {
+        &SINGLESIG_CODE
+    }
+
     /// Creates a new [`AuthSingleSig`] component with the given `public_key`.
     pub fn new(pub_key: PublicKeyCommitment, auth_scheme: AuthScheme) -> Self {
         Self { pub_key, auth_scheme }
+    }
+
+    /// Creates a new [`AuthSingleSig`] component using the Falcon512Poseidon2 signature scheme.
+    ///
+    /// The public key commitment is derived from the provided Falcon512 public key.
+    pub fn falcon512_poseidon2(pub_key: falcon512_poseidon2::PublicKey) -> Self {
+        Self {
+            pub_key: pub_key.into(),
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        }
+    }
+
+    /// Creates a new [`AuthSingleSig`] component using the EcdsaK256Keccak signature scheme.
+    ///
+    /// The public key commitment is derived from the provided ECDSA K256 public key.
+    pub fn ecdsa_k256_keccak(pub_key: ecdsa_k256_keccak::PublicKey) -> Self {
+        Self {
+            pub_key: pub_key.into(),
+            auth_scheme: AuthScheme::EcdsaK256Keccak,
+        }
+    }
+
+    /// Creates a new [`AuthSingleSig`] component from a [`PublicKey`].
+    ///
+    /// The authentication scheme and public key commitment are derived from the provided key.
+    pub fn from_public_key(pub_key: PublicKey) -> Self {
+        Self {
+            auth_scheme: pub_key.auth_scheme(),
+            pub_key: pub_key.to_commitment(),
+        }
     }
 
     /// Returns the [`StorageSlotName`] where the public key is stored.
@@ -85,7 +132,7 @@ impl AuthSingleSig {
         ])
         .expect("storage schema should be valid");
 
-        AccountComponentMetadata::new(Self::NAME, AccountType::all())
+        AccountComponentMetadata::new(Self::NAME)
             .with_description(
                 "Authentication component using ECDSA K256 Keccak or Falcon512 Poseidon2 signature scheme",
             )
@@ -108,7 +155,7 @@ impl From<AuthSingleSig> for AccountComponent {
             ),
         ];
 
-        AccountComponent::new(singlesig_library(), storage_slots, metadata).expect(
+        AccountComponent::new(AuthSingleSig::code().clone(), storage_slots, metadata).expect(
             "singlesig component should satisfy the requirements of a valid account component",
         )
     }

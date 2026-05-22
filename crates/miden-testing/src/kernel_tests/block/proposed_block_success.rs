@@ -6,7 +6,7 @@ use anyhow::Context;
 use assert_matches::assert_matches;
 use miden_protocol::Felt;
 use miden_protocol::account::delta::AccountUpdateDetails;
-use miden_protocol::account::{Account, AccountId, AccountStorageMode};
+use miden_protocol::account::{Account, AccountId, AccountType};
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::block::{BlockInputs, ProposedBlock};
 use miden_protocol::note::{Note, NoteType};
@@ -265,7 +265,7 @@ async fn proposed_block_with_batch_at_expiration_limit() -> anyhow::Result<()> {
 #[tokio::test]
 async fn noop_tx_and_state_updating_tx_against_same_account_in_same_block() -> anyhow::Result<()> {
     let account_builder = Account::builder(rand::rng().random())
-        .storage_mode(AccountStorageMode::Public)
+        .account_type(AccountType::Public)
         .with_component(MockAccountComponent::with_empty_slots());
 
     let mut builder = MockChain::builder();
@@ -333,9 +333,9 @@ async fn generate_conditional_tx(
     modify_storage: bool,
 ) -> ExecutedTransaction {
     let auth_args = [
-        Felt::new(97),
-        Felt::new(98),
-        Felt::new(99),
+        Felt::new_unchecked(97),
+        Felt::new_unchecked(98),
+        Felt::new_unchecked(99),
         // increment nonce if modify_storage is true
         if modify_storage { Felt::ONE } else { Felt::ZERO },
     ];

@@ -16,6 +16,7 @@ pub use executor::{
     NoteConsumptionChecker,
     NoteConsumptionInfo,
     ProgramExecutor,
+    SuccessfulNote,
     TransactionExecutor,
     TransactionExecutorHost,
 };

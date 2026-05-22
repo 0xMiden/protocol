@@ -10,5 +10,16 @@ pub use singlesig_acl::{AuthSingleSigAcl, AuthSingleSigAclConfig};
 mod multisig;
 pub use multisig::{AuthMultisig, AuthMultisigConfig};
 
-mod multisig_psm;
-pub use multisig_psm::{AuthMultisigPsm, AuthMultisigPsmConfig, PsmConfig};
+pub mod multisig_smart;
+pub use multisig_smart::{AuthMultisigSmart, AuthMultisigSmartConfig};
+
+mod guarded_multisig;
+pub use guarded_multisig::{AuthGuardedMultisig, AuthGuardedMultisigConfig, GuardianConfig};
+
+mod network_account;
+pub use network_account::{
+    AuthNetworkAccount,
+    NetworkAccount,
+    NetworkAccountNoteAllowlist,
+    NetworkAccountNoteAllowlistError,
+};
