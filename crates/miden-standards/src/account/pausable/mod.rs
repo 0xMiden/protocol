@@ -39,9 +39,9 @@ procedure_root!(
 
 /// Storage helper backing the pause flag for a single account.
 ///
-/// `PausableStorage` exposes the slot name and schema for the `is_paused` flag word plus an
-/// optional initial pause state. It is **not** an installable account component on its own —
-/// the [`Pausable`] component installs the storage slot, and any consumer (TokenPolicyManager
+/// `PausableStorage` exposes the slot name and schema for the `is_paused` flag word plus the
+/// captured pause state. It is **not** an installable account component on its own — the
+/// [`Pausable`] component installs the storage slot, and any consumer (TokenPolicyManager
 /// dispatch, asset callbacks, metadata setters) reads via `exec.pausable::assert_not_paused` /
 /// `assert_paused` exec helpers from the standards library at
 /// `miden::standards::utils::pausable`.
@@ -52,33 +52,28 @@ procedure_root!(
 ///   paused. Any non-zero word is interpreted as paused by the MASM helpers.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct PausableStorage {
-    initial_state: bool,
+    state: bool,
 }
 
 impl PausableStorage {
-    /// Creates a [`PausableStorage`] starting unpaused.
-    pub const fn new() -> Self {
-        Self { initial_state: false }
+    /// Creates a [`PausableStorage`] with the given pause state.
+    pub const fn new(state: bool) -> Self {
+        Self { state }
     }
 
-    /// Creates a [`PausableStorage`] with the given initial pause state.
-    pub const fn with_initial_state(initial_state: bool) -> Self {
-        Self { initial_state }
-    }
-
-    /// Creates a [`PausableStorage`] that starts in the paused state.
+    /// Creates a [`PausableStorage`] in the paused state.
     pub const fn paused() -> Self {
-        Self::with_initial_state(true)
+        Self::new(true)
     }
 
-    /// Creates a [`PausableStorage`] that starts in the unpaused state.
+    /// Creates a [`PausableStorage`] in the unpaused state.
     pub const fn unpaused() -> Self {
-        Self::with_initial_state(false)
+        Self::new(false)
     }
 
-    /// Returns the initial pause state captured in this storage.
-    pub fn initial_state(&self) -> bool {
-        self.initial_state
+    /// Returns the pause state captured in this storage.
+    pub fn state(&self) -> bool {
+        self.state
     }
 
     /// Storage slot name for the pause flag word.
@@ -102,9 +97,9 @@ impl PausableStorage {
         )
     }
 
-    /// Builds the initial pause-flag [`Word`] from the captured initial state.
-    pub fn build_word(&self) -> Word {
-        if self.initial_state {
+    /// Returns the pause-flag [`Word`] for the captured state.
+    pub fn to_word(&self) -> Word {
+        if self.state {
             Word::from([1u32, 0, 0, 0])
         } else {
             Word::default()
@@ -114,7 +109,7 @@ impl PausableStorage {
     /// Consumes the storage and returns the [`StorageSlot`] it contributes to an account
     /// component. The slot is initialized with the captured pause state.
     pub fn into_slot(self) -> StorageSlot {
-        StorageSlot::with_value(Self::is_paused_slot().clone(), self.build_word())
+        StorageSlot::with_value(Self::is_paused_slot().clone(), self.to_word())
     }
 }
 
@@ -128,7 +123,7 @@ impl PausableStorage {
 /// account-wide [`crate::account::access::Authority`] component.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Pausable {
-    initial_state: bool,
+    state: bool,
 }
 
 impl Pausable {
@@ -137,9 +132,9 @@ impl Pausable {
 
     pub const IS_PAUSED_PROC_NAME: &'static str = "is_paused";
 
-    /// Creates a [`Pausable`] component with the given initial pause state.
-    pub const fn new(initial_state: bool) -> Self {
-        Self { initial_state }
+    /// Creates a [`Pausable`] component with the given pause state.
+    pub const fn new(state: bool) -> Self {
+        Self { state }
     }
 
     /// Creates a [`Pausable`] component that starts in the paused state.
@@ -152,9 +147,9 @@ impl Pausable {
         Self::new(false)
     }
 
-    /// Returns the initial pause state captured in this component.
-    pub fn initial_state(&self) -> bool {
-        self.initial_state
+    /// Returns the pause state captured in this component.
+    pub fn state(&self) -> bool {
+        self.state
     }
 
     /// Returns the [`AccountComponentCode`] of this component.
@@ -170,7 +165,7 @@ impl Pausable {
 
 impl From<Pausable> for AccountComponent {
     fn from(pausable: Pausable) -> Self {
-        let storage = PausableStorage::with_initial_state(pausable.initial_state);
+        let storage = PausableStorage::new(pausable.state);
         let storage_schema = StorageSchema::new([PausableStorage::is_paused_slot_schema()])
             .expect("storage schema should be valid");
 

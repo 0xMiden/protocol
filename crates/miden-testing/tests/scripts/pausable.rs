@@ -284,15 +284,15 @@ async fn pausable_manager_pause_while_paused_fails() -> anyhow::Result<()> {
 #[test]
 fn pausable_storage_default_is_unpaused() {
     let storage = PausableStorage::default();
-    assert!(!storage.initial_state());
-    assert_eq!(storage.build_word(), Word::default());
+    assert!(!storage.state());
+    assert_eq!(storage.to_word(), Word::default());
 }
 
 #[test]
 fn pausable_storage_paused_writes_canonical_word() {
     let storage = PausableStorage::paused();
-    assert!(storage.initial_state());
-    assert_eq!(storage.build_word(), Word::from([1u32, 0, 0, 0]));
+    assert!(storage.state());
+    assert_eq!(storage.to_word(), Word::from([1u32, 0, 0, 0]));
 }
 
 // TESTS — PAUSE (mint / burn / transfer policies)
