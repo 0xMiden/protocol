@@ -829,8 +829,9 @@ pub proc auth_tx(salt: word)
     loc_load.3 u32max
     # => [policy_or_spending_threshold, num_verified_signatures, TX_SUMMARY_COMMITMENT]
 
-    loc_load.1 swap
-    # => [policy_or_spending_threshold, default_threshold, num_verified_signatures, TX_SUMMARY_COMMITMENT]
+    # compute_tx_threshold expects default_threshold on top, policy_threshold underneath.
+    loc_load.1
+    # => [default_threshold, policy_or_spending_threshold, num_verified_signatures, TX_SUMMARY_COMMITMENT]
 
     exec.compute_tx_threshold
     # => [transaction_threshold, num_verified_signatures, TX_SUMMARY_COMMITMENT]
@@ -844,16 +845,18 @@ pub proc auth_tx(salt: word)
     end
 
     # ------ Enforcing execute-path consistency ------
-    # If any policy (procedure or spending) requires the delayed mode, the transaction must be
-    # running on the execute path (proposed earlier, now being executed). Conversely, the
-    # immediate path is only valid when no consumed policy required a delay.
-    loc_load.2 loc_load.4 or
-    # => [requires_delay, TX_SUMMARY_COMMITMENT]
+    # If a *procedure* policy demands the delayed execution mode, the transaction must already be
+    # on the execute path (proposed earlier, now being executed). Spending limits use their own
+    # `requires_delay` flag to decide whether to advance timelock proposals (below) but do not
+    # by themselves veto an immediate-mode transaction — that distinction belongs to the policy
+    # layer and is consistent with the pre-foundation behavior we are preserving here.
+    loc_load.2
+    # => [policy_requires_delay, TX_SUMMARY_COMMITMENT]
 
     exec.timelock_controller::is_execute_path
-    # => [is_execute_path, requires_delay, TX_SUMMARY_COMMITMENT]
+    # => [is_execute_path, policy_requires_delay, TX_SUMMARY_COMMITMENT]
 
-    # is_valid = NOT(requires_delay) OR is_execute_path
+    # is_valid = NOT(policy_requires_delay) OR is_execute_path
     swap not or
     # => [is_valid_execute_path, TX_SUMMARY_COMMITMENT]
 
@@ -861,6 +864,8 @@ pub proc auth_tx(salt: word)
     # => [TX_SUMMARY_COMMITMENT]
 
     # ------ Finalizing timelock proposals ------
+    # The timelock controller consumes the union of policy- and spending-derived delay flags so
+    # that high-spending transactions still advance any pending propose/cancel/execute slots.
     loc_load.2 loc_load.4 or
     # => [requires_delay, TX_SUMMARY_COMMITMENT]
 

@@ -444,16 +444,12 @@ proc compute_spending_amount
         dup
         # => [note_index_arg, note_index_keep]
 
-        push.TMP_ASSETS_PTR
+        # Save the destination pointer in local 1; the protocol's `output_note::get_assets`
+        # only returns `[num_assets]`, so we cannot recover the pointer from its outputs.
+        push.TMP_ASSETS_PTR dup loc_store.1
         # => [dest_ptr, note_index_arg, note_index_keep]
 
         exec.output_note::get_assets
-        # => [num_assets, dest_ptr, note_index_ret, note_index_keep]
-
-        movup.2 drop
-        # => [num_assets, dest_ptr, note_index_keep]
-
-        swap loc_store.1
         # => [num_assets, note_index_keep]
 
         dup neq.0

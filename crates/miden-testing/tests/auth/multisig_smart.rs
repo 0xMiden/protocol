@@ -655,8 +655,12 @@ async fn test_multisig_smart_spending_tiers_require_expected_signature_counts(
     #[case] auth_scheme: AuthScheme,
 ) -> anyhow::Result<()> {
     let oracle_fixture = build_test_oracle_fixture(TestOracleMode::OneToOneTracked)?;
+    // Each tx calls `move_asset_to_note` on the wallet, which has no per-procedure policy and
+    // therefore contributes the `default_threshold` (3) to the threshold accumulator. The
+    // effective required-signature count is therefore `max(tier_threshold, default_threshold)`
+    // — so tier1 (which would resolve to 2 on its own) is raised to 3 by the default.
     let cases = [
-        ("tier1", [500, 100, 100], 2usize),
+        ("tier1", [500, 100, 100], 3usize),
         ("tier2", [1000, 100, 100], 3usize),
         ("tier3", [2000, 100, 100], 4usize),
     ];
@@ -1273,41 +1277,49 @@ async fn test_multisig_smart_low_spending_uses_tier_threshold_instead_of_high_de
     let msg = tx_summary.as_ref().to_commitment();
     let tx_summary = SigningInputs::TransactionSummary(tx_summary);
 
-    let sig_0 = authenticators[0]
-        .get_signature(public_keys[0].to_commitment(), &tx_summary)
-        .await?;
-    let one_sig_result = mock_chain
+    // With `default_threshold = 4`, the unpolicied `move_asset_to_note` call contributes the
+    // default to the threshold accumulator. The spending tier (2 for tier-0 amounts) is therefore
+    // floored by the default, so `default_threshold` signatures are still required.
+    let mut signatures = Vec::new();
+    for idx in 0..4 {
+        signatures.push((
+            public_keys[idx].to_commitment(),
+            authenticators[idx]
+                .get_signature(public_keys[idx].to_commitment(), &tx_summary)
+                .await?,
+        ));
+    }
+
+    let three_sig_result = mock_chain
         .build_tx_context(multisig_account.id(), &[], &[])?
         .foreign_accounts(test_oracle_foreign_account_inputs(&mock_chain, &oracle_fixture)?)
         .extend_expected_output_notes(vec![RawOutputNote::Full(output_note.clone())])
         .tx_script(tx_script.clone())
         .auth_args(salt)
-        .add_signature(public_keys[0].to_commitment(), msg, sig_0.clone())
+        .add_signature(signatures[0].0, msg, signatures[0].1.clone())
+        .add_signature(signatures[1].0, msg, signatures[1].1.clone())
+        .add_signature(signatures[2].0, msg, signatures[2].1.clone())
         .build()?
         .execute()
         .await;
     assert!(
-        matches!(one_sig_result, Err(TransactionExecutorError::Unauthorized(_))),
-        "low spending should still reject a single signature when tier-0 threshold is 2"
+        matches!(three_sig_result, Err(TransactionExecutorError::Unauthorized(_))),
+        "three signatures should remain insufficient when default_threshold=4 floors the tier"
     );
 
-    let sig_1 = authenticators[1]
-        .get_signature(public_keys[1].to_commitment(), &tx_summary)
-        .await?;
-    let two_sig_result = mock_chain
+    let mut signed_context = mock_chain
         .build_tx_context(multisig_account.id(), &[], &[])?
         .foreign_accounts(test_oracle_foreign_account_inputs(&mock_chain, &oracle_fixture)?)
         .extend_expected_output_notes(vec![RawOutputNote::Full(output_note)])
         .tx_script(tx_script)
-        .auth_args(salt)
-        .add_signature(public_keys[0].to_commitment(), msg, sig_0)
-        .add_signature(public_keys[1].to_commitment(), msg, sig_1)
-        .build()?
-        .execute()
-        .await?;
+        .auth_args(salt);
+    for (pk, sig) in &signatures {
+        signed_context = signed_context.add_signature(*pk, msg, sig.clone());
+    }
+    let four_sig_result = signed_context.build()?.execute().await?;
 
-    multisig_account.apply_delta(two_sig_result.account_delta())?;
-    mock_chain.add_pending_executed_transaction(&two_sig_result)?;
+    multisig_account.apply_delta(four_sig_result.account_delta())?;
+    mock_chain.add_pending_executed_transaction(&four_sig_result)?;
     mock_chain.prove_next_block()?;
 
     Ok(())
@@ -1605,25 +1617,28 @@ async fn test_multisig_smart_low_spending_send_note_uses_tier_threshold_over_def
 
     let msg = tx_summary.as_ref().to_commitment();
     let tx_summary = SigningInputs::TransactionSummary(tx_summary);
-    let sig = authenticators[0]
+    // With `default_threshold = 2`, the unpolicied `move_asset_to_note` contributes the default
+    // to the threshold accumulator, so the effective requirement is `max(tier_0=1, default=2)=2`.
+    let sig_0 = authenticators[0]
         .get_signature(public_keys[0].to_commitment(), &tx_summary)
+        .await?;
+    let sig_1 = authenticators[1]
+        .get_signature(public_keys[1].to_commitment(), &tx_summary)
         .await?;
 
     let result = mock_chain
         .build_tx_context(multisig_account.id(), &[], &[])?
         .foreign_accounts(test_oracle_foreign_account_inputs(&mock_chain, &oracle_fixture)?)
         .extend_expected_output_notes(vec![RawOutputNote::Full(output_note)])
-        .add_signature(public_keys[0].to_commitment(), msg, sig)
+        .add_signature(public_keys[0].to_commitment(), msg, sig_0)
+        .add_signature(public_keys[1].to_commitment(), msg, sig_1)
         .auth_args(salt)
         .tx_script(send_note_transaction_script)
         .build()?
         .execute()
         .await;
 
-    assert!(
-        result.is_ok(),
-        "low spending should use tier_0=1 instead of the default threshold of 2"
-    );
+    assert!(result.is_ok(), "two signatures should satisfy max(tier_0=1, default=2)");
 
     multisig_account.apply_delta(result.as_ref().unwrap().account_delta())?;
     mock_chain.add_pending_executed_transaction(&result.unwrap())?;
@@ -1691,11 +1706,17 @@ async fn test_multisig_smart_spending_window_boundary_resets_spending_tracker(
     };
     let msg_1 = tx_summary_1.as_ref().to_commitment();
     let tx_summary_1 = SigningInputs::TransactionSummary(tx_summary_1);
+    // `move_asset_to_note` has no per-procedure policy, so the unpolicied default contributes
+    // `default_threshold` (3) to the threshold accumulator. The tier-1 spending threshold (2) is
+    // therefore floored by the default — three signatures are required even for the first send.
     let sig_1_0 = authenticators[0]
         .get_signature(public_keys[0].to_commitment(), &tx_summary_1)
         .await?;
     let sig_1_1 = authenticators[1]
         .get_signature(public_keys[1].to_commitment(), &tx_summary_1)
+        .await?;
+    let sig_1_2 = authenticators[2]
+        .get_signature(public_keys[2].to_commitment(), &tx_summary_1)
         .await?;
 
     let tx_1 = mock_chain
@@ -1706,6 +1727,7 @@ async fn test_multisig_smart_spending_window_boundary_resets_spending_tracker(
         .auth_args(salt_1)
         .add_signature(public_keys[0].to_commitment(), msg_1, sig_1_0)
         .add_signature(public_keys[1].to_commitment(), msg_1, sig_1_1)
+        .add_signature(public_keys[2].to_commitment(), msg_1, sig_1_2)
         .build()?
         .execute()
         .await?;
@@ -1802,11 +1824,16 @@ async fn test_multisig_smart_spending_window_boundary_resets_spending_tracker(
     };
     let msg_3 = tx_summary_3.as_ref().to_commitment();
     let tx_summary_3 = SigningInputs::TransactionSummary(tx_summary_3);
+    // After the spending window reset the tracker shows tier-1 spending again; the default
+    // threshold still floors the required sigs to three (same as tx_1 above).
     let sig_3_0 = authenticators[0]
         .get_signature(public_keys[0].to_commitment(), &tx_summary_3)
         .await?;
     let sig_3_1 = authenticators[1]
         .get_signature(public_keys[1].to_commitment(), &tx_summary_3)
+        .await?;
+    let sig_3_2 = authenticators[2]
+        .get_signature(public_keys[2].to_commitment(), &tx_summary_3)
         .await?;
 
     let tx_3 = mock_chain
@@ -1817,6 +1844,7 @@ async fn test_multisig_smart_spending_window_boundary_resets_spending_tracker(
         .auth_args(salt_3)
         .add_signature(public_keys[0].to_commitment(), msg_3, sig_3_0)
         .add_signature(public_keys[1].to_commitment(), msg_3, sig_3_1)
+        .add_signature(public_keys[2].to_commitment(), msg_3, sig_3_2)
         .build()?
         .execute()
         .await?;
