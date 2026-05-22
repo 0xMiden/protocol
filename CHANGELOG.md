@@ -72,6 +72,7 @@
 - Optimized `B2AGG` processing with selective load/save of Local Exit Tree frontier entries, halving frontier storage map syscalls ([#2752](https://github.com/0xMiden/protocol/pull/2752)).
 - [BREAKING] Removed `AccountType` ([#2939](https://github.com/0xMiden/protocol/pull/2939)).
 - [BREAKING] Removed `AccountType` and renamed `AccountStorageMode` to `AccountType` ([#2939](https://github.com/0xMiden/protocol/pull/2939), [#2942](https://github.com/0xMiden/protocol/pull/2942)).
+- [BREAKING] Refactored `TransferPolicy`, `MintPolicyConfig`, and `BurnPolicyConfig` from enums into structs ([#2974](https://github.com/0xMiden/protocol/pull/2974)).
 
 ### Fixes
 
