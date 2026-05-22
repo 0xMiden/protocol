@@ -1,7 +1,6 @@
 use alloc::vec::Vec;
 
 use miden_protocol::Word;
-use miden_protocol::account::AccountProcedureRoot;
 
 use super::{AuthMultisigSmart, ProcedurePolicy, ProcedurePolicyNoteRestriction};
 use crate::procedure_root;
@@ -125,27 +124,27 @@ impl AuthMultisigSmartPresets {
     }
 
     pub fn update_signers_and_threshold() -> Word {
-        AccountProcedureRoot::from(*MULTISIG_SMART_UPDATE_SIGNERS_AND_THRESHOLD).as_word()
+        MULTISIG_SMART_UPDATE_SIGNERS_AND_THRESHOLD.as_word()
     }
 
     pub fn update_threshold_config() -> Word {
-        AccountProcedureRoot::from(*MULTISIG_SMART_UPDATE_THRESHOLD_CONFIG).as_word()
+        MULTISIG_SMART_UPDATE_THRESHOLD_CONFIG.as_word()
     }
 
     pub fn update_spending_limits() -> Word {
-        AccountProcedureRoot::from(*MULTISIG_SMART_UPDATE_SPENDING_LIMITS).as_word()
+        MULTISIG_SMART_UPDATE_SPENDING_LIMITS.as_word()
     }
 
     pub fn update_oracle_config_and_proc_root() -> Word {
-        AccountProcedureRoot::from(*MULTISIG_SMART_UPDATE_ORACLE_CONFIG).as_word()
+        MULTISIG_SMART_UPDATE_ORACLE_CONFIG.as_word()
     }
 
     pub fn update_get_price_untracked_policy() -> Word {
-        AccountProcedureRoot::from(*MULTISIG_SMART_UPDATE_GET_PRICE_UNTRACKED_POLICY).as_word()
+        MULTISIG_SMART_UPDATE_GET_PRICE_UNTRACKED_POLICY.as_word()
     }
 
     pub fn update_timelock_controller() -> Word {
-        AccountProcedureRoot::from(*MULTISIG_SMART_UPDATE_TIMELOCK_CONTROLLER).as_word()
+        MULTISIG_SMART_UPDATE_TIMELOCK_CONTROLLER.as_word()
     }
 }
 

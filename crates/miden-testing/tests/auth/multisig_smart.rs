@@ -436,6 +436,7 @@ fn compile_timelocked_send_note_script(
     compile_multisig_smart_tx_script(script)
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn execute_script_with_signers(
     mock_chain: &MockChain,
     account_id: AccountId,
@@ -505,6 +506,7 @@ async fn execute_script_with_signers(
     Ok(tx_context_signed_builder.build()?.execute().await)
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn execute_script_with_signers_at(
     mock_chain: &MockChain,
     reference_block: u32,
@@ -575,6 +577,7 @@ async fn execute_script_with_signers_at(
     Ok(tx_context_signed_builder.build()?.execute().await)
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn execute_script_with_signers_at_and_outputs(
     mock_chain: &MockChain,
     reference_block: u32,
