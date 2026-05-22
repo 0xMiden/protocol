@@ -22,7 +22,7 @@ mod p2ide;
 pub use p2ide::{P2ideNote, P2ideNoteStorage};
 
 mod pswap;
-pub use pswap::{PswapNote, PswapNoteStorage};
+pub use pswap::{PswapNote, PswapNoteAttachment, PswapNoteStorage};
 
 mod swap;
 pub use swap::{SwapNote, SwapNoteStorage};

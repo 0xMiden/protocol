@@ -1,11 +1,12 @@
 use std::collections::BTreeMap;
+use std::slice;
 
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountId, AccountType, AccountVaultDelta};
-use miden_protocol::asset::{Asset, FungibleAsset};
+use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
 use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
 use miden_protocol::errors::MasmError;
-use miden_protocol::note::{Note, NoteAttachment, NoteAttachmentScheme, NoteAttachments, NoteType};
+use miden_protocol::note::{Note, NoteAttachments, NoteType};
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, ONE, Word, ZERO};
 use miden_standards::account::wallets::BasicWallet;
@@ -14,7 +15,7 @@ use miden_standards::errors::standards::{
     ERR_PSWAP_FILL_SUM_OVERFLOW,
     ERR_PSWAP_NOT_VALID_ASSET_AMOUNT,
 };
-use miden_standards::note::{PswapNote, PswapNoteStorage};
+use miden_standards::note::{PswapNote, PswapNoteAttachment, PswapNoteStorage};
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain, MockChainBuilder, assert_transaction_executor_error};
 use rand::SeedableRng;
@@ -108,17 +109,31 @@ fn assert_vault_single_added(vault_delta: &AccountVaultDelta, expected: Fungible
 // ================================================================================================
 
 /// Verifies that Alice can independently reconstruct and consume the P2ID payback note
-/// using only her original PSWAP note data and the aux data from Bob's transaction output.
+/// using only her original PSWAP data and the on-chain attachment data from Bob's tx.
 ///
 /// Flow:
-/// 1. Alice creates a PSWAP note (50 USDC for 25 ETH)
-/// 2. Bob partially fills it (20 ETH) → produces P2ID payback + remainder
-/// 3. Alice reconstructs the P2ID note from her PSWAP data + fill amount from aux
-/// 4. Alice consumes the reconstructed P2ID note and receives 20 ETH
+/// 1. Alice creates a PSWAP note (50 USDC for 25 ETH) with a parameterized payback note type.
+/// 2. Bob fills it (fully or partially per case) → produces a P2ID payback (+ remainder on
+///    partial).
+/// 3. Alice reconstructs the payback Note via `PswapNote::payback_note` using only the on-chain
+///    attachment data. On partial fills she also reconstructs the remainder via
+///    `PswapNote::remainder_note`.
+/// 4. Alice consumes the *reconstructed* P2ID payback (fed unauthenticated, the only path available
+///    against a real chain for private paybacks where only the commitment is on-chain) and verifies
+///    she receives the filled amount.
+///
+/// The private case is the headline discovery use case: the chain holds only a commitment,
+/// so Alice's only path to consume is to reconstruct the body from her PSWAP + attachment.
+#[rstest]
+#[case::partial_public(NoteType::Public, 20)]
+#[case::full_public(NoteType::Public, 25)]
+#[case::partial_private(NoteType::Private, 20)]
+#[case::full_private(NoteType::Private, 25)]
 #[tokio::test]
-async fn pswap_note_alice_reconstructs_and_consumes_p2id() -> anyhow::Result<()> {
-    use miden_standards::note::P2idNoteStorage;
-
+async fn pswap_note_alice_reconstructs_and_consumes_p2id(
+    #[case] payback_note_type: NoteType,
+    #[case] fill_amount: u64,
+) -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     let usdc_faucet = builder.add_existing_basic_faucet(BASIC_AUTH, "USDC", 1000, Some(150))?;
@@ -130,18 +145,19 @@ async fn pswap_note_alice_reconstructs_and_consumes_p2id() -> anyhow::Result<()>
     )?;
     let bob = builder.add_existing_wallet_with_assets(
         BASIC_AUTH,
-        [FungibleAsset::new(eth_faucet.id(), 20)?.into()],
+        [FungibleAsset::new(eth_faucet.id(), fill_amount)?.into()],
     )?;
 
     let offered_asset = FungibleAsset::new(usdc_faucet.id(), 50)?;
     let requested_asset = FungibleAsset::new(eth_faucet.id(), 25)?;
+    let is_partial = fill_amount < u64::from(requested_asset.amount());
 
     let mut rng = RandomCoin::new(Word::default());
     let serial_number = rng.draw_word();
     let storage = PswapNoteStorage::builder()
         .requested_asset(requested_asset)
         .creator_account_id(alice.id())
-        .payback_note_type(NoteType::Public)
+        .payback_note_type(payback_note_type)
         .build();
     let pswap = PswapNote::builder()
         .sender(alice.id())
@@ -155,38 +171,43 @@ async fn pswap_note_alice_reconstructs_and_consumes_p2id() -> anyhow::Result<()>
 
     let mut mock_chain = builder.build()?;
 
-    // --- Step 1: Bob partially fills the PSWAP note (20 out of 25 ETH) ---
+    // --- Step 1: Bob fills the PSWAP note ---
 
-    let fill_amount = 20u64;
     let mut note_args_map = BTreeMap::new();
     note_args_map.insert(pswap_note.id(), PswapNote::create_args(fill_amount, 0)?);
 
     let (p2id_note, remainder_pswap) =
-        pswap.execute(bob.id(), Some(FungibleAsset::new(eth_faucet.id(), 20)?), None)?;
-    let remainder_note =
-        Note::from(remainder_pswap.expect("partial fill should produce remainder"));
+        pswap.execute(bob.id(), Some(FungibleAsset::new(eth_faucet.id(), fill_amount)?), None)?;
+
+    let mut expected_output_notes = vec![RawOutputNote::Full(p2id_note.clone())];
+    let predicted_remainder = if is_partial {
+        let r = remainder_pswap.expect("partial fill should produce remainder");
+        let rn = Note::from(r);
+        expected_output_notes.push(RawOutputNote::Full(rn.clone()));
+        Some(rn)
+    } else {
+        assert!(remainder_pswap.is_none(), "full fill should not produce a remainder");
+        None
+    };
 
     let tx_context = mock_chain
         .build_tx_context(bob.id(), &[pswap_note.id()], &[])?
         .extend_note_args(note_args_map)
-        .extend_expected_output_notes(vec![
-            RawOutputNote::Full(p2id_note.clone()),
-            RawOutputNote::Full(remainder_note.clone()),
-        ])
+        .extend_expected_output_notes(expected_output_notes)
         .build()?;
 
     let executed_transaction = tx_context.execute().await?;
     mock_chain.add_pending_executed_transaction(&executed_transaction)?;
     mock_chain.prove_next_block()?;
 
-    // --- Step 2: Alice reconstructs the P2ID note from her PSWAP data + aux ---
+    // --- Step 2: Alice reconstructs the P2ID payback from on-chain attachment data ---
 
-    // Read the attachment from the executed transaction's output (not from the
-    // Rust-predicted `p2id_note`) so this actually validates the MASM side.
+    // Read attachments from the executed tx (the body is still here even when the note will
+    // ultimately land on-chain as a header-only private commitment).
     let output_p2id = executed_transaction.output_notes().get_note(0);
     let attachment_word = first_attachment_word(output_p2id.attachments());
     let fill_amount_from_aux = attachment_word[0].as_canonical_u64();
-    assert_eq!(fill_amount_from_aux, 20, "Fill amount from aux should be 20 ETH");
+    assert_eq!(fill_amount_from_aux, fill_amount, "fill amount from aux should match the case");
 
     // Parity check: Rust-predicted P2ID attachment must match the MASM output.
     assert_eq!(
@@ -195,99 +216,81 @@ async fn pswap_note_alice_reconstructs_and_consumes_p2id() -> anyhow::Result<()>
         "Rust-predicted P2ID attachment does not match the MASM-produced one",
     );
 
-    // Alice reconstructs the recipient using her serial number and account ID
-    let p2id_serial =
-        Word::from([serial_number[0] + ONE, serial_number[1], serial_number[2], serial_number[3]]);
-    let reconstructed_recipient = P2idNoteStorage::new(alice.id()).into_recipient(p2id_serial);
+    // Depth = 1 (first fill). Consumer comes from the on-chain payback's metadata sender.
+    let payback_attachment =
+        PswapNoteAttachment::new(AssetAmount::new(fill_amount_from_aux)?, pswap.order_id(), 1);
+    let reconstructed_payback =
+        pswap.payback_note(output_p2id.metadata().sender(), &payback_attachment)?;
 
-    // Verify the reconstructed recipient matches the actual output
     assert_eq!(
-        reconstructed_recipient.digest(),
+        reconstructed_payback.recipient().digest(),
         output_p2id.recipient_digest(),
         "Alice's reconstructed P2ID recipient does not match the actual output"
     );
 
-    // --- Step 2b: Alice reconstructs the remainder PSWAP note ---
+    // --- Step 2b: On partial fills, Alice also reconstructs the remainder PSWAP ---
+
+    if is_partial {
+        let output_remainder = executed_transaction.output_notes().get_note(1);
+        let remainder_attachment_word = first_attachment_word(output_remainder.attachments());
+        let amt_payout_from_attachment = remainder_attachment_word[0].as_canonical_u64();
+
+        let expected_payout = pswap.calculate_offered_for_requested(fill_amount_from_aux)?;
+        assert_eq!(
+            amt_payout_from_attachment, expected_payout,
+            "remainder aux should carry amt_payout matching the Rust-side calc",
+        );
+
+        let remaining_requested =
+            (requested_asset.amount() - AssetAmount::new(fill_amount_from_aux)?)?;
+        let remaining_offered =
+            (pswap.offered_asset().amount() - AssetAmount::new(amt_payout_from_attachment)?)?;
+
+        let remainder_attachment = PswapNoteAttachment::new(
+            AssetAmount::new(amt_payout_from_attachment)?,
+            pswap.order_id(),
+            1,
+        );
+        let reconstructed_remainder = pswap.remainder_note(
+            output_remainder.metadata().sender(),
+            &remainder_attachment,
+            remaining_offered,
+            remaining_requested,
+        )?;
+
+        // Parity: Rust-predicted remainder must match the executed output.
+        let predicted_remainder = predicted_remainder
+            .as_ref()
+            .expect("predicted remainder must exist on partial fill");
+        assert_eq!(
+            predicted_remainder.recipient().digest(),
+            output_remainder.recipient_digest(),
+            "Rust-predicted remainder recipient does not match executed output",
+        );
+
+        assert_eq!(
+            reconstructed_remainder.details_commitment(),
+            output_remainder.details_commitment(),
+            "reconstructed remainder commitment must match on-chain leaf",
+        );
+    }
+
+    // --- Step 3: Alice consumes the *reconstructed* P2ID payback ---
     //
-    // Alice only needs: her original PSWAP data + both on-chain attachments
-    // (fill_amount from the P2ID, amt_payout from the remainder). From those
-    // she derives the remaining offered/requested amounts and rebuilds the
-    // remainder PswapNote.
+    // The note is fed via the unauthenticated path: Alice provides the body herself, and
+    // the chain validates that the body's commitment matches the one recorded by Bob's tx.
+    // This is the only path for private paybacks (no body on-chain) and works equally for
+    // public ones.
 
-    let output_remainder = executed_transaction.output_notes().get_note(1);
-    let remainder_attachment_word = first_attachment_word(output_remainder.attachments());
-    let amt_payout_from_attachment = remainder_attachment_word[0].as_canonical_u64();
-
-    let expected_payout = pswap.calculate_offered_for_requested(fill_amount_from_aux)?;
-    assert_eq!(
-        amt_payout_from_attachment, expected_payout,
-        "remainder aux should carry amt_payout matching the Rust-side calc",
-    );
-
-    let remaining_offered = offered_asset.amount().as_u64() - amt_payout_from_attachment;
-    let remaining_requested = requested_asset.amount().as_u64() - fill_amount_from_aux;
-
-    let remainder_storage = PswapNoteStorage::builder()
-        .requested_asset(FungibleAsset::new(eth_faucet.id(), remaining_requested)?)
-        .creator_account_id(alice.id())
-        .payback_note_type(NoteType::Public)
-        .build();
-
-    // MASM increments serial_number[3], so the remainder serial is s[3] + 1.
-    let remainder_serial =
-        Word::from([serial_number[0], serial_number[1], serial_number[2], serial_number[3] + ONE]);
-
-    let remainder_attachment_word = Word::from([
-        Felt::try_from(amt_payout_from_attachment).expect("amt_payout fits in a felt"),
-        ZERO,
-        ZERO,
-        ZERO,
-    ]);
-    let remainder_attachment =
-        NoteAttachment::with_word(NoteAttachmentScheme::none(), remainder_attachment_word);
-    let reconstructed_remainder: Note = PswapNote::builder()
-        .sender(bob.id())
-        .storage(remainder_storage)
-        .serial_number(remainder_serial)
-        .note_type(NoteType::Public)
-        .offered_asset(FungibleAsset::new(usdc_faucet.id(), remaining_offered)?)
-        .attachment(remainder_attachment)
-        .build()?
-        .into();
-
-    // Sanity check: the Rust-predicted remainder (computed by pswap.execute
-    // above) must match the executed output. If this fires, the Rust/MASM
-    // parity itself is broken, independently of our reconstruction.
-    assert_eq!(
-        remainder_note.recipient().digest(),
-        output_remainder.recipient_digest(),
-        "Rust-predicted remainder recipient does not match executed output",
-    );
-
-    // Recipient digest covers the note's storage (creator, requested asset,
-    // payback tag/type) + serial + script root.
-    assert_eq!(
-        reconstructed_remainder.recipient().digest(),
-        output_remainder.recipient_digest(),
-        "reconstructed remainder recipient does not match executed output",
-    );
-
-    // Parity on the attachment word itself.
-    assert_eq!(
-        first_attachment_word(reconstructed_remainder.attachments()),
-        remainder_attachment_word,
-        "reconstructed remainder attachment does not match executed output",
-    );
-
-    // --- Step 3: Alice consumes the P2ID payback note ---
-
-    let tx_context = mock_chain.build_tx_context(alice.id(), &[p2id_note.id()], &[])?.build()?;
+    let tx_context = mock_chain
+        .build_tx_context(alice.id(), &[], slice::from_ref(&reconstructed_payback))?
+        .build()?;
 
     let executed_transaction = tx_context.execute().await?;
 
-    // Verify Alice received 20 ETH
+    // Verify Alice received the filled amount.
     let vault_delta = executed_transaction.account_delta().vault();
-    assert_vault_single_added(vault_delta, FungibleAsset::new(eth_faucet.id(), 20)?);
+    assert_vault_single_added(vault_delta, FungibleAsset::new(eth_faucet.id(), fill_amount)?);
 
     Ok(())
 }
@@ -297,12 +300,13 @@ async fn pswap_note_alice_reconstructs_and_consumes_p2id() -> anyhow::Result<()>
 /// `create_payback_note` / `create_remainder_pswap_note` in pswap.rs.
 ///
 /// Both sides agree on:
-/// - P2ID payback attachment:   `[fill_amount, 0, 0, 0]`
-/// - Remainder PSWAP attachment: `[amt_payout, 0, 0, 0]`
+/// - P2ID payback attachment:   `[fill_amount, order_id, depth, 0]`, scheme = PswapAttachment
+/// - Remainder PSWAP attachment: `[amt_payout, order_id, depth, 0]`, scheme = PswapAttachment
 ///
-/// i.e. the load-bearing felt sits at `Word[0]` and the remaining three felts
-/// are zero padding. If either side drifts (e.g. MASM switches to
-/// `[0, 0, 0, x]` or Rust does), this test fires.
+/// `order_id` is the original creator's `serial[1]` (stable across the lineage), and
+/// `depth` is the 1-indexed round number (1 for the first fill of an original PSWAP).
+/// If either side drifts (e.g. MASM switches the slots, or one side forgets the scheme),
+/// this test fires.
 ///
 /// Uses a simple partial fill — offered 50 USDC, requested 25 ETH, fill 20 ETH
 /// — so both output notes exist and the expected amounts are
@@ -328,6 +332,8 @@ async fn pswap_attachment_layout_matches_masm_test() -> anyhow::Result<()> {
 
     let fill_amount = 20u64;
     let expected_payout = 40u64; // floor(50 * 20 / 25)
+    let order_id = pswap.order_id();
+    let expected_depth = 1u64; // first fill of an original PSWAP
 
     let mut note_args_map = BTreeMap::new();
     note_args_map.insert(pswap_note.id(), PswapNote::create_args(fill_amount, 0)?);
@@ -349,46 +355,68 @@ async fn pswap_attachment_layout_matches_masm_test() -> anyhow::Result<()> {
     let output_notes = executed_transaction.output_notes();
     assert_eq!(output_notes.num_notes(), 2, "expected P2ID + remainder");
 
-    let p2id_attachment = first_attachment_word(output_notes.get_note(0).attachments());
-    let remainder_attachment = first_attachment_word(output_notes.get_note(1).attachments());
+    let p2id_attachments = output_notes.get_note(0).attachments();
+    let remainder_attachments = output_notes.get_note(1).attachments();
 
-    // P2ID payback attachment: `[fill_amount, 0, 0, 0]` — fill_amount at Word[0].
-    let expected_p2id_attachment = Word::from([
-        Felt::try_from(fill_amount).expect("fill_amount fits in a felt"),
-        ZERO,
-        ZERO,
-        ZERO,
-    ]);
+    // Both output notes must carry exactly one attachment under PSWAP_ATTACHMENT_SCHEME.
+    assert_eq!(p2id_attachments.num_attachments(), 1, "payback expects 1 attachment");
+    assert_eq!(remainder_attachments.num_attachments(), 1, "remainder expects 1 attachment");
+
+    let p2id_att = p2id_attachments.get(0).expect("payback attachment present");
+    let remainder_att = remainder_attachments.get(0).expect("remainder attachment present");
+
     assert_eq!(
-        p2id_attachment, expected_p2id_attachment,
-        "P2ID attachment layout mismatch: expected [fill_amount, 0, 0, 0] at Word[0..3]",
+        p2id_att.attachment_scheme(),
+        PswapNote::PSWAP_ATTACHMENT_SCHEME,
+        "payback must use PSWAP_ATTACHMENT_SCHEME",
+    );
+    assert_eq!(
+        remainder_att.attachment_scheme(),
+        PswapNote::PSWAP_ATTACHMENT_SCHEME,
+        "remainder must use PSWAP_ATTACHMENT_SCHEME",
     );
 
-    // Remainder PSWAP attachment: `[amt_payout, 0, 0, 0]` — amt_payout at Word[0].
-    let expected_remainder_attachment = Word::from([
-        Felt::try_from(expected_payout).expect("amt_payout fits in a felt"),
-        ZERO,
-        ZERO,
+    // P2ID payback attachment word: [fill_amount, order_id, depth, 0].
+    let expected_p2id_word = Word::from([
+        Felt::try_from(fill_amount).expect("fill_amount fits in a felt"),
+        order_id,
+        Felt::try_from(expected_depth).expect("depth fits in a felt"),
         ZERO,
     ]);
     assert_eq!(
-        remainder_attachment, expected_remainder_attachment,
-        "remainder attachment layout mismatch: expected [amt_payout, 0, 0, 0] at Word[0..3]",
+        p2id_att.content().as_words()[0],
+        expected_p2id_word,
+        "P2ID attachment word mismatch: expected [fill_amount, order_id, depth, 0]",
+    );
+
+    // Remainder PSWAP attachment word: [amt_payout, order_id, depth, 0].
+    let expected_remainder_word = Word::from([
+        Felt::try_from(expected_payout).expect("amt_payout fits in a felt"),
+        order_id,
+        Felt::try_from(expected_depth).expect("depth fits in a felt"),
+        ZERO,
+    ]);
+    assert_eq!(
+        remainder_att.content().as_words()[0],
+        expected_remainder_word,
+        "remainder attachment word mismatch: expected [amt_payout, order_id, depth, 0]",
     );
 
     // Cross-check: the Rust-predicted notes must produce the same attachment
-    // words as the on-chain executed ones. A future drift between either side
-    // would fail here even if the Word[0] position stays correct.
+    // words as the on-chain executed ones.
     assert_eq!(
         first_attachment_word(p2id_note.attachments()),
-        p2id_attachment,
+        p2id_att.content().as_words()[0],
         "Rust-predicted P2ID attachment does not match MASM output",
     );
     assert_eq!(
         first_attachment_word(remainder_note.attachments()),
-        remainder_attachment,
+        remainder_att.content().as_words()[0],
         "Rust-predicted remainder attachment does not match MASM output",
     );
+
+    // Sanity: order_id must equal the original PSWAP's serial[1].
+    assert_eq!(order_id, pswap.serial_number()[1], "order_id should equal serial[1]");
 
     Ok(())
 }
@@ -1352,6 +1380,384 @@ fn compare_pswap_create_output_notes_vs_test_helper() {
 }
 
 /// Test that PswapNote::parse_inputs roundtrips correctly
+/// The original PSWAP note must NOT carry the PswapAttachment scheme. Only remainder
+/// PSWAPs and payback P2IDs (which are emitted by the on-chain script) carry that
+/// scheme. If an original were to carry PswapAttachment, the on-chain `get_current_depth`
+/// would (incorrectly) read a non-zero parent_depth from it and corrupt the lineage's
+/// depth chain.
+#[test]
+fn pswap_original_has_no_pswap_scheme() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let usdc_faucet = builder.add_existing_basic_faucet(BASIC_AUTH, "USDC", 1000, Some(50))?;
+    let eth_faucet = builder.add_existing_basic_faucet(BASIC_AUTH, "ETH", 1000, Some(50))?;
+    let alice = builder.add_existing_wallet_with_assets(
+        BASIC_AUTH,
+        [FungibleAsset::new(usdc_faucet.id(), 50)?.into()],
+    )?;
+
+    let (pswap, _) = build_pswap_note(
+        &mut builder,
+        alice.id(),
+        FungibleAsset::new(usdc_faucet.id(), 50)?,
+        FungibleAsset::new(eth_faucet.id(), 25)?,
+        NoteType::Public,
+    )?;
+
+    if let Some(att) = pswap.attachments() {
+        assert_ne!(
+            att.attachment_scheme(),
+            PswapNote::PSWAP_ATTACHMENT_SCHEME,
+            "original PSWAP must not carry PswapAttachment — that scheme is reserved for outputs",
+        );
+    }
+
+    assert_eq!(pswap.parent_depth(), 0, "parent_depth must be 0 for an original PSWAP");
+
+    Ok(())
+}
+
+/// Regression test for the load-bearing line that sets the `attachment` field on a
+/// Rust-built remainder PswapNote. If this is forgotten, the remainder defaults to
+/// `attachment = None`, the on-chain `get_current_depth` reads parent_depth = 0 on the
+/// *next* round, and the lineage's depth chain silently resets to 1 each round.
+#[test]
+fn pswap_remainder_carries_pswap_scheme() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let usdc_faucet = builder.add_existing_basic_faucet(BASIC_AUTH, "USDC", 1000, Some(50))?;
+    let eth_faucet = builder.add_existing_basic_faucet(BASIC_AUTH, "ETH", 1000, Some(50))?;
+    let alice = builder.add_existing_wallet_with_assets(
+        BASIC_AUTH,
+        [FungibleAsset::new(usdc_faucet.id(), 50)?.into()],
+    )?;
+    let bob = builder.add_existing_wallet_with_assets(
+        BASIC_AUTH,
+        [FungibleAsset::new(eth_faucet.id(), 10)?.into()],
+    )?;
+
+    let (pswap, _) = build_pswap_note(
+        &mut builder,
+        alice.id(),
+        FungibleAsset::new(usdc_faucet.id(), 50)?,
+        FungibleAsset::new(eth_faucet.id(), 25)?,
+        NoteType::Public,
+    )?;
+
+    let account_fill = FungibleAsset::new(eth_faucet.id(), 10)?;
+    let (_, remainder_pswap) = pswap.execute(bob.id(), Some(account_fill), None)?;
+    let remainder_pswap = remainder_pswap.expect("partial fill should produce a remainder");
+
+    let att = remainder_pswap.attachments().expect("remainder must carry an attachment");
+    assert_eq!(
+        att.attachment_scheme(),
+        PswapNote::PSWAP_ATTACHMENT_SCHEME,
+        "remainder PSWAP must carry PswapAttachment so on-chain depth derivation works",
+    );
+
+    assert_eq!(
+        remainder_pswap.parent_depth(),
+        1,
+        "remainder built from an original PSWAP must carry depth = 1",
+    );
+
+    Ok(())
+}
+
+/// Headline discovery test: Alice creates a PSWAP, Bob consumes it across three partial
+/// fills (a 3-round lineage), and at every round Alice reconstructs the payback's
+/// `NoteRecipient` from the on-chain attachment word and *consumes the reconstructed note*
+/// against the chain — proving end-to-end that the body Alice rebuilds from
+/// `(order_id, depth, fill_amount)` matches the commitment Bob's tx recorded.
+///
+/// Each round's remainder recipient is also derived and cross-checked against the on-chain
+/// digest, since remainder threading carries the parent `PswapAttachment` forward (the
+/// on-chain `get_current_depth` reads it to stamp the next round's depth).
+#[tokio::test]
+async fn pswap_creator_reconstructs_lineage_from_attachments() -> anyhow::Result<()> {
+    // Three partial fills: 5, 8, 7 (sum = 20 of requested 25, so a 5-unit remainder survives).
+    let fills = [5u64, 8u64, 7u64];
+    let initial_offered = 50u64;
+    let initial_requested = 25u64;
+    let total_fill: u64 = fills.iter().sum();
+
+    let mut builder = MockChain::builder();
+    let max_supply = 100_000u64;
+    let usdc_faucet =
+        builder.add_existing_basic_faucet(BASIC_AUTH, "USDC", max_supply, Some(initial_offered))?;
+    let eth_faucet =
+        builder.add_existing_basic_faucet(BASIC_AUTH, "ETH", max_supply, Some(total_fill))?;
+    let alice = builder.add_existing_wallet_with_assets(BASIC_AUTH, [])?;
+    let bob = builder.add_existing_wallet_with_assets(
+        BASIC_AUTH,
+        [FungibleAsset::new(eth_faucet.id(), total_fill)?.into()],
+    )?;
+
+    let original_pswap = PswapNote::builder()
+        .sender(alice.id())
+        .storage(
+            PswapNoteStorage::builder()
+                .requested_asset(FungibleAsset::new(eth_faucet.id(), initial_requested)?)
+                .creator_account_id(alice.id())
+                .build(),
+        )
+        .serial_number(RandomCoin::new(Word::default()).draw_word())
+        .note_type(NoteType::Public)
+        .offered_asset(FungibleAsset::new(usdc_faucet.id(), initial_offered)?)
+        .build()?;
+    let original_pswap_note: Note = original_pswap.clone().into();
+    builder.add_output_note(RawOutputNote::Full(original_pswap_note.clone()));
+
+    let mut mock_chain = builder.build()?;
+
+    // Threaded across rounds: round 1 consumes the original PSWAP, rounds 2+ consume the
+    // previous round's remainder (which carries the right `PswapAttachment` so the on-chain
+    // depth derivation stamps the next round correctly).
+    let mut current_pswap = original_pswap.clone();
+    let mut current_pswap_note = original_pswap_note;
+    let mut current_offered = initial_offered;
+    let mut current_requested = initial_requested;
+
+    for (idx, fill_amount) in fills.iter().copied().enumerate() {
+        let depth = (idx + 1) as u32;
+
+        // --- Bob fills the current PSWAP ---
+        let payout_amount = current_pswap.calculate_offered_for_requested(fill_amount)?;
+        let remaining_offered = current_offered - payout_amount;
+        let remaining_requested = current_requested - fill_amount;
+
+        let (predicted_payback_note, predicted_remainder_pswap) = current_pswap.execute(
+            bob.id(),
+            Some(FungibleAsset::new(eth_faucet.id(), fill_amount)?),
+            None,
+        )?;
+
+        let mut expected_notes = vec![RawOutputNote::Full(predicted_payback_note.clone())];
+        let next_pswap_opt = if remaining_requested > 0 {
+            let predicted_remainder =
+                predicted_remainder_pswap.expect("partial fill should produce remainder");
+            expected_notes.push(RawOutputNote::Full(Note::from(predicted_remainder.clone())));
+            Some(predicted_remainder)
+        } else {
+            None
+        };
+
+        let mut note_args_map = BTreeMap::new();
+        note_args_map.insert(current_pswap_note.id(), PswapNote::create_args(fill_amount, 0)?);
+
+        let bob_tx = mock_chain
+            .build_tx_context(bob.id(), &[current_pswap_note.id()], &[])?
+            .extend_expected_output_notes(expected_notes)
+            .extend_note_args(note_args_map)
+            .build()?
+            .execute()
+            .await?;
+        mock_chain.add_pending_executed_transaction(&bob_tx)?;
+        mock_chain.prove_next_block()?;
+
+        let on_chain_payback = bob_tx.output_notes().get_note(0);
+
+        // --- Alice reconstructs the payback from the on-chain attachment word ---
+        let attachment_word = first_attachment_word(on_chain_payback.attachments());
+        let fill_from_attachment = attachment_word[0].as_canonical_u64();
+        assert_eq!(
+            fill_from_attachment, fill_amount,
+            "round {depth}: attachment fill amount mismatch",
+        );
+
+        let payback_attachment = PswapNoteAttachment::new(
+            AssetAmount::new(fill_from_attachment)?,
+            original_pswap.order_id(),
+            depth,
+        );
+        let reconstructed_payback = original_pswap
+            .payback_note(on_chain_payback.metadata().sender(), &payback_attachment)?;
+        assert_eq!(
+            reconstructed_payback.details_commitment(),
+            on_chain_payback.details_commitment(),
+            "round {depth}: reconstructed payback commitment must match on-chain leaf",
+        );
+
+        // --- Alice reconstructs the remainder (when partial) from on-chain data alone ---
+        if next_pswap_opt.is_some() {
+            let on_chain_remainder = bob_tx.output_notes().get_note(1);
+            let remainder_attachment_word = first_attachment_word(on_chain_remainder.attachments());
+            let payout_from_attachment = remainder_attachment_word[0].as_canonical_u64();
+
+            let remainder_attachment = PswapNoteAttachment::new(
+                AssetAmount::new(payout_from_attachment)?,
+                original_pswap.order_id(),
+                depth,
+            );
+            let reconstructed_remainder = original_pswap.remainder_note(
+                on_chain_remainder.metadata().sender(),
+                &remainder_attachment,
+                AssetAmount::new(remaining_offered)?,
+                AssetAmount::new(remaining_requested)?,
+            )?;
+            assert_eq!(
+                reconstructed_remainder.details_commitment(),
+                on_chain_remainder.details_commitment(),
+                "round {depth}: reconstructed remainder commitment must match on-chain leaf",
+            );
+        }
+
+        // --- Alice consumes the reconstructed payback (unauthenticated path) ---
+        let alice_tx = mock_chain
+            .build_tx_context(alice.id(), &[], slice::from_ref(&reconstructed_payback))?
+            .build()?
+            .execute()
+            .await?;
+        assert_vault_single_added(
+            alice_tx.account_delta().vault(),
+            FungibleAsset::new(eth_faucet.id(), fill_amount)?,
+        );
+        mock_chain.add_pending_executed_transaction(&alice_tx)?;
+        mock_chain.prove_next_block()?;
+
+        // Advance state for the next round.
+        if let Some(next) = next_pswap_opt {
+            current_pswap_note = Note::from(next.clone());
+            current_pswap = next;
+            current_offered = remaining_offered;
+            current_requested = remaining_requested;
+        }
+    }
+
+    Ok(())
+}
+
+/// When multiple PSWAP notes from the same creator are consumed in the same transaction,
+/// the on-chain payback tag is identical (it derives from the creator's account ID), so
+/// tag alone cannot distinguish which payback came from which PSWAP. This test exercises
+/// the `order_id` disambiguation: different PSWAPs have different `serial[1]`s, and the
+/// MASM stamps each round's output notes with the parent's `serial[1]`, letting the
+/// creator sort outputs back to their originating lineage purely by `order_id`.
+#[tokio::test]
+async fn pswap_disambiguates_multiple_creator_pswaps_in_same_tx() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let usdc_faucet = builder.add_existing_basic_faucet(BASIC_AUTH, "USDC", 1_000, Some(100))?;
+    let eth_faucet = builder.add_existing_basic_faucet(BASIC_AUTH, "ETH", 1_000, Some(50))?;
+
+    let alice = builder.add_existing_wallet_with_assets(
+        BASIC_AUTH,
+        [FungibleAsset::new(usdc_faucet.id(), 100)?.into()],
+    )?;
+    let bob = builder.add_existing_wallet_with_assets(
+        BASIC_AUTH,
+        [FungibleAsset::new(eth_faucet.id(), 30)?.into()],
+    )?;
+
+    // Two PSWAPs from Alice, both USDC → ETH, but distinct serials → distinct order_ids.
+    let pswap_a = {
+        let mut rng = RandomCoin::new(Word::default());
+        let serial = rng.draw_word();
+        let storage = PswapNoteStorage::builder()
+            .requested_asset(FungibleAsset::new(eth_faucet.id(), 20)?)
+            .creator_account_id(alice.id())
+            .build();
+
+        PswapNote::builder()
+            .sender(alice.id())
+            .storage(storage)
+            .serial_number(serial)
+            .note_type(NoteType::Public)
+            .offered_asset(FungibleAsset::new(usdc_faucet.id(), 40)?)
+            .build()?
+    };
+    let pswap_b = {
+        // Distinct seed → distinct serial → distinct order_id.
+        let mut rng = RandomCoin::new(Word::from([Felt::from(7u32); 4]));
+        let serial = rng.draw_word();
+        let storage = PswapNoteStorage::builder()
+            .requested_asset(FungibleAsset::new(eth_faucet.id(), 30)?)
+            .creator_account_id(alice.id())
+            .build();
+
+        PswapNote::builder()
+            .sender(alice.id())
+            .storage(storage)
+            .serial_number(serial)
+            .note_type(NoteType::Public)
+            .offered_asset(FungibleAsset::new(usdc_faucet.id(), 60)?)
+            .build()?
+    };
+
+    assert_ne!(pswap_a.order_id(), pswap_b.order_id(), "test setup: order_ids must differ");
+
+    let note_a: Note = pswap_a.clone().into();
+    let note_b: Note = pswap_b.clone().into();
+    builder.add_output_note(RawOutputNote::Full(note_a.clone()));
+    builder.add_output_note(RawOutputNote::Full(note_b.clone()));
+    let mock_chain = builder.build()?;
+
+    // Bob partially fills BOTH PSWAPs in the same tx — 10 ETH from each.
+    let fill_each = 10u64;
+    let mut note_args = BTreeMap::new();
+    note_args.insert(note_a.id(), PswapNote::create_args(fill_each, 0)?);
+    note_args.insert(note_b.id(), PswapNote::create_args(fill_each, 0)?);
+
+    let (payback_a, remainder_a) =
+        pswap_a.execute(bob.id(), Some(FungibleAsset::new(eth_faucet.id(), fill_each)?), None)?;
+    let (payback_b, remainder_b) =
+        pswap_b.execute(bob.id(), Some(FungibleAsset::new(eth_faucet.id(), fill_each)?), None)?;
+    let remainder_a_note = Note::from(remainder_a.expect("partial fill A produces remainder"));
+    let remainder_b_note = Note::from(remainder_b.expect("partial fill B produces remainder"));
+
+    let tx_context = mock_chain
+        .build_tx_context(bob.id(), &[note_a.id(), note_b.id()], &[])?
+        .extend_note_args(note_args)
+        .extend_expected_output_notes(vec![
+            RawOutputNote::Full(payback_a.clone()),
+            RawOutputNote::Full(remainder_a_note.clone()),
+            RawOutputNote::Full(payback_b.clone()),
+            RawOutputNote::Full(remainder_b_note.clone()),
+        ])
+        .build()?;
+    let executed_tx = tx_context.execute().await?;
+
+    let outputs = executed_tx.output_notes();
+    assert_eq!(outputs.num_notes(), 4, "expected 2 paybacks + 2 remainders in same tx");
+
+    // Alice's discovery: she scans the tx's 4 output notes and sorts by order_id
+    // (`Word[1]` of each attachment), without inspecting tags or recipient digests.
+    let order_id_a = pswap_a.order_id();
+    let order_id_b = pswap_b.order_id();
+
+    // Each lineage should yield 2 notes (payback + remainder) → preallocate.
+    let mut from_a: Vec<Word> = Vec::with_capacity(2);
+    let mut from_b: Vec<Word> = Vec::with_capacity(2);
+    // PswapAttachment word layout is [amount, order_id, depth, 0]; order_id sits at index 1.
+    const ORDER_ID_INDEX_IN_PSWAP_ATTACHMENT: usize = 1;
+    for i in 0..outputs.num_notes() {
+        let att_word = first_attachment_word(outputs.get_note(i).attachments());
+        let oid = att_word[ORDER_ID_INDEX_IN_PSWAP_ATTACHMENT];
+        let digest = outputs.get_note(i).recipient_digest();
+        if oid == order_id_a {
+            from_a.push(digest);
+        } else if oid == order_id_b {
+            from_b.push(digest);
+        } else {
+            panic!("output note's order_id matches neither lineage");
+        }
+    }
+    assert_eq!(from_a.len(), 2, "lineage A should yield 2 notes (payback + remainder)");
+    assert_eq!(from_b.len(), 2, "lineage B should yield 2 notes (payback + remainder)");
+
+    // Sanity: the digests Alice sorted into each lineage match the Rust-predicted ones.
+    assert!(
+        from_a.contains(&payback_a.recipient().digest())
+            && from_a.contains(&remainder_a_note.recipient().digest()),
+        "lineage A's notes must include both Rust-predicted output digests",
+    );
+    assert!(
+        from_b.contains(&payback_b.recipient().digest())
+            && from_b.contains(&remainder_b_note.recipient().digest()),
+        "lineage B's notes must include both Rust-predicted output digests",
+    );
+
+    Ok(())
+}
+
 #[test]
 fn pswap_parse_inputs_roundtrip() {
     let mut builder = MockChain::builder();
