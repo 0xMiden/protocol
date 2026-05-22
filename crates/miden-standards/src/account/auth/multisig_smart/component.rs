@@ -796,7 +796,7 @@ mod tests {
         let config = AuthMultisigSmartConfig::new(approvers.clone(), 2)
             .expect("invalid multisig smart config")
             .with_proc_policies(vec![(
-                BasicWallet::receive_asset_digest(),
+                BasicWallet::receive_asset_root().as_word(),
                 ProcedurePolicy::with_immediate_threshold(1)
                     .expect("procedure policy should be valid"),
             )])
@@ -849,7 +849,7 @@ mod tests {
             .storage()
             .get_map_item(
                 AuthMultisigSmart::procedure_policies_slot(),
-                BasicWallet::receive_asset_digest(),
+                BasicWallet::receive_asset_root().as_word(),
             )
             .expect("receive_asset policy should be present");
         assert_eq!(receive_asset_policy, Word::from([1u32, 0u32, 0u32, 0u32]));
