@@ -1,9 +1,9 @@
 #!/bin/bash
-set -uo pipefail
+set -euo pipefail
 
 CHANGELOG_FILE="CHANGELOG.md"
 
-if [ "${NO_CHANGELOG_LABEL}" = "true" ]; then
+if [ "${NO_CHANGELOG_LABEL:-false}" = "true" ]; then
     # 'no changelog' set, so finish successfully
     echo "\"no changelog\" label has been set"
     exit 0
