@@ -4,6 +4,8 @@
 
 ### Features
 
+- Added benchmark for ECDSA signed transaction ([#2967](https://github.com/0xMiden/protocol/pull/2967)).
+- [BREAKING] Renamed `NoteId` to `NoteDetailsCommitment`, new `NoteId` struct now includes the NoteMetadata ([#1731](https://github.com/0xMiden/protocol/issues/1731)).
 - Added lock/unlock path for Miden-native tokens in the AggLayer bridge: `is_native` flag in `faucet_registry_map`, bridge-local `faucet_metadata_map` (replacing FPI to faucets for conversion data), and `lock_asset` / `unlock_and_send` procedures so the bridge holds native assets in its own vault instead of burn/mint via a faucet ([#2771](https://github.com/0xMiden/protocol/pull/2771)).
 - [BREAKING] Renamed `NoteId` to `NoteDetailsCommitment`, new `NoteId` struct now includes the NoteMetadata ([#2861](https://github.com/0xMiden/protocol/pull/2861)).
 - [BREAKING] Updated note nullifiers to include note metadata and attachments commitment ([#2953](https://github.com/0xMiden/protocol/pull/2953)).
@@ -83,6 +85,7 @@
 - Renamed the AggLayer faucet registry flag constant for clarity ([#2812](https://github.com/0xMiden/protocol/issues/2812)).
 - Bound MINT notes to their faucet ([#2911](https://github.com/0xMiden/protocol/pull/2911)).
 - [BREAKING] Replaced `NoAuth` with the new `AuthNetworkAccount` auth component on the AggLayer bridge and AggLayer faucet, closing the forged-MINT attack surface where any transaction against the bridge could emit a bridge-authored MINT note ([#2797](https://github.com/0xMiden/protocol/issues/2797), [#2818](https://github.com/0xMiden/protocol/pull/2818)).
+- Fixed `TokenPolicyManager::manager_storage_slots` to register the protocol-reserved asset-callback storage slots whenever any transfer policy is configured (including `TransferAllowAll`), so every minted asset carries `AssetCallbackFlag::Enabled` and future `set_send_policy` / `set_receive_policy` switches apply uniformly to the entire circulating supply ([#2946](https://github.com/0xMiden/protocol/pull/2946)).
 - [BREAKING] Keyed the AggLayer faucet token registry by `(origin_token_address, origin_network)` instead of `origin_token_address` alone, preventing same-address cross-network mint collisions on CLAIM ([#2860](https://github.com/0xMiden/protocol/pull/2860)).
 - Fixed `set_procedure_threshold` in the multisig auth component validating per-procedure overrides against initial `num_approvers`.
 
