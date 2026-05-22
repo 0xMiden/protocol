@@ -1,20 +1,11 @@
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
-use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
-use miden_protocol::account::{AccountId, AccountProcedureRoot, AccountStorage, StorageSlotName};
+use miden_protocol::Felt;
+use miden_protocol::account::{AccountId, AccountProcedureRoot};
 use miden_protocol::note::PartialNote;
-use miden_protocol::{Felt, Word};
 
-use crate::AuthMethod;
-use crate::account::auth::{
-    AuthGuardedMultisig,
-    AuthMultisig,
-    AuthMultisigSmart,
-    AuthSingleSig,
-    AuthSingleSigAcl,
-    NetworkAccountNoteAllowlist,
-};
+use crate::account::auth::AccountAuthScheme;
 use crate::account::interface::AccountInterfaceError;
 
 // ACCOUNT COMPONENT INTERFACE
@@ -121,48 +112,22 @@ impl AccountComponentInterface {
         )
     }
 
-    /// Returns the authentication schemes associated with this component interface.
-    pub fn get_auth_methods(&self, storage: &AccountStorage) -> Vec<AuthMethod> {
+    /// Returns the [`AccountAuthScheme`] tag for this component interface, if it is an auth
+    /// component. Returns [`None`] for non-auth components.
+    pub fn auth_scheme(&self) -> Option<AccountAuthScheme> {
         match self {
-            AccountComponentInterface::AuthSingleSig => vec![extract_singlesig_auth_method(
-                storage,
-                AuthSingleSig::public_key_slot(),
-                AuthSingleSig::scheme_id_slot(),
-            )],
-            AccountComponentInterface::AuthSingleSigAcl => vec![extract_singlesig_auth_method(
-                storage,
-                AuthSingleSigAcl::public_key_slot(),
-                AuthSingleSigAcl::scheme_id_slot(),
-            )],
-            AccountComponentInterface::AuthMultisig => {
-                vec![extract_multisig_auth_method(
-                    storage,
-                    AuthMultisig::threshold_config_slot(),
-                    AuthMultisig::approver_public_keys_slot(),
-                    AuthMultisig::approver_scheme_ids_slot(),
-                )]
-            },
+            AccountComponentInterface::AuthSingleSig => Some(AccountAuthScheme::SingleSig),
+            AccountComponentInterface::AuthSingleSigAcl => Some(AccountAuthScheme::SingleSigAcl),
+            AccountComponentInterface::AuthMultisig => Some(AccountAuthScheme::Multisig),
+            AccountComponentInterface::AuthMultisigSmart => Some(AccountAuthScheme::MultisigSmart),
             AccountComponentInterface::AuthGuardedMultisig => {
-                vec![extract_multisig_auth_method(
-                    storage,
-                    AuthGuardedMultisig::threshold_config_slot(),
-                    AuthGuardedMultisig::approver_public_keys_slot(),
-                    AuthGuardedMultisig::approver_scheme_ids_slot(),
-                )]
+                Some(AccountAuthScheme::GuardedMultisig)
             },
-            AccountComponentInterface::AuthMultisigSmart => {
-                vec![extract_multisig_auth_method(
-                    storage,
-                    AuthMultisigSmart::threshold_config_slot(),
-                    AuthMultisigSmart::approver_public_keys_slot(),
-                    AuthMultisigSmart::approver_scheme_ids_slot(),
-                )]
-            },
-            AccountComponentInterface::AuthNoAuth => vec![AuthMethod::NoAuth],
+            AccountComponentInterface::AuthNoAuth => Some(AccountAuthScheme::NoAuth),
             AccountComponentInterface::AuthNetworkAccount => {
-                vec![extract_network_account_auth_method(storage)]
+                Some(AccountAuthScheme::NetworkAccount)
             },
-            _ => vec![], // Non-auth components return empty vector
+            _ => None,
         }
     }
 
@@ -194,8 +159,9 @@ impl AccountComponentInterface {
     /// ```masm
     ///     push.{note information}
     ///
-    ///     push.{asset amount}
-    ///     call.::miden::standards::faucets::fungible::mint_and_send dropw dropw drop
+    ///     push.{ASSET_VALUE} push.{ASSET_KEY}
+    ///     call.::miden::standards::faucets::fungible::mint_and_send
+    ///     swapdw dropw dropw swapdw dropw dropw
     /// ```
     ///
     /// # Errors:
@@ -248,13 +214,18 @@ impl AccountComponentInterface {
 
                     body.push_str(&format!(
                         "
-                        push.{amount}
+                        push.{ASSET_VALUE}
+                        push.{ASSET_KEY}
+                        # => [ASSET_KEY, ASSET_VALUE, tag, note_type, RECIPIENT, pad(16)]
+
                         call.::miden::standards::faucets::fungible::mint_and_send
-                        # => [note_idx, pad(25)]
-                        swapdw dropw dropw swap drop
-                        # => [note_idx, pad(16)]\n
+                        # => [note_idx, pad(29)]
+
+                        swapdw dropw dropw swapdw dropw dropw
+                        # => [note_idx, pad(13)]\n
                         ",
-                        amount = asset.unwrap_fungible().amount()
+                        ASSET_KEY = asset.to_key_word(),
+                        ASSET_VALUE = asset.to_value_word(),
                     ));
                 },
                 AccountComponentInterface::BasicWallet => {
@@ -320,94 +291,5 @@ impl AccountComponentInterface {
         }
 
         Ok(body)
-    }
-}
-
-// HELPER FUNCTIONS
-// ================================================================================================
-
-/// Extracts authentication method from a single-signature component.
-fn extract_singlesig_auth_method(
-    storage: &AccountStorage,
-    public_key_slot: &StorageSlotName,
-    scheme_id_slot: &StorageSlotName,
-) -> AuthMethod {
-    let pub_key = PublicKeyCommitment::from(
-        storage
-            .get_item(public_key_slot)
-            .expect("invalid storage index of the public key"),
-    );
-
-    let scheme_id = storage
-        .get_item(scheme_id_slot)
-        .expect("invalid storage index of the scheme id")[0]
-        .as_canonical_u64() as u8;
-
-    let auth_scheme =
-        AuthScheme::try_from(scheme_id).expect("invalid auth scheme id in the scheme id slot");
-
-    AuthMethod::SingleSig { approver: (pub_key, auth_scheme) }
-}
-
-/// Extracts authentication method from a multisig component.
-fn extract_multisig_auth_method(
-    storage: &AccountStorage,
-    config_slot: &StorageSlotName,
-    approver_public_keys_slot: &StorageSlotName,
-    approver_scheme_ids_slot: &StorageSlotName,
-) -> AuthMethod {
-    // Read the multisig configuration from the config slot
-    // Format: [threshold, num_approvers, 0, 0]
-    let config = storage
-        .get_item(config_slot)
-        .expect("invalid slot name of the multisig configuration");
-
-    let threshold = config[0].as_canonical_u64() as u32;
-    let num_approvers = config[1].as_canonical_u64() as u8;
-
-    let mut approvers = Vec::new();
-
-    // Read each public key from the map
-    for key_index in 0..num_approvers {
-        // The multisig component stores keys and scheme IDs using pattern [index, 0, 0, 0]
-        let map_key = Word::from([key_index as u32, 0, 0, 0]);
-
-        let pub_key_word =
-            storage.get_map_item(approver_public_keys_slot, map_key).unwrap_or_else(|_| {
-                panic!(
-                    "Failed to read public key {} from multisig configuration at storage slot {}. \
-                     Expected key pattern [index, 0, 0, 0].",
-                    key_index, approver_public_keys_slot
-                )
-            });
-
-        let pub_key = PublicKeyCommitment::from(pub_key_word);
-
-        let scheme_word = storage
-            .get_map_item(approver_scheme_ids_slot, map_key)
-            .unwrap_or_else(|_| {
-                panic!(
-                    "Failed to read scheme id for approver {} from multisig configuration at storage slot {}. \
-                     Expected key pattern [index, 0, 0, 0].",
-                    key_index, approver_scheme_ids_slot
-                )
-            });
-
-        let scheme_id = scheme_word[0].as_canonical_u64() as u8;
-        let auth_scheme =
-            AuthScheme::try_from(scheme_id).expect("invalid auth scheme id in the scheme id slot");
-        approvers.push((pub_key, auth_scheme));
-    }
-
-    AuthMethod::Multisig { threshold, approvers }
-}
-
-/// Extracts authentication method from a network-account component.
-fn extract_network_account_auth_method(storage: &AccountStorage) -> AuthMethod {
-    let allowlist = NetworkAccountNoteAllowlist::try_from(storage)
-        .expect("network account allowlist slot should be present and valid");
-
-    AuthMethod::NetworkAccount {
-        allowed_script_roots: allowlist.into_allowed_script_roots(),
     }
 }

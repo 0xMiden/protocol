@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 
 use miden_protocol::account::{Account, AccountCode, AccountId, AccountProcedureRoot};
 
-use crate::AuthMethod;
+use crate::account::auth::AccountAuthScheme;
 use crate::account::components::StandardAccountComponent;
 use crate::account::interface::{AccountComponentInterface, AccountInterface};
 
@@ -13,15 +13,15 @@ use crate::account::interface::{AccountComponentInterface, AccountInterface};
 /// An extension for [`AccountInterface`] that allows instantiation from higher-level types.
 pub trait AccountInterfaceExt {
     /// Creates a new [`AccountInterface`] instance from the provided account ID, authentication
-    /// methods and account code.
-    fn from_code(account_id: AccountId, auth: Vec<AuthMethod>, code: &AccountCode) -> Self;
+    /// scheme tags and account code.
+    fn from_code(account_id: AccountId, auth: Vec<AccountAuthScheme>, code: &AccountCode) -> Self;
 
     /// Creates a new [`AccountInterface`] instance from the provided [`Account`].
     fn from_account(account: &Account) -> Self;
 }
 
 impl AccountInterfaceExt for AccountInterface {
-    fn from_code(account_id: AccountId, auth: Vec<AuthMethod>, code: &AccountCode) -> Self {
+    fn from_code(account_id: AccountId, auth: Vec<AccountAuthScheme>, code: &AccountCode) -> Self {
         let components = AccountComponentInterface::from_procedures(code.procedures());
 
         Self::new(account_id, auth, components)
@@ -29,16 +29,8 @@ impl AccountInterfaceExt for AccountInterface {
 
     fn from_account(account: &Account) -> Self {
         let components = AccountComponentInterface::from_procedures(account.code().procedures());
-        let mut auth = Vec::new();
-
-        // Find the auth component and extract all auth methods from it
-        // An account should have only one auth component
-        for component in components.iter() {
-            if component.is_auth_component() {
-                auth = component.get_auth_methods(account.storage());
-                break;
-            }
-        }
+        let auth: Vec<AccountAuthScheme> =
+            components.iter().filter_map(|c| c.auth_scheme()).collect();
 
         Self::new(account.id(), auth, components)
     }

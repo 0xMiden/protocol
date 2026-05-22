@@ -46,8 +46,7 @@ use miden_protocol::testing::account_id::ACCOUNT_ID_FEE_FAUCET;
 use miden_protocol::testing::random_secret_key::random_secret_key;
 use miden_protocol::transaction::{OrderedTransactionHeaders, RawOutputNote, TransactionKernel};
 use miden_protocol::{MAX_OUTPUT_NOTES_PER_BATCH, Word};
-use miden_standards::AuthMethod;
-use miden_standards::account::access::AccessControl;
+use miden_standards::account::access::{AccessControl, Authority};
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
     BurnPolicyConfig,
@@ -317,43 +316,43 @@ impl MockChainBuilder {
         self.add_account_from_builder(auth_method, account_builder, AccountState::Exists)
     }
 
-    /// Creates a new public [`FungibleFaucet`] account and registers the authenticator (if
-    /// any) for it.
-    ///
-    /// This does not add the account to the chain state, but it can still be used to call
-    /// [`MockChain::build_tx_context`] to automatically add the authenticator.
-    fn create_new_fungible_faucet(
+    /// Internal helper: creates a new user-account fungible faucet account (AuthControlled).
+    /// Installs [`Authority::AuthControlled`] directly; the auth component comes from `Auth`.
+    fn create_new_user_fungible_faucet(
         &mut self,
         auth_method: Auth,
         faucet: FungibleFaucet,
         account_type: AccountType,
-        access_control: AccessControl,
         token_policy_manager: TokenPolicyManager,
     ) -> anyhow::Result<Account> {
         let account_builder = AccountBuilder::new(self.rng.random())
             .account_type(account_type)
             .with_component(faucet)
-            .with_components(access_control)
+            .with_component(Authority::AuthControlled)
             .with_components(token_policy_manager);
 
         self.add_account_from_builder(auth_method, account_builder, AccountState::New)
     }
 
-    /// Adds an existing fungible faucet account to the initial chain state and registers the
-    /// authenticator (if any).
-    ///
-    /// The behaviour of the faucet (basic vs network-style) is determined entirely by the
-    /// combination of arguments:
-    /// - `account_type`: [`AccountType::Public`] for basic faucets, or [`AccountType::Private`] for
-    ///   off-chain accounts.
-    /// - `auth_method`: typically a [`Auth::BasicAuth`] for basic faucets, or [`Auth::IncrNonce`]
-    ///   for network-style faucets.
-    /// - `access_control`: [`AccessControl::AuthControlled`] for basic faucets;
-    ///   [`AccessControl::Ownable2Step`] / [`AccessControl::Rbac`] for owner-controlled faucets.
-    ///   The matching `Authority` component is auto-installed by `AccessControl`.
-    /// - `token_policy_manager`: the unified [`TokenPolicyManager`] holding both mint and burn
-    ///   policy.
-    fn add_existing_fungible_faucet(
+    /// Internal helper: adds an existing user-account fungible faucet (AuthControlled).
+    fn add_existing_user_fungible_faucet(
+        &mut self,
+        auth_method: Auth,
+        faucet: FungibleFaucet,
+        account_type: AccountType,
+        token_policy_manager: TokenPolicyManager,
+    ) -> anyhow::Result<Account> {
+        let account_builder = AccountBuilder::new(self.rng.random())
+            .account_type(account_type)
+            .with_component(faucet)
+            .with_component(Authority::AuthControlled)
+            .with_components(token_policy_manager);
+
+        self.add_account_from_builder(auth_method, account_builder, AccountState::Exists)
+    }
+
+    /// Internal helper: adds an existing network-style fungible faucet (Ownable2Step / Rbac).
+    fn add_existing_network_fungible_faucet(
         &mut self,
         auth_method: Auth,
         faucet: FungibleFaucet,
@@ -404,17 +403,10 @@ impl MockChainBuilder {
             .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?
             .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?;
 
-        // The `auth` field on AccessControl is a placeholder in chain_builder: the real auth
-        // component is built from `auth_method: Auth` by `add_account_from_builder` and
-        // installed via `with_auth_component`. `AccessControl::IntoIterator` only yields the
-        // setter-gate components, so the placeholder is not used to construct components — it
-        // only satisfies the type. Tests that exercise factory-level validation should call
-        // `create_fungible_faucet` directly instead.
-        self.add_existing_fungible_faucet(
+        self.add_existing_user_fungible_faucet(
             auth_method,
             faucet,
             AccountType::Public,
-            AccessControl::AuthControlled { auth: AuthMethod::NoAuth },
             token_policy_manager,
         )
     }
@@ -465,16 +457,11 @@ impl MockChainBuilder {
                 .chain([MintNote::script_root(), BurnNote::script_root()])
                 .collect();
 
-        self.add_existing_fungible_faucet(
-            Auth::NetworkAccount {
-                allowed_script_roots: allowed_script_roots.clone(),
-            },
+        self.add_existing_network_fungible_faucet(
+            Auth::NetworkAccount { allowed_script_roots },
             faucet,
             AccountType::Public,
-            AccessControl::Ownable2Step {
-                owner: owner_account_id,
-                auth: AuthMethod::NetworkAccount { allowed_script_roots },
-            },
+            AccessControl::Ownable2Step { owner: owner_account_id },
             token_policy_manager,
         )
     }
@@ -503,16 +490,11 @@ impl MockChainBuilder {
                 .chain([MintNote::script_root(), BurnNote::script_root()])
                 .collect();
 
-        self.add_existing_fungible_faucet(
-            Auth::NetworkAccount {
-                allowed_script_roots: allowed_script_roots.clone(),
-            },
+        self.add_existing_network_fungible_faucet(
+            Auth::NetworkAccount { allowed_script_roots },
             faucet,
             AccountType::Public,
-            AccessControl::Ownable2Step {
-                owner: owner_account_id,
-                auth: AuthMethod::NetworkAccount { allowed_script_roots },
-            },
+            AccessControl::Ownable2Step { owner: owner_account_id },
             token_policy_manager,
         )
     }
@@ -543,12 +525,10 @@ impl MockChainBuilder {
             .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?
             .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?;
 
-        // See note on `add_existing_basic_faucet` re: the placeholder auth field.
-        self.create_new_fungible_faucet(
+        self.create_new_user_fungible_faucet(
             auth_method,
             faucet,
             AccountType::Public,
-            AccessControl::AuthControlled { auth: AuthMethod::NoAuth },
             token_policy_manager,
         )
     }

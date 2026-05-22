@@ -10,7 +10,13 @@ use crate::utils::FixedWidthStringError;
 mod fungible;
 mod token_metadata;
 
-pub use fungible::{FungibleFaucet, FungibleFaucetBuilder, create_fungible_faucet};
+pub use fungible::{
+    FungibleFaucet,
+    FungibleFaucetBuilder,
+    create_network_fungible_faucet,
+    create_user_fungible_faucet,
+    user_faucet_single_sig_acl,
+};
 pub use token_metadata::{Description, ExternalLink, LogoURI, TokenMetadata, TokenName};
 
 // TOKEN METADATA ERROR
@@ -59,12 +65,10 @@ pub enum FungibleFaucetError {
     MissingFungibleFaucetInterface,
     #[error("unsupported authentication method: {0}")]
     UnsupportedAuthMethod(String),
-    #[error(
-        "AccessControl::AuthControlled is incompatible with the chosen auth method: {0}. \
-         Under AuthControlled the auth component is the sole gate for authority-protected \
-         setters. It must authenticate every authority-gated setter root."
-    )]
+    #[error("AuthControlled is incompatible with the chosen auth method: {0}")]
     IncompatibleAuthControlledAuth(String),
+    #[error("unsupported combination of access control and auth method: {0}")]
+    UnsupportedAccessControlAuthCombination(String),
     #[error("account creation failed")]
     AccountError(#[source] AccountError),
     #[error("account is not a fungible faucet account")]

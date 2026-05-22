@@ -6,10 +6,14 @@ use miden_protocol::account::{AccountBuilder, AccountType};
 use miden_protocol::asset::{AssetAmount, TokenSymbol};
 use miden_protocol::{Felt, Word};
 
-use super::{FungibleFaucet, create_fungible_faucet};
-use crate::AuthMethod;
+use super::{
+    FungibleFaucet,
+    create_network_fungible_faucet,
+    create_user_fungible_faucet,
+    user_faucet_single_sig_acl,
+};
 use crate::account::access::AccessControl;
-use crate::account::auth::{AuthSingleSig, AuthSingleSigAcl};
+use crate::account::auth::{AccountAuthComponent, AuthSingleSig, AuthSingleSigAcl};
 use crate::account::faucets::{Description, FungibleFaucetError, TokenMetadata, TokenName};
 use crate::account::policies::{
     BurnPolicyConfig,
@@ -64,13 +68,8 @@ fn read_trigger_procedure_roots(
 }
 
 #[test]
-fn faucet_contract_creation() {
+fn user_fungible_faucet_with_single_sig_acl() {
     let pub_key_word = Word::new([Felt::ONE; 4]);
-    let auth = AuthMethod::SingleSig {
-        approver: (pub_key_word.into(), AuthScheme::Falcon512Poseidon2),
-    };
-
-    // we need to use an initial seed to create the wallet account
     let init_seed: [u8; 32] = [
         90, 110, 209, 94, 84, 105, 250, 242, 223, 203, 216, 124, 22, 159, 14, 132, 215, 85, 183,
         204, 149, 90, 166, 68, 100, 73, 106, 168, 125, 237, 138, 16,
@@ -81,34 +80,30 @@ fn faucet_contract_creation() {
     let token_name_string = "polygon";
     let description_string = "A polygon token";
 
-    let faucet = sample_faucet();
-    let faucet_account = create_fungible_faucet(
+    let auth_component =
+        user_faucet_single_sig_acl(pub_key_word.into(), AuthScheme::Falcon512Poseidon2).unwrap();
+
+    let faucet_account = create_user_fungible_faucet(
         init_seed,
-        faucet,
-        AccessControl::AuthControlled { auth },
+        sample_faucet(),
+        auth_component,
         allow_all_policy_manager(),
         AccountType::Private,
     )
     .unwrap();
 
-    // The falcon auth component's public key should be present.
+    // The auth component's public key should be present.
     assert_eq!(
         faucet_account.storage().get_item(AuthSingleSigAcl::public_key_slot()).unwrap(),
         pub_key_word
     );
 
-    // The config slot of the auth component stores:
-    // [num_trigger_procs, allow_unauthorized_output_notes, allow_unauthorized_input_notes, 0].
-    //
-    // With 9 authority-gated trigger procedures (mint_and_send + 4 token metadata setters +
-    // 4 policy setters), allow_unauthorized_output_notes=false, and
-    // allow_unauthorized_input_notes=true, this should be [9, 0, 1, 0].
+    // Config slot: 9 trigger procedures, allow_unauthorized_input_notes=true → [9, 0, 1, 0].
     assert_eq!(
         faucet_account.storage().get_item(AuthSingleSigAcl::config_slot()).unwrap(),
         [Felt::from(9_u32), Felt::ZERO, Felt::ONE, Felt::ZERO].into()
     );
 
-    // The trigger procedure root map should contain every authority-gated setter root.
     let stored_roots = read_trigger_procedure_roots(&faucet_account, 9);
     let expected_roots: BTreeSet<Word> = [
         FungibleFaucet::mint_and_send_root(),
@@ -126,14 +121,12 @@ fn faucet_contract_creation() {
     .collect();
     assert_eq!(stored_roots, expected_roots);
 
-    // Check that faucet metadata was initialized to the given values.
-    // Storage layout: [token_supply, max_supply, decimals, symbol]
+    // Token config slot layout: [token_supply, max_supply, decimals, symbol]
     assert_eq!(
         faucet_account.storage().get_item(FungibleFaucet::token_config_slot()).unwrap(),
         [Felt::ZERO, Felt::from(123_u32), Felt::from(2_u32), token_symbol.into()].into()
     );
 
-    // Check that name was stored
     let name_0 = faucet_account.storage().get_item(TokenMetadata::name_chunk_0_slot()).unwrap();
     let name_1 = faucet_account.storage().get_item(TokenMetadata::name_chunk_1_slot()).unwrap();
     let decoded_name = TokenName::try_from_words(&[name_0, name_1]).unwrap();
@@ -144,62 +137,64 @@ fn faucet_contract_creation() {
         assert_eq!(chunk, *expected);
     }
 
-    // Verify the faucet component can be extracted
     let _faucet_component = FungibleFaucet::try_from(faucet_account.clone()).unwrap();
 }
 
-/// `AccessControl::AuthControlled { auth: NoAuth }` must be rejected: under AuthControlled the
-/// auth component is the sole gate for authority-gated setters, so a NoAuth pairing would
-/// leave them permissionless.
+/// `create_user_fungible_faucet` with `NoAuth` must be rejected: the auth component is the
+/// sole gate for authority-protected setters.
 #[test]
-fn auth_controlled_rejects_no_auth() {
-    let err = create_fungible_faucet(
+fn user_fungible_faucet_rejects_no_auth() {
+    let err = create_user_fungible_faucet(
         [7u8; 32],
         sample_faucet(),
-        AccessControl::AuthControlled { auth: AuthMethod::NoAuth },
+        AccountAuthComponent::no_auth(),
         allow_all_policy_manager(),
         AccountType::Private,
     )
-    .expect_err("AuthControlled+NoAuth should be rejected");
+    .expect_err("user faucet with NoAuth should be rejected");
     assert_matches!(err, FungibleFaucetError::IncompatibleAuthControlledAuth(_));
 }
 
-/// `AccessControl::AuthControlled { auth: Multisig | Unknown }` must be rejected — both are
-/// already unsupported for fungible faucets, and the merge surfaces the rejection at the
-/// type level.
+/// `create_user_fungible_faucet` with a plain `SingleSig` (no ACL) must be rejected: the
+/// trigger list would be empty, leaving authority-gated setters permissionless. Callers must
+/// use `user_faucet_single_sig_acl`.
 #[test]
-fn auth_controlled_rejects_multisig_and_unknown() {
-    let multisig_err = create_fungible_faucet(
+fn user_fungible_faucet_rejects_plain_single_sig() {
+    let pub_key_word = Word::new([Felt::ONE; 4]);
+    let err = create_user_fungible_faucet(
         [7u8; 32],
         sample_faucet(),
-        AccessControl::AuthControlled {
-            auth: AuthMethod::Multisig {
-                threshold: 1,
-                approvers: alloc::vec::Vec::new(),
-            },
-        },
+        AccountAuthComponent::single_sig(pub_key_word.into(), AuthScheme::Falcon512Poseidon2),
         allow_all_policy_manager(),
         AccountType::Private,
     )
-    .expect_err("AuthControlled+Multisig should be rejected");
-    assert_matches!(multisig_err, FungibleFaucetError::UnsupportedAuthMethod(_));
-
-    let unknown_err = create_fungible_faucet(
-        [7u8; 32],
-        sample_faucet(),
-        AccessControl::AuthControlled { auth: AuthMethod::Unknown },
-        allow_all_policy_manager(),
-        AccountType::Private,
-    )
-    .expect_err("AuthControlled+Unknown should be rejected");
-    assert_matches!(unknown_err, FungibleFaucetError::UnsupportedAuthMethod(_));
+    .expect_err("user faucet with plain SingleSig should be rejected");
+    assert_matches!(err, FungibleFaucetError::UnsupportedAccessControlAuthCombination(_));
 }
 
-/// `Ownable2Step + NoAuth` is a valid configuration: the setter gate is enforced
-/// in-procedure (`assert_sender_is_owner`), so the account-level auth can legitimately be
-/// NoAuth (typical for network-style faucets driven by allowlisted note scripts).
+/// `create_user_fungible_faucet` with NetworkAccount must be rejected: network-style auth
+/// belongs with `create_network_fungible_faucet`.
 #[test]
-fn ownable2step_with_no_auth_is_accepted() {
+fn user_fungible_faucet_rejects_network_account() {
+    let allowlist: BTreeSet<miden_protocol::note::NoteScriptRoot> =
+        [miden_protocol::note::NoteScriptRoot::from_raw(Word::new([Felt::ONE; 4]))]
+            .into_iter()
+            .collect();
+    let err = create_user_fungible_faucet(
+        [7u8; 32],
+        sample_faucet(),
+        AccountAuthComponent::network_account(allowlist).unwrap(),
+        allow_all_policy_manager(),
+        AccountType::Private,
+    )
+    .expect_err("user faucet with NetworkAccount should be rejected");
+    assert_matches!(err, FungibleFaucetError::UnsupportedAccessControlAuthCombination(_));
+}
+
+/// `create_network_fungible_faucet` with `Ownable2Step + NoAuth` is a valid configuration: the
+/// setter gate is enforced in-procedure (`assert_sender_is_owner`).
+#[test]
+fn network_fungible_faucet_ownable2step_with_no_auth_is_accepted() {
     use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
 
     let owner = miden_protocol::account::AccountId::try_from(
@@ -207,24 +202,49 @@ fn ownable2step_with_no_auth_is_accepted() {
     )
     .unwrap();
 
-    let _account = create_fungible_faucet(
+    let _account = create_network_fungible_faucet(
         [7u8; 32],
         sample_faucet(),
-        AccessControl::Ownable2Step { owner, auth: AuthMethod::NoAuth },
+        AccessControl::Ownable2Step { owner },
+        AccountAuthComponent::no_auth(),
         allow_all_policy_manager(),
         AccountType::Public,
     )
     .expect("Ownable2Step+NoAuth should be accepted");
 }
 
+/// `create_network_fungible_faucet` with SingleSig must be rejected: SingleSig belongs with
+/// the user-account faucet factory.
+#[test]
+fn network_fungible_faucet_rejects_single_sig() {
+    use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
+
+    let owner = miden_protocol::account::AccountId::try_from(
+        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
+    )
+    .unwrap();
+
+    let err = create_network_fungible_faucet(
+        [7u8; 32],
+        sample_faucet(),
+        AccessControl::Ownable2Step { owner },
+        AccountAuthComponent::single_sig(
+            Word::new([Felt::ONE; 4]).into(),
+            AuthScheme::Falcon512Poseidon2,
+        ),
+        allow_all_policy_manager(),
+        AccountType::Public,
+    )
+    .expect_err("network faucet with SingleSig should be rejected");
+    assert_matches!(err, FungibleFaucetError::UnsupportedAccessControlAuthCombination(_));
+}
+
 #[test]
 fn faucet_create_from_account() {
-    // prepare the test data
     let mock_word = Word::from([0, 1, 2, 3u32]);
     let mock_public_key = PublicKeyCommitment::from(mock_word);
     let mock_seed = mock_word.as_bytes();
 
-    // valid account
     let token_symbol = TokenSymbol::new("POL").expect("invalid token symbol");
     let faucet = FungibleFaucet::builder()
         .name(TokenName::new("POL").unwrap())
@@ -246,7 +266,6 @@ fn faucet_create_from_account() {
     // invalid account: fungible faucet component is missing
     let invalid_faucet_account = AccountBuilder::new(mock_seed)
         .with_auth_component(AuthSingleSig::new(mock_public_key, AuthScheme::Falcon512Poseidon2))
-        // we need to add some other component so the builder doesn't fail
         .with_component(BasicWallet)
         .build_existing()
         .expect("failed to create wallet account");

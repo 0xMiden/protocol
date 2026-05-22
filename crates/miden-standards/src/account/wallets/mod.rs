@@ -12,9 +12,8 @@ use miden_protocol::account::{
 use miden_protocol::errors::AccountError;
 use thiserror::Error;
 
-use super::AuthMethod;
 use crate::account::account_component_code;
-use crate::account::auth::{AuthMultisig, AuthMultisigConfig, AuthSingleSig};
+use crate::account::auth::{AccountAuthComponent, AccountAuthScheme};
 use crate::procedure_root;
 
 // BASIC WALLET
@@ -117,53 +116,44 @@ pub enum BasicWalletError {
     AccountError(#[source] AccountError),
 }
 
-/// Creates a new account with basic wallet interface, the specified authentication scheme and the
-/// account storage type. Basic wallets can be specified to have either mutable or immutable code.
+/// Creates a new account with the basic wallet interface and the specified authentication
+/// component.
 ///
-/// The basic wallet interface exposes three procedures:
+/// The basic wallet interface exposes two procedures:
 /// - `receive_asset`, which can be used to add an asset to the account.
 /// - `move_asset_to_note`, which can be used to remove the specified asset from the account and add
 ///   it to the output note with the specified index.
 ///
-/// All methods require authentication. The authentication procedure is defined by the specified
-/// authentication scheme.
+/// All methods require authentication. The caller provides any [`AccountAuthComponent`]; this
+/// factory rejects schemes that don't make sense for a basic wallet (`NoAuth` and
+/// `NetworkAccount`), and accepts SingleSig, Multisig variants, and Custom components.
 pub fn create_basic_wallet(
     init_seed: [u8; 32],
-    auth_method: AuthMethod,
-    account_storage_mode: AccountType,
+    auth_component: AccountAuthComponent,
+    account_type: AccountType,
 ) -> Result<Account, BasicWalletError> {
-    let auth_component: AccountComponent = match auth_method {
-        AuthMethod::SingleSig { approver: (pub_key, auth_scheme) } => {
-            AuthSingleSig::new(pub_key, auth_scheme).into()
-        },
-        AuthMethod::Multisig { threshold, approvers } => {
-            let config = AuthMultisigConfig::new(approvers, threshold)
-                .and_then(|cfg| {
-                    cfg.with_proc_thresholds(vec![(BasicWallet::receive_asset_root(), 1)])
-                })
-                .map_err(BasicWalletError::AccountError)?;
-            AuthMultisig::new(config).map_err(BasicWalletError::AccountError)?.into()
-        },
-        AuthMethod::NoAuth => {
+    match auth_component.scheme() {
+        AccountAuthScheme::SingleSig
+        | AccountAuthScheme::SingleSigAcl
+        | AccountAuthScheme::Multisig
+        | AccountAuthScheme::GuardedMultisig
+        | AccountAuthScheme::MultisigSmart
+        | AccountAuthScheme::Custom => {},
+        AccountAuthScheme::NoAuth => {
             return Err(BasicWalletError::UnsupportedAuthMethod(
                 "basic wallets cannot be created with NoAuth authentication method".into(),
             ));
         },
-        AuthMethod::NetworkAccount { .. } => {
+        AccountAuthScheme::NetworkAccount => {
             return Err(BasicWalletError::UnsupportedAuthMethod(
                 "basic wallets cannot be created with NetworkAccount authentication method".into(),
             ));
         },
-        AuthMethod::Unknown => {
-            return Err(BasicWalletError::UnsupportedAuthMethod(
-                "basic wallets cannot be created with Unknown authentication method".into(),
-            ));
-        },
-    };
+    }
 
     let account = AccountBuilder::new(init_seed)
-        .account_type(account_storage_mode)
-        .with_auth_component(auth_component)
+        .account_type(account_type)
+        .with_auth_component(auth_component.into_inner())
         .with_component(BasicWallet)
         .build()
         .map_err(BasicWalletError::AccountError)?;
@@ -180,7 +170,8 @@ mod tests {
     use miden_protocol::utils::serde::{Deserializable, Serializable};
     use miden_protocol::{ONE, Word};
 
-    use super::{Account, AccountType, AuthMethod, create_basic_wallet};
+    use super::{Account, AccountType, create_basic_wallet};
+    use crate::account::auth::AccountAuthComponent;
     use crate::account::wallets::BasicWallet;
 
     #[test]
@@ -189,7 +180,7 @@ mod tests {
         let auth_scheme = auth::AuthScheme::Falcon512Poseidon2;
         let wallet = create_basic_wallet(
             [1; 32],
-            AuthMethod::SingleSig { approver: (pub_key, auth_scheme) },
+            AccountAuthComponent::single_sig(pub_key, auth_scheme),
             AccountType::Public,
         );
 
@@ -204,7 +195,7 @@ mod tests {
         let auth_scheme = auth::AuthScheme::EcdsaK256Keccak;
         let wallet = create_basic_wallet(
             [1; 32],
-            AuthMethod::SingleSig { approver: (pub_key, auth_scheme) },
+            AccountAuthComponent::single_sig(pub_key, auth_scheme),
             AccountType::Public,
         )
         .unwrap();

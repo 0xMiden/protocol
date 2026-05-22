@@ -1,3 +1,6 @@
+mod account_auth_component;
+pub use account_auth_component::{AccountAuthComponent, AccountAuthScheme};
+
 mod no_auth;
 pub use no_auth::NoAuth;
 

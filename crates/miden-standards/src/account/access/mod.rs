@@ -2,16 +2,18 @@ use alloc::vec;
 
 use miden_protocol::account::{AccountComponent, AccountId, RoleSymbol};
 
-use crate::auth_method::AuthMethod;
-
 pub mod authority;
 pub mod ownable2step;
 pub mod rbac;
 
-/// Access control configuration for account components.
+/// Access control configuration for network-style accounts whose authority-gated setters are
+/// gated by an owner / role check rather than by the account's auth component.
 ///
-/// - [`AccessControl::AuthControlled`] → [`Authority::AuthControlled`] (only). The setter gate
-///   delegates to the auth component.
+/// User-account faucets (where the auth component is itself the setter gate) install
+/// [`Authority::AuthControlled`] directly via factories like
+/// [`create_user_fungible_faucet`][crate::account::faucets::create_user_fungible_faucet]; they
+/// do not need this enum.
+///
 /// - [`AccessControl::Ownable2Step`] → [`Ownable2Step`] + [`Authority::OwnerControlled`]. The
 ///   setter gate enforces `sender == owner`.
 /// - [`AccessControl::Rbac`] → [`Ownable2Step`] + [`RoleBasedAccessControl`] + an [`Authority`].
@@ -19,19 +21,13 @@ pub mod rbac;
 ///   - `None` → [`Authority::OwnerControlled`] (the top-level owner gates `set_*` operations).
 ///   - `Some(role)` → [`Authority::RbacControlled { role }`] (any holder of `role` gates `set_*`
 ///     operations).
-///
-/// Note that the auth component is **not** yielded by [`IntoIterator`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AccessControl {
-    /// The account's auth component is used for both transaction-level authentication
-    /// and authority-gated setters.
-    AuthControlled { auth: AuthMethod },
     /// Two-step ownership transfer with the provided initial owner. The setter gate enforces
     /// `sender == owner`.
-    Ownable2Step { owner: AccountId, auth: AuthMethod },
+    Ownable2Step { owner: AccountId },
     /// Role-based access control. Includes [`Ownable2Step`] internally. The provided `owner`
-    /// becomes the top-level RBAC authority (the account's owner). `auth` governs the
-    /// account's own transaction authentication only.
+    /// becomes the top-level RBAC authority (the account's owner).
     ///
     /// `authority_role` controls which authority is installed alongside RBAC:
     /// - `None` (default) → [`Authority::OwnerControlled`]: the top-level `owner` is the sole
@@ -44,44 +40,28 @@ pub enum AccessControl {
     Rbac {
         owner: AccountId,
         authority_role: Option<RoleSymbol>,
-        auth: AuthMethod,
     },
-}
-
-impl AccessControl {
-    /// Returns the [`AuthMethod`] selected for the account's auth component.
-    pub fn auth_method(&self) -> &AuthMethod {
-        match self {
-            AccessControl::AuthControlled { auth }
-            | AccessControl::Ownable2Step { auth, .. }
-            | AccessControl::Rbac { auth, .. } => auth,
-        }
-    }
 }
 
 impl IntoIterator for AccessControl {
     type Item = AccountComponent;
     type IntoIter = alloc::vec::IntoIter<AccountComponent>;
 
+    /// Yields the [`AccountComponent`]s implementing this access control configuration, in the
+    /// order they must be installed on the account. The matching [`Authority`] component is
+    /// always included.
     fn into_iter(self) -> Self::IntoIter {
         match self {
-            AccessControl::AuthControlled { auth: _ } => {
-                vec![Authority::AuthControlled.into()].into_iter()
-            },
-            AccessControl::Ownable2Step { owner, auth: _ } => {
+            AccessControl::Ownable2Step { owner } => {
                 vec![Ownable2Step::new(owner).into(), Authority::OwnerControlled.into()].into_iter()
             },
-            AccessControl::Rbac { owner, authority_role: None, auth: _ } => vec![
+            AccessControl::Rbac { owner, authority_role: None } => vec![
                 Ownable2Step::new(owner).into(),
                 RoleBasedAccessControl::empty().into(),
                 Authority::OwnerControlled.into(),
             ]
             .into_iter(),
-            AccessControl::Rbac {
-                owner,
-                authority_role: Some(role),
-                auth: _,
-            } => vec![
+            AccessControl::Rbac { owner, authority_role: Some(role) } => vec![
                 Ownable2Step::new(owner).into(),
                 RoleBasedAccessControl::empty().into(),
                 Authority::RbacControlled { role }.into(),

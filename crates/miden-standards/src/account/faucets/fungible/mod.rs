@@ -32,18 +32,12 @@ use super::{
     TokenMetadataError,
     TokenName,
 };
-use crate::account::access::AccessControl;
+use crate::account::access::{AccessControl, Authority};
 use crate::account::account_component_code;
-use crate::account::auth::{
-    AuthNetworkAccount,
-    AuthSingleSig,
-    AuthSingleSigAcl,
-    AuthSingleSigAclConfig,
-    NoAuth,
-};
+use crate::account::auth::{AccountAuthComponent, AccountAuthScheme, AuthSingleSigAclConfig};
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
 use crate::account::policies::TokenPolicyManager;
-use crate::{AuthMethod, procedure_root};
+use crate::procedure_root;
 
 #[cfg(test)]
 mod tests;
@@ -290,9 +284,9 @@ impl FungibleFaucet {
     }
 
     /// Returns the procedure root of the `set_max_supply` account procedure. This is an
-    /// authority-gated setter; under
-    /// [`AccessControl::AuthControlled`][crate::account::access::AccessControl::AuthControlled]
-    /// it must appear in the auth component's trigger procedure list.
+    /// authority-gated setter; when paired with `Authority::AuthControlled` (via
+    /// [`create_user_fungible_faucet`]) it must appear in the auth component's trigger
+    /// procedure list.
     pub fn set_max_supply_root() -> AccountProcedureRoot {
         *FUNGIBLE_FAUCET_SET_MAX_SUPPLY
     }
@@ -563,15 +557,10 @@ impl TryFrom<&Account> for FungibleFaucet {
 
 /// Returns every authority-gated setter procedure root exported by a fungible faucet account.
 ///
-/// Under [`AccessControl::AuthControlled`] the auth component must authenticate calls to all
-/// of these procedures, otherwise the setters become permissionless. This list is the single
-/// source of truth used by [`create_fungible_faucet`] when configuring
-/// [`AuthSingleSigAcl`]'s trigger procedure list.
-///
-/// Includes `mint_and_send` so that minting always requires a signature regardless of access
-/// control configuration. `receive_and_burn` is intentionally **excluded**: it is only
-/// invoked from a note context (i.e., by an incoming burn note), and faucets accept those
-/// without a signature.
+/// Under [`Authority::AuthControlled`] the auth component must authenticate calls to all of
+/// these procedures, otherwise the setters become permissionless. This list is the single
+/// source of truth used by [`create_user_fungible_faucet`] when configuring the
+/// [`AuthSingleSigAcl`][crate::account::auth::AuthSingleSigAcl] trigger procedure list.
 fn all_authority_gated_setter_roots() -> Vec<AccountProcedureRoot> {
     vec![
         FungibleFaucet::mint_and_send_root(),
@@ -586,30 +575,74 @@ fn all_authority_gated_setter_roots() -> Vec<AccountProcedureRoot> {
     ]
 }
 
-/// Creates a new fungible faucet account.
+/// Creates a new **user-account** fungible faucet. The account's auth component is the sole
+/// gate for authority-protected setters ([`Authority::AuthControlled`] is installed directly).
 ///
-/// `access_control` carries both the setter access gate and the account's [`AuthMethod`]:
+/// The caller provides any [`AccountAuthComponent`]; the factory validates the scheme:
 ///
-/// - [`AccessControl::AuthControlled { auth }`] — `auth` is the sole gate for authority-gated
-///   setters. For [`AuthMethod::NetworkAccount`], the caller is responsible for choosing
-///   `allowed_script_roots` that exclude unauthorized setter invocations.
-/// - [`AccessControl::Ownable2Step`] / [`AccessControl::Rbac`] — setter gate is enforced
-///   in-procedure (owner / role check), so any [`AuthMethod`] is accepted.
-///
-/// The faucet itself, including all token metadata, is provided in the `faucet` parameter (see
-/// [`FungibleFaucet::builder`]).
-pub fn create_fungible_faucet(
+/// - [`AccountAuthScheme::SingleSig`]: rejected — under AuthControlled, every authority-gated
+///   setter must be tracked by the auth component. Construct an ACL via
+///   [`AccountAuthComponent::single_sig_acl`] instead (the trigger list is irrelevant; the factory
+///   rebuilds it).
+/// - [`AccountAuthScheme::SingleSigAcl`]: the factory installs the provided component as-is;
+///   callers should already have populated the trigger list with every authority-gated setter root.
+///   [`user_faucet_single_sig_acl`] is the recommended convenience constructor.
+/// - [`AccountAuthScheme::NoAuth`]: rejected via
+///   [`FungibleFaucetError::IncompatibleAuthControlledAuth`] — would leave setters permissionless.
+/// - [`AccountAuthScheme::NetworkAccount`]: rejected — network-style faucets must use
+///   [`create_network_fungible_faucet`] with [`AccessControl::Ownable2Step`] or
+///   [`AccessControl::Rbac`].
+/// - [`AccountAuthScheme::Custom`]: accepted; the caller is responsible for ensuring the custom
+///   auth component authenticates every authority-gated setter root.
+/// - Multisig variants: rejected via [`FungibleFaucetError::UnsupportedAuthMethod`].
+pub fn create_user_fungible_faucet(
     init_seed: [u8; 32],
     faucet: FungibleFaucet,
-    access_control: AccessControl,
+    auth_component: AccountAuthComponent,
     token_policy_manager: TokenPolicyManager,
     account_type: AccountType,
 ) -> Result<Account, FungibleFaucetError> {
-    let auth_component = build_auth_component(&access_control)?;
+    let auth_component = validate_user_faucet_auth(auth_component)?;
 
     let account = AccountBuilder::new(init_seed)
         .account_type(account_type)
-        .with_auth_component(auth_component)
+        .with_auth_component(auth_component.into_inner())
+        .with_component(faucet)
+        .with_component(Authority::AuthControlled)
+        .with_components(token_policy_manager)
+        .build()
+        .map_err(FungibleFaucetError::AccountError)?;
+
+    Ok(account)
+}
+
+/// Creates a new **network-style** fungible faucet. Setter gating is enforced in-procedure by
+/// the owner / role check installed via `access_control` ([`AccessControl::Ownable2Step`] or
+/// [`AccessControl::Rbac`]). The auth component only governs the faucet's own transaction
+/// authentication.
+///
+/// Validates the auth scheme:
+///
+/// - [`AccountAuthScheme::NetworkAccount`], [`AccountAuthScheme::NoAuth`],
+///   [`AccountAuthScheme::Custom`]: accepted.
+/// - [`AccountAuthScheme::SingleSig`], [`AccountAuthScheme::SingleSigAcl`]: rejected via
+///   [`FungibleFaucetError::UnsupportedAccessControlAuthCombination`] — SingleSig is for
+///   user-account faucets (see [`create_user_fungible_faucet`]); pairing it here duplicates the
+///   setter check with a per-tx signature that doesn't add security.
+/// - Multisig variants: rejected via [`FungibleFaucetError::UnsupportedAuthMethod`].
+pub fn create_network_fungible_faucet(
+    init_seed: [u8; 32],
+    faucet: FungibleFaucet,
+    access_control: AccessControl,
+    auth_component: AccountAuthComponent,
+    token_policy_manager: TokenPolicyManager,
+    account_type: AccountType,
+) -> Result<Account, FungibleFaucetError> {
+    let auth_component = validate_network_faucet_auth(auth_component)?;
+
+    let account = AccountBuilder::new(init_seed)
+        .account_type(account_type)
+        .with_auth_component(auth_component.into_inner())
         .with_component(faucet)
         .with_components(access_control)
         .with_components(token_policy_manager)
@@ -619,73 +652,83 @@ pub fn create_fungible_faucet(
     Ok(account)
 }
 
-/// Builds the account-level auth component from the [`AuthMethod`] embedded in
-/// `access_control`.
-fn build_auth_component(
-    access_control: &AccessControl,
-) -> Result<AccountComponent, FungibleFaucetError> {
-    let auth = access_control.auth_method();
-
-    if let AccessControl::AuthControlled { .. } = access_control {
-        // AuthControlled: the auth component is the only setter gate.
-        return match auth {
-            AuthMethod::SingleSig { approver: (pub_key, auth_scheme) } => {
-                let component = AuthSingleSigAcl::new(
-                    *pub_key,
-                    *auth_scheme,
-                    AuthSingleSigAclConfig::new()
-                        .with_auth_trigger_procedures(all_authority_gated_setter_roots())
-                        .with_allow_unauthorized_input_notes(true),
-                )
-                .map_err(FungibleFaucetError::AccountError)?
-                .into();
-                Ok(component)
-            },
-            AuthMethod::NetworkAccount { allowed_script_roots } => {
-                let component = AuthNetworkAccount::with_allowlist(allowed_script_roots.clone())
-                    .map_err(|err| {
-                        FungibleFaucetError::UnsupportedAuthMethod(alloc::format!(
-                            "invalid network account allowlist: {err}"
-                        ))
-                    })?
-                    .into();
-                Ok(component)
-            },
-            AuthMethod::NoAuth => Err(FungibleFaucetError::IncompatibleAuthControlledAuth(
-                "NoAuth cannot authenticate authority-gated setters under AuthControlled; \
-                 use AccessControl::Ownable2Step or AccessControl::Rbac for owner-gated faucets, \
-                 or pair AuthControlled with SingleSig / NetworkAccount."
+/// Validates and (when needed) rewrites the auth component for a user-account faucet.
+///
+/// For [`AccountAuthScheme::SingleSigAcl`] the configured ACL is left intact — the caller is
+/// trusted to have included all authority-gated setter roots in the trigger list. Use
+/// [`all_authority_gated_setter_roots`] when constructing the ACL configuration.
+fn validate_user_faucet_auth(
+    auth_component: AccountAuthComponent,
+) -> Result<AccountAuthComponent, FungibleFaucetError> {
+    match auth_component.scheme() {
+        AccountAuthScheme::SingleSigAcl => Ok(auth_component),
+        AccountAuthScheme::Custom => Ok(auth_component),
+        AccountAuthScheme::SingleSig => {
+            Err(FungibleFaucetError::UnsupportedAccessControlAuthCombination(
+                "plain SingleSig cannot gate authority-protected setters under AuthControlled; \
+                 use AccountAuthComponent::single_sig_acl with all_authority_gated_setter_roots() \
+                 as the trigger list."
                     .into(),
-            )),
-            AuthMethod::Multisig { .. } => Err(FungibleFaucetError::UnsupportedAuthMethod(
-                "fungible faucets do not support Multisig authentication".into(),
-            )),
-            AuthMethod::Unknown => Err(FungibleFaucetError::UnsupportedAuthMethod(
-                "fungible faucets cannot be created with Unknown authentication method".into(),
-            )),
-        };
-    }
-
-    match auth {
-        AuthMethod::SingleSig { approver: (pub_key, auth_scheme) } => {
-            Ok(AuthSingleSig::new(*pub_key, *auth_scheme).into())
+            ))
         },
-        AuthMethod::NoAuth => Ok(NoAuth::new().into()),
-        AuthMethod::NetworkAccount { allowed_script_roots } => {
-            let component = AuthNetworkAccount::with_allowlist(allowed_script_roots.clone())
-                .map_err(|err| {
-                    FungibleFaucetError::UnsupportedAuthMethod(alloc::format!(
-                        "invalid network account allowlist: {err}"
-                    ))
-                })?
-                .into();
-            Ok(component)
+        AccountAuthScheme::NoAuth => Err(FungibleFaucetError::IncompatibleAuthControlledAuth(
+            "NoAuth cannot authenticate authority-gated setters".into(),
+        )),
+        AccountAuthScheme::NetworkAccount => {
+            Err(FungibleFaucetError::UnsupportedAccessControlAuthCombination(
+                "NetworkAccount is only supported with create_network_fungible_faucet \
+                 (AccessControl::Ownable2Step / Rbac)"
+                    .into(),
+            ))
         },
-        AuthMethod::Multisig { .. } => Err(FungibleFaucetError::UnsupportedAuthMethod(
+        AccountAuthScheme::Multisig
+        | AccountAuthScheme::GuardedMultisig
+        | AccountAuthScheme::MultisigSmart => Err(FungibleFaucetError::UnsupportedAuthMethod(
             "fungible faucets do not support Multisig authentication".into(),
         )),
-        AuthMethod::Unknown => Err(FungibleFaucetError::UnsupportedAuthMethod(
-            "fungible faucets cannot be created with Unknown authentication method".into(),
+    }
+}
+
+/// Validates the auth component for a network-style faucet. SingleSig variants are rejected;
+/// network or no-auth (and custom) are allowed.
+fn validate_network_faucet_auth(
+    auth_component: AccountAuthComponent,
+) -> Result<AccountAuthComponent, FungibleFaucetError> {
+    match auth_component.scheme() {
+        AccountAuthScheme::NetworkAccount
+        | AccountAuthScheme::NoAuth
+        | AccountAuthScheme::Custom => Ok(auth_component),
+        AccountAuthScheme::SingleSig | AccountAuthScheme::SingleSigAcl => {
+            Err(FungibleFaucetError::UnsupportedAccessControlAuthCombination(
+                "SingleSig is only supported with create_user_fungible_faucet \
+                 (AccessControl::AuthControlled)"
+                    .into(),
+            ))
+        },
+        AccountAuthScheme::Multisig
+        | AccountAuthScheme::GuardedMultisig
+        | AccountAuthScheme::MultisigSmart => Err(FungibleFaucetError::UnsupportedAuthMethod(
+            "fungible faucets do not support Multisig authentication".into(),
         )),
     }
+}
+
+/// Convenience constructor for the typical user-account faucet auth component:
+/// [`AccountAuthComponent::single_sig_acl`] with the trigger procedure list covering every
+/// authority-gated setter and `allow_unauthorized_input_notes=true`.
+///
+/// Use this when calling [`create_user_fungible_faucet`] with `AuthScheme::Falcon512Poseidon2`
+/// or `AuthScheme::EcdsaK256Keccak` to ensure every authority-gated setter forces a signature.
+pub fn user_faucet_single_sig_acl(
+    pub_key: miden_protocol::account::auth::PublicKeyCommitment,
+    scheme: miden_protocol::account::auth::AuthScheme,
+) -> Result<AccountAuthComponent, FungibleFaucetError> {
+    AccountAuthComponent::single_sig_acl(
+        pub_key,
+        scheme,
+        AuthSingleSigAclConfig::new()
+            .with_auth_trigger_procedures(all_authority_gated_setter_roots())
+            .with_allow_unauthorized_input_notes(true),
+    )
+    .map_err(FungibleFaucetError::AccountError)
 }

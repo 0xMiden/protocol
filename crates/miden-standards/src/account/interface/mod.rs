@@ -6,7 +6,7 @@ use miden_protocol::note::PartialNote;
 use miden_protocol::transaction::TransactionScript;
 use thiserror::Error;
 
-use crate::AuthMethod;
+use crate::account::auth::AccountAuthScheme;
 use crate::code_builder::CodeBuilder;
 use crate::errors::CodeBuilderError;
 
@@ -25,7 +25,7 @@ pub use extension::{AccountComponentInterfaceExt, AccountInterfaceExt};
 /// An [`AccountInterface`] describes the exported, callable procedures of an account.
 pub struct AccountInterface {
     account_id: AccountId,
-    auth: Vec<AuthMethod>,
+    auth: Vec<AccountAuthScheme>,
     components: Vec<AccountComponentInterface>,
 }
 
@@ -39,7 +39,7 @@ impl AccountInterface {
     /// schemes and account component interfaces.
     pub fn new(
         account_id: AccountId,
-        auth: Vec<AuthMethod>,
+        auth: Vec<AccountAuthScheme>,
         components: Vec<AccountComponentInterface>,
     ) -> Self {
         Self { account_id, auth, components }
@@ -70,8 +70,9 @@ impl AccountInterface {
         self.account_id.is_public()
     }
 
-    /// Returns a reference to the vector of used authentication methods.
-    pub fn auth(&self) -> &Vec<AuthMethod> {
+    /// Returns a reference to the vector of [`AccountAuthScheme`] tags identifying each
+    /// authentication component installed on the account.
+    pub fn auth(&self) -> &Vec<AccountAuthScheme> {
         &self.auth
     }
 
@@ -109,8 +110,9 @@ impl AccountInterface {
     ///
     ///     push.{note information}
     ///
-    ///     push.{asset amount}
-    ///     call.::miden::standards::faucets::fungible::mint_and_send dropw dropw drop
+    ///     push.{ASSET_VALUE} push.{ASSET_KEY}
+    ///     call.::miden::standards::faucets::fungible::mint_and_send
+    ///     swapdw dropw dropw swapdw dropw dropw
     /// end
     /// ```
     ///
