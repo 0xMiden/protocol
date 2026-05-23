@@ -17,6 +17,7 @@ use miden::protocol::asset::FUNGIBLE_ASSET_MAX_AMOUNT
 use miden::standards::access::authority
 use miden::standards::faucets::policies::policy_manager
 use miden::standards::faucets::MUTABILITY_CONFIG_SLOT
+use miden::standards::access::pausable
 
 # =================================================================================================
 # CONSTANTS — slot names
@@ -184,6 +185,9 @@ pub proc set_max_supply
 
     # 2. Verify the caller satisfies the account-wide authority configuration
     exec.authority::assert_authorized
+    # => [new_max_supply, pad(15)]
+
+    exec.pausable::assert_not_paused
     # => [new_max_supply, pad(15)]
 
     # 3. Read current token config word
