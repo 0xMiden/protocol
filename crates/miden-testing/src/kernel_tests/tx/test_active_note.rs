@@ -21,12 +21,12 @@ use miden_protocol::testing::account_id::{
     ACCOUNT_ID_SENDER,
 };
 use miden_protocol::transaction::memory::{ASSET_SIZE, ASSET_VALUE_OFFSET};
-use miden_protocol::{EMPTY_WORD, Felt, ONE, WORD_SIZE, Word};
+use miden_protocol::{EMPTY_WORD, Felt, ONE, WORD_SIZE, Word, ZERO};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::mock_account::MockAccountExt;
 
 use crate::kernel_tests::tx::ExecutionOutputExt;
-use crate::utils::create_public_p2any_note;
+use crate::utils::{create_p2any_note, create_public_p2any_note};
 use crate::{
     Auth,
     MockChain,
@@ -121,6 +121,60 @@ async fn test_active_note_get_metadata() -> anyhow::Result<()> {
         METADATA_HEADER = tx_context.input_notes().get_note(0).note().metadata().to_header_word(),
         NOTE_ATTACHMENT =
             tx_context.input_notes().get_note(0).note().metadata().to_attachment_word()
+    );
+
+    tx_context.execute_code(&code).await?;
+
+    Ok(())
+}
+
+/// `is_note_public` returns 1 for a public active note and 0 for a private one.
+#[rstest::rstest]
+#[case::public(NoteType::Public, ONE)]
+#[case::private(NoteType::Private, ZERO)]
+#[tokio::test]
+async fn test_active_note_is_note_public(
+    #[case] note_type: NoteType,
+    #[case] expected_is_public: Felt,
+) -> anyhow::Result<()> {
+    let tx_context = {
+        let account =
+            Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
+        let mut rng = RandomCoin::new(Default::default());
+        let input_note = create_p2any_note(
+            ACCOUNT_ID_SENDER.try_into().unwrap(),
+            note_type,
+            [FungibleAsset::mock(100)],
+            &mut rng,
+        );
+        TransactionContextBuilder::new(account)
+            .extend_input_notes(vec![input_note])
+            .build()?
+    };
+
+    let code = format!(
+        r#"
+        use $kernel::prologue
+        use $kernel::note->note_internal
+        use miden::standards::note::metadata
+
+        begin
+            exec.prologue::prepare_transaction
+            exec.note_internal::prepare_note
+            dropw dropw dropw dropw
+
+            # check whether the active note is public
+            exec.metadata::is_note_public
+            # => [is_public]
+
+            push.{expected_is_public}
+            assert_eq.err="active note public flag did not match expected value"
+            # => []
+
+            # truncate the stack
+            swapw dropw
+        end
+        "#,
     );
 
     tx_context.execute_code(&code).await?;

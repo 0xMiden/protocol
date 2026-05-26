@@ -2,6 +2,7 @@ extern crate alloc;
 
 use miden_agglayer::errors::{
     ERR_B2AGG_DESTINATION_NETWORK_IS_MIDEN,
+    ERR_B2AGG_NOTE_MUST_BE_PUBLIC,
     ERR_B2AGG_TARGET_ACCOUNT_MISMATCH,
     ERR_FAUCET_NOT_REGISTERED,
 };
@@ -29,12 +30,13 @@ use miden_protocol::account::{
     StorageMapKey,
 };
 use miden_protocol::asset::{Asset, FungibleAsset};
-use miden_protocol::note::{NoteAssets, NoteType};
+use miden_protocol::errors::MasmError;
+use miden_protocol::note::{Note, NoteAssets, NoteAttachment, NoteMetadata, NoteType};
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
 use miden_standards::account::faucets::TokenMetadata;
 use miden_standards::account::mint_policies::OwnerControlledInitConfig;
-use miden_standards::note::StandardNote;
+use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint, StandardNote};
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 use miden_tx::utils::hex_to_bytes;
 use rand::rngs::StdRng;
@@ -541,10 +543,37 @@ async fn test_bridge_out_fails_with_unregistered_faucet() -> anyhow::Result<()> 
     Ok(())
 }
 
-/// B2AGG / bridge-out must reject a note whose `destination_network` equals the Miden network ID,
-/// even when the faucet is registered and the rest of the bridge-out path would otherwise succeed.
+/// The kind of malformation applied to an otherwise-valid B2AGG note in
+/// [`test_bridge_out_rejects_invalid_b2agg_note`].
+#[derive(Debug, Clone, Copy)]
+enum InvalidB2aggNote {
+    /// `destination_network` equals Miden's AggLayer network ID.
+    DestinationIsMiden,
+    /// Recipient-identical note marked `NoteType::Private` instead of public.
+    PrivateNoteType,
+}
+
+/// B2AGG / bridge-out must reject malformed notes even when the faucet is registered and the rest
+/// of the bridge-out path would otherwise succeed.
+///
+/// - `DestinationIsMiden`: the destination network equals Miden's own network ID, which
+///   `bridge_out` rejects outright.
+/// - `PrivateNoteType`: the note type lives in `NoteMetadata`, not in the recipient commitment, so
+///   an attacker can assemble a note with an identical recipient/attachment/asset but
+///   `NoteType::Private`. If accepted, the leaf would be folded into the on-chain Local Exit Tree
+///   while AggLayer's off-chain indexer (aggkit) could never recover the pre-image, permanently
+///   desyncing the LET mirror. The bridge branch must reject it.
+#[rstest::rstest]
+#[case::destination_is_miden(
+    InvalidB2aggNote::DestinationIsMiden,
+    ERR_B2AGG_DESTINATION_NETWORK_IS_MIDEN
+)]
+#[case::private_note_type(InvalidB2aggNote::PrivateNoteType, ERR_B2AGG_NOTE_MUST_BE_PUBLIC)]
 #[tokio::test]
-async fn test_bridge_out_fails_when_destination_is_miden_network() -> anyhow::Result<()> {
+async fn test_bridge_out_rejects_invalid_b2agg_note(
+    #[case] invalid_note: InvalidB2aggNote,
+    #[case] expected_err: MasmError,
+) -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     // CREATE BRIDGE ADMIN ACCOUNT (sends CONFIG_AGG_BRIDGE notes)
@@ -607,9 +636,7 @@ async fn test_bridge_out_fails_when_destination_is_miden_network() -> anyhow::Re
     )?;
     builder.add_output_note(RawOutputNote::Full(config_note.clone()));
 
-    // CREATE B2AGG NOTE (targets the bridge)
-    // Set destination_network to exactly `AggLayerBridge::MIDEN_NETWORK_ID` so `bridge_out`
-    // fails immediately.
+    // CREATE THE INVALID B2AGG NOTE (targets the bridge)
     // --------------------------------------------------------------------------------------------
     let amount = Felt::new(100);
     let bridge_asset: Asset =
@@ -617,14 +644,39 @@ async fn test_bridge_out_fails_when_destination_is_miden_network() -> anyhow::Re
     let eth_address =
         EthAddress::from_hex(&vectors.destination_addresses[0]).expect("valid destination address");
 
-    let b2agg_note = B2AggNote::create(
-        AggLayerBridge::MIDEN_NETWORK_ID,
-        eth_address,
-        NoteAssets::new(vec![bridge_asset])?,
-        bridge_account.id(),
-        faucet.id(),
-        builder.rng_mut(),
-    )?;
+    let b2agg_note = match invalid_note {
+        // Destination network equals Miden's own network ID, which `bridge_out` rejects.
+        InvalidB2aggNote::DestinationIsMiden => B2AggNote::create(
+            AggLayerBridge::MIDEN_NETWORK_ID,
+            eth_address,
+            NoteAssets::new(vec![bridge_asset])?,
+            bridge_account.id(),
+            faucet.id(),
+            builder.rng_mut(),
+        )?,
+        // Build a legitimate (public) B2AGG note with a valid destination network, then assemble an
+        // attack note reusing its exact recipient and assets but flipping the note type to Private.
+        // The note type is not part of the recipient commitment, so the two notes share a recipient
+        // and are indistinguishable to consensus apart from the type bit.
+        InvalidB2aggNote::PrivateNoteType => {
+            let public_note = B2AggNote::create(
+                origin_network,
+                eth_address,
+                NoteAssets::new(vec![bridge_asset])?,
+                bridge_account.id(),
+                faucet.id(),
+                builder.rng_mut(),
+            )?;
+
+            let attachment = NoteAttachment::from(
+                NetworkAccountTarget::new(bridge_account.id(), NoteExecutionHint::Always)
+                    .map_err(|e| anyhow::anyhow!(e.to_string()))?,
+            );
+            let metadata =
+                NoteMetadata::new(faucet.id(), NoteType::Private).with_attachment(attachment);
+            Note::new(public_note.assets().clone(), metadata, public_note.recipient().clone())
+        },
+    };
 
     builder.add_output_note(RawOutputNote::Full(b2agg_note.clone()));
 
@@ -644,7 +696,7 @@ async fn test_bridge_out_fails_when_destination_is_miden_network() -> anyhow::Re
     mock_chain.add_pending_executed_transaction(&config_executed)?;
     mock_chain.prove_next_block()?;
 
-    // TX1: EXECUTE B2AGG NOTE AGAINST BRIDGE (must fail: destination_network is Miden's ID)
+    // TX1: EXECUTE THE INVALID B2AGG NOTE AGAINST BRIDGE (must fail)
     // --------------------------------------------------------------------------------------------
     let foreign_account_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
 
@@ -655,7 +707,7 @@ async fn test_bridge_out_fails_when_destination_is_miden_network() -> anyhow::Re
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_B2AGG_DESTINATION_NETWORK_IS_MIDEN);
+    assert_transaction_executor_error!(result, expected_err);
 
     Ok(())
 }
