@@ -560,7 +560,7 @@ end
 
 #! Computes the SERIAL_NUM of the outputted BURN note.
 #!
-#! The serial number is computed as hash(B2AGG_SERIAL_NUM, ASSET_KEY).
+#! The serial number is computed as hash([leaf_count, 0, 0, 0], hash(B2AGG_SERIAL_NUM, ASSET_KEY))).
 #!
 #! Inputs:  [ASSET_KEY]
 #! Outputs: [SERIAL_NUM]
@@ -568,11 +568,20 @@ end
 #! Where:
 #! - ASSET_KEY is the vault key from which to compute the burn note serial number.
 #! - SERIAL_NUM is the computed serial number for the BURN note.
+#! - leaf_count is the number of leaves in the Local Exit Tree.
 #!
 #! Invocation: exec
 proc compute_burn_note_serial_num
     exec.active_note::get_serial_number
     # => [B2AGG_SERIAL_NUM, ASSET_KEY]
+
+    exec.poseidon2::merge
+    # => [SERIAL_AND_ASSET_HASH]
+
+    # load num_leaves from its value slot and merge it with the intermediate hash word
+    push.LET_NUM_LEAVES_SLOT[0..2]
+    exec.active_account::get_item
+    # => [num_leaves, 0, 0, 0, SERIAL_AND_ASSET_HASH]
 
     exec.poseidon2::merge
     # => [SERIAL_NUM]
