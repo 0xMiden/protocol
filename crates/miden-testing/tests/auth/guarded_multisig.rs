@@ -204,10 +204,13 @@ async fn test_guarded_multisig_signature_required(
         .extend_expected_output_notes(vec![RawOutputNote::Full(output_note)])
         .auth_args(salt);
 
-    let tx_summary = match tx_context_builder.clone().build()?.execute().await.unwrap_err() {
-        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
-        error => anyhow::bail!("expected abort with tx effects: {error}"),
-    };
+    let tx_summary = tx_context_builder
+        .clone()
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
     let msg = tx_summary.as_ref().to_commitment();
     let tx_summary_signing = SigningInputs::TransactionSummary(tx_summary);
 
@@ -311,10 +314,13 @@ async fn test_guarded_multisig_update_guardian_public_key(
         .tx_script(update_guardian_script)
         .auth_args(update_salt);
 
-    let tx_summary = match tx_context_builder.clone().build()?.execute().await.unwrap_err() {
-        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
-        error => anyhow::bail!("expected abort with tx effects: {error}"),
-    };
+    let tx_summary = tx_context_builder
+        .clone()
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
 
     let update_msg = tx_summary.as_ref().to_commitment();
     let tx_summary_signing = SigningInputs::TransactionSummary(tx_summary);
@@ -462,10 +468,13 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
         .tx_script(update_guardian_script)
         .auth_args(salt);
 
-    let tx_summary = match tx_context_builder.clone().build()?.execute().await.unwrap_err() {
-        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
-        error => anyhow::bail!("expected abort with tx effects: {error}"),
-    };
+    let tx_summary = tx_context_builder
+        .clone()
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
 
     let msg = tx_summary.as_ref().to_commitment();
     let tx_summary_signing = SigningInputs::TransactionSummary(tx_summary);
@@ -541,10 +550,13 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
         .extend_expected_output_notes(vec![RawOutputNote::Full(output_note)])
         .auth_args(salt);
 
-    let tx_summary = match tx_context_builder.clone().build()?.execute().await.unwrap_err() {
-        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
-        error => anyhow::bail!("expected abort with tx effects: {error}"),
-    };
+    let tx_summary = tx_context_builder
+        .clone()
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
 
     let msg = tx_summary.as_ref().to_commitment();
     let tx_summary_signing = SigningInputs::TransactionSummary(tx_summary);
@@ -673,10 +685,13 @@ async fn test_guarded_multisig_update_guardian_enforces_no_notes(
         tx_context_builder =
             tx_context_builder.extend_expected_output_notes(vec![RawOutputNote::Full(out)]);
     }
-    let tx_summary = match tx_context_builder.clone().build()?.execute().await.unwrap_err() {
-        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
-        error => anyhow::bail!("expected dry-run abort with tx effects: {error}"),
-    };
+    let tx_summary = tx_context_builder
+        .clone()
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
 
     let msg = tx_summary.as_ref().to_commitment();
     let signing = SigningInputs::TransactionSummary(tx_summary);

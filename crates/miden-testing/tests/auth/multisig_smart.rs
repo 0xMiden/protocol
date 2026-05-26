@@ -19,7 +19,6 @@ use miden_standards::errors::standards::{
     ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_OUTPUT_NOTES,
 };
 use miden_testing::{MockChainBuilder, assert_transaction_executor_error};
-use miden_tx::TransactionExecutorError;
 use miden_tx::auth::{SigningInputs, TransactionAuthenticator};
 use rstest::rstest;
 
@@ -107,10 +106,13 @@ async fn test_multisig_smart_receive_asset_policy_overrides_default_three_of_thr
         .build_tx_context(multisig_account.id(), &[note.id()], &[])?
         .auth_args(salt);
 
-    let tx_summary = match tx_context_builder.clone().build()?.execute().await.unwrap_err() {
-        TransactionExecutorError::Unauthorized(tx_summary) => tx_summary,
-        error => panic!("expected abort with tx summary: {error:?}"),
-    };
+    let tx_summary = tx_context_builder
+        .clone()
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
 
     let msg = tx_summary.as_ref().to_commitment();
     let tx_summary_signing = SigningInputs::TransactionSummary(tx_summary);
@@ -194,10 +196,7 @@ async fn test_multisig_smart_enforces_note_restrictions_on_tx_with_input_notes(
             );
         },
         ProcedurePolicyNoteRestriction::None | ProcedurePolicyNoteRestriction::NoOutputNotes => {
-            match result {
-                Err(TransactionExecutorError::Unauthorized(_)) => {},
-                other => panic!("expected Unauthorized (no signatures provided), got: {other:?}"),
-            }
+            result.unwrap_err().unwrap_unauthorized_err();
         },
     }
 
@@ -272,10 +271,7 @@ async fn test_multisig_smart_enforces_note_restrictions_on_tx_with_output_notes(
             );
         },
         ProcedurePolicyNoteRestriction::None | ProcedurePolicyNoteRestriction::NoInputNotes => {
-            match result {
-                Err(TransactionExecutorError::Unauthorized(_)) => {},
-                other => panic!("expected Unauthorized (no signatures provided), got: {other:?}"),
-            }
+            result.unwrap_err().unwrap_unauthorized_err();
         },
     }
 
@@ -336,10 +332,13 @@ async fn test_multisig_smart_update_signers_and_thresholds(
         .auth_args(salt);
 
     // Dry-run to obtain the tx summary that the current approvers must sign.
-    let tx_summary = match tx_context_builder.clone().build()?.execute().await.unwrap_err() {
-        TransactionExecutorError::Unauthorized(tx_summary) => tx_summary,
-        error => panic!("expected abort with tx summary: {error:?}"),
-    };
+    let tx_summary = tx_context_builder
+        .clone()
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
 
     let msg = tx_summary.as_ref().to_commitment();
     let signing_inputs = SigningInputs::TransactionSummary(tx_summary);
@@ -432,10 +431,13 @@ async fn test_multisig_smart_set_procedure_policy(
         .auth_args(salt);
 
     // Dry-run to obtain the tx summary that the approvers must sign.
-    let tx_summary = match tx_context_builder.clone().build()?.execute().await.unwrap_err() {
-        TransactionExecutorError::Unauthorized(tx_summary) => tx_summary,
-        error => panic!("expected abort with tx summary: {error:?}"),
-    };
+    let tx_summary = tx_context_builder
+        .clone()
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
 
     let msg = tx_summary.as_ref().to_commitment();
     let signing_inputs = SigningInputs::TransactionSummary(tx_summary);
@@ -533,10 +535,13 @@ async fn test_multisig_smart_unpolicied_proc_call_requires_default_threshold() -
         .auth_args(salt);
 
     // Dry-run to capture the tx summary.
-    let tx_summary = match tx_context_builder.clone().build()?.execute().await.unwrap_err() {
-        TransactionExecutorError::Unauthorized(tx_summary) => tx_summary,
-        error => panic!("expected dry-run abort with tx summary: {error:?}"),
-    };
+    let tx_summary = tx_context_builder
+        .clone()
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
 
     let msg = tx_summary.as_ref().to_commitment();
     let signing = SigningInputs::TransactionSummary(tx_summary);
@@ -558,12 +563,7 @@ async fn test_multisig_smart_unpolicied_proc_call_requires_default_threshold() -
         .build()?
         .execute()
         .await;
-    match one_sig_result {
-        Err(TransactionExecutorError::Unauthorized(_)) => {},
-        other => {
-            panic!("expected Unauthorized with 1 sig (escalation would let it pass): {other:?}")
-        },
-    }
+    one_sig_result.unwrap_err().unwrap_unauthorized_err();
 
     // With all 3 signatures the unpolicied default contribution is met and the tx succeeds.
     let three_sig_result = tx_context_builder
