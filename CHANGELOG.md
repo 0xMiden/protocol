@@ -1,5 +1,7 @@
 # Changelog
 
+## v0.16.0 (TBD)
+
 ## v0.15.0 (2026-05-22)
 
 ### Features
@@ -39,6 +41,7 @@
 - Added `TransactionScript::from_package()` method to create `TransactionScript` from `miden-mast-package::Package` ([#2779](https://github.com/0xMiden/protocol/pull/2779)).
 - [BREAKING] Removed unused `payback_attachment` from `SwapNoteStorage` and `attachment` from `MintNoteStorage` ([#2789](https://github.com/0xMiden/protocol/pull/2789)).
 - Automatically enable `concurrent` feature in `miden-tx` for `std` context ([#2791](https://github.com/0xMiden/protocol/pull/2791)).
+- Added `Pausable` standard component with `pause`, `unpause`, `is_paused` procedures and `on_before_asset_added_to_account`, `on_before_asset_added_to_note` callbacks ([#2793](https://github.com/0xMiden/protocol/pull/2793)).
 - Added trace row counts to `bench-tx.json` ([#2794](https://github.com/0xMiden/protocol/pull/2794)).
 - [BREAKING] Renamed `set_attachment` to `add_attachment`, `set_word_attachment` to `add_word_attachment`, and `set_array_attachment` to `add_array_attachment` in `miden::protocol::output_note` ([#2795](https://github.com/0xMiden/protocol/pull/2795), [#2849](https://github.com/0xMiden/protocol/pull/2849)).
 - Added foundations for `AuthMultisigSmart` ([#2806](https://github.com/0xMiden/protocol/pull/2806)).
@@ -86,6 +89,7 @@
 - Fixed `LocalTransactionProver` accumulating `MastForest` entries across `prove()` calls, causing `capacity_overflow` panics in WASM environments where linear memory fragmentation prevents subsequent allocations ([#2918](https://github.com/0xMiden/protocol/pull/2918)).
 - Fixed `TokenPolicyManager::manager_storage_slots` to register the protocol-reserved asset-callback storage slots whenever any transfer policy is configured (including `TransferAllowAll`), so every minted asset carries `AssetCallbackFlag::Enabled` and future `set_send_policy` / `set_receive_policy` switches apply uniformly to the entire circulating supply ([#2946](https://github.com/0xMiden/protocol/pull/2946)).
 - Fixed `create_fungible_faucet` leaving authority-gated setters unauthenticated under `AccessControl::AuthControlled`: the `AuthSingleSigAcl` trigger list now contains every authority-gated setter root (`set_max_supply`, `set_description`, `set_logo_uri`, `set_external_link`, `set_mint_policy`, `set_burn_policy`, `set_send_policy`, `set_receive_policy`) in addition to `mint_and_send`. ([#2958](https://github.com/0xMiden/protocol/pull/2958)).
+- [BREAKING] Added missing transaction `ref_block_commitment` validation in `ProposedBatch::new` ([#2971](https://github.com/0xMiden/protocol/pull/2971)).
 
 ## 0.14.6 (2026-05-09)
 
