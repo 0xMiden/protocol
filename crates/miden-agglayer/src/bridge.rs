@@ -1,5 +1,6 @@
 extern crate alloc;
 
+use alloc::collections::BTreeSet;
 use alloc::vec;
 use alloc::vec::Vec;
 
@@ -15,6 +16,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::block::account_tree::AccountIdKey;
 use miden_protocol::crypto::hash::poseidon2::Poseidon2;
+use miden_protocol::note::NoteScriptRoot;
 use miden_utils_sync::LazyLock;
 use thiserror::Error;
 
@@ -137,8 +139,8 @@ static LET_NUM_LEAVES_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// - [`Self::cgi_chain_hash_lo_slot_name`]: Stores the lower 128 bits of the CGI chain hash.
 /// - [`Self::cgi_chain_hash_hi_slot_name`]: Stores the upper 128 bits of the CGI chain hash.
 /// - [`Self::let_frontier_slot_name`]: Stores the Local Exit Tree (LET) frontier.
-/// - [`Self::let_root_lo_slot_name`]: Stores the lower 32 bits of the LET root.
-/// - [`Self::let_root_hi_slot_name`]: Stores the upper 32 bits of the LET root.
+/// - [`Self::let_root_lo_slot_name`]: Stores the lower 128 bits of the LET root.
+/// - [`Self::let_root_hi_slot_name`]: Stores the upper 128 bits of the LET root.
 /// - [`Self::let_num_leaves_slot_name`]: Stores the number of leaves in the LET frontier.
 ///
 /// The bridge starts with an empty faucet registry; faucets are registered at runtime via
@@ -249,6 +251,25 @@ impl AggLayerBridge {
         &LET_NUM_LEAVES_SLOT_NAME
     }
 
+    // ALLOWED NOTES
+    // --------------------------------------------------------------------------------------------
+
+    /// Returns the set of input-note script roots that AggLayer bridge accounts accept.
+    ///
+    /// The bridge's [`AuthNetworkAccount`] component is initialized with this allowlist, which
+    /// means any transaction consuming a note outside this set is rejected before reaching
+    /// `output_note::create`.
+    ///
+    /// [`AuthNetworkAccount`]: miden_standards::account::auth::AuthNetworkAccount
+    pub fn allowed_notes() -> BTreeSet<NoteScriptRoot> {
+        BTreeSet::from([
+            crate::claim_script_root(),
+            B2AggNote::script_root(),
+            ConfigAggBridgeNote::script_root(),
+            UpdateGerNote::script_root(),
+        ])
+    }
+
     /// Returns a boolean indicating whether the provided GER is present in storage of the provided
     /// bridge account.
     ///
@@ -258,10 +279,10 @@ impl AggLayerBridge {
     /// - the provided account is not an [`AggLayerBridge`] account.
     pub fn is_ger_registered(
         ger: ExitRoot,
-        bridge_account: Account,
+        bridge_account: &Account,
     ) -> Result<bool, AgglayerBridgeError> {
         // check that the provided account is a bridge account
-        Self::assert_bridge_account(&bridge_account)?;
+        Self::assert_bridge_account(bridge_account)?;
 
         // Compute the expected GER hash: poseidon2::merge(GER_LOWER, GER_UPPER)
         let ger_lower: Word = ger.to_elements()[0..4].try_into().unwrap();

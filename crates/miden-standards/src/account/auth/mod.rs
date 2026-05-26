@@ -12,3 +12,10 @@ pub use multisig::{AuthMultisig, AuthMultisigConfig};
 
 mod multisig_psm;
 pub use multisig_psm::{AuthMultisigPsm, AuthMultisigPsmConfig, PsmConfig};
+
+mod network_account;
+pub use network_account::{
+    AuthNetworkAccount,
+    NetworkAccountNoteAllowlist,
+    NetworkAccountNoteAllowlistError,
+};

@@ -9,7 +9,6 @@ use alloc::string::ToString;
 use alloc::vec;
 
 use miden_assembly::serde::Deserializable;
-use miden_core::Word;
 use miden_core::program::Program;
 use miden_protocol::account::AccountId;
 use miden_protocol::crypto::rand::FeltRng;
@@ -21,6 +20,7 @@ use miden_protocol::note::{
     NoteMetadata,
     NoteRecipient,
     NoteScript,
+    NoteScriptRoot,
     NoteStorage,
     NoteType,
 };
@@ -65,7 +65,7 @@ impl UpdateGerNote {
     }
 
     /// Returns the UPDATE_GER note script root.
-    pub fn script_root() -> Word {
+    pub fn script_root() -> NoteScriptRoot {
         UPDATE_GER_SCRIPT.root()
     }
 

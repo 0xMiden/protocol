@@ -76,6 +76,15 @@ static NO_AUTH_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     Library::read_from_bytes(bytes).expect("Shipped NoAuth library is well-formed")
 });
 
+// Initialize the AuthNetworkAccount library only once.
+static NETWORK_ACCOUNT_AUTH_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+    let bytes = include_bytes!(concat!(
+        env!("OUT_DIR"),
+        "/assets/account_components/auth/network_account.masl"
+    ));
+    Library::read_from_bytes(bytes).expect("Shipped AuthNetworkAccount library is well-formed")
+});
+
 // FAUCET LIBRARIES
 // ================================================================================================
 
@@ -175,6 +184,11 @@ pub fn no_auth_library() -> Library {
     NO_AUTH_LIBRARY.clone()
 }
 
+/// Returns the AuthNetworkAccount Library.
+pub fn network_account_auth_library() -> Library {
+    NETWORK_ACCOUNT_AUTH_LIBRARY.clone()
+}
+
 // STANDARD ACCOUNT COMPONENTS
 // ================================================================================================
 
@@ -189,6 +203,7 @@ pub enum StandardAccountComponent {
     AuthMultisig,
     AuthMultisigPsm,
     AuthNoAuth,
+    AuthNetworkAccount,
 }
 
 impl StandardAccountComponent {
@@ -203,6 +218,7 @@ impl StandardAccountComponent {
             Self::AuthMultisig => MULTISIG_LIBRARY.as_ref(),
             Self::AuthMultisigPsm => MULTISIG_PSM_LIBRARY.as_ref(),
             Self::AuthNoAuth => NO_AUTH_LIBRARY.as_ref(),
+            Self::AuthNetworkAccount => NETWORK_ACCOUNT_AUTH_LIBRARY.as_ref(),
         };
 
         library
@@ -260,6 +276,9 @@ impl StandardAccountComponent {
                 Self::AuthNoAuth => {
                     component_interface_vec.push(AccountComponentInterface::AuthNoAuth)
                 },
+                Self::AuthNetworkAccount => {
+                    component_interface_vec.push(AccountComponentInterface::AuthNetworkAccount)
+                },
             }
         }
     }
@@ -278,5 +297,6 @@ impl StandardAccountComponent {
         Self::AuthMultisigPsm.extract_component(procedures_set, component_interface_vec);
         Self::AuthMultisig.extract_component(procedures_set, component_interface_vec);
         Self::AuthNoAuth.extract_component(procedures_set, component_interface_vec);
+        Self::AuthNetworkAccount.extract_component(procedures_set, component_interface_vec);
     }
 }
