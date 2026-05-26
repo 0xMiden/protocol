@@ -87,10 +87,7 @@ pub proc update_ger
     # => [OLD_VALUE, pad(12)]
 
     # assert OLD_VALUE is EMPTY_WORD, i.e. the GER was not previously registered
-    padw
-    # => [ZERO_WORD, OLD_VALUE, pad(12)]
-
-    assert_eqw.err=ERR_GER_ALREADY_REGISTERED
+    padw assert_eqw.err=ERR_GER_ALREADY_REGISTERED
     # => [pad(16)]
 end
 

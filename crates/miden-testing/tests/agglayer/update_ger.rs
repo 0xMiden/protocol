@@ -21,7 +21,7 @@ use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::utils::sync::LazyLock;
-use miden_testing::{Auth, MockChain};
+use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 use miden_tx::utils::hex_to_bytes;
 use serde::Deserialize;
 
@@ -321,13 +321,7 @@ async fn update_ger_rejects_duplicate() -> anyhow::Result<()> {
         .execute()
         .await;
 
-    assert!(result.is_err(), "Second UPDATE_GER note with duplicate GER should fail");
-    let error_msg = result.unwrap_err().to_string();
-    let expected_err_code = ERR_GER_ALREADY_REGISTERED.code().to_string();
-    assert!(
-        error_msg.contains(&expected_err_code),
-        "expected error code {expected_err_code} for 'GER already registered', got: {error_msg}"
-    );
+    assert_transaction_executor_error!(result, ERR_GER_ALREADY_REGISTERED);
 
     Ok(())
 }
