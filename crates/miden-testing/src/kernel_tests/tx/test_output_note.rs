@@ -1077,13 +1077,12 @@ async fn test_get_recipient_and_metadata() -> anyhow::Result<()> {
 }
 
 /// Check that the assets number and assets data obtained from the `output_note::get_assets`
-/// procedure is correct for each note with zero, one and two different assets.
+/// procedure is correct for each note with one and two different assets.
 #[tokio::test]
 async fn test_get_assets() -> anyhow::Result<()> {
     let TestSetup {
         mock_chain,
         account,
-        p2id_note_0_assets,
         p2id_note_1_asset,
         p2id_note_2_assets,
     } = setup_test()?;
@@ -1160,9 +1159,6 @@ async fn test_get_assets() -> anyhow::Result<()> {
         use miden::core::sys
 
         begin
-            {create_note_0}
-            {check_note_0}
-
             {create_note_1}
             {check_note_1}
 
@@ -1173,12 +1169,10 @@ async fn test_get_assets() -> anyhow::Result<()> {
             exec.sys::truncate_stack
         end
         ",
-        create_note_0 = create_output_note(&p2id_note_0_assets),
-        check_note_0 = check_assets_code(0, 0, &p2id_note_0_assets),
         create_note_1 = create_output_note(&p2id_note_1_asset),
-        check_note_1 = check_assets_code(1, 8, &p2id_note_1_asset),
+        check_note_1 = check_assets_code(0, 0, &p2id_note_1_asset),
         create_note_2 = create_output_note(&p2id_note_2_assets),
-        check_note_2 = check_assets_code(2, 16, &p2id_note_2_assets),
+        check_note_2 = check_assets_code(1, 8, &p2id_note_2_assets),
     );
 
     let tx_script = CodeBuilder::default().compile_tx_script(tx_script_src)?;
@@ -1186,7 +1180,6 @@ async fn test_get_assets() -> anyhow::Result<()> {
     let tx_context = mock_chain
         .build_tx_context(account.id(), &[], &[])?
         .extend_expected_output_notes(vec![
-            RawOutputNote::Full(p2id_note_0_assets),
             RawOutputNote::Full(p2id_note_1_asset),
             RawOutputNote::Full(p2id_note_2_assets),
         ])

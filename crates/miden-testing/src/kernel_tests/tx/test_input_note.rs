@@ -9,14 +9,13 @@ use super::{TestSetup, setup_test};
 use crate::TxContextInput;
 
 /// Check that the assets number and assets commitment obtained from the
-/// `input_note::get_assets_info` procedure is correct for each note with zero, one and two
+/// `input_note::get_assets_info` procedure is correct for each note with one and two
 /// different assets.
 #[tokio::test]
 async fn test_get_asset_info() -> anyhow::Result<()> {
     let TestSetup {
         mock_chain,
         account,
-        p2id_note_0_assets,
         p2id_note_1_asset,
         p2id_note_2_assets,
     } = setup_test()?;
@@ -51,25 +50,18 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
         use miden::protocol::input_note
 
         begin
-            {check_note_0}
-
             {check_note_1}
 
             {check_note_2}
         end
     ",
-        check_note_0 = check_asset_info_code(
-            0,
-            p2id_note_0_assets.assets().commitment(),
-            p2id_note_0_assets.assets().num_assets()
-        ),
         check_note_1 = check_asset_info_code(
-            1,
+            0,
             p2id_note_1_asset.assets().commitment(),
             p2id_note_1_asset.assets().num_assets()
         ),
         check_note_2 = check_asset_info_code(
-            2,
+            1,
             p2id_note_2_assets.assets().commitment(),
             p2id_note_2_assets.assets().num_assets()
         ),
@@ -81,7 +73,7 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
         .build_tx_context(
             TxContextInput::AccountId(account.id()),
             &[],
-            &[p2id_note_0_assets, p2id_note_1_asset, p2id_note_2_assets],
+            &[p2id_note_1_asset, p2id_note_2_assets],
         )?
         .tx_script(tx_script)
         .build()?;
@@ -98,7 +90,6 @@ async fn test_get_recipient_and_metadata() -> anyhow::Result<()> {
     let TestSetup {
         mock_chain,
         account,
-        p2id_note_0_assets: _,
         p2id_note_1_asset,
         p2id_note_2_assets: _,
     } = setup_test()?;
@@ -151,7 +142,6 @@ async fn test_get_sender() -> anyhow::Result<()> {
     let TestSetup {
         mock_chain,
         account,
-        p2id_note_0_assets: _,
         p2id_note_1_asset,
         p2id_note_2_assets: _,
     } = setup_test()?;
@@ -194,13 +184,12 @@ async fn test_get_sender() -> anyhow::Result<()> {
 }
 
 /// Check that the assets number and assets data obtained from the `input_note::get_assets`
-/// procedure is correct for each note with zero, one and two different assets.
+/// procedure is correct for each note with one and two different assets.
 #[tokio::test]
 async fn test_get_assets() -> anyhow::Result<()> {
     let TestSetup {
         mock_chain,
         account,
-        p2id_note_0_assets,
         p2id_note_1_asset,
         p2id_note_2_assets,
     } = setup_test()?;
@@ -276,16 +265,13 @@ async fn test_get_assets() -> anyhow::Result<()> {
         use miden::protocol::input_note
 
         begin
-            {check_note_0}
-
             {check_note_1}
 
             {check_note_2}
         end
     ",
-        check_note_0 = check_assets_code(0, 0, &p2id_note_0_assets),
-        check_note_1 = check_assets_code(1, 8, &p2id_note_1_asset),
-        check_note_2 = check_assets_code(2, 16, &p2id_note_2_assets),
+        check_note_1 = check_assets_code(0, 0, &p2id_note_1_asset),
+        check_note_2 = check_assets_code(1, 8, &p2id_note_2_assets),
     );
 
     let tx_script = CodeBuilder::default().compile_tx_script(code)?;
@@ -294,7 +280,7 @@ async fn test_get_assets() -> anyhow::Result<()> {
         .build_tx_context(
             TxContextInput::AccountId(account.id()),
             &[],
-            &[p2id_note_0_assets, p2id_note_1_asset, p2id_note_2_assets],
+            &[p2id_note_1_asset, p2id_note_2_assets],
         )?
         .tx_script(tx_script)
         .build()?;
@@ -311,7 +297,6 @@ async fn test_get_storage_info() -> anyhow::Result<()> {
     let TestSetup {
         mock_chain,
         account,
-        p2id_note_0_assets: _,
         p2id_note_1_asset,
         p2id_note_2_assets: _,
     } = setup_test()?;
@@ -361,7 +346,6 @@ async fn test_get_script_root() -> anyhow::Result<()> {
     let TestSetup {
         mock_chain,
         account,
-        p2id_note_0_assets: _,
         p2id_note_1_asset,
         p2id_note_2_assets: _,
     } = setup_test()?;
@@ -404,7 +388,6 @@ async fn test_get_serial_number() -> anyhow::Result<()> {
     let TestSetup {
         mock_chain,
         account,
-        p2id_note_0_assets: _,
         p2id_note_1_asset,
         p2id_note_2_assets: _,
     } = setup_test()?;

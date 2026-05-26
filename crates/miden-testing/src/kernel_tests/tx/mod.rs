@@ -102,12 +102,11 @@ pub fn input_note_data_ptr(note_idx: u32) -> memory::MemoryAddress {
 struct TestSetup {
     mock_chain: MockChain,
     account: Account,
-    p2id_note_0_assets: Note,
     p2id_note_1_asset: Note,
     p2id_note_2_assets: Note,
 }
 
-/// Return a [`TestSetup`], whose notes contain 0, 1 and 2 assets respectively.
+/// Return a [`TestSetup`], whose notes contain 1 and 2 assets respectively.
 fn setup_test() -> anyhow::Result<TestSetup> {
     let mut builder = MockChain::builder();
 
@@ -145,12 +144,6 @@ fn setup_test() -> anyhow::Result<TestSetup> {
     )?;
 
     // Notes
-    let p2id_note_0_assets = builder.add_p2id_note(
-        ACCOUNT_ID_SENDER.try_into().unwrap(),
-        account.id(),
-        &[],
-        NoteType::Public,
-    )?;
     let p2id_note_1_asset = builder.add_p2id_note(
         ACCOUNT_ID_SENDER.try_into().unwrap(),
         account.id(),
@@ -169,7 +162,6 @@ fn setup_test() -> anyhow::Result<TestSetup> {
     anyhow::Ok(TestSetup {
         mock_chain,
         account,
-        p2id_note_0_assets,
         p2id_note_1_asset,
         p2id_note_2_assets,
     })

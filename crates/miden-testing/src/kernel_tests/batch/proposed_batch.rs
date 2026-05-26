@@ -5,6 +5,7 @@ use anyhow::Context;
 use assert_matches::assert_matches;
 use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountId, AccountType};
+use miden_protocol::asset::FungibleAsset;
 use miden_protocol::batch::ProposedBatch;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::merkle::MerkleError;
@@ -60,7 +61,7 @@ fn setup_chain() -> TestSetup {
     let account1 = generate_account(&mut builder);
     let account2 = generate_account(&mut builder);
     let note1 = builder
-        .add_p2id_note(account1.id(), account2.id(), &[], NoteType::Public)
+        .add_p2id_note(account1.id(), account2.id(), &[FungibleAsset::mock(1)], NoteType::Public)
         .expect("adding p2id note1 should work");
     let mut chain = builder.build().expect("genesis should be valid");
     chain.prove_next_block().expect("valid setup");

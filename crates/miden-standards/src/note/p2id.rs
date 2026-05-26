@@ -73,7 +73,8 @@ impl P2idNote {
     /// tag is set to the target's account ID.
     ///
     /// # Errors
-    /// Returns an error if deserialization or compilation of the `P2ID` script fails.
+    /// - Returns [`NoteError::MissingAsset`] if `assets` is empty.
+    /// - Returns an error if deserialization or compilation of the `P2ID` script fails.
     pub fn create<R: FeltRng>(
         sender: AccountId,
         target: AccountId,
@@ -82,6 +83,10 @@ impl P2idNote {
         attachments: NoteAttachments,
         rng: &mut R,
     ) -> Result<Note, NoteError> {
+        if assets.is_empty() {
+            return Err(NoteError::MissingAsset);
+        }
+
         let serial_num = rng.draw_word();
         let recipient = P2idNoteStorage::new(target).into_recipient(serial_num);
 
@@ -164,6 +169,7 @@ impl TryFrom<&[Felt]> for P2idNoteStorage {
 mod tests {
     use miden_protocol::Felt;
     use miden_protocol::account::{AccountId, AccountIdVersion, AccountType};
+    use miden_protocol::crypto::rand::RandomCoin;
     use miden_protocol::errors::NoteError;
 
     use super::*;
@@ -204,5 +210,24 @@ mod tests {
             .expect_err("should fail due to invalid account id encoding");
 
         assert!(matches!(err, NoteError::Other { source: Some(_), .. }));
+    }
+
+    #[test]
+    fn create_rejects_empty_assets() {
+        let sender = AccountId::dummy([4u8; 15], AccountIdVersion::Version1, AccountType::Private);
+        let target = AccountId::dummy([5u8; 15], AccountIdVersion::Version1, AccountType::Private);
+        let mut rng = RandomCoin::new(Word::default());
+
+        let err = P2idNote::create(
+            sender,
+            target,
+            vec![],
+            NoteType::Private,
+            NoteAttachments::default(),
+            &mut rng,
+        )
+        .expect_err("empty assets must be rejected");
+
+        assert!(matches!(err, NoteError::MissingAsset));
     }
 }

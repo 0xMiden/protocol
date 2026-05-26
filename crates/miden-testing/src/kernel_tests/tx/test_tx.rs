@@ -465,6 +465,7 @@ async fn user_code_can_abort_transaction_with_summary() -> anyhow::Result<()> {
         .account_type(AccountType::Private)
         .with_auth_component(auth_component)
         .with_component(BasicWallet)
+        .with_assets([FungibleAsset::mock(1)])
         .build_existing()
         .context("failed to build account")?;
 
@@ -473,7 +474,7 @@ async fn user_code_can_abort_transaction_with_summary() -> anyhow::Result<()> {
     let output_note = P2idNote::create(
         account.id(),
         account.id(),
-        vec![],
+        vec![FungibleAsset::mock(1)],
         NoteType::Private,
         NoteAttachments::default(),
         &mut rng,
@@ -493,7 +494,6 @@ async fn user_code_can_abort_transaction_with_summary() -> anyhow::Result<()> {
     let error = tx_context.execute().await.unwrap_err();
 
     assert_matches!(error, TransactionExecutorError::Unauthorized(tx_summary) => {
-        assert!(tx_summary.account_delta().vault().is_empty());
         assert!(tx_summary.account_delta().storage().is_empty());
         assert_eq!(tx_summary.account_delta().nonce_delta().as_canonical_u64(), 1);
         assert_eq!(tx_summary.input_notes(), &input_notes);
@@ -511,14 +511,17 @@ async fn user_code_can_abort_transaction_with_summary() -> anyhow::Result<()> {
 #[tokio::test]
 async fn tx_summary_commitment_is_signed_by_falcon_auth() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let account = builder.add_existing_mock_account(Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    })?;
+    let account = builder.add_existing_mock_account_with_assets(
+        Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        },
+        [FungibleAsset::mock(1)],
+    )?;
     let mut rng = RandomCoin::new(Word::empty());
     let p2id_note = P2idNote::create(
         account.id(),
         account.id(),
-        vec![],
+        vec![FungibleAsset::mock(1)],
         NoteType::Private,
         NoteAttachments::default(),
         &mut rng,
@@ -574,13 +577,15 @@ async fn tx_summary_commitment_is_signed_by_falcon_auth() -> anyhow::Result<()> 
 #[tokio::test]
 async fn tx_summary_commitment_is_signed_by_ecdsa_auth() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let account = builder
-        .add_existing_mock_account(Auth::BasicAuth { auth_scheme: AuthScheme::EcdsaK256Keccak })?;
+    let account = builder.add_existing_mock_account_with_assets(
+        Auth::BasicAuth { auth_scheme: AuthScheme::EcdsaK256Keccak },
+        [FungibleAsset::mock(1)],
+    )?;
     let mut rng = RandomCoin::new(Word::empty());
     let p2id_note = P2idNote::create(
         account.id(),
         account.id(),
-        vec![],
+        vec![FungibleAsset::mock(1)],
         NoteType::Private,
         NoteAttachments::default(),
         &mut rng,

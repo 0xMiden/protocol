@@ -2,6 +2,10 @@
 
 ## v0.16.0 (TBD)
 
+### Changes
+
+- [BREAKING] P2ID and P2IDE notes must carry at least one asset. Enforced in `P2idNote::create` / `P2ideNote::create` (new `NoteError::MissingAsset`) and in the `basic_wallet::add_assets_to_account` MASM helper.
+
 ## v0.15.0 (2026-05-22)
 
 ### Features

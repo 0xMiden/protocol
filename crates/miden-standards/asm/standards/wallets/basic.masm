@@ -4,6 +4,11 @@ use miden::protocol::native_account
 use miden::protocol::output_note
 use miden::protocol::active_note
 
+# ERRORS
+# =================================================================================================
+
+const ERR_BASIC_WALLET_EMPTY_NOTE_ASSETS="active note must contain at least one asset"
+
 # CONSTANTS
 # =================================================================================================
 
@@ -75,6 +80,10 @@ pub proc add_assets_to_account
     # we have allocated ASSET_SIZE * MAX_ASSETS_PER_NOTE number of locals so all assets should fit
     # since the asset memory will be overwritten, we don't have to initialize the locals to zero
     locaddr.0 exec.active_note::get_assets
+    # => [num_of_assets]
+
+    # ensure the note carries at least one asset
+    dup neq.0 assert.err=ERR_BASIC_WALLET_EMPTY_NOTE_ASSETS
     # => [num_of_assets]
 
     # compute the pointer at which we should stop iterating

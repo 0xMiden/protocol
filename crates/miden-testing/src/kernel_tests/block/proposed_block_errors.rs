@@ -349,12 +349,14 @@ async fn proposed_block_fails_on_duplicate_output_note() -> anyhow::Result<()> {
 async fn proposed_block_fails_on_invalid_proof_or_missing_note_inclusion_reference_block()
 -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let account0 = builder.add_existing_mock_account(Auth::IncrNonce)?;
+    // account0 funds the P2ID note via the spawn-note flow, so it needs a balance to give.
+    let account0 =
+        builder.add_existing_mock_account_with_assets(Auth::IncrNonce, [FungibleAsset::mock(1)])?;
     let account1 = builder.add_existing_mock_account(Auth::IncrNonce)?;
     let p2id_note = P2idNote::create(
         account0.id(),
         account1.id(),
-        vec![],
+        vec![FungibleAsset::mock(1)],
         NoteType::Private,
         NoteAttachments::default(),
         builder.rng_mut(),

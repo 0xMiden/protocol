@@ -700,6 +700,8 @@ pub enum NoteError {
     NoteAttachmentSchemeExceeded(u32),
     #[error("attachment scheme value 0 is reserved")]
     NoteAttachmentSchemeZeroReserved,
+    #[error("note must contain at least one asset")]
+    MissingAsset,
     #[error("{error_msg}")]
     Other {
         error_msg: Box<str>,

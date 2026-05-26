@@ -80,7 +80,8 @@ impl P2ideNote {
     /// and the note tag is set to the storage target account.
     ///
     /// # Errors
-    /// Returns an error if construction of the note recipient or asset vault fails.
+    /// - Returns [`NoteError::MissingAsset`] if `assets` is empty.
+    /// - Returns an error if construction of the note recipient or asset vault fails.
     pub fn create<R: FeltRng>(
         sender: AccountId,
         storage: P2ideNoteStorage,
@@ -89,6 +90,10 @@ impl P2ideNote {
         attachments: NoteAttachments,
         rng: &mut R,
     ) -> Result<Note, NoteError> {
+        if assets.is_empty() {
+            return Err(NoteError::MissingAsset);
+        }
+
         let serial_num = rng.draw_word();
         let recipient = storage.into_recipient(serial_num)?;
         let tag = NoteTag::with_account_target(storage.target());
@@ -216,6 +221,7 @@ mod tests {
     use miden_protocol::Felt;
     use miden_protocol::account::{AccountId, AccountIdVersion, AccountType};
     use miden_protocol::block::BlockNumber;
+    use miden_protocol::crypto::rand::RandomCoin;
     use miden_protocol::errors::NoteError;
 
     use super::*;
@@ -308,5 +314,24 @@ mod tests {
             .expect_err("overflow timelock height must fail");
 
         assert!(matches!(err, NoteError::Other { source: Some(_), .. }));
+    }
+
+    #[test]
+    fn create_rejects_empty_assets() {
+        let sender = AccountId::dummy([4u8; 15], AccountIdVersion::Version1, AccountType::Private);
+        let storage = P2ideNoteStorage::new(dummy_account(), None, None);
+        let mut rng = RandomCoin::new(Word::default());
+
+        let err = P2ideNote::create(
+            sender,
+            storage,
+            vec![],
+            NoteType::Private,
+            NoteAttachments::default(),
+            &mut rng,
+        )
+        .expect_err("empty assets must be rejected");
+
+        assert!(matches!(err, NoteError::MissingAsset));
     }
 }

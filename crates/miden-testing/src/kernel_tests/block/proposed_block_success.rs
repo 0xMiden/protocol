@@ -185,8 +185,18 @@ async fn proposed_block_authenticating_unauthenticated_notes() -> anyhow::Result
     let mut builder = MockChain::builder();
     let account0 = builder.add_existing_mock_account(Auth::IncrNonce)?;
     let account1 = builder.add_existing_mock_account(Auth::IncrNonce)?;
-    let note0 = builder.add_p2id_note(sender_id, account0.id(), &[], NoteType::Private)?;
-    let note1 = builder.add_p2id_note(sender_id, account1.id(), &[], NoteType::Public)?;
+    let note0 = builder.add_p2id_note(
+        sender_id,
+        account0.id(),
+        &[FungibleAsset::mock(1)],
+        NoteType::Private,
+    )?;
+    let note1 = builder.add_p2id_note(
+        sender_id,
+        account1.id(),
+        &[FungibleAsset::mock(1)],
+        NoteType::Public,
+    )?;
     let chain = builder.build()?;
 
     // These txs will use block1 as the reference block.
