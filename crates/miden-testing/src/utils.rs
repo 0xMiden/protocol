@@ -20,45 +20,43 @@ use rand::rngs::SmallRng;
 
 /// Asserts that a `Result<_, ExecError>` failed as expected.
 ///
-/// Three forms:
+/// Two forms:
 /// - `..., matches <pat> [if <guard>]` — matches the inner `ExecutionError` against `<pat>`. Use
 ///   this for variants other than `FailedAssertion`, or to assert on a specific `err_code`.
-/// - `..., any` — succeeds on any `Err`.
-/// - `..., $expected` — delegates to `ExpectedExecutionError::matches` (e.g. a `MasmError` error
+/// - `..., $expected` — delegates to `MasmError::matches_execution_error` (e.g. a `MasmError` error
 ///   code).
 #[macro_export]
 macro_rules! assert_execution_error {
     ($execution_result:expr, matches $pat:pat $(if $guard:expr)? $(,)?) => {
         match $execution_result {
             Err($crate::ExecError($pat)) $(if $guard)? => {},
-            Ok(_) => ::core::panic!("Execution was unexpectedly successful"),
+            Ok(_) => ::core::panic!(
+                "Execution was unexpectedly successful\nexpected error: {}",
+                ::core::stringify!($pat),
+            ),
             Err(err) => ::core::panic!(
-                "Execution error did not match `{}`: {}",
+                "Execution error did not match:\nexpected: {}\nactual: {}",
                 ::core::stringify!($pat),
                 err,
             ),
         }
     };
 
-    ($execution_result:expr, any $(,)?) => {
-        match $execution_result {
-            Err(_) => {},
-            Ok(_) => ::core::panic!("Execution was unexpectedly successful"),
-        }
-    };
-
     ($execution_result:expr, $expected:expr $(,)?) => {
         match $execution_result {
             Err($crate::ExecError(actual)) => {
-                if !$crate::expected_error::ExpectedExecutionError::matches(&$expected, &actual) {
+                if !$expected.matches_execution_error(&actual) {
                     ::core::panic!(
-                        "Execution error did not match expected `{}`: {}",
+                        "Execution error did not match:\nexpected: {}\nactual: {}",
                         $expected,
                         actual,
                     );
                 }
             },
-            Ok(_) => ::core::panic!("Execution was unexpectedly successful"),
+            Ok(_) => ::core::panic!(
+                "Execution was unexpectedly successful\nexpected error: {}",
+                $expected,
+            ),
         }
     };
 }
@@ -73,35 +71,38 @@ macro_rules! assert_transaction_executor_error {
         match $execution_result {
             Err(miden_tx::TransactionExecutorError::TransactionProgramExecutionFailed($pat))
                 $(if $guard)? => {},
-            Ok(_) => ::core::panic!("Execution was unexpectedly successful"),
+            Ok(_) => ::core::panic!(
+                "Execution was unexpectedly successful\nexpected error: {}",
+                ::core::stringify!($pat),
+            ),
             Err(err) => ::core::panic!(
-                "Execution error did not match `{}`: {}",
+                "Execution error did not match:\nexpected: {}\nactual: {}",
                 ::core::stringify!($pat),
                 err,
             ),
         }
     };
 
-    ($execution_result:expr, any $(,)?) => {
-        match $execution_result {
-            Err(_) => {},
-            Ok(_) => ::core::panic!("Execution was unexpectedly successful"),
-        }
-    };
-
     ($execution_result:expr, $expected:expr $(,)?) => {
         match $execution_result {
             Err(miden_tx::TransactionExecutorError::TransactionProgramExecutionFailed(actual)) => {
-                if !$crate::expected_error::ExpectedExecutionError::matches(&$expected, &actual) {
+                if !$expected.matches_execution_error(&actual) {
                     ::core::panic!(
-                        "Execution error did not match expected `{}`: {}",
+                        "Execution error did not match:\nexpected: {}\nactual: {}",
                         $expected,
                         actual,
                     );
                 }
             },
-            Ok(_) => ::core::panic!("Execution was unexpectedly successful"),
-            Err(err) => ::core::panic!("Execution error was not as expected: {err}"),
+            Ok(_) => ::core::panic!(
+                "Execution was unexpectedly successful\nexpected error: {}",
+                $expected,
+            ),
+            Err(err) => ::core::panic!(
+                "Execution error did not match:\nexpected: {}\nactual: {}",
+                $expected,
+                err,
+            ),
         }
     };
 }
