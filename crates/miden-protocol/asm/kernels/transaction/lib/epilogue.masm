@@ -60,14 +60,11 @@ const VAULT_KEY_HASH_CYCLES=50
 # to the lowest observed value (which comes from a zero-fee transaction that skips fee removal).
 const NUM_POST_COMPUTE_FEE_CYCLES=608
 
-# The number of cycles the epilogue is estimated to take after compute_fee has been executed. This
-# must remain an upper bound on the real post-compute_fee cycle count, otherwise the verification
-# fee is undercharged. The most recently observed worst case is 863 cycles, leaving 45 cycles of
-# margin against this 908-cycle budget; the margin is empirical, so re-measure when the epilogue or
-# smt::set changes. The fee-removal smt::set cost cannot be inflated by an adversary: vault keys are
-# hashed before insertion (see AssetVaultKey::hash), so leaf indices are uniformly distributed and
-# entries cannot be concentrated into the fee asset's leaf without breaking the hash's collision
-# resistance. The multi-leaf smt::set worst case is not yet exercised (see test_fee.rs TODO).
+# Upper bound on the post-compute_fee cycle count; it must stay an upper bound or the verification
+# fee is undercharged. Worst case observed is 863 cycles (45 of margin); re-measure when the
+# epilogue or smt::set changes. An adversary cannot inflate the fee-removal smt::set cost: vault
+# keys are hashed before insertion (see AssetVaultKey::hash). The multi-leaf smt::set worst case is
+# not yet exercised (see test_fee.rs TODO).
 const ESTIMATED_AFTER_COMPUTE_FEE_CYCLES=NUM_POST_COMPUTE_FEE_CYCLES+SMT_SET_ADDITIONAL_CYCLES+VAULT_KEY_HASH_CYCLES
 
 # OUTPUT NOTES PROCEDURES
