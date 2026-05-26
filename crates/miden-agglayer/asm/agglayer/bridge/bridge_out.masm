@@ -92,7 +92,7 @@ const BURN_NOTE_NUM_STORAGE_ITEMS=0
 #!
 #! This procedure handles the complete bridge-out operation:
 #! 1. Validates the asset's faucet is registered in the bridge's faucet registry
-#! 2. Queries the faucet for origin asset conversion data via FPI
+#! 2. Reads the faucet's origin asset conversion data from the bridge's faucet_metadata_map
 #! 3. Builds the leaf data (origin token, destination, amount, metadata)
 #! 4. Computes Keccak hash of the leaf data and appends it to the Local Exit Tree
 #! 5. Creates a BURN note with the bridged out asset
@@ -132,7 +132,7 @@ pub proc bridge_out
     loc_store.DESTINATION_ADDRESS_4_LOC
     # => [pad(16)]
 
-    # --- 1. Validate faucet registration and convert asset via FPI ---
+    # --- 1. Validate faucet registration and convert asset using bridge-stored metadata ---
     locaddr.BRIDGE_OUT_BURN_ASSET_LOC
     exec.asset::load
     # => [ASSET_KEY, ASSET_VALUE, pad(16)]

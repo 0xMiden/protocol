@@ -107,7 +107,7 @@
       "y": 150,
       "width": 190,
       "height": 120,
-      "text": "1. Validate faucet\n2. FPI: get amount\n3. FPI: get metadata\n4. Build leaf data\n5. Append to LET\n6. Create BURN note",
+      "text": "1. Validate faucet\n2. Convert amount\n3. Read metadata\n4. Build leaf data\n5. Append to LET\n6. Create BURN note",
       "fontSize": 14,
       "fontFamily": 1,
       "textAlign": "left"
