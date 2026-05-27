@@ -85,6 +85,7 @@ impl ProvenTransaction {
     /// - The total number of output notes is greater than
     ///   [`MAX_OUTPUT_NOTES_PER_TX`](crate::constants::MAX_OUTPUT_NOTES_PER_TX).
     /// - The vector of output notes contains duplicates.
+    /// - The set of input and output notes contains the same note.
     /// - The transaction is empty, which is the case if the account state is unchanged or the
     ///   number of input notes is zero.
     /// - The commitment computed on the actual account delta contained in [`TxAccountUpdate`] does
@@ -107,6 +108,15 @@ impl ProvenTransaction {
             InputNotes::new(input_notes).map_err(ProvenTransactionError::InputNotesError)?;
         let output_notes =
             OutputNotes::new(output_notes).map_err(ProvenTransactionError::OutputNotesError)?;
+
+        // Disallow creating and consuming notes with the same ID in a transaction. This is a
+        // circular dependency that can be abused (see https://github.com/0xMiden/protocol/issues/2796).
+        // This is only relevant for unauthenticated notes (notes with a header).
+        for input_note in input_notes.iter().filter_map(InputNoteCommitment::header) {
+            if output_notes.iter().any(|output_note| output_note.id() == input_note.id()) {
+                return Err(ProvenTransactionError::NoteConsumedAndCreated(input_note.id()));
+            }
+        }
 
         let id = TransactionId::new(
             account_update.initial_state_commitment(),
