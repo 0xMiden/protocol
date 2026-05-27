@@ -150,6 +150,16 @@ pub enum TransactionExecutorError {
     MissingAuthenticator,
 }
 
+#[cfg(any(test, feature = "testing"))]
+impl TransactionExecutorError {
+    pub fn unwrap_unauthorized_err(self) -> Box<TransactionSummary> {
+        match self {
+            TransactionExecutorError::Unauthorized(transaction_summary) => transaction_summary,
+            other => panic!("expected TransactionExecutorError::Unauthorized, got {other}"),
+        }
+    }
+}
+
 // TRANSACTION PROVER ERROR
 // ================================================================================================
 
