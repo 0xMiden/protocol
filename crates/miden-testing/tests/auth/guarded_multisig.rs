@@ -199,16 +199,18 @@ async fn test_guarded_multisig_signature_required(
     let mut mock_chain = mock_chain_builder.build().unwrap();
 
     let salt = Word::from([Felt::new_unchecked(777); 4]);
-    let tx_context_init = mock_chain
+    let tx_context_builder = mock_chain
         .build_tx_context(multisig_account.id(), &[input_note.id()], &[])?
-        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note.clone())])
-        .auth_args(salt)
-        .build()?;
+        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note)])
+        .auth_args(salt);
 
-    let tx_summary = match tx_context_init.execute().await.unwrap_err() {
-        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
-        error => anyhow::bail!("expected abort with tx effects: {error}"),
-    };
+    let tx_summary = tx_context_builder
+        .clone()
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
     let msg = tx_summary.as_ref().to_commitment();
     let tx_summary_signing = SigningInputs::TransactionSummary(tx_summary);
 
@@ -220,12 +222,10 @@ async fn test_guarded_multisig_signature_required(
         .await?;
 
     // Missing guardian signature must fail.
-    let without_guardian_result = mock_chain
-        .build_tx_context(multisig_account.id(), &[input_note.id()], &[])?
-        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note.clone())])
+    let without_guardian_result = tx_context_builder
+        .clone()
         .add_signature(public_keys[0].to_commitment(), msg, sig_1.clone())
         .add_signature(public_keys[1].to_commitment(), msg, sig_2.clone())
-        .auth_args(salt)
         .build()?
         .execute()
         .await;
@@ -239,13 +239,10 @@ async fn test_guarded_multisig_signature_required(
         .await?;
 
     // With guardian signature the transaction should succeed.
-    let tx_context_execute = mock_chain
-        .build_tx_context(multisig_account.id(), &[input_note.id()], &[])?
-        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note)])
+    let tx_context_execute = tx_context_builder
         .add_signature(public_keys[0].to_commitment(), msg, sig_1)
         .add_signature(public_keys[1].to_commitment(), msg, sig_2)
         .add_signature(guardian_public_key.to_commitment(), msg, guardian_signature)
-        .auth_args(salt)
         .build()?
         .execute()
         .await?;
@@ -312,16 +309,18 @@ async fn test_guarded_multisig_update_guardian_public_key(
         ))?;
 
     let update_salt = Word::from([Felt::new_unchecked(991); 4]);
-    let tx_context_init = mock_chain
+    let tx_context_builder = mock_chain
         .build_tx_context(multisig_account.id(), &[], &[])?
-        .tx_script(update_guardian_script.clone())
-        .auth_args(update_salt)
-        .build()?;
+        .tx_script(update_guardian_script)
+        .auth_args(update_salt);
 
-    let tx_summary = match tx_context_init.execute().await.unwrap_err() {
-        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
-        error => anyhow::bail!("expected abort with tx effects: {error}"),
-    };
+    let tx_summary = tx_context_builder
+        .clone()
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
 
     let update_msg = tx_summary.as_ref().to_commitment();
     let tx_summary_signing = SigningInputs::TransactionSummary(tx_summary);
@@ -333,12 +332,9 @@ async fn test_guarded_multisig_update_guardian_public_key(
         .await?;
 
     // Guardian key rotation intentionally skips guardian signature for this update tx.
-    let update_guardian_tx = mock_chain
-        .build_tx_context(multisig_account.id(), &[], &[])?
-        .tx_script(update_guardian_script)
+    let update_guardian_tx = tx_context_builder
         .add_signature(public_keys[0].to_commitment(), update_msg, sig_1)
         .add_signature(public_keys[1].to_commitment(), update_msg, sig_2)
-        .auth_args(update_salt)
         .build()?
         .execute()
         .await?;
@@ -364,15 +360,15 @@ async fn test_guarded_multisig_update_guardian_public_key(
     // Build one tx summary after key update. Old GUARDIAN must fail and new GUARDIAN must pass on
     // this same transaction.
     let next_salt = Word::from([Felt::new_unchecked(992); 4]);
-    let tx_context_init_next = mock_chain
+    let tx_context_builder_next = mock_chain
         .build_tx_context(updated_multisig_account.id(), &[], &[])?
-        .auth_args(next_salt)
-        .build()?;
+        .auth_args(next_salt);
 
-    let tx_summary_next = match tx_context_init_next.execute().await.unwrap_err() {
-        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
-        error => anyhow::bail!("expected abort with tx effects: {error}"),
-    };
+    let tx_summary_next =
+        match tx_context_builder_next.clone().build()?.execute().await.unwrap_err() {
+            TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
+            error => anyhow::bail!("expected abort with tx effects: {error}"),
+        };
     let next_msg = tx_summary_next.as_ref().to_commitment();
     let tx_summary_next_signing = SigningInputs::TransactionSummary(tx_summary_next);
 
@@ -390,12 +386,11 @@ async fn test_guarded_multisig_update_guardian_public_key(
         .await?;
 
     // Old guardian signature must fail after key update.
-    let with_old_guardian_result = mock_chain
-        .build_tx_context(updated_multisig_account.id(), &[], &[])?
+    let with_old_guardian_result = tx_context_builder_next
+        .clone()
         .add_signature(public_keys[0].to_commitment(), next_msg, next_sig_1.clone())
         .add_signature(public_keys[1].to_commitment(), next_msg, next_sig_2.clone())
         .add_signature(old_guardian_public_key.to_commitment(), next_msg, old_guardian_sig_next)
-        .auth_args(next_salt)
         .build()?
         .execute()
         .await;
@@ -405,12 +400,10 @@ async fn test_guarded_multisig_update_guardian_public_key(
     ));
 
     // New guardian signature must pass.
-    mock_chain
-        .build_tx_context(updated_multisig_account.id(), &[], &[])?
+    tx_context_builder_next
         .add_signature(public_keys[0].to_commitment(), next_msg, next_sig_1)
         .add_signature(public_keys[1].to_commitment(), next_msg, next_sig_2)
         .add_signature(new_guardian_public_key.to_commitment(), next_msg, new_guardian_sig_next)
-        .auth_args(next_salt)
         .build()?
         .execute()
         .await?;
@@ -470,16 +463,18 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
     let mock_chain = mock_chain_builder.build().unwrap();
 
     let salt = Word::from([Felt::new_unchecked(993); 4]);
-    let tx_context_init = mock_chain
+    let tx_context_builder = mock_chain
         .build_tx_context(multisig_account.id(), &[receive_asset_note.id()], &[])?
-        .tx_script(update_guardian_script.clone())
-        .auth_args(salt)
-        .build()?;
+        .tx_script(update_guardian_script)
+        .auth_args(salt);
 
-    let tx_summary = match tx_context_init.execute().await.unwrap_err() {
-        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
-        error => anyhow::bail!("expected abort with tx effects: {error}"),
-    };
+    let tx_summary = tx_context_builder
+        .clone()
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
 
     let msg = tx_summary.as_ref().to_commitment();
     let tx_summary_signing = SigningInputs::TransactionSummary(tx_summary);
@@ -490,12 +485,10 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
         .get_signature(public_keys[1].to_commitment(), &tx_summary_signing)
         .await?;
 
-    let without_guardian_result = mock_chain
-        .build_tx_context(multisig_account.id(), &[receive_asset_note.id()], &[])?
-        .tx_script(update_guardian_script.clone())
+    let without_guardian_result = tx_context_builder
+        .clone()
         .add_signature(public_keys[0].to_commitment(), msg, sig_1.clone())
         .add_signature(public_keys[1].to_commitment(), msg, sig_2.clone())
-        .auth_args(salt)
         .build()?
         .execute()
         .await;
@@ -508,13 +501,10 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
         .get_signature(old_guardian_public_key.to_commitment(), &tx_summary_signing)
         .await?;
 
-    let with_guardian_result = mock_chain
-        .build_tx_context(multisig_account.id(), &[receive_asset_note.id()], &[])?
-        .tx_script(update_guardian_script)
+    let with_guardian_result = tx_context_builder
         .add_signature(public_keys[0].to_commitment(), msg, sig_1)
         .add_signature(public_keys[1].to_commitment(), msg, sig_2)
         .add_signature(old_guardian_public_key.to_commitment(), msg, old_guardian_signature)
-        .auth_args(salt)
         .build()?
         .execute()
         .await;
@@ -553,18 +543,20 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
         .unwrap();
 
     let salt = Word::from([Felt::new_unchecked(994); 4]);
-    let tx_context_init = mock_chain
+    let tx_context_builder = mock_chain
         .build_tx_context(multisig_account.id(), &[], &[])?
-        .tx_script(update_guardian_with_output_script.clone())
-        .add_note_script(note_script.clone())
-        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note.clone())])
-        .auth_args(salt)
-        .build()?;
+        .tx_script(update_guardian_with_output_script)
+        .add_note_script(note_script)
+        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note)])
+        .auth_args(salt);
 
-    let tx_summary = match tx_context_init.execute().await.unwrap_err() {
-        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
-        error => anyhow::bail!("expected abort with tx effects: {error}"),
-    };
+    let tx_summary = tx_context_builder
+        .clone()
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
 
     let msg = tx_summary.as_ref().to_commitment();
     let tx_summary_signing = SigningInputs::TransactionSummary(tx_summary);
@@ -575,14 +567,9 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
         .get_signature(public_keys[1].to_commitment(), &tx_summary_signing)
         .await?;
 
-    let result = mock_chain
-        .build_tx_context(multisig_account.id(), &[], &[])?
-        .tx_script(update_guardian_with_output_script)
-        .add_note_script(note_script)
-        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note)])
+    let result = tx_context_builder
         .add_signature(public_keys[0].to_commitment(), msg, sig_1)
         .add_signature(public_keys[1].to_commitment(), msg, sig_2)
-        .auth_args(salt)
         .build()?
         .execute()
         .await;
@@ -690,17 +677,21 @@ async fn test_guarded_multisig_update_guardian_enforces_no_notes(
     let salt = Word::from([Felt::new_unchecked(995); 4]);
 
     // Dry-run to obtain the tx summary the signers must sign.
-    let mut init_ctx = mock_chain
+    let mut tx_context_builder = mock_chain
         .build_tx_context(multisig_account.id(), &input_ids, &[])?
-        .tx_script(update_guardian_script.clone())
+        .tx_script(update_guardian_script)
         .auth_args(salt);
-    if let Some(ref out) = output_note {
-        init_ctx = init_ctx.extend_expected_output_notes(vec![RawOutputNote::Full(out.clone())]);
+    if let Some(out) = output_note {
+        tx_context_builder =
+            tx_context_builder.extend_expected_output_notes(vec![RawOutputNote::Full(out)]);
     }
-    let tx_summary = match init_ctx.build()?.execute().await.unwrap_err() {
-        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
-        error => anyhow::bail!("expected dry-run abort with tx effects: {error}"),
-    };
+    let tx_summary = tx_context_builder
+        .clone()
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
 
     let msg = tx_summary.as_ref().to_commitment();
     let signing = SigningInputs::TransactionSummary(tx_summary);
@@ -714,18 +705,13 @@ async fn test_guarded_multisig_update_guardian_enforces_no_notes(
         .get_signature(old_guardian_public_key.to_commitment(), &signing)
         .await?;
 
-    let mut signed_ctx = mock_chain
-        .build_tx_context(multisig_account.id(), &input_ids, &[])?
-        .tx_script(update_guardian_script)
-        .auth_args(salt)
+    let result = tx_context_builder
         .add_signature(public_keys[0].to_commitment(), msg, sig_1)
         .add_signature(public_keys[1].to_commitment(), msg, sig_2)
-        .add_signature(old_guardian_public_key.to_commitment(), msg, guardian_sig);
-    if let Some(ref out) = output_note {
-        signed_ctx =
-            signed_ctx.extend_expected_output_notes(vec![RawOutputNote::Full(out.clone())]);
-    }
-    let result = signed_ctx.build()?.execute().await;
+        .add_signature(old_guardian_public_key.to_commitment(), msg, guardian_sig)
+        .build()?
+        .execute()
+        .await;
 
     // Input check fires first, output check fires only when no input notes are present.
     match (include_input_note, include_output_note) {
