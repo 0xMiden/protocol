@@ -35,8 +35,7 @@ const TRAILING_PAD_WORD_FELT_IDX: usize = 12;
 ///
 /// The kernel takes `[TRANSACTIONS_COMMITMENT, BLOCK_HASH]` as public inputs and emits
 /// `[INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, batch_expiration_block_num]`. See
-/// `asm/kernels/batch/main.masm` for the input/output contract and the `TODO` listing checks
-/// the kernel does not yet enforce.
+/// `asm/kernels/batch/main.masm` for the input/output contract.
 pub struct BatchKernel;
 
 impl BatchKernel {
@@ -64,7 +63,7 @@ impl BatchKernel {
         let block_hash = proposed_batch.reference_block_header().commitment();
         let transactions_commitment = proposed_batch.id().as_word();
 
-        let stack_inputs = Self::build_input_stack(block_hash, transactions_commitment);
+        let stack_inputs = Self::build_input_stack(transactions_commitment, block_hash);
         let advice_inputs = Self::build_advice_inputs(proposed_batch);
 
         (stack_inputs, advice_inputs)
@@ -83,7 +82,7 @@ impl BatchKernel {
     ///   sequential hash of `(transaction_id || account_id_prefix || account_id_suffix || 0 || 0)`
     ///   over all transactions in the batch.
     /// - `BLOCK_HASH` is the commitment of the batch's reference block.
-    pub fn build_input_stack(block_hash: Word, transactions_commitment: Word) -> StackInputs {
+    pub fn build_input_stack(transactions_commitment: Word, block_hash: Word) -> StackInputs {
         let mut inputs: Vec<Felt> = Vec::with_capacity(8);
         inputs.extend_from_slice(transactions_commitment.as_elements());
         inputs.extend_from_slice(block_hash.as_elements());
