@@ -113,18 +113,23 @@ on Miden. The bridge consumes these notes:
 1. Asserts the note sender is the designated GER manager.
 2. Computes `KEY = poseidon2::merge(GER_LOWER, GER_UPPER)`.
 3. Stores `KEY -> [1, 0, 0, 0]` in the `ger_map`, marking the GER as known.
+4. Reverts if the GER was already present in the map (duplicate insertions are rejected).
 
 Subsequent CLAIM notes reference a GER that must be present in this map for the claim
 to be valid.
+
+> **Note on Solidity divergence:** The Solidity `GlobalExitRootManager` contract treats a
+> duplicate GER insertion as an idempotent no-op. Miden intentionally diverges: a duplicate
+> `UPDATE_GER` note causes the consuming transaction to revert. Because `UPDATE_GER` is a
+> network note (consumed by the note nullifier mechanism), a duplicate would become
+> permanently unconsumable rather than silently accepted. Rejecting duplicates makes the
+> failure explicit and prevents the GER manager from accidentally creating unconsumed notes.
 
 TODO: GERs cannot be removed once inserted
 ([#2702](https://github.com/0xMiden/protocol/issues/2702)).
 
 TODO: No hash chain tracks GER insertions for proof generation
 ([#2707](https://github.com/0xMiden/protocol/issues/2707)).
-
-TODO: Duplicate GER insertions are silently accepted
-([#2708](https://github.com/0xMiden/protocol/issues/2708)).
 
 ### 2.4 Faucet Registration
 
@@ -237,12 +242,14 @@ Asserts the note sender matches the bridge admin stored in
 | **Inputs** | `[GER_LOWER(4), GER_UPPER(4), pad(8)]` |
 | **Outputs** | `[pad(16)]` |
 | **Context** | Consuming an `UPDATE_GER` note on the bridge account |
-| **Panics** | Note sender is not the GER manager |
+| **Panics** | Note sender is not the GER manager; GER has already been registered in storage |
 
 Asserts the note sender matches the GER manager stored in
 `agglayer::bridge::ger_manager_account_id`, then computes
 `KEY = poseidon2::merge(GER_LOWER, GER_UPPER)` and stores
 `KEY -> [1, 0, 0, 0]` in the `ger_map` map slot. This marks the GER as "known".
+Duplicate insertions (same GER value) are explicitly rejected: if the key already exists
+in the map the procedure panics with `ERR_GER_ALREADY_REGISTERED`.
 
 #### `bridge_in::claim`
 
