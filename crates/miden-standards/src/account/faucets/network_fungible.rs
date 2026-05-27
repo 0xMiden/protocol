@@ -355,10 +355,7 @@ mod tests {
         .expect("network faucet creation should succeed");
 
         let expected_owner_word = Ownable::new(owner).to_word();
-        assert_eq!(
-            account.storage().get_item(Ownable::slot_name()).unwrap(),
-            expected_owner_word
-        );
+        assert_eq!(account.storage().get_item(Ownable::slot_name()).unwrap(), expected_owner_word);
 
         let faucet = NetworkFungibleFaucet::try_from(&account)
             .expect("network fungible faucet should be extractable from account");
