@@ -560,7 +560,7 @@ end
 
 #! Computes the SERIAL_NUM of the outputted BURN note.
 #!
-#! The serial number is computed as hash([leaf_count, 0, 0, 0], hash(B2AGG_SERIAL_NUM, ASSET_KEY))).
+#! The serial number is computed as hash([num_leaves, 0, 0, 0], hash(B2AGG_SERIAL_NUM, ASSET_KEY))).
 #!
 #! Inputs:  [ASSET_KEY]
 #! Outputs: [SERIAL_NUM]
@@ -568,7 +568,7 @@ end
 #! Where:
 #! - ASSET_KEY is the vault key from which to compute the burn note serial number.
 #! - SERIAL_NUM is the computed serial number for the BURN note.
-#! - leaf_count is the number of leaves in the Local Exit Tree.
+#! - num_leaves is the number of leaves in the Local Exit Tree, post-append.
 #!
 #! Invocation: exec
 proc compute_burn_note_serial_num
