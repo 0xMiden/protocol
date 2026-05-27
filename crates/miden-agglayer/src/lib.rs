@@ -16,7 +16,7 @@ use miden_protocol::account::{
 use miden_protocol::asset::TokenSymbol;
 use miden_protocol::note::{NoteScript, NoteScriptRoot};
 use miden_protocol::vm::Program;
-use miden_standards::account::access::Ownable2Step;
+use miden_standards::account::access::Ownable;
 use miden_standards::account::auth::AuthNetworkAccount;
 use miden_standards::account::mint_policies::OwnerControlled;
 use miden_utils_sync::LazyLock;
@@ -197,7 +197,7 @@ pub fn create_existing_bridge_account(
 ///
 /// The builder includes:
 /// - The `AggLayerFaucet` component (token metadata only; conversion metadata lives on the bridge).
-/// - The `Ownable2Step` component (bridge account ID as owner for mint authorization).
+/// - The `Ownable` component (bridge account ID as owner for mint authorization).
 /// - The `OwnerControlled` component (mint policy management required by
 ///   `network_fungible::mint_and_send`).
 /// - The [`AuthNetworkAccount`] auth component, initialized with
@@ -217,7 +217,7 @@ fn create_agglayer_faucet_builder(
         .account_type(AccountType::FungibleFaucet)
         .storage_mode(AccountStorageMode::Network)
         .with_component(agglayer_component)
-        .with_component(Ownable2Step::new(bridge_account_id))
+        .with_component(Ownable::new(bridge_account_id))
         .with_component(OwnerControlled::owner_only())
         .with_auth_component(
             AuthNetworkAccount::with_allowlist(AggLayerFaucet::allowed_notes())

@@ -17,7 +17,7 @@ use miden_protocol::account::{
 use miden_protocol::asset::TokenSymbol;
 use miden_protocol::errors::AccountIdError;
 use miden_protocol::note::NoteScriptRoot;
-use miden_standards::account::access::Ownable2Step;
+use miden_standards::account::access::Ownable;
 use miden_standards::account::faucets::{FungibleFaucetError, TokenMetadata};
 use miden_standards::account::mint_policies::OwnerControlled;
 use miden_standards::note::{BurnNote, MintNote};
@@ -66,7 +66,7 @@ include!(concat!(env!("OUT_DIR"), "/agglayer_constants.rs"));
 /// ## Required Companion Components
 ///
 /// This component re-exports `network_fungible::mint_and_send`, which requires:
-/// - [`Ownable2Step`]: Provides ownership data (bridge account ID as owner).
+/// - [`Ownable`]: Provides ownership data (bridge account ID as owner).
 /// - [`miden_standards::account::mint_policies::OwnerControlled`]: Provides mint policy management.
 ///
 /// These must be added as separate components when building the faucet account.
@@ -114,9 +114,9 @@ impl AggLayerFaucet {
     }
 
     /// Storage slot name for the owner account ID (bridge), provided by the
-    /// [`Ownable2Step`] companion component.
+    /// [`Ownable`] companion component.
     pub fn owner_config_slot() -> &'static StorageSlotName {
-        Ownable2Step::slot_name()
+        Ownable::slot_name()
     }
 
     // ALLOWED NOTES
@@ -149,7 +149,7 @@ impl AggLayerFaucet {
         TokenMetadata::try_from(metadata_word).map_err(AgglayerFaucetError::FungibleFaucetError)
     }
 
-    /// Extracts the bridge account ID from the [`Ownable2Step`] owner config storage slot
+    /// Extracts the bridge account ID from the [`Ownable`] owner config storage slot
     /// of the provided account.
     ///
     /// # Errors
@@ -160,8 +160,8 @@ impl AggLayerFaucet {
         // check that the provided account is a faucet account
         Self::assert_faucet_account(faucet_account)?;
 
-        let ownership = Ownable2Step::try_from_storage(faucet_account.storage())
-            .map_err(AgglayerFaucetError::Ownable2StepError)?;
+        let ownership = Ownable::try_from_storage(faucet_account.storage())
+            .map_err(AgglayerFaucetError::OwnableError)?;
         ownership.owner().ok_or(AgglayerFaucetError::OwnershipRenounced)
     }
 
@@ -231,7 +231,7 @@ impl AggLayerFaucet {
     fn slot_names() -> Vec<&'static StorageSlotName> {
         vec![
             TokenMetadata::metadata_slot(),
-            Ownable2Step::slot_name(),
+            Ownable::slot_name(),
             OwnerControlled::active_policy_proc_root_slot(),
             OwnerControlled::allowed_policy_proc_roots_slot(),
             OwnerControlled::policy_authority_slot(),
@@ -262,8 +262,8 @@ pub enum AgglayerFaucetError {
     FungibleFaucetError(#[source] FungibleFaucetError),
     #[error("account ID error")]
     AccountIdError(#[source] AccountIdError),
-    #[error("ownable2step error")]
-    Ownable2StepError(#[source] miden_standards::account::access::Ownable2StepError),
+    #[error("ownable error")]
+    OwnableError(#[source] miden_standards::account::access::OwnableError),
     #[error("faucet ownership has been renounced")]
     OwnershipRenounced,
 }

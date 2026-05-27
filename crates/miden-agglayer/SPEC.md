@@ -328,7 +328,7 @@ modules in `asm/agglayer/common/`.
 
 Re-export of `miden::standards::faucets::network_fungible::mint_and_send`. Mints the
 specified amount and creates an output note with the given recipient. Requires the
-faucet's owner (the bridge account) to be the creator of this note (the bridge is stored in `Ownable2Step` storage slot as the owner; the faucet's `mint_and_send` executes the current access policy via `exec.policy_manager::execute_mint_policy`).
+faucet's owner (the bridge account) to be the creator of this note (the bridge is stored in `Ownable` storage slot as the owner; the faucet's `mint_and_send` executes the current access policy via `exec.policy_manager::execute_mint_policy`).
 
 #### `agglayer_faucet::get_metadata_hash`
 
@@ -394,7 +394,7 @@ This is a re-export of `miden::standards::faucets::basic_fungible::burn`. It bur
 **Companion component storage slots:** The faucet account also includes storage from
 companion components required by `network_fungible::mint_and_send`:
 
-- `Ownable2Step` owner config slot: stores the bridge account ID as owner.
+- `Ownable` owner config slot: stores the bridge account ID as owner.
 - `OwnerControlled` slots (3): `active_policy_proc_root`, `allowed_policy_proc_roots`,
   `policy_authority`.
 
@@ -773,9 +773,9 @@ The standard MINT script for public note creation loads the 18 storage items fro
 
 Before minting, `mint_and_send` executes the active mint policy via
 `policy_manager::execute_mint_policy`. For AggLayer faucets, the active policy is
-`owner_controlled::owner_only`, which calls `ownable2step::assert_sender_is_owner`. This
+`owner_controlled::owner_only`, which calls `ownable::assert_sender_is_owner`. This
 asserts that the MINT note's sender matches the faucet's owner (the bridge account, set
-via the `Ownable2Step` companion component at account creation time). This ensures only
+via the `Ownable` companion component at account creation time). This ensures only
 the bridge can trigger minting on the faucet.
 
 After the policy check passes, `mint_and_send` mints the specified amount and creates a
@@ -786,7 +786,7 @@ destination account ID, tag).
 
 | Role | Enforcement |
 |------|------------|
-| **Issuer** | Bridge account only -- **enforced** by faucet's `owner_only` mint policy via `Ownable2Step` (asserts note sender is the faucet's owner, i.e. the bridge) |
+| **Issuer** | Bridge account only -- **enforced** by faucet's `owner_only` mint policy via `Ownable` (asserts note sender is the faucet's owner, i.e. the bridge) |
 | **Consumer** | Target faucet only -- **enforced** via `NetworkAccountTarget` attachment |
 
 ---
@@ -1159,7 +1159,7 @@ behavior on both directions:
 | Bridge-in    | `bridge_in_output::build_mint_output_note` — emits a MINT note consumed by the faucet. | `bridge_in_output::unlock_and_send` — `native_account::remove_asset` unlocks from the vault, then emits a P2ID note directly to the recipient. No MINT note is emitted. |
 
 The LET leaf is constructed identically in both bridge-out branches. The native branch
-does not require the bridge to be the faucet's owner, and `ownable2step::assert_sender_is_owner`
+does not require the bridge to be the faucet's owner, and `ownable::assert_sender_is_owner`
 is not invoked on the native path. The P2ID note emitted by `unlock_and_send` uses the
 `PROOF_DATA_KEY` as its serial number, which makes the note commitment deterministic for
 a given claim and prevents double-spend within the same claim.

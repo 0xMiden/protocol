@@ -319,7 +319,7 @@ fn generate_agglayer_constants(
         let agglayer_component =
             AccountComponent::new(content_library, vec![], dummy_metadata.clone()).unwrap();
 
-        // The faucet account includes Ownable2Step and OwnerControlled components
+        // The faucet account includes Ownable and OwnerControlled components
         // alongside the agglayer faucet component, since network_fungible::mint_and_send
         // requires these for access control.
         //
@@ -337,7 +337,7 @@ fn generate_agglayer_constants(
             )
             .unwrap();
             components.push(AccountComponent::from(
-                miden_standards::account::access::Ownable2Step::new(dummy_owner),
+                miden_standards::account::access::Ownable::new(dummy_owner),
             ));
             components.push(AccountComponent::from(OwnerControlled::owner_only()));
         }

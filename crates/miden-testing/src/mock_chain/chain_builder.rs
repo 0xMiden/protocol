@@ -47,7 +47,7 @@ use miden_protocol::testing::account_id::ACCOUNT_ID_NATIVE_ASSET_FAUCET;
 use miden_protocol::testing::random_secret_key::random_secret_key;
 use miden_protocol::transaction::{OrderedTransactionHeaders, RawOutputNote, TransactionKernel};
 use miden_protocol::{Felt, MAX_OUTPUT_NOTES_PER_BATCH, Word};
-use miden_standards::account::access::Ownable2Step;
+use miden_standards::account::access::Ownable;
 use miden_standards::account::faucets::{BasicFungibleFaucet, NetworkFungibleFaucet};
 use miden_standards::account::mint_policies::{
     AuthControlled,
@@ -398,7 +398,7 @@ impl MockChainBuilder {
         let account_builder = AccountBuilder::new(self.rng.random())
             .storage_mode(AccountStorageMode::Network)
             .with_component(network_faucet)
-            .with_component(Ownable2Step::new(owner_account_id))
+            .with_component(Ownable::new(owner_account_id))
             .with_component(OwnerControlled::new(mint_policy))
             .account_type(AccountType::FungibleFaucet);
 

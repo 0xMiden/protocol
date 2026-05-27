@@ -1,13 +1,13 @@
 use miden::core::word
 use miden::protocol::active_account
 use miden::protocol::native_account
-use miden::standards::access::ownable2step
+use miden::standards::access::ownable
 
 # DEPENDENCY NOTE
 # This manager supports two policy-authority modes:
-# - 0: auth_controlled: no Ownable2Step dependency.
-# - 1: owner_controlled: requires Ownable2Step component
-#   (`ownable2step::assert_sender_is_owner`) for `set_mint_policy`.
+# - 0: auth_controlled: no Ownable dependency.
+# - 1: owner_controlled: requires Ownable component
+#   (`ownable::assert_sender_is_owner`) for `set_mint_policy`.
 
 # CONSTANTS
 # ================================================================================================
@@ -28,7 +28,7 @@ const ALLOWED_POLICY_PROC_ROOTS_SLOT=word("miden::standards::mint_policy_manager
 # Policy authority slot.
 # Layout: [policy_authority, 0, 0, 0]
 # - POLICY_AUTHORITY = 0: policy authority rely on `auth_controlled`.
-# - POLICY_AUTHORITY = 1: `set_mint_policy` requires Ownable2Step owner check.
+# - POLICY_AUTHORITY = 1: `set_mint_policy` requires Ownable owner check.
 const POLICY_AUTHORITY_SLOT=word("miden::standards::mint_policy_manager::policy_authority")
 const POLICY_AUTHORITY_OWNER_CONTROLLED=1
 
@@ -130,7 +130,7 @@ proc assert_can_set_mint_policy
 
     eq.POLICY_AUTHORITY_OWNER_CONTROLLED
     if.true
-        exec.ownable2step::assert_sender_is_owner
+        exec.ownable::assert_sender_is_owner
         # => [NEW_POLICY_ROOT, pad(12)]
     end
 end

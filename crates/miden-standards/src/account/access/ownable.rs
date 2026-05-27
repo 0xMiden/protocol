@@ -1,0 +1,168 @@
+use miden_protocol::account::component::{
+    AccountComponentMetadata,
+    FeltSchema,
+    StorageSchema,
+    StorageSlotSchema,
+};
+use miden_protocol::account::{
+    AccountComponent,
+    AccountId,
+    AccountStorage,
+    AccountType,
+    StorageSlot,
+    StorageSlotName,
+};
+use miden_protocol::errors::AccountIdError;
+use miden_protocol::utils::sync::LazyLock;
+use miden_protocol::{Felt, Word};
+
+use crate::account::components::ownable_library;
+
+static OWNER_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::access::ownable::owner_config")
+        .expect("storage slot name should be valid")
+});
+
+/// One-step ownership management for account components.
+///
+/// This struct holds the current owner of the component. Ownership is transferred in a single
+/// step: the current owner directly assigns a new owner (or renounces ownership). Unlike
+/// [`crate::account::access::Ownable2Step`], there is no nominated-owner acceptance step.
+///
+/// ## Storage Layout
+///
+/// The ownership data is stored in a single word, with the upper two felts left zero:
+///
+/// ```text
+/// Word:  [owner_suffix, owner_prefix, 0, 0]
+///         word[0]       word[1]        word[2]  word[3]
+/// ```
+pub struct Ownable {
+    /// The current owner of the component. `None` when ownership has been renounced.
+    owner: Option<AccountId>,
+}
+
+impl Ownable {
+    /// The name of the component.
+    pub const NAME: &'static str = "miden::standards::components::access::ownable";
+
+    // CONSTRUCTORS
+    // --------------------------------------------------------------------------------------------
+
+    /// Creates a new [`Ownable`] with the given owner.
+    pub fn new(owner: AccountId) -> Self {
+        Self { owner: Some(owner) }
+    }
+
+    /// Reads ownership data from account storage, validating any non-zero account ID.
+    ///
+    /// Returns an error if the owner contains an invalid (but non-zero) account ID.
+    pub fn try_from_storage(storage: &AccountStorage) -> Result<Self, OwnableError> {
+        let word: Word =
+            storage.get_item(Self::slot_name()).map_err(OwnableError::StorageLookupFailed)?;
+
+        Self::try_from_word(word)
+    }
+
+    /// Reconstructs an [`Ownable`] from a raw storage word.
+    ///
+    /// Format: `[owner_suffix, owner_prefix, 0, 0]`
+    pub fn try_from_word(word: Word) -> Result<Self, OwnableError> {
+        let owner =
+            account_id_from_felt_pair(word[0], word[1]).map_err(OwnableError::InvalidOwnerId)?;
+
+        Ok(Self { owner })
+    }
+
+    // PUBLIC ACCESSORS
+    // --------------------------------------------------------------------------------------------
+
+    /// Returns the [`StorageSlotName`] where ownership data is stored.
+    pub fn slot_name() -> &'static StorageSlotName {
+        &OWNER_CONFIG_SLOT_NAME
+    }
+
+    /// Returns the storage slot schema for the ownership configuration slot.
+    pub fn slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+        (
+            Self::slot_name().clone(),
+            StorageSlotSchema::value(
+                "Ownership data (owner)",
+                [
+                    FeltSchema::felt("owner_suffix"),
+                    FeltSchema::felt("owner_prefix"),
+                    FeltSchema::new_void(),
+                    FeltSchema::new_void(),
+                ],
+            ),
+        )
+    }
+
+    /// Returns the current owner, or `None` if ownership has been renounced.
+    pub fn owner(&self) -> Option<AccountId> {
+        self.owner
+    }
+
+    /// Converts this ownership data into a [`StorageSlot`].
+    pub fn to_storage_slot(&self) -> StorageSlot {
+        StorageSlot::with_value(Self::slot_name().clone(), self.to_word())
+    }
+
+    /// Converts this ownership data into a raw [`Word`].
+    pub fn to_word(&self) -> Word {
+        let (owner_suffix, owner_prefix) = match self.owner {
+            Some(id) => (id.suffix(), id.prefix().as_felt()),
+            None => (Felt::ZERO, Felt::ZERO),
+        };
+        [owner_suffix, owner_prefix, Felt::ZERO, Felt::ZERO].into()
+    }
+
+    /// Returns the [`AccountComponentMetadata`] for this component.
+    pub fn component_metadata() -> AccountComponentMetadata {
+        let storage_schema =
+            StorageSchema::new([Self::slot_schema()]).expect("storage schema should be valid");
+
+        AccountComponentMetadata::new(Self::NAME, AccountType::all())
+            .with_description("One-step ownership management component")
+            .with_storage_schema(storage_schema)
+    }
+}
+
+impl From<Ownable> for AccountComponent {
+    fn from(ownership: Ownable) -> Self {
+        let storage_slot = ownership.to_storage_slot();
+        let metadata = Ownable::component_metadata();
+
+        AccountComponent::new(ownable_library(), vec![storage_slot], metadata).expect(
+            "Ownable component should satisfy the requirements of a valid account component",
+        )
+    }
+}
+
+// OWNABLE ERROR
+// ================================================================================================
+
+/// Errors that can occur when reading [`Ownable`] data from storage.
+#[derive(Debug, thiserror::Error)]
+pub enum OwnableError {
+    #[error("failed to read ownership slot from storage")]
+    StorageLookupFailed(#[source] miden_protocol::errors::AccountError),
+    #[error("invalid owner account ID in storage")]
+    InvalidOwnerId(#[source] AccountIdError),
+}
+
+// HELPERS
+// ================================================================================================
+
+/// Constructs an `Option<AccountId>` from a suffix/prefix felt pair.
+/// Returns `Ok(None)` when both felts are zero (renounced).
+fn account_id_from_felt_pair(
+    suffix: Felt,
+    prefix: Felt,
+) -> Result<Option<AccountId>, AccountIdError> {
+    if suffix == Felt::ZERO && prefix == Felt::ZERO {
+        Ok(None)
+    } else {
+        AccountId::try_from_elements(suffix, prefix).map(Some)
+    }
+}

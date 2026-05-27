@@ -25,6 +25,13 @@ static BASIC_WALLET_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
 // ACCESS LIBRARIES
 // ================================================================================================
 
+// Initialize the Ownable library only once.
+static OWNABLE_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+    let bytes =
+        include_bytes!(concat!(env!("OUT_DIR"), "/assets/account_components/access/ownable.masl"));
+    Library::read_from_bytes(bytes).expect("Shipped Ownable library is well-formed")
+});
+
 // Initialize the Ownable2Step library only once.
 static OWNABLE2STEP_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     let bytes = include_bytes!(concat!(
@@ -132,6 +139,11 @@ static MINT_POLICY_AUTH_CONTROLLED_LIBRARY: LazyLock<Library> = LazyLock::new(||
 /// Returns the Basic Wallet Library.
 pub fn basic_wallet_library() -> Library {
     BASIC_WALLET_LIBRARY.clone()
+}
+
+/// Returns the Ownable Library.
+pub fn ownable_library() -> Library {
+    OWNABLE_LIBRARY.clone()
 }
 
 /// Returns the Ownable2Step Library.

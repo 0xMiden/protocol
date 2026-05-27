@@ -28,7 +28,7 @@ use miden_protocol::note::{
 use miden_protocol::testing::account_id::ACCOUNT_ID_PRIVATE_SENDER;
 use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote};
 use miden_protocol::{Felt, Word};
-use miden_standards::account::access::Ownable2Step;
+use miden_standards::account::access::Ownable;
 use miden_standards::account::faucets::{
     BasicFungibleFaucet,
     NetworkFungibleFaucet,
@@ -590,14 +590,14 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
     assert_eq!(actual_max_supply.as_canonical_u64(), max_supply);
 
     // Check that the creator account ID is stored in the ownership slot.
-    // Word: [owner_suffix, owner_prefix, nominated_suffix, nominated_prefix]
-    let stored_owner_id = faucet.storage().get_item(Ownable2Step::slot_name()).unwrap();
+    // Word: [owner_suffix, owner_prefix, 0, 0]
+    let stored_owner_id = faucet.storage().get_item(Ownable::slot_name()).unwrap();
     assert_eq!(
         stored_owner_id[0],
         Felt::new(faucet_owner_account_id.suffix().as_canonical_u64())
     );
     assert_eq!(stored_owner_id[1], faucet_owner_account_id.prefix().as_felt());
-    assert_eq!(stored_owner_id[2], Felt::new(0)); // no nominated owner
+    assert_eq!(stored_owner_id[2], Felt::new(0));
     assert_eq!(stored_owner_id[3], Felt::new(0));
 
     // Check that the faucet's token supply has been correctly initialized.
@@ -872,20 +872,18 @@ async fn test_network_faucet_owner_storage() -> anyhow::Result<()> {
     let _mock_chain = builder.build()?;
 
     // Verify owner is stored correctly
-    let stored_owner = faucet.storage().get_item(Ownable2Step::slot_name())?;
+    let stored_owner = faucet.storage().get_item(Ownable::slot_name())?;
 
-    // Word: [owner_suffix, owner_prefix, nominated_suffix, nominated_prefix]
+    // Word: [owner_suffix, owner_prefix, 0, 0]
     assert_eq!(stored_owner[0], Felt::new(owner_account_id.suffix().as_canonical_u64()));
     assert_eq!(stored_owner[1], owner_account_id.prefix().as_felt());
-    assert_eq!(stored_owner[2], Felt::new(0)); // no nominated owner
+    assert_eq!(stored_owner[2], Felt::new(0));
     assert_eq!(stored_owner[3], Felt::new(0));
 
     Ok(())
 }
 
-/// Tests that two-step transfer_ownership updates the owner correctly.
-/// Step 1: Owner nominates a new owner via transfer_ownership.
-/// Step 2: Nominated owner accepts via accept_ownership.
+/// Tests that one-step transfer_ownership updates the owner immediately.
 #[tokio::test]
 async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
@@ -939,16 +937,16 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
         &mut rng,
     )?;
 
-    // Step 1: Create transfer_ownership note script to nominate new owner
+    // Create the one-step transfer_ownership note script
     let transfer_note_script_code = format!(
         r#"
-        use miden::standards::access::ownable2step
+        use miden::standards::access::ownable
 
         begin
             repeat.14 push.0 end
             push.{new_owner_prefix}
             push.{new_owner_suffix}
-            call.ownable2step::transfer_ownership
+            call.ownable::transfer_ownership
             dropw dropw dropw dropw
         end
         "#,
@@ -979,54 +977,22 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
     let executed_transaction = tx_context.execute().await?;
     assert_eq!(executed_transaction.output_notes().num_notes(), 1);
 
-    // Execute transfer_ownership via note script (nominates new owner)
+    // Execute transfer_ownership via note script (owner changes immediately)
     let tx_context = mock_chain
         .build_tx_context(faucet.id(), &[transfer_note.id()], &[])?
         .with_source_manager(source_manager.clone())
         .build()?;
     let executed_transaction = tx_context.execute().await?;
 
-    // Persistence: Apply the transaction to update the faucet state
-    mock_chain.add_pending_executed_transaction(&executed_transaction)?;
-    mock_chain.prove_next_block()?;
-
-    let mut updated_faucet = faucet.clone();
-    updated_faucet.apply_delta(executed_transaction.account_delta())?;
-
-    // Step 2: Accept ownership as the nominated owner
-    let accept_note_script_code = r#"
-        use miden::standards::access::ownable2step
-
-        begin
-            repeat.16 push.0 end
-            call.ownable2step::accept_ownership
-            dropw dropw dropw dropw
-        end
-        "#;
-
-    let mut rng = RandomCoin::new([Felt::from(400u32); 4].into());
-    let accept_note = NoteBuilder::new(new_owner_account_id, &mut rng)
-        .note_type(NoteType::Private)
-        .tag(NoteTag::default().into())
-        .serial_number(Word::from([55, 66, 77, 88u32]))
-        .code(accept_note_script_code)
-        .build()?;
-
-    let tx_context = mock_chain
-        .build_tx_context(updated_faucet.clone(), &[], slice::from_ref(&accept_note))?
-        .with_source_manager(source_manager.clone())
-        .build()?;
-    let executed_transaction = tx_context.execute().await?;
-
-    let mut final_faucet = updated_faucet.clone();
+    let mut final_faucet = faucet.clone();
     final_faucet.apply_delta(executed_transaction.account_delta())?;
 
-    // Verify that owner changed to new_owner and nominated was cleared
-    // Word: [owner_suffix, owner_prefix, nominated_suffix, nominated_prefix]
-    let stored_owner = final_faucet.storage().get_item(Ownable2Step::slot_name())?;
+    // Verify that owner changed to new_owner immediately (no acceptance step)
+    // Word: [owner_suffix, owner_prefix, 0, 0]
+    let stored_owner = final_faucet.storage().get_item(Ownable::slot_name())?;
     assert_eq!(stored_owner[0], Felt::new(new_owner_account_id.suffix().as_canonical_u64()));
     assert_eq!(stored_owner[1], new_owner_account_id.prefix().as_felt());
-    assert_eq!(stored_owner[2], Felt::new(0)); // nominated cleared
+    assert_eq!(stored_owner[2], Felt::new(0));
     assert_eq!(stored_owner[3], Felt::new(0));
 
     Ok(())
@@ -1070,13 +1036,13 @@ async fn test_network_faucet_only_owner_can_transfer() -> anyhow::Result<()> {
     // Create transfer ownership note script
     let transfer_note_script_code = format!(
         r#"
-        use miden::standards::access::ownable2step
+        use miden::standards::access::ownable
 
         begin
             repeat.14 push.0 end
             push.{new_owner_prefix}
             push.{new_owner_suffix}
-            call.ownable2step::transfer_ownership
+            call.ownable::transfer_ownership
             dropw dropw dropw dropw
         end
         "#,
@@ -1134,17 +1100,17 @@ async fn test_network_faucet_renounce_ownership() -> anyhow::Result<()> {
     )?;
 
     // Check stored value before renouncing
-    let stored_owner_before = faucet.storage().get_item(Ownable2Step::slot_name())?;
+    let stored_owner_before = faucet.storage().get_item(Ownable::slot_name())?;
     assert_eq!(stored_owner_before[0], Felt::new(owner_account_id.suffix().as_canonical_u64()));
     assert_eq!(stored_owner_before[1], owner_account_id.prefix().as_felt());
 
     // Create renounce_ownership note script
     let renounce_note_script_code = r#"
-        use miden::standards::access::ownable2step
+        use miden::standards::access::ownable
 
         begin
             repeat.16 push.0 end
-            call.ownable2step::renounce_ownership
+            call.ownable::renounce_ownership
             dropw dropw dropw dropw
         end
         "#;
@@ -1154,13 +1120,13 @@ async fn test_network_faucet_renounce_ownership() -> anyhow::Result<()> {
     // Create transfer note script (will be used after renounce)
     let transfer_note_script_code = format!(
         r#"
-        use miden::standards::access::ownable2step
+        use miden::standards::access::ownable
 
         begin
             repeat.14 push.0 end
             push.{new_owner_prefix}
             push.{new_owner_suffix}
-            call.ownable2step::transfer_ownership
+            call.ownable::transfer_ownership
             dropw dropw dropw dropw
         end
         "#,
@@ -1203,7 +1169,7 @@ async fn test_network_faucet_renounce_ownership() -> anyhow::Result<()> {
     updated_faucet.apply_delta(executed_transaction.account_delta())?;
 
     // Check stored value after renouncing - should be zero
-    let stored_owner_after = updated_faucet.storage().get_item(Ownable2Step::slot_name())?;
+    let stored_owner_after = updated_faucet.storage().get_item(Ownable::slot_name())?;
     assert_eq!(stored_owner_after[0], Felt::new(0));
     assert_eq!(stored_owner_after[1], Felt::new(0));
     assert_eq!(stored_owner_after[2], Felt::new(0));

@@ -4,7 +4,7 @@ use miden_protocol::account::StorageSlotName;
 use miden_protocol::errors::{AccountError, TokenSymbolError};
 use thiserror::Error;
 
-use crate::account::access::Ownable2StepError;
+use crate::account::access::OwnableError;
 
 mod basic_fungible;
 mod network_fungible;
@@ -55,5 +55,5 @@ pub enum FungibleFaucetError {
     #[error("account is not a fungible faucet account")]
     NotAFungibleFaucetAccount,
     #[error("failed to read ownership data from storage")]
-    OwnershipError(#[source] Ownable2StepError),
+    OwnershipError(#[source] OwnableError),
 }

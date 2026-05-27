@@ -1,0 +1,7 @@
+# The MASM code of the Ownable Account Component.
+#
+# See the `Ownable` Rust type's documentation for more details.
+
+pub use ::miden::standards::access::ownable::get_owner
+pub use ::miden::standards::access::ownable::transfer_ownership
+pub use ::miden::standards::access::ownable::renounce_ownership

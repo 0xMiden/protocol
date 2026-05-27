@@ -60,9 +60,9 @@ procedure_digest!(
 /// authentication while `burn` does not require authentication and can be called by anyone.
 /// Thus, this component must be combined with a component providing authentication.
 ///
-/// This component relies on [`crate::account::access::Ownable2Step`] for ownership checks in
+/// This component relies on [`crate::account::access::Ownable`] for ownership checks in
 /// `mint_and_send`. When building an account with this component,
-/// [`crate::account::access::Ownable2Step`] must also be included.
+/// [`crate::account::access::Ownable`] must also be included.
 ///
 /// ## Storage Layout
 ///
@@ -284,7 +284,7 @@ impl TryFrom<&Account> for NetworkFungibleFaucet {
 /// - [`NoAuth`] for authentication
 ///
 /// The storage layout of the faucet account is documented on the [`NetworkFungibleFaucet`] and
-/// [`OwnerControlled`] and [`crate::account::access::Ownable2Step`] component types and
+/// [`OwnerControlled`] and [`crate::account::access::Ownable`] component types and
 /// contains no additional storage slots for its auth ([`NoAuth`]).
 pub fn create_network_fungible_faucet(
     init_seed: [u8; 32],
@@ -293,15 +293,15 @@ pub fn create_network_fungible_faucet(
     max_supply: Felt,
     access_control: AccessControl,
 ) -> Result<Account, FungibleFaucetError> {
-    // Validate that access_control is Ownable2Step, as this faucet depends on it.
+    // Validate that access_control is Ownable, as this faucet depends on it.
     // When new variants are added to AccessControl, update this match to either support
     // them or return Err(FungibleFaucetError::UnsupportedAccessControl).
     match access_control {
-        AccessControl::Ownable2Step { .. } => {},
+        AccessControl::Ownable { .. } => {},
         #[allow(unreachable_patterns)]
         _ => {
             return Err(FungibleFaucetError::UnsupportedAccessControl(
-                "network fungible faucets require Ownable2Step access control".into(),
+                "network fungible faucets require Ownable access control".into(),
             ));
         },
     }
@@ -329,7 +329,7 @@ mod tests {
     use miden_protocol::account::{AccountId, AccountIdVersion, AccountStorageMode, AccountType};
 
     use super::*;
-    use crate::account::access::Ownable2Step;
+    use crate::account::access::Ownable;
 
     #[test]
     fn test_create_network_fungible_faucet() {
@@ -350,13 +350,13 @@ mod tests {
             symbol.clone(),
             decimals,
             max_supply,
-            AccessControl::Ownable2Step { owner },
+            AccessControl::Ownable { owner },
         )
         .expect("network faucet creation should succeed");
 
-        let expected_owner_word = Ownable2Step::new(owner).to_word();
+        let expected_owner_word = Ownable::new(owner).to_word();
         assert_eq!(
-            account.storage().get_item(Ownable2Step::slot_name()).unwrap(),
+            account.storage().get_item(Ownable::slot_name()).unwrap(),
             expected_owner_word
         );
 
