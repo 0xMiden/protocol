@@ -40,14 +40,14 @@ pub fn mock_output_note(num: u8) -> OutputNote {
     RawOutputNote::Full(mock_note(num)).into_output_note().unwrap()
 }
 
-struct TestSetup {
-    chain: MockChain,
-    account1: Account,
-    account2: Account,
-    note1: Note,
+pub struct TestSetup {
+    pub chain: MockChain,
+    pub account1: Account,
+    pub account2: Account,
+    pub note1: Note,
 }
 
-fn setup_chain() -> TestSetup {
+pub fn setup_chain() -> TestSetup {
     let mut builder = MockChain::builder();
     let account1 = generate_account(&mut builder);
     let account2 = generate_account(&mut builder);

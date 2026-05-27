@@ -5,48 +5,15 @@ use anyhow::Context;
 use miden_core_lib::CoreLibrary;
 use miden_processor::{DefaultHost, ExecutionOptions, FastProcessor};
 use miden_protocol::Word;
-use miden_protocol::account::{Account, AccountStorageMode};
 use miden_protocol::batch::{BatchKernel, ProposedBatch};
 use miden_protocol::block::BlockNumber;
-use miden_protocol::note::{Note, NoteType};
 use miden_protocol::vm::{AdviceInputs, Program, StackInputs, StackOutputs};
-use miden_standards::testing::account_component::MockAccountComponent;
-use rand::Rng;
 
-use super::proposed_batch::{mock_note, mock_output_note};
+use super::proposed_batch::{TestSetup, mock_note, mock_output_note, setup_chain};
 use super::proven_tx_builder::MockProvenTxBuilder;
-use crate::{AccountState, Auth, MockChain, MockChainBuilder};
 
 // SETUP HELPERS
 // ================================================================================================
-
-struct TestSetup {
-    chain: MockChain,
-    account1: Account,
-    account2: Account,
-    auth_note: Note,
-}
-
-fn setup() -> TestSetup {
-    let mut builder = MockChain::builder();
-    let account1 = generate_account(&mut builder);
-    let account2 = generate_account(&mut builder);
-    let auth_note = builder
-        .add_p2id_note(account1.id(), account2.id(), &[], NoteType::Public)
-        .expect("adding p2id note should work");
-    let mut chain = builder.build().expect("genesis should be valid");
-    chain.prove_next_block().expect("first block should prove");
-    TestSetup { chain, account1, account2, auth_note }
-}
-
-fn generate_account(chain: &mut MockChainBuilder) -> Account {
-    let account_builder = Account::builder(rand::rng().random())
-        .storage_mode(AccountStorageMode::Private)
-        .with_component(MockAccountComponent::with_empty_slots());
-    chain
-        .add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
-        .expect("failed to add pending account from builder")
-}
 
 /// Builds a two-transaction batch with realistic inputs and outputs. The skeleton kernel does not
 /// inspect any of this data, but the batch is built end-to-end so the smoke test exercises the
@@ -61,7 +28,7 @@ fn two_tx_batch(setup: &mut TestSetup) -> anyhow::Result<ProposedBatch> {
         setup.account1.to_commitment(),
     )
     .ref_block_commitment(block1.commitment())
-    .authenticated_notes(vec![setup.auth_note.clone()])
+    .authenticated_notes(vec![setup.note1.clone()])
     .output_notes(vec![mock_output_note(80)])
     .expiration_block_num(BlockNumber::from(1234u32))
     .build()?;
@@ -112,7 +79,7 @@ fn run_kernel(
 /// shape.
 #[test]
 fn batch_kernel_skeleton_emits_empty_outputs() -> anyhow::Result<()> {
-    let mut setup = setup();
+    let mut setup = setup_chain();
     let batch = two_tx_batch(&mut setup)?;
 
     let (stack_inputs, advice_inputs) = BatchKernel::prepare_inputs(&batch);
