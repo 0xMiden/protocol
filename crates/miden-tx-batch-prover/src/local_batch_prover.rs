@@ -1,7 +1,7 @@
 use alloc::boxed::Box;
 use alloc::string::ToString;
 
-use miden_processor::DefaultHost;
+use miden_processor::{DefaultHost, ExecutionOptions};
 use miden_protocol::batch::{BatchKernel, ProposedBatch, ProvenBatch};
 use miden_protocol::errors::ProvenBatchError;
 use miden_prover::{ExecutionProof, ProvingOptions, prove};
@@ -66,6 +66,7 @@ impl LocalBatchProver {
             stack_inputs,
             advice_inputs,
             &mut host,
+            ExecutionOptions::default(),
             self.proving_options.clone(),
         )
         .await

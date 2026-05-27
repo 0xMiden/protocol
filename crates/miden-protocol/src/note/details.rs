@@ -1,4 +1,4 @@
-use super::{NoteAssets, NoteId, NoteRecipient, NoteScript, NoteStorage, Nullifier};
+use super::{NoteAssets, NoteDetailsCommitment, NoteRecipient, NoteScript, NoteStorage};
 use crate::Word;
 use crate::utils::serde::{
     ByteReader,
@@ -32,11 +32,11 @@ impl NoteDetails {
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns the note's unique identifier.
+    /// Returns the commitment of this [`NoteDetails`].
     ///
-    /// This value is both an unique identifier and a commitment to the note.
-    pub fn id(&self) -> NoteId {
-        NoteId::from(self)
+    /// This value is used as part of the note's public identifier.
+    pub fn commitment(&self) -> NoteDetailsCommitment {
+        NoteDetailsCommitment::new(self.recipient(), self.assets())
     }
 
     /// Returns the note's assets.
@@ -62,13 +62,6 @@ impl NoteDetails {
     /// Returns the note's recipient.
     pub fn recipient(&self) -> &NoteRecipient {
         &self.recipient
-    }
-
-    /// Returns the note's nullifier.
-    ///
-    /// This is public data, used to prevent double spend.
-    pub fn nullifier(&self) -> Nullifier {
-        Nullifier::from(self)
     }
 
     // MUTATORS

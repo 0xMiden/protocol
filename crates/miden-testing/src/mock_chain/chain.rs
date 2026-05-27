@@ -19,7 +19,7 @@ use miden_protocol::block::{
     ProposedBlock,
     ProvenBlock,
 };
-use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SecretKey;
+use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
 use miden_protocol::note::{Note, NoteHeader, NoteId, NoteInclusionProof, Nullifier};
 use miden_protocol::transaction::{
     ExecutedTransaction,
@@ -64,7 +64,7 @@ use crate::{MockChainBuilder, TransactionContextBuilder};
 /// # use anyhow::Result;
 /// # use miden_protocol::{
 /// #    account::auth::AuthScheme,
-/// #    asset::{Asset, FungibleAsset},
+/// #    asset::{Asset, AssetCallbackFlag, FungibleAsset},
 /// #    note::NoteType,
 /// # };
 /// # use miden_testing::{Auth, MockChain};
@@ -119,7 +119,7 @@ use crate::{MockChainBuilder, TransactionContextBuilder};
 ///     mock_chain
 ///         .committed_account(receiver.id())?
 ///         .vault()
-///         .get_balance(fungible_asset.faucet_id())?,
+///         .get_balance(fungible_asset.vault_key())?,
 ///     fungible_asset.amount()
 /// );
 /// # Ok(())
@@ -206,7 +206,7 @@ pub struct MockChain {
     account_authenticators: BTreeMap<AccountId, AccountAuthenticator>,
 
     /// Validator secret key used for signing blocks.
-    validator_secret_key: SecretKey,
+    validator_secret_key: SigningKey,
 }
 
 impl MockChain {
@@ -238,7 +238,7 @@ impl MockChain {
         genesis_block: ProvenBlock,
         account_tree: AccountTree,
         account_authenticators: BTreeMap<AccountId, AccountAuthenticator>,
-        secret_key: SecretKey,
+        secret_key: SigningKey,
         genesis_notes: Vec<Note>,
     ) -> anyhow::Result<Self> {
         let mut chain = MockChain {
@@ -972,7 +972,7 @@ impl MockChain {
                     created_note.id(),
                     MockChainNote::Private(
                         created_note.id(),
-                        created_note.metadata().clone(),
+                        *created_note.metadata(),
                         note_inclusion_proof,
                     ),
                 );
@@ -1096,7 +1096,7 @@ impl Deserializable for MockChain {
         let committed_notes = BTreeMap::<NoteId, MockChainNote>::read_from(source)?;
         let account_authenticators =
             BTreeMap::<AccountId, AccountAuthenticator>::read_from(source)?;
-        let secret_key = SecretKey::read_from(source)?;
+        let secret_key = SigningKey::read_from(source)?;
 
         Ok(Self {
             chain,
@@ -1221,7 +1221,7 @@ impl From<Account> for TxContextInput {
 #[cfg(test)]
 mod tests {
     use miden_protocol::account::auth::AuthScheme;
-    use miden_protocol::account::{AccountBuilder, AccountStorageMode};
+    use miden_protocol::account::{AccountBuilder, AccountType};
     use miden_protocol::asset::{Asset, FungibleAsset};
     use miden_protocol::note::NoteType;
     use miden_protocol::testing::account_id::{
@@ -1248,7 +1248,7 @@ mod tests {
     async fn private_account_state_update() -> anyhow::Result<()> {
         let faucet_id = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into()?;
         let account_builder = AccountBuilder::new([4; 32])
-            .storage_mode(AccountStorageMode::Private)
+            .account_type(AccountType::Private)
             .with_component(BasicWallet);
 
         let mut builder = MockChain::builder();

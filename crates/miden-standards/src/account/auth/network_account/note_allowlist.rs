@@ -2,6 +2,7 @@ use alloc::collections::BTreeSet;
 
 use miden_protocol::account::component::{SchemaType, StorageSlotSchema};
 use miden_protocol::account::{
+    AccountId,
     AccountStorage,
     StorageMap,
     StorageMapKey,
@@ -40,7 +41,7 @@ const ALLOWED_FLAG: Word = Word::new([Felt::ONE, Felt::ZERO, Felt::ZERO, Felt::Z
 ///
 /// The slot is a [`StorageMap`] keyed by note script root; any non-empty value marks a root as
 /// allowed.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NetworkAccountNoteAllowlist {
     allowed_script_roots: BTreeSet<NoteScriptRoot>,
 }
@@ -70,6 +71,11 @@ impl NetworkAccountNoteAllowlist {
     /// Returns the allowed input-note script roots in this allowlist.
     pub fn allowed_script_roots(&self) -> &BTreeSet<NoteScriptRoot> {
         &self.allowed_script_roots
+    }
+
+    /// Returns the allowed input-note script roots in this allowlist.
+    pub fn into_allowed_script_roots(self) -> BTreeSet<NoteScriptRoot> {
+        self.allowed_script_roots
     }
 
     /// Returns the schema entry for the allowlist slot.
@@ -152,6 +158,8 @@ pub enum NetworkAccountNoteAllowlistError {
         NetworkAccountNoteAllowlist::slot_name()
     )]
     UnexpectedSlotType,
+    #[error("network account must have public account type, but account {0} does not")]
+    AccountNotPublic(AccountId),
 }
 
 // TESTS

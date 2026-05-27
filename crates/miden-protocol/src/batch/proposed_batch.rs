@@ -165,30 +165,53 @@ impl ProposedBatch {
         //
         // Note that some block X is only added to the blockchain by block X + 1. This
         // is because block X cannot compute its own block commitment and thus cannot add
-        // itself to the chain. So, more generally, a previous block is added to the
-        // blockchain by its child block.
+        // itself to the chain. So, more generally, a block is added to the blockchain by its child
+        // block.
         //
         // The reference block of a batch may be the latest block in the chain and, as mentioned,
-        // block is not yet part of the blockchain, so its inclusion cannot be proven.
-        // Since the inclusion cannot be proven in all cases, the batch kernel instead
-        // commits to this reference block's commitment as a public input, which means the
-        // block kernel will prove this block's inclusion when including this batch and
-        // verifying its ZK proof.
+        // the block is not yet part of the blockchain, so its inclusion cannot be proven.
+        // Since the inclusion cannot be proven, the batch kernel instead commits to this reference
+        // block's commitment as a public input, which means the block kernel will prove
+        // this block's inclusion when including this batch and verifying its ZK proof.
         //
         // Finally, note that we don't verify anything cryptographically here. We have previously
-        // verified that the batch reference block's chain commitment matches the hashed peaks of
-        // the `PartialBlockchain`, and so we only have to check if the partial blockchain contains
-        // the block here.
+        // verified that the chain commitment of the batch's reference block matches the hashed
+        // peaks of the `PartialBlockchain`. This means the provided blockchain is consistent with
+        // the batch's reference block and that all blocks contained in the blockchain are
+        // consistent, too. So, as long as each transaction's reference block (number and
+        // commitment) is contained in the partial blockchain, we know the transaction's
+        // block header is consistent with the batch's reference block, too.
         // --------------------------------------------------------------------------------------------
 
         for tx in transactions.iter() {
-            if reference_block_header.block_num() != tx.ref_block_num()
-                && !partial_blockchain.contains_block(tx.ref_block_num())
-            {
-                return Err(ProposedBatchError::MissingTransactionBlockReference {
-                    block_reference: tx.ref_block_commitment(),
-                    transaction_id: tx.id(),
-                });
+            // Differentiate between validation against the batch's reference block or a block from
+            // the chain (see above).
+            if reference_block_header.block_num() == tx.ref_block_num() {
+                if reference_block_header.commitment() != tx.ref_block_commitment() {
+                    return Err(ProposedBatchError::TransactionReferenceBlockCommitmentMismatch {
+                        transaction_id: tx.id(),
+                        block_num: tx.ref_block_num(),
+                        actual_block_commitment: tx.ref_block_commitment(),
+                        expected_block_commitment: reference_block_header.commitment(),
+                    });
+                }
+            } else {
+                let block_header =
+                    partial_blockchain.get_block(tx.ref_block_num()).ok_or_else(|| {
+                        ProposedBatchError::MissingTransactionReferenceBlock {
+                            transaction_id: tx.id(),
+                            block_num: tx.ref_block_num(),
+                        }
+                    })?;
+
+                if block_header.commitment() != tx.ref_block_commitment() {
+                    return Err(ProposedBatchError::TransactionReferenceBlockCommitmentMismatch {
+                        transaction_id: tx.id(),
+                        block_num: tx.ref_block_num(),
+                        actual_block_commitment: tx.ref_block_commitment(),
+                        expected_block_commitment: block_header.commitment(),
+                    });
+                }
             }
         }
 
@@ -444,7 +467,7 @@ mod tests {
     use super::*;
     use crate::Word;
     use crate::account::delta::AccountUpdateDetails;
-    use crate::account::{AccountIdVersion, AccountStorageMode, AccountType};
+    use crate::account::{AccountIdVersion, AccountType};
     use crate::asset::FungibleAsset;
     use crate::transaction::{InputNoteCommitment, OutputNote, ProvenTransaction, TxAccountUpdate};
 
@@ -454,7 +477,8 @@ mod tests {
         let mut mmr = Mmr::default();
         for i in 0..3 {
             let block_header = BlockHeader::mock(i, None, None, &[], Word::empty());
-            mmr.add(block_header.commitment());
+            mmr.add(block_header.commitment())
+                .expect("mmr leaf count exceeds forest leaf bound");
         }
         let partial_mmr: PartialMmr = mmr.peaks().into();
         let partial_blockchain = PartialBlockchain::new(partial_mmr, Vec::new()).unwrap();
@@ -470,12 +494,8 @@ mod tests {
             tx_kernel_commitment,
         );
 
-        let account_id = AccountId::dummy(
-            [1; 15],
-            AccountIdVersion::Version1,
-            AccountType::FungibleFaucet,
-            AccountStorageMode::Private,
-        );
+        let account_id =
+            AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountType::Private);
         let initial_account_commitment =
             [2; 32].try_into().expect("failed to create initial account commitment");
         let final_account_commitment =

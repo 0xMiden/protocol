@@ -17,6 +17,11 @@ use miden::standards::wallets::basic->wallet
 const NUM_STORAGE_ITEMS=7
 const MAX_U32=0x0000000100000000
 
+# Attachment scheme used by both PSWAP output notes (payback P2ID + remainder PSWAP).
+# Carries the word [amount, order_id, depth, 0]. Mirrors
+# StandardNoteAttachment::PswapAttachment in the Rust standards crate.
+const PSWAP_ATTACHMENT_SCHEME = 3
+
 # Note storage layout (7 felts, loaded at STORAGE_PTR by get_storage):
 # - requested_enable_callbacks [0]  : 1 felt
 # - requested_faucet_suffix    [1]  : 1 felt
@@ -86,6 +91,11 @@ const EXEC_OFFERED_FAUCET_SUFFIX = 6
 const EXEC_OFFERED_FAUCET_PREFIX = 7
 const EXEC_AMT_REQUESTED_ACCOUNT_FILL = 8
 const EXEC_AMT_REQUESTED_NOTE_FILL = 9
+
+# Local memory for the parent's PswapAttachment word [amount, order_id, depth, 0]:
+# write the word at PARENT_ATTACHMENT_PTR, read back only the depth at DEPTH_OFFSET.
+const PARENT_ATTACHMENT_PTR = 0
+const PARENT_ATTACHMENT_DEPTH_OFFSET = 2
 
 # ERRORS
 # =================================================================================================
@@ -228,20 +238,28 @@ proc create_p2id_note
     loc_store.P2ID_AMT_NOTE_FILL
     # => []
 
-    # Set attachment: aux = amt_account_fill + amt_note_fill at Word[0].
-    # attachment_scheme = 0 (NoteAttachmentScheme::none).
-    #
     # The add cannot overflow: `execute_pswap` asserts
     # `amt_account_fill + amt_note_fill <= requested_amount` before calling
     # this procedure, and `requested_amount` itself fits in a felt.
-    push.0.0.0
+    loc_load.P2ID_NOTE_IDX
+    # => [note_idx]
+
+    push.0
+    # => [0, note_idx]
+
+    exec.get_current_depth
+    # => [depth, 0, note_idx]
+
+    exec.get_order_id
+    # => [order_id, depth, 0, note_idx]
+
     loc_load.P2ID_AMT_ACCOUNT_FILL loc_load.P2ID_AMT_NOTE_FILL add
-    # => [total_fill, 0, 0, 0]
+    # => [total_fill, order_id, depth, 0, note_idx]
 
-    push.0 loc_load.P2ID_NOTE_IDX
-    # => [note_idx, attachment_scheme=0, total_fill, 0, 0, 0]
+    push.PSWAP_ATTACHMENT_SCHEME
+    # => [PSWAP_ATTACHMENT_SCHEME, total_fill, order_id, depth, 0, note_idx]
 
-    exec.output_note::set_word_attachment
+    exec.output_note::add_word_attachment
     # => []
 
     # Move account_fill_amount from consumer's vault to P2ID note (if > 0)
@@ -355,14 +373,25 @@ proc create_remainder_note
     loc_store.REMAINDER_NOTE_IDX
     # => []
 
-    # Set attachment: aux = amt_payout at Word[0]
-    push.0.0.0 loc_load.REMAINDER_AMT_PAYOUT
-    # => [amt_payout, 0, 0, 0]
+    loc_load.REMAINDER_NOTE_IDX
+    # => [note_idx]
 
-    push.0 loc_load.REMAINDER_NOTE_IDX
-    # => [note_idx, attachment_scheme=0, amt_payout, 0, 0, 0]
+    push.0
+    # => [0, note_idx]
 
-    exec.output_note::set_word_attachment
+    exec.get_current_depth
+    # => [depth, 0, note_idx]
+
+    exec.get_order_id
+    # => [order_id, depth, 0, note_idx]
+
+    loc_load.REMAINDER_AMT_PAYOUT
+    # => [amt_payout, order_id, depth, 0, note_idx]
+
+    push.PSWAP_ATTACHMENT_SCHEME
+    # => [PSWAP_ATTACHMENT_SCHEME, amt_payout, order_id, depth, 0, note_idx]
+
+    exec.output_note::add_word_attachment
     # => []
 
     # Add remaining offered asset: remainder_amount = amt_offered - amt_payout.
@@ -439,6 +468,65 @@ proc handle_reclaim
 
     dropw dropw dropw dropw
     # => []
+end
+
+#! Returns the PSWAP order_id, taken from the active note's serial[1].
+#!
+#! serial[1] is stable across every payback and remainder in the PSWAP note chain:
+#! the payback bumps serial[0] and the remainder bumps serial[3], so the creator's
+#! serial[1] carries through every note in the chain unchanged.
+#!
+#! Inputs:  []
+#! Outputs: [order_id]
+proc get_order_id
+    exec.active_note::get_serial_number
+    # => [s0, s1, s2, s3]
+
+    drop
+    # => [s1, s2, s3]
+
+    movdn.2
+    # => [s2, s3, s1]
+
+    drop drop
+    # => [s1]
+end
+
+#! Returns current_depth = parent_depth + 1, where parent_depth is the depth carried in the
+#! consumed PSWAP note's PswapAttachment word at offset PARENT_ATTACHMENT_DEPTH_OFFSET if such an
+#! attachment exists, or 0 if not (i.e., the parent is the original PSWAP, with scheme none()
+#! or NetworkAccountTarget).
+#!
+#! Inputs:  []
+#! Outputs: [current_depth]
+@locals(4)
+proc get_current_depth
+    push.PSWAP_ATTACHMENT_SCHEME
+    # => [PSWAP_ATTACHMENT_SCHEME]
+
+    exec.active_note::find_attachment
+    # => [is_found, attachment_idx]
+
+    if.true
+        locaddr.PARENT_ATTACHMENT_PTR
+        # => [dest_ptr, attachment_idx]
+
+        exec.active_note::write_attachment_to_memory
+        # => [num_words]
+
+        drop
+        # => []
+
+        loc_load.PARENT_ATTACHMENT_DEPTH_OFFSET
+        # => [parent_depth]
+    else
+        drop push.0
+        # => [0]
+    end
+    # => [parent_depth]
+
+    add.1
+    # => [current_depth]
 end
 
 #! Executes the partially-fillable swap.
@@ -614,13 +702,16 @@ proc execute_pswap
         # => [remaining_requested]
 
         exec.active_note::get_metadata
-        # => [NOTE_ATTACHMENT, METADATA_HEADER, remaining_requested]
-        # where METADATA_HEADER = [sid_suf_ver, sid_pre, tag, att_ks]
-        dropw
-        # => [sid_suf_ver, sid_pre, tag, att_ks, remaining_requested]
+        # => [METADATA, remaining_requested]
 
-        dup.2 movdn.4
-        # => [sid_suf_ver, sid_pre, tag, att_ks, tag, remaining_requested]
+        dupw
+        # => [METADATA, METADATA, remaining_requested]
+
+        exec.note::metadata_into_tag
+        # => [tag, METADATA, remaining_requested]
+
+        movdn.4
+        # => [METADATA, tag, remaining_requested]
 
         exec.note::metadata_into_note_type
         # => [note_type, tag, remaining_requested]

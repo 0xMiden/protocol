@@ -7,13 +7,39 @@ use thiserror::Error;
 use crate::account::access::Ownable2StepError;
 use crate::utils::FixedWidthStringError;
 
-mod basic_fungible;
-mod network_fungible;
+mod fungible;
 mod token_metadata;
 
-pub use basic_fungible::{BasicFungibleFaucet, create_basic_fungible_faucet};
-pub use network_fungible::{NetworkFungibleFaucet, create_network_fungible_faucet};
-pub use token_metadata::TokenMetadata;
+pub use fungible::{FungibleFaucet, FungibleFaucetBuilder, create_fungible_faucet};
+pub use token_metadata::{Description, ExternalLink, LogoURI, TokenMetadata, TokenName};
+
+// TOKEN METADATA ERROR
+// ================================================================================================
+
+/// Errors raised when parsing token metadata from storage.
+#[derive(Debug, Error)]
+pub enum TokenMetadataError {
+    #[error("failed to retrieve storage slot with name {slot_name}")]
+    StorageLookupFailed {
+        slot_name: StorageSlotName,
+        source: AccountError,
+    },
+    #[error("invalid string data in field '{field}'")]
+    InvalidStringField {
+        field: &'static str,
+        #[source]
+        source: FixedWidthStringError,
+    },
+    #[error("mutability flag at index {index} has invalid value {value}: must be 0 or 1")]
+    InvalidMutabilityFlag { index: usize, value: u64 },
+    #[error("storage slot name mismatch: expected {expected}, got {actual}")]
+    SlotNameMismatch {
+        expected: StorageSlotName,
+        actual: StorageSlotName,
+    },
+    #[error("invalid token symbol")]
+    InvalidTokenSymbol(#[source] TokenSymbolError),
+}
 
 // FUNGIBLE FAUCET ERROR
 // ================================================================================================
@@ -30,37 +56,19 @@ pub enum FungibleFaucetError {
     #[error(
         "account interface does not have the procedures of the basic fungible faucet component"
     )]
-    MissingBasicFungibleFaucetInterface,
-    #[error(
-        "account interface does not have the procedures of the network fungible faucet component"
-    )]
-    MissingNetworkFungibleFaucetInterface,
-    #[error("failed to retrieve storage slot with name {slot_name}")]
-    StorageLookupFailed {
-        slot_name: StorageSlotName,
-        source: AccountError,
-    },
-    #[error("invalid token symbol")]
-    InvalidTokenSymbol(#[source] TokenSymbolError),
-    #[error("storage slot name mismatch: expected {expected}, got {actual}")]
-    SlotNameMismatch {
-        expected: StorageSlotName,
-        actual: StorageSlotName,
-    },
+    MissingFungibleFaucetInterface,
     #[error("unsupported authentication method: {0}")]
     UnsupportedAuthMethod(String),
+    #[error("AccessControl::AuthControlled is incompatible with the chosen auth method: {0}")]
+    IncompatibleAuthControlledAuth(String),
+    #[error("unsupported combination of AccessControl and AuthMethod: {0}")]
+    UnsupportedAccessControlAuthCombination(String),
     #[error("account creation failed")]
     AccountError(#[source] AccountError),
     #[error("account is not a fungible faucet account")]
     NotAFungibleFaucetAccount,
     #[error("failed to read ownership data from storage")]
     OwnershipError(#[source] Ownable2StepError),
-    #[error("mutability flag at index {index} has invalid value {value}: must be 0 or 1")]
-    InvalidMutabilityFlag { index: usize, value: u64 },
-    #[error("invalid string data in field '{field}'")]
-    InvalidStringField {
-        field: &'static str,
-        #[source]
-        source: FixedWidthStringError,
-    },
+    #[error(transparent)]
+    TokenMetadata(#[from] TokenMetadataError),
 }

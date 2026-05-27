@@ -12,11 +12,11 @@ use miden_protocol::field::PrimeField64;
 use miden_protocol::note::{
     Note,
     NoteAssets,
-    NoteMetadata,
     NoteRecipient,
     NoteStorage,
     NoteTag,
     NoteType,
+    PartialNoteMetadata,
 };
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
@@ -786,11 +786,11 @@ fn create_p2ide_note_with_storage(
     let recipient = NoteRecipient::new(
         serial_num,
         note_script,
-        NoteStorage::new(storage.into_iter().map(Felt::new).collect()).unwrap(),
+        NoteStorage::new(storage.into_iter().map(Felt::new_unchecked).collect()).unwrap(),
     );
 
     let tag = NoteTag::with_account_target(sender);
-    let metadata = NoteMetadata::new(sender, NoteType::Public).with_tag(tag);
+    let metadata = PartialNoteMetadata::new(sender, NoteType::Public).with_tag(tag);
 
     Note::new(NoteAssets::default(), metadata, recipient)
 }

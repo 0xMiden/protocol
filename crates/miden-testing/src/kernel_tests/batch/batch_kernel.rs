@@ -27,7 +27,7 @@ fn two_tx_batch(setup: &mut TestSetup) -> anyhow::Result<ProposedBatch> {
         Word::empty(),
         setup.account1.to_commitment(),
     )
-    .ref_block_commitment(block1.commitment())
+    .reference_block(&block1)
     .authenticated_notes(vec![setup.note1.clone()])
     .output_notes(vec![mock_output_note(80)])
     .expiration_block_num(BlockNumber::from(1234u32))
@@ -39,7 +39,7 @@ fn two_tx_batch(setup: &mut TestSetup) -> anyhow::Result<ProposedBatch> {
         Word::empty(),
         setup.account2.to_commitment(),
     )
-    .ref_block_commitment(block1.commitment())
+    .reference_block(&block1)
     .unauthenticated_notes(vec![tx2_input])
     .output_notes(vec![mock_output_note(82), mock_output_note(83)])
     .expiration_block_num(BlockNumber::from(800u32))
@@ -64,6 +64,7 @@ fn run_kernel(
 
     let processor =
         FastProcessor::new_with_options(stack_inputs, advice_inputs, ExecutionOptions::default())
+            .expect("failed to create processor")
             .with_debugging(true);
     let output = processor.execute_sync(program, &mut host)?;
     Ok(output.stack)

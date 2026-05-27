@@ -9,14 +9,14 @@ use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
     Note,
     NoteAssets,
-    NoteAttachment,
-    NoteMetadata,
+    NoteAttachments,
     NoteRecipient,
     NoteScript,
     NoteScriptRoot,
     NoteStorage,
     NoteTag,
     NoteType,
+    PartialNoteMetadata,
 };
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
@@ -86,18 +86,17 @@ impl P2ideNote {
         storage: P2ideNoteStorage,
         assets: Vec<Asset>,
         note_type: NoteType,
-        attachment: NoteAttachment,
+        attachments: NoteAttachments,
         rng: &mut R,
     ) -> Result<Note, NoteError> {
         let serial_num = rng.draw_word();
         let recipient = storage.into_recipient(serial_num)?;
         let tag = NoteTag::with_account_target(storage.target());
 
-        let metadata =
-            NoteMetadata::new(sender, note_type).with_tag(tag).with_attachment(attachment);
+        let metadata = PartialNoteMetadata::new(sender, note_type).with_tag(tag);
         let vault = NoteAssets::new(assets)?;
 
-        Ok(Note::new(vault, metadata, recipient))
+        Ok(Note::with_attachments(vault, metadata, recipient, attachments))
     }
 }
 
@@ -215,19 +214,14 @@ impl TryFrom<&[Felt]> for P2ideNoteStorage {
 #[cfg(test)]
 mod tests {
     use miden_protocol::Felt;
-    use miden_protocol::account::{AccountId, AccountIdVersion, AccountStorageMode, AccountType};
+    use miden_protocol::account::{AccountId, AccountIdVersion, AccountType};
     use miden_protocol::block::BlockNumber;
     use miden_protocol::errors::NoteError;
 
     use super::*;
 
     fn dummy_account() -> AccountId {
-        AccountId::dummy(
-            [3u8; 15],
-            AccountIdVersion::Version1,
-            AccountType::FungibleFaucet,
-            AccountStorageMode::Private,
-        )
+        AccountId::dummy([3u8; 15], AccountIdVersion::Version1, AccountType::Private)
     }
 
     #[test]
@@ -279,7 +273,7 @@ mod tests {
 
     #[test]
     fn try_from_invalid_account_id_fails() {
-        let storage = vec![Felt::new(999u64), Felt::new(888u64), Felt::ZERO, Felt::ZERO];
+        let storage = vec![Felt::from(999_u32), Felt::from(888_u32), Felt::ZERO, Felt::ZERO];
 
         let err = P2ideNoteStorage::try_from(storage.as_slice())
             .expect_err("invalid account id encoding must fail");
@@ -292,7 +286,7 @@ mod tests {
         let target = dummy_account();
 
         // > u32::MAX
-        let overflow = Felt::new(u64::from(u32::MAX) + 1);
+        let overflow = Felt::new_unchecked(u64::from(u32::MAX) + 1);
 
         let storage = vec![target.suffix(), target.prefix().as_felt(), overflow, Felt::ZERO];
 
@@ -306,7 +300,7 @@ mod tests {
     fn try_from_timelock_height_overflow_fails() {
         let target = dummy_account();
 
-        let overflow = Felt::new(u64::from(u32::MAX) + 10);
+        let overflow = Felt::new_unchecked(u64::from(u32::MAX) + 10);
 
         let storage = vec![target.suffix(), target.prefix().as_felt(), Felt::ZERO, overflow];
 

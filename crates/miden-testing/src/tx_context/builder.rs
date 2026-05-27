@@ -29,7 +29,7 @@ use miden_tx::TransactionMastStore;
 use miden_tx::auth::BasicAuthenticator;
 
 use super::TransactionContext;
-use crate::{MockChain, MockChainNote};
+use crate::MockChain;
 
 // TRANSACTION CONTEXT BUILDER
 // ================================================================================================
@@ -67,6 +67,7 @@ use crate::{MockChain, MockChainNote};
 /// # Ok(())
 /// # }
 /// ```
+#[derive(Clone)]
 pub struct TransactionContextBuilder {
     source_manager: Arc<dyn SourceManagerSync>,
     account: Account,
@@ -284,16 +285,17 @@ impl TransactionContextBuilder {
                 // to generate valid block header/MMR data
 
                 let mut builder = MockChain::builder();
-                for i in self.input_notes {
-                    builder.add_output_note(RawOutputNote::Full(i));
+
+                // Get the set of note IDs in the provided order.
+                let input_note_ids: Vec<NoteId> = self.input_notes.iter().map(Note::id).collect();
+
+                for input_note in self.input_notes {
+                    builder.add_output_note(RawOutputNote::Full(input_note));
                 }
                 let mut mock_chain = builder.build()?;
 
                 mock_chain.prove_next_block().context("failed to prove first block")?;
                 mock_chain.prove_next_block().context("failed to prove second block")?;
-
-                let input_note_ids: Vec<NoteId> =
-                    mock_chain.committed_notes().values().map(MockChainNote::id).collect();
 
                 mock_chain
                     .get_transaction_inputs(&self.account, &input_note_ids, &[])

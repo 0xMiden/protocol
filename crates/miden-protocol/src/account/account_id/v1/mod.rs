@@ -10,14 +10,7 @@ use miden_crypto::utils::hex_to_bytes;
 pub use prefix::AccountIdPrefixV1;
 
 use crate::account::account_id::NetworkId;
-use crate::account::account_id::account_type::{
-    FUNGIBLE_FAUCET,
-    NON_FUNGIBLE_FAUCET,
-    REGULAR_ACCOUNT_IMMUTABLE_CODE,
-    REGULAR_ACCOUNT_UPDATABLE_CODE,
-};
-use crate::account::account_id::storage_mode::{NETWORK, PRIVATE, PUBLIC};
-use crate::account::{AccountIdVersion, AccountStorageMode, AccountType};
+use crate::account::{AccountIdVersion, AccountType};
 use crate::address::AddressType;
 use crate::errors::{AccountError, AccountIdError, Bech32Error};
 use crate::utils::serde::{
@@ -55,17 +48,13 @@ impl AccountIdV1 {
     /// The serialized size of an [`AccountIdV1`] in bytes.
     const SERIALIZED_SIZE: usize = 15;
 
-    /// The lower two bits of the second least significant nibble encode the account type.
-    pub(crate) const TYPE_MASK: u8 = 0b11 << Self::TYPE_SHIFT;
-    pub(crate) const TYPE_SHIFT: u64 = 4;
-
     /// The least significant nibble determines the account version.
     const VERSION_MASK: u64 = 0b1111;
 
-    /// The higher two bits of the second least significant nibble encode the account storage
-    /// mode.
-    pub(crate) const STORAGE_MODE_MASK: u8 = 0b11 << Self::STORAGE_MODE_SHIFT;
-    pub(crate) const STORAGE_MODE_SHIFT: u64 = 6;
+    /// The second most significant bit of the prefix's least significant byte encodes the account
+    /// type.
+    pub(crate) const ACCOUNT_TYPE_MASK: u8 = 0b1 << Self::ACCOUNT_TYPE_SHIFT;
+    pub(crate) const ACCOUNT_TYPE_SHIFT: u64 = 4;
 
     /// The element index in the seed digest that becomes the account ID suffix (after
     /// [`shape_suffix`]).
@@ -118,15 +107,9 @@ impl AccountIdV1 {
 
     /// See [`AccountId::dummy`](super::AccountId::dummy) for details.
     #[cfg(any(feature = "testing", test))]
-    pub fn dummy(
-        mut bytes: [u8; 15],
-        account_type: AccountType,
-        storage_mode: AccountStorageMode,
-    ) -> AccountIdV1 {
+    pub fn dummy(mut bytes: [u8; 15], account_type: AccountType) -> AccountIdV1 {
         let version = AccountIdVersion::Version1 as u8;
-        let low_nibble = ((storage_mode as u8) << Self::STORAGE_MODE_SHIFT)
-            | ((account_type as u8) << Self::TYPE_SHIFT)
-            | version;
+        let low_nibble = ((account_type as u8) << Self::ACCOUNT_TYPE_SHIFT) | version;
 
         // Set least significant byte.
         bytes[7] = low_nibble;
@@ -144,12 +127,10 @@ impl AccountIdV1 {
         // shape_suffix anyway).
         suffix_bytes[..7].copy_from_slice(&bytes[8..]);
 
-        // If the value is too large modular reduction is performed, which is fine here.
-        let mut suffix = Felt::new(u64::from_be_bytes(suffix_bytes));
-
-        // Clear the most significant bit of the suffix.
-        suffix = Felt::try_from(suffix.as_canonical_u64() & 0x7fff_ffff_ffff_ffff)
-            .expect("no bits were set so felt should still be valid");
+        // Clear the most significant bit of the suffix to make sure we get a valid felt
+        let suffix = u64::from_be_bytes(suffix_bytes) & 0x7fff_ffff_ffff_ffff;
+        let mut suffix =
+            Felt::try_from(suffix).expect("no bits were set so felt should still be valid");
 
         suffix = shape_suffix(suffix);
 
@@ -157,7 +138,6 @@ impl AccountIdV1 {
             .expect("we should have shaped the felts to produce a valid id");
 
         debug_assert_eq!(account_id.account_type(), account_type);
-        debug_assert_eq!(account_id.storage_mode(), storage_mode);
 
         account_id
     }
@@ -166,7 +146,6 @@ impl AccountIdV1 {
     pub fn compute_account_seed(
         init_seed: [u8; 32],
         account_type: AccountType,
-        storage_mode: AccountStorageMode,
         version: AccountIdVersion,
         code_commitment: Word,
         storage_commitment: Word,
@@ -174,7 +153,6 @@ impl AccountIdV1 {
         crate::account::account_id::seed::compute_account_seed(
             init_seed,
             account_type,
-            storage_mode,
             version,
             code_commitment,
             storage_commitment,
@@ -186,28 +164,12 @@ impl AccountIdV1 {
 
     /// See [`AccountId::account_type`](super::AccountId::account_type) for details.
     pub fn account_type(&self) -> AccountType {
-        extract_type(self.prefix.as_canonical_u64())
-    }
-
-    /// See [`AccountId::is_faucet`](super::AccountId::is_faucet) for details.
-    pub fn is_faucet(&self) -> bool {
-        self.account_type().is_faucet()
-    }
-
-    /// See [`AccountId::is_regular_account`](super::AccountId::is_regular_account) for details.
-    pub fn is_regular_account(&self) -> bool {
-        self.account_type().is_regular_account()
-    }
-
-    /// See [`AccountId::storage_mode`](super::AccountId::storage_mode) for details.
-    pub fn storage_mode(&self) -> AccountStorageMode {
-        extract_storage_mode(self.prefix().as_u64())
-            .expect("account ID should have been constructed with a valid storage mode")
+        extract_account_type(self.prefix().as_u64())
     }
 
     /// See [`AccountId::is_public`](super::AccountId::is_public) for details.
     pub fn is_public(&self) -> bool {
-        self.storage_mode() == AccountStorageMode::Public
+        self.account_type() == AccountType::Public
     }
 
     /// See [`AccountId::version`](super::AccountId::version) for details.
@@ -434,22 +396,18 @@ impl Deserializable for AccountIdV1 {
 // HELPER FUNCTIONS
 // ================================================================================================
 
-/// Checks that the prefix:
-/// - has known values for metadata (storage mode, type and version).
+/// Checks that the prefix has a known value for the version.
 pub(crate) fn validate_prefix(
     prefix: Felt,
-) -> Result<(AccountType, AccountStorageMode, AccountIdVersion), AccountIdError> {
+) -> Result<(AccountType, AccountIdVersion), AccountIdError> {
     let prefix = prefix.as_canonical_u64();
 
-    // Validate storage bits.
-    let storage_mode = extract_storage_mode(prefix)?;
+    let account_type = extract_account_type(prefix);
 
     // Validate version bits.
     let version = extract_version(prefix)?;
 
-    let account_type = extract_type(prefix);
-
-    Ok((account_type, storage_mode, version))
+    Ok((account_type, version))
 }
 
 /// Checks that the suffix:
@@ -471,14 +429,13 @@ fn validate_suffix(suffix: Felt) -> Result<(), AccountIdError> {
     Ok(())
 }
 
-pub(crate) fn extract_storage_mode(prefix: u64) -> Result<AccountStorageMode, AccountIdError> {
-    let bits = (prefix & AccountIdV1::STORAGE_MODE_MASK as u64) >> AccountIdV1::STORAGE_MODE_SHIFT;
-    // SAFETY: `STORAGE_MODE_MASK` is u8 so casting bits is lossless
+pub(crate) fn extract_account_type(prefix: u64) -> AccountType {
+    let bits = (prefix & AccountIdV1::ACCOUNT_TYPE_MASK as u64) >> AccountIdV1::ACCOUNT_TYPE_SHIFT;
+    // SAFETY: `ACCOUNT_TYPE_MASK` is u8 so casting bits is lossless
     match bits as u8 {
-        PUBLIC => Ok(AccountStorageMode::Public),
-        NETWORK => Ok(AccountStorageMode::Network),
-        PRIVATE => Ok(AccountStorageMode::Private),
-        _ => Err(AccountIdError::UnknownAccountStorageMode(format!("0b{bits:b}").into())),
+        AccountType::PRIVATE => AccountType::Private,
+        AccountType::PUBLIC => AccountType::Public,
+        _ => unreachable!("account type mask is 1 bit so every value is covered above"),
     }
 }
 
@@ -487,21 +444,6 @@ pub(crate) fn extract_version(prefix: u64) -> Result<AccountIdVersion, AccountId
     // u8 is safe.
     let version = (prefix & AccountIdV1::VERSION_MASK) as u8;
     AccountIdVersion::try_from(version)
-}
-
-pub(crate) const fn extract_type(prefix: u64) -> AccountType {
-    let bits = (prefix & (AccountIdV1::TYPE_MASK as u64)) >> AccountIdV1::TYPE_SHIFT;
-    // SAFETY: `TYPE_MASK` is u8 so casting bits is lossless
-    match bits as u8 {
-        REGULAR_ACCOUNT_UPDATABLE_CODE => AccountType::RegularAccountUpdatableCode,
-        REGULAR_ACCOUNT_IMMUTABLE_CODE => AccountType::RegularAccountImmutableCode,
-        FUNGIBLE_FAUCET => AccountType::FungibleFaucet,
-        NON_FUNGIBLE_FAUCET => AccountType::NonFungibleFaucet,
-        _ => {
-            // SAFETY: type mask contains only 2 bits and we've covered all 4 possible options.
-            panic!("type mask contains only 2 bits and we've covered all 4 possible options")
-        },
-    }
 }
 
 /// Shapes the suffix so it meets the requirements of the account ID, by setting the lower 8 bits to
@@ -554,6 +496,8 @@ pub(crate) fn compute_digest(seed: Word, code_commitment: Word, storage_commitme
 #[cfg(test)]
 mod tests {
 
+    use rstest::rstest;
+
     use super::*;
     use crate::account::AccountIdPrefix;
     use crate::testing::account_id::{
@@ -567,40 +511,34 @@ mod tests {
     #[test]
     fn account_id_from_felts_with_max_pop_count() {
         let valid_suffix = Felt::try_from(0x7fff_ffff_ffff_ff00u64).unwrap();
-        let valid_prefix = Felt::try_from(0x7fff_ffff_ffff_ff71u64).unwrap();
+        let valid_prefix = Felt::try_from(0x7fff_ffff_ffff_fff1u64).unwrap();
 
         let id1 = AccountIdV1::new_unchecked([valid_prefix, valid_suffix]);
-        assert_eq!(id1.account_type(), AccountType::NonFungibleFaucet);
-        assert_eq!(id1.storage_mode(), AccountStorageMode::Network);
+        assert_eq!(id1.account_type(), AccountType::Public);
         assert_eq!(id1.version(), AccountIdVersion::Version1);
     }
 
-    #[test]
-    fn account_id_dummy_construction() {
+    #[rstest]
+    fn account_id_serde_roundtrip(
         // Use the highest possible input to check if the constructed id is a valid Felt in that
         // scenario.
         // Use the lowest possible input to check whether the constructor produces valid IDs with
         // all-zeroes input.
-        for input in [[0xff; 15], [0; 15]] {
-            for account_type in [
-                AccountType::FungibleFaucet,
-                AccountType::NonFungibleFaucet,
-                AccountType::RegularAccountImmutableCode,
-                AccountType::RegularAccountUpdatableCode,
-            ] {
-                for storage_mode in [AccountStorageMode::Private, AccountStorageMode::Public] {
-                    let id = AccountIdV1::dummy(input, account_type, storage_mode);
-                    assert_eq!(id.account_type(), account_type);
-                    assert_eq!(id.storage_mode(), storage_mode);
-                    assert_eq!(id.version(), AccountIdVersion::Version1);
+        #[values([0xff; 15], [0; 15])] input: [u8; 15],
+        #[values(AccountType::Private, AccountType::Public)] account_type: AccountType,
+    ) {
+        let id = AccountIdV1::dummy(input, account_type);
+        assert_eq!(id.account_type(), account_type);
+        assert_eq!(id.version(), AccountIdVersion::Version1);
 
-                    // Do a serialization roundtrip to ensure validity.
-                    let serialized_id = id.to_bytes();
-                    AccountIdV1::read_from_bytes(&serialized_id).unwrap();
-                    assert_eq!(serialized_id.len(), AccountIdV1::SERIALIZED_SIZE);
-                }
-            }
-        }
+        // Do a serialization roundtrip to ensure validity.
+        let serialized_id = id.to_bytes();
+        AccountIdV1::read_from_bytes(&serialized_id).unwrap();
+        assert_eq!(serialized_id.len(), AccountIdV1::SERIALIZED_SIZE);
+
+        let serialized_prefix = id.prefix().to_bytes();
+        AccountIdPrefix::read_from_bytes(&serialized_prefix).unwrap();
+        assert_eq!(serialized_prefix.len(), AccountIdPrefix::SERIALIZED_SIZE);
     }
 
     #[test]
@@ -644,29 +582,21 @@ mod tests {
     }
 
     #[test]
-    fn test_account_id_tag_identifiers() {
+    fn test_account_id_accessors() {
         let account_id = AccountIdV1::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE)
             .expect("valid account ID");
-        assert!(account_id.is_regular_account());
-        assert_eq!(account_id.account_type(), AccountType::RegularAccountImmutableCode);
         assert!(account_id.is_public());
 
         let account_id = AccountIdV1::try_from(ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE)
             .expect("valid account ID");
-        assert!(account_id.is_regular_account());
-        assert_eq!(account_id.account_type(), AccountType::RegularAccountUpdatableCode);
         assert!(!account_id.is_public());
 
         let account_id =
             AccountIdV1::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).expect("valid account ID");
-        assert!(account_id.is_faucet());
-        assert_eq!(account_id.account_type(), AccountType::FungibleFaucet);
         assert!(account_id.is_public());
 
         let account_id = AccountIdV1::try_from(ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET)
             .expect("valid account ID");
-        assert!(account_id.is_faucet());
-        assert_eq!(account_id.account_type(), AccountType::NonFungibleFaucet);
         assert!(!account_id.is_public());
     }
 }

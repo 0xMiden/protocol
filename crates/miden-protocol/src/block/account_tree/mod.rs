@@ -205,6 +205,7 @@ where
     /// Returns an error if:
     /// - an insertion of an account ID would violate the uniqueness of account ID prefixes in the
     ///   tree.
+    /// - the list of provided account updates contains duplicates.
     pub fn compute_mutations(
         &self,
         account_commitments: impl IntoIterator<Item = (AccountId, Word)>,
@@ -412,22 +413,12 @@ pub(super) mod tests {
     use assert_matches::assert_matches;
 
     use super::*;
-    use crate::account::{AccountStorageMode, AccountType};
+    use crate::account::AccountType;
     use crate::testing::account_id::{AccountIdBuilder, account_id};
 
     pub(crate) fn setup_duplicate_prefix_ids() -> [(AccountId, Word); 2] {
-        let id0 = AccountId::try_from(account_id(
-            AccountType::FungibleFaucet,
-            AccountStorageMode::Public,
-            0xaabb_ccdd,
-        ))
-        .unwrap();
-        let id1 = AccountId::try_from(account_id(
-            AccountType::FungibleFaucet,
-            AccountStorageMode::Public,
-            0xaabb_ccff,
-        ))
-        .unwrap();
+        let id0 = AccountId::try_from(account_id(AccountType::Public, 0xaabb_ccdd)).unwrap();
+        let id1 = AccountId::try_from(account_id(AccountType::Public, 0xaabb_ccff)).unwrap();
         assert_eq!(id0.prefix(), id1.prefix(), "test requires that these ids have the same prefix");
 
         let commitment0 = Word::from([0, 0, 0, 42u32]);

@@ -242,7 +242,7 @@ pub proc verify_signatures
         adv.has_mapkey
         # => [SIG_KEY, MSG, i-1]
 
-        adv_push.1
+        adv_push
         # => [has_signature, SIG_KEY, MSG, i-1]
 
         # if SIG_KEY => SIGNATURE exists in AdviceMap check the signature
@@ -320,8 +320,7 @@ end
 #!
 #! Inputs: [key_index]
 #! Outputs: [APPROVER_MAP_KEY]
-proc create_approver_map_key
+pub proc create_approver_map_key
     push.0.0.0 movup.3
-    # => [[key_index, 0, 0, 0]]
     # => [APPROVER_MAP_KEY]
 end

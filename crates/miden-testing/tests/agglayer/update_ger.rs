@@ -4,6 +4,7 @@ use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
+use miden_agglayer::errors::ERR_GER_ALREADY_REGISTERED;
 use miden_agglayer::{
     AggLayerBridge,
     ExitRoot,
@@ -20,7 +21,7 @@ use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::utils::sync::LazyLock;
-use miden_testing::{Auth, MockChain};
+use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 use miden_tx::utils::hex_to_bytes;
 use serde::Deserialize;
 
@@ -98,7 +99,7 @@ async fn update_ger_note_updates_storage() -> anyhow::Result<()> {
     let mut updated_bridge_account = bridge_account.clone();
     updated_bridge_account.apply_delta(executed_transaction.account_delta())?;
 
-    let is_registered = AggLayerBridge::is_ger_registered(ger, updated_bridge_account)?;
+    let is_registered = AggLayerBridge::is_ger_registered(ger, &updated_bridge_account)?;
     assert!(is_registered, "GER was not registered in the bridge account");
 
     Ok(())
@@ -262,6 +263,65 @@ async fn test_compute_ger_basic() -> anyhow::Result<()> {
     let result_digest: Vec<Felt> = exec_output.stack[0..8].to_vec();
 
     assert_eq!(result_digest, expected_ger_felts);
+
+    Ok(())
+}
+
+/// Tests that consuming a second UPDATE_GER note with the same GER is rejected.
+#[tokio::test]
+async fn update_ger_rejects_duplicate() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    // CREATE BRIDGE ADMIN ACCOUNT
+    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    // CREATE GER MANAGER ACCOUNT
+    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    // CREATE BRIDGE ACCOUNT
+    let bridge_seed = builder.rng_mut().draw_word();
+    let bridge_account =
+        create_existing_bridge_account(bridge_seed, bridge_admin.id(), ger_manager.id());
+    builder.add_account(bridge_account.clone())?;
+
+    let ger_bytes: [u8; 32] = [
+        0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
+        0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66,
+        0x77, 0x88,
+    ];
+    let ger = ExitRoot::from(ger_bytes);
+
+    // CREATE TWO UPDATE_GER NOTES WITH THE SAME GER
+    let update_ger_note_1 =
+        UpdateGerNote::create(ger, ger_manager.id(), bridge_account.id(), builder.rng_mut())?;
+    builder.add_output_note(RawOutputNote::Full(update_ger_note_1.clone()));
+
+    let update_ger_note_2 =
+        UpdateGerNote::create(ger, ger_manager.id(), bridge_account.id(), builder.rng_mut())?;
+    builder.add_output_note(RawOutputNote::Full(update_ger_note_2.clone()));
+
+    let mut mock_chain = builder.build()?;
+
+    // TX1: Consume first UPDATE_GER note (should succeed)
+    let tx_context_1 = mock_chain
+        .build_tx_context(bridge_account.id(), &[update_ger_note_1.id()], &[])?
+        .build()?;
+    let executed_tx_1 = tx_context_1.execute().await?;
+    mock_chain.add_pending_executed_transaction(&executed_tx_1)?;
+    mock_chain.prove_next_block()?;
+
+    // TX2: Consume second UPDATE_GER note with same GER (should fail)
+    let result = mock_chain
+        .build_tx_context(bridge_account.id(), &[], &[update_ger_note_2])?
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_GER_ALREADY_REGISTERED);
 
     Ok(())
 }

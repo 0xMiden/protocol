@@ -9,7 +9,6 @@ use miden_protocol::account::{
     AccountBuilder,
     AccountId,
     AccountIdVersion,
-    AccountStorageMode,
     AccountType,
     RoleSymbol,
 };
@@ -31,9 +30,9 @@ use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 
 fn create_rbac_account_with_owner(owner: AccountId) -> anyhow::Result<Account> {
     let account = AccountBuilder::new([9; 32])
-        .storage_mode(AccountStorageMode::Public)
+        .account_type(AccountType::Public)
         .with_auth_component(Auth::IncrNonce)
-        .with_components(AccessControl::Rbac { owner })
+        .with_components(AccessControl::Rbac { owner, authority_role: None })
         .build_existing()?;
 
     Ok(account)
@@ -48,12 +47,7 @@ fn create_rbac_chain(owner: AccountId) -> anyhow::Result<(Account, MockChain)> {
 }
 
 fn test_account_id(seed: u8) -> AccountId {
-    AccountId::dummy(
-        [seed; 15],
-        AccountIdVersion::Version1,
-        AccountType::RegularAccountImmutableCode,
-        AccountStorageMode::Private,
-    )
+    AccountId::dummy([seed; 15], AccountIdVersion::Version1, AccountType::Private)
 }
 
 fn role(name: &str) -> RoleSymbol {
@@ -106,7 +100,7 @@ fn is_role_member(
 
 fn build_note(sender: AccountId, code: impl Into<String>) -> anyhow::Result<Note> {
     let seed: [u64; 4] = rand::random();
-    let mut rng = RandomCoin::new(Word::from(seed.map(Felt::new)));
+    let mut rng = RandomCoin::new(Word::from(seed.map(Felt::new_unchecked)));
     Ok(NoteBuilder::new(sender, &mut rng)
         .note_type(NoteType::Private)
         .code(code.into())
@@ -461,7 +455,6 @@ async fn test_rbac_grant_existing_member_is_noop() -> anyhow::Result<()> {
     let regrant_note = build_note(owner, grant_minter_to_member)?;
     let regranted = execute_note_and_apply(&mock_chain, &granted, &regrant_note).await?;
 
-    // Member count must remain at 1; granting an existing member is idempotent.
     let (member_count, _) = get_role_config(&regranted, &minter)?;
     assert_eq!(member_count, Felt::from(1u32));
     assert!(is_role_member(&regranted, &minter, member)?);
