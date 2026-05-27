@@ -1009,6 +1009,15 @@ pub enum ProposedBatchError {
     },
 
     #[error(
+        "transaction {consumed_by} that consumes the note with ID {note_id} must be ordered before transaction {created_by} that creates the note"
+    )]
+    NoteConsumedBeforeCreated {
+        note_id: NoteId,
+        consumed_by: TransactionId,
+        created_by: TransactionId,
+    },
+
+    #[error(
         "note commitment mismatch for note {id}: (input: {input_commitment}, output: {output_commitment})"
     )]
     NoteCommitmentMismatch {
@@ -1128,6 +1137,15 @@ pub enum ProposedBlockError {
         note_id: NoteId,
         first_batch_id: BatchId,
         second_batch_id: BatchId,
+    },
+
+    #[error(
+        "batch {consumed_by} that consumes the note with ID {note_id} must be ordered before batch {created_by} that creates the note"
+    )]
+    NoteConsumedBeforeCreated {
+        note_id: NoteId,
+        consumed_by: BatchId,
+        created_by: BatchId,
     },
 
     #[error(

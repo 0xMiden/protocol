@@ -4,7 +4,8 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use crate::account::AccountId;
-use crate::batch::{BatchAccountUpdate, BatchId, InputOutputNoteTracker};
+use crate::batch::input_output_note_tracker::erase_transaction_notes;
+use crate::batch::{BatchAccountUpdate, BatchId};
 use crate::block::{BlockHeader, BlockNumber};
 use crate::errors::ProposedBatchError;
 use crate::note::{NoteId, NoteInclusionProof};
@@ -104,6 +105,8 @@ impl ProposedBatch {
     ///     notes do not count.
     /// - Any note is consumed more than once.
     /// - Any note is created more than once.
+    /// - An unauthenticated note is consumed before it is created (as determined by the order in
+    ///   which transactions are given).
     /// - The number of account updates exceeds [`MAX_ACCOUNTS_PER_BATCH`].
     ///   - Note that any number of transactions against the same account count as one update.
     /// - The partial blockchains chain length does not match the block header's block number. This
@@ -290,7 +293,7 @@ impl ProposedBatch {
 
         // Check for duplicate output notes and remove all output notes from the batch output note
         // set that are consumed by transactions.
-        let (input_notes, output_notes) = InputOutputNoteTracker::from_transactions(
+        let (input_notes, output_notes) = erase_transaction_notes(
             transactions.iter().map(AsRef::as_ref),
             &unauthenticated_note_proofs,
             &partial_blockchain,

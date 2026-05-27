@@ -4,13 +4,8 @@ use alloc::vec::Vec;
 
 use crate::account::AccountId;
 use crate::account::delta::AccountUpdateDetails;
-use crate::batch::{
-    BatchAccountUpdate,
-    BatchId,
-    InputOutputNoteTracker,
-    OrderedBatches,
-    ProvenBatch,
-};
+use crate::batch::input_output_note_tracker::erase_batch_notes;
+use crate::batch::{BatchAccountUpdate, BatchId, OrderedBatches, ProvenBatch};
 use crate::block::account_tree::{AccountWitness, PartialAccountTree};
 use crate::block::block_inputs::BlockInputs;
 use crate::block::nullifier_tree::{NullifierWitness, PartialNullifierTree};
@@ -116,8 +111,8 @@ impl ProposedBlock {
     ///
     /// - The union of all input notes across all batches contain duplicates.
     /// - The union of all output notes across all batches contain duplicates.
-    /// - There is an unauthenticated input note and an output note with the same note ID but their
-    ///   note commitments are different (i.e. their metadata is different).
+    /// - An unauthenticated note is consumed before it is created (as determined by the order in
+    ///   which batches are given).
     /// - There is a note inclusion proof for an unauthenticated note whose referenced block is not
     ///   in the [`PartialBlockchain`].
     /// - The note inclusion proof for an unauthenticated is invalid.
@@ -191,13 +186,12 @@ impl ProposedBlock {
         // authenticating unauthenticated notes.
         // --------------------------------------------------------------------------------------------
 
-        let (block_input_notes, block_erased_notes, block_output_notes) =
-            InputOutputNoteTracker::from_batches(
-                batches.iter(),
-                block_inputs.unauthenticated_note_proofs(),
-                block_inputs.partial_blockchain(),
-                block_inputs.prev_block_header(),
-            )?;
+        let (block_input_notes, block_erased_notes, block_output_notes) = erase_batch_notes(
+            batches.iter(),
+            block_inputs.unauthenticated_note_proofs(),
+            block_inputs.partial_blockchain(),
+            block_inputs.prev_block_header(),
+        )?;
 
         // All unauthenticated notes must be erased or authenticated by now.
         if let Some(nullifier) = block_input_notes
