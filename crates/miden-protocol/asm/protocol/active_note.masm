@@ -16,6 +16,14 @@ const ERR_NOTE_DATA_DOES_NOT_MATCH_COMMITMENT="note data does not match the comm
 
 const ERR_NOTE_INVALID_NUMBER_OF_STORAGE_ITEMS="the specified number of note storage items does not match the actual number"
 
+# CONSTANTS
+# =================================================================================================
+
+# Note type encoding, mirroring the Rust `NoteType` definition in `note/note_type.rs`
+# (`PUBLIC = 0b01`, `PRIVATE = 0b10`).
+const NOTE_TYPE_PUBLIC = 1
+const NOTE_TYPE_PRIVATE = 2
+
 # ACTIVE NOTE PROCEDURES
 # =================================================================================================
 #
@@ -164,6 +172,66 @@ pub proc get_metadata
     # clean the stack
     swapdw dropw dropw
     # => [NOTE_ATTACHMENT, METADATA_HEADER]
+end
+
+#! Returns whether the active note is public.
+#!
+#! The note type is stored in the metadata header rather than the recipient commitment, so this
+#! reads the active note's metadata and compares the note type against the public encoding.
+#!
+#! Inputs:  []
+#! Outputs: [is_public]
+#!
+#! Where:
+#! - is_public is 1 if the active note is public, 0 otherwise.
+#!
+#! Panics if:
+#! - no note is currently active.
+#!
+#! Invocation: exec
+pub proc is_public
+    exec.get_metadata
+    # => [NOTE_ATTACHMENT, METADATA_HEADER]
+
+    # drop the attachment word, keeping the metadata header
+    dropw
+    # => [METADATA_HEADER]
+
+    exec.note::extract_note_type_from_metadata
+    # => [note_type]
+
+    eq.NOTE_TYPE_PUBLIC
+    # => [is_public]
+end
+
+#! Returns whether the active note is private.
+#!
+#! The note type is stored in the metadata header rather than the recipient commitment, so this
+#! reads the active note's metadata and compares the note type against the private encoding.
+#!
+#! Inputs:  []
+#! Outputs: [is_private]
+#!
+#! Where:
+#! - is_private is 1 if the active note is private, 0 otherwise.
+#!
+#! Panics if:
+#! - no note is currently active.
+#!
+#! Invocation: exec
+pub proc is_private
+    exec.get_metadata
+    # => [NOTE_ATTACHMENT, METADATA_HEADER]
+
+    # drop the attachment word, keeping the metadata header
+    dropw
+    # => [METADATA_HEADER]
+
+    exec.note::extract_note_type_from_metadata
+    # => [note_type]
+
+    eq.NOTE_TYPE_PRIVATE
+    # => [is_private]
 end
 
 #! Returns the sender of the active note.

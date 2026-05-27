@@ -128,14 +128,13 @@ async fn test_active_note_get_metadata() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// `is_note_public` returns 1 for a public active note and 0 for a private one.
+/// `is_public` / `is_private` return the correct flag for the active note's type.
 #[rstest::rstest]
-#[case::public(NoteType::Public, ONE)]
-#[case::private(NoteType::Private, ZERO)]
+#[case::public(NoteType::Public)]
+#[case::private(NoteType::Private)]
 #[tokio::test]
-async fn test_active_note_is_note_public(
+async fn test_active_note_is_public_and_is_private(
     #[case] note_type: NoteType,
-    #[case] expected_is_public: Felt,
 ) -> anyhow::Result<()> {
     let tx_context = {
         let account =
@@ -152,11 +151,18 @@ async fn test_active_note_is_note_public(
             .build()?
     };
 
+    // The Rust and MASM `NoteType` encodings are identical, so derive the expected flags from the
+    // note type rather than passing them as separate test cases.
+    let (expected_public, expected_private) = match note_type {
+        NoteType::Public => (ONE, ZERO),
+        NoteType::Private => (ZERO, ONE),
+    };
+
     let code = format!(
         r#"
         use $kernel::prologue
         use $kernel::note->note_internal
-        use miden::standards::note::metadata
+        use miden::protocol::active_note
 
         begin
             exec.prologue::prepare_transaction
@@ -164,11 +170,19 @@ async fn test_active_note_is_note_public(
             dropw dropw dropw dropw
 
             # check whether the active note is public
-            exec.metadata::is_note_public
+            exec.active_note::is_public
             # => [is_public]
 
-            push.{expected_is_public}
+            push.{expected_public}
             assert_eq.err="active note public flag did not match expected value"
+            # => []
+
+            # check whether the active note is private
+            exec.active_note::is_private
+            # => [is_private]
+
+            push.{expected_private}
+            assert_eq.err="active note private flag did not match expected value"
             # => []
 
             # truncate the stack

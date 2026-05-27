@@ -217,3 +217,30 @@ pub proc extract_attachment_info_from_metadata
     u32split swap
     # => [attachment_kind, attachment_scheme]
 end
+
+#! Extracts the note type from the provided metadata header.
+#!
+#! Inputs:  [METADATA_HEADER]
+#! Outputs: [note_type]
+#!
+#! Where:
+#! - METADATA_HEADER is the metadata of a note.
+#! - note_type is the note type of the note. It is stored in the low byte of the merged
+#!   sender_id_suffix_and_note_type felt and is not part of the recipient commitment.
+#!
+#! Invocation: exec
+pub proc extract_note_type_from_metadata
+    # => [sender_id_suffix_and_note_type, sender_id_prefix, tag, attachment_kind_scheme]
+
+    # keep the merged suffix/note_type felt and drop the other three header felts
+    movdn.3 drop drop drop
+    # => [sender_id_suffix_and_note_type]
+
+    # take the low 32 bits of the felt
+    u32split swap drop
+    # => [suffix_and_note_type_lo]
+
+    # mask to the low byte, which holds the note type
+    u32and.0xff
+    # => [note_type]
+end

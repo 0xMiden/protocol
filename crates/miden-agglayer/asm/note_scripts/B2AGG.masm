@@ -4,7 +4,6 @@ use miden::protocol::active_account
 use miden::protocol::active_note
 use miden::protocol::asset
 use miden::standards::attachments::network_account_target
-use miden::standards::note::metadata
 use miden::standards::wallets::basic->basic_wallet
 
 # CONSTANTS
@@ -21,7 +20,6 @@ const B2AGG_NOTE_NUM_STORAGE_ITEMS = 6
 const ERR_B2AGG_WRONG_NUMBER_OF_ASSETS="B2AGG script requires exactly 1 note asset"
 const ERR_B2AGG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS="B2AGG script expects exactly 6 note storage items"
 const ERR_B2AGG_TARGET_ACCOUNT_MISMATCH="B2AGG note attachment target account does not match consuming account"
-const ERR_B2AGG_NOTE_MUST_BE_PUBLIC="B2AGG note bridged to AggLayer must be of public note type"
 
 # NOTE SCRIPT
 # =================================================================================================
@@ -33,11 +31,6 @@ const ERR_B2AGG_NOTE_MUST_BE_PUBLIC="B2AGG note bridged to AggLayer must be of p
 #!   consuming account.
 #! - If the consuming account is the Agglayer Bridge: the note's assets are moved to a BURN note,
 #!   and the note details are hashed into a leaf and appended to the Local Exit Tree.
-#!
-#! When consumed by the bridge, the note must be public: AggLayer's off-chain indexer (aggkit)
-#! mirrors the Local Exit Tree by observing notes in the public block space, so the leaf pre-image
-#! must be publicly observable. The note type lives in the metadata header rather than the recipient
-#! commitment, so it is checked explicitly before the note storage is trusted.
 #!
 #! Inputs:  []
 #! Outputs: []
@@ -57,7 +50,7 @@ const ERR_B2AGG_NOTE_MUST_BE_PUBLIC="B2AGG note bridged to AggLayer must be of p
 #! - The note does not contain exactly 6 storage items.
 #! - The note does not contain exactly 1 asset.
 #! - The note attachment does not target the consuming account.
-#! - The note is not public.
+#! - The note is not public (enforced by `bridge_out`).
 #! - The destination network ID equals Miden's AggLayer network ID.
 begin
     dropw
@@ -81,10 +74,6 @@ begin
         # Ensure note attachment targets the consuming bridge account.
         exec.network_account_target::active_account_matches_target_account
         assert.err=ERR_B2AGG_TARGET_ACCOUNT_MISMATCH
-        # => [pad(16)]
-
-        # The bridged note must be public (see the note documentation above).
-        exec.metadata::is_note_public assert.err=ERR_B2AGG_NOTE_MUST_BE_PUBLIC
         # => [pad(16)]
 
         # Store note storage -> mem[8..14]
