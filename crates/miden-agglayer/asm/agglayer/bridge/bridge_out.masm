@@ -119,7 +119,7 @@ const BURN_NOTE_NUM_STORAGE_ITEMS=0
 #! Invocation: call
 @locals(15)
 pub proc bridge_out
-    # The note being bridged out must be public (see above); checked before its data is trusted.
+    # The note being bridged out must be public (see above)
     exec.active_note::is_public assert.err=ERR_B2AGG_NOTE_MUST_BE_PUBLIC
     # => [ASSET_KEY, ASSET_VALUE, dest_network_id, dest_address(5), pad(2)]
 
