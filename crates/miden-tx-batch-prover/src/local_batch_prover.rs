@@ -30,11 +30,6 @@ impl LocalBatchProver {
         }
     }
 
-    /// Returns this prover's configured proof security level.
-    pub fn proof_security_level(&self) -> u32 {
-        self.proof_security_level
-    }
-
     /// Attempts to prove the [`ProposedBatch`] into a [`ProvenBatch`].
     ///
     /// Verifies each transaction's `ExecutionProof` natively first, then runs the batch kernel
