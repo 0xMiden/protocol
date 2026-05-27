@@ -98,10 +98,7 @@ const BURN_NOTE_NUM_STORAGE_ITEMS=0
 #! 4. Computes Keccak hash of the leaf data and appends it to the Local Exit Tree
 #! 5. Creates a BURN note with the bridged out asset
 #!
-#! The note being bridged out must be public: AggLayer's off-chain indexer (aggkit) mirrors the
-#! Local Exit Tree by observing notes in the public block space, so the appended leaf's pre-image
-#! must be publicly observable. The note type lives in the metadata header rather than the recipient
-#! commitment, so it is checked explicitly before the note's data is trusted.
+#! The note being bridged out must be public so its pre-image is observable off-chain.
 #!
 #! Inputs:  [ASSET_KEY, ASSET_VALUE, dest_network_id, dest_address(5), pad(2)]
 #! Outputs: [pad(16)]

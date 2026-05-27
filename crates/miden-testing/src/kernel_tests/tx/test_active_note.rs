@@ -151,8 +151,6 @@ async fn test_active_note_is_public_and_is_private(
             .build()?
     };
 
-    // The Rust and MASM `NoteType` encodings are identical, so derive the expected flags from the
-    // note type rather than passing them as separate test cases.
     let (expected_public, expected_private) = match note_type {
         NoteType::Public => (ONE, ZERO),
         NoteType::Private => (ZERO, ONE),
