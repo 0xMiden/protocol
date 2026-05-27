@@ -8,7 +8,7 @@ use crate::errors::BatchOutputError;
 use crate::utils::serde::Deserializable;
 use crate::utils::sync::LazyLock;
 use crate::vm::{AdviceInputs, Program, ProgramInfo, StackInputs, StackOutputs};
-use crate::{Felt, Word};
+use crate::{Felt, Word, ZERO};
 
 // CONSTANTS
 // ================================================================================================
@@ -22,11 +22,6 @@ static KERNEL_MAIN: LazyLock<Program> = LazyLock::new(|| {
 const INPUT_NOTES_COMMITMENT_WORD_IDX: usize = 0;
 const OUTPUT_NOTES_COMMITMENT_WORD_IDX: usize = 4;
 const BATCH_EXPIRATION_BLOCK_NUM_ELEMENT_IDX: usize = 8;
-// The word containing `batch_expiration_block_num` plus three padding zeros.
-const EXPIRATION_PAD_WORD_FELT_IDX: usize = 8;
-const EXPIRATION_PAD_WORD_INNER_OFFSET: usize = 1;
-// The trailing word at felt indices 12..16 must be all zero.
-const TRAILING_PAD_WORD_FELT_IDX: usize = 12;
 
 // BATCH KERNEL
 // ================================================================================================
@@ -131,25 +126,13 @@ impl BatchKernel {
             .get_element(BATCH_EXPIRATION_BLOCK_NUM_ELEMENT_IDX)
             .expect("batch_expiration_block_num missing");
 
-        // The word at felt indices 8..12 contains [batch_expiration_block_num, 0, 0, 0]. Indices
-        // 9..12 of the output stack must be zero.
-        let pad_word = stack
-            .get_word(EXPIRATION_PAD_WORD_FELT_IDX)
-            .expect("expiration pad word missing");
-        if pad_word.as_elements()[EXPIRATION_PAD_WORD_INNER_OFFSET..]
-            != Word::empty().as_elements()[1..]
+        // Every cell after batch_expiration_block_num must be zero padding.
+        if stack[BATCH_EXPIRATION_BLOCK_NUM_ELEMENT_IDX + 1..]
+            .iter()
+            .any(|&felt| felt != ZERO)
         {
             return Err(BatchOutputError::OutputStackInvalid(
                 "batch_expiration_block_num must be followed by zero padding".into(),
-            ));
-        }
-
-        // Felts 12..16 (the trailing word) must also be zero.
-        let trailing_word =
-            stack.get_word(TRAILING_PAD_WORD_FELT_IDX).expect("trailing word missing");
-        if trailing_word != Word::empty() {
-            return Err(BatchOutputError::OutputStackInvalid(
-                "trailing output stack cells must be zero".into(),
             ));
         }
 
