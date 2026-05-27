@@ -38,6 +38,7 @@
 - Fixed `output_note::add_asset` and `output_note::set_attachment` to no longer accept invalid note indices ([#2824](https://github.com/0xMiden/protocol/pull/2824)).
 - [BREAKING] Keyed AggLayer faucet token registry by `(origin_token_address, origin_network)` instead of `origin_token_address` alone, preventing same-address cross-network mint collisions on CLAIM ([#2860](https://github.com/0xMiden/protocol/pull/2860)).
 - [BREAKING] Replaced `NoAuth` with the new `AuthNetworkAccount` auth component on the AggLayer bridge and AggLayer faucet, closing the forged-MINT attack surface where any transaction against the bridge could emit a bridge-authored MINT note ([#2797](https://github.com/0xMiden/protocol/issues/2797), [#2818](https://github.com/0xMiden/protocol/pull/2818)).
+- Enforced `NoteType::Public` for B2AGG bridge-out notes so a recipient-identical private note can no longer be folded into the Local Exit Tree and desync the aggkit mirror ([#2988](https://github.com/0xMiden/protocol/pull/2988)).
 
 ## 0.14.3 (2026-04-07)
 

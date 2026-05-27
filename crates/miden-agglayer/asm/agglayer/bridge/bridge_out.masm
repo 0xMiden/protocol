@@ -22,6 +22,7 @@ use agglayer::common::eth_address::EthereumAddressFormat
 # =================================================================================================
 
 const ERR_B2AGG_DESTINATION_NETWORK_IS_MIDEN = "B2AGG note destination network ID must not be Miden's AggLayer network ID"
+const ERR_B2AGG_NOTE_MUST_BE_PUBLIC = "B2AGG note bridged to AggLayer must be of public note type"
 
 # CONSTANTS
 # =================================================================================================
@@ -97,6 +98,8 @@ const BURN_NOTE_NUM_STORAGE_ITEMS=0
 #! 4. Computes Keccak hash of the leaf data and appends it to the Local Exit Tree
 #! 5. Creates a BURN note with the bridged out asset
 #!
+#! The note being bridged out must be public so its pre-image is observable off-chain.
+#!
 #! Inputs:  [ASSET_KEY, ASSET_VALUE, dest_network_id, dest_address(5), pad(2)]
 #! Outputs: [pad(16)]
 #!
@@ -107,11 +110,16 @@ const BURN_NOTE_NUM_STORAGE_ITEMS=0
 #! - dest_address(5) are 5 u32 values representing a 20-byte Ethereum address.
 #!
 #! Panics if:
+#! - the note being bridged out is not public.
 #! - destination network ID is Miden's AggLayer network ID.
 #!
 #! Invocation: call
 @locals(15)
 pub proc bridge_out
+    # The note being bridged out must be public (see above)
+    exec.active_note::is_public assert.err=ERR_B2AGG_NOTE_MUST_BE_PUBLIC
+    # => [ASSET_KEY, ASSET_VALUE, dest_network_id, dest_address(5), pad(2)]
+
     # Save ASSET to local memory for later BURN note creation
     locaddr.BRIDGE_OUT_BURN_ASSET_LOC
     exec.asset::store
