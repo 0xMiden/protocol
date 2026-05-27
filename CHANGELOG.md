@@ -2,6 +2,9 @@
 
 ## v0.16.0 (TBD)
 
+### Fixes
+- Fixed `update_ger` to explicitly reject duplicate GER insertions with `ERR_GER_ALREADY_REGISTERED` instead of silently accepting them ([#2983](https://github.com/0xMiden/protocol/pull/2983)).
+
 ## v0.15.0 (2026-05-22)
 
 ### Features
