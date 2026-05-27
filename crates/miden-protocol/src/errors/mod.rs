@@ -1017,15 +1017,6 @@ pub enum ProposedBatchError {
         created_by: TransactionId,
     },
 
-    #[error(
-        "note commitment mismatch for note {id}: (input: {input_commitment}, output: {output_commitment})"
-    )]
-    NoteCommitmentMismatch {
-        id: NoteId,
-        input_commitment: Word,
-        output_commitment: Word,
-    },
-
     #[error("failed to merge transaction delta into account {account_id}")]
     AccountUpdateError {
         account_id: AccountId,
@@ -1189,15 +1180,6 @@ pub enum ProposedBlockError {
     BatchReferenceBlockMissingFromChain {
         reference_block_num: BlockNumber,
         batch_id: BatchId,
-    },
-
-    #[error(
-        "note commitment mismatch for note {id}: (input: {input_commitment}, output: {output_commitment})"
-    )]
-    NoteCommitmentMismatch {
-        id: NoteId,
-        input_commitment: Word,
-        output_commitment: Word,
     },
 
     #[error(
