@@ -102,10 +102,6 @@ fn main() -> Result<()> {
 
 /// Reads the batch kernel MASM source from the `source_dir`, compiles it, and saves the result
 /// to the `target_dir` as a `batch_kernel.masb` binary file.
-///
-/// Unlike the transaction kernel, the batch kernel does not expose syscalls, so there is no
-/// `KernelLibrary` to build — only a single executable program assembled from
-/// `kernels/batch/main.masm`.
 fn compile_batch_kernel(source_dir: &Path, target_dir: &Path) -> Result<()> {
     let batch_kernel_dir = source_dir.join(ASM_BATCH_KERNEL_DIR);
     let main_file_path = batch_kernel_dir.join("main.masm");

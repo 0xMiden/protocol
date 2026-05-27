@@ -5,14 +5,9 @@
 #!
 #! A transaction batch groups a set of independently-proven transactions so they can later be
 #! aggregated into a block by the block kernel. This program defines the public input/output
-#! contract that the batch kernel will eventually verify, but does not yet perform any
-#! verification: it drops its inputs and exits, leaving the all-zero word output region as the
+#! contract that the batch kernel will eventually verify, but currently does not yet perform
+#! any verification: it drops its inputs and exits, leaving the all-zero word output region as the
 #! stack's initial padding zeros.
-#!
-#! Splitting the kernel into "shape only" and "verification" lets downstream Rust tooling
-#! (`BatchKernel`'s input/advice/output builders, `LocalBatchProver::prove`, the `ProvenBatch`
-#! proof field) be built and reviewed against a stable interface before the verification logic
-#! lands. The verification chain that fills in the real outputs is added in a follow-up PR.
 #!
 #! Inputs: [
 #!   TRANSACTIONS_COMMITMENT,
@@ -38,13 +33,7 @@
 #! - batch_expiration_block_num will be the minimum of every transaction's
 #!   `expiration_block_num`. In this skeleton it is zero.
 #!
-#! TODO: replace this skeleton with the verification chain that reconstructs every transaction
-#!       from the advice provider, anchors the reconstruction in `TRANSACTIONS_COMMITMENT`, and
-#!       emits the real batch commitments and expiration.
 proc main
-    # Drop TRANSACTIONS_COMMITMENT and BLOCK_HASH. The VM keeps the stack at depth >= 16, so the
-    # remaining 8 felts (the explicit `pad(8)` inputs) plus 8 zeros auto-filled below them form
-    # the all-zero 16-felt output region.
     dropw dropw
 end
 

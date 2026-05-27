@@ -18,8 +18,7 @@ static KERNEL_MAIN: LazyLock<Program> = LazyLock::new(|| {
     Program::read_from_bytes(bytes).expect("failed to deserialize batch kernel runtime")
 });
 
-// Output stack indices, kept in sync with the layout at the end of `main.masm::main`. These are
-// felt offsets, not word indices: `get_word(N)` returns the four felts at positions `N..N+4`.
+// Output stack indices (layout at the end of `batch/main.masm::main`).
 const INPUT_NOTES_COMMITMENT_WORD_IDX: usize = 0;
 const OUTPUT_NOTES_COMMITMENT_WORD_IDX: usize = 4;
 const BATCH_EXPIRATION_BLOCK_NUM_ELEMENT_IDX: usize = 8;
@@ -168,9 +167,6 @@ impl BatchKernel {
     /// Builds the advice inputs (map + stack) consumed by the batch kernel.
     ///
     /// The skeleton kernel ignores its advice inputs, so this returns the default empty value.
-    /// The follow-up PR that adds the verification chain will populate the advice map with the
-    /// `(tx_id, account_id)` tuple list keyed by `TRANSACTIONS_COMMITMENT` and the per-tx headers
-    /// and note tuples.
     fn build_advice_inputs(_proposed_batch: &ProposedBatch) -> AdviceInputs {
         AdviceInputs::default()
     }

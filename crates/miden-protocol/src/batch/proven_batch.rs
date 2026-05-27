@@ -18,7 +18,8 @@ use crate::utils::serde::{
 use crate::vm::ExecutionProof;
 use crate::{MIN_PROOF_SECURITY_LEVEL, Word};
 
-/// A transaction batch with an execution proof over the batch kernel's public commitments.
+/// A transaction batch with an execution proof.
+/// Currently, this only carries a skeleton proof which does not attest to anything meaningful.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProvenBatch {
     id: BatchId,

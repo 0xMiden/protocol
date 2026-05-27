@@ -40,8 +40,7 @@ impl LocalBatchProver {
     /// Verifies each transaction's `ExecutionProof` natively first, then runs the batch kernel
     /// via `miden_prover::prove` and attaches the resulting proof to the returned
     /// [`ProvenBatch`]. The kernel's public outputs are not yet cross-checked against the
-    /// proposed batch's expected values; that check is added together with the kernel's
-    /// verification logic in a follow-up PR.
+    /// proposed batch's expected values.
     ///
     /// # Errors
     ///
