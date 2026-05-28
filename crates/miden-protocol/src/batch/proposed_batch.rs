@@ -16,6 +16,7 @@ use crate::transaction::{
     PartialBlockchain,
     ProvenTransaction,
     TransactionHeader,
+    TransactionVerifier,
 };
 use crate::utils::serde::{
     ByteReader,
@@ -122,7 +123,7 @@ impl ProposedBatch {
     /// - There are duplicate transactions.
     /// - If any transaction's expiration block number is less than or equal to the batch's
     ///   reference block.
-    pub fn new(
+    fn new_batch_inner(
         transactions: Vec<Arc<ProvenTransaction>>,
         reference_block_header: BlockHeader,
         partial_blockchain: PartialBlockchain,
@@ -326,6 +327,63 @@ impl ProposedBatch {
         })
     }
 
+    /// Creates a new [`ProposedBatch`] from the provided parts, verifying every transaction's
+    /// execution proof against the transaction kernel.
+    ///
+    /// This runs the same batch validation as `new_batch_inner` and additionally verifies that
+    /// each transaction's proof is valid and meets `proof_security_level`. Note that this verifies
+    /// `N` transaction proofs and is therefore relatively expensive.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for any of the batch-validation conditions documented on `new_batch_inner`,
+    /// or if a transaction's proof fails to verify or does not meet `proof_security_level`.
+    pub fn new(
+        transactions: Vec<Arc<ProvenTransaction>>,
+        reference_block_header: BlockHeader,
+        partial_blockchain: PartialBlockchain,
+        unauthenticated_note_proofs: BTreeMap<NoteId, NoteInclusionProof>,
+        proof_security_level: u32,
+    ) -> Result<Self, ProposedBatchError> {
+        let batch = Self::new_batch_inner(
+            transactions,
+            reference_block_header,
+            partial_blockchain,
+            unauthenticated_note_proofs,
+        )?;
+
+        let verifier = TransactionVerifier::new(proof_security_level);
+        for tx in batch.transactions() {
+            verifier.verify(tx).map_err(|source| {
+                ProposedBatchError::TransactionVerificationFailed {
+                    transaction_id: tx.id(),
+                    source,
+                }
+            })?;
+        }
+
+        Ok(batch)
+    }
+
+    /// Creates a new [`ProposedBatch`] **without verifying the transactions' execution proofs**.
+    ///
+    /// Runs the same batch validation as [`Self::new`] but skips proof verification. Exposed for
+    /// tests that build batches from mock transactions carrying dummy proofs.
+    #[cfg(any(test, feature = "testing"))]
+    pub fn new_unverified(
+        transactions: Vec<Arc<ProvenTransaction>>,
+        reference_block_header: BlockHeader,
+        partial_blockchain: PartialBlockchain,
+        unauthenticated_note_proofs: BTreeMap<NoteId, NoteInclusionProof>,
+    ) -> Result<Self, ProposedBatchError> {
+        Self::new_batch_inner(
+            transactions,
+            reference_block_header,
+            partial_blockchain,
+            unauthenticated_note_proofs,
+        )
+    }
+
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
@@ -440,7 +498,11 @@ impl Deserializable for ProposedBatch {
         let unauthenticated_note_proofs =
             BTreeMap::<NoteId, NoteInclusionProof>::read_from(source)?;
 
-        ProposedBatch::new(
+        // Reconstruct structurally via `new_batch_inner` rather than `new`: deserialization must
+        // not re-run STARK verification of the transactions' proofs (they were verified when the
+        // batch was originally constructed via `new`), keeping deserialization cheap and not
+        // requiring valid proofs to be present.
+        ProposedBatch::new_batch_inner(
             transactions,
             block_header,
             partial_blockchain,
@@ -523,7 +585,7 @@ mod tests {
         )
         .context("failed to build proven transaction")?;
 
-        let batch = ProposedBatch::new(
+        let batch = ProposedBatch::new_unverified(
             vec![Arc::new(tx)],
             reference_block_header,
             partial_blockchain,

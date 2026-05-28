@@ -15,6 +15,7 @@ version.workspace      = true
 [lib]
 bench   = false
 doctest = false
+test    = false
 
 [features]
 default = ["std"]
