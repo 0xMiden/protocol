@@ -2,7 +2,7 @@ use alloc::boxed::Box;
 
 use miden_protocol::batch::{ProposedBatch, ProvenBatch};
 use miden_protocol::errors::ProvenBatchError;
-use miden_tx::TransactionVerifier;
+use miden_protocol::transaction::TransactionVerifier;
 
 // LOCAL BATCH PROVER
 // ================================================================================================

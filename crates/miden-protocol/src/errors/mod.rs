@@ -9,6 +9,7 @@ use miden_core::mast::MastForestError;
 use miden_crypto::merkle::mmr::MmrError;
 use miden_crypto::merkle::smt::{SmtLeafError, SmtProofError};
 use miden_crypto::utils::HexParseError;
+use miden_verifier::VerificationError;
 use thiserror::Error;
 
 use super::account::{AccountId, RoleSymbol};
@@ -1292,4 +1293,15 @@ pub enum NullifierTreeError {
 pub enum AuthSchemeError {
     #[error("auth scheme identifier `{0}` is not valid")]
     InvalidAuthSchemeIdentifier(String),
+}
+
+// TRANSACTION VERIFIER ERROR
+// ================================================================================================
+
+#[derive(Debug, Error)]
+pub enum TransactionVerifierError {
+    #[error("failed to verify transaction")]
+    TransactionVerificationFailed(#[source] VerificationError),
+    #[error("transaction proof security level is {actual} but must be at least {expected_minimum}")]
+    InsufficientProofSecurityLevel { actual: u32, expected_minimum: u32 },
 }
