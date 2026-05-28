@@ -4,7 +4,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use crate::account::AccountId;
-use crate::batch::input_output_note_tracker::compute_transaction_notes;
+use crate::batch::note_tracker::{NoteTracker, TrackerOutput};
 use crate::batch::{BatchAccountUpdate, BatchId};
 use crate::block::{BlockHeader, BlockNumber};
 use crate::errors::ProposedBatchError;
@@ -293,12 +293,20 @@ impl ProposedBatch {
 
         // Check for duplicate output notes and remove all output notes from the batch output note
         // set that are consumed by transactions.
-        let (input_notes, output_notes) = compute_transaction_notes(
-            transactions.iter().map(AsRef::as_ref),
-            &unauthenticated_note_proofs,
+        let mut tracker = NoteTracker::new(
             &partial_blockchain,
             &reference_block_header,
-        )?;
+            &unauthenticated_note_proofs,
+        );
+        for tx in transactions.iter() {
+            tracker.push(tx.as_ref()).map_err(ProposedBatchError::from)?;
+        }
+        let TrackerOutput { input_notes, output_notes, .. } =
+            tracker.finalize().map_err(ProposedBatchError::from)?;
+
+        // Collect the remaining (non-erased) output notes into the final set of output notes.
+        let output_notes: Vec<OutputNote> =
+            output_notes.into_values().map(|(_, output_note)| output_note).collect();
 
         if input_notes.len() > MAX_INPUT_NOTES_PER_BATCH {
             return Err(ProposedBatchError::TooManyInputNotes(input_notes.len()));

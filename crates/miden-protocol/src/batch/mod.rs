@@ -16,4 +16,4 @@ pub use proposed_batch::ProposedBatch;
 mod ordered_batches;
 pub use ordered_batches::OrderedBatches;
 
-pub(super) mod input_output_note_tracker;
+pub(super) mod note_tracker;

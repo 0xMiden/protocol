@@ -955,7 +955,7 @@ async fn tx_circular_note_dependency_is_rejected() -> anyhow::Result<()> {
     let error = LocalTransactionProver::default().prove_dummy(executed_tx).unwrap_err();
 
     assert_matches!(error, TransactionProverError::ProvenTransactionBuildFailed(
-      ProvenTransactionError::NoteConsumedAndCreated(note_id)) => {
+      ProvenTransactionError::NoteCreatedAndConsumed(note_id)) => {
         assert_eq!(note_id, note_x.id());
     });
 

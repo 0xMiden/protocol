@@ -952,7 +952,7 @@ pub enum ProvenTransactionError {
     #[error("failed to validate account delta in transaction account update")]
     AccountDeltaCommitmentMismatch(#[source] Box<dyn Error + Send + Sync + 'static>),
     #[error("note with id {0} is both created and consumed by the transaction")]
-    NoteConsumedAndCreated(NoteId),
+    NoteCreatedAndConsumed(NoteId),
 }
 
 // PROPOSED BATCH ERROR

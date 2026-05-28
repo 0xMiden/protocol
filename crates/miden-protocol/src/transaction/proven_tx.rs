@@ -111,10 +111,11 @@ impl ProvenTransaction {
 
         // Disallow creating and consuming notes with the same ID in a transaction. This is a
         // circular dependency that can be abused (see https://github.com/0xMiden/protocol/issues/2796).
-        // This is only relevant for unauthenticated notes (notes with a header).
+        // This is only relevant for unauthenticated notes (notes with a header), since only these
+        // can be erased at batch or block level. Authenticated notes don't exhibit this issue.
         for input_note in input_notes.iter().filter_map(InputNoteCommitment::header) {
             if output_notes.iter().any(|output_note| output_note.id() == input_note.id()) {
-                return Err(ProvenTransactionError::NoteConsumedAndCreated(input_note.id()));
+                return Err(ProvenTransactionError::NoteCreatedAndConsumed(input_note.id()));
             }
         }
 

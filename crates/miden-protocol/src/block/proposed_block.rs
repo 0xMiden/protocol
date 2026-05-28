@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 
 use crate::account::AccountId;
 use crate::account::delta::AccountUpdateDetails;
-use crate::batch::input_output_note_tracker::compute_batch_notes;
+use crate::batch::note_tracker::{NoteTracker, TrackerOutput};
 use crate::batch::{BatchAccountUpdate, BatchId, OrderedBatches, ProvenBatch};
 use crate::block::account_tree::{AccountWitness, PartialAccountTree};
 use crate::block::block_inputs::BlockInputs;
@@ -186,12 +186,19 @@ impl ProposedBlock {
         // authenticating unauthenticated notes.
         // --------------------------------------------------------------------------------------------
 
-        let (block_input_notes, block_erased_notes, block_output_notes) = compute_batch_notes(
-            batches.iter(),
-            block_inputs.unauthenticated_note_proofs(),
+        let mut tracker = NoteTracker::new(
             block_inputs.partial_blockchain(),
             block_inputs.prev_block_header(),
-        )?;
+            block_inputs.unauthenticated_note_proofs(),
+        );
+        for batch in batches.iter() {
+            tracker.push(batch)?;
+        }
+        let TrackerOutput {
+            input_notes: block_input_notes,
+            erased_notes: block_erased_notes,
+            output_notes: block_output_notes,
+        } = tracker.finalize()?;
 
         // All unauthenticated notes must be erased or authenticated by now.
         if let Some(nullifier) = block_input_notes
