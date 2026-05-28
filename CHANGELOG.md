@@ -8,6 +8,7 @@
 
 ### Fixes
 - Fixed `update_ger` to explicitly reject duplicate GER insertions with `ERR_GER_ALREADY_REGISTERED` instead of silently accepting them ([#2983](https://github.com/0xMiden/protocol/pull/2983)).
+- Fixed `pack_leaf_data` to explicitly reject leaf data with non-zero trailing padding felts, replacing an implicit precompile failure with a clear `ERR_LEAF_PADDING_NOT_ZERO` error ([#3003](https://github.com/0xMiden/protocol/pull/3003)).
 
 ## v0.15.1 (TBD)
 
