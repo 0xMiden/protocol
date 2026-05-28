@@ -90,7 +90,7 @@ fn generate_account(chain: &mut MockChainBuilder) -> Account {
 /// TX 2: Inputs [Y] -> Outputs [X]
 pub async fn setup_circular_note_dependency_test()
 -> anyhow::Result<(MockChain, ProvenTransaction, ProvenTransaction)> {
-    // Use a fungible asset whose faucet is different from the executing account.
+    // Use a non-fungible asset whose faucet is different from the executing account.
     let asset = NonFungibleAsset::mock(&[42]);
 
     let mut builder = MockChain::builder();
@@ -871,6 +871,70 @@ async fn cross_tx_circular_note_dependency_is_rejected() -> anyhow::Result<()> {
     .unwrap_err();
 
     // A circular dependency is detected as consumption-before-creation.
+    assert_matches!(error, ProposedBatchError::NoteConsumedBeforeCreated { .. });
+
+    Ok(())
+}
+
+/// Tests that a non-fungible asset minted out of thin air cannot be used by an account in valid
+/// ways.
+///
+/// TX 1: Inputs [X] -> Outputs [ ]
+/// TX 2: Inputs [ ] -> Outputs [X]
+#[tokio::test]
+async fn cross_tx_circular_note_dependency_is_rejected_2() -> anyhow::Result<()> {
+    // Use a non-fungible asset whose faucet is different from the executing account.
+    let asset = NonFungibleAsset::mock(&[42]);
+
+    let mut builder = MockChain::builder();
+    let account = builder.add_existing_wallet_with_assets(Auth::IncrNonce, [])?;
+    let chain = builder.build()?;
+
+    // Create two distinct p2any notes carrying the same arbitrary asset.
+    let mut rng = RandomCoin::new(Word::from([1u32; 4]));
+    let note_x = create_p2any_note(account.id(), NoteType::Public, [asset], &mut rng);
+
+    // TX 1: consume note_x to move the asset to the vault.
+    let executed_tx1 = chain
+        .build_tx_context(account.clone(), &[], slice::from_ref(&note_x))?
+        .build()?
+        .execute()
+        .await?;
+    let proven_tx1 = LocalTransactionProver::default().prove_dummy(executed_tx1.clone())?;
+
+    // Apply the account delta from TX1 to obtain the updated account state for TX2.
+    let mut updated_account = account.clone();
+    updated_account.apply_delta(executed_tx1.account_delta())?;
+
+    assert_eq!(updated_account.vault().get(asset.vault_key()).unwrap(), asset);
+
+    let tx_script_x = AccountInterface::from_account(&account)
+        .build_send_notes_script(&[PartialNote::from(note_x.clone())], None)?;
+    // TX 2: create note_x with the asset from the account vault.
+    let executed_tx2 = chain
+        .build_tx_context(updated_account, &[], &[])?
+        .tx_script(tx_script_x)
+        .extend_expected_output_notes(vec![RawOutputNote::Full(note_x.clone())])
+        .build()?
+        .execute()
+        .await?;
+    assert_eq!(
+        executed_tx2.output_notes().get_note(0).assets().iter().next().unwrap(),
+        &asset,
+        "asset should have been moved to the note"
+    );
+    let proven_tx2 = LocalTransactionProver::default().prove_dummy(executed_tx2)?;
+
+    let error = ProposedBatch::new(
+        [proven_tx1, proven_tx2].into_iter().map(Arc::new).collect(),
+        chain.latest_block_header(),
+        chain.latest_partial_blockchain(),
+        BTreeMap::default(),
+    )
+    .unwrap_err();
+
+    // Tx1 cannot depend on an input note that is created by transaction 2. This circular dependency
+    // is detected as consumption-before-creation.
     assert_matches!(error, ProposedBatchError::NoteConsumedBeforeCreated { .. });
 
     Ok(())
