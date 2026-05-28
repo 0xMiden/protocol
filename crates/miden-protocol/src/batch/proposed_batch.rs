@@ -4,7 +4,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use crate::account::AccountId;
-use crate::batch::input_output_note_tracker::erase_transaction_notes;
+use crate::batch::input_output_note_tracker::compute_transaction_notes;
 use crate::batch::{BatchAccountUpdate, BatchId};
 use crate::block::{BlockHeader, BlockNumber};
 use crate::errors::ProposedBatchError;
@@ -293,7 +293,7 @@ impl ProposedBatch {
 
         // Check for duplicate output notes and remove all output notes from the batch output note
         // set that are consumed by transactions.
-        let (input_notes, output_notes) = erase_transaction_notes(
+        let (input_notes, output_notes) = compute_transaction_notes(
             transactions.iter().map(AsRef::as_ref),
             &unauthenticated_note_proofs,
             &partial_blockchain,

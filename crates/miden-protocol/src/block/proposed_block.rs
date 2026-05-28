@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 
 use crate::account::AccountId;
 use crate::account::delta::AccountUpdateDetails;
-use crate::batch::input_output_note_tracker::erase_batch_notes;
+use crate::batch::input_output_note_tracker::compute_batch_notes;
 use crate::batch::{BatchAccountUpdate, BatchId, OrderedBatches, ProvenBatch};
 use crate::block::account_tree::{AccountWitness, PartialAccountTree};
 use crate::block::block_inputs::BlockInputs;
@@ -186,7 +186,7 @@ impl ProposedBlock {
         // authenticating unauthenticated notes.
         // --------------------------------------------------------------------------------------------
 
-        let (block_input_notes, block_erased_notes, block_output_notes) = erase_batch_notes(
+        let (block_input_notes, block_erased_notes, block_output_notes) = compute_batch_notes(
             batches.iter(),
             block_inputs.unauthenticated_note_proofs(),
             block_inputs.partial_blockchain(),

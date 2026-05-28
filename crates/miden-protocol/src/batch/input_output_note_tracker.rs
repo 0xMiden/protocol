@@ -28,8 +28,8 @@ type BatchOutputNotes = Vec<OutputNote>;
 /// transactions. Implements batch-specific logic.
 ///
 /// Tracks the input and output notes and erases those that are created and consumed within the same
-/// batch or block. The exception is that notes must be created by a transaction before a
-/// transaction is allowed to consume and erase it, to prevent circular note dependencies.
+/// batch. The exception is that notes must be created by a transaction before a transaction is
+/// allowed to consume and erase it, to prevent circular note dependencies.
 ///
 /// All input notes for which a note inclusion proof is provided are authenticated and converted
 /// into authenticated notes, unless they were erased first.
@@ -44,7 +44,7 @@ type BatchOutputNotes = Vec<OutputNote>;
 /// - The block is missing in which an unauthenticated note was created and for which a proof is
 ///   provided.
 /// - Authentication of an unauthenticated note fails due to an invalid proof.
-pub fn erase_transaction_notes<'a>(
+pub fn compute_transaction_notes<'a>(
     txs: impl Iterator<Item = &'a ProvenTransaction>,
     unauthenticated_note_proofs: &BTreeMap<NoteId, NoteInclusionProof>,
     partial_blockchain: &PartialBlockchain,
@@ -53,7 +53,7 @@ pub fn erase_transaction_notes<'a>(
     let tx_notes_iter = txs
         .map(|tx| (tx.id(), tx.input_notes().iter().cloned(), tx.output_notes().iter().cloned()));
 
-    let (batch_input_notes, _erased_notes, batch_output_notes) = erase_notes_inner(
+    let (batch_input_notes, _erased_notes, batch_output_notes) = compute_notes_inner(
         tx_notes_iter,
         unauthenticated_note_proofs,
         partial_blockchain,
@@ -75,7 +75,7 @@ pub fn erase_transaction_notes<'a>(
 ///
 /// The same details as in [`erase_transaction_notes`] apply, except for batches rather than
 /// transactions.
-pub fn erase_batch_notes<'a>(
+pub fn compute_batch_notes<'a>(
     batches: impl Iterator<Item = &'a ProvenBatch>,
     unauthenticated_note_proofs: &BTreeMap<NoteId, NoteInclusionProof>,
     partial_blockchain: &PartialBlockchain,
@@ -89,7 +89,7 @@ pub fn erase_batch_notes<'a>(
         )
     });
 
-    let (block_input_notes, erased_notes, block_output_notes) = erase_notes_inner(
+    let (block_input_notes, erased_notes, block_output_notes) = compute_notes_inner(
         batch_notes_iter,
         unauthenticated_note_proofs,
         partial_blockchain,
@@ -106,7 +106,7 @@ pub fn erase_batch_notes<'a>(
 /// Creates the input and output note set. Checks for duplicates, erases notes and, authenticates
 /// any unauthenticated notes for which proofs are provided.
 #[allow(clippy::type_complexity)]
-fn erase_notes_inner<ContainerId: Copy + Eq + Debug>(
+fn compute_notes_inner<ContainerId: Copy + Eq + Debug>(
     notes_iter: impl Iterator<
         Item = (
             ContainerId,
