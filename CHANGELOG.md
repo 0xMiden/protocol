@@ -2,6 +2,10 @@
 
 ## v0.16.0 (TBD)
 
+### Features
+
+- Added `NullifierTreeBackendReader` and `AccountTreeBackendReader` traits ([#2755](https://github.com/0xMiden/protocol/pull/2755)).
+
 ### Fixes
 - Fixed `update_ger` to explicitly reject duplicate GER insertions with `ERR_GER_ALREADY_REGISTERED` instead of silently accepting them ([#2983](https://github.com/0xMiden/protocol/pull/2983)).
 
@@ -19,8 +23,6 @@
 - Added benchmark for ECDSA signed transaction ([#2967](https://github.com/0xMiden/protocol/pull/2967)).
 
 ### Changes
-- Added validation of leaf type on CLAIM note processing to prevent message leaves from being processed as asset claims ([#2730](https://github.com/0xMiden/protocol/pull/2730)).
-- Added `AssetAmount` wrapper type for validated fungible asset amounts ([#2721](https://github.com/0xMiden/protocol/pull/2721)).
 
 - Documented the `miden::protocol::account_id` module in the protocol library docs ([#2607](https://github.com/0xMiden/protocol/issues/2607)).
 - [BREAKING] Renamed `procedure_digest!` to `procedure_root!` and return `AccountProcedureRoot` instead of `Word` ([#2621](https://github.com/0xMiden/protocol/issues/2621)).
@@ -31,8 +33,6 @@
 - [BREAKING] Renamed the guarded multisig component-facing APIs from `multisig_guardian` / `AuthMultisigGuardian` to `guarded_multisig` / `AuthGuardedMultisig`, while retaining the `guardian` auth namespace and guardian-specific procedures.
 - Added shared `ProcedurePolicy` for AuthMultisig ([#2670](https://github.com/0xMiden/protocol/pull/2670)).
 - [BREAKING] Changed `NoteType` encoding from 2 bits to 1 and makes `NoteType::Private` the default ([#2691](https://github.com/0xMiden/miden-base/issues/2691)).
-- Added `BlockNumber::saturating_sub()` ([#2660](https://github.com/0xMiden/protocol/issues/2660)).
-- Added `NullifierTreeBackendReader` and `AccountTreeBackendReader` traits ([#2755](https://github.com/0xMiden/protocol/pull/2755)).
 - [BREAKING] Renamed `native_asset_id` to `fee_faucet_id` ([#2718](https://github.com/0xMiden/protocol/pull/2718)).
 - Added `AssetAmount` wrapper type for validated fungible asset amounts ([#2721](https://github.com/0xMiden/protocol/pull/2721)).
 - Added validation of leaf type on CLAIM note processing to prevent message leaves from being processed as asset claims ([#2730](https://github.com/0xMiden/protocol/pull/2730)).
