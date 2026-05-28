@@ -330,10 +330,6 @@ impl ProposedBatch {
     /// Creates a new [`ProposedBatch`] from the provided parts, verifying every transaction's
     /// execution proof against the transaction kernel.
     ///
-    /// This runs the same batch validation as `new_batch_inner` and additionally verifies that
-    /// each transaction's proof is valid and meets `proof_security_level`. Note that this verifies
-    /// `N` transaction proofs and is therefore relatively expensive.
-    ///
     /// # Errors
     ///
     /// Returns an error for any of the batch-validation conditions documented on `new_batch_inner`,
@@ -498,10 +494,7 @@ impl Deserializable for ProposedBatch {
         let unauthenticated_note_proofs =
             BTreeMap::<NoteId, NoteInclusionProof>::read_from(source)?;
 
-        // Reconstruct structurally via `new_batch_inner` rather than `new`: deserialization must
-        // not re-run STARK verification of the transactions' proofs (they were verified when the
-        // batch was originally constructed via `new`), keeping deserialization cheap and not
-        // requiring valid proofs to be present.
+        // Reconstruct structurally without verifying the transactions' proofs.
         ProposedBatch::new_batch_inner(
             transactions,
             block_header,
