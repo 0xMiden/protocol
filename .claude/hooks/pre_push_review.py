@@ -98,16 +98,6 @@ def main() -> None:
 def _diff_base() -> str:
     """Return the integration branch to review against — the remote's
     default branch (e.g. `origin/next`).
-
-    Reviewing against the branch's own upstream (`@{u}`) is wrong for
-    merge commits: after merging the integration branch in, the
-    `merge-base(HEAD, @{u})` lands on the pre-merge tip, so the diff
-    sweeps in the whole merged branch and the reviewers end up checking
-    already-reviewed upstream code instead of this branch's change.
-    Basing on the integration branch makes `merge-base(HEAD, origin/next)`
-    the branch's divergence point, so the reviewed diff is just this
-    branch's own contribution. Falls back to `origin/next` when the
-    remote default isn't resolvable.
     """
     result = subprocess.run(
         ["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
