@@ -4,7 +4,7 @@
 
 ### Features
 
-- Added `NullifierTreeBackendReader` and `AccountTreeBackendReader` traits ([#2755](https://github.com/0xMiden/protocol/pull/2755)).
+- [BREAKING] Extracted `NullifierTreeBackendReader` and `AccountTreeBackendReader` traits from existing `NullifierTreeBackend` and `AccountTreeBackend` traits ([#2755](https://github.com/0xMiden/protocol/pull/2755)).
 
 ### Fixes
 - Fixed `update_ger` to explicitly reject duplicate GER insertions with `ERR_GER_ALREADY_REGISTERED` instead of silently accepting them ([#2983](https://github.com/0xMiden/protocol/pull/2983)).
