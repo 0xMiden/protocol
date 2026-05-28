@@ -187,16 +187,20 @@ impl<'container, ContainerId: Copy + Eq + Debug> NoteTracker<'container, Contain
                 if let Some((created_by, _output_note)) =
                     self.output_notes.remove(&input_note_header.id())
                 {
-                    // We should never encounter a note that is created and consumed by the same
-                    // container. If we do anyway, it is better to panic than to proceed.
+                    // We should never encounter a note that is both in the input and output note
+                    // set of a given transaction or batch:
                     // - A `ProvenTransaction` guarantees that the set of input and output notes is
                     //   disjoint.
                     // - A batch guarantees this as well due to executing _this_ function's logic.
                     //
-                    // Notes that are created and consumed within transactions or batches must NOT
-                    // be erased as it is a form of circular note dependency and could be abused.
-                    // If not erased, it would lead to an unspendable note, so there is no reason
-                    // to allow it in the first place.
+                    // If we do anyway, it is better to panic than to proceed.
+                    //
+                    // Rationale: Notes that would be in the input _and_ output notes of
+                    // transactions (or batches) must NOT be erased at the batch (or block) level,
+                    // as it is a form of circular note dependency and could be abused.
+                    // We should also not propagate them upwards to the batch or block, as it would
+                    // lead to an unspendable note, so there is no reason to allow it in the first
+                    // place.
                     assert_ne!(
                         created_by, container_id,
                         "transactions and batches should never create and consume the same note"
@@ -245,13 +249,13 @@ impl<'container, ContainerId: Copy + Eq + Debug> NoteTracker<'container, Contain
     /// ordering or 2) a circular dependency between two transactions or batches. Notes that were
     /// created and consumed in-order would have been erased by [`Self::push`].
     ///
-    /// We need to disallow incorrectly ordered transactions at the batch (and block) level.
-    /// Consider transaction A that creates note 1 and transaction B that consumes note 1, but they
-    /// are provided in order [B, A]. Instead of returning an error, an alternative would be to
-    /// promote B's input note to an unauthenticated input note of the batch, and to promote A's
+    /// Regarding 1): We need to disallow incorrectly ordered transactions at the batch (and block)
+    /// level. Consider transaction A that creates note 1 and transaction B that consumes note
+    /// 1, but they are provided in order [B, A]. We return an error because we would otherwise
+    /// promote B's input note to an unauthenticated input note of the batch, and promote A's
     /// output note to an output note of the batch. However, this would result in a batch that
-    /// creates and consumes the same note, which must be disallowed as it has the same abuse
-    /// potential as <https://github.com/0xMiden/protocol/issues/2796>.
+    /// contains the same note in its input and output note sets, which must be disallowed as it
+    /// has the same abuse potential as <https://github.com/0xMiden/protocol/issues/2796>.
     pub(crate) fn finalize(
         self,
     ) -> Result<TrackerOutput<ContainerId>, NoteTrackerError<ContainerId>> {
