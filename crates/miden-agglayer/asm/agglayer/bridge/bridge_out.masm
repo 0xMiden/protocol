@@ -239,9 +239,18 @@ end
 #!
 #! Invocation: exec
 proc zero_padding_felts
-    push.0 push.LEAF_DATA_START_PTR push.PADDING_OFFSET add mem_store
-    push.0 push.LEAF_DATA_START_PTR push.PADDING_OFFSET add.1 add mem_store
-    push.0 push.LEAF_DATA_START_PTR push.PADDING_OFFSET add.2 add mem_store
+    # prepare the padding pointer
+    push.LEAF_DATA_START_PTR add.PADDING_OFFSET
+    # => [padding_ptr]
+
+    push.0 dup.1 mem_store
+    # => [padding_ptr]
+
+    push.0 dup.1 add.1 mem_store
+    # => [padding_ptr]
+
+    push.0 swap add.2 mem_store
+    # => []
 end
 
 #! Asserts that the bridge-out destination network ID is not equal to the Miden's AggLayer network
