@@ -89,11 +89,11 @@ end
 #! Invocation: exec
 @locals(1) # start_ptr
 pub proc pack_leaf_data(leaf_data_start_ptr: MemoryAddress)
-    loc_store.PACKING_START_PTR_LOCAL
-    # => []
-
     # reject non-canonical leaf data: the trailing padding felts must be zero
-    loc_load.PACKING_START_PTR_LOCAL exec.assert_padding_is_zero
+    dup exec.assert_padding_is_zero
+    # => [leaf_data_start_ptr]
+
+    loc_store.PACKING_START_PTR_LOCAL
     # => []
 
     # initialize loop counter to 0
