@@ -7,10 +7,9 @@ use crate::account::{
     AccountCode,
     AccountComponent,
     AccountId,
-    AccountIdV0,
+    AccountIdV1,
     AccountIdVersion,
     AccountStorage,
-    AccountStorageMode,
     AccountType,
 };
 use crate::asset::AssetVault;
@@ -23,13 +22,11 @@ use crate::{Felt, Word};
 /// This will build a valid new account with these properties:
 /// - An empty [`AssetVault`].
 /// - The nonce set to [`Felt::ZERO`].
-/// - A seed which results in an [`AccountId`] valid for the configured account type and storage
-///   mode.
+/// - A seed which results in an [`AccountId`] valid for the configured account type.
 ///
 /// By default, the builder is initialized with:
-/// - The `account_type` set to [`AccountType::RegularAccountUpdatableCode`].
-/// - The `storage_mode` set to [`AccountStorageMode::Private`].
-/// - The `version` set to [`AccountIdVersion::Version0`].
+/// - The `account_type` set to [`AccountType::Private`].
+/// - The `version` set to [`AccountIdVersion::Version1`].
 ///
 /// The methods that are required to be called are:
 ///
@@ -42,13 +39,12 @@ use crate::{Felt, Word};
 /// - Add assets to the account's vault; this only succeeds when using
 ///   `AccountBuilder::build_existing`.
 ///
-/// **Storage Slot Order**
+/// **Account Procedure Order**
 ///
-/// Note that the components are merged together in the same order as `with_component` is called,
-/// except for the auth component. It is always moved to the first position, due to the requirement
-/// that the auth procedure must be at procedure index 0 within an [`AccountCode`]. That also
-/// affects the storage slot order and means the auth component's storage comes first, if it has any
-/// storage.
+/// Note that the procedure in each components code are merged together in the same order as
+/// `with_component` is called, except for the auth component. The auth procedure is always moved to
+/// the first position, since the tx kernel assume procedure index 0 is the auth procedure within an
+/// [`AccountCode`].
 #[derive(Debug, Clone)]
 pub struct AccountBuilder {
     #[cfg(any(feature = "testing", test))]
@@ -58,7 +54,6 @@ pub struct AccountBuilder {
     components: Vec<AccountComponent>,
     auth_component: Option<AccountComponent>,
     account_type: AccountType,
-    storage_mode: AccountStorageMode,
     init_seed: [u8; 32],
     id_version: AccountIdVersion,
 }
@@ -77,9 +72,8 @@ impl AccountBuilder {
             components: vec![],
             auth_component: None,
             init_seed,
-            account_type: AccountType::RegularAccountUpdatableCode,
-            storage_mode: AccountStorageMode::Private,
-            id_version: AccountIdVersion::Version0,
+            account_type: AccountType::Private,
+            id_version: AccountIdVersion::Version1,
         }
     }
 
@@ -89,15 +83,9 @@ impl AccountBuilder {
         self
     }
 
-    /// Sets the type of the account.
+    /// Sets the account type of the account.
     pub fn account_type(mut self, account_type: AccountType) -> Self {
         self.account_type = account_type;
-        self
-    }
-
-    /// Sets the storage mode of the account.
-    pub fn storage_mode(mut self, storage_mode: AccountStorageMode) -> Self {
-        self.storage_mode = storage_mode;
         self
     }
 
@@ -105,8 +93,28 @@ impl AccountBuilder {
     /// **must be called at least once** since an account must export at least one procedure.
     ///
     /// All components will be merged to form the final code and storage of the built account.
+    ///
+    /// For composite configurations that expand into multiple components (such as
+    /// `AccessControl` or `TokenPolicyManager`), use [`Self::with_components`].
     pub fn with_component(mut self, account_component: impl Into<AccountComponent>) -> Self {
         self.components.push(account_component.into());
+        self
+    }
+
+    /// Adds the components yielded by `components` to the builder.
+    ///
+    /// This is a convenience wrapper around repeated [`Self::with_component`] calls. It is
+    /// most useful for installing the variable number of components produced by composite
+    /// configurations whose component count is not known at the call site (for example, a
+    /// configuration value that expands into one or several components depending on its
+    /// variant).
+    pub fn with_components(
+        mut self,
+        components: impl IntoIterator<Item = impl Into<AccountComponent>>,
+    ) -> Self {
+        for component in components {
+            self = self.with_component(component);
+        }
         self
     }
 
@@ -149,13 +157,12 @@ impl AccountBuilder {
         let mut components = vec![auth_component];
         components.append(&mut self.components);
 
-        let (code, storage) = Account::initialize_from_components(self.account_type, components)
-            .map_err(|err| {
-                AccountError::BuildError(
-                    "account components failed to build".into(),
-                    Some(Box::new(err)),
-                )
-            })?;
+        let (code, storage) = Account::initialize_from_components(components).map_err(|err| {
+            AccountError::BuildError(
+                "account components failed to build".into(),
+                Some(Box::new(err)),
+            )
+        })?;
 
         Ok((vault, code, storage))
     }
@@ -168,10 +175,9 @@ impl AccountBuilder {
         code_commitment: Word,
         storage_commitment: Word,
     ) -> Result<Word, AccountError> {
-        let seed = AccountIdV0::compute_account_seed(
+        let seed = AccountIdV1::compute_account_seed(
             init_seed,
             self.account_type,
-            self.storage_mode,
             version,
             code_commitment,
             storage_commitment,
@@ -189,7 +195,6 @@ impl AccountBuilder {
     ///
     /// Returns an error if:
     /// - The init seed is not set.
-    /// - Any of the components does not support the set account type.
     /// - The number of procedures in all merged components is 0 or exceeds
     ///   [`AccountCode::MAX_NUM_PROCEDURES`](crate::account::AccountCode::MAX_NUM_PROCEDURES).
     /// - Two or more libraries export a procedure with the same MAST root.
@@ -220,14 +225,13 @@ impl AccountBuilder {
 
         let account_id = AccountId::new(
             seed,
-            AccountIdVersion::Version0,
+            AccountIdVersion::Version1,
             code.commitment(),
             storage.to_commitment(),
         )
         .expect("get_account_seed should provide a suitable seed");
 
         debug_assert_eq!(account_id.account_type(), self.account_type);
-        debug_assert_eq!(account_id.storage_mode(), self.storage_mode);
 
         // SAFETY: The account ID was derived from the seed and the seed is provided, so it is safe
         // to bypass the checks of `Account::new`.
@@ -269,12 +273,7 @@ impl AccountBuilder {
         let account_id = {
             let bytes = <[u8; 15]>::try_from(&self.init_seed[0..15])
                 .expect("we should have sliced exactly 15 bytes off");
-            AccountId::dummy(
-                bytes,
-                AccountIdVersion::Version0,
-                self.account_type,
-                self.storage_mode,
-            )
+            AccountId::dummy(bytes, AccountIdVersion::Version1, self.account_type)
         };
 
         // Use the nonce value set by the Self::nonce method or Felt::ONE as a default.
@@ -340,15 +339,14 @@ mod tests {
     });
 
     struct CustomComponent1 {
-        slot0: u64,
+        slot0: u32,
     }
     impl From<CustomComponent1> for AccountComponent {
         fn from(custom: CustomComponent1) -> Self {
             let mut value = Word::empty();
-            value[0] = Felt::new(custom.slot0);
+            value[0] = Felt::from(custom.slot0);
 
-            let metadata =
-                AccountComponentMetadata::new("test::custom_component1", AccountType::all());
+            let metadata = AccountComponentMetadata::new("test::custom_component1");
             AccountComponent::new(
                 CUSTOM_LIBRARY1.clone(),
                 vec![StorageSlot::with_value(CUSTOM_COMPONENT1_SLOT_NAME.clone(), value)],
@@ -359,18 +357,17 @@ mod tests {
     }
 
     struct CustomComponent2 {
-        slot0: u64,
-        slot1: u64,
+        slot0: u32,
+        slot1: u32,
     }
     impl From<CustomComponent2> for AccountComponent {
         fn from(custom: CustomComponent2) -> Self {
             let mut value0 = Word::empty();
-            value0[3] = Felt::new(custom.slot0);
+            value0[3] = Felt::from(custom.slot0);
             let mut value1 = Word::empty();
-            value1[3] = Felt::new(custom.slot1);
+            value1[3] = Felt::from(custom.slot1);
 
-            let metadata =
-                AccountComponentMetadata::new("test::custom_component2", AccountType::all());
+            let metadata = AccountComponentMetadata::new("test::custom_component2");
             AccountComponent::new(
                 CUSTOM_LIBRARY2.clone(),
                 vec![
@@ -404,7 +401,7 @@ mod tests {
 
         let computed_id = AccountId::new(
             account.seed().unwrap(),
-            AccountIdVersion::Version0,
+            AccountIdVersion::Version1,
             account.code.commitment(),
             account.storage.to_commitment(),
         )
@@ -426,16 +423,70 @@ mod tests {
 
         assert_eq!(
             account.storage().get_item(&CUSTOM_COMPONENT1_SLOT_NAME).unwrap(),
-            [Felt::new(storage_slot0), Felt::new(0), Felt::new(0), Felt::new(0)].into()
+            Word::from([Felt::from(storage_slot0), Felt::ZERO, Felt::ZERO, Felt::ZERO])
         );
         assert_eq!(
             account.storage().get_item(&CUSTOM_COMPONENT2_SLOT_NAME0).unwrap(),
-            [Felt::new(0), Felt::new(0), Felt::new(0), Felt::new(storage_slot1)].into()
+            Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::from(storage_slot1)])
         );
         assert_eq!(
             account.storage().get_item(&CUSTOM_COMPONENT2_SLOT_NAME1).unwrap(),
-            [Felt::new(0), Felt::new(0), Felt::new(0), Felt::new(storage_slot2)].into()
+            Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::from(storage_slot2)])
         );
+    }
+
+    #[test]
+    fn account_builder_with_components() {
+        let storage_slot0 = 25;
+        let storage_slot1 = 12;
+        let storage_slot2 = 42;
+
+        let components: Vec<AccountComponent> = vec![
+            CustomComponent1 { slot0: storage_slot0 }.into(),
+            CustomComponent2 {
+                slot0: storage_slot1,
+                slot1: storage_slot2,
+            }
+            .into(),
+        ];
+
+        let account = Account::builder([5; 32])
+            .with_auth_component(NoopAuthComponent)
+            .with_components(components)
+            .build()
+            .unwrap();
+
+        // The account built via `with_components` should be identical to one built via
+        // chained `with_component` calls in the same order.
+        let expected = Account::builder([5; 32])
+            .with_auth_component(NoopAuthComponent)
+            .with_component(CustomComponent1 { slot0: storage_slot0 })
+            .with_component(CustomComponent2 {
+                slot0: storage_slot1,
+                slot1: storage_slot2,
+            })
+            .build()
+            .unwrap();
+
+        assert_eq!(account.id(), expected.id());
+        assert_eq!(account.code().commitment(), expected.code().commitment());
+        assert_eq!(account.storage().to_commitment(), expected.storage().to_commitment());
+
+        // Empty iterators are accepted and behave as a no-op.
+        let account_no_extra = Account::builder([6; 32])
+            .with_auth_component(NoopAuthComponent)
+            .with_component(CustomComponent1 { slot0: storage_slot0 })
+            .with_components(core::iter::empty::<CustomComponent2>())
+            .build()
+            .unwrap();
+
+        let expected_no_extra = Account::builder([6; 32])
+            .with_auth_component(NoopAuthComponent)
+            .with_component(CustomComponent1 { slot0: storage_slot0 })
+            .build()
+            .unwrap();
+
+        assert_eq!(account_no_extra.id(), expected_no_extra.id());
     }
 
     #[test]

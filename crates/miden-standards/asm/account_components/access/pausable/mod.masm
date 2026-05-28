@@ -1,0 +1,6 @@
+# Pause / unpause administration is delegated to the [`PausableManager`] component.
+# Pause checks (mint, burn, transfer, metadata setters) are handled by
+# [`TokenPolicyManager`] and the metadata setter procedures themselves, both of which use the
+# `assert_not_paused` exec helper from `miden::standards::access::pausable` directly.
+
+pub use ::miden::standards::access::pausable::is_paused

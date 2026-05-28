@@ -515,11 +515,10 @@ fn generate_event_file_content(
     for (event_path, event_name) in events {
         let value = EventId::from_name(event_path).as_felt().as_canonical_u64();
         debug_assert!(!event_name.is_empty());
-        writeln!(&mut output, "const {}_ID: u64 = {};", event_name, value)?;
+        writeln!(&mut output, "const {event_name}_ID: u64 = {value};")?;
         writeln!(
             &mut output,
-            "static {}_NAME: ::miden_core::events::EventName = ::miden_core::events::EventName::new(\"{}\");",
-            event_name, event_path
+            "static {event_name}_NAME: ::miden_core::events::EventName = ::miden_core::events::EventName::new(\"{event_path}\");"
         )?;
         writeln!(&mut output)?;
     }

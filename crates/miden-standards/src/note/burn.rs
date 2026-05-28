@@ -1,4 +1,3 @@
-use miden_protocol::Word;
 use miden_protocol::account::AccountId;
 use miden_protocol::assembly::Path;
 use miden_protocol::asset::Asset;
@@ -7,13 +6,14 @@ use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
     Note,
     NoteAssets,
-    NoteAttachment,
-    NoteMetadata,
+    NoteAttachments,
     NoteRecipient,
     NoteScript,
+    NoteScriptRoot,
     NoteStorage,
     NoteTag,
     NoteType,
+    PartialNoteMetadata,
 };
 use miden_protocol::utils::sync::LazyLock;
 
@@ -55,7 +55,7 @@ impl BurnNote {
     }
 
     /// Returns the BURN note script root.
-    pub fn script_root() -> Word {
+    pub fn script_root() -> NoteScriptRoot {
         BURN_SCRIPT.root()
     }
 
@@ -64,10 +64,9 @@ impl BurnNote {
 
     /// Generates a BURN note - a note that instructs a faucet to burn a fungible asset.
     ///
-    /// This script enables the creation of a PUBLIC note that, when consumed by a faucet (either
-    /// basic or network), will burn the fungible assets contained in the note. Both basic and
-    /// network fungible faucets export the same `burn` procedure with identical MAST roots,
-    /// allowing a single BURN note script to work with either faucet type.
+    /// This script enables the creation of a PUBLIC note that, when consumed by a fungible
+    /// faucet, will burn the fungible assets contained in the note. The compiled call targets
+    /// `fungible::receive_and_burn`.
     ///
     /// BURN notes are always PUBLIC for network execution.
     ///
@@ -78,7 +77,7 @@ impl BurnNote {
     /// - `sender`: The account ID of the note creator
     /// - `faucet_id`: The account ID of the faucet that will burn the assets
     /// - `fungible_asset`: The fungible asset to be burned
-    /// - `attachment`: The [`NoteAttachment`] of the BURN note
+    /// - `attachment`: The [`NoteAttachments`] of the BURN note
     /// - `rng`: Random number generator for creating the serial number
     ///
     /// # Errors
@@ -87,7 +86,7 @@ impl BurnNote {
         sender: AccountId,
         faucet_id: AccountId,
         fungible_asset: Asset,
-        attachment: NoteAttachment,
+        attachments: NoteAttachments,
         rng: &mut R,
     ) -> Result<Note, NoteError> {
         let note_script = Self::script();
@@ -99,11 +98,10 @@ impl BurnNote {
         let inputs = NoteStorage::new(vec![])?;
         let tag = NoteTag::with_account_target(faucet_id);
 
-        let metadata =
-            NoteMetadata::new(sender, note_type).with_tag(tag).with_attachment(attachment);
+        let metadata = PartialNoteMetadata::new(sender, note_type).with_tag(tag);
         let assets = NoteAssets::new(vec![fungible_asset])?; // BURN notes contain the asset to burn
         let recipient = NoteRecipient::new(serial_num, note_script, inputs);
 
-        Ok(Note::new(assets, metadata, recipient))
+        Ok(Note::with_attachments(assets, metadata, recipient, attachments))
     }
 }

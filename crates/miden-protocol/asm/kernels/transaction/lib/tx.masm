@@ -58,7 +58,7 @@ pub use memory::get_blk_timestamp->get_block_timestamp
 pub use memory::get_input_notes_commitment
 
 #! Returns the output notes commitment hash. This is computed as a sequential hash of
-#! (note_id, note_metadata) tuples over all output notes.
+#! (note_details_commitment, note_metadata_commitment) tuples over all output notes.
 #!
 #! Inputs:  []
 #! Outputs: [OUTPUT_NOTES_COMMITMENT]
@@ -84,6 +84,16 @@ pub use memory::get_num_input_notes
 #! Where:
 #! - num_output_notes is the number of output notes created in this transaction so far.
 pub use memory::get_num_output_notes
+
+#! Returns the transaction script root.
+#!
+#! Inputs:  []
+#! Outputs: [TX_SCRIPT_ROOT]
+#!
+#! Where:
+#! - TX_SCRIPT_ROOT is the transaction script root, or the empty word if no transaction script was
+#!   executed.
+pub use memory::get_tx_script_root
 
 #! Updates the transaction expiration block delta.
 #!
@@ -171,7 +181,7 @@ end
 #! - VAULT_ROOT is the commitment of the foreign account's vault.
 #! - STORAGE_ROOT is the commitment of the foreign account's storage.
 #! - STORAGE_SLOT_DATA is the data contained in the storage slot which is constructed as follows:
-#!   [SLOT_VALUE, slot_type, 0, 0, 0].
+#!   [0, slot_type, slot_id_suffix, slot_id_prefix, SLOT_VALUE].
 #! - CODE_COMMITMENT is the commitment of the foreign account's code.
 #! - ACCOUNT_PROCEDURE_DATA are the roots of the public procedures of the foreign account.
 #!
@@ -224,7 +234,7 @@ end
 #!
 #! Inputs:  []
 #! Outputs: []
-proc clear_fpi_memory
+pub proc clear_fpi_memory
     # set the upcoming foreign account ID to zero
     push.0 push.0 exec.memory::set_fpi_account_id
     # => []

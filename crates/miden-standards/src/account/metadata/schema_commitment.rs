@@ -1,3 +1,11 @@
+//! Account storage schema commitment component.
+//!
+//! [`AccountSchemaCommitment`] computes a commitment over the merged storage schemas of all
+//! account components and stores the result in a dedicated slot. The companion
+//! [`AccountBuilderSchemaCommitmentExt`] trait adds a convenience method to
+//! [`AccountBuilder`](miden_protocol::account::AccountBuilder) for building accounts with an
+//! automatically computed schema commitment.
+
 use alloc::collections::BTreeMap;
 
 use miden_protocol::Word;
@@ -12,7 +20,6 @@ use miden_protocol::account::{
     Account,
     AccountBuilder,
     AccountComponent,
-    AccountType,
     StorageSlot,
     StorageSlotName,
 };
@@ -33,6 +40,7 @@ static STORAGE_SCHEMA_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     Library::read_from_bytes(bytes).expect("Shipped Storage Schema library is well-formed")
 });
 
+/// Schema commitment slot name.
 static SCHEMA_COMMITMENT_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::metadata::storage_schema::commitment")
         .expect("storage slot name should be valid")
@@ -44,8 +52,8 @@ static SCHEMA_COMMITMENT_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(||
 /// An [`AccountComponent`] exposing the account storage schema commitment.
 ///
 /// The [`AccountSchemaCommitment`] component can be constructed from a list of [`StorageSchema`],
-/// from which a commitment is computed and then inserted into the
-/// `miden::standards::metadata::storage_schema::commitment` slot.
+/// from which a commitment is computed and then inserted into the slot returned by
+/// [`AccountSchemaCommitment::schema_commitment_slot()`].
 ///
 /// It reexports the `get_schema_commitment` procedure from
 /// `miden::standards::metadata::storage_schema`.
@@ -61,7 +69,6 @@ impl AccountSchemaCommitment {
     /// Name of the component is set to match the path of the corresponding module in the standards
     /// library.
     const NAME: &str = "miden::standards::metadata::storage_schema";
-
     /// Creates a new [`AccountSchemaCommitment`] component from storage schemas.
     ///
     /// The input schemas are merged into a single schema before the final commitment is computed.
@@ -98,7 +105,7 @@ impl AccountSchemaCommitment {
         )])
         .expect("storage schema should be valid");
 
-        AccountComponentMetadata::new(Self::NAME, AccountType::all())
+        AccountComponentMetadata::new(Self::NAME)
             .with_description("Component exposing the account storage schema commitment")
             .with_storage_schema(storage_schema)
     }
@@ -151,8 +158,8 @@ impl AccountBuilderSchemaCommitmentExt for AccountBuilder {
 
 /// Computes the schema commitment.
 ///
-/// The account schema commitment is computed from the merged schema commitment. If the passed
-/// list of schemas is empty, [`Word::empty()`] is returned.
+/// The account schema commitment is computed from the merged schema commitment.
+/// If the passed list of schemas is empty, [`Word::empty()`] is returned.
 fn compute_schema_commitment<'a>(
     schemas: impl IntoIterator<Item = &'a StorageSchema>,
 ) -> Result<Word, ComponentMetadataError> {
@@ -205,7 +212,6 @@ mod tests {
             name = "Component A"
             description = "Component A schema"
             version = "0.1.0"
-            supported-types = []
 
             [[storage.slots]]
             name = "test::slot_a"
@@ -216,7 +222,6 @@ mod tests {
             name = "Component B"
             description = "Component B schema"
             version = "0.1.0"
-            supported-types = []
 
             [[storage.slots]]
             name = "test::slot_b"

@@ -5,7 +5,6 @@ use core::error::Error;
 
 use miden_assembly::Report;
 use miden_assembly::diagnostics::reporting::PrintDiagnostic;
-use miden_core::Felt;
 use miden_core::mast::MastForestError;
 use miden_crypto::merkle::mmr::MmrError;
 use miden_crypto::merkle::smt::{SmtLeafError, SmtProofError};
@@ -13,7 +12,7 @@ use miden_crypto::utils::HexParseError;
 use thiserror::Error;
 
 use super::account::{AccountId, RoleSymbol};
-use super::asset::{AssetVaultKey, FungibleAsset, NonFungibleAsset, TokenSymbol};
+use super::asset::{AssetComposition, AssetVaultKey, FungibleAsset, NonFungibleAsset, TokenSymbol};
 use super::crypto::merkle::MerkleError;
 use super::note::NoteId;
 use super::{MAX_BATCHES_PER_BLOCK, MAX_OUTPUT_NOTES_PER_BATCH, Word};
@@ -22,7 +21,6 @@ use crate::account::{
     AccountCode,
     AccountIdPrefix,
     AccountStorage,
-    AccountType,
     StorageMapKey,
     StorageSlotId,
     StorageSlotName,
@@ -33,9 +31,9 @@ use crate::batch::BatchId;
 use crate::block::BlockNumber;
 use crate::note::{
     NoteAssets,
-    NoteAttachmentArray,
-    NoteAttachmentKind,
+    NoteAttachment,
     NoteAttachmentScheme,
+    NoteAttachments,
     NoteTag,
     NoteType,
     Nullifier,
@@ -45,6 +43,7 @@ use crate::utils::serde::DeserializationError;
 use crate::vm::EventId;
 use crate::{
     ACCOUNT_UPDATE_MAX_SIZE,
+    Felt,
     MAX_ACCOUNTS_PER_BATCH,
     MAX_INPUT_NOTES_PER_BATCH,
     MAX_INPUT_NOTES_PER_TX,
@@ -108,8 +107,6 @@ pub enum ComponentMetadataError {
 
 #[derive(Debug, Error)]
 pub enum AccountError {
-    #[error("failed to deserialize account code")]
-    AccountCodeDeserializationError(#[source] DeserializationError),
     #[error("account code does not contain an auth component")]
     AccountCodeNoAuthComponent,
     #[error("account code contains multiple auth components")]
@@ -171,13 +168,6 @@ pub enum AccountError {
     #[error("number of storage slots is {0} but max possible number is {max}", max = AccountStorage::MAX_NUM_STORAGE_SLOTS)]
     StorageTooManySlots(u64),
     #[error(
-        "account component at index {component_index} is incompatible with account of type {account_type}"
-    )]
-    UnsupportedComponentForAccountType {
-        account_type: AccountType,
-        component_index: usize,
-    },
-    #[error(
         "failed to apply full state delta to existing account; full state deltas can be converted to accounts directly"
     )]
     ApplyFullStateDeltaToAccount,
@@ -225,9 +215,7 @@ pub enum AccountIdError {
     AccountIdInvalidPrefixFieldElement(#[source] DeserializationError),
     #[error("failed to convert bytes into account ID suffix field element")]
     AccountIdInvalidSuffixFieldElement(#[source] DeserializationError),
-    #[error("`{0}` is not a known account storage mode")]
-    UnknownAccountStorageMode(Box<str>),
-    #[error(r#"`{0}` is not a known account type, expected one of "FungibleFaucet", "NonFungibleFaucet", "RegularAccountImmutableCode" or "RegularAccountUpdatableCode""#)]
+    #[error("`{0}` is not a known account type")]
     UnknownAccountType(Box<str>),
     #[error("failed to parse hex string into account ID")]
     AccountIdHexParseError(#[source] HexParseError),
@@ -258,6 +246,31 @@ pub enum StorageSlotNameError {
     )]
     TooShort,
     #[error("slot names must contain at most {} characters", StorageSlotName::MAX_LENGTH)]
+    TooLong,
+}
+
+// ACCOUNT COMPONENT NAME ERROR
+// ================================================================================================
+
+#[derive(Debug, Error)]
+pub enum AccountComponentNameError {
+    #[error(
+        "account component name must only contain characters a..z, A..Z, 0..9, double colon or underscore"
+    )]
+    InvalidCharacter,
+    #[error("account component names must be separated by double colons")]
+    UnexpectedColon,
+    #[error("account component name components must not start with an underscore")]
+    UnexpectedUnderscore,
+    #[error(
+        "account component names must contain at least {} components separated by double colons",
+        StorageSlotName::MIN_NUM_COMPONENTS
+    )]
+    TooShort,
+    #[error(
+        "account component names must contain at most {} characters",
+        StorageSlotName::MAX_LENGTH
+    )]
     TooLong,
 }
 
@@ -401,7 +414,9 @@ pub enum AccountDeltaError {
         increment: Felt,
         new: Felt,
     },
-    #[error("account ID {0} in fungible asset delta is not of type fungible faucet")]
+    #[error(
+        "asset issued by faucet {0} in fungible asset delta does not have fungible composition"
+    )]
     NotAFungibleFaucetId(AccountId),
     #[error("cannot merge two full state deltas")]
     MergingFullStateDeltas,
@@ -465,12 +480,6 @@ pub enum AssetError {
     #[error("faucet account ID in asset is invalid")]
     InvalidFaucetAccountId(#[source] Box<dyn Error + Send + Sync + 'static>),
     #[error(
-      "faucet id {0} of type {id_type} must be of type {expected_ty} for fungible assets",
-      id_type = .0.account_type(),
-      expected_ty = AccountType::FungibleFaucet
-    )]
-    FungibleFaucetIdTypeMismatch(AccountId),
-    #[error(
         "asset ID prefix and suffix in a non-fungible asset's vault key must match indices 0 and 1 in the value, but asset ID was {asset_id} and value was {value}"
     )]
     NonFungibleAssetIdMustMatchValue { asset_id: AssetId, value: Word },
@@ -480,16 +489,24 @@ pub enum AssetError {
         "the three most significant elements in a fungible asset's value must be zero but provided value was {0}"
     )]
     FungibleAssetValueMostSignificantElementsMustBeZero(Word),
-    #[error(
-      "faucet id {0} of type {id_type} must be of type {expected_ty} for non fungible assets",
-      id_type = .0.account_type(),
-      expected_ty = AccountType::NonFungibleFaucet
-    )]
-    NonFungibleFaucetIdTypeMismatch(AccountId),
     #[error("smt proof in asset witness contains invalid key or value")]
     AssetWitnessInvalid(#[source] Box<AssetError>),
-    #[error("invalid native asset callbacks encoding: {0}")]
-    InvalidAssetCallbackFlag(u8),
+    #[error("unknown native asset callbacks encoding: {0}")]
+    UnknownAssetCallbackFlag(u8),
+    #[error("unknown asset composition encoding: {0}")]
+    UnknownAssetComposition(u8),
+    #[error("asset composition {0:?} is not supported at this operational site")]
+    UnsupportedAssetComposition(AssetComposition),
+    #[error(
+        "asset composition mismatch for faucet {faucet_id}: expected {expected:?}, found {actual:?}"
+    )]
+    AssetCompositionMismatch {
+        faucet_id: AccountId,
+        expected: AssetComposition,
+        actual: AssetComposition,
+    },
+    #[error("asset metadata byte 0x{0:02x} has reserved bits set to non-zero values")]
+    ReservedAssetMetadata(u8),
 }
 
 // TOKEN SYMBOL ERROR
@@ -585,8 +602,6 @@ pub enum AssetVaultError {
     DuplicateNonFungibleAsset(NonFungibleAsset),
     #[error("fungible asset {0} does not exist in the vault")]
     FungibleAssetNotFound(FungibleAsset),
-    #[error("faucet id {0} is not a fungible faucet id")]
-    NotAFungibleFaucetId(AccountId),
     #[error("non fungible asset {0} does not exist in the vault")]
     NonFungibleAssetNotFound(NonFungibleAsset),
     #[error("subtracting fungible asset amounts would underflow")]
@@ -662,29 +677,29 @@ pub enum NoteError {
     InvalidNoteStorageLength { expected: usize, actual: usize },
     #[error("note tag requires a public note but the note is of type {0}")]
     PublicNoteRequired(NoteType),
+    #[error("note attachment content must have at least one word")]
+    NoteAttachmentContentEmpty,
     #[error(
-        "note attachment cannot commit to more than {} elements",
-        NoteAttachmentArray::MAX_NUM_ELEMENTS
+        "note attachment content contains {0} words, but the maximum is {max} words",
+        max = NoteAttachment::MAX_NUM_WORDS
     )]
-    NoteAttachmentArraySizeExceeded(usize),
-    #[error("unknown note attachment kind {0}")]
-    UnknownNoteAttachmentKind(u8),
-    #[error("note attachment of kind None must have attachment scheme None")]
-    AttachmentKindNoneMustHaveAttachmentSchemeNone,
+    NoteAttachmentContentTooManyWords(usize),
     #[error(
-        "note attachment kind mismatch: header has {header_kind:?} but attachment has {attachment_kind:?}"
+        "note attachments contain a total of {0} words, but the maximum allowed is {max} words",
+        max = NoteAttachments::MAX_NUM_WORDS
     )]
-    AttachmentKindMismatch {
-        header_kind: NoteAttachmentKind,
-        attachment_kind: NoteAttachmentKind,
-    },
+    NoteAttachmentsTooManyWords(usize),
     #[error(
-        "note attachment scheme mismatch: header has {header_scheme:?} but attachment has {attachment_scheme:?}"
+        "attachment size {0} exceeds maximum {max}",
+        max = NoteAttachment::MAX_NUM_WORDS
     )]
-    AttachmentSchemeMismatch {
-        header_scheme: NoteAttachmentScheme,
-        attachment_scheme: NoteAttachmentScheme,
-    },
+    NoteAttachmentHeaderSizeExceeded(u8),
+    #[error("{0} attachments were provided but maximum is {max}", max = NoteAttachments::MAX_COUNT)]
+    TooManyAttachments(usize),
+    #[error("attachment scheme {0} exceeds maximum value of {max}", max = NoteAttachmentScheme::MAX)]
+    NoteAttachmentSchemeExceeded(u32),
+    #[error("attachment scheme value 0 is reserved")]
+    NoteAttachmentSchemeZeroReserved,
     #[error("{error_msg}")]
     Other {
         error_msg: Box<str>,
@@ -764,6 +779,8 @@ impl PartialBlockchainError {
 pub enum TransactionScriptError {
     #[error("failed to assemble transaction script:\n{}", PrintDiagnostic::new(.0))]
     AssemblyError(Report),
+    #[error("failed to convert package to transaction script:\n{}", PrintDiagnostic::new(.0))]
+    PackageNotProgram(Report),
 }
 
 // TRANSACTION INPUT ERROR
@@ -859,7 +876,7 @@ pub enum TransactionOutputError {
 
 /// Errors that can occur when creating a
 /// [`PublicOutputNote`](crate::transaction::PublicOutputNote) or
-/// [`PrivateNoteHeader`](crate::transaction::PrivateNoteHeader).
+/// [`PrivateOutputNote`](crate::transaction::PrivateOutputNote).
 #[derive(Debug, Error)]
 pub enum OutputNoteError {
     #[error("note with id {0} is private but expected a public note")]
@@ -1033,11 +1050,21 @@ pub enum ProposedBatchError {
     InconsistentChainRoot { expected: Word, actual: Word },
 
     #[error(
-        "block {block_reference} referenced by transaction {transaction_id} is not in the partial blockchain"
+        "block {block_num} referenced by transaction {transaction_id} is not in the partial blockchain"
     )]
-    MissingTransactionBlockReference {
-        block_reference: Word,
+    MissingTransactionReferenceBlock {
         transaction_id: TransactionId,
+        block_num: BlockNumber,
+    },
+
+    #[error(
+        "transaction {transaction_id} references block {block_num} with commitment {actual_block_commitment}, but the block in the chain with the same number has commitment {expected_block_commitment}"
+    )]
+    TransactionReferenceBlockCommitmentMismatch {
+        transaction_id: TransactionId,
+        block_num: BlockNumber,
+        expected_block_commitment: Word,
+        actual_block_commitment: Word,
     },
 }
 
@@ -1224,15 +1251,6 @@ pub enum ProposedBlockError {
 
     #[error("nullifier witness has a different root than the current nullifier tree root")]
     NullifierWitnessRootMismatch(NullifierTreeError),
-}
-
-// FEE ERROR
-// ================================================================================================
-
-#[derive(Debug, Error)]
-pub enum FeeError {
-    #[error("native asset of the chain must be a fungible faucet but was of type {account_type}")]
-    NativeAssetIdNotFungible { account_type: AccountType },
 }
 
 // NULLIFIER TREE ERROR

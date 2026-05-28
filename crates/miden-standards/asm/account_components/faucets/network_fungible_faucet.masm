@@ -1,6 +1,0 @@
-# The MASM code of the Network Fungible Faucet Account Component.
-#
-# See the `NetworkFungibleFaucet` Rust type's documentation for more details.
-
-pub use ::miden::standards::faucets::network_fungible::mint_and_send
-pub use ::miden::standards::faucets::network_fungible::burn

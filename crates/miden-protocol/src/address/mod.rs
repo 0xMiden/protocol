@@ -215,7 +215,7 @@ mod tests {
     use bech32::{Bech32, Bech32m, NoChecksum};
 
     use super::*;
-    use crate::account::{AccountId, AccountStorageMode, AccountType};
+    use crate::account::{AccountId, AccountType};
     use crate::address::CustomNetworkId;
     use crate::errors::{AccountIdError, Bech32Error};
     use crate::testing::account_id::{ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET, AccountIdBuilder};
@@ -236,18 +236,8 @@ mod tests {
             NetworkId::Custom(Box::new(CustomNetworkId::from_str(longest_possible_hrp).unwrap())),
         ] {
             for (idx, account_id) in [
-                AccountIdBuilder::new()
-                    .account_type(AccountType::FungibleFaucet)
-                    .build_with_rng(rng),
-                AccountIdBuilder::new()
-                    .account_type(AccountType::NonFungibleFaucet)
-                    .build_with_rng(rng),
-                AccountIdBuilder::new()
-                    .account_type(AccountType::RegularAccountImmutableCode)
-                    .build_with_rng(rng),
-                AccountIdBuilder::new()
-                    .account_type(AccountType::RegularAccountUpdatableCode)
-                    .build_with_rng(rng),
+                AccountIdBuilder::new().account_type(AccountType::Private).build_with_rng(rng),
+                AccountIdBuilder::new().account_type(AccountType::Public).build_with_rng(rng),
             ]
             .into_iter()
             .enumerate()
@@ -294,9 +284,7 @@ mod tests {
 
     #[test]
     fn address_decoding_fails_on_trailing_separator() -> anyhow::Result<()> {
-        let id = AccountIdBuilder::new()
-            .account_type(AccountType::FungibleFaucet)
-            .build_with_rng(&mut rand::rng());
+        let id = AccountIdBuilder::new().build_with_rng(&mut rand::rng());
 
         let address = Address::new(id);
         let mut encoded_address = address.encode(NetworkId::Devnet);
@@ -389,14 +377,7 @@ mod tests {
     fn address_serialization() -> anyhow::Result<()> {
         let rng = &mut rand::rng();
 
-        for account_type in [
-            AccountType::FungibleFaucet,
-            AccountType::NonFungibleFaucet,
-            AccountType::RegularAccountImmutableCode,
-            AccountType::RegularAccountUpdatableCode,
-        ]
-        .into_iter()
-        {
+        for account_type in [AccountType::Private, AccountType::Public].into_iter() {
             let account_id = AccountIdBuilder::new().account_type(account_type).build_with_rng(rng);
             let address = Address::new(account_id).with_routing_parameters(
                 RoutingParameters::new(AddressInterface::BasicWallet)
@@ -414,16 +395,14 @@ mod tests {
     /// Tests that an address with encryption key can be created and used.
     #[test]
     fn address_with_encryption_key() -> anyhow::Result<()> {
-        use crate::crypto::dsa::eddsa_25519_sha512::SecretKey;
+        use crate::crypto::dsa::eddsa_25519_sha512::KeyExchangeKey;
         use crate::crypto::ies::{SealingKey, UnsealingKey};
 
         let rng = &mut rand::rng();
-        let account_id = AccountIdBuilder::new()
-            .account_type(AccountType::FungibleFaucet)
-            .build_with_rng(rng);
+        let account_id = AccountIdBuilder::new().build_with_rng(rng);
 
         // Create keypair using rand::rng()
-        let secret_key = SecretKey::with_rng(rng);
+        let secret_key = KeyExchangeKey::with_rng(rng);
         let public_key = secret_key.public_key();
         let sealing_key = SealingKey::X25519XChaCha20Poly1305(public_key.clone());
         let unsealing_key = UnsealingKey::X25519XChaCha20Poly1305(secret_key.clone());
@@ -453,18 +432,14 @@ mod tests {
     /// Tests that an address with encryption key can be encoded/decoded.
     #[test]
     fn address_encryption_key_encode_decode() -> anyhow::Result<()> {
-        use crate::crypto::dsa::eddsa_25519_sha512::SecretKey;
+        use crate::crypto::dsa::eddsa_25519_sha512::KeyExchangeKey;
 
         let rng = &mut rand::rng();
-        // Use a local account type (RegularAccountImmutableCode) instead of network
-        // (FungibleFaucet)
-        let account_id = AccountIdBuilder::new()
-            .account_type(AccountType::RegularAccountImmutableCode)
-            .storage_mode(AccountStorageMode::Public)
-            .build_with_rng(rng);
+        let account_id =
+            AccountIdBuilder::new().account_type(AccountType::Public).build_with_rng(rng);
 
         // Create keypair
-        let secret_key = SecretKey::with_rng(rng);
+        let secret_key = KeyExchangeKey::with_rng(rng);
         let public_key = secret_key.public_key();
         let sealing_key = SealingKey::X25519XChaCha20Poly1305(public_key);
 
@@ -493,9 +468,7 @@ mod tests {
 
     #[test]
     fn address_allows_max_note_tag_len() -> anyhow::Result<()> {
-        let account_id = AccountIdBuilder::new()
-            .account_type(AccountType::RegularAccountImmutableCode)
-            .build_with_rng(&mut rand::rng());
+        let account_id = AccountIdBuilder::new().build_with_rng(&mut rand::rng());
 
         let address = Address::new(account_id).with_routing_parameters(
             RoutingParameters::new(AddressInterface::BasicWallet)

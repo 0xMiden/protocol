@@ -11,12 +11,12 @@ use crate::errors::{OutputNoteError, TransactionOutputError};
 use crate::note::{
     Note,
     NoteAssets,
-    NoteMetadata,
     NoteRecipient,
     NoteScript,
     NoteStorage,
     NoteTag,
     NoteType,
+    PartialNoteMetadata,
 };
 use crate::testing::account_id::{
     ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
@@ -57,11 +57,11 @@ fn output_note_size_hint_matches_serialized_length() -> anyhow::Result<()> {
     let assets = NoteAssets::new(vec![asset_1, asset_2])?;
 
     // Build metadata similarly to how mock notes are constructed.
-    let metadata = NoteMetadata::new(sender_id, NoteType::Private)
+    let metadata = PartialNoteMetadata::new(sender_id, NoteType::Private)
         .with_tag(NoteTag::with_account_target(sender_id));
 
     // Build storage with at least two values.
-    let storage = NoteStorage::new(vec![Felt::new(1), Felt::new(2)])?;
+    let storage = NoteStorage::new(vec![Felt::ONE, Felt::new_unchecked(2)])?;
 
     let serial_num = Word::empty();
     let script = NoteScript::mock();
@@ -108,7 +108,7 @@ fn oversized_public_note_triggers_size_limit_error() -> anyhow::Result<()> {
     let asset = FungibleAsset::new(faucet_id, 100)?.into();
     let assets = NoteAssets::new(vec![asset])?;
 
-    let metadata = NoteMetadata::new(sender_id, NoteType::Public)
+    let metadata = PartialNoteMetadata::new(sender_id, NoteType::Public)
         .with_tag(NoteTag::with_account_target(sender_id));
 
     let recipient = NoteRecipient::new(serial_num, script, storage);

@@ -243,8 +243,8 @@ where
     /// The returned tree shares the same root and entries as `self`, but its storage is a
     /// read-only snapshot produced by [`SmtStorage::reader`]. The returned tree cannot be
     /// mutated.
-    pub fn reader(&self) -> NullifierTree<LargeSmt<Backend::Reader>> {
-        NullifierTree::new_unchecked(self.smt.reader())
+    pub fn reader(&self) -> Result<NullifierTree<LargeSmt<Backend::Reader>>, LargeSmtError> {
+        Ok(NullifierTree::new_unchecked(self.smt.reader()?))
     }
 }
 

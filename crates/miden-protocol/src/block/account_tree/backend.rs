@@ -252,8 +252,8 @@ where
     Backend: SmtStorage,
 {
     /// Returns a read-only account tree backed by a reader view of this tree's storage.
-    pub fn reader(&self) -> AccountTree<LargeSmt<Backend::Reader>> {
-        AccountTree::new_unchecked(self.smt.reader())
+    pub fn reader(&self) -> Result<AccountTree<LargeSmt<Backend::Reader>>, LargeSmtError> {
+        Ok(AccountTree::new_unchecked(self.smt.reader()?))
     }
 }
 

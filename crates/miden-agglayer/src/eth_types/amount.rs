@@ -135,7 +135,7 @@ impl EthAmount {
         // y must fit into u64; canonical Felt is guaranteed by max amount bound
         let y_u64: u64 = y_u256.try_into().map_err(|_| EthAmountError::ScaledValueDoesNotFitU64)?;
 
-        if y_u64 > FungibleAsset::MAX_AMOUNT {
+        if y_u64 > FungibleAsset::MAX_AMOUNT.as_u64() {
             return Err(EthAmountError::ScaledValueExceedsMaxFungibleAmount);
         }
 

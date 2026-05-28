@@ -1,3 +1,4 @@
+use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use miden_protocol::asset::Asset;
@@ -6,9 +7,10 @@ use miden_protocol::note::{
     Note,
     NoteAssets,
     NoteAttachment,
-    NoteMetadata,
+    NoteAttachments,
     NoteRecipient,
     PartialNote,
+    PartialNoteMetadata,
 };
 
 use super::{RawOutputNote, Word};
@@ -24,8 +26,9 @@ use crate::errors::TransactionKernelError;
 /// addition.
 #[derive(Debug, Clone)]
 pub struct OutputNoteBuilder {
-    metadata: NoteMetadata,
+    metadata: PartialNoteMetadata,
     assets: Vec<Asset>,
+    attachments: NoteAttachments,
     recipient_digest: Word,
     recipient: Option<NoteRecipient>,
 }
@@ -42,11 +45,11 @@ impl OutputNoteBuilder {
     /// Returns an error if:
     /// - the note is public.
     pub fn from_recipient_digest(
-        metadata: NoteMetadata,
+        metadata: PartialNoteMetadata,
         recipient_digest: Word,
     ) -> Result<Self, TransactionKernelError> {
         // For public notes, we must have a recipient.
-        if !metadata.is_private() {
+        if metadata.is_public() {
             return Err(TransactionKernelError::PublicNoteMissingDetails(
                 metadata,
                 recipient_digest,
@@ -58,16 +61,18 @@ impl OutputNoteBuilder {
             recipient_digest,
             recipient: None,
             assets: Vec::new(),
+            attachments: NoteAttachments::empty(),
         })
     }
 
     /// Returns a new [`OutputNoteBuilder`] from the provided metadata and recipient.
-    pub fn from_recipient(metadata: NoteMetadata, recipient: NoteRecipient) -> Self {
+    pub fn from_recipient(metadata: PartialNoteMetadata, recipient: NoteRecipient) -> Self {
         Self {
             metadata,
             recipient_digest: recipient.digest(),
             recipient: Some(recipient),
             assets: Vec::new(),
+            attachments: NoteAttachments::empty(),
         }
     }
 
@@ -116,26 +121,44 @@ impl OutputNoteBuilder {
         Ok(())
     }
 
-    /// Overwrites the attachment in the note's metadata.
-    pub fn set_attachment(&mut self, attachment: NoteAttachment) {
-        self.metadata.set_attachment(attachment);
+    /// Appends an attachment to the note.
+    ///
+    /// # Errors
+    /// Returns an error if the note already has the maximum number of attachments, or if the
+    /// total number of words across all attachments exceeds the maximum.
+    pub fn add_attachment(
+        &mut self,
+        attachment: NoteAttachment,
+    ) -> Result<(), TransactionKernelError> {
+        let mut attachments = core::mem::take(&mut self.attachments).into_vec();
+        attachments.push(attachment);
+        self.attachments = NoteAttachments::new(attachments)
+            .map_err(|err| TransactionKernelError::other(err.to_string()))?;
+
+        Ok(())
     }
 
-    /// Converts this builder to an [OutputNote].
+    /// Converts this builder to an [RawOutputNote].
     ///
-    /// Depending on the available information, this may result in [`OutputNote::Full`] or
-    /// [`OutputNote::Partial`] notes.
+    /// Depending on the available information, this may result in [`RawOutputNote::Full`] or
+    /// [`RawOutputNote::Partial`] notes.
     pub fn build(self) -> RawOutputNote {
         let assets = NoteAssets::new(self.assets)
             .expect("assets should be valid since add_asset validates them");
 
         match self.recipient {
             Some(recipient) => {
-                let note = Note::new(assets, self.metadata, recipient);
+                let note =
+                    Note::with_attachments(assets, self.metadata, recipient, self.attachments);
                 RawOutputNote::Full(note)
             },
             None => {
-                let note = PartialNote::new(self.metadata, self.recipient_digest, assets);
+                let note = PartialNote::new(
+                    self.metadata,
+                    self.recipient_digest,
+                    assets,
+                    self.attachments,
+                );
                 RawOutputNote::Partial(note)
             },
         }

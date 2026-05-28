@@ -10,7 +10,7 @@ use miden::protocol::types::MemoryAddress
 #!
 #! Inputs:  [value]
 #! Outputs: [swapped]
-proc swap_u32_bytes
+pub proc swap_u32_bytes
     # part0 = (value & 0xFF) << 24
     dup u32and.0xFF u32shl.24
     # => [part0, value]
@@ -40,7 +40,7 @@ end
 #! Outputs: [WORD_1, WORD_2, ptr]
 #!
 #! Total cycles: 28
-proc mem_store_double_word(
+pub proc mem_store_double_word(
     double_word_to_store: DoubleWord,
     mem_ptr: MemoryAddress
 ) -> (DoubleWord, MemoryAddress)
@@ -55,7 +55,7 @@ end
 #!
 #! Inputs:  [WORD_1, WORD_2, ptr]
 #! Outputs: []
-proc mem_store_double_word_unaligned(
+pub proc mem_store_double_word_unaligned(
     double_word_to_store: DoubleWord,
     mem_ptr: MemoryAddress
 )
@@ -83,10 +83,37 @@ end
 #!
 #! Inputs:  [ptr]
 #! Outputs: [WORD_1, WORD_2]
-proc mem_load_double_word(mem_ptr: MemoryAddress) -> DoubleWord
+pub proc mem_load_double_word(mem_ptr: MemoryAddress) -> DoubleWord
     padw dup.4 add.4 mem_loadw_le
     # => [WORD_2, ptr]
 
     padw movup.8 mem_loadw_le
+    # => [WORD_1, WORD_2]
+end
+
+#! Loads two words from the provided unaligned (not a multiple of 4) memory address.
+#!
+#! Mirrors `mem_store_double_word_unaligned`: reads 8 consecutive felts via individual
+#! `mem_load`s and stacks them as `[WORD_1, WORD_2]` (with WORD_1's first felt on top of
+#! the stack, matching the order produced by the aligned `mem_load_double_word`).
+#!
+#! Inputs:  [ptr]
+#! Outputs: [WORD_1, WORD_2]
+pub proc mem_load_double_word_unaligned(mem_ptr: MemoryAddress) -> DoubleWord
+    # Load WORD_2 first so it ends up underneath WORD_1 on the final stack.
+    dup add.7 mem_load
+    dup.1 add.6 mem_load
+    dup.2 add.5 mem_load
+    dup.3 add.4 mem_load
+    # => [w2_0, w2_1, w2_2, w2_3, ptr]
+
+    # Load WORD_1 on top.
+    dup.4 add.3 mem_load
+    dup.5 add.2 mem_load
+    dup.6 add.1 mem_load
+    dup.7 mem_load
+    # => [w1_0, w1_1, w1_2, w1_3, w2_0, w2_1, w2_2, w2_3, ptr]
+
+    movup.8 drop
     # => [WORD_1, WORD_2]
 end

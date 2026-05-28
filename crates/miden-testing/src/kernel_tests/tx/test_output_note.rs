@@ -1,30 +1,42 @@
 use alloc::string::String;
+use alloc::vec::Vec;
 
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountId};
 use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset};
 use miden_protocol::crypto::rand::RandomCoin;
+use miden_protocol::errors::MasmError;
 use miden_protocol::errors::tx_kernel::{
     ERR_NON_FUNGIBLE_ASSET_ALREADY_EXISTS,
+    ERR_NOTE_NUM_OF_ASSETS_EXCEED_LIMIT,
+    ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_CANNOT_BE_ZERO,
+    ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_CANNOT_BE_ZERO,
+    ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_MAX_EXCEEDED,
+    ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_MUST_BE_MULTIPLE_OF_WORD_SIZE,
+    ERR_OUTPUT_NOTE_INDEX_OUT_OF_BOUNDS,
+    ERR_OUTPUT_NOTE_TOO_MANY_ATTACHMENTS,
+    ERR_OUTPUT_NOTE_TOTAL_ATTACHMENT_WORDS_EXCEEDED,
     ERR_TX_NUMBER_OF_OUTPUT_NOTES_EXCEEDS_LIMIT,
 };
 use miden_protocol::note::{
     Note,
     NoteAttachment,
     NoteAttachmentScheme,
+    NoteAttachments,
     NoteMetadata,
     NoteRecipient,
     NoteStorage,
     NoteTag,
     NoteType,
+    PartialNoteMetadata,
 };
 use miden_protocol::testing::account_id::{
-    ACCOUNT_ID_NETWORK_NON_FUNGIBLE_FAUCET,
     ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
     ACCOUNT_ID_PRIVATE_SENDER,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2,
+    ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET,
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
     ACCOUNT_ID_SENDER,
@@ -36,14 +48,14 @@ use miden_protocol::transaction::memory::{
     NOTE_MEM_SIZE,
     NUM_OUTPUT_NOTES_PTR,
     OUTPUT_NOTE_ASSETS_OFFSET,
-    OUTPUT_NOTE_ATTACHMENT_OFFSET,
-    OUTPUT_NOTE_METADATA_HEADER_OFFSET,
+    OUTPUT_NOTE_ATTACHMENT_0_OFFSET,
+    OUTPUT_NOTE_METADATA_OFFSET,
     OUTPUT_NOTE_NUM_ASSETS_OFFSET,
     OUTPUT_NOTE_RECIPIENT_OFFSET,
     OUTPUT_NOTE_SECTION_OFFSET,
 };
 use miden_protocol::transaction::{RawOutputNote, RawOutputNotes};
-use miden_protocol::{Felt, Word, ZERO};
+use miden_protocol::{Felt, WORD_SIZE, Word, ZERO};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::{
     AccountTargetNetworkNote,
@@ -54,11 +66,18 @@ use miden_standards::note::{
 };
 use miden_standards::testing::mock_account::MockAccountExt;
 use miden_standards::testing::note::NoteBuilder;
+use rstest::rstest;
 
 use super::{TestSetup, setup_test};
 use crate::kernel_tests::tx::ExecutionOutputExt;
 use crate::utils::{create_public_p2any_note, create_spawn_note};
-use crate::{Auth, MockChain, TransactionContextBuilder, assert_execution_error};
+use crate::{
+    Auth,
+    MockChain,
+    TransactionContextBuilder,
+    assert_execution_error,
+    assert_transaction_executor_error,
+};
 
 #[tokio::test]
 async fn test_create_note() -> anyhow::Result<()> {
@@ -106,19 +125,20 @@ async fn test_create_note() -> anyhow::Result<()> {
         "recipient must be stored at the correct memory location",
     );
 
-    let metadata = NoteMetadata::new(account_id, NoteType::Public).with_tag(tag);
-    let expected_metadata_header = metadata.to_header_word();
-    let expected_note_attachment = metadata.to_attachment_word();
+    let metadata = PartialNoteMetadata::new(account_id, NoteType::Public).with_tag(tag);
+    let expected_metadata_word =
+        NoteMetadata::new(metadata, &NoteAttachments::default()).to_metadata_word();
+    let expected_note_attachment = NoteAttachments::default().to_commitment();
 
     assert_eq!(
-        exec_output
-            .get_kernel_mem_word(OUTPUT_NOTE_SECTION_OFFSET + OUTPUT_NOTE_METADATA_HEADER_OFFSET),
-        expected_metadata_header,
-        "metadata header must be stored at the correct memory location",
+        exec_output.get_kernel_mem_word(OUTPUT_NOTE_SECTION_OFFSET + OUTPUT_NOTE_METADATA_OFFSET),
+        expected_metadata_word,
+        "metadata must be stored at the correct memory location",
     );
 
     assert_eq!(
-        exec_output.get_kernel_mem_word(OUTPUT_NOTE_SECTION_OFFSET + OUTPUT_NOTE_ATTACHMENT_OFFSET),
+        exec_output
+            .get_kernel_mem_word(OUTPUT_NOTE_SECTION_OFFSET + OUTPUT_NOTE_ATTACHMENT_0_OFFSET),
         expected_note_attachment,
         "attachment must be stored at the correct memory location",
     );
@@ -135,7 +155,7 @@ async fn test_create_note() -> anyhow::Result<()> {
 async fn test_create_note_with_invalid_tag() -> anyhow::Result<()> {
     let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
 
-    let invalid_tag = Felt::new((NoteType::Public as u64) << 62);
+    let invalid_tag = Felt::new_unchecked((NoteType::Public as u64) << 62);
     let valid_tag: Felt = NoteTag::default().into();
 
     // Test invalid tag
@@ -228,11 +248,23 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
         .tag(NoteTag::with_custom_account_target(account.id(), 2)?.as_u32())
         .note_type(NoteType::Public)
         .add_assets([asset_2])
-        .attachment(NoteAttachment::new_array(
-            NoteAttachmentScheme::new(5),
-            [42, 43, 44, 45, 46u32].map(Felt::from).to_vec(),
+        .attachment(NoteAttachment::with_words(
+            NoteAttachmentScheme::new(5u16)?,
+            vec![Word::from([42, 43, 44, 45u32]); NoteAttachment::MAX_NUM_WORDS as usize],
         )?)
         .build()?;
+
+    let attachment = output_note_2.attachments().get(0).unwrap();
+    let attachment_words = attachment.content().as_words();
+    let store_attachment_words = attachment_words
+        .iter()
+        .enumerate()
+        .map(|(word_idx, word)| {
+            format!("push.{word} loc_storew_le.{offset} dropw", offset = word_idx * WORD_SIZE)
+        })
+        .collect::<Vec<_>>()
+        .join("\n            ");
+    let num_attachment_words = attachment_words.len();
 
     let tx_context = TransactionContextBuilder::new(account)
         .extend_input_notes(vec![input_note_1.clone(), input_note_2.clone()])
@@ -257,6 +289,20 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
         use miden::protocol::output_note
 
         use $kernel::prologue
+
+        #! Since we execute in the kernel context, we write to local memory rather than to global
+        #! kernel memory to avoid accidental overwrites.
+        #!
+        #! Inputs:  []
+        #! Outputs: [attachment_ptr]
+        @locals({num_attachment_elements})
+        proc store_attachment_words
+            {store_attachment_words}
+            # => []
+
+            locaddr.0
+            # => [attachment_ptr]
+        end
 
         begin
             exec.prologue::prepare_transaction
@@ -287,11 +333,12 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
             exec.output_note::add_asset
             # => [note_idx]
 
-            push.{ATTACHMENT2}
+            # Store attachment words to memory
+            exec.store_attachment_words
+            push.{num_attachment_words}
             push.{attachment_scheme2}
-            movup.5
-            # => [note_idx, attachment_scheme, ATTACHMENT]
-            exec.output_note::set_array_attachment
+            # => [attachment_scheme, num_words, ptr, note_idx]
+            exec.output_note::add_attachment_from_memory
             # => []
 
             # compute the output notes commitment
@@ -312,8 +359,11 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
         tag_2 = output_note_2.metadata().tag(),
         ASSET_2_KEY = asset_2.to_key_word(),
         ASSET_2_VALUE = asset_2.to_value_word(),
-        ATTACHMENT2 = output_note_2.metadata().to_attachment_word(),
-        attachment_scheme2 = output_note_2.metadata().attachment().attachment_scheme().as_u32(),
+        store_attachment_words = store_attachment_words,
+        num_attachment_words = num_attachment_words,
+        attachment_scheme2 =
+            output_note_2.attachments().get(0).unwrap().attachment_scheme().as_u16(),
+        num_attachment_elements = output_note_2.attachments().get(0).unwrap().as_elements().len(),
     );
 
     let exec_output = &tx_context.execute_code(&code).await?;
@@ -324,33 +374,50 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
         "The test creates two notes",
     );
     assert_eq!(
-        exec_output
-            .get_kernel_mem_word(OUTPUT_NOTE_SECTION_OFFSET + OUTPUT_NOTE_METADATA_HEADER_OFFSET),
-        output_note_1.metadata().to_header_word(),
-        "Validate the output note 1 metadata header",
+        exec_output.get_kernel_mem_word(OUTPUT_NOTE_SECTION_OFFSET + OUTPUT_NOTE_METADATA_OFFSET),
+        output_note_1.metadata().to_metadata_word(),
+        "Validate the output note 1 metadata",
     );
-    assert_eq!(
-        exec_output.get_kernel_mem_word(OUTPUT_NOTE_SECTION_OFFSET + OUTPUT_NOTE_ATTACHMENT_OFFSET),
-        output_note_1.metadata().to_attachment_word(),
-        "Validate the output note 1 attachment",
-    );
+    for attachment_idx in 0..4u32 {
+        assert_eq!(
+            exec_output.get_kernel_mem_word(
+                OUTPUT_NOTE_SECTION_OFFSET
+                    + OUTPUT_NOTE_ATTACHMENT_0_OFFSET
+                    + attachment_idx * WORD_SIZE as u32
+            ),
+            Word::empty(),
+            "Validate output note 1 attachment {attachment_idx} is empty",
+        );
+    }
 
     assert_eq!(
         exec_output.get_kernel_mem_word(
-            OUTPUT_NOTE_SECTION_OFFSET + OUTPUT_NOTE_METADATA_HEADER_OFFSET + NOTE_MEM_SIZE
+            OUTPUT_NOTE_SECTION_OFFSET + OUTPUT_NOTE_METADATA_OFFSET + NOTE_MEM_SIZE
         ),
-        output_note_2.metadata().to_header_word(),
-        "Validate the output note 2 metadata header",
+        output_note_2.metadata().to_metadata_word(),
+        "Validate the output note 2 metadata",
     );
     assert_eq!(
         exec_output.get_kernel_mem_word(
-            OUTPUT_NOTE_SECTION_OFFSET + OUTPUT_NOTE_ATTACHMENT_OFFSET + NOTE_MEM_SIZE
+            OUTPUT_NOTE_SECTION_OFFSET + OUTPUT_NOTE_ATTACHMENT_0_OFFSET + NOTE_MEM_SIZE
         ),
-        output_note_2.metadata().to_attachment_word(),
+        output_note_2.attachments().get(0).unwrap().content().to_commitment(),
         "Validate the output note 2 attachment",
     );
+    for attachment_idx in 1..4u32 {
+        assert_eq!(
+            exec_output.get_kernel_mem_word(
+                OUTPUT_NOTE_SECTION_OFFSET
+                    + OUTPUT_NOTE_ATTACHMENT_0_OFFSET
+                    + attachment_idx * WORD_SIZE as u32
+            ),
+            Word::empty(),
+            "Validate output note 2 attachment {attachment_idx} is empty",
+        );
+    }
 
     assert_eq!(exec_output.get_stack_word(0), expected_output_notes_commitment);
+
     Ok(())
 }
 
@@ -604,6 +671,79 @@ async fn test_create_note_and_add_same_nft_twice() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Tests adding assets to an output note at and beyond the `MAX_ASSETS_PER_NOTE` limit.
+///
+/// - `at_max`: adding exactly `MAX_ASSETS_PER_NOTE` assets succeeds.
+/// - `exceeding_max`: adding `MAX_ASSETS_PER_NOTE + 1` assets fails with
+///   `ERR_NOTE_NUM_OF_ASSETS_EXCEED_LIMIT`.
+#[rstest::rstest]
+#[case::at_max(0, false)]
+#[case::exceeding_max(1, true)]
+#[tokio::test]
+async fn test_add_assets_around_max_per_note(
+    #[case] extra_assets: usize,
+    #[case] expect_error: bool,
+) -> anyhow::Result<()> {
+    use miden_protocol::MAX_ASSETS_PER_NOTE;
+
+    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+
+    let recipient = Word::from([0, 1, 2, 3u32]);
+    let tag = NoteTag::new(999 << 16 | 777);
+
+    // Create the required number of unique non-fungible assets.
+    let num_assets = MAX_ASSETS_PER_NOTE + extra_assets;
+    let assets: Vec<Asset> = (0..num_assets)
+        .map(|i| NonFungibleAsset::mock(&(i as u32).to_le_bytes()))
+        .collect();
+
+    // Build the MASM code: create a note, then add all assets one by one.
+    let mut add_assets_code = String::new();
+    for (i, asset) in assets.iter().enumerate() {
+        let is_last = i == num_assets - 1;
+        // For all but the last asset, duplicate note_idx so it remains on the stack.
+        if !is_last {
+            add_assets_code.push_str("dup\n");
+        }
+        add_assets_code.push_str(&format!(
+            "push.{ASSET_VALUE}\npush.{ASSET_KEY}\nexec.output_note::add_asset\n",
+            ASSET_KEY = asset.to_key_word(),
+            ASSET_VALUE = asset.to_value_word(),
+        ));
+    }
+
+    let code = format!(
+        "
+        use $kernel::prologue
+        use miden::protocol::output_note
+
+        begin
+            exec.prologue::prepare_transaction
+
+            push.{recipient}
+            push.{NOTE_TYPE_PUBLIC}
+            push.{tag}
+            exec.output_note::create
+            # => [note_idx]
+
+            {add_assets_code}
+        end
+        ",
+        recipient = recipient,
+        NOTE_TYPE_PUBLIC = NoteType::Public as u8,
+        tag = tag,
+        add_assets_code = add_assets_code,
+    );
+
+    if expect_error {
+        let exec_output = tx_context.execute_code(&code).await;
+        assert_execution_error!(exec_output, ERR_NOTE_NUM_OF_ASSETS_EXCEED_LIMIT);
+    } else {
+        tx_context.execute_code(&code).await?;
+    }
+    Ok(())
+}
+
 /// Tests that creating a note with a fungible asset with amount zero works.
 #[tokio::test]
 async fn creating_note_with_fungible_asset_amount_zero_works() -> anyhow::Result<()> {
@@ -628,7 +768,7 @@ async fn creating_note_with_fungible_asset_amount_zero_works() -> anyhow::Result
 }
 
 #[tokio::test]
-async fn test_build_recipient_hash() -> anyhow::Result<()> {
+async fn test_compute_recipient() -> anyhow::Result<()> {
     let tx_context = {
         let account =
             Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
@@ -647,7 +787,7 @@ async fn test_build_recipient_hash() -> anyhow::Result<()> {
     let output_serial_no = Word::from([0, 1, 2, 3u32]);
     let tag = NoteTag::new(42 << 16 | 42);
     let single_input = 2;
-    let storage = NoteStorage::new(vec![Felt::new(single_input)]).unwrap();
+    let storage = NoteStorage::new(vec![Felt::new_unchecked(single_input)]).unwrap();
     let storage_commitment = storage.commitment();
 
     let recipient = NoteRecipient::new(output_serial_no, input_note_1.script().clone(), storage);
@@ -669,7 +809,7 @@ async fn test_build_recipient_hash() -> anyhow::Result<()> {
             push.{output_serial_no}
             # => [SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT]
 
-            exec.note::build_recipient_hash
+            exec.note::compute_recipient
             # => [RECIPIENT, pad(12)]
 
             push.{NOTE_TYPE_PUBLIC}
@@ -751,7 +891,7 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into()?,
         vec![fungible_asset_0],
         NoteType::Public,
-        NoteAttachment::default(),
+        NoteAttachments::default(),
         &mut RandomCoin::new(Word::from([1, 2, 3, 4u32])),
     )?;
 
@@ -760,7 +900,7 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into()?,
         vec![fungible_asset_0, fungible_asset_1],
         NoteType::Public,
-        NoteAttachment::default(),
+        NoteAttachments::default(),
         &mut RandomCoin::new(Word::from([4, 3, 2, 1u32])),
     )?;
 
@@ -881,7 +1021,7 @@ async fn test_get_recipient_and_metadata() -> anyhow::Result<()> {
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into()?,
         vec![FungibleAsset::mock(5)],
         NoteType::Public,
-        NoteAttachment::default(),
+        NoteAttachments::default(),
         &mut RandomCoin::new(Word::from([1, 2, 3, 4u32])),
     )?;
 
@@ -908,14 +1048,10 @@ async fn test_get_recipient_and_metadata() -> anyhow::Result<()> {
             # get the metadata (the only existing note has 0'th index)
             push.0
             exec.output_note::get_metadata
-            # => [NOTE_ATTACHMENT, METADATA_HEADER]
+            # => [METADATA]
 
-            push.{NOTE_ATTACHMENT}
-            assert_eqw.err="requested note has incorrect note attachment"
-            # => [METADATA_HEADER]
-
-            push.{METADATA_HEADER}
-            assert_eqw.err="requested note has incorrect metadata header"
+            push.{METADATA}
+            assert_eqw.err="requested note has incorrect metadata"
             # => []
 
             # truncate the stack
@@ -924,8 +1060,7 @@ async fn test_get_recipient_and_metadata() -> anyhow::Result<()> {
         "#,
         output_note = create_output_note(&output_note),
         RECIPIENT = output_note.recipient().digest(),
-        METADATA_HEADER = output_note.metadata().to_header_word(),
-        NOTE_ATTACHMENT = output_note.metadata().to_attachment_word(),
+        METADATA = output_note.metadata().to_metadata_word(),
     );
 
     let tx_script = CodeBuilder::default().compile_tx_script(tx_script_src)?;
@@ -962,12 +1097,16 @@ async fn test_get_assets() -> anyhow::Result<()> {
 
             # write the assets to memory
             exec.output_note::get_assets
-            # => [num_assets, dest_ptr, note_index]
+            # => [num_assets]
 
             # assert the number of note assets
             push.{assets_number}
             assert_eq.err="expected note {note_index} to have {assets_number} assets"
-            # => [dest_ptr, note_index]
+            # => []
+
+            # push the dest pointer for asset assertions
+            push.{dest_ptr}
+            # => [dest_ptr]
         "#,
             note_idx = note_index,
             dest_ptr = dest_ptr,
@@ -980,27 +1119,27 @@ async fn test_get_assets() -> anyhow::Result<()> {
                 r#"
                     # load the asset stored in memory
                     padw dup.4 mem_loadw_le
-                    # => [STORED_ASSET_KEY, dest_ptr, note_index]
+                    # => [STORED_ASSET_KEY, dest_ptr]
 
                     # assert the asset key matches
                     push.{NOTE_ASSET_KEY}
                     assert_eqw.err="expected asset key at asset index {asset_index} of the note\
                     {note_index} to be {NOTE_ASSET_KEY}"
-                    # => [dest_ptr, note_index]
+                    # => [dest_ptr]
 
                     # load the asset stored in memory
                     padw dup.4 add.{ASSET_VALUE_OFFSET} mem_loadw_le
-                    # => [STORED_ASSET_VALUE, dest_ptr, note_index]
+                    # => [STORED_ASSET_VALUE, dest_ptr]
 
                     # assert the asset value matches
                     push.{NOTE_ASSET_VALUE}
                     assert_eqw.err="expected asset value at asset index {asset_index} of the note\
                     {note_index} to be {NOTE_ASSET_VALUE}"
-                    # => [dest_ptr, note_index]
+                    # => [dest_ptr]
 
                     # move the pointer
                     add.{ASSET_SIZE}
-                    # => [dest_ptr+ASSET_SIZE, note_index]
+                    # => [dest_ptr+ASSET_SIZE]
                 "#,
                 NOTE_ASSET_KEY = asset.to_key_word(),
                 NOTE_ASSET_VALUE = asset.to_value_word(),
@@ -1009,8 +1148,8 @@ async fn test_get_assets() -> anyhow::Result<()> {
             ));
         }
 
-        // drop the final `dest_ptr` and `note_index` from the stack
-        check_assets_code.push_str("\ndrop drop");
+        // drop the final `dest_ptr` from the stack
+        check_assets_code.push_str("\ndrop");
 
         check_assets_code
     }
@@ -1059,13 +1198,146 @@ async fn test_get_assets() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[rstest]
+#[case::zero_elements(vec![], ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_CANNOT_BE_ZERO)]
+#[case::one_element(vec![1], ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_MUST_BE_MULTIPLE_OF_WORD_SIZE)]
+#[case::max_elements_exceeded(
+  vec![2; WORD_SIZE * (NoteAttachment::MAX_NUM_WORDS as usize + 1)],
+  ERR_OUTPUT_NOTE_ATTACHMENT_SIZE_MAX_EXCEEDED
+)]
 #[tokio::test]
-async fn test_set_none_attachment() -> anyhow::Result<()> {
+async fn test_add_attachment_with_invalid_num_elements_fails(
+    #[case] elements: Vec<u8>,
+    #[case] expected_error: MasmError,
+) -> anyhow::Result<()> {
+    let elements = elements.into_iter().map(Felt::from).collect();
+    let commitment = Word::from([42, 43, 44, 45u32]);
+    let tx_context = TransactionContextBuilder::with_existing_mock_account()
+        .extend_advice_map(vec![(commitment, elements)])
+        .build()?;
+
+    let code = format!(
+        "
+        use miden::protocol::output_note
+        use miden::standards::note_tag::DEFAULT_TAG
+        use $kernel::prologue
+        use mock::util
+
+        begin
+            exec.prologue::prepare_transaction
+
+            exec.util::create_default_note
+            # => [note_idx]
+
+            push.{COMMITMENT}
+            push.5
+            # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx]
+            exec.output_note::add_attachment
+            # => []
+        end
+        ",
+        COMMITMENT = commitment,
+    );
+
+    let exec_output = tx_context.execute_code(&code).await;
+
+    assert_execution_error!(exec_output, expected_error);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_add_attachment_with_scheme_zero_fails() -> anyhow::Result<()> {
+    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+
+    let code = "
+        use miden::protocol::output_note
+        use miden::standards::note_tag::DEFAULT_TAG
+        use $kernel::prologue
+        use mock::util
+
+        begin
+            exec.prologue::prepare_transaction
+
+            exec.util::create_default_note
+            # => [note_idx]
+
+            push.1.2.3.4
+            push.0
+            # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx]
+            exec.output_note::add_attachment
+            # => []
+        end
+        ";
+
+    let exec_output = tx_context.execute_code(code).await;
+
+    assert_execution_error!(exec_output, ERR_OUTPUT_NOTE_ATTACHMENT_SCHEME_CANNOT_BE_ZERO);
+
+    Ok(())
+}
+
+/// Test that adding a fifth attachment to an output note fails with
+/// `ERR_OUTPUT_NOTE_TOO_MANY_ATTACHMENTS`.
+#[tokio::test]
+async fn test_add_fifth_attachment_fails() -> anyhow::Result<()> {
+    let tx_script = "
+        use miden::protocol::output_note
+        use mock::util
+
+        begin
+            exec.util::create_default_note
+            # => [note_idx]
+
+            # add attachment 1
+            dup push.1.2.3.4 push.1
+            exec.output_note::add_word_attachment
+            # => [note_idx]
+
+            # add attachment 2
+            dup push.5.6.7.8 push.2
+            exec.output_note::add_word_attachment
+            # => [note_idx]
+
+            # add attachment 3
+            dup push.9.10.11.12 push.3
+            exec.output_note::add_word_attachment
+            # => [note_idx]
+
+            # add attachment 4
+            dup push.13.14.15.16 push.4
+            exec.output_note::add_word_attachment
+            # => [note_idx]
+
+            # add attachment 5 (should fail)
+            push.17.18.19.20 push.5
+            exec.output_note::add_word_attachment
+            # => []
+        end
+        ";
+
+    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script)?;
+
+    let result = TransactionContextBuilder::with_existing_mock_account()
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_OUTPUT_NOTE_TOO_MANY_ATTACHMENTS);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_add_word_attachment() -> anyhow::Result<()> {
     let account = Account::mock(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET, Auth::IncrNonce);
     let rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
-    let attachment = NoteAttachment::default();
-    let output_note =
-        RawOutputNote::Full(NoteBuilder::new(account.id(), rng).attachment(attachment).build()?);
+    let attachment_word = Word::from([3, 4, 5, 6u32]);
+    let attachment = NoteAttachment::with_word(NoteAttachmentScheme::MAX, attachment_word);
+    let output_note = RawOutputNote::Full(
+        NoteBuilder::new(account.id(), rng).attachment(attachment.clone()).build()?,
+    );
 
     let tx_script = format!(
         "
@@ -1079,11 +1351,9 @@ async fn test_set_none_attachment() -> anyhow::Result<()> {
             # => [note_idx]
 
             push.{ATTACHMENT}
-            push.{attachment_kind}
             push.{attachment_scheme}
-            movup.6
-            # => [note_idx, attachment_scheme, attachment_kind, ATTACHMENT]
-            exec.output_note::set_attachment
+            # => [attachment_scheme, ATTACHMENT, note_idx]
+            exec.output_note::add_word_attachment
             # => []
 
             # truncate the stack
@@ -1091,11 +1361,10 @@ async fn test_set_none_attachment() -> anyhow::Result<()> {
         end
         ",
         RECIPIENT = output_note.recipient().unwrap().digest(),
-        note_type = output_note.metadata().note_type() as u8,
+        note_type = output_note.metadata().note_type().as_u8(),
         tag = output_note.metadata().tag().as_u32(),
-        ATTACHMENT = output_note.metadata().to_attachment_word(),
-        attachment_kind = output_note.metadata().attachment().content().attachment_kind().as_u8(),
-        attachment_scheme = output_note.metadata().attachment().attachment_scheme().as_u32(),
+        attachment_scheme = output_note.attachments().get(0).unwrap().attachment_scheme().as_u16(),
+        ATTACHMENT = attachment_word,
     );
 
     let tx_script = CodeBuilder::new().compile_tx_script(tx_script)?;
@@ -1108,6 +1377,9 @@ async fn test_set_none_attachment() -> anyhow::Result<()> {
         .await?;
 
     let actual_note = tx.output_notes().get_note(0);
+    assert_eq!(actual_note.attachments().num_attachments(), 1);
+    assert_eq!(actual_note.attachments().get(0).unwrap(), &attachment);
+
     assert_eq!(actual_note.header(), output_note.header());
     assert_eq!(actual_note.assets(), output_note.assets());
 
@@ -1115,13 +1387,27 @@ async fn test_set_none_attachment() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn test_set_word_attachment() -> anyhow::Result<()> {
+async fn test_add_attachment_from_memory() -> anyhow::Result<()> {
     let account = Account::mock(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET, Auth::IncrNonce);
     let rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
-    let attachment =
-        NoteAttachment::new_word(NoteAttachmentScheme::new(u32::MAX), Word::from([3, 4, 5, 6u32]));
-    let output_note =
-        RawOutputNote::Full(NoteBuilder::new(account.id(), rng).attachment(attachment).build()?);
+    let words = vec![Word::from([3, 4, 5, 6u32]); NoteAttachment::MAX_NUM_WORDS as usize];
+    let attachment = NoteAttachment::with_words(NoteAttachmentScheme::new(42)?, words.clone())?;
+    let output_note = RawOutputNote::Full(
+        NoteBuilder::new(account.id(), rng).attachment(attachment.clone()).build()?,
+    );
+
+    let attachment_ptr = 1024;
+    let store_attachment_words = words
+        .iter()
+        .enumerate()
+        .map(|(idx, word)| {
+            format!(
+                "push.{word} push.{ptr} mem_storew_le dropw",
+                ptr = attachment_ptr + idx * WORD_SIZE
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
 
     let tx_script = format!(
         "
@@ -1134,11 +1420,14 @@ async fn test_set_word_attachment() -> anyhow::Result<()> {
             exec.output_note::create
             # => [note_idx]
 
-            push.{ATTACHMENT}
+            # Store attachment words to memory
+            {store_attachment_words}
+
+            push.{attachment_ptr}
+            push.{num_words}
             push.{attachment_scheme}
-            movup.5
-            # => [note_idx, attachment_scheme, ATTACHMENT]
-            exec.output_note::set_word_attachment
+            # => [attachment_scheme, num_words, ptr, note_idx]
+            exec.output_note::add_attachment_from_memory
             # => []
 
             # truncate the stack
@@ -1146,10 +1435,10 @@ async fn test_set_word_attachment() -> anyhow::Result<()> {
         end
         ",
         RECIPIENT = output_note.recipient().unwrap().digest(),
-        note_type = output_note.metadata().note_type() as u8,
+        note_type = output_note.metadata().note_type().as_u8(),
         tag = output_note.metadata().tag().as_u32(),
-        attachment_scheme = output_note.metadata().attachment().attachment_scheme().as_u32(),
-        ATTACHMENT = output_note.metadata().to_attachment_word(),
+        attachment_scheme = output_note.attachments().get(0).unwrap().attachment_scheme().as_u16(),
+        num_words = words.len(),
     );
 
     let tx_script = CodeBuilder::new().compile_tx_script(tx_script)?;
@@ -1162,61 +1451,8 @@ async fn test_set_word_attachment() -> anyhow::Result<()> {
         .await?;
 
     let actual_note = tx.output_notes().get_note(0);
-    assert_eq!(actual_note.header(), output_note.header());
-    assert_eq!(actual_note.assets(), output_note.assets());
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_set_array_attachment() -> anyhow::Result<()> {
-    let account = Account::mock(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET, Auth::IncrNonce);
-    let rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
-    let elements = [3, 4, 5, 6, 7, 8, 9u32].map(Felt::from).to_vec();
-    let attachment = NoteAttachment::new_array(NoteAttachmentScheme::new(42), elements.clone())?;
-    let output_note =
-        RawOutputNote::Full(NoteBuilder::new(account.id(), rng).attachment(attachment).build()?);
-
-    let tx_script = format!(
-        "
-        use miden::protocol::output_note
-
-        begin
-            push.{RECIPIENT}
-            push.{note_type}
-            push.{tag}
-            exec.output_note::create
-            # => [note_idx]
-
-            push.{ATTACHMENT}
-            push.{attachment_scheme}
-            movup.5
-            # => [note_idx, attachment_scheme, ATTACHMENT]
-            exec.output_note::set_array_attachment
-            # => []
-
-            # truncate the stack
-            swapdw dropw dropw
-        end
-        ",
-        RECIPIENT = output_note.recipient().unwrap().digest(),
-        note_type = output_note.metadata().note_type() as u8,
-        tag = output_note.metadata().tag().as_u32(),
-        attachment_scheme = output_note.metadata().attachment().attachment_scheme().as_u32(),
-        ATTACHMENT = output_note.metadata().to_attachment_word(),
-    );
-
-    let tx_script = CodeBuilder::new().compile_tx_script(tx_script)?;
-
-    let tx = TransactionContextBuilder::new(account)
-        .extend_expected_output_notes(vec![output_note.clone()])
-        .tx_script(tx_script)
-        .extend_advice_map(vec![(output_note.metadata().to_attachment_word(), elements)])
-        .build()?
-        .execute()
-        .await?;
-
-    let actual_note = tx.output_notes().get_note(0);
+    assert_eq!(actual_note.attachments().num_attachments(), 1);
+    assert_eq!(actual_note.attachments().get(0).unwrap(), &attachment);
     assert_eq!(actual_note.header(), output_note.header());
     assert_eq!(actual_note.assets(), output_note.assets());
 
@@ -1229,7 +1465,7 @@ async fn test_set_network_target_account_attachment() -> anyhow::Result<()> {
     let account = Account::mock(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET, Auth::IncrNonce);
     let rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
     let attachment = NetworkAccountTarget::new(
-        ACCOUNT_ID_NETWORK_NON_FUNGIBLE_FAUCET.try_into()?,
+        ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET.try_into()?,
         NoteExecutionHint::on_block_slot(5, 32, 3),
     )?;
     let output_note = NoteBuilder::new(account.id(), rng)
@@ -1249,7 +1485,8 @@ async fn test_set_network_target_account_attachment() -> anyhow::Result<()> {
     assert_eq!(actual_note.assets(), output_note.assets());
 
     // Make sure we can deserialize the attachment back into its original type.
-    let actual_attachment = NetworkAccountTarget::try_from(actual_note.metadata().attachment())?;
+    let actual_attachment =
+        NetworkAccountTarget::try_from(actual_note.attachments().get(0).unwrap())?;
     assert_eq!(actual_attachment, attachment);
 
     Ok(())
@@ -1261,7 +1498,7 @@ async fn test_network_note() -> anyhow::Result<()> {
     let mut rng = RandomCoin::new(Word::from([9, 8, 7, 6u32]));
 
     // --- Valid network note ---
-    let target_id = AccountId::try_from(ACCOUNT_ID_NETWORK_NON_FUNGIBLE_FAUCET)?;
+    let target_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET)?;
     let attachment = NetworkAccountTarget::new(target_id, NoteExecutionHint::Always)?;
 
     let note = NoteBuilder::new(sender.id(), &mut rng)
@@ -1321,6 +1558,475 @@ async fn test_network_note() -> anyhow::Result<()> {
     // TryFrom<Note> fails for a private note.
     assert!(AccountTargetNetworkNote::try_from(private_network_note).is_err());
 
+    Ok(())
+}
+
+/// Test that `output_note::write_attachment_commitments_to_memory` returns the correct number of
+/// attachments and writes the individual attachment commitments to memory at the destination
+/// pointer.
+#[tokio::test]
+async fn test_write_attachment_commitments_to_memory() -> anyhow::Result<()> {
+    let account = Account::mock(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET, Auth::IncrNonce);
+    let rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
+
+    let attachment_0 =
+        NoteAttachment::with_word(NoteAttachmentScheme::new(1)?, Word::from([3, 4, 5, 6u32]));
+    let attachment_1 =
+        NoteAttachment::with_word(NoteAttachmentScheme::new(2)?, Word::from([7, 8, 9, 10u32]));
+
+    let output_note = RawOutputNote::Full(
+        NoteBuilder::new(account.id(), rng)
+            .attachment(attachment_0.clone())
+            .attachment(attachment_1.clone())
+            .build()?,
+    );
+
+    let commitment_0 = attachment_0.to_commitment();
+    let commitment_1 = attachment_1.to_commitment();
+
+    let tx_script = format!(
+        "
+        use miden::protocol::output_note
+        use miden::core::sys
+
+        const DEST_PTR = 0x1000
+
+        begin
+            push.{RECIPIENT}
+            push.{note_type}
+            push.{tag}
+            exec.output_note::create
+            # => [note_idx]
+
+            # add first word attachment (note_idx = 0)
+            push.{ATTACHMENT_WORD_0}
+            push.{attachment_scheme_0}
+            # => [attachment_scheme, ATTACHMENT, note_idx]
+            exec.output_note::add_word_attachment
+            # => []
+
+            # add second word attachment
+            push.0
+            push.{ATTACHMENT_WORD_1}
+            push.{attachment_scheme_1}
+            # => [attachment_scheme, ATTACHMENT, note_idx=0]
+            exec.output_note::add_word_attachment
+            # => []
+
+            # write attachment commitments for note at index 0 to DEST_PTR
+            push.0 push.DEST_PTR
+            # => [dest_ptr, note_idx=0]
+            exec.output_note::write_attachment_commitments_to_memory
+            # => [num_attachments]
+
+            # assert num_attachments == 2
+            eq.2 assert.err=\"expected 2 attachments\"
+            # => []
+
+            # read commitment 0 from memory at DEST_PTR and assert
+            padw push.DEST_PTR mem_loadw_le
+            # => [COMMITMENT_0]
+            push.{EXPECTED_COMMITMENT_0}
+            assert_eqw.err=\"attachment commitment 0 mismatch\"
+            # => []
+
+            # read commitment 1 from DEST_PTR + WORD_SIZE
+            padw push.DEST_PTR add.4 mem_loadw_le
+            # => [COMMITMENT_1]
+            push.{EXPECTED_COMMITMENT_1}
+            assert_eqw.err=\"attachment commitment 1 mismatch\"
+            # => []
+
+            # truncate the stack
+            exec.sys::truncate_stack
+        end
+        ",
+        RECIPIENT = output_note.recipient().unwrap().digest(),
+        note_type = output_note.metadata().note_type() as u8,
+        tag = output_note.metadata().tag().as_u32(),
+        attachment_scheme_0 = attachment_0.attachment_scheme().as_u16(),
+        ATTACHMENT_WORD_0 = Word::from([3, 4, 5, 6u32]),
+        attachment_scheme_1 = attachment_1.attachment_scheme().as_u16(),
+        ATTACHMENT_WORD_1 = Word::from([7, 8, 9, 10u32]),
+        EXPECTED_COMMITMENT_0 = commitment_0,
+        EXPECTED_COMMITMENT_1 = commitment_1,
+    );
+
+    let tx_script = CodeBuilder::new().compile_tx_script(tx_script)?;
+
+    let tx = TransactionContextBuilder::new(account)
+        .extend_expected_output_notes(vec![output_note.clone()])
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await?;
+
+    let actual_note = tx.output_notes().get_note(0);
+    assert_eq!(actual_note.header(), output_note.header());
+
+    Ok(())
+}
+
+/// Test that `output_note::write_attachment_to_memory` retrieves the correct attachment data from
+/// the advice map and writes it to the destination pointer.
+#[tokio::test]
+async fn test_write_attachment_to_memory() -> anyhow::Result<()> {
+    let account = Account::mock(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET, Auth::IncrNonce);
+    let rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
+
+    let attachment0_word = Word::from([3, 4, 5, 6u32]);
+    let attachment1_word0 = Word::from([7, 8, 9, 10u32]);
+    let attachment1_word1 = Word::from([11, 12, 13, 14u32]);
+
+    let attachment_0 = NoteAttachment::with_word(NoteAttachmentScheme::new(1)?, attachment0_word);
+    let attachment_1 = NoteAttachment::with_words(
+        NoteAttachmentScheme::new(2)?,
+        [attachment1_word0, attachment1_word1].to_vec(),
+    )?;
+
+    let output_note = RawOutputNote::Full(
+        NoteBuilder::new(account.id(), rng)
+            .attachment(attachment_0.clone())
+            .attachment(attachment_1.clone())
+            .build()?,
+    );
+
+    let tx_script = format!(
+        r#"
+        use miden::protocol::output_note
+        use miden::core::sys
+
+        const ATTACHMENT_2_PTR = 1024
+        const ATTACHMENT_2_WORD_0_PTR = ATTACHMENT_2_PTR
+        const ATTACHMENT_2_WORD_1_PTR = ATTACHMENT_2_PTR + 4
+
+        const ATTACHMENT_DEST_PTR = 2048
+
+        begin
+            push.{RECIPIENT}
+            push.{note_type}
+            push.{tag}
+            exec.output_note::create
+            # => [note_idx]
+
+            # add first word attachment (note_idx = 0)
+            push.{attachment0_word}
+            push.{attachment_scheme_0}
+            # => [attachment_scheme, ATTACHMENT, note_idx]
+            exec.output_note::add_word_attachment
+            # => []
+
+            # write attachment elements to memory
+            push.{attachment1_word0} mem_storew_le.ATTACHMENT_2_WORD_0_PTR dropw
+            push.{attachment1_word1} mem_storew_le.ATTACHMENT_2_WORD_1_PTR dropw
+            # => []
+
+            # add second attachment
+            push.0
+            push.ATTACHMENT_2_PTR
+            push.{attachment1_num_words}
+            push.{attachment_scheme_1}
+            # => [attachment_scheme, num_words, attachment_ptr, note_idx=0]
+            exec.output_note::add_attachment_from_memory
+            # => []
+
+            # --- validate attachment 0 ---
+            push.0 push.0 push.ATTACHMENT_DEST_PTR
+            # => [dest_ptr, attachment_idx=0, note_idx=0]
+            exec.output_note::write_attachment_to_memory
+            # => [num_words]
+
+            eq.{attachment0_num_words}
+            assert.err="expected attachment 0 to have {attachment0_num_words} words"
+            # => []
+
+            padw mem_loadw_le.ATTACHMENT_DEST_PTR
+            push.{attachment0_word}
+            assert_eqw.err="attachment 0 word mismatch"
+
+            # --- validate attachment 1 ---
+            push.0 push.1 push.ATTACHMENT_DEST_PTR
+            # => [dest_ptr, attachment_idx=1, note_idx=0]
+            exec.output_note::write_attachment_to_memory
+            # => [num_words]
+
+            eq.{attachment1_num_words}
+            assert.err="expected attachment 1 to have {attachment1_num_words} words"
+            # => []
+
+            # validate first word in attachment_ptr
+            padw mem_loadw_le.ATTACHMENT_DEST_PTR
+            # => [ATTACHMENT1_WORD0, attachment_ptr]
+            push.{attachment1_word0}
+            assert_eqw.err="attachment 1 word 0 mismatch"
+            # => [attachment_ptr]
+
+            # validate second word in attachment_ptr (offset by 4)
+            padw push.ATTACHMENT_DEST_PTR add.4 mem_loadw_le
+            # => [ATTACHMENT1_WORD1]
+            push.{attachment1_word1}
+            assert_eqw.err="attachment 1 word 1 mismatch"
+            # => []
+
+            # truncate the stack
+            exec.sys::truncate_stack
+        end
+        "#,
+        RECIPIENT = output_note.recipient().unwrap().digest(),
+        note_type = output_note.metadata().note_type() as u8,
+        tag = output_note.metadata().tag().as_u32(),
+        attachment_scheme_0 = attachment_0.attachment_scheme().as_u16(),
+        attachment_scheme_1 = attachment_1.attachment_scheme().as_u16(),
+        attachment0_num_words = attachment_0.num_words(),
+        attachment1_num_words = attachment_1.num_words(),
+    );
+
+    let tx_script = CodeBuilder::new().compile_tx_script(tx_script)?;
+
+    let tx = TransactionContextBuilder::new(account)
+        .extend_expected_output_notes(vec![output_note.clone()])
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await?;
+
+    let actual_note = tx.output_notes().get_note(0);
+    assert_eq!(actual_note.header(), output_note.header());
+
+    Ok(())
+}
+
+/// Tests `output_note::find_attachment` for both the found and not-found cases.
+///
+/// Setup: a SPAWN note creates an output note with two word attachments (schemes 10 and 20).
+/// The tx_script then calls `find_attachment` on the created output note.
+///
+/// - `found`:     search for scheme 10 → is_found=1, attachment_idx=0.
+/// - `not_found`: search for scheme 99 → is_found=0.
+#[rstest]
+#[case::found(20, true, 1)]
+#[case::not_found(99, false, 0)]
+#[tokio::test]
+async fn test_find_attachment(
+    #[case] search_scheme: u16,
+    #[case] expected_found: bool,
+    #[case] expected_idx: u8,
+) -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let account = builder.add_existing_wallet(Auth::IncrNonce)?;
+
+    let word_0 = Word::from([3, 4, 5, 6u32]);
+    let word_1 = Word::from([7, 8, 9, 10u32]);
+    let scheme_0 = NoteAttachmentScheme::new(10)?;
+    let scheme_1 = NoteAttachmentScheme::new(20)?;
+
+    let output_note = NoteBuilder::new(account.id(), RandomCoin::new(Word::from([1, 2, 3, 4u32])))
+        .note_type(NoteType::Public)
+        .attachment(NoteAttachment::with_word(scheme_0, word_0))
+        .attachment(NoteAttachment::with_word(scheme_1, word_1))
+        .build()?;
+
+    let spawn_note = builder.add_spawn_note([&output_note])?;
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let tx_script = format!(
+        r#"
+        use miden::protocol::output_note
+        use miden::core::sys
+
+        const DEST_PTR = 0x1000
+
+        begin
+            # the spawn note creates output note at index 0;
+            # search for the target scheme on that note
+            push.0
+            push.{search_scheme}
+            # => [attachment_scheme, note_idx=0]
+            exec.output_note::find_attachment
+            # => [is_found, attachment_idx]
+
+            # assert is_found matches expectation
+            push.{expected_found} assert_eq.err="is_found mismatch"
+            # => [attachment_idx]
+
+            push.{expected_found}
+            if.true
+                # found path: verify attachment_idx matches expectation
+                push.{expected_idx} assert_eq.err="attachment_idx mismatch"
+                # => []
+
+                # write the found attachment to memory and read it back
+                push.0 push.{expected_idx} push.DEST_PTR
+                # => [dest_ptr, attachment_idx, note_idx=0]
+                exec.output_note::write_attachment_to_memory
+                # => [num_words]
+
+                eq.1 assert.err="expected num_words=1"
+                # => []
+
+                # read the word from memory and assert it matches
+                padw push.DEST_PTR mem_loadw_le
+                # => [ATTACHMENT_WORD]
+
+                push.{EXPECTED_WORD}
+                assert_eqw.err="attachment data mismatch"
+                # => []
+            else
+                # not-found path: drop the (undefined) attachment_idx
+                drop
+                # => []
+            end
+
+            # truncate the stack
+            exec.sys::truncate_stack
+        end
+        "#,
+        expected_found = expected_found as u8,
+        EXPECTED_WORD = word_1,
+    );
+
+    let tx_script = CodeBuilder::new().compile_tx_script(tx_script)?;
+
+    let tx = mock_chain
+        .build_tx_context(account.id(), &[spawn_note.id()], &[])?
+        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note.clone())])
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await?;
+
+    let actual_note = tx.output_notes().get_note(0);
+    assert_eq!(actual_note.header(), output_note.header());
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_add_attachments_with_too_many_overall_elements_fails() -> anyhow::Result<()> {
+    let attachment0 = NoteAttachment::with_words(
+        NoteAttachmentScheme::new_const(3),
+        vec![Word::from([1, 2, 3, 4u32]); NoteAttachment::MAX_NUM_WORDS as usize],
+    )?;
+    let attachment1 = NoteAttachment::with_words(
+        NoteAttachmentScheme::new_const(6),
+        vec![Word::from([2, 3, 4, 5u32]); NoteAttachment::MAX_NUM_WORDS as usize],
+    )?;
+
+    let tx_context = TransactionContextBuilder::with_existing_mock_account()
+        .extend_advice_map(vec![(attachment0.to_commitment(), attachment0.content().to_elements())])
+        .extend_advice_map(vec![(attachment1.to_commitment(), attachment1.content().to_elements())])
+        .build()?;
+
+    let code = format!(
+        "
+        use miden::protocol::output_note
+        use miden::standards::note_tag::DEFAULT_TAG
+        use $kernel::prologue
+        use mock::util
+
+        begin
+            exec.prologue::prepare_transaction
+
+            exec.util::create_default_note
+            # => [note_idx]
+
+            dup push.{ATTACHMENT_0_COMMITMENT} push.{attachment0_scheme}
+            # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx]
+
+            exec.output_note::add_attachment
+            # => [note_idx]
+
+            dup push.{ATTACHMENT_1_COMMITMENT} push.{attachment1_scheme}
+            # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx]
+
+            exec.output_note::add_attachment
+            # => [note_idx]
+
+            # add one more word which pushes the overall limit of 512 words over the edge
+            push.1.2.3.4 push.5
+            exec.output_note::add_word_attachment
+            # => []
+        end
+        ",
+        attachment0_scheme = attachment0.attachment_scheme().as_u16(),
+        attachment1_scheme = attachment1.attachment_scheme().as_u16(),
+        ATTACHMENT_0_COMMITMENT = attachment0.to_commitment(),
+        ATTACHMENT_1_COMMITMENT = attachment1.to_commitment(),
+    );
+
+    let exec_output = tx_context.execute_code(&code).await;
+
+    assert_execution_error!(exec_output, ERR_OUTPUT_NOTE_TOTAL_ATTACHMENT_WORDS_EXCEEDED);
+
+    Ok(())
+}
+
+/// Test that output_note procedures abort when given an out-of-bounds note index (equal to
+/// num_output_notes).
+///
+/// Each case creates one note via `mock::util::create_default_note` (index 0), then calls the
+/// procedure under test with index 1, which is out of bounds. The bounds assertion fires before
+/// any parameter validation, so dummy values are sufficient.
+#[rstest]
+#[case::add_asset(8, "add_asset")]
+#[case::get_assets_info(0, "get_assets_info")]
+#[case::get_assets(1, "get_assets")]
+#[case::get_recipient(0, "get_recipient")]
+#[case::get_metadata(0, "get_metadata")]
+#[case::add_attachment(5, "add_attachment")]
+#[case::add_word_attachment(5, "add_word_attachment")]
+#[case::find_attachment(1, "find_attachment")]
+#[case::write_attachment_commitments_to_memory(1, "write_attachment_commitments_to_memory")]
+#[case::write_attachment_to_memory(2, "write_attachment_to_memory")]
+#[case::get_attachments_commitment(0, "get_attachments_commitment")]
+#[tokio::test]
+async fn test_output_note_index_out_of_bounds(
+    #[case] params_above: usize,
+    #[case] procedure_name: &str,
+) -> anyhow::Result<()> {
+    let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
+
+    let push_above = if params_above > 0 {
+        format!("repeat.{params_above} push.99 end")
+    } else {
+        String::new()
+    };
+
+    // Create one note (index 0), then try to call the procedure with index 1.
+    let code = format!(
+        "
+        use miden::protocol::output_note
+        use mock::util
+
+        use $kernel::prologue
+
+        begin
+            exec.prologue::prepare_transaction
+
+            exec.util::create_default_note
+            # => [note_idx = 0]
+            drop
+            # => []
+
+            # push the out-of-bounds index (1 == num_output_notes)
+            push.1
+            # => [note_idx = 1]
+
+            # push garbage parameters that should sit above note_idx
+            {push_above}
+            # => [params_above(n), note_idx = 1]
+
+            # call the procedure under test with the invalid index
+            exec.output_note::{procedure_name}
+        end
+        ",
+    );
+
+    let exec_output = tx_context.execute_code(&code).await;
+
+    assert_execution_error!(exec_output, ERR_OUTPUT_NOTE_INDEX_OUT_OF_BOUNDS);
     Ok(())
 }
 
