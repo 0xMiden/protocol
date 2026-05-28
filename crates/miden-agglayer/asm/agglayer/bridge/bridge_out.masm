@@ -22,6 +22,7 @@ use agglayer::common::eth_address::EthereumAddressFormat
 # =================================================================================================
 
 const ERR_B2AGG_DESTINATION_NETWORK_IS_MIDEN = "B2AGG note destination network ID must not be Miden's AggLayer network ID"
+const ERR_B2AGG_NOTE_MUST_BE_PUBLIC = "B2AGG note must be public"
 
 # CONSTANTS
 # =================================================================================================
@@ -106,11 +107,15 @@ const BURN_NOTE_NUM_STORAGE_ITEMS=0
 #! - dest_address(5) are 5 u32 values representing a 20-byte Ethereum address.
 #!
 #! Panics if:
+#! - the B2AGG note calling `bridge_out` is not public.
 #! - destination network ID is Miden's AggLayer network ID.
 #!
 #! Invocation: call
 @locals(15)
 pub proc bridge_out
+    exec.active_note::is_public assert.err=ERR_B2AGG_NOTE_MUST_BE_PUBLIC
+    # => [ASSET_KEY, ASSET_VALUE, dest_network_id, dest_address(5), pad(2)]
+
     # Save ASSET to local memory for later BURN note creation
     locaddr.BRIDGE_OUT_BURN_ASSET_LOC
     exec.asset::store
