@@ -528,7 +528,7 @@ The storage is divided into three logical regions: proof data (felts 0-535), lea
 | 544-548 | `destination_address` | 5 | 5 x u32 felts |
 | 549-556 | `amount` | 8 | U256 as 8 x u32 felts |
 | 557-564 | `metadata_hash` | 8 | Keccak-256 hash as 8 x u32 felts |
-| 565-567 | padding | 3 | zeros (enforced: non-zero padding rejects the claim) |
+| 565-567 | padding | 3 | zeros |
 | 568 | `miden_claim_amount` | 1 | Scaled-down Miden token amount (Felt). Computed as `floor(amount / 10^scale)` |
 
 **Consumption:**

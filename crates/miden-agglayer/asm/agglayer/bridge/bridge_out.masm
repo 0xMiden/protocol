@@ -57,8 +57,7 @@ const DESTINATION_NETWORK_OFFSET=7
 const DESTINATION_ADDRESS_OFFSET=8
 const AMOUNT_OFFSET=13
 const METADATA_HASH_OFFSET=21
-# padding sits immediately after the 8-felt metadata hash; derive it so it tracks the layout above
-const PADDING_OFFSET=METADATA_HASH_OFFSET + 8
+const PADDING_OFFSET=29
 
 # Local memory offsets
 # -------------------------------------------------------------------------------------------------
@@ -202,20 +201,9 @@ pub proc bridge_out
     exec.utils::mem_store_double_word_unaligned
     # => [pad(16)]
 
-    # Explicitly zero the 3 padding felts after METADATA_HASH. leaf_utils::pack_leaf_data requires a
-    # canonical leaf preimage and asserts these are zero, so this zeroing is what keeps the
-    # bridge-out leaf within that enforced contract.
-    push.0
-    push.LEAF_DATA_START_PTR push.PADDING_OFFSET add
-    mem_store
-
-    push.0
-    push.LEAF_DATA_START_PTR push.PADDING_OFFSET add.1 add
-    mem_store
-
-    push.0
-    push.LEAF_DATA_START_PTR push.PADDING_OFFSET add.2 add
-    mem_store
+    # Explicitly zero the 3 padding felts after METADATA_HASH for
+    # leaf_utils::pack_leaf_data
+    exec.zero_padding_felts
     # => [pad(16)]
 
     # --- 4. Compute leaf value and append it to the Local Exit Tree ---
@@ -242,6 +230,19 @@ end
 
 # HELPER PROCEDURES
 # =================================================================================================
+
+#! Zeroes the 3 trailing padding felts of the leaf data so it satisfies the zero-padding contract
+#! enforced by leaf_utils::pack_leaf_data.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Invocation: exec
+proc zero_padding_felts
+    push.0 push.LEAF_DATA_START_PTR push.PADDING_OFFSET add mem_store
+    push.0 push.LEAF_DATA_START_PTR push.PADDING_OFFSET add.1 add mem_store
+    push.0 push.LEAF_DATA_START_PTR push.PADDING_OFFSET add.2 add mem_store
+end
 
 #! Asserts that the bridge-out destination network ID is not equal to the Miden's AggLayer network
 #! ID.
@@ -328,11 +329,11 @@ end
 #!   destinationAddress[5],
 #!   amount[8],
 #!   metadataHash[8],
-#!   padding[3],          // must be zero; asserted by leaf_utils::pack_leaf_data
+#!   padding[3],
 #! ]
 #!
 #! Panics if:
-#! - any of the 3 trailing padding felts is non-zero.
+#! - any of the 3 trailing padding felts in the leaf data is non-zero.
 #!
 #! Invocation: exec
 proc add_leaf_bridge(leaf_data_start_ptr: MemoryAddress)

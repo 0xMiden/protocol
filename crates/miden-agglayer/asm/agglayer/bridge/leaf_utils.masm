@@ -19,11 +19,8 @@ const PACKING_START_PTR_LOCAL= 0
 # the number of elements to pack (113 bytes = 29 elements, rounding up from 28.25)
 const PACKED_DATA_NUM_ELEMENTS = 29
 
-# the felt offset (relative to the leaf data start pointer) of the 3 trailing padding felts. They
-# sit immediately after the packed data - i.e. at the felt right after the last element the packing
-# loop writes - so derive it from PACKED_DATA_NUM_ELEMENTS to keep it coupled to the loop bound.
-# (bridge_out.masm defines the same relative offset for the leaf it builds.)
-const PADDING_OFFSET = PACKED_DATA_NUM_ELEMENTS
+# the offset of the 3 trailing padding felts in the leaf data
+const LEAF_DATA_PADDING_OFFSET = PACKED_DATA_NUM_ELEMENTS
 
 # PUBLIC INTERFACE
 # =================================================================================================
@@ -35,7 +32,7 @@ const PADDING_OFFSET = PACKED_DATA_NUM_ELEMENTS
 #! Outputs: [LEAF_VALUE[8]]
 #!
 #! Panics if:
-#! - any of the 3 trailing padding felts is non-zero (see pack_leaf_data).
+#! - any of the 3 trailing padding felts in the leaf data is non-zero.
 #!
 #! Invocation: exec
 pub proc compute_leaf_value(leaf_data_start_ptr: MemoryAddress) -> DoubleWord
@@ -87,7 +84,7 @@ end
 #! Outputs: []
 #!
 #! Panics if:
-#! - any of the 3 trailing padding felts is non-zero.
+#! - any of the 3 trailing padding felts in the leaf data is non-zero.
 #!
 #! Invocation: exec
 @locals(1) # start_ptr
@@ -176,27 +173,20 @@ end
 
 #! Asserts that the 3 trailing padding felts of the leaf data are all zero.
 #!
-#! The leaf is a 113-byte keccak preimage. pack_leaf_data folds padding[0]'s low 3 bytes into the
-#! high 3 bytes of the final packed u32 (packed[28]), at byte positions 113..115 - the unused tail
-#! of the final limb. The keccak precompile hashes only the first 113 bytes, so padding never
-#! changes the leaf value, but it requires that tail to be zero. padding[1] and padding[2] are never
-#! read by the packer or the hash at all.
-#!
-#! Asserting all 3 are zero turns the precompile's implicit tail-must-be-zero contract into an
-#! explicit and total check - it also covers padding[1] and padding[2], which the precompile never
-#! sees - and produces a clear bridge-specific error instead of a generic precompile padding
-#! failure. This is defense-in-depth only: it does not change LEAF_VALUE or the claim nullifier
-#! (which is derived from the leaf index and source network, not the leaf preimage).
+#! `pack_leaf_data` folds `padding[0]`'s low 3 bytes into the high 3 bytes of the final `packed[28]`
+#! value - the unused tail of the final limb. The keccak precompile requires that tail to be zero.
+#! padding[1] and padding[2] are never read by the packer or the hash at all, but are still checked
+#! defensively for potential future use.
 #!
 #! Inputs:  [leaf_data_start_ptr]
 #! Outputs: []
 #!
 #! Panics if:
-#! - any of the 3 trailing padding felts is non-zero.
+#! - any of the 3 trailing padding felts in the leaf data is non-zero.
 #!
 #! Invocation: exec
 proc assert_padding_is_zero(leaf_data_start_ptr: MemoryAddress)
-    push.PADDING_OFFSET add
+    push.LEAF_DATA_PADDING_OFFSET add
     # => [padding_ptr]
 
     dup mem_load assertz.err=ERR_LEAF_PADDING_NOT_ZERO
