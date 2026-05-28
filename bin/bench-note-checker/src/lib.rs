@@ -58,6 +58,7 @@ pub struct MixedNotesSetup {
     pub notes: Vec<Note>,
     pub target_account_id: AccountId,
     pub expected_successful_count: usize,
+    pub expected_failed_count: usize,
 }
 
 /// Creates a benchmark setup with one successful note, N failing notes, and one more successful
@@ -112,6 +113,7 @@ pub fn setup_mixed_notes_benchmark(config: MixedNotesConfig) -> anyhow::Result<M
         notes: all_notes,
         target_account_id,
         expected_successful_count,
+        expected_failed_count: config.failing_note_count,
     })
 }
 
@@ -143,8 +145,14 @@ pub async fn run_mixed_notes_check(setup: &MixedNotesSetup) -> anyhow::Result<()
         result.successful().len()
     );
 
-    // Validate that we have some failed notes (all the failing ones).
-    assert!(!result.failed().is_empty(), "Expected some failed notes");
+    // Validate that the number of failed notes matches the configuration.
+    assert_eq!(
+        setup.expected_failed_count,
+        result.failed().len(),
+        "Expected {} failed notes, got {}",
+        setup.expected_failed_count,
+        result.failed().len()
+    );
 
     Ok(())
 }
