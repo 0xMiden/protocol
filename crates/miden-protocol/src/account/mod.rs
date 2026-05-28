@@ -46,13 +46,13 @@ pub use interface::AccountComponentName;
 pub mod delta;
 pub use delta::{
     AccountDelta,
-    AccountStorageDelta,
+    AccountStoragePatch,
     AccountVaultDelta,
     FungibleAssetDelta,
     NonFungibleAssetDelta,
     NonFungibleDeltaAction,
-    StorageMapDelta,
-    StorageSlotDelta,
+    StorageMapPatch,
+    StorageSlotPatch,
 };
 
 pub mod storage;
@@ -306,7 +306,7 @@ impl Account {
             .map_err(AccountError::AssetVaultUpdateError)?;
 
         // update storage
-        self.storage.apply_delta(delta.storage())?;
+        self.storage.apply_patch(delta.storage())?;
 
         // update nonce
         self.increment_nonce(delta.nonce_delta())?;
@@ -382,9 +382,9 @@ impl TryFrom<Account> for AccountDelta {
             .into_slots()
             .into_iter()
             .map(StorageSlot::into_parts)
-            .map(|(slot_name, slot_content)| (slot_name, StorageSlotDelta::from(slot_content)))
+            .map(|(slot_name, slot_content)| (slot_name, StorageSlotPatch::from(slot_content)))
             .collect();
-        let storage_delta = AccountStorageDelta::from_raw(slot_deltas);
+        let storage_patch = AccountStoragePatch::from_raw(slot_deltas);
 
         let mut fungible_delta = FungibleAssetDelta::default();
         let mut non_fungible_delta = NonFungibleAssetDelta::default();
@@ -411,7 +411,7 @@ impl TryFrom<Account> for AccountDelta {
 
         // SAFETY: As checked earlier, the nonce delta should be greater than 0 allowing for
         // non-empty state changes.
-        let delta = AccountDelta::new(id, storage_delta, vault_delta, nonce_delta)
+        let delta = AccountDelta::new(id, storage_patch, vault_delta, nonce_delta)
             .expect("nonce_delta should be greater than 0")
             .with_code(Some(code));
 
@@ -520,7 +520,7 @@ mod tests {
         AccountDelta,
         AccountId,
         AccountStorage,
-        AccountStorageDelta,
+        AccountStoragePatch,
         AccountVaultDelta,
     };
     use crate::account::{
@@ -530,8 +530,8 @@ mod tests {
         AccountType,
         PartialAccount,
         StorageMap,
-        StorageMapDelta,
         StorageMapKey,
+        StorageMapPatch,
         StorageSlot,
         StorageSlotContent,
         StorageSlotName,
@@ -564,7 +564,7 @@ mod tests {
         let nonce_delta = Felt::from(2_u32);
         let asset_0 = FungibleAsset::mock(15);
         let asset_1 = NonFungibleAsset::mock(&[5, 5, 5]);
-        let storage_delta = AccountStorageDelta::new()
+        let storage_patch = AccountStoragePatch::new()
             .add_cleared_items([StorageSlotName::mock(0)])
             .add_updated_values([(StorageSlotName::mock(1), Word::from([1, 2, 3, 4u32]))]);
         let account_delta = build_account_delta(
@@ -572,7 +572,7 @@ mod tests {
             vec![asset_1],
             vec![asset_0],
             nonce_delta,
-            storage_delta,
+            storage_patch,
         );
 
         let serialized = account_delta.to_bytes();
@@ -614,12 +614,12 @@ mod tests {
         let key = StorageMapKey::from_array([101, 102, 103, 104]);
         let value = Word::from([9, 10, 11, 12u32]);
 
-        let updated_map = StorageMapDelta::from_iters([], [(key, value)]);
+        let updated_map = StorageMapPatch::from_iters([], [(key, value)]);
         storage_map.insert(key, value).unwrap();
 
         // build account delta
         let final_nonce = Felt::from(2_u32);
-        let storage_delta = AccountStorageDelta::new()
+        let storage_patch = AccountStoragePatch::new()
             .add_cleared_items([StorageSlotName::mock(0)])
             .add_updated_values([(StorageSlotName::mock(1), Word::from([1, 2, 3, 4u32]))])
             .add_updated_maps([(StorageSlotName::mock(2), updated_map)]);
@@ -628,7 +628,7 @@ mod tests {
             vec![asset_1],
             vec![asset_0],
             final_nonce - init_nonce,
-            storage_delta,
+            storage_patch,
         );
 
         // apply delta and create final_account
@@ -659,11 +659,11 @@ mod tests {
             build_account(vec![asset], init_nonce, vec![StorageSlotContent::Value(Word::empty())]);
 
         // build account delta
-        let storage_delta = AccountStorageDelta::new()
+        let storage_patch = AccountStoragePatch::new()
             .add_cleared_items([StorageSlotName::mock(0)])
             .add_updated_values([(StorageSlotName::mock(1), Word::from([1, 2, 3, 4u32]))]);
         let account_delta =
-            build_account_delta(account_id, vec![], vec![asset], init_nonce, storage_delta);
+            build_account_delta(account_id, vec![], vec![asset], init_nonce, storage_patch);
 
         // apply delta
         account.apply_delta(&account_delta).unwrap()
@@ -681,11 +681,11 @@ mod tests {
 
         // build account delta
         let final_nonce = Felt::from(1_u32);
-        let storage_delta = AccountStorageDelta::new()
+        let storage_patch = AccountStoragePatch::new()
             .add_cleared_items([StorageSlotName::mock(0)])
             .add_updated_values([(StorageSlotName::mock(1), Word::from([1, 2, 3, 4u32]))]);
         let account_delta =
-            build_account_delta(account_id, vec![], vec![asset], final_nonce, storage_delta);
+            build_account_delta(account_id, vec![], vec![asset], final_nonce, storage_patch);
 
         // apply delta
         account.apply_delta(&account_delta).unwrap()
@@ -704,7 +704,7 @@ mod tests {
         let nonce_delta = Felt::from(1_u32);
         let account_delta = AccountDelta::new(
             account_id,
-            AccountStorageDelta::new(),
+            AccountStoragePatch::new(),
             AccountVaultDelta::default(),
             nonce_delta,
         )
@@ -719,10 +719,10 @@ mod tests {
         added_assets: Vec<Asset>,
         removed_assets: Vec<Asset>,
         nonce_delta: Felt,
-        storage_delta: AccountStorageDelta,
+        storage_patch: AccountStoragePatch,
     ) -> AccountDelta {
         let vault_delta = AccountVaultDelta::from_iters(added_assets, removed_assets);
-        AccountDelta::new(account_id, storage_delta, vault_delta, nonce_delta).unwrap()
+        AccountDelta::new(account_id, storage_patch, vault_delta, nonce_delta).unwrap()
     }
 
     pub fn build_account(

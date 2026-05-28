@@ -20,58 +20,58 @@ use crate::account::{
 };
 use crate::{EMPTY_WORD, Felt, ZERO};
 
-// ACCOUNT STORAGE DELTA
+// ACCOUNT STORAGE PATCH
 // ================================================================================================
 
-/// The [`AccountStorageDelta`] stores the differences between two states of account storage.
+/// The [`AccountStoragePatch`] stores the differences between two states of account storage.
 ///
-/// The delta consists of a map from [`StorageSlotName`] to [`StorageSlotDelta`].
+/// The patch consists of a map from [`StorageSlotName`] to [`StorageSlotPatch`].
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct AccountStorageDelta {
+pub struct AccountStoragePatch {
     /// The updates to the slots of the account.
-    deltas: BTreeMap<StorageSlotName, StorageSlotDelta>,
+    patches: BTreeMap<StorageSlotName, StorageSlotPatch>,
 }
 
-impl AccountStorageDelta {
-    /// Creates a new, empty storage delta.
+impl AccountStoragePatch {
+    /// Creates a new, empty storage patch.
     pub fn new() -> Self {
-        Self { deltas: BTreeMap::new() }
+        Self { patches: BTreeMap::new() }
     }
 
-    /// Creates a new storage delta from the provided slot deltas.
-    pub fn from_raw(deltas: BTreeMap<StorageSlotName, StorageSlotDelta>) -> Self {
-        Self { deltas }
+    /// Creates a new storage patch from the provided slot patches.
+    pub fn from_raw(patches: BTreeMap<StorageSlotName, StorageSlotPatch>) -> Self {
+        Self { patches }
     }
 
-    /// Returns the delta for the provided slot name, or `None` if no delta exists.
-    pub fn get(&self, slot_name: &StorageSlotName) -> Option<&StorageSlotDelta> {
-        self.deltas.get(slot_name)
+    /// Returns the patch for the provided slot name, or `None` if no patch exists.
+    pub fn get(&self, slot_name: &StorageSlotName) -> Option<&StorageSlotPatch> {
+        self.patches.get(slot_name)
     }
 
-    /// Returns an iterator over the slot deltas.
-    pub(crate) fn slots(&self) -> impl Iterator<Item = (&StorageSlotName, &StorageSlotDelta)> {
-        self.deltas.iter()
+    /// Returns an iterator over the slot patches.
+    pub(crate) fn slots(&self) -> impl Iterator<Item = (&StorageSlotName, &StorageSlotPatch)> {
+        self.patches.iter()
     }
 
-    /// Returns an iterator over the updated values in this storage delta.
+    /// Returns an iterator over the updated values in this storage patch.
     pub fn values(&self) -> impl Iterator<Item = (&StorageSlotName, &Word)> {
-        self.deltas.iter().filter_map(|(slot_name, slot_delta)| match slot_delta {
-            StorageSlotDelta::Value(word) => Some((slot_name, word)),
-            StorageSlotDelta::Map(_) => None,
+        self.patches.iter().filter_map(|(slot_name, slot_patch)| match slot_patch {
+            StorageSlotPatch::Value(word) => Some((slot_name, word)),
+            StorageSlotPatch::Map(_) => None,
         })
     }
 
-    /// Returns an iterator over the updated maps in this storage delta.
-    pub fn maps(&self) -> impl Iterator<Item = (&StorageSlotName, &StorageMapDelta)> {
-        self.deltas.iter().filter_map(|(slot_name, slot_delta)| match slot_delta {
-            StorageSlotDelta::Value(_) => None,
-            StorageSlotDelta::Map(map_delta) => Some((slot_name, map_delta)),
+    /// Returns an iterator over the updated maps in this storage patch.
+    pub fn maps(&self) -> impl Iterator<Item = (&StorageSlotName, &StorageMapPatch)> {
+        self.patches.iter().filter_map(|(slot_name, slot_patch)| match slot_patch {
+            StorageSlotPatch::Value(_) => None,
+            StorageSlotPatch::Map(map_patch) => Some((slot_name, map_patch)),
         })
     }
 
-    /// Returns true if storage delta contains no updates.
+    /// Returns true if storage patch contains no updates.
     pub fn is_empty(&self) -> bool {
-        self.deltas.is_empty()
+        self.patches.is_empty()
     }
 
     /// Tracks a slot change.
@@ -88,11 +88,11 @@ impl AccountStorageDelta {
         slot_name: StorageSlotName,
         new_slot_value: Word,
     ) -> Result<(), AccountDeltaError> {
-        if !self.deltas.get(&slot_name).map(StorageSlotDelta::is_value).unwrap_or(true) {
+        if !self.patches.get(&slot_name).map(StorageSlotPatch::is_value).unwrap_or(true) {
             return Err(AccountDeltaError::StorageSlotUsedAsDifferentTypes(slot_name));
         }
 
-        self.deltas.insert(slot_name, StorageSlotDelta::Value(new_slot_value));
+        self.patches.insert(slot_name, StorageSlotPatch::Value(new_slot_value));
 
         Ok(())
     }
@@ -113,39 +113,39 @@ impl AccountStorageDelta {
         new_value: Word,
     ) -> Result<(), AccountDeltaError> {
         match self
-            .deltas
+            .patches
             .entry(slot_name.clone())
-            .or_insert(StorageSlotDelta::Map(StorageMapDelta::default()))
+            .or_insert(StorageSlotPatch::Map(StorageMapPatch::default()))
         {
-            StorageSlotDelta::Value(_) => {
+            StorageSlotPatch::Value(_) => {
                 return Err(AccountDeltaError::StorageSlotUsedAsDifferentTypes(slot_name));
             },
-            StorageSlotDelta::Map(storage_map_delta) => {
-                storage_map_delta.insert(key, new_value);
+            StorageSlotPatch::Map(storage_map_patch) => {
+                storage_map_patch.insert(key, new_value);
             },
         };
 
         Ok(())
     }
 
-    /// Inserts an empty storage map delta for the provided slot name.
+    /// Inserts an empty storage map patch for the provided slot name.
     ///
-    /// This is useful for full state deltas to represent an empty map in the delta.
+    /// This is useful for full state patches to represent an empty map in the patch.
     ///
-    /// This overwrites the existing slot delta, if any.
-    pub fn insert_empty_map_delta(&mut self, slot_name: StorageSlotName) {
-        self.deltas.insert(slot_name, StorageSlotDelta::with_empty_map());
+    /// This overwrites the existing slot patch, if any.
+    pub fn insert_empty_map_patch(&mut self, slot_name: StorageSlotName) {
+        self.patches.insert(slot_name, StorageSlotPatch::with_empty_map());
     }
 
-    /// Merges another delta into this one, overwriting any existing values.
+    /// Merges another patch into this one, overwriting any existing values.
     pub fn merge(&mut self, other: Self) -> Result<(), AccountDeltaError> {
-        for (slot_name, slot_delta) in other.deltas {
-            match self.deltas.entry(slot_name.clone()) {
+        for (slot_name, slot_patch) in other.patches {
+            match self.patches.entry(slot_name.clone()) {
                 Entry::Vacant(vacant_entry) => {
-                    vacant_entry.insert(slot_delta);
+                    vacant_entry.insert(slot_patch);
                 },
                 Entry::Occupied(mut occupied_entry) => {
-                    occupied_entry.get_mut().merge(slot_delta).ok_or_else(|| {
+                    occupied_entry.get_mut().merge(slot_patch).ok_or_else(|| {
                         AccountDeltaError::StorageSlotUsedAsDifferentTypes(slot_name)
                     })?;
                 },
@@ -175,17 +175,17 @@ impl AccountStorageDelta {
         })
     }
 
-    /// Appends the storage slots delta to the given `elements` from which the delta commitment will
+    /// Appends the storage slots patch to the given `elements` from which the delta commitment will
     /// be computed.
     pub(super) fn append_delta_elements(&self, elements: &mut Vec<Felt>) {
         let domain_value = Felt::from_u8(2);
         let domain_map = Felt::from_u8(3);
 
-        for (slot_name, slot_delta) in self.deltas.iter() {
+        for (slot_name, slot_patch) in self.patches.iter() {
             let slot_id = slot_name.id();
 
-            match slot_delta {
-                StorageSlotDelta::Value(new_value) => {
+            match slot_patch {
+                StorageSlotPatch::Value(new_value) => {
                     elements.extend_from_slice(&[
                         domain_value,
                         ZERO,
@@ -194,13 +194,13 @@ impl AccountStorageDelta {
                     ]);
                     elements.extend_from_slice(new_value.as_elements());
                 },
-                StorageSlotDelta::Map(map_delta) => {
-                    for (key, value) in map_delta.entries() {
+                StorageSlotPatch::Map(map_patch) => {
+                    for (key, value) in map_patch.entries() {
                         elements.extend_from_slice(key.as_elements());
                         elements.extend_from_slice(value.as_elements());
                     }
 
-                    let num_changed_entries = Felt::try_from(map_delta.num_entries() as u64)
+                    let num_changed_entries = Felt::try_from(map_patch.num_entries() as u64)
                         .expect(
                             "number of changed entries should not exceed max representable felt",
                         );
@@ -217,19 +217,19 @@ impl AccountStorageDelta {
         }
     }
 
-    /// Consumes self and returns the underlying map of the storage delta.
-    pub fn into_map(self) -> BTreeMap<StorageSlotName, StorageSlotDelta> {
-        self.deltas
+    /// Consumes self and returns the underlying map of the storage patch.
+    pub fn into_map(self) -> BTreeMap<StorageSlotName, StorageSlotPatch> {
+        self.patches
     }
 }
 
-impl Default for AccountStorageDelta {
+impl Default for AccountStoragePatch {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Serializable for AccountStorageDelta {
+impl Serializable for AccountStoragePatch {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         let num_cleared_values = self.cleared_values().count();
         let num_cleared_values =
@@ -258,11 +258,11 @@ impl Serializable for AccountStorageDelta {
     fn get_size_hint(&self) -> usize {
         let u8_size = 0u8.get_size_hint();
 
-        let mut storage_map_delta_size = 0;
-        for (slot_name, storage_map_delta) in self.maps() {
-            // The serialized size of each entry is the combination of slot (key) and the delta
+        let mut storage_map_patch_size = 0;
+        for (slot_name, storage_map_patch) in self.maps() {
+            // The serialized size of each entry is the combination of slot (key) and the patch
             // (value).
-            storage_map_delta_size += slot_name.get_size_hint() + storage_map_delta.get_size_hint();
+            storage_map_patch_size += slot_name.get_size_hint() + storage_map_patch.get_size_hint();
         }
 
         // Length Prefixes
@@ -273,91 +273,91 @@ impl Serializable for AccountStorageDelta {
         self.updated_values().fold(0, |acc, (slot_name, slot_value)| {
             acc + slot_name.get_size_hint() + slot_value.get_size_hint()
         }) +
-        // Storage Map Delta
-        storage_map_delta_size
+        // Storage Map Patch
+        storage_map_patch_size
     }
 }
 
-impl Deserializable for AccountStorageDelta {
+impl Deserializable for AccountStoragePatch {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let mut deltas = BTreeMap::new();
+        let mut patches = BTreeMap::new();
 
         let num_cleared_values = source.read_u8()?;
         for _ in 0..num_cleared_values {
             let cleared_value: StorageSlotName = source.read()?;
-            deltas.insert(cleared_value, StorageSlotDelta::with_empty_value());
+            patches.insert(cleared_value, StorageSlotPatch::with_empty_value());
         }
 
         let num_updated_values = source.read_u8()?;
         for _ in 0..num_updated_values {
             let (updated_slot, updated_value) = source.read()?;
-            deltas.insert(updated_slot, StorageSlotDelta::Value(updated_value));
+            patches.insert(updated_slot, StorageSlotPatch::Value(updated_value));
         }
 
         let num_maps = source.read_u8()? as usize;
-        for read_result in source.read_many_iter::<(StorageSlotName, StorageMapDelta)>(num_maps)? {
-            let (slot_name, map_delta) = read_result?;
-            deltas.insert(slot_name, StorageSlotDelta::Map(map_delta));
+        for read_result in source.read_many_iter::<(StorageSlotName, StorageMapPatch)>(num_maps)? {
+            let (slot_name, map_patch) = read_result?;
+            patches.insert(slot_name, StorageSlotPatch::Map(map_patch));
         }
 
-        Ok(Self::from_raw(deltas))
+        Ok(Self::from_raw(patches))
     }
 }
 
-// STORAGE SLOT DELTA
+// STORAGE SLOT PATCH
 // ================================================================================================
 
-/// The delta of a single storage slot.
+/// The patch of a single storage slot.
 ///
-/// - [`StorageSlotDelta::Value`] contains the value to which a value slot is updated.
-/// - [`StorageSlotDelta::Map`] contains the [`StorageMapDelta`] which contains the key-value pairs
+/// - [`StorageSlotPatch::Value`] contains the value to which a value slot is updated.
+/// - [`StorageSlotPatch::Map`] contains the [`StorageMapPatch`] which contains the key-value pairs
 ///   that were updated in a map slot.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum StorageSlotDelta {
+pub enum StorageSlotPatch {
     Value(Word),
-    Map(StorageMapDelta),
+    Map(StorageMapPatch),
 }
 
-impl StorageSlotDelta {
+impl StorageSlotPatch {
     // CONSTANTS
     // ----------------------------------------------------------------------------------------
 
-    /// The type byte for value slot deltas.
+    /// The type byte for value slot patches.
     const VALUE: u8 = 0;
 
-    /// The type byte for map slot deltas.
+    /// The type byte for map slot patches.
     const MAP: u8 = 1;
 
     // CONSTRUCTORS
     // ----------------------------------------------------------------------------------------
 
-    /// Returns a new [`StorageSlotDelta::Value`] with an empty value.
+    /// Returns a new [`StorageSlotPatch::Value`] with an empty value.
     pub fn with_empty_value() -> Self {
         Self::Value(Word::empty())
     }
 
-    /// Returns a new [`StorageSlotDelta::Map`] with an empty map delta.
+    /// Returns a new [`StorageSlotPatch::Map`] with an empty map patch.
     pub fn with_empty_map() -> Self {
-        Self::Map(StorageMapDelta::default())
+        Self::Map(StorageMapPatch::default())
     }
 
     // ACCESSORS
     // ----------------------------------------------------------------------------------------
 
-    /// Returns the [`StorageSlotType`] of this slot delta.
+    /// Returns the [`StorageSlotType`] of this slot patch.
     pub fn slot_type(&self) -> StorageSlotType {
         match self {
-            StorageSlotDelta::Value(_) => StorageSlotType::Value,
-            StorageSlotDelta::Map(_) => StorageSlotType::Map,
+            StorageSlotPatch::Value(_) => StorageSlotType::Value,
+            StorageSlotPatch::Map(_) => StorageSlotType::Map,
         }
     }
 
-    /// Returns `true` if the slot delta is of type [`StorageSlotDelta::Value`], `false` otherwise.
+    /// Returns `true` if the slot patch is of type [`StorageSlotPatch::Value`], `false` otherwise.
     pub fn is_value(&self) -> bool {
         matches!(self, Self::Value(_))
     }
 
-    /// Returns `true` if the slot delta is of type [`StorageSlotDelta::Map`], `false` otherwise.
+    /// Returns `true` if the slot patch is of type [`StorageSlotPatch::Map`], `false` otherwise.
     pub fn is_map(&self) -> bool {
         matches!(self, Self::Map(_))
     }
@@ -365,29 +365,29 @@ impl StorageSlotDelta {
     // MUTATORS
     // ----------------------------------------------------------------------------------------
 
-    /// Unwraps a value slot delta into a [`Word`].
+    /// Unwraps a value slot patch into a [`Word`].
     ///
     /// # Panics
     ///
     /// Panics if:
-    /// - `self` is not of type [`StorageSlotDelta::Value`].
+    /// - `self` is not of type [`StorageSlotPatch::Value`].
     pub fn unwrap_value(self) -> Word {
         match self {
-            StorageSlotDelta::Value(value) => value,
-            StorageSlotDelta::Map(_) => panic!("called unwrap_value on a map slot delta"),
+            StorageSlotPatch::Value(value) => value,
+            StorageSlotPatch::Map(_) => panic!("called unwrap_value on a map slot patch"),
         }
     }
 
-    /// Unwraps a map slot delta into a [`StorageMapDelta`].
+    /// Unwraps a map slot patch into a [`StorageMapPatch`].
     ///
     /// # Panics
     ///
     /// Panics if:
-    /// - `self` is not of type [`StorageSlotDelta::Map`].
-    pub fn unwrap_map(self) -> StorageMapDelta {
+    /// - `self` is not of type [`StorageSlotPatch::Map`].
+    pub fn unwrap_map(self) -> StorageMapPatch {
         match self {
-            StorageSlotDelta::Value(_) => panic!("called unwrap_map on a value slot delta"),
-            StorageSlotDelta::Map(map_delta) => map_delta,
+            StorageSlotPatch::Value(_) => panic!("called unwrap_map on a value slot patch"),
+            StorageSlotPatch::Map(map_patch) => map_patch,
         }
     }
 
@@ -400,11 +400,11 @@ impl StorageSlotDelta {
     #[must_use]
     fn merge(&mut self, other: Self) -> Option<()> {
         match (self, other) {
-            (StorageSlotDelta::Value(current_value), StorageSlotDelta::Value(new_value)) => {
+            (StorageSlotPatch::Value(current_value), StorageSlotPatch::Value(new_value)) => {
                 *current_value = new_value;
             },
-            (StorageSlotDelta::Map(current_map_delta), StorageSlotDelta::Map(new_map_delta)) => {
-                current_map_delta.merge(new_map_delta);
+            (StorageSlotPatch::Map(current_map_patch), StorageSlotPatch::Map(new_map_patch)) => {
+                current_map_patch.merge(new_map_patch);
             },
             (..) => {
                 return None;
@@ -415,33 +415,33 @@ impl StorageSlotDelta {
     }
 }
 
-impl From<StorageSlotContent> for StorageSlotDelta {
+impl From<StorageSlotContent> for StorageSlotPatch {
     fn from(content: StorageSlotContent) -> Self {
         match content {
-            StorageSlotContent::Value(word) => StorageSlotDelta::Value(word),
+            StorageSlotContent::Value(word) => StorageSlotPatch::Value(word),
             StorageSlotContent::Map(storage_map) => {
-                StorageSlotDelta::Map(StorageMapDelta::from(storage_map))
+                StorageSlotPatch::Map(StorageMapPatch::from(storage_map))
             },
         }
     }
 }
 
-impl Serializable for StorageSlotDelta {
+impl Serializable for StorageSlotPatch {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         match self {
-            StorageSlotDelta::Value(value) => {
+            StorageSlotPatch::Value(value) => {
                 target.write_u8(Self::VALUE);
                 target.write(value);
             },
-            StorageSlotDelta::Map(storage_map_delta) => {
+            StorageSlotPatch::Map(storage_map_patch) => {
                 target.write_u8(Self::MAP);
-                target.write(storage_map_delta);
+                target.write(storage_map_patch);
             },
         }
     }
 }
 
-impl Deserializable for StorageSlotDelta {
+impl Deserializable for StorageSlotPatch {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         match source.read_u8()? {
             Self::VALUE => {
@@ -449,55 +449,55 @@ impl Deserializable for StorageSlotDelta {
                 Ok(Self::Value(value))
             },
             Self::MAP => {
-                let map_delta = source.read()?;
-                Ok(Self::Map(map_delta))
+                let map_patch = source.read()?;
+                Ok(Self::Map(map_patch))
             },
             other => Err(DeserializationError::InvalidValue(format!(
-                "unknown storage slot delta variant {other}"
+                "unknown storage slot patch variant {other}"
             ))),
         }
     }
 }
 
-// STORAGE MAP DELTA
+// STORAGE MAP PATCH
 // ================================================================================================
 
-/// [StorageMapDelta] stores the differences between two states of account storage maps.
+/// [StorageMapPatch] stores the differences between two states of account storage maps.
 ///
 /// The differences are represented as leaf updates: a map of updated item key ([Word]) to
 /// value ([Word]). For cleared items the value is [EMPTY_WORD].
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct StorageMapDelta(BTreeMap<StorageMapKey, Word>);
+pub struct StorageMapPatch(BTreeMap<StorageMapKey, Word>);
 
-impl StorageMapDelta {
-    /// Creates a new storage map delta from the provided leaves.
+impl StorageMapPatch {
+    /// Creates a new storage map patch from the provided leaves.
     pub fn new(map: BTreeMap<StorageMapKey, Word>) -> Self {
         Self(map)
     }
 
-    /// Returns the number of changed entries in this map delta.
+    /// Returns the number of changed entries in this map patch.
     pub fn num_entries(&self) -> usize {
         self.0.len()
     }
 
-    /// Returns a reference to the updated entries in this storage map delta.
+    /// Returns a reference to the updated entries in this storage map patch.
     ///
     /// Note that the returned key is the [`StorageMapKey`].
     pub fn entries(&self) -> &BTreeMap<StorageMapKey, Word> {
         &self.0
     }
 
-    /// Inserts an item into the storage map delta.
+    /// Inserts an item into the storage map patch.
     pub fn insert(&mut self, key: StorageMapKey, value: Word) {
         self.0.insert(key, value);
     }
 
-    /// Returns true if storage map delta contains no updates.
+    /// Returns true if storage map patch contains no updates.
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 
-    /// Merge `other` into this delta, giving precedence to `other`.
+    /// Merge `other` into this patch, giving precedence to `other`.
     pub fn merge(&mut self, other: Self) {
         // Aggregate the changes into a map such that `other` overwrites self.
         self.0.extend(other.0);
@@ -524,8 +524,8 @@ impl StorageMapDelta {
 }
 
 #[cfg(any(feature = "testing", test))]
-impl StorageMapDelta {
-    /// Creates a new [StorageMapDelta] from the provided iterators.
+impl StorageMapPatch {
+    /// Creates a new [StorageMapPatch] from the provided iterators.
     pub fn from_iters(
         cleared_leaves: impl IntoIterator<Item = StorageMapKey>,
         updated_leaves: impl IntoIterator<Item = (StorageMapKey, Word)>,
@@ -541,14 +541,14 @@ impl StorageMapDelta {
     }
 }
 
-/// Converts a [StorageMap] into a [StorageMapDelta] for initial delta construction.
-impl From<StorageMap> for StorageMapDelta {
+/// Converts a [StorageMap] into a [StorageMapPatch] for initial patch construction.
+impl From<StorageMap> for StorageMapPatch {
     fn from(map: StorageMap) -> Self {
-        StorageMapDelta::new(map.into_entries().into_iter().collect())
+        StorageMapPatch::new(map.into_entries().into_iter().collect())
     }
 }
 
-impl Serializable for StorageMapDelta {
+impl Serializable for StorageMapPatch {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         let cleared: Vec<&StorageMapKey> = self.cleared_keys().collect();
         let updated: Vec<(&StorageMapKey, &Word)> = self.updated_entries().collect();
@@ -574,7 +574,7 @@ impl Serializable for StorageMapDelta {
     }
 }
 
-impl Deserializable for StorageMapDelta {
+impl Deserializable for StorageMapPatch {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let mut map = BTreeMap::new();
 
@@ -602,30 +602,30 @@ mod tests {
     use anyhow::Context;
     use assert_matches::assert_matches;
 
-    use super::{AccountStorageDelta, Deserializable, Serializable};
-    use crate::account::{StorageMapDelta, StorageMapKey, StorageSlotDelta, StorageSlotName};
+    use super::{AccountStoragePatch, Deserializable, Serializable};
+    use crate::account::{StorageMapKey, StorageMapPatch, StorageSlotName, StorageSlotPatch};
     use crate::errors::AccountDeltaError;
     use crate::{ONE, Word};
 
     #[test]
-    fn account_storage_delta_returns_err_on_slot_type_mismatch() {
+    fn account_storage_patch_returns_err_on_slot_type_mismatch() {
         let value_slot_name = StorageSlotName::mock(1);
         let map_slot_name = StorageSlotName::mock(2);
 
-        let mut delta = AccountStorageDelta::from_iters(
+        let mut patch = AccountStoragePatch::from_iters(
             [value_slot_name.clone()],
             [],
-            [(map_slot_name.clone(), StorageMapDelta::default())],
+            [(map_slot_name.clone(), StorageMapPatch::default())],
         );
 
-        let err = delta
+        let err = patch
             .set_map_item(value_slot_name.clone(), StorageMapKey::empty(), Word::empty())
             .unwrap_err();
         assert_matches!(err, AccountDeltaError::StorageSlotUsedAsDifferentTypes(slot_name) => {
             assert_eq!(value_slot_name, slot_name)
         });
 
-        let err = delta.set_item(map_slot_name.clone(), Word::empty()).unwrap_err();
+        let err = patch.set_item(map_slot_name.clone(), Word::empty()).unwrap_err();
         assert_matches!(err, AccountDeltaError::StorageSlotUsedAsDifferentTypes(slot_name) => {
             assert_eq!(map_slot_name, slot_name)
         });
@@ -633,112 +633,112 @@ mod tests {
 
     #[test]
     fn test_is_empty() {
-        let storage_delta = AccountStorageDelta::new();
-        assert!(storage_delta.is_empty());
+        let storage_patch = AccountStoragePatch::new();
+        assert!(storage_patch.is_empty());
 
-        let storage_delta = AccountStorageDelta::from_iters([StorageSlotName::mock(1)], [], []);
-        assert!(!storage_delta.is_empty());
+        let storage_patch = AccountStoragePatch::from_iters([StorageSlotName::mock(1)], [], []);
+        assert!(!storage_patch.is_empty());
 
-        let storage_delta = AccountStorageDelta::from_iters(
+        let storage_patch = AccountStoragePatch::from_iters(
             [],
             [(StorageSlotName::mock(2), Word::from([ONE, ONE, ONE, ONE]))],
             [],
         );
-        assert!(!storage_delta.is_empty());
+        assert!(!storage_patch.is_empty());
 
-        let storage_delta = AccountStorageDelta::from_iters(
+        let storage_patch = AccountStoragePatch::from_iters(
             [],
             [],
-            [(StorageSlotName::mock(3), StorageMapDelta::default())],
+            [(StorageSlotName::mock(3), StorageMapPatch::default())],
         );
-        assert!(!storage_delta.is_empty());
+        assert!(!storage_patch.is_empty());
     }
 
     #[test]
-    fn test_serde_account_storage_delta() {
-        let storage_delta = AccountStorageDelta::new();
-        let serialized = storage_delta.to_bytes();
-        let deserialized = AccountStorageDelta::read_from_bytes(&serialized).unwrap();
-        assert_eq!(deserialized, storage_delta);
-        assert_eq!(storage_delta.get_size_hint(), serialized.len());
+    fn test_serde_account_storage_patch() {
+        let storage_patch = AccountStoragePatch::new();
+        let serialized = storage_patch.to_bytes();
+        let deserialized = AccountStoragePatch::read_from_bytes(&serialized).unwrap();
+        assert_eq!(deserialized, storage_patch);
+        assert_eq!(storage_patch.get_size_hint(), serialized.len());
 
-        let storage_delta = AccountStorageDelta::from_iters([StorageSlotName::mock(1)], [], []);
-        let serialized = storage_delta.to_bytes();
-        let deserialized = AccountStorageDelta::read_from_bytes(&serialized).unwrap();
-        assert_eq!(deserialized, storage_delta);
-        assert_eq!(storage_delta.get_size_hint(), serialized.len());
+        let storage_patch = AccountStoragePatch::from_iters([StorageSlotName::mock(1)], [], []);
+        let serialized = storage_patch.to_bytes();
+        let deserialized = AccountStoragePatch::read_from_bytes(&serialized).unwrap();
+        assert_eq!(deserialized, storage_patch);
+        assert_eq!(storage_patch.get_size_hint(), serialized.len());
 
-        let storage_delta = AccountStorageDelta::from_iters(
+        let storage_patch = AccountStoragePatch::from_iters(
             [],
             [(StorageSlotName::mock(2), Word::from([ONE, ONE, ONE, ONE]))],
             [],
         );
-        let serialized = storage_delta.to_bytes();
-        let deserialized = AccountStorageDelta::read_from_bytes(&serialized).unwrap();
-        assert_eq!(deserialized, storage_delta);
-        assert_eq!(storage_delta.get_size_hint(), serialized.len());
+        let serialized = storage_patch.to_bytes();
+        let deserialized = AccountStoragePatch::read_from_bytes(&serialized).unwrap();
+        assert_eq!(deserialized, storage_patch);
+        assert_eq!(storage_patch.get_size_hint(), serialized.len());
 
-        let storage_delta = AccountStorageDelta::from_iters(
+        let storage_patch = AccountStoragePatch::from_iters(
             [],
             [],
-            [(StorageSlotName::mock(3), StorageMapDelta::default())],
+            [(StorageSlotName::mock(3), StorageMapPatch::default())],
         );
-        let serialized = storage_delta.to_bytes();
-        let deserialized = AccountStorageDelta::read_from_bytes(&serialized).unwrap();
-        assert_eq!(deserialized, storage_delta);
-        assert_eq!(storage_delta.get_size_hint(), serialized.len());
+        let serialized = storage_patch.to_bytes();
+        let deserialized = AccountStoragePatch::read_from_bytes(&serialized).unwrap();
+        assert_eq!(deserialized, storage_patch);
+        assert_eq!(storage_patch.get_size_hint(), serialized.len());
     }
 
     #[test]
-    fn test_serde_storage_map_delta() {
-        let storage_map_delta = StorageMapDelta::default();
-        let serialized = storage_map_delta.to_bytes();
-        let deserialized = StorageMapDelta::read_from_bytes(&serialized).unwrap();
-        assert_eq!(deserialized, storage_map_delta);
+    fn test_serde_storage_map_patch() {
+        let storage_map_patch = StorageMapPatch::default();
+        let serialized = storage_map_patch.to_bytes();
+        let deserialized = StorageMapPatch::read_from_bytes(&serialized).unwrap();
+        assert_eq!(deserialized, storage_map_patch);
 
-        let storage_map_delta =
-            StorageMapDelta::from_iters([StorageMapKey::from_array([1, 1, 1, 1])], []);
-        let serialized = storage_map_delta.to_bytes();
-        let deserialized = StorageMapDelta::read_from_bytes(&serialized).unwrap();
-        assert_eq!(deserialized, storage_map_delta);
+        let storage_map_patch =
+            StorageMapPatch::from_iters([StorageMapKey::from_array([1, 1, 1, 1])], []);
+        let serialized = storage_map_patch.to_bytes();
+        let deserialized = StorageMapPatch::read_from_bytes(&serialized).unwrap();
+        assert_eq!(deserialized, storage_map_patch);
 
-        let storage_map_delta = StorageMapDelta::from_iters(
+        let storage_map_patch = StorageMapPatch::from_iters(
             [],
             [(StorageMapKey::empty(), Word::from([ONE, ONE, ONE, ONE]))],
         );
-        let serialized = storage_map_delta.to_bytes();
-        let deserialized = StorageMapDelta::read_from_bytes(&serialized).unwrap();
-        assert_eq!(deserialized, storage_map_delta);
+        let serialized = storage_map_patch.to_bytes();
+        let deserialized = StorageMapPatch::read_from_bytes(&serialized).unwrap();
+        assert_eq!(deserialized, storage_map_patch);
     }
 
     #[test]
-    fn test_serde_storage_slot_value_delta() {
-        let slot_delta = StorageSlotDelta::with_empty_value();
-        let serialized = slot_delta.to_bytes();
-        let deserialized = StorageSlotDelta::read_from_bytes(&serialized).unwrap();
-        assert_eq!(deserialized, slot_delta);
+    fn test_serde_storage_slot_value_patch() {
+        let slot_patch = StorageSlotPatch::with_empty_value();
+        let serialized = slot_patch.to_bytes();
+        let deserialized = StorageSlotPatch::read_from_bytes(&serialized).unwrap();
+        assert_eq!(deserialized, slot_patch);
 
-        let slot_delta = StorageSlotDelta::Value(Word::from([1, 2, 3, 4u32]));
-        let serialized = slot_delta.to_bytes();
-        let deserialized = StorageSlotDelta::read_from_bytes(&serialized).unwrap();
-        assert_eq!(deserialized, slot_delta);
+        let slot_patch = StorageSlotPatch::Value(Word::from([1, 2, 3, 4u32]));
+        let serialized = slot_patch.to_bytes();
+        let deserialized = StorageSlotPatch::read_from_bytes(&serialized).unwrap();
+        assert_eq!(deserialized, slot_patch);
     }
 
     #[test]
-    fn test_serde_storage_slot_map_delta() {
-        let slot_delta = StorageSlotDelta::with_empty_map();
-        let serialized = slot_delta.to_bytes();
-        let deserialized = StorageSlotDelta::read_from_bytes(&serialized).unwrap();
-        assert_eq!(deserialized, slot_delta);
+    fn test_serde_storage_slot_map_patch() {
+        let slot_patch = StorageSlotPatch::with_empty_map();
+        let serialized = slot_patch.to_bytes();
+        let deserialized = StorageSlotPatch::read_from_bytes(&serialized).unwrap();
+        assert_eq!(deserialized, slot_patch);
 
-        let map_delta = StorageMapDelta::from_iters(
+        let map_patch = StorageMapPatch::from_iters(
             [StorageMapKey::from_array([1, 2, 3, 4])],
             [(StorageMapKey::from_array([5, 6, 7, 8]), Word::from([3, 4, 5, 6u32]))],
         );
-        let slot_delta = StorageSlotDelta::Map(map_delta);
-        let serialized = slot_delta.to_bytes();
-        let deserialized = StorageSlotDelta::read_from_bytes(&serialized).unwrap();
-        assert_eq!(deserialized, slot_delta);
+        let slot_patch = StorageSlotPatch::Map(map_patch);
+        let serialized = slot_patch.to_bytes();
+        let deserialized = StorageSlotPatch::read_from_bytes(&serialized).unwrap();
+        assert_eq!(deserialized, slot_patch);
     }
 
     #[rstest::rstest]
@@ -751,23 +751,23 @@ mod tests {
         #[case] y: Option<u32>,
         #[case] expected: Option<u32>,
     ) -> anyhow::Result<()> {
-        /// Creates a delta containing the item as an update if Some, else with the item cleared.
-        fn create_delta(item: Option<u32>) -> AccountStorageDelta {
+        /// Creates a patch containing the item as an update if Some, else with the item cleared.
+        fn create_patch(item: Option<u32>) -> AccountStoragePatch {
             let slot_name = StorageSlotName::mock(123);
             let item = item.map(|x| (slot_name.clone(), Word::from([x, 0, 0, 0])));
 
-            AccountStorageDelta::new()
+            AccountStoragePatch::new()
                 .add_cleared_items(item.is_none().then_some(slot_name.clone()))
                 .add_updated_values(item)
         }
 
-        let mut delta_x = create_delta(x);
-        let delta_y = create_delta(y);
-        let expected = create_delta(expected);
+        let mut patch_x = create_patch(x);
+        let patch_y = create_patch(y);
+        let expected = create_patch(expected);
 
-        delta_x.merge(delta_y).context("failed to merge deltas")?;
+        patch_x.merge(patch_y).context("failed to merge patches")?;
 
-        assert_eq!(delta_x, expected);
+        assert_eq!(patch_x, expected);
 
         Ok(())
     }
@@ -778,22 +778,22 @@ mod tests {
     #[case::some_none(Some(1), None, None)]
     #[test]
     fn merge_maps(#[case] x: Option<u32>, #[case] y: Option<u32>, #[case] expected: Option<u32>) {
-        fn create_delta(value: Option<u32>) -> StorageMapDelta {
+        fn create_patch(value: Option<u32>) -> StorageMapPatch {
             let key = StorageMapKey::from_array([10, 0, 0, 0]);
             match value {
                 Some(value) => {
-                    StorageMapDelta::from_iters([], [(key, Word::from([value, 0, 0, 0]))])
+                    StorageMapPatch::from_iters([], [(key, Word::from([value, 0, 0, 0]))])
                 },
-                None => StorageMapDelta::from_iters([key], []),
+                None => StorageMapPatch::from_iters([key], []),
             }
         }
 
-        let mut delta_x = create_delta(x);
-        let delta_y = create_delta(y);
-        let expected = create_delta(expected);
+        let mut patch_x = create_patch(x);
+        let patch_y = create_patch(y);
+        let expected = create_patch(expected);
 
-        delta_x.merge(delta_y);
+        patch_x.merge(patch_y);
 
-        assert_eq!(delta_x, expected);
+        assert_eq!(patch_x, expected);
     }
 }
