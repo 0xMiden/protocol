@@ -3,6 +3,7 @@ extern crate alloc;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
+use miden_agglayer::errors::ERR_LEAF_PADDING_NOT_ZERO;
 use miden_agglayer::{LeafValue, agglayer_library};
 use miden_assembly::{Assembler, DefaultSourceManager};
 use miden_core_lib::CoreLibrary;
@@ -10,6 +11,7 @@ use miden_crypto::SequentialCommit;
 use miden_processor::advice::AdviceInputs;
 use miden_processor::utils::packed_u32_elements_to_bytes;
 use miden_protocol::{Felt, Word};
+use miden_testing::{ExecError, assert_execution_error};
 use miden_tx::utils::hex_to_bytes;
 
 use super::test_utils::{
@@ -28,6 +30,19 @@ fn felts_to_le_bytes(limbs: &[Felt]) -> Vec<u8> {
         bytes.extend_from_slice(&u32_value.to_le_bytes());
     }
     bytes
+}
+
+/// Wraps a raw leaf-data felt vector so its Poseidon2 sequential commitment can be computed for
+/// arbitrary (possibly non-canonical) contents. `pipe_preimage_to_memory` checks the piped data
+/// against this commitment, so a test that corrupts the leaf data needs the matching key.
+struct RawLeafData(Vec<Felt>);
+
+impl SequentialCommit for RawLeafData {
+    type Commitment = Word;
+
+    fn to_elements(&self) -> Vec<Felt> {
+        self.0.clone()
+    }
 }
 
 // TESTS
@@ -193,5 +208,69 @@ async fn get_leaf_value() -> anyhow::Result<()> {
     let expected_leaf_value: Vec<Felt> = LeafValue::from(expected_leaf_value_bytes).to_elements();
 
     assert_eq!(computed_leaf_value, expected_leaf_value);
+    Ok(())
+}
+
+/// Tests that `pack_leaf_data` rejects leaf data whose trailing padding felts are non-zero.
+///
+/// padding[0] (offset 29) lands in the unused tail of the final packed u32, which the keccak
+/// precompile requires to be zero; padding[1]/[2] (offsets 30, 31) never reach the packer or hash.
+/// `pack_leaf_data` asserts all three are zero, so a non-zero value in any of them must be
+/// rejected.
+#[tokio::test]
+async fn pack_leaf_data_rejects_non_zero_padding() -> anyhow::Result<()> {
+    let vector: LeafValueVector =
+        serde_json::from_str(LEAF_VALUE_VECTORS_JSON).expect("failed to parse leaf value vector");
+    let leaf_data = vector.to_leaf_data();
+    let agglayer_lib = agglayer_library();
+
+    // The 3 trailing padding felts sit at offsets 29, 30, 31 of the 32-felt leaf data.
+    for padding_offset in 29..32usize {
+        let mut leaf_data_elements = leaf_data.to_elements();
+        // Sanity: this felt is part of the (initially zero) padding region.
+        assert_eq!(leaf_data_elements[padding_offset], Felt::ZERO);
+        // Corrupt a single padding felt with a non-zero value.
+        leaf_data_elements[padding_offset] = Felt::from(1u32);
+
+        // pipe_preimage_to_memory checks the piped data against this key, so it must be the
+        // commitment of the corrupted elements.
+        let key: Word = RawLeafData(leaf_data_elements.clone()).to_commitment();
+        let advice_inputs =
+            AdviceInputs::default().with_map(vec![(key, leaf_data_elements.clone())]);
+
+        let source = format!(
+            r#"
+                use miden::core::mem
+                use agglayer::bridge::leaf_utils
+
+                const LEAF_DATA_START_PTR = 0
+                const CLAIM_LEAF_DATA_WORD_LEN = 8
+
+                begin
+                    push.{key}
+
+                    adv.push_mapval
+                    push.LEAF_DATA_START_PTR push.CLAIM_LEAF_DATA_WORD_LEN
+                    exec.mem::pipe_preimage_to_memory drop
+
+                    exec.leaf_utils::pack_leaf_data
+                end
+            "#
+        );
+
+        let program = Assembler::new(Arc::new(DefaultSourceManager::default()))
+            .with_dynamic_library(CoreLibrary::default())
+            .unwrap()
+            .with_dynamic_library(agglayer_lib.clone())
+            .unwrap()
+            .assemble_program(&source)
+            .unwrap();
+
+        let err = execute_program_with_default_host(program, Some(advice_inputs))
+            .await
+            .map_err(ExecError::new);
+        assert_execution_error!(err, ERR_LEAF_PADDING_NOT_ZERO);
+    }
+
     Ok(())
 }

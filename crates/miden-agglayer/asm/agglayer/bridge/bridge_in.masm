@@ -489,10 +489,18 @@ end
 #!       destinationAddress[5],           // Destination address (5 felts, address as 5 u32 felts)
 #!       amount[8],                       // Amount of tokens (8 felts, uint256 as 8 u32 felts)
 #!       metadata_hash[8],                // Metadata hash (8 felts, bytes32 as 8 u32 felts)
-#!       padding[3],                      // padding (3 felts) - not used in the hash
+#!       padding[3],                      // padding (3 felts) - must be zero (see below)
 #!     ],
 #!   }
 #! Outputs: [LEAF_VALUE[8]]
+#!
+#! The 3 trailing padding felts must be zero. They are not part of any leaf field and do not affect
+#! LEAF_VALUE (the keccak hash covers only the 113 real bytes); pack_leaf_data nonetheless asserts
+#! all 3 are zero as defense-in-depth - see leaf_utils::assert_padding_is_zero. A claim whose
+#! prover-supplied leaf data carries non-zero padding is therefore rejected.
+#!
+#! Panics if:
+#! - any of the 3 trailing padding felts is non-zero.
 #!
 #! Invocation: exec
 pub proc get_leaf_value(leaf_data_key: word) -> DoubleWord

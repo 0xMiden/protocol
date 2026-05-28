@@ -259,7 +259,7 @@ in the map the procedure panics with `ERR_GER_ALREADY_REGISTERED`.
 | **Inputs** | `[PROOF_DATA_KEY, LEAF_DATA_KEY, faucet_mint_amount, pad(7)]` on the operand stack; proof data and leaf data in the advice map keyed by `PROOF_DATA_KEY` and `LEAF_DATA_KEY` respectively |
 | **Outputs** | `[pad(16)]` |
 | **Context** | Consuming a `CLAIM` note on the bridge account |
-| **Panics** | Leaf `destination_network` does not match `agglayer::common::constants::MIDEN_NETWORK_ID`; invalid leaf type; GER not known; global index invalid; Merkle proof verification failed; (origin token address, origin network) pair not in token registry; claim already spent; amount conversion mismatch |
+| **Panics** | Leaf `destination_network` does not match `agglayer::common::constants::MIDEN_NETWORK_ID`; invalid leaf type; leaf padding felts are non-zero; GER not known; global index invalid; Merkle proof verification failed; (origin token address, origin network) pair not in token registry; claim already spent; amount conversion mismatch |
 
 Validates a bridge-in claim and creates a MINT note targeting the faucet:
 
@@ -528,7 +528,7 @@ The storage is divided into three logical regions: proof data (felts 0-535), lea
 | 544-548 | `destination_address` | 5 | 5 x u32 felts |
 | 549-556 | `amount` | 8 | U256 as 8 x u32 felts |
 | 557-564 | `metadata_hash` | 8 | Keccak-256 hash as 8 x u32 felts |
-| 565-567 | padding | 3 | zeros |
+| 565-567 | padding | 3 | zeros (enforced: non-zero padding rejects the claim) |
 | 568 | `miden_claim_amount` | 1 | Scaled-down Miden token amount (Felt). Computed as `floor(amount / 10^scale)` |
 
 **Consumption:**

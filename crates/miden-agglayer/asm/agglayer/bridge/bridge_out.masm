@@ -57,7 +57,8 @@ const DESTINATION_NETWORK_OFFSET=7
 const DESTINATION_ADDRESS_OFFSET=8
 const AMOUNT_OFFSET=13
 const METADATA_HASH_OFFSET=21
-const PADDING_OFFSET=29
+# padding sits immediately after the 8-felt metadata hash; derive it so it tracks the layout above
+const PADDING_OFFSET=METADATA_HASH_OFFSET + 8
 
 # Local memory offsets
 # -------------------------------------------------------------------------------------------------
@@ -201,8 +202,9 @@ pub proc bridge_out
     exec.utils::mem_store_double_word_unaligned
     # => [pad(16)]
 
-    # Explicitly zero the 3 padding felts after METADATA_HASH for
-    # leaf_utils::pack_leaf_data
+    # Explicitly zero the 3 padding felts after METADATA_HASH. leaf_utils::pack_leaf_data requires a
+    # canonical leaf preimage and asserts these are zero, so this zeroing is what keeps the
+    # bridge-out leaf within that enforced contract.
     push.0
     push.LEAF_DATA_START_PTR push.PADDING_OFFSET add
     mem_store
@@ -326,8 +328,11 @@ end
 #!   destinationAddress[5],
 #!   amount[8],
 #!   metadataHash[8],
-#!   padding[3],
+#!   padding[3],          // must be zero; asserted by leaf_utils::pack_leaf_data
 #! ]
+#!
+#! Panics if:
+#! - any of the 3 trailing padding felts is non-zero.
 #!
 #! Invocation: exec
 proc add_leaf_bridge(leaf_data_start_ptr: MemoryAddress)
