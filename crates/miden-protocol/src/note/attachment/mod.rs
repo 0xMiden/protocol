@@ -525,6 +525,9 @@ impl NoteAttachments {
     }
 
     /// Returns the first attachment with the provided scheme, if any.
+    ///
+    /// Schemes are not required to be unique within a note. If multiple attachments share the
+    /// provided scheme, the first one is treated as the canonical one and returned.
     pub fn find(&self, scheme: NoteAttachmentScheme) -> Option<&NoteAttachment> {
         self.attachments
             .iter()
