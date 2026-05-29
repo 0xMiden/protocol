@@ -32,9 +32,6 @@ pub use prover::{
     TransactionProverHost,
 };
 
-mod verifier;
-pub use verifier::TransactionVerifier;
-
 mod errors;
 pub use errors::{
     AuthenticationError,
@@ -43,7 +40,6 @@ pub use errors::{
     TransactionExecutorError,
     TransactionKernelError,
     TransactionProverError,
-    TransactionVerifierError,
 };
 
 pub mod auth;
