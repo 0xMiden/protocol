@@ -1,6 +1,9 @@
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
+#[cfg(feature = "std")]
+use miden_crypto::merkle::smt::{LargeSmt, LargeSmtError, SmtStorage};
+
 use crate::block::BlockNumber;
 use crate::crypto::merkle::MerkleError;
 use crate::crypto::merkle::smt::{MutationSet, SMT_DEPTH, Smt};
@@ -198,6 +201,72 @@ where
         self.smt
             .apply_mutations(mutations.into_mutation_set())
             .map_err(NullifierTreeError::TreeRootConflict)
+    }
+}
+
+impl NullifierTree<Smt> {
+    /// Creates a new nullifier tree from the provided entries.
+    ///
+    /// This is a convenience method that creates an SMT backend with the provided entries and
+    /// wraps it in a NullifierTree.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - the provided entries contain multiple block numbers for the same nullifier.
+    pub fn with_entries(
+        entries: impl IntoIterator<Item = (Nullifier, BlockNumber)>,
+    ) -> Result<Self, NullifierTreeError> {
+        let leaves = entries.into_iter().map(|(nullifier, block_num)| {
+            (nullifier.as_word(), NullifierBlock::from(block_num).into())
+        });
+
+        let smt = Smt::with_entries(leaves)
+            .map_err(NullifierTreeError::DuplicateNullifierBlockNumbers)?;
+
+        Ok(Self::new_unchecked(smt))
+    }
+}
+
+#[cfg(feature = "std")]
+impl<Backend> NullifierTree<LargeSmt<Backend>>
+where
+    Backend: SmtStorage,
+{
+    /// Creates a new nullifier tree from the provided entries using the given storage backend
+    ///
+    /// This is a convenience method that creates an SMT on the provided storage backend using the
+    /// provided entries and wraps it in a NullifierTree.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - the provided entries contain multiple block numbers for the same nullifier.
+    /// - a storage error is encountered.
+    pub fn with_storage_from_entries(
+        storage: Backend,
+        entries: impl IntoIterator<Item = (Nullifier, BlockNumber)>,
+    ) -> Result<Self, NullifierTreeError> {
+        use crate::block::nullifier_tree::backend::large_smt_error_to_merkle_error;
+
+        let leaves = entries.into_iter().map(|(nullifier, block_num)| {
+            (nullifier.as_word(), NullifierBlock::from(block_num).into())
+        });
+
+        let smt = LargeSmt::<Backend>::with_entries(storage, leaves)
+            .map_err(large_smt_error_to_merkle_error)
+            .map_err(NullifierTreeError::DuplicateNullifierBlockNumbers)?;
+
+        Ok(Self::new_unchecked(smt))
+    }
+
+    /// Returns a read-only nullifier tree backed by a reader view of this tree's storage.
+    ///
+    /// The returned tree shares the same root and entries as `self`, but its storage is a
+    /// read-only snapshot produced by [`SmtStorage::reader`]. The returned tree cannot be
+    /// mutated.
+    pub fn reader(&self) -> Result<NullifierTree<LargeSmt<Backend::Reader>>, LargeSmtError> {
+        Ok(NullifierTree::new_unchecked(self.smt.reader()?))
     }
 }
 
