@@ -3,6 +3,8 @@ mod account_delta_tracker;
 use account_delta_tracker::AccountDeltaTracker;
 mod storage_patch_tracker;
 
+mod vault_update_tracker;
+
 mod link_map;
 pub use link_map::{LinkMap, MemoryViewer};
 
@@ -61,6 +63,7 @@ pub(crate) use tx_event::{RecipientData, TransactionEvent, TransactionProgressEv
 pub use tx_progress::TransactionProgress;
 
 use crate::errors::TransactionKernelError;
+use crate::host::tx_event::{AddedAssetUpdate, RemovedAssetUpdate};
 
 // TRANSACTION BASE HOST
 // ================================================================================================
@@ -386,12 +389,9 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     /// Tracks the addition of an asset to the account vault in the account delta.
     pub fn on_account_vault_after_add_asset(
         &mut self,
-        asset: Asset,
+        update: AddedAssetUpdate,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
-        self.account_delta
-            .vault_delta_mut()
-            .add_asset(asset)
-            .map_err(TransactionKernelError::AccountDeltaAddAssetFailed)?;
+        self.account_delta.add_asset(update)?;
 
         Ok(Vec::new())
     }
@@ -399,12 +399,9 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     /// Tracks the removal of an asset from the account vault in the account delta.
     pub fn on_account_vault_after_remove_asset(
         &mut self,
-        asset: Asset,
+        update: RemovedAssetUpdate,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
-        self.account_delta
-            .vault_delta_mut()
-            .remove_asset(asset)
-            .map_err(TransactionKernelError::AccountDeltaRemoveAssetFailed)?;
+        self.account_delta.remove_asset(update)?;
 
         Ok(Vec::new())
     }

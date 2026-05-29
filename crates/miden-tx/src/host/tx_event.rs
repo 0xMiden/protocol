@@ -69,11 +69,11 @@ pub(crate) enum TransactionEvent {
     },
 
     AccountVaultAfterRemoveAsset {
-        asset: Asset,
+        update: RemovedAssetUpdate,
     },
 
     AccountVaultAfterAddAsset {
-        asset: Asset,
+        update: AddedAssetUpdate,
     },
 
     AccountStorageAfterSetItem {
@@ -165,6 +165,22 @@ pub(crate) enum TransactionEvent {
     Progress(TransactionProgressEvent),
 }
 
+#[derive(Debug)]
+pub(crate) struct AddedAssetUpdate {
+    // The asset that was added to or removed from the vault - the relative change.
+    pub added_asset: Asset,
+    // The asset that is now in the vault - the new absolute value.
+    pub vault_asset: Asset,
+}
+
+#[derive(Debug)]
+pub(crate) struct RemovedAssetUpdate {
+    // The asset that was removed from the vault - the relative change.
+    pub removed_asset: Asset,
+    // The asset that is now in the vault - the new absolute value.
+    pub vault_asset: Asset,
+}
+
 impl TransactionEvent {
     /// Extracts the [`TransactionEventId`] from the stack as well as the data necessary to handle
     /// it.
@@ -221,34 +237,45 @@ impl TransactionEvent {
                 )?
             },
             TransactionEventId::AccountVaultAfterRemoveAsset => {
-                // Expected stack state: [event, ASSET_KEY, ASSET_VALUE]
+                // Expected stack state: [event, ASSET_KEY, ASSET_VALUE, REMAINING_ASSET_VALUE]
                 let asset_key = process.get_stack_word(1);
-                let asset_value = process.get_stack_word(5);
+                let removed_asset_value = process.get_stack_word(5);
+                let vault_asset_value = process.get_stack_word(9);
 
-                let asset =
-                    Asset::from_key_value_words(asset_key, asset_value).map_err(|source| {
-                        TransactionKernelError::MalformedAssetInEventHandler {
-                            handler: "AccountVaultAfterRemoveAsset",
-                            source,
-                        }
+                let removed_asset = Asset::from_key_value_words(asset_key, removed_asset_value)
+                    .map_err(|source| TransactionKernelError::MalformedAssetInEventHandler {
+                        handler: "AccountVaultAfterRemoveAsset",
+                        source,
+                    })?;
+                let vault_asset = Asset::from_key_value_words(asset_key, vault_asset_value)
+                    .map_err(|source| TransactionKernelError::MalformedAssetInEventHandler {
+                        handler: "AccountVaultAfterRemoveAsset",
+                        source,
                     })?;
 
-                Some(TransactionEvent::AccountVaultAfterRemoveAsset { asset })
+                let update = RemovedAssetUpdate { removed_asset, vault_asset };
+                Some(TransactionEvent::AccountVaultAfterRemoveAsset { update })
             },
             TransactionEventId::AccountVaultAfterAddAsset => {
-                // Expected stack state: [event, ASSET_KEY, ASSET_VALUE]
+                // Expected stack state: [event, ASSET_KEY, PROCESSED_ASSET_VALUE,
+                // PROCESSED_ASSET_VALUE']
                 let asset_key = process.get_stack_word(1);
-                let asset_value = process.get_stack_word(5);
+                let added_asset_value = process.get_stack_word(5);
+                let vault_asset_value = process.get_stack_word(9);
 
-                let asset =
-                    Asset::from_key_value_words(asset_key, asset_value).map_err(|source| {
-                        TransactionKernelError::MalformedAssetInEventHandler {
-                            handler: "AccountVaultAfterAddAsset",
-                            source,
-                        }
+                let added_asset = Asset::from_key_value_words(asset_key, added_asset_value)
+                    .map_err(|source| TransactionKernelError::MalformedAssetInEventHandler {
+                        handler: "AccountVaultAfterAddAsset",
+                        source,
+                    })?;
+                let vault_asset = Asset::from_key_value_words(asset_key, vault_asset_value)
+                    .map_err(|source| TransactionKernelError::MalformedAssetInEventHandler {
+                        handler: "AccountVaultAfterAddAsset",
+                        source,
                     })?;
 
-                Some(TransactionEvent::AccountVaultAfterAddAsset { asset })
+                let update = AddedAssetUpdate { added_asset, vault_asset };
+                Some(TransactionEvent::AccountVaultAfterAddAsset { update })
             },
             TransactionEventId::AccountVaultBeforeGetAsset => {
                 // Expected stack state:
