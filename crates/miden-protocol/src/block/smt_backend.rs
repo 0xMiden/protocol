@@ -17,7 +17,14 @@ use crate::crypto::merkle::smt::{LeafIndex, MutationSet, SMT_DEPTH, Smt, SmtLeaf
 /// specific value type (such as the nullifier tree) are responsible for converting to and from
 /// [`Word`] in their own accessors.
 ///
+/// The method set is intentionally the superset required by both the account and nullifier trees,
+/// so a given tree only uses the subset relevant to it (e.g. the account tree iterates [`leaves`],
+/// the nullifier tree iterates [`entries`]).
+///
 /// This trait contains only read-only methods. For write methods, see [`SmtBackend`].
+///
+/// [`leaves`]: SmtBackendReader::leaves
+/// [`entries`]: SmtBackendReader::entries
 pub trait SmtBackendReader: Sized {
     type Error: core::error::Error + Send + 'static;
 
@@ -30,7 +37,7 @@ pub trait SmtBackendReader: Sized {
     fn num_entries(&self) -> usize;
 
     /// Returns all leaves in the SMT as an iterator over leaf index and leaf pairs.
-    fn leaves<'a>(&'a self) -> Box<dyn 'a + Iterator<Item = (LeafIndex<SMT_DEPTH>, SmtLeaf)>>;
+    fn leaves(&self) -> Box<dyn Iterator<Item = (LeafIndex<SMT_DEPTH>, SmtLeaf)> + '_>;
 
     /// Returns all key-value entries in the SMT.
     fn entries(&self) -> Box<dyn Iterator<Item = (Word, Word)> + '_>;
@@ -91,7 +98,7 @@ impl SmtBackendReader for Smt {
         Smt::num_entries(self)
     }
 
-    fn leaves<'a>(&'a self) -> Box<dyn 'a + Iterator<Item = (LeafIndex<SMT_DEPTH>, SmtLeaf)>> {
+    fn leaves(&self) -> Box<dyn Iterator<Item = (LeafIndex<SMT_DEPTH>, SmtLeaf)> + '_> {
         Box::new(Smt::leaves(self).map(|(idx, leaf)| (idx, leaf.clone())))
     }
 
@@ -164,7 +171,7 @@ where
         LargeSmt::num_entries(self)
     }
 
-    fn leaves<'a>(&'a self) -> Box<dyn 'a + Iterator<Item = (LeafIndex<SMT_DEPTH>, SmtLeaf)>> {
+    fn leaves(&self) -> Box<dyn Iterator<Item = (LeafIndex<SMT_DEPTH>, SmtLeaf)> + '_> {
         Box::new(LargeSmt::leaves(self).expect("Only IO can error out here"))
     }
 

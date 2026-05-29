@@ -342,19 +342,7 @@ impl AccountTree<Smt> {
                 .into_iter()
                 .map(|(id, commitment)| (AccountIdKey::from(id).as_word(), commitment)),
         )
-        .map_err(|err| {
-            let MerkleError::DuplicateValuesForIndex(leaf_idx) = err else {
-                unreachable!("the only error returned by Smt::with_entries is of this type");
-            };
-
-            // SAFETY: Since we only inserted account IDs into the SMT, it is guaranteed that
-            // the leaf_idx is a valid Felt as well as a valid account ID prefix.
-            AccountTreeError::DuplicateStateCommitments {
-                prefix: AccountIdPrefix::new_unchecked(
-                    crate::Felt::try_from(leaf_idx).expect("leaf index should be a valid felt"),
-                ),
-            }
-        })?;
+        .map_err(duplicate_state_commitment_error)?;
 
         AccountTree::new(smt)
     }
@@ -372,8 +360,8 @@ where
     ///
     /// # Errors
     ///
-    /// Returns an error if:
-    /// - the provided entries contain duplicate account ID prefixes.
+    /// Returns an error if the provided entries contain duplicate account ID prefixes or duplicate
+    /// state commitments for the same account ID.
     ///
     /// # Panics
     ///
@@ -390,7 +378,7 @@ where
 
         let smt = LargeSmt::<Backend>::with_entries(storage, leaves)
             .map_err(large_smt_error_to_merkle_error)
-            .map_err(AccountTreeError::DuplicateEntries)?;
+            .map_err(duplicate_state_commitment_error)?;
 
         AccountTree::new(smt)
     }
@@ -399,9 +387,28 @@ where
     ///
     /// The returned tree shares the same root and account commitments as `self`, but its storage is
     /// a read-only snapshot produced by [`SmtStorage::reader`]. The returned tree cannot be
-    /// mutated.
+    /// mutated: its backend implements [`SmtBackendReader`] but not [`SmtBackend`], because the
+    /// storage reader ([`SmtStorage::Reader`]) is read-only.
     pub fn reader(&self) -> Result<AccountTree<LargeSmt<Backend::Reader>>, LargeSmtError> {
         Ok(AccountTree::new_unchecked(self.smt.reader()?))
+    }
+}
+
+// HELPER FUNCTIONS
+// ================================================================================================
+
+/// Maps the duplicate-key error returned by the SMT constructors to an [`AccountTreeError`].
+fn duplicate_state_commitment_error(err: MerkleError) -> AccountTreeError {
+    let MerkleError::DuplicateValuesForIndex(leaf_idx) = err else {
+        unreachable!("the only error returned by the SMT constructors is a duplicate-value error");
+    };
+
+    // SAFETY: Since we only inserted account IDs into the SMT, it is guaranteed that the leaf_idx
+    // is a valid Felt as well as a valid account ID prefix.
+    AccountTreeError::DuplicateStateCommitments {
+        prefix: AccountIdPrefix::new_unchecked(
+            crate::Felt::try_from(leaf_idx).expect("leaf index should be a valid felt"),
+        ),
     }
 }
 
@@ -805,5 +812,28 @@ pub(super) mod tests {
         let source: std::collections::BTreeMap<_, _> = tree.account_commitments().collect();
         let view: std::collections::BTreeMap<_, _> = reader.account_commitments().collect();
         assert_eq!(source, view);
+    }
+
+    #[cfg(feature = "std")]
+    #[test]
+    fn with_storage_from_entries_rejects_duplicate_state_commitments() {
+        use miden_crypto::merkle::smt::MemoryStorage;
+
+        let id = AccountIdBuilder::new().build_with_seed([5; 32]);
+        let commitment0 = Word::from([0, 0, 0, 1u32]);
+        let commitment1 = Word::from([0, 0, 0, 2u32]);
+
+        // The same account ID appears twice, which must surface the same structured error as the
+        // `Smt`-backed `with_entries` path.
+        let err = AccountTree::with_storage_from_entries(
+            MemoryStorage::default(),
+            [(id, commitment0), (id, commitment1)],
+        )
+        .unwrap_err();
+
+        assert_matches!(
+            err,
+            AccountTreeError::DuplicateStateCommitments { prefix } if prefix == id.prefix()
+        );
     }
 }
