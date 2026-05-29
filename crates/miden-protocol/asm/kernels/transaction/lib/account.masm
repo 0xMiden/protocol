@@ -694,6 +694,10 @@ pub proc add_asset_to_vault
 
     # add the asset to the account vault
     exec.asset_vault::add_asset
+    # => [INITIAL_ASSET_VALUE, PROCESSED_ASSET_VALUE', ASSET_KEY, PROCESSED_ASSET_VALUE]
+
+    # drop INITIAL_ASSET_VALUE
+    dropw
     # => [PROCESSED_ASSET_VALUE', ASSET_KEY, PROCESSED_ASSET_VALUE]
 
     movdnw.2
@@ -736,6 +740,10 @@ pub proc remove_asset_from_vault
 
     # remove the asset from the account vault
     exec.asset_vault::remove_asset
+    # => [INITIAL_ASSET_VALUE, REMAINING_ASSET_VALUE, ASSET_KEY, ASSET_VALUE]
+
+    # drop INITIAL_ASSET_VALUE
+    dropw
     # => [REMAINING_ASSET_VALUE, ASSET_KEY, ASSET_VALUE]
 
     movdnw.2
