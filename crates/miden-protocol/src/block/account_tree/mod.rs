@@ -374,7 +374,10 @@ where
     ///
     /// Returns an error if:
     /// - the provided entries contain duplicate account ID prefixes.
-    /// - a storage error is encountered.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a storage error is encountered.
     pub fn with_storage_from_entries(
         storage: Backend,
         entries: impl IntoIterator<Item = (AccountId, Word)>,
@@ -393,6 +396,10 @@ where
     }
 
     /// Returns a read-only account tree backed by a reader view of this tree's storage.
+    ///
+    /// The returned tree shares the same root and account commitments as `self`, but its storage is
+    /// a read-only snapshot produced by [`SmtStorage::reader`]. The returned tree cannot be
+    /// mutated.
     pub fn reader(&self) -> Result<AccountTree<LargeSmt<Backend::Reader>>, LargeSmtError> {
         Ok(AccountTree::new_unchecked(self.smt.reader()?))
     }
@@ -769,5 +776,34 @@ pub(super) mod tests {
             regular_tree.account_commitments().collect();
 
         assert_eq!(large_commitments, regular_commitments);
+    }
+
+    #[cfg(feature = "std")]
+    #[test]
+    fn reader_matches_source_tree() {
+        use miden_crypto::merkle::smt::MemoryStorage;
+
+        let id0 = AccountIdBuilder::new().build_with_seed([5; 32]);
+        let id1 = AccountIdBuilder::new().build_with_seed([6; 32]);
+
+        let digest0 = Word::from([0, 0, 0, 1u32]);
+        let digest1 = Word::from([0, 0, 0, 2u32]);
+
+        let tree = AccountTree::with_storage_from_entries(
+            MemoryStorage::default(),
+            [(id0, digest0), (id1, digest1)],
+        )
+        .unwrap();
+
+        let reader = tree.reader().unwrap();
+
+        // The reader shares the same root and commitments as the source tree.
+        assert_eq!(reader.root(), tree.root());
+        assert_eq!(reader.get(id0), digest0);
+        assert_eq!(reader.get(id1), digest1);
+
+        let source: std::collections::BTreeMap<_, _> = tree.account_commitments().collect();
+        let view: std::collections::BTreeMap<_, _> = reader.account_commitments().collect();
+        assert_eq!(source, view);
     }
 }

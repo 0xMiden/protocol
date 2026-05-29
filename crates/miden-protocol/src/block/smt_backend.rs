@@ -116,7 +116,7 @@ impl SmtBackendReader for Smt {
     }
 }
 
-// BACKEND IMPLEMENTATION FOR SMT
+// BACKEND WRITER IMPLEMENTATION FOR SMT
 // ================================================================================================
 
 impl SmtBackend for Smt {
@@ -191,7 +191,7 @@ where
     }
 }
 
-// BACKEND IMPLEMENTATION FOR LARGE SMT
+// BACKEND WRITER IMPLEMENTATION FOR LARGE SMT
 // ================================================================================================
 
 #[cfg(feature = "std")]
@@ -228,6 +228,10 @@ where
 // HELPER FUNCTIONS
 // ================================================================================================
 
+/// Converts a [`LargeSmtError`] into a [`MerkleError`].
+///
+/// Storage failures are treated as unrecoverable at this layer and cause a panic. See issue #2010
+/// for future error handling improvements.
 #[cfg(feature = "std")]
 pub(crate) fn large_smt_error_to_merkle_error(err: LargeSmtError) -> MerkleError {
     match err {
