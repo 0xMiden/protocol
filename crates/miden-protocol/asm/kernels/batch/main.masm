@@ -10,8 +10,8 @@
 #! stack's initial padding zeros.
 #!
 #! Inputs: [
-#!   TRANSACTIONS_COMMITMENT,
-#!   BLOCK_HASH,
+#!   BATCH_ID,
+#!   BLOCK_COMMITMENT,
 #!   pad(8),
 #! ]
 #!
@@ -23,9 +23,8 @@
 #! ]
 #!
 #! Where:
-#! - TRANSACTIONS_COMMITMENT is the sequential hash of the `(tx_id, account_id)` tuples
-#!   committing to the transactions in the batch (i.e. the `BatchId` value).
-#! - BLOCK_HASH is the commitment of the batch's reference block.
+#! - BATCH_ID is the batch's `BatchId`, the commitment to its transactions.
+#! - BLOCK_COMMITMENT is the commitment of the batch's reference block.
 #! - INPUT_NOTES_COMMITMENT will be the sequential hash over every transaction's input note
 #!   commitments. In this skeleton it is the empty word.
 #! - OUTPUT_NOTES_COMMITMENT will be the sequential hash over every transaction's output note

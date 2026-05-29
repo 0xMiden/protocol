@@ -28,7 +28,7 @@ const BATCH_EXPIRATION_BLOCK_NUM_ELEMENT_IDX: usize = 8;
 
 /// The batch kernel program: an executable Miden program that proves a batch of transactions.
 ///
-/// The kernel takes `[TRANSACTIONS_COMMITMENT, BLOCK_HASH]` as public inputs and emits
+/// The kernel takes `[BATCH_ID, BLOCK_COMMITMENT]` as public inputs and emits
 /// `[INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, batch_expiration_block_num]`. See
 /// `asm/kernels/batch/main.masm` for the input/output contract.
 pub struct BatchKernel;
@@ -55,10 +55,10 @@ impl BatchKernel {
     /// Transforms the provided [`ProposedBatch`] into the stack and advice inputs needed to
     /// execute the batch kernel.
     pub fn prepare_inputs(proposed_batch: &ProposedBatch) -> (StackInputs, AdviceInputs) {
-        let block_hash = proposed_batch.reference_block_header().commitment();
-        let transactions_commitment = proposed_batch.id().as_word();
+        let block_commitment = proposed_batch.reference_block_header().commitment();
+        let batch_id = proposed_batch.id().as_word();
 
-        let stack_inputs = Self::build_input_stack(transactions_commitment, block_hash);
+        let stack_inputs = Self::build_input_stack(batch_id, block_commitment);
         let advice_inputs = Self::build_advice_inputs(proposed_batch);
 
         (stack_inputs, advice_inputs)
@@ -69,18 +69,16 @@ impl BatchKernel {
     /// The initial stack is:
     ///
     /// ```text
-    /// [TRANSACTIONS_COMMITMENT, BLOCK_HASH, pad(8)]
+    /// [BATCH_ID, BLOCK_COMMITMENT, pad(8)]
     /// ```
     ///
     /// Where:
-    /// - `TRANSACTIONS_COMMITMENT` is the value [`BatchId`](crate::batch::BatchId) computes — a
-    ///   sequential hash of `(transaction_id || account_id_prefix || account_id_suffix || 0 || 0)`
-    ///   over all transactions in the batch.
-    /// - `BLOCK_HASH` is the commitment of the batch's reference block.
-    pub fn build_input_stack(transactions_commitment: Word, block_hash: Word) -> StackInputs {
+    /// - `BATCH_ID` is the batch's [`BatchId`](crate::batch::BatchId).
+    /// - `BLOCK_COMMITMENT` is the commitment of the batch's reference block.
+    pub fn build_input_stack(batch_id: Word, block_commitment: Word) -> StackInputs {
         let mut inputs: Vec<Felt> = Vec::with_capacity(8);
-        inputs.extend_from_slice(transactions_commitment.as_elements());
-        inputs.extend_from_slice(block_hash.as_elements());
+        inputs.extend_from_slice(batch_id.as_elements());
+        inputs.extend_from_slice(block_commitment.as_elements());
 
         StackInputs::new(&inputs).expect("number of stack inputs should be <= 16")
     }
