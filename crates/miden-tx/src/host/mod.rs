@@ -1,7 +1,7 @@
 mod account_delta_tracker;
 
 use account_delta_tracker::AccountDeltaTracker;
-mod storage_delta_tracker;
+mod storage_patch_tracker;
 
 mod link_map;
 pub use link_map::{LinkMap, MemoryViewer};

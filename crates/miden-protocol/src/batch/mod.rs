@@ -16,8 +16,7 @@ pub use proposed_batch::ProposedBatch;
 mod ordered_batches;
 pub use ordered_batches::OrderedBatches;
 
-mod input_output_note_tracker;
-pub(crate) use input_output_note_tracker::InputOutputNoteTracker;
+pub(super) mod note_tracker;
 
 mod kernel;
 pub use kernel::BatchKernel;

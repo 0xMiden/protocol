@@ -9,6 +9,7 @@ use miden_protocol::Word;
 use miden_protocol::account::AccountId;
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::crypto::utils::Serializable;
+use miden_protocol::errors::TransactionVerifierError;
 use miden_protocol::note::{
     Note,
     NoteAssets,
@@ -18,15 +19,10 @@ use miden_protocol::note::{
     PartialNoteMetadata,
 };
 use miden_protocol::testing::account_id::ACCOUNT_ID_SENDER;
-use miden_protocol::transaction::{ExecutedTransaction, ProvenTransaction};
+use miden_protocol::transaction::{ExecutedTransaction, ProvenTransaction, TransactionVerifier};
 use miden_protocol::utils::serde::Deserializable;
 use miden_standards::code_builder::CodeBuilder;
-use miden_tx::{
-    LocalTransactionProver,
-    ProvingOptions,
-    TransactionVerifier,
-    TransactionVerifierError,
-};
+use miden_tx::{LocalTransactionProver, ProvingOptions};
 
 // HELPER FUNCTIONS
 // ================================================================================================

@@ -9,6 +9,7 @@ use miden_core::mast::MastForestError;
 use miden_crypto::merkle::mmr::MmrError;
 use miden_crypto::merkle::smt::{SmtLeafError, SmtProofError};
 use miden_crypto::utils::HexParseError;
+use miden_verifier::VerificationError;
 use thiserror::Error;
 
 use super::account::{AccountId, RoleSymbol};
@@ -951,6 +952,8 @@ pub enum ProvenTransactionError {
     EmptyTransaction,
     #[error("failed to validate account delta in transaction account update")]
     AccountDeltaCommitmentMismatch(#[source] Box<dyn Error + Send + Sync + 'static>),
+    #[error("note with id {0} is both created and consumed by the transaction")]
+    NoteCreatedAndConsumed(NoteId),
 }
 
 // PROPOSED BATCH ERROR
@@ -958,6 +961,12 @@ pub enum ProvenTransactionError {
 
 #[derive(Debug, Error)]
 pub enum ProposedBatchError {
+    #[error("failed to verify transaction {transaction_id} in transaction batch")]
+    TransactionVerificationFailed {
+        transaction_id: TransactionId,
+        source: TransactionVerifierError,
+    },
+
     #[error(
         "transaction batch has {0} input notes but at most {MAX_INPUT_NOTES_PER_BATCH} are allowed"
     )]
@@ -1007,12 +1016,12 @@ pub enum ProposedBatchError {
     },
 
     #[error(
-        "note commitment mismatch for note {id}: (input: {input_commitment}, output: {output_commitment})"
+        "transaction {consumed_by} that consumes the note with ID {note_id} must be ordered before transaction {created_by} that creates the note"
     )]
-    NoteCommitmentMismatch {
-        id: NoteId,
-        input_commitment: Word,
-        output_commitment: Word,
+    NoteConsumedBeforeCreated {
+        note_id: NoteId,
+        consumed_by: TransactionId,
+        created_by: TransactionId,
     },
 
     #[error("failed to merge transaction delta into account {account_id}")]
@@ -1073,11 +1082,6 @@ pub enum ProposedBatchError {
 
 #[derive(Debug, Error)]
 pub enum ProvenBatchError {
-    #[error("failed to verify transaction {transaction_id} in transaction batch")]
-    TransactionVerificationFailed {
-        transaction_id: TransactionId,
-        source: Box<dyn Error + Send + Sync + 'static>,
-    },
     #[error(
         "batch expiration block number {batch_expiration_block_num} is not greater than the reference block number {reference_block_num}"
     )]
@@ -1142,6 +1146,15 @@ pub enum ProposedBlockError {
     },
 
     #[error(
+        "batch {consumed_by} that consumes the note with ID {note_id} must be ordered before batch {created_by} that creates the note"
+    )]
+    NoteConsumedBeforeCreated {
+        note_id: NoteId,
+        consumed_by: BatchId,
+        created_by: BatchId,
+    },
+
+    #[error(
         "timestamp {provided_timestamp} does not increase monotonically compared to timestamp {previous_timestamp} from the previous block header"
     )]
     TimestampDoesNotIncreaseMonotonically {
@@ -1182,15 +1195,6 @@ pub enum ProposedBlockError {
     BatchReferenceBlockMissingFromChain {
         reference_block_num: BlockNumber,
         batch_id: BatchId,
-    },
-
-    #[error(
-        "note commitment mismatch for note {id}: (input: {input_commitment}, output: {output_commitment})"
-    )]
-    NoteCommitmentMismatch {
-        id: NoteId,
-        input_commitment: Word,
-        output_commitment: Word,
     },
 
     #[error(
@@ -1305,4 +1309,15 @@ pub enum NullifierTreeError {
 pub enum AuthSchemeError {
     #[error("auth scheme identifier `{0}` is not valid")]
     InvalidAuthSchemeIdentifier(String),
+}
+
+// TRANSACTION VERIFIER ERROR
+// ================================================================================================
+
+#[derive(Debug, Error)]
+pub enum TransactionVerifierError {
+    #[error("failed to verify transaction")]
+    TransactionVerificationFailed(#[source] VerificationError),
+    #[error("transaction proof security level is {actual} but must be at least {expected_minimum}")]
+    InsufficientProofSecurityLevel { actual: u32, expected_minimum: u32 },
 }

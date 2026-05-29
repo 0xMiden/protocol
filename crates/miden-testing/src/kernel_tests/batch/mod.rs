@@ -1,3 +1,3 @@
 mod batch_kernel;
-mod proposed_batch;
+pub(super) mod proposed_batch;
 mod proven_tx_builder;

@@ -17,16 +17,9 @@ doctest = false
 
 [features]
 concurrent = ["miden-prover/concurrent", "std"]
-default = ["std"]
-std = [
-  "concurrent",
-  "miden-processor/std",
-  "miden-protocol/std",
-  "miden-prover/std",
-  "miden-standards/std",
-  "miden-verifier/std",
-]
-testing = ["miden-processor/testing", "miden-protocol/testing", "miden-standards/testing"]
+default    = ["std"]
+std        = ["concurrent", "miden-processor/std", "miden-protocol/std", "miden-prover/std", "miden-standards/std"]
+testing    = ["miden-processor/testing", "miden-protocol/testing", "miden-standards/testing"]
 
 [dependencies]
 # Workspace dependencies
@@ -36,7 +29,6 @@ miden-standards = { workspace = true }
 # Miden dependencies
 miden-processor = { workspace = true }
 miden-prover    = { workspace = true }
-miden-verifier  = { workspace = true }
 
 # External dependencies
 thiserror = { workspace = true }

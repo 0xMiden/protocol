@@ -2095,7 +2095,6 @@ dependencies = [
  "miden-protocol",
  "miden-prover",
  "miden-standards",
- "miden-verifier",
  "rand_chacha",
  "thiserror",
 ]
@@ -2107,7 +2106,6 @@ dependencies = [
  "miden-processor",
  "miden-protocol",
  "miden-prover",
- "miden-tx",
 ]
 
 [[package]]

@@ -13,6 +13,7 @@ use miden_protocol::note::{NoteAttachments, NoteInclusionProof, NoteType};
 use miden_standards::note::P2idNote;
 use miden_tx::LocalTransactionProver;
 
+use crate::kernel_tests::batch::proposed_batch::setup_circular_note_dependency_test;
 use crate::kernel_tests::block::utils::MockChainBlockExt;
 use crate::utils::create_p2any_note;
 use crate::{Auth, MockChain};
@@ -658,6 +659,33 @@ async fn proposed_block_fails_on_inconsistent_account_state_transition() -> anyh
       state_commitment == executed_tx0.final_account().to_commitment() &&
       remaining_state_commitments == [executed_tx2.initial_account().to_commitment()]
     );
+
+    Ok(())
+}
+
+/// Tests that batches with a circular dependency between notes are rejected at the block level.
+///
+/// Both transactions execute against the same account but are placed into separate batches. The
+/// two p2any notes share the same sender (the executing account) and carry the same asset, but
+/// have different serial numbers so that they are distinct notes with different IDs.
+///
+/// Batch 0 (TX 1): Inputs [X] -> Outputs [Y]
+/// Batch 1 (TX 2): Inputs [Y] -> Outputs [X]
+#[tokio::test]
+async fn proposed_block_fails_on_cross_batch_circular_note_dependency() -> anyhow::Result<()> {
+    let (chain, proven_tx1, proven_tx2) = setup_circular_note_dependency_test().await?;
+
+    // Place each transaction into its own batch so the cycle spans across batches.
+    let batch0 = chain.create_batch(vec![proven_tx1])?;
+    let batch1 = chain.create_batch(vec![proven_tx2])?;
+    let batches = vec![batch0, batch1];
+
+    let block_inputs = chain.get_block_inputs(&batches)?;
+
+    let error = ProposedBlock::new(block_inputs, batches).unwrap_err();
+
+    // A circular dependency is detected as consumption-before-creation.
+    assert_matches!(error, ProposedBlockError::NoteConsumedBeforeCreated { .. });
 
     Ok(())
 }

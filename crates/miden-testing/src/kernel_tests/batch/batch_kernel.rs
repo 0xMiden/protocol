@@ -45,7 +45,7 @@ fn two_tx_batch(setup: &mut TestSetup) -> anyhow::Result<ProposedBatch> {
     .expiration_block_num(BlockNumber::from(800u32))
     .build()?;
 
-    Ok(ProposedBatch::new(
+    Ok(ProposedBatch::new_unverified(
         [tx1, tx2].into_iter().map(Arc::new).collect(),
         block2.header().clone(),
         setup.chain.latest_partial_blockchain(),

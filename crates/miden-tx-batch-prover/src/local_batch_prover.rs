@@ -1,63 +1,44 @@
-use alloc::boxed::Box;
 use alloc::string::ToString;
 
 use miden_processor::{DefaultHost, ExecutionOptions};
 use miden_protocol::batch::{BatchKernel, ProposedBatch, ProvenBatch};
 use miden_protocol::errors::ProvenBatchError;
 use miden_prover::{ExecutionProof, ProvingOptions, prove};
-use miden_tx::TransactionVerifier;
 
 // LOCAL BATCH PROVER
 // ================================================================================================
 
 /// A local prover for transaction batches.
 ///
-/// Verifies each transaction's `ExecutionProof` natively, then runs the batch kernel program
-/// via `miden_prover::prove` to produce an [`ExecutionProof`] over the batch's public
-/// commitments.
-#[derive(Clone)]
+/// Runs the batch kernel program via `miden_prover::prove` to produce an [`ExecutionProof`] over
+/// the batch's public commitments. The batch's transactions are verified when the
+/// [`ProposedBatch`] is constructed, so the prover does not re-verify them.
+#[derive(Clone, Default)]
 pub struct LocalBatchProver {
-    proof_security_level: u32,
     proving_options: ProvingOptions,
 }
 
 impl LocalBatchProver {
     /// Creates a new [`LocalBatchProver`] instance.
-    pub fn new(proof_security_level: u32) -> Self {
-        Self {
-            proof_security_level,
-            proving_options: ProvingOptions::default(),
-        }
+    pub fn new() -> Self {
+        Self::default()
     }
 
-    /// Attempts to prove the [`ProposedBatch`] into a [`ProvenBatch`].
+    /// Proves the [`ProposedBatch`] into a [`ProvenBatch`].
     ///
-    /// Verifies each transaction's `ExecutionProof` natively first, then runs the batch kernel
-    /// via `miden_prover::prove` and attaches the resulting proof to the returned
-    /// [`ProvenBatch`]. The kernel's public outputs are not yet cross-checked against the
+    /// Runs the batch kernel via `miden_prover::prove` and attaches the resulting proof to the
+    /// returned [`ProvenBatch`]. The kernel's public outputs are not yet cross-checked against the
     /// proposed batch's expected values.
     ///
     /// # Errors
     ///
     /// Returns an error if:
-    /// - any transaction's proof in the batch fails to verify;
     /// - the batch kernel program fails to execute or produce a proof;
     /// - the kernel output stack fails to parse.
     pub async fn prove(
         &self,
         proposed_batch: ProposedBatch,
     ) -> Result<ProvenBatch, ProvenBatchError> {
-        let verifier = TransactionVerifier::new(self.proof_security_level);
-
-        for tx in proposed_batch.transactions() {
-            verifier.verify(tx).map_err(|source| {
-                ProvenBatchError::TransactionVerificationFailed {
-                    transaction_id: tx.id(),
-                    source: Box::new(source),
-                }
-            })?;
-        }
-
         let (stack_inputs, advice_inputs) = BatchKernel::prepare_inputs(&proposed_batch);
         let mut host = DefaultHost::default();
 
