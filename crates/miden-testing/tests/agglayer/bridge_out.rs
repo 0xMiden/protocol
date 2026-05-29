@@ -661,9 +661,10 @@ async fn test_bridge_out_rejects_invalid_b2agg_note(
                 builder.rng_mut(),
             )?;
 
-            let attachment = NoteAttachment::from(
-                NetworkAccountTarget::new(bridge_account.id(), NoteExecutionHint::Always)?
-            );
+            let attachment = NoteAttachment::from(NetworkAccountTarget::new(
+                bridge_account.id(),
+                NoteExecutionHint::Always,
+            )?);
             let attachments = NoteAttachments::from(attachment);
             let metadata = PartialNoteMetadata::new(faucet.id(), NoteType::Private);
             Note::with_attachments(
