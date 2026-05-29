@@ -9,7 +9,7 @@ use miden_prover::{ExecutionProof, ProvingOptions, prove};
 /// A local prover for transaction batches.
 ///
 /// Runs the batch kernel program to produce an [`ExecutionProof`] over the batch's public
-/// commitments. 
+/// commitments.
 #[derive(Clone, Default)]
 pub struct LocalBatchProver {
     proving_options: ProvingOptions,
