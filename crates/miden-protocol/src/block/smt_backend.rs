@@ -18,8 +18,8 @@ use crate::crypto::merkle::smt::{LeafIndex, MutationSet, SMT_DEPTH, Smt, SmtLeaf
 /// [`Word`] in their own accessors.
 ///
 /// The method set is intentionally the superset required by both the account and nullifier trees,
-/// so a given tree only uses the subset relevant to it (e.g. the account tree iterates [`leaves`],
-/// the nullifier tree iterates [`entries`]).
+/// so a given tree only uses the subset relevant to it (e.g. the account tree iterates
+/// [`leaves`](Self::leaves), the nullifier tree iterates [`entries`](Self::entries)).
 ///
 /// This trait contains only read-only methods. For write methods, see [`SmtBackend`].
 pub trait SmtBackendReader: Sized {
