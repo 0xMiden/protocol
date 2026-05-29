@@ -16,7 +16,7 @@ use super::proven_tx_builder::MockProvenTxBuilder;
 /// Builds a two-transaction batch with realistic inputs and outputs. The skeleton kernel does not
 /// inspect any of this data, but the batch is built end-to-end so the smoke test exercises the
 /// real `prepare_inputs` path that the verification PR will eventually consume.
-fn two_tx_batch(setup: &mut TestSetup) -> anyhow::Result<ProposedBatch> {
+pub(super) fn two_tx_batch(setup: &mut TestSetup) -> anyhow::Result<ProposedBatch> {
     let block1 = setup.chain.block_header(1);
     let block2 = setup.chain.prove_next_block()?;
 
