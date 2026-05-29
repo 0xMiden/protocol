@@ -8,7 +8,7 @@ use crate::errors::BatchOutputError;
 use crate::utils::serde::Deserializable;
 use crate::utils::sync::LazyLock;
 use crate::vm::{AdviceInputs, Program, ProgramInfo, StackInputs, StackOutputs};
-use crate::{Felt, Word, ZERO};
+use crate::{Felt, Word};
 
 // CONSTANTS
 // ================================================================================================
@@ -127,7 +127,7 @@ impl BatchKernel {
         // Every cell after batch_expiration_block_num must be zero padding.
         if stack[BATCH_EXPIRATION_BLOCK_NUM_ELEMENT_IDX + 1..]
             .iter()
-            .any(|&felt| felt != ZERO)
+            .any(|&felt| felt != Felt::ZERO)
         {
             return Err(BatchOutputError::OutputStackInvalid(
                 "batch_expiration_block_num must be followed by zero padding".into(),
