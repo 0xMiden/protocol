@@ -1,6 +1,9 @@
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
+#[cfg(feature = "std")]
+use miden_crypto::merkle::smt::{LargeSmt, LargeSmtError, SmtStorage};
+
 use crate::Word;
 use crate::account::{AccountId, AccountIdPrefix};
 use crate::crypto::merkle::MerkleError;
@@ -21,7 +24,7 @@ mod witness;
 pub use witness::AccountWitness;
 
 mod backend;
-pub use backend::AccountTreeBackend;
+pub use backend::{AccountTreeBackend, AccountTreeBackendReader};
 
 mod account_id_key;
 pub use account_id_key::AccountIdKey;
@@ -53,18 +56,13 @@ where
 
 impl<S> AccountTree<S>
 where
-    S: AccountTreeBackend<Error = MerkleError>,
+    S: AccountTreeBackendReader<Error = MerkleError>,
 {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
 
     /// The depth of the account tree.
     pub const DEPTH: u8 = SMT_DEPTH;
-
-    /// The index of the account ID suffix in the SMT key.
-    pub(super) const KEY_SUFFIX_IDX: usize = 2;
-    /// The index of the account ID prefix in the SMT key.
-    pub(super) const KEY_PREFIX_IDX: usize = 3;
 
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
@@ -157,7 +155,7 @@ where
 
     /// Returns true if the tree contains a leaf for the given account ID prefix.
     pub fn contains_account_id_prefix(&self, account_id_prefix: AccountIdPrefix) -> bool {
-        let key = Self::id_prefix_to_smt_key(account_id_prefix);
+        let key = AccountIdKey::id_prefix_to_smt_key(account_id_prefix);
         let is_empty = matches!(self.smt.get_leaf(&key), SmtLeaf::Empty(_));
         !is_empty
     }
@@ -181,12 +179,20 @@ where
 
             (
                 // SAFETY: By construction, the tree only contains valid IDs.
-                AccountId::try_from_elements(key[Self::KEY_SUFFIX_IDX], key[Self::KEY_PREFIX_IDX])
+                AccountIdKey::try_from_word(key)
                     .expect("account tree should only contain valid IDs"),
                 commitment,
             )
         })
     }
+}
+
+impl<S> AccountTree<S>
+where
+    S: AccountTreeBackend<Error = MerkleError>,
+{
+    // PUBLIC MUTATORS
+    // --------------------------------------------------------------------------------------------
 
     /// Computes the necessary changes to insert the specified (account ID, state commitment) pairs
     /// into this tree, allowing for validation before applying those changes.
@@ -245,9 +251,6 @@ where
 
         Ok(AccountMutationSet::new(mutation_set))
     }
-
-    // PUBLIC MUTATORS
-    // --------------------------------------------------------------------------------------------
 
     /// Inserts the state commitment for the given account ID, returning the previous state
     /// commitment associated with that ID.
@@ -315,18 +318,85 @@ where
             .map_err(AccountTreeError::ApplyMutations)?;
         Ok(AccountMutationSet::new(reversion))
     }
+}
 
-    // HELPERS
-    // --------------------------------------------------------------------------------------------
+impl AccountTree<Smt> {
+    /// Creates a new [`AccountTree`] with the provided entries.
+    ///
+    /// This is a convenience method for testing that creates an SMT backend with the provided
+    /// entries and wraps it in an AccountTree. It validates that the entries don't contain
+    /// duplicate prefixes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The provided entries contain duplicate account ID prefixes
+    /// - The backend fails to create the SMT with the entries
+    pub fn with_entries<I>(
+        entries: impl IntoIterator<Item = (AccountId, Word), IntoIter = I>,
+    ) -> Result<Self, AccountTreeError>
+    where
+        I: ExactSizeIterator<Item = (AccountId, Word)>,
+    {
+        // Create the SMT with the entries
+        let smt = Smt::with_entries(
+            entries
+                .into_iter()
+                .map(|(id, commitment)| (AccountIdKey::from(id).as_word(), commitment)),
+        )
+        .map_err(|err| {
+            let MerkleError::DuplicateValuesForIndex(leaf_idx) = err else {
+                unreachable!("the only error returned by Smt::with_entries is of this type");
+            };
 
-    /// Returns the SMT key of the given account ID prefix.
-    fn id_prefix_to_smt_key(account_id: AccountIdPrefix) -> Word {
-        // We construct this in such a way that we're forced to use the constants, so that when
-        // they're updated, the other usages of the constants are also updated.
-        let mut key = Word::empty();
-        key[Self::KEY_PREFIX_IDX] = account_id.as_felt();
+            // SAFETY: Since we only inserted account IDs into the SMT, it is guaranteed that
+            // the leaf_idx is a valid Felt as well as a valid account ID prefix.
+            AccountTreeError::DuplicateStateCommitments {
+                prefix: AccountIdPrefix::new_unchecked(
+                    crate::Felt::try_from(leaf_idx).expect("leaf index should be a valid felt"),
+                ),
+            }
+        })?;
 
-        key
+        AccountTree::new(smt)
+    }
+}
+
+#[cfg(feature = "std")]
+impl<Backend> AccountTree<LargeSmt<Backend>>
+where
+    Backend: SmtStorage,
+{
+    /// Creates a new account tree from the provided entries using the given storage backend.
+    ///
+    /// This is a convenience method that creates an SMT on the provided storage backend using the
+    /// provided entries and wraps it in an AccountTree.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - the provided entries contain duplicate account ID prefixes.
+    /// - a storage error is encountered.
+    pub fn with_storage_from_entries(
+        storage: Backend,
+        entries: impl IntoIterator<Item = (AccountId, Word)>,
+    ) -> Result<Self, AccountTreeError> {
+        use crate::block::account_tree::backend::large_smt_error_to_merkle_error;
+
+        let leaves = entries
+            .into_iter()
+            .map(|(id, commitment)| (AccountIdKey::from(id).as_word(), commitment));
+
+        let smt = LargeSmt::<Backend>::with_entries(storage, leaves)
+            .map_err(large_smt_error_to_merkle_error)
+            .map_err(AccountTreeError::DuplicateEntries)?;
+
+        AccountTree::new(smt)
+    }
+
+    /// Returns a read-only account tree backed by a reader view of this tree's storage.
+    pub fn reader(&self) -> Result<AccountTree<LargeSmt<Backend::Reader>>, LargeSmtError> {
+        Ok(AccountTree::new_unchecked(self.smt.reader()?))
     }
 }
 
