@@ -1,7 +1,6 @@
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 
-use super::{AccountId, AccountIdKey, AccountIdPrefix, AccountTree, AccountTreeError};
 use crate::Word;
 use crate::crypto::merkle::MerkleError;
 #[cfg(feature = "std")]
@@ -198,62 +197,6 @@ where
 
     fn insert(&mut self, key: Word, value: Word) -> Result<Word, Self::Error> {
         LargeSmt::insert(self, key, value)
-    }
-}
-
-// CONVENIENCE METHODS
-// ================================================================================================
-
-impl AccountTree<Smt> {
-    /// Creates a new [`AccountTree`] with the provided entries.
-    ///
-    /// This is a convenience method for testing that creates an SMT backend with the provided
-    /// entries and wraps it in an AccountTree. It validates that the entries don't contain
-    /// duplicate prefixes.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - The provided entries contain duplicate account ID prefixes
-    /// - The backend fails to create the SMT with the entries
-    pub fn with_entries<I>(
-        entries: impl IntoIterator<Item = (AccountId, Word), IntoIter = I>,
-    ) -> Result<Self, AccountTreeError>
-    where
-        I: ExactSizeIterator<Item = (AccountId, Word)>,
-    {
-        // Create the SMT with the entries
-        let smt = Smt::with_entries(
-            entries
-                .into_iter()
-                .map(|(id, commitment)| (AccountIdKey::from(id).as_word(), commitment)),
-        )
-        .map_err(|err| {
-            let MerkleError::DuplicateValuesForIndex(leaf_idx) = err else {
-                unreachable!("the only error returned by Smt::with_entries is of this type");
-            };
-
-            // SAFETY: Since we only inserted account IDs into the SMT, it is guaranteed that
-            // the leaf_idx is a valid Felt as well as a valid account ID prefix.
-            AccountTreeError::DuplicateStateCommitments {
-                prefix: AccountIdPrefix::new_unchecked(
-                    crate::Felt::try_from(leaf_idx).expect("leaf index should be a valid felt"),
-                ),
-            }
-        })?;
-
-        AccountTree::new(smt)
-    }
-}
-
-#[cfg(feature = "std")]
-impl<Backend> AccountTree<LargeSmt<Backend>>
-where
-    Backend: SmtStorage,
-{
-    /// Returns a read-only account tree backed by a reader view of this tree's storage.
-    pub fn reader(&self) -> Result<AccountTree<LargeSmt<Backend::Reader>>, LargeSmtError> {
-        Ok(AccountTree::new_unchecked(self.smt.reader()?))
     }
 }
 
