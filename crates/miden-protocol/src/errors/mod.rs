@@ -952,6 +952,8 @@ pub enum ProvenTransactionError {
     EmptyTransaction,
     #[error("failed to validate account delta in transaction account update")]
     AccountDeltaCommitmentMismatch(#[source] Box<dyn Error + Send + Sync + 'static>),
+    #[error("note with id {0} is both created and consumed by the transaction")]
+    NoteCreatedAndConsumed(NoteId),
 }
 
 // PROPOSED BATCH ERROR
@@ -1014,12 +1016,12 @@ pub enum ProposedBatchError {
     },
 
     #[error(
-        "note commitment mismatch for note {id}: (input: {input_commitment}, output: {output_commitment})"
+        "transaction {consumed_by} that consumes the note with ID {note_id} must be ordered before transaction {created_by} that creates the note"
     )]
-    NoteCommitmentMismatch {
-        id: NoteId,
-        input_commitment: Word,
-        output_commitment: Word,
+    NoteConsumedBeforeCreated {
+        note_id: NoteId,
+        consumed_by: TransactionId,
+        created_by: TransactionId,
     },
 
     #[error("failed to merge transaction delta into account {account_id}")]
@@ -1131,6 +1133,15 @@ pub enum ProposedBlockError {
     },
 
     #[error(
+        "batch {consumed_by} that consumes the note with ID {note_id} must be ordered before batch {created_by} that creates the note"
+    )]
+    NoteConsumedBeforeCreated {
+        note_id: NoteId,
+        consumed_by: BatchId,
+        created_by: BatchId,
+    },
+
+    #[error(
         "timestamp {provided_timestamp} does not increase monotonically compared to timestamp {previous_timestamp} from the previous block header"
     )]
     TimestampDoesNotIncreaseMonotonically {
@@ -1171,15 +1182,6 @@ pub enum ProposedBlockError {
     BatchReferenceBlockMissingFromChain {
         reference_block_num: BlockNumber,
         batch_id: BatchId,
-    },
-
-    #[error(
-        "note commitment mismatch for note {id}: (input: {input_commitment}, output: {output_commitment})"
-    )]
-    NoteCommitmentMismatch {
-        id: NoteId,
-        input_commitment: Word,
-        output_commitment: Word,
     },
 
     #[error(

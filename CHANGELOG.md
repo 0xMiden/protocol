@@ -2,8 +2,18 @@
 
 ## v0.16.0 (TBD)
 
+### Changes
+
+- [BREAKING] Renamed `AccountStorageDelta` to `AccountStoragePatch` ([#3002](https://github.com/0xMiden/protocol/pull/3002)).
+
 ### Fixes
 - Fixed `update_ger` to explicitly reject duplicate GER insertions with `ERR_GER_ALREADY_REGISTERED` instead of silently accepting them ([#2983](https://github.com/0xMiden/protocol/pull/2983)).
+
+## v0.15.1 (TBD)
+
+### Changes
+
+- Reject batches and blocks where an unauthenticated note is consumed before it is created to prevent circular note dependencies ([#2993](https://github.com/0xMiden/protocol/pull/2993)).
 
 ## v0.15.0 (2026-05-22)
 

@@ -15,8 +15,8 @@ use miden_protocol::account::{
     StorageMap,
     StorageMapKey,
     StorageSlot,
-    StorageSlotDelta,
     StorageSlotName,
+    StorageSlotPatch,
 };
 use miden_protocol::asset::{
     Asset,
@@ -112,7 +112,7 @@ async fn delta_nonce() -> anyhow::Result<()> {
 /// - Slot 2: [1,3,5,7]  -> [1,3,5,7]               -> Delta: None
 /// - Slot 3: [1,3,5,7]  -> [2,3,4,5] -> [1,3,5,7]  -> Delta: None
 #[tokio::test]
-async fn storage_delta_for_value_slots() -> anyhow::Result<()> {
+async fn storage_patch_for_value_slots() -> anyhow::Result<()> {
     let slot_0_name = StorageSlotName::mock(0);
     let slot_0_init_value = Word::from([2, 4, 6, 8u32]);
     let slot_0_tmp_value = Word::from([3, 4, 5, 6u32]);
@@ -225,7 +225,7 @@ async fn storage_delta_for_value_slots() -> anyhow::Result<()> {
 ///   - key5 and key4 are the same scenario, but in different slots. In particular, slot 2's delta
 ///     map will be empty after normalization and so it shouldn't be present in the delta at all.
 #[tokio::test]
-async fn storage_delta_for_map_slots() -> anyhow::Result<()> {
+async fn storage_patch_for_map_slots() -> anyhow::Result<()> {
     // Test with random keys to make sure the ordering in the MASM and Rust implementations
     // matches.
     let key0 = StorageMapKey::from_raw(rand_value::<Word>());
@@ -361,13 +361,13 @@ async fn storage_delta_for_map_slots() -> anyhow::Result<()> {
 
     let mut map0_delta = maps_delta
         .get(&slot_0_name)
-        .map(|map_delta| (*map_delta).clone())
+        .map(|map_patch| (*map_patch).clone())
         .expect("delta for map 0 should exist")
         .into_map();
 
     let mut map1_delta = maps_delta
         .get(&slot_1_name)
-        .map(|map_delta| (*map_delta).clone())
+        .map(|map_patch| (*map_patch).clone())
         .expect("delta for map 1 should exist")
         .clone()
         .into_map();
@@ -608,7 +608,7 @@ async fn non_fungible_asset_delta() -> anyhow::Result<()> {
 /// Tests that adding and removing assets and updating value and map storage slots results in the
 /// correct delta.
 #[tokio::test]
-async fn asset_and_storage_delta() -> anyhow::Result<()> {
+async fn asset_and_storage_patch() -> anyhow::Result<()> {
     let account_assets = AssetVault::mock().assets().collect::<Vec<Asset>>();
 
     let account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
@@ -766,7 +766,7 @@ async fn asset_and_storage_delta() -> anyhow::Result<()> {
 
     assert_eq!(executed_transaction.account_delta().nonce_delta(), Felt::ONE);
 
-    // storage delta
+    // storage patch
     // --------------------------------------------------------------------------------------------
     // We expect one updated item and one updated map
     assert_eq!(executed_transaction.account_delta().storage().values().count(), 1);
@@ -776,19 +776,19 @@ async fn asset_and_storage_delta() -> anyhow::Result<()> {
             .storage()
             .get(&MOCK_VALUE_SLOT0)
             .cloned()
-            .map(StorageSlotDelta::unwrap_value),
+            .map(StorageSlotPatch::unwrap_value),
         Some(updated_slot_value)
     );
 
     assert_eq!(executed_transaction.account_delta().storage().maps().count(), 1);
-    let map_delta = executed_transaction
+    let map_patch = executed_transaction
         .account_delta()
         .storage()
         .get(&MOCK_MAP_SLOT)
         .cloned()
-        .map(StorageSlotDelta::unwrap_map)
+        .map(StorageSlotPatch::unwrap_map)
         .unwrap();
-    assert_eq!(*map_delta.entries().get(&updated_map_key).unwrap(), updated_map_value);
+    assert_eq!(*map_patch.entries().get(&updated_map_key).unwrap(), updated_map_value);
 
     // vault delta
     // --------------------------------------------------------------------------------------------
@@ -897,15 +897,15 @@ async fn proven_tx_storage_maps_matches_executed_tx_for_new_account() -> anyhow:
     for (slot_name, expected_map) in
         [(map0_slot_name, map0), (map1_slot_name, map1), (map2_slot_name, map2)]
     {
-        let map_delta = tx
+        let map_patch = tx
             .account_delta()
             .storage()
             .get(&slot_name)
             .cloned()
-            .map(StorageSlotDelta::unwrap_map)
+            .map(StorageSlotPatch::unwrap_map)
             .unwrap();
         assert_eq!(
-            map_delta.entries().iter().collect::<BTreeMap<_, _>>(),
+            map_patch.entries().iter().collect::<BTreeMap<_, _>>(),
             expected_map.entries().collect(),
             "map delta does not match for slot {slot_name}",
         );
@@ -971,7 +971,7 @@ async fn delta_for_new_account_retains_empty_value_storage_slots() -> anyhow::Re
             .storage()
             .get(&slot_name0)
             .cloned()
-            .map(StorageSlotDelta::unwrap_value)
+            .map(StorageSlotPatch::unwrap_value)
             .unwrap(),
         Word::empty()
     );
@@ -980,7 +980,7 @@ async fn delta_for_new_account_retains_empty_value_storage_slots() -> anyhow::Re
             .storage()
             .get(&slot_name1)
             .cloned()
-            .map(StorageSlotDelta::unwrap_value)
+            .map(StorageSlotPatch::unwrap_value)
             .unwrap(),
         slot_value2
     );
@@ -1022,7 +1022,7 @@ async fn delta_for_new_account_retains_empty_map_storage_slots() -> anyhow::Resu
             .storage()
             .get(&slot_name0)
             .cloned()
-            .map(StorageSlotDelta::unwrap_map)
+            .map(StorageSlotPatch::unwrap_map)
             .unwrap()
             .is_empty()
     );

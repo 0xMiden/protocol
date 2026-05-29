@@ -4,39 +4,39 @@ use miden_core::{Felt, Word};
 
 use crate::account::{
     AccountStorage,
-    AccountStorageDelta,
+    AccountStoragePatch,
     StorageMap,
-    StorageMapDelta,
     StorageMapKey,
+    StorageMapPatch,
     StorageSlot,
-    StorageSlotDelta,
     StorageSlotName,
+    StorageSlotPatch,
 };
 use crate::utils::sync::LazyLock;
 
-// ACCOUNT STORAGE DELTA
+// ACCOUNT STORAGE PATCH
 // ================================================================================================
 
-impl AccountStorageDelta {
+impl AccountStoragePatch {
     // CONSTRUCTORS
     // ----------------------------------------------------------------------------------------
 
-    /// Creates an [`AccountStorageDelta`] from the given iterators.
+    /// Creates an [`AccountStoragePatch`] from the given iterators.
     pub fn from_iters(
         cleared_values: impl IntoIterator<Item = StorageSlotName>,
         updated_values: impl IntoIterator<Item = (StorageSlotName, Word)>,
-        updated_maps: impl IntoIterator<Item = (StorageSlotName, StorageMapDelta)>,
+        updated_maps: impl IntoIterator<Item = (StorageSlotName, StorageMapPatch)>,
     ) -> Self {
         let deltas =
             cleared_values
                 .into_iter()
-                .map(|slot_name| (slot_name, StorageSlotDelta::with_empty_value()))
+                .map(|slot_name| (slot_name, StorageSlotPatch::with_empty_value()))
                 .chain(updated_values.into_iter().map(|(slot_name, slot_value)| {
-                    (slot_name, StorageSlotDelta::Value(slot_value))
+                    (slot_name, StorageSlotPatch::Value(slot_value))
                 }))
                 .chain(
-                    updated_maps.into_iter().map(|(slot_name, map_delta)| {
-                        (slot_name, StorageSlotDelta::Map(map_delta))
+                    updated_maps.into_iter().map(|(slot_name, map_patch)| {
+                        (slot_name, StorageSlotPatch::Map(map_patch))
                     }),
                 )
                 .collect();
@@ -68,10 +68,10 @@ impl AccountStorageDelta {
 
     pub fn add_updated_maps(
         mut self,
-        items: impl IntoIterator<Item = (StorageSlotName, StorageMapDelta)>,
+        items: impl IntoIterator<Item = (StorageSlotName, StorageMapPatch)>,
     ) -> Self {
-        items.into_iter().for_each(|(slot_name, map_delta)| {
-            for (key, value) in map_delta.entries() {
+        items.into_iter().for_each(|(slot_name, map_patch)| {
+            for (key, value) in map_patch.entries() {
                 self.set_map_item(slot_name.clone(), *key, *value).expect("TODO")
             }
         });

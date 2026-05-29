@@ -7,7 +7,7 @@ use miden_protocol::account::{
     PartialAccount,
 };
 
-use crate::host::storage_delta_tracker::StorageDeltaTracker;
+use crate::host::storage_patch_tracker::StoragePatchTracker;
 
 // ACCOUNT DELTA TRACKER
 // ================================================================================================
@@ -24,7 +24,7 @@ use crate::host::storage_delta_tracker::StorageDeltaTracker;
 #[derive(Debug, Clone)]
 pub struct AccountDeltaTracker {
     account_id: AccountId,
-    storage: StorageDeltaTracker,
+    storage: StoragePatchTracker,
     vault: AccountVaultDelta,
     code: Option<AccountCode>,
     nonce_delta: Felt,
@@ -41,7 +41,7 @@ impl AccountDeltaTracker {
 
         Self {
             account_id: account.id(),
-            storage: StorageDeltaTracker::new(account),
+            storage: StoragePatchTracker::new(account),
             vault: AccountVaultDelta::default(),
             code,
             nonce_delta: Felt::ZERO,
@@ -68,8 +68,8 @@ impl AccountDeltaTracker {
         &mut self.vault
     }
 
-    /// Returns a mutable reference to the current storage delta tracker.
-    pub fn storage(&mut self) -> &mut StorageDeltaTracker {
+    /// Returns a mutable reference to the current storage patch tracker.
+    pub fn storage(&mut self) -> &mut StoragePatchTracker {
         &mut self.storage
     }
 
@@ -81,10 +81,10 @@ impl AccountDeltaTracker {
         let account_id = self.account_id;
         let nonce_delta = self.nonce_delta;
 
-        let storage_delta = self.storage.into_delta();
+        let storage_patch = self.storage.into_patch();
         let vault_delta = self.vault;
 
-        AccountDelta::new(account_id, storage_delta, vault_delta, nonce_delta)
+        AccountDelta::new(account_id, storage_patch, vault_delta, nonce_delta)
             .expect("account delta created in delta tracker should be valid")
             .with_code(self.code)
     }

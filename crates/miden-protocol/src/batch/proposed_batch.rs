@@ -4,7 +4,8 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use crate::account::AccountId;
-use crate::batch::{BatchAccountUpdate, BatchId, InputOutputNoteTracker};
+use crate::batch::note_tracker::{NoteTracker, TrackerOutput};
+use crate::batch::{BatchAccountUpdate, BatchId};
 use crate::block::{BlockHeader, BlockNumber};
 use crate::errors::ProposedBatchError;
 use crate::note::{NoteId, NoteInclusionProof};
@@ -105,6 +106,8 @@ impl ProposedBatch {
     ///     notes do not count.
     /// - Any note is consumed more than once.
     /// - Any note is created more than once.
+    /// - An unauthenticated note is consumed before it is created (as determined by the order in
+    ///   which transactions are given).
     /// - The number of account updates exceeds [`MAX_ACCOUNTS_PER_BATCH`].
     ///   - Note that any number of transactions against the same account count as one update.
     /// - The partial blockchains chain length does not match the block header's block number. This
@@ -291,12 +294,20 @@ impl ProposedBatch {
 
         // Check for duplicate output notes and remove all output notes from the batch output note
         // set that are consumed by transactions.
-        let (input_notes, output_notes) = InputOutputNoteTracker::from_transactions(
-            transactions.iter().map(AsRef::as_ref),
-            &unauthenticated_note_proofs,
+        let mut tracker = NoteTracker::new(
             &partial_blockchain,
             &reference_block_header,
-        )?;
+            &unauthenticated_note_proofs,
+        );
+        for tx in transactions.iter() {
+            tracker.push(tx.as_ref()).map_err(ProposedBatchError::from)?;
+        }
+        let TrackerOutput { input_notes, output_notes, .. } =
+            tracker.finalize().map_err(ProposedBatchError::from)?;
+
+        // Collect the remaining (non-erased) output notes into the final set of output notes.
+        let output_notes: Vec<OutputNote> =
+            output_notes.into_values().map(|(_, output_note)| output_note).collect();
 
         if input_notes.len() > MAX_INPUT_NOTES_PER_BATCH {
             return Err(ProposedBatchError::TooManyInputNotes(input_notes.len()));
