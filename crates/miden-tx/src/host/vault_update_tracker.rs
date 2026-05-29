@@ -20,10 +20,10 @@ use crate::host::tx_event::{AddedAssetUpdate, RemovedAssetUpdate};
 #[derive(Debug, Clone, Default)]
 pub(crate) struct VaultUpdateTracker {
     delta: AccountVaultDelta,
-    /// The absolute value of each touched vault key at the start of the transaction.
-    init_values: BTreeMap<AssetVaultKey, Word>,
-    /// The latest absolute value of each touched vault key.
-    entries: BTreeMap<AssetVaultKey, Word>,
+    /// For each touched vault key, the `(initial, latest)` absolute values. The initial value is
+    /// recorded only on the very first observation and never overwritten; the latest value is
+    /// updated on every observation.
+    entries: BTreeMap<AssetVaultKey, (Word, Word)>,
 }
 
 impl VaultUpdateTracker {
@@ -83,16 +83,19 @@ impl VaultUpdateTracker {
     ///
     /// Drops entries whose final value equals the initial value at the start of the transaction.
     pub fn into_patch(self) -> AccountVaultPatch {
-        let Self { init_values, mut entries, .. } = self;
+        let normalized = self
+            .entries
+            .into_iter()
+            .filter_map(|(key, (initial_value, final_value))| {
+                if final_value == initial_value {
+                    Some((key, final_value))
+                } else {
+                    None
+                }
+            })
+            .collect();
 
-        entries.retain(|key, final_value| {
-            let initial_value = init_values
-                .get(key)
-                .expect("initial value should be tracked for every touched vault key");
-            final_value != initial_value
-        });
-
-        AccountVaultPatch::from_raw(entries)
+        AccountVaultPatch::from_raw(normalized)
     }
 
     /// Records the initial value of `asset_key` on first observation and updates its latest value.
@@ -102,7 +105,9 @@ impl VaultUpdateTracker {
         initial_value: Word,
         final_value: Word,
     ) {
-        self.init_values.entry(asset_key).or_insert(initial_value);
-        self.entries.insert(asset_key, final_value);
+        self.entries
+            .entry(asset_key)
+            .and_modify(|(_, latest)| *latest = final_value)
+            .or_insert((initial_value, final_value));
     }
 }
