@@ -61,11 +61,6 @@ where
     /// The depth of the account tree.
     pub const DEPTH: u8 = SMT_DEPTH;
 
-    /// The index of the account ID suffix in the SMT key.
-    pub(super) const KEY_SUFFIX_IDX: usize = 2;
-    /// The index of the account ID prefix in the SMT key.
-    pub(super) const KEY_PREFIX_IDX: usize = 3;
-
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
@@ -157,7 +152,7 @@ where
 
     /// Returns true if the tree contains a leaf for the given account ID prefix.
     pub fn contains_account_id_prefix(&self, account_id_prefix: AccountIdPrefix) -> bool {
-        let key = Self::id_prefix_to_smt_key(account_id_prefix);
+        let key = AccountIdKey::id_prefix_to_smt_key(account_id_prefix);
         let is_empty = matches!(self.smt.get_leaf(&key), SmtLeaf::Empty(_));
         !is_empty
     }
@@ -181,24 +176,11 @@ where
 
             (
                 // SAFETY: By construction, the tree only contains valid IDs.
-                AccountId::try_from_elements(key[Self::KEY_SUFFIX_IDX], key[Self::KEY_PREFIX_IDX])
+                AccountIdKey::try_from_word(key)
                     .expect("account tree should only contain valid IDs"),
                 commitment,
             )
         })
-    }
-
-    // HELPERS
-    // --------------------------------------------------------------------------------------------
-
-    /// Returns the SMT key of the given account ID prefix.
-    fn id_prefix_to_smt_key(account_id: AccountIdPrefix) -> Word {
-        // We construct this in such a way that we're forced to use the constants, so that when
-        // they're updated, the other usages of the constants are also updated.
-        let mut key = Word::empty();
-        key[Self::KEY_PREFIX_IDX] = account_id.as_felt();
-
-        key
     }
 }
 
