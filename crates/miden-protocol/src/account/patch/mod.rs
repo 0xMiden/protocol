@@ -18,10 +18,10 @@ use crate::{Felt, Word};
 /// merge/split procedures defined by the issuing faucet).
 ///
 /// The patch represents updates to the account as follows:
-/// - storage: an [`AccountStorageDelta`] containing the new values of changed storage slots and map
+/// - storage: an [`AccountStoragePatch`] containing the new values of changed storage slots and map
 ///   entries. Storage updates are already absolute per changed entry, so no dedicated patch type is
 ///   required for storage.
-/// - vault: an [`AssetVaultPatch`] containing the new values of changed vault entries.
+/// - vault: an [`AccountVaultPatch`] containing the new values of changed vault entries.
 /// - nonce: the new (absolute) nonce of the account, in contrast to
 ///   [`AccountDelta::nonce_delta`](crate::account::AccountDelta::nonce_delta) which stores the
 ///   increment.
