@@ -177,7 +177,7 @@ impl AccountStoragePatch {
 
     /// Appends the storage slots patch to the given `elements` from which the delta commitment will
     /// be computed.
-    pub(super) fn append_delta_elements(&self, elements: &mut Vec<Felt>) {
+    pub(in crate::account) fn append_patch_elements(&self, elements: &mut Vec<Felt>) {
         let domain_value = Felt::from_u8(2);
         let domain_map = Felt::from_u8(3);
 

@@ -191,8 +191,9 @@ impl AccountDelta {
     ///
     /// ## Computation
     ///
-    /// The delta is a sequential hash over a vector of field elements which starts out empty and
-    /// is appended to in the following way. Whenever sorting is expected, it is that of a [`Word`].
+    /// The delta commitment is a sequential hash over a vector of field elements which starts out
+    /// empty and is appended to in the following way. Whenever sorting is expected, it is that
+    /// of a [`Word`].
     ///
     /// - Append `[[nonce_delta, 0, account_id_suffix, account_id_prefix], EMPTY_WORD]`, where
     ///   `account_id_{prefix,suffix}` are the prefix and suffix felts of the native account id and
@@ -416,7 +417,7 @@ impl SequentialCommit for AccountDelta {
         self.vault.append_delta_elements(&mut elements);
 
         // Storage Patch
-        self.storage.append_delta_elements(&mut elements);
+        self.storage.append_patch_elements(&mut elements);
 
         debug_assert!(
             elements.len() % (2 * crate::WORD_SIZE) == 0,

@@ -43,6 +43,9 @@ pub use component::{AccountComponent, AccountComponentCode, AccountComponentMeta
 pub mod interface;
 pub use interface::AccountComponentName;
 
+mod patch;
+pub use patch::{AccountPatch, AccountVaultPatch};
+
 pub mod delta;
 pub use delta::{
     AccountDelta,
@@ -515,19 +518,13 @@ mod tests {
     use miden_crypto::utils::{Deserializable, Serializable};
     use miden_crypto::{Felt, Word};
 
-    use super::{
-        AccountCode,
-        AccountDelta,
-        AccountId,
-        AccountStorage,
-        AccountStoragePatch,
-        AccountVaultDelta,
-    };
+    use super::{AccountCode, AccountDelta, AccountId, AccountStorage, AccountStoragePatch};
     use crate::account::{
         Account,
         AccountBuilder,
         AccountIdVersion,
         AccountType,
+        AccountVaultDelta,
         PartialAccount,
         StorageMap,
         StorageMapKey,

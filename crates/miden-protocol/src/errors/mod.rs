@@ -425,6 +425,18 @@ pub enum AccountDeltaError {
     MergingFullStateDeltas,
 }
 
+#[derive(Debug, Error)]
+pub enum AccountPatchError {
+    #[error("new_nonce can never be set to zero")]
+    NewNonceIsZero,
+
+    #[error("non-empty account storage or vault patch with new_nonce set to zero is not allowed")]
+    NonEmptyStorageOrVaultDeltaWithZeroNonceDelta,
+
+    #[error("account code must be provided for new accounts (with nonce = 1)")]
+    CodeMustBeProvidedForNewAccounts,
+}
+
 // STORAGE MAP ERROR
 // ================================================================================================
 
