@@ -367,6 +367,33 @@ impl<Backend> AccountTree<LargeSmt<Backend>>
 where
     Backend: SmtStorage,
 {
+    /// Creates a new account tree from the provided entries using the given storage backend.
+    ///
+    /// This is a convenience method that creates an SMT on the provided storage backend using the
+    /// provided entries and wraps it in an AccountTree.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - the provided entries contain duplicate account ID prefixes.
+    /// - a storage error is encountered.
+    pub fn with_storage_from_entries(
+        storage: Backend,
+        entries: impl IntoIterator<Item = (AccountId, Word)>,
+    ) -> Result<Self, AccountTreeError> {
+        use crate::block::account_tree::backend::large_smt_error_to_merkle_error;
+
+        let leaves = entries
+            .into_iter()
+            .map(|(id, commitment)| (AccountIdKey::from(id).as_word(), commitment));
+
+        let smt = LargeSmt::<Backend>::with_entries(storage, leaves)
+            .map_err(large_smt_error_to_merkle_error)
+            .map_err(AccountTreeError::DuplicateEntries)?;
+
+        AccountTree::new(smt)
+    }
+
     /// Returns a read-only account tree backed by a reader view of this tree's storage.
     pub fn reader(&self) -> Result<AccountTree<LargeSmt<Backend::Reader>>, LargeSmtError> {
         Ok(AccountTree::new_unchecked(self.smt.reader()?))

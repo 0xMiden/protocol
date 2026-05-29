@@ -204,7 +204,7 @@ where
 // ================================================================================================
 
 #[cfg(feature = "std")]
-fn large_smt_error_to_merkle_error(err: LargeSmtError) -> MerkleError {
+pub(super) fn large_smt_error_to_merkle_error(err: LargeSmtError) -> MerkleError {
     match err {
         LargeSmtError::Storage(storage_err) => {
             panic!("Storage error encountered: {:?}", storage_err)
