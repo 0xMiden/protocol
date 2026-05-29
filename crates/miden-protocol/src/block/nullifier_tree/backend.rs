@@ -17,11 +17,12 @@ use crate::crypto::merkle::smt::{MutationSet, SMT_DEPTH, Smt, SmtProof};
 /// [`NullifierTreeBackend`].
 ///
 /// Users should instantiate the backend directly (potentially with entries) and then
-/// pass it to [`NullifierTree::new_unchecked`].
+/// pass it to [`NullifierTree::new_unchecked`](super::NullifierTree::new_unchecked).
 ///
 /// # Invariants
 ///
-/// Assumes the provided SMT upholds the guarantees of the [`NullifierTree`]. Specifically:
+/// Assumes the provided SMT upholds the guarantees of the [`NullifierTree`](super::NullifierTree).
+/// Specifically:
 /// - Nullifiers are only spent once and their block numbers do not change.
 /// - Nullifier leaf values must be valid according to [`NullifierBlock`].
 pub trait NullifierTreeBackendReader: Sized {

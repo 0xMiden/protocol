@@ -18,7 +18,7 @@ use crate::crypto::merkle::smt::{LeafIndex, MutationSet, SMT_DEPTH, Smt, SmtLeaf
 ///
 /// Implementors must provide `Default` for creating empty instances. Users should
 /// instantiate the backend directly (potentially with entries) and then pass it to
-/// [`AccountTree::new`].
+/// [`AccountTree::new`](super::AccountTree::new).
 pub trait AccountTreeBackendReader: Sized {
     type Error: core::error::Error + Send + 'static;
 
