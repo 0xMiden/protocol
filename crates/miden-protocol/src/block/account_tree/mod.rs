@@ -384,11 +384,6 @@ where
     }
 
     /// Returns a read-only account tree backed by a reader view of this tree's storage.
-    ///
-    /// The returned tree shares the same root and account commitments as `self`, but its storage is
-    /// a read-only snapshot produced by [`SmtStorage::reader`]. The returned tree cannot be
-    /// mutated: its backend implements [`SmtBackendReader`] but not [`SmtBackend`], because the
-    /// storage reader ([`SmtStorage::Reader`]) is read-only.
     pub fn reader(&self) -> Result<AccountTree<LargeSmt<Backend::Reader>>, LargeSmtError> {
         Ok(AccountTree::new_unchecked(self.smt.reader()?))
     }

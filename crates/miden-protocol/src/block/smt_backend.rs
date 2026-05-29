@@ -22,9 +22,6 @@ use crate::crypto::merkle::smt::{LeafIndex, MutationSet, SMT_DEPTH, Smt, SmtLeaf
 /// the nullifier tree iterates [`entries`]).
 ///
 /// This trait contains only read-only methods. For write methods, see [`SmtBackend`].
-///
-/// [`leaves`]: SmtBackendReader::leaves
-/// [`entries`]: SmtBackendReader::entries
 pub trait SmtBackendReader: Sized {
     type Error: core::error::Error + Send + 'static;
 
