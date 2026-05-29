@@ -99,7 +99,7 @@ end
 #! - DELTA_COMMITMENT is the commitment to the account delta.
 #!
 #! Panics if:
-#! - the vault or storage delta is not empty but the nonce increment is zero.
+#! - the vault or storage patch is not empty but the nonce increment is zero.
 pub proc compute_delta_commitment
     # pad the stack
     padw padw padw push.0.0.0
