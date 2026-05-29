@@ -9,6 +9,7 @@ use miden_core::mast::MastForestError;
 use miden_crypto::merkle::mmr::MmrError;
 use miden_crypto::merkle::smt::{SmtLeafError, SmtProofError};
 use miden_crypto::utils::HexParseError;
+use miden_verifier::VerificationError;
 use thiserror::Error;
 
 use super::account::{AccountId, RoleSymbol};
@@ -962,6 +963,12 @@ pub enum ProvenTransactionError {
 
 #[derive(Debug, Error)]
 pub enum ProposedBatchError {
+    #[error("failed to verify transaction {transaction_id} in transaction batch")]
+    TransactionVerificationFailed {
+        transaction_id: TransactionId,
+        source: TransactionVerifierError,
+    },
+
     #[error(
         "transaction batch has {0} input notes but at most {MAX_INPUT_NOTES_PER_BATCH} are allowed"
     )]
@@ -1077,11 +1084,6 @@ pub enum ProposedBatchError {
 
 #[derive(Debug, Error)]
 pub enum ProvenBatchError {
-    #[error("failed to verify transaction {transaction_id} in transaction batch")]
-    TransactionVerificationFailed {
-        transaction_id: TransactionId,
-        source: Box<dyn Error + Send + Sync + 'static>,
-    },
     #[error(
         "batch expiration block number {batch_expiration_block_num} is not greater than the reference block number {reference_block_num}"
     )]
@@ -1296,4 +1298,15 @@ pub enum NullifierTreeError {
 pub enum AuthSchemeError {
     #[error("auth scheme identifier `{0}` is not valid")]
     InvalidAuthSchemeIdentifier(String),
+}
+
+// TRANSACTION VERIFIER ERROR
+// ================================================================================================
+
+#[derive(Debug, Error)]
+pub enum TransactionVerifierError {
+    #[error("failed to verify transaction")]
+    TransactionVerificationFailed(#[source] VerificationError),
+    #[error("transaction proof security level is {actual} but must be at least {expected_minimum}")]
+    InsufficientProofSecurityLevel { actual: u32, expected_minimum: u32 },
 }

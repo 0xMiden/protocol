@@ -2095,7 +2095,6 @@ dependencies = [
  "miden-protocol",
  "miden-prover",
  "miden-standards",
- "miden-verifier",
  "rand_chacha",
  "thiserror",
 ]
@@ -2105,7 +2104,6 @@ name = "miden-tx-batch-prover"
 version = "0.16.0"
 dependencies = [
  "miden-protocol",
- "miden-tx",
 ]
 
 [[package]]
