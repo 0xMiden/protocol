@@ -6,6 +6,7 @@ use miden_crypto::merkle::smt::{LargeSmt, LargeSmtError, SmtStorage};
 
 use crate::Word;
 use crate::account::{AccountId, AccountIdPrefix};
+use crate::block::{SmtBackend, SmtBackendReader};
 use crate::crypto::merkle::MerkleError;
 use crate::crypto::merkle::smt::{MutationSet, SMT_DEPTH, Smt, SmtLeaf};
 use crate::errors::AccountTreeError;
@@ -22,9 +23,6 @@ pub use partial::PartialAccountTree;
 
 mod witness;
 pub use witness::AccountWitness;
-
-mod backend;
-pub use backend::{AccountTreeBackend, AccountTreeBackendReader};
 
 mod account_id_key;
 pub use account_id_key::AccountIdKey;
@@ -56,7 +54,7 @@ where
 
 impl<S> AccountTree<S>
 where
-    S: AccountTreeBackendReader<Error = MerkleError>,
+    S: SmtBackendReader<Error = MerkleError>,
 {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
@@ -189,7 +187,7 @@ where
 
 impl<S> AccountTree<S>
 where
-    S: AccountTreeBackend<Error = MerkleError>,
+    S: SmtBackend<Error = MerkleError>,
 {
     // PUBLIC MUTATORS
     // --------------------------------------------------------------------------------------------
@@ -381,7 +379,7 @@ where
         storage: Backend,
         entries: impl IntoIterator<Item = (AccountId, Word)>,
     ) -> Result<Self, AccountTreeError> {
-        use crate::block::account_tree::backend::large_smt_error_to_merkle_error;
+        use crate::block::smt_backend::large_smt_error_to_merkle_error;
 
         let leaves = entries
             .into_iter()
