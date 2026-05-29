@@ -696,18 +696,19 @@ pub proc add_asset_to_vault
     exec.asset_vault::add_asset
     # => [INITIAL_ASSET_VALUE, PROCESSED_ASSET_VALUE', ASSET_KEY, PROCESSED_ASSET_VALUE]
 
-    # drop INITIAL_ASSET_VALUE
-    dropw
-    # => [PROCESSED_ASSET_VALUE', ASSET_KEY, PROCESSED_ASSET_VALUE]
-
-    movdnw.2
-    # => [ASSET_KEY, PROCESSED_ASSET_VALUE, PROCESSED_ASSET_VALUE']
+    # arrange the stack so that INITIAL_ASSET_VALUE is the deepest word for the after-event
+    swapw swapdw
+    # => [ASSET_KEY, PROCESSED_ASSET_VALUE, PROCESSED_ASSET_VALUE', INITIAL_ASSET_VALUE]
 
     # emit event to signal that an asset is being added to the account vault
     emit.ACCOUNT_VAULT_AFTER_ADD_ASSET_EVENT
-    # => [ASSET_KEY, PROCESSED_ASSET_VALUE, PROCESSED_ASSET_VALUE']
+    # => [ASSET_KEY, PROCESSED_ASSET_VALUE, PROCESSED_ASSET_VALUE', INITIAL_ASSET_VALUE]
 
     exec.account_delta::add_asset
+    # => [PROCESSED_ASSET_VALUE', INITIAL_ASSET_VALUE]
+
+    # drop INITIAL_ASSET_VALUE
+    swapw dropw
     # => [PROCESSED_ASSET_VALUE']
 end
 
@@ -742,18 +743,19 @@ pub proc remove_asset_from_vault
     exec.asset_vault::remove_asset
     # => [INITIAL_ASSET_VALUE, REMAINING_ASSET_VALUE, ASSET_KEY, ASSET_VALUE]
 
-    # drop INITIAL_ASSET_VALUE
-    dropw
-    # => [REMAINING_ASSET_VALUE, ASSET_KEY, ASSET_VALUE]
-
-    movdnw.2
-    # => [ASSET_KEY, ASSET_VALUE, REMAINING_ASSET_VALUE]
+    # arrange the stack so that INITIAL_ASSET_VALUE is the deepest word for the after-event
+    swapw swapdw
+    # => [ASSET_KEY, ASSET_VALUE, REMAINING_ASSET_VALUE, INITIAL_ASSET_VALUE]
 
     # emit event to signal that an asset is being removed from the account vault
     emit.ACCOUNT_VAULT_AFTER_REMOVE_ASSET_EVENT
-    # => [ASSET_KEY, ASSET_VALUE, REMAINING_ASSET_VALUE]
+    # => [ASSET_KEY, ASSET_VALUE, REMAINING_ASSET_VALUE, INITIAL_ASSET_VALUE]
 
     exec.account_delta::remove_asset
+    # => [REMAINING_ASSET_VALUE, INITIAL_ASSET_VALUE]
+
+    # drop INITIAL_ASSET_VALUE
+    swapw dropw
     # => [REMAINING_ASSET_VALUE]
 end
 

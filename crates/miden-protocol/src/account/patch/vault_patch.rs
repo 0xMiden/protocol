@@ -25,9 +25,24 @@ impl AccountVaultPatch {
         }
     }
 
+    /// Creates a new vault patch directly from its raw key/value entries.
+    pub fn from_raw(entries: BTreeMap<AssetVaultKey, Word>) -> Self {
+        Self { entries }
+    }
+
     /// Inserts an asset into the patch, overwriting the previous value.
     pub fn insert_asset(&mut self, asset: Asset) {
         self.entries.insert(asset.vault_key(), asset.to_value_word());
+    }
+
+    /// Returns a reference to the underlying map of the vault patch.
+    pub fn as_map(&self) -> &BTreeMap<AssetVaultKey, Word> {
+        &self.entries
+    }
+
+    /// Consumes self and returns the underlying map of the vault patch.
+    pub fn into_map(self) -> BTreeMap<AssetVaultKey, Word> {
+        self.entries
     }
 
     /// Returns an iterator over the assets contained in this patch, sorted by vault key.
