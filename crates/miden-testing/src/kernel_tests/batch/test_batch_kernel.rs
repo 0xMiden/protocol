@@ -64,13 +64,12 @@ fn batch_kernel_skeleton_emits_empty_outputs() -> anyhow::Result<()> {
     let batch = two_tx_batch(&mut setup)?;
 
     let executed = BatchExecutor::new().execute(batch).context("batch execution failed")?;
-    let (input_notes_commitment, output_notes_commitment, expiration) =
-        BatchKernel::parse_output_stack(executed.stack_outputs())
-            .context("parse output stack failed")?;
+    let output = BatchKernel::parse_output_stack(executed.stack_outputs())
+        .context("parse output stack failed")?;
 
-    assert_eq!(input_notes_commitment, Word::empty());
-    assert_eq!(output_notes_commitment, Word::empty());
-    assert_eq!(expiration, BlockNumber::from(0u32));
+    assert_eq!(output.input_notes_commitment(), Word::empty());
+    assert_eq!(output.output_notes_commitment(), Word::empty());
+    assert_eq!(output.batch_expiration_block_num(), BlockNumber::from(0u32));
 
     Ok(())
 }

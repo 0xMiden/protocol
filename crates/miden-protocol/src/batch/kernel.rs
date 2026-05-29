@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 
 use miden_core::program::Kernel;
 
-use crate::batch::ProposedBatch;
+use crate::batch::{BatchOutput, ProposedBatch};
 use crate::block::BlockNumber;
 use crate::errors::BatchOutputError;
 use crate::utils::serde::Deserializable;
@@ -17,11 +17,6 @@ static KERNEL_MAIN: LazyLock<Program> = LazyLock::new(|| {
     let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/kernels/batch_kernel.masb"));
     Program::read_from_bytes(bytes).expect("failed to deserialize batch kernel runtime")
 });
-
-// Output stack indices (layout at the end of `batch/main.masm::main`).
-const INPUT_NOTES_COMMITMENT_WORD_IDX: usize = 0;
-const OUTPUT_NOTES_COMMITMENT_WORD_IDX: usize = 4;
-const BATCH_EXPIRATION_BLOCK_NUM_ELEMENT_IDX: usize = 8;
 
 // BATCH KERNEL
 // ================================================================================================
@@ -103,29 +98,27 @@ impl BatchKernel {
         StackOutputs::new(&outputs).expect("number of stack outputs should be <= 16")
     }
 
-    /// Extracts batch output data from the provided stack outputs.
+    /// Extracts the [`BatchOutput`] from the provided stack outputs.
     ///
     /// # Errors
     ///
     /// Returns an error if:
     /// - The padding cells (positions 9..16) are not all zero.
     /// - `batch_expiration_block_num` does not fit into a `u32`.
-    pub fn parse_output_stack(
-        stack: &StackOutputs,
-    ) -> Result<(Word, Word, BlockNumber), BatchOutputError> {
+    pub fn parse_output_stack(stack: &StackOutputs) -> Result<BatchOutput, BatchOutputError> {
         let input_notes_commitment = stack
-            .get_word(INPUT_NOTES_COMMITMENT_WORD_IDX)
+            .get_word(BatchOutput::INPUT_NOTES_COMMITMENT_WORD_IDX)
             .expect("input_notes_commitment word missing");
         let output_notes_commitment = stack
-            .get_word(OUTPUT_NOTES_COMMITMENT_WORD_IDX)
+            .get_word(BatchOutput::OUTPUT_NOTES_COMMITMENT_WORD_IDX)
             .expect("output_notes_commitment word missing");
 
         let expiration_felt = stack
-            .get_element(BATCH_EXPIRATION_BLOCK_NUM_ELEMENT_IDX)
+            .get_element(BatchOutput::BATCH_EXPIRATION_BLOCK_NUM_ELEMENT_IDX)
             .expect("batch_expiration_block_num missing");
 
         // Every cell after batch_expiration_block_num must be zero padding.
-        if stack[BATCH_EXPIRATION_BLOCK_NUM_ELEMENT_IDX + 1..]
+        if stack[BatchOutput::BATCH_EXPIRATION_BLOCK_NUM_ELEMENT_IDX + 1..]
             .iter()
             .any(|&felt| felt != Felt::ZERO)
         {
@@ -138,7 +131,11 @@ impl BatchKernel {
             .map_err(|_| BatchOutputError::ExpirationBlockNumberTooLarge(expiration_felt))?
             .into();
 
-        Ok((input_notes_commitment, output_notes_commitment, batch_expiration_block_num))
+        Ok(BatchOutput::new(
+            input_notes_commitment,
+            output_notes_commitment,
+            batch_expiration_block_num,
+        ))
     }
 
     // ADVICE BUILDER

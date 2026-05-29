@@ -20,3 +20,6 @@ pub(super) mod note_tracker;
 
 mod kernel;
 pub use kernel::BatchKernel;
+
+mod output;
+pub use output::BatchOutput;
