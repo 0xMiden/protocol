@@ -288,6 +288,8 @@ pub enum AccountTreeError {
         "entries passed to account tree contain multiple state commitments for the same account ID prefix {prefix}"
     )]
     DuplicateStateCommitments { prefix: AccountIdPrefix },
+    #[error("entries passed to account tree contain duplicate values")]
+    DuplicateEntries(#[source] MerkleError),
     #[error("untracked account ID {id} used in partial account tree")]
     UntrackedAccountId { id: AccountId, source: MerkleError },
     #[error("new tree root after account witness insertion does not match previous tree root")]
