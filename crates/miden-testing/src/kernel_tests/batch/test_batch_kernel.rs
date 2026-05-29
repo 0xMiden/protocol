@@ -2,12 +2,10 @@ use alloc::sync::Arc;
 use std::collections::BTreeMap;
 
 use anyhow::Context;
-use miden_core_lib::CoreLibrary;
-use miden_processor::{DefaultHost, ExecutionOptions, FastProcessor};
 use miden_protocol::Word;
 use miden_protocol::batch::{BatchKernel, ProposedBatch};
 use miden_protocol::block::BlockNumber;
-use miden_protocol::vm::{AdviceInputs, Program, StackInputs, StackOutputs};
+use miden_tx_batch_prover::{BatchExecutor, LocalBatchProver};
 
 use super::proposed_batch::{TestSetup, mock_note, mock_output_note, setup_chain};
 use super::proven_tx_builder::MockProvenTxBuilder;
@@ -53,45 +51,41 @@ fn two_tx_batch(setup: &mut TestSetup) -> anyhow::Result<ProposedBatch> {
     )?)
 }
 
-fn run_kernel(
-    program: &Program,
-    stack_inputs: StackInputs,
-    advice_inputs: AdviceInputs,
-) -> Result<StackOutputs, miden_processor::ExecutionError> {
-    let mut host = DefaultHost::default();
-    host.load_library(CoreLibrary::default().mast_forest())
-        .expect("loading the core library into the test host should succeed");
-
-    let processor =
-        FastProcessor::new_with_options(stack_inputs, advice_inputs, ExecutionOptions::default())
-            .expect("failed to create processor")
-            .with_debugging(true);
-    let output = processor.execute_sync(program, &mut host)?;
-    Ok(output.stack)
-}
-
-// SMOKE TEST
+// TESTS
 // ================================================================================================
 
 /// The skeleton batch kernel drops its public inputs and exits, leaving the all-zero word output
-/// region. This test exercises the full plumbing path (build a realistic `ProposedBatch`, derive
-/// stack and advice inputs via `BatchKernel::prepare_inputs`, run the kernel, parse the outputs)
-/// and asserts that the contract holds: the kernel runs to completion and emits the empty word
-/// shape.
+/// region. This test exercises the full plumbing path (build a realistic `ProposedBatch`, execute
+/// the batch kernel via `BatchExecutor`, parse the outputs) and asserts that the contract holds:
+/// the kernel runs to completion and emits the empty word shape.
 #[test]
 fn batch_kernel_skeleton_emits_empty_outputs() -> anyhow::Result<()> {
     let mut setup = setup_chain();
     let batch = two_tx_batch(&mut setup)?;
 
-    let (stack_inputs, advice_inputs) = BatchKernel::prepare_inputs(&batch);
-    let stack_outputs = run_kernel(&BatchKernel::main(), stack_inputs, advice_inputs)
-        .context("kernel execution failed")?;
+    let executed = BatchExecutor::new().execute(batch).context("batch execution failed")?;
     let (input_notes_commitment, output_notes_commitment, expiration) =
-        BatchKernel::parse_output_stack(&stack_outputs).context("parse output stack failed")?;
+        BatchKernel::parse_output_stack(executed.stack_outputs())
+            .context("parse output stack failed")?;
 
     assert_eq!(input_notes_commitment, Word::empty());
     assert_eq!(output_notes_commitment, Word::empty());
     assert_eq!(expiration, BlockNumber::from(0u32));
+
+    Ok(())
+}
+
+/// Executing a batch and then proving it produces a [`ProvenBatch`] carrying the kernel's proof.
+#[test]
+fn batch_executor_then_prover_produces_proven_batch() -> anyhow::Result<()> {
+    let mut setup = setup_chain();
+    let batch = two_tx_batch(&mut setup)?;
+    let expected_id = batch.id();
+
+    let executed = BatchExecutor::new().execute(batch).context("batch execution failed")?;
+    let proven = LocalBatchProver::new().prove(executed).context("batch proving failed")?;
+
+    assert_eq!(proven.id(), expected_id);
 
     Ok(())
 }

@@ -1,15 +1,16 @@
-use miden_processor::{DefaultHost, ExecutionOptions};
-use miden_protocol::batch::{BatchKernel, ProposedBatch, ProvenBatch};
+use miden_protocol::batch::{ProposedBatch, ProvenBatch};
 use miden_protocol::errors::ProvenBatchError;
-use miden_prover::{ExecutionProof, ProvingOptions, prove};
+use miden_prover::{ExecutionProof, ProvingOptions, TraceProvingInputs, prove_from_trace_sync};
+
+use crate::ExecutedBatch;
 
 // LOCAL BATCH PROVER
 // ================================================================================================
 
 /// A local prover for transaction batches.
 ///
-/// Runs the batch kernel program to produce an [`ExecutionProof`] over the batch's public
-/// commitments.
+/// Proves an [`ExecutedBatch`] (produced by [`BatchExecutor`](crate::BatchExecutor)) into a
+/// [`ProvenBatch`] carrying an [`ExecutionProof`] over the batch's public commitments.
 #[derive(Clone, Default)]
 pub struct LocalBatchProver {
     proving_options: ProvingOptions,
@@ -21,40 +22,23 @@ impl LocalBatchProver {
         Self::default()
     }
 
-    /// Proves the [`ProposedBatch`] into a [`ProvenBatch`].
+    /// Proves the [`ExecutedBatch`] into a [`ProvenBatch`].
     ///
-    /// Runs the batch kernel via `miden_prover::prove` and attaches the resulting proof to the
-    /// returned [`ProvenBatch`]. The kernel's public outputs are not yet cross-checked against the
-    /// proposed batch's expected values.
+    /// Builds the execution trace from the executed batch and generates the proof, attaching it to
+    /// the returned [`ProvenBatch`]. The kernel's public outputs are not yet cross-checked against
+    /// the proposed batch's expected values.
     ///
     /// # Errors
     ///
-    /// Returns an error if:
-    /// - the batch kernel program fails to execute or produce a proof;
-    /// - the kernel output stack fails to parse.
-    pub async fn prove(
-        &self,
-        proposed_batch: ProposedBatch,
-    ) -> Result<ProvenBatch, ProvenBatchError> {
-        let (stack_inputs, advice_inputs) = BatchKernel::prepare_inputs(&proposed_batch);
-        let mut host = DefaultHost::default();
+    /// Returns an error if proof generation fails.
+    pub fn prove(&self, executed_batch: ExecutedBatch) -> Result<ProvenBatch, ProvenBatchError> {
+        let (proposed_batch, trace_inputs) = executed_batch.into_parts();
 
-        let (stack_outputs, proof) = prove(
-            &BatchKernel::main(),
-            stack_inputs,
-            advice_inputs,
-            &mut host,
-            ExecutionOptions::default(),
+        let (_stack_outputs, proof) = prove_from_trace_sync(TraceProvingInputs::new(
+            trace_inputs,
             self.proving_options.clone(),
-        )
-        .await
+        ))
         .map_err(ProvenBatchError::BatchKernelExecutionFailed)?;
-
-        // Validate the output stack shape (padding cells are zero and the expiration fits in
-        // u32); the actual output values themselves are not checked until the kernel verifies
-        // them.
-        BatchKernel::parse_output_stack(&stack_outputs)
-            .map_err(ProvenBatchError::BatchKernelOutputInvalid)?;
 
         Self::build_proven_batch(proposed_batch, proof)
     }
