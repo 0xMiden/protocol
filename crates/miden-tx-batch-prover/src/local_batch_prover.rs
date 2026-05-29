@@ -1,5 +1,3 @@
-use alloc::string::ToString;
-
 use miden_processor::{DefaultHost, ExecutionOptions};
 use miden_protocol::batch::{BatchKernel, ProposedBatch, ProvenBatch};
 use miden_protocol::errors::ProvenBatchError;
@@ -51,13 +49,13 @@ impl LocalBatchProver {
             self.proving_options.clone(),
         )
         .await
-        .map_err(|err| ProvenBatchError::BatchKernelExecutionFailed(err.to_string()))?;
+        .map_err(ProvenBatchError::BatchKernelExecutionFailed)?;
 
         // Validate the output stack shape (padding cells are zero and the expiration fits in
         // u32); the actual output values themselves are not checked until the kernel verifies
         // them.
         BatchKernel::parse_output_stack(&stack_outputs)
-            .map_err(|err| ProvenBatchError::BatchKernelExecutionFailed(err.to_string()))?;
+            .map_err(ProvenBatchError::BatchKernelOutputInvalid)?;
 
         Self::build_proven_batch(proposed_batch, proof)
     }

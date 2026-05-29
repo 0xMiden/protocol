@@ -9,6 +9,7 @@ use miden_core::mast::MastForestError;
 use miden_crypto::merkle::mmr::MmrError;
 use miden_crypto::merkle::smt::{SmtLeafError, SmtProofError};
 use miden_crypto::utils::HexParseError;
+use miden_processor::ExecutionError;
 use miden_verifier::VerificationError;
 use thiserror::Error;
 
@@ -1089,8 +1090,10 @@ pub enum ProvenBatchError {
         batch_expiration_block_num: BlockNumber,
         reference_block_num: BlockNumber,
     },
-    #[error("batch kernel execution failed: {0}")]
-    BatchKernelExecutionFailed(String),
+    #[error("batch kernel execution failed")]
+    BatchKernelExecutionFailed(#[source] ExecutionError),
+    #[error("batch kernel produced an invalid output stack")]
+    BatchKernelOutputInvalid(#[source] BatchOutputError),
 }
 
 // BATCH OUTPUT ERROR
