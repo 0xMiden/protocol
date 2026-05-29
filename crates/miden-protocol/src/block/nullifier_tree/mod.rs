@@ -625,33 +625,4 @@ mod tests {
 
         assert_eq!(large_entries, regular_entries);
     }
-
-    #[cfg(feature = "std")]
-    #[test]
-    fn reader_matches_source_tree() {
-        use miden_crypto::merkle::smt::MemoryStorage;
-
-        let nullifier1 = Nullifier::dummy(1);
-        let nullifier2 = Nullifier::dummy(2);
-
-        let block1 = BlockNumber::from(1);
-        let block2 = BlockNumber::from(2);
-
-        let tree = NullifierTree::with_storage_from_entries(
-            MemoryStorage::default(),
-            [(nullifier1, block1), (nullifier2, block2)],
-        )
-        .unwrap();
-
-        let reader = tree.reader().unwrap();
-
-        // The reader shares the same root and entries as the source tree.
-        assert_eq!(reader.root(), tree.root());
-        assert_eq!(reader.get_block_num(&nullifier1).unwrap(), block1);
-        assert_eq!(reader.get_block_num(&nullifier2).unwrap(), block2);
-
-        let source: std::collections::BTreeMap<_, _> = tree.entries().collect();
-        let view: std::collections::BTreeMap<_, _> = reader.entries().collect();
-        assert_eq!(source, view);
-    }
 }

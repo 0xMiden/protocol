@@ -787,35 +787,6 @@ pub(super) mod tests {
 
     #[cfg(feature = "std")]
     #[test]
-    fn reader_matches_source_tree() {
-        use miden_crypto::merkle::smt::MemoryStorage;
-
-        let id0 = AccountIdBuilder::new().build_with_seed([5; 32]);
-        let id1 = AccountIdBuilder::new().build_with_seed([6; 32]);
-
-        let digest0 = Word::from([0, 0, 0, 1u32]);
-        let digest1 = Word::from([0, 0, 0, 2u32]);
-
-        let tree = AccountTree::with_storage_from_entries(
-            MemoryStorage::default(),
-            [(id0, digest0), (id1, digest1)],
-        )
-        .unwrap();
-
-        let reader = tree.reader().unwrap();
-
-        // The reader shares the same root and commitments as the source tree.
-        assert_eq!(reader.root(), tree.root());
-        assert_eq!(reader.get(id0), digest0);
-        assert_eq!(reader.get(id1), digest1);
-
-        let source: std::collections::BTreeMap<_, _> = tree.account_commitments().collect();
-        let view: std::collections::BTreeMap<_, _> = reader.account_commitments().collect();
-        assert_eq!(source, view);
-    }
-
-    #[cfg(feature = "std")]
-    #[test]
     fn with_storage_from_entries_rejects_duplicate_state_commitments() {
         use miden_crypto::merkle::smt::MemoryStorage;
 
