@@ -8,9 +8,6 @@ use crate::ExecutedBatch;
 // ================================================================================================
 
 /// Executes the batch kernel over a [`ProposedBatch`], producing an [`ExecutedBatch`].
-///
-/// The proposed batch's transactions are verified when the [`ProposedBatch`] is constructed, so the
-/// executor only runs the batch kernel program; it does not re-verify the transactions.
 #[derive(Clone, Default)]
 pub struct BatchExecutor;
 
