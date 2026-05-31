@@ -28,6 +28,7 @@ pub use crate::{
     GlobalIndex,
     GlobalIndexError,
     LeafData,
+    MessageNote,
     MetadataHash,
     ProofData,
     SmtNode,
@@ -114,6 +115,7 @@ static LET_NUM_LEAVES_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// - `register_faucet`, which registers a faucet in the bridge.
 /// - `update_ger`, which injects a new GER into the storage map.
 /// - `bridge_out`, which bridges an asset out of Miden to the destination network.
+/// - `bridge_message`, which sends an arbitrary cross-chain message to the destination network.
 /// - `claim`, which validates a claim against the AggLayer bridge and creates a MINT note for the
 ///   AggLayer Faucet.
 ///
@@ -260,6 +262,7 @@ impl AggLayerBridge {
             B2AggNote::script_root(),
             ConfigAggBridgeNote::script_root(),
             UpdateGerNote::script_root(),
+            MessageNote::script_root(),
         ])
     }
 
