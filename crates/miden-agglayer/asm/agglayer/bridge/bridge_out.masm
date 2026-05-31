@@ -16,6 +16,7 @@ use agglayer::common::asset_conversion
 use agglayer::bridge::bridge_config
 use agglayer::bridge::leaf_utils
 use agglayer::bridge::merkle_tree_frontier
+use agglayer::common::eth_address
 use agglayer::common::eth_address::EthereumAddressFormat
 
 # ERRORS
@@ -82,6 +83,7 @@ const ATTACHMENT_SCHEME_LOC=12
 # -------------------------------------------------------------------------------------------------
 
 const LEAF_TYPE_ASSET=0
+const LEAF_TYPE_MESSAGE=1
 use miden::protocol::note::NOTE_TYPE_PUBLIC
 const BURN_NOTE_NUM_STORAGE_ITEMS=0
 
@@ -241,6 +243,116 @@ pub proc bridge_out
         exec.create_burn_note
         # => [pad(16)]
     end
+end
+
+#! Bridges a message out via the AggLayer.
+#!
+#! This procedure handles the complete bridge-message operation:
+#! 1. Validates the note is public and the destination is not Miden
+#! 2. Builds the leaf data with leafType=1, the caller-provided metadata hash,
+#!    and the note sender's address as the origin token address
+#! 3. Computes Keccak hash of the leaf data and appends it to the Local Exit Tree
+#!
+#! Unlike bridge_out, this procedure does NOT involve any faucet lookup, burn, or lock operations.
+#! The amount field is always zero.
+#!
+#! Inputs:  [dest_network_id, dest_address(5), metadata_hash(8), pad(2)]
+#! Outputs: [pad(16)]
+#!
+#! Where:
+#! - dest_network_id is the u32 destination network/chain ID.
+#! - dest_address(5) are 5 u32 values representing a 20-byte Ethereum address.
+#! - metadata_hash(8) is the Keccak256 hash of the message metadata (8 u32 limbs).
+#!
+#! Panics if:
+#! - the note calling `bridge_message` is not public.
+#! - destination network ID is Miden's AggLayer network ID.
+#!
+#! Invocation: call
+pub proc bridge_message
+    exec.active_note::is_public assert.err=ERR_B2AGG_NOTE_MUST_BE_PUBLIC
+    # => [dest_network_id, dest_address(5), metadata_hash(8), pad(2)]
+
+    dup exec.assert_destination_id_not_miden_id
+    # => [dest_network_id, dest_address(5), metadata_hash(8), pad(2)]
+
+    # --- 1. Store destination_network ---
+    push.LEAF_DATA_START_PTR push.DESTINATION_NETWORK_OFFSET add
+    mem_store
+    # => [dest_address(5), metadata_hash(8), pad(2)]
+
+    # --- 2. Store destination_address (5 felts) ---
+    push.LEAF_DATA_START_PTR push.DESTINATION_ADDRESS_OFFSET add
+    exec.write_address_to_memory
+    # => [metadata_hash(8), pad(2)]
+
+    # --- 3. Store metadata_hash (8 felts) ---
+    push.LEAF_DATA_START_PTR push.METADATA_HASH_OFFSET add
+    movdn.8
+    exec.utils::mem_store_double_word_unaligned
+    # => [pad(2)]
+
+    # Pad stack back to 16 elements for subsequent operations
+    padw padw push.0.0.0.0.0.0
+    # => [pad(16)]
+
+    # --- 4. Store leafType=1 (byte-swapped) ---
+    push.LEAF_TYPE_MESSAGE
+    exec.utils::swap_u32_bytes
+    push.LEAF_DATA_START_PTR push.LEAF_TYPE_OFFSET add
+    mem_store
+    # => [pad(16)]
+
+    # --- 5. Store originNetwork = MIDEN_NETWORK_ID ---
+    push.MIDEN_NETWORK_ID
+    push.LEAF_DATA_START_PTR push.ORIGIN_NETWORK_OFFSET add
+    mem_store
+    # => [pad(16)]
+
+    # --- 6. Store origin_token_address from note sender ---
+    exec.active_note::get_sender
+    # => [sender_prefix, sender_suffix, pad(16)]
+
+    # from_account_id expects [suffix, prefix]
+    swap
+    exec.eth_address::from_account_id
+    # => [limb0, limb1, limb2, limb3, limb4, pad(16)]
+
+    push.LEAF_DATA_START_PTR push.ORIGIN_TOKEN_ADDRESS_OFFSET add
+    exec.write_address_to_memory
+    # => [pad(16)]
+
+    # --- 7. Store amount = 0 (8 felts, all zero) ---
+    push.LEAF_DATA_START_PTR push.AMOUNT_OFFSET add
+    movdn.8
+    padw padw
+    # => [0, 0, 0, 0, 0, 0, 0, 0, amount_ptr, pad(8)]
+
+    exec.utils::mem_store_double_word_unaligned
+    # => [pad(8)]
+
+    # Restore stack to 16 elements
+    padw padw
+    # => [pad(16)]
+
+    # --- 8. Zero the 3 padding felts ---
+    push.0
+    push.LEAF_DATA_START_PTR push.PADDING_OFFSET add
+    mem_store
+
+    push.0
+    push.LEAF_DATA_START_PTR push.PADDING_OFFSET add.1 add
+    mem_store
+
+    push.0
+    push.LEAF_DATA_START_PTR push.PADDING_OFFSET add.2 add
+    mem_store
+    # => [pad(16)]
+
+    # --- 9. Compute leaf value and append to LET ---
+    push.LEAF_DATA_START_PTR
+    exec.add_leaf_bridge
+    # => [pad(16)]
 end
 
 # HELPER PROCEDURES
