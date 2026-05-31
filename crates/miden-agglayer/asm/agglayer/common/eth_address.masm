@@ -69,6 +69,64 @@ pub proc to_account_id
     # => [suffix, prefix]
 end
 
+#! Converts an AccountId [suffix, prefix] into the Ethereum address format (address[5] type).
+#!
+#! This is the inverse of `to_account_id`. Each felt encodes a conceptual u64 = (hi << 32) | lo
+#! in big-endian limb order. The procedure splits each felt back into two u32 limbs via u32split,
+#! then byte-swaps each limb from big-endian back to little-endian (matching the bridge convention).
+#!
+#! The most-significant 4 bytes (limb0) are always zero since an AccountId only occupies 16 bytes.
+#!
+#! Inputs:  [suffix, prefix]
+#! Outputs: [limb0, limb1, limb2, limb3, limb4]
+#!
+#! Invocation: exec
+pub proc from_account_id
+    # split prefix into BE limbs
+    swap
+    # => [prefix, suffix]
+
+    u32split
+    # => [hi_be, lo_be, suffix]
+    #   prefix = hi_be * 2^32 + lo_be
+
+    # byte-swap hi_be to get limb1 (LE)
+    exec.utils::swap_u32_bytes
+    # => [limb1, lo_be, suffix]
+
+    swap
+    # => [lo_be, limb1, suffix]
+
+    # byte-swap lo_be to get limb2 (LE)
+    exec.utils::swap_u32_bytes
+    # => [limb2, limb1, suffix]
+
+    # split suffix into BE limbs
+    movup.2
+    # => [suffix, limb2, limb1]
+
+    u32split
+    # => [hi_be, lo_be, limb2, limb1]
+
+    # byte-swap hi_be to get limb3 (LE)
+    exec.utils::swap_u32_bytes
+    # => [limb3, lo_be, limb2, limb1]
+
+    swap
+    # => [lo_be, limb3, limb2, limb1]
+
+    # byte-swap lo_be to get limb4 (LE)
+    exec.utils::swap_u32_bytes
+    # => [limb4, limb3, limb2, limb1]
+
+    # reorder from [limb4, limb3, limb2, limb1] to [limb1, limb2, limb3, limb4]
+    movdn.3 movdn.2 swap
+    # => [limb1, limb2, limb3, limb4]
+
+    push.0
+    # => [limb0=0, limb1, limb2, limb3, limb4]
+end
+
 # HELPER PROCEDURES
 # =================================================================================================
 
