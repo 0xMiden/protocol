@@ -24,6 +24,7 @@ pub mod bridge;
 pub mod claim_note;
 pub mod config_note;
 pub mod errors;
+pub mod message_note;
 pub mod eth_types;
 pub mod faucet;
 #[cfg(feature = "testing")]
@@ -44,6 +45,7 @@ pub use claim_note::{
     SmtNode,
 };
 pub use config_note::{ConfigAggBridgeNote, ConversionMetadata};
+pub use message_note::MessageNote;
 #[cfg(any(test, feature = "testing"))]
 pub use eth_types::GlobalIndexExt;
 pub use eth_types::{
