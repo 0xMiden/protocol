@@ -323,8 +323,9 @@ pub proc bridge_message
     mem_store
     # => [pad(16)]
 
-    # --- 5. Store originNetwork = MIDEN_NETWORK_ID ---
+    # --- 5. Store originNetwork = MIDEN_NETWORK_ID (byte-swapped to LE) ---
     push.MIDEN_NETWORK_ID
+    exec.utils::swap_u32_bytes
     push.LEAF_DATA_START_PTR push.ORIGIN_NETWORK_OFFSET add
     mem_store
     # => [pad(16)]
