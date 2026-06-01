@@ -5,7 +5,7 @@ impl AccountVaultPatch {
     // CONSTRUCTORS
     // ----------------------------------------------------------------------------------------
 
-    /// Creates an [`AccountVaultPatch`] from the given iterators.
+    /// Creates an [`AccountVaultPatch`] that represents a vault update to the given assets.
     pub fn with_assets(entries: impl IntoIterator<Item = Asset>) -> Self {
         Self::from_raw(
             entries
