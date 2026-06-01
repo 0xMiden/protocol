@@ -15,7 +15,6 @@ use miden_standards::note::P2idNote;
 use miden_standards::testing::account_interface::get_public_keys_from_account;
 use miden_testing::utils::create_spawn_note;
 use miden_testing::{Auth, MockChainBuilder};
-use miden_tx::TransactionExecutorError;
 use miden_tx::auth::{BasicAuthenticator, SigningInputs, TransactionAuthenticator};
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
@@ -140,17 +139,20 @@ async fn test_multisig_2_of_2_with_note_creation() -> anyhow::Result<()> {
 
     let salt = Word::from([Felt::ONE; 4]);
 
-    // Execute transaction without signatures - should fail
-    let tx_context_init = mock_chain
+    // Build transaction context with all config
+    let tx_context_builder = mock_chain
         .build_tx_context(multisig_account.id(), &[input_note.id()], &[])?
-        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note.clone())])
-        .auth_args(salt)
-        .build()?;
+        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note)])
+        .auth_args(salt);
 
-    let tx_summary = match tx_context_init.execute().await.unwrap_err() {
-        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
-        error => anyhow::bail!("expected abort with tx effects: {error}"),
-    };
+    // Execute transaction without signatures - should fail
+    let tx_summary = tx_context_builder
+        .clone()
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
 
     // Get signatures from both approvers
     let msg = tx_summary.as_ref().to_commitment();
@@ -164,12 +166,9 @@ async fn test_multisig_2_of_2_with_note_creation() -> anyhow::Result<()> {
         .await?;
 
     // Execute transaction with signatures - should succeed
-    let tx_context_execute = mock_chain
-        .build_tx_context(multisig_account.id(), &[input_note.id()], &[])?
-        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note)])
+    let tx_context_execute = tx_context_builder
         .add_signature(public_keys[0].to_commitment(), msg, sig_1)
         .add_signature(public_keys[1].to_commitment(), msg, sig_2)
-        .auth_args(salt)
         .build()?
         .execute()
         .await?;
@@ -228,16 +227,18 @@ async fn test_multisig_2_of_4_all_signer_combinations() -> anyhow::Result<()> {
     for (i, (signer1_idx, signer2_idx)) in signer_combinations.iter().enumerate() {
         let salt = Word::from([Felt::new_unchecked(10 + i as u64); 4]);
 
-        // Execute transaction without signatures first to get tx summary
-        let tx_context_init = mock_chain
-            .build_tx_context(multisig_account.id(), &[], &[])?
-            .auth_args(salt)
-            .build()?;
+        // Build transaction context with all config
+        let tx_context_builder =
+            mock_chain.build_tx_context(multisig_account.id(), &[], &[])?.auth_args(salt);
 
-        let tx_summary = match tx_context_init.execute().await.unwrap_err() {
-            TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
-            error => panic!("expected abort with tx effects: {error:?}"),
-        };
+        // Execute transaction without signatures first to get tx summary
+        let tx_summary = tx_context_builder
+            .clone()
+            .build()?
+            .execute()
+            .await
+            .unwrap_err()
+            .unwrap_unauthorized_err();
 
         // Get signatures from the specific combination of signers
         let msg = tx_summary.as_ref().to_commitment();
@@ -251,9 +252,7 @@ async fn test_multisig_2_of_4_all_signer_combinations() -> anyhow::Result<()> {
             .await?;
 
         // Execute transaction with signatures - should succeed for any combination
-        let tx_context_execute = mock_chain
-            .build_tx_context(multisig_account.id(), &[], &[])?
-            .auth_args(salt)
+        let tx_context_execute = tx_context_builder
             .add_signature(public_keys[*signer1_idx].to_commitment(), msg, sig_1)
             .add_signature(public_keys[*signer2_idx].to_commitment(), msg, sig_2)
             .build()?;
@@ -361,27 +360,27 @@ async fn test_multisig_update_signers() -> anyhow::Result<()> {
         .with_dynamically_linked_library(AuthMultisig::code())?
         .compile_tx_script(tx_script_code)?;
 
-    let advice_inputs = AdviceInputs {
-        map: advice_map.clone(),
-        ..Default::default()
-    };
+    let advice_inputs = AdviceInputs { map: advice_map, ..Default::default() };
 
     // Pass the MULTISIG_CONFIG_HASH as the tx_script_args
     let tx_script_args: Word = multisig_config_hash;
 
-    // Execute transaction without signatures first to get tx summary
-    let tx_context_init = mock_chain
+    // Build transaction context with all config
+    let tx_context_builder = mock_chain
         .build_tx_context(multisig_account.id(), &[], &[])?
-        .tx_script(tx_script.clone())
+        .tx_script(tx_script)
         .tx_script_args(tx_script_args)
-        .extend_advice_inputs(advice_inputs.clone())
-        .auth_args(salt)
-        .build()?;
+        .extend_advice_inputs(advice_inputs)
+        .auth_args(salt);
 
-    let tx_summary = match tx_context_init.execute().await.unwrap_err() {
-        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
-        error => panic!("expected abort with tx effects: {error:?}"),
-    };
+    // Execute transaction without signatures first to get tx summary
+    let tx_summary = tx_context_builder
+        .clone()
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
 
     // Get signatures from both approvers
     let msg = tx_summary.as_ref().to_commitment();
@@ -395,14 +394,9 @@ async fn test_multisig_update_signers() -> anyhow::Result<()> {
         .await?;
 
     // Execute transaction with signatures - should succeed
-    let update_approvers_tx = mock_chain
-        .build_tx_context(multisig_account.id(), &[], &[])?
-        .tx_script(tx_script)
-        .tx_script_args(multisig_config_hash)
+    let update_approvers_tx = tx_context_builder
         .add_signature(public_keys[0].to_commitment(), msg, sig_1)
         .add_signature(public_keys[1].to_commitment(), msg, sig_2)
-        .auth_args(salt)
-        .extend_advice_inputs(advice_inputs)
         .build()?
         .execute()
         .await
@@ -507,17 +501,20 @@ async fn test_multisig_update_signers() -> anyhow::Result<()> {
     new_mock_chain_builder.add_output_note(RawOutputNote::Full(input_note_new.clone()));
     let new_mock_chain = new_mock_chain_builder.build().unwrap();
 
-    // Execute transaction without signatures first to get tx summary
-    let tx_context_init_new = new_mock_chain
+    // Build transaction context with base config (output notes differ between init and execute)
+    let tx_context_builder_new = new_mock_chain
         .build_tx_context(updated_multisig_account.id(), &[input_note_new.id()], &[])?
-        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note.clone())])
-        .auth_args(salt_new)
-        .build()?;
+        .auth_args(salt_new);
 
-    let tx_summary_new = match tx_context_init_new.execute().await.unwrap_err() {
-        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
-        error => panic!("expected abort with tx effects: {error:?}"),
-    };
+    // Execute transaction without signatures first to get tx summary
+    let tx_summary_new = tx_context_builder_new
+        .clone()
+        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note.clone())])
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
 
     // Get signatures from 3 of the 4 new approvers (threshold is 3)
     let msg_new = tx_summary_new.as_ref().to_commitment();
@@ -537,13 +534,11 @@ async fn test_multisig_update_signers() -> anyhow::Result<()> {
     // ================================================================================
 
     // Execute transaction with new signatures - should succeed
-    let tx_context_execute_new = new_mock_chain
-        .build_tx_context(updated_multisig_account.id(), &[input_note_new.id()], &[])?
+    let tx_context_execute_new = tx_context_builder_new
         .extend_expected_output_notes(vec![RawOutputNote::Full(output_note_new)])
         .add_signature(new_public_keys[0].to_commitment(), msg_new, sig_1_new)
         .add_signature(new_public_keys[1].to_commitment(), msg_new, sig_2_new)
         .add_signature(new_public_keys[2].to_commitment(), msg_new, sig_3_new)
-        .auth_args(salt_new)
         .build()?
         .execute()
         .await?;
@@ -625,19 +620,22 @@ async fn test_multisig_update_signers_remove_owner() -> anyhow::Result<()> {
 
     let salt = Word::from([Felt::new_unchecked(3); 4]);
 
-    // Execute without signatures to get tx summary
-    let tx_context_init = mock_chain
+    // Build transaction context with all config
+    let tx_context_builder = mock_chain
         .build_tx_context(multisig_account.id(), &[], &[])?
-        .tx_script(tx_script.clone())
+        .tx_script(tx_script)
         .tx_script_args(multisig_config_hash)
-        .extend_advice_inputs(advice_inputs.clone())
-        .auth_args(salt)
-        .build()?;
+        .extend_advice_inputs(advice_inputs)
+        .auth_args(salt);
 
-    let tx_summary = match tx_context_init.execute().await.unwrap_err() {
-        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
-        error => panic!("expected abort with tx effects: {error:?}"),
-    };
+    // Execute without signatures to get tx summary
+    let tx_summary = tx_context_builder
+        .clone()
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
 
     // Get signatures from 4 of the 5 original approvers (threshold is 4)
     let msg = tx_summary.as_ref().to_commitment();
@@ -657,16 +655,11 @@ async fn test_multisig_update_signers_remove_owner() -> anyhow::Result<()> {
         .await?;
 
     // Execute with signatures
-    let update_approvers_tx = mock_chain
-        .build_tx_context(multisig_account.id(), &[], &[])?
-        .tx_script(tx_script)
-        .tx_script_args(multisig_config_hash)
+    let update_approvers_tx = tx_context_builder
         .add_signature(public_keys[0].to_commitment(), msg, sig_1)
         .add_signature(public_keys[1].to_commitment(), msg, sig_2)
         .add_signature(public_keys[2].to_commitment(), msg, sig_3)
         .add_signature(public_keys[3].to_commitment(), msg, sig_4)
-        .auth_args(salt)
-        .extend_advice_inputs(advice_inputs)
         .build()?
         .execute()
         .await
@@ -846,27 +839,27 @@ async fn test_multisig_new_approvers_cannot_sign_before_update() -> anyhow::Resu
         .with_dynamically_linked_library(AuthMultisig::code())?
         .compile_tx_script(tx_script_code)?;
 
-    let advice_inputs = AdviceInputs {
-        map: advice_map.clone(),
-        ..Default::default()
-    };
+    let advice_inputs = AdviceInputs { map: advice_map, ..Default::default() };
 
     // Pass the MULTISIG_CONFIG_HASH as the tx_script_args
     let tx_script_args: Word = multisig_config_hash;
 
-    // Execute transaction without signatures first to get tx summary
-    let tx_context_init = mock_chain
+    // Build transaction context with all config
+    let tx_context_builder = mock_chain
         .build_tx_context(multisig_account.id(), &[], &[])?
-        .tx_script(tx_script.clone())
+        .tx_script(tx_script)
         .tx_script_args(tx_script_args)
-        .extend_advice_inputs(advice_inputs.clone())
-        .auth_args(salt)
-        .build()?;
+        .extend_advice_inputs(advice_inputs)
+        .auth_args(salt);
 
-    let tx_summary = match tx_context_init.execute().await.unwrap_err() {
-        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
-        error => panic!("expected abort with tx effects: {error:?}"),
-    };
+    // Execute transaction without signatures first to get tx summary
+    let tx_summary = tx_context_builder
+        .clone()
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
 
     // SECTION 3: Try to sign the transaction with the NEW approvers (should fail)
     // ================================================================================
@@ -883,14 +876,9 @@ async fn test_multisig_new_approvers_cannot_sign_before_update() -> anyhow::Resu
         .await?;
 
     // Try to execute transaction with NEW signatures - should FAIL
-    let tx_context_with_new_sigs = mock_chain
-        .build_tx_context(multisig_account.id(), &[], &[])?
-        .tx_script(tx_script.clone())
-        .tx_script_args(multisig_config_hash)
+    let tx_context_with_new_sigs = tx_context_builder
         .add_signature(new_public_keys[0].to_commitment(), msg, new_sig_1)
         .add_signature(new_public_keys[1].to_commitment(), msg, new_sig_2)
-        .auth_args(salt)
-        .extend_advice_inputs(advice_inputs.clone())
         .build()?;
 
     // SECTION 4: Verify that only the CURRENT approvers can sign the update transaction

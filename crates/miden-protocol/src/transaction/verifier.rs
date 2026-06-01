@@ -1,9 +1,9 @@
-use miden_protocol::CoreLibrary;
-use miden_protocol::transaction::{ProvenTransaction, TransactionKernel};
-use miden_protocol::vm::ProgramInfo;
 use miden_verifier::verify_with_precompiles;
 
-use super::TransactionVerifierError;
+use crate::CoreLibrary;
+use crate::errors::TransactionVerifierError;
+use crate::transaction::{ProvenTransaction, TransactionKernel};
+use crate::vm::ProgramInfo;
 
 // TRANSACTION VERIFIER
 // ================================================================================================

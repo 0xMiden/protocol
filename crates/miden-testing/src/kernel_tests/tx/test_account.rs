@@ -22,9 +22,9 @@ use miden_protocol::account::{
     StorageMapKey,
     StorageSlot,
     StorageSlotContent,
-    StorageSlotDelta,
     StorageSlotId,
     StorageSlotName,
+    StorageSlotPatch,
     StorageSlotType,
 };
 use miden_protocol::assembly::diagnostics::NamedSource;
@@ -829,21 +829,21 @@ async fn prove_account_creation_with_non_empty_storage() -> anyhow::Result<()> {
 
     assert_matches!(
         tx.account_delta().storage().get(&slot_name0).unwrap(),
-        StorageSlotDelta::Value(value) => {
+        StorageSlotPatch::Value(value) => {
             assert_eq!(*value, slot0.value())
         }
     );
     assert_matches!(
         tx.account_delta().storage().get(&slot_name1).unwrap(),
-        StorageSlotDelta::Value(value) => {
+        StorageSlotPatch::Value(value) => {
             assert_eq!(*value, slot1.value())
         }
     );
     assert_matches!(
         tx.account_delta().storage().get(&slot_name2).unwrap(),
-        StorageSlotDelta::Map(map_delta) => {
+        StorageSlotPatch::Map(map_patch) => {
             let expected = &BTreeMap::from_iter(map_entries);
-            assert_eq!(expected, map_delta.entries())
+            assert_eq!(expected, map_patch.entries())
         }
     );
 
@@ -1471,7 +1471,7 @@ async fn transaction_executor_account_code_using_custom_library() -> anyhow::Res
     assert_eq!(executed_tx.account_delta().storage().values().count(), 1);
     assert_eq!(
         executed_tx.account_delta().storage().get(&MOCK_VALUE_SLOT0).unwrap(),
-        &StorageSlotDelta::Value(slot_value),
+        &StorageSlotPatch::Value(slot_value),
     );
     Ok(())
 }

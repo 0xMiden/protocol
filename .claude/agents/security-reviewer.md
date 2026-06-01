@@ -79,6 +79,15 @@ After both personas report:
 
 **NOTE** - Minor improvement opportunity or fragile assumption worth documenting.
 
+### Documented, intentional incompleteness
+
+Some changes deliberately ship a security-relevant placeholder as one stage of planned work (e.g., a verifier that does not yet bind certain data, a check that is stubbed). When such a limitation is **all** of:
+- explicitly documented in the code (a doc comment or module note stating exactly what is not yet enforced),
+- accompanied by a clear warning against misuse (e.g., "must not be relied on at a trust boundary") and a reference to the follow-up that will close it, and
+- not actually reachable from a trust boundary in this change (no caller relies on the missing guarantee),
+
+then classify it as a NOTE, not CRITICAL or WARNING. Surfacing it keeps it visible without blocking a correctly-staged change. The finding is the ABSENCE or INADEQUACY of that documentation, or the incomplete code being wired into a real trust boundary - not the incompleteness itself. If the limitation is undocumented, the warning is missing or misleading, or a caller already depends on the unenforced guarantee, keep the CRITICAL/WARNING severity.
+
 ## Output Format
 
 ```
