@@ -41,9 +41,9 @@ An [Asset](asset) can be fungible and non-fungible. They are stored in the owner
 
 ### Transactions
 
-A [Transaction](transaction) describes the production and consumption of notes by a single account.
+A [Transaction](transaction) describes the state transition of a single account. This commonly involves producing and consuming notes, but more generally it captures any change to an account's state, such as executing a public smart contract function.
 
-Executing a transaction always results in a STARK proof.
+After a transaction is executed, a STARK proof must be created to attest to its correctness before submitting it to the network. This proving step can be done separately from execution, for example by a "remote prover" running a powerful machine.
 
 The [transaction chapter](transaction) describes the transaction design and implementation, including an in-depth discussion of how transaction execution happens in the transaction kernel program.
 
