@@ -392,7 +392,8 @@ impl FungibleFaucet {
     /// `execute_burn_policy`, `check_policy` (allow_all / blocklist / allowlist) and the metadata
     /// setters can read it without panicking. Pause / unpause administration is exposed by the
     /// [`crate::account::access::pausable::PausableManager`] component, which is bundled by
-    /// [`create_fungible_faucet`] alongside this faucet so the slot is always actionable.
+    /// [`create_user_fungible_faucet`] / [`create_network_fungible_faucet`] alongside this faucet
+    /// so the slot is always actionable.
     pub fn into_storage_slots(self) -> Vec<StorageSlot> {
         let mut slots: Vec<StorageSlot> = Vec::new();
         slots.push(self.token_config_slot_value());
@@ -714,7 +715,7 @@ fn validate_network_faucet_auth(
         AccountAuthScheme::SingleSig | AccountAuthScheme::SingleSigAcl => {
             Err(FungibleFaucetError::UnsupportedAccessControlAuthCombination(
                 "SingleSig is only supported with create_user_fungible_faucet \
-                 (AccessControl::AuthControlled)"
+                 (Authority::AuthControlled)"
                     .into(),
             ))
         },
