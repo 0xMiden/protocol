@@ -1,0 +1,103 @@
+use miden::core::mem
+
+use miden::batch_kernel::memory
+use miden::batch_kernel::memory::TX_TUPLES_PTR
+
+# PROLOGUE
+# =================================================================================================
+
+#! Loads and verifies the batch's structural commitments from the advice provider.
+#!
+#! Performs two steps:
+#! - Layer 1: pipes the `(tx_id, account_id)` tuples from the advice map keyed by `BATCH_ID` into
+#!   [`memory::TX_TUPLES_PTR`], asserting that the sequential hash of the piped data matches
+#!   `BATCH_ID`. The number of transactions is derived from the piped length and stored in
+#!   [`memory::NUM_TRANSACTIONS_PTR`].
+#! - Layer 2: for each transaction, pipes the felt sequence hashed by `TransactionId::new` from the
+#!   advice map keyed by the verified `tx_id`, asserting that the sequential hash matches the
+#!   `tx_id`. Each transaction's data is written into [`memory::TX_HEADERS_PTR`] at the appropriate
+#!   per-tx offset.
+#!
+#! `BATCH_ID` is the batch's `BatchId` value, i.e. the sequential hash of the `(tx_id, account_id)`
+#! tuples committing to the transactions in the batch.
+#!
+#! Inputs:
+#!   Operand stack: [BATCH_ID]
+#!   Advice map:
+#!     BATCH_ID |-> [(tx_id_0, account_id_0_pair), (tx_id_1, account_id_1_pair), ...]
+#!     For each verified tx_id_i:
+#!       tx_id_i |-> [INIT_i, FINAL_i, INPUT_NOTES_COMMITMENT_i, OUTPUT_NOTES_COMMITMENT_i,
+#!                    FEE_ASSET_i]
+#!
+#! Outputs:
+#!   Operand stack: []
+#!
+#! Panics if:
+#! - the `(tx_id, account_id)` tuple list piped from the advice map does not hash to `BATCH_ID`.
+#! - a transaction's `(INIT, FINAL, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, FEE_ASSET)`
+#!   data piped from the advice map does not hash to its `tx_id`.
+#!
+#! TODO: verify that each transaction's reference block is contained in the chain MMR rooted at
+#!       BLOCK_COMMITMENT.
+#! TODO: verify that the partial-blockchain peaks hash matches the block header's chain commitment.
+pub proc prepare_batch
+    # Layer 1: pipe BATCH_ID's mapped value to tx_tuples_ptr + verify.
+    # ---------------------------------------------------------------------------------------------
+
+    # Stack: [BATCH_ID]
+    push.TX_TUPLES_PTR movdn.4
+    # Stack: [BATCH_ID, tx_tuples_ptr]
+
+    adv.push_mapvaln
+    # AS: [len_felts, data...]
+
+    adv_push div.4
+    # Stack: [num_words, BATCH_ID, tx_tuples_ptr]
+
+    # num_transactions = num_words / 2 (each tx contributes 2 words: tx_id + account_id_pair).
+    dup div.2 exec.memory::set_num_transactions
+
+    movup.5 swap
+    # Stack: [num_words, tx_tuples_ptr, BATCH_ID]
+
+    # Pipe the tuples into memory, asserting their poseidon2 hash equals BATCH_ID.
+    exec.mem::pipe_preimage_to_memory
+    # Stack: [end_ptr]
+    drop
+
+    # Layer 2: for each transaction, pipe + verify its header.
+    # ---------------------------------------------------------------------------------------------
+
+    exec.memory::get_num_transactions
+    push.0
+    # Stack: [tx_index, num_transactions]
+
+    dup.1 dup.1 neq
+    # Stack: [should_loop, tx_index, num_transactions]
+
+    while.true
+        dup exec.memory::get_tx_id
+        # Stack: [TX_ID, tx_index, num_transactions]
+
+        dup.4 exec.memory::tx_header_ptr movdn.4
+        # Stack: [TX_ID, tx_header_ptr, tx_index, num_transactions]
+
+        adv.push_mapvaln
+        adv_push div.4
+        # Stack: [num_words, TX_ID, tx_header_ptr, tx_index, num_transactions]
+
+        movup.5 swap
+        # Stack: [num_words, tx_header_ptr, TX_ID, tx_index, num_transactions]
+
+        # Pipe the header into memory, asserting its poseidon2 hash equals TX_ID.
+        exec.mem::pipe_preimage_to_memory
+        # Stack: [end_ptr, tx_index, num_transactions]
+        drop
+
+        add.1
+        dup.1 dup.1 neq
+        # Stack: [should_loop, tx_index, num_transactions]
+    end
+
+    drop drop
+end

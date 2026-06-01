@@ -1,0 +1,209 @@
+# MEMORY LAYOUT
+# =================================================================================================
+#
+# Below is the memory layout used by the batch kernel:
+#
+# +-------------------+-------------------------+----------------------------------+
+# | Address range     | Constant                | Contents                         |
+# +-------------------+-------------------------+----------------------------------+
+# | 0                 | NUM_TRANSACTIONS_PTR    | num_transactions (1 felt).       |
+# | 4..8              | BATCH_HASHER_RATE0_PTR  | RATE0 of the batch-level         |
+# |                   |                         | poseidon2 hasher state.          |
+# | 8..12             | BATCH_HASHER_RATE1_PTR  | RATE1 of the batch-level hasher. |
+# | 12..16            | BATCH_HASHER_CAP_PTR    | CAPACITY of the batch-level      |
+# |                   |                         | hasher.                          |
+# | 16                | SCRATCH_WORDS_COUNT_PTR | num_words piped into             |
+# |                   |                         | TX_NOTES_SCRATCH_PTR for the     |
+# |                   |                         | current transaction.             |
+# | 17                | SCRATCH_WORD_INDEX_PTR  | current iteration cursor for the |
+# |                   |                         | scratch absorption loop.         |
+# | 20..8212          | TX_TUPLES_PTR           | Layer 1 piped data: per          |
+# |                   |                         | transaction `[tx_id[4],          |
+# |                   |                         | account_id_prefix,               |
+# |                   |                         | account_id_suffix, 0, 0]`        |
+# |                   |                         | (8 felts each, sized for up to   |
+# |                   |                         | 1024 transactions).              |
+# | 8212..32788       | TX_HEADERS_PTR          | Layer 2 piped data: per          |
+# |                   |                         | transaction the felt sequence    |
+# |                   |                         | TransactionId::new hashes        |
+# |                   |                         | (24 felts each, sized for up to  |
+# |                   |                         | 1024 transactions).              |
+# | 32788..40980      | TX_NOTES_SCRATCH_PTR    | Per-transaction scratch space    |
+# |                   |                         | for Layer 3 / Layer 3' note      |
+# |                   |                         | data (overwritten each tx).      |
+# +-------------------+-------------------------+----------------------------------+
+
+# BOOK KEEPING
+# =================================================================================================
+
+#! Single-felt slot holding `num_transactions` after Layer 1 verification.
+const NUM_TRANSACTIONS_PTR=0
+
+# BATCH HASHER STATE
+# =================================================================================================
+
+#! Word holding the RATE0 portion of the batch-level poseidon2 hasher state.
+const BATCH_HASHER_RATE0_PTR=4
+
+#! Word holding the RATE1 portion of the batch-level poseidon2 hasher state.
+const BATCH_HASHER_RATE1_PTR=8
+
+#! Word holding the CAPACITY portion of the batch-level poseidon2 hasher state.
+const BATCH_HASHER_CAP_PTR=12
+
+# SCRATCH BOOKKEEPING
+# =================================================================================================
+
+#! Number of words piped into TX_NOTES_SCRATCH_PTR for the transaction whose Layer 3 / 3' is
+#! being absorbed.
+const SCRATCH_WORDS_COUNT_PTR=16
+
+#! Iteration cursor (index in words) into TX_NOTES_SCRATCH_PTR for the absorption loop.
+const SCRATCH_WORD_INDEX_PTR=17
+
+# PIPED DATA REGIONS
+# =================================================================================================
+
+#! Base of the Layer 1 piped data region. Per transaction, 8 felts:
+#!   `[tx_id[4], account_id_prefix, account_id_suffix, 0, 0]`.
+pub const TX_TUPLES_PTR=20
+
+#! Number of felts each transaction occupies in TX_TUPLES_PTR.
+const TX_TUPLE_FELT_LEN=8
+
+#! Base of the Layer 2 piped data region. Per transaction, 24 felts:
+#!   `[INIT[4], FINAL[4], INPUT_NOTES_COMMITMENT[4], OUTPUT_NOTES_COMMITMENT[4], FEE_ASSET[8]]`.
+#! This must match the felt-sequence layout of `TransactionId::new`.
+const TX_HEADERS_PTR=8212
+
+#! Number of felts each transaction occupies in TX_HEADERS_PTR.
+const TX_HEADER_FELT_LEN=24
+
+#! Felt offset within a transaction header where INPUT_NOTES_COMMITMENT starts.
+const TX_HEADER_INPUT_NOTES_OFFSET=8
+
+#! Felt offset within a transaction header where OUTPUT_NOTES_COMMITMENT starts.
+const TX_HEADER_OUTPUT_NOTES_OFFSET=12
+
+#! Per-transaction scratch space for Layer 3 note data, overwritten between iterations.
+pub const TX_NOTES_SCRATCH_PTR=32788
+
+# NUM TRANSACTIONS
+# =================================================================================================
+
+#! Stores `num_transactions`.
+#!
+#! Inputs:  [num_transactions]
+#! Outputs: []
+pub proc set_num_transactions
+    mem_store.NUM_TRANSACTIONS_PTR
+end
+
+#! Returns `num_transactions`.
+#!
+#! Inputs:  []
+#! Outputs: [num_transactions]
+pub proc get_num_transactions
+    mem_load.NUM_TRANSACTIONS_PTR
+end
+
+# BATCH HASHER STATE
+# =================================================================================================
+
+#! Persists the batch hasher state from the operand stack into memory.
+#!
+#! Inputs:  [RATE0, RATE1, CAPACITY]
+#! Outputs: []
+pub proc save_batch_hasher_state
+    mem_storew_le.BATCH_HASHER_RATE0_PTR dropw
+    mem_storew_le.BATCH_HASHER_RATE1_PTR dropw
+    mem_storew_le.BATCH_HASHER_CAP_PTR dropw
+end
+
+#! Loads the batch hasher state from memory onto the operand stack.
+#!
+#! Inputs:  []
+#! Outputs: [RATE0, RATE1, CAPACITY]
+pub proc load_batch_hasher_state
+    padw mem_loadw_le.BATCH_HASHER_CAP_PTR
+    padw mem_loadw_le.BATCH_HASHER_RATE1_PTR
+    padw mem_loadw_le.BATCH_HASHER_RATE0_PTR
+end
+
+# SCRATCH BOOKKEEPING
+# =================================================================================================
+
+#! Stores the count (in words) of data piped into the per-transaction scratch.
+#!
+#! Inputs:  [num_words]
+#! Outputs: []
+pub proc set_scratch_words_count
+    mem_store.SCRATCH_WORDS_COUNT_PTR
+end
+
+#! Returns the count (in words) of data piped into the per-transaction scratch.
+#!
+#! Inputs:  []
+#! Outputs: [num_words]
+pub proc get_scratch_words_count
+    mem_load.SCRATCH_WORDS_COUNT_PTR
+end
+
+#! Stores the absorption iteration cursor (index in words).
+#!
+#! Inputs:  [word_index]
+#! Outputs: []
+pub proc set_scratch_word_index
+    mem_store.SCRATCH_WORD_INDEX_PTR
+end
+
+#! Returns the absorption iteration cursor (index in words).
+#!
+#! Inputs:  []
+#! Outputs: [word_index]
+pub proc get_scratch_word_index
+    mem_load.SCRATCH_WORD_INDEX_PTR
+end
+
+# TRANSACTION TUPLE / HEADER ACCESSORS
+# =================================================================================================
+
+#! Returns a pointer to transaction `tx_index`'s entry in TX_TUPLES_PTR.
+#!
+#! Inputs:  [tx_index]
+#! Outputs: [tx_tuple_ptr]
+pub proc tx_tuple_ptr
+    mul.TX_TUPLE_FELT_LEN add.TX_TUPLES_PTR
+end
+
+#! Returns the verified `tx_id` for transaction `tx_index` (loaded from TX_TUPLES_PTR).
+#!
+#! Inputs:  [tx_index]
+#! Outputs: [TX_ID]
+pub proc get_tx_id
+    exec.tx_tuple_ptr padw movup.4 mem_loadw_le
+end
+
+#! Returns a pointer to transaction `tx_index`'s entry in TX_HEADERS_PTR.
+#!
+#! Inputs:  [tx_index]
+#! Outputs: [tx_header_ptr]
+pub proc tx_header_ptr
+    mul.TX_HEADER_FELT_LEN add.TX_HEADERS_PTR
+end
+
+#! Returns the verified per-transaction INPUT_NOTES_COMMITMENT for transaction `tx_index`.
+#!
+#! Inputs:  [tx_index]
+#! Outputs: [INPUT_NOTES_COMMITMENT_i]
+pub proc get_tx_input_notes_commitment
+    exec.tx_header_ptr add.TX_HEADER_INPUT_NOTES_OFFSET padw movup.4 mem_loadw_le
+end
+
+#! Returns the verified per-transaction OUTPUT_NOTES_COMMITMENT for transaction `tx_index`.
+#!
+#! Inputs:  [tx_index]
+#! Outputs: [OUTPUT_NOTES_COMMITMENT_i]
+pub proc get_tx_output_notes_commitment
+    exec.tx_header_ptr add.TX_HEADER_OUTPUT_NOTES_OFFSET padw movup.4 mem_loadw_le
+end

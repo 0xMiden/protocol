@@ -4,6 +4,7 @@
 
 ### Changes
 - Added a skeleton batch kernel ([#1122](https://github.com/0xMiden/protocol/issues/1122)) wired through `LocalBatchProver::prove` and attached to `ProvenBatch` as an `ExecutionProof`. It does not yet perform any verification.
+- The batch kernel now verifies the batch's transaction list against its `BATCH_ID`, verifies each transaction header, and computes the batch `INPUT_NOTES_COMMITMENT` ([#2905](https://github.com/0xMiden/protocol/pull/2905)).
 
 - [BREAKING] Renamed `AccountStorageDelta` to `AccountStoragePatch` ([#3002](https://github.com/0xMiden/protocol/pull/3002)).
 - [BREAKING] Replaced the per-tree account and nullifier backend traits with shared `SmtBackend` and `SmtBackendReader` traits, split into read-only and read-write capabilities, enabling read-only `LargeSmt`-backed tree views via `reader()` ([#2755](https://github.com/0xMiden/protocol/pull/2755), [#3009](https://github.com/0xMiden/protocol/pull/3009)).

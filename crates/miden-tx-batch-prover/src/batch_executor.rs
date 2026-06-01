@@ -1,4 +1,5 @@
 use miden_processor::{DefaultHost, ExecutionError, ExecutionOptions, FastProcessor};
+use miden_protocol::CoreLibrary;
 use miden_protocol::batch::{BatchKernel, BatchOutputs, ProposedBatch};
 use miden_protocol::errors::ProvenBatchError;
 
@@ -39,8 +40,14 @@ impl BatchExecutor {
         .map_err(ExecutionError::advice_error_no_context)
         .map_err(ProvenBatchError::BatchKernelExecutionFailed)?;
 
+        // The batch kernel calls `miden::core` procedures (poseidon2, mem, ...), so the core
+        // library must be available to the host at runtime.
+        let mut host = DefaultHost::default();
+        host.load_library(CoreLibrary::default().mast_forest())
+            .expect("loading the core library into the host should succeed");
+
         let trace_inputs = processor
-            .execute_trace_inputs_sync(&BatchKernel::main(), &mut DefaultHost::default())
+            .execute_trace_inputs_sync(&BatchKernel::main(), &mut host)
             .map_err(ProvenBatchError::BatchKernelExecutionFailed)?;
 
         // Parse and validate the output stack shape (padding cells are zero and the expiration
