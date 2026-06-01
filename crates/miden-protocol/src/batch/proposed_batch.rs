@@ -5,7 +5,7 @@ use alloc::vec::Vec;
 
 use crate::account::AccountId;
 use crate::batch::note_tracker::{NoteTracker, TrackerOutput};
-use crate::batch::{BatchAccountUpdate, BatchId};
+use crate::batch::{BatchAccountUpdate, BatchId, BatchNoteTree};
 use crate::block::{BlockHeader, BlockNumber};
 use crate::errors::ProposedBatchError;
 use crate::note::{NoteId, NoteInclusionProof};
@@ -63,6 +63,9 @@ pub struct ProposedBatch {
     /// batch that are not consumed within the same batch. These are sorted by
     /// [`OutputNote::id`].
     output_notes: Vec<OutputNote>,
+    /// The [`BatchNoteTree`] built over the batch's output notes, with note IDs packed at
+    /// contiguous leaf indices in the same order as `output_notes`.
+    batch_note_tree: BatchNoteTree,
 }
 
 impl ProposedBatch {
@@ -320,6 +323,12 @@ impl ProposedBatch {
             return Err(ProposedBatchError::TooManyOutputNotes(output_notes.len()));
         }
 
+        // Build the batch note tree over the final output notes. The number of output notes is
+        // bounded by the check above, so the tree's capacity cannot be exceeded.
+        let batch_note_tree =
+            BatchNoteTree::with_contiguous_leaves(output_notes.iter().map(Into::into))
+                .map_err(ProposedBatchError::NoteTreeRootError)?;
+
         // Compute batch ID.
         // --------------------------------------------------------------------------------------------
 
@@ -335,6 +344,7 @@ impl ProposedBatch {
             batch_expiration_block_num,
             input_notes,
             output_notes,
+            batch_note_tree,
         })
     }
 
@@ -452,6 +462,11 @@ impl ProposedBatch {
         &self.output_notes
     }
 
+    /// Returns the [`BatchNoteTree`] built over the batch's output notes.
+    pub fn batch_note_tree(&self) -> &BatchNoteTree {
+        &self.batch_note_tree
+    }
+
     /// Consumes the proposed batch and returns its underlying parts.
     #[allow(clippy::type_complexity)]
     pub fn into_parts(
@@ -466,6 +481,7 @@ impl ProposedBatch {
         InputNotes<InputNoteCommitment>,
         Vec<OutputNote>,
         BlockNumber,
+        BatchNoteTree,
     ) {
         (
             self.transactions,
@@ -477,6 +493,7 @@ impl ProposedBatch {
             self.input_notes,
             self.output_notes,
             self.batch_expiration_block_num,
+            self.batch_note_tree,
         )
     }
 }

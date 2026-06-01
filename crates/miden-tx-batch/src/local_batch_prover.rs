@@ -70,6 +70,7 @@ impl LocalBatchProver {
             input_notes,
             output_notes,
             batch_expiration_block_num,
+            _batch_note_tree,
         ) = proposed_batch.into_parts();
 
         ProvenBatch::new_unchecked(
