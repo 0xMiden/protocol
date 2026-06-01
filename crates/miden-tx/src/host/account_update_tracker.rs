@@ -26,17 +26,17 @@ use crate::host::vault_update_tracker::VaultUpdateTracker;
 /// TODO: implement tracking of:
 /// - account code changes.
 #[derive(Debug, Clone)]
-pub struct AccountDeltaTracker {
+pub struct AccountUpdateTracker {
     account_id: AccountId,
     storage: StoragePatchTracker,
-    vault_tracker: VaultUpdateTracker,
+    vault: VaultUpdateTracker,
     code: Option<AccountCode>,
     initial_nonce: Felt,
     nonce_delta: Felt,
 }
 
-impl AccountDeltaTracker {
-    /// Returns a new [AccountDeltaTracker] instantiated for the specified account.
+impl AccountUpdateTracker {
+    /// Returns a new [`AccountUpdateTracker`] instantiated for the specified account.
     pub fn new(account: &PartialAccount) -> Self {
         let code = if account.is_new() {
             Some(account.code().clone())
@@ -47,7 +47,7 @@ impl AccountDeltaTracker {
         Self {
             account_id: account.id(),
             storage: StoragePatchTracker::new(account),
-            vault_tracker: VaultUpdateTracker::default(),
+            vault: VaultUpdateTracker::default(),
             code,
             nonce_delta: Felt::ZERO,
             initial_nonce: account.nonce(),
@@ -66,12 +66,12 @@ impl AccountDeltaTracker {
 
     /// Returns a reference to the vault delta.
     pub fn vault_delta(&self) -> &AccountVaultDelta {
-        self.vault_tracker.delta()
+        self.vault.delta()
     }
 
     /// Adds an asset to the vault delta and patch.
     pub fn add_asset(&mut self, update: AddedAssetUpdate) -> Result<(), TransactionKernelError> {
-        self.vault_tracker.add(update)
+        self.vault.add(update)
     }
 
     /// Removes an asset from the vault delta and patch.
@@ -79,7 +79,7 @@ impl AccountDeltaTracker {
         &mut self,
         update: RemovedAssetUpdate,
     ) -> Result<(), TransactionKernelError> {
-        self.vault_tracker.remove(update)
+        self.vault.remove(update)
     }
 
     /// Returns a mutable reference to the current storage patch tracker.
@@ -96,7 +96,7 @@ impl AccountDeltaTracker {
         let nonce_delta = self.nonce_delta;
 
         let storage_patch = self.storage.into_patch();
-        let vault_delta = self.vault_tracker.into_delta();
+        let vault_delta = self.vault.into_delta();
 
         AccountDelta::new(account_id, storage_patch, vault_delta, nonce_delta)
             .expect("account delta created in delta tracker should be valid")
@@ -110,7 +110,7 @@ impl AccountDeltaTracker {
     #[allow(unused, reason = "TODO(patch): will be used in an upcoming PR")]
     pub fn into_patch(self) -> AccountPatch {
         let storage_patch = self.storage.into_patch();
-        let vault_patch = self.vault_tracker.into_patch();
+        let vault_patch = self.vault.into_patch();
 
         let new_nonce = if self.nonce_delta == Felt::ZERO {
             None

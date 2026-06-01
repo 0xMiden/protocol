@@ -239,7 +239,7 @@ where
         let current_fee_asset = {
             let fee_asset_amount_delta = self
                 .base_host
-                .account_delta_tracker()
+                .account_update_tracker()
                 .vault_delta()
                 .fungible()
                 .amount(&initial_fee_asset.vault_key())
