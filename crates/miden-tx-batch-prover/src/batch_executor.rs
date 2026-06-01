@@ -46,9 +46,9 @@ impl BatchExecutor {
         // Parse and validate the output stack shape (padding cells are zero and the expiration
         // fits in u32); the actual output values themselves are not checked until the kernel
         // verifies them.
-        BatchOutputs::parse(trace_inputs.stack_outputs())
+        let batch_outputs = BatchOutputs::parse(trace_inputs.stack_outputs())
             .map_err(ProvenBatchError::BatchKernelOutputInvalid)?;
 
-        Ok(ExecutedBatch::new(proposed_batch, trace_inputs))
+        Ok(ExecutedBatch::new(proposed_batch, trace_inputs, batch_outputs))
     }
 }

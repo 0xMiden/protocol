@@ -1,5 +1,5 @@
-use miden_processor::{StackOutputs, TraceBuildInputs};
-use miden_protocol::batch::ProposedBatch;
+use miden_processor::TraceBuildInputs;
+use miden_protocol::batch::{BatchOutputs, ProposedBatch};
 
 // EXECUTED BATCH
 // ================================================================================================
@@ -12,13 +12,22 @@ use miden_protocol::batch::ProposedBatch;
 pub struct ExecutedBatch {
     proposed_batch: ProposedBatch,
     trace_inputs: TraceBuildInputs,
+    batch_outputs: BatchOutputs,
 }
 
 impl ExecutedBatch {
-    /// Creates a new [`ExecutedBatch`] from the proposed batch and the trace inputs produced by
-    /// executing the batch kernel over it.
-    pub(crate) fn new(proposed_batch: ProposedBatch, trace_inputs: TraceBuildInputs) -> Self {
-        Self { proposed_batch, trace_inputs }
+    /// Creates a new [`ExecutedBatch`] from the proposed batch, the trace inputs and the public
+    /// outputs produced by executing the batch kernel over it.
+    pub(crate) fn new(
+        proposed_batch: ProposedBatch,
+        trace_inputs: TraceBuildInputs,
+        batch_outputs: BatchOutputs,
+    ) -> Self {
+        Self {
+            proposed_batch,
+            trace_inputs,
+            batch_outputs,
+        }
     }
 
     /// Returns the [`ProposedBatch`] this batch was executed from.
@@ -26,9 +35,9 @@ impl ExecutedBatch {
         &self.proposed_batch
     }
 
-    /// Returns the public outputs the batch kernel left on the stack.
-    pub fn stack_outputs(&self) -> &StackOutputs {
-        self.trace_inputs.stack_outputs()
+    /// Returns the public outputs produced by the batch kernel.
+    pub fn batch_outputs(&self) -> &BatchOutputs {
+        &self.batch_outputs
     }
 
     /// Consumes the executed batch, returning the proposed batch and the trace inputs needed to
