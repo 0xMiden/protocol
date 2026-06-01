@@ -177,6 +177,9 @@ impl AccountPatch {
     ///         - For partial state deltas, the map header must only be included if
     ///           `num_changed_entries` is not zero.
     ///         - For full state deltas, the map header must always be included.
+    ///
+    /// Headers for storage map slots and asset patches are appended rather than prepended since the
+    /// tx kernel cannot efficiently get the number of changed entries before the iteration.
     pub fn to_commitment(&self) -> Word {
         <Self as SequentialCommit>::to_commitment(self)
     }
