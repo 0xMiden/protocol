@@ -427,11 +427,11 @@ pub enum AccountDeltaError {
 
 #[derive(Debug, Error)]
 pub enum AccountPatchError {
-    #[error("new_nonce can never be set to zero")]
-    NewNonceIsZero,
+    #[error("final nonce can never be set to zero")]
+    FinalNonceIsZero,
 
-    #[error("non-empty account storage or vault patch with new_nonce set to zero is not allowed")]
-    NonEmptyStorageOrVaultDeltaWithZeroNonceDelta,
+    #[error("non-empty account storage or vault patch with final nonce set to zero is not allowed")]
+    NonEmptyStorageOrVaultPatchWithZeroNonce,
 
     #[error("account code must be provided for new accounts (with nonce = 1)")]
     CodeMustBeProvidedForNewAccounts,

@@ -31,7 +31,7 @@ pub struct AccountDeltaTracker {
     storage: StoragePatchTracker,
     vault_tracker: VaultUpdateTracker,
     code: Option<AccountCode>,
-    old_nonce: Felt,
+    initial_nonce: Felt,
     nonce_delta: Felt,
 }
 
@@ -50,7 +50,7 @@ impl AccountDeltaTracker {
             vault_tracker: VaultUpdateTracker::default(),
             code,
             nonce_delta: Felt::ZERO,
-            old_nonce: account.nonce(),
+            initial_nonce: account.nonce(),
         }
     }
 
@@ -116,10 +116,10 @@ impl AccountDeltaTracker {
             None
         } else {
             debug_assert!(
-                self.old_nonce.as_canonical_u64() < (Felt::ORDER - 1),
+                self.initial_nonce.as_canonical_u64() < (Felt::ORDER - 1),
                 "tx kernel should abort if nonce would overflow"
             );
-            Some(self.old_nonce + self.nonce_delta)
+            Some(self.initial_nonce + self.nonce_delta)
         };
 
         AccountPatch::new(self.account_id, storage_patch, vault_patch, self.code, new_nonce)
