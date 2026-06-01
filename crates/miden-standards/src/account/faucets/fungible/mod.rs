@@ -32,7 +32,7 @@ use super::{
     TokenMetadataError,
     TokenName,
 };
-use crate::account::access::{AccessControl, Authority};
+use crate::account::access::{AccessControl, Authority, PausableManager};
 use crate::account::account_component_code;
 use crate::account::auth::{AccountAuthComponent, AccountAuthScheme, AuthSingleSigAclConfig};
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
@@ -385,11 +385,19 @@ impl FungibleFaucet {
     }
 
     /// Returns the storage slots produced by this faucet (token config word + name + mutability
-    /// config + description + logo URI + external link).
+    /// config + description + logo URI + external link + Pausable's `is_paused` flag).
+    ///
+    /// The `is_paused` slot is installed by FungibleFaucet itself (initial value: unpaused, zero
+    /// word) so that the transversal pause guards baked into `execute_mint_policy`,
+    /// `execute_burn_policy`, `check_policy` (allow_all / blocklist / allowlist) and the metadata
+    /// setters can read it without panicking. Pause / unpause administration is exposed by the
+    /// [`crate::account::access::pausable::PausableManager`] component, which is bundled by
+    /// [`create_fungible_faucet`] alongside this faucet so the slot is always actionable.
     pub fn into_storage_slots(self) -> Vec<StorageSlot> {
         let mut slots: Vec<StorageSlot> = Vec::new();
         slots.push(self.token_config_slot_value());
         slots.extend(self.metadata.into_storage_slots());
+        slots.push(crate::account::access::pausable::PausableStorage::default().into_slot());
         slots
     }
 
@@ -572,11 +580,18 @@ fn all_authority_gated_setter_roots() -> Vec<AccountProcedureRoot> {
         TokenPolicyManager::set_burn_policy_root(),
         TokenPolicyManager::set_send_policy_root(),
         TokenPolicyManager::set_receive_policy_root(),
+        PausableManager::pause_root(),
+        PausableManager::unpause_root(),
     ]
 }
 
 /// Creates a new **user-account** fungible faucet. The account's auth component is the sole
 /// gate for authority-protected setters ([`Authority::AuthControlled`] is installed directly).
+///
+/// In addition to the explicit parameters, [`PausableManager`] is always bundled so the
+/// `is_paused` slot installed by [`FungibleFaucet::into_storage_slots`] is actionable via
+/// `pause` / `unpause` admin procedures (gated by the [`Authority::AuthControlled`] component
+/// installed by this factory).
 ///
 /// The caller provides any [`AccountAuthComponent`]; the factory validates the scheme:
 ///
@@ -646,6 +661,7 @@ pub fn create_network_fungible_faucet(
         .with_component(faucet)
         .with_components(access_control)
         .with_components(token_policy_manager)
+        .with_component(PausableManager)
         .build()
         .map_err(FungibleFaucetError::AccountError)?;
 

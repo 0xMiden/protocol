@@ -85,6 +85,7 @@ impl ProvenTransaction {
     /// - The total number of output notes is greater than
     ///   [`MAX_OUTPUT_NOTES_PER_TX`](crate::constants::MAX_OUTPUT_NOTES_PER_TX).
     /// - The vector of output notes contains duplicates.
+    /// - The set of input and output notes contains the same note.
     /// - The transaction is empty, which is the case if the account state is unchanged or the
     ///   number of input notes is zero.
     /// - The commitment computed on the actual account delta contained in [`TxAccountUpdate`] does
@@ -107,6 +108,16 @@ impl ProvenTransaction {
             InputNotes::new(input_notes).map_err(ProvenTransactionError::InputNotesError)?;
         let output_notes =
             OutputNotes::new(output_notes).map_err(ProvenTransactionError::OutputNotesError)?;
+
+        // Disallow creating and consuming notes with the same ID in a transaction. This is a
+        // circular dependency that can be abused (see https://github.com/0xMiden/protocol/issues/2796).
+        // This is only relevant for unauthenticated notes (notes with a header), since only these
+        // can be erased at batch or block level. Authenticated notes don't exhibit this issue.
+        for input_note in input_notes.iter().filter_map(InputNoteCommitment::header) {
+            if output_notes.iter().any(|output_note| output_note.id() == input_note.id()) {
+                return Err(ProvenTransactionError::NoteCreatedAndConsumed(input_note.id()));
+            }
+        }
 
         let id = TransactionId::new(
             account_update.initial_state_commitment(),
@@ -606,11 +617,11 @@ mod tests {
         AccountDelta,
         AccountId,
         AccountIdVersion,
-        AccountStorageDelta,
+        AccountStoragePatch,
         AccountType,
         AccountVaultDelta,
-        StorageMapDelta,
         StorageMapKey,
+        StorageMapPatch,
         StorageSlotName,
     };
     use crate::asset::FungibleAsset;
@@ -677,12 +688,12 @@ mod tests {
         for _ in 0..required_entries {
             map.insert(StorageMapKey::from_raw(rand_value()), rand_value::<Word>());
         }
-        let storage_delta = StorageMapDelta::new(map);
+        let storage_patch = StorageMapPatch::new(map);
 
         // A delta that exceeds the limit returns an error.
-        let storage_delta =
-            AccountStorageDelta::from_iters([], [], [(StorageSlotName::mock(4), storage_delta)]);
-        let delta = AccountDelta::new(account_id, storage_delta, AccountVaultDelta::default(), ONE)
+        let storage_patch =
+            AccountStoragePatch::from_iters([], [], [(StorageSlotName::mock(4), storage_patch)]);
+        let delta = AccountDelta::new(account_id, storage_patch, AccountVaultDelta::default(), ONE)
             .unwrap();
         let details = AccountUpdateDetails::Delta(delta);
         let details_size = details.get_size_hint();

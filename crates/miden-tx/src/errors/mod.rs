@@ -25,7 +25,6 @@ use miden_protocol::errors::{
 use miden_protocol::note::{NoteId, PartialNoteMetadata};
 use miden_protocol::transaction::TransactionSummary;
 use miden_protocol::{Felt, Word};
-use miden_verifier::VerificationError;
 use thiserror::Error;
 
 // NOTE EXECUTION ERROR
@@ -150,6 +149,16 @@ pub enum TransactionExecutorError {
     MissingAuthenticator,
 }
 
+#[cfg(any(test, feature = "testing"))]
+impl TransactionExecutorError {
+    pub fn unwrap_unauthorized_err(self) -> Box<TransactionSummary> {
+        match self {
+            TransactionExecutorError::Unauthorized(transaction_summary) => transaction_summary,
+            other => panic!("expected TransactionExecutorError::Unauthorized, got {other}"),
+        }
+    }
+}
+
 // TRANSACTION PROVER ERROR
 // ================================================================================================
 
@@ -198,17 +207,6 @@ impl TransactionProverError {
             source: Some(Box::new(source)),
         }
     }
-}
-
-// TRANSACTION VERIFIER ERROR
-// ================================================================================================
-
-#[derive(Debug, Error)]
-pub enum TransactionVerifierError {
-    #[error("failed to verify transaction")]
-    TransactionVerificationFailed(#[source] VerificationError),
-    #[error("transaction proof security level is {actual} but must be at least {expected_minimum}")]
-    InsufficientProofSecurityLevel { actual: u32, expected_minimum: u32 },
 }
 
 // TRANSACTION KERNEL ERROR

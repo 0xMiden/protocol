@@ -2,6 +2,7 @@ use miden_crypto::merkle::smt::LeafIndex;
 
 use super::AccountId;
 use crate::Word;
+use crate::account::AccountIdPrefix;
 use crate::crypto::merkle::smt::SMT_DEPTH;
 use crate::errors::AccountIdError;
 
@@ -47,6 +48,13 @@ impl AccountIdKey {
     /// Validates structure before converting.
     pub fn try_from_word(word: Word) -> Result<AccountId, AccountIdError> {
         AccountId::try_from_elements(word[Self::KEY_SUFFIX_IDX], word[Self::KEY_PREFIX_IDX])
+    }
+
+    /// Returns the SMT key for an account ID prefix, with only the prefix field set.
+    pub(crate) fn id_prefix_to_smt_key(prefix: AccountIdPrefix) -> Word {
+        let mut key = Word::empty();
+        key[Self::KEY_PREFIX_IDX] = prefix.as_felt();
+        key
     }
 
     // LEAF INDEX

@@ -15,12 +15,12 @@ version.workspace      = true
 [lib]
 bench   = false
 doctest = false
+test    = false
 
 [features]
 default = ["std"]
-std     = ["miden-protocol/std", "miden-tx/std"]
+std     = ["miden-protocol/std"]
 testing = []
 
 [dependencies]
 miden-protocol = { workspace = true }
-miden-tx       = { workspace = true }

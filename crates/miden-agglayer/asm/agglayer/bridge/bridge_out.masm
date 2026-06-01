@@ -22,6 +22,7 @@ use agglayer::common::eth_address::EthereumAddressFormat
 # =================================================================================================
 
 const ERR_B2AGG_DESTINATION_NETWORK_IS_MIDEN = "B2AGG note destination network ID must not be Miden's AggLayer network ID"
+const ERR_B2AGG_NOTE_MUST_BE_PUBLIC = "B2AGG note must be public"
 
 # CONSTANTS
 # =================================================================================================
@@ -106,11 +107,15 @@ const BURN_NOTE_NUM_STORAGE_ITEMS=0
 #! - dest_address(5) are 5 u32 values representing a 20-byte Ethereum address.
 #!
 #! Panics if:
+#! - the B2AGG note calling `bridge_out` is not public.
 #! - destination network ID is Miden's AggLayer network ID.
 #!
 #! Invocation: call
 @locals(15)
 pub proc bridge_out
+    exec.active_note::is_public assert.err=ERR_B2AGG_NOTE_MUST_BE_PUBLIC
+    # => [ASSET_KEY, ASSET_VALUE, dest_network_id, dest_address(5), pad(2)]
+
     # Save ASSET to local memory for later BURN note creation
     locaddr.BRIDGE_OUT_BURN_ASSET_LOC
     exec.asset::store
@@ -560,7 +565,7 @@ end
 
 #! Computes the SERIAL_NUM of the outputted BURN note.
 #!
-#! The serial number is computed as hash(B2AGG_SERIAL_NUM, ASSET_KEY).
+#! The serial number is computed as hash([num_leaves, 0, 0, 0], hash(B2AGG_SERIAL_NUM, ASSET_KEY))).
 #!
 #! Inputs:  [ASSET_KEY]
 #! Outputs: [SERIAL_NUM]
@@ -568,11 +573,20 @@ end
 #! Where:
 #! - ASSET_KEY is the vault key from which to compute the burn note serial number.
 #! - SERIAL_NUM is the computed serial number for the BURN note.
+#! - num_leaves is the number of leaves in the Local Exit Tree, post-append.
 #!
 #! Invocation: exec
 proc compute_burn_note_serial_num
     exec.active_note::get_serial_number
     # => [B2AGG_SERIAL_NUM, ASSET_KEY]
+
+    exec.poseidon2::merge
+    # => [SERIAL_AND_ASSET_HASH]
+
+    # load num_leaves from its value slot and merge it with the intermediate hash word
+    push.LET_NUM_LEAVES_SLOT[0..2]
+    exec.active_account::get_item
+    # => [num_leaves, 0, 0, 0, SERIAL_AND_ASSET_HASH]
 
     exec.poseidon2::merge
     # => [SERIAL_NUM]

@@ -1,5 +1,8 @@
 use alloc::borrow::Cow;
 
+use miden_processor::ExecutionError;
+use miden_processor::operation::OperationError;
+
 use crate::Felt;
 
 /// A convenience wrapper around an error extracted from Miden Assembly source files.
@@ -28,6 +31,30 @@ impl MasmError {
     /// Returns the code of this error.
     pub fn code(&self) -> Felt {
         crate::assembly::mast::error_code_from_msg(&self.message)
+    }
+
+    /// Returns `true` if `error` is an `OperationError::FailedAssertion` whose `err_code` equals
+    /// this error's [code](Self::code).
+    ///
+    /// If the actual error carries an `err_msg`, it must also equal this error's
+    /// [message](Self::message); an absent `err_msg` is accepted.
+    pub fn matches_execution_error(&self, error: &ExecutionError) -> bool {
+        let ExecutionError::OperationError {
+            err: OperationError::FailedAssertion { err_code, err_msg },
+            ..
+        } = error
+        else {
+            return false;
+        };
+
+        if *err_code != self.code() {
+            return false;
+        }
+
+        match err_msg {
+            Some(msg) => msg.as_ref() == self.message(),
+            None => true,
+        }
     }
 }
 

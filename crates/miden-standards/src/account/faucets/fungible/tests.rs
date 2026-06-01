@@ -12,7 +12,7 @@ use super::{
     create_user_fungible_faucet,
     user_faucet_single_sig_acl,
 };
-use crate::account::access::AccessControl;
+use crate::account::access::{AccessControl, PausableManager};
 use crate::account::auth::{AccountAuthComponent, AuthSingleSig, AuthSingleSigAcl};
 use crate::account::faucets::{Description, FungibleFaucetError, TokenMetadata, TokenName};
 use crate::account::policies::{
@@ -98,13 +98,14 @@ fn user_fungible_faucet_with_single_sig_acl() {
         pub_key_word
     );
 
-    // Config slot: 9 trigger procedures, allow_unauthorized_input_notes=true → [9, 0, 1, 0].
+    // Config slot: 11 trigger procedures (mint_and_send + 4 token metadata setters + 4 policy
+    // setters + pause + unpause), allow_unauthorized_input_notes=true → [11, 0, 1, 0].
     assert_eq!(
         faucet_account.storage().get_item(AuthSingleSigAcl::config_slot()).unwrap(),
-        [Felt::from(9_u32), Felt::ZERO, Felt::ONE, Felt::ZERO].into()
+        [Felt::from(11_u32), Felt::ZERO, Felt::ONE, Felt::ZERO].into()
     );
 
-    let stored_roots = read_trigger_procedure_roots(&faucet_account, 9);
+    let stored_roots = read_trigger_procedure_roots(&faucet_account, 11);
     let expected_roots: BTreeSet<Word> = [
         FungibleFaucet::mint_and_send_root(),
         FungibleFaucet::set_max_supply_root(),
@@ -115,6 +116,8 @@ fn user_fungible_faucet_with_single_sig_acl() {
         TokenPolicyManager::set_burn_policy_root(),
         TokenPolicyManager::set_send_policy_root(),
         TokenPolicyManager::set_receive_policy_root(),
+        PausableManager::pause_root(),
+        PausableManager::unpause_root(),
     ]
     .into_iter()
     .map(|root| root.as_word())

@@ -74,6 +74,15 @@ Categorize every finding:
 
 **Nit** - Worth improving (naming, style, minor readability, optional optimization)
 
+### Documented, intentional incompleteness
+
+A change may deliberately ship incomplete behavior as one stage of a larger, planned effort (a skeleton, placeholder, or stub). When the incompleteness is **all** of:
+- explicitly documented in the code (a doc comment or module note stating what is not yet implemented),
+- clearly scoped and warned about (the docs say what not to rely on and reference the follow-up work), and
+- not wired into any path that depends on the missing behavior being correct,
+
+then the incompleteness itself is NOT a Critical or Important finding - the change is complete for what it claims to be. Treat it as a Nit at most, or acknowledge the clear documentation under "What's Done Well". Escalate only when the documentation is missing, inaccurate, or misleading, or when the incomplete code is actually relied upon as if it were complete. Distinguish "incomplete but correct, documented, and self-contained" from "broken or silently incomplete".
+
 ## Output Format
 
 ```

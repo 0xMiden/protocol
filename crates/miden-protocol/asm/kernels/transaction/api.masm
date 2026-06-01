@@ -153,7 +153,7 @@ end
 #! - DELTA_COMMITMENT is the commitment to the account delta.
 #!
 #! Panics if:
-#! - the vault or storage delta is not empty but the nonce increment is zero.
+#! - the vault delta or storage patch is not empty but the nonce increment is zero.
 #!
 #! Invocation: dynexec
 pub proc account_compute_delta_commitment
