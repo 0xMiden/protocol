@@ -154,11 +154,12 @@ impl AccountPatch {
     ///
     /// - Append `[[final_nonce, 0, account_id_suffix, account_id_prefix], EMPTY_WORD]`, where
     ///   `account_id_{prefix,suffix}` are the prefix and suffix felts of the native account id and
-    ///   `final_nonce` is the the new nonce of the account.
+    ///   `final_nonce` is the new nonce of the account.
     /// - Asset Patch
     ///   - For each asset whose value has changed compared to the initial state of the transaction,
-    ///     sorted by its vault key:
-    ///     - Append `[ASSET_KEY, ASSET_VALUE]` which are the key and value of the asset.
+    ///     including if it was removed, sorted by its vault key:
+    ///     - Append `[ASSET_KEY, ASSET_VALUE_OR_EMPTY_WORD]` which are the key and either the value
+    ///       of the asset (for updates) or the empty word (for removals).
     ///     - Append `[[domain = 1, num_changed_assets, 0, 0], 0, 0, 0, 0]`, where
     ///       `num_changed_assets` is the number of assets that were appended.
     /// - Storage Slots are sorted by slot ID and are iterated in this order. For each slot **whose

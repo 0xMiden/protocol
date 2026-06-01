@@ -55,9 +55,9 @@ impl AccountVaultPatch {
     pub(super) fn append_patch_elements(&self, elements: &mut Vec<Felt>) {
         let domain_assets = Felt::from_u8(1);
 
-        for (asset_vault_key, asset_value) in self.entries.iter() {
+        for (asset_vault_key, asset_value_or_empty_word) in self.entries.iter() {
             elements.extend_from_slice(asset_vault_key.to_word().as_elements());
-            elements.extend_from_slice(asset_value.as_elements());
+            elements.extend_from_slice(asset_value_or_empty_word.as_elements());
         }
 
         let num_changed_assets = Felt::try_from(self.entries.len() as u64)
