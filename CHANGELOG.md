@@ -13,6 +13,10 @@
 - Added `CodeTree`, `PartialCodeTree`, `CodeWitness` and `ProcedureRoot` to prove presence or absence of procedure roots in the blockchain ([#4062](https://github.com/0xMiden/protocol/pull/4062)).
 - [BREAKING] Implemented partial batch kernel verification to check the transaction list against `BATCH_ID` and compute `INPUT_NOTES_COMMITMENT` ([#2905](https://github.com/0xMiden/protocol/pull/2905)).
 
+### Features
+
+- Added `BatchNoteTree` construction to `ProposedBatch`, exposing it via a `batch_note_tree()` accessor and including it in `into_parts` ([#3022](https://github.com/0xMiden/protocol/pull/3022)).
+
 ### Changes
 
 - Disabled asset callbacks on all AggLayer faucets by omitting their unrestricted send and receive policies ([#3865](https://github.com/0xMiden/protocol/pull/3865)).
