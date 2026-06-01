@@ -287,10 +287,7 @@ impl TransactionAdviceInputs {
         // populate Merkle store and advice map with nodes info needed to access vault assets
         self.extend_merkle_store(account.vault().inner_nodes());
         self.extend_map(
-            account
-                .vault()
-                .leaves()
-                .map(|(_, leaf)| (leaf.hash(), leaf.to_elements().collect())),
+            account.vault().leaves().map(|leaf| (leaf.hash(), leaf.to_elements().collect())),
         );
     }
 

@@ -178,11 +178,6 @@ impl AssetVaultKey {
     pub fn hash(&self) -> AssetVaultKeyHash {
         AssetVaultKeyHash::from_raw(Hasher::hash_elements(self.to_word().as_elements()))
     }
-
-    /// Returns the leaf index of a vault key in the asset vault's underlying SMT.
-    pub fn to_leaf_index(&self) -> LeafIndex<SMT_DEPTH> {
-        self.hash().to_leaf_index()
-    }
 }
 
 // ASSET VAULT KEY HASH

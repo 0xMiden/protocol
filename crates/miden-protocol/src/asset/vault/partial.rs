@@ -1,7 +1,8 @@
 use alloc::collections::BTreeMap;
 use alloc::string::ToString;
+use alloc::vec::Vec;
 
-use miden_crypto::merkle::smt::{LeafIndex, PartialSmt, SMT_DEPTH, SmtLeaf, SmtProof};
+use miden_crypto::merkle::smt::{PartialSmt, SmtLeaf, SmtProof};
 use miden_crypto::merkle::{InnerNodeInfo, MerkleError};
 
 use super::{AssetVault, AssetVaultKey};
@@ -59,7 +60,14 @@ impl PartialVault {
         let mut entries = BTreeMap::new();
 
         let partial_smt = PartialSmt::from_proofs(witnesses.into_iter().map(|witness| {
-            entries.extend(witness.entries().map(|(key, value)| (*key, *value)));
+            // Skip empty values so `entries` only ever tracks valid assets (mirrors
+            // `AssetVault::new`).
+            entries.extend(
+                witness
+                    .entries()
+                    .filter(|(_, value)| !value.is_empty())
+                    .map(|(key, value)| (*key, *value)),
+            );
             SmtProof::from(witness)
         }))
         .map_err(PartialAssetVaultError::FailedToAddProof)?;
@@ -105,13 +113,18 @@ impl PartialVault {
                 .get_value(&key.hash().as_word())
                 .map_err(PartialAssetVaultError::UntrackedAsset)?;
 
-            if !value.is_empty() {
-                Asset::from_key_value(key, value).map_err(|source| {
-                    PartialAssetVaultError::InvalidAssetForKey { key, value, source }
-                })?;
-            }
+            // Validate that the (key, value) pair forms a valid asset, even when the value is
+            // empty: an empty value paired with e.g. a non-fungible key carrying a non-zero asset
+            // id is malformed and must be rejected rather than silently tracked.
+            Asset::from_key_value(key, value).map_err(|source| {
+                PartialAssetVaultError::InvalidAssetForKey { key, value, source }
+            })?;
 
-            entries.insert(key, value);
+            // Skip empty values so `entries` stays in sync with the SMT, which treats empty values
+            // as no-ops (mirrors `AssetVault::new`).
+            if !value.is_empty() {
+                entries.insert(key, value);
+            }
         }
 
         Ok(Self { partial_smt, entries })
@@ -134,12 +147,21 @@ impl PartialVault {
     }
 
     /// Returns an iterator over all leaves of the underlying [`PartialSmt`].
-    pub fn leaves(&self) -> impl Iterator<Item = (LeafIndex<SMT_DEPTH>, &SmtLeaf)> {
-        self.partial_smt.leaves()
+    pub fn leaves(&self) -> impl Iterator<Item = &SmtLeaf> {
+        self.partial_smt.leaves().map(|(_, leaf)| leaf)
+    }
+
+    /// Returns an iterator over the [`Asset`]s tracked by this partial vault.
+    pub fn assets(&self) -> impl Iterator<Item = Asset> + '_ {
+        self.entries.iter().map(|(key, value)| {
+            Asset::from_key_value(*key, *value)
+                .expect("partial vault should only track valid assets")
+        })
     }
 
     /// Returns an iterator over the raw `(vault_key, value)` pairs tracked by this partial vault.
-    pub fn entries(&self) -> impl Iterator<Item = (&AssetVaultKey, &Word)> {
+    #[cfg(test)]
+    pub(super) fn entries(&self) -> impl Iterator<Item = (&AssetVaultKey, &Word)> {
         self.entries.iter()
     }
 
@@ -194,15 +216,16 @@ impl PartialVault {
     /// - the new root after the insertion of the leaf and the path does not match the existing root
     ///   (except when the first leaf is added).
     pub fn add(&mut self, witness: AssetWitness) -> Result<(), PartialAssetVaultError> {
-        // Collect entries first so that, if `add_proof` fails, no partial state escapes into
-        // `self.entries`. The type-level guarantee (entries are a subset of partial_smt) must
-        // hold even after an error.
-        let new_entries: alloc::vec::Vec<_> =
-            witness.entries().map(|(key, value)| (*key, *value)).collect();
+        // Take ownership of the witness' entries up front so that, if `add_proof` fails, no
+        // partial state escapes into `self.entries`. The type-level guarantee (entries are a
+        // subset of partial_smt) must hold even after an error.
+        let (proof, new_entries) = witness.into_parts();
         self.partial_smt
-            .add_proof(SmtProof::from(witness))
+            .add_proof(proof)
             .map_err(PartialAssetVaultError::FailedToAddProof)?;
-        self.entries.extend(new_entries);
+        // Skip empty values so `entries` only ever tracks valid assets (mirrors `AssetVault::new`).
+        self.entries
+            .extend(new_entries.into_iter().filter(|(_, value)| !value.is_empty()));
         Ok(())
     }
 }
@@ -221,7 +244,7 @@ impl Deserializable for PartialVault {
         let num_entries: usize = source.read()?;
         let keys = source
             .read_many_iter::<AssetVaultKey>(num_entries)?
-            .collect::<Result<alloc::vec::Vec<_>, _>>()?;
+            .collect::<Result<Vec<_>, _>>()?;
 
         Self::from_partial_smt_and_keys(partial_smt, keys)
             .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
@@ -236,6 +259,7 @@ mod tests {
     use alloc::vec::Vec;
 
     use assert_matches::assert_matches;
+    use miden_crypto::merkle::smt::Smt;
 
     use super::*;
     use crate::asset::{FungibleAsset, NonFungibleAsset};
@@ -351,6 +375,25 @@ mod tests {
         let entries_after: Vec<_> = partial.entries().map(|(k, v)| (*k, *v)).collect();
         assert_eq!(entries_before, entries_after);
         assert_eq!(partial.root(), root_before);
+
+        Ok(())
+    }
+
+    #[test]
+    fn from_partial_smt_and_keys_rejects_inconsistent_asset() -> anyhow::Result<()> {
+        let fungible = FungibleAsset::mock(500);
+        let non_fungible = NonFungibleAsset::mock(&[4, 5, 6]);
+
+        // Build an SMT that stores a non-fungible value under a fungible key's hashed slot, then
+        // wrap it in a partial SMT covering that key.
+        let fungible_key = fungible.vault_key();
+        let inconsistent_smt =
+            Smt::with_entries([(fungible_key.hash().as_word(), non_fungible.to_value_word())])?;
+        let proof = inconsistent_smt.open(&fungible_key.hash().as_word());
+        let partial_smt = PartialSmt::from_proofs([proof])?;
+
+        let err = PartialVault::from_partial_smt_and_keys(partial_smt, [fungible_key]).unwrap_err();
+        assert_matches!(err, PartialAssetVaultError::InvalidAssetForKey { .. });
 
         Ok(())
     }

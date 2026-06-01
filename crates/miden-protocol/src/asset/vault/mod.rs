@@ -46,9 +46,7 @@ pub use asset_id::AssetId;
 /// uses to determine leaf membership.
 ///
 /// The raw (unhashed) [`AssetVaultKey`]s are retained alongside the SMT to allow iteration and
-/// proof reconstruction. This mirrors the
-/// [`StorageMap`](crate::account::StorageMap)/[`StorageMapKey`](crate::account::StorageMapKey)
-/// pattern used elsewhere in this crate.
+/// proof reconstruction.
 ///
 /// An asset vault can be reduced to a single hash which is the root of the Sparse Merkle Tree.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -461,7 +459,10 @@ mod tests {
         assert_eq!(asset0.vault_key().to_word()[3], asset1.vault_key().to_word()[3]);
 
         // With hashing, the hashed leaf indices differ, so they live in different SMT leaves.
-        assert_ne!(asset0.vault_key().to_leaf_index(), asset1.vault_key().to_leaf_index());
+        assert_ne!(
+            asset0.vault_key().hash().to_leaf_index(),
+            asset1.vault_key().hash().to_leaf_index()
+        );
 
         let vault = AssetVault::new(&[asset0, asset1])?;
         assert_eq!(vault.num_leaves(), 2);

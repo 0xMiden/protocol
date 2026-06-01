@@ -423,8 +423,8 @@ end
 #! Hashes the raw asset vault key and writes ASSET_VALUE into the asset vault SMT at the hashed key,
 #! returning the previous value stored there.
 #!
-#! Inputs:  [ASSET_VALUE, ASSET_KEY, VAULT_ROOT, ...]
-#! Outputs: [OLD_VALUE, NEW_VAULT_ROOT, ...]
+#! Inputs:  [ASSET_VALUE, ASSET_KEY, VAULT_ROOT]
+#! Outputs: [OLD_VALUE, NEW_VAULT_ROOT]
 #!
 #! Where:
 #! - ASSET_KEY is the raw (unhashed) asset vault key.
@@ -434,8 +434,8 @@ end
 #! - NEW_VAULT_ROOT is the root of the asset vault SMT after the write.
 proc set_asset
     swapw exec.hash_asset_key swapw
-    # => [ASSET_VALUE, HASHED_ASSET_KEY, VAULT_ROOT, ...]
+    # => [ASSET_VALUE, HASHED_ASSET_KEY, VAULT_ROOT]
 
     exec.smt::set
-    # => [OLD_VALUE, NEW_VAULT_ROOT, ...]
+    # => [OLD_VALUE, NEW_VAULT_ROOT]
 end

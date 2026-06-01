@@ -571,7 +571,7 @@ fn on_account_vault_asset_accessed<'store, STORE>(
     vault_key: AssetVaultKey,
     vault_root: Word,
 ) -> Result<Option<TransactionEvent>, TransactionKernelError> {
-    let leaf_index = Felt::try_from(vault_key.to_leaf_index().position())
+    let leaf_index = Felt::try_from(vault_key.hash().to_leaf_index().position())
         .expect("expected key index to be a felt");
     let active_account_id = process.get_active_account_id()?;
 

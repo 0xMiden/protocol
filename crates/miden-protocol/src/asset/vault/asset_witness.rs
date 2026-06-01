@@ -78,14 +78,6 @@ impl AssetWitness {
     ///
     /// Prefer [`AssetWitness::new`] whenever possible. See the type-level docs for the invariants
     /// callers must uphold.
-    ///
-    /// # Caller precondition
-    ///
-    /// For each `(key, value)` pair, `proof.get(&key.hash().as_word())` must return `Some(value)`.
-    /// In other words, each provided pair must agree with what the proof asserts at the hashed
-    /// key. Passing a mismatched pair lets downstream consumers of [`Self::find`] /
-    /// [`Self::assets`] disagree with consumers of the underlying [`SmtProof`]. This
-    /// precondition is checked in debug builds via [`debug_assert!`].
     pub fn new_unchecked(
         proof: SmtProof,
         key_values: impl IntoIterator<Item = (AssetVaultKey, Word)>,
@@ -115,7 +107,7 @@ impl AssetWitness {
     /// Returns `true` if this [`AssetWitness`] authenticates the provided [`AssetVaultKey`], i.e.
     /// if its leaf index matches, `false` otherwise.
     pub fn authenticates_asset_vault_key(&self, vault_key: AssetVaultKey) -> bool {
-        self.proof.leaf().index() == vault_key.to_leaf_index()
+        self.proof.leaf().index() == vault_key.hash().to_leaf_index()
     }
 
     /// Searches for an [`Asset`] in the witness with the given `vault_key`.
@@ -150,6 +142,12 @@ impl AssetWitness {
         self.entries.iter()
     }
 
+    /// Decomposes the witness into its underlying [`SmtProof`] and the raw `(vault_key, value)`
+    /// entries it tracks.
+    pub(super) fn into_parts(self) -> (SmtProof, BTreeMap<AssetVaultKey, Word>) {
+        (self.proof, self.entries)
+    }
+
     /// Returns an iterator over every inner node of this witness' merkle path.
     pub fn authenticated_nodes(&self) -> impl Iterator<Item = InnerNodeInfo> + '_ {
         self.proof
@@ -177,9 +175,9 @@ impl Deserializable for AssetWitness {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let proof: SmtProof = source.read()?;
         let num_keys: usize = source.read()?;
-        let keys: Vec<AssetVaultKey> = (0..num_keys)
-            .map(|_| source.read::<AssetVaultKey>())
-            .collect::<Result<_, _>>()?;
+        let keys = source
+            .read_many_iter::<AssetVaultKey>(num_keys)?
+            .collect::<Result<Vec<_>, _>>()?;
 
         Self::new(proof, keys).map_err(|err| DeserializationError::InvalidValue(err.to_string()))
     }
@@ -191,6 +189,7 @@ impl Deserializable for AssetWitness {
 #[cfg(test)]
 mod tests {
     use assert_matches::assert_matches;
+    use miden_crypto::merkle::smt::Smt;
 
     use super::*;
     use crate::asset::{AssetVault, FungibleAsset, NonFungibleAsset};
@@ -208,7 +207,7 @@ mod tests {
 
         // Manually build a proof at the fungible asset's hashed key but with a non-fungible value.
         let fungible_key = fungible_asset.vault_key();
-        let inconsistent_smt = miden_crypto::merkle::smt::Smt::with_entries([(
+        let inconsistent_smt = Smt::with_entries([(
             fungible_key.hash().as_word(),
             non_fungible_asset.to_value_word(),
         )])?;
