@@ -7,6 +7,7 @@
 - [BREAKING] Renamed `AccountStorageDelta` to `AccountStoragePatch` ([#3002](https://github.com/0xMiden/protocol/pull/3002)).
 - [BREAKING] Extracted `NullifierTreeBackendReader` and `AccountTreeBackendReader` traits from existing `NullifierTreeBackend` and `AccountTreeBackend` traits ([#2755](https://github.com/0xMiden/protocol/pull/2755)).
 - Added `active_note::is_public` and `active_note::is_private` MASM procedures for checking whether the active note is public or private ([#2988](https://github.com/0xMiden/protocol/pull/2988)).
+- Clarified the Notes page: the purpose and roles of a note, the serial number's commitment/nullifier role, and the terms of the nullifier formula ([#3016](https://github.com/0xMiden/protocol/pull/3016)).
 
 ### Fixes
 - Fixed `update_ger` to explicitly reject duplicate GER insertions with `ERR_GER_ALREADY_REGISTERED` instead of silently accepting them ([#2983](https://github.com/0xMiden/protocol/pull/2983)).
