@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 
 use anyhow::Context;
 use miden_protocol::Word;
-use miden_protocol::batch::{BatchKernel, ProposedBatch};
+use miden_protocol::batch::{BatchOutputs, ProposedBatch};
 use miden_protocol::block::BlockNumber;
 use miden_tx_batch_prover::{BatchExecutor, LocalBatchProver};
 
@@ -64,8 +64,8 @@ fn batch_kernel_skeleton_emits_empty_outputs() -> anyhow::Result<()> {
     let batch = two_tx_batch(&mut setup)?;
 
     let executed = BatchExecutor::new().execute(batch).context("batch execution failed")?;
-    let output = BatchKernel::parse_output_stack(executed.stack_outputs())
-        .context("parse output stack failed")?;
+    let output =
+        BatchOutputs::parse(executed.stack_outputs()).context("parse output stack failed")?;
 
     assert_eq!(output.input_notes_commitment(), Word::empty());
     assert_eq!(output.batch_note_tree_root(), Word::empty());

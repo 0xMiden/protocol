@@ -2,9 +2,8 @@ use alloc::vec::Vec;
 
 use miden_core::program::Kernel;
 
-use crate::batch::{BatchId, BatchOutputs, ProposedBatch};
+use crate::batch::{BatchId, ProposedBatch};
 use crate::block::BlockNumber;
-use crate::errors::BatchOutputError;
 use crate::utils::serde::Deserializable;
 use crate::utils::sync::LazyLock;
 use crate::vm::{AdviceInputs, Program, ProgramInfo, StackInputs, StackOutputs};
@@ -96,46 +95,6 @@ impl BatchKernel {
         outputs.push(Felt::from(batch_expiration_block_num));
 
         StackOutputs::new(&outputs).expect("number of stack outputs should be <= 16")
-    }
-
-    /// Extracts the [`BatchOutputs`] from the provided stack outputs.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - The padding cells (positions 9..16) are not all zero.
-    /// - `batch_expiration_block_num` does not fit into a `u32`.
-    pub fn parse_output_stack(stack: &StackOutputs) -> Result<BatchOutputs, BatchOutputError> {
-        let input_notes_commitment = stack
-            .get_word(BatchOutputs::INPUT_NOTES_COMMITMENT_WORD_IDX)
-            .expect("input_notes_commitment word missing");
-        let batch_note_tree_root = stack
-            .get_word(BatchOutputs::BATCH_NOTE_TREE_ROOT_WORD_IDX)
-            .expect("batch_note_tree_root word missing");
-
-        let expiration_felt = stack
-            .get_element(BatchOutputs::BATCH_EXPIRATION_BLOCK_NUM_ELEMENT_IDX)
-            .expect("batch_expiration_block_num missing");
-
-        // Every cell after batch_expiration_block_num must be zero padding.
-        if stack[BatchOutputs::BATCH_EXPIRATION_BLOCK_NUM_ELEMENT_IDX + 1..]
-            .iter()
-            .any(|&felt| felt != Felt::ZERO)
-        {
-            return Err(BatchOutputError::OutputStackInvalid(
-                "batch_expiration_block_num must be followed by zero padding".into(),
-            ));
-        }
-
-        let batch_expiration_block_num = u32::try_from(expiration_felt.as_canonical_u64())
-            .map_err(|_| BatchOutputError::ExpirationBlockNumberTooLarge(expiration_felt))?
-            .into();
-
-        Ok(BatchOutputs::new(
-            input_notes_commitment,
-            batch_note_tree_root,
-            batch_expiration_block_num,
-        ))
     }
 
     // ADVICE BUILDER

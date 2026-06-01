@@ -1,14 +1,15 @@
-use crate::Word;
 use crate::block::BlockNumber;
+use crate::errors::BatchOutputError;
+use crate::vm::StackOutputs;
+use crate::{Felt, Word};
 
 // BATCH OUTPUTS
 // ================================================================================================
 
 /// The public outputs produced by the batch kernel.
 ///
-/// This is the parsed, typed form of the kernel's output stack (see
-/// [`BatchKernel::parse_output_stack`](crate::batch::BatchKernel::parse_output_stack)), mirroring
-/// [`TransactionOutputs`](crate::transaction::TransactionOutputs) for transactions.
+/// This is the parsed, typed form of the kernel's output stack (see [`BatchOutputs::parse`]),
+/// mirroring [`TransactionOutputs`](crate::transaction::TransactionOutputs) for transactions.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BatchOutputs {
     /// The commitment to the batch's input notes.
@@ -45,6 +46,61 @@ impl BatchOutputs {
             batch_note_tree_root,
             batch_expiration_block_num,
         }
+    }
+
+    // PARSER
+    // --------------------------------------------------------------------------------------------
+
+    /// Parses the batch kernel's output stack into a [`BatchOutputs`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BatchOutputError::OutputStackInvalid`] if:
+    /// - a required output word or element is missing from the stack;
+    /// - the cells following `batch_expiration_block_num` (positions 9..16) are not all zero.
+    ///
+    /// Returns [`BatchOutputError::ExpirationBlockNumberTooLarge`] if `batch_expiration_block_num`
+    /// does not fit into a `u32`.
+    pub fn parse(stack: &StackOutputs) -> Result<Self, BatchOutputError> {
+        let input_notes_commitment =
+            stack.get_word(Self::INPUT_NOTES_COMMITMENT_WORD_IDX).ok_or_else(|| {
+                BatchOutputError::OutputStackInvalid(
+                    "input notes commitment word missing from output stack".into(),
+                )
+            })?;
+        let batch_note_tree_root =
+            stack.get_word(Self::BATCH_NOTE_TREE_ROOT_WORD_IDX).ok_or_else(|| {
+                BatchOutputError::OutputStackInvalid(
+                    "batch note tree root word missing from output stack".into(),
+                )
+            })?;
+
+        let expiration_felt =
+            stack.get_element(Self::BATCH_EXPIRATION_BLOCK_NUM_ELEMENT_IDX).ok_or_else(|| {
+                BatchOutputError::OutputStackInvalid(
+                    "batch expiration block number missing from output stack".into(),
+                )
+            })?;
+
+        // Every cell after batch_expiration_block_num must be zero padding.
+        if stack[Self::BATCH_EXPIRATION_BLOCK_NUM_ELEMENT_IDX + 1..]
+            .iter()
+            .any(|&felt| felt != Felt::ZERO)
+        {
+            return Err(BatchOutputError::OutputStackInvalid(
+                "batch_expiration_block_num must be followed by zero padding".into(),
+            ));
+        }
+
+        let batch_expiration_block_num = u32::try_from(expiration_felt.as_canonical_u64())
+            .map_err(|_| BatchOutputError::ExpirationBlockNumberTooLarge(expiration_felt))?
+            .into();
+
+        Ok(Self::new(
+            input_notes_commitment,
+            batch_note_tree_root,
+            batch_expiration_block_num,
+        ))
     }
 
     // PUBLIC ACCESSORS

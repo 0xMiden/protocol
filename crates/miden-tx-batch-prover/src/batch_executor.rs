@@ -1,5 +1,5 @@
 use miden_processor::{DefaultHost, ExecutionError, ExecutionOptions, FastProcessor};
-use miden_protocol::batch::{BatchKernel, ProposedBatch};
+use miden_protocol::batch::{BatchKernel, BatchOutputs, ProposedBatch};
 use miden_protocol::errors::ProvenBatchError;
 
 use crate::ExecutedBatch;
@@ -43,9 +43,10 @@ impl BatchExecutor {
             .execute_trace_inputs_sync(&BatchKernel::main(), &mut DefaultHost::default())
             .map_err(ProvenBatchError::BatchKernelExecutionFailed)?;
 
-        // Validate the output stack shape (padding cells are zero and the expiration fits in u32);
-        // the actual output values themselves are not checked until the kernel verifies them.
-        BatchKernel::parse_output_stack(trace_inputs.stack_outputs())
+        // Parse and validate the output stack shape (padding cells are zero and the expiration
+        // fits in u32); the actual output values themselves are not checked until the kernel
+        // verifies them.
+        BatchOutputs::parse(trace_inputs.stack_outputs())
             .map_err(ProvenBatchError::BatchKernelOutputInvalid)?;
 
         Ok(ExecutedBatch::new(proposed_batch, trace_inputs))
