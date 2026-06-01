@@ -19,7 +19,6 @@ use miden_protocol::{Felt, Word};
 use miden_standards::account::access::{Authority, Ownable2Step};
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
-    BasicBlocklist,
     BlocklistOwnerControlled,
     BurnPolicy,
     MintPolicy,
@@ -57,9 +56,10 @@ fn add_faucet_with_owner_blocklist_transfer(
 
 /// Same as [`add_faucet_with_owner_blocklist_transfer`] but seeds the `blocked_accounts`
 /// storage map with the given accounts at deploy time via
-/// [`BasicBlocklist::with_blocked_accounts`]. The transfer policy is wired up through
-/// [`TransferPolicy::custom`] so the manager does not also install an empty `BasicBlocklist`
-/// (which would conflict with the seeded one).
+/// [`TransferPolicy::with_basic_blocklist_ids`]. The receive policy reuses the same root via
+/// [`TransferPolicy::empty_basic_blocklist`]; the manager dedups companion components by
+/// procedure root, so the seeded `BasicBlocklist` from the send policy is installed exactly
+/// once.
 fn add_faucet_with_owner_blocklist_transfer_initialized(
     builder: &mut MockChainBuilder,
     owner_id: AccountId,
@@ -72,8 +72,6 @@ fn add_faucet_with_owner_blocklist_transfer_initialized(
         .max_supply(AssetAmount::new(1_000_000)?)
         .build()?;
 
-    let basic_blocklist = BasicBlocklist::with_blocked_accounts(initial_blocked);
-
     let account_builder = AccountBuilder::new([43u8; 32])
         .account_type(AccountType::Public)
         .with_component(faucet)
@@ -84,15 +82,14 @@ fn add_faucet_with_owner_blocklist_transfer_initialized(
                 .with_mint_policy(MintPolicy::allow_all(), PolicyRegistration::Active)
                 .with_burn_policy(BurnPolicy::allow_all(), PolicyRegistration::Active)
                 .with_send_policy(
-                    TransferPolicy::custom(BasicBlocklist::root()),
+                    TransferPolicy::with_basic_blocklist_ids(initial_blocked),
                     PolicyRegistration::Active,
                 )
                 .with_receive_policy(
-                    TransferPolicy::custom(BasicBlocklist::root()),
+                    TransferPolicy::empty_basic_blocklist(),
                     PolicyRegistration::Active,
                 ),
         )
-        .with_component(basic_blocklist)
         .with_component(BlocklistOwnerControlled);
 
     builder.add_account_from_builder(

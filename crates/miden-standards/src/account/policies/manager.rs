@@ -175,10 +175,7 @@ struct PolicyConfig {
 /// (the type implements [`IntoIterator<Item = AccountComponent>`]). Iteration yields the
 /// manager itself plus the companion components contributed by every registered policy
 /// (deduplicated by procedure root — a policy installed under both send and receive only
-/// contributes its companion components once). Descriptors built via
-/// [`MintPolicy::custom`], [`BurnPolicy::custom`], or [`TransferPolicy::custom`] contribute no
-/// companion components — the caller installs the matching components on the account
-/// separately.
+/// contributes its companion components once).
 ///
 /// ## Storage layout
 ///
@@ -254,7 +251,7 @@ impl TokenPolicyManager {
         if registration == PolicyRegistration::Active {
             self.active_mint_policy_root = root;
         }
-        self.insert_policy(root, policy.into_components(), PolicyKind::Mint);
+        self.insert_policy(root, policy.into_iter().collect(), PolicyKind::Mint);
         self
     }
 
@@ -268,7 +265,7 @@ impl TokenPolicyManager {
         if registration == PolicyRegistration::Active {
             self.active_burn_policy_root = root;
         }
-        self.insert_policy(root, policy.into_components(), PolicyKind::Burn);
+        self.insert_policy(root, policy.into_iter().collect(), PolicyKind::Burn);
         self
     }
 
@@ -283,7 +280,7 @@ impl TokenPolicyManager {
         if registration == PolicyRegistration::Active {
             self.active_send_policy_root = root;
         }
-        self.insert_policy(root, policy.into_components(), PolicyKind::Send);
+        self.insert_policy(root, policy.into_iter().collect(), PolicyKind::Send);
         self
     }
 
@@ -298,7 +295,7 @@ impl TokenPolicyManager {
         if registration == PolicyRegistration::Active {
             self.active_receive_policy_root = root;
         }
-        self.insert_policy(root, policy.into_components(), PolicyKind::Receive);
+        self.insert_policy(root, policy.into_iter().collect(), PolicyKind::Receive);
         self
     }
 
@@ -585,9 +582,7 @@ impl IntoIterator for TokenPolicyManager {
     /// manager itself first, then the companion components contributed by every registered
     /// policy. Deduplication by procedure root is implicit (the manager's internal `policies`
     /// map is keyed by root), so a policy installed under both send and receive only
-    /// contributes its companion components once. Descriptors built via [`MintPolicy::custom`],
-    /// [`BurnPolicy::custom`], or [`TransferPolicy::custom`] contribute no companion components
-    /// — the caller installs the matching components on the account separately.
+    /// contributes its companion components once.
     fn into_iter(self) -> Self::IntoIter {
         let manager_component = self.to_manager_component();
         let mut components = vec![manager_component];

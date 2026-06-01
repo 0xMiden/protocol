@@ -39,10 +39,11 @@ pub use blocklist::{BlocklistOwnerControlled, BlocklistStorage};
 /// (`on_before_asset_added_to_account`) callbacks — the policy procedure receives no direction
 /// parameter and reads the relevant account context via `native_account::get_id`.
 ///
-/// Construct via [`Self::allow_all`], [`Self::basic_blocklist`],
-/// [`Self::basic_blocklist_with_initial`], [`Self::basic_allowlist`], [`Self::custom`], or
-/// [`Self::from_components`]. The companion components carried by the descriptor are inlined into
-/// the account by the [`super::TokenPolicyManager`] when it is converted into account components.
+/// Construct via [`Self::allow_all`], [`Self::empty_basic_blocklist`],
+/// [`Self::with_basic_blocklist_ids`], [`Self::empty_basic_allowlist`],
+/// [`Self::with_basic_allowlist`], or [`Self::custom`]. The companion components carried by the
+/// descriptor are inlined into the account by the [`super::TokenPolicyManager`] when it is
+/// converted into account components.
 #[derive(Debug, Clone)]
 pub struct TransferPolicy {
     root: AccountProcedureRoot,
@@ -63,8 +64,8 @@ impl TransferPolicy {
 
     /// Returns a transfer policy that rejects transfers whose native account is in the
     /// `blocked_accounts` map, starting with an empty blocklist. To seed initial entries use
-    /// [`Self::basic_blocklist_with_initial`].
-    pub fn basic_blocklist() -> Self {
+    /// [`Self::with_basic_blocklist_ids`].
+    pub fn empty_basic_blocklist() -> Self {
         Self {
             root: BasicBlocklist::root(),
             components: vec![BasicBlocklist::default().into()],
@@ -72,7 +73,7 @@ impl TransferPolicy {
     }
 
     /// Returns a basic-blocklist transfer policy seeded with the given initial blocked accounts.
-    pub fn basic_blocklist_with_initial<I>(blocked_accounts: I) -> Self
+    pub fn with_basic_blocklist_ids<I>(blocked_accounts: I) -> Self
     where
         I: IntoIterator<Item = AccountId>,
     {
@@ -83,27 +84,45 @@ impl TransferPolicy {
     }
 
     /// Returns a transfer policy that rejects transfers whose native account is not in the
+    /// `allowed_accounts` map, starting with an empty allowlist (every transfer rejected). To
+    /// seed initial entries use [`Self::with_basic_allowlist`].
+    pub fn empty_basic_allowlist() -> Self {
+        Self {
+            root: BasicAllowlist::root(),
+            components: vec![BasicAllowlist::default().into()],
+        }
+    }
+
+    /// Returns a transfer policy that rejects transfers whose native account is not in the
     /// `allowed_accounts` map. The provided [`AllowlistStorage`] seeds the initial allowlist
     /// entries at component-construction time.
-    pub fn basic_allowlist(allow_list: AllowlistStorage) -> Self {
+    pub fn with_basic_allowlist(allow_list: AllowlistStorage) -> Self {
         Self {
             root: BasicAllowlist::root(),
             components: vec![BasicAllowlist::from(allow_list).into()],
         }
     }
 
-    /// Returns a transfer policy resolving to the provided procedure root. The corresponding
-    /// component(s) must be installed by the caller separately — this descriptor carries no
-    /// companion components.
-    pub fn custom(root: AccountProcedureRoot) -> Self {
-        Self { root, components: Vec::new() }
-    }
-
-    /// Returns a transfer policy resolving to the provided procedure root and shipping the
-    /// provided companion components. Use this for fully bespoke policy compositions where the
-    /// caller wants the manager to install the companion components alongside the procedure
-    /// root.
-    pub fn from_components(root: AccountProcedureRoot, components: Vec<AccountComponent>) -> Self {
+    /// Returns a transfer policy resolving to `root` and shipping the provided companion
+    /// `components` (anything that can be converted into an [`AccountComponent`]).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `root` is not the procedure root of any procedure exported by the provided
+    /// components.
+    pub fn custom<I>(root: AccountProcedureRoot, components: I) -> Self
+    where
+        I: IntoIterator,
+        I::Item: Into<AccountComponent>,
+    {
+        let components: Vec<AccountComponent> = components.into_iter().map(Into::into).collect();
+        assert!(
+            components
+                .iter()
+                .any(|component| component.procedures().any(|(proc_root, _)| proc_root == root)),
+            "custom transfer policy root must match a procedure root in one of the provided \
+             components",
+        );
         Self { root, components }
     }
 
@@ -111,15 +130,21 @@ impl TransferPolicy {
     pub fn root(&self) -> AccountProcedureRoot {
         self.root
     }
-
-    /// Returns the [`AccountComponent`]s that must accompany this transfer policy.
-    pub(crate) fn into_components(self) -> Vec<AccountComponent> {
-        self.components
-    }
 }
 
 impl Default for TransferPolicy {
     fn default() -> Self {
         Self::allow_all()
+    }
+}
+
+impl IntoIterator for TransferPolicy {
+    type Item = AccountComponent;
+    type IntoIter = alloc::vec::IntoIter<AccountComponent>;
+
+    /// Yields the [`AccountComponent`]s carried by this transfer policy descriptor in
+    /// installation order.
+    fn into_iter(self) -> Self::IntoIter {
+        self.components.into_iter()
     }
 }

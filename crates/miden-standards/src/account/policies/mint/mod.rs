@@ -19,8 +19,8 @@ pub use owner_only::MintOwnerOnly;
 /// Binds the procedure root the manager dispatches to (via `dynexec`) with any companion
 /// [`AccountComponent`]s that must be installed for the procedure to work.
 ///
-/// Construct via [`Self::allow_all`], [`Self::owner_only`], [`Self::custom`], or
-/// [`Self::from_components`]. Pass to [`super::TokenPolicyManager::with_mint_policy`].
+/// Construct via [`Self::allow_all`], [`Self::owner_only`], or [`Self::custom`]. Pass to
+/// [`super::TokenPolicyManager::with_mint_policy`].
 #[derive(Debug, Clone)]
 pub struct MintPolicy {
     root: AccountProcedureRoot,
@@ -44,16 +44,25 @@ impl MintPolicy {
         }
     }
 
-    /// Returns a mint policy resolving to the provided procedure root. The corresponding
-    /// component(s) must be installed by the caller separately — this descriptor carries no
-    /// companion components.
-    pub fn custom(root: AccountProcedureRoot) -> Self {
-        Self { root, components: Vec::new() }
-    }
-
-    /// Returns a mint policy resolving to the provided procedure root and shipping the provided
-    /// companion components.
-    pub fn from_components(root: AccountProcedureRoot, components: Vec<AccountComponent>) -> Self {
+    /// Returns a mint policy resolving to `root` and shipping the provided companion
+    /// `components` (anything that can be converted into an [`AccountComponent`]).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `root` is not the procedure root of any procedure exported by the provided
+    /// components.
+    pub fn custom<I>(root: AccountProcedureRoot, components: I) -> Self
+    where
+        I: IntoIterator,
+        I::Item: Into<AccountComponent>,
+    {
+        let components: Vec<AccountComponent> = components.into_iter().map(Into::into).collect();
+        assert!(
+            components
+                .iter()
+                .any(|component| component.procedures().any(|(proc_root, _)| proc_root == root)),
+            "custom mint policy root must match a procedure root in one of the provided components",
+        );
         Self { root, components }
     }
 
@@ -61,15 +70,21 @@ impl MintPolicy {
     pub fn root(&self) -> AccountProcedureRoot {
         self.root
     }
-
-    /// Returns the [`AccountComponent`]s that must accompany this mint policy.
-    pub(crate) fn into_components(self) -> Vec<AccountComponent> {
-        self.components
-    }
 }
 
 impl Default for MintPolicy {
     fn default() -> Self {
         Self::owner_only()
+    }
+}
+
+impl IntoIterator for MintPolicy {
+    type Item = AccountComponent;
+    type IntoIter = alloc::vec::IntoIter<AccountComponent>;
+
+    /// Yields the [`AccountComponent`]s carried by this mint policy descriptor in installation
+    /// order.
+    fn into_iter(self) -> Self::IntoIter {
+        self.components.into_iter()
     }
 }

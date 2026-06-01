@@ -299,8 +299,14 @@ fn add_faucet_with_pause_and_policies(
             TokenPolicyManager::new()
                 .with_mint_policy(MintPolicy::allow_all(), PolicyRegistration::Active)
                 .with_burn_policy(BurnPolicy::allow_all(), PolicyRegistration::Active)
-                .with_send_policy(TransferPolicy::basic_blocklist(), PolicyRegistration::Active)
-                .with_receive_policy(TransferPolicy::basic_blocklist(), PolicyRegistration::Active),
+                .with_send_policy(
+                    TransferPolicy::empty_basic_blocklist(),
+                    PolicyRegistration::Active,
+                )
+                .with_receive_policy(
+                    TransferPolicy::empty_basic_blocklist(),
+                    PolicyRegistration::Active,
+                ),
         );
 
     builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)

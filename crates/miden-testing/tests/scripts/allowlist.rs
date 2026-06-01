@@ -45,7 +45,7 @@ fn dummy_owner() -> AccountId {
     AccountId::dummy([9; 15], AccountIdVersion::Version1, AccountType::Private)
 }
 
-/// Builds a fungible faucet with [`TransferPolicy::basic_allowlist`] on both send and receive,
+/// Builds a fungible faucet with [`TransferPolicy::with_basic_allowlist`] on both send and receive,
 /// plus the [`AllowlistOwnerControlled`] component (gated by `Ownable2Step::new(owner_id)`)
 /// so that the owner can invoke `allow_account` / `disallow_account` via owner-authored notes.
 ///
@@ -84,11 +84,11 @@ fn add_faucet_with_owner_allowlist_transfer_initialized(
                 .with_mint_policy(MintPolicy::allow_all(), PolicyRegistration::Active)
                 .with_burn_policy(BurnPolicy::allow_all(), PolicyRegistration::Active)
                 .with_send_policy(
-                    TransferPolicy::basic_allowlist(allow_list.clone()),
+                    TransferPolicy::with_basic_allowlist(allow_list.clone()),
                     PolicyRegistration::Active,
                 )
                 .with_receive_policy(
-                    TransferPolicy::basic_allowlist(allow_list),
+                    TransferPolicy::with_basic_allowlist(allow_list),
                     PolicyRegistration::Active,
                 ),
         )
@@ -445,8 +445,8 @@ async fn allow_does_not_affect_other_accounts() -> anyhow::Result<()> {
 }
 
 /// Verifies that `mint_and_send` works on a `BasicFungibleFaucet` whose `TokenPolicyManager`
-/// installs the asset-callback slots (here via [`TransferPolicy::basic_allowlist`]) once the faucet
-/// itself is allowlisted so it can satisfy the send policy when minting.
+/// installs the asset-callback slots (here via [`TransferPolicy::with_basic_allowlist`]) once the
+/// faucet itself is allowlisted so it can satisfy the send policy when minting.
 #[tokio::test]
 async fn mint_and_send_on_allowlist_basic_faucet() -> anyhow::Result<()> {
     let owner_id = dummy_owner();

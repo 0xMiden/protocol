@@ -1809,8 +1809,8 @@ fn build_network_faucet_with_blocklist_transfer(
     let token_policy_manager = TokenPolicyManager::new()
         .with_mint_policy(MintPolicy::owner_only(), PolicyRegistration::Active)
         .with_burn_policy(BurnPolicy::allow_all(), PolicyRegistration::Active)
-        .with_send_policy(TransferPolicy::basic_blocklist(), PolicyRegistration::Active)
-        .with_receive_policy(TransferPolicy::basic_blocklist(), PolicyRegistration::Active);
+        .with_send_policy(TransferPolicy::empty_basic_blocklist(), PolicyRegistration::Active)
+        .with_receive_policy(TransferPolicy::empty_basic_blocklist(), PolicyRegistration::Active);
 
     let account_builder = AccountBuilder::new(builder.rng_mut().random())
         .account_type(AccountType::Public)
