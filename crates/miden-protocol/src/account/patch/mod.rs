@@ -47,6 +47,12 @@ pub struct AccountPatch {
 }
 
 impl AccountPatch {
+    // CONSTANTS
+    // --------------------------------------------------------------------------------------------
+
+    /// Domain separator for the account patch commitment header.
+    const DOMAIN: Felt = Felt::new_unchecked(2);
+
     // CONSTRUCTOR
     // --------------------------------------------------------------------------------------------
 
@@ -152,27 +158,31 @@ impl AccountPatch {
     /// empty and is appended to in the following way. Whenever sorting is expected, it is that
     /// of a [`Word`].
     ///
-    /// - Append `[[final_nonce, 0, account_id_suffix, account_id_prefix], EMPTY_WORD]`, where
-    ///   `account_id_{prefix,suffix}` are the prefix and suffix felts of the native account id and
-    ///   `final_nonce` is the new nonce of the account.
+    /// - Append `[[domain = 2, final_nonce, account_id_suffix, account_id_prefix], EMPTY_WORD]`,
+    ///   where `account_id_{prefix,suffix}` are the prefix and suffix felts of the native account
+    ///   id, `final_nonce` is the new nonce of the account, and `domain = 2` identifies the header
+    ///   as the start of an account patch commitment (distinguishing it from a delta commitment,
+    ///   which uses `domain = 1`).
     /// - Asset Patch
     ///   - For each asset whose value has changed compared to the initial state of the transaction,
     ///     including if it was removed, sorted by its vault key:
     ///     - Append `[ASSET_KEY, ASSET_VALUE_OR_EMPTY_WORD]` which are the key and either the value
     ///       of the asset (for updates) or the empty word (for removals).
-    ///     - Append `[[domain = 1, num_changed_assets, 0, 0], 0, 0, 0, 0]`, where
-    ///       `num_changed_assets` is the number of assets that were appended.
+    ///     - Append `[[domain = 4, num_changed_assets, 0, 0], 0, 0, 0, 0]`, where
+    ///       `num_changed_assets` is the number of assets that were appended. Note that this is a
+    ///       distinct domain from the delta asset domain (`3`), so an asset delta and an asset
+    ///       patch can never produce the same commitment.
     /// - Storage Slots are sorted by slot ID and are iterated in this order. For each slot **whose
     ///   value has changed**, depending on the slot type:
     ///   - Value Slot
-    ///     - Append `[[domain = 2, 0, slot_id_suffix, slot_id_prefix], NEW_VALUE]` where
+    ///     - Append `[[domain = 5, 0, slot_id_suffix, slot_id_prefix], NEW_VALUE]` where
     ///       `NEW_VALUE` is the new value of the slot and `slot_id_{suffix, prefix}` is the
     ///       identifier of the slot.
     ///   - Map Slot
     ///     - For each key-value pair, sorted by key, whose new value is different from the previous
     ///       value in the map:
     ///       - Append `[KEY, NEW_VALUE]`.
-    ///     - Append `[[domain = 3, num_changed_entries, slot_id_suffix, slot_id_prefix], 0, 0, 0,
+    ///     - Append `[[domain = 6, num_changed_entries, slot_id_suffix, slot_id_prefix], 0, 0, 0,
     ///       0]`, where `slot_id_{suffix, prefix}` are the slot identifiers and
     ///       `num_changed_entries` is the number of changed key-value pairs in the map.
     ///         - For partial state deltas, the map header must only be included if
@@ -204,8 +214,8 @@ impl SequentialCommit for AccountPatch {
         // ID and Nonce
         let final_nonce = self.final_nonce.expect("non-empty patches should have a new nonce set");
         elements.extend_from_slice(&[
+            Self::DOMAIN,
             final_nonce,
-            Felt::ZERO,
             self.account_id.suffix(),
             self.account_id.prefix().as_felt(),
         ]);

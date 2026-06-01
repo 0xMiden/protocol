@@ -14,6 +14,9 @@ pub struct AccountVaultPatch {
 }
 
 impl AccountVaultPatch {
+    /// Domain separator for assets in the account patch commitment.
+    const DOMAIN: Felt = Felt::new_unchecked(4);
+
     /// Creates a new vault patch directly from its raw key/value entries.
     pub fn from_raw(entries: BTreeMap<AssetVaultKey, Word>) -> Self {
         Self { entries }
@@ -53,8 +56,6 @@ impl AccountVaultPatch {
     /// Appends the vault patch to the given `elements` from which the patch commitment will be
     /// computed.
     pub(super) fn append_patch_elements(&self, elements: &mut Vec<Felt>) {
-        let domain_assets = Felt::from_u8(1);
-
         for (asset_vault_key, asset_value_or_empty_word) in self.entries.iter() {
             elements.extend_from_slice(asset_vault_key.to_word().as_elements());
             elements.extend_from_slice(asset_value_or_empty_word.as_elements());
@@ -63,7 +64,7 @@ impl AccountVaultPatch {
         let num_changed_assets = Felt::try_from(self.entries.len() as u64)
             .expect("number of assets should not exceed max representable felt");
 
-        elements.extend_from_slice(&[domain_assets, num_changed_assets, Felt::ZERO, Felt::ZERO]);
+        elements.extend_from_slice(&[Self::DOMAIN, num_changed_assets, Felt::ZERO, Felt::ZERO]);
         elements.extend_from_slice(Word::empty().as_elements());
     }
 }
