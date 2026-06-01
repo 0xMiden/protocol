@@ -315,6 +315,40 @@ fn batch_note_tree_excludes_erased_notes() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Tests that a batch without output notes has an empty batch note tree, and that the root carried
+/// on the proven batch matches the proposed batch's tree root.
+#[test]
+fn batch_note_tree_empty_when_no_output_notes() -> anyhow::Result<()> {
+    let TestSetup { mut chain, account1, .. } = setup_chain();
+    let block1 = chain.block_header(1);
+    let block2 = chain.prove_next_block()?;
+
+    let tx =
+        MockProvenTxBuilder::with_account(account1.id(), Word::empty(), account1.to_commitment())
+            .reference_block(&block1)
+            .build()?;
+
+    let proposed_batch = ProposedBatch::new_unverified(
+        [tx].into_iter().map(Arc::new).collect(),
+        block2.header().clone(),
+        chain.latest_partial_blockchain(),
+        BTreeMap::default(),
+    )?;
+
+    assert_eq!(proposed_batch.output_notes().len(), 0);
+    assert_eq!(proposed_batch.batch_note_tree().num_leaves(), 0);
+    assert_eq!(
+        proposed_batch.batch_note_tree().root(),
+        BatchNoteTree::with_contiguous_leaves([])?.root(),
+    );
+
+    // The proven batch carries the same note tree root.
+    let proven_batch = chain.prove_transaction_batch(proposed_batch.clone())?;
+    assert_eq!(proven_batch.note_tree_root(), proposed_batch.batch_note_tree().root());
+
+    Ok(())
+}
+
 /// Notes with the same details but different metadata are not considered the same for batch
 /// erasure.
 #[test]

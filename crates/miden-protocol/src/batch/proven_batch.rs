@@ -28,6 +28,8 @@ pub struct ProvenBatch {
     account_updates: BTreeMap<AccountId, BatchAccountUpdate>,
     input_notes: InputNotes<InputNoteCommitment>,
     output_notes: Vec<OutputNote>,
+    /// The root of the [`BatchNoteTree`](crate::batch::BatchNoteTree) built over `output_notes`.
+    note_tree_root: Word,
     batch_expiration_block_num: BlockNumber,
     transactions: OrderedTransactionHeaders,
     proof: ExecutionProof,
@@ -54,6 +56,7 @@ impl ProvenBatch {
         account_updates: BTreeMap<AccountId, BatchAccountUpdate>,
         input_notes: InputNotes<InputNoteCommitment>,
         output_notes: Vec<OutputNote>,
+        note_tree_root: Word,
         batch_expiration_block_num: BlockNumber,
         transactions: OrderedTransactionHeaders,
         proof: ExecutionProof,
@@ -73,6 +76,7 @@ impl ProvenBatch {
             account_updates,
             input_notes,
             output_notes,
+            note_tree_root,
             batch_expiration_block_num,
             transactions,
             proof,
@@ -143,6 +147,12 @@ impl ProvenBatch {
         &self.output_notes
     }
 
+    /// Returns the root of the [`BatchNoteTree`](crate::batch::BatchNoteTree) built over the
+    /// batch's output notes.
+    pub fn note_tree_root(&self) -> Word {
+        self.note_tree_root
+    }
+
     /// Returns the [`OrderedTransactionHeaders`] included in this batch.
     pub fn transactions(&self) -> &OrderedTransactionHeaders {
         &self.transactions
@@ -172,6 +182,7 @@ impl Serializable for ProvenBatch {
         self.account_updates.write_into(target);
         self.input_notes.write_into(target);
         self.output_notes.write_into(target);
+        self.note_tree_root.write_into(target);
         self.batch_expiration_block_num.write_into(target);
         self.transactions.write_into(target);
         self.proof.write_into(target);
@@ -185,6 +196,7 @@ impl Deserializable for ProvenBatch {
         let account_updates = BTreeMap::read_from(source)?;
         let input_notes = InputNotes::<InputNoteCommitment>::read_from(source)?;
         let output_notes = Vec::<OutputNote>::read_from(source)?;
+        let note_tree_root = Word::read_from(source)?;
         let batch_expiration_block_num = BlockNumber::read_from(source)?;
         let transactions = OrderedTransactionHeaders::read_from(source)?;
         let proof = ExecutionProof::read_from(source)?;
@@ -199,6 +211,7 @@ impl Deserializable for ProvenBatch {
             account_updates,
             input_notes,
             output_notes,
+            note_tree_root,
             batch_expiration_block_num,
             transactions,
             proof,

@@ -6,6 +6,10 @@
 
 - [BREAKING] Implemented partial batch kernel verification to check the transaction list against `BATCH_ID` and compute `INPUT_NOTES_COMMITMENT`; `BatchExecutor::execute` now additionally takes caller `AdviceInputs` ([#2905](https://github.com/0xMiden/protocol/pull/2905)).
 
+### Features
+
+- Added `BatchNoteTree` construction to `ProposedBatch`, exposing it via a `batch_note_tree()` accessor and including it in `into_parts` ([#3022](https://github.com/0xMiden/protocol/pull/3022)).
+
 ### Changes
 
 - [BREAKING] Moved the internal shared helpers of `miden::protocol::input_note`, `miden::protocol::active_note`, and the note memory-write helpers into private `input_note_internal` and `note_internal` modules ([#3501](https://github.com/0xMiden/protocol/pull/3501)).

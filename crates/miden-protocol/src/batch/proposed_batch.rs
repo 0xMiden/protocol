@@ -324,10 +324,11 @@ impl ProposedBatch {
         }
 
         // Build the batch note tree over the final output notes. The number of output notes is
-        // bounded by the check above, so the tree's capacity cannot be exceeded.
+        // bounded by the check above to at most the tree's capacity, so this is a defensive error
+        // path that cannot be triggered in practice.
         let batch_note_tree =
             BatchNoteTree::with_contiguous_leaves(output_notes.iter().map(Into::into))
-                .map_err(ProposedBatchError::NoteTreeRootError)?;
+                .map_err(ProposedBatchError::BatchNoteTreeConstructionFailed)?;
 
         // Compute batch ID.
         // --------------------------------------------------------------------------------------------

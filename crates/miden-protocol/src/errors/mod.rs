@@ -1075,7 +1075,7 @@ pub enum ProposedBatchError {
     TooManyOutputNotes(usize),
 
     #[error("failed to construct the batch note tree from the batch's output notes")]
-    NoteTreeRootError(#[source] MerkleError),
+    BatchNoteTreeConstructionFailed(#[source] MerkleError),
 
     #[error(
         "transaction batch has {0} account updates but at most {MAX_ACCOUNTS_PER_BATCH} are allowed"
