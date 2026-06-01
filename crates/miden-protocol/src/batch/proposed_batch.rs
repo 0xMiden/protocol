@@ -316,9 +316,10 @@ impl ProposedBatch {
             return Err(ProposedBatchError::TooManyOutputNotes(output_notes.len()));
         }
 
-        // Build the batch note tree over the final output notes. The number of output notes is
-        // bounded by the check above to at most the tree's capacity, so this is a defensive error
-        // path that cannot be triggered in practice.
+        // Build the batch note tree over the final output notes. `MAX_OUTPUT_NOTES_PER_BATCH`
+        // equals the tree's capacity (`2^BATCH_NOTE_TREE_DEPTH`) and the check above bounds the
+        // number of output notes by it, so this is a defensive error path that cannot be triggered
+        // in practice.
         let batch_note_tree =
             BatchNoteTree::with_contiguous_leaves(output_notes.iter().map(Into::into))
                 .map_err(ProposedBatchError::BatchNoteTreeConstructionFailed)?;
