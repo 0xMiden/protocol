@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 
 use miden_core::program::Kernel;
 
-use crate::batch::{BatchOutput, ProposedBatch};
+use crate::batch::{BatchId, BatchOutput, ProposedBatch};
 use crate::block::BlockNumber;
 use crate::errors::BatchOutputError;
 use crate::utils::serde::Deserializable;
@@ -51,7 +51,7 @@ impl BatchKernel {
     /// execute the batch kernel.
     pub fn prepare_inputs(proposed_batch: &ProposedBatch) -> (StackInputs, AdviceInputs) {
         let block_commitment = proposed_batch.reference_block_header().commitment();
-        let batch_id = proposed_batch.id().as_word();
+        let batch_id = proposed_batch.id();
 
         let stack_inputs = Self::build_input_stack(block_commitment, batch_id);
         let advice_inputs = Self::build_advice_inputs(proposed_batch);
@@ -69,11 +69,11 @@ impl BatchKernel {
     ///
     /// Where:
     /// - `BLOCK_COMMITMENT` is the commitment of the batch's reference block.
-    /// - `BATCH_ID` is the batch's [`BatchId`](crate::batch::BatchId).
-    pub fn build_input_stack(block_commitment: Word, batch_id: Word) -> StackInputs {
+    /// - `BATCH_ID` is the batch's [`BatchId`].
+    pub fn build_input_stack(block_commitment: Word, batch_id: BatchId) -> StackInputs {
         let mut inputs: Vec<Felt> = Vec::with_capacity(8);
         inputs.extend_from_slice(block_commitment.as_elements());
-        inputs.extend_from_slice(batch_id.as_elements());
+        inputs.extend_from_slice(batch_id.as_word().as_elements());
 
         StackInputs::new(&inputs).expect("number of stack inputs should be <= 16")
     }
