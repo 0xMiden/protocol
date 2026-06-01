@@ -3,11 +3,9 @@ use alloc::vec::Vec;
 use std::collections::BTreeMap;
 
 use anyhow::Context;
-use miden_core_lib::CoreLibrary;
-use miden_processor::{DefaultHost, ExecutionOptions, FastProcessor};
-use miden_protocol::batch::{BatchId, BatchKernel, ProposedBatch};
+use miden_protocol::batch::{BatchKernel, ProposedBatch};
 use miden_protocol::block::BlockNumber;
-use miden_protocol::vm::{AdviceInputs, StackInputs, StackOutputs};
+use miden_protocol::vm::AdviceInputs;
 use miden_protocol::{Felt, Hasher, Word};
 use miden_tx_batch_prover::{BatchExecutor, LocalBatchProver};
 
@@ -83,30 +81,24 @@ fn expected_input_notes_commitment(batch: &ProposedBatch) -> Word {
     }
 }
 
-// EXECUTION HELPERS
+// TAMPERING HELPERS
 // ================================================================================================
 
-/// Runs the batch kernel directly over the given inputs, returning its output stack.
-///
-/// Used by the tampering tests, which corrupt the advice inputs before execution. `BatchExecutor`
-/// builds the advice internally from a (valid) `ProposedBatch` and offers no injection point, so it
-/// cannot exercise the kernel's rejection paths. This mirrors how the transaction-kernel tests
-/// inject tampered advice and run kernel code directly (see `tx_context.execute_code` with
-/// `extend_advice_inputs` in `test_prologue.rs`).
-fn run_kernel(
-    stack_inputs: StackInputs,
-    advice_inputs: AdviceInputs,
-) -> Result<StackOutputs, miden_processor::ExecutionError> {
-    let mut host = DefaultHost::default();
-    host.load_library(CoreLibrary::default().mast_forest())
-        .expect("loading the core library into the test host should succeed");
-
-    let processor =
-        FastProcessor::new_with_options(stack_inputs, advice_inputs, ExecutionOptions::default())
-            .expect("failed to create processor")
-            .with_debugging(true);
-    let output = processor.execute_sync(&BatchKernel::main(), &mut host)?;
-    Ok(output.stack)
+/// Builds an advice-inputs override that corrupts the advice-map entry stored under `key`, so the
+/// kernel's hash check against `key` fails. Fed to [`BatchExecutor::extend_advice_inputs`] to drive
+/// the kernel's rejection paths through the normal executor (mirroring how the transaction-kernel
+/// tests inject tampered advice via `extend_advice_inputs`; see `test_prologue.rs`).
+fn tampered_advice_for(batch: &ProposedBatch, key: Word) -> AdviceInputs {
+    let (_, advice_inputs) = BatchKernel::prepare_inputs(batch);
+    let mut tampered: Vec<Felt> = advice_inputs
+        .map
+        .get(&key)
+        .expect("advice-map entry for key")
+        .iter()
+        .copied()
+        .collect();
+    tampered[0] += Felt::from(1u32);
+    AdviceInputs::default().with_map([(key, tampered)])
 }
 
 // HAPPY PATH
@@ -148,63 +140,51 @@ fn batch_executor_then_prover_produces_proven_batch() -> anyhow::Result<()> {
 
 // NEGATIVE TESTS
 // ================================================================================================
+//
+// Each test injects a tampered advice-map entry through `BatchExecutor::extend_advice_inputs` and
+// asserts the kernel aborts. The executor builds consistent advice from the (valid) `ProposedBatch`
+// and the override then corrupts a single layer's entry, breaking that layer's hash check.
 
-/// Corrupting `BATCH_ID` on the input stack makes Layer 1 unloadable from the advice map, so the
-/// kernel must abort.
+/// Tampering the `BATCH_ID` -> `(tx_id, account_id)` tuples breaks the Layer 1 hash check.
 #[test]
-fn batch_kernel_rejects_wrong_batch_id() -> anyhow::Result<()> {
+fn batch_kernel_rejects_tampered_layer_1() -> anyhow::Result<()> {
     let mut setup = setup_chain();
     let batch = two_tx_batch(&mut setup)?;
 
-    let block_commitment = batch.reference_block_header().commitment();
-    // A BatchId over a one-transaction subset differs from the real (two-tx) batch id, so the
-    // kernel cannot find its Layer 1 tuples in the advice map.
-    let bogus_tx = &batch.transactions()[0];
-    let bogus_batch_id = BatchId::from_ids([(bogus_tx.id(), bogus_tx.account_id())]);
-    let stack_inputs = BatchKernel::build_input_stack(block_commitment, bogus_batch_id);
-    let (_, advice_inputs) = BatchKernel::prepare_inputs(&batch);
+    let override_advice = tampered_advice_for(&batch, batch.id().as_word());
 
-    run_kernel(stack_inputs, advice_inputs).expect_err("kernel must abort on an unknown BATCH_ID");
+    let result = BatchExecutor::new().extend_advice_inputs(override_advice).execute(batch);
+    assert!(result.is_err(), "kernel must abort on a tampered transaction list");
 
     Ok(())
 }
 
-/// Tampering a verified `tx_id`'s Layer 2 advice-map entry breaks the per-tx header hash check.
+/// Tampering a verified `tx_id`'s header data breaks the Layer 2 hash check.
 #[test]
 fn batch_kernel_rejects_tampered_layer_2() -> anyhow::Result<()> {
     let mut setup = setup_chain();
     let batch = two_tx_batch(&mut setup)?;
 
-    let (stack_inputs, mut advice_inputs) = BatchKernel::prepare_inputs(&batch);
-
     let tx0_id = batch.transactions()[0].id().as_word();
-    let entry = advice_inputs.map.get(&tx0_id).expect("tx0 layer 2 entry");
-    let mut tampered: Vec<Felt> = entry.iter().copied().collect();
-    tampered[0] += Felt::from(1u32);
-    advice_inputs.map.extend([(tx0_id, tampered)]);
+    let override_advice = tampered_advice_for(&batch, tx0_id);
 
-    run_kernel(stack_inputs, advice_inputs)
-        .expect_err("kernel must abort on a tampered transaction header");
+    let result = BatchExecutor::new().extend_advice_inputs(override_advice).execute(batch);
+    assert!(result.is_err(), "kernel must abort on a tampered transaction header");
 
     Ok(())
 }
 
-/// Tampering the per-tx input-notes Layer 3 entry breaks the input-note hash check.
+/// Tampering a transaction's input-notes data breaks the Layer 3 (input-notes commitment) check.
 #[test]
 fn batch_kernel_rejects_tampered_input_notes() -> anyhow::Result<()> {
     let mut setup = setup_chain();
     let batch = two_tx_batch(&mut setup)?;
 
-    let (stack_inputs, mut advice_inputs) = BatchKernel::prepare_inputs(&batch);
-
     let key = batch.transactions()[0].input_notes().commitment();
-    let entry = advice_inputs.map.get(&key).expect("layer 3 entry");
-    let mut tampered: Vec<Felt> = entry.iter().copied().collect();
-    tampered[0] += Felt::from(1u32);
-    advice_inputs.map.extend([(key, tampered)]);
+    let override_advice = tampered_advice_for(&batch, key);
 
-    run_kernel(stack_inputs, advice_inputs)
-        .expect_err("kernel must abort on tampered input notes data");
+    let result = BatchExecutor::new().extend_advice_inputs(override_advice).execute(batch);
+    assert!(result.is_err(), "kernel must abort on tampered input-notes data");
 
     Ok(())
 }
