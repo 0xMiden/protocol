@@ -23,6 +23,7 @@ const ASM_TX_KERNEL_DIR: &str = "kernels/transaction";
 const ASM_BATCH_KERNEL_DIR: &str = "kernels/batch";
 
 const PROTOCOL_LIB_NAMESPACE: &str = "miden::protocol";
+const BATCH_KERNEL_NAMESPACE: &str = "miden::batch_kernel";
 
 const KERNEL_PROCEDURES_RS_FILE: &str = "procedures.rs";
 const TX_KERNEL_ERRORS_RS_FILE: &str = "tx_kernel_errors.rs";
@@ -101,11 +102,17 @@ fn main() -> Result<()> {
 
 /// Reads the batch kernel MASM source from the `source_dir`, compiles it, and saves the result
 /// to the `target_dir` as a `batch_kernel.masb` binary file.
+///
+/// The modules under `kernels/batch/lib/` are statically linked under the `miden::batch_kernel`
+/// namespace so `main.masm` can `use` them.
 fn compile_batch_kernel(source_dir: &Path, target_dir: &Path) -> Result<()> {
     let batch_kernel_dir = source_dir.join(ASM_BATCH_KERNEL_DIR);
+    let lib_dir = batch_kernel_dir.join("lib");
     let main_file_path = batch_kernel_dir.join("main.masm");
 
-    let assembler = build_assembler(None)?;
+    let mut assembler = build_assembler(None)?;
+    assembler.compile_and_statically_link_from_dir(&lib_dir, BATCH_KERNEL_NAMESPACE)?;
+
     let batch_main = assembler.assemble_program(main_file_path)?;
 
     let masb_file_path = target_dir.join("batch_kernel.masb");

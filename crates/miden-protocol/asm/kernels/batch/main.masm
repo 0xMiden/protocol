@@ -1,13 +1,27 @@
+use miden::batch_kernel::note_tracker
+use miden::batch_kernel::prologue
+
 # MAIN
 # =================================================================================================
 
-#! Batch kernel program (skeleton).
+#! Batch kernel program.
 #!
 #! A transaction batch groups a set of independently-proven transactions so they can later be
-#! aggregated into a block by the block kernel. This program defines the public input/output
-#! contract that the batch kernel will eventually verify, but currently does not yet perform
-#! any verification: it drops its inputs and exits, leaving the all-zero word output region as the
-#! stack's initial padding zeros.
+#! aggregated into a block by the block kernel. This program reconstructs the per-transaction data
+#! from the advice provider, anchoring the reconstruction in the public `BATCH_ID`, and emits the
+#! batch's `INPUT_NOTES_COMMITMENT`.
+#!
+#! Reconstruction is a recursive unhashing chain. Each layer of advice data is keyed by a hash that
+#! the previous layer's verification produced, so once `BATCH_ID` is anchored to the public input,
+#! every felt that feeds `INPUT_NOTES_COMMITMENT` is transitively committed-to:
+#!
+#!   `BATCH_ID` (public input)        -> `(tx_id, account_id)` tuple list
+#!   each `tx_id`                     -> per-tx
+#!     `(INIT, FINAL, INPUT_NOTES_COMMITMENT_i, OUTPUT_NOTES_COMMITMENT_i, FEE_ASSET)`
+#!   each `INPUT_NOTES_COMMITMENT_i`  -> `(NULLIFIER, EMPTY_OR_COMMITMENT)` tuples
+#!
+#! Each layer is loaded via `adv.push_mapvaln` keyed by the previously-verified hash and asserted
+#! against that hash via `assert_eqw`. Only verified data feeds into the batch output.
 #!
 #! Inputs: [
 #!   BLOCK_COMMITMENT,
@@ -24,16 +38,38 @@
 #!
 #! Where:
 #! - BLOCK_COMMITMENT is the commitment of the batch's reference block.
-#! - BATCH_ID is the batch's `BatchId`, the commitment to its transactions.
-#! - INPUT_NOTES_COMMITMENT will be the sequential hash over every transaction's input note
-#!   commitments. In this skeleton it is the empty word.
-#! - BATCH_NOTE_TREE_ROOT will be the root of the batch note tree built over every transaction's
-#!   output notes. In this skeleton it is the empty word.
-#! - batch_expiration_block_num will be the minimum of every transaction's
-#!   `expiration_block_num`. In this skeleton it is zero.
+#! - BATCH_ID is the batch's `BatchId`, the sequential hash of the `(tx_id, account_id)` tuples
+#!   committing to the transactions in the batch.
+#! - INPUT_NOTES_COMMITMENT is the sequential hash over every transaction's
+#!   `(NULLIFIER, EMPTY_OR_COMMITMENT)` tuples.
+#! - BATCH_NOTE_TREE_ROOT is currently not wired up (empty word).
+#! - batch_expiration_block_num is currently not wired-up (zero).
 #!
+#! TODO: verify BLOCK_COMMITMENT against block header data via the same pipe-and-verify pattern.
+#! TODO: authenticate unauthenticated input notes against BLOCK_COMMITMENT's chain MMR.
+#! TODO: erase intra-batch unauthenticated notes from INPUT_NOTES_COMMITMENT.
+#! TODO: emit BATCH_NOTE_TREE_ROOT (the batch note tree SMT root) and batch_expiration_block_num.
+#! TODO: aggregate per-account updates and emit a separate ACCOUNT_UPDATES_COMMITMENT output.
+#! TODO: recursively verify each transaction's `ExecutionProof`.
 proc main
-    dropw dropw
+    # Stack: [BLOCK_COMMITMENT, BATCH_ID, pad(8)]
+
+    # TODO: verify BLOCK_COMMITMENT against block header data via the pipe-and-verify pattern.
+    dropw
+    # Stack: [BATCH_ID, pad(12)]
+
+    exec.prologue::prepare_batch
+    # Stack: [pad(16)]
+
+    exec.note_tracker::compute_input_notes_commitment
+    # Stack: [INPUT_NOTES_COMMITMENT, pad(16)]
+
+    # Drop the surplus padding word so the stack holds exactly the 16-felt output region
+    # [INPUT_NOTES_COMMITMENT, BATCH_NOTE_TREE_ROOT, batch_expiration_block_num, pad(7)]. The
+    # BATCH_NOTE_TREE_ROOT and batch_expiration_block_num cells stay zero (wired up in follow-up
+    # PRs).
+    movupw.3 dropw
+    # Stack: [INPUT_NOTES_COMMITMENT, pad(12)]
 end
 
 begin
