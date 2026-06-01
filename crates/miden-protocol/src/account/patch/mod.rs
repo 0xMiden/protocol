@@ -1,10 +1,10 @@
-mod vault_patch;
+mod vault;
 
 mod storage;
 use alloc::vec::Vec;
 
 pub use storage::{AccountStoragePatch, StorageMapPatch, StorageSlotPatch};
-pub use vault_patch::AccountVaultPatch;
+pub use vault::AccountVaultPatch;
 
 use crate::account::{AccountCode, AccountId};
 use crate::crypto::SequentialCommit;
