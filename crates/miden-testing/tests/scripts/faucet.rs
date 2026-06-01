@@ -33,7 +33,6 @@ use miden_standards::account::policies::{
     BurnOwnerOnly,
     BurnPolicy,
     MintPolicy,
-    PolicyRegistration,
     TokenPolicyManager,
     TransferPolicy,
 };
@@ -224,12 +223,13 @@ fn build_network_faucet_with_burn_switching(
         .token_supply(token_supply)
         .build()?;
 
-    let token_policy_manager = TokenPolicyManager::new()
-        .with_mint_policy(mint_policy, PolicyRegistration::Active)
-        .with_burn_policy(BurnPolicy::allow_all(), PolicyRegistration::Active)
-        .with_burn_policy(BurnPolicy::owner_only(), PolicyRegistration::Reserved)
-        .with_send_policy(TransferPolicy::allow_all(), PolicyRegistration::Active)
-        .with_receive_policy(TransferPolicy::allow_all(), PolicyRegistration::Active);
+    let token_policy_manager = TokenPolicyManager::builder()
+        .active_mint_policy(mint_policy)
+        .active_burn_policy(BurnPolicy::allow_all())
+        .allowed_burn_policy(BurnPolicy::owner_only())
+        .active_send_policy(TransferPolicy::allow_all())
+        .active_receive_policy(TransferPolicy::allow_all())
+        .build();
 
     let account_builder = AccountBuilder::new(builder.rng_mut().random())
         .account_type(AccountType::Public)
@@ -1806,11 +1806,12 @@ fn build_network_faucet_with_blocklist_transfer(
         .token_supply(token_supply)
         .build()?;
 
-    let token_policy_manager = TokenPolicyManager::new()
-        .with_mint_policy(MintPolicy::owner_only(), PolicyRegistration::Active)
-        .with_burn_policy(BurnPolicy::allow_all(), PolicyRegistration::Active)
-        .with_send_policy(TransferPolicy::empty_basic_blocklist(), PolicyRegistration::Active)
-        .with_receive_policy(TransferPolicy::empty_basic_blocklist(), PolicyRegistration::Active);
+    let token_policy_manager = TokenPolicyManager::builder()
+        .active_mint_policy(MintPolicy::owner_only())
+        .active_burn_policy(BurnPolicy::allow_all())
+        .active_send_policy(TransferPolicy::empty_basic_blocklist())
+        .active_receive_policy(TransferPolicy::empty_basic_blocklist())
+        .build();
 
     let account_builder = AccountBuilder::new(builder.rng_mut().random())
         .account_type(AccountType::Public)

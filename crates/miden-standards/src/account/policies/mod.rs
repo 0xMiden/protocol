@@ -24,10 +24,10 @@
 //! [`TransferAllowAll`]) install a specific policy procedure on the account so that the
 //! manager's `dynexec` can dispatch to it.
 //!
-//! A faucet installs the manager via the chained builder
-//! [`TokenPolicyManager::with_mint_policy`] / [`TokenPolicyManager::with_burn_policy`] /
-//! [`TokenPolicyManager::with_send_policy`] / [`TokenPolicyManager::with_receive_policy`] and
-//! passes it directly to [`miden_protocol::account::AccountBuilder::with_components`].
+//! A faucet constructs the manager via [`TokenPolicyManager::builder`], setting the required
+//! `active_*_policy` for each kind (and optionally any number of reserved `allowed_*_policy`
+//! entries), then passes the built manager directly to
+//! [`miden_protocol::account::AccountBuilder::with_components`].
 
 mod burn;
 mod manager;
@@ -47,19 +47,3 @@ pub use transfer::{
     TransferAllowAll,
     TransferPolicy,
 };
-
-// POLICY REGISTRATION
-// ================================================================================================
-
-/// Indicates whether a policy entry is the currently active one (written into the
-/// `active_*_policy` slot) or a reserved alternative (kept in the `allowed_*_policies` map for
-/// future activation via `set_*_policy`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PolicyRegistration {
-    /// Becomes the policy stored in the `active_*_policy` slot for its kind (mint, burn, send,
-    /// or receive). Exactly one `Active` entry is allowed per kind.
-    Active,
-    /// Registered in the `allowed_*_policies` map for its kind. Can be promoted to active
-    /// later by calling the matching `set_*_policy` procedure.
-    Reserved,
-}

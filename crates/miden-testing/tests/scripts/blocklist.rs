@@ -22,7 +22,6 @@ use miden_standards::account::policies::{
     BlocklistOwnerControlled,
     BurnPolicy,
     MintPolicy,
-    PolicyRegistration,
     TokenPolicyManager,
     TransferPolicy,
 };
@@ -78,17 +77,12 @@ fn add_faucet_with_owner_blocklist_transfer_initialized(
         .with_component(Ownable2Step::new(owner_id))
         .with_component(Authority::OwnerControlled)
         .with_components(
-            TokenPolicyManager::new()
-                .with_mint_policy(MintPolicy::allow_all(), PolicyRegistration::Active)
-                .with_burn_policy(BurnPolicy::allow_all(), PolicyRegistration::Active)
-                .with_send_policy(
-                    TransferPolicy::with_basic_blocklist_ids(initial_blocked),
-                    PolicyRegistration::Active,
-                )
-                .with_receive_policy(
-                    TransferPolicy::empty_basic_blocklist(),
-                    PolicyRegistration::Active,
-                ),
+            TokenPolicyManager::builder()
+                .active_mint_policy(MintPolicy::allow_all())
+                .active_burn_policy(BurnPolicy::allow_all())
+                .active_send_policy(TransferPolicy::with_basic_blocklist_ids(initial_blocked))
+                .active_receive_policy(TransferPolicy::empty_basic_blocklist())
+                .build(),
         )
         .with_component(BlocklistOwnerControlled);
 

@@ -23,7 +23,6 @@ use miden_standards::account::policies::{
     AllowlistStorage,
     BurnPolicy,
     MintPolicy,
-    PolicyRegistration,
     TokenPolicyManager,
     TransferPolicy,
 };
@@ -80,17 +79,12 @@ fn add_faucet_with_owner_allowlist_transfer_initialized(
         .with_component(Ownable2Step::new(owner_id))
         .with_component(Authority::OwnerControlled)
         .with_components(
-            TokenPolicyManager::new()
-                .with_mint_policy(MintPolicy::allow_all(), PolicyRegistration::Active)
-                .with_burn_policy(BurnPolicy::allow_all(), PolicyRegistration::Active)
-                .with_send_policy(
-                    TransferPolicy::with_basic_allowlist(allow_list.clone()),
-                    PolicyRegistration::Active,
-                )
-                .with_receive_policy(
-                    TransferPolicy::with_basic_allowlist(allow_list),
-                    PolicyRegistration::Active,
-                ),
+            TokenPolicyManager::builder()
+                .active_mint_policy(MintPolicy::allow_all())
+                .active_burn_policy(BurnPolicy::allow_all())
+                .active_send_policy(TransferPolicy::with_basic_allowlist(allow_list.clone()))
+                .active_receive_policy(TransferPolicy::with_basic_allowlist(allow_list))
+                .build(),
         )
         .with_component(AllowlistOwnerControlled);
 

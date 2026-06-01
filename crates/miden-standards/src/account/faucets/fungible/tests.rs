@@ -11,22 +11,17 @@ use crate::AuthMethod;
 use crate::account::access::{AccessControl, PausableManager};
 use crate::account::auth::{AuthSingleSig, AuthSingleSigAcl};
 use crate::account::faucets::{Description, FungibleFaucetError, TokenMetadata, TokenName};
-use crate::account::policies::{
-    BurnPolicy,
-    MintPolicy,
-    PolicyRegistration,
-    TokenPolicyManager,
-    TransferPolicy,
-};
+use crate::account::policies::{BurnPolicy, MintPolicy, TokenPolicyManager, TransferPolicy};
 use crate::account::wallets::BasicWallet;
 
 /// Builds a minimal policy manager with AllowAll on every kind, used by the construction tests.
 fn allow_all_policy_manager() -> TokenPolicyManager {
-    TokenPolicyManager::new()
-        .with_mint_policy(MintPolicy::allow_all(), PolicyRegistration::Active)
-        .with_burn_policy(BurnPolicy::allow_all(), PolicyRegistration::Active)
-        .with_send_policy(TransferPolicy::allow_all(), PolicyRegistration::Active)
-        .with_receive_policy(TransferPolicy::allow_all(), PolicyRegistration::Active)
+    TokenPolicyManager::builder()
+        .active_mint_policy(MintPolicy::allow_all())
+        .active_burn_policy(BurnPolicy::allow_all())
+        .active_send_policy(TransferPolicy::allow_all())
+        .active_receive_policy(TransferPolicy::allow_all())
+        .build()
 }
 
 /// Builds a sample `FungibleFaucet` shared by construction tests.

@@ -35,12 +35,7 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 use miden_standards::account::access::Authority;
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
-use miden_standards::account::policies::{
-    BurnPolicy,
-    MintPolicy,
-    PolicyRegistration,
-    TokenPolicyManager,
-};
+use miden_standards::account::policies::{BurnPolicy, MintPolicy, TokenPolicyManager};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::procedure_root;
 use miden_standards::testing::account_component::MockFaucetComponent;
@@ -773,9 +768,10 @@ fn add_faucet_with_callbacks(
         .with_component(faucet)
         .with_component(Authority::AuthControlled)
         .with_components(
-            TokenPolicyManager::new()
-                .with_mint_policy(MintPolicy::allow_all(), PolicyRegistration::Active)
-                .with_burn_policy(BurnPolicy::allow_all(), PolicyRegistration::Active),
+            TokenPolicyManager::builder()
+                .active_mint_policy(MintPolicy::allow_all())
+                .active_burn_policy(BurnPolicy::allow_all())
+                .build(),
         )
         .with_component(callback_component);
 

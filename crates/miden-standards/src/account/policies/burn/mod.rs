@@ -19,8 +19,8 @@ pub use owner_only::BurnOwnerOnly;
 /// Binds the procedure root the manager dispatches to (via `dynexec`) with any companion
 /// [`AccountComponent`]s that must be installed for the procedure to work.
 ///
-/// Construct via [`Self::allow_all`], [`Self::owner_only`], or [`Self::custom`]. Pass to
-/// [`super::TokenPolicyManager::with_burn_policy`].
+/// Construct via [`Self::allow_all`], [`Self::owner_only`], or [`Self::custom`]. Pass to the
+/// [`super::TokenPolicyManager`] builder via `active_burn_policy` or `allowed_burn_policy`.
 #[derive(Debug, Clone)]
 pub struct BurnPolicy {
     root: AccountProcedureRoot,

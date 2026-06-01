@@ -22,7 +22,6 @@ use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
     BurnPolicy,
     MintPolicy,
-    PolicyRegistration,
     TokenPolicyManager,
     TransferPolicy,
 };
@@ -296,17 +295,12 @@ fn add_faucet_with_pause_and_policies(
         .with_components(AccessControl::Ownable2Step { owner })
         .with_component(PausableManager)
         .with_components(
-            TokenPolicyManager::new()
-                .with_mint_policy(MintPolicy::allow_all(), PolicyRegistration::Active)
-                .with_burn_policy(BurnPolicy::allow_all(), PolicyRegistration::Active)
-                .with_send_policy(
-                    TransferPolicy::empty_basic_blocklist(),
-                    PolicyRegistration::Active,
-                )
-                .with_receive_policy(
-                    TransferPolicy::empty_basic_blocklist(),
-                    PolicyRegistration::Active,
-                ),
+            TokenPolicyManager::builder()
+                .active_mint_policy(MintPolicy::allow_all())
+                .active_burn_policy(BurnPolicy::allow_all())
+                .active_send_policy(TransferPolicy::empty_basic_blocklist())
+                .active_receive_policy(TransferPolicy::empty_basic_blocklist())
+                .build(),
         );
 
     builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
