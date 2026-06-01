@@ -67,4 +67,6 @@ The [Blockchain](blockchain) defines how state progresses as aggregated-state-up
 
 ##### Operators capture and progress state
 
+A **Miden operator** is an entity that runs the node infrastructure powering the Miden network. Operators receive proven transactions, verify their proofs, and progress the chain's state by recording newly created notes and consumed-note nullifiers in the state databases and by building the batches and blocks that extend the chain. Operators also execute [network transactions](./transaction.md#network-transaction) on behalf of users — transactions against public, shared-state accounts — for example, consuming a user's note against a DEX or other public contract.
+
 ![Architecture state process](img/miden-architecture-state-progress.gif)
