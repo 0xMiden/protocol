@@ -44,25 +44,25 @@ pub proc prepare_batch
     # Layer 1: pipe BATCH_ID's mapped value to tx_tuples_ptr + verify.
     # ---------------------------------------------------------------------------------------------
 
-    # Stack: [BATCH_ID]
+    # => [BATCH_ID]
     push.TX_TUPLES_PTR movdn.4
-    # Stack: [BATCH_ID, tx_tuples_ptr]
+    # => [BATCH_ID, tx_tuples_ptr]
 
     adv.push_mapvaln
-    # AS: [len_felts, data...]
+    # AS => [len_felts, data...]
 
     adv_push div.4
-    # Stack: [num_words, BATCH_ID, tx_tuples_ptr]
+    # => [num_words, BATCH_ID, tx_tuples_ptr]
 
     # num_transactions = num_words / 2 (each tx contributes 2 words: tx_id + account_id_pair).
     dup div.2 exec.memory::set_num_transactions
 
     movup.5 swap
-    # Stack: [num_words, tx_tuples_ptr, BATCH_ID]
+    # => [num_words, tx_tuples_ptr, BATCH_ID]
 
     # Pipe the tuples into memory, asserting their poseidon2 hash equals BATCH_ID.
     exec.mem::pipe_preimage_to_memory
-    # Stack: [end_ptr]
+    # => [end_ptr]
     drop
 
     # Layer 2: for each transaction, pipe + verify its header.
@@ -70,33 +70,33 @@ pub proc prepare_batch
 
     exec.memory::get_num_transactions
     push.0
-    # Stack: [tx_index, num_transactions]
+    # => [tx_index, num_transactions]
 
     dup.1 dup.1 neq
-    # Stack: [should_loop, tx_index, num_transactions]
+    # => [should_loop, tx_index, num_transactions]
 
     while.true
         dup exec.memory::get_tx_id
-        # Stack: [TX_ID, tx_index, num_transactions]
+        # => [TX_ID, tx_index, num_transactions]
 
         dup.4 exec.memory::tx_header_ptr movdn.4
-        # Stack: [TX_ID, tx_header_ptr, tx_index, num_transactions]
+        # => [TX_ID, tx_header_ptr, tx_index, num_transactions]
 
         adv.push_mapvaln
         adv_push div.4
-        # Stack: [num_words, TX_ID, tx_header_ptr, tx_index, num_transactions]
+        # => [num_words, TX_ID, tx_header_ptr, tx_index, num_transactions]
 
         movup.5 swap
-        # Stack: [num_words, tx_header_ptr, TX_ID, tx_index, num_transactions]
+        # => [num_words, tx_header_ptr, TX_ID, tx_index, num_transactions]
 
         # Pipe the header into memory, asserting its poseidon2 hash equals TX_ID.
         exec.mem::pipe_preimage_to_memory
-        # Stack: [end_ptr, tx_index, num_transactions]
+        # => [end_ptr, tx_index, num_transactions]
         drop
 
         add.1
         dup.1 dup.1 neq
-        # Stack: [should_loop, tx_index, num_transactions]
+        # => [should_loop, tx_index, num_transactions]
     end
 
     drop drop

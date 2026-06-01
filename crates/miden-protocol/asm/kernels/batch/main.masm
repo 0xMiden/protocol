@@ -52,24 +52,24 @@ use miden::batch_kernel::prologue
 #! TODO: aggregate per-account updates and emit a separate ACCOUNT_UPDATES_COMMITMENT output.
 #! TODO: recursively verify each transaction's `ExecutionProof`.
 proc main
-    # Stack: [BLOCK_COMMITMENT, BATCH_ID, pad(8)]
+    # => [BLOCK_COMMITMENT, BATCH_ID, pad(8)]
 
     # TODO: verify BLOCK_COMMITMENT against block header data via the pipe-and-verify pattern.
     dropw
-    # Stack: [BATCH_ID, pad(12)]
+    # => [BATCH_ID, pad(12)]
 
     exec.prologue::prepare_batch
-    # Stack: [pad(16)]
+    # => [pad(16)]
 
     exec.note_tracker::compute_input_notes_commitment
-    # Stack: [INPUT_NOTES_COMMITMENT, pad(16)]
+    # => [INPUT_NOTES_COMMITMENT, pad(16)]
 
     # Drop the surplus padding word so the stack holds exactly the 16-felt output region
     # [INPUT_NOTES_COMMITMENT, BATCH_NOTE_TREE_ROOT, batch_expiration_block_num, pad(7)]. The
     # BATCH_NOTE_TREE_ROOT and batch_expiration_block_num cells stay zero (wired up in follow-up
     # PRs).
     movupw.3 dropw
-    # Stack: [INPUT_NOTES_COMMITMENT, pad(12)]
+    # => [INPUT_NOTES_COMMITMENT, pad(12)]
 end
 
 begin
