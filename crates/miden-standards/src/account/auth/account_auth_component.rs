@@ -38,21 +38,13 @@ pub enum AccountAuthScheme {
 }
 
 /// A typed wrapper around an authentication [`AccountComponent`].
-///
-/// Replaces the previous `AuthMethod` enum: instead of describing what an auth component
-/// _could_ be and translating to a concrete component inside each factory, callers construct
-/// the auth component themselves with one of the convenience constructors below (or wrap a
-/// custom [`AccountComponent`]) and pass the resulting [`AccountAuthComponent`] to a
-/// factory. Factories use [`Self::scheme`] to validate the combination.
 pub struct AccountAuthComponent {
     inner: AccountComponent,
     scheme: AccountAuthScheme,
 }
 
 impl AccountAuthComponent {
-    /// Wraps an arbitrary [`AccountComponent`] as an auth component. The component is treated
-    /// as opaque ([`AccountAuthScheme::Custom`]) and is accepted by factories that allow
-    /// custom auth components.
+    /// Wraps an arbitrary [`AccountComponent`] as an auth component.
     pub fn custom(component: AccountComponent) -> Self {
         Self {
             inner: component,

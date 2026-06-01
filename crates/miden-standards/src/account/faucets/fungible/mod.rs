@@ -607,9 +607,8 @@ fn all_authority_gated_setter_roots() -> Vec<AccountProcedureRoot> {
 /// - [`AccountAuthScheme::NetworkAccount`]: rejected — network-style faucets must use
 ///   [`create_network_fungible_faucet`] with [`AccessControl::Ownable2Step`] or
 ///   [`AccessControl::Rbac`].
-/// - [`AccountAuthScheme::Custom`]: accepted; the caller is responsible for ensuring the custom
+/// - [`AccountAuthScheme::Custom`]: accepted. The caller is responsible for ensuring the custom
 ///   auth component authenticates every authority-gated setter root.
-/// - Multisig variants: rejected via [`FungibleFaucetError::UnsupportedAuthMethod`].
 pub fn create_user_fungible_faucet(
     init_seed: [u8; 32],
     faucet: FungibleFaucet,
@@ -642,9 +641,7 @@ pub fn create_user_fungible_faucet(
 ///   [`AccountAuthScheme::Custom`]: accepted.
 /// - [`AccountAuthScheme::SingleSig`], [`AccountAuthScheme::SingleSigAcl`]: rejected via
 ///   [`FungibleFaucetError::UnsupportedAccessControlAuthCombination`] — SingleSig is for
-///   user-account faucets (see [`create_user_fungible_faucet`]); pairing it here duplicates the
-///   setter check with a per-tx signature that doesn't add security.
-/// - Multisig variants: rejected via [`FungibleFaucetError::UnsupportedAuthMethod`].
+///   user-account faucets (see [`create_user_fungible_faucet`]).
 pub fn create_network_fungible_faucet(
     init_seed: [u8; 32],
     faucet: FungibleFaucet,
