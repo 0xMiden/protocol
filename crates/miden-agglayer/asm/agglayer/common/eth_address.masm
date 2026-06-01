@@ -86,9 +86,10 @@ pub proc from_account_id
     swap
     # => [prefix, suffix]
 
-    u32split
+    u32split swap
     # => [hi_be, lo_be, suffix]
     #   prefix = hi_be * 2^32 + lo_be
+    #   (u32split returns [lo, hi]; swap corrects to [hi, lo])
 
     # byte-swap hi_be to get limb1 (LE)
     exec.utils::swap_u32_bytes
@@ -105,8 +106,9 @@ pub proc from_account_id
     movup.2
     # => [suffix, limb2, limb1]
 
-    u32split
+    u32split swap
     # => [hi_be, lo_be, limb2, limb1]
+    #   (u32split returns [lo, hi]; swap corrects to [hi, lo])
 
     # byte-swap hi_be to get limb3 (LE)
     exec.utils::swap_u32_bytes
