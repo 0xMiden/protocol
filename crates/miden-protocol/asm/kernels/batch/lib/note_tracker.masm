@@ -22,39 +22,39 @@ proc absorb_scratch_into_batch_hasher
     push.0 exec.memory::set_scratch_word_index
 
     exec.memory::load_batch_hasher_state
-    # Stack: [RATE0, RATE1, CAPACITY]
+    # => [RATE0, RATE1, CAPACITY]
 
     exec.memory::get_scratch_word_index
     exec.memory::get_scratch_words_count
     u32lt
-    # Stack: [should_loop, RATE0, RATE1, CAPACITY]
+    # => [should_loop, RATE0, RATE1, CAPACITY]
 
     while.true
         exec.memory::get_scratch_word_index
         mul.4 add.TX_NOTES_SCRATCH_PTR
-        # Stack: [scratch_ptr, RATE0, RATE1, CAPACITY]
+        # => [scratch_ptr, RATE0, RATE1, CAPACITY]
 
         padw dup.4 mem_loadw_le
-        # Stack: [DATA1, scratch_ptr, RATE0, RATE1, CAPACITY]
+        # => [DATA1, scratch_ptr, RATE0, RATE1, CAPACITY]
 
         padw dup.8 add.4 mem_loadw_le
-        # Stack: [DATA2, DATA1, scratch_ptr, RATE0, RATE1, CAPACITY]
+        # => [DATA2, DATA1, scratch_ptr, RATE0, RATE1, CAPACITY]
 
         movup.8 drop
-        # Stack: [DATA2, DATA1, RATE0, RATE1, CAPACITY]
+        # => [DATA2, DATA1, RATE0, RATE1, CAPACITY]
 
         # Replace RATE0 + RATE1 with DATA1 + DATA2 (DATA1 first, DATA2 second), then permute.
         swapdw
         dropw dropw
         swapw
         exec.poseidon2::permute
-        # Stack: [RATE0', RATE1', CAPACITY']
+        # => [RATE0', RATE1', CAPACITY']
 
         exec.memory::get_scratch_word_index add.2 exec.memory::set_scratch_word_index
         exec.memory::get_scratch_word_index
         exec.memory::get_scratch_words_count
         u32lt
-        # Stack: [should_loop, RATE0, RATE1, CAPACITY]
+        # => [should_loop, RATE0, RATE1, CAPACITY]
     end
 
     exec.memory::save_batch_hasher_state
@@ -87,51 +87,51 @@ pub proc compute_input_notes_commitment
 
     exec.memory::get_num_transactions
     push.0
-    # Stack: [tx_index, num_transactions]
+    # => [tx_index, num_transactions]
 
     dup.1 dup.1 neq
-    # Stack: [should_loop, tx_index, num_transactions]
+    # => [should_loop, tx_index, num_transactions]
 
     while.true
         dup exec.memory::get_tx_input_notes_commitment
-        # Stack: [INPUT_NOTES_COMMITMENT_i, tx_index, num_transactions]
+        # => [INPUT_NOTES_COMMITMENT_i, tx_index, num_transactions]
 
         dupw exec.word::eqz
-        # Stack: [is_empty, INPUT_NOTES_COMMITMENT_i, tx_index, num_transactions]
+        # => [is_empty, INPUT_NOTES_COMMITMENT_i, tx_index, num_transactions]
 
         if.true
             dropw
         else
             push.TX_NOTES_SCRATCH_PTR movdn.4
-            # Stack: [INPUT_NOTES_COMMITMENT_i, tx_notes_scratch_ptr, tx_index, num_transactions]
+            # => [INPUT_NOTES_COMMITMENT_i, tx_notes_scratch_ptr, tx_index, num_transactions]
 
             adv.push_mapvaln
             adv_push div.4
-            # Stack: [num_words, INPUT_NOTES_COMMITMENT_i, tx_notes_scratch_ptr, tx_index, num_transactions]
+            # => [num_words, INPUT_NOTES_COMMITMENT_i, tx_notes_scratch_ptr, tx_index, num_transactions]
 
             dup exec.memory::set_scratch_words_count
 
             movup.5 swap
-            # Stack: [num_words, tx_notes_scratch_ptr, INPUT_NOTES_COMMITMENT_i, tx_index, num_transactions]
+            # => [num_words, tx_notes_scratch_ptr, INPUT_NOTES_COMMITMENT_i, tx_index, num_transactions]
 
             # Pipe the note data into scratch, asserting its poseidon2 hash equals
             # INPUT_NOTES_COMMITMENT_i.
             exec.mem::pipe_preimage_to_memory
-            # Stack: [end_ptr, tx_index, num_transactions]
+            # => [end_ptr, tx_index, num_transactions]
             drop
 
             exec.absorb_scratch_into_batch_hasher
         end
-        # Stack: [tx_index, num_transactions]
+        # => [tx_index, num_transactions]
 
         add.1
         dup.1 dup.1 neq
-        # Stack: [should_loop, tx_index, num_transactions]
+        # => [should_loop, tx_index, num_transactions]
     end
 
     drop drop
 
     exec.memory::load_batch_hasher_state
     exec.poseidon2::squeeze_digest
-    # Stack: [INPUT_NOTES_COMMITMENT]
+    # => [INPUT_NOTES_COMMITMENT]
 end
