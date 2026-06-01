@@ -43,11 +43,13 @@ account_component_code!(NETWORK_ACCOUNT_AUTH_CODE, "auth/network_account.masl");
 /// IMPORTANT: an allowlisted root pins the script's *code* (its MAST root), but not its
 /// `TX_SCRIPT_ARGS` or advice-provider inputs, which anyone submitting a transaction against this
 /// open account controls. An allowlisted script therefore runs for arbitrary callers with arbitrary
-/// inputs, so only scripts that are safe for *every* possible input should be allowlisted - i.e.
-/// input-closed scripts whose effect does not depend on attacker-controlled args/advice. The
-/// canonical example is a script that sets the transaction expiration delta to a hardcoded constant
-/// (the kernel only ever lets the expiration decrease, so the effect is harmless regardless of who
-/// runs it). Allowlisting an input-dependent script re-opens the very code path the allowlist
+/// inputs, so only scripts that are safe for *every* possible input should be allowlisted. The
+/// canonical example is a script that sets the transaction expiration delta to a hardcoded
+/// constant: its effect is fixed regardless of caller or inputs, and it only affects the current
+/// transaction's own inclusion window. Expiration is per-transaction state (reset to its maximum at
+/// the start of every transaction), and within a transaction the kernel only ever lets a script
+/// tighten that window, never extend it, so the worst a caller can do is make their own transaction
+/// expire sooner. Allowlisting an input-dependent script re-opens the very code path the allowlist
 /// exists to constrain.
 ///
 /// The note allowlist is stored in the standardized [`NetworkAccountNoteAllowlist`] slot so
