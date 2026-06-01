@@ -19,6 +19,10 @@
 
 - Reject batches and blocks where an unauthenticated note is consumed before it is created to prevent circular note dependencies ([#2993](https://github.com/0xMiden/protocol/pull/2993)).
 
+### Changes
+
+- [BREAKING] Refactored `TransferPolicy`, `MintPolicyConfig`, and `BurnPolicyConfig` from enums into structs ([#2974](https://github.com/0xMiden/protocol/pull/2974)).
+
 ## v0.15.0 (2026-05-22)
 
 ### Features
@@ -88,7 +92,6 @@
 - [BREAKING] `FungibleAsset::amount()` and `AssetVault::get_balance()` now return `AssetAmount` ([#2928](https://github.com/0xMiden/protocol/pull/2928)).
 - [BREAKING] Upgraded `miden-vm` to v0.23 and `miden-crypto` to v0.25. Notable downstream changes: dropped the immediate form of `adv_push` in kernel and standards MASM, marked cross-module-referenced MASM constants and procedures `pub`, migrated to the split `Host`/`BaseHost` trait surface, renamed `Felt::new` call sites to the preserved-behavior `Felt::new_unchecked`, switched `ecdsa_k256_keccak`/`eddsa_25519_sha512` `SecretKey` references to the new `SigningKey`/`KeyExchangeKey` types, and recomputed the kernel's `EMPTY_SMT_ROOT` constant for the Plonky3-aligned Poseidon2 and domain-separated `SmtLeaf::hash` ([#2931](https://github.com/0xMiden/protocol/pull/2931)).
 - [BREAKING] Removed `AccountType` and renamed `AccountStorageMode` to `AccountType` ([#2939](https://github.com/0xMiden/protocol/pull/2939), [#2942](https://github.com/0xMiden/protocol/pull/2942)).
-- [BREAKING] Refactored `TransferPolicy`, `MintPolicyConfig`, and `BurnPolicyConfig` from enums into structs ([#2974](https://github.com/0xMiden/protocol/pull/2974)).
 - [BREAKING] Updated note nullifiers to include note metadata and attachments commitment ([#2953](https://github.com/0xMiden/protocol/pull/2953)).
 - Exposed `token_config_slot_value` on `FungibleFaucet` to allow reading the token config word directly from the account storage ([#2954](https://github.com/0xMiden/protocol/pull/2954)).
 
