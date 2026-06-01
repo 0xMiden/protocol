@@ -332,10 +332,9 @@ pub proc bridge_message
 
     # --- 6. Store origin_token_address from note sender ---
     exec.active_note::get_sender
-    # => [sender_prefix, sender_suffix, pad(16)]
+    # => [sender_suffix, sender_prefix, pad(16)]
 
-    # from_account_id expects [suffix, prefix]
-    swap
+    # from_account_id expects [suffix, prefix] — get_sender already returns this order
     exec.eth_address::from_account_id
     # => [limb0, limb1, limb2, limb3, limb4, pad(16)]
 
