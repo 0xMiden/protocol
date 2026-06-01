@@ -16,8 +16,8 @@ use miden_protocol::errors::MasmError;
 use miden_protocol::note::{Note, NoteTag, NoteType};
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::utils::sync::LazyLock;
-use miden_standards::account::access::AccessControl;
 use miden_standards::account::access::pausable::{PausableManager, PausableStorage};
+use miden_standards::account::access::{AccessControl, Authority};
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
     BurnPolicyConfig,
@@ -579,7 +579,7 @@ async fn pausable_set_max_supply_fails_when_paused() -> anyhow::Result<()> {
 // TESTS — PAUSABLE MANAGER WITH AUTH-CONTROLLED ACCESS CONTROL
 // ================================================================================================
 
-/// Same as `add_faucet_with_pause` but uses `AccessControl::AuthControlled`.
+/// Same as `add_faucet_with_pause` but uses `Authority::AuthControlled` directly.
 fn add_faucet_with_pause_auth_controlled(
     builder: &mut MockChainBuilder,
 ) -> anyhow::Result<Account> {
@@ -593,7 +593,7 @@ fn add_faucet_with_pause_auth_controlled(
     let account_builder = AccountBuilder::new([46u8; 32])
         .account_type(AccountType::Public)
         .with_component(faucet)
-        .with_components(AccessControl::AuthControlled)
+        .with_component(Authority::AuthControlled)
         .with_component(PausableManager);
 
     builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
