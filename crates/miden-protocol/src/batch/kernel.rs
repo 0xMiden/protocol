@@ -23,7 +23,7 @@ static KERNEL_MAIN: LazyLock<Program> = LazyLock::new(|| {
 
 /// The batch kernel program: an executable Miden program that proves a batch of transactions.
 ///
-/// The kernel takes `[BATCH_ID, BLOCK_COMMITMENT]` as public inputs and emits
+/// The kernel takes `[BLOCK_COMMITMENT, BATCH_ID]` as public inputs and emits
 /// `[INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, batch_expiration_block_num]`. See
 /// `asm/kernels/batch/main.masm` for the input/output contract.
 pub struct BatchKernel;
@@ -53,7 +53,7 @@ impl BatchKernel {
         let block_commitment = proposed_batch.reference_block_header().commitment();
         let batch_id = proposed_batch.id().as_word();
 
-        let stack_inputs = Self::build_input_stack(batch_id, block_commitment);
+        let stack_inputs = Self::build_input_stack(block_commitment, batch_id);
         let advice_inputs = Self::build_advice_inputs(proposed_batch);
 
         (stack_inputs, advice_inputs)
@@ -64,16 +64,16 @@ impl BatchKernel {
     /// The initial stack is:
     ///
     /// ```text
-    /// [BATCH_ID, BLOCK_COMMITMENT, pad(8)]
+    /// [BLOCK_COMMITMENT, BATCH_ID, pad(8)]
     /// ```
     ///
     /// Where:
-    /// - `BATCH_ID` is the batch's [`BatchId`](crate::batch::BatchId).
     /// - `BLOCK_COMMITMENT` is the commitment of the batch's reference block.
-    pub fn build_input_stack(batch_id: Word, block_commitment: Word) -> StackInputs {
+    /// - `BATCH_ID` is the batch's [`BatchId`](crate::batch::BatchId).
+    pub fn build_input_stack(block_commitment: Word, batch_id: Word) -> StackInputs {
         let mut inputs: Vec<Felt> = Vec::with_capacity(8);
-        inputs.extend_from_slice(batch_id.as_elements());
         inputs.extend_from_slice(block_commitment.as_elements());
+        inputs.extend_from_slice(batch_id.as_elements());
 
         StackInputs::new(&inputs).expect("number of stack inputs should be <= 16")
     }
