@@ -2,6 +2,7 @@ use miden_processor::{DefaultHost, ExecutionError, ExecutionOptions, FastProcess
 use miden_protocol::CoreLibrary;
 use miden_protocol::batch::{BatchKernel, BatchOutputs, ProposedBatch};
 use miden_protocol::errors::ProvenBatchError;
+use miden_protocol::vm::AdviceInputs;
 
 use crate::ExecutedBatch;
 
@@ -10,12 +11,26 @@ use crate::ExecutedBatch;
 
 /// Executes the batch kernel over a [`ProposedBatch`], producing an [`ExecutedBatch`].
 #[derive(Clone, Default)]
-pub struct BatchExecutor;
+pub struct BatchExecutor {
+    /// Extra advice inputs merged onto those derived from the proposed batch before execution.
+    advice_inputs: AdviceInputs,
+}
 
 impl BatchExecutor {
     /// Creates a new [`BatchExecutor`] instance.
     pub fn new() -> Self {
-        Self
+        Self::default()
+    }
+
+    /// Extends the advice inputs merged onto those derived from the proposed batch before
+    /// execution. Entries provided here override matching keys from the derived advice.
+    ///
+    /// This is primarily a testing hook for exercising the batch kernel's rejection paths by
+    /// injecting tampered advice, mirroring
+    /// [`TransactionContextBuilder::extend_advice_inputs`](https://docs.rs/miden-testing).
+    pub fn extend_advice_inputs(mut self, advice_inputs: AdviceInputs) -> Self {
+        self.advice_inputs.extend(advice_inputs);
+        self
     }
 
     /// Runs the batch kernel over the [`ProposedBatch`], returning an [`ExecutedBatch`] that can be
@@ -30,7 +45,9 @@ impl BatchExecutor {
         &self,
         proposed_batch: ProposedBatch,
     ) -> Result<ExecutedBatch, ProvenBatchError> {
-        let (stack_inputs, advice_inputs) = BatchKernel::prepare_inputs(&proposed_batch);
+        let (stack_inputs, mut advice_inputs) = BatchKernel::prepare_inputs(&proposed_batch);
+        // Merge any caller-provided advice, overriding matching keys from the derived advice.
+        advice_inputs.extend(self.advice_inputs.clone());
 
         let processor = FastProcessor::new_with_options(
             stack_inputs,
