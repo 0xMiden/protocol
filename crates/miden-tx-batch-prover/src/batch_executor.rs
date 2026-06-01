@@ -68,10 +68,20 @@ impl BatchExecutor {
             .map_err(ProvenBatchError::BatchKernelExecutionFailed)?;
 
         // Parse and validate the output stack shape (padding cells are zero and the expiration
-        // fits in u32); the actual output values themselves are not checked until the kernel
-        // verifies them.
+        // fits in u32).
         let batch_outputs = BatchOutputs::parse(trace_inputs.stack_outputs())
             .map_err(ProvenBatchError::BatchKernelOutputInvalid)?;
+
+        // Cross-check the kernel's running-min expiration against the value the proposed batch
+        // independently derived from its transactions.
+        let expected_expiration = proposed_batch.batch_expiration_block_num();
+        let actual_expiration = batch_outputs.batch_expiration_block_num();
+        if actual_expiration != expected_expiration {
+            return Err(ProvenBatchError::BatchExpirationMismatch {
+                actual: actual_expiration,
+                expected: expected_expiration,
+            });
+        }
 
         Ok(ExecutedBatch::new(proposed_batch, trace_inputs, batch_outputs))
     }

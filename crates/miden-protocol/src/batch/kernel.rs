@@ -111,7 +111,10 @@ impl BatchKernel {
     ///   `TransactionId::input_elements`).
     /// - each per-tx `INPUT_NOTES_COMMITMENT` -> the `(NULLIFIER, EMPTY_OR_COMMITMENT)` tuples.
     ///
-    /// The per-tx output-notes layer and the expiration data are wired up in follow-up PRs.
+    /// It also pushes each transaction's `expiration_block_num` onto the advice stack, from which
+    /// the kernel accumulates the batch-wide running minimum.
+    ///
+    /// The per-tx output-notes layer is wired up in a follow-up PR.
     fn build_advice_inputs(proposed_batch: &ProposedBatch) -> AdviceInputs {
         let mut advice_inputs = AdviceInputs::default();
 
@@ -151,6 +154,13 @@ impl BatchKernel {
                     .map
                     .extend([(input_notes_commitment, notes_commitment_preimage_data)]);
             }
+        }
+
+        // Advice stack: each transaction's expiration_block_num, in transaction order. The kernel
+        // pops one per transaction and accumulates the running minimum; order is irrelevant to the
+        // resulting minimum.
+        for tx in proposed_batch.transactions().iter() {
+            advice_inputs.stack.push(Felt::from(tx.expiration_block_num()));
         }
 
         advice_inputs
