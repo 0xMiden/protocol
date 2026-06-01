@@ -218,6 +218,73 @@ async fn test_auth_network_account_rejects_non_allowlisted_tx_script() -> anyhow
     Ok(())
 }
 
+/// Allowlisting several distinct tx scripts must let a transaction run any one of them. Here two
+/// expiration-delta scripts (delta 30 and delta 10) are both allowlisted, and a transaction running
+/// each one end-to-end succeeds and produces the corresponding expiration block number.
+#[tokio::test]
+async fn test_auth_network_account_accepts_multiple_allowlisted_tx_scripts() -> anyhow::Result<()> {
+    let script_30 = expiration_tx_script(30);
+    let script_10 = expiration_tx_script(10);
+
+    // Learn the allowed note script root from a template note.
+    let bootstrap_account = build_allowlist_account(vec![placeholder_script_root()])?;
+    let template_note = NoteBuilder::new(bootstrap_account.id(), &mut rand::rng())
+        .build()
+        .expect("failed to build template note");
+    let allowed_note_root: Word = template_note.script().root().into();
+
+    // Allowlist the note root and both expiration scripts.
+    let account = build_account_with_allowlists(
+        vec![allowed_note_root],
+        vec![script_30.root(), script_10.root()],
+    )?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+
+    // One consumable note per transaction (each transaction must consume a note or change state).
+    let note_a = NoteBuilder::new(account.id(), &mut rand::rng())
+        .build()
+        .expect("failed to build note a");
+    let note_b = NoteBuilder::new(account.id(), &mut rand::rng())
+        .build()
+        .expect("failed to build note b");
+    builder.add_output_note(RawOutputNote::Full(note_a.clone()));
+    builder.add_output_note(RawOutputNote::Full(note_b.clone()));
+
+    let mock_chain = builder.build()?;
+
+    // Run the delta-30 script.
+    let executed_30 = mock_chain
+        .build_tx_context(account.id(), &[], slice::from_ref(&note_a))?
+        .tx_script(script_30)
+        .build()?
+        .execute()
+        .await
+        .expect("the delta-30 script is allowlisted and should succeed");
+    assert_eq!(
+        executed_30.expiration_block_num(),
+        executed_30.block_header().block_num() + 30u32,
+        "the delta-30 script should set the expiration to reference_block + 30",
+    );
+
+    // Run the delta-10 script against the same account.
+    let executed_10 = mock_chain
+        .build_tx_context(account.id(), &[], slice::from_ref(&note_b))?
+        .tx_script(script_10)
+        .build()?
+        .execute()
+        .await
+        .expect("the delta-10 script is allowlisted and should succeed");
+    assert_eq!(
+        executed_10.expiration_block_num(),
+        executed_10.block_header().block_num() + 10u32,
+        "the delta-10 script should set the expiration to reference_block + 10",
+    );
+
+    Ok(())
+}
+
 /// A transaction that consumes a mix of allowed and disallowed input notes must be rejected: the
 /// allowlist check must fail as soon as any single consumed note is not in the allowlist, even if
 /// the others are.
