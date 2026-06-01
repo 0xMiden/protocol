@@ -19,7 +19,7 @@ use crate::BatchVerifierError;
 ///
 /// The current batch kernel is a skeleton that drops its inputs and emits an all-zero output
 /// region, so a successful [`verify`](BatchVerifier::verify) attests only that the kernel program
-/// ran over the batch's `[BATCH_ID, BLOCK_COMMITMENT]` public inputs. It does **not** yet bind the
+/// ran over the batch's `[BLOCK_COMMITMENT, BATCH_ID]` public inputs. It does **not** yet bind the
 /// batch's notes, account updates, or expiration: those values are not part of what the proof
 /// commits to, so a `ProvenBatch` whose contents were mutated would still verify. This verifier
 /// must therefore not be relied on at a trust boundary until the kernel verification logic that
@@ -44,13 +44,13 @@ impl BatchVerifier {
     /// - The security level of the verified proof is insufficient.
     pub fn verify(&self, batch: &ProvenBatch) -> Result<(), BatchVerifierError> {
         let stack_inputs = BatchKernel::build_input_stack(
-            batch.id().as_word(),
             batch.reference_block_commitment(),
+            batch.id().as_word(),
         );
 
         // The skeleton kernel drops its inputs and emits the all-zero output region, so the proof
         // attests to empty outputs. Once the kernel computes the real commitments, these empty
-        // values become `batch.input_notes().commitment()`, the output notes commitment and
+        // values become `batch.input_notes().commitment()`, the batch note tree root and
         // `batch.batch_expiration_block_num()`.
         let stack_outputs =
             BatchKernel::build_output_stack(Word::empty(), Word::empty(), BlockNumber::from(0u32));
