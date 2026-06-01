@@ -67,6 +67,6 @@ The [Blockchain](blockchain) defines how state progresses as aggregated-state-up
 
 ##### Operational roles capture and progress state
 
-Miden's node infrastructure is split across operational roles. At a high level, RPC nodes expose network state and accept transactions; transaction builders execute and prove [network transactions](./transaction.md#network-transaction) against public, shared-state accounts; and batch and block builders verify proven transactions, record newly created notes and consumed-note nullifiers in the state databases, and extend the chain. In the current centralized setting these responsibilities may be run by a single operator, but the protocol model separates the roles performed by the underlying infrastructure.
+Miden's node infrastructure is split across operational roles. At a high level, RPC nodes expose network state and accept transactions; network-transaction builders execute and prove [network transactions](./transaction.md#network-transaction) against public, shared-state accounts; and batch and block builders verify proven transactions, record newly created notes and consumed-note nullifiers in the state databases, and extend the chain. In the current centralized setting these responsibilities may be run by a single operator, but the protocol model separates the roles performed by the underlying infrastructure.
 
 ![Architecture state process](img/miden-architecture-state-progress.gif)
