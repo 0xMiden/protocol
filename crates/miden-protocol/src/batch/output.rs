@@ -8,8 +8,7 @@ use crate::{Felt, Word};
 
 /// The public outputs produced by the batch kernel.
 ///
-/// This is the parsed, typed form of the kernel's output stack (see [`BatchOutputs::parse`]),
-/// mirroring [`TransactionOutputs`](crate::transaction::TransactionOutputs) for transactions.
+/// This is the parsed, typed form of the kernel's output stack.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BatchOutputs {
     /// The commitment to the batch's input notes.
