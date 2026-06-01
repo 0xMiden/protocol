@@ -58,7 +58,7 @@ pub proc compute_commitment
 
     # the delta of the nonce is equal to was_nonce_incremented
     exec.was_nonce_incremented push.DOMAIN_DELTA
-    # => [DOMAIN_DELTA, nonce_delta, native_acct_id_suffix, native_acct_id_prefix, EMPTY_WORD, CAPACITY]
+    # => [domain_delta, nonce_delta, native_acct_id_suffix, native_acct_id_prefix, EMPTY_WORD, CAPACITY]
     # => [ID_AND_NONCE, EMPTY_WORD, CAPACITY]
 
     exec.poseidon2::permute
