@@ -121,3 +121,83 @@ impl BatchOutputs {
         self.batch_expiration_block_num
     }
 }
+
+// TESTS
+// ================================================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_returns_outputs_for_well_formed_stack() {
+        let input_notes_commitment =
+            Word::from([Felt::from(1u32), Felt::from(2u32), Felt::from(3u32), Felt::from(4u32)]);
+        let batch_note_tree_root =
+            Word::from([Felt::from(5u32), Felt::from(6u32), Felt::from(7u32), Felt::from(8u32)]);
+        let elements = [
+            Felt::from(1u32),
+            Felt::from(2u32),
+            Felt::from(3u32),
+            Felt::from(4u32),
+            Felt::from(5u32),
+            Felt::from(6u32),
+            Felt::from(7u32),
+            Felt::from(8u32),
+            Felt::from(1234u32),
+        ];
+        let stack = StackOutputs::new(&elements).unwrap();
+
+        let outputs = BatchOutputs::parse(&stack).unwrap();
+
+        assert_eq!(outputs.input_notes_commitment(), input_notes_commitment);
+        assert_eq!(outputs.batch_note_tree_root(), batch_note_tree_root);
+        assert_eq!(outputs.batch_expiration_block_num(), BlockNumber::from(1234u32));
+    }
+
+    #[test]
+    fn parse_rejects_non_zero_padding() {
+        // A valid 9-element output followed by a non-zero felt in the padding region (>= idx 9).
+        let elements = [
+            Felt::ZERO,
+            Felt::ZERO,
+            Felt::ZERO,
+            Felt::ZERO,
+            Felt::ZERO,
+            Felt::ZERO,
+            Felt::ZERO,
+            Felt::ZERO,
+            Felt::from(7u32),
+            Felt::from(1u32),
+        ];
+        let stack = StackOutputs::new(&elements).unwrap();
+
+        assert!(matches!(
+            BatchOutputs::parse(&stack),
+            Err(BatchOutputError::OutputStackInvalid(_))
+        ));
+    }
+
+    #[test]
+    fn parse_rejects_oversized_expiration() {
+        // An expiration value that does not fit into a u32.
+        let oversized = Felt::from(u32::MAX) + Felt::from(1u32);
+        let elements = [
+            Felt::ZERO,
+            Felt::ZERO,
+            Felt::ZERO,
+            Felt::ZERO,
+            Felt::ZERO,
+            Felt::ZERO,
+            Felt::ZERO,
+            Felt::ZERO,
+            oversized,
+        ];
+        let stack = StackOutputs::new(&elements).unwrap();
+
+        assert!(matches!(
+            BatchOutputs::parse(&stack),
+            Err(BatchOutputError::ExpirationBlockNumberTooLarge(_))
+        ));
+    }
+}
