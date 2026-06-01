@@ -13,8 +13,9 @@ use crate::block::BlockNumber;
 pub struct BatchOutput {
     /// The commitment to the batch's input notes.
     input_notes_commitment: Word,
-    /// The commitment to the batch's output notes.
-    output_notes_commitment: Word,
+    /// The root of the batch's note tree (the [`BatchNoteTree`](crate::batch::BatchNoteTree)) over
+    /// the batch's output notes.
+    batch_note_tree_root: Word,
     /// The block number at which the batch expires.
     batch_expiration_block_num: BlockNumber,
 }
@@ -25,8 +26,8 @@ impl BatchOutput {
 
     /// The element index at which the input notes commitment word starts on the output stack.
     pub const INPUT_NOTES_COMMITMENT_WORD_IDX: usize = 0;
-    /// The element index at which the output notes commitment word starts on the output stack.
-    pub const OUTPUT_NOTES_COMMITMENT_WORD_IDX: usize = 4;
+    /// The element index at which the batch note tree root word starts on the output stack.
+    pub const BATCH_NOTE_TREE_ROOT_WORD_IDX: usize = 4;
     /// The element index at which the batch expiration block number is stored on the output stack.
     pub const BATCH_EXPIRATION_BLOCK_NUM_ELEMENT_IDX: usize = 8;
 
@@ -36,12 +37,12 @@ impl BatchOutput {
     /// Returns a new [`BatchOutput`] instantiated from the provided data.
     pub fn new(
         input_notes_commitment: Word,
-        output_notes_commitment: Word,
+        batch_note_tree_root: Word,
         batch_expiration_block_num: BlockNumber,
     ) -> Self {
         Self {
             input_notes_commitment,
-            output_notes_commitment,
+            batch_note_tree_root,
             batch_expiration_block_num,
         }
     }
@@ -54,9 +55,9 @@ impl BatchOutput {
         self.input_notes_commitment
     }
 
-    /// Returns the commitment to the batch's output notes.
-    pub fn output_notes_commitment(&self) -> Word {
-        self.output_notes_commitment
+    /// Returns the root of the batch's note tree.
+    pub fn batch_note_tree_root(&self) -> Word {
+        self.batch_note_tree_root
     }
 
     /// Returns the block number at which the batch expires.

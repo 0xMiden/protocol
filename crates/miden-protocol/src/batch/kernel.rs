@@ -24,7 +24,7 @@ static KERNEL_MAIN: LazyLock<Program> = LazyLock::new(|| {
 /// The batch kernel program: an executable Miden program that proves a batch of transactions.
 ///
 /// The kernel takes `[BLOCK_COMMITMENT, BATCH_ID]` as public inputs and emits
-/// `[INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, batch_expiration_block_num]`. See
+/// `[INPUT_NOTES_COMMITMENT, BATCH_NOTE_TREE_ROOT, batch_expiration_block_num]`. See
 /// `asm/kernels/batch/main.masm` for the input/output contract.
 pub struct BatchKernel;
 
@@ -83,16 +83,16 @@ impl BatchKernel {
     /// The output stack is defined as:
     ///
     /// ```text
-    /// [INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, batch_expiration_block_num]
+    /// [INPUT_NOTES_COMMITMENT, BATCH_NOTE_TREE_ROOT, batch_expiration_block_num]
     /// ```
     pub fn build_output_stack(
         input_notes_commitment: Word,
-        output_notes_commitment: Word,
+        batch_note_tree_root: Word,
         batch_expiration_block_num: BlockNumber,
     ) -> StackOutputs {
         let mut outputs: Vec<Felt> = Vec::with_capacity(9);
         outputs.extend_from_slice(input_notes_commitment.as_elements());
-        outputs.extend_from_slice(output_notes_commitment.as_elements());
+        outputs.extend_from_slice(batch_note_tree_root.as_elements());
         outputs.push(Felt::from(batch_expiration_block_num));
 
         StackOutputs::new(&outputs).expect("number of stack outputs should be <= 16")
@@ -109,9 +109,9 @@ impl BatchKernel {
         let input_notes_commitment = stack
             .get_word(BatchOutput::INPUT_NOTES_COMMITMENT_WORD_IDX)
             .expect("input_notes_commitment word missing");
-        let output_notes_commitment = stack
-            .get_word(BatchOutput::OUTPUT_NOTES_COMMITMENT_WORD_IDX)
-            .expect("output_notes_commitment word missing");
+        let batch_note_tree_root = stack
+            .get_word(BatchOutput::BATCH_NOTE_TREE_ROOT_WORD_IDX)
+            .expect("batch_note_tree_root word missing");
 
         let expiration_felt = stack
             .get_element(BatchOutput::BATCH_EXPIRATION_BLOCK_NUM_ELEMENT_IDX)
@@ -133,7 +133,7 @@ impl BatchKernel {
 
         Ok(BatchOutput::new(
             input_notes_commitment,
-            output_notes_commitment,
+            batch_note_tree_root,
             batch_expiration_block_num,
         ))
     }

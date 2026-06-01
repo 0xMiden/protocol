@@ -17,7 +17,7 @@
 #!
 #! Outputs: [
 #!   INPUT_NOTES_COMMITMENT,
-#!   OUTPUT_NOTES_COMMITMENT,
+#!   BATCH_NOTE_TREE_ROOT,
 #!   batch_expiration_block_num,
 #!   pad(7),
 #! ]
@@ -27,8 +27,8 @@
 #! - BATCH_ID is the batch's `BatchId`, the commitment to its transactions.
 #! - INPUT_NOTES_COMMITMENT will be the sequential hash over every transaction's input note
 #!   commitments. In this skeleton it is the empty word.
-#! - OUTPUT_NOTES_COMMITMENT will be the sequential hash over every transaction's output note
-#!   commitments. In this skeleton it is the empty word.
+#! - BATCH_NOTE_TREE_ROOT will be the root of the batch note tree built over every transaction's
+#!   output notes. In this skeleton it is the empty word.
 #! - batch_expiration_block_num will be the minimum of every transaction's
 #!   `expiration_block_num`. In this skeleton it is zero.
 #!

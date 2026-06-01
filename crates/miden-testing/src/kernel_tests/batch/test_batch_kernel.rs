@@ -68,7 +68,7 @@ fn batch_kernel_skeleton_emits_empty_outputs() -> anyhow::Result<()> {
         .context("parse output stack failed")?;
 
     assert_eq!(output.input_notes_commitment(), Word::empty());
-    assert_eq!(output.output_notes_commitment(), Word::empty());
+    assert_eq!(output.batch_note_tree_root(), Word::empty());
     assert_eq!(output.batch_expiration_block_num(), BlockNumber::from(0u32));
 
     Ok(())
