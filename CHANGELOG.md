@@ -5,6 +5,7 @@
 ### Changes
 - Added a skeleton batch kernel ([#1122](https://github.com/0xMiden/protocol/issues/1122)) wired through `LocalBatchProver::prove` and attached to `ProvenBatch` as an `ExecutionProof`. It does not yet perform any verification.
 - The batch kernel now verifies the batch's transaction list against its `BATCH_ID`, verifies each transaction header, and computes the batch `INPUT_NOTES_COMMITMENT` ([#2905](https://github.com/0xMiden/protocol/pull/2905)).
+- The batch kernel now emits `batch_expiration_block_num`, the running minimum of its transactions' expiration block numbers, cross-checked against the proposed batch ([#3019](https://github.com/0xMiden/protocol/pull/3019)).
 
 - [BREAKING] Renamed `AccountStorageDelta` to `AccountStoragePatch` ([#3002](https://github.com/0xMiden/protocol/pull/3002)).
 - [BREAKING] Extracted `NullifierTreeBackendReader` and `AccountTreeBackendReader` traits from existing `NullifierTreeBackend` and `AccountTreeBackend` traits ([#2755](https://github.com/0xMiden/protocol/pull/2755)).

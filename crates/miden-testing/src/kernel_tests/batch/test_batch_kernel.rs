@@ -105,20 +105,25 @@ fn tampered_advice_for(batch: &ProposedBatch, key: Word) -> AdviceInputs {
 // ================================================================================================
 
 /// The batch kernel reconstructs every transaction's input notes from the advice provider, anchors
-/// them in `BATCH_ID`, and emits the batch's `INPUT_NOTES_COMMITMENT`. The batch note tree root and
-/// expiration outputs are not wired up yet, so they remain empty / zero.
+/// them in `BATCH_ID`, and emits the batch's `INPUT_NOTES_COMMITMENT` and the running-min
+/// `batch_expiration_block_num`. The batch note tree root is not wired up yet, so it remains empty.
 #[test]
-fn batch_kernel_emits_input_notes_commitment() -> anyhow::Result<()> {
+fn batch_kernel_emits_input_notes_commitment_and_expiration() -> anyhow::Result<()> {
     let mut setup = setup_chain();
     let batch = two_tx_batch(&mut setup)?;
     let expected_input_notes_commitment = expected_input_notes_commitment(&batch);
+    // The expected expiration is the minimum over the batch's transactions, which the proposed
+    // batch derives independently of the kernel.
+    let expected_expiration = batch.batch_expiration_block_num();
 
     let executed = BatchExecutor::new().execute(batch).context("batch execution failed")?;
     let output = executed.batch_outputs();
 
     assert_eq!(output.input_notes_commitment(), expected_input_notes_commitment);
     assert_eq!(output.batch_note_tree_root(), Word::empty());
-    assert_eq!(output.batch_expiration_block_num(), BlockNumber::from(0u32));
+    assert_eq!(output.batch_expiration_block_num(), expected_expiration);
+    // Sanity check: the min of the two transactions' expirations (1234 and 800).
+    assert_eq!(output.batch_expiration_block_num(), BlockNumber::from(800u32));
 
     Ok(())
 }

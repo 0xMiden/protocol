@@ -3,6 +3,12 @@ use miden::core::mem
 use miden::batch_kernel::memory
 use miden::batch_kernel::memory::TX_TUPLES_PTR
 
+# CONSTANTS
+# =================================================================================================
+
+#! Maximum value of `batch_expiration_block_num`, used as the running-min initialiser.
+const MAX_BLOCK_NUM=0xFFFFFFFF
+
 # PROLOGUE
 # =================================================================================================
 
@@ -16,7 +22,8 @@ use miden::batch_kernel::memory::TX_TUPLES_PTR
 #! - Layer 2: for each transaction, pipes the felt sequence hashed by `TransactionId::new` from the
 #!   advice map keyed by the verified `tx_id`, asserting that the sequential hash matches the
 #!   `tx_id`. Each transaction's data is written into [`memory::TX_HEADERS_PTR`] at the appropriate
-#!   per-tx offset.
+#!   per-tx offset. For each transaction, pops its `expiration_block_num` from the advice stack and
+#!   updates the running minimum in [`memory::BATCH_EXPIRATION_PTR`].
 #!
 #! `BATCH_ID` is the batch's `BatchId` value, i.e. the sequential hash of the `(tx_id, account_id)`
 #! tuples committing to the transactions in the batch.
@@ -28,6 +35,7 @@ use miden::batch_kernel::memory::TX_TUPLES_PTR
 #!     For each verified tx_id_i:
 #!       tx_id_i |-> [INIT_i, FINAL_i, INPUT_NOTES_COMMITMENT_i, OUTPUT_NOTES_COMMITMENT_i,
 #!                    FEE_ASSET_i]
+#!   Advice stack: [expiration_block_num_0, expiration_block_num_1, ...]
 #!
 #! Outputs:
 #!   Operand stack: []
@@ -40,6 +48,9 @@ use miden::batch_kernel::memory::TX_TUPLES_PTR
 #! TODO: verify that each transaction's reference block is contained in the chain MMR rooted at
 #!       BLOCK_COMMITMENT.
 #! TODO: verify that the partial-blockchain peaks hash matches the block header's chain commitment.
+#! TODO: assert each `expiration_block_num_i > reference_block_num`.
+#! TODO: derive each `expiration_block_num_i` from data committed-to in the verified transaction
+#!       header rather than from the unverified advice stack.
 pub proc prepare_batch
     # Layer 1: pipe BATCH_ID's mapped value to tx_tuples_ptr + verify.
     # ---------------------------------------------------------------------------------------------
@@ -65,7 +76,12 @@ pub proc prepare_batch
     # => [end_ptr]
     drop
 
-    # Layer 2: for each transaction, pipe + verify its header.
+    # Initialise batch_expiration_block_num to u32::MAX.
+    # ---------------------------------------------------------------------------------------------
+
+    push.MAX_BLOCK_NUM exec.memory::set_batch_expiration_block_num
+
+    # Layer 2: for each transaction, pipe + verify its header, accumulate expiration min.
     # ---------------------------------------------------------------------------------------------
 
     exec.memory::get_num_transactions
@@ -93,6 +109,23 @@ pub proc prepare_batch
         exec.mem::pipe_preimage_to_memory
         # => [end_ptr, tx_index, num_transactions]
         drop
+
+        # Accumulate the expiration running-min from the advice stack.
+        adv_push
+        # => [expiration, tx_index, num_transactions]
+
+        dup exec.memory::get_batch_expiration_block_num
+        # => [current_min, expiration, expiration, tx_index, num_transactions]
+
+        u32lt
+        # => [is_new_min, expiration, tx_index, num_transactions]
+
+        if.true
+            exec.memory::set_batch_expiration_block_num
+        else
+            drop
+        end
+        # => [tx_index, num_transactions]
 
         add.1
         dup.1 dup.1 neq

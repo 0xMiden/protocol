@@ -7,6 +7,8 @@
 # | Address range     | Constant                | Contents                         |
 # +-------------------+-------------------------+----------------------------------+
 # | 0                 | NUM_TRANSACTIONS_PTR    | num_transactions (1 felt).       |
+# | 1                 | BATCH_EXPIRATION_PTR    | batch_expiration_block_num,      |
+# |                   |                         | the running min over all txs.    |
 # | 4..8              | BATCH_HASHER_RATE0_PTR  | RATE0 of the batch-level         |
 # |                   |                         | poseidon2 hasher state.          |
 # | 8..12             | BATCH_HASHER_RATE1_PTR  | RATE1 of the batch-level hasher. |
@@ -38,6 +40,10 @@
 
 #! Single-felt slot holding `num_transactions` after Layer 1 verification.
 const NUM_TRANSACTIONS_PTR=0
+
+#! Single-felt slot holding `batch_expiration_block_num`: the running minimum of every
+#! transaction's `expiration_block_num`, initialised to `u32::MAX`.
+const BATCH_EXPIRATION_PTR=1
 
 # BATCH HASHER STATE
 # =================================================================================================
@@ -105,6 +111,25 @@ end
 #! Outputs: [num_transactions]
 pub proc get_num_transactions
     mem_load.NUM_TRANSACTIONS_PTR
+end
+
+# BATCH EXPIRATION BLOCK NUM
+# =================================================================================================
+
+#! Stores `batch_expiration_block_num`.
+#!
+#! Inputs:  [batch_expiration_block_num]
+#! Outputs: []
+pub proc set_batch_expiration_block_num
+    mem_store.BATCH_EXPIRATION_PTR
+end
+
+#! Returns `batch_expiration_block_num`.
+#!
+#! Inputs:  []
+#! Outputs: [batch_expiration_block_num]
+pub proc get_batch_expiration_block_num
+    mem_load.BATCH_EXPIRATION_PTR
 end
 
 # BATCH HASHER STATE

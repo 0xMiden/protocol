@@ -1096,6 +1096,13 @@ pub enum ProvenBatchError {
     BatchKernelExecutionFailed(#[source] ExecutionError),
     #[error("batch kernel produced an invalid output stack")]
     BatchKernelOutputInvalid(#[source] BatchOutputError),
+    #[error(
+        "batch kernel computed expiration block number {actual} but the proposed batch expected {expected}"
+    )]
+    BatchExpirationMismatch {
+        actual: BlockNumber,
+        expected: BlockNumber,
+    },
 }
 
 // BATCH OUTPUT ERROR

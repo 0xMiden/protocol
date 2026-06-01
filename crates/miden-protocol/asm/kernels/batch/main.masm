@@ -1,3 +1,6 @@
+use miden::core::sys
+
+use miden::batch_kernel::memory
 use miden::batch_kernel::note_tracker
 use miden::batch_kernel::prologue
 
@@ -9,7 +12,7 @@ use miden::batch_kernel::prologue
 #! A transaction batch groups a set of independently-proven transactions so they can later be
 #! aggregated into a block by the block kernel. This program reconstructs the per-transaction data
 #! from the advice provider, anchoring the reconstruction in the public `BATCH_ID`, and emits the
-#! batch's `INPUT_NOTES_COMMITMENT`.
+#! batch's `INPUT_NOTES_COMMITMENT` and its effective `batch_expiration_block_num`.
 #!
 #! Reconstruction is a recursive unhashing chain. Each layer of advice data is keyed by a hash that
 #! the previous layer's verification produced, so once `BATCH_ID` is anchored to the public input,
@@ -43,12 +46,14 @@ use miden::batch_kernel::prologue
 #! - INPUT_NOTES_COMMITMENT is the sequential hash over every transaction's
 #!   `(NULLIFIER, EMPTY_OR_COMMITMENT)` tuples.
 #! - BATCH_NOTE_TREE_ROOT is currently not wired up (empty word).
-#! - batch_expiration_block_num is currently not wired-up (zero).
+#! - batch_expiration_block_num is the minimum of every transaction's `expiration_block_num`.
 #!
 #! TODO: verify BLOCK_COMMITMENT against block header data via the same pipe-and-verify pattern.
 #! TODO: authenticate unauthenticated input notes against BLOCK_COMMITMENT's chain MMR.
 #! TODO: erase intra-batch unauthenticated notes from INPUT_NOTES_COMMITMENT.
-#! TODO: emit BATCH_NOTE_TREE_ROOT (the batch note tree SMT root) and batch_expiration_block_num.
+#! TODO: emit BATCH_NOTE_TREE_ROOT (the batch note tree SMT root).
+#! TODO: derive batch_expiration_block_num from verified data rather than the unverified advice
+#!       stack (see `prologue::prepare_batch`).
 #! TODO: aggregate per-account updates and emit a separate ACCOUNT_UPDATES_COMMITMENT output.
 #! TODO: recursively verify each transaction's `ExecutionProof`.
 proc main
@@ -64,12 +69,25 @@ proc main
     exec.note_tracker::compute_input_notes_commitment
     # => [INPUT_NOTES_COMMITMENT, pad(16)]
 
-    # Drop the surplus padding word so the stack holds exactly the 16-felt output region
-    # [INPUT_NOTES_COMMITMENT, BATCH_NOTE_TREE_ROOT, batch_expiration_block_num, pad(7)]. The
-    # BATCH_NOTE_TREE_ROOT and batch_expiration_block_num cells stay zero (wired up in follow-up
-    # PRs).
-    movupw.3 dropw
-    # => [INPUT_NOTES_COMMITMENT, pad(12)]
+    # Assemble the output region [INPUT_NOTES_COMMITMENT, BATCH_NOTE_TREE_ROOT, expiration]. The
+    # BATCH_NOTE_TREE_ROOT word stays empty for now (wired up in a follow-up PR).
+    padw
+    # => [BATCH_NOTE_TREE_ROOT, INPUT_NOTES_COMMITMENT, pad(16)]
+
+    exec.memory::get_batch_expiration_block_num
+    # => [batch_expiration_block_num, BATCH_NOTE_TREE_ROOT, INPUT_NOTES_COMMITMENT, pad(16)]
+
+    movdn.8
+    # => [BATCH_NOTE_TREE_ROOT, INPUT_NOTES_COMMITMENT, batch_expiration_block_num, pad(16)]
+
+    swapw
+    # => [INPUT_NOTES_COMMITMENT, BATCH_NOTE_TREE_ROOT, batch_expiration_block_num, pad(16)]
+
+    # batch_expiration_block_num is a single felt, so the output region (9 felts) is not
+    # word-aligned and the surplus padding cannot be dropped in whole words; truncate the operand
+    # stack to the 16-felt output [INPUT_NOTES_COMMITMENT, BATCH_NOTE_TREE_ROOT,
+    # batch_expiration_block_num, pad(7)].
+    exec.sys::truncate_stack
 end
 
 begin
