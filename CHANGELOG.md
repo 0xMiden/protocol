@@ -7,6 +7,7 @@
 - [BREAKING] Renamed `AccountStorageDelta` to `AccountStoragePatch` ([#3002](https://github.com/0xMiden/protocol/pull/3002)).
 - [BREAKING] Extracted `NullifierTreeBackendReader` and `AccountTreeBackendReader` traits from existing `NullifierTreeBackend` and `AccountTreeBackend` traits ([#2755](https://github.com/0xMiden/protocol/pull/2755)).
 - Added `active_note::is_public` and `active_note::is_private` MASM procedures for checking whether the active note is public or private ([#2988](https://github.com/0xMiden/protocol/pull/2988)).
+- Added a `min_burn_amount` fungible faucet burn policy that rejects burns below a configurable, owner-gated minimum burn amount.
 - Clarified the transaction definition and the distinction between execution and proving on the architecture overview page ([#3015](https://github.com/0xMiden/protocol/pull/3015)).
 
 ### Fixes

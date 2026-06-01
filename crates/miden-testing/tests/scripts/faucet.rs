@@ -32,6 +32,7 @@ use miden_standards::account::policies::{
     BurnAllowAll,
     BurnOwnerOnly,
     BurnPolicyConfig,
+    MinBurnAmount,
     MintPolicyConfig,
     PolicyRegistration,
     TokenPolicyManager,
@@ -39,6 +40,7 @@ use miden_standards::account::policies::{
 };
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
+    ERR_BURN_AMOUNT_BELOW_MIN_BURN_AMOUNT,
     ERR_BURN_POLICY_ROOT_NOT_ALLOWED,
     ERR_FAUCET_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY,
     ERR_FUNGIBLE_ASSET_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY,
@@ -239,6 +241,69 @@ fn build_network_faucet_with_burn_switching(
         .with_components(token_policy_manager);
 
     builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
+}
+
+/// Builds a network fungible faucet whose active burn policy is `min_burn_amount`, configured
+/// with the given threshold. The faucet installs an owner-controlled [`Authority`] so the
+/// owner-gated `set_min_burn_amount` setter can be exercised, plus the standard transfer
+/// policies.
+fn build_network_faucet_with_min_burn_amount(
+    builder: &mut MockChainBuilder,
+    token_symbol: &str,
+    max_supply: u64,
+    owner: AccountId,
+    token_supply: u64,
+    min_burn_amount: u64,
+) -> anyhow::Result<Account> {
+    let name = TokenName::new(token_symbol)?;
+    let symbol = TokenSymbol::new(token_symbol)?;
+    let max_supply = AssetAmount::new(max_supply)?;
+    let token_supply = AssetAmount::new(token_supply)?;
+    let min_burn_amount = AssetAmount::new(min_burn_amount)?;
+    let faucet = FungibleFaucet::builder()
+        .name(name)
+        .symbol(symbol)
+        .decimals(10)
+        .max_supply(max_supply)
+        .token_supply(token_supply)
+        .build()?;
+
+    let token_policy_manager = TokenPolicyManager::new()
+        .with_mint_policy(MintPolicyConfig::OwnerOnly, PolicyRegistration::Active)?
+        .with_burn_policy(
+            BurnPolicyConfig::MinBurnAmount(min_burn_amount),
+            PolicyRegistration::Active,
+        )?
+        .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?
+        .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?;
+
+    let account_builder = AccountBuilder::new(builder.rng_mut().random())
+        .account_type(AccountType::Public)
+        .with_component(faucet)
+        .with_component(Ownable2Step::new(owner))
+        .with_component(Authority::OwnerControlled)
+        .with_components(token_policy_manager);
+
+    builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
+}
+
+/// Builds a note script that calls the owner-gated `set_min_burn_amount` procedure with the
+/// given new threshold. The procedure expects `[new_min_burn_amount, pad(15)]`, so the script
+/// pushes 15 padding elements before the amount.
+fn create_set_min_burn_amount_note_script(new_min_burn_amount: u64) -> String {
+    format!(
+        r#"
+        use miden::standards::faucets::policies::burn::min_burn_amount
+
+        @note_script
+        pub proc main
+            padw padw padw push.0.0.0
+            push.{new_min_burn_amount}
+            call.min_burn_amount::set_min_burn_amount
+            dropw dropw dropw dropw
+        end
+        "#
+    )
 }
 
 // TESTS MINT FUNGIBLE ASSET
@@ -1549,6 +1614,224 @@ async fn test_network_faucet_owner_can_burn_when_owner_only_policy_active() -> a
 
     assert_eq!(executed_transaction.output_notes().num_notes(), 0);
     assert_eq!(executed_transaction.account_delta().nonce_delta(), Felt::ONE);
+
+    Ok(())
+}
+
+// TESTS FOR MIN BURN AMOUNT BURN POLICY
+// ================================================================================================
+
+/// Tests that the `min_burn_amount` policy is installed as the active burn policy and its
+/// procedure root is exported by the account code.
+#[test]
+fn test_network_faucet_min_burn_amount_policy_is_active() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let owner_account_id =
+        AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountType::Private);
+
+    let faucet = build_network_faucet_with_min_burn_amount(
+        &mut builder,
+        "NET",
+        200,
+        owner_account_id,
+        100,
+        50,
+    )?;
+
+    let stored_root = faucet.storage().get_item(TokenPolicyManager::active_burn_policy_slot())?;
+
+    assert_eq!(stored_root, MinBurnAmount::root().as_word());
+    assert!(faucet.code().has_procedure(stored_root));
+
+    Ok(())
+}
+
+/// Tests that a burn below the configured minimum burn amount is rejected.
+#[tokio::test]
+async fn test_network_faucet_burn_below_min_burn_amount_fails() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let owner_account_id =
+        AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountType::Private);
+
+    let faucet = build_network_faucet_with_min_burn_amount(
+        &mut builder,
+        "NET",
+        200,
+        owner_account_id,
+        100,
+        50,
+    )?;
+
+    // Burn amount of 10 is below the configured minimum of 50.
+    let burn_amount = 10u64;
+    let fungible_asset = FungibleAsset::new(faucet.id(), burn_amount).unwrap();
+    let mut rng = RandomCoin::new([Felt::from(600u32); 4].into());
+    let burn_note = BurnNote::create(
+        owner_account_id,
+        faucet.id(),
+        fungible_asset.into(),
+        NoteAttachments::default(),
+        &mut rng,
+    )?;
+    builder.add_output_note(RawOutputNote::Full(burn_note.clone()));
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let tx_context = mock_chain.build_tx_context(faucet.id(), &[burn_note.id()], &[])?.build()?;
+    let result = tx_context.execute().await;
+
+    assert_transaction_executor_error!(result, ERR_BURN_AMOUNT_BELOW_MIN_BURN_AMOUNT);
+
+    Ok(())
+}
+
+/// Tests that a burn of exactly the configured minimum burn amount succeeds (boundary case).
+#[tokio::test]
+async fn test_network_faucet_burn_at_min_burn_amount_succeeds() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let owner_account_id =
+        AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountType::Private);
+
+    let mut faucet = build_network_faucet_with_min_burn_amount(
+        &mut builder,
+        "NET",
+        200,
+        owner_account_id,
+        100,
+        50,
+    )?;
+
+    // Burn amount equal to the configured minimum of 50 meets the threshold.
+    let burn_amount = 50u64;
+    let fungible_asset = FungibleAsset::new(faucet.id(), burn_amount).unwrap();
+    let mut rng = RandomCoin::new([Felt::from(601u32); 4].into());
+    let burn_note = BurnNote::create(
+        owner_account_id,
+        faucet.id(),
+        fungible_asset.into(),
+        NoteAttachments::default(),
+        &mut rng,
+    )?;
+    builder.add_output_note(RawOutputNote::Full(burn_note.clone()));
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let initial_token_supply = FungibleFaucet::try_from(faucet.storage())?.token_supply();
+
+    let tx_context = mock_chain.build_tx_context(faucet.id(), &[burn_note.id()], &[])?.build()?;
+    let executed_transaction = tx_context.execute().await?;
+
+    assert_eq!(executed_transaction.output_notes().num_notes(), 0);
+    assert_eq!(executed_transaction.account_delta().nonce_delta(), Felt::ONE);
+
+    faucet.apply_delta(executed_transaction.account_delta())?;
+    let final_token_supply = FungibleFaucet::try_from(faucet.storage())?.token_supply();
+    assert_eq!(
+        final_token_supply,
+        AssetAmount::new(initial_token_supply.as_u64() - burn_amount).unwrap()
+    );
+
+    Ok(())
+}
+
+/// Tests that the owner can lower the minimum burn amount via `set_min_burn_amount`, after which
+/// a burn that previously violated the threshold succeeds.
+#[tokio::test]
+async fn test_network_faucet_owner_can_set_min_burn_amount() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let owner_account_id =
+        AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountType::Private);
+
+    let faucet = build_network_faucet_with_min_burn_amount(
+        &mut builder,
+        "NET",
+        200,
+        owner_account_id,
+        100,
+        50,
+    )?;
+
+    // Owner lowers the minimum burn amount from 50 to 5.
+    let set_note_script = create_set_min_burn_amount_note_script(5);
+    let mut rng = RandomCoin::new([Felt::from(610u32); 4].into());
+    let set_note = NoteBuilder::new(owner_account_id, &mut rng)
+        .note_type(NoteType::Private)
+        .code(set_note_script.as_str())
+        .build()?;
+
+    // A burn of 10 is below the original threshold (50) but at/above the new one (5).
+    let burn_amount = 10u64;
+    let fungible_asset = FungibleAsset::new(faucet.id(), burn_amount).unwrap();
+    let mut rng = RandomCoin::new([Felt::from(611u32); 4].into());
+    let burn_note = BurnNote::create(
+        owner_account_id,
+        faucet.id(),
+        fungible_asset.into(),
+        NoteAttachments::default(),
+        &mut rng,
+    )?;
+    builder.add_output_note(RawOutputNote::Full(set_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(burn_note.clone()));
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    // Execute the set-min-burn-amount note first.
+    let source_manager = Arc::new(DefaultSourceManager::default());
+    let tx_context = mock_chain
+        .build_tx_context(faucet.id(), &[set_note.id()], &[])?
+        .with_source_manager(source_manager.clone())
+        .build()?;
+    let executed_transaction = tx_context.execute().await?;
+    mock_chain.add_pending_executed_transaction(&executed_transaction)?;
+    mock_chain.prove_next_block()?;
+
+    // The burn that was below the original threshold now succeeds.
+    let tx_context = mock_chain.build_tx_context(faucet.id(), &[burn_note.id()], &[])?.build()?;
+    let executed_transaction = tx_context.execute().await?;
+
+    assert_eq!(executed_transaction.output_notes().num_notes(), 0);
+    assert_eq!(executed_transaction.account_delta().nonce_delta(), Felt::ONE);
+
+    Ok(())
+}
+
+/// Tests that a non-owner cannot update the minimum burn amount via `set_min_burn_amount`.
+#[tokio::test]
+async fn test_network_faucet_non_owner_cannot_set_min_burn_amount() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let owner_account_id =
+        AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountType::Private);
+    let non_owner_account_id =
+        AccountId::dummy([2; 15], AccountIdVersion::Version1, AccountType::Private);
+
+    let faucet = build_network_faucet_with_min_burn_amount(
+        &mut builder,
+        "NET",
+        200,
+        owner_account_id,
+        100,
+        50,
+    )?;
+
+    let set_note_script = create_set_min_burn_amount_note_script(5);
+    let mut rng = RandomCoin::new([Felt::from(620u32); 4].into());
+    let set_note = NoteBuilder::new(non_owner_account_id, &mut rng)
+        .note_type(NoteType::Private)
+        .code(set_note_script.as_str())
+        .build()?;
+    builder.add_output_note(RawOutputNote::Full(set_note.clone()));
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let tx_context = mock_chain.build_tx_context(faucet.id(), &[set_note.id()], &[])?.build()?;
+    let result = tx_context.execute().await;
+
+    assert_transaction_executor_error!(result, ERR_SENDER_NOT_OWNER);
 
     Ok(())
 }

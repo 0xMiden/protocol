@@ -1,0 +1,91 @@
+# miden::standards::faucets::policies::burn::min_burn_amount
+#
+# `min_burn_amount` burn policy: rejects burns whose amount is below a configurable minimum.
+#
+# The minimum burn amount lives in a single value slot owned by this component and is updated
+# through the owner-gated `set_min_burn_amount` setter, which authorizes the caller via the
+# account-wide `Authority` component (the same gate used by the policy-switching setters).
+
+use miden::protocol::active_account
+use miden::protocol::native_account
+use miden::protocol::asset
+use miden::standards::access::authority
+
+# CONSTANTS — slot names
+# =================================================================================================
+
+# Minimum burn amount slot. Layout: [min_burn_amount, 0, 0, 0]
+pub const MIN_BURN_AMOUNT_SLOT = word("miden::standards::faucets::policies::burn::min_burn_amount::min_burn_amount")
+
+# CONSTANTS — errors
+# =================================================================================================
+
+const ERR_BURN_AMOUNT_BELOW_MIN_BURN_AMOUNT = "amount to be burned must exceed specified minimum burn amount"
+
+# POLICY PROCEDURES
+# =================================================================================================
+
+#! Burn policy that rejects burns whose amount is below the configured minimum burn amount.
+#!
+#! Inputs:  [ASSET_KEY, ASSET_VALUE]
+#! Outputs: []
+#!
+#! Where:
+#! - ASSET_VALUE is the fungible asset value word `[amount, 0, 0, 0]`.
+#!
+#! Panics if:
+#! - the burn amount is below the configured minimum burn amount.
+#!
+#! Invocation: dynexec
+pub proc check_policy
+    dropw
+    # => [ASSET_VALUE]
+
+    exec.asset::fungible_value_into_amount
+    # => [amount]
+
+    push.MIN_BURN_AMOUNT_SLOT[0..2] exec.active_account::get_item
+    # => [min_burn_amount, 0, 0, 0, amount]
+
+    movdn.4 drop drop drop
+    # => [amount, min_burn_amount]
+
+    # burn amount must meet or exceed the configured minimum
+    lte assert.err=ERR_BURN_AMOUNT_BELOW_MIN_BURN_AMOUNT
+    # => []
+end
+
+# CONFIGURATION PROCEDURES
+# =================================================================================================
+
+#! Returns the configured minimum burn amount.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [min_burn_amount, 0, 0, 0, pad(12)]
+#!
+#! Invocation: call
+pub proc get_min_burn_amount
+    push.MIN_BURN_AMOUNT_SLOT[0..2] exec.active_account::get_item
+    # => [min_burn_amount, 0, 0, 0, pad(12)]
+end
+
+#! Sets the minimum burn amount.
+#!
+#! Inputs:  [new_min_burn_amount, pad(15)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the caller is not authorized per the installed `Authority`.
+#!
+#! Invocation: call
+pub proc set_min_burn_amount
+    exec.authority::assert_authorized
+    # => [new_min_burn_amount, pad(15)]
+
+    # build the value word [new_min_burn_amount, 0, 0, 0]
+    push.0.0.0 movup.3
+    # => [new_min_burn_amount, 0, 0, 0, pad(12)]
+
+    push.MIN_BURN_AMOUNT_SLOT[0..2] exec.native_account::set_item dropw
+    # => [pad(16)]
+end
