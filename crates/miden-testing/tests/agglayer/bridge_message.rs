@@ -1,12 +1,15 @@
 extern crate alloc;
 
+use miden_agglayer::errors::{
+    ERR_B2AGG_DESTINATION_NETWORK_IS_MIDEN, ERR_BRIDGE_MSG_TARGET_ACCOUNT_MISMATCH,
+};
 use miden_agglayer::{
     AggLayerBridge, EthAddress, MessageNote, MetadataHash, create_existing_bridge_account,
 };
 use miden_crypto::rand::FeltRng;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::transaction::RawOutputNote;
-use miden_testing::{Auth, MockChain};
+use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 
 /// Tests that consuming a Bridge Message note against the bridge account updates the LET.
 ///
@@ -306,6 +309,289 @@ async fn bridge_message_reclaim_is_noop() -> anyhow::Result<()> {
 
     // LET unchanged on bridge (note wasn't consumed by bridge)
     assert_eq!(AggLayerBridge::read_let_num_leaves(&bridge_account), 0);
+
+    Ok(())
+}
+
+/// Tests that consuming multiple MessageNotes consecutively updates the LET correctly.
+///
+/// Sends 3 messages with different parameters and verifies:
+/// - LET num_leaves increments to 1, 2, 3
+/// - LET root changes after each message (is different from the previous)
+/// - No output notes after any consumption
+#[tokio::test]
+async fn bridge_message_consecutive() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    let mut bridge_account = create_existing_bridge_account(
+        builder.rng_mut().draw_word(),
+        bridge_admin.id(),
+        ger_manager.id(),
+    );
+    builder.add_account(bridge_account.clone())?;
+
+    let sender = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    // Create 3 MessageNotes with different destinations and metadata hashes
+    let destinations = [
+        (
+            1u32,
+            "0x1111111111111111111111111111111111111111",
+            [0x01u8; 32],
+        ),
+        (
+            2u32,
+            "0x2222222222222222222222222222222222222222",
+            [0x02u8; 32],
+        ),
+        (
+            3u32,
+            "0x3333333333333333333333333333333333333333",
+            [0x03u8; 32],
+        ),
+    ];
+
+    let mut notes = Vec::with_capacity(3);
+    for (dest_network, dest_addr, mh_bytes) in &destinations {
+        let note = MessageNote::create(
+            *dest_network,
+            EthAddress::from_hex(dest_addr).expect("valid Ethereum address"),
+            MetadataHash::new(*mh_bytes),
+            bridge_account.id(),
+            sender.id(),
+            builder.rng_mut(),
+        )?;
+        builder.add_output_note(RawOutputNote::Full(note.clone()));
+        notes.push(note);
+    }
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let mut prev_root = AggLayerBridge::read_local_exit_root(&bridge_account)?;
+
+    for (i, note) in notes.iter().enumerate() {
+        let executed_tx = mock_chain
+            .build_tx_context(bridge_account.clone(), &[note.id()], &[])?
+            .build()?
+            .execute()
+            .await?;
+
+        // No output notes for messages
+        assert_eq!(
+            executed_tx.output_notes().num_notes(),
+            0,
+            "Message note #{} should not produce any output notes",
+            i + 1
+        );
+
+        bridge_account.apply_delta(executed_tx.account_delta())?;
+
+        // LET num_leaves increments
+        assert_eq!(
+            AggLayerBridge::read_let_num_leaves(&bridge_account),
+            (i + 1) as u64,
+            "LET num_leaves should be {} after consuming message note #{}",
+            i + 1,
+            i + 1
+        );
+
+        // LET root changed from previous
+        let current_root = AggLayerBridge::read_local_exit_root(&bridge_account)?;
+        assert_ne!(
+            current_root, prev_root,
+            "LET root should change after consuming message note #{}",
+            i + 1
+        );
+        prev_root = current_root;
+
+        mock_chain.add_pending_executed_transaction(&executed_tx)?;
+        mock_chain.prove_next_block()?;
+    }
+
+    Ok(())
+}
+
+/// Tests that a MessageNote with destination_network == MIDEN_NETWORK_ID is rejected.
+///
+/// The bridge_message procedure in bridge_out.masm checks that the destination network
+/// is not Miden's own network ID (77) and panics with ERR_B2AGG_DESTINATION_NETWORK_IS_MIDEN.
+#[tokio::test]
+async fn bridge_message_rejects_destination_miden() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    let bridge_account = create_existing_bridge_account(
+        builder.rng_mut().draw_word(),
+        bridge_admin.id(),
+        ger_manager.id(),
+    );
+    builder.add_account(bridge_account.clone())?;
+
+    let sender = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    // Create a MessageNote with destination_network = MIDEN_NETWORK_ID (77)
+    let note = MessageNote::create(
+        AggLayerBridge::MIDEN_NETWORK_ID,
+        EthAddress::from_hex("0x1234567890abcdef1234567890abcdef12345678")
+            .expect("valid Ethereum address"),
+        MetadataHash::new([0x42u8; 32]),
+        bridge_account.id(),
+        sender.id(),
+        builder.rng_mut(),
+    )?;
+    builder.add_output_note(RawOutputNote::Full(note.clone()));
+
+    let mock_chain = builder.build()?;
+
+    let result = mock_chain
+        .build_tx_context(bridge_account.id(), &[note.id()], &[])?
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_B2AGG_DESTINATION_NETWORK_IS_MIDEN);
+
+    Ok(())
+}
+
+/// Tests that a non-target account cannot consume a MessageNote.
+///
+/// The bridge_message note script checks that the consuming account matches the target
+/// specified in the note attachment. If neither the bridge (target) nor the sender (reclaim),
+/// the transaction fails with ERR_BRIDGE_MSG_TARGET_ACCOUNT_MISMATCH.
+#[tokio::test]
+async fn bridge_message_non_target_cannot_consume() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    let bridge_account = create_existing_bridge_account(
+        builder.rng_mut().draw_word(),
+        bridge_admin.id(),
+        ger_manager.id(),
+    );
+    builder.add_account(bridge_account.clone())?;
+
+    let sender = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    // Create a "other" account (neither bridge nor sender)
+    let other_account = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    let note = MessageNote::create(
+        1u32,
+        EthAddress::from_hex("0x1234567890abcdef1234567890abcdef12345678")
+            .expect("valid Ethereum address"),
+        MetadataHash::new([0x42u8; 32]),
+        bridge_account.id(),
+        sender.id(),
+        builder.rng_mut(),
+    )?;
+    builder.add_output_note(RawOutputNote::Full(note.clone()));
+
+    let mock_chain = builder.build()?;
+
+    // Try to consume with other_account (not bridge, not sender)
+    let result = mock_chain
+        .build_tx_context(other_account.id(), &[note.id()], &[])?
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_BRIDGE_MSG_TARGET_ACCOUNT_MISMATCH);
+
+    Ok(())
+}
+
+/// Tests that two messages with identical destinations but different metadata_hashes produce
+/// different LET roots.
+///
+/// This verifies that the metadata_hash is included in the leaf hash computation, so
+/// distinct messages produce distinct tree states.
+#[tokio::test]
+async fn bridge_message_distinct_metadata_produces_distinct_roots() -> anyhow::Result<()> {
+    // Helper: build a fresh bridge, consume one MessageNote, return the final LET root.
+    async fn consume_single_message(
+        metadata_hash: MetadataHash,
+    ) -> anyhow::Result<Vec<miden_protocol::Felt>> {
+        let mut builder = MockChain::builder();
+
+        let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        })?;
+        let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        })?;
+
+        let mut bridge_account = create_existing_bridge_account(
+            builder.rng_mut().draw_word(),
+            bridge_admin.id(),
+            ger_manager.id(),
+        );
+        builder.add_account(bridge_account.clone())?;
+
+        let sender = builder.add_existing_wallet(Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        })?;
+
+        let note = MessageNote::create(
+            1u32,
+            EthAddress::from_hex("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+                .expect("valid Ethereum address"),
+            metadata_hash,
+            bridge_account.id(),
+            sender.id(),
+            builder.rng_mut(),
+        )?;
+        builder.add_output_note(RawOutputNote::Full(note.clone()));
+
+        let mut mock_chain = builder.build()?;
+        mock_chain.prove_next_block()?;
+
+        let executed_tx = mock_chain
+            .build_tx_context(bridge_account.clone(), &[note.id()], &[])?
+            .build()?
+            .execute()
+            .await?;
+
+        bridge_account.apply_delta(executed_tx.account_delta())?;
+        let root = AggLayerBridge::read_local_exit_root(&bridge_account)?;
+        Ok(root)
+    }
+
+    let root_a = consume_single_message(MetadataHash::new([0xAAu8; 32])).await?;
+    let root_b = consume_single_message(MetadataHash::new([0xBBu8; 32])).await?;
+
+    assert_ne!(
+        root_a, root_b,
+        "Different metadata_hashes should produce different LET roots"
+    );
 
     Ok(())
 }
