@@ -51,9 +51,8 @@ async fn bridge_message_updates_let() -> anyhow::Result<()> {
 
     // CREATE THE MESSAGE NOTE
     let destination_network = 1u32;
-    let destination_address =
-        EthAddress::from_hex("0x1234567890abcdef1234567890abcdef12345678")
-            .expect("valid Ethereum address");
+    let destination_address = EthAddress::from_hex("0x1234567890abcdef1234567890abcdef12345678")
+        .expect("valid Ethereum address");
     let metadata_hash = MetadataHash::new([0x42u8; 32]);
 
     let note = MessageNote::create(
@@ -145,9 +144,8 @@ async fn bridge_message_leaf_hash_matches_independent_computation() -> anyhow::R
     })?;
 
     let destination_network = 1u32;
-    let destination_address =
-        EthAddress::from_hex("0x1234567890abcdef1234567890abcdef12345678")
-            .expect("valid Ethereum address");
+    let destination_address = EthAddress::from_hex("0x1234567890abcdef1234567890abcdef12345678")
+        .expect("valid Ethereum address");
     let metadata_hash = MetadataHash::new([0x42u8; 32]);
 
     let note = MessageNote::create(
@@ -234,7 +232,7 @@ async fn bridge_message_leaf_hash_matches_independent_computation() -> anyhow::R
 
     // Compare the on-chain leaf hash against the independently computed one
     let expected_leaf_felts: Vec<Felt> =
-        ExitRoot::new((*leaf_hash.as_bytes()).into()).to_elements();
+        ExitRoot::new(*leaf_hash.as_bytes()).to_elements();
 
     assert_eq!(
         on_chain_leaf_felts
@@ -339,21 +337,9 @@ async fn bridge_message_consecutive() -> anyhow::Result<()> {
 
     // Create 3 MessageNotes with different destinations and metadata hashes
     let destinations = [
-        (
-            1u32,
-            "0x1111111111111111111111111111111111111111",
-            [0x01u8; 32],
-        ),
-        (
-            2u32,
-            "0x2222222222222222222222222222222222222222",
-            [0x02u8; 32],
-        ),
-        (
-            3u32,
-            "0x3333333333333333333333333333333333333333",
-            [0x03u8; 32],
-        ),
+        (1u32, "0x1111111111111111111111111111111111111111", [0x01u8; 32]),
+        (2u32, "0x2222222222222222222222222222222222222222", [0x02u8; 32]),
+        (3u32, "0x3333333333333333333333333333333333333333", [0x03u8; 32]),
     ];
 
     let mut notes = Vec::with_capacity(3);
@@ -404,7 +390,8 @@ async fn bridge_message_consecutive() -> anyhow::Result<()> {
         // LET root changed from previous
         let current_root = AggLayerBridge::read_local_exit_root(&bridge_account)?;
         assert_ne!(
-            current_root, prev_root,
+            current_root,
+            prev_root,
             "LET root should change after consuming message note #{}",
             i + 1
         );
@@ -700,14 +687,10 @@ async fn bridge_message_leaf_hash_masm_unit_test() -> anyhow::Result<()> {
 
     // --- Compare hash output ---
     let computed_felts: Vec<Felt> = exec_output.stack[0..8].to_vec();
-    let computed_u32s: Vec<u32> = computed_felts
-        .iter()
-        .map(|f| f.as_canonical_u64() as u32)
-        .collect();
-    let expected_u32s: Vec<u32> = expected_felts
-        .iter()
-        .map(|f| f.as_canonical_u64() as u32)
-        .collect();
+    let computed_u32s: Vec<u32> =
+        computed_felts.iter().map(|f| f.as_canonical_u64() as u32).collect();
+    let expected_u32s: Vec<u32> =
+        expected_felts.iter().map(|f| f.as_canonical_u64() as u32).collect();
 
     if computed_u32s != expected_u32s {
         // Diagnostic: show both as bytes
@@ -733,10 +716,7 @@ async fn bridge_message_leaf_hash_masm_unit_test() -> anyhow::Result<()> {
         // Convert packed memory to bytes for comparison with expected packed bytes
         let packed_mem_felts: Vec<Felt> = (0..29u32)
             .map(|addr| {
-                exec_output
-                    .memory
-                    .read_element(ctx, Felt::from(addr))
-                    .unwrap_or(Felt::ZERO)
+                exec_output.memory.read_element(ctx, Felt::from(addr)).unwrap_or(Felt::ZERO)
             })
             .collect();
         let packed_mem_bytes = packed_u32_elements_to_bytes(&packed_mem_felts);
@@ -810,15 +790,9 @@ async fn test_from_account_id_matches_rust() -> anyhow::Result<()> {
     let exec_output = execute_masm_script(&source).await?;
 
     // Read the 5 felts from the stack (limb0 on top = stack[0])
-    let actual: Vec<u64> = exec_output.stack[0..5]
-        .iter()
-        .map(|f| f.as_canonical_u64())
-        .collect();
+    let actual: Vec<u64> = exec_output.stack[0..5].iter().map(|f| f.as_canonical_u64()).collect();
 
-    let expected: Vec<u64> = expected_elements
-        .iter()
-        .map(|f| f.as_canonical_u64())
-        .collect();
+    let expected: Vec<u64> = expected_elements.iter().map(|f| f.as_canonical_u64()).collect();
 
     eprintln!("MASM actual   (u64): {:?}", actual);
     eprintln!("Rust expected (u64): {:?}", expected);
@@ -896,10 +870,7 @@ async fn bridge_message_distinct_metadata_produces_distinct_roots() -> anyhow::R
     let root_a = consume_single_message(MetadataHash::new([0xAAu8; 32])).await?;
     let root_b = consume_single_message(MetadataHash::new([0xBBu8; 32])).await?;
 
-    assert_ne!(
-        root_a, root_b,
-        "Different metadata_hashes should produce different LET roots"
-    );
+    assert_ne!(root_a, root_b, "Different metadata_hashes should produce different LET roots");
 
     Ok(())
 }

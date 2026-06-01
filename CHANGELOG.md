@@ -2,6 +2,10 @@
 
 ## v0.16.0 (TBD)
 
+### Features
+
+- Added outbound message bridging (`bridge_message`) to the AggLayer bridge, enabling arbitrary cross-chain messages from Miden to Ethereum/AggLayer chains via leafType=1 leaves in the Local Exit Tree. Includes `BRIDGE_MESSAGE` note script, `MessageNote` Rust type, and `from_account_id` address conversion ([#3012](https://github.com/0xMiden/protocol/pull/3012)).
+
 ### Changes
 
 - [BREAKING] Renamed `AccountStorageDelta` to `AccountStoragePatch` ([#3002](https://github.com/0xMiden/protocol/pull/3002)).
