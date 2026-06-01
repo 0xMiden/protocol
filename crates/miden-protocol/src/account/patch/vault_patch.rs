@@ -5,26 +5,15 @@ use crate::asset::{Asset, AssetVaultKey};
 use crate::{Felt, Word};
 
 /// Describes the updates to an [`AssetVault`](crate::account::AssetVault) after a transaction.
+///
+/// The patch entries map an [`AssetVaultKey`] to the final [`Word`] value of the asset after the
+/// update. If the asset was removed, the value is [`Word::empty`].
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AccountVaultPatch {
     entries: BTreeMap<AssetVaultKey, Word>,
 }
 
 impl AccountVaultPatch {
-    /// Returns a new [`AccountVaultPatch`] containing the provided assets as the absolute values of
-    /// changed vault entries.
-    ///
-    /// Duplicate vault keys in the iterator are silently deduplicated: only the last asset for a
-    /// given key is retained.
-    pub fn new(assets: impl IntoIterator<Item = Asset>) -> Self {
-        Self {
-            entries: assets
-                .into_iter()
-                .map(|asset| (asset.vault_key(), asset.to_value_word()))
-                .collect(),
-        }
-    }
-
     /// Creates a new vault patch directly from its raw key/value entries.
     pub fn from_raw(entries: BTreeMap<AssetVaultKey, Word>) -> Self {
         Self { entries }
@@ -33,6 +22,11 @@ impl AccountVaultPatch {
     /// Inserts an asset into the patch, overwriting the previous value.
     pub fn insert_asset(&mut self, asset: Asset) {
         self.entries.insert(asset.vault_key(), asset.to_value_word());
+    }
+
+    /// Marks an asset as removed by inserting [`Word::empty`] into the patch.
+    pub fn remove_asset(&mut self, asset_vault_key: AssetVaultKey) {
+        self.entries.insert(asset_vault_key, Word::empty());
     }
 
     /// Returns a reference to the underlying map of the vault patch.
@@ -45,11 +39,10 @@ impl AccountVaultPatch {
         self.entries
     }
 
-    /// Returns an iterator over the assets contained in this patch, sorted by vault key.
-    pub fn assets(&self) -> impl Iterator<Item = Asset> {
-        self.entries.iter().map(|(key, value)| {
-            Asset::from_key_value(*key, *value).expect("vault patch should store valid assets")
-        })
+    /// Returns an iterator over the asset key-value pairs contained in this patch, sorted by vault
+    /// key.
+    pub fn iter(&self) -> impl Iterator<Item = (&AssetVaultKey, &Word)> {
+        self.entries.iter()
     }
 
     /// Returns `true` if this vault patch contains no entries.

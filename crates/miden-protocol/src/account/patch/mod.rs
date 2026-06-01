@@ -246,7 +246,7 @@ mod tests {
         let error = AccountPatch::new(
             account_id,
             AccountStoragePatch::new(),
-            AccountVaultPatch::new([]),
+            AccountVaultPatch::default(),
             None,
             Some(Felt::ZERO),
         )
@@ -267,14 +267,14 @@ mod tests {
         let storage_error = AccountPatch::new(
             account_id,
             non_empty_storage,
-            AccountVaultPatch::new([]),
+            AccountVaultPatch::default(),
             None,
             None,
         )
         .unwrap_err();
         assert_matches!(storage_error, AccountPatchError::NonEmptyStorageOrVaultPatchWithZeroNonce);
 
-        let non_empty_vault = AccountVaultPatch::new([FungibleAsset::mock(100)]);
+        let non_empty_vault = AccountVaultPatch::with_assets([FungibleAsset::mock(100)]);
         let vault_error =
             AccountPatch::new(account_id, AccountStoragePatch::new(), non_empty_vault, None, None)
                 .unwrap_err();
@@ -292,7 +292,7 @@ mod tests {
         let error = AccountPatch::new(
             account_id,
             AccountStoragePatch::new(),
-            AccountVaultPatch::new([]),
+            AccountVaultPatch::default(),
             None,
             Some(Felt::ONE),
         )
@@ -303,7 +303,7 @@ mod tests {
         AccountPatch::new(
             account_id,
             AccountStoragePatch::new(),
-            AccountVaultPatch::new([]),
+            AccountVaultPatch::default(),
             Some(AccountCode::mock()),
             Some(Felt::ONE),
         )?;
