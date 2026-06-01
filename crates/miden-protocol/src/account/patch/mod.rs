@@ -79,9 +79,7 @@ impl AccountPatch {
 
         // If account storage or vault were updated the nonce cannot be zero, as mandated by the tx
         // kernel
-        let was_nonce_not_updated =
-            final_nonce.map(|final_nonce| final_nonce == Felt::ZERO).unwrap_or(true);
-        if (!storage.is_empty() || !vault.is_empty()) && was_nonce_not_updated {
+        if (!storage.is_empty() || !vault.is_empty()) && final_nonce.is_none() {
             return Err(AccountPatchError::NonEmptyStorageOrVaultPatchWithZeroNonce);
         }
 
@@ -132,7 +130,9 @@ impl AccountPatch {
     /// Returns true if this account patch does not contain any vault or storage updates and the
     /// nonce wasn't updated.
     pub fn is_empty(&self) -> bool {
-        self.storage.is_empty() && self.vault.is_empty() && self.final_nonce.is_none()
+        // The check can be implemented by checking only the nonce, since the constructor validates
+        // that non-empty storage or vault patches must increment the nonce.
+        self.final_nonce.is_none()
     }
 
     /// Computes the commitment to the account patch.
