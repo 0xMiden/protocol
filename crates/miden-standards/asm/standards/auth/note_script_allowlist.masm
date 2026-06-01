@@ -1,11 +1,10 @@
-# Reusable note-script allowlist primitives.
+# Reusable note-script allowlist primitive.
 #
-# Provides two checks used to restrict what an account can do during a transaction:
-# - `assert_no_tx_script` rejects transactions that executed a tx script.
+# Provides one check used to restrict what an account can do during a transaction:
 # - `assert_all_input_notes_allowed` rejects transactions that consume an input note whose script
 #   root is not present in a storage map at the given slot id.
 #
-# These are designed to be composed into auth components. The caller owns the storage map and
+# This is designed to be composed into auth components. The caller owns the storage map and
 # passes the slot id (suffix, prefix) so the same logic can back multiple components, each with
 # their own allowlist.
 
@@ -17,28 +16,10 @@ use miden::core::word
 # ERRORS
 # =================================================================================================
 
-const ERR_NOTE_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED="a transaction script cannot be executed against an account guarded by a note script allowlist"
 const ERR_NOTE_SCRIPT_ALLOWLIST_NOTE_NOT_ALLOWED="input note script root is not in the note script allowlist"
 
 # PROCEDURES
 # =================================================================================================
-
-#! Asserts that no transaction script was executed in the current transaction.
-#!
-#! Inputs:  []
-#! Outputs: []
-#!
-#! Invocation: exec
-pub proc assert_no_tx_script
-    exec.tx::get_tx_script_root
-    # => [TX_SCRIPT_ROOT]
-
-    exec.word::eqz
-    # => [has_no_tx_script]
-
-    assert.err=ERR_NOTE_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED
-    # => []
-end
 
 #! Asserts that every input note consumed by this transaction has a script root present in the
 #! storage map at the given slot id.

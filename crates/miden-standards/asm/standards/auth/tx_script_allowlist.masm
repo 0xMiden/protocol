@@ -1,0 +1,70 @@
+# Reusable tx-script allowlist primitive.
+#
+# Provides a single check used to restrict which transaction scripts an account will execute:
+# - `assert_tx_script_allowed` accepts transactions that executed no tx script, and otherwise
+#   rejects transactions whose tx script root is not present in a storage map at the given slot id.
+#
+# This is designed to be composed into auth components. The caller owns the storage map and passes
+# the slot id (suffix, prefix) so the same logic can back multiple components, each with their own
+# allowlist.
+
+use miden::protocol::active_account
+use miden::protocol::tx
+use miden::core::word
+
+# ERRORS
+# =================================================================================================
+
+const ERR_TX_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED="transaction script root is not in the tx script allowlist"
+
+# PROCEDURES
+# =================================================================================================
+
+#! Asserts that the transaction script root is present in the storage map at the given slot id.
+#!
+#! A transaction that executed no tx script (empty root) is always allowed. Any other tx script must
+#! have its root present in the allowlist.
+#!
+#! Map convention: keys are tx script roots (defined as Word), and any non-empty value marks a root
+#! as allowed. Empty values (the default for absent keys) cause this procedure to fail.
+#!
+#! Inputs:  [allowlist_slot_id_suffix, allowlist_slot_id_prefix]
+#! Outputs: []
+#!
+#! Where:
+#! - allowlist_slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier
+#!   pointing at the allowlist storage map.
+#!
+#! Invocation: exec
+pub proc assert_tx_script_allowed
+    # => [slot_id_suffix, slot_id_prefix]
+
+    exec.tx::get_tx_script_root
+    # => [TX_SCRIPT_ROOT, slot_id_suffix, slot_id_prefix]
+
+    dupw exec.word::eqz
+    # => [no_tx_script, TX_SCRIPT_ROOT, slot_id_suffix, slot_id_prefix]
+
+    if.true
+        # No tx script was executed, which is always allowed.
+        dropw drop drop
+        # => []
+    else
+        # Copy the slot id to the top of the stack to call get_map_item.
+        dup.5 dup.5
+        # => [slot_id_suffix, slot_id_prefix, TX_SCRIPT_ROOT, slot_id_suffix, slot_id_prefix]
+
+        exec.active_account::get_map_item
+        # => [VALUE, slot_id_suffix, slot_id_prefix]
+
+        exec.word::eqz not
+        # => [is_allowed, slot_id_suffix, slot_id_prefix]
+
+        assert.err=ERR_TX_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED
+        # => [slot_id_suffix, slot_id_prefix]
+
+        drop drop
+        # => []
+    end
+    # => []
+end

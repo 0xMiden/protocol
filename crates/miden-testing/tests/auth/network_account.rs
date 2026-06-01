@@ -1,15 +1,16 @@
 use core::slice;
+use std::collections::BTreeSet;
 
 use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountBuilder, AccountType};
 use miden_protocol::note::NoteScriptRoot;
-use miden_protocol::transaction::RawOutputNote;
+use miden_protocol::transaction::{RawOutputNote, TransactionScript, TransactionScriptRoot};
 use miden_standards::account::auth::AuthNetworkAccount;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_NOTE_SCRIPT_ALLOWLIST_NOTE_NOT_ALLOWED,
-    ERR_NOTE_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED,
+    ERR_TX_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED,
 };
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{MockChain, assert_transaction_executor_error};
@@ -26,11 +27,21 @@ fn placeholder_script_root() -> Word {
 }
 
 /// Builds a minimal account that uses the [`AuthNetworkAccount`] auth component with the provided
-/// allowlist of input-note script roots.
+/// allowlist of input-note script roots and an empty tx-script allowlist.
 fn build_allowlist_account(allowed_script_roots: Vec<Word>) -> anyhow::Result<Account> {
+    build_account_with_allowlists(allowed_script_roots, Vec::new())
+}
+
+/// Builds a minimal account that uses the [`AuthNetworkAccount`] auth component with the provided
+/// note-script and tx-script allowlists.
+fn build_account_with_allowlists(
+    allowed_note_script_roots: Vec<Word>,
+    allowed_tx_script_roots: Vec<TransactionScriptRoot>,
+) -> anyhow::Result<Account> {
     let auth_component = AuthNetworkAccount::with_allowlist(
-        allowed_script_roots.into_iter().map(NoteScriptRoot::from_raw).collect(),
-    )?;
+        allowed_note_script_roots.into_iter().map(NoteScriptRoot::from_raw).collect(),
+    )?
+    .with_allowed_tx_scripts(allowed_tx_script_roots.into_iter().collect::<BTreeSet<_>>());
 
     Ok(AccountBuilder::new([0; 32])
         .with_auth_component(auth_component)
@@ -39,14 +50,33 @@ fn build_allowlist_account(allowed_script_roots: Vec<Word>) -> anyhow::Result<Ac
         .build_existing()?)
 }
 
+/// Compiles a transaction script that sets the transaction expiration delta to `delta`. This is the
+/// canonical kind of tx script a network account would allowlist (see protocol issue #3027).
+fn expiration_tx_script(delta: u16) -> TransactionScript {
+    let code = format!(
+        "
+        use miden::protocol::tx
+
+        begin
+            push.{delta}
+            exec.tx::update_expiration_block_delta
+        end
+        "
+    );
+
+    CodeBuilder::default()
+        .compile_tx_script(code)
+        .expect("expiration tx script should compile")
+}
+
 // TESTS
 // ================================================================================================
 
-/// A transaction that executes a tx script must be rejected by `AuthNetworkAccount`, even if the
-/// allowlist and input notes are otherwise valid.
+/// A transaction that executes a tx script whose root is not in the tx-script allowlist must be
+/// rejected by `AuthNetworkAccount`. An empty tx-script allowlist rejects every tx script.
 #[tokio::test]
 async fn test_auth_network_account_rejects_tx_script() -> anyhow::Result<()> {
-    // Allowlist contents don't matter — the tx-script check rejects before any allowlist lookup.
+    // Empty tx-script allowlist => no tx script is permitted.
     let account = build_allowlist_account(vec![placeholder_script_root()])?;
 
     let mut builder = MockChain::builder();
@@ -62,7 +92,128 @@ async fn test_auth_network_account_rejects_tx_script() -> anyhow::Result<()> {
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_NOTE_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED);
+    assert_transaction_executor_error!(result, ERR_TX_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED);
+
+    Ok(())
+}
+
+/// A transaction that executes a tx script whose root IS in the tx-script allowlist must succeed,
+/// and the script's effect (setting the expiration delta) must be reflected in the transaction.
+///
+/// The transaction also consumes an allowlisted note, both because a network transaction does so in
+/// practice and because the kernel rejects a transaction that neither changes the account state nor
+/// consumes a note.
+#[tokio::test]
+async fn test_auth_network_account_accepts_allowlisted_tx_script() -> anyhow::Result<()> {
+    const DELTA: u16 = 10;
+    let tx_script = expiration_tx_script(DELTA);
+
+    // Learn the allowed note script root from a template note.
+    let bootstrap_account = build_allowlist_account(vec![placeholder_script_root()])?;
+    let template_note = NoteBuilder::new(bootstrap_account.id(), &mut rand::rng())
+        .build()
+        .expect("failed to build template note");
+    let allowed_note_root: Word = template_note.script().root().into();
+
+    // Allowlist the note script root and the expiration tx script's root.
+    let account = build_account_with_allowlists(vec![allowed_note_root], vec![tx_script.root()])?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+
+    let note = NoteBuilder::new(account.id(), &mut rand::rng())
+        .build()
+        .expect("failed to build input note");
+    builder.add_output_note(RawOutputNote::Full(note.clone()));
+
+    let mock_chain = builder.build()?;
+
+    let executed = mock_chain
+        .build_tx_context(account.id(), &[], slice::from_ref(&note))?
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await
+        .expect("executing an allowlisted tx script should succeed");
+
+    // The expiration delta script set the expiration to reference_block + DELTA.
+    let reference_block = executed.block_header().block_num();
+    assert_eq!(
+        executed.expiration_block_num(),
+        reference_block + u32::from(DELTA),
+        "the allowlisted expiration script should have set the expiration block number",
+    );
+
+    Ok(())
+}
+
+/// A transaction that runs no tx script must be allowed regardless of the tx-script allowlist
+/// contents: the empty-root case short-circuits before any allowlist lookup.
+#[tokio::test]
+async fn test_auth_network_account_allows_no_tx_script_with_non_empty_allowlist()
+-> anyhow::Result<()> {
+    // Learn the allowed note script root from a template note.
+    let bootstrap_account = build_allowlist_account(vec![placeholder_script_root()])?;
+    let template_note = NoteBuilder::new(bootstrap_account.id(), &mut rand::rng())
+        .build()
+        .expect("failed to build template note");
+    let allowed_note_root: Word = template_note.script().root().into();
+
+    // Non-empty tx-script allowlist, but the transaction below runs no tx script at all.
+    let account = build_account_with_allowlists(
+        vec![allowed_note_root],
+        vec![expiration_tx_script(10).root()],
+    )?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+
+    let note = NoteBuilder::new(account.id(), &mut rand::rng())
+        .build()
+        .expect("failed to build input note");
+    builder.add_output_note(RawOutputNote::Full(note.clone()));
+
+    let mock_chain = builder.build()?;
+
+    mock_chain
+        .build_tx_context(account.id(), &[], slice::from_ref(&note))?
+        .build()?
+        .execute()
+        .await
+        .expect("a transaction with no tx script should be allowed");
+
+    Ok(())
+}
+
+/// A non-empty tx-script allowlist must still reject a tx script whose root is not in it.
+#[tokio::test]
+async fn test_auth_network_account_rejects_non_allowlisted_tx_script() -> anyhow::Result<()> {
+    // Allowlist the expiration script, then try to run a different (non-allowlisted) tx script.
+    let allowed_script = expiration_tx_script(10);
+    let account = build_account_with_allowlists(
+        vec![placeholder_script_root()],
+        vec![allowed_script.root()],
+    )?;
+
+    let mut builder = MockChain::builder();
+    builder.add_account(account.clone())?;
+    let mock_chain = builder.build()?;
+
+    let other_script = CodeBuilder::default().compile_tx_script("begin nop end")?;
+    assert_ne!(
+        other_script.root(),
+        allowed_script.root(),
+        "the other script must differ from the allowlisted one",
+    );
+
+    let result = mock_chain
+        .build_tx_context(account.id(), &[], &[])?
+        .tx_script(other_script)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_TX_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED);
 
     Ok(())
 }

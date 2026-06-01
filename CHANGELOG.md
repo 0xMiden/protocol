@@ -4,6 +4,8 @@
 
 ### Changes
 
+- [BREAKING] `AuthNetworkAccount` now gates transaction scripts with a root allowlist instead of banning them outright, enabling network accounts to run approved tx scripts such as setting the expiration delta ([#3028](https://github.com/0xMiden/protocol/pull/3028)).
+- [BREAKING] `TransactionScript::root()` now returns `TransactionScriptRoot` instead of `Word` ([#3028](https://github.com/0xMiden/protocol/pull/3028)).
 - [BREAKING] Renamed `AccountStorageDelta` to `AccountStoragePatch` ([#3002](https://github.com/0xMiden/protocol/pull/3002)).
 - Added `active_note::is_public` and `active_note::is_private` MASM procedures for checking whether the active note is public or private ([#2988](https://github.com/0xMiden/protocol/pull/2988)).
 

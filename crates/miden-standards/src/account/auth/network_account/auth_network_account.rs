@@ -9,8 +9,13 @@ use miden_protocol::account::component::{
 };
 use miden_protocol::account::{AccountComponent, AccountComponentName, StorageSlotName};
 use miden_protocol::note::NoteScriptRoot;
+use miden_protocol::transaction::TransactionScriptRoot;
 
-use super::{NetworkAccountNoteAllowlist, NetworkAccountNoteAllowlistError};
+use super::{
+    NetworkAccountNoteAllowlist,
+    NetworkAccountNoteAllowlistError,
+    NetworkAccountTxScriptAllowlist,
+};
 use crate::account::account_component_code;
 
 account_component_code!(NETWORK_ACCOUNT_AUTH_CODE, "auth/network_account.masl");
@@ -19,24 +24,40 @@ account_component_code!(NETWORK_ACCOUNT_AUTH_CODE, "auth/network_account.masl");
 // ================================================================================================
 
 /// An [`AccountComponent`] implementing an authentication scheme that restricts what notes an
-/// account can consume to a fixed allowlist of note script roots, and forbids transaction scripts
-/// from running against the account.
+/// account can consume to a fixed allowlist of note script roots, and what transaction scripts may
+/// run against the account to a fixed allowlist of tx script roots.
 ///
 /// This is intended for network-owned accounts (e.g. the AggLayer bridge or a network faucet)
-/// whose only legitimate inputs are a known, finite set of system-issued notes.
+/// whose only legitimate inputs are a known, finite set of system-issued notes and scripts.
 ///
 /// The component exports a single auth procedure, `auth_network_transaction`, that rejects the
 /// transaction unless:
-/// - no transaction script was executed, and
-/// - every consumed input note has a script root present in the component's allowlist.
+/// - the transaction script root, if any, is present in the component's tx-script allowlist, and
+/// - every consumed input note has a script root present in the component's note-script allowlist.
 ///
-/// The allowlist is stored in the standardized [`NetworkAccountNoteAllowlist`] slot so off-chain
-/// services can identify a network account by checking for this slot.
+/// Because a network account has no signature gate, a transaction script is an unconstrained code
+/// path that could call the account's procedures directly. The tx-script allowlist constrains this
+/// to a fixed set of owner-approved scripts; an empty tx-script allowlist permits no transaction
+/// scripts at all.
 ///
-/// The allowlist is fixed at account creation; there is intentionally no procedure to mutate it
-/// after deployment.
+/// IMPORTANT: an allowlisted root pins the script's *code* (its MAST root), but not its
+/// `TX_SCRIPT_ARGS` or advice-provider inputs, which anyone submitting a transaction against this
+/// open account controls. An allowlisted script therefore runs for arbitrary callers with arbitrary
+/// inputs, so only scripts that are safe for *every* possible input should be allowlisted - i.e.
+/// input-closed scripts whose effect does not depend on attacker-controlled args/advice. The
+/// canonical example is a script that sets the transaction expiration delta to a hardcoded constant
+/// (the kernel only ever lets the expiration decrease, so the effect is harmless regardless of who
+/// runs it). Allowlisting an input-dependent script re-opens the very code path the allowlist
+/// exists to constrain.
+///
+/// The note allowlist is stored in the standardized [`NetworkAccountNoteAllowlist`] slot so
+/// off-chain services can identify a network account by checking for this slot.
+///
+/// Both allowlists are fixed at account creation; there is intentionally no procedure to mutate
+/// them after deployment.
 pub struct AuthNetworkAccount {
     allowlist: NetworkAccountNoteAllowlist,
+    tx_script_allowlist: NetworkAccountTxScriptAllowlist,
 }
 
 impl AuthNetworkAccount {
@@ -65,7 +86,24 @@ impl AuthNetworkAccount {
     ) -> Result<Self, NetworkAccountNoteAllowlistError> {
         Ok(Self {
             allowlist: NetworkAccountNoteAllowlist::new(allowed_script_roots)?,
+            tx_script_allowlist: NetworkAccountTxScriptAllowlist::default(),
         })
+    }
+
+    /// Sets the allowlist of transaction script roots this account will execute, replacing any
+    /// previously configured tx-script allowlist.
+    ///
+    /// An empty set (the default) means the account permits no transaction scripts.
+    ///
+    /// Only input-closed scripts should be allowlisted: a root pins the script's code but not its
+    /// `TX_SCRIPT_ARGS` or advice inputs, which the (arbitrary) transaction submitter controls. See
+    /// the [`AuthNetworkAccount`] type docs for the full rationale.
+    pub fn with_allowed_tx_scripts(
+        mut self,
+        allowed_tx_script_roots: BTreeSet<TransactionScriptRoot>,
+    ) -> Self {
+        self.tx_script_allowlist = NetworkAccountTxScriptAllowlist::new(allowed_tx_script_roots);
+        self
     }
 
     /// Returns the storage slot holding the allowlist of allowed input-note script roots.
@@ -73,20 +111,33 @@ impl AuthNetworkAccount {
         NetworkAccountNoteAllowlist::slot_name()
     }
 
-    /// Returns the storage slot schema for the allowlist slot.
+    /// Returns the storage slot schema for the note-script allowlist slot.
     pub fn allowed_note_scripts_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
         NetworkAccountNoteAllowlist::slot_schema()
     }
 
+    /// Returns the storage slot holding the allowlist of allowed transaction script roots.
+    pub fn allowed_tx_scripts_slot() -> &'static StorageSlotName {
+        NetworkAccountTxScriptAllowlist::slot_name()
+    }
+
+    /// Returns the storage slot schema for the tx-script allowlist slot.
+    pub fn allowed_tx_scripts_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+        NetworkAccountTxScriptAllowlist::slot_schema()
+    }
+
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        let storage_schema = StorageSchema::new(vec![NetworkAccountNoteAllowlist::slot_schema()])
-            .expect("storage schema should be valid");
+        let storage_schema = StorageSchema::new(vec![
+            NetworkAccountNoteAllowlist::slot_schema(),
+            NetworkAccountTxScriptAllowlist::slot_schema(),
+        ])
+        .expect("storage schema should be valid");
 
         AccountComponentMetadata::new(Self::NAME)
             .with_description(
-                "Authentication component that restricts input notes to a fixed allowlist of \
-                 note script roots and forbids tx scripts",
+                "Authentication component that restricts input notes and transaction scripts to \
+                 fixed allowlists of script roots",
             )
             .with_storage_schema(storage_schema)
     }
@@ -94,7 +145,10 @@ impl AuthNetworkAccount {
 
 impl From<AuthNetworkAccount> for AccountComponent {
     fn from(component: AuthNetworkAccount) -> Self {
-        let storage_slots = vec![component.allowlist.into_storage_slot()];
+        let storage_slots = vec![
+            component.allowlist.into_storage_slot(),
+            component.tx_script_allowlist.into_storage_slot(),
+        ];
         let metadata = AuthNetworkAccount::component_metadata();
 
         AccountComponent::new(AuthNetworkAccount::code().clone(), storage_slots, metadata).expect(
@@ -144,11 +198,14 @@ mod tests {
                 .into();
 
         let storage_slots = component.storage_slots();
-        assert_eq!(storage_slots.len(), 1);
+        assert_eq!(storage_slots.len(), 2);
         assert_eq!(storage_slots[0].name(), NetworkAccountNoteAllowlist::slot_name());
+        assert_eq!(storage_slots[1].name(), NetworkAccountTxScriptAllowlist::slot_name());
 
-        let StorageSlotContent::Map(_) = storage_slots[0].content() else {
-            panic!("allowlist slot must be a map");
-        };
+        for slot in storage_slots {
+            let StorageSlotContent::Map(_) = slot.content() else {
+                panic!("allowlist slots must be maps");
+            };
+        }
     }
 }

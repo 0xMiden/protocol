@@ -669,13 +669,17 @@ fn build_auth_component(
         // consumed against the faucet.
         (
             AccessControl::Ownable2Step { .. } | AccessControl::Rbac { .. },
-            AuthMethod::NetworkAccount { allowed_script_roots },
+            AuthMethod::NetworkAccount {
+                allowed_script_roots,
+                allowed_tx_script_roots,
+            },
         ) => Ok(AuthNetworkAccount::with_allowlist(allowed_script_roots)
             .map_err(|err| {
                 FungibleFaucetError::UnsupportedAuthMethod(alloc::format!(
                     "invalid network account allowlist: {err}"
                 ))
             })?
+            .with_allowed_tx_scripts(allowed_tx_script_roots)
             .into()),
 
         // Ownable2Step / Rbac + NoAuth: valid; the setter gate is the in-procedure owner /
