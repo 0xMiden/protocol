@@ -1,4 +1,5 @@
 use alloc::sync::Arc;
+use core::slice;
 use std::collections::BTreeMap;
 
 use anyhow::Context;
@@ -7,7 +8,7 @@ use miden_crypto::rand::RandomCoin;
 use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountId, AccountType};
 use miden_protocol::asset::NonFungibleAsset;
-use miden_protocol::batch::{BatchNoteTree, ProposedBatch};
+use miden_protocol::batch::{BatchNoteTree, ProposedBatch, ProvenBatch};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::merkle::MerkleError;
 use miden_protocol::errors::{BatchAccountUpdateError, ProposedBatchError, ProvenBatchError};
@@ -29,6 +30,7 @@ use miden_protocol::transaction::{
     ProvenTransaction,
     RawOutputNote,
 };
+use miden_protocol::utils::serde::{Deserializable, Serializable};
 use miden_protocol::vm::AdviceInputs;
 use miden_standards::note::P2idNoteStorage;
 use miden_standards::testing::account_component::MockAccountComponent;
@@ -345,6 +347,37 @@ fn batch_note_tree_empty_when_no_output_notes() -> anyhow::Result<()> {
     // The proven batch carries the same note tree root.
     let proven_batch = chain.prove_transaction_batch(proposed_batch.clone())?;
     assert_eq!(proven_batch.note_tree_root(), proposed_batch.batch_note_tree().root());
+
+    Ok(())
+}
+
+/// Tests that a proven batch's note tree root survives a serialization round-trip.
+#[test]
+fn proven_batch_serialization_preserves_note_tree_root() -> anyhow::Result<()> {
+    let TestSetup { mut chain, account1, .. } = setup_chain();
+    let block1 = chain.block_header(1);
+    let block2 = chain.prove_next_block()?;
+
+    let output_notes = (40..43).map(mock_output_note).collect::<alloc::vec::Vec<_>>();
+    let tx =
+        MockProvenTxBuilder::with_account(account1.id(), Word::empty(), account1.to_commitment())
+            .reference_block(&block1)
+            .output_notes(output_notes)
+            .build()?;
+
+    let proposed_batch = ProposedBatch::new_unverified(
+        [tx].into_iter().map(Arc::new).collect(),
+        block2.header().clone(),
+        chain.latest_partial_blockchain(),
+        BTreeMap::default(),
+    )?;
+    let expected_root = proposed_batch.batch_note_tree().root();
+    let proven_batch = chain.prove_transaction_batch(proposed_batch)?;
+    assert_eq!(proven_batch.note_tree_root(), expected_root);
+
+    let deserialized = ProvenBatch::read_from_bytes(&proven_batch.to_bytes()).unwrap();
+    assert_eq!(deserialized, proven_batch);
+    assert_eq!(deserialized.note_tree_root(), expected_root);
 
     Ok(())
 }

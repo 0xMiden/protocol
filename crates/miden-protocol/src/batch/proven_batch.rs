@@ -29,6 +29,11 @@ pub struct ProvenBatch {
     input_notes: InputNotes<InputNoteCommitment>,
     output_notes: Vec<OutputNote>,
     /// The root of the [`BatchNoteTree`](crate::batch::BatchNoteTree) built over `output_notes`.
+    ///
+    /// This value is stored as-is and is **not** recomputed from or checked against `output_notes`
+    /// by [`ProvenBatch::new_unchecked`] or deserialization. It must therefore not be trusted at a
+    /// trust boundary until a consumer binds it to `output_notes` (e.g. the block kernel, which
+    /// will verify it against the per-batch note tree it reconstructs).
     note_tree_root: Word,
     batch_expiration_block_num: BlockNumber,
     transactions: OrderedTransactionHeaders,
@@ -149,6 +154,10 @@ impl ProvenBatch {
 
     /// Returns the root of the [`BatchNoteTree`](crate::batch::BatchNoteTree) built over the
     /// batch's output notes.
+    ///
+    /// This root is not validated against [`Self::output_notes`] by the constructor or
+    /// deserialization, so it must not be trusted at a trust boundary until a consumer binds it to
+    /// the output notes.
     pub fn note_tree_root(&self) -> Word {
         self.note_tree_root
     }
