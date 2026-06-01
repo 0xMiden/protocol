@@ -16,9 +16,23 @@ use thiserror::Error;
 use super::agglayer_bridge_component_library;
 use crate::claim_note::CgiChainHash;
 pub use crate::{
-    B2AggNote, ClaimNote, ClaimNoteStorage, ConfigAggBridgeNote, EthAddress, EthAmount,
-    EthAmountError, EthEmbeddedAccountId, ExitRoot, GlobalIndex, GlobalIndexError, LeafData,
-    MessageNote, MetadataHash, ProofData, SmtNode, UpdateGerNote,
+    B2AggNote,
+    ClaimNote,
+    ClaimNoteStorage,
+    ConfigAggBridgeNote,
+    EthAddress,
+    EthAmount,
+    EthAmountError,
+    EthEmbeddedAccountId,
+    ExitRoot,
+    GlobalIndex,
+    GlobalIndexError,
+    LeafData,
+    MessageNote,
+    MetadataHash,
+    ProofData,
+    SmtNode,
+    UpdateGerNote,
 };
 
 // CONSTANTS

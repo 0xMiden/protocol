@@ -1,10 +1,15 @@
 extern crate alloc;
 
 use miden_agglayer::errors::{
-    ERR_B2AGG_DESTINATION_NETWORK_IS_MIDEN, ERR_BRIDGE_MSG_TARGET_ACCOUNT_MISMATCH,
+    ERR_B2AGG_DESTINATION_NETWORK_IS_MIDEN,
+    ERR_BRIDGE_MSG_TARGET_ACCOUNT_MISMATCH,
 };
 use miden_agglayer::{
-    AggLayerBridge, EthAddress, MessageNote, MetadataHash, create_existing_bridge_account,
+    AggLayerBridge,
+    EthAddress,
+    MessageNote,
+    MetadataHash,
+    create_existing_bridge_account,
 };
 use miden_crypto::rand::FeltRng;
 use miden_protocol::account::auth::AuthScheme;
@@ -231,8 +236,7 @@ async fn bridge_message_leaf_hash_matches_independent_computation() -> anyhow::R
     let leaf_hash: Keccak256Digest = Keccak256::hash(&packed);
 
     // Compare the on-chain leaf hash against the independently computed one
-    let expected_leaf_felts: Vec<Felt> =
-        ExitRoot::new(*leaf_hash.as_bytes()).to_elements();
+    let expected_leaf_felts: Vec<Felt> = ExitRoot::new(*leaf_hash.as_bytes()).to_elements();
 
     assert_eq!(
         on_chain_leaf_felts
@@ -867,8 +871,8 @@ async fn bridge_message_distinct_metadata_produces_distinct_roots() -> anyhow::R
         Ok(root)
     }
 
-    let root_a = consume_single_message(MetadataHash::new([0xAAu8; 32])).await?;
-    let root_b = consume_single_message(MetadataHash::new([0xBBu8; 32])).await?;
+    let root_a = consume_single_message(MetadataHash::new([0xaau8; 32])).await?;
+    let root_b = consume_single_message(MetadataHash::new([0xbbu8; 32])).await?;
 
     assert_ne!(root_a, root_b, "Different metadata_hashes should produce different LET roots");
 
