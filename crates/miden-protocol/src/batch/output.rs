@@ -1,7 +1,7 @@
 use crate::Word;
 use crate::block::BlockNumber;
 
-// BATCH OUTPUT
+// BATCH OUTPUTS
 // ================================================================================================
 
 /// The public outputs produced by the batch kernel.
@@ -10,7 +10,7 @@ use crate::block::BlockNumber;
 /// [`BatchKernel::parse_output_stack`](crate::batch::BatchKernel::parse_output_stack)), mirroring
 /// [`TransactionOutputs`](crate::transaction::TransactionOutputs) for transactions.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BatchOutput {
+pub struct BatchOutputs {
     /// The commitment to the batch's input notes.
     input_notes_commitment: Word,
     /// The root of the batch's note tree (the [`BatchNoteTree`](crate::batch::BatchNoteTree)) over
@@ -20,7 +20,7 @@ pub struct BatchOutput {
     batch_expiration_block_num: BlockNumber,
 }
 
-impl BatchOutput {
+impl BatchOutputs {
     // OUTPUT STACK LAYOUT
     // --------------------------------------------------------------------------------------------
 
@@ -34,7 +34,7 @@ impl BatchOutput {
     // CONSTRUCTOR
     // --------------------------------------------------------------------------------------------
 
-    /// Returns a new [`BatchOutput`] instantiated from the provided data.
+    /// Returns a new [`BatchOutputs`] instantiated from the provided data.
     pub fn new(
         input_notes_commitment: Word,
         batch_note_tree_root: Word,

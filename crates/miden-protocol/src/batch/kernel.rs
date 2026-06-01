@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 
 use miden_core::program::Kernel;
 
-use crate::batch::{BatchId, BatchOutput, ProposedBatch};
+use crate::batch::{BatchId, BatchOutputs, ProposedBatch};
 use crate::block::BlockNumber;
 use crate::errors::BatchOutputError;
 use crate::utils::serde::Deserializable;
@@ -98,27 +98,27 @@ impl BatchKernel {
         StackOutputs::new(&outputs).expect("number of stack outputs should be <= 16")
     }
 
-    /// Extracts the [`BatchOutput`] from the provided stack outputs.
+    /// Extracts the [`BatchOutputs`] from the provided stack outputs.
     ///
     /// # Errors
     ///
     /// Returns an error if:
     /// - The padding cells (positions 9..16) are not all zero.
     /// - `batch_expiration_block_num` does not fit into a `u32`.
-    pub fn parse_output_stack(stack: &StackOutputs) -> Result<BatchOutput, BatchOutputError> {
+    pub fn parse_output_stack(stack: &StackOutputs) -> Result<BatchOutputs, BatchOutputError> {
         let input_notes_commitment = stack
-            .get_word(BatchOutput::INPUT_NOTES_COMMITMENT_WORD_IDX)
+            .get_word(BatchOutputs::INPUT_NOTES_COMMITMENT_WORD_IDX)
             .expect("input_notes_commitment word missing");
         let batch_note_tree_root = stack
-            .get_word(BatchOutput::BATCH_NOTE_TREE_ROOT_WORD_IDX)
+            .get_word(BatchOutputs::BATCH_NOTE_TREE_ROOT_WORD_IDX)
             .expect("batch_note_tree_root word missing");
 
         let expiration_felt = stack
-            .get_element(BatchOutput::BATCH_EXPIRATION_BLOCK_NUM_ELEMENT_IDX)
+            .get_element(BatchOutputs::BATCH_EXPIRATION_BLOCK_NUM_ELEMENT_IDX)
             .expect("batch_expiration_block_num missing");
 
         // Every cell after batch_expiration_block_num must be zero padding.
-        if stack[BatchOutput::BATCH_EXPIRATION_BLOCK_NUM_ELEMENT_IDX + 1..]
+        if stack[BatchOutputs::BATCH_EXPIRATION_BLOCK_NUM_ELEMENT_IDX + 1..]
             .iter()
             .any(|&felt| felt != Felt::ZERO)
         {
@@ -131,7 +131,7 @@ impl BatchKernel {
             .map_err(|_| BatchOutputError::ExpirationBlockNumberTooLarge(expiration_felt))?
             .into();
 
-        Ok(BatchOutput::new(
+        Ok(BatchOutputs::new(
             input_notes_commitment,
             batch_note_tree_root,
             batch_expiration_block_num,

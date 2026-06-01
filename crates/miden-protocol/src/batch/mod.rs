@@ -22,4 +22,4 @@ mod kernel;
 pub use kernel::BatchKernel;
 
 mod output;
-pub use output::BatchOutput;
+pub use output::BatchOutputs;
