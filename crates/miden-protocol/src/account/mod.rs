@@ -44,18 +44,21 @@ pub mod interface;
 pub use interface::AccountComponentName;
 
 mod patch;
-pub use patch::{AccountPatch, AccountVaultPatch};
+pub use patch::{
+    AccountPatch,
+    AccountStoragePatch,
+    AccountVaultPatch,
+    StorageMapPatch,
+    StorageSlotPatch,
+};
 
 pub mod delta;
 pub use delta::{
     AccountDelta,
-    AccountStoragePatch,
     AccountVaultDelta,
     FungibleAssetDelta,
     NonFungibleAssetDelta,
     NonFungibleDeltaAction,
-    StorageMapPatch,
-    StorageSlotPatch,
 };
 
 pub mod storage;

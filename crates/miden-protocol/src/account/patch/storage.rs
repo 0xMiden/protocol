@@ -2,15 +2,6 @@ use alloc::collections::BTreeMap;
 use alloc::collections::btree_map::Entry;
 use alloc::vec::Vec;
 
-use super::{
-    AccountDeltaError,
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-    Word,
-};
 use crate::account::{
     StorageMap,
     StorageMapKey,
@@ -18,7 +9,15 @@ use crate::account::{
     StorageSlotName,
     StorageSlotType,
 };
-use crate::{EMPTY_WORD, Felt, ZERO};
+use crate::errors::AccountDeltaError;
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
+use crate::{EMPTY_WORD, Felt, Word, ZERO};
 
 // ACCOUNT STORAGE PATCH
 // ================================================================================================

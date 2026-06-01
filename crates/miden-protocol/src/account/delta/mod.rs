@@ -6,6 +6,7 @@ use crate::account::{
     AccountCode,
     AccountId,
     AccountStorage,
+    AccountStoragePatch,
     StorageSlot,
     StorageSlotType,
 };
@@ -20,9 +21,6 @@ use crate::utils::serde::{
     Serializable,
 };
 use crate::{Felt, Word, ZERO};
-
-mod storage;
-pub use storage::{AccountStoragePatch, StorageMapPatch, StorageSlotPatch};
 
 mod vault;
 pub use vault::{
