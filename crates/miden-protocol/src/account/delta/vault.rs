@@ -3,6 +3,8 @@ use alloc::collections::btree_map::Entry;
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
+use miden_core::Word;
+
 use super::{
     AccountDeltaError,
     ByteReader,
@@ -11,8 +13,8 @@ use super::{
     DeserializationError,
     Serializable,
 };
+use crate::Felt;
 use crate::asset::{Asset, AssetVaultKey, FungibleAsset, NonFungibleAsset};
-use crate::{Felt, ONE, ZERO};
 
 // ACCOUNT VAULT DELTA
 // ================================================================================================
@@ -32,6 +34,9 @@ pub struct AccountVaultDelta {
 impl AccountVaultDelta {
     /// Domain separator for assets in the account delta commitment.
     pub(in crate::account) const DOMAIN: Felt = Felt::new_unchecked(3);
+
+    pub(in crate::account) const DELTA_OP_ADD: Felt = Felt::new_unchecked(1);
+    pub(in crate::account) const DELTA_OP_REMOVE: Felt = Felt::new_unchecked(2);
 
     /// Validates and creates an [AccountVaultDelta] with the given fungible and non-fungible asset
     /// deltas.
@@ -87,8 +92,53 @@ impl AccountVaultDelta {
     /// Appends the vault delta to the given `elements` from which the delta commitment will be
     /// computed.
     pub(super) fn append_delta_elements(&self, elements: &mut Vec<Felt>) {
-        self.fungible().append_delta_elements(elements);
-        self.non_fungible().append_delta_elements(elements);
+        // Add added and removed assets to a map to sort by vault key.
+        // TODO(unified_delta): Refactoring the internal asset delta structure to make this extra
+        // allocation unnecessary.
+        let added_assets = BTreeMap::from_iter(
+            self.added_assets().map(|asset| (asset.vault_key(), asset.to_value_word())),
+        );
+        let removed_assets = BTreeMap::from_iter(
+            self.removed_assets().map(|asset| (asset.vault_key(), asset.to_value_word())),
+        );
+
+        let num_added_assets = added_assets.len();
+        for (asset_vault_key, asset_value) in added_assets {
+            elements.extend_from_slice(asset_vault_key.to_word().as_elements());
+            elements.extend_from_slice(asset_value.as_elements());
+        }
+
+        if num_added_assets != 0 {
+            let num_added_assets = Felt::try_from(num_added_assets as u64)
+                .expect("number of added assets should not exceed max representable felt");
+
+            elements.extend_from_slice(&[
+                Self::DOMAIN,
+                num_added_assets,
+                Self::DELTA_OP_ADD,
+                Felt::ZERO,
+            ]);
+            elements.extend_from_slice(Word::empty().as_elements());
+        }
+
+        let num_removed_assets = removed_assets.len();
+        for (asset_vault_key, asset_value) in removed_assets {
+            elements.extend_from_slice(asset_vault_key.to_word().as_elements());
+            elements.extend_from_slice(asset_value.as_elements());
+        }
+
+        if num_removed_assets != 0 {
+            let num_removed_assets = Felt::try_from(num_removed_assets as u64)
+                .expect("number of removed assets should not exceed max representable felt");
+
+            elements.extend_from_slice(&[
+                Self::DOMAIN,
+                num_removed_assets,
+                Self::DELTA_OP_REMOVE,
+                Felt::ZERO,
+            ]);
+            elements.extend_from_slice(Word::empty().as_elements());
+        }
     }
 }
 
@@ -316,40 +366,6 @@ impl FungibleAssetDelta {
 
         Ok(())
     }
-
-    /// Appends the fungible asset vault delta to the given `elements` from which the delta
-    /// commitment will be computed.
-    ///
-    /// Note that the order in which elements are appended should be the link map key ordering. This
-    /// is fulfilled here because the link map key's most significant element takes precedence over
-    /// less significant ones. The most significant element in the fungible asset delta is the
-    /// faucet ID prefix and the delta happens to be sorted by vault keys. Since the faucet ID
-    /// prefix is unique, it will always decide on the ordering of a link map key, so less
-    /// significant elements are unimportant. This implicit sort should therefore always match the
-    /// link map key ordering, however this is subtle and fragile.
-    pub(super) fn append_delta_elements(&self, elements: &mut Vec<Felt>) {
-        for (vault_key, amount_delta) in self.iter() {
-            // Note that this iterator is guaranteed to never yield zero amounts, so we don't have
-            // to exclude those explicitly.
-            debug_assert_ne!(
-                *amount_delta, 0,
-                "fungible asset iterator should never yield amount deltas of 0"
-            );
-
-            let was_added = if *amount_delta > 0 { ONE } else { ZERO };
-            let amount_delta = Felt::try_from(amount_delta.unsigned_abs())
-                .expect("amount delta should be less than i64::MAX");
-
-            let key_word = vault_key.to_word();
-            elements.extend_from_slice(&[
-                AccountVaultDelta::DOMAIN,
-                was_added,
-                key_word[2], // faucet_id_suffix_and_metadata
-                key_word[3], // faucet_id_prefix
-            ]);
-            elements.extend_from_slice(&[amount_delta, ZERO, ZERO, ZERO]);
-        }
-    }
 }
 
 impl Serializable for FungibleAssetDelta {
@@ -491,26 +507,6 @@ impl NonFungibleAssetDelta {
             .iter()
             .filter(move |&(_, (_asset, cur_action))| cur_action == &action)
             .map(|(_key, (asset, _action))| *asset)
-    }
-
-    /// Appends the non-fungible asset vault delta to the given `elements` from which the delta
-    /// commitment will be computed.
-    pub(super) fn append_delta_elements(&self, elements: &mut Vec<Felt>) {
-        for (asset, action) in self.iter() {
-            let was_added = match action {
-                NonFungibleDeltaAction::Remove => ZERO,
-                NonFungibleDeltaAction::Add => ONE,
-            };
-
-            let key_word = asset.vault_key().to_word();
-            elements.extend_from_slice(&[
-                AccountVaultDelta::DOMAIN,
-                was_added,
-                key_word[2], // faucet_id_suffix_and_metadata
-                key_word[3], // faucet_id_prefix
-            ]);
-            elements.extend_from_slice(asset.to_value_word().as_elements());
-        }
     }
 }
 
