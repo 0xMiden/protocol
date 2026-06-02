@@ -88,9 +88,9 @@ impl VaultUpdateTracker {
             .into_iter()
             .filter_map(|(key, (initial_value, final_value))| {
                 if final_value == initial_value {
-                    Some((key, final_value))
-                } else {
                     None
+                } else {
+                    Some((key, final_value))
                 }
             })
             .collect();
