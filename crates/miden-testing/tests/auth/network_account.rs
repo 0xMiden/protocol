@@ -4,6 +4,7 @@ use std::collections::BTreeSet;
 use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountBuilder, AccountType};
 use miden_protocol::note::NoteScriptRoot;
+use miden_protocol::testing::account_id::ACCOUNT_ID_SENDER;
 use miden_protocol::transaction::{RawOutputNote, TransactionScript, TransactionScriptRoot};
 use miden_standards::account::auth::AuthNetworkAccount;
 use miden_standards::account::wallets::BasicWallet;
@@ -14,14 +15,14 @@ use miden_standards::errors::standards::{
 };
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{MockChain, assert_transaction_executor_error};
+use rstest::rstest;
 
 // HELPER FUNCTIONS
 // ================================================================================================
 
-/// A placeholder script root used when a test needs an [`AuthNetworkAccount`] account whose
-/// allowlist contents are not material to the test logic (e.g. for bootstrap accounts that only
-/// exist to seed a [`NoteBuilder`]). The constructor rejects empty allowlists, so tests must
-/// supply at least one root.
+/// A placeholder note script root used when a test needs an [`AuthNetworkAccount`] account whose
+/// allowlist contents are not material to the test logic (e.g. an account that never consumes a
+/// note). The constructor rejects empty allowlists, so tests must supply at least one root.
 fn placeholder_script_root() -> Word {
     NoteScriptRoot::from_array([1, 0, 0, 0]).into()
 }
@@ -48,6 +49,12 @@ fn build_account_with_allowlists(
         .with_component(BasicWallet)
         .account_type(AccountType::Public)
         .build_existing()?)
+}
+
+/// Builds a default-code input note from a fixed sender. The note's script root is independent of
+/// its sender, so this is a convenient way to obtain a note whose root can be allowlisted.
+fn build_input_note() -> anyhow::Result<miden_protocol::note::Note> {
+    Ok(NoteBuilder::new(ACCOUNT_ID_SENDER.try_into()?, &mut rand::rng()).build()?)
 }
 
 /// Compiles a transaction script that sets the transaction expiration delta to `delta`. This is the
@@ -108,23 +115,14 @@ async fn test_auth_network_account_accepts_allowlisted_tx_script() -> anyhow::Re
     const DELTA: u16 = 10;
     let tx_script = expiration_tx_script(DELTA);
 
-    // Learn the allowed note script root from a template note.
-    let bootstrap_account = build_allowlist_account(vec![placeholder_script_root()])?;
-    let template_note = NoteBuilder::new(bootstrap_account.id(), &mut rand::rng())
-        .build()
-        .expect("failed to build template note");
-    let allowed_note_root: Word = template_note.script().root().into();
+    let mut builder = MockChain::builder();
+    let note = build_input_note()?;
+    builder.add_output_note(RawOutputNote::Full(note.clone()));
 
     // Allowlist the note script root and the expiration tx script's root.
-    let account = build_account_with_allowlists(vec![allowed_note_root], vec![tx_script.root()])?;
-
-    let mut builder = MockChain::builder();
+    let account =
+        build_account_with_allowlists(vec![note.script().root().into()], vec![tx_script.root()])?;
     builder.add_account(account.clone())?;
-
-    let note = NoteBuilder::new(account.id(), &mut rand::rng())
-        .build()
-        .expect("failed to build input note");
-    builder.add_output_note(RawOutputNote::Full(note.clone()));
 
     let mock_chain = builder.build()?;
 
@@ -133,8 +131,7 @@ async fn test_auth_network_account_accepts_allowlisted_tx_script() -> anyhow::Re
         .tx_script(tx_script)
         .build()?
         .execute()
-        .await
-        .expect("executing an allowlisted tx script should succeed");
+        .await?;
 
     // The expiration delta script set the expiration to reference_block + DELTA.
     let reference_block = executed.block_header().block_num();
@@ -152,26 +149,16 @@ async fn test_auth_network_account_accepts_allowlisted_tx_script() -> anyhow::Re
 #[tokio::test]
 async fn test_auth_network_account_allows_no_tx_script_with_non_empty_allowlist()
 -> anyhow::Result<()> {
-    // Learn the allowed note script root from a template note.
-    let bootstrap_account = build_allowlist_account(vec![placeholder_script_root()])?;
-    let template_note = NoteBuilder::new(bootstrap_account.id(), &mut rand::rng())
-        .build()
-        .expect("failed to build template note");
-    let allowed_note_root: Word = template_note.script().root().into();
+    let mut builder = MockChain::builder();
+    let note = build_input_note()?;
+    builder.add_output_note(RawOutputNote::Full(note.clone()));
 
     // Non-empty tx-script allowlist, but the transaction below runs no tx script at all.
     let account = build_account_with_allowlists(
-        vec![allowed_note_root],
+        vec![note.script().root().into()],
         vec![expiration_tx_script(10).root()],
     )?;
-
-    let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
-
-    let note = NoteBuilder::new(account.id(), &mut rand::rng())
-        .build()
-        .expect("failed to build input note");
-    builder.add_output_note(RawOutputNote::Full(note.clone()));
 
     let mock_chain = builder.build()?;
 
@@ -217,68 +204,44 @@ async fn test_auth_network_account_rejects_non_allowlisted_tx_script() -> anyhow
     Ok(())
 }
 
-/// Allowlisting several distinct tx scripts must let a transaction run any one of them. Here two
-/// expiration-delta scripts (delta 30 and delta 10) are both allowlisted, and a transaction running
-/// each one end-to-end succeeds and produces the corresponding expiration block number.
+/// Allowlisting several distinct tx scripts must let a transaction run any one of them. Both
+/// expiration-delta scripts (delta 10 and delta 30) are allowlisted, and a transaction running
+/// either one end-to-end succeeds and produces the corresponding expiration block number.
+#[rstest]
+#[case(10)]
+#[case(30)]
 #[tokio::test]
-async fn test_auth_network_account_accepts_multiple_allowlisted_tx_scripts() -> anyhow::Result<()> {
-    let script_30 = expiration_tx_script(30);
+async fn test_auth_network_account_accepts_one_of_multiple_allowlisted_tx_scripts(
+    #[case] delta: u16,
+) -> anyhow::Result<()> {
     let script_10 = expiration_tx_script(10);
+    let script_30 = expiration_tx_script(30);
+    let tx_script = expiration_tx_script(delta);
 
-    // Learn the allowed note script root from a template note.
-    let bootstrap_account = build_allowlist_account(vec![placeholder_script_root()])?;
-    let template_note = NoteBuilder::new(bootstrap_account.id(), &mut rand::rng())
-        .build()
-        .expect("failed to build template note");
-    let allowed_note_root: Word = template_note.script().root().into();
+    let mut builder = MockChain::builder();
+    let note = build_input_note()?;
+    builder.add_output_note(RawOutputNote::Full(note.clone()));
 
     // Allowlist the note root and both expiration scripts.
     let account = build_account_with_allowlists(
-        vec![allowed_note_root],
-        vec![script_30.root(), script_10.root()],
+        vec![note.script().root().into()],
+        vec![script_10.root(), script_30.root()],
     )?;
-
-    let mut builder = MockChain::builder();
     builder.add_account(account.clone())?;
-
-    // One consumable note per transaction (each transaction must consume a note or change state).
-    let note_a = NoteBuilder::new(account.id(), &mut rand::rng())
-        .build()
-        .expect("failed to build note a");
-    let note_b = NoteBuilder::new(account.id(), &mut rand::rng())
-        .build()
-        .expect("failed to build note b");
-    builder.add_output_note(RawOutputNote::Full(note_a.clone()));
-    builder.add_output_note(RawOutputNote::Full(note_b.clone()));
 
     let mock_chain = builder.build()?;
 
-    // Run the delta-30 script.
-    let executed_30 = mock_chain
-        .build_tx_context(account.id(), &[], slice::from_ref(&note_a))?
-        .tx_script(script_30)
+    let executed = mock_chain
+        .build_tx_context(account.id(), &[], slice::from_ref(&note))?
+        .tx_script(tx_script)
         .build()?
         .execute()
-        .await
-        .expect("the delta-30 script is allowlisted and should succeed");
-    assert_eq!(
-        executed_30.expiration_block_num(),
-        executed_30.block_header().block_num() + 30u32,
-        "the delta-30 script should set the expiration to reference_block + 30",
-    );
+        .await?;
 
-    // Run the delta-10 script against the same account.
-    let executed_10 = mock_chain
-        .build_tx_context(account.id(), &[], slice::from_ref(&note_b))?
-        .tx_script(script_10)
-        .build()?
-        .execute()
-        .await
-        .expect("the delta-10 script is allowlisted and should succeed");
     assert_eq!(
-        executed_10.expiration_block_num(),
-        executed_10.block_header().block_num() + 10u32,
-        "the delta-10 script should set the expiration to reference_block + 10",
+        executed.expiration_block_num(),
+        executed.block_header().block_num() + u32::from(delta),
+        "the allowlisted expiration script should set the expiration to reference_block + delta",
     );
 
     Ok(())
@@ -289,32 +252,15 @@ async fn test_auth_network_account_accepts_multiple_allowlisted_tx_scripts() -> 
 /// the others are.
 #[tokio::test]
 async fn test_auth_network_account_rejects_when_any_note_disallowed() -> anyhow::Result<()> {
-    // Build a template note with the default code to learn the "allowed" script root. The
-    // bootstrap account never executes a transaction, so its allowlist contents don't matter.
-    let bootstrap_account = build_allowlist_account(vec![placeholder_script_root()])?;
-    let template_allowed = NoteBuilder::new(bootstrap_account.id(), &mut rand::rng())
-        .build()
-        .expect("failed to build template allowed note");
-    let allowed_root = template_allowed.script().root();
-
-    // Build the real account with only that one root in the allowlist.
-    let account = build_allowlist_account(vec![allowed_root.into()])?;
-
     let mut builder = MockChain::builder();
+
+    // Allowed note: uses the default note code, so its script root is the one we allowlist.
+    let note_allowed = build_input_note()?;
+    let account = build_allowlist_account(vec![note_allowed.script().root().into()])?;
     builder.add_account(account.clone())?;
 
-    // Allowed note: uses the default note code so its script root matches `allowed_root`.
-    let note_allowed = NoteBuilder::new(account.id(), &mut rand::rng())
-        .build()
-        .expect("failed to build allowed input note");
-    assert_eq!(
-        note_allowed.script().root(),
-        allowed_root,
-        "default-code NoteBuilder should reproduce the allowed script root",
-    );
-
-    // Disallowed note: distinct code → distinct script root → not in the allowlist.
-    let note_disallowed = NoteBuilder::new(account.id(), &mut rand::rng())
+    // Disallowed note: distinct code => distinct script root => not in the allowlist.
+    let note_disallowed = NoteBuilder::new(ACCOUNT_ID_SENDER.try_into()?, &mut rand::rng())
         .code(
             "\
         @note_script
@@ -323,11 +269,10 @@ async fn test_auth_network_account_rejects_when_any_note_disallowed() -> anyhow:
         end
         ",
         )
-        .build()
-        .expect("failed to build disallowed input note");
+        .build()?;
     assert_ne!(
         note_disallowed.script().root(),
-        allowed_root,
+        note_allowed.script().root(),
         "disallowed note must have a different script root than the allowed one",
     );
 
@@ -351,31 +296,11 @@ async fn test_auth_network_account_rejects_when_any_note_disallowed() -> anyhow:
 /// Consuming an input note whose script root is in the allowlist must succeed.
 #[tokio::test]
 async fn test_auth_network_account_accepts_allowed_note() -> anyhow::Result<()> {
-    // First build a template note so we know its script root, then use that root to configure the
-    // account's allowlist. The bootstrap account never executes a transaction, so its allowlist
-    // contents don't matter.
-    let bootstrap_account = build_allowlist_account(vec![placeholder_script_root()])?;
-    let template_note = NoteBuilder::new(bootstrap_account.id(), &mut rand::rng())
-        .build()
-        .expect("failed to build template note");
-    let allowed_root = template_note.script().root();
-
-    // Now build the real account with the allowlist containing that root.
-    let account = build_allowlist_account(vec![allowed_root.into()])?;
-
     let mut builder = MockChain::builder();
-    builder.add_account(account.clone())?;
 
-    // Build a note that uses the same code but is sent from the real account so its script root
-    // matches `allowed_root`.
-    let note = NoteBuilder::new(account.id(), &mut rand::rng())
-        .build()
-        .expect("failed to build input note");
-    assert_eq!(
-        note.script().root(),
-        allowed_root,
-        "NoteBuilder with default code should produce a fixed script root"
-    );
+    let note = build_input_note()?;
+    let account = build_allowlist_account(vec![note.script().root().into()])?;
+    builder.add_account(account.clone())?;
     builder.add_output_note(RawOutputNote::Full(note.clone()));
 
     let mock_chain = builder.build()?;
@@ -384,8 +309,7 @@ async fn test_auth_network_account_accepts_allowed_note() -> anyhow::Result<()> 
         .build_tx_context(account.id(), &[], slice::from_ref(&note))?
         .build()?
         .execute()
-        .await
-        .expect("consuming an allowed note should succeed");
+        .await?;
 
     Ok(())
 }

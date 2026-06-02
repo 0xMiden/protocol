@@ -40,8 +40,8 @@ const ALLOWED_FLAG: Word = Word::new([Felt::ONE, Felt::ZERO, Felt::ZERO, Felt::Z
 /// no transaction scripts at all.
 ///
 /// A root pins the script's code but not its `TX_SCRIPT_ARGS` or advice inputs, which the
-/// transaction submitter controls; only input-closed scripts should be allowlisted (see the
-/// [`AuthNetworkAccount`](super::AuthNetworkAccount) docs).
+/// transaction submitter controls; only scripts whose effect is safe for every possible input
+/// should be allowlisted (see the [`AuthNetworkAccount`](super::AuthNetworkAccount) docs).
 ///
 /// The slot is a [`StorageMap`] keyed by tx script root; any non-empty value marks a root as
 /// allowed.

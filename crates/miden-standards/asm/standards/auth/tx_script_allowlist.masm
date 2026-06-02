@@ -50,20 +50,17 @@ pub proc assert_tx_script_allowed
         dropw drop drop
         # => []
     else
-        # Copy the slot id to the top of the stack to call get_map_item.
-        dup.5 dup.5
-        # => [slot_id_suffix, slot_id_prefix, TX_SCRIPT_ROOT, slot_id_suffix, slot_id_prefix]
+        # Move the slot id above the root so get_map_item consumes both and leaves only the value.
+        movup.5 movup.5
+        # => [slot_id_suffix, slot_id_prefix, TX_SCRIPT_ROOT]
 
         exec.active_account::get_map_item
-        # => [VALUE, slot_id_suffix, slot_id_prefix]
+        # => [VALUE]
 
         exec.word::eqz not
-        # => [is_allowed, slot_id_suffix, slot_id_prefix]
+        # => [is_allowed]
 
         assert.err=ERR_TX_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED
-        # => [slot_id_suffix, slot_id_prefix]
-
-        drop drop
         # => []
     end
     # => []

@@ -40,23 +40,27 @@ account_component_code!(NETWORK_ACCOUNT_AUTH_CODE, "auth/network_account.masl");
 /// to a fixed set of owner-approved scripts; an empty tx-script allowlist permits no transaction
 /// scripts at all.
 ///
-/// IMPORTANT: an allowlisted root pins the script's *code* (its MAST root), but not its
-/// `TX_SCRIPT_ARGS` or advice-provider inputs, which anyone submitting a transaction against this
-/// open account controls. An allowlisted script therefore runs for arbitrary callers with arbitrary
-/// inputs, so only scripts that are safe for *every* possible input should be allowlisted. The
-/// canonical example is a script that sets the transaction expiration delta to a hardcoded
-/// constant: its effect is fixed regardless of caller or inputs, and it only affects the current
-/// transaction's own inclusion window. Expiration is per-transaction state (reset to its maximum at
-/// the start of every transaction), and within a transaction the kernel only ever lets a script
-/// tighten that window, never extend it, so the worst a caller can do is make their own transaction
-/// expire sooner. Allowlisting an input-dependent script re-opens the very code path the allowlist
-/// exists to constrain.
+/// IMPORTANT: an allowlisted root pins a script's *code* (its MAST root) but not the inputs it runs
+/// on. A tx script still receives caller-controlled `TX_SCRIPT_ARGS` and advice-provider inputs,
+/// and a note script likewise receives caller-controlled `NOTE_ARGS`; on an open network account
+/// anyone can submit a transaction that supplies those inputs. An allowlisted script therefore runs
+/// for arbitrary callers with arbitrary inputs, so a root should only be allowlisted when the
+/// script's effect is safe for *every* possible input. The canonical example is a tx script that
+/// sets the transaction expiration delta to a hardcoded constant: its effect is fixed regardless of
+/// caller or inputs, and it only affects the current transaction's own inclusion window. Expiration
+/// is per-transaction state (reset to its maximum at the start of every transaction), and within a
+/// transaction the kernel only ever lets a script tighten that window, never extend it, so the
+/// worst a caller can do is make their own transaction expire sooner. Allowlisting a script whose
+/// effect depends on its inputs re-opens the very code path the allowlist exists to constrain.
 ///
 /// The note allowlist is stored in the standardized [`NetworkAccountNoteAllowlist`] slot so
 /// off-chain services can identify a network account by checking for this slot.
 ///
-/// Both allowlists are fixed at account creation; there is intentionally no procedure to mutate
-/// them after deployment.
+/// Both allowlists are fixed at account creation: this component intentionally exports no procedure
+/// to mutate them after deployment. That is a limitation of this component rather than a safety
+/// requirement, and a user who needs a mutable allowlist can write their own component today. Note
+/// that the node would likely not yet respect updates made to the list after deployment, but there
+/// is in principle nothing preventing us from supporting mutation in the future.
 pub struct AuthNetworkAccount {
     allowlist: NetworkAccountNoteAllowlist,
     tx_script_allowlist: NetworkAccountTxScriptAllowlist,
@@ -97,9 +101,10 @@ impl AuthNetworkAccount {
     ///
     /// An empty set (the default) means the account permits no transaction scripts.
     ///
-    /// Only input-closed scripts should be allowlisted: a root pins the script's code but not its
-    /// `TX_SCRIPT_ARGS` or advice inputs, which the (arbitrary) transaction submitter controls. See
-    /// the [`AuthNetworkAccount`] type docs for the full rationale.
+    /// Only scripts whose effect is safe for every possible input should be allowlisted: a root
+    /// pins the script's code but not its `TX_SCRIPT_ARGS` or advice inputs, which the
+    /// (arbitrary) transaction submitter controls. See the [`AuthNetworkAccount`] type docs for
+    /// the full rationale.
     pub fn with_allowed_tx_scripts(
         mut self,
         allowed_tx_script_roots: BTreeSet<TransactionScriptRoot>,
