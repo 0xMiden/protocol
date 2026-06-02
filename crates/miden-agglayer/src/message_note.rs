@@ -127,9 +127,9 @@ impl MessageNote {
 /// Builds the note storage for a Bridge Message note.
 ///
 /// The storage layout is:
-/// - 1 felt: destination_network
-/// - 5 felts: destination_address (20 bytes as 5 u32 values)
-/// - 8 felts: metadata_hash (32 bytes as 8 u32 values)
+/// - 1 felt: destination_network (byte-swapped to LE u32, matching the leaf data convention)
+/// - 5 felts: destination_address (20 bytes as 5 LE-packed u32 values)
+/// - 8 felts: metadata_hash (32 bytes as 8 LE-packed u32 values)
 fn build_note_storage(
     destination_network: u32,
     destination_address: EthAddress,

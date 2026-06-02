@@ -90,39 +90,29 @@ pub proc main
         push.BRIDGE_MSG_NOTE_NUM_STORAGE_ITEMS assert_eq.err=ERR_BRIDGE_MSG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
         # => [pad(16)]
 
-        # Load the 14 felts from memory in reverse order so the stack top matches the
-        # expected call layout: [dest_network, da(5), mh(8), pad(2)]
+        # Load the 14 storage felts as 4 words in reverse order so the stack top matches
+        # the expected call layout: [dest_network, da(5), mh(8), pad(2)]
         #
-        # Memory layout (BRIDGE_MSG_NOTE_STORAGE_PTR = 8):
-        #   mem[8]  = dest_network
-        #   mem[9]  = da0
-        #   mem[10] = da1
-        #   mem[11] = da2
-        #   mem[12] = da3
-        #   mem[13] = da4
-        #   mem[14] = mh0
-        #   mem[15] = mh1
-        #   mem[16] = mh2
-        #   mem[17] = mh3
-        #   mem[18] = mh4
-        #   mem[19] = mh5
-        #   mem[20] = mh6
-        #   mem[21] = mh7
+        # Memory layout (BRIDGE_MSG_NOTE_STORAGE_PTR = 8, 4 words):
+        #   word at addr  8: [dest_network, da0, da1, da2]
+        #   word at addr 12: [da3, da4, mh0, mh1]
+        #   word at addr 16: [mh2, mh3, mh4, mh5]
+        #   word at addr 20: [mh6, mh7, 0, 0]
         #
-        # Each mem_load.X pushes the value at address X onto the stack.
-        # Loading in reverse order so that dest_network ends up on top.
-        mem_load.21 mem_load.20 mem_load.19 mem_load.18
-        mem_load.17 mem_load.16 mem_load.15 mem_load.14
-        mem_load.13 mem_load.12 mem_load.11 mem_load.10
-        mem_load.9 mem_load.8
-        # => [dest_network, da(5), mh(8), pad(16)]
+        # Each `padw` + `mem_loadw_le.X` pushes 4 zeros then overwrites them with the word at X.
+        # Loading in reverse address order so dest_network ends up on top.
+        padw push.BRIDGE_MSG_NOTE_STORAGE_PTR add.12 mem_loadw_le
+        padw push.BRIDGE_MSG_NOTE_STORAGE_PTR add.8 mem_loadw_le
+        padw push.BRIDGE_MSG_NOTE_STORAGE_PTR add.4 mem_loadw_le
+        padw mem_loadw_le.BRIDGE_MSG_NOTE_STORAGE_PTR
+        # => [dest_network, da(5), mh(8), 0, 0, pad(16)]
         # Top 16 elements: [dest_network, da(5), mh(8), 0, 0]
 
         call.bridge_out::bridge_message
-        # => [pad(16), pad(14)]
+        # => [pad(16), pad(16)]
 
-        # Clean up the 14 extra elements below the call's return frame
-        dropw dropw dropw drop drop
+        # Clean up the 16 extra elements below the call's return frame
+        dropw dropw dropw dropw
         # => [pad(16)]
     end
     # => [pad(16)]
