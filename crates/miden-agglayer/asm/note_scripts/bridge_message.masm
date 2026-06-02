@@ -7,6 +7,7 @@ use miden::standards::attachments::network_account_target
 # CONSTANTS
 # =================================================================================================
 
+const BRIDGE_MSG_NOTE_ASSETS_PTR = 0
 const BRIDGE_MSG_NOTE_STORAGE_PTR = 8
 const BRIDGE_MSG_NOTE_NUM_STORAGE_ITEMS = 14
 
@@ -14,6 +15,7 @@ const BRIDGE_MSG_NOTE_NUM_STORAGE_ITEMS = 14
 # =================================================================================================
 const ERR_BRIDGE_MSG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS="BRIDGE_MESSAGE script expects exactly 14 note storage items"
 const ERR_BRIDGE_MSG_TARGET_ACCOUNT_MISMATCH="BRIDGE_MESSAGE note attachment target account does not match consuming account"
+const ERR_BRIDGE_MSG_NOTE_HAS_ASSETS="BRIDGE_MESSAGE note must not contain any assets"
 
 # NOTE SCRIPT
 # =================================================================================================
@@ -43,9 +45,10 @@ const ERR_BRIDGE_MSG_TARGET_ACCOUNT_MISMATCH="BRIDGE_MESSAGE note attachment tar
 #! - [0, exec_hint_tag, target_id_prefix, target_id_suffix]
 #!
 #! Panics if:
+#! - The note contains any assets (message notes must be asset-free).
 #! - The note does not contain exactly 14 storage items.
 #! - The note attachment does not target the consuming account.
-#! - The note is not public (enforced by `bridge_out`).
+#! - The note is not public (enforced by `bridge_message`).
 #! - The destination network ID equals Miden's AggLayer network ID.
 @note_script
 pub proc main
@@ -57,7 +60,7 @@ pub proc main
     # => [account_id_prefix, account_id_suffix, pad(16)]
 
     exec.active_note::get_sender
-    # => [sender_id_prefix, sender_id_suffix, account_id_prefix, account_id_suffix, pad(16)]
+    # => [sender_id_suffix, sender_id_prefix, account_id_prefix, account_id_suffix, pad(16)]
 
     exec.account_id::is_equal
     # => [reclaim, pad(16)]
@@ -70,6 +73,13 @@ pub proc main
         # Ensure note attachment targets the consuming bridge account.
         exec.network_account_target::active_account_matches_target_account
         assert.err=ERR_BRIDGE_MSG_TARGET_ACCOUNT_MISMATCH
+        # => [pad(16)]
+
+        # Assert the note carries no assets (message notes are asset-free).
+        push.BRIDGE_MSG_NOTE_ASSETS_PTR exec.active_note::get_assets
+        # => [num_assets, pad(16)]
+
+        assertz.err=ERR_BRIDGE_MSG_NOTE_HAS_ASSETS
         # => [pad(16)]
 
         # Store note storage -> mem[8..22]

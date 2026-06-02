@@ -24,6 +24,8 @@ use agglayer::common::eth_address::EthereumAddressFormat
 
 const ERR_B2AGG_DESTINATION_NETWORK_IS_MIDEN = "B2AGG note destination network ID must not be Miden's AggLayer network ID"
 const ERR_B2AGG_NOTE_MUST_BE_PUBLIC = "B2AGG note must be public"
+const ERR_BRIDGE_MSG_DESTINATION_NETWORK_IS_MIDEN = "BRIDGE_MESSAGE note destination network ID must not be Miden's AggLayer network ID"
+const ERR_BRIDGE_MSG_NOTE_MUST_BE_PUBLIC = "BRIDGE_MESSAGE note must be public"
 
 # CONSTANTS
 # =================================================================================================
@@ -287,10 +289,11 @@ end
 #! Invocation: call
 @locals(14)
 pub proc bridge_message
-    exec.active_note::is_public assert.err=ERR_B2AGG_NOTE_MUST_BE_PUBLIC
+    exec.active_note::is_public assert.err=ERR_BRIDGE_MSG_NOTE_MUST_BE_PUBLIC
     # => [dest_network_id, dest_address(5), metadata_hash(8), pad(2)]
 
-    dup exec.assert_destination_id_not_miden_id
+    dup exec.utils::swap_u32_bytes push.MIDEN_NETWORK_ID neq
+    assert.err=ERR_BRIDGE_MSG_DESTINATION_NETWORK_IS_MIDEN
     # => [dest_network_id, dest_address(5), metadata_hash(8), pad(2)]
 
     # Save all 14 input values to locals. Within a `call` frame, the stack floor is 16,

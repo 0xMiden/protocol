@@ -1,7 +1,7 @@
 extern crate alloc;
 
 use miden_agglayer::errors::{
-    ERR_B2AGG_DESTINATION_NETWORK_IS_MIDEN,
+    ERR_BRIDGE_MSG_DESTINATION_NETWORK_IS_MIDEN,
     ERR_BRIDGE_MSG_TARGET_ACCOUNT_MISMATCH,
 };
 use miden_agglayer::{
@@ -411,7 +411,7 @@ async fn bridge_message_consecutive() -> anyhow::Result<()> {
 /// Tests that a MessageNote with destination_network == MIDEN_NETWORK_ID is rejected.
 ///
 /// The bridge_message procedure in bridge_out.masm checks that the destination network
-/// is not Miden's own network ID (77) and panics with ERR_B2AGG_DESTINATION_NETWORK_IS_MIDEN.
+/// is not Miden's own network ID (77) and panics with ERR_BRIDGE_MSG_DESTINATION_NETWORK_IS_MIDEN.
 #[tokio::test]
 async fn bridge_message_rejects_destination_miden() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
@@ -454,7 +454,7 @@ async fn bridge_message_rejects_destination_miden() -> anyhow::Result<()> {
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_B2AGG_DESTINATION_NETWORK_IS_MIDEN);
+    assert_transaction_executor_error!(result, ERR_BRIDGE_MSG_DESTINATION_NETWORK_IS_MIDEN);
 
     Ok(())
 }
