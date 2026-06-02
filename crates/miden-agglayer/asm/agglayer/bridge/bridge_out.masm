@@ -74,6 +74,22 @@ const DESTINATION_ADDRESS_4_LOC=12
 const DESTINATION_NETWORK_LOC=13
 const BRIDGE_OUT_IS_NATIVE_LOC=14
 
+# bridge_message memory locals
+const BRIDGE_MSG_DEST_NETWORK_LOC=0
+const BRIDGE_MSG_DEST_ADDRESS_0_LOC=1
+const BRIDGE_MSG_DEST_ADDRESS_1_LOC=2
+const BRIDGE_MSG_DEST_ADDRESS_2_LOC=3
+const BRIDGE_MSG_DEST_ADDRESS_3_LOC=4
+const BRIDGE_MSG_DEST_ADDRESS_4_LOC=5
+const BRIDGE_MSG_METADATA_HASH_0_LOC=6
+const BRIDGE_MSG_METADATA_HASH_1_LOC=7
+const BRIDGE_MSG_METADATA_HASH_2_LOC=8
+const BRIDGE_MSG_METADATA_HASH_3_LOC=9
+const BRIDGE_MSG_METADATA_HASH_4_LOC=10
+const BRIDGE_MSG_METADATA_HASH_5_LOC=11
+const BRIDGE_MSG_METADATA_HASH_6_LOC=12
+const BRIDGE_MSG_METADATA_HASH_7_LOC=13
+
 # create_burn_note memory locals
 const CREATE_BURN_NOTE_BURN_ASSET_LOC=0
 const ATTACHMENT_LOC=8
@@ -280,37 +296,47 @@ pub proc bridge_message
     # Save all 14 input values to locals. Within a `call` frame, the stack floor is 16,
     # so `loc_store` at depth 16 pops the value into local memory while keeping depth at 16
     # (zeros fill from below). This drains the meaningful input values into locals.
-    loc_store.0  # dest_network
-    loc_store.1  # da0
-    loc_store.2  # da1
-    loc_store.3  # da2
-    loc_store.4  # da3
-    loc_store.5  # da4
-    loc_store.6  # mh0
-    loc_store.7  # mh1
-    loc_store.8  # mh2
-    loc_store.9  # mh3
-    loc_store.10 # mh4
-    loc_store.11 # mh5
-    loc_store.12 # mh6
-    loc_store.13 # mh7
+    loc_store.BRIDGE_MSG_DEST_NETWORK_LOC
+    loc_store.BRIDGE_MSG_DEST_ADDRESS_0_LOC
+    loc_store.BRIDGE_MSG_DEST_ADDRESS_1_LOC
+    loc_store.BRIDGE_MSG_DEST_ADDRESS_2_LOC
+    loc_store.BRIDGE_MSG_DEST_ADDRESS_3_LOC
+    loc_store.BRIDGE_MSG_DEST_ADDRESS_4_LOC
+    loc_store.BRIDGE_MSG_METADATA_HASH_0_LOC
+    loc_store.BRIDGE_MSG_METADATA_HASH_1_LOC
+    loc_store.BRIDGE_MSG_METADATA_HASH_2_LOC
+    loc_store.BRIDGE_MSG_METADATA_HASH_3_LOC
+    loc_store.BRIDGE_MSG_METADATA_HASH_4_LOC
+    loc_store.BRIDGE_MSG_METADATA_HASH_5_LOC
+    loc_store.BRIDGE_MSG_METADATA_HASH_6_LOC
+    loc_store.BRIDGE_MSG_METADATA_HASH_7_LOC
     # => [pad(16)]
 
     # --- 1. Store destination_network ---
-    loc_load.0
+    loc_load.BRIDGE_MSG_DEST_NETWORK_LOC
     push.LEAF_DATA_START_PTR push.DESTINATION_NETWORK_OFFSET add
     mem_store
     # => [pad(16)]
 
     # --- 2. Store destination_address (5 felts) ---
-    loc_load.5 loc_load.4 loc_load.3 loc_load.2 loc_load.1
+    loc_load.BRIDGE_MSG_DEST_ADDRESS_4_LOC
+    loc_load.BRIDGE_MSG_DEST_ADDRESS_3_LOC
+    loc_load.BRIDGE_MSG_DEST_ADDRESS_2_LOC
+    loc_load.BRIDGE_MSG_DEST_ADDRESS_1_LOC
+    loc_load.BRIDGE_MSG_DEST_ADDRESS_0_LOC
     push.LEAF_DATA_START_PTR push.DESTINATION_ADDRESS_OFFSET add
     exec.write_address_to_memory
     # => [pad(16)]
 
     # --- 3. Store metadata_hash (8 felts) ---
-    loc_load.13 loc_load.12 loc_load.11 loc_load.10
-    loc_load.9 loc_load.8 loc_load.7 loc_load.6
+    loc_load.BRIDGE_MSG_METADATA_HASH_7_LOC
+    loc_load.BRIDGE_MSG_METADATA_HASH_6_LOC
+    loc_load.BRIDGE_MSG_METADATA_HASH_5_LOC
+    loc_load.BRIDGE_MSG_METADATA_HASH_4_LOC
+    loc_load.BRIDGE_MSG_METADATA_HASH_3_LOC
+    loc_load.BRIDGE_MSG_METADATA_HASH_2_LOC
+    loc_load.BRIDGE_MSG_METADATA_HASH_1_LOC
+    loc_load.BRIDGE_MSG_METADATA_HASH_0_LOC
     push.LEAF_DATA_START_PTR push.METADATA_HASH_OFFSET add
     movdn.8
     exec.utils::mem_store_double_word_unaligned
