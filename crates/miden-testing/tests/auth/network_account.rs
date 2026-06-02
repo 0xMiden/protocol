@@ -2,7 +2,7 @@ use core::slice;
 use std::collections::BTreeSet;
 
 use miden_protocol::account::{Account, AccountBuilder, AccountType};
-use miden_protocol::note::NoteScriptRoot;
+use miden_protocol::note::{Note, NoteScriptRoot};
 use miden_protocol::testing::account_id::ACCOUNT_ID_SENDER;
 use miden_protocol::transaction::{RawOutputNote, TransactionScript, TransactionScriptRoot};
 use miden_protocol::{Felt, Word};
@@ -53,7 +53,7 @@ fn build_account_with_allowlists(
 
 /// Builds a default-code input note from a fixed sender. The note's script root is independent of
 /// its sender, so this is a convenient way to obtain a note whose root can be allowlisted.
-fn build_input_note() -> anyhow::Result<miden_protocol::note::Note> {
+fn build_input_note() -> anyhow::Result<Note> {
     Ok(NoteBuilder::new(ACCOUNT_ID_SENDER.try_into()?, &mut rand::rng()).build()?)
 }
 
@@ -220,6 +220,49 @@ async fn test_auth_network_account_rejects_non_allowlisted_tx_script() -> anyhow
         .await;
 
     assert_transaction_executor_error!(result, ERR_TX_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED);
+
+    Ok(())
+}
+
+/// Allowlisting several *distinct* tx-script roots must let a transaction run any one of them. Both
+/// hardcoded expiration scripts (delta 10 and delta 30) are allowlisted, and running either one
+/// end-to-end succeeds and produces the corresponding expiration block number.
+#[rstest]
+#[case(10)]
+#[case(30)]
+#[tokio::test]
+async fn test_auth_network_account_accepts_any_of_multiple_allowlisted_roots(
+    #[case] delta: u16,
+) -> anyhow::Result<()> {
+    let script_10 = expiration_tx_script(10);
+    let script_30 = expiration_tx_script(30);
+    let tx_script = expiration_tx_script(delta);
+
+    let mut builder = MockChain::builder();
+    let note = build_input_note()?;
+    builder.add_output_note(RawOutputNote::Full(note.clone()));
+
+    // Allowlist the note root and both distinct expiration script roots.
+    let account = build_account_with_allowlists(
+        vec![note.script().root().into()],
+        vec![script_10.root(), script_30.root()],
+    )?;
+    builder.add_account(account.clone())?;
+
+    let mock_chain = builder.build()?;
+
+    let executed = mock_chain
+        .build_tx_context(account.id(), &[], slice::from_ref(&note))?
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await?;
+
+    assert_eq!(
+        executed.expiration_block_num(),
+        executed.block_header().block_num() + u32::from(delta),
+        "running one of several allowlisted scripts should set the expiration to reference + delta",
+    );
 
     Ok(())
 }
