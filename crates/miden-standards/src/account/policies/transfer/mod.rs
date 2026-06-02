@@ -12,6 +12,7 @@
 use alloc::vec::Vec;
 
 use miden_protocol::account::{AccountComponent, AccountId, AccountProcedureRoot};
+use thiserror::Error;
 
 mod allow_all;
 mod allowlist;
@@ -24,6 +25,20 @@ pub use allowlist::{AllowlistOwnerControlled, AllowlistStorage};
 pub use basic_allowlist::BasicAllowlist;
 pub use basic_blocklist::BasicBlocklist;
 pub use blocklist::{BlocklistOwnerControlled, BlocklistStorage};
+
+// TRANSFER POLICY ERROR
+// ================================================================================================
+
+/// Errors returned by [`TransferPolicy::custom`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum TransferPolicyError {
+    /// The procedure root supplied to [`TransferPolicy::custom`] is not exported by any of
+    /// the provided components.
+    #[error(
+        "custom transfer policy root must match a procedure root in one of the provided components"
+    )]
+    RootNotInComponents,
+}
 
 // TRANSFER POLICY
 // ================================================================================================
@@ -39,11 +54,8 @@ pub use blocklist::{BlocklistOwnerControlled, BlocklistStorage};
 /// (`on_before_asset_added_to_account`) callbacks — the policy procedure receives no direction
 /// parameter and reads the relevant account context via `native_account::get_id`.
 ///
-/// Construct via [`Self::allow_all`], [`Self::empty_basic_blocklist`],
-/// [`Self::with_basic_blocklist_ids`], [`Self::empty_basic_allowlist`],
-/// [`Self::with_basic_allowlist`], or [`Self::custom`]. The companion components carried by the
-/// descriptor are inlined into the account by the [`super::TokenPolicyManager`] when it is
-/// converted into account components.
+/// The companion components carried by the descriptor are inlined into the account by the
+/// [`super::TokenPolicyManager`] when it is converted into account components.
 #[derive(Debug, Clone)]
 pub struct TransferPolicy {
     root: AccountProcedureRoot,
@@ -106,24 +118,23 @@ impl TransferPolicy {
     /// Returns a transfer policy resolving to `root` and shipping the provided companion
     /// `components` (anything that can be converted into an [`AccountComponent`]).
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if `root` is not the procedure root of any procedure exported by the provided
-    /// components.
-    pub fn custom<I>(root: AccountProcedureRoot, components: I) -> Self
+    /// Returns [`TransferPolicyError::RootNotInComponents`] if `root` is not the procedure
+    /// root of any procedure exported by the provided components.
+    pub fn custom<I>(root: AccountProcedureRoot, components: I) -> Result<Self, TransferPolicyError>
     where
         I: IntoIterator,
         I::Item: Into<AccountComponent>,
     {
         let components: Vec<AccountComponent> = components.into_iter().map(Into::into).collect();
-        assert!(
-            components
-                .iter()
-                .any(|component| component.procedures().any(|(proc_root, _)| proc_root == root)),
-            "custom transfer policy root must match a procedure root in one of the provided \
-             components",
-        );
-        Self { root, components }
+        let root_present = components
+            .iter()
+            .any(|component| component.procedures().any(|(proc_root, _)| proc_root == root));
+        if !root_present {
+            return Err(TransferPolicyError::RootNotInComponents);
+        }
+        Ok(Self { root, components })
     }
 
     /// Returns the procedure root of the policy this descriptor resolves to.

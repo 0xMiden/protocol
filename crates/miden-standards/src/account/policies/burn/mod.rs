@@ -4,12 +4,27 @@
 use alloc::vec::Vec;
 
 use miden_protocol::account::{AccountComponent, AccountProcedureRoot};
+use thiserror::Error;
 
 mod allow_all;
 mod owner_only;
 
 pub use allow_all::BurnAllowAll;
 pub use owner_only::BurnOwnerOnly;
+
+// BURN POLICY ERROR
+// ================================================================================================
+
+/// Errors returned by [`BurnPolicy::custom`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum BurnPolicyError {
+    /// The procedure root supplied to [`BurnPolicy::custom`] is not exported by any of the
+    /// provided components.
+    #[error(
+        "custom burn policy root must match a procedure root in one of the provided components"
+    )]
+    RootNotInComponents,
+}
 
 // BURN POLICY
 // ================================================================================================
@@ -47,23 +62,23 @@ impl BurnPolicy {
     /// Returns a burn policy resolving to `root` and shipping the provided companion
     /// `components` (anything that can be converted into an [`AccountComponent`]).
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if `root` is not the procedure root of any procedure exported by the provided
-    /// components.
-    pub fn custom<I>(root: AccountProcedureRoot, components: I) -> Self
+    /// Returns [`BurnPolicyError::RootNotInComponents`] if `root` is not the procedure root of
+    /// any procedure exported by the provided components.
+    pub fn custom<I>(root: AccountProcedureRoot, components: I) -> Result<Self, BurnPolicyError>
     where
         I: IntoIterator,
         I::Item: Into<AccountComponent>,
     {
         let components: Vec<AccountComponent> = components.into_iter().map(Into::into).collect();
-        assert!(
-            components
-                .iter()
-                .any(|component| component.procedures().any(|(proc_root, _)| proc_root == root)),
-            "custom burn policy root must match a procedure root in one of the provided components",
-        );
-        Self { root, components }
+        let root_present = components
+            .iter()
+            .any(|component| component.procedures().any(|(proc_root, _)| proc_root == root));
+        if !root_present {
+            return Err(BurnPolicyError::RootNotInComponents);
+        }
+        Ok(Self { root, components })
     }
 
     /// Returns the procedure root of the policy this descriptor resolves to.
