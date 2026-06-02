@@ -179,8 +179,7 @@ async fn test_auth_network_account_allows_no_tx_script_with_non_empty_allowlist(
         .build_tx_context(account.id(), &[], slice::from_ref(&note))?
         .build()?
         .execute()
-        .await
-        .expect("a transaction with no tx script should be allowed");
+        .await?;
 
     Ok(())
 }
