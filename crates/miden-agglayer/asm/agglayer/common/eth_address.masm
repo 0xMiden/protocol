@@ -81,7 +81,7 @@ end
 #! Outputs: [limb0, limb1, limb2, limb3, limb4]
 #!
 #! Invocation: exec
-pub proc from_account_id
+pub proc from_account_id(suffix: felt, prefix: felt) -> EthereumAddressFormat
     # split prefix into BE limbs
     swap
     # => [prefix, suffix]
