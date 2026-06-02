@@ -35,23 +35,21 @@ account_component_code!(NETWORK_ACCOUNT_AUTH_CODE, "auth/network_account.masl");
 /// - the transaction script root, if any, is present in the component's tx-script allowlist, and
 /// - every consumed input note has a script root present in the component's note-script allowlist.
 ///
-/// Because a network account has no signature gate, a transaction script is an unconstrained code
-/// path that could call the account's procedures directly. The tx-script allowlist constrains this
-/// to a fixed set of owner-approved scripts; an empty tx-script allowlist permits no transaction
-/// scripts at all.
+/// Because a network account has no signature gate by default, a transaction script is an
+/// unconstrained code path that could call the account's procedures directly. The tx-script
+/// allowlist constrains this to a fixed set of owner-approved scripts; an empty tx-script allowlist
+/// permits no transaction scripts at all.
 ///
-/// IMPORTANT: an allowlisted root pins a script's *code* (its MAST root) but not the inputs it runs
+/// IMPORTANT: an allowlisted root pins a script's *code* (its MAST root), not the inputs it runs
 /// on. A tx script still receives caller-controlled `TX_SCRIPT_ARGS` and advice-provider inputs,
-/// and a note script likewise receives caller-controlled `NOTE_ARGS`; on an open network account
-/// anyone can submit a transaction that supplies those inputs. An allowlisted script therefore runs
-/// for arbitrary callers with arbitrary inputs, so a root should only be allowlisted when the
-/// script's effect is safe for *every* possible input. The canonical example is a tx script that
-/// sets the transaction expiration delta to a hardcoded constant: its effect is fixed regardless of
-/// caller or inputs, and it only affects the current transaction's own inclusion window. Expiration
-/// is per-transaction state (reset to its maximum at the start of every transaction), and within a
-/// transaction the kernel only ever lets a script tighten that window, never extend it, so the
-/// worst a caller can do is make their own transaction expire sooner. Allowlisting a script whose
-/// effect depends on its inputs re-opens the very code path the allowlist exists to constrain.
+/// and a note script receives caller-controlled `NOTE_ARGS`; on an open network account anyone can
+/// supply those. A root should therefore only be allowlisted when the script's effect is safe for
+/// *every* possible input. The canonical example is a tx script that sets the transaction
+/// expiration delta to a hardcoded constant: its effect is fixed regardless of caller or inputs,
+/// and the kernel only ever lets a script tighten the current transaction's expiration window
+/// (never extend it), so the worst a caller can do is make their own transaction expire sooner.
+/// Allowlisting a script whose effect depends on its inputs re-opens the very code path the
+/// allowlist exists to constrain.
 ///
 /// The note allowlist is stored in the standardized [`NetworkAccountNoteAllowlist`] slot so
 /// off-chain services can identify a network account by checking for this slot.
