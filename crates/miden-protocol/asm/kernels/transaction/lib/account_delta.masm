@@ -1,6 +1,7 @@
 use $kernel::account
 use $kernel::asset
 use $kernel::constants::STORAGE_SLOT_TYPE_VALUE
+use $kernel::asset::ASSET_SIZE
 use $kernel::fungible_asset
 use $kernel::link_map
 use $kernel::memory
@@ -491,6 +492,209 @@ proc update_non_fungible_asset_delta
     # => [RATE0, RATE1, CAPACITY]
 end
 
+const UPDATE_ASSET_DELTA_HAS_NEXT_LOC = 0
+const UPDATE_ASSET_DELTA_ITER_LOC = 1
+const UPDATE_ASSET_DELTA_NUM_ADDED_LOC = 2
+const UPDATE_ASSET_DELTA_NUM_REMOVED_LOC = 3
+const UPDATE_ASSET_DELTA_REMOVED_ASSET_IDX_LOC = 4
+const UPDATE_ASSET_DELTA_REMOVED_ASSETS_LOC = 8
+#! The maximum number of assets that can be removed in a single transaction.
+#!
+#! This limit is arbitrary and can be increased accordingly with the number of locals of
+#! update_asset_delta.
+const UPDATE_ASSET_DELTA_MAX_REMOVED_ASSETS = 1024
+
+#! Updates the given delta hasher with the asset vault delta.
+#!
+#! It iterates the asset delta link map once and processes the added assets first. It writes the
+#! removed assets into local memory to enable a subsequent iteration over linear memory rather than
+#! a second expensive link map iteration that would have to skip added assets.
+#!
+#! Inputs:  [RATE0, RATE1, CAPACITY]
+#! Outputs: [RATE0, RATE1, CAPACITY]
+#!
+#! Locals:
+#! - 0: has_next
+#! - 1: iter
+#! - 2: num_added_assets
+#! - 3: num_removed_assets
+#! - 4: removed_assets_idx
+#! - 8..8196: removed_assets (UPDATE_ASSET_DELTA_MAX_REMOVED_ASSETS * ASSET_SIZE elements)
+@locals(8200)
+proc update_asset_delta
+    # initialize num_added_assets = 0 and num_removed_assets = 0
+    # this is necessary because this procedure can be called multiple times and the second
+    # invocation shouldn't reuse the first invocation's values
+    push.0 loc_store.UPDATE_ASSET_DELTA_NUM_ADDED_LOC
+    push.0 loc_store.UPDATE_ASSET_DELTA_NUM_REMOVED_LOC
+
+    # Iterate asset delta.
+    # Add added assets into the hasher.
+    # Store removed assets to memory for later processing.
+    # ---------------------------------------------------------------------------------------------
+
+    push.ACCOUNT_DELTA_ASSET_PTR
+    # => [asset_delta_map_ptr, RATE0, RATE1, CAPACITY]
+
+    exec.link_map::iter
+    # => [has_next, iter, RATE0, RATE1, CAPACITY]
+
+    # enter loop if the link map is not empty
+    while.true
+        exec.link_map::next_key_double_value
+        # => [ASSET_KEY, ASSET_VALUE, [delta_op, 0, 0, 0], has_next, iter, ...]
+
+        # store has_next and iter
+        movup.12 loc_store.UPDATE_ASSET_DELTA_HAS_NEXT_LOC
+        movup.12 loc_store.UPDATE_ASSET_DELTA_ITER_LOC
+        # => [ASSET_KEY, ASSET_VALUE, [delta_op, 0, 0, 0], ...]
+
+        # if the delta op is not none, we have either addition or removal
+        dup.8 neq.DELTA_OP_NONE
+        # => [was_added_or_removed, ASSET_KEY, ASSET_VALUE, [delta_op, 0, 0, 0], ...]
+
+        if.true
+            movupw.2 movdn.3 drop drop drop
+            # => [delta_op, ASSET_KEY, ASSET_VALUE, ...]
+
+            eq.DELTA_OP_ADD
+            # => [is_addition, ASSET_KEY, ASSET_VALUE, ...]
+
+            if.true
+                # increment num_added_assets
+                loc_load.UPDATE_ASSET_DELTA_NUM_ADDED_LOC
+                add.1
+                loc_store.UPDATE_ASSET_DELTA_NUM_ADDED_LOC
+                # => [ASSET_KEY, ASSET_VALUE, RATE0, RATE1, CAPACITY]
+
+                # drop previous RATE elements
+                swapdw dropw dropw
+                # => [ASSET_KEY, ASSET_VALUE, CAPACITY]
+
+                exec.poseidon2::permute
+                # => [RATE0, RATE1, CAPACITY]
+            else
+                loc_load.UPDATE_ASSET_DELTA_NUM_REMOVED_LOC
+                # => [num_removed_assets, ASSET_KEY, ASSET_VALUE, ...]
+
+                # make sure we do not write outside the assigned number of locals
+                dup neq.UPDATE_ASSET_DELTA_MAX_REMOVED_ASSETS
+                assert.err="TODO(unified_delta): Too many removed assets"
+                # => [num_removed_assets, ASSET_KEY, ASSET_VALUE, ...]
+
+                # compute the pointer at which to store the removed asset as
+                # locaddr.removed_assets_ptr + num_removed_assets * ASSET_SIZE
+                mul.ASSET_SIZE
+                locaddr.UPDATE_ASSET_DELTA_REMOVED_ASSETS_LOC
+                add
+                # => [removed_assets_ptr, ASSET_KEY, ASSET_VALUE, ...]
+
+                exec.asset::store
+                # => [RATE0, RATE1, CAPACITY]
+
+                # increment num_removed_assets
+                loc_load.UPDATE_ASSET_DELTA_NUM_REMOVED_LOC
+                add.1
+                loc_store.UPDATE_ASSET_DELTA_NUM_REMOVED_LOC
+                # => [RATE0, RATE1, CAPACITY]
+            end
+            # => [RATE0, RATE1, CAPACITY]
+        else
+            # discard the asset key value and delta metadata loaded from the map
+            dropw dropw dropw
+            # => [RATE0, RATE1, CAPACITY]
+        end
+        # => [RATE0, RATE1, CAPACITY]
+
+        # load iter and has_next
+        loc_load.UPDATE_ASSET_DELTA_ITER_LOC
+        loc_load.UPDATE_ASSET_DELTA_HAS_NEXT_LOC
+        # => [has_next, iter, RATE0, RATE1, CAPACITY]
+    end
+
+    # drop iter
+    drop
+    # => [RATE0, RATE1, CAPACITY]
+
+    # Add the added assets trailer if num_added_assets != 0.
+    # ---------------------------------------------------------------------------------------------
+
+    loc_load.UPDATE_ASSET_DELTA_NUM_ADDED_LOC neq.0
+    if.true
+        # drop the previous RATE elements
+        dropw dropw
+        # => [CAPACITY]
+
+        padw push.0 push.DELTA_OP_ADD
+        loc_load.UPDATE_ASSET_DELTA_NUM_ADDED_LOC push.DOMAIN_ASSET
+        # => [[domain, num_added_assets, delta_op, 0], EMPTY_WORD, CAPACITY]
+
+        exec.poseidon2::permute
+        # => [RATE0, RATE1, CAPACITY]
+    end
+    # => [RATE0, RATE1, CAPACITY]
+
+    # Hash the removed assets.
+    # ---------------------------------------------------------------------------------------------
+
+    # initialize removed_assets_idx = 0
+    push.0 loc_store.UPDATE_ASSET_DELTA_REMOVED_ASSET_IDX_LOC
+    loc_load.UPDATE_ASSET_DELTA_NUM_REMOVED_LOC
+    # => [num_removed_assets, ...]
+
+    # loop if the number of removed assets is not zero
+    neq.0
+    # => [should_loop, ...]
+
+    while.true
+        # compute the pointer from which to load the removed asset as
+        # locaddr.removed_assets_ptr + removed_asset_idx * ASSET_SIZE
+        locaddr.UPDATE_ASSET_DELTA_REMOVED_ASSETS_LOC
+        loc_load.UPDATE_ASSET_DELTA_REMOVED_ASSET_IDX_LOC
+        mul.ASSET_SIZE
+        add
+        # => [removed_asset_ptr, ...]
+
+        exec.asset::load
+        # => [ASSET_KEY, ASSET_VALUE, RATE0, RATE1, CAPACITY]
+
+        swapdw dropw dropw
+        # => [ASSET_KEY, ASSET_VALUE, CAPACITY]
+
+        exec.poseidon2::permute
+        # => [RATE0, RATE1, CAPACITY]
+
+        loc_load.UPDATE_ASSET_DELTA_REMOVED_ASSET_IDX_LOC
+        add.1 dup
+        loc_store.UPDATE_ASSET_DELTA_REMOVED_ASSET_IDX_LOC
+        # => [removed_asset_idx+1, RATE0, RATE1, CAPACITY]
+
+        # continue if removed_assets_idx + 1 != num_removed_assets
+        loc_load.UPDATE_ASSET_DELTA_NUM_REMOVED_LOC
+        neq
+        # => [should_continue, RATE0, RATE1, CAPACITY]
+    end
+    # => [RATE0, RATE1, CAPACITY]
+
+    # Add the removed assets trailer if num_removed_assets != 0.
+    # ---------------------------------------------------------------------------------------------
+
+    loc_load.UPDATE_ASSET_DELTA_NUM_REMOVED_LOC neq.0
+    if.true
+        # drop the previous RATE elements
+        dropw dropw
+        # => [CAPACITY]
+
+        padw push.0 push.DELTA_OP_REMOVE
+        loc_load.UPDATE_ASSET_DELTA_NUM_REMOVED_LOC push.DOMAIN_ASSET
+        # => [[domain, num_removed_assets, delta_op, 0], EMPTY_WORD, CAPACITY]
+
+        exec.poseidon2::permute
+        # => [RATE0, RATE1, CAPACITY]
+    end
+    # => [RATE0, RATE1, CAPACITY]
+end
+
 # DELTA BOOKKEEPING
 # -------------------------------------------------------------------------------------------------
 
@@ -577,7 +781,7 @@ proc insert_asset_delta
     loc_store.INSERT_ASSET_DELTA_OP_LOC
     # => [ASSET_KEY, INCOMING_ASSET_VALUE]
 
-    swapw exec.word::testz
+    swapw exec.word::testz not
     assert.err="insert_asset_delta sanity check: incoming asset value should never be the empty word"
     # => [INCOMING_ASSET_VALUE, ASSET_KEY]
 
@@ -603,11 +807,11 @@ proc insert_asset_delta
         dropw eq.DELTA_OP_NONE
         assert.err="insert_asset_delta sanity check: delta op should be 0 if asset value is empty word"
         drop drop drop
-        # => [ASSET_KEY, INCOMING_ASSET_VALUE]
+        # => [INCOMING_ASSET_VALUE, ASSET_KEY]
 
         # we checked that the value is not empty and so the addition is a "proper" one (e.g. not
         # adding an asset with amount 0)
-        push.0.0.0 loc_load.INSERT_ASSET_DELTA_OP_LOC movdnw.2
+        push.0.0.0 loc_load.INSERT_ASSET_DELTA_OP_LOC movdnw.2 swapw
         # => [ASSET_KEY, INCOMING_ASSET_VALUE, [delta_op, 0, 0, 0]]
     else
         # if the delta already contains the asset, combine the deltas
@@ -701,6 +905,9 @@ proc combine_asset_delta
             push.DELTA_OP_NONE
             # => [DELTA_OP_NONE, EMPTY_WORD]
         else
+            dupw.2 dupw.2 dupw.2 movupw.2
+            # => [ASSET_KEY, CURRENT_ASSET_VALUE, INCOMING_ASSET_VALUE, CURRENT_ASSET_VALUE, INCOMING_ASSET_VALUE, ASSET_KEY]
+
             exec.asset::lt
             # => [is_incoming_lt_current, CURRENT_ASSET_VALUE, INCOMING_ASSET_VALUE, ASSET_KEY]
 

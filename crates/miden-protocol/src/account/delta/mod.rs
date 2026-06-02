@@ -203,23 +203,18 @@ impl AccountDelta {
     ///   where `account_id_{prefix,suffix}` are the prefix and suffix felts of the native account
     ///   id, `nonce_delta` is the value by which the nonce was incremented, and `domain = 1`
     ///   identifies the header as the start of an account delta commitment.
-    /// - Fungible Asset Delta
-    ///   - For each **updated** fungible asset, sorted by its vault key, whose amount delta is
-    ///     **non-zero**:
-    ///     - Append `[domain = 3, was_added, faucet_id_suffix_and_metadata, faucet_id_prefix]`
-    ///       where `faucet_id_suffix_and_metadata` is the faucet ID suffix with asset metadata
-    ///       (including the callbacks flag) encoded in the lower 8 bits.
-    ///     - Append `[amount_delta, 0, 0, 0]` where `amount_delta` is the delta by which the
-    ///       fungible asset's amount has changed and `was_added` is a boolean flag indicating
-    ///       whether the amount was added (1) or subtracted (0).
-    /// - Non-Fungible Asset Delta
-    ///   - For each **updated** non-fungible asset, sorted by its vault key:
-    ///     - Append `[domain = 3, was_added, faucet_id_suffix, faucet_id_prefix]` where `was_added`
-    ///       is a boolean flag indicating whether the asset was added (1) or removed (0). Note that
-    ///       the domain is the same for assets since `faucet_id_suffix` and `faucet_id_prefix` are
-    ///       at the same position in the layout for both assets, and, by design, they are never the
-    ///       same for fungible and non-fungible assets.
-    ///     - Append `[hash0, hash1, hash2, hash3]`, i.e. the non-fungible asset.
+    /// - Asset Delta
+    ///   - For each **added** asset, sorted by its vault key:
+    ///     - Append `[ASSET_KEY, ASSET_VALUE]`.
+    ///     - Append `[domain = 3, num_added_assets, delta_op = 1, 0, 0]` where `num_added_assets`
+    ///       is the number of added assets and `delta_op` is set to `1` indicating asset addition.
+    ///   - For each **removed** asset, sorted by its vault key:
+    ///     - Append `[ASSET_KEY, ASSET_VALUE]`.
+    ///     - Append `[domain = 3, num_removed_assets, delta_op = 2, 0, 0]` where
+    ///       `num_removed_assets` is the number of removed assets and `delta_op` is set to `2`
+    ///       indicating asset removal.
+    ///   - Note that the domain is the same independent of asset addition or removal, since the
+    ///     `delta_op` sufficiently distinguishes the two domains.
     /// - Storage Slots are sorted by slot ID and are iterated in this order. For each slot **whose
     ///   value has changed**, depending on the slot type:
     ///   - Value Slot
