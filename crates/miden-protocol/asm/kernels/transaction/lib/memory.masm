@@ -231,6 +231,9 @@ pub const ACCOUNT_DELTA_NON_FUNGIBLE_ASSET_PTR=ACCOUNT_DELTA_FUNGIBLE_ASSET_PTR+
 # delta at that slot index. Slot indices that are not map slots are simply unused.
 const ACCOUNT_DELTA_STORAGE_MAP_SECTION=ACCOUNT_DELTA_FUNGIBLE_ASSET_PTR+8
 
+#! The link map pointer at which the delta of the asset vault is stored.
+pub const ACCOUNT_DELTA_ASSET_PTR=ACCOUNT_DELTA_FUNGIBLE_ASSET_PTR+12
+
 # INPUT NOTES DATA
 # -------------------------------------------------------------------------------------------------
 

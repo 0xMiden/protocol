@@ -103,6 +103,25 @@ pub proc split
     # => [NEW_ASSET_VALUE]
 end
 
+#! Returns 1 if ASSET_VALUE_0 is less than ASSET_VALUE_1, 0 otherwise.
+#!
+#! WARNING: This procedure assumes the assets have been validated and that it is never called when
+#! ASSET_VALUE_0 = ASSET_VALUE_1.
+#!
+#! Inputs:  [ASSET_VALUE_1, ASSET_VALUE_0]
+#! Outputs: [is_lt]
+#!
+#! Where:
+#! - ASSET_VALUE_{0, 1} are the assets to compare.
+#! - is_lt is 1 if ASSET_VALUE_0 is less than ASSET_VALUE_1.
+pub proc lt
+    exec.value_into_amount movdn.4 exec.value_into_amount swap
+    # => [amount_1, amount_0]
+
+    lt
+    # => [amount_0 < amount_1]
+end
+
 #! Validates that a fungible asset is well formed.
 #!
 #! Inputs:  [ASSET_KEY, ASSET_VALUE]

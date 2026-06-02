@@ -27,8 +27,25 @@ const DOMAIN_VALUE = 5
 # The domain of a map storage slot in the delta commitment.
 const DOMAIN_MAP = 6
 
+#! The default delta operation indicating no change.
+const DELTA_OP_NONE = 0
+
+#! The delta operation indicating that an asset was added.
+const DELTA_OP_ADD = 1
+
+#! The delta operation indicating that an asset was removed.
+const DELTA_OP_REMOVE = 2
+
 # The maximum value a felt can represent.
 const FELT_MAX = 0xffffffff00000000
+
+#! Local in insert_asset_delta that stores the delta operation.
+const INSERT_ASSET_DELTA_OP_LOC = 0
+
+#! Locals in combine_asset_delta that store the incoming and current delta operations so that the
+#! new delta operation can be selected after the magnitude comparison.
+const COMBINE_INCOMING_OP_LOC = 0
+const COMBINE_CURRENT_OP_LOC = 1
 
 # PROCEDURES
 # =================================================================================================
@@ -506,22 +523,15 @@ end
 #! - ASSET_KEY is the vault key of the asset that is added.
 #! - ASSET_VALUE is the value of the asset that is added.
 pub proc add_asset
-    # check if the asset is a fungible asset
-    exec.asset::is_fungible_asset_key
-    # => [is_fungible_asset, ASSET_KEY, ASSET_VALUE]
+    dupw.1 exec.word::eqz
+    # => [is_empty_asset_value, ASSET_KEY, ASSET_VALUE]
 
     if.true
-        swapw
-        # => [ASSET_VALUE, ASSET_KEY]
-
-        exec.fungible_asset::value_into_amount
-        movdn.4
-        # => [ASSET_KEY, amount]
-
-        exec.add_fungible_asset
+        push.DELTA_OP_ADD
+        exec.insert_asset_delta
         # => []
     else
-        exec.add_non_fungible_asset
+        dropw dropw
         # => []
     end
 end
@@ -538,23 +548,186 @@ end
 #! - ASSET_KEY is the vault key of the asset that is removed.
 #! - ASSET_VALUE is the value of the asset that is removed.
 pub proc remove_asset
-    # check if the asset is a fungible asset
-    exec.asset::is_fungible_asset_key
-    # => [is_fungible_asset, ASSET_KEY, ASSET_VALUE]
+    dupw.1 exec.word::eqz
+    # => [is_empty_asset_value, ASSET_KEY, ASSET_VALUE]
 
     if.true
-        swapw
-        # => [ASSET_VALUE, ASSET_KEY]
-
-        exec.fungible_asset::value_into_amount
-        movdn.4
-        # => [ASSET_KEY, amount]
-
-        exec.remove_fungible_asset
+        push.DELTA_OP_REMOVE
+        exec.insert_asset_delta
         # => []
     else
-        exec.remove_non_fungible_asset
+        dropw dropw
         # => []
+    end
+end
+
+#! Adds the given asset to the asset delta.
+#!
+#! Assumption: The incoming asset value should never be the empty word, as this is a noop that does
+#! not need to be tracked explicitly.
+#!
+#! Inputs:  [delta_op, ASSET_KEY, INCOMING_ASSET_VALUE]
+#! Outputs: []
+#!
+#! Where:
+#! - ASSET_KEY is the asset key of the asset.
+#! - INCOMING_ASSET_VALUE is the value of the asset.
+@locals(1)
+proc insert_asset_delta
+    loc_store.INSERT_ASSET_DELTA_OP_LOC
+    # => [ASSET_KEY, INCOMING_ASSET_VALUE]
+
+    swapw exec.word::testz
+    assert.err="insert_asset_delta sanity check: incoming asset value should never be the empty word"
+    # => [INCOMING_ASSET_VALUE, ASSET_KEY]
+
+    dupw.1 push.ACCOUNT_DELTA_ASSET_PTR
+    # => [asset_delta_map_ptr, ASSET_KEY, INCOMING_ASSET_VALUE, ASSET_KEY]
+
+    # retrieve the current delta value
+    exec.link_map::get drop
+    # => [CURRENT_ASSET_VALUE, [current_delta_op, 0, 0, 0], INCOMING_ASSET_VALUE, ASSET_KEY]
+
+    # check if the current value is the empty word
+    # if so, the incoming value itself becomes the delta value
+    # if not, combine current and incoming to get the new delta value
+    #
+    # note that checking contains_key returned by link_map::get does not tell us the same,
+    # as the key could exist but with an empty value, due to an earlier delta cancelling (add(X)
+    # followed by remove(X)).
+    exec.word::testz
+    # => [is_incoming_value_new_delta, CURRENT_ASSET_VALUE, [current_delta_op, 0, 0, 0], INCOMING_ASSET_VALUE, ASSET_KEY]
+
+    if.true
+        # drop the empty CURRENT_ASSET_VALUE
+        dropw eq.DELTA_OP_NONE
+        assert.err="insert_asset_delta sanity check: delta op should be 0 if asset value is empty word"
+        drop drop drop
+        # => [ASSET_KEY, INCOMING_ASSET_VALUE]
+
+        # we checked that the value is not empty and so the addition is a "proper" one (e.g. not
+        # adding an asset with amount 0)
+        push.0.0.0 loc_load.INSERT_ASSET_DELTA_OP_LOC movdnw.2
+        # => [ASSET_KEY, INCOMING_ASSET_VALUE, [delta_op, 0, 0, 0]]
+    else
+        # if the delta already contains the asset, combine the deltas
+        dupw.3 movupw.2
+        # => [[current_delta_op, 0, 0, 0], ASSET_KEY, CURRENT_ASSET_VALUE, INCOMING_ASSET_VALUE, ASSET_KEY]
+
+        movdn.3 drop drop drop
+        # => [current_delta_op, ASSET_KEY, CURRENT_ASSET_VALUE, INCOMING_ASSET_VALUE, ASSET_KEY]
+
+        # note that the result of this combining could be the EMPTY_WORD, in which case we also
+        # need to write to the delta entry to overwrite the previous value. In that case,
+        # combine_asset_delta returns DELTA_OP_NONE as the new delta op, which maintains the
+        # invariant that empty asset values are tagged with DELTA_OP_NONE.
+        loc_load.INSERT_ASSET_DELTA_OP_LOC
+        exec.combine_asset_delta
+        # => [new_delta_op, COMBINED_ASSET_VALUE, ASSET_KEY]
+
+        # Construct the metadata word [new_delta_op, 0, 0, 0] (new_delta_op on top).
+        push.0.0.0 movup.3
+        # => [[new_delta_op, 0, 0, 0], COMBINED_ASSET_VALUE, ASSET_KEY]
+
+        movdnw.2 swapw
+        # => [ASSET_KEY, COMBINED_ASSET_VALUE, [new_delta_op, 0, 0, 0]]
+    end
+    # => [ASSET_KEY, NEW_ASSET_VALUE, [delta_op, 0, 0, 0]]
+
+    push.ACCOUNT_DELTA_ASSET_PTR
+    exec.link_map::set drop
+    # => []
+end
+
+#! Combines two asset deltas.
+#!
+#! The procedure implements the following logic:
+#! - combine(add(X), add(Y)) or combine(remove(X), remove(Y)) -> X + Y.
+#! - combine(add(X), remove(Y)) or combine(remove(X), add(Y)):
+#!    - if Y == X: EMPTY_WORD; operations cancel.
+#!    - if Y > X: Y - X
+#!    - if Y < X: X - Y
+#!
+#! The + and - operations are the merge and split implementations of the asset, according to its
+#! asset composition. In particular, if None, they panic.
+#!
+#! Examples:
+#! - combine(add(30), add(40)) is wrapped to add(70)
+#! - combine(remove(30), remove(40)) is wrapped to remove(70)
+#! - combine(remove(40), add(40)) cancels out
+#! - combine(add(30), remove(40)) is wrapped to remove(10)
+#! - combine(remove(40), add(30)) is wrapped to remove(10)
+#!
+#! Inputs:  [incoming_delta_op, current_delta_op, ASSET_KEY, CURRENT_ASSET_VALUE, INCOMING_ASSET_VALUE]
+#! Outputs: [new_delta_op, COMBINED_ASSET_VALUE]
+#!
+#! The `new_delta_op` is the delta op of the combined delta:
+#! - When the deltas cancel out, `new_delta_op` is `DELTA_OP_NONE` and `COMBINED_ASSET_VALUE` is the
+#!   empty word.
+#! - When the provided delta ops are the same (both adds or both removes), `new_delta_op` matches
+#!   the input ops.
+#! - When the deltas oppose each other but their magnitudes differ, `new_delta_op` is the delta op
+#!   of whichever input had the larger magnitude.
+#!
+#! Panics if:
+#! - the asset composition is set to None TODO ...
+#! - TODO
+@locals(2)
+proc combine_asset_delta
+    # Store ops to locals so we can pick the correct new_delta_op after the magnitude comparison.
+    loc_store.COMBINE_INCOMING_OP_LOC
+    loc_store.COMBINE_CURRENT_OP_LOC
+    # => [ASSET_KEY, CURRENT_ASSET_VALUE, INCOMING_ASSET_VALUE]
+
+    # Determine if the ops matched by comparing the saved values.
+    loc_load.COMBINE_INCOMING_OP_LOC loc_load.COMBINE_CURRENT_OP_LOC eq
+    # => [delta_ops_match, ASSET_KEY, CURRENT_ASSET_VALUE, INCOMING_ASSET_VALUE]
+
+    if.true
+        exec.asset::merge
+        # => [MERGED_ASSET_VALUE]
+
+        loc_load.COMBINE_INCOMING_OP_LOC
+        # => [new_delta_op, MERGED_ASSET_VALUE]
+    else
+        movdnw.2 exec.word::test_eq
+        # => [are_values_equal, CURRENT_ASSET_VALUE, INCOMING_ASSET_VALUE, ASSET_KEY]
+
+        if.true
+            # The two deltas cancel out exactly.
+            dropw dropw padw swapw dropw
+            # => [EMPTY_WORD]
+
+            push.DELTA_OP_NONE
+            # => [DELTA_OP_NONE, EMPTY_WORD]
+        else
+            exec.asset::lt
+            # => [is_incoming_lt_current, CURRENT_ASSET_VALUE, INCOMING_ASSET_VALUE, ASSET_KEY]
+
+            # Arrange the stack so that `asset::split` computes "greater - lesser".
+            if.true
+                # current's magnitude is larger, so the result keeps current's delta op.
+                # Swap so that LESSER=INCOMING is on top of GREATER=CURRENT.
+                swapw
+                # => [INCOMING_ASSET_VALUE, CURRENT_ASSET_VALUE, ASSET_KEY]
+
+                movupw.2 exec.asset::split
+                # => [COMBINED_ASSET_VALUE]
+
+                loc_load.COMBINE_CURRENT_OP_LOC
+                # => [new_delta_op, COMBINED_ASSET_VALUE]
+            else
+                # incoming's magnitude is larger (values are not equal in this branch), so the
+                # result keeps incoming's delta op.
+                # => [CURRENT_ASSET_VALUE, INCOMING_ASSET_VALUE, ASSET_KEY]
+
+                movupw.2 exec.asset::split
+                # => [COMBINED_ASSET_VALUE]
+
+                loc_load.COMBINE_INCOMING_OP_LOC
+                # => [new_delta_op, COMBINED_ASSET_VALUE]
+            end
+        end
     end
 end
 
