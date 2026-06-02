@@ -224,4 +224,30 @@ mod tests {
 
         assert_eq!(actual, original_roots);
     }
+
+    #[test]
+    fn try_from_fails_when_slot_missing() {
+        // Storage that contains an unrelated slot but not the tx-script allowlist slot.
+        let other_slot = StorageSlot::with_value(
+            StorageSlotName::new("miden::standards::test::unrelated").expect("valid slot name"),
+            Word::empty(),
+        );
+        let storage = AccountStorage::new(vec![other_slot]).expect("storage should be valid");
+
+        let result = NetworkAccountTxScriptAllowlist::try_from(&storage);
+        assert!(matches!(result, Err(NetworkAccountTxScriptAllowlistError::SlotNotFound)));
+    }
+
+    #[test]
+    fn try_from_fails_when_slot_is_not_a_map() {
+        // The allowlist slot is present but is a value slot rather than the expected map.
+        let value_slot = StorageSlot::with_value(
+            NetworkAccountTxScriptAllowlist::slot_name().clone(),
+            Word::empty(),
+        );
+        let storage = AccountStorage::new(vec![value_slot]).expect("storage should be valid");
+
+        let result = NetworkAccountTxScriptAllowlist::try_from(&storage);
+        assert!(matches!(result, Err(NetworkAccountTxScriptAllowlistError::UnexpectedSlotType)));
+    }
 }
