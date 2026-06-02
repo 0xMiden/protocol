@@ -42,7 +42,7 @@ pub proc assert_tx_script_allowed
     exec.tx::get_tx_script_root
     # => [TX_SCRIPT_ROOT, slot_id_suffix, slot_id_prefix]
 
-    dupw exec.word::eqz
+    exec.word::testz
     # => [no_tx_script, TX_SCRIPT_ROOT, slot_id_suffix, slot_id_prefix]
 
     if.true
