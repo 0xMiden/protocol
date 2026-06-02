@@ -1,11 +1,11 @@
 use core::slice;
 use std::collections::BTreeSet;
 
-use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountBuilder, AccountType};
 use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::testing::account_id::ACCOUNT_ID_SENDER;
 use miden_protocol::transaction::{RawOutputNote, TransactionScript, TransactionScriptRoot};
+use miden_protocol::{Felt, Word};
 use miden_standards::account::auth::AuthNetworkAccount;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
@@ -74,6 +74,26 @@ fn expiration_tx_script(delta: u16) -> TransactionScript {
     CodeBuilder::default()
         .compile_tx_script(code)
         .expect("expiration tx script should compile")
+}
+
+/// Compiles a transaction script that sets the expiration delta to the value the caller supplies in
+/// the first element of `TX_SCRIPT_ARGS`, rather than baking it into the script. A single
+/// allowlisted root therefore accepts any caller-chosen delta. At script entry the operand stack
+/// holds `[TX_SCRIPT_ARGS, ..]`, so the top element is the delta; the remaining three arg elements
+/// are dropped.
+fn expiration_from_args_tx_script() -> TransactionScript {
+    let code = "
+        use miden::protocol::tx
+
+        begin
+            exec.tx::update_expiration_block_delta
+            drop drop drop
+        end
+        ";
+
+    CodeBuilder::default()
+        .compile_tx_script(code)
+        .expect("expiration-from-args tx script should compile")
 }
 
 // TESTS
@@ -204,36 +224,45 @@ async fn test_auth_network_account_rejects_non_allowlisted_tx_script() -> anyhow
     Ok(())
 }
 
-/// Allowlisting several distinct tx scripts must let a transaction run any one of them. Both
-/// expiration-delta scripts (delta 10 and delta 30) are allowlisted, and a transaction running
-/// either one end-to-end succeeds and produces the corresponding expiration block number.
+/// An allowlisted tx script may read caller-supplied `TX_SCRIPT_ARGS`: the allowlist pins the
+/// script's *code* (its root), not its arguments. Here a single expiration-delta script that takes
+/// the delta from `TX_SCRIPT_ARGS` is allowlisted, and transactions supplying different arbitrary
+/// deltas all run end-to-end and produce the corresponding expiration block number.
+///
+/// This is the input-dependent pattern the type docs caution against in general; it is acceptable
+/// for the expiration delta specifically because the kernel only ever lets a script tighten the
+/// expiration window, never extend it, so the worst an arbitrary caller can do is make their own
+/// transaction expire sooner. Network accounts that want this (e.g. for the ntx-builder) can
+/// allowlist such a script knowingly.
 #[rstest]
 #[case(10)]
 #[case(30)]
+#[case(u16::MAX)]
 #[tokio::test]
-async fn test_auth_network_account_accepts_one_of_multiple_allowlisted_tx_scripts(
+async fn test_auth_network_account_accepts_allowlisted_tx_script_with_caller_args(
     #[case] delta: u16,
 ) -> anyhow::Result<()> {
-    let script_10 = expiration_tx_script(10);
-    let script_30 = expiration_tx_script(30);
-    let tx_script = expiration_tx_script(delta);
+    let tx_script = expiration_from_args_tx_script();
 
     let mut builder = MockChain::builder();
     let note = build_input_note()?;
     builder.add_output_note(RawOutputNote::Full(note.clone()));
 
-    // Allowlist the note root and both expiration scripts.
-    let account = build_account_with_allowlists(
-        vec![note.script().root().into()],
-        vec![script_10.root(), script_30.root()],
-    )?;
+    // Allowlist the note root and the single caller-parameterized expiration script.
+    let account =
+        build_account_with_allowlists(vec![note.script().root().into()], vec![tx_script.root()])?;
     builder.add_account(account.clone())?;
 
     let mock_chain = builder.build()?;
 
+    // The caller chooses the expiration delta via TX_SCRIPT_ARGS; the allowlist still permits it
+    // because the script's root is allowlisted regardless of its arguments.
+    let tx_script_args = Word::new([Felt::from(delta), Felt::ZERO, Felt::ZERO, Felt::ZERO]);
+
     let executed = mock_chain
         .build_tx_context(account.id(), &[], slice::from_ref(&note))?
         .tx_script(tx_script)
+        .tx_script_args(tx_script_args)
         .build()?
         .execute()
         .await?;
@@ -241,7 +270,7 @@ async fn test_auth_network_account_accepts_one_of_multiple_allowlisted_tx_script
     assert_eq!(
         executed.expiration_block_num(),
         executed.block_header().block_num() + u32::from(delta),
-        "the allowlisted expiration script should set the expiration to reference_block + delta",
+        "the caller-supplied expiration delta should be applied",
     );
 
     Ok(())

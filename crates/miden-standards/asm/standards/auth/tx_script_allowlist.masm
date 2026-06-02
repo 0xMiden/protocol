@@ -50,7 +50,6 @@ pub proc assert_tx_script_allowed
         dropw drop drop
         # => []
     else
-        # Move the slot id above the root so get_map_item consumes both and leaves only the value.
         movup.5 movup.5
         # => [slot_id_suffix, slot_id_prefix, TX_SCRIPT_ROOT]
 
