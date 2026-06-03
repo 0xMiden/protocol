@@ -24,7 +24,7 @@ use miden::protocol::active_note
 #! Invocation: call
 pub proc receive_asset
     exec.native_account::add_asset
-    # => [ASSET_VALUE', pad(12)]
+    # => [FINAL_ASSET_VALUE, pad(12)]
 
     # drop the final asset
     dropw

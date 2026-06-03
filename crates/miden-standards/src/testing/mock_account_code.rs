@@ -113,17 +113,17 @@ const MOCK_ACCOUNT_CODE: &str = "
     end
 
     #! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
-    #! Outputs: [ASSET_VALUE', pad(12)]
+    #! Outputs: [FINAL_ASSET_VALUE, pad(12)]
     pub proc add_asset
         exec.native_account::add_asset
-        # => [ASSET_VALUE', pad(12)]
+        # => [FINAL_ASSET_VALUE, pad(12)]
     end
 
     #! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
-    #! Outputs: [REMAINING_ASSET_VALUE, pad(12)]
+    #! Outputs: [FINAL_ASSET_VALUE, pad(12)]
     pub proc remove_asset
         exec.native_account::remove_asset
-        # => [REMAINING_ASSET_VALUE, pad(12)]
+        # => [FINAL_ASSET_VALUE, pad(12)]
     end
 
     #! Inputs:  [pad(16)]
