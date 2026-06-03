@@ -556,7 +556,7 @@ async fn non_fungible_asset_delta() -> anyhow::Result<()> {
         push.{ASSET3_VALUE}
         push.{ASSET3_KEY}
         exec.remove_asset
-        # => [REMAINING_ASSET_VALUE]
+        # => [FINAL_ASSET_VALUE]
         dropw
 
         # re-add asset 3
@@ -1144,16 +1144,16 @@ const TEST_ACCOUNT_CONVENIENCE_WRAPPERS: &str = "
       end
 
       #! Inputs:  [ASSET_KEY, ASSET_VALUE]
-      #! Outputs: [ASSET_VALUE']
+      #! Outputs: [FINAL_ASSET_VALUE]
       proc add_asset
           repeat.8 push.0 movdn.8 end
           # => [ASSET_KEY, ASSET_VALUE, pad(8)]
 
           call.account::add_asset
-          # => [ASSET_VALUE', pad(12)]
+          # => [FINAL_ASSET_VALUE, pad(12)]
 
           repeat.12 movup.4 drop end
-          # => [ASSET_VALUE']
+          # => [FINAL_ASSET_VALUE]
       end
 
       #! Inputs:  [ASSET_KEY, ASSET_VALUE]

@@ -2,15 +2,6 @@ use alloc::collections::BTreeMap;
 use alloc::collections::btree_map::Entry;
 use alloc::vec::Vec;
 
-use super::{
-    AccountDeltaError,
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-    Word,
-};
 use crate::account::{
     StorageMap,
     StorageMapKey,
@@ -18,7 +9,15 @@ use crate::account::{
     StorageSlotName,
     StorageSlotType,
 };
-use crate::{EMPTY_WORD, Felt, ZERO};
+use crate::errors::AccountDeltaError;
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
+use crate::{EMPTY_WORD, Felt, Word, ZERO};
 
 // ACCOUNT STORAGE PATCH
 // ================================================================================================
@@ -33,6 +32,12 @@ pub struct AccountStoragePatch {
 }
 
 impl AccountStoragePatch {
+    /// Domain separator for value storage slots in delta and patch commitments.
+    const DOMAIN_VALUE: Felt = Felt::new_unchecked(5);
+
+    /// Domain separator for map storage slots in delta and patch commitments.
+    const DOMAIN_MAP: Felt = Felt::new_unchecked(6);
+
     /// Creates a new, empty storage patch.
     pub fn new() -> Self {
         Self { patches: BTreeMap::new() }
@@ -177,17 +182,14 @@ impl AccountStoragePatch {
 
     /// Appends the storage slots patch to the given `elements` from which the delta commitment will
     /// be computed.
-    pub(super) fn append_delta_elements(&self, elements: &mut Vec<Felt>) {
-        let domain_value = Felt::from_u8(2);
-        let domain_map = Felt::from_u8(3);
-
+    pub(in crate::account) fn append_patch_elements(&self, elements: &mut Vec<Felt>) {
         for (slot_name, slot_patch) in self.patches.iter() {
             let slot_id = slot_name.id();
 
             match slot_patch {
                 StorageSlotPatch::Value(new_value) => {
                     elements.extend_from_slice(&[
-                        domain_value,
+                        Self::DOMAIN_VALUE,
                         ZERO,
                         slot_id.suffix(),
                         slot_id.prefix(),
@@ -206,7 +208,7 @@ impl AccountStoragePatch {
                         );
 
                     elements.extend_from_slice(&[
-                        domain_map,
+                        Self::DOMAIN_MAP,
                         num_changed_entries,
                         slot_id.suffix(),
                         slot_id.prefix(),

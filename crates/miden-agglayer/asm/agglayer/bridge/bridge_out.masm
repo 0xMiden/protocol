@@ -689,7 +689,7 @@ end
 #! Invocation: exec
 proc lock_asset
     exec.native_account::add_asset
-    # => [ASSET_VALUE']
+    # => [FINAL_ASSET_VALUE]
 
     dropw
     # => []
