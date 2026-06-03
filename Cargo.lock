@@ -2106,6 +2106,8 @@ dependencies = [
  "miden-processor",
  "miden-protocol",
  "miden-prover",
+ "miden-verifier",
+ "thiserror",
 ]
 
 [[package]]
