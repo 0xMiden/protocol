@@ -19,6 +19,7 @@
 - [BREAKING] Refactored `TokenPolicyManager` by adding `invoke_send_policy` / `invoke_receive_policy` wrappers (stored in the protocol reserved asset callback slots) that read the active policy root from the new `active_send_policy_proc_root` / `active_receive_policy_proc_root` storage slots ([#3047](https://github.com/0xMiden/protocol/pull/3047)).
 - Added a definition of the Miden operator on the architecture overview page and linked it from the note lifecycle ([#3017](https://github.com/0xMiden/protocol/pull/3017)).
 - Clarified Miden's operational roles on the architecture overview page and linked them from the note lifecycle ([#3017](https://github.com/0xMiden/protocol/pull/3017)).
+- [BREAKING] Unified the fungible and non-fungible asset vault deltas into a single asset delta, changing the on-chain account delta commitment layout ([#3038](https://github.com/0xMiden/protocol/pull/3038)).
 
 ### Fixes
 - Fixed `update_ger` to explicitly reject duplicate GER insertions with `ERR_GER_ALREADY_REGISTERED` instead of silently accepting them ([#2983](https://github.com/0xMiden/protocol/pull/2983)).
