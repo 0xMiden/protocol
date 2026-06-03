@@ -7,26 +7,37 @@ use crate::crypto::merkle::MerkleError;
 use crate::crypto::merkle::smt::{LargeSmt, LargeSmtError, SmtStorage, SmtStorageReader};
 use crate::crypto::merkle::smt::{LeafIndex, MutationSet, SMT_DEPTH, Smt, SmtLeaf, SmtProof};
 
-// ACCOUNT TREE BACKEND READER
+// SMT BACKEND READER
 // ================================================================================================
 
-/// This trait abstracts over different SMT backends (e.g., `Smt` and `LargeSmt`) to allow
-/// the `AccountTree` to work with either implementation transparently.
+/// Abstracts over the read-only operations of the different SMT backends (e.g. [`Smt`] and
+/// [`LargeSmt`]), so that the block trees can work with either implementation transparently.
 ///
-/// This trait contains only read-only methods. For write methods, see
-/// [`AccountTreeBackend`].
+/// This trait is value-agnostic: leaves are stored as raw [`Word`]s. Trees that wrap a more
+/// specific value type (such as the nullifier tree) are responsible for converting to and from
+/// [`Word`] in their own accessors.
 ///
-/// Implementors must provide `Default` for creating empty instances. Users should
-/// instantiate the backend directly (potentially with entries) and then pass it to
-/// [`AccountTree::new`](super::AccountTree::new).
-pub trait AccountTreeBackendReader: Sized {
+/// The method set is intentionally the superset required by both the account and nullifier trees,
+/// so a given tree only uses the subset relevant to it (e.g. the account tree iterates
+/// [`leaves`](Self::leaves), the nullifier tree iterates [`entries`](Self::entries)).
+///
+/// This trait contains only read-only methods. For write methods, see [`SmtBackend`].
+pub trait SmtBackendReader: Sized {
     type Error: core::error::Error + Send + 'static;
 
     /// Returns the number of leaves in the SMT.
     fn num_leaves(&self) -> usize;
 
+    /// Returns the number of key-value entries in the SMT.
+    ///
+    /// This can exceed [`Self::num_leaves`] when keys collide into the same leaf.
+    fn num_entries(&self) -> usize;
+
     /// Returns all leaves in the SMT as an iterator over leaf index and leaf pairs.
-    fn leaves<'a>(&'a self) -> Box<dyn 'a + Iterator<Item = (LeafIndex<SMT_DEPTH>, SmtLeaf)>>;
+    fn leaves(&self) -> Box<dyn Iterator<Item = (LeafIndex<SMT_DEPTH>, SmtLeaf)> + '_>;
+
+    /// Returns all key-value entries in the SMT.
+    fn entries(&self) -> Box<dyn Iterator<Item = (Word, Word)> + '_>;
 
     /// Opens the leaf at the given key, returning a Merkle proof.
     fn open(&self, key: &Word) -> SmtProof;
@@ -41,11 +52,11 @@ pub trait AccountTreeBackendReader: Sized {
     fn root(&self) -> Word;
 }
 
-// ACCOUNT TREE BACKEND
+// SMT BACKEND
 // ================================================================================================
 
-/// Extension trait for [`AccountTreeBackendReader`] that provides write methods.
-pub trait AccountTreeBackend: AccountTreeBackendReader {
+/// Extension trait for [`SmtBackendReader`] that provides write methods.
+pub trait SmtBackend: SmtBackendReader {
     /// Computes the mutation set required to apply the given updates to the SMT.
     fn compute_mutations(
         &self,
@@ -73,15 +84,23 @@ pub trait AccountTreeBackend: AccountTreeBackendReader {
 // BACKEND READER IMPLEMENTATION FOR SMT
 // ================================================================================================
 
-impl AccountTreeBackendReader for Smt {
+impl SmtBackendReader for Smt {
     type Error = MerkleError;
 
     fn num_leaves(&self) -> usize {
         Smt::num_leaves(self)
     }
 
-    fn leaves<'a>(&'a self) -> Box<dyn 'a + Iterator<Item = (LeafIndex<SMT_DEPTH>, SmtLeaf)>> {
+    fn num_entries(&self) -> usize {
+        Smt::num_entries(self)
+    }
+
+    fn leaves(&self) -> Box<dyn Iterator<Item = (LeafIndex<SMT_DEPTH>, SmtLeaf)> + '_> {
         Box::new(Smt::leaves(self).map(|(idx, leaf)| (idx, leaf.clone())))
+    }
+
+    fn entries(&self) -> Box<dyn Iterator<Item = (Word, Word)> + '_> {
+        Box::new(Smt::entries(self).map(|(k, v)| (*k, *v)))
     }
 
     fn open(&self, key: &Word) -> SmtProof {
@@ -101,10 +120,10 @@ impl AccountTreeBackendReader for Smt {
     }
 }
 
-// BACKEND IMPLEMENTATION FOR SMT
+// BACKEND WRITER IMPLEMENTATION FOR SMT
 // ================================================================================================
 
-impl AccountTreeBackend for Smt {
+impl SmtBackend for Smt {
     fn compute_mutations(
         &self,
         updates: Vec<(Word, Word)>,
@@ -135,7 +154,7 @@ impl AccountTreeBackend for Smt {
 // ================================================================================================
 
 #[cfg(feature = "std")]
-impl<Backend> AccountTreeBackendReader for LargeSmt<Backend>
+impl<Backend> SmtBackendReader for LargeSmt<Backend>
 where
     Backend: SmtStorageReader,
 {
@@ -145,8 +164,18 @@ where
         LargeSmt::num_leaves(self)
     }
 
-    fn leaves<'a>(&'a self) -> Box<dyn 'a + Iterator<Item = (LeafIndex<SMT_DEPTH>, SmtLeaf)>> {
+    fn num_entries(&self) -> usize {
+        LargeSmt::num_entries(self)
+    }
+
+    fn leaves(&self) -> Box<dyn Iterator<Item = (LeafIndex<SMT_DEPTH>, SmtLeaf)> + '_> {
         Box::new(LargeSmt::leaves(self).expect("Only IO can error out here"))
+    }
+
+    fn entries(&self) -> Box<dyn Iterator<Item = (Word, Word)> + '_> {
+        // SAFETY: We expect here as only I/O errors can occur. Storage failures are considered
+        // unrecoverable at this layer. See issue #2010 for future error handling improvements.
+        Box::new(LargeSmt::entries(self).expect("Storage I/O error accessing entries"))
     }
 
     fn open(&self, key: &Word) -> SmtProof {
@@ -166,11 +195,11 @@ where
     }
 }
 
-// BACKEND IMPLEMENTATION FOR LARGE SMT
+// BACKEND WRITER IMPLEMENTATION FOR LARGE SMT
 // ================================================================================================
 
 #[cfg(feature = "std")]
-impl<Backend> AccountTreeBackend for LargeSmt<Backend>
+impl<Backend> SmtBackend for LargeSmt<Backend>
 where
     Backend: SmtStorage,
 {
@@ -203,8 +232,12 @@ where
 // HELPER FUNCTIONS
 // ================================================================================================
 
+/// Converts a [`LargeSmtError`] into a [`MerkleError`].
+///
+/// Storage failures are treated as unrecoverable at this layer and cause a panic. See issue #2010
+/// for future error handling improvements.
 #[cfg(feature = "std")]
-pub(super) fn large_smt_error_to_merkle_error(err: LargeSmtError) -> MerkleError {
+pub(crate) fn large_smt_error_to_merkle_error(err: LargeSmtError) -> MerkleError {
     match err {
         LargeSmtError::Storage(storage_err) => {
             panic!("Storage error encountered: {:?}", storage_err)

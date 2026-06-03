@@ -40,6 +40,7 @@
 - **Worktree visibility:** Always tell the user which worktree (full path) you will work in as part of the plan. When finished, state where the changes live (worktree path and branch name).
 - **Commit authorship:** Always commit as Claude, not as the user. Use: `git -c user.name="Claude (Opus)" -c user.email="noreply@anthropic.com" -c commit.gpgsign=false commit -m "message"`
 - **Commit frequency:** Always commit at the end of each task. Avoid single commits that span multiple unrelated changes.
+- **Responding to PR review:** When addressing review feedback on a pushed PR, add new commits on top of the branch (e.g. `fix: address review comments`). NEVER amend, squash, or otherwise rewrite already-pushed commits to incorporate review changes, and NEVER force-push the branch to do so - this destroys the diff reviewers rely on to see what changed since their review. The only time a force-push is acceptable is when the branch must be rebased onto an updated base (or a PR lower in a stack changed); that is a base update, not a review response, and should be called out explicitly.
 
 ## Output Formatting
 
