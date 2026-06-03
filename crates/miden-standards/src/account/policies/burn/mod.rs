@@ -72,10 +72,7 @@ impl BurnPolicy {
         I::Item: Into<AccountComponent>,
     {
         let components: Vec<AccountComponent> = components.into_iter().map(Into::into).collect();
-        let root_present = components
-            .iter()
-            .any(|component| component.procedures().any(|(proc_root, _)| proc_root == root));
-        if !root_present {
+        if !components.iter().any(|component| component.has_procedure(root)) {
             return Err(BurnPolicyError::RootNotInComponents);
         }
         Ok(Self { root, components })
