@@ -1,5 +1,5 @@
 use miden_protocol::Word;
-use miden_protocol::batch::{BatchKernel, ProvenBatch};
+use miden_protocol::batch::{BatchKernel, BatchOutputs, ProvenBatch};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::vm::ProgramInfo;
 use miden_verifier::verify;
@@ -52,8 +52,8 @@ impl BatchVerifier {
         // attests to empty outputs. Once the kernel computes the real commitments, these empty
         // values become `batch.input_notes().commitment()`, the batch note tree root and
         // `batch.batch_expiration_block_num()`.
-        let stack_outputs =
-            BatchKernel::build_output_stack(Word::empty(), Word::empty(), BlockNumber::from(0u32));
+        let stack_outputs = BatchOutputs::new(Word::empty(), Word::empty(), BlockNumber::from(0u32))
+            .into_stack_outputs();
 
         let proof_security_level = verify(
             self.batch_program_info.clone(),

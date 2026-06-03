@@ -1,3 +1,5 @@
+use alloc::vec::Vec;
+
 use crate::block::BlockNumber;
 use crate::errors::BatchOutputError;
 use crate::vm::StackOutputs;
@@ -118,6 +120,25 @@ impl BatchOutputs {
     /// Returns the block number at which the batch expires.
     pub fn batch_expiration_block_num(&self) -> BlockNumber {
         self.batch_expiration_block_num
+    }
+
+    // CONVERSIONS
+    // --------------------------------------------------------------------------------------------
+
+    /// Encodes these [`BatchOutputs`] into the batch kernel's output stack.
+    ///
+    /// This is the inverse of [`BatchOutputs::parse`]; the resulting stack is laid out as:
+    ///
+    /// ```text
+    /// [INPUT_NOTES_COMMITMENT, BATCH_NOTE_TREE_ROOT, batch_expiration_block_num]
+    /// ```
+    pub fn into_stack_outputs(self) -> StackOutputs {
+        let mut outputs: Vec<Felt> = Vec::with_capacity(9);
+        outputs.extend_from_slice(self.input_notes_commitment.as_elements());
+        outputs.extend_from_slice(self.batch_note_tree_root.as_elements());
+        outputs.push(Felt::from(self.batch_expiration_block_num));
+
+        StackOutputs::new(&outputs).expect("number of stack outputs should be <= 16")
     }
 }
 

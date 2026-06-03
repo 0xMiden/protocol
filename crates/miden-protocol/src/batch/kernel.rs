@@ -3,10 +3,9 @@ use alloc::vec::Vec;
 use miden_core::program::Kernel;
 
 use crate::batch::{BatchId, ProposedBatch};
-use crate::block::BlockNumber;
 use crate::utils::serde::Deserializable;
 use crate::utils::sync::LazyLock;
-use crate::vm::{AdviceInputs, Program, ProgramInfo, StackInputs, StackOutputs};
+use crate::vm::{AdviceInputs, Program, ProgramInfo, StackInputs};
 use crate::{Felt, Word};
 
 // CONSTANTS
@@ -75,26 +74,6 @@ impl BatchKernel {
         inputs.extend_from_slice(batch_id.as_word().as_elements());
 
         StackInputs::new(&inputs).expect("number of stack inputs should be <= 16")
-    }
-
-    /// Builds the stack with the expected batch kernel outputs.
-    ///
-    /// The output stack is defined as:
-    ///
-    /// ```text
-    /// [INPUT_NOTES_COMMITMENT, BATCH_NOTE_TREE_ROOT, batch_expiration_block_num]
-    /// ```
-    pub fn build_output_stack(
-        input_notes_commitment: Word,
-        batch_note_tree_root: Word,
-        batch_expiration_block_num: BlockNumber,
-    ) -> StackOutputs {
-        let mut outputs: Vec<Felt> = Vec::with_capacity(9);
-        outputs.extend_from_slice(input_notes_commitment.as_elements());
-        outputs.extend_from_slice(batch_note_tree_root.as_elements());
-        outputs.push(Felt::from(batch_expiration_block_num));
-
-        StackOutputs::new(&outputs).expect("number of stack outputs should be <= 16")
     }
 
     // ADVICE BUILDER
