@@ -53,6 +53,13 @@ const MOCK_ACCOUNT_CODE: &str = "
     end
 
     #! Inputs:  [slot_id_prefix, slot_id_suffix, pad(14)]
+    #! Outputs: [has_slot, pad(15)]
+    pub proc has_storage_slot
+        exec.active_account::has_storage_slot
+        # => [has_slot, pad(15)]
+    end
+
+    #! Inputs:  [slot_id_prefix, slot_id_suffix, pad(14)]
     #! Outputs: [VALUE, pad(12)]
     pub proc get_initial_item
         exec.active_account::get_initial_item
