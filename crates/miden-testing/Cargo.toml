@@ -22,11 +22,11 @@ tx_context_debug = []
 
 [dependencies]
 # Workspace dependencies
-miden-block-prover    = { features = ["testing"], workspace = true }
-miden-protocol        = { features = ["testing"], workspace = true }
-miden-standards       = { features = ["testing"], workspace = true }
-miden-tx              = { features = ["testing"], workspace = true }
-miden-tx-batch-prover = { features = ["testing"], workspace = true }
+miden-batch        = { features = ["testing"], workspace = true }
+miden-block-prover = { features = ["testing"], workspace = true }
+miden-protocol     = { features = ["testing"], workspace = true }
+miden-standards    = { features = ["testing"], workspace = true }
+miden-tx           = { features = ["testing"], workspace = true }
 
 # Miden dependencies
 miden-core-lib  = { workspace = true }

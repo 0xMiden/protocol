@@ -1,6 +1,6 @@
 use anyhow::Context;
 use assert_matches::assert_matches;
-use miden_tx_batch_prover::{BatchExecutor, BatchVerifier, BatchVerifierError, LocalBatchProver};
+use miden_batch::{BatchExecutor, BatchVerifier, BatchVerifierError, LocalBatchProver};
 
 use super::proposed_batch::setup_chain;
 use super::test_batch_kernel::two_tx_batch;

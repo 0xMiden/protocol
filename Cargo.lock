@@ -1677,6 +1677,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "miden-batch"
+version = "0.16.0"
+dependencies = [
+ "miden-processor",
+ "miden-protocol",
+ "miden-prover",
+ "miden-verifier",
+ "thiserror",
+]
+
+[[package]]
 name = "miden-block-prover"
 version = "0.16.0"
 dependencies = [
@@ -2069,6 +2080,7 @@ dependencies = [
  "itertools 0.14.0",
  "miden-agglayer",
  "miden-assembly",
+ "miden-batch",
  "miden-block-prover",
  "miden-core-lib",
  "miden-crypto",
@@ -2076,7 +2088,6 @@ dependencies = [
  "miden-protocol",
  "miden-standards",
  "miden-tx",
- "miden-tx-batch-prover",
  "primitive-types",
  "rand 0.9.4",
  "rand_chacha",
@@ -2096,17 +2107,6 @@ dependencies = [
  "miden-prover",
  "miden-standards",
  "rand_chacha",
- "thiserror",
-]
-
-[[package]]
-name = "miden-tx-batch-prover"
-version = "0.16.0"
-dependencies = [
- "miden-processor",
- "miden-protocol",
- "miden-prover",
- "miden-verifier",
  "thiserror",
 ]
 
