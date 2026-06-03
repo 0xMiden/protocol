@@ -2,6 +2,12 @@ use miden::core::mem
 
 use miden::batch_kernel::memory
 use miden::batch_kernel::memory::TX_TUPLES_PTR
+use miden::batch_kernel::memory::MAX_TRANSACTIONS_PER_BATCH
+
+# ERRORS
+# =================================================================================================
+
+const ERR_BATCH_TOO_MANY_TRANSACTIONS="the batch contains more transactions than the maximum allowed"
 
 # PROLOGUE
 # =================================================================================================
@@ -55,7 +61,10 @@ pub proc prepare_batch
     # => [num_words, BATCH_ID, tx_tuples_ptr]
 
     # num_transactions = num_words / 2 (each tx contributes 2 words: tx_id + account_id_pair).
-    dup div.2 exec.memory::set_num_transactions
+    dup div.2
+    # => [num_transactions, num_words, BATCH_ID, tx_tuples_ptr]
+    dup u32lte.MAX_TRANSACTIONS_PER_BATCH assert.err=ERR_BATCH_TOO_MANY_TRANSACTIONS
+    exec.memory::set_num_transactions
 
     movup.5 swap
     # => [num_words, tx_tuples_ptr, BATCH_ID]

@@ -157,6 +157,18 @@ pub const OUTPUT_NOTE_IS_CREATED_OFFSET=1
 #! Felt offset of the `linked_input_index` field within an output-note flag word.
 pub const OUTPUT_NOTE_LINKED_INPUT_OFFSET=2
 
+# CAPACITY LIMITS
+# =================================================================================================
+
+#! Maximum number of transactions in a batch. The Layer 1/2 piped-data regions are sized to hold
+#! exactly this many transactions.
+pub const MAX_TRANSACTIONS_PER_BATCH=1024
+
+#! Maximum number of entries in a global note list and in a single transaction's note set. The
+#! input/output note regions and the per-transaction scratch region each hold exactly this many
+#! entries. Equals `MAX_INPUT_NOTES_PER_BATCH` = `MAX_OUTPUT_NOTES_PER_BATCH` in `src/constants.rs`.
+pub const MAX_NOTES_PER_BATCH=1024
+
 # NUM TRANSACTIONS
 # =================================================================================================
 

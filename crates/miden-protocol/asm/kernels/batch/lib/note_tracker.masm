@@ -11,14 +11,15 @@ use miden::batch_kernel::memory::NOTE_ENTRY_FELT_LEN
 use miden::batch_kernel::memory::INPUT_NOTE_CONSUMPTION_OFFSET
 use miden::batch_kernel::memory::OUTPUT_NOTE_IS_CREATED_OFFSET
 use miden::batch_kernel::memory::OUTPUT_NOTE_LINKED_INPUT_OFFSET
+use miden::batch_kernel::memory::MAX_NOTES_PER_BATCH
 
 # CONSTANTS
 # =================================================================================================
 
-#! Advice-map keys under which the global input/output note lists are provided. Kept in sync with
-#! `kernel.rs`. All four felts are equal so each key word is independent of word orientation. The
-#! lists' integrity is established by binding every entry to a verified per-transaction note (not by
-#! these keys).
+#! Advice-map keys under which the global input/output note lists are provided. These definitions
+#! are the single source of truth: `build.rs` generates the matching Rust constants from them. All
+#! four felts are equal so each key word is independent of word orientation. The lists' integrity is
+#! established by binding every entry to a verified per-transaction note (not by these keys).
 const INPUT_NOTE_LIST_KEY=0xBA7C0001
 const OUTPUT_NOTE_LIST_KEY=0xBA7C0002
 
@@ -43,6 +44,10 @@ const ERR_BATCH_OUTPUT_NOTE_NOT_CREATED="a batch output-note list entry was not 
 
 const ERR_BATCH_NOTE_CONSUMED_BEFORE_CREATED="an erased input note was consumed before the transaction that creates it (incorrect ordering or circular dependency)"
 
+const ERR_BATCH_NOTE_LIST_TOO_LONG="a batch note list contains more entries than the maximum allowed"
+
+const ERR_BATCH_TX_TOO_MANY_NOTES="a transaction's note set contains more notes than the maximum allowed"
+
 # GLOBAL NOTE LIST LOADING
 # =================================================================================================
 
@@ -61,6 +66,7 @@ proc load_global_note_list
     # => [num_words, KEY, write_ptr]
     dup div.2
     # => [num_notes, num_words, KEY, write_ptr]
+    dup u32lte.MAX_NOTES_PER_BATCH assert.err=ERR_BATCH_NOTE_LIST_TOO_LONG
     movdn.6
     # => [num_words, KEY, write_ptr, num_notes]
     movup.5
@@ -332,6 +338,7 @@ proc process_tx_output_notes
         adv.push_mapvaln
         adv_push div.4
         # => [num_words, OUTPUT_NOTES_COMMITMENT_i, scratch_ptr, tx_index]
+        dup div.2 u32lte.MAX_NOTES_PER_BATCH assert.err=ERR_BATCH_TX_TOO_MANY_NOTES
         movup.5 swap
         exec.mem::pipe_preimage_to_memory
         # => [end_ptr, tx_index]
@@ -434,6 +441,7 @@ proc process_tx_input_notes
         adv.push_mapvaln
         adv_push div.4
         # => [num_words, INPUT_NOTES_COMMITMENT_i, scratch_ptr, tx_index]
+        dup div.2 u32lte.MAX_NOTES_PER_BATCH assert.err=ERR_BATCH_TX_TOO_MANY_NOTES
         movup.5 swap
         exec.mem::pipe_preimage_to_memory
         # => [end_ptr, tx_index]

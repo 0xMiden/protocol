@@ -234,10 +234,9 @@ fn batch_kernel_rejects_tampered_input_notes() -> anyhow::Result<()> {
 // These corrupt the host-provided global input-note list (overriding it via `extend_advice_inputs`)
 // and assert the kernel's binding rejects it, so the host cannot omit, inject, or alter notes.
 
-/// Advice-map key for the global input-note list. Must match `INPUT_NOTE_LIST_KEY_FELT` in
-/// `crates/miden-protocol/src/batch/kernel.rs`.
+/// Advice-map key for the global input-note list.
 fn input_note_list_key() -> Word {
-    Word::from([0xba7c_0001u32; 4])
+    BatchKernel::input_note_list_key()
 }
 
 /// Builds the global input-note list blob the kernel expects: `(nullifier, note_id_or_empty)` per
@@ -314,10 +313,9 @@ fn batch_kernel_rejects_input_note_list_id_mismatch() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Advice-map key for the global output-note list. Must match `OUTPUT_NOTE_LIST_KEY_FELT` in
-/// `crates/miden-protocol/src/batch/kernel.rs`.
+/// Advice-map key for the global output-note list.
 fn output_note_list_key() -> Word {
-    Word::from([0xba7c_0002u32; 4])
+    BatchKernel::output_note_list_key()
 }
 
 /// Builds the global output-note list blob the kernel expects: `(note_id, 0, 0, 0, 0)` per output
@@ -384,6 +382,86 @@ fn batch_kernel_rejects_consume_before_create() -> anyhow::Result<()> {
 
     let result = BatchExecutor::new().extend_advice_inputs(override_advice).execute(batch);
     assert_kernel_error(result, batch_kernel::ERR_BATCH_NOTE_CONSUMED_BEFORE_CREATED);
+
+    Ok(())
+}
+
+/// An extra input-note list entry that no transaction consumes trips the epilogue sweep requiring
+/// every entry to have been consumed (so the host cannot pad the list with phantom notes).
+#[test]
+fn batch_kernel_rejects_unconsumed_input_note() -> anyhow::Result<()> {
+    let mut setup = setup_chain();
+    let batch = two_tx_batch(&mut setup)?;
+
+    // Append an entry whose nullifier no transaction consumes, then sort so the strict-sort check
+    // still passes. `u32::MAX` felts make it distinct from the real (hash-derived) nullifiers.
+    let mut notes: Vec<(Word, Word)> = Vec::new();
+    for tx in batch.transactions() {
+        for commit in tx.input_notes().iter() {
+            let nullifier = commit.nullifier().as_word();
+            let note_id_or_empty =
+                commit.header().map_or(Word::empty(), |header| header.id().as_word());
+            notes.push((nullifier, note_id_or_empty));
+        }
+    }
+    notes.push((Word::from([u32::MAX; 4]), Word::empty()));
+    notes.sort_by(|a, b| a.0.cmp(&b.0));
+    let mut blob = Vec::with_capacity(notes.len() * 8);
+    for (nullifier, note_id_or_empty) in &notes {
+        blob.extend_from_slice(nullifier.as_elements());
+        blob.extend_from_slice(note_id_or_empty.as_elements());
+    }
+    let override_advice = AdviceInputs::default().with_map([(input_note_list_key(), blob)]);
+
+    let result = BatchExecutor::new().extend_advice_inputs(override_advice).execute(batch);
+    assert_kernel_error(result, batch_kernel::ERR_BATCH_INPUT_NOTE_NOT_CONSUMED);
+
+    Ok(())
+}
+
+/// An extra output-note list entry that no transaction creates trips the epilogue sweep requiring
+/// every entry to have been created. The injected id matches no input note, so it isn't linked for
+/// erasure and the failure is specifically "not created" rather than the ordering gate.
+#[test]
+fn batch_kernel_rejects_uncreated_output_note() -> anyhow::Result<()> {
+    let mut setup = setup_chain();
+    let batch = two_tx_batch(&mut setup)?;
+
+    let mut ids: Vec<Word> = Vec::new();
+    for tx in batch.transactions() {
+        for note in tx.output_notes().iter() {
+            ids.push(note.id().as_word());
+        }
+    }
+    ids.push(Word::from([u32::MAX; 4]));
+    ids.sort_unstable();
+    let mut blob = Vec::with_capacity(ids.len() * 8);
+    for note_id in &ids {
+        blob.extend_from_slice(note_id.as_elements());
+        blob.extend_from_slice(Word::empty().as_elements());
+    }
+    let override_advice = AdviceInputs::default().with_map([(output_note_list_key(), blob)]);
+
+    let result = BatchExecutor::new().extend_advice_inputs(override_advice).execute(batch);
+    assert_kernel_error(result, batch_kernel::ERR_BATCH_OUTPUT_NOTE_NOT_CREATED);
+
+    Ok(())
+}
+
+/// A global input-note list longer than `MAX_NOTES_PER_BATCH` is rejected before it can overflow
+/// its memory region. The length assert runs during load, before the strict-sort check, so the
+/// (here all-zero) entry contents are never inspected.
+#[test]
+fn batch_kernel_rejects_oversized_input_note_list() -> anyhow::Result<()> {
+    let mut setup = setup_chain();
+    let batch = two_tx_batch(&mut setup)?;
+
+    // 1025 entries, one past the 1024 maximum.
+    let blob = vec![Felt::from(0u32); 1025 * 8];
+    let override_advice = AdviceInputs::default().with_map([(input_note_list_key(), blob)]);
+
+    let result = BatchExecutor::new().extend_advice_inputs(override_advice).execute(batch);
+    assert_kernel_error(result, batch_kernel::ERR_BATCH_NOTE_LIST_TOO_LONG);
 
     Ok(())
 }

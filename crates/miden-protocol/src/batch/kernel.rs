@@ -20,16 +20,18 @@ static KERNEL_MAIN: LazyLock<Program> = LazyLock::new(|| {
 // Advice-map keys under which the global (pre-erasure) note lists are provided to the kernel. Their
 // integrity is established by the kernel binding every list entry to the per-transaction notes that
 // are anchored in `BATCH_ID`, not by the key, so any fixed sentinel works. All four felts are equal
-// so the key is independent of word orientation. Kept in sync with `note_tracker.masm`.
-const INPUT_NOTE_LIST_KEY_FELT: u32 = 0xba7c_0001;
-const OUTPUT_NOTE_LIST_KEY_FELT: u32 = 0xba7c_0002;
+// so the key is independent of word orientation. The values are generated from the `*_LIST_KEY`
+// definitions in `note_tracker.masm`, which is the single source of truth.
+mod generated_keys {
+    include!(concat!(env!("OUT_DIR"), "/batch_kernel_constants.rs"));
+}
 
 fn input_note_list_key() -> Word {
-    Word::from([INPUT_NOTE_LIST_KEY_FELT; 4])
+    Word::from([generated_keys::INPUT_NOTE_LIST_KEY; 4])
 }
 
 fn output_note_list_key() -> Word {
-    Word::from([OUTPUT_NOTE_LIST_KEY_FELT; 4])
+    Word::from([generated_keys::OUTPUT_NOTE_LIST_KEY; 4])
 }
 
 // BATCH KERNEL
@@ -197,5 +199,19 @@ impl BatchKernel {
         advice_inputs.map.extend([(output_note_list_key(), output_blob)]);
 
         advice_inputs
+    }
+}
+
+#[cfg(any(feature = "testing", test))]
+impl BatchKernel {
+    /// The advice-map key under which the global input-note list is provided to the kernel. Exposed
+    /// so tests can construct override blobs without duplicating the sentinel value.
+    pub fn input_note_list_key() -> Word {
+        input_note_list_key()
+    }
+
+    /// The advice-map key under which the global output-note list is provided to the kernel.
+    pub fn output_note_list_key() -> Word {
+        output_note_list_key()
     }
 }
