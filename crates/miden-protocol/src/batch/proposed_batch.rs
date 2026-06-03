@@ -4,7 +4,8 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use crate::account::AccountId;
-use crate::batch::{BatchAccountUpdate, BatchId, InputOutputNoteTracker};
+use crate::batch::note_tracker::{NoteTracker, TrackerOutput};
+use crate::batch::{BatchAccountUpdate, BatchId};
 use crate::block::{BlockHeader, BlockNumber};
 use crate::errors::ProposedBatchError;
 use crate::note::{NoteId, NoteInclusionProof};
@@ -16,6 +17,7 @@ use crate::transaction::{
     PartialBlockchain,
     ProvenTransaction,
     TransactionHeader,
+    TransactionVerifier,
 };
 use crate::utils::serde::{
     ByteReader,
@@ -104,6 +106,8 @@ impl ProposedBatch {
     ///     notes do not count.
     /// - Any note is consumed more than once.
     /// - Any note is created more than once.
+    /// - An unauthenticated note is consumed before it is created (as determined by the order in
+    ///   which transactions are given).
     /// - The number of account updates exceeds [`MAX_ACCOUNTS_PER_BATCH`].
     ///   - Note that any number of transactions against the same account count as one update.
     /// - The partial blockchains chain length does not match the block header's block number. This
@@ -122,7 +126,7 @@ impl ProposedBatch {
     /// - There are duplicate transactions.
     /// - If any transaction's expiration block number is less than or equal to the batch's
     ///   reference block.
-    pub fn new(
+    fn new_batch_inner(
         transactions: Vec<Arc<ProvenTransaction>>,
         reference_block_header: BlockHeader,
         partial_blockchain: PartialBlockchain,
@@ -290,12 +294,20 @@ impl ProposedBatch {
 
         // Check for duplicate output notes and remove all output notes from the batch output note
         // set that are consumed by transactions.
-        let (input_notes, output_notes) = InputOutputNoteTracker::from_transactions(
-            transactions.iter().map(AsRef::as_ref),
-            &unauthenticated_note_proofs,
+        let mut tracker = NoteTracker::new(
             &partial_blockchain,
             &reference_block_header,
-        )?;
+            &unauthenticated_note_proofs,
+        );
+        for tx in transactions.iter() {
+            tracker.push(tx.as_ref()).map_err(ProposedBatchError::from)?;
+        }
+        let TrackerOutput { input_notes, output_notes, .. } =
+            tracker.finalize().map_err(ProposedBatchError::from)?;
+
+        // Collect the remaining (non-erased) output notes into the final set of output notes.
+        let output_notes: Vec<OutputNote> =
+            output_notes.into_values().map(|(_, output_note)| output_note).collect();
 
         if input_notes.len() > MAX_INPUT_NOTES_PER_BATCH {
             return Err(ProposedBatchError::TooManyInputNotes(input_notes.len()));
@@ -324,6 +336,59 @@ impl ProposedBatch {
             input_notes,
             output_notes,
         })
+    }
+
+    /// Creates a new [`ProposedBatch`] from the provided parts, verifying every transaction's
+    /// execution proof against the transaction kernel.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for any of the batch-validation conditions documented on `new_batch_inner`,
+    /// or if a transaction's proof fails to verify or does not meet `proof_security_level`.
+    pub fn new(
+        transactions: Vec<Arc<ProvenTransaction>>,
+        reference_block_header: BlockHeader,
+        partial_blockchain: PartialBlockchain,
+        unauthenticated_note_proofs: BTreeMap<NoteId, NoteInclusionProof>,
+        proof_security_level: u32,
+    ) -> Result<Self, ProposedBatchError> {
+        let batch = Self::new_batch_inner(
+            transactions,
+            reference_block_header,
+            partial_blockchain,
+            unauthenticated_note_proofs,
+        )?;
+
+        let verifier = TransactionVerifier::new(proof_security_level);
+        for tx in batch.transactions() {
+            verifier.verify(tx).map_err(|source| {
+                ProposedBatchError::TransactionVerificationFailed {
+                    transaction_id: tx.id(),
+                    source,
+                }
+            })?;
+        }
+
+        Ok(batch)
+    }
+
+    /// Creates a new [`ProposedBatch`] **without verifying the transactions' execution proofs**.
+    ///
+    /// Runs the same batch validation as [`Self::new`] but skips proof verification. Exposed for
+    /// tests that build batches from mock transactions carrying dummy proofs.
+    #[cfg(any(test, feature = "testing"))]
+    pub fn new_unverified(
+        transactions: Vec<Arc<ProvenTransaction>>,
+        reference_block_header: BlockHeader,
+        partial_blockchain: PartialBlockchain,
+        unauthenticated_note_proofs: BTreeMap<NoteId, NoteInclusionProof>,
+    ) -> Result<Self, ProposedBatchError> {
+        Self::new_batch_inner(
+            transactions,
+            reference_block_header,
+            partial_blockchain,
+            unauthenticated_note_proofs,
+        )
     }
 
     // PUBLIC ACCESSORS
@@ -362,6 +427,11 @@ impl ProposedBatch {
     /// The ID of this batch. See [`BatchId`] for details on how it is computed.
     pub fn id(&self) -> BatchId {
         self.id
+    }
+
+    /// Returns the header of the reference block this batch is proposed for.
+    pub fn reference_block_header(&self) -> &BlockHeader {
+        &self.reference_block_header
     }
 
     /// Returns the block number at which the batch will expire.
@@ -440,7 +510,8 @@ impl Deserializable for ProposedBatch {
         let unauthenticated_note_proofs =
             BTreeMap::<NoteId, NoteInclusionProof>::read_from(source)?;
 
-        ProposedBatch::new(
+        // Reconstruct structurally without verifying the transactions' proofs.
+        ProposedBatch::new_batch_inner(
             transactions,
             block_header,
             partial_blockchain,
@@ -523,7 +594,7 @@ mod tests {
         )
         .context("failed to build proven transaction")?;
 
-        let batch = ProposedBatch::new(
+        let batch = ProposedBatch::new_unverified(
             vec![Arc::new(tx)],
             reference_block_header,
             partial_blockchain,

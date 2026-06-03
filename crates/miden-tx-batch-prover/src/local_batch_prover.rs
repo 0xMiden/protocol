@@ -1,66 +1,64 @@
-use alloc::boxed::Box;
-
 use miden_protocol::batch::{ProposedBatch, ProvenBatch};
 use miden_protocol::errors::ProvenBatchError;
-use miden_tx::TransactionVerifier;
+use miden_prover::{ExecutionProof, ProvingOptions, TraceProvingInputs, prove_from_trace_sync};
+
+use crate::ExecutedBatch;
 
 // LOCAL BATCH PROVER
 // ================================================================================================
 
-/// A local prover for transaction batches, proving the transactions in a [`ProposedBatch`] and
-/// returning a [`ProvenBatch`].
-#[derive(Clone)]
+/// A local prover for transaction batches.
+///
+/// Proves an [`ExecutedBatch`] (produced by [`BatchExecutor`](crate::BatchExecutor)) into a
+/// [`ProvenBatch`] carrying an [`ExecutionProof`] over the batch's public commitments.
+#[derive(Clone, Default)]
 pub struct LocalBatchProver {
-    proof_security_level: u32,
+    proving_options: ProvingOptions,
 }
 
 impl LocalBatchProver {
     /// Creates a new [`LocalBatchProver`] instance.
-    pub fn new(proof_security_level: u32) -> Self {
-        Self { proof_security_level }
+    pub fn new() -> Self {
+        Self::default()
     }
 
-    /// Attempts to prove the [`ProposedBatch`] into a [`ProvenBatch`].
+    /// Proves the [`ExecutedBatch`] into a [`ProvenBatch`].
     ///
-    /// Currently we don't perform any recursive proving. For now, this function runs a native
-    /// verifier for each transaction separately, and outputs a `ProvenBatch` object if all of the
-    /// individual proofs verify.
+    /// Builds the execution trace from the executed batch and generates the proof, attaching it to
+    /// the returned [`ProvenBatch`]. The kernel's public outputs are not yet cross-checked against
+    /// the proposed batch's expected values.
     ///
     /// # Errors
     ///
-    /// Returns an error if:
-    /// - a proof of any transaction in the batch fails to verify.
-    pub fn prove(&self, proposed_batch: ProposedBatch) -> Result<ProvenBatch, ProvenBatchError> {
-        let verifier = TransactionVerifier::new(self.proof_security_level);
+    /// Returns an error if proof generation fails.
+    pub fn prove(&self, executed_batch: ExecutedBatch) -> Result<ProvenBatch, ProvenBatchError> {
+        let (proposed_batch, trace_inputs) = executed_batch.into_parts();
 
-        for tx in proposed_batch.transactions() {
-            verifier.verify(tx).map_err(|source| {
-                ProvenBatchError::TransactionVerificationFailed {
-                    transaction_id: tx.id(),
-                    source: Box::new(source),
-                }
-            })?;
-        }
+        let (_stack_outputs, proof) = prove_from_trace_sync(TraceProvingInputs::new(
+            trace_inputs,
+            self.proving_options.clone(),
+        ))
+        .map_err(ProvenBatchError::BatchKernelExecutionFailed)?;
 
-        self.prove_inner(proposed_batch)
+        Self::build_proven_batch(proposed_batch, proof)
     }
 
-    /// Proves the provided [`ProposedBatch`] into a [`ProvenBatch`], **without verifying batches
-    /// and proving the block**.
-    ///
-    /// This is exposed for testing purposes.
+    /// Returns a [`ProvenBatch`] built from the proposed batch with a dummy [`ExecutionProof`]
+    /// attached, without running the batch kernel.
     #[cfg(any(feature = "testing", test))]
     pub fn prove_dummy(
         &self,
         proposed_batch: ProposedBatch,
     ) -> Result<ProvenBatch, ProvenBatchError> {
-        self.prove_inner(proposed_batch)
+        Self::build_proven_batch(proposed_batch, ExecutionProof::new_dummy())
     }
 
-    /// Converts a proposed batch into a proven batch.
-    ///
-    /// For now, this doesn't do anything interesting.
-    fn prove_inner(&self, proposed_batch: ProposedBatch) -> Result<ProvenBatch, ProvenBatchError> {
+    /// Combines the parts of a [`ProposedBatch`] with the produced [`ExecutionProof`] into a
+    /// [`ProvenBatch`].
+    fn build_proven_batch(
+        proposed_batch: ProposedBatch,
+        proof: ExecutionProof,
+    ) -> Result<ProvenBatch, ProvenBatchError> {
         let tx_headers = proposed_batch.transaction_headers();
         let (
             _transactions,
@@ -83,6 +81,7 @@ impl LocalBatchProver {
             output_notes,
             batch_expiration_block_num,
             tx_headers,
+            proof,
         )
     }
 }

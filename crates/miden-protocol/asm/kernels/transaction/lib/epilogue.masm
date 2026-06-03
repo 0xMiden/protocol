@@ -189,7 +189,7 @@ proc build_output_vault
             #     output_vault_root_ptr, num_assets, note_data_ptr, output_notes_end_ptr]
 
             # insert output note asset into output vault
-            exec.asset_vault::add_asset dropw
+            exec.asset_vault::add_asset dropw dropw
             # => [assets_start_ptr, assets_end_ptr, output_vault_root_ptr, num_assets,
             #     note_data_ptr, output_notes_end_ptr]
 
@@ -363,7 +363,7 @@ proc compute_and_remove_fee
     # => [FEE_ASSET_KEY, FEE_ASSET_VALUE, account_vault_root_ptr, fee_faucet_id_suffix, fee_faucet_id_prefix, fee_amount]
 
     # remove the asset from the account vault
-    exec.asset_vault::remove_fungible_asset dropw
+    exec.asset_vault::remove_fungible_asset dropw dropw
     # => [fee_faucet_id_suffix, fee_faucet_id_prefix, fee_amount]
 end
 

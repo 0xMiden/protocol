@@ -34,7 +34,7 @@ use miden_protocol::crypto::SequentialCommit;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::note::{NoteAssets, NoteType};
 use miden_protocol::transaction::RawOutputNote;
-use miden_standards::account::policies::MintPolicyConfig;
+use miden_standards::account::policies::MintPolicy;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::ERR_FUNGIBLE_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET;
@@ -961,7 +961,7 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
         faucet_owner_account_id,
         // Seed enough native supply for the lock step's sender to bundle into the B2AGG note.
         Some(miden_claim_amount_u64.saturating_mul(2)),
-        MintPolicyConfig::OwnerOnly,
+        MintPolicy::owner_only(),
         [],
     )?;
 
@@ -1216,7 +1216,7 @@ async fn bridge_in_unlock_native_duplicate_rejected() -> anyhow::Result<()> {
         miden_claim_amount_u64.saturating_mul(4),
         faucet_owner_account_id,
         Some(miden_claim_amount_u64.saturating_mul(4)),
-        MintPolicyConfig::OwnerOnly,
+        MintPolicy::owner_only(),
         [],
     )?;
 

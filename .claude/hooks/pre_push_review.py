@@ -96,9 +96,11 @@ def main() -> None:
 
 
 def _diff_base() -> str:
-    """Prefer the configured upstream; fall back to origin/next."""
+    """Return the integration branch to review against — the remote's
+    default branch (e.g. `origin/next`).
+    """
     result = subprocess.run(
-        ["git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
+        ["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
         capture_output=True,
         text=True,
     )

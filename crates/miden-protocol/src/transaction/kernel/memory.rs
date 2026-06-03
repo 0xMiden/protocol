@@ -54,7 +54,7 @@ pub type StorageSlot = u8;
 // | ---------------------------- | ------------- | ---------------- | ----------------------------------- |
 // | Fungible Asset Delta Ptr     | 0             | 4                |                                     |
 // | Non-Fungible Asset Delta Ptr | 4             | 4                |                                     |
-// | Storage Map Delta Ptrs       | 8             | 256              | Max 255 storage map deltas          |
+// | Storage Map Patch Ptrs       | 8             | 256              | Max 255 storage map patches         |
 
 // BOOKKEEPING
 // ------------------------------------------------------------------------------------------------

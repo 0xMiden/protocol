@@ -18,9 +18,15 @@ doctest = false
 
 [features]
 default = ["std"]
-std     = ["miden-protocol/std", "miden-tx/std"]
-testing = []
+std     = ["miden-processor/std", "miden-protocol/std", "miden-prover/std", "miden-verifier/std"]
+testing = ["miden-processor/testing", "miden-protocol/testing"]
 
 [dependencies]
-miden-protocol = { workspace = true }
-miden-tx       = { workspace = true }
+miden-processor = { workspace = true }
+miden-protocol  = { workspace = true }
+miden-prover    = { workspace = true }
+miden-verifier  = { workspace = true }
+thiserror       = { workspace = true }
+
+[dev-dependencies]
+miden-protocol = { features = ["testing"], workspace = true }
