@@ -11,6 +11,7 @@ use miden::protocol::kernel_proc_offsets::ACCOUNT_COMPUTE_STORAGE_COMMITMENT_OFF
 use miden::protocol::kernel_proc_offsets::ACCOUNT_GET_INITIAL_VAULT_ROOT_OFFSET
 use miden::protocol::kernel_proc_offsets::ACCOUNT_GET_VAULT_ROOT_OFFSET
 use miden::protocol::kernel_proc_offsets::ACCOUNT_GET_ITEM_OFFSET
+use miden::protocol::kernel_proc_offsets::ACCOUNT_HAS_STORAGE_SLOT_OFFSET
 use miden::protocol::kernel_proc_offsets::ACCOUNT_GET_INITIAL_ITEM_OFFSET
 use miden::protocol::kernel_proc_offsets::ACCOUNT_GET_MAP_ITEM_OFFSET
 use miden::protocol::kernel_proc_offsets::ACCOUNT_GET_INITIAL_MAP_ITEM_OFFSET
@@ -331,6 +332,39 @@ pub proc get_item
     # clean the stack
     swapdw dropw dropw swapw dropw
     # => [VALUE]
+end
+
+#! Returns a flag indicating whether a storage slot with the provided slot ID exists on the active
+#! account.
+#!
+#! Returns 1 if the slot exists and 0 otherwise.
+#!
+#! Inputs:  [slot_id_suffix, slot_id_prefix]
+#! Outputs: [has_slot]
+#!
+#! Where:
+#! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
+#!   the first two felts of the hashed slot name.
+#! - has_slot is 1 if a slot with the provided slot ID exists, 0 otherwise.
+#!
+#! Invocation: exec
+pub proc has_storage_slot
+    push.0 movdn.2
+    # => [slot_id_suffix, slot_id_prefix, 0]
+
+    push.ACCOUNT_HAS_STORAGE_SLOT_OFFSET
+    # => [offset, slot_id_suffix, slot_id_prefix, 0]
+
+    # pad the stack
+    padw swapw padw padw swapdw
+    # => [offset, slot_id_suffix, slot_id_prefix, pad(13)]
+
+    syscall.exec_kernel_proc
+    # => [has_slot, pad(15)]
+
+    # clean the stack
+    swapdw dropw dropw swapw dropw movdn.3 drop drop drop
+    # => [has_slot]
 end
 
 #! Gets the initial item from the active account storage slot as it was at the beginning of the

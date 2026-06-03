@@ -1561,6 +1561,55 @@ async fn test_has_procedure() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[tokio::test]
+async fn test_has_storage_slot() -> anyhow::Result<()> {
+    let existing_slot_name = format!("{}", AccountStorage::mock_value_slot0().name());
+
+    // (slot name, whether a slot with that name is expected to exist on the account)
+    let test_cases = [(existing_slot_name.as_str(), true), ("unknown::slot::name", false)];
+
+    for (slot_name, expected_to_exist) in test_cases {
+        let tx_context = TransactionContextBuilder::with_existing_mock_account().build().unwrap();
+
+        let assertion = if expected_to_exist {
+            r#"assert.err="installed storage slot should be reported as present""#
+        } else {
+            r#"assertz.err="unknown storage slot should be reported as absent""#
+        };
+
+        let code = format!(
+            r#"
+            use miden::core::sys
+
+            use $kernel::prologue
+            use mock::account->mock_account
+
+            const SLOT_NAME = word("{slot_name}")
+
+            begin
+                exec.prologue::prepare_transaction
+
+                # pad the stack for the call
+                push.SLOT_NAME[0..2]
+                repeat.14 push.0 movdn.2 end
+                # => [slot_id_suffix, slot_id_prefix, pad(14)]
+
+                call.mock_account::has_storage_slot
+                # => [has_slot, pad(15)]
+
+                {assertion}
+
+                exec.sys::truncate_stack
+            end
+            "#,
+        );
+
+        tx_context.execute_code(&code).await?;
+    }
+
+    Ok(())
+}
+
 /// Tests that the `has_callbacks` faucet procedure correctly reports whether a faucet defines
 /// callbacks.
 ///
