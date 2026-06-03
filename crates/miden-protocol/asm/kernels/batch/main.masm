@@ -40,14 +40,13 @@ use miden::batch_kernel::prologue
 #! - BLOCK_COMMITMENT is the commitment of the batch's reference block.
 #! - BATCH_ID is the batch's `BatchId`, the sequential hash of the `(tx_id, account_id)` tuples
 #!   committing to the transactions in the batch.
-#! - INPUT_NOTES_COMMITMENT is the sequential hash over every transaction's
-#!   `(NULLIFIER, EMPTY_OR_COMMITMENT)` tuples.
+#! - INPUT_NOTES_COMMITMENT is the nullifier-sorted sequential hash over the batch's input notes,
+#!   excluding notes created and consumed within the batch (matching `ProposedBatch`).
 #! - BATCH_NOTE_TREE_ROOT is currently not wired up (empty word).
 #! - batch_expiration_block_num is currently not wired-up (zero).
 #!
 #! TODO: verify BLOCK_COMMITMENT against block header data via the same pipe-and-verify pattern.
-#! TODO: authenticate unauthenticated input notes against BLOCK_COMMITMENT's chain MMR.
-#! TODO: erase intra-batch unauthenticated notes from INPUT_NOTES_COMMITMENT.
+#! TODO: authenticate unauthenticated, non-erased input notes against BLOCK_COMMITMENT's chain MMR.
 #! TODO: emit BATCH_NOTE_TREE_ROOT (the batch note tree SMT root) and batch_expiration_block_num.
 #! TODO: aggregate per-account updates and emit a separate ACCOUNT_UPDATES_COMMITMENT output.
 #! TODO: recursively verify each transaction's `ExecutionProof`.

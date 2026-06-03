@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use anyhow::Context;
 use miden_protocol::batch::{BatchKernel, ProposedBatch};
 use miden_protocol::block::BlockNumber;
+use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::vm::AdviceInputs;
 use miden_protocol::{Felt, Word};
 use miden_tx_batch_prover::{BatchExecutor, LocalBatchProver};
@@ -92,6 +93,53 @@ fn batch_kernel_emits_input_notes_commitment() -> anyhow::Result<()> {
     assert_eq!(output.input_notes_commitment(), expected_input_notes_commitment);
     assert_eq!(output.batch_note_tree_root(), Word::empty());
     assert_eq!(output.batch_expiration_block_num(), BlockNumber::from(0u32));
+
+    Ok(())
+}
+
+/// A note created by one transaction and consumed (unauthenticated) by a later transaction in the
+/// same batch is erased: the kernel excludes it from `INPUT_NOTES_COMMITMENT`, matching the empty
+/// commitment the proposed batch derives after erasure.
+#[test]
+fn batch_kernel_erases_note_created_and_consumed_in_batch() -> anyhow::Result<()> {
+    let setup = setup_chain();
+    let mut chain = setup.chain;
+    let block1 = chain.block_header(1);
+    let block2 = chain.prove_next_block()?;
+
+    let note = mock_note(40);
+    let tx1 = MockProvenTxBuilder::with_account(
+        setup.account1.id(),
+        Word::empty(),
+        setup.account1.to_commitment(),
+    )
+    .reference_block(&block1)
+    .output_notes(vec![RawOutputNote::Full(note.clone()).into_output_note().unwrap()])
+    .build()?;
+    let tx2 = MockProvenTxBuilder::with_account(
+        setup.account2.id(),
+        Word::empty(),
+        setup.account2.to_commitment(),
+    )
+    .reference_block(&block1)
+    .unauthenticated_notes(vec![note.clone()])
+    .build()?;
+
+    let batch = ProposedBatch::new_unverified(
+        [tx1, tx2].into_iter().map(Arc::new).collect(),
+        block2.header().clone(),
+        chain.latest_partial_blockchain(),
+        BTreeMap::default(),
+    )?;
+    // The note is created and consumed within the batch, so the batch has no input notes.
+    assert_eq!(batch.input_notes().num_notes(), 0);
+    let expected_input_notes_commitment = batch.input_notes().commitment();
+
+    let executed = BatchExecutor::new().execute(batch).context("batch execution failed")?;
+    assert_eq!(
+        executed.batch_outputs().input_notes_commitment(),
+        expected_input_notes_commitment,
+    );
 
     Ok(())
 }
@@ -244,6 +292,50 @@ fn batch_kernel_rejects_input_note_list_id_mismatch() -> anyhow::Result<()> {
 
     let result = BatchExecutor::new().extend_advice_inputs(override_advice).execute(batch);
     assert!(result.is_err(), "kernel must abort when a list entry's note id is altered");
+
+    Ok(())
+}
+
+/// Advice-map key for the global output-note list. Must match `OUTPUT_NOTE_LIST_KEY_FELT` in
+/// `crates/miden-protocol/src/batch/kernel.rs`.
+fn output_note_list_key() -> Word {
+    Word::from([0xba7c_0002u32; 4])
+}
+
+/// Builds the global output-note list blob the kernel expects: `(note_id, 0, 0, 0, 0)` per output
+/// note across all transactions, sorted by note id.
+fn output_note_list_blob(batch: &ProposedBatch) -> Vec<Felt> {
+    let mut ids: Vec<Word> = Vec::new();
+    for tx in batch.transactions() {
+        for note in tx.output_notes().iter() {
+            ids.push(note.id().as_word());
+        }
+    }
+    ids.sort_unstable();
+    let mut blob = Vec::with_capacity(ids.len() * 8);
+    for note_id in &ids {
+        blob.extend_from_slice(note_id.as_elements());
+        blob.extend_from_slice(Word::empty().as_elements());
+    }
+    blob
+}
+
+/// Omitting an output note from the global list makes its per-transaction lookup fail (the
+/// output-note binding needed to soundly drive erasure).
+#[test]
+fn batch_kernel_rejects_output_note_missing_from_list() -> anyhow::Result<()> {
+    let mut setup = setup_chain();
+    let batch = two_tx_batch(&mut setup)?;
+
+    let mut blob = output_note_list_blob(&batch);
+    blob.truncate(blob.len() - 8); // drop the last (highest-note-id) output note
+    let override_advice = AdviceInputs::default().with_map([(output_note_list_key(), blob)]);
+
+    let result = BatchExecutor::new().extend_advice_inputs(override_advice).execute(batch);
+    assert!(
+        result.is_err(),
+        "kernel must abort when an output note is missing from the list"
+    );
 
     Ok(())
 }
