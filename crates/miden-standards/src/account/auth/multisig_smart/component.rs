@@ -21,7 +21,7 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
 use super::ProcedurePolicy;
-use super::config::{OracleReaderConfig, SpendingPolicyConfig, TimelockControllerConfig};
+use super::config::{DelayedExecutionPolicy, OracleReaderConfig, SpendingPolicy};
 use super::types::{AmountLimits, OracleId, TierThresholds};
 use crate::account::account_component_code;
 
@@ -55,8 +55,8 @@ static PROCEDURE_POLICIES_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|
         .expect("storage slot name should be valid")
 });
 
-static TIMELOCK_CONTROLLER_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::auth::multisig_smart::timelock_controller")
+static DELAYED_EXECUTION_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::auth::multisig_smart::delayed_execution")
         .expect("storage slot name should be valid")
 });
 
@@ -124,8 +124,8 @@ pub struct AuthMultisigSmartConfig {
     approvers: Vec<(PublicKeyCommitment, AuthScheme)>,
     default_threshold: u32,
     procedure_policies: Vec<(Word, ProcedurePolicy)>,
-    spending_policy: SpendingPolicyConfig,
-    timelock_controller: TimelockControllerConfig,
+    spending_policy: SpendingPolicy,
+    delayed_execution: DelayedExecutionPolicy,
     oracle_reader: OracleReaderConfig,
 }
 
@@ -156,8 +156,8 @@ impl AuthMultisigSmartConfig {
             approvers,
             default_threshold,
             procedure_policies: vec![],
-            spending_policy: SpendingPolicyConfig::default(),
-            timelock_controller: TimelockControllerConfig::default(),
+            spending_policy: SpendingPolicy::default(),
+            delayed_execution: DelayedExecutionPolicy::default(),
             oracle_reader: OracleReaderConfig::default(),
         })
     }
@@ -172,16 +172,13 @@ impl AuthMultisigSmartConfig {
         Ok(self)
     }
 
-    pub fn with_spending(mut self, spending_policy: SpendingPolicyConfig) -> Self {
+    pub fn with_spending(mut self, spending_policy: SpendingPolicy) -> Self {
         self.spending_policy = spending_policy;
         self
     }
 
-    pub fn with_timelock_controller_config(
-        mut self,
-        timelock_controller: TimelockControllerConfig,
-    ) -> Self {
-        self.timelock_controller = timelock_controller;
+    pub fn with_delayed_execution(mut self, delayed_execution: DelayedExecutionPolicy) -> Self {
+        self.delayed_execution = delayed_execution;
         self
     }
 
@@ -202,12 +199,12 @@ impl AuthMultisigSmartConfig {
         &self.procedure_policies
     }
 
-    pub fn spending_policy(&self) -> SpendingPolicyConfig {
+    pub fn spending_policy(&self) -> SpendingPolicy {
         self.spending_policy
     }
 
-    pub fn timelock_controller(&self) -> TimelockControllerConfig {
-        self.timelock_controller
+    pub fn delayed_execution(&self) -> DelayedExecutionPolicy {
+        self.delayed_execution
     }
 
     pub fn oracle_reader(&self) -> OracleReaderConfig {
@@ -219,11 +216,11 @@ impl AuthMultisigSmartConfig {
     }
 
     pub fn min_delay(&self) -> u32 {
-        self.timelock_controller.min_delay()
+        self.delayed_execution.min_delay()
     }
 
     pub fn propose_expiration_delta(&self) -> u16 {
-        self.timelock_controller.propose_expiration_delta()
+        self.delayed_execution.propose_expiration_delta()
     }
 
     pub fn amount_limits(&self) -> AmountLimits {
@@ -234,7 +231,7 @@ impl AuthMultisigSmartConfig {
         self.spending_policy.tier_thresholds()
     }
 
-    pub fn oracle_id(&self) -> OracleId {
+    pub fn oracle_id(&self) -> Option<OracleId> {
         self.oracle_reader.oracle_id()
     }
 
@@ -302,7 +299,8 @@ impl AuthMultisigSmart {
     pub const UPDATE_ORACLE_CONFIG_PROC_NAME: &'static str = "update_oracle_config_and_proc_root";
     pub const UPDATE_GET_PRICE_UNTRACKED_POLICY_PROC_NAME: &'static str =
         "update_get_price_untracked_policy";
-    pub const UPDATE_TIMELOCK_CONTROLLER_PROC_NAME: &'static str = "update_timelock_controller";
+    pub const UPDATE_DELAYED_EXECUTION_POLICY_PROC_NAME: &'static str =
+        "update_delayed_execution_policy";
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
@@ -323,10 +321,10 @@ impl AuthMultisigSmart {
         if config.spending_policy().spending_window() == 0 {
             return Err(AccountError::other("spending window must be non-zero"));
         }
-        if config.timelock_controller().min_delay() == 0 {
+        if config.delayed_execution().min_delay() == 0 {
             return Err(AccountError::other("min delay must be non-zero"));
         }
-        if config.timelock_controller().propose_expiration_delta() == 0 {
+        if config.delayed_execution().propose_expiration_delta() == 0 {
             return Err(AccountError::other("propose expiration delta must be non-zero"));
         }
         if config.oracle_reader().untracked_price_policy() > 1 {
@@ -362,8 +360,8 @@ impl AuthMultisigSmart {
         &PROCEDURE_POLICIES_SLOT_NAME
     }
 
-    pub fn timelock_controller_slot() -> &'static StorageSlotName {
-        &TIMELOCK_CONTROLLER_SLOT_NAME
+    pub fn delayed_execution_slot() -> &'static StorageSlotName {
+        &DELAYED_EXECUTION_SLOT_NAME
     }
 
     pub fn spending_window_slot() -> &'static StorageSlotName {
@@ -469,9 +467,9 @@ impl AuthMultisigSmart {
         )
     }
 
-    pub fn timelock_controller_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+    pub fn delayed_execution_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
         (
-            Self::timelock_controller_slot().clone(),
+            Self::delayed_execution_slot().clone(),
             StorageSlotSchema::value(
                 "Timelock controller",
                 [
@@ -663,7 +661,7 @@ impl From<AuthMultisigSmart> for AccountComponent {
         ));
 
         // Smart policy slots
-        let timelock_controller = multisig.config.timelock_controller();
+        let delayed_execution = multisig.config.delayed_execution();
         let spending_policy = multisig.config.spending_policy();
         let amount_limits = spending_policy.amount_limits();
         let tier_thresholds = spending_policy.tier_thresholds();
@@ -671,10 +669,10 @@ impl From<AuthMultisigSmart> for AccountComponent {
         let oracle_id = oracle_reader.oracle_id();
 
         storage_slots.push(StorageSlot::with_value(
-            AuthMultisigSmart::timelock_controller_slot().clone(),
+            AuthMultisigSmart::delayed_execution_slot().clone(),
             Word::from([
-                timelock_controller.min_delay(),
-                timelock_controller.propose_expiration_delta() as u32,
+                delayed_execution.min_delay(),
+                delayed_execution.propose_expiration_delta() as u32,
                 0u32,
                 0u32,
             ]),
@@ -705,9 +703,13 @@ impl From<AuthMultisigSmart> for AccountComponent {
                 tier_thresholds.tier_3(),
             ]),
         ));
+        let oracle_id_word = match oracle_id {
+            Some(id) => Word::from([id.prefix(), id.suffix(), Felt::ZERO, Felt::ZERO]),
+            None => Word::empty(),
+        };
         storage_slots.push(StorageSlot::with_value(
             AuthMultisigSmart::oracle_config_slot().clone(),
-            Word::from([oracle_id.prefix(), oracle_id.suffix(), Felt::ZERO, Felt::ZERO]),
+            oracle_id_word,
         ));
         storage_slots.push(StorageSlot::with_value(
             AuthMultisigSmart::get_price_proc_root_slot().clone(),
@@ -740,7 +742,7 @@ impl From<AuthMultisigSmart> for AccountComponent {
             AuthMultisigSmart::approver_auth_scheme_slot_schema(),
             AuthMultisigSmart::executed_transactions_slot_schema(),
             AuthMultisigSmart::procedure_policies_slot_schema(),
-            AuthMultisigSmart::timelock_controller_slot_schema(),
+            AuthMultisigSmart::delayed_execution_slot_schema(),
             AuthMultisigSmart::spending_window_slot_schema(),
             AuthMultisigSmart::spending_tracker_slot_schema(),
             AuthMultisigSmart::amount_limits_slot_schema(),
@@ -769,18 +771,19 @@ impl From<AuthMultisigSmart> for AccountComponent {
 mod tests {
     use alloc::string::ToString;
 
-    use miden_protocol::account::AccountBuilder;
     use miden_protocol::account::auth::AuthSecretKey;
+    use miden_protocol::account::{AccountBuilder, AccountId};
+    use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
 
     use super::*;
     use crate::account::auth::multisig_smart::{
         AmountLimits,
+        DelayedExecutionPolicy,
         OracleId,
         OracleReaderConfig,
         ProcedurePolicyNoteRestriction,
-        SpendingPolicyConfig,
+        SpendingPolicy,
         TierThresholds,
-        TimelockControllerConfig,
     };
     use crate::account::wallets::BasicWallet;
 
@@ -801,14 +804,14 @@ mod tests {
                     .expect("procedure policy should be valid"),
             )])
             .expect("procedure policy config should be valid")
-            .with_spending(SpendingPolicyConfig::new(
+            .with_spending(SpendingPolicy::new(
                 100,
                 AmountLimits::new(500, 1000, 2000, 1500),
                 TierThresholds::new(1, 2, 2, 2),
             ))
-            .with_timelock_controller_config(TimelockControllerConfig::new(30, 3))
+            .with_delayed_execution(DelayedExecutionPolicy::new(30, 3))
             .with_oracle_reader(OracleReaderConfig::new(
-                OracleId::new(Felt::from(1u32), Felt::from(2u32)),
+                OracleId::new(AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap()),
                 Word::from([7u32, 8, 9, 10]),
             ));
 
@@ -827,11 +830,11 @@ mod tests {
             .expect("threshold config should be present");
         assert_eq!(threshold_config, Word::from([2u32, 2u32, 0, 0]));
 
-        let timelock_controller = account
+        let delayed_execution = account
             .storage()
-            .get_item(AuthMultisigSmart::timelock_controller_slot())
+            .get_item(AuthMultisigSmart::delayed_execution_slot())
             .expect("timelock controller should be present");
-        assert_eq!(timelock_controller, Word::from([30u32, 3u32, 0u32, 0u32]));
+        assert_eq!(delayed_execution, Word::from([30u32, 3u32, 0u32, 0u32]));
 
         let spending_window = account
             .storage()
@@ -879,12 +882,12 @@ mod tests {
 
         let config = AuthMultisigSmartConfig::new(approvers, 1)
             .expect("config should be valid")
-            .with_spending(SpendingPolicyConfig::new(
+            .with_spending(SpendingPolicy::new(
                 100,
                 AmountLimits::new(u32::MAX as u64 + 1, 0, 0, 0),
                 TierThresholds::new(1, 2, 2, 2),
             ))
-            .with_timelock_controller_config(TimelockControllerConfig::new(30, 3));
+            .with_delayed_execution(DelayedExecutionPolicy::new(30, 3));
         let result = AuthMultisigSmart::new(config);
         assert!(result.unwrap_err().to_string().contains("amount limits must fit into u32"));
 
@@ -930,36 +933,36 @@ mod tests {
         let result = AuthMultisigSmart::new(
             AuthMultisigSmartConfig::new(approvers.clone(), 2)
                 .expect("config should be valid")
-                .with_spending(SpendingPolicyConfig::new(
+                .with_spending(SpendingPolicy::new(
                     100,
                     AmountLimits::new(500, 1000, 2000, 1500),
                     TierThresholds::new(0, 2, 2, 2),
                 ))
-                .with_timelock_controller_config(TimelockControllerConfig::new(30, 3)),
+                .with_delayed_execution(DelayedExecutionPolicy::new(30, 3)),
         );
         assert!(result.unwrap_err().to_string().contains("tier_0 must be > 0"));
 
         let result = AuthMultisigSmart::new(
             AuthMultisigSmartConfig::new(approvers.clone(), 2)
                 .expect("config should be valid")
-                .with_spending(SpendingPolicyConfig::new(
+                .with_spending(SpendingPolicy::new(
                     100,
                     AmountLimits::new(500, 1000, 2000, 1500),
                     TierThresholds::new(1, 2, 1, 2),
                 ))
-                .with_timelock_controller_config(TimelockControllerConfig::new(30, 3)),
+                .with_delayed_execution(DelayedExecutionPolicy::new(30, 3)),
         );
         assert!(result.unwrap_err().to_string().contains("tier config is invalid"));
 
         let result = AuthMultisigSmart::new(
             AuthMultisigSmartConfig::new(approvers, 2)
                 .expect("config should be valid")
-                .with_spending(SpendingPolicyConfig::new(
+                .with_spending(SpendingPolicy::new(
                     100,
                     AmountLimits::new(500, 1000, 2000, 1500),
                     TierThresholds::new(1, 2, 2, 3),
                 ))
-                .with_timelock_controller_config(TimelockControllerConfig::new(30, 3)),
+                .with_delayed_execution(DelayedExecutionPolicy::new(30, 3)),
         );
         assert!(result.unwrap_err().to_string().contains("tier_3 must be <= num_approvers"));
     }

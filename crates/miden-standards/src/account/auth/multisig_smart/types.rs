@@ -1,4 +1,5 @@
 use miden_protocol::Felt;
+use miden_protocol::account::AccountId;
 
 /// Defines the spending breakpoints used by smart multisig spending-policy evaluation.
 ///
@@ -82,31 +83,38 @@ impl TierThresholds {
     }
 }
 
-/// Identifies the oracle instance used by smart multisig price lookups.
+/// Identifies the oracle account used by smart multisig price lookups.
 ///
-/// This value is stored as a `(prefix, suffix)` pair so the configured foreign price-reader
-/// procedure can distinguish which oracle feed should be queried during spending-policy
-/// evaluation.
+/// Wrapping [`AccountId`] keeps the felt layout the same as any other account-id reference at the
+/// contract level (prefix-suffix word) while preventing arbitrary `(Felt, Felt)` pairs from being
+/// passed to the spending-policy pipeline at the Rust level.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct OracleId {
-    prefix: Felt,
-    suffix: Felt,
-}
+pub struct OracleId(AccountId);
 
 impl OracleId {
-    pub const fn new(prefix: Felt, suffix: Felt) -> Self {
-        Self { prefix, suffix }
+    pub const fn new(account_id: AccountId) -> Self {
+        Self(account_id)
     }
 
-    pub const fn prefix(&self) -> Felt {
-        self.prefix
+    pub fn account_id(&self) -> AccountId {
+        self.0
     }
 
-    pub const fn suffix(&self) -> Felt {
-        self.suffix
+    pub fn prefix(&self) -> Felt {
+        self.0.prefix().as_felt()
     }
 
-    pub const fn as_felt_pair(&self) -> [Felt; 2] {
-        [self.prefix, self.suffix]
+    pub fn suffix(&self) -> Felt {
+        self.0.suffix()
+    }
+
+    pub fn as_felt_pair(&self) -> [Felt; 2] {
+        [self.prefix(), self.suffix()]
+    }
+}
+
+impl From<AccountId> for OracleId {
+    fn from(account_id: AccountId) -> Self {
+        Self(account_id)
     }
 }

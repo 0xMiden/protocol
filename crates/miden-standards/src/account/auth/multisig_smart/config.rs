@@ -1,4 +1,4 @@
-use miden_protocol::{Felt, Word};
+use miden_protocol::Word;
 
 use super::types::{AmountLimits, OracleId, TierThresholds};
 
@@ -7,7 +7,7 @@ use super::types::{AmountLimits, OracleId, TierThresholds};
 /// This bundles the tracked spending window, the amount breakpoints used to derive a spending
 /// tier, and the approval threshold required for each tier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct SpendingPolicyConfig {
+pub struct SpendingPolicy {
     /// Number of blocks over which spending is accumulated before the tracker resets.
     spending_window: u32,
     /// Spending breakpoints that map accumulated spend into tiers `0..=3`.
@@ -16,7 +16,7 @@ pub struct SpendingPolicyConfig {
     tier_thresholds: TierThresholds,
 }
 
-impl SpendingPolicyConfig {
+impl SpendingPolicy {
     pub const fn new(
         spending_window: u32,
         amount_limits: AmountLimits,
@@ -48,12 +48,12 @@ impl SpendingPolicyConfig {
 /// `propose_expiration_delta` controls the transaction expiration delta applied to proposal
 /// transactions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct TimelockControllerConfig {
+pub struct DelayedExecutionPolicy {
     min_delay: u32,
     propose_expiration_delta: u16,
 }
 
-impl TimelockControllerConfig {
+impl DelayedExecutionPolicy {
     pub const fn new(min_delay: u32, propose_expiration_delta: u16) -> Self {
         Self { min_delay, propose_expiration_delta }
     }
@@ -82,7 +82,7 @@ pub const GET_PRICE_UNTRACKED_REJECT: u32 = 1;
 /// fungible output (see [`GET_PRICE_UNTRACKED_OMIT`] and [`GET_PRICE_UNTRACKED_REJECT`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OracleReaderConfig {
-    oracle_id: OracleId,
+    oracle_id: Option<OracleId>,
     get_price_proc_root: Word,
     untracked_price_policy: u32,
 }
@@ -90,13 +90,14 @@ pub struct OracleReaderConfig {
 impl OracleReaderConfig {
     pub const fn new(oracle_id: OracleId, get_price_proc_root: Word) -> Self {
         Self {
-            oracle_id,
+            oracle_id: Some(oracle_id),
             get_price_proc_root,
             untracked_price_policy: GET_PRICE_UNTRACKED_OMIT,
         }
     }
 
-    pub const fn oracle_id(&self) -> OracleId {
+    /// Returns the configured oracle id, or `None` when no oracle is attached (default).
+    pub const fn oracle_id(&self) -> Option<OracleId> {
         self.oracle_id
     }
 
@@ -116,6 +117,10 @@ impl OracleReaderConfig {
 
 impl Default for OracleReaderConfig {
     fn default() -> Self {
-        Self::new(OracleId::new(Felt::ZERO, Felt::ZERO), Word::empty())
+        Self {
+            oracle_id: None,
+            get_price_proc_root: Word::empty(),
+            untracked_price_policy: GET_PRICE_UNTRACKED_OMIT,
+        }
     }
 }

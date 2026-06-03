@@ -41,9 +41,9 @@ procedure_root!(
 );
 
 procedure_root!(
-    MULTISIG_SMART_UPDATE_TIMELOCK_CONTROLLER,
+    MULTISIG_SMART_UPDATE_DELAYED_EXECUTION_POLICY,
     AuthMultisigSmart::NAME,
-    AuthMultisigSmart::UPDATE_TIMELOCK_CONTROLLER_PROC_NAME,
+    AuthMultisigSmart::UPDATE_DELAYED_EXECUTION_POLICY_PROC_NAME,
     AuthMultisigSmart::code()
 );
 
@@ -80,7 +80,7 @@ impl AuthMultisigSmartPresets {
                     .expect("preset policy should be valid"),
             ),
             (
-                Self::update_timelock_controller(),
+                Self::update_delayed_execution_policy(),
                 ProcedurePolicy::with_immediate_and_delay_thresholds(2, 1)
                     .expect("preset policy should be valid"),
             ),
@@ -116,7 +116,7 @@ impl AuthMultisigSmartPresets {
                     .expect("preset policy should be valid"),
             ),
             (
-                Self::update_timelock_controller(),
+                Self::update_delayed_execution_policy(),
                 ProcedurePolicy::with_immediate_and_delay_thresholds(5, 4)
                     .expect("preset policy should be valid"),
             ),
@@ -143,8 +143,8 @@ impl AuthMultisigSmartPresets {
         MULTISIG_SMART_UPDATE_GET_PRICE_UNTRACKED_POLICY.as_word()
     }
 
-    pub fn update_timelock_controller() -> Word {
-        MULTISIG_SMART_UPDATE_TIMELOCK_CONTROLLER.as_word()
+    pub fn update_delayed_execution_policy() -> Word {
+        MULTISIG_SMART_UPDATE_DELAYED_EXECUTION_POLICY.as_word()
     }
 }
 
@@ -157,9 +157,9 @@ mod tests {
         AmountLimits,
         AuthMultisigSmart,
         AuthMultisigSmartConfig,
-        SpendingPolicyConfig,
+        DelayedExecutionPolicy,
+        SpendingPolicy,
         TierThresholds,
-        TimelockControllerConfig,
     };
 
     #[test]
@@ -186,24 +186,24 @@ mod tests {
             .expect("config should be valid")
             .with_proc_policies(AuthMultisigSmartPresets::single_user_1_of_2())
             .expect("preset policies should validate")
-            .with_spending(SpendingPolicyConfig::new(
+            .with_spending(SpendingPolicy::new(
                 100,
                 AmountLimits::new(500, 1000, 2000, 1500),
                 TierThresholds::new(1, 1, 1, 1),
             ))
-            .with_timelock_controller_config(TimelockControllerConfig::new(30, 3));
+            .with_delayed_execution(DelayedExecutionPolicy::new(30, 3));
         AuthMultisigSmart::new(one_of_two).expect("preset component should build");
 
         let three_of_five = AuthMultisigSmartConfig::new(three_of_five_approvers, 3)
             .expect("config should be valid")
             .with_proc_policies(AuthMultisigSmartPresets::multisig_3_of_5())
             .expect("preset policies should validate")
-            .with_spending(SpendingPolicyConfig::new(
+            .with_spending(SpendingPolicy::new(
                 100,
                 AmountLimits::new(500, 1000, 2000, 1500),
                 TierThresholds::new(1, 2, 3, 5),
             ))
-            .with_timelock_controller_config(TimelockControllerConfig::new(30, 3));
+            .with_delayed_execution(DelayedExecutionPolicy::new(30, 3));
         AuthMultisigSmart::new(three_of_five).expect("preset component should build");
     }
 }

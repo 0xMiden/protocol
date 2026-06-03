@@ -18,13 +18,13 @@ use miden_protocol::vm::AdviceMap;
 use miden_protocol::{Felt, Hasher, Word};
 use miden_standards::account::auth::multisig_smart::{
     AmountLimits,
+    DelayedExecutionPolicy,
     OracleId,
     OracleReaderConfig,
     ProcedurePolicy,
     ProcedurePolicyNoteRestriction,
-    SpendingPolicyConfig,
+    SpendingPolicy,
     TierThresholds,
-    TimelockControllerConfig,
 };
 use miden_standards::account::auth::{
     AuthMultisigSmart,
@@ -69,8 +69,13 @@ enum TestOracleMode {
 
 struct TestOracleFixture {
     account: Account,
-    oracle_id: [Felt; 2],
     get_price_proc_root: Word,
+}
+
+impl TestOracleFixture {
+    fn oracle_id(&self) -> OracleId {
+        OracleId::from(self.account.id())
+    }
 }
 
 /// Sets up secret keys, auth schemes, public keys, and authenticators for a specific scheme.
@@ -187,9 +192,8 @@ fn build_test_oracle_fixture(mode: TestOracleMode) -> anyhow::Result<TestOracleF
         .build_existing()?;
 
     Ok(TestOracleFixture {
-        oracle_id: [account.id().prefix().as_felt(), account.id().suffix()],
-        get_price_proc_root: get_price_proc_root.as_word(),
         account,
+        get_price_proc_root: get_price_proc_root.as_word(),
     })
 }
 
@@ -205,37 +209,20 @@ fn create_multisig_smart_account_with_assets_and_optional_oracle(
     public_keys: &[PublicKey],
     auth_scheme: AuthScheme,
     assets: Vec<FungibleAsset>,
-    amount_limits: [u64; 4],
-    tier_thresholds: [u32; 4],
+    amount_limits: AmountLimits,
+    tier_thresholds: TierThresholds,
     proc_policy_map: Vec<(Word, ProcedurePolicy)>,
-    oracle_config: Option<([Felt; 2], Word)>,
+    oracle_config: Option<(OracleId, Word)>,
 ) -> anyhow::Result<Account> {
     let approvers: Vec<_> =
         public_keys.iter().map(|pk| (pk.to_commitment(), auth_scheme)).collect();
     let mut config = AuthMultisigSmartConfig::new(approvers, threshold)?
         .with_proc_policies(proc_policy_map)?
-        .with_spending(SpendingPolicyConfig::new(
-            100,
-            AmountLimits::new(
-                amount_limits[0],
-                amount_limits[1],
-                amount_limits[2],
-                amount_limits[3],
-            ),
-            TierThresholds::new(
-                tier_thresholds[0],
-                tier_thresholds[1],
-                tier_thresholds[2],
-                tier_thresholds[3],
-            ),
-        ))
-        .with_timelock_controller_config(TimelockControllerConfig::new(30, 2));
+        .with_spending(SpendingPolicy::new(100, amount_limits, tier_thresholds))
+        .with_delayed_execution(DelayedExecutionPolicy::new(30, 2));
 
-    if let Some(([prefix, suffix], get_price_proc_root)) = oracle_config {
-        config = config.with_oracle_reader(OracleReaderConfig::new(
-            OracleId::new(prefix, suffix),
-            get_price_proc_root,
-        ));
+    if let Some((oracle_id, get_price_proc_root)) = oracle_config {
+        config = config.with_oracle_reader(OracleReaderConfig::new(oracle_id, get_price_proc_root));
     }
 
     let multisig_account = AccountBuilder::new([0; 32])
@@ -253,8 +240,8 @@ fn create_multisig_smart_account_with_assets(
     public_keys: &[PublicKey],
     auth_scheme: AuthScheme,
     assets: Vec<FungibleAsset>,
-    amount_limits: [u64; 4],
-    tier_thresholds: [u32; 4],
+    amount_limits: AmountLimits,
+    tier_thresholds: TierThresholds,
     proc_policy_map: Vec<(Word, ProcedurePolicy)>,
 ) -> anyhow::Result<Account> {
     create_multisig_smart_account_with_assets_and_optional_oracle(
@@ -274,8 +261,8 @@ fn create_multisig_smart_account_with_assets_and_oracle(
     public_keys: &[PublicKey],
     auth_scheme: AuthScheme,
     assets: Vec<FungibleAsset>,
-    amount_limits: [u64; 4],
-    tier_thresholds: [u32; 4],
+    amount_limits: AmountLimits,
+    tier_thresholds: TierThresholds,
     proc_policy_map: Vec<(Word, ProcedurePolicy)>,
     oracle_fixture: &TestOracleFixture,
 ) -> anyhow::Result<Account> {
@@ -287,7 +274,7 @@ fn create_multisig_smart_account_with_assets_and_oracle(
         amount_limits,
         tier_thresholds,
         proc_policy_map,
-        Some((oracle_fixture.oracle_id, oracle_fixture.get_price_proc_root)),
+        Some((oracle_fixture.oracle_id(), oracle_fixture.get_price_proc_root)),
     )
 }
 
@@ -312,8 +299,8 @@ fn create_multisig_smart_with_fixed_test_configuration_and_oracle(
             .into_iter()
             .map(|(account_id, amount)| FungibleAsset::new(account_id, amount).unwrap())
             .collect(),
-        [500, 1000, 2000, 1500],
-        [1, 2, 3, 4],
+        AmountLimits::new(500, 1000, 2000, 1500),
+        TierThresholds::new(1, 2, 3, 4),
         proc_policy_map,
         oracle_fixture,
     )
@@ -378,8 +365,8 @@ fn create_multisig_account_with_schemes(
             AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?,
             starting_balance,
         )?],
-        [500, 1000, 2000, 1500],
-        [1, 2u32.min(num_approvers), 3u32.min(num_approvers), num_approvers],
+        AmountLimits::new(500, 1000, 2000, 1500),
+        TierThresholds::new(1, 2u32.min(num_approvers), 3u32.min(num_approvers), num_approvers),
         proc_policy_map,
     )
 }
@@ -773,20 +760,16 @@ fn test_multisig_smart_oracle_config_is_stored_and_used() -> anyhow::Result<()> 
             AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?,
             100,
         )?],
-        [500, 1000, 2000, 1500],
-        [1, 2, 2, 2],
+        AmountLimits::new(500, 1000, 2000, 1500),
+        TierThresholds::new(1, 2, 2, 2),
         vec![],
         &oracle_fixture,
     )?;
 
+    let [oracle_prefix, oracle_suffix] = oracle_fixture.oracle_id().as_felt_pair();
     assert_eq!(
         multisig_account.storage().get_item(AuthMultisigSmart::oracle_config_slot())?,
-        Word::from([
-            oracle_fixture.oracle_id[0],
-            oracle_fixture.oracle_id[1],
-            Felt::ZERO,
-            Felt::ZERO,
-        ])
+        Word::from([oracle_prefix, oracle_suffix, Felt::ZERO, Felt::ZERO])
     );
     assert_eq!(
         multisig_account
@@ -818,8 +801,8 @@ async fn test_multisig_smart_oracle_pricing_uses_foreign_value_instead_of_raw_am
         &public_keys,
         auth_scheme,
         assets,
-        [500, 1000, 2000, 1500],
-        [1, 2, 3, 3],
+        AmountLimits::new(500, 1000, 2000, 1500),
+        TierThresholds::new(1, 2, 3, 3),
         vec![],
         &oracle_fixture,
     )?;
@@ -914,8 +897,8 @@ async fn test_multisig_smart_oracle_untracked_assets_do_not_raise_spending_tier(
         &public_keys,
         auth_scheme,
         assets,
-        [500, 1000, 2000, 1500],
-        [2, 2, 2, 2],
+        AmountLimits::new(500, 1000, 2000, 1500),
+        TierThresholds::new(2, 2, 2, 2),
         vec![],
         &oracle_fixture,
     )?;
@@ -984,8 +967,8 @@ async fn test_multisig_smart_oracle_pricing_missing_foreign_account_fails() -> a
             AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)?,
             1_000,
         )?],
-        [500, 1000, 2000, 1500],
-        [1, 2, 2, 2],
+        AmountLimits::new(500, 1000, 2000, 1500),
+        TierThresholds::new(1, 2, 2, 2),
         vec![],
         &oracle_fixture,
     )?;
@@ -1038,11 +1021,11 @@ async fn test_multisig_smart_oracle_pricing_wrong_proc_root_fails() -> anyhow::R
             AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)?,
             1_000,
         )?],
-        [500, 1000, 2000, 1500],
-        [1, 2, 2, 2],
+        AmountLimits::new(500, 1000, 2000, 1500),
+        TierThresholds::new(1, 2, 2, 2),
         vec![],
         Some((
-            oracle_fixture.oracle_id,
+            oracle_fixture.oracle_id(),
             Word::from([
                 Felt::from(999u32),
                 Felt::from(998u32),
@@ -1107,8 +1090,8 @@ async fn test_multisig_smart_high_spending_escalates_above_default_threshold(
         &public_keys,
         auth_scheme,
         assets,
-        [500, 1000, 2000, 1500],
-        [1, 2, 3, 5],
+        AmountLimits::new(500, 1000, 2000, 1500),
+        TierThresholds::new(1, 2, 3, 5),
         vec![],
         &oracle_fixture,
     )?;
@@ -1216,8 +1199,8 @@ async fn test_multisig_smart_low_spending_uses_tier_threshold_instead_of_high_de
         &public_keys,
         auth_scheme,
         assets,
-        [500, 1000, 2000, 1500],
-        [2, 3, 4, 5],
+        AmountLimits::new(500, 1000, 2000, 1500),
+        TierThresholds::new(2, 3, 4, 5),
         vec![],
         &oracle_fixture,
     )?;
@@ -1321,8 +1304,8 @@ async fn test_multisig_smart_receive_asset_policy_overrides_default_three_of_thr
         &public_keys,
         auth_scheme,
         assets,
-        [500, 1000, 2000, 1500],
-        [3, 3, 3, 3],
+        AmountLimits::new(500, 1000, 2000, 1500),
+        TierThresholds::new(3, 3, 3, 3),
         proc_policy_map,
     )?;
 
@@ -1388,7 +1371,7 @@ async fn test_multisig_smart_delayed_only_proc_rejects_signed_direct_path(
         auth_scheme,
         100,
         vec![(
-            AuthMultisigSmartPresets::update_timelock_controller(),
+            AuthMultisigSmartPresets::update_delayed_execution_policy(),
             ProcedurePolicy::with_delay_threshold(1)?,
         )],
     )?;
@@ -1400,7 +1383,7 @@ async fn test_multisig_smart_delayed_only_proc_rejects_signed_direct_path(
         begin
             push.2
             push.40
-            call.::miden::standards::components::auth::multisig_smart::update_timelock_controller
+            call.::miden::standards::components::auth::multisig_smart::update_delayed_execution_policy
             drop
             drop
         end
@@ -1450,7 +1433,7 @@ async fn test_multisig_smart_delayed_only_execute_lane_still_returns_tx_summary_
         auth_scheme,
         100,
         vec![(
-            AuthMultisigSmartPresets::update_timelock_controller(),
+            AuthMultisigSmartPresets::update_delayed_execution_policy(),
             ProcedurePolicy::with_delay_threshold(1)?,
         )],
     )?;
@@ -1463,7 +1446,7 @@ async fn test_multisig_smart_delayed_only_execute_lane_still_returns_tx_summary_
             call.::miden::standards::components::auth::multisig_smart::execute_proposed_transaction
             push.2
             push.40
-            call.::miden::standards::components::auth::multisig_smart::update_timelock_controller
+            call.::miden::standards::components::auth::multisig_smart::update_delayed_execution_policy
             drop
             drop
         end
@@ -1547,8 +1530,8 @@ async fn test_multisig_smart_low_spending_send_note_uses_tier_threshold_over_def
         &public_keys,
         auth_scheme,
         assets,
-        [500, 1000, 2000, 1500],
-        [1, 2, 2, 2],
+        AmountLimits::new(500, 1000, 2000, 1500),
+        TierThresholds::new(1, 2, 2, 2),
         vec![],
         &oracle_fixture,
     )?;
@@ -2081,8 +2064,8 @@ async fn test_multisig_smart_proposal_stores_unlock_timestamp_and_enforces_min_d
         &public_keys,
         auth_scheme,
         assets,
-        [500, 1000, 2000, 1500],
-        [1, 2, 2, 3],
+        AmountLimits::new(500, 1000, 2000, 1500),
+        TierThresholds::new(1, 2, 2, 3),
         vec![],
         &oracle_fixture,
     )?;
@@ -2725,8 +2708,8 @@ async fn test_multisig_smart_proc_threshold_override_dominates_spending_tier(
         &public_keys,
         auth_scheme,
         assets,
-        [500, 1000, 2000, 1500],
-        [1, 2, 3, 4],
+        AmountLimits::new(500, 1000, 2000, 1500),
+        TierThresholds::new(1, 2, 3, 4),
         proc_policy_map,
     )?;
 

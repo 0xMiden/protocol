@@ -7,7 +7,7 @@ use miden::standards::auth::multisig::APPROVER_PUBLIC_KEYS_SLOT
 use miden::standards::auth::multisig::APPROVER_SCHEME_ID_SLOT
 use miden::standards::auth::multisig::THRESHOLD_CONFIG_SLOT
 use miden::standards::auth::multisig_smart::spending_limits
-use miden::standards::auth::multisig_smart::timelock_controller
+use miden::standards::auth::multisig_smart::delayed_execution
 use miden::standards::auth::signature
 use miden::standards::auth::tx_policy
 
@@ -162,28 +162,32 @@ proc multisig_config_to_num_approvers
     # => [num_approvers, MULTISIG_CONFIG]
 end
 
-#! Computes the effective transaction threshold.
+#! Computes the effective transaction threshold by combining the procedure-policy max and the
+#! spending-policy tier and applying `default_threshold` as a fallback.
 #!
-#! Used as a fallback layer on top of `compute_called_proc_policy`: when no non-auth procedure was
-#! called (policy_threshold is 0), the tx still needs to require at least `default_threshold`
-#! signatures. When any non-auth procedure was called, `compute_called_proc_policy` has already
-#! folded `default_threshold` into the max for every unpolicied procedure, so `policy_threshold`
-#! alone reflects the correct requirement and is returned as-is.
-#!
-#! Inputs:  [default_threshold, policy_threshold]
+#! Inputs:  [default_threshold, policy_threshold, spending_threshold]
 #! Outputs: [transaction_threshold]
 #!
 #! Where:
-#! - policy_threshold is the max contribution across all called non-auth procedures (each
-#!   contributes either its policy-selected threshold or `default_threshold` when unpolicied);
-#!   it is 0 only when no non-auth procedure was called.
 #! - default_threshold is the account's configured default multisig threshold.
+#! - policy_threshold is the procedure-policy contribution.
+#! - spending_threshold is the amount-derived spending-policy contribution.
 #! - transaction_threshold is the effective minimum number of signatures required.
 #!
 #! Invocation: exec
-proc compute_tx_threshold(default_threshold: u32, policy_threshold: u32) -> u32
+proc compute_tx_threshold(
+    default_threshold: u32,
+    policy_threshold: u32,
+    spending_threshold: u32,
+) -> u32
+    movdn.2 u32max
+    # => [policy_or_spending_threshold, default_threshold]
+
+    swap
+    # => [default_threshold, policy_or_spending_threshold]
+
     dup.1 eq.0
-    # => [is_policy_zero, default_threshold, policy_threshold]
+    # => [is_combined_zero, default_threshold, policy_or_spending_threshold]
 
     cdrop
     # => [effective_transaction_threshold]
@@ -415,7 +419,7 @@ end
 #! - returns the effective threshold required by the called procedure policies and
 #!   whether any policy required the delayed-execution mode.
 #!
-#! The active execution mode is read from [`timelock_controller::is_execute_path`]: when
+#! The active execution mode is read from [`delayed_execution::is_execute_path`]: when
 #! the timelock controller's `PENDING_EXECUTE` slot is set this transaction is on the
 #! delayed-execute path (mode = 1); otherwise it is on the immediate path (mode = 0).
 #!
@@ -430,7 +434,7 @@ end
 #!
 #! Invocation: exec
 proc enforce_procedure_policy(default_threshold: u32)
-    exec.timelock_controller::is_execute_path
+    exec.delayed_execution::is_execute_path
     # => [execution_mode, default_threshold]
 
     exec.compute_called_proc_policy
@@ -820,18 +824,12 @@ pub proc auth_tx(salt: word)
     # => [num_verified_signatures, TX_SUMMARY_COMMITMENT]
 
     # ------ Computing final transaction threshold ------
-    # The per-procedure pass (`compute_called_proc_policy`) has already folded `default_threshold`
-    # into every called procedure that lacked an explicit policy, so `policy_threshold` carries
-    # the procedure-side contribution. Spending limits add an independent amount-derived bound;
-    # combine the two via `u32max`. When both are zero (no called procedures and no spending),
-    # `compute_tx_threshold` falls back to `default_threshold`.
+    # `compute_tx_threshold` combines the procedure-policy and spending-policy contributions and
+    # falls back to `default_threshold` when both are zero.
+    loc_load.3
     loc_load.0
-    loc_load.3 u32max
-    # => [policy_or_spending_threshold, num_verified_signatures, TX_SUMMARY_COMMITMENT]
-
-    # compute_tx_threshold expects default_threshold on top, policy_threshold underneath.
     loc_load.1
-    # => [default_threshold, policy_or_spending_threshold, num_verified_signatures, TX_SUMMARY_COMMITMENT]
+    # => [default_threshold, policy_threshold, spending_threshold, num_verified_signatures, TX_SUMMARY_COMMITMENT]
 
     exec.compute_tx_threshold
     # => [transaction_threshold, num_verified_signatures, TX_SUMMARY_COMMITMENT]
@@ -853,7 +851,7 @@ pub proc auth_tx(salt: word)
     loc_load.2
     # => [policy_requires_delay, TX_SUMMARY_COMMITMENT]
 
-    exec.timelock_controller::is_execute_path
+    exec.delayed_execution::is_execute_path
     # => [is_execute_path, policy_requires_delay, TX_SUMMARY_COMMITMENT]
 
     # is_valid = NOT(policy_requires_delay) OR is_execute_path
@@ -872,6 +870,6 @@ pub proc auth_tx(salt: word)
     loc_load.5
     # => [num_verified_signatures, requires_delay, TX_SUMMARY_COMMITMENT]
 
-    exec.timelock_controller::finalize_timelock_proposals
+    exec.delayed_execution::finalize_timelock_proposals
     # => [TX_SUMMARY_COMMITMENT]
 end

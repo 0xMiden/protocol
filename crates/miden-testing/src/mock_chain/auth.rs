@@ -9,10 +9,10 @@ use miden_protocol::account::{AccountComponent, AccountProcedureRoot};
 use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
 use miden_standards::account::auth::multisig_smart::{
+    DelayedExecutionPolicy,
     OracleReaderConfig,
     ProcedurePolicy,
-    SpendingPolicyConfig,
-    TimelockControllerConfig,
+    SpendingPolicy,
 };
 use miden_standards::account::auth::{
     AuthGuardedMultisig,
@@ -63,8 +63,8 @@ pub enum Auth {
         threshold: u32,
         approvers: Vec<(PublicKeyCommitment, AuthScheme)>,
         proc_policy_map: Vec<(Word, ProcedurePolicy)>,
-        spending_policy: SpendingPolicyConfig,
-        timelock: TimelockControllerConfig,
+        spending_policy: SpendingPolicy,
+        timelock: DelayedExecutionPolicy,
         oracle_reader: OracleReaderConfig,
     },
 
@@ -152,7 +152,7 @@ impl Auth {
                     .and_then(|cfg| cfg.with_proc_policies(proc_policy_map.clone()))
                     .expect("invalid multisig smart config")
                     .with_spending(*spending_policy)
-                    .with_timelock_controller_config(*timelock)
+                    .with_delayed_execution(*timelock)
                     .with_oracle_reader(*oracle_reader);
 
                 let component = AuthMultisigSmart::new(config)
