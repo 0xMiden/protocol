@@ -43,17 +43,16 @@ impl BatchVerifier {
     /// - Batch proof verification fails.
     /// - The security level of the verified proof is insufficient.
     pub fn verify(&self, batch: &ProvenBatch) -> Result<(), BatchVerifierError> {
-        let stack_inputs = BatchKernel::build_input_stack(
-            batch.reference_block_commitment(),
-            batch.id().as_word(),
-        );
+        let stack_inputs =
+            BatchKernel::build_input_stack(batch.reference_block_commitment(), batch.id());
 
         // The skeleton kernel drops its inputs and emits the all-zero output region, so the proof
         // attests to empty outputs. Once the kernel computes the real commitments, these empty
         // values become `batch.input_notes().commitment()`, the batch note tree root and
         // `batch.batch_expiration_block_num()`.
-        let stack_outputs = BatchOutputs::new(Word::empty(), Word::empty(), BlockNumber::from(0u32))
-            .into_stack_outputs();
+        let stack_outputs =
+            BatchOutputs::new(Word::empty(), Word::empty(), BlockNumber::from(0u32))
+                .into_stack_outputs();
 
         let proof_security_level = verify(
             self.batch_program_info.clone(),
