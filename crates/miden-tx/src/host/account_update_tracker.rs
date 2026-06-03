@@ -3,11 +3,15 @@ use miden_protocol::account::{
     AccountCode,
     AccountDelta,
     AccountId,
+    AccountPatch,
     AccountVaultDelta,
     PartialAccount,
 };
 
+use crate::TransactionKernelError;
 use crate::host::storage_patch_tracker::StoragePatchTracker;
+use crate::host::tx_event::{AddedAssetUpdate, RemovedAssetUpdate};
+use crate::host::vault_update_tracker::VaultUpdateTracker;
 
 // ACCOUNT DELTA TRACKER
 // ================================================================================================
@@ -22,16 +26,17 @@ use crate::host::storage_patch_tracker::StoragePatchTracker;
 /// TODO: implement tracking of:
 /// - account code changes.
 #[derive(Debug, Clone)]
-pub struct AccountDeltaTracker {
+pub struct AccountUpdateTracker {
     account_id: AccountId,
     storage: StoragePatchTracker,
-    vault: AccountVaultDelta,
+    vault: VaultUpdateTracker,
     code: Option<AccountCode>,
+    initial_nonce: Felt,
     nonce_delta: Felt,
 }
 
-impl AccountDeltaTracker {
-    /// Returns a new [AccountDeltaTracker] instantiated for the specified account.
+impl AccountUpdateTracker {
+    /// Returns a new [`AccountUpdateTracker`] instantiated for the specified account.
     pub fn new(account: &PartialAccount) -> Self {
         let code = if account.is_new() {
             Some(account.code().clone())
@@ -42,9 +47,10 @@ impl AccountDeltaTracker {
         Self {
             account_id: account.id(),
             storage: StoragePatchTracker::new(account),
-            vault: AccountVaultDelta::default(),
+            vault: VaultUpdateTracker::default(),
             code,
             nonce_delta: Felt::ZERO,
+            initial_nonce: account.nonce(),
         }
     }
 
@@ -60,12 +66,20 @@ impl AccountDeltaTracker {
 
     /// Returns a reference to the vault delta.
     pub fn vault_delta(&self) -> &AccountVaultDelta {
-        &self.vault
+        self.vault.delta()
     }
 
-    /// Returns a mutable reference to the vault delta.
-    pub fn vault_delta_mut(&mut self) -> &mut AccountVaultDelta {
-        &mut self.vault
+    /// Adds an asset to the vault delta and patch.
+    pub fn add_asset(&mut self, update: AddedAssetUpdate) -> Result<(), TransactionKernelError> {
+        self.vault.add(update)
+    }
+
+    /// Removes an asset from the vault delta and patch.
+    pub fn remove_asset(
+        &mut self,
+        update: RemovedAssetUpdate,
+    ) -> Result<(), TransactionKernelError> {
+        self.vault.remove(update)
     }
 
     /// Returns a mutable reference to the current storage patch tracker.
@@ -82,10 +96,33 @@ impl AccountDeltaTracker {
         let nonce_delta = self.nonce_delta;
 
         let storage_patch = self.storage.into_patch();
-        let vault_delta = self.vault;
+        let vault_delta = self.vault.into_delta();
 
         AccountDelta::new(account_id, storage_patch, vault_delta, nonce_delta)
             .expect("account delta created in delta tracker should be valid")
             .with_code(self.code)
+    }
+
+    /// Consumes `self` and returns the resulting [`AccountPatch`].
+    ///
+    /// Normalizes the patch by removing entries for storage slots where the initial and new
+    /// value are equal.
+    #[allow(unused, reason = "TODO(patch): will be used in an upcoming PR")]
+    pub fn into_patch(self) -> AccountPatch {
+        let storage_patch = self.storage.into_patch();
+        let vault_patch = self.vault.into_patch();
+
+        let new_nonce = if self.nonce_delta == Felt::ZERO {
+            None
+        } else {
+            debug_assert!(
+                self.initial_nonce.as_canonical_u64() < (Felt::ORDER - 1),
+                "tx kernel should abort if nonce would overflow"
+            );
+            Some(self.initial_nonce + self.nonce_delta)
+        };
+
+        AccountPatch::new(self.account_id, storage_patch, vault_patch, self.code, new_nonce)
+            .expect("account patch created in delta tracker should be valid")
     }
 }

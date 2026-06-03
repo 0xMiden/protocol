@@ -22,6 +22,9 @@ pub use proven_block::ProvenBlock;
 pub mod account_tree;
 pub mod nullifier_tree;
 
+mod smt_backend;
+pub use smt_backend::{SmtBackend, SmtBackendReader};
+
 mod blockchain;
 pub use blockchain::Blockchain;
 

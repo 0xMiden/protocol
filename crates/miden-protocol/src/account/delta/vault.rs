@@ -17,9 +17,6 @@ use crate::{Felt, ONE, ZERO};
 // ACCOUNT VAULT DELTA
 // ================================================================================================
 
-/// The domain for the assets in the delta commitment.
-const DOMAIN_ASSET: Felt = Felt::ONE;
-
 /// [AccountVaultDelta] stores the difference between the initial and final account vault states.
 ///
 /// The difference is represented as follows:
@@ -33,6 +30,9 @@ pub struct AccountVaultDelta {
 }
 
 impl AccountVaultDelta {
+    /// Domain separator for assets in the account delta commitment.
+    pub(in crate::account) const DOMAIN: Felt = Felt::new_unchecked(3);
+
     /// Validates and creates an [AccountVaultDelta] with the given fungible and non-fungible asset
     /// deltas.
     ///
@@ -342,7 +342,7 @@ impl FungibleAssetDelta {
 
             let key_word = vault_key.to_word();
             elements.extend_from_slice(&[
-                DOMAIN_ASSET,
+                AccountVaultDelta::DOMAIN,
                 was_added,
                 key_word[2], // faucet_id_suffix_and_metadata
                 key_word[3], // faucet_id_prefix
@@ -504,7 +504,7 @@ impl NonFungibleAssetDelta {
 
             let key_word = asset.vault_key().to_word();
             elements.extend_from_slice(&[
-                DOMAIN_ASSET,
+                AccountVaultDelta::DOMAIN,
                 was_added,
                 key_word[2], // faucet_id_suffix_and_metadata
                 key_word[3], // faucet_id_prefix
