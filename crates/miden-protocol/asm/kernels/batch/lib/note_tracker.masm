@@ -444,8 +444,13 @@ proc process_tx_input_notes
     end
 end
 
-#! Processes every transaction in batch order, binding its output notes (first, so a created note is
-#! marked before any later transaction consumes it) then its input notes.
+#! Processes every transaction in batch order, binding its input notes then its output notes.
+#!
+#! Input notes are processed before output notes (within each transaction) so that a note created
+#! and consumed by the *same* transaction is rejected: at consume time its erasure flag is still 1
+#! (its creating output has not been processed yet), which trips the erasure ordering gate. A note
+#! created by an *earlier* transaction is still erased correctly, since that creator's outputs are
+#! processed (at its turn) before any later transaction's inputs.
 #!
 #! Inputs:  []
 #! Outputs: []
@@ -455,8 +460,8 @@ proc bind_per_tx_notes
     # => [tx_index, num_transactions]
     dup.1 dup.1 neq
     while.true
-        dup exec.process_tx_output_notes
         dup exec.process_tx_input_notes
+        dup exec.process_tx_output_notes
         add.1
         dup.1 dup.1 neq
     end

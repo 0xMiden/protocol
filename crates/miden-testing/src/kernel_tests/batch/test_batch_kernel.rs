@@ -339,3 +339,39 @@ fn batch_kernel_rejects_output_note_missing_from_list() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+/// Exercises the erasure ordering gate: claiming a consumed input note is created in-batch (by
+/// adding its note id to the output list) without any transaction actually creating it leaves the
+/// note expected-to-be-erased, so consuming it trips the consume-before-create /
+/// circular-dependency check.
+#[test]
+fn batch_kernel_rejects_consume_before_create() -> anyhow::Result<()> {
+    let mut setup = setup_chain();
+    let batch = two_tx_batch(&mut setup)?;
+
+    // `two_tx_batch`'s tx2 consumes `mock_note(81)` as unauthenticated. Add that note's id to the
+    // output list as a phantom creation that no transaction performs.
+    let phantom_created_id = mock_note(81).id().as_word();
+    let mut ids: Vec<Word> = Vec::new();
+    for tx in batch.transactions() {
+        for note in tx.output_notes().iter() {
+            ids.push(note.id().as_word());
+        }
+    }
+    ids.push(phantom_created_id);
+    ids.sort_unstable();
+    let mut blob = Vec::with_capacity(ids.len() * 8);
+    for note_id in &ids {
+        blob.extend_from_slice(note_id.as_elements());
+        blob.extend_from_slice(Word::empty().as_elements());
+    }
+    let override_advice = AdviceInputs::default().with_map([(output_note_list_key(), blob)]);
+
+    let result = BatchExecutor::new().extend_advice_inputs(override_advice).execute(batch);
+    assert!(
+        result.is_err(),
+        "kernel must reject consuming a note whose claimed creator never runs"
+    );
+
+    Ok(())
+}
