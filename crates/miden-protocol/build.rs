@@ -20,6 +20,7 @@ const ASM_PROTOCOL_DIR: &str = "protocol";
 const SHARED_UTILS_DIR: &str = "shared_utils";
 const SHARED_MODULES_DIR: &str = "shared_modules";
 const ASM_TX_KERNEL_DIR: &str = "kernels/transaction";
+const ASM_BATCH_KERNEL_DIR: &str = "kernels/batch";
 
 const PROTOCOL_LIB_NAMESPACE: &str = "miden::protocol";
 
@@ -85,11 +86,30 @@ fn main() -> Result<()> {
     let protocol_lib = compile_protocol_lib(&source_dir, &target_dir, assembler.clone())?;
     assembler.link_dynamic_library(protocol_lib)?;
 
+    // compile batch kernel
+    compile_batch_kernel(&source_dir, &target_dir.join("kernels"))?;
+
     generate_error_constants(&source_dir, &build_dir)?;
 
     generate_event_constants(&source_dir, &target_dir)?;
 
     Ok(())
+}
+
+// COMPILE BATCH KERNEL
+// ================================================================================================
+
+/// Reads the batch kernel MASM source from the `source_dir`, compiles it, and saves the result
+/// to the `target_dir` as a `batch_kernel.masb` binary file.
+fn compile_batch_kernel(source_dir: &Path, target_dir: &Path) -> Result<()> {
+    let batch_kernel_dir = source_dir.join(ASM_BATCH_KERNEL_DIR);
+    let main_file_path = batch_kernel_dir.join("main.masm");
+
+    let assembler = build_assembler(None)?;
+    let batch_main = assembler.assemble_program(main_file_path)?;
+
+    let masb_file_path = target_dir.join("batch_kernel.masb");
+    batch_main.write_to_file(masb_file_path).into_diagnostic()
 }
 
 // COMPILE TRANSACTION KERNEL

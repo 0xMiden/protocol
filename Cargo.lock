@@ -2103,7 +2103,9 @@ dependencies = [
 name = "miden-tx-batch-prover"
 version = "0.16.0"
 dependencies = [
+ "miden-processor",
  "miden-protocol",
+ "miden-prover",
 ]
 
 [[package]]

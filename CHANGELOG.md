@@ -3,6 +3,7 @@
 ## v0.16.0 (TBD)
 
 ### Changes
+- Added a skeleton batch kernel ([#1122](https://github.com/0xMiden/protocol/issues/1122)) wired through `LocalBatchProver::prove` and attached to `ProvenBatch` as an `ExecutionProof`. It does not yet perform any verification.
 
 - [BREAKING] Renamed `AccountStorageDelta` to `AccountStoragePatch` ([#3002](https://github.com/0xMiden/protocol/pull/3002)).
 - [BREAKING] Extracted `NullifierTreeBackendReader` and `AccountTreeBackendReader` traits from existing `NullifierTreeBackend` and `AccountTreeBackend` traits ([#2755](https://github.com/0xMiden/protocol/pull/2755)).
