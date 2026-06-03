@@ -88,7 +88,7 @@ pub proc get_nonce
     # => [nonce, pad(15)]
 
     # clean the stack
-    swapdw dropw dropw swapw dropw movdn.3 drop drop drop
+    swapw.3 dropw dropw dropw movdn.3 drop drop drop
     # => [nonce]
 end
 
@@ -662,7 +662,7 @@ pub proc has_procedure
     # => [is_procedure_available, pad(15)]
 
     # clean the stack
-    swapdw dropw dropw swapw dropw movdn.3 drop drop drop
+    swapw.3 dropw dropw dropw movdn.3 drop drop drop
     # => [is_procedure_available]
 end
 
