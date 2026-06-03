@@ -736,7 +736,7 @@ proc add_input_note_assets_to_vault
 
         # the witnesses for the note assets should be added prior to transaction execution and so
         # there should be no need to fetch them lazily via an event.
-        exec.asset_vault::add_asset dropw
+        exec.asset_vault::add_asset dropw dropw
         # => [assets_start_ptr, assets_end_ptr, input_vault_root_ptr]
 
         add.ASSET_SIZE
