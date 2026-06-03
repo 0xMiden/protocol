@@ -5,7 +5,6 @@ use $kernel::asset::ASSET_SIZE
 use $kernel::link_map
 use $kernel::memory
 use $kernel::memory::ACCOUNT_DELTA_ASSET_PTR
-use $kernel::util::asset::FUNGIBLE_ASSET_MAX_AMOUNT
 use miden::core::crypto::hashes::poseidon2
 use miden::core::word
 
@@ -833,76 +832,4 @@ pub proc set_map_item
 
     exec.link_map::set drop
     # => []
-end
-
-# FUNGIBLE ASSET AMOUNT MATH
-# -------------------------------------------------------------------------------------------------
-
-# Asset Amount Deltas can be signed or unsigned and are represented as felts.
-#
-# Any value in range [0, 2^63 - 2^31] (inclusive) is interpreted as a positive value.
-# Any value in range [2^63 - 2^31 + 1, 2^64 - 2^32] (inclusive) is interpreted as a negative value.
-# 2^64 - 2^32 represents -1, 2^64 - 2^32 - 1 represents -2, and so on, up to 2^63 - 2^31 + 1 which
-# represents -(2^63 - 2^31).
-#
-# This allows us to use the add and sub operations which wrap around. E.g. push.5 sub.6 add.1 will
-# correctly result in 0.
-#
-# To negate a negative `value`, we can multiply the value by -1, e.g. the result of push.0 sub.1.
-#
-# Don't we have to check for overflows? No, because we're building on top of the guarantees of the
-# asset vault. It guarantees that the max value that can be added to the vault within a transaction
-# is asset::FUNGIBLE_ASSET_MAX_AMOUNT and that the max value that can be removed is also that.
-# Since the delta amount range can represent positive and negative
-# asset::FUNGIBLE_ASSET_MAX_AMOUNT, this works out.
-#
-# With these ranges every positive value has a negative counterpart and vice versa. This is
-# **unlike** two's complements because the goldilocks modulus is odd while the "modulus" in
-# binary numbers is even. For example, a signed 8-bit integer can represent 128 positive and 128
-# negative values, because the total number of values is 256 divided by two. Zero is counted on the
-# positive side and so i8::MAX is 127 and i8::MIN is -128 - therefore not every negative value has
-# a positive counterpart. The "modulus", if you will, is 256 and even.
-#
-# Since the golidlocks modulus is 2^64 - 2^32 + 1 and therefore odd, we can represent
-# modulus / 2 + 1 positive and modulus / 2 negative values. Again, 0 is counted on the positive
-# side and so the largest representable positive value is modulus / 2 and the smallest
-# representable negative value is -(modulus / 2). So, every negative value has a positive 
-# counterpart (and vice versa).
-
-#! Computes the absolute value of the given delta amount represented as a felt and returns a
-#! boolean flag indicating whether the value is positive (or unsigned).
-#!
-#! Inputs: [delta_amount]
-#! Outputs: [is_delta_amount_positive, delta_amount_abs]
-#!
-#! Where:
-#! - delta_amount is the delta amount that can span the entire felt range.
-#! - is_delta_amount_positive indicates whether the delta amount is positive.
-#! - delta_amount_abs is the absolute value of the delta_amount, meaning negative values are
-#!   remapped to their positive equivalent value.
-proc delta_amount_absolute
-    dup exec.is_delta_amount_negative not
-    # => [is_positive, delta_amount]
-
-    # map 0 -> -1 and 1 -> 1
-    dup mul.2 sub.1
-    # => [multiplier, is_positive, delta_amount]
-
-    # multiply negative values by -1 and positive values by 1 to get the absolute value
-    movup.2 mul swap
-    # => [is_positive, delta_amount_abs]
-end
-
-#! Returns 1 if the given delta amount is negative (or signed).
-#!
-#! Inputs: [delta_amount]
-#! Outputs: [is_delta_amount_negative]
-#!
-#! Where:
-#! - delta_amount is the delta amount that can span the entire felt range.
-#! - is_delta_amount_negative indicates whether the delta amount represents a negative value.
-proc is_delta_amount_negative
-    # delta_amount represents a negative number if it is greater than the max amount
-    gt.FUNGIBLE_ASSET_MAX_AMOUNT
-    # => [is_delta_amount_negative]
 end
