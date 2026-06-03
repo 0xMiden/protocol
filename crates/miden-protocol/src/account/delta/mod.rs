@@ -206,13 +206,12 @@ impl AccountDelta {
     /// - Asset Delta
     ///   - For each **added** asset, sorted by its vault key:
     ///     - Append `[ASSET_KEY, ASSET_VALUE]`.
-    ///     - Append `[domain = 3, num_added_assets, delta_op = 1, 0, 0]` where `num_added_assets`
-    ///       is the number of added assets and `delta_op` is set to `1` indicating asset addition.
+    ///   - Append `[domain = 3, delta_op = 1, num_added_assets, 0, 0]` where `num_added_assets` is
+    ///     the number of added assets and `delta_op` is set to `1` indicating asset addition.
     ///   - For each **removed** asset, sorted by its vault key:
     ///     - Append `[ASSET_KEY, ASSET_VALUE]`.
-    ///     - Append `[domain = 3, num_removed_assets, delta_op = 2, 0, 0]` where
-    ///       `num_removed_assets` is the number of removed assets and `delta_op` is set to `2`
-    ///       indicating asset removal.
+    ///   - Append `[domain = 3, delta_op = 2, num_removed_assets, 0, 0]` where `num_removed_assets`
+    ///     is the number of removed assets and `delta_op` is set to `2` indicating asset removal.
     ///   - Note that the domain is the same independent of asset addition or removal, since the
     ///     `delta_op` sufficiently distinguishes the two domains.
     /// - Storage Slots are sorted by slot ID and are iterated in this order. For each slot **whose

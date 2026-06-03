@@ -102,41 +102,26 @@ impl AccountVaultDelta {
             self.removed_assets().map(|asset| (asset.vault_key(), asset.to_value_word())),
         );
 
-        let num_added_assets = added_assets.len();
-        for (asset_vault_key, asset_value) in added_assets {
+        Self::add_asset_section(Self::DELTA_OP_ADD, added_assets, elements);
+        Self::add_asset_section(Self::DELTA_OP_REMOVE, removed_assets, elements);
+    }
+
+    fn add_asset_section(
+        delta_op: Felt,
+        assets: BTreeMap<AssetVaultKey, Word>,
+        elements: &mut Vec<Felt>,
+    ) {
+        let num_changed_assets = assets.len();
+        for (asset_vault_key, asset_value) in assets {
             elements.extend_from_slice(asset_vault_key.to_word().as_elements());
             elements.extend_from_slice(asset_value.as_elements());
         }
 
-        if num_added_assets != 0 {
-            let num_added_assets = Felt::try_from(num_added_assets as u64)
-                .expect("number of added assets should not exceed max representable felt");
+        if num_changed_assets != 0 {
+            let num_changed_assets = Felt::try_from(num_changed_assets as u64)
+                .expect("number of changed assets should not exceed max representable felt");
 
-            elements.extend_from_slice(&[
-                Self::DOMAIN,
-                num_added_assets,
-                Self::DELTA_OP_ADD,
-                Felt::ZERO,
-            ]);
-            elements.extend_from_slice(Word::empty().as_elements());
-        }
-
-        let num_removed_assets = removed_assets.len();
-        for (asset_vault_key, asset_value) in removed_assets {
-            elements.extend_from_slice(asset_vault_key.to_word().as_elements());
-            elements.extend_from_slice(asset_value.as_elements());
-        }
-
-        if num_removed_assets != 0 {
-            let num_removed_assets = Felt::try_from(num_removed_assets as u64)
-                .expect("number of removed assets should not exceed max representable felt");
-
-            elements.extend_from_slice(&[
-                Self::DOMAIN,
-                num_removed_assets,
-                Self::DELTA_OP_REMOVE,
-                Felt::ZERO,
-            ]);
+            elements.extend_from_slice(&[Self::DOMAIN, delta_op, num_changed_assets, Felt::ZERO]);
             elements.extend_from_slice(Word::empty().as_elements());
         }
     }

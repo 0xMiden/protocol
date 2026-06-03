@@ -45,8 +45,8 @@ const TRACK_ASSET_DELTA_OP_LOC = 0
 
 #! Locals in combine_asset_delta that store the incoming and current delta operations so that the
 #! new delta operation can be selected after the magnitude comparison.
-const COMBINE_INCOMING_OP_LOC = 0
-const COMBINE_CURRENT_OP_LOC = 1
+const COMBINE_INCOMING_DELTA_OP_LOC = 0
+const COMBINE_CURRENT_DELTA_OP_LOC = 1
 
 #! Locals in update_asset_delta. The last region is a buffer of removed assets that is hashed after
 #! the added-assets section.
@@ -102,12 +102,6 @@ pub proc compute_commitment
     # => [RATE0, RATE1, CAPACITY, ID_AND_NONCE_DIGEST]
 
     exec.update_asset_delta
-    # => [RATE0, RATE1, CAPACITY, ID_AND_NONCE_DIGEST]
-
-    # exec.update_fungible_asset_delta
-    # => [RATE0, RATE1, CAPACITY, ID_AND_NONCE_DIGEST]
-
-    # exec.update_non_fungible_asset_delta
     # => [RATE0, RATE1, CAPACITY, ID_AND_NONCE_DIGEST]
 
     exec.update_storage_patch
@@ -472,9 +466,11 @@ proc update_asset_delta
         dropw dropw
         # => [CAPACITY]
 
-        padw push.0 push.DELTA_OP_ADD
-        loc_load.UPDATE_ASSET_DELTA_NUM_ADDED_LOC push.DOMAIN_ASSET
-        # => [[domain, num_added_assets, delta_op, 0], EMPTY_WORD, CAPACITY]
+        padw push.0
+        loc_load.UPDATE_ASSET_DELTA_NUM_ADDED_LOC
+        push.DELTA_OP_ADD
+        push.DOMAIN_ASSET
+        # => [[domain, delta_op, num_added_assets, 0], EMPTY_WORD, CAPACITY]
 
         exec.poseidon2::permute
         # => [RATE0, RATE1, CAPACITY]
@@ -532,9 +528,11 @@ proc update_asset_delta
         dropw dropw
         # => [CAPACITY]
 
-        padw push.0 push.DELTA_OP_REMOVE
-        loc_load.UPDATE_ASSET_DELTA_NUM_REMOVED_LOC push.DOMAIN_ASSET
-        # => [[domain, num_removed_assets, delta_op, 0], EMPTY_WORD, CAPACITY]
+        padw push.0
+        loc_load.UPDATE_ASSET_DELTA_NUM_REMOVED_LOC
+        push.DELTA_OP_REMOVE
+        push.DOMAIN_ASSET
+        # => [[domain, delta_op, num_removed_assets, 0], EMPTY_WORD, CAPACITY]
 
         exec.poseidon2::permute
         # => [RATE0, RATE1, CAPACITY]
@@ -657,8 +655,9 @@ proc track_asset_delta
         drop drop drop
         # => [INCOMING_ASSET_VALUE, ASSET_KEY]
 
-        # we checked that the value is not empty and so the addition is a "proper" one (e.g. not
-        # adding an asset with amount 0)
+        # we checked that the value is not empty and so the addition or removal is a "proper" one
+        # (e.g. not adding/removing an asset with amount 0), so storing the provided delta op is
+        # fine (rather than DELTA_OP_NONE)
         push.0.0.0 loc_load.TRACK_ASSET_DELTA_OP_LOC movdnw.2 swapw
         # => [ASSET_KEY, INCOMING_ASSET_VALUE, [delta_op, 0, 0, 0]]
     else
@@ -669,10 +668,7 @@ proc track_asset_delta
         movdn.3 drop drop drop
         # => [current_delta_op, ASSET_KEY, CURRENT_ASSET_VALUE, INCOMING_ASSET_VALUE, ASSET_KEY]
 
-        # note that the result of this combining could be the EMPTY_WORD, in which case we also
-        # need to write to the delta entry to overwrite the previous value. In that case,
-        # combine_asset_delta returns DELTA_OP_NONE as the new delta op, which maintains the
-        # invariant that empty asset values are tagged with DELTA_OP_NONE.
+        # combine current and incoming asset values
         loc_load.TRACK_ASSET_DELTA_OP_LOC
         exec.combine_asset_delta
         # => [new_delta_op, COMBINED_ASSET_VALUE, ASSET_KEY]
@@ -703,6 +699,9 @@ end
 #! The + and - operations are the merge and split implementations of the asset, according to its
 #! asset composition. In particular, if None, they panic.
 #!
+#! The second case less formally: If we combine two delta values, no matter what order they are in,
+#! we can compute "greater - lesser" and reuse the delta op of the greater value.
+#!
 #! Examples:
 #! - combine(add(30), add(40)) results in add(70)
 #! - combine(remove(30), remove(40)) results in remove(70)
@@ -713,21 +712,29 @@ end
 #! Inputs:  [incoming_delta_op, current_delta_op, ASSET_KEY, CURRENT_ASSET_VALUE, INCOMING_ASSET_VALUE]
 #! Outputs: [new_delta_op, COMBINED_ASSET_VALUE]
 #!
-#! The `new_delta_op` is the delta op of the combined delta:
-#! - When the deltas cancel out, `new_delta_op` is `DELTA_OP_NONE` and `COMBINED_ASSET_VALUE` is the
-#!   empty word.
-#! - When the provided delta ops are the same (both adds or both removes), `new_delta_op` matches
-#!   the input ops.
-#! - When the deltas oppose each other but their magnitudes differ, `new_delta_op` is the delta op
-#!   of whichever input had the larger magnitude.
+#! Where:
+#! - incoming_delta_op is the delta op (add or remove) of the incoming delta.
+#! - current_delta_op is the delta op (add or remove) of the delta currently tracked for ASSET_KEY.
+#! - ASSET_KEY is the vault key of the asset being combined.
+#! - CURRENT_ASSET_VALUE is the asset value currently tracked in the delta for ASSET_KEY.
+#! - INCOMING_ASSET_VALUE is the asset value being combined into the delta.
+#! - new_delta_op is the delta op of the combined delta:
+#!   - when the deltas cancel out, new_delta_op is DELTA_OP_NONE and COMBINED_ASSET_VALUE is the
+#!     empty word.
+#!   - when the provided delta ops are the same (both adds or both removes), new_delta_op matches
+#!     the input ops.
+#!   - when the deltas oppose each other but their magnitudes differ, new_delta_op is the delta op
+#!     of whichever input had the larger magnitude.
+#! - COMBINED_ASSET_VALUE is the resulting asset value of the combined delta.
 #!
 #! Panics if:
-#! - the asset composition is set to None TODO ...
-#! - TODO
+#! - the asset's composition is None.
+#! - the asset's composition is Custom (not yet supported).
+#! - the delta ops match and merging the two asset values would exceed FUNGIBLE_ASSET_MAX_AMOUNT.
 @locals(2)
 proc combine_asset_delta
-    dup loc_store.COMBINE_INCOMING_OP_LOC
-    dup.1 loc_store.COMBINE_CURRENT_OP_LOC
+    dup loc_store.COMBINE_INCOMING_DELTA_OP_LOC
+    dup.1 loc_store.COMBINE_CURRENT_DELTA_OP_LOC
     # => [incoming_delta_op, current_delta_op, ASSET_KEY, CURRENT_ASSET_VALUE, INCOMING_ASSET_VALUE]
 
     eq
@@ -737,7 +744,7 @@ proc combine_asset_delta
         exec.asset::merge
         # => [MERGED_ASSET_VALUE]
 
-        loc_load.COMBINE_INCOMING_OP_LOC
+        loc_load.COMBINE_INCOMING_DELTA_OP_LOC
         # => [new_delta_op, MERGED_ASSET_VALUE]
     else
         movdnw.2 exec.word::test_eq
@@ -745,7 +752,7 @@ proc combine_asset_delta
 
         if.true
             # the two deltas cancel out exactly
-            dropw dropw padw swapw dropw
+            dropw dropw dropw padw
             # => [EMPTY_WORD]
 
             push.DELTA_OP_NONE
@@ -770,8 +777,8 @@ proc combine_asset_delta
             movupw.2 exec.asset::split
             # => [COMBINED_ASSET_VALUE, is_incoming_lt_current]
 
-            loc_load.COMBINE_INCOMING_OP_LOC
-            loc_load.COMBINE_CURRENT_OP_LOC
+            loc_load.COMBINE_INCOMING_DELTA_OP_LOC
+            loc_load.COMBINE_CURRENT_DELTA_OP_LOC
             movup.6
             # => [is_incoming_lt_current, current_delta_op, incoming_delta_op, COMBINED_ASSET_VALUE]
 

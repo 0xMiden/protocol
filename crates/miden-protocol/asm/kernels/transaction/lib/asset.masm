@@ -250,7 +250,7 @@ end
 #! Returns 1 if OTHER_ASSET_VALUE is less than CURRENT_ASSET_VALUE, 0 otherwise.
 #!
 #! WARNING: This procedure assumes both asset values belong to the asset identified by ASSET_KEY
-#! and have already been validated, and that it is never called when the two values are equal.
+#! and have already been validated.
 #!
 #! Inputs:  [ASSET_KEY, CURRENT_ASSET_VALUE, OTHER_ASSET_VALUE]
 #! Outputs: [is_lt]
