@@ -71,7 +71,7 @@ proc burn_fungible_asset
 
     # remove the asset from the input vault for asset preservation
     exec.asset_vault::remove_fungible_asset
-    # => [INITIAL_ASSET_VALUE, REMAINING_ASSET_VALUE]
+    # => [INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE]
 
     # drop both values (not meaningful to the caller)
     dropw dropw
@@ -144,7 +144,7 @@ proc burn_non_fungible_asset
     # => [ASSET_KEY, ASSET_VALUE, input_vault_root_ptr]
 
     exec.asset_vault::remove_non_fungible_asset
-    # => [INITIAL_ASSET_VALUE, REMAINING_ASSET_VALUE]
+    # => [INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE]
 
     # drop both values (not meaningful to the caller)
     dropw dropw
