@@ -71,6 +71,12 @@ pub mod protocol {
     include!(concat!(env!("OUT_DIR"), "/protocol_errors.rs"));
 }
 
+/// The errors from the MASM code of the batch kernel.
+#[cfg(any(feature = "testing", test))]
+pub mod batch_kernel {
+    include!(concat!(env!("OUT_DIR"), "/batch_kernel_errors.rs"));
+}
+
 // ACCOUNT COMPONENT TEMPLATE ERROR
 // ================================================================================================
 

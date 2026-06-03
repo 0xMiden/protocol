@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use anyhow::Context;
 use miden_protocol::batch::{BatchKernel, ProposedBatch};
 use miden_protocol::block::BlockNumber;
+use miden_protocol::errors::{MasmError, ProvenBatchError, batch_kernel};
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::vm::AdviceInputs;
 use miden_protocol::{Felt, Word};
@@ -72,6 +73,18 @@ fn tampered_advice_for(batch: &ProposedBatch, key: Word) -> AdviceInputs {
         .collect();
     tampered[0] += Felt::from(1u32);
     AdviceInputs::default().with_map([(key, tampered)])
+}
+
+/// Asserts that batch execution failed with the kernel raising the expected MASM assertion error.
+fn assert_kernel_error<T>(result: Result<T, ProvenBatchError>, expected: MasmError) {
+    match result {
+        Ok(_) => panic!("expected batch kernel error {expected}, but execution succeeded"),
+        Err(ProvenBatchError::BatchKernelExecutionFailed(execution_error)) => assert!(
+            expected.matches_execution_error(&execution_error),
+            "batch kernel error did not match:\n  expected: {expected}\n  actual: {execution_error}",
+        ),
+        Err(other) => panic!("expected a batch kernel execution error {expected}, got: {other}"),
+    }
 }
 
 // HAPPY PATH
@@ -165,6 +178,11 @@ fn batch_executor_then_prover_produces_proven_batch() -> anyhow::Result<()> {
 // Each test injects a tampered advice-map entry through `BatchExecutor::extend_advice_inputs` and
 // asserts the kernel aborts. The executor builds consistent advice from the (valid) `ProposedBatch`
 // and the override then corrupts a single layer's entry, breaking that layer's hash check.
+//
+// These three checks are performed by `mem::pipe_preimage_to_memory`, whose bare `assert_eqw`
+// carries no named error code, so they assert only that execution fails. The global-list binding
+// and erasure checks below raise named `ERR_BATCH_*` errors and are asserted concretely via
+// `assert_kernel_error`.
 
 /// Tampering the `BATCH_ID` -> `(tx_id, account_id)` tuples breaks the Layer 1 hash check.
 #[test]
@@ -254,7 +272,7 @@ fn batch_kernel_rejects_input_note_missing_from_list() -> anyhow::Result<()> {
     let override_advice = AdviceInputs::default().with_map([(input_note_list_key(), blob)]);
 
     let result = BatchExecutor::new().extend_advice_inputs(override_advice).execute(batch);
-    assert!(result.is_err(), "kernel must abort when an input note is missing from the list");
+    assert_kernel_error(result, batch_kernel::ERR_BATCH_INPUT_NOTE_NOT_IN_LIST);
 
     Ok(())
 }
@@ -272,7 +290,7 @@ fn batch_kernel_rejects_duplicated_input_note_list_entry() -> anyhow::Result<()>
     let override_advice = AdviceInputs::default().with_map([(input_note_list_key(), duplicated)]);
 
     let result = BatchExecutor::new().extend_advice_inputs(override_advice).execute(batch);
-    assert!(result.is_err(), "kernel must abort on a duplicate input-note list entry");
+    assert_kernel_error(result, batch_kernel::ERR_BATCH_NOTE_LIST_NOT_SORTED);
 
     Ok(())
 }
@@ -291,7 +309,7 @@ fn batch_kernel_rejects_input_note_list_id_mismatch() -> anyhow::Result<()> {
     let override_advice = AdviceInputs::default().with_map([(input_note_list_key(), blob)]);
 
     let result = BatchExecutor::new().extend_advice_inputs(override_advice).execute(batch);
-    assert!(result.is_err(), "kernel must abort when a list entry's note id is altered");
+    assert_kernel_error(result, batch_kernel::ERR_BATCH_INPUT_NOTE_ID_MISMATCH);
 
     Ok(())
 }
@@ -332,10 +350,7 @@ fn batch_kernel_rejects_output_note_missing_from_list() -> anyhow::Result<()> {
     let override_advice = AdviceInputs::default().with_map([(output_note_list_key(), blob)]);
 
     let result = BatchExecutor::new().extend_advice_inputs(override_advice).execute(batch);
-    assert!(
-        result.is_err(),
-        "kernel must abort when an output note is missing from the list"
-    );
+    assert_kernel_error(result, batch_kernel::ERR_BATCH_OUTPUT_NOTE_NOT_IN_LIST);
 
     Ok(())
 }
@@ -368,10 +383,7 @@ fn batch_kernel_rejects_consume_before_create() -> anyhow::Result<()> {
     let override_advice = AdviceInputs::default().with_map([(output_note_list_key(), blob)]);
 
     let result = BatchExecutor::new().extend_advice_inputs(override_advice).execute(batch);
-    assert!(
-        result.is_err(),
-        "kernel must reject consuming a note whose claimed creator never runs"
-    );
+    assert_kernel_error(result, batch_kernel::ERR_BATCH_NOTE_CONSUMED_BEFORE_CREATED);
 
     Ok(())
 }
