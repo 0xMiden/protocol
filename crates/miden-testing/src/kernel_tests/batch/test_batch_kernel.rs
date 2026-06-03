@@ -6,7 +6,7 @@ use anyhow::Context;
 use miden_protocol::batch::{BatchKernel, ProposedBatch};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::vm::AdviceInputs;
-use miden_protocol::{Felt, Hasher, Word};
+use miden_protocol::{Felt, Word};
 use miden_tx_batch_prover::{BatchExecutor, LocalBatchProver};
 
 use super::proposed_batch::{TestSetup, mock_note, mock_output_note, setup_chain};
@@ -53,34 +53,6 @@ pub(super) fn two_tx_batch(setup: &mut TestSetup) -> anyhow::Result<ProposedBatc
     )?)
 }
 
-// EXPECTED-VALUE HELPERS
-// ================================================================================================
-
-/// Sequential hash over `(NULLIFIER, EMPTY_OR_NOTE_ID)` tuples for every input note in every
-/// transaction in transaction order, mirroring the kernel's per-tx absorption.
-///
-/// We cannot compare against `ProposedBatch::input_notes().commitment()` yet: that commitment is
-/// over the batch-level input notes re-sorted and deduped by nullifier, whereas the kernel
-/// currently absorbs notes in transaction order without that re-sort/dedupe (tracked as a TODO in
-/// `note_tracker.masm`). The two coincide only when transaction order already matches nullifier
-/// order; this helper reproduces exactly what the kernel computes today.
-fn expected_input_notes_commitment(batch: &ProposedBatch) -> Word {
-    let mut elements: Vec<Felt> = Vec::new();
-    for tx in batch.transactions() {
-        for commit in tx.input_notes().iter() {
-            elements.extend_from_slice(commit.nullifier().as_word().as_elements());
-            let note_id_or_empty =
-                commit.header().map_or(Word::empty(), |header| header.id().as_word());
-            elements.extend_from_slice(note_id_or_empty.as_elements());
-        }
-    }
-    if elements.is_empty() {
-        Word::empty()
-    } else {
-        Hasher::hash_elements(&elements)
-    }
-}
-
 // TAMPERING HELPERS
 // ================================================================================================
 
@@ -104,14 +76,15 @@ fn tampered_advice_for(batch: &ProposedBatch, key: Word) -> AdviceInputs {
 // HAPPY PATH
 // ================================================================================================
 
-/// The batch kernel reconstructs every transaction's input notes from the advice provider, anchors
-/// them in `BATCH_ID`, and emits the batch's `INPUT_NOTES_COMMITMENT`. The batch note tree root and
-/// expiration outputs are not wired up yet, so they remain empty / zero.
+/// The batch kernel reconstructs every transaction's input notes, binds them to the global
+/// nullifier-sorted list, and emits `INPUT_NOTES_COMMITMENT` equal to the commitment the proposed
+/// batch derives over the same notes. `two_tx_batch` has no intra-batch erasure, so the full union
+/// is committed. The batch note tree root and expiration outputs are not wired up yet.
 #[test]
 fn batch_kernel_emits_input_notes_commitment() -> anyhow::Result<()> {
     let mut setup = setup_chain();
     let batch = two_tx_batch(&mut setup)?;
-    let expected_input_notes_commitment = expected_input_notes_commitment(&batch);
+    let expected_input_notes_commitment = batch.input_notes().commitment();
 
     let executed = BatchExecutor::new().execute(batch).context("batch execution failed")?;
     let output = executed.batch_outputs();
@@ -185,6 +158,92 @@ fn batch_kernel_rejects_tampered_input_notes() -> anyhow::Result<()> {
 
     let result = BatchExecutor::new().extend_advice_inputs(override_advice).execute(batch);
     assert!(result.is_err(), "kernel must abort on tampered input-notes data");
+
+    Ok(())
+}
+
+// GLOBAL INPUT-NOTE LIST BINDING NEGATIVE TESTS
+// ================================================================================================
+//
+// These corrupt the host-provided global input-note list (overriding it via `extend_advice_inputs`)
+// and assert the kernel's binding rejects it, so the host cannot omit, inject, or alter notes.
+
+/// Advice-map key for the global input-note list. Must match `INPUT_NOTE_LIST_KEY_FELT` in
+/// `crates/miden-protocol/src/batch/kernel.rs`.
+fn input_note_list_key() -> Word {
+    Word::from([0xba7c_0001u32; 4])
+}
+
+/// Builds the global input-note list blob the kernel expects: `(nullifier, note_id_or_empty)` per
+/// note across all transactions, sorted by nullifier.
+fn input_note_list_blob(batch: &ProposedBatch) -> Vec<Felt> {
+    let mut notes: Vec<(Word, Word)> = Vec::new();
+    for tx in batch.transactions() {
+        for commit in tx.input_notes().iter() {
+            let nullifier = commit.nullifier().as_word();
+            let note_id_or_empty =
+                commit.header().map_or(Word::empty(), |header| header.id().as_word());
+            notes.push((nullifier, note_id_or_empty));
+        }
+    }
+    notes.sort_by(|a, b| a.0.cmp(&b.0));
+    let mut blob = Vec::with_capacity(notes.len() * 8);
+    for (nullifier, note_id_or_empty) in &notes {
+        blob.extend_from_slice(nullifier.as_elements());
+        blob.extend_from_slice(note_id_or_empty.as_elements());
+    }
+    blob
+}
+
+/// Omitting an input note from the global list makes its per-transaction lookup fail.
+#[test]
+fn batch_kernel_rejects_input_note_missing_from_list() -> anyhow::Result<()> {
+    let mut setup = setup_chain();
+    let batch = two_tx_batch(&mut setup)?;
+
+    let mut blob = input_note_list_blob(&batch);
+    blob.truncate(blob.len() - 8); // drop the last (highest-nullifier) note
+    let override_advice = AdviceInputs::default().with_map([(input_note_list_key(), blob)]);
+
+    let result = BatchExecutor::new().extend_advice_inputs(override_advice).execute(batch);
+    assert!(result.is_err(), "kernel must abort when an input note is missing from the list");
+
+    Ok(())
+}
+
+/// A duplicate entry breaks the strict-sorted (no-duplicate) invariant.
+#[test]
+fn batch_kernel_rejects_duplicated_input_note_list_entry() -> anyhow::Result<()> {
+    let mut setup = setup_chain();
+    let batch = two_tx_batch(&mut setup)?;
+
+    let blob = input_note_list_blob(&batch);
+    // Prepend a copy of the first entry, so two equal nullifiers are adjacent.
+    let mut duplicated: Vec<Felt> = blob[0..8].to_vec();
+    duplicated.extend_from_slice(&blob);
+    let override_advice = AdviceInputs::default().with_map([(input_note_list_key(), duplicated)]);
+
+    let result = BatchExecutor::new().extend_advice_inputs(override_advice).execute(batch);
+    assert!(result.is_err(), "kernel must abort on a duplicate input-note list entry");
+
+    Ok(())
+}
+
+/// Altering a list entry's note id (without touching its nullifier) is caught when the kernel binds
+/// the entry to the per-transaction note id.
+#[test]
+fn batch_kernel_rejects_input_note_list_id_mismatch() -> anyhow::Result<()> {
+    let mut setup = setup_chain();
+    let batch = two_tx_batch(&mut setup)?;
+
+    let mut blob = input_note_list_blob(&batch);
+    // Corrupt the first entry's note-id word (felts 4..8); the nullifier (felts 0..4) is untouched,
+    // so the entry is still found by nullifier but its note id no longer matches.
+    blob[4] += Felt::from(1u32);
+    let override_advice = AdviceInputs::default().with_map([(input_note_list_key(), blob)]);
+
+    let result = BatchExecutor::new().extend_advice_inputs(override_advice).execute(batch);
+    assert!(result.is_err(), "kernel must abort when a list entry's note id is altered");
 
     Ok(())
 }

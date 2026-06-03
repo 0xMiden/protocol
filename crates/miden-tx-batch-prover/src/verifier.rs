@@ -17,13 +17,13 @@ use crate::BatchVerifierError;
 ///
 /// # Warning
 ///
-/// The current batch kernel is a skeleton that drops its inputs and emits an all-zero output
-/// region, so a successful [`verify`](BatchVerifier::verify) attests only that the kernel program
-/// ran over the batch's `[BLOCK_COMMITMENT, BATCH_ID]` public inputs. It does **not** yet bind the
-/// batch's notes, account updates, or expiration: those values are not part of what the proof
-/// commits to, so a `ProvenBatch` whose contents were mutated would still verify. This verifier
-/// must therefore not be relied on at a trust boundary until the kernel verification logic that
-/// emits and binds the real commitments lands.
+/// The batch kernel currently emits and binds only the batch's `INPUT_NOTES_COMMITMENT`; the batch
+/// note tree root and expiration are still all-zero placeholders, and input notes are not yet
+/// authenticated against the chain MMR. A successful [`verify`](BatchVerifier::verify) therefore
+/// attests that the kernel ran over the batch's `[BLOCK_COMMITMENT, BATCH_ID]` inputs and produced
+/// `batch.input_notes().commitment()`, but does **not** yet bind the batch's output notes, account
+/// updates, or expiration. This verifier must not be relied on at a trust boundary until the
+/// remaining kernel verification logic lands.
 pub struct BatchVerifier {
     batch_program_info: ProgramInfo,
     proof_security_level: u32,
@@ -46,13 +46,15 @@ impl BatchVerifier {
         let stack_inputs =
             BatchKernel::build_input_stack(batch.reference_block_commitment(), batch.id());
 
-        // The skeleton kernel drops its inputs and emits the all-zero output region, so the proof
-        // attests to empty outputs. Once the kernel computes the real commitments, these empty
-        // values become `batch.input_notes().commitment()`, the batch note tree root and
-        // `batch.batch_expiration_block_num()`.
-        let stack_outputs =
-            BatchOutputs::new(Word::empty(), Word::empty(), BlockNumber::from(0u32))
-                .into_stack_outputs();
+        // The kernel emits the batch's INPUT_NOTES_COMMITMENT; the batch note tree root and
+        // expiration are still all-zero placeholders (wired up in follow-up work, at which point
+        // they become the batch note tree root and `batch.batch_expiration_block_num()`).
+        let stack_outputs = BatchOutputs::new(
+            batch.input_notes().commitment(),
+            Word::empty(),
+            BlockNumber::from(0u32),
+        )
+        .into_stack_outputs();
 
         let proof_security_level = verify(
             self.batch_program_info.clone(),
