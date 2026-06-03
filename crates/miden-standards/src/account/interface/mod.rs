@@ -6,7 +6,6 @@ use miden_protocol::note::PartialNote;
 use miden_protocol::transaction::TransactionScript;
 use thiserror::Error;
 
-use crate::account::auth::AccountAuthScheme;
 use crate::code_builder::CodeBuilder;
 use crate::errors::CodeBuilderError;
 
@@ -25,7 +24,6 @@ pub use extension::{AccountComponentInterfaceExt, AccountInterfaceExt};
 /// An [`AccountInterface`] describes the exported, callable procedures of an account.
 pub struct AccountInterface {
     account_id: AccountId,
-    auth: Vec<AccountAuthScheme>,
     components: Vec<AccountComponentInterface>,
 }
 
@@ -35,14 +33,10 @@ impl AccountInterface {
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
-    /// Creates a new [`AccountInterface`] instance from the provided account ID, authentication
-    /// schemes and account component interfaces.
-    pub fn new(
-        account_id: AccountId,
-        auth: Vec<AccountAuthScheme>,
-        components: Vec<AccountComponentInterface>,
-    ) -> Self {
-        Self { account_id, auth, components }
+    /// Creates a new [`AccountInterface`] instance from the provided account ID and account
+    /// component interfaces.
+    pub fn new(account_id: AccountId, components: Vec<AccountComponentInterface>) -> Self {
+        Self { account_id, components }
     }
 
     /// Returns `true` if the account installs an [`AccountComponentInterface::Ownable2Step`]
@@ -70,15 +64,14 @@ impl AccountInterface {
         self.account_id.is_public()
     }
 
-    /// Returns a reference to the vector of [`AccountAuthScheme`] tags identifying each
-    /// authentication component installed on the account.
-    pub fn auth(&self) -> &Vec<AccountAuthScheme> {
-        &self.auth
-    }
-
     /// Returns a reference to the set of used component interfaces.
     pub fn components(&self) -> &Vec<AccountComponentInterface> {
         &self.components
+    }
+
+    /// Returns an iterator over the auth components installed on this account.
+    pub fn auth_components(&self) -> impl Iterator<Item = &AccountComponentInterface> {
+        self.components.iter().filter(|c| c.is_auth_component())
     }
 }
 

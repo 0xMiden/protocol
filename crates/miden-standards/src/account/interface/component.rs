@@ -5,7 +5,6 @@ use miden_protocol::Felt;
 use miden_protocol::account::{AccountId, AccountProcedureRoot};
 use miden_protocol::note::PartialNote;
 
-use crate::account::auth::AccountAuthScheme;
 use crate::account::interface::AccountInterfaceError;
 
 // ACCOUNT COMPONENT INTERFACE
@@ -110,25 +109,6 @@ impl AccountComponentInterface {
                 | AccountComponentInterface::AuthNoAuth
                 | AccountComponentInterface::AuthNetworkAccount
         )
-    }
-
-    /// Returns the [`AccountAuthScheme`] tag for this component interface, if it is an auth
-    /// component. Returns [`None`] for non-auth components.
-    pub fn auth_scheme(&self) -> Option<AccountAuthScheme> {
-        match self {
-            AccountComponentInterface::AuthSingleSig => Some(AccountAuthScheme::SingleSig),
-            AccountComponentInterface::AuthSingleSigAcl => Some(AccountAuthScheme::SingleSigAcl),
-            AccountComponentInterface::AuthMultisig => Some(AccountAuthScheme::Multisig),
-            AccountComponentInterface::AuthMultisigSmart => Some(AccountAuthScheme::MultisigSmart),
-            AccountComponentInterface::AuthGuardedMultisig => {
-                Some(AccountAuthScheme::GuardedMultisig)
-            },
-            AccountComponentInterface::AuthNoAuth => Some(AccountAuthScheme::NoAuth),
-            AccountComponentInterface::AuthNetworkAccount => {
-                Some(AccountAuthScheme::NetworkAccount)
-            },
-            _ => None,
-        }
     }
 
     /// Generates a body for the note creation of the `send_note` transaction script. The resulting

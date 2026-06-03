@@ -4,7 +4,6 @@ use miden_protocol::Word;
 use miden_protocol::account::Account;
 
 use crate::account::auth::{
-    AccountAuthScheme,
     AuthGuardedMultisig,
     AuthMultisig,
     AuthMultisigSmart,
@@ -21,37 +20,34 @@ pub fn get_public_keys_from_account(account: &Account) -> Vec<Word> {
 
     let mut keys = Vec::new();
     for component in interface.components() {
-        match component.auth_scheme() {
-            Some(AccountAuthScheme::SingleSig) => {
+        match component {
+            AccountComponentInterface::AuthSingleSig => {
                 if let Ok(key) = storage.get_item(AuthSingleSig::public_key_slot()) {
                     keys.push(key);
                 }
             },
-            Some(AccountAuthScheme::SingleSigAcl) => {
+            AccountComponentInterface::AuthSingleSigAcl => {
                 if let Ok(key) = storage.get_item(AuthSingleSigAcl::public_key_slot()) {
                     keys.push(key);
                 }
             },
-            Some(AccountAuthScheme::Multisig) => {
+            AccountComponentInterface::AuthMultisig => {
                 keys.extend(read_multisig_public_keys(
                     storage,
-                    component,
                     AuthMultisig::threshold_config_slot(),
                     AuthMultisig::approver_public_keys_slot(),
                 ));
             },
-            Some(AccountAuthScheme::GuardedMultisig) => {
+            AccountComponentInterface::AuthGuardedMultisig => {
                 keys.extend(read_multisig_public_keys(
                     storage,
-                    component,
                     AuthGuardedMultisig::threshold_config_slot(),
                     AuthGuardedMultisig::approver_public_keys_slot(),
                 ));
             },
-            Some(AccountAuthScheme::MultisigSmart) => {
+            AccountComponentInterface::AuthMultisigSmart => {
                 keys.extend(read_multisig_public_keys(
                     storage,
-                    component,
                     AuthMultisigSmart::threshold_config_slot(),
                     AuthMultisigSmart::approver_public_keys_slot(),
                 ));
@@ -64,7 +60,6 @@ pub fn get_public_keys_from_account(account: &Account) -> Vec<Word> {
 
 fn read_multisig_public_keys(
     storage: &miden_protocol::account::AccountStorage,
-    _component: &AccountComponentInterface,
     config_slot: &miden_protocol::account::StorageSlotName,
     keys_slot: &miden_protocol::account::StorageSlotName,
 ) -> Vec<Word> {

@@ -55,8 +55,11 @@ use miden_protocol::transaction::{
     TransactionSummary,
 };
 use miden_protocol::{Felt, Hasher, ONE, Word};
-use miden_standards::account::auth::AccountAuthScheme;
-use miden_standards::account::interface::{AccountInterface, AccountInterfaceExt};
+use miden_standards::account::interface::{
+    AccountComponentInterface,
+    AccountInterface,
+    AccountInterfaceExt,
+};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::P2idNote;
@@ -555,7 +558,10 @@ async fn tx_summary_commitment_is_signed_by_falcon_auth() -> anyhow::Result<()> 
     let summary_commitment = summary.to_commitment();
 
     let account_interface = AccountInterface::from_account(&account);
-    assert_eq!(account_interface.auth().first(), Some(&AccountAuthScheme::SingleSig));
+    assert!(matches!(
+        account_interface.auth_components().next(),
+        Some(AccountComponentInterface::AuthSingleSig)
+    ));
     let pub_keys = get_public_keys_from_account(&account);
     let pub_key = pub_keys.first().expect("expected at least one public key");
 
@@ -609,7 +615,10 @@ async fn tx_summary_commitment_is_signed_by_ecdsa_auth() -> anyhow::Result<()> {
     let summary_commitment = summary.to_commitment();
 
     let account_interface = AccountInterface::from_account(&account);
-    assert_eq!(account_interface.auth().first(), Some(&AccountAuthScheme::SingleSig));
+    assert!(matches!(
+        account_interface.auth_components().next(),
+        Some(AccountComponentInterface::AuthSingleSig)
+    ));
     let pub_keys = get_public_keys_from_account(&account);
     let pub_key = pub_keys.first().expect("expected at least one public key");
 

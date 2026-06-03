@@ -1,5 +1,3 @@
-use alloc::string::String;
-
 use miden_protocol::account::StorageSlotName;
 use miden_protocol::errors::{AccountError, TokenSymbolError};
 use thiserror::Error;
@@ -63,12 +61,6 @@ pub enum FungibleFaucetError {
         "account interface does not have the procedures of the basic fungible faucet component"
     )]
     MissingFungibleFaucetInterface,
-    #[error("unsupported authentication method: {0}")]
-    UnsupportedAuthMethod(String),
-    #[error("AuthControlled is incompatible with the chosen auth method: {0}")]
-    IncompatibleAuthControlledAuth(String),
-    #[error("unsupported combination of access control and auth method: {0}")]
-    UnsupportedAccessControlAuthCombination(String),
     #[error("account creation failed")]
     AccountError(#[source] AccountError),
     #[error("account is not a fungible faucet account")]

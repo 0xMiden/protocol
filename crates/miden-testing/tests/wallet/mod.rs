@@ -1,6 +1,5 @@
 use miden_protocol::Word;
 use miden_protocol::account::auth::AuthSecretKey;
-use miden_standards::account::auth::AccountAuthComponent;
 use miden_standards::account::wallets::create_basic_wallet;
 use rand_chacha::ChaCha20Rng;
 use rand_chacha::rand_core::SeedableRng;
@@ -19,7 +18,7 @@ fn wallet_creation() {
     let sec_key = AuthSecretKey::new_falcon512_poseidon2_with_rng(&mut rng);
     let auth_scheme = auth::AuthScheme::Falcon512Poseidon2;
     let pub_key = sec_key.public_key().to_commitment();
-    let auth_component = AccountAuthComponent::single_sig(pub_key, auth_scheme);
+    let auth_component = AuthSingleSig::new(pub_key, auth_scheme);
 
     // we need to use an initial seed to create the wallet account
     let init_seed: [u8; 32] = [
@@ -58,7 +57,7 @@ fn wallet_creation_2() {
     let sec_key = AuthSecretKey::new_ecdsa_k256_keccak_with_rng(&mut rng);
     let auth_scheme = auth::AuthScheme::EcdsaK256Keccak;
     let pub_key = sec_key.public_key().to_commitment();
-    let auth_component = AccountAuthComponent::single_sig(pub_key, auth_scheme);
+    let auth_component = AuthSingleSig::new(pub_key, auth_scheme);
 
     // we need to use an initial seed to create the wallet account
     let init_seed: [u8; 32] = [

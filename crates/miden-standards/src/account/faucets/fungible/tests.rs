@@ -4,6 +4,7 @@ use assert_matches::assert_matches;
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 use miden_protocol::account::{AccountBuilder, AccountType};
 use miden_protocol::asset::{AssetAmount, TokenSymbol};
+use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::{Felt, Word};
 
 use super::{
@@ -13,7 +14,7 @@ use super::{
     user_faucet_single_sig_acl,
 };
 use crate::account::access::{AccessControl, PausableManager};
-use crate::account::auth::{AccountAuthComponent, AuthSingleSig, AuthSingleSigAcl};
+use crate::account::auth::{AuthNetworkAccount, AuthSingleSig, AuthSingleSigAcl};
 use crate::account::faucets::{Description, FungibleFaucetError, TokenMetadata, TokenName};
 use crate::account::policies::{
     BurnPolicyConfig,
@@ -143,103 +144,30 @@ fn user_fungible_faucet_with_single_sig_acl() {
     let _faucet_component = FungibleFaucet::try_from(faucet_account.clone()).unwrap();
 }
 
-/// `create_user_fungible_faucet` with `NoAuth` must be rejected: the auth component is the
-/// sole gate for authority-protected setters.
+/// `create_network_fungible_faucet` with `Ownable2Step + AuthNetworkAccount` builds a valid
+/// account. The auth component governs the faucet's own tx authentication; the setter gate is
+/// enforced in-procedure by `assert_sender_is_owner`.
 #[test]
-fn user_fungible_faucet_rejects_no_auth() {
-    let err = create_user_fungible_faucet(
-        [7u8; 32],
-        sample_faucet(),
-        AccountAuthComponent::no_auth(),
-        allow_all_policy_manager(),
-        AccountType::Private,
-    )
-    .expect_err("user faucet with NoAuth should be rejected");
-    assert_matches!(err, FungibleFaucetError::IncompatibleAuthControlledAuth(_));
-}
-
-/// `create_user_fungible_faucet` with a plain `SingleSig` (no ACL) must be rejected: the
-/// trigger list would be empty, leaving authority-gated setters permissionless. Callers must
-/// use `user_faucet_single_sig_acl`.
-#[test]
-fn user_fungible_faucet_rejects_plain_single_sig() {
-    let pub_key_word = Word::new([Felt::ONE; 4]);
-    let err = create_user_fungible_faucet(
-        [7u8; 32],
-        sample_faucet(),
-        AccountAuthComponent::single_sig(pub_key_word.into(), AuthScheme::Falcon512Poseidon2),
-        allow_all_policy_manager(),
-        AccountType::Private,
-    )
-    .expect_err("user faucet with plain SingleSig should be rejected");
-    assert_matches!(err, FungibleFaucetError::UnsupportedAccessControlAuthCombination(_));
-}
-
-/// `create_user_fungible_faucet` with NetworkAccount must be rejected: network-style auth
-/// belongs with `create_network_fungible_faucet`.
-#[test]
-fn user_fungible_faucet_rejects_network_account() {
-    let allowlist: BTreeSet<miden_protocol::note::NoteScriptRoot> =
-        [miden_protocol::note::NoteScriptRoot::from_raw(Word::new([Felt::ONE; 4]))]
-            .into_iter()
-            .collect();
-    let err = create_user_fungible_faucet(
-        [7u8; 32],
-        sample_faucet(),
-        AccountAuthComponent::network_account(allowlist).unwrap(),
-        allow_all_policy_manager(),
-        AccountType::Private,
-    )
-    .expect_err("user faucet with NetworkAccount should be rejected");
-    assert_matches!(err, FungibleFaucetError::UnsupportedAccessControlAuthCombination(_));
-}
-
-/// `create_network_fungible_faucet` with `Ownable2Step + NoAuth` is a valid configuration: the
-/// setter gate is enforced in-procedure (`assert_sender_is_owner`).
-#[test]
-fn network_fungible_faucet_ownable2step_with_no_auth_is_accepted() {
+fn network_fungible_faucet_with_ownable2step() {
     use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
 
     let owner = miden_protocol::account::AccountId::try_from(
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
     )
     .unwrap();
+
+    let allowlist: BTreeSet<NoteScriptRoot> =
+        [NoteScriptRoot::from_raw(Word::new([Felt::ONE; 4]))].into_iter().collect();
 
     let _account = create_network_fungible_faucet(
         [7u8; 32],
         sample_faucet(),
         AccessControl::Ownable2Step { owner },
-        AccountAuthComponent::no_auth(),
+        AuthNetworkAccount::with_allowlist(allowlist).unwrap(),
         allow_all_policy_manager(),
         AccountType::Public,
     )
-    .expect("Ownable2Step+NoAuth should be accepted");
-}
-
-/// `create_network_fungible_faucet` with SingleSig must be rejected: SingleSig belongs with
-/// the user-account faucet factory.
-#[test]
-fn network_fungible_faucet_rejects_single_sig() {
-    use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
-
-    let owner = miden_protocol::account::AccountId::try_from(
-        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
-    )
-    .unwrap();
-
-    let err = create_network_fungible_faucet(
-        [7u8; 32],
-        sample_faucet(),
-        AccessControl::Ownable2Step { owner },
-        AccountAuthComponent::single_sig(
-            Word::new([Felt::ONE; 4]).into(),
-            AuthScheme::Falcon512Poseidon2,
-        ),
-        allow_all_policy_manager(),
-        AccountType::Public,
-    )
-    .expect_err("network faucet with SingleSig should be rejected");
-    assert_matches!(err, FungibleFaucetError::UnsupportedAccessControlAuthCombination(_));
+    .expect("Ownable2Step+AuthNetworkAccount should be accepted");
 }
 
 #[test]
