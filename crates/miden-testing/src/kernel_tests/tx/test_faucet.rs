@@ -550,7 +550,7 @@ async fn test_burn_non_fungible_asset_succeeds() -> anyhow::Result<()> {
             push.{INPUT_VAULT_ROOT_PTR}
             push.{NON_FUNGIBLE_ASSET_VALUE}
             push.{NON_FUNGIBLE_ASSET_KEY}
-            exec.asset_vault::add_non_fungible_asset dropw
+            exec.asset_vault::add_non_fungible_asset dropw dropw
 
             # check that the non-fungible asset is presented in the input vault
             push.{INPUT_VAULT_ROOT_PTR}

@@ -20,19 +20,20 @@ You receive a prompt like: `Check changelog for PR #N (URL)`
    ```
    gh pr view <N> --json labels --jq '.labels[].name'
    ```
-2. Check if CHANGELOG.md is already modified in the diff:
+2. Check if the PR already modifies CHANGELOG.md:
    ```
-   git diff origin/next...HEAD -- CHANGELOG.md
+   gh pr diff <N> --name-only | grep -qx CHANGELOG.md
    ```
 
 If either condition is met, output `SKIP: already handled` and stop.
 
 ## Step 2: Analyze the Diff
 
-Run:
+Classify the PR's own diff (not a local `git diff`):
 ```
-git diff origin/next...HEAD -- ':(exclude)CHANGELOG.md'
+gh pr diff <N>
 ```
+Disregard changes to CHANGELOG.md itself.
 
 ## Step 3: Classify
 
