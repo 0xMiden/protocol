@@ -1,7 +1,10 @@
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
-use crate::block::BlockNumber;
+#[cfg(feature = "std")]
+use miden_crypto::merkle::smt::{LargeSmt, LargeSmtError, SmtStorage};
+
+use crate::block::{BlockNumber, SmtBackend, SmtBackendReader};
 use crate::crypto::merkle::MerkleError;
 use crate::crypto::merkle::smt::{MutationSet, SMT_DEPTH, Smt};
 use crate::errors::NullifierTreeError;
@@ -14,9 +17,6 @@ use crate::utils::serde::{
     Serializable,
 };
 use crate::{Felt, Word};
-
-mod backend;
-pub use backend::NullifierTreeBackend;
 
 mod witness;
 pub use witness::NullifierWitness;
@@ -51,7 +51,7 @@ where
 
 impl<Backend> NullifierTree<Backend>
 where
-    Backend: NullifierTreeBackend<Error = MerkleError>,
+    Backend: SmtBackendReader<Error = MerkleError>,
 {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
@@ -66,7 +66,9 @@ where
     ///
     /// # Invariants
     ///
-    /// See the documentation on [`NullifierTreeBackend`] trait documentation.
+    /// Assumes the provided SMT upholds the guarantees of the [`NullifierTree`]. Specifically:
+    /// - Nullifiers are only spent once and their block numbers do not change.
+    /// - Nullifier leaf values must be valid according to [`NullifierBlock`].
     pub fn new_unchecked(backend: Backend) -> Self {
         NullifierTree { smt: backend }
     }
@@ -109,13 +111,22 @@ where
     /// Returns the block number for the given nullifier or `None` if the nullifier wasn't spent
     /// yet.
     pub fn get_block_num(&self, nullifier: &Nullifier) -> Option<BlockNumber> {
-        let nullifier_block = self.smt.get_value(&nullifier.as_word());
+        let nullifier_block = NullifierBlock::new(self.smt.get_value(&nullifier.as_word()))
+            .expect("SMT should only store valid NullifierBlocks");
         if nullifier_block.is_unspent() {
             return None;
         }
 
         Some(nullifier_block.into())
     }
+}
+
+impl<Backend> NullifierTree<Backend>
+where
+    Backend: SmtBackend<Error = MerkleError>,
+{
+    // PUBLIC MUTATORS
+    // --------------------------------------------------------------------------------------------
 
     /// Computes a mutation set resulting from inserting the provided nullifiers into this nullifier
     /// tree.
@@ -154,9 +165,6 @@ where
         Ok(NullifierMutationSet::new(mutation_set))
     }
 
-    // PUBLIC MUTATORS
-    // --------------------------------------------------------------------------------------------
-
     /// Marks the given nullifier as spent at the given block number.
     ///
     /// # Errors
@@ -168,10 +176,12 @@ where
         nullifier: Nullifier,
         block_num: BlockNumber,
     ) -> Result<(), NullifierTreeError> {
-        let prev_nullifier_value = self
+        let prev_value = self
             .smt
-            .insert(nullifier.as_word(), NullifierBlock::from(block_num))
+            .insert(nullifier.as_word(), NullifierBlock::from(block_num).into())
             .map_err(NullifierTreeError::MaxLeafEntriesExceeded)?;
+        let prev_nullifier_value = NullifierBlock::try_from(prev_value)
+            .expect("SMT should only store valid NullifierBlocks");
 
         if prev_nullifier_value.is_spent() {
             Err(NullifierTreeError::NullifierAlreadySpent(nullifier))
@@ -193,6 +203,75 @@ where
         self.smt
             .apply_mutations(mutations.into_mutation_set())
             .map_err(NullifierTreeError::TreeRootConflict)
+    }
+}
+
+impl NullifierTree<Smt> {
+    /// Creates a new nullifier tree from the provided entries.
+    ///
+    /// This is a convenience method that creates an SMT backend with the provided entries and
+    /// wraps it in a NullifierTree.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - the provided entries contain multiple block numbers for the same nullifier.
+    pub fn with_entries(
+        entries: impl IntoIterator<Item = (Nullifier, BlockNumber)>,
+    ) -> Result<Self, NullifierTreeError> {
+        let leaves = entries.into_iter().map(|(nullifier, block_num)| {
+            (nullifier.as_word(), NullifierBlock::from(block_num).into())
+        });
+
+        let smt = Smt::with_entries(leaves)
+            .map_err(NullifierTreeError::DuplicateNullifierBlockNumbers)?;
+
+        Ok(Self::new_unchecked(smt))
+    }
+}
+
+#[cfg(feature = "std")]
+impl<Backend> NullifierTree<LargeSmt<Backend>>
+where
+    Backend: SmtStorage,
+{
+    /// Creates a new nullifier tree from the provided entries using the given storage backend
+    ///
+    /// This is a convenience method that creates an SMT on the provided storage backend using the
+    /// provided entries and wraps it in a NullifierTree.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - the provided entries contain multiple block numbers for the same nullifier.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a storage error is encountered.
+    pub fn with_storage_from_entries(
+        storage: Backend,
+        entries: impl IntoIterator<Item = (Nullifier, BlockNumber)>,
+    ) -> Result<Self, NullifierTreeError> {
+        use crate::block::smt_backend::large_smt_error_to_merkle_error;
+
+        let leaves = entries.into_iter().map(|(nullifier, block_num)| {
+            (nullifier.as_word(), NullifierBlock::from(block_num).into())
+        });
+
+        let smt = LargeSmt::<Backend>::with_entries(storage, leaves)
+            .map_err(large_smt_error_to_merkle_error)
+            .map_err(NullifierTreeError::DuplicateNullifierBlockNumbers)?;
+
+        Ok(Self::new_unchecked(smt))
+    }
+
+    /// Returns a read-only nullifier tree backed by a reader view of this tree's storage.
+    ///
+    /// The returned tree shares the same root and entries as `self`, but its storage is a
+    /// read-only snapshot produced by [`SmtStorage::reader`]. The returned tree cannot be
+    /// mutated.
+    pub fn reader(&self) -> Result<NullifierTree<LargeSmt<Backend::Reader>>, LargeSmtError> {
+        Ok(NullifierTree::new_unchecked(self.smt.reader()?))
     }
 }
 

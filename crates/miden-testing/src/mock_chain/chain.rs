@@ -516,7 +516,7 @@ impl MockChain {
                     .flat_map(|tx| tx.unauthenticated_notes().map(NoteHeader::id)),
             )?;
 
-        Ok(ProposedBatch::new(
+        Ok(ProposedBatch::new_unverified(
             transactions,
             batch_reference_block,
             partial_blockchain,
@@ -531,7 +531,7 @@ impl MockChain {
         &self,
         proposed_batch: ProposedBatch,
     ) -> anyhow::Result<ProvenBatch> {
-        let batch_prover = LocalBatchProver::new(0);
+        let batch_prover = LocalBatchProver::new();
         Ok(batch_prover.prove_dummy(proposed_batch)?)
     }
 

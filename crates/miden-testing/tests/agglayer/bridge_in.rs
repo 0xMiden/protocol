@@ -29,12 +29,12 @@ use miden_agglayer::{
 use miden_protocol::Felt;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountId, AccountIdVersion, AccountType};
-use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
+use miden_protocol::asset::{Asset, AssetAmount, AssetCallbackFlag, FungibleAsset};
 use miden_protocol::crypto::SequentialCommit;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::note::{NoteAssets, NoteType};
 use miden_protocol::transaction::RawOutputNote;
-use miden_standards::account::policies::MintPolicyConfig;
+use miden_standards::account::policies::MintPolicy;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::ERR_FUNGIBLE_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET;
@@ -369,6 +369,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     let expected_asset: Asset =
         FungibleAsset::new(agglayer_faucet.id(), miden_claim_amount.as_canonical_u64())
             .unwrap()
+            .with_callbacks(AssetCallbackFlag::Enabled)
             .into();
     let expected_output_p2id_note = create_p2id_note_exact(
         agglayer_faucet.id(),
@@ -389,13 +390,17 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     mock_chain.prove_next_block()?;
 
     // Execute the consume transaction for the destination account. Pass the account
-    // directly since the JSON-encoded destination decodes to a private account ID.
+    // directly since the JSON-encoded destination decodes to a private account ID. The
+    // issuing AggLayer faucet must be supplied as a foreign account so the kernel can
+    // dispatch the receive callback when the asset is added to the destination vault.
+    let agglayer_faucet_inputs = mock_chain.get_foreign_account_inputs(agglayer_faucet.id())?;
     let consume_tx_context = mock_chain
         .build_tx_context(
             destination_account.clone(),
             &[],
             slice::from_ref(&expected_output_p2id_note),
         )?
+        .foreign_accounts(vec![agglayer_faucet_inputs])
         .build()?;
     let consume_executed_transaction = consume_tx_context.execute().await?;
 
@@ -956,7 +961,7 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
         faucet_owner_account_id,
         // Seed enough native supply for the lock step's sender to bundle into the B2AGG note.
         Some(miden_claim_amount_u64.saturating_mul(2)),
-        MintPolicyConfig::OwnerOnly,
+        MintPolicy::owner_only(),
         [],
     )?;
 
@@ -1211,7 +1216,7 @@ async fn bridge_in_unlock_native_duplicate_rejected() -> anyhow::Result<()> {
         miden_claim_amount_u64.saturating_mul(4),
         faucet_owner_account_id,
         Some(miden_claim_amount_u64.saturating_mul(4)),
-        MintPolicyConfig::OwnerOnly,
+        MintPolicy::owner_only(),
         [],
     )?;
 

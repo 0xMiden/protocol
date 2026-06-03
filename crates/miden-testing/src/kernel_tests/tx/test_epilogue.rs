@@ -3,7 +3,7 @@ use std::borrow::ToOwned;
 
 use miden_processor::crypto::random::RandomCoin;
 use miden_processor::{Felt, ONE};
-use miden_protocol::account::{Account, AccountDelta, AccountStorageDelta, AccountVaultDelta};
+use miden_protocol::account::{Account, AccountDelta, AccountStoragePatch, AccountVaultDelta};
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::errors::tx_kernel::{
     ERR_ACCOUNT_DELTA_NONCE_MUST_BE_INCREMENTED_IF_VAULT_OR_STORAGE_CHANGED,
@@ -107,7 +107,7 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
 
     let account_delta_commitment = AccountDelta::new(
         tx_context.account().id(),
-        AccountStorageDelta::default(),
+        AccountStoragePatch::default(),
         AccountVaultDelta::default(),
         ONE,
     )?

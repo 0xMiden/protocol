@@ -32,7 +32,7 @@ use super::{
     TokenMetadataError,
     TokenName,
 };
-use crate::account::access::AccessControl;
+use crate::account::access::{AccessControl, PausableManager};
 use crate::account::account_component_code;
 use crate::account::auth::{AuthNetworkAccount, AuthSingleSigAcl, AuthSingleSigAclConfig, NoAuth};
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
@@ -74,6 +74,34 @@ procedure_root!(
     FUNGIBLE_FAUCET_RECEIVE_AND_BURN,
     FungibleFaucet::NAME,
     FungibleFaucet::RECEIVE_AND_BURN_PROC_NAME,
+    FungibleFaucet::code()
+);
+
+procedure_root!(
+    FUNGIBLE_FAUCET_SET_MAX_SUPPLY,
+    FungibleFaucet::NAME,
+    FungibleFaucet::SET_MAX_SUPPLY_PROC_NAME,
+    FungibleFaucet::code()
+);
+
+procedure_root!(
+    FUNGIBLE_FAUCET_SET_DESCRIPTION,
+    FungibleFaucet::NAME,
+    FungibleFaucet::SET_DESCRIPTION_PROC_NAME,
+    FungibleFaucet::code()
+);
+
+procedure_root!(
+    FUNGIBLE_FAUCET_SET_LOGO_URI,
+    FungibleFaucet::NAME,
+    FungibleFaucet::SET_LOGO_URI_PROC_NAME,
+    FungibleFaucet::code()
+);
+
+procedure_root!(
+    FUNGIBLE_FAUCET_SET_EXTERNAL_LINK,
+    FungibleFaucet::NAME,
+    FungibleFaucet::SET_EXTERNAL_LINK_PROC_NAME,
     FungibleFaucet::code()
 );
 
@@ -195,6 +223,10 @@ impl FungibleFaucet {
 
     const MINT_PROC_NAME: &'static str = "mint_and_send";
     const RECEIVE_AND_BURN_PROC_NAME: &'static str = "receive_and_burn";
+    const SET_MAX_SUPPLY_PROC_NAME: &'static str = "set_max_supply";
+    const SET_DESCRIPTION_PROC_NAME: &'static str = "set_description";
+    const SET_LOGO_URI_PROC_NAME: &'static str = "set_logo_uri";
+    const SET_EXTERNAL_LINK_PROC_NAME: &'static str = "set_external_link";
 
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
@@ -249,6 +281,26 @@ impl FungibleFaucet {
     /// Returns the procedure root of the `receive_and_burn` account procedure.
     pub fn receive_and_burn_root() -> AccountProcedureRoot {
         *FUNGIBLE_FAUCET_RECEIVE_AND_BURN
+    }
+
+    /// Returns the procedure root of the `set_max_supply` account procedure.
+    pub fn set_max_supply_root() -> AccountProcedureRoot {
+        *FUNGIBLE_FAUCET_SET_MAX_SUPPLY
+    }
+
+    /// Returns the procedure root of the `set_description` account procedure.
+    pub fn set_description_root() -> AccountProcedureRoot {
+        *FUNGIBLE_FAUCET_SET_DESCRIPTION
+    }
+
+    /// Returns the procedure root of the `set_logo_uri` account procedure.
+    pub fn set_logo_uri_root() -> AccountProcedureRoot {
+        *FUNGIBLE_FAUCET_SET_LOGO_URI
+    }
+
+    /// Returns the procedure root of the `set_external_link` account procedure.
+    pub fn set_external_link_root() -> AccountProcedureRoot {
+        *FUNGIBLE_FAUCET_SET_EXTERNAL_LINK
     }
 
     /// Returns the [`StorageSlotName`] holding the token config word
@@ -330,11 +382,19 @@ impl FungibleFaucet {
     }
 
     /// Returns the storage slots produced by this faucet (token config word + name + mutability
-    /// config + description + logo URI + external link).
+    /// config + description + logo URI + external link + Pausable's `is_paused` flag).
+    ///
+    /// The `is_paused` slot is installed by FungibleFaucet itself (initial value: unpaused, zero
+    /// word) so that the transversal pause guards baked into `execute_mint_policy`,
+    /// `execute_burn_policy`, `check_policy` (allow_all / blocklist / allowlist) and the metadata
+    /// setters can read it without panicking. Pause / unpause administration is exposed by the
+    /// [`crate::account::access::pausable::PausableManager`] component, which is bundled by
+    /// [`create_fungible_faucet`] alongside this faucet so the slot is always actionable.
     pub fn into_storage_slots(self) -> Vec<StorageSlot> {
         let mut slots: Vec<StorageSlot> = Vec::new();
         slots.push(self.token_config_slot_value());
         slots.extend(self.metadata.into_storage_slots());
+        slots.push(crate::account::access::pausable::PausableStorage::default().into_slot());
         slots
     }
 
@@ -500,20 +560,47 @@ impl TryFrom<&Account> for FungibleFaucet {
 // FACTORY
 // ================================================================================================
 
+/// Every authority-gated procedure root that must require a signature when
+/// [`AccessControl::AuthControlled`] is paired with [`AuthMethod::SingleSig`]. Includes
+/// `mint_and_send` so that minting always requires a signature regardless of the access
+/// control variant.
+fn all_authority_gated_setter_roots() -> Vec<AccountProcedureRoot> {
+    vec![
+        FungibleFaucet::mint_and_send_root(),
+        FungibleFaucet::set_max_supply_root(),
+        FungibleFaucet::set_description_root(),
+        FungibleFaucet::set_logo_uri_root(),
+        FungibleFaucet::set_external_link_root(),
+        TokenPolicyManager::set_mint_policy_root(),
+        TokenPolicyManager::set_burn_policy_root(),
+        TokenPolicyManager::set_send_policy_root(),
+        TokenPolicyManager::set_receive_policy_root(),
+        PausableManager::pause_root(),
+        PausableManager::unpause_root(),
+    ]
+}
+
 /// Creates a new fungible faucet account by composing the required components.
 ///
-/// The behaviour of the resulting faucet (basic vs network-style) is determined entirely by the
-/// combination of arguments passed in:
-/// - `account_type`: typically [`AccountType::Public`] for basic or network faucets.
-/// - `auth_method`: typically [`AuthMethod::SingleSig`] for basic faucets, or
-///   [`AuthMethod::NetworkAccount`] for network-style faucets. [`AuthMethod::NoAuth`] is also
-///   accepted for unauthenticated faucets.
-/// - `access_control`: [`AccessControl::AuthControlled`] for auth-only faucets, or
-///   [`AccessControl::Ownable2Step`] / [`AccessControl::Rbac`] for owner-controlled faucets.
-/// - `token_policy_manager`: the unified [`TokenPolicyManager`] holding both mint and burn policy.
+/// In addition to the explicit parameters, [`PausableManager`] is always bundled so the
+/// `is_paused` slot installed by [`FungibleFaucet::into_storage_slots`] is actionable via
+/// `pause` / `unpause` admin procedures (gated by the same `Authority` component installed by
+/// `access_control`).
 ///
-/// The faucet itself, including all token metadata, is provided in the `faucet` parameter (see
-/// [`FungibleFaucet::builder`]).
+/// Only specific `(access_control, auth_method)` combinations are supported; everything else
+/// is rejected at the factory level. The valid combinations are:
+///
+/// - [`AccessControl::AuthControlled`] + [`AuthMethod::SingleSig`] — user-account faucet whose auth
+///   component is the sole gate for every authority-protected setter.
+/// - [`AccessControl::Ownable2Step`] / [`AccessControl::Rbac`] + [`AuthMethod::NetworkAccount`] or
+///   [`AuthMethod::NoAuth`] — network-style faucet whose setter gate is enforced in-procedure by
+///   the owner/role check.
+///
+/// All other pairings return a typed error:
+/// [`FungibleFaucetError::IncompatibleAuthControlledAuth`] for `AuthControlled + NoAuth`, and
+/// [`FungibleFaucetError::UnsupportedAccessControlAuthCombination`] for `AuthControlled +
+/// NetworkAccount` and for `Ownable2Step`/`Rbac` + `SingleSig`. `Multisig` and `Unknown`
+/// remain rejected for every variant via [`FungibleFaucetError::UnsupportedAuthMethod`].
 pub fn create_fungible_faucet(
     init_seed: [u8; 32],
     faucet: FungibleFaucet,
@@ -522,39 +609,7 @@ pub fn create_fungible_faucet(
     access_control: AccessControl,
     token_policy_manager: TokenPolicyManager,
 ) -> Result<Account, FungibleFaucetError> {
-    let mint_proc_root = FungibleFaucet::mint_and_send_root();
-
-    let auth_component: AccountComponent = match auth_method {
-        AuthMethod::SingleSig { approver: (pub_key, auth_scheme) } => AuthSingleSigAcl::new(
-            pub_key,
-            auth_scheme,
-            AuthSingleSigAclConfig::new()
-                .with_auth_trigger_procedures(vec![mint_proc_root])
-                .with_allow_unauthorized_input_notes(true),
-        )
-        .map_err(FungibleFaucetError::AccountError)?
-        .into(),
-        AuthMethod::NoAuth => NoAuth::new().into(),
-        AuthMethod::NetworkAccount { allowed_script_roots } => {
-            AuthNetworkAccount::with_allowlist(allowed_script_roots)
-                .map_err(|err| {
-                    FungibleFaucetError::UnsupportedAuthMethod(alloc::format!(
-                        "invalid network account allowlist: {err}"
-                    ))
-                })?
-                .into()
-        },
-        AuthMethod::Unknown => {
-            return Err(FungibleFaucetError::UnsupportedAuthMethod(
-                "fungible faucets cannot be created with Unknown authentication method".into(),
-            ));
-        },
-        AuthMethod::Multisig { .. } => {
-            return Err(FungibleFaucetError::UnsupportedAuthMethod(
-                "fungible faucets do not support Multisig authentication".into(),
-            ));
-        },
-    };
+    let auth_component = build_auth_component(&access_control, auth_method)?;
 
     let account = AccountBuilder::new(init_seed)
         .account_type(account_type)
@@ -562,8 +617,91 @@ pub fn create_fungible_faucet(
         .with_component(faucet)
         .with_components(access_control)
         .with_components(token_policy_manager)
+        .with_component(PausableManager)
         .build()
         .map_err(FungibleFaucetError::AccountError)?;
 
     Ok(account)
+}
+
+/// Builds the account-level auth component, validating the `(access_control, auth_method)`
+/// pair. See [`create_fungible_faucet`] for the list of supported combinations.
+fn build_auth_component(
+    access_control: &AccessControl,
+    auth_method: AuthMethod,
+) -> Result<AccountComponent, FungibleFaucetError> {
+    match (access_control, auth_method) {
+        // AuthControlled + SingleSig: the auth component is the sole setter gate, so it
+        // must authenticate every authority-gated setter root.
+        (
+            AccessControl::AuthControlled,
+            AuthMethod::SingleSig { approver: (pub_key, auth_scheme) },
+        ) => Ok(AuthSingleSigAcl::new(
+            pub_key,
+            auth_scheme,
+            AuthSingleSigAclConfig::new()
+                .with_auth_trigger_procedures(all_authority_gated_setter_roots())
+                .with_allow_unauthorized_input_notes(true),
+        )
+        .map_err(FungibleFaucetError::AccountError)?
+        .into()),
+
+        // AuthControlled + NetworkAccount: rejected.
+        (AccessControl::AuthControlled, AuthMethod::NetworkAccount { .. }) => {
+            Err(FungibleFaucetError::UnsupportedAccessControlAuthCombination(
+                "NetworkAccount is only supported with AccessControl::Ownable2Step or \
+                 AccessControl::Rbac (network-style faucets)"
+                    .into(),
+            ))
+        },
+
+        // AuthControlled + NoAuth: rejected. NoAuth cannot authenticate setters; under
+        // AuthControlled the auth component is the sole gate, so this would leave every
+        // authority-gated setter permissionless.
+        (AccessControl::AuthControlled, AuthMethod::NoAuth) => {
+            Err(FungibleFaucetError::IncompatibleAuthControlledAuth(
+                "NoAuth cannot authenticate authority-gated setters".into(),
+            ))
+        },
+
+        // Ownable2Step / Rbac + NetworkAccount: typical network-style faucet. Setter gating
+        // is enforced in-procedure; the auth component restricts which note scripts can be
+        // consumed against the faucet.
+        (
+            AccessControl::Ownable2Step { .. } | AccessControl::Rbac { .. },
+            AuthMethod::NetworkAccount { allowed_script_roots },
+        ) => Ok(AuthNetworkAccount::with_allowlist(allowed_script_roots)
+            .map_err(|err| {
+                FungibleFaucetError::UnsupportedAuthMethod(alloc::format!(
+                    "invalid network account allowlist: {err}"
+                ))
+            })?
+            .into()),
+
+        // Ownable2Step / Rbac + NoAuth: valid; the setter gate is the in-procedure owner /
+        // role check, so the account-level auth can legitimately be NoAuth.
+        (AccessControl::Ownable2Step { .. } | AccessControl::Rbac { .. }, AuthMethod::NoAuth) => {
+            Ok(NoAuth::new().into())
+        },
+
+        // Ownable2Step / Rbac + SingleSig: rejected. SingleSig is for user-account faucets
+        // (AuthControlled); under owner/role-gated faucets it duplicates the setter check
+        // with a per-tx signature that doesn't add security.
+        (
+            AccessControl::Ownable2Step { .. } | AccessControl::Rbac { .. },
+            AuthMethod::SingleSig { .. },
+        ) => Err(FungibleFaucetError::UnsupportedAccessControlAuthCombination(
+            "SingleSig is only supported with AccessControl::AuthControlled; pair \
+             Ownable2Step / Rbac with NetworkAccount or NoAuth instead"
+                .into(),
+        )),
+
+        // Multisig and Unknown are not supported for any access control variant.
+        (_, AuthMethod::Multisig { .. }) => Err(FungibleFaucetError::UnsupportedAuthMethod(
+            "fungible faucets do not support Multisig authentication".into(),
+        )),
+        (_, AuthMethod::Unknown) => Err(FungibleFaucetError::UnsupportedAuthMethod(
+            "fungible faucets cannot be created with Unknown authentication method".into(),
+        )),
+    }
 }

@@ -99,7 +99,7 @@ end
 #! - DELTA_COMMITMENT is the commitment to the account delta.
 #!
 #! Panics if:
-#! - the vault or storage delta is not empty but the nonce increment is zero.
+#! - the vault or storage patch is not empty but the nonce increment is zero.
 pub proc compute_delta_commitment
     # pad the stack
     padw padw padw push.0.0.0
@@ -199,14 +199,14 @@ end
 #! Add the specified asset to the vault.
 #!
 #! Inputs:  [ASSET_KEY, ASSET_VALUE]
-#! Outputs: [ASSET_VALUE']
+#! Outputs: [FINAL_ASSET_VALUE]
 #!
 #! Where:
 #! - ASSET_KEY is the vault key of the asset that is added to the vault.
 #! - ASSET_VALUE is the value of the asset to add to the vault.
-#! - ASSET_VALUE' final asset in the account vault defined as follows:
-#!   - If ASSET_VALUE is a non-fungible asset, then ASSET_VALUE' is the same as ASSET_VALUE.
-#!   - If ASSET_VALUE is a fungible asset, then ASSET_VALUE' is the total fungible asset in the account vault
+#! - FINAL_ASSET_VALUE is the asset in the account vault after the operation, defined as follows:
+#!   - If ASSET_VALUE is a non-fungible asset, then FINAL_ASSET_VALUE is the same as ASSET_VALUE.
+#!   - If ASSET_VALUE is a fungible asset, then FINAL_ASSET_VALUE is the total fungible asset in the account vault
 #!     after ASSET_VALUE was added to it.
 #!
 #! Panics if:
@@ -224,22 +224,22 @@ pub proc add_asset
     # => [offset, ASSET_KEY, ASSET_VALUE, pad(7)]
 
     syscall.exec_kernel_proc
-    # => [ASSET_VALUE', pad(12)]
+    # => [FINAL_ASSET_VALUE, pad(12)]
 
     # clean the stack
     swapdw dropw dropw swapw dropw
-    # => [ASSET_VALUE']
+    # => [FINAL_ASSET_VALUE]
 end
 
 #! Remove the specified asset from the vault and return the remaining asset value.
 #!
 #! Inputs:  [ASSET_KEY, ASSET_VALUE]
-#! Outputs: [REMAINING_ASSET_VALUE]
+#! Outputs: [FINAL_ASSET_VALUE]
 #!
 #! Where:
 #! - ASSET_KEY is the vault key of the asset to remove from the vault.
 #! - ASSET_VALUE is the value of the asset to remove from the vault.
-#! - REMAINING_ASSET_VALUE is the value of the asset remaining in the vault after removal which may
+#! - FINAL_ASSET_VALUE is the value of the asset remaining in the vault after removal which may
 #!   be the empty word if nothing remains (e.g. if a non-fungible asset is removed).
 #!
 #! Panics if:
@@ -257,11 +257,11 @@ pub proc remove_asset
     # => [offset, ASSET_KEY, ASSET_VALUE, pad(7)]
 
     syscall.exec_kernel_proc
-    # => [REMAINING_ASSET_VALUE, pad(12)]
+    # => [FINAL_ASSET_VALUE, pad(12)]
 
     # clean the stack
     swapdw dropw dropw swapw dropw
-    # => [REMAINING_ASSET_VALUE]
+    # => [FINAL_ASSET_VALUE]
 end
 
 # CODE

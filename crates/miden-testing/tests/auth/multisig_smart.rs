@@ -466,10 +466,12 @@ async fn execute_script_with_signers(
         tx_context_init_builder = tx_context_init_builder.foreign_accounts(foreign_accounts);
     }
 
-    let tx_summary = match tx_context_init_builder.build()?.execute().await.unwrap_err() {
-        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
-        error => panic!("expected abort with tx effects: {error:?}"),
-    };
+    let tx_summary = tx_context_init_builder
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
 
     let msg = tx_summary.as_ref().to_commitment();
     let tx_summary = SigningInputs::TransactionSummary(tx_summary);
@@ -537,10 +539,12 @@ async fn execute_script_with_signers_at(
         tx_context_init_builder = tx_context_init_builder.foreign_accounts(foreign_accounts);
     }
 
-    let tx_summary = match tx_context_init_builder.build()?.execute().await.unwrap_err() {
-        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
-        error => panic!("expected abort with tx effects: {error:?}"),
-    };
+    let tx_summary = tx_context_init_builder
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
 
     let msg = tx_summary.as_ref().to_commitment();
     let tx_summary = SigningInputs::TransactionSummary(tx_summary);
@@ -600,10 +604,12 @@ async fn execute_script_with_signers_at_and_outputs(
         tx_context_init_builder = tx_context_init_builder.foreign_accounts(foreign_accounts);
     }
 
-    let tx_summary = match tx_context_init_builder.build()?.execute().await.unwrap_err() {
-        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
-        error => panic!("expected abort with tx effects: {error:?}"),
-    };
+    let tx_summary = tx_context_init_builder
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
 
     let msg = tx_summary.as_ref().to_commitment();
     let tx_summary = SigningInputs::TransactionSummary(tx_summary);
@@ -707,30 +713,25 @@ async fn test_multisig_smart_spending_tiers_require_expected_signature_counts(
         let salt = Word::from([Felt::from(required_signatures as u32); 4]);
         let mut mock_chain = mock_chain_builder.build()?;
 
-        let tx_summary = match mock_chain
+        let tx_context_builder = mock_chain
             .build_tx_context(multisig_account.id(), &[], &[])?
             .foreign_accounts(test_oracle_foreign_account_inputs(&mock_chain, &oracle_fixture)?)
-            .extend_expected_output_notes(vec![RawOutputNote::Full(output_note.clone())])
-            .tx_script(send_note_transaction_script.clone())
-            .auth_args(salt)
+            .extend_expected_output_notes(vec![RawOutputNote::Full(output_note)])
+            .tx_script(send_note_transaction_script)
+            .auth_args(salt);
+
+        let tx_summary = tx_context_builder
+            .clone()
             .build()?
             .execute()
             .await
             .unwrap_err()
-        {
-            TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
-            error => panic!("expected abort with tx effects: {error:?}"),
-        };
+            .unwrap_unauthorized_err();
 
         let msg = tx_summary.as_ref().to_commitment();
         let tx_summary = SigningInputs::TransactionSummary(tx_summary);
 
-        let mut signed_context = mock_chain
-            .build_tx_context(multisig_account.id(), &[], &[])?
-            .foreign_accounts(test_oracle_foreign_account_inputs(&mock_chain, &oracle_fixture)?)
-            .extend_expected_output_notes(vec![RawOutputNote::Full(output_note)])
-            .auth_args(salt)
-            .tx_script(send_note_transaction_script);
+        let mut signed_context = tx_context_builder;
 
         for signer_idx in 0..required_signatures {
             let signature = authenticators[signer_idx]
@@ -841,20 +842,20 @@ async fn test_multisig_smart_oracle_pricing_uses_foreign_value_instead_of_raw_am
     let salt = Word::from([Felt::from(77u32); 4]);
 
     let mock_chain = mock_chain_builder.build()?;
-    let tx_summary = match mock_chain
+    let tx_context_builder = mock_chain
         .build_tx_context(multisig_account.id(), &[], &[])?
         .foreign_accounts(test_oracle_foreign_account_inputs(&mock_chain, &oracle_fixture)?)
-        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note.clone())])
-        .tx_script(tx_script.clone())
-        .auth_args(salt)
+        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note)])
+        .tx_script(tx_script)
+        .auth_args(salt);
+
+    let tx_summary = tx_context_builder
+        .clone()
         .build()?
         .execute()
         .await
         .unwrap_err()
-    {
-        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
-        error => panic!("expected abort with tx effects: {error:?}"),
-    };
+        .unwrap_unauthorized_err();
 
     let msg = tx_summary.as_ref().to_commitment();
     let tx_summary = SigningInputs::TransactionSummary(tx_summary);
@@ -865,12 +866,8 @@ async fn test_multisig_smart_oracle_pricing_uses_foreign_value_instead_of_raw_am
         .get_signature(public_keys[1].to_commitment(), &tx_summary)
         .await?;
 
-    let two_sig_result = mock_chain
-        .build_tx_context(multisig_account.id(), &[], &[])?
-        .foreign_accounts(test_oracle_foreign_account_inputs(&mock_chain, &oracle_fixture)?)
-        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note.clone())])
-        .tx_script(tx_script.clone())
-        .auth_args(salt)
+    let two_sig_result = tx_context_builder
+        .clone()
         .add_signature(public_keys[0].to_commitment(), msg, sig_0.clone())
         .add_signature(public_keys[1].to_commitment(), msg, sig_1.clone())
         .build()?
@@ -884,12 +881,7 @@ async fn test_multisig_smart_oracle_pricing_uses_foreign_value_instead_of_raw_am
     let sig_2 = authenticators[2]
         .get_signature(public_keys[2].to_commitment(), &tx_summary)
         .await?;
-    let three_sig_result = mock_chain
-        .build_tx_context(multisig_account.id(), &[], &[])?
-        .foreign_accounts(test_oracle_foreign_account_inputs(&mock_chain, &oracle_fixture)?)
-        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note)])
-        .tx_script(tx_script)
-        .auth_args(salt)
+    let three_sig_result = tx_context_builder
         .add_signature(public_keys[0].to_commitment(), msg, sig_0)
         .add_signature(public_keys[1].to_commitment(), msg, sig_1)
         .add_signature(public_keys[2].to_commitment(), msg, sig_2)
@@ -946,20 +938,20 @@ async fn test_multisig_smart_oracle_untracked_assets_do_not_raise_spending_tier(
     let salt = Word::from([Felt::from(78u32); 4]);
 
     let mock_chain = mock_chain_builder.build()?;
-    let tx_summary = match mock_chain
+    let tx_context_builder = mock_chain
         .build_tx_context(multisig_account.id(), &[], &[])?
         .foreign_accounts(test_oracle_foreign_account_inputs(&mock_chain, &oracle_fixture)?)
-        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note.clone())])
-        .tx_script(tx_script.clone())
-        .auth_args(salt)
+        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note)])
+        .tx_script(tx_script)
+        .auth_args(salt);
+
+    let tx_summary = tx_context_builder
+        .clone()
         .build()?
         .execute()
         .await
         .unwrap_err()
-    {
-        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
-        error => panic!("expected abort with tx effects: {error:?}"),
-    };
+        .unwrap_unauthorized_err();
 
     let msg = tx_summary.as_ref().to_commitment();
     let tx_summary = SigningInputs::TransactionSummary(tx_summary);
@@ -967,13 +959,8 @@ async fn test_multisig_smart_oracle_untracked_assets_do_not_raise_spending_tier(
         .get_signature(public_keys[0].to_commitment(), &tx_summary)
         .await?;
 
-    let result = mock_chain
-        .build_tx_context(multisig_account.id(), &[], &[])?
-        .foreign_accounts(test_oracle_foreign_account_inputs(&mock_chain, &oracle_fixture)?)
-        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note)])
+    let result = tx_context_builder
         .add_signature(public_keys[0].to_commitment(), msg, sig)
-        .auth_args(salt)
-        .tx_script(tx_script)
         .build()?
         .execute()
         .await?;
@@ -1144,20 +1131,20 @@ async fn test_multisig_smart_high_spending_escalates_above_default_threshold(
     let salt = Word::from([Felt::from(11u32); 4]);
 
     let mut mock_chain = mock_chain_builder.build()?;
-    let tx_summary = match mock_chain
+    let tx_context_builder = mock_chain
         .build_tx_context(multisig_account.id(), &[], &[])?
         .foreign_accounts(test_oracle_foreign_account_inputs(&mock_chain, &oracle_fixture)?)
-        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note.clone())])
-        .tx_script(tx_script.clone())
-        .auth_args(salt)
+        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note)])
+        .tx_script(tx_script)
+        .auth_args(salt);
+
+    let tx_summary = tx_context_builder
+        .clone()
         .build()?
         .execute()
         .await
         .unwrap_err()
-    {
-        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
-        error => panic!("expected abort with tx effects: {error:?}"),
-    };
+        .unwrap_unauthorized_err();
 
     let msg = tx_summary.as_ref().to_commitment();
     let tx_summary = SigningInputs::TransactionSummary(tx_summary);
@@ -1175,12 +1162,8 @@ async fn test_multisig_smart_high_spending_escalates_above_default_threshold(
         .get_signature(public_keys[3].to_commitment(), &tx_summary)
         .await?;
 
-    let four_sig_result = mock_chain
-        .build_tx_context(multisig_account.id(), &[], &[])?
-        .foreign_accounts(test_oracle_foreign_account_inputs(&mock_chain, &oracle_fixture)?)
-        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note.clone())])
-        .tx_script(tx_script.clone())
-        .auth_args(salt)
+    let four_sig_result = tx_context_builder
+        .clone()
         .add_signature(public_keys[0].to_commitment(), msg, sig_0.clone())
         .add_signature(public_keys[1].to_commitment(), msg, sig_1.clone())
         .add_signature(public_keys[2].to_commitment(), msg, sig_2.clone())
@@ -1196,12 +1179,7 @@ async fn test_multisig_smart_high_spending_escalates_above_default_threshold(
     let sig_4 = authenticators[4]
         .get_signature(public_keys[4].to_commitment(), &tx_summary)
         .await?;
-    let five_sig_result = mock_chain
-        .build_tx_context(multisig_account.id(), &[], &[])?
-        .foreign_accounts(test_oracle_foreign_account_inputs(&mock_chain, &oracle_fixture)?)
-        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note)])
-        .tx_script(tx_script)
-        .auth_args(salt)
+    let five_sig_result = tx_context_builder
         .add_signature(public_keys[0].to_commitment(), msg, sig_0)
         .add_signature(public_keys[1].to_commitment(), msg, sig_1)
         .add_signature(public_keys[2].to_commitment(), msg, sig_2)
@@ -1262,20 +1240,20 @@ async fn test_multisig_smart_low_spending_uses_tier_threshold_instead_of_high_de
     let salt = Word::from([Felt::from(12u32); 4]);
 
     let mut mock_chain = mock_chain_builder.build()?;
-    let tx_summary = match mock_chain
+    let tx_context_builder = mock_chain
         .build_tx_context(multisig_account.id(), &[], &[])?
         .foreign_accounts(test_oracle_foreign_account_inputs(&mock_chain, &oracle_fixture)?)
-        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note.clone())])
-        .tx_script(tx_script.clone())
-        .auth_args(salt)
+        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note)])
+        .tx_script(tx_script)
+        .auth_args(salt);
+
+    let tx_summary = tx_context_builder
+        .clone()
         .build()?
         .execute()
         .await
         .unwrap_err()
-    {
-        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
-        error => panic!("expected abort with tx effects: {error:?}"),
-    };
+        .unwrap_unauthorized_err();
 
     let msg = tx_summary.as_ref().to_commitment();
     let tx_summary = SigningInputs::TransactionSummary(tx_summary);
@@ -1293,12 +1271,8 @@ async fn test_multisig_smart_low_spending_uses_tier_threshold_instead_of_high_de
         ));
     }
 
-    let three_sig_result = mock_chain
-        .build_tx_context(multisig_account.id(), &[], &[])?
-        .foreign_accounts(test_oracle_foreign_account_inputs(&mock_chain, &oracle_fixture)?)
-        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note.clone())])
-        .tx_script(tx_script.clone())
-        .auth_args(salt)
+    let three_sig_result = tx_context_builder
+        .clone()
         .add_signature(signatures[0].0, msg, signatures[0].1.clone())
         .add_signature(signatures[1].0, msg, signatures[1].1.clone())
         .add_signature(signatures[2].0, msg, signatures[2].1.clone())
@@ -1310,12 +1284,7 @@ async fn test_multisig_smart_low_spending_uses_tier_threshold_instead_of_high_de
         "three signatures should remain insufficient when default_threshold=4 floors the tier"
     );
 
-    let mut signed_context = mock_chain
-        .build_tx_context(multisig_account.id(), &[], &[])?
-        .foreign_accounts(test_oracle_foreign_account_inputs(&mock_chain, &oracle_fixture)?)
-        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note)])
-        .tx_script(tx_script)
-        .auth_args(salt);
+    let mut signed_context = tx_context_builder;
     for (pk, sig) in &signatures {
         signed_context = signed_context.add_signature(*pk, msg, sig.clone());
     }
@@ -1367,18 +1336,18 @@ async fn test_multisig_smart_receive_asset_policy_overrides_default_three_of_thr
     )?;
     let mut mock_chain = mock_chain_builder.build()?;
 
-    let salt = Word::from([Felt::from(11u32); 4]);
-    let tx_summary = match mock_chain
+    let salt = Word::from([Felt::new_unchecked(11); 4]);
+    let tx_context_builder = mock_chain
         .build_tx_context(multisig_account.id(), &[note.id()], &[])?
-        .auth_args(salt)
+        .auth_args(salt);
+
+    let tx_summary = tx_context_builder
+        .clone()
         .build()?
         .execute()
         .await
         .unwrap_err()
-    {
-        TransactionExecutorError::Unauthorized(tx_summary) => tx_summary,
-        error => panic!("expected abort with tx summary: {error:?}"),
-    };
+        .unwrap_unauthorized_err();
 
     let msg = tx_summary.as_ref().to_commitment();
     let tx_summary_signing = SigningInputs::TransactionSummary(tx_summary);
@@ -1386,10 +1355,8 @@ async fn test_multisig_smart_receive_asset_policy_overrides_default_three_of_thr
         .get_signature(public_keys[0].to_commitment(), &tx_summary_signing)
         .await?;
 
-    let tx_result = mock_chain
-        .build_tx_context(multisig_account.id(), &[note.id()], &[])?
+    let tx_result = tx_context_builder
         .add_signature(public_keys[0].to_commitment(), msg, one_signature)
-        .auth_args(salt)
         .build()?
         .execute()
         .await;
@@ -1603,20 +1570,20 @@ async fn test_multisig_smart_low_spending_send_note_uses_tier_threshold_over_def
             .build()?;
     let salt = Word::from([Felt::from(2u32); 4]);
 
-    let tx_summary = match mock_chain
+    let tx_context_builder = mock_chain
         .build_tx_context(multisig_account.id(), &[], &[])?
         .foreign_accounts(test_oracle_foreign_account_inputs(&mock_chain, &oracle_fixture)?)
-        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note.clone())])
-        .tx_script(send_note_transaction_script.clone())
-        .auth_args(salt)
+        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note)])
+        .tx_script(send_note_transaction_script)
+        .auth_args(salt);
+
+    let tx_summary = tx_context_builder
+        .clone()
         .build()?
         .execute()
         .await
         .unwrap_err()
-    {
-        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
-        error => panic!("expected abort with tx effects: {error:?}"),
-    };
+        .unwrap_unauthorized_err();
 
     let msg = tx_summary.as_ref().to_commitment();
     let tx_summary = SigningInputs::TransactionSummary(tx_summary);
@@ -1629,14 +1596,9 @@ async fn test_multisig_smart_low_spending_send_note_uses_tier_threshold_over_def
         .get_signature(public_keys[1].to_commitment(), &tx_summary)
         .await?;
 
-    let result = mock_chain
-        .build_tx_context(multisig_account.id(), &[], &[])?
-        .foreign_accounts(test_oracle_foreign_account_inputs(&mock_chain, &oracle_fixture)?)
-        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note)])
+    let result = tx_context_builder
         .add_signature(public_keys[0].to_commitment(), msg, sig_0)
         .add_signature(public_keys[1].to_commitment(), msg, sig_1)
-        .auth_args(salt)
-        .tx_script(send_note_transaction_script)
         .build()?
         .execute()
         .await;
@@ -2778,18 +2740,18 @@ async fn test_multisig_smart_proc_threshold_override_dominates_spending_tier(
     )?;
     let mock_chain = mock_chain_builder.build()?;
 
-    let salt = Word::from([Felt::from(701u32); 4]);
-    let tx_summary = match mock_chain
+    let salt = Word::from([Felt::new_unchecked(701); 4]);
+    let tx_context_builder = mock_chain
         .build_tx_context(multisig_account.id(), &[note.id()], &[])?
-        .auth_args(salt)
+        .auth_args(salt);
+
+    let tx_summary = tx_context_builder
+        .clone()
         .build()?
         .execute()
         .await
         .unwrap_err()
-    {
-        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
-        error => panic!("expected abort with tx effects: {error:?}"),
-    };
+        .unwrap_unauthorized_err();
 
     let msg = tx_summary.as_ref().to_commitment();
     let tx_summary_signing = SigningInputs::TransactionSummary(tx_summary.clone());
@@ -2804,9 +2766,8 @@ async fn test_multisig_smart_proc_threshold_override_dominates_spending_tier(
         .get_signature(public_keys[2].to_commitment(), &tx_summary_signing)
         .await?;
 
-    let three_sig_result = mock_chain
-        .build_tx_context(multisig_account.id(), &[note.id()], &[])?
-        .auth_args(salt)
+    let three_sig_result = tx_context_builder
+        .clone()
         .add_signature(public_keys[0].to_commitment(), msg, sig_0.clone())
         .add_signature(public_keys[1].to_commitment(), msg, sig_1.clone())
         .add_signature(public_keys[2].to_commitment(), msg, sig_2.clone())
@@ -2821,9 +2782,7 @@ async fn test_multisig_smart_proc_threshold_override_dominates_spending_tier(
     let sig_3 = authenticators[3]
         .get_signature(public_keys[3].to_commitment(), &tx_summary_signing)
         .await?;
-    let four_sig_result = mock_chain
-        .build_tx_context(multisig_account.id(), &[note.id()], &[])?
-        .auth_args(salt)
+    let four_sig_result = tx_context_builder
         .add_signature(public_keys[0].to_commitment(), msg, sig_0)
         .add_signature(public_keys[1].to_commitment(), msg, sig_1)
         .add_signature(public_keys[2].to_commitment(), msg, sig_2)
@@ -2858,17 +2817,16 @@ async fn test_multisig_smart_zero_output_notes_do_not_update_spending_tracker(
         MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
 
     let salt = Word::from([Felt::from(801u32); 4]);
-    let tx_summary = match mock_chain
-        .build_tx_context(multisig_account.id(), &[], &[])?
-        .auth_args(salt)
+    let tx_context_builder =
+        mock_chain.build_tx_context(multisig_account.id(), &[], &[])?.auth_args(salt);
+
+    let tx_summary = tx_context_builder
+        .clone()
         .build()?
         .execute()
         .await
         .unwrap_err()
-    {
-        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
-        error => panic!("expected abort with tx effects: {error:?}"),
-    };
+        .unwrap_unauthorized_err();
     let msg = tx_summary.as_ref().to_commitment();
     let tx_summary = SigningInputs::TransactionSummary(tx_summary);
 
@@ -2879,9 +2837,7 @@ async fn test_multisig_smart_zero_output_notes_do_not_update_spending_tracker(
         .get_signature(public_keys[1].to_commitment(), &tx_summary)
         .await?;
 
-    let tx = mock_chain
-        .build_tx_context(multisig_account.id(), &[], &[])?
-        .auth_args(salt)
+    let tx = tx_context_builder
         .add_signature(public_keys[0].to_commitment(), msg, sig_0)
         .add_signature(public_keys[1].to_commitment(), msg, sig_1)
         .build()?
@@ -2915,17 +2871,14 @@ async fn test_multisig_smart_replay_protection_same_tx_different_signer_subset(
         MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
 
     let salt = Word::from([Felt::from(901u32); 4]);
-    let tx_summary = match mock_chain
+    let tx_summary = mock_chain
         .build_tx_context(multisig_account.id(), &[], &[])?
         .auth_args(salt)
         .build()?
         .execute()
         .await
         .unwrap_err()
-    {
-        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
-        error => panic!("expected abort with tx effects: {error:?}"),
-    };
+        .unwrap_unauthorized_err();
     let msg = tx_summary.as_ref().to_commitment();
     let tx_summary = SigningInputs::TransactionSummary(tx_summary);
 

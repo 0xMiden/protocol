@@ -31,9 +31,8 @@ use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
     BurnAllowAll,
     BurnOwnerOnly,
-    BurnPolicyConfig,
-    MintPolicyConfig,
-    PolicyRegistration,
+    BurnPolicy,
+    MintPolicy,
     TokenPolicyManager,
     TransferPolicy,
 };
@@ -82,8 +81,13 @@ pub fn create_mint_script_code(params: &FaucetTestParams, faucet_id: AccountId) 
                 push.{amount}
                 push.{faucet_id_prefix}
                 push.{faucet_id_suffix}
-                push.0
-                # => [enable_callbacks=0, faucet_id_suffix, faucet_id_prefix, amount, tag, note_type, RECIPIENT, ...]
+                push.1
+                # => [enable_callbacks=1, faucet_id_suffix, faucet_id_prefix, amount, tag, note_type, RECIPIENT, ...]
+                # `enable_callbacks=1` matches the faucet's storage state under the M-01 fix:
+                # AllowAll transfer policies register the protocol callback slots, so
+                # `fungible::mint_and_send` derives the asset with `has_callbacks=true` and
+                # the input ASSET_KEY must carry the same flag for the binding check (#2911)
+                # to pass.
 
                 exec.::miden::protocol::asset::create_fungible_asset
                 # => [ASSET_KEY, ASSET_VALUE, tag, note_type, RECIPIENT, ...]
@@ -131,8 +135,9 @@ pub fn verify_minted_output_note(
 ) -> anyhow::Result<()> {
     let output_note = executed_transaction.output_notes().get_note(0).clone();
 
-    let fungible_asset: Asset =
-        FungibleAsset::new(faucet.id(), params.amount.as_canonical_u64())?.into();
+    let fungible_asset: Asset = FungibleAsset::new(faucet.id(), params.amount.as_canonical_u64())?
+        .with_callbacks(AssetCallbackFlag::Enabled)
+        .into();
     let assets = NoteAssets::new(vec![fungible_asset])?;
 
     let partial_metadata =
@@ -204,7 +209,7 @@ fn build_network_faucet_with_burn_switching(
     max_supply: u64,
     owner: AccountId,
     token_supply: u64,
-    mint_policy: MintPolicyConfig,
+    mint_policy: MintPolicy,
 ) -> anyhow::Result<Account> {
     let name = TokenName::new(token_symbol)?;
     let symbol = TokenSymbol::new(token_symbol)?;
@@ -218,12 +223,13 @@ fn build_network_faucet_with_burn_switching(
         .token_supply(token_supply)
         .build()?;
 
-    let token_policy_manager = TokenPolicyManager::new()
-        .with_mint_policy(mint_policy, PolicyRegistration::Active)?
-        .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)?
-        .with_burn_policy(BurnPolicyConfig::OwnerOnly, PolicyRegistration::Reserved)?
-        .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?
-        .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)?;
+    let token_policy_manager = TokenPolicyManager::builder()
+        .active_mint_policy(mint_policy)
+        .active_burn_policy(BurnPolicy::allow_all())
+        .allowed_burn_policy(BurnPolicy::owner_only())
+        .active_send_policy(TransferPolicy::allow_all())
+        .active_receive_policy(TransferPolicy::allow_all())
+        .build();
 
     let account_builder = AccountBuilder::new(builder.rng_mut().random())
         .account_type(AccountType::Public)
@@ -523,7 +529,9 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
 
     let output_script_root = note_recipient.script().root();
 
-    let asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?;
+    let callbacks_flag = AssetCallbackFlag::Enabled;
+    let asset =
+        FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?.with_callbacks(callbacks_flag);
     let metadata = PartialNoteMetadata::new(faucet.id(), note_type).with_tag(tag);
     let expected_note = Note::new(NoteAssets::new(vec![asset.into()])?, metadata, note_recipient);
 
@@ -561,8 +569,8 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
                 push.{amount}
                 push.{faucet_id_prefix}
                 push.{faucet_id_suffix}
-                push.0
-                # => [0, faucet_id_suffix, faucet_id_prefix, amount, tag, note_type, RECIPIENT]
+                push.{callbacks_flag}
+                # => [callbacks_flag, faucet_id_suffix, faucet_id_prefix, amount, tag, note_type, RECIPIENT]
 
                 exec.::miden::protocol::asset::create_fungible_asset
                 # => [ASSET_KEY, ASSET_VALUE, tag, note_type, RECIPIENT]
@@ -588,6 +596,7 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
         amount = amount,
         faucet_id_suffix = faucet.id().suffix(),
         faucet_id_prefix = faucet.id().prefix().as_felt(),
+        callbacks_flag = callbacks_flag as u8,
     );
 
     // Create the trigger note that will call mint
@@ -618,7 +627,8 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
         executed_transaction,
         note_type: NoteType::Public,
         sender: faucet.id(),
-        assets: [FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?],
+        assets: [FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?
+            .with_callbacks(AssetCallbackFlag::Enabled)],
     );
 
     let output_note = executed_transaction.output_notes().get_note(0);
@@ -666,7 +676,7 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
         max_supply,
         faucet_owner_account_id,
         Some(token_supply),
-        MintPolicyConfig::OwnerOnly,
+        MintPolicy::owner_only(),
         [],
     )?;
 
@@ -697,7 +707,11 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
     // --------------------------------------------------------------------------------------------
 
     let amount = Felt::new_unchecked(75);
-    let mint_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64()).unwrap();
+    // The faucet has callbacks configured via [`TransferPolicy::allow_all`], so the asset to mint
+    // must match on the callback flag.
+    let mint_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())
+        .unwrap()
+        .with_callbacks(AssetCallbackFlag::Enabled);
     let serial_num = Word::default();
 
     let output_note_tag = NoteTag::with_account_target(target_account.id());
@@ -737,7 +751,8 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
     let output_note = executed_transaction.output_notes().get_note(0);
 
     // Verify the output note contains the minted fungible asset
-    let expected_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?;
+    let expected_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?
+        .with_callbacks(AssetCallbackFlag::Enabled);
     let assets = NoteAssets::new(vec![expected_asset.into()])?;
     let details_commitment =
         NoteDetailsCommitment::from_raw_commitments(recipient, assets.commitment());
@@ -753,8 +768,10 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
     // CONSUME THE OUTPUT NOTE WITH TARGET ACCOUNT
     // --------------------------------------------------------------------------------------------
     // Execute transaction to consume the output note with the target account
+    let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
     let consume_tx_context = mock_chain
         .build_tx_context(target_account.id(), &[], slice::from_ref(&p2id_mint_output_note))?
+        .foreign_accounts(vec![faucet_inputs])
         .build()?;
     let consume_executed_transaction = consume_tx_context.execute().await?;
 
@@ -784,14 +801,15 @@ async fn test_network_faucet_owner_can_mint() -> anyhow::Result<()> {
         1000,
         owner_account_id,
         Some(50),
-        MintPolicyConfig::OwnerOnly,
+        MintPolicy::owner_only(),
         [],
     )?;
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
     let mock_chain = builder.build()?;
 
     let amount = Felt::new_unchecked(75);
-    let mint_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?;
+    let mint_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?
+        .with_callbacks(AssetCallbackFlag::Enabled);
 
     let output_note_tag = NoteTag::with_account_target(target_account.id());
     let p2id_note = create_p2id_note_exact(
@@ -851,7 +869,7 @@ async fn test_network_faucet_set_policy_rejects_non_allowed_root() -> anyhow::Re
         1000,
         owner_account_id,
         Some(0),
-        MintPolicyConfig::OwnerOnly,
+        MintPolicy::owner_only(),
         [set_policy_note_script.root()],
     )?;
     let mock_chain = builder.build()?;
@@ -888,7 +906,7 @@ async fn test_network_faucet_set_burn_policy_rejects_non_allowed_root() -> anyho
         1000,
         owner_account_id,
         Some(0),
-        MintPolicyConfig::OwnerOnly,
+        MintPolicy::owner_only(),
         [set_policy_note_script.root()],
     )?;
     let mock_chain = builder.build()?;
@@ -923,14 +941,15 @@ async fn test_network_faucet_non_owner_cannot_mint() -> anyhow::Result<()> {
         1000,
         owner_account_id,
         Some(50),
-        MintPolicyConfig::OwnerOnly,
+        MintPolicy::owner_only(),
         [],
     )?;
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
     let mock_chain = builder.build()?;
 
     let amount = Felt::new_unchecked(75);
-    let mint_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?;
+    let mint_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?
+        .with_callbacks(AssetCallbackFlag::Enabled);
 
     let output_note_tag = NoteTag::with_account_target(target_account.id());
     let p2id_note = create_p2id_note_exact(
@@ -977,7 +996,7 @@ async fn test_network_faucet_owner_storage() -> anyhow::Result<()> {
         1000,
         owner_account_id,
         Some(50),
-        MintPolicyConfig::OwnerOnly,
+        MintPolicy::owner_only(),
         [],
     )?;
     let _mock_chain = builder.build()?;
@@ -1049,13 +1068,14 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
         1000,
         initial_owner_account_id,
         Some(50),
-        MintPolicyConfig::OwnerOnly,
+        MintPolicy::owner_only(),
         [transfer_script.root(), accept_script.root()],
     )?;
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
 
     let amount = Felt::new_unchecked(75);
-    let mint_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?;
+    let mint_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?
+        .with_callbacks(AssetCallbackFlag::Enabled);
 
     let output_note_tag = NoteTag::with_account_target(target_account.id());
     let p2id_note = create_p2id_note_exact(
@@ -1186,7 +1206,7 @@ async fn test_network_faucet_only_owner_can_transfer() -> anyhow::Result<()> {
         1000,
         owner_account_id,
         Some(50),
-        MintPolicyConfig::OwnerOnly,
+        MintPolicy::owner_only(),
         [transfer_script.root()],
     )?;
     let mock_chain = builder.build()?;
@@ -1262,7 +1282,7 @@ async fn test_network_faucet_renounce_ownership() -> anyhow::Result<()> {
         1000,
         owner_account_id,
         Some(50),
-        MintPolicyConfig::OwnerOnly,
+        MintPolicy::owner_only(),
         [renounce_script.root(), transfer_script.root()],
     )?;
 
@@ -1344,7 +1364,7 @@ fn test_network_faucet_contains_default_burn_policy_root() -> anyhow::Result<()>
         200,
         owner_account_id,
         Some(100),
-        MintPolicyConfig::OwnerOnly,
+        MintPolicy::owner_only(),
         [],
     )?;
 
@@ -1369,7 +1389,7 @@ async fn network_faucet_burn() -> anyhow::Result<()> {
         200,
         faucet_owner_account_id,
         Some(100),
-        MintPolicyConfig::OwnerOnly,
+        MintPolicy::owner_only(),
         [],
     )?;
 
@@ -1436,7 +1456,7 @@ async fn test_network_faucet_non_owner_cannot_burn_when_owner_only_policy_active
         200,
         owner_account_id,
         100,
-        MintPolicyConfig::OwnerOnly,
+        MintPolicy::owner_only(),
     )?;
     let set_policy_note_script =
         create_set_burn_policy_note_script(BurnOwnerOnly::root().as_word());
@@ -1491,7 +1511,7 @@ async fn test_network_faucet_owner_can_burn_when_owner_only_policy_active() -> a
         200,
         owner_account_id,
         100,
-        MintPolicyConfig::OwnerOnly,
+        MintPolicy::owner_only(),
     )?;
     let set_policy_note_script =
         create_set_burn_policy_note_script(BurnOwnerOnly::root().as_word());
@@ -1553,13 +1573,17 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
         1000,
         faucet_owner_account_id,
         Some(50),
-        MintPolicyConfig::OwnerOnly,
+        MintPolicy::owner_only(),
         [],
     )?;
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
 
     let amount = Felt::new_unchecked(75);
-    let mint_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64()).unwrap();
+    // The faucet has callbacks configured via [`TransferPolicy::allow_all`], so the asset to mint
+    // must match on the callback flag.
+    let mint_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())
+        .unwrap()
+        .with_callbacks(AssetCallbackFlag::Enabled);
     let serial_num = Word::from([1, 2, 3, 4u32]);
 
     // Create the expected P2ID output note
@@ -1631,14 +1655,17 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
 
     // Consume the output note with target account
     let mut target_account_mut = target_account.clone();
+    let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
     let consume_tx_context = mock_chain
         .build_tx_context(target_account.id(), &[], slice::from_ref(&p2id_mint_output_note))?
+        .foreign_accounts(vec![faucet_inputs])
         .build()?;
     let consume_executed_transaction = consume_tx_context.execute().await?;
 
     target_account_mut.apply_delta(consume_executed_transaction.account_delta())?;
 
-    let expected_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?;
+    let expected_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?
+        .with_callbacks(AssetCallbackFlag::Enabled);
     let balance = target_account_mut.vault().get_balance(expected_asset.vault_key())?;
     assert_eq!(balance, expected_asset.amount());
 
@@ -1677,8 +1704,8 @@ async fn multiple_mints_in_single_tx_produce_correct_amounts() -> anyhow::Result
                 push.{amount_1}
                 push.{faucet_id_prefix}
                 push.{faucet_id_suffix}
-                push.0
-                # => [0, faucet_id_suffix, faucet_id_prefix, amount_1, tag, note_type, RECIPIENT_1]
+                push.1
+                # => [enable_callbacks=1, faucet_id_suffix, faucet_id_prefix, amount_1, tag, note_type, RECIPIENT_1]
 
                 exec.::miden::protocol::asset::create_fungible_asset
                 # => [ASSET_KEY, ASSET_VALUE, tag, note_type, RECIPIENT_1]
@@ -1696,8 +1723,8 @@ async fn multiple_mints_in_single_tx_produce_correct_amounts() -> anyhow::Result
                 push.{amount_2}
                 push.{faucet_id_prefix}
                 push.{faucet_id_suffix}
-                push.0
-                # => [0, faucet_id_suffix, faucet_id_prefix, amount_2, tag, note_type, RECIPIENT_2]
+                push.1
+                # => [enable_callbacks=1, faucet_id_suffix, faucet_id_prefix, amount_2, tag, note_type, RECIPIENT_2]
 
                 exec.::miden::protocol::asset::create_fungible_asset
                 # => [ASSET_KEY, ASSET_VALUE, tag, note_type, RECIPIENT_2]
@@ -1730,7 +1757,9 @@ async fn multiple_mints_in_single_tx_produce_correct_amounts() -> anyhow::Result
     assert_eq!(executed_transaction.output_notes().num_notes(), 2);
 
     // Verify first note has exactly amount_1 tokens.
-    let expected_asset_1: Asset = FungibleAsset::new(faucet.id(), amount_1)?.into();
+    let expected_asset_1: Asset = FungibleAsset::new(faucet.id(), amount_1)?
+        .with_callbacks(AssetCallbackFlag::Enabled)
+        .into();
     let output_note_1 = executed_transaction.output_notes().get_note(0);
     let assets_1 = NoteAssets::new(vec![expected_asset_1])?;
     let details_commitment_1 =
@@ -1739,7 +1768,9 @@ async fn multiple_mints_in_single_tx_produce_correct_amounts() -> anyhow::Result
     assert_eq!(output_note_1.id(), expected_id_1);
 
     // Verify second note has exactly amount_2 tokens.
-    let expected_asset_2: Asset = FungibleAsset::new(faucet.id(), amount_2)?.into();
+    let expected_asset_2: Asset = FungibleAsset::new(faucet.id(), amount_2)?
+        .with_callbacks(AssetCallbackFlag::Enabled)
+        .into();
     let output_note_2 = executed_transaction.output_notes().get_note(1);
     let assets_2 = NoteAssets::new(vec![expected_asset_2])?;
     let details_commitment_2 =
@@ -1750,10 +1781,10 @@ async fn multiple_mints_in_single_tx_produce_correct_amounts() -> anyhow::Result
     Ok(())
 }
 
-// NetworkFungibleFaucet + TransferPolicy::Blocklist (post-#2879 happy path)
+// NetworkFungibleFaucet + TransferPolicy::basic_blocklist (post-#2879 happy path)
 // ================================================================================================
 
-/// Builds a network faucet with [`TransferPolicy::Blocklist`] on both send and receive,
+/// Builds a network faucet with [`TransferPolicy::basic_blocklist`] on both send and receive,
 /// so the manager populates the asset-callback slots and callbacks dispatch to the
 /// basic blocklist predicate.
 fn build_network_faucet_with_blocklist_transfer(
@@ -1775,11 +1806,12 @@ fn build_network_faucet_with_blocklist_transfer(
         .token_supply(token_supply)
         .build()?;
 
-    let token_policy_manager = TokenPolicyManager::new()
-        .with_mint_policy(MintPolicyConfig::OwnerOnly, PolicyRegistration::Active)?
-        .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Active)?
-        .with_send_policy(TransferPolicy::Blocklist, PolicyRegistration::Active)?
-        .with_receive_policy(TransferPolicy::Blocklist, PolicyRegistration::Active)?;
+    let token_policy_manager = TokenPolicyManager::builder()
+        .active_mint_policy(MintPolicy::owner_only())
+        .active_burn_policy(BurnPolicy::allow_all())
+        .active_send_policy(TransferPolicy::empty_basic_blocklist())
+        .active_receive_policy(TransferPolicy::empty_basic_blocklist())
+        .build();
 
     let account_builder = AccountBuilder::new(builder.rng_mut().random())
         .account_type(AccountType::Public)
@@ -1798,7 +1830,7 @@ fn build_network_faucet_with_blocklist_transfer(
 }
 
 /// Verifies that the network-faucet mint pattern works when `TokenPolicyManager` installs
-/// asset-callback slots (here via [`TransferPolicy::Blocklist`]).
+/// asset-callback slots (here via [`TransferPolicy::basic_blocklist`]).
 ///
 /// Before the protocol fix in 0xMiden/protocol#2879 the kernel rejected this with
 /// `ERR_FOREIGN_ACCOUNT_CONTEXT_AGAINST_NATIVE_ACCOUNT` because the issuing faucet was also
