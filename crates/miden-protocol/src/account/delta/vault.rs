@@ -96,10 +96,12 @@ impl AccountVaultDelta {
         // TODO(unified_delta): Refactoring the internal asset delta structure to make this extra
         // allocation unnecessary.
         let added_assets = BTreeMap::from_iter(
-            self.added_assets().map(|asset| (asset.vault_key(), asset.to_value_word())),
+            self.added_assets_inner()
+                .map(|asset| (asset.vault_key(), asset.to_value_word())),
         );
         let removed_assets = BTreeMap::from_iter(
-            self.removed_assets().map(|asset| (asset.vault_key(), asset.to_value_word())),
+            self.removed_assets_inner()
+                .map(|asset| (asset.vault_key(), asset.to_value_word())),
         );
 
         Self::add_asset_section(Self::DELTA_OP_ADD, added_assets, elements);
@@ -164,6 +166,18 @@ impl AccountVaultDelta {
 
     /// Returns an iterator over the added assets in this delta.
     pub fn added_assets(&self) -> impl Iterator<Item = crate::asset::Asset> + '_ {
+        self.added_assets_inner()
+    }
+
+    /// Returns an iterator over the removed assets in this delta.
+    pub fn removed_assets(&self) -> impl Iterator<Item = crate::asset::Asset> + '_ {
+        self.removed_assets_inner()
+    }
+}
+
+impl AccountVaultDelta {
+    /// Returns an iterator over the added assets in this delta.
+    fn added_assets_inner(&self) -> impl Iterator<Item = crate::asset::Asset> + '_ {
         self.fungible
             .0
             .iter()
@@ -183,7 +197,7 @@ impl AccountVaultDelta {
     }
 
     /// Returns an iterator over the removed assets in this delta.
-    pub fn removed_assets(&self) -> impl Iterator<Item = crate::asset::Asset> + '_ {
+    fn removed_assets_inner(&self) -> impl Iterator<Item = crate::asset::Asset> + '_ {
         self.fungible
             .0
             .iter()
