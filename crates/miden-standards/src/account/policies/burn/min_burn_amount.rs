@@ -60,7 +60,7 @@ static MIN_BURN_AMOUNT_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// Pair with a [`crate::account::policies::TokenPolicyManager`] whose allowed burn-policies map
 /// includes [`MinBurnAmount::root`]. When active, a burn is rejected unless its amount meets or
 /// exceeds the configured minimum burn amount, which is stored in this component's value slot
-/// ([`MinBurnAmount::slot_name`]) and can be updated through the owner-gated
+/// ([`MinBurnAmount::slot_name`]) and can be updated through the authority-gated
 /// `set_min_burn_amount` procedure (authorized via the account-wide
 /// [`Authority`][crate::account::access::Authority] component).
 #[derive(Debug, Clone, Copy)]

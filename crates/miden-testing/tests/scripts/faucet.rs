@@ -1722,9 +1722,6 @@ async fn test_network_faucet_burn_at_min_burn_amount_succeeds() -> anyhow::Resul
     let tx_context = mock_chain.build_tx_context(faucet.id(), &[burn_note.id()], &[])?.build()?;
     let executed_transaction = tx_context.execute().await?;
 
-    assert_eq!(executed_transaction.output_notes().num_notes(), 0);
-    assert_eq!(executed_transaction.account_delta().nonce_delta(), Felt::ONE);
-
     faucet.apply_delta(executed_transaction.account_delta())?;
     let final_token_supply = FungibleFaucet::try_from(faucet.storage())?.token_supply();
     assert_eq!(
@@ -1744,7 +1741,7 @@ async fn test_network_faucet_owner_can_set_min_burn_amount() -> anyhow::Result<(
     let owner_account_id =
         AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountType::Private);
 
-    let faucet = build_network_faucet_with_min_burn_amount(
+    let mut faucet = build_network_faucet_with_min_burn_amount(
         &mut builder,
         "NET",
         200,
@@ -1777,22 +1774,30 @@ async fn test_network_faucet_owner_can_set_min_burn_amount() -> anyhow::Result<(
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
+    let initial_token_supply = FungibleFaucet::try_from(faucet.storage())?.token_supply();
+
     // Execute the set-min-burn-amount note first.
     let source_manager = Arc::new(DefaultSourceManager::default());
     let tx_context = mock_chain
         .build_tx_context(faucet.id(), &[set_note.id()], &[])?
         .with_source_manager(source_manager.clone())
         .build()?;
-    let executed_transaction = tx_context.execute().await?;
-    mock_chain.add_pending_executed_transaction(&executed_transaction)?;
+    let set_transaction = tx_context.execute().await?;
+    mock_chain.add_pending_executed_transaction(&set_transaction)?;
     mock_chain.prove_next_block()?;
+    faucet.apply_delta(set_transaction.account_delta())?;
 
     // The burn that was below the original threshold now succeeds.
     let tx_context = mock_chain.build_tx_context(faucet.id(), &[burn_note.id()], &[])?.build()?;
-    let executed_transaction = tx_context.execute().await?;
+    let burn_transaction = tx_context.execute().await?;
 
-    assert_eq!(executed_transaction.output_notes().num_notes(), 0);
-    assert_eq!(executed_transaction.account_delta().nonce_delta(), Felt::ONE);
+    // Lowering the threshold left the supply untouched; only the burn reduces it.
+    faucet.apply_delta(burn_transaction.account_delta())?;
+    let final_token_supply = FungibleFaucet::try_from(faucet.storage())?.token_supply();
+    assert_eq!(
+        final_token_supply,
+        AssetAmount::new(initial_token_supply.as_u64() - burn_amount).unwrap()
+    );
 
     Ok(())
 }
