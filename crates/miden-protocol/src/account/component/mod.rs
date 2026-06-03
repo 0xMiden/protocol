@@ -200,6 +200,12 @@ impl AccountComponent {
     ) -> Option<AccountProcedureRoot> {
         self.code.get_procedure_root_by_path(proc_name)
     }
+
+    /// Returns `true` if `root` is the procedure root of any procedure exported by this
+    /// component.
+    pub fn has_procedure(&self, root: AccountProcedureRoot) -> bool {
+        self.procedures().any(|(proc_root, _)| proc_root == root)
+    }
 }
 
 impl From<AccountComponent> for AccountComponentCode {
