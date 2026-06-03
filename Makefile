@@ -143,12 +143,12 @@ build: ## By default we should build in release mode
 
 .PHONY: build-no-std
 build-no-std: ## Build without the standard library
-	$(BUILD_GENERATED_FILES_IN_SRC) cargo build --no-default-features --target wasm32-unknown-unknown --workspace --lib
+	$(BUILD_GENERATED_FILES_IN_SRC) cargo build --no-default-features --target wasm32-unknown-unknown --workspace --lib --exclude bench-transaction --exclude bench-note-checker
 
 
 .PHONY: build-no-std-testing
 build-no-std-testing: ## Build without the standard library. Includes the `testing` feature
-	$(BUILD_GENERATED_FILES_IN_SRC) cargo build --no-default-features --target wasm32-unknown-unknown --workspace --exclude bench-transaction --features testing
+	$(BUILD_GENERATED_FILES_IN_SRC) cargo build --no-default-features --target wasm32-unknown-unknown --workspace --exclude bench-transaction --exclude bench-note-checker --features testing
 
 # --- test vectors --------------------------------------------------------------------------------
 
