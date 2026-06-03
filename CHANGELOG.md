@@ -9,6 +9,7 @@
 - [BREAKING] Replaced the per-tree account and nullifier backend traits with shared `SmtBackend` and `SmtBackendReader` traits, split into read-only and read-write capabilities, enabling read-only `LargeSmt`-backed tree views via `reader()` ([#2755](https://github.com/0xMiden/protocol/pull/2755), [#3009](https://github.com/0xMiden/protocol/pull/3009)).
 - Added `active_note::is_public` and `active_note::is_private` MASM procedures for checking whether the active note is public or private ([#2988](https://github.com/0xMiden/protocol/pull/2988)).
 - Added a `min_burn_amount` fungible faucet burn policy that rejects burns below a configurable, owner-gated minimum burn amount ([#3021](https://github.com/0xMiden/protocol/pull/3021)).
+- Added the `active_account::has_storage_slot` MASM procedure for checking whether a storage slot exists on the active account without panicking ([#3037](https://github.com/0xMiden/protocol/pull/3037)).
 - Introduced `AccountPatch` and `AccountVaultPatch` ([#3010](https://github.com/0xMiden/protocol/pull/3010)).
 - Clarified the transaction definition and the distinction between execution and proving on the architecture overview page ([#3015](https://github.com/0xMiden/protocol/pull/3015)).
 - [BREAKING] Refactored `TransferPolicy`, `MintPolicyConfig`, and `BurnPolicyConfig` from enums into structs ([#2974](https://github.com/0xMiden/protocol/pull/2974)).
