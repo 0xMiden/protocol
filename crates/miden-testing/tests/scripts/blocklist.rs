@@ -55,7 +55,7 @@ fn add_faucet_with_owner_blocklist_transfer(
 
 /// Same as [`add_faucet_with_owner_blocklist_transfer`] but seeds the `blocked_accounts`
 /// storage map with the given accounts at deploy time via
-/// [`TransferPolicy::with_basic_blocklist_ids`]. The receive policy reuses the same root via
+/// [`TransferPolicy::with_basic_blocklist`]. The receive policy reuses the same root via
 /// [`TransferPolicy::empty_basic_blocklist`]; the manager dedups companion components by
 /// procedure root, so the seeded `BasicBlocklist` from the send policy is installed exactly
 /// once.
@@ -80,7 +80,7 @@ fn add_faucet_with_owner_blocklist_transfer_initialized(
             TokenPolicyManager::builder()
                 .active_mint_policy(MintPolicy::allow_all())
                 .active_burn_policy(BurnPolicy::allow_all())
-                .active_send_policy(TransferPolicy::with_basic_blocklist_ids(initial_blocked))
+                .active_send_policy(TransferPolicy::with_basic_blocklist(initial_blocked))
                 .active_receive_policy(TransferPolicy::empty_basic_blocklist())
                 .build(),
         )

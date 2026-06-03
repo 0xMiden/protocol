@@ -76,7 +76,7 @@ impl TransferPolicy {
 
     /// Returns a transfer policy that rejects transfers whose native account is in the
     /// `blocked_accounts` map, starting with an empty blocklist. To seed initial entries use
-    /// [`Self::with_basic_blocklist_ids`].
+    /// [`Self::with_basic_blocklist`].
     pub fn empty_basic_blocklist() -> Self {
         Self {
             root: BasicBlocklist::root(),
@@ -85,7 +85,7 @@ impl TransferPolicy {
     }
 
     /// Returns a basic-blocklist transfer policy seeded with the given initial blocked accounts.
-    pub fn with_basic_blocklist_ids<I>(blocked_accounts: I) -> Self
+    pub fn with_basic_blocklist<I>(blocked_accounts: I) -> Self
     where
         I: IntoIterator<Item = AccountId>,
     {

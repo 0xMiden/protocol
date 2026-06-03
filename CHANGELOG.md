@@ -8,6 +8,7 @@
 - [BREAKING] Extracted `NullifierTreeBackendReader` and `AccountTreeBackendReader` traits from existing `NullifierTreeBackend` and `AccountTreeBackend` traits ([#2755](https://github.com/0xMiden/protocol/pull/2755)).
 - Added `active_note::is_public` and `active_note::is_private` MASM procedures for checking whether the active note is public or private ([#2988](https://github.com/0xMiden/protocol/pull/2988)).
 - Clarified the transaction definition and the distinction between execution and proving on the architecture overview page ([#3015](https://github.com/0xMiden/protocol/pull/3015)).
+- [BREAKING] Refactored `TransferPolicy`, `MintPolicyConfig`, and `BurnPolicyConfig` from enums into structs (renamed to `TransferPolicy`/`MintPolicy`/`BurnPolicy`) constructed via `allow_all`/`owner_only`/`empty_basic_blocklist`/`with_basic_blocklist`/`empty_basic_allowlist`/`with_basic_allowlist`/`custom`, refactored `TokenPolicyManager` to a `bon` builder with explicit `active_*_policy` / `allowed_*_policy` setters (removing `PolicyRegistration`), aligned `BasicBlocklist` with `BasicAllowlist` by wrapping `BlocklistStorage`, and added per-policy `custom()` validation errors (`MintPolicyError` / `BurnPolicyError` / `TransferPolicyError`) ([#2974](https://github.com/0xMiden/protocol/pull/2974)).
 
 ### Fixes
 - Fixed `update_ger` to explicitly reject duplicate GER insertions with `ERR_GER_ALREADY_REGISTERED` instead of silently accepting them ([#2983](https://github.com/0xMiden/protocol/pull/2983)).
@@ -18,10 +19,6 @@
 ### Changes
 
 - Reject batches and blocks where an unauthenticated note is consumed before it is created to prevent circular note dependencies ([#2993](https://github.com/0xMiden/protocol/pull/2993)).
-
-### Changes
-
-- [BREAKING] Refactored `TransferPolicy`, `MintPolicyConfig`, and `BurnPolicyConfig` from enums into structs ([#2974](https://github.com/0xMiden/protocol/pull/2974)).
 
 ## v0.15.0 (2026-05-22)
 
