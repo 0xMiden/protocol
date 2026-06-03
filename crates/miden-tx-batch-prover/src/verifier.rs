@@ -17,13 +17,12 @@ use crate::BatchVerifierError;
 ///
 /// # Warning
 ///
-/// The batch kernel currently emits and binds only the batch's `INPUT_NOTES_COMMITMENT`; the batch
-/// note tree root and expiration are still all-zero placeholders, and input notes are not yet
-/// authenticated against the chain MMR. A successful [`verify`](BatchVerifier::verify) therefore
-/// attests that the kernel ran over the batch's `[BLOCK_COMMITMENT, BATCH_ID]` inputs and produced
-/// `batch.input_notes().commitment()`, but does **not** yet bind the batch's output notes, account
-/// updates, or expiration. This verifier must not be relied on at a trust boundary until the
-/// remaining kernel verification logic lands.
+/// The batch kernel binds only the batch's `INPUT_NOTES_COMMITMENT`. The batch note tree root and
+/// expiration are emitted as the empty word and zero, and input notes are not authenticated against
+/// the chain MMR. A successful [`verify`](BatchVerifier::verify) therefore attests that the kernel
+/// ran over the batch's `[BLOCK_COMMITMENT, BATCH_ID]` inputs and produced
+/// `batch.input_notes().commitment()`, but does **not** bind the batch's output notes, account
+/// updates, or expiration. This verifier must not be relied on at a trust boundary.
 pub struct BatchVerifier {
     batch_program_info: ProgramInfo,
     proof_security_level: u32,
@@ -46,9 +45,8 @@ impl BatchVerifier {
         let stack_inputs =
             BatchKernel::build_input_stack(batch.reference_block_commitment(), batch.id());
 
-        // The kernel emits the batch's INPUT_NOTES_COMMITMENT; the batch note tree root and
-        // expiration are still all-zero placeholders (wired up in follow-up work, at which point
-        // they become the batch note tree root and `batch.batch_expiration_block_num()`).
+        // The kernel binds the batch's INPUT_NOTES_COMMITMENT but not the batch note tree root or
+        // expiration, so those are passed as the empty word and zero.
         let stack_outputs = BatchOutputs::new(
             batch.input_notes().commitment(),
             Word::empty(),

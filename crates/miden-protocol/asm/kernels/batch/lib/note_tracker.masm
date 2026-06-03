@@ -244,8 +244,8 @@ proc mark_output_note_created
     push.1 swap mem_store
 end
 
-#! Advances input-note list entry `i`'s erasure flag from 1 (expected) to 2 (its creator has now been
-#! processed), asserting it was 1.
+#! Advances input-note list entry `i`'s erasure flag from 1 (expected) to 2 (its creator output note
+#! has been processed), asserting it was 1.
 #!
 #! Inputs:  [i]
 #! Outputs: []
@@ -300,7 +300,7 @@ proc bind_one_output_note
     end
 end
 
-#! Binds all `num_notes` per-transaction output notes currently in the scratch region.
+#! Binds all `num_notes` per-transaction output notes staged in the scratch region.
 #!
 #! Inputs:  [num_notes]
 #! Outputs: []
@@ -357,8 +357,8 @@ proc mark_input_note_consumed
     push.1 swap mem_store
 end
 
-#! Asserts input-note list entry `i` is not still expected-to-be-erased (erasure flag != 1) at the
-#! point it is consumed — i.e. if it is created in this batch, its creator has already been
+#! Asserts input-note list entry `i` is not expected-to-be-erased (erasure flag != 1) at the
+#! point it is consumed: if it is created in this batch, its creator has already been
 #! processed. Rejects consume-before-create / circular dependencies.
 #!
 #! Inputs:  [i]
@@ -402,7 +402,7 @@ proc bind_one_input_note
     exec.mark_input_note_consumed
 end
 
-#! Binds all `num_notes` per-transaction input notes currently in the scratch region.
+#! Binds all `num_notes` per-transaction input notes staged in the scratch region.
 #!
 #! Inputs:  [num_notes]
 #! Outputs: []

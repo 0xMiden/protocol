@@ -42,8 +42,8 @@ use miden::batch_kernel::prologue
 #!   committing to the transactions in the batch.
 #! - INPUT_NOTES_COMMITMENT is the nullifier-sorted sequential hash over the batch's input notes,
 #!   excluding notes created and consumed within the batch (matching `ProposedBatch`).
-#! - BATCH_NOTE_TREE_ROOT is currently not wired up (empty word).
-#! - batch_expiration_block_num is currently not wired-up (zero).
+#! - BATCH_NOTE_TREE_ROOT is the empty word; not bound by the kernel.
+#! - batch_expiration_block_num is zero; not bound by the kernel.
 #!
 #! TODO: verify BLOCK_COMMITMENT against block header data via the same pipe-and-verify pattern.
 #! TODO: authenticate unauthenticated, non-erased input notes against BLOCK_COMMITMENT's chain MMR.
@@ -65,8 +65,7 @@ proc main
 
     # Drop the surplus padding word so the stack holds exactly the 16-felt output region
     # [INPUT_NOTES_COMMITMENT, BATCH_NOTE_TREE_ROOT, batch_expiration_block_num, pad(7)]. The
-    # BATCH_NOTE_TREE_ROOT and batch_expiration_block_num cells stay zero (wired up in follow-up
-    # PRs).
+    # BATCH_NOTE_TREE_ROOT and batch_expiration_block_num cells stay zero.
     movupw.3 dropw
     # => [INPUT_NOTES_COMMITMENT, pad(12)]
 end

@@ -93,7 +93,7 @@ fn assert_kernel_error<T>(result: Result<T, ProvenBatchError>, expected: MasmErr
 /// The batch kernel reconstructs every transaction's input notes, binds them to the global
 /// nullifier-sorted list, and emits `INPUT_NOTES_COMMITMENT` equal to the commitment the proposed
 /// batch derives over the same notes. `two_tx_batch` has no intra-batch erasure, so the full union
-/// is committed. The batch note tree root and expiration outputs are not wired up yet.
+/// is committed. Only the `INPUT_NOTES_COMMITMENT` output is asserted.
 #[test]
 fn batch_kernel_emits_input_notes_commitment() -> anyhow::Result<()> {
     let mut setup = setup_chain();
