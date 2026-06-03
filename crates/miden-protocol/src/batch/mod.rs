@@ -17,3 +17,9 @@ mod ordered_batches;
 pub use ordered_batches::OrderedBatches;
 
 pub(super) mod note_tracker;
+
+mod kernel;
+pub use kernel::BatchKernel;
+
+mod output;
+pub use output::BatchOutputs;
