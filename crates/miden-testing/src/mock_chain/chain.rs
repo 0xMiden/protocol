@@ -532,7 +532,7 @@ impl MockChain {
         proposed_batch: ProposedBatch,
     ) -> anyhow::Result<ProvenBatch> {
         let batch_prover = LocalBatchProver::new();
-        Ok(batch_prover.prove(proposed_batch)?)
+        Ok(batch_prover.prove_dummy(proposed_batch)?)
     }
 
     // BLOCK APIS

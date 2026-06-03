@@ -9,6 +9,7 @@ use miden_core::mast::MastForestError;
 use miden_crypto::merkle::mmr::MmrError;
 use miden_crypto::merkle::smt::{SmtLeafError, SmtProofError};
 use miden_crypto::utils::HexParseError;
+use miden_processor::ExecutionError;
 use miden_verifier::VerificationError;
 use thiserror::Error;
 
@@ -288,8 +289,6 @@ pub enum AccountTreeError {
         "entries passed to account tree contain multiple state commitments for the same account ID prefix {prefix}"
     )]
     DuplicateStateCommitments { prefix: AccountIdPrefix },
-    #[error("entries passed to account tree contain duplicate values")]
-    DuplicateEntries(#[source] MerkleError),
     #[error("untracked account ID {id} used in partial account tree")]
     UntrackedAccountId { id: AccountId, source: MerkleError },
     #[error("new tree root after account witness insertion does not match previous tree root")]
@@ -1091,6 +1090,21 @@ pub enum ProvenBatchError {
         batch_expiration_block_num: BlockNumber,
         reference_block_num: BlockNumber,
     },
+    #[error("batch kernel execution failed")]
+    BatchKernelExecutionFailed(#[source] ExecutionError),
+    #[error("batch kernel produced an invalid output stack")]
+    BatchKernelOutputInvalid(#[source] BatchOutputError),
+}
+
+// BATCH OUTPUT ERROR
+// ================================================================================================
+
+#[derive(Debug, Error)]
+pub enum BatchOutputError {
+    #[error("batch kernel output stack is invalid: {0}")]
+    OutputStackInvalid(String),
+    #[error("batch expiration block number {0} does not fit into a u32")]
+    ExpirationBlockNumberTooLarge(Felt),
 }
 
 // PROPOSED BLOCK ERROR

@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 #[cfg(feature = "std")]
 use miden_crypto::merkle::smt::{LargeSmt, LargeSmtError, SmtStorage};
 
-use crate::block::BlockNumber;
+use crate::block::{BlockNumber, SmtBackend, SmtBackendReader};
 use crate::crypto::merkle::MerkleError;
 use crate::crypto::merkle::smt::{MutationSet, SMT_DEPTH, Smt};
 use crate::errors::NullifierTreeError;
@@ -17,9 +17,6 @@ use crate::utils::serde::{
     Serializable,
 };
 use crate::{Felt, Word};
-
-mod backend;
-pub use backend::{NullifierTreeBackend, NullifierTreeBackendReader};
 
 mod witness;
 pub use witness::NullifierWitness;
@@ -54,7 +51,7 @@ where
 
 impl<Backend> NullifierTree<Backend>
 where
-    Backend: NullifierTreeBackendReader<Error = MerkleError>,
+    Backend: SmtBackendReader<Error = MerkleError>,
 {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
@@ -69,7 +66,9 @@ where
     ///
     /// # Invariants
     ///
-    /// See the documentation on [`NullifierTreeBackend`] trait documentation.
+    /// Assumes the provided SMT upholds the guarantees of the [`NullifierTree`]. Specifically:
+    /// - Nullifiers are only spent once and their block numbers do not change.
+    /// - Nullifier leaf values must be valid according to [`NullifierBlock`].
     pub fn new_unchecked(backend: Backend) -> Self {
         NullifierTree { smt: backend }
     }
@@ -112,7 +111,8 @@ where
     /// Returns the block number for the given nullifier or `None` if the nullifier wasn't spent
     /// yet.
     pub fn get_block_num(&self, nullifier: &Nullifier) -> Option<BlockNumber> {
-        let nullifier_block = self.smt.get_value(&nullifier.as_word());
+        let nullifier_block = NullifierBlock::new(self.smt.get_value(&nullifier.as_word()))
+            .expect("SMT should only store valid NullifierBlocks");
         if nullifier_block.is_unspent() {
             return None;
         }
@@ -123,7 +123,7 @@ where
 
 impl<Backend> NullifierTree<Backend>
 where
-    Backend: NullifierTreeBackend<Error = MerkleError>,
+    Backend: SmtBackend<Error = MerkleError>,
 {
     // PUBLIC MUTATORS
     // --------------------------------------------------------------------------------------------
@@ -176,10 +176,12 @@ where
         nullifier: Nullifier,
         block_num: BlockNumber,
     ) -> Result<(), NullifierTreeError> {
-        let prev_nullifier_value = self
+        let prev_value = self
             .smt
-            .insert(nullifier.as_word(), NullifierBlock::from(block_num))
+            .insert(nullifier.as_word(), NullifierBlock::from(block_num).into())
             .map_err(NullifierTreeError::MaxLeafEntriesExceeded)?;
+        let prev_nullifier_value = NullifierBlock::try_from(prev_value)
+            .expect("SMT should only store valid NullifierBlocks");
 
         if prev_nullifier_value.is_spent() {
             Err(NullifierTreeError::NullifierAlreadySpent(nullifier))
@@ -242,12 +244,15 @@ where
     ///
     /// Returns an error if:
     /// - the provided entries contain multiple block numbers for the same nullifier.
-    /// - a storage error is encountered.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a storage error is encountered.
     pub fn with_storage_from_entries(
         storage: Backend,
         entries: impl IntoIterator<Item = (Nullifier, BlockNumber)>,
     ) -> Result<Self, NullifierTreeError> {
-        use crate::block::nullifier_tree::backend::large_smt_error_to_merkle_error;
+        use crate::block::smt_backend::large_smt_error_to_merkle_error;
 
         let leaves = entries.into_iter().map(|(nullifier, block_num)| {
             (nullifier.as_word(), NullifierBlock::from(block_num).into())
