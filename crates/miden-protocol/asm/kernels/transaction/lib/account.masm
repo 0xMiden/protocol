@@ -443,9 +443,6 @@ end
 #! Returns a flag indicating whether a storage slot with the provided slot ID exists in the active
 #! account's storage.
 #!
-#! Unlike `get_item`, this procedure does not panic if the slot does not exist. Instead, it returns
-#! `has_slot = 0`.
-#!
 #! Inputs:  [slot_id_suffix, slot_id_prefix]
 #! Outputs: [has_slot]
 #!
