@@ -5,7 +5,7 @@ use thiserror::Error;
 use crate::account::access::Ownable2StepError;
 use crate::utils::FixedWidthStringError;
 
-pub(crate) mod fungible;
+mod fungible;
 mod token_metadata;
 
 pub use fungible::{

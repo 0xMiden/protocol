@@ -564,28 +564,6 @@ impl TryFrom<&Account> for FungibleFaucet {
 // FACTORY
 // ================================================================================================
 
-/// Returns every authority-gated setter procedure root exported by a fungible faucet account.
-///
-/// Under [`Authority::AuthControlled`] the auth component must authenticate calls to all of
-/// these procedures, otherwise the setters become permissionless. This list is the single
-/// source of truth used when configuring an [`AuthSingleSigAcl`] trigger procedure list for a
-/// user-account fungible faucet.
-pub(crate) fn all_authority_gated_setter_roots() -> Vec<AccountProcedureRoot> {
-    vec![
-        FungibleFaucet::mint_and_send_root(),
-        FungibleFaucet::set_max_supply_root(),
-        FungibleFaucet::set_description_root(),
-        FungibleFaucet::set_logo_uri_root(),
-        FungibleFaucet::set_external_link_root(),
-        TokenPolicyManager::set_mint_policy_root(),
-        TokenPolicyManager::set_burn_policy_root(),
-        TokenPolicyManager::set_send_policy_root(),
-        TokenPolicyManager::set_receive_policy_root(),
-        PausableManager::pause_root(),
-        PausableManager::unpause_root(),
-    ]
-}
-
 /// Creates a new **user-account** fungible faucet. The account's auth component is the sole
 /// gate for authority-protected setters ([`Authority::AuthControlled`] is installed directly).
 ///
@@ -595,8 +573,9 @@ pub(crate) fn all_authority_gated_setter_roots() -> Vec<AccountProcedureRoot> {
 /// installed by this factory).
 ///
 /// Caller passes a fully-configured [`AuthSingleSigAcl`] — its trigger procedure list must
-/// cover every authority-gated setter (see [`all_authority_gated_setter_roots`] for the
-/// canonical list).
+/// cover every authority-gated setter on the faucet (`mint_and_send`, the metadata setters,
+/// the policy setters, and `pause` / `unpause`), otherwise those procedures become
+/// permissionless under [`Authority::AuthControlled`].
 pub fn create_user_fungible_faucet(
     init_seed: [u8; 32],
     faucet: FungibleFaucet,
