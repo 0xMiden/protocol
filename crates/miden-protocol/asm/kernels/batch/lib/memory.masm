@@ -22,29 +22,31 @@
 # | 19                | NUM_OUTPUT_NOTES_PTR    | number of entries in the global  |
 # |                   |                         | output-note list.                |
 # | 20..8212          | TX_TUPLES_PTR           | Layer 1 piped data: per          |
-# |                   |                         | transaction `[tx_id[4],          |
+# |                   |                         | transaction `[TX_ID,             |
 # |                   |                         | account_id_prefix,               |
 # |                   |                         | account_id_suffix, 0, 0]`        |
 # |                   |                         | (8 felts each, sized for up to   |
 # |                   |                         | 1024 transactions).              |
 # | 8212..32788       | TX_HEADERS_PTR          | Layer 2 piped data: per          |
-# |                   |                         | transaction the felt sequence    |
-# |                   |                         | TransactionId::new hashes        |
-# |                   |                         | (24 felts each, sized for up to  |
-# |                   |                         | 1024 transactions).              |
+# |                   |                         | transaction `[INIT, FINAL,       |
+# |                   |                         | INPUT_NOTES_COMMITMENT,          |
+# |                   |                         | OUTPUT_NOTES_COMMITMENT,         |
+# |                   |                         | FEE_ASSET[8]]` (24 felts each,   |
+# |                   |                         | sized for up to 1024             |
+# |                   |                         | transactions).                   |
 # | 32788..40980      | TX_NOTES_SCRATCH_PTR    | Per-transaction scratch space    |
 # |                   |                         | for Layer 3 / Layer 3' note      |
 # |                   |                         | data (overwritten each tx).      |
 # | 40980..49172      | INPUT_NOTES_PTR         | Global input-note list, sorted   |
-# |                   |                         | by nullifier: `[NULLIFIER[4],    |
-# |                   |                         | NOTE_ID_OR_EMPTY[4]]` per note   |
+# |                   |                         | by nullifier: `[NULLIFIER,       |
+# |                   |                         | NOTE_ID_OR_EMPTY]` per note      |
 # |                   |                         | (8 felts each, up to 1024).      |
 # | 49172..53268      | INPUT_NOTE_FLAGS_PTR    | Parallel input-note flags:       |
 # |                   |                         | `[erasure, consumption, 0, 0]`   |
 # |                   |                         | per note (4 felts each).         |
 # | 53268..61460      | OUTPUT_NOTES_PTR        | Global output-note list, sorted  |
-# |                   |                         | by note_id: `[NOTE_ID[4], 0,0,   |
-# |                   |                         | 0,0]` per note (8 felts each).   |
+# |                   |                         | by note_id: `[NOTE_ID, 0, 0, 0,  |
+# |                   |                         | 0]` per note (8 felts each).     |
 # | 61460..65556      | OUTPUT_NOTE_FLAGS_PTR   | Parallel output-note flags:      |
 # |                   |                         | `[will_be_erased, is_created,    |
 # |                   |                         | linked_input_index, 0]` per note |
@@ -89,14 +91,14 @@ const NUM_OUTPUT_NOTES_PTR=19
 # =================================================================================================
 
 #! Base of the Layer 1 piped data region. Per transaction, 8 felts:
-#!   `[tx_id[4], account_id_prefix, account_id_suffix, 0, 0]`.
+#!   `[TX_ID, account_id_prefix, account_id_suffix, 0, 0]`.
 pub const TX_TUPLES_PTR=20
 
 #! Number of felts each transaction occupies in TX_TUPLES_PTR.
 const TX_TUPLE_FELT_LEN=8
 
 #! Base of the Layer 2 piped data region. Per transaction, 24 felts:
-#!   `[INIT[4], FINAL[4], INPUT_NOTES_COMMITMENT[4], OUTPUT_NOTES_COMMITMENT[4], FEE_ASSET[8]]`.
+#!   `[INIT, FINAL, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, FEE_ASSET[8]]`.
 #! This must match the felt-sequence layout of `TransactionId::new`.
 const TX_HEADERS_PTR=8212
 
@@ -116,7 +118,7 @@ pub const TX_NOTES_SCRATCH_PTR=32788
 # =================================================================================================
 
 #! Base of the global input-note list, sorted by nullifier. Per note, an 8-felt sorted-array entry
-#!   `[NULLIFIER[4], NOTE_ID_OR_EMPTY[4]]`
+#!   `[NULLIFIER, NOTE_ID_OR_EMPTY]`
 #! where the KEY word is the nullifier (the `sorted_array` lookup key) and the VALUE word is the
 #! note id (for unauthenticated notes) or the empty word. The VALUE word doubles as the second half
 #! of the `(nullifier, note_id_or_empty)` tuple hashed into INPUT_NOTES_COMMITMENT.
@@ -126,8 +128,10 @@ pub const INPUT_NOTES_PTR=40980
 pub const NOTE_ENTRY_FELT_LEN=8
 
 #! Base of the parallel input-note flags array. Per note, one word `[erasure, consumption, 0, 0]`.
-#! `erasure` is 0 (not erased / external), 1 (expected to be erased, creator not yet seen) or 2
-#! (erased, creator seen). `consumption` is 0 or 1.
+#! `erasure` is 0 (not erased / external), 1 (expected to be erased: the input note's id matches an
+#! output note created by another transaction within this batch -- its "creator" -- which has not
+#! been processed yet) or 2 (erased: the creator output note has been processed). `consumption` is
+#! 0 or 1.
 pub const INPUT_NOTE_FLAGS_PTR=49172
 
 #! Number of felts each note occupies in the flag arrays (one word).
@@ -140,7 +144,7 @@ pub const INPUT_NOTE_ERASURE_OFFSET=0
 pub const INPUT_NOTE_CONSUMPTION_OFFSET=1
 
 #! Base of the global output-note list, sorted by note id. Per note, an 8-felt sorted-array entry
-#!   `[NOTE_ID[4], 0, 0, 0, 0]`
+#!   `[NOTE_ID, 0, 0, 0, 0]`
 #! where the KEY word is the note id (the `sorted_array` lookup key); the VALUE word is unused.
 pub const OUTPUT_NOTES_PTR=53268
 
@@ -262,7 +266,12 @@ end
 #! Inputs:  [tx_index]
 #! Outputs: [TX_ID]
 pub proc get_tx_id
-    exec.tx_tuple_ptr padw movup.4 mem_loadw_le
+    exec.tx_tuple_ptr
+    # => [tx_tuple_ptr]
+    padw movup.4
+    # => [PAD, tx_tuple_ptr]
+    mem_loadw_le
+    # => [TX_ID]
 end
 
 #! Returns a pointer to transaction `tx_index`'s entry in TX_HEADERS_PTR.
@@ -276,17 +285,27 @@ end
 #! Returns the verified per-transaction INPUT_NOTES_COMMITMENT for transaction `tx_index`.
 #!
 #! Inputs:  [tx_index]
-#! Outputs: [INPUT_NOTES_COMMITMENT_i]
+#! Outputs: [INPUT_NOTES_COMMITMENT_idx]
 pub proc get_tx_input_notes_commitment
-    exec.tx_header_ptr add.TX_HEADER_INPUT_NOTES_OFFSET padw movup.4 mem_loadw_le
+    exec.tx_header_ptr add.TX_HEADER_INPUT_NOTES_OFFSET
+    # => [input_notes_commitment_ptr]
+    padw movup.4
+    # => [PAD, input_notes_commitment_ptr]
+    mem_loadw_le
+    # => [INPUT_NOTES_COMMITMENT]
 end
 
 #! Returns the verified per-transaction OUTPUT_NOTES_COMMITMENT for transaction `tx_index`.
 #!
 #! Inputs:  [tx_index]
-#! Outputs: [OUTPUT_NOTES_COMMITMENT_i]
+#! Outputs: [OUTPUT_NOTES_COMMITMENT_idx]
 pub proc get_tx_output_notes_commitment
-    exec.tx_header_ptr add.TX_HEADER_OUTPUT_NOTES_OFFSET padw movup.4 mem_loadw_le
+    exec.tx_header_ptr add.TX_HEADER_OUTPUT_NOTES_OFFSET
+    # => [output_notes_commitment_ptr]
+    padw movup.4
+    # => [PAD, output_notes_commitment_ptr]
+    mem_loadw_le
+    # => [OUTPUT_NOTES_COMMITMENT]
 end
 
 # GLOBAL NOTE LIST ACCESSORS
@@ -341,33 +360,33 @@ pub proc get_output_notes_end_ptr
     exec.get_num_output_notes mul.NOTE_ENTRY_FELT_LEN add.OUTPUT_NOTES_PTR
 end
 
-#! Returns a pointer to input-note entry `i` in INPUT_NOTES_PTR.
+#! Returns a pointer to input-note entry `idx` in INPUT_NOTES_PTR.
 #!
-#! Inputs:  [i]
+#! Inputs:  [idx]
 #! Outputs: [input_note_entry_ptr]
 pub proc input_note_entry_ptr
     mul.NOTE_ENTRY_FELT_LEN add.INPUT_NOTES_PTR
 end
 
-#! Returns a pointer to output-note entry `i` in OUTPUT_NOTES_PTR.
+#! Returns a pointer to output-note entry `idx` in OUTPUT_NOTES_PTR.
 #!
-#! Inputs:  [i]
+#! Inputs:  [idx]
 #! Outputs: [output_note_entry_ptr]
 pub proc output_note_entry_ptr
     mul.NOTE_ENTRY_FELT_LEN add.OUTPUT_NOTES_PTR
 end
 
-#! Returns a pointer to input-note flag word `i` in INPUT_NOTE_FLAGS_PTR.
+#! Returns a pointer to input-note flag word `idx` in INPUT_NOTE_FLAGS_PTR.
 #!
-#! Inputs:  [i]
+#! Inputs:  [idx]
 #! Outputs: [input_note_flags_ptr]
 pub proc input_note_flags_ptr
     mul.NOTE_FLAGS_FELT_LEN add.INPUT_NOTE_FLAGS_PTR
 end
 
-#! Returns a pointer to output-note flag word `i` in OUTPUT_NOTE_FLAGS_PTR.
+#! Returns a pointer to output-note flag word `idx` in OUTPUT_NOTE_FLAGS_PTR.
 #!
-#! Inputs:  [i]
+#! Inputs:  [idx]
 #! Outputs: [output_note_flags_ptr]
 pub proc output_note_flags_ptr
     mul.NOTE_FLAGS_FELT_LEN add.OUTPUT_NOTE_FLAGS_PTR
@@ -377,7 +396,7 @@ end
 #! index `(key_ptr - INPUT_NOTES_PTR) / 8`.
 #!
 #! Inputs:  [key_ptr]
-#! Outputs: [i]
+#! Outputs: [idx]
 pub proc input_entry_index_from_key_ptr
     sub.INPUT_NOTES_PTR div.NOTE_ENTRY_FELT_LEN
 end
@@ -385,7 +404,7 @@ end
 #! Converts an output-note `key_ptr` into its entry index `(key_ptr - OUTPUT_NOTES_PTR) / 8`.
 #!
 #! Inputs:  [key_ptr]
-#! Outputs: [i]
+#! Outputs: [idx]
 pub proc output_entry_index_from_key_ptr
     sub.OUTPUT_NOTES_PTR div.NOTE_ENTRY_FELT_LEN
 end

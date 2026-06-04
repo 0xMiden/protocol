@@ -24,8 +24,8 @@ const ERR_BATCH_TOO_MANY_TRANSACTIONS="the batch contains more transactions than
 #!   `tx_id`. Each transaction's data is written into [`memory::TX_HEADERS_PTR`] at the appropriate
 #!   per-tx offset.
 #!
-#! `BATCH_ID` is the batch's `BatchId` value, i.e. the sequential hash of the `(tx_id, account_id)`
-#! tuples committing to the transactions in the batch.
+#! `BATCH_ID` is the sequential hash of the `(tx_id, account_id)` tuples committing to the
+#! transactions in the batch.
 #!
 #! Inputs:
 #!   Operand stack: [BATCH_ID]
@@ -55,8 +55,9 @@ pub proc prepare_batch
     # => [BATCH_ID, tx_tuples_ptr]
 
     adv.push_mapvaln
-    # AS => [len_felts, data...]
+    # AS => [tx_tuples_len, [TX_TUPLES]]
 
+    # adv_push reads the value's felt length; div.4 converts felts -> words (4 felts per word).
     adv_push div.4
     # => [num_words, BATCH_ID, tx_tuples_ptr]
 
@@ -92,6 +93,9 @@ pub proc prepare_batch
         # => [TX_ID, tx_header_ptr, tx_index, num_transactions]
 
         adv.push_mapvaln
+        # AS => [tx_header_len, [TX_HEADER]]
+
+        # adv_push reads the value's felt length; div.4 converts felts -> words (4 felts per word).
         adv_push div.4
         # => [num_words, TX_ID, tx_header_ptr, tx_index, num_transactions]
 
