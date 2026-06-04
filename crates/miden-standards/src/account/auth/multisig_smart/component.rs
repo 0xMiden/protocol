@@ -92,7 +92,7 @@ pub struct AuthMultisigSmartConfig {
     approvers: Vec<(PublicKeyCommitment, AuthScheme)>,
     default_threshold: u32,
     procedure_policies: Vec<(Word, ProcedurePolicy)>,
-    delayed_execution: DelayedExecutionPolicy,
+    delayed_execution: Option<DelayedExecutionPolicy>,
 }
 
 impl AuthMultisigSmartConfig {
@@ -122,7 +122,7 @@ impl AuthMultisigSmartConfig {
             approvers,
             default_threshold,
             procedure_policies: vec![],
-            delayed_execution: DelayedExecutionPolicy::default(),
+            delayed_execution: None,
         })
     }
 
@@ -136,9 +136,13 @@ impl AuthMultisigSmartConfig {
         Ok(self)
     }
 
-    /// Sets the delayed-execution policy (min delay + propose expiration delta).
+    /// Enables delayed execution with the given policy (min delay + propose expiration delta).
+    ///
+    /// When unset, the on-chain `DELAYED_EXECUTION_SLOT` is initialized to `[0, 0, 0, 0]` and any
+    /// attempt to call `propose_transaction` / `execute_proposed_transaction` will panic at
+    /// runtime — the feature is opt-in via this builder.
     pub fn with_delayed_execution(mut self, delayed_execution: DelayedExecutionPolicy) -> Self {
-        self.delayed_execution = delayed_execution;
+        self.delayed_execution = Some(delayed_execution);
         self
     }
 
@@ -154,16 +158,8 @@ impl AuthMultisigSmartConfig {
         &self.procedure_policies
     }
 
-    pub fn delayed_execution(&self) -> DelayedExecutionPolicy {
+    pub fn delayed_execution(&self) -> Option<DelayedExecutionPolicy> {
         self.delayed_execution
-    }
-
-    pub fn min_delay(&self) -> u32 {
-        self.delayed_execution.min_delay()
-    }
-
-    pub fn propose_expiration_delta(&self) -> u16 {
-        self.delayed_execution.propose_expiration_delta()
     }
 }
 
@@ -224,6 +220,27 @@ impl AuthMultisigSmart {
     pub fn new(config: AuthMultisigSmartConfig) -> Result<Self, AccountError> {
         validate_proc_policies(config.approvers().len() as u32, config.procedure_policies())?;
         Ok(Self { config })
+    }
+
+    /// Returns the approver list configured for this component.
+    pub fn approvers(&self) -> &[(PublicKeyCommitment, AuthScheme)] {
+        self.config.approvers()
+    }
+
+    /// Returns the default approver threshold.
+    pub fn default_threshold(&self) -> u32 {
+        self.config.default_threshold()
+    }
+
+    /// Returns the per-procedure smart policy map.
+    pub fn procedure_policies(&self) -> &[(Word, ProcedurePolicy)] {
+        self.config.procedure_policies()
+    }
+
+    /// Returns the configured delayed-execution policy, or `None` if delayed execution is
+    /// disabled for this account.
+    pub fn delayed_execution(&self) -> Option<DelayedExecutionPolicy> {
+        self.config.delayed_execution()
     }
 
     pub fn threshold_config_slot() -> &'static StorageSlotName {
@@ -392,16 +409,22 @@ impl From<AuthMultisigSmart> for AccountComponent {
             procedure_policies,
         ));
 
-        // Delayed-execution policy slot (value: [min_delay, propose_expiration_delta, 0, 0])
-        let delayed_execution = multisig.config.delayed_execution();
-        storage_slots.push(StorageSlot::with_value(
-            AuthMultisigSmart::delayed_execution_slot().clone(),
-            Word::from([
-                delayed_execution.min_delay(),
-                delayed_execution.propose_expiration_delta() as u32,
+        // Delayed-execution policy slot (value: [min_delay, propose_expiration_delta, 0, 0]).
+        // When the feature is not enabled, the slot is initialized to the empty word so that
+        // any attempt to call `propose_transaction` / `execute_proposed_transaction` fails at
+        // runtime via the MASM zero-checks.
+        let delayed_execution_word = match multisig.config.delayed_execution() {
+            Some(policy) => Word::from([
+                policy.min_delay(),
+                policy.propose_expiration_delta() as u32,
                 0u32,
                 0u32,
             ]),
+            None => Word::empty(),
+        };
+        storage_slots.push(StorageSlot::with_value(
+            AuthMultisigSmart::delayed_execution_slot().clone(),
+            delayed_execution_word,
         ));
 
         // Tx-proposals map slot (TX_HASH => [unlock_timestamp, expiration_height, 0, 0])

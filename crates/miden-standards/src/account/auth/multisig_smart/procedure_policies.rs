@@ -52,7 +52,7 @@ pub enum ProcedurePolicyNoteRestriction {
 /// The thresholds for immediate and delayed execution may differ.
 ///
 /// The policy is encoded into the procedure-policy storage word as:
-/// `[immediate_threshold, delayed_threshold, note_restrictions, 0]`.
+/// `[immediate_threshold, delay_threshold, note_restrictions, 0]`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProcedurePolicy {
     execution_mode: ProcedurePolicyExecutionMode,

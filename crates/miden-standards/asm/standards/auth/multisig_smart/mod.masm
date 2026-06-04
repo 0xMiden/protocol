@@ -48,7 +48,7 @@ const ERR_ZERO_IN_MULTISIG_CONFIG = "number of approvers or threshold must not b
 
 const ERR_PROC_POLICY_INVALID_MODE = "called procedures do not support the selected execution mode"
 
-const ERR_DELAYED_THRESHOLD_EXCEEDS_IMMEDIATE = "delayed threshold cannot exceed immediate threshold"
+const ERR_DELAY_THRESHOLD_EXCEEDS_IMMEDIATE = "delay threshold cannot exceed immediate threshold"
 
 const ERR_NOTE_RESTRICTIONS_REQUIRE_THRESHOLD = "procedure policy note restrictions require an immediate or delayed threshold"
 
@@ -66,7 +66,7 @@ const ERR_EXECUTE_PATH_MISMATCH = "execute path must match delay requirement"
 # =================================================================================================
 
 const IMMEDIATE_THRESHOLD_LOC = 0
-const DELAYED_THRESHOLD_LOC = 1
+const DELAY_THRESHOLD_LOC = 1
 const NOTE_RESTRICTIONS_LOC = 2
 
 # LOCAL ADDRESSES (compute_called_proc_policy)
@@ -78,22 +78,22 @@ const DEFAULT_THRESHOLD_LOC = 1
 #! Gets the procedure policy entry for PROC_ROOT from the account's initial state.
 #!
 #! Inputs:  [PROC_ROOT]
-#! Outputs: [immediate_threshold, delayed_threshold, note_restrictions]
+#! Outputs: [immediate_threshold, delay_threshold, note_restrictions]
 #!
 #! Where:
 #! - PROC_ROOT is the root of the account procedure whose smart policy is being read.
 #! - immediate_threshold is the threshold for direct execution, or 0 when disabled.
-#! - delayed_threshold is the threshold for delayed execution, or 0 when disabled.
+#! - delay_threshold is the threshold for delayed execution, or 0 when disabled.
 #! - note_restrictions is the note restriction enum value in the 0..=NOTE_RESTRICTION_MAX range.
 #!
 #! Invocation: exec
 pub proc get_procedure_policy
     push.PROCEDURE_POLICIES_SLOT[0..2]
     exec.active_account::get_initial_map_item
-    # => [immediate_threshold, delayed_threshold, note_restrictions, 0]
+    # => [immediate_threshold, delay_threshold, note_restrictions, 0]
 
     movup.3 drop
-    # => [immediate_threshold, delayed_threshold, note_restrictions]
+    # => [immediate_threshold, delay_threshold, note_restrictions]
 end
 
 #! Validates that note_restrictions is within the supported range.
@@ -478,23 +478,23 @@ proc assert_proc_policies_lte_num_approvers
         # in this transaction that raised a threshold above the new num_approvers would otherwise
         # be missed and the multisig could end up with an unreachable threshold.
         exec.active_account::get_map_item
-        # => [immediate_threshold, delayed_threshold, note_restrictions, 0, proc_index, num_approvers]
+        # => [immediate_threshold, delay_threshold, note_restrictions, 0, proc_index, num_approvers]
 
         # Drop the trailing 0 (depth 3) without disturbing the three policy fields above it.
         movup.3 drop
-        # => [immediate_threshold, delayed_threshold, note_restrictions, proc_index, num_approvers]
+        # => [immediate_threshold, delay_threshold, note_restrictions, proc_index, num_approvers]
 
         # immediate_threshold <= num_approvers
         dup.4
-        # => [num_approvers, immediate_threshold, delayed_threshold, note_restrictions, proc_index, num_approvers]
+        # => [num_approvers, immediate_threshold, delay_threshold, note_restrictions, proc_index, num_approvers]
 
         u32assert2.err=ERR_NUM_APPROVERS_OR_PROC_THRESHOLD_NOT_U32
         u32gt assertz.err=ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS
-        # => [delayed_threshold, note_restrictions, proc_index, num_approvers]
+        # => [delay_threshold, note_restrictions, proc_index, num_approvers]
 
-        # delayed_threshold <= num_approvers
+        # delay_threshold <= num_approvers
         dup.3
-        # => [num_approvers, delayed_threshold, note_restrictions, proc_index, num_approvers]
+        # => [num_approvers, delay_threshold, note_restrictions, proc_index, num_approvers]
 
         u32assert2.err=ERR_NUM_APPROVERS_OR_PROC_THRESHOLD_NOT_U32
         u32gt assertz.err=ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS
@@ -516,29 +516,29 @@ end
 
 #! Sets or clears a smart per-procedure policy.
 #!
-#! Inputs:  [immediate_threshold, delayed_threshold, note_restrictions, PROC_ROOT]
+#! Inputs:  [immediate_threshold, delay_threshold, note_restrictions, PROC_ROOT]
 #! Outputs: []
 #!
 #! Where:
 #! - immediate_threshold is the threshold for direct execution, or 0 when disabled.
-#! - delayed_threshold is the threshold for delayed execution, or 0 when disabled.
+#! - delay_threshold is the threshold for delayed execution, or 0 when disabled.
 #! - note_restrictions is the note restriction enum value in the 0..=NOTE_RESTRICTION_MAX range.
 #! - PROC_ROOT is the root of the account procedure whose policy is being updated.
 #!
 #! Panics if:
-#! - immediate_threshold or delayed_threshold is not a u32 value.
+#! - immediate_threshold or delay_threshold is not a u32 value.
 #! - note_restrictions is outside the supported range.
 #! - either threshold exceeds the current number of approvers.
-#! - delayed_threshold exceeds immediate_threshold when immediate_threshold is non-zero.
+#! - delay_threshold exceeds immediate_threshold when immediate_threshold is non-zero.
 #! - note_restrictions is non-zero while both thresholds are zero.
 #!
 #! Invocation: call
 @locals(3)
 pub proc set_procedure_policy
     loc_store.IMMEDIATE_THRESHOLD_LOC
-    # => [delayed_threshold, note_restrictions, PROC_ROOT]
+    # => [delay_threshold, note_restrictions, PROC_ROOT]
 
-    loc_store.DELAYED_THRESHOLD_LOC
+    loc_store.DELAY_THRESHOLD_LOC
     # => [note_restrictions, PROC_ROOT]
 
     loc_store.NOTE_RESTRICTIONS_LOC
@@ -556,9 +556,9 @@ pub proc set_procedure_policy
     u32gt assertz.err=ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS
     # => [num_approvers, PROC_ROOT]
 
-    # ----- Validate delayed_threshold <= num_approvers (consumes num_approvers). -----
-    loc_load.DELAYED_THRESHOLD_LOC swap
-    # => [num_approvers, delayed_threshold, PROC_ROOT]
+    # ----- Validate delay_threshold <= num_approvers (consumes num_approvers). -----
+    loc_load.DELAY_THRESHOLD_LOC swap
+    # => [num_approvers, delay_threshold, PROC_ROOT]
 
     u32assert2.err=ERR_NUM_APPROVERS_OR_PROC_THRESHOLD_NOT_U32
     u32gt assertz.err=ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS
@@ -578,8 +578,8 @@ pub proc set_procedure_policy
     if.true
         # immediate is zero. If delayed is also zero, note_restrictions must be zero, otherwise
         # the policy would forbid notes for a procedure that has no threshold to authorize them.
-        loc_load.DELAYED_THRESHOLD_LOC eq.0
-        # => [is_delayed_threshold_zero, PROC_ROOT]
+        loc_load.DELAY_THRESHOLD_LOC eq.0
+        # => [is_delay_threshold_zero, PROC_ROOT]
 
         if.true
             # `eq.0 assert` produces the proper error when note_restrictions is non-zero;
@@ -588,24 +588,24 @@ pub proc set_procedure_policy
             # => [PROC_ROOT]
         end
     else
-        # immediate is non-zero. Validate delayed_threshold <= immediate_threshold.
-        loc_load.DELAYED_THRESHOLD_LOC loc_load.IMMEDIATE_THRESHOLD_LOC
-        # => [immediate_threshold, delayed_threshold, PROC_ROOT]
+        # immediate is non-zero. Validate delay_threshold <= immediate_threshold.
+        loc_load.DELAY_THRESHOLD_LOC loc_load.IMMEDIATE_THRESHOLD_LOC
+        # => [immediate_threshold, delay_threshold, PROC_ROOT]
 
         u32assert2.err=ERR_NUM_APPROVERS_OR_PROC_THRESHOLD_NOT_U32
-        u32gt assertz.err=ERR_DELAYED_THRESHOLD_EXCEEDS_IMMEDIATE
+        u32gt assertz.err=ERR_DELAY_THRESHOLD_EXCEEDS_IMMEDIATE
         # => [PROC_ROOT]
     end
 
     # ----- Write [immediate, delayed, note_restrictions, 0] to PROCEDURE_POLICIES_SLOT[PROC_ROOT].
     push.0
     loc_load.NOTE_RESTRICTIONS_LOC
-    loc_load.DELAYED_THRESHOLD_LOC
+    loc_load.DELAY_THRESHOLD_LOC
     loc_load.IMMEDIATE_THRESHOLD_LOC
-    # => [immediate_threshold, delayed_threshold, note_restrictions, 0, PROC_ROOT]
+    # => [immediate_threshold, delay_threshold, note_restrictions, 0, PROC_ROOT]
 
     swapw
-    # => [PROC_ROOT, immediate_threshold, delayed_threshold, note_restrictions, 0]
+    # => [PROC_ROOT, immediate_threshold, delay_threshold, note_restrictions, 0]
 
     push.PROCEDURE_POLICIES_SLOT[0..2]
     # => [procedure_policies_slot_suffix, procedure_policies_slot_prefix, PROC_ROOT, POLICY_WORD]

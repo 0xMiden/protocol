@@ -69,11 +69,14 @@ pub proc update_delayed_execution_policy
     dup eq.0 assertz.err=ERR_PROPOSE_EXPIRATION_DELTA_ZERO
     # => [propose_expiration_delta, min_delay]
 
-    push.0 push.0
-    # => [0, 0, propose_expiration_delta, min_delay]
+    swap
+    # => [min_delay, propose_expiration_delta]
+
+    push.0 push.0 movdn.3 movdn.3
+    # => [min_delay, propose_expiration_delta, 0, 0]
 
     push.DELAYED_EXECUTION_SLOT[0..2]
-    # => [slot_prefix, slot_suffix, 0, 0, propose_expiration_delta, min_delay]
+    # => [slot_prefix, slot_suffix, min_delay, propose_expiration_delta, 0, 0]
 
     exec.native_account::set_item
     # => [OLD_WORD]
@@ -172,7 +175,7 @@ end
 #!   (`ERR_TX_EXPIRATION_DELTA_NOT_SET`).
 #!
 #! Invocation: exec
-pub proc apply_expiration_delta
+proc apply_expiration_delta
     dup neq.0 assert.err=ERR_EXPIRATION_DELTA_ZERO
     # => [expiration_delta]
 

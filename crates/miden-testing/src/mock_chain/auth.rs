@@ -58,7 +58,7 @@ pub enum Auth {
         threshold: u32,
         approvers: Vec<(PublicKeyCommitment, AuthScheme)>,
         proc_policy_map: Vec<(Word, ProcedurePolicy)>,
-        delayed_execution: DelayedExecutionPolicy,
+        delayed_execution: Option<DelayedExecutionPolicy>,
     },
 
     /// Creates a secret key for the account, and creates a [BasicAuthenticator] used to
@@ -139,10 +139,12 @@ impl Auth {
                 proc_policy_map,
                 delayed_execution,
             } => {
-                let config = AuthMultisigSmartConfig::new(approvers.clone(), *threshold)
+                let mut config = AuthMultisigSmartConfig::new(approvers.clone(), *threshold)
                     .and_then(|cfg| cfg.with_proc_policies(proc_policy_map.clone()))
-                    .expect("invalid multisig smart config")
-                    .with_delayed_execution(*delayed_execution);
+                    .expect("invalid multisig smart config");
+                if let Some(de) = delayed_execution {
+                    config = config.with_delayed_execution(*de);
+                }
 
                 let component = AuthMultisigSmart::new(config)
                     .expect("multisig smart component creation failed")
