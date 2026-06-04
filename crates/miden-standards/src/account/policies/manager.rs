@@ -1,12 +1,14 @@
 //! Unified token policy manager.
 //!
-//! [`TokenPolicyManager`] owns the policy state for fungible faucets. Mint and burn use one
-//! `active_*_policy_proc_root` slot each plus an `allowed_*_policies` map slot; send and
-//! receive are flattened — their active policy roots live directly in the protocol-reserved
-//! callback slots (`miden::protocol::faucet::callback::on_before_asset_added_to_account` and
-//! `..._to_note`) so the kernel dispatches to them via `call` without a manager-side wrapper.
-//! Each kind also has an `allowed_*_policies` map slot for validating policy-switching at
-//! set time.
+//! [`TokenPolicyManager`] owns the policy state for fungible faucets. All four kinds use one
+//! `active_*_policy_proc_root` slot each plus an `allowed_*_policies` map slot for validating
+//! policy-switching at set time. Mint and burn are dispatched by `exec`-invoked
+//! `execute_*_policy` wrappers from the faucet flow. Send and receive are dispatched by
+//! `invoke_send_policy` / `invoke_receive_policy` wrappers whose roots live in the
+//! protocol-reserved callback slots
+//! (`miden::protocol::faucet::callback::on_before_asset_added_to_account` and `..._to_note`); the
+//! kernel `dyncall`s the wrapper, which applies the account-wide pause check and then dispatches to
+//! the active policy root.
 
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec::Vec;
@@ -75,6 +77,20 @@ procedure_root!(
     TokenPolicyManager::code()
 );
 
+procedure_root!(
+    POLICY_MANAGER_INVOKE_SEND_POLICY,
+    POLICY_MANAGER_LIBRARY_PATH,
+    TokenPolicyManager::INVOKE_SEND_POLICY_PROC_NAME,
+    TokenPolicyManager::code()
+);
+
+procedure_root!(
+    POLICY_MANAGER_INVOKE_RECEIVE_POLICY,
+    POLICY_MANAGER_LIBRARY_PATH,
+    TokenPolicyManager::INVOKE_RECEIVE_POLICY_PROC_NAME,
+    TokenPolicyManager::code()
+);
+
 // STORAGE SLOT NAMES
 // ================================================================================================
 
@@ -88,6 +104,20 @@ static ACTIVE_MINT_POLICY_PROC_ROOT_SLOT_NAME: LazyLock<StorageSlotName> = LazyL
 static ACTIVE_BURN_POLICY_PROC_ROOT_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new(
         "miden::standards::faucets::policies::policy_manager::active_burn_policy_proc_root",
+    )
+    .expect("storage slot name should be valid")
+});
+
+static ACTIVE_SEND_POLICY_PROC_ROOT_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new(
+        "miden::standards::faucets::policies::policy_manager::active_send_policy_proc_root",
+    )
+    .expect("storage slot name should be valid")
+});
+
+static ACTIVE_RECEIVE_POLICY_PROC_ROOT_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new(
+        "miden::standards::faucets::policies::policy_manager::active_receive_policy_proc_root",
     )
     .expect("storage slot name should be valid")
 });
@@ -156,11 +186,14 @@ struct PolicyConfig {
 /// An [`AccountComponent`] that owns the policy-manager storage slots and the manager
 /// procedures for the four policy kinds (mint, burn, send, receive).
 ///
-/// The component exposes `set_*_policy`, `get_*_policy`, and `execute_*_policy` procedures for
-/// each kind, plus the protocol-level `on_before_asset_added_to_*` asset callbacks (which
-/// dispatch to the active send / receive policy). Authorization for switching the active policies
-/// is delegated to the account-wide [`Authority`][crate::account::access::Authority] component,
-/// which must be installed alongside this manager.
+/// The component exposes `set_*_policy` and `get_*_policy` for each kind, `execute_*_policy` for
+/// mint / burn, and `invoke_send_policy` / `invoke_receive_policy` for the transfer kinds. The
+/// transfer wrappers double as the protocol-level `on_before_asset_added_to_*` asset callbacks:
+/// the kernel `dyncall`s the wrapper, which applies the account-wide pause check and then
+/// dispatches to the active send / receive policy.
+/// Authorization for switching the active policies is delegated to the account-wide
+/// [`Authority`][crate::account::access::Authority] component, which must be installed alongside
+/// this manager.
 ///
 /// Construct via [`Self::builder`]. The builder requires the active mint and burn policy
 /// ([`TokenPolicyManagerBuilder::active_mint_policy`] /
@@ -175,13 +208,17 @@ struct PolicyConfig {
 ///
 /// - [`Self::active_mint_policy_slot`]: procedure root of the active mint policy.
 /// - [`Self::active_burn_policy_slot`]: procedure root of the active burn policy.
+/// - [`Self::active_send_policy_slot`]: procedure root of the active send policy.
+/// - [`Self::active_receive_policy_slot`]: procedure root of the active receive policy.
 /// - [`Self::allowed_mint_policies_slot`]: map of allowed mint policy roots.
 /// - [`Self::allowed_burn_policies_slot`]: map of allowed burn policy roots.
 /// - [`Self::allowed_send_policies_slot`]: map of allowed send policy roots.
 /// - [`Self::allowed_receive_policies_slot`]: map of allowed receive policy roots.
-/// - Asset-callback storage slots (registered via [`AssetCallbacks`]) hold the active send and
-///   receive policy procedure roots directly so the kernel dispatches to them via `call`. They are
-///   installed unconditionally so every minted asset carries
+/// - Asset-callback storage slots (registered via [`AssetCallbacks`]) hold the fixed
+///   `invoke_send_policy` / `invoke_receive_policy` wrapper roots, so the kernel dispatches to the
+///   wrapper (which then dispatches to the active policy in the slot above). They are installed
+///   only when at least one transfer policy is configured, so a manager with transfer policies
+///   mints assets carrying
 ///   [`AssetCallbackFlag::Enabled`][miden_protocol::asset::AssetCallbackFlag::Enabled] uniformly,
 ///   and future policy switches via `set_send_policy` / `set_receive_policy` apply to the entire
 ///   circulating supply rather than only to assets minted after the switch.
@@ -325,6 +362,8 @@ impl TokenPolicyManager {
     const SET_BURN_POLICY_PROC_NAME: &'static str = "set_burn_policy";
     const SET_SEND_POLICY_PROC_NAME: &'static str = "set_send_policy";
     const SET_RECEIVE_POLICY_PROC_NAME: &'static str = "set_receive_policy";
+    const INVOKE_SEND_POLICY_PROC_NAME: &'static str = "invoke_send_policy";
+    const INVOKE_RECEIVE_POLICY_PROC_NAME: &'static str = "invoke_receive_policy";
 
     /// Returns the canonical [`AccountComponentName`] of this component.
     pub const fn name() -> AccountComponentName {
@@ -414,6 +453,28 @@ impl TokenPolicyManager {
         &ACTIVE_BURN_POLICY_PROC_ROOT_SLOT_NAME
     }
 
+    /// Returns the [`StorageSlotName`] where the active send policy procedure root is stored.
+    pub fn active_send_policy_slot() -> &'static StorageSlotName {
+        &ACTIVE_SEND_POLICY_PROC_ROOT_SLOT_NAME
+    }
+
+    /// Returns the [`StorageSlotName`] where the active receive policy procedure root is stored.
+    pub fn active_receive_policy_slot() -> &'static StorageSlotName {
+        &ACTIVE_RECEIVE_POLICY_PROC_ROOT_SLOT_NAME
+    }
+
+    /// Returns the procedure root of the `invoke_send_policy` wrapper stored in the
+    /// `on_before_asset_added_to_note` callback slot.
+    pub fn invoke_send_policy_root() -> AccountProcedureRoot {
+        *POLICY_MANAGER_INVOKE_SEND_POLICY
+    }
+
+    /// Returns the procedure root of the `invoke_receive_policy` wrapper stored in the
+    /// `on_before_asset_added_to_account` callback slot.
+    pub fn invoke_receive_policy_root() -> AccountProcedureRoot {
+        *POLICY_MANAGER_INVOKE_RECEIVE_POLICY
+    }
+
     /// Returns the [`StorageSlotName`] where allowed mint policy roots are stored.
     pub fn allowed_mint_policies_slot() -> &'static StorageSlotName {
         &ALLOWED_MINT_POLICY_PROC_ROOTS_SLOT_NAME
@@ -453,6 +514,20 @@ impl TokenPolicyManager {
                 ACTIVE_BURN_POLICY_PROC_ROOT_SLOT_NAME.clone(),
                 StorageSlotSchema::value(
                     "Active burn policy procedure root",
+                    SchemaType::native_word(),
+                ),
+            ),
+            (
+                ACTIVE_SEND_POLICY_PROC_ROOT_SLOT_NAME.clone(),
+                StorageSlotSchema::value(
+                    "Active send policy procedure root",
+                    SchemaType::native_word(),
+                ),
+            ),
+            (
+                ACTIVE_RECEIVE_POLICY_PROC_ROOT_SLOT_NAME.clone(),
+                StorageSlotSchema::value(
+                    "Active receive policy procedure root",
                     SchemaType::native_word(),
                 ),
             ),
@@ -506,6 +581,14 @@ impl TokenPolicyManager {
                 ACTIVE_BURN_POLICY_PROC_ROOT_SLOT_NAME.clone(),
                 self.active_burn_policy_root.as_word(),
             ),
+            StorageSlot::with_value(
+                ACTIVE_SEND_POLICY_PROC_ROOT_SLOT_NAME.clone(),
+                self.active_send_policy_root.as_word(),
+            ),
+            StorageSlot::with_value(
+                ACTIVE_RECEIVE_POLICY_PROC_ROOT_SLOT_NAME.clone(),
+                self.active_receive_policy_root.as_word(),
+            ),
             StorageSlot::with_map(
                 ALLOWED_MINT_POLICY_PROC_ROOTS_SLOT_NAME.clone(),
                 self.build_allowed_map(PolicyKind::Mint),
@@ -525,14 +608,18 @@ impl TokenPolicyManager {
         ];
 
         // Register the protocol-reserved asset-callback slots only when at least one transfer
-        // policy is configured.
+        // policy is configured. The slots hold the fixed `invoke_*_policy` wrapper roots (not the
+        // active policy roots): the kernel `dyncall`s the wrapper, which applies the pause check
+        // and then dispatches to whatever active root lives in the `active_*_policy` slot above.
+        // This indirection lets `set_send_policy` / `set_receive_policy` switch the active policy
+        // for the entire circulating supply without touching the callback slots.
         let has_transfer_policy = self.policies.iter().any(|(_, cfg)| {
             cfg.kinds.contains(&PolicyKind::Send) || cfg.kinds.contains(&PolicyKind::Receive)
         });
         if has_transfer_policy {
             let callback_slots = AssetCallbacks::new()
-                .on_before_asset_added_to_account(self.active_receive_policy_root.as_word())
-                .on_before_asset_added_to_note(self.active_send_policy_root.as_word())
+                .on_before_asset_added_to_account(Self::invoke_receive_policy_root().as_word())
+                .on_before_asset_added_to_note(Self::invoke_send_policy_root().as_word())
                 .into_storage_slots();
             slots.extend(callback_slots);
         }
@@ -626,9 +713,9 @@ mod tests {
         component.storage_slots().iter().find(|slot| slot.name() == slot_name)
     }
 
-    /// Checks that a manager configured with `TransferAllowAll` for both transfer kinds
-    /// registers the protocol-reserved asset-callback slots, populated with
-    /// `TransferAllowAll`'s procedure root.
+    /// Checks that a manager configured with a transfer policy for both kinds registers the
+    /// protocol-reserved asset-callback slots populated with the fixed `invoke_*_policy` wrapper
+    /// roots (the active `TransferAllowAll` root lives in the `active_*_policy` slots instead).
     #[test]
     fn allow_all_transfer_policy_registers_protocol_callback_slots() {
         let manager = TokenPolicyManager::builder()
@@ -655,9 +742,22 @@ mod tests {
              callback slot",
                 );
 
-        // Both slots must hold the AllowAll procedure root (not zero).
-        assert_eq!(on_account_slot.value(), allow_all_root);
-        assert_eq!(on_note_slot.value(), allow_all_root);
+        // The callback slots must hold the wrapper roots, not the active policy root.
+        assert_eq!(
+            on_account_slot.value(),
+            TokenPolicyManager::invoke_receive_policy_root().as_word()
+        );
+        assert_eq!(on_note_slot.value(), TokenPolicyManager::invoke_send_policy_root().as_word());
+
+        // The active TransferAllowAll root lives in the dedicated active-policy slots.
+        let active_send_slot =
+            find_slot(&manager_component, TokenPolicyManager::active_send_policy_slot())
+                .expect("active send policy slot must be registered");
+        let active_receive_slot =
+            find_slot(&manager_component, TokenPolicyManager::active_receive_policy_slot())
+                .expect("active receive policy slot must be registered");
+        assert_eq!(active_send_slot.value(), allow_all_root);
+        assert_eq!(active_receive_slot.value(), allow_all_root);
     }
 
     /// A manager configured without send / receive policies must NOT register the

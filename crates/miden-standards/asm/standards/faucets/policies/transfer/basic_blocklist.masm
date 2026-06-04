@@ -6,17 +6,11 @@
 
 use miden::protocol::native_account
 use miden::standards::faucets::policies::transfer::blocklist
-use miden::standards::access::pausable
 
 # POLICY PROCEDURES
 # ================================================================================================
 
 #! Transfer policy that rejects transfers whose native account is blocked on the issuing faucet.
-#!
-#! Invoked as the active send or receive policy via `TokenPolicyManager`. Reads the native
-#! account ID (asset recipient when invoked from `on_before_asset_added_to_account`, note
-#! creator when invoked from `on_before_asset_added_to_note`) and asserts it is not blocked
-#! against the issuing faucet's `blocked_accounts` storage.
 #!
 #! The same procedure root is reusable as both send and receive policy because it only
 #! consumes the top eight felts (`ASSET_KEY`, `ASSET_VALUE`) and leaves the rest of the call
@@ -26,14 +20,10 @@ use miden::standards::access::pausable
 #! Outputs: [ASSET_VALUE, pad(12)]
 #!
 #! Panics if:
-#! - the account is paused (no-op when the `Pausable` component is not installed).
 #! - the native account is blocked on the issuing faucet.
 #!
 #! Invocation: call
 pub proc check_policy
-    exec.pausable::assert_not_paused
-    # => [ASSET_KEY, ASSET_VALUE, pad(8)]
-
     exec.native_account::get_id
     # => [account_id_suffix, account_id_prefix, ASSET_KEY, ASSET_VALUE, pad(8)]
 
