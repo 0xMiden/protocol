@@ -293,6 +293,6 @@ pub proc was_procedure_called
     # => [was_called, pad(15)]
 
     # clean the stack
-    swapdw dropw dropw swapw dropw movdn.3 drop drop drop
+    swapw.3 dropw dropw dropw movdn.3 drop drop drop
     # => [was_called]
 end
