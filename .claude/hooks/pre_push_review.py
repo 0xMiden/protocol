@@ -96,16 +96,29 @@ def main() -> None:
 
 
 def _diff_base() -> str:
-    """Return the integration branch to review against — the remote's
-    default branch (e.g. `origin/next`).
+    """Return the ref to review against — the current branch's upstream (its
+    already-pushed state), so only the commits being pushed are reviewed rather
+    than the entire branch. This avoids re-reviewing earlier, already-reviewed
+    commits on every push.
+
+    Falls back to the remote's default branch (e.g. `origin/next`) for a branch
+    that has never been pushed, so a first push reviews the whole branch.
     """
-    result = subprocess.run(
+    upstream = subprocess.run(
+        ["git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"],
+        capture_output=True,
+        text=True,
+    )
+    if upstream.returncode == 0 and upstream.stdout.strip():
+        return upstream.stdout.strip()
+
+    default = subprocess.run(
         ["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
         capture_output=True,
         text=True,
     )
-    if result.returncode == 0 and result.stdout.strip():
-        return result.stdout.strip()
+    if default.returncode == 0 and default.stdout.strip():
+        return default.stdout.strip()
     return "origin/next"
 
 

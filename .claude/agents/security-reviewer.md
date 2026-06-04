@@ -13,18 +13,22 @@ You are a hostile reviewer. Your job is to break this code before an attacker do
 
 ## Step 1: Gather the Changes
 
-Diff against the integration branch (the remote's default branch), not the
-branch's own upstream:
+Review only the commits being pushed — the delta over this branch's already-pushed
+state — not the entire branch. Resolve the base and diff against it:
 
 ```
-git diff "$(git symbolic-ref --short refs/remotes/origin/HEAD)...HEAD"
+BASE="$(git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null \
+  || git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null \
+  || echo origin/next)"
+git diff "$BASE...HEAD"
 ```
 
-If `origin/HEAD` is not set, resolve the default branch with
-`gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name'` and run
-`git diff origin/<branch>...HEAD`.
+`@{upstream}` is the branch's remote-tracking ref, so on a branch that has been pushed
+before you review only the new commits — code from earlier, already-reviewed commits is
+out of scope. (On a never-pushed branch this falls back to the integration branch and
+reviews the whole branch, which is correct for a first review.)
 
-For every file in the diff, read the **full file**. Vulnerabilities hide in how new code interacts with existing code, not just in the diff itself.
+For every file in the diff, read the **full file**. Vulnerabilities hide in how new code interacts with existing code, not just in the diff itself. Confirm every finding against the current file contents before reporting it — never raise an issue the code already addresses.
 
 ## Step 2: Run Both Personas
 
@@ -128,6 +132,7 @@ then classify it as a NOTE, not CRITICAL or WARNING. Surfacing it keeps it visib
 - **Restating the diff** - "This function was added" is not a finding. What's WRONG with it?
 - **Cosmetic-only findings** - Reporting style issues while missing a panic is worse than no review.
 - **Reviewing only changed lines** - Read the full file. The bug is in the interaction.
+- **Re-reviewing already-pushed code** - Only the commits being pushed are in scope. Don't resurrect findings about code outside this diff range; it was reviewed when it was first pushed.
 
 ## Breaking the Self-Review Trap
 

@@ -9,6 +9,7 @@ so a regression points directly at the responsible script.
 from __future__ import annotations
 
 import importlib
+from types import SimpleNamespace
 
 import pytest
 
@@ -139,3 +140,37 @@ def test_paired_hooks_share_target(
         f"Either re-align or remove the entry from PAIRED_TARGETS and add "
         f"explicit per-hook routing cases for both."
     )
+
+
+# pre_push_review review base selection. The review must cover only the commits
+# being pushed (the branch's upstream), not the whole branch vs the integration
+# branch — otherwise every push re-reviews earlier, already-reviewed commits.
+def _fake_proc(returncode: int = 0, stdout: str = "", stderr: str = "") -> SimpleNamespace:
+    return SimpleNamespace(returncode=returncode, stdout=stdout, stderr=stderr)
+
+
+def test_diff_base_prefers_upstream(monkeypatch: pytest.MonkeyPatch) -> None:
+    """When the branch has an upstream, review against it (only the pushed commits)."""
+    import pre_push_review
+
+    def fake_run(cmd: list[str], **_kwargs: object) -> SimpleNamespace:
+        assert "@{upstream}" in cmd, "upstream must be queried first"
+        return _fake_proc(stdout="origin/some-feature-branch\n")
+
+    monkeypatch.setattr(pre_push_review.subprocess, "run", fake_run)
+    assert pre_push_review._diff_base() == "origin/some-feature-branch"
+
+
+def test_diff_base_falls_back_to_default_branch(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A never-pushed branch (no upstream) falls back to the remote default branch."""
+    import pre_push_review
+
+    def fake_run(cmd: list[str], **_kwargs: object) -> SimpleNamespace:
+        if "@{upstream}" in cmd:
+            return _fake_proc(returncode=128, stderr="no upstream configured")
+        if "symbolic-ref" in cmd:
+            return _fake_proc(stdout="origin/next\n")
+        return _fake_proc(returncode=1)
+
+    monkeypatch.setattr(pre_push_review.subprocess, "run", fake_run)
+    assert pre_push_review._diff_base() == "origin/next"
