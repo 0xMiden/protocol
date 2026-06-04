@@ -16,27 +16,12 @@ const ERR_BATCH_NOTE_CONSUMED_BEFORE_CREATED="an erased input note was consumed 
 # ASSERTIONS
 # =================================================================================================
 
-#! Asserts every input-note list entry was consumed by exactly one transaction (with the per-tx
-#! binding, this proves the list is exactly the union of the per-transaction input notes).
-#!
-#! Inputs:  []
-#! Outputs: []
-proc assert_all_input_notes_consumed
-    exec.memory::get_num_input_notes
-    push.0
-    dup.1 dup.1 neq
-    while.true
-        dup exec.memory::input_note_flags_ptr add.INPUT_NOTE_CONSUMPTION_OFFSET mem_load
-        assert.err=ERR_BATCH_INPUT_NOTE_NOT_CONSUMED
-        add.1
-        dup.1 dup.1 neq
-    end
-    drop drop
-end
-
 #! Asserts every output-note list entry was created by exactly one transaction (with the per-tx
 #! binding, this proves the list is exactly the union of the per-transaction output notes, so a host
 #! cannot fabricate an erasure with a note no transaction creates).
+#!
+#! The matching input-note checks (every entry consumed exactly once, none left pending-erasure) are
+#! folded into the single pass in [`compute_input_notes_commitment`].
 #!
 #! Inputs:  []
 #! Outputs: []
@@ -47,25 +32,6 @@ proc assert_all_output_notes_created
     while.true
         dup exec.memory::output_note_flags_ptr add.OUTPUT_NOTE_IS_CREATED_OFFSET mem_load
         assert.err=ERR_BATCH_OUTPUT_NOTE_NOT_CREATED
-        add.1
-        dup.1 dup.1 neq
-    end
-    drop drop
-end
-
-#! Asserts no input-note list entry is left expected-to-be-erased (erasure flag == 1): every note
-#! claimed to be created-and-consumed in the batch had its creator processed.
-#!
-#! Inputs:  []
-#! Outputs: []
-proc assert_no_pending_erasure
-    exec.memory::get_num_input_notes
-    push.0
-    dup.1 dup.1 neq
-    while.true
-        dup exec.memory::input_note_flags_ptr mem_load
-        # => [erasure, idx, num]
-        neq.1 assert.err=ERR_BATCH_NOTE_CONSUMED_BEFORE_CREATED
         add.1
         dup.1 dup.1 neq
     end
@@ -109,6 +75,10 @@ end
 #! (entries with erasure flag == 2 are skipped). Reproduces `build_input_note_commitment`: an empty
 #! result is the empty word.
 #!
+#! The single pass over the input entries also enforces the epilogue invariants on each entry: it
+#! was consumed exactly once (consumption == 1) and is not left expected-to-be-erased (erasure != 1,
+#! i.e. any created-and-consumed note had its creator processed).
+#!
 #! Inputs:  []
 #! Outputs: [INPUT_NOTES_COMMITMENT]
 proc compute_input_notes_commitment
@@ -121,7 +91,15 @@ proc compute_input_notes_commitment
     dup dup.3 neq
     # => [should_loop, idx, absorbed_count, num]
     while.true
-        dup exec.memory::input_note_flags_ptr mem_load
+        dup exec.memory::input_note_flags_ptr
+        # => [flags_ptr, idx, absorbed_count, num]
+        dup add.INPUT_NOTE_CONSUMPTION_OFFSET mem_load
+        # => [consumption, flags_ptr, idx, absorbed_count, num]
+        assert.err=ERR_BATCH_INPUT_NOTE_NOT_CONSUMED
+        # => [flags_ptr, idx, absorbed_count, num]
+        mem_load
+        # => [erasure, idx, absorbed_count, num]
+        dup neq.1 assert.err=ERR_BATCH_NOTE_CONSUMED_BEFORE_CREATED
         # => [erasure, idx, absorbed_count, num]
         neq.2
         # => [not_erased, idx, absorbed_count, num]
@@ -168,17 +146,16 @@ end
 
 #! Verifies the note-tracking results and computes the batch's note commitments.
 #!
-#! Asserts every input-note list entry was consumed, every output-note list entry was created, and no
-#! erasure is left pending, then computes the input- and output-notes commitments.
+#! Asserts every output-note list entry was created, then computes the input- and output-notes
+#! commitments. The per-input-entry invariants (consumed exactly once, no pending erasure) are
+#! enforced inside the input-commitment pass.
 #!
 #! Inputs:  []
 #! Outputs: [INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT]
 #!
 #! TODO: authenticate unauthenticated, non-erased input notes against BLOCK_COMMITMENT's chain MMR.
 pub proc finalize
-    exec.assert_all_input_notes_consumed
     exec.assert_all_output_notes_created
-    exec.assert_no_pending_erasure
     exec.compute_output_notes_commitment
     # => [OUTPUT_NOTES_COMMITMENT]
     exec.compute_input_notes_commitment
