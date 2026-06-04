@@ -44,9 +44,9 @@ fn create_multisig_smart_account(
 ) -> anyhow::Result<Account> {
     let approvers: Vec<_> =
         public_keys.iter().map(|pk| (pk.to_commitment(), auth_scheme)).collect();
-    let config = AuthMultisigSmartConfig::new(approvers, threshold)?
-        .with_proc_policies(proc_policy_map)?
-        .with_delayed_execution(DelayedExecutionPolicy::new(30, 2)?);
+    let config =
+        AuthMultisigSmartConfig::new(approvers, threshold, DelayedExecutionPolicy::new(30, 2)?)?
+            .with_proc_policies(proc_policy_map)?;
 
     let asset = FungibleAsset::new(
         AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?,

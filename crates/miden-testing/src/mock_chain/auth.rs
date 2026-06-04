@@ -52,13 +52,13 @@ pub enum Auth {
         proc_threshold_map: Vec<(AccountProcedureRoot, u32)>,
     },
 
-    /// Multisig with smart per-procedure policy configuration and an optional delayed-execution
-    /// policy controlling propose/cancel/execute timelock flows.
+    /// Multisig with smart per-procedure policy configuration and a delayed-execution policy
+    /// controlling propose/cancel/execute timelock flows.
     MultisigSmart {
         threshold: u32,
         approvers: Vec<(PublicKeyCommitment, AuthScheme)>,
         proc_policy_map: Vec<(Word, ProcedurePolicy)>,
-        delayed_execution: Option<DelayedExecutionPolicy>,
+        delayed_execution: DelayedExecutionPolicy,
     },
 
     /// Creates a secret key for the account, and creates a [BasicAuthenticator] used to
@@ -139,12 +139,10 @@ impl Auth {
                 proc_policy_map,
                 delayed_execution,
             } => {
-                let mut config = AuthMultisigSmartConfig::new(approvers.clone(), *threshold)
-                    .and_then(|cfg| cfg.with_proc_policies(proc_policy_map.clone()))
-                    .expect("invalid multisig smart config");
-                if let Some(de) = delayed_execution {
-                    config = config.with_delayed_execution(*de);
-                }
+                let config =
+                    AuthMultisigSmartConfig::new(approvers.clone(), *threshold, *delayed_execution)
+                        .and_then(|cfg| cfg.with_proc_policies(proc_policy_map.clone()))
+                        .expect("invalid multisig smart config");
 
                 let component = AuthMultisigSmart::new(config)
                     .expect("multisig smart component creation failed")

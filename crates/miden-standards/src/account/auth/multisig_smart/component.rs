@@ -92,16 +92,20 @@ pub struct AuthMultisigSmartConfig {
     approvers: Vec<(PublicKeyCommitment, AuthScheme)>,
     default_threshold: u32,
     procedure_policies: Vec<(Word, ProcedurePolicy)>,
-    delayed_execution: Option<DelayedExecutionPolicy>,
+    delayed_execution: DelayedExecutionPolicy,
 }
 
 impl AuthMultisigSmartConfig {
-    /// Creates a new configuration with the given approvers and a default threshold.
+    /// Creates a new configuration with the given approvers, default threshold, and delayed
+    /// execution policy.
     ///
     /// The `default_threshold` must be at least 1 and at most the number of approvers.
+    /// `delayed_execution` is required — `AuthMultisigSmart` always runs with a configured
+    /// timelock policy; see [`DelayedExecutionPolicy::new`] for its validation rules.
     pub fn new(
         approvers: Vec<(PublicKeyCommitment, AuthScheme)>,
         default_threshold: u32,
+        delayed_execution: DelayedExecutionPolicy,
     ) -> Result<Self, AccountError> {
         if default_threshold == 0 {
             return Err(AccountError::other("threshold must be at least 1"));
@@ -122,7 +126,7 @@ impl AuthMultisigSmartConfig {
             approvers,
             default_threshold,
             procedure_policies: vec![],
-            delayed_execution: None,
+            delayed_execution,
         })
     }
 
@@ -134,16 +138,6 @@ impl AuthMultisigSmartConfig {
         validate_proc_policies(self.approvers.len() as u32, &proc_policies)?;
         self.procedure_policies = proc_policies;
         Ok(self)
-    }
-
-    /// Enables delayed execution with the given policy (min delay + propose expiration delta).
-    ///
-    /// When unset, the on-chain `DELAYED_EXECUTION_SLOT` is initialized to `[0, 0, 0, 0]` and any
-    /// attempt to call `propose_transaction` / `execute_proposed_transaction` will panic at
-    /// runtime — the feature is opt-in via this builder.
-    pub fn with_delayed_execution(mut self, delayed_execution: DelayedExecutionPolicy) -> Self {
-        self.delayed_execution = Some(delayed_execution);
-        self
     }
 
     pub fn approvers(&self) -> &[(PublicKeyCommitment, AuthScheme)] {
@@ -158,7 +152,7 @@ impl AuthMultisigSmartConfig {
         &self.procedure_policies
     }
 
-    pub fn delayed_execution(&self) -> Option<DelayedExecutionPolicy> {
+    pub fn delayed_execution(&self) -> DelayedExecutionPolicy {
         self.delayed_execution
     }
 }
@@ -237,9 +231,8 @@ impl AuthMultisigSmart {
         self.config.procedure_policies()
     }
 
-    /// Returns the configured delayed-execution policy, or `None` if delayed execution is
-    /// disabled for this account.
-    pub fn delayed_execution(&self) -> Option<DelayedExecutionPolicy> {
+    /// Returns the configured delayed-execution policy.
+    pub fn delayed_execution(&self) -> DelayedExecutionPolicy {
         self.config.delayed_execution()
     }
 
@@ -410,21 +403,15 @@ impl From<AuthMultisigSmart> for AccountComponent {
         ));
 
         // Delayed-execution policy slot (value: [min_delay, propose_expiration_delta, 0, 0]).
-        // When the feature is not enabled, the slot is initialized to the empty word so that
-        // any attempt to call `propose_transaction` / `execute_proposed_transaction` fails at
-        // runtime via the MASM zero-checks.
-        let delayed_execution_word = match multisig.config.delayed_execution() {
-            Some(policy) => Word::from([
-                policy.min_delay(),
-                policy.propose_expiration_delta() as u32,
+        let delayed_execution = multisig.config.delayed_execution();
+        storage_slots.push(StorageSlot::with_value(
+            AuthMultisigSmart::delayed_execution_slot().clone(),
+            Word::from([
+                delayed_execution.min_delay(),
+                delayed_execution.propose_expiration_delta() as u32,
                 0u32,
                 0u32,
             ]),
-            None => Word::empty(),
-        };
-        storage_slots.push(StorageSlot::with_value(
-            AuthMultisigSmart::delayed_execution_slot().clone(),
-            delayed_execution_word,
         ));
 
         // Tx-proposals map slot (TX_HASH => [unlock_timestamp, expiration_height, 0, 0])
@@ -481,6 +468,10 @@ mod tests {
     use super::*;
     use crate::account::wallets::BasicWallet;
 
+    fn default_delayed_execution_policy() -> DelayedExecutionPolicy {
+        DelayedExecutionPolicy::new(30, 2).expect("default test policy must be valid")
+    }
+
     #[test]
     fn test_multisig_smart_component_setup() {
         let sec_key_1 = AuthSecretKey::new_ecdsa_k256_keccak();
@@ -493,14 +484,18 @@ mod tests {
         let default_threshold = 2u32;
         let receive_asset_immediate_threshold = 1u32;
 
-        let config = AuthMultisigSmartConfig::new(approvers.clone(), default_threshold)
-            .expect("invalid multisig smart config")
-            .with_proc_policies(vec![(
-                BasicWallet::receive_asset_root().as_word(),
-                ProcedurePolicy::with_immediate_threshold(receive_asset_immediate_threshold)
-                    .expect("procedure policy should be valid"),
-            )])
-            .expect("procedure policy config should be valid");
+        let config = AuthMultisigSmartConfig::new(
+            approvers.clone(),
+            default_threshold,
+            default_delayed_execution_policy(),
+        )
+        .expect("invalid multisig smart config")
+        .with_proc_policies(vec![(
+            BasicWallet::receive_asset_root().as_word(),
+            ProcedurePolicy::with_immediate_threshold(receive_asset_immediate_threshold)
+                .expect("procedure policy should be valid"),
+        )])
+        .expect("procedure policy config should be valid");
 
         let component =
             AuthMultisigSmart::new(config).expect("multisig smart component creation failed");
@@ -535,10 +530,11 @@ mod tests {
         let sec_key = AuthSecretKey::new_ecdsa_k256_keccak();
         let approvers = vec![(sec_key.public_key().to_commitment(), sec_key.auth_scheme())];
 
-        let result = AuthMultisigSmartConfig::new(approvers.clone(), 0);
+        let policy = default_delayed_execution_policy();
+        let result = AuthMultisigSmartConfig::new(approvers.clone(), 0, policy);
         assert!(result.unwrap_err().to_string().contains("threshold must be at least 1"));
 
-        let result = AuthMultisigSmartConfig::new(approvers, 2);
+        let result = AuthMultisigSmartConfig::new(approvers, 2, policy);
         assert!(
             result
                 .unwrap_err()
@@ -562,7 +558,7 @@ mod tests {
         let policy_two =
             ProcedurePolicy::with_immediate_threshold(2).expect("procedure policy should be valid");
 
-        let result = AuthMultisigSmartConfig::new(approvers, 2)
+        let result = AuthMultisigSmartConfig::new(approvers, 2, default_delayed_execution_policy())
             .expect("base config should be valid")
             .with_proc_policies(vec![
                 (receive_asset_root, policy_one),
@@ -588,7 +584,7 @@ mod tests {
             (sec_key_2.public_key().to_commitment(), sec_key_2.auth_scheme()),
         ];
 
-        let result = AuthMultisigSmartConfig::new(approvers, 2);
+        let result = AuthMultisigSmartConfig::new(approvers, 2, default_delayed_execution_policy());
         assert!(
             result
                 .unwrap_err()
