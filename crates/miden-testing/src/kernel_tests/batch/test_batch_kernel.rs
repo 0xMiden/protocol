@@ -188,45 +188,25 @@ fn batch_executor_then_prover_produces_proven_batch() -> anyhow::Result<()> {
 // and erasure checks below raise named `ERR_BATCH_*` errors and are asserted concretely via
 // `assert_kernel_error`.
 
-/// Selects which advice-map layer the tampering test corrupts.
-#[derive(Clone, Copy)]
-enum TamperedLayer {
-    /// Layer 1: the `BATCH_ID` -> `(tx_id, account_id)` transaction list.
-    TransactionList,
-    /// Layer 2: a verified `tx_id`'s header data.
-    TransactionHeader,
-    /// Layer 3: a transaction's input-notes commitment data.
-    InputNotes,
-}
-
-/// Tampering any of the three preimage layers breaks its hash check inside
-/// `mem::pipe_preimage_to_memory`. That check is a bare `assert_eqw` carrying no named error code,
-/// so each case only asserts that execution fails.
+/// Tampering any preimage layer breaks its hash check inside `mem::pipe_preimage_to_memory`. That
+/// check is a bare `assert_eqw` carrying no named error code, so each case only asserts that
+/// execution fails. Each case selects which layer's advice-map key to corrupt: Layer 1 (the
+/// transaction list, keyed by `BATCH_ID`), Layer 2 (a transaction header, keyed by `tx_id`), and
+/// Layer 3 (a transaction's input notes, keyed by its `INPUT_NOTES_COMMITMENT`).
 #[rstest]
-#[case(TamperedLayer::TransactionList)]
-#[case(TamperedLayer::TransactionHeader)]
-#[case(TamperedLayer::InputNotes)]
-fn batch_kernel_rejects_tampered_advice(#[case] layer: TamperedLayer) -> anyhow::Result<()> {
+#[case(|batch: &ProposedBatch| batch.id().as_word())]
+#[case(|batch: &ProposedBatch| batch.transactions()[0].id().as_word())]
+#[case(|batch: &ProposedBatch| batch.transactions()[0].input_notes().commitment())]
+fn batch_kernel_rejects_tampered_advice(
+    #[case] key: fn(&ProposedBatch) -> Word,
+) -> anyhow::Result<()> {
     let mut setup = setup_chain();
     let batch = two_tx_batch(&mut setup)?;
 
-    let (key, message) = match layer {
-        TamperedLayer::TransactionList => {
-            (batch.id().as_word(), "kernel must abort on a tampered transaction list")
-        },
-        TamperedLayer::TransactionHeader => (
-            batch.transactions()[0].id().as_word(),
-            "kernel must abort on a tampered transaction header",
-        ),
-        TamperedLayer::InputNotes => (
-            batch.transactions()[0].input_notes().commitment(),
-            "kernel must abort on tampered input-notes data",
-        ),
-    };
-    let override_advice = tampered_advice_for(&batch, key);
+    let override_advice = tampered_advice_for(&batch, key(&batch));
 
     let result = BatchExecutor::new().extend_advice_inputs(override_advice).execute(batch);
-    assert!(result.is_err(), "{message}");
+    assert!(result.is_err(), "kernel must abort on tampered advice");
 
     Ok(())
 }
