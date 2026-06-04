@@ -27,7 +27,7 @@ use miden::standards::access::pausable
 #! Outputs: [ASSET_VALUE, pad(12)]
 #!
 #! Panics if:
-#! - the account is paused (`Pausable` component required).
+#! - the account is paused (no-op when the `Pausable` component is not installed).
 #! - the native account is not allowed on the issuing faucet.
 #!
 #! Invocation: call

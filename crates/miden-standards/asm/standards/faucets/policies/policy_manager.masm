@@ -271,9 +271,8 @@ end
 #! Outputs: [amount, tag, note_type, RECIPIENT]
 #!
 #! Panics if:
-#! - the account is paused (`exec.pausable::assert_not_paused` — TokenPolicyManager requires the
-#!   [`Pausable`] component to be installed; the slot lookup panics on accounts that did not
-#!   install it).
+#! - the account is paused (`exec.pausable::assert_not_paused` is a no-op when the [`Pausable`]
+#!   component is not installed).
 #! - active mint policy predicate fails.
 #!
 #! The active policy root is validated at config time (in `set_mint_policy` and on initial

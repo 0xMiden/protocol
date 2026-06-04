@@ -9,8 +9,8 @@ use miden::standards::access::pausable
 #!
 #! Invoked as the active send or receive policy via `TokenPolicyManager`.
 #!
-#! Calls `exec.pausable::assert_not_paused` before allowing the transfer. The `Pausable` component
-#! is REQUIRED on accounts using TokenPolicyManager.
+#! Calls `exec.pausable::assert_not_paused` before allowing the transfer. The pause check is a
+#! no-op on accounts that did not install the `Pausable` component.
 #!
 #! Inputs:  [ASSET_KEY, ASSET_VALUE]
 #! Outputs: [ASSET_VALUE]
