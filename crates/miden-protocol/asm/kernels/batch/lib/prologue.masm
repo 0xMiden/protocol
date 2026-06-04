@@ -9,15 +9,13 @@ use miden::batch_kernel::memory::NOTE_ENTRY_FELT_LEN
 use miden::batch_kernel::memory::MAX_TRANSACTIONS_PER_BATCH
 use miden::batch_kernel::memory::MAX_NOTES_PER_BATCH
 
-# CONSTANTS
-# =================================================================================================
-
-#! Advice-map keys under which the global input/output note lists are provided. These definitions
-#! are the single source of truth: `build.rs` generates the matching Rust constants from them. All
-#! four felts are equal so each key word is independent of word orientation. The lists' integrity is
-#! established by binding every entry to a verified per-transaction note (not by these keys).
-const INPUT_NOTE_LIST_KEY=0xBA7C0001
-const OUTPUT_NOTE_LIST_KEY=0xBA7C0002
+# Advice-map keys under which the global input/output note lists are provided. `build.rs` derives
+# them by hashing a domain message and emits the matching values to this generated module and to the
+# Rust advice builder. Each key word is four equal felts of the value, so it is independent of word
+# orientation. The lists' integrity comes from binding every entry to a verified per-transaction note
+# (not from these keys).
+use miden::batch_kernel::note_list_keys::INPUT_NOTE_LIST_KEY
+use miden::batch_kernel::note_list_keys::OUTPUT_NOTE_LIST_KEY
 
 # ERRORS
 # =================================================================================================
