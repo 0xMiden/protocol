@@ -43,7 +43,7 @@ const ERR_TX_EXPIRATION_DELTA_NOT_SET = "tx expiration delta must be set"
 
 #! High-impact action.
 #!
-#! Sets the timelock controller used by proposal lifecycle checks.
+#! Sets the delayed execution policy used by proposal lifecycle checks.
 #!
 #! Inputs:  [min_delay, propose_expiration_delta]
 #! Outputs: []
@@ -82,10 +82,18 @@ pub proc update_delayed_execution_policy
     # => []
 end
 
-#! Loads the timelock controller configuration.
+#! Loads the delayed execution policy configuration from `DELAYED_EXECUTION_SLOT`.
 #!
 #! Inputs:  []
 #! Outputs: [min_delay, propose_expiration_delta, 0, 0]
+#!
+#! Where:
+#! - min_delay is the minimum number of seconds that must elapse between a `propose_transaction`
+#!   call and the matching `execute_proposed_transaction` call.
+#! - propose_expiration_delta is the block delta applied to proposal transactions so that
+#!   unsatisfied proposals expire after `propose_expiration_delta` blocks.
+#!
+#! Invocation: exec
 proc get_delayed_execution
     push.DELAYED_EXECUTION_SLOT[0..2]
     # => [slot_prefix, slot_suffix]
@@ -182,8 +190,29 @@ pub proc apply_expiration_delta
 end
 
 
+#! Applies the configured `propose_expiration_delta` to the current transaction.
+#!
+#! Reads `propose_expiration_delta` from the delayed execution policy and forwards it to
+#! `apply_expiration_delta`, which writes the value through `tx::update_expiration_block_delta`
+#! and asserts the resulting transaction expiration block delta is non-zero. This is the helper
+#! used by `propose_transaction` and `cancel_and_propose_new_transaction` to make sure every
+#! proposal-bearing transaction expires within the policy-defined window.
+#!
 #! Inputs:  []
 #! Outputs: []
+#!
+#! Panics if:
+#! - `propose_expiration_delta` configured in `DELAYED_EXECUTION_SLOT` is zero
+#!   (`ERR_EXPIRATION_DELTA_ZERO`).
+#! - `tx::update_expiration_block_delta` rejects the configured value.
+#! - the stored transaction expiration delta is zero after the update
+#!   (`ERR_TX_EXPIRATION_DELTA_NOT_SET`).
+#!
+#! Side effects:
+#!   - Calls `tx::update_expiration_block_delta` to overwrite the current transaction's
+#!     expiration block delta with the configured `propose_expiration_delta`.
+#!
+#! Invocation: exec
 proc apply_propose_expiration_delta
     exec.get_propose_expiration_delta
     # => [propose_expiration_delta]
