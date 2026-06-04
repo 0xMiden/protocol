@@ -749,14 +749,15 @@ async fn test_multisig_smart_delayed_only_proc_rejects_signed_direct_path(
     Ok(())
 }
 
-/// The execute lane should still produce a `TX_SUMMARY_COMMITMENT` (via the unauthorized dry-run)
-/// even when the tx only touches a delayed-only procedure: the auth path runs to threshold check,
-/// fails without signatures, but emits the summary needed to drive the propose/execute round-trip.
+/// Calling `execute_proposed_transaction` should still produce a `TX_SUMMARY_COMMITMENT` (via the
+/// unauthorized dry-run) even when the tx only touches a delayed-only procedure: the auth path
+/// runs to threshold check, fails without signatures, but emits the summary needed to drive the
+/// propose/execute round-trip.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
-async fn test_multisig_smart_delayed_only_execute_lane_still_returns_tx_summary_on_dry_run(
+async fn test_multisig_smart_delayed_only_execute_proc_returns_tx_summary_on_dry_run(
     #[case] auth_scheme: AuthScheme,
 ) -> anyhow::Result<()> {
     let (_secret_keys, _auth_schemes, public_keys, _authenticators) =

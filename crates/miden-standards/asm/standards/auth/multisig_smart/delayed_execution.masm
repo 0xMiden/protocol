@@ -802,7 +802,8 @@ end
 #!
 #! Where:
 #! - num_verified_signatures is the number of signatures verified for the current transaction.
-#! - requires_delay is 1 if the current transaction must use the execute lane, otherwise 0.
+#! - requires_delay is 1 if the current transaction must run in delayed execution mode,
+#!   otherwise 0.
 #! - TX_HASH is the current transaction summary hash.
 #!
 #! Panics if:
@@ -1009,7 +1010,8 @@ end
 #!
 #! Where:
 #! - num_verified_signatures is the number of signatures verified for the current transaction.
-#! - requires_delay is 1 if the current transaction must use the execute lane, otherwise 0.
+#! - requires_delay is 1 if the current transaction must run in delayed execution mode,
+#!   otherwise 0.
 #! - TX_HASH is the current transaction summary hash.
 #!
 #! Panics if:
