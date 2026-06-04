@@ -186,8 +186,7 @@ impl AssetVaultKey {
 /// A hashed [`AssetVaultKey`].
 ///
 /// This is produced by hashing an [`AssetVaultKey`] and is used as the actual key in the
-/// underlying SMT. Wrapping the hashed key in a distinct type prevents accidentally using a raw
-/// key where a hashed key is expected and vice-versa.
+/// underlying SMT.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, WordWrapper)]
 pub struct AssetVaultKeyHash(Word);
 
