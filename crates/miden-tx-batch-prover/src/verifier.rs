@@ -22,7 +22,10 @@ use crate::BatchVerifierError;
 /// the chain MMR. A successful [`verify`](BatchVerifier::verify) therefore attests that the kernel
 /// ran over the batch's `[BLOCK_COMMITMENT, BATCH_ID]` inputs and produced
 /// `batch.input_notes().commitment()`, but does **not** bind the batch's output notes, account
-/// updates, or expiration. This verifier must not be relied on at a trust boundary.
+/// updates, or expiration. The `BATCH_ID` and reference block commitment fed to the kernel are
+/// taken from the [`ProvenBatch`]'s own fields and are not recomputed from its transactions, so
+/// verification binds nothing that an entity constructing the [`ProvenBatch`] could not also forge.
+/// This verifier must not be relied on at a trust boundary.
 pub struct BatchVerifier {
     batch_program_info: ProgramInfo,
     min_proof_security_level: u32,
@@ -40,7 +43,9 @@ impl BatchVerifier {
 
     /// Verifies the provided [`ProvenBatch`]'s execution proof against the batch kernel.
     ///
-    /// On success, returns the security level (in bits) of the verified proof.
+    /// On success, returns the security level (in bits) of the verified proof. See the
+    /// [type-level warning](BatchVerifier#warning): a successful result must not be relied on at a
+    /// trust boundary while the kernel binds only `INPUT_NOTES_COMMITMENT`.
     ///
     /// # Errors
     /// Returns an error if:
