@@ -66,6 +66,7 @@
 - Added trace row counts to `bench-tx.json` ([#2794](https://github.com/0xMiden/protocol/pull/2794)).
 - [BREAKING] Renamed `set_attachment` to `add_attachment`, `set_word_attachment` to `add_word_attachment`, and `set_array_attachment` to `add_array_attachment` in `miden::protocol::output_note` ([#2795](https://github.com/0xMiden/protocol/pull/2795), [#2849](https://github.com/0xMiden/protocol/pull/2849)).
 - Added foundations for `AuthMultisigSmart` ([#2806](https://github.com/0xMiden/protocol/pull/2806)).
+- Extended `AuthMultisigSmart` with a `DelayedExecutionPolicy` and a `delayed_execution` module that exposes a timelock-controlled propose/cancel/execute flow, surfaced through `update_delayed_execution_policy`, `propose_transaction`, `cancel_transaction_proposal`, `cancel_and_propose_new_transaction`, and `execute_proposed_transaction`.
 - Added `tx::get_tx_script_root` kernel procedure returning the root of the executed transaction script (empty word if no script was executed) ([#2816](https://github.com/0xMiden/protocol/pull/2816)).
 - Added `AuthNetworkAccount` auth component that rejects transactions which execute a tx script or consume input notes outside of a fixed allowlist of note script roots ([#2817](https://github.com/0xMiden/protocol/pull/2817)).
 - Added basic blocklist transfer policy with owner-managed admin (`block_account`/`unblock_account`) and runtime policy switching via the protocol-reserved asset callback slots ([#2820])(https://github.com/0xMiden/protocol/pull/2820).

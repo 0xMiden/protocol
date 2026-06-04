@@ -8,7 +8,7 @@ use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, PublicKeyCommitme
 use miden_protocol::account::{AccountComponent, AccountProcedureRoot};
 use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
-use miden_standards::account::auth::multisig_smart::ProcedurePolicy;
+use miden_standards::account::auth::multisig_smart::{DelayedExecutionPolicy, ProcedurePolicy};
 use miden_standards::account::auth::{
     AuthGuardedMultisig,
     AuthGuardedMultisigConfig,
@@ -52,11 +52,13 @@ pub enum Auth {
         proc_threshold_map: Vec<(AccountProcedureRoot, u32)>,
     },
 
-    /// Multisig with smart per-procedure policy configuration.
+    /// Multisig with smart per-procedure policy configuration and an optional delayed-execution
+    /// policy controlling propose/cancel/execute timelock flows.
     MultisigSmart {
         threshold: u32,
         approvers: Vec<(PublicKeyCommitment, AuthScheme)>,
         proc_policy_map: Vec<(Word, ProcedurePolicy)>,
+        delayed_execution: DelayedExecutionPolicy,
     },
 
     /// Creates a secret key for the account, and creates a [BasicAuthenticator] used to
@@ -131,10 +133,16 @@ impl Auth {
 
                 (component, None)
             },
-            Auth::MultisigSmart { threshold, approvers, proc_policy_map } => {
+            Auth::MultisigSmart {
+                threshold,
+                approvers,
+                proc_policy_map,
+                delayed_execution,
+            } => {
                 let config = AuthMultisigSmartConfig::new(approvers.clone(), *threshold)
                     .and_then(|cfg| cfg.with_proc_policies(proc_policy_map.clone()))
-                    .expect("invalid multisig smart config");
+                    .expect("invalid multisig smart config")
+                    .with_delayed_execution(*delayed_execution);
 
                 let component = AuthMultisigSmart::new(config)
                     .expect("multisig smart component creation failed")

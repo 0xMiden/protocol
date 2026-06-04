@@ -6,6 +6,7 @@ use miden::standards::auth::multisig
 use miden::standards::auth::multisig::APPROVER_PUBLIC_KEYS_SLOT
 use miden::standards::auth::multisig::APPROVER_SCHEME_ID_SLOT
 use miden::standards::auth::multisig::THRESHOLD_CONFIG_SLOT
+use miden::standards::auth::multisig_smart::delayed_execution
 use miden::standards::auth::signature
 use miden::standards::auth::tx_policy
 
@@ -58,6 +59,8 @@ const ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS = "procedure threshold exceeds ne
 const ERR_INVALID_NOTE_RESTRICTIONS = "procedure policy note restrictions must be between 0 and 3"
 
 const ERR_INSUFFICIENT_SIGNATURES = "insufficient number of signatures"
+
+const ERR_EXECUTE_PATH_MISMATCH = "execute path must match delay requirement"
 
 # LOCAL ADDRESSES (set_procedure_policy)
 # =================================================================================================
@@ -422,26 +425,24 @@ end
 #!
 #! Invocation: exec
 #!
-#! NOTE: This procedure is a temporary form. Once the TimelockedAccount feature lands, the
-#! hardcoded IMMEDIATE_EXECUTION_MODE push will be replaced with a call to
-#! `timelock_controller::execution_mode`, and the procedure will also expose
-#! `policy_requires_delay` for downstream enforcement.
+#! The active execution mode is read from [`delayed_execution::is_execute_path`]: when the
+#! delayed-execution module's `PENDING_EXECUTE` slot is set this transaction is on the
+#! delayed-execute path (mode = 1); otherwise it is on the immediate path (mode = 0).
+#!
+#! `policy_requires_delay` is surfaced so the caller can enforce execute-path consistency
+#! after signature verification (see [`ERR_EXECUTE_PATH_MISMATCH`]).
 proc enforce_procedure_policy(default_threshold: u32)
-    push.IMMEDIATE_EXECUTION_MODE
+    exec.delayed_execution::is_execute_path
     # => [execution_mode, default_threshold]
 
     exec.compute_called_proc_policy
     # => [policy_threshold, policy_requires_delay, note_restrictions]
 
-    # policy_requires_delay is always 0 on IMMEDIATE_EXECUTION_MODE; drop it.
-    swap drop
-    # => [policy_threshold, note_restrictions]
-
-    swap
-    # => [note_restrictions, policy_threshold]
+    movup.2
+    # => [note_restrictions, policy_threshold, policy_requires_delay]
 
     exec.enforce_note_restrictions
-    # => [policy_threshold]
+    # => [policy_threshold, policy_requires_delay]
 end
 
 #! Asserts that all configured smart per-procedure policies are valid for num_approvers.
@@ -747,21 +748,23 @@ end
 #! Locals:
 #! 0: policy_threshold
 #! 1: default_threshold
+#! 2: policy_requires_delay
+#! 3: num_verified_signatures
+#!
+#! Flow:
+#! 1. Build the tx summary commitment used for signing and timelock proposals.
+#! 2. Enforce per-procedure policy (note restrictions + policy threshold + delay flag).
+#! 3. Verify approver signatures and check the threshold.
+#! 4. Enforce execute-path consistency: if any policy required the delayed mode the tx must be
+#!    on the execute path, and conversely the immediate path is only valid when no consumed
+#!    policy required a delay. This check runs after signature verification so a caller can
+#!    still obtain the TX_SUMMARY_COMMITMENT needed for a propose/execute round-trip from an
+#!    unauthorized dry-run.
+#! 5. Finalize any pending timelock propose/cancel/execute slots against the verified sig count
+#!    and the policy-derived `requires_delay` flag.
 #!
 #! Invocation: call
-#!
-#! NOTE: This procedure is a temporary form covering signer verification and
-#! per-procedure policy enforcement. The following sections will be added:
-#! - Spending Limits + Amount-Based Thresholds: a prologue that calls
-#!   `exec.spending_limits::compute_spending_policy` to derive a spending-derived threshold and
-#!   `spending_requires_delay` flag, and combines it via `u32max` with `policy_threshold` before
-#!   the final `compute_tx_threshold` fallback.
-#! - TimelockedAccount: after signature verification, assert the execute-path vs.
-#!   `policy_requires_delay`/`spending_requires_delay` consistency (restoring
-#!   `ERR_EXECUTE_PATH_MISMATCH`), then call
-#!   `exec.timelock_controller::finalize_timelock_proposals` to advance any pending
-#!   propose/cancel/execute state.
-@locals(2)
+@locals(4)
 pub proc auth_tx(salt: word)
     exec.native_account::incr_nonce drop
     # => [SALT]
@@ -787,15 +790,21 @@ pub proc auth_tx(salt: word)
 
     # ------ Enforcing procedure policy (consumes default_threshold) ------
     exec.enforce_procedure_policy
-    # => [policy_threshold, num_of_approvers, TX_SUMMARY_COMMITMENT]
+    # => [policy_threshold, policy_requires_delay, num_of_approvers, TX_SUMMARY_COMMITMENT]
 
     loc_store.0
+    # => [policy_requires_delay, num_of_approvers, TX_SUMMARY_COMMITMENT]
+
+    loc_store.2
     # => [num_of_approvers, TX_SUMMARY_COMMITMENT]
 
     # ------ Verifying approver signatures ------
     push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
     push.APPROVER_SCHEME_ID_SLOT[0..2]
     exec.::miden::standards::auth::signature::verify_signatures
+    # => [num_verified_signatures, TX_SUMMARY_COMMITMENT]
+
+    dup loc_store.3
     # => [num_verified_signatures, TX_SUMMARY_COMMITMENT]
 
     # ------ Computing final transaction threshold ------
@@ -815,4 +824,30 @@ pub proc auth_tx(salt: word)
         emit.AUTH_UNAUTHORIZED_EVENT
         push.0 assert.err=ERR_INSUFFICIENT_SIGNATURES
     end
+
+    # ------ Enforcing execute-path consistency ------
+    # The immediate path is only valid when no consumed policy required a delay. Conversely,
+    # the delayed-execute path is only valid when the tx actually requires a delay.
+    loc_load.2
+    # => [policy_requires_delay, TX_SUMMARY_COMMITMENT]
+
+    exec.delayed_execution::is_execute_path
+    # => [is_execute_path, policy_requires_delay, TX_SUMMARY_COMMITMENT]
+
+    # is_valid = NOT(policy_requires_delay) OR is_execute_path
+    swap not or
+    # => [is_valid_execute_path, TX_SUMMARY_COMMITMENT]
+
+    assert.err=ERR_EXECUTE_PATH_MISMATCH
+    # => [TX_SUMMARY_COMMITMENT]
+
+    # ------ Finalizing timelock proposals ------
+    loc_load.2
+    # => [policy_requires_delay, TX_SUMMARY_COMMITMENT]
+
+    loc_load.3
+    # => [num_verified_signatures, policy_requires_delay, TX_SUMMARY_COMMITMENT]
+
+    exec.delayed_execution::finalize_timelock_proposals
+    # => [TX_SUMMARY_COMMITMENT]
 end

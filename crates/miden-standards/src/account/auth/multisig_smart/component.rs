@@ -11,6 +11,7 @@ use miden_protocol::account::component::{
 };
 use miden_protocol::account::{
     AccountComponent,
+    AccountProcedureRoot,
     StorageMap,
     StorageMapKey,
     StorageSlot,
@@ -29,19 +30,56 @@ use super::super::multisig::{
     THRESHOLD_CONFIG_SLOT_NAME,
 };
 use super::ProcedurePolicy;
+use super::config::DelayedExecutionPolicy;
 use crate::account::account_component_code;
 use crate::account::auth::AuthMultisig;
+use crate::procedure_root;
 
 account_component_code!(MULTISIG_SMART_CODE, "auth/multisig_smart.masl");
+
+// Procedure-root statics for the delayed-execution control-plane procedures. Tests and callers
+// can use these to look up the on-chain procedure roots without re-deriving them from the
+// component code.
+procedure_root!(
+    MULTISIG_SMART_UPDATE_DELAYED_EXECUTION_POLICY,
+    AuthMultisigSmart::NAME,
+    AuthMultisigSmart::UPDATE_DELAYED_EXECUTION_POLICY_PROC_NAME,
+    AuthMultisigSmart::code()
+);
 
 // CONSTANTS
 // ================================================================================================
 
-// Only the smart-specific procedure_policies slot needs its own constant here. The other four
-// slots (threshold config, approver public keys, approver scheme ids, executed transactions) are
-// reused from `AuthMultisig` via the imports above.
+// Only the smart-specific slots need their own constants here. The four slots reused from
+// `AuthMultisig` (threshold config, approver public keys, approver scheme ids, executed
+// transactions) are imported from that sibling module above.
 static PROCEDURE_POLICIES_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::auth::multisig_smart::procedure_policies")
+        .expect("storage slot name should be valid")
+});
+
+static DELAYED_EXECUTION_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::auth::multisig_smart::delayed_execution")
+        .expect("storage slot name should be valid")
+});
+
+static TX_PROPOSALS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::auth::multisig_smart::tx_proposals")
+        .expect("storage slot name should be valid")
+});
+
+static PENDING_PROPOSE_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::auth::multisig_smart::pending_propose")
+        .expect("storage slot name should be valid")
+});
+
+static PENDING_CANCEL_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::auth::multisig_smart::pending_cancel")
+        .expect("storage slot name should be valid")
+});
+
+static PENDING_EXECUTE_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::auth::multisig_smart::pending_execute")
         .expect("storage slot name should be valid")
 });
 
@@ -54,6 +92,7 @@ pub struct AuthMultisigSmartConfig {
     approvers: Vec<(PublicKeyCommitment, AuthScheme)>,
     default_threshold: u32,
     procedure_policies: Vec<(Word, ProcedurePolicy)>,
+    delayed_execution: DelayedExecutionPolicy,
 }
 
 impl AuthMultisigSmartConfig {
@@ -83,6 +122,7 @@ impl AuthMultisigSmartConfig {
             approvers,
             default_threshold,
             procedure_policies: vec![],
+            delayed_execution: DelayedExecutionPolicy::default(),
         })
     }
 
@@ -96,6 +136,12 @@ impl AuthMultisigSmartConfig {
         Ok(self)
     }
 
+    /// Sets the delayed-execution policy (min delay + propose expiration delta).
+    pub fn with_delayed_execution(mut self, delayed_execution: DelayedExecutionPolicy) -> Self {
+        self.delayed_execution = delayed_execution;
+        self
+    }
+
     pub fn approvers(&self) -> &[(PublicKeyCommitment, AuthScheme)] {
         &self.approvers
     }
@@ -106,6 +152,18 @@ impl AuthMultisigSmartConfig {
 
     pub fn procedure_policies(&self) -> &[(Word, ProcedurePolicy)] {
         &self.procedure_policies
+    }
+
+    pub fn delayed_execution(&self) -> DelayedExecutionPolicy {
+        self.delayed_execution
+    }
+
+    pub fn min_delay(&self) -> u32 {
+        self.delayed_execution.min_delay()
+    }
+
+    pub fn propose_expiration_delta(&self) -> u16 {
+        self.delayed_execution.propose_expiration_delta()
     }
 }
 
@@ -154,6 +212,9 @@ impl AuthMultisigSmart {
     /// The name of the component.
     pub const NAME: &'static str = "miden::standards::components::auth::multisig_smart";
 
+    pub const UPDATE_DELAYED_EXECUTION_POLICY_PROC_NAME: &'static str =
+        "update_delayed_execution_policy";
+
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
         &MULTISIG_SMART_CODE
@@ -185,6 +246,31 @@ impl AuthMultisigSmart {
         &PROCEDURE_POLICIES_SLOT_NAME
     }
 
+    pub fn delayed_execution_slot() -> &'static StorageSlotName {
+        &DELAYED_EXECUTION_SLOT_NAME
+    }
+
+    pub fn tx_proposals_slot() -> &'static StorageSlotName {
+        &TX_PROPOSALS_SLOT_NAME
+    }
+
+    pub fn pending_propose_slot() -> &'static StorageSlotName {
+        &PENDING_PROPOSE_SLOT_NAME
+    }
+
+    pub fn pending_cancel_slot() -> &'static StorageSlotName {
+        &PENDING_CANCEL_SLOT_NAME
+    }
+
+    pub fn pending_execute_slot() -> &'static StorageSlotName {
+        &PENDING_EXECUTE_SLOT_NAME
+    }
+
+    /// Returns the [`AccountProcedureRoot`] of the `update_delayed_execution_policy` procedure.
+    pub fn update_delayed_execution_policy_root() -> AccountProcedureRoot {
+        *MULTISIG_SMART_UPDATE_DELAYED_EXECUTION_POLICY
+    }
+
     pub fn threshold_config_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
         AuthMultisig::threshold_config_slot_schema()
     }
@@ -211,11 +297,56 @@ impl AuthMultisigSmart {
             ),
         )
     }
+
+    pub fn delayed_execution_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+        (
+            Self::delayed_execution_slot().clone(),
+            StorageSlotSchema::value(
+                "Delayed-execution policy: [min_delay, propose_expiration_delta, 0, 0]",
+                SchemaType::native_word(),
+            ),
+        )
+    }
+
+    pub fn tx_proposals_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+        (
+            Self::tx_proposals_slot().clone(),
+            StorageSlotSchema::map(
+                "Active tx proposals: tx_hash => [unlock_timestamp, expiration_height, 0, 0]",
+                SchemaType::native_word(),
+                SchemaType::native_word(),
+            ),
+        )
+    }
+
+    pub fn pending_propose_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+        (
+            Self::pending_propose_slot().clone(),
+            StorageSlotSchema::value("Pending propose: TX_HASH", SchemaType::native_word()),
+        )
+    }
+
+    pub fn pending_cancel_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+        (
+            Self::pending_cancel_slot().clone(),
+            StorageSlotSchema::value("Pending cancel: TX_HASH", SchemaType::native_word()),
+        )
+    }
+
+    pub fn pending_execute_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+        (
+            Self::pending_execute_slot().clone(),
+            StorageSlotSchema::value(
+                "Pending execute marker (any non-zero word)",
+                SchemaType::native_word(),
+            ),
+        )
+    }
 }
 
 impl From<AuthMultisigSmart> for AccountComponent {
     fn from(multisig: AuthMultisigSmart) -> Self {
-        let mut storage_slots = Vec::with_capacity(5);
+        let mut storage_slots = Vec::with_capacity(10);
 
         // Threshold config slot (value: [threshold, num_approvers, 0, 0])
         let num_approvers = multisig.config.approvers().len() as u32;
@@ -261,12 +392,49 @@ impl From<AuthMultisigSmart> for AccountComponent {
             procedure_policies,
         ));
 
+        // Delayed-execution policy slot (value: [min_delay, propose_expiration_delta, 0, 0])
+        let delayed_execution = multisig.config.delayed_execution();
+        storage_slots.push(StorageSlot::with_value(
+            AuthMultisigSmart::delayed_execution_slot().clone(),
+            Word::from([
+                delayed_execution.min_delay(),
+                delayed_execution.propose_expiration_delta() as u32,
+                0u32,
+                0u32,
+            ]),
+        ));
+
+        // Tx-proposals map slot (TX_HASH => [unlock_timestamp, expiration_height, 0, 0])
+        storage_slots.push(StorageSlot::with_map(
+            AuthMultisigSmart::tx_proposals_slot().clone(),
+            StorageMap::default(),
+        ));
+
+        // Pending propose / cancel / execute scratch slots — empty by default.
+        storage_slots.push(StorageSlot::with_value(
+            AuthMultisigSmart::pending_propose_slot().clone(),
+            Word::empty(),
+        ));
+        storage_slots.push(StorageSlot::with_value(
+            AuthMultisigSmart::pending_cancel_slot().clone(),
+            Word::empty(),
+        ));
+        storage_slots.push(StorageSlot::with_value(
+            AuthMultisigSmart::pending_execute_slot().clone(),
+            Word::empty(),
+        ));
+
         let storage_schema = StorageSchema::new(vec![
             AuthMultisigSmart::threshold_config_slot_schema(),
             AuthMultisigSmart::approver_public_keys_slot_schema(),
             AuthMultisigSmart::approver_auth_scheme_slot_schema(),
             AuthMultisigSmart::executed_transactions_slot_schema(),
             AuthMultisigSmart::procedure_policies_slot_schema(),
+            AuthMultisigSmart::delayed_execution_slot_schema(),
+            AuthMultisigSmart::tx_proposals_slot_schema(),
+            AuthMultisigSmart::pending_propose_slot_schema(),
+            AuthMultisigSmart::pending_cancel_slot_schema(),
+            AuthMultisigSmart::pending_execute_slot_schema(),
         ])
         .expect("storage schema should be valid");
 
