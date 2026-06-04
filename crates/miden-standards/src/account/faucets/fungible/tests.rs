@@ -205,7 +205,10 @@ fn auth_controlled_rejects_network_account() {
         [7u8; 32],
         sample_faucet(),
         AccountType::Private,
-        AuthMethod::NetworkAccount { allowed_script_roots },
+        AuthMethod::NetworkAccount {
+            allowed_script_roots,
+            allowed_tx_script_roots: BTreeSet::new(),
+        },
         AccessControl::AuthControlled,
         allow_all_policy_manager(),
     )

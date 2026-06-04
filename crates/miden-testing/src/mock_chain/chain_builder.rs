@@ -1,4 +1,4 @@
-use alloc::collections::BTreeMap;
+use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec::Vec;
 
 use anyhow::Context;
@@ -458,7 +458,10 @@ impl MockChainBuilder {
             .collect();
 
         self.add_existing_fungible_faucet(
-            Auth::NetworkAccount { allowed_script_roots },
+            Auth::NetworkAccount {
+                allowed_script_roots,
+                allowed_tx_script_roots: BTreeSet::new(),
+            },
             faucet,
             AccountType::Public,
             AccessControl::Ownable2Step { owner: owner_account_id },
@@ -490,7 +493,10 @@ impl MockChainBuilder {
             .collect();
 
         self.add_existing_fungible_faucet(
-            Auth::NetworkAccount { allowed_script_roots },
+            Auth::NetworkAccount {
+                allowed_script_roots,
+                allowed_tx_script_roots: BTreeSet::new(),
+            },
             faucet,
             AccountType::Public,
             AccessControl::Ownable2Step { owner: owner_account_id },

@@ -1822,6 +1822,7 @@ fn build_network_faucet_with_blocklist_transfer(
     builder.add_account_from_builder(
         Auth::NetworkAccount {
             allowed_script_roots: BTreeSet::from([MintNote::script_root()]),
+            allowed_tx_script_roots: BTreeSet::new(),
         },
         account_builder,
         AccountState::Exists,
