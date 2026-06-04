@@ -7,17 +7,13 @@ use miden_protocol::asset::{AssetAmount, TokenSymbol};
 use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::{Felt, Word};
 
-use super::{
-    FungibleFaucet,
-    create_network_fungible_faucet,
-    create_user_fungible_faucet,
-    user_faucet_single_sig_acl,
-};
+use super::{FungibleFaucet, create_network_fungible_faucet, create_user_fungible_faucet};
 use crate::account::access::{AccessControl, PausableManager};
 use crate::account::auth::{AuthNetworkAccount, AuthSingleSig, AuthSingleSigAcl};
 use crate::account::faucets::{Description, FungibleFaucetError, TokenMetadata, TokenName};
 use crate::account::policies::{BurnPolicy, MintPolicy, TokenPolicyManager, TransferPolicy};
 use crate::account::wallets::BasicWallet;
+use crate::testing::faucet::user_faucet_single_sig_acl;
 
 /// Builds a minimal policy manager with AllowAll on every kind, used by the construction tests.
 fn allow_all_policy_manager() -> TokenPolicyManager {
@@ -148,7 +144,7 @@ fn network_fungible_faucet_with_ownable2step() {
     .unwrap();
 
     let allowlist: BTreeSet<NoteScriptRoot> =
-        [NoteScriptRoot::from_raw(Word::new([Felt::ONE; 4]))].into_iter().collect();
+        [NoteScriptRoot::from_array([0; 4])].into_iter().collect();
 
     let _account = create_network_fungible_faucet(
         [7u8; 32],

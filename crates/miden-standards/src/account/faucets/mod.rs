@@ -5,7 +5,7 @@ use thiserror::Error;
 use crate::account::access::Ownable2StepError;
 use crate::utils::FixedWidthStringError;
 
-mod fungible;
+pub(crate) mod fungible;
 mod token_metadata;
 
 pub use fungible::{
@@ -13,7 +13,6 @@ pub use fungible::{
     FungibleFaucetBuilder,
     create_network_fungible_faucet,
     create_user_fungible_faucet,
-    user_faucet_single_sig_acl,
 };
 pub use token_metadata::{Description, ExternalLink, LogoURI, TokenMetadata, TokenName};
 

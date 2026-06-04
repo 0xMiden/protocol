@@ -1,4 +1,4 @@
-use alloc::collections::BTreeMap;
+use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec::Vec;
 
 use anyhow::Context;
@@ -315,41 +315,6 @@ impl MockChainBuilder {
         self.add_account_from_builder(auth_method, account_builder, AccountState::Exists)
     }
 
-    /// Internal helper: creates a new user-account fungible faucet account (AuthControlled).
-    /// Installs [`Authority::AuthControlled`] directly; the auth component comes from `Auth`.
-    fn create_new_user_fungible_faucet(
-        &mut self,
-        auth_method: Auth,
-        faucet: FungibleFaucet,
-        account_type: AccountType,
-        token_policy_manager: TokenPolicyManager,
-    ) -> anyhow::Result<Account> {
-        let account_builder = AccountBuilder::new(self.rng.random())
-            .account_type(account_type)
-            .with_component(faucet)
-            .with_component(Authority::AuthControlled)
-            .with_components(token_policy_manager);
-
-        self.add_account_from_builder(auth_method, account_builder, AccountState::New)
-    }
-
-    /// Internal helper: adds an existing user-account fungible faucet (AuthControlled).
-    fn add_existing_user_fungible_faucet(
-        &mut self,
-        auth_method: Auth,
-        faucet: FungibleFaucet,
-        account_type: AccountType,
-        token_policy_manager: TokenPolicyManager,
-    ) -> anyhow::Result<Account> {
-        let account_builder = AccountBuilder::new(self.rng.random())
-            .account_type(account_type)
-            .with_component(faucet)
-            .with_component(Authority::AuthControlled)
-            .with_components(token_policy_manager);
-
-        self.add_account_from_builder(auth_method, account_builder, AccountState::Exists)
-    }
-
     /// Internal helper: adds an existing network-style fungible faucet (Ownable2Step / Rbac).
     fn add_existing_network_fungible_faucet(
         &mut self,
@@ -369,11 +334,11 @@ impl MockChainBuilder {
     }
 
     /// Convenience: builds a basic auth-controlled fungible faucet from a token-symbol shorthand
-    /// using default decimals and `AllowAll` policies, then adds it via
-    /// `Self::add_existing_fungible_faucet`.
+    /// using default decimals and `AllowAll` policies, then adds it as an existing account with
+    /// [`Authority::AuthControlled`].
     ///
     /// For full control over the faucet's metadata, decimals, and policies, construct a
-    /// [`FungibleFaucet`] manually and call `Self::add_existing_fungible_faucet`.
+    /// [`FungibleFaucet`] manually and use [`AccountBuilder`] directly.
     pub fn add_existing_basic_faucet(
         &mut self,
         auth_method: Auth,
@@ -403,12 +368,13 @@ impl MockChainBuilder {
             .active_receive_policy(TransferPolicy::allow_all())
             .build();
 
-        self.add_existing_user_fungible_faucet(
-            auth_method,
-            faucet,
-            AccountType::Public,
-            token_policy_manager,
-        )
+        let account_builder = AccountBuilder::new(self.rng.random())
+            .account_type(AccountType::Public)
+            .with_component(faucet)
+            .with_component(Authority::AuthControlled)
+            .with_components(token_policy_manager);
+
+        self.add_account_from_builder(auth_method, account_builder, AccountState::Exists)
     }
 
     /// Convenience: builds an owner-controlled (network-style) fungible faucet from a
@@ -452,11 +418,10 @@ impl MockChainBuilder {
             .active_receive_policy(TransferPolicy::allow_all())
             .build();
 
-        let allowed_script_roots: alloc::collections::BTreeSet<NoteScriptRoot> =
-            allowed_script_roots
-                .into_iter()
-                .chain([MintNote::script_root(), BurnNote::script_root()])
-                .collect();
+        let allowed_script_roots: BTreeSet<NoteScriptRoot> = allowed_script_roots
+            .into_iter()
+            .chain([MintNote::script_root(), BurnNote::script_root()])
+            .collect();
 
         self.add_existing_network_fungible_faucet(
             Auth::NetworkAccount { allowed_script_roots },
@@ -486,11 +451,10 @@ impl MockChainBuilder {
             .active_receive_policy(TransferPolicy::allow_all())
             .build();
 
-        let allowed_script_roots: alloc::collections::BTreeSet<NoteScriptRoot> =
-            allowed_script_roots
-                .into_iter()
-                .chain([MintNote::script_root(), BurnNote::script_root()])
-                .collect();
+        let allowed_script_roots: BTreeSet<NoteScriptRoot> = allowed_script_roots
+            .into_iter()
+            .chain([MintNote::script_root(), BurnNote::script_root()])
+            .collect();
 
         self.add_existing_network_fungible_faucet(
             Auth::NetworkAccount { allowed_script_roots },
@@ -528,12 +492,13 @@ impl MockChainBuilder {
             .active_receive_policy(TransferPolicy::allow_all())
             .build();
 
-        self.create_new_user_fungible_faucet(
-            auth_method,
-            faucet,
-            AccountType::Public,
-            token_policy_manager,
-        )
+        let account_builder = AccountBuilder::new(self.rng.random())
+            .account_type(AccountType::Public)
+            .with_component(faucet)
+            .with_component(Authority::AuthControlled)
+            .with_components(token_policy_manager);
+
+        self.add_account_from_builder(auth_method, account_builder, AccountState::New)
     }
 
     /// Creates a new public account with an [`MockAccountComponent`] and registers the

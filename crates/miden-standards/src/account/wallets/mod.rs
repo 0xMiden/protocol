@@ -8,7 +8,6 @@ use miden_protocol::account::{
     AccountType,
 };
 use miden_protocol::errors::AccountError;
-use thiserror::Error;
 
 use crate::account::account_component_code;
 use crate::account::auth::AuthSingleSig;
@@ -102,16 +101,6 @@ impl From<BasicWallet> for AccountComponent {
     }
 }
 
-// BASIC WALLET ERROR
-// ================================================================================================
-
-/// Basic wallet related errors.
-#[derive(Debug, Error)]
-pub enum BasicWalletError {
-    #[error("account creation failed")]
-    AccountError(#[source] AccountError),
-}
-
 /// Creates a new account with the basic wallet interface authenticated by the provided
 /// [`AuthSingleSig`] component.
 ///
@@ -125,13 +114,12 @@ pub fn create_basic_wallet(
     init_seed: [u8; 32],
     auth_component: AuthSingleSig,
     account_type: AccountType,
-) -> Result<Account, BasicWalletError> {
+) -> Result<Account, AccountError> {
     AccountBuilder::new(init_seed)
         .account_type(account_type)
         .with_auth_component(auth_component)
         .with_component(BasicWallet)
         .build()
-        .map_err(BasicWalletError::AccountError)
 }
 
 // TESTS

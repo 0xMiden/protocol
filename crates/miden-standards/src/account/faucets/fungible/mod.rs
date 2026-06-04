@@ -34,7 +34,7 @@ use super::{
 };
 use crate::account::access::{AccessControl, Authority, PausableManager};
 use crate::account::account_component_code;
-use crate::account::auth::{AuthNetworkAccount, AuthSingleSigAcl, AuthSingleSigAclConfig};
+use crate::account::auth::{AuthNetworkAccount, AuthSingleSigAcl};
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
 use crate::account::policies::TokenPolicyManager;
 use crate::procedure_root;
@@ -568,9 +568,9 @@ impl TryFrom<&Account> for FungibleFaucet {
 ///
 /// Under [`Authority::AuthControlled`] the auth component must authenticate calls to all of
 /// these procedures, otherwise the setters become permissionless. This list is the single
-/// source of truth used by [`create_user_fungible_faucet`] when configuring the
-/// [`AuthSingleSigAcl`][crate::account::auth::AuthSingleSigAcl] trigger procedure list.
-fn all_authority_gated_setter_roots() -> Vec<AccountProcedureRoot> {
+/// source of truth used when configuring an [`AuthSingleSigAcl`] trigger procedure list for a
+/// user-account fungible faucet.
+pub(crate) fn all_authority_gated_setter_roots() -> Vec<AccountProcedureRoot> {
     vec![
         FungibleFaucet::mint_and_send_root(),
         FungibleFaucet::set_max_supply_root(),
@@ -595,8 +595,8 @@ fn all_authority_gated_setter_roots() -> Vec<AccountProcedureRoot> {
 /// installed by this factory).
 ///
 /// Caller passes a fully-configured [`AuthSingleSigAcl`] — its trigger procedure list must
-/// cover every authority-gated setter. Use [`user_faucet_single_sig_acl`] to construct one
-/// with the canonical trigger list.
+/// cover every authority-gated setter (see [`all_authority_gated_setter_roots`] for the
+/// canonical list).
 pub fn create_user_fungible_faucet(
     init_seed: [u8; 32],
     faucet: FungibleFaucet,
@@ -636,21 +636,4 @@ pub fn create_network_fungible_faucet(
         .with_component(PausableManager)
         .build()
         .map_err(FungibleFaucetError::AccountError)
-}
-
-/// Convenience constructor for the typical user-account faucet auth component: an
-/// [`AuthSingleSigAcl`] with the trigger procedure list covering every authority-gated setter
-/// and `allow_unauthorized_input_notes=true`.
-pub fn user_faucet_single_sig_acl(
-    pub_key: miden_protocol::account::auth::PublicKeyCommitment,
-    scheme: miden_protocol::account::auth::AuthScheme,
-) -> Result<AuthSingleSigAcl, FungibleFaucetError> {
-    AuthSingleSigAcl::new(
-        pub_key,
-        scheme,
-        AuthSingleSigAclConfig::new()
-            .with_auth_trigger_procedures(all_authority_gated_setter_roots())
-            .with_allow_unauthorized_input_notes(true),
-    )
-    .map_err(FungibleFaucetError::AccountError)
 }
