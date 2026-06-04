@@ -155,6 +155,6 @@ pub proc has_callbacks
     # => [has_callbacks, pad(15)]
 
     # clean the stack
-    swapdw dropw dropw swapw dropw movdn.3 drop drop drop
+    swapw.3 dropw dropw dropw movdn.3 drop drop drop
     # => [has_callbacks]
 end
