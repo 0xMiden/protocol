@@ -170,11 +170,6 @@ impl AssetVaultKey {
 
     /// Hashes this raw vault key to produce the [`AssetVaultKeyHash`] used as the key in the asset
     /// vault's underlying SMT.
-    ///
-    /// Hashing the raw key ensures a uniform distribution across SMT leaves. In particular it
-    /// prevents non-fungible assets issued by the same faucet from sharing a leaf: their raw
-    /// vault keys share their fourth element (the faucet ID prefix), which the SMT uses to
-    /// determine leaf membership.
     pub fn hash(&self) -> AssetVaultKeyHash {
         AssetVaultKeyHash::from_raw(Hasher::hash_elements(self.to_word().as_elements()))
     }
