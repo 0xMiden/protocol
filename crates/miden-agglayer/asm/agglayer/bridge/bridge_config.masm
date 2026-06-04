@@ -1,4 +1,5 @@
 use miden::core::crypto::hashes::poseidon2
+use miden::core::word
 use miden::protocol::account_id
 use miden::protocol::active_account
 use miden::protocol::active_note
@@ -9,6 +10,7 @@ use agglayer::common::utils
 # =================================================================================================
 
 const ERR_GER_NOT_FOUND = "GER not found in storage"
+const ERR_GER_ALREADY_REGISTERED = "GER is already registered in storage"
 const ERR_FAUCET_NOT_REGISTERED = "faucet is not registered in the bridge's faucet registry"
 const ERR_TOKEN_NOT_REGISTERED = "(origin token address, origin network) pair is not registered in the bridge's token registry"
 const ERR_SENDER_NOT_BRIDGE_ADMIN = "note sender is not the bridge admin"
@@ -60,6 +62,7 @@ const FAUCET_METADATA_SUBKEY_HASH_HI = 3  # METADATA_HASH_HI[4]
 #!
 #! Panics if:
 #! - the note sender is not the global exit root manager.
+#! - the GER has already been registered in storage.
 #!
 #! Invocation: call
 pub proc update_ger
@@ -83,8 +86,9 @@ pub proc update_ger
 
     exec.native_account::set_map_item
     # => [OLD_VALUE, pad(12)]
-    
-    dropw
+
+    # assert OLD_VALUE is EMPTY_WORD, i.e. the GER was not previously registered
+    exec.word::eqz assert.err=ERR_GER_ALREADY_REGISTERED
     # => [pad(16)]
 end
 
