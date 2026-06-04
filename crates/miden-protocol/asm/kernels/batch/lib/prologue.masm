@@ -1,13 +1,134 @@
 use miden::core::mem
+use miden::core::word
 
 use miden::batch_kernel::memory
 use miden::batch_kernel::memory::TX_TUPLES_PTR
+use miden::batch_kernel::memory::INPUT_NOTES_PTR
+use miden::batch_kernel::memory::OUTPUT_NOTES_PTR
+use miden::batch_kernel::memory::NOTE_ENTRY_FELT_LEN
 use miden::batch_kernel::memory::MAX_TRANSACTIONS_PER_BATCH
+use miden::batch_kernel::memory::MAX_NOTES_PER_BATCH
+
+# CONSTANTS
+# =================================================================================================
+
+#! Advice-map keys under which the global input/output note lists are provided. These definitions
+#! are the single source of truth: `build.rs` generates the matching Rust constants from them. All
+#! four felts are equal so each key word is independent of word orientation. The lists' integrity is
+#! established by binding every entry to a verified per-transaction note (not by these keys).
+const INPUT_NOTE_LIST_KEY=0xBA7C0001
+const OUTPUT_NOTE_LIST_KEY=0xBA7C0002
 
 # ERRORS
 # =================================================================================================
 
 const ERR_BATCH_TOO_MANY_TRANSACTIONS="the batch contains more transactions than the maximum allowed"
+
+const ERR_BATCH_NOTE_LIST_NOT_SORTED="a batch note list is not strictly sorted by its key"
+
+const ERR_BATCH_NOTE_LIST_TOO_LONG="a batch note list contains more entries than the maximum allowed"
+
+# GLOBAL NOTE LIST LOADING
+# =================================================================================================
+
+#! Pipes a global note list (8-felt `[KEY, VALUE]` entries) from the advice map into memory and
+#! returns the number of entries. The list is not hashed against a commitment; its integrity is
+#! established later by binding every entry to a verified per-transaction note.
+#!
+#! Inputs:  [KEY, write_ptr]
+#! Outputs: [num_notes]
+proc load_global_note_list
+    adv.push_mapvaln
+    # AS: [len_felts, data...]
+    adv_push
+    # => [len_felts, KEY, write_ptr]
+    div.4
+    # => [num_words, KEY, write_ptr]
+    dup div.2
+    # => [num_notes, num_words, KEY, write_ptr]
+    dup u32lte.MAX_NOTES_PER_BATCH assert.err=ERR_BATCH_NOTE_LIST_TOO_LONG
+    movdn.6
+    # => [num_words, KEY, write_ptr, num_notes]
+    movup.5
+    # => [write_ptr, num_words, KEY, num_notes]
+    swap
+    # => [num_words, write_ptr, KEY, num_notes]
+    exec.mem::pipe_words_to_memory
+    # => [R0, R1, C, end_ptr, KEY, num_notes]
+    dropw dropw dropw drop
+    # => [KEY, num_notes]
+    dropw
+    # => [num_notes]
+end
+
+#! Asserts a note list (8-felt entries starting at `base_ptr`) is strictly increasing by its KEY
+#! word, which also proves there are no duplicate keys.
+#!
+#! Inputs:  [base_ptr, num]
+#! Outputs: []
+proc assert_list_strictly_sorted
+    dup.1 push.2 u32lt
+    # => [num<2, base_ptr, num]
+    if.true
+        drop drop
+    else
+        push.0
+        # => [idx, base_ptr, num]
+        dup add.1 dup.3 u32lt
+        # => [should_loop, idx, base_ptr, num]
+        while.true
+            dup mul.NOTE_ENTRY_FELT_LEN dup.2 add
+            # => [ptr_i, idx, base_ptr, num]
+            dup add.NOTE_ENTRY_FELT_LEN
+            # => [ptr_i1, ptr_i, idx, base_ptr, num]
+            padw movup.4 mem_loadw_le
+            # => [KEY_i1, ptr_i, idx, base_ptr, num]
+            movup.4
+            # => [ptr_i, KEY_i1, idx, base_ptr, num]
+            padw movup.4 mem_loadw_le
+            # => [KEY_i, KEY_i1, idx, base_ptr, num]
+            swapw
+            # => [KEY_i1, KEY_i, idx, base_ptr, num]
+            exec.word::lt
+            # => [is_strictly_increasing, idx, base_ptr, num]
+            assert.err=ERR_BATCH_NOTE_LIST_NOT_SORTED
+            add.1
+            dup add.1 dup.3 u32lt
+            # => [should_loop, idx, base_ptr, num]
+        end
+        drop drop drop
+    end
+end
+
+#! Loads and verifies the global input-note list into [`memory::INPUT_NOTES_PTR`].
+#!
+#! Inputs:  []
+#! Outputs: []
+proc prepare_input_note_list
+    push.INPUT_NOTES_PTR
+    push.INPUT_NOTE_LIST_KEY dup dup dup
+    # => [KEY, input_notes_ptr]
+    exec.load_global_note_list
+    exec.memory::set_num_input_notes
+    exec.memory::get_num_input_notes push.INPUT_NOTES_PTR
+    # => [input_notes_ptr, num_input_notes]
+    exec.assert_list_strictly_sorted
+end
+
+#! Loads and verifies the global output-note list into [`memory::OUTPUT_NOTES_PTR`].
+#!
+#! Inputs:  []
+#! Outputs: []
+proc prepare_output_note_list
+    push.OUTPUT_NOTES_PTR
+    push.OUTPUT_NOTE_LIST_KEY dup dup dup
+    # => [KEY, output_notes_ptr]
+    exec.load_global_note_list
+    exec.memory::set_num_output_notes
+    exec.memory::get_num_output_notes push.OUTPUT_NOTES_PTR
+    # => [output_notes_ptr, num_output_notes]
+    exec.assert_list_strictly_sorted
+end
 
 # PROLOGUE
 # =================================================================================================
@@ -23,6 +144,9 @@ const ERR_BATCH_TOO_MANY_TRANSACTIONS="the batch contains more transactions than
 #!   advice map keyed by the verified `tx_id`, asserting that the sequential hash matches the
 #!   `tx_id`. Each transaction's data is written into [`memory::TX_HEADERS_PTR`] at the appropriate
 #!   per-tx offset.
+#! - Layer 3: loads the global input- and output-note lists from the advice map and asserts each is
+#!   strictly sorted by its key. Their integrity is established later, when the note tracker binds
+#!   every entry to a verified per-transaction note.
 #!
 #! `BATCH_ID` is the sequential hash of the `(tx_id, account_id)` tuples committing to the
 #! transactions in the batch.
@@ -113,4 +237,10 @@ pub proc prepare_batch
     end
 
     drop drop
+
+    # Layer 3: load and strict-sort the global input- and output-note lists.
+    # ---------------------------------------------------------------------------------------------
+
+    exec.prepare_input_note_list
+    exec.prepare_output_note_list
 end

@@ -13,20 +13,8 @@ use miden::batch_kernel::memory::OUTPUT_NOTE_IS_CREATED_OFFSET
 use miden::batch_kernel::memory::OUTPUT_NOTE_LINKED_INPUT_OFFSET
 use miden::batch_kernel::memory::MAX_NOTES_PER_BATCH
 
-# CONSTANTS
-# =================================================================================================
-
-#! Advice-map keys under which the global input/output note lists are provided. These definitions
-#! are the single source of truth: `build.rs` generates the matching Rust constants from them. All
-#! four felts are equal so each key word is independent of word orientation. The lists' integrity is
-#! established by binding every entry to a verified per-transaction note (not by these keys).
-const INPUT_NOTE_LIST_KEY=0xBA7C0001
-const OUTPUT_NOTE_LIST_KEY=0xBA7C0002
-
 # ERRORS
 # =================================================================================================
-
-const ERR_BATCH_NOTE_LIST_NOT_SORTED="a batch note list is not strictly sorted by its key"
 
 const ERR_BATCH_INPUT_NOTE_NOT_IN_LIST="a transaction input note is missing from the batch input-note list"
 
@@ -34,128 +22,20 @@ const ERR_BATCH_INPUT_NOTE_ID_MISMATCH="a transaction input note id does not mat
 
 const ERR_BATCH_INPUT_NOTE_CONSUMED_TWICE="a batch input-note list entry was consumed by more than one transaction"
 
-const ERR_BATCH_INPUT_NOTE_NOT_CONSUMED="a batch input-note list entry was not consumed by any transaction"
-
 const ERR_BATCH_OUTPUT_NOTE_NOT_IN_LIST="a transaction output note is missing from the batch output-note list"
 
 const ERR_BATCH_OUTPUT_NOTE_CREATED_TWICE="a batch output-note list entry was created by more than one transaction"
 
-const ERR_BATCH_OUTPUT_NOTE_NOT_CREATED="a batch output-note list entry was not created by any transaction"
-
 const ERR_BATCH_NOTE_CONSUMED_BEFORE_CREATED="an erased input note was consumed before the transaction that creates it (incorrect ordering or circular dependency)"
 
-const ERR_BATCH_NOTE_LIST_TOO_LONG="a batch note list contains more entries than the maximum allowed"
-
 const ERR_BATCH_TX_TOO_MANY_NOTES="a transaction's note set contains more notes than the maximum allowed"
-
-# GLOBAL NOTE LIST LOADING
-# =================================================================================================
-
-#! Pipes a global note list (8-felt `[KEY, VALUE]` entries) from the advice map into memory and
-#! returns the number of entries. The list is not hashed against a commitment; its integrity is
-#! established later by binding every entry to a verified per-transaction note.
-#!
-#! Inputs:  [KEY, write_ptr]
-#! Outputs: [num_notes]
-proc load_global_note_list
-    adv.push_mapvaln
-    # AS: [len_felts, data...]
-    adv_push
-    # => [len_felts, KEY, write_ptr]
-    div.4
-    # => [num_words, KEY, write_ptr]
-    dup div.2
-    # => [num_notes, num_words, KEY, write_ptr]
-    dup u32lte.MAX_NOTES_PER_BATCH assert.err=ERR_BATCH_NOTE_LIST_TOO_LONG
-    movdn.6
-    # => [num_words, KEY, write_ptr, num_notes]
-    movup.5
-    # => [write_ptr, num_words, KEY, num_notes]
-    swap
-    # => [num_words, write_ptr, KEY, num_notes]
-    exec.mem::pipe_words_to_memory
-    # => [R0, R1, C, end_ptr, KEY, num_notes]
-    dropw dropw dropw drop
-    # => [KEY, num_notes]
-    dropw
-    # => [num_notes]
-end
-
-#! Asserts a note list (8-felt entries starting at `base_ptr`) is strictly increasing by its KEY
-#! word, which also proves there are no duplicate keys.
-#!
-#! Inputs:  [base_ptr, num]
-#! Outputs: []
-proc assert_list_strictly_sorted
-    dup.1 push.2 u32lt
-    # => [num<2, base_ptr, num]
-    if.true
-        drop drop
-    else
-        push.0
-        # => [i, base_ptr, num]
-        dup add.1 dup.3 u32lt
-        # => [should_loop, i, base_ptr, num]
-        while.true
-            dup mul.NOTE_ENTRY_FELT_LEN dup.2 add
-            # => [ptr_i, i, base_ptr, num]
-            dup add.NOTE_ENTRY_FELT_LEN
-            # => [ptr_i1, ptr_i, i, base_ptr, num]
-            padw movup.4 mem_loadw_le
-            # => [KEY_i1, ptr_i, i, base_ptr, num]
-            movup.4
-            # => [ptr_i, KEY_i1, i, base_ptr, num]
-            padw movup.4 mem_loadw_le
-            # => [KEY_i, KEY_i1, i, base_ptr, num]
-            swapw
-            # => [KEY_i1, KEY_i, i, base_ptr, num]
-            exec.word::lt
-            # => [is_strictly_increasing, i, base_ptr, num]
-            assert.err=ERR_BATCH_NOTE_LIST_NOT_SORTED
-            add.1
-            dup add.1 dup.3 u32lt
-            # => [should_loop, i, base_ptr, num]
-        end
-        drop drop drop
-    end
-end
-
-#! Loads and verifies the global input-note list into [`memory::INPUT_NOTES_PTR`].
-#!
-#! Inputs:  []
-#! Outputs: []
-proc prepare_input_note_list
-    push.INPUT_NOTES_PTR
-    push.INPUT_NOTE_LIST_KEY dup dup dup
-    # => [KEY, input_notes_ptr]
-    exec.load_global_note_list
-    exec.memory::set_num_input_notes
-    exec.memory::get_num_input_notes push.INPUT_NOTES_PTR
-    # => [input_notes_ptr, num_input_notes]
-    exec.assert_list_strictly_sorted
-end
-
-#! Loads and verifies the global output-note list into [`memory::OUTPUT_NOTES_PTR`].
-#!
-#! Inputs:  []
-#! Outputs: []
-proc prepare_output_note_list
-    push.OUTPUT_NOTES_PTR
-    push.OUTPUT_NOTE_LIST_KEY dup dup dup
-    # => [KEY, output_notes_ptr]
-    exec.load_global_note_list
-    exec.memory::set_num_output_notes
-    exec.memory::get_num_output_notes push.OUTPUT_NOTES_PTR
-    # => [output_notes_ptr, num_output_notes]
-    exec.assert_list_strictly_sorted
-end
 
 # ERASURE CROSS-REFERENCE
 # =================================================================================================
 
-#! Marks input-note list entry `i` as expected-to-be-erased (erasure flag, offset 0, set to 1).
+#! Marks input-note list entry `idx` as expected-to-be-erased (erasure flag, offset 0, set to 1).
 #!
-#! Inputs:  [i]
+#! Inputs:  [idx]
 #! Outputs: []
 proc set_input_erasure_expected
     exec.memory::input_note_flags_ptr
@@ -163,52 +43,52 @@ proc set_input_erasure_expected
     push.1 swap mem_store
 end
 
-#! Records on output-note list entry `j` that it erases input-note list entry `i`: sets
-#! `will_be_erased` (offset 0) to 1 and `linked_input_index` to `i`.
+#! Records on output-note list entry `j` that it erases input-note list entry `idx`: sets
+#! `will_be_erased` (offset 0) to 1 and `linked_input_index` to `idx`.
 #!
-#! Inputs:  [j, i]
+#! Inputs:  [j, idx]
 #! Outputs: []
 proc set_output_erases_input
     dup exec.memory::output_note_flags_ptr
-    # => [flags_ptr, j, i]
+    # => [flags_ptr, j, idx]
     push.1 dup.1 mem_store
-    # => [flags_ptr, j, i]   (will_be_erased = 1 at offset 0)
+    # => [flags_ptr, j, idx]   (will_be_erased = 1 at offset 0)
     add.OUTPUT_NOTE_LINKED_INPUT_OFFSET
-    # => [linked_ptr, j, i]
+    # => [linked_ptr, j, idx]
     movup.2 swap mem_store
     # => [j]
     drop
 end
 
-#! For input-note list entry `i`: if it is unauthenticated (its note id is non-empty) and that note
+#! For input-note list entry `idx`: if it is unauthenticated (its note id is non-empty) and that note
 #! id appears in the output-note list, marks the input entry erasure-expected and links the matching
 #! output entry back to it. This is the static (order-independent) erasure determination; the
 #! temporal ordering is enforced during per-transaction processing.
 #!
-#! Inputs:  [i]
+#! Inputs:  [idx]
 #! Outputs: []
 proc cross_reference_one_input
     dup exec.memory::input_note_entry_ptr add.4
-    # => [note_id_ptr, i]
+    # => [note_id_ptr, idx]
     padw movup.4 mem_loadw_le
-    # => [NOTE_ID, i]
+    # => [NOTE_ID, idx]
     dupw exec.word::eqz
-    # => [is_empty, NOTE_ID, i]
+    # => [is_empty, NOTE_ID, idx]
     if.true
         dropw drop
     else
         push.OUTPUT_NOTES_PTR movdn.4
         exec.memory::get_output_notes_end_ptr movdn.5
-        # => [NOTE_ID, output_notes_ptr, output_end_ptr, i]
+        # => [NOTE_ID, output_notes_ptr, output_end_ptr, idx]
         exec.sorted_array::find_key_value
-        # => [is_found, key_ptr, start_ptr, end_ptr, i]
+        # => [is_found, key_ptr, start_ptr, end_ptr, idx]
         if.true
             swap drop swap drop
-            # => [key_ptr, i]
+            # => [key_ptr, idx]
             exec.memory::output_entry_index_from_key_ptr
-            # => [j, i]
+            # => [j, idx]
             dup.1 exec.set_input_erasure_expected
-            # => [j, i]
+            # => [j, idx]
             exec.set_output_erases_input
             # => []
         else
@@ -225,7 +105,7 @@ end
 proc cross_reference_erasure
     exec.memory::get_num_input_notes
     push.0
-    # => [i, num]
+    # => [idx, num]
     dup.1 dup.1 neq
     while.true
         dup exec.cross_reference_one_input
@@ -250,10 +130,10 @@ proc mark_output_note_created
     push.1 swap mem_store
 end
 
-#! Advances input-note list entry `i`'s erasure flag from 1 (expected) to 2 (its creator output note
-#! has been processed), asserting it was 1.
+#! Advances input-note list entry `idx`'s erasure flag from 1 (expected) to 2 (its creator output
+#! note has been processed), asserting it was 1.
 #!
-#! Inputs:  [i]
+#! Inputs:  [idx]
 #! Outputs: []
 proc flip_input_erasure_created
     exec.memory::input_note_flags_ptr
@@ -322,14 +202,14 @@ proc bind_scratch_output_notes
     drop drop
 end
 
-#! Verifies transaction `tx_index`'s `OUTPUT_NOTES_COMMITMENT_i` against its piped
+#! Verifies transaction `tx_index`'s `OUTPUT_NOTES_COMMITMENT_idx` against its piped
 #! `(DETAILS_COMMITMENT, METADATA_COMMITMENT)` tuples and binds each output note to the global list.
 #!
 #! Inputs:  [tx_index]
 #! Outputs: []
 proc process_tx_output_notes
     dup exec.memory::get_tx_output_notes_commitment
-    # => [OUTPUT_NOTES_COMMITMENT_i, tx_index]
+    # => [OUTPUT_NOTES_COMMITMENT_idx, tx_index]
     dupw exec.word::eqz
     if.true
         dropw drop
@@ -337,7 +217,7 @@ proc process_tx_output_notes
         push.TX_NOTES_SCRATCH_PTR movdn.4
         adv.push_mapvaln
         adv_push div.4
-        # => [num_words, OUTPUT_NOTES_COMMITMENT_i, scratch_ptr, tx_index]
+        # => [num_words, OUTPUT_NOTES_COMMITMENT_idx, scratch_ptr, tx_index]
         dup div.2 u32lte.MAX_NOTES_PER_BATCH assert.err=ERR_BATCH_TX_TOO_MANY_NOTES
         movup.5 swap
         exec.mem::pipe_preimage_to_memory
@@ -352,9 +232,9 @@ end
 # PER-TRANSACTION INPUT NOTES
 # =================================================================================================
 
-#! Marks input-note list entry `i` as consumed, asserting it was not already consumed.
+#! Marks input-note list entry `idx` as consumed, asserting it was not already consumed.
 #!
-#! Inputs:  [i]
+#! Inputs:  [idx]
 #! Outputs: []
 proc mark_input_note_consumed
     exec.memory::input_note_flags_ptr add.INPUT_NOTE_CONSUMPTION_OFFSET
@@ -364,11 +244,11 @@ proc mark_input_note_consumed
     push.1 swap mem_store
 end
 
-#! Asserts input-note list entry `i` is not expected-to-be-erased (erasure flag != 1) at the
+#! Asserts input-note list entry `idx` is not expected-to-be-erased (erasure flag != 1) at the
 #! point it is consumed: if it is created in this batch, its creator has already been
 #! processed. Rejects consume-before-create / circular dependencies.
 #!
-#! Inputs:  [i]
+#! Inputs:  [idx]
 #! Outputs: []
 proc assert_input_not_consumed_before_created
     exec.memory::input_note_flags_ptr mem_load
@@ -404,7 +284,7 @@ proc bind_one_input_note
     swap drop
     # => [key_ptr]
     exec.memory::input_entry_index_from_key_ptr
-    # => [i]
+    # => [idx]
     dup exec.assert_input_not_consumed_before_created
     exec.mark_input_note_consumed
 end
@@ -425,14 +305,14 @@ proc bind_scratch_input_notes
     drop drop
 end
 
-#! Verifies transaction `tx_index`'s `INPUT_NOTES_COMMITMENT_i` against its piped
+#! Verifies transaction `tx_index`'s `INPUT_NOTES_COMMITMENT_idx` against its piped
 #! `(NULLIFIER, NOTE_ID_OR_EMPTY)` tuples and binds each input note to the global list.
 #!
 #! Inputs:  [tx_index]
 #! Outputs: []
 proc process_tx_input_notes
     dup exec.memory::get_tx_input_notes_commitment
-    # => [INPUT_NOTES_COMMITMENT_i, tx_index]
+    # => [INPUT_NOTES_COMMITMENT_idx, tx_index]
     dupw exec.word::eqz
     if.true
         dropw drop
@@ -440,7 +320,7 @@ proc process_tx_input_notes
         push.TX_NOTES_SCRATCH_PTR movdn.4
         adv.push_mapvaln
         adv_push div.4
-        # => [num_words, INPUT_NOTES_COMMITMENT_i, scratch_ptr, tx_index]
+        # => [num_words, INPUT_NOTES_COMMITMENT_idx, scratch_ptr, tx_index]
         dup div.2 u32lte.MAX_NOTES_PER_BATCH assert.err=ERR_BATCH_TX_TOO_MANY_NOTES
         movup.5 swap
         exec.mem::pipe_preimage_to_memory
@@ -476,161 +356,17 @@ proc bind_per_tx_notes
     drop drop
 end
 
-# EPILOGUE CHECKS
+# NOTE TRACKING
 # =================================================================================================
 
-#! Asserts every input-note list entry was consumed by exactly one transaction (with the per-tx
-#! binding, this proves the list is exactly the union of the per-transaction input notes).
+#! Tracks the batch's notes: determines erasure by cross-referencing the prepared global input- and
+#! output-note lists, then binds both lists to the verified per-transaction notes while enforcing the
+#! creator-before-consumer ordering gate. Assumes the prologue has loaded and strict-sorted the two
+#! global lists into memory.
 #!
 #! Inputs:  []
 #! Outputs: []
-proc assert_all_input_notes_consumed
-    exec.memory::get_num_input_notes
-    push.0
-    dup.1 dup.1 neq
-    while.true
-        dup exec.memory::input_note_flags_ptr add.INPUT_NOTE_CONSUMPTION_OFFSET mem_load
-        assert.err=ERR_BATCH_INPUT_NOTE_NOT_CONSUMED
-        add.1
-        dup.1 dup.1 neq
-    end
-    drop drop
-end
-
-#! Asserts every output-note list entry was created by exactly one transaction (with the per-tx
-#! binding, this proves the list is exactly the union of the per-transaction output notes, so a host
-#! cannot fabricate an erasure with a note no transaction creates).
-#!
-#! Inputs:  []
-#! Outputs: []
-proc assert_all_output_notes_created
-    exec.memory::get_num_output_notes
-    push.0
-    dup.1 dup.1 neq
-    while.true
-        dup exec.memory::output_note_flags_ptr add.OUTPUT_NOTE_IS_CREATED_OFFSET mem_load
-        assert.err=ERR_BATCH_OUTPUT_NOTE_NOT_CREATED
-        add.1
-        dup.1 dup.1 neq
-    end
-    drop drop
-end
-
-#! Asserts no input-note list entry is left expected-to-be-erased (erasure flag == 1): every note
-#! claimed to be created-and-consumed in the batch had its creator processed.
-#!
-#! Inputs:  []
-#! Outputs: []
-proc assert_no_pending_erasure
-    exec.memory::get_num_input_notes
-    push.0
-    dup.1 dup.1 neq
-    while.true
-        dup exec.memory::input_note_flags_ptr mem_load
-        # => [erasure, i, num]
-        neq.1 assert.err=ERR_BATCH_NOTE_CONSUMED_BEFORE_CREATED
-        add.1
-        dup.1 dup.1 neq
-    end
-    drop drop
-end
-
-# INPUT NOTES COMMITMENT
-# =================================================================================================
-
-#! Absorbs input-note list entry `i`'s 8-felt `(NULLIFIER, NOTE_ID_OR_EMPTY)` tuple into the batch
-#! hasher state held in memory (overwrite-mode poseidon2, matching `Hasher::hash_elements`).
-#!
-#! Inputs:  [i]
-#! Outputs: []
-proc absorb_input_entry
-    exec.memory::input_note_entry_ptr
-    # => [entry_ptr]
-    exec.memory::load_batch_hasher_state
-    # => [RATE0, RATE1, CAPACITY, entry_ptr]
-    movup.12
-    # => [entry_ptr, RATE0, RATE1, CAPACITY]
-    padw dup.4 mem_loadw_le
-    # => [DATA1, entry_ptr, RATE0, RATE1, CAPACITY]
-    padw dup.8 add.4 mem_loadw_le
-    # => [DATA2, DATA1, entry_ptr, RATE0, RATE1, CAPACITY]
-    movup.8 drop
-    # => [DATA2, DATA1, RATE0, RATE1, CAPACITY]
-    swapdw
-    # => [RATE0, RATE1, DATA2, DATA1, CAPACITY]
-    dropw dropw
-    # => [DATA2, DATA1, CAPACITY]
-    swapw
-    # => [DATA1, DATA2, CAPACITY]
-    exec.poseidon2::permute
-    # => [RATE0', RATE1', CAPACITY']
-    exec.memory::save_batch_hasher_state
-end
-
-#! Computes INPUT_NOTES_COMMITMENT as the sequential poseidon2 hash of the non-erased
-#! `(NULLIFIER, NOTE_ID_OR_EMPTY)` entries of the global input-note list, in nullifier order
-#! (entries with erasure flag == 2 are skipped). Reproduces `build_input_note_commitment`: an empty
-#! result is the empty word.
-#!
-#! Inputs:  []
-#! Outputs: [INPUT_NOTES_COMMITMENT]
-proc hash_non_erased_input_notes
-    exec.poseidon2::init_no_padding
-    exec.memory::save_batch_hasher_state
-
-    exec.memory::get_num_input_notes
-    push.0 push.0
-    # => [i, absorbed_count, num]
-    dup dup.3 neq
-    # => [should_loop, i, absorbed_count, num]
-    while.true
-        dup exec.memory::input_note_flags_ptr mem_load
-        # => [erasure, i, absorbed_count, num]
-        neq.2
-        # => [not_erased, i, absorbed_count, num]
-        if.true
-            dup exec.absorb_input_entry
-            swap add.1 swap
-            # => [i, absorbed_count+1, num]
-        end
-        add.1
-        dup dup.3 neq
-        # => [should_loop, i, absorbed_count, num]
-    end
-    # => [i, absorbed_count, num]
-    drop swap drop
-    # => [absorbed_count]
-    eq.0
-    if.true
-        padw
-        # => [EMPTY_WORD]
-    else
-        exec.memory::load_batch_hasher_state
-        exec.poseidon2::squeeze_digest
-        # => [INPUT_NOTES_COMMITMENT]
-    end
-end
-
-#! Computes the batch's `INPUT_NOTES_COMMITMENT`.
-#!
-#! Loads the global input- and output-note lists (sorted by nullifier / note id), determines which
-#! input notes are created-and-consumed within the batch (erasure), binds both lists to the verified
-#! per-transaction notes while enforcing creator-before-consumer ordering, and hashes the surviving
-#! input notes in nullifier order. The result equals `ProposedBatch::input_notes().commitment()`.
-#!
-#! Inputs:  []
-#! Outputs: [INPUT_NOTES_COMMITMENT]
-#!
-#! TODO: authenticate unauthenticated, non-erased input notes against BLOCK_COMMITMENT's chain MMR.
-#! TODO: emit the output-note (batch note tree) commitment.
-#! TODO: enforce MAX_INPUT_NOTES_PER_BATCH / MAX_OUTPUT_NOTES_PER_BATCH.
-pub proc compute_input_notes_commitment
-    exec.prepare_input_note_list
-    exec.prepare_output_note_list
+pub proc track_notes
     exec.cross_reference_erasure
     exec.bind_per_tx_notes
-    exec.assert_all_input_notes_consumed
-    exec.assert_all_output_notes_created
-    exec.assert_no_pending_erasure
-    exec.hash_non_erased_input_notes
 end

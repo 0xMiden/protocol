@@ -1,5 +1,6 @@
-use miden::batch_kernel::note_tracker
 use miden::batch_kernel::prologue
+use miden::batch_kernel::note_tracker
+use miden::batch_kernel::epilogue
 
 # MAIN
 # =================================================================================================
@@ -60,14 +61,18 @@ proc main
     exec.prologue::prepare_batch
     # => [pad(16)]
 
-    exec.note_tracker::compute_input_notes_commitment
-    # => [INPUT_NOTES_COMMITMENT, pad(16)]
+    exec.note_tracker::track_notes
+    # => [pad(16)]
 
-    # Drop the surplus padding word so the stack holds exactly the 16-felt output region
-    # [INPUT_NOTES_COMMITMENT, BATCH_NOTE_TREE_ROOT, batch_expiration_block_num, pad(7)]. The
-    # BATCH_NOTE_TREE_ROOT and batch_expiration_block_num cells stay zero.
-    movupw.3 dropw
-    # => [INPUT_NOTES_COMMITMENT, pad(12)]
+    exec.epilogue::finalize
+    # => [INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, pad(16)]
+
+    # Drop two surplus padding words so the stack holds exactly the 16-felt output region
+    # [INPUT_NOTES_COMMITMENT, BATCH_NOTE_TREE_ROOT, batch_expiration_block_num, pad(7)].
+    # OUTPUT_NOTES_COMMITMENT occupies the BATCH_NOTE_TREE_ROOT cells; batch_expiration_block_num
+    # stays zero.
+    repeat.2 movupw.3 dropw end
+    # => [INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, pad(8)]
 end
 
 begin

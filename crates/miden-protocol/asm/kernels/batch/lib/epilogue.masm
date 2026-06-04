@@ -1,0 +1,186 @@
+use miden::core::crypto::hashes::poseidon2
+
+use miden::batch_kernel::memory
+use miden::batch_kernel::memory::INPUT_NOTE_CONSUMPTION_OFFSET
+use miden::batch_kernel::memory::OUTPUT_NOTE_IS_CREATED_OFFSET
+
+# ERRORS
+# =================================================================================================
+
+const ERR_BATCH_INPUT_NOTE_NOT_CONSUMED="a batch input-note list entry was not consumed by any transaction"
+
+const ERR_BATCH_OUTPUT_NOTE_NOT_CREATED="a batch output-note list entry was not created by any transaction"
+
+const ERR_BATCH_NOTE_CONSUMED_BEFORE_CREATED="an erased input note was consumed before the transaction that creates it (incorrect ordering or circular dependency)"
+
+# ASSERTIONS
+# =================================================================================================
+
+#! Asserts every input-note list entry was consumed by exactly one transaction (with the per-tx
+#! binding, this proves the list is exactly the union of the per-transaction input notes).
+#!
+#! Inputs:  []
+#! Outputs: []
+proc assert_all_input_notes_consumed
+    exec.memory::get_num_input_notes
+    push.0
+    dup.1 dup.1 neq
+    while.true
+        dup exec.memory::input_note_flags_ptr add.INPUT_NOTE_CONSUMPTION_OFFSET mem_load
+        assert.err=ERR_BATCH_INPUT_NOTE_NOT_CONSUMED
+        add.1
+        dup.1 dup.1 neq
+    end
+    drop drop
+end
+
+#! Asserts every output-note list entry was created by exactly one transaction (with the per-tx
+#! binding, this proves the list is exactly the union of the per-transaction output notes, so a host
+#! cannot fabricate an erasure with a note no transaction creates).
+#!
+#! Inputs:  []
+#! Outputs: []
+proc assert_all_output_notes_created
+    exec.memory::get_num_output_notes
+    push.0
+    dup.1 dup.1 neq
+    while.true
+        dup exec.memory::output_note_flags_ptr add.OUTPUT_NOTE_IS_CREATED_OFFSET mem_load
+        assert.err=ERR_BATCH_OUTPUT_NOTE_NOT_CREATED
+        add.1
+        dup.1 dup.1 neq
+    end
+    drop drop
+end
+
+#! Asserts no input-note list entry is left expected-to-be-erased (erasure flag == 1): every note
+#! claimed to be created-and-consumed in the batch had its creator processed.
+#!
+#! Inputs:  []
+#! Outputs: []
+proc assert_no_pending_erasure
+    exec.memory::get_num_input_notes
+    push.0
+    dup.1 dup.1 neq
+    while.true
+        dup exec.memory::input_note_flags_ptr mem_load
+        # => [erasure, idx, num]
+        neq.1 assert.err=ERR_BATCH_NOTE_CONSUMED_BEFORE_CREATED
+        add.1
+        dup.1 dup.1 neq
+    end
+    drop drop
+end
+
+# INPUT NOTES COMMITMENT
+# =================================================================================================
+
+#! Absorbs input-note list entry `idx`'s 8-felt `(NULLIFIER, NOTE_ID_OR_EMPTY)` tuple into the batch
+#! hasher state held in memory (overwrite-mode poseidon2, matching `Hasher::hash_elements`).
+#!
+#! Inputs:  [idx]
+#! Outputs: []
+proc absorb_input_entry
+    exec.memory::input_note_entry_ptr
+    # => [entry_ptr]
+    exec.memory::load_batch_hasher_state
+    # => [RATE0, RATE1, CAPACITY, entry_ptr]
+    movup.12
+    # => [entry_ptr, RATE0, RATE1, CAPACITY]
+    padw dup.4 mem_loadw_le
+    # => [DATA1, entry_ptr, RATE0, RATE1, CAPACITY]
+    padw dup.8 add.4 mem_loadw_le
+    # => [DATA2, DATA1, entry_ptr, RATE0, RATE1, CAPACITY]
+    movup.8 drop
+    # => [DATA2, DATA1, RATE0, RATE1, CAPACITY]
+    swapdw
+    # => [RATE0, RATE1, DATA2, DATA1, CAPACITY]
+    dropw dropw
+    # => [DATA2, DATA1, CAPACITY]
+    swapw
+    # => [DATA1, DATA2, CAPACITY]
+    exec.poseidon2::permute
+    # => [RATE0', RATE1', CAPACITY']
+    exec.memory::save_batch_hasher_state
+end
+
+#! Computes INPUT_NOTES_COMMITMENT as the sequential poseidon2 hash of the non-erased
+#! `(NULLIFIER, NOTE_ID_OR_EMPTY)` entries of the global input-note list, in nullifier order
+#! (entries with erasure flag == 2 are skipped). Reproduces `build_input_note_commitment`: an empty
+#! result is the empty word.
+#!
+#! Inputs:  []
+#! Outputs: [INPUT_NOTES_COMMITMENT]
+proc compute_input_notes_commitment
+    exec.poseidon2::init_no_padding
+    exec.memory::save_batch_hasher_state
+
+    exec.memory::get_num_input_notes
+    push.0 push.0
+    # => [idx, absorbed_count, num]
+    dup dup.3 neq
+    # => [should_loop, idx, absorbed_count, num]
+    while.true
+        dup exec.memory::input_note_flags_ptr mem_load
+        # => [erasure, idx, absorbed_count, num]
+        neq.2
+        # => [not_erased, idx, absorbed_count, num]
+        if.true
+            dup exec.absorb_input_entry
+            swap add.1 swap
+            # => [idx, absorbed_count+1, num]
+        end
+        add.1
+        dup dup.3 neq
+        # => [should_loop, idx, absorbed_count, num]
+    end
+    # => [idx, absorbed_count, num]
+    drop swap drop
+    # => [absorbed_count]
+    eq.0
+    if.true
+        padw
+        # => [EMPTY_WORD]
+    else
+        exec.memory::load_batch_hasher_state
+        exec.poseidon2::squeeze_digest
+        # => [INPUT_NOTES_COMMITMENT]
+    end
+end
+
+# OUTPUT NOTES COMMITMENT
+# =================================================================================================
+
+#! Computes the batch's output-notes commitment (the batch note tree root).
+#!
+#! Placeholder: returns the empty word until the batch note tree is wired up.
+#!
+#! Inputs:  []
+#! Outputs: [OUTPUT_NOTES_COMMITMENT]
+#!
+#! TODO: hash the batch's output notes into the batch note tree (SMT) root.
+proc compute_output_notes_commitment
+    padw
+end
+
+# EPILOGUE
+# =================================================================================================
+
+#! Verifies the note-tracking results and computes the batch's note commitments.
+#!
+#! Asserts every input-note list entry was consumed, every output-note list entry was created, and no
+#! erasure is left pending, then computes the input- and output-notes commitments.
+#!
+#! Inputs:  []
+#! Outputs: [INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT]
+#!
+#! TODO: authenticate unauthenticated, non-erased input notes against BLOCK_COMMITMENT's chain MMR.
+pub proc finalize
+    exec.assert_all_input_notes_consumed
+    exec.assert_all_output_notes_created
+    exec.assert_no_pending_erasure
+    exec.compute_output_notes_commitment
+    # => [OUTPUT_NOTES_COMMITMENT]
+    exec.compute_input_notes_commitment
+    # => [INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT]
+end
