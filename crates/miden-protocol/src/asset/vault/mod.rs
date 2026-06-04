@@ -458,8 +458,10 @@ mod tests {
         assert_eq!(asset0.vault_key().faucet_id(), asset1.vault_key().faucet_id());
         assert_ne!(asset0.vault_key(), asset1.vault_key());
 
-        // Without hashing, both raw vault keys would share their element-3 (the faucet ID prefix)
-        // and the SMT would route them into a single leaf. Sanity-check that pre-condition.
+        // Without hashing, both raw vault keys share their two most significant elements (the
+        // faucet ID suffix/metadata in element 2 and the faucet ID prefix in element 3). Element 3
+        // is what the SMT uses for leaf membership, so the two would collide into a single leaf.
+        // Sanity-check that pre-condition.
         assert_eq!(asset0.vault_key().to_word()[2], asset1.vault_key().to_word()[2]);
         assert_eq!(asset0.vault_key().to_word()[3], asset1.vault_key().to_word()[3]);
 

@@ -339,10 +339,12 @@ impl TransactionInputs {
         vault_root: Word,
         asset_key: AssetVaultKey,
     ) -> Result<Option<Asset>, TransactionInputsExtractionError> {
-        let mut witnesses =
+        let witnesses =
             self.read_vault_asset_witnesses(vault_root, BTreeSet::from_iter([asset_key]))?;
-        // We requested a single key, so we get exactly one witness back.
-        let witness = witnesses.remove(0);
+        let witness = witnesses
+            .into_iter()
+            .next()
+            .expect("one key requested should yield exactly one witness");
         Ok(witness.find(asset_key))
     }
 
