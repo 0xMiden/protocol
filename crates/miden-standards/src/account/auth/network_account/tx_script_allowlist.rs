@@ -165,8 +165,8 @@ mod tests {
 
     #[test]
     fn allowlist_storage_slot_contains_expected_entries() {
-        let root_a = TransactionScriptRoot::from_array([1, 2, 3, 4]);
-        let root_b = TransactionScriptRoot::from_array([5, 6, 7, 8]);
+        let root_a = TransactionScriptRoot::from_raw(Word::from([1, 2, 3, 4u32]));
+        let root_b = TransactionScriptRoot::from_raw(Word::from([5, 6, 7, 8u32]));
 
         let slot = NetworkAccountTxScriptAllowlist::new(BTreeSet::from_iter([root_a, root_b]))
             .into_storage_slot();
@@ -200,8 +200,8 @@ mod tests {
 
     #[test]
     fn allowlist_round_trips_through_account_storage() {
-        let root_a = TransactionScriptRoot::from_array([1, 2, 3, 4]);
-        let root_b = TransactionScriptRoot::from_array([5, 6, 7, 8]);
+        let root_a = TransactionScriptRoot::from_raw(Word::from([1, 2, 3, 4u32]));
+        let root_b = TransactionScriptRoot::from_raw(Word::from([5, 6, 7, 8u32]));
         let original_roots = BTreeSet::from_iter([root_a, root_b]);
 
         let account = AccountBuilder::new([0; 32])
