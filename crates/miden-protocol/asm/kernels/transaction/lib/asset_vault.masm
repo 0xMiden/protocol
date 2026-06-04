@@ -31,14 +31,14 @@ const ERR_VAULT_NON_FUNGIBLE_ASSET_TO_REMOVE_NOT_FOUND="failed to remove non-exi
 pub proc get_asset
     # hash the asset vault key before using it as the SMT key
     exec.hash_asset_key
-    # => [HASHED_ASSET_KEY, vault_root_ptr]
+    # => [ASSET_KEY_HASH, vault_root_ptr]
 
     # load the asset vault root from memory
     padw movup.8 mem_loadw_le
-    # => [ASSET_VAULT_ROOT, HASHED_ASSET_KEY]
+    # => [ASSET_VAULT_ROOT, ASSET_KEY_HASH]
 
     swapw
-    # => [HASHED_ASSET_KEY, ASSET_VAULT_ROOT]
+    # => [ASSET_KEY_HASH, ASSET_VAULT_ROOT]
 
     # lookup asset
     exec.smt::get swapw dropw
@@ -71,18 +71,18 @@ end
 pub proc peek_asset
     # hash the asset vault key before using it as the SMT key
     exec.hash_asset_key
-    # => [HASHED_ASSET_KEY, vault_root_ptr]
+    # => [ASSET_KEY_HASH, vault_root_ptr]
 
     # load the asset vault root from memory
     padw movup.8 mem_loadw_le
-    # => [ASSET_VAULT_ROOT, HASHED_ASSET_KEY]
+    # => [ASSET_VAULT_ROOT, ASSET_KEY_HASH]
 
     swapw
-    # => [HASHED_ASSET_KEY, ASSET_VAULT_ROOT]
+    # => [ASSET_KEY_HASH, ASSET_VAULT_ROOT]
 
     # lookup asset
     exec.smt::peek
-    # OS => [HASHED_ASSET_KEY, ASSET_VAULT_ROOT]
+    # OS => [ASSET_KEY_HASH, ASSET_VAULT_ROOT]
     # AS => [ASSET_VALUE]
 
     dropw
@@ -446,10 +446,10 @@ end
 #! See [`AssetVaultKey::hash`] in Rust for the rationale.
 #!
 #! Inputs:  [ASSET_KEY]
-#! Outputs: [HASHED_ASSET_KEY]
+#! Outputs: [ASSET_KEY_HASH]
 proc hash_asset_key
     exec.poseidon2::hash
-    # => [HASHED_ASSET_KEY]
+    # => [ASSET_KEY_HASH]
 end
 
 #! Hashes the raw asset vault key and writes ASSET_VALUE into the asset vault SMT at the hashed key,
@@ -466,7 +466,7 @@ end
 #! - NEW_VAULT_ROOT is the root of the asset vault SMT after the write.
 proc set_asset
     swapw exec.hash_asset_key swapw
-    # => [ASSET_VALUE, HASHED_ASSET_KEY, VAULT_ROOT]
+    # => [ASSET_VALUE, ASSET_KEY_HASH, VAULT_ROOT]
 
     exec.smt::set
     # => [OLD_VALUE, NEW_VAULT_ROOT]
