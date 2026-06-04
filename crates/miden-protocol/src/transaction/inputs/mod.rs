@@ -325,12 +325,14 @@ impl TransactionInputs {
         }
     }
 
-    /// Reads the asset from the specified vault under the specified key; returns `None` if the
-    /// specified asset is not present in these inputs.
+    /// Reads the asset stored under `asset_key` in the vault with the specified root.
+    ///
+    /// Returns `Ok(None)` when the key's leaf is tracked but holds no asset.
     ///
     /// # Errors
     /// Returns an error if:
-    /// - A Merkle tree with the specified root is not present in the advice data of these inputs.
+    /// - A Merkle tree with the specified root, or the key's Merkle path, is not present in the
+    ///   advice data of these inputs.
     /// - Construction of the leaf node or the asset fails.
     pub fn read_vault_asset(
         &self,
