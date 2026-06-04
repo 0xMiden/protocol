@@ -127,11 +127,11 @@ end
 proc prepare_input_note_list
     push.INPUT_NOTES_PTR
     push.INPUT_NOTE_LIST_KEY dup dup dup
-    # => [KEY, INPUT_NOTES_PTR]
+    # => [KEY, input_notes_ptr]
     exec.load_global_note_list
     exec.memory::set_num_input_notes
     exec.memory::get_num_input_notes push.INPUT_NOTES_PTR
-    # => [INPUT_NOTES_PTR, num_input_notes]
+    # => [input_notes_ptr, num_input_notes]
     exec.assert_list_strictly_sorted
 end
 
@@ -142,11 +142,11 @@ end
 proc prepare_output_note_list
     push.OUTPUT_NOTES_PTR
     push.OUTPUT_NOTE_LIST_KEY dup dup dup
-    # => [KEY, OUTPUT_NOTES_PTR]
+    # => [KEY, output_notes_ptr]
     exec.load_global_note_list
     exec.memory::set_num_output_notes
     exec.memory::get_num_output_notes push.OUTPUT_NOTES_PTR
-    # => [OUTPUT_NOTES_PTR, num_output_notes]
+    # => [output_notes_ptr, num_output_notes]
     exec.assert_list_strictly_sorted
 end
 
@@ -199,7 +199,7 @@ proc cross_reference_one_input
     else
         push.OUTPUT_NOTES_PTR movdn.4
         exec.memory::get_output_notes_end_ptr movdn.5
-        # => [NOTE_ID, OUTPUT_NOTES_PTR, output_end_ptr, i]
+        # => [NOTE_ID, output_notes_ptr, output_end_ptr, i]
         exec.sorted_array::find_key_value
         # => [is_found, key_ptr, start_ptr, end_ptr, i]
         if.true
@@ -284,7 +284,7 @@ proc bind_one_output_note
     # => [NOTE_ID]
     push.OUTPUT_NOTES_PTR movdn.4
     exec.memory::get_output_notes_end_ptr movdn.5
-    # => [NOTE_ID, OUTPUT_NOTES_PTR, output_end_ptr]
+    # => [NOTE_ID, output_notes_ptr, output_end_ptr]
     exec.sorted_array::find_key_value
     # => [is_found, key_ptr, start_ptr, end_ptr]
     assert.err=ERR_BATCH_OUTPUT_NOTE_NOT_IN_LIST

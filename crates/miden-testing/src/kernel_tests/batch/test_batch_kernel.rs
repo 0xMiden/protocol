@@ -8,11 +8,15 @@ use miden_protocol::block::BlockNumber;
 use miden_protocol::errors::{MasmError, ProvenBatchError, batch_kernel};
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::vm::AdviceInputs;
-use miden_protocol::{Felt, Word};
+use miden_protocol::{Felt, MAX_INPUT_NOTES_PER_BATCH, WORD_SIZE, Word};
 use miden_tx_batch_prover::{BatchExecutor, LocalBatchProver};
+use rstest::rstest;
 
 use super::proposed_batch::{TestSetup, mock_note, mock_output_note, setup_chain};
 use super::proven_tx_builder::MockProvenTxBuilder;
+
+/// Felts per global note-list entry: a KEY word plus a VALUE word.
+const FELTS_PER_NOTE_ENTRY: usize = 2 * WORD_SIZE;
 
 // SETUP HELPERS
 // ================================================================================================
@@ -184,46 +188,45 @@ fn batch_executor_then_prover_produces_proven_batch() -> anyhow::Result<()> {
 // and erasure checks below raise named `ERR_BATCH_*` errors and are asserted concretely via
 // `assert_kernel_error`.
 
-/// Tampering the `BATCH_ID` -> `(tx_id, account_id)` tuples breaks the Layer 1 hash check.
-#[test]
-fn batch_kernel_rejects_tampered_layer_1() -> anyhow::Result<()> {
-    let mut setup = setup_chain();
-    let batch = two_tx_batch(&mut setup)?;
-
-    let override_advice = tampered_advice_for(&batch, batch.id().as_word());
-
-    let result = BatchExecutor::new().extend_advice_inputs(override_advice).execute(batch);
-    assert!(result.is_err(), "kernel must abort on a tampered transaction list");
-
-    Ok(())
+/// Selects which advice-map layer the tampering test corrupts.
+#[derive(Clone, Copy)]
+enum TamperedLayer {
+    /// Layer 1: the `BATCH_ID` -> `(tx_id, account_id)` transaction list.
+    TransactionList,
+    /// Layer 2: a verified `tx_id`'s header data.
+    TransactionHeader,
+    /// Layer 3: a transaction's input-notes commitment data.
+    InputNotes,
 }
 
-/// Tampering a verified `tx_id`'s header data breaks the Layer 2 hash check.
-#[test]
-fn batch_kernel_rejects_tampered_layer_2() -> anyhow::Result<()> {
+/// Tampering any of the three preimage layers breaks its hash check inside
+/// `mem::pipe_preimage_to_memory`. That check is a bare `assert_eqw` carrying no named error code,
+/// so each case only asserts that execution fails.
+#[rstest]
+#[case(TamperedLayer::TransactionList)]
+#[case(TamperedLayer::TransactionHeader)]
+#[case(TamperedLayer::InputNotes)]
+fn batch_kernel_rejects_tampered_advice(#[case] layer: TamperedLayer) -> anyhow::Result<()> {
     let mut setup = setup_chain();
     let batch = two_tx_batch(&mut setup)?;
 
-    let tx0_id = batch.transactions()[0].id().as_word();
-    let override_advice = tampered_advice_for(&batch, tx0_id);
-
-    let result = BatchExecutor::new().extend_advice_inputs(override_advice).execute(batch);
-    assert!(result.is_err(), "kernel must abort on a tampered transaction header");
-
-    Ok(())
-}
-
-/// Tampering a transaction's input-notes data breaks the Layer 3 (input-notes commitment) check.
-#[test]
-fn batch_kernel_rejects_tampered_input_notes() -> anyhow::Result<()> {
-    let mut setup = setup_chain();
-    let batch = two_tx_batch(&mut setup)?;
-
-    let key = batch.transactions()[0].input_notes().commitment();
+    let (key, message) = match layer {
+        TamperedLayer::TransactionList => {
+            (batch.id().as_word(), "kernel must abort on a tampered transaction list")
+        },
+        TamperedLayer::TransactionHeader => (
+            batch.transactions()[0].id().as_word(),
+            "kernel must abort on a tampered transaction header",
+        ),
+        TamperedLayer::InputNotes => (
+            batch.transactions()[0].input_notes().commitment(),
+            "kernel must abort on tampered input-notes data",
+        ),
+    };
     let override_advice = tampered_advice_for(&batch, key);
 
     let result = BatchExecutor::new().extend_advice_inputs(override_advice).execute(batch);
-    assert!(result.is_err(), "kernel must abort on tampered input-notes data");
+    assert!(result.is_err(), "{message}");
 
     Ok(())
 }
@@ -233,11 +236,6 @@ fn batch_kernel_rejects_tampered_input_notes() -> anyhow::Result<()> {
 //
 // These corrupt the host-provided global input-note list (overriding it via `extend_advice_inputs`)
 // and assert the kernel's binding rejects it, so the host cannot omit, inject, or alter notes.
-
-/// Advice-map key for the global input-note list.
-fn input_note_list_key() -> Word {
-    BatchKernel::input_note_list_key()
-}
 
 /// Builds the global input-note list blob the kernel expects: `(nullifier, note_id_or_empty)` per
 /// note across all transactions, sorted by nullifier.
@@ -252,7 +250,7 @@ fn input_note_list_blob(batch: &ProposedBatch) -> Vec<Felt> {
         }
     }
     notes.sort_by(|a, b| a.0.cmp(&b.0));
-    let mut blob = Vec::with_capacity(notes.len() * 8);
+    let mut blob = Vec::with_capacity(notes.len() * FELTS_PER_NOTE_ENTRY);
     for (nullifier, note_id_or_empty) in &notes {
         blob.extend_from_slice(nullifier.as_elements());
         blob.extend_from_slice(note_id_or_empty.as_elements());
@@ -267,8 +265,9 @@ fn batch_kernel_rejects_input_note_missing_from_list() -> anyhow::Result<()> {
     let batch = two_tx_batch(&mut setup)?;
 
     let mut blob = input_note_list_blob(&batch);
-    blob.truncate(blob.len() - 8); // drop the last (highest-nullifier) note
-    let override_advice = AdviceInputs::default().with_map([(input_note_list_key(), blob)]);
+    blob.truncate(blob.len() - FELTS_PER_NOTE_ENTRY); // drop the last (highest-nullifier) note
+    let override_advice =
+        AdviceInputs::default().with_map([(BatchKernel::input_note_list_key(), blob)]);
 
     let result = BatchExecutor::new().extend_advice_inputs(override_advice).execute(batch);
     assert_kernel_error(result, batch_kernel::ERR_BATCH_INPUT_NOTE_NOT_IN_LIST);
@@ -284,9 +283,10 @@ fn batch_kernel_rejects_duplicated_input_note_list_entry() -> anyhow::Result<()>
 
     let blob = input_note_list_blob(&batch);
     // Prepend a copy of the first entry, so two equal nullifiers are adjacent.
-    let mut duplicated: Vec<Felt> = blob[0..8].to_vec();
+    let mut duplicated: Vec<Felt> = blob[0..FELTS_PER_NOTE_ENTRY].to_vec();
     duplicated.extend_from_slice(&blob);
-    let override_advice = AdviceInputs::default().with_map([(input_note_list_key(), duplicated)]);
+    let override_advice =
+        AdviceInputs::default().with_map([(BatchKernel::input_note_list_key(), duplicated)]);
 
     let result = BatchExecutor::new().extend_advice_inputs(override_advice).execute(batch);
     assert_kernel_error(result, batch_kernel::ERR_BATCH_NOTE_LIST_NOT_SORTED);
@@ -305,17 +305,13 @@ fn batch_kernel_rejects_input_note_list_id_mismatch() -> anyhow::Result<()> {
     // Corrupt the first entry's note-id word (felts 4..8); the nullifier (felts 0..4) is untouched,
     // so the entry is still found by nullifier but its note id no longer matches.
     blob[4] += Felt::from(1u32);
-    let override_advice = AdviceInputs::default().with_map([(input_note_list_key(), blob)]);
+    let override_advice =
+        AdviceInputs::default().with_map([(BatchKernel::input_note_list_key(), blob)]);
 
     let result = BatchExecutor::new().extend_advice_inputs(override_advice).execute(batch);
     assert_kernel_error(result, batch_kernel::ERR_BATCH_INPUT_NOTE_ID_MISMATCH);
 
     Ok(())
-}
-
-/// Advice-map key for the global output-note list.
-fn output_note_list_key() -> Word {
-    BatchKernel::output_note_list_key()
 }
 
 /// Builds the global output-note list blob the kernel expects: `(note_id, 0, 0, 0, 0)` per output
@@ -328,7 +324,7 @@ fn output_note_list_blob(batch: &ProposedBatch) -> Vec<Felt> {
         }
     }
     ids.sort_unstable();
-    let mut blob = Vec::with_capacity(ids.len() * 8);
+    let mut blob = Vec::with_capacity(ids.len() * FELTS_PER_NOTE_ENTRY);
     for note_id in &ids {
         blob.extend_from_slice(note_id.as_elements());
         blob.extend_from_slice(Word::empty().as_elements());
@@ -344,8 +340,9 @@ fn batch_kernel_rejects_output_note_missing_from_list() -> anyhow::Result<()> {
     let batch = two_tx_batch(&mut setup)?;
 
     let mut blob = output_note_list_blob(&batch);
-    blob.truncate(blob.len() - 8); // drop the last (highest-note-id) output note
-    let override_advice = AdviceInputs::default().with_map([(output_note_list_key(), blob)]);
+    blob.truncate(blob.len() - FELTS_PER_NOTE_ENTRY); // drop the last (highest-note-id) output note
+    let override_advice =
+        AdviceInputs::default().with_map([(BatchKernel::output_note_list_key(), blob)]);
 
     let result = BatchExecutor::new().extend_advice_inputs(override_advice).execute(batch);
     assert_kernel_error(result, batch_kernel::ERR_BATCH_OUTPUT_NOTE_NOT_IN_LIST);
@@ -373,12 +370,13 @@ fn batch_kernel_rejects_consume_before_create() -> anyhow::Result<()> {
     }
     ids.push(phantom_created_id);
     ids.sort_unstable();
-    let mut blob = Vec::with_capacity(ids.len() * 8);
+    let mut blob = Vec::with_capacity(ids.len() * FELTS_PER_NOTE_ENTRY);
     for note_id in &ids {
         blob.extend_from_slice(note_id.as_elements());
         blob.extend_from_slice(Word::empty().as_elements());
     }
-    let override_advice = AdviceInputs::default().with_map([(output_note_list_key(), blob)]);
+    let override_advice =
+        AdviceInputs::default().with_map([(BatchKernel::output_note_list_key(), blob)]);
 
     let result = BatchExecutor::new().extend_advice_inputs(override_advice).execute(batch);
     assert_kernel_error(result, batch_kernel::ERR_BATCH_NOTE_CONSUMED_BEFORE_CREATED);
@@ -406,12 +404,13 @@ fn batch_kernel_rejects_unconsumed_input_note() -> anyhow::Result<()> {
     }
     notes.push((Word::from([u32::MAX; 4]), Word::empty()));
     notes.sort_by(|a, b| a.0.cmp(&b.0));
-    let mut blob = Vec::with_capacity(notes.len() * 8);
+    let mut blob = Vec::with_capacity(notes.len() * FELTS_PER_NOTE_ENTRY);
     for (nullifier, note_id_or_empty) in &notes {
         blob.extend_from_slice(nullifier.as_elements());
         blob.extend_from_slice(note_id_or_empty.as_elements());
     }
-    let override_advice = AdviceInputs::default().with_map([(input_note_list_key(), blob)]);
+    let override_advice =
+        AdviceInputs::default().with_map([(BatchKernel::input_note_list_key(), blob)]);
 
     let result = BatchExecutor::new().extend_advice_inputs(override_advice).execute(batch);
     assert_kernel_error(result, batch_kernel::ERR_BATCH_INPUT_NOTE_NOT_CONSUMED);
@@ -435,12 +434,13 @@ fn batch_kernel_rejects_uncreated_output_note() -> anyhow::Result<()> {
     }
     ids.push(Word::from([u32::MAX; 4]));
     ids.sort_unstable();
-    let mut blob = Vec::with_capacity(ids.len() * 8);
+    let mut blob = Vec::with_capacity(ids.len() * FELTS_PER_NOTE_ENTRY);
     for note_id in &ids {
         blob.extend_from_slice(note_id.as_elements());
         blob.extend_from_slice(Word::empty().as_elements());
     }
-    let override_advice = AdviceInputs::default().with_map([(output_note_list_key(), blob)]);
+    let override_advice =
+        AdviceInputs::default().with_map([(BatchKernel::output_note_list_key(), blob)]);
 
     let result = BatchExecutor::new().extend_advice_inputs(override_advice).execute(batch);
     assert_kernel_error(result, batch_kernel::ERR_BATCH_OUTPUT_NOTE_NOT_CREATED);
@@ -456,9 +456,10 @@ fn batch_kernel_rejects_oversized_input_note_list() -> anyhow::Result<()> {
     let mut setup = setup_chain();
     let batch = two_tx_batch(&mut setup)?;
 
-    // 1025 entries, one past the 1024 maximum.
-    let blob = vec![Felt::from(0u32); 1025 * 8];
-    let override_advice = AdviceInputs::default().with_map([(input_note_list_key(), blob)]);
+    // One entry past `MAX_INPUT_NOTES_PER_BATCH`.
+    let blob = vec![Felt::from(0u32); (MAX_INPUT_NOTES_PER_BATCH + 1) * FELTS_PER_NOTE_ENTRY];
+    let override_advice =
+        AdviceInputs::default().with_map([(BatchKernel::input_note_list_key(), blob)]);
 
     let result = BatchExecutor::new().extend_advice_inputs(override_advice).execute(batch);
     assert_kernel_error(result, batch_kernel::ERR_BATCH_NOTE_LIST_TOO_LONG);

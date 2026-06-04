@@ -22,12 +22,7 @@ impl BatchExecutor {
         Self::default()
     }
 
-    /// Extends the advice inputs merged onto those derived from the proposed batch before
-    /// execution. Entries provided here override matching keys from the derived advice.
-    ///
-    /// This is primarily a testing hook for exercising the batch kernel's rejection paths by
-    /// injecting tampered advice, mirroring
-    /// [`TransactionContextBuilder::extend_advice_inputs`](https://docs.rs/miden-testing).
+    /// Extends the advice inputs with the provided ones.
     pub fn extend_advice_inputs(mut self, advice_inputs: AdviceInputs) -> Self {
         self.advice_inputs.extend(advice_inputs);
         self
@@ -57,10 +52,8 @@ impl BatchExecutor {
         .map_err(ExecutionError::advice_error_no_context)
         .map_err(ProvenBatchError::BatchKernelExecutionFailed)?;
 
-        // The batch kernel calls `miden::core` procedures (poseidon2, mem, ...) and emits the
-        // `sorted_array` lowerbound events, so the core library must be available to the host at
-        // runtime. We load the `CoreLibrary` itself (not just its MAST forest) so its event
-        // handlers are registered alongside the procedures.
+        // Load the core library so the host has the `miden::core` procedures and the `sorted_array`
+        // event handlers the batch kernel relies on.
         let mut host = DefaultHost::default();
         host.load_library(&CoreLibrary::default())
             .expect("loading the core library into the host should succeed");

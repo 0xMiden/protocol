@@ -107,10 +107,6 @@ fn main() -> Result<()> {
 
 /// Extracts the batch kernel's advice-map sentinel keys (`const <NAME>_LIST_KEY=0x...`) from the
 /// MASM source and generates a Rust file declaring each as a `pub const <NAME>_LIST_KEY: u32`.
-///
-/// This keeps the MASM definitions in `note_tracker.masm` the single source of truth for the keys:
-/// the Rust side that builds the kernel's advice map derives them at build time rather than
-/// duplicating the literals.
 fn generate_batch_kernel_constants(asm_source_dir: &Path, build_dir: &str) -> Result<()> {
     let batch_kernel_dir = asm_source_dir.join(ASM_BATCH_KERNEL_DIR);
     let regex =

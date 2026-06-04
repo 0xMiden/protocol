@@ -22,16 +22,16 @@ static KERNEL_MAIN: LazyLock<Program> = LazyLock::new(|| {
 // are anchored in `BATCH_ID`, not by the key, so any fixed sentinel works. All four felts are equal
 // so the key is independent of word orientation. The values are generated from the `*_LIST_KEY`
 // definitions in `note_tracker.masm`, which is the single source of truth.
-mod generated_keys {
+mod generated_constants {
     include!(concat!(env!("OUT_DIR"), "/batch_kernel_constants.rs"));
 }
 
 fn input_note_list_key() -> Word {
-    Word::from([generated_keys::INPUT_NOTE_LIST_KEY; 4])
+    Word::from([generated_constants::INPUT_NOTE_LIST_KEY; 4])
 }
 
 fn output_note_list_key() -> Word {
-    Word::from([generated_keys::OUTPUT_NOTE_LIST_KEY; 4])
+    Word::from([generated_constants::OUTPUT_NOTE_LIST_KEY; 4])
 }
 
 // BATCH KERNEL
@@ -145,17 +145,17 @@ impl BatchKernel {
             // followed by the note ID (or the empty word for authenticated notes).
             let input_notes_commitment = tx.input_notes().commitment();
             if input_notes_commitment != Word::empty() {
-                let mut data: Vec<Felt> =
+                let mut preimage_data: Vec<Felt> =
                     Vec::with_capacity(usize::from(tx.input_notes().num_notes()) * 8);
                 for note_commit in tx.input_notes().iter() {
                     let nullifier = note_commit.nullifier().as_word();
                     let note_id_or_empty =
                         note_commit.header().map_or(Word::empty(), |header| header.id().as_word());
-                    data.extend_from_slice(nullifier.as_elements());
-                    data.extend_from_slice(note_id_or_empty.as_elements());
+                    preimage_data.extend_from_slice(nullifier.as_elements());
+                    preimage_data.extend_from_slice(note_id_or_empty.as_elements());
                     input_list.push((nullifier, note_id_or_empty));
                 }
-                advice_inputs.map.extend([(input_notes_commitment, data)]);
+                advice_inputs.map.extend([(input_notes_commitment, preimage_data)]);
             }
 
             // Layer 3': per-tx OUTPUT_NOTES_COMMITMENT -> [(DETAILS_COMMITMENT,
@@ -164,13 +164,15 @@ impl BatchKernel {
             // metadata_commitment)`.
             let output_notes_commitment = tx.output_notes().commitment();
             if output_notes_commitment != Word::empty() {
-                let mut data: Vec<Felt> = Vec::with_capacity(tx.output_notes().num_notes() * 8);
+                let mut preimage_data: Vec<Felt> =
+                    Vec::with_capacity(tx.output_notes().num_notes() * 8);
                 for note in tx.output_notes().iter() {
-                    data.extend_from_slice(note.details_commitment().as_word().as_elements());
-                    data.extend_from_slice(note.metadata().to_commitment().as_elements());
+                    preimage_data
+                        .extend_from_slice(note.details_commitment().as_word().as_elements());
+                    preimage_data.extend_from_slice(note.metadata().to_commitment().as_elements());
                     output_list.push(note.id().as_word());
                 }
-                advice_inputs.map.extend([(output_notes_commitment, data)]);
+                advice_inputs.map.extend([(output_notes_commitment, preimage_data)]);
             }
         }
 
