@@ -25,23 +25,28 @@ use crate::BatchVerifierError;
 /// updates, or expiration. This verifier must not be relied on at a trust boundary.
 pub struct BatchVerifier {
     batch_program_info: ProgramInfo,
-    proof_security_level: u32,
+    min_proof_security_level: u32,
 }
 
 impl BatchVerifier {
     /// Returns a new [`BatchVerifier`] instantiated with the specified minimum security level.
-    pub fn new(proof_security_level: u32) -> Self {
+    pub fn new(min_proof_security_level: u32) -> Self {
         let batch_program_info = BatchKernel::program_info();
-        Self { batch_program_info, proof_security_level }
+        Self {
+            batch_program_info,
+            min_proof_security_level,
+        }
     }
 
     /// Verifies the provided [`ProvenBatch`]'s execution proof against the batch kernel.
     ///
+    /// On success, returns the security level (in bits) of the verified proof.
+    ///
     /// # Errors
     /// Returns an error if:
     /// - Batch proof verification fails.
-    /// - The security level of the verified proof is insufficient.
-    pub fn verify(&self, batch: &ProvenBatch) -> Result<(), BatchVerifierError> {
+    /// - The security level of the verified proof is below the configured minimum.
+    pub fn verify(&self, batch: &ProvenBatch) -> Result<u32, BatchVerifierError> {
         let stack_inputs =
             BatchKernel::build_input_stack(batch.reference_block_commitment(), batch.id());
 
@@ -54,7 +59,7 @@ impl BatchVerifier {
         )
         .into_stack_outputs();
 
-        let proof_security_level = verify(
+        let verified_security_level = verify(
             self.batch_program_info.clone(),
             stack_inputs,
             stack_outputs,
@@ -62,13 +67,13 @@ impl BatchVerifier {
         )
         .map_err(BatchVerifierError::BatchVerificationFailed)?;
 
-        if proof_security_level < self.proof_security_level {
+        if verified_security_level < self.min_proof_security_level {
             return Err(BatchVerifierError::InsufficientProofSecurityLevel {
-                actual: proof_security_level,
-                expected_minimum: self.proof_security_level,
+                actual: verified_security_level,
+                expected_minimum: self.min_proof_security_level,
             });
         }
 
-        Ok(())
+        Ok(verified_security_level)
     }
 }
