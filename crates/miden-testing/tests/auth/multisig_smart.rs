@@ -622,6 +622,8 @@ use miden_protocol::transaction::ExecutedTransaction;
 use miden_standards::errors::standards::{
     ERR_CANCEL_INSUFFICIENT_SIGNATURES,
     ERR_PENDING_ALREADY_SET,
+    ERR_TX_ALREADY_PROPOSED,
+    ERR_TX_NOT_PROPOSED,
     ERR_TX_STILL_TIMELOCKED,
 };
 use miden_testing::MockChain;
@@ -1375,6 +1377,109 @@ async fn test_multisig_smart_multiple_concurrent_proposals_coexist(
             .expect("tx proposals slot should exist");
         assert_ne!(entry, Word::empty(), "proposal entry must be present in storage");
     }
+
+    Ok(())
+}
+
+/// `cancel_and_propose_new_transaction` has two failure branches that fire during the
+/// user-script phase (before any signature verification):
+/// - The OLD tx hash must already be proposed, otherwise `ERR_TX_NOT_PROPOSED`.
+/// - The NEW tx hash must NOT already be proposed, otherwise `ERR_TX_ALREADY_PROPOSED`.
+///
+/// Both branches panic via `assert.err=...` deep inside the proc, so the tx never reaches the
+/// auth finalizer and signatures are irrelevant — we execute without signers.
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[tokio::test]
+async fn test_multisig_smart_cancel_and_propose_failure_modes(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (_secret_keys, _auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
+    let mut multisig_account =
+        create_multisig_smart_account(2, &public_keys, auth_scheme, 100, vec![])?;
+    let account_id = multisig_account.id();
+    let mut mock_chain =
+        MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
+
+    let hash_a = Word::from([Felt::from(1001u32); 4]);
+    let hash_b = Word::from([Felt::from(1002u32); 4]);
+    let hash_never_proposed = Word::from([Felt::from(1003u32); 4]);
+
+    // ----- Branch 1: OLD_TX_HASH was never proposed → ERR_TX_NOT_PROPOSED.
+    //
+    // MASM stack convention: `cancel_and_propose_new_transaction` consumes [OLD_TX_HASH,
+    // NEW_TX_HASH] (top → bottom). The script pushes NEW first so it lands below OLD.
+    let old_not_proposed_script = compile_multisig_smart_tx_script(format!(
+        "
+        begin
+            push.{hash_b}
+            push.{hash_never_proposed}
+            call.::miden::standards::components::auth::multisig_smart::cancel_and_propose_new_transaction
+            dropw dropw dropw dropw dropw
+        end
+        "
+    ))?;
+    let result = mock_chain
+        .build_tx_context(account_id, &[], &[])?
+        .tx_script(old_not_proposed_script)
+        .auth_args(salt(1010))
+        .build()?
+        .execute()
+        .await;
+    assert_transaction_executor_error!(result, ERR_TX_NOT_PROPOSED);
+
+    // Pre-propose `hash_a` and `hash_b` so that branch 2 can fail on the NEW side.
+    for (hash, seed) in [(hash_a, 1011u32), (hash_b, 1012u32)] {
+        let propose_script = compile_multisig_smart_tx_script(format!(
+            "
+            begin
+                push.{hash}
+                call.::miden::standards::components::auth::multisig_smart::propose_transaction
+                dropw dropw dropw dropw dropw
+            end
+            "
+        ))?;
+        let propose_tx = execute_script_with_signers(
+            &mock_chain,
+            account_id,
+            propose_script,
+            salt(seed),
+            &[0, 1],
+            &public_keys,
+            &authenticators,
+            None,
+            None,
+        )
+        .await?
+        .expect("propose tx should succeed");
+        multisig_account.apply_delta(propose_tx.account_delta())?;
+        mock_chain.add_pending_executed_transaction(&propose_tx)?;
+        mock_chain.prove_next_block()?;
+    }
+
+    // ----- Branch 2: NEW_TX_HASH is already proposed → ERR_TX_ALREADY_PROPOSED.
+    //
+    // OLD = hash_a (valid existing proposal), NEW = hash_b (also already exists).
+    let new_already_proposed_script = compile_multisig_smart_tx_script(format!(
+        "
+        begin
+            push.{hash_b}
+            push.{hash_a}
+            call.::miden::standards::components::auth::multisig_smart::cancel_and_propose_new_transaction
+            dropw dropw dropw dropw dropw
+        end
+        "
+    ))?;
+    let result = mock_chain
+        .build_tx_context(account_id, &[], &[])?
+        .tx_script(new_already_proposed_script)
+        .auth_args(salt(1013))
+        .build()?
+        .execute()
+        .await;
+    assert_transaction_executor_error!(result, ERR_TX_ALREADY_PROPOSED);
 
     Ok(())
 }
