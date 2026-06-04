@@ -376,15 +376,20 @@ impl AssetVault {
         vault_key: AssetVaultKey,
         value: Word,
     ) -> Result<Word, AssetVaultError> {
+        // Insert into the SMT first so that `entries` is only mutated once the fallible insert
+        // succeeds; this keeps the two structures in sync even if the insert errors.
+        let old_value = self
+            .asset_tree
+            .insert(vault_key.hash().into(), value)
+            .map_err(AssetVaultError::MaxLeafEntriesExceeded)?;
+
         if value == Smt::EMPTY_VALUE {
             self.entries.remove(&vault_key);
         } else {
             self.entries.insert(vault_key, value);
         }
 
-        self.asset_tree
-            .insert(vault_key.hash().into(), value)
-            .map_err(AssetVaultError::MaxLeafEntriesExceeded)
+        Ok(old_value)
     }
 }
 
