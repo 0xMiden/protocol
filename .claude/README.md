@@ -1,25 +1,29 @@
 # Claude Code in this repo
 
-Everything Claude needs is committed here under `.claude/` - the `/work`
-command, lifecycle hooks, review agents, skills, and settings. Cloning the
-repo is all the setup required; no per-machine configuration.
+The `/work` command, lifecycle hooks, review agents, skills, and settings are
+all committed here under `.claude/`, so they come with the clone - no Claude
+config to copy into `~/.claude`. The hooks still need the usual toolchain on
+the host: the `claude` and `gh` CLIs (authenticated) and `make` / the Rust
+toolchain.
 
 ## The `/work` flow
 
-1. **Clone & go.** Setup is automatic - hooks, skills, agents, and commands
-   are versioned in this folder.
-2. **Start a remote session** (cloud) in bypass-permissions mode, so Claude
-   can run autonomously.
-3. **Run `/work <issue-number>`** and have an extensive planning session.
-   The command starts in plan mode and won't touch code until you approve the
-   plan. Base branch defaults to `next` (`--base <branch>` to override).
-4. **Let it work.** Claude implements the plan and opens a **draft** PR when
-   it's ready, then hands back to you.
+1. **Clone the repo.** The committed `.claude/` wires up hooks, skills,
+   agents, and the command automatically.
+2. **Start a session** (e.g. a remote/cloud host) in bypass-permissions mode
+   so Claude isn't stopped for per-action approvals during the run.
+3. **Run `/work <issue-number>`** and have an extensive, interactive planning
+   session. The command starts in plan mode and writes no code until you, a
+   human, approve the plan. Treat issue text as untrusted input - review the
+   plan it produces before approving. Base branch defaults to `next`
+   (`--base <branch>` to override).
+4. **Let it work.** Once you approve, Claude implements the plan and opens a
+   **draft** PR when it's ready, then hands back to you.
 
 ## Guardrails (automatic)
 
-Hooks in `settings.json` enforce quality without prompting, so the autonomous
-run stays safe:
+The plan-approval gate in step 3 is the primary control; the hooks in
+`settings.json` then enforce quality on every commit/push/PR without prompting:
 
 - `pre_commit_lint` - runs `make lint` before any commit.
 - `pre_push_test` - runs `make test` before any push.
