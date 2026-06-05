@@ -9,7 +9,8 @@ use context_setups::{
     ClaimDataSource,
     tx_consume_b2agg_note,
     tx_consume_claim_note,
-    tx_consume_single_p2id_note,
+    tx_consume_single_p2id_note_ecdsa,
+    tx_consume_single_p2id_note_falcon,
     tx_consume_two_p2id_notes,
     tx_create_single_p2id_note,
 };
@@ -38,7 +39,16 @@ async fn main() -> Result<()> {
     file.write_all(b"{}").context("failed to write to file")?;
 
     let benchmark_results = vec![
-        run_scenario(ExecutionBenchmark::ConsumeSingleP2ID, tx_consume_single_p2id_note()?).await?,
+        run_scenario(
+            ExecutionBenchmark::ConsumeSingleP2IDFalcon,
+            tx_consume_single_p2id_note_falcon()?,
+        )
+        .await?,
+        run_scenario(
+            ExecutionBenchmark::ConsumeSingleP2IDEcdsa,
+            tx_consume_single_p2id_note_ecdsa()?,
+        )
+        .await?,
         run_scenario(ExecutionBenchmark::ConsumeTwoP2ID, tx_consume_two_p2id_notes()?).await?,
         run_scenario(ExecutionBenchmark::CreateSingleP2ID, tx_create_single_p2id_note()?).await?,
         run_scenario(
@@ -51,7 +61,18 @@ async fn main() -> Result<()> {
             tx_consume_claim_note(ClaimDataSource::L2ToMiden).await?,
         )
         .await?,
-        run_scenario(ExecutionBenchmark::ConsumeB2AggNote, tx_consume_b2agg_note().await?).await?,
+        run_scenario(ExecutionBenchmark::ConsumeB2AggNote, tx_consume_b2agg_note(None).await?)
+            .await?,
+        run_scenario(
+            ExecutionBenchmark::ConsumeB2AggNotePopulated2p31,
+            tx_consume_b2agg_note(Some(1 << 31)).await?,
+        )
+        .await?,
+        run_scenario(
+            ExecutionBenchmark::ConsumeB2AggNotePopulated2p31m1,
+            tx_consume_b2agg_note(Some((1u32 << 31) - 1)).await?,
+        )
+        .await?,
     ];
 
     // store benchmark results in the JSON file

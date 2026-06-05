@@ -63,8 +63,6 @@ const ERR_FOREIGN_ACCOUNT_INVALID_COMMITMENT="commitment of the foreign account 
 
 const ERR_ACCOUNT_ID_UNKNOWN_VERSION="unknown version in account ID"
 
-const ERR_ACCOUNT_ID_UNKNOWN_STORAGE_MODE="unknown account storage mode in account ID"
-
 const ERR_ACCOUNT_READING_MAP_VALUE_FROM_NON_MAP_SLOT="failed to read an account map item from a non-map storage slot"
 
 const ERR_FOREIGN_ACCOUNT_ID_MISMATCH="foreign account ID provided with advice map doesn't match the ID provided by the operand stack"
@@ -83,42 +81,6 @@ const MIN_NUM_PROCEDURES=2
 
 # The maximum number of account interface procedures.
 const MAX_NUM_PROCEDURES=256
-
-# Given the least significant 32 bits of an account ID's prefix, this mask defines the bits used
-# to determine the account version.
-const ACCOUNT_VERSION_MASK_U32=0x0f # 0b1111
-
-# Given the least significant 32 bits of an account ID's prefix, this mask defines the bits used
-# to determine the account type.
-const ACCOUNT_ID_TYPE_MASK_U32=0x30 # 0b11_0000
-
-# Given the least significant 32 bits of an account ID's first felt, this mask defines the bits used
-# to determine the account storage mode.
-const ACCOUNT_ID_STORAGE_MODE_MASK_U32=0xC0 # 0b1100_0000
-
-# Given the least significant 32 bits of an account ID's first felt with the storage mode mask
-# applied, this value defines the public storage mode.
-const ACCOUNT_ID_STORAGE_MODE_PUBLIC_U32=0 # 0b0000_0000
-
-# Given the least significant 32 bits of an account ID's first felt with the storage mode mask
-# applied, this value defines the private storage mode.
-const ACCOUNT_ID_STORAGE_MODE_PRIVATE_U32=0x80 # 0b1000_0000
-
-# Bit pattern for an account w/ immutable code, after the account type mask has been applied.
-const REGULAR_ACCOUNT_IMMUTABLE_CODE=0 # 0b00_0000
-
-# Bit pattern for an account w/ updatable code, after the account type mask has been applied.
-const REGULAR_ACCOUNT_UPDATABLE_CODE=0x10 # 0b01_0000
-
-# Bit pattern for a fungible faucet w/ immutable code, after the account type mask has been applied.
-const FUNGIBLE_FAUCET_ACCOUNT=0x20 # 0b10_0000
-
-# Bit pattern for a non-fungible faucet w/ immutable code, after the account type mask has been
-# applied.
-const NON_FUNGIBLE_FAUCET_ACCOUNT=0x30 # 0b11_0000
-
-# Bit pattern for a faucet account, after the account type mask has been applied.
-const FAUCET_ACCOUNT=0x20 # 0b10_0000
 
 # Depth of the account database tree.
 const ACCOUNT_TREE_DEPTH=64
@@ -478,6 +440,29 @@ pub proc find_item
     # => [is_found, VALUE]
 end
 
+#! Returns a flag indicating whether a storage slot with the provided slot ID exists in the active
+#! account's storage.
+#!
+#! Inputs:  [slot_id_suffix, slot_id_prefix]
+#! Outputs: [has_slot]
+#!
+#! Where:
+#! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
+#!   the first two felts of the hashed slot name.
+#! - has_slot is 1 if a slot with the provided slot ID exists, 0 otherwise.
+pub proc has_storage_slot
+    # get account storage slots section offset
+    exec.memory::get_account_active_storage_slots_section_ptr
+    # => [acct_storage_slots_section_offset, slot_id_suffix, slot_id_prefix]
+
+    exec.find_storage_slot
+    # => [has_slot, slot_ptr]
+
+    # drop the slot pointer, keeping only the found flag
+    swap drop
+    # => [has_slot]
+end
+
 #! Gets an item and its slot type from the account storage.
 #!
 #! Inputs:  [slot_id_suffix, slot_id_prefix]
@@ -695,14 +680,14 @@ end
 #! Adds the specified asset to the account vault.
 #!
 #! Inputs:  [ASSET_KEY, ASSET_VALUE]
-#! Outputs: [ASSET_VALUE']
+#! Outputs: [FINAL_ASSET_VALUE]
 #!
 #! Where:
 #! - ASSET_KEY is the vault key of the asset that is added to the vault.
 #! - ASSET_VALUE is the value of the asset that is added to the vault.
-#! - ASSET_VALUE' final asset in the account vault defined as follows:
-#!   - If ASSET_VALUE is a non-fungible asset, then ASSET_VALUE' is the same as ASSET_VALUE.
-#!   - If ASSET_VALUE is a fungible asset, then ASSET_VALUE' is the total fungible asset in the account vault
+#! - FINAL_ASSET_VALUE final asset in the account vault defined as follows:
+#!   - If ASSET_VALUE is a non-fungible asset, then FINAL_ASSET_VALUE is the same as ASSET_VALUE.
+#!   - If ASSET_VALUE is a fungible asset, then FINAL_ASSET_VALUE is the total fungible asset in the account vault
 #!     after ASSET_VALUE was added to it.
 #!
 #! Panics if:
@@ -732,28 +717,33 @@ pub proc add_asset_to_vault
 
     # add the asset to the account vault
     exec.asset_vault::add_asset
-    # => [PROCESSED_ASSET_VALUE', ASSET_KEY, PROCESSED_ASSET_VALUE]
+    # => [INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, ASSET_KEY, PROCESSED_ASSET_VALUE]
 
-    movdnw.2
-    # => [ASSET_KEY, PROCESSED_ASSET_VALUE, PROCESSED_ASSET_VALUE']
+    # arrange the stack so that INITIAL_ASSET_VALUE is the deepest word for the after-event
+    swapw swapdw
+    # => [ASSET_KEY, PROCESSED_ASSET_VALUE, FINAL_ASSET_VALUE, INITIAL_ASSET_VALUE]
 
     # emit event to signal that an asset is being added to the account vault
     emit.ACCOUNT_VAULT_AFTER_ADD_ASSET_EVENT
-    # => [ASSET_KEY, PROCESSED_ASSET_VALUE, PROCESSED_ASSET_VALUE']
+    # => [ASSET_KEY, PROCESSED_ASSET_VALUE, FINAL_ASSET_VALUE, INITIAL_ASSET_VALUE]
 
     exec.account_delta::add_asset
-    # => [PROCESSED_ASSET_VALUE']
+    # => [FINAL_ASSET_VALUE, INITIAL_ASSET_VALUE]
+
+    # drop INITIAL_ASSET_VALUE
+    swapw dropw
+    # => [FINAL_ASSET_VALUE]
 end
 
 #! Removes the specified asset from the account vault and returns the remaining asset value.
 #!
 #! Inputs:  [ASSET_KEY, ASSET_VALUE]
-#! Outputs: [REMAINING_ASSET_VALUE]
+#! Outputs: [FINAL_ASSET_VALUE]
 #!
 #! Where:
 #! - ASSET_KEY is the asset vault key of the asset to remove from the vault.
 #! - ASSET_VALUE is the value of the asset to remove from the vault.
-#! - REMAINING_ASSET_VALUE is the value of the asset remaining in the vault after removal.
+#! - FINAL_ASSET_VALUE is the value of the asset remaining in the vault after removal.
 #!
 #! Panics if:
 #! - the fungible asset is not found in the vault.
@@ -774,17 +764,22 @@ pub proc remove_asset_from_vault
 
     # remove the asset from the account vault
     exec.asset_vault::remove_asset
-    # => [REMAINING_ASSET_VALUE, ASSET_KEY, ASSET_VALUE]
+    # => [INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, ASSET_KEY, ASSET_VALUE]
 
-    movdnw.2
-    # => [ASSET_KEY, ASSET_VALUE, REMAINING_ASSET_VALUE]
+    # arrange the stack so that INITIAL_ASSET_VALUE is the deepest word for the after-event
+    swapw swapdw
+    # => [ASSET_KEY, ASSET_VALUE, FINAL_ASSET_VALUE, INITIAL_ASSET_VALUE]
 
     # emit event to signal that an asset is being removed from the account vault
     emit.ACCOUNT_VAULT_AFTER_REMOVE_ASSET_EVENT
-    # => [ASSET_KEY, ASSET_VALUE, REMAINING_ASSET_VALUE]
+    # => [ASSET_KEY, ASSET_VALUE, FINAL_ASSET_VALUE, INITIAL_ASSET_VALUE]
 
     exec.account_delta::remove_asset
-    # => [REMAINING_ASSET_VALUE]
+    # => [FINAL_ASSET_VALUE, INITIAL_ASSET_VALUE]
+
+    # drop INITIAL_ASSET_VALUE
+    swapw dropw
+    # => [FINAL_ASSET_VALUE]
 end
 
 #! Returns the ASSET_VALUE associated with the provided asset vault key in the active account's vault.
@@ -848,7 +843,7 @@ end
 #! - the procedure root is not part of the account code.
 pub proc authenticate_and_track_procedure
     # load procedure index
-    emit.ACCOUNT_PUSH_PROCEDURE_INDEX_EVENT adv_push.1
+    emit.ACCOUNT_PUSH_PROCEDURE_INDEX_EVENT adv_push
     # => [index, PROC_ROOT]
 
     dup movdn.5 exec.get_procedure_root
@@ -1187,7 +1182,7 @@ pub proc save_account_storage_data
 
     # push the length of the storage slot data onto the operand stack and compute the number of
     # storage slots from it
-    adv_push.1 div.ACCOUNT_STORAGE_SLOT_DATA_LENGTH
+    adv_push div.ACCOUNT_STORAGE_SLOT_DATA_LENGTH
     # OS => [num_storage_slots, STORAGE_COMMITMENT]
     # AS => [[STORAGE_SLOT_DATA]]
 
@@ -1257,7 +1252,7 @@ pub proc save_account_procedure_data
 
     # push the length of the account procedure data onto the operand stack and compute the number of
     # procedures from it
-    adv_push.1 div.ACCOUNT_PROCEDURE_DATA_LENGTH
+    adv_push div.ACCOUNT_PROCEDURE_DATA_LENGTH
     # OS => [num_procs, CODE_COMMITMENT]
     # AS => [[ACCOUNT_PROCEDURE_DATA]]
 
@@ -1386,7 +1381,7 @@ proc insert_and_validate_storage_map
     # OS => [slot_ptr, MAP_ROOT]
     # AS => [num_elements, [MAP_ENTRIES]]
 
-    adv_push.1
+    adv_push
     # OS => [num_elements, slot_ptr, MAP_ROOT]
     # AS => [[MAP_ENTRIES]]
 
@@ -1769,7 +1764,7 @@ end
 #!
 #! Panics if:
 #! - the procedure index is out of bounds.
-proc get_procedure_root
+pub proc get_procedure_root
     dup exec.memory::get_num_account_procedures
     u32assert2.err=ERR_ACCOUNT_PROC_INDEX_OUT_OF_BOUNDS
     u32lt assert.err=ERR_ACCOUNT_PROC_INDEX_OUT_OF_BOUNDS
@@ -1972,7 +1967,7 @@ end
 #! - the procedure root is not part of the account code.
 pub proc was_procedure_called
     # load procedure index
-    emit.ACCOUNT_PUSH_PROCEDURE_INDEX_EVENT adv_push.1
+    emit.ACCOUNT_PUSH_PROCEDURE_INDEX_EVENT adv_push
     # => [index, PROC_ROOT]
 
     dup movdn.5

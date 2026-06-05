@@ -2,7 +2,7 @@
 //!
 //! Once lazy loading is enabled generally, it can be removed and/or integrated into other tests.
 
-use miden_protocol::account::{AccountId, AccountStorage, StorageMapKey, StorageSlotDelta};
+use miden_protocol::account::{AccountId, AccountStorage, StorageMapKey, StorageSlotPatch};
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_FEE_FAUCET,
@@ -28,7 +28,7 @@ async fn adding_fungible_assets_with_lazy_loading_succeeds() -> anyhow::Result<(
     let faucet_id2: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2.try_into().unwrap();
 
     let fungible_asset1 =
-        FungibleAsset::new(faucet_id1, FungibleAsset::MAX_AMOUNT - FUNGIBLE_ASSET_AMOUNT)?;
+        FungibleAsset::new(faucet_id1, FungibleAsset::MAX_AMOUNT.as_u64() - FUNGIBLE_ASSET_AMOUNT)?;
     let fungible_asset2 = FungibleAsset::new(faucet_id2, FUNGIBLE_ASSET_AMOUNT)?;
 
     // Build a note that adds the assets to the input vault of the transaction. This is necessary
@@ -85,7 +85,7 @@ async fn removing_fungible_assets_with_lazy_loading_succeeds() -> anyhow::Result
     let faucet_id2: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2.try_into().unwrap();
 
     let fungible_asset1 =
-        FungibleAsset::new(faucet_id1, FungibleAsset::MAX_AMOUNT - FUNGIBLE_ASSET_AMOUNT)?;
+        FungibleAsset::new(faucet_id1, FungibleAsset::MAX_AMOUNT.as_u64() - FUNGIBLE_ASSET_AMOUNT)?;
     let fungible_asset2 = FungibleAsset::new(faucet_id2, FUNGIBLE_ASSET_AMOUNT)?;
 
     let code = format!(
@@ -234,15 +234,15 @@ async fn setting_map_item_with_lazy_loading_succeeds() -> anyhow::Result<()> {
         .execute()
         .await?;
 
-    let map_delta = tx
+    let map_patch = tx
         .account_delta()
         .storage()
         .get(mock_map_slot)
         .cloned()
-        .map(StorageSlotDelta::unwrap_map)
+        .map(StorageSlotPatch::unwrap_map)
         .unwrap();
-    assert_eq!(map_delta.entries().get(&existing_key).unwrap(), &value0);
-    assert_eq!(map_delta.entries().get(&non_existent_key).unwrap(), &value1);
+    assert_eq!(map_patch.entries().get(&existing_key).unwrap(), &value0);
+    assert_eq!(map_patch.entries().get(&non_existent_key).unwrap(), &value1);
 
     Ok(())
 }

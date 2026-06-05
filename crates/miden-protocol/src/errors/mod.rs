@@ -9,10 +9,12 @@ use miden_core::mast::MastForestError;
 use miden_crypto::merkle::mmr::MmrError;
 use miden_crypto::merkle::smt::{SmtLeafError, SmtProofError};
 use miden_crypto::utils::HexParseError;
+use miden_processor::ExecutionError;
+use miden_verifier::VerificationError;
 use thiserror::Error;
 
 use super::account::{AccountId, RoleSymbol};
-use super::asset::{AssetVaultKey, FungibleAsset, NonFungibleAsset, TokenSymbol};
+use super::asset::{AssetComposition, AssetVaultKey, FungibleAsset, NonFungibleAsset, TokenSymbol};
 use super::crypto::merkle::MerkleError;
 use super::note::NoteId;
 use super::{MAX_BATCHES_PER_BLOCK, MAX_OUTPUT_NOTES_PER_BATCH, Word};
@@ -21,7 +23,6 @@ use crate::account::{
     AccountCode,
     AccountIdPrefix,
     AccountStorage,
-    AccountType,
     StorageMapKey,
     StorageSlotId,
     StorageSlotName,
@@ -169,13 +170,6 @@ pub enum AccountError {
     #[error("number of storage slots is {0} but max possible number is {max}", max = AccountStorage::MAX_NUM_STORAGE_SLOTS)]
     StorageTooManySlots(u64),
     #[error(
-        "account component at index {component_index} is incompatible with account of type {account_type}"
-    )]
-    UnsupportedComponentForAccountType {
-        account_type: AccountType,
-        component_index: usize,
-    },
-    #[error(
         "failed to apply full state delta to existing account; full state deltas can be converted to accounts directly"
     )]
     ApplyFullStateDeltaToAccount,
@@ -223,9 +217,7 @@ pub enum AccountIdError {
     AccountIdInvalidPrefixFieldElement(#[source] DeserializationError),
     #[error("failed to convert bytes into account ID suffix field element")]
     AccountIdInvalidSuffixFieldElement(#[source] DeserializationError),
-    #[error("`{0}` is not a known account storage mode")]
-    UnknownAccountStorageMode(Box<str>),
-    #[error(r#"`{0}` is not a known account type, expected one of "FungibleFaucet", "NonFungibleFaucet", "RegularAccountImmutableCode" or "RegularAccountUpdatableCode""#)]
+    #[error("`{0}` is not a known account type")]
     UnknownAccountType(Box<str>),
     #[error("failed to parse hex string into account ID")]
     AccountIdHexParseError(#[source] HexParseError),
@@ -256,6 +248,31 @@ pub enum StorageSlotNameError {
     )]
     TooShort,
     #[error("slot names must contain at most {} characters", StorageSlotName::MAX_LENGTH)]
+    TooLong,
+}
+
+// ACCOUNT COMPONENT NAME ERROR
+// ================================================================================================
+
+#[derive(Debug, Error)]
+pub enum AccountComponentNameError {
+    #[error(
+        "account component name must only contain characters a..z, A..Z, 0..9, double colon or underscore"
+    )]
+    InvalidCharacter,
+    #[error("account component names must be separated by double colons")]
+    UnexpectedColon,
+    #[error("account component name components must not start with an underscore")]
+    UnexpectedUnderscore,
+    #[error(
+        "account component names must contain at least {} components separated by double colons",
+        StorageSlotName::MIN_NUM_COMPONENTS
+    )]
+    TooShort,
+    #[error(
+        "account component names must contain at most {} characters",
+        StorageSlotName::MAX_LENGTH
+    )]
     TooLong,
 }
 
@@ -399,10 +416,24 @@ pub enum AccountDeltaError {
         increment: Felt,
         new: Felt,
     },
-    #[error("account ID {0} in fungible asset delta is not of type fungible faucet")]
+    #[error(
+        "asset issued by faucet {0} in fungible asset delta does not have fungible composition"
+    )]
     NotAFungibleFaucetId(AccountId),
     #[error("cannot merge two full state deltas")]
     MergingFullStateDeltas,
+}
+
+#[derive(Debug, Error)]
+pub enum AccountPatchError {
+    #[error("final nonce can never be set to zero")]
+    FinalNonceIsZero,
+
+    #[error("non-empty account storage or vault patch with final nonce set to zero is not allowed")]
+    NonEmptyStorageOrVaultPatchWithZeroNonce,
+
+    #[error("account code must be provided for new accounts (with nonce = 1)")]
+    CodeMustBeProvidedForNewAccounts,
 }
 
 // STORAGE MAP ERROR
@@ -463,12 +494,6 @@ pub enum AssetError {
     #[error("faucet account ID in asset is invalid")]
     InvalidFaucetAccountId(#[source] Box<dyn Error + Send + Sync + 'static>),
     #[error(
-      "faucet id {0} of type {id_type} must be of type {expected_ty} for fungible assets",
-      id_type = .0.account_type(),
-      expected_ty = AccountType::FungibleFaucet
-    )]
-    FungibleFaucetIdTypeMismatch(AccountId),
-    #[error(
         "asset ID prefix and suffix in a non-fungible asset's vault key must match indices 0 and 1 in the value, but asset ID was {asset_id} and value was {value}"
     )]
     NonFungibleAssetIdMustMatchValue { asset_id: AssetId, value: Word },
@@ -478,16 +503,24 @@ pub enum AssetError {
         "the three most significant elements in a fungible asset's value must be zero but provided value was {0}"
     )]
     FungibleAssetValueMostSignificantElementsMustBeZero(Word),
-    #[error(
-      "faucet id {0} of type {id_type} must be of type {expected_ty} for non fungible assets",
-      id_type = .0.account_type(),
-      expected_ty = AccountType::NonFungibleFaucet
-    )]
-    NonFungibleFaucetIdTypeMismatch(AccountId),
     #[error("smt proof in asset witness contains invalid key or value")]
     AssetWitnessInvalid(#[source] Box<AssetError>),
-    #[error("invalid native asset callbacks encoding: {0}")]
-    InvalidAssetCallbackFlag(u8),
+    #[error("unknown native asset callbacks encoding: {0}")]
+    UnknownAssetCallbackFlag(u8),
+    #[error("unknown asset composition encoding: {0}")]
+    UnknownAssetComposition(u8),
+    #[error("asset composition {0:?} is not supported at this operational site")]
+    UnsupportedAssetComposition(AssetComposition),
+    #[error(
+        "asset composition mismatch for faucet {faucet_id}: expected {expected:?}, found {actual:?}"
+    )]
+    AssetCompositionMismatch {
+        faucet_id: AccountId,
+        expected: AssetComposition,
+        actual: AssetComposition,
+    },
+    #[error("asset metadata byte 0x{0:02x} has reserved bits set to non-zero values")]
+    ReservedAssetMetadata(u8),
 }
 
 // TOKEN SYMBOL ERROR
@@ -583,8 +616,6 @@ pub enum AssetVaultError {
     DuplicateNonFungibleAsset(NonFungibleAsset),
     #[error("fungible asset {0} does not exist in the vault")]
     FungibleAssetNotFound(FungibleAsset),
-    #[error("faucet id {0} is not a fungible faucet id")]
-    NotAFungibleFaucetId(AccountId),
     #[error("non fungible asset {0} does not exist in the vault")]
     NonFungibleAssetNotFound(NonFungibleAsset),
     #[error("subtracting fungible asset amounts would underflow")]
@@ -934,6 +965,8 @@ pub enum ProvenTransactionError {
     EmptyTransaction,
     #[error("failed to validate account delta in transaction account update")]
     AccountDeltaCommitmentMismatch(#[source] Box<dyn Error + Send + Sync + 'static>),
+    #[error("note with id {0} is both created and consumed by the transaction")]
+    NoteCreatedAndConsumed(NoteId),
 }
 
 // PROPOSED BATCH ERROR
@@ -941,6 +974,12 @@ pub enum ProvenTransactionError {
 
 #[derive(Debug, Error)]
 pub enum ProposedBatchError {
+    #[error("failed to verify transaction {transaction_id} in transaction batch")]
+    TransactionVerificationFailed {
+        transaction_id: TransactionId,
+        source: TransactionVerifierError,
+    },
+
     #[error(
         "transaction batch has {0} input notes but at most {MAX_INPUT_NOTES_PER_BATCH} are allowed"
     )]
@@ -990,12 +1029,12 @@ pub enum ProposedBatchError {
     },
 
     #[error(
-        "note commitment mismatch for note {id}: (input: {input_commitment}, output: {output_commitment})"
+        "transaction {consumed_by} that consumes the note with ID {note_id} must be ordered before transaction {created_by} that creates the note"
     )]
-    NoteCommitmentMismatch {
-        id: NoteId,
-        input_commitment: Word,
-        output_commitment: Word,
+    NoteConsumedBeforeCreated {
+        note_id: NoteId,
+        consumed_by: TransactionId,
+        created_by: TransactionId,
     },
 
     #[error("failed to merge transaction delta into account {account_id}")]
@@ -1033,11 +1072,21 @@ pub enum ProposedBatchError {
     InconsistentChainRoot { expected: Word, actual: Word },
 
     #[error(
-        "block {block_reference} referenced by transaction {transaction_id} is not in the partial blockchain"
+        "block {block_num} referenced by transaction {transaction_id} is not in the partial blockchain"
     )]
-    MissingTransactionBlockReference {
-        block_reference: Word,
+    MissingTransactionReferenceBlock {
         transaction_id: TransactionId,
+        block_num: BlockNumber,
+    },
+
+    #[error(
+        "transaction {transaction_id} references block {block_num} with commitment {actual_block_commitment}, but the block in the chain with the same number has commitment {expected_block_commitment}"
+    )]
+    TransactionReferenceBlockCommitmentMismatch {
+        transaction_id: TransactionId,
+        block_num: BlockNumber,
+        expected_block_commitment: Word,
+        actual_block_commitment: Word,
     },
 }
 
@@ -1046,11 +1095,6 @@ pub enum ProposedBatchError {
 
 #[derive(Debug, Error)]
 pub enum ProvenBatchError {
-    #[error("failed to verify transaction {transaction_id} in transaction batch")]
-    TransactionVerificationFailed {
-        transaction_id: TransactionId,
-        source: Box<dyn Error + Send + Sync + 'static>,
-    },
     #[error(
         "batch expiration block number {batch_expiration_block_num} is not greater than the reference block number {reference_block_num}"
     )]
@@ -1058,6 +1102,21 @@ pub enum ProvenBatchError {
         batch_expiration_block_num: BlockNumber,
         reference_block_num: BlockNumber,
     },
+    #[error("batch kernel execution failed")]
+    BatchKernelExecutionFailed(#[source] ExecutionError),
+    #[error("batch kernel produced an invalid output stack")]
+    BatchKernelOutputInvalid(#[source] BatchOutputError),
+}
+
+// BATCH OUTPUT ERROR
+// ================================================================================================
+
+#[derive(Debug, Error)]
+pub enum BatchOutputError {
+    #[error("batch kernel output stack is invalid: {0}")]
+    OutputStackInvalid(String),
+    #[error("batch expiration block number {0} does not fit into a u32")]
+    ExpirationBlockNumberTooLarge(Felt),
 }
 
 // PROPOSED BLOCK ERROR
@@ -1102,6 +1161,15 @@ pub enum ProposedBlockError {
     },
 
     #[error(
+        "batch {consumed_by} that consumes the note with ID {note_id} must be ordered before batch {created_by} that creates the note"
+    )]
+    NoteConsumedBeforeCreated {
+        note_id: NoteId,
+        consumed_by: BatchId,
+        created_by: BatchId,
+    },
+
+    #[error(
         "timestamp {provided_timestamp} does not increase monotonically compared to timestamp {previous_timestamp} from the previous block header"
     )]
     TimestampDoesNotIncreaseMonotonically {
@@ -1142,15 +1210,6 @@ pub enum ProposedBlockError {
     BatchReferenceBlockMissingFromChain {
         reference_block_num: BlockNumber,
         batch_id: BatchId,
-    },
-
-    #[error(
-        "note commitment mismatch for note {id}: (input: {input_commitment}, output: {output_commitment})"
-    )]
-    NoteCommitmentMismatch {
-        id: NoteId,
-        input_commitment: Word,
-        output_commitment: Word,
     },
 
     #[error(
@@ -1226,15 +1285,6 @@ pub enum ProposedBlockError {
     NullifierWitnessRootMismatch(NullifierTreeError),
 }
 
-// FEE ERROR
-// ================================================================================================
-
-#[derive(Debug, Error)]
-pub enum FeeError {
-    #[error("fee faucet of the chain must be a fungible faucet but was of type {account_type}")]
-    FeeFaucetIdNotFungible { account_type: AccountType },
-}
-
 // NULLIFIER TREE ERROR
 // ================================================================================================
 
@@ -1274,4 +1324,15 @@ pub enum NullifierTreeError {
 pub enum AuthSchemeError {
     #[error("auth scheme identifier `{0}` is not valid")]
     InvalidAuthSchemeIdentifier(String),
+}
+
+// TRANSACTION VERIFIER ERROR
+// ================================================================================================
+
+#[derive(Debug, Error)]
+pub enum TransactionVerifierError {
+    #[error("failed to verify transaction")]
+    TransactionVerificationFailed(#[source] VerificationError),
+    #[error("transaction proof security level is {actual} but must be at least {expected_minimum}")]
+    InsufficientProofSecurityLevel { actual: u32, expected_minimum: u32 },
 }

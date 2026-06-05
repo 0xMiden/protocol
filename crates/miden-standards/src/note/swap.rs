@@ -259,8 +259,8 @@ impl From<SwapNoteStorage> for NoteStorage {
 
 #[cfg(test)]
 mod tests {
-    use miden_protocol::Felt;
-    use miden_protocol::account::{AccountIdVersion, AccountStorageMode, AccountType};
+
+    use miden_protocol::account::{AccountIdVersion, AccountType};
     use miden_protocol::asset::{FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
     use miden_protocol::note::{NoteStorage, NoteTag, NoteType};
     use miden_protocol::testing::account_id::{
@@ -283,9 +283,8 @@ mod tests {
     }
 
     fn non_fungible_asset() -> Asset {
-        let details =
-            NonFungibleAssetDetails::new(non_fungible_faucet(), vec![0xaa, 0xbb]).unwrap();
-        Asset::NonFungible(NonFungibleAsset::new(&details).unwrap())
+        let details = NonFungibleAssetDetails::new(non_fungible_faucet(), vec![0xaa, 0xbb]);
+        Asset::NonFungible(NonFungibleAsset::new(&details))
     }
 
     #[test]
@@ -293,8 +292,7 @@ mod tests {
         let payback_note_type = NoteType::Private;
         let payback_tag = NoteTag::new(0x12345678);
         let requested_asset = fungible_asset();
-        let payback_recipient_digest =
-            Word::new([Felt::new(1), Felt::new(2), Felt::new(3), Felt::new(4)]);
+        let payback_recipient_digest = Word::from([1_u32, 2_u32, 3_u32, 4_u32]);
 
         let storage = SwapNoteStorage::from_parts(
             payback_note_type,
@@ -318,8 +316,7 @@ mod tests {
         let payback_note_type = NoteType::Public;
         let payback_tag = NoteTag::new(0xaabbccdd);
         let requested_asset = non_fungible_asset();
-        let payback_recipient_digest =
-            Word::new([Felt::new(10), Felt::new(20), Felt::new(30), Felt::new(40)]);
+        let payback_recipient_digest = Word::from([10_u32, 20_u32, 30_u32, 40_u32]);
 
         let storage = SwapNoteStorage::from_parts(
             payback_note_type,
@@ -352,29 +349,22 @@ mod tests {
                 AccountId::dummy(
                     fungible_faucet_id_bytes,
                     AccountIdVersion::Version1,
-                    AccountType::FungibleFaucet,
-                    AccountStorageMode::Public,
+                    AccountType::Public,
                 ),
                 2500,
             )
             .unwrap(),
         );
 
-        let requested_asset = Asset::NonFungible(
-            NonFungibleAsset::new(
-                &NonFungibleAssetDetails::new(
-                    AccountId::dummy(
-                        non_fungible_faucet_id_bytes,
-                        AccountIdVersion::Version1,
-                        AccountType::NonFungibleFaucet,
-                        AccountStorageMode::Public,
-                    ),
-                    vec![0xaa, 0xbb, 0xcc, 0xdd],
-                )
-                .unwrap(),
-            )
-            .unwrap(),
-        );
+        let requested_asset =
+            Asset::NonFungible(NonFungibleAsset::new(&NonFungibleAssetDetails::new(
+                AccountId::dummy(
+                    non_fungible_faucet_id_bytes,
+                    AccountIdVersion::Version1,
+                    AccountType::Public,
+                ),
+                vec![0xaa, 0xbb, 0xcc, 0xdd],
+            )));
 
         // The fungible ID starts with 0xcdb1.
         // The non fungible ID starts with 0xabec.

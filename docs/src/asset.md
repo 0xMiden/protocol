@@ -28,29 +28,118 @@ In Miden, assets serve as the primary means of expressing and transferring value
 All data structures following the Miden asset model that can be exchanged.
 :::
 
-Native assets adhere to the Miden `Asset` model (encoding, issuance, storage). Every native `Asset` is encoded using 32 bytes, including both the [ID](./account/id) of the issuing account and the `Asset` details.
+Native assets adhere to the Miden `Asset` model (encoding, issuance, storage). Every native `Asset` is encoded using 64 bytes (vault key and value), including both the [ID](./account/id) of the issuing account and the `Asset` details.
 
 ### Issuance
 
-:::note
-Only [faucet](./account/id#account-type) accounts can issue assets.
-:::
-
-Faucets can issue either fungible or non-fungible assets as defined at account creation. The faucet's code specifies the `Asset` minting conditions: i.e., how, when, and by whom these assets can be minted. Once minted, they can be transferred to other accounts using notes.
+Accounts that issue assets are referred to as faucets. They can issue either fungible or non-fungible assets as defined at asset creation. The faucet's code specifies the `Asset` minting conditions: i.e., how, when, and by whom these assets can be minted. Once minted, they can be transferred to other accounts using notes.
 
 <p style={{textAlign: 'center'}}>
     <img src={require('./img/asset/asset-issuance.png').default} style={{width: '70%'}} alt="Asset issuance"/>
 </p>
 
-### Type
+:::tip
+An account can technically issue different types of assets simultaneously, for example, both a fungible asset with [callbacks](#callbacks) disabled and a non-fungible asset with callbacks enabled. It is highly recommended that accounts issue only one type of asset, in order to have a simple 1-to-1 relationship between faucets and asset types.
+:::
 
-#### Fungible asset
+### Encoding
 
-Fungible assets are encoded with the amount and the `faucet_id` of the issuing faucet. The amount is always $2^{63}-1$ or smaller, representing the maximum supply for any fungible `Asset`. Examples include ETH and various stablecoins (e.g., DAI, USDT, USDC).
+Every asset is stored as a key-value pair of two `Word`s: The vault key and the asset value.
 
-#### Non-fungible asset
+While the asset value is unique to each type of asset, the vault key has a common structure for all types of assets:
 
-Non-fungible assets are encoded by hashing the `Asset` data into 32 bytes and placing the `faucet_id` as the second element. Examples include NFTs like a DevCon ticket.
+```text
+[
+  asset_id_suffix (64 bits),
+  asset_id_prefix (64 bits),
+  [faucet_id_suffix (56 bits) | reserved (5 bits) | callback_flag (1 bit) | composition (2 bits)],
+  faucet_id_prefix (64 bits)
+]
+```
+
+- `faucet_id_suffix` and `faucet_id_prefix` is the ID of the faucet which issues the asset. The transaction kernel ensures that a given account can only issue assets when the faucet ID matches its own ID.
+- `asset_id_suffix` and `asset_id_prefix` is an ID that determines if two assets issued by the same faucet are considered to be the same asset. It is set by the asset creator arbitrarily - see [identity](#identity) for more.
+- `callback_flag` is the flag that determines whether callbacks are enabled (see also [callbacks](#callbacks)).
+- `composition` describes how assets compose. Read on for more details.
+- `reserved` bits are reserved for future use and should be assumed to be undefined and therefore not relied upon.
+
+:::note
+The `callback_flag` and `composition` are also referred to as "asset metadata".
+:::
+
+### Composition
+
+Assets can compose in two ways: They can be merged or split. This is automatically done by the transaction kernel when assets are added to an account's vault or to the assets in a note.
+
+Example: If an account has 10 USDC in its vault and 20 are added, the transaction kernel merges these two instances into one instance with amount 30.
+
+The transaction kernel needs two pieces of information to work with assets:
+1. _Whether_ an asset need to be merged or split with another instance. This comes down to whether two assets have the same _identity_.
+2. If so, _how_ do these two instances compose, if at all? This comes down to the `composition` defined by the asset.
+
+When an asset is added or removed from an account's vault or added to a note, the transaction kernel may have to compose assets:
+- If 10 USDC are added to an account vault that already contains 20 USDC, then these two instances must be _merged_.
+- If 10 USDC are removed from an account vault that contains 20 USDC, then 10 USDC must be _split_ off the 20 USDC.
+- If 10 USDC are added to an empty account vault, then the asset can be written directly into the vault without needing to merge or split anything.
+
+#### Identity
+
+Note that for example's sake, we use "USDC" as the _identifier_ of an asset, and so 10 USDC and 20 USDC are instances of the same type of asset. In practice, the identity of an asset is determined by its [vault key](#encoding).
+
+:::info
+Two assets are of the same type whenever their vault keys match.
+:::
+
+The transaction kernel relies on this rule and so creators of assets need to ensure that:
+- Instances of assets that should compose, should have identical vault keys.
+- Instances of assets that should _not_ compose, should have different vault keys.
+
+The asset ID can be used by asset creators to ensure this. Let's look at the native fungible and non-fungible assets:
+- Fungible assets should _always_ compose and so by construction, their asset ID limbs are set to zero. This ensures two instances of a fungible asset have the same vault key.
+- Non-fungible assets should _never_ compose and so by construction, their asset ID limbs are set to parts of their hash value. In practice, this ensures that two instances of non-fungible assets have unique vault keys. The transaction kernel never attempts to compose these.
+
+#### Composition
+
+Now that the transaction kernel knows _whether_ two assets need to compose, it also needs to know _how_ these instances compose. This is where the `composition` flag comes into play. It can fall into one of three categories:
+
+- `None`: Instances do not compose. Used by non-fungible assets.
+- `Fungible`: Instances compose according to the native fungible asset, by summing their amounts, up to the maximum supply.
+- `Custom`: Instances compose according to faucet-defined logic. Currently disabled and reserved for future use.
+
+:::danger
+If the transaction kernel encounters two assets that need to be merged and their composition is set to `None`, it will abort. It is therefore important to ensure that assets that do not compose have unique [_identities_](#identity).
+:::
+
+The `Fungible` composition is a specialization of the transaction kernel for native fungible assets. The advantage of this built-in way of composing assets is that the issuing faucet does not need to be called.
+
+On the other hand, `Custom` would involve invoking `merge` and `split` implementations defined by the issuing faucet via a callback.
+
+### Fungible Assets
+
+The native fungible asset has the following vault key and value layout:
+
+- Vault key: `[0, 0, faucet_id_suffix | callback_flag | composition, faucet_id_prefix]`.
+  - Its `callback_flag` can be disabled or enabled.
+  - Its `composition` must be set to `Fungible`.
+- Value: `[amount, 0, 0, 0]`.
+  - The amount is always $2^{63}-2^{31}$ or smaller, representing the maximum supply for any fungible `Asset`.
+
+Note how the `Fungible` composition variant together with the asset ID limbs set to zero, ensure that instances of fungible assets can always be merged and split.
+
+Examples of such assets include ETH and various stablecoins (e.g. DAI, USDT, USDC).
+
+### Non-Fungible Assets
+
+The native non-fungible asset is encoded by hashing arbitrary data into 32 bytes, which results in the asset value.
+
+- Vault key: `[hash0, hash1, faucet_id_suffix | callback_flag | composition, faucet_id_prefix]`.
+  - Its `callback_flag` can be disabled or enabled.
+  - Its `composition` must be set to `None`.
+- Value: `[hash0, hash1, hash2, hash3]`.
+
+Note how the `None` composition variant together with the asset ID limbs set to hashes from the asset value, ensure that instances of non-fungible assets are never attempted to be merged or split by the transaction kernel.
+
+Examples of such assets include NFTs like a DevCon ticket.
 
 ### Storage
 

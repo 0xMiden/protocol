@@ -1,49 +1,52 @@
-//! Token (mint and burn) policy account components.
+//! Token policy account components.
 //!
-//! Policies are the procedures that gate minting and burning of tokens. The policy state is owned
-//! by a single [`TokenPolicyManager`] component:
-//! - It owns five storage slots (shared authority + active/allowed maps for mint and burn).
-//! - It exposes the `set_*_policy` / `get_*_policy` / `execute_*_policy` procedures via a single
-//!   MASM library.
+//! Policies are the procedures that gate minting, burning, and transferring of tokens. The policy
+//! state is owned by a single [`TokenPolicyManager`] component, which exposes four kinds of
+//! policies:
+//! - **mint** — gate mint operations
+//! - **burn** — gate burn operations
+//! - **send** — fired by the protocol's `on_before_asset_added_to_note` callback when the issuing
+//!   faucet's asset is added to a note (transfer "from" side)
+//! - **receive** — fired by the protocol's `on_before_asset_added_to_account` callback when the
+//!   issuing faucet's asset is added to an account vault (transfer "to" side)
 //!
-//! Storage-free policy components (e.g. [`MintAllowAll`], [`BurnOwnerOnly`]) install a specific
-//! policy procedure on the account so that the manager's `dynexec` can dispatch to it.
+//! The manager owns an `active_*_policy` slot per kind plus an `allowed_*_policies` map per kind
+//! for set-time validation. Mint and burn are dispatched via `dynexec` by `exec`-invoked
+//! wrappers; send and receive are dispatched by `invoke_send_policy` / `invoke_receive_policy`
+//! wrappers whose roots live in
+//! the protocol-reserved callback slots, so the kernel `dyncall`s the wrapper, which applies the
+//! pause check and then dispatches to the active policy.
 //!
-//! A faucet installs the manager together with at least one mint and one burn policy component
-//! whose procedure roots are registered in the manager's allowed-policies maps. Pass a
-//! [`TokenPolicyManager`] directly to
-//! [`miden_protocol::account::AccountBuilder::with_components`] to install the manager and the
-//! configured mint/burn policy components in one call.
+//! Authority for switching policies is provided by the separate
+//! [`Authority`][crate::account::access::Authority] component, which must be installed on the
+//! account alongside the policy manager. The masm helper `authority::assert_authorized` is
+//! `exec`'d from `set_*_policy` to gate runtime policy changes.
+//!
+//! Storage-free policy components (e.g. [`MintAllowAll`], [`BurnOwnerOnly`],
+//! [`TransferAllowAll`]) install a specific policy procedure on the account so that the
+//! manager's `dynexec` can dispatch to it.
+//!
+//! A faucet constructs the manager via [`TokenPolicyManager::builder`], setting the required
+//! `active_*_policy` for each kind (and optionally any number of reserved `allowed_*_policy`
+//! entries), then passes the built manager directly to
+//! [`miden_protocol::account::AccountBuilder::with_components`].
 
-use miden_protocol::Word;
-
-pub mod burn;
+mod burn;
 mod manager;
-pub mod mint;
+mod mint;
+mod transfer;
 
-pub use burn::{BurnAllowAll, BurnOwnerOnly, BurnPolicyConfig};
-pub use manager::TokenPolicyManager;
-pub use mint::{MintAllowAll, MintOwnerOnly, MintPolicyConfig};
-
-// POLICY AUTHORITY
-// ================================================================================================
-
-/// Identifies which authority is allowed to manage policies for a faucet.
-///
-/// Shared between mint and burn — the manager stores a single value that gates both
-/// `set_mint_policy` and `set_burn_policy`.
-#[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum PolicyAuthority {
-    /// Policy changes are authorized by the account's authentication component logic.
-    AuthControlled = 0,
-    /// Policy changes are authorized by the external account owner.
-    OwnerControlled = 1,
-}
-
-impl From<PolicyAuthority> for Word {
-    fn from(value: PolicyAuthority) -> Self {
-        Word::from([value as u8, 0, 0, 0])
-    }
-}
+pub use burn::{BurnAllowAll, BurnOwnerOnly, BurnPolicy, BurnPolicyError, MinBurnAmount};
+pub use manager::{TokenPolicyManager, TokenPolicyManagerBuilder};
+pub use mint::{MintAllowAll, MintOwnerOnly, MintPolicy, MintPolicyError};
+pub use transfer::{
+    AllowlistOwnerControlled,
+    AllowlistStorage,
+    BasicAllowlist,
+    BasicBlocklist,
+    BlocklistOwnerControlled,
+    BlocklistStorage,
+    TransferAllowAll,
+    TransferPolicy,
+    TransferPolicyError,
+};

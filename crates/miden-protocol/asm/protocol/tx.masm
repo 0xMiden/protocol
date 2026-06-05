@@ -32,7 +32,7 @@ pub proc get_block_number
     # => [num, pad(15)]
 
     # clean the stack
-    swapdw dropw dropw swapw dropw movdn.3 drop drop drop
+    swapw.3 dropw dropw dropw movdn.3 drop drop drop
     # => [num]
 end
 
@@ -100,7 +100,7 @@ pub proc get_block_timestamp
     # => [timestamp, pad(15)]
 
     # clean the stack
-    swapdw dropw dropw swapw dropw movdn.3 drop drop drop
+    swapw.3 dropw dropw dropw movdn.3 drop drop drop
     # => [timestamp]
 end
 
@@ -131,8 +131,8 @@ pub proc get_input_notes_commitment
     # => [INPUT_NOTES_COMMITMENT]
 end
 
-#! Returns the output notes commitment. This is computed as a sequential hash of (note_id, note_metadata)
-#! tuples over all output notes.
+#! Returns the output notes commitment. This is computed as a sequential hash of
+#! (note_details_commitment, note_metadata_commitment) tuples over all output notes.
 #!
 #! Inputs:  [0, 0, 0, 0]
 #! Outputs: [OUTPUT_NOTES_COMMITMENT]
@@ -178,7 +178,7 @@ pub proc get_num_input_notes
     # => [num_input_notes, pad(15)]
 
     # clean the stack
-    swapdw dropw dropw swapw dropw movdn.3 drop drop drop
+    swapw.3 dropw dropw dropw movdn.3 drop drop drop
     # => [num_input_notes]
 end
 
@@ -206,7 +206,7 @@ pub proc get_num_output_notes
     # => [num_output_notes, pad(15)]
 
     # clean the stack
-    swapdw dropw dropw swapw dropw movdn.3 drop drop drop
+    swapw.3 dropw dropw dropw movdn.3 drop drop drop
     # => [num_output_notes]
 end
 
@@ -317,7 +317,7 @@ pub proc get_expiration_block_delta
     # => [expiration_delta, pad(15)]
 
     # clear the stack
-    swapdw dropw dropw swapw dropw movdn.3 drop drop drop
+    swapw.3 dropw dropw dropw movdn.3 drop drop drop
     # => [expiration_delta]
 end
 

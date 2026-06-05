@@ -1,7 +1,15 @@
 #[cfg(test)]
 use miden_processor::DefaultHost;
 use miden_processor::advice::AdviceInputs;
-use miden_processor::{ExecutionOutput, FastProcessor, Host, Program, StackInputs};
+use miden_processor::{
+    ExecutionError,
+    ExecutionOptions,
+    ExecutionOutput,
+    FastProcessor,
+    Host,
+    Program,
+    StackInputs,
+};
 #[cfg(test)]
 use miden_protocol::assembly::Assembler;
 
@@ -15,6 +23,7 @@ pub(crate) struct CodeExecutor<H> {
     host: H,
     stack_inputs: Option<StackInputs>,
     advice_inputs: AdviceInputs,
+    execution_options: Option<ExecutionOptions>,
 }
 
 impl<H: Host> CodeExecutor<H> {
@@ -25,6 +34,7 @@ impl<H: Host> CodeExecutor<H> {
             host,
             stack_inputs: None,
             advice_inputs: AdviceInputs::default(),
+            execution_options: None,
         }
     }
 
@@ -35,6 +45,13 @@ impl<H: Host> CodeExecutor<H> {
 
     pub fn stack_inputs(mut self, stack_inputs: StackInputs) -> Self {
         self.stack_inputs = Some(stack_inputs);
+        self
+    }
+
+    /// Overrides the [`ExecutionOptions`] used to run the program (e.g. to cap `max_cycles`).
+    #[cfg(test)]
+    pub fn execution_options(mut self, options: ExecutionOptions) -> Self {
+        self.execution_options = Some(options);
         self
     }
 
@@ -68,6 +85,11 @@ impl<H: Host> CodeExecutor<H> {
 
         let processor = FastProcessor::new(stack_inputs)
             .with_advice(self.advice_inputs)
+            .map_err(ExecutionError::advice_error_no_context)
+            .map_err(ExecError::new)?
+            .with_options(self.execution_options.unwrap_or_default())
+            .map_err(ExecutionError::advice_error_no_context)
+            .map_err(ExecError::new)?
             .with_debugging(true);
 
         let execution_output =

@@ -45,10 +45,10 @@ const TX_EXPIRATION_BLOCK_NUM_PTR = 2
 const NATIVE_ACCT_STORAGE_COMMITMENT_DIRTY_FLAG_PTR = 3
 
 # The memory address at which the input vault root is stored.
-const INPUT_VAULT_ROOT_PTR = 4
+pub const INPUT_VAULT_ROOT_PTR = 4
 
 # The memory address at which the output vault root is stored.
-const OUTPUT_VAULT_ROOT_PTR = 8
+pub const OUTPUT_VAULT_ROOT_PTR = 8
 
 # Pointer to the prefix and suffix of the ID of the foreign account which will be loaded during the
 # upcoming FPI call. This ID is updated during the `prepare_fpi_call` kernel procedure.
@@ -59,11 +59,11 @@ const UPCOMING_FOREIGN_ACCOUNT_PREFIX_PTR = UPCOMING_FOREIGN_ACCOUNT_SUFFIX_PTR 
 # during the upcoming FPI call. This "buffer" value helps to work around the 15 value limitation of
 # the `exec_kernel_proc` kernel procedure, so that any account procedure, even if it has 16 input
 # values, could be executed as foreign.
-const UPCOMING_FOREIGN_PROC_INPUT_VALUE_15_PTR = 14
+pub const UPCOMING_FOREIGN_PROC_INPUT_VALUE_15_PTR = 14
 
 # Pointer to the root of the foreign procedure which will be executed during the upcoming FPI call.
 # This root is updated during the `prepare_fpi_call` kernel procedure.
-const UPCOMING_FOREIGN_PROCEDURE_PTR = 16
+pub const UPCOMING_FOREIGN_PROCEDURE_PTR = 16
 
 # The memory address at which the pointer to the account stack element containing the pointer to the
 # currently accessing account (active account) data is stored.
@@ -105,7 +105,7 @@ const INIT_NATIVE_ACCOUNT_STORAGE_COMMITMENT_PTR=420
 const INPUT_NOTES_COMMITMENT_PTR=424
 
 # The memory address at which the transaction script mast root is stored.
-const TX_SCRIPT_ROOT_PTR=428
+pub const TX_SCRIPT_ROOT_PTR=428
 
 # The memory address at which the transaction script arguments are stored.
 const TX_SCRIPT_ARGS_PTR=432
@@ -117,7 +117,7 @@ const AUTH_ARGS_PTR=436
 # -------------------------------------------------------------------------------------------------
 
 # The memory address at which the block data section begins
-const BLOCK_DATA_SECTION_OFFSET=800
+pub const BLOCK_DATA_SECTION_OFFSET=800
 
 # The memory address at which the previous block commitment is stored
 const PREV_BLOCK_COMMITMENT_PTR=800
@@ -162,7 +162,7 @@ const NOTE_ROOT_PTR=840
 # -------------------------------------------------------------------------------------------------
 
 # The memory address at which the chain data section begins
-const PARTIAL_BLOCKCHAIN_PTR=1200
+pub const PARTIAL_BLOCKCHAIN_PTR=1200
 
 # The memory address at which the total number of leaves in the partial blockchain is stored
 const PARTIAL_BLOCKCHAIN_NUM_LEAVES_PTR=1200
@@ -177,7 +177,7 @@ const PARTIAL_BLOCKCHAIN_PEAKS_PTR=1204
 const NUM_KERNEL_PROCEDURES_PTR=1600
 
 # The memory address at which the hashes of kernel procedures begin.
-const KERNEL_PROCEDURES_PTR=1604
+pub const KERNEL_PROCEDURES_PTR=1604
 
 # ACCOUNT DATA
 # -------------------------------------------------------------------------------------------------
@@ -185,22 +185,22 @@ const KERNEL_PROCEDURES_PTR=1604
 # The largest memory address which can be used to load the foreign account data.
 # It is computed as `2048 * 64 * 4` -- this is the memory address where the data block of the 64th
 # account starts.
-const MAX_FOREIGN_ACCOUNT_PTR=524288
+pub const MAX_FOREIGN_ACCOUNT_PTR=524288
 
 # The memory address at which the native account data is stored.
-const NATIVE_ACCOUNT_DATA_PTR=8192
+pub const NATIVE_ACCOUNT_DATA_PTR=8192
 const NATIVE_ACCOUNT_ID_SUFFIX_PTR = NATIVE_ACCOUNT_DATA_PTR + ACCT_ID_SUFFIX_OFFSET
 const NATIVE_ACCOUNT_ID_PREFIX_PTR = NATIVE_ACCOUNT_DATA_PTR + ACCT_ID_PREFIX_OFFSET
 const NATIVE_ACCOUNT_NUM_STORAGE_SLOTS_PTR = NATIVE_ACCOUNT_DATA_PTR + ACCT_NUM_STORAGE_SLOTS_OFFSET
 
 # The length of the memory interval that the account data occupies.
-const ACCOUNT_DATA_LENGTH=8192
+pub const ACCOUNT_DATA_LENGTH=8192
 
 # The offsets at which the account data is stored relative to the start of the account data segment.
-const ACCT_NONCE_OFFSET=0
-const ACCT_ID_AND_NONCE_OFFSET=0
-const ACCT_ID_SUFFIX_OFFSET=2
-const ACCT_ID_PREFIX_OFFSET=3
+pub const ACCT_NONCE_OFFSET=0
+pub const ACCT_ID_AND_NONCE_OFFSET=0
+pub const ACCT_ID_SUFFIX_OFFSET=2
+pub const ACCT_ID_PREFIX_OFFSET=3
 const ACCT_VAULT_ROOT_OFFSET=4
 const ACCT_STORAGE_COMMITMENT_OFFSET=8
 const ACCT_CODE_COMMITMENT_OFFSET=12
@@ -226,7 +226,7 @@ pub const ACCOUNT_DELTA_FUNGIBLE_ASSET_PTR=532480
 # The link map pointer at which the delta of the non-fungible asset vault is stored.
 pub const ACCOUNT_DELTA_NON_FUNGIBLE_ASSET_PTR=ACCOUNT_DELTA_FUNGIBLE_ASSET_PTR+4
 
-# The section of link map pointers where storage map deltas are stored.
+# The section of link map pointers where storage map patches are stored.
 # This section is offset by `slot index` to get the link map ptr for the storage map
 # delta at that slot index. Slot indices that are not map slots are simply unused.
 const ACCOUNT_DELTA_STORAGE_MAP_SECTION=ACCOUNT_DELTA_FUNGIBLE_ASSET_PTR+8
@@ -247,15 +247,15 @@ const INPUT_NOTE_DATA_SECTION_OFFSET=4259840
 const NUM_INPUT_NOTES_PTR=INPUT_NOTE_SECTION_OFFSET
 
 # The offsets at which data of an input note is stored relative to the start of its data segment
-const INPUT_NOTE_ID_OFFSET=0
+const INPUT_NOTE_DETAILS_COMMITMENT_OFFSET=0
 const INPUT_NOTE_CORE_DATA_OFFSET=4
 const INPUT_NOTE_SERIAL_NUM_OFFSET=4
 const INPUT_NOTE_SCRIPT_ROOT_OFFSET=8
 const INPUT_NOTE_STORAGE_COMMITMENT_OFFSET=12
 const INPUT_NOTE_ASSETS_COMMITMENT_OFFSET=16
-const INPUT_NOTE_RECIPIENT_OFFSET=20
-const INPUT_NOTE_METADATA_OFFSET=24
-const INPUT_NOTE_ATTACHMENTS_COMMITMENT_OFFSET=28
+const INPUT_NOTE_METADATA_OFFSET=20
+const INPUT_NOTE_ATTACHMENTS_COMMITMENT_OFFSET=24
+const INPUT_NOTE_RECIPIENT_OFFSET=28
 const INPUT_NOTE_ARGS_OFFSET=32
 const INPUT_NOTE_NUM_STORAGE_ITEMS_OFFSET=36
 const INPUT_NOTE_NUM_ASSETS_OFFSET=40
@@ -265,10 +265,10 @@ const INPUT_NOTE_ASSETS_OFFSET=44
 # -------------------------------------------------------------------------------------------------
 
 # The memory address at which the output notes section begins.
-const OUTPUT_NOTE_SECTION_OFFSET=16777216
+pub const OUTPUT_NOTE_SECTION_OFFSET=16777216
 
 # The offsets at which data of an output note is stored relative to the start of its data segment.
-const OUTPUT_NOTE_ID_OFFSET=0
+const OUTPUT_NOTE_DETAILS_COMMITMENT_OFFSET=0
 const OUTPUT_NOTE_METADATA_OFFSET=4
 const OUTPUT_NOTE_RECIPIENT_OFFSET=8
 const OUTPUT_NOTE_DIRTY_FLAG_OFFSET=12
@@ -288,21 +288,21 @@ const OUTPUT_NOTE_ASSETS_OFFSET=36
 # The inclusive start of the link map dynamic memory region.
 # Chosen as a number greater than 2^25 such that all entry pointers are multiples of
 # LINK_MAP_ENTRY_SIZE. That enables a simpler check in assert_entry_ptr_is_valid.
-const LINK_MAP_REGION_START_PTR=33554448
+pub const LINK_MAP_REGION_START_PTR=33554448
 
 # The non-inclusive end of the link map dynamic memory region.
 # This happens to be 2^26, but if it is changed, it should be chosen as a number such that
 # LINK_MAP_REGION_END_PTR - LINK_MAP_REGION_START_PTR is a multiple of LINK_MAP_ENTRY_SIZE,
 # because that enables checking whether a newly allocated entry pointer is at the end of the range
 # using equality rather than lt/gt in link_map_malloc.
-const LINK_MAP_REGION_END_PTR=67108864
+pub const LINK_MAP_REGION_END_PTR=67108864
 
 # LINK_MAP_REGION_START_PTR + the currently used size stored at this pointer defines the next
 # entry pointer that will be allocated.
 const LINK_MAP_USED_MEMORY_SIZE=33554432
 
 # The size of each map entry, i.e. four words.
-const LINK_MAP_ENTRY_SIZE=16
+pub const LINK_MAP_ENTRY_SIZE=16
 
 # MEMORY PROCEDURES
 # =================================================================================================
@@ -1427,15 +1427,15 @@ end
 
 ### ACCOUNT DELTA #################################################
 
-#! Returns the link map pointer to the storage map delta of the storage map in the given slot index.
+#! Returns the link map pointer to the storage map patch of the storage map in the given slot index.
 #!
 #! Inputs:  [slot_idx]
-#! Outputs: [account_delta_storage_map_ptr]
+#! Outputs: [account_patch_storage_map_ptr]
 #!
 #! Where:
-#! - account_delta_storage_map_ptr is the link map pointer to the storage map delta for the
+#! - account_patch_storage_map_ptr is the link map pointer to the storage map patch for the
 #!   requested slot index.
-pub proc get_account_delta_storage_map_ptr
+pub proc get_account_patch_storage_map_ptr
     add.ACCOUNT_DELTA_STORAGE_MAP_SECTION
 end
 
@@ -1494,41 +1494,28 @@ pub proc get_input_note_ptr
     push.NOTE_MEM_SIZE mul add.INPUT_NOTE_DATA_SECTION_OFFSET
 end
 
-#! Set the note id of the input note.
+#! Set the note details commitment of the input note.
 #!
-#! Inputs:  [note_ptr, NOTE_ID]
-#! Outputs: [NOTE_ID]
+#! Inputs:  [note_ptr, NOTE_DETAILS_COMMITMENT]
+#! Outputs: [NOTE_DETAILS_COMMITMENT]
 #!
 #! Where:
-#! - note_ptr is the input note's the memory address.
-#! - NOTE_ID is the note's id.
-pub proc set_input_note_id
+#! - note_ptr is the memory address at which the input note data segment begins.
+#! - NOTE_DETAILS_COMMITMENT is the commitment to the note's details.
+pub proc set_input_note_details_commitment
     mem_storew_le
 end
 
-#! Computes a pointer to the memory address at which the nullifier associated a note with `idx` is
-#! stored.
+#! Stores the nullifier of the input note with `idx` in the nullifier memory section.
 #!
-#! Inputs:  [idx]
-#! Outputs: [nullifier_ptr]
-#!
-#! Where:
-#! - idx is the index of the input note.
-#! - nullifier_ptr is the memory address of the nullifier for note idx.
-pub proc get_input_note_nullifier_ptr
-    mul.4 add.INPUT_NOTE_NULLIFIER_SECTION_PTR
-end
-
-#! Returns the nullifier of an input note with `idx`.
-#!
-#! Inputs:  [idx]
-#! Outputs: [nullifier]
+#! Inputs:  [idx, NULLIFIER]
+#! Outputs: [NULLIFIER]
 #!
 #! Where:
 #! - idx is the index of the input note.
-#! - nullifier is the nullifier of the input note.
-pub proc get_input_note_nullifier
-    mul.4 padw movup.4 add.INPUT_NOTE_NULLIFIER_SECTION_PTR mem_loadw_le
+#! - NULLIFIER is the nullifier of the input note.
+pub proc set_input_note_nullifier
+    mul.4 add.INPUT_NOTE_NULLIFIER_SECTION_PTR mem_storew_le
 end
 
 #! Returns a pointer to the start of the input note core data segment for the note located at the
@@ -1598,19 +1585,6 @@ pub proc get_input_note_metadata
     mem_loadw_le
 end
 
-#! Sets the metadata for an input note located at the specified memory address.
-#!
-#! Inputs:  [note_ptr, NOTE_METADATA]
-#! Outputs: [NOTE_METADATA]
-#!
-#! Where:
-#! - note_ptr is the memory address at which the input note data begins.
-#! - NOTE_METADATA is the metadata of the input note.
-pub proc set_input_note_metadata
-    add.INPUT_NOTE_METADATA_OFFSET
-    mem_storew_le
-end
-
 #! Returns the attachment of an input note located at the specified memory address.
 #!
 #! Inputs:  [note_ptr]
@@ -1623,19 +1597,6 @@ pub proc get_input_note_attachments_commitment
     padw
     movup.4 add.INPUT_NOTE_ATTACHMENTS_COMMITMENT_OFFSET
     mem_loadw_le
-end
-
-#! Sets the attachment for an input note located at the specified memory address.
-#!
-#! Inputs:  [note_ptr, NOTE_ATTACHMENTS_COMMITMENT]
-#! Outputs: [NOTE_ATTACHMENTS_COMMITMENT]
-#!
-#! Where:
-#! - note_ptr is the memory address at which the input note data begins.
-#! - NOTE_ATTACHMENTS_COMMITMENT is the commitment to all attachments of the input note.
-pub proc set_input_note_attachments_commitment
-    add.INPUT_NOTE_ATTACHMENTS_COMMITMENT_OFFSET
-    mem_storew_le
 end
 
 #! Returns the note's args.

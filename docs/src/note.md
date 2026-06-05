@@ -70,7 +70,7 @@ Every note includes metadata:
 - the [note tag](#note-discovery) that aids in discovery of the note.
 - optional [note attachments](#attachments) (up to 4).
 
-Regardless of [storage mode](#note-storage-mode), these metadata fields are always public.
+Regardless of [note type](#note-type), these metadata fields are always public.
 
 ### Attachments
 
@@ -79,6 +79,8 @@ A note can have up to 4 attachments. Each attachment is a variable-size, _public
 - **Scheme**: A 16-bit (limited to 65534) user-defined value that identifies the kind of attachment. This allows consumers to detect the presence of certain standardized attachments. For untyped attachments, the `none = 1` scheme can be used.
 
 The note commits to all of its attachments via a sequential hash over the individual attachment commitments (the attachments commitment). The attachment schemes are encoded in the note's metadata. When the note is consumed, the actual attachment content is provided via the advice provider.
+
+Schemes are not required to be unique within a note, but adding multiple attachments with the same scheme is discouraged. It provides no additional benefit and only increases the note's public on-chain data and the fees its creator pays.
 
 Example use cases for attachments are:
 - Communicate the note details of a private note in encrypted form. This means the encrypted note is attached publicly to the otherwise private note.
@@ -101,7 +103,7 @@ Accounts can create notes in a transaction. The `Note` exists if it is included 
 - **Users:** Executing local or network transactions.
 - **Miden operators:** Facilitating on-chain actions, e.g. such as executing user notes against a DEX or other contracts.
 
-#### Note storage mode
+#### Note Type
 
 As with [accounts](account/index.md), notes can be stored either publicly or privately:
 
@@ -150,31 +152,29 @@ Upon successful verification of the transaction:
 
 #### Note recipient restricting consumption
 
-Consumption of a `Note` can be restricted to certain accounts or entities. For instance, the P2ID and P2IDE `Note` scripts target a specific account ID. Alternatively, Miden defines a RECIPIENT (represented as 32 bytes) computed as:
+Every `Note` has a RECIPIENT, represented as 32 bytes, that commits to the data defining the conditions under which the note can be consumed. The RECIPIENT is computed as:
 
 ```arduino
 hash(hash(hash(serial_num, [0; 4]), script_root), storage_commitment)
 ```
 
-Only those who know the RECIPIENT’s pre-image can consume the `Note`. For private notes, this ensures an additional layer of control and privacy, as only parties with the correct data can claim the `Note`.
+The RECIPIENT is not necessarily just an account address. Its pre-image consists of the note's serial number, script, and storage. The consumer of the note must provide this data so the [transaction prologue](transaction) can recompute the RECIPIENT and verify that it matches the committed note details.
 
-The [transaction prologue](transaction) requires all necessary data to compute the `Note` hash. This setup allows scenario-specific restrictions on who may consume a `Note`.
-
-For a practical example, refer to the [SWAP note script](https://github.com/0xMiden/protocol/blob/next/crates/miden-standards/asm/standards/notes/swap.masm), where the RECIPIENT ensures that only a defined target can consume the swapped asset.
+The note script and storage determine the actual consumption conditions. For example, the [P2ID](https://github.com/0xMiden/protocol/blob/next/crates/miden-standards/asm/standards/notes/p2id.masm) and [P2IDE](https://github.com/0xMiden/protocol/blob/next/crates/miden-standards/asm/standards/notes/p2ide.masm) note scripts specify the target account ID as part of the note's storage. In a [SWAP](https://github.com/0xMiden/protocol/blob/next/crates/miden-standards/asm/standards/notes/swap.masm) note, consumption is only possible if the consumer provides the asset expected in return for the asset being offered. For private notes, keeping the RECIPIENT pre-image private ensures that only parties with the required note data can attempt to consume the note.
 
 #### Note nullifier ensuring private consumption
 
 The `Note` nullifier, computed as:
 
 ```arduino
-hash(serial_num, script_root, storage_commitment, vault_hash)
+hash(SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT, ASSET_COMMITMENT, METADATA, ATTACHMENTS_COMMITMENT)
 ```
 
 This achieves the following properties:
 
 - Every `Note` can be reduced to a single unique nullifier.
-- One cannot derive a note's hash from its nullifier.
-- To compute the nullifier, one must know all components of the `Note`: serial_num, script_root, storage_commitment, and vault_hash.
+- One cannot derive a note's ID from its nullifier.
+- To compute the nullifier, one must know all components of the `Note`: serial_num, script_root, storage_commitment, assets_commitment, metadata, and attachments_commitment.
 
 That means if a `Note` is private and the operator stores only the note's hash, only those with the `Note` details know if this `Note` has been consumed already. Zcash first [introduced](https://zcash.github.io/orchard/design/nullifiers.html#nullifiers) this approach.
 

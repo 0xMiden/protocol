@@ -11,15 +11,11 @@ use super::{
     DeserializationError,
     Serializable,
 };
-use crate::account::AccountType;
 use crate::asset::{Asset, AssetVaultKey, FungibleAsset, NonFungibleAsset};
 use crate::{Felt, ONE, ZERO};
 
 // ACCOUNT VAULT DELTA
 // ================================================================================================
-
-/// The domain for the assets in the delta commitment.
-const DOMAIN_ASSET: Felt = Felt::new(1);
 
 /// [AccountVaultDelta] stores the difference between the initial and final account vault states.
 ///
@@ -34,6 +30,9 @@ pub struct AccountVaultDelta {
 }
 
 impl AccountVaultDelta {
+    /// Domain separator for assets in the account delta commitment.
+    pub(in crate::account) const DOMAIN: Felt = Felt::new_unchecked(3);
+
     /// Validates and creates an [AccountVaultDelta] with the given fungible and non-fungible asset
     /// deltas.
     ///
@@ -205,10 +204,9 @@ impl FungibleAssetDelta {
     /// # Errors
     /// Returns an error if the delta does not pass the validation.
     pub fn new(map: BTreeMap<AssetVaultKey, i64>) -> Result<Self, AccountDeltaError> {
-        let delta = Self(map);
-        delta.validate()?;
+        Self::validate(&map)?;
 
-        Ok(delta)
+        Ok(Self(map))
     }
 
     /// Adds a new fungible asset to the delta.
@@ -216,7 +214,7 @@ impl FungibleAssetDelta {
     /// # Errors
     /// Returns an error if the delta would overflow.
     pub fn add(&mut self, asset: FungibleAsset) -> Result<(), AccountDeltaError> {
-        let amount: i64 = asset.amount().try_into().expect("Amount it too high");
+        let amount: i64 = asset.amount().as_i64();
         self.add_delta(asset.vault_key(), amount)
     }
 
@@ -225,7 +223,7 @@ impl FungibleAssetDelta {
     /// # Errors
     /// Returns an error if the delta would overflow.
     pub fn remove(&mut self, asset: FungibleAsset) -> Result<(), AccountDeltaError> {
-        let amount: i64 = asset.amount().try_into().expect("Amount it too high");
+        let amount: i64 = asset.amount().as_i64();
         self.add_delta(asset.vault_key(), -amount)
     }
 
@@ -309,9 +307,9 @@ impl FungibleAssetDelta {
     ///
     /// # Errors
     /// Returns an error if one or more fungible assets' faucet IDs are invalid.
-    fn validate(&self) -> Result<(), AccountDeltaError> {
-        for vault_key in self.0.keys() {
-            if !matches!(vault_key.faucet_id().account_type(), AccountType::FungibleFaucet) {
+    fn validate(map: &BTreeMap<AssetVaultKey, i64>) -> Result<(), AccountDeltaError> {
+        for vault_key in map.keys() {
+            if !vault_key.composition().is_fungible() {
                 return Err(AccountDeltaError::NotAFungibleFaucetId(vault_key.faucet_id()));
             }
         }
@@ -344,7 +342,7 @@ impl FungibleAssetDelta {
 
             let key_word = vault_key.to_word();
             elements.extend_from_slice(&[
-                DOMAIN_ASSET,
+                AccountVaultDelta::DOMAIN,
                 was_added,
                 key_word[2], // faucet_id_suffix_and_metadata
                 key_word[3], // faucet_id_prefix
@@ -506,7 +504,7 @@ impl NonFungibleAssetDelta {
 
             let key_word = asset.vault_key().to_word();
             elements.extend_from_slice(&[
-                DOMAIN_ASSET,
+                AccountVaultDelta::DOMAIN,
                 was_added,
                 key_word[2], // faucet_id_suffix_and_metadata
                 key_word[3], // faucet_id_prefix
@@ -606,8 +604,8 @@ mod tests {
     #[case::empty_neg(0, -50, Some(-50))]
     #[case::nullify_pos_neg(100, -100, Some(0))]
     #[case::nullify_neg_pos(-100, 100, Some(0))]
-    #[case::overflow(FungibleAsset::MAX_AMOUNT as i64, FungibleAsset::MAX_AMOUNT as i64, None)]
-    #[case::underflow(-(FungibleAsset::MAX_AMOUNT as i64), -(FungibleAsset::MAX_AMOUNT as i64), None)]
+    #[case::overflow(FungibleAsset::MAX_AMOUNT.as_i64(), FungibleAsset::MAX_AMOUNT.as_i64(), None)]
+    #[case::underflow(-(FungibleAsset::MAX_AMOUNT.as_i64()), -(FungibleAsset::MAX_AMOUNT.as_i64()), None)]
     #[test]
     fn merge_fungible_aggregation(#[case] x: i64, #[case] y: i64, #[case] expected: Option<i64>) {
         /// Creates an [AccountVaultDelta] with a single [FungibleAsset] delta. This delta will
@@ -656,11 +654,9 @@ mod tests {
             account_id: AccountId,
             added: Option<bool>,
         ) -> AccountVaultDelta {
-            let asset: Asset = NonFungibleAsset::new(
-                &NonFungibleAssetDetails::new(account_id, vec![1, 2, 3]).unwrap(),
-            )
-            .unwrap()
-            .into();
+            let asset: Asset =
+                NonFungibleAsset::new(&NonFungibleAssetDetails::new(account_id, vec![1, 2, 3]))
+                    .into();
 
             match added {
                 Some(true) => AccountVaultDelta::from_iters([asset], []),

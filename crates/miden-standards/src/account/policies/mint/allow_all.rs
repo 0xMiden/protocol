@@ -1,18 +1,19 @@
-use miden_protocol::Word;
-use miden_protocol::account::component::AccountComponentMetadata;
-use miden_protocol::account::{AccountComponent, AccountType};
+use miden_protocol::account::component::{AccountComponentCode, AccountComponentMetadata};
+use miden_protocol::account::{AccountComponent, AccountComponentName, AccountProcedureRoot};
 
-use crate::account::components::allow_all_mint_policy_library;
-use crate::procedure_digest;
+use crate::account::account_component_code;
+use crate::procedure_root;
 
 // ALLOW-ALL MINT POLICY
 // ================================================================================================
 
-procedure_digest!(
+account_component_code!(ALLOW_ALL_MINT_POLICY_CODE, "faucets/policies/mint/allow_all.masl");
+
+procedure_root!(
     ALLOW_ALL_POLICY_ROOT,
     MintAllowAll::NAME,
     MintAllowAll::PROC_NAME,
-    allow_all_mint_policy_library
+    MintAllowAll::code()
 );
 
 /// The storage-free `allow_all` mint policy account component.
@@ -30,19 +31,28 @@ impl MintAllowAll {
 
     pub(crate) const PROC_NAME: &str = "check_policy";
 
-    /// Returns the MAST root of the `allow_all` mint policy procedure.
-    pub fn root() -> Word {
+    /// Returns the canonical [`AccountComponentName`] of this component.
+    pub const fn name() -> AccountComponentName {
+        AccountComponentName::from_static_str(Self::NAME)
+    }
+
+    /// Returns the [`AccountComponentCode`] of this component.
+    pub fn code() -> &'static AccountComponentCode {
+        &ALLOW_ALL_MINT_POLICY_CODE
+    }
+
+    /// Returns the procedure root of the `allow_all` mint policy procedure.
+    pub fn root() -> AccountProcedureRoot {
         *ALLOW_ALL_POLICY_ROOT
     }
 }
 
 impl From<MintAllowAll> for AccountComponent {
     fn from(_: MintAllowAll) -> Self {
-        let metadata =
-            AccountComponentMetadata::new(MintAllowAll::NAME, [AccountType::FungibleFaucet])
-                .with_description("`allow_all` mint policy for fungible faucets");
+        let metadata = AccountComponentMetadata::new(MintAllowAll::NAME)
+            .with_description("`allow_all` mint policy for fungible faucets");
 
-        AccountComponent::new(allow_all_mint_policy_library(), vec![], metadata).expect(
+        AccountComponent::new(MintAllowAll::code().clone(), vec![], metadata).expect(
             "`allow_all` mint policy component should satisfy the requirements of a valid account component",
         )
     }

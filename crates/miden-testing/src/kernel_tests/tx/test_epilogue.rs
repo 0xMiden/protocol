@@ -3,7 +3,7 @@ use std::borrow::ToOwned;
 
 use miden_processor::crypto::random::RandomCoin;
 use miden_processor::{Felt, ONE};
-use miden_protocol::account::{Account, AccountDelta, AccountStorageDelta, AccountVaultDelta};
+use miden_protocol::account::{Account, AccountDelta, AccountStoragePatch, AccountVaultDelta};
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::errors::tx_kernel::{
     ERR_ACCOUNT_DELTA_NONCE_MUST_BE_INCREMENTED_IF_VAULT_OR_STORAGE_CHANGED,
@@ -21,7 +21,7 @@ use miden_protocol::testing::account_id::{
 use miden_protocol::testing::storage::MOCK_VALUE_SLOT0;
 use miden_protocol::transaction::memory::{
     NOTE_MEM_SIZE,
-    OUTPUT_NOTE_ASSET_COMMITMENT_OFFSET,
+    OUTPUT_NOTE_ASSETS_COMMITMENT_OFFSET,
     OUTPUT_NOTE_SECTION_OFFSET,
 };
 use miden_protocol::transaction::{RawOutputNote, RawOutputNotes, TransactionOutputs};
@@ -107,7 +107,7 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
 
     let account_delta_commitment = AccountDelta::new(
         tx_context.account().id(),
-        AccountStorageDelta::default(),
+        AccountStoragePatch::default(),
         AccountVaultDelta::default(),
         ONE,
     )?
@@ -140,7 +140,7 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
         exec_output
             .get_stack_element(TransactionOutputs::FEE_AMOUNT_ELEMENT_IDX)
             .as_canonical_u64(),
-        fee_asset.amount()
+        fee_asset.amount().as_u64()
     );
     assert_eq!(
         exec_output
@@ -160,7 +160,7 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
 
 /// Tests that the output note memory section is correctly populated during finalize_transaction.
 #[tokio::test]
-async fn test_compute_output_note_id() -> anyhow::Result<()> {
+async fn test_compute_output_note_details_commitment() -> anyhow::Result<()> {
     let mut rng = RandomCoin::new(Word::from([3, 4, 5, 6u32]));
     let account = Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
     let mut assets = account.vault().assets();
@@ -229,15 +229,15 @@ async fn test_compute_output_note_id() -> anyhow::Result<()> {
             exec_output.get_kernel_mem_word(
                 OUTPUT_NOTE_SECTION_OFFSET
                     + i * NOTE_MEM_SIZE
-                    + OUTPUT_NOTE_ASSET_COMMITMENT_OFFSET
+                    + OUTPUT_NOTE_ASSETS_COMMITMENT_OFFSET
             ),
             "ASSET_COMMITMENT didn't match expected value",
         );
 
         assert_eq!(
-            note.id().as_word(),
+            note.details_commitment().as_word(),
             exec_output.get_kernel_mem_word(OUTPUT_NOTE_SECTION_OFFSET + i * NOTE_MEM_SIZE),
-            "NOTE_ID didn't match expected value",
+            "note details commitment didn't match kernel output note offset 0",
         );
     }
 

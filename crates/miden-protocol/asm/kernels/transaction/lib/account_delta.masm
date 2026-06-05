@@ -18,12 +18,14 @@ const ERR_ACCOUNT_DELTA_NONCE_MUST_BE_INCREMENTED_IF_VAULT_OR_STORAGE_CHANGED="n
 # CONSTANTS
 # =================================================================================================
 
+# The domain of the delta commitment header.
+const DOMAIN_DELTA = 1
 # The domain of an asset in the delta commitment.
-const DOMAIN_ASSET = 1
+const DOMAIN_ASSET = 3
 # The domain of a value storage slot in the delta commitment.
-const DOMAIN_VALUE = 2
+const DOMAIN_VALUE = 5
 # The domain of a map storage slot in the delta commitment.
-const DOMAIN_MAP = 3
+const DOMAIN_MAP = 6
 
 # The maximum value a felt can represent.
 const FELT_MAX = 0xffffffff00000000
@@ -45,7 +47,7 @@ const FELT_MAX = 0xffffffff00000000
 #! - DELTA_COMMITMENT is the commitment to the account delta.
 #!
 #! Panics if:
-#! - the vault or storage delta is not empty but the nonce increment is zero.
+#! - the vault delta or storage patch is not empty but the nonce increment is zero.
 pub proc compute_commitment
     # pad capacity and RATE1 of the hasher with empty words
     padw padw
@@ -55,8 +57,8 @@ pub proc compute_commitment
     # => [native_acct_id_suffix, native_acct_id_prefix, EMPTY_WORD, CAPACITY]
 
     # the delta of the nonce is equal to was_nonce_incremented
-    push.0 exec.was_nonce_incremented
-    # => [nonce_delta, 0, native_acct_id_suffix, native_acct_id_prefix, EMPTY_WORD, CAPACITY]
+    exec.was_nonce_incremented push.DOMAIN_DELTA
+    # => [domain_delta, nonce_delta, native_acct_id_suffix, native_acct_id_prefix, EMPTY_WORD, CAPACITY]
     # => [ID_AND_NONCE, EMPTY_WORD, CAPACITY]
 
     exec.poseidon2::permute
@@ -72,7 +74,7 @@ pub proc compute_commitment
     exec.update_non_fungible_asset_delta
     # => [RATE0, RATE1, CAPACITY, ID_AND_NONCE_DIGEST]
 
-    exec.update_storage_delta
+    exec.update_storage_patch
     # => [RATE0, RATE1, CAPACITY, ID_AND_NONCE_DIGEST]
 
     exec.poseidon2::squeeze_digest
@@ -102,7 +104,7 @@ end
 #!
 #! Inputs:  [RATE0, RATE1, CAPACITY]
 #! Outputs: [RATE0, RATE1, CAPACITY]
-proc update_storage_delta
+proc update_storage_patch
     exec.memory::get_native_num_storage_slots movdn.12
     # => [RATE0, RATE1, CAPACITY, num_storage_slots]
 
@@ -117,7 +119,7 @@ proc update_storage_delta
         dup.12
         # => [slot_idx, RATE0, RATE1, CAPACITY, slot_idx, num_storage_slots]
 
-        exec.update_slot_delta
+        exec.update_slot_patch
         # => [RATE0, RATE1, CAPACITY, slot_idx, num_storage_slots]
 
         # increment slot index
@@ -143,7 +145,7 @@ end
 #!
 #! Inputs:  [slot_idx, RATE0, RATE1, CAPACITY]
 #! Outputs: [RATE0, RATE1, CAPACITY]
-proc update_slot_delta
+proc update_slot_patch
     dup exec.account::get_native_storage_slot_type
     # => [storage_slot_type, slot_idx, RATE0, RATE1, CAPACITY]
 
@@ -152,9 +154,9 @@ proc update_slot_delta
     # => [is_value_slot_type, slot_idx, RATE0, RATE1, CAPACITY]
 
     if.true
-        exec.update_value_slot_delta
+        exec.update_value_slot_patch
     else
-        exec.update_map_slot_delta
+        exec.update_map_slot_patch
     end
     # => [RATE0, RATE1, CAPACITY]
 end
@@ -163,7 +165,7 @@ end
 #!
 #! Inputs:  [slot_idx, RATE0, RATE1, CAPACITY]
 #! Outputs: [RATE0, RATE1, CAPACITY]
-proc update_value_slot_delta
+proc update_value_slot_patch
     exec.account::get_item_delta
     # => [INIT_VALUE, CURRENT_VALUE, slot_id_suffix, slot_id_prefix, RATE0, RATE1, CAPACITY]
 
@@ -216,7 +218,7 @@ end
 #! - 3: iter
 #! - 4: num_changed_entries
 @locals(5)
-proc update_map_slot_delta
+proc update_map_slot_patch
     # initialize num_changed_entries = 0
     # this is necessary because this procedure can be called multiple times and the second
     # invocation shouldn't reuse the first invocation's value
@@ -229,8 +231,8 @@ proc update_map_slot_delta
     loc_store.0 loc_store.1
     # => [slot_idx, RATE0, RATE1, CAPACITY]
 
-    exec.memory::get_account_delta_storage_map_ptr
-    # => [account_delta_storage_map_ptr, RATE0, RATE1, CAPACITY]
+    exec.memory::get_account_patch_storage_map_ptr
+    # => [account_patch_storage_map_ptr, RATE0, RATE1, CAPACITY]
 
     exec.link_map::iter
     # => [has_next, iter, RATE0, RATE1, CAPACITY]
@@ -746,7 +748,7 @@ pub proc remove_non_fungible_asset
     # => []
 end
 
-#! Updates the storage map delta of the given slot index with the given key-value pair and its
+#! Updates the storage map patch of the given slot index with the given key-value pair and its
 #! previous value.
 #!
 #! The layout of a link map entry for a given KEY is: [KEY, INIT_VALUE, NEW_VALUE] where INIT_VALUE
@@ -763,9 +765,9 @@ end
 #! - NEW_VALUE is the new value of the key in the storage map that is being updated.
 @locals(8)
 pub proc set_map_item
-    # retrieve the link map ptr to the storage map delta for the provided index
-    exec.memory::get_account_delta_storage_map_ptr
-    # => [account_delta_storage_map_ptr, KEY, PREV_VALUE, NEW_VALUE]
+    # retrieve the link map ptr to the storage map patch for the provided index
+    exec.memory::get_account_patch_storage_map_ptr
+    # => [account_patch_storage_map_ptr, KEY, PREV_VALUE, NEW_VALUE]
 
     # store map ptr in local
     loc_store.0
@@ -776,9 +778,9 @@ pub proc set_map_item
     # => [KEY, PREV_VALUE, NEW_VALUE]
 
     loc_load.0
-    # => [account_delta_storage_map_ptr, KEY, PREV_VALUE, NEW_VALUE]
+    # => [account_patch_storage_map_ptr, KEY, PREV_VALUE, NEW_VALUE]
 
-    # retrieve the current delta
+    # retrieve the current patch
     exec.link_map::get
     # => [contains_key, VALUE0, VALUE1, PREV_VALUE, NEW_VALUE]
 
@@ -804,7 +806,7 @@ pub proc set_map_item
 
     # load key and index from locals
     padw loc_loadw_le.4 loc_load.0
-    # => [account_delta_storage_map_ptr, KEY, INITIAL_VALUE, NEW_VALUE]
+    # => [account_patch_storage_map_ptr, KEY, INITIAL_VALUE, NEW_VALUE]
 
     exec.link_map::set drop
     # => []

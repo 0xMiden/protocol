@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 use miden_processor::advice::AdviceMutation;
 use miden_processor::event::EventError;
 use miden_processor::mast::MastForest;
-use miden_processor::{FutureMaybeSend, Host, MastForestStore, ProcessorState};
+use miden_processor::{BaseHost, FutureMaybeSend, Host, MastForestStore, ProcessorState};
 use miden_protocol::Word;
 use miden_protocol::account::{AccountDelta, PartialAccount};
 use miden_protocol::assembly::debuginfo::Location;
@@ -63,7 +63,7 @@ where
 // HOST IMPLEMENTATION
 // ================================================================================================
 
-impl<STORE> Host for TransactionProverHost<'_, STORE>
+impl<STORE> BaseHost for TransactionProverHost<'_, STORE>
 where
     STORE: MastForestStore,
 {
@@ -77,6 +77,15 @@ where
         (SourceSpan::UNKNOWN, None)
     }
 
+    fn resolve_event(&self, event_id: EventId) -> Option<&EventName> {
+        self.base_host.resolve_event(event_id)
+    }
+}
+
+impl<STORE> Host for TransactionProverHost<'_, STORE>
+where
+    STORE: MastForestStore,
+{
     fn get_mast_forest(&self, node_digest: &Word) -> impl FutureMaybeSend<Option<Arc<MastForest>>> {
         let result = self.base_host.get_mast_forest(node_digest);
         async move { result }
@@ -88,10 +97,6 @@ where
     ) -> impl FutureMaybeSend<Result<Vec<AdviceMutation>, EventError>> {
         let result = self.on_event_sync(process);
         async move { result }
-    }
-
-    fn resolve_event(&self, event_id: EventId) -> Option<&EventName> {
-        self.base_host.resolve_event(event_id)
     }
 }
 
@@ -120,11 +125,11 @@ where
             // proving time, so there is nothing to do.
             TransactionEvent::AccountBeforeForeignLoad { .. } => Ok(Vec::new()),
 
-            TransactionEvent::AccountVaultAfterRemoveAsset { asset } => {
-                self.base_host.on_account_vault_after_remove_asset(asset)
+            TransactionEvent::AccountVaultAfterRemoveAsset { update } => {
+                self.base_host.on_account_vault_after_remove_asset(update)
             },
-            TransactionEvent::AccountVaultAfterAddAsset { asset } => {
-                self.base_host.on_account_vault_after_add_asset(asset)
+            TransactionEvent::AccountVaultAfterAddAsset { update } => {
+                self.base_host.on_account_vault_after_add_asset(update)
             },
 
             TransactionEvent::AccountStorageAfterSetItem { slot_name, new_value } => {

@@ -1,10 +1,11 @@
 use alloc::sync::Arc;
 
 use miden_protocol::Felt;
-use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountId, AccountType};
+use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountId};
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::asset::{
     AssetCallbackFlag,
+    AssetComposition,
     AssetId,
     AssetVaultKey,
     FungibleAsset,
@@ -14,8 +15,8 @@ use miden_protocol::errors::tx_kernel::{
     ERR_FUNGIBLE_ASSET_AMOUNT_EXCEEDS_MAX_AMOUNT,
     ERR_FUNGIBLE_ASSET_FAUCET_IS_NOT_ORIGIN,
     ERR_NON_FUNGIBLE_ASSET_FAUCET_IS_NOT_ORIGIN,
+    ERR_VAULT_ASSET_METADATA_NON_ZERO_RESERVED_BITS,
     ERR_VAULT_FUNGIBLE_ASSET_AMOUNT_LESS_THAN_AMOUNT_TO_WITHDRAW,
-    ERR_VAULT_INVALID_ENABLE_CALLBACKS,
     ERR_VAULT_NON_FUNGIBLE_ASSET_TO_REMOVE_NOT_FOUND,
 };
 use miden_protocol::testing::account_id::{
@@ -158,7 +159,7 @@ async fn mint_fungible_asset_fails_on_invalid_asset_metadata() -> anyhow::Result
     let asset = FungibleAsset::mock(50);
 
     let mut vault_key_word = asset.to_key_word();
-    vault_key_word[2] = Felt::try_from(vault_key_word[2].as_canonical_u64() | u8::MAX as u64)?;
+    vault_key_word[2] = Felt::try_from(vault_key_word[2].as_canonical_u64() | 1 << 7)?;
 
     let code = format!(
         "
@@ -181,7 +182,7 @@ async fn mint_fungible_asset_fails_on_invalid_asset_metadata() -> anyhow::Result
         .build()?
         .execute_code(&code)
         .await;
-    assert_execution_error!(result, ERR_VAULT_INVALID_ENABLE_CALLBACKS);
+    assert_execution_error!(result, ERR_VAULT_ASSET_METADATA_NON_ZERO_RESERVED_BITS);
 
     Ok(())
 }
@@ -209,7 +210,7 @@ async fn test_mint_fungible_asset_fails_when_amount_exceeds_max_representable_am
         end
     ",
         ASSET_KEY = FungibleAsset::mock(0).to_key_word(),
-        max_amount_plus_1 = FungibleAsset::MAX_AMOUNT + 1,
+        max_amount_plus_1 = FungibleAsset::MAX_AMOUNT.as_u64() + 1,
     );
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(code)?;
 
@@ -340,7 +341,12 @@ async fn test_mint_fungible_asset_with_callbacks_enabled() -> anyhow::Result<()>
     let asset = FungibleAsset::new(faucet_id, FUNGIBLE_ASSET_AMOUNT)?;
 
     // Build a vault key with callbacks enabled.
-    let vault_key = AssetVaultKey::new(AssetId::default(), faucet_id, AssetCallbackFlag::Enabled)?;
+    let vault_key = AssetVaultKey::new(
+        AssetId::default(),
+        faucet_id,
+        AssetComposition::Fungible,
+        AssetCallbackFlag::Enabled,
+    )?;
 
     let code = format!(
         r#"
@@ -544,7 +550,7 @@ async fn test_burn_non_fungible_asset_succeeds() -> anyhow::Result<()> {
             push.{INPUT_VAULT_ROOT_PTR}
             push.{NON_FUNGIBLE_ASSET_VALUE}
             push.{NON_FUNGIBLE_ASSET_KEY}
-            exec.asset_vault::add_non_fungible_asset dropw
+            exec.asset_vault::add_non_fungible_asset dropw dropw
 
             # check that the non-fungible asset is presented in the input vault
             push.{INPUT_VAULT_ROOT_PTR}
@@ -690,13 +696,9 @@ fn setup_non_faucet_account() -> anyhow::Result<Account> {
         "pub use ::miden::protocol::faucet::mint
          pub use ::miden::protocol::faucet::burn",
     )?;
-    let metadata = AccountComponentMetadata::new(
-        "test::non_faucet_component",
-        [AccountType::RegularAccountUpdatableCode],
-    );
+    let metadata = AccountComponentMetadata::new("test::non_faucet_component");
     let faucet_component = AccountComponent::new(faucet_code, vec![], metadata)?;
     Ok(AccountBuilder::new([4; 32])
-        .account_type(AccountType::RegularAccountUpdatableCode)
         .with_auth_component(NoopAuthComponent)
         .with_component(faucet_component)
         .build_existing()?)

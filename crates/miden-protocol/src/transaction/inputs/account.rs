@@ -119,7 +119,7 @@ mod tests {
         let code = AccountCode::mock();
         let vault = AssetVault::new(&[]).unwrap();
         let storage = AccountStorage::new(vec![]).unwrap();
-        let account = Account::new_existing(id, vault, storage, code, Felt::new(10));
+        let account = Account::new_existing(id, vault, storage, code, Felt::new_unchecked(10));
 
         let commitment = account.to_commitment();
 

@@ -3,6 +3,7 @@ use alloc::vec::Vec;
 use miden_protocol::Word;
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 use miden_protocol::account::component::{
+    AccountComponentCode,
     AccountComponentMetadata,
     SchemaType,
     StorageSchema,
@@ -10,7 +11,8 @@ use miden_protocol::account::component::{
 };
 use miden_protocol::account::{
     AccountComponent,
-    AccountType,
+    AccountComponentName,
+    AccountProcedureRoot,
     StorageMap,
     StorageMapKey,
     StorageSlot,
@@ -20,7 +22,9 @@ use miden_protocol::errors::AccountError;
 use miden_protocol::utils::sync::LazyLock;
 
 use super::multisig::{AuthMultisig, AuthMultisigConfig};
-use crate::account::components::guarded_multisig_library;
+use crate::account::account_component_code;
+
+account_component_code!(GUARDED_MULTISIG_CODE, "auth/guarded_multisig.masl");
 
 // CONSTANTS
 // ================================================================================================
@@ -150,7 +154,7 @@ impl AuthGuardedMultisigConfig {
     /// at most the number of approvers.
     pub fn with_proc_thresholds(
         mut self,
-        proc_thresholds: Vec<(Word, u32)>,
+        proc_thresholds: Vec<(AccountProcedureRoot, u32)>,
     ) -> Result<Self, AccountError> {
         self.multisig = self.multisig.with_proc_thresholds(proc_thresholds)?;
         Ok(self)
@@ -164,7 +168,7 @@ impl AuthGuardedMultisigConfig {
         self.multisig.default_threshold()
     }
 
-    pub fn proc_thresholds(&self) -> &[(Word, u32)] {
+    pub fn proc_thresholds(&self) -> &[(AccountProcedureRoot, u32)] {
         self.multisig.proc_thresholds()
     }
 
@@ -184,8 +188,6 @@ impl AuthGuardedMultisigConfig {
 /// combined with guardian authorization, so operations require both multisig approval and a valid
 /// guardian signature. This substantially mitigates low-threshold state-withholding scenarios
 /// since the guardian is expected to forward state updates to other approvers.
-///
-/// This component supports all account types.
 #[derive(Debug)]
 pub struct AuthGuardedMultisig {
     multisig: AuthMultisig,
@@ -195,6 +197,16 @@ pub struct AuthGuardedMultisig {
 impl AuthGuardedMultisig {
     /// The name of the component.
     pub const NAME: &'static str = "miden::standards::components::auth::guarded_multisig";
+
+    /// Returns the canonical [`AccountComponentName`] of this component.
+    pub const fn name() -> AccountComponentName {
+        AccountComponentName::from_static_str(Self::NAME)
+    }
+
+    /// Returns the [`AccountComponentCode`] of this component.
+    pub fn code() -> &'static AccountComponentCode {
+        &GUARDED_MULTISIG_CODE
+    }
 
     /// Creates a new [`AuthGuardedMultisig`] component from the provided configuration.
     pub fn new(config: AuthGuardedMultisigConfig) -> Result<Self, AccountError> {
@@ -288,7 +300,7 @@ impl AuthGuardedMultisig {
         ])
         .expect("storage schema should be valid");
 
-        AccountComponentMetadata::new(Self::NAME, AccountType::all())
+        AccountComponentMetadata::new(Self::NAME)
             .with_description(
                 "Guarded multisig authentication component integrated \
                  with a state guardian using hybrid signature schemes",
@@ -316,17 +328,14 @@ impl From<AuthGuardedMultisig> for AccountComponent {
         let storage_schema =
             StorageSchema::new(slot_schemas).expect("storage schema should be valid");
 
-        let metadata = AccountComponentMetadata::new(
-            AuthGuardedMultisig::NAME,
-            multisig_component.supported_types().clone(),
-        )
-        .with_description(multisig_component.metadata().description())
-        .with_version(multisig_component.metadata().version().clone())
-        .with_storage_schema(storage_schema);
+        let metadata = AccountComponentMetadata::new(AuthGuardedMultisig::NAME)
+            .with_description(multisig_component.metadata().description())
+            .with_version(multisig_component.metadata().version().clone())
+            .with_storage_schema(storage_schema);
 
-        AccountComponent::new(guarded_multisig_library(), storage_slots, metadata).expect(
-            "Guarded multisig auth component should satisfy the requirements of a valid account \
-             component",
+        AccountComponent::new(AuthGuardedMultisig::code().clone(), storage_slots, metadata).expect(
+            "Guarded multisig auth component should satisfy the requirements of a valid \
+             account component",
         )
     }
 }

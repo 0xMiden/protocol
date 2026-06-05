@@ -29,16 +29,11 @@ The procedures maintain the same security and context restrictions as the underl
 
 ## Account ID Procedures (`miden::protocol::account_id`)
 
-Account ID procedures can be used to validate account IDs and inspect their account type.
+Account ID procedures can be used to validate and compare account IDs.
 
 | Procedure                 | Description                                                                                                                                                                                                                   | Context |
 | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| `is_fungible_faucet`      | Returns whether the account ID prefix belongs to a fungible faucet account.<br/><br/>**Inputs:** `[account_id_prefix]`<br/>**Outputs:** `[is_fungible_faucet]`                                                               | Any     |
-| `is_non_fungible_faucet`  | Returns whether the account ID prefix belongs to a non-fungible faucet account.<br/><br/>**Inputs:** `[account_id_prefix]`<br/>**Outputs:** `[is_non_fungible_faucet]`                                                       | Any     |
 | `is_equal`                | Returns whether two account IDs are equal.<br/><br/>**Inputs:** `[account_id_suffix, account_id_prefix, other_account_id_suffix, other_account_id_prefix]`<br/>**Outputs:** `[is_id_equal]`                                  | Any     |
-| `is_faucet`               | Returns whether the account ID prefix belongs to a faucet account.<br/><br/>**Inputs:** `[account_id_prefix]`<br/>**Outputs:** `[is_faucet]`                                                                                 | Any     |
-| `is_updatable_account`    | Returns whether the account ID prefix belongs to a regular account with updatable code.<br/><br/>**Inputs:** `[account_id_prefix]`<br/>**Outputs:** `[is_updatable_account]`                                                 | Any     |
-| `is_immutable_account`    | Returns whether the account ID prefix belongs to a regular account with immutable code.<br/><br/>**Inputs:** `[account_id_prefix]`<br/>**Outputs:** `[is_immutable_account]`                                                 | Any     |
 | `validate`                | Validates the provided account ID.<br/><br/>**Inputs:** `[account_id_suffix, account_id_prefix]`<br/>**Outputs:** `[]`                                                                                                       | Any     |
 | `shape_suffix`            | Shapes a digest suffix into an account ID suffix by clearing the lower 8 bits.<br/><br/>**Inputs:** `[seed_digest_suffix]`<br/>**Outputs:** `[account_id_suffix]`                                                            | Any     |
 
@@ -196,4 +191,4 @@ Asset procedures provide utilities for creating fungible and non-fungible assets
 | Procedure                  | Description                                                                                                                                                          | Context |
 | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
 | `create_fungible_asset`     | Builds a fungible asset for the specified fungible faucet and amount.<br/><br/>**Inputs:** `[enable_callbacks, faucet_id_suffix, faucet_id_prefix, amount]`<br/>**Outputs:** `[ASSET_KEY, ASSET_VALUE]` | Any     |
-| `create_non_fungible_asset` | Builds a non-fungible asset for the specified non-fungible faucet and data hash.<br/><br/>**Inputs:** `[faucet_id_suffix, faucet_id_prefix, DATA_HASH]`<br/>**Outputs:** `[ASSET_KEY, ASSET_VALUE]`     | Any     |
+| `create_non_fungible_asset` | Builds a non-fungible asset for the specified non-fungible faucet and data hash.<br/><br/>**Inputs:** `[enable_callbacks, faucet_id_suffix, faucet_id_prefix, DATA_HASH]`<br/>**Outputs:** `[ASSET_KEY, ASSET_VALUE]`     | Any     |

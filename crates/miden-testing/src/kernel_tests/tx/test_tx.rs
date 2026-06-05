@@ -1,4 +1,5 @@
 use alloc::sync::Arc;
+use core::slice;
 
 use anyhow::Context;
 use assert_matches::assert_matches;
@@ -11,7 +12,6 @@ use miden_protocol::account::{
     AccountCode,
     AccountComponent,
     AccountStorage,
-    AccountStorageMode,
     AccountType,
     StorageSlot,
     StorageSlotName,
@@ -20,17 +20,20 @@ use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::assembly::diagnostics::NamedSource;
 use miden_protocol::asset::{Asset, AssetVault, FungibleAsset, NonFungibleAsset};
 use miden_protocol::block::BlockNumber;
+use miden_protocol::errors::ProvenTransactionError;
 use miden_protocol::note::{
     Note,
     NoteAssets,
     NoteAttachment,
     NoteAttachmentScheme,
     NoteAttachments,
+    NoteDetailsCommitment,
     NoteId,
     NoteRecipient,
     NoteStorage,
     NoteTag,
     NoteType,
+    PartialNote,
     PartialNoteMetadata,
 };
 use miden_protocol::testing::account_id::{
@@ -60,10 +63,15 @@ use miden_standards::note::P2idNote;
 use miden_standards::testing::account_component::IncrNonceAuthComponent;
 use miden_standards::testing::mock_account::MockAccountExt;
 use miden_tx::auth::UnreachableAuth;
-use miden_tx::{TransactionExecutor, TransactionExecutorError};
+use miden_tx::{
+    LocalTransactionProver,
+    TransactionExecutor,
+    TransactionExecutorError,
+    TransactionProverError,
+};
 
 use crate::kernel_tests::tx::ExecutionOutputExt;
-use crate::utils::{create_public_p2any_note, create_spawn_note};
+use crate::utils::{create_p2any_note, create_public_p2any_note, create_spawn_note};
 use crate::{Auth, MockChain, TransactionContextBuilder};
 
 /// Tests that consuming a note created in a block that is newer than the reference block of the
@@ -244,9 +252,10 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
         Note::with_attachments(vault_2, metadata_2, recipient_2, attachments_2);
 
     // Create the expected output note for Note 3 which is public
-    let serial_num_3 = Word::from([Felt::new(5), Felt::new(6), Felt::new(7), Felt::new(8)]);
+    let serial_num_3 =
+        Word::from([Felt::from(5_u32), Felt::from(6_u32), Felt::from(7_u32), Felt::from(8_u32)]);
     let note_script_3 = CodeBuilder::default().compile_note_script(DEFAULT_NOTE_SCRIPT)?;
-    let inputs_3 = NoteStorage::new(vec![ONE, Felt::new(2)])?;
+    let inputs_3 = NoteStorage::new(vec![ONE, Felt::from(2_u32)])?;
     let metadata_3 = PartialNoteMetadata::new(account_id, note_type3).with_tag(tag3);
     let vault_3 = NoteAssets::new(vec![])?;
     let recipient_3 = NoteRecipient::new(serial_num_3, note_script_3, inputs_3);
@@ -379,7 +388,11 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
     let resulting_output_note_1 = executed_transaction.output_notes().get_note(0);
 
     let expected_note_assets_1 = NoteAssets::new(vec![combined_asset])?;
-    let expected_note_id_1 = NoteId::new(recipient_1, expected_note_assets_1.commitment());
+    let details_commitment_1 = NoteDetailsCommitment::from_raw_commitments(
+        recipient_1,
+        expected_note_assets_1.commitment(),
+    );
+    let expected_note_id_1 = NoteId::new(details_commitment_1, resulting_output_note_1.metadata());
     assert_eq!(resulting_output_note_1.id(), expected_note_id_1);
 
     // assert that the expected output note 2 is present
@@ -457,7 +470,7 @@ async fn user_code_can_abort_transaction_with_summary() -> anyhow::Result<()> {
     .context("failed to parse auth component")?;
 
     let account = AccountBuilder::new([42; 32])
-        .storage_mode(AccountStorageMode::Private)
+        .account_type(AccountType::Private)
         .with_auth_component(auth_component)
         .with_component(BasicWallet)
         .build_existing()
@@ -547,6 +560,9 @@ async fn tx_summary_commitment_is_signed_by_falcon_auth() -> anyhow::Result<()> 
         AuthMethod::Multisig { .. } => {
             panic!("Expected SingleSig auth scheme, got Multisig")
         },
+        AuthMethod::NetworkAccount { .. } => {
+            panic!("Expected SingleSig auth scheme, got NetworkAccount")
+        },
         AuthMethod::Unknown => panic!("Expected SingleSig auth scheme, got Unknown"),
     };
 
@@ -605,6 +621,9 @@ async fn tx_summary_commitment_is_signed_by_ecdsa_auth() -> anyhow::Result<()> {
         AuthMethod::NoAuth => panic!("Expected SingleSig auth scheme, got NoAuth"),
         AuthMethod::Multisig { .. } => {
             panic!("Expected SingleSig auth scheme, got Multisig")
+        },
+        AuthMethod::NetworkAccount { .. } => {
+            panic!("Expected SingleSig auth scheme, got NetworkAccount")
         },
         AuthMethod::Unknown => panic!("Expected SingleSig auth scheme, got Unknown"),
     };
@@ -666,7 +685,7 @@ async fn execute_tx_view_script() -> anyhow::Result<()> {
         .execute_tx_view_script(account_id, block_ref, tx_script, advice_inputs)
         .await?;
 
-    assert_eq!(stack_outputs[..3], [Felt::new(7), Felt::new(2), ONE]);
+    assert_eq!(stack_outputs[..3], [Felt::new_unchecked(7), Felt::new_unchecked(2), ONE]);
 
     Ok(())
 }
@@ -830,10 +849,8 @@ async fn inputs_created_correctly() -> anyhow::Result<()> {
         AccountComponentMetadata::mock("test::adv_map_component"),
     )?;
 
-    let account_code = AccountCode::from_components(
-        &[IncrNonceAuthComponent.into(), component.clone()],
-        AccountType::RegularAccountUpdatableCode,
-    )?;
+    let account_code =
+        AccountCode::from_components(&[IncrNonceAuthComponent.into(), component.clone()])?;
 
     let script = r#"
             adv_map A([1,2,3,4]) = [5,6,7,8]
@@ -867,7 +884,7 @@ async fn inputs_created_correctly() -> anyhow::Result<()> {
         AssetVault::mock(),
         AccountStorage::mock(),
         account_code,
-        Felt::new(1u64),
+        Felt::new_unchecked(1u64),
     );
     let tx_context = crate::TransactionContextBuilder::new(account).tx_script(tx_script).build()?;
     _ = tx_context.execute().await?;
@@ -906,6 +923,41 @@ async fn tx_can_be_reexecuted() -> anyhow::Result<()> {
         .build()?
         .execute()
         .await?;
+
+    Ok(())
+}
+
+/// Tests that creating and consuming the same note in a transaction fails.
+///
+/// TX: Inputs [X] -> Outputs [X]
+#[tokio::test]
+async fn tx_circular_note_dependency_is_rejected() -> anyhow::Result<()> {
+    let asset = NonFungibleAsset::mock(&[42]);
+
+    let mut builder = MockChain::builder();
+    let account = builder.add_existing_wallet_with_assets(Auth::IncrNonce, [])?;
+    let chain = builder.build()?;
+
+    let mut rng = RandomCoin::new(Word::from([1u32; 4]));
+    let note_x = create_p2any_note(account.id(), NoteType::Public, [asset], &mut rng);
+
+    let script = AccountInterface::from_account(&account)
+        .build_send_notes_script(&[PartialNote::from(note_x.clone())], None)?;
+
+    // The tx script reconstructs note_x as an output note (same recipient + same asset).
+    let executed_tx = chain
+        .build_tx_context(account.clone(), &[], slice::from_ref(&note_x))?
+        .tx_script(script)
+        .extend_expected_output_notes(vec![RawOutputNote::Full(note_x.clone())])
+        .build()?
+        .execute()
+        .await?;
+    let error = LocalTransactionProver::default().prove_dummy(executed_tx).unwrap_err();
+
+    assert_matches!(error, TransactionProverError::ProvenTransactionBuildFailed(
+      ProvenTransactionError::NoteCreatedAndConsumed(note_id)) => {
+        assert_eq!(note_id, note_x.id());
+    });
 
     Ok(())
 }

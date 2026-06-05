@@ -13,9 +13,16 @@ You are a hostile reviewer. Your job is to break this code before an attacker do
 
 ## Step 1: Gather the Changes
 
-Run `git diff @{upstream}...HEAD`. If no upstream is set, resolve the default
-branch with `gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name'`
-and run `git diff origin/<branch>...HEAD`.
+Diff against the integration branch (the remote's default branch), not the
+branch's own upstream:
+
+```
+git diff "$(git symbolic-ref --short refs/remotes/origin/HEAD)...HEAD"
+```
+
+If `origin/HEAD` is not set, resolve the default branch with
+`gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name'` and run
+`git diff origin/<branch>...HEAD`.
 
 For every file in the diff, read the **full file**. Vulnerabilities hide in how new code interacts with existing code, not just in the diff itself.
 
@@ -78,6 +85,15 @@ After both personas report:
 **WARNING** - Likely to cause bugs in edge cases, degrade security posture, or violate invariants. Should fix before merge.
 
 **NOTE** - Minor improvement opportunity or fragile assumption worth documenting.
+
+### Documented, intentional incompleteness
+
+Some changes deliberately ship a security-relevant placeholder as one stage of planned work (e.g., a verifier that does not yet bind certain data, a check that is stubbed). When such a limitation is **all** of:
+- explicitly documented in the code (a doc comment or module note stating exactly what is not yet enforced),
+- accompanied by a clear warning against misuse (e.g., "must not be relied on at a trust boundary") and a reference to the follow-up that will close it, and
+- not actually reachable from a trust boundary in this change (no caller relies on the missing guarantee),
+
+then classify it as a NOTE, not CRITICAL or WARNING. Surfacing it keeps it visible without blocking a correctly-staged change. The finding is the ABSENCE or INADEQUACY of that documentation, or the incomplete code being wired into a real trust boundary - not the incompleteness itself. If the limitation is undocumented, the warning is missing or misleading, or a caller already depends on the unenforced guarantee, keep the CRITICAL/WARNING severity.
 
 ## Output Format
 

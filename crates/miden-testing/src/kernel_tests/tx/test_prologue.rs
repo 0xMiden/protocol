@@ -9,7 +9,6 @@ use miden_protocol::account::{
     AccountBuilder,
     AccountHeader,
     AccountProcedureRoot,
-    AccountStorageMode,
     AccountType,
     StorageSlot,
     StorageSlotName,
@@ -42,8 +41,8 @@ use miden_protocol::transaction::memory::{
     INPUT_NOTE_ARGS_OFFSET,
     INPUT_NOTE_ASSETS_COMMITMENT_OFFSET,
     INPUT_NOTE_ASSETS_OFFSET,
-    INPUT_NOTE_ATTACHMENT_OFFSET,
-    INPUT_NOTE_ID_OFFSET,
+    INPUT_NOTE_ATTACHMENTS_COMMITMENT_OFFSET,
+    INPUT_NOTE_DETAILS_COMMITMENT_OFFSET,
     INPUT_NOTE_METADATA_OFFSET,
     INPUT_NOTE_NULLIFIER_SECTION_PTR,
     INPUT_NOTE_NUM_ASSETS_OFFSET,
@@ -322,7 +321,7 @@ fn partial_blockchain_memory_assertions(
 
     assert_eq!(
         exec_output.get_kernel_mem_word(PARTIAL_BLOCKCHAIN_NUM_LEAVES_PTR)[0],
-        Felt::new(partial_blockchain.chain_length().as_u64()),
+        Felt::from(partial_blockchain.chain_length()),
         "The number of leaves should be stored at the PARTIAL_BLOCKCHAIN_NUM_LEAVES_PTR"
     );
 
@@ -452,9 +451,9 @@ fn input_notes_memory_assertions(
         );
 
         assert_eq!(
-            exec_output.get_note_mem_word(note_idx, INPUT_NOTE_ID_OFFSET),
-            note.id().as_word(),
-            "ID hash should be computed and stored at the correct offset"
+            exec_output.get_note_mem_word(note_idx, INPUT_NOTE_DETAILS_COMMITMENT_OFFSET),
+            note.details_commitment().as_word(),
+            "note details commitment should be computed and stored at INPUT_NOTE_DETAILS_COMMITMENT_OFFSET"
         );
 
         assert_eq!(
@@ -494,7 +493,7 @@ fn input_notes_memory_assertions(
         );
 
         assert_eq!(
-            exec_output.get_note_mem_word(note_idx, INPUT_NOTE_ATTACHMENT_OFFSET),
+            exec_output.get_note_mem_word(note_idx, INPUT_NOTE_ATTACHMENTS_COMMITMENT_OFFSET),
             note.attachments().to_commitment(),
             "note attachment should be stored at the correct offset"
         );
@@ -541,7 +540,7 @@ fn input_notes_memory_assertions(
 #[tokio::test]
 async fn create_simple_account() -> anyhow::Result<()> {
     let account = AccountBuilder::new([6; 32])
-        .storage_mode(AccountStorageMode::Public)
+        .account_type(AccountType::Public)
         .with_auth_component(Auth::IncrNonce)
         .with_component(MockAccountComponent::with_empty_slots())
         .build()?;
@@ -552,11 +551,11 @@ async fn create_simple_account() -> anyhow::Result<()> {
         .await
         .context("failed to execute account-creating transaction")?;
 
-    assert_eq!(tx.account_delta().nonce_delta(), Felt::new(1));
+    assert_eq!(tx.account_delta().nonce_delta(), Felt::ONE);
     // except for the nonce, the delta should be empty
     assert!(tx.account_delta().storage().is_empty());
     assert!(tx.account_delta().vault().is_empty());
-    assert_eq!(tx.final_account().nonce(), Felt::new(1));
+    assert_eq!(tx.final_account().nonce(), Felt::ONE);
     // account commitment should not be the empty word
     assert_ne!(tx.account_delta().to_commitment(), EMPTY_WORD);
 
@@ -571,33 +570,22 @@ pub async fn create_account_test(
     TransactionContextBuilder::new(account).build().unwrap().execute().await
 }
 
-pub async fn create_multiple_accounts_test(storage_mode: AccountStorageMode) -> anyhow::Result<()> {
+pub async fn create_multiple_accounts_test(account_type: AccountType) -> anyhow::Result<()> {
     let mut accounts = Vec::new();
 
-    for account_type in [
-        AccountType::RegularAccountImmutableCode,
-        AccountType::RegularAccountUpdatableCode,
-        AccountType::FungibleFaucet,
-        AccountType::NonFungibleFaucet,
-    ] {
-        let account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
-            .account_type(account_type)
-            .storage_mode(storage_mode)
-            .with_auth_component(Auth::IncrNonce)
-            .with_component(MockAccountComponent::with_slots(vec![StorageSlot::with_value(
-                StorageSlotName::mock(0),
-                Word::from([255u32; WORD_SIZE]),
-            )]))
-            .build()
-            .with_context(|| {
-                format!("account build for {account_type} and {storage_mode} failed")
-            })?;
+    let account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
+        .account_type(account_type)
+        .with_auth_component(Auth::IncrNonce)
+        .with_component(MockAccountComponent::with_slots(vec![StorageSlot::with_value(
+            StorageSlotName::mock(0),
+            Word::from([255u32; WORD_SIZE]),
+        )]))
+        .build()
+        .with_context(|| format!("account build with account type {account_type} failed"))?;
 
-        accounts.push(account);
-    }
+    accounts.push(account);
 
     for account in accounts {
-        let account_type = account.account_type();
         create_account_test(account).await.context(format!(
             "create_multiple_accounts_test test failed for account type {account_type}"
         ))?;
@@ -606,14 +594,12 @@ pub async fn create_multiple_accounts_test(storage_mode: AccountStorageMode) -> 
     Ok(())
 }
 
-/// Tests that a valid account of each storage mode can be created successfully.
+/// Tests that a valid account of each account type can be created successfully.
 #[tokio::test]
 pub async fn create_accounts_with_all_storage_modes() -> anyhow::Result<()> {
-    create_multiple_accounts_test(AccountStorageMode::Private).await?;
+    create_multiple_accounts_test(AccountType::Private).await?;
 
-    create_multiple_accounts_test(AccountStorageMode::Public).await?;
-
-    create_multiple_accounts_test(AccountStorageMode::Network).await
+    create_multiple_accounts_test(AccountType::Public).await
 }
 
 /// Tests that supplying an invalid seed causes account creation to fail.
@@ -623,7 +609,6 @@ pub async fn create_account_invalid_seed() -> anyhow::Result<()> {
     mock_chain.prove_next_block()?;
 
     let account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
-        .account_type(AccountType::RegularAccountUpdatableCode)
         .with_auth_component(Auth::IncrNonce)
         .with_component(BasicWallet)
         .build()?;

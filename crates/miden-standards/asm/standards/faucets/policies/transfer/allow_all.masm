@@ -1,0 +1,17 @@
+# Generic transfer policy procedures shared by policy manager flows.
+
+# POLICY PROCEDURES
+# ================================================================================================
+
+#! Transfer policy that accepts every transfer.
+#!
+#! Invoked as the active send or receive policy via `TokenPolicyManager`, which applies the
+#! account-wide pause check.
+#!
+#! Inputs:  [ASSET_KEY, ASSET_VALUE]
+#! Outputs: [ASSET_VALUE]
+#!
+#! Invocation: call
+pub proc check_policy
+    dropw
+end

@@ -13,9 +13,16 @@ You are an experienced Staff Engineer conducting a thorough code review with fre
 
 ## Step 1: Gather Context
 
-Run `git diff @{upstream}...HEAD`. If no upstream is set, resolve the default
-branch with `gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name'`
-and run `git diff origin/<branch>...HEAD`.
+Diff against the integration branch (the remote's default branch), not the
+branch's own upstream:
+
+```
+git diff "$(git symbolic-ref --short refs/remotes/origin/HEAD)...HEAD"
+```
+
+If `origin/HEAD` is not set, resolve the default branch with
+`gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name'` and run
+`git diff origin/<branch>...HEAD`.
 
 For every file in the diff, read the **full file** - not just the changed lines. Bugs hide in how new code interacts with existing code.
 
@@ -73,6 +80,15 @@ Categorize every finding:
 **Important** - Should fix before merge (missing test, wrong abstraction, poor error handling, API design issue)
 
 **Nit** - Worth improving (naming, style, minor readability, optional optimization)
+
+### Documented, intentional incompleteness
+
+A change may deliberately ship incomplete behavior as one stage of a larger, planned effort (a skeleton, placeholder, or stub). When the incompleteness is **all** of:
+- explicitly documented in the code (a doc comment or module note stating what is not yet implemented),
+- clearly scoped and warned about (the docs say what not to rely on and reference the follow-up work), and
+- not wired into any path that depends on the missing behavior being correct,
+
+then the incompleteness itself is NOT a Critical or Important finding - the change is complete for what it claims to be. Treat it as a Nit at most, or acknowledge the clear documentation under "What's Done Well". Escalate only when the documentation is missing, inaccurate, or misleading, or when the incomplete code is actually relied upon as if it were complete. Distinguish "incomplete but correct, documented, and self-contained" from "broken or silently incomplete".
 
 ## Output Format
 

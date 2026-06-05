@@ -67,6 +67,7 @@ use crate::MockChain;
 /// # Ok(())
 /// # }
 /// ```
+#[derive(Clone)]
 pub struct TransactionContextBuilder {
     source_manager: Arc<dyn SourceManagerSync>,
     account: Account,

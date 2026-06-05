@@ -2,6 +2,7 @@ use miden_crypto::merkle::smt::LeafIndex;
 
 use super::AccountId;
 use crate::Word;
+use crate::account::AccountIdPrefix;
 use crate::crypto::merkle::smt::SMT_DEPTH;
 use crate::errors::AccountIdError;
 
@@ -49,6 +50,13 @@ impl AccountIdKey {
         AccountId::try_from_elements(word[Self::KEY_SUFFIX_IDX], word[Self::KEY_PREFIX_IDX])
     }
 
+    /// Returns the SMT key for an account ID prefix, with only the prefix field set.
+    pub(crate) fn id_prefix_to_smt_key(prefix: AccountIdPrefix) -> Word {
+        let mut key = Word::empty();
+        key[Self::KEY_PREFIX_IDX] = prefix.as_felt();
+        key
+    }
+
     // LEAF INDEX
     //---------------------------------------------------------------------------------------------------
 
@@ -73,15 +81,10 @@ mod tests {
     use miden_core::ZERO;
 
     use super::{AccountId, *};
-    use crate::account::{AccountIdVersion, AccountStorageMode, AccountType};
+    use crate::account::{AccountIdVersion, AccountType};
     #[test]
     fn test_as_word_layout() {
-        let id = AccountId::dummy(
-            [1u8; 15],
-            AccountIdVersion::Version1,
-            AccountType::RegularAccountImmutableCode,
-            AccountStorageMode::Private,
-        );
+        let id = AccountId::dummy([1u8; 15], AccountIdVersion::Version1, AccountType::Private);
         let key = AccountIdKey::from(id);
         let word = key.as_word();
 
@@ -93,12 +96,7 @@ mod tests {
 
     #[test]
     fn test_roundtrip_word_conversion() {
-        let id = AccountId::dummy(
-            [1u8; 15],
-            AccountIdVersion::Version1,
-            AccountType::RegularAccountImmutableCode,
-            AccountStorageMode::Private,
-        );
+        let id = AccountId::dummy([1u8; 15], AccountIdVersion::Version1, AccountType::Private);
 
         let key = AccountIdKey::from(id);
         let recovered =
@@ -109,12 +107,7 @@ mod tests {
 
     #[test]
     fn test_leaf_index_consistency() {
-        let id = AccountId::dummy(
-            [1u8; 15],
-            AccountIdVersion::Version1,
-            AccountType::RegularAccountImmutableCode,
-            AccountStorageMode::Private,
-        );
+        let id = AccountId::dummy([1u8; 15], AccountIdVersion::Version1, AccountType::Private);
         let key = AccountIdKey::from(id);
 
         let idx1 = key.to_leaf_index();
@@ -125,12 +118,7 @@ mod tests {
 
     #[test]
     fn test_from_conversion() {
-        let id = AccountId::dummy(
-            [1u8; 15],
-            AccountIdVersion::Version1,
-            AccountType::RegularAccountImmutableCode,
-            AccountStorageMode::Private,
-        );
+        let id = AccountId::dummy([1u8; 15], AccountIdVersion::Version1, AccountType::Private);
         let key: AccountIdKey = id.into();
 
         assert_eq!(key.account_id(), id);
@@ -139,12 +127,7 @@ mod tests {
     #[test]
     fn test_multiple_roundtrips() {
         for _ in 0..100 {
-            let id = AccountId::dummy(
-                [1u8; 15],
-                AccountIdVersion::Version1,
-                AccountType::RegularAccountImmutableCode,
-                AccountStorageMode::Private,
-            );
+            let id = AccountId::dummy([1u8; 15], AccountIdVersion::Version1, AccountType::Private);
             let key = AccountIdKey::from(id);
 
             let recovered =

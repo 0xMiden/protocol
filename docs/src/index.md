@@ -41,9 +41,9 @@ An [Asset](asset) can be fungible and non-fungible. They are stored in the owner
 
 ### Transactions
 
-A [Transaction](transaction) describes the production and consumption of notes by a single account.
+A [Transaction](transaction) is always executed against a single account. It involves at least one of two things: mutating that account's state — its storage or vault, for example by executing a public smart contract function — or creating or consuming notes. The account is not always mutated: a transaction may only consume and create notes, leaving the account itself untouched.
 
-Executing a transaction always results in a STARK proof.
+After a transaction is executed, a STARK proof must be created to attest to its correctness before submitting it to the network. This proving step can be done separately from execution, for example by a "remote prover" running a powerful machine.
 
 The [transaction chapter](transaction) describes the transaction design and implementation, including an in-depth discussion of how transaction execution happens in the transaction kernel program.
 

@@ -35,13 +35,13 @@ async fn prove_account_creation_with_fees() -> anyhow::Result<()> {
     // We expect that the new account contains the amount minus the paid fee.
     let added_asset = FungibleAsset::new(chain.fee_faucet_id(), amount)?.sub(tx.fee())?;
 
-    assert_eq!(tx.account_delta().nonce_delta(), Felt::new(1));
-    // except for the nonce, the storage delta should be empty
+    assert_eq!(tx.account_delta().nonce_delta(), Felt::ONE);
+    // except for the nonce, the storage patch should be empty
     assert!(tx.account_delta().storage().is_empty());
     assert_eq!(tx.account_delta().vault().added_assets().count(), 1);
     assert_eq!(tx.account_delta().vault().removed_assets().count(), 0);
     assert_eq!(tx.account_delta().vault().added_assets().next().unwrap(), added_asset.into());
-    assert_eq!(tx.final_account().nonce(), Felt::new(1));
+    assert_eq!(tx.final_account().nonce(), Felt::ONE);
     // account commitment should not be the empty word
     assert_ne!(tx.account_delta().to_commitment(), Word::empty());
 
