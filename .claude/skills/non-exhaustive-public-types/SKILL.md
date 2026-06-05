@@ -59,10 +59,3 @@ pub enum AccountStorageMode {
     Private,
 }
 ```
-
-## Evidence
-
-- PR #2712 (PhilippGackstatter): "Public enums in library APIs should be marked non_exhaustive when new variants are anticipated."
-- PR #1924 (PhilippGackstatter): "Mark this `#[non_exhaustive]`."
-- PR #1713 (PhilippGackstatter): "We anticipate more variants — make it non_exhaustive."
-- PR #1721 (bobbinth): "Public struct, add non_exhaustive."

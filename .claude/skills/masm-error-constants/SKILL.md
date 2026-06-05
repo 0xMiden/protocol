@@ -1,6 +1,6 @@
 ---
 name: masm-error-constants
-description: Use when adding or editing MASM `assert*` / `panic` instructions — define an `ERR_<NAME>` constant with a descriptive string message and use it via `assert.err=ERR_NAME`; never use bare assertions without an error code.
+description: Use when adding or editing MASM `assert*` / `panic` instructions — define an `ERR_<NAME>` constant with a descriptive string message and use it via `assert.err=ERR_NAME`.
 ---
 
 # MASM Error Constants
@@ -50,11 +50,3 @@ end
 const ERR_INVALID = "invalid"
 assert.err=ERR_INVALID   # used in 6 places, each meaning something different
 ```
-
-## Evidence
-
-- PR #1968 (bobbinth): "Always attach a descriptive error string to MASM assertions to aid debugging and refactoring."
-- PR #1871 (bobbinth): "Use the `ERR_` prefix and a dedicated constant for each distinct error condition in MASM."
-- PR #2636 (PhilippGackstatter): "This assert needs a descriptive error code."
-- PR #1521 (bobbinth): "Move this to an ERR_ constant."
-- PR #1609 (PhilippGackstatter): "Bare assert; add an ERR_ code."

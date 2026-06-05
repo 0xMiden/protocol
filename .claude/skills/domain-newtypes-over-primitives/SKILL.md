@@ -1,6 +1,6 @@
 ---
 name: domain-newtypes-over-primitives
-description: Use when introducing API parameters, struct fields, or return types that conceptually carry a domain value (asset amount, faucet ID, slot index, fee rate) — wrap them in a newtype that enforces invariants, instead of accepting raw `Word`, `u64`, or `(prefix, suffix)` tuples.
+description: Use when introducing API parameters, struct fields, or return types that conceptually carry a domain value (asset amount, faucet ID, slot index, fee rate) — wrap them in a newtype that enforces invariants.
 ---
 
 # Use Domain Newtypes, Not Raw Primitives
@@ -44,11 +44,3 @@ impl BlockNumber {
 // Bad: raw u32 leaks into every signature, every caller checks the bound
 pub fn lookup_block(n: u32) -> Option<Block>;
 ```
-
-## Evidence
-
-- PR #2439 (PhilippGackstatter): "Wrap domain-validated values in newtypes that enforce invariants at construction time; avoid raw Word or u64 in APIs."
-- PR #2636 (PhilippGackstatter): "Accept strongly-typed domain values (e.g. FungibleAsset) at API boundaries instead of raw (AccountId, u64) tuples or Word arrays."
-- PR #2890 (bobbinth): "We should introduce a newtype here rather than passing the raw value."
-- PR #1978 (PhilippGackstatter): "Use a typed wrapper instead of a bare Word."
-- PR #2246 (bobbinth): "This should be a typed wrapper, not a raw integer."

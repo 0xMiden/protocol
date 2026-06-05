@@ -1,6 +1,6 @@
 ---
 name: return-error-not-panic
-description: Use when writing a public Rust API function, a deserialization path, or any code reachable from external/untrusted input — return a `Result` for recoverable failures (never panic/unwrap/silent-default), and when a genuinely-trusted fast path is needed, expose it as a separate `_unchecked` entry point rather than weakening the default.
+description: Use when writing a public Rust API function, a deserialization path, or any code reachable from external/untrusted input — return a `Result` for recoverable failures, and when a genuinely-trusted fast path is needed, expose it as a separate `_unchecked` entry point.
 ---
 
 # Return Errors, Don't Panic on External Input
@@ -65,13 +65,3 @@ impl AccountId {
 ```
 
 For the MASM analog (validating against a commitment, content-addressed advice keys, erroring on missing advice), see `advice-provider-hygiene`.
-
-## Evidence
-
-- PR #2439 (PhilippGackstatter): "Return errors rather than silently swallowing them with Option or defaults in conversion logic."
-- PR #2246 (bobbinth): "Treat missing required data as an error rather than silently defaulting or skipping."
-- PR #2123 (PhilippGackstatter): "Don't unwrap on deserialized data."
-- PR #2006 (PhilippGackstatter): "Deserialization constructors must treat input as untrusted; provide a separate trusted constructor for in-memory use."
-- PR #1934 (PhilippGackstatter): "Surface this as a Result variant; users could trigger it."
-- PR #1995 (PhilippGackstatter): "Absent advice key must produce a typed error."
-- PR #1531 (bobbinth): "Replace this panic with a typed error."

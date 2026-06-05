@@ -36,10 +36,3 @@ const ACCOUNT_HEADER_LEN_FELTS = 8
 ```
 
 If you change either to `9`, change both in the same PR. Add a comment at one declaration pointing to the other (or a build-script assertion) if the relationship isn't obvious.
-
-## Evidence
-
-- PR #2795 (mmagician): "Numeric limits must agree across Rust and MASM; cross-check Rust constants against their MASM counterparts when changing either side."
-- PR #1532 (bobbinth): "This constant also needs to change in MASM."
-- PR #1353 (PhilippGackstatter): "MASM side is now out of sync with the Rust constant."
-- PR #1982 (bobbinth): "Cross-check the kernel side."

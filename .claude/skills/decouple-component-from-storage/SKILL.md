@@ -1,6 +1,6 @@
 ---
 name: decouple-component-from-storage
-description: Use when writing a MASM procedure that lives inside an account component and currently reads from a hard-coded storage slot — accept the required values as stack parameters instead, so the procedure works regardless of where the component is mapped in the account's storage layout.
+description: Use when writing a MASM procedure that lives inside an account component and currently reads from a hard-coded storage slot — accept the required values as stack parameters, so the procedure works regardless of where the component is mapped in the account's storage layout.
 ---
 
 # Decouple Component Procedures from Storage Layout
@@ -39,9 +39,3 @@ proc transfer_asset
     mem_loadw.4   # only works if THIS component is at slot 4
 end
 ```
-
-## Evidence
-
-- PR #1712 (PhilippGackstatter): "Decouple component procedures from storage layout assumptions by accepting required values as input parameters."
-- PR #2664 (PhilippGackstatter): "This component reads slot 4 directly — pass it as a parameter."
-- PR #1599 (bobbinth): "The component shouldn't know its own slot."

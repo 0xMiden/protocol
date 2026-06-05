@@ -37,10 +37,3 @@ u32lt
 # Bad: u32 op on untrusted input
 u32add   # one operand could be >2^32; silently wraps or traps
 ```
-
-## Evidence
-
-- PR #1605 (bobbinth): "Before using u32 comparison or arithmetic instructions on user-supplied values, assert they are valid u32s with `u32assert`."
-- PR #1638 (PhilippGackstatter): "Add u32assert before this u32lt."
-- PR #1871 (bobbinth): "u32assert2 here for both operands."
-- PR #1968 (bobbinth): "Need a u32assert before the u32op."

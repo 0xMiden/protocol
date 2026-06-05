@@ -48,9 +48,3 @@ serde = "1.0"
 [dependencies]
 serde = "1.0.130"
 ```
-
-## Evidence
-
-- PR #1894 (bobbinth): "Define shared dependencies at the workspace level rather than duplicating versions across crates."
-- PR #1721 (bobbinth): "Promote crate dependencies to workspace dependencies once they are used in more than one crate."
-- PR #1802 (PhilippGackstatter): "This should be `workspace = true`."

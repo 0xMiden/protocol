@@ -1,6 +1,6 @@
 ---
 name: cheap-masm-equivalents
-description: Use when writing or reviewing MASM hot paths — prefer the cheaper instruction sequence when it is semantically equivalent (`neq.0` over `gt.0` for non-zero checks, `dup` over `loc_load`, `cdrop` over branches selecting between two values).
+description: Use when writing or reviewing MASM hot paths — prefer the cheaper equivalent instruction: `neq.0` over `gt.0` for non-zero checks, `cdrop` over an `if/else` selecting between two values, `dup.N` over `loc_load` for a value still on the stack, `eqw` over element-wise word comparison, `u32gt`/`u32lt` over generic `gt`/`lt` on known-u32 operands.
 ---
 
 # Prefer Cheap MASM Equivalents
@@ -48,11 +48,3 @@ else
     swap drop # drop a, keep b
 end
 ```
-
-## Evidence
-
-- PR #2636 (PhilippGackstatter): "Prefer neq.0 (3 cycles) over gt.0 (16 cycles) when checking a value is non-zero in MASM."
-- PR #2712 (PhilippGackstatter): "Use cdrop here instead of the branch."
-- PR #1681 (bobbinth): "Replace this branch with cdrop."
-- PR #1968 (bobbinth): "eqw is cheaper than the per-element compare."
-- PR #2123 (PhilippGackstatter): "u32gt; we know both operands are u32."

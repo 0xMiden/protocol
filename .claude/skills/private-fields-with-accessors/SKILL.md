@@ -38,10 +38,3 @@ pub struct FungibleTokenMetadata {
     pub supply: u64,
 }
 ```
-
-## Evidence
-
-- PR #2439 (PhilippGackstatter): "Keep fields of public structs private to preserve the ability to extend them non-breakingly after release."
-- PR #2670 (PhilippGackstatter): "Make these fields private and add accessors."
-- PR #2712 (PhilippGackstatter): "This field should be private."
-- PR #1934 (bobbinth): "We should not expose these fields directly."

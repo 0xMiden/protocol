@@ -1,6 +1,6 @@
 ---
 name: checked-arithmetic
-description: Use when writing Rust arithmetic on amounts, balances, supplies, or other quantities derived from external/user input — use `checked_*` or `overflowing_*` operations and handle the overflow flag explicitly; do not rely on wrapping semantics for untrusted values.
+description: Use when writing Rust arithmetic on amounts, balances, supplies, or other quantities derived from external/user input — use `checked_*` or `overflowing_*` operations and handle the overflow flag explicitly.
 ---
 
 # Checked Arithmetic on User-Supplied Values
@@ -15,7 +15,7 @@ Any arithmetic where one or more operands originates from external input (transa
 
 ## Why
 
-Default arithmetic on `u64`/`u128` wraps in release. Two amounts that fit individually can multiply to overflow, producing a fungible-asset amount that is silently far smaller than the user intended. Checked arithmetic forces the caller to acknowledge the overflow path; wrapping arithmetic hides it.
+The default `+`, `-`, `*` operators wrap silently in release builds. An overflow on a balance or asset amount then yields a wrong value with no error — a sum or product that wraps to a number the caller never intended. Checked and overflowing operations surface the overflow so it can be rejected.
 
 ## Examples
 
@@ -30,9 +30,3 @@ if overflow { return Err(Error::Overflow); }
 // Bad: wraps on overflow in release
 let total = balance + amount;
 ```
-
-## Evidence
-
-- PR #2636 (PhilippGackstatter): "Use checked or overflowing arithmetic (overflowing_add, widening_mul) on user-supplied amounts and assert the overflow flag rather than relying on wrapping semantics."
-- PR #2712 (PhilippGackstatter): "This addition can overflow on user input — use checked_add and handle the None case."
-- PR #1654 (bobbinth): "We should use checked arithmetic here."

@@ -1,6 +1,6 @@
 ---
 name: assert-specific-error-in-tests
-description: Use when writing a Rust test that exercises a failure path or a MASM test that expects a `panic` / `assert` — assert on the specific expected error variant or `ERR_*` code, not merely that some failure occurred.
+description: Use when writing a Rust test that exercises a failure path or a MASM test that expects a `panic` / `assert` — assert on the specific expected error variant or error code.
 ---
 
 # Negative Tests Must Pin the Expected Error
@@ -42,11 +42,3 @@ assert_eq!(err.code(), ERR_NOTE_NOT_FOUND);
 // Bad
 assert!(run_kernel(...).is_err());
 ```
-
-## Evidence
-
-- PR #2740 (PhilippGackstatter): "Negative tests must assert the exact expected error code/variant, not merely that some failure occurred."
-- PR #2636 (PhilippGackstatter): "Assert on a specific expected error in negative-path tests instead of asserting only that some error occurred."
-- PR #1604 (bobbinth): "Assert on the variant; is_err is too loose."
-- PR #1599 (PhilippGackstatter): "Match the specific ERR_ constant."
-- PR #1759 (PhilippGackstatter): "Use assert_matches with the specific variant."

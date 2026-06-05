@@ -1,6 +1,6 @@
 ---
 name: preserve-error-source
-description: Use when defining a new error variant or wrapping a lower-level error — preserve the underlying error via `#[source]` (or `Box<dyn Error>`); never stringify it into the message.
+description: Use when defining a new error variant or wrapping a lower-level error — preserve the underlying error via `#[source]` (or `Box<dyn Error>`).
 ---
 
 # Preserve Error Source Chains
@@ -42,11 +42,3 @@ pub enum AccountError {
 // Bad: source baked into the message via format!
 return Err(AccountError::StorageDeser(format!("{e}")));
 ```
-
-## Evidence
-
-- PR #2439 (PhilippGackstatter): "Preserve source errors using source attribute rather than stringifying them, so error chains remain useful for debugging."
-- PR #2389 (PhilippGackstatter): "Use #[source] here so the underlying io error survives."
-- PR #2053 (PhilippGackstatter): "Don't stringify the source; thiserror has source for this."
-- PR #1998 (bobbinth): "Box the inner error rather than calling to_string on it."
-- PR #2365 (PhilippGackstatter): "Attach the cause as a source."

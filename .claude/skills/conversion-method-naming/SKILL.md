@@ -1,6 +1,6 @@
 ---
 name: conversion-method-naming
-description: Use when naming a conversion or accessor method in Rust — follow the API guideline prefixes (`as_` for free borrows, `to_` for expensive conversions, `into_` for ownership transfers, `from_` for type-associated constructors) and don't overload `with_` for non-builder methods.
+description: Use when naming a conversion or accessor method in Rust — follow the API guideline prefixes (`as_` for free borrows, `to_` for expensive conversions, `into_` for ownership transfers, `from_` for type-associated constructors).
 ---
 
 # Rust Conversion Method Naming
@@ -46,11 +46,3 @@ impl Header {
 // Bad: with_* on a non-builder method
 fn with_seed(rng: &mut Rng, seed: u64) { ... }   // not returning Self
 ```
-
-## Evidence
-
-- PR #2053 (PhilippGackstatter): "Follow Rust API naming guidelines for conversions: as_ for free borrows, to_ for expensive conversions, into_ for ownership transfers."
-- PR #2712 (PhilippGackstatter): "Reserve with_* for builder methods that return Self; if a method does not return Self, give it a different verb or implement a conversion trait."
-- PR #2569 (PhilippGackstatter): "This should be to_, not as_, because it allocates."
-- PR #2205 (bobbinth): "Rename as_ to to_ here."
-- PR #1426 (PhilippGackstatter): "with_ implies builder semantics; rename."

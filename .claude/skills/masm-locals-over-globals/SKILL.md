@@ -40,10 +40,3 @@ proc compute_hash
     mem_store.SCRATCH_PTR        # collides with anyone else using SCRATCH_PTR
 end
 ```
-
-## Evidence
-
-- PR #2871 (PhilippGackstatter): "Prefer procedure locals over scratch memory in MASM procedures when both achieve the same result."
-- PR #2636 (PhilippGackstatter): "Keep procedure-scoped temporary values in local memory rather than global memory."
-- PR #2381 (bobbinth): "Use loc_store here instead of a global scratch region."
-- PR #2292 (PhilippGackstatter): "This scratch is per-call; make it local."

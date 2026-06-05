@@ -1,6 +1,6 @@
 ---
 name: intra-doc-links
-description: Use when writing or editing a Rust doc comment that references a type, method, or module — write the reference as an intra-doc link with brackets (`[TypeName]`) so renames produce rustdoc warnings instead of silently stale prose.
+description: Use when writing or editing a Rust doc comment that references a type, method, or module — write the reference as an intra-doc link with brackets (`[TypeName]`) so renames produce rustdoc warnings.
 ---
 
 # Use Intra-Doc Links in Rust Doc Comments
@@ -44,10 +44,3 @@ pub fn account_id(&self) -> Result<AccountId, AccountError> { ... }
 /// Returns `AccountError::NotFound` if the storage slot is empty.
 pub fn account_id(&self) -> Result<AccountId, AccountError> { ... }
 ```
-
-## Evidence
-
-- PR #1832 (PhilippGackstatter): "Write type names in doc comments as intra-doc links so renames surface as warnings."
-- PR #1787 (PhilippGackstatter): "Use intra-doc links here."
-- PR #1480 (bobbinth): "Link these type references."
-- PR #2833 (partylikeits1983): "These type names should be intra-doc links."

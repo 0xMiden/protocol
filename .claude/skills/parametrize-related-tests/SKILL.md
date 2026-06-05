@@ -1,6 +1,6 @@
 ---
 name: parametrize-related-tests
-description: Use when writing two or more tests that differ only by inputs or expected outputs (e.g. one per enum variant, one per "good/bad" input pair) — parameterize them with `rstest` cases instead of copy-pasting per-case test functions.
+description: Use when writing two or more tests that differ only by inputs or expected outputs (e.g. one per enum variant, one per "good/bad" input pair) — parameterize them with `rstest` cases.
 ---
 
 # Parameterize Repeated Tests with `rstest`
@@ -44,11 +44,3 @@ fn asset_kind_fungible() { assert_eq!(Asset::Fungible(make_fungible()).kind(), A
 #[test]
 fn asset_kind_nft() { assert_eq!(Asset::Nft(make_nft()).kind(), AssetKind::Nft); }
 ```
-
-## Evidence
-
-- PR #2849 (PhilippGackstatter): "Parametrize tests across all variants of an enum family rather than duplicating per-variant test boilerplate."
-- PR #2439 (PhilippGackstatter): "Use rstest to dedupe these test functions."
-- PR #2741 (bobbinth): "Could be expressed as rstest cases."
-- PR #2390 (PhilippGackstatter): "These tests differ only by input — rstest case form."
-- PR #2123 (PhilippGackstatter): "Fold into a single parameterized test."

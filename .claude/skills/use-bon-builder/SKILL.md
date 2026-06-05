@@ -1,6 +1,6 @@
 ---
 name: use-bon-builder
-description: Use when introducing a Rust type whose constructor takes more than ~3 optional or named parameters — derive a builder with `#[bon::builder]` instead of hand-writing a separate Builder module or adding overloaded constructors.
+description: Use when introducing a Rust type whose constructor takes more than ~3 optional or named parameters — derive a builder with `#[bon::builder]`.
 ---
 
 # Use `bon` for Builders With Many Optional Fields
@@ -50,10 +50,3 @@ let acc = Account::builder()
 pub struct AccountBuilder { id: Option<AccountId>, storage: Option<AccountStorage>, ... }
 impl AccountBuilder { ... 80 lines ... }
 ```
-
-## Evidence
-
-- PR #2890 (PhilippGackstatter): "Replace hand-written builder modules with `#[bon::builder]` when the builder has many optional fields."
-- PR #2636 (PhilippGackstatter): "Use bon here instead of the custom builder."
-- PR #2439 (PhilippGackstatter): "This is a perfect case for `#[bon::builder]`."
-- PR #1713 (PhilippGackstatter): "bon would replace this boilerplate."

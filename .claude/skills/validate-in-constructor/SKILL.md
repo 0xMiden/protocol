@@ -54,11 +54,3 @@ metadata.set_name(name);
 metadata.set_supply(supply);
 metadata.validate()?;  // can be forgotten
 ```
-
-## Evidence
-
-- PR #2795 (mmagician): "Constructors should validate inputs and centralize derived-state computation so callers cannot bypass invariants."
-- PR #2883 (bobbinth): "Reject configurations that would render an object permanently unusable at construction time."
-- PR #2439 (PhilippGackstatter): "I would in any case suggest validating before building the struct, so that once you have a FungibleTokenMetadata, you know it is valid and do not have an in-between state where the struct could be invalid."
-- PR #2670 (PhilippGackstatter): "Ideally, what this function validates should be enforced in `ProcedurePolicyMode`. We should not be able to construct a `ProcedurePolicyMode` with immediate threshold = 0 if this is never a valid state."
-- PR #2382 (bobbinth): "Validation should happen in the constructor."

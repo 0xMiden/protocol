@@ -1,6 +1,6 @@
 ---
 name: felt-construction
-description: Use when constructing a `Felt` from a numeric value in Rust — never call `Felt::new(value)` on values that may exceed the field modulus; use `Felt::from(u32)` (infallible) or `Felt::try_from(u64)` (checked) instead.
+description: Use when constructing a `Felt` from a numeric value in Rust — use `Felt::from(u32)` (infallible) or `Felt::try_from(u64)` (checked) for values that may exceed the field modulus.
 ---
 
 # Felt Construction From Untrusted Numeric Inputs
@@ -33,11 +33,3 @@ let f = Felt::try_from(user_value).map_err(|_| Error::FeltOverflow)?;
 // Bad: silent truncation on any value >= MODULUS
 let f = Felt::new(user_value);
 ```
-
-## Evidence
-
-- PR #2546 (PhilippGackstatter): "Avoid Felt::new on values that may exceed the field modulus; silent truncation can introduce hard-to-find bugs."
-- PR #2439 (PhilippGackstatter): "Use Felt::from on u32 inputs instead of Felt::new."
-- PR #2636 (PhilippGackstatter): "Use Felt::try_from for u64 inputs so we surface modulus overflow."
-- PR #2712 (PhilippGackstatter): "Felt::new on a user value is unsafe — switch to try_from."
-- PR #1925 (PhilippGackstatter): "Felt::new can truncate here; use the checked variant."

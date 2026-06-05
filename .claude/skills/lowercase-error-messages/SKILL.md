@@ -48,10 +48,3 @@ const ERR_NOTE_NOT_FOUND = "note not found"
 # Bad
 const ERR_NOTE_NOT_FOUND = "Note not found!"
 ```
-
-## Evidence
-
-- PR #1832 (PhilippGackstatter): "Use lowercase for error messages and assertion strings unless they begin with a proper noun."
-- PR #1599 (bobbinth): "Drop the trailing period."
-- PR #1480 (bobbinth): "Lowercase the first word here."
-- PR #1507 (PhilippGackstatter): "No exclamation mark."

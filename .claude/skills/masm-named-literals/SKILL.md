@@ -39,11 +39,3 @@ impl AccountStorage {
 // Bad
 if slots.len() > 255 { ... }   // 255 also appears unrelated elsewhere
 ```
-
-## Evidence
-
-- PR #2390 (PhilippGackstatter): "Replace magic numbers in MASM with named constants."
-- PR #2257 (bobbinth): "Define recurring magic numbers (protocol/tag/type values) as named constants in a single central location, not inline literals."
-- PR #2871 (PhilippGackstatter): "We should use a named constant here rather than the literal."
-- PR #2730 (bobbinth): "It would be good to have a constant for this value."
-- PR #2670 (PhilippGackstatter): "Let's name this rather than using the literal."

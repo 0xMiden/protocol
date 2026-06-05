@@ -1,6 +1,6 @@
 ---
 name: masm-explicit-stack-inputs
-description: Use when defining the interface for a new MASM procedure — pass inputs explicitly on the stack rather than relying on the caller having written values to a known memory address; reserve memory I/O for data that must cross many procedure boundaries.
+description: Use when defining the interface for a new MASM procedure — pass inputs explicitly on the stack; reserve memory I/O for data that must cross many procedure boundaries.
 ---
 
 # Pass MASM Procedure Inputs Explicitly on the Stack
@@ -41,10 +41,3 @@ proc add_asset_to_note
     # ...
 end
 ```
-
-## Evidence
-
-- PR #2439 (PhilippGackstatter): "Pass parameters explicitly via the stack rather than relying on shared global memory for MASM procedures."
-- PR #2664 (PhilippGackstatter): "Make this an explicit stack input rather than reading from a fixed slot."
-- PR #1599 (bobbinth): "The caller shouldn't have to populate memory before calling."
-- PR #1712 (PhilippGackstatter): "Take this as a stack parameter."

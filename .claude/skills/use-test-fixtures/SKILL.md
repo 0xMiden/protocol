@@ -1,6 +1,6 @@
 ---
 name: use-test-fixtures
-description: Use when a Rust or MASM test needs to construct an account, note, transaction, or other domain object — use the existing fixture builder (`NoteBuilder`, `ScriptBuilder`, `AccountIdBuilder`, `rand_value()`) rather than hand-rolled `dummy(...)` helpers or raw constructors.
+description: Use when a Rust or MASM test needs to construct an account, note, transaction, or other domain object — use the existing fixture builder (`NoteBuilder`, `ScriptBuilder`, `AccountIdBuilder`, `rand_value()`).
 ---
 
 # Use Existing Test Fixtures, Don't Hand-Roll
@@ -44,11 +44,3 @@ let note = Note {
 
 let account_id = AccountId::try_from(Word::default()).unwrap();
 ```
-
-## Evidence
-
-- PR #2592 (PhilippGackstatter): "In tests, use existing account-id constants or `AccountIdBuilder` rather than ad-hoc `AccountId::dummy(...)` helpers."
-- PR #1959 (PhilippGackstatter): "NoteBuilder will do this."
-- PR #1916 (PhilippGackstatter): "Use the ScriptBuilder."
-- PR #1564 (bobbinth): "There's a fixture for this."
-- PR #1622 (PhilippGackstatter): "Use rand_value() instead of inventing a random helper."
