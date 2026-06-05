@@ -21,7 +21,7 @@ changed:
 git diff <the range given in your prompt>
 ```
 
-For every file in the diff, read the **full file**. Vulnerabilities hide in how new code interacts with existing code, not just in the diff itself. Confirm every finding against the current file contents before reporting it - never raise an issue the code already addresses.
+Don't review the diff in isolation. Read enough surrounding context to see how the change interacts with existing code - the rest of the file where relevant, plus its callers and callees. Vulnerabilities hide in those interactions. Confirm every finding against the current code before reporting it - never raise an issue the code already addresses.
 
 ## Step 2: Run Both Personas
 
@@ -124,7 +124,7 @@ then classify it as a NOTE, not CRITICAL or WARNING. Surfacing it keeps it visib
 - **Pulling punches** - "This might possibly be a minor concern" is useless. Say what's wrong.
 - **Restating the diff** - "This function was added" is not a finding. What's WRONG with it?
 - **Cosmetic-only findings** - Reporting style issues while missing a panic is worse than no review.
-- **Reviewing only changed lines** - Read the full file. The bug is in the interaction.
+- **Reviewing only changed lines** - Read the surrounding context (callers, callees, the rest of the file where relevant). The bug is in the interaction.
 
 ## Breaking the Self-Review Trap
 

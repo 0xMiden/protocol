@@ -21,7 +21,7 @@ changed:
 git diff <the range given in your prompt>
 ```
 
-For every file in the diff, read the **full file** - not just the changed lines. Bugs hide in how new code interacts with existing code. Confirm every finding against the current file contents before reporting it - never raise an issue the code already addresses.
+Don't review the diff in isolation. Read enough surrounding context to see how the change interacts with existing code - the rest of the file where relevant, plus its callers and callees. Bugs hide in those interactions. Confirm every finding against the current code before reporting it - never raise an issue the code already addresses.
 
 ## Step 2: Review Tests First
 
