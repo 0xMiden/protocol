@@ -3,8 +3,9 @@
 //!
 //! Layout convention inside this module:
 //! - File at the root (e.g. `allow_all`, `basic_blocklist`, `basic_allowlist`) = a transfer policy
-//!   variant. Each exports a `check_policy` procedure that the kernel invokes via `call` through
-//!   the protocol-reserved callback slots.
+//!   variant. Each exports a `check_policy` procedure that the manager's `invoke_send_policy` /
+//!   `invoke_receive_policy` wrapper dispatches to via `dyncall` (after the pause check) once the
+//!   active policy is set.
 //! - Folder at the root (e.g. `blocklist`, `allowlist`) = a primitive bundle: storage namespace +
 //!   helpers + auth-gated admin component(s) that maintain the storage. Primitives are not transfer
 //!   policies by themselves; they are consumed by policy variants.
@@ -46,9 +47,10 @@ pub enum TransferPolicyError {
 /// Descriptor for the transfer policy registered with a [`super::TokenPolicyManager`] for either
 /// the send or the receive kind.
 ///
-/// A transfer policy binds together the procedure root that the kernel dispatches to (via `call`,
-/// through the protocol-reserved callback slots) with any companion [`AccountComponent`]s that
-/// must be installed on the account for that procedure root to work.
+/// A transfer policy binds together the procedure root that the manager's `invoke_send_policy` /
+/// `invoke_receive_policy` wrapper dispatches to (via `dyncall`, after the account-wide pause
+/// check) with any companion [`AccountComponent`]s that must be installed on the account for that
+/// procedure root to work.
 ///
 /// The same descriptor applies to both send (`on_before_asset_added_to_note`) and receive
 /// (`on_before_asset_added_to_account`) callbacks — the policy procedure receives no direction
