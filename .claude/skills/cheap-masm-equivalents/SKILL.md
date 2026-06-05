@@ -19,9 +19,7 @@ Don't apply the cheap form when the operands violate its precondition (e.g. `u32
 
 ## Why
 
-MASM cycle costs are not uniform. `gt.0` does signed-comparison work that `neq.0` skips entirely; both produce the same boolean for the typical "is it non-zero?" question on non-negative inputs. A hot kernel path that uses `gt.0` everywhere pays the full 16-cycle cost on each call for a check `neq.0` would do in 3.
-
-These swaps are also free of risk in most cases — the semantics are equivalent under typical preconditions.
+MASM cycle costs are not uniform — `gt.0` does signed-comparison work that `neq.0` skips, so a hot path using the expensive form pays for it on every call. The swaps are semantically equivalent under their preconditions, so the saving is free.
 
 ## Examples
 

@@ -16,9 +16,7 @@ If multiple error conditions could plausibly fire on the same input, assert on t
 
 ## Why
 
-A test that only checks `is_err()` passes even when an unrelated bug breaks the function. The test isn't validating the failure mode it claims to — it's validating "this code path doesn't reach the happy path", which a `panic!("not implemented")` would also satisfy.
-
-Specific-variant assertions catch regressions where one error path starts firing instead of another (e.g. a validation reorder that surfaces `InvalidFormat` before `EmptyInput`), which the looser assertion would silently accept.
+A test that only checks `is_err()` passes even when an unrelated bug breaks the function, so it no longer validates the failure mode it claims to. Pinning the exact variant also catches reorderings where one error path starts firing instead of another.
 
 ## Examples
 

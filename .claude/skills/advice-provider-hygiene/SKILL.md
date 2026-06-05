@@ -34,15 +34,7 @@ A missing advice-map entry, an empty advice stack, or an absent required value i
 
 ## Why
 
-The advice provider is filled by the prover, who is potentially adversarial. Each of the three rules closes a different attack:
-
-- Without commitment validation, a malicious prover injects any data and the kernel runs against it.
-- Without content-addressed keys, two procedures (or one procedure plus an adversarial write) can silently collide on the same key in the global per-transaction namespace.
-- Without erroring on missing data, the prover skips inputs the kernel would have used to enforce a check; the kernel runs to completion against zeros and produces a "proof" that doesn't actually witness the intended property.
-
-Content addressing makes collisions cryptographically negligible. The load/hash/assert pattern binds untrusted advice to trusted state. Treating absence as an error preserves the kernel's invariants under adversarial input.
-
-The pattern is universal in the kernel and account procedures: **load → hash → assert against commitment → use**, with content-addressed keys throughout and `assert.err=...` on absence.
+The advice provider is filled by a potentially adversarial prover. Validating every value against a commitment the kernel already trusts, keying map entries by content hash, and erroring on missing entries are what stop untrusted advice from silently corrupting the kernel's invariants.
 
 ## Examples
 

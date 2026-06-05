@@ -1,6 +1,6 @@
 ---
 name: parametrize-related-tests
-description: Use when writing two or more tests that differ only by inputs or expected outputs (e.g. one per enum variant, one per "good/bad" input pair) — parameterize them with `rstest` cases.
+description: Use when writing two or more tests that differ only by inputs or expected outputs — collapse the duplication into parameterized cases.
 ---
 
 # Parameterize Repeated Tests with `rstest`
@@ -23,9 +23,7 @@ This applies especially to "one test per enum variant" patterns and "one test pe
 
 ## Why
 
-Copy-pasted test bodies drift: a fix in one variant doesn't propagate to the others. `rstest` cases keep the assertion logic in one place, name each case in test output, and make it obvious from the test file that the coverage is complete (one case per variant).
-
-Tests parameterized this way are also cheaper to extend: adding a new variant or input is a single `#[case]` line instead of a copy of the whole function.
+Copy-pasted test bodies drift — a fix in one case doesn't reach the others. Parameterized cases keep the assertion in one place, name each case in the output, and make a missing case obvious; adding one is a single line.
 
 ## Examples
 

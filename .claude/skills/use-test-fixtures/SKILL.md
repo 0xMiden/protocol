@@ -1,6 +1,6 @@
 ---
 name: use-test-fixtures
-description: Use when a Rust or MASM test needs to construct an account, note, transaction, or other domain object — use the existing fixture builder (`NoteBuilder`, `ScriptBuilder`, `AccountIdBuilder`, `rand_value()`).
+description: Use when a Rust or MASM test needs to construct an account, note, transaction, or other domain object — build it with the existing test fixtures.
 ---
 
 # Use Existing Test Fixtures, Don't Hand-Roll
@@ -19,9 +19,7 @@ Don't write a new `AccountId::dummy(...)`, `Note::test_only(...)`, or one-off ra
 
 ## Why
 
-Shared fixtures encode the domain's validation rules and keep tests honest: an `AccountIdBuilder`-built ID has the right tag bits, the right storage-mode bits, and survives a round-trip through serialization. A hand-rolled `dummy()` typically doesn't, which means tests pass against invariants the real code doesn't enforce — or fail randomly on the few invariants that do leak through.
-
-Reusing fixtures also keeps tests short and lets a single fixture upgrade (e.g. adding a new required field to `Note`) propagate to every test via a single edit.
+Shared fixtures encode the domain's validation rules, so a fixture-built object has the right bits and survives serialization; a hand-rolled `dummy()` usually doesn't, letting tests pass against invariants the real code never enforces. Reusing fixtures also lets one upgrade propagate to every test.
 
 ## Examples
 

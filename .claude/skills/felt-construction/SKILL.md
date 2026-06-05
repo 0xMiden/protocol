@@ -1,6 +1,6 @@
 ---
 name: felt-construction
-description: Use when constructing a `Felt` from a numeric value in Rust — use `Felt::from(u32)` (infallible) or `Felt::try_from(u64)` (checked) for values that may exceed the field modulus.
+description: Use when constructing a `Felt` from a numeric value in Rust — avoid silently truncating values that may exceed the field modulus.
 ---
 
 # Felt Construction From Untrusted Numeric Inputs
@@ -17,9 +17,7 @@ Use one of:
 
 ## Why
 
-The field modulus is just below `2^64`, so the truncation only kicks in for a narrow band of large values. Most tests pass; production hits one of the bad inputs and the symptom is a value mismatch many layers away from the truncating call.
-
-`Felt::from(u32)` cannot truncate. `Felt::try_from(u64)` makes the bound check explicit and forces the caller to handle the error.
+The field modulus sits just below `2^64`, so `Felt::new` truncates only for a narrow band of large values — most tests pass and production hits the bad input as a value mismatch far from the call. `Felt::from(u32)` cannot truncate and `Felt::try_from` forces the bound check.
 
 ## Examples
 

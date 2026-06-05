@@ -1,6 +1,6 @@
 ---
 name: domain-newtypes-over-primitives
-description: Use when introducing API parameters, struct fields, or return types that conceptually carry a domain value (asset amount, faucet ID, slot index, fee rate) — wrap them in a newtype that enforces invariants.
+description: Use when introducing API parameters, struct fields, or return types that carry a domain value — represent them with a domain newtype that enforces their invariants.
 ---
 
 # Use Domain Newtypes, Not Raw Primitives
@@ -17,9 +17,7 @@ Raw `(AccountId, u64)` tuples, bare `Word` parameters, and primitive-typed amoun
 
 ## Why
 
-A typed wrapper is the only place invariants get enforced. Once a function accepts `u64` for "amount", every caller is responsible for not passing a value above the max supply, and every reviewer has to check. With `FungibleAsset` (or similar) the type system enforces the rule once and everyone benefits.
-
-Newtypes also make refactors safer: changing a representation (e.g. moving from `(prefix, suffix)` to a single `[u8; 16]`) touches one type, not every signature.
+A newtype is the one place an invariant gets enforced; once a function takes a raw `u64` for an amount, every caller and reviewer must re-check the bound. It also localizes representation changes to a single type instead of every signature.
 
 ## Examples
 

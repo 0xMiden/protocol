@@ -1,6 +1,6 @@
 ---
 name: masm-error-constants
-description: Use when adding or editing MASM `assert*` / `panic` instructions — define an `ERR_<NAME>` constant with a descriptive string message and use it via `assert.err=ERR_NAME`.
+description: Use when adding or editing MASM `assert*` / `panic` instructions — give every assertion a descriptive named error code.
 ---
 
 # MASM Error Constants
@@ -23,9 +23,7 @@ The error constant must:
 
 ## Why
 
-Bare `assert` instructions trap with the generic "assertion failed" message, giving the debugger no signal about which check failed. A descriptive `ERR_` constant ties each trap site to a specific failure mode, so a developer reading a transaction's trap output can attribute the failure without disassembling the procedure.
-
-Distinct constants per failure condition also let tests pin the expected error (see `assert-specific-error-in-tests`).
+A bare `assert` traps with a generic message that tells the debugger nothing about which check failed; a descriptive `ERR_` constant ties each trap site to a specific failure mode. Distinct constants per condition also let tests pin the expected error (see `assert-specific-error-in-tests`).
 
 ## Examples
 

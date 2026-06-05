@@ -1,6 +1,6 @@
 ---
 name: conversion-method-naming
-description: Use when naming a conversion or accessor method in Rust — follow the API guideline prefixes (`as_` for free borrows, `to_` for expensive conversions, `into_` for ownership transfers, `from_` for type-associated constructors).
+description: Use when naming a conversion or accessor method in Rust — follow the Rust API naming conventions for the method's cost and ownership.
 ---
 
 # Rust Conversion Method Naming
@@ -19,9 +19,7 @@ Do not name a non-borrowing method `as_*`. Do not name a non-builder method `wit
 
 ## Why
 
-The conventions come from the Rust API guidelines and are deeply baked into the standard library and the wider ecosystem. A reader expects `as_x` to be cheap, `to_x` to allocate, `into_x` to consume — violating that costs every reader a moment of confusion and trains them to distrust the rest of the API.
-
-`with_*` is especially load-bearing: when readers see `foo.with_bar(b)`, they expect `foo` back with `bar` set. Naming an unrelated method `with_` derails that intuition.
+The prefixes come from the Rust API guidelines and are baked into the standard library: readers expect `as_` to be cheap, `to_` to allocate, `into_` to consume, and `with_` to return `Self`. Violating that costs every reader a moment of confusion and erodes trust in the API.
 
 ## Examples
 

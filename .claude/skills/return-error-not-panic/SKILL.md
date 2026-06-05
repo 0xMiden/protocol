@@ -1,6 +1,6 @@
 ---
 name: return-error-not-panic
-description: Use when writing a public Rust API function, a deserialization path, or any code reachable from external/untrusted input — return a `Result` for recoverable failures, and when a genuinely-trusted fast path is needed, expose it as a separate `_unchecked` entry point.
+description: Use when writing a public Rust API, a deserialization path, or any code reachable from untrusted input — surface recoverable failures as a `Result`.
 ---
 
 # Return Errors, Don't Panic on External Input
@@ -22,11 +22,7 @@ When a no-check fast path is genuinely needed for callers operating on already-v
 
 ## Why
 
-A panic on untrusted input is a denial-of-service vector and a debugging black hole. `unwrap_or_default()` is worse: the function silently produces a value that "looks valid" but represents data the caller never sent, and the bug surfaces far from the actual error.
-
-Silently defaulting on missing input is particularly dangerous in kernel-adjacent code: a malicious prover (or buggy upstream) can skip data the kernel would have used to enforce a check; the kernel runs to completion against zeros and produces a "proof" that doesn't actually witness the property the user wanted.
-
-Splitting the trusted entry point out by name (`*_unchecked`) keeps the default path strict while still giving performance-sensitive callers an explicit opt-out — and the name forces them to acknowledge what they're skipping.
+A panic on untrusted input is a denial-of-service vector and a debugging black hole, and `unwrap_or_default()` is worse — it fabricates a valid-looking value the caller never sent. A named `*_unchecked` entry point keeps the default path strict while forcing opt-in callers to acknowledge what they skip.
 
 ## Examples
 

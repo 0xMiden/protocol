@@ -1,6 +1,6 @@
 ---
 name: masm-locals-over-globals
-description: Use when writing a MASM procedure that needs temporary scratch storage — prefer procedure-local memory (`loc_store` / `loc_load`) over global memory regions when both achieve the same result.
+description: Use when a MASM procedure needs temporary scratch storage — keep it in procedure-local memory so it cannot collide in a shared global region.
 ---
 
 # Prefer Procedure Locals for MASM Scratch Storage
@@ -13,13 +13,7 @@ Global memory regions are reserved for state that crosses procedure boundaries (
 
 ## Why
 
-Procedure locals are automatically allocated and freed by the VM. Two callers of the same procedure on the same kernel run cannot collide. By contrast, a hard-coded scratch slot in global memory:
-
-- Risks colliding with another procedure that uses the same slot.
-- Forces every caller to know the slot exists (don't clobber it).
-- Locks the layout — moving the slot is a cross-cutting change.
-
-Use globals only for data that must persist across procedure boundaries by design.
+Procedure locals are allocated and freed by the VM, so two callers of the same procedure can't collide. A hard-coded scratch slot in global memory risks colliding with another procedure, forces every caller to avoid clobbering it, and locks the layout.
 
 ## Examples
 

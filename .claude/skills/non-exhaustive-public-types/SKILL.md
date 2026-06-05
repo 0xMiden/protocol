@@ -1,6 +1,6 @@
 ---
 name: non-exhaustive-public-types
-description: Use when defining a new public `enum` or `struct` in a library crate that may grow new variants/fields in future releases — mark it `#[non_exhaustive]` so adding variants is not a breaking change.
+description: Use when defining a public `enum` or `struct` in a library crate that may gain variants or fields later — keep future additions from being breaking changes.
 ---
 
 # Mark Public Types `#[non_exhaustive]`
@@ -11,7 +11,11 @@ Public enums and public-fielded structs in library crates whose variants/fields 
 
 ```rust
 #[non_exhaustive]
-pub enum AssetKind { Fungible, NonFungible }
+pub enum Authority {
+    AuthControlled,
+    OwnerControlled,
+    RbacControlled { role: RoleSymbol },
+}
 
 #[non_exhaustive]
 pub struct Header {
@@ -22,40 +26,39 @@ pub struct Header {
 
 This forces external code to use a wildcard match arm (or default field syntax) and lets the library add new variants/fields in a minor release without breaking downstreams.
 
-Don't mark types `#[non_exhaustive]` when the closed set is part of the contract (e.g. a primitive-like wrapper, a fixed protocol enum that must match a spec).
+Don't mark types `#[non_exhaustive]` when the closed set is part of the contract — e.g. `NoteType`, a protocol-level enum fixed by the spec and serialized with a fixed-width discriminant, where adding a variant is a breaking protocol change anyway.
 
 ## Why
 
-In a downstream crate, an exhaustive match on a non-`#[non_exhaustive]` enum compiles successfully — but a future minor release that adds a variant breaks every such match. `#[non_exhaustive]` makes the wildcard arm mandatory and shifts variant-additions from breaking to non-breaking.
-
-The same applies to public-fielded structs: without `#[non_exhaustive]`, every `Header { version, flags }` literal must list every field, and adding a field is a breaking change.
+Without `#[non_exhaustive]`, a downstream exhaustive `match` or struct literal compiles today but breaks the moment a minor release adds a variant or field. The attribute makes the wildcard arm mandatory, turning those additions from breaking to non-breaking.
 
 ## Examples
 
 ```rust
-// Good
+// Good: a standards-level enum that is expected to gain variants over time
 #[non_exhaustive]
-pub enum AccountStorageMode {
-    Public,
-    Private,
+pub enum TransferPolicy {
+    AllowAll,
+    Blocklist,
+    Allowlist { allow_list: AllowlistStorage },
+    Custom(AccountProcedureRoot),
 }
 
-// Internal callers still match exhaustively (in-crate exhaustiveness is allowed)
-match mode {
-    AccountStorageMode::Public => ...,
-    AccountStorageMode::Private => ...,
+// External callers are forced to include a wildcard, so a future variant
+// (e.g. a time-locked or volume-limited policy) stays non-breaking:
+match policy {
+    TransferPolicy::AllowAll => ...,
+    TransferPolicy::Blocklist => ...,
+    TransferPolicy::Allowlist { .. } => ...,
+    TransferPolicy::Custom(_) => ...,
+    _ => ...,   // adding a variant in a minor release: still compiles
 }
 
-// External callers are forced to a wildcard
-match mode {
-    AccountStorageMode::Public => ...,
-    AccountStorageMode::Private => ...,
-    _ => ...,   // adding a variant in a minor release: compiles
-}
-
-// Bad: closed public enum, additions are breaking
-pub enum AccountStorageMode {
-    Public,
-    Private,
+// Bad: closed public enum, so any new transfer policy is a breaking change
+pub enum TransferPolicy {
+    AllowAll,
+    Blocklist,
+    Allowlist { allow_list: AllowlistStorage },
+    Custom(AccountProcedureRoot),
 }
 ```

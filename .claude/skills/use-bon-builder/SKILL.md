@@ -1,6 +1,6 @@
 ---
 name: use-bon-builder
-description: Use when introducing a Rust type whose constructor takes more than ~3 optional or named parameters — derive a builder with `#[bon::builder]`.
+description: Use when introducing a Rust type whose constructor takes more than ~3 optional or named parameters — give it a generated builder instead of hand-written boilerplate.
 ---
 
 # Use `bon` for Builders With Many Optional Fields
@@ -24,9 +24,7 @@ Don't hand-write a separate `FooBuilder` module just to expose a fluent API. Don
 
 ## Why
 
-Hand-written builders are repetitive boilerplate that drifts over time: a new field gets added to the struct, the builder forgets to set it, and the bug surfaces on the next refactor. `bon` derives the builder from the constructor signature, so the two cannot diverge.
-
-`bon` also enforces required-field-set at compile time (calling `.build()` without setting a required field is a type error), which most hand-written builders skip.
+Hand-written builders are boilerplate that drifts — add a struct field, forget to set it in the builder, and the bug surfaces later. `bon` derives the builder from the constructor signature so the two can't diverge, and enforces required fields at compile time.
 
 ## Examples
 

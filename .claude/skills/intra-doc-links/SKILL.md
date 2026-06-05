@@ -1,6 +1,6 @@
 ---
 name: intra-doc-links
-description: Use when writing or editing a Rust doc comment that references a type, method, or module — write the reference as an intra-doc link with brackets (`[TypeName]`) so renames produce rustdoc warnings.
+description: Use when writing or editing a Rust doc comment that references a type, method, or module — link the reference so renames are caught by rustdoc.
 ---
 
 # Use Intra-Doc Links in Rust Doc Comments
@@ -21,9 +21,7 @@ Do not write type names as plain text or inside single backticks alone (e.g. `` 
 
 ## Why
 
-Intra-doc links are checked by `rustdoc` (with `-D rustdoc::broken-intra-doc-links` or the project's lints). When you rename a type, every intra-doc link to it surfaces as a warning. Plain-text references go silently stale and accumulate over time.
-
-Intra-doc links also render as clickable in the generated docs, which makes navigation much easier for readers.
+Intra-doc links are checked by rustdoc, so renaming a linked item produces a warning while plain-text references silently go stale. They also render as clickable navigation in the generated docs.
 
 ## Examples
 

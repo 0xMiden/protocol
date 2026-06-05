@@ -1,6 +1,6 @@
 ---
 name: lowercase-error-messages
-description: Use when writing or editing a Rust error message, panic message, assertion string, or MASM `ERR_*` constant value — start with a lowercase letter and end without trailing punctuation, unless the first word is a proper noun.
+description: Use when writing or editing a Rust error message, panic/assert string, or MASM `ERR_*` constant — follow the Rust convention for error-message casing and punctuation.
 ---
 
 # Lowercase Error Messages, No Trailing Punctuation
@@ -17,7 +17,7 @@ Examples of correct shape: `"invalid account id length"`, `"note not found"`, `"
 
 ## Why
 
-Error messages get composed into chains (`Display`/`source`) and into anyhow contexts. A trailing period or a capital letter mid-chain ("X failed: Y failed: Z failed.") makes the chain read like a sequence of unrelated sentences instead of a single error. Lowercase-and-no-punctuation is the convention `std::io::Error`, `thiserror`, and most ecosystem crates already follow.
+Error messages get composed into chains and contexts, where a capital letter or trailing period mid-chain makes them read like disconnected sentences. Lowercase-with-no-punctuation is the convention `std`, `thiserror`, and most crates already follow.
 
 ## Examples
 

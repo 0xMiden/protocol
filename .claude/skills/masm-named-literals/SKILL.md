@@ -1,6 +1,6 @@
 ---
 name: masm-named-literals
-description: Use when writing or editing MASM procedures or Rust modules that contain numeric literals for memory offsets, slot indices, sizes, tag/type/protocol values, or domain constants — promote them to named constants in a single source-of-truth location.
+description: Use when writing or editing MASM or Rust code that contains meaningful numeric literals — promote them to named constants with a single source of truth.
 ---
 
 # Replace Magic Numbers with Named Constants
@@ -17,7 +17,7 @@ Define each constant exactly once. In MASM, declare it in the file's `CONSTANTS`
 
 ## Why
 
-A bare `47` or `0x1234` in code is invisible to grep, indistinguishable from coincidental same-valued numbers, and risks drift when one occurrence is updated and another is missed. Naming the literal documents intent and gives refactors a single source of truth.
+A bare `47` or `0x1234` is invisible to grep, indistinguishable from coincidentally-equal numbers, and drifts when one occurrence is updated and another missed. A named constant documents intent and gives refactors a single source of truth.
 
 ## Examples
 

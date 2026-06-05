@@ -1,6 +1,6 @@
 ---
 name: validate-in-constructor
-description: Use when writing or reviewing a Rust constructor, `try_new`, or builder `build` — centralize validation so every instance is valid by construction, and reject configurations (empty allowlists, zero thresholds, mutually inconsistent fields) that render the object unusable.
+description: Use when writing or reviewing a Rust constructor, `try_new`, or builder `build` — centralize validation so every instance is valid by construction.
 ---
 
 # Validate Invariants in Constructors
@@ -17,9 +17,7 @@ Do not split validation across the constructor and downstream methods; do not al
 
 ## Why
 
-If the type can be constructed in an intermediate or invalid state, every consumer has to defend against it. Centralizing validation means once you hold a `T`, you can trust its invariants without re-checking.
-
-Rejecting unusable configurations early (e.g. an empty script-roots allowlist that "bricks" the account, a zero threshold for a policy that requires `count >= threshold`) prevents bugs from surfacing far from their cause.
+If a type can be constructed in an invalid or in-between state, every consumer has to defend against it; centralizing validation means holding a `T` is proof its invariants hold. Rejecting unusable configurations early keeps bugs from surfacing far from their cause.
 
 ## Examples
 

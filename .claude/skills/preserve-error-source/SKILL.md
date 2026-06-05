@@ -1,6 +1,6 @@
 ---
 name: preserve-error-source
-description: Use when defining a new error variant or wrapping a lower-level error — preserve the underlying error via `#[source]` (or `Box<dyn Error>`).
+description: Use when defining a new error variant or wrapping a lower-level error — keep the underlying error's source chain intact.
 ---
 
 # Preserve Error Source Chains
@@ -15,9 +15,7 @@ When a new error wraps a lower-level error, preserve the source so the chain rem
 
 ## Why
 
-Tools (anyhow, eyre, tracing, logging frameworks) walk `Error::source()` to produce full chains, render context, and group by root cause. Stringifying the source into the message yields one flat string with no machine-readable structure: chains can't be walked, root causes can't be re-attributed, and the inner error's fields are gone.
-
-A preserved source costs nothing — a `#[source]` annotation is one line — and gives every observer the ability to inspect the chain.
+Tools like anyhow, tracing, and logging walk `Error::source()` to render full chains and group by root cause. Stringifying the source into the message flattens it to one opaque string — the chain can't be walked and the inner error's fields are gone.
 
 ## Examples
 

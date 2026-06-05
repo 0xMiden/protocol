@@ -1,6 +1,6 @@
 ---
 name: u32-assert-before-u32-ops
-description: Use when writing MASM that uses `u32*` instructions (`u32add`, `u32lt`, `u32div`, etc.) on values that originate from user input or untrusted sources — assert the operands are valid u32s with `u32assert*` before the operation.
+description: Use when writing MASM `u32*` instructions on values from user input or untrusted sources — ensure the operands are valid u32s first.
 ---
 
 # Validate u32 Operands Before u32 Instructions
@@ -21,7 +21,7 @@ If the operand is already known-valid (just produced by another `u32*` op, or a 
 
 ## Why
 
-`u32*` instructions are tuned for performance under the precondition that their inputs fit in 32 bits. The VM does not implicitly check the precondition — it's the procedure's job. Skipping `u32assert*` lets a non-u32 input produce a wrong result or trap with an uninformative message; the explicit assert gives the bug a named failure mode (see `masm-error-constants`).
+`u32*` instructions are tuned for the precondition that operands fit in 32 bits, and the VM does not check it for you. Skipping `u32assert*` lets a non-u32 input silently produce a wrong result or trap uninformatively; the assert gives the bug a named failure mode.
 
 ## Examples
 

@@ -1,6 +1,6 @@
 ---
 name: workspace-shared-dependencies
-description: Use when adding or modifying a dependency entry in a crate's `Cargo.toml` — if the dependency is used by more than one crate in the workspace, declare it once in the workspace root `[workspace.dependencies]` and reference it from each crate with `dep = { workspace = true }`.
+description: Use when adding or modifying a dependency in a crate's `Cargo.toml` that is or may become shared by multiple workspace crates — keep its version defined in one place.
 ---
 
 # Workspace-Level Shared Dependencies
@@ -20,9 +20,7 @@ For dependencies used in only one crate, keep them crate-local. Promote when a s
 
 ## Why
 
-Workspace-level declarations are the single source of truth for shared versions. Without them, every crate pins its own version, which inevitably drifts — two crates ending up on different minor versions, cargo resolving a duplicate dependency graph, larger compile times, and version-mismatch bugs.
-
-Promoting on second use (rather than upfront) keeps the workspace table from accumulating one-off entries.
+A workspace declaration is the single source of truth for a shared version. Without it, each crate pins its own, versions drift, cargo resolves duplicates, and compile times grow.
 
 ## Examples
 

@@ -1,6 +1,6 @@
 ---
 name: checked-arithmetic
-description: Use when writing Rust arithmetic on amounts, balances, supplies, or other quantities derived from external/user input — use `checked_*` or `overflowing_*` operations and handle the overflow flag explicitly.
+description: Use when writing Rust arithmetic on amounts or other quantities derived from external/user input — guard against silent overflow.
 ---
 
 # Checked Arithmetic on User-Supplied Values
@@ -15,7 +15,7 @@ Any arithmetic where one or more operands originates from external input (transa
 
 ## Why
 
-The default `+`, `-`, `*` operators wrap silently in release builds. An overflow on a balance or asset amount then yields a wrong value with no error — a sum or product that wraps to a number the caller never intended. Checked and overflowing operations surface the overflow so it can be rejected.
+The default `+`, `-`, `*` operators wrap silently in release builds, so an overflow on a balance or amount yields a wrong value with no error. Checked and overflowing operations surface the overflow so it can be rejected.
 
 ## Examples
 
