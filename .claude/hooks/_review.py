@@ -41,8 +41,16 @@ class ReviewerResult:
     stderr: str
 
 
-def run_review(diff_range: str, cwd: str | None = None) -> tuple[bool, str]:
+def run_review(
+    diff_range: str,
+    cwd: str | None = None,
+    intent: str | None = None,
+) -> tuple[bool, str]:
     """Run both reviewers in parallel over `diff_range`.
+
+    `intent`, when given, is the session's user prompts — passed so the
+    reviewers respect what the user explicitly asked for instead of
+    second-guessing deliberate choices.
 
     Returns `(blocked, rendered)` where `blocked` is True if either reviewer
     reported a Critical/Important/Warning finding, crashed, or produced
@@ -53,6 +61,15 @@ def run_review(diff_range: str, cwd: str | None = None) -> tuple[bool, str]:
         f"Review the changes in diff range `{diff_range}`. "
         f"Run `git diff {diff_range}` to see exactly what is under review."
     )
+    if intent:
+        prompt += (
+            "\n\n## User intent (this session, most recent first)\n"
+            f"{intent}\n\n"
+            "Respect this intent: don't flag deliberate choices the user explicitly "
+            "requested as if they were mistakes, and don't recommend reversing them. "
+            "If a requested approach itself carries real risk, raise it as a Nit/Note "
+            "rather than blocking. This never excuses actual correctness or security bugs."
+        )
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
         futures = {

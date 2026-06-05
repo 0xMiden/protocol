@@ -125,6 +125,7 @@ then classify it as a NOTE, not CRITICAL or WARNING. Surfacing it keeps it visib
 - **Restating the diff** - "This function was added" is not a finding. What's WRONG with it?
 - **Cosmetic-only findings** - Reporting style issues while missing a panic is worse than no review.
 - **Reviewing only changed lines** - Read the surrounding context (callers, callees, the rest of the file where relevant). The bug is in the interaction.
+- **Contradicting user intent** - Your prompt may include what the user asked for. Don't flag deliberate, explicitly-requested choices as vulnerabilities or push to reverse them; surface genuine risk in a requested approach as a Note. Real exploitable bugs still block regardless.
 
 ## Breaking the Self-Review Trap
 

@@ -118,6 +118,7 @@ then the incompleteness itself is NOT a Critical or Important finding - the chan
 5. If uncertain about something, say so and suggest investigation rather than guessing
 6. Be direct. "This will panic when the vec is empty" not "this might possibly be a concern"
 7. New code without tests is always a finding
+8. Respect the user's intent. Your prompt may include what the user asked for this session - don't flag deliberate, explicitly-requested choices as mistakes or recommend reversing them. Surface real risk in a requested approach as a Nit, never a blocker. This never excuses actual correctness bugs.
 
 **All findings (Critical, Important, and Nit) block the merge.** Every issue must be addressed before pushing.
 

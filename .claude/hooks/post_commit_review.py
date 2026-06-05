@@ -22,7 +22,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _classify import matches  # noqa: E402
-from _hookutils import command_from_payload, read_payload  # noqa: E402
+from _hookutils import command_from_payload, read_payload, recent_user_prompts  # noqa: E402
 from _review import run_review  # noqa: E402
 
 TARGET = ("git", ["commit"])
@@ -58,7 +58,8 @@ def main() -> None:
         sys.exit(0)
 
     sys.stderr.write("Post-commit: reviewing HEAD~1..HEAD (code + security)...\n")
-    blocked, rendered = run_review("HEAD~1..HEAD", cwd)
+    intent = recent_user_prompts(payload.get("transcript_path"))
+    blocked, rendered = run_review("HEAD~1..HEAD", cwd, intent)
     sys.stderr.write(rendered + "\n")
 
     if blocked:
