@@ -138,7 +138,7 @@ fn create_bridge_account_builder(
         .account_type(AccountType::Public)
         .with_component(AggLayerBridge::new(bridge_admin_id, ger_manager_id))
         .with_auth_component(
-            AuthNetworkAccount::with_allowlist(AggLayerBridge::allowed_notes())
+            AuthNetworkAccount::with_allowed_notes(AggLayerBridge::allowed_notes())
                 .expect("bridge note allowlist is non-empty"),
         )
 }
@@ -212,7 +212,7 @@ fn create_agglayer_faucet_builder(
         .with_components(token_policy_manager)
         .with_component(BurnAllowAll)
         .with_auth_component(
-            AuthNetworkAccount::with_allowlist(AggLayerFaucet::allowed_notes())
+            AuthNetworkAccount::with_allowed_notes(AggLayerFaucet::allowed_notes())
                 .expect("faucet note allowlist is non-empty"),
         )
 }

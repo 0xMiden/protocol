@@ -187,10 +187,11 @@ impl Auth {
                 allowed_script_roots,
                 allowed_tx_script_roots,
             } => {
-                let component = AuthNetworkAccount::with_allowlist(allowed_script_roots.clone())
-                    .expect("network account allowlist must be non-empty")
-                    .with_allowed_tx_scripts(allowed_tx_script_roots.clone())
-                    .into();
+                let component =
+                    AuthNetworkAccount::with_allowed_notes(allowed_script_roots.clone())
+                        .expect("network account allowlist must be non-empty")
+                        .with_allowed_tx_scripts(allowed_tx_script_roots.clone())
+                        .into();
                 (component, None)
             },
         }

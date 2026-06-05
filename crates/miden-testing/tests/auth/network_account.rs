@@ -39,7 +39,7 @@ fn build_account_with_allowlists(
     allowed_note_script_roots: Vec<Word>,
     allowed_tx_script_roots: Vec<TransactionScriptRoot>,
 ) -> anyhow::Result<Account> {
-    let auth_component = AuthNetworkAccount::with_allowlist(
+    let auth_component = AuthNetworkAccount::with_allowed_notes(
         allowed_note_script_roots.into_iter().map(NoteScriptRoot::from_raw).collect(),
     )?
     .with_allowed_tx_scripts(allowed_tx_script_roots.into_iter().collect::<BTreeSet<_>>());
