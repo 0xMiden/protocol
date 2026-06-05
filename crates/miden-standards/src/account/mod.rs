@@ -7,9 +7,11 @@ pub mod faucets;
 pub mod interface;
 pub mod metadata;
 pub mod policies;
+mod send_notes_script;
 pub mod wallets;
 
 pub use metadata::AccountBuilderSchemaCommitmentExt;
+pub use send_notes_script::{SendNotesScriptError, SendNotesTransactionScript};
 
 /// Macro to simplify the creation of static procedure root constants.
 ///

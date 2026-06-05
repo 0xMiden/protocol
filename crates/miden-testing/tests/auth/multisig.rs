@@ -14,11 +14,11 @@ use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
 };
-use miden_protocol::transaction::RawOutputNote;
+use miden_protocol::transaction::{RawOutputNote, TransactionScript};
 use miden_protocol::vm::AdviceMap;
 use miden_protocol::{Felt, Hasher, Word};
+use miden_standards::account::SendNotesTransactionScript;
 use miden_standards::account::auth::AuthMultisig;
-use miden_standards::account::interface::{AccountInterface, AccountInterfaceExt};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
@@ -1158,9 +1158,10 @@ async fn test_multisig_proc_threshold_overrides(
         Default::default(),
         &mut RandomCoin::new(Word::from([Felt::new_unchecked(42); 4])),
     )?;
-    let multisig_account_interface = AccountInterface::from_account(&multisig_account);
-    let send_note_transaction_script =
-        multisig_account_interface.build_send_notes_script(&[output_note.clone().into()], None)?;
+    let send_note_transaction_script = TransactionScript::from(SendNotesTransactionScript::new(
+        &multisig_account.code_interface(),
+        &[output_note.clone().into()],
+    )?);
 
     // Build base transaction context for note sending
     let tx_context_builder2 = mock_chain

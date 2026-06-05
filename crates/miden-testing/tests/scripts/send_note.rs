@@ -1,3 +1,4 @@
+use core::num::NonZeroU16;
 use core::slice;
 use std::collections::BTreeMap;
 
@@ -19,8 +20,8 @@ use miden_protocol::note::{
     PartialNoteMetadata,
 };
 use miden_protocol::testing::note::DEFAULT_NOTE_SCRIPT;
-use miden_protocol::transaction::RawOutputNote;
-use miden_standards::account::interface::{AccountInterface, AccountInterfaceExt};
+use miden_protocol::transaction::{RawOutputNote, TransactionScript};
+use miden_standards::account::SendNotesTransactionScript;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::P2idNote;
 use miden_testing::utils::create_p2any_note;
@@ -62,8 +63,6 @@ async fn test_send_note_script_basic_wallet() -> anyhow::Result<()> {
     let spawn_note = builder.add_spawn_note([&p2any_note])?;
     let mock_chain = builder.build()?;
 
-    let sender_account_interface = AccountInterface::from_account(&sender_basic_wallet_account);
-
     let attachment_0 = NoteAttachment::with_words(
         NoteAttachmentScheme::new(42)?,
         vec![Word::from([9, 8, 7, 6u32]), Word::from([5, 4, 3, 2u32])],
@@ -94,9 +93,13 @@ async fn test_send_note_script_basic_wallet() -> anyhow::Result<()> {
     )?;
     let partial_note = PartialNote::from(p2id_note.clone());
 
-    let expiration_delta = 10u16;
-    let send_note_transaction_script = sender_account_interface
-        .build_send_notes_script(slice::from_ref(&partial_note), Some(expiration_delta))?;
+    let expiration_delta = NonZeroU16::new(10).expect("10 is non-zero");
+    let send_note_transaction_script =
+        TransactionScript::from(SendNotesTransactionScript::with_expiration_delta(
+            &sender_basic_wallet_account.code_interface(),
+            slice::from_ref(&partial_note),
+            expiration_delta,
+        )?);
 
     let executed_transaction = mock_chain
         .build_tx_context(sender_basic_wallet_account.id(), &[spawn_note.id()], &[])
@@ -151,8 +154,6 @@ async fn test_send_note_script_fungible_faucet() -> anyhow::Result<()> {
     )?;
     let mock_chain = builder.build()?;
 
-    let sender_account_interface = AccountInterface::from_account(&sender_fungible_faucet_account);
-
     let tag = NoteTag::with_account_target(sender_fungible_faucet_account.id());
     let attachment = NoteAttachment::with_word(NoteAttachmentScheme::new(100)?, Word::empty());
     let metadata = PartialNoteMetadata::new(sender_fungible_faucet_account.id(), NoteType::Public)
@@ -170,9 +171,13 @@ async fn test_send_note_script_fungible_faucet() -> anyhow::Result<()> {
     let note = Note::with_attachments(assets.clone(), metadata, recipient, attachments);
     let partial_note: PartialNote = note.clone().into();
 
-    let expiration_delta = 10u16;
-    let send_note_transaction_script = sender_account_interface
-        .build_send_notes_script(slice::from_ref(&partial_note), Some(expiration_delta))?;
+    let expiration_delta = NonZeroU16::new(10).expect("10 is non-zero");
+    let send_note_transaction_script =
+        TransactionScript::from(SendNotesTransactionScript::with_expiration_delta(
+            &sender_fungible_faucet_account.code_interface(),
+            slice::from_ref(&partial_note),
+            expiration_delta,
+        )?);
 
     let executed_transaction = mock_chain
         .build_tx_context(sender_fungible_faucet_account.id(), &[], &[])
