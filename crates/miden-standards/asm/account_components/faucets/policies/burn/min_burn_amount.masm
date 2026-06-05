@@ -1,0 +1,9 @@
+# The MASM code of the `min_burn_amount` Burn Policy Account Component.
+#
+# Exposes `check_policy` so its MAST root can be registered as the active (or allowed) policy on
+# a `TokenPolicyManager`, plus the owner-gated `set_min_burn_amount` / `get_min_burn_amount`
+# accessors for the configurable minimum burn amount stored in this component's storage slot.
+
+pub use ::miden::standards::faucets::policies::burn::min_burn_amount::check_policy
+pub use ::miden::standards::faucets::policies::burn::min_burn_amount::set_min_burn_amount
+pub use ::miden::standards::faucets::policies::burn::min_burn_amount::get_min_burn_amount
