@@ -11,6 +11,7 @@ use miden_protocol::account::component::{
 use miden_protocol::account::{
     Account,
     AccountBuilder,
+    AccountCodeInterface,
     AccountComponent,
     AccountComponentName,
     AccountProcedureRoot,
@@ -35,7 +36,6 @@ use super::{
 use crate::account::access::{AccessControl, PausableManager};
 use crate::account::account_component_code;
 use crate::account::auth::{AuthNetworkAccount, AuthSingleSigAcl, AuthSingleSigAclConfig, NoAuth};
-use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
 use crate::account::policies::TokenPolicyManager;
 use crate::{AuthMethod, procedure_root};
 
@@ -463,10 +463,10 @@ impl FungibleFaucet {
 
     /// Checks that the account contains the fungible faucet interface.
     fn try_from_interface(
-        interface: AccountInterface,
+        interface: AccountCodeInterface,
         storage: &AccountStorage,
     ) -> Result<Self, FungibleFaucetError> {
-        if !interface.components().contains(&AccountComponentInterface::FungibleFaucet) {
+        if !interface.contains(FungibleFaucet::code().procedure_roots()) {
             return Err(FungibleFaucetError::MissingFungibleFaucetInterface);
         }
 
@@ -541,9 +541,7 @@ impl TryFrom<Account> for FungibleFaucet {
     type Error = FungibleFaucetError;
 
     fn try_from(account: Account) -> Result<Self, Self::Error> {
-        let account_interface = AccountInterface::from_account(&account);
-
-        FungibleFaucet::try_from_interface(account_interface, account.storage())
+        FungibleFaucet::try_from_interface(account.code_interface(), account.storage())
     }
 }
 
@@ -551,9 +549,7 @@ impl TryFrom<&Account> for FungibleFaucet {
     type Error = FungibleFaucetError;
 
     fn try_from(account: &Account) -> Result<Self, Self::Error> {
-        let account_interface = AccountInterface::from_account(account);
-
-        FungibleFaucet::try_from_interface(account_interface, account.storage())
+        FungibleFaucet::try_from_interface(account.code_interface(), account.storage())
     }
 }
 
