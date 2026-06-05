@@ -60,8 +60,8 @@ account_component_code!(NETWORK_ACCOUNT_AUTH_CODE, "auth/network_account.masl");
 /// that the node would likely not yet respect updates made to the list after deployment, but there
 /// is in principle nothing preventing us from supporting mutation in the future.
 pub struct AuthNetworkAccount {
-    allowlist: NetworkAccountNoteAllowlist,
-    tx_script_allowlist: NetworkAccountTxScriptAllowlist,
+    allowed_notes: NetworkAccountNoteAllowlist,
+    allowed_tx_scripts: NetworkAccountTxScriptAllowlist,
 }
 
 impl AuthNetworkAccount {
@@ -85,12 +85,12 @@ impl AuthNetworkAccount {
     ///
     /// Returns an error if `allowed_script_roots` is empty since the account could not consume any
     /// notes.
-    pub fn with_allowlist(
+    pub fn with_allowed_notes(
         allowed_script_roots: BTreeSet<NoteScriptRoot>,
     ) -> Result<Self, NetworkAccountNoteAllowlistError> {
         Ok(Self {
-            allowlist: NetworkAccountNoteAllowlist::new(allowed_script_roots)?,
-            tx_script_allowlist: NetworkAccountTxScriptAllowlist::default(),
+            allowed_notes: NetworkAccountNoteAllowlist::new(allowed_script_roots)?,
+            allowed_tx_scripts: NetworkAccountTxScriptAllowlist::default(),
         })
     }
 
@@ -107,7 +107,7 @@ impl AuthNetworkAccount {
         mut self,
         allowed_tx_script_roots: BTreeSet<TransactionScriptRoot>,
     ) -> Self {
-        self.tx_script_allowlist = NetworkAccountTxScriptAllowlist::new(allowed_tx_script_roots);
+        self.allowed_tx_scripts = NetworkAccountTxScriptAllowlist::new(allowed_tx_script_roots);
         self
     }
 
@@ -151,8 +151,8 @@ impl AuthNetworkAccount {
 impl From<AuthNetworkAccount> for AccountComponent {
     fn from(component: AuthNetworkAccount) -> Self {
         let storage_slots = vec![
-            component.allowlist.into_storage_slot(),
-            component.tx_script_allowlist.into_storage_slot(),
+            component.allowed_notes.into_storage_slot(),
+            component.allowed_tx_scripts.into_storage_slot(),
         ];
         let metadata = AuthNetworkAccount::component_metadata();
 
@@ -180,7 +180,7 @@ mod tests {
 
         let _account = AccountBuilder::new([0; 32])
             .with_auth_component(
-                AuthNetworkAccount::with_allowlist(BTreeSet::from_iter([root_a, root_b]))
+                AuthNetworkAccount::with_allowed_notes(BTreeSet::from_iter([root_a, root_b]))
                     .expect("non-empty allowlist should construct"),
             )
             .with_component(BasicWallet)
@@ -190,7 +190,7 @@ mod tests {
 
     #[test]
     fn auth_network_account_with_empty_allowlist_is_rejected() {
-        let result = AuthNetworkAccount::with_allowlist(BTreeSet::new());
+        let result = AuthNetworkAccount::with_allowed_notes(BTreeSet::new());
         assert!(matches!(result, Err(NetworkAccountNoteAllowlistError::EmptyAllowlist)));
     }
 
@@ -198,7 +198,7 @@ mod tests {
     fn auth_network_account_uses_standardized_allowlist_slot() {
         let root_a = NoteScriptRoot::from_array([1, 2, 3, 4]);
         let component: AccountComponent =
-            AuthNetworkAccount::with_allowlist(BTreeSet::from_iter([root_a]))
+            AuthNetworkAccount::with_allowed_notes(BTreeSet::from_iter([root_a]))
                 .expect("non-empty allowlist should construct")
                 .into();
 

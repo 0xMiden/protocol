@@ -206,7 +206,7 @@ mod tests {
 
         let account = AccountBuilder::new([0; 32])
             .with_auth_component(
-                AuthNetworkAccount::with_allowlist(BTreeSet::from_iter([
+                AuthNetworkAccount::with_allowed_notes(BTreeSet::from_iter([
                     miden_protocol::note::NoteScriptRoot::from_array([9, 9, 9, 9]),
                 ]))
                 .expect("non-empty note allowlist should construct")

@@ -673,7 +673,7 @@ fn build_auth_component(
                 allowed_script_roots,
                 allowed_tx_script_roots,
             },
-        ) => Ok(AuthNetworkAccount::with_allowlist(allowed_script_roots)
+        ) => Ok(AuthNetworkAccount::with_allowed_notes(allowed_script_roots)
             .map_err(|err| {
                 FungibleFaucetError::UnsupportedAuthMethod(alloc::format!(
                     "invalid network account allowlist: {err}"

@@ -17,6 +17,7 @@
 
 - [BREAKING] `AuthNetworkAccount` now gates transaction scripts with a root allowlist instead of banning them outright, enabling network accounts to run approved tx scripts such as setting the expiration delta ([#3028](https://github.com/0xMiden/protocol/pull/3028)).
 - [BREAKING] `TransactionScript::root()` now returns `TransactionScriptRoot` instead of `Word` ([#3028](https://github.com/0xMiden/protocol/pull/3028)).
+- Renamed `AuthNetworkAccount::with_allowlist` to `with_allowed_notes` and aligned the component's internal allowlist field names, for consistency with `with_allowed_tx_scripts` ([#3049](https://github.com/0xMiden/protocol/pull/3049)).
 
 ## v0.15.1 (TBD)
 
