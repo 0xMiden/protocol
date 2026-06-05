@@ -35,7 +35,7 @@ impl MockChainNote {
         }
     }
 
-    /// Returns the note's public attachments.
+    /// Returns the note's attachments.
     pub fn attachments(&self) -> &NoteAttachments {
         match self {
             MockChainNote::Private(_, _, attachments, _) => attachments,
