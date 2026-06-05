@@ -4,12 +4,15 @@
 use alloc::vec::Vec;
 
 use miden_protocol::account::{AccountComponent, AccountProcedureRoot};
+use miden_protocol::asset::AssetAmount;
 use thiserror::Error;
 
 mod allow_all;
+mod min_burn_amount;
 mod owner_only;
 
 pub use allow_all::BurnAllowAll;
+pub use min_burn_amount::MinBurnAmount;
 pub use owner_only::BurnOwnerOnly;
 
 // BURN POLICY ERROR
@@ -34,8 +37,9 @@ pub enum BurnPolicyError {
 /// Binds the procedure root the manager dispatches to (via `dynexec`) with any companion
 /// [`AccountComponent`]s that must be installed for the procedure to work.
 ///
-/// Construct via [`Self::allow_all`], [`Self::owner_only`], or [`Self::custom`]. Pass to the
-/// [`super::TokenPolicyManager`] builder via `active_burn_policy` or `allowed_burn_policy`.
+/// Construct via [`Self::allow_all`], [`Self::owner_only`], [`Self::min_burn_amount`], or
+/// [`Self::custom`]. Pass to the [`super::TokenPolicyManager`] builder via `active_burn_policy`
+/// or `allowed_burn_policy`.
 #[derive(Debug, Clone)]
 pub struct BurnPolicy {
     root: AccountProcedureRoot,
@@ -56,6 +60,17 @@ impl BurnPolicy {
         Self {
             root: BurnOwnerOnly::root(),
             components: vec![BurnOwnerOnly.into()],
+        }
+    }
+
+    /// Returns a burn policy that rejects burns below `min_burn_amount`.
+    ///
+    /// The threshold is written to the [`MinBurnAmount`] component's storage slot and can be
+    /// updated at runtime through the owner-gated `set_min_burn_amount` procedure.
+    pub fn min_burn_amount(min_burn_amount: AssetAmount) -> Self {
+        Self {
+            root: MinBurnAmount::root(),
+            components: vec![MinBurnAmount::new(min_burn_amount).into()],
         }
     }
 
