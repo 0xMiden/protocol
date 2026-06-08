@@ -21,6 +21,7 @@
 - Fixed `update_ger` to explicitly reject duplicate GER insertions with `ERR_GER_ALREADY_REGISTERED` instead of silently accepting them ([#2983](https://github.com/0xMiden/protocol/pull/2983)).
 - AggLayer `bridge_out` now rejects B2AGG notes whose `NoteType` is not `Public`, preventing a recipient-identical private note from desyncing the Local Exit Tree from AggLayer's off-chain mirror ([#2988](https://github.com/0xMiden/protocol/pull/2988)).
 - Fixed `pausable::assert_not_paused` to guard its storage read with `active_account::has_storage_slot`, making it a no-op on accounts without the `Pausable` component instead of panicking on the missing `is_paused` slot ([#3047](https://github.com/0xMiden/protocol/pull/3047)).
+- [BREAKING] Fixed batch ID being serialized/deserialized and potentially not matching the serialized transaction headers ([#3061](https://github.com/0xMiden/protocol/pull/3061)).
 
 ## v0.15.1 (TBD)
 
