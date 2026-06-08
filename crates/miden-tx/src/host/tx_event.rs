@@ -69,11 +69,7 @@ pub(crate) enum TransactionEvent {
         foreign_account_id: AccountId,
     },
 
-    AccountVaultAfterRemoveAsset {
-        patch: AssetPatch,
-    },
-
-    AccountVaultAfterAddAsset {
+    AccountVaultAfterAssetUpdate {
         patch: AssetPatch,
     },
 
@@ -240,7 +236,8 @@ impl TransactionEvent {
                     current_vault_root,
                 )?
             },
-            TransactionEventId::AccountVaultAfterRemoveAsset => {
+            TransactionEventId::AccountVaultAfterRemoveAsset
+            | TransactionEventId::AccountVaultAfterAddAsset => {
                 // Expected stack state:
                 // [event, ASSET_KEY, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE]
                 let asset_key = process.get_stack_word(1);
@@ -259,28 +256,7 @@ impl TransactionEvent {
                     initial_vault_value,
                     final_vault_value,
                 };
-                Some(TransactionEvent::AccountVaultAfterRemoveAsset { patch })
-            },
-            TransactionEventId::AccountVaultAfterAddAsset => {
-                // Expected stack state:
-                // [event, ASSET_KEY, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE]
-                let asset_key = process.get_stack_word(1);
-                let initial_vault_value = process.get_stack_word(5);
-                let final_vault_value = process.get_stack_word(9);
-
-                let asset_key = AssetVaultKey::try_from(asset_key).map_err(|source| {
-                    TransactionKernelError::MalformedAssetInEventHandler {
-                        handler: "AccountVaultAfterAddAsset",
-                        source,
-                    }
-                })?;
-
-                let patch = AssetPatch {
-                    asset_key,
-                    initial_vault_value,
-                    final_vault_value,
-                };
-                Some(TransactionEvent::AccountVaultAfterAddAsset { patch })
+                Some(TransactionEvent::AccountVaultAfterAssetUpdate { patch })
             },
             TransactionEventId::AccountAfterAssetDeltaComputation => Some({
                 // Expected stack state:

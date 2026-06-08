@@ -396,17 +396,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         Ok(Vec::new())
     }
 
-    /// Tracks the addition of an asset to the account vault in the account patch.
-    pub fn on_account_vault_after_add_asset(
-        &mut self,
-        patch: AssetPatch,
-    ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
-        self.update_tracker.update_asset_patch(patch)?;
-
-        Ok(Vec::new())
-    }
-
-    /// Tracks the removal of an asset from the account vault in the account patch.
+    /// Tracks the update of an asset from the account vault in the account patch.
     pub fn on_account_vault_after_remove_asset(
         &mut self,
         patch: AssetPatch,

@@ -535,11 +535,8 @@ where
                     self.on_foreign_account_requested(account_id).await
                 },
 
-                TransactionEvent::AccountVaultAfterRemoveAsset { patch } => {
+                TransactionEvent::AccountVaultAfterAssetUpdate { patch } => {
                     self.base_host.on_account_vault_after_remove_asset(patch)
-                },
-                TransactionEvent::AccountVaultAfterAddAsset { patch: update } => {
-                    self.base_host.on_account_vault_after_add_asset(update)
                 },
 
                 TransactionEvent::AccountAfterAssetDeltaComputation { delta: update } => {
