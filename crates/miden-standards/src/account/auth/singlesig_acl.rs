@@ -126,8 +126,9 @@ impl AuthSingleSigAcl {
     /// Creates a new [`AuthSingleSigAcl`] component with the given `public_key` and
     /// configuration.
     ///
-    /// # Panics
-    /// Panics if more than [AccountCode::MAX_NUM_PROCEDURES] procedures are specified.
+    /// Returns an error if more than [`AccountCode::MAX_NUM_PROCEDURES`] procedures are
+    /// specified, or if `config.exempt_procedures` contains duplicate procedure roots
+    /// (since procedure roots are used as storage map keys).
     pub fn new(
         pub_key: PublicKeyCommitment,
         auth_scheme: AuthScheme,
@@ -138,6 +139,14 @@ impl AuthSingleSigAcl {
             return Err(AccountError::other(format!(
                 "Cannot track more than {max_procedures} procedures (account limit)"
             )));
+        }
+
+        let unique_roots: alloc::collections::BTreeSet<_> =
+            config.exempt_procedures.iter().map(|p| p.as_word()).collect();
+        if unique_roots.len() != config.exempt_procedures.len() {
+            return Err(AccountError::other(
+                "exempt_procedures contains duplicate procedure roots",
+            ));
         }
 
         Ok(Self { pub_key, auth_scheme, config })
@@ -226,7 +235,8 @@ impl From<AuthSingleSigAcl> for AccountComponent {
             (StorageMapKey::from_raw(proc_root.as_word()), Word::from([1u32, 0, 0, 0]))
         });
 
-        // Safe to unwrap because we know that the map keys are unique.
+        // Uniqueness of procedure roots is validated in `AuthSingleSigAcl::new`, so
+        // `with_entries` cannot return `DuplicateKey` here.
         storage_slots.push(StorageSlot::with_map(
             AuthSingleSigAcl::exempt_procedure_roots_slot().clone(),
             StorageMap::with_entries(map_entries).unwrap(),
@@ -325,5 +335,21 @@ mod tests {
             )
             .expect("storage map access failed");
         assert_eq!(probe, Word::empty());
+    }
+
+    /// Duplicate procedure roots in `exempt_procedures` must be rejected by `new` rather than
+    /// panicking later inside `StorageMap::with_entries` when the component is converted.
+    #[test]
+    fn test_singlesig_acl_rejects_duplicate_exempt_procedures() {
+        let procedures = get_basic_wallet_procedures();
+        let dup = procedures[0];
+        let config = AuthSingleSigAclConfig::new().with_exempt_procedures(vec![dup, dup]);
+
+        let result = AuthSingleSigAcl::new(
+            PublicKeyCommitment::from(Word::empty()),
+            AuthScheme::Falcon512Poseidon2,
+            config,
+        );
+        assert!(result.is_err(), "duplicate exempt procedures should be rejected");
     }
 }

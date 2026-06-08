@@ -207,7 +207,8 @@ async fn test_acl(#[case] auth_scheme: AuthScheme) -> anyhow::Result<()> {
     assert_eq!(
         executed.account_delta().nonce_delta(),
         Felt::ZERO,
-        "no auth but should still increment nonce only if state changed"
+        "only-exempt tx does not change account state, so the conditional-nonce branch leaves \
+         nonce_delta at zero"
     );
 
     Ok(())
