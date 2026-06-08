@@ -192,10 +192,7 @@ which is a thin wrapper that re-exports procedures from the `agglayer` library m
 - `bridge_out::bridge_out`
 
 The underlying library code lives in `asm/agglayer/bridge/` with supporting modules in
-`asm/agglayer/common/`. `bridge_config` additionally exposes internal `exec` helpers
-(`assert_faucet_registered`, `is_faucet_native`, `get_faucet_scale`,
-`get_faucet_conversion_info`, `get_faucet_metadata_hash`) that read faucet registration and
-conversion metadata back out of the bridge's own storage; these are documented below.
+`asm/agglayer/common/`.
 
 #### `bridge_out::bridge_out`
 

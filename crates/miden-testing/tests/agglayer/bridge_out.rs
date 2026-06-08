@@ -55,8 +55,7 @@ use super::test_utils::SOLIDITY_MTF_VECTORS;
 /// 4. Consumes the B2AGG note against the bridge account — the bridge's `bridge_out` procedure:
 ///    - Validates the faucet is registered via `convert_asset`
 ///    - Reads the faucet's conversion metadata from the bridge's `faucet_metadata_map`
-///      (`bridge_config::get_faucet_conversion_info`) to get the scaled amount, origin token
-///      address, and origin network
+///      to get the scaled amount, origin token address, and origin network
 ///    - Writes the leaf data and computes the Keccak hash for the Merkle Tree Faucet
 ///    - Creates a BURN note addressed to the faucet
 /// 5. Verifies the BURN note was created with the correct asset, tag, and script
