@@ -552,14 +552,14 @@ end
 #! Adds the specified asset to the vault.
 #!
 #! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
-#! Outputs: [ASSET_VALUE', pad(12)]
+#! Outputs: [FINAL_ASSET_VALUE, pad(12)]
 #!
 #! Where:
 #! - ASSET_KEY is the vault key of the asset that is added to the vault.
 #! - ASSET_VALUE is the value of the asset to add to the vault.
-#! - ASSET_VALUE' final asset in the account vault defined as follows:
-#!   - If ASSET_VALUE is a non-fungible asset, then ASSET_VALUE' is the same as ASSET_VALUE.
-#!   - If ASSET_VALUE is a fungible asset, then ASSET_VALUE' is the total fungible asset in the account vault
+#! - FINAL_ASSET_VALUE is the asset in the account vault after the operation, defined as follows:
+#!   - If ASSET_VALUE is a non-fungible asset, then FINAL_ASSET_VALUE is the same as ASSET_VALUE.
+#!   - If ASSET_VALUE is a fungible asset, then FINAL_ASSET_VALUE is the total fungible asset in the account vault
 #!     after ASSET_VALUE was added to it.
 #!
 #! Panics if:
@@ -581,18 +581,18 @@ pub proc account_add_asset
 
     # add the specified asset to the account vault, emitting the corresponding events
     exec.account::add_asset_to_vault
-    # => [ASSET_VALUE', pad(12)]
+    # => [FINAL_ASSET_VALUE, pad(12)]
 end
 
 #! Removes the specified asset from the vault and returns the remaining asset value.
 #!
 #! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
-#! Outputs: [REMAINING_ASSET_VALUE, pad(12)]
+#! Outputs: [FINAL_ASSET_VALUE, pad(12)]
 #!
 #! Where:
 #! - ASSET_KEY is the vault key of the asset to remove from the vault.
 #! - ASSET_VALUE is the value of the asset to remove from the vault.
-#! - REMAINING_ASSET_VALUE is the value of the asset remaining in the vault after removal.
+#! - FINAL_ASSET_VALUE is the value of the asset remaining in the vault after removal.
 #!
 #! Panics if:
 #! - the fungible asset is not found in the vault.
@@ -612,7 +612,7 @@ pub proc account_remove_asset
 
     # remove the specified asset from the account vault, emitting the corresponding events
     exec.account::remove_asset_from_vault
-    # => [REMAINING_ASSET_VALUE, pad(12)]
+    # => [FINAL_ASSET_VALUE, pad(12)]
 end
 
 #! Returns the asset associated with the provided asset vault key in the active account's vault.
@@ -736,6 +736,30 @@ pub proc account_has_procedure
     # check if the procedure was called
     exec.account::has_procedure
     # => [is_procedure_available, pad(15)]
+end
+
+#! Returns a flag indicating whether a storage slot with the provided slot ID exists in the active
+#! account's storage.
+#!
+#! Returns 1 if the slot exists and 0 otherwise.
+#!
+#! Inputs:  [slot_id_suffix, slot_id_prefix, pad(14)]
+#! Outputs: [has_slot, pad(15)]
+#!
+#! Where:
+#! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
+#!   the first two felts of the hashed slot name.
+#! - has_slot is 1 if a slot with the provided slot ID exists, 0 otherwise.
+#!
+#! Invocation: dynexec
+pub proc account_has_storage_slot
+    # authenticate that the procedure invocation originates from the account context
+    exec.authenticate_account_origin
+    # => [slot_id_suffix, slot_id_prefix, pad(14)]
+
+    # check whether the storage slot exists
+    exec.account::has_storage_slot
+    # => [has_slot, pad(15)]
 end
 
 # FAUCET

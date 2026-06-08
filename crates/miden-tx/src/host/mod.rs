@@ -1,7 +1,9 @@
-mod account_delta_tracker;
+mod account_update_tracker;
+use account_update_tracker::AccountUpdateTracker;
 
-use account_delta_tracker::AccountDeltaTracker;
 mod storage_patch_tracker;
+
+mod vault_update_tracker;
 
 mod link_map;
 pub use link_map::{LinkMap, MemoryViewer};
@@ -61,6 +63,7 @@ pub(crate) use tx_event::{RecipientData, TransactionEvent, TransactionProgressEv
 pub use tx_progress::TransactionProgress;
 
 use crate::errors::TransactionKernelError;
+use crate::host::tx_event::{AddedAssetUpdate, RemovedAssetUpdate};
 
 // TRANSACTION BASE HOST
 // ================================================================================================
@@ -83,8 +86,8 @@ pub struct TransactionBaseHost<'store, STORE> {
 
     /// Account state changes accumulated during transaction execution.
     ///
-    /// The delta is updated by event handlers.
-    account_delta: AccountDeltaTracker,
+    /// The tracker is updated by event handlers.
+    update_tracker: AccountUpdateTracker,
 
     /// A map of the procedure MAST roots to the corresponding procedure indices for all the
     /// account codes involved in the transaction (for native and foreign accounts alike).
@@ -129,7 +132,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
             scripts_mast_store,
             initial_account_header: account.into(),
             initial_account_storage_header: account.storage().header().clone(),
-            account_delta: AccountDeltaTracker::new(account),
+            update_tracker: AccountUpdateTracker::new(account),
             acct_procedure_index_map,
             output_notes: BTreeMap::default(),
             input_notes,
@@ -173,13 +176,13 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     }
 
     /// Returns a reference to the account delta tracker of this transaction host.
-    pub fn account_delta_tracker(&self) -> &AccountDeltaTracker {
-        &self.account_delta
+    pub fn account_update_tracker(&self) -> &AccountUpdateTracker {
+        &self.update_tracker
     }
 
-    /// Clones the inner [`AccountDeltaTracker`] and converts it into an [`AccountDelta`].
+    /// Clones the inner [`AccountUpdateTracker`] and converts it into an [`AccountDelta`].
     pub fn build_account_delta(&self) -> AccountDelta {
-        self.account_delta_tracker().clone().into_delta()
+        self.account_update_tracker().clone().into_delta()
     }
 
     /// Returns the input notes consumed in this transaction.
@@ -197,7 +200,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     pub fn into_parts(self) -> (AccountDelta, InputNotes<InputNote>, Vec<RawOutputNote>) {
         let output_notes = self.output_notes.into_values().map(|builder| builder.build()).collect();
 
-        (self.account_delta.into_delta(), self.input_notes, output_notes)
+        (self.update_tracker.into_delta(), self.input_notes, output_notes)
     }
 
     // MUTATORS
@@ -342,11 +345,11 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     pub fn on_account_after_increment_nonce(
         &mut self,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
-        if self.account_delta.was_nonce_incremented() {
+        if self.update_tracker.was_nonce_incremented() {
             return Err(TransactionKernelError::NonceCanOnlyIncrementOnce);
         }
 
-        self.account_delta.increment_nonce();
+        self.update_tracker.increment_nonce();
 
         Ok(Vec::new())
     }
@@ -360,7 +363,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         slot_name: StorageSlotName,
         new_value: Word,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
-        self.account_delta.storage().set_item(slot_name, new_value);
+        self.update_tracker.storage().set_item(slot_name, new_value);
 
         Ok(Vec::new())
     }
@@ -373,7 +376,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         old_map_value: Word,
         new_map_value: Word,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
-        self.account_delta
+        self.update_tracker
             .storage()
             .set_map_item(slot_name, key, old_map_value, new_map_value);
 
@@ -386,12 +389,9 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     /// Tracks the addition of an asset to the account vault in the account delta.
     pub fn on_account_vault_after_add_asset(
         &mut self,
-        asset: Asset,
+        update: AddedAssetUpdate,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
-        self.account_delta
-            .vault_delta_mut()
-            .add_asset(asset)
-            .map_err(TransactionKernelError::AccountDeltaAddAssetFailed)?;
+        self.update_tracker.add_asset(update)?;
 
         Ok(Vec::new())
     }
@@ -399,12 +399,9 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     /// Tracks the removal of an asset from the account vault in the account delta.
     pub fn on_account_vault_after_remove_asset(
         &mut self,
-        asset: Asset,
+        update: RemovedAssetUpdate,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
-        self.account_delta
-            .vault_delta_mut()
-            .remove_asset(asset)
-            .map_err(TransactionKernelError::AccountDeltaRemoveAssetFailed)?;
+        self.update_tracker.remove_asset(update)?;
 
         Ok(Vec::new())
     }

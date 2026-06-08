@@ -424,6 +424,18 @@ pub enum AccountDeltaError {
     MergingFullStateDeltas,
 }
 
+#[derive(Debug, Error)]
+pub enum AccountPatchError {
+    #[error("final nonce can never be set to zero")]
+    FinalNonceIsZero,
+
+    #[error("non-empty account storage or vault patch with final nonce set to zero is not allowed")]
+    NonEmptyStorageOrVaultPatchWithZeroNonce,
+
+    #[error("account code must be provided for new accounts (with nonce = 1)")]
+    CodeMustBeProvidedForNewAccounts,
+}
+
 // STORAGE MAP ERROR
 // ================================================================================================
 
@@ -493,6 +505,8 @@ pub enum AssetError {
     FungibleAssetValueMostSignificantElementsMustBeZero(Word),
     #[error("smt proof in asset witness contains invalid key or value")]
     AssetWitnessInvalid(#[source] Box<AssetError>),
+    #[error("vault key {key} is not present in the provided asset witness SMT proof")]
+    AssetWitnessMissingKey { key: AssetVaultKey },
     #[error("unknown native asset callbacks encoding: {0}")]
     UnknownAssetCallbackFlag(u8),
     #[error("unknown asset composition encoding: {0}")]
@@ -617,8 +631,13 @@ pub enum AssetVaultError {
 
 #[derive(Debug, Error)]
 pub enum PartialAssetVaultError {
-    #[error("provided SMT entry {entry} is not a valid asset")]
-    InvalidAssetInSmt { entry: Word, source: AssetError },
+    #[error("partial vault contains invalid asset value {value} at key {key}")]
+    InvalidAssetForKey {
+        key: AssetVaultKey,
+        value: Word,
+        #[source]
+        source: AssetError,
+    },
     #[error("failed to add asset proof")]
     FailedToAddProof(#[source] MerkleError),
     #[error("asset is not tracked in the partial vault")]

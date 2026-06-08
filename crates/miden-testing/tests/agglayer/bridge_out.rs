@@ -35,7 +35,7 @@ use miden_protocol::note::{
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
 use miden_standards::account::faucets::FungibleFaucet;
-use miden_standards::account::policies::MintPolicyConfig;
+use miden_standards::account::policies::MintPolicy;
 use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint, StandardNote};
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 use miden_tx::utils::hex_to_bytes;
@@ -735,7 +735,7 @@ async fn b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
         1000,
         faucet_owner_account_id,
         Some(100),
-        MintPolicyConfig::OwnerOnly,
+        MintPolicy::owner_only(),
         [],
     )?;
 
@@ -849,7 +849,7 @@ async fn b2agg_note_non_target_account_cannot_consume() -> anyhow::Result<()> {
         1000,
         faucet_owner_account_id,
         Some(100),
-        MintPolicyConfig::OwnerOnly,
+        MintPolicy::owner_only(),
         [],
     )?;
 
@@ -956,7 +956,7 @@ async fn bridge_out_lock_native_token() -> anyhow::Result<()> {
         1000,
         faucet_owner_account_id,
         Some(500),
-        MintPolicyConfig::OwnerOnly,
+        MintPolicy::owner_only(),
         [],
     )?;
 

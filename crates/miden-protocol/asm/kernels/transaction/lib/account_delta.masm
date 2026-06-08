@@ -18,12 +18,14 @@ const ERR_ACCOUNT_DELTA_NONCE_MUST_BE_INCREMENTED_IF_VAULT_OR_STORAGE_CHANGED="n
 # CONSTANTS
 # =================================================================================================
 
+# The domain of the delta commitment header.
+const DOMAIN_DELTA = 1
 # The domain of an asset in the delta commitment.
-const DOMAIN_ASSET = 1
+const DOMAIN_ASSET = 3
 # The domain of a value storage slot in the delta commitment.
-const DOMAIN_VALUE = 2
+const DOMAIN_VALUE = 5
 # The domain of a map storage slot in the delta commitment.
-const DOMAIN_MAP = 3
+const DOMAIN_MAP = 6
 
 # The maximum value a felt can represent.
 const FELT_MAX = 0xffffffff00000000
@@ -55,8 +57,8 @@ pub proc compute_commitment
     # => [native_acct_id_suffix, native_acct_id_prefix, EMPTY_WORD, CAPACITY]
 
     # the delta of the nonce is equal to was_nonce_incremented
-    push.0 exec.was_nonce_incremented
-    # => [nonce_delta, 0, native_acct_id_suffix, native_acct_id_prefix, EMPTY_WORD, CAPACITY]
+    exec.was_nonce_incremented push.DOMAIN_DELTA
+    # => [domain_delta, nonce_delta, native_acct_id_suffix, native_acct_id_prefix, EMPTY_WORD, CAPACITY]
     # => [ID_AND_NONCE, EMPTY_WORD, CAPACITY]
 
     exec.poseidon2::permute

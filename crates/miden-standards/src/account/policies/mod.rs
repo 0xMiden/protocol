@@ -10,10 +10,12 @@
 //! - **receive** — fired by the protocol's `on_before_asset_added_to_account` callback when the
 //!   issuing faucet's asset is added to an account vault (transfer "to" side)
 //!
-//! The manager owns an `active_*_policy` slot per mint / burn kind (and dispatches them via
-//! `dynexec`) plus an `allowed_*_policies` map per kind for set-time validation. The active roots
-//! for send and receive policies reside directly in the protocol-reserved
-//! callback slots so the kernel dispatches to them via `call`.
+//! The manager owns an `active_*_policy` slot per kind plus an `allowed_*_policies` map per kind
+//! for set-time validation. Mint and burn are dispatched via `dynexec` by `exec`-invoked
+//! wrappers; send and receive are dispatched by `invoke_send_policy` / `invoke_receive_policy`
+//! wrappers whose roots live in
+//! the protocol-reserved callback slots, so the kernel `dyncall`s the wrapper, which applies the
+//! pause check and then dispatches to the active policy.
 //!
 //! Authority for switching policies is provided by the separate
 //! [`Authority`][crate::account::access::Authority] component, which must be installed on the
@@ -24,19 +26,19 @@
 //! [`TransferAllowAll`]) install a specific policy procedure on the account so that the
 //! manager's `dynexec` can dispatch to it.
 //!
-//! A faucet installs the manager via the chained builder
-//! [`TokenPolicyManager::with_mint_policy`] / [`TokenPolicyManager::with_burn_policy`] /
-//! [`TokenPolicyManager::with_send_policy`] / [`TokenPolicyManager::with_receive_policy`] and
-//! passes it directly to [`miden_protocol::account::AccountBuilder::with_components`].
+//! A faucet constructs the manager via [`TokenPolicyManager::builder`], setting the required
+//! `active_*_policy` for each kind (and optionally any number of reserved `allowed_*_policy`
+//! entries), then passes the built manager directly to
+//! [`miden_protocol::account::AccountBuilder::with_components`].
 
 mod burn;
 mod manager;
 mod mint;
 mod transfer;
 
-pub use burn::{BurnAllowAll, BurnOwnerOnly, BurnPolicyConfig};
-pub use manager::{TokenPolicyManager, TokenPolicyManagerError};
-pub use mint::{MintAllowAll, MintOwnerOnly, MintPolicyConfig};
+pub use burn::{BurnAllowAll, BurnOwnerOnly, BurnPolicy, BurnPolicyError, MinBurnAmount};
+pub use manager::{TokenPolicyManager, TokenPolicyManagerBuilder};
+pub use mint::{MintAllowAll, MintOwnerOnly, MintPolicy, MintPolicyError};
 pub use transfer::{
     AllowlistOwnerControlled,
     AllowlistStorage,
@@ -46,20 +48,5 @@ pub use transfer::{
     BlocklistStorage,
     TransferAllowAll,
     TransferPolicy,
+    TransferPolicyError,
 };
-
-// POLICY REGISTRATION
-// ================================================================================================
-
-/// Indicates whether a policy entry is the currently active one (written into the
-/// `active_*_policy` slot) or a reserved alternative (kept in the `allowed_*_policies` map for
-/// future activation via `set_*_policy`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PolicyRegistration {
-    /// Becomes the policy stored in the `active_*_policy` slot for its kind (mint, burn, send,
-    /// or receive). Exactly one `Active` entry is allowed per kind.
-    Active,
-    /// Registered in the `allowed_*_policies` map for its kind. Can be promoted to active
-    /// later by calling the matching `set_*_policy` procedure.
-    Reserved,
-}

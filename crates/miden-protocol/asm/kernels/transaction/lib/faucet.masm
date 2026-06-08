@@ -36,6 +36,10 @@ pub proc mint_fungible_asset
 
     # add the asset to the input vault for asset preservation
     exec.asset_vault::add_fungible_asset
+    # => [INITIAL_ASSET_VALUE, NEW_ASSET_VALUE]
+
+    # drop INITIAL_ASSET_VALUE; mint_fungible_asset returns only NEW_ASSET_VALUE
+    dropw
     # => [NEW_ASSET_VALUE]
 end
 
@@ -67,10 +71,10 @@ proc burn_fungible_asset
 
     # remove the asset from the input vault for asset preservation
     exec.asset_vault::remove_fungible_asset
-    # => [REMAINING_ASSET_VALUE]
+    # => [INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE]
 
-    # drop the remaining value (not meaningful to the caller)
-    dropw
+    # drop both values (not meaningful to the caller)
+    dropw dropw
     # => []
 end
 
@@ -106,6 +110,10 @@ proc mint_non_fungible_asset
 
     # add the non-fungible asset to the input vault for asset preservation
     exec.asset_vault::add_non_fungible_asset
+    # => [INITIAL_ASSET_VALUE, NEW_ASSET_VALUE]
+
+    # drop INITIAL_ASSET_VALUE; mint_non_fungible_asset returns only NEW_ASSET_VALUE
+    dropw
     # => [NEW_ASSET_VALUE]
 end
 
@@ -136,10 +144,10 @@ proc burn_non_fungible_asset
     # => [ASSET_KEY, ASSET_VALUE, input_vault_root_ptr]
 
     exec.asset_vault::remove_non_fungible_asset
-    # => [REMAINING_ASSET_VALUE]
+    # => [INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE]
 
-    # drop the remaining value (not meaningful to the caller)
-    dropw
+    # drop both values (not meaningful to the caller)
+    dropw dropw
     # => []
 end
 

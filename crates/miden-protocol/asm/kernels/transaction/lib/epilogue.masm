@@ -39,22 +39,33 @@ const EPILOGUE_AUTH_PROC_START_EVENT=event("miden::protocol::epilogue::auth_proc
 # Event emitted to signal that an execution of the authentication procedure has ended.
 const EPILOGUE_AUTH_PROC_END_EVENT=event("miden::protocol::epilogue::auth_proc_end")
 
-# An additional number of cyclces to account for the number of cycles that smt::set will take when
+# An additional number of cycles to account for the number of cycles that smt::set will take when
 # removing the computed fee from the asset vault.
 # Theoretically, this can safely be set to worst_case_cycles - best_case_cycles of smt::set. That's
 # because we can assume that the measured number of cycles already contains at least the best case
 # number of cycles, and so we only need to add the difference.
 const SMT_SET_ADDITIONAL_CYCLES=250
 
+# An upper-bound estimate of the cycles needed to hash the asset vault key before the fee-removing
+# smt::set. This cost is incurred only when a fee is actually removed from the asset vault, and is
+# kept separate from SMT_SET_ADDITIONAL_CYCLES (which models smt::set's own best/worst-case spread).
+# It is additive rather than double-counted: the lowest-observed NUM_POST_COMPUTE_FEE_CYCLES below
+# comes from a zero-fee transaction that skips fee removal entirely, and so excludes this hashing.
+const VAULT_KEY_HASH_CYCLES=50
+
 # The number of cycles the epilogue is estimated to take after compute_fee has been executed,
 # including an unknown cycle number of the above-mentioned call to smt::set. It is safe to assume
 # that this includes at least smt::set's best case number of cycles.
 # This can be _estimated_ using the transaction measurements on ExecutedTransaction and can be set
-# to the lowest observed value.
+# to the lowest observed value (which comes from a zero-fee transaction that skips fee removal).
 const NUM_POST_COMPUTE_FEE_CYCLES=608
 
-# The number of cycles the epilogue is estimated to take after compute_fee has been executed.
-const ESTIMATED_AFTER_COMPUTE_FEE_CYCLES=NUM_POST_COMPUTE_FEE_CYCLES+SMT_SET_ADDITIONAL_CYCLES
+# Upper bound on the post-compute_fee cycle count; it must stay an upper bound or the verification
+# fee is undercharged. Worst case observed is 863 cycles (45 of margin); re-measure when the
+# epilogue or smt::set changes. An adversary cannot inflate the fee-removal smt::set cost: vault
+# keys are hashed before insertion (see AssetVaultKey::hash). The multi-leaf smt::set worst case is
+# not yet exercised (see test_fee.rs TODO).
+const ESTIMATED_AFTER_COMPUTE_FEE_CYCLES=NUM_POST_COMPUTE_FEE_CYCLES+SMT_SET_ADDITIONAL_CYCLES+VAULT_KEY_HASH_CYCLES
 
 # OUTPUT NOTES PROCEDURES
 # =================================================================================================
@@ -178,7 +189,7 @@ proc build_output_vault
             #     output_vault_root_ptr, num_assets, note_data_ptr, output_notes_end_ptr]
 
             # insert output note asset into output vault
-            exec.asset_vault::add_asset dropw
+            exec.asset_vault::add_asset dropw dropw
             # => [assets_start_ptr, assets_end_ptr, output_vault_root_ptr, num_assets,
             #     note_data_ptr, output_notes_end_ptr]
 
@@ -352,7 +363,7 @@ proc compute_and_remove_fee
     # => [FEE_ASSET_KEY, FEE_ASSET_VALUE, account_vault_root_ptr, fee_faucet_id_suffix, fee_faucet_id_prefix, fee_amount]
 
     # remove the asset from the account vault
-    exec.asset_vault::remove_fungible_asset dropw
+    exec.asset_vault::remove_fungible_asset dropw dropw
     # => [fee_faucet_id_suffix, fee_faucet_id_prefix, fee_amount]
 end
 
