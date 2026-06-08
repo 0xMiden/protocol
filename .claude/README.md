@@ -16,14 +16,13 @@ the `claude` and `gh` CLIs (authenticated), and `make` / the Rust toolchain.
    claude --permission-mode bypassPermissions
    ```
 
-   Recommended: run each task in its own git worktree (parallel agents don't
-   collide) inside a tmux session (the run survives disconnects on a
-   remote/cloud host). For example:
+   Recommended: add `--worktree` so the session runs in its own git worktree
+   (parallel agents don't collide) and `--tmux` so it runs inside tmux (the run
+   survives disconnects on a remote/cloud host; `--tmux` requires `--worktree`).
+   For example:
 
    ```bash
-   git worktree add ../protocol-issue-1234 next
-   tmux new -s issue-1234
-   cd ../protocol-issue-1234 && claude --permission-mode bypassPermissions
+   claude --permission-mode bypassPermissions --worktree issue-1234 --tmux
    ```
 3. **Run `/work <issue-number>`** and plan it out together. The command starts
    in plan mode and writes no code until you approve. Base defaults to `next`
