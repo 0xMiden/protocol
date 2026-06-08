@@ -38,18 +38,15 @@ impl VaultUpdateTracker {
         Ok(())
     }
 
-    pub fn update_delta(&mut self, delta: AssetDelta) -> Result<(), TransactionKernelError> {
-        // TODO(unified_delta): Temporary logic.
+    pub fn update_delta(&mut self, delta: AssetDelta) {
         match delta.delta_op {
             AssetDeltaOp::Add => {
-                self.delta.add_asset(delta.asset).expect("TODO");
+                self.delta.set_added_asset(delta.asset);
             },
             AssetDeltaOp::Remove => {
-                self.delta.remove_asset(delta.asset).expect("TODO");
+                self.delta.set_removed_asset(delta.asset);
             },
         }
-
-        Ok(())
     }
 
     /// Returns a reference to the vault delta.

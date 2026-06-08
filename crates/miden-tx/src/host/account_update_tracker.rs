@@ -75,7 +75,7 @@ impl AccountUpdateTracker {
     }
 
     /// Updates the vault delta.
-    pub fn update_asset_delta(&mut self, delta: AssetDelta) -> Result<(), TransactionKernelError> {
+    pub fn update_asset_delta(&mut self, delta: AssetDelta) {
         self.vault.update_delta(delta)
     }
 
