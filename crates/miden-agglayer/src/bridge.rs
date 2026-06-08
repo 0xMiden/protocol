@@ -69,6 +69,10 @@ static FAUCET_METADATA_MAP_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(
     StorageSlotName::new("agglayer::bridge::faucet_metadata_map")
         .expect("faucet metadata map storage slot name should be valid")
 });
+static NETWORK_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("agglayer::bridge::network_id")
+        .expect("network ID storage slot name should be valid")
+});
 
 // bridge in
 // ------------------------------------------------------------------------------------------------
@@ -127,6 +131,7 @@ static LET_NUM_LEAVES_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// - [`Self::faucet_metadata_map_slot_name`]: Stores conversion metadata (origin address, origin
 ///   network, scale, metadata hash) for all registered faucets, keyed by sub-key scheme based on
 ///   faucet ID.
+/// - [`Self::network_id_slot_name`]: Stores the bridge's AggLayer network ID.
 /// - [`Self::claim_nullifiers_slot_name`]: Stores the CLAIM note nullifiers map (RPO(leaf_index,
 ///   source_bridge_network) → \[1, 0, 0, 0\]).
 /// - [`Self::cgi_chain_hash_lo_slot_name`]: Stores the lower 128 bits of the CGI chain hash.
@@ -139,23 +144,20 @@ static LET_NUM_LEAVES_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// The bridge starts with an empty faucet registry; faucets are registered at runtime via
 /// CONFIG_AGG_BRIDGE notes.
 ///
-/// Claim validation compares the leaf's `destination_network` to the global MASM constant
-/// `agglayer::common::constants::MIDEN_NETWORK_ID`. Rust exposes the same value as
-/// [`Self::MIDEN_NETWORK_ID`] from generated `agglayer_constants.rs` file.
+/// Claim validation compares the leaf's `destination_network` to the bridge's own network ID,
+/// which is stored in [`Self::network_id_slot_name`] at account creation and read at runtime by
+/// the bridge MASM. The network ID is set once and never mutated, so different deployments (e.g.
+/// testnet vs mainnet) can use different IDs.
 #[derive(Debug, Clone)]
 pub struct AggLayerBridge {
     bridge_admin_id: AccountId,
     ger_manager_id: AccountId,
+    network_id: u32,
 }
 
 impl AggLayerBridge {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
-
-    /// AggLayer-assigned network ID for this Miden chain.
-    ///
-    /// Matches `const MIDEN_NETWORK_ID` in `asm/agglayer/common/constants.masm`.
-    pub const MIDEN_NETWORK_ID: u32 = MIDEN_NETWORK_ID;
 
     const REGISTERED_GER_MAP_VALUE: Word = Word::new([ONE, ZERO, ZERO, ZERO]);
 
@@ -163,8 +165,15 @@ impl AggLayerBridge {
     // --------------------------------------------------------------------------------------------
 
     /// Creates a new AggLayer bridge component with the standard configuration.
-    pub fn new(bridge_admin_id: AccountId, ger_manager_id: AccountId) -> Self {
-        Self { bridge_admin_id, ger_manager_id }
+    ///
+    /// `network_id` is the AggLayer network ID assigned to this Miden chain. It is written to the
+    /// bridge's storage and is immutable for the lifetime of the account.
+    pub fn new(bridge_admin_id: AccountId, ger_manager_id: AccountId, network_id: u32) -> Self {
+        Self {
+            bridge_admin_id,
+            ger_manager_id,
+            network_id,
+        }
     }
 
     // PUBLIC ACCESSORS
@@ -203,6 +212,14 @@ impl AggLayerBridge {
     /// for all registered faucets, keyed by sub-key scheme based on faucet ID.
     pub fn faucet_metadata_map_slot_name() -> &'static StorageSlotName {
         &FAUCET_METADATA_MAP_SLOT_NAME
+    }
+
+    /// Storage slot name for the bridge's AggLayer network ID.
+    ///
+    /// Holds the network ID assigned to this bridge as a single felt in the first word element.
+    /// It is set at account creation and never mutated by any bridge procedure.
+    pub fn network_id_slot_name() -> &'static StorageSlotName {
+        &NETWORK_ID_SLOT_NAME
     }
 
     // --- bridge in --------
@@ -332,6 +349,26 @@ impl AggLayerBridge {
         Ok(root)
     }
 
+    /// Returns the AggLayer network ID stored in the bridge account.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - the provided account is not an [`AggLayerBridge`] account.
+    pub fn network_id(account: &Account) -> Result<u32, AgglayerBridgeError> {
+        // check that the provided account is a bridge account
+        Self::assert_bridge_account(account)?;
+
+        let value = account
+            .storage()
+            .get_item(AggLayerBridge::network_id_slot_name())
+            .expect("should be able to read the network ID");
+        let network_id = u32::try_from(value.to_vec()[0].as_canonical_u64())
+            .map_err(|_| AgglayerBridgeError::InvalidNetworkId)?;
+
+        Ok(network_id)
+    }
+
     /// Returns the number of leaves in the Local Exit Tree (LET) frontier.
     pub fn read_let_num_leaves(account: &Account) -> u64 {
         let num_leaves_slot = AggLayerBridge::let_num_leaves_slot_name();
@@ -456,6 +493,7 @@ impl AggLayerBridge {
             &*CGI_CHAIN_HASH_LO_SLOT_NAME,
             &*CGI_CHAIN_HASH_HI_SLOT_NAME,
             &*CLAIM_NULLIFIERS_SLOT_NAME,
+            &*NETWORK_ID_SLOT_NAME,
         ]
     }
 }
@@ -479,6 +517,10 @@ impl From<AggLayerBridge> for AccountComponent {
             StorageSlot::with_value(CGI_CHAIN_HASH_LO_SLOT_NAME.clone(), Word::empty()),
             StorageSlot::with_value(CGI_CHAIN_HASH_HI_SLOT_NAME.clone(), Word::empty()),
             StorageSlot::with_empty_map(CLAIM_NULLIFIERS_SLOT_NAME.clone()),
+            StorageSlot::with_value(
+                NETWORK_ID_SLOT_NAME.clone(),
+                Word::new([Felt::from(bridge.network_id), ZERO, ZERO, ZERO]),
+            ),
         ];
         bridge_component(bridge_storage_slots)
     }
@@ -498,6 +540,8 @@ pub enum AgglayerBridgeError {
         "the code commitment of the provided account does not match the code commitment of the AggLayer Bridge account"
     )]
     CodeCommitmentMismatch,
+    #[error("the network ID stored in the bridge account does not fit into a u32")]
+    InvalidNetworkId,
 }
 
 // HELPER FUNCTIONS

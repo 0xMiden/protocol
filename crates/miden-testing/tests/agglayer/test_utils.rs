@@ -26,6 +26,15 @@ use miden_processor::{
 use miden_protocol::transaction::TransactionKernel;
 use miden_protocol::utils::sync::LazyLock;
 
+// TEST NETWORK ID
+// ================================================================================================
+
+/// The AggLayer network ID encoded as `destination_network` in the bundled Solidity-generated claim
+/// test vectors. Tests create their bridge accounts with this value so vector-based claims validate
+/// against the bridge's configured network ID. It is a test fixture only - the library no longer
+/// defines a canonical network ID.
+pub const MIDEN_NETWORK_ID: u32 = 77;
+
 // EMBEDDED TEST VECTOR JSON FILES
 // ================================================================================================
 

@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.16.0 (TBD)
+
+- [BREAKING] Changed `AggLayerBridge::new`, `create_bridge_account`, and `create_existing_bridge_account` to accept a `network_id: u32` parameter; the bridge now stores its AggLayer network ID in account storage and reads it at runtime instead of compiling in a hardcoded constant, so testnet and mainnet deployments share the same code commitment ([#3062](https://github.com/0xMiden/protocol/pull/3062)).
+
 ## v0.15.2 (2026-06-05)
 
 - [BREAKING] `AuthNetworkAccount` now gates transaction scripts with a root allowlist instead of banning them outright, enabling network accounts to run approved tx scripts such as setting the expiration delta ([#3028](https://github.com/0xMiden/protocol/pull/3028)).

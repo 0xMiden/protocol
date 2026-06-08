@@ -54,6 +54,7 @@ use rand::Rng;
 
 use super::test_utils::{
     ClaimDataSource,
+    MIDEN_NETWORK_ID,
     MerkleProofVerificationFile,
     SOLIDITY_MERKLE_PROOF_VECTORS,
 };
@@ -153,8 +154,12 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     // CREATE BRIDGE ACCOUNT
     // --------------------------------------------------------------------------------------------
     let bridge_seed = builder.rng_mut().draw_word();
-    let bridge_account =
-        create_existing_bridge_account(bridge_seed, bridge_admin.id(), ger_manager.id());
+    let bridge_account = create_existing_bridge_account(
+        bridge_seed,
+        bridge_admin.id(),
+        ger_manager.id(),
+        MIDEN_NETWORK_ID,
+    );
     builder.add_account(bridge_account.clone())?;
 
     // GET CLAIM DATA FROM JSON (source depends on the test case)
@@ -440,8 +445,12 @@ async fn test_mint_cannot_be_consumed_by_unrelated_faucet() -> anyhow::Result<()
     })?;
 
     let bridge_seed = builder.rng_mut().draw_word();
-    let bridge_account =
-        create_existing_bridge_account(bridge_seed, bridge_admin.id(), ger_manager.id());
+    let bridge_account = create_existing_bridge_account(
+        bridge_seed,
+        bridge_admin.id(),
+        ger_manager.id(),
+        MIDEN_NETWORK_ID,
+    );
     builder.add_account(bridge_account.clone())?;
 
     let (proof_data, leaf_data, ger, _cgi_chain_hash) = data_source.get_data();
@@ -609,9 +618,8 @@ async fn test_mint_cannot_be_consumed_by_unrelated_faucet() -> anyhow::Result<()
     Ok(())
 }
 
-/// CLAIM must reject a leaf whose `destination_network` does not match the global Miden
-/// AggLayer network ID (`MIDEN_NETWORK_ID` in `constants.masm`), even when the rest of the proof
-/// data is unchanged.
+/// CLAIM must reject a leaf whose `destination_network` does not match the bridge's configured
+/// network ID, even when the rest of the proof data is unchanged.
 #[tokio::test]
 async fn test_claim_rejects_wrong_destination_network() -> anyhow::Result<()> {
     let data_source = ClaimDataSource::L1ToMiden;
@@ -632,8 +640,12 @@ async fn test_claim_rejects_wrong_destination_network() -> anyhow::Result<()> {
     // CREATE BRIDGE ACCOUNT
     // --------------------------------------------------------------------------------------------
     let bridge_seed = builder.rng_mut().draw_word();
-    let bridge_account =
-        create_existing_bridge_account(bridge_seed, bridge_admin.id(), ger_manager.id());
+    let bridge_account = create_existing_bridge_account(
+        bridge_seed,
+        bridge_admin.id(),
+        ger_manager.id(),
+        MIDEN_NETWORK_ID,
+    );
     builder.add_account(bridge_account.clone())?;
 
     // GET CLAIM DATA FROM JSON
@@ -643,7 +655,7 @@ async fn test_claim_rejects_wrong_destination_network() -> anyhow::Result<()> {
     // Override destination_network so it no longer matches the bridge's MIDEN_NETWORK_ID.
     // Proof data is unchanged; the bridge should fail before Merkle verification.
     // --------------------------------------------------------------------------------------------
-    leaf_data.destination_network = AggLayerBridge::MIDEN_NETWORK_ID.saturating_add(1);
+    leaf_data.destination_network = MIDEN_NETWORK_ID.saturating_add(1);
 
     // CREATE AGGLAYER FAUCET ACCOUNT (with agglayer_faucet component)
     // Use the origin token address and network from the claim data.
@@ -744,6 +756,136 @@ async fn test_claim_rejects_wrong_destination_network() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// A bridge configured with a non-default network ID must enforce *that* ID on the claim path. The
+/// canonical test-vector leaf targets `MIDEN_NETWORK_ID`, so a bridge configured for a different ID
+/// must reject it. This is the bridge-in counterpart to
+/// `test_bridge_out_rejection_tracks_configured_network_id`: under the old hardcoded-constant
+/// behaviour the leaf's default destination would have matched and the claim would have proceeded.
+#[tokio::test]
+async fn test_claim_tracks_configured_network_id() -> anyhow::Result<()> {
+    // A network ID that differs from the canonical default the test-vector leaf targets.
+    let configured_network_id = MIDEN_NETWORK_ID + 1;
+
+    let data_source = ClaimDataSource::L1ToMiden;
+    let mut builder = MockChain::builder();
+
+    // CREATE BRIDGE ADMIN + GER MANAGER ACCOUNTS
+    // --------------------------------------------------------------------------------------------
+    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    // CREATE BRIDGE ACCOUNT WITH A CUSTOM NETWORK ID
+    // --------------------------------------------------------------------------------------------
+    let bridge_seed = builder.rng_mut().draw_word();
+    let bridge_account = create_existing_bridge_account(
+        bridge_seed,
+        bridge_admin.id(),
+        ger_manager.id(),
+        configured_network_id,
+    );
+    builder.add_account(bridge_account.clone())?;
+    assert_eq!(AggLayerBridge::network_id(&bridge_account)?, configured_network_id);
+
+    // GET CLAIM DATA FROM JSON (leaf destination is the canonical `MIDEN_NETWORK_ID`, unmodified)
+    // --------------------------------------------------------------------------------------------
+    let (proof_data, leaf_data, ger, _cgi) = data_source.get_data();
+    assert_eq!(
+        leaf_data.destination_network, MIDEN_NETWORK_ID,
+        "test vector leaf must target the canonical network ID"
+    );
+
+    // CREATE AGGLAYER FAUCET ACCOUNT
+    // --------------------------------------------------------------------------------------------
+    let token_symbol = "AGG";
+    let decimals = 8u8;
+    let max_supply: Felt = FungibleAsset::MAX_AMOUNT.into();
+    let agglayer_faucet_seed = builder.rng_mut().draw_word();
+    let origin_token_address = leaf_data.origin_token_address;
+    let origin_network = leaf_data.origin_network;
+    let scale = 10u8;
+    let metadata_hash = leaf_data.metadata_hash;
+    let agglayer_faucet = create_existing_agglayer_faucet(
+        agglayer_faucet_seed,
+        token_symbol,
+        decimals,
+        max_supply,
+        Felt::ZERO,
+        bridge_account.id(),
+    );
+    builder.add_account(agglayer_faucet.clone())?;
+
+    let miden_claim_amount = leaf_data
+        .amount
+        .scale_to_token_amount(scale as u32)
+        .expect("amount should scale successfully");
+
+    // CREATE CLAIM / CONFIG / UPDATE_GER NOTES
+    // --------------------------------------------------------------------------------------------
+    let claim_note = ClaimNote::create(
+        ClaimNoteStorage {
+            proof_data,
+            leaf_data,
+            miden_claim_amount,
+        },
+        bridge_account.id(),
+        bridge_admin.id(),
+        builder.rng_mut(),
+    )?;
+    builder.add_output_note(RawOutputNote::Full(claim_note.clone()));
+
+    let config_note = ConfigAggBridgeNote::create(
+        ConversionMetadata {
+            faucet_account_id: agglayer_faucet.id(),
+            origin_token_address,
+            scale,
+            origin_network,
+            is_native: false,
+            metadata_hash,
+        },
+        bridge_admin.id(),
+        bridge_account.id(),
+        builder.rng_mut(),
+    )?;
+    builder.add_output_note(RawOutputNote::Full(config_note.clone()));
+
+    let update_ger_note =
+        UpdateGerNote::create(ger, ger_manager.id(), bridge_account.id(), builder.rng_mut())?;
+    builder.add_output_note(RawOutputNote::Full(update_ger_note.clone()));
+
+    // BUILD MOCK CHAIN AND RUN PREREQUISITE TXS
+    // --------------------------------------------------------------------------------------------
+    let mut mock_chain = builder.clone().build()?;
+
+    let config_tx_context = mock_chain
+        .build_tx_context(bridge_account.id(), &[config_note.id()], &[])?
+        .build()?;
+    mock_chain.add_pending_executed_transaction(&config_tx_context.execute().await?)?;
+    mock_chain.prove_next_block()?;
+
+    let update_ger_tx_context = mock_chain
+        .build_tx_context(bridge_account.id(), &[update_ger_note.id()], &[])?
+        .build()?;
+    mock_chain.add_pending_executed_transaction(&update_ger_tx_context.execute().await?)?;
+    mock_chain.prove_next_block()?;
+
+    // EXECUTE THE CLAIM: must be rejected because the leaf targets the default ID, not the
+    // bridge's configured ID.
+    // --------------------------------------------------------------------------------------------
+    let faucet_foreign_inputs = mock_chain.get_foreign_account_inputs(agglayer_faucet.id())?;
+    let claim_tx_context = mock_chain
+        .build_tx_context(bridge_account.id(), &[], &[claim_note])?
+        .foreign_accounts(vec![faucet_foreign_inputs])
+        .build()?;
+    let result = claim_tx_context.execute().await;
+    assert_transaction_executor_error!(result, ERR_CLAIM_LEAF_DESTINATION_NETWORK_MISMATCH);
+
+    Ok(())
+}
+
 /// Tests that consuming a CLAIM note with the same PROOF_DATA_KEY twice fails.
 ///
 /// This test verifies the nullifier tracking mechanism:
@@ -769,8 +911,12 @@ async fn test_duplicate_claim_note_rejected() -> anyhow::Result<()> {
 
     // CREATE BRIDGE ACCOUNT
     let bridge_seed = builder.rng_mut().draw_word();
-    let bridge_account =
-        create_existing_bridge_account(bridge_seed, bridge_admin.id(), ger_manager.id());
+    let bridge_account = create_existing_bridge_account(
+        bridge_seed,
+        bridge_admin.id(),
+        ger_manager.id(),
+        MIDEN_NETWORK_ID,
+    );
     builder.add_account(bridge_account.clone())?;
 
     // GET CLAIM DATA FROM JSON
@@ -933,8 +1079,12 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
     })?;
 
     let bridge_seed = builder.rng_mut().draw_word();
-    let mut bridge_account =
-        create_existing_bridge_account(bridge_seed, bridge_admin.id(), ger_manager.id());
+    let mut bridge_account = create_existing_bridge_account(
+        bridge_seed,
+        bridge_admin.id(),
+        ger_manager.id(),
+        MIDEN_NETWORK_ID,
+    );
     builder.add_account(bridge_account.clone())?;
 
     // Claim data: leaf data's origin_token_address + metadata_hash must match the registration
@@ -1190,8 +1340,12 @@ async fn bridge_in_unlock_native_duplicate_rejected() -> anyhow::Result<()> {
     })?;
 
     let bridge_seed = builder.rng_mut().draw_word();
-    let mut bridge_account =
-        create_existing_bridge_account(bridge_seed, bridge_admin.id(), ger_manager.id());
+    let mut bridge_account = create_existing_bridge_account(
+        bridge_seed,
+        bridge_admin.id(),
+        ger_manager.id(),
+        MIDEN_NETWORK_ID,
+    );
     builder.add_account(bridge_account.clone())?;
 
     let (proof_data, leaf_data, ger, _cgi_chain_hash) = data_source.get_data();
@@ -1423,8 +1577,12 @@ async fn test_claim_fails_when_origin_network_unregistered() -> anyhow::Result<(
     })?;
 
     let bridge_seed = builder.rng_mut().draw_word();
-    let bridge_account =
-        create_existing_bridge_account(bridge_seed, bridge_admin.id(), ger_manager.id());
+    let bridge_account = create_existing_bridge_account(
+        bridge_seed,
+        bridge_admin.id(),
+        ger_manager.id(),
+        MIDEN_NETWORK_ID,
+    );
     builder.add_account(bridge_account.clone())?;
 
     let (proof_data, leaf_data, ger, _cgi_chain_hash) = data_source.get_data();

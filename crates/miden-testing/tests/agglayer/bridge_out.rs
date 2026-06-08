@@ -43,7 +43,7 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 
 use super::merkle_tree_frontier::MerkleTreeFrontier32;
-use super::test_utils::SOLIDITY_MTF_VECTORS;
+use super::test_utils::{MIDEN_NETWORK_ID, SOLIDITY_MTF_VECTORS};
 
 /// Tests that 32 sequential B2AGG note consumptions match all 32 Solidity MTF roots.
 ///
@@ -93,6 +93,7 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
         builder.rng_mut().draw_word(),
         bridge_admin.id(),
         ger_manager.id(),
+        MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 
@@ -371,6 +372,7 @@ async fn bridge_out_at_high_num_leaves(#[case] initial_num_leaves: u32) -> anyho
         builder.rng_mut().draw_word(),
         bridge_admin.id(),
         ger_manager.id(),
+        MIDEN_NETWORK_ID,
     );
     populate_let_state(&mut bridge_account, initial_num_leaves, &initial_frontier);
     builder.add_account(bridge_account.clone())?;
@@ -497,6 +499,7 @@ async fn test_bridge_out_fails_with_unregistered_faucet() -> anyhow::Result<()> 
         builder.rng_mut().draw_word(),
         bridge_admin.id(),
         ger_manager.id(),
+        MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 
@@ -590,6 +593,7 @@ async fn test_bridge_out_rejects_invalid_b2agg_note(
         builder.rng_mut().draw_word(),
         bridge_admin.id(),
         ger_manager.id(),
+        MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 
@@ -643,7 +647,7 @@ async fn test_bridge_out_rejects_invalid_b2agg_note(
     let b2agg_note = match invalid_note {
         // Destination network equals Miden's own network ID, which `bridge_out` rejects.
         InvalidB2aggNote::DestinationIsMiden => B2AggNote::create(
-            AggLayerBridge::MIDEN_NETWORK_ID,
+            MIDEN_NETWORK_ID,
             eth_address,
             NoteAssets::new(vec![bridge_asset])?,
             bridge_account.id(),
@@ -710,6 +714,122 @@ async fn test_bridge_out_rejects_invalid_b2agg_note(
     Ok(())
 }
 
+/// A bridge configured with a non-default network ID must enforce *that* ID, not the hardcoded
+/// canonical default. A B2AGG note whose destination equals the configured ID is rejected as a
+/// bridge-out to Miden itself, proving the network ID is read from the bridge's storage rather than
+/// baked into the contract.
+#[tokio::test]
+async fn test_bridge_out_rejection_tracks_configured_network_id() -> anyhow::Result<()> {
+    // Use a network ID that differs from the canonical default so the test fails under the old
+    // hardcoded behaviour (where only `MIDEN_NETWORK_ID` was ever rejected).
+    let configured_network_id = MIDEN_NETWORK_ID + 1;
+
+    let mut builder = MockChain::builder();
+
+    // CREATE BRIDGE ADMIN + GER MANAGER ACCOUNTS
+    // --------------------------------------------------------------------------------------------
+    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    // CREATE BRIDGE ACCOUNT WITH A CUSTOM NETWORK ID
+    // --------------------------------------------------------------------------------------------
+    let mut bridge_account = create_existing_bridge_account(
+        builder.rng_mut().draw_word(),
+        bridge_admin.id(),
+        ger_manager.id(),
+        configured_network_id,
+    );
+    builder.add_account(bridge_account.clone())?;
+
+    // The configured network ID must be persisted in (and read back from) the bridge's storage.
+    assert_eq!(AggLayerBridge::network_id(&bridge_account)?, configured_network_id);
+
+    // CREATE AGGLAYER FAUCET + CONFIG NOTE (mirrors `test_bridge_out_rejects_invalid_b2agg_note`)
+    // --------------------------------------------------------------------------------------------
+    let vectors = &*SOLIDITY_MTF_VECTORS;
+    let origin_token_address =
+        EthAddress::from_hex(&vectors.origin_token_address).expect("valid origin token address");
+    let origin_network = 64u32;
+    let metadata_hash = MetadataHash::from_token_info(
+        &vectors.token_name,
+        &vectors.token_symbol,
+        vectors.token_decimals,
+    );
+    let faucet = create_existing_agglayer_faucet(
+        builder.rng_mut().draw_word(),
+        &vectors.token_symbol,
+        vectors.token_decimals,
+        FungibleAsset::MAX_AMOUNT.into(),
+        Felt::new_unchecked(100),
+        bridge_account.id(),
+    );
+    builder.add_account(faucet.clone())?;
+
+    let config_note = ConfigAggBridgeNote::create(
+        ConversionMetadata {
+            faucet_account_id: faucet.id(),
+            origin_token_address,
+            scale: 0u8,
+            origin_network,
+            is_native: false,
+            metadata_hash,
+        },
+        bridge_admin.id(),
+        bridge_account.id(),
+        builder.rng_mut(),
+    )?;
+    builder.add_output_note(RawOutputNote::Full(config_note.clone()));
+
+    // CREATE A B2AGG NOTE WHOSE DESTINATION EQUALS THE CONFIGURED NETWORK ID
+    // --------------------------------------------------------------------------------------------
+    let amount = Felt::new_unchecked(100);
+    let bridge_asset: Asset =
+        FungibleAsset::new(faucet.id(), amount.as_canonical_u64()).unwrap().into();
+    let eth_address =
+        EthAddress::from_hex(&vectors.destination_addresses[0]).expect("valid destination address");
+    let b2agg_note = B2AggNote::create(
+        configured_network_id,
+        eth_address,
+        NoteAssets::new(vec![bridge_asset])?,
+        bridge_account.id(),
+        faucet.id(),
+        builder.rng_mut(),
+    )?;
+    builder.add_output_note(RawOutputNote::Full(b2agg_note.clone()));
+
+    // BUILD MOCK CHAIN AND REGISTER THE FAUCET
+    // --------------------------------------------------------------------------------------------
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let config_executed = mock_chain
+        .build_tx_context(bridge_account.id(), &[config_note.id()], &[])?
+        .build()?
+        .execute()
+        .await?;
+    bridge_account.apply_delta(config_executed.account_delta())?;
+    mock_chain.add_pending_executed_transaction(&config_executed)?;
+    mock_chain.prove_next_block()?;
+
+    // EXECUTE THE B2AGG NOTE: must be rejected because the destination is the bridge's own network
+    // --------------------------------------------------------------------------------------------
+    let foreign_account_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
+    let result = mock_chain
+        .build_tx_context(bridge_account.id(), &[b2agg_note.id()], &[])?
+        .foreign_accounts(vec![foreign_account_inputs])
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_B2AGG_DESTINATION_NETWORK_IS_MIDEN);
+
+    Ok(())
+}
+
 /// Tests the B2AGG (Bridge to AggLayer) note script reclaim functionality.
 ///
 /// This test covers the "reclaim" branch where the note creator consumes their own B2AGG note.
@@ -754,6 +874,7 @@ async fn b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
         builder.rng_mut().draw_word(),
         bridge_admin.id(),
         ger_manager.id(),
+        MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 
@@ -868,6 +989,7 @@ async fn b2agg_note_non_target_account_cannot_consume() -> anyhow::Result<()> {
         builder.rng_mut().draw_word(),
         bridge_admin.id(),
         ger_manager.id(),
+        MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 
@@ -881,6 +1003,7 @@ async fn b2agg_note_non_target_account_cannot_consume() -> anyhow::Result<()> {
         builder.rng_mut().draw_word(),
         bridge_admin.id(),
         ger_manager.id(),
+        MIDEN_NETWORK_ID,
     );
     builder.add_account(malicious_account.clone())?;
 
@@ -945,6 +1068,7 @@ async fn bridge_out_lock_native_token() -> anyhow::Result<()> {
         builder.rng_mut().draw_word(),
         bridge_admin.id(),
         ger_manager.id(),
+        MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 

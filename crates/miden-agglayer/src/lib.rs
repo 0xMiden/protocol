@@ -134,10 +134,11 @@ fn create_bridge_account_builder(
     seed: Word,
     bridge_admin_id: AccountId,
     ger_manager_id: AccountId,
+    network_id: u32,
 ) -> AccountBuilder {
     Account::builder(seed.into())
         .account_type(AccountType::Public)
-        .with_component(AggLayerBridge::new(bridge_admin_id, ger_manager_id))
+        .with_component(AggLayerBridge::new(bridge_admin_id, ger_manager_id, network_id))
         .with_auth_component(
             AuthNetworkAccount::with_allowed_notes(AggLayerBridge::allowed_notes())
                 .expect("bridge note allowlist is non-empty"),
@@ -146,13 +147,17 @@ fn create_bridge_account_builder(
 
 /// Creates a new bridge account with the standard configuration.
 ///
+/// `network_id` is the AggLayer network ID assigned to this Miden chain. It is stored in the bridge
+/// account and is immutable for the lifetime of the account.
+///
 /// This creates a new account suitable for production use.
 pub fn create_bridge_account(
     seed: Word,
     bridge_admin_id: AccountId,
     ger_manager_id: AccountId,
+    network_id: u32,
 ) -> Account {
-    create_bridge_account_builder(seed, bridge_admin_id, ger_manager_id)
+    create_bridge_account_builder(seed, bridge_admin_id, ger_manager_id, network_id)
         .build()
         .expect("bridge account should be valid")
 }
@@ -165,8 +170,9 @@ pub fn create_existing_bridge_account(
     seed: Word,
     bridge_admin_id: AccountId,
     ger_manager_id: AccountId,
+    network_id: u32,
 ) -> Account {
-    create_bridge_account_builder(seed, bridge_admin_id, ger_manager_id)
+    create_bridge_account_builder(seed, bridge_admin_id, ger_manager_id, network_id)
         .build_existing()
         .expect("bridge account should be valid")
 }

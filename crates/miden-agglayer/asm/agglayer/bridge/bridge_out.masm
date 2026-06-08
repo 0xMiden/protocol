@@ -10,7 +10,6 @@ use miden::standards::note::execution_hint::ALWAYS
 use miden::protocol::types::MemoryAddress
 use miden::protocol::output_note
 use miden::core::crypto::hashes::poseidon2
-use agglayer::common::constants::MIDEN_NETWORK_ID
 use agglayer::common::utils
 use agglayer::common::asset_conversion
 use agglayer::bridge::bridge_config
@@ -246,23 +245,29 @@ end
 # HELPER PROCEDURES
 # =================================================================================================
 
-#! Asserts that the bridge-out destination network ID is not equal to the Miden's AggLayer network
-#! ID.
+#! Asserts that the bridge-out destination network ID is not equal to the bridge's configured
+#! network ID.
 #!
 #! Inputs:  [dest_network_id]
 #! Outputs: []
 #!
+#! Where:
+#! - dest_network_id is the LE-packed u32 destination network ID of the B2AGG note.
+#!
 #! Panics if:
-#! - the destination network ID equals `MIDEN_NETWORK_ID`.
+#! - the destination network ID equals the bridge's configured network ID.
 #!
 #! Invocation: exec
 proc assert_destination_id_not_miden_id
-    # change the endianness to BE to compare it with the Miden network ID
+    # change the endianness to BE to compare it with the network ID
     exec.utils::swap_u32_bytes
     # => [destination_network_id_be]
 
-    # assert that the destination network ID is not equal to the Miden network ID
-    push.MIDEN_NETWORK_ID neq assert.err=ERR_B2AGG_DESTINATION_NETWORK_IS_MIDEN
+    # assert that the destination network ID is not equal to the bridge's configured network ID
+    exec.bridge_config::load_network_id
+    # => [network_id, destination_network_id_be]
+
+    neq assert.err=ERR_B2AGG_DESTINATION_NETWORK_IS_MIDEN
     # => []
 end
 
