@@ -2,10 +2,10 @@ use alloc::collections::BTreeMap;
 
 use miden_protocol::Word;
 use miden_protocol::account::{AccountVaultDelta, AccountVaultPatch};
-use miden_protocol::asset::{Asset, AssetVaultKey};
+use miden_protocol::asset::AssetVaultKey;
 
 use crate::TransactionKernelError;
-use crate::host::tx_event::{AddedAssetUpdate, RemovedAssetUpdate};
+use crate::host::tx_event::AssetUpdate;
 
 /// Keeps track of the updates to an account's vault during transaction execution.
 ///
@@ -28,37 +28,16 @@ pub(crate) struct VaultUpdateTracker {
 
 impl VaultUpdateTracker {
     /// Records an add-asset event in the vault delta and patch.
-    pub fn add(&mut self, update: AddedAssetUpdate) -> Result<(), TransactionKernelError> {
-        let added_asset = Asset::from_key_value(update.asset_key, update.added_asset_value)
-            .map_err(|source| TransactionKernelError::MalformedAssetInEventHandler {
-                handler: "AccountVaultAfterAddAsset",
-                source,
-            })?;
+    pub fn update(&mut self, update: AssetUpdate) -> Result<(), TransactionKernelError> {
+        // let added_asset = Asset::from_key_value(update.asset_key, update.added_asset_value)
+        //     .map_err(|source| TransactionKernelError::MalformedAssetInEventHandler {
+        //         handler: "AccountVaultAfterAddAsset",
+        //         source,
+        //     })?;
 
-        self.delta
-            .add_asset(added_asset)
-            .map_err(TransactionKernelError::AccountDeltaAddAssetFailed)?;
-
-        self.record_observation(
-            update.asset_key,
-            update.initial_vault_value,
-            update.final_vault_value,
-        );
-
-        Ok(())
-    }
-
-    /// Records a remove-asset event in the vault delta and patch.
-    pub fn remove(&mut self, update: RemovedAssetUpdate) -> Result<(), TransactionKernelError> {
-        let removed_asset = Asset::from_key_value(update.asset_key, update.removed_asset_value)
-            .map_err(|source| TransactionKernelError::MalformedAssetInEventHandler {
-                handler: "AccountVaultAfterRemoveAsset",
-                source,
-            })?;
-
-        self.delta
-            .remove_asset(removed_asset)
-            .map_err(TransactionKernelError::AccountDeltaRemoveAssetFailed)?;
+        // self.delta
+        //     .add_asset(added_asset)
+        //     .map_err(TransactionKernelError::AccountDeltaAddAssetFailed)?;
 
         self.record_observation(
             update.asset_key,
@@ -68,6 +47,27 @@ impl VaultUpdateTracker {
 
         Ok(())
     }
+
+    // /// Records a remove-asset event in the vault delta and patch.
+    // pub fn remove(&mut self, update: RemovedAssetUpdate) -> Result<(), TransactionKernelError> {
+    //     let removed_asset = Asset::from_key_value(update.asset_key, update.removed_asset_value)
+    //         .map_err(|source| TransactionKernelError::MalformedAssetInEventHandler {
+    //             handler: "AccountVaultAfterRemoveAsset",
+    //             source,
+    //         })?;
+
+    //     self.delta
+    //         .remove_asset(removed_asset)
+    //         .map_err(TransactionKernelError::AccountDeltaRemoveAssetFailed)?;
+
+    //     self.record_observation(
+    //         update.asset_key,
+    //         update.initial_vault_value,
+    //         update.final_vault_value,
+    //     );
+
+    //     Ok(())
+    // }
 
     /// Returns a reference to the vault delta.
     pub fn delta(&self) -> &AccountVaultDelta {

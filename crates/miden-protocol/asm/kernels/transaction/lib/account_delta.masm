@@ -540,28 +540,44 @@ pub proc was_nonce_incremented
     # => [was_nonce_incremented]
 end
 
-#! Adds the given asset to the delta.
+#! Adds the given asset update to the patch.
 #!
-#! Assumes the asset is valid, so it should be called after asset_vault::add_asset.
+#! Assumes the assets are valid, so it should be called after asset_vault::add_asset.
 #!
-#! Inputs:  [ASSET_KEY, ASSET_VALUE]
+#! Inputs:  [ASSET_KEY, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE]
 #! Outputs: []
 #!
 #! Where:
 #! - ASSET_KEY is the vault key of the asset that is added.
-#! - ASSET_VALUE is the value of the asset that is added.
-pub proc add_asset
-    dupw.1 exec.word::eqz not
-    # => [is_non_empty_asset_value, ASSET_KEY, ASSET_VALUE]
+#! - INITIAL_ASSET_VALUE is the value of the asset before the update.
+#! - FINAL_ASSET_VALUE is the value of the asset after the update.
+pub proc update_asset
+    swapw dupw.1 push.ACCOUNT_DELTA_ASSET_PTR
+    # => [asset_delta_map_ptr, ASSET_KEY, INITIAL_ASSET_VALUE, ASSET_KEY, FINAL_ASSET_VALUE]
 
-    if.true
-        push.DELTA_OP_ADD
-        exec.track_asset_delta
-        # => []
-    else
-        dropw dropw
-        # => []
-    end
+    # retrieve the current patch entry
+    exec.link_map::get
+    # => [contains_key, STORED_INITIAL_VALUE, STORED_FINAL_VALUE, INITIAL_ASSET_VALUE, ASSET_KEY, FINAL_ASSET_VALUE]
+
+    movdn.12
+    # => [STORED_INITIAL_VALUE, STORED_FINAL_VALUE, INITIAL_ASSET_VALUE, contains_key, ASSET_KEY, FINAL_ASSET_VALUE]
+
+    swapw dropw
+    # => [STORED_INITIAL_VALUE, INITIAL_ASSET_VALUE, contains_key, ASSET_KEY, FINAL_ASSET_VALUE]
+
+    movup.8
+    # => [contains_key, STORED_INITIAL_VALUE, INITIAL_ASSET_VALUE, ASSET_KEY, FINAL_ASSET_VALUE]
+
+    # If contains_key STORED_INITIAL_VALUE remains.
+    # If !contains_key INITIAL_ASSET_VALUE remains.
+    cdropw
+    # => [NEW_INITIAL_VALUE, ASSET_KEY, FINAL_ASSET_VALUE]
+
+    swapw push.ACCOUNT_DELTA_ASSET_PTR
+    # => [asset_delta_map_ptr, ASSET_KEY, NEW_INITIAL_VALUE, FINAL_ASSET_VALUE]
+
+    exec.link_map::set drop
+    # => []
 end
 
 #! Removes the given asset from the delta.

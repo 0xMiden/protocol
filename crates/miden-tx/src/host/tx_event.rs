@@ -69,11 +69,11 @@ pub(crate) enum TransactionEvent {
     },
 
     AccountVaultAfterRemoveAsset {
-        update: RemovedAssetUpdate,
+        update: AssetUpdate,
     },
 
     AccountVaultAfterAddAsset {
-        update: AddedAssetUpdate,
+        update: AssetUpdate,
     },
 
     AccountStorageAfterSetItem {
@@ -166,27 +166,11 @@ pub(crate) enum TransactionEvent {
 }
 
 #[derive(Debug)]
-pub(crate) struct AddedAssetUpdate {
+pub(crate) struct AssetUpdate {
     pub asset_key: AssetVaultKey,
-    /// The relative change applied by this add (always non-empty).
-    pub added_asset_value: Word,
-    /// The absolute value of `asset_key` in the vault before the operation that produced this
-    /// event was applied.
+    /// The absolute value of `asset_key` in the vault before the operation.
     pub initial_vault_value: Word,
     /// The absolute value of `asset_key` in the vault after the operation.
-    pub final_vault_value: Word,
-}
-
-#[derive(Debug)]
-pub(crate) struct RemovedAssetUpdate {
-    pub asset_key: AssetVaultKey,
-    /// The relative change applied by this remove (always non-empty).
-    pub removed_asset_value: Word,
-    /// The absolute value of `asset_key` in the vault before the operation that produced this
-    /// event was applied.
-    pub initial_vault_value: Word,
-    /// The absolute value of `asset_key` in the vault after the operation. `EMPTY_WORD` for a
-    /// fully-removed non-fungible asset.
     pub final_vault_value: Word,
 }
 
@@ -247,11 +231,10 @@ impl TransactionEvent {
             },
             TransactionEventId::AccountVaultAfterRemoveAsset => {
                 // Expected stack state:
-                // [event, ASSET_KEY, ASSET_VALUE, FINAL_ASSET_VALUE, INITIAL_ASSET_VALUE]
+                // [event, ASSET_KEY, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE]
                 let asset_key = process.get_stack_word(1);
-                let removed_asset_value = process.get_stack_word(5);
+                let initial_vault_value = process.get_stack_word(5);
                 let final_vault_value = process.get_stack_word(9);
-                let initial_vault_value = process.get_stack_word(13);
 
                 let asset_key = AssetVaultKey::try_from(asset_key).map_err(|source| {
                     TransactionKernelError::MalformedAssetInEventHandler {
@@ -260,9 +243,8 @@ impl TransactionEvent {
                     }
                 })?;
 
-                let update = RemovedAssetUpdate {
+                let update = AssetUpdate {
                     asset_key,
-                    removed_asset_value,
                     initial_vault_value,
                     final_vault_value,
                 };
@@ -270,12 +252,10 @@ impl TransactionEvent {
             },
             TransactionEventId::AccountVaultAfterAddAsset => {
                 // Expected stack state:
-                // [event, ASSET_KEY, PROCESSED_ASSET_VALUE, PROCESSED_ASSET_VALUE',
-                //  INITIAL_ASSET_VALUE]
+                // [event, ASSET_KEY, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE]
                 let asset_key = process.get_stack_word(1);
-                let added_asset_value = process.get_stack_word(5);
+                let initial_vault_value = process.get_stack_word(5);
                 let final_vault_value = process.get_stack_word(9);
-                let initial_vault_value = process.get_stack_word(13);
 
                 let asset_key = AssetVaultKey::try_from(asset_key).map_err(|source| {
                     TransactionKernelError::MalformedAssetInEventHandler {
@@ -284,9 +264,8 @@ impl TransactionEvent {
                     }
                 })?;
 
-                let update = AddedAssetUpdate {
+                let update = AssetUpdate {
                     asset_key,
-                    added_asset_value,
                     initial_vault_value,
                     final_vault_value,
                 };

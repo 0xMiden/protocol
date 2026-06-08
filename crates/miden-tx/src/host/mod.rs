@@ -63,7 +63,7 @@ pub(crate) use tx_event::{RecipientData, TransactionEvent, TransactionProgressEv
 pub use tx_progress::TransactionProgress;
 
 use crate::errors::TransactionKernelError;
-use crate::host::tx_event::{AddedAssetUpdate, RemovedAssetUpdate};
+use crate::host::tx_event::AssetUpdate;
 
 // TRANSACTION BASE HOST
 // ================================================================================================
@@ -389,9 +389,9 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     /// Tracks the addition of an asset to the account vault in the account delta.
     pub fn on_account_vault_after_add_asset(
         &mut self,
-        update: AddedAssetUpdate,
+        update: AssetUpdate,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
-        self.update_tracker.add_asset(update)?;
+        self.update_tracker.update_asset(update)?;
 
         Ok(Vec::new())
     }
@@ -399,9 +399,9 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     /// Tracks the removal of an asset from the account vault in the account delta.
     pub fn on_account_vault_after_remove_asset(
         &mut self,
-        update: RemovedAssetUpdate,
+        update: AssetUpdate,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
-        self.update_tracker.remove_asset(update)?;
+        self.update_tracker.update_asset(update)?;
 
         Ok(Vec::new())
     }
