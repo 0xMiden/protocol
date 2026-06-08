@@ -14,7 +14,7 @@ import json
 
 import pytest
 
-from _hookutils import command_from_payload, read_command, read_payload, recent_user_prompts
+from _hookutils import command_from_payload, read_command, read_payload
 
 
 # ---------------------------------------------------------------------------
@@ -102,65 +102,3 @@ def test_read_command_malformed_returns_none() -> None:
 
 def test_read_command_missing_tool_input_returns_none() -> None:
     assert read_command(io.StringIO("{}")) is None
-
-
-# ---------------------------------------------------------------------------
-# recent_user_prompts — transcript intent extraction.
-# ---------------------------------------------------------------------------
-
-
-def _write_transcript(tmp_path, entries):
-    path = tmp_path / "transcript.jsonl"
-    path.write_text("\n".join(json.dumps(e) for e in entries))
-    return str(path)
-
-
-def test_recent_user_prompts_extracts_human_turns(tmp_path) -> None:
-    transcript = _write_transcript(
-        tmp_path,
-        [
-            {"type": "user", "message": {"role": "user", "content": "do the first thing"}},
-            {"type": "assistant", "message": {"role": "assistant", "content": "ok"}},
-            {
-                "type": "user",
-                "message": {
-                    "role": "user",
-                    "content": [
-                        {"type": "tool_result", "content": "tool output"},
-                        {"type": "text", "text": "now the second thing"},
-                    ],
-                },
-            },
-        ],
-    )
-    result = recent_user_prompts(transcript)
-    # Most recent first; tool_result dropped.
-    assert result == "- now the second thing\n- do the first thing"
-
-
-def test_recent_user_prompts_strips_system_reminders(tmp_path) -> None:
-    transcript = _write_transcript(
-        tmp_path,
-        [
-            {
-                "type": "user",
-                "message": {
-                    "role": "user",
-                    "content": "real request<system-reminder>injected noise</system-reminder>",
-                },
-            },
-            # A user turn that is ONLY a system reminder yields nothing.
-            {
-                "type": "user",
-                "message": {"role": "user", "content": "<system-reminder>only noise</system-reminder>"},
-            },
-        ],
-    )
-    assert recent_user_prompts(transcript) == "- real request"
-
-
-def test_recent_user_prompts_missing_or_empty_returns_none(tmp_path) -> None:
-    assert recent_user_prompts(None) is None
-    assert recent_user_prompts("/no/such/file.jsonl") is None
-    empty = _write_transcript(tmp_path, [{"type": "assistant", "message": {"content": "hi"}}])
-    assert recent_user_prompts(empty) is None

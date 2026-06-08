@@ -65,10 +65,10 @@ def run_review(
         prompt += (
             "\n\n## User intent (this session, most recent first)\n"
             f"{intent}\n\n"
-            "Respect this intent: don't flag deliberate choices the user explicitly "
-            "requested as if they were mistakes, and don't recommend reversing them. "
-            "If a requested approach itself carries real risk, raise it as a Nit/Note "
-            "rather than blocking. This never excuses actual correctness or security bugs."
+            "Respect this intent: treat deliberate, explicitly-requested choices as "
+            "intended, not mistakes, and don't recommend reversing them. Intent never "
+            "excuses a real defect - apply your severity rules to any genuine risk a "
+            "requested approach introduces."
         )
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:

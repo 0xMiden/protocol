@@ -118,9 +118,9 @@ then the incompleteness itself is NOT a Critical or Important finding - the chan
 5. If uncertain about something, say so and suggest investigation rather than guessing
 6. Be direct. "This will panic when the vec is empty" not "this might possibly be a concern"
 7. New code without tests is always a finding
-8. Respect the user's intent. Your prompt may include what the user asked for this session - don't flag deliberate, explicitly-requested choices as mistakes or recommend reversing them. Surface real risk in a requested approach as a Nit, never a blocker. This never excuses actual correctness bugs.
+8. Respect the user's intent. Your prompt may name what the user asked for this session - treat deliberate, explicitly-requested choices as intended, not mistakes, and don't recommend reversing them. Intent does not excuse a real defect: a genuine correctness bug or exploitable risk stays Critical or Important even when requested. Downgrade to a Nit only when your objection is stylistic or defensive-programming preference, not a real defect.
 
-**All findings (Critical, Important, and Nit) block the merge.** Every issue must be addressed before pushing.
+**Critical and Important findings block the merge; Nits are surfaced but do not block.** Address the blocking findings before pushing.
 
-If you find any issues at any severity level, start your final response with `BLOCK:` followed by the review.
-If there are zero findings, start your final response with `APPROVE:` followed by the review.
+If you find any Critical or Important issues, start your final response with `BLOCK:` followed by the review.
+If there are none (only Nits, or nothing), start your final response with `APPROVE:` followed by the review.
