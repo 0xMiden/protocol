@@ -8,16 +8,19 @@
 - [BREAKING] Renamed `AccountStorageDelta` to `AccountStoragePatch` ([#3002](https://github.com/0xMiden/protocol/pull/3002)).
 - [BREAKING] Replaced the per-tree account and nullifier backend traits with shared `SmtBackend` and `SmtBackendReader` traits, split into read-only and read-write capabilities, enabling read-only `LargeSmt`-backed tree views via `reader()` ([#2755](https://github.com/0xMiden/protocol/pull/2755), [#3009](https://github.com/0xMiden/protocol/pull/3009)).
 - Added `active_note::is_public` and `active_note::is_private` MASM procedures for checking whether the active note is public or private ([#2988](https://github.com/0xMiden/protocol/pull/2988)).
+- Added a `min_burn_amount` fungible faucet burn policy that rejects burns below a configurable, owner-gated minimum burn amount ([#3021](https://github.com/0xMiden/protocol/pull/3021)).
 - Added the `active_account::has_storage_slot` MASM procedure for checking whether a storage slot exists on the active account without panicking ([#3037](https://github.com/0xMiden/protocol/pull/3037)).
 - Introduced `AccountPatch` and `AccountVaultPatch` ([#3010](https://github.com/0xMiden/protocol/pull/3010)).
 - Clarified the transaction definition and the distinction between execution and proving on the architecture overview page ([#3015](https://github.com/0xMiden/protocol/pull/3015)).
 - [BREAKING] Refactored `TransferPolicy`, `MintPolicyConfig`, and `BurnPolicyConfig` from enums into structs ([#2974](https://github.com/0xMiden/protocol/pull/2974)).
 - Added `AccountComponent::has_procedure(root)` helper ([#2974](https://github.com/0xMiden/protocol/pull/2974)).
 - Optimized protocol MASM stack-cleaning sequences, saving 1 cycle per occurrence across 9 single-element-extraction procedures ([#3041](https://github.com/0xMiden/protocol/pull/3041)).
+- [BREAKING] Refactored `TokenPolicyManager` by adding `invoke_send_policy` / `invoke_receive_policy` wrappers (stored in the protocol reserved asset callback slots) that read the active policy root from the new `active_send_policy_proc_root` / `active_receive_policy_proc_root` storage slots ([#3047](https://github.com/0xMiden/protocol/pull/3047)).
 
 ### Fixes
 - Fixed `update_ger` to explicitly reject duplicate GER insertions with `ERR_GER_ALREADY_REGISTERED` instead of silently accepting them ([#2983](https://github.com/0xMiden/protocol/pull/2983)).
 - AggLayer `bridge_out` now rejects B2AGG notes whose `NoteType` is not `Public`, preventing a recipient-identical private note from desyncing the Local Exit Tree from AggLayer's off-chain mirror ([#2988](https://github.com/0xMiden/protocol/pull/2988)).
+- Fixed `pausable::assert_not_paused` to guard its storage read with `active_account::has_storage_slot`, making it a no-op on accounts without the `Pausable` component instead of panicking on the missing `is_paused` slot ([#3047](https://github.com/0xMiden/protocol/pull/3047)).
 
 ## v0.15.1 (TBD)
 
@@ -84,6 +87,7 @@
 - Added standardized `NetworkAccountNoteAllowlist` slot for detecting network accounts ([#2883](https://github.com/0xMiden/protocol/pull/2883)).
 - [BREAKING] Merged `BasicFungibleFaucet` and `NetworkFungibleFaucet` ([#2890](https://github.com/0xMiden/protocol/pull/2890)).
 - [BREAKING] Renamed `NoteMetadata` to `PartialNoteMetadata` and renamed `NoteMetadataHeader` to `NoteMetadata` ([#2887](https://github.com/0xMiden/protocol/pull/2887)).
+- [BREAKING] Hashed `AssetVaultKey` before insertion into the asset vault SMT ([#2912](https://github.com/0xMiden/protocol/pull/2912)).
 - [BREAKING] Renamed account ID version 0 to version 1 and made encoded version 0 invalid ([#2842](https://github.com/0xMiden/protocol/issues/2842)).
 - [BREAKING] Changed note metadata version 1 to encode as `1`, leaving encoded version `0` invalid.
 - [BREAKING] Added `NetworkAccount` wrapper for convenient network account identification ([#2915](https://github.com/0xMiden/protocol/pull/2915)).
