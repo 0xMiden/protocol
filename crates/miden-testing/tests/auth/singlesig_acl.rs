@@ -2,6 +2,7 @@ use core::slice;
 
 use assert_matches::assert_matches;
 use miden_processor::ExecutionError;
+use miden_protocol::Word;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey};
 use miden_protocol::account::{
     Account,
@@ -15,7 +16,6 @@ use miden_protocol::errors::MasmError;
 use miden_protocol::note::Note;
 use miden_protocol::testing::storage::MOCK_VALUE_SLOT0;
 use miden_protocol::transaction::RawOutputNote;
-use miden_protocol::{Felt, Word};
 use miden_standards::account::auth::AuthSingleSigAcl;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::MockAccountComponent;
@@ -28,19 +28,6 @@ use rand_chacha::ChaCha20Rng;
 use rstest::rstest;
 
 use crate::prove_and_verify_transaction;
-
-// CONSTANTS
-// ================================================================================================
-
-/// A tx script that only calls `account_procedure_1`, the procedure designated as exempt in
-/// these tests.
-const TX_SCRIPT_EXEMPT_ONLY: &str = r#"
-    use mock::account
-    begin
-        call.account::account_procedure_1
-        drop
-    end
-    "#;
 
 // HELPER FUNCTIONS
 // ================================================================================================
@@ -155,9 +142,6 @@ async fn test_acl(#[case] auth_scheme: AuthScheme) -> anyhow::Result<()> {
     let tx_script_set_item =
         CodeBuilder::with_mock_libraries().compile_tx_script(tx_script_call_set_item)?;
 
-    let tx_script_exempt_only =
-        CodeBuilder::with_mock_libraries().compile_tx_script(TX_SCRIPT_EXEMPT_ONLY)?;
-
     // Test 1: non-exempt `get_item` WITH authenticator (should succeed).
     let tx_context_get_item_with_auth = mock_chain
         .build_tx_context(account.id(), &[], slice::from_ref(&note))?
@@ -193,23 +177,50 @@ async fn test_acl(#[case] auth_scheme: AuthScheme) -> anyhow::Result<()> {
     let result_no_auth = tx_context_get_item_no_auth.execute().await;
     assert_matches!(result_no_auth, Err(TransactionExecutorError::MissingAuthenticator));
 
-    // Test 4: only-exempt `account_procedure_1` WITHOUT authenticator (should succeed).
-    let tx_context_exempt_only = mock_chain
+    Ok(())
+}
+
+/// Positive exempt-path: a kernel-detected procedure that *is* on the exempt list can be
+/// called without a signature, and the input-note consumption is vouched for by the exempt
+/// call so the input-note auth check doesn't fire either. This is the main path the exempt
+/// map lookup is supposed to enable.
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[tokio::test]
+async fn test_acl_exempt_detected_procedure_succeeds_without_auth(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (get_item, _set_item, _account_procedure_1) = mock_component_proc_roots();
+    let exempt_procedures = vec![get_item];
+    let (account, mock_chain, note) = setup_acl_test(exempt_procedures, auth_scheme)?;
+
+    let tx_script_src = format!(
+        r#"
+        use mock::account
+
+        const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
+
+        begin
+            push.MOCK_VALUE_SLOT0[0..2]
+            call.account::get_item
+            dropw
+        end
+        "#,
+        mock_value_slot0 = &*MOCK_VALUE_SLOT0,
+    );
+    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script_src)?;
+
+    let tx_context = mock_chain
         .build_tx_context(account.id(), &[], slice::from_ref(&note))?
         .authenticator(None)
-        .tx_script(tx_script_exempt_only)
+        .tx_script(tx_script)
         .build()?;
 
-    let executed = tx_context_exempt_only
+    tx_context
         .execute()
         .await
-        .expect("only-exempt call without auth should succeed");
-    assert_eq!(
-        executed.account_delta().nonce_delta(),
-        Felt::ZERO,
-        "only-exempt tx does not change account state, so the conditional-nonce branch leaves \
-         nonce_delta at zero"
-    );
+        .expect("exempt detected procedure without auth should succeed");
 
     Ok(())
 }

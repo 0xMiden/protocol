@@ -83,10 +83,16 @@ impl Default for AuthSingleSigAclConfig {
 ///
 /// ## Authentication Logic
 ///
-/// Authentication is required if any called account procedure (excluding the auth procedure
-/// itself at index 0) is not on the exempt list. When all called procedures are exempt — or
-/// when no account procedure is called at all — only the nonce is conditionally incremented
-/// (when the account state changed or the account is new) without verifying a signature.
+/// Authentication is required if any of the following hold:
+///
+/// 1. A kernel-detected account procedure (other than the auth procedure at index 0) was called and
+///    is not on the exempt list.
+/// 2. Any output note was created — unconditional (see the note-detection caveat below).
+/// 3. Any input note was consumed AND no exempt procedure was detected as called during the
+///    transaction (the note consumption was not vouched for by an exempt procedure).
+///
+/// When none of these hold, only the nonce is conditionally incremented (when the account state
+/// changed or the account is new) without verifying a signature.
 ///
 /// Because the auth procedure runs *after* the rest of the transaction, the exempt list is
 /// consulted against `was_procedure_called` results captured during execution.
@@ -98,11 +104,19 @@ impl Default for AuthSingleSigAclConfig {
 ///   the procedure as exempt from signature verification.
 ///
 /// ## Important Note on Procedure Detection
-/// Procedure detection relies on the `was_procedure_called` kernel function, which only
-/// returns `true` if the procedure called into a kernel account API restricted to the account
-/// context. Procedures that don't interact with account state or kernel APIs may not be
-/// detected as "called" even if they were executed during the transaction. Pure getters that
-/// only read state are typically not flagged and therefore do not need to be exempted.
+/// Procedure detection relies on the `was_procedure_called` kernel function, which only returns
+/// `true` if the procedure invoked an account-restricted kernel API (vault add/remove, storage
+/// write, storage read via `account::get_item`, etc.). Procedures that only touch unrestricted
+/// APIs — for example, creating output notes via `output_note_create` without also moving assets
+/// through the vault — are *not* flagged by this mechanism even when they execute. The explicit
+/// output- and input-note checks in points 2 and 3 above exist specifically to close this gap,
+/// so that an unflagged side-effecting procedure cannot make the account emit notes or process
+/// note consumptions without a signature.
+///
+/// Practical consequence for exempt-list authoring: a procedure that does not touch any
+/// account-restricted kernel API will not be observed as called even if it is in the exempt
+/// list, so listing it is a no-op (and consuming a note via such a procedure still trips check
+/// 3). When in doubt, prefer to exempt only procedures whose detection you can verify in tests.
 pub struct AuthSingleSigAcl {
     pub_key: PublicKeyCommitment,
     auth_scheme: AuthScheme,
