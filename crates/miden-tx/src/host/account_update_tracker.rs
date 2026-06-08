@@ -10,7 +10,7 @@ use miden_protocol::account::{
 
 use crate::TransactionKernelError;
 use crate::host::storage_patch_tracker::StoragePatchTracker;
-use crate::host::tx_event::AssetUpdate;
+use crate::host::tx_event::{AssetDelta, AssetPatch};
 use crate::host::vault_update_tracker::VaultUpdateTracker;
 
 // ACCOUNT DELTA TRACKER
@@ -69,9 +69,14 @@ impl AccountUpdateTracker {
         self.vault.delta()
     }
 
-    /// Adds an asset to the vault delta and patch.
-    pub fn update_asset(&mut self, update: AssetUpdate) -> Result<(), TransactionKernelError> {
-        self.vault.update(update)
+    /// Updates the vault patch.
+    pub fn update_asset_patch(&mut self, patch: AssetPatch) -> Result<(), TransactionKernelError> {
+        self.vault.update_patch(patch)
+    }
+
+    /// Updates the vault delta.
+    pub fn update_asset_delta(&mut self, delta: AssetDelta) -> Result<(), TransactionKernelError> {
+        self.vault.update_delta(delta)
     }
 
     /// Returns a mutable reference to the current storage patch tracker.

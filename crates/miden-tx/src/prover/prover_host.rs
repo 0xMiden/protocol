@@ -125,11 +125,15 @@ where
             // proving time, so there is nothing to do.
             TransactionEvent::AccountBeforeForeignLoad { .. } => Ok(Vec::new()),
 
-            TransactionEvent::AccountVaultAfterRemoveAsset { update } => {
-                self.base_host.on_account_vault_after_remove_asset(update)
+            TransactionEvent::AccountVaultAfterRemoveAsset { patch } => {
+                self.base_host.on_account_vault_after_remove_asset(patch)
             },
-            TransactionEvent::AccountVaultAfterAddAsset { update } => {
-                self.base_host.on_account_vault_after_add_asset(update)
+            TransactionEvent::AccountVaultAfterAddAsset { patch } => {
+                self.base_host.on_account_vault_after_add_asset(patch)
+            },
+
+            TransactionEvent::AccountAfterAssetDeltaComputation { delta } => {
+                self.base_host.on_account_after_asset_delta_computation(delta)
             },
 
             TransactionEvent::AccountStorageAfterSetItem { slot_name, new_value } => {

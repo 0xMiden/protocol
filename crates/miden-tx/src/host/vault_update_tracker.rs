@@ -1,11 +1,12 @@
 use alloc::collections::BTreeMap;
 
 use miden_protocol::Word;
+use miden_protocol::account::delta::AssetDeltaOp;
 use miden_protocol::account::{AccountVaultDelta, AccountVaultPatch};
 use miden_protocol::asset::AssetVaultKey;
 
 use crate::TransactionKernelError;
-use crate::host::tx_event::AssetUpdate;
+use crate::host::tx_event::{AssetDelta, AssetPatch};
 
 /// Keeps track of the updates to an account's vault during transaction execution.
 ///
@@ -20,54 +21,36 @@ use crate::host::tx_event::AssetUpdate;
 #[derive(Debug, Clone, Default)]
 pub(crate) struct VaultUpdateTracker {
     delta: AccountVaultDelta,
-    /// For each touched vault key, the `(initial, latest)` absolute values. The initial value is
-    /// recorded only on the very first observation and never overwritten; the latest value is
+    /// For each touched vault key, the `(initial, final)` absolute values. The initial value is
+    /// recorded only on the very first observation and never overwritten; the final value is
     /// updated on every observation.
     entries: BTreeMap<AssetVaultKey, (Word, Word)>,
 }
 
 impl VaultUpdateTracker {
-    /// Records an add-asset event in the vault delta and patch.
-    pub fn update(&mut self, update: AssetUpdate) -> Result<(), TransactionKernelError> {
-        // let added_asset = Asset::from_key_value(update.asset_key, update.added_asset_value)
-        //     .map_err(|source| TransactionKernelError::MalformedAssetInEventHandler {
-        //         handler: "AccountVaultAfterAddAsset",
-        //         source,
-        //     })?;
-
-        // self.delta
-        //     .add_asset(added_asset)
-        //     .map_err(TransactionKernelError::AccountDeltaAddAssetFailed)?;
-
-        self.record_observation(
-            update.asset_key,
-            update.initial_vault_value,
-            update.final_vault_value,
-        );
+    /// Records an asset patch.
+    pub fn update_patch(&mut self, patch: AssetPatch) -> Result<(), TransactionKernelError> {
+        self.entries
+            .entry(patch.asset_key)
+            .and_modify(|(_, r#final)| *r#final = patch.final_vault_value)
+            .or_insert((patch.initial_vault_value, patch.final_vault_value));
 
         Ok(())
     }
 
-    // /// Records a remove-asset event in the vault delta and patch.
-    // pub fn remove(&mut self, update: RemovedAssetUpdate) -> Result<(), TransactionKernelError> {
-    //     let removed_asset = Asset::from_key_value(update.asset_key, update.removed_asset_value)
-    //         .map_err(|source| TransactionKernelError::MalformedAssetInEventHandler {
-    //             handler: "AccountVaultAfterRemoveAsset",
-    //             source,
-    //         })?;
+    pub fn update_delta(&mut self, delta: AssetDelta) -> Result<(), TransactionKernelError> {
+        // TODO(unified_delta): Temporary logic.
+        match delta.delta_op {
+            AssetDeltaOp::Add => {
+                self.delta.add_asset(delta.asset).expect("TODO");
+            },
+            AssetDeltaOp::Remove => {
+                self.delta.remove_asset(delta.asset).expect("TODO");
+            },
+        }
 
-    //     self.delta
-    //         .remove_asset(removed_asset)
-    //         .map_err(TransactionKernelError::AccountDeltaRemoveAssetFailed)?;
-
-    //     self.record_observation(
-    //         update.asset_key,
-    //         update.initial_vault_value,
-    //         update.final_vault_value,
-    //     );
-
-    //     Ok(())
-    // }
+        Ok(())
+    }
 
     /// Returns a reference to the vault delta.
     pub fn delta(&self) -> &AccountVaultDelta {
@@ -96,18 +79,5 @@ impl VaultUpdateTracker {
             .collect();
 
         AccountVaultPatch::from_raw(normalized)
-    }
-
-    /// Records the initial value of `asset_key` on first observation and updates its latest value.
-    fn record_observation(
-        &mut self,
-        asset_key: AssetVaultKey,
-        initial_value: Word,
-        final_value: Word,
-    ) {
-        self.entries
-            .entry(asset_key)
-            .and_modify(|(_, latest)| *latest = final_value)
-            .or_insert((initial_value, final_value));
     }
 }

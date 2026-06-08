@@ -22,6 +22,9 @@ use crate::utils::serde::{
 };
 use crate::{Felt, Word, ZERO};
 
+mod delta_op;
+pub use delta_op::AssetDeltaOp;
+
 mod vault;
 pub use vault::{
     AccountVaultDelta,

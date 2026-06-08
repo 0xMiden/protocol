@@ -535,11 +535,15 @@ where
                     self.on_foreign_account_requested(account_id).await
                 },
 
-                TransactionEvent::AccountVaultAfterRemoveAsset { update } => {
-                    self.base_host.on_account_vault_after_remove_asset(update)
+                TransactionEvent::AccountVaultAfterRemoveAsset { patch } => {
+                    self.base_host.on_account_vault_after_remove_asset(patch)
                 },
-                TransactionEvent::AccountVaultAfterAddAsset { update } => {
+                TransactionEvent::AccountVaultAfterAddAsset { patch: update } => {
                     self.base_host.on_account_vault_after_add_asset(update)
+                },
+
+                TransactionEvent::AccountAfterAssetDeltaComputation { delta: update } => {
+                    self.base_host.on_account_after_asset_delta_computation(update)
                 },
 
                 TransactionEvent::AccountStorageAfterSetItem { slot_name, new_value } => {

@@ -3,6 +3,7 @@ use alloc::vec::Vec;
 use miden_processor::ProcessorState;
 use miden_processor::advice::{AdviceMutation, AdviceProvider};
 use miden_processor::trace::RowIndex;
+use miden_protocol::account::delta::AssetDeltaOp;
 use miden_protocol::account::{
     AccountId,
     StorageMap,
@@ -69,11 +70,15 @@ pub(crate) enum TransactionEvent {
     },
 
     AccountVaultAfterRemoveAsset {
-        update: AssetUpdate,
+        patch: AssetPatch,
     },
 
     AccountVaultAfterAddAsset {
-        update: AssetUpdate,
+        patch: AssetPatch,
+    },
+
+    AccountAfterAssetDeltaComputation {
+        delta: AssetDelta,
     },
 
     AccountStorageAfterSetItem {
@@ -166,12 +171,18 @@ pub(crate) enum TransactionEvent {
 }
 
 #[derive(Debug)]
-pub(crate) struct AssetUpdate {
+pub(crate) struct AssetPatch {
     pub asset_key: AssetVaultKey,
     /// The absolute value of `asset_key` in the vault before the operation.
     pub initial_vault_value: Word,
     /// The absolute value of `asset_key` in the vault after the operation.
     pub final_vault_value: Word,
+}
+
+#[derive(Debug)]
+pub(crate) struct AssetDelta {
+    pub delta_op: AssetDeltaOp,
+    pub asset: Asset,
 }
 
 impl TransactionEvent {
@@ -243,12 +254,12 @@ impl TransactionEvent {
                     }
                 })?;
 
-                let update = AssetUpdate {
+                let patch = AssetPatch {
                     asset_key,
                     initial_vault_value,
                     final_vault_value,
                 };
-                Some(TransactionEvent::AccountVaultAfterRemoveAsset { update })
+                Some(TransactionEvent::AccountVaultAfterRemoveAsset { patch })
             },
             TransactionEventId::AccountVaultAfterAddAsset => {
                 // Expected stack state:
@@ -264,13 +275,48 @@ impl TransactionEvent {
                     }
                 })?;
 
-                let update = AssetUpdate {
+                let patch = AssetPatch {
                     asset_key,
                     initial_vault_value,
                     final_vault_value,
                 };
-                Some(TransactionEvent::AccountVaultAfterAddAsset { update })
+                Some(TransactionEvent::AccountVaultAfterAddAsset { patch })
             },
+            TransactionEventId::AccountAfterAssetDeltaComputation => Some({
+                // Expected stack state:
+                // [event, delta_op, ASSET_KEY, DELTA_ASSET_VALUE]
+                let delta_op = process.get_stack_item(1);
+                let asset_key = process.get_stack_word(2);
+                let delta_asset_value = process.get_stack_word(6);
+
+                let asset_key = AssetVaultKey::try_from(asset_key).map_err(|source| {
+                    TransactionKernelError::MalformedAssetInEventHandler {
+                        handler: "AccountDeltaAfterComputation",
+                        source,
+                    }
+                })?;
+                let asset =
+                    Asset::from_key_value(asset_key, delta_asset_value).map_err(|source| {
+                        TransactionKernelError::MalformedAssetInEventHandler {
+                            handler: "AccountAfterAssetDeltaComputation",
+                            source,
+                        }
+                    })?;
+                let delta_op =
+                    AssetDeltaOp::try_from(u8::try_from(delta_op.as_canonical_u64()).map_err(
+                        |_| TransactionKernelError::other("failed to convert asset delta op to u8"),
+                    )?)
+                    .map_err(|source| {
+                        TransactionKernelError::other_with_source(
+                            "failed to decode asset delta op",
+                            source,
+                        )
+                    })?;
+
+                TransactionEvent::AccountAfterAssetDeltaComputation {
+                    delta: AssetDelta { delta_op, asset },
+                }
+            }),
             TransactionEventId::AccountVaultBeforeGetAsset => {
                 // Expected stack state:
                 // [event, ASSET_KEY, vault_root_ptr]
