@@ -10,7 +10,6 @@ use miden_agglayer::errors::{
     ERR_TOKEN_NOT_REGISTERED,
 };
 use miden_agglayer::{
-    AggLayerBridge,
     B2AggNote,
     ClaimNote,
     ClaimNoteStorage,
