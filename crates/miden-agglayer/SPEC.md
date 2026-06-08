@@ -210,10 +210,10 @@ conversion metadata back out of the bridge's own storage; these are documented b
 Bridges an asset out of Miden into the AggLayer:
 
 1. Validates the asset's faucet is registered in the faucet registry.
-2. Reads the faucet's conversion metadata (origin token address, origin network, scale) from the bridge's own `faucet_metadata_map` via `bridge_config::get_faucet_conversion_info`, then scales the amount to the origin chain's U256 representation locally. No FPI into the faucet is performed.
-3. Builds a leaf-data structure in memory (leaf type, origin network, origin token address, destination network, destination address, amount, metadata hash — the latter read from `faucet_metadata_map` via `bridge_config::get_faucet_metadata_hash`).
+2. Reads the faucet's conversion metadata (origin token address, origin network, scale) from the bridge's own `faucet_metadata_map` via `bridge_config::get_faucet_conversion_info`, then scales the amount to the origin chain's U256 representation locally.
+3. Builds a leaf-data structure in memory (leaf type, origin network, origin token address, destination network, destination address, amount, metadata hash).
 4. Computes the Keccak-256 leaf value and appends it to the Local Exit Tree.
-5. If the faucet is not native, creates a public `BURN` note targeting the faucet via a `NetworkAccountTarget` attachment. If the faucet is native (`is_native = 1`), locks the asset in the bridge's own vault (`bridge_out::lock_asset` → `native_account::add_asset`) and emits no `BURN` note (see [Section 7](#7-faucet-registry)).
+5. If the faucet is not native, creates a public `BURN` note targeting the faucet via a `NetworkAccountTarget` attachment. If the faucet is native (`is_native = 1`), locks the asset in the bridge's own vault and emits no `BURN` note (see [Section 7](#7-faucet-registry)).
 
 #### `bridge_config::register_faucet`
 
@@ -229,12 +229,10 @@ Asserts the note sender matches the bridge admin stored in
 `agglayer::bridge::admin_account_id`, then registers the faucet across three storage maps:
 
 1. Writes `[0, 0, faucet_id_suffix, faucet_id_prefix] -> [1, is_native, 0, 0]` into the
-   `faucet_registry_map` map slot (the `is_native` flag selects the burn/mint vs.
-   lock/unlock path on later bridge operations).
+   `faucet_registry_map` map slot.
 2. Writes the faucet's conversion metadata into `faucet_metadata_map` under two
    faucet-ID-keyed sub-keys: `[0, 0, faucet_id_suffix, faucet_id_prefix] -> [addr0, addr1, addr2, addr3]`
    and `[1, 0, faucet_id_suffix, faucet_id_prefix] -> [addr4, origin_network, scale, 0]`.
-   `origin_network` is stored in raw (non-byte-swapped) form here.
 3. Hashes `origin_token_addr` (5 felts) together with `origin_network` (1 felt, byte-swapped
    to match the leaf-side representation) using `Poseidon2::hash_elements` and writes
    `hash(origin_token_addr, origin_network) -> [0, 0, faucet_id_suffix, faucet_id_prefix]`
@@ -242,23 +240,6 @@ Asserts the note sender matches the bridge admin stored in
    pair is the canonical asset identity (matching the Solidity `tokenInfoHash`); keying on
    the address alone would let a CLAIM bound to one origin network resolve to the faucet of
    the same address on another network.
-
-The metadata hash is written separately by `store_faucet_metadata_hash` (below), because the
-16-element MASM stack cannot hold all 18 registration felts at once.
-
-#### `bridge_config::store_faucet_metadata_hash`
-
-| | |
-|-|-|
-| **Invocation** | `call` |
-| **Inputs** | `[faucet_id_suffix, faucet_id_prefix, METADATA_HASH_LO, METADATA_HASH_HI, pad(6)]` |
-| **Outputs** | `[pad(16)]` |
-| **Context** | Consuming a `CONFIG_AGG_BRIDGE` note on the bridge account (second call after `register_faucet`) |
-| **Panics** | Note sender is not the bridge admin |
-
-Stores the faucet's precomputed Keccak-256 metadata hash into `faucet_metadata_map` under
-two further sub-keys: `[2, 0, faucet_id_suffix, faucet_id_prefix] -> METADATA_HASH_LO` and
-`[3, 0, faucet_id_suffix, faucet_id_prefix] -> METADATA_HASH_HI`.
 
 #### `bridge_config::update_ger`
 
@@ -319,21 +300,6 @@ Validates a bridge-in claim and creates a MINT note targeting the faucet:
    asset from the bridge's vault and emits a `P2ID` note directly to the recipient
    (`bridge_in_output::unlock_and_send`), emitting no MINT note (see [Section 7](#7-faucet-registry)).
 
-#### Internal metadata helpers
-
-These `exec`-invoked helpers read faucet registration and conversion metadata back out of the
-bridge's own storage (`faucet_registry_map` and `faucet_metadata_map`). They replace the FPI
-calls into the faucet that previous revisions used. All take `[faucet_id_suffix, faucet_id_prefix]`.
-
-- `assert_faucet_registered` — asserts the registration flag is set; panics with
-  `ERR_FAUCET_NOT_REGISTERED` otherwise.
-- `is_faucet_native` → `[is_native]` — returns the `is_native` flag from `faucet_registry_map`.
-- `get_faucet_scale` → `[scale]` — returns the decimal scale from `faucet_metadata_map` sub-key 1.
-- `get_faucet_conversion_info` → `[origin_addr(5), origin_network, scale]` — returns the origin
-  token address, origin network, and scale from `faucet_metadata_map` sub-keys 0 and 1.
-- `get_faucet_metadata_hash` → `[METADATA_HASH_LO, METADATA_HASH_HI]` — returns the 8-felt
-  Keccak-256 metadata hash from `faucet_metadata_map` sub-keys 2 and 3.
-
 #### Bridge Account Storage
 
 | Slot name | Slot type | Key encoding | Value encoding | Purpose |
@@ -364,10 +330,6 @@ standard Miden fungible-faucet procedures:
 - `mint_and_send` (from `miden::standards::faucets::fungible::mint_and_send`)
 - `receive_and_burn` (from `miden::standards::faucets::fungible::receive_and_burn`)
 
-The AggLayer-specific conversion and metadata procedures that earlier revisions exposed on the
-faucet (`asset_to_origin_asset`, `get_metadata_hash`, `get_scale`) have been removed: all faucet
-metadata now lives on the bridge (`faucet_metadata_map`, see §3.1), so an AggLayer-integrated
-faucet is just a plain network fungible faucet with no AggLayer-specific storage or FPI surface.
 
 The underlying library code lives in `asm/agglayer/faucet/mod.masm`.
 
@@ -407,9 +369,6 @@ This is a re-export of `miden::standards::faucets::fungible::receive_and_burn`. 
 | Slot name | Slot type | Value encoding | Purpose |
 |-----------|-----------|----------------|---------|
 | Faucet metadata (standard) | Value | `[token_supply, max_supply, decimals, token_symbol]` | Standard `NetworkFungibleFaucet` metadata |
-
-The faucet holds no AggLayer-specific storage: all conversion metadata (origin token address,
-origin network, scale, metadata hash) lives on the bridge in `faucet_metadata_map` (see §3.1).
 
 **Companion component storage slots:** The faucet account also includes storage from
 companion components required by `fungible::mint_and_send`:

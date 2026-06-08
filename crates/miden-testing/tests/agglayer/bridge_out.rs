@@ -376,7 +376,7 @@ async fn bridge_out_at_high_num_leaves(#[case] initial_num_leaves: u32) -> anyho
     populate_let_state(&mut bridge_account, initial_num_leaves, &initial_frontier);
     builder.add_account(bridge_account.clone())?;
 
-    // CREATE AGGLAYER FAUCET ACCOUNT (conversion metadata is registered on the bridge)
+    // CREATE AGGLAYER FAUCET ACCOUNT
     let amount = vectors.amounts[0].parse::<u64>().expect("valid amount decimal string");
     let origin_token_address = EthAddress::from_hex(&vectors.origin_token_address)
         .expect("valid shared origin token address");
@@ -594,7 +594,7 @@ async fn test_bridge_out_rejects_invalid_b2agg_note(
     );
     builder.add_account(bridge_account.clone())?;
 
-    // CREATE AGGLAYER FAUCET ACCOUNT (conversion metadata is registered on the bridge)
+    // CREATE AGGLAYER FAUCET ACCOUNT
     // Use MTF vector token metadata and a fixed origin network compatible with the vectors.
     // --------------------------------------------------------------------------------------------
     let vectors = &*SOLIDITY_MTF_VECTORS;
