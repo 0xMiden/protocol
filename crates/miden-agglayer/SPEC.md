@@ -550,7 +550,7 @@ The storage is divided into three logical regions: proof data (felts 0-535), lea
 | 5 | `faucet_id_suffix` | Felt (AccountId suffix) |
 | 6 | `faucet_id_prefix` | Felt (AccountId prefix) |
 | 7 | `scale` | Felt (decimal scale factor between origin-chain and Miden-side units) |
-| 8 | `origin_network` | Felt (raw u32 origin network identifier; byte-swapped only when hashed into the token-registry key) |
+| 8 | `origin_network` | Felt (raw u32 origin network identifier) |
 | 9 | `is_native` | Felt (0 or 1; 1 marks a Miden-native lock/unlock faucet) |
 | 10-13 | `METADATA_HASH_LO` | Lower word of the Keccak-256 metadata hash (4 u32 felts) |
 | 14-17 | `METADATA_HASH_HI` | Upper word of the Keccak-256 metadata hash (4 u32 felts) |
