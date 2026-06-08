@@ -1,5 +1,3 @@
-use alloc::collections::BTreeSet;
-
 use assert_matches::assert_matches;
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 use miden_protocol::account::{AccountBuilder, AccountType};
@@ -34,24 +32,6 @@ fn sample_faucet() -> FungibleFaucet {
         .description(Description::new("A polygon token").unwrap())
         .build()
         .unwrap()
-}
-
-/// Reads every trigger-procedure-root map entry from `0..num` and returns the set.
-fn read_trigger_procedure_roots(
-    account: &miden_protocol::account::Account,
-    num: u32,
-) -> BTreeSet<Word> {
-    (0..num)
-        .map(|i| {
-            account
-                .storage()
-                .get_map_item(
-                    AuthSingleSigAcl::trigger_procedure_roots_slot(),
-                    [Felt::from(i), Felt::ZERO, Felt::ZERO, Felt::ZERO].into(),
-                )
-                .unwrap()
-        })
-        .collect()
 }
 
 #[test]
@@ -89,36 +69,19 @@ fn faucet_contract_creation() {
         pub_key_word
     );
 
-    // The config slot of the auth component stores:
-    // [num_trigger_procs, allow_unauthorized_output_notes, allow_unauthorized_input_notes, 0].
-    //
-    // With 11 authority-gated trigger procedures (mint_and_send + 4 token metadata setters +
-    // 4 policy setters + pause + unpause), allow_unauthorized_output_notes=false, and
-    // allow_unauthorized_input_notes=true, this should be [11, 0, 1, 0].
-    assert_eq!(
-        faucet_account.storage().get_item(AuthSingleSigAcl::config_slot()).unwrap(),
-        [Felt::from(11_u32), Felt::ZERO, Felt::ONE, Felt::ZERO].into()
-    );
-
-    // The trigger procedure root map should contain every authority-gated setter root.
-    let stored_roots = read_trigger_procedure_roots(&faucet_account, 11);
-    let expected_roots: BTreeSet<Word> = [
+    // The exempt procedure roots map is empty under the AuthControlled + SingleSig faucet —
+    // every authority-gated setter requires a signature, including burn/receive paths.
+    for probed_root in [
         FungibleFaucet::mint_and_send_root(),
         FungibleFaucet::set_max_supply_root(),
-        FungibleFaucet::set_description_root(),
-        FungibleFaucet::set_logo_uri_root(),
-        FungibleFaucet::set_external_link_root(),
-        TokenPolicyManager::set_mint_policy_root(),
-        TokenPolicyManager::set_burn_policy_root(),
-        TokenPolicyManager::set_send_policy_root(),
-        TokenPolicyManager::set_receive_policy_root(),
         PausableManager::pause_root(),
-        PausableManager::unpause_root(),
-    ]
-    .into_iter()
-    .map(|root| root.as_word())
-    .collect();
-    assert_eq!(stored_roots, expected_roots);
+    ] {
+        let value = faucet_account
+            .storage()
+            .get_map_item(AuthSingleSigAcl::exempt_procedure_roots_slot(), probed_root.as_word())
+            .unwrap();
+        assert_eq!(value, Word::empty());
+    }
 
     // Check that faucet metadata was initialized to the given values.
     // Storage layout: [token_supply, max_supply, decimals, symbol]

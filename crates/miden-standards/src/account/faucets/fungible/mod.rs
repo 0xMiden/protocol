@@ -560,26 +560,6 @@ impl TryFrom<&Account> for FungibleFaucet {
 // FACTORY
 // ================================================================================================
 
-/// Every authority-gated procedure root that must require a signature when
-/// [`AccessControl::AuthControlled`] is paired with [`AuthMethod::SingleSig`]. Includes
-/// `mint_and_send` so that minting always requires a signature regardless of the access
-/// control variant.
-fn all_authority_gated_setter_roots() -> Vec<AccountProcedureRoot> {
-    vec![
-        FungibleFaucet::mint_and_send_root(),
-        FungibleFaucet::set_max_supply_root(),
-        FungibleFaucet::set_description_root(),
-        FungibleFaucet::set_logo_uri_root(),
-        FungibleFaucet::set_external_link_root(),
-        TokenPolicyManager::set_mint_policy_root(),
-        TokenPolicyManager::set_burn_policy_root(),
-        TokenPolicyManager::set_send_policy_root(),
-        TokenPolicyManager::set_receive_policy_root(),
-        PausableManager::pause_root(),
-        PausableManager::unpause_root(),
-    ]
-}
-
 /// Creates a new fungible faucet account by composing the required components.
 ///
 /// In addition to the explicit parameters, [`PausableManager`] is always bundled so the
@@ -631,20 +611,16 @@ fn build_auth_component(
     auth_method: AuthMethod,
 ) -> Result<AccountComponent, FungibleFaucetError> {
     match (access_control, auth_method) {
-        // AuthControlled + SingleSig: the auth component is the sole setter gate, so it
-        // must authenticate every authority-gated setter root.
+        // AuthControlled + SingleSig: the auth component is the sole setter gate. With
+        // exempt-list semantics an empty exempt list is the safe default — every called
+        // account procedure requires a signature, including the burn/receive path that
+        // previously rode in unsigned via `allow_unauthorized_input_notes(true)`.
         (
             AccessControl::AuthControlled,
             AuthMethod::SingleSig { approver: (pub_key, auth_scheme) },
-        ) => Ok(AuthSingleSigAcl::new(
-            pub_key,
-            auth_scheme,
-            AuthSingleSigAclConfig::new()
-                .with_auth_trigger_procedures(all_authority_gated_setter_roots())
-                .with_allow_unauthorized_input_notes(true),
-        )
-        .map_err(FungibleFaucetError::AccountError)?
-        .into()),
+        ) => Ok(AuthSingleSigAcl::new(pub_key, auth_scheme, AuthSingleSigAclConfig::new())
+            .map_err(FungibleFaucetError::AccountError)?
+            .into()),
 
         // AuthControlled + NetworkAccount: rejected.
         (AccessControl::AuthControlled, AuthMethod::NetworkAccount { .. }) => {

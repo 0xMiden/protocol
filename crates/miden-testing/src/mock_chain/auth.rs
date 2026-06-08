@@ -60,12 +60,10 @@ pub enum Auth {
     },
 
     /// Creates a secret key for the account, and creates a [BasicAuthenticator] used to
-    /// authenticate the account with [AuthSingleSigAcl]. Authentication will only be
-    /// triggered if any of the procedures specified in the list are called during execution.
+    /// authenticate the account with [AuthSingleSigAcl]. Any called procedure that is not
+    /// in `exempt_procedures` forces signature verification.
     Acl {
-        auth_trigger_procedures: Vec<AccountProcedureRoot>,
-        allow_unauthorized_output_notes: bool,
-        allow_unauthorized_input_notes: bool,
+        exempt_procedures: Vec<AccountProcedureRoot>,
         auth_scheme: AuthScheme,
     },
 
@@ -152,12 +150,7 @@ impl Auth {
 
                 (component, None)
             },
-            Auth::Acl {
-                auth_trigger_procedures,
-                allow_unauthorized_output_notes,
-                allow_unauthorized_input_notes,
-                auth_scheme,
-            } => {
+            Auth::Acl { exempt_procedures, auth_scheme } => {
                 let mut rng = ChaCha20Rng::from_seed(Default::default());
                 let sec_key = AuthSecretKey::with_scheme_and_rng(*auth_scheme, &mut rng)
                     .expect("failed to create secret key");
@@ -166,10 +159,7 @@ impl Auth {
                 let component = AuthSingleSigAcl::new(
                     pub_key,
                     *auth_scheme,
-                    AuthSingleSigAclConfig::new()
-                        .with_auth_trigger_procedures(auth_trigger_procedures.clone())
-                        .with_allow_unauthorized_output_notes(*allow_unauthorized_output_notes)
-                        .with_allow_unauthorized_input_notes(*allow_unauthorized_input_notes),
+                    AuthSingleSigAclConfig::new().with_exempt_procedures(exempt_procedures.clone()),
                 )
                 .expect("component creation failed")
                 .into();

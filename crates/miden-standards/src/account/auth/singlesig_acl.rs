@@ -1,10 +1,10 @@
 use alloc::vec::Vec;
 
+use miden_protocol::Word;
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 use miden_protocol::account::component::{
     AccountComponentCode,
     AccountComponentMetadata,
-    FeltSchema,
     SchemaType,
     StorageSchema,
     StorageSlotSchema,
@@ -21,7 +21,6 @@ use miden_protocol::account::{
 };
 use miden_protocol::errors::AccountError;
 use miden_protocol::utils::sync::LazyLock;
-use miden_protocol::{Felt, Word};
 
 use crate::account::account_component_code;
 
@@ -40,55 +39,29 @@ static SCHEME_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
         .expect("storage slot name should be valid")
 });
 
-static CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::auth::singlesig_acl::config")
-        .expect("storage slot name should be valid")
-});
-
-static TRIGGER_PROCEDURE_ROOT_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::auth::singlesig_acl::trigger_procedure_roots")
+static EXEMPT_PROCEDURE_ROOTS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::auth::singlesig_acl::exempt_procedure_roots")
         .expect("storage slot name should be valid")
 });
 
 /// Configuration for [`AuthSingleSigAcl`] component.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AuthSingleSigAclConfig {
-    /// List of procedure roots that require authentication when called.
-    pub auth_trigger_procedures: Vec<AccountProcedureRoot>,
-    /// When `false`, creating output notes (sending notes to other accounts) requires
-    /// authentication. When `true`, output notes can be created without authentication.
-    pub allow_unauthorized_output_notes: bool,
-    /// When `false`, consuming input notes (processing notes sent to this account) requires
-    /// authentication. When `true`, input notes can be consumed without authentication.
-    pub allow_unauthorized_input_notes: bool,
+    /// List of procedure roots that are exempt from requiring authentication when called.
+    /// Any called procedure that is not on this list forces signature verification.
+    pub exempt_procedures: Vec<AccountProcedureRoot>,
 }
 
 impl AuthSingleSigAclConfig {
-    /// Creates a new configuration with no trigger procedures and both flags set to `false` (most
-    /// restrictive).
+    /// Creates a new configuration with an empty exempt list. Under this default, every
+    /// account procedure call requires authentication.
     pub fn new() -> Self {
-        Self {
-            auth_trigger_procedures: vec![],
-            allow_unauthorized_output_notes: false,
-            allow_unauthorized_input_notes: false,
-        }
+        Self { exempt_procedures: vec![] }
     }
 
-    /// Sets the list of procedure roots that require authentication when called.
-    pub fn with_auth_trigger_procedures(mut self, procedures: Vec<AccountProcedureRoot>) -> Self {
-        self.auth_trigger_procedures = procedures;
-        self
-    }
-
-    /// Sets whether unauthorized output notes are allowed.
-    pub fn with_allow_unauthorized_output_notes(mut self, allow: bool) -> Self {
-        self.allow_unauthorized_output_notes = allow;
-        self
-    }
-
-    /// Sets whether unauthorized input notes are allowed.
-    pub fn with_allow_unauthorized_input_notes(mut self, allow: bool) -> Self {
-        self.allow_unauthorized_input_notes = allow;
+    /// Sets the list of procedure roots that are exempt from requiring authentication.
+    pub fn with_exempt_procedures(mut self, procedures: Vec<AccountProcedureRoot>) -> Self {
+        self.exempt_procedures = procedures;
         self
     }
 }
@@ -102,55 +75,34 @@ impl Default for AuthSingleSigAclConfig {
 /// An [`AccountComponent`] implementing a procedure-based Access Control List (ACL) using either
 /// the EcdsaK256Keccak or Falcon512 Poseidon2 signature scheme for authentication of transactions.
 ///
-/// This component provides fine-grained authentication control based on three conditions:
-/// 1. **Procedure-based authentication**: Requires authentication when any of the specified trigger
-///    procedures are called during the transaction.
-/// 2. **Output note authentication**: Controls whether creating output notes requires
-///    authentication. Output notes are new notes created by the account and sent to other accounts
-///    (e.g., when transferring assets). When `allow_unauthorized_output_notes` is `false`, any
-///    transaction that creates output notes must be authenticated, ensuring account owners control
-///    when their account sends assets to other accounts.
-/// 3. **Input note authentication**: Controls whether consuming input notes requires
-///    authentication. Input notes are notes that were sent to this account by other accounts (e.g.,
-///    incoming asset transfers). When `allow_unauthorized_input_notes` is `false`, any transaction
-///    that consumes input notes must be authenticated, ensuring account owners control when their
-///    account processes incoming notes.
+/// This component uses *exempt-list* ACL semantics: every called account procedure requires
+/// authentication by default, and only procedures explicitly listed in
+/// [`AuthSingleSigAclConfig::exempt_procedures`] are permitted to execute without a signature.
+/// This makes the safe path the default — newly added setters cannot silently become
+/// permissionless by being forgotten in the configuration.
 ///
 /// ## Authentication Logic
 ///
-/// Authentication is required if ANY of the following conditions are true:
-/// - Any trigger procedure from the ACL was called
-/// - Output notes were created AND `allow_unauthorized_output_notes` is `false`
-/// - Input notes were consumed AND `allow_unauthorized_input_notes` is `false`
+/// Authentication is required if any called account procedure (excluding the auth procedure
+/// itself at index 0) is not on the exempt list. When all called procedures are exempt — or
+/// when no account procedure is called at all — only the nonce is conditionally incremented
+/// (when the account state changed or the account is new) without verifying a signature.
 ///
-/// If none of these conditions are met, only the nonce is incremented without requiring a
-/// signature.
-///
-/// ## Use Cases
-///
-/// - **Restrictive mode** (`allow_unauthorized_output_notes=false`,
-///   `allow_unauthorized_input_notes=false`): All note operations require authentication, providing
-///   maximum security.
-/// - **Selective mode**: Allow some note operations without authentication while protecting
-///   specific procedures, useful for accounts that need to process certain operations
-///   automatically.
-/// - **Procedure-only mode** (`allow_unauthorized_output_notes=true`,
-///   `allow_unauthorized_input_notes=true`): Only specific procedures require authentication,
-///   allowing free note processing.
+/// Because the auth procedure runs *after* the rest of the transaction, the exempt list is
+/// consulted against `was_procedure_called` results captured during execution.
 ///
 /// ## Storage Layout
 /// - [`Self::public_key_slot`]: Public key
-/// - [`Self::config_slot`]: `[num_trigger_procs, allow_unauthorized_output_notes,
-///   allow_unauthorized_input_notes, 0]`
-/// - [`Self::trigger_procedure_roots_slot`]: A map with trigger procedure roots
+/// - [`Self::scheme_id_slot`]: Signature scheme id
+/// - [`Self::exempt_procedure_roots_slot`]: A map `PROC_ROOT => [1, 0, 0, 0]` whose presence marks
+///   the procedure as exempt from signature verification.
 ///
 /// ## Important Note on Procedure Detection
-/// The procedure-based authentication relies on the `was_procedure_called` kernel function,
-/// which only returns `true` if the procedure in question called into a kernel account API
-/// that is restricted to the account context. Procedures that don't interact with account
-/// state or kernel APIs may not be detected as "called" even if they were executed during
-/// the transaction. This is an important limitation to consider when designing trigger
-/// procedures for authentication.
+/// Procedure detection relies on the `was_procedure_called` kernel function, which only
+/// returns `true` if the procedure called into a kernel account API restricted to the account
+/// context. Procedures that don't interact with account state or kernel APIs may not be
+/// detected as "called" even if they were executed during the transaction. Pure getters that
+/// only read state are typically not flagged and therefore do not need to be exempted.
 pub struct AuthSingleSigAcl {
     pub_key: PublicKeyCommitment,
     auth_scheme: AuthScheme,
@@ -182,7 +134,7 @@ impl AuthSingleSigAcl {
         config: AuthSingleSigAclConfig,
     ) -> Result<Self, AccountError> {
         let max_procedures = AccountCode::MAX_NUM_PROCEDURES;
-        if config.auth_trigger_procedures.len() > max_procedures {
+        if config.exempt_procedures.len() > max_procedures {
             return Err(AccountError::other(format!(
                 "Cannot track more than {max_procedures} procedures (account limit)"
             )));
@@ -201,14 +153,9 @@ impl AuthSingleSigAcl {
         &SCHEME_ID_SLOT_NAME
     }
 
-    /// Returns the [`StorageSlotName`] where the component's configuration is stored.
-    pub fn config_slot() -> &'static StorageSlotName {
-        &CONFIG_SLOT_NAME
-    }
-
-    /// Returns the [`StorageSlotName`] where the trigger procedure roots are stored.
-    pub fn trigger_procedure_roots_slot() -> &'static StorageSlotName {
-        &TRIGGER_PROCEDURE_ROOT_SLOT_NAME
+    /// Returns the [`StorageSlotName`] where the exempt procedure roots are stored.
+    pub fn exempt_procedure_roots_slot() -> &'static StorageSlotName {
+        &EXEMPT_PROCEDURE_ROOTS_SLOT_NAME
     }
 
     /// Returns the storage slot schema for the public key slot.
@@ -216,22 +163,6 @@ impl AuthSingleSigAcl {
         (
             Self::public_key_slot().clone(),
             StorageSlotSchema::value("Public key commitment", SchemaType::pub_key()),
-        )
-    }
-
-    /// Returns the storage slot schema for the configuration slot.
-    pub fn config_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::config_slot().clone(),
-            StorageSlotSchema::value(
-                "ACL configuration",
-                [
-                    FeltSchema::u32("num_trigger_procs").with_default(Felt::ZERO),
-                    FeltSchema::bool("allow_unauthorized_output_notes").with_default(Felt::ZERO),
-                    FeltSchema::bool("allow_unauthorized_input_notes").with_default(Felt::ZERO),
-                    FeltSchema::new_void(),
-                ],
-            ),
         )
     }
 
@@ -243,14 +174,14 @@ impl AuthSingleSigAcl {
         )
     }
 
-    /// Returns the storage slot schema for the trigger procedure roots slot.
-    pub fn trigger_procedure_roots_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+    /// Returns the storage slot schema for the exempt procedure roots slot.
+    pub fn exempt_procedure_roots_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
         (
-            Self::trigger_procedure_roots_slot().clone(),
+            Self::exempt_procedure_roots_slot().clone(),
             StorageSlotSchema::map(
-                "Trigger procedure roots",
-                SchemaType::u32(),
+                "Exempt procedure roots",
                 SchemaType::native_word(),
+                SchemaType::u32(),
             ),
         )
     }
@@ -260,14 +191,13 @@ impl AuthSingleSigAcl {
         let storage_schema = StorageSchema::new(vec![
             Self::public_key_slot_schema(),
             Self::auth_scheme_slot_schema(),
-            Self::config_slot_schema(),
-            Self::trigger_procedure_roots_slot_schema(),
+            Self::exempt_procedure_roots_slot_schema(),
         ])
         .expect("storage schema should be valid");
 
         AccountComponentMetadata::new(Self::NAME)
             .with_description(
-                "Authentication component with procedure-based ACL using ECDSA K256 Keccak or Falcon512 Poseidon2 signature scheme",
+                "Authentication component with exempt-list ACL using ECDSA K256 Keccak or Falcon512 Poseidon2 signature scheme",
             )
             .with_storage_schema(storage_schema)
     }
@@ -289,31 +219,16 @@ impl From<AuthSingleSigAcl> for AccountComponent {
             Word::from([singlesig_acl.auth_scheme.as_u8(), 0, 0, 0]),
         ));
 
-        // Config slot
-        let num_procs = singlesig_acl.config.auth_trigger_procedures.len() as u32;
-        storage_slots.push(StorageSlot::with_value(
-            AuthSingleSigAcl::config_slot().clone(),
-            Word::from([
-                num_procs,
-                u32::from(singlesig_acl.config.allow_unauthorized_output_notes),
-                u32::from(singlesig_acl.config.allow_unauthorized_input_notes),
-                0,
-            ]),
-        ));
-
-        // Trigger procedure roots slot
-        // We add the map even if there are no trigger procedures, to always maintain the same
+        // Exempt procedure roots slot (map: PROC_ROOT -> [1, 0, 0, 0] presence marker).
+        // We add the map even if there are no exempt procedures, to always maintain the same
         // storage layout.
-        let map_entries = singlesig_acl
-            .config
-            .auth_trigger_procedures
-            .iter()
-            .enumerate()
-            .map(|(i, proc_root)| (StorageMapKey::from_index(i as u32), proc_root.as_word()));
+        let map_entries = singlesig_acl.config.exempt_procedures.iter().map(|proc_root| {
+            (StorageMapKey::from_raw(proc_root.as_word()), Word::from([1u32, 0, 0, 0]))
+        });
 
         // Safe to unwrap because we know that the map keys are unique.
         storage_slots.push(StorageSlot::with_map(
-            AuthSingleSigAcl::trigger_procedure_roots_slot().clone(),
+            AuthSingleSigAcl::exempt_procedure_roots_slot().clone(),
             StorageMap::with_entries(map_entries).unwrap(),
         ));
 
@@ -337,47 +252,22 @@ mod tests {
     use crate::account::components::StandardAccountComponent;
     use crate::account::wallets::BasicWallet;
 
-    /// Test configuration for parametrized ACL tests
-    struct AclTestConfig {
-        /// Whether to include auth trigger procedures
-        with_procedures: bool,
-        /// Allow unauthorized output notes flag
-        allow_unauthorized_output_notes: bool,
-        /// Allow unauthorized input notes flag
-        allow_unauthorized_input_notes: bool,
-        /// Expected config slot value [num_procs, allow_output, allow_input, 0]
-        expected_config_slot: Word,
-    }
-
-    /// Helper function to get the basic wallet procedures for testing
+    /// Helper that returns the two callable procedures of [`BasicWallet`].
     fn get_basic_wallet_procedures() -> Vec<AccountProcedureRoot> {
-        // Get the two trigger procedures from BasicWallet: `receive_asset`, `move_asset_to_note`.
         let procedures: Vec<AccountProcedureRoot> =
             StandardAccountComponent::BasicWallet.procedure_roots().collect();
-
         assert_eq!(procedures.len(), 2);
         procedures
     }
 
-    /// Parametrized test helper for ACL component testing
-    fn test_acl_component(config: AclTestConfig) {
+    fn build_account(
+        exempt_procedures: Vec<AccountProcedureRoot>,
+    ) -> (PublicKeyCommitment, miden_protocol::account::Account) {
         let public_key = PublicKeyCommitment::from(Word::empty());
         let auth_scheme = AuthScheme::Falcon512Poseidon2;
 
-        // Build the configuration
-        let mut acl_config = AuthSingleSigAclConfig::new()
-            .with_allow_unauthorized_output_notes(config.allow_unauthorized_output_notes)
-            .with_allow_unauthorized_input_notes(config.allow_unauthorized_input_notes);
+        let acl_config = AuthSingleSigAclConfig::new().with_exempt_procedures(exempt_procedures);
 
-        let auth_trigger_procedures: Vec<AccountProcedureRoot> = if config.with_procedures {
-            let procedures = get_basic_wallet_procedures();
-            acl_config = acl_config.with_auth_trigger_procedures(procedures.clone());
-            procedures
-        } else {
-            vec![]
-        };
-
-        // Create component and account
         let component = AuthSingleSigAcl::new(public_key, auth_scheme, acl_config)
             .expect("component creation failed");
 
@@ -387,105 +277,53 @@ mod tests {
             .build()
             .expect("account building failed");
 
-        // Check public key storage
+        (public_key, account)
+    }
+
+    /// Empty exempt list: the public key is stored and the exempt map returns the empty word
+    /// for every probed key.
+    #[test]
+    fn test_singlesig_acl_empty_exempt_list() {
+        let (public_key, account) = build_account(vec![]);
+
         let public_key_slot = account
             .storage()
             .get_item(AuthSingleSigAcl::public_key_slot())
             .expect("public key storage slot access failed");
         assert_eq!(public_key_slot, public_key.into());
 
-        // Check configuration storage
-        let config_slot = account
+        // Probe an arbitrary key: the empty list means every lookup returns Word::empty().
+        let probe = account
             .storage()
-            .get_item(AuthSingleSigAcl::config_slot())
-            .expect("config storage slot access failed");
-        assert_eq!(config_slot, config.expected_config_slot);
+            .get_map_item(AuthSingleSigAcl::exempt_procedure_roots_slot(), Word::empty())
+            .expect("storage map access failed");
+        assert_eq!(probe, Word::empty());
+    }
 
-        // Check procedure roots
-        if config.with_procedures {
-            for (i, expected_proc_root) in auth_trigger_procedures.iter().enumerate() {
-                let proc_root = account
-                    .storage()
-                    .get_map_item(
-                        AuthSingleSigAcl::trigger_procedure_roots_slot(),
-                        Word::from([i as u32, 0, 0, 0]),
-                    )
-                    .expect("storage map access failed");
-                assert_eq!(proc_root, expected_proc_root.as_word());
-            }
-        } else {
-            // When no procedures, the map should return empty for key [0,0,0,0]
-            let proc_root = account
+    /// Non-empty exempt list: each provided procedure root is stored with the presence marker
+    /// `[1, 0, 0, 0]` and lookups for absent roots still return `Word::empty()`.
+    #[test]
+    fn test_singlesig_acl_with_exempt_procedures() {
+        let procedures = get_basic_wallet_procedures();
+        let (_public_key, account) = build_account(procedures.clone());
+
+        let marker = Word::from([1u32, 0, 0, 0]);
+        for proc_root in &procedures {
+            let value = account
                 .storage()
-                .get_map_item(AuthSingleSigAcl::trigger_procedure_roots_slot(), Word::empty())
+                .get_map_item(AuthSingleSigAcl::exempt_procedure_roots_slot(), proc_root.as_word())
                 .expect("storage map access failed");
-            assert_eq!(proc_root, Word::empty());
+            assert_eq!(value, marker);
         }
-    }
 
-    /// Test ACL component with no procedures and both authorization flags set to false
-    #[test]
-    fn test_singlesig_acl_no_procedures() {
-        test_acl_component(AclTestConfig {
-            with_procedures: false,
-            allow_unauthorized_output_notes: false,
-            allow_unauthorized_input_notes: false,
-            expected_config_slot: Word::empty(), // [0, 0, 0, 0]
-        });
-    }
-
-    /// Test ACL component with two procedures and both authorization flags set to false
-    #[test]
-    fn test_singlesig_acl_with_two_procedures() {
-        test_acl_component(AclTestConfig {
-            with_procedures: true,
-            allow_unauthorized_output_notes: false,
-            allow_unauthorized_input_notes: false,
-            expected_config_slot: Word::from([2u32, 0, 0, 0]),
-        });
-    }
-
-    /// Test ACL component with no procedures and allow_unauthorized_output_notes set to true
-    #[test]
-    fn test_ecdsa_k256_keccak_acl_with_allow_unauthorized_output_notes() {
-        test_acl_component(AclTestConfig {
-            with_procedures: false,
-            allow_unauthorized_output_notes: true,
-            allow_unauthorized_input_notes: false,
-            expected_config_slot: Word::from([0u32, 1, 0, 0]),
-        });
-    }
-
-    /// Test ACL component with two procedures and allow_unauthorized_output_notes set to true
-    #[test]
-    fn test_ecdsa_k256_keccak_acl_with_procedures_and_allow_unauthorized_output_notes() {
-        test_acl_component(AclTestConfig {
-            with_procedures: true,
-            allow_unauthorized_output_notes: true,
-            allow_unauthorized_input_notes: false,
-            expected_config_slot: Word::from([2u32, 1, 0, 0]),
-        });
-    }
-
-    /// Test ACL component with no procedures and allow_unauthorized_input_notes set to true
-    #[test]
-    fn test_ecdsa_k256_keccak_acl_with_allow_unauthorized_input_notes() {
-        test_acl_component(AclTestConfig {
-            with_procedures: false,
-            allow_unauthorized_output_notes: false,
-            allow_unauthorized_input_notes: true,
-            expected_config_slot: Word::from([0u32, 0, 1, 0]),
-        });
-    }
-
-    /// Test ACL component with two procedures and both authorization flags set to true
-    #[test]
-    fn test_ecdsa_k256_keccak_acl_with_both_allow_flags() {
-        test_acl_component(AclTestConfig {
-            with_procedures: true,
-            allow_unauthorized_output_notes: true,
-            allow_unauthorized_input_notes: true,
-            expected_config_slot: Word::from([2u32, 1, 1, 0]),
-        });
+        // A root that wasn't exempted reads as Word::empty().
+        let probe = account
+            .storage()
+            .get_map_item(
+                AuthSingleSigAcl::exempt_procedure_roots_slot(),
+                Word::from([42u32, 0, 0, 0]),
+            )
+            .expect("storage map access failed");
+        assert_eq!(probe, Word::empty());
     }
 }
