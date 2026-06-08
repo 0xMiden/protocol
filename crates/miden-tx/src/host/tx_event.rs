@@ -267,7 +267,7 @@ impl TransactionEvent {
 
                 let asset_key = AssetVaultKey::try_from(asset_key).map_err(|source| {
                     TransactionKernelError::MalformedAssetInEventHandler {
-                        handler: "AccountDeltaAfterComputation",
+                        handler: "AccountAfterAssetDeltaComputation",
                         source,
                     }
                 })?;

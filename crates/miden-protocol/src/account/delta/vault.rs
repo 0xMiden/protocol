@@ -14,6 +14,7 @@ use super::{
     Serializable,
 };
 use crate::Felt;
+use crate::account::delta::AssetDeltaOp;
 use crate::asset::{Asset, AssetVaultKey, FungibleAsset, NonFungibleAsset};
 
 // ACCOUNT VAULT DELTA
@@ -34,9 +35,6 @@ pub struct AccountVaultDelta {
 impl AccountVaultDelta {
     /// Domain separator for assets in the account delta commitment.
     pub(in crate::account) const DOMAIN: Felt = Felt::new_unchecked(3);
-
-    pub(in crate::account) const DELTA_OP_ADD: Felt = Felt::new_unchecked(1);
-    pub(in crate::account) const DELTA_OP_REMOVE: Felt = Felt::new_unchecked(2);
 
     /// Validates and creates an [AccountVaultDelta] with the given fungible and non-fungible asset
     /// deltas.
@@ -109,8 +107,9 @@ impl AccountVaultDelta {
     /// computed.
     pub(super) fn append_delta_elements(&self, elements: &mut Vec<Felt>) {
         // Add added and removed assets to a map to sort by vault key.
-        // TODO(unified_delta): Refactoring the internal asset delta structure to make this extra
-        // allocation unnecessary.
+
+        // TODO(unified_delta): Refactor the internal asset delta structure to match the tx kernel
+        // internals and to make this extra allocation unnecessary.
         let added_assets = BTreeMap::from_iter(
             self.added_assets_inner()
                 .map(|asset| (asset.vault_key(), asset.to_value_word())),
@@ -120,12 +119,12 @@ impl AccountVaultDelta {
                 .map(|asset| (asset.vault_key(), asset.to_value_word())),
         );
 
-        Self::add_asset_section(Self::DELTA_OP_ADD, added_assets, elements);
-        Self::add_asset_section(Self::DELTA_OP_REMOVE, removed_assets, elements);
+        Self::add_asset_section(AssetDeltaOp::Add, added_assets, elements);
+        Self::add_asset_section(AssetDeltaOp::Remove, removed_assets, elements);
     }
 
     fn add_asset_section(
-        delta_op: Felt,
+        delta_op: AssetDeltaOp,
         assets: BTreeMap<AssetVaultKey, Word>,
         elements: &mut Vec<Felt>,
     ) {
@@ -139,7 +138,12 @@ impl AccountVaultDelta {
             let num_changed_assets = Felt::try_from(num_changed_assets as u64)
                 .expect("number of changed assets should not exceed max representable felt");
 
-            elements.extend_from_slice(&[Self::DOMAIN, delta_op, num_changed_assets, Felt::ZERO]);
+            elements.extend_from_slice(&[
+                Self::DOMAIN,
+                Felt::from(delta_op.as_u8()),
+                num_changed_assets,
+                Felt::ZERO,
+            ]);
             elements.extend_from_slice(Word::empty().as_elements());
         }
     }
