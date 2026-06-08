@@ -147,9 +147,6 @@ fn create_bridge_account_builder(
 
 /// Creates a new bridge account with the standard configuration.
 ///
-/// `network_id` is the AggLayer network ID assigned to this Miden chain. It is stored in the bridge
-/// account and is immutable for the lifetime of the account.
-///
 /// This creates a new account suitable for production use.
 pub fn create_bridge_account(
     seed: Word,

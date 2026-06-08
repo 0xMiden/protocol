@@ -166,8 +166,7 @@ impl AggLayerBridge {
 
     /// Creates a new AggLayer bridge component with the standard configuration.
     ///
-    /// `network_id` is the AggLayer network ID assigned to this Miden chain. It is written to the
-    /// bridge's storage and is immutable for the lifetime of the account.
+    /// `network_id` is the AggLayer network ID assigned to the Miden chain.
     pub fn new(bridge_admin_id: AccountId, ger_manager_id: AccountId, network_id: u32) -> Self {
         Self {
             bridge_admin_id,
