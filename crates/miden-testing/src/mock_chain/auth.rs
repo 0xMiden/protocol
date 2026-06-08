@@ -89,6 +89,16 @@ pub enum Auth {
     },
 }
 
+impl Default for Auth {
+    /// Returns the most common authentication scheme used in tests:
+    /// [`Auth::BasicAuth`] with [`AuthScheme::Falcon512Poseidon2`].
+    fn default() -> Self {
+        Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        }
+    }
+}
+
 impl Auth {
     /// Converts `self` into its corresponding authentication [`AccountComponent`] and an optional
     /// [`BasicAuthenticator`]. The component is always returned, but the authenticator is only

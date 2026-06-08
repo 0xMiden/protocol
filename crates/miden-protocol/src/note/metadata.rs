@@ -226,6 +226,14 @@ impl NoteMetadata {
         self.attachments_commitment
     }
 
+    /// Returns `true` if the metadata advertises at least one attachment.
+    ///
+    /// The metadata carries only attachment scheme markers, not their content, so this does not
+    /// imply the content is available locally.
+    pub fn has_attachments(&self) -> bool {
+        self.attachment_headers.iter().any(|header| !header.is_absent())
+    }
+
     /// Returns `true` if the note is private, `false` otherwise.
     pub fn is_private(&self) -> bool {
         self.partial_metadata.is_private()
