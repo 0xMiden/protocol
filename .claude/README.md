@@ -9,13 +9,31 @@ the `claude` and `gh` CLIs (authenticated), and `make` / the Rust toolchain.
 
 1. **Clone the repo.** The committed `.claude/` wires up hooks, skills,
    agents, and the command automatically.
-2. **Start a session** (e.g. a remote/cloud host) in bypass-permissions mode
-   so Claude isn't stopped for per-action approvals.
+2. **Start a session** in bypass-permissions mode so Claude isn't stopped for
+   per-action approvals:
+
+   ```bash
+   claude --permission-mode bypassPermissions
+   ```
+
+   Recommended: run each task in its own git worktree (parallel agents don't
+   collide) inside a tmux session (the run survives disconnects on a
+   remote/cloud host). For example:
+
+   ```bash
+   git worktree add ../protocol-issue-1234 next
+   tmux new -s issue-1234
+   cd ../protocol-issue-1234 && claude --permission-mode bypassPermissions
+   ```
 3. **Run `/work <issue-number>`** and plan it out together. The command starts
    in plan mode and writes no code until you approve. Base defaults to `next`
    (`--base <branch>` to override).
 4. **Let it work.** Claude implements the plan and opens a **draft** PR when
    it's ready.
+5. **Review the PR on GitHub.** If changes are needed, tell Claude to apply
+   them. When the feedback reflects a reusable convention, also have Claude
+   codify it as a skill or hook under `.claude/` - ideally as a separate PR for
+   the Claude setup, kept apart from the feature work.
 
 ## Guardrails
 
