@@ -1,0 +1,1036 @@
+use miden::core::word
+use miden::protocol::active_account
+use miden::protocol::native_account
+use miden::protocol::tx
+
+# CONSTANTS
+# =================================================================================================
+
+# [min_delay, propose_expiration_delta, 0, 0]
+const DELAYED_EXECUTION_SLOT = word("miden::standards::auth::multisig_smart::delayed_execution")
+
+# Map entries: [TX_HASH] -> [unlock_timestamp, proposal_timestamp, min_cancel_sigs, 1]
+const TX_PROPOSALS_SLOT = word("miden::standards::auth::multisig_smart::tx_proposals")
+
+# Pending action slots
+const PENDING_PROPOSE_SLOT = word("miden::standards::auth::multisig_smart::pending_propose")
+const PENDING_CANCEL_SLOT = word("miden::standards::auth::multisig_smart::pending_cancel")
+const PENDING_EXECUTE_SLOT = word("miden::standards::auth::multisig_smart::pending_execute")
+
+const EMPTY_WORD = [0, 0, 0, 0]
+const PENDING_EXECUTE_FLAG = [1, 0, 0, 0]
+
+# ERRORS
+# =================================================================================================
+
+const ERR_MIN_DELAY_NOT_U32 = "min_delay must be u32"
+const ERR_MIN_DELAY_ZERO = "min_delay must be non-zero"
+const ERR_PROPOSE_EXPIRATION_DELTA_NOT_U32 = "propose_expiration_delta must be u32"
+const ERR_PROPOSE_EXPIRATION_DELTA_ZERO = "propose_expiration_delta must be non-zero"
+const ERR_TIMESTAMPS_NOT_U32 = "current_timestamp and unlock_timestamp must be u32"
+const ERR_TX_ALREADY_PROPOSED = "tx already proposed"
+const ERR_TX_NOT_PROPOSED = "tx not proposed"
+const ERR_TX_STILL_TIMELOCKED = "tx still timelocked"
+const ERR_PENDING_ALREADY_SET = "pending action already set"
+const ERR_PROPOSE_ZERO_SIGNATURES = "num_verified_signatures cannot be zero"
+const ERR_CANCEL_INSUFFICIENT_SIGNATURES = "insufficient signatures for cancel"
+const ERR_EXECUTE_PATH_MISMATCH = "execute path must match delay requirement"
+const ERR_EXPIRATION_DELTA_ZERO = "expiration_delta must be non-zero"
+const ERR_TX_EXPIRATION_DELTA_NOT_SET = "tx expiration delta must be set"
+
+# CONFIGURATION
+# =================================================================================================
+
+#! High-impact action.
+#!
+#! Sets the timelock controller used by proposal lifecycle checks.
+#!
+#! Inputs:  [min_delay, propose_expiration_delta]
+#! Outputs: []
+#!
+#! Side effects:
+#!   - Writes DELAYED_EXECUTION_SLOT with word
+#!     `[min_delay, propose_expiration_delta, 0, 0]` (see `get_delayed_execution`).
+#!
+#! Panics if:
+#! - `min_delay` is not a valid `u32` field element (`ERR_MIN_DELAY_NOT_U32`).
+#! - `propose_expiration_delta` is not a valid `u32` field element
+#!   (`ERR_PROPOSE_EXPIRATION_DELTA_NOT_U32`).
+#! - `min_delay` is zero (`ERR_MIN_DELAY_ZERO`).
+#! - `propose_expiration_delta` is zero (`ERR_PROPOSE_EXPIRATION_DELTA_ZERO`).
+#!
+#! Invocation: exec
+pub proc update_delayed_execution_policy
+    u32assert.err=ERR_MIN_DELAY_NOT_U32
+    dup eq.0 assertz.err=ERR_MIN_DELAY_ZERO
+    # => [min_delay, propose_expiration_delta]
+
+    swap u32assert.err=ERR_PROPOSE_EXPIRATION_DELTA_NOT_U32
+    dup eq.0 assertz.err=ERR_PROPOSE_EXPIRATION_DELTA_ZERO
+    # => [propose_expiration_delta, min_delay]
+
+    push.0 push.0
+    # => [0, 0, propose_expiration_delta, min_delay]
+
+    push.DELAYED_EXECUTION_SLOT[0..2]
+    # => [slot_prefix, slot_suffix, 0, 0, propose_expiration_delta, min_delay]
+
+    exec.native_account::set_item
+    # => [OLD_WORD]
+
+    dropw
+    # => []
+end
+
+#! Loads the timelock controller configuration.
+#!
+#! Inputs:  []
+#! Outputs: [min_delay, propose_expiration_delta, 0, 0]
+proc get_delayed_execution
+    push.DELAYED_EXECUTION_SLOT[0..2]
+    # => [slot_prefix, slot_suffix]
+
+    exec.active_account::get_initial_item
+    # => [min_delay, propose_expiration_delta, 0, 0]
+end
+
+#! Returns 1 if `execute_proposed_transaction` was called in the current transaction, 0 otherwise.
+#!
+#! Inputs:  []
+#! Outputs: [is_execute_path]
+#!
+#! Where:
+#! - is_execute_path is 1 if `PENDING_EXECUTE_SLOT` is non-empty, otherwise 0.
+#!
+#! Invocation: exec
+pub proc is_execute_path
+    push.PENDING_EXECUTE_SLOT[0..2]
+    # => [slot_prefix, slot_suffix]
+
+    exec.active_account::get_item
+    # => [PENDING_EXECUTE_WORD]
+
+    exec.word::eqz
+    # => [is_pending_execute_empty]
+
+    not
+    # => [is_execute_path]
+end
+
+
+#! Returns `min_delay` from [`DELAYED_EXECUTION_SLOT`]
+#!
+#! Inputs:  []
+#! Outputs: [min_delay]
+#!
+#! Invocation: exec
+proc get_min_delay
+    exec.get_delayed_execution
+    # => [min_delay, propose_expiration_delta, 0, 0]
+
+    movdn.3 drop drop drop
+    # => [min_delay]
+end
+
+#! Returns `propose_expiration_delta` from [`DELAYED_EXECUTION_SLOT`]
+#!
+#! Proposal transactions must carry a non-zero expiration delta. This helper is used
+#! when applying that delta to the current transaction (`apply_propose_expiration_delta`).
+#!
+#! Inputs:  []
+#! Outputs: [propose_expiration_delta]
+#!
+#! Invocation: exec
+proc get_propose_expiration_delta
+    exec.get_delayed_execution
+    # => [min_delay, propose_expiration_delta, 0, 0]
+
+    drop movdn.2 drop drop
+    # => [propose_expiration_delta]
+end
+
+#! Applies `expiration_delta` to the current transaction and verifies it was set.
+#!
+#! Inputs:  [expiration_delta]
+#! Outputs: []
+#!
+#! Where:
+#! - expiration_delta is the desired transaction expiration block delta.
+#!
+#! Panics if:
+#! - expiration_delta is zero (`ERR_EXPIRATION_DELTA_ZERO`).
+#! - `tx::update_expiration_block_delta` rejects `expiration_delta`.
+#! - the stored transaction expiration delta is zero after the update
+#!   (`ERR_TX_EXPIRATION_DELTA_NOT_SET`).
+#!
+#! Invocation: exec
+pub proc apply_expiration_delta
+    dup neq.0 assert.err=ERR_EXPIRATION_DELTA_ZERO
+    # => [expiration_delta]
+
+    exec.tx::update_expiration_block_delta
+    # => []
+
+    exec.tx::get_expiration_block_delta
+    # => [tx_expiration_delta]
+
+    dup neq.0 assert.err=ERR_TX_EXPIRATION_DELTA_NOT_SET
+    # => [tx_expiration_delta]
+
+    drop
+    # => []
+end
+
+
+#! Inputs:  []
+#! Outputs: []
+proc apply_propose_expiration_delta
+    exec.get_propose_expiration_delta
+    # => [propose_expiration_delta]
+
+    exec.apply_expiration_delta
+    # => []
+end
+
+# TIMELOCK + PROPOSALS HELPERS
+# =================================================================================================
+
+#! Returns the proposal entry stored for `TX_HASH`.
+#!
+#! Inputs:  [TX_HASH]
+#! Outputs: [unlock_timestamp, proposal_timestamp, min_cancel_sigs, is_set]
+#!
+#! Where:
+#! - TX_HASH is the transaction summary hash used as the proposal map key.
+#! - unlock_timestamp is the earliest timestamp at which the proposal can be executed,
+#!   or 0 if no proposal exists.
+#! - proposal_timestamp is the timestamp at which the proposal was recorded,
+#!   or 0 if no proposal exists.
+#! - min_cancel_sigs is the minimum number of signatures required to cancel the proposal,
+#!   or 0 if no proposal exists.
+#! - is_set is 1 if a proposal exists for `TX_HASH`, otherwise 0.
+#!
+#! Invocation: exec
+proc get_tx_proposal(tx_hash: word)
+    push.TX_PROPOSALS_SLOT[0..2]
+    # => [slot_prefix, slot_suffix, TX_HASH]
+
+    exec.active_account::get_map_item
+    # => [unlock_timestamp, proposal_timestamp, min_cancel_sigs, is_set]
+end
+
+#! Returns 1 if a proposal exists for `TX_HASH`, 0 otherwise.
+#!
+#! Inputs:  [TX_HASH]
+#! Outputs: [is_proposed]
+#!
+#! Where:
+#! - TX_HASH is the transaction summary hash used as the proposal map key.
+#! - is_proposed is 1 if the stored proposal word is non-empty, otherwise 0.
+#!
+#! Invocation: exec
+proc is_tx_proposed(tx_hash: word) -> u32
+    exec.get_tx_proposal
+    # => [unlock_timestamp, proposal_timestamp, min_cancel_sigs, is_set]
+
+    exec.word::eqz
+    # => [is_proposal_empty]
+
+    not
+    # => [is_proposed]
+end
+
+
+#! Deletes the proposal entry for `TX_HASH` by writing `EMPTY_WORD`.
+#!
+#! Inputs:  [TX_HASH]
+#! Outputs: []
+#!
+#! Where:
+#! - TX_HASH is the transaction summary hash used as the proposal map key.
+#!
+#! Side effects:
+#!   - Writes `EMPTY_WORD` to `TX_PROPOSALS_SLOT[TX_HASH]`.
+#!
+#! Invocation: exec
+proc remove_tx_proposal(tx_hash: word)
+    push.EMPTY_WORD
+    # => [EMPTY_WORD, TX_HASH]
+
+    swapw
+    # => [TX_HASH, EMPTY_WORD]
+
+    push.TX_PROPOSALS_SLOT[0..2]
+    # => [slot_prefix, slot_suffix, TX_HASH, EMPTY_WORD]
+
+    exec.native_account::set_map_item
+    # => [OLD_PROPOSAL_WORD]
+
+    dropw
+    # => []
+end
+
+
+#! Writes the proposal entry for `TX_HASH` unconditionally.
+#!
+#! The `is_set` flag is always written as `1`. The caller is responsible for ensuring
+#! the proposal does not already exist.
+#!
+#! Inputs:  [unlock_timestamp, proposal_timestamp, min_cancel_sigs, TX_HASH]
+#! Outputs: []
+#!
+#! Where:
+#! - unlock_timestamp is the earliest timestamp at which the proposal can be executed.
+#! - proposal_timestamp is the timestamp at which the proposal was recorded.
+#! - min_cancel_sigs is the minimum number of signatures required to cancel the proposal.
+#! - TX_HASH is the transaction summary hash used as the proposal map key.
+#!
+#! Side effects:
+#!   - Writes `TX_PROPOSALS_SLOT[TX_HASH] =
+#!     [unlock_timestamp, proposal_timestamp, min_cancel_sigs, 1]`.
+#!
+#! Invocation: exec
+proc write_tx_proposal
+    push.1
+    # => [1, unlock_timestamp, proposal_timestamp, min_cancel_sigs, TX_HASH]
+
+    movdn.3
+    # => [unlock_timestamp, proposal_timestamp, min_cancel_sigs, 1, TX_HASH]
+
+    swapw
+    # => [TX_HASH, unlock_timestamp, proposal_timestamp, min_cancel_sigs, 1]
+
+    push.TX_PROPOSALS_SLOT[0..2]
+    # => [slot_prefix, slot_suffix, TX_HASH, unlock_timestamp, proposal_timestamp, min_cancel_sigs, 1]
+
+    exec.native_account::set_map_item
+    # => [OLD_PROPOSAL_WORD]
+
+    dropw
+    # => []
+end
+
+
+#! Computes the unlock timestamp for the current proposal.
+#!
+#! Inputs:  []
+#! Outputs: [unlock_timestamp, proposal_timestamp]
+#!
+#! Where:
+#! - proposal_timestamp is the current transaction reference block timestamp.
+#! - unlock_timestamp is `proposal_timestamp + min_delay`.
+#!
+#! Invocation: exec
+proc compute_unlock_timestamp
+    exec.tx::get_block_timestamp
+    # => [proposal_timestamp]
+
+    dup exec.get_min_delay
+    # => [min_delay, proposal_timestamp, proposal_timestamp]
+
+    add
+    # => [unlock_timestamp, proposal_timestamp]
+end
+
+
+#! Asserts that the proposal unlock timestamp has been reached.
+#!
+#! Inputs:  [current_timestamp, unlock_timestamp]
+#! Outputs: []
+#!
+#! Where:
+#! - current_timestamp is the current transaction reference block timestamp.
+#! - unlock_timestamp is the earliest timestamp at which execution is allowed.
+#!
+#! Panics if:
+#! - current_timestamp or unlock_timestamp is not a valid `u32` field element
+#!   (`ERR_TIMESTAMPS_NOT_U32`).
+#! - current_timestamp is less than unlock_timestamp (`ERR_TX_STILL_TIMELOCKED`).
+#!
+#! Invocation: exec
+proc assert_unlock_reached
+    u32assert2.err=ERR_TIMESTAMPS_NOT_U32
+    # => [current_timestamp, unlock_timestamp]
+
+    swap
+    # => [unlock_timestamp, current_timestamp]
+
+    u32lt assertz.err=ERR_TX_STILL_TIMELOCKED
+    # => []
+end
+
+
+#! Enforces that `TX_HASH` is proposed and that its unlock timestamp has been reached.
+#!
+#! Inputs:  [TX_HASH]
+#! Outputs: [min_cancel_sigs]
+#!
+#! Where:
+#! - TX_HASH is the transaction summary hash used as the proposal map key.
+#! - min_cancel_sigs is the minimum number of signatures required to cancel the proposal.
+#!
+#! Panics if:
+#! - no proposal exists for `TX_HASH` (`ERR_TX_NOT_PROPOSED`).
+#! - `assert_unlock_reached` fails.
+#!
+#! Invocation: exec
+proc enforce_tx_timelock
+    dupw exec.get_tx_proposal
+    # => [unlock_timestamp, proposal_timestamp, min_cancel_sigs, is_set, TX_HASH]
+
+    dup.3 eq.1 assert.err=ERR_TX_NOT_PROPOSED
+    # => [unlock_timestamp, proposal_timestamp, min_cancel_sigs, is_set, TX_HASH]
+
+    swapw
+    # => [TX_HASH, unlock_timestamp, proposal_timestamp, min_cancel_sigs, is_set]
+
+    dropw
+    # => [unlock_timestamp, proposal_timestamp, min_cancel_sigs, is_set]
+
+    exec.tx::get_block_timestamp
+    # => [current_timestamp, unlock_timestamp, proposal_timestamp, min_cancel_sigs, is_set]
+
+    exec.assert_unlock_reached
+    # => [proposal_timestamp, min_cancel_sigs, is_set]
+
+    swap
+    # => [min_cancel_sigs, proposal_timestamp, is_set]
+
+    movdn.2 drop drop
+    # => [min_cancel_sigs]
+end
+
+
+# PENDING SLOT MANAGEMENT HELPERS
+# =================================================================================================
+
+#! Returns the pending propose transaction summary hash, or `EMPTY_WORD` if none is set.
+#!
+#! Inputs:  []
+#! Outputs: [PENDING_PROPOSE_HASH]
+#!
+#! Where:
+#! - PENDING_PROPOSE_HASH is the pending propose transaction summary hash, or
+#!   `EMPTY_WORD` if no propose action is pending.
+#!
+#! Invocation: exec
+proc get_pending_propose
+    push.PENDING_PROPOSE_SLOT[0..2]
+    # => [slot_prefix, slot_suffix]
+
+    exec.active_account::get_item
+    # => [PENDING_PROPOSE_HASH]
+end
+
+
+#! Returns the pending cancel transaction summary hash, or `EMPTY_WORD` if none is set.
+#!
+#! Inputs:  []
+#! Outputs: [PENDING_CANCEL_HASH]
+#!
+#! Where:
+#! - PENDING_CANCEL_HASH is the pending cancel transaction summary hash, or
+#!   `EMPTY_WORD` if no cancel action is pending.
+#!
+#! Invocation: exec
+proc get_pending_cancel
+    push.PENDING_CANCEL_SLOT[0..2]
+    # => [slot_prefix, slot_suffix]
+
+    exec.active_account::get_item
+    # => [PENDING_CANCEL_HASH]
+end
+
+
+#! Returns the pending execute transaction summary hash, or `EMPTY_WORD` if none is set.
+#!
+#! Inputs:  []
+#! Outputs: [PENDING_EXECUTE_HASH]
+#!
+#! Where:
+#! - PENDING_EXECUTE_HASH is the pending execute transaction summary hash, or
+#!   `EMPTY_WORD` if no execute action is pending.
+#!
+#! Invocation: exec
+proc get_pending_execute
+    push.PENDING_EXECUTE_SLOT[0..2]
+    # => [slot_prefix, slot_suffix]
+
+    exec.active_account::get_item
+    # => [PENDING_EXECUTE_HASH]
+end
+
+
+
+#! Sets the pending propose slot to `TX_HASH`.
+#!
+#! Inputs:  [TX_HASH]
+#! Outputs: []
+#!
+#! Where:
+#! - TX_HASH is the transaction summary hash to stage for proposal.
+#!
+#! Panics if:
+#! - `PENDING_PROPOSE_SLOT` is already non-empty (`ERR_PENDING_ALREADY_SET`).
+#!
+#! Side effects:
+#!   - Writes `TX_HASH` to `PENDING_PROPOSE_SLOT`.
+#!
+#! Invocation: exec
+proc set_pending_propose
+    exec.get_pending_propose
+    # => [pending_propose_word, TX_HASH]
+
+    exec.word::eqz
+    # => [is_pending_empty, TX_HASH]
+
+    assert.err=ERR_PENDING_ALREADY_SET
+    # => [TX_HASH]
+
+    push.PENDING_PROPOSE_SLOT[0..2]
+    # => [slot_prefix, slot_suffix, TX_HASH]
+
+    exec.native_account::set_item
+    # => [old_pending_propose_word]
+
+    dropw
+    # => []
+end
+
+#! Clears the pending propose transaction summary hash.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Side effects:
+#!   - Writes `EMPTY_WORD` to `PENDING_PROPOSE_SLOT`.
+#!
+#! Invocation: exec
+proc clear_pending_propose
+    push.EMPTY_WORD
+    # => [EMPTY_WORD]
+
+    push.PENDING_PROPOSE_SLOT[0..2]
+    # => [slot_prefix, slot_suffix, EMPTY_WORD]
+
+    exec.native_account::set_item
+    # => [OLD_PENDING_PROPOSE_HASH]
+
+    dropw
+    # => []
+end
+
+
+#! Sets the pending cancel slot to `TX_HASH`.
+#!
+#! Inputs:  [TX_HASH]
+#! Outputs: []
+#!
+#! Where:
+#! - TX_HASH is the transaction summary hash to stage for cancellation.
+#!
+#! Panics if:
+#! - `PENDING_CANCEL_SLOT` is already non-empty (`ERR_PENDING_ALREADY_SET`).
+#!
+#! Side effects:
+#!   - Writes `TX_HASH` to `PENDING_CANCEL_SLOT`.
+#!
+#! Invocation: exec
+proc set_pending_cancel
+    exec.get_pending_cancel
+    # => [pending_cancel_word, TX_HASH]
+
+    exec.word::eqz
+    # => [is_pending_empty, TX_HASH]
+
+    assert.err=ERR_PENDING_ALREADY_SET
+    # => [TX_HASH]
+
+    push.PENDING_CANCEL_SLOT[0..2]
+    # => [slot_prefix, slot_suffix, TX_HASH]
+
+    exec.native_account::set_item
+    # => [old_pending_cancel_word]
+
+    dropw
+    # => []
+end
+
+#! Clears the pending cancel transaction summary hash.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Side effects:
+#!   - Writes `EMPTY_WORD` to `PENDING_CANCEL_SLOT`.
+#!
+#! Invocation: exec
+proc clear_pending_cancel
+    push.EMPTY_WORD
+    # => [EMPTY_WORD]
+
+    push.PENDING_CANCEL_SLOT[0..2]
+    # => [slot_prefix, slot_suffix, EMPTY_WORD]
+
+    exec.native_account::set_item
+    # => [OLD_PENDING_CANCEL_HASH]
+
+    dropw
+    # => []
+end
+
+
+#! Marks the current transaction as an execute-path transaction.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Panics if:
+#! - `PENDING_EXECUTE_SLOT` is already non-empty (`ERR_PENDING_ALREADY_SET`).
+#!
+#! Side effects:
+#!   - Writes `PENDING_EXECUTE_FLAG` to `PENDING_EXECUTE_SLOT`.
+#!
+#! Invocation: exec
+proc set_pending_execute
+    exec.get_pending_execute
+    # => [pending_execute_word]
+
+    exec.word::eqz
+    # => [is_pending_empty]
+
+    assert.err=ERR_PENDING_ALREADY_SET
+    # => []
+
+    push.PENDING_EXECUTE_FLAG
+    # => [PENDING_EXECUTE_FLAG]
+
+    push.PENDING_EXECUTE_SLOT[0..2]
+    # => [slot_prefix, slot_suffix, PENDING_EXECUTE_FLAG]
+
+    exec.native_account::set_item
+    # => [old_pending_execute_word]
+
+    dropw
+    # => []
+end
+
+
+#! Clears the pending execute transaction summary hash.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Side effects:
+#!   - Writes `EMPTY_WORD` to `PENDING_EXECUTE_SLOT`.
+#!
+#! Invocation: exec
+proc clear_pending_execute
+    push.EMPTY_WORD
+    # => [EMPTY_WORD]
+
+    push.PENDING_EXECUTE_SLOT[0..2]
+    # => [slot_prefix, slot_suffix, EMPTY_WORD]
+
+    exec.native_account::set_item
+    # => [OLD_PENDING_EXECUTE_HASH]
+
+    dropw
+    # => []
+end
+
+
+# TX ACTIONS API
+# =================================================================================================
+
+#! Stages a new proposal for `TX_HASH`.
+#!
+#! Any signer can call this procedure. The proposal word itself is written later in the auth
+#! finalizer after signature verification completes.
+#!
+#! Inputs:  [TX_HASH]
+#! Outputs: []
+#!
+#! Where:
+#! - TX_HASH is the transaction summary hash of the proposal to stage.
+#!
+#! Panics if:
+#! - a proposal already exists for `TX_HASH` (`ERR_TX_ALREADY_PROPOSED`).
+#! - a pending action slot is already set (`ERR_PENDING_ALREADY_SET`).
+#! - `apply_propose_expiration_delta` fails.
+#!
+#! Side effects:
+#!   - Applies the propose expiration delta to the current transaction.
+#!   - Writes `TX_HASH` to `PENDING_PROPOSE_SLOT`.
+#!
+#! Invocation: exec
+pub proc propose_transaction
+    exec.apply_propose_expiration_delta
+    # => [TX_HASH]
+
+    dupw
+    # => [TX_HASH, TX_HASH]
+
+    exec.is_tx_proposed
+    # => [is_proposed, TX_HASH]
+
+    assertz.err=ERR_TX_ALREADY_PROPOSED
+    # => [TX_HASH]
+
+    exec.set_pending_propose
+    # => []
+end
+
+
+#! Stages cancellation of an existing proposal.
+#!
+#! The proposal is not removed immediately, the actual delete happens in the auth finalizer.
+#!
+#! Inputs:  [TX_HASH]
+#! Outputs: []
+#!
+#! Where:
+#! - TX_HASH is the transaction summary hash of the proposal to cancel.
+#!
+#! Panics if:
+#! - no proposal exists for `TX_HASH` (`ERR_TX_NOT_PROPOSED`).
+#! - a pending action slot is already set (`ERR_PENDING_ALREADY_SET`).
+#!
+#! Side effects:
+#!   - Writes `TX_HASH` to `PENDING_CANCEL_SLOT`.
+#!
+#! Invocation: exec
+pub proc cancel_transaction_proposal
+    dupw
+    # => [TX_HASH, TX_HASH]
+
+    exec.is_tx_proposed
+    # => [is_proposed, TX_HASH]
+
+    assert.err=ERR_TX_NOT_PROPOSED
+    # => [TX_HASH]
+
+    exec.set_pending_cancel
+    # => []
+end
+
+
+#! Cancels an existing proposal and stages a replacement proposal in the same transaction.
+#!
+#! The old proposal is marked for cancellation first, and the new proposal is then staged for
+#! creation in the auth finalizer.
+#!
+#! Inputs:  [OLD_TX_HASH, NEW_TX_HASH]
+#! Outputs: []
+#!
+#! Where:
+#! - OLD_TX_HASH is the transaction summary hash of the proposal to cancel.
+#! - NEW_TX_HASH is the transaction summary hash of the proposal to stage.
+#!
+#! Panics if:
+#! - no proposal exists for `OLD_TX_HASH` (`ERR_TX_NOT_PROPOSED`).
+#! - a proposal already exists for `NEW_TX_HASH` (`ERR_TX_ALREADY_PROPOSED`).
+#! - a pending action slot is already set (`ERR_PENDING_ALREADY_SET`).
+#! - `apply_propose_expiration_delta` fails.
+#!
+#! Side effects:
+#!   - Writes `OLD_TX_HASH` to `PENDING_CANCEL_SLOT`.
+#!   - Applies the propose expiration delta to the current transaction.
+#!   - Writes `NEW_TX_HASH` to `PENDING_PROPOSE_SLOT`.
+#!
+#! Invocation: exec
+pub proc cancel_and_propose_new_transaction
+    dupw
+    # => [OLD_TX_HASH, OLD_TX_HASH, NEW_TX_HASH]
+
+    exec.is_tx_proposed
+    # => [is_old_tx_proposed, OLD_TX_HASH, NEW_TX_HASH]
+
+    assert.err=ERR_TX_NOT_PROPOSED
+    # => [OLD_TX_HASH, NEW_TX_HASH]
+
+    swapw
+    # => [NEW_TX_HASH, OLD_TX_HASH]
+
+    dupw
+    # => [NEW_TX_HASH, NEW_TX_HASH, OLD_TX_HASH]
+
+    exec.is_tx_proposed
+    # => [is_new_tx_proposed, NEW_TX_HASH, OLD_TX_HASH]
+
+    assertz.err=ERR_TX_ALREADY_PROPOSED
+    # => [NEW_TX_HASH, OLD_TX_HASH]
+
+    swapw
+    # => [OLD_TX_HASH, NEW_TX_HASH]
+
+    exec.set_pending_cancel
+    # => [NEW_TX_HASH]
+
+    exec.apply_propose_expiration_delta
+    # => [NEW_TX_HASH]
+
+    exec.set_pending_propose
+    # => []
+end
+
+
+#! Marks that this tx intends to execute a proposed action.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Panics if:
+#! - `PENDING_EXECUTE_SLOT` is already non-empty (`ERR_PENDING_ALREADY_SET`).
+#!
+#! Side effects:
+#!   - Writes `PENDING_EXECUTE_FLAG` to `PENDING_EXECUTE_SLOT`.
+#!
+#! Invocation: exec
+pub proc execute_proposed_transaction
+    exec.set_pending_execute
+    # => []
+end
+
+# TX FINALIZERS
+# =================================================================================================
+
+#! Finalizes a pending execute action for the current transaction.
+#!
+#! Inputs:  [num_verified_signatures, requires_delay, TX_HASH]
+#! Outputs: [num_verified_signatures, TX_HASH]
+#!
+#! Where:
+#! - num_verified_signatures is the number of signatures verified for the current transaction.
+#! - requires_delay is 1 if the current transaction must use the execute lane, otherwise 0.
+#! - TX_HASH is the current transaction summary hash.
+#!
+#! Panics if:
+#! - `enforce_tx_timelock` fails.
+#!
+#! Side effects:
+#!   - If `PENDING_EXECUTE_SLOT` is non-empty, removes the proposal for `TX_HASH`.
+#!   - Clears `PENDING_EXECUTE_SLOT`.
+#!
+#! Locals:
+#! 0: num_verified_signatures
+#!
+#! Invocation: exec
+@locals(1)
+proc finalize_pending_execute
+    loc_store.0
+    # => [requires_delay, TX_HASH]
+
+    exec.get_pending_execute
+    # => [PENDING_EXECUTE_HASH, requires_delay, TX_HASH]
+
+    exec.word::eqz
+    # => [is_pending_execute_empty, requires_delay, TX_HASH]
+
+    if.true
+        drop
+        # => [TX_HASH]
+    else
+        if.true
+            dupw
+            # => [TX_HASH, TX_HASH]
+
+            exec.enforce_tx_timelock
+            # => [min_cancel_sigs, TX_HASH]
+
+            drop
+            # => [TX_HASH]
+        end
+
+        dupw
+        # => [TX_HASH, TX_HASH]
+
+        exec.remove_tx_proposal
+        # => [TX_HASH]
+    end
+
+    exec.clear_pending_execute
+    # => [TX_HASH]
+
+    loc_load.0
+    # => [num_verified_signatures, TX_HASH]
+end
+
+#! Finalizes a pending cancel action for the current transaction.
+#!
+#! Inputs:  [num_verified_signatures, TX_HASH]
+#! Outputs: [num_verified_signatures, TX_HASH]
+#!
+#! Where:
+#! - num_verified_signatures is the number of signatures verified for the current transaction.
+#! - TX_HASH is the current transaction summary hash.
+#!
+#! Panics if:
+#! - the pending cancel hash is not currently proposed (`ERR_TX_NOT_PROPOSED`).
+#! - `num_verified_signatures` is less than `min_cancel_sigs`
+#!   (`ERR_CANCEL_INSUFFICIENT_SIGNATURES`).
+#!
+#! Side effects:
+#!   - If `PENDING_CANCEL_SLOT` is non-empty, removes the proposal for the pending cancel hash.
+#!   - Clears `PENDING_CANCEL_SLOT`.
+#!
+#! Locals:
+#! 0: num_verified_signatures
+#!
+#! Invocation: exec
+@locals(1)
+proc finalize_pending_cancel
+    loc_store.0
+    # => [TX_HASH]
+
+    exec.get_pending_cancel
+    # => [PENDING_CANCEL_HASH, TX_HASH]
+
+    exec.word::eqz
+    # => [is_pending_cancel_empty, TX_HASH]
+
+    if.false
+        exec.get_pending_cancel
+        # => [PENDING_CANCEL_HASH, TX_HASH]
+
+        dupw
+        # => [PENDING_CANCEL_HASH, PENDING_CANCEL_HASH, TX_HASH]
+
+        exec.get_tx_proposal
+        # => [unlock_timestamp, proposal_timestamp, min_cancel_sigs, is_set, PENDING_CANCEL_HASH, TX_HASH]
+
+        dup.3 eq.1 assert.err=ERR_TX_NOT_PROPOSED
+        # => [unlock_timestamp, proposal_timestamp, min_cancel_sigs, is_set, PENDING_CANCEL_HASH, TX_HASH]
+
+        drop drop swap drop
+        # => [min_cancel_sigs, PENDING_CANCEL_HASH, TX_HASH]
+
+        loc_load.0
+        # => [num_verified_signatures, min_cancel_sigs, PENDING_CANCEL_HASH, TX_HASH]
+
+        swap
+        # => [min_cancel_sigs, num_verified_signatures, PENDING_CANCEL_HASH, TX_HASH]
+
+        u32lt assertz.err=ERR_CANCEL_INSUFFICIENT_SIGNATURES
+        # => [PENDING_CANCEL_HASH, TX_HASH]
+
+        exec.remove_tx_proposal
+        # => [TX_HASH]
+    end
+
+    exec.clear_pending_cancel
+    # => [TX_HASH]
+
+    loc_load.0
+    # => [num_verified_signatures, TX_HASH]
+end
+
+#! Finalizes a pending propose action for the current transaction.
+#!
+#! Inputs:  [num_verified_signatures, TX_HASH]
+#! Outputs: [TX_HASH]
+#!
+#! Where:
+#! - num_verified_signatures is the number of signatures verified for the current transaction.
+#! - TX_HASH is the current transaction summary hash.
+#!
+#! Panics if:
+#! - the pending propose hash is already proposed (`ERR_TX_ALREADY_PROPOSED`).
+#! - `num_verified_signatures` is zero (`ERR_PROPOSE_ZERO_SIGNATURES`).
+#! - `apply_propose_expiration_delta` fails.
+#!
+#! Side effects:
+#!   - If `PENDING_PROPOSE_SLOT` is non-empty, writes a new proposal for the pending propose hash.
+#!   - Clears `PENDING_PROPOSE_SLOT`.
+#!
+#! Locals:
+#! 0: num_verified_signatures
+#!
+#! Invocation: exec
+@locals(1)
+proc finalize_pending_propose
+    loc_store.0
+    # => [TX_HASH]
+
+    exec.get_pending_propose
+    # => [PENDING_PROPOSE_HASH, TX_HASH]
+
+    exec.word::eqz
+    # => [is_pending_propose_empty, TX_HASH]
+
+    if.false
+        exec.get_pending_propose
+        # => [PENDING_PROPOSE_HASH, TX_HASH]
+
+        dupw
+        # => [PENDING_PROPOSE_HASH, PENDING_PROPOSE_HASH, TX_HASH]
+
+        exec.is_tx_proposed
+        # => [is_proposed, PENDING_PROPOSE_HASH, TX_HASH]
+
+        assertz.err=ERR_TX_ALREADY_PROPOSED
+        # => [PENDING_PROPOSE_HASH, TX_HASH]
+
+        loc_load.0
+        # => [num_verified_signatures, PENDING_PROPOSE_HASH, TX_HASH]
+
+        dup
+        # => [num_verified_signatures, num_verified_signatures, PENDING_PROPOSE_HASH, TX_HASH]
+
+        eq.0
+        # => [num_verified_eq_0, num_verified_signatures, PENDING_PROPOSE_HASH, TX_HASH]
+
+        assertz.err=ERR_PROPOSE_ZERO_SIGNATURES
+        # => [num_verified_signatures, PENDING_PROPOSE_HASH, TX_HASH]
+
+        exec.apply_propose_expiration_delta
+        # => [num_verified_signatures, PENDING_PROPOSE_HASH, TX_HASH]
+
+        exec.compute_unlock_timestamp
+        # => [unlock_timestamp, proposal_timestamp, num_verified_signatures, PENDING_PROPOSE_HASH, TX_HASH]
+
+        exec.write_tx_proposal
+        # => [TX_HASH]
+    end
+
+    exec.clear_pending_propose
+    # => [TX_HASH]
+end
+
+#! Finalizes all staged timelock actions for the current transaction.
+#!
+#! Pending actions are processed in this order:
+#! 1. execute
+#! 2. cancel
+#! 3. propose
+#!
+#! Inputs:  [num_verified_signatures, requires_delay, TX_HASH]
+#! Outputs: [TX_HASH]
+#!
+#! Where:
+#! - num_verified_signatures is the number of signatures verified for the current transaction.
+#! - requires_delay is 1 if the current transaction must use the execute lane, otherwise 0.
+#! - TX_HASH is the current transaction summary hash.
+#!
+#! Panics if:
+#! - `finalize_pending_execute` fails.
+#! - `finalize_pending_cancel` fails.
+#! - `finalize_pending_propose` fails.
+#!
+#! Side effects:
+#!   - Clears `PENDING_EXECUTE_SLOT`, `PENDING_CANCEL_SLOT`, and `PENDING_PROPOSE_SLOT`.
+#!   - May remove an existing proposal for `TX_HASH`.
+#!   - May remove an existing proposal for the pending cancel hash.
+#!   - May write a new proposal for the pending propose hash.
+#!
+#! Invocation: exec
+pub proc finalize_timelock_proposals
+    exec.finalize_pending_execute
+    # => [num_verified_signatures, TX_HASH]
+
+    exec.finalize_pending_cancel
+    # => [num_verified_signatures, TX_HASH]
+
+    exec.finalize_pending_propose
+    # => [TX_HASH]
+end

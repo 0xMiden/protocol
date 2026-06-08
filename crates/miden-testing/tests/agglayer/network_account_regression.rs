@@ -145,7 +145,7 @@ async fn faucet_rejects_tx_script() -> anyhow::Result<()> {
         builder.rng_mut().draw_word(),
         "TEST",
         8,
-        Felt::new(1_000_000).unwrap(),
+        Felt::from(1_000_000u32),
         Felt::ZERO,
         bridge_admin.id(),
     );
@@ -185,7 +185,7 @@ async fn faucet_rejects_non_allowlisted_input_note() -> anyhow::Result<()> {
         builder.rng_mut().draw_word(),
         "TEST",
         8,
-        Felt::new(1_000_000).unwrap(),
+        Felt::from(1_000_000u32),
         Felt::ZERO,
         bridge_admin.id(),
     );

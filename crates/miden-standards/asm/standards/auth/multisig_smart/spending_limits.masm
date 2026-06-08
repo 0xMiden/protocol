@@ -1,0 +1,768 @@
+use miden::protocol::active_account
+use miden::protocol::asset
+use miden::protocol::asset::COMPOSITION_FUNGIBLE
+use miden::protocol::native_account
+use miden::protocol::output_note
+use miden::core::word
+use miden::protocol::tx
+use miden::standards::auth::multisig
+use miden::standards::auth::multisig_smart::oracle
+
+# CONSTANTS
+# =================================================================================================
+
+# [spending_window, 0, 0, 0]
+const SPENDING_WINDOW_SLOT = word("miden::standards::auth::multisig_smart::spending_window")
+
+# [amount_limit0, amount_limit1, amount_limit2, delay_trigger_amount]
+const AMOUNT_LIMITS_SLOT = word("miden::standards::auth::multisig_smart::amount_limits")
+
+# [amount_spent_in_window, window_start_timestamp, 0, 0]
+const SPENDING_TRACKER_SLOT = word("miden::standards::auth::multisig_smart::spending_tracker")
+
+# [tier_0, tier_1, tier_2, tier_3]
+const TIER_THRESHOLD_CONFIG_SLOT = word("miden::standards::auth::multisig_smart::tier_threshold_config")
+
+# tmp memory area for loading assets
+# NOTE: must be multiple of 4 for mem_loadw_be
+const TMP_ASSETS_PTR = 1024
+
+# ERRORS
+# =================================================================================================
+
+const ERR_SPENDING_WINDOW_NOT_U32 = "spending_window must be a valid u32"
+const ERR_SPENDING_WINDOW_ZERO = "spending_window must be non-zero"
+const ERR_LAST_WINDOW_START_GT_CURRENT = "window_start_timestamp is greater than current_timestamp"
+const ERR_INVALID_TIER_INDEX = "invalid tier index (must be 0..3)"
+const ERR_TIER0_MUST_BE_POSITIVE = "tier_0 must be > 0"
+const ERR_TIER3_TOO_HIGH = "tier_3 must be <= num_approvers"
+const ERR_INVALID_TIER_CONFIG = "tier config is invalid"
+const ERR_INVALID_AMOUNT_LIMITS = "invalid amount limits (must satisfy limit0 <= limit1 <= limit2)"
+
+# High-impact configuration procedures
+# =================================================================================================
+#
+# The following public procedures persist fields that define spending-window accounting, tier
+# approval counts, and amount breakpoints. They are high-impact: expose them only through
+# governance paths with appropriate multisig. 
+#
+#   - update_spending_window_policy
+#   - update_threshold_config
+#   - update_spending_limits
+#
+# =================================================================================================
+
+#! Replaces the account spending-window duration (seconds per bucket) used by window checks.
+#!
+#! Updating the window clears `SPENDING_TRACKER_SLOT`, so accumulated spend for the policy
+#! restarts. Callers should schedule this when resetting counters is acceptable.
+#!
+#! Inputs:  [spending_window]
+#! Outputs: []
+#!
+#! Side effects:
+#!   - Writes SPENDING_WINDOW_SLOT.
+#!   - Resets SPENDING_TRACKER_SLOT to EMPTY_WORD.
+#!
+#! Panics if:
+#! - `spending_window` is not a valid `u32` (ERR_SPENDING_WINDOW_NOT_U32).
+#! - `spending_window` is zero (ERR_SPENDING_WINDOW_ZERO).
+#!
+#! Invocation: exec
+pub proc update_spending_window_policy
+    u32assert.err=ERR_SPENDING_WINDOW_NOT_U32
+    dup eq.0 assertz.err=ERR_SPENDING_WINDOW_ZERO
+    # => [spending_window]
+
+    push.0.0.0
+    movup.3
+    # => [spending_window, 0, 0, 0]
+
+    push.SPENDING_WINDOW_SLOT[0..2]
+    # => [slot_prefix, slot_suffix, spending_window, 0, 0, 0]
+
+    exec.native_account::set_item
+    # => [OLD_WORD]
+
+    dropw
+    # => []
+
+    push.0.0.0.0
+    # => [EMPTY_WORD]
+
+    push.SPENDING_TRACKER_SLOT[0..2]
+    # => [slot_prefix, slot_suffix, EMPTY_WORD]
+
+    exec.native_account::set_item
+    # => [OLD_WORD]
+
+    dropw
+    # => []
+end
+
+#! Replaces the word in `TIER_THRESHOLD_CONFIG_SLOT`: for tier index `i` in 0..3,
+#! `tier_i` is the minimum number of approvals required when that tier applies.
+#!
+#! On-stack validation enforces `0 < tier_0`, monotonic `tier_0 <= tier_1 <= tier_2 <= tier_3`,
+#! and `tier_3 < num_approvers` from the multisig configuration.
+#!
+#! Inputs:  [tier_0, tier_1, tier_2, tier_3]
+#! Outputs: []
+#!
+#! Side effects:
+#!   - Writes TIER_THRESHOLD_CONFIG_SLOT.
+#!
+#! Panics if:
+#! - any tier input is not a valid `u32` where asserted.
+#! - `tier_0` is zero (ERR_TIER0_MUST_BE_POSITIVE).
+#! - tier ordering is non-monotonic (ERR_INVALID_TIER_CONFIG).
+#! - `tier_3` is not strictly below `num_approvers` (ERR_TIER3_TOO_HIGH).
+#!
+#! Invocation: exec
+pub proc update_threshold_config
+    u32assert2 movup.3 movup.3
+    # => [tier_2, tier_3, tier_0, tier_1]
+    
+    u32assert2 movdn.3 movdn.3
+    # => [tier_0, tier_1, tier_2, tier_3]
+
+    # tier_0 must be > 0
+
+    dup eq.0 assertz.err=ERR_TIER0_MUST_BE_POSITIVE
+    # => [tier_0, tier_1, tier_2, tier_3]
+
+    # Monotonic tier_0 <= tier_1 <= tier_2 <= tier_3
+
+    dup dup.2 u32gt assertz.err=ERR_INVALID_TIER_CONFIG
+    dup.1 dup.3 u32gt assertz.err=ERR_INVALID_TIER_CONFIG
+    dup.2 dup.4 u32gt assertz.err=ERR_INVALID_TIER_CONFIG
+    # => [tier_0, tier_1, tier_2, tier_3]
+
+    # Tier 3 is less than num_approvers
+
+    exec.multisig::get_threshold_and_num_approvers
+    # => [default_threshold, num_approvers, tier_0, tier_1, tier_2, tier_3]
+    
+    drop
+    # => [num_approvers, tier_0, tier_1, tier_2, tier_3]
+    
+    dup.4 u32gte assert.err=ERR_TIER3_TOO_HIGH
+    # => [tier_0, tier_1, tier_2, tier_3]
+
+    swap movup.2 movup.3
+    # => [tier_3, tier_2, tier_1, tier_0]
+    
+    push.TIER_THRESHOLD_CONFIG_SLOT[0..2]
+    # => [slot_prefix, slot_suffix, tier_3, tier_2, tier_1, tier_0]
+    
+    exec.native_account::set_item
+    # => [OLD_WORD]
+    
+    dropw
+    # => []
+end
+
+#! Replaces the word in `AMOUNT_LIMITS_SLOT`: strictly increasing limits
+#! `amount_limit0 < amount_limit1 < amount_limit2` define tier bands for cumulative window spend,
+#! and `delay_trigger_amount` is the threshold above which `get_num_required_signatures` sets
+#! `requires_delay` (strictly greater than this amount).
+#!
+#! Inputs:  [amount_limit0, amount_limit1, amount_limit2, delay_trigger_amount]
+#! Outputs: []
+#!
+#! Side effects:
+#!   - Writes AMOUNT_LIMITS_SLOT.
+#!
+#! Panics if:
+#! - any limit input is not a valid `u32` where asserted.
+#! - `amount_limit0`, `amount_limit1`, `amount_limit2` are not strictly increasing
+#!   (ERR_INVALID_AMOUNT_LIMITS).
+#!
+#! Invocation: exec
+pub proc update_spending_limits
+    u32assert2 movup.3 movup.3
+    # => [amount_limit2, delay_trigger_amount, amount_limit0, amount_limit1]
+    
+    u32assert2 movdn.3 movdn.3
+    # => [amount_limit0, amount_limit1, amount_limit2, delay_trigger_amount]
+
+    # Monotonic amount_limit0 < amount_limit1 < amount_limit2
+
+    dup dup.2 u32gte assertz.err=ERR_INVALID_AMOUNT_LIMITS
+    dup.1 dup.3 u32gte assertz.err=ERR_INVALID_AMOUNT_LIMITS
+    # => [amount_limit0, amount_limit1, amount_limit2, delay_trigger_amount]
+
+    swap movup.2 movup.3
+    # => [delay_trigger_amount, amount_limit2, amount_limit1, amount_limit0]
+    
+    push.AMOUNT_LIMITS_SLOT[0..2]
+    # => [slot_prefix, slot_suffix, delay_trigger_amount, amount_limit2, amount_limit1, amount_limit0]
+    
+    exec.native_account::set_item
+    # => [OLD_WORD]
+    
+    dropw
+    # => []
+end
+
+#! Returns the spending window duration stored in `SPENDING_WINDOW_SLOT`.
+#!
+#! Inputs:  []
+#! Outputs: [spending_window]
+#!
+#! Where:
+#! - spending_window is the duration of a single spending window, in seconds.
+#!   For example, 3600 represents an hourly window, 86400 a daily window.
+#!
+#! Invocation: exec
+pub proc get_spending_window
+    push.SPENDING_WINDOW_SLOT[0..2]
+    # => [slot_prefix, slot_suffix]
+
+    exec.active_account::get_initial_item
+    # => [spending_window, 0, 0, 0]
+
+    movdn.3 drop drop drop
+    # => [spending_window]
+end
+
+#! Computes the start timestamp of the currently active spending window.
+#!
+#! Uses integer window bucketing:
+#! `current_window_start_timestamp = floor(current_timestamp / spending_window) * spending_window`.
+#!
+#! Inputs:  []
+#! Outputs: [current_window_start_timestamp]
+#!
+#! Where:
+#! - current_timestamp is the current block timestamp.
+#! - spending_window is the configured window duration from `SPENDING_WINDOW_SLOT`.
+#! - current_window_start_timestamp is the start boundary of the window containing
+#!   `current_timestamp`.
+#!
+#! Panics if:
+#! - `tx::get_block_timestamp` does not return a valid `u32` timestamp.
+#! - `spending_window` is zero (division by zero in `u32div`).
+#! - `spending_window` is not a valid `u32` value for `u32div`.
+#!
+#! Invocation: exec
+proc get_current_window_start_timestamp
+    exec.tx::get_block_timestamp
+    # => [current_timestamp]
+
+    dup
+    # => [current_timestamp, current_timestamp]
+
+    exec.get_spending_window
+    # => [spending_window, current_timestamp, current_timestamp]
+
+    # floor(current_timestamp / spending_window) -> current window index
+    u32div
+    # => [current_window_index, current_timestamp]
+
+    # u32div consumes spending_window, so reload it for index * spending_window
+    exec.get_spending_window
+    # => [spending_window, current_window_index, current_timestamp]
+
+    # map index back to concrete window boundary timestamp
+    mul
+    # => [current_window_start_timestamp, current_timestamp]
+
+    swap
+    # => [current_timestamp, current_window_start_timestamp]
+
+    drop
+    # => [current_window_start_timestamp]
+end
+
+#! Loads the spending tracker word from `SPENDING_TRACKER_SLOT` (account initial state).
+#!
+#! Inputs:  []
+#! Outputs: [amount_spent_in_window, window_start_timestamp, 0, 0]
+#!
+#! Where:
+#! - amount_spent_in_window is the cumulative USD value recorded for the stored window.
+#! - window_start_timestamp is the window boundary associated with that total (or 0 if unset).
+#! - The trailing two felts are reserved and read as zero for the stored layout.
+#!
+#! Invocation: exec
+proc get_spending_tracker
+    push.SPENDING_TRACKER_SLOT[0..2]
+    # => [slot_prefix, slot_suffix]
+
+    exec.active_account::get_initial_item
+    # => [amount_spent_in_window, window_start_timestamp, 0, 0]
+end
+
+#! Reads the amount spent in the last recorded spending window from `SPENDING_TRACKER_SLOT`.
+#!
+#! Inputs:  []
+#! Outputs: [amount_spent_in_window]
+#!
+#! Where:
+#! - amount_spent_in_window is the total USD value spent during the last recorded spending window.
+#!
+#! Invocation: exec
+proc get_amount_spent_in_window
+    exec.get_spending_tracker
+    # => [amount_spent_in_window, window_start_timestamp, 0, 0]
+
+    movdn.3 drop drop drop
+    # => [amount_spent_in_window]
+end
+
+#! Reads the start timestamp of the last recorded spending window from `SPENDING_TRACKER_SLOT`.
+#!
+#! This is the window start at the time spending was last committed. Compare with
+#! `get_current_window_start_timestamp` to determine whether the tracker is still active.
+#!
+#! Inputs:  []
+#! Outputs: [window_start_timestamp]
+#!
+#! Where:
+#! - window_start_timestamp is the start of the window in which spending was last recorded,
+#!   or 0 if no spending has been tracked yet.
+#!
+#! Invocation: exec
+proc get_window_start_timestamp
+    exec.get_spending_tracker
+    # => [amount_spent_in_window, window_start_timestamp, 0, 0]
+
+    drop movdn.2 drop drop
+    # => [window_start_timestamp]
+end
+
+#! Returns whether we are still within the active spending window.
+#!
+#! Semantics:
+#!   - empty tracker => returns 0
+#!   - if current_window_start_timestamp == window_start_timestamp => returns 1
+#!   - if current_window_start_timestamp > window_start_timestamp => returns 0
+#!   - if current_window_start_timestamp < window_start_timestamp => error
+#!
+#! Inputs:  []
+#! Outputs: [within_spending_window]
+#!
+#! Where:
+#! - within_spending_window is 1 if the tracker targets the active window, 0 if the tracker
+#!   is empty or belongs to a past window.
+#!
+#! Panics if:
+#! - the tracker is non-empty and its window start is after the current window start
+#!   (ERR_LAST_WINDOW_START_GT_CURRENT).
+#!
+#! Invocation: exec
+proc within_spending_window
+    exec.get_spending_tracker
+    # => [amount_spent_in_window, window_start_timestamp, 0, 0]
+
+    exec.word::eqz
+    # => [is_empty_tracker]
+
+    if.true
+        push.0
+        # => [within_spending_window=0]
+    else
+        exec.get_window_start_timestamp
+        # => [window_start_timestamp]
+
+        exec.get_current_window_start_timestamp
+        # => [current_window_start_timestamp, window_start_timestamp]
+
+        dup.1 dup.1
+        # => [current_window_start_timestamp, window_start_timestamp, current_window_start_timestamp, window_start_timestamp]
+
+        eq
+        # => [same_window, current_window_start_timestamp, window_start_timestamp]
+
+        if.true
+            drop drop
+            # => []
+
+            push.1
+            # => [within_spending_window=1]
+        else
+            u32lt
+            # => [window_start_is_before_current]
+
+            if.true
+                push.0
+                # => [within_spending_window=0]
+            else
+                push.0 assert.err=ERR_LAST_WINDOW_START_GT_CURRENT
+            end
+        end
+    end
+end
+
+#! Computes the total spending amount for all output notes (USD terms).
+#!
+#! Behavior:
+#! - iterates over output notes: tx::get_num_output_notes
+#! - for each note: output_note::get_assets(dest_ptr, note_index) writes assets into memory
+#! - iterates loaded assets as [ASSET_KEY, ASSET_VALUE]
+#! - if the asset is from a fungible faucet, extracts [faucet_id_suffix, faucet_id_prefix, amount]
+#! - calls a get_price-style reader (`oracle::get_price`) and folds USD into a running sum
+#!
+#! `is_tracked` (oracle / foreign reader output):
+#! - When `is_tracked` is non-zero, `amount_in_usd` is added to the running total.
+#! - When `is_tracked` is zero, `oracle::apply_get_price_untracked_policy` runs (see `oracle.masm`):
+#!   mode **0** omits USD; mode **1** rejects the transaction.
+#!
+#! Inputs:  []
+#! Outputs: [amount_in_usd]
+#!
+#! Assumes get_price-style interface:
+#!   Inputs:  [faucet_id_suffix, faucet_id_prefix, amount]
+#!   Outputs: [is_tracked, amount_in_usd]
+#!
+#! Locals:
+#!
+#! 0: running_sum
+#! 1: dest_ptr
+#! 4..7: current ASSET_VALUE
+#! 8..11: current ASSET_KEY
+#!
+#! Invocation: exec
+@locals(12)
+proc compute_spending_amount
+    push.0 loc_store.0
+    # => []
+
+    exec.tx::get_num_output_notes
+    # => [num_notes]
+
+    dup neq.0
+    # => [should_continue, num_notes]
+
+    while.true
+        # => [num_notes]
+
+        sub.1
+        # => [note_index]
+
+        dup
+        # => [note_index_arg, note_index_keep]
+
+        # Save the destination pointer in local 1; the protocol's `output_note::get_assets`
+        # only returns `[num_assets]`, so we cannot recover the pointer from its outputs.
+        push.TMP_ASSETS_PTR dup loc_store.1
+        # => [dest_ptr, note_index_arg, note_index_keep]
+
+        exec.output_note::get_assets
+        # => [num_assets, note_index_keep]
+
+        dup neq.0
+        # => [should_continue, num_assets, note_index_keep]
+
+        while.true
+            # => [num_assets, note_index_keep]
+
+            sub.1
+            # => [remaining, note_index_keep]
+
+            loc_load.1
+            # => [ptr, remaining, note_index_keep]
+
+            padw movup.4 mem_loadw_le
+            # => [ASSET_KEY, remaining, note_index_keep]
+
+            loc_load.1 add.4
+            # => [ptr+4, ASSET_KEY, remaining, note_index_keep]
+
+            padw movup.4 mem_loadw_le
+            # => [ASSET_VALUE, ASSET_KEY, remaining, note_index_keep]
+
+            loc_load.1 add.8 loc_store.1
+            # => [ASSET_VALUE, ASSET_KEY, remaining, note_index_keep]
+
+            # Duplicate ASSET_KEY (positions 4..=7), extract its composition, then drop the
+            # duplicate copy so we keep the original ASSET_KEY in place for downstream code.
+            dupw.1 exec.asset::key_to_composition movdn.4 dropw
+            # => [composition, ASSET_VALUE, ASSET_KEY, remaining, note_index_keep]
+
+            eq.COMPOSITION_FUNGIBLE
+            # => [is_fungible, ASSET_VALUE, ASSET_KEY, remaining, note_index_keep]
+
+            if.true
+                # Store the loaded asset words in locals so we can prepare the get_price-style
+                # inputs without disturbing the outer loop state.
+                loc_storew_le.4 dropw
+                # => [ASSET_KEY, remaining, note_index_keep]
+
+                loc_storew_le.8 dropw
+                # => [remaining, note_index_keep]
+
+                padw loc_loadw_le.8
+                # => [ASSET_KEY, remaining, note_index_keep]
+
+                exec.asset::key_into_faucet_id
+                # => [faucet_id_suffix, faucet_id_prefix, remaining, note_index_keep]
+
+                padw loc_loadw_le.4
+                # => [ASSET_VALUE, faucet_id_suffix, faucet_id_prefix, remaining, note_index_keep]
+
+                exec.asset::fungible_value_into_amount
+                # => [amount, faucet_id_suffix, faucet_id_prefix, remaining, note_index_keep]
+
+                movdn.2
+                # => [faucet_id_suffix, faucet_id_prefix, amount, remaining, note_index_keep]
+
+                exec.oracle::get_price
+                # => [is_tracked, amount_in_usd, remaining, note_index_keep]
+
+                if.true
+                    loc_load.0 add loc_store.0
+                    # => [remaining, note_index_keep]
+                else
+                    exec.oracle::apply_get_price_untracked_policy
+                    # => [remaining, note_index_keep]
+                end
+            else
+                dropw dropw
+                # => [remaining, note_index_keep]
+            end
+            # => [remaining, note_index_keep]
+
+            dup neq.0
+            # => [should_continue, remaining, note_index_keep]
+
+        end
+
+        drop
+        # => [note_index_keep]
+
+        dup neq.0
+        # => [should_continue, note_index_keep]
+
+    end
+
+    drop
+    # => []
+
+    loc_load.0
+    # => [amount_in_usd]
+end
+
+#! Maps a computed tier index (0..3) to the required approvals threshold.
+#!
+#! Inputs:  [tier_index]
+#! Outputs: [tier_threshold]
+#!
+#! Where:
+#! - tier_index is the spending tier computed from the transaction amount (0..3).
+#! - tier_threshold is the minimum number of approvals required for that tier.
+#!
+#! Panics if:
+#! - tier_index is outside 0..3 (ERR_INVALID_TIER_INDEX).
+#!
+#! Invocation: exec
+proc get_tier_threshold_for_index
+    push.TIER_THRESHOLD_CONFIG_SLOT[0..2]
+    # => [slot_prefix, slot_suffix, tier_index]
+
+    exec.active_account::get_initial_item
+    # => [tier_0, tier_1, tier_2, tier_3, tier_index]
+
+    movup.4
+    # => [tier_index, tier_0, tier_1, tier_2, tier_3]
+
+    dup eq.0
+    # => [is_tier_0, tier_index, tier_0, tier_1, tier_2, tier_3]
+
+    if.true
+        drop
+        # => [tier_0, tier_1, tier_2, tier_3]
+
+        movdn.3 drop drop drop
+        # => [tier_0]
+    else
+        dup eq.1
+        # => [is_tier_1, tier_index, tier_0, tier_1, tier_2, tier_3]
+
+        if.true
+            drop
+            # => [tier_0, tier_1, tier_2, tier_3]
+
+            drop movdn.2 drop drop
+            # => [tier_1]
+        else
+            dup eq.2
+            # => [is_tier_2, tier_index, tier_0, tier_1, tier_2, tier_3]
+
+            if.true
+                drop
+                # => [tier_0, tier_1, tier_2, tier_3]
+
+                drop drop swap drop
+                # => [tier_2]
+            else
+                eq.3 assert.err=ERR_INVALID_TIER_INDEX
+                # => [tier_0, tier_1, tier_2, tier_3]
+
+                drop drop drop
+                # => [tier_3]
+            end
+        end
+    end
+    # => [tier_threshold]
+end
+
+
+#! Writes the spending tracker to `SPENDING_TRACKER_SLOT`.
+#!
+#! Uses the current block timestamp to derive the active window start via
+#! `get_current_window_start_timestamp`. The caller is responsible for passing
+#! the correct `total_spent_amount`: if within an existing window, it should
+#! include the previously accumulated amount; if a new window has started,
+#! it should contain only the current transaction's amount.
+#!
+#! Inputs:  [total_spent_amount]
+#! Outputs: []
+#!
+#! Where:
+#! - total_spent_amount is the cumulative USD value spent in the active window.
+#!
+#! Side effects:
+#!   - Writes SPENDING_TRACKER_SLOT with
+#!     [total_spent_amount, current_window_start_timestamp, 0, 0].
+#!
+#! Invocation: exec
+proc set_spending_tracker
+    exec.get_current_window_start_timestamp
+    # => [current_window_start_timestamp, total_spent_amount]
+
+    push.0 push.0 movup.3 movup.3
+    # => [current_window_start_timestamp, total_spent_amount, 0, 0]
+
+    swap
+    # => [total_spent_amount, current_window_start_timestamp, 0, 0]
+
+    push.SPENDING_TRACKER_SLOT[0..2]
+    # => [slot_prefix, slot_suffix, total_spent_amount, current_window_start_timestamp, 0, 0]
+
+    exec.native_account::set_item
+    # => [OLD_TRACKER_WORD]
+
+    dropw
+    # => []
+end
+
+#! Computes required approvals for the current transaction's spending amount.
+#!
+#! Inputs:  [currently_spending_amount]
+#! Outputs: [total_spent_amount_in_window, threshold_tier, requires_delay]
+#!
+#! Where:
+#! - currently_spending_amount is the USD value of this transaction.
+#! - total_spent_amount_in_window is the cumulative USD value used for tier/delay rules. If
+#!   `within_spending_window` is 1, it is prior window spend plus this transaction; if 0, it
+#!   is only `currently_spending_amount` (tracker empty or not in the active window).
+#! - threshold_tier is the minimum number of approvals required for the resolved tier.
+#! - requires_delay is 1 if a timelock delay is required, 0 otherwise.
+#!
+#! Invocation: exec
+proc get_num_required_signatures
+    exec.within_spending_window
+    # => [is_within_spending_window, currently_spending_amount]
+
+    if.true
+        exec.get_amount_spent_in_window
+        # => [amount_spent_in_window, currently_spending_amount]
+
+        add
+        # => [total_amount]
+    end
+    # => [total_amount]
+
+    push.AMOUNT_LIMITS_SLOT[0..2]
+    # => [slot_prefix, slot_suffix, total]
+
+    exec.active_account::get_initial_item
+    # => [l0, l1, l2, delay_trigger_amount, total]
+
+    movup.4
+    # => [total, l0, l1, l2, delay_trigger_amount]
+
+    # ------ requires_delay = total > delay_trigger_amount ------
+    dup dup.5 u32gt
+    # => [requires_delay, total, l0, l1, l2, delay_trigger_amount]
+
+    swap
+    # => [total, requires_delay, l0, l1, l2, delay_trigger_amount]
+
+    # ------ tier_index from cumulative total vs limits ------
+    dup dup.3 u32lt
+    # => [total_lt_l0, total, requires_delay, l0, l1, l2, delay_trigger_amount]
+    if.true
+        push.0
+        # => [tier_index=0, total, requires_delay, l0, l1, l2, delay_trigger_amount]
+    else
+        dup dup.4 u32lt
+        # => [total_lt_l1, total, requires_delay, l0, l1, l2, delay_trigger_amount]
+        if.true
+            push.1
+            # => [tier_index=1, total, requires_delay, l0, l1, l2, delay_trigger_amount]
+        else
+            dup dup.5 u32lt
+            # => [total_lt_l2, total, requires_delay, l0, l1, l2, delay_trigger_amount]
+            if.true
+                push.2
+                # => [tier_index=2, total, requires_delay, l0, l1, l2, delay_trigger_amount]
+            else
+                push.3
+                # => [tier_index=3, total, requires_delay, l0, l1, l2, delay_trigger_amount]
+            end
+        end
+    end
+    # => [tier_index, total, requires_delay, l0, l1, l2, delay_trigger_amount]
+
+    exec.get_tier_threshold_for_index
+    # => [tier_threshold, total, requires_delay, l0, l1, l2, delay_trigger_amount]
+
+    swap
+    # => [total, tier_threshold, requires_delay, l0, l1, l2, delay_trigger_amount]
+
+    movup.3 drop movup.3 drop movup.3 drop movup.3 drop
+    # => [total, tier_threshold, requires_delay]
+end
+
+#! Computes spending policy for the active transaction and optionally persists the tracker.
+#!
+#! Flow: `compute_spending_amount` sums priced fungible output value; if zero, returns no
+#! approvals and no delay. Otherwise `get_num_required_signatures` applies window totals,
+#! amount limits, and tier thresholds, then `set_spending_tracker` stores the cumulative window
+#! total when spending is non-zero.
+#!
+#! Inputs:  []
+#! Outputs: [threshold_tier, requires_delay]
+#!
+#! Where:
+#! - threshold_tier is the required approval count for the resolved tier (0 when spend is 0).
+#! - requires_delay is the delay flag from amount-limit rules (0 when spend is 0).
+#!
+#! Side effects:
+#!   - If spending_amount > 0: writes SPENDING_TRACKER_SLOT via `set_spending_tracker`.
+#!
+#! Invocation: exec
+pub proc compute_spending_policy
+    exec.compute_spending_amount
+    # => [spending_amount]
+
+    dup eq.0
+    # => [is_zero_spend, spending_amount]
+
+    if.true
+        drop
+        # => []
+
+        push.0 push.0
+        # => [threshold_tier=0, requires_delay=0]
+    else
+        exec.get_num_required_signatures
+        # => [total_spent_amount_in_window, threshold_tier, requires_delay]
+
+        exec.set_spending_tracker
+        # => [threshold_tier, requires_delay]
+    end
+end

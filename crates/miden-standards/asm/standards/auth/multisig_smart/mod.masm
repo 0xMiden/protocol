@@ -6,6 +6,8 @@ use miden::standards::auth::multisig
 use miden::standards::auth::multisig::APPROVER_PUBLIC_KEYS_SLOT
 use miden::standards::auth::multisig::APPROVER_SCHEME_ID_SLOT
 use miden::standards::auth::multisig::THRESHOLD_CONFIG_SLOT
+use miden::standards::auth::multisig_smart::spending_limits
+use miden::standards::auth::multisig_smart::delayed_execution
 use miden::standards::auth::signature
 use miden::standards::auth::tx_policy
 
@@ -58,6 +60,8 @@ const ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS = "procedure threshold exceeds ne
 const ERR_INVALID_NOTE_RESTRICTIONS = "procedure policy note restrictions must be between 0 and 3"
 
 const ERR_INSUFFICIENT_SIGNATURES = "insufficient number of signatures"
+
+const ERR_EXECUTE_PATH_MISMATCH = "execute path must match delay requirement"
 
 # LOCAL ADDRESSES (set_procedure_policy)
 # =================================================================================================
@@ -158,28 +162,32 @@ proc multisig_config_to_num_approvers
     # => [num_approvers, MULTISIG_CONFIG]
 end
 
-#! Computes the effective transaction threshold.
+#! Computes the effective transaction threshold by combining the procedure-policy max and the
+#! spending-policy tier and applying `default_threshold` as a fallback.
 #!
-#! Used as a fallback layer on top of `compute_called_proc_policy`: when no non-auth procedure was
-#! called (policy_threshold is 0), the tx still needs to require at least `default_threshold`
-#! signatures. When any non-auth procedure was called, `compute_called_proc_policy` has already
-#! folded `default_threshold` into the max for every unpolicied procedure, so `policy_threshold`
-#! alone reflects the correct requirement and is returned as-is.
-#!
-#! Inputs:  [default_threshold, policy_threshold]
+#! Inputs:  [default_threshold, policy_threshold, spending_threshold]
 #! Outputs: [transaction_threshold]
 #!
 #! Where:
-#! - policy_threshold is the max contribution across all called non-auth procedures (each
-#!   contributes either its policy-selected threshold or `default_threshold` when unpolicied);
-#!   it is 0 only when no non-auth procedure was called.
 #! - default_threshold is the account's configured default multisig threshold.
+#! - policy_threshold is the procedure-policy contribution.
+#! - spending_threshold is the amount-derived spending-policy contribution.
 #! - transaction_threshold is the effective minimum number of signatures required.
 #!
 #! Invocation: exec
-proc compute_tx_threshold(default_threshold: u32, policy_threshold: u32) -> u32
+proc compute_tx_threshold(
+    default_threshold: u32,
+    policy_threshold: u32,
+    spending_threshold: u32,
+) -> u32
+    movdn.2 u32max
+    # => [policy_or_spending_threshold, default_threshold]
+
+    swap
+    # => [default_threshold, policy_or_spending_threshold]
+
     dup.1 eq.0
-    # => [is_policy_zero, default_threshold, policy_threshold]
+    # => [is_combined_zero, default_threshold, policy_or_spending_threshold]
 
     cdrop
     # => [effective_transaction_threshold]
@@ -408,40 +416,35 @@ end
 #! Enforces the procedure-policy for the current transaction:
 #! - asserts each called procedure supports the active execution mode,
 #! - asserts the union of note restrictions against the transaction's input/output notes,
-#! - returns the effective threshold required by the called procedure policies.
+#! - returns the effective threshold required by the called procedure policies and
+#!   whether any policy required the delayed-execution mode.
 #!
-#! Always uses IMMEDIATE_EXECUTION_MODE; procedures whose policies require the delayed mode
-#! panic via [`compute_called_proc_policy`] because this component has no timelock.
+#! The active execution mode is read from [`delayed_execution::is_execute_path`]: when
+#! the timelock controller's `PENDING_EXECUTE` slot is set this transaction is on the
+#! delayed-execute path (mode = 1); otherwise it is on the immediate path (mode = 0).
 #!
 #! Inputs:  [default_threshold]
-#! Outputs: [policy_threshold]
+#! Outputs: [policy_threshold, policy_requires_delay]
 #!
 #! Where:
 #! - default_threshold is forwarded to [`compute_called_proc_policy`] as the per-procedure
 #!   contribution for any called procedure without an explicit policy.
+#! - policy_requires_delay is 1 when any called procedure's policy explicitly requires the
+#!   delayed execution mode (used downstream to enforce [`ERR_EXECUTE_PATH_MISMATCH`]).
 #!
 #! Invocation: exec
-#!
-#! NOTE: This procedure is a temporary form. Once the TimelockedAccount feature lands, the
-#! hardcoded IMMEDIATE_EXECUTION_MODE push will be replaced with a call to
-#! `timelock_controller::execution_mode`, and the procedure will also expose
-#! `policy_requires_delay` for downstream enforcement.
 proc enforce_procedure_policy(default_threshold: u32)
-    push.IMMEDIATE_EXECUTION_MODE
+    exec.delayed_execution::is_execute_path
     # => [execution_mode, default_threshold]
 
     exec.compute_called_proc_policy
     # => [policy_threshold, policy_requires_delay, note_restrictions]
 
-    # policy_requires_delay is always 0 on IMMEDIATE_EXECUTION_MODE; drop it.
-    swap drop
-    # => [policy_threshold, note_restrictions]
-
-    swap
-    # => [note_restrictions, policy_threshold]
+    movup.2
+    # => [note_restrictions, policy_threshold, policy_requires_delay]
 
     exec.enforce_note_restrictions
-    # => [policy_threshold]
+    # => [policy_threshold, policy_requires_delay]
 end
 
 #! Asserts that all configured smart per-procedure policies are valid for num_approvers.
@@ -747,23 +750,39 @@ end
 #! Locals:
 #! 0: policy_threshold
 #! 1: default_threshold
+#! 2: policy_requires_delay
+#! 3: spending_threshold
+#! 4: spending_requires_delay
+#! 5: num_verified_signatures
+#!
+#! Flow:
+#! 1. Compute spending policy (amount/tier-derived threshold + requires_delay flag).
+#! 2. Build the tx summary commitment used for signing and timelock proposals.
+#! 3. Enforce per-procedure policy (note restrictions + policy threshold + delay flag).
+#! 4. Verify approver signatures.
+#! 5. Combine the policy threshold with the spending threshold via `u32max`, fall back to
+#!    `default_threshold` when both are zero, and assert `num_verified_signatures` meets it.
+#! 6. After signature verification, enforce that the active execute-path matches whether any
+#!    consumed policy (procedure or spending) required the delayed mode. Running this check
+#!    only after verification lets a caller still produce the TX_SUMMARY_COMMITMENT needed for
+#!    a propose/execute round-trip from an unauthorized dry-run.
+#! 7. Finalize any pending timelock propose/cancel/execute slots against the verified sig count
+#!    and the union of `policy_requires_delay`/`spending_requires_delay`.
 #!
 #! Invocation: call
-#!
-#! NOTE: This procedure is a temporary form covering signer verification and
-#! per-procedure policy enforcement. The following sections will be added:
-#! - Spending Limits + Amount-Based Thresholds: a prologue that calls
-#!   `exec.spending_limits::compute_spending_policy` to derive a spending-derived threshold and
-#!   `spending_requires_delay` flag, and combines it via `u32max` with `policy_threshold` before
-#!   the final `compute_tx_threshold` fallback.
-#! - TimelockedAccount: after signature verification, assert the execute-path vs.
-#!   `policy_requires_delay`/`spending_requires_delay` consistency (restoring
-#!   `ERR_EXECUTE_PATH_MISMATCH`), then call
-#!   `exec.timelock_controller::finalize_timelock_proposals` to advance any pending
-#!   propose/cancel/execute state.
-@locals(2)
+@locals(6)
 pub proc auth_tx(salt: word)
     exec.native_account::incr_nonce drop
+    # => [SALT]
+
+    # ------ Computing spending policy ------
+    exec.spending_limits::compute_spending_policy
+    # => [spending_threshold, spending_requires_delay, SALT]
+
+    loc_store.3
+    # => [spending_requires_delay, SALT]
+
+    loc_store.4
     # => [SALT]
 
     # ------ Computing transaction summary ------
@@ -787,9 +806,12 @@ pub proc auth_tx(salt: word)
 
     # ------ Enforcing procedure policy (consumes default_threshold) ------
     exec.enforce_procedure_policy
-    # => [policy_threshold, num_of_approvers, TX_SUMMARY_COMMITMENT]
+    # => [policy_threshold, policy_requires_delay, num_of_approvers, TX_SUMMARY_COMMITMENT]
 
     loc_store.0
+    # => [policy_requires_delay, num_of_approvers, TX_SUMMARY_COMMITMENT]
+
+    loc_store.2
     # => [num_of_approvers, TX_SUMMARY_COMMITMENT]
 
     # ------ Verifying approver signatures ------
@@ -798,12 +820,16 @@ pub proc auth_tx(salt: word)
     exec.::miden::standards::auth::signature::verify_signatures
     # => [num_verified_signatures, TX_SUMMARY_COMMITMENT]
 
+    dup loc_store.5
+    # => [num_verified_signatures, TX_SUMMARY_COMMITMENT]
+
     # ------ Computing final transaction threshold ------
-    # If no non-auth procedure was called, `policy_threshold` is 0 and `compute_tx_threshold`
-    # falls back to `default_threshold`; otherwise it returns the policy max directly.
+    # `compute_tx_threshold` combines the procedure-policy and spending-policy contributions and
+    # falls back to `default_threshold` when both are zero.
+    loc_load.3
     loc_load.0
     loc_load.1
-    # => [default_threshold, policy_threshold, num_verified_signatures, TX_SUMMARY_COMMITMENT]
+    # => [default_threshold, policy_threshold, spending_threshold, num_verified_signatures, TX_SUMMARY_COMMITMENT]
 
     exec.compute_tx_threshold
     # => [transaction_threshold, num_verified_signatures, TX_SUMMARY_COMMITMENT]
@@ -815,4 +841,35 @@ pub proc auth_tx(salt: word)
         emit.AUTH_UNAUTHORIZED_EVENT
         push.0 assert.err=ERR_INSUFFICIENT_SIGNATURES
     end
+
+    # ------ Enforcing execute-path consistency ------
+    # If a *procedure* policy demands the delayed execution mode, the transaction must already be
+    # on the execute path (proposed earlier, now being executed). Spending limits use their own
+    # `requires_delay` flag to decide whether to advance timelock proposals (below) but do not
+    # by themselves veto an immediate-mode transaction — that distinction belongs to the policy
+    # layer and is consistent with the pre-foundation behavior we are preserving here.
+    loc_load.2
+    # => [policy_requires_delay, TX_SUMMARY_COMMITMENT]
+
+    exec.delayed_execution::is_execute_path
+    # => [is_execute_path, policy_requires_delay, TX_SUMMARY_COMMITMENT]
+
+    # is_valid = NOT(policy_requires_delay) OR is_execute_path
+    swap not or
+    # => [is_valid_execute_path, TX_SUMMARY_COMMITMENT]
+
+    assert.err=ERR_EXECUTE_PATH_MISMATCH
+    # => [TX_SUMMARY_COMMITMENT]
+
+    # ------ Finalizing timelock proposals ------
+    # The timelock controller consumes the union of policy- and spending-derived delay flags so
+    # that high-spending transactions still advance any pending propose/cancel/execute slots.
+    loc_load.2 loc_load.4 or
+    # => [requires_delay, TX_SUMMARY_COMMITMENT]
+
+    loc_load.5
+    # => [num_verified_signatures, requires_delay, TX_SUMMARY_COMMITMENT]
+
+    exec.delayed_execution::finalize_timelock_proposals
+    # => [TX_SUMMARY_COMMITMENT]
 end

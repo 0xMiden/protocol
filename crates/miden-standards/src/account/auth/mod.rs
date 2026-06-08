@@ -11,7 +11,7 @@ mod multisig;
 pub use multisig::{AuthMultisig, AuthMultisigConfig};
 
 pub mod multisig_smart;
-pub use multisig_smart::{AuthMultisigSmart, AuthMultisigSmartConfig};
+pub use multisig_smart::{AuthMultisigSmart, AuthMultisigSmartConfig, AuthMultisigSmartPresets};
 
 mod guarded_multisig;
 pub use guarded_multisig::{AuthGuardedMultisig, AuthGuardedMultisigConfig, GuardianConfig};
