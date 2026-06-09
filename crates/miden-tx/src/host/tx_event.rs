@@ -75,7 +75,7 @@ pub(crate) enum TransactionEvent {
 
     AccountBeforeAssetDeltaComputation,
 
-    AccountAfterAssetDeltaComputation {
+    AccountOnAssetDeltaComputation {
         delta: AssetDelta,
     },
 
@@ -263,7 +263,7 @@ impl TransactionEvent {
             TransactionEventId::AccountBeforeAssetDeltaComputation => {
                 Some(TransactionEvent::AccountBeforeAssetDeltaComputation)
             },
-            TransactionEventId::AccountAfterAssetDeltaComputation => Some({
+            TransactionEventId::AccountOnAssetDeltaComputation => Some({
                 // Expected stack state:
                 // [event, delta_op, ASSET_KEY, DELTA_ASSET_VALUE]
                 let delta_op = process.get_stack_item(1);
@@ -295,7 +295,7 @@ impl TransactionEvent {
                     )
                 })?;
 
-                TransactionEvent::AccountAfterAssetDeltaComputation {
+                TransactionEvent::AccountOnAssetDeltaComputation {
                     delta: AssetDelta { delta_op, asset },
                 }
             }),

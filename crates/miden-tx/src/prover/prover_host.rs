@@ -133,8 +133,8 @@ where
                 self.base_host.on_account_before_asset_delta_computation()
             },
 
-            TransactionEvent::AccountAfterAssetDeltaComputation { delta } => {
-                self.base_host.on_account_after_asset_delta_computation(delta)
+            TransactionEvent::AccountOnAssetDeltaComputation { delta } => {
+                self.base_host.on_account_on_asset_delta_computation(delta)
             },
 
             TransactionEvent::AccountStorageAfterSetItem { slot_name, new_value } => {

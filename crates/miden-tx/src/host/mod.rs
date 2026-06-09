@@ -396,7 +396,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     }
 
     /// Tracks the computation of an asset delta for the account delta.
-    pub fn on_account_after_asset_delta_computation(
+    pub fn on_account_on_asset_delta_computation(
         &mut self,
         delta: AssetDelta,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
