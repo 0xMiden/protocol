@@ -69,7 +69,7 @@ fn faucet_contract_creation() {
         pub_key_word
     );
 
-    // The exempt procedure roots map is empty under the AuthControlled + SingleSig faucet —
+    // The exempt procedure roots map is empty under the AuthControlled + SingleSig faucet -
     // every authority-gated setter requires a signature, including the burn/receive path that
     // previously rode in unsigned via `allow_unauthorized_input_notes(true)`. Probe the full
     // former trigger set so a regression that put any of them back into the exempt map would

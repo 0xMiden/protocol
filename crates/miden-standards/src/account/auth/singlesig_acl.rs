@@ -84,7 +84,7 @@ impl Default for AuthSingleSigAclConfig {
 /// This component uses *exempt-list* ACL semantics: every called account procedure requires
 /// authentication by default, and only procedures explicitly listed in
 /// [`AuthSingleSigAclConfig::exempt_procedures`] are permitted to execute without a signature.
-/// This makes the safe path the default — newly added setters cannot silently become
+/// This makes the safe path the default - newly added setters cannot silently become
 /// permissionless by being forgotten in the configuration.
 ///
 /// ## Authentication Logic
@@ -93,7 +93,7 @@ impl Default for AuthSingleSigAclConfig {
 ///
 /// 1. A kernel-detected account procedure (other than the auth procedure at index 0) was called and
 ///    is not on the exempt list.
-/// 2. Any output note was created — unconditional (see the note-detection caveat below).
+/// 2. Any output note was created - unconditional (see the note-detection caveat below).
 /// 3. Any input note was consumed AND no detected exempt procedure ran anywhere in the transaction.
 ///    The "vouching" here is transaction-wide, not per-note: a single detected exempt call lifts
 ///    the input-note signature requirement for every input note in the same transaction. Asset
@@ -119,8 +119,8 @@ impl Default for AuthSingleSigAclConfig {
 /// Procedure detection relies on the `was_procedure_called` kernel function, which only returns
 /// `true` if the procedure invoked an account-restricted kernel API (vault add/remove, storage
 /// write, storage read via `account::get_item`, etc.). Procedures that only touch unrestricted
-/// APIs — for example, creating output notes via `output_note_create` without also moving assets
-/// through the vault — are *not* flagged by this mechanism even when they execute. The explicit
+/// APIs - for example, creating output notes via `output_note_create` without also moving assets
+/// through the vault - are *not* flagged by this mechanism even when they execute. The explicit
 /// output- and input-note checks in points 2 and 3 above exist specifically to close this gap,
 /// so that an unflagged side-effecting procedure cannot make the account emit notes or process
 /// note consumptions without a signature.

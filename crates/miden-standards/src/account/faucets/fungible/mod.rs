@@ -612,7 +612,7 @@ fn build_auth_component(
 ) -> Result<AccountComponent, FungibleFaucetError> {
     match (access_control, auth_method) {
         // AuthControlled + SingleSig: the auth component is the sole setter gate. With
-        // exempt-list semantics an empty exempt list is the safe default — every called
+        // exempt-list semantics an empty exempt list is the safe default - every called
         // account procedure requires a signature, including the burn/receive path that
         // previously rode in unsigned via `allow_unauthorized_input_notes(true)`.
         (

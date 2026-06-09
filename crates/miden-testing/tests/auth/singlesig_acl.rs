@@ -313,7 +313,7 @@ async fn test_acl_input_note_consumption_requires_auth_without_exempt(
 ) -> anyhow::Result<()> {
     let (account, mock_chain, note) = setup_acl_test(vec![], auth_scheme)?;
 
-    // No tx script — the only side effect of the transaction is consuming the mock note
+    // No tx script - the only side effect of the transaction is consuming the mock note
     // produced by `setup_acl_test`. With an empty exempt list and no exempt procedure
     // detected, the input-note gate must trip.
     let tx_context = mock_chain

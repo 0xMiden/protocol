@@ -11,7 +11,7 @@ use miden::core::word
 # Tracks whether any exempt procedure was detected as called during the procedure-iteration
 # loop. Required so the input-note check can distinguish "an exempt procedure ran in this
 # transaction" (trusted) from "no exempt procedure ran at all" (input-note consumption must
-# be signed). This is a transaction-wide flag — a single detected exempt call lifts the
+# be signed). This is a transaction-wide flag - a single detected exempt call lifts the
 # input-note signature requirement for every input note in the same transaction, not
 # per-note. `was_procedure_called` only fires for procedures that touch account-restricted
 # kernel APIs, so an exempt procedure that is never detected stays at 0 here.
@@ -39,7 +39,7 @@ const EXEMPT_PROCEDURE_ROOTS_SLOT = word("miden::standards::auth::singlesig_acl:
 #! Authentication is required if any of the following hold:
 #!   1. A kernel-detected account procedure (other than the auth procedure at index 0) was
 #!      called and is not on the exempt list.
-#!   2. Any output note was created (unconditional — `output_note_create` does not trigger
+#!   2. Any output note was created (unconditional - `output_note_create` does not trigger
 #!      `was_procedure_called`, so the only way to gate unsigned note emission is here).
 #!   3. Any input note was consumed AND no exempt procedure was detected as called during
 #!      the transaction (i.e. the note consumption was not vouched for by an exempt procedure).
