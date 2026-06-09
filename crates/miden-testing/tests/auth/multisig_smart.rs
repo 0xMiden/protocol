@@ -218,8 +218,8 @@ async fn test_multisig_smart_enforces_note_restrictions_on_tx_with_output_notes(
     use miden_processor::crypto::random::RandomCoin;
     use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
     use miden_protocol::transaction::{RawOutputNote, TransactionScript};
-    use miden_standards::account::SendNotesTransactionScript;
     use miden_standards::note::P2idNote;
+    use miden_standards::tx_script::SendNotesTransactionScript;
 
     let (_secret_keys, _auth_schemes, public_keys, _authenticators) =
         setup_keys_and_authenticators_with_scheme(2, 2, AuthScheme::EcdsaK256Keccak)?;

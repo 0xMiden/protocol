@@ -31,10 +31,10 @@ use miden_protocol::transaction::{
     RawOutputNote,
     TransactionScript,
 };
-use miden_standards::account::SendNotesTransactionScript;
 use miden_standards::note::P2idNoteStorage;
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::note::NoteBuilder;
+use miden_standards::tx_script::SendNotesTransactionScript;
 use miden_tx::LocalTransactionProver;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};

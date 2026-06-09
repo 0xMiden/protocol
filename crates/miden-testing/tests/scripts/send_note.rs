@@ -21,9 +21,9 @@ use miden_protocol::note::{
 };
 use miden_protocol::testing::note::DEFAULT_NOTE_SCRIPT;
 use miden_protocol::transaction::{RawOutputNote, TransactionScript};
-use miden_standards::account::SendNotesTransactionScript;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::P2idNote;
+use miden_standards::tx_script::SendNotesTransactionScript;
 use miden_testing::utils::create_p2any_note;
 use miden_testing::{Auth, MockChain};
 

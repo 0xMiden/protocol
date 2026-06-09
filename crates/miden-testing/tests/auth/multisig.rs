@@ -17,7 +17,6 @@ use miden_protocol::testing::account_id::{
 use miden_protocol::transaction::{RawOutputNote, TransactionScript};
 use miden_protocol::vm::AdviceMap;
 use miden_protocol::{Felt, Hasher, Word};
-use miden_standards::account::SendNotesTransactionScript;
 use miden_standards::account::auth::AuthMultisig;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
@@ -27,6 +26,7 @@ use miden_standards::errors::standards::{
 };
 use miden_standards::note::P2idNote;
 use miden_standards::testing::account_interface::get_public_keys_from_account;
+use miden_standards::tx_script::SendNotesTransactionScript;
 use miden_testing::utils::create_spawn_note;
 use miden_testing::{Auth, MockChainBuilder, assert_transaction_executor_error};
 use miden_tx::TransactionExecutorError;

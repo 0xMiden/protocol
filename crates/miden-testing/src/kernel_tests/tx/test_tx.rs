@@ -57,13 +57,13 @@ use miden_protocol::transaction::{
 };
 use miden_protocol::{Felt, Hasher, ONE, Word};
 use miden_standards::AuthMethod;
-use miden_standards::account::SendNotesTransactionScript;
 use miden_standards::account::interface::{AccountInterface, AccountInterfaceExt};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::P2idNote;
 use miden_standards::testing::account_component::IncrNonceAuthComponent;
 use miden_standards::testing::mock_account::MockAccountExt;
+use miden_standards::tx_script::SendNotesTransactionScript;
 use miden_tx::auth::UnreachableAuth;
 use miden_tx::{
     LocalTransactionProver,

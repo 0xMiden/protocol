@@ -60,7 +60,7 @@ impl SendNotesTransactionScript {
     pub fn new(
         interface: &AccountCodeInterface,
         output_notes: &[PartialNote],
-    ) -> Result<Self, SendNotesScriptError> {
+    ) -> Result<Self, SendNotesTransactionScriptError> {
         Self::build(interface, output_notes, "")
     }
 
@@ -72,7 +72,7 @@ impl SendNotesTransactionScript {
         interface: &AccountCodeInterface,
         output_notes: &[PartialNote],
         expiration_delta: NonZeroU16,
-    ) -> Result<Self, SendNotesScriptError> {
+    ) -> Result<Self, SendNotesTransactionScriptError> {
         let prelude = format!(
             "push.{expiration_delta} exec.::miden::protocol::tx::update_expiration_block_delta\n"
         );
@@ -83,7 +83,7 @@ impl SendNotesTransactionScript {
         interface: &AccountCodeInterface,
         output_notes: &[PartialNote],
         expiration_prelude: &str,
-    ) -> Result<Self, SendNotesScriptError> {
+    ) -> Result<Self, SendNotesTransactionScriptError> {
         let sender = interface.id();
 
         let is_fungible_faucet = interface.contains(FungibleFaucet::code().procedure_roots());
@@ -92,13 +92,13 @@ impl SendNotesTransactionScript {
 
         let body = if is_fungible_faucet {
             if is_owner_controlled {
-                return Err(SendNotesScriptError::UnsupportedAccountInterface);
+                return Err(SendNotesTransactionScriptError::UnsupportedAccountInterface);
             }
             fungible_faucet_note_body(sender, output_notes)?
         } else if is_basic_wallet {
             basic_wallet_note_body(sender, output_notes)?
         } else {
-            return Err(SendNotesScriptError::UnsupportedAccountInterface);
+            return Err(SendNotesTransactionScriptError::UnsupportedAccountInterface);
         };
 
         let script = format!("begin\n{expiration_prelude}\n{body}\nend");
@@ -113,7 +113,7 @@ impl SendNotesTransactionScript {
 
         let tx_script = code_builder
             .compile_tx_script(script)
-            .map_err(SendNotesScriptError::InvalidTransactionScript)?;
+            .map_err(SendNotesTransactionScriptError::InvalidTransactionScript)?;
 
         Ok(Self(tx_script))
     }
@@ -130,7 +130,7 @@ impl From<SendNotesTransactionScript> for TransactionScript {
 
 /// Errors that can occur while building a [`SendNotesTransactionScript`].
 #[derive(Debug, Error)]
-pub enum SendNotesScriptError {
+pub enum SendNotesTransactionScriptError {
     #[error("note asset is not issued by faucet {0}")]
     IssuanceFaucetMismatch(AccountId),
     #[error("note created by the basic fungible faucet doesn't contain exactly one asset")]
@@ -152,7 +152,7 @@ pub enum SendNotesScriptError {
 fn basic_wallet_note_body(
     sender: AccountId,
     notes: &[PartialNote],
-) -> Result<String, SendNotesScriptError> {
+) -> Result<String, SendNotesTransactionScriptError> {
     let mut body = String::new();
     for note in notes {
         push_note_header(&mut body, sender, note)?;
@@ -195,17 +195,17 @@ fn basic_wallet_note_body(
 fn fungible_faucet_note_body(
     sender: AccountId,
     notes: &[PartialNote],
-) -> Result<String, SendNotesScriptError> {
+) -> Result<String, SendNotesTransactionScriptError> {
     let mut body = String::new();
     for note in notes {
         push_note_header(&mut body, sender, note)?;
 
         if note.assets().num_assets() != 1 {
-            return Err(SendNotesScriptError::FaucetNoteWithoutAsset);
+            return Err(SendNotesTransactionScriptError::FaucetNoteWithoutAsset);
         }
         let asset = note.assets().iter().next().expect("note should contain an asset");
         if asset.faucet_id() != sender {
-            return Err(SendNotesScriptError::IssuanceFaucetMismatch(asset.faucet_id()));
+            return Err(SendNotesTransactionScriptError::IssuanceFaucetMismatch(asset.faucet_id()));
         }
 
         body.push_str(&format!(
@@ -234,9 +234,11 @@ fn push_note_header(
     body: &mut String,
     sender: AccountId,
     note: &PartialNote,
-) -> Result<(), SendNotesScriptError> {
+) -> Result<(), SendNotesTransactionScriptError> {
     if note.metadata().sender() != sender {
-        return Err(SendNotesScriptError::InvalidSenderAccount(note.metadata().sender()));
+        return Err(SendNotesTransactionScriptError::InvalidSenderAccount(
+            note.metadata().sender(),
+        ));
     }
 
     body.push_str(&format!(
