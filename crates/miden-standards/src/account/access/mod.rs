@@ -1,6 +1,7 @@
+use alloc::collections::BTreeMap;
 use alloc::vec;
 
-use miden_protocol::account::{AccountComponent, AccountId, RoleSymbol};
+use miden_protocol::account::{AccountComponent, AccountId, AccountProcedureRoot, RoleSymbol};
 
 pub mod authority;
 pub mod ownable2step;
@@ -16,23 +17,27 @@ pub mod rbac;
 ///
 /// - [`AccessControl::AuthControlled`] yields just [`Authority::AuthControlled`].
 /// - [`AccessControl::Ownable2Step`] yields [`Ownable2Step`] + [`Authority::OwnerControlled`].
-/// - [`AccessControl::Rbac`] yields [`Ownable2Step`] + [`RoleBasedAccessControl`] + an
-///   [`Authority`]. The `authority_role` field selects which authority kind is installed:
-///   - `None` → [`Authority::OwnerControlled`] (the top-level owner gates `set_*` operations).
-///   - `Some(role)` → [`Authority::RbacControlled { role }`] (any holder of `role` gates `set_*`
-///     operations).
+/// - [`AccessControl::Rbac`] yields [`Ownable2Step`] + [`RoleBasedAccessControl`] +
+///   [`Authority::RbacControlled`]. The `roles` map assigns a role to individual gated procedures
+///   (keyed by procedure root); procedures without a mapping fall back to `default`
+///   ([`DefaultAuthority::Owner`] or a default role).
 ///
 /// Pass to
 /// [`AccountBuilder::with_components`][miden_protocol::account::AccountBuilder::with_components]
 /// to install the access control components on the account:
 ///
 /// ```no_run
+/// use std::collections::BTreeMap;
+///
 /// use miden_protocol::account::AccountBuilder;
-/// use miden_standards::account::access::AccessControl;
+/// use miden_standards::account::access::{AccessControl, DefaultAuthority};
 /// # let owner: miden_protocol::account::AccountId = unimplemented!();
 /// # let init_seed = [0u8; 32];
-/// AccountBuilder::new(init_seed)
-///     .with_components(AccessControl::Rbac { owner, authority_role: None });
+/// AccountBuilder::new(init_seed).with_components(AccessControl::Rbac {
+///     owner,
+///     roles: BTreeMap::new(),
+///     default: DefaultAuthority::Owner,
+/// });
 /// ```
 ///
 /// For accounts that don't use the [`AccessControl`] convenience but want to install the
@@ -48,18 +53,10 @@ pub enum AccessControl {
     Ownable2Step { owner: AccountId },
     /// Role-based access control. Includes [`Ownable2Step`] internally; the provided `owner`
     /// becomes the top-level RBAC authority (the account's owner).
-    ///
-    /// `authority_role` controls which authority is installed alongside RBAC:
-    /// - `None` (default) → [`Authority::OwnerControlled`]: the top-level `owner` is the sole
-    ///   authority for `set_*` operations (`set_mint_policy`, `set_burn_policy`, metadata setters).
-    ///   RBAC roles can still be granted/revoked but they do not directly gate the
-    ///   authority-protected procedures.
-    /// - `Some(role)` → [`Authority::RbacControlled { role }`]: any account holding `role` becomes
-    ///   a valid authority for `set_*` operations. Role membership is managed through the standard
-    ///   RBAC API on the [`RoleBasedAccessControl`] component.
     Rbac {
         owner: AccountId,
-        authority_role: Option<RoleSymbol>,
+        roles: BTreeMap<AccountProcedureRoot, RoleSymbol>,
+        default: DefaultAuthority,
     },
 }
 
@@ -76,23 +73,17 @@ impl IntoIterator for AccessControl {
             AccessControl::Ownable2Step { owner } => {
                 vec![Ownable2Step::new(owner).into(), Authority::OwnerControlled.into()].into_iter()
             },
-            AccessControl::Rbac { owner, authority_role: None } => vec![
+            AccessControl::Rbac { owner, roles, default } => vec![
                 Ownable2Step::new(owner).into(),
                 RoleBasedAccessControl::empty().into(),
-                Authority::OwnerControlled.into(),
-            ]
-            .into_iter(),
-            AccessControl::Rbac { owner, authority_role: Some(role) } => vec![
-                Ownable2Step::new(owner).into(),
-                RoleBasedAccessControl::empty().into(),
-                Authority::RbacControlled { role }.into(),
+                Authority::RbacControlled { roles, default }.into(),
             ]
             .into_iter(),
         }
     }
 }
 
-pub use authority::{Authority, AuthorityError};
+pub use authority::{Authority, AuthorityError, DefaultAuthority};
 pub use ownable2step::{Ownable2Step, Ownable2StepError};
 pub use pausable::{Pausable, PausableManager, PausableStorage};
 pub use rbac::RoleBasedAccessControl;

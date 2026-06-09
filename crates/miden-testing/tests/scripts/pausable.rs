@@ -6,18 +6,27 @@
 
 extern crate alloc;
 
+use alloc::collections::BTreeMap;
 use alloc::string::String;
 
 use miden_processor::crypto::random::RandomCoin;
-use miden_protocol::Word;
-use miden_protocol::account::{Account, AccountBuilder, AccountId, AccountIdVersion, AccountType};
+use miden_protocol::account::{
+    Account,
+    AccountBuilder,
+    AccountId,
+    AccountIdVersion,
+    AccountProcedureRoot,
+    AccountType,
+    RoleSymbol,
+};
 use miden_protocol::asset::{Asset, AssetAmount, AssetCallbackFlag, FungibleAsset};
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::{Note, NoteTag, NoteType};
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::utils::sync::LazyLock;
-use miden_standards::account::access::AccessControl;
+use miden_protocol::{Felt, Word};
 use miden_standards::account::access::pausable::{PausableManager, PausableStorage};
+use miden_standards::account::access::{AccessControl, DefaultAuthority};
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
     BurnPolicy,
@@ -37,6 +46,9 @@ use miden_testing::{
 const ERR_PAUSABLE_IS_PAUSED: MasmError = MasmError::from_static_str("the contract is paused");
 
 const ERR_SENDER_NOT_OWNER: MasmError = MasmError::from_static_str("note sender is not the owner");
+
+const ERR_SENDER_LACKS_ROLE: MasmError =
+    MasmError::from_static_str("note sender does not hold the required role");
 
 static OWNER_ID: LazyLock<AccountId> = LazyLock::new(|| test_account_id(11));
 static NON_OWNER_ID: LazyLock<AccountId> = LazyLock::new(|| test_account_id(99));
@@ -255,6 +267,256 @@ async fn pausable_manager_pause_while_paused_is_noop() -> anyhow::Result<()> {
 
     execute_note_on_faucet(&mut mock_chain, faucet.id(), &pause_note_1).await?;
     execute_note_on_faucet(&mut mock_chain, faucet.id(), &pause_note_2).await?;
+
+    Ok(())
+}
+
+// TESTS — PAUSABLE MANAGER WITH PER-PROCEDURE RBAC ROLES
+// ================================================================================================
+
+fn role(name: &str) -> RoleSymbol {
+    RoleSymbol::new(name).expect("role symbol should be valid")
+}
+
+/// Maps `pause` → `PAUSER` and `unpause` → `UNPAUSER` so the two capabilities are gated by
+/// distinct roles.
+fn pause_unpause_roles() -> BTreeMap<AccountProcedureRoot, RoleSymbol> {
+    BTreeMap::from([
+        (PausableManager::pause_root(), role("PAUSER")),
+        (PausableManager::unpause_root(), role("UNPAUSER")),
+    ])
+}
+
+/// Builds an RBAC faucet whose pause / unpause are gated per-procedure, with `default` applied to
+/// any authority-gated procedure that is not in the role map.
+fn add_rbac_faucet_with_pause(
+    builder: &mut MockChainBuilder,
+    owner: AccountId,
+    roles: BTreeMap<AccountProcedureRoot, RoleSymbol>,
+    default: DefaultAuthority,
+    seed: u8,
+    mutable_max_supply: bool,
+) -> anyhow::Result<Account> {
+    let faucet = FungibleFaucet::builder()
+        .name(TokenName::new("SYM")?)
+        .symbol("SYM".try_into()?)
+        .decimals(8)
+        .max_supply(AssetAmount::new(1_000_000)?)
+        .is_max_supply_mutable(mutable_max_supply)
+        .build()?;
+
+    let account_builder = AccountBuilder::new([seed; 32])
+        .account_type(AccountType::Public)
+        .with_component(faucet)
+        .with_components(AccessControl::Rbac { owner, roles, default })
+        .with_component(PausableManager);
+
+    builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
+}
+
+/// Builds an owner-or-admin-authored note that grants `role` to `account_id` via
+/// `rbac::grant_role`.
+fn build_grant_role_note(
+    sender: AccountId,
+    role: &RoleSymbol,
+    account_id: AccountId,
+) -> anyhow::Result<Note> {
+    build_note(
+        sender,
+        format!(
+            r#"
+        use miden::standards::access::rbac
+
+        @note_script
+        pub proc main
+            repeat.13 push.0 end
+            push.{account_prefix}
+            push.{account_suffix}
+            push.{role}
+            call.rbac::grant_role
+            dropw dropw dropw dropw
+        end
+        "#,
+            account_prefix = account_id.prefix().as_felt(),
+            account_suffix = account_id.suffix(),
+            role = Felt::from(role),
+        ),
+    )
+}
+
+/// Builds a note that calls `set_max_supply`, an authority-gated procedure intentionally left out
+/// of the role map in the tests below so it exercises the default-authority fallback.
+fn build_set_max_supply_note(sender: AccountId, new_max_supply: u64) -> anyhow::Result<Note> {
+    build_note(
+        sender,
+        format!(
+            r#"
+        @note_script
+        pub proc main
+            push.{new_max_supply}
+            swap drop
+            call.::miden::standards::faucets::fungible::set_max_supply
+        end
+        "#,
+        ),
+    )
+}
+
+/// Returns whether the faucet's `is_paused` slot is set in the latest committed state.
+fn is_faucet_paused(mock_chain: &MockChain, faucet_id: AccountId) -> anyhow::Result<bool> {
+    let account = mock_chain.committed_account(faucet_id)?;
+    let word = account.storage().get_item(PausableStorage::is_paused_slot())?;
+    Ok(word != Word::default())
+}
+
+#[tokio::test]
+async fn rbac_pause_and_unpause_use_distinct_roles() -> anyhow::Result<()> {
+    let pauser = test_account_id(20);
+    let unpauser = test_account_id(21);
+
+    let mut builder = MockChain::builder();
+    let faucet = add_rbac_faucet_with_pause(
+        &mut builder,
+        *OWNER_ID,
+        pause_unpause_roles(),
+        DefaultAuthority::Owner,
+        47,
+        false,
+    )?;
+
+    // Owner grants PAUSER to `pauser` and UNPAUSER to `unpauser`; then each acts in their lane.
+    let grant_pauser = build_grant_role_note(*OWNER_ID, &role("PAUSER"), pauser)?;
+    let grant_unpauser = build_grant_role_note(*OWNER_ID, &role("UNPAUSER"), unpauser)?;
+    let pause_note = build_pause_note(pauser)?;
+    let unpause_note = build_unpause_note(unpauser)?;
+    for note in [&grant_pauser, &grant_unpauser, &pause_note, &unpause_note] {
+        builder.add_output_note(RawOutputNote::Full(note.clone()));
+    }
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &grant_pauser).await?;
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &grant_unpauser).await?;
+
+    // PAUSER pauses → the faucet records the paused state.
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &pause_note).await?;
+    assert!(is_faucet_paused(&mock_chain, faucet.id())?);
+
+    // UNPAUSER unpauses → the faucet records the unpaused state.
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &unpause_note).await?;
+    assert!(!is_faucet_paused(&mock_chain, faucet.id())?);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn rbac_pause_fails_when_sender_lacks_pauser_role() -> anyhow::Result<()> {
+    let unpauser = test_account_id(22);
+
+    let mut builder = MockChain::builder();
+    let faucet = add_rbac_faucet_with_pause(
+        &mut builder,
+        *OWNER_ID,
+        pause_unpause_roles(),
+        DefaultAuthority::Owner,
+        48,
+        false,
+    )?;
+
+    // `unpauser` only holds UNPAUSER, so calling `pause` (gated by PAUSER) must be rejected.
+    let grant_unpauser = build_grant_role_note(*OWNER_ID, &role("UNPAUSER"), unpauser)?;
+    let pause_note = build_pause_note(unpauser)?;
+    builder.add_output_note(RawOutputNote::Full(grant_unpauser.clone()));
+    builder.add_output_note(RawOutputNote::Full(pause_note.clone()));
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &grant_unpauser).await?;
+
+    let result = mock_chain
+        .build_tx_context(faucet.id(), &[pause_note.id()], &[])?
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_SENDER_LACKS_ROLE);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn rbac_unmapped_procedure_falls_back_to_owner_default() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let faucet = add_rbac_faucet_with_pause(
+        &mut builder,
+        *OWNER_ID,
+        pause_unpause_roles(),
+        DefaultAuthority::Owner,
+        49,
+        true,
+    )?;
+
+    // `set_max_supply` is not in the role map → falls back to DefaultAuthority::Owner. The owner
+    // can call it; a non-owner cannot.
+    let owner_note = build_set_max_supply_note(*OWNER_ID, 500_000)?;
+    let attacker_note = build_set_max_supply_note(*NON_OWNER_ID, 500_000)?;
+    builder.add_output_note(RawOutputNote::Full(owner_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(attacker_note.clone()));
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &owner_note).await?;
+
+    let result = mock_chain
+        .build_tx_context(faucet.id(), &[attacker_note.id()], &[])?
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_SENDER_NOT_OWNER);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn rbac_unmapped_procedure_falls_back_to_default_role() -> anyhow::Result<()> {
+    let admin = test_account_id(23);
+
+    let mut builder = MockChain::builder();
+    let faucet = add_rbac_faucet_with_pause(
+        &mut builder,
+        *OWNER_ID,
+        pause_unpause_roles(),
+        DefaultAuthority::Role(role("ADMIN")),
+        50,
+        true,
+    )?;
+
+    // `set_max_supply` is unmapped → falls back to the default ADMIN role. A holder of ADMIN can
+    // call it; the owner (who does not hold ADMIN) cannot.
+    let grant_admin = build_grant_role_note(*OWNER_ID, &role("ADMIN"), admin)?;
+    let admin_note = build_set_max_supply_note(admin, 500_000)?;
+    let owner_note = build_set_max_supply_note(*OWNER_ID, 400_000)?;
+    builder.add_output_note(RawOutputNote::Full(grant_admin.clone()));
+    builder.add_output_note(RawOutputNote::Full(admin_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(owner_note.clone()));
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &grant_admin).await?;
+    execute_note_on_faucet(&mut mock_chain, faucet.id(), &admin_note).await?;
+
+    let result = mock_chain
+        .build_tx_context(faucet.id(), &[owner_note.id()], &[])?
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_SENDER_LACKS_ROLE);
 
     Ok(())
 }
