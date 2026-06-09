@@ -668,6 +668,10 @@ end
 
 #! Marks that this tx intends to execute a proposed action.
 #!
+#! Called from the user's tx script. The auth procedure later reads `PENDING_EXECUTE_SLOT`
+#! through `is_delayed_execution_path` to drive the execute-path consistency check and the
+#! timelock enforcement in `finalize_pending_execute`.
+#!
 #! Inputs:  []
 #! Outputs: []
 #!
@@ -874,7 +878,7 @@ end
 #! - num_verified_signatures is the number of signatures verified for the current transaction.
 #! - requires_delay is 1 if the current transaction must run in delayed execution mode,
 #!   otherwise 0.
-#! - TX_SUMMARY_COMMITMENT is the current transaction summary hash.
+#! - TX_SUMMARY_COMMITMENT is the current transaction summary commitment.
 #!
 #! Panics if:
 #! - `finalize_pending_execute` fails.
