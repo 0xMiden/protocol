@@ -16,7 +16,7 @@ use miden_protocol::errors::MasmError;
 use miden_protocol::note::{Note, NoteTag, NoteType};
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::utils::sync::LazyLock;
-use miden_standards::account::access::pausable::{PausableManager, PausableStorage};
+use miden_standards::account::access::pausable::{Pausable, PausableManager, PausableStorage};
 use miden_standards::account::access::{AccessControl, Authority};
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
@@ -66,6 +66,7 @@ fn add_faucet_with_pause(
         .account_type(AccountType::Public)
         .with_component(faucet)
         .with_components(AccessControl::Ownable2Step { owner })
+        .with_component(Pausable::unpaused())
         .with_component(PausableManager);
 
     builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
@@ -293,6 +294,7 @@ fn add_faucet_with_pause_and_policies(
         .account_type(AccountType::Public)
         .with_component(faucet)
         .with_components(AccessControl::Ownable2Step { owner })
+        .with_component(Pausable::unpaused())
         .with_component(PausableManager)
         .with_components(
             TokenPolicyManager::builder()
@@ -523,6 +525,7 @@ fn add_faucet_mutable_max_supply_with_pause(
         .account_type(AccountType::Public)
         .with_component(faucet)
         .with_components(AccessControl::Ownable2Step { owner })
+        .with_component(Pausable::unpaused())
         .with_component(PausableManager);
 
     builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
@@ -594,6 +597,7 @@ fn add_faucet_with_pause_auth_controlled(
         .account_type(AccountType::Public)
         .with_component(faucet)
         .with_component(Authority::AuthControlled)
+        .with_component(Pausable::unpaused())
         .with_component(PausableManager);
 
     builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)

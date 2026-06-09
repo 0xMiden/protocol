@@ -4,12 +4,11 @@ use assert_matches::assert_matches;
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 use miden_protocol::account::{AccountBuilder, AccountType};
 use miden_protocol::asset::{AssetAmount, TokenSymbol};
-use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::{Felt, Word};
 
 use super::{FungibleFaucet, create_network_fungible_faucet, create_user_fungible_faucet};
 use crate::account::access::{AccessControl, PausableManager};
-use crate::account::auth::{AuthNetworkAccount, AuthSingleSig, AuthSingleSigAcl};
+use crate::account::auth::{AuthSingleSig, AuthSingleSigAcl};
 use crate::account::faucets::{Description, FungibleFaucetError, TokenMetadata, TokenName};
 use crate::account::policies::{BurnPolicy, MintPolicy, TokenPolicyManager, TransferPolicy};
 use crate::account::wallets::BasicWallet;
@@ -131,9 +130,9 @@ fn user_fungible_faucet_with_single_sig_acl() {
     let _faucet_component = FungibleFaucet::try_from(faucet_account.clone()).unwrap();
 }
 
-/// `create_network_fungible_faucet` with `Ownable2Step + AuthNetworkAccount` builds a valid
-/// account. The auth component governs the faucet's own tx authentication; the setter gate is
-/// enforced in-procedure by `assert_sender_is_owner`.
+/// `create_network_fungible_faucet` with `Ownable2Step` builds a valid account. The factory
+/// constructs `AuthNetworkAccount` internally; the setter gate is enforced in-procedure by
+/// `assert_sender_is_owner`.
 #[test]
 fn network_fungible_faucet_with_ownable2step() {
     use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
@@ -143,18 +142,13 @@ fn network_fungible_faucet_with_ownable2step() {
     )
     .unwrap();
 
-    let allowlist: BTreeSet<NoteScriptRoot> =
-        [NoteScriptRoot::from_array([0; 4])].into_iter().collect();
-
     let _account = create_network_fungible_faucet(
         [7u8; 32],
         sample_faucet(),
         AccessControl::Ownable2Step { owner },
-        AuthNetworkAccount::with_allowed_notes(allowlist).unwrap(),
         allow_all_policy_manager(),
-        AccountType::Public,
     )
-    .expect("Ownable2Step+AuthNetworkAccount should be accepted");
+    .expect("Ownable2Step network faucet should be accepted");
 }
 
 #[test]

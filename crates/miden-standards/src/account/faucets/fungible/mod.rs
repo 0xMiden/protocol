@@ -32,11 +32,12 @@ use super::{
     TokenMetadataError,
     TokenName,
 };
-use crate::account::access::{AccessControl, Authority, PausableManager};
+use crate::account::access::{AccessControl, Authority, Pausable, PausableManager};
 use crate::account::account_component_code;
 use crate::account::auth::{AuthNetworkAccount, AuthSingleSigAcl};
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
 use crate::account::policies::TokenPolicyManager;
+use crate::note::{BurnNote, MintNote};
 use crate::procedure_root;
 
 #[cfg(test)]
@@ -385,22 +386,11 @@ impl FungibleFaucet {
     }
 
     /// Returns the storage slots produced by this faucet (token config word + name + mutability
-    /// config + description + logo URI + external link + Pausable's `is_paused` flag).
-    ///
-    /// The `is_paused` slot is installed by FungibleFaucet itself (initial value: unpaused, zero
-    /// word) so that the transversal pause guards baked into mint / burn / transfer / metadata
-    /// setters can read it without panicking. Pause / unpause administration is exposed by the
-    /// [`crate::account::access::pausable::PausableManager`] component, which is bundled by
-    /// [`create_user_fungible_faucet`] / [`create_network_fungible_faucet`] alongside this faucet
-    /// so the slot is always actionable. The full [`Pausable`][crate::account::access::Pausable]
-    /// component (which exposes an `is_paused` view procedure) is intentionally NOT bundled —
-    /// it would install the same slot name and conflict with the faucet's own slot. Callers that
-    /// want the public view procedure should read the slot directly via account storage queries.
+    /// config + description + logo URI + external link).
     pub fn into_storage_slots(self) -> Vec<StorageSlot> {
         let mut slots: Vec<StorageSlot> = Vec::new();
         slots.push(self.token_config_slot_value());
         slots.extend(self.metadata.into_storage_slots());
-        slots.push(crate::account::access::pausable::PausableStorage::default().into_slot());
         slots
     }
 
@@ -569,11 +559,6 @@ impl TryFrom<&Account> for FungibleFaucet {
 /// Creates a new **user-account** fungible faucet. The account's auth component is the sole
 /// gate for authority-protected setters ([`Authority::AuthControlled`] is installed directly).
 ///
-/// In addition to the explicit parameters, [`PausableManager`] is always bundled so the
-/// `is_paused` slot (installed by [`FungibleFaucet::into_storage_slots`]) is actionable via
-/// `pause` / `unpause` admin procedures (gated by the [`Authority::AuthControlled`] component
-/// installed by this factory).
-///
 /// Caller passes a fully-configured [`AuthSingleSigAcl`] — its trigger procedure list must
 /// cover every authority-gated setter on the faucet (`mint_and_send`, the metadata setters,
 /// the policy setters, and `pause` / `unpause`), otherwise those procedures become
@@ -591,29 +576,42 @@ pub fn create_user_fungible_faucet(
         .with_component(faucet)
         .with_component(Authority::AuthControlled)
         .with_components(token_policy_manager)
+        .with_component(Pausable::unpaused())
         .with_component(PausableManager)
         .build()
         .map_err(FungibleFaucetError::AccountError)
 }
 
-/// Creates a new **network-style** fungible faucet. Setter gating is enforced in-procedure by
-/// the owner / role check installed via `access_control` ([`AccessControl::Ownable2Step`] or
-/// [`AccessControl::Rbac`]). The auth component only governs the faucet's own transaction
-/// authentication.
+/// Creates a new **network-style** fungible faucet. The account is always
+/// [`AccountType::Public`] (network accounts cannot be private). Setter gating is enforced
+/// in-procedure by the owner / role check installed via `access_control`
+/// ([`AccessControl::Ownable2Step`] or [`AccessControl::Rbac`]).
+///
+/// The factory builds the [`AuthNetworkAccount`] auth component internally with a note
+/// allowlist covering the faucet's own [`MintNote`] and [`BurnNote`] scripts and an empty
+/// tx-script allowlist (network faucets are consumed via notes, not tx scripts). Callers
+/// that need a custom allowlist (additional note scripts or tx scripts) should use
+/// [`AccountBuilder`] directly.
+///
+/// In addition to the explicit parameters, [`Pausable`] (slot + `is_paused` view) and
+/// [`PausableManager`] (admin `pause` / `unpause` gated by `access_control`) are bundled.
 pub fn create_network_fungible_faucet(
     init_seed: [u8; 32],
     faucet: FungibleFaucet,
     access_control: AccessControl,
-    auth_component: AuthNetworkAccount,
     token_policy_manager: TokenPolicyManager,
-    account_type: AccountType,
 ) -> Result<Account, FungibleFaucetError> {
+    let note_allowlist = [MintNote::script_root(), BurnNote::script_root()].into_iter().collect();
+    let auth_component = AuthNetworkAccount::with_allowed_notes(note_allowlist)
+        .expect("MintNote + BurnNote allowlist is non-empty");
+
     AccountBuilder::new(init_seed)
-        .account_type(account_type)
+        .account_type(AccountType::Public)
         .with_auth_component(auth_component)
         .with_component(faucet)
         .with_components(access_control)
         .with_components(token_policy_manager)
+        .with_component(Pausable::unpaused())
         .with_component(PausableManager)
         .build()
         .map_err(FungibleFaucetError::AccountError)
