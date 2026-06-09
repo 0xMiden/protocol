@@ -9,7 +9,7 @@ use miden::protocol::tx
 # [min_delay, propose_expiration_delta, 0, 0]
 const DELAYED_EXECUTION_SLOT = word("miden::standards::auth::multisig_smart::delayed_execution")
 
-# Map entries: [TX_SUMMARY_COMMITMENT] -> [unlock_timestamp, proposal_timestamp, min_cancel_sigs, 1]
+# Map entries: [TX_SUMMARY_COMMITMENT] -> [unlock_timestamp, proposal_timestamp, min_cancel_sigs, 0]
 const TX_PROPOSALS_SLOT = word("miden::standards::auth::multisig_smart::tx_proposals")
 
 # Pending action slots
@@ -34,8 +34,6 @@ const ERR_TX_STILL_TIMELOCKED = "tx still timelocked"
 const ERR_PENDING_ALREADY_SET = "pending action already set"
 const ERR_PROPOSE_ZERO_SIGNATURES = "num_verified_signatures cannot be zero"
 const ERR_CANCEL_INSUFFICIENT_SIGNATURES = "insufficient signatures for cancel"
-const ERR_EXPIRATION_DELTA_ZERO = "expiration_delta must be non-zero"
-const ERR_TX_EXPIRATION_DELTA_NOT_SET = "tx expiration delta must be set"
 
 # CONFIGURATION
 # =================================================================================================
@@ -112,13 +110,13 @@ end
 #! Returns 1 if `execute_proposed_transaction` was called in the current transaction, 0 otherwise.
 #!
 #! Inputs:  []
-#! Outputs: [is_execute_path]
+#! Outputs: [is_delayed_execution_path]
 #!
 #! Where:
-#! - is_execute_path is 1 if `PENDING_EXECUTE_SLOT` is non-empty, otherwise 0.
+#! - is_delayed_execution_path is 1 if `PENDING_EXECUTE_SLOT` is non-empty, otherwise 0.
 #!
 #! Invocation: exec
-pub proc is_execute_path
+pub proc is_delayed_execution_path
     push.PENDING_EXECUTE_SLOT[0..2]
     # => [slot_prefix, slot_suffix]
 
@@ -129,7 +127,7 @@ pub proc is_execute_path
     # => [is_pending_execute_empty]
 
     not
-    # => [is_execute_path]
+    # => [is_delayed_execution_path]
 end
 
 
@@ -147,10 +145,11 @@ proc get_min_delay
     # => [min_delay]
 end
 
-#! Returns `propose_expiration_delta` from [`DELAYED_EXECUTION_SLOT`]
+#! Returns `propose_expiration_delta` from [`DELAYED_EXECUTION_SLOT`].
 #!
-#! Proposal transactions must carry a non-zero expiration delta. This helper is used
-#! when applying that delta to the current transaction (`apply_propose_expiration_delta`).
+#! Callers stage a proposal by piping the returned delta through
+#! `tx::update_expiration_block_delta` so that proposal-bearing transactions expire within the
+#! policy-defined window.
 #!
 #! Inputs:  []
 #! Outputs: [propose_expiration_delta]
@@ -164,74 +163,19 @@ proc get_propose_expiration_delta
     # => [propose_expiration_delta]
 end
 
-#! Applies `expiration_delta` to the current transaction and verifies it was set.
-#!
-#! Inputs:  [expiration_delta]
-#! Outputs: []
-#!
-#! Where:
-#! - expiration_delta is the desired transaction expiration block delta.
-#!
-#! Panics if:
-#! - expiration_delta is zero (`ERR_EXPIRATION_DELTA_ZERO`).
-#! - `tx::update_expiration_block_delta` rejects `expiration_delta`.
-#! - the stored transaction expiration delta is zero after the update
-#!   (`ERR_TX_EXPIRATION_DELTA_NOT_SET`).
-#!
-#! Invocation: exec
-proc apply_expiration_delta
-    dup neq.0 assert.err=ERR_EXPIRATION_DELTA_ZERO
-    # => [expiration_delta]
-
-    exec.tx::update_expiration_block_delta
-    # => []
-
-    exec.tx::get_expiration_block_delta
-    # => [tx_expiration_delta]
-
-    dup neq.0 assert.err=ERR_TX_EXPIRATION_DELTA_NOT_SET
-    # => [tx_expiration_delta]
-
-    drop
-    # => []
-end
-
-
-#! Applies the configured `propose_expiration_delta` to the current transaction.
-#!
-#! Inputs:  []
-#! Outputs: []
-#!
-#! Panics if:
-#! - `propose_expiration_delta` configured in `DELAYED_EXECUTION_SLOT` is zero
-#!   (`ERR_EXPIRATION_DELTA_ZERO`).
-#! - `tx::update_expiration_block_delta` rejects the configured value.
-#! - the stored transaction expiration delta is zero after the update
-#!   (`ERR_TX_EXPIRATION_DELTA_NOT_SET`).
-#!
-#! Invocation: exec
-proc apply_propose_expiration_delta
-    exec.get_propose_expiration_delta
-    # => [propose_expiration_delta]
-
-    exec.apply_expiration_delta
-    # => []
-end
-
 # TIMELOCK + PROPOSALS HELPERS
 # =================================================================================================
 
 #! Returns the proposal entry stored for `TX_SUMMARY_COMMITMENT`.
 #!
 #! Inputs:  [TX_SUMMARY_COMMITMENT]
-#! Outputs: [unlock_timestamp, proposal_timestamp, min_cancel_sigs, proposal_exists]
+#! Outputs: [unlock_timestamp, proposal_timestamp, min_cancel_sigs]
 #!
 #! Where:
 #! - TX_SUMMARY_COMMITMENT is the transaction summary commitment used as the proposal map key.
 #! - unlock_timestamp is the earliest timestamp at which the proposal can be executed, or 0 if no proposal exists.
 #! - proposal_timestamp is the timestamp at which the proposal was recorded, or 0 if no proposal exists.
 #! - min_cancel_sigs is the minimum number of signatures required to cancel the proposal, or 0 if no proposal exists.
-#! - proposal_exists is 1 if a proposal exists for `TX_SUMMARY_COMMITMENT`, otherwise 0.
 #!
 #! Invocation: exec
 proc get_tx_proposal(tx_summary_commitment: word)
@@ -239,7 +183,10 @@ proc get_tx_proposal(tx_summary_commitment: word)
     # => [slot_prefix, slot_suffix, TX_SUMMARY_COMMITMENT]
 
     exec.active_account::get_map_item
-    # => [unlock_timestamp, proposal_timestamp, min_cancel_sigs, proposal_exists]
+    # => [unlock_timestamp, proposal_timestamp, min_cancel_sigs, 0]
+
+    movup.3 drop
+    # => [unlock_timestamp, proposal_timestamp, min_cancel_sigs]
 end
 
 #! Returns 1 if a proposal exists for `TX_SUMMARY_COMMITMENT`, 0 otherwise.
@@ -248,18 +195,16 @@ end
 #! Outputs: [is_proposed]
 #!
 #! Where:
-#! - TX_SUMMARY_COMMITMENT is the transaction summary hash used as the proposal map key.
-#! - is_proposed is 1 if the stored proposal word is non-empty, otherwise 0.
+#! - TX_SUMMARY_COMMITMENT is the transaction summary commitment used as the proposal map key.
+#! - is_proposed is 1 if `proposal_timestamp` is non-zero (i.e. a proposal has been recorded
+#!   for the commitment), otherwise 0.
 #!
 #! Invocation: exec
 proc is_tx_proposed(tx_summary_commitment: word) -> u32
     exec.get_tx_proposal
-    # => [unlock_timestamp, proposal_timestamp, min_cancel_sigs, proposal_exists]
+    # => [unlock_timestamp, proposal_timestamp, min_cancel_sigs]
 
-    exec.word::eqz
-    # => [is_proposal_empty]
-
-    not
+    drop swap drop neq.0
     # => [is_proposed]
 end
 
@@ -293,9 +238,6 @@ end
 
 #! Writes the proposal entry for `TX_SUMMARY_COMMITMENT` unconditionally.
 #!
-#! The `proposal_exists` flag is always written as `1`. The caller is responsible for ensuring
-#! the proposal does not already exist.
-#!
 #! Inputs:  [unlock_timestamp, proposal_timestamp, min_cancel_sigs, TX_SUMMARY_COMMITMENT]
 #! Outputs: []
 #!
@@ -303,21 +245,21 @@ end
 #! - unlock_timestamp is the earliest timestamp at which the proposal can be executed.
 #! - proposal_timestamp is the timestamp at which the proposal was recorded.
 #! - min_cancel_sigs is the minimum number of signatures required to cancel the proposal.
-#! - TX_SUMMARY_COMMITMENT is the transaction summary hash used as the proposal map key.
+#! - TX_SUMMARY_COMMITMENT is the transaction summary commitment used as the proposal map key.
 #!
 #! Invocation: exec
 proc write_tx_proposal
-    push.1
-    # => [1, unlock_timestamp, proposal_timestamp, min_cancel_sigs, TX_SUMMARY_COMMITMENT]
+    push.0
+    # => [0, unlock_timestamp, proposal_timestamp, min_cancel_sigs, TX_SUMMARY_COMMITMENT]
 
     movdn.3
-    # => [unlock_timestamp, proposal_timestamp, min_cancel_sigs, 1, TX_SUMMARY_COMMITMENT]
+    # => [unlock_timestamp, proposal_timestamp, min_cancel_sigs, 0, TX_SUMMARY_COMMITMENT]
 
     swapw
-    # => [TX_SUMMARY_COMMITMENT, unlock_timestamp, proposal_timestamp, min_cancel_sigs, 1]
+    # => [TX_SUMMARY_COMMITMENT, unlock_timestamp, proposal_timestamp, min_cancel_sigs, 0]
 
     push.TX_PROPOSALS_SLOT[0..2]
-    # => [slot_prefix, slot_suffix, TX_SUMMARY_COMMITMENT, unlock_timestamp, proposal_timestamp, min_cancel_sigs, 1]
+    # => [slot_prefix, slot_suffix, TX_SUMMARY_COMMITMENT, unlock_timestamp, proposal_timestamp, min_cancel_sigs, 0]
 
     exec.native_account::set_map_item
     # => [OLD_PROPOSAL_WORD]
@@ -394,9 +336,9 @@ end
 #! Invocation: exec
 proc enforce_tx_timelock
     exec.get_tx_proposal
-    # => [unlock_timestamp, proposal_timestamp, min_cancel_sigs, proposal_exists]
+    # => [unlock_timestamp, proposal_timestamp, min_cancel_sigs]
 
-    movup.3 assert.err=ERR_TX_NOT_PROPOSED
+    dup.1 neq.0 assert.err=ERR_TX_NOT_PROPOSED
     # => [unlock_timestamp, proposal_timestamp, min_cancel_sigs]
 
     swap drop
@@ -618,11 +560,11 @@ end
 #! Panics if:
 #! - a proposal already exists for `TX_SUMMARY_COMMITMENT` (`ERR_TX_ALREADY_PROPOSED`).
 #! - a pending action slot is already set (`ERR_PENDING_ALREADY_SET`).
-#! - `apply_propose_expiration_delta` fails.
+#! - `tx::update_expiration_block_delta` rejects the configured `propose_expiration_delta`.
 #!
 #! Invocation: exec
 pub proc propose_transaction
-    exec.apply_propose_expiration_delta
+    exec.get_propose_expiration_delta exec.tx::update_expiration_block_delta
     # => [TX_SUMMARY_COMMITMENT]
 
     dupw
@@ -685,7 +627,7 @@ end
 #! - no proposal exists for `OLD_TX_SUMMARY_COMMITMENT` (`ERR_TX_NOT_PROPOSED`).
 #! - a proposal already exists for `NEW_TX_SUMMARY_COMMITMENT` (`ERR_TX_ALREADY_PROPOSED`).
 #! - a pending action slot is already set (`ERR_PENDING_ALREADY_SET`).
-#! - `apply_propose_expiration_delta` fails.
+#! - `tx::update_expiration_block_delta` rejects the configured `propose_expiration_delta`.
 #!
 #! Invocation: exec
 pub proc cancel_and_propose_new_transaction
@@ -716,7 +658,7 @@ pub proc cancel_and_propose_new_transaction
     exec.set_pending_cancel
     # => [NEW_TX_SUMMARY_COMMITMENT]
 
-    exec.apply_propose_expiration_delta
+    exec.get_propose_expiration_delta exec.tx::update_expiration_block_delta
     # => [NEW_TX_SUMMARY_COMMITMENT]
 
     exec.set_pending_propose
@@ -828,9 +770,9 @@ proc finalize_pending_cancel
         # => [PENDING_CANCEL_COMMITMENT, num_verified_signatures]
 
         dupw exec.get_tx_proposal
-        # => [unlock_timestamp, proposal_timestamp, min_cancel_sigs, proposal_exists, PENDING_CANCEL_COMMITMENT, num_verified_signatures]
+        # => [unlock_timestamp, proposal_timestamp, min_cancel_sigs, PENDING_CANCEL_COMMITMENT, num_verified_signatures]
 
-        movup.3 assert.err=ERR_TX_NOT_PROPOSED
+        dup.1 neq.0 assert.err=ERR_TX_NOT_PROPOSED
         # => [unlock_timestamp, proposal_timestamp, min_cancel_sigs, PENDING_CANCEL_COMMITMENT, num_verified_signatures]
 
         drop swap drop
@@ -862,7 +804,7 @@ end
 #! Panics if:
 #! - the pending propose hash is already proposed (`ERR_TX_ALREADY_PROPOSED`).
 #! - `num_verified_signatures` is zero (`ERR_PROPOSE_ZERO_SIGNATURES`).
-#! - `apply_propose_expiration_delta` fails.
+#! - `tx::update_expiration_block_delta` rejects the configured `propose_expiration_delta`.
 #!
 #! Locals:
 #! 0: num_verified_signatures
@@ -904,7 +846,7 @@ proc finalize_pending_propose
         assertz.err=ERR_PROPOSE_ZERO_SIGNATURES
         # => [num_verified_signatures, PENDING_PROPOSE_COMMITMENT, TX_SUMMARY_COMMITMENT]
 
-        exec.apply_propose_expiration_delta
+        exec.get_propose_expiration_delta exec.tx::update_expiration_block_delta
         # => [num_verified_signatures, PENDING_PROPOSE_COMMITMENT, TX_SUMMARY_COMMITMENT]
 
         exec.compute_unlock_timestamp

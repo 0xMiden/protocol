@@ -322,7 +322,7 @@ impl AuthMultisigSmart {
         (
             Self::tx_proposals_slot().clone(),
             StorageSlotSchema::map(
-                "Active tx proposals: tx_summary_commitment => [unlock_timestamp, expiration_height, 0, 0]",
+                "Active tx proposals: tx_summary_commitment => [unlock_timestamp, proposal_timestamp, min_cancel_sigs, 0]",
                 SchemaType::native_word(),
                 SchemaType::native_word(),
             ),
@@ -420,8 +420,8 @@ impl From<AuthMultisigSmart> for AccountComponent {
             ]),
         ));
 
-        // Tx-proposals map slot (TX_SUMMARY_COMMITMENT => [unlock_timestamp, expiration_height, 0,
-        // 0])
+        // Tx-proposals map slot (TX_SUMMARY_COMMITMENT => [unlock_timestamp, proposal_timestamp,
+        // min_cancel_sigs, 0]). Existence is encoded by `proposal_timestamp != 0`.
         storage_slots.push(StorageSlot::with_map(
             AuthMultisigSmart::tx_proposals_slot().clone(),
             StorageMap::default(),

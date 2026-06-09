@@ -281,6 +281,11 @@ end
 #! Where:
 #! - block_height_delta is the desired expiration time delta (1 to 0xFFFF).
 #!
+#! Panics if:
+#! - block_height_delta is not a valid `u32`.
+#! - block_height_delta is zero.
+#! - block_height_delta is greater than 0xFFFF.
+#!
 #! Annotation hint: is not used anywhere
 pub proc update_expiration_block_delta
     push.TX_UPDATE_EXPIRATION_BLOCK_DELTA_OFFSET

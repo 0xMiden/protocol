@@ -928,7 +928,8 @@ async fn test_multisig_smart_pending_actions_are_mutually_exclusive(
 /// A successfully recorded proposal must not be executable before its `unlock_timestamp` has been
 /// reached. Propose a delayed action, then immediately try to execute it on the next block (only
 /// `TIMESTAMP_STEP_SECS` after the propose) — far short of the configured `min_delay` of 30
-/// seconds. The execute path's `enforce_tx_timelock` should fail with `ERR_TX_STILL_TIMELOCKED`.
+/// seconds. The delayed execution path's `enforce_tx_timelock` should fail with
+/// `ERR_TX_STILL_TIMELOCKED`.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[case::falcon(AuthScheme::Falcon512Poseidon2)]

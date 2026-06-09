@@ -60,7 +60,7 @@ const ERR_INVALID_NOTE_RESTRICTIONS = "procedure policy note restrictions must b
 
 const ERR_INSUFFICIENT_SIGNATURES = "insufficient number of signatures"
 
-const ERR_EXECUTE_PATH_MISMATCH = "execute_proposed_transaction must be called iff a called procedure requires delayed execution"
+const ERR_DELAYED_EXECUTION_PATH_MISMATCH = "execute_proposed_transaction must be called iff a called procedure requires delayed execution"
 
 # LOCAL ADDRESSES (set_procedure_policy)
 # =================================================================================================
@@ -428,14 +428,14 @@ end
 #!
 #! Invocation: exec
 #!
-#! The active execution mode is read from [`delayed_execution::is_execute_path`]: when the
+#! The active execution mode is read from [`delayed_execution::is_delayed_execution_path`]: when the
 #! delayed-execution module's `PENDING_EXECUTE` slot is set this transaction is on the
-#! delayed-execute path (mode = 1); otherwise it is on the immediate path (mode = 0).
+#! delayed execution path (mode = 1); otherwise it is on the immediate path (mode = 0).
 #!
 #! `policy_requires_delay` is surfaced so the caller can enforce execute-path consistency
-#! after signature verification (see [`ERR_EXECUTE_PATH_MISMATCH`]).
+#! after signature verification (see [`ERR_DELAYED_EXECUTION_PATH_MISMATCH`]).
 proc enforce_procedure_policy(default_threshold: u32)
-    exec.delayed_execution::is_execute_path
+    exec.delayed_execution::is_delayed_execution_path
     # => [execution_mode, default_threshold]
 
     exec.compute_called_proc_policy
@@ -759,7 +759,7 @@ end
 #! 2. Enforce per-procedure policy (note restrictions + policy threshold + delay flag).
 #! 3. Verify approver signatures and check the threshold.
 #! 4. Enforce execute-path consistency: if any policy required the delayed mode the tx must be
-#!    on the execute path, and conversely the immediate path is only valid when no consumed
+#!    on the delayed execution path, and conversely the immediate path is only valid when no consumed
 #!    policy required a delay. This check runs after signature verification so a caller can
 #!    still obtain the TX_SUMMARY_COMMITMENT needed for a propose/execute round-trip from an
 #!    unauthorized dry-run.
@@ -830,18 +830,18 @@ pub proc auth_tx(salt: word)
 
     # ------ Enforcing execute-path consistency ------
     # The immediate path is only valid when no consumed policy required a delay. Conversely,
-    # the delayed-execute path is only valid when the tx actually requires a delay.
+    # the delayed execution path is only valid when the tx actually requires a delay.
     loc_load.2
     # => [policy_requires_delay, TX_SUMMARY_COMMITMENT]
 
-    exec.delayed_execution::is_execute_path
-    # => [is_execute_path, policy_requires_delay, TX_SUMMARY_COMMITMENT]
+    exec.delayed_execution::is_delayed_execution_path
+    # => [is_delayed_execution_path, policy_requires_delay, TX_SUMMARY_COMMITMENT]
 
-    # is_valid = NOT(policy_requires_delay) OR is_execute_path
+    # is_valid = NOT(policy_requires_delay) OR is_delayed_execution_path
     swap not or
     # => [is_valid_execute_path, TX_SUMMARY_COMMITMENT]
 
-    assert.err=ERR_EXECUTE_PATH_MISMATCH
+    assert.err=ERR_DELAYED_EXECUTION_PATH_MISMATCH
     # => [TX_SUMMARY_COMMITMENT]
 
     # ------ Finalizing timelock proposals ------
