@@ -184,6 +184,11 @@ impl Note {
         &self.attachments
     }
 
+    /// Returns `true` if the note has at least one attachment.
+    pub fn has_attachments(&self) -> bool {
+        !self.attachments.is_empty()
+    }
+
     /// Returns a reference to the note's metadata.
     pub fn metadata(&self) -> &NoteMetadata {
         self.header.metadata()

@@ -101,7 +101,7 @@ The `Note` lifecycle proceeds through four primary phases: **creation**, **valid
 Accounts can create notes in a transaction. The `Note` exists if it is included in the global notes DB.
 
 - **Users:** Executing local or network transactions.
-- **Miden operators:** Facilitating on-chain actions, e.g. such as executing user notes against a DEX or other contracts.
+- **[Miden node infrastructure](./index.md#operational-roles-capture-and-progress-state):** Facilitating on-chain actions, e.g. such as executing user notes against a DEX or other contracts.
 
 #### Note Type
 

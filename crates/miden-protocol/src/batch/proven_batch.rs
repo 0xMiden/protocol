@@ -167,7 +167,6 @@ impl ProvenBatch {
 
 impl Serializable for ProvenBatch {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.id.write_into(target);
         self.reference_block_commitment.write_into(target);
         self.reference_block_num.write_into(target);
         self.account_updates.write_into(target);
@@ -181,7 +180,6 @@ impl Serializable for ProvenBatch {
 
 impl Deserializable for ProvenBatch {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let id = BatchId::read_from(source)?;
         let reference_block_commitment = Word::read_from(source)?;
         let reference_block_num = BlockNumber::read_from(source)?;
         let account_updates = BTreeMap::read_from(source)?;
@@ -190,6 +188,9 @@ impl Deserializable for ProvenBatch {
         let batch_expiration_block_num = BlockNumber::read_from(source)?;
         let transactions = OrderedTransactionHeaders::read_from(source)?;
         let proof = ExecutionProof::read_from(source)?;
+
+        let id =
+            BatchId::from_ids(transactions.as_slice().iter().map(|tx| (tx.id(), tx.account_id())));
 
         Self::new_unchecked(
             id,

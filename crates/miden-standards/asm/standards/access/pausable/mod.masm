@@ -102,31 +102,36 @@ end
 
 #! Requires the contract to be unpaused (storage word is the zero word).
 #!
-#! Reads [`IS_PAUSED_SLOT`] on the active account and applies [`word::eqz`]. If the stored word
-#! is non-zero (paused), panics with [`ERR_PAUSABLE_IS_PAUSED`].
+#! If [`IS_PAUSED_SLOT`] is not installed on the active account, the check is skipped and the
+#! account is treated as "unpaused" — so the assertion is a no-op for accounts that did not
+#! install the Pausable component.
 #!
-#! If the `IS_PAUSED_SLOT` is not installed on the account, `active_account:: get_item` 
-#! returns the zero word, which is treated as "unpaused" — so the assertion is a no-op
-#! for accounts that did not install the Pausable component. This is the canonical way for
-#! cross-cutting consumers (TokenPolicyManager dispatch, asset callbacks, metadata setters) to
-#! gate their logic on pause state without making Pausable a hard dependency.
+#! Otherwise reads [`IS_PAUSED_SLOT`] and applies [`word::eqz`]. If the stored word is non-zero
+#! (paused), panics with [`ERR_PAUSABLE_IS_PAUSED`].
 #!
 #! Inputs:  []
 #! Outputs: []
 #!
 #! Panics if:
-#! - the paused-state word is not the zero word.
+#! - the slot is installed and the paused-state word is not the zero word.
 #!
 #! Invocation: exec
 pub proc assert_not_paused
     push.IS_PAUSED_SLOT[0..2]
-    exec.active_account::get_item
-    # => [is_paused, 0, 0, 0]
+    exec.active_account::has_storage_slot
+    # => [has_slot]
 
-    exec.word::eqz
-    # => [is_unpaused]
+    if.true
+        push.IS_PAUSED_SLOT[0..2]
+        exec.active_account::get_item
+        # => [is_paused, 0, 0, 0]
 
-    assert.err=ERR_PAUSABLE_IS_PAUSED
+        exec.word::eqz
+        # => [is_unpaused]
+
+        assert.err=ERR_PAUSABLE_IS_PAUSED
+        # => []
+    end
     # => []
 end
 

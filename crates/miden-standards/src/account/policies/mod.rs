@@ -10,10 +10,12 @@
 //! - **receive** — fired by the protocol's `on_before_asset_added_to_account` callback when the
 //!   issuing faucet's asset is added to an account vault (transfer "to" side)
 //!
-//! The manager owns an `active_*_policy` slot per mint / burn kind (and dispatches them via
-//! `dynexec`) plus an `allowed_*_policies` map per kind for set-time validation. The active roots
-//! for send and receive policies reside directly in the protocol-reserved
-//! callback slots so the kernel dispatches to them via `call`.
+//! The manager owns an `active_*_policy` slot per kind plus an `allowed_*_policies` map per kind
+//! for set-time validation. Mint and burn are dispatched via `dynexec` by `exec`-invoked
+//! wrappers; send and receive are dispatched by `invoke_send_policy` / `invoke_receive_policy`
+//! wrappers whose roots live in
+//! the protocol-reserved callback slots, so the kernel `dyncall`s the wrapper, which applies the
+//! pause check and then dispatches to the active policy.
 //!
 //! Authority for switching policies is provided by the separate
 //! [`Authority`][crate::account::access::Authority] component, which must be installed on the

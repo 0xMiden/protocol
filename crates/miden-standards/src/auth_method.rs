@@ -3,6 +3,7 @@ use alloc::vec::Vec;
 
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 use miden_protocol::note::NoteScriptRoot;
+use miden_protocol::transaction::TransactionScriptRoot;
 
 /// Defines standard authentication methods supported by account auth components.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -28,10 +29,12 @@ pub enum AuthMethod {
     /// An authentication method intended for network-owned accounts.
     ///
     /// It restricts the account to consuming only notes whose script roots are in
-    /// `allowed_script_roots`, and forbids transaction scripts from running against the account.
-    /// The allowlist must be non-empty.
+    /// `allowed_script_roots` (which must be non-empty), and to executing only transaction scripts
+    /// whose roots are in `allowed_tx_script_roots`. An empty `allowed_tx_script_roots` permits no
+    /// transaction scripts.
     NetworkAccount {
         allowed_script_roots: BTreeSet<NoteScriptRoot>,
+        allowed_tx_script_roots: BTreeSet<TransactionScriptRoot>,
     },
     /// A non-standard authentication method.
     Unknown,

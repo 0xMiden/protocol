@@ -264,7 +264,7 @@ impl MockChain {
         // This is needed because apply_block only stores headers for private notes,
         // but tests need full note details to create input notes.
         for note in genesis_notes {
-            if let Some(MockChainNote::Private(_, _, inclusion_proof)) =
+            if let Some(MockChainNote::Private(_, _, _, inclusion_proof)) =
                 chain.committed_notes.get(&note.id())
             {
                 chain.committed_notes.insert(
@@ -962,20 +962,24 @@ impl MockChain {
             )
             .context("failed to create inclusion proof for output note")?;
 
-            if let OutputNote::Public(public_note) = created_note {
-                self.committed_notes.insert(
-                    public_note.id(),
-                    MockChainNote::Public(public_note.as_note().clone(), note_inclusion_proof),
-                );
-            } else {
-                self.committed_notes.insert(
-                    created_note.id(),
-                    MockChainNote::Private(
-                        created_note.id(),
-                        *created_note.metadata(),
-                        note_inclusion_proof,
-                    ),
-                );
+            match created_note {
+                OutputNote::Public(public_note) => {
+                    self.committed_notes.insert(
+                        public_note.id(),
+                        MockChainNote::Public(public_note.as_note().clone(), note_inclusion_proof),
+                    );
+                },
+                OutputNote::Private(private_note) => {
+                    self.committed_notes.insert(
+                        private_note.id(),
+                        MockChainNote::Private(
+                            private_note.id(),
+                            *private_note.metadata(),
+                            private_note.attachments().clone(),
+                            note_inclusion_proof,
+                        ),
+                    );
+                },
             }
         }
 
