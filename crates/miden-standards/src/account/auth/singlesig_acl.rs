@@ -88,8 +88,14 @@ impl Default for AuthSingleSigAclConfig {
 /// 1. A kernel-detected account procedure (other than the auth procedure at index 0) was called and
 ///    is not on the exempt list.
 /// 2. Any output note was created — unconditional (see the note-detection caveat below).
-/// 3. Any input note was consumed AND no exempt procedure was detected as called during the
-///    transaction (the note consumption was not vouched for by an exempt procedure).
+/// 3. Any input note was consumed AND no detected exempt procedure ran anywhere in the transaction.
+///    The "vouching" here is transaction-wide, not per-note: a single detected exempt call lifts
+///    the input-note signature requirement for every input note in the same transaction. Asset
+///    exfiltration is still blocked by check 2, but exempting a detected procedure (even a benign
+///    read-only getter) implicitly relaxes the input-note signature requirement for any consumption
+///    happening alongside it. Authors should only exempt procedures whose semantics they are happy
+///    to extend to "this procedure may run unsigned AND any input notes may be consumed unsigned in
+///    the same transaction".
 ///
 /// When none of these hold, only the nonce is conditionally incremented (when the account state
 /// changed or the account is new) without verifying a signature.

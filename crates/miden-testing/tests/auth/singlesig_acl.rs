@@ -339,8 +339,9 @@ async fn test_acl_empty_exempt_list_default_denies_unsigned(
     Ok(())
 }
 
-/// A transaction that calls a mix of exempt and non-exempt procedures must still require
-/// a signature, because at least one non-exempt procedure was invoked.
+/// A transaction that calls a mix of detected exempt and detected non-exempt procedures must
+/// still require a signature: a detected exempt call must not suppress the signature
+/// requirement for a co-occurring non-exempt call.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[case::falcon(AuthScheme::Falcon512Poseidon2)]
@@ -348,12 +349,14 @@ async fn test_acl_empty_exempt_list_default_denies_unsigned(
 async fn test_acl_mixed_exempt_and_protected_requires_auth(
     #[case] auth_scheme: AuthScheme,
 ) -> anyhow::Result<()> {
-    let (_get_item, _set_item, account_procedure_1) = mock_component_proc_roots();
-    let exempt_procedures = vec![account_procedure_1];
+    let (get_item, _set_item, _account_procedure_1) = mock_component_proc_roots();
+    let exempt_procedures = vec![get_item];
     let (account, mock_chain, note) = setup_acl_test(exempt_procedures.clone(), auth_scheme)?;
 
     let authenticator = build_acl_authenticator(exempt_procedures, auth_scheme);
 
+    // Call `get_item` (detected & exempt) and `set_item` (detected & non-exempt) in the same
+    // transaction so both branches of the per-procedure check are exercised.
     let tx_script_mixed = format!(
         r#"
         use mock::account
@@ -361,11 +364,13 @@ async fn test_acl_mixed_exempt_and_protected_requires_auth(
         const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
 
         begin
-            call.account::account_procedure_1
-            drop
             push.MOCK_VALUE_SLOT0[0..2]
             call.account::get_item
             dropw
+            push.1.2.3.4
+            push.MOCK_VALUE_SLOT0[0..2]
+            call.account::set_item
+            dropw dropw
         end
         "#,
         mock_value_slot0 = &*MOCK_VALUE_SLOT0,

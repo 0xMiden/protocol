@@ -9,10 +9,12 @@ use miden::standards::auth::signature
 use miden::core::word
 
 # Tracks whether any exempt procedure was detected as called during the procedure-iteration
-# loop. Required so the input-note check can distinguish "the note was handled by an exempt
-# procedure" (trusted) from "the note was consumed without any exempt procedure running"
-# (must be signed). `was_procedure_called` only fires for procedures that touch account-
-# restricted kernel APIs, so an exempt procedure that is never detected stays at 0 here.
+# loop. Required so the input-note check can distinguish "an exempt procedure ran in this
+# transaction" (trusted) from "no exempt procedure ran at all" (input-note consumption must
+# be signed). This is a transaction-wide flag — a single detected exempt call lifts the
+# input-note signature requirement for every input note in the same transaction, not
+# per-note. `was_procedure_called` only fires for procedures that touch account-restricted
+# kernel APIs, so an exempt procedure that is never detected stays at 0 here.
 const ANY_EXEMPT_CALLED_LOC = 0
 
 # CONSTANTS
@@ -128,7 +130,11 @@ pub proc auth_tx_acl(auth_args: word)
     # => [auth_required, pad(16)]
 
     # ------ Output notes: any output note created requires a signature, unconditionally ------
-
+    #
+    # SECURITY-CRITICAL: this `or` must stay unconditional. It is the only barrier against an
+    # account procedure that emits notes via `output_note_create` (which does not trigger
+    # `was_procedure_called`) running unsigned and exfiltrating assets. Do not gate it on the
+    # exempt list or on procedure detection.
     exec.tx::get_num_output_notes neq.0 or
     # => [auth_required, pad(16)]
 
