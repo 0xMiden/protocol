@@ -436,11 +436,11 @@ fn build_executed_transaction<STORE: DataStore + Sync, AUTH: TransactionAuthenti
         TransactionKernel::from_transaction_parts(&stack_outputs, &advice_inputs, output_notes)
             .map_err(TransactionExecutorError::TransactionOutputConstructionFailed)?;
 
-    let pre_fee_delta_commitment = pre_fee_account_delta.to_commitment();
-    if tx_outputs.account_delta_commitment() != pre_fee_delta_commitment {
-        return Err(TransactionExecutorError::InconsistentAccountDeltaCommitment {
-            in_kernel_commitment: tx_outputs.account_delta_commitment(),
-            host_commitment: pre_fee_delta_commitment,
+    let patch_commitment = account_patch.to_commitment();
+    if tx_outputs.account_patch_commitment() != patch_commitment {
+        return Err(TransactionExecutorError::InconsistentAccountPatchCommitment {
+            in_kernel_commitment: tx_outputs.account_patch_commitment(),
+            host_commitment: patch_commitment,
         });
     }
 

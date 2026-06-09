@@ -108,9 +108,9 @@ pub enum TransactionExecutorError {
     #[error("failed to process account update commitment: {0}")]
     AccountUpdateCommitment(&'static str),
     #[error(
-        "account delta commitment computed in transaction kernel ({in_kernel_commitment}) does not match account delta computed via the host ({host_commitment})"
+        "account patch commitment computed in transaction kernel ({in_kernel_commitment}) does not match account patch computed via the host ({host_commitment})"
     )]
-    InconsistentAccountDeltaCommitment {
+    InconsistentAccountPatchCommitment {
         in_kernel_commitment: Word,
         host_commitment: Word,
     },
