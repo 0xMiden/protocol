@@ -86,17 +86,17 @@ impl SendNotesTransactionScript {
     ) -> Result<Self, SendNotesTransactionScriptError> {
         let sender = interface.id();
 
-        let is_fungible_faucet = interface.contains(FungibleFaucet::code().procedure_roots());
-        let is_basic_wallet = interface.contains(BasicWallet::code().procedure_roots());
+        let has_mint_and_send = interface.contains([FungibleFaucet::mint_and_send_root()]);
+        let has_move_asset_to_note = interface.contains([BasicWallet::move_asset_to_note_root()]);
         let is_owner_controlled = interface.contains(Ownable2Step::code().procedure_roots());
 
-        let body = if is_fungible_faucet {
+        let body = if has_mint_and_send {
             if is_owner_controlled {
                 return Err(SendNotesTransactionScriptError::UnsupportedAccountInterface);
             }
-            fungible_faucet_note_body(sender, output_notes)?
-        } else if is_basic_wallet {
-            basic_wallet_note_body(sender, output_notes)?
+            mint_and_send_note_body(sender, output_notes)?
+        } else if has_move_asset_to_note {
+            move_asset_to_note_body(sender, output_notes)?
         } else {
             return Err(SendNotesTransactionScriptError::UnsupportedAccountInterface);
         };
@@ -149,7 +149,7 @@ pub enum SendNotesTransactionScriptError {
 // HELPER FUNCTIONS
 // ================================================================================================
 
-fn basic_wallet_note_body(
+fn move_asset_to_note_body(
     sender: AccountId,
     notes: &[PartialNote],
 ) -> Result<String, SendNotesTransactionScriptError> {
@@ -192,7 +192,7 @@ fn basic_wallet_note_body(
     Ok(body)
 }
 
-fn fungible_faucet_note_body(
+fn mint_and_send_note_body(
     sender: AccountId,
     notes: &[PartialNote],
 ) -> Result<String, SendNotesTransactionScriptError> {
