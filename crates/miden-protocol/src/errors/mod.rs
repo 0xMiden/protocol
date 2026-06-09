@@ -176,9 +176,9 @@ pub enum AccountError {
     )]
     ApplyFullStateDeltaToAccount,
     #[error(
-        "failed to apply new-account patch to existing account; new-account patches can be converted to accounts directly"
+        "failed to apply full state patch to existing account; full state patches can be converted to accounts directly"
     )]
-    ApplyNewAccountPatchToAccount,
+    ApplyFullStatePatchToAccount,
     #[error("delta is for account ID {delta_id} but is being applied to account {account_id}")]
     DeltaAccountIdMismatch {
         account_id: AccountId,
@@ -191,6 +191,8 @@ pub enum AccountError {
     },
     #[error("only account deltas representing a full account can be converted to a full account")]
     PartialStateDeltaToAccount,
+    #[error("only account patches representing a full account can be converted to a full account")]
+    PartialStatePatchToAccount,
     #[error("maximum number of storage map leaves exceeded")]
     MaxNumStorageMapLeavesExceeded(#[source] MerkleError),
     /// This variant can be used by methods that are not inherent to the account but want to return

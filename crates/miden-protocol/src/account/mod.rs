@@ -356,8 +356,8 @@ impl Account {
             });
         }
 
-        if patch.code().is_some() {
-            return Err(AccountError::ApplyNewAccountPatchToAccount);
+        if patch.is_full_state() {
+            return Err(AccountError::ApplyFullStatePatchToAccount);
         }
 
         self.vault
@@ -733,7 +733,7 @@ mod tests {
         )?;
 
         let err = account.apply_patch(&patch).unwrap_err();
-        assert_matches!(err, AccountError::ApplyNewAccountPatchToAccount);
+        assert_matches!(err, AccountError::ApplyFullStatePatchToAccount);
 
         Ok(())
     }

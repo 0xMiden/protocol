@@ -7,9 +7,17 @@ use alloc::vec::Vec;
 pub use storage::{AccountStoragePatch, StorageMapPatch, StorageSlotPatch};
 pub use vault::AccountVaultPatch;
 
-use crate::account::{AccountCode, AccountId};
+use crate::account::{
+    Account,
+    AccountCode,
+    AccountId,
+    AccountStorage,
+    StorageSlot,
+    StorageSlotType,
+};
+use crate::asset::AssetVault;
 use crate::crypto::SequentialCommit;
-use crate::errors::AccountPatchError;
+use crate::errors::{AccountError, AccountPatchError};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -27,6 +35,10 @@ use crate::{Felt, Word};
 /// USDC balance is 100". This means a patch can be applied to compute the new account state
 /// without loading the previous state and without invoking any custom asset compose logic (e.g.
 /// merge/split procedures defined by the issuing faucet).
+///
+/// The presence of the code in a patch signals if the patch is a _full state_ or _partial state_
+/// patch. A full state patch must be converted into an [`Account`] object, while a partial state
+/// patch must be applied to an existing [`Account`].
 ///
 /// The patch represents updates to the account as follows:
 /// - storage: an [`AccountStoragePatch`] containing the new values of changed storage slots and map
@@ -142,6 +154,17 @@ impl AccountPatch {
         self.final_nonce
     }
 
+    /// Returns `true` if this patch is a "full state" patch, `false` otherwise, i.e. if it is a
+    /// "partial state" patch.
+    ///
+    /// See the type-level docs for more on this distinction.
+    pub fn is_full_state(&self) -> bool {
+        // TODO(code_upgrades): Change this to another detection mechanism once we have code upgrade
+        // support, at which point the presence of code may not be enough of an indication that a
+        // patch can be converted to a full account.
+        self.code.is_some() && self.final_nonce.is_some()
+    }
+
     /// Returns true if this account patch does not contain any vault or storage updates and the
     /// nonce wasn't updated.
     pub fn is_empty(&self) -> bool {
@@ -202,6 +225,52 @@ impl AccountPatch {
     /// tx kernel cannot efficiently get the number of changed entries before the iteration.
     pub fn to_commitment(&self) -> Word {
         <Self as SequentialCommit>::to_commitment(self)
+    }
+}
+
+impl TryFrom<&AccountPatch> for Account {
+    type Error = AccountError;
+
+    /// Converts an [`AccountPatch`] into an [`Account`].
+    ///
+    /// Conceptually, this applies the patch onto an empty account. Only patches that fully
+    /// describe an account (i.e. carry account code and a final nonce) can be converted; see
+    /// [`AccountPatch`] for details.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The patch does not carry account code or a final nonce.
+    /// - Applying the vault patch to an empty vault fails.
+    /// - Applying the storage patch to the reconstructed initial storage fails.
+    fn try_from(patch: &AccountPatch) -> Result<Self, Self::Error> {
+        if !patch.is_full_state() {
+            return Err(AccountError::PartialStatePatchToAccount);
+        }
+
+        let Some(code) = patch.code().cloned() else {
+            return Err(AccountError::PartialStatePatchToAccount);
+        };
+        let Some(nonce) = patch.final_nonce() else {
+            return Err(AccountError::PartialStatePatchToAccount);
+        };
+
+        let mut vault = AssetVault::default();
+        vault.apply_patch(patch.vault()).map_err(AccountError::AssetVaultUpdateError)?;
+
+        let mut empty_storage_slots = Vec::new();
+        for (slot_name, slot_patch) in patch.storage().slots() {
+            let slot = match slot_patch.slot_type() {
+                StorageSlotType::Value => StorageSlot::with_empty_value(slot_name.clone()),
+                StorageSlotType::Map => StorageSlot::with_empty_map(slot_name.clone()),
+            };
+            empty_storage_slots.push(slot);
+        }
+        let mut storage = AccountStorage::new(empty_storage_slots)
+            .expect("storage patch should contain a valid number of slots");
+        storage.apply_patch(patch.storage())?;
+
+        Account::new(patch.id(), vault, storage, code, nonce, None)
     }
 }
 
@@ -287,6 +356,7 @@ mod tests {
 
     use super::{AccountPatch, AccountVaultPatch};
     use crate::account::{
+        Account,
         AccountCode,
         AccountId,
         AccountStoragePatch,
@@ -295,7 +365,7 @@ mod tests {
         StorageSlotName,
     };
     use crate::asset::{FungibleAsset, NonFungibleAsset};
-    use crate::errors::AccountPatchError;
+    use crate::errors::{AccountError, AccountPatchError};
     use crate::testing::account_id::ACCOUNT_ID_PRIVATE_SENDER;
     use crate::utils::serde::Serializable;
     use crate::{Felt, Word};
@@ -408,6 +478,72 @@ mod tests {
             Some(AccountCode::mock()),
             Some(Felt::ONE),
         )?;
+
+        Ok(())
+    }
+
+    /// A patch carrying account code and a final nonce can be converted to an [`Account`].
+    #[test]
+    fn account_try_from_patch_succeeds() -> anyhow::Result<()> {
+        let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER)?;
+        let code = AccountCode::mock();
+        let asset = FungibleAsset::mock(42);
+
+        let slot_name = StorageSlotName::mock(4);
+        let slot_value = Word::from([1, 2, 3, 4u32]);
+
+        let storage_patch =
+            AccountStoragePatch::from_iters([], [(slot_name.clone(), slot_value)], []);
+
+        let patch = AccountPatch::new(
+            account_id,
+            storage_patch,
+            AccountVaultPatch::with_assets([asset]),
+            Some(code.clone()),
+            Some(Felt::ONE),
+        )?;
+
+        let account = Account::try_from(&patch)?;
+
+        assert_eq!(account.id(), account_id);
+        assert_eq!(account.code(), &code);
+        assert_eq!(account.nonce(), Felt::ONE);
+        assert_eq!(account.storage().get_item(&slot_name)?, slot_value);
+        assert_eq!(account.vault().get(asset.vault_key()), Some(asset));
+
+        Ok(())
+    }
+
+    /// A patch lacking code or a final nonce cannot be converted to an [`Account`].
+    #[test]
+    fn account_try_from_partial_patch_fails() -> anyhow::Result<()> {
+        let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER)?;
+
+        // Missing code.
+        let no_code = AccountPatch::new(
+            account_id,
+            AccountStoragePatch::new(),
+            AccountVaultPatch::default(),
+            None,
+            Some(Felt::from(2_u32)),
+        )?;
+        assert_matches!(
+            Account::try_from(&no_code).unwrap_err(),
+            AccountError::PartialStatePatchToAccount
+        );
+
+        // Missing final nonce (empty patch).
+        let empty = AccountPatch::new(
+            account_id,
+            AccountStoragePatch::new(),
+            AccountVaultPatch::default(),
+            None,
+            None,
+        )?;
+        assert_matches!(
+            Account::try_from(&empty).unwrap_err(),
+            AccountError::PartialStatePatchToAccount
+        );
 
         Ok(())
     }
