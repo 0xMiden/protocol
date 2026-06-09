@@ -1,12 +1,12 @@
 [package]
 authors.workspace      = true
 categories             = ["no-std"]
-description            = "Miden blockchain transaction batch executor and prover"
+description            = "Miden blockchain transaction batch executor, prover, and verifier"
 edition.workspace      = true
 homepage.workspace     = true
 keywords               = ["batch", "miden", "prover"]
 license.workspace      = true
-name                   = "miden-tx-batch-prover"
+name                   = "miden-tx-batch"
 readme                 = "README.md"
 repository.workspace   = true
 rust-version.workspace = true
