@@ -97,7 +97,7 @@
 - [BREAKING] Removed `AccountType` and renamed `AccountStorageMode` to `AccountType` ([#2939](https://github.com/0xMiden/protocol/pull/2939), [#2942](https://github.com/0xMiden/protocol/pull/2942)).
 - [BREAKING] Updated note nullifiers to include note metadata and attachments commitment ([#2953](https://github.com/0xMiden/protocol/pull/2953)).
 - Exposed `token_config_slot_value` on `FungibleFaucet` to allow reading the token config word directly from the account storage ([#2954](https://github.com/0xMiden/protocol/pull/2954)).
-- [BREAKING] Introduced `AccountCodeInterface` ([#2621](https://github.com/0xMiden/protocol/pull/2621)).
+- [BREAKING] Introduced `AccountCodeInterface` ([#2924](https://github.com/0xMiden/protocol/pull/2924)).
 
 ### Fixes
 
