@@ -2,10 +2,10 @@ use alloc::sync::Arc;
 use std::collections::BTreeMap;
 
 use anyhow::Context;
-use miden_batch::{BatchExecutor, LocalBatchProver};
 use miden_protocol::Word;
 use miden_protocol::batch::ProposedBatch;
 use miden_protocol::block::BlockNumber;
+use miden_tx_batch::{BatchExecutor, LocalBatchProver};
 
 use super::proposed_batch::{TestSetup, mock_note, mock_output_note, setup_chain};
 use super::proven_tx_builder::MockProvenTxBuilder;

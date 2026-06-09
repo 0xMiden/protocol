@@ -4,6 +4,7 @@
 
 ### Changes
 - [BREAKING] Renamed the `miden-tx-batch-prover` crate to `miden-batch` ([#3035](https://github.com/0xMiden/protocol/pull/3035)).
+- [BREAKING] Renamed the `miden-tx-batch-prover` crate to `miden-tx-batch`, reflecting that it now executes, proves, and verifies transaction batches ([#3035](https://github.com/0xMiden/protocol/pull/3035)).
 - Added a skeleton batch kernel ([#1122](https://github.com/0xMiden/protocol/issues/1122)) wired through `LocalBatchProver::prove` and attached to `ProvenBatch` as an `ExecutionProof`. It does not yet perform any verification.
 
 - [BREAKING] Renamed `AccountStorageDelta` to `AccountStoragePatch` ([#3002](https://github.com/0xMiden/protocol/pull/3002)).

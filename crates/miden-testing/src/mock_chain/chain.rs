@@ -2,7 +2,6 @@ use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec::Vec;
 
 use anyhow::Context;
-use miden_batch::LocalBatchProver;
 use miden_block_prover::LocalBlockProver;
 use miden_processor::serde::DeserializationError;
 use miden_protocol::MIN_PROOF_SECURITY_LEVEL;
@@ -34,6 +33,7 @@ use miden_protocol::transaction::{
 use miden_tx::LocalTransactionProver;
 use miden_tx::auth::BasicAuthenticator;
 use miden_tx::utils::serde::{ByteReader, ByteWriter, Deserializable, Serializable};
+use miden_tx_batch::LocalBatchProver;
 
 use super::note::MockChainNote;
 use crate::{MockChainBuilder, TransactionContextBuilder};

@@ -1,4 +1,4 @@
-# Miden Batch
+# Miden Transaction Batch
 
 This crate contains tools for executing, proving, and verifying Miden transaction batches.
 
