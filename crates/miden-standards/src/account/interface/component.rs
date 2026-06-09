@@ -14,6 +14,7 @@ use crate::account::auth::{
     AuthSingleSig,
     AuthSingleSigAcl,
     NetworkAccountNoteAllowlist,
+    NetworkAccountTxScriptAllowlist,
 };
 use crate::account::interface::AccountInterfaceError;
 
@@ -411,9 +412,12 @@ fn extract_multisig_auth_method(
 /// Extracts authentication method from a network-account component.
 fn extract_network_account_auth_method(storage: &AccountStorage) -> AuthMethod {
     let allowlist = NetworkAccountNoteAllowlist::try_from(storage)
-        .expect("network account allowlist slot should be present and valid");
+        .expect("network account note allowlist slot should be present and valid");
+    let tx_script_allowlist = NetworkAccountTxScriptAllowlist::try_from(storage)
+        .expect("network account tx script allowlist slot should be present and valid");
 
     AuthMethod::NetworkAccount {
         allowed_script_roots: allowlist.into_allowed_script_roots(),
+        allowed_tx_script_roots: tx_script_allowlist.into_allowed_script_roots(),
     }
 }
