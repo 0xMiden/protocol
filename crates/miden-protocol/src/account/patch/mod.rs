@@ -1,6 +1,7 @@
 mod vault;
 
 mod storage;
+use alloc::string::ToString;
 use alloc::vec::Vec;
 
 pub use storage::{AccountStoragePatch, StorageMapPatch, StorageSlotPatch};
@@ -9,6 +10,13 @@ pub use vault::AccountVaultPatch;
 use crate::account::{AccountCode, AccountId};
 use crate::crypto::SequentialCommit;
 use crate::errors::AccountPatchError;
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 use crate::{Felt, Word};
 
 /// An [`AccountPatch`] describes the new absolute state of an account after one or more
@@ -237,19 +245,97 @@ impl SequentialCommit for AccountPatch {
     }
 }
 
+impl Serializable for AccountPatch {
+    fn write_into<W: ByteWriter>(&self, target: &mut W) {
+        self.account_id.write_into(target);
+        self.storage.write_into(target);
+        self.vault.write_into(target);
+        self.code.write_into(target);
+        self.final_nonce.write_into(target);
+    }
+
+    fn get_size_hint(&self) -> usize {
+        self.account_id.get_size_hint()
+            + self.storage.get_size_hint()
+            + self.vault.get_size_hint()
+            + self.code.get_size_hint()
+            + self.final_nonce.get_size_hint()
+    }
+}
+
+impl Deserializable for AccountPatch {
+    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
+        let account_id = AccountId::read_from(source)?;
+        let storage = AccountStoragePatch::read_from(source)?;
+        let vault = AccountVaultPatch::read_from(source)?;
+        let code = <Option<AccountCode>>::read_from(source)?;
+        let final_nonce = <Option<Felt>>::read_from(source)?;
+
+        Self::new(account_id, storage, vault, code, final_nonce)
+            .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
+    }
+}
+
 // TESTS
 // ================================================================================================
 
 #[cfg(test)]
 mod tests {
     use assert_matches::assert_matches;
+    use miden_core::serde::Deserializable;
 
     use super::{AccountPatch, AccountVaultPatch};
-    use crate::Felt;
-    use crate::account::{AccountCode, AccountId, AccountStoragePatch, StorageSlotName};
-    use crate::asset::FungibleAsset;
+    use crate::account::{
+        AccountCode,
+        AccountId,
+        AccountStoragePatch,
+        StorageMapKey,
+        StorageMapPatch,
+        StorageSlotName,
+    };
+    use crate::asset::{FungibleAsset, NonFungibleAsset};
     use crate::errors::AccountPatchError;
     use crate::testing::account_id::ACCOUNT_ID_PRIVATE_SENDER;
+    use crate::utils::serde::Serializable;
+    use crate::{Felt, Word};
+
+    #[test]
+    fn account_patch_serde() -> anyhow::Result<()> {
+        let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
+        let asset_0 = FungibleAsset::mock(100);
+        let asset_1 = FungibleAsset::new(ACCOUNT_ID_PRIVATE_SENDER.try_into()?, 500_000)?.into();
+        let asset_2 = NonFungibleAsset::mock(&[10]);
+        let asset_3 = NonFungibleAsset::mock(&[20]);
+        let vault_patch = AccountVaultPatch::with_assets([asset_0, asset_1, asset_2, asset_3]);
+
+        let storage_patch = AccountStoragePatch::from_iters(
+            [StorageSlotName::mock(1)],
+            [
+                (StorageSlotName::mock(2), Word::from([1, 1, 1, 1u32])),
+                (StorageSlotName::mock(3), Word::from([1, 1, 0, 1u32])),
+            ],
+            [(
+                StorageSlotName::mock(4),
+                StorageMapPatch::from_iters(
+                    [
+                        StorageMapKey::from_array([1, 1, 1, 0]),
+                        StorageMapKey::from_array([0, 1, 1, 1]),
+                    ],
+                    [(StorageMapKey::from_array([1, 1, 1, 1]), Word::from([1, 1, 1, 1u32]))],
+                ),
+            )],
+        );
+
+        assert_eq!(storage_patch.to_bytes().len(), storage_patch.get_size_hint());
+        assert_eq!(vault_patch.to_bytes().len(), vault_patch.get_size_hint());
+
+        let account_patch =
+            AccountPatch::new(account_id, storage_patch, vault_patch, None, Some(Felt::from(5u8)))?;
+        assert_eq!(AccountPatch::read_from_bytes(&account_patch.to_bytes())?, account_patch);
+        assert_eq!(account_patch.to_bytes().len(), account_patch.get_size_hint());
+
+        Ok(())
+    }
 
     /// A `final_nonce` set to `Some(Felt::ZERO)` is rejected: the tx kernel guarantees the nonce of
     /// an updated account is at least one, so empty patches must pass `None` instead.
