@@ -60,7 +60,7 @@ const ERR_INVALID_NOTE_RESTRICTIONS = "procedure policy note restrictions must b
 
 const ERR_INSUFFICIENT_SIGNATURES = "insufficient number of signatures"
 
-const ERR_EXECUTE_PATH_MISMATCH = "execute path must match delay requirement"
+const ERR_EXECUTE_PATH_MISMATCH = "execute_proposed_transaction must be called iff a called procedure requires delayed execution"
 
 # LOCAL ADDRESSES (set_procedure_policy)
 # =================================================================================================
@@ -417,11 +417,14 @@ end
 #! panic via [`compute_called_proc_policy`] because this component has no timelock.
 #!
 #! Inputs:  [default_threshold]
-#! Outputs: [policy_threshold]
+#! Outputs: [policy_threshold, policy_requires_delay]
 #!
 #! Where:
 #! - default_threshold is forwarded to [`compute_called_proc_policy`] as the per-procedure
 #!   contribution for any called procedure without an explicit policy.
+#! - policy_threshold is the effective threshold required by the called procedure policies.
+#! - policy_requires_delay is 1 when any called procedure's policy explicitly requires the
+#!   delayed execution mode, 0 otherwise.
 #!
 #! Invocation: exec
 #!

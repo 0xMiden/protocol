@@ -322,7 +322,7 @@ impl AuthMultisigSmart {
         (
             Self::tx_proposals_slot().clone(),
             StorageSlotSchema::map(
-                "Active tx proposals: tx_hash => [unlock_timestamp, expiration_height, 0, 0]",
+                "Active tx proposals: tx_summary_commitment => [unlock_timestamp, expiration_height, 0, 0]",
                 SchemaType::native_word(),
                 SchemaType::native_word(),
             ),
@@ -332,14 +332,20 @@ impl AuthMultisigSmart {
     pub fn pending_propose_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
         (
             Self::pending_propose_slot().clone(),
-            StorageSlotSchema::value("Pending propose: TX_HASH", SchemaType::native_word()),
+            StorageSlotSchema::value(
+                "Pending propose: TX_SUMMARY_COMMITMENT",
+                SchemaType::native_word(),
+            ),
         )
     }
 
     pub fn pending_cancel_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
         (
             Self::pending_cancel_slot().clone(),
-            StorageSlotSchema::value("Pending cancel: TX_HASH", SchemaType::native_word()),
+            StorageSlotSchema::value(
+                "Pending cancel: TX_SUMMARY_COMMITMENT",
+                SchemaType::native_word(),
+            ),
         )
     }
 
@@ -414,7 +420,8 @@ impl From<AuthMultisigSmart> for AccountComponent {
             ]),
         ));
 
-        // Tx-proposals map slot (TX_HASH => [unlock_timestamp, expiration_height, 0, 0])
+        // Tx-proposals map slot (TX_SUMMARY_COMMITMENT => [unlock_timestamp, expiration_height, 0,
+        // 0])
         storage_slots.push(StorageSlot::with_map(
             AuthMultisigSmart::tx_proposals_slot().clone(),
             StorageMap::default(),

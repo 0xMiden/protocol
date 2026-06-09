@@ -833,17 +833,17 @@ async fn test_multisig_smart_pending_actions_are_mutually_exclusive(
     let mut mock_chain =
         MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
 
-    let pending_propose_hash =
+    let pending_propose_commitment =
         Word::from([Felt::from(11u32), Felt::from(22u32), Felt::from(33u32), Felt::from(44u32)]);
-    let pending_cancel_hash =
+    let pending_cancel_commitment =
         Word::from([Felt::from(55u32), Felt::from(66u32), Felt::from(77u32), Felt::from(88u32)]);
 
     let propose_twice_script = compile_multisig_smart_tx_script(format!(
         "
         begin
-            push.{pending_propose_hash}
+            push.{pending_propose_commitment}
             call.::miden::standards::components::auth::multisig_smart::propose_transaction
-            push.{pending_propose_hash}
+            push.{pending_propose_commitment}
             call.::miden::standards::components::auth::multisig_smart::propose_transaction
             dropw dropw dropw dropw dropw
         end
@@ -861,7 +861,7 @@ async fn test_multisig_smart_pending_actions_are_mutually_exclusive(
     let propose_once_script = compile_multisig_smart_tx_script(format!(
         "
         begin
-            push.{pending_cancel_hash}
+            push.{pending_cancel_commitment}
             call.::miden::standards::components::auth::multisig_smart::propose_transaction
             dropw dropw dropw dropw dropw
         end
@@ -887,9 +887,9 @@ async fn test_multisig_smart_pending_actions_are_mutually_exclusive(
     let cancel_twice_script = compile_multisig_smart_tx_script(format!(
         "
         begin
-            push.{pending_cancel_hash}
+            push.{pending_cancel_commitment}
             call.::miden::standards::components::auth::multisig_smart::cancel_transaction_proposal
-            push.{pending_cancel_hash}
+            push.{pending_cancel_commitment}
             call.::miden::standards::components::auth::multisig_smart::cancel_transaction_proposal
             dropw dropw dropw dropw dropw
         end
@@ -976,14 +976,14 @@ async fn test_multisig_smart_execute_before_min_delay_fails(
         .await
         .unwrap_err()
         .unwrap_unauthorized_err();
-    let tx_hash_word = tx_summary.as_ref().to_commitment();
+    let tx_summary_commitment_word = tx_summary.as_ref().to_commitment();
 
     // Propose the tx hash (2 sigs, default threshold). The propose script signs over its own
     // tx-summary; only the propose-tx itself needs sigs, not the proposed action.
     let propose_script = compile_multisig_smart_tx_script(format!(
         "
         begin
-            push.{tx_hash_word}
+            push.{tx_summary_commitment_word}
             call.::miden::standards::components::auth::multisig_smart::propose_transaction
             dropw dropw dropw dropw dropw
         end
@@ -1072,12 +1072,12 @@ async fn test_multisig_smart_full_propose_wait_execute_lifecycle(
         .await
         .unwrap_err()
         .unwrap_unauthorized_err();
-    let tx_hash_word = tx_summary.as_ref().to_commitment();
+    let tx_summary_commitment_word = tx_summary.as_ref().to_commitment();
 
     let propose_script = compile_multisig_smart_tx_script(format!(
         "
         begin
-            push.{tx_hash_word}
+            push.{tx_summary_commitment_word}
             call.::miden::standards::components::auth::multisig_smart::propose_transaction
             dropw dropw dropw dropw dropw
         end
@@ -1103,7 +1103,7 @@ async fn test_multisig_smart_full_propose_wait_execute_lifecycle(
     // After propose, the proposal entry is present.
     let stored_before = multisig_account
         .storage()
-        .get_map_item(AuthMultisigSmart::tx_proposals_slot(), tx_hash_word)
+        .get_map_item(AuthMultisigSmart::tx_proposals_slot(), tx_summary_commitment_word)
         .expect("tx proposals slot should exist");
     assert_ne!(stored_before, Word::empty(), "proposal must be written to storage");
 
@@ -1131,7 +1131,7 @@ async fn test_multisig_smart_full_propose_wait_execute_lifecycle(
     // Proposal entry should be cleared after execute.
     let stored_after = multisig_account
         .storage()
-        .get_map_item(AuthMultisigSmart::tx_proposals_slot(), tx_hash_word)
+        .get_map_item(AuthMultisigSmart::tx_proposals_slot(), tx_summary_commitment_word)
         .expect("tx proposals slot should still exist");
     assert_eq!(
         stored_after,
@@ -1407,10 +1407,11 @@ async fn test_multisig_smart_cancel_and_propose_failure_modes(
     let hash_b = Word::from([Felt::from(1002u32); 4]);
     let hash_never_proposed = Word::from([Felt::from(1003u32); 4]);
 
-    // ----- Branch 1: OLD_TX_HASH was never proposed → ERR_TX_NOT_PROPOSED.
+    // ----- Branch 1: OLD_TX_SUMMARY_COMMITMENT was never proposed → ERR_TX_NOT_PROPOSED.
     //
-    // MASM stack convention: `cancel_and_propose_new_transaction` consumes [OLD_TX_HASH,
-    // NEW_TX_HASH] (top → bottom). The script pushes NEW first so it lands below OLD.
+    // MASM stack convention: `cancel_and_propose_new_transaction` consumes
+    // [OLD_TX_SUMMARY_COMMITMENT, NEW_TX_SUMMARY_COMMITMENT] (top → bottom). The script pushes
+    // NEW first so it lands below OLD.
     let old_not_proposed_script = compile_multisig_smart_tx_script(format!(
         "
         begin
@@ -1459,7 +1460,7 @@ async fn test_multisig_smart_cancel_and_propose_failure_modes(
         mock_chain.prove_next_block()?;
     }
 
-    // ----- Branch 2: NEW_TX_HASH is already proposed → ERR_TX_ALREADY_PROPOSED.
+    // ----- Branch 2: NEW_TX_SUMMARY_COMMITMENT is already proposed → ERR_TX_ALREADY_PROPOSED.
     //
     // OLD = hash_a (valid existing proposal), NEW = hash_b (also already exists).
     let new_already_proposed_script = compile_multisig_smart_tx_script(format!(
