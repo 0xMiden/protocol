@@ -26,6 +26,14 @@
 - Fixed `pausable::assert_not_paused` to guard its storage read with `active_account::has_storage_slot`, making it a no-op on accounts without the `Pausable` component instead of panicking on the missing `is_paused` slot ([#3047](https://github.com/0xMiden/protocol/pull/3047)).
 - [BREAKING] Fixed batch ID being serialized/deserialized and potentially not matching the serialized transaction headers ([#3061](https://github.com/0xMiden/protocol/pull/3061)).
 
+## v0.15.2 (TBD)
+
+### Changes
+
+- [BREAKING] `AuthNetworkAccount` now gates transaction scripts with a root allowlist instead of banning them outright, enabling network accounts to run approved tx scripts such as setting the expiration delta ([#3028](https://github.com/0xMiden/protocol/pull/3028)).
+- [BREAKING] `TransactionScript::root()` now returns `TransactionScriptRoot` instead of `Word` ([#3028](https://github.com/0xMiden/protocol/pull/3028)).
+- Renamed `AuthNetworkAccount::with_allowlist` to `with_allowed_notes` and aligned the component's internal allowlist field names, for consistency with `with_allowed_tx_scripts` ([#3049](https://github.com/0xMiden/protocol/pull/3049)).
+
 ## v0.15.1 (TBD)
 
 ### Changes
