@@ -70,11 +70,22 @@ fn faucet_contract_creation() {
     );
 
     // The exempt procedure roots map is empty under the AuthControlled + SingleSig faucet —
-    // every authority-gated setter requires a signature, including burn/receive paths.
+    // every authority-gated setter requires a signature, including the burn/receive path that
+    // previously rode in unsigned via `allow_unauthorized_input_notes(true)`. Probe the full
+    // former trigger set so a regression that put any of them back into the exempt map would
+    // surface here.
     for probed_root in [
         FungibleFaucet::mint_and_send_root(),
         FungibleFaucet::set_max_supply_root(),
+        FungibleFaucet::set_description_root(),
+        FungibleFaucet::set_logo_uri_root(),
+        FungibleFaucet::set_external_link_root(),
+        TokenPolicyManager::set_mint_policy_root(),
+        TokenPolicyManager::set_burn_policy_root(),
+        TokenPolicyManager::set_send_policy_root(),
+        TokenPolicyManager::set_receive_policy_root(),
         PausableManager::pause_root(),
+        PausableManager::unpause_root(),
     ] {
         let value = faucet_account
             .storage()

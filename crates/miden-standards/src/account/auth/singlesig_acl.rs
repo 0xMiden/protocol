@@ -200,7 +200,7 @@ impl AuthSingleSigAcl {
         )
     }
 
-    // Returns the storage slot schema for the scheme ID slot.
+    /// Returns the storage slot schema for the scheme ID slot.
     pub fn auth_scheme_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
         (
             Self::scheme_id_slot().clone(),
