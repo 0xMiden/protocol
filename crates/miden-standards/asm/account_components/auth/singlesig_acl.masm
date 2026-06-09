@@ -36,13 +36,19 @@ const EXEMPT_PROCEDURE_ROOTS_SLOT = word("miden::standards::auth::singlesig_acl:
 #! - 1 => ecdsa_k256_keccak
 #! - 2 => falcon512_poseidon2
 #!
-#! Authentication is required if any of the following hold:
-#!   1. A kernel-detected account procedure (other than the auth procedure at index 0) was
-#!      called and is not on the exempt list.
-#!   2. Any output note was created (unconditional - `output_note_create` does not trigger
-#!      `was_procedure_called`, so the only way to gate unsigned note emission is here).
-#!   3. Any input note was consumed AND no exempt procedure was detected as called during
-#!      the transaction (i.e. the note consumption was not vouched for by an exempt procedure).
+#! Authentication is required if either of the following holds:
+#!   1. The procedures called during the transaction do not all match the exempt list.
+#!      This triggers when (a) a kernel-detected procedure not on the exempt list was
+#!      called (other than the auth procedure at index 0), or (b) any input note was
+#!      consumed and no detected exempt procedure ran anywhere in the transaction.
+#!      Sub-case (b) also covers the situation where no procedure was called at all:
+#!      input-note consumption alone forces authentication unless at least one detected
+#!      exempt procedure vouches for it. The vouching in sub-case (b) is transaction-wide,
+#!      not per-note - a single detected exempt call lifts the input-note signature
+#!      requirement for every input note in the same transaction.
+#!   2. Any output note was created. This is unconditional - `output_note_create` does
+#!      not trigger `was_procedure_called`, so the only way to gate unsigned note
+#!      emission is here.
 #!
 #! If authentication is required, the configured signature is verified. Otherwise, the nonce
 #! is conditionally incremented when the account state changed or the account is new.
