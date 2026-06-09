@@ -73,6 +73,8 @@ pub(crate) enum TransactionEvent {
         patch: AssetPatch,
     },
 
+    AccountBeforeAssetDeltaComputation,
+
     AccountAfterAssetDeltaComputation {
         delta: AssetDelta,
     },
@@ -257,6 +259,9 @@ impl TransactionEvent {
                     final_vault_value,
                 };
                 Some(TransactionEvent::AccountVaultAfterAssetUpdate { patch })
+            },
+            TransactionEventId::AccountBeforeAssetDeltaComputation => {
+                Some(TransactionEvent::AccountBeforeAssetDeltaComputation)
             },
             TransactionEventId::AccountAfterAssetDeltaComputation => Some({
                 // Expected stack state:

@@ -386,6 +386,15 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     // ACCOUNT VAULT UPDATE HANDLERS
     // --------------------------------------------------------------------------------------------
 
+    /// Resets the accumulating vault delta before the kernel iterates the asset delta.
+    pub fn on_account_before_asset_delta_computation(
+        &mut self,
+    ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
+        self.update_tracker.reset_vault_delta();
+
+        Ok(Vec::new())
+    }
+
     /// Tracks the computation of an asset delta for the account delta.
     pub fn on_account_after_asset_delta_computation(
         &mut self,

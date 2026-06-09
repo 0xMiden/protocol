@@ -19,6 +19,8 @@ const ERR_ACCOUNT_DELTA_TOO_MANY_REMOVED_ASSETS="number of removed assets in the
 # EVENTS
 # =================================================================================================
 
+const ACCOUNT_BEFORE_ASSET_DELTA_COMPUTATION=event("miden::protocol::account::before_asset_delta_computation")
+
 const ACCOUNT_AFTER_ASSET_DELTA_COMPUTATION_EVENT=event("miden::protocol::account::after_asset_delta_computation")
 
 # CONSTANTS
@@ -371,6 +373,12 @@ proc update_asset_delta
     # invocation shouldn't reuse the first invocation's values
     push.0 loc_store.UPDATE_ASSET_DELTA_NUM_ADDED_LOC
     push.0 loc_store.UPDATE_ASSET_DELTA_NUM_REMOVED_LOC
+
+    # signal to the host that delta computation is starting so it can reset its accumulating
+    # vault delta. this is necessary because compute_commitment can be invoked multiple times in
+    # a single transaction (e.g. by auth and the epilogue) and each invocation re-emits the
+    # ACCOUNT_AFTER_ASSET_DELTA_COMPUTATION events.
+    emit.ACCOUNT_BEFORE_ASSET_DELTA_COMPUTATION
 
     # Iterate asset delta.
     # Add added assets into the hasher.

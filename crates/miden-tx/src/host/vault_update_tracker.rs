@@ -14,9 +14,8 @@ use crate::host::tx_event::{AssetDelta, AssetPatch};
 /// - the final absolute value of the touched vault key in [`AccountVaultPatch`].
 ///
 /// When the delta commitment is computed in the VM, the tracker records the relative change in
-/// [`AccountVaultDelta`]. Note that the delta could be computed multiple times, so tracking the
-/// delta needs to have overwrite semantics rather than add semantics so that the tracked delta is
-/// always in sync.
+/// [`AccountVaultDelta`]. Note that the delta could be computed multiple times, so the tracker is
+/// reset before every computation to ensure the host delta matches the tx kernel delta.
 ///
 /// At the end of the transaction, [`Self::into_patch`] normalizes the patch by dropping entries
 /// whose final value equals the initial value, i.e. vault keys that were touched but ultimately
@@ -44,6 +43,11 @@ impl VaultUpdateTracker {
     /// Inserts an asset delta.
     pub fn update_delta(&mut self, delta: AssetDelta) {
         self.delta.insert(delta.delta_op, delta.asset);
+    }
+
+    /// Clears the accumulating vault delta.
+    pub fn reset_delta(&mut self) {
+        self.delta = AccountVaultDelta::default();
     }
 
     /// Returns a reference to the vault delta.

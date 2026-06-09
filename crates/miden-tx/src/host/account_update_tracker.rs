@@ -79,6 +79,12 @@ impl AccountUpdateTracker {
         self.vault.update_delta(delta)
     }
 
+    /// Clears the accumulating vault delta so the next pass of the kernel's delta computation
+    /// rebuilds it from scratch.
+    pub fn reset_vault_delta(&mut self) {
+        self.vault.reset_delta();
+    }
+
     /// Returns a mutable reference to the current storage patch tracker.
     pub fn storage(&mut self) -> &mut StoragePatchTracker {
         &mut self.storage

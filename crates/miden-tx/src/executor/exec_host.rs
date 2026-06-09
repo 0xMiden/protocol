@@ -539,6 +539,10 @@ where
                     self.base_host.on_account_vault_after_remove_asset(patch)
                 },
 
+                TransactionEvent::AccountBeforeAssetDeltaComputation => {
+                    self.base_host.on_account_before_asset_delta_computation()
+                },
+
                 TransactionEvent::AccountAfterAssetDeltaComputation { delta: update } => {
                     self.base_host.on_account_after_asset_delta_computation(update)
                 },
