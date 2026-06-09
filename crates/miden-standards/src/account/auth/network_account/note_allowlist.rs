@@ -217,7 +217,7 @@ mod tests {
 
         let account = AccountBuilder::new([0; 32])
             .with_auth_component(
-                AuthNetworkAccount::with_allowlist(original_roots.clone())
+                AuthNetworkAccount::with_allowed_notes(original_roots.clone())
                     .expect("non-empty allowlist should construct"),
             )
             .with_component(BasicWallet)

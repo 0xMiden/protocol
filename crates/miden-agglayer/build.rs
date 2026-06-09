@@ -326,7 +326,7 @@ fn generate_agglayer_constants(
         // The allowlist lives in storage, not code, and here we only care about the code commitment
         // of the accounts, so we can init the allowlists with dummy values.
         let placeholder_allowlist = BTreeSet::from([NoteScriptRoot::from_raw(Word::default())]);
-        let auth_component = AuthNetworkAccount::with_allowlist(placeholder_allowlist)
+        let auth_component = AuthNetworkAccount::with_allowed_notes(placeholder_allowlist)
             .expect("placeholder allowlist is non-empty");
         let mut components: Vec<AccountComponent> =
             vec![AccountComponent::from(auth_component), agglayer_component];

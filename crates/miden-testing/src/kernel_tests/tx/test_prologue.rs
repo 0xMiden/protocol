@@ -207,7 +207,7 @@ fn global_input_memory_assertions(exec_output: &ExecutionOutput, inputs: &Transa
 
     assert_eq!(
         exec_output.get_kernel_mem_word(TX_SCRIPT_ROOT_PTR),
-        inputs.tx_args().tx_script().as_ref().unwrap().root(),
+        inputs.tx_args().tx_script().as_ref().unwrap().root().as_word(),
         "The transaction script root should be stored at the TX_SCRIPT_ROOT_PTR"
     );
 }

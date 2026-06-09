@@ -97,11 +97,12 @@ async fn num_tx_cycles_after_compute_fee_are_less_than_estimated(
     // These constants should always be updated together with the equivalent constants in
     // epilogue.masm.
     const SMT_SET_ADDITIONAL_CYCLES: usize = 250;
+    const VAULT_KEY_HASH_CYCLES: usize = 50;
     const NUM_POST_COMPUTE_FEE_CYCLES: usize = 608;
 
     assert!(
         tx.measurements().after_tx_cycles_obtained
-            < NUM_POST_COMPUTE_FEE_CYCLES + SMT_SET_ADDITIONAL_CYCLES,
+            < NUM_POST_COMPUTE_FEE_CYCLES + SMT_SET_ADDITIONAL_CYCLES + VAULT_KEY_HASH_CYCLES,
         "estimated number of cycles is not larger than the measurements, so they need to be updated"
     );
 

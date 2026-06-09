@@ -150,7 +150,7 @@ fn network_fungible_faucet_with_ownable2step() {
         [7u8; 32],
         sample_faucet(),
         AccessControl::Ownable2Step { owner },
-        AuthNetworkAccount::with_allowlist(allowlist).unwrap(),
+        AuthNetworkAccount::with_allowed_notes(allowlist).unwrap(),
         allow_all_policy_manager(),
         AccountType::Public,
     )

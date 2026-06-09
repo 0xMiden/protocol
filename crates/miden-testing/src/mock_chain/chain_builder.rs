@@ -427,7 +427,10 @@ impl MockChainBuilder {
             .collect();
 
         self.add_existing_network_fungible_faucet(
-            Auth::NetworkAccount { allowed_script_roots },
+            Auth::NetworkAccount {
+                allowed_script_roots,
+                allowed_tx_script_roots: BTreeSet::new(),
+            },
             faucet,
             AccountType::Public,
             AccessControl::Ownable2Step { owner: owner_account_id },
@@ -460,7 +463,10 @@ impl MockChainBuilder {
             .collect();
 
         self.add_existing_network_fungible_faucet(
-            Auth::NetworkAccount { allowed_script_roots },
+            Auth::NetworkAccount {
+                allowed_script_roots,
+                allowed_tx_script_roots: BTreeSet::new(),
+            },
             faucet,
             AccountType::Public,
             AccessControl::Ownable2Step { owner: owner_account_id },
