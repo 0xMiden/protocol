@@ -60,6 +60,11 @@ impl AuthSingleSigAclConfig {
     }
 
     /// Sets the list of procedure roots that are exempt from requiring authentication.
+    ///
+    /// See [`AuthSingleSigAcl`] for the full semantics. In particular, condition 3 of the
+    /// authentication logic is transaction-wide: exempting any kernel-detected procedure
+    /// (even a benign read-only getter) also relaxes the input-note signature requirement
+    /// for every input note consumed in the same transaction.
     pub fn with_exempt_procedures(mut self, procedures: Vec<AccountProcedureRoot>) -> Self {
         self.exempt_procedures = procedures;
         self

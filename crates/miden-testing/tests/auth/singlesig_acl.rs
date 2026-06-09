@@ -299,6 +299,34 @@ async fn test_acl_exempt_detected_procedure_succeeds_without_auth(
     Ok(())
 }
 
+/// Isolates condition 3: input note consumption without any detected exempt procedure must
+/// force a signature even when no account procedure is called by a tx script. This guards
+/// against a regression that drops the input-note branch of the MASM `and or`; deleting that
+/// block today would let unsigned note consumption sneak through any time the script is
+/// inert.
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[tokio::test]
+async fn test_acl_input_note_consumption_requires_auth_without_exempt(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (account, mock_chain, note) = setup_acl_test(vec![], auth_scheme)?;
+
+    // No tx script — the only side effect of the transaction is consuming the mock note
+    // produced by `setup_acl_test`. With an empty exempt list and no exempt procedure
+    // detected, the input-note gate must trip.
+    let tx_context = mock_chain
+        .build_tx_context(account.id(), &[], slice::from_ref(&note))?
+        .authenticator(None)
+        .build()?;
+
+    let result = tx_context.execute().await;
+    assert_matches!(result, Err(TransactionExecutorError::MissingAuthenticator));
+
+    Ok(())
+}
+
 /// Empty exempt list is the safe default: any kernel-detected procedure call without a
 /// signature must be rejected. Uses `get_item` because it interacts with a kernel-restricted
 /// account API (so `was_procedure_called` fires for it).
