@@ -388,12 +388,14 @@ impl FungibleFaucet {
     /// config + description + logo URI + external link + Pausable's `is_paused` flag).
     ///
     /// The `is_paused` slot is installed by FungibleFaucet itself (initial value: unpaused, zero
-    /// word) so that the transversal pause guards baked into `execute_mint_policy`,
-    /// `execute_burn_policy`, `check_policy` (allow_all / blocklist / allowlist) and the metadata
+    /// word) so that the transversal pause guards baked into mint / burn / transfer / metadata
     /// setters can read it without panicking. Pause / unpause administration is exposed by the
     /// [`crate::account::access::pausable::PausableManager`] component, which is bundled by
     /// [`create_user_fungible_faucet`] / [`create_network_fungible_faucet`] alongside this faucet
-    /// so the slot is always actionable.
+    /// so the slot is always actionable. The full [`Pausable`][crate::account::access::Pausable]
+    /// component (which exposes an `is_paused` view procedure) is intentionally NOT bundled —
+    /// it would install the same slot name and conflict with the faucet's own slot. Callers that
+    /// want the public view procedure should read the slot directly via account storage queries.
     pub fn into_storage_slots(self) -> Vec<StorageSlot> {
         let mut slots: Vec<StorageSlot> = Vec::new();
         slots.push(self.token_config_slot_value());
@@ -568,7 +570,7 @@ impl TryFrom<&Account> for FungibleFaucet {
 /// gate for authority-protected setters ([`Authority::AuthControlled`] is installed directly).
 ///
 /// In addition to the explicit parameters, [`PausableManager`] is always bundled so the
-/// `is_paused` slot installed by [`FungibleFaucet::into_storage_slots`] is actionable via
+/// `is_paused` slot (installed by [`FungibleFaucet::into_storage_slots`]) is actionable via
 /// `pause` / `unpause` admin procedures (gated by the [`Authority::AuthControlled`] component
 /// installed by this factory).
 ///

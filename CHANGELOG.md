@@ -13,9 +13,12 @@
 - Clarified the transaction definition and the distinction between execution and proving on the architecture overview page ([#3015](https://github.com/0xMiden/protocol/pull/3015)).
 - [BREAKING] Refactored `TransferPolicy`, `MintPolicyConfig`, and `BurnPolicyConfig` from enums into structs ([#2974](https://github.com/0xMiden/protocol/pull/2974)).
 - Added `AccountComponent::has_procedure(root)` helper ([#2974](https://github.com/0xMiden/protocol/pull/2974)).
-- [BREAKING] Removed `AuthMethod` enum. Faucet and wallet factories now take concrete auth-component types so invalid configurations are rejected ([#2944](https://github.com/0xMiden/protocol/pull/2944)).
-- [BREAKING] Split `create_fungible_faucet` into `create_user_fungible_faucet` and `create_network_fungible_faucet` ([#2944](https://github.com/0xMiden/protocol/pull/2944)).
 - Optimized protocol MASM stack-cleaning sequences, saving 1 cycle per occurrence across 9 single-element-extraction procedures ([#3041](https://github.com/0xMiden/protocol/pull/3041)).
+- [BREAKING] Removed `AuthMethod` enum, `AccountAuthComponent` / `AccountAuthScheme`, and the `AccessControl::AuthControlled` variant. Faucet and wallet factories now take concrete auth-component types so invalid configurations are rejected at compile time ([#2944](https://github.com/0xMiden/protocol/pull/2944)).
+- [BREAKING] Split `create_fungible_faucet` into `create_user_fungible_faucet(auth_component: AuthSingleSigAcl, ...)` (installs `Authority::AuthControlled` directly) and `create_network_fungible_faucet(access_control, auth_component: AuthNetworkAccount, ...)`. Other auth schemes are no longer supported through these helpers — fall back to `AccountBuilder` directly. A `user_faucet_single_sig_acl` testing helper is provided behind the `testing` feature ([#2944](https://github.com/0xMiden/protocol/pull/2944)).
+- Added `create_multisig_wallet` and `create_guarded_wallet` helpers for `BasicWallet` accounts authenticated by `AuthMultisig` and `AuthGuardedMultisig` respectively ([#2944](https://github.com/0xMiden/protocol/pull/2944)).
+- [BREAKING] `create_basic_wallet` now takes `AuthSingleSig` directly and returns `AccountError` instead of the removed `BasicWalletError` ([#2944](https://github.com/0xMiden/protocol/pull/2944)).
+- [BREAKING] Removed `AccountInterface::auth()` and `AccountComponentInterface::auth_scheme()`. Auth components are now discovered via `AccountInterface::auth_components()`, which iterates `AccountComponentInterface` variants flagged by `is_auth_component()` ([#2944](https://github.com/0xMiden/protocol/pull/2944)).
 
 ### Fixes
 - Fixed `update_ger` to explicitly reject duplicate GER insertions with `ERR_GER_ALREADY_REGISTERED` instead of silently accepting them ([#2983](https://github.com/0xMiden/protocol/pull/2983)).
@@ -80,6 +83,7 @@
 - [BREAKING] All `get_metadata` procedures (`active_note`, `input_note`, `output_note`) no longer return attachments ([#2795](https://github.com/0xMiden/protocol/pull/2795), [#2849](https://github.com/0xMiden/protocol/pull/2849)).
 - [BREAKING] Added `NoteScriptRoot` newtype wrapping note script roots ([#2851](https://github.com/0xMiden/protocol/pull/2851)).
 - Re-exported `MIN_STACK_DEPTH` from `miden-processor` ([#2856](https://github.com/0xMiden/protocol/pull/2856)).
+- [BREAKING] Renamed `NoteId` to `NoteDetailsCommitment`, new `NoteId` struct now includes the NoteMetadata ([#2861](https://github.com/0xMiden/protocol/pull/2861)).
 - Added `metadata_into_tag` helper for extracting the tag from metadata. This should be used instead of extracting the tag manually from the header ([#2871](https://github.com/0xMiden/protocol/pull/2871)).
 - [BREAKING] Renamed `note::build_recipient_hash` to `note::compute_recipient` and `note::build_recipient` to `note::compute_and_store_recipient` ([#2875](https://github.com/0xMiden/protocol/issues/2875)).
 - Added standardized `NetworkAccountNoteAllowlist` slot for detecting network accounts ([#2883](https://github.com/0xMiden/protocol/pull/2883)).
@@ -100,18 +104,18 @@
 
 ### Fixes
 
-- Fixed `LocalTransactionProver` accumulating `MastForest` entries across `prove()` calls, causing `capacity_overflow` panics in WASM environments where linear memory fragmentation prevents subsequent allocations ([#2918](https://github.com/0xMiden/protocol/pull/2918)).
-- Made deserialization of `AccountCode` more robust ([#2788](https://github.com/0xMiden/protocol/pull/2788)).
-- Validated `PartialBlockchain` invariants on deserialization ([#2888](https://github.com/0xMiden/protocol/pull/2888)).
-- Fixed `output_note::add_asset` and `output_note::set_attachment` to no longer accept invalid note indices ([#2824](https://github.com/0xMiden/protocol/pull/2824)).
 - Fixed auth components to use initial storage state for authentication ([#2677](https://github.com/0xMiden/protocol/issues/2677)).
+- Made deserialization of `AccountCode` more robust ([#2788](https://github.com/0xMiden/protocol/pull/2788)).
 - [BREAKING] Replaced `NoAuth` with the new `AuthNetworkAccount` auth component on the AggLayer bridge and AggLayer faucet, closing the forged-MINT attack surface where any transaction against the bridge could emit a bridge-authored MINT note ([#2797](https://github.com/0xMiden/protocol/issues/2797), [#2818](https://github.com/0xMiden/protocol/pull/2818)).
 - Renamed the AggLayer faucet registry flag constant for clarity ([#2812](https://github.com/0xMiden/protocol/issues/2812)).
+- Fixed `output_note::add_asset` and `output_note::set_attachment` to no longer accept invalid note indices ([#2824](https://github.com/0xMiden/protocol/pull/2824)).
 - [BREAKING] Keyed the AggLayer faucet token registry by `(origin_token_address, origin_network)` instead of `origin_token_address` alone, preventing same-address cross-network mint collisions on CLAIM ([#2860](https://github.com/0xMiden/protocol/pull/2860)).
+- Validated `PartialBlockchain` invariants on deserialization ([#2888](https://github.com/0xMiden/protocol/pull/2888)).
 - Fixed `set_procedure_threshold` in the multisig auth component validating per-procedure overrides against initial `num_approvers`.
 - Bound MINT notes to their faucet ([#2911](https://github.com/0xMiden/protocol/pull/2911)).
+- Fixed `LocalTransactionProver` accumulating `MastForest` entries across `prove()` calls, causing `capacity_overflow` panics in WASM environments where linear memory fragmentation prevents subsequent allocations ([#2918](https://github.com/0xMiden/protocol/pull/2918)).
 - Fixed `TokenPolicyManager::manager_storage_slots` to register the protocol-reserved asset-callback storage slots whenever any transfer policy is configured (including `TransferAllowAll`), so every minted asset carries `AssetCallbackFlag::Enabled` and future `set_send_policy` / `set_receive_policy` switches apply uniformly to the entire circulating supply ([#2946](https://github.com/0xMiden/protocol/pull/2946)).
-- Fixed `create_fungible_faucet` leaving authority-gated setters unauthenticated under `AccessControl::AuthControlled`: the `AuthSingleSigAcl` trigger list now contains every authority-gated setter root (`set_max_supply`, `set_description`, `set_logo_uri`, `set_external_link`, `set_mint_policy`, `set_burn_policy`, `set_send_policy`, `set_receive_policy`) in addition to `mint_and_send` ([#2943](https://github.com/0xMiden/protocol/issues/2943), [#2958](https://github.com/0xMiden/protocol/pull/2958)).
+- Fixed `create_fungible_faucet` leaving authority-gated setters unauthenticated under `AccessControl::AuthControlled`: the `AuthSingleSigAcl` trigger list now contains every authority-gated setter root (`set_max_supply`, `set_description`, `set_logo_uri`, `set_external_link`, `set_mint_policy`, `set_burn_policy`, `set_send_policy`, `set_receive_policy`) in addition to `mint_and_send`. ([#2958](https://github.com/0xMiden/protocol/pull/2958)).
 - [BREAKING] Added missing transaction `ref_block_commitment` validation in `ProposedBatch::new` ([#2971](https://github.com/0xMiden/protocol/pull/2971)).
 
 ## 0.14.6 (2026-05-09)

@@ -46,7 +46,7 @@ use miden_protocol::testing::account_id::ACCOUNT_ID_FEE_FAUCET;
 use miden_protocol::testing::random_secret_key::random_secret_key;
 use miden_protocol::transaction::{OrderedTransactionHeaders, RawOutputNote, TransactionKernel};
 use miden_protocol::{MAX_OUTPUT_NOTES_PER_BATCH, Word};
-use miden_standards::account::access::{AccessControl, Authority};
+use miden_standards::account::access::{AccessControl, Authority, PausableManager};
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
     BurnPolicy,
@@ -316,6 +316,7 @@ impl MockChainBuilder {
     }
 
     /// Internal helper: adds an existing network-style fungible faucet (Ownable2Step / Rbac).
+    /// Bundles [`PausableManager`] to match the `create_network_fungible_faucet` factory.
     fn add_existing_network_fungible_faucet(
         &mut self,
         auth_method: Auth,
@@ -328,7 +329,8 @@ impl MockChainBuilder {
             .account_type(account_type)
             .with_component(faucet)
             .with_components(access_control)
-            .with_components(token_policy_manager);
+            .with_components(token_policy_manager)
+            .with_component(PausableManager);
 
         self.add_account_from_builder(auth_method, account_builder, AccountState::Exists)
     }
@@ -372,7 +374,8 @@ impl MockChainBuilder {
             .account_type(AccountType::Public)
             .with_component(faucet)
             .with_component(Authority::AuthControlled)
-            .with_components(token_policy_manager);
+            .with_components(token_policy_manager)
+            .with_component(PausableManager);
 
         self.add_account_from_builder(auth_method, account_builder, AccountState::Exists)
     }
@@ -496,7 +499,8 @@ impl MockChainBuilder {
             .account_type(AccountType::Public)
             .with_component(faucet)
             .with_component(Authority::AuthControlled)
-            .with_components(token_policy_manager);
+            .with_components(token_policy_manager)
+            .with_component(PausableManager);
 
         self.add_account_from_builder(auth_method, account_builder, AccountState::New)
     }
