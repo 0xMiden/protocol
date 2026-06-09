@@ -180,6 +180,80 @@ async fn test_acl(#[case] auth_scheme: AuthScheme) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Output notes always require a signature, even when the procedure that produced them is on
+/// the exempt list. This is the regression guard for the unconditional output-note gate
+/// (condition 2 in the auth logic); without it, an exempt procedure that emits notes would
+/// be able to move assets out of the account without authentication.
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[tokio::test]
+async fn test_acl_output_note_creation_requires_auth_even_when_caller_exempt(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    use miden_processor::crypto::random::RandomCoin;
+    use miden_protocol::Hasher;
+    use miden_protocol::account::AccountId;
+    use miden_protocol::asset::FungibleAsset;
+    use miden_protocol::note::NoteType;
+    use miden_protocol::testing::account_id::{
+        ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
+        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
+    };
+    use miden_standards::account::interface::{AccountInterface, AccountInterfaceExt};
+    use miden_standards::account::wallets::BasicWallet;
+    use miden_standards::note::P2idNote;
+    use miden_testing::MockChainBuilder;
+
+    let move_asset_to_note = BasicWallet::move_asset_to_note_root();
+
+    let (auth_component, _authenticator) = Auth::Acl {
+        exempt_procedures: vec![move_asset_to_note],
+        auth_scheme,
+    }
+    .build_component();
+
+    let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?;
+    let starting_asset = FungibleAsset::new(faucet_id, 100)?;
+
+    let account = AccountBuilder::new([0; 32])
+        .with_auth_component(auth_component)
+        .with_component(BasicWallet)
+        .account_type(AccountType::Public)
+        .with_assets(core::iter::once(starting_asset.into()))
+        .build_existing()?;
+
+    let recipient = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE).unwrap();
+    let output_note = P2idNote::create(
+        account.id(),
+        recipient,
+        vec![FungibleAsset::new(faucet_id, 5)?.into()],
+        NoteType::Public,
+        Default::default(),
+        &mut RandomCoin::new(Hasher::hash(b"singlesig-acl-output-note-test")),
+    )?;
+
+    let send_note_script = AccountInterface::from_account(&account)
+        .build_send_notes_script(&[output_note.clone().into()], None)?;
+
+    let mock_chain = MockChainBuilder::with_accounts([account.clone()]).unwrap().build()?;
+
+    let result = mock_chain
+        .build_tx_context(account.id(), &[], &[])?
+        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note)])
+        .tx_script(send_note_script)
+        .authenticator(None)
+        .build()?
+        .execute()
+        .await;
+
+    // Exempting `move_asset_to_note` clears condition 1, so the only thing forcing
+    // authentication here is the unconditional output-note check.
+    assert_matches!(result, Err(TransactionExecutorError::MissingAuthenticator));
+
+    Ok(())
+}
+
 /// Positive exempt-path: a kernel-detected procedure that *is* on the exempt list can be
 /// called without a signature, and the input-note consumption is vouched for by the exempt
 /// call so the input-note auth check doesn't fire either. This is the main path the exempt
