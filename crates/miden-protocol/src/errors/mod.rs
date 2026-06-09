@@ -179,6 +179,11 @@ pub enum AccountError {
         "failed to apply new-account patch to existing account; new-account patches can be converted to accounts directly"
     )]
     ApplyNewAccountPatchToAccount,
+    #[error("delta is for account ID {delta_id} but is being applied to account {account_id}")]
+    DeltaAccountIdMismatch {
+        account_id: AccountId,
+        delta_id: AccountId,
+    },
     #[error("patch is for account ID {patch_id} but is being applied to account {account_id}")]
     PatchAccountIdMismatch {
         account_id: AccountId,
