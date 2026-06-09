@@ -1,3 +1,4 @@
+use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use miden_protocol::Word;
@@ -166,7 +167,7 @@ impl AuthSingleSigAcl {
             )));
         }
 
-        let unique_roots: alloc::collections::BTreeSet<_> =
+        let unique_roots: BTreeSet<_> =
             config.exempt_procedures.iter().map(|p| p.as_word()).collect();
         if unique_roots.len() != config.exempt_procedures.len() {
             return Err(AccountError::other(
@@ -376,5 +377,22 @@ mod tests {
             config,
         );
         assert!(result.is_err(), "duplicate exempt procedures should be rejected");
+    }
+
+    /// More than `MAX_NUM_PROCEDURES` exempt entries must be rejected by `new`.
+    #[test]
+    fn test_singlesig_acl_rejects_exempt_list_above_account_limit() {
+        let too_many: Vec<AccountProcedureRoot> = (0..=AccountCode::MAX_NUM_PROCEDURES as u32)
+            .map(|i| AccountProcedureRoot::from_raw(Word::from([i, 0, 0, 0])))
+            .collect();
+
+        let config = AuthSingleSigAclConfig::new().with_exempt_procedures(too_many);
+
+        let result = AuthSingleSigAcl::new(
+            PublicKeyCommitment::from(Word::empty()),
+            AuthScheme::Falcon512Poseidon2,
+            config,
+        );
+        assert!(result.is_err(), "exempt list above MAX_NUM_PROCEDURES should be rejected");
     }
 }
