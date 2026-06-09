@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 use miden_processor::ProcessorState;
 use miden_processor::advice::{AdviceMutation, AdviceProvider};
 use miden_processor::trace::RowIndex;
-use miden_protocol::account::delta::AssetDeltaOp;
+use miden_protocol::account::delta::AssetDeltaOperation;
 use miden_protocol::account::{
     AccountId,
     StorageMap,
@@ -177,7 +177,7 @@ pub(crate) struct AssetPatch {
 
 #[derive(Debug)]
 pub(crate) struct AssetDelta {
-    pub delta_op: AssetDeltaOp,
+    pub delta_op: AssetDeltaOperation,
     pub asset: Asset,
 }
 
@@ -278,16 +278,17 @@ impl TransactionEvent {
                             source,
                         }
                     })?;
-                let delta_op =
-                    AssetDeltaOp::try_from(u8::try_from(delta_op.as_canonical_u64()).map_err(
-                        |_| TransactionKernelError::other("failed to convert asset delta op to u8"),
-                    )?)
-                    .map_err(|source| {
-                        TransactionKernelError::other_with_source(
-                            "failed to decode asset delta op",
-                            source,
-                        )
-                    })?;
+                let delta_op = AssetDeltaOperation::try_from(
+                    u8::try_from(delta_op.as_canonical_u64()).map_err(|_| {
+                        TransactionKernelError::other("failed to convert asset delta op to u8")
+                    })?,
+                )
+                .map_err(|source| {
+                    TransactionKernelError::other_with_source(
+                        "failed to decode asset delta op",
+                        source,
+                    )
+                })?;
 
                 TransactionEvent::AccountAfterAssetDeltaComputation {
                     delta: AssetDelta { delta_op, asset },

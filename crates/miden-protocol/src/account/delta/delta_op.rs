@@ -1,13 +1,17 @@
 use crate::errors::AssetError;
 
+/// Describes whether an asset was added or removed in an
+/// [`AccountVaultDelta`](crate::account::AccountVaultDelta).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
-pub enum AssetDeltaOp {
+pub enum AssetDeltaOperation {
     Add = Self::ADD,
     Remove = Self::REMOVE,
 }
 
-impl AssetDeltaOp {
+impl AssetDeltaOperation {
+    // The encoding starts at 1 to leave 0 to encode a possible default `None` operation ("nothing
+    // has changed").
     const ADD: u8 = 1;
     const REMOVE: u8 = 2;
 
@@ -17,7 +21,7 @@ impl AssetDeltaOp {
     }
 }
 
-impl TryFrom<u8> for AssetDeltaOp {
+impl TryFrom<u8> for AssetDeltaOperation {
     type Error = AssetError;
 
     /// Decodes a delta operation from a `u8`.

@@ -1,7 +1,6 @@
 use alloc::collections::BTreeMap;
 
 use miden_protocol::Word;
-use miden_protocol::account::delta::AssetDeltaOp;
 use miden_protocol::account::{AccountVaultDelta, AccountVaultPatch};
 use miden_protocol::asset::AssetVaultKey;
 
@@ -11,9 +10,13 @@ use crate::host::tx_event::{AssetDelta, AssetPatch};
 /// Keeps track of the updates to an account's vault during transaction execution.
 ///
 /// On each add/remove event the tracker records:
-/// - the relative change in [`AccountVaultDelta`],
 /// - the initial value of the touched vault key, only the very first time it is observed,
-/// - the latest absolute value of the touched vault key in [`AccountVaultPatch`].
+/// - the final absolute value of the touched vault key in [`AccountVaultPatch`].
+///
+/// When the delta commitment is computed in the VM, the tracker records the relative change in
+/// [`AccountVaultDelta`]. Note that the delta could be computed multiple times, so tracking the
+/// delta needs to have overwrite semantics rather than add semantics so that the tracked delta is
+/// always in sync.
 ///
 /// At the end of the transaction, [`Self::into_patch`] normalizes the patch by dropping entries
 /// whose final value equals the initial value, i.e. vault keys that were touched but ultimately
@@ -28,7 +31,7 @@ pub(crate) struct VaultUpdateTracker {
 }
 
 impl VaultUpdateTracker {
-    /// Records an asset patch.
+    /// Inserts an asset patch.
     pub fn update_patch(&mut self, patch: AssetPatch) -> Result<(), TransactionKernelError> {
         self.entries
             .entry(patch.asset_key)
@@ -38,15 +41,9 @@ impl VaultUpdateTracker {
         Ok(())
     }
 
+    /// Inserts an asset delta.
     pub fn update_delta(&mut self, delta: AssetDelta) {
-        match delta.delta_op {
-            AssetDeltaOp::Add => {
-                self.delta.set_added_asset(delta.asset);
-            },
-            AssetDeltaOp::Remove => {
-                self.delta.set_removed_asset(delta.asset);
-            },
-        }
+        self.delta.insert(delta.delta_op, delta.asset);
     }
 
     /// Returns a reference to the vault delta.

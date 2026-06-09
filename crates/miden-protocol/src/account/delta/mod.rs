@@ -23,7 +23,7 @@ use crate::utils::serde::{
 use crate::{Felt, Word, ZERO};
 
 mod delta_op;
-pub use delta_op::AssetDeltaOp;
+pub use delta_op::AssetDeltaOperation;
 
 mod vault;
 pub use vault::{

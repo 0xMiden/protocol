@@ -14,7 +14,7 @@ use super::{
     Serializable,
 };
 use crate::Felt;
-use crate::account::delta::AssetDeltaOp;
+use crate::account::delta::AssetDeltaOperation;
 use crate::asset::{Asset, AssetVaultKey, FungibleAsset, NonFungibleAsset};
 
 // ACCOUNT VAULT DELTA
@@ -60,19 +60,17 @@ impl AccountVaultDelta {
         self.fungible.is_empty() && self.non_fungible.is_empty()
     }
 
-    // TODO(unified_delta): Temporary API; will be renamed to add_asset.
-    pub fn set_added_asset(&mut self, asset: Asset) {
+    /// Inserts an asset into the vault delta, overwriting the previous value.
+    pub fn insert(&mut self, delta_op: AssetDeltaOperation, asset: Asset) {
         match asset {
-            Asset::Fungible(asset) => self.fungible.set_added(asset),
-            Asset::NonFungible(asset) => self.non_fungible.set_added(asset),
-        }
-    }
-
-    // TODO(unified_delta): Temporary API; will be be renamed to removed_asset.
-    pub fn set_removed_asset(&mut self, asset: Asset) {
-        match asset {
-            Asset::Fungible(asset) => self.fungible.set_removed(asset),
-            Asset::NonFungible(asset) => self.non_fungible.set_removed(asset),
+            Asset::Fungible(asset) => match delta_op {
+                AssetDeltaOperation::Add => self.fungible.set_added(asset),
+                AssetDeltaOperation::Remove => self.fungible.set_removed(asset),
+            },
+            Asset::NonFungible(asset) => match delta_op {
+                AssetDeltaOperation::Add => self.non_fungible.set_added(asset),
+                AssetDeltaOperation::Remove => self.non_fungible.set_removed(asset),
+            },
         }
     }
 
@@ -119,12 +117,12 @@ impl AccountVaultDelta {
                 .map(|asset| (asset.vault_key(), asset.to_value_word())),
         );
 
-        Self::add_asset_section(AssetDeltaOp::Add, added_assets, elements);
-        Self::add_asset_section(AssetDeltaOp::Remove, removed_assets, elements);
+        Self::add_asset_section(AssetDeltaOperation::Add, added_assets, elements);
+        Self::add_asset_section(AssetDeltaOperation::Remove, removed_assets, elements);
     }
 
     fn add_asset_section(
-        delta_op: AssetDeltaOp,
+        delta_op: AssetDeltaOperation,
         assets: BTreeMap<AssetVaultKey, Word>,
         elements: &mut Vec<Felt>,
     ) {
