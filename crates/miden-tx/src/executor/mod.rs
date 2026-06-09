@@ -423,6 +423,7 @@ fn build_executed_transaction<STORE: DataStore + Sync, AUTH: TransactionAuthenti
 
     let (
         pre_fee_account_delta,
+        account_patch,
         _input_notes,
         output_notes,
         accessed_foreign_account_code,
@@ -483,6 +484,7 @@ fn build_executed_transaction<STORE: DataStore + Sync, AUTH: TransactionAuthenti
         tx_inputs,
         tx_outputs,
         post_fee_account_delta,
+        account_patch,
         tx_progress.into(),
     ))
 }

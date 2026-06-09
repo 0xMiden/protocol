@@ -12,6 +12,7 @@ use miden_protocol::account::{
     AccountCode,
     AccountDelta,
     AccountId,
+    AccountPatch,
     PartialAccount,
     StorageMapKey,
     StorageSlotId,
@@ -444,6 +445,7 @@ where
         self,
     ) -> (
         AccountDelta,
+        AccountPatch,
         InputNotes<InputNote>,
         Vec<RawOutputNote>,
         Vec<AccountCode>,
@@ -451,10 +453,11 @@ where
         TransactionProgress,
         BTreeMap<StorageSlotId, StorageSlotName>,
     ) {
-        let (account_delta, input_notes, output_notes) = self.base_host.into_parts();
+        let (account_delta, account_patch, input_notes, output_notes) = self.base_host.into_parts();
 
         (
             account_delta,
+            account_patch,
             input_notes,
             output_notes,
             self.accessed_foreign_account_code,
