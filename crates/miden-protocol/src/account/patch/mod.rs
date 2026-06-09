@@ -97,8 +97,9 @@ impl AccountPatch {
             return Err(AccountPatchError::NonEmptyStorageOrVaultPatchWithZeroNonce);
         }
 
-        // Code must be provided for new accounts (nonce = 1) to be able to reconstruct the full
-        // Account.
+        // Code must be provided for new accounts to be able to reconstruct the full Account.
+        // New accounts are usually defined with nonce 0, but here we have the post-creation
+        // final nonce, so we define new accounts as having final_nonce = 1.
         if final_nonce.is_some_and(|final_nonce| final_nonce == Felt::ONE) && code.is_none() {
             return Err(AccountPatchError::CodeMustBeProvidedForNewAccounts);
         }

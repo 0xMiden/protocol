@@ -137,6 +137,8 @@ pub enum AccountError {
         increment: Felt,
         new: Felt,
     },
+    #[error("patch final nonce {new} is not strictly greater than current account nonce {current}")]
+    NonceMustIncrease { current: Felt, new: Felt },
     #[error(
         "digest of the seed has {actual} trailing zeroes but must have at least {expected} trailing zeroes"
     )]
@@ -173,6 +175,15 @@ pub enum AccountError {
         "failed to apply full state delta to existing account; full state deltas can be converted to accounts directly"
     )]
     ApplyFullStateDeltaToAccount,
+    #[error(
+        "failed to apply new-account patch to existing account; new-account patches can be converted to accounts directly"
+    )]
+    ApplyNewAccountPatchToAccount,
+    #[error("patch is for account ID {patch_id} but is being applied to account {account_id}")]
+    PatchAccountIdMismatch {
+        account_id: AccountId,
+        patch_id: AccountId,
+    },
     #[error("only account deltas representing a full account can be converted to a full account")]
     PartialStateDeltaToAccount,
     #[error("maximum number of storage map leaves exceeded")]
