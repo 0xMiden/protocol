@@ -43,7 +43,7 @@ use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
 
 use super::merkle_tree_frontier::MerkleTreeFrontier32;
-use super::test_utils::SOLIDITY_MTF_VECTORS;
+use super::test_utils::{MIDEN_NETWORK_ID, SOLIDITY_MTF_VECTORS};
 
 /// Tests that 32 sequential B2AGG note consumptions match all 32 Solidity MTF roots.
 ///
@@ -99,6 +99,7 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
         bridge_admin.id(),
         ger_injector.id(),
         ger_remover.id(),
+        MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 
@@ -382,6 +383,7 @@ async fn bridge_out_at_high_num_leaves(#[case] initial_num_leaves: u32) -> anyho
         bridge_admin.id(),
         ger_injector.id(),
         ger_remover.id(),
+        MIDEN_NETWORK_ID,
     );
     populate_let_state(&mut bridge_account, initial_num_leaves, &initial_frontier);
     builder.add_account(bridge_account.clone())?;
@@ -514,6 +516,7 @@ async fn test_bridge_out_fails_with_unregistered_faucet() -> anyhow::Result<()> 
         bridge_admin.id(),
         ger_injector.id(),
         ger_remover.id(),
+        MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 
@@ -612,6 +615,7 @@ async fn test_bridge_out_rejects_invalid_b2agg_note(
         bridge_admin.id(),
         ger_injector.id(),
         ger_remover.id(),
+        MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 
@@ -665,7 +669,7 @@ async fn test_bridge_out_rejects_invalid_b2agg_note(
     let b2agg_note = match invalid_note {
         // Destination network equals Miden's own network ID, which `bridge_out` rejects.
         InvalidB2aggNote::DestinationIsMiden => B2AggNote::create(
-            AggLayerBridge::MIDEN_NETWORK_ID,
+            MIDEN_NETWORK_ID,
             eth_address,
             NoteAssets::new(vec![bridge_asset])?,
             bridge_account.id(),
@@ -782,6 +786,7 @@ async fn b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
         bridge_admin.id(),
         ger_injector.id(),
         ger_remover.id(),
+        MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 
@@ -906,6 +911,7 @@ async fn b2agg_note_non_target_account_cannot_consume() -> anyhow::Result<()> {
         bridge_admin.id(),
         ger_injector.id(),
         ger_remover.id(),
+        MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 
@@ -920,6 +926,7 @@ async fn b2agg_note_non_target_account_cannot_consume() -> anyhow::Result<()> {
         bridge_admin.id(),
         ger_injector.id(),
         ger_remover.id(),
+        MIDEN_NETWORK_ID,
     );
     builder.add_account(malicious_account.clone())?;
 
@@ -989,6 +996,7 @@ async fn bridge_out_lock_native_token() -> anyhow::Result<()> {
         bridge_admin.id(),
         ger_injector.id(),
         ger_remover.id(),
+        MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 

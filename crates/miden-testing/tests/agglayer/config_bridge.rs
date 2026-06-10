@@ -27,6 +27,8 @@ use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Hasher, Word};
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 
+use super::test_utils::MIDEN_NETWORK_ID;
+
 /// Computes the `token_registry_map` key for a given (origin_token_address, origin_network) pair.
 ///
 /// Mirrors `bridge_config::hash_token_address` in `bridge_config.masm`: hashes the 5-felt token
@@ -71,6 +73,7 @@ async fn test_config_agg_bridge_registers_faucet() -> anyhow::Result<()> {
         bridge_admin.id(),
         ger_injector.id(),
         ger_remover.id(),
+        MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 
@@ -164,6 +167,7 @@ async fn test_config_agg_bridge_distinguishes_origin_network() -> anyhow::Result
         bridge_admin.id(),
         ger_injector.id(),
         ger_remover.id(),
+        MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 
@@ -297,6 +301,7 @@ async fn test_deregister_agg_faucet_clears_both_registries() -> anyhow::Result<(
         bridge_admin.id(),
         ger_injector.id(),
         ger_remover.id(),
+        MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 
@@ -438,6 +443,7 @@ async fn test_deregister_agg_faucet_clears_native_faucet() -> anyhow::Result<()>
         bridge_admin.id(),
         ger_injector.id(),
         ger_remover.id(),
+        MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 
@@ -567,6 +573,7 @@ async fn test_deregister_agg_faucet_rejects_invalid(
         bridge_admin.id(),
         ger_injector.id(),
         ger_remover.id(),
+        MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 

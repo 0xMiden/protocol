@@ -131,44 +131,72 @@ fn create_agglayer_faucet_component(
 ///
 /// The bridge starts with an empty faucet registry. Faucets are registered at runtime
 /// via CONFIG_AGG_BRIDGE notes that call `bridge_config::register_faucet`.
+///
+/// `network_id` is the AggLayer network ID assigned to the Miden chain; it is written to the
+/// bridge's [`AggLayerBridge::network_id_slot_name`] storage slot at account creation.
 fn create_bridge_account_builder(
     seed: Word,
     bridge_admin_id: AccountId,
     ger_injector_id: AccountId,
     ger_remover_id: AccountId,
+    network_id: u32,
 ) -> AccountBuilder {
     NetworkAccount::builder(seed.into(), AggLayerBridge::allowed_notes())
         .expect("bridge note allowlist is non-empty")
-        .with_component(AggLayerBridge::new(bridge_admin_id, ger_injector_id, ger_remover_id))
+        .with_component(AggLayerBridge::new(
+            bridge_admin_id,
+            ger_injector_id,
+            ger_remover_id,
+            network_id,
+        ))
 }
 
 /// Creates a new bridge account with the standard configuration.
 ///
-/// This creates a new account suitable for production use.
+/// This creates a new account suitable for production use. `network_id` is the AggLayer network
+/// ID assigned to the Miden chain. It is written once at account creation and can never be
+/// changed afterwards, so a bridge deployed with the wrong ID must be redeployed - double-check
+/// the value against the AggLayer network registry for the target deployment.
 pub fn create_bridge_account(
     seed: Word,
     bridge_admin_id: AccountId,
     ger_injector_id: AccountId,
     ger_remover_id: AccountId,
+    network_id: u32,
 ) -> Account {
-    create_bridge_account_builder(seed, bridge_admin_id, ger_injector_id, ger_remover_id)
-        .build()
-        .expect("bridge account should be valid")
+    create_bridge_account_builder(
+        seed,
+        bridge_admin_id,
+        ger_injector_id,
+        ger_remover_id,
+        network_id,
+    )
+    .build()
+    .expect("bridge account should be valid")
 }
 
 /// Creates an existing bridge account with the standard configuration.
 ///
-/// This creates an existing account suitable for testing scenarios.
+/// This creates an existing account suitable for testing scenarios. `network_id` is the AggLayer
+/// network ID assigned to the Miden chain, written to the bridge's
+/// [`AggLayerBridge::network_id_slot_name`] storage slot at account creation.
 #[cfg(any(feature = "testing", test))]
 pub fn create_existing_bridge_account(
     seed: Word,
     bridge_admin_id: AccountId,
     ger_injector_id: AccountId,
     ger_remover_id: AccountId,
+    network_id: u32,
 ) -> Account {
-    create_bridge_account_builder(seed, bridge_admin_id, ger_injector_id, ger_remover_id)
-        .build_existing()
-        .expect("bridge account should be valid")
+    create_bridge_account_builder(
+        seed,
+        bridge_admin_id,
+        ger_injector_id,
+        ger_remover_id,
+        network_id,
+    )
+    .build_existing()
+    .expect("bridge account should be valid")
 }
 
 /// Creates a complete agglayer faucet account builder with the specified configuration.
@@ -300,13 +328,28 @@ mod tests {
 
     use super::*;
 
+    /// The network ID passed at bridge creation is written to the network-id storage slot and
+    /// readable via [`AggLayerBridge::network_id`], and bridges configured with different network
+    /// IDs share the same code commitment.
+    #[test]
+    fn bridge_network_id_is_a_deployment_setting() {
+        let id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
+
+        let bridge_77 = create_existing_bridge_account(Word::default(), id, id, id, 77);
+        let bridge_78 = create_existing_bridge_account(Word::default(), id, id, id, 78);
+
+        assert_eq!(AggLayerBridge::network_id(&bridge_77).unwrap(), 77);
+        assert_eq!(AggLayerBridge::network_id(&bridge_78).unwrap(), 78);
+        assert_eq!(bridge_77.code().commitment(), bridge_78.code().commitment());
+    }
+
     /// Both agglayer network accounts allowlist the canonical [`ExpirationTransactionScript`],
     /// which the network transaction builder attaches to every network transaction.
     #[test]
     fn agglayer_accounts_allowlist_expiration_tx_script() {
         let id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
 
-        let bridge = create_existing_bridge_account(Word::default(), id, id, id);
+        let bridge = create_existing_bridge_account(Word::default(), id, id, id, 77);
         let faucet = create_existing_agglayer_faucet(
             Word::default(),
             "AGG",

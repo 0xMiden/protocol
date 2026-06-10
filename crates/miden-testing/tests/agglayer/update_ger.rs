@@ -25,7 +25,7 @@ use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 use miden_tx::utils::hex_to_bytes;
 use serde::Deserialize;
 
-use super::test_utils::execute_program_with_default_host;
+use super::test_utils::{MIDEN_NETWORK_ID, execute_program_with_default_host};
 
 // EXIT ROOT TEST VECTORS
 // ================================================================================================
@@ -79,6 +79,7 @@ async fn update_ger_note_updates_storage() -> anyhow::Result<()> {
         bridge_admin.id(),
         ger_injector.id(),
         ger_remover.id(),
+        MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 
@@ -308,6 +309,7 @@ async fn update_ger_rejects_duplicate() -> anyhow::Result<()> {
         bridge_admin.id(),
         ger_injector.id(),
         ger_remover.id(),
+        MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 
