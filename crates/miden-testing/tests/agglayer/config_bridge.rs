@@ -18,6 +18,8 @@ use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Hasher, Word};
 use miden_testing::{Auth, MockChain};
 
+use super::test_utils::MIDEN_NETWORK_ID;
+
 /// Computes the `token_registry_map` key for a given (origin_token_address, origin_network) pair.
 ///
 /// Mirrors `bridge_config::hash_token_address` in `bridge_config.masm`: hashes the 5-felt token
@@ -56,6 +58,7 @@ async fn test_config_agg_bridge_registers_faucet() -> anyhow::Result<()> {
         builder.rng_mut().draw_word(),
         bridge_admin.id(),
         ger_manager.id(),
+        MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 
@@ -144,6 +147,7 @@ async fn test_config_agg_bridge_distinguishes_origin_network() -> anyhow::Result
         builder.rng_mut().draw_word(),
         bridge_admin.id(),
         ger_manager.id(),
+        MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 

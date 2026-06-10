@@ -1,7 +1,6 @@
 use agglayer::bridge::bridge_config
 use agglayer::bridge::bridge_in_output
 use agglayer::bridge::leaf_utils
-use agglayer::common::constants::MIDEN_NETWORK_ID
 use agglayer::common::utils
 use agglayer::common::asset_conversion
 use agglayer::common::eth_address
@@ -166,7 +165,7 @@ const CLAIM_DEST_ID_SUFFIX_LOCAL = 1
 #!
 #! Panics if:
 #! - the leaf type is not 0 (not an asset claim).
-#! - the leaf destination network does not match the global `MIDEN_NETWORK_ID` constant.
+#! - the leaf destination network does not match the bridge's configured network ID.
 #! - the Merkle proof validation fails.
 #! - the (origin_token_address, origin_network) pair is not registered in the bridge's token registry.
 #!
@@ -932,17 +931,17 @@ proc store_cgi_chain_hash
     # => []
 end
 
-#! Asserts the claim leaf's `destination_network` matches the global `MIDEN_NETWORK_ID`.
+#! Asserts the claim leaf's `destination_network` matches the bridge's configured network ID.
 #!
 #! `claim_batch_pipe_double_words` stores leaf felts as LE-packed u32 limbs. `swap_u32_bytes`
-#! converts the loaded limb to the canonical u32 value so it can be compared to `MIDEN_NETWORK_ID`
-#! from `agglayer::common::constants`.
+#! converts the loaded limb to the canonical u32 value so it can be compared to the network ID
+#! read from the bridge's storage via `bridge_config::load_network_id`.
 #!
 #! Inputs:  []
 #! Outputs: []
 #!
 #! Panics if:
-#! - the leaf destination network does not match the Miden AggLayer network ID constant.
+#! - the leaf destination network does not match the bridge's configured network ID.
 #!
 #! Invocation: exec
 proc assert_claim_leaf_destination_network
@@ -950,12 +949,14 @@ proc assert_claim_leaf_destination_network
     mem_load.DESTINATION_NETWORK_ID_MEM_ADDR
     # => [destination_network_id_le]
 
-    # change the endianness to BE to compare it with the Miden network ID
+    # change the endianness to BE to compare it with the network ID
     exec.utils::swap_u32_bytes
     # => [destination_network_id_be]
 
-    # assert that the destination network ID matches the Miden network ID
-    push.MIDEN_NETWORK_ID
+    # assert that the destination network ID matches the bridge's configured network ID
+    exec.bridge_config::load_network_id
+    # => [network_id, destination_network_id_be]
+
     assert_eq.err=ERR_CLAIM_LEAF_DESTINATION_NETWORK_MISMATCH
     # => []
 end

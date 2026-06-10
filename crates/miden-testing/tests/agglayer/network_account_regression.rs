@@ -29,6 +29,8 @@ use miden_standards::errors::standards::{
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 
+use super::test_utils::MIDEN_NETWORK_ID;
+
 /// Attack note script: trivial body whose root falls outside the bridge's allowlist.
 const ATTACK_NOTE_CODE: &str = "\
 @note_script
@@ -56,6 +58,7 @@ async fn bridge_rejects_tx_script() -> anyhow::Result<()> {
         builder.rng_mut().draw_word(),
         bridge_admin.id(),
         ger_manager.id(),
+        MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 
@@ -102,6 +105,7 @@ async fn bridge_rejects_non_allowlisted_input_note() -> anyhow::Result<()> {
         builder.rng_mut().draw_word(),
         bridge_admin.id(),
         ger_manager.id(),
+        MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 

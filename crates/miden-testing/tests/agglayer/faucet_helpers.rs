@@ -11,6 +11,8 @@ use miden_protocol::asset::FungibleAsset;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_testing::{Auth, MockChain};
 
+use super::test_utils::MIDEN_NETWORK_ID;
+
 #[test]
 fn test_faucet_helper_methods() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
@@ -26,6 +28,7 @@ fn test_faucet_helper_methods() -> anyhow::Result<()> {
         builder.rng_mut().draw_word(),
         bridge_admin.id(),
         ger_manager.id(),
+        MIDEN_NETWORK_ID,
     );
     builder.add_account(bridge_account.clone())?;
 

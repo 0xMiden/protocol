@@ -26,6 +26,13 @@ use miden_processor::{
 use miden_protocol::transaction::TransactionKernel;
 use miden_protocol::utils::sync::LazyLock;
 
+// TEST NETWORK ID
+// ================================================================================================
+
+/// The AggLayer network ID encoded as `destination_network` in the bundled Solidity-generated claim
+/// test vectors.
+pub const MIDEN_NETWORK_ID: u32 = 77;
+
 // EMBEDDED TEST VECTOR JSON FILES
 // ================================================================================================
 

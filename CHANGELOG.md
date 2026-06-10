@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.16.0 (TBD)
+
+- [BREAKING] Changed AggLayerBridge to store its AggLayer network ID in account storage ([#3062](https://github.com/0xMiden/protocol/pull/3062)).
+
 ## v0.15.2 (2026-06-05)
 
 - [BREAKING] `AuthNetworkAccount` now gates transaction scripts with a root allowlist instead of banning them outright, enabling network accounts to run approved tx scripts such as setting the expiration delta ([#3028](https://github.com/0xMiden/protocol/pull/3028)).
