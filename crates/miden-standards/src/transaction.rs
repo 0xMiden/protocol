@@ -11,18 +11,19 @@ use crate::code_builder::CodeBuilder;
 // EXPIRATION TRANSACTION SCRIPT
 // ================================================================================================
 
-/// Source of the canonical transaction script that sets the transaction expiration delta.
-///
-/// The delta is read from the first element of `TX_SCRIPT_ARGS` rather than baked into the script,
-/// so a single MAST root accepts any caller-chosen delta. At script entry the operand stack holds
-/// `[TX_SCRIPT_ARGS]`, so the top element is the delta; `update_expiration_block_delta`
-/// consumes it and the remaining three argument elements are dropped.
+/// Transaction script that sets the expiration delta.
 const EXPIRATION_TX_SCRIPT_SOURCE: &str = "\
 use miden::protocol::tx
 
+#! Set the transaction's expiration delta.
+#!
+#! Inputs:  [[delta, 0, 0, 0], pad(12)]
+#! Outputs: [pad(16)]
+#!
+#! Invocation: call
 begin
     exec.tx::update_expiration_block_delta
-    drop drop drop
+    # => [pad(16)]
 end
 ";
 
