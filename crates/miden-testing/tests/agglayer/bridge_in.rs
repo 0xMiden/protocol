@@ -7,6 +7,7 @@ use anyhow::Context;
 use miden_agglayer::errors::{
     ERR_CLAIM_ALREADY_SPENT,
     ERR_CLAIM_LEAF_DESTINATION_NETWORK_MISMATCH,
+    ERR_GER_NOT_FOUND,
     ERR_TOKEN_NOT_REGISTERED,
 };
 use miden_agglayer::{
@@ -20,6 +21,7 @@ use miden_agglayer::{
     EthEmbeddedAccountId,
     ExitRoot,
     LeafValue,
+    RemoveGerNote,
     SmtNode,
     UpdateGerNote,
     agglayer_library,
@@ -935,6 +937,150 @@ async fn test_duplicate_claim_note_rejected() -> anyhow::Result<()> {
         error_msg.contains(&expected_err_code),
         "expected error code {expected_err_code} for 'claim note has already been spent', got: {error_msg}"
     );
+
+    Ok(())
+}
+
+/// Tests that a CLAIM note referencing a removed GER is rejected.
+///
+/// Uses the same known-good claim data as `test_bridge_in_claim_to_p2id`, so the failure is
+/// attributable solely to the GER removal:
+/// 1. Sets up the bridge (CONFIG + UPDATE_GER) so the CLAIM would succeed.
+/// 2. Removes the GER via REMOVE_GER.
+/// 3. Attempts to execute the CLAIM note and asserts it fails with `ERR_GER_NOT_FOUND`.
+#[tokio::test]
+async fn test_claim_rejects_removed_ger() -> anyhow::Result<()> {
+    let data_source = ClaimDataSource::L1ToMiden;
+    let mut builder = MockChain::builder();
+
+    // CREATE BRIDGE ADMIN ACCOUNT
+    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    // CREATE GER MANAGER ACCOUNT
+    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    // CREATE GER REMOVER ACCOUNT (sends the REMOVE_GER note)
+    let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    // CREATE BRIDGE ACCOUNT
+    let bridge_seed = builder.rng_mut().draw_word();
+    let bridge_account = create_existing_bridge_account(
+        bridge_seed,
+        bridge_admin.id(),
+        ger_manager.id(),
+        ger_remover.id(),
+    );
+    builder.add_account(bridge_account.clone())?;
+
+    // GET CLAIM DATA FROM JSON
+    let (proof_data, leaf_data, ger, _cgi_chain_hash) = data_source.get_data();
+
+    // CREATE AGGLAYER FAUCET ACCOUNT
+    let token_symbol = "AGG";
+    let decimals = 8u8;
+    let max_supply: Felt = FungibleAsset::MAX_AMOUNT.into();
+    let agglayer_faucet_seed = builder.rng_mut().draw_word();
+
+    let origin_token_address = leaf_data.origin_token_address;
+    let origin_network = leaf_data.origin_network;
+    let scale = 10u8;
+
+    let agglayer_faucet = create_existing_agglayer_faucet(
+        agglayer_faucet_seed,
+        token_symbol,
+        decimals,
+        max_supply,
+        Felt::ZERO,
+        bridge_account.id(),
+    );
+    builder.add_account(agglayer_faucet.clone())?;
+
+    // Calculate the scaled-down Miden amount
+    let miden_claim_amount = leaf_data
+        .amount
+        .scale_to_token_amount(scale as u32)
+        .expect("amount should scale successfully");
+
+    // CREATE CLAIM NOTE
+    let claim_inputs = ClaimNoteStorage {
+        proof_data: proof_data.clone(),
+        leaf_data: leaf_data.clone(),
+        miden_claim_amount,
+    };
+
+    let claim_note =
+        ClaimNote::create(claim_inputs, bridge_account.id(), bridge_admin.id(), builder.rng_mut())?;
+    builder.add_output_note(RawOutputNote::Full(claim_note.clone()));
+
+    // CREATE CONFIG_AGG_BRIDGE NOTE
+    let config_note = ConfigAggBridgeNote::create(
+        ConversionMetadata {
+            faucet_account_id: agglayer_faucet.id(),
+            origin_token_address,
+            scale,
+            origin_network,
+            is_native: false,
+            metadata_hash: leaf_data.metadata_hash,
+        },
+        bridge_admin.id(),
+        bridge_account.id(),
+        builder.rng_mut(),
+    )?;
+    builder.add_output_note(RawOutputNote::Full(config_note.clone()));
+
+    // CREATE UPDATE_GER NOTE
+    let update_ger_note =
+        UpdateGerNote::create(ger, ger_manager.id(), bridge_account.id(), builder.rng_mut())?;
+    builder.add_output_note(RawOutputNote::Full(update_ger_note.clone()));
+
+    // CREATE REMOVE_GER NOTE (removes the GER the claim's proof is verified against)
+    let remove_ger_note =
+        RemoveGerNote::create(ger, ger_remover.id(), bridge_account.id(), builder.rng_mut())?;
+    builder.add_output_note(RawOutputNote::Full(remove_ger_note.clone()));
+
+    // BUILD MOCK CHAIN
+    let mut mock_chain = builder.build()?;
+
+    // TX0: CONFIG_AGG_BRIDGE
+    let config_tx_context = mock_chain
+        .build_tx_context(bridge_account.id(), &[config_note.id()], &[])?
+        .build()?;
+    let config_executed = config_tx_context.execute().await?;
+    mock_chain.add_pending_executed_transaction(&config_executed)?;
+    mock_chain.prove_next_block()?;
+
+    // TX1: UPDATE_GER
+    let update_ger_tx_context = mock_chain
+        .build_tx_context(bridge_account.id(), &[update_ger_note.id()], &[])?
+        .build()?;
+    let update_ger_executed = update_ger_tx_context.execute().await?;
+    mock_chain.add_pending_executed_transaction(&update_ger_executed)?;
+    mock_chain.prove_next_block()?;
+
+    // TX2: REMOVE_GER
+    let remove_ger_tx_context = mock_chain
+        .build_tx_context(bridge_account.id(), &[remove_ger_note.id()], &[])?
+        .build()?;
+    let remove_ger_executed = remove_ger_tx_context.execute().await?;
+    mock_chain.add_pending_executed_transaction(&remove_ger_executed)?;
+    mock_chain.prove_next_block()?;
+
+    // TX3: CLAIM (should fail because its GER was removed)
+    let faucet_foreign_inputs = mock_chain.get_foreign_account_inputs(agglayer_faucet.id())?;
+    let result = mock_chain
+        .build_tx_context(bridge_account.id(), &[], &[claim_note])?
+        .foreign_accounts(vec![faucet_foreign_inputs])
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_GER_NOT_FOUND);
 
     Ok(())
 }
