@@ -14,7 +14,6 @@ pub mod code_builder;
 pub mod errors;
 pub mod note;
 mod standards_lib;
-pub mod transaction;
 pub mod tx_script;
 pub mod utils;
 

@@ -1,7 +1,7 @@
 use core::num::NonZeroU16;
 
 use miden_protocol::account::auth::AuthScheme;
-use miden_standards::transaction::ExpirationTransactionScript;
+use miden_standards::tx_script::ExpirationTransactionScript;
 use miden_testing::{Auth, MockChain};
 
 /// Example: attach the standardized expiration transaction script to a transaction and choose the

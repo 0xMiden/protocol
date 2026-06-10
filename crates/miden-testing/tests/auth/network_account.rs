@@ -15,7 +15,7 @@ use miden_standards::errors::standards::{
     ERR_TX_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED,
 };
 use miden_standards::testing::note::NoteBuilder;
-use miden_standards::transaction::ExpirationTransactionScript;
+use miden_standards::tx_script::ExpirationTransactionScript;
 use miden_testing::{MockChain, assert_transaction_executor_error};
 use rstest::rstest;
 

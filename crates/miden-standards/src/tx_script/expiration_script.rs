@@ -1,5 +1,3 @@
-//! Standardized transaction scripts.
-
 use core::num::NonZeroU16;
 
 use miden_protocol::transaction::{TransactionScript, TransactionScriptRoot};
@@ -73,17 +71,14 @@ impl ExpirationTransactionScript {
         Word::from([Felt::from(self.delta.get()), Felt::ZERO, Felt::ZERO, Felt::ZERO])
     }
 
-    /// The [`TransactionScriptRoot`] shared by every delta - the script reads the delta from
-    /// `TX_SCRIPT_ARGS`, so its root is delta-independent. Allowlist this on a network account via
-    /// `AuthNetworkAccount::with_allowed_tx_scripts`.
+    /// The [`TransactionScriptRoot`] of the canonical script, to be allowlisted on a network
+    /// account via `AuthNetworkAccount::with_allowed_tx_scripts`.
     pub fn script_root() -> TransactionScriptRoot {
         EXPIRATION_TX_SCRIPT.root()
     }
 }
 
 impl From<ExpirationTransactionScript> for TransactionScript {
-    /// The compiled script is delta-independent (the delta is passed via `TX_SCRIPT_ARGS`), so this
-    /// returns the single cached canonical script regardless of the configured delta.
     fn from(_script: ExpirationTransactionScript) -> Self {
         EXPIRATION_TX_SCRIPT.clone()
     }
