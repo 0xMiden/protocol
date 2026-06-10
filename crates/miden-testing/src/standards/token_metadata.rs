@@ -690,7 +690,7 @@ async fn test_field_setter_owner_succeeds(
 
     let executed = tx_context.execute().await?;
     let mut updated_faucet = faucet_account.clone();
-    updated_faucet.apply_delta(executed.account_delta())?;
+    updated_faucet.apply_patch(executed.account_patch())?;
 
     for (i, expected) in new_data.iter().enumerate() {
         let chunk = updated_faucet.storage().get_item(slot_fn(i))?;
@@ -923,7 +923,7 @@ async fn set_max_supply_mutable_owner_succeeds() -> anyhow::Result<()> {
 
     let executed = tx_context.execute().await?;
     let mut updated_faucet = faucet_account.clone();
-    updated_faucet.apply_delta(executed.account_delta())?;
+    updated_faucet.apply_patch(executed.account_patch())?;
 
     let restored = FungibleFaucet::try_from(updated_faucet.storage())?;
     assert_eq!(restored.max_supply().as_u64(), new_max_supply, "max_supply should be updated");

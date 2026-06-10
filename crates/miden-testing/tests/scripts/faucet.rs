@@ -839,7 +839,7 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
     let consume_executed_transaction = consume_tx_context.execute().await?;
 
     // Apply the delta to the target account and verify the asset was added to the account's vault
-    target_account.apply_delta(consume_executed_transaction.account_delta())?;
+    target_account.apply_patch(consume_executed_transaction.account_patch())?;
 
     // Verify the account's vault now contains the expected fungible asset
     let actual_asset = target_account.vault().get(expected_asset.vault_key()).unwrap();
@@ -1197,7 +1197,7 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
     mock_chain.prove_next_block()?;
 
     let mut updated_faucet = faucet.clone();
-    updated_faucet.apply_delta(executed_transaction.account_delta())?;
+    updated_faucet.apply_patch(executed_transaction.account_patch())?;
 
     let mut rng = RandomCoin::new([Felt::from(400u32); 4].into());
     let accept_note = NoteBuilder::new(new_owner_account_id, &mut rng)
@@ -1214,7 +1214,7 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
     let executed_transaction = tx_context.execute().await?;
 
     let mut final_faucet = updated_faucet.clone();
-    final_faucet.apply_delta(executed_transaction.account_delta())?;
+    final_faucet.apply_patch(executed_transaction.account_patch())?;
 
     // Verify that owner changed to new_owner and nominated was cleared
     // Word: [owner_suffix, owner_prefix, nominated_suffix, nominated_prefix]
@@ -1388,7 +1388,7 @@ async fn test_network_faucet_renounce_ownership() -> anyhow::Result<()> {
     mock_chain.prove_next_block()?;
 
     let mut updated_faucet = faucet.clone();
-    updated_faucet.apply_delta(executed_transaction.account_delta())?;
+    updated_faucet.apply_patch(executed_transaction.account_patch())?;
 
     // Check stored value after renouncing - should be zero
     let stored_owner_after = updated_faucet.storage().get_item(Ownable2Step::slot_name())?;
@@ -1491,7 +1491,7 @@ async fn network_faucet_burn() -> anyhow::Result<()> {
     assert_eq!(executed_transaction.input_notes().get_note(0).id(), note.id());
 
     // Apply the delta to the faucet account and verify the token issuance decreased
-    faucet.apply_delta(executed_transaction.account_delta())?;
+    faucet.apply_patch(executed_transaction.account_patch())?;
     let final_token_supply = FungibleFaucet::try_from(faucet.storage())?.token_supply();
     assert_eq!(
         final_token_supply,
@@ -1722,7 +1722,7 @@ async fn test_network_faucet_burn_at_min_burn_amount_succeeds() -> anyhow::Resul
     let tx_context = mock_chain.build_tx_context(faucet.id(), &[burn_note.id()], &[])?.build()?;
     let executed_transaction = tx_context.execute().await?;
 
-    faucet.apply_delta(executed_transaction.account_delta())?;
+    faucet.apply_patch(executed_transaction.account_patch())?;
     let final_token_supply = FungibleFaucet::try_from(faucet.storage())?.token_supply();
     assert_eq!(
         final_token_supply,
@@ -1785,14 +1785,14 @@ async fn test_network_faucet_owner_can_set_min_burn_amount() -> anyhow::Result<(
     let set_transaction = tx_context.execute().await?;
     mock_chain.add_pending_executed_transaction(&set_transaction)?;
     mock_chain.prove_next_block()?;
-    faucet.apply_delta(set_transaction.account_delta())?;
+    faucet.apply_patch(set_transaction.account_patch())?;
 
     // The burn that was below the original threshold now succeeds.
     let tx_context = mock_chain.build_tx_context(faucet.id(), &[burn_note.id()], &[])?.build()?;
     let burn_transaction = tx_context.execute().await?;
 
     // Lowering the threshold left the supply untouched; only the burn reduces it.
-    faucet.apply_delta(burn_transaction.account_delta())?;
+    faucet.apply_patch(burn_transaction.account_patch())?;
     let final_token_supply = FungibleFaucet::try_from(faucet.storage())?.token_supply();
     assert_eq!(
         final_token_supply,
@@ -1948,7 +1948,7 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
         .build()?;
     let consume_executed_transaction = consume_tx_context.execute().await?;
 
-    target_account_mut.apply_delta(consume_executed_transaction.account_delta())?;
+    target_account_mut.apply_patch(consume_executed_transaction.account_patch())?;
 
     let expected_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?
         .with_callbacks(AssetCallbackFlag::Enabled);

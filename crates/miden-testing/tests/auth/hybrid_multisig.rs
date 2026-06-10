@@ -179,7 +179,7 @@ async fn test_multisig_2_of_2_with_note_creation() -> anyhow::Result<()> {
         .execute()
         .await?;
 
-    multisig_account.apply_delta(tx_context_execute.account_delta())?;
+    multisig_account.apply_patch(tx_context_execute.account_patch())?;
 
     mock_chain.add_pending_executed_transaction(&tx_context_execute)?;
     mock_chain.prove_next_block()?;
@@ -416,7 +416,7 @@ async fn test_multisig_update_signers() -> anyhow::Result<()> {
 
     // Apply the delta to get the updated account with new signers
     let mut updated_multisig_account = multisig_account.clone();
-    updated_multisig_account.apply_delta(update_approvers_tx.account_delta())?;
+    updated_multisig_account.apply_patch(update_approvers_tx.account_patch())?;
 
     // Verify that the public keys were actually updated in storage
     for (i, expected_key) in new_public_keys.iter().enumerate() {
@@ -678,7 +678,7 @@ async fn test_multisig_update_signers_remove_owner() -> anyhow::Result<()> {
 
     // Apply delta to get updated account
     let mut updated_multisig_account = multisig_account.clone();
-    updated_multisig_account.apply_delta(update_approvers_tx.account_delta())?;
+    updated_multisig_account.apply_patch(update_approvers_tx.account_patch())?;
 
     // Verify public keys were updated
     for (i, expected_key) in new_public_keys.iter().enumerate() {
