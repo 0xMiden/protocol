@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.16.0 (TBD)
+## v0.15.3 (2026-06-10)
 
 - [BREAKING] Changed AggLayerBridge to store its AggLayer network ID in account storage ([#3062](https://github.com/0xMiden/protocol/pull/3062)).
 
