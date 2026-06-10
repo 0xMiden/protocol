@@ -66,7 +66,7 @@ impl AccountUpdateTracker {
 
     /// Returns the vault delta materialized from the currently tracked per-asset deltas.
     ///
-    /// TOOD: Remove this method when removing automatic fee removal from the tx kernel.
+    /// TODO: Remove this method when removing automatic fee removal from the tx kernel.
     pub(crate) fn build_vault_delta(&self) -> AccountVaultDelta {
         self.vault.clone().into_delta()
     }
