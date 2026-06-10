@@ -52,10 +52,15 @@ async fn bridge_rejects_tx_script() -> anyhow::Result<()> {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
+    let bridge_seed = builder.rng_mut().draw_word();
+    let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
     let bridge_account = create_existing_bridge_account(
-        builder.rng_mut().draw_word(),
+        bridge_seed,
         bridge_admin.id(),
         ger_manager.id(),
+        ger_remover.id(),
     );
     builder.add_account(bridge_account.clone())?;
 
@@ -98,10 +103,15 @@ async fn bridge_rejects_non_allowlisted_input_note() -> anyhow::Result<()> {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
+    let bridge_seed = builder.rng_mut().draw_word();
+    let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
     let bridge_account = create_existing_bridge_account(
-        builder.rng_mut().draw_word(),
+        bridge_seed,
         bridge_admin.id(),
         ger_manager.id(),
+        ger_remover.id(),
     );
     builder.add_account(bridge_account.clone())?;
 

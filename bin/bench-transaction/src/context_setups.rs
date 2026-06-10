@@ -187,10 +187,19 @@ pub async fn tx_consume_claim_note(data_source: ClaimDataSource) -> Result<Trans
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
+    // CREATE GER REMOVER ACCOUNT (not used in this benchmark, but distinct from admin and manager)
+    let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
     // CREATE BRIDGE ACCOUNT
     let bridge_seed = builder.rng_mut().draw_word();
-    let bridge_account =
-        create_existing_bridge_account(bridge_seed, bridge_admin.id(), ger_manager.id());
+    let bridge_account = create_existing_bridge_account(
+        bridge_seed,
+        bridge_admin.id(),
+        ger_manager.id(),
+        ger_remover.id(),
+    );
     builder.add_account(bridge_account.clone())?;
 
     // GET CLAIM DATA FROM JSON
@@ -397,11 +406,17 @@ pub async fn tx_consume_b2agg_note(pre_populate_leaves: Option<u32>) -> Result<T
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
 
+    // CREATE GER REMOVER ACCOUNT (not used in bridge-out, but required for bridge creation)
+    let ger_remover = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
     // CREATE BRIDGE ACCOUNT
     let mut bridge_account = create_existing_bridge_account(
         builder.rng_mut().draw_word(),
         bridge_admin.id(),
         ger_manager.id(),
+        ger_remover.id(),
     );
 
     // Pre-populate frontier before adding the account to the mock chain

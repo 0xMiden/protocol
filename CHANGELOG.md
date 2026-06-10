@@ -20,6 +20,7 @@
 - [BREAKING] Refactored `TokenPolicyManager` by adding `invoke_send_policy` / `invoke_receive_policy` wrappers (stored in the protocol reserved asset callback slots) that read the active policy root from the new `active_send_policy_proc_root` / `active_receive_policy_proc_root` storage slots ([#3047](https://github.com/0xMiden/protocol/pull/3047)).
 - Added a definition of the Miden operator on the architecture overview page and linked it from the note lifecycle ([#3017](https://github.com/0xMiden/protocol/pull/3017)).
 - Clarified Miden's operational roles on the architecture overview page and linked them from the note lifecycle ([#3017](https://github.com/0xMiden/protocol/pull/3017)).
+- [BREAKING] Added GER removal mechanism with a dedicated `ger_remover` role, `remove_ger` MASM procedure, `REMOVE_GER` note script, `RemoveGerNote` Rust helper, and a running keccak256 removed-GER hash chain; `AggLayerBridge::new`, `create_bridge_account`, and `create_existing_bridge_account` now take a `ger_remover_id` argument ([#2837](https://github.com/0xMiden/protocol/pull/2837)).
 
 ### Fixes
 - Fixed `update_ger` to explicitly reject duplicate GER insertions with `ERR_GER_ALREADY_REGISTERED` instead of silently accepting them ([#2983](https://github.com/0xMiden/protocol/pull/2983)).
