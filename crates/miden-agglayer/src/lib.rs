@@ -32,7 +32,7 @@ pub mod update_ger_note;
 pub mod utils;
 
 pub use b2agg_note::B2AggNote;
-pub use bridge::{AggLayerBridge, AgglayerBridgeError};
+pub use bridge::{AggLayerBridge, AgglayerBridgeError, RemovedGerHashChain};
 pub use claim_note::{
     CgiChainHash,
     ClaimNote,

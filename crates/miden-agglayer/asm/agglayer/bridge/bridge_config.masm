@@ -104,10 +104,10 @@ end
 #! Removes a Global Exit Root (GER) from the bridge account storage and folds it into the running
 #! removed-GER keccak256 hash chain.
 #!
-#! Computes hash(GER) = poseidon2::merge(GER_LOWER, GER_UPPER), asserts that the GER is currently
-#! known (map value equals GER_KNOWN_FLAG), overwrites the map entry with [0, 0, 0, 0]
-#! (Miden equivalent of Solidity's `delete globalExitRootMap[ger]`), and updates the removed-GER
-#! hash chain as NEW_CHAIN = keccak256::merge(OLD_CHAIN, GER).
+#! Computes hash(GER) = poseidon2::merge(GER_LOWER, GER_UPPER), overwrites the map entry with
+#! [0, 0, 0, 0] (Miden equivalent of Solidity's `delete globalExitRootMap[ger]`) while asserting
+#! that the previous map value equals GER_KNOWN_FLAG (i.e. the GER was currently known), and
+#! updates the removed-GER hash chain as NEW_CHAIN = keccak256::merge(OLD_CHAIN, GER).
 #!
 #! Inputs: [GER_LOWER[4], GER_UPPER[4], pad(8)]
 #! Outputs: [pad(16)]
@@ -122,7 +122,7 @@ pub proc remove_ger
     exec.assert_sender_is_ger_remover
     # => [GER_LOWER[4], GER_UPPER[4], pad(8)]
 
-    # duplicate the GER (16 felts) so we can use one copy to compute the map key + clear the map
+    # duplicate the GER (16 felts) so we can use one copy to compute the map key
     # and the other copy as the keccak256 preimage for the chain hash update later.
     dupw.1 dupw.1
     # => [GER_LOWER, GER_UPPER, GER_LOWER, GER_UPPER, pad(8)]
@@ -131,23 +131,9 @@ pub proc remove_ger
     exec.poseidon2::merge
     # => [GER_HASH, GER_LOWER, GER_UPPER, pad(8)]
 
-    # assert the GER is currently known: map[GER_HASH] must equal GER_KNOWN_FLAG.
-    dupw
-    # => [GER_HASH, GER_HASH, GER_LOWER, GER_UPPER, pad(8)]
-
-    push.GER_MAP_STORAGE_SLOT[0..2]
-    # => [slot_id_prefix, slot_id_suffix, GER_HASH, GER_HASH, GER_LOWER, GER_UPPER, pad(8)]
-
-    exec.active_account::get_map_item
-    # => [VALUE, GER_HASH, GER_LOWER, GER_UPPER, pad(8)]
-
-    push.GER_KNOWN_FLAG
-    assert_eqw.err=ERR_GER_NOT_FOUND
-    # => [GER_HASH, GER_LOWER, GER_UPPER, pad(8)]
-
-    # overwrite the map entry with [0, 0, 0, 0] to mark it removed.
+    # prepare VALUE = [0, 0, 0, 0] to mark the entry removed.
     push.0.0.0.0
-    # => [0, 0, 0, 0, GER_HASH, GER_LOWER, GER_UPPER, pad(8)]
+    # => [[0, 0, 0, 0], GER_HASH, GER_LOWER, GER_UPPER, pad(8)]
 
     swapw
     # => [GER_HASH, [0, 0, 0, 0], GER_LOWER, GER_UPPER, pad(8)]
@@ -158,7 +144,10 @@ pub proc remove_ger
     exec.native_account::set_map_item
     # => [OLD_VALUE, GER_LOWER, GER_UPPER, pad(8)]
 
-    dropw
+    # assert the GER was currently known: OLD_VALUE must equal GER_KNOWN_FLAG. A failed
+    # assertion aborts the transaction, discarding the map write above.
+    push.GER_KNOWN_FLAG
+    assert_eqw.err=ERR_GER_NOT_FOUND
     # => [GER_LOWER, GER_UPPER, pad(8)]
 
     # update the removed-GER keccak256 hash chain: NEW_CHAIN = keccak256::merge(OLD_CHAIN, GER).

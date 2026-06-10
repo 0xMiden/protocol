@@ -15,6 +15,10 @@ use thiserror::Error;
 
 use super::agglayer_bridge_component_library;
 use crate::claim_note::CgiChainHash;
+use crate::utils::Keccak256Output;
+
+/// Removed-GER hash chain representation (32-byte Keccak256 hash)
+pub type RemovedGerHashChain = Keccak256Output;
 pub use crate::{
     B2AggNote,
     ClaimNote,
@@ -406,24 +410,10 @@ impl AggLayerBridge {
             .get_item(AggLayerBridge::cgi_chain_hash_hi_slot_name())
             .expect("failed to get CGI hash chain hi slot");
 
-        let cgi_chain_hash_bytes = cgi_chain_hash_lo
-            .iter()
-            .chain(cgi_chain_hash_hi.iter())
-            .flat_map(|felt| {
-                (u32::try_from(felt.as_canonical_u64()).expect("Felt value does not fit into u32"))
-                    .to_le_bytes()
-            })
-            .collect::<Vec<u8>>();
-
-        Ok(CgiChainHash::new(
-            cgi_chain_hash_bytes
-                .try_into()
-                .expect("keccak hash should consist of exactly 32 bytes"),
-        ))
+        Ok(CgiChainHash::new(Self::chain_hash_bytes(cgi_chain_hash_lo, cgi_chain_hash_hi)))
     }
 
-    /// Returns the removed-GER keccak256 hash chain from the corresponding storage slots as a
-    /// 32-byte array.
+    /// Returns the removed-GER keccak256 hash chain from the corresponding storage slots.
     ///
     /// The chain is the running keccak256 of all removed GERs:
     /// `chain_n = keccak256(chain_{n-1} || removed_ger_n)` with `chain_0 = 0...0`.
@@ -434,7 +424,7 @@ impl AggLayerBridge {
     /// - the provided account is not an [`AggLayerBridge`] account.
     pub fn removed_ger_hash_chain(
         bridge_account: &Account,
-    ) -> Result<[u8; 32], AgglayerBridgeError> {
+    ) -> Result<RemovedGerHashChain, AgglayerBridgeError> {
         // check that the provided account is a bridge account
         Self::assert_bridge_account(bridge_account)?;
 
@@ -447,20 +437,24 @@ impl AggLayerBridge {
             .get_item(AggLayerBridge::removed_ger_hash_chain_hi_slot_name())
             .expect("failed to get removed GER hash chain hi slot");
 
-        let chain_bytes = chain_lo
-            .iter()
-            .chain(chain_hi.iter())
-            .flat_map(|felt| {
-                (u32::try_from(felt.as_canonical_u64()).expect("Felt value does not fit into u32"))
-                    .to_le_bytes()
-            })
-            .collect::<Vec<u8>>();
-
-        Ok(chain_bytes.try_into().expect("keccak hash should consist of exactly 32 bytes"))
+        Ok(RemovedGerHashChain::new(Self::chain_hash_bytes(chain_lo, chain_hi)))
     }
 
     // HELPER FUNCTIONS
     // --------------------------------------------------------------------------------------------
+
+    /// Converts a keccak256 hash stored across two lo/hi storage words into its 32-byte form.
+    fn chain_hash_bytes(lo: Word, hi: Word) -> [u8; 32] {
+        lo.iter()
+            .chain(hi.iter())
+            .flat_map(|felt| {
+                (u32::try_from(felt.as_canonical_u64()).expect("Felt value does not fit into u32"))
+                    .to_le_bytes()
+            })
+            .collect::<Vec<u8>>()
+            .try_into()
+            .expect("keccak hash should consist of exactly 32 bytes")
+    }
 
     /// Checks that the provided account is an [`AggLayerBridge`] account.
     ///
