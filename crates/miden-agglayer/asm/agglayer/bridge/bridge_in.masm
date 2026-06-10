@@ -212,6 +212,14 @@ pub proc claim
     exec.bridge_config::lookup_faucet_by_token_address
     # => [faucet_id_suffix, faucet_id_prefix, pad(16)]
 
+    # Assert the resolved faucet is still registered. `lookup_faucet_by_token_address` only proves
+    # the token route exists, but a faucet that was re-registered under a different token identity
+    # and then deregistered can leave a stale `token_registry` key pointing at it (`register_faucet`
+    # does not clear the prior key). Re-checking `faucet_registry` here makes deregistration an
+    # unconditional revocation: a deregistered faucet can never mint or unlock through CLAIM.
+    dup.1 dup.1 exec.bridge_config::assert_faucet_registered
+    # => [faucet_id_suffix, faucet_id_prefix, pad(16)]
+
     dup.1 dup.1
     # => [faucet_id_suffix, faucet_id_prefix, faucet_id_suffix, faucet_id_prefix, pad(16)]
 

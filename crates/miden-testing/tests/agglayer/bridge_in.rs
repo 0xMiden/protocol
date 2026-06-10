@@ -7,6 +7,7 @@ use anyhow::Context;
 use miden_agglayer::errors::{
     ERR_CLAIM_ALREADY_SPENT,
     ERR_CLAIM_LEAF_DESTINATION_NETWORK_MISMATCH,
+    ERR_FAUCET_NOT_REGISTERED,
     ERR_TOKEN_NOT_REGISTERED,
 };
 use miden_agglayer::{
@@ -16,6 +17,7 @@ use miden_agglayer::{
     ClaimNoteStorage,
     ConfigAggBridgeNote,
     ConversionMetadata,
+    DeregisterAggBridgeNote,
     EthAddress,
     EthEmbeddedAccountId,
     ExitRoot,
@@ -1536,6 +1538,189 @@ async fn test_claim_fails_when_origin_network_unregistered() -> anyhow::Result<(
     assert!(
         error_msg.contains(&expected_err_code),
         "expected error code {expected_err_code} for cross-network unregistered claim, got: {error_msg}"
+    );
+
+    Ok(())
+}
+
+/// Tests that deregistration is an unconditional revocation even when a stale `token_registry` key
+/// survives.
+///
+/// `register_faucet` does not clear a faucet's previous token key when the faucet is re-registered
+/// under a different `(origin_token_address, origin_network)`, so after deregistration the prior
+/// token key can still resolve to the (now-unregistered) faucet via
+/// `lookup_faucet_by_token_address`. Because `claim` re-checks `assert_faucet_registered` after the
+/// token lookup, such a CLAIM is rejected with `ERR_FAUCET_NOT_REGISTERED` instead of minting
+/// through the revoked faucet.
+#[tokio::test]
+async fn test_claim_rejects_deregistered_faucet_via_stale_token_key() -> anyhow::Result<()> {
+    let data_source = ClaimDataSource::L1ToMiden;
+    let mut builder = MockChain::builder();
+
+    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    let bridge_seed = builder.rng_mut().draw_word();
+    let bridge_account =
+        create_existing_bridge_account(bridge_seed, bridge_admin.id(), ger_manager.id());
+    builder.add_account(bridge_account.clone())?;
+
+    let (proof_data, leaf_data, ger, _cgi_chain_hash) = data_source.get_data();
+
+    let token_symbol = "AGG";
+    let decimals = 8u8;
+    let max_supply: Felt = FungibleAsset::MAX_AMOUNT.into();
+    let agglayer_faucet_seed = builder.rng_mut().draw_word();
+
+    let origin_token_address = leaf_data.origin_token_address;
+    let leaf_origin_network = leaf_data.origin_network;
+    // First registration uses the leaf's own network (so a CLAIM would resolve to the faucet); the
+    // re-registration uses a different network, stranding the leaf-network token-registry key.
+    let reregistered_origin_network = leaf_origin_network.wrapping_add(1);
+    let scale = 10u8;
+    let metadata_hash = leaf_data.metadata_hash;
+
+    let agglayer_faucet = create_existing_agglayer_faucet(
+        agglayer_faucet_seed,
+        token_symbol,
+        decimals,
+        max_supply,
+        Felt::ZERO,
+        bridge_account.id(),
+    );
+    builder.add_account(agglayer_faucet.clone())?;
+
+    let sender_account_builder =
+        Account::builder(builder.rng_mut().random()).with_component(BasicWallet);
+    let sender_account = builder.add_account_from_builder(
+        Auth::IncrNonce,
+        sender_account_builder,
+        AccountState::Exists,
+    )?;
+
+    let miden_claim_amount = leaf_data
+        .amount
+        .scale_to_token_amount(scale as u32)
+        .expect("amount should scale successfully");
+
+    let claim_inputs = ClaimNoteStorage {
+        proof_data,
+        leaf_data,
+        miden_claim_amount,
+    };
+    let claim_note = ClaimNote::create(
+        claim_inputs,
+        bridge_account.id(),
+        sender_account.id(),
+        builder.rng_mut(),
+    )?;
+    builder.add_output_note(RawOutputNote::Full(claim_note.clone()));
+
+    // Registration #1: under the leaf's own origin network, so the leaf-network token key points at
+    // the faucet.
+    let config_note_leaf_network = ConfigAggBridgeNote::create(
+        ConversionMetadata {
+            faucet_account_id: agglayer_faucet.id(),
+            origin_token_address,
+            scale,
+            origin_network: leaf_origin_network,
+            is_native: false,
+            metadata_hash,
+        },
+        bridge_admin.id(),
+        bridge_account.id(),
+        builder.rng_mut(),
+    )?;
+    builder.add_output_note(RawOutputNote::Full(config_note_leaf_network.clone()));
+
+    // Registration #2: re-register the SAME faucet under a different origin network. This writes a
+    // new token key and updates the metadata, leaving the leaf-network token key stranded.
+    let config_note_reregister = ConfigAggBridgeNote::create(
+        ConversionMetadata {
+            faucet_account_id: agglayer_faucet.id(),
+            origin_token_address,
+            scale,
+            origin_network: reregistered_origin_network,
+            is_native: false,
+            metadata_hash,
+        },
+        bridge_admin.id(),
+        bridge_account.id(),
+        builder.rng_mut(),
+    )?;
+    builder.add_output_note(RawOutputNote::Full(config_note_reregister.clone()));
+
+    // Deregister: clears the faucet registry, metadata, and the token key derived from the CURRENT
+    // metadata (the re-registered network) — but NOT the stranded leaf-network token key.
+    let deregister_note = DeregisterAggBridgeNote::create(
+        agglayer_faucet.id(),
+        bridge_admin.id(),
+        bridge_account.id(),
+        builder.rng_mut(),
+    )?;
+    builder.add_output_note(RawOutputNote::Full(deregister_note.clone()));
+
+    let update_ger_note =
+        UpdateGerNote::create(ger, ger_manager.id(), bridge_account.id(), builder.rng_mut())?;
+    builder.add_output_note(RawOutputNote::Full(update_ger_note.clone()));
+
+    let mut mock_chain = builder.clone().build()?;
+
+    // TX0: register under the leaf network.
+    let executed = mock_chain
+        .build_tx_context(bridge_account.id(), &[config_note_leaf_network.id()], &[])?
+        .build()?
+        .execute()
+        .await?;
+    mock_chain.add_pending_executed_transaction(&executed)?;
+    mock_chain.prove_next_block()?;
+
+    // TX1: re-register under a different network (strands the leaf-network token key).
+    let executed = mock_chain
+        .build_tx_context(bridge_account.id(), &[config_note_reregister.id()], &[])?
+        .build()?
+        .execute()
+        .await?;
+    mock_chain.add_pending_executed_transaction(&executed)?;
+    mock_chain.prove_next_block()?;
+
+    // TX2: deregister the faucet.
+    let executed = mock_chain
+        .build_tx_context(bridge_account.id(), &[deregister_note.id()], &[])?
+        .build()?
+        .execute()
+        .await?;
+    mock_chain.add_pending_executed_transaction(&executed)?;
+    mock_chain.prove_next_block()?;
+
+    // TX3: store the GER.
+    let executed = mock_chain
+        .build_tx_context(bridge_account.id(), &[update_ger_note.id()], &[])?
+        .build()?
+        .execute()
+        .await?;
+    mock_chain.add_pending_executed_transaction(&executed)?;
+    mock_chain.prove_next_block()?;
+
+    // TX4: the CLAIM resolves to the deregistered faucet through the stale leaf-network token key,
+    // but the `assert_faucet_registered` check in `claim` rejects it.
+    let faucet_foreign_inputs = mock_chain.get_foreign_account_inputs(agglayer_faucet.id())?;
+    let claim_tx = mock_chain
+        .build_tx_context(bridge_account.id(), &[], &[claim_note])?
+        .foreign_accounts(vec![faucet_foreign_inputs])
+        .build()?;
+
+    let result = claim_tx.execute().await;
+    assert!(result.is_err(), "CLAIM resolving to a deregistered faucet must fail");
+    let error_msg = result.unwrap_err().to_string();
+    let expected_err_code = ERR_FAUCET_NOT_REGISTERED.code().to_string();
+    assert!(
+        error_msg.contains(&expected_err_code),
+        "expected ERR_FAUCET_NOT_REGISTERED ({expected_err_code}) for claim via deregistered faucet, got: {error_msg}"
     );
 
     Ok(())

@@ -20,6 +20,7 @@ pub use crate::{
     ClaimNote,
     ClaimNoteStorage,
     ConfigAggBridgeNote,
+    DeregisterAggBridgeNote,
     EthAddress,
     EthAmount,
     EthAmountError,
@@ -112,6 +113,8 @@ static LET_NUM_LEAVES_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// component, the `agglayer` library must be available to the assembler.
 /// The procedures of this component are:
 /// - `register_faucet`, which registers a faucet in the bridge.
+/// - `deregister_faucet`, which clears a previously-registered faucet from both the faucet registry
+///   and token registry maps.
 /// - `update_ger`, which injects a new GER into the storage map.
 /// - `bridge_out`, which bridges an asset out of Miden to the destination network.
 /// - `claim`, which validates a claim against the AggLayer bridge and creates a MINT note for the
@@ -137,7 +140,7 @@ static LET_NUM_LEAVES_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// - [`Self::let_num_leaves_slot_name`]: Stores the number of leaves in the LET frontier.
 ///
 /// The bridge starts with an empty faucet registry; faucets are registered at runtime via
-/// CONFIG_AGG_BRIDGE notes.
+/// CONFIG_AGG_BRIDGE notes and can be removed via DEREGISTER_AGG_BRIDGE notes.
 ///
 /// Claim validation compares the leaf's `destination_network` to the global MASM constant
 /// `agglayer::common::constants::MIDEN_NETWORK_ID`. Rust exposes the same value as
@@ -259,6 +262,7 @@ impl AggLayerBridge {
             ClaimNote::script_root(),
             B2AggNote::script_root(),
             ConfigAggBridgeNote::script_root(),
+            DeregisterAggBridgeNote::script_root(),
             UpdateGerNote::script_root(),
         ])
     }

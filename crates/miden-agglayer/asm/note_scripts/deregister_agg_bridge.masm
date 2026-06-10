@@ -1,0 +1,80 @@
+use agglayer::bridge::bridge_config
+use miden::protocol::active_note
+use miden::standards::attachments::network_account_target
+
+# CONSTANTS
+# =================================================================================================
+
+const DEREGISTER_AGG_BRIDGE_NUM_STORAGE_ITEMS = 2
+
+const STORAGE_START_PTR = 0
+const FAUCET_ID_SUFFIX = 0
+const FAUCET_ID_PREFIX = 1
+
+# ERRORS
+# =================================================================================================
+
+const ERR_DEREGISTER_AGG_BRIDGE_UNEXPECTED_STORAGE_ITEMS = "DEREGISTER_AGG_BRIDGE expects exactly 2 note storage items"
+const ERR_DEREGISTER_AGG_BRIDGE_TARGET_ACCOUNT_MISMATCH = "DEREGISTER_AGG_BRIDGE note attachment target account does not match consuming account"
+
+#! Agglayer Bridge DEREGISTER_AGG_BRIDGE script: deregisters a faucet from the bridge's faucet
+#! registry, token registry, and faucet metadata.
+#!
+#! This note can only be consumed by the Agglayer Bridge account that is targeted by the note
+#! attachment, and only if the note was sent by the bridge admin.
+#! Upon consumption, it clears every registry/metadata entry the bridge holds for the provided
+#! faucet ID. The origin token address and origin network are not carried by the note: the bridge
+#! reads them back from its own faucet metadata, so the cleared token-registry key matches the one
+#! written at registration.
+#!
+#! Requires that the account exposes:
+#! - agglayer::bridge_config::deregister_faucet procedure.
+#!
+#! Inputs:  [ARGS, pad(12)]
+#! Outputs: [pad(16)]
+#!
+#! NoteStorage layout (2 felts total):
+#! - faucet_id_suffix [0] : 1 felt
+#! - faucet_id_prefix [1] : 1 felt
+#!
+#! Where:
+#! - faucet_id_suffix: Suffix felt of the faucet account ID to deregister.
+#! - faucet_id_prefix: Prefix felt of the faucet account ID to deregister.
+#!
+#! Panics if:
+#! - The note attachment target account does not match the consuming bridge account.
+#! - The note does not contain exactly 2 storage items.
+#! - The account does not expose the deregister_faucet procedure.
+#! - The faucet is not currently registered (panics inside deregister_faucet).
+@note_script
+pub proc main
+    dropw
+    # => [pad(16)]
+
+    # Ensure note attachment targets the consuming bridge account.
+    exec.network_account_target::active_account_matches_target_account
+    assert.err=ERR_DEREGISTER_AGG_BRIDGE_TARGET_ACCOUNT_MISMATCH
+    # => [pad(16)]
+
+    # Load note storage to memory
+    push.STORAGE_START_PTR exec.active_note::get_storage
+    # => [num_storage_items, pad(16)]
+
+    # Validate the number of storage items
+    push.DEREGISTER_AGG_BRIDGE_NUM_STORAGE_ITEMS assert_eq.err=ERR_DEREGISTER_AGG_BRIDGE_UNEXPECTED_STORAGE_ITEMS
+    # => [pad(16)]
+
+    # Build deregister_faucet args by loading the two stored felts explicitly.
+    # deregister_faucet expects: [faucet_id_suffix, faucet_id_prefix, pad(14)]
+    mem_load.FAUCET_ID_PREFIX
+    mem_load.FAUCET_ID_SUFFIX
+    # => [faucet_id_suffix, faucet_id_prefix, pad(16)]
+
+    # Deregister the faucet in the bridge
+    call.bridge_config::deregister_faucet
+    # => [pad(18)]
+
+    # Drop the 2 overflow pad felts to bring sdepth back to the 16-minimum.
+    drop drop
+    # => [pad(16)]
+end
