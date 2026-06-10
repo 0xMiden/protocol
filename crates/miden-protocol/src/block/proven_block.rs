@@ -2,7 +2,8 @@ use miden_core::Word;
 use miden_crypto::dsa::ecdsa_k256_keccak::Signature;
 
 use crate::MIN_PROOF_SECURITY_LEVEL;
-use crate::block::{BlockBody, BlockHeader, BlockProof};
+use crate::block::validation::{self, ParentValidationError};
+use crate::block::{BlockBody, BlockHeader, BlockNumber, BlockProof};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -17,7 +18,7 @@ use crate::utils::serde::{
 #[derive(Debug, thiserror::Error)]
 pub enum ProvenBlockError {
     #[error(
-        "ECDSA signature verification failed based on the proven block's header commitment, validator public key and signature"
+        "ECDSA signature verification failed based on the proven block's header commitment, the parent block's validator public key and signature"
     )]
     InvalidSignature,
     #[error(
@@ -31,6 +32,34 @@ pub enum ProvenBlockError {
         "proven block header note root ({header_root}) does not match the corresponding body's note root ({body_root})"
     )]
     NoteRootMismatch { header_root: Word, body_root: Word },
+    #[error(
+        "proven block previous block commitment ({expected}) does not match expected parent's block commitment ({parent})"
+    )]
+    ParentCommitmentMismatch { expected: Word, parent: Word },
+    #[error("parent block number ({parent}) is not proven block number - 1 ({expected})")]
+    ParentNumberMismatch {
+        expected: BlockNumber,
+        parent: BlockNumber,
+    },
+    #[error("supplied parent block ({parent}) cannot be parent to genesis block")]
+    GenesisBlockHasNoParent { parent: BlockNumber },
+}
+
+impl From<ParentValidationError> for ProvenBlockError {
+    fn from(err: ParentValidationError) -> Self {
+        match err {
+            ParentValidationError::InvalidSignature => Self::InvalidSignature,
+            ParentValidationError::ParentNumberMismatch { expected, parent } => {
+                Self::ParentNumberMismatch { expected, parent }
+            },
+            ParentValidationError::ParentCommitmentMismatch { expected, parent } => {
+                Self::ParentCommitmentMismatch { expected, parent }
+            },
+            ParentValidationError::GenesisBlockHasNoParent { parent } => {
+                Self::GenesisBlockHasNoParent { parent }
+            },
+        }
+    }
 }
 
 // PROVEN BLOCK
@@ -60,8 +89,10 @@ pub struct ProvenBlock {
 impl ProvenBlock {
     /// Returns a new [`ProvenBlock`] instantiated from the provided components.
     ///
-    /// Validates that the provided components correspond to each other by verifying the signature,
-    /// and checking for matching transaction commitments and note roots.
+    /// Validates that the header and body correspond by checking the transaction commitment and
+    /// note root. This does NOT verify the validator signature, which can only be checked against
+    /// the parent block's validator key; callers must also call [`Self::validate_parent`] to
+    /// authenticate the block.
     ///
     /// Involves non-trivial computation. Use [`Self::new_unchecked`] if the validation is not
     /// necessary.
@@ -77,8 +108,6 @@ impl ProvenBlock {
     ///
     /// # Errors
     /// Returns an error if:
-    /// - If the validator signature does not verify against the block header commitment and the
-    ///   validator key.
     /// - If the transaction commitment in the block header is inconsistent with the transactions
     ///   included in the block body.
     /// - If the note root in the block header is inconsistent with the notes included in the block
@@ -111,8 +140,9 @@ impl ProvenBlock {
         Self { header, signature, body, proof }
     }
 
-    /// Validates that the components of the proven block correspond to each other by verifying the
-    /// signature, and checking for matching transaction commitments and note roots.
+    /// Validates that the components of the proven block correspond by checking the transaction
+    /// commitment and note root. Like [`Self::new`], this does NOT verify the validator signature;
+    /// call [`Self::validate_parent`] to authenticate the block.
     ///
     /// Validation involves non-trivial computation, and depending on the size of the block may
     /// take non-negligible amount of time.
@@ -128,16 +158,11 @@ impl ProvenBlock {
     ///
     /// # Errors
     /// Returns an error if:
-    /// - If the validator signature does not verify against the block header commitment and the
-    ///   validator key.
     /// - If the transaction commitment in the block header is inconsistent with the transactions
     ///   included in the block body.
     /// - If the note root in the block header is inconsistent with the notes included in the block
     ///   body.
     pub fn validate(&self) -> Result<(), ProvenBlockError> {
-        // Verify signature.
-        self.validate_signature()?;
-
         // Validate that header / body transaction commitments match.
         self.validate_tx_commitment()?;
 
@@ -177,17 +202,26 @@ impl ProvenBlock {
         (self.header, self.body, self.signature, self.proof)
     }
 
+    /// Validates that the provided parent block precedes and authorizes this block: the parent's
+    /// number is this block's number minus one, the parent's commitment matches this block's
+    /// `prev_block_commitment`, and this block's signature verifies against the parent's
+    /// `validator_key` (the key authorized to sign this block).
+    ///
+    /// `parent_block` MUST come from already-trusted chain state. Because `prev_block_commitment`
+    /// is attacker-controlled, passing an untrusted parent would let a forged block self-authorize.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the block is the genesis block (no parent), the parent's number or
+    /// commitment do not match, or the signature does not verify against the parent's validator
+    /// key.
+    pub fn validate_parent(&self, parent_block: &BlockHeader) -> Result<(), ProvenBlockError> {
+        validation::validate_against_parent(&self.header, &self.signature, parent_block)?;
+        Ok(())
+    }
+
     // HELPER METHODS
     // --------------------------------------------------------------------------------------------
-
-    /// Performs ECDSA signature verification against the header commitment and validator key.
-    fn validate_signature(&self) -> Result<(), ProvenBlockError> {
-        if !self.signature.verify(self.header.commitment(), self.header.validator_key()) {
-            Err(ProvenBlockError::InvalidSignature)
-        } else {
-            Ok(())
-        }
-    }
 
     /// Validates that the transaction commitments between the header and body match for this proven
     /// block.
@@ -239,5 +273,51 @@ impl Deserializable for ProvenBlock {
         };
 
         Ok(block)
+    }
+}
+
+// TESTS
+// ================================================================================================
+
+#[cfg(test)]
+mod tests {
+    use alloc::vec::Vec;
+
+    use miden_crypto::dsa::ecdsa_k256_keccak::SigningKey;
+
+    use super::*;
+    use crate::Word;
+    use crate::block::validation::test_block_header;
+    use crate::testing::random_secret_key::random_secret_key;
+    use crate::transaction::OrderedTransactionHeaders;
+
+    /// Builds block 1 signed by `signer` and linked to `parent`. The exhaustive matrix of failure
+    /// modes lives in `block::validation`; here we only confirm `ProvenBlock::validate_parent`
+    /// wires the signature and parent header through to the shared check.
+    fn block_one(parent: &BlockHeader, signer: &SigningKey) -> ProvenBlock {
+        let header = test_block_header(1, parent.commitment(), random_secret_key().public_key());
+        let signature = signer.sign(header.commitment());
+        let body = BlockBody::new_unchecked(
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            OrderedTransactionHeaders::new_unchecked(Vec::new()),
+        );
+        ProvenBlock::new_unchecked(header, body, signature, BlockProof::new_dummy())
+    }
+
+    #[test]
+    fn validate_parent_accepts_committed_signer() {
+        let validator = random_secret_key();
+        let parent = test_block_header(0, Word::empty(), validator.public_key());
+        block_one(&parent, &validator).validate_parent(&parent).unwrap();
+    }
+
+    #[test]
+    fn validate_parent_rejects_uncommitted_signer() {
+        let parent = test_block_header(0, Word::empty(), random_secret_key().public_key());
+        let impostor = random_secret_key();
+        let result = block_one(&parent, &impostor).validate_parent(&parent);
+        assert!(matches!(result, Err(ProvenBlockError::InvalidSignature)));
     }
 }

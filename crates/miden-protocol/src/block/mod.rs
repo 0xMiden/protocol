@@ -19,6 +19,8 @@ pub use signed_block::SignedBlock;
 mod proven_block;
 pub use proven_block::ProvenBlock;
 
+mod validation;
+
 pub mod account_tree;
 pub mod nullifier_tree;
 

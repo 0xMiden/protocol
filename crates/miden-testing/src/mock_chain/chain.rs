@@ -19,7 +19,7 @@ use miden_protocol::block::{
     ProposedBlock,
     ProvenBlock,
 };
-use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
+use miden_protocol::crypto::dsa::ecdsa_k256_keccak::{PublicKey as ValidatorKey, SigningKey};
 use miden_protocol::note::{Note, NoteHeader, NoteId, NoteInclusionProof, Nullifier};
 use miden_protocol::transaction::{
     ExecutedTransaction,
@@ -410,6 +410,11 @@ impl MockChain {
         let chain_tip =
             self.chain.chain_tip().expect("chain should contain at least the genesis block");
         self.blocks[chain_tip.as_usize()].header().clone()
+    }
+
+    /// Returns the public key of the validator that signs the next block produced by this chain.
+    pub fn validator_key(&self) -> ValidatorKey {
+        self.validator_secret_key.public_key()
     }
 
     /// Returns the latest [`ProvenBlock`] in the chain.
@@ -825,14 +830,31 @@ impl MockChain {
     ///
     /// This will commit all the currently pending transactions into the chain state.
     pub fn prove_next_block(&mut self) -> anyhow::Result<ProvenBlock> {
-        self.prove_and_apply_block(None)
+        self.prove_and_apply_block(None, None)
+    }
+
+    /// Proves the next block in the mock chain, rotating the validator key.
+    ///
+    /// The produced block is still signed by the current validator key (the one committed to by
+    /// the previous block) but commits `new_validator_key.public_key()` as the validator key
+    /// authorized to sign the *following* block. After this block is applied, the chain signs
+    /// subsequent blocks with `new_validator_key`.
+    ///
+    /// This commits all currently pending transactions into the chain state.
+    pub fn prove_next_block_with_validator_key_rotation(
+        &mut self,
+        new_validator_key: SigningKey,
+    ) -> anyhow::Result<ProvenBlock> {
+        let block = self.prove_and_apply_block(None, Some(new_validator_key.public_key()))?;
+        self.validator_secret_key = new_validator_key;
+        Ok(block)
     }
 
     /// Proves the next block in the mock chain at the given timestamp.
     ///
     /// This will commit all the currently pending transactions into the chain state.
     pub fn prove_next_block_at(&mut self, timestamp: u32) -> anyhow::Result<ProvenBlock> {
-        self.prove_and_apply_block(Some(timestamp))
+        self.prove_and_apply_block(Some(timestamp), None)
     }
 
     /// Proves new blocks until the block with the given target block number has been created.
@@ -911,6 +933,15 @@ impl MockChain {
     /// - Consumed notes are removed from the committed notes.
     /// - The block is appended to the [`BlockChain`] and the list of proven blocks.
     fn apply_block(&mut self, proven_block: ProvenBlock) -> anyhow::Result<()> {
+        // Verify the block is correctly linked to and authorized by its parent. Genesis is the
+        // trust root and has no parent to anchor against, so it is skipped.
+        if proven_block.header().block_num() != BlockNumber::GENESIS {
+            let parent = self.latest_block_header();
+            proven_block
+                .validate_parent(&parent)
+                .context("block failed validation against its parent")?;
+        }
+
         for account_update in proven_block.body().updated_accounts() {
             self.account_tree
                 .insert(account_update.account_id(), account_update.final_state_commitment())
@@ -1026,7 +1057,11 @@ impl MockChain {
     /// 2. Insert all the account updates, nullifiers and notes from the block into the chain state.
     ///
     /// If a `timestamp` is provided, it will be set on the block.
-    fn prove_and_apply_block(&mut self, timestamp: Option<u32>) -> anyhow::Result<ProvenBlock> {
+    fn prove_and_apply_block(
+        &mut self,
+        timestamp: Option<u32>,
+        next_validator_key: Option<ValidatorKey>,
+    ) -> anyhow::Result<ProvenBlock> {
         // Create batches from pending transactions.
         // ----------------------------------------------------------------------------------------
 
@@ -1039,9 +1074,15 @@ impl MockChain {
         let block_timestamp =
             timestamp.unwrap_or(self.latest_block_header().timestamp() + Self::TIMESTAMP_STEP_SECS);
 
-        let proposed_block = self
+        let mut proposed_block = self
             .propose_block_at(batches.clone(), block_timestamp)
             .context("failed to create proposed block")?;
+
+        // Commit to a rotated validator key for the next block, if requested.
+        if let Some(next_validator_key) = next_validator_key {
+            proposed_block = proposed_block.with_next_validator_key(next_validator_key);
+        }
+
         let proven_block = self.prove_block(proposed_block.clone())?;
 
         // Apply block.
@@ -1233,6 +1274,7 @@ mod tests {
         ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
         ACCOUNT_ID_SENDER,
     };
+    use miden_protocol::testing::random_secret_key::random_secret_key;
     use miden_standards::account::wallets::BasicWallet;
 
     use super::*;
@@ -1244,6 +1286,55 @@ mod tests {
         let block = chain.prove_until_block(5)?;
         assert_eq!(block.header().block_num(), 5u32.into());
         assert_eq!(chain.proven_blocks().len(), 6);
+
+        Ok(())
+    }
+
+    #[test]
+    fn validator_key_rotation_across_blocks() -> anyhow::Result<()> {
+        let mut chain = MockChain::new();
+        let original_key = chain.validator_key();
+
+        // Build normal blocks. The parent-linkage and signature are verified inside `apply_block`,
+        // so these calls succeeding proves the chain validates against the previous block's key.
+        chain.prove_next_block()?;
+        chain.prove_next_block()?;
+        assert_eq!(chain.validator_key(), original_key);
+
+        // Rotate to a new validator key.
+        let new_key = random_secret_key();
+        let new_pub = new_key.public_key();
+        let rotation_block = chain.prove_next_block_with_validator_key_rotation(new_key)?;
+
+        // The rotation block is still signed by (and validates against) the original key, but
+        // commits the new key as the signer authorized for the next block.
+        assert_eq!(rotation_block.header().validator_key(), &new_pub);
+        assert_eq!(chain.validator_key(), new_pub);
+
+        // The next block is signed by the rotated key and must validate against the rotation
+        // block's committed key; `apply_block` would error otherwise.
+        chain.prove_next_block()?;
+        assert_eq!(chain.validator_key(), new_pub);
+
+        Ok(())
+    }
+
+    #[test]
+    fn proposed_block_serialization_round_trip() -> anyhow::Result<()> {
+        let chain = MockChain::new();
+        let timestamp = chain.latest_block_header().timestamp() + 1;
+        let next_key = random_secret_key().public_key();
+        let proposed = chain
+            .propose_block_at(Vec::<ProvenBatch>::new(), timestamp)?
+            .with_next_validator_key(next_key.clone());
+
+        let bytes = proposed.to_bytes();
+        let deserialized = ProposedBlock::read_from_bytes(&bytes).unwrap();
+
+        // `ProposedBlock` does not implement `PartialEq`, so compare via re-serialization and the
+        // round-tripped `next_validator_key` field added by this change.
+        assert_eq!(deserialized.to_bytes(), bytes);
+        assert_eq!(deserialized.next_validator_key(), &next_key);
 
         Ok(())
     }
@@ -1360,28 +1451,31 @@ mod tests {
         builder.add_existing_mock_account(Auth::IncrNonce)?;
         let mut chain = builder.build()?;
 
-        // Verify the genesis block signature.
+        // The genesis block is the trust root: it is signed by the key it commits as the signer
+        // of block 1.
         let genesis_block = chain.latest_block();
+        let genesis_validator_key = genesis_block.header().validator_key().clone();
         assert!(
-            genesis_block.signature().verify(
-                genesis_block.header().commitment(),
-                genesis_block.header().validator_key()
-            )
+            genesis_block
+                .signature()
+                .verify(genesis_block.header().commitment(), &genesis_validator_key)
         );
 
         // Add another block.
         chain.prove_next_block()?;
 
-        // Verify the next block signature.
+        // The next block's signature must verify against the validator key committed to by its
+        // parent (the genesis block), not the key in its own header.
         let next_block = chain.latest_block();
         assert!(
             next_block
                 .signature()
-                .verify(next_block.header().commitment(), next_block.header().validator_key())
+                .verify(next_block.header().commitment(), &genesis_validator_key)
         );
 
-        // Public keys should be carried through from the genesis header to the next.
-        assert_eq!(next_block.header().validator_key(), next_block.header().validator_key());
+        // Without rotation, the validator key is carried through from the genesis header to the
+        // next.
+        assert_eq!(next_block.header().validator_key(), &genesis_validator_key);
 
         Ok(())
     }
