@@ -1,11 +1,12 @@
+use core::num::NonZeroU16;
 use core::slice;
 use std::collections::BTreeSet;
 
+use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountBuilder, AccountType};
 use miden_protocol::note::{Note, NoteScriptRoot};
 use miden_protocol::testing::account_id::ACCOUNT_ID_SENDER;
 use miden_protocol::transaction::{RawOutputNote, TransactionScript, TransactionScriptRoot};
-use miden_protocol::{Felt, Word};
 use miden_standards::account::auth::AuthNetworkAccount;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
@@ -14,6 +15,7 @@ use miden_standards::errors::standards::{
     ERR_TX_SCRIPT_ALLOWLIST_TX_SCRIPT_NOT_ALLOWED,
 };
 use miden_standards::testing::note::NoteBuilder;
+use miden_standards::transaction::ExpirationTransactionScript;
 use miden_testing::{MockChain, assert_transaction_executor_error};
 use rstest::rstest;
 
@@ -74,26 +76,6 @@ fn expiration_tx_script(delta: u16) -> TransactionScript {
     CodeBuilder::default()
         .compile_tx_script(code)
         .expect("expiration tx script should compile")
-}
-
-/// Compiles a transaction script that sets the expiration delta to the value the caller supplies in
-/// the first element of `TX_SCRIPT_ARGS`, rather than baking it into the script. A single
-/// allowlisted root therefore accepts any caller-chosen delta. At script entry the operand stack
-/// holds `[TX_SCRIPT_ARGS, ..]`, so the top element is the delta; the remaining three arg elements
-/// are dropped.
-fn expiration_from_args_tx_script() -> TransactionScript {
-    let code = "
-        use miden::protocol::tx
-
-        begin
-            exec.tx::update_expiration_block_delta
-            drop drop drop
-        end
-        ";
-
-    CodeBuilder::default()
-        .compile_tx_script(code)
-        .expect("expiration-from-args tx script should compile")
 }
 
 // TESTS
@@ -285,27 +267,29 @@ async fn test_auth_network_account_accepts_any_of_multiple_allowlisted_roots(
 async fn test_auth_network_account_accepts_allowlisted_tx_script_with_caller_args(
     #[case] delta: u16,
 ) -> anyhow::Result<()> {
-    let tx_script = expiration_from_args_tx_script();
+    // Use the canonical, args-driven expiration script from miden-standards - the same script the
+    // node allowlists - so this exercises the standardized root rather than a local copy.
+    let script = ExpirationTransactionScript::new(
+        NonZeroU16::new(delta).expect("rstest delta cases are non-zero"),
+    );
 
     let mut builder = MockChain::builder();
     let note = build_input_note()?;
     builder.add_output_note(RawOutputNote::Full(note.clone()));
 
     // Allowlist the note root and the single caller-parameterized expiration script.
-    let account =
-        build_account_with_allowlists(vec![note.script().root().into()], vec![tx_script.root()])?;
+    let account = build_account_with_allowlists(
+        vec![note.script().root().into()],
+        vec![ExpirationTransactionScript::script_root()],
+    )?;
     builder.add_account(account.clone())?;
 
     let mock_chain = builder.build()?;
 
-    // The caller chooses the expiration delta via TX_SCRIPT_ARGS; the allowlist still permits it
-    // because the script's root is allowlisted regardless of its arguments.
-    let tx_script_args = Word::new([Felt::from(delta), Felt::ZERO, Felt::ZERO, Felt::ZERO]);
-
     let executed = mock_chain
         .build_tx_context(account.id(), &[], slice::from_ref(&note))?
-        .tx_script(tx_script)
-        .tx_script_args(tx_script_args)
+        .tx_script(script.into())
+        .tx_script_args(script.tx_script_args())
         .build()?
         .execute()
         .await?;
