@@ -19,8 +19,8 @@ use crate::errors::CodeBuilderError;
 /// A [`TransactionScript`] that sends the specified notes from an account whose code interface
 /// exposes either the [`BasicWallet`] or [`FungibleFaucet`] procedures.
 ///
-/// Construction is fallible (see [`SendNotesScriptError`]); converting the wrapper into the
-/// underlying [`TransactionScript`] via the [`From`] impl is infallible.
+/// Construction is fallible (see [`SendNotesTransactionScriptError`]); converting the wrapper into
+/// the underlying [`TransactionScript`] via the [`From`] impl is infallible.
 ///
 /// Provided `expiration_delta` specifies how close to the transaction's reference block the
 /// transaction must be included into the chain. For example, with a reference block of 100 and a
