@@ -94,7 +94,7 @@ The `CLAIM` note is consumed by the bridge account:
      `P2ID` note targeted at the recipient directly. The asset must have been previously
      locked into the bridge by a prior bridge-out for the same token.
 
-Inside `bridge_in::claim`, immediately after proof and leaf data are piped into memory, the bridge asserts the leaf's `destination_network` equals the global MASM constant `MIDEN_NETWORK_ID` in `asm/agglayer/common/constants.masm` (after `swap_u32_bytes` on the LE-packed memory limb). The same value is exposed to Rust as `AggLayerBridge::MIDEN_NETWORK_ID`, matching Solidity test vectors.
+Inside `bridge_in::claim`, immediately after proof and leaf data are piped into memory, the bridge asserts the leaf's `destination_network` equals the bridge's configured network ID (after `swap_u32_bytes` on the LE-packed memory limb). The network ID is a deployment setting passed to `create_bridge_account` and stored in the `agglayer::bridge::network_id` slot; `bridge_config::load_network_id` reads it at runtime. It is set once at account creation and never mutated.
 This mirrors Solidity `claimAsset` destination-network checks.
 
 TODO: The leaf type field is not validated to be `LEAF_TYPE_ASSET` (0)
@@ -346,14 +346,14 @@ in the map the procedure panics with `ERR_GER_ALREADY_REGISTERED`.
 | **Inputs** | `[PROOF_DATA_KEY, LEAF_DATA_KEY, faucet_mint_amount, pad(7)]` on the operand stack; proof data and leaf data in the advice map keyed by `PROOF_DATA_KEY` and `LEAF_DATA_KEY` respectively |
 | **Outputs** | `[pad(16)]` |
 | **Context** | Consuming a `CLAIM` note on the bridge account |
-| **Panics** | Leaf `destination_network` does not match `agglayer::common::constants::MIDEN_NETWORK_ID`; invalid leaf type; GER not known; global index invalid; Merkle proof verification failed; (origin token address, origin network) pair not in token registry; claim already spent; amount conversion mismatch |
+| **Panics** | Leaf `destination_network` does not match the bridge's configured network ID; invalid leaf type; GER not known; global index invalid; Merkle proof verification failed; (origin token address, origin network) pair not in token registry; claim already spent; amount conversion mismatch |
 
 Validates a bridge-in claim and creates a MINT note targeting the faucet:
 
 1. Pipes proof data and leaf data from the advice map into memory, verifying preimage
-   integrity, then asserts the leaf's `destination_network` matches the global
-   `MIDEN_NETWORK_ID` constant (`asm/agglayer/common/constants.masm`) after `swap_u32_bytes` on
-   the LE-packed limb (same convention as other AggLayer bridge-in u32 felts in memory).
+   integrity, then asserts the leaf's `destination_network` matches the bridge's configured
+   network ID (read from the `agglayer::bridge::network_id` storage slot) after `swap_u32_bytes`
+   on the LE-packed limb (same convention as other AggLayer bridge-in u32 felts in memory).
 2. Extracts the destination account ID from the leaf data's destination address
    (via `eth_address::to_account_id`).
 3. Validates the Merkle proof via `verify_leaf_bridge`: computes the leaf
@@ -392,6 +392,7 @@ Validates a bridge-in claim and creates a MINT note targeting the faucet:
 | `agglayer::bridge::cgi_chain_hash_hi` | Value | -- | Upper word of the CGI chain hash | CGI chain hash high word (Keccak-256 upper 16 bytes) |
 | `agglayer::bridge::removed_ger_hash_chain_lo` | Value | -- | Lower word of the removed-GER hash chain | Removed-GER hash chain low word (Keccak-256 lower 16 bytes) |
 | `agglayer::bridge::removed_ger_hash_chain_hi` | Value | -- | Upper word of the removed-GER hash chain | Removed-GER hash chain high word (Keccak-256 upper 16 bytes) |
+| `agglayer::bridge::network_id` | Value | -- | `[network_id, 0, 0, 0]` | AggLayer network ID of this bridge; written once at account creation, never mutated |
 
 The privileged-role state is held by the access-control components installed on the bridge account
 (`RoleBasedAccessControl` role config/membership maps and the `Authority` procedure-to-role map),
@@ -633,8 +634,8 @@ The storage is divided into three logical regions: proof data (felts 0-535), lea
    advice map as two keyed entries (`PROOF_DATA_KEY`, `LEAF_DATA_KEY`).
 4. The `miden_claim_amount` is read from memory.
 5. `bridge_in::claim` is called with `[PROOF_DATA_KEY, LEAF_DATA_KEY, miden_claim_amount]`
-   on the stack. The bridge asserts the leaf's `destination_network` matches the global
-   `MIDEN_NETWORK_ID` MASM constant, validates the proof, checks the claim nullifier, looks up the faucet via the token
+   on the stack. The bridge asserts the leaf's `destination_network` matches the bridge's
+   configured network ID, validates the proof, checks the claim nullifier, looks up the faucet via the token
    registry, verifies the amount conversion, then builds a MINT output note targeting the faucet.
 
 #### Permissions
