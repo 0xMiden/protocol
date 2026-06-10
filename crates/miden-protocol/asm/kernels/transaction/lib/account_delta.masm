@@ -640,17 +640,13 @@ proc compute_asset_delta
         dropw
         # => [INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, ASSET_KEY]
 
+        # the asset was removed if the initial value is not the empty word (in which case the final
+        # word must be empty)
         exec.word::testz not
         # => [was_removed, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, ASSET_KEY]
 
-        push.DELTA_OP_ADD
-        push.DELTA_OP_REMOVE
-        dup.2
-        # => [was_removed, delta_op_remove, delta_op_add, was_removed, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, ASSET_KEY]
-
-        # if was_removed DELTA_OP_REMOVE is selected
-        # if !was_removed DELTA_OP_ADD is selected
-        cdrop
+        # compute delta_op as was_removed + 1
+        dup add.1
         # => [delta_op, was_removed, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, ASSET_KEY]
 
         movdn.13
@@ -670,14 +666,8 @@ proc compute_asset_delta
         exec.asset::lt
         # => [is_final_lt_initial, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, ASSET_KEY]
 
-        push.DELTA_OP_ADD
-        push.DELTA_OP_REMOVE
-        dup.2
-        # => [is_final_lt_initial, delta_op_remove, delta_op_add, is_final_lt_initial, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, ASSET_KEY]
-
-        # if is_final_lt_initial DELTA_OP_REMOVE is selected
-        # if !is_final_lt_initial DELTA_OP_ADD is selected
-        cdrop
+        # compute delta_op as is_final_lt_initial + 1
+        dup add.1
         # => [delta_op, is_final_lt_initial, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, ASSET_KEY]
 
         movdn.13

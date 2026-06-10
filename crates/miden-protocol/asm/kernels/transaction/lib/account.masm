@@ -746,7 +746,7 @@ end
 #! - the non-fungible asset is not found in the vault.
 pub proc remove_asset_from_vault
     # duplicate the asset key for the later event and delta update
-    dupw movdnw.2
+    swapw dupw.1
     # => [ASSET_KEY, ASSET_VALUE, ASSET_KEY]
 
     # push the vault root ptr
