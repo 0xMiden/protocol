@@ -25,7 +25,7 @@ use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 use miden_tx::utils::hex_to_bytes;
 use serde::Deserialize;
 
-use super::test_utils::execute_program_with_default_host;
+use super::test_utils::{MIDEN_NETWORK_ID, execute_program_with_default_host};
 
 // EXIT ROOT TEST VECTORS
 // ================================================================================================
@@ -68,8 +68,12 @@ async fn update_ger_note_updates_storage() -> anyhow::Result<()> {
     // CREATE BRIDGE ACCOUNT
     // --------------------------------------------------------------------------------------------
     let bridge_seed = builder.rng_mut().draw_word();
-    let bridge_account =
-        create_existing_bridge_account(bridge_seed, bridge_admin.id(), ger_manager.id());
+    let bridge_account = create_existing_bridge_account(
+        bridge_seed,
+        bridge_admin.id(),
+        ger_manager.id(),
+        MIDEN_NETWORK_ID,
+    );
     builder.add_account(bridge_account.clone())?;
 
     // CREATE UPDATE_GER NOTE WITH 8 STORAGE ITEMS (NEW GER AS TWO WORDS)
@@ -284,8 +288,12 @@ async fn update_ger_rejects_duplicate() -> anyhow::Result<()> {
 
     // CREATE BRIDGE ACCOUNT
     let bridge_seed = builder.rng_mut().draw_word();
-    let bridge_account =
-        create_existing_bridge_account(bridge_seed, bridge_admin.id(), ger_manager.id());
+    let bridge_account = create_existing_bridge_account(
+        bridge_seed,
+        bridge_admin.id(),
+        ger_manager.id(),
+        MIDEN_NETWORK_ID,
+    );
     builder.add_account(bridge_account.clone())?;
 
     let ger_bytes: [u8; 32] = [

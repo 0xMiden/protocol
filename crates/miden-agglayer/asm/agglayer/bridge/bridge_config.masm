@@ -26,6 +26,7 @@ const GER_MAP_STORAGE_SLOT = word("agglayer::bridge::ger_map")
 const FAUCET_REGISTRY_MAP_SLOT = word("agglayer::bridge::faucet_registry_map")
 const TOKEN_REGISTRY_MAP_SLOT = word("agglayer::bridge::token_registry_map")
 const FAUCET_METADATA_MAP_SLOT = word("agglayer::bridge::faucet_metadata_map")
+const NETWORK_ID_SLOT = word("agglayer::bridge::network_id")
 
 # Flags
 const GER_KNOWN_FLAG = [1, 0, 0, 0]
@@ -540,4 +541,28 @@ proc assert_sender_is_ger_manager
     exec.account_id::is_equal
     assert.err=ERR_SENDER_NOT_GER_MANAGER
     # => [pad(16)]
+end
+
+#! Returns the AggLayer network ID assigned to this bridge.
+#!
+#! The network ID is written to NETWORK_ID_SLOT once at account creation and is never mutated by
+#! any bridge procedure, so it is effectively immutable for the lifetime of the account. It
+#! identifies this Miden chain within the AggLayer and may differ between deployments (e.g. testnet
+#! vs mainnet).
+#!
+#! Inputs:  []
+#! Outputs: [network_id]
+#!
+#! Where:
+#! - network_id is the u32 AggLayer network ID of this bridge.
+#!
+#! Invocation: exec
+pub proc load_network_id
+    push.NETWORK_ID_SLOT[0..2]
+    exec.active_account::get_item
+    # => [network_id, 0, 0, 0]
+
+    # discard the three padding zeros, keeping only the network ID
+    movdn.3 drop drop drop
+    # => [network_id]
 end
