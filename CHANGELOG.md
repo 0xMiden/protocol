@@ -18,6 +18,7 @@
 - Added `AccountComponent::has_procedure(root)` helper ([#2974](https://github.com/0xMiden/protocol/pull/2974)).
 - Optimized protocol MASM stack-cleaning sequences, saving 1 cycle per occurrence across 9 single-element-extraction procedures ([#3041](https://github.com/0xMiden/protocol/pull/3041)).
 - [BREAKING] Refactored `TokenPolicyManager` by adding `invoke_send_policy` / `invoke_receive_policy` wrappers (stored in the protocol reserved asset callback slots) that read the active policy root from the new `active_send_policy_proc_root` / `active_receive_policy_proc_root` storage slots ([#3047](https://github.com/0xMiden/protocol/pull/3047)).
+- [BREAKING] Changed `asset_vault::get_asset` and `asset_vault::peek_asset` to accept a pre-hashed `ASSET_KEY_HASH` instead of a raw `ASSET_KEY`, and made `asset_vault::hash_asset_key` public; fungible add/remove now hash the vault key once, eliminating a redundant `poseidon2::hash` per operation ([#3073](https://github.com/0xMiden/protocol/pull/3073)).
 - Added a definition of the Miden operator on the architecture overview page and linked it from the note lifecycle ([#3017](https://github.com/0xMiden/protocol/pull/3017)).
 - Clarified Miden's operational roles on the architecture overview page and linked them from the note lifecycle ([#3017](https://github.com/0xMiden/protocol/pull/3017)).
 
