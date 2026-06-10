@@ -20,6 +20,7 @@
 - [BREAKING] Refactored `TokenPolicyManager` by adding `invoke_send_policy` / `invoke_receive_policy` wrappers (stored in the protocol reserved asset callback slots) that read the active policy root from the new `active_send_policy_proc_root` / `active_receive_policy_proc_root` storage slots ([#3047](https://github.com/0xMiden/protocol/pull/3047)).
 - Added a definition of the Miden operator on the architecture overview page and linked it from the note lifecycle ([#3017](https://github.com/0xMiden/protocol/pull/3017)).
 - Clarified Miden's operational roles on the architecture overview page and linked them from the note lifecycle ([#3017](https://github.com/0xMiden/protocol/pull/3017)).
+- [BREAKING] Added an `asset_callbacks` field to `ConversionMetadata` and stored it in the bridge's faucet registry at registration time, replacing the hardcoded callbacks bits on the bridge-in MINT and unlock paths with a registry lookup ([#3074](https://github.com/0xMiden/protocol/pull/3074)).
 
 ### Fixes
 - Fixed `update_ger` to explicitly reject duplicate GER insertions with `ERR_GER_ALREADY_REGISTERED` instead of silently accepting them ([#2983](https://github.com/0xMiden/protocol/pull/2983)).
