@@ -49,7 +49,7 @@ asset and the destination network/address. The bridge account consumes this note
 5. Computes the Keccak-256 leaf value and appends it to the Local Exit Tree (LET).
 6. Dispatches on the faucet's `is_native` flag (also read from the registry):
    - **Wrapped faucet (`is_native = false`):** the bridge does not hold the asset onchain; it
-     emits a public [`BURN`](#45-burn-generated) note targeting the faucet, which the faucet
+     emits a public [`BURN`](#46-burn-generated) note targeting the faucet, which the faucet
      consumes to burn the asset and decrement the faucet's token supply.
    - **Miden-native faucet (`is_native = true`):** the bridge does not hold mint/burn authority
      for the faucet, so it cannot emit a `BURN`. Instead it locks the asset by adding it to
@@ -84,9 +84,9 @@ The `CLAIM` note is consumed by the bridge account:
    registry.
 7. Verifies the claim amount against the leaf's U256 amount and the faucet's scale factor.
 8. Dispatches on the faucet's `is_native` flag:
-   - **Wrapped faucet (`is_native = false`):** the bridge emits a [`MINT`](#47-mint-generated)
+   - **Wrapped faucet (`is_native = false`):** the bridge emits a [`MINT`](#48-mint-generated)
      note targeting the faucet. The faucet consumes the `MINT` note, mints the specified amount,
-     and creates a [`P2ID`](#46-p2id-generated) note delivering the minted assets to the
+     and creates a [`P2ID`](#47-p2id-generated) note delivering the minted assets to the
      recipient's Miden account.
    - **Miden-native faucet (`is_native = true`):** the bridge cannot mint via the faucet, so
      it removes the asset from its own vault (`native_account::remove_asset`) and emits a
@@ -126,7 +126,7 @@ to be valid.
 > failure explicit and prevents the GER manager from accidentally creating unconsumed notes.
 
 A separate GER Remover role can revoke a previously-registered GER by sending a
-`REMOVE_GER` note. The bridge consumes such a note and:
+[`REMOVE_GER`](#45-remove_ger) note. The bridge consumes such a note and:
 
 1. Asserts the note sender is the designated GER remover (a role distinct from the GER
    manager so that insertion and revocation authority can be split).
@@ -182,14 +182,17 @@ TODO: Faucet existence and code commitment are not validated during registration
 
 ### 2.5 Administration
 
-The bridge has two administrative roles set at account creation time:
+The bridge has three administrative roles set at account creation time:
 
 - **Bridge admin** (`admin_account_id`): authorizes faucet registration via
   [`CONFIG_AGG_BRIDGE`](#43-config_agg_bridge) notes.
 - **GER manager** (`ger_manager_account_id`): authorizes GER updates via [`UPDATE_GER`](#44-update_ger)
   notes.
+- **GER remover** (`ger_remover_account_id`): authorizes GER removals via
+  [`REMOVE_GER`](#45-remove_ger) notes. Kept distinct from the GER manager so that insertion
+  and revocation authority can be split.
 
-Both roles are verified by checking the note sender against the stored account ID.
+All roles are verified by checking the note sender against the stored account ID.
 
 TODO: Administrative roles cannot be transferred after account creation
 ([#2706](https://github.com/0xMiden/protocol/issues/2706)).
@@ -208,6 +211,7 @@ which is a thin wrapper that re-exports procedures from the `agglayer` library m
 
 - `bridge_config::register_faucet`
 - `bridge_config::update_ger`
+- `bridge_config::remove_ger`
 - `bridge_in::claim`
 - `bridge_out::bridge_out`
 
@@ -308,7 +312,7 @@ Validates a bridge-in claim and creates a MINT note targeting the faucet:
 7. Verifies the `faucet_mint_amount` against the leaf data's U256 amount and the
    faucet's scale factor (via FPI to `agglayer_faucet::get_scale`), using
    `asset_conversion::verify_u256_to_native_amount_conversion`.
-8. Builds a MINT output note targeting the faucet (see [Section 4.7](#47-mint-generated)).
+8. Builds a MINT output note targeting the faucet (see [Section 4.8](#48-mint-generated)).
 
 #### Bridge Account Storage
 
@@ -326,9 +330,13 @@ Validates a bridge-in claim and creates a MINT note targeting the faucet:
 | `agglayer::bridge::cgi_chain_hash_hi` | Value | -- | Upper word of the CGI chain hash | CGI chain hash high word (Keccak-256 upper 16 bytes) |
 | `agglayer::bridge::admin_account_id` | Value | -- | `[0, 0, admin_suffix, admin_prefix]` | Bridge admin account ID for CONFIG note authorization |
 | `agglayer::bridge::ger_manager_account_id` | Value | -- | `[0, 0, mgr_suffix, mgr_prefix]` | GER manager account ID for UPDATE_GER note authorization |
+| `agglayer::bridge::ger_remover_account_id` | Value | -- | `[0, 0, rem_suffix, rem_prefix]` | GER remover account ID for REMOVE_GER note authorization |
+| `agglayer::bridge::removed_ger_hash_chain_lo` | Value | -- | Lower word of the removed-GER hash chain | Removed-GER hash chain low word (Keccak-256 lower 16 bytes) |
+| `agglayer::bridge::removed_ger_hash_chain_hi` | Value | -- | Upper word of the removed-GER hash chain | Removed-GER hash chain high word (Keccak-256 upper 16 bytes) |
 
 Initial state: all map slots empty, all value slots `[0, 0, 0, 0]` except
-`admin_account_id` and `ger_manager_account_id` (set at account creation time).
+`admin_account_id`, `ger_manager_account_id`, and `ger_remover_account_id` (set at account
+creation time).
 
 ### 3.2 Faucet Account Component
 
@@ -361,7 +369,7 @@ recipient. Requires the faucet's owner (the bridge account) to be the creator of
 `mint_and_send` executes the current access policy via
 `exec.policy_manager::execute_mint_policy`). `mint_and_send` then derives the asset to mint
 for the active faucet and panics if the stored `ASSET_KEY` does not belong to that faucet,
-which binds the MINT note to its resolved faucet (see §4.7).
+which binds the MINT note to its resolved faucet (see §4.8).
 
 #### `agglayer_faucet::get_metadata_hash`
 
@@ -665,7 +673,56 @@ CLAIM notes can be verified against it.
 | **Issuer** | GER manager only -- **enforced** by `bridge_config::update_ger` procedure |
 | **Consumer** | Bridge account -- **enforced** via `NetworkAccountTarget` attachment |
 
-### 4.5 BURN (generated)
+### 4.5 REMOVE_GER
+
+**Purpose:** Removes a previously-registered Global Exit Root (GER) from the bridge account so
+that subsequent CLAIM notes referencing it fail validation, and folds the removed GER into the
+removed-GER keccak256 hash chain.
+
+**`NoteHeader`**
+
+*`NoteMetadata`:*
+
+| Field | Value |
+|-------|-------|
+| `sender` | GER remover (sender authorization enforced by the bridge's `remove_ger` procedure) |
+| `note_type` | `NoteType::Public` |
+| `tag` | `NoteTag::default()` |
+| `attachment` | `NetworkAccountTarget` -- target is the bridge account; execution hint: Always |
+
+**`NoteDetails`**
+
+*`NoteAssets`:* None (empty).
+
+*`NoteRecipient`:*
+
+| Field | Value |
+|-------|-------|
+| `serial_num` | Random (`rng.draw_word()`) |
+| `script` | `remove_ger.masm` |
+| `storage` | 8 felts -- see layout below |
+
+**Storage layout (8 felts):**
+
+| Range | Field | Encoding |
+|-------|-------|----------|
+| 0-3 | `GER_LOWER` | First 16 bytes as 4 x u32 felts |
+| 4-7 | `GER_UPPER` | Last 16 bytes as 4 x u32 felts |
+
+**Consumption:** Script validates attachment target, loads storage, and calls
+`bridge_config::remove_ger` (which asserts sender is GER remover), which computes
+`poseidon2::merge(GER_LOWER, GER_UPPER)`, asserts the GER map entry equals `[1, 0, 0, 0]`
+while overwriting it with `[0, 0, 0, 0]`, and updates the removed-GER hash chain as
+`keccak256(prev_chain || GER)` (see [Section 2.3](#23-ger-injection)).
+
+#### Permissions
+
+| Role | Enforcement |
+|------|------------|
+| **Issuer** | GER remover only -- **enforced** by `bridge_config::remove_ger` procedure |
+| **Consumer** | Bridge account -- **enforced** via `NetworkAccountTarget` attachment |
+
+### 4.6 BURN (generated)
 
 **Purpose:** Created by `bridge_out::bridge_out` to burn the bridged asset on the faucet.
 
@@ -709,7 +766,7 @@ decreases the faucet's total token supply by the burned amount.
 | **Issuer** | Bridge account (created by `bridge_out::bridge_out`) |
 | **Consumer** | Target faucet only -- **enforced** via `NetworkAccountTarget` attachment |
 
-### 4.6 P2ID (generated)
+### 4.7 P2ID (generated)
 
 **Purpose:** Created by the faucet (via `mint_and_send`) when consuming a MINT note, to
 deliver minted assets to the recipient.
@@ -757,7 +814,7 @@ script). All note assets are added to the consuming account via
 | **Issuer** | Faucet account (created by `mint_and_send`) |
 | **Consumer** | Destination account only -- **enforced** by P2ID script (checks `target_account_id`) |
 
-### 4.7 MINT (generated)
+### 4.8 MINT (generated)
 
 **Purpose:** Created by `bridge_in::claim` on the bridge account. Consumed by the faucet
 to mint and distribute assets to the recipient.
