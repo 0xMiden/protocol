@@ -251,6 +251,23 @@ pub enum StorageSlotNameError {
     TooLong,
 }
 
+// ACCOUNT CODE INTERFACE ERROR
+// ================================================================================================
+
+#[derive(Debug, Error)]
+pub enum AccountCodeInterfaceError {
+    #[error(
+        "account code interface must contain at least {} procedures, but only {actual} were given",
+        AccountCode::MIN_NUM_PROCEDURES
+    )]
+    TooFewProcedures { actual: usize },
+    #[error(
+        "account code interface contains {actual} procedures but it may contain at most {} procedures",
+        AccountCode::MAX_NUM_PROCEDURES
+    )]
+    TooManyProcedures { actual: usize },
+}
+
 // ACCOUNT COMPONENT NAME ERROR
 // ================================================================================================
 
