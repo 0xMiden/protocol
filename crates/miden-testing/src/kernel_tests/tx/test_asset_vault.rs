@@ -91,6 +91,10 @@ async fn peek_asset_returns_correct_asset() -> anyhow::Result<()> {
             emit.event("miden::protocol::account::vault_before_get_asset")
             # => [ASSET_KEY, account_vault_root_ptr]
 
+            # hash the asset vault key before using it as the SMT key
+            exec.asset_vault::hash_asset_key
+            # => [ASSET_KEY_HASH, account_vault_root_ptr]
+
             exec.asset_vault::peek_asset
             # => [PEEKED_ASSET_VALUE]
 

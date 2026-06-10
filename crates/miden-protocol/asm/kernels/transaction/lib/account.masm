@@ -799,6 +799,10 @@ pub proc get_asset
     emit.ACCOUNT_VAULT_BEFORE_GET_ASSET_EVENT
     # => [ASSET_KEY, vault_root_ptr]
 
+    # hash the asset vault key before using it as the SMT key
+    exec.asset_vault::hash_asset_key
+    # => [ASSET_KEY_HASH, vault_root_ptr]
+
     # get the asset
     exec.asset_vault::get_asset
     # => [ASSET_VALUE]
@@ -821,6 +825,10 @@ pub proc get_initial_asset
     # emit event to signal that an asset is requested
     emit.ACCOUNT_VAULT_BEFORE_GET_ASSET_EVENT
     # => [ASSET_KEY, init_native_vault_root_ptr]
+
+    # hash the asset vault key before using it as the SMT key
+    exec.asset_vault::hash_asset_key
+    # => [ASSET_KEY_HASH, init_native_vault_root_ptr]
 
     # get the asset
     exec.asset_vault::get_asset

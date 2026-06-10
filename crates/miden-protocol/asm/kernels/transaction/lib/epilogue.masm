@@ -46,12 +46,13 @@ const EPILOGUE_AUTH_PROC_END_EVENT=event("miden::protocol::epilogue::auth_proc_e
 # number of cycles, and so we only need to add the difference.
 const SMT_SET_ADDITIONAL_CYCLES=250
 
-# An upper-bound estimate of the cycles needed to hash the asset vault key before the fee-removing
-# smt::set. This cost is incurred only when a fee is actually removed from the asset vault, and is
-# kept separate from SMT_SET_ADDITIONAL_CYCLES (which models smt::set's own best/worst-case spread).
+# An upper-bound estimate of the cycles needed to hash the asset vault key inside the fee-removing
+# remove_fungible_asset (the key is hashed once, at the start of the procedure). This cost is
+# incurred only when a fee is actually removed from the asset vault, and is kept separate from
+# SMT_SET_ADDITIONAL_CYCLES (which models smt::set's own best/worst-case spread).
 # It is additive rather than double-counted: the lowest-observed NUM_POST_COMPUTE_FEE_CYCLES below
 # comes from a zero-fee transaction that skips fee removal entirely, and so excludes this hashing.
-const VAULT_KEY_HASH_CYCLES=50
+const VAULT_KEY_HASH_CYCLES=30
 
 # The number of cycles the epilogue is estimated to take after compute_fee has been executed,
 # including an unknown cycle number of the above-mentioned call to smt::set. It is safe to assume
@@ -61,7 +62,7 @@ const VAULT_KEY_HASH_CYCLES=50
 const NUM_POST_COMPUTE_FEE_CYCLES=608
 
 # Upper bound on the post-compute_fee cycle count; it must stay an upper bound or the verification
-# fee is undercharged. Worst case observed is 863 cycles (45 of margin); re-measure when the
+# fee is undercharged. Worst case observed is 843 cycles (45 of margin); re-measure when the
 # epilogue or smt::set changes. An adversary cannot inflate the fee-removal smt::set cost: vault
 # keys are hashed before insertion (see AssetVaultKey::hash). The multi-leaf smt::set worst case is
 # not yet exercised (see test_fee.rs TODO).
