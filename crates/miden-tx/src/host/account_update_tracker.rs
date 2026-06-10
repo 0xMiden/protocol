@@ -64,9 +64,11 @@ impl AccountUpdateTracker {
         self.nonce_delta += Felt::ONE;
     }
 
-    /// Returns a reference to the vault delta.
-    pub fn vault_delta(&self) -> &AccountVaultDelta {
-        self.vault.delta()
+    /// Returns the vault delta materialized from the currently tracked per-asset deltas.
+    ///
+    /// TOOD: Remove this method when removing automatic fee removal from the tx kernel.
+    pub(crate) fn build_vault_delta(&self) -> AccountVaultDelta {
+        self.vault.clone().into_delta()
     }
 
     /// Updates the vault patch.

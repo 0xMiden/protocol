@@ -177,7 +177,7 @@ pub(crate) struct AssetPatch {
     pub final_vault_value: Word,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct AssetDelta {
     pub delta_op: AssetDeltaOperation,
     pub asset: Asset,

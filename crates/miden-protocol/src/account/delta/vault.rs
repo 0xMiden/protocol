@@ -60,20 +60,6 @@ impl AccountVaultDelta {
         self.fungible.is_empty() && self.non_fungible.is_empty()
     }
 
-    /// Inserts an asset into the vault delta, overwriting the previous value.
-    pub fn insert(&mut self, delta_op: AssetDeltaOperation, asset: Asset) {
-        match asset {
-            Asset::Fungible(asset) => match delta_op {
-                AssetDeltaOperation::Add => self.fungible.set_added(asset),
-                AssetDeltaOperation::Remove => self.fungible.set_removed(asset),
-            },
-            Asset::NonFungible(asset) => match delta_op {
-                AssetDeltaOperation::Add => self.non_fungible.set_added(asset),
-                AssetDeltaOperation::Remove => self.non_fungible.set_removed(asset),
-            },
-        }
-    }
-
     /// Tracks asset addition.
     pub fn add_asset(&mut self, asset: Asset) -> Result<(), AccountDeltaError> {
         match asset {
@@ -276,16 +262,6 @@ impl FungibleAssetDelta {
         Ok(Self(map))
     }
 
-    // TODO(unified_delta): Temporary API; will be removed.
-    pub fn set_added(&mut self, asset: FungibleAsset) {
-        self.0.insert(asset.vault_key(), asset.amount().as_i64());
-    }
-
-    // TODO(unified_delta): Temporary API; will be removed.
-    pub fn set_removed(&mut self, asset: FungibleAsset) {
-        self.0.insert(asset.vault_key(), -asset.amount().as_i64());
-    }
-
     /// Adds a new fungible asset to the delta.
     ///
     /// # Errors
@@ -444,16 +420,6 @@ impl NonFungibleAssetDelta {
         map: BTreeMap<AssetVaultKey, (NonFungibleAsset, NonFungibleDeltaAction)>,
     ) -> Self {
         Self(map)
-    }
-
-    // TODO(unified_delta): Temporary API; will be removed.
-    pub fn set_added(&mut self, asset: NonFungibleAsset) {
-        self.0.insert(asset.vault_key(), (asset, NonFungibleDeltaAction::Add));
-    }
-
-    // TODO(unified_delta): Temporary API; will be removed.
-    pub fn set_removed(&mut self, asset: NonFungibleAsset) {
-        self.0.insert(asset.vault_key(), (asset, NonFungibleDeltaAction::Remove));
     }
 
     /// Adds a new non-fungible asset to the delta.

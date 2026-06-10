@@ -237,13 +237,9 @@ where
         // Compute the current balance of the fee asset in the account based on the initial value
         // and the delta.
         let current_fee_asset = {
-            let fee_asset_amount_delta = self
-                .base_host
-                .account_update_tracker()
-                .vault_delta()
-                .fungible()
-                .amount(&initial_fee_asset.vault_key())
-                .unwrap_or(0);
+            let vault_delta = self.base_host.account_update_tracker().build_vault_delta();
+            let fee_asset_amount_delta =
+                vault_delta.fungible().amount(&initial_fee_asset.vault_key()).unwrap_or(0);
 
             // SAFETY: Initial fee faucet ID should be a fungible faucet and amount should
             // be less than MAX_AMOUNT as checked by the account delta.
