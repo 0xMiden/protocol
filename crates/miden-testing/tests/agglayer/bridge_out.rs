@@ -54,8 +54,8 @@ use super::test_utils::{MIDEN_NETWORK_ID, SOLIDITY_MTF_VECTORS};
 /// 3. Creates a B2AGG note with assets from the agglayer faucet
 /// 4. Consumes the B2AGG note against the bridge account — the bridge's `bridge_out` procedure:
 ///    - Validates the faucet is registered via `convert_asset`
-///    - Calls the faucet's `asset_to_origin_asset` via FPI to get the scaled amount, origin token
-///      address, and origin network
+///    - Reads the faucet's conversion metadata from the bridge's `faucet_metadata_map` to get the
+///      scaled amount, origin token address, and origin network
 ///    - Writes the leaf data and computes the Keccak hash for the Merkle Tree Faucet
 ///    - Creates a BURN note addressed to the faucet
 /// 5. Verifies the BURN note was created with the correct asset, tag, and script
@@ -377,7 +377,7 @@ async fn bridge_out_at_high_num_leaves(#[case] initial_num_leaves: u32) -> anyho
     populate_let_state(&mut bridge_account, initial_num_leaves, &initial_frontier);
     builder.add_account(bridge_account.clone())?;
 
-    // CREATE AGGLAYER FAUCET ACCOUNT (with conversion metadata for FPI)
+    // CREATE AGGLAYER FAUCET ACCOUNT
     let amount = vectors.amounts[0].parse::<u64>().expect("valid amount decimal string");
     let origin_token_address = EthAddress::from_hex(&vectors.origin_token_address)
         .expect("valid shared origin token address");
@@ -597,7 +597,7 @@ async fn test_bridge_out_rejects_invalid_b2agg_note(
     );
     builder.add_account(bridge_account.clone())?;
 
-    // CREATE AGGLAYER FAUCET ACCOUNT (with conversion metadata for FPI)
+    // CREATE AGGLAYER FAUCET ACCOUNT
     // Use MTF vector token metadata and a fixed origin network compatible with the vectors.
     // --------------------------------------------------------------------------------------------
     let vectors = &*SOLIDITY_MTF_VECTORS;
