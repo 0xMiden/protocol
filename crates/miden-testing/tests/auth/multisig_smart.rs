@@ -217,9 +217,9 @@ async fn test_multisig_smart_enforces_note_restrictions_on_tx_with_output_notes(
 ) -> anyhow::Result<()> {
     use miden_processor::crypto::random::RandomCoin;
     use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
-    use miden_protocol::transaction::RawOutputNote;
-    use miden_standards::account::interface::{AccountInterface, AccountInterfaceExt};
+    use miden_protocol::transaction::{RawOutputNote, TransactionScript};
     use miden_standards::note::P2idNote;
+    use miden_standards::tx_script::SendNotesTransactionScript;
 
     let (_secret_keys, _auth_schemes, public_keys, _authenticators) =
         setup_keys_and_authenticators_with_scheme(2, 2, AuthScheme::EcdsaK256Keccak)?;
@@ -244,8 +244,10 @@ async fn test_multisig_smart_enforces_note_restrictions_on_tx_with_output_notes(
         &mut RandomCoin::new(Word::from([Felt::new_unchecked(7); 4])),
     )?;
 
-    let send_note_script = AccountInterface::from_account(&multisig_account)
-        .build_send_notes_script(&[output_note.clone().into()], None)?;
+    let send_note_script = TransactionScript::from(SendNotesTransactionScript::new(
+        &multisig_account.code_interface(),
+        &[output_note.clone().into()],
+    )?);
 
     let mock_chain =
         MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
