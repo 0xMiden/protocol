@@ -12,6 +12,7 @@ use miden_agglayer::{
 };
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{AccountId, AccountIdVersion, AccountType};
+use miden_protocol::asset::AssetCallbackFlag;
 use miden_protocol::block::account_tree::AccountIdKey;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::transaction::RawOutputNote;
@@ -86,6 +87,7 @@ async fn test_config_agg_bridge_registers_faucet() -> anyhow::Result<()> {
             scale,
             origin_network,
             is_native: false,
+            asset_callbacks: AssetCallbackFlag::Enabled,
             metadata_hash,
         },
         bridge_admin.id(),
@@ -108,10 +110,10 @@ async fn test_config_agg_bridge_registers_faucet() -> anyhow::Result<()> {
     let value_after = updated_bridge.storage().get_map_item(registry_slot_name, key)?;
     // TODO: use a getter helper on AggLayerBridge once available
     // (see https://github.com/0xMiden/protocol/issues/2548)
-    let expected_value = [Felt::ONE, Felt::ZERO, Felt::ZERO, Felt::ZERO].into();
+    let expected_value = [Felt::ONE, Felt::ZERO, Felt::ONE, Felt::ZERO].into();
     assert_eq!(
         value_after, expected_value,
-        "Faucet should be registered with value [1, 0, 0, 0]"
+        "Faucet should be registered with value [1, is_native = 0, asset_callbacks = 1, 0]"
     );
 
     Ok(())
@@ -167,6 +169,7 @@ async fn test_config_agg_bridge_distinguishes_origin_network() -> anyhow::Result
             scale: 0,
             origin_network: origin_network_1,
             is_native: false,
+            asset_callbacks: AssetCallbackFlag::Enabled,
             metadata_hash,
         },
         bridge_admin.id(),
@@ -180,6 +183,7 @@ async fn test_config_agg_bridge_distinguishes_origin_network() -> anyhow::Result
             scale: 0,
             origin_network: origin_network_2,
             is_native: false,
+            asset_callbacks: AssetCallbackFlag::Enabled,
             metadata_hash,
         },
         bridge_admin.id(),

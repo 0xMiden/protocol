@@ -242,6 +242,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
             scale,
             origin_network,
             is_native: false,
+            asset_callbacks: AssetCallbackFlag::Enabled,
             metadata_hash,
         },
         bridge_admin.id(),
@@ -525,6 +526,7 @@ async fn test_mint_cannot_be_consumed_by_unrelated_faucet() -> anyhow::Result<()
             scale,
             origin_network: leaf_data.origin_network,
             is_native: false,
+            asset_callbacks: AssetCallbackFlag::Enabled,
             metadata_hash: leaf_data.metadata_hash,
         },
         bridge_admin.id(),
@@ -542,6 +544,7 @@ async fn test_mint_cannot_be_consumed_by_unrelated_faucet() -> anyhow::Result<()
             scale,
             origin_network: leaf_data.origin_network,
             is_native: false,
+            asset_callbacks: AssetCallbackFlag::Enabled,
             metadata_hash: leaf_data.metadata_hash,
         },
         bridge_admin.id(),
@@ -603,6 +606,156 @@ async fn test_mint_cannot_be_consumed_by_unrelated_faucet() -> anyhow::Result<()
     let attack_result = attack_tx_context.execute().await;
     assert_transaction_executor_error!(
         attack_result,
+        ERR_FUNGIBLE_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET
+    );
+
+    Ok(())
+}
+
+/// Asserts that the asset-callbacks bit registered on the bridge actually flows into the MINT
+/// note's `ASSET_KEY`.
+///
+/// The faucet is registered with `asset_callbacks: Disabled`, which does not match the AggLayer
+/// faucet's real configuration (its `AllowAll` transfer policies populate the callback slots, so
+/// the kernel derives `has_callbacks = 1`). The bridge's claim succeeds and emits a MINT note
+/// whose stored `ASSET_KEY` carries the registered (cleared) callbacks bit; the faucet's
+/// `mint_and_send` then derives its own key with the bit set and rejects the consumption with
+/// `ERR_FUNGIBLE_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET`.
+#[tokio::test]
+async fn test_mint_with_wrong_registered_callbacks_rejected_by_faucet() -> anyhow::Result<()> {
+    let data_source = ClaimDataSource::L1ToMiden;
+    let mut builder = MockChain::builder();
+
+    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    let bridge_seed = builder.rng_mut().draw_word();
+    let bridge_account =
+        create_existing_bridge_account(bridge_seed, bridge_admin.id(), ger_manager.id());
+    builder.add_account(bridge_account.clone())?;
+
+    let (proof_data, leaf_data, ger, _cgi_chain_hash) = data_source.get_data();
+
+    let max_supply: Felt = FungibleAsset::MAX_AMOUNT.into();
+    let scale = 10u8;
+
+    let faucet_seed = builder.rng_mut().draw_word();
+    let faucet = create_existing_agglayer_faucet(
+        faucet_seed,
+        "AGG",
+        8u8,
+        max_supply,
+        Felt::ZERO,
+        bridge_account.id(),
+    );
+    builder.add_account(faucet.clone())?;
+
+    // The destination is baked into the fixture; create it so the bridge claim succeeds.
+    let destination_account_id = EthEmbeddedAccountId::try_from(leaf_data.destination_address)
+        .expect("destination address is not an embedded Miden AccountId")
+        .into_account_id();
+    let dest = Account::mock(u128::from(destination_account_id), IncrNonceAuthComponent);
+    builder.add_account(dest)?;
+
+    let sender_account_builder =
+        Account::builder(builder.rng_mut().random()).with_component(BasicWallet);
+    let sender_account = builder.add_account_from_builder(
+        Auth::IncrNonce,
+        sender_account_builder,
+        AccountState::Exists,
+    )?;
+
+    let miden_claim_amount = leaf_data
+        .amount
+        .scale_to_token_amount(scale as u32)
+        .expect("amount should scale successfully");
+
+    let claim_inputs = ClaimNoteStorage {
+        proof_data,
+        leaf_data: leaf_data.clone(),
+        miden_claim_amount,
+    };
+
+    let claim_note = ClaimNote::create(
+        claim_inputs,
+        bridge_account.id(),
+        sender_account.id(),
+        builder.rng_mut(),
+    )?;
+    builder.add_output_note(RawOutputNote::Full(claim_note.clone()));
+
+    // Register the faucet with a callbacks bit that does NOT match its real configuration.
+    let config_note = ConfigAggBridgeNote::create(
+        ConversionMetadata {
+            faucet_account_id: faucet.id(),
+            origin_token_address: leaf_data.origin_token_address,
+            scale,
+            origin_network: leaf_data.origin_network,
+            is_native: false,
+            asset_callbacks: AssetCallbackFlag::Disabled,
+            metadata_hash: leaf_data.metadata_hash,
+        },
+        bridge_admin.id(),
+        bridge_account.id(),
+        builder.rng_mut(),
+    )?;
+    builder.add_output_note(RawOutputNote::Full(config_note.clone()));
+
+    let update_ger_note =
+        UpdateGerNote::create(ger, ger_manager.id(), bridge_account.id(), builder.rng_mut())?;
+    builder.add_output_note(RawOutputNote::Full(update_ger_note.clone()));
+
+    let mut mock_chain = builder.clone().build()?;
+
+    // TX0: register the faucet.
+    let config_executed = mock_chain
+        .build_tx_context(bridge_account.id(), &[config_note.id()], &[])?
+        .build()?
+        .execute()
+        .await?;
+    mock_chain.add_pending_executed_transaction(&config_executed)?;
+    mock_chain.prove_next_block()?;
+
+    // TX1: store GER.
+    let update_ger_executed = mock_chain
+        .build_tx_context(bridge_account.id(), &[update_ger_note.id()], &[])?
+        .build()?
+        .execute()
+        .await?;
+    mock_chain.add_pending_executed_transaction(&update_ger_executed)?;
+    mock_chain.prove_next_block()?;
+
+    // TX2: claim succeeds — the bridge trusts the registered bit and emits a MINT note whose
+    // ASSET_KEY has the callbacks bit cleared.
+    let faucet_foreign_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
+    let claim_executed = mock_chain
+        .build_tx_context(bridge_account.id(), &[], &[claim_note])?
+        .foreign_accounts(vec![faucet_foreign_inputs])
+        .build()?
+        .execute()
+        .await
+        .context("CLAIM execution should succeed")?;
+
+    assert_eq!(claim_executed.output_notes().num_notes(), 1);
+    let mint_output_note = claim_executed.output_notes().get_note(0);
+
+    mock_chain.add_pending_executed_transaction(&claim_executed)?;
+    mock_chain.prove_next_block()?;
+
+    // The faucet derives its own ASSET_KEY with the callbacks bit set; the mismatch with the
+    // MINT note's stored key trips the bind check.
+    let consume_tx_context = mock_chain
+        .build_tx_context(faucet.id(), &[mint_output_note.id()], &[])?
+        .add_note_script(P2idNote::script())
+        .build()?;
+
+    let consume_result = consume_tx_context.execute().await;
+    assert_transaction_executor_error!(
+        consume_result,
         ERR_FUNGIBLE_MINT_NOTE_ASSET_NOT_FROM_THIS_FAUCET
     );
 
@@ -697,6 +850,7 @@ async fn test_claim_rejects_wrong_destination_network() -> anyhow::Result<()> {
             scale,
             origin_network,
             is_native: false,
+            asset_callbacks: AssetCallbackFlag::Enabled,
             metadata_hash,
         },
         bridge_admin.id(),
@@ -840,6 +994,7 @@ async fn test_duplicate_claim_note_rejected() -> anyhow::Result<()> {
             scale,
             origin_network,
             is_native: false,
+            asset_callbacks: AssetCallbackFlag::Enabled,
             metadata_hash: leaf_data.metadata_hash,
         },
         bridge_admin.id(),
@@ -995,6 +1150,7 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
             scale,
             origin_network,
             is_native: true,
+            asset_callbacks: AssetCallbackFlag::Disabled,
             metadata_hash,
         },
         bridge_admin.id(),
@@ -1246,6 +1402,7 @@ async fn bridge_in_unlock_native_duplicate_rejected() -> anyhow::Result<()> {
             scale,
             origin_network,
             is_native: true,
+            asset_callbacks: AssetCallbackFlag::Disabled,
             metadata_hash,
         },
         bridge_admin.id(),
@@ -1492,6 +1649,7 @@ async fn test_claim_fails_when_origin_network_unregistered() -> anyhow::Result<(
             scale,
             origin_network: registered_origin_network,
             is_native: false,
+            asset_callbacks: AssetCallbackFlag::Enabled,
             metadata_hash,
         },
         bridge_admin.id(),

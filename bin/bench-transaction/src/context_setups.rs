@@ -15,7 +15,7 @@ use miden_agglayer::{
 };
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, StorageMapKey};
-use miden_protocol::asset::{Asset, FungibleAsset};
+use miden_protocol::asset::{Asset, AssetCallbackFlag, FungibleAsset};
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::note::{NoteAssets, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_SENDER;
@@ -256,6 +256,7 @@ pub async fn tx_consume_claim_note(data_source: ClaimDataSource) -> Result<Trans
             scale,
             origin_network,
             is_native: false,
+            asset_callbacks: AssetCallbackFlag::Enabled,
             metadata_hash: config_metadata_hash,
         },
         bridge_admin.id(),
@@ -437,6 +438,7 @@ pub async fn tx_consume_b2agg_note(pre_populate_leaves: Option<u32>) -> Result<T
             scale,
             origin_network,
             is_native: false,
+            asset_callbacks: AssetCallbackFlag::Enabled,
             metadata_hash,
         },
         bridge_admin.id(),

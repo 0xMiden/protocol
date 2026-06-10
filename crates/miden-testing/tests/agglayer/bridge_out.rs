@@ -22,7 +22,7 @@ use miden_crypto::hash::keccak::Keccak256Digest;
 use miden_crypto::rand::FeltRng;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountId, AccountIdVersion, AccountType, StorageMapKey};
-use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset};
+use miden_protocol::asset::{Asset, AssetAmount, AssetCallbackFlag, FungibleAsset};
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::{
     Note,
@@ -132,6 +132,7 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
             scale,
             origin_network,
             is_native: false,
+            asset_callbacks: AssetCallbackFlag::Enabled,
             metadata_hash,
         },
         bridge_admin.id(),
@@ -403,6 +404,7 @@ async fn bridge_out_at_high_num_leaves(#[case] initial_num_leaves: u32) -> anyho
             scale,
             origin_network,
             is_native: false,
+            asset_callbacks: AssetCallbackFlag::Enabled,
             metadata_hash,
         },
         bridge_admin.id(),
@@ -624,6 +626,7 @@ async fn test_bridge_out_rejects_invalid_b2agg_note(
             scale: 0u8,
             origin_network,
             is_native: false,
+            asset_callbacks: AssetCallbackFlag::Enabled,
             metadata_hash,
         },
         bridge_admin.id(),
@@ -979,6 +982,7 @@ async fn bridge_out_lock_native_token() -> anyhow::Result<()> {
             scale,
             origin_network,
             is_native: true,
+            asset_callbacks: AssetCallbackFlag::Disabled,
             metadata_hash,
         },
         bridge_admin.id(),

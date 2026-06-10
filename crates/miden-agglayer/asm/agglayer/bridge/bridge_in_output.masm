@@ -1,3 +1,4 @@
+use agglayer::bridge::bridge_config
 use agglayer::bridge::bridge_in::CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT
 use agglayer::bridge::bridge_in::CLAIM_PROOF_DATA_KEY_MEM_ADDR
 use miden::protocol::asset
@@ -109,11 +110,10 @@ pub proc unlock_and_send
     mem_load.CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT movdn.2
     # => [faucet_id_suffix, faucet_id_prefix, amount]
 
-    # TODO(#2963): callbacks bit is hardcoded to 0. If a bridge-owned faucet enables
-    # callbacks, the ASSET_KEY derived here will not match the asset the bridge actually
-    # holds, and `native_account::remove_asset` will panic on a legitimate withdrawal.
-    push.0 # enable_callbacks = 0
-    # => [0, faucet_id_suffix, faucet_id_prefix, amount]
+    # load the faucet's registered asset-callbacks bit so the derived ASSET_KEY matches the
+    # asset actually held in the bridge's vault.
+    dup.1 dup.1 exec.bridge_config::get_faucet_asset_callbacks
+    # => [asset_callbacks, faucet_id_suffix, faucet_id_prefix, amount]
 
     exec.asset::create_fungible_asset
     # => [ASSET_KEY, ASSET_VALUE]
@@ -214,12 +214,13 @@ proc write_mint_note_storage
     mem_load.CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT
     # => [native_amount, faucet_id_suffix, faucet_id_prefix, faucet_id_suffix, faucet_id_prefix]
 
-    # prepare stack for asset::create_fungible_asset: [enable_callbacks, suffix, prefix, amount]
-    # TODO(#2963): callbacks bit is hardcoded to 1 to match AggLayer faucets configured with
-    #  `AllowAll` transfer policies). We need to support the registration of both types of agglayer 
-    # faucets, with & without callbacks.
-    movdn.2 push.1
-    # => [1, faucet_id_suffix, faucet_id_prefix, native_amount, faucet_id_suffix, faucet_id_prefix]
+    # prepare stack for asset::create_fungible_asset: [enable_callbacks, suffix, prefix, amount].
+    # The callbacks bit is the one registered for the faucet at CONFIG_AGG_BRIDGE time; it must
+    # match the faucet's actual `has_callbacks` state or `mint_and_send`'s bind check rejects
+    # the MINT note.
+    movdn.2
+    dup.1 dup.1 exec.bridge_config::get_faucet_asset_callbacks
+    # => [asset_callbacks, faucet_id_suffix, faucet_id_prefix, native_amount, faucet_id_suffix, faucet_id_prefix]
 
     exec.asset::create_fungible_asset
     # => [ASSET_KEY, ASSET_VALUE, faucet_id_suffix, faucet_id_prefix]

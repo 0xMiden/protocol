@@ -13,6 +13,7 @@ use miden_assembly::Library;
 use miden_assembly::serde::Deserializable;
 use miden_core::Felt;
 use miden_protocol::account::AccountId;
+use miden_protocol::asset::AssetCallbackFlag;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
@@ -67,12 +68,16 @@ pub struct ConversionMetadata {
     /// locks into it); `false` for bridge-owned faucets (bridge-in mints via the faucet,
     /// bridge-out burns via the faucet).
     pub is_native: bool,
+    /// Asset-callbacks bit of the faucet's assets. Must match the kernel `has_callbacks` result
+    /// for the faucet account; the bridge uses it when re-deriving the faucet's `ASSET_KEY` on
+    /// bridge-in (MINT note storage and vault unlock).
+    pub asset_callbacks: AssetCallbackFlag,
     /// keccak256 hash of the ABI-encoded token metadata (`name`, `symbol`, `decimals`).
     pub metadata_hash: MetadataHash,
 }
 
 impl ConversionMetadata {
-    /// Serializes the metadata to the 18-felt layout consumed by `CONFIG_AGG_BRIDGE`.
+    /// Serializes the metadata to the 19-felt layout consumed by `CONFIG_AGG_BRIDGE`.
     ///
     /// `origin_network` is written in raw u32 form (no byte swap). The bridge stores it as-is
     /// in `faucet_metadata_map`; `bridge_out::convert_asset` later applies `swap_u32_bytes` to
@@ -87,6 +92,7 @@ impl ConversionMetadata {
         v.push(Felt::from(self.scale));
         v.push(Felt::from(self.origin_network));
         v.push(Felt::from(u8::from(self.is_native)));
+        v.push(Felt::from(self.asset_callbacks.as_u8()));
         v.extend(self.metadata_hash.to_elements());
         v
     }
@@ -108,7 +114,7 @@ impl ConfigAggBridgeNote {
 
     /// Expected number of storage items for a CONFIG_AGG_BRIDGE note.
     ///
-    /// Layout (18 felts):
+    /// Layout (19 felts):
     /// - `[0..4]`   origin_token_addr (5 felts)
     /// - `[5]`      faucet_id_suffix
     /// - `[6]`      faucet_id_prefix
@@ -117,9 +123,10 @@ impl ConfigAggBridgeNote {
     ///   into the token-registry key, and `bridge_out` byte-swaps it before placing it in the LET
     ///   leaf)
     /// - `[9]`      is_native (0 or 1)
-    /// - `[10..13]` METADATA_HASH_LO (4 felts)
-    /// - `[14..17]` METADATA_HASH_HI (4 felts)
-    pub const NUM_STORAGE_ITEMS: usize = 18;
+    /// - `[10]`     asset_callbacks (0 or 1)
+    /// - `[11..14]` METADATA_HASH_LO (4 felts)
+    /// - `[15..18]` METADATA_HASH_HI (4 felts)
+    pub const NUM_STORAGE_ITEMS: usize = 19;
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
@@ -190,9 +197,9 @@ mod tests {
 
     use super::*;
 
-    /// Locks in the 18-felt wire layout of `CONFIG_AGG_BRIDGE` note storage. Any reordering in
+    /// Locks in the 19-felt wire layout of `CONFIG_AGG_BRIDGE` note storage. Any reordering in
     /// `to_elements` would silently desync from the indices the MASM `CONFIG_AGG_BRIDGE` script
-    /// reads from (`ORIGIN_TOKEN_ADDR_0..4`, `FAUCET_ID_SUFFIX=5`, ... `METADATA_HASH_HI_3=17`).
+    /// reads from (`ORIGIN_TOKEN_ADDR_0..4`, `FAUCET_ID_SUFFIX=5`, ... `METADATA_HASH_HI_3=18`).
     #[test]
     fn to_elements_layout_matches_masm_storage_indices() {
         let faucet = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)
@@ -207,6 +214,7 @@ mod tests {
             scale: 6,
             origin_network: 42,
             is_native: true,
+            asset_callbacks: AssetCallbackFlag::Enabled,
             metadata_hash,
         };
 
@@ -221,6 +229,7 @@ mod tests {
         // before hashing into the token-registry or placing into the LET leaf).
         assert_eq!(elements[8], Felt::from(42_u32));
         assert_eq!(elements[9], Felt::from(1_u8));
-        assert_eq!(&elements[10..18], metadata_hash.to_elements().as_slice());
+        assert_eq!(elements[10], Felt::from(AssetCallbackFlag::Enabled.as_u8()));
+        assert_eq!(&elements[11..19], metadata_hash.to_elements().as_slice());
     }
 }
