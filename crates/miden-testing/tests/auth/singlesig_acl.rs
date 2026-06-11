@@ -258,8 +258,8 @@ async fn test_acl_output_note_creation_requires_auth_even_when_caller_exempt(
 }
 
 /// Positive exempt-path: a kernel-detected procedure that *is* on the exempt list can be
-/// called without a signature, and the input-note consumption is vouched for by the exempt
-/// call so the input-note auth check doesn't fire either. This is the main path the exempt
+/// called without a signature, and the input note consumption is vouched for by the exempt
+/// call so the input note auth check doesn't fire either. This is the main path the exempt
 /// map lookup is supposed to enable.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
@@ -304,7 +304,7 @@ async fn test_acl_exempt_detected_procedure_succeeds_without_auth(
 
 /// Isolates condition 2: input note consumption without any detected procedure must
 /// force a signature even when no account procedure is called by a tx script. This guards
-/// against a regression that drops the input-note branch of the MASM `and or`; deleting that
+/// against a regression that drops the input note branch of the MASM `and or`; deleting that
 /// block today would let unsigned note consumption sneak through any time the script is
 /// inert.
 #[rstest]
@@ -318,7 +318,7 @@ async fn test_acl_input_note_consumption_requires_auth_without_exempt(
 
     // No tx script - the only side effect of the transaction is consuming the mock note
     // produced by `setup_acl_test`. With an empty exempt list and no exempt procedure
-    // detected, the input-note gate must trip.
+    // detected, the input note gate must trip.
     let tx_context = mock_chain
         .build_tx_context(account.id(), &[], slice::from_ref(&note))?
         .authenticator(None)

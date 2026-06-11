@@ -9,10 +9,10 @@ use miden::standards::auth::signature
 use miden::core::word
 
 # Tracks whether any account procedure was detected as called during the procedure-iteration
-# loop. Used by the input-note check to distinguish "a procedure handled this transaction"
-# from "no procedure ran at all" (in the latter case, input-note consumption must be
+# loop. Used by the input note check to distinguish "a procedure handled this transaction"
+# from "no procedure ran at all" (in the latter case, input note consumption must be
 # signed). Non-exempt detected calls already force authentication via the per-procedure
-# check inside the loop, so the practical effect of this flag is to gate the input-note
+# check inside the loop, so the practical effect of this flag is to gate the input note
 # check on whether an exempt procedure was present. The flag is transaction-wide, not
 # per-note. `was_procedure_called` only fires for procedures that touch account-restricted
 # kernel APIs, so a procedure that is never detected stays at 0 here.
@@ -42,7 +42,7 @@ const EXEMPT_PROCEDURE_ROOTS_SLOT = word("miden::standards::auth::singlesig_acl:
 #!      auth procedure at index 0).
 #!   2. An input note was consumed AND no procedure was detected as called anywhere in
 #!      the transaction. Combined with condition 1 (which catches the non-exempt-called
-#!      case), the practical effect is that input-note consumption requires a signature
+#!      case), the practical effect is that input note consumption requires a signature
 #!      unless at least one exempt procedure was detected as called; the most easily
 #!      missed case this rule covers is a transaction that consumes notes but invokes
 #!      no account procedure at all.
@@ -76,61 +76,58 @@ pub proc auth_tx_acl(auth_args: word)
     exec.active_account::get_num_procedures
     # => [num_procedures, auth_required, pad(16)]
 
-    dup neq.0
+    # Iterate indices num_procedures-1 down to 1. The auth procedure is guaranteed to live
+    # at index 0 (enforced by the account-code builder), so by stopping at 1 we never need
+    # to gate the body on "is_non_auth" - index 0 is simply never reached.
+    dup neq.1
     # => [should_continue, num_procedures, auth_required, pad(16)]
     while.true
         sub.1
-        # => [i-1, auth_required, pad(16)]
+        # => [i, auth_required, pad(16)]  where i in num_procedures-1 .. 1
 
-        # Skip the auth procedure at index 0; it is the auth flow itself, not a user-callable
-        # account procedure, so it must not gate auth on itself.
-        dup neq.0
-        # => [is_non_auth, i-1, auth_required, pad(16)]
+        # Get the procedure root at index i.
+        dup exec.active_account::get_procedure_root dupw
+        # => [PROC_ROOT, PROC_ROOT, i, auth_required, pad(16)]
+
+        exec.native_account::was_procedure_called
+        # => [was_called, PROC_ROOT, i, auth_required, pad(16)]
+
         if.true
-            # Get the procedure root at index i-1
-            dup exec.active_account::get_procedure_root dupw
-            # => [PROC_ROOT, PROC_ROOT, i-1, auth_required, pad(16)]
+            # Mark that a detected procedure was called this transaction. Setting to 1
+            # is idempotent across iterations.
+            push.1 loc_store.ANY_PROC_CALLED_LOC
 
-            exec.native_account::was_procedure_called
-            # => [was_called, PROC_ROOT, i-1, auth_required, pad(16)]
+            # Look up the proc root in the exempt map. Absent keys return [0, 0, 0, 0];
+            # exempt entries are stored as the marker [1, 0, 0, 0].
+            push.EXEMPT_PROCEDURE_ROOTS_SLOT[0..2]
+            # => [slot_suffix, slot_prefix, PROC_ROOT, i, auth_required, pad(16)]
 
-            if.true
-                # Mark that a detected procedure was called this transaction. Setting to 1
-                # is idempotent across iterations.
-                push.1 loc_store.ANY_PROC_CALLED_LOC
+            exec.active_account::get_initial_map_item
+            # => [[is_exempt, 0, 0, 0], i, auth_required, pad(16)]
 
-                # Look up the proc root in the exempt map. Absent keys return [0, 0, 0, 0];
-                # exempt entries are stored as the marker [1, 0, 0, 0].
-                push.EXEMPT_PROCEDURE_ROOTS_SLOT[0..2]
-                # => [slot_suffix, slot_prefix, PROC_ROOT, i-1, auth_required, pad(16)]
+            movdn.3 drop drop drop
+            # => [is_exempt, i, auth_required, pad(16)]
 
-                exec.active_account::get_initial_map_item
-                # => [[is_exempt, 0, 0, 0], i-1, auth_required, pad(16)]
+            # If the called procedure is not exempt, auth is required.
+            not
+            # => [is_not_exempt, i, auth_required, pad(16)]
 
-                movdn.3 drop drop drop
-                # => [is_exempt, i-1, auth_required, pad(16)]
+            movup.2 or
+            # => [auth_required', i, pad(16)]
 
-                # If the called procedure is not exempt, auth is required.
-                not
-                # => [is_not_exempt, i-1, auth_required, pad(16)]
-
-                movup.2 or
-                # => [auth_required', i-1, pad(16)]
-
-                swap
-                # => [i-1, auth_required', pad(16)]
-            else
-                # Procedure was not called; discard the duplicated root.
-                dropw
-                # => [i-1, auth_required, pad(16)]
-            end
+            swap
+            # => [i, auth_required', pad(16)]
+        else
+            # Procedure was not called; discard the duplicated root.
+            dropw
+            # => [i, auth_required, pad(16)]
         end
-        # => [i-1, auth_required, pad(16)]
 
-        dup neq.0
-        # => [should_continue, i-1, auth_required, pad(16)]
+        dup neq.1
+        # => [should_continue, i, auth_required, pad(16)]
     end
-    # => [0, auth_required, pad(16)]
+    # => [1, auth_required, pad(16)]  (top is always 1 here, either from the initial guard
+    # when num_procedures == 1, or from the final iteration that processed index 1)
 
     drop
     # => [auth_required, pad(16)]
@@ -146,7 +143,7 @@ pub proc auth_tx_acl(auth_args: word)
 
     # ------ Input notes: consumption requires a signature unless a procedure ran ------
     #
-    # Combined with condition 1, this gates input-note consumption on at least one
+    # Combined with condition 1, this gates input note consumption on at least one
     # exempt procedure being detected as called: non-exempt detected calls already trip
     # condition 1, so the only case this `and` actually adds beyond condition 1 is the
     # one where no procedure was detected as called at all.
