@@ -12,7 +12,7 @@ use crate::account::{
 };
 use crate::asset::AssetVault;
 use crate::crypto::SequentialCommit;
-use crate::errors::{AccountDeltaError, AccountError};
+use crate::errors::{AccountDeltaError, AccountError, AccountPatchError};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -130,7 +130,23 @@ impl AccountDelta {
 
         self.nonce_delta = new_nonce_delta;
 
-        self.storage.merge(other.storage)?;
+        // TODO: This code will go away soon, so the ugly match is temporary.
+        self.storage.merge(other.storage).map_err(|err| match err {
+            AccountPatchError::StorageSlotUsedAsDifferentTypes(slot_name) => {
+                AccountDeltaError::StorageSlotUsedAsDifferentTypes(slot_name)
+            },
+            AccountPatchError::FinalNonceIsZero
+            | AccountPatchError::NonEmptyStorageOrVaultPatchWithZeroNonce
+            | AccountPatchError::CodeMustBeProvidedForNewAccounts
+            | AccountPatchError::MergingFullStatePatches
+            | AccountPatchError::NonceMustIncrementByOne { .. }
+            | AccountPatchError::AccountIdMismatch { .. } => {
+                unreachable!(
+                    "AccountStoragePatch::merge only returns StorageSlotUsedAsDifferentTypes"
+                )
+            },
+        })?;
+
         self.vault.merge(other.vault)
     }
 
