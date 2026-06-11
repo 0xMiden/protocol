@@ -41,7 +41,7 @@ pub mod component;
 pub use component::{AccountComponent, AccountComponentCode, AccountComponentMetadata};
 
 pub mod interface;
-pub use interface::AccountComponentName;
+pub use interface::{AccountCodeInterface, AccountComponentName};
 
 mod patch;
 pub use patch::{
@@ -246,6 +246,13 @@ impl Account {
     /// Returns a reference to the code of this account.
     pub fn code(&self) -> &AccountCode {
         &self.code
+    }
+
+    /// Returns the public interface of this account: its ID and the set of procedure roots it
+    /// exposes.
+    pub fn code_interface(&self) -> AccountCodeInterface {
+        AccountCodeInterface::new(self.id(), self.code.procedures().iter().copied().collect())
+            .expect("account code procedure count is enforced by AccountCode invariants")
     }
 
     /// Returns nonce for this account.

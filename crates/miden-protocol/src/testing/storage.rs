@@ -44,6 +44,37 @@ impl AccountStoragePatch {
         Self::from_raw(deltas)
     }
 
+    // ACCESSORS
+    // -------------------------------------------------------------------------------------------
+
+    /// Returns the updated value for the given slot, or `None` if the slot was not updated.
+    ///
+    /// # Panics
+    /// Panics if the slot patch is a map.
+    pub fn get_value(&self, slot_name: &StorageSlotName) -> Option<Word> {
+        self.get(slot_name).cloned().map(StorageSlotPatch::unwrap_value)
+    }
+
+    /// Returns the map patch for the given slot, or `None` if the slot was not updated.
+    ///
+    /// # Panics
+    /// Panics if the slot patch is a value.
+    pub fn get_map(&self, slot_name: &StorageSlotName) -> Option<&StorageMapPatch> {
+        self.get(slot_name).map(|patch| match patch {
+            StorageSlotPatch::Map(map_patch) => map_patch,
+            StorageSlotPatch::Value(_) => panic!("called get_map on a value slot patch"),
+        })
+    }
+
+    /// Returns the updated value for the given map entry, or `None` if the slot or key was not
+    /// updated.
+    ///
+    /// # Panics
+    /// Panics if the slot patch is a value.
+    pub fn get_map_value(&self, slot_name: &StorageSlotName, key: &StorageMapKey) -> Option<Word> {
+        self.get_map(slot_name)?.entries().get(key).copied()
+    }
+
     // MUTATORS
     // -------------------------------------------------------------------------------------------
 
