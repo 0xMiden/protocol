@@ -16,12 +16,7 @@ use miden_protocol::account::{
 use miden_protocol::errors::AccountIdError;
 use miden_protocol::note::{Note, NoteType};
 use miden_protocol::{Felt, Word};
-use miden_standards::account::access::{
-    AccessControl,
-    DefaultAuthority,
-    Ownable2Step,
-    RoleBasedAccessControl,
-};
+use miden_standards::account::access::{AccessControl, Ownable2Step, RoleBasedAccessControl};
 use miden_standards::errors::standards::{
     ERR_ACCOUNT_NOT_IN_ROLE,
     ERR_ROLE_SYMBOL_ZERO,
@@ -38,11 +33,7 @@ fn create_rbac_account_with_owner(owner: AccountId) -> anyhow::Result<Account> {
     let account = AccountBuilder::new([9; 32])
         .account_type(AccountType::Public)
         .with_auth_component(Auth::IncrNonce)
-        .with_components(AccessControl::Rbac {
-            owner,
-            roles: BTreeMap::new(),
-            default: DefaultAuthority::Owner,
-        })
+        .with_components(AccessControl::Rbac { owner, roles: BTreeMap::new() })
         .build_existing()?;
 
     Ok(account)

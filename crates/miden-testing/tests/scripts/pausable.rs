@@ -25,8 +25,8 @@ use miden_protocol::note::{Note, NoteTag, NoteType};
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
+use miden_standards::account::access::AccessControl;
 use miden_standards::account::access::pausable::{PausableManager, PausableStorage};
-use miden_standards::account::access::{AccessControl, DefaultAuthority};
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{
     BurnPolicy,
@@ -287,13 +287,12 @@ fn pause_unpause_roles() -> BTreeMap<AccountProcedureRoot, RoleSymbol> {
     ])
 }
 
-/// Builds an RBAC faucet whose pause / unpause are gated per-procedure, with `default` applied to
-/// any authority-gated procedure that is not in the role map.
+/// Builds an RBAC faucet whose pause / unpause are gated per-procedure. Any authority-gated
+/// procedure not present in `roles` falls back to the owner check.
 fn add_rbac_faucet_with_pause(
     builder: &mut MockChainBuilder,
     owner: AccountId,
     roles: BTreeMap<AccountProcedureRoot, RoleSymbol>,
-    default: DefaultAuthority,
     seed: u8,
     mutable_max_supply: bool,
 ) -> anyhow::Result<Account> {
@@ -308,7 +307,7 @@ fn add_rbac_faucet_with_pause(
     let account_builder = AccountBuilder::new([seed; 32])
         .account_type(AccountType::Public)
         .with_component(faucet)
-        .with_components(AccessControl::Rbac { owner, roles, default })
+        .with_components(AccessControl::Rbac { owner, roles })
         .with_component(PausableManager);
 
     builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
@@ -345,7 +344,7 @@ fn build_grant_role_note(
 }
 
 /// Builds a note that calls `set_max_supply`, an authority-gated procedure intentionally left out
-/// of the role map in the tests below so it exercises the default-authority fallback.
+/// of the role map in the tests below so it exercises the owner fallback.
 fn build_set_max_supply_note(sender: AccountId, new_max_supply: u64) -> anyhow::Result<Note> {
     build_note(
         sender,
@@ -375,14 +374,8 @@ async fn rbac_pause_and_unpause_use_distinct_roles() -> anyhow::Result<()> {
     let unpauser = test_account_id(21);
 
     let mut builder = MockChain::builder();
-    let faucet = add_rbac_faucet_with_pause(
-        &mut builder,
-        *OWNER_ID,
-        pause_unpause_roles(),
-        DefaultAuthority::Owner,
-        47,
-        false,
-    )?;
+    let faucet =
+        add_rbac_faucet_with_pause(&mut builder, *OWNER_ID, pause_unpause_roles(), 47, false)?;
 
     // Owner grants PAUSER to `pauser` and UNPAUSER to `unpauser`; then each acts in their lane.
     let grant_pauser = build_grant_role_note(*OWNER_ID, &role("PAUSER"), pauser)?;
@@ -415,14 +408,8 @@ async fn rbac_pause_fails_when_sender_lacks_pauser_role() -> anyhow::Result<()> 
     let unpauser = test_account_id(22);
 
     let mut builder = MockChain::builder();
-    let faucet = add_rbac_faucet_with_pause(
-        &mut builder,
-        *OWNER_ID,
-        pause_unpause_roles(),
-        DefaultAuthority::Owner,
-        48,
-        false,
-    )?;
+    let faucet =
+        add_rbac_faucet_with_pause(&mut builder, *OWNER_ID, pause_unpause_roles(), 48, false)?;
 
     // `unpauser` only holds UNPAUSER, so calling `pause` (gated by PAUSER) must be rejected.
     let grant_unpauser = build_grant_role_note(*OWNER_ID, &role("UNPAUSER"), unpauser)?;
@@ -447,19 +434,13 @@ async fn rbac_pause_fails_when_sender_lacks_pauser_role() -> anyhow::Result<()> 
 }
 
 #[tokio::test]
-async fn rbac_unmapped_procedure_falls_back_to_owner_default() -> anyhow::Result<()> {
+async fn rbac_unmapped_procedure_falls_back_to_owner() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let faucet = add_rbac_faucet_with_pause(
-        &mut builder,
-        *OWNER_ID,
-        pause_unpause_roles(),
-        DefaultAuthority::Owner,
-        49,
-        true,
-    )?;
+    let faucet =
+        add_rbac_faucet_with_pause(&mut builder, *OWNER_ID, pause_unpause_roles(), 49, true)?;
 
-    // `set_max_supply` is not in the role map → falls back to DefaultAuthority::Owner. The owner
-    // can call it; a non-owner cannot.
+    // `set_max_supply` is not in the role map → falls back to the owner check. The owner can call
+    // it; a non-owner cannot.
     let owner_note = build_set_max_supply_note(*OWNER_ID, 500_000)?;
     let attacker_note = build_set_max_supply_note(*NON_OWNER_ID, 500_000)?;
     builder.add_output_note(RawOutputNote::Full(owner_note.clone()));
@@ -477,46 +458,6 @@ async fn rbac_unmapped_procedure_falls_back_to_owner_default() -> anyhow::Result
         .await;
 
     assert_transaction_executor_error!(result, ERR_SENDER_NOT_OWNER);
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn rbac_unmapped_procedure_falls_back_to_default_role() -> anyhow::Result<()> {
-    let admin = test_account_id(23);
-
-    let mut builder = MockChain::builder();
-    let faucet = add_rbac_faucet_with_pause(
-        &mut builder,
-        *OWNER_ID,
-        pause_unpause_roles(),
-        DefaultAuthority::Role(role("ADMIN")),
-        50,
-        true,
-    )?;
-
-    // `set_max_supply` is unmapped → falls back to the default ADMIN role. A holder of ADMIN can
-    // call it; the owner (who does not hold ADMIN) cannot.
-    let grant_admin = build_grant_role_note(*OWNER_ID, &role("ADMIN"), admin)?;
-    let admin_note = build_set_max_supply_note(admin, 500_000)?;
-    let owner_note = build_set_max_supply_note(*OWNER_ID, 400_000)?;
-    builder.add_output_note(RawOutputNote::Full(grant_admin.clone()));
-    builder.add_output_note(RawOutputNote::Full(admin_note.clone()));
-    builder.add_output_note(RawOutputNote::Full(owner_note.clone()));
-
-    let mut mock_chain = builder.build()?;
-    mock_chain.prove_next_block()?;
-
-    execute_note_on_faucet(&mut mock_chain, faucet.id(), &grant_admin).await?;
-    execute_note_on_faucet(&mut mock_chain, faucet.id(), &admin_note).await?;
-
-    let result = mock_chain
-        .build_tx_context(faucet.id(), &[owner_note.id()], &[])?
-        .build()?
-        .execute()
-        .await;
-
-    assert_transaction_executor_error!(result, ERR_SENDER_LACKS_ROLE);
 
     Ok(())
 }
