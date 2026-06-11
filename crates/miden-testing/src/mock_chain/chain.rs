@@ -33,7 +33,7 @@ use miden_protocol::transaction::{
 use miden_tx::LocalTransactionProver;
 use miden_tx::auth::BasicAuthenticator;
 use miden_tx::utils::serde::{ByteReader, ByteWriter, Deserializable, Serializable};
-use miden_tx_batch_prover::LocalBatchProver;
+use miden_tx_batch::LocalBatchProver;
 
 use super::note::MockChainNote;
 use crate::{MockChainBuilder, TransactionContextBuilder};

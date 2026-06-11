@@ -3,6 +3,7 @@
 ## v0.16.0 (TBD)
 
 ### Changes
+- [BREAKING] Renamed the `miden-tx-batch-prover` crate to `miden-tx-batch` ([#3035](https://github.com/0xMiden/protocol/pull/3035)).
 - Added a skeleton batch kernel ([#1122](https://github.com/0xMiden/protocol/issues/1122)) wired through `LocalBatchProver::prove` and attached to `ProvenBatch` as an `ExecutionProof`. It does not yet perform any verification.
 
 - [BREAKING] Renamed `AccountStorageDelta` to `AccountStoragePatch` ([#3002](https://github.com/0xMiden/protocol/pull/3002)).
@@ -20,6 +21,7 @@
 - Added a definition of the Miden operator on the architecture overview page and linked it from the note lifecycle ([#3017](https://github.com/0xMiden/protocol/pull/3017)).
 - [BREAKING] Extended `Authority::RbacControlled` to assign roles per authority-gated procedure ([#3072](https://github.com/0xMiden/protocol/pull/3072)).
 - Clarified Miden's operational roles on the architecture overview page and linked them from the note lifecycle ([#3017](https://github.com/0xMiden/protocol/pull/3017)).
+- [BREAKING] Replaced `AccountInterface::build_send_notes_script` with a standalone `SendNotesTransactionScript` built against `AccountCodeInterface` ([#3055](https://github.com/0xMiden/protocol/pull/3055)).
 
 ### Fixes
 - Fixed `update_ger` to explicitly reject duplicate GER insertions with `ERR_GER_ALREADY_REGISTERED` instead of silently accepting them ([#2983](https://github.com/0xMiden/protocol/pull/2983)).
@@ -113,6 +115,7 @@
 - [BREAKING] Removed `AccountType` and renamed `AccountStorageMode` to `AccountType` ([#2939](https://github.com/0xMiden/protocol/pull/2939), [#2942](https://github.com/0xMiden/protocol/pull/2942)).
 - [BREAKING] Updated note nullifiers to include note metadata and attachments commitment ([#2953](https://github.com/0xMiden/protocol/pull/2953)).
 - Exposed `token_config_slot_value` on `FungibleFaucet` to allow reading the token config word directly from the account storage ([#2954](https://github.com/0xMiden/protocol/pull/2954)).
+- [BREAKING] Introduced `AccountCodeInterface` ([#2924](https://github.com/0xMiden/protocol/pull/2924)).
 
 ### Fixes
 
