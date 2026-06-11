@@ -468,6 +468,11 @@ pub enum AccountPatchError {
     #[error("account code must be provided for new accounts (with nonce = 1)")]
     CodeMustBeProvidedForNewAccounts,
 
+    #[error(
+        "account code in patch requires a final nonce, since account creation is a state-changing transaction"
+    )]
+    CodeRequiresNonceUpdate,
+
     #[error("storage slot {0} was used as different slot types")]
     StorageSlotUsedAsDifferentTypes(StorageSlotName),
 

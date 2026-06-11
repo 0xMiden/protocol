@@ -138,6 +138,7 @@ impl AccountDelta {
             AccountPatchError::FinalNonceIsZero
             | AccountPatchError::NonEmptyStorageOrVaultPatchWithZeroNonce
             | AccountPatchError::CodeMustBeProvidedForNewAccounts
+            | AccountPatchError::CodeRequiresNonceUpdate
             | AccountPatchError::MergingFullStatePatches
             | AccountPatchError::NonceMustIncrementByOne { .. }
             | AccountPatchError::AccountIdMismatch { .. } => {

@@ -89,6 +89,8 @@ impl AccountPatch {
     ///   constructed with `None` instead.
     /// - `storage` or `vault` contain updates but `final_nonce` is `None`. The tx kernel mandates
     ///   that the nonce is incremented whenever account state changes.
+    /// - `code` is `Some` but `final_nonce` is `None`. A patch with code represents account
+    ///   creation, which is a state-changing transaction and so must increment the nonce.
     pub fn new(
         account_id: AccountId,
         storage: AccountStoragePatch,
@@ -107,6 +109,12 @@ impl AccountPatch {
         // kernel
         if (!storage.is_empty() || !vault.is_empty()) && final_nonce.is_none() {
             return Err(AccountPatchError::NonEmptyStorageOrVaultPatchWithZeroNonce);
+        }
+
+        // A patch carrying code represents account creation, which is a state-changing
+        // transaction and so must increment the nonce per the tx kernel rules.
+        if code.is_some() && final_nonce.is_none() {
+            return Err(AccountPatchError::CodeRequiresNonceUpdate);
         }
 
         // Code must be provided for new accounts to be able to reconstruct the full Account.
@@ -558,6 +566,25 @@ mod tests {
             Some(AccountCode::mock()),
             Some(Felt::ONE),
         )?;
+
+        Ok(())
+    }
+
+    /// A patch carrying account code but no `final_nonce` is rejected: a patch with code represents
+    /// account creation, which is a state-changing transaction and so must increment the nonce.
+    #[test]
+    fn account_patch_code_requires_nonce_update() -> anyhow::Result<()> {
+        let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER)?;
+
+        let error = AccountPatch::new(
+            account_id,
+            AccountStoragePatch::new(),
+            AccountVaultPatch::default(),
+            Some(AccountCode::mock()),
+            None,
+        )
+        .unwrap_err();
+        assert_matches!(error, AccountPatchError::CodeRequiresNonceUpdate);
 
         Ok(())
     }
