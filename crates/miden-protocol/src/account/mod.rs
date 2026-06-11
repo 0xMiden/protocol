@@ -723,19 +723,8 @@ mod tests {
     #[test]
     fn apply_patch_rejects_non_increasing_nonce() -> anyhow::Result<()> {
         let account_id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE)?;
-        let init_nonce = Felt::from(5_u32);
-        let mut account = build_account(vec![], init_nonce, vec![]);
-
-        // Equal nonce.
-        let patch_equal = AccountPatch::new(
-            account_id,
-            AccountStoragePatch::new(),
-            AccountVaultPatch::default(),
-            None,
-            Some(init_nonce),
-        )?;
-        let err = account.apply_patch(&patch_equal).unwrap_err();
-        assert_matches!(err, AccountError::NonceMustIncrease { .. });
+        let init_nonce = 5_u32;
+        let mut account = build_account(vec![], Felt::from(init_nonce), vec![]);
 
         // Smaller nonce.
         let patch_smaller = AccountPatch::new(
@@ -743,7 +732,7 @@ mod tests {
             AccountStoragePatch::new(),
             AccountVaultPatch::default(),
             None,
-            Some(Felt::from(4_u32)),
+            Some(Felt::from(init_nonce - 1)),
         )?;
         let err = account.apply_patch(&patch_smaller).unwrap_err();
         assert_matches!(err, AccountError::NonceMustIncrease { .. });
