@@ -1,9 +1,12 @@
 use alloc::collections::BTreeMap;
+use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+use core::fmt::Display;
 
 use miden_core::mast::MastNodeExt;
 use miden_crypto::merkle::InnerNodeInfo;
+use miden_crypto_derive::WordWrapper;
 use miden_mast_package::Package;
 
 use super::{Felt, Hasher, Word};
@@ -276,6 +279,42 @@ impl Deserializable for TransactionArgs {
     }
 }
 
+// TRANSACTION SCRIPT ROOT
+// ================================================================================================
+
+/// The MAST root of a [`TransactionScript`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, WordWrapper)]
+pub struct TransactionScriptRoot(Word);
+
+impl From<TransactionScriptRoot> for Word {
+    fn from(root: TransactionScriptRoot) -> Self {
+        root.0
+    }
+}
+
+impl Display for TransactionScriptRoot {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        Display::fmt(&self.0, f)
+    }
+}
+
+impl Serializable for TransactionScriptRoot {
+    fn write_into<W: ByteWriter>(&self, target: &mut W) {
+        target.write(self.0);
+    }
+
+    fn get_size_hint(&self) -> usize {
+        self.0.get_size_hint()
+    }
+}
+
+impl Deserializable for TransactionScriptRoot {
+    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
+        let word: Word = source.read()?;
+        Ok(Self::from_raw(word))
+    }
+}
+
 // TRANSACTION SCRIPT
 // ================================================================================================
 
@@ -334,8 +373,8 @@ impl TransactionScript {
     }
 
     /// Returns the commitment of this transaction script (i.e., the script's MAST root).
-    pub fn root(&self) -> Word {
-        self.mast[self.entrypoint].digest()
+    pub fn root(&self) -> TransactionScriptRoot {
+        TransactionScriptRoot::from_raw(self.mast[self.entrypoint].digest())
     }
 
     /// Returns a new [TransactionScript] with the provided advice map entries merged into the

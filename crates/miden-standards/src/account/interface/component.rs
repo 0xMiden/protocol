@@ -1,10 +1,9 @@
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
+use miden_protocol::Word;
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
-use miden_protocol::account::{AccountId, AccountProcedureRoot, AccountStorage, StorageSlotName};
-use miden_protocol::note::PartialNote;
-use miden_protocol::{Felt, Word};
+use miden_protocol::account::{AccountProcedureRoot, AccountStorage, StorageSlotName};
 
 use crate::AuthMethod;
 use crate::account::auth::{
@@ -14,8 +13,8 @@ use crate::account::auth::{
     AuthSingleSig,
     AuthSingleSigAcl,
     NetworkAccountNoteAllowlist,
+    NetworkAccountTxScriptAllowlist,
 };
-use crate::account::interface::AccountInterfaceError;
 
 // ACCOUNT COMPONENT INTERFACE
 // ================================================================================================
@@ -165,168 +164,6 @@ impl AccountComponentInterface {
             _ => vec![], // Non-auth components return empty vector
         }
     }
-
-    /// Generates a body for the note creation of the `send_note` transaction script. The resulting
-    /// code could use different procedures for note creation, which depends on the used interface.
-    ///
-    /// The body consists of two sections:
-    /// - Pushing the note information on the stack.
-    /// - Creating a note:
-    ///   - For basic fungible faucet: pushing the amount of assets and distributing them.
-    ///   - For basic wallet: creating a note, pushing the assets on the stack and moving them to
-    ///     the created note.
-    ///
-    /// # Examples
-    ///
-    /// Example script for the [`AccountComponentInterface::BasicWallet`] with one note:
-    ///
-    /// ```masm
-    ///     push.{note_information}
-    ///     call.::miden::protocol::output_note::create
-    ///
-    ///     push.{note asset}
-    ///     call.::miden::standards::wallets::basic::move_asset_to_note dropw
-    ///     dropw dropw dropw drop
-    /// ```
-    ///
-    /// Example script for the [`AccountComponentInterface::FungibleFaucet`] with one note:
-    ///
-    /// ```masm
-    ///     push.{note information}
-    ///
-    ///     push.{ASSET_VALUE} push.{ASSET_KEY}
-    ///     call.::miden::standards::faucets::fungible::mint_and_send
-    ///     swapdw dropw dropw swapdw dropw dropw
-    /// ```
-    ///
-    /// # Errors:
-    /// Returns an error if:
-    /// - the interface does not support the generation of the standard `send_note` procedure.
-    /// - the sender of the note isn't the account for which the script is being built.
-    /// - the note created by the faucet doesn't contain exactly one asset.
-    /// - a faucet tries to mint an asset with a different faucet ID.
-    pub(crate) fn send_note_body(
-        &self,
-        sender_account_id: AccountId,
-        notes: &[PartialNote],
-    ) -> Result<String, AccountInterfaceError> {
-        let mut body = String::new();
-
-        for partial_note in notes {
-            if partial_note.metadata().sender() != sender_account_id {
-                return Err(AccountInterfaceError::InvalidSenderAccount(
-                    partial_note.metadata().sender(),
-                ));
-            }
-
-            body.push_str(&format!(
-                "
-                push.{recipient}
-                push.{note_type}
-                push.{tag}
-                # => [tag, note_type, RECIPIENT, pad(16)]
-                ",
-                recipient = partial_note.recipient_digest(),
-                note_type = Felt::from(partial_note.metadata().note_type()),
-                tag = Felt::from(partial_note.metadata().tag()),
-            ));
-
-            match self {
-                AccountComponentInterface::FungibleFaucet => {
-                    if partial_note.assets().num_assets() != 1 {
-                        return Err(AccountInterfaceError::FaucetNoteWithoutAsset);
-                    }
-
-                    // SAFETY: We checked that the note contains exactly one asset
-                    let asset =
-                        partial_note.assets().iter().next().expect("note should contain an asset");
-
-                    if asset.faucet_id() != sender_account_id {
-                        return Err(AccountInterfaceError::IssuanceFaucetMismatch(
-                            asset.faucet_id(),
-                        ));
-                    }
-
-                    body.push_str(&format!(
-                        "
-                        push.{ASSET_VALUE}
-                        push.{ASSET_KEY}
-                        # => [ASSET_KEY, ASSET_VALUE, tag, note_type, RECIPIENT, pad(16)]
-
-                        call.::miden::standards::faucets::fungible::mint_and_send
-                        # => [note_idx, pad(29)]
-
-                        swapdw dropw dropw swapdw dropw dropw
-                        # => [note_idx, pad(13)]\n
-                        ",
-                        ASSET_KEY = asset.to_key_word(),
-                        ASSET_VALUE = asset.to_value_word(),
-                    ));
-                },
-                AccountComponentInterface::BasicWallet => {
-                    body.push_str(
-                        "
-                    exec.::miden::protocol::output_note::create
-                    # => [note_idx, pad(16)]\n
-                    ",
-                    );
-
-                    for asset in partial_note.assets().iter() {
-                        body.push_str(&format!(
-                            "
-                            # duplicate note index
-                            padw push.0 push.0 push.0 dup.7
-                            # => [note_idx, pad(7), note_idx, pad(16)]
-
-                            push.{ASSET_VALUE}
-                            push.{ASSET_KEY}
-                            # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7), note_idx, pad(16)]
-
-                            call.::miden::standards::wallets::basic::move_asset_to_note
-                            # => [pad(16), note_idx, pad(16)]
-
-                            dropw dropw dropw dropw
-                            # => [note_idx, pad(16)]\n
-                            ",
-                            ASSET_KEY = asset.to_key_word(),
-                            ASSET_VALUE = asset.to_value_word(),
-                        ));
-                    }
-                },
-                _ => {
-                    return Err(AccountInterfaceError::UnsupportedInterface {
-                        interface: self.clone(),
-                    });
-                },
-            }
-
-            for attachment in partial_note.attachments().iter() {
-                let attachment_scheme = attachment.attachment_scheme().as_u16();
-                let attachment_commitment = attachment.content().to_commitment();
-
-                body.push_str(&format!(
-                    "
-                dup
-                push.{attachment_commitment}
-                push.{attachment_scheme}
-                # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx, note_idx, pad(16)]
-                exec.::miden::protocol::output_note::add_attachment
-                # => [note_idx, pad(16)]
-            ",
-                ));
-            }
-
-            body.push_str(
-                "
-                # drop the note idx
-                drop
-                # => [pad(16)]
-            ",
-            );
-        }
-
-        Ok(body)
-    }
 }
 
 // HELPER FUNCTIONS
@@ -411,9 +248,12 @@ fn extract_multisig_auth_method(
 /// Extracts authentication method from a network-account component.
 fn extract_network_account_auth_method(storage: &AccountStorage) -> AuthMethod {
     let allowlist = NetworkAccountNoteAllowlist::try_from(storage)
-        .expect("network account allowlist slot should be present and valid");
+        .expect("network account note allowlist slot should be present and valid");
+    let tx_script_allowlist = NetworkAccountTxScriptAllowlist::try_from(storage)
+        .expect("network account tx script allowlist slot should be present and valid");
 
     AuthMethod::NetworkAccount {
         allowed_script_roots: allowlist.into_allowed_script_roots(),
+        allowed_tx_script_roots: tx_script_allowlist.into_allowed_script_roots(),
     }
 }

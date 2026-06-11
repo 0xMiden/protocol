@@ -634,6 +634,35 @@ mod tests {
     }
 
     #[test]
+    fn account_storage_patch_accessors() {
+        let value_slot = StorageSlotName::mock(1);
+        let map_slot = StorageSlotName::mock(2);
+        let absent_slot = StorageSlotName::mock(3);
+
+        let value = Word::from([1u32, 2, 3, 4]);
+        let map_key = StorageMapKey::from_array([10, 11, 12, 13]);
+        let map_value = Word::from([5u32, 6, 7, 8]);
+        let absent_key = StorageMapKey::from_array([99, 99, 99, 99]);
+
+        let patch = AccountStoragePatch::from_iters(
+            [],
+            [(value_slot.clone(), value)],
+            [(map_slot.clone(), StorageMapPatch::from_iters([], [(map_key, map_value)]))],
+        );
+
+        assert_eq!(patch.get_value(&value_slot), Some(value));
+        assert_eq!(patch.get_value(&absent_slot), None);
+
+        let map_patch = patch.get_map(&map_slot).unwrap();
+        assert_eq!(map_patch.entries().get(&map_key), Some(&map_value));
+        assert_eq!(patch.get_map(&absent_slot), None);
+
+        assert_eq!(patch.get_map_value(&map_slot, &map_key), Some(map_value));
+        assert_eq!(patch.get_map_value(&map_slot, &absent_key), None);
+        assert_eq!(patch.get_map_value(&absent_slot, &map_key), None);
+    }
+
+    #[test]
     fn test_is_empty() {
         let storage_patch = AccountStoragePatch::new();
         assert!(storage_patch.is_empty());

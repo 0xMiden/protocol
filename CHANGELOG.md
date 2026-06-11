@@ -3,6 +3,7 @@
 ## v0.16.0 (TBD)
 
 ### Changes
+- [BREAKING] Renamed the `miden-tx-batch-prover` crate to `miden-tx-batch` ([#3035](https://github.com/0xMiden/protocol/pull/3035)).
 - Added a skeleton batch kernel ([#1122](https://github.com/0xMiden/protocol/issues/1122)) wired through `LocalBatchProver::prove` and attached to `ProvenBatch` as an `ExecutionProof`. It does not yet perform any verification.
 
 - [BREAKING] Renamed `AccountStorageDelta` to `AccountStoragePatch` ([#3002](https://github.com/0xMiden/protocol/pull/3002)).
@@ -20,12 +21,21 @@
 - [BREAKING] Flipped `AuthSingleSigAcl` ACL semantics from a trigger list to an exempt list: every called account procedure now requires a signature unless its root is listed in the new `exempt_procedures` configuration. Removed the `allow_unauthorized_output_notes` and `allow_unauthorized_input_notes` configuration flags and the `config` storage slot; the trigger-roots storage map was renamed to `exempt_procedure_roots`. Authentication is required when any of (1) a kernel-detected procedure not on the exempt list was called, (2) an input note was consumed and no procedure was detected as called anywhere in the transaction (combined with (1), this requires authentication for input-note consumption unless an exempt procedure was detected as called), or (3) any output note was created (unconditional, because `output_note_create` does not trigger `was_procedure_called`). The input-note check in (2) is transaction-wide rather than per-note: a single detected procedure call lifts the input-note signature requirement for every input note in the same transaction. The auth procedure now iterates every account procedure once (two kernel calls per procedure, plus a map lookup for each detected call), so the no-signature hot path costs proportionally more than under the old trigger list. Part of [#2964](https://github.com/0xMiden/protocol/issues/2964).
 - Added a definition of the Miden operator on the architecture overview page and linked it from the note lifecycle ([#3017](https://github.com/0xMiden/protocol/pull/3017)).
 - Clarified Miden's operational roles on the architecture overview page and linked them from the note lifecycle ([#3017](https://github.com/0xMiden/protocol/pull/3017)).
+- [BREAKING] Replaced `AccountInterface::build_send_notes_script` with a standalone `SendNotesTransactionScript` built against `AccountCodeInterface` ([#3055](https://github.com/0xMiden/protocol/pull/3055)).
 
 ### Fixes
 - Fixed `update_ger` to explicitly reject duplicate GER insertions with `ERR_GER_ALREADY_REGISTERED` instead of silently accepting them ([#2983](https://github.com/0xMiden/protocol/pull/2983)).
 - AggLayer `bridge_out` now rejects B2AGG notes whose `NoteType` is not `Public`, preventing a recipient-identical private note from desyncing the Local Exit Tree from AggLayer's off-chain mirror ([#2988](https://github.com/0xMiden/protocol/pull/2988)).
 - Fixed `pausable::assert_not_paused` to guard its storage read with `active_account::has_storage_slot`, making it a no-op on accounts without the `Pausable` component instead of panicking on the missing `is_paused` slot ([#3047](https://github.com/0xMiden/protocol/pull/3047)).
 - [BREAKING] Fixed batch ID being serialized/deserialized and potentially not matching the serialized transaction headers ([#3061](https://github.com/0xMiden/protocol/pull/3061)).
+
+## v0.15.2 (TBD)
+
+### Changes
+
+- [BREAKING] `AuthNetworkAccount` now gates transaction scripts with a root allowlist instead of banning them outright, enabling network accounts to run approved tx scripts such as setting the expiration delta ([#3028](https://github.com/0xMiden/protocol/pull/3028)).
+- [BREAKING] `TransactionScript::root()` now returns `TransactionScriptRoot` instead of `Word` ([#3028](https://github.com/0xMiden/protocol/pull/3028)).
+- Renamed `AuthNetworkAccount::with_allowlist` to `with_allowed_notes` and aligned the component's internal allowlist field names, for consistency with `with_allowed_tx_scripts` ([#3049](https://github.com/0xMiden/protocol/pull/3049)).
 
 ## v0.15.1 (TBD)
 
@@ -105,6 +115,7 @@
 - [BREAKING] Removed `AccountType` and renamed `AccountStorageMode` to `AccountType` ([#2939](https://github.com/0xMiden/protocol/pull/2939), [#2942](https://github.com/0xMiden/protocol/pull/2942)).
 - [BREAKING] Updated note nullifiers to include note metadata and attachments commitment ([#2953](https://github.com/0xMiden/protocol/pull/2953)).
 - Exposed `token_config_slot_value` on `FungibleFaucet` to allow reading the token config word directly from the account storage ([#2954](https://github.com/0xMiden/protocol/pull/2954)).
+- [BREAKING] Introduced `AccountCodeInterface` ([#2924](https://github.com/0xMiden/protocol/pull/2924)).
 
 ### Fixes
 

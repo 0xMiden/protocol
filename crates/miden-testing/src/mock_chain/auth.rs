@@ -8,6 +8,7 @@ use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, PublicKeyCommitme
 use miden_protocol::account::{AccountComponent, AccountProcedureRoot};
 use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
+use miden_protocol::transaction::TransactionScriptRoot;
 use miden_standards::account::auth::multisig_smart::ProcedurePolicy;
 use miden_standards::account::auth::{
     AuthGuardedMultisig,
@@ -81,9 +82,11 @@ pub enum Auth {
     Conditional,
 
     /// Network-account authentication that restricts the account to consuming only notes whose
-    /// script roots appear in `allowed_script_roots`. Must be non-empty.
+    /// script roots appear in `allowed_script_roots` (must be non-empty), and to executing only
+    /// transaction scripts whose roots appear in `allowed_tx_script_roots` (may be empty).
     NetworkAccount {
         allowed_script_roots: BTreeSet<NoteScriptRoot>,
+        allowed_tx_script_roots: BTreeSet<TransactionScriptRoot>,
     },
 }
 
@@ -170,10 +173,15 @@ impl Auth {
             Auth::IncrNonce => (IncrNonceAuthComponent.into(), None),
             Auth::Noop => (NoopAuthComponent.into(), None),
             Auth::Conditional => (ConditionalAuthComponent.into(), None),
-            Auth::NetworkAccount { allowed_script_roots } => {
-                let component = AuthNetworkAccount::with_allowlist(allowed_script_roots.clone())
-                    .expect("network account allowlist must be non-empty")
-                    .into();
+            Auth::NetworkAccount {
+                allowed_script_roots,
+                allowed_tx_script_roots,
+            } => {
+                let component =
+                    AuthNetworkAccount::with_allowed_notes(allowed_script_roots.clone())
+                        .expect("network account allowlist must be non-empty")
+                        .with_allowed_tx_scripts(allowed_tx_script_roots.clone())
+                        .into();
                 (component, None)
             },
         }

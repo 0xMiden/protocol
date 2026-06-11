@@ -200,9 +200,10 @@ async fn test_acl_output_note_creation_requires_auth_even_when_caller_exempt(
         ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
     };
-    use miden_standards::account::interface::{AccountInterface, AccountInterfaceExt};
+    use miden_protocol::transaction::TransactionScript;
     use miden_standards::account::wallets::BasicWallet;
     use miden_standards::note::P2idNote;
+    use miden_standards::tx_script::SendNotesTransactionScript;
     use miden_testing::MockChainBuilder;
 
     let move_asset_to_note = BasicWallet::move_asset_to_note_root();
@@ -233,8 +234,10 @@ async fn test_acl_output_note_creation_requires_auth_even_when_caller_exempt(
         &mut RandomCoin::new(Hasher::hash(b"singlesig-acl-output-note-test")),
     )?;
 
-    let send_note_script = AccountInterface::from_account(&account)
-        .build_send_notes_script(&[output_note.clone().into()], None)?;
+    let send_note_script = TransactionScript::from(SendNotesTransactionScript::new(
+        &account.code_interface(),
+        &[output_note.clone().into()],
+    )?);
 
     let mock_chain = MockChainBuilder::with_accounts([account.clone()]).unwrap().build()?;
 
