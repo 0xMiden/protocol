@@ -3,6 +3,7 @@ use alloc::vec::Vec;
 use miden_processor::ProcessorState;
 use miden_processor::advice::{AdviceMutation, AdviceProvider};
 use miden_processor::trace::RowIndex;
+use miden_protocol::account::auth::PublicKeyCommitment;
 use miden_protocol::account::{
     AccountId,
     StorageMap,
@@ -142,7 +143,7 @@ pub(crate) enum TransactionEvent {
 
     /// The data necessary to handle an auth request.
     AuthRequest {
-        pub_key_hash: Word,
+        pub_key_commitment: PublicKeyCommitment,
         tx_summary: TransactionSummary,
         signature: Option<Vec<Felt>>,
     },
@@ -487,8 +488,8 @@ impl TransactionEvent {
             TransactionEventId::AuthRequest => {
                 // Expected stack state: [event, MESSAGE, PUB_KEY]
                 let message = process.get_stack_word(1);
-                let pub_key_hash = process.get_stack_word(5);
-                let signature_key = Hasher::merge(&[pub_key_hash, message]);
+                let pub_key_commitment = PublicKeyCommitment::from(process.get_stack_word(5));
+                let signature_key = Hasher::merge(&[pub_key_commitment.into(), message]);
 
                 let signature = process
                     .advice_provider()
@@ -497,7 +498,11 @@ impl TransactionEvent {
 
                 let tx_summary = extract_tx_summary(base_host, process, message)?;
 
-                Some(TransactionEvent::AuthRequest { pub_key_hash, tx_summary, signature })
+                Some(TransactionEvent::AuthRequest {
+                    pub_key_commitment,
+                    tx_summary,
+                    signature,
+                })
             },
 
             TransactionEventId::Unauthorized => {
