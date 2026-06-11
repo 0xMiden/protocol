@@ -255,9 +255,9 @@ async fn test_auth_network_account_accepts_any_of_multiple_allowlisted_roots(
 /// deltas all run end-to-end and produce the corresponding expiration block number.
 ///
 /// This is the input-dependent pattern the type docs caution against in general; it is acceptable
-/// for the expiration delta specifically because the kernel only ever lets a script tighten the
-/// expiration window, never extend it, so the worst an arbitrary caller can do is make their own
-/// transaction expire sooner. Network accounts that want this (e.g. for the ntx-builder) can
+/// for the expiration delta specifically because the delta only bounds the inclusion window of the
+/// caller's own transaction (it cannot touch account nonce, state, or assets) and the kernel
+/// hard-caps it at `0xFFFF` blocks. Network accounts that want this (e.g. for the ntx-builder) can
 /// allowlist such a script knowingly.
 #[rstest]
 #[case(10)]

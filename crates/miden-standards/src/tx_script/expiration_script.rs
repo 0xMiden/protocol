@@ -35,12 +35,13 @@ static EXPIRATION_TX_SCRIPT: LazyLock<TransactionScript> = LazyLock::new(|| {
 /// supplied in the first element of `TX_SCRIPT_ARGS`.
 ///
 /// This is the standard tx script a network account allowlists so that the network transaction
-/// builder can bound how long a submitted network transaction stays valid. Because the delta is an
+/// builder can bound how long a submitted transaction stays valid. Because the delta is an
 /// input rather than hardcoded, the single [`ExpirationTransactionScript::script_root`] covers
-/// every delta; and since the kernel only ever lets the delta be tightened (never extended) within
-/// a single transaction, it is safe to allowlist on an open network account even though the
-/// (arbitrary) submitter controls the argument - the worst they can do is make their own
-/// transaction expire sooner.
+/// every delta. It is safe to allowlist on an open network account even though an arbitrary
+/// submitter controls the argument: the delta only bounds the inclusion window of the submitter's
+/// own transaction - it cannot touch the account's nonce, state, or assets - and the kernel
+/// hard-caps it at `0xFFFF` blocks. So the only thing the submitter decides is how soon their own
+/// transaction must be included before it expires, within that fixed bound.
 ///
 /// The type pairs the script (via [`From<ExpirationTransactionScript>`]) with the matching
 /// `TX_SCRIPT_ARGS` ([`ExpirationTransactionScript::tx_script_args`]), so callers do not assemble
@@ -60,8 +61,11 @@ pub struct ExpirationTransactionScript {
 impl ExpirationTransactionScript {
     /// Creates an expiration script that sets the transaction's expiration block delta to `delta`.
     ///
-    /// `delta` is a [`NonZeroU16`] because the kernel requires the expiration delta to be in
-    /// `1..=0xFFFF`; encoding that in the type keeps this constructor infallible.
+    /// `delta` is a [`NonZeroU16`] because the kernel's `update_expiration_block_delta` only
+    /// accepts a delta in `1..=0xFFFF` and otherwise fails the transaction with
+    /// `ERR_TX_INVALID_EXPIRATION_DELTA`. Encoding that bound in the type keeps this constructor
+    /// infallible and guarantees the delta produced by [`Self::tx_script_args`] is always in
+    /// range.
     pub fn new(delta: NonZeroU16) -> Self {
         Self { delta }
     }
