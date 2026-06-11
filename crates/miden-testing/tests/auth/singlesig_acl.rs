@@ -2,25 +2,35 @@ use core::slice;
 
 use assert_matches::assert_matches;
 use miden_processor::ExecutionError;
-use miden_protocol::Word;
+use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey};
 use miden_protocol::account::{
     Account,
     AccountBuilder,
     AccountComponent,
+    AccountId,
     AccountProcedureRoot,
     AccountStorage,
     AccountType,
 };
+use miden_protocol::asset::FungibleAsset;
 use miden_protocol::errors::MasmError;
-use miden_protocol::note::Note;
+use miden_protocol::note::{Note, NoteType};
+use miden_protocol::testing::account_id::{
+    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
+    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
+};
 use miden_protocol::testing::storage::MOCK_VALUE_SLOT0;
-use miden_protocol::transaction::RawOutputNote;
+use miden_protocol::transaction::{RawOutputNote, TransactionScript};
+use miden_protocol::{Hasher, Word};
 use miden_standards::account::auth::AuthSingleSigAcl;
+use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
+use miden_standards::note::P2idNote;
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::note::NoteBuilder;
-use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
+use miden_standards::tx_script::SendNotesTransactionScript;
+use miden_testing::{Auth, MockChain, MockChainBuilder, assert_transaction_executor_error};
 use miden_tx::TransactionExecutorError;
 use miden_tx::auth::BasicAuthenticator;
 use rand::SeedableRng;
@@ -191,21 +201,6 @@ async fn test_acl(#[case] auth_scheme: AuthScheme) -> anyhow::Result<()> {
 async fn test_acl_output_note_creation_requires_auth_even_when_caller_exempt(
     #[case] auth_scheme: AuthScheme,
 ) -> anyhow::Result<()> {
-    use miden_processor::crypto::random::RandomCoin;
-    use miden_protocol::Hasher;
-    use miden_protocol::account::AccountId;
-    use miden_protocol::asset::FungibleAsset;
-    use miden_protocol::note::NoteType;
-    use miden_protocol::testing::account_id::{
-        ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
-        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
-    };
-    use miden_protocol::transaction::TransactionScript;
-    use miden_standards::account::wallets::BasicWallet;
-    use miden_standards::note::P2idNote;
-    use miden_standards::tx_script::SendNotesTransactionScript;
-    use miden_testing::MockChainBuilder;
-
     let move_asset_to_note = BasicWallet::move_asset_to_note_root();
 
     let (auth_component, _authenticator) = Auth::Acl {
@@ -234,10 +229,9 @@ async fn test_acl_output_note_creation_requires_auth_even_when_caller_exempt(
         &mut RandomCoin::new(Hasher::hash(b"singlesig-acl-output-note-test")),
     )?;
 
-    let send_note_script = TransactionScript::from(SendNotesTransactionScript::new(
-        &account.code_interface(),
-        &[output_note.clone().into()],
-    )?);
+    let send_note_script: TransactionScript =
+        SendNotesTransactionScript::new(&account.code_interface(), &[output_note.clone().into()])?
+            .into();
 
     let mock_chain = MockChainBuilder::with_accounts([account.clone()]).unwrap().build()?;
 

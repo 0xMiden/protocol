@@ -24,7 +24,7 @@ const PUBLIC_KEY_SLOT = word("miden::standards::auth::singlesig_acl::pub_key")
 const SCHEME_ID_SLOT = word("miden::standards::auth::singlesig_acl::scheme")
 
 # The slot where the map of procedure roots exempt from requiring a signature is stored.
-# Map entries: PROC_ROOT => [1, 0, 0, 0] (presence marker; absent keys read as [0, 0, 0, 0]).
+# Map entries: `PROC_ROOT => [1, 0, 0, 0]`
 const EXEMPT_PROCEDURE_ROOTS_SLOT = word("miden::standards::auth::singlesig_acl::exempt_procedure_roots")
 
 #! Authenticate a transaction using the signature scheme specified by scheme_id.
@@ -40,11 +40,8 @@ const EXEMPT_PROCEDURE_ROOTS_SLOT = word("miden::standards::auth::singlesig_acl:
 #!     no procedure was detected as called anywhere in the transaction. Combined with
 #!     the "non-exempt proc was called" rule above, the practical effect is that input
 #!     note consumption requires a signature unless at least one exempt procedure was
-#!     detected as called; the most easily missed case this rule covers is a transaction
-#!     that consumes notes but invokes no account procedure at all.
-#!   - "output note was created": an output note was created. This is unconditional -
-#!     `output_note_create` does not trigger `was_procedure_called`, so the only way to
-#!     gate unsigned note emission is here.
+#!     detected as called.
+#!   - "output note was created": an output note was created.
 #!
 #! If authentication is required, the configured signature is verified. Otherwise, the nonce
 #! is conditionally incremented when the account state changed or the account is new.
@@ -138,11 +135,7 @@ pub proc auth_tx_acl(auth_args: word)
     # => [auth_required, pad(16)]
 
     # ------ Input notes: consumption requires a signature unless a procedure ran ------
-    #
-    # Combined with the "non-exempt proc was called" rule above, this gates input note
-    # consumption on at least one exempt procedure being detected as called: non-exempt
-    # detected calls already trip that rule, so the only case this `and` actually adds
-    # beyond it is the one where no procedure was detected as called at all.
+
     exec.tx::get_num_input_notes neq.0
     # => [were_input_notes_consumed, auth_required, pad(16)]
 

@@ -609,8 +609,7 @@ fn build_auth_component(
     match (access_control, auth_method) {
         // AuthControlled + SingleSig: the auth component is the sole setter gate. With
         // exempt-list semantics an empty exempt list is the safe default - every called
-        // account procedure requires a signature, including the burn/receive path that
-        // previously rode in unsigned via `allow_unauthorized_input_notes(true)`.
+        // account procedure requires a signature.
         (
             AccessControl::AuthControlled,
             AuthMethod::SingleSig { approver: (pub_key, auth_scheme) },

@@ -22,6 +22,7 @@ use crate::account::component::{SchemaTypeError, StorageValueName, StorageValueN
 use crate::account::{
     AccountCode,
     AccountIdPrefix,
+    AccountProcedureRoot,
     AccountStorage,
     StorageMapKey,
     StorageSlotId,
@@ -161,6 +162,8 @@ pub enum AccountError {
     StorageSlotNotValue(StorageSlotName),
     #[error("storage slot name {0} is assigned to more than one slot")]
     DuplicateStorageSlotName(StorageSlotName),
+    #[error("auth component exempt procedure list contains a duplicate procedure root {0:?}")]
+    DuplicateExemptProcedure(AccountProcedureRoot),
     #[error("storage does not contain a slot with name {slot_name}")]
     StorageSlotNameNotFound { slot_name: StorageSlotName },
     #[error("storage does not contain a slot with ID {slot_id}")]

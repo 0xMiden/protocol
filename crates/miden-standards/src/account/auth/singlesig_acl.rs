@@ -176,12 +176,11 @@ impl AuthSingleSigAcl {
             )));
         }
 
-        let unique_roots: BTreeSet<_> =
-            config.exempt_procedures.iter().map(|p| p.as_word()).collect();
-        if unique_roots.len() != config.exempt_procedures.len() {
-            return Err(AccountError::other(
-                "exempt_procedures contains duplicate procedure roots",
-            ));
+        let mut seen = BTreeSet::new();
+        for proc_root in &config.exempt_procedures {
+            if !seen.insert(proc_root.as_word()) {
+                return Err(AccountError::DuplicateExemptProcedure(*proc_root));
+            }
         }
 
         Ok(Self { pub_key, auth_scheme, config })
