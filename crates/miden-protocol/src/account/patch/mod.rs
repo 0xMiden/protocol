@@ -482,9 +482,10 @@ mod tests {
         Ok(())
     }
 
-    /// A patch carrying account code and a final nonce can be converted to an [`Account`].
+    /// A patch carrying account code and a final nonce can be converted to an [`Account`] and back,
+    /// preserving all components.
     #[test]
-    fn account_try_from_patch_succeeds() -> anyhow::Result<()> {
+    fn account_patch_roundtrip() -> anyhow::Result<()> {
         let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER)?;
         let code = AccountCode::mock();
         let asset = FungibleAsset::mock(42);
@@ -510,6 +511,10 @@ mod tests {
         assert_eq!(account.nonce(), Felt::ONE);
         assert_eq!(account.storage().get_item(&slot_name)?, slot_value);
         assert_eq!(account.vault().get(asset.vault_key()), Some(asset));
+
+        // Roundtrip back to a patch should reproduce the original.
+        let roundtripped_patch = AccountPatch::try_from(account)?;
+        assert_eq!(roundtripped_patch, patch);
 
         Ok(())
     }

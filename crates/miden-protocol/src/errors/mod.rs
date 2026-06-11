@@ -147,6 +147,10 @@ pub enum AccountError {
         "an account with a seed cannot be converted into a delta since it represents an unregistered account"
     )]
     DeltaFromAccountWithSeed,
+    #[error(
+        "an account with a seed cannot be converted into a patch since it represents an unregistered account"
+    )]
+    PatchFromAccountWithSeed,
     #[error("seed converts to an invalid account ID")]
     SeedConvertsToInvalidAccountId(#[source] AccountIdError),
     #[error("storage map root {0} not found in the account storage")]

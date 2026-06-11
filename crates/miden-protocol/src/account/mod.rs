@@ -483,6 +483,48 @@ impl TryFrom<Account> for AccountDelta {
     }
 }
 
+impl TryFrom<Account> for AccountPatch {
+    type Error = AccountError;
+
+    /// Converts an [`Account`] into an [`AccountPatch`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - the account has a seed. Accounts with seeds have a nonce of 0. Representing such accounts
+    ///   as patches is not possible because patches with a non-empty state change need a
+    ///   `final_nonce` greater than 0.
+    fn try_from(account: Account) -> Result<Self, Self::Error> {
+        let Account { id, vault, storage, code, nonce, seed } = account;
+
+        if seed.is_some() {
+            return Err(AccountError::PatchFromAccountWithSeed);
+        }
+
+        let slot_patches = storage
+            .into_slots()
+            .into_iter()
+            .map(StorageSlot::into_parts)
+            .map(|(slot_name, slot_content)| (slot_name, StorageSlotPatch::from(slot_content)))
+            .collect();
+        let storage_patch = AccountStoragePatch::from_raw(slot_patches);
+
+        let mut vault_patch = AccountVaultPatch::default();
+        for asset in vault.assets() {
+            vault_patch.insert_asset(asset);
+        }
+
+        // The account's nonce is the final (absolute) nonce of the patch. Since the seed was
+        // checked above, the nonce is guaranteed to be greater than zero, so the patch can
+        // represent non-empty state changes and the `final_nonce == 1` invariant is satisfied
+        // by passing the account code.
+        let patch = AccountPatch::new(id, storage_patch, vault_patch, Some(code), Some(nonce))
+            .expect("non-seeded account should yield a valid patch");
+
+        Ok(patch)
+    }
+}
+
 impl SequentialCommit for Account {
     type Commitment = Word;
 
