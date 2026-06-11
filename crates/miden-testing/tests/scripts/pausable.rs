@@ -20,7 +20,6 @@ use miden_protocol::account::{
     RoleSymbol,
 };
 use miden_protocol::asset::{Asset, AssetAmount, AssetCallbackFlag, FungibleAsset};
-use miden_protocol::errors::MasmError;
 use miden_protocol::note::{Note, NoteTag, NoteType};
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::utils::sync::LazyLock;
@@ -34,6 +33,11 @@ use miden_standards::account::policies::{
     TokenPolicyManager,
     TransferPolicy,
 };
+use miden_standards::errors::standards::{
+    ERR_PAUSABLE_IS_PAUSED,
+    ERR_SENDER_LACKS_ROLE,
+    ERR_SENDER_NOT_OWNER,
+};
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{
     AccountState,
@@ -42,13 +46,6 @@ use miden_testing::{
     MockChainBuilder,
     assert_transaction_executor_error,
 };
-
-const ERR_PAUSABLE_IS_PAUSED: MasmError = MasmError::from_static_str("the contract is paused");
-
-const ERR_SENDER_NOT_OWNER: MasmError = MasmError::from_static_str("note sender is not the owner");
-
-const ERR_SENDER_LACKS_ROLE: MasmError =
-    MasmError::from_static_str("note sender does not hold the required role");
 
 static OWNER_ID: LazyLock<AccountId> = LazyLock::new(|| test_account_id(11));
 static NON_OWNER_ID: LazyLock<AccountId> = LazyLock::new(|| test_account_id(99));

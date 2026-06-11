@@ -181,14 +181,18 @@ impl Authority {
     // PRIVATE HELPERS
     // --------------------------------------------------------------------------------------------
 
-    /// Encodes the authority configuration value slot word: `[authority, 0, 0, 0]`.
-    fn config_word(&self) -> Word {
-        let discriminant = match self {
+    /// Returns the discriminant byte written to `word[0]` of the authority slot.
+    fn as_u8(&self) -> u8 {
+        match self {
             Authority::AuthControlled => AUTH_CONTROLLED,
             Authority::OwnerControlled => OWNER_CONTROLLED,
             Authority::RbacControlled { .. } => RBAC_CONTROLLED,
-        };
-        Word::new([Felt::from(discriminant), Felt::ZERO, Felt::ZERO, Felt::ZERO])
+        }
+    }
+
+    /// Encodes the authority configuration value slot word: `[authority, 0, 0, 0]`.
+    fn to_word(&self) -> Word {
+        Word::new([Felt::from(self.as_u8()), Felt::ZERO, Felt::ZERO, Felt::ZERO])
     }
 
     /// Reconstructs the per-procedure role map from the procedure-roles storage slot.
@@ -199,10 +203,10 @@ impl Authority {
             .slots()
             .iter()
             .find(|slot| slot.name().id() == AUTHORITY_PROCEDURE_ROLES_SLOT_NAME.id())
-            .ok_or(AuthorityError::InvalidProcedureRolesSlot)?;
+            .ok_or(AuthorityError::MissingProcedureRolesSlot)?;
 
         let StorageSlotContent::Map(map) = slot.content() else {
-            return Err(AuthorityError::InvalidProcedureRolesSlot);
+            return Err(AuthorityError::MissingProcedureRolesSlot);
         };
 
         let mut roles = BTreeMap::new();
@@ -223,8 +227,7 @@ impl From<Authority> for AccountComponent {
     fn from(value: Authority) -> Self {
         let metadata = value.component_metadata();
 
-        let mut slots =
-            vec![StorageSlot::with_value(AUTHORITY_SLOT_NAME.clone(), value.config_word())];
+        let mut slots = vec![StorageSlot::with_value(AUTHORITY_SLOT_NAME.clone(), value.to_word())];
 
         if let Authority::RbacControlled { roles } = value {
             let entries = roles.into_iter().map(|(proc_root, role)| {
@@ -261,5 +264,5 @@ pub enum AuthorityError {
     #[error("failed to read authority slot from storage")]
     MissingStorageSlot(#[source] AccountError),
     #[error("authority procedure-roles slot is missing or not a map")]
-    InvalidProcedureRolesSlot,
+    MissingProcedureRolesSlot,
 }
