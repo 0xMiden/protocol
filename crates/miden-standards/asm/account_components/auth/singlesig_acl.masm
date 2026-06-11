@@ -8,14 +8,15 @@ use miden::protocol::tx
 use miden::standards::auth::signature
 use miden::core::word
 
-# Tracks whether any exempt procedure was detected as called during the procedure-iteration
-# loop. Required so the input-note check can distinguish "an exempt procedure ran in this
-# transaction" (trusted) from "no exempt procedure ran at all" (input-note consumption must
-# be signed). This is a transaction-wide flag - a single detected exempt call lifts the
-# input-note signature requirement for every input note in the same transaction, not
+# Tracks whether any account procedure was detected as called during the procedure-iteration
+# loop. Used by the input-note check to distinguish "a procedure handled this transaction"
+# from "no procedure ran at all" (in the latter case, input-note consumption must be
+# signed). Non-exempt detected calls already force authentication via the per-procedure
+# check inside the loop, so the practical effect of this flag is to gate the input-note
+# check on whether an exempt procedure was present. The flag is transaction-wide, not
 # per-note. `was_procedure_called` only fires for procedures that touch account-restricted
-# kernel APIs, so an exempt procedure that is never detected stays at 0 here.
-const ANY_EXEMPT_CALLED_LOC = 0
+# kernel APIs, so a procedure that is never detected stays at 0 here.
+const ANY_PROC_CALLED_LOC = 0
 
 # CONSTANTS
 # ================================================================================================
@@ -36,17 +37,16 @@ const EXEMPT_PROCEDURE_ROOTS_SLOT = word("miden::standards::auth::singlesig_acl:
 #! - 1 => ecdsa_k256_keccak
 #! - 2 => falcon512_poseidon2
 #!
-#! Authentication is required if either of the following holds:
-#!   1. The procedures called during the transaction do not all match the exempt list.
-#!      This triggers when (a) a kernel-detected procedure not on the exempt list was
-#!      called (other than the auth procedure at index 0), or (b) any input note was
-#!      consumed and no detected exempt procedure ran anywhere in the transaction.
-#!      Sub-case (b) also covers the situation where no procedure was called at all:
-#!      input-note consumption alone forces authentication unless at least one detected
-#!      exempt procedure vouches for it. The vouching in sub-case (b) is transaction-wide,
-#!      not per-note - a single detected exempt call lifts the input-note signature
-#!      requirement for every input note in the same transaction.
-#!   2. Any output note was created. This is unconditional - `output_note_create` does
+#! Authentication is required if any of the following hold:
+#!   1. A kernel-detected procedure not on the exempt list was called (other than the
+#!      auth procedure at index 0).
+#!   2. An input note was consumed AND no procedure was detected as called anywhere in
+#!      the transaction. Combined with condition 1 (which catches the non-exempt-called
+#!      case), the practical effect is that input-note consumption requires a signature
+#!      unless at least one exempt procedure was detected as called; the most easily
+#!      missed case this rule covers is a transaction that consumes notes but invokes
+#!      no account procedure at all.
+#!   3. Any output note was created. This is unconditional - `output_note_create` does
 #!      not trigger `was_procedure_called`, so the only way to gate unsigned note
 #!      emission is here.
 #!
@@ -65,8 +65,8 @@ pub proc auth_tx_acl(auth_args: word)
 
     # ------ Iterate account procedures, splitting called procs into exempt/non-exempt ------
 
-    # any_exempt_called = 0
-    push.0 loc_store.ANY_EXEMPT_CALLED_LOC
+    # any_proc_called = 0
+    push.0 loc_store.ANY_PROC_CALLED_LOC
     # => [pad(16)]
 
     # auth_required = 0
@@ -95,6 +95,10 @@ pub proc auth_tx_acl(auth_args: word)
             # => [was_called, PROC_ROOT, i-1, auth_required, pad(16)]
 
             if.true
+                # Mark that a detected procedure was called this transaction. Setting to 1
+                # is idempotent across iterations.
+                push.1 loc_store.ANY_PROC_CALLED_LOC
+
                 # Look up the proc root in the exempt map. Absent keys return [0, 0, 0, 0];
                 # exempt entries are stored as the marker [1, 0, 0, 0].
                 push.EXEMPT_PROCEDURE_ROOTS_SLOT[0..2]
@@ -104,10 +108,6 @@ pub proc auth_tx_acl(auth_args: word)
                 # => [[is_exempt, 0, 0, 0], i-1, auth_required, pad(16)]
 
                 movdn.3 drop drop drop
-                # => [is_exempt, i-1, auth_required, pad(16)]
-
-                # any_exempt_called |= is_exempt
-                dup loc_load.ANY_EXEMPT_CALLED_LOC or loc_store.ANY_EXEMPT_CALLED_LOC
                 # => [is_exempt, i-1, auth_required, pad(16)]
 
                 # If the called procedure is not exempt, auth is required.
@@ -144,13 +144,17 @@ pub proc auth_tx_acl(auth_args: word)
     exec.tx::get_num_output_notes neq.0 or
     # => [auth_required, pad(16)]
 
-    # ------ Input notes: consumption requires a signature unless an exempt procedure ran ------
-
+    # ------ Input notes: consumption requires a signature unless a procedure ran ------
+    #
+    # Combined with condition 1, this gates input-note consumption on at least one
+    # exempt procedure being detected as called: non-exempt detected calls already trip
+    # condition 1, so the only case this `and` actually adds beyond condition 1 is the
+    # one where no procedure was detected as called at all.
     exec.tx::get_num_input_notes neq.0
     # => [were_input_notes_consumed, auth_required, pad(16)]
 
-    loc_load.ANY_EXEMPT_CALLED_LOC not
-    # => [no_exempt_called, were_input_notes_consumed, auth_required, pad(16)]
+    loc_load.ANY_PROC_CALLED_LOC not
+    # => [no_proc_called, were_input_notes_consumed, auth_required, pad(16)]
 
     and or
     # => [auth_required, pad(16)]

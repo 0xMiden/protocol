@@ -62,10 +62,10 @@ impl AuthSingleSigAclConfig {
 
     /// Sets the list of procedure roots that are exempt from requiring authentication.
     ///
-    /// See [`AuthSingleSigAcl`] for the full semantics. In particular, the input-note
-    /// vouching clause in condition 1 is transaction-wide: exempting any kernel-detected
-    /// procedure (even a benign read-only getter) also relaxes the input-note signature
-    /// requirement for every input note consumed in the same transaction.
+    /// See [`AuthSingleSigAcl`] for the full semantics. In particular, condition 2 (the
+    /// input-note check) is transaction-wide: exempting any kernel-detected procedure (even
+    /// a benign read-only getter) also relaxes the input-note signature requirement for
+    /// every input note consumed in the same transaction.
     pub fn with_exempt_procedures(mut self, procedures: Vec<AccountProcedureRoot>) -> Self {
         self.exempt_procedures = procedures;
         self
@@ -89,25 +89,24 @@ impl Default for AuthSingleSigAclConfig {
 ///
 /// ## Authentication Logic
 ///
-/// Authentication is required if either of the following holds:
+/// Authentication is required if any of the following hold:
 ///
-/// 1. The procedures called during the transaction do not all match the exempt list. Specifically,
-///    this triggers when (a) a kernel-detected procedure not on the exempt list was called (other
-///    than the auth procedure at index 0), or (b) any input note was consumed and no detected
-///    exempt procedure ran anywhere in the transaction. Sub-case (b) also covers the situation
-///    where no procedure was called at all: input-note consumption alone forces authentication
-///    unless at least one detected exempt procedure vouches for it.
+/// 1. A kernel-detected procedure not on the exempt list was called (other than the auth procedure
+///    at index 0).
+/// 2. An input note was consumed AND no procedure was detected as called anywhere in the
+///    transaction. Combined with condition 1, which already catches the non-exempt-called case, the
+///    practical effect is that input-note consumption requires authentication unless at least one
+///    exempt procedure was detected as called. The most easily missed case this rule covers is a
+///    transaction that consumes notes but invokes no account procedure at all.
+/// 3. Any output note was created. This is unconditional (see the note-detection caveat below).
 ///
-///    The vouching in sub-case (b) is transaction-wide, not per-note: a single detected
-///    exempt call lifts the input-note signature requirement for every input note in the
-///    same transaction. Asset exfiltration is still blocked by condition 2 below, but
-///    exempting a detected procedure (even a benign read-only getter) implicitly relaxes
-///    the input-note signature requirement for any consumption happening alongside it.
-///    Authors should only exempt procedures whose semantics they are happy to extend to
-///    "this procedure may run unsigned AND any input notes may be consumed unsigned in the
-///    same transaction".
-///
-/// 2. Any output note was created. This is unconditional (see the note-detection caveat below).
+/// The vouching in condition 2 is transaction-wide, not per-note: a single detected procedure
+/// call (even an exempt read-only getter) lifts the input-note signature requirement for
+/// every input note in the same transaction. Asset exfiltration is still blocked by
+/// condition 3, but exempting a detected procedure implicitly relaxes the input-note
+/// signature requirement for any consumption happening alongside it. Authors should only
+/// exempt procedures whose semantics they are happy to extend to "this procedure may run
+/// unsigned AND any input notes may be consumed unsigned in the same transaction".
 ///
 /// When none of these hold, only the nonce is conditionally incremented (when the account state
 /// changed or the account is new) without verifying a signature.
@@ -127,15 +126,15 @@ impl Default for AuthSingleSigAclConfig {
 /// write, storage read via `account::get_item`, etc.). Procedures that only touch unrestricted
 /// APIs - for example, creating output notes via `output_note_create` without also moving assets
 /// through the vault - are *not* flagged by this mechanism even when they execute. The explicit
-/// output-note gate in condition 2 and the input-note vouching clause in condition 1 exist
+/// output-note gate in condition 3 and the input-note check in condition 2 exist
 /// specifically to close this gap, so that an unflagged side-effecting procedure cannot make
 /// the account emit notes or process note consumptions without a signature.
 ///
 /// Practical consequence for exempt-list authoring: a procedure that does not touch any
 /// account-restricted kernel API will not be observed as called even if it is in the exempt
-/// list, so listing it is a no-op (and consuming a note via such a procedure still trips the
-/// input-note vouching clause). When in doubt, prefer to exempt only procedures whose
-/// detection you can verify in tests.
+/// list, so listing it is a no-op (and consuming a note via such a procedure still trips
+/// condition 2). When in doubt, prefer to exempt only procedures whose detection you can
+/// verify in tests.
 pub struct AuthSingleSigAcl {
     pub_key: PublicKeyCommitment,
     auth_scheme: AuthScheme,
