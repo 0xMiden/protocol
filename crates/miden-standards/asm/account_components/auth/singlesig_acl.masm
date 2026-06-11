@@ -125,11 +125,6 @@ pub proc auth_tx_acl(auth_args: word)
     # => [auth_required, pad(16)]
 
     # ------ Output notes: any output note created requires a signature, unconditionally ------
-    #
-    # SECURITY-CRITICAL: this `or` must stay unconditional. It is the only barrier against an
-    # account procedure that emits notes via `output_note_create` (which does not trigger
-    # `was_procedure_called`) running unsigned and exfiltrating assets. Do not gate it on the
-    # exempt list or on procedure detection.
     exec.tx::get_num_output_notes neq.0 or
     # => [auth_required, pad(16)]
 
