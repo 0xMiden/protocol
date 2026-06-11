@@ -2,8 +2,7 @@ use alloc::collections::BTreeMap;
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
-use crate::account::AccountId;
-use crate::asset::{Asset, AssetAmount, AssetCallbackFlag, AssetVaultKey, FungibleAsset};
+use crate::asset::{Asset, AssetVaultKey};
 use crate::errors::AssetError;
 use crate::utils::serde::{
     ByteReader,
@@ -91,72 +90,55 @@ impl AccountVaultPatch {
         elements.extend_from_slice(Word::empty().as_elements());
     }
 
-    fn num_fungible_assets(&self) -> usize {
+    /// Returns an iterator over the keys of assets that were removed (i.e. whose value is
+    /// [`Word::empty`]).
+    fn removed_asset_keys(&self) -> impl Iterator<Item = &AssetVaultKey> {
         self.entries
             .iter()
-            .filter(|(key, _value)| key.composition().is_fungible())
-            .count()
+            .filter(|(_key, value)| value.is_empty())
+            .map(|(key, _value)| key)
     }
 
-    /// Returns an iterator over the parts of assets with `AssetComposition::Fungible` that are
-    /// relevant for serialization.
-    fn fungible_assets(&self) -> impl Iterator<Item = (AccountId, AssetCallbackFlag, AssetAmount)> {
-        self.entries.iter().filter(|(key, _value)| key.composition().is_fungible()).map(
-            |(key, value)| {
-                // An empty word is also a valid encoding for a fungible asset, so we don't need
-                // special handling.
-                let asset = FungibleAsset::from_key_value(*key, *value)
-                    .expect("patch should track valid assets");
-
-                (asset.vault_key().faucet_id(), asset.vault_key().callback_flag(), asset.amount())
-            },
-        )
-    }
-
-    fn num_not_fungible_assets(&self) -> usize {
-        self.not_fungible_assets().count()
-    }
-
-    /// Returns an iterator over all assets that do not have `AssetComposition::Fungible`, which
-    /// includes non-fungible and custom assets.
-    fn not_fungible_assets(&self) -> impl Iterator<Item = (&AssetVaultKey, &Word)> {
-        self.entries.iter().filter(|(key, _value)| !key.composition().is_fungible())
+    /// Returns an iterator over the assets that were added or updated (i.e. whose value is not
+    /// [`Word::empty`]).
+    fn added_assets(&self) -> impl Iterator<Item = Asset> {
+        self.entries
+            .iter()
+            .filter(|(_key, value)| !value.is_empty())
+            .map(|(key, value)| {
+                Asset::from_key_value(*key, *value).expect("patch should track valid assets")
+            })
     }
 }
 
 impl Serializable for AccountVaultPatch {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        target.write_usize(self.num_not_fungible_assets());
-        target.write_many(self.not_fungible_assets());
+        target.write_usize(self.removed_asset_keys().count());
+        target.write_many(self.removed_asset_keys());
 
-        target.write_usize(self.num_fungible_assets());
-        target.write_many(self.fungible_assets());
+        target.write_usize(self.added_assets().count());
+        target.write_many(self.added_assets());
     }
 
     fn get_size_hint(&self) -> usize {
-        2 * 0usize.get_size_hint()
-            + (AssetVaultKey::SERIALIZED_SIZE + Word::SERIALIZED_SIZE)
-                * self.num_not_fungible_assets()
-            + (AccountId::SERIALIZED_SIZE
-                + AssetCallbackFlag::SERIALIZED_SIZE
-                + AssetAmount::SERIALIZED_SIZE)
-                * self.num_fungible_assets()
+        let removed_size = AssetVaultKey::SERIALIZED_SIZE * self.removed_asset_keys().count();
+        let added_size: usize = self.added_assets().map(|asset| asset.get_size_hint()).sum();
+
+        2 * 0usize.get_size_hint() + removed_size + added_size
     }
 }
 
 impl Deserializable for AccountVaultPatch {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let num_not_fungible_assets = source.read_usize()?;
-        let mut entries: BTreeMap<AssetVaultKey, Word> =
-            source.read_many_iter(num_not_fungible_assets)?.collect::<Result<_, _>>()?;
+        let num_removed_assets = source.read_usize()?;
+        let mut entries: BTreeMap<AssetVaultKey, Word> = source
+            .read_many_iter::<AssetVaultKey>(num_removed_assets)?
+            .map(|result| result.map(|key| (key, Word::empty())))
+            .collect::<Result<_, _>>()?;
 
-        let num_fungible_assets = source.read_usize()?;
-        for result in source.read_many_iter(num_fungible_assets)? {
-            let (faucet_id, callback_flag, amount): (AccountId, AssetCallbackFlag, AssetAmount) =
-                result?;
-            let asset = FungibleAsset::new(faucet_id, amount.as_u64())
-                .map_err(|err| DeserializationError::InvalidValue(err.to_string()))?
-                .with_callbacks(callback_flag);
+        let num_added_assets = source.read_usize()?;
+        for result in source.read_many_iter::<Asset>(num_added_assets)? {
+            let asset = result?;
             entries.insert(asset.vault_key(), asset.to_value_word());
         }
 
@@ -167,7 +149,7 @@ impl Deserializable for AccountVaultPatch {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::asset::NonFungibleAsset;
+    use crate::asset::{FungibleAsset, NonFungibleAsset};
     use crate::testing::account_id::ACCOUNT_ID_PRIVATE_SENDER;
 
     #[test]
@@ -178,14 +160,15 @@ mod tests {
         assert_eq!(empty_patch, deserialized);
         assert_eq!(empty_patch.get_size_hint(), serialized.len());
 
-        let asset_0 = FungibleAsset::mock(100);
-        let asset_1 = FungibleAsset::new(ACCOUNT_ID_PRIVATE_SENDER.try_into()?, 500_000)?.into();
-        let asset_2 = NonFungibleAsset::mock(&[10]);
-        let asset_3 = NonFungibleAsset::mock(&[20]);
-        let patch = AccountVaultPatch::with_assets([asset_0, asset_1, asset_2, asset_3]);
+        let asset_0: Asset = FungibleAsset::mock(100);
+        let asset_1: Asset =
+            FungibleAsset::new(ACCOUNT_ID_PRIVATE_SENDER.try_into()?, 500_000)?.into();
+        let asset_2: Asset = NonFungibleAsset::mock(&[10]);
+        let asset_3: Asset = NonFungibleAsset::mock(&[20]);
+        let patch = AccountVaultPatch::from_iters([asset_0, asset_1, asset_2], [asset_3]);
 
         let serialized = patch.to_bytes();
-        let deserialized = AccountVaultPatch::read_from_bytes(&serialized).unwrap();
+        let deserialized = AccountVaultPatch::read_from_bytes(&serialized)?;
         assert_eq!(deserialized, patch);
         assert_eq!(patch.get_size_hint(), serialized.len());
 
