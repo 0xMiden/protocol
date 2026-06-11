@@ -192,7 +192,7 @@ async fn test_acl(#[case] auth_scheme: AuthScheme) -> anyhow::Result<()> {
 
 /// Output notes always require a signature, even when the procedure that produced them is on
 /// the exempt list. This is the regression guard for the unconditional output-note gate
-/// (the "output note was created" rule); without it, an exempt procedure that emits notes would
+/// (the output note check); without it, an exempt procedure that emits notes would
 /// be able to move assets out of the account without authentication.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
@@ -244,8 +244,8 @@ async fn test_acl_output_note_creation_requires_auth_even_when_caller_exempt(
         .execute()
         .await;
 
-    // Exempting `move_asset_to_note` clears the "non-exempt proc was called" rule, so the
-    // only thing forcing authentication here is the unconditional output note check.
+    // Exempting `move_asset_to_note` clears the non-exempt proc check, so the only thing
+    // forcing authentication here is the unconditional output note check.
     assert_matches!(result, Err(TransactionExecutorError::MissingAuthenticator));
 
     Ok(())
@@ -296,7 +296,7 @@ async fn test_acl_exempt_detected_procedure_succeeds_without_auth(
     Ok(())
 }
 
-/// Isolates the "input note was consumed, but no proc was called" rule: input note consumption
+/// Isolates the input note check: input note consumption
 /// without any detected procedure must force a signature even when no account procedure is called
 /// by a tx script. This guards against a regression that drops the input note branch of the MASM
 /// `and or`; deleting that block today would let unsigned note consumption sneak through any time

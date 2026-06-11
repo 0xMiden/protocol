@@ -34,14 +34,13 @@ const EXEMPT_PROCEDURE_ROOTS_SLOT = word("miden::standards::auth::singlesig_acl:
 #! - 2 => falcon512_poseidon2
 #!
 #! Authentication is required if any of the following hold:
-#!   - "non-exempt proc was called": a kernel-detected procedure not on the exempt list
-#!     was called (other than the auth procedure at index 0).
-#!   - "input note was consumed, but no proc was called": an input note was consumed AND
-#!     no procedure was detected as called anywhere in the transaction. Combined with
-#!     the "non-exempt proc was called" rule above, the practical effect is that input
-#!     note consumption requires a signature unless at least one exempt procedure was
-#!     detected as called.
-#!   - "output note was created": an output note was created.
+#!   1. A kernel-detected procedure not on the exempt list was called (other than the
+#!      auth procedure at index 0).
+#!   2. An input note was consumed AND no procedure was detected as called anywhere in
+#!      the transaction. Combined with the non-exempt proc check above, the practical
+#!      effect is that input note consumption requires a signature unless at least one
+#!      exempt procedure was detected as called.
+#!   3. An output note was created.
 #!
 #! If authentication is required, the configured signature is verified. Otherwise, the nonce
 #! is conditionally incremented when the account state changed or the account is new.

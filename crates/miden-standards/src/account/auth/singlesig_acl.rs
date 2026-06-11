@@ -62,10 +62,10 @@ impl AuthSingleSigAclConfig {
 
     /// Sets the list of procedure roots that are exempt from requiring authentication.
     ///
-    /// See [`AuthSingleSigAcl`] for the full semantics. In particular, the "input note was
-    /// consumed, but no proc was called" rule is transaction-wide: exempting any
-    /// kernel-detected procedure (even a benign read-only getter) also relaxes the input
-    /// note signature requirement for every input note consumed in the same transaction.
+    /// See [`AuthSingleSigAcl`] for the full semantics. In particular, the input note check
+    /// is transaction-wide: exempting any kernel-detected procedure (even a benign read-only
+    /// getter) also relaxes the input note signature requirement for every input note
+    /// consumed in the same transaction.
     pub fn with_exempt_procedures(mut self, procedures: Vec<AccountProcedureRoot>) -> Self {
         self.exempt_procedures = procedures;
         self
@@ -91,25 +91,21 @@ impl Default for AuthSingleSigAclConfig {
 ///
 /// Authentication is required if any of the following hold:
 ///
-/// - "non-exempt proc was called": a kernel-detected procedure not on the exempt list was called
-///   (other than the auth procedure at index 0).
-/// - "input note was consumed, but no proc was called": an input note was consumed AND no procedure
-///   was detected as called anywhere in the transaction. Combined with the "non-exempt proc was
-///   called" rule above, the practical effect is that input note consumption requires
-///   authentication unless at least one exempt procedure was detected as called. The most easily
-///   missed case this rule covers is a transaction that consumes notes but invokes no account
-///   procedure at all.
-/// - "output note was created": any output note was created. This is unconditional (see the
-///   note-detection caveat below).
+/// 1. A kernel-detected procedure not on the exempt list was called (other than the auth procedure
+///    at index 0).
+/// 2. An input note was consumed AND no procedure was detected as called anywhere in the
+///    transaction. Combined with the non-exempt proc check above, the practical effect is that
+///    input note consumption requires authentication unless at least one exempt procedure was
+///    detected as called.
+/// 3. An output note was created. This is unconditional (see the note-detection caveat below).
 ///
-/// The vouching in the "input note was consumed, but no proc was called" rule is
-/// transaction-wide, not per-note: a single detected procedure call (even an exempt read-only
-/// getter) lifts the input note signature requirement for every input note in the same
-/// transaction. Asset exfiltration is still blocked by the "output note was created" rule, but
-/// exempting a detected procedure implicitly relaxes the input note signature requirement for
-/// any consumption happening alongside it. Authors should only exempt procedures whose semantics
-/// they are happy to extend to "this procedure may run unsigned AND any input notes may be
-/// consumed unsigned in the same transaction".
+/// The input note check is transaction-wide, not per-note: a single detected procedure call
+/// (even an exempt read-only getter) lifts the input note signature requirement for every
+/// input note in the same transaction. Asset exfiltration is still blocked by the output note
+/// check, but exempting a detected procedure implicitly relaxes the input note signature
+/// requirement for any consumption happening alongside it. Authors should only exempt
+/// procedures whose semantics they are happy to extend to "this procedure may run unsigned AND
+/// any input notes may be consumed unsigned in the same transaction".
 ///
 /// When none of these hold, only the nonce is conditionally incremented (when the account state
 /// changed or the account is new) without verifying a signature.
@@ -129,15 +125,15 @@ impl Default for AuthSingleSigAclConfig {
 /// write, storage read via `account::get_item`, etc.). Procedures that only touch unrestricted
 /// APIs - for example, creating output notes via `output_note_create` without also moving assets
 /// through the vault - are *not* flagged by this mechanism even when they execute. The explicit
-/// "output note was created" and "input note was consumed, but no proc was called" rules
-/// exist specifically to close this gap, so that an unflagged side-effecting procedure
-/// cannot make the account emit notes or process note consumptions without a signature.
+/// output note and input note checks exist specifically to close this gap, so that an
+/// unflagged side-effecting procedure cannot make the account emit notes or process note
+/// consumptions without a signature.
 ///
 /// Practical consequence for exempt-list authoring: a procedure that does not touch any
 /// account-restricted kernel API will not be observed as called even if it is in the exempt
 /// list, so listing it is a no-op (and consuming a note via such a procedure still trips the
-/// "input note was consumed, but no proc was called" rule). When in doubt, prefer to exempt
-/// only procedures whose detection you can verify in tests.
+/// input note check). When in doubt, prefer to exempt only procedures whose detection you can
+/// verify in tests.
 pub struct AuthSingleSigAcl {
     pub_key: PublicKeyCommitment,
     auth_scheme: AuthScheme,
