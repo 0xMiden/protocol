@@ -382,34 +382,16 @@ impl Account {
     pub fn increment_nonce(&mut self, nonce_delta: Felt) -> Result<(), AccountError> {
         let new_nonce = self.nonce + nonce_delta;
 
-        if new_nonce.as_canonical_u64() < self.nonce.as_canonical_u64() {
-            return Err(AccountError::NonceOverflow {
-                current: self.nonce,
-                increment: nonce_delta,
-                new: new_nonce,
-            });
-        }
-
-        self.nonce = new_nonce;
-
-        // Maintain internal consistency of the account, i.e. the seed should not be present for
-        // existing accounts, where existing accounts are defined as having a nonce > 0.
-        // If we've incremented the nonce, then we should remove the seed (if it was present at
-        // all).
-        if !self.is_new() {
-            self.seed = None;
-        }
-
-        Ok(())
+        self.set_nonce(new_nonce)
     }
 
     /// Sets the nonce of this account to the provided value.
     ///
     /// # Errors
     ///
-    /// Returns an error if `new_nonce` is not strictly greater than the current account nonce.
+    /// Returns an error if `new_nonce` is not equal to or greater than the current account nonce.
     pub fn set_nonce(&mut self, new_nonce: Felt) -> Result<(), AccountError> {
-        if new_nonce.as_canonical_u64() <= self.nonce.as_canonical_u64() {
+        if new_nonce.as_canonical_u64() < self.nonce.as_canonical_u64() {
             return Err(AccountError::NonceMustIncrease { current: self.nonce, new: new_nonce });
         }
 

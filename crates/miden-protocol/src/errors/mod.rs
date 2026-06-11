@@ -131,13 +131,7 @@ pub enum AccountError {
     FinalAccountHeaderIdParsingFailed(#[source] AccountIdError),
     #[error("account header data has length {actual} but it must be of length {expected}")]
     HeaderDataIncorrectLength { actual: usize, expected: usize },
-    #[error("active account nonce {current} plus increment {increment} overflows a felt to {new}")]
-    NonceOverflow {
-        current: Felt,
-        increment: Felt,
-        new: Felt,
-    },
-    #[error("patch final nonce {new} is not strictly greater than current account nonce {current}")]
+    #[error("final nonce {new} is not strictly greater than current account nonce {current}")]
     NonceMustIncrease { current: Felt, new: Felt },
     #[error(
         "digest of the seed has {actual} trailing zeroes but must have at least {expected} trailing zeroes"
