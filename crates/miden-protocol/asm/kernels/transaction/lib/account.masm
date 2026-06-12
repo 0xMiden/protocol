@@ -766,7 +766,7 @@ pub proc remove_asset_from_vault
 
     # emit event to signal that an asset is being removed from the account vault
     emit.ACCOUNT_VAULT_AFTER_REMOVE_ASSET_EVENT
-    # => [ASSET_KEY, ASSET_VALUE, FINAL_ASSET_VALUE, INITIAL_ASSET_VALUE]
+    # => [ASSET_KEY, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, FINAL_ASSET_VALUE]
 
     exec.account_delta::update_asset
     # => [FINAL_ASSET_VALUE]
