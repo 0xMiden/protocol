@@ -30,11 +30,7 @@ use crate::{Felt, Hasher, Word, ZERO};
 /// - `tx_commitment` is a commitment to the set of transaction IDs which affected accounts in the
 ///   block.
 /// - `tx_kernel_commitment` a commitment to all transaction kernels supported by this block.
-/// - `validator_key` is the public key of the validator authorized to sign the *next* block. A
-///   block's own signature is verified against the `validator_key` committed to by its parent
-///   block, so the current validator commits to the next key by including it in the block it signs
-///   and trust chains forward from one key to the next. For the genesis block this field declares
-///   the signer of block 1 and is trusted as the root of the chain.
+/// - `validator_key` is the public key of the validator authorized to sign the *next* block.
 /// - `fee_parameters` are the parameters defining the base fees and the fee faucet ID, see
 ///   [`FeeParameters`] for more details.
 /// - `timestamp` is the time when the block was created, in seconds since UNIX epoch. Current
