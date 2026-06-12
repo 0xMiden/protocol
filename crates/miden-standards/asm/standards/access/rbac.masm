@@ -434,8 +434,8 @@ end
 
 #! Internal helper used by `grant_role` to assign a role to an account.
 #!
-#! Validates the account ID, then no-ops if the account is already a member.
-#! Otherwise, sets the membership flag and increments the role's member count.
+#! Validates the account ID, sets the membership flag, and increments the role's
+#! member count only when the account did not already hold the role.
 #!
 #! Inputs:  [role_symbol, account_suffix, account_prefix]
 #! Outputs: []
@@ -445,41 +445,37 @@ proc grant_role_internal
     dup.2 dup.2 exec.account_id::validate
     # => [role_symbol, account_suffix, account_prefix]
 
-    dup.2 dup.2 dup.2 exec.has_role_internal
-    # => [has_role, role_symbol, account_suffix, account_prefix]
+    # Save a copy of role_symbol at the bottom of the stack so it survives the
+    # membership map write and is available for the role-config update.
+    dup movdn.3
+    # => [role_symbol, account_suffix, account_prefix, role_symbol]
+
+    push.0
+    # => [0, role_symbol, account_suffix, account_prefix, role_symbol]
+
+    push.SET_MEMBERSHIP
+    # => [1, 0, 0, 0, 0, role_symbol, account_suffix, account_prefix, role_symbol]
+
+    swapw
+    # => [0, role_symbol, account_suffix, account_prefix, 1, 0, 0, 0, role_symbol]
+
+    push.ROLE_MEMBERSHIP_SLOT[0..2]
+    # => [slot_suffix, slot_prefix, 0, role_symbol, account_suffix, account_prefix,
+    #     1, 0, 0, 0, role_symbol]
+
+    exec.native_account::set_map_item
+    # => [OLD_MEMBERSHIP_WORD, role_symbol]
+
+    # Reduce OLD_MEMBERSHIP_WORD to its first element, the previous membership flag.
+    movdn.3 drop drop drop
+    # => [old_is_member, role_symbol]
 
     if.true
-        # Already a member — no-op.
-        drop drop drop
+        # Role was already held — the write above was idempotent, count unchanged.
+        drop
         # => []
     else
-        # Save a copy of role_symbol at the bottom of the stack so it survives the
-        # membership map write and is available for the role-config update.
-        dup movdn.3
-        # => [role_symbol, account_suffix, account_prefix, role_symbol]
-
-        # Write membership[role, account] = [1, 0, 0, 0].
-        push.SET_MEMBERSHIP
-        # => [1, 0, 0, 0, role_symbol, account_suffix, account_prefix, role_symbol]
-
-        # Bring role/suffix/prefix back in order.
-        movup.6 movup.6 movup.6
-        # => [role_symbol, account_suffix, account_prefix, 1, 0, 0, 0, role_symbol]
-
-        push.0
-        # => [0, role_symbol, account_suffix, account_prefix, 1, 0, 0, 0, role_symbol]
-
-        push.ROLE_MEMBERSHIP_SLOT[0..2]
-        # => [slot_suffix, slot_prefix, 0, role_symbol, account_suffix, account_prefix,
-        #     1, 0, 0, 0, role_symbol]
-
-        exec.native_account::set_map_item
-        # => [OLD_MEMBERSHIP_WORD, role_symbol]
-
-        dropw
-        # => [role_symbol]
-
-        # Increment the role's member count.
+        # New grant — increment the role's member count.
         dup exec.get_role_config
         # => [member_count, admin_role_symbol, role_symbol]
 
@@ -497,8 +493,8 @@ end
 #! Internal helper used by `revoke_role` and `renounce_role` to remove a role from
 #! an account.
 #!
-#! Validates the account ID, asserts that the account currently holds the role,
-#! clears the membership flag, and decrements the role's member count.
+#! Validates the account ID, clears the membership flag, asserts that the account
+#! previously held the role, and decrements the role's member count.
 #!
 #! Inputs:  [role_symbol, account_suffix, account_prefix]
 #! Outputs: []
@@ -512,27 +508,18 @@ proc revoke_role_internal
     dup.2 dup.2 exec.account_id::validate
     # => [role_symbol, account_suffix, account_prefix]
 
-    # Assert the account currently holds the role, preserving the inputs.
-    dup.2 dup.2 dup.2 exec.has_role_internal
-    # => [has_role, role_symbol, account_suffix, account_prefix]
-
-    assert.err=ERR_ACCOUNT_NOT_IN_ROLE
-    # => [role_symbol, account_suffix, account_prefix]
-
     # Save a copy of role_symbol at the bottom of the stack so it survives the
     # membership map write and is available for the role-config update.
     dup movdn.3
     # => [role_symbol, account_suffix, account_prefix, role_symbol]
 
-    # Clear membership[role, account] = [0, 0, 0, 0].
-    push.CLEAR_MEMBERSHIP
-    # => [0, 0, 0, 0, role_symbol, account_suffix, account_prefix, role_symbol]
-
-    # Bring role/suffix/prefix back above the value word, in order.
-    movup.6 movup.6 movup.6
-    # => [role_symbol, account_suffix, account_prefix, 0, 0, 0, 0, role_symbol]
-
     push.0
+    # => [0, role_symbol, account_suffix, account_prefix, role_symbol]
+
+    push.CLEAR_MEMBERSHIP
+    # => [0, 0, 0, 0, 0, role_symbol, account_suffix, account_prefix, role_symbol]
+
+    swapw
     # => [0, role_symbol, account_suffix, account_prefix, 0, 0, 0, 0, role_symbol]
 
     push.ROLE_MEMBERSHIP_SLOT[0..2]
@@ -542,7 +529,10 @@ proc revoke_role_internal
     exec.native_account::set_map_item
     # => [OLD_MEMBERSHIP_WORD, role_symbol]
 
-    dropw
+    movdn.3 drop drop drop
+    # => [old_is_member, role_symbol]
+
+    assert.err=ERR_ACCOUNT_NOT_IN_ROLE
     # => [role_symbol]
 
     # Decrement the role's member count.
