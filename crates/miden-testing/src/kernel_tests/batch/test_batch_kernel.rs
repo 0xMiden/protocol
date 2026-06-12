@@ -196,8 +196,8 @@ fn batch_executor_then_prover_produces_proven_batch() -> anyhow::Result<()> {
 
 /// Tampering any preimage layer breaks its hash check inside `mem::pipe_preimage_to_memory` (a
 /// bare `assert_eqw` with no named error code, so the cases only assert that execution fails).
-/// Cases: Layer 1 (`BATCH_ID`), Layer 2 (`tx_id`), Layer 3 (`INPUT_NOTES_COMMITMENT`), Layer 3'
-/// (`OUTPUT_NOTES_COMMITMENT`).
+/// Cases: Layer 1 (`BATCH_ID`), Layer 2 (`tx_id`), Layer 3a (`INPUT_NOTES_COMMITMENT`), Layer
+/// 3b (`OUTPUT_NOTES_COMMITMENT`).
 #[rstest]
 #[case(|batch: &ProposedBatch| batch.id().as_word())]
 #[case(|batch: &ProposedBatch| batch.transactions()[0].id().as_word())]

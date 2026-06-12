@@ -26,7 +26,7 @@ const ERR_BATCH_OUTPUT_NOTE_NOT_IN_LIST="a transaction output note is missing fr
 
 const ERR_BATCH_OUTPUT_NOTE_CREATED_TWICE="a note-id-sorted output-note list entry was created by more than one transaction"
 
-const ERR_BATCH_NOTE_CONSUMED_BEFORE_CREATED="an erased input note was consumed before the transaction that creates it (incorrect ordering or circular dependency)"
+const ERR_BATCH_NOTE_CONSUMED_BEFORE_CREATED="an erased input note was consumed before the transaction that creates it"
 
 const ERR_BATCH_TX_TOO_MANY_NOTES="a transaction's note set contains more notes than the maximum allowed"
 

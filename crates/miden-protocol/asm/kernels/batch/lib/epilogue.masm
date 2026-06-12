@@ -8,11 +8,11 @@ use miden::batch_kernel::memory::OUTPUT_NOTE_IS_CREATED_OFFSET
 # ERRORS
 # =================================================================================================
 
-const ERR_BATCH_INPUT_NOTE_NOT_CONSUMED="a nullifier-sorted input-note list entry was not consumed by any transaction"
+const ERR_BATCH_INPUT_NOTE_NOT_CONSUMED="an input-note list entry was not consumed by any transaction"
 
-const ERR_BATCH_OUTPUT_NOTE_NOT_CREATED="a note-id-sorted output-note list entry was not created by any transaction"
+const ERR_BATCH_OUTPUT_NOTE_NOT_CREATED="an output-note list entry was not created by any transaction"
 
-const ERR_BATCH_NOTE_CONSUMED_BEFORE_CREATED="an erased input note was consumed before the transaction that creates it (incorrect ordering or circular dependency)"
+const ERR_BATCH_NOTE_CONSUMED_BEFORE_CREATED="an erased input note was consumed before the transaction that creates it"
 
 # ASSERTIONS
 # =================================================================================================

@@ -30,7 +30,7 @@
 # |                   |                         | sized for up to 1024             |
 # |                   |                         | transactions).                   |
 # | 32788..40980      | TX_NOTES_SCRATCH_PTR    | Per-transaction scratch space    |
-# |                   |                         | for Layer 3 / Layer 3' note      |
+# |                   |                         | for Layer 3a / Layer 3b note     |
 # |                   |                         | data (overwritten each tx).      |
 # | 40980..49172      | INPUT_NOTES_PTR         | Nullifier-sorted input-note      |
 # |                   |                         | list: `[NULLIFIER,               |
@@ -99,7 +99,7 @@ const TX_HEADER_INPUT_NOTES_OFFSET=8
 #! Felt offset within a transaction header where OUTPUT_NOTES_COMMITMENT starts.
 const TX_HEADER_OUTPUT_NOTES_OFFSET=12
 
-#! Per-transaction scratch space for Layer 3 note data, overwritten between iterations.
+#! Per-transaction scratch space for Layer 3a / 3b note data, overwritten between iterations.
 pub const TX_NOTES_SCRATCH_PTR=32788
 
 # SORTED NOTE LISTS

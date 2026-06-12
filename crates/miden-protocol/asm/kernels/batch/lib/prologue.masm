@@ -12,8 +12,8 @@ use miden::batch_kernel::memory::MAX_NOTES_PER_BATCH
 # CONSTANTS
 # =================================================================================================
 
-# Advice-map keys under which the nullifier/note-id-sorted note lists are provided. Each key is the
-# word hash of a domain message, matching `kernel.rs`.
+# Advice-map keys under which the sorted note lists (input notes by nullifier, output notes by
+# note id) are provided. Each key is the word hash of a domain message, matching `kernel.rs`.
 const INPUT_NOTE_LIST_KEY=word("miden::batch_kernel::input_note_list")
 const OUTPUT_NOTE_LIST_KEY=word("miden::batch_kernel::output_note_list")
 
@@ -143,9 +143,10 @@ end
 #! - Layer 2: for each transaction, pipes its pre-image from the advice map keyed by the verified
 #!   `tx_id`. Each transaction's data is written into [`memory::TX_HEADERS_PTR`] at the appropriate
 #!   per-tx offset.
-#! - Layer 3: loads the nullifier- and note-id-sorted note lists from the advice map and asserts each is
-#!   strictly sorted by its key. Their integrity is established later, when the note tracker binds
-#!   every entry to a verified per-transaction note.
+#! - Note lists: loads the input-note list (sorted by nullifier) and the output-note list (sorted
+#!   by note id) from the advice map and asserts each is strictly sorted by its key. Their
+#!   integrity is established later, when the note tracker binds every entry to a verified
+#!   per-transaction note.
 #!
 #! Inputs:
 #!   Operand stack: [BATCH_ID]
@@ -234,7 +235,7 @@ pub proc prepare_batch
 
     drop drop
 
-    # Layer 3: load and strict-sort the nullifier- and note-id-sorted note lists.
+    # Note lists: load the sorted note lists and assert each is strictly sorted by its key.
     # ---------------------------------------------------------------------------------------------
 
     exec.prepare_input_note_list

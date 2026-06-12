@@ -23,8 +23,7 @@ impl BatchExecutor {
     /// passed to [`LocalBatchProver::prove`](crate::LocalBatchProver::prove).
     ///
     /// The provided advice inputs are merged onto those derived from the proposed batch,
-    /// overriding matching advice-map keys. All advice is untrusted: the kernel verifies
-    /// everything it consumes.
+    /// overriding matching advice-map keys.
     ///
     /// # Errors
     ///
