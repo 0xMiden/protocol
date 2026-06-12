@@ -23,6 +23,10 @@ impl BatchExecutor {
     }
 
     /// Extends the advice inputs with the provided ones.
+    ///
+    /// Exposed for testing only: it lets kernel tests override the advice derived from the
+    /// proposed batch (e.g. with tampered entries) to drive the kernel's rejection paths.
+    #[cfg(any(feature = "testing", test))]
     pub fn extend_advice_inputs(mut self, advice_inputs: AdviceInputs) -> Self {
         self.advice_inputs.extend(advice_inputs);
         self
