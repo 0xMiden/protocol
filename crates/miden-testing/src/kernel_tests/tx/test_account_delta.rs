@@ -1024,6 +1024,22 @@ async fn adding_amount_zero_fungible_asset_to_account_vault_works() -> anyhow::R
 }
 
 /// Tests that recomputing a delta correctly resets the account delta tracked by the host.
+///
+/// The auth procedure adds `asset0` to the vault, explicitly calls `compute_delta_commitment`,
+/// and then removes `asset0` again. The epilogue then implicitly calls `compute_delta_commitment`
+/// a second time. The net vault delta is empty, so the host's tracked delta must end up empty.
+///
+/// Without the reset performed at the start of each `compute_delta_commitment`, this would fail:
+/// - The explicit call iterates the asset delta link map, sees the added `asset0`, and fires
+///   `on_asset_delta_computation`, which accumulates `asset0` into the host's tracked vault delta.
+/// - Removing `asset0` afterwards turns its link map entry into a net-empty entry.
+/// - The implicit call iterates the link map again, but the net-empty entry does NOT fire
+///   `on_asset_delta_computation`, so the previously accumulated `asset0` would remain in the
+///   host's vault delta forever, leaving it non-empty even though the actual change is zero.
+///
+/// With the reset (the `before_asset_delta_computation` event emitted at the start of each
+/// `compute_delta_commitment`), the host clears its vault delta before each iteration, so the
+/// implicit call correctly produces an empty delta.
 #[tokio::test]
 async fn recomputing_delta_resets_host_delta() -> anyhow::Result<()> {
     let mut rng = rand::rng();
