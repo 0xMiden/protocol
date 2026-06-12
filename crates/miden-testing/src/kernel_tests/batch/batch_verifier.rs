@@ -21,13 +21,12 @@ fn batch_verifier_accepts_freshly_proven_batch() -> anyhow::Result<()> {
         .context("batch execution failed")?;
     let proven = LocalBatchProver::new().prove(executed).context("batch proving failed")?;
 
-    // `verify` returns the proof's actual security level; a zero minimum always passes, so this
-    // measures what the proof provides rather than relying on a hardcoded constant.
+    // A zero minimum always passes; `verify` returns the proof's actual security level.
     let security_level = BatchVerifier::new(0)
         .verify(&proven)
         .context("verifying the proven batch should succeed")?;
 
-    // Requiring exactly the level the proof provides must still succeed (the check is inclusive).
+    // The minimum check is inclusive.
     BatchVerifier::new(security_level)
         .verify(&proven)
         .context("requiring exactly the provided security level should succeed")?;

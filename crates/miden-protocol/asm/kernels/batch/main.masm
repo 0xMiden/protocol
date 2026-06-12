@@ -39,12 +39,9 @@ use miden::batch_kernel::epilogue
 #!   committing to the transactions in the batch.
 #! - INPUT_NOTES_COMMITMENT is the nullifier-sorted sequential hash over the batch's input notes,
 #!   excluding notes created and consumed within the batch (i.e. post-erasure).
-#! - BATCH_NOTE_TREE_ROOT is emitted as the empty word; not yet derived from the batch's output
-#!   notes.
-#! - batch_expiration_block_num is emitted as zero; not yet derived from the transactions'
-#!   expiration block numbers.
+#! - BATCH_NOTE_TREE_ROOT is emitted as the empty word (not yet computed).
+#! - batch_expiration_block_num is emitted as zero (not yet computed).
 #!
-#! TODO: verify BLOCK_COMMITMENT against block header data via the same pipe-and-verify pattern.
 #! TODO: authenticate unauthenticated, non-erased input notes against BLOCK_COMMITMENT's chain MMR.
 #! TODO: emit BATCH_NOTE_TREE_ROOT (the batch note tree SMT root) and batch_expiration_block_num.
 #! TODO: aggregate per-account updates and emit a separate ACCOUNT_UPDATES_COMMITMENT output.

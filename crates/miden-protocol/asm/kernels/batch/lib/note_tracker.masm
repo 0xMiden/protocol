@@ -65,10 +65,8 @@ end
 #! output entry back to it. This is the static (order-independent) erasure determination; the
 #! temporal ordering is enforced during per-transaction processing.
 #!
-#! If two input entries (distinct nullifiers) carry the same note id — impossible for real notes,
-#! whose nullifier is derived from the note — the second link overwrites the first, leaving the
-#! first entry permanently expected-to-be-erased, so the kernel conservatively aborts during
-#! per-transaction processing.
+#! If two input entries carry the same note id (impossible for real notes, whose nullifier is
+#! derived from the note), the second link overwrites the first and the kernel later aborts.
 #!
 #! Inputs:  [idx]
 #! Outputs: []

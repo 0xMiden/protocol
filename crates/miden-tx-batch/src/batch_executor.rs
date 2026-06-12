@@ -23,11 +23,8 @@ impl BatchExecutor {
     /// passed to [`LocalBatchProver::prove`](crate::LocalBatchProver::prove).
     ///
     /// The provided advice inputs are merged onto those derived from the proposed batch,
-    /// overriding matching advice-map keys (mirroring how [`TransactionArgs`] carry caller advice
-    /// into the transaction executor). All advice is untrusted: the kernel verifies everything it
-    /// consumes, so extra or overridden advice can only make execution fail.
-    ///
-    /// [`TransactionArgs`]: miden_protocol::transaction::TransactionArgs
+    /// overriding matching advice-map keys. All advice is untrusted: the kernel verifies
+    /// everything it consumes.
     ///
     /// # Errors
     ///
@@ -60,9 +57,7 @@ impl BatchExecutor {
             .execute_trace_inputs_sync(&BatchKernel::main(), &mut host)
             .map_err(ProvenBatchError::BatchKernelExecutionFailed)?;
 
-        // Parse and validate the output stack shape (padding cells are zero and the expiration
-        // fits in u32); the actual output values themselves are not checked until the kernel
-        // verifies them.
+        // Parse and validate the output stack shape (zero padding, u32 expiration).
         let batch_outputs = BatchOutputs::parse(trace_inputs.stack_outputs())
             .map_err(ProvenBatchError::BatchKernelOutputInvalid)?;
 

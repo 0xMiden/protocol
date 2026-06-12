@@ -24,8 +24,7 @@ use super::proven_tx_builder::MockProvenTxBuilder;
 /// Felts per global note-list entry: a KEY word plus a VALUE word.
 const FELTS_PER_NOTE_ENTRY: usize = 2 * WORD_SIZE;
 
-/// Maximum number of transactions in a batch. Must match `MAX_TRANSACTIONS_PER_BATCH` in
-/// `asm/kernels/batch/lib/memory.masm`.
+/// Must match `MAX_TRANSACTIONS_PER_BATCH` in `asm/kernels/batch/lib/memory.masm`.
 const MAX_TRANSACTIONS_PER_BATCH: usize = 1024;
 
 // SETUP HELPERS
@@ -73,9 +72,7 @@ pub(super) fn two_tx_batch(setup: &mut TestSetup) -> anyhow::Result<ProposedBatc
 // ================================================================================================
 
 /// Builds an advice-inputs override that corrupts the advice-map entry stored under `key`, so the
-/// kernel's hash check against `key` fails. Passed to [`BatchExecutor::execute`] to drive the
-/// kernel's rejection paths through the normal executor (mirroring how the transaction-kernel
-/// tests inject tampered advice; see `test_prologue.rs`).
+/// kernel's hash check against `key` fails.
 fn tampered_advice_for(batch: &ProposedBatch, key: Word) -> AdviceInputs {
     let (_, advice_inputs) = BatchKernel::prepare_inputs(batch);
     let mut tampered: Vec<Felt> = advice_inputs
@@ -104,10 +101,9 @@ fn assert_kernel_error<T>(result: Result<T, ProvenBatchError>, expected: MasmErr
 // HAPPY PATH
 // ================================================================================================
 
-/// The batch kernel reconstructs every transaction's input notes, binds them to the global
-/// nullifier-sorted list, and emits `INPUT_NOTES_COMMITMENT` equal to the commitment the proposed
-/// batch derives over the same notes. `two_tx_batch` has no intra-batch erasure, so the full union
-/// is committed. Only the `INPUT_NOTES_COMMITMENT` output is asserted.
+/// The kernel emits `INPUT_NOTES_COMMITMENT` equal to the commitment the proposed batch derives
+/// over the same notes (`two_tx_batch` has no intra-batch erasure, so the full union is
+/// committed).
 #[test]
 fn batch_kernel_emits_input_notes_commitment() -> anyhow::Result<()> {
     let mut setup = setup_chain();
@@ -195,21 +191,13 @@ fn batch_executor_then_prover_produces_proven_batch() -> anyhow::Result<()> {
 // NEGATIVE TESTS
 // ================================================================================================
 //
-// Each test injects a tampered advice-map entry through `BatchExecutor::execute` and
-// asserts the kernel aborts. The executor builds consistent advice from the (valid) `ProposedBatch`
-// and the override then corrupts a single layer's entry, breaking that layer's hash check.
-//
-// The preimage hash checks are performed by `mem::pipe_preimage_to_memory`, whose bare
-// `assert_eqw` carries no named error code, so they assert only that execution fails. The
-// global-list binding and erasure checks below raise named `ERR_BATCH_*` errors and are asserted
-// concretely via `assert_kernel_error`.
+// Each test merges a tampered advice-map entry over the advice derived from a valid
+// `ProposedBatch` and asserts the kernel aborts.
 
-/// Tampering any preimage layer breaks its hash check inside `mem::pipe_preimage_to_memory`. That
-/// check is a bare `assert_eqw` carrying no named error code, so each case only asserts that
-/// execution fails. Each case selects which layer's advice-map key to corrupt: Layer 1 (the
-/// transaction list, keyed by `BATCH_ID`), Layer 2 (a transaction header, keyed by `tx_id`),
-/// Layer 3 (a transaction's input notes, keyed by its `INPUT_NOTES_COMMITMENT`), and Layer 3' (a
-/// transaction's output notes, keyed by its `OUTPUT_NOTES_COMMITMENT`).
+/// Tampering any preimage layer breaks its hash check inside `mem::pipe_preimage_to_memory` (a
+/// bare `assert_eqw` with no named error code, so the cases only assert that execution fails).
+/// Cases: Layer 1 (`BATCH_ID`), Layer 2 (`tx_id`), Layer 3 (`INPUT_NOTES_COMMITMENT`), Layer 3'
+/// (`OUTPUT_NOTES_COMMITMENT`).
 #[rstest]
 #[case(|batch: &ProposedBatch| batch.id().as_word())]
 #[case(|batch: &ProposedBatch| batch.transactions()[0].id().as_word())]
@@ -229,11 +217,10 @@ fn batch_kernel_rejects_tampered_advice(
     Ok(())
 }
 
-// GLOBAL INPUT-NOTE LIST BINDING NEGATIVE TESTS
+// GLOBAL NOTE LIST BINDING NEGATIVE TESTS
 // ================================================================================================
 //
-// These corrupt the host-provided global input-note list (overriding its advice-map entry)
-// and assert the kernel's binding rejects it, so the host cannot omit, inject, or alter notes.
+// These corrupt the host-provided global note lists and assert the kernel's binding rejects them.
 
 /// Builds the global input-note list blob the kernel expects: `(nullifier, note_id_or_empty)` per
 /// note across all transactions, sorted by nullifier.
@@ -300,8 +287,7 @@ fn batch_kernel_rejects_input_note_list_id_mismatch() -> anyhow::Result<()> {
     let batch = two_tx_batch(&mut setup)?;
 
     let mut blob = input_note_list_blob(&batch);
-    // Corrupt the first entry's note-id word (felts 4..8); the nullifier (felts 0..4) is untouched,
-    // so the entry is still found by nullifier but its note id no longer matches.
+    // Corrupt the first entry's note-id word only, so the entry is still found by nullifier.
     blob[4] += Felt::from(1u32);
     let override_advice =
         AdviceInputs::default().with_map([(BatchKernel::input_note_list_key(), blob)]);
@@ -330,8 +316,7 @@ fn output_note_list_blob(batch: &ProposedBatch) -> Vec<Felt> {
     blob
 }
 
-/// Omitting an output note from the global list makes its per-transaction lookup fail (the
-/// output-note binding needed to soundly drive erasure).
+/// Omitting an output note from the global list makes its per-transaction lookup fail.
 #[test]
 fn batch_kernel_rejects_output_note_missing_from_list() -> anyhow::Result<()> {
     let mut setup = setup_chain();
@@ -348,17 +333,14 @@ fn batch_kernel_rejects_output_note_missing_from_list() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Exercises the erasure ordering gate: claiming a consumed input note is created in-batch (by
-/// adding its note id to the output list) without any transaction actually creating it leaves the
-/// note expected-to-be-erased, so consuming it trips the consume-before-create /
-/// circular-dependency check.
+/// Adding a consumed note's id to the output list as a phantom creation (which no transaction
+/// performs) leaves the note expected-to-be-erased, tripping the consume-before-create gate.
 #[test]
 fn batch_kernel_rejects_consume_before_create() -> anyhow::Result<()> {
     let mut setup = setup_chain();
     let batch = two_tx_batch(&mut setup)?;
 
-    // `two_tx_batch`'s tx2 consumes `mock_note(81)` as unauthenticated. Add that note's id to the
-    // output list as a phantom creation that no transaction performs.
+    // Add tx2's unauthenticated input note id to the output list as a phantom creation.
     let phantom_created_id = mock_note(81).id().as_word();
     let mut ids: Vec<Word> = Vec::new();
     for tx in batch.transactions() {
@@ -389,8 +371,7 @@ fn batch_kernel_rejects_unconsumed_input_note() -> anyhow::Result<()> {
     let mut setup = setup_chain();
     let batch = two_tx_batch(&mut setup)?;
 
-    // Append an entry whose nullifier no transaction consumes, then sort so the strict-sort check
-    // still passes. `u32::MAX` felts make it distinct from the real (hash-derived) nullifiers.
+    // Append an entry whose nullifier no transaction consumes, keeping the list strictly sorted.
     let mut notes: Vec<(Word, Word)> = Vec::new();
     for tx in batch.transactions() {
         for commit in tx.input_notes().iter() {
@@ -417,8 +398,8 @@ fn batch_kernel_rejects_unconsumed_input_note() -> anyhow::Result<()> {
 }
 
 /// An extra output-note list entry that no transaction creates trips the epilogue sweep requiring
-/// every entry to have been created. The injected id matches no input note, so it isn't linked for
-/// erasure and the failure is specifically "not created" rather than the ordering gate.
+/// every entry to have been created (the injected id matches no input note, so it is not linked
+/// for erasure).
 #[test]
 fn batch_kernel_rejects_uncreated_output_note() -> anyhow::Result<()> {
     let mut setup = setup_chain();
@@ -446,15 +427,13 @@ fn batch_kernel_rejects_uncreated_output_note() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// A global input-note list longer than `MAX_NOTES_PER_BATCH` is rejected before it can overflow
-/// its memory region. The length assert runs during load, before the strict-sort check, so the
-/// (here all-zero) entry contents are never inspected.
+/// A global input-note list longer than the maximum is rejected during load, before the (here
+/// all-zero) entries are inspected.
 #[test]
 fn batch_kernel_rejects_oversized_input_note_list() -> anyhow::Result<()> {
     let mut setup = setup_chain();
     let batch = two_tx_batch(&mut setup)?;
 
-    // One entry past `MAX_INPUT_NOTES_PER_BATCH`.
     let blob = vec![Felt::from(0u32); (MAX_INPUT_NOTES_PER_BATCH + 1) * FELTS_PER_NOTE_ENTRY];
     let override_advice =
         AdviceInputs::default().with_map([(BatchKernel::input_note_list_key(), blob)]);
@@ -465,14 +444,12 @@ fn batch_kernel_rejects_oversized_input_note_list() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// A global output-note list longer than `MAX_NOTES_PER_BATCH` is rejected before it can overflow
-/// its memory region, mirroring the input-list bound above.
+/// Same as above for the output-note list.
 #[test]
 fn batch_kernel_rejects_oversized_output_note_list() -> anyhow::Result<()> {
     let mut setup = setup_chain();
     let batch = two_tx_batch(&mut setup)?;
 
-    // One entry past `MAX_OUTPUT_NOTES_PER_BATCH`.
     let blob = vec![Felt::from(0u32); (MAX_OUTPUT_NOTES_PER_BATCH + 1) * FELTS_PER_NOTE_ENTRY];
     let override_advice =
         AdviceInputs::default().with_map([(BatchKernel::output_note_list_key(), blob)]);
@@ -483,16 +460,14 @@ fn batch_kernel_rejects_oversized_output_note_list() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// A layer-1 tuple list longer than `MAX_TRANSACTIONS_PER_BATCH` is rejected before it can
-/// overflow its memory region. The transaction-count assert runs before the list is piped and
-/// hash-checked against `BATCH_ID`, so the (here all-zero) tuple contents are never verified.
+/// A layer-1 tuple list longer than `MAX_TRANSACTIONS_PER_BATCH` is rejected before it is piped
+/// and hash-checked against `BATCH_ID`.
 #[test]
 fn batch_kernel_rejects_too_many_transactions() -> anyhow::Result<()> {
     let mut setup = setup_chain();
     let batch = two_tx_batch(&mut setup)?;
 
-    // One tuple past `MAX_TRANSACTIONS_PER_BATCH`, stored under the layer-1 key (`BATCH_ID`).
-    // A layer-1 tuple is 8 felts: `[tx_id[4], account_id_prefix, account_id_suffix, 0, 0]`.
+    // A layer-1 `(tx_id, account_id)` tuple is 8 felts.
     const FELTS_PER_TX_TUPLE: usize = 2 * WORD_SIZE;
     let blob = vec![Felt::from(0u32); (MAX_TRANSACTIONS_PER_BATCH + 1) * FELTS_PER_TX_TUPLE];
     let override_advice = AdviceInputs::default().with_map([(batch.id().as_word(), blob)]);
@@ -503,17 +478,13 @@ fn batch_kernel_rejects_too_many_transactions() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// A per-transaction note set longer than `MAX_NOTES_PER_BATCH` is rejected before it can overflow
-/// the scratch region. The note-count assert runs before the tuples are piped and hash-checked
-/// against the transaction's `INPUT_NOTES_COMMITMENT`, so the (here all-zero) tuple contents are
-/// never verified.
+/// A per-transaction note set longer than the maximum is rejected before it is piped and
+/// hash-checked against the transaction's `INPUT_NOTES_COMMITMENT`.
 #[test]
 fn batch_kernel_rejects_too_many_notes_per_transaction() -> anyhow::Result<()> {
     let mut setup = setup_chain();
     let batch = two_tx_batch(&mut setup)?;
 
-    // One entry past the per-transaction maximum, stored under the layer-3 key (the first
-    // transaction's `INPUT_NOTES_COMMITMENT`).
     let key = batch.transactions()[0].input_notes().commitment();
     let blob = vec![Felt::from(0u32); (MAX_INPUT_NOTES_PER_BATCH + 1) * FELTS_PER_NOTE_ENTRY];
     let override_advice = AdviceInputs::default().with_map([(key, blob)]);

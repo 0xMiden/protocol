@@ -206,8 +206,7 @@ impl BatchKernel {
 #[cfg(any(feature = "testing", test))]
 impl BatchKernel {
     /// The advice-map key under which the nullifier-sorted input-note list is provided to the
-    /// kernel. Exposed so tests can construct override blobs without duplicating the sentinel
-    /// value.
+    /// kernel.
     pub fn input_note_list_key() -> Word {
         input_note_list_key()
     }
