@@ -164,7 +164,7 @@ end
 #! - the note sender is not the owner.
 #!
 #! Invocation: exec
-pub proc assert_sender_is_owner_internal
+pub proc assert_sender_is_owner
     exec.is_sender_owner_internal
     # => [is_sender_owner]
 
@@ -174,20 +174,6 @@ end
 
 # PUBLIC INTERFACE
 # ================================================================================================
-
-#! Checks if the note sender is the owner and panics if not.
-#!
-#! Inputs:  [pad(16)]
-#! Outputs: [pad(16)]
-#!
-#! Panics if:
-#! - the note sender is not the owner.
-#!
-#! Invocation: call
-pub proc assert_sender_is_owner
-    exec.assert_sender_is_owner_internal
-    # => [pad(16)]
-end
 
 #! Returns the owner account ID.
 #!
@@ -245,7 +231,7 @@ end
 #!
 #! Invocation: call
 pub proc transfer_ownership
-    exec.assert_sender_is_owner_internal
+    exec.assert_sender_is_owner
     # => [new_owner_suffix, new_owner_prefix, pad(14)]
 
     # Detect explicit cancel via the zero address. The zero address is not a valid
@@ -332,7 +318,7 @@ end
 #!
 #! Invocation: call
 pub proc renounce_ownership
-    exec.assert_sender_is_owner_internal
+    exec.assert_sender_is_owner
     # => [pad(16)]
 
     exec.get_nominated_owner_internal
