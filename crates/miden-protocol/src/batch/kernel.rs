@@ -19,19 +19,19 @@ static KERNEL_MAIN: LazyLock<Program> = LazyLock::new(|| {
 
 // Advice-map keys under which the global (pre-erasure) note lists are provided to the kernel. Their
 // integrity is established by the kernel binding every list entry to the per-transaction notes that
-// are anchored in `BATCH_ID`, not by the key, so any fixed sentinel works. All four felts are equal
-// so the key is independent of word orientation. The values are derived by `build.rs` from a domain
-// message and shared between the kernel (a generated MASM module) and this advice builder.
+// are anchored in `BATCH_ID`, not by the key, so any fixed sentinel works. Each key is the
+// poseidon2 hash of a domain message, derived by `build.rs` and shared between the kernel (a
+// generated MASM module) and this advice builder.
 mod generated_constants {
     include!(concat!(env!("OUT_DIR"), "/batch_kernel_constants.rs"));
 }
 
 fn input_note_list_key() -> Word {
-    Word::from([Felt::new_unchecked(generated_constants::INPUT_NOTE_LIST_KEY); 4])
+    Word::from(generated_constants::INPUT_NOTE_LIST_KEY.map(Felt::new_unchecked))
 }
 
 fn output_note_list_key() -> Word {
-    Word::from([Felt::new_unchecked(generated_constants::OUTPUT_NOTE_LIST_KEY); 4])
+    Word::from(generated_constants::OUTPUT_NOTE_LIST_KEY.map(Felt::new_unchecked))
 }
 
 // BATCH KERNEL

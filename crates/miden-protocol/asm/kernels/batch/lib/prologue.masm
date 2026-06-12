@@ -10,12 +10,10 @@ use miden::batch_kernel::memory::MAX_TRANSACTIONS_PER_BATCH
 use miden::batch_kernel::memory::MAX_NOTES_PER_BATCH
 
 # Advice-map keys under which the global input/output note lists are provided. `build.rs` derives
-# them by hashing a domain message and emits the matching values to this generated module and to the
-# Rust advice builder. Each key word is four equal felts of the value, so it is independent of word
-# orientation. The lists' integrity comes from binding every entry to a verified per-transaction note
-# (not from these keys).
-use miden::batch_kernel::note_list_keys::INPUT_NOTE_LIST_KEY
-use miden::batch_kernel::note_list_keys::OUTPUT_NOTE_LIST_KEY
+# each key by hashing a domain message to a word and emits a `push`-the-word proc here and the
+# matching word to the Rust advice builder. The lists' integrity comes from binding every entry to a
+# verified per-transaction note (not from these keys).
+use miden::batch_kernel::note_list_keys
 
 # ERRORS
 # =================================================================================================
@@ -104,7 +102,7 @@ end
 #! Outputs: []
 proc prepare_input_note_list
     push.INPUT_NOTES_PTR
-    push.INPUT_NOTE_LIST_KEY dup dup dup
+    exec.note_list_keys::input_note_list_key
     # => [KEY, input_notes_ptr]
     exec.load_global_note_list
     exec.memory::set_num_input_notes
@@ -119,7 +117,7 @@ end
 #! Outputs: []
 proc prepare_output_note_list
     push.OUTPUT_NOTES_PTR
-    push.OUTPUT_NOTE_LIST_KEY dup dup dup
+    exec.note_list_keys::output_note_list_key
     # => [KEY, output_notes_ptr]
     exec.load_global_note_list
     exec.memory::set_num_output_notes
@@ -131,23 +129,19 @@ end
 # PROLOGUE
 # =================================================================================================
 
-#! Loads and verifies the batch's structural commitments from the advice provider.
+#! Loads to memory and verifies the batch's structural commitments from the advice provider.
 #!
 #! Performs two steps:
 #! - Layer 1: pipes the `(tx_id, account_id)` tuples from the advice map keyed by `BATCH_ID` into
 #!   [`memory::TX_TUPLES_PTR`], asserting that the sequential hash of the piped data matches
 #!   `BATCH_ID`. The number of transactions is derived from the piped length and stored in
 #!   [`memory::NUM_TRANSACTIONS_PTR`].
-#! - Layer 2: for each transaction, pipes the felt sequence hashed by `TransactionId::new` from the
-#!   advice map keyed by the verified `tx_id`, asserting that the sequential hash matches the
+#! - Layer 2: for each transaction, pipes its pre-image from the advice map keyed by the verified
 #!   `tx_id`. Each transaction's data is written into [`memory::TX_HEADERS_PTR`] at the appropriate
 #!   per-tx offset.
 #! - Layer 3: loads the global input- and output-note lists from the advice map and asserts each is
 #!   strictly sorted by its key. Their integrity is established later, when the note tracker binds
 #!   every entry to a verified per-transaction note.
-#!
-#! `BATCH_ID` is the sequential hash of the `(tx_id, account_id)` tuples committing to the
-#! transactions in the batch.
 #!
 #! Inputs:
 #!   Operand stack: [BATCH_ID]
