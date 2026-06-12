@@ -243,6 +243,42 @@ fn build_network_faucet_with_burn_switching(
     builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
 }
 
+/// Builds an existing public fungible faucet whose send and receive policies are registered only
+/// as reserved alternatives, with no active transfer policy. Used to exercise minting on a faucet
+/// that has reserved-but-inactive transfer policies.
+fn build_existing_faucet_with_reserved_only_transfer_policy(
+    builder: &mut MockChainBuilder,
+    token_symbol: &str,
+    max_supply: u64,
+    owner: AccountId,
+) -> anyhow::Result<Account> {
+    let name = TokenName::new(token_symbol)?;
+    let symbol = TokenSymbol::new(token_symbol)?;
+    let max_supply = AssetAmount::new(max_supply)?;
+    let faucet = FungibleFaucet::builder()
+        .name(name)
+        .symbol(symbol)
+        .decimals(10)
+        .max_supply(max_supply)
+        .build()?;
+
+    let token_policy_manager = TokenPolicyManager::builder()
+        .active_mint_policy(MintPolicy::allow_all())
+        .active_burn_policy(BurnPolicy::allow_all())
+        .allowed_send_policy(TransferPolicy::allow_all())
+        .allowed_receive_policy(TransferPolicy::allow_all())
+        .build();
+
+    let account_builder = AccountBuilder::new(builder.rng_mut().random())
+        .account_type(AccountType::Public)
+        .with_component(faucet)
+        .with_component(Ownable2Step::new(owner))
+        .with_component(Authority::OwnerControlled)
+        .with_components(token_policy_manager);
+
+    builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
+}
+
 /// Builds a network fungible faucet whose active burn policy is `min_burn_amount`, configured
 /// with the given threshold. The faucet installs an owner-controlled [`Authority`] so the
 /// owner-gated `set_min_burn_amount` setter can be exercised, plus the standard transfer
@@ -330,6 +366,39 @@ async fn minting_fungible_asset_on_existing_faucet_succeeds() -> anyhow::Result<
 
     let executed_transaction =
         execute_mint_transaction(&mut mock_chain, faucet.clone(), &params).await?;
+    verify_minted_output_note(&executed_transaction, &faucet, &params)?;
+
+    Ok(())
+}
+
+/// Checks that minting on a faucet whose transfer policies are registered only as reserved
+/// alternatives still produces assets carrying `AssetCallbackFlag::Enabled`. The mint succeeds and
+/// the output asset is enabled only if `has_callbacks` is true from creation.
+#[tokio::test]
+async fn minting_on_reserved_only_transfer_policy_faucet_enables_callbacks() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let owner_account_id =
+        AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountType::Private);
+
+    let faucet = build_existing_faucet_with_reserved_only_transfer_policy(
+        &mut builder,
+        "RSV",
+        1000,
+        owner_account_id,
+    )?;
+    let mut mock_chain = builder.build()?;
+
+    let params = FaucetTestParams {
+        recipient: Word::from([0, 1, 2, 3u32]),
+        tag: NoteTag::default(),
+        note_type: NoteType::Private,
+        amount: Felt::new_unchecked(100),
+    };
+
+    let executed_transaction =
+        execute_mint_transaction(&mut mock_chain, faucet.clone(), &params).await?;
+    // `verify_minted_output_note` asserts the minted asset carries `AssetCallbackFlag::Enabled`.
     verify_minted_output_note(&executed_transaction, &faucet, &params)?;
 
     Ok(())
