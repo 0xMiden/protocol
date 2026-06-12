@@ -13,7 +13,6 @@ use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::merkle::smt::SmtProofError;
 use miden_protocol::errors::{
     AccountDeltaError,
-    AccountError,
     AssetError,
     NoteError,
     OutputNoteError,
@@ -164,10 +163,6 @@ impl TransactionExecutorError {
 
 #[derive(Debug, Error)]
 pub enum TransactionProverError {
-    #[error("failed to apply account delta")]
-    AccountDeltaApplyFailed(#[source] AccountError),
-    #[error("failed to remove the fee asset from the pre-fee account delta")]
-    RemoveFeeAssetFromDelta(#[source] AccountDeltaError),
     #[error("failed to construct transaction outputs")]
     TransactionOutputConstructionFailed(#[source] TransactionOutputError),
     #[error("failed to shrink output note")]

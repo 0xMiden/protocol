@@ -140,14 +140,14 @@ impl Serializable for TransactionOutputs {
 impl Deserializable for TransactionOutputs {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let account = AccountHeader::read_from(source)?;
-        let account_delta_commitment = Word::read_from(source)?;
+        let account_patch_commitment = Word::read_from(source)?;
         let output_notes = RawOutputNotes::read_from(source)?;
         let fee = FungibleAsset::read_from(source)?;
         let expiration_block_num = BlockNumber::read_from(source)?;
 
         Ok(Self {
             account,
-            account_patch_commitment: account_delta_commitment,
+            account_patch_commitment,
             output_notes,
             fee,
             expiration_block_num,

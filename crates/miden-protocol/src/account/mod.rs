@@ -47,6 +47,7 @@ mod patch;
 pub use patch::{
     AccountPatch,
     AccountStoragePatch,
+    AccountUpdateDetails,
     AccountVaultPatch,
     StorageMapPatch,
     StorageSlotPatch,

@@ -1,9 +1,7 @@
 use alloc::vec::Vec;
 
 use miden_processor::ExecutionOptions;
-use miden_protocol::account::delta::AccountUpdateDetails;
-use miden_protocol::account::{AccountDelta, PartialAccount};
-use miden_protocol::asset::Asset;
+use miden_protocol::account::{AccountPatch, AccountUpdateDetails, PartialAccount};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::transaction::{
     InputNote,
@@ -49,7 +47,7 @@ impl LocalTransactionProver {
         &self,
         input_notes: &InputNotes<InputNote>,
         tx_outputs: TransactionOutputs,
-        pre_fee_account_delta: AccountDelta,
+        account_patch: AccountPatch,
         account: PartialAccount,
         ref_block_num: BlockNumber,
         ref_block_commitment: Word,
@@ -66,19 +64,12 @@ impl LocalTransactionProver {
             .collect::<Result<Vec<_>, _>>()
             .map_err(TransactionProverError::OutputNoteShrinkFailed)?;
 
-        // Compute the commitment of the pre-fee delta, which goes into the proven transaction,
-        // since it is the output of the transaction and so is needed for proof verification.
-        let pre_fee_delta_commitment: Word = pre_fee_account_delta.to_commitment();
-
-        // The full transaction delta is the pre fee delta with the fee asset removed.
-        let mut post_fee_account_delta = pre_fee_account_delta;
-        post_fee_account_delta
-            .vault_mut()
-            .remove_asset(Asset::from(fee))
-            .map_err(TransactionProverError::RemoveFeeAssetFromDelta)?;
+        // Compute the commitment of the patch, which goes into the proven transaction since it is
+        // the output of the transaction and so is needed for proof verification.
+        let patch_commitment: Word = account_patch.to_commitment();
 
         let account_update_details = if account.id().is_public() {
-            AccountUpdateDetails::Delta(post_fee_account_delta)
+            AccountUpdateDetails::Public(account_patch)
         } else {
             AccountUpdateDetails::Private
         };
@@ -87,7 +78,7 @@ impl LocalTransactionProver {
             account.id(),
             account.initial_commitment(),
             account_header.to_commitment(),
-            pre_fee_delta_commitment,
+            patch_commitment,
             account_update_details,
         )
         .map_err(TransactionProverError::ProvenTransactionBuildFailed)?;
@@ -156,9 +147,7 @@ impl LocalTransactionProver {
         .map_err(TransactionProverError::TransactionProgramExecutionFailed)?;
 
         // Extract transaction outputs and process transaction data.
-        // Note that the account delta does not contain the removed transaction fee, so it is the
-        // "pre-fee" delta of the transaction.
-        let (pre_fee_account_delta, _account_patch, input_notes, output_notes) = host.into_parts();
+        let (_account_delta, account_patch, input_notes, output_notes) = host.into_parts();
         let tx_outputs =
             TransactionKernel::from_transaction_parts(&stack_outputs, &advice_inputs, output_notes)
                 .map_err(TransactionProverError::TransactionOutputConstructionFailed)?;
@@ -166,7 +155,7 @@ impl LocalTransactionProver {
         self.build_proven_transaction(
             &input_notes,
             tx_outputs,
-            pre_fee_account_delta,
+            account_patch,
             partial_account,
             ref_block.block_num(),
             ref_block.commitment(),
@@ -181,14 +170,15 @@ impl LocalTransactionProver {
         &self,
         executed_transaction: miden_protocol::transaction::ExecutedTransaction,
     ) -> Result<ProvenTransaction, TransactionProverError> {
-        let (tx_inputs, tx_outputs, account_delta, _) = executed_transaction.into_parts();
+        let (tx_inputs, tx_outputs, _account_delta, account_patch, _) =
+            executed_transaction.into_parts();
 
         let (partial_account, ref_block, _, input_notes, _) = tx_inputs.into_parts();
 
         self.build_proven_transaction(
             &input_notes,
             tx_outputs,
-            account_delta,
+            account_patch,
             partial_account,
             ref_block.block_num(),
             ref_block.commitment(),

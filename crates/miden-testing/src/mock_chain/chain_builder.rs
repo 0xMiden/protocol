@@ -14,14 +14,14 @@ const DEFAULT_FAUCET_DECIMALS: u8 = 10;
 
 use itertools::Itertools;
 use miden_processor::crypto::random::RandomCoin;
-use miden_protocol::account::delta::AccountUpdateDetails;
 use miden_protocol::account::{
     Account,
     AccountBuilder,
     AccountComponent,
-    AccountDelta,
     AccountId,
+    AccountPatch,
     AccountType,
+    AccountUpdateDetails,
     StorageSlot,
 };
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset, TokenSymbol};
@@ -187,9 +187,9 @@ impl MockChainBuilder {
             .map(|account| {
                 let account_id = account.id();
                 let account_commitment = account.to_commitment();
-                let account_delta = AccountDelta::try_from(account)
+                let account_patch = AccountPatch::try_from(account)
                     .expect("chain builder should only store existing accounts without seeds");
-                let update_details = AccountUpdateDetails::Delta(account_delta);
+                let update_details = AccountUpdateDetails::Public(account_patch);
 
                 BlockAccountUpdate::new(account_id, account_commitment, update_details)
             })

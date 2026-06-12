@@ -173,8 +173,20 @@ impl ExecutedTransaction {
     /// Returns individual components of this transaction.
     pub fn into_parts(
         self,
-    ) -> (TransactionInputs, TransactionOutputs, AccountDelta, TransactionMeasurements) {
-        (self.tx_inputs, self.tx_outputs, self.account_delta, self.tx_measurements)
+    ) -> (
+        TransactionInputs,
+        TransactionOutputs,
+        AccountDelta,
+        AccountPatch,
+        TransactionMeasurements,
+    ) {
+        (
+            self.tx_inputs,
+            self.tx_outputs,
+            self.account_delta,
+            self.account_patch,
+            self.tx_measurements,
+        )
     }
 }
 
@@ -186,7 +198,7 @@ impl From<ExecutedTransaction> for TransactionInputs {
 
 impl From<ExecutedTransaction> for TransactionMeasurements {
     fn from(tx: ExecutedTransaction) -> Self {
-        let (_, _, _, tx_progress) = tx.into_parts();
+        let (_, _, _, _, tx_progress) = tx.into_parts();
         tx_progress
     }
 }
