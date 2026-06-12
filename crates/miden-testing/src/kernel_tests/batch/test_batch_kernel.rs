@@ -3,14 +3,12 @@ use alloc::vec::Vec;
 use std::collections::BTreeMap;
 
 use anyhow::Context;
-use miden_processor::{DefaultHost, ExecutionOptions, FastProcessor};
 use miden_protocol::batch::{BatchId, BatchKernel, ProposedBatch};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::errors::{MasmError, ProvenBatchError, batch_kernel};
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::vm::AdviceInputs;
 use miden_protocol::{
-    CoreLibrary,
     Felt,
     MAX_INPUT_NOTES_PER_BATCH,
     MAX_OUTPUT_NOTES_PER_BATCH,
@@ -526,38 +524,13 @@ fn batch_kernel_rejects_too_many_notes_per_transaction() -> anyhow::Result<()> {
 // ================================================================================================
 //
 // `ProposedBatch` validation rejects duplicate transactions and duplicate notes, so the kernel's
-// consumed-twice / created-twice checks cannot be reached through `BatchExecutor`. These tests
-// model a malicious prover who bypasses `ProposedBatch` entirely: they anchor the public `BATCH_ID`
-// to a forged tuple list containing the same transaction twice and execute the kernel directly.
-
-/// Executes the batch kernel directly with the given (potentially forged) `BATCH_ID` and advice
-/// inputs, bypassing [`BatchExecutor`] (which always derives the public `BATCH_ID` from a valid
-/// [`ProposedBatch`]).
-fn execute_kernel_raw(
-    batch_id: BatchId,
-    advice_inputs: AdviceInputs,
-) -> Result<(), ProvenBatchError> {
-    // The kernel drops BLOCK_COMMITMENT unverified, so its value is irrelevant here.
-    let stack_inputs = BatchKernel::build_input_stack(Word::empty(), batch_id);
-    let processor =
-        FastProcessor::new_with_options(stack_inputs, advice_inputs, ExecutionOptions::default())
-            .expect("processor construction should succeed");
-
-    let mut host = DefaultHost::default();
-    host.load_library(&CoreLibrary::default())
-        .expect("loading the core library into the host should succeed");
-
-    processor
-        .execute_trace_inputs_sync(&BatchKernel::main(), &mut host)
-        .map_err(ProvenBatchError::BatchKernelExecutionFailed)?;
-
-    Ok(())
-}
+// consumed-twice / created-twice checks cannot be reached through a valid batch. These tests model
+// a malicious prover who bypasses `ProposedBatch`: they override the public `BATCH_ID` fed to the
+// kernel with one anchored to a forged tuple list containing the same transaction twice.
 
 /// Returns a forged `BATCH_ID` anchored to a tuple list containing the batch's first transaction
-/// twice, along with advice inputs serving that forged batch: the batch's own advice (the
-/// hash-keyed layers 2/3 and the global note lists serve both copies) extended with the duplicated
-/// layer-1 tuple list under the forged id.
+/// twice, along with the advice override mapping the forged id to that tuple list. The batch's own
+/// advice (the hash-keyed layers 2/3 and the global note lists) serves both copies.
 fn forge_duplicated_tx_advice(batch: &ProposedBatch) -> (BatchId, AdviceInputs) {
     let tx = &batch.transactions()[0];
     let tuples = [(tx.id(), tx.account_id()), (tx.id(), tx.account_id())];
@@ -577,10 +550,9 @@ fn forge_duplicated_tx_advice(batch: &ProposedBatch) -> (BatchId, AdviceInputs) 
         ]);
     }
 
-    let (_, mut advice_inputs) = BatchKernel::prepare_inputs(batch);
-    advice_inputs.map.extend([(forged_batch_id.as_word(), layer1)]);
+    let override_advice = AdviceInputs::default().with_map([(forged_batch_id.as_word(), layer1)]);
 
-    (forged_batch_id, advice_inputs)
+    (forged_batch_id, override_advice)
 }
 
 /// A forged transaction list containing the same note-consuming transaction twice makes the second
@@ -592,9 +564,12 @@ fn batch_kernel_rejects_note_consumed_twice() -> anyhow::Result<()> {
     let batch = two_tx_batch(&mut setup)?;
 
     // `two_tx_batch`'s first transaction consumes one input note.
-    let (forged_batch_id, advice_inputs) = forge_duplicated_tx_advice(&batch);
+    let (forged_batch_id, override_advice) = forge_duplicated_tx_advice(&batch);
 
-    let result = execute_kernel_raw(forged_batch_id, advice_inputs);
+    let result = BatchExecutor::new()
+        .with_batch_id(forged_batch_id)
+        .extend_advice_inputs(override_advice)
+        .execute(batch);
     assert_kernel_error(result, batch_kernel::ERR_BATCH_INPUT_NOTE_CONSUMED_TWICE);
 
     Ok(())
@@ -628,9 +603,12 @@ fn batch_kernel_rejects_note_created_twice() -> anyhow::Result<()> {
         BTreeMap::default(),
     )?;
 
-    let (forged_batch_id, advice_inputs) = forge_duplicated_tx_advice(&batch);
+    let (forged_batch_id, override_advice) = forge_duplicated_tx_advice(&batch);
 
-    let result = execute_kernel_raw(forged_batch_id, advice_inputs);
+    let result = BatchExecutor::new()
+        .with_batch_id(forged_batch_id)
+        .extend_advice_inputs(override_advice)
+        .execute(batch);
     assert_kernel_error(result, batch_kernel::ERR_BATCH_OUTPUT_NOTE_CREATED_TWICE);
 
     Ok(())

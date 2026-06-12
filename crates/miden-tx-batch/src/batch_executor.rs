@@ -1,6 +1,6 @@
 use miden_processor::{DefaultHost, ExecutionError, ExecutionOptions, FastProcessor};
 use miden_protocol::CoreLibrary;
-use miden_protocol::batch::{BatchKernel, BatchOutputs, ProposedBatch};
+use miden_protocol::batch::{BatchId, BatchKernel, BatchOutputs, ProposedBatch};
 use miden_protocol::errors::ProvenBatchError;
 use miden_protocol::vm::AdviceInputs;
 
@@ -14,6 +14,8 @@ use crate::ExecutedBatch;
 pub struct BatchExecutor {
     /// Extra advice inputs merged onto those derived from the proposed batch before execution.
     advice_inputs: AdviceInputs,
+    /// When set, fed to the kernel as the public `BATCH_ID` instead of the proposed batch's id.
+    batch_id_override: Option<BatchId>,
 }
 
 impl BatchExecutor {
@@ -32,6 +34,17 @@ impl BatchExecutor {
         self
     }
 
+    /// Overrides the public `BATCH_ID` fed to the kernel.
+    ///
+    /// Exposed for testing only: together with [`Self::extend_advice_inputs`] it lets kernel
+    /// tests anchor the kernel to a forged transaction tuple list that [`ProposedBatch`]
+    /// validation would reject (e.g. one containing duplicate transactions).
+    #[cfg(any(feature = "testing", test))]
+    pub fn with_batch_id(mut self, batch_id: BatchId) -> Self {
+        self.batch_id_override = Some(batch_id);
+        self
+    }
+
     /// Runs the batch kernel over the [`ProposedBatch`], returning an [`ExecutedBatch`] that can be
     /// passed to [`LocalBatchProver::prove`](crate::LocalBatchProver::prove).
     ///
@@ -47,6 +60,14 @@ impl BatchExecutor {
         let (stack_inputs, mut advice_inputs) = BatchKernel::prepare_inputs(&proposed_batch);
         // Merge any caller-provided advice, overriding matching keys from the derived advice.
         advice_inputs.extend(self.advice_inputs.clone());
+        // Apply the testing-only batch id override, if any.
+        let stack_inputs = match self.batch_id_override {
+            Some(batch_id) => BatchKernel::build_input_stack(
+                proposed_batch.reference_block_header().commitment(),
+                batch_id,
+            ),
+            None => stack_inputs,
+        };
 
         let processor = FastProcessor::new_with_options(
             stack_inputs,
