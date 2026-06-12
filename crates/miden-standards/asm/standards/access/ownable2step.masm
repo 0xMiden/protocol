@@ -253,24 +253,14 @@ pub proc transfer_ownership
     dup.1 eq.0 dup.1 eq.0 and
     # => [is_zero_address, new_owner_suffix, new_owner_prefix, pad(14)]
 
-    if.true
-        # Cancel via zero address: drop the (0, 0) inputs and write [owner, 0, 0].
-        drop drop
-        # => [pad(14)]
-
-        exec.get_owner_internal
-        # => [owner_suffix, owner_prefix, pad(14)]
-
-        push.0.0 movup.3 movup.3
-        # => [owner_suffix, owner_prefix, 0, 0, pad(14)]
-    else
-        # Non-zero new owner: validate and store as the nominated owner.
+    if.false
+        # Non-zero new owner: validate before storing as the nominated owner.
         dup.1 dup.1 exec.account_id::validate
-        # => [new_owner_suffix, new_owner_prefix, pad(14)]
-
-        exec.get_owner_internal
-        # => [owner_suffix, owner_prefix, new_owner_suffix, new_owner_prefix, pad(14)]
     end
+    # => [new_owner_suffix, new_owner_prefix, pad(14)]
+
+    exec.get_owner_internal
+    # => [owner_suffix, owner_prefix, new_owner_suffix, new_owner_prefix, pad(14)]
 
     exec.save_ownership_info
     # => [pad(14)]
