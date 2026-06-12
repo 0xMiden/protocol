@@ -6,6 +6,7 @@
 - [BREAKING] Renamed the `miden-tx-batch-prover` crate to `miden-tx-batch` ([#3035](https://github.com/0xMiden/protocol/pull/3035)).
 - Added a skeleton batch kernel ([#1122](https://github.com/0xMiden/protocol/issues/1122)) wired through `LocalBatchProver::prove` and attached to `ProvenBatch` as an `ExecutionProof`. It does not yet perform any verification.
 - The batch kernel verifies the transaction list against `BATCH_ID` and computes the nullifier-sorted `INPUT_NOTES_COMMITMENT` matching `ProposedBatch::input_notes().commitment()` ([#2905](https://github.com/0xMiden/protocol/pull/2905)).
+- Optimized the batch kernel's input-note commitment hashing to absorb contiguous non-erased entries in runs, and removed the unreachable pending-erasure epilogue assertion ([#3095](https://github.com/0xMiden/protocol/pull/3095)).
 
 - [BREAKING] Renamed `AccountStorageDelta` to `AccountStoragePatch` ([#3002](https://github.com/0xMiden/protocol/pull/3002)).
 - [BREAKING] Replaced the per-tree account and nullifier backend traits with shared `SmtBackend` and `SmtBackendReader` traits, split into read-only and read-write capabilities, enabling read-only `LargeSmt`-backed tree views via `reader()` ([#2755](https://github.com/0xMiden/protocol/pull/2755), [#3009](https://github.com/0xMiden/protocol/pull/3009)).
