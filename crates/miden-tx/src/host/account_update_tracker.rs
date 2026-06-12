@@ -10,7 +10,7 @@ use miden_protocol::account::{
 
 use crate::TransactionKernelError;
 use crate::host::storage_patch_tracker::StoragePatchTracker;
-use crate::host::tx_event::{AddedAssetUpdate, RemovedAssetUpdate};
+use crate::host::tx_event::{AssetDelta, AssetPatch};
 use crate::host::vault_update_tracker::VaultUpdateTracker;
 
 // ACCOUNT DELTA TRACKER
@@ -64,22 +64,27 @@ impl AccountUpdateTracker {
         self.nonce_delta += Felt::ONE;
     }
 
-    /// Returns a reference to the vault delta.
-    pub fn vault_delta(&self) -> &AccountVaultDelta {
-        self.vault.delta()
+    /// Returns the vault delta materialized from the currently tracked per-asset deltas.
+    ///
+    /// TODO: Remove this method when removing automatic fee removal from the tx kernel.
+    pub(crate) fn build_vault_delta(&self) -> AccountVaultDelta {
+        self.vault.clone().into_delta()
     }
 
-    /// Adds an asset to the vault delta and patch.
-    pub fn add_asset(&mut self, update: AddedAssetUpdate) -> Result<(), TransactionKernelError> {
-        self.vault.add(update)
+    /// Updates the vault patch.
+    pub fn update_asset_patch(&mut self, patch: AssetPatch) -> Result<(), TransactionKernelError> {
+        self.vault.update_patch(patch)
     }
 
-    /// Removes an asset from the vault delta and patch.
-    pub fn remove_asset(
-        &mut self,
-        update: RemovedAssetUpdate,
-    ) -> Result<(), TransactionKernelError> {
-        self.vault.remove(update)
+    /// Updates the vault delta.
+    pub fn update_asset_delta(&mut self, delta: AssetDelta) {
+        self.vault.update_delta(delta)
+    }
+
+    /// Clears the accumulating vault delta so the next pass of the kernel's delta computation
+    /// rebuilds it from scratch.
+    pub fn reset_vault_delta(&mut self) {
+        self.vault.reset_delta();
     }
 
     /// Returns a mutable reference to the current storage patch tracker.

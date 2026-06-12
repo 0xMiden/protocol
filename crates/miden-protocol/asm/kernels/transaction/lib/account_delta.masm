@@ -1,12 +1,11 @@
 use $kernel::account
 use $kernel::asset
+use $kernel::asset::COMPOSITION_NONE
 use $kernel::constants::STORAGE_SLOT_TYPE_VALUE
-use $kernel::fungible_asset
+use $kernel::asset::ASSET_SIZE
 use $kernel::link_map
 use $kernel::memory
-use $kernel::memory::ACCOUNT_DELTA_FUNGIBLE_ASSET_PTR
-use $kernel::memory::ACCOUNT_DELTA_NON_FUNGIBLE_ASSET_PTR
-use $kernel::util::asset::FUNGIBLE_ASSET_MAX_AMOUNT
+use $kernel::memory::ACCOUNT_DELTA_ASSET_PTR
 use miden::core::crypto::hashes::poseidon2
 use miden::core::word
 
@@ -14,6 +13,15 @@ use miden::core::word
 # =================================================================================================
 
 const ERR_ACCOUNT_DELTA_NONCE_MUST_BE_INCREMENTED_IF_VAULT_OR_STORAGE_CHANGED="nonce must be incremented if account vault or account storage changed"
+
+const ERR_ACCOUNT_DELTA_TOO_MANY_REMOVED_ASSETS="number of removed assets in the transaction exceeds the maximum limit of 1024"
+
+# EVENTS
+# =================================================================================================
+
+const ACCOUNT_BEFORE_ASSET_DELTA_COMPUTATION=event("miden::protocol::account::before_asset_delta_computation")
+
+const ACCOUNT_ON_ASSET_DELTA_COMPUTATION_EVENT=event("miden::protocol::account::on_asset_delta_computation")
 
 # CONSTANTS
 # =================================================================================================
@@ -27,8 +35,39 @@ const DOMAIN_VALUE = 5
 # The domain of a map storage slot in the delta commitment.
 const DOMAIN_MAP = 6
 
+#! The default delta operation indicating no change.
+const DELTA_OP_NONE = 0
+
+#! The delta operation indicating that an asset was added.
+const DELTA_OP_ADD = 1
+
+#! The delta operation indicating that an asset was removed.
+const DELTA_OP_REMOVE = 2
+
 # The maximum value a felt can represent.
 const FELT_MAX = 0xffffffff00000000
+
+#! Local in track_asset_delta that stores the delta operation.
+const TRACK_ASSET_DELTA_OP_LOC = 0
+
+#! Locals in combine_asset_delta that store the incoming and current delta operations so that the
+#! new delta operation can be selected after the magnitude comparison.
+const COMBINE_INCOMING_DELTA_OP_LOC = 0
+const COMBINE_CURRENT_DELTA_OP_LOC = 1
+
+#! Locals in update_asset_delta. The last region is a buffer of removed assets that is hashed after
+#! the added-assets section.
+const UPDATE_ASSET_DELTA_HAS_NEXT_LOC = 0
+const UPDATE_ASSET_DELTA_ITER_LOC = 1
+const UPDATE_ASSET_DELTA_NUM_ADDED_LOC = 2
+const UPDATE_ASSET_DELTA_NUM_REMOVED_LOC = 3
+const UPDATE_ASSET_DELTA_REMOVED_ASSETS_LOC = 4
+
+#! The maximum number of assets that can be removed in a single transaction.
+#!
+#! This limit is arbitrary and can be increased accordingly with the number of locals of
+#! update_asset_delta.
+const UPDATE_ASSET_DELTA_MAX_REMOVED_ASSETS = 1024
 
 # PROCEDURES
 # =================================================================================================
@@ -68,10 +107,7 @@ pub proc compute_commitment
     exec.poseidon2::copy_digest movdnw.3
     # => [RATE0, RATE1, CAPACITY, ID_AND_NONCE_DIGEST]
 
-    exec.update_fungible_asset_delta
-    # => [RATE0, RATE1, CAPACITY, ID_AND_NONCE_DIGEST]
-
-    exec.update_non_fungible_asset_delta
+    exec.update_asset_delta
     # => [RATE0, RATE1, CAPACITY, ID_AND_NONCE_DIGEST]
 
     exec.update_storage_patch
@@ -240,21 +276,21 @@ proc update_map_slot_patch
     # enter loop if the link map is not empty
     while.true
         exec.link_map::next_key_double_value
-        # => [KEY, INIT_VALUE, NEW_VALUE, has_next, iter, ...]
+        # => [KEY, INIT_VALUE, NEW_VALUE, has_next, iter, RATE0, RATE1, CAPACITY]
 
         # store has_next
         movup.12 loc_store.2
-        # => [KEY, INIT_VALUE, NEW_VALUE, iter, ...]
+        # => [KEY, INIT_VALUE, NEW_VALUE, iter, RATE0, RATE1, CAPACITY]
 
         # store iter
         movup.12 loc_store.3
-        # => [KEY, INIT_VALUE, NEW_VALUE, ...]
+        # => [KEY, INIT_VALUE, NEW_VALUE, RATE0, RATE1, CAPACITY]
 
         swapw.2
-        # => [NEW_VALUE, INIT_VALUE, KEY, ...]
+        # => [NEW_VALUE, INIT_VALUE, KEY, RATE0, RATE1, CAPACITY]
 
         exec.word::test_eq not
-        # => [was_changed, NEW_VALUE, INIT_VALUE, KEY, ...]
+        # => [was_changed, NEW_VALUE, INIT_VALUE, KEY, RATE0, RATE1, CAPACITY]
 
         # if the key-value pair has actually changed, update the hasher
         if.true
@@ -315,7 +351,11 @@ proc update_map_slot_patch
     # => [RATE0, RATE1, CAPACITY]
 end
 
-#! Updates the given delta hasher with the fungible asset vault delta.
+#! Updates the given delta hasher with the asset vault delta.
+#!
+#! It iterates the asset delta link map once and processes the added assets first. It writes the
+#! removed assets into local memory to enable a subsequent iteration over linear memory rather than
+#! a second expensive link map iteration that would have to skip added assets.
 #!
 #! Inputs:  [RATE0, RATE1, CAPACITY]
 #! Outputs: [RATE0, RATE1, CAPACITY]
@@ -323,91 +363,30 @@ end
 #! Locals:
 #! - 0: has_next
 #! - 1: iter
-@locals(2)
-proc update_fungible_asset_delta
-    push.ACCOUNT_DELTA_FUNGIBLE_ASSET_PTR
-    # => [account_delta_fungible_asset_ptr, RATE0, RATE1, CAPACITY]
+#! - 2: num_added_assets
+#! - 3: num_removed_assets
+#! - 4..8196: removed_assets (UPDATE_ASSET_DELTA_MAX_REMOVED_ASSETS * ASSET_SIZE elements)
+@locals(8196)
+proc update_asset_delta
+    # initialize num_added_assets = 0 and num_removed_assets = 0
+    # this is necessary because this procedure can be called multiple times and the second
+    # invocation shouldn't reuse the first invocation's values
+    push.0 loc_store.UPDATE_ASSET_DELTA_NUM_ADDED_LOC
+    push.0 loc_store.UPDATE_ASSET_DELTA_NUM_REMOVED_LOC
 
-    exec.link_map::iter
-    # => [has_next, iter, RATE0, RATE1, CAPACITY]
+    # signal to the host that delta computation is starting so it can reset its accumulating
+    # vault delta. this is necessary because compute_commitment can be invoked multiple times in
+    # a single transaction (e.g. by auth and the epilogue) and each invocation re-emits the
+    # ACCOUNT_ON_ASSET_DELTA_COMPUTATION events.
+    emit.ACCOUNT_BEFORE_ASSET_DELTA_COMPUTATION
 
-    # enter loop if the link map is not empty
-    while.true
-        exec.link_map::next_key_value
-        # => [KEY, VALUE0, has_next, iter, ...]
+    # Iterate asset delta.
+    # Add added assets into the hasher.
+    # Store removed assets to memory for later processing.
+    # ---------------------------------------------------------------------------------------------
 
-        # store has_next
-        movup.8 loc_store.0
-        # => [KEY, VALUE0, iter, ...]
-
-        # store iter
-        movup.8 loc_store.1
-        # => [KEY, VALUE0, ...]
-        # this stack state is equivalent to:
-        # => [[0, 0, faucet_id_suffix_and_metadata, faucet_id_prefix], [delta_amount, 0, 0, 0], ...]
-
-        swapw
-        # => [[delta_amount, 0, 0, 0], [0, 0, faucet_id_suffix_and_metadata, faucet_id_prefix], ...]
-
-        # compute the absolute value of delta amount with a flag indicating whether it's positive
-        exec.delta_amount_absolute
-        # => [is_delta_amount_positive, [delta_amount_abs, 0, 0, 0], [0, 0, faucet_id_suffix_and_metadata, faucet_id_prefix], ...]
-
-        # define the was_added value as equivalent to is_delta_amount_positive
-        # this value is 1 if the amount was added and 0 if the amount was removed
-        swap.6 drop
-        # => [[delta_amount_abs, 0, 0, 0], [0, was_added, faucet_id_suffix_and_metadata, faucet_id_prefix], ...]
-
-        dup neq.0
-        # => [is_delta_amount_non_zero, [delta_amount_abs, 0, 0, 0], [0, was_added, faucet_id_suffix_and_metadata, faucet_id_prefix], ...]
-
-        # if delta amount is non-zero, update the hasher
-        if.true
-            push.DOMAIN_ASSET swap.5 drop
-            # => [[delta_amount_abs, 0, 0, 0], [domain, was_added, faucet_id_suffix_and_metadata, faucet_id_prefix], ...]
-
-            # swap value and metadata words
-            swapw
-            # => [[domain, was_added, faucet_id_suffix_and_metadata, faucet_id_prefix], [delta_amount_abs, 0, 0, 0], RATE0, RATE1, CAPACITY]
-
-            # drop previous RATE elements
-            swapdw dropw dropw
-            # => [[domain, was_added, faucet_id_suffix_and_metadata, faucet_id_prefix], [delta_amount_abs, 0, 0, 0], CAPACITY]
-
-            exec.poseidon2::permute
-            # => [RATE0, RATE1, CAPACITY]
-        else
-            # discard values loaded from map: KEY, VALUE0
-            dropw dropw
-            # => [RATE0, RATE1, CAPACITY]
-        end
-        # => [RATE0, RATE1, CAPACITY]
-
-        # load iter and has_next
-        loc_load.1
-        # => [iter, RATE0, RATE1, CAPACITY]
-
-        loc_load.0
-        # => [has_next, iter, RATE0, RATE1, CAPACITY]
-    end
-
-    # drop iter
-    drop
-    # => [RATE0, RATE1, CAPACITY]
-end
-
-#! Updates the given delta hasher with the non-fungible asset vault delta.
-#!
-#! Inputs:  [RATE0, RATE1, CAPACITY]
-#! Outputs: [RATE0, RATE1, CAPACITY]
-#!
-#! Locals:
-#! - 0: has_next
-#! - 1: iter
-@locals(2)
-proc update_non_fungible_asset_delta
-    push.ACCOUNT_DELTA_NON_FUNGIBLE_ASSET_PTR
-    # => [account_delta_non_fungible_asset_ptr, RATE0, RATE1, CAPACITY]
+    push.ACCOUNT_DELTA_ASSET_PTR
+    # => [asset_delta_map_ptr, RATE0, RATE1, CAPACITY]
 
     exec.link_map::iter
     # => [has_next, iter, RATE0, RATE1, CAPACITY]
@@ -415,63 +394,157 @@ proc update_non_fungible_asset_delta
     # enter loop if the link map is not empty
     while.true
         exec.link_map::next_key_double_value
-        # => [KEY, VALUE0, VALUE1, has_next, iter, ...]
+        # => [ASSET_KEY, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, has_next, iter, RATE0, RATE1, CAPACITY]
 
-        # store has_next
-        movup.12 loc_store.0
-        # => [KEY, VALUE0, VALUE1, iter, ...]
+        # store has_next and iter
+        movup.12 loc_store.UPDATE_ASSET_DELTA_HAS_NEXT_LOC
+        movup.12 loc_store.UPDATE_ASSET_DELTA_ITER_LOC
+        # => [ASSET_KEY, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, RATE0, RATE1, CAPACITY]
 
-        # store iter
-        movup.12 loc_store.1
-        # => [KEY, VALUE0, VALUE1, ...]
-        # this stack state is equivalent to:
-        # => [ASSET_KEY, [was_added, 0, 0, 0], ASSET_VALUE, ...]
+        movdnw.2 exec.word::test_eq not
+        # => [has_asset_changed, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, ASSET_KEY, RATE0, RATE1, CAPACITY]
 
-        dup.4 neq.0
-        # => [was_added_or_removed, ASSET_KEY, [was_added, 0, 0, 0], ASSET_VALUE, ...]
-
-        # if the asset was added or removed (i.e. if was_added != 0), update the hasher
         if.true
-            swapw
-            # => [[was_added, 0, 0, 0], ASSET_KEY, ASSET_VALUE, ...]
+            exec.compute_asset_delta
+            # => [delta_op, ASSET_KEY, DELTA_ASSET_VALUE, RATE0, RATE1, CAPACITY]
 
-            # convert was_added to a boolean
-            # was_added is 1 if the asset was added and 0 - 1 if it was removed
-            eq.1
-            # => [[was_added, 0, 0, 0], [asset_id_suffix, asset_id_prefix, faucet_id_suffix_and_metadata, faucet_id_prefix], ASSET_VALUE, ...]
+            emit.ACCOUNT_ON_ASSET_DELTA_COMPUTATION_EVENT
+            # => [delta_op, ASSET_KEY, DELTA_ASSET_VALUE, RATE0, RATE1, CAPACITY]
 
-            # replace asset_id_prefix with was_added and drop the remaining word
-            swap.5 dropw
-            # => [[asset_id_suffix, was_added, faucet_id_suffix_and_metadata, faucet_id_prefix], ASSET_VALUE, ...]
+            eq.DELTA_OP_ADD
+            # => [is_addition, ASSET_KEY, DELTA_ASSET_VALUE, RATE0, RATE1, CAPACITY]
 
-            # replace asset_id_suffix with domain
-            drop push.DOMAIN_ASSET
-            # => [[domain, was_added, faucet_id_suffix_and_metadata, faucet_id_prefix], ASSET_VALUE, ...]
+            if.true
+                # increment num_added_assets
+                loc_load.UPDATE_ASSET_DELTA_NUM_ADDED_LOC
+                add.1
+                loc_store.UPDATE_ASSET_DELTA_NUM_ADDED_LOC
+                # => [ASSET_KEY, DELTA_ASSET_VALUE, RATE0, RATE1, CAPACITY]
 
-            # drop previous RATE elements
-            swapdw dropw dropw
-            # => [[domain, was_added, faucet_id_suffix_and_metadata, faucet_id_prefix], ASSET_VALUE, CAPACITY]
+                # drop previous RATE elements
+                swapdw dropw dropw
+                # => [ASSET_KEY, DELTA_ASSET_VALUE, CAPACITY]
 
-            exec.poseidon2::permute
-            # => [RATE0, RATE1, CAPACITY]
+                exec.poseidon2::permute
+                # => [RATE0, RATE1, CAPACITY]
+            else
+                loc_load.UPDATE_ASSET_DELTA_NUM_REMOVED_LOC
+                # => [num_removed_assets, ASSET_KEY, DELTA_ASSET_VALUE, RATE0, RATE1, CAPACITY]
+
+                # make sure we do not write outside the assigned number of locals
+                dup neq.UPDATE_ASSET_DELTA_MAX_REMOVED_ASSETS
+                assert.err=ERR_ACCOUNT_DELTA_TOO_MANY_REMOVED_ASSETS
+                # => [num_removed_assets, ASSET_KEY, DELTA_ASSET_VALUE, RATE0, RATE1, CAPACITY]
+
+                # compute the pointer at which to store the removed asset as
+                # locaddr.removed_assets_ptr + num_removed_assets * ASSET_SIZE
+                mul.ASSET_SIZE
+                locaddr.UPDATE_ASSET_DELTA_REMOVED_ASSETS_LOC
+                add
+                # => [removed_assets_ptr, ASSET_KEY, DELTA_ASSET_VALUE, RATE0, RATE1, CAPACITY]
+
+                exec.asset::store
+                # => [RATE0, RATE1, CAPACITY]
+
+                # increment num_removed_assets
+                loc_load.UPDATE_ASSET_DELTA_NUM_REMOVED_LOC
+                add.1
+                loc_store.UPDATE_ASSET_DELTA_NUM_REMOVED_LOC
+                # => [RATE0, RATE1, CAPACITY]
+            end
         else
-            # discard the key, value0 and value1 words loaded from the map
+            # discard the values loaded from the map
             dropw dropw dropw
             # => [RATE0, RATE1, CAPACITY]
         end
         # => [RATE0, RATE1, CAPACITY]
 
         # load iter and has_next
-        loc_load.1
-        # => [iter, RATE0, RATE1, CAPACITY]
-
-        loc_load.0
+        loc_load.UPDATE_ASSET_DELTA_ITER_LOC
+        loc_load.UPDATE_ASSET_DELTA_HAS_NEXT_LOC
         # => [has_next, iter, RATE0, RATE1, CAPACITY]
     end
 
     # drop iter
     drop
     # => [RATE0, RATE1, CAPACITY]
+
+    # Add the added assets trailer if num_added_assets != 0.
+    # ---------------------------------------------------------------------------------------------
+
+    loc_load.UPDATE_ASSET_DELTA_NUM_ADDED_LOC push.DELTA_OP_ADD
+    exec.commit_asset_count_trailer
+    # => [RATE0, RATE1, CAPACITY]
+
+    # Hash the removed assets.
+    # ---------------------------------------------------------------------------------------------
+
+    # setup start_ptr and end_ptr for the removed assets buffer
+    locaddr.UPDATE_ASSET_DELTA_REMOVED_ASSETS_LOC dup
+    # => [start_ptr, start_ptr, RATE0, RATE1, CAPACITY]
+
+    # end_ptr = start_ptr + num_removed_assets * ASSET_SIZE
+    loc_load.UPDATE_ASSET_DELTA_NUM_REMOVED_LOC
+    mul.ASSET_SIZE add
+    # => [end_ptr, start_ptr, RATE0, RATE1, CAPACITY]
+
+    # move the pointers below the hasher state
+    movdn.13 movdn.12
+    # => [RATE0, RATE1, CAPACITY, start_ptr, end_ptr]
+
+    # absorb the removed assets from memory into the hasher state; this is a no-op when
+    # start_ptr == end_ptr (i.e. when no assets were removed)
+    exec.poseidon2::absorb_double_words_from_memory
+    # => [RATE0, RATE1, CAPACITY, end_ptr, end_ptr]
+
+    movup.12 drop movup.12 drop
+    # => [RATE0, RATE1, CAPACITY]
+
+    # Add the removed assets trailer if num_removed_assets != 0.
+    # ---------------------------------------------------------------------------------------------
+
+    loc_load.UPDATE_ASSET_DELTA_NUM_REMOVED_LOC push.DELTA_OP_REMOVE
+    exec.commit_asset_count_trailer
+    # => [RATE0, RATE1, CAPACITY]
+end
+
+#! Permutes the delta hasher with a trailer that commits to the number of assets affected by the
+#! given delta operation. If num_assets is zero, this is a no-op and the hasher state is preserved.
+#!
+#! Inputs:  [delta_op, num_assets, RATE0, RATE1, CAPACITY]
+#! Outputs: [RATE0, RATE1, CAPACITY]
+#!
+#! Where:
+#! - delta_op is the delta operation (DELTA_OP_ADD or DELTA_OP_REMOVE).
+#! - num_assets is the number of assets affected by delta_op (added or removed).
+proc commit_asset_count_trailer
+    dup.1 neq.0
+    # => [is_non_zero, delta_op, num_assets, RATE0, RATE1, CAPACITY]
+
+    if.true
+        # move delta_op and num_assets below RATE0 and RATE1 so the previous RATE elements
+        # can be dropped while preserving them
+        movdn.9 movdn.9
+        # => [RATE0, RATE1, delta_op, num_assets, CAPACITY]
+
+        dropw dropw
+        # => [delta_op, num_assets, CAPACITY]
+
+        # build the metadata
+        push.0 movdn.2 push.DOMAIN_ASSET
+        # => [[domain, delta_op, num_assets, 0], CAPACITY]
+
+        # prepend the empty word that follows the metadata word as the second hasher input
+        padw swapw
+        # => [[domain, delta_op, num_assets, 0], EMPTY_WORD, CAPACITY]
+
+        exec.poseidon2::permute
+        # => [RATE0, RATE1, CAPACITY]
+    else
+        # discard delta_op and num_assets
+        drop drop
+        # => [RATE0, RATE1, CAPACITY]
+    end
 end
 
 # DELTA BOOKKEEPING
@@ -495,257 +568,137 @@ pub proc was_nonce_incremented
     # => [was_nonce_incremented]
 end
 
-#! Adds the given asset to the delta.
+#! Adds the given asset update to the patch.
 #!
-#! Assumes the asset is valid, so it should be called after asset_vault::add_asset.
+#! Assumes the assets are valid, so it should be called after asset_vault::add_asset.
 #!
-#! Inputs:  [ASSET_KEY, ASSET_VALUE]
+#! Inputs:  [ASSET_KEY, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE]
 #! Outputs: []
 #!
 #! Where:
 #! - ASSET_KEY is the vault key of the asset that is added.
-#! - ASSET_VALUE is the value of the asset that is added.
-pub proc add_asset
-    # check if the asset is a fungible asset
-    exec.asset::is_fungible_asset_key
-    # => [is_fungible_asset, ASSET_KEY, ASSET_VALUE]
+#! - INITIAL_ASSET_VALUE is the value of the asset before the update.
+#! - FINAL_ASSET_VALUE is the value of the asset after the update.
+pub proc update_asset
+    swapw dupw.1 push.ACCOUNT_DELTA_ASSET_PTR
+    # => [asset_delta_map_ptr, ASSET_KEY, INITIAL_ASSET_VALUE, ASSET_KEY, FINAL_ASSET_VALUE]
 
-    if.true
-        swapw
-        # => [ASSET_VALUE, ASSET_KEY]
+    # retrieve the current patch entry
+    exec.link_map::get
+    # => [contains_key, STORED_INITIAL_VALUE, STORED_FINAL_VALUE, INITIAL_ASSET_VALUE, ASSET_KEY, FINAL_ASSET_VALUE]
 
-        exec.fungible_asset::value_into_amount
-        movdn.4
-        # => [ASSET_KEY, amount]
+    movdn.12
+    # => [STORED_INITIAL_VALUE, STORED_FINAL_VALUE, INITIAL_ASSET_VALUE, contains_key, ASSET_KEY, FINAL_ASSET_VALUE]
 
-        exec.add_fungible_asset
-        # => []
-    else
-        exec.add_non_fungible_asset
-        # => []
-    end
-end
-
-#! Removes the given asset from the delta.
-#!
-#! Assumes the asset is valid, so it should be called after asset_vault::remove_asset
-#! (which would abort if the asset is invalid).
-#!
-#! Inputs:  [ASSET_KEY, ASSET_VALUE]
-#! Outputs: []
-#!
-#! Where:
-#! - ASSET_KEY is the vault key of the asset that is removed.
-#! - ASSET_VALUE is the value of the asset that is removed.
-pub proc remove_asset
-    # check if the asset is a fungible asset
-    exec.asset::is_fungible_asset_key
-    # => [is_fungible_asset, ASSET_KEY, ASSET_VALUE]
-
-    if.true
-        swapw
-        # => [ASSET_VALUE, ASSET_KEY]
-
-        exec.fungible_asset::value_into_amount
-        movdn.4
-        # => [ASSET_KEY, amount]
-
-        exec.remove_fungible_asset
-        # => []
-    else
-        exec.remove_non_fungible_asset
-        # => []
-    end
-end
-
-#! Adds the given amount to the fungible asset delta for the asset identified by the asset key.
-#!
-#! Inputs:  [ASSET_KEY, amount]
-#! Outputs: []
-#!
-#! Where:
-#! - ASSET_KEY is the asset key of the fungible asset.
-#! - amount is the amount by which the fungible asset's amount increases.
-pub proc add_fungible_asset
-    dupw push.ACCOUNT_DELTA_FUNGIBLE_ASSET_PTR
-    # => [fungible_delta_map_ptr, ASSET_KEY, ASSET_KEY, amount]
-
-    # retrieve the current delta amount
-    # contains_key can be ignored because the default value is a delta amount of 0
-    # VALUE1 is unused so we drop it as well
-    exec.link_map::get drop swapw dropw
-    # => [delta_amount, 0, 0, 0, ASSET_KEY, amount]
+    swapw dropw
+    # => [STORED_INITIAL_VALUE, INITIAL_ASSET_VALUE, contains_key, ASSET_KEY, FINAL_ASSET_VALUE]
 
     movup.8
-    # => [amount, delta_amount, 0, 0, 0, ASSET_KEY]
+    # => [contains_key, STORED_INITIAL_VALUE, INITIAL_ASSET_VALUE, ASSET_KEY, FINAL_ASSET_VALUE]
 
-    # compute delta + amount
-    # note that this operation wraps around
-    add
-    # => [delta_amount, 0, 0, 0, ASSET_KEY]
+    # If contains_key STORED_INITIAL_VALUE remains.
+    # If !contains_key INITIAL_ASSET_VALUE remains.
+    cdropw
+    # => [NEW_INITIAL_VALUE, ASSET_KEY, FINAL_ASSET_VALUE]
 
-    # pad VALUE1 of the link map
-    swapw padw movdnw.2
-    # => [ASSET_KEY, delta_amount, 0, 0, 0, EMPTY_WORD]
-
-    push.ACCOUNT_DELTA_FUNGIBLE_ASSET_PTR
-    # => [fungible_delta_map_ptr, ASSET_KEY, delta_amount, 0, 0, 0, EMPTY_WORD]
+    swapw push.ACCOUNT_DELTA_ASSET_PTR
+    # => [asset_delta_map_ptr, ASSET_KEY, NEW_INITIAL_VALUE, FINAL_ASSET_VALUE]
 
     exec.link_map::set drop
     # => []
 end
 
-#! Subtracts the given amount from the fungible asset delta for the asset identified by the asset key.
+#! Computes the delta between two asset values and returns the resulting delta op and delta value.
 #!
-#! Inputs:  [ASSET_KEY, amount]
-#! Outputs: []
+#! This procedure assumes the provided INITIAL_ASSET_VALUE and FINAL_ASSET_VALUE are NOT equal.
 #!
-#! Where:
-#! - ASSET_KEY is the asset key of the fungible asset.
-#! - amount is the amount by which the fungible asset's amount decreases.
-pub proc remove_fungible_asset
-    dupw push.ACCOUNT_DELTA_FUNGIBLE_ASSET_PTR
-    # => [fungible_delta_map_ptr, ASSET_KEY, ASSET_KEY, amount]
-
-    # retrieve the current delta amount
-    # contains_key can be ignored because the default value is a delta amount of 0
-    # VALUE1 is unused so we drop it as well
-    exec.link_map::get drop swapw dropw
-    # => [delta_amount, 0, 0, 0, ASSET_KEY, amount]
-
-    movup.8
-    # => [amount, delta_amount, 0, 0, 0, ASSET_KEY]
-
-    # compute delta - amount
-    # note that this operation wraps around
-    sub
-    # => [delta_amount, 0, 0, 0, ASSET_KEY]
-
-    # pad VALUE1 of the link map
-    swapw padw movdnw.2
-    # => [ASSET_KEY, delta_amount, 0, 0, 0, EMPTY_WORD]
-
-    push.ACCOUNT_DELTA_FUNGIBLE_ASSET_PTR
-    # => [fungible_delta_map_ptr, ASSET_KEY, delta_amount, 0, 0, 0, EMPTY_WORD]
-
-    exec.link_map::set drop
-    # => []
-end
-
-#! Adds the given non-fungible asset to the non-fungible asset vault delta.
+#! This procedure computes the delta as follows:
+#! - If the composition of the asset is none:
+#!   - If the initial value is the empty word, the final value must be non-empty, so the asset was
+#!     added.
+#!   - Conversely, if the initial value is not the empty word, the final value must be empty
+#!     according to the asset vault guarantees, so the asset was removed.
+#! - If the composition is not none:
+#!   - Compute the delta as `GREATER_ASSET_VALUE - LESSER_ASSET_VALUE` using `asset::lt` to find
+#!     the larger value and `asset::split` for the computation itself.
+#!   - Since the procedure assumes the values are not equal, the final value must be less than or
+#!     greater than the initial value. If the final value is larger than the initial one, value
+#!     was added; if it is smaller, value was removed.
 #!
-#! ASSET_VALUE must be a valid non-fungible asset.
-#!
-#! If the key does not exist in the delta map, the non-fungible asset's was_added value is 0.
-#! When it is added to the account vault, was_added is incremented by 1; when it is removed from
-#! the account vault, was_added is decremented by 1.
-#! Since an asset can only be added to or removed from a vault once, was_added will always have a
-#! value of -1, 0, or 1, where -1 is represented by `0 - 1` in felt operations.
-#! This means adding and removing or removing and adding the asset will correctly cancel out.
-#!
-#! The final was_added value after transaction execution is then interpreted as follows:
-#! -1 -> asset was removed
-#! 0 -> no change to the asset
-#! +1 -> asset was added
-#!
-#! Inputs:  [ASSET_KEY, ASSET_VALUE]
-#! Outputs: []
+#! Inputs:  [INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, ASSET_KEY]
+#! Outputs: [delta_op, ASSET_KEY, DELTA_ASSET_VALUE]
 #!
 #! Where:
-#! - ASSET_KEY is the vault key of the non-fungible asset to be added.
-#! - ASSET_VALUE is the value of the non-fungible asset to be added.
-pub proc add_non_fungible_asset
-    dupw push.ACCOUNT_DELTA_NON_FUNGIBLE_ASSET_PTR
-    # => [non_fungible_delta_map_ptr, ASSET_KEY, ASSET_KEY, ASSET_VALUE]
-
-    # retrieve the current delta
-    # contains_key can be ignored because the asset vault ensures each asset key is only added to
-    # the delta once
-    # if no entry exists, the default value is an empty word and so the was_added value is 0
-    exec.link_map::get drop
-    # => [was_added, 0, 0, 0, PREV_ASSET_VALUE, ASSET_KEY, ASSET_VALUE]
-
-    dupw.3 movupw.2
-    # => [PREV_ASSET_VALUE, ASSET_VALUE, was_added, 0, 0, 0, ASSET_KEY, ASSET_VALUE]
-
-    # the asset vault guarantees that this procedure is only called when the asset was not yet
-    # _added_ to the vault, so it can either be absent or it could have been removed
-    # absent means PREV_ASSET_VALUE is the EMPTY_WORD
-    # removal means PREV_ASSET_VALUE is equal to ASSET_VALUE
-    # sanity check that this assumption is true
-
-    exec.word::testz movdn.8
-    # => [PREV_ASSET_VALUE, ASSET_VALUE, is_empty_word, was_added, 0, 0, 0, ASSET_KEY, ASSET_VALUE]
-
-    exec.word::eq or
-    assert.err="add: prev_asset_value must be empty or equal to asset_value for non-fungible assets"
-    # => [was_added, 0, 0, 0, ASSET_KEY, ASSET_VALUE]
-
-    # add 1 to cancel out a previous removal (was_added = 0) or mark the asset as added (was_added = 1)
-    add.1
-    # => [was_added, 0, 0, 0, ASSET_KEY, ASSET_VALUE]
-
-    swapw
-    # => [ASSET_KEY, was_added, 0, 0, 0, ASSET_VALUE]
-
-    push.ACCOUNT_DELTA_NON_FUNGIBLE_ASSET_PTR
-    # => [non_fungible_delta_map_ptr, ASSET_KEY, was_added, 0, 0, 0, ASSET_VALUE]
-
-    exec.link_map::set drop
-    # => []
-end
-
-#! Removes the given non-fungible asset from the non-fungible asset vault delta.
+#! - ASSET_KEY is the vault key of the asset whose delta is computed.
+#! - INITIAL_ASSET_VALUE is the value of the asset in the account vault at the beginning of the
+#!   transaction.
+#! - FINAL_ASSET_VALUE is the value of the asset in the account vault at the time the procedure is
+#!   called.
+#! - delta_op is the delta operation (addition or removal) for the asset.
+#! - DELTA_ASSET_VALUE is the resulting delta between the initial and final asset value.
 #!
-#! ASSET_VALUE must be a valid non-fungible asset.
-#!
-#! See add_non_fungible_asset for documentation.
-#!
-#! Inputs:  [ASSET_KEY, ASSET_VALUE]
-#! Outputs: []
-#!
-#! Where:
-#! - ASSET_KEY is the vault key of the non-fungible asset to be removed.
-#! - ASSET_VALUE is the value of the non-fungible asset to be removed.
-pub proc remove_non_fungible_asset
-    dupw push.ACCOUNT_DELTA_NON_FUNGIBLE_ASSET_PTR
-    # => [non_fungible_delta_map_ptr, ASSET_KEY, ASSET_KEY, ASSET_VALUE]
+#! Panics if:
+#! - the asset's composition is Custom (not yet supported).
+proc compute_asset_delta
+    dupw.2
+    # => [ASSET_KEY, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, ASSET_KEY]
 
-    # retrieve the current delta
-    # contains_key can be ignored because the asset vault ensures each asset key is only removed
-    # from the delta once
-    # if no entry exists, the default value is an empty word and so the was_added value is 0
-    exec.link_map::get drop
-    # => [was_added, 0, 0, 0, PREV_ASSET_VALUE, ASSET_KEY, ASSET_VALUE]
+    exec.asset::key_to_composition
+    # => [asset_composition, ASSET_KEY, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, ASSET_KEY]
 
-    dupw.3 movupw.2
-    # => [PREV_ASSET_VALUE, ASSET_VALUE, was_added, 0, 0, 0, ASSET_KEY, ASSET_VALUE]
+    eq.COMPOSITION_NONE
+    # => [is_composition_none, ASSET_KEY, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, ASSET_KEY]
 
-    # the asset vault guarantees that this procedure is only called when the asset was not yet
-    # _removed_ from the vault, so it can either be present or it could have been removed
-    # absent means PREV_ASSET_VALUE is the EMPTY_WORD
-    # addition means PREV_ASSET_VALUE is equal to ASSET_VALUE
-    # sanity check that this assumption is true
+    if.true
+        dropw
+        # => [INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, ASSET_KEY]
 
-    exec.word::testz movdn.8
-    # => [PREV_ASSET_VALUE, ASSET_VALUE, is_empty_word, was_added, 0, 0, 0, ASSET_KEY, ASSET_VALUE]
+        # the asset was removed if the initial value is not the empty word (in which case the final
+        # word must be empty)
+        exec.word::testz not
+        # => [was_removed, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, ASSET_KEY]
 
-    exec.word::eq or
-    assert.err="remove: prev_asset_value must be empty or equal to asset_value for non-fungible assets"
-    # => [was_added, 0, 0, 0, ASSET_KEY, ASSET_VALUE]
+        # compute delta_op as was_removed + 1
+        dup add.1
+        # => [delta_op, was_removed, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, ASSET_KEY]
 
-    # sub 1 to cancel out a previous addition (was_added = 1) or mark the asset as removed (was_added = -1)
-    sub.1
-    # => [was_added, 0, 0, 0, ASSET_KEY, ASSET_VALUE]
+        movdn.13
+        # => [was_removed, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, ASSET_KEY, delta_op]
 
-    swapw
-    # => [ASSET_KEY, was_added, 0, 0, 0, ASSET_VALUE]
+        # if was_removed INITIAL_ASSET_VALUE is selected
+        # if !was_removed FINAL_ASSET_VALUE is selected
+        cdropw
+        # => [DELTA_ASSET_VALUE, ASSET_KEY, delta_op]
 
-    push.ACCOUNT_DELTA_NON_FUNGIBLE_ASSET_PTR
-    # => [non_fungible_delta_map_ptr, ASSET_KEY, was_added, 0, 0, 0, ASSET_VALUE]
+        swapw movup.8
+        # => [delta_op, ASSET_KEY, DELTA_ASSET_VALUE]
+    else
+        dupw.2 dupw.2 movupw.2
+        # => [ASSET_KEY, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, ASSET_KEY]
 
-    exec.link_map::set drop
-    # => []
+        exec.asset::lt
+        # => [is_final_lt_initial, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, ASSET_KEY]
+
+        # compute delta_op as is_final_lt_initial + 1
+        dup add.1
+        # => [delta_op, is_final_lt_initial, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, ASSET_KEY]
+
+        movdn.13
+        # => [is_final_lt_initial, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, ASSET_KEY, delta_op]
+
+        # place the greater asset at the deeper position in the stack
+        # if is_final_lt_initial the stack becomes [FINAL_ASSET_VALUE, INITIAL_ASSET_VALUE]
+        # if !is_final_lt_initial the stack remains [INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE]
+        cswapw
+        # => [LESSER_ASSET_VALUE, GREATER_ASSET_VALUE, ASSET_KEY, delta_op]
+
+        # compute the delta as greater - lesser
+        dupw.2 exec.asset::split
+        # => [DELTA_ASSET_VALUE, ASSET_KEY, delta_op]
+
+        swapw movup.8
+        # => [delta_op, ASSET_KEY, DELTA_ASSET_VALUE]
+    end
 end
 
 #! Updates the storage map patch of the given slot index with the given key-value pair and its
@@ -810,76 +763,4 @@ pub proc set_map_item
 
     exec.link_map::set drop
     # => []
-end
-
-# FUNGIBLE ASSET AMOUNT MATH
-# -------------------------------------------------------------------------------------------------
-
-# Asset Amount Deltas can be signed or unsigned and are represented as felts.
-#
-# Any value in range [0, 2^63 - 2^31] (inclusive) is interpreted as a positive value.
-# Any value in range [2^63 - 2^31 + 1, 2^64 - 2^32] (inclusive) is interpreted as a negative value.
-# 2^64 - 2^32 represents -1, 2^64 - 2^32 - 1 represents -2, and so on, up to 2^63 - 2^31 + 1 which
-# represents -(2^63 - 2^31).
-#
-# This allows us to use the add and sub operations which wrap around. E.g. push.5 sub.6 add.1 will
-# correctly result in 0.
-#
-# To negate a negative `value`, we can multiply the value by -1, e.g. the result of push.0 sub.1.
-#
-# Don't we have to check for overflows? No, because we're building on top of the guarantees of the
-# asset vault. It guarantees that the max value that can be added to the vault within a transaction
-# is asset::FUNGIBLE_ASSET_MAX_AMOUNT and that the max value that can be removed is also that.
-# Since the delta amount range can represent positive and negative
-# asset::FUNGIBLE_ASSET_MAX_AMOUNT, this works out.
-#
-# With these ranges every positive value has a negative counterpart and vice versa. This is
-# **unlike** two's complements because the goldilocks modulus is odd while the "modulus" in
-# binary numbers is even. For example, a signed 8-bit integer can represent 128 positive and 128
-# negative values, because the total number of values is 256 divided by two. Zero is counted on the
-# positive side and so i8::MAX is 127 and i8::MIN is -128 - therefore not every negative value has
-# a positive counterpart. The "modulus", if you will, is 256 and even.
-#
-# Since the golidlocks modulus is 2^64 - 2^32 + 1 and therefore odd, we can represent
-# modulus / 2 + 1 positive and modulus / 2 negative values. Again, 0 is counted on the positive
-# side and so the largest representable positive value is modulus / 2 and the smallest
-# representable negative value is -(modulus / 2). So, every negative value has a positive 
-# counterpart (and vice versa).
-
-#! Computes the absolute value of the given delta amount represented as a felt and returns a
-#! boolean flag indicating whether the value is positive (or unsigned).
-#!
-#! Inputs: [delta_amount]
-#! Outputs: [is_delta_amount_positive, delta_amount_abs]
-#!
-#! Where:
-#! - delta_amount is the delta amount that can span the entire felt range.
-#! - is_delta_amount_positive indicates whether the delta amount is positive.
-#! - delta_amount_abs is the absolute value of the delta_amount, meaning negative values are
-#!   remapped to their positive equivalent value.
-proc delta_amount_absolute
-    dup exec.is_delta_amount_negative not
-    # => [is_positive, delta_amount]
-
-    # map 0 -> -1 and 1 -> 1
-    dup mul.2 sub.1
-    # => [multiplier, is_positive, delta_amount]
-
-    # multiply negative values by -1 and positive values by 1 to get the absolute value
-    movup.2 mul swap
-    # => [is_positive, delta_amount_abs]
-end
-
-#! Returns 1 if the given delta amount is negative (or signed).
-#!
-#! Inputs: [delta_amount]
-#! Outputs: [is_delta_amount_negative]
-#!
-#! Where:
-#! - delta_amount is the delta amount that can span the entire felt range.
-#! - is_delta_amount_negative indicates whether the delta amount represents a negative value.
-proc is_delta_amount_negative
-    # delta_amount represents a negative number if it is greater than the max amount
-    gt.FUNGIBLE_ASSET_MAX_AMOUNT
-    # => [is_delta_amount_negative]
 end

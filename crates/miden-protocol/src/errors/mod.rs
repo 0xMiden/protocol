@@ -528,6 +528,8 @@ pub enum AssetError {
     UnknownAssetCallbackFlag(u8),
     #[error("unknown asset composition encoding: {0}")]
     UnknownAssetComposition(u8),
+    #[error("unknown asset delta operation encoding: {0}")]
+    UnknownAssetDeltaOperation(u8),
     #[error("asset composition {0:?} is not supported at this operational site")]
     UnsupportedAssetComposition(AssetComposition),
     #[error(
