@@ -18,11 +18,10 @@ static KERNEL_MAIN: LazyLock<Program> = LazyLock::new(|| {
     Program::read_from_bytes(bytes).expect("failed to deserialize batch kernel runtime")
 });
 
-// Advice-map keys under which the sorted (pre-erasure) note lists are provided to the kernel. Their
-// integrity is established by the kernel binding every list entry to the per-transaction notes that
-// are anchored in `BATCH_ID`, not by the key, so any fixed sentinel works. Each key is the word
-// hash of a domain message; the kernel derives the same word via the MASM `word("...")` constant
-// (both use `hash_string_to_word`), so the two sides agree by construction.
+// Advice-map keys under which the sorted (pre-erasure) note lists are provided to the kernel. Each
+// key is the word hash of a domain message; the kernel derives the same word via its MASM
+// `word("...")` constant (both call `hash_string_to_word`). The key value does not affect
+// soundness: integrity comes from binding every list entry to a verified per-transaction note.
 const INPUT_NOTE_LIST_KEY_MESSAGE: &str = "miden::batch_kernel::input_note_list";
 const OUTPUT_NOTE_LIST_KEY_MESSAGE: &str = "miden::batch_kernel::output_note_list";
 

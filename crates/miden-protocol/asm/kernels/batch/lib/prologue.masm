@@ -12,10 +12,8 @@ use miden::batch_kernel::memory::MAX_NOTES_PER_BATCH
 # CONSTANTS
 # =================================================================================================
 
-# Advice-map keys under which the nullifier/note-id-sorted note lists are provided. Each key is the word
-# hash of a domain message (`hash_string_to_word`); the Rust advice builder derives the same word
-# from the same message. The lists' integrity comes from binding every entry to a verified
-# per-transaction note, not from these keys.
+# Advice-map keys under which the nullifier/note-id-sorted note lists are provided. Each key is the
+# word hash of a domain message, matching `kernel.rs`.
 const INPUT_NOTE_LIST_KEY=word("miden::batch_kernel::input_note_list")
 const OUTPUT_NOTE_LIST_KEY=word("miden::batch_kernel::output_note_list")
 

@@ -1,6 +1,7 @@
 use miden::core::crypto::hashes::poseidon2
 
 use miden::batch_kernel::memory
+use miden::batch_kernel::memory::NOTE_ENTRY_FELT_LEN
 use miden::batch_kernel::memory::INPUT_NOTE_CONSUMPTION_OFFSET
 use miden::batch_kernel::memory::OUTPUT_NOTE_IS_CREATED_OFFSET
 
@@ -47,33 +48,23 @@ end
 #! Inputs:  [idx]
 #! Outputs: []
 proc absorb_input_entry
+    # The entry occupies one double word [entry_ptr, entry_ptr + NOTE_ENTRY_FELT_LEN).
     exec.memory::input_note_entry_ptr
     # => [entry_ptr]
+    dup add.NOTE_ENTRY_FELT_LEN swap
+    # => [entry_ptr, end_ptr]
     exec.memory::load_batch_hasher_state
-    # => [RATE0, RATE1, CAPACITY, entry_ptr]
-    movup.12
-    # => [entry_ptr, RATE0, RATE1, CAPACITY]
-    padw dup.4 mem_loadw_le
-    # => [DATA1, entry_ptr, RATE0, RATE1, CAPACITY]
-    padw dup.8 add.4 mem_loadw_le
-    # => [DATA2, DATA1, entry_ptr, RATE0, RATE1, CAPACITY]
-    movup.8 drop
-    # => [DATA2, DATA1, RATE0, RATE1, CAPACITY]
-    swapdw
-    # => [RATE0, RATE1, DATA2, DATA1, CAPACITY]
-    dropw dropw
-    # => [DATA2, DATA1, CAPACITY]
-    swapw
-    # => [DATA1, DATA2, CAPACITY]
-    exec.poseidon2::permute
-    # => [RATE0', RATE1', CAPACITY']
+    # => [RATE0, RATE1, CAPACITY, entry_ptr, end_ptr]
+    exec.poseidon2::absorb_double_words_from_memory
+    # => [RATE0', RATE1', CAPACITY', end_ptr, end_ptr]
     exec.memory::save_batch_hasher_state
+    # => [end_ptr, end_ptr]
+    drop drop
 end
 
 #! Computes INPUT_NOTES_COMMITMENT as the sequential poseidon2 hash of the non-erased
-#! `(NULLIFIER, NOTE_ID_OR_EMPTY)` entries of the nullifier-sorted input-note list
-#! (entries with erasure flag == 2 are skipped). Reproduces `build_input_note_commitment`: an empty
-#! result is the empty word.
+#! `(NULLIFIER, NOTE_ID_OR_EMPTY)` entries of the nullifier-sorted input-note list (entries with
+#! erasure flag == 2 are skipped).
 #!
 #! The single pass over the input entries also enforces the epilogue invariants on each entry: it
 #! was consumed exactly once (consumption == 1) and is not left expected-to-be-erased (erasure != 1,
@@ -82,6 +73,7 @@ end
 #! Inputs:  []
 #! Outputs: [INPUT_NOTES_COMMITMENT]
 proc compute_input_notes_commitment
+    # Initialize the batch hasher state in memory.
     exec.poseidon2::init_no_padding
     exec.memory::save_batch_hasher_state
 
@@ -91,6 +83,7 @@ proc compute_input_notes_commitment
     dup dup.3 neq
     # => [should_loop, idx, absorbed_count, num]
     while.true
+        # Assert this entry was consumed exactly once and is not left expected-to-be-erased.
         dup exec.memory::input_note_flags_ptr
         # => [flags_ptr, idx, absorbed_count, num]
         dup add.INPUT_NOTE_CONSUMPTION_OFFSET mem_load
@@ -101,6 +94,8 @@ proc compute_input_notes_commitment
         # => [erasure, idx, absorbed_count, num]
         dup neq.1 assert.err=ERR_BATCH_NOTE_CONSUMED_BEFORE_CREATED
         # => [erasure, idx, absorbed_count, num]
+
+        # Absorb the entry unless it was erased (created-and-consumed in this batch).
         neq.2
         # => [not_erased, idx, absorbed_count, num]
         if.true
@@ -115,6 +110,10 @@ proc compute_input_notes_commitment
     # => [idx, absorbed_count, num]
     drop swap drop
     # => [absorbed_count]
+
+    # With no non-erased entries the commitment is the empty word, matching the early return in
+    # `build_input_note_commitment` (this is not the hash of zero elements). Otherwise squeeze the
+    # accumulated state.
     eq.0
     if.true
         padw
