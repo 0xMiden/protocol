@@ -18,7 +18,7 @@ use miden::batch_kernel::epilogue
 #!   `BATCH_ID` (public input)        -> `(tx_id, account_id)` tuple list
 #!   each `tx_id`                     -> per-tx
 #!     `(INIT, FINAL, INPUT_NOTES_COMMITMENT_i, OUTPUT_NOTES_COMMITMENT_i, FEE_ASSET)`
-#!   each `INPUT_NOTES_COMMITMENT_i`  -> `(NULLIFIER, EMPTY_OR_COMMITMENT)` tuples
+#!   each `INPUT_NOTES_COMMITMENT_i`  -> `(NULLIFIER, NOTE_ID_OR_EMPTY)` tuples
 #!
 #! Inputs: [
 #!   BLOCK_COMMITMENT,
@@ -39,8 +39,10 @@ use miden::batch_kernel::epilogue
 #!   committing to the transactions in the batch.
 #! - INPUT_NOTES_COMMITMENT is the nullifier-sorted sequential hash over the batch's input notes,
 #!   excluding notes created and consumed within the batch (i.e. post-erasure).
-#! - BATCH_NOTE_TREE_ROOT is the empty word; not bound by the kernel.
-#! - batch_expiration_block_num is zero; not bound by the kernel.
+#! - BATCH_NOTE_TREE_ROOT is emitted as the empty word; not yet derived from the batch's output
+#!   notes.
+#! - batch_expiration_block_num is emitted as zero; not yet derived from the transactions'
+#!   expiration block numbers.
 #!
 #! TODO: verify BLOCK_COMMITMENT against block header data via the same pipe-and-verify pattern.
 #! TODO: authenticate unauthenticated, non-erased input notes against BLOCK_COMMITMENT's chain MMR.

@@ -44,6 +44,8 @@ proc load_note_list
     # => [num_words, KEY, write_ptr]
     dup div.2
     # => [num_notes, num_words, KEY, write_ptr]
+    # `div` is field division, so a host-supplied length that is not a multiple of 8 felts wraps
+    # `num_notes` to a huge non-u32 felt, which the u32 range check below rejects.
     dup u32lte.MAX_NOTES_PER_BATCH assert.err=ERR_BATCH_NOTE_LIST_TOO_LONG
     movdn.6
     # => [num_words, KEY, write_ptr, num_notes]

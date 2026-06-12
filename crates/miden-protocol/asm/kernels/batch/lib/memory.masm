@@ -12,11 +12,6 @@
 # | 8..12             | BATCH_HASHER_RATE1_PTR  | RATE1 of the batch-level hasher. |
 # | 12..16            | BATCH_HASHER_CAP_PTR    | CAPACITY of the batch-level      |
 # |                   |                         | hasher.                          |
-# | 16                | SCRATCH_WORDS_COUNT_PTR | num_words piped into             |
-# |                   |                         | TX_NOTES_SCRATCH_PTR for the     |
-# |                   |                         | current transaction.             |
-# | 17                | SCRATCH_WORD_INDEX_PTR  | current iteration cursor for the |
-# |                   |                         | scratch absorption loop.         |
 # | 18                | NUM_INPUT_NOTES_PTR     | number of entries in the         |
 # |                   |                         | input-note list.                 |
 # | 19                | NUM_OUTPUT_NOTES_PTR    | number of entries in the         |
@@ -71,15 +66,8 @@ const BATCH_HASHER_RATE1_PTR=8
 #! Word holding the CAPACITY portion of the batch-level poseidon2 hasher state.
 const BATCH_HASHER_CAP_PTR=12
 
-# SCRATCH BOOKKEEPING
+# NOTE LIST BOOKKEEPING
 # =================================================================================================
-
-#! Number of words piped into TX_NOTES_SCRATCH_PTR for the transaction whose Layer 3 / 3' is
-#! being absorbed.
-const SCRATCH_WORDS_COUNT_PTR=16
-
-#! Iteration cursor (index in words) into TX_NOTES_SCRATCH_PTR for the absorption loop.
-const SCRATCH_WORD_INDEX_PTR=17
 
 #! Single-felt slot holding the number of entries in the nullifier-sorted input-note list.
 const NUM_INPUT_NOTES_PTR=18
@@ -213,41 +201,6 @@ pub proc load_batch_hasher_state
     padw mem_loadw_le.BATCH_HASHER_CAP_PTR
     padw mem_loadw_le.BATCH_HASHER_RATE1_PTR
     padw mem_loadw_le.BATCH_HASHER_RATE0_PTR
-end
-
-# SCRATCH BOOKKEEPING
-# =================================================================================================
-
-#! Stores the count (in words) of data piped into the per-transaction scratch.
-#!
-#! Inputs:  [num_words]
-#! Outputs: []
-pub proc set_scratch_words_count
-    mem_store.SCRATCH_WORDS_COUNT_PTR
-end
-
-#! Returns the count (in words) of data piped into the per-transaction scratch.
-#!
-#! Inputs:  []
-#! Outputs: [num_words]
-pub proc get_scratch_words_count
-    mem_load.SCRATCH_WORDS_COUNT_PTR
-end
-
-#! Stores the absorption iteration cursor (index in words).
-#!
-#! Inputs:  [word_index]
-#! Outputs: []
-pub proc set_scratch_word_index
-    mem_store.SCRATCH_WORD_INDEX_PTR
-end
-
-#! Returns the absorption iteration cursor (index in words).
-#!
-#! Inputs:  []
-#! Outputs: [word_index]
-pub proc get_scratch_word_index
-    mem_load.SCRATCH_WORD_INDEX_PTR
 end
 
 # TRANSACTION TUPLE / HEADER ACCESSORS
