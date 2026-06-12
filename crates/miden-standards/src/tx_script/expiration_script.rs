@@ -18,6 +18,9 @@ use miden::protocol::tx
 #! Inputs:  [[delta, 0, 0, 0], pad(12)]
 #! Outputs: [pad(16)]
 #!
+#! Panics if:
+#! - delta is 0 or not a u32 in the range 1..=0xFFFF (ERR_TX_INVALID_EXPIRATION_DELTA).
+#!
 #! Invocation: call
 begin
     exec.tx::update_expiration_block_delta
@@ -71,6 +74,11 @@ impl ExpirationTransactionScript {
     }
 
     /// The `TX_SCRIPT_ARGS` word the script reads its delta from: `[delta, 0, 0, 0]`.
+    ///
+    /// Since `delta` is a [`NonZeroU16`], this word always carries an in-range delta, so the
+    /// script never triggers the kernel's range check. A caller that bypasses this type and
+    /// hand-crafts an out-of-range first element makes the kernel reject the transaction with
+    /// `ERR_TX_INVALID_EXPIRATION_DELTA`; it does not panic the host.
     pub fn tx_script_args(&self) -> Word {
         Word::from([Felt::from(self.delta.get()), Felt::ZERO, Felt::ZERO, Felt::ZERO])
     }
