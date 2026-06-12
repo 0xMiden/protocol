@@ -11,9 +11,8 @@ use miden_standards::account::access::{Authority, Ownable2Step};
 use miden_standards::account::auth::AuthNetworkAccount;
 use miden_standards::account::policies::{
     BurnAllowAll,
-    BurnPolicyConfig,
-    MintPolicyConfig,
-    PolicyRegistration,
+    BurnPolicy,
+    MintPolicy,
     TokenPolicyManager,
     TransferPolicy,
 };
@@ -139,7 +138,7 @@ fn create_bridge_account_builder(
         .account_type(AccountType::Public)
         .with_component(AggLayerBridge::new(bridge_admin_id, ger_manager_id))
         .with_auth_component(
-            AuthNetworkAccount::with_allowlist(AggLayerBridge::allowed_notes())
+            AuthNetworkAccount::with_allowed_notes(AggLayerBridge::allowed_notes())
                 .expect("bridge note allowlist is non-empty"),
         )
 }
@@ -176,8 +175,8 @@ pub fn create_existing_bridge_account(
 /// The builder includes:
 /// - The `AggLayerFaucet` component (token metadata only).
 /// - The `Ownable2Step` component (bridge account ID as owner for mint authorization).
-/// - A [`TokenPolicyManager`] (owner-controlled) configured with `MintPolicyConfig::OwnerOnly` and
-///   `BurnPolicyConfig::OwnerOnly`. The manager additionally registers `BurnAllowAll::root()` as an
+/// - A [`TokenPolicyManager`] (owner-controlled) configured with [`MintPolicy::owner_only`] and
+///   [`BurnPolicy::owner_only`]. The manager additionally registers `BurnAllowAll::root()` as an
 ///   allowed burn policy so the owner can open burns at runtime via `set_burn_policy`. The active
 ///   mint policy component (`MintOwnerOnly`) and burn policy component (`BurnOwnerOnly`) are
 ///   produced by the manager; `BurnAllowAll` is installed separately as the additional allowed burn
@@ -197,17 +196,13 @@ fn create_agglayer_faucet_builder(
 
     // `allow_all` is explicitly registered as Reserved so the owner can open burns at runtime
     // via `set_burn_policy`.
-    let token_policy_manager = TokenPolicyManager::new()
-        .with_mint_policy(MintPolicyConfig::OwnerOnly, PolicyRegistration::Active)
-        .expect("active mint policy is registered exactly once")
-        .with_burn_policy(BurnPolicyConfig::OwnerOnly, PolicyRegistration::Active)
-        .expect("active burn policy is registered exactly once")
-        .with_burn_policy(BurnPolicyConfig::AllowAll, PolicyRegistration::Reserved)
-        .expect("reserved burn policy registration does not conflict")
-        .with_send_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)
-        .expect("active send policy is registered exactly once")
-        .with_receive_policy(TransferPolicy::AllowAll, PolicyRegistration::Active)
-        .expect("active receive policy is registered exactly once");
+    let token_policy_manager = TokenPolicyManager::builder()
+        .active_mint_policy(MintPolicy::owner_only())
+        .active_burn_policy(BurnPolicy::owner_only())
+        .allowed_burn_policy(BurnPolicy::allow_all())
+        .active_send_policy(TransferPolicy::allow_all())
+        .active_receive_policy(TransferPolicy::allow_all())
+        .build();
 
     Account::builder(seed.into())
         .account_type(AccountType::Public)
@@ -217,7 +212,7 @@ fn create_agglayer_faucet_builder(
         .with_components(token_policy_manager)
         .with_component(BurnAllowAll)
         .with_auth_component(
-            AuthNetworkAccount::with_allowlist(AggLayerFaucet::allowed_notes())
+            AuthNetworkAccount::with_allowed_notes(AggLayerFaucet::allowed_notes())
                 .expect("faucet note allowlist is non-empty"),
         )
 }

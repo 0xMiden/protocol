@@ -3,6 +3,7 @@ use alloc::vec::Vec;
 use miden_processor::ProcessorState;
 use miden_processor::advice::{AdviceMutation, AdviceProvider};
 use miden_processor::trace::RowIndex;
+use miden_protocol::account::delta::AssetDeltaOperation;
 use miden_protocol::account::{
     AccountId,
     StorageMap,
@@ -68,12 +69,14 @@ pub(crate) enum TransactionEvent {
         foreign_account_id: AccountId,
     },
 
-    AccountVaultAfterRemoveAsset {
-        asset: Asset,
+    AccountVaultAfterAssetUpdate {
+        patch: AssetPatch,
     },
 
-    AccountVaultAfterAddAsset {
-        asset: Asset,
+    AccountBeforeAssetDeltaComputation,
+
+    AccountOnAssetDeltaComputation {
+        delta: AssetDelta,
     },
 
     AccountStorageAfterSetItem {
@@ -165,6 +168,21 @@ pub(crate) enum TransactionEvent {
     Progress(TransactionProgressEvent),
 }
 
+#[derive(Debug)]
+pub(crate) struct AssetPatch {
+    pub asset_key: AssetVaultKey,
+    /// The absolute value of `asset_key` in the vault before the operation.
+    pub initial_vault_value: Word,
+    /// The absolute value of `asset_key` in the vault after the operation.
+    pub final_vault_value: Word,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct AssetDelta {
+    pub delta_op: AssetDeltaOperation,
+    pub asset: Asset,
+}
+
 impl TransactionEvent {
     /// Extracts the [`TransactionEventId`] from the stack as well as the data necessary to handle
     /// it.
@@ -220,36 +238,67 @@ impl TransactionEvent {
                     current_vault_root,
                 )?
             },
-            TransactionEventId::AccountVaultAfterRemoveAsset => {
-                // Expected stack state: [event, ASSET_KEY, ASSET_VALUE]
+            TransactionEventId::AccountVaultAfterRemoveAsset
+            | TransactionEventId::AccountVaultAfterAddAsset => {
+                // Expected stack state:
+                // [event, ASSET_KEY, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE]
                 let asset_key = process.get_stack_word(1);
-                let asset_value = process.get_stack_word(5);
+                let initial_vault_value = process.get_stack_word(5);
+                let final_vault_value = process.get_stack_word(9);
 
+                let asset_key = AssetVaultKey::try_from(asset_key).map_err(|source| {
+                    TransactionKernelError::MalformedAssetInEventHandler {
+                        handler: "AccountVaultAfterRemoveAsset",
+                        source,
+                    }
+                })?;
+
+                let patch = AssetPatch {
+                    asset_key,
+                    initial_vault_value,
+                    final_vault_value,
+                };
+                Some(TransactionEvent::AccountVaultAfterAssetUpdate { patch })
+            },
+            TransactionEventId::AccountBeforeAssetDeltaComputation => {
+                Some(TransactionEvent::AccountBeforeAssetDeltaComputation)
+            },
+            TransactionEventId::AccountOnAssetDeltaComputation => Some({
+                // Expected stack state:
+                // [event, delta_op, ASSET_KEY, DELTA_ASSET_VALUE]
+                let delta_op = process.get_stack_item(1);
+                let asset_key = process.get_stack_word(2);
+                let delta_asset_value = process.get_stack_word(6);
+
+                let asset_key = AssetVaultKey::try_from(asset_key).map_err(|source| {
+                    TransactionKernelError::MalformedAssetInEventHandler {
+                        handler: "AccountOnAssetDeltaComputation",
+                        source,
+                    }
+                })?;
                 let asset =
-                    Asset::from_key_value_words(asset_key, asset_value).map_err(|source| {
+                    Asset::from_key_value(asset_key, delta_asset_value).map_err(|source| {
                         TransactionKernelError::MalformedAssetInEventHandler {
-                            handler: "AccountVaultAfterRemoveAsset",
+                            handler: "AccountOnAssetDeltaComputation",
                             source,
                         }
                     })?;
+                let delta_op = AssetDeltaOperation::try_from(
+                    u8::try_from(delta_op.as_canonical_u64()).map_err(|_| {
+                        TransactionKernelError::other("failed to convert asset delta op to u8")
+                    })?,
+                )
+                .map_err(|source| {
+                    TransactionKernelError::other_with_source(
+                        "failed to decode asset delta op",
+                        source,
+                    )
+                })?;
 
-                Some(TransactionEvent::AccountVaultAfterRemoveAsset { asset })
-            },
-            TransactionEventId::AccountVaultAfterAddAsset => {
-                // Expected stack state: [event, ASSET_KEY, ASSET_VALUE]
-                let asset_key = process.get_stack_word(1);
-                let asset_value = process.get_stack_word(5);
-
-                let asset =
-                    Asset::from_key_value_words(asset_key, asset_value).map_err(|source| {
-                        TransactionKernelError::MalformedAssetInEventHandler {
-                            handler: "AccountVaultAfterAddAsset",
-                            source,
-                        }
-                    })?;
-
-                Some(TransactionEvent::AccountVaultAfterAddAsset { asset })
-            },
+                TransactionEvent::AccountOnAssetDeltaComputation {
+                    delta: AssetDelta { delta_op, asset },
+                }
+            }),
             TransactionEventId::AccountVaultBeforeGetAsset => {
                 // Expected stack state:
                 // [event, ASSET_KEY, vault_root_ptr]
@@ -571,7 +620,7 @@ fn on_account_vault_asset_accessed<'store, STORE>(
     vault_key: AssetVaultKey,
     vault_root: Word,
 ) -> Result<Option<TransactionEvent>, TransactionKernelError> {
-    let leaf_index = Felt::try_from(vault_key.to_leaf_index().position())
+    let leaf_index = Felt::try_from(vault_key.hash().to_leaf_index().position())
         .expect("expected key index to be a felt");
     let active_account_id = process.get_active_account_id()?;
 

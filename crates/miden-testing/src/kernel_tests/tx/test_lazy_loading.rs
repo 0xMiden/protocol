@@ -2,7 +2,7 @@
 //!
 //! Once lazy loading is enabled generally, it can be removed and/or integrated into other tests.
 
-use miden_protocol::account::{AccountId, AccountStorage, StorageMapKey, StorageSlotPatch};
+use miden_protocol::account::{AccountId, AccountStorage, StorageMapKey};
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_FEE_FAUCET,
@@ -234,13 +234,7 @@ async fn setting_map_item_with_lazy_loading_succeeds() -> anyhow::Result<()> {
         .execute()
         .await?;
 
-    let map_patch = tx
-        .account_delta()
-        .storage()
-        .get(mock_map_slot)
-        .cloned()
-        .map(StorageSlotPatch::unwrap_map)
-        .unwrap();
+    let map_patch = tx.account_delta().storage().get_map(mock_map_slot).unwrap();
     assert_eq!(map_patch.entries().get(&existing_key).unwrap(), &value0);
     assert_eq!(map_patch.entries().get(&non_existent_key).unwrap(), &value1);
 

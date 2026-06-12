@@ -33,7 +33,7 @@ pub use outputs::{
 pub use partial_blockchain::PartialBlockchain;
 pub use proven_tx::{InputNoteCommitment, ProvenTransaction, TxAccountUpdate};
 pub use transaction_id::TransactionId;
-pub use tx_args::{TransactionArgs, TransactionScript};
+pub use tx_args::{TransactionArgs, TransactionScript, TransactionScriptRoot};
 pub use tx_header::TransactionHeader;
 pub use tx_summary::TransactionSummary;
 pub use verifier::TransactionVerifier;

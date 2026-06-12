@@ -2076,7 +2076,7 @@ dependencies = [
  "miden-protocol",
  "miden-standards",
  "miden-tx",
- "miden-tx-batch-prover",
+ "miden-tx-batch",
  "primitive-types",
  "rand 0.9.4",
  "rand_chacha",
@@ -2100,7 +2100,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "miden-tx-batch-prover"
+name = "miden-tx-batch"
 version = "0.16.0"
 dependencies = [
  "miden-processor",

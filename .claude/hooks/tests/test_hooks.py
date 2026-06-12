@@ -9,6 +9,7 @@ so a regression points directly at the responsible script.
 from __future__ import annotations
 
 import importlib
+from types import SimpleNamespace
 
 import pytest
 
@@ -17,8 +18,9 @@ from _classify import matches
 
 HOOK_NAMES = [
     "pre_commit_lint",
+    "post_commit_review",
     "pre_pr_draft",
-    "pre_push_review",
+    "pre_pr_review",
     "pre_push_test",
     "post_pr_create_changelog",
 ]
@@ -36,29 +38,31 @@ HOOK_NAMES = [
 # changes one hook's TARGET without the other, that test fails and the
 # missing per-hook coverage is restored.
 HOOK_CASES: list[tuple[str, str, bool]] = [
-    # pre_push_review — every must-run / must-not-run case for `git push`.
-    # Routing for pre_push_test (same TARGET) is covered transitively.
-    ("pre_push_review", "git push", True),
-    ("pre_push_review", "git push origin main", True),
-    ("pre_push_review", "git -C . push", True),
-    ("pre_push_review", "git -c user.name=foo push", True),
-    ("pre_push_review", "git -c user.name=foo -C . push origin main", True),
-    ("pre_push_review", "cd repo && git push", True),
-    ("pre_push_review", "FOO=bar git push", True),
-    ("pre_push_review", "echo git push", False),
-    ("pre_push_review", 'echo "git push"', False),
-    ("pre_push_review", "git status", False),
-    ("pre_push_review", "git --version", False),
-    ("pre_push_review", "git push-graph", False),
+    # pre_push_test — every must-run / must-not-run case for `git push`.
+    ("pre_push_test", "git push", True),
+    ("pre_push_test", "git push origin main", True),
+    ("pre_push_test", "git -C . push", True),
+    ("pre_push_test", "git -c user.name=foo push", True),
+    ("pre_push_test", "git -c user.name=foo -C . push origin main", True),
+    ("pre_push_test", "cd repo && git push", True),
+    ("pre_push_test", "FOO=bar git push", True),
+    ("pre_push_test", "echo git push", False),
+    ("pre_push_test", 'echo "git push"', False),
+    ("pre_push_test", "git status", False),
+    ("pre_push_test", "git --version", False),
+    ("pre_push_test", "git push-graph", False),
     # pre_commit_lint — `git commit`.
+    # Routing for post_commit_review (same TARGET) is covered transitively.
     ("pre_commit_lint", "git commit -m hello", True),
     ("pre_commit_lint", 'git -c commit.gpgsign=false commit -m "x"', True),
     ("pre_commit_lint", "git -c user.name=foo commit", True),
+    ("pre_commit_lint", "git commit --amend --no-edit", True),
     ("pre_commit_lint", "echo git commit", False),
     ("pre_commit_lint", "git status", False),
     ("pre_commit_lint", "git push", False),
     # pre_pr_draft — `gh pr create`.
-    # Routing for post_pr_create_changelog (same TARGET) is covered transitively.
+    # Routing for post_pr_create_changelog and pre_pr_review (same TARGET) is
+    # covered transitively.
     ("pre_pr_draft", "gh pr create", True),
     ("pre_pr_draft", "gh --repo 0xMiden/miden-base pr create", True),
     ("pre_pr_draft", "gh -R 0xMiden/miden-base pr create --draft", True),
@@ -74,8 +78,9 @@ HOOK_CASES: list[tuple[str, str, bool]] = [
 # hook in each pair is the one whose routing cases appear in HOOK_CASES;
 # the second's coverage rides on the assertion that the targets match.
 PAIRED_TARGETS: list[tuple[str, str]] = [
-    ("pre_push_review", "pre_push_test"),
+    ("pre_commit_lint", "post_commit_review"),
     ("pre_pr_draft", "post_pr_create_changelog"),
+    ("pre_pr_draft", "pre_pr_review"),
 ]
 
 
@@ -139,3 +144,73 @@ def test_paired_hooks_share_target(
         f"Either re-align or remove the entry from PAIRED_TARGETS and add "
         f"explicit per-hook routing cases for both."
     )
+
+
+# _review.run_review's severity parser is the single source of truth for what
+# blocks. Verify it counts only Critical/Important/Warnings bullets and ignores
+# nits, notes, and absence markers.
+def test_count_blocking_findings_counts_only_blocking_sections() -> None:
+    import _review
+
+    review = "\n".join(
+        [
+            "## Review Summary",
+            "### Critical Issues",
+            "- foo.rs:10 will panic on empty input",
+            "### Important Issues",
+            "- bar.rs:20 missing test",
+            "- baz.rs:30 wrong abstraction",
+            "### Warnings",
+            "- qux.rs:40 unchecked arithmetic",
+            "### Nits",
+            "- naming could be clearer",
+            "### Notes",
+            "- consider documenting this",
+            "### What's Done Well",
+            "- great test coverage",
+        ]
+    )
+    assert _review._count_blocking_findings(review) == 4
+
+
+def test_count_blocking_findings_ignores_absence_markers() -> None:
+    import _review
+
+    review = "\n".join(
+        [
+            "### Critical Issues",
+            "- None.",
+            "### Important Issues",
+            "- N/A",
+            "### Nits",
+            "- a small thing",
+        ]
+    )
+    assert _review._count_blocking_findings(review) == 0
+
+
+# pre_pr_review reviews the whole PR against the integration branch. Verify the
+# base resolves to origin/HEAD when set and falls back to origin/next otherwise.
+def _fake_proc(returncode: int = 0, stdout: str = "", stderr: str = "") -> SimpleNamespace:
+    return SimpleNamespace(returncode=returncode, stdout=stdout, stderr=stderr)
+
+
+def test_pre_pr_diff_base_prefers_origin_head(monkeypatch: pytest.MonkeyPatch) -> None:
+    import pre_pr_review
+
+    def fake_run(cmd: list[str], **_kwargs: object) -> SimpleNamespace:
+        assert "symbolic-ref" in cmd
+        return _fake_proc(stdout="origin/next\n")
+
+    monkeypatch.setattr(pre_pr_review.subprocess, "run", fake_run)
+    assert pre_pr_review._diff_base(None) == "origin/next"
+
+
+def test_pre_pr_diff_base_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
+    import pre_pr_review
+
+    def fake_run(cmd: list[str], **_kwargs: object) -> SimpleNamespace:
+        return _fake_proc(returncode=1)
+
+    monkeypatch.setattr(pre_pr_review.subprocess, "run", fake_run)
+    assert pre_pr_review._diff_base(None) == "origin/next"

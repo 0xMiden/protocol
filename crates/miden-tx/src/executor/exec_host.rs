@@ -237,13 +237,9 @@ where
         // Compute the current balance of the fee asset in the account based on the initial value
         // and the delta.
         let current_fee_asset = {
-            let fee_asset_amount_delta = self
-                .base_host
-                .account_delta_tracker()
-                .vault_delta()
-                .fungible()
-                .amount(&initial_fee_asset.vault_key())
-                .unwrap_or(0);
+            let vault_delta = self.base_host.account_update_tracker().build_vault_delta();
+            let fee_asset_amount_delta =
+                vault_delta.fungible().amount(&initial_fee_asset.vault_key()).unwrap_or(0);
 
             // SAFETY: Initial fee faucet ID should be a fungible faucet and amount should
             // be less than MAX_AMOUNT as checked by the account delta.
@@ -535,11 +531,16 @@ where
                     self.on_foreign_account_requested(account_id).await
                 },
 
-                TransactionEvent::AccountVaultAfterRemoveAsset { asset } => {
-                    self.base_host.on_account_vault_after_remove_asset(asset)
+                TransactionEvent::AccountVaultAfterAssetUpdate { patch } => {
+                    self.base_host.on_account_vault_after_remove_asset(patch)
                 },
-                TransactionEvent::AccountVaultAfterAddAsset { asset } => {
-                    self.base_host.on_account_vault_after_add_asset(asset)
+
+                TransactionEvent::AccountBeforeAssetDeltaComputation => {
+                    self.base_host.on_account_before_asset_delta_computation()
+                },
+
+                TransactionEvent::AccountOnAssetDeltaComputation { delta: update } => {
+                    self.base_host.on_account_on_asset_delta_computation(update)
                 },
 
                 TransactionEvent::AccountStorageAfterSetItem { slot_name, new_value } => {

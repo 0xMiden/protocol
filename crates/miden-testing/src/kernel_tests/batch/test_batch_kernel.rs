@@ -9,7 +9,7 @@ use miden_protocol::errors::{MasmError, ProvenBatchError, batch_kernel};
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::vm::AdviceInputs;
 use miden_protocol::{Felt, MAX_INPUT_NOTES_PER_BATCH, WORD_SIZE, Word};
-use miden_tx_batch_prover::{BatchExecutor, LocalBatchProver};
+use miden_tx_batch::{BatchExecutor, LocalBatchProver};
 use rstest::rstest;
 
 use super::proposed_batch::{TestSetup, mock_note, mock_output_note, setup_chain};

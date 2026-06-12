@@ -220,16 +220,14 @@ const ACCT_ACTIVE_STORAGE_SLOTS_SECTION_OFFSET=3360
 # NATIVE ACCOUNT DELTA
 # -------------------------------------------------------------------------------------------------
 
-# The link map pointer at which the delta of the fungible asset vault is stored.
-pub const ACCOUNT_DELTA_FUNGIBLE_ASSET_PTR=532480
-
-# The link map pointer at which the delta of the non-fungible asset vault is stored.
-pub const ACCOUNT_DELTA_NON_FUNGIBLE_ASSET_PTR=ACCOUNT_DELTA_FUNGIBLE_ASSET_PTR+4
+# The link map pointer at which the delta of the asset vault is stored.
+pub const ACCOUNT_DELTA_ASSET_PTR=532480
 
 # The section of link map pointers where storage map patches are stored.
 # This section is offset by `slot index` to get the link map ptr for the storage map
 # delta at that slot index. Slot indices that are not map slots are simply unused.
-const ACCOUNT_DELTA_STORAGE_MAP_SECTION=ACCOUNT_DELTA_FUNGIBLE_ASSET_PTR+8
+# The section spans `MAX_NUM_STORAGE_SLOTS` (255) entries, one per possible slot index.
+const ACCOUNT_DELTA_STORAGE_MAP_SECTION=ACCOUNT_DELTA_ASSET_PTR+4
 
 # INPUT NOTES DATA
 # -------------------------------------------------------------------------------------------------
