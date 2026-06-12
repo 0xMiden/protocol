@@ -17,6 +17,7 @@
 - [BREAKING] Refactored `TransferPolicy`, `MintPolicyConfig`, and `BurnPolicyConfig` from enums into structs ([#2974](https://github.com/0xMiden/protocol/pull/2974)).
 - Added `AccountComponent::has_procedure(root)` helper ([#2974](https://github.com/0xMiden/protocol/pull/2974)).
 - Optimized protocol MASM stack-cleaning sequences, saving 1 cycle per occurrence across 9 single-element-extraction procedures ([#3041](https://github.com/0xMiden/protocol/pull/3041)).
+- Optimized `rbac::grant_role_internal` and `rbac::revoke_role_internal` by removing the redundant membership read and rearranging the stack ([#3090](https://github.com/0xMiden/protocol/pull/3090)).
 - [BREAKING] Refactored `TokenPolicyManager` by adding `invoke_send_policy` / `invoke_receive_policy` wrappers (stored in the protocol reserved asset callback slots) that read the active policy root from the new `active_send_policy_proc_root` / `active_receive_policy_proc_root` storage slots ([#3047](https://github.com/0xMiden/protocol/pull/3047)).
 - Added a definition of the Miden operator on the architecture overview page and linked it from the note lifecycle ([#3017](https://github.com/0xMiden/protocol/pull/3017)).
 - Clarified Miden's operational roles on the architecture overview page and linked them from the note lifecycle ([#3017](https://github.com/0xMiden/protocol/pull/3017)).
