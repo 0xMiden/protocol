@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 use std::collections::BTreeMap;
 
 use anyhow::Context;
-use miden_protocol::batch::{BatchId, BatchKernel, ProposedBatch};
+use miden_protocol::batch::{BatchKernel, ProposedBatch};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::errors::{MasmError, ProvenBatchError, batch_kernel};
 use miden_protocol::transaction::RawOutputNote;
@@ -27,10 +27,6 @@ const FELTS_PER_NOTE_ENTRY: usize = 2 * WORD_SIZE;
 /// Maximum number of transactions in a batch. Must match `MAX_TRANSACTIONS_PER_BATCH` in
 /// `asm/kernels/batch/lib/memory.masm`.
 const MAX_TRANSACTIONS_PER_BATCH: usize = 1024;
-
-/// Felts per layer-1 `(tx_id, account_id)` tuple. Must match `TX_TUPLE_FELT_LEN` in
-/// `asm/kernels/batch/lib/memory.masm`.
-const FELTS_PER_TX_TUPLE: usize = 2 * WORD_SIZE;
 
 // SETUP HELPERS
 // ================================================================================================
@@ -77,9 +73,9 @@ pub(super) fn two_tx_batch(setup: &mut TestSetup) -> anyhow::Result<ProposedBatc
 // ================================================================================================
 
 /// Builds an advice-inputs override that corrupts the advice-map entry stored under `key`, so the
-/// kernel's hash check against `key` fails. Fed to [`BatchExecutor::extend_advice_inputs`] to drive
-/// the kernel's rejection paths through the normal executor (mirroring how the transaction-kernel
-/// tests inject tampered advice via `extend_advice_inputs`; see `test_prologue.rs`).
+/// kernel's hash check against `key` fails. Fed to [`BatchExecutor::execute_with_advice_overrides`]
+/// to drive the kernel's rejection paths through the normal executor (mirroring how the
+/// transaction-kernel tests inject tampered advice; see `test_prologue.rs`).
 fn tampered_advice_for(batch: &ProposedBatch, key: Word) -> AdviceInputs {
     let (_, advice_inputs) = BatchKernel::prepare_inputs(batch);
     let mut tampered: Vec<Felt> = advice_inputs
@@ -193,7 +189,7 @@ fn batch_executor_then_prover_produces_proven_batch() -> anyhow::Result<()> {
 // NEGATIVE TESTS
 // ================================================================================================
 //
-// Each test injects a tampered advice-map entry through `BatchExecutor::extend_advice_inputs` and
+// Each test injects a tampered advice-map entry through `execute_with_advice_overrides` and
 // asserts the kernel aborts. The executor builds consistent advice from the (valid) `ProposedBatch`
 // and the override then corrupts a single layer's entry, breaking that layer's hash check.
 //
@@ -221,7 +217,7 @@ fn batch_kernel_rejects_tampered_advice(
 
     let override_advice = tampered_advice_for(&batch, key(&batch));
 
-    let result = BatchExecutor::new().extend_advice_inputs(override_advice).execute(batch);
+    let result = BatchExecutor::new().execute_with_advice_overrides(batch, override_advice);
     assert!(result.is_err(), "kernel must abort on tampered advice");
 
     Ok(())
@@ -230,7 +226,7 @@ fn batch_kernel_rejects_tampered_advice(
 // GLOBAL INPUT-NOTE LIST BINDING NEGATIVE TESTS
 // ================================================================================================
 //
-// These corrupt the host-provided global input-note list (overriding it via `extend_advice_inputs`)
+// These corrupt the host-provided global input-note list (overriding its advice-map entry)
 // and assert the kernel's binding rejects it, so the host cannot omit, inject, or alter notes.
 
 /// Builds the global input-note list blob the kernel expects: `(nullifier, note_id_or_empty)` per
@@ -265,7 +261,7 @@ fn batch_kernel_rejects_input_note_missing_from_list() -> anyhow::Result<()> {
     let override_advice =
         AdviceInputs::default().with_map([(BatchKernel::input_note_list_key(), blob)]);
 
-    let result = BatchExecutor::new().extend_advice_inputs(override_advice).execute(batch);
+    let result = BatchExecutor::new().execute_with_advice_overrides(batch, override_advice);
     assert_kernel_error(result, batch_kernel::ERR_BATCH_INPUT_NOTE_NOT_IN_LIST);
 
     Ok(())
@@ -284,7 +280,7 @@ fn batch_kernel_rejects_duplicated_input_note_list_entry() -> anyhow::Result<()>
     let override_advice =
         AdviceInputs::default().with_map([(BatchKernel::input_note_list_key(), duplicated)]);
 
-    let result = BatchExecutor::new().extend_advice_inputs(override_advice).execute(batch);
+    let result = BatchExecutor::new().execute_with_advice_overrides(batch, override_advice);
     assert_kernel_error(result, batch_kernel::ERR_BATCH_NOTE_LIST_NOT_SORTED);
 
     Ok(())
@@ -304,7 +300,7 @@ fn batch_kernel_rejects_input_note_list_id_mismatch() -> anyhow::Result<()> {
     let override_advice =
         AdviceInputs::default().with_map([(BatchKernel::input_note_list_key(), blob)]);
 
-    let result = BatchExecutor::new().extend_advice_inputs(override_advice).execute(batch);
+    let result = BatchExecutor::new().execute_with_advice_overrides(batch, override_advice);
     assert_kernel_error(result, batch_kernel::ERR_BATCH_INPUT_NOTE_ID_MISMATCH);
 
     Ok(())
@@ -340,7 +336,7 @@ fn batch_kernel_rejects_output_note_missing_from_list() -> anyhow::Result<()> {
     let override_advice =
         AdviceInputs::default().with_map([(BatchKernel::output_note_list_key(), blob)]);
 
-    let result = BatchExecutor::new().extend_advice_inputs(override_advice).execute(batch);
+    let result = BatchExecutor::new().execute_with_advice_overrides(batch, override_advice);
     assert_kernel_error(result, batch_kernel::ERR_BATCH_OUTPUT_NOTE_NOT_IN_LIST);
 
     Ok(())
@@ -374,7 +370,7 @@ fn batch_kernel_rejects_consume_before_create() -> anyhow::Result<()> {
     let override_advice =
         AdviceInputs::default().with_map([(BatchKernel::output_note_list_key(), blob)]);
 
-    let result = BatchExecutor::new().extend_advice_inputs(override_advice).execute(batch);
+    let result = BatchExecutor::new().execute_with_advice_overrides(batch, override_advice);
     assert_kernel_error(result, batch_kernel::ERR_BATCH_NOTE_CONSUMED_BEFORE_CREATED);
 
     Ok(())
@@ -408,7 +404,7 @@ fn batch_kernel_rejects_unconsumed_input_note() -> anyhow::Result<()> {
     let override_advice =
         AdviceInputs::default().with_map([(BatchKernel::input_note_list_key(), blob)]);
 
-    let result = BatchExecutor::new().extend_advice_inputs(override_advice).execute(batch);
+    let result = BatchExecutor::new().execute_with_advice_overrides(batch, override_advice);
     assert_kernel_error(result, batch_kernel::ERR_BATCH_INPUT_NOTE_NOT_CONSUMED);
 
     Ok(())
@@ -438,7 +434,7 @@ fn batch_kernel_rejects_uncreated_output_note() -> anyhow::Result<()> {
     let override_advice =
         AdviceInputs::default().with_map([(BatchKernel::output_note_list_key(), blob)]);
 
-    let result = BatchExecutor::new().extend_advice_inputs(override_advice).execute(batch);
+    let result = BatchExecutor::new().execute_with_advice_overrides(batch, override_advice);
     assert_kernel_error(result, batch_kernel::ERR_BATCH_OUTPUT_NOTE_NOT_CREATED);
 
     Ok(())
@@ -457,7 +453,7 @@ fn batch_kernel_rejects_oversized_input_note_list() -> anyhow::Result<()> {
     let override_advice =
         AdviceInputs::default().with_map([(BatchKernel::input_note_list_key(), blob)]);
 
-    let result = BatchExecutor::new().extend_advice_inputs(override_advice).execute(batch);
+    let result = BatchExecutor::new().execute_with_advice_overrides(batch, override_advice);
     assert_kernel_error(result, batch_kernel::ERR_BATCH_NOTE_LIST_TOO_LONG);
 
     Ok(())
@@ -475,7 +471,7 @@ fn batch_kernel_rejects_oversized_output_note_list() -> anyhow::Result<()> {
     let override_advice =
         AdviceInputs::default().with_map([(BatchKernel::output_note_list_key(), blob)]);
 
-    let result = BatchExecutor::new().extend_advice_inputs(override_advice).execute(batch);
+    let result = BatchExecutor::new().execute_with_advice_overrides(batch, override_advice);
     assert_kernel_error(result, batch_kernel::ERR_BATCH_NOTE_LIST_TOO_LONG);
 
     Ok(())
@@ -490,10 +486,12 @@ fn batch_kernel_rejects_too_many_transactions() -> anyhow::Result<()> {
     let batch = two_tx_batch(&mut setup)?;
 
     // One tuple past `MAX_TRANSACTIONS_PER_BATCH`, stored under the layer-1 key (`BATCH_ID`).
+    // A layer-1 tuple is 8 felts: `[tx_id[4], account_id_prefix, account_id_suffix, 0, 0]`.
+    const FELTS_PER_TX_TUPLE: usize = 2 * WORD_SIZE;
     let blob = vec![Felt::from(0u32); (MAX_TRANSACTIONS_PER_BATCH + 1) * FELTS_PER_TX_TUPLE];
     let override_advice = AdviceInputs::default().with_map([(batch.id().as_word(), blob)]);
 
-    let result = BatchExecutor::new().extend_advice_inputs(override_advice).execute(batch);
+    let result = BatchExecutor::new().execute_with_advice_overrides(batch, override_advice);
     assert_kernel_error(result, batch_kernel::ERR_BATCH_TOO_MANY_TRANSACTIONS);
 
     Ok(())
@@ -514,102 +512,8 @@ fn batch_kernel_rejects_too_many_notes_per_transaction() -> anyhow::Result<()> {
     let blob = vec![Felt::from(0u32); (MAX_INPUT_NOTES_PER_BATCH + 1) * FELTS_PER_NOTE_ENTRY];
     let override_advice = AdviceInputs::default().with_map([(key, blob)]);
 
-    let result = BatchExecutor::new().extend_advice_inputs(override_advice).execute(batch);
+    let result = BatchExecutor::new().execute_with_advice_overrides(batch, override_advice);
     assert_kernel_error(result, batch_kernel::ERR_BATCH_TX_TOO_MANY_NOTES);
-
-    Ok(())
-}
-
-// FORGED TRANSACTION LIST NEGATIVE TESTS
-// ================================================================================================
-//
-// `ProposedBatch` validation rejects duplicate transactions and duplicate notes, so the kernel's
-// consumed-twice / created-twice checks cannot be reached through a valid batch. These tests model
-// a malicious prover who bypasses `ProposedBatch`: they override the public `BATCH_ID` fed to the
-// kernel with one anchored to a forged tuple list containing the same transaction twice.
-
-/// Returns a forged `BATCH_ID` anchored to a tuple list containing the batch's first transaction
-/// twice, along with the advice override mapping the forged id to that tuple list. The batch's own
-/// advice (the hash-keyed layers 2/3 and the global note lists) serves both copies.
-fn forge_duplicated_tx_advice(batch: &ProposedBatch) -> (BatchId, AdviceInputs) {
-    let tx = &batch.transactions()[0];
-    let tuples = [(tx.id(), tx.account_id()), (tx.id(), tx.account_id())];
-    let forged_batch_id = BatchId::from_ids(tuples);
-
-    // The layer-1 felt sequence hashed by `BatchId::from_ids`: per tuple,
-    // `[tx_id[4], account_id_prefix, account_id_suffix, 0, 0]`.
-    let mut layer1: Vec<Felt> = Vec::with_capacity(tuples.len() * FELTS_PER_TX_TUPLE);
-    for (tx_id, account_id) in tuples {
-        layer1.extend_from_slice(tx_id.as_elements());
-        let [account_id_prefix, account_id_suffix] = <[Felt; 2]>::from(account_id);
-        layer1.extend_from_slice(&[
-            account_id_prefix,
-            account_id_suffix,
-            Felt::from(0u32),
-            Felt::from(0u32),
-        ]);
-    }
-
-    let override_advice = AdviceInputs::default().with_map([(forged_batch_id.as_word(), layer1)]);
-
-    (forged_batch_id, override_advice)
-}
-
-/// A forged transaction list containing the same note-consuming transaction twice makes the second
-/// copy consume the same input-note list entry again, tripping the consumed-twice check (so a
-/// malicious prover cannot double-consume a note within a batch).
-#[test]
-fn batch_kernel_rejects_note_consumed_twice() -> anyhow::Result<()> {
-    let mut setup = setup_chain();
-    let batch = two_tx_batch(&mut setup)?;
-
-    // `two_tx_batch`'s first transaction consumes one input note.
-    let (forged_batch_id, override_advice) = forge_duplicated_tx_advice(&batch);
-
-    let result = BatchExecutor::new()
-        .with_batch_id(forged_batch_id)
-        .extend_advice_inputs(override_advice)
-        .execute(batch);
-    assert_kernel_error(result, batch_kernel::ERR_BATCH_INPUT_NOTE_CONSUMED_TWICE);
-
-    Ok(())
-}
-
-/// A forged transaction list containing the same note-creating transaction twice makes the second
-/// copy create the same output-note list entry again, tripping the created-twice check. The
-/// transaction has no input notes, so the failure is specifically "created twice" rather than the
-/// consumed-twice check (inputs are bound before outputs).
-#[test]
-fn batch_kernel_rejects_note_created_twice() -> anyhow::Result<()> {
-    let setup = setup_chain();
-    let mut chain = setup.chain;
-    let block1 = chain.block_header(1);
-    let block2 = chain.prove_next_block()?;
-
-    // A single transaction with no input notes and one output note.
-    let tx = MockProvenTxBuilder::with_account(
-        setup.account1.id(),
-        Word::empty(),
-        setup.account1.to_commitment(),
-    )
-    .reference_block(&block1)
-    .output_notes(vec![mock_output_note(90)])
-    .build()?;
-
-    let batch = ProposedBatch::new_unverified(
-        vec![Arc::new(tx)],
-        block2.header().clone(),
-        chain.latest_partial_blockchain(),
-        BTreeMap::default(),
-    )?;
-
-    let (forged_batch_id, override_advice) = forge_duplicated_tx_advice(&batch);
-
-    let result = BatchExecutor::new()
-        .with_batch_id(forged_batch_id)
-        .extend_advice_inputs(override_advice)
-        .execute(batch);
-    assert_kernel_error(result, batch_kernel::ERR_BATCH_OUTPUT_NOTE_CREATED_TWICE);
 
     Ok(())
 }

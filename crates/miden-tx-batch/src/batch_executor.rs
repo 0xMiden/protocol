@@ -1,8 +1,8 @@
 use miden_processor::{DefaultHost, ExecutionError, ExecutionOptions, FastProcessor};
 use miden_protocol::CoreLibrary;
-use miden_protocol::batch::{BatchId, BatchKernel, BatchOutputs, ProposedBatch};
+use miden_protocol::batch::{BatchKernel, BatchOutputs, ProposedBatch};
 use miden_protocol::errors::ProvenBatchError;
-use miden_protocol::vm::AdviceInputs;
+use miden_protocol::vm::{AdviceInputs, StackInputs};
 
 use crate::ExecutedBatch;
 
@@ -11,38 +11,12 @@ use crate::ExecutedBatch;
 
 /// Executes the batch kernel over a [`ProposedBatch`], producing an [`ExecutedBatch`].
 #[derive(Clone, Default)]
-pub struct BatchExecutor {
-    /// Extra advice inputs merged onto those derived from the proposed batch before execution.
-    advice_inputs: AdviceInputs,
-    /// When set, fed to the kernel as the public `BATCH_ID` instead of the proposed batch's id.
-    batch_id_override: Option<BatchId>,
-}
+pub struct BatchExecutor;
 
 impl BatchExecutor {
     /// Creates a new [`BatchExecutor`] instance.
     pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Extends the advice inputs with the provided ones.
-    ///
-    /// Exposed for testing only: it lets kernel tests override the advice derived from the
-    /// proposed batch (e.g. with tampered entries) to drive the kernel's rejection paths.
-    #[cfg(any(feature = "testing", test))]
-    pub fn extend_advice_inputs(mut self, advice_inputs: AdviceInputs) -> Self {
-        self.advice_inputs.extend(advice_inputs);
-        self
-    }
-
-    /// Overrides the public `BATCH_ID` fed to the kernel.
-    ///
-    /// Exposed for testing only: together with [`Self::extend_advice_inputs`] it lets kernel
-    /// tests anchor the kernel to a forged transaction tuple list that [`ProposedBatch`]
-    /// validation would reject (e.g. one containing duplicate transactions).
-    #[cfg(any(feature = "testing", test))]
-    pub fn with_batch_id(mut self, batch_id: BatchId) -> Self {
-        self.batch_id_override = Some(batch_id);
-        self
+        Self
     }
 
     /// Runs the batch kernel over the [`ProposedBatch`], returning an [`ExecutedBatch`] that can be
@@ -57,18 +31,33 @@ impl BatchExecutor {
         &self,
         proposed_batch: ProposedBatch,
     ) -> Result<ExecutedBatch, ProvenBatchError> {
-        let (stack_inputs, mut advice_inputs) = BatchKernel::prepare_inputs(&proposed_batch);
-        // Merge any caller-provided advice, overriding matching keys from the derived advice.
-        advice_inputs.extend(self.advice_inputs.clone());
-        // Apply the testing-only batch id override, if any.
-        let stack_inputs = match self.batch_id_override {
-            Some(batch_id) => BatchKernel::build_input_stack(
-                proposed_batch.reference_block_header().commitment(),
-                batch_id,
-            ),
-            None => stack_inputs,
-        };
+        let (stack_inputs, advice_inputs) = BatchKernel::prepare_inputs(&proposed_batch);
+        self.execute_with_inputs(proposed_batch, stack_inputs, advice_inputs)
+    }
 
+    /// Runs the batch kernel over the [`ProposedBatch`], merging the provided advice inputs onto
+    /// those derived from the batch (overriding matching keys).
+    ///
+    /// Exposed for testing only: it lets kernel tests override the advice derived from the
+    /// proposed batch (e.g. with tampered entries) to drive the kernel's rejection paths.
+    #[cfg(any(feature = "testing", test))]
+    pub fn execute_with_advice_overrides(
+        &self,
+        proposed_batch: ProposedBatch,
+        override_advice: AdviceInputs,
+    ) -> Result<ExecutedBatch, ProvenBatchError> {
+        let (stack_inputs, mut advice_inputs) = BatchKernel::prepare_inputs(&proposed_batch);
+        advice_inputs.extend(override_advice);
+        self.execute_with_inputs(proposed_batch, stack_inputs, advice_inputs)
+    }
+
+    /// Runs the batch kernel over the given stack and advice inputs.
+    fn execute_with_inputs(
+        &self,
+        proposed_batch: ProposedBatch,
+        stack_inputs: StackInputs,
+        advice_inputs: AdviceInputs,
+    ) -> Result<ExecutedBatch, ProvenBatchError> {
         let processor = FastProcessor::new_with_options(
             stack_inputs,
             advice_inputs,
