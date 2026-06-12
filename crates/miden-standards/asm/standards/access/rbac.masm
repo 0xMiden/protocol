@@ -70,7 +70,7 @@ const ERR_MEMBER_COUNT_OVERFLOW = "role member count overflowed u32"
 #!
 #! Invocation: call
 pub proc assert_sender_has_role
-    exec.assert_role_symbol_non_zero
+    dup exec.assert_role_symbol_non_zero
     # => [role_symbol, pad(15)]
 
     exec.is_sender_in_role
@@ -162,7 +162,7 @@ end
 #! Invocation: call
 pub proc set_role_admin
     exec.ownable2step::assert_sender_is_owner_internal
-    exec.assert_role_symbol_non_zero
+    dup exec.assert_role_symbol_non_zero
     # => [role_symbol, new_admin_role_symbol, pad(14)]
 
     dup exec.get_role_member_count_internal
@@ -195,7 +195,7 @@ end
 #!
 #! Invocation: call
 pub proc grant_role
-    exec.assert_role_symbol_non_zero
+    dup exec.assert_role_symbol_non_zero
     # => [role_symbol, account_suffix, account_prefix, pad(13)]
 
     dup exec.assert_sender_is_owner_or_role_admin
@@ -226,7 +226,7 @@ end
 #!
 #! Invocation: call
 pub proc revoke_role
-    exec.assert_role_symbol_non_zero
+    dup exec.assert_role_symbol_non_zero
     # => [role_symbol, account_suffix, account_prefix, pad(13)]
 
     dup exec.assert_sender_is_owner_or_role_admin
@@ -251,7 +251,7 @@ end
 #!
 #! Invocation: call
 pub proc renounce_role
-    exec.assert_role_symbol_non_zero
+    dup exec.assert_role_symbol_non_zero
     # => [role_symbol, pad(15)]
 
     exec.active_note::get_sender
@@ -270,16 +270,15 @@ end
 #! Asserts that a role symbol is non-zero.
 #!
 #! Inputs:  [role_symbol]
-#! Outputs: [role_symbol]
+#! Outputs: []
 #!
 #! Panics if:
 #! - role_symbol is zero.
 #!
 #! Invocation: exec
 proc assert_role_symbol_non_zero
-    dup eq.0
-    assertz.err=ERR_ROLE_SYMBOL_ZERO
-    # => [role_symbol]
+    eq.0 assertz.err=ERR_ROLE_SYMBOL_ZERO
+    # => []
 end
 
 #! Returns the config for a role.
