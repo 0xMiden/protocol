@@ -4,11 +4,13 @@ use crate::assembly::Library;
 use crate::assembly::mast::MastForest;
 use crate::utils::serde::Deserializable;
 use crate::utils::sync::LazyLock;
+use crate::vm::Package;
 
 // CONSTANTS
 // ================================================================================================
 
-const PROTOCOL_LIB_BYTES: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/assets/protocol.masl"));
+const PROTOCOL_PACKAGE_BYTES: &[u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/assets/protocol.masp"));
 
 // PROTOCOL LIBRARY
 // ================================================================================================
@@ -38,9 +40,9 @@ impl From<ProtocolLib> for Library {
 impl Default for ProtocolLib {
     fn default() -> Self {
         static PROTOCOL_LIB: LazyLock<ProtocolLib> = LazyLock::new(|| {
-            let contents = Library::read_from_bytes(PROTOCOL_LIB_BYTES)
-                .expect("protocol lib masl should be well-formed");
-            ProtocolLib(contents)
+            let package = Package::read_from_bytes(PROTOCOL_PACKAGE_BYTES)
+                .expect("protocol lib masp should be well-formed");
+            ProtocolLib(Arc::unwrap_or_clone(package.mast))
         });
         PROTOCOL_LIB.clone()
     }

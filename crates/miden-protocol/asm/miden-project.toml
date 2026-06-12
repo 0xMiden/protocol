@@ -1,0 +1,9 @@
+[workspace]
+members = ["kernels/batch", "kernels/transaction", "protocol", "utils"]
+
+[workspace.package]
+version = "0.16.0"
+
+[workspace.dependencies]
+miden-utils = { linkage = "static", path = "utils" }
+tx-kernel   = { path = "kernels/transaction" }

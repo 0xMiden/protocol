@@ -1,7 +1,7 @@
 use $kernel::account_id
 use $kernel::fungible_asset
 use $kernel::non_fungible_asset
-use $kernel::util::asset->util_asset
+use miden::utils::asset->util_asset
 
 # ERRORS
 # =================================================================================================
@@ -17,21 +17,21 @@ const ERR_VAULT_LT_COMPOSITION_NONE="assets with composition none cannot be comp
 # CONSTANT ACCESSORS
 # =================================================================================================
 
-pub use $kernel::util::asset::FUNGIBLE_ASSET_MAX_AMOUNT
-pub use $kernel::util::asset::ASSET_SIZE
-pub use $kernel::util::asset::ASSET_VALUE_MEMORY_OFFSET
-pub use $kernel::util::asset::COMPOSITION_NONE
-pub use $kernel::util::asset::COMPOSITION_FUNGIBLE
-pub use $kernel::util::asset::COMPOSITION_CUSTOM
-pub use $kernel::util::asset::key_to_faucet_id
-pub use $kernel::util::asset::key_into_faucet_id
-pub use $kernel::util::asset::key_to_asset_id
-pub use $kernel::util::asset::key_into_asset_id
-pub use $kernel::util::asset::key_to_callbacks_enabled
-pub use $kernel::util::asset::key_to_composition
-pub use $kernel::util::asset::store
-pub use $kernel::util::asset::load
-pub use $kernel::util::asset::validate_metadata
+pub use miden::utils::asset::FUNGIBLE_ASSET_MAX_AMOUNT
+pub use miden::utils::asset::ASSET_SIZE
+pub use miden::utils::asset::ASSET_VALUE_MEMORY_OFFSET
+pub use miden::utils::asset::COMPOSITION_NONE
+pub use miden::utils::asset::COMPOSITION_FUNGIBLE
+pub use miden::utils::asset::COMPOSITION_CUSTOM
+pub use miden::utils::asset::key_to_faucet_id
+pub use miden::utils::asset::key_into_faucet_id
+pub use miden::utils::asset::key_to_asset_id
+pub use miden::utils::asset::key_into_asset_id
+pub use miden::utils::asset::key_to_callbacks_enabled
+pub use miden::utils::asset::key_to_composition
+pub use miden::utils::asset::store
+pub use miden::utils::asset::load
+pub use miden::utils::asset::validate_metadata
 
 # PROCEDURES
 # =================================================================================================

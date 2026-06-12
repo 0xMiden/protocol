@@ -1,0 +1,6 @@
+[package]
+name              = "batch-kernel"
+version.workspace = true
+
+[[bin]]
+path = "main.masm"

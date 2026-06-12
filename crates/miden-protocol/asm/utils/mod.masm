@@ -1,0 +1,5 @@
+#! Root module of the `miden::utils` library.
+#!
+#! This library contains internal utility modules shared by the transaction kernel and the
+#! user-facing protocol library. It is statically linked into both and is not part of the
+#! public protocol API (although some procedures are re-exported from `miden::protocol` modules).

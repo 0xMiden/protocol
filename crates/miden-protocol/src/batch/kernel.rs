@@ -5,15 +5,18 @@ use miden_core::program::Kernel;
 use crate::batch::{BatchId, ProposedBatch};
 use crate::utils::serde::Deserializable;
 use crate::utils::sync::LazyLock;
-use crate::vm::{AdviceInputs, Program, ProgramInfo, StackInputs};
+use crate::vm::{AdviceInputs, Package, Program, ProgramInfo, StackInputs};
 use crate::{Felt, Word};
 
 // CONSTANTS
 // ================================================================================================
 
 static KERNEL_MAIN: LazyLock<Program> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/kernels/batch_kernel.masb"));
-    Program::read_from_bytes(bytes).expect("failed to deserialize batch kernel runtime")
+    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/kernels/batch_kernel.masp"));
+    Package::read_from_bytes(bytes)
+        .expect("failed to deserialize batch kernel package")
+        .try_into_program()
+        .expect("batch kernel package should contain a program")
 });
 
 // BATCH KERNEL

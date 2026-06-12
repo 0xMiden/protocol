@@ -16,7 +16,7 @@ use crate::protocol::ProtocolLib;
 use crate::transaction::{RawOutputNote, RawOutputNotes, TransactionInputs, TransactionOutputs};
 use crate::utils::serde::Deserializable;
 use crate::utils::sync::LazyLock;
-use crate::vm::{AdviceInputs, Program, ProgramInfo, StackInputs, StackOutputs};
+use crate::vm::{AdviceInputs, Package, Program, ProgramInfo, StackInputs, StackOutputs};
 use crate::{Felt, Hasher, Word};
 
 mod procedures {
@@ -36,26 +36,32 @@ pub use tx_event_id::TransactionEventId;
 
 // Initialize the kernel library only once
 static KERNEL_LIB: LazyLock<KernelLibrary> = LazyLock::new(|| {
-    let kernel_lib_bytes =
-        include_bytes!(concat!(env!("OUT_DIR"), "/assets/kernels/tx_kernel.masl"));
-    KernelLibrary::read_from_bytes(kernel_lib_bytes)
-        .expect("failed to deserialize transaction kernel library")
+    let kernel_package_bytes =
+        include_bytes!(concat!(env!("OUT_DIR"), "/assets/kernels/tx_kernel.masp"));
+    Package::read_from_bytes(kernel_package_bytes)
+        .expect("failed to deserialize transaction kernel package")
+        .try_into_kernel_library()
+        .expect("transaction kernel package should contain a kernel library")
 });
 
 // Initialize the kernel main program only once
 static KERNEL_MAIN: LazyLock<Program> = LazyLock::new(|| {
     let kernel_main_bytes =
-        include_bytes!(concat!(env!("OUT_DIR"), "/assets/kernels/tx_kernel.masb"));
-    Program::read_from_bytes(kernel_main_bytes)
-        .expect("failed to deserialize transaction kernel runtime")
+        include_bytes!(concat!(env!("OUT_DIR"), "/assets/kernels/tx_kernel_main.masp"));
+    Package::read_from_bytes(kernel_main_bytes)
+        .expect("failed to deserialize transaction kernel main package")
+        .try_into_program()
+        .expect("transaction kernel main package should contain a program")
 });
 
 // Initialize the transaction script executor program only once
 static TX_SCRIPT_MAIN: LazyLock<Program> = LazyLock::new(|| {
     let tx_script_main_bytes =
-        include_bytes!(concat!(env!("OUT_DIR"), "/assets/kernels/tx_script_main.masb"));
-    Program::read_from_bytes(tx_script_main_bytes)
-        .expect("failed to deserialize tx script executor runtime")
+        include_bytes!(concat!(env!("OUT_DIR"), "/assets/kernels/tx_script_main.masp"));
+    Package::read_from_bytes(tx_script_main_bytes)
+        .expect("failed to deserialize tx script executor package")
+        .try_into_program()
+        .expect("tx script executor package should contain a program")
 });
 
 // TRANSACTION KERNEL
@@ -432,12 +438,13 @@ impl TransactionKernel {
 #[cfg(any(feature = "testing", test))]
 impl TransactionKernel {
     const KERNEL_TESTING_LIB_BYTES: &'static [u8] =
-        include_bytes!(concat!(env!("OUT_DIR"), "/assets/kernels/kernel_library.masl"));
+        include_bytes!(concat!(env!("OUT_DIR"), "/assets/kernels/kernel_library.masp"));
 
     /// Returns the kernel library.
     pub fn library() -> Library {
-        Library::read_from_bytes(Self::KERNEL_TESTING_LIB_BYTES)
-            .expect("failed to deserialize transaction kernel library")
+        let package = Package::read_from_bytes(Self::KERNEL_TESTING_LIB_BYTES)
+            .expect("failed to deserialize transaction kernel library package");
+        Arc::unwrap_or_clone(package.mast)
     }
 }
 

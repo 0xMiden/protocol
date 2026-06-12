@@ -1,0 +1,4 @@
+#! Root module of the `miden::protocol` library.
+#!
+#! The user-facing protocol library wraps the transaction kernel, abstracting over the actual
+#! `syscall`s. The library API is defined by the modules in this directory.

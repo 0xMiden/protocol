@@ -70,12 +70,15 @@ rstest         = { workspace = true }
 tempfile       = { version = "3.19" }
 
 [build-dependencies]
-fs-err         = { workspace = true }
-miden-assembly = { workspace = true }
-miden-core     = { workspace = true }
-miden-core-lib = { workspace = true }
-regex          = { workspace = true }
-walkdir        = { workspace = true }
+fs-err                 = { workspace = true }
+miden-assembly         = { features = ["std"], workspace = true }
+miden-core             = { workspace = true }
+miden-core-lib         = { workspace = true }
+miden-mast-package     = { features = ["std"], workspace = true }
+miden-package-registry = { features = ["std"], workspace = true }
+miden-project          = { features = ["std"], workspace = true }
+regex                  = { workspace = true }
+walkdir                = { workspace = true }
 
 [package.metadata.cargo-shear]
 ignored = ["getrandom"]

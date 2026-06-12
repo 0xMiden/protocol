@@ -1,0 +1,7 @@
+[package]
+name              = "miden-utils"
+version.workspace = true
+
+[lib]
+namespace = "miden::utils"
+path      = "mod.masm"

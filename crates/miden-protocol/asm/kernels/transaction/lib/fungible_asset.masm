@@ -1,16 +1,16 @@
 # Contains procedures for the built-in fungible asset.
 
 use $kernel::account_id
-use $kernel::util::asset::FUNGIBLE_ASSET_MAX_AMOUNT
+use miden::utils::asset::FUNGIBLE_ASSET_MAX_AMOUNT
 use $kernel::asset
 
 # RE-EXPORTS
 # =================================================================================================
 
-pub use $kernel::util::asset::create_fungible_key->create_key
-pub use $kernel::util::asset::create_fungible_asset_unchecked->create_unchecked
-pub use $kernel::util::asset::fungible_to_amount->to_amount
-pub use $kernel::util::asset::fungible_value_into_amount->value_into_amount
+pub use miden::utils::asset::create_fungible_key->create_key
+pub use miden::utils::asset::create_fungible_asset_unchecked->create_unchecked
+pub use miden::utils::asset::fungible_to_amount->to_amount
+pub use miden::utils::asset::fungible_value_into_amount->value_into_amount
 
 # ERRORS
 # =================================================================================================
