@@ -409,7 +409,7 @@ end
 #!
 #! Invocation: exec
 proc assert_sender_is_owner_or_role_admin
-    exec.ownable2step::is_sender_owner_internal
+    exec.ownable2step::is_sender_owner
     # => [is_owner, role_symbol]
 
     if.true

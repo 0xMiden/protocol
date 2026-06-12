@@ -147,7 +147,7 @@ end
 #! - is_sender_owner is 1 if the note sender is the current owner, otherwise 0.
 #!
 #! Invocation: exec
-pub proc is_sender_owner_internal
+pub proc is_sender_owner
     exec.active_note::get_sender
     # => [sender_suffix, sender_prefix]
 
@@ -165,7 +165,7 @@ end
 #!
 #! Invocation: exec
 pub proc assert_sender_is_owner
-    exec.is_sender_owner_internal
+    exec.is_sender_owner
     # => [is_sender_owner]
 
     assert.err=ERR_SENDER_NOT_OWNER

@@ -3,7 +3,7 @@
 ## v0.16.0 (TBD)
 
 ### Changes
-- Consolidated the Ownable2Step owner check into a single `assert_sender_is_owner` (`exec`) procedure, removing the redundant `assert_sender_is_owner_internal` helper, and updated `rbac::set_role_admin` to call it for consistency with `authority` and the faucet policies ([#XXXX](https://github.com/0xMiden/protocol/pull/XXXX)).
+- Cleaned up the Ownable2Step owner-check API so the `_internal` suffix consistently marks private same-module helpers: consolidated the owner assertion into a single `exec` `assert_sender_is_owner` (removing the redundant `assert_sender_is_owner_internal` wrapper), and renamed the cross-module predicate `is_sender_owner_internal` to `is_sender_owner`. Updated `rbac` to call both, matching `authority` and the faucet policies ([#XXXX](https://github.com/0xMiden/protocol/pull/XXXX)).
 - [BREAKING] Renamed the `miden-tx-batch-prover` crate to `miden-tx-batch` ([#3035](https://github.com/0xMiden/protocol/pull/3035)).
 - Added a skeleton batch kernel ([#1122](https://github.com/0xMiden/protocol/issues/1122)) wired through `LocalBatchProver::prove` and attached to `ProvenBatch` as an `ExecutionProof`. It does not yet perform any verification.
 
