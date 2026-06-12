@@ -16,15 +16,15 @@ use miden::batch_kernel::memory::MAX_NOTES_PER_BATCH
 # ERRORS
 # =================================================================================================
 
-const ERR_BATCH_INPUT_NOTE_NOT_IN_LIST="a transaction input note is missing from the batch input-note list"
+const ERR_BATCH_INPUT_NOTE_NOT_IN_LIST="a transaction input note is missing from the nullifier-sorted input-note list"
 
-const ERR_BATCH_INPUT_NOTE_ID_MISMATCH="a transaction input note id does not match its batch input-note list entry"
+const ERR_BATCH_INPUT_NOTE_ID_MISMATCH="a transaction input note id does not match its nullifier-sorted input-note list entry"
 
-const ERR_BATCH_INPUT_NOTE_CONSUMED_TWICE="a batch input-note list entry was consumed by more than one transaction"
+const ERR_BATCH_INPUT_NOTE_CONSUMED_TWICE="a nullifier-sorted input-note list entry was consumed by more than one transaction"
 
-const ERR_BATCH_OUTPUT_NOTE_NOT_IN_LIST="a transaction output note is missing from the batch output-note list"
+const ERR_BATCH_OUTPUT_NOTE_NOT_IN_LIST="a transaction output note is missing from the note-id-sorted output-note list"
 
-const ERR_BATCH_OUTPUT_NOTE_CREATED_TWICE="a batch output-note list entry was created by more than one transaction"
+const ERR_BATCH_OUTPUT_NOTE_CREATED_TWICE="a note-id-sorted output-note list entry was created by more than one transaction"
 
 const ERR_BATCH_NOTE_CONSUMED_BEFORE_CREATED="an erased input note was consumed before the transaction that creates it (incorrect ordering or circular dependency)"
 
@@ -146,7 +146,7 @@ proc flip_input_erasure_created
 end
 
 #! Binds one per-transaction output note (an 8-felt `[DETAILS_COMMITMENT, METADATA_COMMITMENT]` tuple
-#! at `scratch_entry_ptr`) to the batch output-note list: derives its note id, looks it up, marks it
+#! at `scratch_entry_ptr`) to the note-id-sorted output-note list: derives its note id, looks it up, marks it
 #! created, and — if it erases an input note — advances that input note's erasure flag.
 #!
 #! Inputs:  [scratch_entry_ptr]
@@ -164,7 +164,7 @@ proc bind_one_output_note
     movup.4 drop
     # => [NOTE_ID]
 
-    # Look the note id up in the batch output-note list and mark the entry created.
+    # Look the note id up in the note-id-sorted output-note list and mark the entry created.
     push.OUTPUT_NOTES_PTR movdn.4
     exec.memory::get_output_notes_end_ptr movdn.5
     # => [NOTE_ID, output_notes_ptr, output_end_ptr]
@@ -271,13 +271,13 @@ proc assert_input_not_consumed_before_created
 end
 
 #! Binds one per-transaction input note (an 8-felt `[NULLIFIER, NOTE_ID_OR_EMPTY]` tuple at
-#! `scratch_entry_ptr`) to the batch input-note list: looks it up by nullifier, asserts it is present
+#! `scratch_entry_ptr`) to the nullifier-sorted input-note list: looks it up by nullifier, asserts it is present
 #! and that its note id matches, enforces the erasure ordering gate, then marks it consumed.
 #!
 #! Inputs:  [scratch_entry_ptr]
 #! Outputs: []
 proc bind_one_input_note
-    # Look the per-transaction note up in the batch input-note list by its nullifier.
+    # Look the per-transaction note up in the nullifier-sorted input-note list by its nullifier.
     dup padw movup.4 mem_loadw_le
     # => [NULLIFIER, scratch_entry_ptr]
     push.INPUT_NOTES_PTR movdn.4
@@ -398,7 +398,7 @@ end
 #! Tracks the batch's notes: determines erasure by cross-referencing the prepared batch input- and
 #! output-note lists, then binds both lists to the verified per-transaction notes while enforcing the
 #! creator-before-consumer ordering gate. Assumes the prologue has loaded and strict-sorted the two
-#! batch lists into memory.
+#! sorted note lists into memory.
 #!
 #! Inputs:  []
 #! Outputs: []

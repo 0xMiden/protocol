@@ -18,7 +18,7 @@ static KERNEL_MAIN: LazyLock<Program> = LazyLock::new(|| {
     Program::read_from_bytes(bytes).expect("failed to deserialize batch kernel runtime")
 });
 
-// Advice-map keys under which the global (pre-erasure) note lists are provided to the kernel. Their
+// Advice-map keys under which the sorted (pre-erasure) note lists are provided to the kernel. Their
 // integrity is established by the kernel binding every list entry to the per-transaction notes that
 // are anchored in `BATCH_ID`, not by the key, so any fixed sentinel works. Each key is the word
 // hash of a domain message; the kernel derives the same word via the MASM `word("...")` constant
@@ -109,7 +109,7 @@ impl BatchKernel {
     /// - each per-tx `OUTPUT_NOTES_COMMITMENT` -> the `(DETAILS_COMMITMENT, METADATA_COMMITMENT)`
     ///   tuples (the kernel derives each output `NoteId` from these via `poseidon2::merge`).
     ///
-    /// It also provides two global, nullifier/note-id-sorted lists — the pre-erasure union of every
+    /// It also provides two nullifier/note-id-sorted lists — the pre-erasure union of every
     /// transaction's input notes (keyed by [`input_note_list_key`]) and output notes (keyed by
     /// [`output_note_list_key`]). The kernel binds every entry of these lists to the
     /// per-transaction notes above (so the host cannot inject, omit, or duplicate notes),
@@ -176,10 +176,10 @@ impl BatchKernel {
             }
         }
 
-        // Sort the global lists ascending by nullifier / note id. `Word`'s ordering compares the
-        // most-significant felt first, matching the batch kernel's `word::lt` strict-sort check,
-        // `sorted_array`'s lookup order, and `ProposedBatch`'s `InputNoteCommitment::nullifier`
-        // order.
+        // Sort the sorted note lists ascending by nullifier / note id. `Word`'s ordering compares
+        // the most-significant felt first, matching the batch kernel's `word::lt`
+        // strict-sort check, `sorted_array`'s lookup order, and `ProposedBatch`'s
+        // `InputNoteCommitment::nullifier` order.
         input_list.sort_by(|a, b| a.0.cmp(&b.0));
         output_list.sort_unstable();
 
@@ -206,13 +206,15 @@ impl BatchKernel {
 
 #[cfg(any(feature = "testing", test))]
 impl BatchKernel {
-    /// The advice-map key under which the global input-note list is provided to the kernel. Exposed
-    /// so tests can construct override blobs without duplicating the sentinel value.
+    /// The advice-map key under which the nullifier-sorted input-note list is provided to the
+    /// kernel. Exposed so tests can construct override blobs without duplicating the sentinel
+    /// value.
     pub fn input_note_list_key() -> Word {
         input_note_list_key()
     }
 
-    /// The advice-map key under which the global output-note list is provided to the kernel.
+    /// The advice-map key under which the note-id-sorted output-note list is provided to the
+    /// kernel.
     pub fn output_note_list_key() -> Word {
         output_note_list_key()
     }

@@ -17,9 +17,9 @@
 # |                   |                         | current transaction.             |
 # | 17                | SCRATCH_WORD_INDEX_PTR  | current iteration cursor for the |
 # |                   |                         | scratch absorption loop.         |
-# | 18                | NUM_INPUT_NOTES_PTR     | number of entries in the global  |
+# | 18                | NUM_INPUT_NOTES_PTR     | number of entries in the         |
 # |                   |                         | input-note list.                 |
-# | 19                | NUM_OUTPUT_NOTES_PTR    | number of entries in the global  |
+# | 19                | NUM_OUTPUT_NOTES_PTR    | number of entries in the         |
 # |                   |                         | output-note list.                |
 # | 20..8212          | TX_TUPLES_PTR           | Layer 1 piped data: per          |
 # |                   |                         | transaction `[TX_ID,             |
@@ -37,15 +37,15 @@
 # | 32788..40980      | TX_NOTES_SCRATCH_PTR    | Per-transaction scratch space    |
 # |                   |                         | for Layer 3 / Layer 3' note      |
 # |                   |                         | data (overwritten each tx).      |
-# | 40980..49172      | INPUT_NOTES_PTR         | Global input-note list, sorted   |
-# |                   |                         | by nullifier: `[NULLIFIER,       |
+# | 40980..49172      | INPUT_NOTES_PTR         | Nullifier-sorted input-note      |
+# |                   |                         | list: `[NULLIFIER,               |
 # |                   |                         | NOTE_ID_OR_EMPTY]` per note      |
 # |                   |                         | (8 felts each, up to 1024).      |
 # | 49172..53268      | INPUT_NOTE_FLAGS_PTR    | Parallel input-note flags:       |
 # |                   |                         | `[erasure, consumption, 0, 0]`   |
 # |                   |                         | per note (4 felts each).         |
-# | 53268..61460      | OUTPUT_NOTES_PTR        | Global output-note list, sorted  |
-# |                   |                         | by note_id: `[NOTE_ID, 0, 0, 0,  |
+# | 53268..61460      | OUTPUT_NOTES_PTR        | Note-id-sorted output-note       |
+# |                   |                         | list: `[NOTE_ID, 0, 0, 0,        |
 # |                   |                         | 0]` per note (8 felts each).     |
 # | 61460..65556      | OUTPUT_NOTE_FLAGS_PTR   | Parallel output-note flags:      |
 # |                   |                         | `[will_be_erased, is_created,    |
@@ -81,10 +81,10 @@ const SCRATCH_WORDS_COUNT_PTR=16
 #! Iteration cursor (index in words) into TX_NOTES_SCRATCH_PTR for the absorption loop.
 const SCRATCH_WORD_INDEX_PTR=17
 
-#! Single-felt slot holding the number of entries in the global input-note list.
+#! Single-felt slot holding the number of entries in the nullifier-sorted input-note list.
 const NUM_INPUT_NOTES_PTR=18
 
-#! Single-felt slot holding the number of entries in the global output-note list.
+#! Single-felt slot holding the number of entries in the note-id-sorted output-note list.
 const NUM_OUTPUT_NOTES_PTR=19
 
 # PIPED DATA REGIONS
@@ -114,10 +114,10 @@ const TX_HEADER_OUTPUT_NOTES_OFFSET=12
 #! Per-transaction scratch space for Layer 3 note data, overwritten between iterations.
 pub const TX_NOTES_SCRATCH_PTR=32788
 
-# GLOBAL NOTE LISTS
+# SORTED NOTE LISTS
 # =================================================================================================
 
-#! Base of the global input-note list, sorted by nullifier. Per note, an 8-felt sorted-array entry
+#! Base of the nullifier-sorted input-note list. Per note, an 8-felt sorted-array entry
 #!   `[NULLIFIER, NOTE_ID_OR_EMPTY]`
 #! where the KEY word is the nullifier (the `sorted_array` lookup key) and the VALUE word is the
 #! note id (for unauthenticated notes) or the empty word. The VALUE word doubles as the second half
@@ -143,7 +143,7 @@ pub const INPUT_NOTE_ERASURE_OFFSET=0
 #! Felt offset of the `consumption` flag within an input-note flag word.
 pub const INPUT_NOTE_CONSUMPTION_OFFSET=1
 
-#! Base of the global output-note list, sorted by note id. Per note, an 8-felt sorted-array entry
+#! Base of the note-id-sorted output-note list. Per note, an 8-felt sorted-array entry
 #!   `[NOTE_ID, 0, 0, 0, 0]`
 #! where the KEY word is the note id (the `sorted_array` lookup key); the VALUE word is unused.
 pub const OUTPUT_NOTES_PTR=53268
@@ -168,7 +168,7 @@ pub const OUTPUT_NOTE_LINKED_INPUT_OFFSET=2
 #! exactly this many transactions.
 pub const MAX_TRANSACTIONS_PER_BATCH=1024
 
-#! Maximum number of entries in a global note list and in a single transaction's note set. The
+#! Maximum number of entries in a sorted note list and in a single transaction's note set. The
 #! input/output note regions and the per-transaction scratch region each hold exactly this many
 #! entries. Equals `MAX_INPUT_NOTES_PER_BATCH` = `MAX_OUTPUT_NOTES_PER_BATCH` in `src/constants.rs`.
 pub const MAX_NOTES_PER_BATCH=1024
@@ -308,10 +308,10 @@ pub proc get_tx_output_notes_commitment
     # => [OUTPUT_NOTES_COMMITMENT]
 end
 
-# GLOBAL NOTE LIST ACCESSORS
+# SORTED NOTE LIST ACCESSORS
 # =================================================================================================
 
-#! Stores the number of entries in the global input-note list.
+#! Stores the number of entries in the nullifier-sorted input-note list.
 #!
 #! Inputs:  [num_input_notes]
 #! Outputs: []
@@ -319,7 +319,7 @@ pub proc set_num_input_notes
     mem_store.NUM_INPUT_NOTES_PTR
 end
 
-#! Returns the number of entries in the global input-note list.
+#! Returns the number of entries in the nullifier-sorted input-note list.
 #!
 #! Inputs:  []
 #! Outputs: [num_input_notes]
@@ -327,7 +327,7 @@ pub proc get_num_input_notes
     mem_load.NUM_INPUT_NOTES_PTR
 end
 
-#! Stores the number of entries in the global output-note list.
+#! Stores the number of entries in the note-id-sorted output-note list.
 #!
 #! Inputs:  [num_output_notes]
 #! Outputs: []
@@ -335,7 +335,7 @@ pub proc set_num_output_notes
     mem_store.NUM_OUTPUT_NOTES_PTR
 end
 
-#! Returns the number of entries in the global output-note list.
+#! Returns the number of entries in the note-id-sorted output-note list.
 #!
 #! Inputs:  []
 #! Outputs: [num_output_notes]
@@ -343,7 +343,7 @@ pub proc get_num_output_notes
     mem_load.NUM_OUTPUT_NOTES_PTR
 end
 
-#! Returns the end pointer of the global input-note list (base + num_input_notes * 8), as required
+#! Returns the end pointer of the nullifier-sorted input-note list (base + num_input_notes * 8), as required
 #! by `sorted_array::find_key_value`.
 #!
 #! Inputs:  []
@@ -352,7 +352,7 @@ pub proc get_input_notes_end_ptr
     exec.get_num_input_notes mul.NOTE_ENTRY_FELT_LEN add.INPUT_NOTES_PTR
 end
 
-#! Returns the end pointer of the global output-note list (base + num_output_notes * 8).
+#! Returns the end pointer of the note-id-sorted output-note list (base + num_output_notes * 8).
 #!
 #! Inputs:  []
 #! Outputs: [output_notes_end_ptr]

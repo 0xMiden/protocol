@@ -7,9 +7,9 @@ use miden::batch_kernel::memory::OUTPUT_NOTE_IS_CREATED_OFFSET
 # ERRORS
 # =================================================================================================
 
-const ERR_BATCH_INPUT_NOTE_NOT_CONSUMED="a batch input-note list entry was not consumed by any transaction"
+const ERR_BATCH_INPUT_NOTE_NOT_CONSUMED="a nullifier-sorted input-note list entry was not consumed by any transaction"
 
-const ERR_BATCH_OUTPUT_NOTE_NOT_CREATED="a batch output-note list entry was not created by any transaction"
+const ERR_BATCH_OUTPUT_NOTE_NOT_CREATED="a note-id-sorted output-note list entry was not created by any transaction"
 
 const ERR_BATCH_NOTE_CONSUMED_BEFORE_CREATED="an erased input note was consumed before the transaction that creates it (incorrect ordering or circular dependency)"
 
@@ -71,7 +71,7 @@ proc absorb_input_entry
 end
 
 #! Computes INPUT_NOTES_COMMITMENT as the sequential poseidon2 hash of the non-erased
-#! `(NULLIFIER, NOTE_ID_OR_EMPTY)` entries of the global input-note list, in nullifier order
+#! `(NULLIFIER, NOTE_ID_OR_EMPTY)` entries of the nullifier-sorted input-note list
 #! (entries with erasure flag == 2 are skipped). Reproduces `build_input_note_commitment`: an empty
 #! result is the empty word.
 #!

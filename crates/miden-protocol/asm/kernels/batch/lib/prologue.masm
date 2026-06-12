@@ -12,7 +12,7 @@ use miden::batch_kernel::memory::MAX_NOTES_PER_BATCH
 # CONSTANTS
 # =================================================================================================
 
-# Advice-map keys under which the global input/output note lists are provided. Each key is the word
+# Advice-map keys under which the nullifier/note-id-sorted note lists are provided. Each key is the word
 # hash of a domain message (`hash_string_to_word`); the Rust advice builder derives the same word
 # from the same message. The lists' integrity comes from binding every entry to a verified
 # per-transaction note, not from these keys.
@@ -28,16 +28,16 @@ const ERR_BATCH_NOTE_LIST_NOT_SORTED="a batch note list is not strictly sorted b
 
 const ERR_BATCH_NOTE_LIST_TOO_LONG="a batch note list contains more entries than the maximum allowed"
 
-# GLOBAL NOTE LIST LOADING
+# SORTED NOTE LIST LOADING
 # =================================================================================================
 
-#! Pipes a global note list (8-felt `[KEY, VALUE]` entries) from the advice map into memory and
+#! Pipes a sorted note list (8-felt `[KEY, VALUE]` entries) from the advice map into memory and
 #! returns the number of entries. The list is not hashed against a commitment; its integrity is
 #! established later by binding every entry to a verified per-transaction note.
 #!
 #! Inputs:  [KEY, write_ptr]
 #! Outputs: [num_notes]
-proc load_global_note_list
+proc load_note_list
     adv.push_mapvaln
     # AS: [len_felts, data...]
     adv_push
@@ -100,7 +100,7 @@ proc assert_list_strictly_sorted
     end
 end
 
-#! Loads and verifies the global input-note list into [`memory::INPUT_NOTES_PTR`].
+#! Loads and verifies the nullifier-sorted input-note list into [`memory::INPUT_NOTES_PTR`].
 #!
 #! Inputs:  []
 #! Outputs: []
@@ -108,14 +108,14 @@ proc prepare_input_note_list
     push.INPUT_NOTES_PTR
     push.INPUT_NOTE_LIST_KEY
     # => [KEY, input_notes_ptr]
-    exec.load_global_note_list
+    exec.load_note_list
     exec.memory::set_num_input_notes
     exec.memory::get_num_input_notes push.INPUT_NOTES_PTR
     # => [input_notes_ptr, num_input_notes]
     exec.assert_list_strictly_sorted
 end
 
-#! Loads and verifies the global output-note list into [`memory::OUTPUT_NOTES_PTR`].
+#! Loads and verifies the note-id-sorted output-note list into [`memory::OUTPUT_NOTES_PTR`].
 #!
 #! Inputs:  []
 #! Outputs: []
@@ -123,7 +123,7 @@ proc prepare_output_note_list
     push.OUTPUT_NOTES_PTR
     push.OUTPUT_NOTE_LIST_KEY
     # => [KEY, output_notes_ptr]
-    exec.load_global_note_list
+    exec.load_note_list
     exec.memory::set_num_output_notes
     exec.memory::get_num_output_notes push.OUTPUT_NOTES_PTR
     # => [output_notes_ptr, num_output_notes]
@@ -143,7 +143,7 @@ end
 #! - Layer 2: for each transaction, pipes its pre-image from the advice map keyed by the verified
 #!   `tx_id`. Each transaction's data is written into [`memory::TX_HEADERS_PTR`] at the appropriate
 #!   per-tx offset.
-#! - Layer 3: loads the global input- and output-note lists from the advice map and asserts each is
+#! - Layer 3: loads the nullifier- and note-id-sorted note lists from the advice map and asserts each is
 #!   strictly sorted by its key. Their integrity is established later, when the note tracker binds
 #!   every entry to a verified per-transaction note.
 #!
@@ -234,7 +234,7 @@ pub proc prepare_batch
 
     drop drop
 
-    # Layer 3: load and strict-sort the global input- and output-note lists.
+    # Layer 3: load and strict-sort the nullifier- and note-id-sorted note lists.
     # ---------------------------------------------------------------------------------------------
 
     exec.prepare_input_note_list
