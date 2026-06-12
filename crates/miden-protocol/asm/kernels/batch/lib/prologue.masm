@@ -9,11 +9,15 @@ use miden::batch_kernel::memory::NOTE_ENTRY_FELT_LEN
 use miden::batch_kernel::memory::MAX_TRANSACTIONS_PER_BATCH
 use miden::batch_kernel::memory::MAX_NOTES_PER_BATCH
 
-# Advice-map keys under which the global input/output note lists are provided. `build.rs` derives
-# each key by hashing a domain message to a word and emits a `push`-the-word proc here and the
-# matching word to the Rust advice builder. The lists' integrity comes from binding every entry to a
-# verified per-transaction note (not from these keys).
-use miden::batch_kernel::note_list_keys
+# CONSTANTS
+# =================================================================================================
+
+# Advice-map keys under which the global input/output note lists are provided. Each key is the word
+# hash of a domain message (`hash_string_to_word`); the Rust advice builder derives the same word
+# from the same message. The lists' integrity comes from binding every entry to a verified
+# per-transaction note, not from these keys.
+const INPUT_NOTE_LIST_KEY=word("miden::batch_kernel::input_note_list")
+const OUTPUT_NOTE_LIST_KEY=word("miden::batch_kernel::output_note_list")
 
 # ERRORS
 # =================================================================================================
@@ -102,7 +106,7 @@ end
 #! Outputs: []
 proc prepare_input_note_list
     push.INPUT_NOTES_PTR
-    exec.note_list_keys::input_note_list_key
+    push.INPUT_NOTE_LIST_KEY
     # => [KEY, input_notes_ptr]
     exec.load_global_note_list
     exec.memory::set_num_input_notes
@@ -117,7 +121,7 @@ end
 #! Outputs: []
 proc prepare_output_note_list
     push.OUTPUT_NOTES_PTR
-    exec.note_list_keys::output_note_list_key
+    push.OUTPUT_NOTE_LIST_KEY
     # => [KEY, output_notes_ptr]
     exec.load_global_note_list
     exec.memory::set_num_output_notes

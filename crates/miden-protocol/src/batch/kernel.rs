@@ -1,6 +1,7 @@
 use alloc::vec::Vec;
 
 use miden_core::program::Kernel;
+use miden_core::utils::hash_string_to_word;
 
 use crate::batch::{BatchId, ProposedBatch};
 use crate::transaction::TransactionId;
@@ -19,19 +20,18 @@ static KERNEL_MAIN: LazyLock<Program> = LazyLock::new(|| {
 
 // Advice-map keys under which the global (pre-erasure) note lists are provided to the kernel. Their
 // integrity is established by the kernel binding every list entry to the per-transaction notes that
-// are anchored in `BATCH_ID`, not by the key, so any fixed sentinel works. Each key is the
-// poseidon2 hash of a domain message, derived by `build.rs` and shared between the kernel (a
-// generated MASM module) and this advice builder.
-mod generated_constants {
-    include!(concat!(env!("OUT_DIR"), "/batch_kernel_constants.rs"));
-}
+// are anchored in `BATCH_ID`, not by the key, so any fixed sentinel works. Each key is the word
+// hash of a domain message; the kernel derives the same word via the MASM `word("...")` constant
+// (both use `hash_string_to_word`), so the two sides agree by construction.
+const INPUT_NOTE_LIST_KEY_MESSAGE: &str = "miden::batch_kernel::input_note_list";
+const OUTPUT_NOTE_LIST_KEY_MESSAGE: &str = "miden::batch_kernel::output_note_list";
 
 fn input_note_list_key() -> Word {
-    Word::from(generated_constants::INPUT_NOTE_LIST_KEY.map(Felt::new_unchecked))
+    hash_string_to_word(INPUT_NOTE_LIST_KEY_MESSAGE)
 }
 
 fn output_note_list_key() -> Word {
-    Word::from(generated_constants::OUTPUT_NOTE_LIST_KEY.map(Felt::new_unchecked))
+    hash_string_to_word(OUTPUT_NOTE_LIST_KEY_MESSAGE)
 }
 
 // BATCH KERNEL
