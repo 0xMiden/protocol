@@ -489,9 +489,6 @@ impl ProposedBlock {
     /// - the transaction commitment; and
     /// - the chain commitment.
     ///
-    /// The returned block header contains the proposed block's `next_validator_key` as its
-    /// validator public key, which defaults to the previous block's validator key unless a rotation
-    /// was requested via [`ProposedBlock::with_next_validator_key`].
     ///
     /// # Errors
     ///
