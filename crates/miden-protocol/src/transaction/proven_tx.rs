@@ -335,8 +335,8 @@ impl TxAccountUpdate {
     ///
     /// Returns an error if:
     /// - The size of the serialized account update exceeds [`ACCOUNT_UPDATE_MAX_SIZE`].
-    /// - The transaction was executed against a _new_ account with public state and its account ID
-    ///   does not match the ID in the account update.
+    /// - The transaction was executed against an account with public state and its account ID does
+    ///   not match the ID of the patch in the account update.
     /// - The transaction was executed against a _new_ account with public state and its commitment
     ///   does not match the final state commitment of the account update.
     /// - The transaction creates a _new_ account with public state and the update is of type
@@ -383,6 +383,13 @@ impl TxAccountUpdate {
                 ));
             },
             AccountUpdateDetails::Public(patch) => {
+                if patch.id() != account_id {
+                    return Err(ProvenTransactionError::AccountIdMismatch {
+                        tx_account_id: account_id,
+                        details_account_id: patch.id(),
+                    });
+                }
+
                 let is_new_account = account_update.initial_state_commitment().is_empty();
                 if is_new_account {
                     // Validate that for new accounts, the full account state can be constructed
@@ -393,13 +400,6 @@ impl TxAccountUpdate {
                             source: err,
                         }
                     })?;
-
-                    if account.id() != account_id {
-                        return Err(ProvenTransactionError::AccountIdMismatch {
-                            tx_account_id: account_id,
-                            details_account_id: account.id(),
-                        });
-                    }
 
                     if account.to_commitment() != account_update.final_state_commitment {
                         return Err(ProvenTransactionError::AccountFinalCommitmentMismatch {
@@ -591,6 +591,7 @@ mod tests {
     use alloc::vec::Vec;
 
     use anyhow::Context;
+    use assert_matches::assert_matches;
     use miden_crypto::rand::test_utils::rand_value;
     use miden_verifier::ExecutionProof;
 
@@ -700,6 +701,44 @@ mod tests {
         assert!(
             matches!(err, ProvenTransactionError::AccountUpdateSizeLimitExceeded { update_size, .. } if update_size == details_size)
         );
+    }
+
+    /// Building a [`TxAccountUpdate`] for a public account fails if the account ID in the patch
+    /// does not match the account ID passed to the constructor.
+    #[test]
+    fn account_update_id_mismatch_between_account_id_and_patch() -> anyhow::Result<()> {
+        let patch_account = Account::builder([9; 32])
+            .account_type(AccountType::Public)
+            .with_auth_component(NoopAuthComponent)
+            .with_component(AddComponent)
+            .build_existing()?;
+        let patch = AccountPatch::try_from(patch_account.clone())?;
+
+        let other_account_id =
+            AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE)?;
+        assert_ne!(patch_account.id(), other_account_id);
+
+        let err = TxAccountUpdate::new(
+            other_account_id,
+            patch_account.to_commitment(),
+            patch_account.to_commitment(),
+            Word::empty(),
+            AccountUpdateDetails::Public(patch),
+        )
+        .unwrap_err();
+
+        assert_matches!(
+            err,
+            ProvenTransactionError::AccountIdMismatch {
+                tx_account_id,
+                details_account_id,
+            } => {
+                assert_eq!(tx_account_id, other_account_id);
+                assert_eq!(details_account_id, patch_account.id());
+            }
+        );
+
+        Ok(())
     }
 
     #[test]
