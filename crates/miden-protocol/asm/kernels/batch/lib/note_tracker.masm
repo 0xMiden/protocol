@@ -146,12 +146,13 @@ proc flip_input_erasure_created
 end
 
 #! Binds one per-transaction output note (an 8-felt `[DETAILS_COMMITMENT, METADATA_COMMITMENT]` tuple
-#! at `scratch_entry_ptr`) to the global output-note list: derives its note id, looks it up, marks it
+#! at `scratch_entry_ptr`) to the batch output-note list: derives its note id, looks it up, marks it
 #! created, and — if it erases an input note — advances that input note's erasure flag.
 #!
 #! Inputs:  [scratch_entry_ptr]
 #! Outputs: []
 proc bind_one_output_note
+    # Derive the output note's id as merge(details_commitment, metadata_commitment).
     dup padw movup.4 mem_loadw_le
     # => [DETAILS, scratch_entry_ptr]
     dup.4 add.4 padw movup.4 mem_loadw_le
@@ -162,6 +163,8 @@ proc bind_one_output_note
     # => [NOTE_ID, scratch_entry_ptr]   (NoteId = merge(details, metadata))
     movup.4 drop
     # => [NOTE_ID]
+
+    # Look the note id up in the batch output-note list and mark the entry created.
     push.OUTPUT_NOTES_PTR movdn.4
     exec.memory::get_output_notes_end_ptr movdn.5
     # => [NOTE_ID, output_notes_ptr, output_end_ptr]
@@ -175,6 +178,9 @@ proc bind_one_output_note
     # => [j]
     dup exec.mark_output_note_created
     # => [j]
+
+    # If this output note erases an input note (cross-referenced earlier), advance that input note's
+    # erasure flag from 1 (expected) to 2 (creator processed).
     dup exec.memory::output_note_flags_ptr mem_load
     # => [will_be_erased, j]
     if.true
@@ -186,15 +192,18 @@ proc bind_one_output_note
     end
 end
 
-#! Binds all `num_notes` per-transaction output notes staged in the scratch region.
+#! Binds all of the transaction's output notes staged in the scratch region (see
+#! [`bind_scratch_input_notes`] for the scratch layout).
 #!
 #! Inputs:  [num_notes]
 #! Outputs: []
 proc bind_scratch_output_notes
     push.0
+    # => [i, num_notes]
     dup.1 dup.1 neq
     while.true
         dup mul.NOTE_ENTRY_FELT_LEN add.TX_NOTES_SCRATCH_PTR
+        # => [scratch_entry_ptr, i, num_notes]
         exec.bind_one_output_note
         add.1
         dup.1 dup.1 neq
@@ -203,7 +212,8 @@ proc bind_scratch_output_notes
 end
 
 #! Verifies transaction `tx_index`'s `OUTPUT_NOTES_COMMITMENT_idx` against its piped
-#! `(DETAILS_COMMITMENT, METADATA_COMMITMENT)` tuples and binds each output note to the global list.
+#! `(DETAILS_COMMITMENT, METADATA_COMMITMENT)` tuples, then binds each of those notes to the batch
+#! output-note list (see [`bind_per_tx_notes`] for what binding proves).
 #!
 #! Inputs:  [tx_index]
 #! Outputs: []
@@ -212,8 +222,11 @@ proc process_tx_output_notes
     # => [OUTPUT_NOTES_COMMITMENT_idx, tx_index]
     dupw exec.word::eqz
     if.true
+        # Empty commitment: the transaction has no output notes, so there is nothing to bind.
         dropw drop
     else
+        # Pipe this transaction's output-note tuples into the scratch region, asserting their
+        # sequential hash equals OUTPUT_NOTES_COMMITMENT_idx.
         push.TX_NOTES_SCRATCH_PTR movdn.4
         adv.push_mapvaln
         adv_push div.4
@@ -222,6 +235,7 @@ proc process_tx_output_notes
         movup.5 swap
         exec.mem::pipe_preimage_to_memory
         # => [end_ptr, tx_index]
+        # num_notes = (end_ptr - scratch base) / felts-per-entry.
         sub.TX_NOTES_SCRATCH_PTR div.NOTE_ENTRY_FELT_LEN
         # => [num_notes_i, tx_index]
         swap drop
@@ -257,12 +271,13 @@ proc assert_input_not_consumed_before_created
 end
 
 #! Binds one per-transaction input note (an 8-felt `[NULLIFIER, NOTE_ID_OR_EMPTY]` tuple at
-#! `scratch_entry_ptr`) to the global input-note list: looks it up by nullifier, asserts it is
-#! present and that its note id matches, enforces the erasure ordering gate, then marks it consumed.
+#! `scratch_entry_ptr`) to the batch input-note list: looks it up by nullifier, asserts it is present
+#! and that its note id matches, enforces the erasure ordering gate, then marks it consumed.
 #!
 #! Inputs:  [scratch_entry_ptr]
 #! Outputs: []
 proc bind_one_input_note
+    # Look the per-transaction note up in the batch input-note list by its nullifier.
     dup padw movup.4 mem_loadw_le
     # => [NULLIFIER, scratch_entry_ptr]
     push.INPUT_NOTES_PTR movdn.4
@@ -274,6 +289,8 @@ proc bind_one_input_note
     swap drop swap drop
     # => [key_ptr, scratch_entry_ptr]
 
+    # Assert the list entry's note id equals the per-transaction note's, binding the id as well as
+    # the nullifier (so an unauthenticated note cannot be matched to the wrong list entry).
     dup add.4 padw movup.4 mem_loadw_le
     # => [LIST_NOTE_ID, key_ptr, scratch_entry_ptr]
     dup.5 add.4 padw movup.4 mem_loadw_le
@@ -281,6 +298,7 @@ proc bind_one_input_note
     assert_eqw.err=ERR_BATCH_INPUT_NOTE_ID_MISMATCH
     # => [key_ptr, scratch_entry_ptr]
 
+    # Enforce the erasure ordering gate (reject consume-before-create), then mark the entry consumed.
     swap drop
     # => [key_ptr]
     exec.memory::input_entry_index_from_key_ptr
@@ -289,15 +307,21 @@ proc bind_one_input_note
     exec.mark_input_note_consumed
 end
 
-#! Binds all `num_notes` per-transaction input notes staged in the scratch region.
+#! Binds all of the transaction's input notes staged in the scratch region.
+#!
+#! The scratch region ([`memory::TX_NOTES_SCRATCH_PTR`]) holds the current transaction's note tuples
+#! piped from the advice provider; it is overwritten for each transaction. Entry `i` is the 8 felts
+#! at `TX_NOTES_SCRATCH_PTR + i * NOTE_ENTRY_FELT_LEN`.
 #!
 #! Inputs:  [num_notes]
 #! Outputs: []
 proc bind_scratch_input_notes
     push.0
+    # => [i, num_notes]
     dup.1 dup.1 neq
     while.true
         dup mul.NOTE_ENTRY_FELT_LEN add.TX_NOTES_SCRATCH_PTR
+        # => [scratch_entry_ptr, i, num_notes]
         exec.bind_one_input_note
         add.1
         dup.1 dup.1 neq
@@ -306,7 +330,8 @@ proc bind_scratch_input_notes
 end
 
 #! Verifies transaction `tx_index`'s `INPUT_NOTES_COMMITMENT_idx` against its piped
-#! `(NULLIFIER, NOTE_ID_OR_EMPTY)` tuples and binds each input note to the global list.
+#! `(NULLIFIER, NOTE_ID_OR_EMPTY)` tuples, then binds each of those notes to the batch input-note
+#! list (see [`bind_per_tx_notes`] for what binding proves).
 #!
 #! Inputs:  [tx_index]
 #! Outputs: []
@@ -315,8 +340,12 @@ proc process_tx_input_notes
     # => [INPUT_NOTES_COMMITMENT_idx, tx_index]
     dupw exec.word::eqz
     if.true
+        # Empty commitment: the transaction has no input notes, so there is nothing to bind.
         dropw drop
     else
+        # Pipe this transaction's input-note tuples into the scratch region, asserting their
+        # sequential hash equals INPUT_NOTES_COMMITMENT_idx (so the tuples are exactly the committed
+        # ones).
         push.TX_NOTES_SCRATCH_PTR movdn.4
         adv.push_mapvaln
         adv_push div.4
@@ -325,6 +354,7 @@ proc process_tx_input_notes
         movup.5 swap
         exec.mem::pipe_preimage_to_memory
         # => [end_ptr, tx_index]
+        # num_notes = (end_ptr - scratch base) / felts-per-entry.
         sub.TX_NOTES_SCRATCH_PTR div.NOTE_ENTRY_FELT_LEN
         # => [num_notes_i, tx_index]
         swap drop
@@ -334,11 +364,15 @@ end
 
 #! Processes every transaction in batch order, binding its input notes then its output notes.
 #!
-#! Input notes are processed before output notes (within each transaction) so that a note created
-#! and consumed by the *same* transaction is rejected: at consume time its erasure flag is still 1
-#! (its creating output has not been processed yet), which trips the erasure ordering gate. A note
-#! created by an *earlier* transaction is still erased correctly, since that creator's outputs are
-#! processed (at its turn) before any later transaction's inputs.
+#! Binding a per-transaction note means locating it in the batch's sorted note list — by nullifier
+#! for inputs, by note id for outputs — and marking the matching entry (consumed for inputs, created
+#! for outputs). Because every per-transaction note must be found and each entry may be marked at
+#! most once, binding proves the host-provided list is exactly the multiset of per-transaction
+#! notes: the host cannot inject, omit, or duplicate entries.
+#!
+#! Inputs are bound before outputs within a transaction so a note created and consumed by the same
+#! transaction is rejected — at consume time its erasure flag is still 1 (its creating output has
+#! not been processed), tripping the gate in [`assert_input_not_consumed_before_created`].
 #!
 #! Inputs:  []
 #! Outputs: []
@@ -347,11 +381,13 @@ proc bind_per_tx_notes
     push.0
     # => [tx_index, num_transactions]
     dup.1 dup.1 neq
+    # => [should_loop, tx_index, num_transactions]
     while.true
         dup exec.process_tx_input_notes
         dup exec.process_tx_output_notes
         add.1
         dup.1 dup.1 neq
+        # => [should_loop, tx_index, num_transactions]
     end
     drop drop
 end
@@ -359,10 +395,10 @@ end
 # NOTE TRACKING
 # =================================================================================================
 
-#! Tracks the batch's notes: determines erasure by cross-referencing the prepared global input- and
+#! Tracks the batch's notes: determines erasure by cross-referencing the prepared batch input- and
 #! output-note lists, then binds both lists to the verified per-transaction notes while enforcing the
 #! creator-before-consumer ordering gate. Assumes the prologue has loaded and strict-sorted the two
-#! global lists into memory.
+#! batch lists into memory.
 #!
 #! Inputs:  []
 #! Outputs: []
