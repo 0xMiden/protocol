@@ -2,7 +2,7 @@ use miden_processor::{DefaultHost, ExecutionError, ExecutionOptions, FastProcess
 use miden_protocol::CoreLibrary;
 use miden_protocol::batch::{BatchKernel, BatchOutputs, ProposedBatch};
 use miden_protocol::errors::ProvenBatchError;
-use miden_protocol::vm::{AdviceInputs, StackInputs};
+use miden_protocol::vm::AdviceInputs;
 
 use crate::ExecutedBatch;
 
@@ -22,6 +22,13 @@ impl BatchExecutor {
     /// Runs the batch kernel over the [`ProposedBatch`], returning an [`ExecutedBatch`] that can be
     /// passed to [`LocalBatchProver::prove`](crate::LocalBatchProver::prove).
     ///
+    /// The provided advice inputs are merged onto those derived from the proposed batch,
+    /// overriding matching advice-map keys (mirroring how [`TransactionArgs`] carry caller advice
+    /// into the transaction executor). All advice is untrusted: the kernel verifies everything it
+    /// consumes, so extra or overridden advice can only make execution fail.
+    ///
+    /// [`TransactionArgs`]: miden_protocol::transaction::TransactionArgs
+    ///
     /// # Errors
     ///
     /// Returns an error if:
@@ -30,37 +37,14 @@ impl BatchExecutor {
     pub fn execute(
         &self,
         proposed_batch: ProposedBatch,
-    ) -> Result<ExecutedBatch, ProvenBatchError> {
-        let (stack_inputs, advice_inputs) = BatchKernel::prepare_inputs(&proposed_batch);
-        self.execute_with_inputs(proposed_batch, stack_inputs, advice_inputs)
-    }
-
-    /// Runs the batch kernel over the [`ProposedBatch`], merging the provided advice inputs onto
-    /// those derived from the batch (overriding matching keys).
-    ///
-    /// Exposed for testing only: it lets kernel tests override the advice derived from the
-    /// proposed batch (e.g. with tampered entries) to drive the kernel's rejection paths.
-    #[cfg(any(feature = "testing", test))]
-    pub fn execute_with_advice_overrides(
-        &self,
-        proposed_batch: ProposedBatch,
-        override_advice: AdviceInputs,
-    ) -> Result<ExecutedBatch, ProvenBatchError> {
-        let (stack_inputs, mut advice_inputs) = BatchKernel::prepare_inputs(&proposed_batch);
-        advice_inputs.extend(override_advice);
-        self.execute_with_inputs(proposed_batch, stack_inputs, advice_inputs)
-    }
-
-    /// Runs the batch kernel over the given stack and advice inputs.
-    fn execute_with_inputs(
-        &self,
-        proposed_batch: ProposedBatch,
-        stack_inputs: StackInputs,
         advice_inputs: AdviceInputs,
     ) -> Result<ExecutedBatch, ProvenBatchError> {
+        let (stack_inputs, mut batch_advice_inputs) = BatchKernel::prepare_inputs(&proposed_batch);
+        batch_advice_inputs.extend(advice_inputs);
+
         let processor = FastProcessor::new_with_options(
             stack_inputs,
-            advice_inputs,
+            batch_advice_inputs,
             ExecutionOptions::default(),
         )
         .map_err(ExecutionError::advice_error_no_context)

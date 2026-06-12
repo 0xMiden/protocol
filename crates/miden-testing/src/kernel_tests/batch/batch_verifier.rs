@@ -1,5 +1,6 @@
 use anyhow::Context;
 use assert_matches::assert_matches;
+use miden_protocol::vm::AdviceInputs;
 use miden_tx_batch::{BatchExecutor, BatchVerifier, BatchVerifierError, LocalBatchProver};
 
 use super::proposed_batch::setup_chain;
@@ -15,7 +16,9 @@ fn batch_verifier_accepts_freshly_proven_batch() -> anyhow::Result<()> {
     let mut setup = setup_chain();
     let batch = two_tx_batch(&mut setup)?;
 
-    let executed = BatchExecutor::new().execute(batch).context("batch execution failed")?;
+    let executed = BatchExecutor::new()
+        .execute(batch, AdviceInputs::default())
+        .context("batch execution failed")?;
     let proven = LocalBatchProver::new().prove(executed).context("batch proving failed")?;
 
     // `verify` returns the proof's actual security level; a zero minimum always passes, so this
