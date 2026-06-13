@@ -8,6 +8,8 @@ use miden_protocol::account::delta::AccountUpdateDetails;
 use miden_protocol::account::{
     Account,
     AccountBuilder,
+    AccountComponent,
+    AccountComponentMetadata,
     AccountDelta,
     AccountId,
     AccountStorage,
@@ -16,7 +18,6 @@ use miden_protocol::account::{
     StorageMapKey,
     StorageSlot,
     StorageSlotName,
-    StorageSlotPatch,
 };
 use miden_protocol::asset::{
     Asset,
@@ -771,24 +772,18 @@ async fn asset_and_storage_patch() -> anyhow::Result<()> {
     // We expect one updated item and one updated map
     assert_eq!(executed_transaction.account_delta().storage().values().count(), 1);
     assert_eq!(
-        executed_transaction
-            .account_delta()
-            .storage()
-            .get(&MOCK_VALUE_SLOT0)
-            .cloned()
-            .map(StorageSlotPatch::unwrap_value),
+        executed_transaction.account_delta().storage().get_value(&MOCK_VALUE_SLOT0),
         Some(updated_slot_value)
     );
 
     assert_eq!(executed_transaction.account_delta().storage().maps().count(), 1);
-    let map_patch = executed_transaction
-        .account_delta()
-        .storage()
-        .get(&MOCK_MAP_SLOT)
-        .cloned()
-        .map(StorageSlotPatch::unwrap_map)
-        .unwrap();
-    assert_eq!(*map_patch.entries().get(&updated_map_key).unwrap(), updated_map_value);
+    assert_eq!(
+        executed_transaction
+            .account_delta()
+            .storage()
+            .get_map_value(&MOCK_MAP_SLOT, &updated_map_key),
+        Some(updated_map_value)
+    );
 
     // vault delta
     // --------------------------------------------------------------------------------------------
@@ -897,18 +892,9 @@ async fn proven_tx_storage_maps_matches_executed_tx_for_new_account() -> anyhow:
     for (slot_name, expected_map) in
         [(map0_slot_name, map0), (map1_slot_name, map1), (map2_slot_name, map2)]
     {
-        let map_patch = tx
-            .account_delta()
-            .storage()
-            .get(&slot_name)
-            .cloned()
-            .map(StorageSlotPatch::unwrap_map)
-            .unwrap();
-        assert_eq!(
-            map_patch.entries().iter().collect::<BTreeMap<_, _>>(),
-            expected_map.entries().collect(),
-            "map delta does not match for slot {slot_name}",
-        );
+        let map_patch_entries = tx.account_delta().storage().get_map(&slot_name).unwrap().entries();
+        let expected: BTreeMap<_, _> = expected_map.entries().map(|(k, v)| (*k, *v)).collect();
+        assert_eq!(map_patch_entries, &expected, "map delta does not match for slot {slot_name}",);
     }
 
     let proven_tx = LocalTransactionProver::default().prove_dummy(tx.clone())?;
@@ -966,24 +952,8 @@ async fn delta_for_new_account_retains_empty_value_storage_slots() -> anyhow::Re
     };
 
     assert_eq!(delta.storage().values().count(), 2);
-    assert_eq!(
-        delta
-            .storage()
-            .get(&slot_name0)
-            .cloned()
-            .map(StorageSlotPatch::unwrap_value)
-            .unwrap(),
-        Word::empty()
-    );
-    assert_eq!(
-        delta
-            .storage()
-            .get(&slot_name1)
-            .cloned()
-            .map(StorageSlotPatch::unwrap_value)
-            .unwrap(),
-        slot_value2
-    );
+    assert_eq!(delta.storage().get_value(&slot_name0), Some(Word::empty()));
+    assert_eq!(delta.storage().get_value(&slot_name1), Some(slot_value2));
 
     let recreated_account = Account::try_from(delta)?;
     // The recreated account should match the original account with the nonce incremented (and the
@@ -1017,15 +987,7 @@ async fn delta_for_new_account_retains_empty_map_storage_slots() -> anyhow::Resu
     };
 
     assert_eq!(delta.storage().maps().count(), 1);
-    assert!(
-        delta
-            .storage()
-            .get(&slot_name0)
-            .cloned()
-            .map(StorageSlotPatch::unwrap_map)
-            .unwrap()
-            .is_empty()
-    );
+    assert!(delta.storage().get_map(&slot_name0).unwrap().is_empty());
 
     let recreated_account = Account::try_from(delta)?;
     // The recreated account should match the original account with the nonce incremented (and the
@@ -1057,6 +1019,113 @@ async fn adding_amount_zero_fungible_asset_to_account_vault_works() -> anyhow::R
         .await?;
 
     assert!(tx.account_delta().vault().is_empty());
+
+    Ok(())
+}
+
+/// Tests that recomputing a delta correctly resets the account delta tracked by the host.
+///
+/// The auth procedure adds `asset0` to the vault, explicitly calls `compute_delta_commitment`,
+/// and then removes `asset0` again. The epilogue then implicitly calls `compute_delta_commitment`
+/// a second time. The net vault delta is empty, so the host's tracked delta must end up empty.
+///
+/// Without the reset performed at the start of each `compute_delta_commitment`, this would fail:
+/// - The explicit call iterates the asset delta link map, sees the added `asset0`, and fires
+///   `on_asset_delta_computation`, which accumulates `asset0` into the host's tracked vault delta.
+/// - Removing `asset0` afterwards turns its link map entry into a net-empty entry.
+/// - The implicit call iterates the link map again, but the net-empty entry does NOT fire
+///   `on_asset_delta_computation`, so the previously accumulated `asset0` would remain in the
+///   host's vault delta forever, leaving it non-empty even though the actual change is zero.
+///
+/// With the reset (the `before_asset_delta_computation` event emitted at the start of each
+/// `compute_delta_commitment`), the host clears its vault delta before each iteration, so the
+/// implicit call correctly produces an empty delta.
+#[tokio::test]
+async fn recomputing_delta_resets_host_delta() -> anyhow::Result<()> {
+    let mut rng = rand::rng();
+    // Test with random IDs to make sure the ordering in the MASM and Rust implementations
+    // matches.
+    let faucet0: AccountId = AccountIdBuilder::new().build_with_seed(rng.random());
+    let faucet1: AccountId = AccountIdBuilder::new().build_with_seed(rng.random());
+
+    let asset0 = NonFungibleAsset::new(&NonFungibleAssetDetails::new(
+        faucet0,
+        rng.random::<[u8; 32]>().to_vec(),
+    ));
+    let asset1 = NonFungibleAsset::new(&NonFungibleAssetDetails::new(
+        faucet1,
+        rng.random::<[u8; 32]>().to_vec(),
+    ));
+
+    let auth_code = format!(
+        "
+    use miden::protocol::native_account
+
+    {TEST_ACCOUNT_CONVENIENCE_WRAPPERS}
+
+    @auth_script
+    pub proc auth_test
+        exec.native_account::incr_nonce drop
+        # => []
+
+        # add asset 0 to the vault
+        push.{ASSET0_VALUE} push.{ASSET0_KEY}
+        exec.add_asset dropw
+        # => []
+
+        # compute the delta to trigger the host to add the assets to the vault delta
+        exec.native_account::compute_delta_commitment
+        dropw
+        # => []
+
+        # remove asset 0 for correct asset preservation
+        push.{ASSET0_VALUE}
+        push.{ASSET0_KEY}
+        exec.remove_asset dropw
+        # => []
+    end
+    ",
+        ASSET0_KEY = asset0.to_key_word(),
+        ASSET0_VALUE = asset0.to_value_word(),
+    );
+
+    let auth_component_code =
+        CodeBuilder::with_mock_libraries().compile_component_code("test::account", auth_code)?;
+
+    let mut builder = MockChain::builder();
+    let account = Account::builder(builder.rng_mut().random())
+        .account_type(AccountType::Public)
+        .with_auth_component(AccountComponent::new(
+            auth_component_code,
+            vec![],
+            AccountComponentMetadata::new("test::account"),
+        )?)
+        .with_component(MockAccountComponent::with_slots(vec![]))
+        .with_assets(vec![asset1.into()])
+        .build_existing()?;
+    builder.add_account(account.clone())?;
+    let mock_chain = builder.build()?;
+
+    let executed_tx = mock_chain
+        .build_tx_context(account, &[], &[])?
+        .build()?
+        .execute()
+        .await
+        .context("failed to execute transaction")?;
+
+    assert!(
+        executed_tx.account_delta().vault().is_empty(),
+        "vault delta should be effectively empty"
+    );
+    assert!(
+        executed_tx.account_delta().storage().is_empty(),
+        "storage delta should be empty"
+    );
+    assert_eq!(
+        executed_tx.account_delta().nonce_delta().as_canonical_u64(),
+        1,
+        "nonce should have been incremented"
+    );
 
     Ok(())
 }

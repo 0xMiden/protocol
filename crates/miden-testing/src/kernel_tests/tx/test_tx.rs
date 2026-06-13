@@ -52,6 +52,7 @@ use miden_protocol::transaction::{
     RawOutputNotes,
     TransactionArgs,
     TransactionKernel,
+    TransactionScript,
     TransactionSummary,
 };
 use miden_protocol::{Felt, Hasher, ONE, Word};
@@ -62,6 +63,7 @@ use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::P2idNote;
 use miden_standards::testing::account_component::IncrNonceAuthComponent;
 use miden_standards::testing::mock_account::MockAccountExt;
+use miden_standards::tx_script::SendNotesTransactionScript;
 use miden_tx::auth::UnreachableAuth;
 use miden_tx::{
     LocalTransactionProver,
@@ -941,8 +943,10 @@ async fn tx_circular_note_dependency_is_rejected() -> anyhow::Result<()> {
     let mut rng = RandomCoin::new(Word::from([1u32; 4]));
     let note_x = create_p2any_note(account.id(), NoteType::Public, [asset], &mut rng);
 
-    let script = AccountInterface::from_account(&account)
-        .build_send_notes_script(&[PartialNote::from(note_x.clone())], None)?;
+    let script = TransactionScript::from(SendNotesTransactionScript::new(
+        &account.code_interface(),
+        &[PartialNote::from(note_x.clone())],
+    )?);
 
     // The tx script reconstructs note_x as an output note (same recipient + same asset).
     let executed_tx = chain
