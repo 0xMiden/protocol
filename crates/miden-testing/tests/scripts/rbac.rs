@@ -1,5 +1,6 @@
 extern crate alloc;
 
+use alloc::collections::BTreeMap;
 use alloc::string::String;
 use core::slice;
 
@@ -32,7 +33,7 @@ fn create_rbac_account_with_owner(owner: AccountId) -> anyhow::Result<Account> {
     let account = AccountBuilder::new([9; 32])
         .account_type(AccountType::Public)
         .with_auth_component(Auth::IncrNonce)
-        .with_components(AccessControl::Rbac { owner, authority_role: None })
+        .with_components(AccessControl::Rbac { owner, roles: BTreeMap::new() })
         .build_existing()?;
 
     Ok(account)
