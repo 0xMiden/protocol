@@ -386,7 +386,7 @@ mod tests {
                 .storage()
                 .get_map_item(
                     AuthMultisig::approver_public_keys_slot(),
-                    Word::from([i as u32, 0, 0, 0]),
+                    StorageMapKey::from_index(i as u32),
                 )
                 .expect("approver public key storage map access failed");
             assert_eq!(stored_pub_key, Word::from(*expected_pub_key));
@@ -398,7 +398,7 @@ mod tests {
                 .storage()
                 .get_map_item(
                     AuthMultisig::approver_scheme_ids_slot(),
-                    Word::from([i as u32, 0, 0, 0]),
+                    StorageMapKey::from_index(i as u32),
                 )
                 .expect("approver scheme ID storage map access failed");
             assert_eq!(stored_scheme_id, Word::from([*expected_auth_scheme as u32, 0, 0, 0]));
@@ -432,13 +432,13 @@ mod tests {
 
         let stored_pub_key = account
             .storage()
-            .get_map_item(AuthMultisig::approver_public_keys_slot(), Word::from([0u32, 0, 0, 0]))
+            .get_map_item(AuthMultisig::approver_public_keys_slot(), StorageMapKey::from_index(0))
             .expect("approver pub keys storage map access failed");
         assert_eq!(stored_pub_key, Word::from(pub_key));
 
         let stored_scheme_id = account
             .storage()
-            .get_map_item(AuthMultisig::approver_scheme_ids_slot(), Word::from([0u32, 0, 0, 0]))
+            .get_map_item(AuthMultisig::approver_scheme_ids_slot(), StorageMapKey::from_index(0))
             .expect("approver scheme IDs storage map access failed");
         assert_eq!(
             stored_scheme_id,
