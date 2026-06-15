@@ -306,6 +306,7 @@ fn add_rbac_faucet_with_pause(
         .account_type(AccountType::Public)
         .with_component(faucet)
         .with_components(AccessControl::Rbac { owner, roles })
+        .with_component(Pausable::unpaused())
         .with_component(PausableManager);
 
     builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
