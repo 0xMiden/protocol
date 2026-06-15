@@ -197,16 +197,19 @@ impl StandardNote {
                     .map_err(|e| NoteError::other_with_source("invalid P2IDE note storage", e))?;
 
                 let current_block_height = block_ref.as_u32();
-                let reclaim_height = reclaim_height.unwrap_or_default().as_u32();
                 let timelock_height = timelock_height.unwrap_or_default().as_u32();
-
-                // block height after which sender account can consume the note
-                let consumable_after = reclaim_height.max(timelock_height);
 
                 // handle the case when the target account of the transaction is sender
                 if target_account_id == note.metadata().sender() {
+                    // If reclaim_height is None, reclaim is disabled -- sender can never consume.
+                    let Some(reclaim_height) = reclaim_height else {
+                        return Ok(Some(NoteConsumptionStatus::NeverConsumable(
+                            "reclaim is disabled for this note".into(),
+                        )));
+                    };
                     // For the sender, the current block height needs to have reached both reclaim
                     // and timelock height to be consumable.
+                    let consumable_after = reclaim_height.as_u32().max(timelock_height);
                     if current_block_height >= consumable_after {
                         Ok(Some(NoteConsumptionStatus::ConsumableWithAuthorization))
                     } else {
