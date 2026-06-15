@@ -69,6 +69,10 @@ fn read_multisig_public_keys(
     };
     let num_approvers = config[1].as_canonical_u64() as u32;
     (0..num_approvers)
-        .filter_map(|i| storage.get_map_item(keys_slot, Word::from([i, 0u32, 0, 0])).ok())
+        .filter_map(|i| {
+            storage
+                .get_map_item(keys_slot, miden_protocol::account::StorageMapKey::from_index(i))
+                .ok()
+        })
         .collect()
 }

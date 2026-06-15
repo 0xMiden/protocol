@@ -2,7 +2,7 @@ use alloc::collections::BTreeSet;
 
 use assert_matches::assert_matches;
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
-use miden_protocol::account::{AccountBuilder, AccountType};
+use miden_protocol::account::{AccountBuilder, AccountType, StorageMapKey};
 use miden_protocol::asset::{AssetAmount, TokenSymbol};
 use miden_protocol::{Felt, Word};
 
@@ -47,7 +47,7 @@ fn read_trigger_procedure_roots(
                 .storage()
                 .get_map_item(
                     AuthSingleSigAcl::trigger_procedure_roots_slot(),
-                    [Felt::from(i), Felt::ZERO, Felt::ZERO, Felt::ZERO].into(),
+                    StorageMapKey::from_index(i),
                 )
                 .unwrap()
         })

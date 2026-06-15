@@ -12,7 +12,7 @@ use crate::account::{
 };
 use crate::asset::AssetVault;
 use crate::crypto::SequentialCommit;
-use crate::errors::{AccountDeltaError, AccountError};
+use crate::errors::{AccountDeltaError, AccountError, AccountPatchError};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -21,6 +21,9 @@ use crate::utils::serde::{
     Serializable,
 };
 use crate::{Felt, Word, ZERO};
+
+mod delta_op;
+pub use delta_op::AssetDeltaOperation;
 
 mod vault;
 pub use vault::{
@@ -127,7 +130,23 @@ impl AccountDelta {
 
         self.nonce_delta = new_nonce_delta;
 
-        self.storage.merge(other.storage)?;
+        // TODO: This code will go away soon, so the ugly match is temporary.
+        self.storage.merge(other.storage).map_err(|err| match err {
+            AccountPatchError::StorageSlotUsedAsDifferentTypes(slot_name) => {
+                AccountDeltaError::StorageSlotUsedAsDifferentTypes(slot_name)
+            },
+            AccountPatchError::FinalNonceIsZero
+            | AccountPatchError::StateChangeRequiresNonceUpdate
+            | AccountPatchError::CodeMustBeProvidedForNewAccounts
+            | AccountPatchError::MergingFullStatePatches
+            | AccountPatchError::NonceMustIncrementByOne { .. }
+            | AccountPatchError::AccountIdMismatch { .. } => {
+                unreachable!(
+                    "AccountStoragePatch::merge only returns StorageSlotUsedAsDifferentTypes"
+                )
+            },
+        })?;
+
         self.vault.merge(other.vault)
     }
 
@@ -203,23 +222,19 @@ impl AccountDelta {
     ///   where `account_id_{prefix,suffix}` are the prefix and suffix felts of the native account
     ///   id, `nonce_delta` is the value by which the nonce was incremented, and `domain = 1`
     ///   identifies the header as the start of an account delta commitment.
-    /// - Fungible Asset Delta
-    ///   - For each **updated** fungible asset, sorted by its vault key, whose amount delta is
-    ///     **non-zero**:
-    ///     - Append `[domain = 3, was_added, faucet_id_suffix_and_metadata, faucet_id_prefix]`
-    ///       where `faucet_id_suffix_and_metadata` is the faucet ID suffix with asset metadata
-    ///       (including the callbacks flag) encoded in the lower 8 bits.
-    ///     - Append `[amount_delta, 0, 0, 0]` where `amount_delta` is the delta by which the
-    ///       fungible asset's amount has changed and `was_added` is a boolean flag indicating
-    ///       whether the amount was added (1) or subtracted (0).
-    /// - Non-Fungible Asset Delta
-    ///   - For each **updated** non-fungible asset, sorted by its vault key:
-    ///     - Append `[domain = 3, was_added, faucet_id_suffix, faucet_id_prefix]` where `was_added`
-    ///       is a boolean flag indicating whether the asset was added (1) or removed (0). Note that
-    ///       the domain is the same for assets since `faucet_id_suffix` and `faucet_id_prefix` are
-    ///       at the same position in the layout for both assets, and, by design, they are never the
-    ///       same for fungible and non-fungible assets.
-    ///     - Append `[hash0, hash1, hash2, hash3]`, i.e. the non-fungible asset.
+    /// - Asset Delta
+    ///   - For each **added** asset, sorted by its vault key:
+    ///     - Append `[ASSET_KEY, ASSET_VALUE]`.
+    ///   - Append `[domain = 3, delta_op = 1, num_added_assets, 0]` if `num_added_assets != 0`
+    ///     where `num_added_assets` is the number of added assets and `delta_op` is set to `1`
+    ///     indicating asset addition.
+    ///   - For each **removed** asset, sorted by its vault key:
+    ///     - Append `[ASSET_KEY, ASSET_VALUE]`.
+    ///   - Append `[domain = 3, delta_op = 2, num_removed_assets, 0]` if `num_removed_assets != 0`
+    ///     where `num_removed_assets` is the number of removed assets and `delta_op` is set to `2`
+    ///     indicating asset removal.
+    ///   - Note that the domain is the same independent of asset addition or removal, since the
+    ///     `delta_op` sufficiently distinguishes the two domains.
     /// - Storage Slots are sorted by slot ID and are iterated in this order. For each slot **whose
     ///   value has changed**, depending on the slot type:
     ///   - Value Slot
@@ -282,8 +297,9 @@ impl AccountDelta {
     /// ```text
     /// [
     ///   ID_AND_NONCE, EMPTY_WORD,
-    ///   [/* no fungible asset delta */],
-    ///   [[domain = 3, was_added = 0, faucet_id_suffix, faucet_id_prefix], NON_FUNGIBLE_ASSET],
+    ///   [ASSET_KEY, ASSET_VALUE],
+    ///   [[domain = 3, delta_op = 1, num_added_assets = 1, 0], EMPTY_WORD],
+    ///   [/* no removed assets delta */],
     ///   [/* no storage patch */]
     /// ]
     /// ```
@@ -291,17 +307,16 @@ impl AccountDelta {
     /// ```text
     /// [
     ///   ID_AND_NONCE, EMPTY_WORD,
-    ///   [/* no fungible asset delta */],
-    ///   [/* no non-fungible asset delta */],
-    ///   [[domain = 5, 0, slot_id_suffix = faucet_id_suffix, slot_id_prefix = faucet_id_prefix], NEW_VALUE]
+    ///   [/* no asset delta */],
+    ///   [[domain = 5, 0, slot_id_suffix0, slot_id_prefix0], NEW_VALUE]
+    ///   [[domain = 5, 0, slot_id_suffix1, slot_id_prefix1], NEW_VALUE]
     /// ]
     /// ```
     ///
-    /// `NEW_VALUE` is user-controllable so it can be crafted to match `NON_FUNGIBLE_ASSET`. Users
-    /// would have to choose a slot ID (at account creation time) that is equal to the faucet ID.
-    /// The domain separator is then the only value that differentiates these two deltas. This shows
-    /// the importance of placing the domain separators in the same index within each word's layout
-    /// to ensure users cannot craft an ambiguous delta.
+    /// - `NEW_VALUE` is user-controlled and can be crafted to match `ASSET_VALUE` or `EMPTY_WORD`.
+    /// - Slot IDs are user-controlled and can be crafted to match the two most significant elements
+    ///   in the asset key or `num_added_assets` and the fixed 0.
+    /// - This leaves only the domain separator and the delta_op to differentiate these two deltas.
     ///
     /// The delta and patch headers further use distinct domain separators (1 and 2 respectively),
     /// so a delta and a patch with otherwise identical bodies can never collide.
@@ -313,8 +328,7 @@ impl AccountDelta {
     /// ```text
     /// [
     ///   ID_AND_NONCE, EMPTY_WORD,
-    ///   [/* no fungible asset delta */],
-    ///   [/* no non-fungible asset delta */],
+    ///   [/* no asset delta */],
     ///   [domain = 6, num_changed_entries = 0, slot_id_suffix = 20, slot_id_prefix = 21, 0, 0, 0, 0]
     ///   [domain = 6, num_changed_entries = 0, slot_id_suffix = 42, slot_id_prefix = 43, 0, 0, 0, 0]
     /// ]
@@ -323,8 +337,7 @@ impl AccountDelta {
     /// ```text
     /// [
     ///   ID_AND_NONCE, EMPTY_WORD,
-    ///   [/* no fungible asset delta */],
-    ///   [/* no non-fungible asset delta */],
+    ///   [/* no asset delta */],
     ///   [KEY0, VALUE0],
     ///   [domain = 6, num_changed_entries = 1, slot_id_suffix = 42, slot_id_prefix = 43, 0, 0, 0, 0]
     /// ]

@@ -1,7 +1,16 @@
 use alloc::collections::BTreeMap;
+use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use crate::asset::{Asset, AssetVaultKey};
+use crate::errors::AssetError;
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 use crate::{Felt, Word};
 
 /// Describes the updates to an [`AssetVault`](crate::account::AssetVault) after a transaction.
@@ -18,8 +27,21 @@ impl AccountVaultPatch {
     const DOMAIN: Felt = Felt::new_unchecked(4);
 
     /// Creates a new vault patch directly from its raw key/value entries.
-    pub fn from_raw(entries: BTreeMap<AssetVaultKey, Word>) -> Self {
-        Self { entries }
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the provided entries are not valid assets, unless the value is
+    /// [`Word::empty`].
+    pub fn new(entries: BTreeMap<AssetVaultKey, Word>) -> Result<Self, AssetError> {
+        for (key, value) in entries.iter() {
+            // If the asset was not removed (final value != Word::empty), ensure the provided entry
+            // is a valid asset.
+            if !value.is_empty() {
+                Asset::from_key_value(*key, *value)?;
+            }
+        }
+
+        Ok(Self { entries })
     }
 
     /// Inserts an asset into the patch, overwriting the previous value.
@@ -30,6 +52,11 @@ impl AccountVaultPatch {
     /// Marks an asset as removed by inserting [`Word::empty`] into the patch.
     pub fn remove_asset(&mut self, asset_vault_key: AssetVaultKey) {
         self.entries.insert(asset_vault_key, Word::empty());
+    }
+
+    /// Returns the number of assets being patched.
+    pub fn num_assets(&self) -> usize {
+        self.entries.len()
     }
 
     /// Returns a reference to the underlying map of the vault patch.
@@ -53,6 +80,12 @@ impl AccountVaultPatch {
         self.entries.is_empty()
     }
 
+    /// Merges another vault patch into this one. Entries from `other` overwrite any existing
+    /// entries in `self` for the same [`AssetVaultKey`].
+    pub fn merge(&mut self, other: Self) {
+        self.entries.extend(other.entries);
+    }
+
     /// Appends the vault patch to the given `elements` from which the patch commitment will be
     /// computed.
     pub(super) fn append_patch_elements(&self, elements: &mut Vec<Felt>) {
@@ -66,5 +99,90 @@ impl AccountVaultPatch {
 
         elements.extend_from_slice(&[Self::DOMAIN, num_changed_assets, Felt::ZERO, Felt::ZERO]);
         elements.extend_from_slice(Word::empty().as_elements());
+    }
+
+    /// Returns an iterator over the keys of assets that were removed (i.e. whose value is
+    /// [`Word::empty`]).
+    fn removed_asset_keys(&self) -> impl Iterator<Item = &AssetVaultKey> {
+        self.entries
+            .iter()
+            .filter(|(_key, value)| value.is_empty())
+            .map(|(key, _value)| key)
+    }
+
+    /// Returns an iterator over the assets that were added or updated (i.e. whose value is not
+    /// [`Word::empty`]).
+    fn added_assets(&self) -> impl Iterator<Item = Asset> {
+        self.entries
+            .iter()
+            .filter(|(_key, value)| !value.is_empty())
+            .map(|(key, value)| {
+                Asset::from_key_value(*key, *value).expect("patch should track valid assets")
+            })
+    }
+}
+
+impl Serializable for AccountVaultPatch {
+    fn write_into<W: ByteWriter>(&self, target: &mut W) {
+        target.write_usize(self.removed_asset_keys().count());
+        target.write_many(self.removed_asset_keys());
+
+        target.write_usize(self.added_assets().count());
+        target.write_many(self.added_assets());
+    }
+
+    fn get_size_hint(&self) -> usize {
+        let removed_size = AssetVaultKey::SERIALIZED_SIZE * self.removed_asset_keys().count();
+        let added_size: usize = self.added_assets().map(|asset| asset.get_size_hint()).sum();
+
+        2 * 0usize.get_size_hint() + removed_size + added_size
+    }
+}
+
+impl Deserializable for AccountVaultPatch {
+    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
+        let num_removed_assets = source.read_usize()?;
+        let mut entries: BTreeMap<AssetVaultKey, Word> = source
+            .read_many_iter::<AssetVaultKey>(num_removed_assets)?
+            .map(|result| result.map(|key| (key, Word::empty())))
+            .collect::<Result<_, _>>()?;
+
+        let num_added_assets = source.read_usize()?;
+        for result in source.read_many_iter::<Asset>(num_added_assets)? {
+            let asset = result?;
+            entries.insert(asset.vault_key(), asset.to_value_word());
+        }
+
+        Self::new(entries).map_err(|err| DeserializationError::InvalidValue(err.to_string()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::asset::{FungibleAsset, NonFungibleAsset};
+    use crate::testing::account_id::ACCOUNT_ID_PRIVATE_SENDER;
+
+    #[test]
+    fn account_vault_patch_serde() -> anyhow::Result<()> {
+        let empty_patch = AccountVaultPatch::default();
+        let serialized = empty_patch.to_bytes();
+        let deserialized = AccountVaultPatch::read_from_bytes(&serialized)?;
+        assert_eq!(empty_patch, deserialized);
+        assert_eq!(empty_patch.get_size_hint(), serialized.len());
+
+        let asset_0: Asset = FungibleAsset::mock(100);
+        let asset_1: Asset =
+            FungibleAsset::new(ACCOUNT_ID_PRIVATE_SENDER.try_into()?, 500_000)?.into();
+        let asset_2: Asset = NonFungibleAsset::mock(&[10]);
+        let asset_3: Asset = NonFungibleAsset::mock(&[20]);
+        let patch = AccountVaultPatch::from_iters([asset_0, asset_1, asset_2], [asset_3]);
+
+        let serialized = patch.to_bytes();
+        let deserialized = AccountVaultPatch::read_from_bytes(&serialized)?;
+        assert_eq!(deserialized, patch);
+        assert_eq!(patch.get_size_hint(), serialized.len());
+
+        Ok(())
     }
 }
