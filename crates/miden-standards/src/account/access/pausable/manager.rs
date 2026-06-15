@@ -33,9 +33,7 @@ procedure_root!(
 /// - [`crate::account::access::AccessControl::Ownable2Step`] →
 ///   [`crate::account::access::Authority::OwnerControlled`] requires the Ownable2Step owner.
 /// - [`crate::account::access::AccessControl::Rbac`] →
-///   [`crate::account::access::Authority::RbacControlled { role }`] requires the single configured
-///   role for both pause and unpause (no PAUSER / UNPAUSER separation — emergency pause is a
-///   coarse-grained capability).
+///   [`crate::account::access::Authority::RbacControlled`] for roles per procedure.
 ///
 /// Companion components required:
 /// - [`crate::account::access::Authority`] — installed automatically by the
