@@ -89,6 +89,8 @@ impl AccountPatch {
     ///   constructed with `None` instead.
     /// - `storage` or `vault` contain updates but `final_nonce` is `None`. The tx kernel mandates
     ///   that the nonce is incremented whenever account state changes.
+    /// - `code` is `Some` but `final_nonce` is `None`. A patch that carries account code describes
+    ///   a full account state, which always has a nonce.
     pub fn new(
         account_id: AccountId,
         storage: AccountStoragePatch,
@@ -103,14 +105,15 @@ impl AccountPatch {
             return Err(AccountPatchError::FinalNonceIsZero);
         }
 
-        // If account storage or vault were updated the nonce cannot be zero, as mandated by the tx
-        // kernel
-        if (!storage.is_empty() || !vault.is_empty()) && final_nonce.is_none() {
-            return Err(AccountPatchError::NonEmptyStorageOrVaultPatchWithZeroNonce);
+        // If account storage or vault were updated or code is present, the patch represents a state
+        // change and so the nonce cannot be zero. The tx kernel mandates this (except it does not
+        // consider code yet).
+        if (!storage.is_empty() || !vault.is_empty() || code.is_some()) && final_nonce.is_none() {
+            return Err(AccountPatchError::StateChangeRequiresNonceUpdate);
         }
 
         // Code must be provided for new accounts to be able to reconstruct the full Account.
-        // New accounts are usually defined with nonce 0, but here we have the post-creation
+        // New accounts are defined with nonce 0, but here we have the post-creation
         // final nonce, so we define new accounts as having final_nonce = 1.
         if final_nonce.is_some_and(|final_nonce| final_nonce == Felt::ONE) && code.is_none() {
             return Err(AccountPatchError::CodeMustBeProvidedForNewAccounts);
@@ -162,7 +165,10 @@ impl AccountPatch {
         // TODO(code_upgrades): Change this to another detection mechanism once we have code upgrade
         // support, at which point the presence of code may not be enough of an indication that a
         // patch can be converted to a full account.
-        self.code.is_some() && self.final_nonce.is_some()
+        //
+        // The constructor enforces that `code.is_some()` implies `final_nonce.is_some()`, so the
+        // presence of code alone is sufficient to identify a full state patch.
+        self.code.is_some()
     }
 
     /// Returns true if this account patch does not contain any vault or storage updates and the
@@ -248,12 +254,9 @@ impl TryFrom<&AccountPatch> for Account {
             return Err(AccountError::PartialStatePatchToAccount);
         }
 
-        let Some(code) = patch.code().cloned() else {
-            return Err(AccountError::PartialStatePatchToAccount);
-        };
-        let Some(nonce) = patch.final_nonce() else {
-            return Err(AccountError::PartialStatePatchToAccount);
-        };
+        // The constructor guarantees that a full state patch carries both code and a final nonce.
+        let code = patch.code().cloned().expect("full state patch must carry code");
+        let nonce = patch.final_nonce().expect("full state patch must carry final nonce");
 
         let mut vault = AssetVault::default();
         vault.apply_patch(patch.vault()).map_err(AccountError::AssetVaultUpdateError)?;
@@ -428,28 +431,34 @@ mod tests {
         Ok(())
     }
 
-    /// A patch that updates storage or the vault but leaves `final_nonce` as `None` is rejected,
-    /// since any account state change requires the nonce to be incremented.
+    /// A patch that updates storage, the vault, or carries code but leaves `final_nonce` as `None`
+    /// is rejected, since any account state change requires the nonce to be incremented.
+    #[rstest::rstest]
+    #[case::non_empty_storage(
+        AccountStoragePatch::from_iters([StorageSlotName::mock(1)], [], []),
+        AccountVaultPatch::default(),
+        None,
+    )]
+    #[case::non_empty_vault(
+        AccountStoragePatch::new(),
+        AccountVaultPatch::with_assets([FungibleAsset::mock(100)]),
+        None,
+    )]
+    #[case::present_code(
+        AccountStoragePatch::new(),
+        AccountVaultPatch::default(),
+        Some(AccountCode::mock())
+    )]
     #[test]
-    fn account_patch_non_empty_with_no_nonce_update() -> anyhow::Result<()> {
+    fn account_patch_with_state_change_requires_nonce_update(
+        #[case] storage: AccountStoragePatch,
+        #[case] vault: AccountVaultPatch,
+        #[case] code: Option<AccountCode>,
+    ) -> anyhow::Result<()> {
         let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER)?;
 
-        let non_empty_storage = AccountStoragePatch::from_iters([StorageSlotName::mock(1)], [], []);
-        let storage_error = AccountPatch::new(
-            account_id,
-            non_empty_storage,
-            AccountVaultPatch::default(),
-            None,
-            None,
-        )
-        .unwrap_err();
-        assert_matches!(storage_error, AccountPatchError::NonEmptyStorageOrVaultPatchWithZeroNonce);
-
-        let non_empty_vault = AccountVaultPatch::with_assets([FungibleAsset::mock(100)]);
-        let vault_error =
-            AccountPatch::new(account_id, AccountStoragePatch::new(), non_empty_vault, None, None)
-                .unwrap_err();
-        assert_matches!(vault_error, AccountPatchError::NonEmptyStorageOrVaultPatchWithZeroNonce);
+        let error = AccountPatch::new(account_id, storage, vault, code, None).unwrap_err();
+        assert_matches!(error, AccountPatchError::StateChangeRequiresNonceUpdate);
 
         Ok(())
     }
@@ -519,34 +528,26 @@ mod tests {
         Ok(())
     }
 
-    /// A patch lacking code or a final nonce cannot be converted to an [`Account`].
+    /// A patch lacking code cannot be converted to an [`Account`], whether or not a final nonce
+    /// is present.
+    #[rstest::rstest]
+    #[case::missing_code(Some(Felt::from(2_u32)))]
+    #[case::empty_patch(None)]
     #[test]
-    fn account_try_from_partial_patch_fails() -> anyhow::Result<()> {
+    fn account_try_from_partial_patch_fails(
+        #[case] final_nonce: Option<Felt>,
+    ) -> anyhow::Result<()> {
         let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER)?;
 
-        // Missing code.
-        let no_code = AccountPatch::new(
+        let patch = AccountPatch::new(
             account_id,
             AccountStoragePatch::new(),
             AccountVaultPatch::default(),
             None,
-            Some(Felt::from(2_u32)),
+            final_nonce,
         )?;
         assert_matches!(
-            Account::try_from(&no_code).unwrap_err(),
-            AccountError::PartialStatePatchToAccount
-        );
-
-        // Missing final nonce (empty patch).
-        let empty = AccountPatch::new(
-            account_id,
-            AccountStoragePatch::new(),
-            AccountVaultPatch::default(),
-            None,
-            None,
-        )?;
-        assert_matches!(
-            Account::try_from(&empty).unwrap_err(),
+            Account::try_from(&patch).unwrap_err(),
             AccountError::PartialStatePatchToAccount
         );
 

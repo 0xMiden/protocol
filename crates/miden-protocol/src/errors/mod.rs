@@ -462,11 +462,16 @@ pub enum AccountPatchError {
     #[error("final nonce can never be set to zero")]
     FinalNonceIsZero,
 
-    #[error("non-empty account storage or vault patch with final nonce set to zero is not allowed")]
-    NonEmptyStorageOrVaultPatchWithZeroNonce,
+    #[error(
+        "state change to an account (store, vault or code) require that the final nonce is incremented"
+    )]
+    StateChangeRequiresNonceUpdate,
 
     #[error("account code must be provided for new accounts (with nonce = 1)")]
     CodeMustBeProvidedForNewAccounts,
+
+    #[error("final nonce must be provided when account code is provided")]
+    FinalNonceRequiredWhenCodeIsProvided,
 }
 
 // STORAGE MAP ERROR
