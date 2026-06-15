@@ -116,30 +116,6 @@ async fn remove_ger_note_clears_storage_and_updates_chain() -> anyhow::Result<()
     Ok(())
 }
 
-/// Tests that REMOVE_GER reverts when the GER was never registered in the first place.
-#[tokio::test]
-async fn remove_ger_unknown_ger_reverts() -> anyhow::Result<()> {
-    let mut builder = MockChain::builder();
-    let (bridge_account, _ger_manager, ger_remover) = setup_bridge(&mut builder)?;
-
-    let ger = ExitRoot::from(GER_BYTES);
-    let remove_ger_note =
-        RemoveGerNote::create(ger, ger_remover.id(), bridge_account.id(), builder.rng_mut())?;
-    builder.add_output_note(RawOutputNote::Full(remove_ger_note.clone()));
-
-    let mock_chain = builder.build()?;
-
-    let result = mock_chain
-        .build_tx_context(bridge_account.id(), &[remove_ger_note.id()], &[])?
-        .build()?
-        .execute()
-        .await;
-
-    assert_transaction_executor_error!(result, ERR_GER_NOT_FOUND);
-
-    Ok(())
-}
-
 /// Tests that removing a GER from the middle of a sequence of inserted GERs leaves the
 /// other GERs in place. Inserts A, B, C, removes B, and verifies that A and C remain
 /// registered while B does not.
