@@ -11,7 +11,7 @@ use miden_agglayer::{
     create_existing_bridge_account,
 };
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::account::{AccountId, AccountIdVersion, AccountType};
+use miden_protocol::account::{AccountId, AccountIdVersion, AccountType, StorageMapKey};
 use miden_protocol::block::account_tree::AccountIdKey;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::transaction::RawOutputNote;
@@ -22,11 +22,11 @@ use miden_testing::{Auth, MockChain};
 ///
 /// Mirrors `bridge_config::hash_token_address` in `bridge_config.masm`: hashes the 5-felt token
 /// address concatenated with the origin network felt (LE-packed u32), using Poseidon2.
-fn token_registry_key(origin_token_address: &EthAddress, origin_network: u32) -> Word {
+fn token_registry_key(origin_token_address: &EthAddress, origin_network: u32) -> StorageMapKey {
     let mut elements: Vec<Felt> = origin_token_address.to_elements();
     let origin_network_packed = u32::from_le_bytes(origin_network.to_be_bytes());
     elements.push(Felt::from(origin_network_packed));
-    Hasher::hash_elements(&elements)
+    StorageMapKey::from_raw(Hasher::hash_elements(&elements))
 }
 
 /// Tests that a CONFIG_AGG_BRIDGE note registers a faucet in the bridge's faucet registry.
@@ -71,7 +71,7 @@ async fn test_config_agg_bridge_registers_faucet() -> anyhow::Result<()> {
 
     // Verify the faucet is NOT in the registry before registration
     let registry_slot_name = AggLayerBridge::faucet_registry_map_slot_name();
-    let key = AccountIdKey::new(faucet_to_register).as_word();
+    let key = StorageMapKey::from_raw(AccountIdKey::new(faucet_to_register).as_word());
     let value_before = bridge_account.storage().get_map_item(registry_slot_name, key)?;
     assert_eq!(
         value_before,

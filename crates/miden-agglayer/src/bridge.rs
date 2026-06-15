@@ -6,7 +6,14 @@ use alloc::vec::Vec;
 
 use miden_core::{Felt, ONE, Word, ZERO};
 use miden_protocol::account::component::AccountComponentMetadata;
-use miden_protocol::account::{Account, AccountComponent, AccountId, StorageSlot, StorageSlotName};
+use miden_protocol::account::{
+    Account,
+    AccountComponent,
+    AccountId,
+    StorageMapKey,
+    StorageSlot,
+    StorageSlotName,
+};
 use miden_protocol::block::account_tree::AccountIdKey;
 use miden_protocol::crypto::hash::poseidon2::Poseidon2;
 use miden_protocol::note::NoteScriptRoot;
@@ -335,7 +342,7 @@ impl AggLayerBridge {
         // equal to [1, 0, 0, 0]
         let stored_value = bridge_account
             .storage()
-            .get_map_item(AggLayerBridge::ger_map_slot_name(), ger_hash)
+            .get_map_item(AggLayerBridge::ger_map_slot_name(), StorageMapKey::from_raw(ger_hash))
             .expect("provided account should have AggLayer Bridge specific storage slots");
 
         if stored_value == Self::REGISTERED_GER_MAP_VALUE {

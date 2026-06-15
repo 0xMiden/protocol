@@ -13,7 +13,7 @@ use super::{
     TransactionId,
     TransactionOutputs,
 };
-use crate::account::PartialAccount;
+use crate::account::{AccountPatch, PartialAccount};
 use crate::asset::FungibleAsset;
 use crate::block::{BlockHeader, BlockNumber};
 use crate::transaction::TransactionInputs;
@@ -44,6 +44,7 @@ pub struct ExecutedTransaction {
     tx_inputs: TransactionInputs,
     tx_outputs: TransactionOutputs,
     account_delta: AccountDelta,
+    account_patch: AccountPatch,
     tx_measurements: TransactionMeasurements,
 }
 
@@ -59,6 +60,7 @@ impl ExecutedTransaction {
         tx_inputs: TransactionInputs,
         tx_outputs: TransactionOutputs,
         account_delta: AccountDelta,
+        account_patch: AccountPatch,
         tx_measurements: TransactionMeasurements,
     ) -> Self {
         // make sure account IDs are consistent across transaction inputs and outputs
@@ -79,6 +81,7 @@ impl ExecutedTransaction {
             tx_inputs,
             tx_outputs,
             account_delta,
+            account_patch,
             tx_measurements,
         }
     }
@@ -141,6 +144,12 @@ impl ExecutedTransaction {
         &self.account_delta
     }
 
+    /// Returns the patch of the transaction that describes the update from the initial to the final
+    /// account state.
+    pub fn account_patch(&self) -> &AccountPatch {
+        &self.account_patch
+    }
+
     /// Returns a reference to the inputs for this transaction.
     pub fn tx_inputs(&self) -> &TransactionInputs {
         &self.tx_inputs
@@ -164,8 +173,20 @@ impl ExecutedTransaction {
     /// Returns individual components of this transaction.
     pub fn into_parts(
         self,
-    ) -> (TransactionInputs, TransactionOutputs, AccountDelta, TransactionMeasurements) {
-        (self.tx_inputs, self.tx_outputs, self.account_delta, self.tx_measurements)
+    ) -> (
+        TransactionInputs,
+        TransactionOutputs,
+        AccountDelta,
+        AccountPatch,
+        TransactionMeasurements,
+    ) {
+        (
+            self.tx_inputs,
+            self.tx_outputs,
+            self.account_delta,
+            self.account_patch,
+            self.tx_measurements,
+        )
     }
 }
 
@@ -177,7 +198,7 @@ impl From<ExecutedTransaction> for TransactionInputs {
 
 impl From<ExecutedTransaction> for TransactionMeasurements {
     fn from(tx: ExecutedTransaction) -> Self {
-        let (_, _, _, tx_progress) = tx.into_parts();
+        let (_, _, _, _, tx_progress) = tx.into_parts();
         tx_progress
     }
 }
@@ -187,6 +208,7 @@ impl Serializable for ExecutedTransaction {
         self.tx_inputs.write_into(target);
         self.tx_outputs.write_into(target);
         self.account_delta.write_into(target);
+        self.account_patch.write_into(target);
         self.tx_measurements.write_into(target);
     }
 }
@@ -196,9 +218,10 @@ impl Deserializable for ExecutedTransaction {
         let tx_inputs = TransactionInputs::read_from(source)?;
         let tx_outputs = TransactionOutputs::read_from(source)?;
         let account_delta = AccountDelta::read_from(source)?;
+        let account_patch = AccountPatch::read_from(source)?;
         let tx_measurements = TransactionMeasurements::read_from(source)?;
 
-        Ok(Self::new(tx_inputs, tx_outputs, account_delta, tx_measurements))
+        Ok(Self::new(tx_inputs, tx_outputs, account_delta, account_patch, tx_measurements))
     }
 }
 

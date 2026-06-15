@@ -2,8 +2,7 @@ use alloc::boxed::Box;
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec::Vec;
 
-use crate::account::AccountId;
-use crate::account::delta::AccountUpdateDetails;
+use crate::account::{AccountId, AccountUpdateDetails};
 use crate::batch::note_tracker::{NoteTracker, TrackerOutput};
 use crate::batch::{BatchAccountUpdate, BatchId, OrderedBatches, ProvenBatch};
 use crate::block::account_tree::{AccountWitness, PartialAccountTree};

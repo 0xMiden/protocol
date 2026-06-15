@@ -11,7 +11,13 @@ use miden::standards::access::rbac
 # CONSTANTS
 # =================================================================================================
 
+# Value slot holding the authority configuration: [authority, 0, 0, 0].
+# authority is the discriminator (0 = AuthControlled, 1 = OwnerControlled, 2 = RbacControlled).
 pub const AUTHORITY_SLOT = word("miden::standards::access::authority")
+
+# Map slot assigning a role to individual gated procedures. Only present under RbacControlled.
+# Map entries: [PROCEDURE_ROOT] -> [role_symbol, 0, 0, 0].
+pub const AUTHORITY_PROCEDURE_ROLES_SLOT = word("miden::standards::access::authority::procedure_roles")
 
 const AUTH_CONTROLLED = 0
 const OWNER_CONTROLLED = 1
@@ -29,25 +35,31 @@ const ERR_UNSUPPORTED_AUTHORITY = "authority is not supported"
 #!
 #! - AuthControlled (0)  → no-op (the account's auth component already gated the call).
 #! - OwnerControlled (1) → calls `ownable2step::assert_sender_is_owner`.
-#! - RbacControlled (2)  → loads the role symbol from the authority slot and calls
-#!   `rbac::assert_sender_has_role`. Requires the
+#! - RbacControlled (2)  → if the calling procedure has a role configured in the authority
+#!   procedure-roles map (keyed by the procedure root obtained via `caller`), asserts the sender
+#!   holds that role; otherwise falls back to `ownable2step::assert_sender_is_owner`. Requires the
 #!   [`RoleBasedAccessControl`][crate::account::access::RoleBasedAccessControl] component to be
 #!   installed on the account; otherwise linking the account fails.
+#!
+#! Because the calling procedure is identified via `caller`, `assert_authorized` MUST be invoked
+#! with `exec` (inlined) from the gated procedure, and the gated procedure MUST be a `call`
+#! entrypoint so that `caller` resolves to the gated procedure's own root.
 #!
 #! Inputs:  []
 #! Outputs: []
 #!
 #! Panics if:
 #! - the authority is OwnerControlled and the sender is not the registered owner.
-#! - the authority is RbacControlled and the sender does not hold the configured role.
+#! - the authority is RbacControlled, a role is configured for the procedure, and the sender does
+#!   not hold it.
+#! - the authority is RbacControlled, no role is configured for the procedure, and the sender is
+#!   not the owner.
 #! - the authority is an unknown value.
 #!
 #! Invocation: exec
 pub proc assert_authorized
-    # Note: invariant — role_symbol felt is 0 unless authority == RBAC_CONTROLLED.
-    # Enforced by `From<Authority> for Word` in Rust.
     push.AUTHORITY_SLOT[0..2] exec.active_account::get_item
-    # => [authority, role_symbol, 0, 0]
+    # => [authority, 0, 0, 0]
 
     dup eq.AUTH_CONTROLLED
     if.true
@@ -58,21 +70,72 @@ pub proc assert_authorized
         dup eq.OWNER_CONTROLLED
         if.true
             exec.ownable2step::assert_sender_is_owner
-            # => [authority, role_symbol, 0, 0]
+            # => [authority, 0, 0, 0]
             dropw
             # => []
         else
             eq.RBAC_CONTROLLED
             if.true
-                # => [role_symbol, 0, 0]
-                exec.rbac::assert_sender_has_role
-                # => [0, 0]
-                drop drop
+                # => [0, 0, 0]
+                drop drop drop
+                # => []
+
+                exec.assert_authorized_rbac
                 # => []
             else
                 # Unknown authority — panic. Stack state irrelevant.
                 push.0 assert.err=ERR_UNSUPPORTED_AUTHORITY
             end
         end
+    end
+end
+
+# PRIVATE PROCEDURES
+# =================================================================================================
+
+#! Asserts the sender is authorized under the RbacControlled authority.
+#!
+#! Resolves the calling procedure's root via `caller` and looks up its assigned role in the
+#! procedure-roles map. If a role is configured, asserts the sender holds it; otherwise falls back
+#! to the Ownable2Step owner check.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Panics if:
+#! - a role is configured for the procedure and the sender does not hold it.
+#! - no role is configured for the procedure and the sender is not the owner.
+#!
+#! Invocation: exec
+proc assert_authorized_rbac
+    # Resolve the calling procedure's root and look up its assigned role in the map.
+    padw caller
+    # => [CALLER_ROOT]
+
+    push.AUTHORITY_PROCEDURE_ROLES_SLOT[0..2]
+    # => [slot_suffix, slot_prefix, CALLER_ROOT]
+
+    exec.active_account::get_map_item
+    # => [mapped_role, 0, 0, 0]
+
+    movdn.3 drop drop drop
+    # => [mapped_role]
+
+    dup eq.0
+    # => [has_no_mapped_role, mapped_role]
+
+    if.true
+        # No role configured for this procedure, require the owner.
+        drop
+        # => []
+
+        exec.ownable2step::assert_sender_is_owner
+        # => []
+    else
+        # Assert the sender holds the configured role.
+        # => [mapped_role]
+
+        exec.rbac::assert_sender_has_role
+        # => []
     end
 end

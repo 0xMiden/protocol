@@ -13,7 +13,6 @@ use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::merkle::smt::SmtProofError;
 use miden_protocol::errors::{
     AccountDeltaError,
-    AccountError,
     AssetError,
     NoteError,
     OutputNoteError,
@@ -108,9 +107,9 @@ pub enum TransactionExecutorError {
     #[error("failed to process account update commitment: {0}")]
     AccountUpdateCommitment(&'static str),
     #[error(
-        "account delta commitment computed in transaction kernel ({in_kernel_commitment}) does not match account delta computed via the host ({host_commitment})"
+        "account patch commitment computed in transaction kernel ({in_kernel_commitment}) does not match account patch computed via the host ({host_commitment})"
     )]
-    InconsistentAccountDeltaCommitment {
+    InconsistentAccountPatchCommitment {
         in_kernel_commitment: Word,
         host_commitment: Word,
     },
@@ -164,10 +163,6 @@ impl TransactionExecutorError {
 
 #[derive(Debug, Error)]
 pub enum TransactionProverError {
-    #[error("failed to apply account delta")]
-    AccountDeltaApplyFailed(#[source] AccountError),
-    #[error("failed to remove the fee asset from the pre-fee account delta")]
-    RemoveFeeAssetFromDelta(#[source] AccountDeltaError),
     #[error("failed to construct transaction outputs")]
     TransactionOutputConstructionFailed(#[source] TransactionOutputError),
     #[error("failed to shrink output note")]

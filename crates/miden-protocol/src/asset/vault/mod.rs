@@ -17,7 +17,7 @@ use super::{
     Serializable,
 };
 use crate::Word;
-use crate::account::{AccountVaultDelta, NonFungibleDeltaAction};
+use crate::account::{AccountVaultDelta, AccountVaultPatch, NonFungibleDeltaAction};
 use crate::crypto::merkle::smt::{SMT_DEPTH, Smt};
 use crate::errors::{AssetError, AssetVaultError};
 
@@ -220,6 +220,21 @@ impl AssetVault {
                     self.remove_non_fungible_asset(asset)?;
                 },
             }
+        }
+
+        Ok(())
+    }
+
+    /// Applies the specified patch to the asset vault.
+    ///
+    /// This updates each asset that is contained in the patch to its new value.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the maximum number of leaves per asset is exceeded.
+    pub fn apply_patch(&mut self, patch: &AccountVaultPatch) -> Result<(), AssetVaultError> {
+        for (&vault_key, &value) in patch.iter() {
+            self.insert_entry(vault_key, value)?;
         }
 
         Ok(())
