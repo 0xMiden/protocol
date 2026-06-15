@@ -64,7 +64,7 @@ pub enum Auth {
     /// authenticate the account with [AuthSingleSigAcl]. Any called procedure that is not
     /// in `exempt_procedures` forces signature verification.
     Acl {
-        exempt_procedures: Vec<AccountProcedureRoot>,
+        exempt_procedures: BTreeSet<AccountProcedureRoot>,
         auth_scheme: AuthScheme,
     },
 

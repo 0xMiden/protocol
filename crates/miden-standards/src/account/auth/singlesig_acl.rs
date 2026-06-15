@@ -48,20 +48,20 @@ static EXEMPT_PROCEDURE_ROOTS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::n
 /// Configuration for [`AuthSingleSigAcl`] component.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AuthSingleSigAclConfig {
-    /// List of procedure roots that are exempt from requiring authentication when called.
-    /// Any called procedure that is not on this list forces signature verification.
-    pub exempt_procedures: Vec<AccountProcedureRoot>,
+    /// Set of procedure roots that are exempt from requiring authentication when called.
+    /// Any called procedure that is not in this set forces signature verification.
+    pub exempt_procedures: BTreeSet<AccountProcedureRoot>,
 }
 
 impl AuthSingleSigAclConfig {
-    /// Creates a new configuration with an empty exempt list. Under this default, every
+    /// Creates a new configuration with an empty exempt set. Under this default, every
     /// account procedure call requires authentication.
     pub fn new() -> Self {
-        Self { exempt_procedures: vec![] }
+        Self { exempt_procedures: BTreeSet::new() }
     }
 
-    /// Sets the list of procedure roots that are exempt from requiring authentication.
-    pub fn with_exempt_procedures(mut self, procedures: Vec<AccountProcedureRoot>) -> Self {
+    /// Sets the set of procedure roots that are exempt from requiring authentication.
+    pub fn with_exempt_procedures(mut self, procedures: BTreeSet<AccountProcedureRoot>) -> Self {
         self.exempt_procedures = procedures;
         self
     }
@@ -113,8 +113,7 @@ impl Default for AuthSingleSigAclConfig {
 /// notes via `output_note_create` without moving assets - are not flagged even when they run;
 /// the output note and input note checks above close that gap. As a corollary, exempting a
 /// procedure that never touches an account-restricted API is a no-op (consuming a note via such
-/// a procedure still trips the input note check). Prefer to exempt only procedures whose
-/// detection you can verify in tests.
+/// a procedure still trips the input note check).
 pub struct AuthSingleSigAcl {
     pub_key: PublicKeyCommitment,
     auth_scheme: AuthScheme,
@@ -138,9 +137,8 @@ impl AuthSingleSigAcl {
     /// Creates a new [`AuthSingleSigAcl`] component with the given `public_key` and
     /// configuration.
     ///
-    /// Returns an error if more than [`AccountCode::MAX_NUM_PROCEDURES`] procedures are
-    /// specified, or if `config.exempt_procedures` contains duplicate procedure roots
-    /// (since procedure roots are used as storage map keys).
+    /// Returns an error if:
+    /// - more than [`AccountCode::MAX_NUM_PROCEDURES`] procedures are specified.
     pub fn new(
         pub_key: PublicKeyCommitment,
         auth_scheme: AuthScheme,
@@ -151,13 +149,6 @@ impl AuthSingleSigAcl {
             return Err(AccountError::other(format!(
                 "Cannot track more than {max_procedures} procedures (account limit)"
             )));
-        }
-
-        let mut seen = BTreeSet::new();
-        for proc_root in &config.exempt_procedures {
-            if !seen.insert(proc_root.as_word()) {
-                return Err(AccountError::DuplicateExemptProcedure(*proc_root));
-            }
         }
 
         Ok(Self { pub_key, auth_scheme, config })
@@ -239,15 +230,13 @@ impl From<AuthSingleSigAcl> for AccountComponent {
             Word::from([singlesig_acl.auth_scheme.as_u8(), 0, 0, 0]),
         ));
 
-        // Exempt procedure roots slot (map: PROC_ROOT -> [1, 0, 0, 0] presence marker).
+        // Exempt procedure roots slot.
         // We add the map even if there are no exempt procedures, to always maintain the same
         // storage layout.
         let map_entries = singlesig_acl.config.exempt_procedures.iter().map(|proc_root| {
             (StorageMapKey::from_raw(proc_root.as_word()), Word::from([1u32, 0, 0, 0]))
         });
 
-        // Uniqueness of procedure roots is validated in `AuthSingleSigAcl::new`, so
-        // `with_entries` cannot return `DuplicateKey` here.
         storage_slots.push(StorageSlot::with_map(
             AuthSingleSigAcl::exempt_procedure_roots_slot().clone(),
             StorageMap::with_entries(map_entries).unwrap(),
@@ -274,15 +263,15 @@ mod tests {
     use crate::account::wallets::BasicWallet;
 
     /// Helper that returns the two callable procedures of [`BasicWallet`].
-    fn get_basic_wallet_procedures() -> Vec<AccountProcedureRoot> {
-        let procedures: Vec<AccountProcedureRoot> =
+    fn get_basic_wallet_procedures() -> BTreeSet<AccountProcedureRoot> {
+        let procedures: BTreeSet<AccountProcedureRoot> =
             StandardAccountComponent::BasicWallet.procedure_roots().collect();
         assert_eq!(procedures.len(), 2);
         procedures
     }
 
     fn build_account(
-        exempt_procedures: Vec<AccountProcedureRoot>,
+        exempt_procedures: BTreeSet<AccountProcedureRoot>,
     ) -> (PublicKeyCommitment, miden_protocol::account::Account) {
         let public_key = PublicKeyCommitment::from(Word::empty());
         let auth_scheme = AuthScheme::Falcon512Poseidon2;
@@ -305,7 +294,7 @@ mod tests {
     /// for every probed key.
     #[test]
     fn test_singlesig_acl_empty_exempt_list() {
-        let (public_key, account) = build_account(vec![]);
+        let (public_key, account) = build_account(BTreeSet::new());
 
         let public_key_slot = account
             .storage()
@@ -351,26 +340,10 @@ mod tests {
         assert_eq!(probe, Word::empty());
     }
 
-    /// Duplicate procedure roots in `exempt_procedures` must be rejected by `new` rather than
-    /// panicking later inside `StorageMap::with_entries` when the component is converted.
-    #[test]
-    fn test_singlesig_acl_rejects_duplicate_exempt_procedures() {
-        let procedures = get_basic_wallet_procedures();
-        let dup = procedures[0];
-        let config = AuthSingleSigAclConfig::new().with_exempt_procedures(vec![dup, dup]);
-
-        let result = AuthSingleSigAcl::new(
-            PublicKeyCommitment::from(Word::empty()),
-            AuthScheme::Falcon512Poseidon2,
-            config,
-        );
-        assert!(result.is_err(), "duplicate exempt procedures should be rejected");
-    }
-
     /// More than `MAX_NUM_PROCEDURES` exempt entries must be rejected by `new`.
     #[test]
     fn test_singlesig_acl_rejects_exempt_list_above_account_limit() {
-        let too_many: Vec<AccountProcedureRoot> = (0..=AccountCode::MAX_NUM_PROCEDURES as u32)
+        let too_many: BTreeSet<AccountProcedureRoot> = (0..=AccountCode::MAX_NUM_PROCEDURES as u32)
             .map(|i| AccountProcedureRoot::from_raw(Word::from([i, 0, 0, 0])))
             .collect();
 

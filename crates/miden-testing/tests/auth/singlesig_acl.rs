@@ -1,4 +1,5 @@
 use core::slice;
+use std::collections::BTreeSet;
 
 use assert_matches::assert_matches;
 use miden_processor::ExecutionError;
@@ -65,7 +66,7 @@ fn mock_component_proc_roots() -> (AccountProcedureRoot, AccountProcedureRoot, A
 /// Sets up an account using `AuthSingleSigAcl` with the supplied exempt list, registers it
 /// on a fresh mock chain, and returns a note ready to be consumed by the account.
 fn setup_acl_test(
-    exempt_procedures: Vec<AccountProcedureRoot>,
+    exempt_procedures: BTreeSet<AccountProcedureRoot>,
     auth_scheme: AuthScheme,
 ) -> anyhow::Result<(Account, MockChain, Note)> {
     let component: AccountComponent =
@@ -94,7 +95,7 @@ fn setup_acl_test(
 
 /// Builds an authenticator using the same seed `Auth::Acl` uses internally.
 fn build_acl_authenticator(
-    exempt_procedures: Vec<AccountProcedureRoot>,
+    exempt_procedures: BTreeSet<AccountProcedureRoot>,
     auth_scheme: AuthScheme,
 ) -> Option<BasicAuthenticator> {
     let (_, authenticator) = Auth::Acl { exempt_procedures, auth_scheme }.build_component();
@@ -110,7 +111,7 @@ fn build_acl_authenticator(
 #[tokio::test]
 async fn test_acl(#[case] auth_scheme: AuthScheme) -> anyhow::Result<()> {
     let (_get_item, _set_item, account_procedure_1) = mock_component_proc_roots();
-    let exempt_procedures = vec![account_procedure_1];
+    let exempt_procedures = BTreeSet::from([account_procedure_1]);
     let (account, mock_chain, note) = setup_acl_test(exempt_procedures.clone(), auth_scheme)?;
 
     let authenticator = build_acl_authenticator(exempt_procedures, auth_scheme);
@@ -204,7 +205,7 @@ async fn test_acl_output_note_creation_requires_auth_even_when_caller_exempt(
     let move_asset_to_note = BasicWallet::move_asset_to_note_root();
 
     let (auth_component, _authenticator) = Auth::Acl {
-        exempt_procedures: vec![move_asset_to_note],
+        exempt_procedures: BTreeSet::from([move_asset_to_note]),
         auth_scheme,
     }
     .build_component();
@@ -263,7 +264,7 @@ async fn test_acl_exempt_detected_procedure_succeeds_without_auth(
     #[case] auth_scheme: AuthScheme,
 ) -> anyhow::Result<()> {
     let (get_item, _set_item, _account_procedure_1) = mock_component_proc_roots();
-    let exempt_procedures = vec![get_item];
+    let exempt_procedures = BTreeSet::from([get_item]);
     let (account, mock_chain, note) = setup_acl_test(exempt_procedures, auth_scheme)?;
 
     let tx_script_src = format!(
@@ -308,7 +309,7 @@ async fn test_acl_exempt_detected_procedure_succeeds_without_auth(
 async fn test_acl_input_note_consumption_requires_auth_without_exempt(
     #[case] auth_scheme: AuthScheme,
 ) -> anyhow::Result<()> {
-    let (account, mock_chain, note) = setup_acl_test(vec![], auth_scheme)?;
+    let (account, mock_chain, note) = setup_acl_test(BTreeSet::new(), auth_scheme)?;
 
     // No tx script - the only side effect of the transaction is consuming the mock note
     // produced by `setup_acl_test`. With an empty exempt list and no exempt procedure
@@ -334,7 +335,7 @@ async fn test_acl_input_note_consumption_requires_auth_without_exempt(
 async fn test_acl_empty_exempt_list_default_denies_unsigned(
     #[case] auth_scheme: AuthScheme,
 ) -> anyhow::Result<()> {
-    let (account, mock_chain, note) = setup_acl_test(vec![], auth_scheme)?;
+    let (account, mock_chain, note) = setup_acl_test(BTreeSet::new(), auth_scheme)?;
 
     let tx_script_src = format!(
         r#"
@@ -375,7 +376,7 @@ async fn test_acl_mixed_exempt_and_protected_requires_auth(
     #[case] auth_scheme: AuthScheme,
 ) -> anyhow::Result<()> {
     let (get_item, _set_item, _account_procedure_1) = mock_component_proc_roots();
-    let exempt_procedures = vec![get_item];
+    let exempt_procedures = BTreeSet::from([get_item]);
     let (account, mock_chain, note) = setup_acl_test(exempt_procedures.clone(), auth_scheme)?;
 
     let authenticator = build_acl_authenticator(exempt_procedures, auth_scheme);
@@ -441,7 +442,7 @@ async fn test_acl_auth_uses_initial_public_key(
     #[case] auth_scheme: AuthScheme,
 ) -> anyhow::Result<()> {
     let (_get_item, _set_item, account_procedure_1) = mock_component_proc_roots();
-    let exempt_procedures = vec![account_procedure_1];
+    let exempt_procedures = BTreeSet::from([account_procedure_1]);
     let (account, mock_chain, note) = setup_acl_test(exempt_procedures.clone(), auth_scheme)?;
 
     let authenticator = build_acl_authenticator(exempt_procedures, auth_scheme);
@@ -490,7 +491,7 @@ async fn test_acl_auth_rejects_rotated_key_signature(
     #[case] auth_scheme: AuthScheme,
 ) -> anyhow::Result<()> {
     let (_get_item, _set_item, account_procedure_1) = mock_component_proc_roots();
-    let exempt_procedures = vec![account_procedure_1];
+    let exempt_procedures = BTreeSet::from([account_procedure_1]);
     let (account, mock_chain, note) = setup_acl_test(exempt_procedures, auth_scheme)?;
 
     let mut rng_a = ChaCha20Rng::from_seed(Default::default());
