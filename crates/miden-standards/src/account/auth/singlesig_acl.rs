@@ -316,7 +316,7 @@ mod tests {
         // Probe an arbitrary key: the empty list means every lookup returns Word::empty().
         let probe = account
             .storage()
-            .get_map_item(AuthSingleSigAcl::exempt_procedure_roots_slot(), Word::empty())
+            .get_map_item(AuthSingleSigAcl::exempt_procedure_roots_slot(), StorageMapKey::empty())
             .expect("storage map access failed");
         assert_eq!(probe, Word::empty());
     }
@@ -332,7 +332,10 @@ mod tests {
         for proc_root in &procedures {
             let value = account
                 .storage()
-                .get_map_item(AuthSingleSigAcl::exempt_procedure_roots_slot(), proc_root.as_word())
+                .get_map_item(
+                    AuthSingleSigAcl::exempt_procedure_roots_slot(),
+                    StorageMapKey::from_raw(proc_root.as_word()),
+                )
                 .expect("storage map access failed");
             assert_eq!(value, marker);
         }
@@ -342,7 +345,7 @@ mod tests {
             .storage()
             .get_map_item(
                 AuthSingleSigAcl::exempt_procedure_roots_slot(),
-                Word::from([42u32, 0, 0, 0]),
+                StorageMapKey::from_index(42u32),
             )
             .expect("storage map access failed");
         assert_eq!(probe, Word::empty());

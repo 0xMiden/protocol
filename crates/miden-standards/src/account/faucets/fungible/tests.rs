@@ -1,6 +1,6 @@
 use assert_matches::assert_matches;
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
-use miden_protocol::account::{AccountBuilder, AccountType};
+use miden_protocol::account::{AccountBuilder, AccountType, StorageMapKey};
 use miden_protocol::asset::{AssetAmount, TokenSymbol};
 use miden_protocol::{Felt, Word};
 
@@ -89,7 +89,10 @@ fn faucet_contract_creation() {
     ] {
         let value = faucet_account
             .storage()
-            .get_map_item(AuthSingleSigAcl::exempt_procedure_roots_slot(), probed_root.as_word())
+            .get_map_item(
+                AuthSingleSigAcl::exempt_procedure_roots_slot(),
+                StorageMapKey::from_raw(probed_root.as_word()),
+            )
             .unwrap();
         assert_eq!(value, Word::empty());
     }

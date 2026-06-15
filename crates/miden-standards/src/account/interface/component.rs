@@ -1,9 +1,13 @@
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
-use miden_protocol::Word;
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
-use miden_protocol::account::{AccountProcedureRoot, AccountStorage, StorageSlotName};
+use miden_protocol::account::{
+    AccountProcedureRoot,
+    AccountStorage,
+    StorageMapKey,
+    StorageSlotName,
+};
 
 use crate::AuthMethod;
 use crate::account::auth::{
@@ -213,7 +217,7 @@ fn extract_multisig_auth_method(
     // Read each public key from the map
     for key_index in 0..num_approvers {
         // The multisig component stores keys and scheme IDs using pattern [index, 0, 0, 0]
-        let map_key = Word::from([key_index as u32, 0, 0, 0]);
+        let map_key = StorageMapKey::from_index(key_index as u32);
 
         let pub_key_word =
             storage.get_map_item(approver_public_keys_slot, map_key).unwrap_or_else(|_| {
