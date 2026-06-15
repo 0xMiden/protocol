@@ -58,20 +58,21 @@ pub proc auth_tx_acl(auth_args: word)
     dropw
     # => [pad(16)]
 
-    # ------ Iterate over account procedures to determine whether any non-exempt proc was called ------
+    # ------ Iterate procedures to determine whether any non-exempt proc was called ------
 
     # Make sure that the any_proc_called flag is set to 0 before we start iterating
     push.0 loc_store.ANY_PROC_CALLED_LOC
     # => [pad(16)]
 
-    # By default we assume that no authentication required, looking for the conditions to change that
+    # By default we assume no authentication required, look for conditions to change that
     push.0
     # => [auth_required, pad(16)]
 
     exec.active_account::get_num_procedures
     # => [num_procedures, auth_required, pad(16)]
 
-    # Iterate indices from `num_procedures-1` down to `1`. That way we can skip the authentication procedure itself located at index `0`.
+    # Iterate indices from `num_procedures-1` down to `1`. That way we can skip the
+    # authentication procedure itself located at index `0`.
     dup neq.1
     # => [should_continue, num_procedures, auth_required, pad(16)]
     while.true
@@ -86,12 +87,13 @@ pub proc auth_tx_acl(auth_args: word)
         # => [was_called, PROC_ROOT, i, auth_required, pad(16)]
 
         if.true
-            # Mark that a detected procedure was called this transaction. Setting to 1
-            # is idempotent across iterations.
-            # This flag will be used later during the input notes check
+            # Mark that a detected procedure was called this transaction.
+            # Setting to 1 is idempotent across iterations.
+            # This flag will be used later during the input notes check.
             push.1 loc_store.ANY_PROC_CALLED_LOC
 
-            # Look up the proc root in the exempt map. Exempt procedure entries have `[1, 0, 0, 0]` as their values.
+            # Look up the proc root in the exempt map. Exempt procedure entries have
+            # `[1, 0, 0, 0]` as their values.
             push.EXEMPT_PROCEDURE_ROOTS_SLOT[0..2]
             # => [slot_suffix, slot_prefix, PROC_ROOT, i, auth_required, pad(16)]
 

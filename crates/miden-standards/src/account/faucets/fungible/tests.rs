@@ -70,10 +70,8 @@ fn faucet_contract_creation() {
     );
 
     // The exempt procedure roots map is empty under the AuthControlled + SingleSig faucet -
-    // every authority-gated setter requires a signature.
-    // Probe the full
-    // former trigger set so a regression that put any of them back into the exempt map would
-    // surface here.
+    // every authority-gated setter requires a signature. Probe the full former trigger set so
+    // a regression that put any of them back into the exempt map would surface here.
     for probed_root in [
         FungibleFaucet::mint_and_send_root(),
         FungibleFaucet::set_max_supply_root(),
