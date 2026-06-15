@@ -26,11 +26,26 @@ use miden_protocol::{Felt, Word};
 use thiserror::Error;
 
 use crate::account::account_component_code;
+use crate::procedure_root;
 
 // CONSTANTS
 // ================================================================================================
 
 account_component_code!(AUTHORITY_CODE, "access/authority.masl");
+
+procedure_root!(
+    AUTHORITY_SET_TARGET_CLOSED,
+    Authority::NAME,
+    Authority::SET_TARGET_CLOSED_PROC_NAME,
+    Authority::code()
+);
+
+procedure_root!(
+    AUTHORITY_SET_TARGET_OPENED,
+    Authority::NAME,
+    Authority::SET_TARGET_OPENED_PROC_NAME,
+    Authority::code()
+);
 
 static AUTHORITY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::access::authority")
@@ -74,8 +89,20 @@ const RBAC_CONTROLLED: u8 = 2;
 /// looks up its role. A procedure without a mapping falls back to the
 /// [`Ownable2Step`][crate::account::access::Ownable2Step] owner check.
 ///
+/// # Emergency switch (`target_closed`)
+///
+/// `word[1]` of the value slot holds a global `target_closed` flag. While set, `assert_authorized`
+/// panics for *every* gated procedure before any role/owner dispatch, atomically freezing the
+/// account's entire management surface regardless of role membership. The flag is toggled by the
+/// owner-gated `set_target_closed` / `set_target_opened` procedures, which are gated directly on
+/// the [`Ownable2Step`][crate::account::access::Ownable2Step] owner check (not `assert_authorized`)
+/// so the owner can always reopen a closed account. Accounts are always constructed open
+/// (`target_closed = 0`). The switch is only meaningful when Ownable2Step is installed
+/// ([`Authority::OwnerControlled`] / [`Authority::RbacControlled`]); under
+/// [`Authority::AuthControlled`] there is no owner and the setters panic.
+///
 /// Storage layout:
-/// - Value slot: `[authority, 0, 0, 0]`.
+/// - Value slot: `[authority, target_closed, 0, 0]`.
 /// - Map slot (only under RBAC): `procedure_root` → `[role_symbol, 0, 0, 0]`.
 #[repr(u8)]
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -102,6 +129,11 @@ impl Authority {
     /// The name of the component.
     pub const NAME: &'static str = "miden::standards::components::access::authority";
 
+    /// Name of the owner-gated procedure that closes the authority-gated surface.
+    pub const SET_TARGET_CLOSED_PROC_NAME: &'static str = "set_target_closed";
+    /// Name of the owner-gated procedure that reopens the authority-gated surface.
+    pub const SET_TARGET_OPENED_PROC_NAME: &'static str = "set_target_opened";
+
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
         &AUTHORITY_CODE
@@ -109,6 +141,22 @@ impl Authority {
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
+
+    /// Returns the procedure root of the owner-gated `set_target_closed` emergency switch.
+    ///
+    /// This procedure is always gated on the owner check directly, so unlike role-assignable
+    /// procedures it must not be placed in the [`Authority::RbacControlled`] role map.
+    pub fn set_target_closed_root() -> AccountProcedureRoot {
+        *AUTHORITY_SET_TARGET_CLOSED
+    }
+
+    /// Returns the procedure root of the owner-gated `set_target_opened` emergency switch.
+    ///
+    /// This procedure is always gated on the owner check directly, so unlike role-assignable
+    /// procedures it must not be placed in the [`Authority::RbacControlled`] role map.
+    pub fn set_target_opened_root() -> AccountProcedureRoot {
+        *AUTHORITY_SET_TARGET_OPENED
+    }
 
     /// Returns the [`StorageSlotName`] holding the authority configuration.
     pub fn authority_slot() -> &'static StorageSlotName {
@@ -150,7 +198,7 @@ impl Authority {
                 "Authority configuration",
                 [
                     FeltSchema::u8("authority"),
-                    FeltSchema::new_void(),
+                    FeltSchema::u8("target_closed"),
                     FeltSchema::new_void(),
                     FeltSchema::new_void(),
                 ],
@@ -190,7 +238,10 @@ impl Authority {
         }
     }
 
-    /// Encodes the authority configuration value slot word: `[authority, 0, 0, 0]`.
+    /// Encodes the authority configuration value slot word: `[authority, target_closed, 0, 0]`.
+    ///
+    /// Accounts are always constructed open, so `target_closed` (`word[1]`) is initialized to
+    /// zero; the owner toggles it later via `set_target_closed` / `set_target_opened`.
     fn to_word(&self) -> Word {
         Word::new([Felt::from(self.as_u8()), Felt::ZERO, Felt::ZERO, Felt::ZERO])
     }
