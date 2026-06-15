@@ -246,8 +246,6 @@ impl ProposedBlock {
         // Build proposed blocks from parts.
         // --------------------------------------------------------------------------------------------
 
-        // By default, the next block keeps the previous block's validator key (no rotation). Use
-        // `with_next_validator_key` to commit to a different key.
         let next_validator_key = prev_block_header.validator_key().clone();
 
         Ok(Self {
@@ -488,7 +486,6 @@ impl ProposedBlock {
     /// - the note root;
     /// - the transaction commitment; and
     /// - the chain commitment.
-    ///
     ///
     /// # Errors
     ///

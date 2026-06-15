@@ -84,7 +84,7 @@ impl SignedBlock {
     ///
     /// Validates that the header and body correspond by checking the transaction commitment and
     /// note root. This does NOT verify the validator signature, which can only be checked against
-    /// the parent block's validator key; callers must also call [`Self::validate_parent`] to
+    /// the parent block's validator key; call [`Self::validate`] with the parent header to
     /// authenticate the block.
     ///
     /// Involves non-trivial computation. Use [`Self::new_unchecked`] if the validation is not
@@ -96,11 +96,7 @@ impl SignedBlock {
     ) -> Result<Self, SignedBlockError> {
         let signed_block = Self { header, body, signature };
 
-        // Validate that header / body transaction commitments match.
-        signed_block.validate_tx_commitment()?;
-
-        // Validate that header / body note roots match.
-        signed_block.validate_note_root()?;
+        signed_block.validate(None)?;
 
         Ok(signed_block)
     }
@@ -135,6 +131,43 @@ impl SignedBlock {
         (self.header, self.body, self.signature)
     }
 
+    /// Validates that the header and body correspond by checking the transaction commitment and
+    /// note root, and -- when `parent` is provided -- authenticates the block against its parent.
+    ///
+    /// Pass `Some(parent)` to fully verify the block: in addition to the self-consistency checks,
+    /// this confirms the parent's number is this block's number minus one, the parent's commitment
+    /// matches this block's `prev_block_commitment`, and this block's signature verifies against
+    /// the parent's `validator_key` (the key the parent authorized to sign this block). Pass
+    /// `None` for the genesis block, which has no parent, or when only self-consistency is
+    /// required.
+    ///
+    /// `parent` MUST come from already-trusted chain state. Because `prev_block_commitment` is
+    /// attacker-controlled, passing an untrusted parent would let a forged block self-authorize.
+    ///
+    /// # Errors
+    /// Returns an error if:
+    /// - the transaction commitment in the block header is inconsistent with the transactions
+    ///   included in the block body;
+    /// - the note root in the block header is inconsistent with the notes included in the block
+    ///   body; or
+    /// - a `parent` is provided and the block is not authorized by it: the block is the genesis
+    ///   block (which has no parent), the parent's number or commitment do not match, or the
+    ///   signature does not verify against the parent's validator key.
+    pub fn validate(&self, parent: Option<&BlockHeader>) -> Result<(), SignedBlockError> {
+        // Validate that header / body transaction commitments match.
+        self.validate_tx_commitment()?;
+
+        // Validate that header / body note roots match.
+        self.validate_note_root()?;
+
+        // When a trusted parent is provided, authenticate the block against it.
+        if let Some(parent) = parent {
+            validation::validate_against_parent(&self.header, &self.signature, parent)?;
+        }
+
+        Ok(())
+    }
+
     /// Validates that the transaction commitments between the header and body match for this signed
     /// block.
     ///
@@ -160,24 +193,6 @@ impl SignedBlock {
         } else {
             Ok(())
         }
-    }
-
-    /// Validates that the provided parent block precedes and authorizes this block: the parent's
-    /// number is this block's number minus one, the parent's commitment matches this block's
-    /// `prev_block_commitment`, and this block's signature verifies against the parent's
-    /// `validator_key` (the key authorized to sign this block).
-    ///
-    /// `parent_block` MUST come from already-trusted chain state. Because `prev_block_commitment`
-    /// is attacker-controlled, passing an untrusted parent would let a forged block self-authorize.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the block is the genesis block (no parent), the parent's number or
-    /// commitment do not match, or the signature does not verify against the parent's validator
-    /// key.
-    pub fn validate_parent(&self, parent_block: &BlockHeader) -> Result<(), SignedBlockError> {
-        validation::validate_against_parent(&self.header, &self.signature, parent_block)?;
-        Ok(())
     }
 }
 
@@ -220,8 +235,8 @@ mod tests {
     use crate::transaction::OrderedTransactionHeaders;
 
     /// Builds block 1 signed by `signer` and linked to `parent`. The exhaustive matrix of failure
-    /// modes lives in `block::validation`; here we only confirm `SignedBlock::validate_parent`
-    /// wires the signature and parent header through to the shared check.
+    /// modes lives in `block::validation`; here we only confirm `SignedBlock::validate` wires the
+    /// signature and parent header through to the shared check.
     fn block_one(parent: &BlockHeader, signer: &SigningKey) -> SignedBlock {
         let header = test_block_header(1, parent.commitment(), random_secret_key().public_key());
         let signature = signer.sign(header.commitment());
@@ -235,17 +250,17 @@ mod tests {
     }
 
     #[test]
-    fn validate_parent_accepts_committed_signer() {
+    fn validate_accepts_committed_signer() {
         let validator = random_secret_key();
         let parent = test_block_header(0, Word::empty(), validator.public_key());
-        block_one(&parent, &validator).validate_parent(&parent).unwrap();
+        block_one(&parent, &validator).validate(Some(&parent)).unwrap();
     }
 
     #[test]
-    fn validate_parent_rejects_uncommitted_signer() {
+    fn validate_rejects_uncommitted_signer() {
         let parent = test_block_header(0, Word::empty(), random_secret_key().public_key());
         let impostor = random_secret_key();
-        let result = block_one(&parent, &impostor).validate_parent(&parent);
+        let result = block_one(&parent, &impostor).validate(Some(&parent));
         assert!(matches!(result, Err(SignedBlockError::InvalidSignature)));
     }
 }

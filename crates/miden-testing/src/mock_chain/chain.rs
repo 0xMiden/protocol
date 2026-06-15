@@ -938,7 +938,7 @@ impl MockChain {
         if proven_block.header().block_num() != BlockNumber::GENESIS {
             let parent = self.latest_block_header();
             proven_block
-                .validate_parent(&parent)
+                .validate(Some(&parent))
                 .context("block failed validation against its parent")?;
         }
 

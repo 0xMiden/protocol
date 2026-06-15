@@ -85,9 +85,11 @@ pub(crate) fn validate_against_parent(
 // ================================================================================================
 
 /// Builds a minimal block header with a controllable block number, previous-block commitment, and
-/// validator key. All other fields are zeroed; they are irrelevant to parent validation.
+/// validator key. The remaining roots are zeroed except the note root and transaction commitment,
+/// which match the empty [`BlockBody`](super::BlockBody) the block tests pair this header with, so
+/// the self-consistency checks in `SignedBlock::validate` / `ProvenBlock::validate` pass.
 ///
-/// Shared by the `validate_parent` tests of [`SignedBlock`](super::SignedBlock),
+/// Shared by the `validate` tests of [`SignedBlock`](super::SignedBlock),
 /// [`ProvenBlock`](super::ProvenBlock), and this module.
 #[cfg(test)]
 pub(crate) fn test_block_header(
@@ -95,8 +97,20 @@ pub(crate) fn test_block_header(
     prev_block_commitment: Word,
     validator_key: miden_crypto::dsa::ecdsa_k256_keccak::PublicKey,
 ) -> BlockHeader {
-    use crate::block::FeeParameters;
+    use alloc::vec::Vec;
+
+    use crate::block::{BlockBody, FeeParameters};
     use crate::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
+    use crate::transaction::OrderedTransactionHeaders;
+
+    let body = BlockBody::new_unchecked(
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        OrderedTransactionHeaders::new_unchecked(Vec::new()),
+    );
+    let note_root = body.compute_block_note_tree().root();
+    let tx_commitment = body.transactions().commitment();
 
     let fee_parameters =
         FeeParameters::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap(), 500);
@@ -107,8 +121,8 @@ pub(crate) fn test_block_header(
         Word::empty(),
         Word::empty(),
         Word::empty(),
-        Word::empty(),
-        Word::empty(),
+        note_root,
+        tx_commitment,
         Word::empty(),
         validator_key,
         fee_parameters,
