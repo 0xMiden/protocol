@@ -33,6 +33,10 @@ const FAUCET_METADATA_MAP_SLOT = word("agglayer::bridge::faucet_metadata_map")
 # Storage slot constants for the removed GER hash chain.
 # The chain is updated as `keccak256(prev_chain || ger)` on each removal and stored in two
 # separate value slots (lo/hi) since a Word holds only 4 felts but the chain is 8 felts.
+# Both slots default to the empty value [0, 0, 0, 0] until the first removal, so the chain starts
+# from 32 zero bytes and the first removal yields `keccak256(0..0 || ger)`. This matches the
+# zero-initialized `removedGERHashChain` (a `bytes32`) in Solidity's
+# `GlobalExitRootManagerL2SovereignChain`.
 const REMOVED_GER_HASH_CHAIN_LO_SLOT = word("agglayer::bridge::removed_ger_hash_chain_lo")
 const REMOVED_GER_HASH_CHAIN_HI_SLOT = word("agglayer::bridge::removed_ger_hash_chain_hi")
 
@@ -656,10 +660,11 @@ proc update_removed_ger_hash_chain
     # => []
 end
 
-#! Loads the old removed-GER hash chain onto the stack, below the existing GER preimage.
+#! Pushes the old removed-GER hash chain onto the stack, above the GER preimage which is left
+#! untouched below it.
 #!
-#! Inputs:  [GER_LOWER[4], GER_UPPER[4]]
-#! Outputs: [OLD_CHAIN[8], GER_LOWER, GER_UPPER]
+#! Inputs:  []
+#! Outputs: [OLD_CHAIN[8]]
 #!
 #! Invocation: exec
 proc load_removed_ger_hash_chain_data
