@@ -319,9 +319,12 @@ pub struct TxAccountUpdate {
     final_state_commitment: Word,
 
     /// The commitment to the [`AccountPatch`](crate::account::AccountPatch) resulting from the
-    /// execution of the transaction, as computed by the transaction kernel in the epilogue. It
-    /// must equal the commitment of the patch carried in [`AccountUpdateDetails::Public`] when
-    /// present.
+    /// execution of the transaction, as computed by the transaction kernel in the epilogue. This
+    /// commitment is always set regardless of whether the account is public or private.
+    /// - When `details` is [`AccountUpdateDetails::Public`], it must equal the commitment of the
+    ///   patch carried in that variant.
+    /// - When `details` is [`AccountUpdateDetails::Private`], the patch itself is not transmitted
+    ///   and the commitment is validated implicitly as part of transaction verification.
     account_patch_commitment: Word,
 
     /// A description of the changes to the account that produces the post-transaction state when

@@ -34,7 +34,8 @@ mod tests;
 pub struct TransactionOutputs {
     /// Information related to the account's final state.
     account: AccountHeader,
-    /// The commitment to the delta computed by the transaction kernel.
+    /// The commitment to the [`AccountPatch`](crate::account::AccountPatch) computed by the
+    /// transaction kernel.
     account_patch_commitment: Word,
     /// Set of output notes created by the transaction.
     output_notes: RawOutputNotes,
