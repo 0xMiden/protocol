@@ -4,32 +4,16 @@
 //! which are used to remove a Global Exit Root from the bridge account and fold it into the
 //! running removed-GER keccak256 hash chain.
 
-extern crate alloc;
-
-use alloc::string::ToString;
-use alloc::vec;
-
 use miden_assembly::Library;
 use miden_assembly::serde::Deserializable;
 use miden_protocol::account::AccountId;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
-use miden_protocol::note::{
-    Note,
-    NoteAssets,
-    NoteAttachment,
-    NoteAttachments,
-    NoteRecipient,
-    NoteScript,
-    NoteScriptRoot,
-    NoteStorage,
-    NoteType,
-    PartialNoteMetadata,
-};
-use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
+use miden_protocol::note::{Note, NoteScript, NoteScriptRoot};
 use miden_utils_sync::LazyLock;
 
 use crate::ExitRoot;
+use crate::ger_note::create_ger_note;
 
 // NOTE SCRIPT
 // ================================================================================================
@@ -92,24 +76,6 @@ impl RemoveGerNote {
         target_account_id: AccountId,
         rng: &mut R,
     ) -> Result<Note, NoteError> {
-        // Create note storage with 8 felts: GER[0..7]
-        let storage_values = ger.to_elements().to_vec();
-
-        let note_storage = NoteStorage::new(storage_values)?;
-
-        // Generate a serial number for the note
-        let serial_num = rng.draw_word();
-
-        let recipient = NoteRecipient::new(serial_num, Self::script(), note_storage);
-
-        let attachment = NetworkAccountTarget::new(target_account_id, NoteExecutionHint::Always)
-            .map_err(|e| NoteError::other(e.to_string()))?;
-        let attachments = NoteAttachments::from(NoteAttachment::from(attachment));
-        let metadata = PartialNoteMetadata::new(sender_account_id, NoteType::Public);
-
-        // REMOVE_GER notes don't carry assets
-        let assets = NoteAssets::new(vec![])?;
-
-        Ok(Note::with_attachments(assets, metadata, recipient, attachments))
+        create_ger_note(ger, sender_account_id, target_account_id, Self::script(), rng)
     }
 }
