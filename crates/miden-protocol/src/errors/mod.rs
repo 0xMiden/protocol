@@ -470,8 +470,21 @@ pub enum AccountPatchError {
     #[error("account code must be provided for new accounts (with nonce = 1)")]
     CodeMustBeProvidedForNewAccounts,
 
-    #[error("final nonce must be provided when account code is provided")]
-    FinalNonceRequiredWhenCodeIsProvided,
+    #[error("storage slot {0} was used as different slot types")]
+    StorageSlotUsedAsDifferentTypes(StorageSlotName),
+
+    #[error("cannot merge two full state patches")]
+    MergingFullStatePatches,
+
+    #[error(
+        "nonce in the patch being merged is {new} which is not exactly one greater than current patch nonce {current}"
+    )]
+    NonceMustIncrementByOne { current: Felt, new: Felt },
+
+    #[error(
+        "patch is for account ID {actual} but is being merged into patch for account {expected}"
+    )]
+    AccountIdMismatch { expected: AccountId, actual: AccountId },
 }
 
 // STORAGE MAP ERROR

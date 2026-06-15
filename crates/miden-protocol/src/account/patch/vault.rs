@@ -54,6 +54,11 @@ impl AccountVaultPatch {
         self.entries.insert(asset_vault_key, Word::empty());
     }
 
+    /// Returns the number of assets being patched.
+    pub fn num_assets(&self) -> usize {
+        self.entries.len()
+    }
+
     /// Returns a reference to the underlying map of the vault patch.
     pub fn as_map(&self) -> &BTreeMap<AssetVaultKey, Word> {
         &self.entries
@@ -73,6 +78,12 @@ impl AccountVaultPatch {
     /// Returns `true` if this vault patch contains no entries.
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
+    }
+
+    /// Merges another vault patch into this one. Entries from `other` overwrite any existing
+    /// entries in `self` for the same [`AssetVaultKey`].
+    pub fn merge(&mut self, other: Self) {
+        self.entries.extend(other.entries);
     }
 
     /// Appends the vault patch to the given `elements` from which the patch commitment will be
