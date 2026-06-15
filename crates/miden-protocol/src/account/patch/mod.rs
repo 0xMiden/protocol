@@ -172,24 +172,26 @@ impl AccountPatch {
             });
         }
 
-        self.final_nonce = match (self.final_nonce, other.final_nonce) {
-            // If both nonces are None, both patches are empty, so the new nonce is None.
-            (None, None) => None,
+        match (self.final_nonce, other.final_nonce) {
+            // Both patches are empty, nothing to merge.
+            (None, None) => return Ok(()),
 
-            // If current nonce is None, the current patch is empty, so we use the new nonce.
-            (None, Some(new)) => Some(new),
+            // `self` is empty, so `other` becomes the merged result.
+            (None, Some(_)) => {
+                *self = other;
+                return Ok(());
+            },
 
-            // If new nonce is None, the new patch is empty, so we use the current nonce.
-            (Some(current), None) => Some(current),
+            // `other` is empty, nothing to merge.
+            (Some(_), None) => return Ok(()),
 
             (Some(current), Some(new)) => {
                 if new != current + Felt::ONE {
                     return Err(AccountPatchError::NonceMustIncrementByOne { current, new });
-                } else {
-                    Some(new)
                 }
+                self.final_nonce = Some(new);
             },
-        };
+        }
 
         // TODO(code_upgrades): This should go away once we have proper account code updates in
         // patches. For now, code cannot be merged and this should never happen.
