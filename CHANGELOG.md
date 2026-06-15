@@ -15,6 +15,7 @@
 - Added `Note::has_attachments` and `NoteMetadata::has_attachments` helpers, and retained private note attachments in `MockChain` ([#3060](https://github.com/0xMiden/protocol/pull/3060)).
 - Introduced `AccountPatch` and `AccountVaultPatch` ([#3010](https://github.com/0xMiden/protocol/pull/3010), [#3071](https://github.com/0xMiden/protocol/pull/3071)).
 - Added `AccountPatch::merge` for combining patches across consecutive transactions ([#3082](https://github.com/0xMiden/protocol/pull/3082)).
+- [BREAKING] Replaced the account delta in `AccountUpdateDetails`, `TxAccountUpdate`, and the kernel-emitted account update commitment with the account patch ([#3089](https://github.com/0xMiden/protocol/pull/3089)).
 - Clarified the transaction definition and the distinction between execution and proving on the architecture overview page ([#3015](https://github.com/0xMiden/protocol/pull/3015)).
 - [BREAKING] Refactored `TransferPolicy`, `MintPolicyConfig`, and `BurnPolicyConfig` from enums into structs ([#2974](https://github.com/0xMiden/protocol/pull/2974)).
 - Added `AccountComponent::has_procedure(root)` helper ([#2974](https://github.com/0xMiden/protocol/pull/2974)).

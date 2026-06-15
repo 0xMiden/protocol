@@ -1,10 +1,12 @@
 mod vault;
 
 mod storage;
+mod update_details;
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
 pub use storage::{AccountStoragePatch, StorageMapPatch, StorageSlotPatch};
+pub use update_details::AccountUpdateDetails;
 pub use vault::AccountVaultPatch;
 
 use crate::account::{

@@ -3,12 +3,12 @@ use alloc::vec::Vec;
 use anyhow::Context;
 use assert_matches::assert_matches;
 use miden_protocol::Word;
-use miden_protocol::account::delta::AccountUpdateDetails;
 use miden_protocol::account::{
     Account,
     AccountBuilder,
     AccountComponent,
     AccountId,
+    AccountUpdateDetails,
     StorageSlot,
     StorageSlotName,
 };

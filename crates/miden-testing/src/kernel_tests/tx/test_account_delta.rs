@@ -4,7 +4,6 @@ use std::string::String;
 
 use anyhow::Context;
 use miden_crypto::rand::test_utils::rand_value;
-use miden_protocol::account::delta::AccountUpdateDetails;
 use miden_protocol::account::{
     Account,
     AccountBuilder,
@@ -12,6 +11,7 @@ use miden_protocol::account::{
     AccountComponentMetadata,
     AccountDelta,
     AccountId,
+    AccountPatch,
     AccountStorage,
     AccountType,
     StorageMap,
@@ -899,27 +899,35 @@ async fn proven_tx_storage_maps_matches_executed_tx_for_new_account() -> anyhow:
 
     let proven_tx = LocalTransactionProver::default().prove_dummy(tx.clone())?;
 
-    let AccountUpdateDetails::Delta(proven_tx_delta) = proven_tx.account_update().details() else {
-        panic!("expected delta");
-    };
+    let proven_tx_patch = proven_tx.account_update().details().unwrap_public();
 
-    let proven_tx_account = Account::try_from(proven_tx_delta)?;
-    let exec_tx_account = Account::try_from(tx.account_delta())?;
+    let proven_tx_account = Account::try_from(proven_tx_patch)?;
+    let exec_tx_account = Account::try_from(tx.account_patch())?;
+    let exec_tx_delta_account = Account::try_from(tx.account_delta())?;
 
+    assert_eq!(exec_tx_delta_account, exec_tx_account);
     assert_eq!(proven_tx_account.storage(), exec_tx_account.storage());
 
-    // Check the conversion back into a full-state delta works correctly.
+    // Check the conversion back into a full-state delta and patch works correctly.
+    let proven_tx_patch_converted = AccountPatch::try_from(proven_tx_account.clone())?;
+    let exec_tx_patch_converted = AccountPatch::try_from(exec_tx_account.clone())?;
+
     let proven_tx_delta_converted = AccountDelta::try_from(proven_tx_account)?;
     let exec_tx_delta_converted = AccountDelta::try_from(exec_tx_account)?;
 
-    // Check that the deltas from proven and executed tx, which were converted from accounts are
-    // identical. This is essentially a roundtrip test.
-    assert_eq!(&proven_tx_delta_converted, proven_tx_delta);
+    // Check that the deltas and patches from proven and executed tx, which were converted from
+    // accounts are identical. This is essentially a roundtrip test.
+    assert_eq!(tx.account_patch(), proven_tx_patch);
+    assert_eq!(&proven_tx_patch_converted, tx.account_patch());
+    assert_eq!(&exec_tx_patch_converted, tx.account_patch());
+
     assert_eq!(&exec_tx_delta_converted, tx.account_delta());
     assert_eq!(&proven_tx_delta_converted, tx.account_delta());
 
     // The commitments should match as well.
-    assert_eq!(proven_tx_delta_converted.to_commitment(), proven_tx_delta.to_commitment());
+    assert_eq!(exec_tx_patch_converted.to_commitment(), tx.account_patch().to_commitment());
+    assert_eq!(proven_tx_patch_converted.to_commitment(), tx.account_patch().to_commitment());
+
     assert_eq!(exec_tx_delta_converted.to_commitment(), tx.account_delta().to_commitment());
     assert_eq!(proven_tx_delta_converted.to_commitment(), tx.account_delta().to_commitment());
 
@@ -947,15 +955,13 @@ async fn delta_for_new_account_retains_empty_value_storage_slots() -> anyhow::Re
 
     let proven_tx = LocalTransactionProver::default().prove_dummy(tx.clone())?;
 
-    let AccountUpdateDetails::Delta(delta) = proven_tx.account_update().details() else {
-        panic!("expected delta");
-    };
+    let patch = proven_tx.account_update().details().unwrap_public();
 
-    assert_eq!(delta.storage().values().count(), 2);
-    assert_eq!(delta.storage().get_value(&slot_name0), Some(Word::empty()));
-    assert_eq!(delta.storage().get_value(&slot_name1), Some(slot_value2));
+    assert_eq!(patch.storage().values().count(), 2);
+    assert_eq!(patch.storage().get_value(&slot_name0), Some(Word::empty()));
+    assert_eq!(patch.storage().get_value(&slot_name1), Some(slot_value2));
 
-    let recreated_account = Account::try_from(delta)?;
+    let recreated_account = Account::try_from(patch)?;
     // The recreated account should match the original account with the nonce incremented (and the
     // seed removed).
     account.increment_nonce(Felt::ONE)?;
@@ -982,14 +988,12 @@ async fn delta_for_new_account_retains_empty_map_storage_slots() -> anyhow::Resu
 
     let proven_tx = LocalTransactionProver::default().prove_dummy(tx.clone())?;
 
-    let AccountUpdateDetails::Delta(delta) = proven_tx.account_update().details() else {
-        panic!("expected delta");
-    };
+    let patch = proven_tx.account_update().details().unwrap_public();
 
-    assert_eq!(delta.storage().maps().count(), 1);
-    assert!(delta.storage().get_map(&slot_name0).unwrap().is_empty());
+    assert_eq!(patch.storage().maps().count(), 1);
+    assert!(patch.storage().get_map(&slot_name0).unwrap().is_empty());
 
-    let recreated_account = Account::try_from(delta)?;
+    let recreated_account = Account::try_from(patch)?;
     // The recreated account should match the original account with the nonce incremented (and the
     // seed removed).
     account.increment_nonce(Felt::ONE)?;

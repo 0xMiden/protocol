@@ -69,7 +69,7 @@ const EPILOGUE_END_EVENT=event("miden::protocol::tx::epilogue_end")
 #! - INPUT_NOTES_COMMITMENT, see `transaction::api::get_input_notes_commitment`.
 #! - OUTPUT_NOTES_COMMITMENT is the commitment to the notes created by the transaction.
 #! - ACCOUNT_UPDATE_COMMITMENT is the hash of the the final account commitment and account
-#!   delta commitment.
+#!   patch commitment.
 #! - fee_amount is the computed fee amount of the transaction denominated in the fee asset.
 #! - fee_faucet_id_{prefix,suffix} are the prefix and suffix felts of the faucet that issues the
 #!   fee asset.

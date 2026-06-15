@@ -1,6 +1,5 @@
 use crate::Word;
-use crate::account::AccountId;
-use crate::account::delta::AccountUpdateDetails;
+use crate::account::{AccountId, AccountUpdateDetails};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
