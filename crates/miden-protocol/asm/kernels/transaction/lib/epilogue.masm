@@ -1,5 +1,5 @@
 use $kernel::account
-use $kernel::account_delta
+use $kernel::account_update
 use $kernel::asset
 use $kernel::asset::ASSET_SIZE
 use $kernel::asset_vault
@@ -454,13 +454,13 @@ pub proc finalize_transaction
 
     # ------ Compute account patch commitment ------
 
-    exec.account_delta::compute_patch_commitment
+    exec.account_update::compute_patch_commitment
     # => [ACCOUNT_PATCH_COMMITMENT]
 
     # TODO(account_patch): Temporarily compute the delta commitment, to let the host track the delta.
     # This will go away when the delta is fully replaced by the patch and removed from the
     # executed transaction.
-    exec.account_delta::compute_commitment dropw
+    exec.account_update::compute_delta_commitment dropw
     # => [ACCOUNT_PATCH_COMMITMENT]
 
     # store commitment in local
