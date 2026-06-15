@@ -143,11 +143,25 @@ A separate GER Remover role can revoke a previously-registered GER by sending a
    `GlobalExitRootManagerL2SovereignChain`, providing an auditable record of every
    removal.
 
+GER removal is an exceptional, emergency-only control: under normal operation GERs are
+only ever injected, never removed. A removal is expected when a GER was registered that
+should not have been - for example because an invalid or malicious exit root was
+propagated from the upstream AggLayer/L1 state, or a GER was injected in error. Removing
+the GER closes the claim window it opened: any `CLAIM` note that has not yet been
+processed and that references the removed GER will fail `assert_valid_ger` and revert.
+Claims that were already processed against the GER are not reversed - removal only
+prevents future claims against that root.
+
 Note that removal does not blocklist a GER permanently: because the map entry is reset
 to the empty word, the GER manager can re-register the same GER via a subsequent
-`UPDATE_GER` note (re-insertion does not touch the removal chain). The removed-GER hash
-chain is therefore an append-only log of removal events, not a registry of currently
-revoked GERs - a GER listed in the chain may have been revived since its removal.
+`UPDATE_GER` note (re-insertion does not touch the removal chain). This is a security
+caveat worth calling out: a compromised or faulty GER manager can undo a `REMOVE_GER`
+emergency patch and re-open the very claim window the removal was meant to close. The
+split between the manager and remover roles bounds this only if the offending role can be
+rotated out, which is not yet supported
+([#2706](https://github.com/0xMiden/protocol/issues/2706)). The removed-GER hash chain is
+therefore an append-only log of removal events, not a registry of currently revoked GERs
+- a GER listed in the chain may have been revived since its removal.
 
 TODO: No hash chain tracks GER insertions for proof generation
 ([#2707](https://github.com/0xMiden/protocol/issues/2707)).
