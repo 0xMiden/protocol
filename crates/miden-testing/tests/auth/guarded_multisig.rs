@@ -1,5 +1,11 @@
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, PublicKey};
-use miden_protocol::account::{Account, AccountBuilder, AccountProcedureRoot, AccountType};
+use miden_protocol::account::{
+    Account,
+    AccountBuilder,
+    AccountProcedureRoot,
+    AccountType,
+    StorageMapKey,
+};
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::note::{
     Note,
@@ -343,11 +349,11 @@ async fn test_guarded_multisig_update_guardian_public_key(
     updated_multisig_account.apply_delta(update_guardian_tx.account_delta())?;
     let updated_guardian_public_key = updated_multisig_account
         .storage()
-        .get_map_item(AuthGuardedMultisig::guardian_public_key_slot(), Word::empty())?;
+        .get_map_item(AuthGuardedMultisig::guardian_public_key_slot(), StorageMapKey::empty())?;
     assert_eq!(updated_guardian_public_key, Word::from(new_guardian_public_key.to_commitment()));
     let updated_guardian_scheme_id = updated_multisig_account.storage().get_map_item(
         AuthGuardedMultisig::guardian_scheme_id_slot(),
-        Word::from([0u32, 0, 0, 0]),
+        StorageMapKey::from_index(0),
     )?;
     assert_eq!(
         updated_guardian_scheme_id,

@@ -252,8 +252,7 @@ impl Account {
     /// Returns the public interface of this account: its ID and the set of procedure roots it
     /// exposes.
     pub fn code_interface(&self) -> AccountCodeInterface {
-        AccountCodeInterface::new(self.id(), self.code.procedures().iter().copied().collect())
-            .expect("account code procedure count is enforced by AccountCode invariants")
+        self.code.interface(self.id())
     }
 
     /// Returns nonce for this account.

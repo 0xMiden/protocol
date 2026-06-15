@@ -201,7 +201,7 @@ where
     /// The signature is requested from the host's authenticator.
     pub async fn on_auth_requested(
         &mut self,
-        pub_key_hash: Word,
+        pub_key_commitment: PublicKeyCommitment,
         tx_summary: TransactionSummary,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
         let signing_inputs = SigningInputs::TransactionSummary(Box::new(tx_summary));
@@ -213,12 +213,12 @@ where
         let message = signing_inputs.to_commitment();
 
         let signature: Vec<Felt> = authenticator
-            .get_signature(PublicKeyCommitment::from(pub_key_hash), &signing_inputs)
+            .get_signature(pub_key_commitment, &signing_inputs)
             .await
             .map_err(TransactionKernelError::SignatureGenerationFailed)?
             .to_prepared_signature(message);
 
-        let signature_key = Hasher::merge(&[pub_key_hash, message]);
+        let signature_key = Hasher::merge(&[pub_key_commitment.into(), message]);
         self.generated_signatures.insert(signature_key, signature.clone());
 
         Ok(vec![AdviceMutation::extend_stack(signature)])
@@ -636,11 +636,15 @@ where
                     .on_note_before_add_attachment(note_idx, attachment)
                     .map(|_| Vec::new()),
 
-                TransactionEvent::AuthRequest { pub_key_hash, tx_summary, signature } => {
+                TransactionEvent::AuthRequest {
+                    pub_key_commitment,
+                    tx_summary,
+                    signature,
+                } => {
                     if let Some(signature) = signature {
                         Ok(self.base_host.on_auth_requested(signature))
                     } else {
-                        self.on_auth_requested(pub_key_hash, tx_summary).await
+                        self.on_auth_requested(pub_key_commitment, tx_summary).await
                     }
                 },
 

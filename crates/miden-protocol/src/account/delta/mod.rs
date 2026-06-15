@@ -136,9 +136,8 @@ impl AccountDelta {
                 AccountDeltaError::StorageSlotUsedAsDifferentTypes(slot_name)
             },
             AccountPatchError::FinalNonceIsZero
-            | AccountPatchError::NonEmptyStorageOrVaultPatchWithZeroNonce
+            | AccountPatchError::StateChangeRequiresNonceUpdate
             | AccountPatchError::CodeMustBeProvidedForNewAccounts
-            | AccountPatchError::CodeRequiresNonceUpdate
             | AccountPatchError::MergingFullStatePatches
             | AccountPatchError::NonceMustIncrementByOne { .. }
             | AccountPatchError::AccountIdMismatch { .. }
