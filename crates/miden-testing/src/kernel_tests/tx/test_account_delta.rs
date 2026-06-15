@@ -25,45 +25,22 @@ use miden_protocol::account::{
     StorageSlot,
     StorageSlotName,
 };
-use miden_protocol::asset::{
-    Asset,
-    AssetVault,
-    FungibleAsset,
-    NonFungibleAsset,
-    NonFungibleAssetDetails,
-};
-use miden_protocol::note::{Note, NoteTag, NoteType};
-use miden_protocol::testing::account_id::{
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2,
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_3,
-    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
-    ACCOUNT_ID_SENDER,
-    AccountIdBuilder,
-};
-use miden_protocol::testing::constants::{
-    CONSUMED_ASSET_1_AMOUNT,
-    CONSUMED_ASSET_3_AMOUNT,
-    FUNGIBLE_ASSET_AMOUNT,
-    NON_FUNGIBLE_ASSET_DATA,
-    NON_FUNGIBLE_ASSET_DATA_2,
-};
+use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
+use miden_protocol::note::{NoteTag, NoteType};
+use miden_protocol::testing::account_id::{ACCOUNT_ID_SENDER, AccountIdBuilder};
 use miden_protocol::testing::storage::{MOCK_MAP_SLOT, MOCK_VALUE_SLOT0};
 use miden_protocol::transaction::TransactionScript;
 use miden_protocol::{EMPTY_WORD, Felt, Word, ZERO};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_tx::{LocalTransactionProver, TransactionExecutorError};
-use rand::{Rng, SeedableRng};
-use rand_chacha::ChaCha20Rng;
+use rand::Rng;
 
-use crate::utils::create_public_p2any_note;
 use crate::{Auth, MockChain, TransactionContextBuilder};
 
 // ACCOUNT DELTA TESTS
 //
-// Note that in all of these tests, the transaction executor will ensure that the account delta
-// commitment computed in-kernel and in the host match.
+// For the approach to these tests, see `AccountUpdateTest::execute`.
 // ================================================================================================
 
 /// Tests that a noop transaction with [`Auth::Noop`] results in an empty nonce delta with an empty
@@ -101,7 +78,7 @@ async fn delta_nonce() -> anyhow::Result<()> {
     AccountUpdateTest {
         initial_storage_slots: vec![],
         initial_vault_assets: vec![],
-        input_note_assets: vec![],
+        input_notes_assets: vec![],
         tx_script: None,
         expected_storage_patch: AccountStoragePatch::new(),
         expected_vault_delta: AccountVaultDelta::default(),
@@ -112,12 +89,12 @@ async fn delta_nonce() -> anyhow::Result<()> {
     .await
 }
 
-/// Tests that setting new values for value storage slots results in the correct delta.
+/// Tests that setting new values for value storage slots results in the correct patch.
 ///
-/// - Slot 0: [2,4,6,8]  -> [3,4,5,6] -> EMPTY_WORD -> Delta: EMPTY_WORD
-/// - Slot 1: EMPTY_WORD -> [3,4,5,6]               -> Delta: [3,4,5,6]
-/// - Slot 2: [1,3,5,7]  -> [1,3,5,7]               -> Delta: None
-/// - Slot 3: [1,3,5,7]  -> [2,3,4,5] -> [1,3,5,7]  -> Delta: None
+/// - Slot 0: [2,4,6,8]  -> [3,4,5,6] -> EMPTY_WORD -> Patch: EMPTY_WORD
+/// - Slot 1: EMPTY_WORD -> [3,4,5,6]               -> Patch: [3,4,5,6]
+/// - Slot 2: [1,3,5,7]  -> [1,3,5,7]               -> Patch: None
+/// - Slot 3: [1,3,5,7]  -> [2,3,4,5] -> [1,3,5,7]  -> Patch: None
 #[tokio::test]
 async fn storage_patch_for_value_slots() -> anyhow::Result<()> {
     let slot_0_name = StorageSlotName::mock(0);
@@ -137,17 +114,6 @@ async fn storage_patch_for_value_slots() -> anyhow::Result<()> {
     let slot_3_init_value = Word::from([1, 3, 5, 7u32]);
     let slot_3_tmp_value = Word::from([2, 3, 4, 5u32]);
     let slot_3_final_value = slot_3_init_value;
-
-    let TestSetup { mock_chain, account_id, .. } = setup_test(
-        vec![
-            StorageSlot::with_value(slot_0_name.clone(), slot_0_init_value),
-            StorageSlot::with_value(slot_1_name.clone(), slot_1_init_value),
-            StorageSlot::with_value(slot_2_name.clone(), slot_2_init_value),
-            StorageSlot::with_value(slot_3_name.clone(), slot_3_init_value),
-        ],
-        [],
-        [],
-    )?;
 
     let tx_script = parse_tx_script(format!(
         r#"
@@ -196,41 +162,40 @@ async fn storage_patch_for_value_slots() -> anyhow::Result<()> {
       "#
     ))?;
 
-    let executed_tx = mock_chain
-        .build_tx_context(account_id, &[], &[])
-        .expect("failed to build tx context")
-        .tx_script(tx_script)
-        .build()?
-        .execute()
-        .await
-        .context("failed to execute transaction")?;
+    // Slots 2 and 3 are absent because their values haven't effectively changed.
+    let mut expected_storage_patch = AccountStoragePatch::new();
+    expected_storage_patch.set_item(slot_0_name.clone(), slot_0_final_value)?;
+    expected_storage_patch.set_item(slot_1_name.clone(), slot_1_final_value)?;
 
-    let storage_values_delta = executed_tx
-        .account_delta()
-        .storage()
-        .values()
-        .map(|(slot_name, value)| (slot_name.clone(), *value))
-        .collect::<BTreeMap<_, _>>();
-
-    // Note that slots 2 and 3 are absent because their values haven't effectively changed.
-    assert_eq!(
-        storage_values_delta,
-        BTreeMap::from_iter([(slot_0_name, slot_0_final_value), (slot_1_name, slot_1_final_value)])
-    );
-
-    Ok(())
+    AccountUpdateTest {
+        initial_storage_slots: vec![
+            StorageSlot::with_value(slot_0_name, slot_0_init_value),
+            StorageSlot::with_value(slot_1_name, slot_1_init_value),
+            StorageSlot::with_value(slot_2_name, slot_2_init_value),
+            StorageSlot::with_value(slot_3_name, slot_3_init_value),
+        ],
+        initial_vault_assets: vec![],
+        input_notes_assets: vec![],
+        tx_script: Some(tx_script),
+        expected_storage_patch,
+        expected_vault_delta: AccountVaultDelta::default(),
+        expected_vault_patch: AccountVaultPatch::default(),
+        expected_code: None,
+    }
+    .execute()
+    .await
 }
 
-/// Tests that setting new values for map storage slots results in the correct delta.
+/// Tests that setting new values for map storage slots results in the correct patch.
 ///
-/// - Slot 0: key0: EMPTY_WORD -> [1,2,3,4]              -> Delta: [1,2,3,4]
-/// - Slot 0: key1: EMPTY_WORD -> [1,2,3,4] -> [2,3,4,5] -> Delta: [2,3,4,5]
-/// - Slot 1: key2: [1,2,3,4]  -> [1,2,3,4]              -> Delta: None
-/// - Slot 1: key3: [1,2,3,4]  -> EMPTY_WORD             -> Delta: EMPTY_WORD
-/// - Slot 1: key4: [1,2,3,4]  -> [2,3,4,5] -> [1,2,3,4] -> Delta: None
-/// - Slot 2: key5: [1,2,3,4]  -> [2,3,4,5] -> [1,2,3,4] -> Delta: None
-///   - key5 and key4 are the same scenario, but in different slots. In particular, slot 2's delta
-///     map will be empty after normalization and so it shouldn't be present in the delta at all.
+/// - Slot 0: key0: EMPTY_WORD -> [1,2,3,4]              -> Patch: [1,2,3,4]
+/// - Slot 0: key1: EMPTY_WORD -> [1,2,3,4] -> [2,3,4,5] -> Patch: [2,3,4,5]
+/// - Slot 1: key2: [1,2,3,4]  -> [1,2,3,4]              -> Patch: None
+/// - Slot 1: key3: [1,2,3,4]  -> EMPTY_WORD             -> Patch: EMPTY_WORD
+/// - Slot 1: key4: [1,2,3,4]  -> [2,3,4,5] -> [1,2,3,4] -> Patch: None
+/// - Slot 2: key5: [1,2,3,4]  -> [2,3,4,5] -> [1,2,3,4] -> Patch: None
+///   - key5 and key4 are the same scenario, but in different slots. In particular, slot 2's patch
+///     map will be empty after normalization and so it shouldn't be present in the patch at all.
 #[tokio::test]
 async fn storage_patch_for_map_slots() -> anyhow::Result<()> {
     // Test with random keys to make sure the ordering in the MASM and Rust implementations
@@ -273,20 +238,6 @@ async fn storage_patch_for_map_slots() -> anyhow::Result<()> {
     let slot_2_name = StorageSlotName::mock(2);
     let mut map2 = StorageMap::new();
     map2.insert(key5, key5_init_value).unwrap();
-
-    let TestSetup { mock_chain, account_id, .. } = setup_test(
-        vec![
-            StorageSlot::with_map(slot_0_name.clone(), map0),
-            StorageSlot::with_map(slot_1_name.clone(), map1),
-            StorageSlot::with_map(slot_2_name.clone(), map2),
-            // Include an empty map which does not receive any updates, to test that the "metadata
-            // header" in the delta commitment is not appended if there are no updates to a map
-            // slot.
-            StorageSlot::with_map(StorageSlotName::mock(3), StorageMap::new()),
-        ],
-        [],
-        [],
-    )?;
 
     let tx_script = parse_tx_script(format!(
         r#"
@@ -352,51 +303,43 @@ async fn storage_patch_for_map_slots() -> anyhow::Result<()> {
       "#
     ))?;
 
-    let executed_tx = mock_chain
-        .build_tx_context(account_id, &[], &[])?
-        .tx_script(tx_script)
-        .build()?
-        .execute()
-        .await
-        .context("failed to execute transaction")?;
-    let maps_delta = executed_tx.account_delta().storage().maps().collect::<BTreeMap<_, _>>();
+    // map2 should not appear in the patch since its only change normalized to a no-op.
+    let mut expected_storage_patch = AccountStoragePatch::new();
+    expected_storage_patch.set_map_item(slot_0_name.clone(), key0, key0_final_value)?;
+    expected_storage_patch.set_map_item(slot_0_name.clone(), key1, key1_final_value)?;
+    expected_storage_patch.set_map_item(slot_1_name.clone(), key3, key3_final_value)?;
 
-    // Note that there should be no delta for map2 since it was normalized to an empty map which
-    // should be removed.
-    assert_eq!(maps_delta.len(), 2);
-    assert!(!maps_delta.contains_key(&slot_2_name), "map2 should not have a delta");
-
-    let mut map0_delta = maps_delta
-        .get(&slot_0_name)
-        .map(|map_patch| (*map_patch).clone())
-        .expect("delta for map 0 should exist")
-        .into_map();
-
-    let mut map1_delta = maps_delta
-        .get(&slot_1_name)
-        .map(|map_patch| (*map_patch).clone())
-        .expect("delta for map 1 should exist")
-        .clone()
-        .into_map();
-
-    assert_eq!(map0_delta.len(), 2);
-    assert_eq!(map0_delta.remove(&key0).unwrap(), key0_final_value);
-    assert_eq!(map0_delta.remove(&key1).unwrap(), key1_final_value);
-
-    assert_eq!(map1_delta.len(), 1);
-    assert_eq!(map1_delta.remove(&key3).unwrap(), key3_final_value);
-
-    Ok(())
+    AccountUpdateTest {
+        initial_storage_slots: vec![
+            StorageSlot::with_map(slot_0_name, map0),
+            StorageSlot::with_map(slot_1_name, map1),
+            StorageSlot::with_map(slot_2_name, map2),
+            // Include an empty map which does not receive any updates, to test that the "metadata
+            // header" in the delta commitment is not appended if there are no updates to a map
+            // slot.
+            StorageSlot::with_map(StorageSlotName::mock(3), StorageMap::new()),
+        ],
+        initial_vault_assets: vec![],
+        input_notes_assets: vec![],
+        tx_script: Some(tx_script),
+        expected_storage_patch,
+        expected_vault_delta: AccountVaultDelta::default(),
+        expected_vault_patch: AccountVaultPatch::default(),
+        expected_code: None,
+    }
+    .execute()
+    .await
 }
 
-/// Tests that increasing, decreasing the amount of a fungible asset results in the correct delta.
-/// - Asset0 is increased by 100 and decreased by 200 -> Delta: -100.
-/// - Asset1 is increased by 100 and decreased by 100 -> Delta: 0.
-/// - Asset2 is increased by 200 and decreased by 100 -> Delta: 100.
-/// - Asset3 is decreased by [`FungibleAsset::MAX_AMOUNT`] -> Delta: -MAX_AMOUNT.
-/// - Asset4 is increased by [`FungibleAsset::MAX_AMOUNT`] -> Delta: MAX_AMOUNT.
+/// Tests that increasing, decreasing the amount of a fungible asset results in the correct update.
+///
+/// - Asset0 starts at 300, is increased by 100 and decreased by 200 -> Delta: -100, Patch: 200.
+/// - Asset1 starts at 200, is increased by 100 and decreased by 100 -> Delta: 0, Patch: None.
+/// - Asset2 starts at 100, is increased by 200 and decreased by 100 -> Delta: 100, Patch: 200.
+/// - Asset3 starts at MAX, is decreased by MAX -> Delta: -MAX, Patch: 0.
+/// - Asset4 starts at 0, is increased by MAX -> Delta: MAX, Patch: MAX.
 #[tokio::test]
-async fn fungible_asset_delta() -> anyhow::Result<()> {
+async fn fungible_asset_update() -> anyhow::Result<()> {
     // Test with random IDs to make sure the ordering in the MASM and Rust implementations
     // matches.
     let faucet0: AccountId = AccountIdBuilder::new()
@@ -409,26 +352,22 @@ async fn fungible_asset_delta() -> anyhow::Result<()> {
     let faucet3: AccountId = AccountIdBuilder::new().build_with_seed(rand::random());
     let faucet4: AccountId = AccountIdBuilder::new().build_with_seed(rand::random());
 
+    let max_amount = FungibleAsset::MAX_AMOUNT.as_u64();
+
     let original_asset0 = FungibleAsset::new(faucet0, 300)?;
     let original_asset1 = FungibleAsset::new(faucet1, 200)?;
     let original_asset2 = FungibleAsset::new(faucet2, 100)?;
-    let original_asset3 = FungibleAsset::new(faucet3, FungibleAsset::MAX_AMOUNT.as_u64())?;
+    let original_asset3 = FungibleAsset::new(faucet3, max_amount)?;
 
     let added_asset0 = FungibleAsset::new(faucet0, 100)?;
     let added_asset1 = FungibleAsset::new(faucet1, 100)?;
     let added_asset2 = FungibleAsset::new(faucet2, 200)?;
-    let added_asset4 = FungibleAsset::new(faucet4, FungibleAsset::MAX_AMOUNT.as_u64())?;
+    let added_asset4 = FungibleAsset::new(faucet4, max_amount)?;
 
     let removed_asset0 = FungibleAsset::new(faucet0, 200)?;
     let removed_asset1 = FungibleAsset::new(faucet1, 100)?;
     let removed_asset2 = FungibleAsset::new(faucet2, 100)?;
-    let removed_asset3 = FungibleAsset::new(faucet3, FungibleAsset::MAX_AMOUNT.as_u64())?;
-
-    let TestSetup { mock_chain, account_id, notes } = setup_test(
-        [],
-        [original_asset0, original_asset1, original_asset2, original_asset3].map(Asset::from),
-        [added_asset0, added_asset1, added_asset2, added_asset4].map(Asset::from),
-    )?;
+    let removed_asset3 = FungibleAsset::new(faucet3, max_amount)?;
 
     let tx_script = parse_tx_script(format!(
         "
@@ -460,60 +399,49 @@ async fn fungible_asset_delta() -> anyhow::Result<()> {
         ASSET3_VALUE = removed_asset3.to_value_word(),
     ))?;
 
-    let executed_tx = mock_chain
-        .build_tx_context(account_id, &notes.iter().map(Note::id).collect::<Vec<_>>(), &[])?
-        .tx_script(tx_script)
-        .build()?
-        .execute()
-        .await
-        .context("failed to execute transaction")?;
-
-    let mut added_assets = executed_tx
-        .account_delta()
-        .vault()
-        .added_assets()
-        .map(|asset| {
-            (asset.unwrap_fungible().faucet_id(), asset.unwrap_fungible().amount().as_u64())
-        })
-        .collect::<BTreeMap<_, _>>();
-    let mut removed_assets = executed_tx
-        .account_delta()
-        .vault()
-        .removed_assets()
-        .map(|asset| {
-            (asset.unwrap_fungible().faucet_id(), asset.unwrap_fungible().amount().as_u64())
-        })
-        .collect::<BTreeMap<_, _>>();
-
-    assert_eq!(added_assets.len(), 2);
-    assert_eq!(removed_assets.len(), 2);
-
-    assert_eq!(
-        added_assets.remove(&original_asset2.faucet_id()).unwrap(),
-        added_asset2.amount().as_u64() - removed_asset2.amount().as_u64()
-    );
-    assert_eq!(
-        added_assets.remove(&added_asset4.faucet_id()).unwrap(),
-        added_asset4.amount().as_u64()
+    let expected_vault_delta = AccountVaultDelta::from_iters(
+        [Asset::from(added_asset2.sub(removed_asset2)?), Asset::from(added_asset4)],
+        [Asset::from(removed_asset0.sub(added_asset0)?), Asset::from(removed_asset3)],
     );
 
-    assert_eq!(
-        removed_assets.remove(&original_asset0.faucet_id()).unwrap(),
-        removed_asset0.amount().as_u64() - added_asset0.amount().as_u64()
-    );
-    assert_eq!(
-        removed_assets.remove(&original_asset3.faucet_id()).unwrap(),
-        removed_asset3.amount().as_u64()
-    );
+    let mut expected_vault_patch = AccountVaultPatch::default();
+    expected_vault_patch
+        .insert_asset(original_asset0.add(added_asset0)?.sub(removed_asset0)?.into());
+    expected_vault_patch
+        .insert_asset(original_asset2.add(added_asset2)?.sub(removed_asset2)?.into());
+    expected_vault_patch.remove_asset(removed_asset3.vault_key());
+    expected_vault_patch.insert_asset(added_asset4.into());
 
-    Ok(())
+    AccountUpdateTest {
+        initial_storage_slots: vec![],
+        initial_vault_assets: vec![
+            original_asset0.into(),
+            original_asset1.into(),
+            original_asset2.into(),
+            original_asset3.into(),
+        ],
+        input_notes_assets: vec![
+            added_asset0.into(),
+            added_asset1.into(),
+            added_asset2.into(),
+            added_asset4.into(),
+        ],
+        tx_script: Some(tx_script),
+        expected_storage_patch: AccountStoragePatch::new(),
+        expected_vault_delta,
+        expected_vault_patch,
+        expected_code: None,
+    }
+    .execute()
+    .await
 }
 
-/// Tests that adding, removing non-fungible assets results in the correct delta.
-/// - Asset0 is added to the vault -> Delta: Add.
-/// - Asset1 is removed from the vault -> Delta: Remove.
-/// - Asset2 is added and removed -> Delta: No Change.
-/// - Asset3 is removed and added -> Delta: No Change.
+/// Tests that adding, removing non-fungible assets results in the correct update.
+///
+/// - Asset0 is added to the vault -> Delta: Add, Patch: Asset0.
+/// - Asset1 is removed from the vault -> Delta: Remove, Patch: EMPTY_WORD.
+/// - Asset2 is added and removed -> Delta: No Change, Patch: None.
+/// - Asset3 is removed and added -> Delta: No Change, Patch: None.
 #[tokio::test]
 async fn non_fungible_asset_delta() -> anyhow::Result<()> {
     let mut rng = rand::rng();
@@ -544,9 +472,6 @@ async fn non_fungible_asset_delta() -> anyhow::Result<()> {
         faucet3,
         rng.random::<[u8; 32]>().to_vec(),
     ));
-
-    let TestSetup { mock_chain, account_id, notes } =
-        setup_test([], [asset1, asset3].map(Asset::from), [asset0, asset2].map(Asset::from))?;
 
     let tx_script = parse_tx_script(format!(
         "
@@ -582,104 +507,101 @@ async fn non_fungible_asset_delta() -> anyhow::Result<()> {
         ASSET3_VALUE = asset3.to_value_word(),
     ))?;
 
-    let executed_tx = mock_chain
-        .build_tx_context(account_id, &notes.iter().map(Note::id).collect::<Vec<_>>(), &[])?
-        .tx_script(tx_script)
-        .build()?
-        .execute()
-        .await
-        .context("failed to execute transaction")?;
+    let expected_vault_delta =
+        AccountVaultDelta::from_iters([Asset::from(asset0)], [Asset::from(asset1)]);
 
-    let mut added_assets = executed_tx
-        .account_delta()
-        .vault()
-        .added_assets()
-        .map(|asset| (asset.faucet_id(), asset.unwrap_non_fungible()))
-        .collect::<BTreeMap<_, _>>();
-    let mut removed_assets = executed_tx
-        .account_delta()
-        .vault()
-        .removed_assets()
-        .map(|asset| (asset.faucet_id(), asset.unwrap_non_fungible()))
-        .collect::<BTreeMap<_, _>>();
+    let mut expected_vault_patch = AccountVaultPatch::default();
+    expected_vault_patch.insert_asset(asset0.into());
+    expected_vault_patch.remove_asset(Asset::from(asset1).vault_key());
 
-    assert_eq!(added_assets.len(), 1);
-    assert_eq!(removed_assets.len(), 1);
-
-    assert_eq!(added_assets.remove(&asset0.faucet_id()).unwrap(), asset0);
-    assert_eq!(removed_assets.remove(&asset1.faucet_id()).unwrap(), asset1);
-
-    Ok(())
+    AccountUpdateTest {
+        initial_storage_slots: vec![],
+        initial_vault_assets: vec![asset1.into(), asset3.into()],
+        input_notes_assets: vec![asset0.into(), asset2.into()],
+        tx_script: Some(tx_script),
+        expected_storage_patch: AccountStoragePatch::new(),
+        expected_vault_delta,
+        expected_vault_patch,
+        expected_code: None,
+    }
+    .execute()
+    .await
 }
 
-/// Tests that adding and removing assets and updating value and map storage slots results in the
-/// correct delta.
+/// Tests that storage value/map updates combined with vault asset additions and removals are
+/// reflected correctly in the resulting delta and patch.
+///
+/// To keep the focus on the interplay between storage and vault sub-patches, the added and
+/// removed assets are deliberately disjoint - multiple updates to same-faucet assets is covered by
+/// other tests.
+///
+/// Vault:
+/// - asset_0 starts at 1000, moved out to note -> Delta: Remove asset_0, Patch: EMPTY_WORD.
+/// - asset_1 is moved out to note -> Delta: Remove asset_1, Patch: EMPTY_WORD.
+/// - asset_2 is moved in to vault -> Delta: Add asset_2, Patch: asset_2.
+/// - asset_3 is moved in to vault -> Delta: Add asset_3, Patch: asset_3.
+///
+/// Storage:
+/// - MOCK_VALUE_SLOT0: STORAGE_VALUE_0 -> updated_slot_value -> Patch: updated_slot_value.
+/// - MOCK_MAP_SLOT[updated_map_key]: EMPTY_WORD -> updated_map_value -> Patch: updated_map_value.
+/// - MOCK_VALUE_SLOT1 and the other MOCK_MAP_SLOT entries are untouched -> Patch: None.
 #[tokio::test]
 async fn asset_and_storage_patch() -> anyhow::Result<()> {
-    let account_assets = AssetVault::mock().assets().collect::<Vec<Asset>>();
+    let mut rng = rand::rng();
 
-    let account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
-        .with_auth_component(Auth::IncrNonce)
-        .with_component(MockAccountComponent::with_slots(AccountStorage::mock_storage_slots()))
-        .with_assets(account_assets)
-        .build_existing()?;
+    let faucet_0: AccountId = AccountIdBuilder::new().build_with_seed(rng.random());
+    let faucet_1: AccountId = AccountIdBuilder::new().build_with_seed(rng.random());
+    let faucet_2: AccountId = AccountIdBuilder::new().build_with_seed(rng.random());
+    let faucet_3: AccountId = AccountIdBuilder::new().build_with_seed(rng.random());
 
-    // updated storage
+    let asset_0: Asset = FungibleAsset::new(faucet_0, 1000)?.into();
+    let asset_1: Asset = NonFungibleAsset::new(&NonFungibleAssetDetails::new(
+        faucet_1,
+        rng.random::<[u8; 32]>().to_vec(),
+    ))
+    .into();
+
+    let asset_2: Asset = FungibleAsset::new(faucet_2, 500)?.into();
+    let asset_3: Asset = NonFungibleAsset::new(&NonFungibleAssetDetails::new(
+        faucet_3,
+        rng.random::<[u8; 32]>().to_vec(),
+    ))
+    .into();
+
     let updated_slot_value = Word::from([7, 9, 11, 13u32]);
-
-    // updated storage map
     let updated_map_key = StorageMapKey::from_array([14, 15, 16, 17u32]);
     let updated_map_value = Word::from([18, 19, 20, 21u32]);
 
-    // removed assets
-    let removed_asset_1 = FungibleAsset::mock(FUNGIBLE_ASSET_AMOUNT / 2);
-    let removed_asset_2 = Asset::Fungible(
-        FungibleAsset::new(
-            ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2.try_into().expect("id is valid"),
-            FUNGIBLE_ASSET_AMOUNT,
-        )
-        .expect("asset is valid"),
-    );
-    let removed_asset_3 = NonFungibleAsset::mock(&NON_FUNGIBLE_ASSET_DATA);
-    let removed_assets = [removed_asset_1, removed_asset_2, removed_asset_3];
+    let removed_assets = [asset_0, asset_1];
+    let added_assets = [asset_2, asset_3];
 
-    let tag1 =
-        NoteTag::with_account_target(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into()?);
-    let tag2 = NoteTag::default();
-    let tag3 = NoteTag::default();
-    let tags = [tag1, tag2, tag3];
-
-    let note_types = [NoteType::Private; 3];
-
-    let mut send_asset_script = String::new();
-    for i in 0..3 {
-        send_asset_script.push_str(&format!(
+    let mut send_assets_script = String::new();
+    for (i, removed_asset) in removed_assets.iter().enumerate() {
+        send_assets_script.push_str(&format!(
             "
             ### note {i}
             # prepare the stack for a new note creation
-            push.0.1.2.3           # recipient
-            push.{NOTETYPE}        # note_type
+            push.0.1.2.3           # RECIPIENT
+            push.{note_type}       # note_type
             push.{tag}             # tag
-            # => [tag, note_type, RECIPIENT]
 
             # create the note
             exec.output_note::create
             # => [note_idx, pad(15)]
 
-            # move an asset to the created note to partially deplete fungible asset balance
+            # move the asset into the new note
             swapw dropw
-            push.{REMOVED_ASSET_VALUE}
-            push.{REMOVED_ASSET_KEY}
+            push.{ASSET_VALUE} push.{ASSET_KEY}
             call.::miden::standards::wallets::basic::move_asset_to_note
             # => [pad(16)]
 
             # clear the stack
             dropw dropw dropw dropw
-        ",
-            NOTETYPE = note_types[i] as u8,
-            tag = tags[i],
-            REMOVED_ASSET_KEY = removed_assets[i].to_key_word(),
-            REMOVED_ASSET_VALUE = removed_assets[i].to_value_word(),
+            ",
+            note_type = NoteType::Private as u8,
+            tag = NoteTag::default(),
+            ASSET_KEY = removed_asset.to_key_word(),
+            ASSET_VALUE = removed_asset.to_value_word(),
         ));
     }
 
@@ -691,134 +613,58 @@ async fn asset_and_storage_patch() -> anyhow::Result<()> {
         const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
         const MOCK_MAP_SLOT = word("{mock_map_slot}")
 
-        ## TRANSACTION SCRIPT
-        ## ========================================================================================
         begin
-            ## Update account storage item
-            ## ------------------------------------------------------------------------------------
-            # push a new value for the storage slot onto the stack
+            ## Update value storage slot
             push.{updated_slot_value}
-            # => [13, 11, 9, 7]
-
-            # get the index of account storage slot
             push.MOCK_VALUE_SLOT0[0..2]
-            # => [slot_id_suffix, slot_id_prefix, 13, 11, 9, 7]
-            # update the storage value
             call.account::set_item dropw
-            # => []
 
-            ## Update account storage map
-            ## ------------------------------------------------------------------------------------
-            # push a new VALUE for the storage map onto the stack
+            ## Update map storage slot at a previously-unset key
             push.{updated_map_value}
-            # => [18, 19, 20, 21]
-
-            # push a new KEY for the storage map onto the stack
             push.{updated_map_key}
-            # => [14, 15, 16, 17, 18, 19, 20, 21]
-
-            # get the index of account storage slot
             push.MOCK_MAP_SLOT[0..2]
-            # => [slot_id_suffix, slot_id_prefix, 14, 15, 16, 17, 18, 19, 20, 21]
-
-            # update the storage value
             call.account::set_map_item dropw dropw dropw
-            # => []
 
-            ## Send some assets from the account vault
-            ## ------------------------------------------------------------------------------------
-            {send_asset_script}
+            ## Move both initial vault assets out via newly created output notes
+            {send_assets_script}
 
             dropw dropw dropw dropw
         end
-    "#,
+        "#,
         mock_value_slot0 = &*MOCK_VALUE_SLOT0,
         mock_map_slot = &*MOCK_MAP_SLOT,
     );
 
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script_src)?;
 
-    // Create the input note that carries the assets that we will assert later
-    let input_note = {
-        let faucet_id_1 = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)?;
-        let faucet_id_3 = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_3)?;
+    let mut expected_storage_patch = AccountStoragePatch::new();
+    expected_storage_patch.set_item(MOCK_VALUE_SLOT0.clone(), updated_slot_value)?;
+    expected_storage_patch.set_map_item(
+        MOCK_MAP_SLOT.clone(),
+        updated_map_key,
+        updated_map_value,
+    )?;
 
-        let fungible_asset_1: Asset =
-            FungibleAsset::new(faucet_id_1, CONSUMED_ASSET_1_AMOUNT)?.into();
-        let fungible_asset_3: Asset =
-            FungibleAsset::new(faucet_id_3, CONSUMED_ASSET_3_AMOUNT)?.into();
-        let nonfungible_asset_1: Asset = NonFungibleAsset::mock(&NON_FUNGIBLE_ASSET_DATA_2);
+    let expected_vault_delta = AccountVaultDelta::from_iters(added_assets, removed_assets);
 
-        create_public_p2any_note(
-            account.id(),
-            [fungible_asset_1, fungible_asset_3, nonfungible_asset_1],
-        )
-    };
+    let mut expected_vault_patch = AccountVaultPatch::default();
+    expected_vault_patch.remove_asset(asset_0.vault_key());
+    expected_vault_patch.remove_asset(asset_1.vault_key());
+    expected_vault_patch.insert_asset(asset_2);
+    expected_vault_patch.insert_asset(asset_3);
 
-    let tx_context = TransactionContextBuilder::new(account)
-        .extend_input_notes(vec![input_note.clone()])
-        .tx_script(tx_script)
-        .build()?;
-
-    // Storing assets that will be added to assert correctness later
-    let added_assets = input_note.assets().iter().cloned().collect::<Vec<_>>();
-
-    // expected delta
-    // --------------------------------------------------------------------------------------------
-    // execute the transaction and get the witness
-    let executed_transaction = tx_context.execute().await?;
-
-    // nonce delta
-    // --------------------------------------------------------------------------------------------
-
-    assert_eq!(executed_transaction.account_delta().nonce_delta(), Felt::ONE);
-
-    // storage patch
-    // --------------------------------------------------------------------------------------------
-    // We expect one updated item and one updated map
-    assert_eq!(executed_transaction.account_delta().storage().values().count(), 1);
-    assert_eq!(
-        executed_transaction.account_delta().storage().get_value(&MOCK_VALUE_SLOT0),
-        Some(updated_slot_value)
-    );
-
-    assert_eq!(executed_transaction.account_delta().storage().maps().count(), 1);
-    assert_eq!(
-        executed_transaction
-            .account_delta()
-            .storage()
-            .get_map_value(&MOCK_MAP_SLOT, &updated_map_key),
-        Some(updated_map_value)
-    );
-
-    // vault delta
-    // --------------------------------------------------------------------------------------------
-    // assert that added assets are tracked
-    assert!(
-        executed_transaction
-            .account_delta()
-            .vault()
-            .added_assets()
-            .all(|x| added_assets.contains(&x))
-    );
-    assert_eq!(
-        added_assets.len(),
-        executed_transaction.account_delta().vault().added_assets().count()
-    );
-
-    // assert that removed assets are tracked
-    assert!(
-        executed_transaction
-            .account_delta()
-            .vault()
-            .removed_assets()
-            .all(|x| removed_assets.contains(&x))
-    );
-    assert_eq!(
-        removed_assets.len(),
-        executed_transaction.account_delta().vault().removed_assets().count()
-    );
-    Ok(())
+    AccountUpdateTest {
+        initial_storage_slots: AccountStorage::mock_storage_slots(),
+        initial_vault_assets: vec![asset_0, asset_1],
+        input_notes_assets: vec![asset_2, asset_3],
+        tx_script: Some(tx_script),
+        expected_storage_patch,
+        expected_vault_delta,
+        expected_vault_patch,
+        expected_code: None,
+    }
+    .execute()
+    .await
 }
 
 /// Tests that the storage map updates for a _new public_ account in an executed and proven
@@ -1009,28 +855,21 @@ async fn delta_for_new_account_retains_empty_map_storage_slots() -> anyhow::Resu
 }
 
 /// Tests that adding a fungible asset with amount zero to the account vault works and does not
-/// result in an account delta entry.
+/// result in an account delta or patch entry.
 #[tokio::test]
 async fn adding_amount_zero_fungible_asset_to_account_vault_works() -> anyhow::Result<()> {
-    let mut builder = MockChain::builder();
-    let account = builder.add_existing_mock_account(Auth::IncrNonce)?;
-    let input_note = builder.add_p2id_note(
-        account.id(),
-        account.id(),
-        &[FungibleAsset::mock(0)],
-        NoteType::Private,
-    )?;
-    let chain = builder.build()?;
-
-    let tx = chain
-        .build_tx_context(account, &[input_note.id()], &[])?
-        .build()?
-        .execute()
-        .await?;
-
-    assert!(tx.account_delta().vault().is_empty());
-
-    Ok(())
+    AccountUpdateTest {
+        initial_storage_slots: vec![],
+        initial_vault_assets: vec![],
+        input_notes_assets: vec![FungibleAsset::mock(0)],
+        tx_script: None,
+        expected_storage_patch: AccountStoragePatch::new(),
+        expected_vault_delta: AccountVaultDelta::default(),
+        expected_vault_patch: AccountVaultPatch::default(),
+        expected_code: None,
+    }
+    .execute()
+    .await
 }
 
 /// Tests that recomputing a delta correctly resets the account delta tracked by the host.
@@ -1142,41 +981,6 @@ async fn recomputing_delta_resets_host_delta() -> anyhow::Result<()> {
 
 // TEST HELPERS
 // ================================================================================================
-
-struct TestSetup {
-    mock_chain: MockChain,
-    account_id: AccountId,
-    notes: Vec<Note>,
-}
-
-fn setup_test(
-    storage_slots: impl IntoIterator<Item = StorageSlot>,
-    vault_assets: impl IntoIterator<Item = Asset>,
-    note_assets: impl IntoIterator<Item = Asset>,
-) -> anyhow::Result<TestSetup> {
-    let mut builder = MockChain::builder();
-    let account = builder.add_existing_mock_account_with_storage_and_assets(
-        Auth::IncrNonce,
-        storage_slots,
-        vault_assets,
-    )?;
-
-    let mut notes = vec![];
-    for note_asset in note_assets {
-        let added_note = builder
-            .add_p2id_note(account.id(), account.id(), &[note_asset], NoteType::Public)
-            .context("failed to add note with asset")?;
-        notes.push(added_note);
-    }
-
-    let mock_chain = builder.build()?;
-
-    Ok(TestSetup {
-        mock_chain,
-        account_id: account.id(),
-        notes,
-    })
-}
 
 fn parse_tx_script(code: impl AsRef<str>) -> anyhow::Result<TransactionScript> {
     let code = format!(
@@ -1311,7 +1115,7 @@ fn delta_check_auth_component() -> AccountComponent {
 struct AccountUpdateTest {
     pub initial_storage_slots: Vec<StorageSlot>,
     pub initial_vault_assets: Vec<Asset>,
-    pub input_note_assets: Vec<Asset>,
+    pub input_notes_assets: Vec<Asset>,
     pub tx_script: Option<TransactionScript>,
     pub expected_storage_patch: AccountStoragePatch,
     pub expected_vault_delta: AccountVaultDelta,
@@ -1336,7 +1140,7 @@ impl AccountUpdateTest {
         let Self {
             initial_storage_slots,
             initial_vault_assets,
-            input_note_assets,
+            input_notes_assets,
             tx_script,
             expected_storage_patch,
             expected_vault_delta,
@@ -1353,11 +1157,11 @@ impl AccountUpdateTest {
             .build_existing()?;
         builder.add_account(account.clone())?;
 
-        let mut input_note_ids = Vec::with_capacity(input_note_assets.len());
-        for note_asset in input_note_assets {
+        let mut input_note_ids = Vec::with_capacity(input_notes_assets.len());
+        for note_asset in input_notes_assets {
             let input_note = builder
                 .add_p2id_note(account.id(), account.id(), &[note_asset], NoteType::Public)
-                .context("failed to add note with asset")?;
+                .context("failed to add note with assets")?;
             input_note_ids.push(input_note.id());
         }
 
