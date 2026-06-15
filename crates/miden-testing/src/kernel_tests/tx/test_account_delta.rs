@@ -1,19 +1,25 @@
 use alloc::vec::Vec;
 use std::collections::BTreeMap;
 use std::string::String;
+use std::sync::LazyLock;
 
 use anyhow::Context;
 use miden_crypto::rand::test_utils::rand_value;
 use miden_protocol::account::{
     Account,
     AccountBuilder,
+    AccountCode,
     AccountComponent,
+    AccountComponentCode,
     AccountComponentMetadata,
     AccountDelta,
     AccountId,
     AccountPatch,
     AccountStorage,
+    AccountStoragePatch,
     AccountType,
+    AccountVaultDelta,
+    AccountVaultPatch,
     StorageMap,
     StorageMapKey,
     StorageSlot,
@@ -47,7 +53,7 @@ use miden_protocol::transaction::TransactionScript;
 use miden_protocol::{EMPTY_WORD, Felt, Word, ZERO};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::MockAccountComponent;
-use miden_tx::LocalTransactionProver;
+use miden_tx::{LocalTransactionProver, TransactionExecutorError};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
@@ -88,22 +94,22 @@ async fn empty_account_delta_commitment_is_empty_word() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Tests that a noop transaction with [`Auth::IncrNonce`] results in a nonce delta of 1.
+/// Tests that a noop transaction with a nonce-incrementing auth results in a nonce delta of 1
+/// and a patch whose only change is the bumped final nonce.
 #[tokio::test]
 async fn delta_nonce() -> anyhow::Result<()> {
-    let TestSetup { mock_chain, account_id, .. } = setup_test([], [], [])?;
-
-    let executed_tx = mock_chain
-        .build_tx_context(account_id, &[], &[])
-        .expect("failed to build tx context")
-        .build()?
-        .execute()
-        .await
-        .context("failed to execute transaction")?;
-
-    assert_eq!(executed_tx.account_delta().nonce_delta(), Felt::ONE);
-
-    Ok(())
+    AccountUpdateTest {
+        initial_storage_slots: vec![],
+        initial_vault_assets: vec![],
+        input_note_assets: vec![],
+        tx_script: None,
+        expected_storage_patch: AccountStoragePatch::new(),
+        expected_vault_delta: AccountVaultDelta::default(),
+        expected_vault_patch: AccountVaultPatch::default(),
+        expected_code: None,
+    }
+    .execute()
+    .await
 }
 
 /// Tests that setting new values for value storage slots results in the correct delta.
@@ -1242,3 +1248,169 @@ const TEST_ACCOUNT_CONVENIENCE_WRAPPERS: &str = "
           # => [ASSET_VALUE]
       end
 ";
+
+// DELTA-CHECK AUTH COMPONENT
+// ================================================================================================
+
+// Auth procedure that increments the nonce and, when the first felt of `AUTH_ARGS` is non-zero,
+// emits `AUTH_UNAUTHORIZED_EVENT` after building the tx summary. The unauthorized event drives
+// `TransactionBaseHost::build_tx_summary` which cross-checks the host-tracked delta commitment
+// against the kernel-computed one — re-establishing the implicit host/kernel match check that
+// existed when the kernel epilogue still produced the delta commitment.
+const DELTA_CHECK_AUTH_CODE: &str = r#"
+    use miden::protocol::native_account
+    use miden::protocol::auth::AUTH_UNAUTHORIZED_EVENT
+
+    #! Inputs:  [[should_emit, 0, 0, 0], pad(12)]
+    #! Outputs: [pad(16)]
+    @auth_script
+    pub proc auth_incr_nonce_with_delta_check
+        exec.native_account::incr_nonce drop
+        # => [[should_emit, 0, 0, 0], pad(12)]
+
+        dup
+        if.true
+            # Replace AUTH_ARGS with an EMPTY_WORD salt for the tx summary.
+            dropw padw
+            # => [SALT, pad(12)]
+
+            exec.::miden::standards::auth::create_tx_summary
+            # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT, pad(12)]
+
+            adv.insert_hqword
+            # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT, pad(12)]
+
+            exec.::miden::standards::auth::hash_tx_summary
+            # => [TX_SUMMARY_COMMITMENT, pad(12)]
+
+            emit.AUTH_UNAUTHORIZED_EVENT
+
+            push.0 assert.err="emitting the event should have aborted execution"
+        end
+    end
+"#;
+
+static DELTA_CHECK_AUTH_LIBRARY: LazyLock<AccountComponentCode> = LazyLock::new(|| {
+    CodeBuilder::with_mock_libraries()
+        .compile_component_code("test::incr_nonce_with_delta_check_auth", DELTA_CHECK_AUTH_CODE)
+        .expect("delta-check auth code should compile")
+});
+
+fn delta_check_auth_component() -> AccountComponent {
+    AccountComponent::new(
+        DELTA_CHECK_AUTH_LIBRARY.clone(),
+        vec![],
+        AccountComponentMetadata::new("test::incr_nonce_with_delta_check_auth"),
+    )
+    .expect("delta-check auth component should be valid")
+}
+
+// EXECUTE ACCOUNT UPDATE TEST HELPER
+// ================================================================================================
+
+struct AccountUpdateTest {
+    pub initial_storage_slots: Vec<StorageSlot>,
+    pub initial_vault_assets: Vec<Asset>,
+    pub input_note_assets: Vec<Asset>,
+    pub tx_script: Option<TransactionScript>,
+    pub expected_storage_patch: AccountStoragePatch,
+    pub expected_vault_delta: AccountVaultDelta,
+    pub expected_vault_patch: AccountVaultPatch,
+    pub expected_code: Option<AccountCode>,
+}
+
+impl AccountUpdateTest {
+    /// Runs a transaction against the same setup to validate:
+    /// - that commitments match in host and kernel.
+    /// - that the delta and patch match the expectation.
+    ///
+    /// - The first run drives the auth into emitting the unauthorized event. The host's
+    ///   `build_tx_summary` checks the host-tracked delta commitment against the kernel-computed
+    ///   one before surfacing [`TransactionExecutorError::Unauthorized`]. We assert that the
+    ///   wrapped `TransactionSummary::account_delta` equals the delta built from the expected
+    ///   parts.
+    /// - The second run completes the transaction normally. The transaction executor checks that
+    ///   patch commitments in host and kernel match. We assert that
+    ///   `ExecutedTransaction::account_patch` equals the patch built from the expected parts.
+    async fn execute(self) -> anyhow::Result<()> {
+        let Self {
+            initial_storage_slots,
+            initial_vault_assets,
+            input_note_assets,
+            tx_script,
+            expected_storage_patch,
+            expected_vault_delta,
+            expected_vault_patch,
+            expected_code,
+        } = self;
+
+        let mut builder = MockChain::builder();
+        let account = Account::builder(builder.rng_mut().random())
+            .account_type(AccountType::Public)
+            .with_auth_component(delta_check_auth_component())
+            .with_component(MockAccountComponent::with_slots(initial_storage_slots))
+            .with_assets(initial_vault_assets)
+            .build_existing()?;
+        builder.add_account(account.clone())?;
+
+        let mut input_note_ids = Vec::with_capacity(input_note_assets.len());
+        for note_asset in input_note_assets {
+            let input_note = builder
+                .add_p2id_note(account.id(), account.id(), &[note_asset], NoteType::Public)
+                .context("failed to add note with asset")?;
+            input_note_ids.push(input_note.id());
+        }
+
+        let mock_chain = builder.build()?;
+
+        let expected_nonce_delta = Felt::ONE;
+        let expected_delta = AccountDelta::new(
+            account.id(),
+            expected_storage_patch.clone(),
+            expected_vault_delta,
+            expected_nonce_delta,
+        )?;
+        let expected_patch = AccountPatch::new(
+            account.id(),
+            expected_storage_patch,
+            expected_vault_patch,
+            expected_code,
+            Some(account.nonce() + expected_nonce_delta),
+        )?;
+
+        // Delta path: emit unauthorized so the host's build_tx_summary cross-checks the delta.
+        let delta_run = {
+            let auth_args = Word::from([Felt::ONE, ZERO, ZERO, ZERO]);
+            let mut tx = mock_chain
+                .build_tx_context(account.id(), &input_note_ids, &[])?
+                .auth_args(auth_args);
+            if let Some(ref script) = tx_script {
+                tx = tx.tx_script(script.clone());
+            }
+            tx.build()?.execute().await
+        };
+        let summary = match delta_run {
+            Err(TransactionExecutorError::Unauthorized(summary)) => summary,
+            Err(other) => anyhow::bail!("expected Unauthorized error, got: {other}"),
+            Ok(_) => anyhow::bail!("expected Unauthorized error, got Ok"),
+        };
+        assert_eq!(*summary.account_delta(), expected_delta);
+
+        // Patch path: complete the tx normally and check the patch.
+        let patch_run_tx = {
+            let mut tx = mock_chain
+                .build_tx_context(account.id(), &input_note_ids, &[])?
+                .auth_args(EMPTY_WORD);
+            if let Some(script) = tx_script {
+                tx = tx.tx_script(script);
+            }
+            tx.build()?
+                .execute()
+                .await
+                .context("failed to execute transaction (patch run)")?
+        };
+        assert_eq!(*patch_run_tx.account_patch(), expected_patch);
+
+        Ok(())
+    }
+}
