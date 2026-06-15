@@ -13,7 +13,7 @@
 - Added a `min_burn_amount` fungible faucet burn policy that rejects burns below a configurable, owner-gated minimum burn amount ([#3021](https://github.com/0xMiden/protocol/pull/3021)).
 - Added the `active_account::has_storage_slot` MASM procedure for checking whether a storage slot exists on the active account without panicking ([#3037](https://github.com/0xMiden/protocol/pull/3037)).
 - Added `Note::has_attachments` and `NoteMetadata::has_attachments` helpers, and retained private note attachments in `MockChain` ([#3060](https://github.com/0xMiden/protocol/pull/3060)).
-- Introduced `AccountPatch` and `AccountVaultPatch` ([#3010](https://github.com/0xMiden/protocol/pull/3010)).
+- Introduced `AccountPatch` and `AccountVaultPatch` ([#3010](https://github.com/0xMiden/protocol/pull/3010), [#3071](https://github.com/0xMiden/protocol/pull/3071)).
 - Clarified the transaction definition and the distinction between execution and proving on the architecture overview page ([#3015](https://github.com/0xMiden/protocol/pull/3015)).
 - [BREAKING] Refactored `TransferPolicy`, `MintPolicyConfig`, and `BurnPolicyConfig` from enums into structs ([#2974](https://github.com/0xMiden/protocol/pull/2974)).
 - Added `AccountComponent::has_procedure(root)` helper ([#2974](https://github.com/0xMiden/protocol/pull/2974)).
