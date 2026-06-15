@@ -561,8 +561,8 @@ async fn tx_summary_commitment_is_signed_by_falcon_auth() -> anyhow::Result<()> 
 
     let account_interface = AccountInterface::from_account(&account);
     assert!(matches!(
-        account_interface.auth_components().next(),
-        Some(AccountComponentInterface::AuthSingleSig)
+        account_interface.auth_component(),
+        AccountComponentInterface::AuthSingleSig
     ));
     let pub_keys = get_public_keys_from_account(&account);
     let pub_key = pub_keys.first().expect("expected at least one public key");
@@ -618,8 +618,8 @@ async fn tx_summary_commitment_is_signed_by_ecdsa_auth() -> anyhow::Result<()> {
 
     let account_interface = AccountInterface::from_account(&account);
     assert!(matches!(
-        account_interface.auth_components().next(),
-        Some(AccountComponentInterface::AuthSingleSig)
+        account_interface.auth_component(),
+        AccountComponentInterface::AuthSingleSig
     ));
     let pub_keys = get_public_keys_from_account(&account);
     let pub_key = pub_keys.first().expect("expected at least one public key");

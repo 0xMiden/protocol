@@ -57,9 +57,10 @@ fn test_account_interface_identifies_single_sig_auth() {
 
     let wallet_account_interface = AccountInterface::from_account(&wallet_account);
 
-    let auth_components: alloc::vec::Vec<_> = wallet_account_interface.auth_components().collect();
-    assert_eq!(auth_components.len(), 1);
-    assert!(matches!(auth_components[0], AccountComponentInterface::AuthSingleSig));
+    assert!(matches!(
+        wallet_account_interface.auth_component(),
+        AccountComponentInterface::AuthSingleSig
+    ));
 }
 
 #[test]
@@ -73,9 +74,10 @@ fn test_account_interface_identifies_no_auth() {
 
     let no_auth_account_interface = AccountInterface::from_account(&no_auth_account);
 
-    let auth_components: alloc::vec::Vec<_> = no_auth_account_interface.auth_components().collect();
-    assert_eq!(auth_components.len(), 1);
-    assert!(matches!(auth_components[0], AccountComponentInterface::AuthNoAuth));
+    assert!(matches!(
+        no_auth_account_interface.auth_component(),
+        AccountComponentInterface::AuthNoAuth
+    ));
 }
 
 #[test]
