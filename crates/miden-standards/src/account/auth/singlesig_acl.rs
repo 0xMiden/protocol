@@ -1,6 +1,5 @@
 use alloc::vec::Vec;
 
-use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 use miden_protocol::account::component::{
     AccountComponentCode,
     AccountComponentMetadata,
@@ -23,6 +22,7 @@ use miden_protocol::errors::AccountError;
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
+use super::Approver;
 use crate::account::account_component_code;
 
 account_component_code!(SINGLESIG_ACL_CODE, "auth/singlesig_acl.masl");
@@ -152,8 +152,7 @@ impl Default for AuthSingleSigAclConfig {
 /// the transaction. This is an important limitation to consider when designing trigger
 /// procedures for authentication.
 pub struct AuthSingleSigAcl {
-    pub_key: PublicKeyCommitment,
-    auth_scheme: AuthScheme,
+    approver: Approver,
     config: AuthSingleSigAclConfig,
 }
 
@@ -176,11 +175,7 @@ impl AuthSingleSigAcl {
     ///
     /// # Panics
     /// Panics if more than [AccountCode::MAX_NUM_PROCEDURES] procedures are specified.
-    pub fn new(
-        pub_key: PublicKeyCommitment,
-        auth_scheme: AuthScheme,
-        config: AuthSingleSigAclConfig,
-    ) -> Result<Self, AccountError> {
+    pub fn new(approver: Approver, config: AuthSingleSigAclConfig) -> Result<Self, AccountError> {
         let max_procedures = AccountCode::MAX_NUM_PROCEDURES;
         if config.auth_trigger_procedures.len() > max_procedures {
             return Err(AccountError::other(format!(
@@ -188,7 +183,12 @@ impl AuthSingleSigAcl {
             )));
         }
 
-        Ok(Self { pub_key, auth_scheme, config })
+        Ok(Self { approver, config })
+    }
+
+    /// Returns the approver of this component.
+    pub fn approver(&self) -> Approver {
+        self.approver
     }
 
     /// Returns the [`StorageSlotName`] where the public key is stored.
@@ -280,13 +280,13 @@ impl From<AuthSingleSigAcl> for AccountComponent {
         // Public key slot
         storage_slots.push(StorageSlot::with_value(
             AuthSingleSigAcl::public_key_slot().clone(),
-            singlesig_acl.pub_key.into(),
+            singlesig_acl.approver.pub_key().into(),
         ));
 
         // Scheme ID slot
         storage_slots.push(StorageSlot::with_value(
             AuthSingleSigAcl::scheme_id_slot().clone(),
-            Word::from([singlesig_acl.auth_scheme.as_u8(), 0, 0, 0]),
+            Word::from([singlesig_acl.approver.auth_scheme().as_u8(), 0, 0, 0]),
         ));
 
         // Config slot
@@ -332,6 +332,7 @@ impl From<AuthSingleSigAcl> for AccountComponent {
 mod tests {
     use miden_protocol::Word;
     use miden_protocol::account::AccountBuilder;
+    use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 
     use super::*;
     use crate::account::components::StandardAccountComponent;
@@ -378,7 +379,7 @@ mod tests {
         };
 
         // Create component and account
-        let component = AuthSingleSigAcl::new(public_key, auth_scheme, acl_config)
+        let component = AuthSingleSigAcl::new(Approver::new(public_key, auth_scheme), acl_config)
             .expect("component creation failed");
 
         let account = AccountBuilder::new([0; 32])

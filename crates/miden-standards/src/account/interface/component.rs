@@ -11,6 +11,8 @@ use miden_protocol::account::{
 
 use crate::AuthMethod;
 use crate::account::auth::{
+    Approver,
+    ApproverSet,
     AuthGuardedMultisig,
     AuthMultisig,
     AuthMultisigSmart,
@@ -193,7 +195,9 @@ fn extract_singlesig_auth_method(
     let auth_scheme =
         AuthScheme::try_from(scheme_id).expect("invalid auth scheme id in the scheme id slot");
 
-    AuthMethod::SingleSig { approver: (pub_key, auth_scheme) }
+    AuthMethod::SingleSig {
+        approver: Approver::new(pub_key, auth_scheme),
+    }
 }
 
 /// Extracts authentication method from a multisig component.
@@ -243,10 +247,13 @@ fn extract_multisig_auth_method(
         let scheme_id = scheme_word[0].as_canonical_u64() as u8;
         let auth_scheme =
             AuthScheme::try_from(scheme_id).expect("invalid auth scheme id in the scheme id slot");
-        approvers.push((pub_key, auth_scheme));
+        approvers.push(Approver::new(pub_key, auth_scheme));
     }
 
-    AuthMethod::Multisig { threshold, approvers }
+    let approver_set = ApproverSet::new(approvers, threshold)
+        .expect("multisig configuration in storage should be valid");
+
+    AuthMethod::Multisig { approver_set }
 }
 
 /// Extracts authentication method from a network-account component.

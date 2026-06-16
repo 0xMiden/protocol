@@ -204,7 +204,7 @@ mod tests {
     use miden_protocol::account::component::AccountComponentMetadata;
 
     use super::{AccountBuilderSchemaCommitmentExt, AccountSchemaCommitment};
-    use crate::account::auth::{AuthSingleSig, NoAuth};
+    use crate::account::auth::{Approver, AuthSingleSig, NoAuth};
 
     #[test]
     fn storage_schema_commitment_is_order_independent() {
@@ -268,10 +268,10 @@ mod tests {
 
     #[test]
     fn build_with_schema_commitment_adds_schema_commitment_component() {
-        let auth_component = AuthSingleSig::new(
+        let auth_component = AuthSingleSig::new(Approver::new(
             PublicKeyCommitment::from(Word::empty()),
             AuthScheme::EcdsaK256Keccak,
-        );
+        ));
 
         let account = AccountBuilder::new([1u8; 32])
             .with_auth_component(auth_component)

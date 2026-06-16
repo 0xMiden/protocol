@@ -20,6 +20,8 @@ use miden_protocol::testing::note::DEFAULT_NOTE_SCRIPT;
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
 use miden_standards::account::auth::{
+    Approver,
+    ApproverSet,
     AuthGuardedMultisig,
     AuthGuardedMultisigConfig,
     GuardianConfig,
@@ -141,10 +143,11 @@ fn create_guarded_multisig_account(
 ) -> anyhow::Result<Account> {
     let approvers = approvers
         .iter()
-        .map(|(pub_key, auth_scheme)| (pub_key.to_commitment(), *auth_scheme))
+        .map(|(pub_key, auth_scheme)| Approver::new(pub_key.to_commitment(), *auth_scheme))
         .collect();
+    let approver_set = ApproverSet::new(approvers, threshold)?;
 
-    let config = AuthGuardedMultisigConfig::new(approvers, threshold, guardian)?
+    let config = AuthGuardedMultisigConfig::new(approver_set, guardian)?
         .with_proc_thresholds(proc_threshold_map)?;
 
     let multisig_account = AccountBuilder::new([0; 32])
@@ -186,7 +189,10 @@ async fn test_guarded_multisig_signature_required(
     let mut multisig_account = create_guarded_multisig_account(
         2,
         &approvers,
-        GuardianConfig::new(guardian_public_key.to_commitment(), AuthScheme::EcdsaK256Keccak),
+        GuardianConfig::new(Approver::new(
+            guardian_public_key.to_commitment(),
+            AuthScheme::EcdsaK256Keccak,
+        )),
         10,
         vec![],
     )?;
@@ -296,7 +302,10 @@ async fn test_guarded_multisig_update_guardian_public_key(
     let multisig_account = create_guarded_multisig_account(
         2,
         &approvers,
-        GuardianConfig::new(old_guardian_public_key.to_commitment(), AuthScheme::EcdsaK256Keccak),
+        GuardianConfig::new(Approver::new(
+            old_guardian_public_key.to_commitment(),
+            AuthScheme::EcdsaK256Keccak,
+        )),
         10,
         vec![],
     )?;
@@ -445,7 +454,10 @@ async fn test_guarded_multisig_update_guardian_public_key_must_be_called_alone(
     let multisig_account = create_guarded_multisig_account(
         2,
         &approvers,
-        GuardianConfig::new(old_guardian_public_key.to_commitment(), AuthScheme::EcdsaK256Keccak),
+        GuardianConfig::new(Approver::new(
+            old_guardian_public_key.to_commitment(),
+            AuthScheme::EcdsaK256Keccak,
+        )),
         10,
         vec![],
     )?;
@@ -622,7 +634,10 @@ async fn test_guarded_multisig_update_guardian_enforces_no_notes(
     let multisig_account = create_guarded_multisig_account(
         2,
         &approvers,
-        GuardianConfig::new(old_guardian_public_key.to_commitment(), AuthScheme::EcdsaK256Keccak),
+        GuardianConfig::new(Approver::new(
+            old_guardian_public_key.to_commitment(),
+            AuthScheme::EcdsaK256Keccak,
+        )),
         10,
         vec![],
     )?;

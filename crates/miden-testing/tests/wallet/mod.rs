@@ -1,5 +1,6 @@
 use miden_protocol::Word;
 use miden_protocol::account::auth::AuthSecretKey;
+use miden_standards::account::auth::Approver;
 use miden_standards::account::wallets::create_basic_wallet;
 use rand_chacha::ChaCha20Rng;
 use rand_chacha::rand_core::SeedableRng;
@@ -27,13 +28,12 @@ fn wallet_creation() {
 
     let account_type = AccountType::Private;
 
-    let wallet = create_basic_wallet(init_seed, (pub_key, auth_scheme), account_type).unwrap();
+    let approver = Approver::new(pub_key, auth_scheme);
+    let wallet = create_basic_wallet(init_seed, approver, account_type).unwrap();
 
-    let expected_code = AccountCode::from_components(&[
-        AuthSingleSig::new(pub_key, auth_scheme).into(),
-        BasicWallet.into(),
-    ])
-    .unwrap();
+    let expected_code =
+        AccountCode::from_components(&[AuthSingleSig::new(approver).into(), BasicWallet.into()])
+            .unwrap();
     let expected_code_commitment = expected_code.commitment();
 
     assert_eq!(wallet.code().commitment(), expected_code_commitment);
@@ -65,13 +65,12 @@ fn wallet_creation_2() {
 
     let account_type = AccountType::Private;
 
-    let wallet = create_basic_wallet(init_seed, (pub_key, auth_scheme), account_type).unwrap();
+    let approver = Approver::new(pub_key, auth_scheme);
+    let wallet = create_basic_wallet(init_seed, approver, account_type).unwrap();
 
-    let expected_code = AccountCode::from_components(&[
-        AuthSingleSig::new(pub_key, auth_scheme).into(),
-        BasicWallet.into(),
-    ])
-    .unwrap();
+    let expected_code =
+        AccountCode::from_components(&[AuthSingleSig::new(approver).into(), BasicWallet.into()])
+            .unwrap();
     let expected_code_commitment = expected_code.commitment();
 
     assert_eq!(wallet.code().commitment(), expected_code_commitment);

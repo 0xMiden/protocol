@@ -11,6 +11,8 @@ use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
 use miden_protocol::transaction::TransactionScriptRoot;
 use miden_standards::account::auth::multisig_smart::ProcedurePolicy;
 use miden_standards::account::auth::{
+    Approver,
+    ApproverSet,
     AuthGuardedMultisig,
     AuthGuardedMultisigConfig,
     AuthMultisig,
@@ -114,14 +116,15 @@ impl Auth {
                     .expect("failed to create secret key");
                 let pub_key = sec_key.public_key().to_commitment();
 
-                let component = AuthSingleSig::new(pub_key, *auth_scheme).into();
+                let component = AuthSingleSig::new(Approver::new(pub_key, *auth_scheme)).into();
                 let authenticator = BasicAuthenticator::new(&[sec_key]);
 
                 (component, Some(authenticator))
             },
             Auth::Multisig { threshold, approvers, proc_threshold_map } => {
-                let config = AuthMultisigConfig::new(approvers.clone(), *threshold)
-                    .and_then(|cfg| cfg.with_proc_thresholds(proc_threshold_map.clone()))
+                let approver_set = build_approver_set(approvers, *threshold);
+                let config = AuthMultisigConfig::new(approver_set)
+                    .with_proc_thresholds(proc_threshold_map.clone())
                     .expect("invalid multisig config");
                 let component =
                     AuthMultisig::new(config).expect("multisig component creation failed").into();
@@ -134,10 +137,10 @@ impl Auth {
                 guardian_config,
                 proc_threshold_map,
             } => {
-                let config =
-                    AuthGuardedMultisigConfig::new(approvers.clone(), *threshold, *guardian_config)
-                        .and_then(|cfg| cfg.with_proc_thresholds(proc_threshold_map.clone()))
-                        .expect("invalid guarded multisig config");
+                let approver_set = build_approver_set(approvers, *threshold);
+                let config = AuthGuardedMultisigConfig::new(approver_set, *guardian_config)
+                    .and_then(|cfg| cfg.with_proc_thresholds(proc_threshold_map.clone()))
+                    .expect("invalid guarded multisig config");
                 let component = AuthGuardedMultisig::new(config)
                     .expect("guarded multisig component creation failed")
                     .into();
@@ -145,8 +148,9 @@ impl Auth {
                 (component, None)
             },
             Auth::MultisigSmart { threshold, approvers, proc_policy_map } => {
-                let config = AuthMultisigSmartConfig::new(approvers.clone(), *threshold)
-                    .and_then(|cfg| cfg.with_proc_policies(proc_policy_map.clone()))
+                let approver_set = build_approver_set(approvers, *threshold);
+                let config = AuthMultisigSmartConfig::new(approver_set)
+                    .with_proc_policies(proc_policy_map.clone())
                     .expect("invalid multisig smart config");
 
                 let component = AuthMultisigSmart::new(config)
@@ -167,8 +171,7 @@ impl Auth {
                 let pub_key = sec_key.public_key().to_commitment();
 
                 let component = AuthSingleSigAcl::new(
-                    pub_key,
-                    *auth_scheme,
+                    Approver::new(pub_key, *auth_scheme),
                     AuthSingleSigAclConfig::new()
                         .with_auth_trigger_procedures(auth_trigger_procedures.clone())
                         .with_allow_unauthorized_output_notes(*allow_unauthorized_output_notes)
@@ -196,6 +199,18 @@ impl Auth {
             },
         }
     }
+}
+
+/// Builds a validated [`ApproverSet`] from a list of `(public key, scheme)` pairs and a threshold.
+fn build_approver_set(
+    approvers: &[(PublicKeyCommitment, AuthScheme)],
+    threshold: u32,
+) -> ApproverSet {
+    let approvers = approvers
+        .iter()
+        .map(|(pub_key, scheme)| Approver::new(*pub_key, *scheme))
+        .collect();
+    ApproverSet::new(approvers, threshold).expect("invalid approver set")
 }
 
 impl From<Auth> for AccountComponent {

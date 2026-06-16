@@ -557,7 +557,7 @@ async fn tx_summary_commitment_is_signed_by_falcon_auth() -> anyhow::Result<()> 
 
     let account_interface = AccountInterface::from_account(&account);
     let pub_key = match account_interface.auth().first().unwrap() {
-        AuthMethod::SingleSig { approver: (pub_key, _) } => pub_key,
+        AuthMethod::SingleSig { approver } => approver.pub_key(),
         AuthMethod::NoAuth => panic!("Expected SingleSig auth scheme, got NoAuth"),
         AuthMethod::Multisig { .. } => {
             panic!("Expected SingleSig auth scheme, got Multisig")
@@ -570,7 +570,7 @@ async fn tx_summary_commitment_is_signed_by_falcon_auth() -> anyhow::Result<()> 
 
     // This is in an internal detail of the tx executor host, but this is the easiest way to check
     // for the presence of the signature in the advice map.
-    let signature_key = Hasher::merge(&[Word::from(*pub_key), summary_commitment]);
+    let signature_key = Hasher::merge(&[Word::from(pub_key), summary_commitment]);
 
     // The summary commitment should have been signed as part of transaction execution and inserted
     // into the advice map.
@@ -619,7 +619,7 @@ async fn tx_summary_commitment_is_signed_by_ecdsa_auth() -> anyhow::Result<()> {
 
     let account_interface = AccountInterface::from_account(&account);
     let pub_key = match account_interface.auth().first().unwrap() {
-        AuthMethod::SingleSig { approver: (pub_key, _) } => pub_key,
+        AuthMethod::SingleSig { approver } => approver.pub_key(),
         AuthMethod::NoAuth => panic!("Expected SingleSig auth scheme, got NoAuth"),
         AuthMethod::Multisig { .. } => {
             panic!("Expected SingleSig auth scheme, got Multisig")
@@ -632,7 +632,7 @@ async fn tx_summary_commitment_is_signed_by_ecdsa_auth() -> anyhow::Result<()> {
 
     // This is in an internal detail of the tx executor host, but this is the easiest way to check
     // for the presence of the signature in the advice map.
-    let signature_key = Hasher::merge(&[Word::from(*pub_key), summary_commitment]);
+    let signature_key = Hasher::merge(&[Word::from(pub_key), summary_commitment]);
 
     // The summary commitment should have been signed as part of transaction execution and inserted
     // into the advice map.

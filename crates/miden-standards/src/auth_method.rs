@@ -1,9 +1,11 @@
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
-use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
+use miden_protocol::account::auth::PublicKeyCommitment;
 use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::transaction::TransactionScriptRoot;
+
+use crate::account::auth::{Approver, ApproverSet};
 
 /// Defines standard authentication methods supported by account auth components.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -16,16 +18,11 @@ pub enum AuthMethod {
     NoAuth,
     /// A single-key authentication method which relies on either ECDSA or Falcon512Poseidon2
     /// signatures.
-    SingleSig {
-        approver: (PublicKeyCommitment, AuthScheme),
-    },
+    SingleSig { approver: Approver },
     /// A multi-signature authentication method using either ECDSA or Falcon512Poseidon2 signatures.
     ///
-    /// Requires a threshold number of signatures from the provided public keys.
-    Multisig {
-        threshold: u32,
-        approvers: Vec<(PublicKeyCommitment, AuthScheme)>,
-    },
+    /// Requires a threshold number of signatures from the provided approvers.
+    Multisig { approver_set: ApproverSet },
     /// An authentication method intended for network-owned accounts.
     ///
     /// It restricts the account to consuming only notes whose script roots are in
@@ -47,9 +44,9 @@ impl AuthMethod {
     pub fn get_public_key_commitments(&self) -> Vec<PublicKeyCommitment> {
         match self {
             AuthMethod::NoAuth => Vec::new(),
-            AuthMethod::SingleSig { approver: (pub_key, _) } => vec![*pub_key],
-            AuthMethod::Multisig { approvers, .. } => {
-                approvers.iter().map(|(pub_key, _)| *pub_key).collect()
+            AuthMethod::SingleSig { approver } => vec![approver.pub_key()],
+            AuthMethod::Multisig { approver_set } => {
+                approver_set.approvers().iter().map(Approver::pub_key).collect()
             },
             AuthMethod::NetworkAccount { .. } => Vec::new(),
             AuthMethod::Unknown => Vec::new(),

@@ -9,7 +9,14 @@ use miden_protocol::note::{NoteAttachments, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
 
 use crate::AuthMethod;
-use crate::account::auth::{AuthMultisig, AuthMultisigConfig, AuthSingleSig, NoAuth};
+use crate::account::auth::{
+    Approver,
+    ApproverSet,
+    AuthMultisig,
+    AuthMultisigConfig,
+    AuthSingleSig,
+    NoAuth,
+};
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
 use crate::account::wallets::BasicWallet;
 use crate::note::SwapNote;
@@ -42,14 +49,14 @@ fn test_required_asset_same_as_offered() {
 fn get_mock_falcon_auth_component() -> AuthSingleSig {
     let mock_word = Word::from([0, 1, 2, 3u32]);
     let mock_public_key = PublicKeyCommitment::from(mock_word);
-    AuthSingleSig::new(mock_public_key, auth::AuthScheme::Falcon512Poseidon2)
+    AuthSingleSig::new(Approver::new(mock_public_key, auth::AuthScheme::Falcon512Poseidon2))
 }
 
 /// Helper function to create a mock Ecdsa auth component for testing
 fn get_mock_ecdsa_auth_component() -> AuthSingleSig {
     let mock_word = Word::from([0, 1, 2, 3u32]);
     let mock_public_key = PublicKeyCommitment::from(mock_word);
-    AuthSingleSig::new(mock_public_key, auth::AuthScheme::EcdsaK256Keccak)
+    AuthSingleSig::new(Approver::new(mock_public_key, auth::AuthScheme::EcdsaK256Keccak))
 }
 
 // GET AUTH SCHEME TESTS
@@ -78,9 +85,9 @@ fn test_get_auth_scheme_ecdsa_k256_keccak() {
     assert_eq!(auth_methods.len(), 1);
     let auth_method = &auth_methods[0];
     match auth_method {
-        AuthMethod::SingleSig { approver: (pub_key, auth_scheme) } => {
-            assert_eq!(*pub_key, PublicKeyCommitment::from(Word::from([0, 1, 2, 3u32])));
-            assert_eq!(*auth_scheme, auth::AuthScheme::EcdsaK256Keccak);
+        AuthMethod::SingleSig { approver } => {
+            assert_eq!(approver.pub_key(), PublicKeyCommitment::from(Word::from([0, 1, 2, 3u32])));
+            assert_eq!(approver.auth_scheme(), auth::AuthScheme::EcdsaK256Keccak);
         },
         _ => panic!("Expected EcdsaK256Keccak auth scheme"),
     }
@@ -109,9 +116,9 @@ fn test_get_auth_scheme_falcon512_poseidon2() {
     assert_eq!(auth_methods.len(), 1);
     let auth_method = &auth_methods[0];
     match auth_method {
-        AuthMethod::SingleSig { approver: (pub_key, auth_scheme) } => {
-            assert_eq!(*pub_key, PublicKeyCommitment::from(Word::from([0, 1, 2, 3u32])));
-            assert_eq!(*auth_scheme, auth::AuthScheme::Falcon512Poseidon2);
+        AuthMethod::SingleSig { approver } => {
+            assert_eq!(approver.pub_key(), PublicKeyCommitment::from(Word::from([0, 1, 2, 3u32])));
+            assert_eq!(approver.auth_scheme(), auth::AuthScheme::Falcon512Poseidon2);
         },
         _ => panic!("Expected Falcon512Poseidon2 auth scheme"),
     }
@@ -176,10 +183,10 @@ fn test_account_interface_from_account_uses_get_auth_scheme() {
     assert_eq!(wallet_account_interface.auth().len(), 1);
 
     match &wallet_account_interface.auth()[0] {
-        AuthMethod::SingleSig { approver: (pub_key, auth_scheme) } => {
+        AuthMethod::SingleSig { approver } => {
             let expected_pub_key = PublicKeyCommitment::from(Word::from([0, 1, 2, 3u32]));
-            assert_eq!(*pub_key, expected_pub_key);
-            assert_eq!(*auth_scheme, auth::AuthScheme::Falcon512Poseidon2);
+            assert_eq!(approver.pub_key(), expected_pub_key);
+            assert_eq!(approver.auth_scheme(), auth::AuthScheme::Falcon512Poseidon2);
         },
         _ => panic!("Expected SingleSig auth method"),
     }
@@ -217,9 +224,9 @@ fn test_account_interface_get_auth_scheme() {
     // Test that auth() method provides the authentication schemes
     assert_eq!(wallet_account_interface.auth().len(), 1);
     match &wallet_account_interface.auth()[0] {
-        AuthMethod::SingleSig { approver: (pub_key, auth_scheme) } => {
-            assert_eq!(*pub_key, PublicKeyCommitment::from(Word::from([0, 1, 2, 3u32])));
-            assert_eq!(*auth_scheme, auth::AuthScheme::Falcon512Poseidon2);
+        AuthMethod::SingleSig { approver } => {
+            assert_eq!(approver.pub_key(), PublicKeyCommitment::from(Word::from([0, 1, 2, 3u32])));
+            assert_eq!(approver.auth_scheme(), auth::AuthScheme::Falcon512Poseidon2);
         },
         _ => panic!("Expected SingleSig auth method"),
     }
@@ -268,17 +275,17 @@ fn test_public_key_extraction_multisig_account() {
     let pub_key_3 = PublicKeyCommitment::from(Word::from([3u32, 0, 0, 0]));
 
     let approvers = vec![
-        (pub_key_1, auth::AuthScheme::Falcon512Poseidon2),
-        (pub_key_2, auth::AuthScheme::Falcon512Poseidon2),
-        (pub_key_3, auth::AuthScheme::EcdsaK256Keccak),
+        Approver::new(pub_key_1, auth::AuthScheme::Falcon512Poseidon2),
+        Approver::new(pub_key_2, auth::AuthScheme::Falcon512Poseidon2),
+        Approver::new(pub_key_3, auth::AuthScheme::EcdsaK256Keccak),
     ];
 
     let threshold = 2u32;
 
     // Create multisig component
-    let multisig_component =
-        AuthMultisig::new(AuthMultisigConfig::new(approvers.clone(), threshold).unwrap())
-            .expect("multisig component creation failed");
+    let approver_set = ApproverSet::new(approvers.clone(), threshold).unwrap();
+    let multisig_component = AuthMultisig::new(AuthMultisigConfig::new(approver_set))
+        .expect("multisig component creation failed");
 
     let mock_seed = Word::from([0, 1, 2, 3u32]).as_bytes();
     let multisig_account = AccountBuilder::new(mock_seed)

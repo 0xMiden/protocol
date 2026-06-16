@@ -22,6 +22,7 @@ use miden_protocol::errors::AccountError;
 use miden_protocol::utils::sync::LazyLock;
 
 use super::multisig::{AuthMultisig, AuthMultisigConfig};
+use super::{Approver, ApproverSet};
 use crate::account::account_component_code;
 
 account_component_code!(GUARDED_MULTISIG_CODE, "auth/guarded_multisig.masl");
@@ -52,21 +53,24 @@ pub struct AuthGuardedMultisigConfig {
 /// Public configuration for the guardian signer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GuardianConfig {
-    pub_key: PublicKeyCommitment,
-    auth_scheme: AuthScheme,
+    approver: Approver,
 }
 
 impl GuardianConfig {
-    pub fn new(pub_key: PublicKeyCommitment, auth_scheme: AuthScheme) -> Self {
-        Self { pub_key, auth_scheme }
+    pub fn new(approver: Approver) -> Self {
+        Self { approver }
+    }
+
+    pub fn approver(&self) -> Approver {
+        self.approver
     }
 
     pub fn pub_key(&self) -> PublicKeyCommitment {
-        self.pub_key
+        self.approver.pub_key()
     }
 
     pub fn auth_scheme(&self) -> AuthScheme {
-        self.auth_scheme
+        self.approver.auth_scheme()
     }
 
     fn public_key_slot() -> &'static StorageSlotName {
@@ -104,7 +108,7 @@ impl GuardianConfig {
 
         // Guardian public key slot (map: [0, 0, 0, 0] -> pubkey)
         let guardian_public_key_entries =
-            [(StorageMapKey::from_raw(Word::from([0u32, 0, 0, 0])), Word::from(self.pub_key))];
+            [(StorageMapKey::from_raw(Word::from([0u32, 0, 0, 0])), Word::from(self.pub_key()))];
         storage_slots.push(StorageSlot::with_map(
             Self::public_key_slot().clone(),
             StorageMap::with_entries(guardian_public_key_entries).unwrap(),
@@ -113,7 +117,7 @@ impl GuardianConfig {
         // Guardian scheme IDs slot (map: [0, 0, 0, 0] -> [scheme_id, 0, 0, 0])
         let guardian_scheme_id_entries = [(
             StorageMapKey::from_raw(Word::from([0u32, 0, 0, 0])),
-            Word::from([self.auth_scheme as u32, 0, 0, 0]),
+            Word::from([self.auth_scheme() as u32, 0, 0, 0]),
         )];
         storage_slots.push(StorageSlot::with_map(
             Self::scheme_id_slot().clone(),
@@ -127,27 +131,27 @@ impl GuardianConfig {
 }
 
 impl AuthGuardedMultisigConfig {
-    /// Creates a new configuration with the given approvers, default threshold and guardian signer.
+    /// Creates a new configuration with the given approver set and guardian signer.
     ///
-    /// The `default_threshold` must be at least 1 and at most the number of approvers.
     /// The guardian public key must be different from all approver public keys.
     pub fn new(
-        approvers: Vec<(PublicKeyCommitment, AuthScheme)>,
-        default_threshold: u32,
+        approver_set: ApproverSet,
         guardian_config: GuardianConfig,
     ) -> Result<Self, AccountError> {
-        let multisig = AuthMultisigConfig::new(approvers, default_threshold)?;
-        if multisig
+        if approver_set
             .approvers()
             .iter()
-            .any(|(approver, _)| *approver == guardian_config.pub_key())
+            .any(|approver| approver.pub_key() == guardian_config.pub_key())
         {
             return Err(AccountError::other(
                 "guardian public key must be different from approvers",
             ));
         }
 
-        Ok(Self { multisig, guardian_config })
+        Ok(Self {
+            multisig: AuthMultisigConfig::new(approver_set),
+            guardian_config,
+        })
     }
 
     /// Attaches a per-procedure threshold map. Each procedure threshold must be at least 1 and
@@ -160,7 +164,11 @@ impl AuthGuardedMultisigConfig {
         Ok(self)
     }
 
-    pub fn approvers(&self) -> &[(PublicKeyCommitment, AuthScheme)] {
+    pub fn approver_set(&self) -> &ApproverSet {
+        self.multisig.approver_set()
+    }
+
+    pub fn approvers(&self) -> &[Approver] {
         self.multisig.approvers()
     }
 
@@ -354,6 +362,10 @@ mod tests {
     use super::*;
     use crate::account::wallets::BasicWallet;
 
+    fn approver(key: &AuthSecretKey) -> Approver {
+        Approver::new(key.public_key().to_commitment(), key.auth_scheme())
+    }
+
     /// Test guarded multisig component setup with various configurations.
     #[test]
     fn test_guarded_multisig_component_setup() {
@@ -364,25 +376,19 @@ mod tests {
         let guardian_key = AuthSecretKey::new_ecdsa_k256_keccak();
 
         // Create approvers list for multisig config
-        let approvers = vec![
-            (sec_key_1.public_key().to_commitment(), sec_key_1.auth_scheme()),
-            (sec_key_2.public_key().to_commitment(), sec_key_2.auth_scheme()),
-            (sec_key_3.public_key().to_commitment(), sec_key_3.auth_scheme()),
-        ];
+        let approvers = vec![approver(&sec_key_1), approver(&sec_key_2), approver(&sec_key_3)];
 
         let threshold = 2u32;
 
         // Create guarded multisig component.
+        let approver_set =
+            ApproverSet::new(approvers.clone(), threshold).expect("invalid approver set");
         let multisig_component = AuthGuardedMultisig::new(
             AuthGuardedMultisigConfig::new(
-                approvers.clone(),
-                threshold,
-                GuardianConfig::new(
-                    guardian_key.public_key().to_commitment(),
-                    guardian_key.auth_scheme(),
-                ),
+                approver_set,
+                GuardianConfig::new(approver(&guardian_key)),
             )
-            .expect("invalid multisig config"),
+            .expect("invalid guarded multisig config"),
         )
         .expect("guarded multisig component creation failed");
 
@@ -401,7 +407,7 @@ mod tests {
         assert_eq!(config_slot, Word::from([threshold, approvers.len() as u32, 0, 0]));
 
         // Verify approver pub keys slot
-        for (i, (expected_pub_key, _)) in approvers.iter().enumerate() {
+        for (i, expected) in approvers.iter().enumerate() {
             let stored_pub_key = account
                 .storage()
                 .get_map_item(
@@ -409,11 +415,11 @@ mod tests {
                     StorageMapKey::from_index(i as u32),
                 )
                 .expect("approver public key storage map access failed");
-            assert_eq!(stored_pub_key, Word::from(*expected_pub_key));
+            assert_eq!(stored_pub_key, Word::from(expected.pub_key()));
         }
 
         // Verify approver scheme IDs slot
-        for (i, (_, expected_auth_scheme)) in approvers.iter().enumerate() {
+        for (i, expected) in approvers.iter().enumerate() {
             let stored_scheme_id = account
                 .storage()
                 .get_map_item(
@@ -421,7 +427,7 @@ mod tests {
                     StorageMapKey::from_index(i as u32),
                 )
                 .expect("approver scheme ID storage map access failed");
-            assert_eq!(stored_scheme_id, Word::from([*expected_auth_scheme as u32, 0, 0, 0]));
+            assert_eq!(stored_scheme_id, Word::from([expected.auth_scheme() as u32, 0, 0, 0]));
         }
 
         // Verify guardian signer is configured.
@@ -447,21 +453,20 @@ mod tests {
     /// Test guarded multisig component with minimum threshold (1 of 1).
     #[test]
     fn test_guarded_multisig_component_minimum_threshold() {
-        let pub_key = AuthSecretKey::new_ecdsa_k256_keccak().public_key().to_commitment();
+        let approver_key = AuthSecretKey::new_ecdsa_k256_keccak();
+        let pub_key = approver_key.public_key().to_commitment();
         let guardian_key = AuthSecretKey::new_falcon512_poseidon2();
-        let approvers = vec![(pub_key, AuthScheme::EcdsaK256Keccak)];
+        let approvers = vec![approver(&approver_key)];
         let threshold = 1u32;
 
+        let approver_set =
+            ApproverSet::new(approvers.clone(), threshold).expect("invalid approver set");
         let multisig_component = AuthGuardedMultisig::new(
             AuthGuardedMultisigConfig::new(
-                approvers.clone(),
-                threshold,
-                GuardianConfig::new(
-                    guardian_key.public_key().to_commitment(),
-                    guardian_key.auth_scheme(),
-                ),
+                approver_set,
+                GuardianConfig::new(approver(&guardian_key)),
             )
-            .expect("invalid multisig config"),
+            .expect("invalid guarded multisig config"),
         )
         .expect("guarded multisig component creation failed");
 
@@ -497,128 +502,17 @@ mod tests {
         assert_eq!(stored_scheme_id, Word::from([AuthScheme::EcdsaK256Keccak as u32, 0, 0, 0]));
     }
 
-    /// Test guarded multisig component setup with a guardian.
-    #[test]
-    fn test_guarded_multisig_component_with_guardian() {
-        let sec_key_1 = AuthSecretKey::new_falcon512_poseidon2();
-        let sec_key_2 = AuthSecretKey::new_falcon512_poseidon2();
-        let guardian_key = AuthSecretKey::new_ecdsa_k256_keccak();
-
-        let approvers = vec![
-            (sec_key_1.public_key().to_commitment(), sec_key_1.auth_scheme()),
-            (sec_key_2.public_key().to_commitment(), sec_key_2.auth_scheme()),
-        ];
-
-        let multisig_component = AuthGuardedMultisig::new(
-            AuthGuardedMultisigConfig::new(
-                approvers,
-                2,
-                GuardianConfig::new(
-                    guardian_key.public_key().to_commitment(),
-                    guardian_key.auth_scheme(),
-                ),
-            )
-            .expect("invalid multisig config"),
-        )
-        .expect("guarded multisig component creation failed");
-
-        let account = AccountBuilder::new([0; 32])
-            .with_auth_component(multisig_component)
-            .with_component(BasicWallet)
-            .build()
-            .expect("account building failed");
-
-        let guardian_public_key = account
-            .storage()
-            .get_map_item(
-                AuthGuardedMultisig::guardian_public_key_slot(),
-                StorageMapKey::from_index(0),
-            )
-            .expect("guardian public key storage map access failed");
-        assert_eq!(guardian_public_key, Word::from(guardian_key.public_key().to_commitment()));
-
-        let guardian_scheme_id = account
-            .storage()
-            .get_map_item(
-                AuthGuardedMultisig::guardian_scheme_id_slot(),
-                StorageMapKey::from_index(0),
-            )
-            .expect("guardian scheme ID storage map access failed");
-        assert_eq!(guardian_scheme_id, Word::from([guardian_key.auth_scheme() as u32, 0, 0, 0]));
-    }
-
-    /// Test guarded multisig component error cases.
-    #[test]
-    fn test_guarded_multisig_component_error_cases() {
-        let pub_key = AuthSecretKey::new_ecdsa_k256_keccak().public_key().to_commitment();
-        let guardian_key = AuthSecretKey::new_falcon512_poseidon2();
-        let approvers = vec![(pub_key, AuthScheme::EcdsaK256Keccak)];
-
-        // Test threshold > number of approvers (should fail)
-        let result = AuthGuardedMultisigConfig::new(
-            approvers,
-            2,
-            GuardianConfig::new(
-                guardian_key.public_key().to_commitment(),
-                guardian_key.auth_scheme(),
-            ),
-        );
-
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("threshold cannot be greater than number of approvers")
-        );
-    }
-
-    /// Test guarded multisig component with duplicate approvers (should fail).
-    #[test]
-    fn test_guarded_multisig_component_duplicate_approvers() {
-        // Create secret keys for approvers
-        let sec_key_1 = AuthSecretKey::new_ecdsa_k256_keccak();
-        let sec_key_2 = AuthSecretKey::new_ecdsa_k256_keccak();
-        let guardian_key = AuthSecretKey::new_falcon512_poseidon2();
-
-        // Create approvers list with duplicate public keys
-        let approvers = vec![
-            (sec_key_1.public_key().to_commitment(), sec_key_1.auth_scheme()),
-            (sec_key_1.public_key().to_commitment(), sec_key_1.auth_scheme()),
-            (sec_key_2.public_key().to_commitment(), sec_key_2.auth_scheme()),
-        ];
-
-        let result = AuthGuardedMultisigConfig::new(
-            approvers,
-            2,
-            GuardianConfig::new(
-                guardian_key.public_key().to_commitment(),
-                guardian_key.auth_scheme(),
-            ),
-        );
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("duplicate approver public keys are not allowed")
-        );
-    }
-
     /// Test guarded multisig component rejects a guardian key which is already an approver.
     #[test]
     fn test_guarded_multisig_component_guardian_not_approver() {
         let sec_key_1 = AuthSecretKey::new_ecdsa_k256_keccak();
         let sec_key_2 = AuthSecretKey::new_ecdsa_k256_keccak();
 
-        let approvers = vec![
-            (sec_key_1.public_key().to_commitment(), sec_key_1.auth_scheme()),
-            (sec_key_2.public_key().to_commitment(), sec_key_2.auth_scheme()),
-        ];
+        let approvers = vec![approver(&sec_key_1), approver(&sec_key_2)];
+        let approver_set = ApproverSet::new(approvers, 2).expect("invalid approver set");
 
-        let result = AuthGuardedMultisigConfig::new(
-            approvers,
-            2,
-            GuardianConfig::new(sec_key_1.public_key().to_commitment(), sec_key_1.auth_scheme()),
-        );
+        let result =
+            AuthGuardedMultisigConfig::new(approver_set, GuardianConfig::new(approver(&sec_key_1)));
 
         assert!(
             result

@@ -1,3 +1,6 @@
+mod approver;
+pub use approver::{Approver, ApproverSet};
+
 mod no_auth;
 pub use no_auth::NoAuth;
 

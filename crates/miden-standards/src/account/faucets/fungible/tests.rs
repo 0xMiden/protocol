@@ -9,7 +9,7 @@ use miden_protocol::{Felt, Word};
 use super::{FungibleFaucet, create_fungible_faucet};
 use crate::AuthMethod;
 use crate::account::access::{AccessControl, PausableManager};
-use crate::account::auth::{AuthSingleSig, AuthSingleSigAcl};
+use crate::account::auth::{Approver, AuthSingleSig, AuthSingleSigAcl};
 use crate::account::faucets::{Description, FungibleFaucetError, TokenMetadata, TokenName};
 use crate::account::policies::{BurnPolicy, MintPolicy, TokenPolicyManager, TransferPolicy};
 use crate::account::wallets::BasicWallet;
@@ -58,7 +58,7 @@ fn read_trigger_procedure_roots(
 fn faucet_contract_creation() {
     let pub_key_word = Word::new([Felt::ONE; 4]);
     let auth_method = AuthMethod::SingleSig {
-        approver: (pub_key_word.into(), AuthScheme::Falcon512Poseidon2),
+        approver: Approver::new(pub_key_word.into(), AuthScheme::Falcon512Poseidon2),
     };
 
     // we need to use an initial seed to create the wallet account
@@ -168,7 +168,7 @@ fn ownable2step_rejects_single_sig() {
     )
     .unwrap();
     let auth_method = AuthMethod::SingleSig {
-        approver: (Word::new([Felt::ONE; 4]).into(), AuthScheme::Falcon512Poseidon2),
+        approver: Approver::new(Word::new([Felt::ONE; 4]).into(), AuthScheme::Falcon512Poseidon2),
     };
 
     let err = create_fungible_faucet(
@@ -246,7 +246,10 @@ fn faucet_create_from_account() {
 
     let faucet_account = AccountBuilder::new(mock_seed)
         .with_component(faucet)
-        .with_auth_component(AuthSingleSig::new(mock_public_key, AuthScheme::Falcon512Poseidon2))
+        .with_auth_component(AuthSingleSig::new(Approver::new(
+            mock_public_key,
+            AuthScheme::Falcon512Poseidon2,
+        )))
         .build_existing()
         .expect("failed to create wallet account");
 
@@ -255,7 +258,10 @@ fn faucet_create_from_account() {
 
     // invalid account: fungible faucet component is missing
     let invalid_faucet_account = AccountBuilder::new(mock_seed)
-        .with_auth_component(AuthSingleSig::new(mock_public_key, AuthScheme::Falcon512Poseidon2))
+        .with_auth_component(AuthSingleSig::new(Approver::new(
+            mock_public_key,
+            AuthScheme::Falcon512Poseidon2,
+        )))
         // we need to add some other component so the builder doesn't fail
         .with_component(BasicWallet)
         .build_existing()

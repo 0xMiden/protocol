@@ -629,18 +629,16 @@ fn build_auth_component(
     match (access_control, auth_method) {
         // AuthControlled + SingleSig: the auth component is the sole setter gate, so it
         // must authenticate every authority-gated setter root.
-        (
-            AccessControl::AuthControlled,
-            AuthMethod::SingleSig { approver: (pub_key, auth_scheme) },
-        ) => Ok(AuthSingleSigAcl::new(
-            pub_key,
-            auth_scheme,
-            AuthSingleSigAclConfig::new()
-                .with_auth_trigger_procedures(all_authority_gated_setter_roots())
-                .with_allow_unauthorized_input_notes(true),
-        )
-        .map_err(FungibleFaucetError::AccountError)?
-        .into()),
+        (AccessControl::AuthControlled, AuthMethod::SingleSig { approver }) => {
+            Ok(AuthSingleSigAcl::new(
+                approver,
+                AuthSingleSigAclConfig::new()
+                    .with_auth_trigger_procedures(all_authority_gated_setter_roots())
+                    .with_allow_unauthorized_input_notes(true),
+            )
+            .map_err(FungibleFaucetError::AccountError)?
+            .into())
+        },
 
         // AuthControlled + NetworkAccount: rejected.
         (AccessControl::AuthControlled, AuthMethod::NetworkAccount { .. }) => {

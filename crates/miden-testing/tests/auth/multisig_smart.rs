@@ -11,7 +11,12 @@ use miden_standards::account::auth::multisig_smart::{
     ProcedurePolicy,
     ProcedurePolicyNoteRestriction,
 };
-use miden_standards::account::auth::{AuthMultisigSmart, AuthMultisigSmartConfig};
+use miden_standards::account::auth::{
+    Approver,
+    ApproverSet,
+    AuthMultisigSmart,
+    AuthMultisigSmartConfig,
+};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
@@ -40,10 +45,12 @@ fn create_multisig_smart_account(
     starting_balance: u64,
     proc_policy_map: Vec<(Word, ProcedurePolicy)>,
 ) -> anyhow::Result<Account> {
-    let approvers: Vec<_> =
-        public_keys.iter().map(|pk| (pk.to_commitment(), auth_scheme)).collect();
-    let config =
-        AuthMultisigSmartConfig::new(approvers, threshold)?.with_proc_policies(proc_policy_map)?;
+    let approvers: Vec<_> = public_keys
+        .iter()
+        .map(|pk| Approver::new(pk.to_commitment(), auth_scheme))
+        .collect();
+    let approver_set = ApproverSet::new(approvers, threshold)?;
+    let config = AuthMultisigSmartConfig::new(approver_set).with_proc_policies(proc_policy_map)?;
 
     let asset = FungibleAsset::new(
         AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?,
