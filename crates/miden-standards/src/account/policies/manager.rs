@@ -197,12 +197,21 @@ struct PolicyConfig {
 ///
 /// Construct via [`Self::builder`]. The builder requires the active mint and burn policy
 /// ([`TokenPolicyManagerBuilder::active_mint_policy`] /
-/// [`TokenPolicyManagerBuilder::active_burn_policy`]). Active send / receive policies
-/// ([`TokenPolicyManagerBuilder::active_send_policy`] /
-/// [`TokenPolicyManagerBuilder::active_receive_policy`]) are optional — when omitted, the
-/// protocol-reserved asset-callback slots are not installed, so every minted asset carries
-/// [`AssetCallbackFlag::Disabled`][miden_protocol::asset::AssetCallbackFlag::Disabled] and is
-/// permanently exempt from any transfer policy installed later.
+/// [`TokenPolicyManagerBuilder::active_burn_policy`]). Send / receive policies are optional and may
+/// be registered as active ([`TokenPolicyManagerBuilder::active_send_policy`] /
+/// [`TokenPolicyManagerBuilder::active_receive_policy`]) and/or as reserved alternatives
+/// ([`TokenPolicyManagerBuilder::allowed_send_policy`] /
+/// [`TokenPolicyManagerBuilder::allowed_receive_policy`]) for runtime switching. The
+/// protocol-reserved asset-callback slots (see the storage layout below) are installed whenever at
+/// least one send or receive policy of either kind is registered - active or reserved - so every
+/// minted asset carries
+/// [`AssetCallbackFlag::Enabled`][miden_protocol::asset::AssetCallbackFlag::Enabled] from creation,
+/// even when only reserved policies exist and no active root is set yet. This keeps `has_callbacks`
+/// true for the faucet's entire lifetime, so promoting a reserved policy later via
+/// `set_send_policy` / `set_receive_policy` enforces it against the whole circulating supply rather
+/// than only assets minted after the switch. The slots are omitted only when no send or receive
+/// policy of any kind is registered, in which case minted assets carry
+/// [`AssetCallbackFlag::Disabled`][miden_protocol::asset::AssetCallbackFlag::Disabled].
 ///
 /// ## Storage layout
 ///
@@ -758,6 +767,57 @@ mod tests {
                 .expect("active receive policy slot must be registered");
         assert_eq!(active_send_slot.value(), allow_all_root);
         assert_eq!(active_receive_slot.value(), allow_all_root);
+    }
+
+    /// Checks that a manager whose send / receive policies are registered only as reserved
+    /// alternatives (no active transfer policy yet) still installs the protocol-reserved callback
+    /// slots with the fixed `invoke_*_policy` wrapper roots, so `has_callbacks` is true from
+    /// creation.
+    #[test]
+    fn reserved_only_transfer_policy_registers_protocol_callback_slots() {
+        let manager = TokenPolicyManager::builder()
+            .active_mint_policy(MintPolicy::allow_all())
+            .active_burn_policy(BurnPolicy::allow_all())
+            .allowed_send_policy(TransferPolicy::allow_all())
+            .allowed_receive_policy(TransferPolicy::allow_all())
+            .build();
+
+        let manager_component = manager.to_manager_component();
+
+        // Both callback slots are installed even though no transfer policy is active yet.
+        let on_account_slot =
+            find_slot(&manager_component, AssetCallbacks::on_before_asset_added_to_account_slot())
+                .expect(
+                    "reserved receive policy must register the on_before_asset_added_to_account \
+                     protocol callback slot",
+                );
+        let on_note_slot =
+            find_slot(&manager_component, AssetCallbacks::on_before_asset_added_to_note_slot())
+                .expect(
+                    "reserved send policy must register the on_before_asset_added_to_note protocol \
+                     callback slot",
+                );
+
+        // They hold the fixed wrapper roots, identical to the active-policy case.
+        assert_eq!(
+            on_account_slot.value(),
+            TokenPolicyManager::invoke_receive_policy_root().as_word()
+        );
+        assert_eq!(on_note_slot.value(), TokenPolicyManager::invoke_send_policy_root().as_word());
+
+        // No policy has been activated yet, so the active-policy slots still hold the empty word.
+        let active_send_slot =
+            find_slot(&manager_component, TokenPolicyManager::active_send_policy_slot())
+                .expect("active send policy slot must be registered");
+        let active_receive_slot =
+            find_slot(&manager_component, TokenPolicyManager::active_receive_policy_slot())
+                .expect("active receive policy slot must be registered");
+        assert_eq!(active_send_slot.value(), Word::empty());
+        assert_eq!(active_receive_slot.value(), Word::empty());
+
+        // The reserved roots are recorded in the allowed-roots maps so they can be promoted later.
+        assert!(manager.allowed_send_policies().contains(&TransferPolicy::allow_all().root()));
+        assert!(manager.allowed_receive_policies().contains(&TransferPolicy::allow_all().root()));
     }
 
     /// A manager configured without send / receive policies must NOT register the
