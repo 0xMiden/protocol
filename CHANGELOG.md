@@ -16,12 +16,14 @@
 - Added `Note::has_attachments` and `NoteMetadata::has_attachments` helpers, and retained private note attachments in `MockChain` ([#3060](https://github.com/0xMiden/protocol/pull/3060)).
 - Introduced `AccountPatch` and `AccountVaultPatch` ([#3010](https://github.com/0xMiden/protocol/pull/3010), [#3071](https://github.com/0xMiden/protocol/pull/3071)).
 - Added `AccountPatch::merge` for combining patches across consecutive transactions ([#3082](https://github.com/0xMiden/protocol/pull/3082)).
+- [BREAKING] Replaced the account delta in `AccountUpdateDetails`, `TxAccountUpdate`, and the kernel-emitted account update commitment with the account patch ([#3089](https://github.com/0xMiden/protocol/pull/3089)).
 - Clarified the transaction definition and the distinction between execution and proving on the architecture overview page ([#3015](https://github.com/0xMiden/protocol/pull/3015)).
 - [BREAKING] Refactored `TransferPolicy`, `MintPolicyConfig`, and `BurnPolicyConfig` from enums into structs ([#2974](https://github.com/0xMiden/protocol/pull/2974)).
 - Added `AccountComponent::has_procedure(root)` helper ([#2974](https://github.com/0xMiden/protocol/pull/2974)).
 - Optimized protocol MASM stack-cleaning sequences, saving 1 cycle per occurrence across 9 single-element-extraction procedures ([#3041](https://github.com/0xMiden/protocol/pull/3041)).
 - Optimized `rbac::grant_role_internal` and `rbac::revoke_role_internal` by removing the redundant membership read and rearranging the stack ([#3090](https://github.com/0xMiden/protocol/pull/3090)).
 - [BREAKING] Refactored `TokenPolicyManager` by adding `invoke_send_policy` / `invoke_receive_policy` wrappers (stored in the protocol reserved asset callback slots) that read the active policy root from the new `active_send_policy_proc_root` / `active_receive_policy_proc_root` storage slots ([#3047](https://github.com/0xMiden/protocol/pull/3047)).
+- Added regression tests ensuring a `TokenPolicyManager` with only reserved send/receive policies installs the protocol reserved asset callback slots, so `has_callbacks` is correct from creation and minted assets carry the callback flag ([#3091](https://github.com/0xMiden/protocol/pull/3091)).
 - Added a definition of the Miden operator on the architecture overview page and linked it from the note lifecycle ([#3017](https://github.com/0xMiden/protocol/pull/3017)).
 - [BREAKING] Extended `Authority::RbacControlled` to assign roles per authority-gated procedure ([#3072](https://github.com/0xMiden/protocol/pull/3072)).
 - Clarified Miden's operational roles on the architecture overview page and linked them from the note lifecycle ([#3017](https://github.com/0xMiden/protocol/pull/3017)).

@@ -532,8 +532,7 @@ mod tests {
 
     use super::*;
     use crate::Word;
-    use crate::account::delta::AccountUpdateDetails;
-    use crate::account::{AccountIdVersion, AccountType};
+    use crate::account::{AccountIdVersion, AccountType, AccountUpdateDetails};
     use crate::asset::FungibleAsset;
     use crate::transaction::{InputNoteCommitment, OutputNote, ProvenTransaction, TxAccountUpdate};
 
@@ -566,8 +565,8 @@ mod tests {
             [2; 32].try_into().expect("failed to create initial account commitment");
         let final_account_commitment =
             [3; 32].try_into().expect("failed to create final account commitment");
-        let account_delta_commitment =
-            [4; 32].try_into().expect("failed to create account delta commitment");
+        let account_patch_commitment =
+            [4; 32].try_into().expect("failed to create account patch commitment");
         let block_num = reference_block_header.block_num();
         let block_ref = reference_block_header.commitment();
         let expiration_block_num = reference_block_header.block_num() + 1;
@@ -577,7 +576,7 @@ mod tests {
             account_id,
             initial_account_commitment,
             final_account_commitment,
-            account_delta_commitment,
+            account_patch_commitment,
             AccountUpdateDetails::Private,
         )
         .context("failed to build account update")?;
