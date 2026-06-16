@@ -442,14 +442,6 @@ pub enum AccountDeltaError {
     #[error("non-empty account storage or vault delta with zero nonce delta is not allowed")]
     NonEmptyStorageOrVaultDeltaWithZeroNonceDelta,
     #[error(
-        "account nonce increment {current} plus the other nonce increment {increment} overflows a felt to {new}"
-    )]
-    NonceIncrementOverflow {
-        current: Felt,
-        increment: Felt,
-        new: Felt,
-    },
-    #[error(
         "asset issued by faucet {0} in fungible asset delta does not have fungible composition"
     )]
     NotAFungibleFaucetId(AccountId),

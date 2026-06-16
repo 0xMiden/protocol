@@ -12,7 +12,7 @@ use crate::account::{
 };
 use crate::asset::AssetVault;
 use crate::crypto::SequentialCommit;
-use crate::errors::{AccountDeltaError, AccountError, AccountPatchError};
+use crate::errors::{AccountDeltaError, AccountError};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -104,52 +104,6 @@ impl AccountDelta {
 
     // PUBLIC MUTATORS
     // --------------------------------------------------------------------------------------------
-
-    /// Merge another [AccountDelta] into this one.
-    pub fn merge(&mut self, other: Self) -> Result<(), AccountDeltaError> {
-        let new_nonce_delta = self.nonce_delta + other.nonce_delta;
-
-        if new_nonce_delta.as_canonical_u64() < self.nonce_delta.as_canonical_u64() {
-            return Err(AccountDeltaError::NonceIncrementOverflow {
-                current: self.nonce_delta,
-                increment: other.nonce_delta,
-                new: new_nonce_delta,
-            });
-        }
-
-        // TODO(code_upgrades): This should go away once we have proper account code updates in
-        // deltas. Then, the two code updates can be merged. For now, code cannot be merged
-        // and this should never happen.
-        if self.is_full_state() && other.is_full_state() {
-            return Err(AccountDeltaError::MergingFullStateDeltas);
-        }
-
-        if let Some(code) = other.code {
-            self.code = Some(code);
-        }
-
-        self.nonce_delta = new_nonce_delta;
-
-        // TODO: This code will go away soon, so the ugly match is temporary.
-        self.storage.merge(other.storage).map_err(|err| match err {
-            AccountPatchError::StorageSlotUsedAsDifferentTypes(slot_name) => {
-                AccountDeltaError::StorageSlotUsedAsDifferentTypes(slot_name)
-            },
-            AccountPatchError::FinalNonceIsZero
-            | AccountPatchError::StateChangeRequiresNonceUpdate
-            | AccountPatchError::CodeMustBeProvidedForNewAccounts
-            | AccountPatchError::MergingFullStatePatches
-            | AccountPatchError::NonceMustIncrementByOne { .. }
-            | AccountPatchError::AccountIdMismatch { .. }
-            | AccountPatchError::IncompatibleAccountUpdates { .. } => {
-                unreachable!(
-                    "AccountStoragePatch::merge only returns StorageSlotUsedAsDifferentTypes"
-                )
-            },
-        })?;
-
-        self.vault.merge(other.vault)
-    }
 
     /// Returns a mutable reference to the account vault delta.
     pub fn vault_mut(&mut self) -> &mut AccountVaultDelta {
@@ -521,7 +475,6 @@ fn validate_nonce(
 mod tests {
 
     use assert_matches::assert_matches;
-    use miden_core::Felt;
 
     use super::{AccountDelta, AccountStoragePatch, AccountVaultDelta};
     use crate::account::{
@@ -569,30 +522,6 @@ mod tests {
             AccountDeltaError::NonEmptyStorageOrVaultDeltaWithZeroNonceDelta
         );
         AccountDelta::new(account_id, storage_patch.clone(), vault_delta.clone(), ONE).unwrap();
-    }
-
-    #[test]
-    fn account_delta_nonce_overflow() {
-        let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
-        let storage_patch = AccountStoragePatch::new();
-        let vault_delta = AccountVaultDelta::default();
-
-        let nonce_delta0 = ONE;
-        let nonce_delta1 = Felt::try_from(0xffff_ffff_0000_0000u64).unwrap();
-
-        let mut delta0 =
-            AccountDelta::new(account_id, storage_patch.clone(), vault_delta.clone(), nonce_delta0)
-                .unwrap();
-        let delta1 =
-            AccountDelta::new(account_id, storage_patch, vault_delta, nonce_delta1).unwrap();
-
-        assert_matches!(delta0.merge(delta1).unwrap_err(), AccountDeltaError::NonceIncrementOverflow {
-          current, increment, new
-        } => {
-            assert_eq!(current, nonce_delta0);
-            assert_eq!(increment, nonce_delta1);
-            assert_eq!(new, nonce_delta0 + nonce_delta1);
-        });
     }
 
     #[test]
