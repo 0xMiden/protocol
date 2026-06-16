@@ -4,7 +4,7 @@ use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use miden_protocol::Word;
-use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, PublicKeyCommitment};
+use miden_protocol::account::auth::{AuthScheme, AuthSecretKey};
 use miden_protocol::account::{AccountComponent, AccountProcedureRoot};
 use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
@@ -42,23 +42,20 @@ pub enum Auth {
 
     /// Multisig
     Multisig {
-        threshold: u32,
-        approvers: Vec<(PublicKeyCommitment, AuthScheme)>,
+        approver_set: ApproverSet,
         proc_threshold_map: Vec<(AccountProcedureRoot, u32)>,
     },
 
     /// Guarded multisig.
     GuardedMultisig {
-        threshold: u32,
-        approvers: Vec<(PublicKeyCommitment, AuthScheme)>,
+        approver_set: ApproverSet,
         guardian_config: GuardianConfig,
         proc_threshold_map: Vec<(AccountProcedureRoot, u32)>,
     },
 
     /// Multisig with smart per-procedure policy configuration.
     MultisigSmart {
-        threshold: u32,
-        approvers: Vec<(PublicKeyCommitment, AuthScheme)>,
+        approver_set: ApproverSet,
         proc_policy_map: Vec<(Word, ProcedurePolicy)>,
     },
 
@@ -121,9 +118,8 @@ impl Auth {
 
                 (component, Some(authenticator))
             },
-            Auth::Multisig { threshold, approvers, proc_threshold_map } => {
-                let approver_set = build_approver_set(approvers, *threshold);
-                let config = AuthMultisigConfig::new(approver_set)
+            Auth::Multisig { approver_set, proc_threshold_map } => {
+                let config = AuthMultisigConfig::new(approver_set.clone())
                     .with_proc_thresholds(proc_threshold_map.clone())
                     .expect("invalid multisig config");
                 let component =
@@ -132,13 +128,11 @@ impl Auth {
                 (component, None)
             },
             Auth::GuardedMultisig {
-                threshold,
-                approvers,
+                approver_set,
                 guardian_config,
                 proc_threshold_map,
             } => {
-                let approver_set = build_approver_set(approvers, *threshold);
-                let config = AuthGuardedMultisigConfig::new(approver_set, *guardian_config)
+                let config = AuthGuardedMultisigConfig::new(approver_set.clone(), *guardian_config)
                     .and_then(|cfg| cfg.with_proc_thresholds(proc_threshold_map.clone()))
                     .expect("invalid guarded multisig config");
                 let component = AuthGuardedMultisig::new(config)
@@ -147,9 +141,8 @@ impl Auth {
 
                 (component, None)
             },
-            Auth::MultisigSmart { threshold, approvers, proc_policy_map } => {
-                let approver_set = build_approver_set(approvers, *threshold);
-                let config = AuthMultisigSmartConfig::new(approver_set)
+            Auth::MultisigSmart { approver_set, proc_policy_map } => {
+                let config = AuthMultisigSmartConfig::new(approver_set.clone())
                     .with_proc_policies(proc_policy_map.clone())
                     .expect("invalid multisig smart config");
 
@@ -199,18 +192,6 @@ impl Auth {
             },
         }
     }
-}
-
-/// Builds a validated [`ApproverSet`] from a list of `(public key, scheme)` pairs and a threshold.
-fn build_approver_set(
-    approvers: &[(PublicKeyCommitment, AuthScheme)],
-    threshold: u32,
-) -> ApproverSet {
-    let approvers = approvers
-        .iter()
-        .map(|(pub_key, scheme)| Approver::new(*pub_key, *scheme))
-        .collect();
-    ApproverSet::new(approvers, threshold).expect("invalid approver set")
 }
 
 impl From<Auth> for AccountComponent {
