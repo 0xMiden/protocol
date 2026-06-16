@@ -4,15 +4,8 @@
 
 use miden::protocol::active_account
 use miden::protocol::native_account
-use miden::protocol::tx
 use miden::standards::auth::signature
 use miden::core::word
-
-# Tracks whether any account procedure was detected as called during the procedure-iteration
-# loop. Used by the input note check to determine whether at least one procedure ran; if
-# not, input note consumption must be signed. Non-exempt detected calls already force
-# authentication via the per-procedure check inside the loop.
-const ANY_PROC_CALLED_LOC = 0
 
 # CONSTANTS
 # ================================================================================================
@@ -33,14 +26,11 @@ const EXEMPT_PROCEDURE_ROOTS_SLOT = word("miden::standards::auth::singlesig_acl:
 #! - 1 => ecdsa_k256_keccak
 #! - 2 => falcon512_poseidon2
 #!
-#! Authentication is required if any of the following hold:
-#!   1. A kernel-detected procedure not on the exempt list was called (other than the
-#!      auth procedure at index 0).
-#!   2. An input note was consumed AND no procedure was detected as called anywhere in
-#!      the transaction. Combined with the non-exempt proc check above, the practical
-#!      effect is that input note consumption requires a signature unless at least one
-#!      exempt procedure was detected as called.
-#!   3. An output note was created.
+#! Authentication is required if a kernel-detected procedure not on the exempt list was called
+#! (other than the auth procedure at index 0). Asset movement out of the account is gated by
+#! this check transitively: removing assets from the vault requires `account_remove_asset`,
+#! which is kernel-tracked, so any procedure that exfiltrates funds shows up in the loop and
+#! forces a signature unless the author has explicitly exempted it.
 #!
 #! If authentication is required, the configured signature is verified. Otherwise, the nonce
 #! is conditionally incremented when the account state changed or the account is new.
@@ -49,20 +39,12 @@ const EXEMPT_PROCEDURE_ROOTS_SLOT = word("miden::standards::auth::singlesig_acl:
 #! Outputs: [pad(16)]
 #!
 #! Invocation: call
-#!
-#! Locals:
-#! - 0: was any procedure called flag
 @auth_script
-@locals(1)
 pub proc auth_tx_acl(auth_args: word)
     dropw
     # => [pad(16)]
 
     # ------ Iterate procedures to determine whether any non-exempt proc was called ------
-
-    # Make sure that the any_proc_called flag is set to 0 before we start iterating
-    push.0 loc_store.ANY_PROC_CALLED_LOC
-    # => [pad(16)]
 
     # By default we assume no authentication required, look for conditions to change that
     push.0
@@ -87,11 +69,6 @@ pub proc auth_tx_acl(auth_args: word)
         # => [was_called, PROC_ROOT, i, auth_required, pad(16)]
 
         if.true
-            # Mark that a detected procedure was called this transaction.
-            # Setting to 1 is idempotent across iterations.
-            # This flag will be used later during the input notes check.
-            push.1 loc_store.ANY_PROC_CALLED_LOC
-
             # Look up the proc root in the exempt map. Exempt procedure entries have
             # `[1, 0, 0, 0]` as their values.
             push.EXEMPT_PROCEDURE_ROOTS_SLOT[0..2]
@@ -124,21 +101,6 @@ pub proc auth_tx_acl(auth_args: word)
     # => [1, auth_required, pad(16)]
 
     drop
-    # => [auth_required, pad(16)]
-
-    # ------ Output notes: any output note created requires a signature, unconditionally ------
-    exec.tx::get_num_output_notes neq.0 or
-    # => [auth_required, pad(16)]
-
-    # ------ Input notes: consumption requires a signature unless a procedure ran ------
-
-    exec.tx::get_num_input_notes neq.0
-    # => [were_input_notes_consumed, auth_required, pad(16)]
-
-    loc_load.ANY_PROC_CALLED_LOC not
-    # => [no_proc_called, were_input_notes_consumed, auth_required, pad(16)]
-
-    and or
     # => [auth_required, pad(16)]
 
     # If authentication is required, perform signature verification

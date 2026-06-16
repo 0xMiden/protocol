@@ -84,22 +84,17 @@ impl Default for AuthSingleSigAclConfig {
 ///
 /// ## Authentication Logic
 ///
-/// Authentication is required if any of the following hold:
+/// Authentication is required when a kernel-detected procedure not on the exempt list was
+/// called (other than the auth procedure at index 0). Otherwise the nonce is conditionally
+/// incremented (when the account state changed or the account is new) without verifying a
+/// signature.
 ///
-/// 1. A kernel-detected procedure not on the exempt list was called (other than the auth procedure
-///    at index 0).
-/// 2. An input note was consumed AND no procedure was detected as called anywhere in the
-///    transaction. Combined with the non-exempt proc check above, the practical effect is that
-///    input note consumption requires authentication unless at least one exempt procedure was
-///    detected as called.
-/// 3. An output note was created. This is unconditional (see the note-detection caveat below).
-///
-/// The input note check is transaction-wide, not per-note: a single detected procedure call
-/// (even an exempt read-only getter) lifts the input note signature requirement for every
-/// input note in the same transaction.
-///
-/// When none of these hold, only the nonce is conditionally incremented (when the account state
-/// changed or the account is new) without verifying a signature.
+/// Asset movement out of the account is gated by this single check transitively: removing
+/// assets from the vault requires `account_remove_asset`, which is kernel-tracked, so any
+/// procedure that exfiltrates funds shows up in the loop and forces a signature unless the
+/// author has explicitly exempted it. The kernel epilogue enforces asset conservation
+/// across the transaction (input vault = output vault), so an output note cannot carry
+/// assets that were not first taken from the account vault or an input note.
 ///
 /// ## Storage Layout
 /// - [`Self::public_key_slot`]: Public key
@@ -109,11 +104,10 @@ impl Default for AuthSingleSigAclConfig {
 ///
 /// ## Important Note on Procedure Detection
 /// `was_procedure_called` only returns `true` for procedures that invoke an account-restricted
-/// kernel API (vault, storage, etc.). Procedures touching only unrestricted APIs - e.g. emitting
-/// notes via `output_note_create` without moving assets - are not flagged even when they run;
-/// the output note and input note checks above close that gap. As a corollary, exempting a
-/// procedure that never touches an account-restricted API is a no-op (consuming a note via such
-/// a procedure still trips the input note check).
+/// kernel API (vault, storage, etc.). A procedure that touches only unrestricted APIs is not
+/// flagged even when it runs, so exempting such a procedure is a no-op. This does not weaken
+/// the funds-out guarantee above, since asset movement always routes through tracked vault
+/// operations.
 pub struct AuthSingleSigAcl {
     pub_key: PublicKeyCommitment,
     auth_scheme: AuthScheme,

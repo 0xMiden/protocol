@@ -3,35 +3,25 @@ use std::collections::BTreeSet;
 
 use assert_matches::assert_matches;
 use miden_processor::ExecutionError;
-use miden_processor::crypto::random::RandomCoin;
+use miden_protocol::Word;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey};
 use miden_protocol::account::{
     Account,
     AccountBuilder,
     AccountComponent,
-    AccountId,
     AccountProcedureRoot,
     AccountStorage,
     AccountType,
 };
-use miden_protocol::asset::FungibleAsset;
 use miden_protocol::errors::MasmError;
-use miden_protocol::note::{Note, NoteType};
-use miden_protocol::testing::account_id::{
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
-    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
-};
+use miden_protocol::note::Note;
 use miden_protocol::testing::storage::MOCK_VALUE_SLOT0;
-use miden_protocol::transaction::{RawOutputNote, TransactionScript};
-use miden_protocol::{Hasher, Word};
+use miden_protocol::transaction::RawOutputNote;
 use miden_standards::account::auth::AuthSingleSigAcl;
-use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
-use miden_standards::note::P2idNote;
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::note::NoteBuilder;
-use miden_standards::tx_script::SendNotesTransactionScript;
-use miden_testing::{Auth, MockChain, MockChainBuilder, assert_transaction_executor_error};
+use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 use miden_tx::TransactionExecutorError;
 use miden_tx::auth::BasicAuthenticator;
 use rand::SeedableRng;
@@ -191,71 +181,9 @@ async fn test_acl(#[case] auth_scheme: AuthScheme) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Output notes always require a signature, even when the procedure that produced them is on
-/// the exempt list. This is the regression guard for the unconditional output-note gate
-/// (the output note check); without it, an exempt procedure that emits notes would
-/// be able to move assets out of the account without authentication.
-#[rstest]
-#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
-#[tokio::test]
-async fn test_acl_output_note_creation_requires_auth_even_when_caller_exempt(
-    #[case] auth_scheme: AuthScheme,
-) -> anyhow::Result<()> {
-    let move_asset_to_note = BasicWallet::move_asset_to_note_root();
-
-    let (auth_component, _authenticator) = Auth::Acl {
-        exempt_procedures: BTreeSet::from([move_asset_to_note]),
-        auth_scheme,
-    }
-    .build_component();
-
-    let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?;
-    let starting_asset = FungibleAsset::new(faucet_id, 100)?;
-
-    let account = AccountBuilder::new([0; 32])
-        .with_auth_component(auth_component)
-        .with_component(BasicWallet)
-        .account_type(AccountType::Public)
-        .with_assets(core::iter::once(starting_asset.into()))
-        .build_existing()?;
-
-    let recipient = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE).unwrap();
-    let output_note = P2idNote::create(
-        account.id(),
-        recipient,
-        vec![FungibleAsset::new(faucet_id, 5)?.into()],
-        NoteType::Public,
-        Default::default(),
-        &mut RandomCoin::new(Hasher::hash(b"singlesig-acl-output-note-test")),
-    )?;
-
-    let send_note_script: TransactionScript =
-        SendNotesTransactionScript::new(&account.code_interface(), &[output_note.clone().into()])?
-            .into();
-
-    let mock_chain = MockChainBuilder::with_accounts([account.clone()]).unwrap().build()?;
-
-    let result = mock_chain
-        .build_tx_context(account.id(), &[], &[])?
-        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note)])
-        .tx_script(send_note_script)
-        .authenticator(None)
-        .build()?
-        .execute()
-        .await;
-
-    // Exempting `move_asset_to_note` clears the non-exempt proc check, so the only thing
-    // forcing authentication here is the unconditional output note check.
-    assert_matches!(result, Err(TransactionExecutorError::MissingAuthenticator));
-
-    Ok(())
-}
-
 /// Positive exempt-path: a kernel-detected procedure that *is* on the exempt list can be
-/// called without a signature, and the input note consumption is vouched for by the exempt
-/// call so the input note auth check doesn't fire either. This is the main path the exempt
-/// map lookup is supposed to enable.
+/// called without a signature. This is the main path the exempt map lookup is supposed to
+/// enable.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[case::falcon(AuthScheme::Falcon512Poseidon2)]
@@ -293,34 +221,6 @@ async fn test_acl_exempt_detected_procedure_succeeds_without_auth(
         .execute()
         .await
         .expect("exempt detected procedure without auth should succeed");
-
-    Ok(())
-}
-
-/// Isolates the input note check: input note consumption
-/// without any detected procedure must force a signature even when no account procedure is called
-/// by a tx script. This guards against a regression that drops the input note branch of the MASM
-/// `and or`; deleting that block today would let unsigned note consumption sneak through any time
-/// the script is inert.
-#[rstest]
-#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Poseidon2)]
-#[tokio::test]
-async fn test_acl_input_note_consumption_requires_auth_without_exempt(
-    #[case] auth_scheme: AuthScheme,
-) -> anyhow::Result<()> {
-    let (account, mock_chain, note) = setup_acl_test(BTreeSet::new(), auth_scheme)?;
-
-    // No tx script - the only side effect of the transaction is consuming the mock note
-    // produced by `setup_acl_test`. With an empty exempt list and no exempt procedure
-    // detected, the input note gate must trip.
-    let tx_context = mock_chain
-        .build_tx_context(account.id(), &[], slice::from_ref(&note))?
-        .authenticator(None)
-        .build()?;
-
-    let result = tx_context.execute().await;
-    assert_matches!(result, Err(TransactionExecutorError::MissingAuthenticator));
 
     Ok(())
 }
