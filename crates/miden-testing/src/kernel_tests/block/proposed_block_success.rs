@@ -5,8 +5,7 @@ use std::vec::Vec;
 use anyhow::Context;
 use assert_matches::assert_matches;
 use miden_protocol::Felt;
-use miden_protocol::account::delta::AccountUpdateDetails;
-use miden_protocol::account::{Account, AccountId, AccountType};
+use miden_protocol::account::{Account, AccountId, AccountType, AccountUpdateDetails};
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::block::{BlockInputs, ProposedBlock};
 use miden_protocol::note::{Note, NoteType};
@@ -114,14 +113,17 @@ async fn proposed_block_basic_success() -> anyhow::Result<()> {
 /// Tests that account updates are correctly aggregated into a block-level account update.
 #[tokio::test]
 async fn proposed_block_aggregates_account_state_transition() -> anyhow::Result<()> {
-    let asset = FungibleAsset::mock(100);
+    let asset = FungibleAsset::mock(100).unwrap_fungible();
     let sender_id = AccountId::try_from(ACCOUNT_ID_SENDER)?;
 
     let mut builder = MockChain::builder();
     let mut account1 = builder.add_existing_mock_account(Auth::IncrNonce)?;
-    let note0 = builder.add_p2id_note(sender_id, account1.id(), &[asset], NoteType::Private)?;
-    let note1 = builder.add_p2id_note(sender_id, account1.id(), &[asset], NoteType::Public)?;
-    let note2 = builder.add_p2id_note(sender_id, account1.id(), &[asset], NoteType::Public)?;
+    let note0 =
+        builder.add_p2id_note(sender_id, account1.id(), &[asset.into()], NoteType::Private)?;
+    let note1 =
+        builder.add_p2id_note(sender_id, account1.id(), &[asset.into()], NoteType::Public)?;
+    let note2 =
+        builder.add_p2id_note(sender_id, account1.id(), &[asset.into()], NoteType::Public)?;
     let mut chain = builder.build()?;
 
     // Add notes to the chain.
@@ -169,9 +171,11 @@ async fn proposed_block_aggregates_account_state_transition() -> anyhow::Result<
         [tx2.id(), tx0.id(), tx1.id()]
     );
 
-    assert_matches!(account_update.details(), AccountUpdateDetails::Delta(delta) => {
-        assert_eq!(delta.vault().fungible().num_assets(), 1);
-        assert_eq!(delta.vault().fungible().amount(&asset.unwrap_fungible().vault_key()).unwrap(), 300);
+    let expected_asset = asset.add(asset)?.add(asset)?;
+
+    assert_matches!(account_update.details(), AccountUpdateDetails::Public(patch) => {
+        assert_eq!(patch.vault().num_assets(), 1);
+        assert_eq!(patch.vault().as_map().get(&asset.vault_key()), Some(&expected_asset.to_value_word()));
     });
 
     Ok(())

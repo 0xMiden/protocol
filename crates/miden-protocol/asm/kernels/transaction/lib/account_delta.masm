@@ -12,7 +12,9 @@ use miden::core::word
 # ERRORS
 # =================================================================================================
 
-const ERR_ACCOUNT_DELTA_NONCE_MUST_BE_INCREMENTED_IF_VAULT_OR_STORAGE_CHANGED="nonce must be incremented if account vault or account storage changed"
+const ERR_ACCOUNT_DELTA_NONCE_MUST_BE_INCREMENTED_IF_VAULT_OR_STORAGE_CHANGED="nonce in delta must have been incremented if account vault or account storage changed"
+
+const ERR_ACCOUNT_PATCH_NONCE_MUST_BE_INCREMENTED_IF_VAULT_OR_STORAGE_CHANGED="final nonce in patch must have been incremented if account vault or account storage changed"
 
 const ERR_ACCOUNT_DELTA_TOO_MANY_REMOVED_ASSETS="number of removed assets in the transaction exceeds the maximum limit of 1024"
 
@@ -28,6 +30,8 @@ const ACCOUNT_ON_ASSET_DELTA_COMPUTATION_EVENT=event("miden::protocol::account::
 
 # The domain of the delta commitment header.
 const DOMAIN_DELTA = 1
+# The domain of the patch commitment header.
+const DOMAIN_PATCH = 2
 # The domain of an asset in the delta commitment.
 const DOMAIN_ASSET = 3
 # The domain of a value storage slot in the delta commitment.
@@ -63,6 +67,11 @@ const UPDATE_ASSET_DELTA_NUM_ADDED_LOC = 2
 const UPDATE_ASSET_DELTA_NUM_REMOVED_LOC = 3
 const UPDATE_ASSET_DELTA_REMOVED_ASSETS_LOC = 4
 
+#! Locals in commit_asset_patch.
+const COMMIT_ASSET_PATCH_HAS_NEXT_LOC = 0
+const COMMIT_ASSET_PATCH_ITER_LOC = 1
+const COMMIT_ASSET_PATCH_NUM_CHANGED_LOC = 2
+
 #! The maximum number of assets that can be removed in a single transaction.
 #!
 #! This limit is arbitrary and can be increased accordingly with the number of locals of
@@ -72,8 +81,71 @@ const UPDATE_ASSET_DELTA_MAX_REMOVED_ASSETS = 1024
 # PROCEDURES
 # =================================================================================================
 
-# DELTA COMPUTATION
+# DELTA & PATCH COMPUTATION
 # -------------------------------------------------------------------------------------------------
+
+#! Computes the commitment to the native account's patch.
+#!
+#! See the Rust function `AccountPatch::to_commitment` for a detailed description of how it is computed.
+#!
+#! Inputs:  []
+#! Outputs: [PATCH_COMMITMENT]
+#!
+#! Where:
+#! - PATCH_COMMITMENT is the commitment to the account patch.
+#!
+#! Panics if:
+#! - the vault patch or storage patch is not empty but the nonce increment is zero.
+pub proc compute_patch_commitment
+    # pad capacity and RATE1 of the hasher with empty words
+    padw padw
+    # => [EMPTY_WORD, CAPACITY]
+
+    exec.memory::get_native_account_id
+    # => [native_account_id_suffix, native_account_id_prefix, EMPTY_WORD, CAPACITY]
+
+    # get the nonce of the account and assume it is the final nonce
+    # we later assert that the nonce was incremented (unless the patch is empty)
+    exec.memory::get_account_nonce
+    push.DOMAIN_PATCH
+    # => [domain_patch, final_nonce, native_account_id_suffix, native_account_id_prefix, EMPTY_WORD, CAPACITY]
+    # => [ID_AND_NONCE, EMPTY_WORD, CAPACITY]
+
+    exec.poseidon2::permute
+    # => [RATE0, RATE1, CAPACITY]
+
+    # save the ID and nonce digest (RATE0 word) for a later check
+    exec.poseidon2::copy_digest movdnw.3
+    # => [RATE0, RATE1, CAPACITY, ID_AND_NONCE_DIGEST]
+
+    exec.commit_asset_patch
+    # => [RATE0, RATE1, CAPACITY, ID_AND_NONCE_DIGEST]
+
+    exec.update_storage_patch
+    # => [RATE0, RATE1, CAPACITY, ID_AND_NONCE_DIGEST]
+
+    exec.poseidon2::squeeze_digest
+    # => [PATCH_COMMITMENT, ID_AND_NONCE_DIGEST]
+
+    exec.was_nonce_incremented not
+    # => [!was_nonce_incremented, PATCH_COMMITMENT, ID_AND_NONCE_DIGEST]
+
+    if.true
+        # if the nonce wasn't incremented, then the vault and storage patch is required to be empty
+        # storage and vault patch were empty if the patch commitment is equal to
+        # ID_AND_NONCE_DIGEST
+        assert_eqw.err=ERR_ACCOUNT_PATCH_NONCE_MUST_BE_INCREMENTED_IF_VAULT_OR_STORAGE_CHANGED
+        # => []
+
+        # if the patch is empty, its commitment is defined as the empty word
+        padw
+        # => [EMPTY_WORD]
+    else
+        # drop the ID and nonce digest
+        swapw dropw
+        # => [PATCH_COMMITMENT]
+    end
+end
 
 #! Computes the commitment to the native account's delta.
 #!
@@ -120,9 +192,9 @@ pub proc compute_commitment
     # => [!was_nonce_incremented, DELTA_COMMITMENT, ID_AND_NONCE_DIGEST]
 
     if.true
-        # if the nonce wasn't incremented, then the vault and storage changes must be empty
-        # if the delta commitment is equivalent to the ID_AND_NONCE_DIGEST, then storage
-        # and vault delta were empty
+        # if the nonce wasn't incremented, then the vault and storage delta is required to be empty
+        # storage and vault delta were empty if the delta commitment is equal to
+        # ID_AND_NONCE_DIGEST
         assert_eqw.err=ERR_ACCOUNT_DELTA_NONCE_MUST_BE_INCREMENTED_IF_VAULT_OR_STORAGE_CHANGED
         # => []
 
@@ -547,7 +619,99 @@ proc commit_asset_count_trailer
     end
 end
 
-# DELTA BOOKKEEPING
+#! Updates the given patch hasher with the asset vault patches.
+#!
+#! Inputs:  [RATE0, RATE1, CAPACITY]
+#! Outputs: [RATE0, RATE1, CAPACITY]
+#!
+#! Locals:
+#! - 0: has_next
+#! - 1: iter
+#! - 2: num_changed_assets
+@locals(3)
+proc commit_asset_patch
+    # initialize num_changed_assets = 0
+    # this is necessary because this procedure can be called multiple times and the second
+    # invocation shouldn't reuse the first invocation's values
+    push.0 loc_store.COMMIT_ASSET_PATCH_NUM_CHANGED_LOC
+
+    # Iterate and hash asset patches.
+    # ---------------------------------------------------------------------------------------------
+
+    push.ACCOUNT_DELTA_ASSET_PTR
+    # => [asset_delta_map_ptr, RATE0, RATE1, CAPACITY]
+
+    exec.link_map::iter
+    # => [has_next, iter, RATE0, RATE1, CAPACITY]
+
+    # enter loop if the link map is not empty
+    while.true
+        exec.link_map::next_key_double_value
+        # => [ASSET_KEY, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, has_next, iter, ...]
+
+        # store has_next and iter
+        movup.12 loc_store.COMMIT_ASSET_PATCH_HAS_NEXT_LOC
+        movup.12 loc_store.COMMIT_ASSET_PATCH_ITER_LOC
+        # => [ASSET_KEY, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, ...]
+
+        movdnw.2 exec.word::test_eq not
+        # => [has_asset_changed, INITIAL_ASSET_VALUE, FINAL_ASSET_VALUE, ASSET_KEY, ...]
+
+        if.true
+            # increment num_changed_assets
+            loc_load.COMMIT_ASSET_PATCH_NUM_CHANGED_LOC
+            add.1
+            loc_store.COMMIT_ASSET_PATCH_NUM_CHANGED_LOC
+            # => [ASSET_KEY, FINAL_ASSET_VALUE, ...]
+
+            # drop initial value
+            dropw swapw
+            # => [ASSET_KEY, FINAL_ASSET_VALUE, RATE0, RATE1, CAPACITY]
+
+            # drop previous RATE elements
+            swapdw dropw dropw
+            # => [ASSET_KEY, FINAL_ASSET_VALUE, CAPACITY]
+
+            exec.poseidon2::permute
+            # => [RATE0, RATE1, CAPACITY]
+        else
+            # discard the values loaded from the map
+            dropw dropw dropw
+            # => [RATE0, RATE1, CAPACITY]
+        end
+        # => [RATE0, RATE1, CAPACITY]
+
+        # load iter and has_next
+        loc_load.COMMIT_ASSET_PATCH_ITER_LOC
+        loc_load.COMMIT_ASSET_PATCH_HAS_NEXT_LOC
+        # => [has_next, iter, RATE0, RATE1, CAPACITY]
+    end
+
+    # drop iter
+    drop
+    # => [RATE0, RATE1, CAPACITY]
+
+    # Add the asset patch trailer if num_changed_assets != 0.
+    # ---------------------------------------------------------------------------------------------
+
+    loc_load.COMMIT_ASSET_PATCH_NUM_CHANGED_LOC neq.0
+    if.true
+        # drop the previous RATE elements
+        dropw dropw
+        # => [CAPACITY]
+
+        padw push.0.0
+        loc_load.COMMIT_ASSET_PATCH_NUM_CHANGED_LOC
+        push.DOMAIN_ASSET
+        # => [[domain, num_changed_assets, 0, 0], EMPTY_WORD, CAPACITY]
+
+        exec.poseidon2::permute
+        # => [RATE0, RATE1, CAPACITY]
+    end
+    # => [RATE0, RATE1, CAPACITY]
+end
+
+# ACCOUNT UPDATE BOOKKEEPING
 # -------------------------------------------------------------------------------------------------
 
 #! Returns a flag indicating whether the account's nonce was incremented.

@@ -24,7 +24,7 @@ pub struct AccountVaultPatch {
 
 impl AccountVaultPatch {
     /// Domain separator for assets in the account patch commitment.
-    const DOMAIN: Felt = Felt::new_unchecked(4);
+    const DOMAIN: Felt = Felt::new_unchecked(3);
 
     /// Creates a new vault patch directly from its raw key/value entries.
     ///
@@ -94,11 +94,14 @@ impl AccountVaultPatch {
             elements.extend_from_slice(asset_value_or_empty_word.as_elements());
         }
 
-        let num_changed_assets = Felt::try_from(self.entries.len() as u64)
-            .expect("number of assets should not exceed max representable felt");
+        let num_changed_assets = self.entries.len();
+        if num_changed_assets != 0 {
+            let num_changed_assets = Felt::try_from(num_changed_assets as u64)
+                .expect("number of assets should not exceed max representable felt");
 
-        elements.extend_from_slice(&[Self::DOMAIN, num_changed_assets, Felt::ZERO, Felt::ZERO]);
-        elements.extend_from_slice(Word::empty().as_elements());
+            elements.extend_from_slice(&[Self::DOMAIN, num_changed_assets, Felt::ZERO, Felt::ZERO]);
+            elements.extend_from_slice(Word::empty().as_elements());
+        }
     }
 
     /// Returns an iterator over the keys of assets that were removed (i.e. whose value is

@@ -112,7 +112,6 @@ impl AccountUpdateTracker {
     ///
     /// Normalizes the patch by removing entries for storage slots where the initial and new
     /// value are equal.
-    #[allow(unused, reason = "TODO(patch): will be used in an upcoming PR")]
     pub fn into_patch(self) -> AccountPatch {
         let storage_patch = self.storage.into_patch();
         let vault_patch = self.vault.into_patch();
