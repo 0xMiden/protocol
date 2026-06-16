@@ -25,7 +25,7 @@ use miden_protocol::note::{Note, NoteType};
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
-use miden_standards::account::access::pausable::PausableManager;
+use miden_standards::account::access::pausable::{Pausable, PausableManager};
 use miden_standards::account::access::{AccessControl, Authority};
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::errors::standards::{ERR_AUTHORITY_CLOSED, ERR_SENDER_NOT_OWNER};
@@ -67,6 +67,7 @@ fn add_owner_faucet(
         .account_type(AccountType::Public)
         .with_component(faucet)
         .with_components(AccessControl::Ownable2Step { owner })
+        .with_component(Pausable::unpaused())
         .with_component(PausableManager);
 
     builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
@@ -90,6 +91,7 @@ fn add_rbac_faucet(
         .account_type(AccountType::Public)
         .with_component(faucet)
         .with_components(AccessControl::Rbac { owner, roles })
+        .with_component(Pausable::unpaused())
         .with_component(PausableManager);
 
     builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
