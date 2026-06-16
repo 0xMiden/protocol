@@ -6,10 +6,6 @@ version.workspace = true
 kind = "kernel"
 path = "lib/api.masm"
 
-# NOTE: The executable targets cannot be assembled declaratively because they `exec` kernel
-# modules directly (under the `$kernel` namespace), while `[[bin]]` targets are always assembled
-# under the `$exec` namespace. They are assembled via `ProjectAssembler::assemble_with_sources`
-# in build.rs, which provides the kernel modules pre-parsed under `$kernel`.
 [[bin]]
 name = "main"
 path = "main.masm"
