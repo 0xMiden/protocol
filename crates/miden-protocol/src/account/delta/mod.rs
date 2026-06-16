@@ -339,8 +339,16 @@ impl TryFrom<&AccountDelta> for Account {
             return Err(AccountError::PartialStateDeltaToAccount);
         };
 
+        // The asset vault of a new account is empty, so if the delta contains removed assets, the
+        // delta is invalid.
+        if delta.vault().removed_assets().count() != 0 {
+            return Err(AccountError::AssetsRemovedFromNewAccount);
+        }
+
         let mut vault = AssetVault::default();
-        vault.apply_delta(delta.vault()).map_err(AccountError::AssetVaultUpdateError)?;
+        for added_asset in delta.vault().added_assets() {
+            vault.insert_asset(added_asset).map_err(AccountError::AssetVaultUpdateError)?;
+        }
 
         // Once we support addition and removal of storage slots, we may be able to change
         // this to create an empty account and use `Account::apply_delta` instead.

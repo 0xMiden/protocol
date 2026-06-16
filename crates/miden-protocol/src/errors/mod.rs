@@ -180,6 +180,8 @@ pub enum AccountError {
     },
     #[error("only account deltas representing a full account can be converted to a full account")]
     PartialStateDeltaToAccount,
+    #[error("assets cannot be removed from a new account with an empty asset vault")]
+    AssetsRemovedFromNewAccount,
     #[error("only account patches representing a full account can be converted to a full account")]
     PartialStatePatchToAccount,
     #[error("maximum number of storage map leaves exceeded")]

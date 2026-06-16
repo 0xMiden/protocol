@@ -242,6 +242,16 @@ impl AssetVault {
 
     // ADD ASSET
     // --------------------------------------------------------------------------------------------
+
+    /// Inserts the specified asset into the vault, overwriting the asset value at the same vault
+    /// key. Returns the value of the asset previously.
+    ///
+    /// # Errors
+    /// - The maximum number of leaves per asset is exceeded.
+    pub fn insert_asset(&mut self, asset: Asset) -> Result<Word, AssetVaultError> {
+        self.insert_entry(asset.vault_key(), asset.to_value_word())
+    }
+
     /// Add the specified asset to the vault.
     ///
     /// # Errors
