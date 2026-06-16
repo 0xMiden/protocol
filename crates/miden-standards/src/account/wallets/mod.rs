@@ -142,14 +142,21 @@ pub fn create_basic_wallet(
 /// `approver_set` approver signatures, with optional per-procedure threshold overrides in
 /// `proc_thresholds`.
 ///
-/// # Security
+/// # Security: private accounts and state withholding
 ///
-/// For private accounts, all thresholds must be uniform: per-procedure overrides that differ from
-/// the default threshold are rejected. A lower per-procedure threshold (e.g. `1` for
-/// `receive_asset`) would allow a single approver to advance the private account state and withhold
-/// the update from the other approvers, locking them out. Public accounts store their full state
-/// on-chain, so non-uniform thresholds are permitted there. To use non-uniform thresholds on a
-/// private account, create a guarded wallet with [`create_guarded_wallet`] instead.
+/// A private account's state lives off-chain, so whoever advances it must share the new state with
+/// the other approvers; any quorum that advances the state and withholds it permanently locks the
+/// excluded approvers out. To bound this, per-procedure overrides on a private account may only
+/// *raise* a procedure's threshold above the default, never lower it: a lower threshold (e.g. `1`
+/// for `receive_asset`) would let a sub-quorum withhold state, whereas a higher one is always safe
+/// and lets sensitive procedures be hardened. Public accounts store their state on-chain, so no
+/// check is applied there.
+///
+/// Raising thresholds does not *eliminate* withholding (any quorum below the full approver set can
+/// still exclude the rest). The only fully withholding-safe options are a public account, unanimity
+/// (`threshold == number of approvers`), or a guarded wallet ([`create_guarded_wallet`]) whose
+/// Guardian forwards state updates - prefer the latter for a private `m`-of-`n` wallet among
+/// mutually distrusting approvers.
 pub fn create_multisig_wallet(
     init_seed: [u8; 32],
     approver_set: ApproverSet,
@@ -160,11 +167,12 @@ pub fn create_multisig_wallet(
     if account_type == AccountType::Private
         && proc_thresholds
             .iter()
-            .any(|(_, proc_threshold)| *proc_threshold != default_threshold)
+            .any(|(_, proc_threshold)| *proc_threshold < default_threshold)
     {
         return Err(AccountError::other(
-            "private multisig wallets require uniform thresholds, per-procedure threshold \
-             overrides are not allowed for private accounts without a guardian",
+            "private multisig wallets do not allow per-procedure thresholds below the default \
+             threshold, as a lower threshold would let a sub-quorum advance and withhold the \
+             private account state; use a guarded wallet to lower thresholds safely",
         ));
     }
 
@@ -180,10 +188,6 @@ pub fn create_multisig_wallet(
 /// Authentication is provided by an [`AuthGuardedMultisig`] component: every operation requires
 /// both the default threshold of `approver_set` approver signatures (with optional per-procedure
 /// overrides in `proc_thresholds`) and a valid signature from the configured `guardian`.
-///
-/// Because the guardian is expected to forward state updates to the other approvers, non-uniform
-/// thresholds (including a per-procedure threshold of `1`) are safe even for private accounts, so
-/// no uniformity check is applied here.
 pub fn create_guarded_wallet(
     init_seed: [u8; 32],
     approver_set: ApproverSet,
@@ -263,36 +267,50 @@ mod tests {
     }
 
     #[test]
-    fn test_create_multisig_wallet_public_allows_overrides() -> anyhow::Result<()> {
+    fn test_create_multisig_wallet_public_allows_lower_override() -> anyhow::Result<()> {
         let approver_set = ApproverSet::new(vec![approver(1), approver(2)], 2)?;
         let proc_thresholds = vec![(BasicWallet::receive_asset_root(), 1)];
 
-        // A public account may use a per-procedure threshold lower than the default.
+        // A public account may use a per-procedure threshold below the default.
         create_multisig_wallet([1; 32], approver_set, proc_thresholds, AccountType::Public)?;
 
         Ok(())
     }
 
     #[test]
-    fn test_create_multisig_wallet_private_uniform_succeeds() -> anyhow::Result<()> {
+    fn test_create_multisig_wallet_private_no_override_succeeds() -> anyhow::Result<()> {
         let approver_set = ApproverSet::new(vec![approver(1), approver(2)], 2)?;
 
-        // No overrides => uniform thresholds, allowed for private accounts.
+        // No overrides is always allowed for private accounts.
         create_multisig_wallet([1; 32], approver_set, vec![], AccountType::Private)?;
 
         Ok(())
     }
 
     #[test]
-    fn test_create_multisig_wallet_private_override_rejected() -> anyhow::Result<()> {
+    fn test_create_multisig_wallet_private_higher_override_succeeds() -> anyhow::Result<()> {
+        let approver_set = ApproverSet::new(vec![approver(1), approver(2), approver(3)], 2)?;
+        // Hardening a procedure above the default (2 -> 3) is safe for private accounts.
+        let proc_thresholds = vec![(BasicWallet::move_asset_to_note_root(), 3)];
+
+        create_multisig_wallet([1; 32], approver_set, proc_thresholds, AccountType::Private)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_multisig_wallet_private_lower_override_rejected() -> anyhow::Result<()> {
         let approver_set = ApproverSet::new(vec![approver(1), approver(2)], 2)?;
         let proc_thresholds = vec![(BasicWallet::receive_asset_root(), 1)];
 
         let err =
             create_multisig_wallet([1; 32], approver_set, proc_thresholds, AccountType::Private)
-                .expect_err("private multisig with a non-uniform threshold must be rejected");
+                .expect_err("private multisig with a below-default threshold must be rejected");
 
-        assert!(err.to_string().contains("private multisig wallets require uniform thresholds"));
+        assert!(
+            err.to_string()
+                .contains("do not allow per-procedure thresholds below the default threshold")
+        );
 
         Ok(())
     }

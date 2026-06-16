@@ -30,7 +30,7 @@
 - Added an `AccountCode::interface` helper that returns the public `AccountCodeInterface` ([#3080](https://github.com/0xMiden/protocol/pull/3080)).
 - [BREAKING] Tightened `AccountStorage::get_map_item` to take a `StorageMapKey` instead of a raw `Word` ([#3080](https://github.com/0xMiden/protocol/pull/3080)).
 - [BREAKING] Renamed the `TransactionEvent::AuthRequest` field from `pub_key_hash: Word` to `pub_key_commitment: PublicKeyCommitment` ([#3080](https://github.com/0xMiden/protocol/pull/3080)).
-- [BREAKING] Split `create_basic_wallet` into `create_basic_wallet` (single-sig), `create_multisig_wallet`, and `create_guarded_wallet`, and rejected non-uniform thresholds on private multisig wallets to prevent a single approver from advancing and withholding private account state ([#3098](https://github.com/0xMiden/protocol/pull/3098)).
+- [BREAKING] Split `create_basic_wallet` into `create_basic_wallet` (single-sig), `create_multisig_wallet`, and `create_guarded_wallet`, and rejected per-procedure thresholds below the default on private multisig wallets to prevent a sub-quorum from advancing and withholding private account state ([#3098](https://github.com/0xMiden/protocol/pull/3098)).
 - [BREAKING] Introduced the `Approver` and `ApproverSet` types to encapsulate the `(PublicKeyCommitment, AuthScheme)` pair and the `(threshold, approvers)` set, and used them across `AuthSingleSig`, `AuthSingleSigAcl`, `GuardianConfig`, the multisig auth configs, `AuthMethod`, and the wallet constructors ([#3098](https://github.com/0xMiden/protocol/pull/3098)).
 
 ### Fixes

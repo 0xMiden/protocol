@@ -115,10 +115,17 @@ impl AuthMultisigConfig {
 /// An [`AccountComponent`] implementing a multisig authentication.
 ///
 /// It enforces a threshold of approver signatures for every transaction, with optional
-/// per-procedure threshold overrides. Non-uniform thresholds (especially a threshold of one)
-/// should be used with caution for private multisig accounts; without a guardian, a single
-/// approver may advance state and withhold updates from other approvers, effectively locking
-/// them out.
+/// per-procedure threshold overrides.
+///
+/// For private accounts this component should be used with caution. A private account's state
+/// lives off-chain, so whoever advances it must share the new state with the other approvers; any
+/// quorum that advances the state and withholds it permanently locks the excluded approvers out.
+/// A per-procedure threshold of one makes this trivial for a single approver. Without a guardian,
+/// the only fully withholding-safe configuration is unanimity (`threshold == number of approvers`).
+/// For a private `m`-of-`n` wallet among mutually distrusting approvers, prefer
+/// [`AuthGuardedMultisig`](super::AuthGuardedMultisig), whose guardian forwards state updates. See
+/// [`create_multisig_wallet`](crate::account::wallets::create_multisig_wallet) for the full
+/// rationale.
 #[derive(Debug)]
 pub struct AuthMultisig {
     config: AuthMultisigConfig,
