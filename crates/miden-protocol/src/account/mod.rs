@@ -295,46 +295,6 @@ impl Account {
     // DATA MUTATORS
     // --------------------------------------------------------------------------------------------
 
-    /// Applies the provided delta to this account. This updates account vault, storage, and nonce
-    /// to the values specified by the delta.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - The delta's account ID does not match this account's ID.
-    /// - [`AccountDelta::is_full_state`] returns `true`, i.e. represents the state of an entire
-    ///   account. Only partial state deltas can be applied to an account.
-    /// - Applying vault sub-delta to the vault of this account fails.
-    /// - Applying storage sub-delta to the storage of this account fails.
-    /// - The nonce specified in the provided delta smaller than or equal to the current account
-    ///   nonce.
-    pub fn apply_delta(&mut self, delta: &AccountDelta) -> Result<(), AccountError> {
-        if delta.id() != self.id {
-            return Err(AccountError::DeltaAccountIdMismatch {
-                account_id: self.id,
-                delta_id: delta.id(),
-            });
-        }
-
-        if delta.is_full_state() {
-            return Err(AccountError::ApplyFullStateDeltaToAccount);
-        }
-
-        // update vault; we don't check vault delta validity here because `AccountDelta` can contain
-        // only valid vault deltas
-        self.vault
-            .apply_delta(delta.vault())
-            .map_err(AccountError::AssetVaultUpdateError)?;
-
-        // update storage
-        self.storage.apply_patch(delta.storage())?;
-
-        // update nonce
-        self.increment_nonce(delta.nonce_delta())?;
-
-        Ok(())
-    }
-
     /// Applies the provided patch to this account. This sets account vault, storage, and nonce to
     /// the values specified by the patch.
     ///

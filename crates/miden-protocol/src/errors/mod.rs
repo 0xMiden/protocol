@@ -170,18 +170,9 @@ pub enum AccountError {
     #[error("number of storage slots is {0} but max possible number is {max}", max = AccountStorage::MAX_NUM_STORAGE_SLOTS)]
     StorageTooManySlots(u64),
     #[error(
-        "failed to apply full state delta to existing account; full state deltas can be converted to accounts directly"
-    )]
-    ApplyFullStateDeltaToAccount,
-    #[error(
         "failed to apply full state patch to existing account; full state patches can be converted to accounts directly"
     )]
     ApplyFullStatePatchToAccount,
-    #[error("delta is for account ID {delta_id} but is being applied to account {account_id}")]
-    DeltaAccountIdMismatch {
-        account_id: AccountId,
-        delta_id: AccountId,
-    },
     #[error("patch is for account ID {patch_id} but is being applied to account {account_id}")]
     PatchAccountIdMismatch {
         account_id: AccountId,
