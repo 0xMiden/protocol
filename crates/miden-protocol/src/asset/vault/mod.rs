@@ -17,7 +17,7 @@ use super::{
     Serializable,
 };
 use crate::Word;
-use crate::account::{AccountVaultDelta, AccountVaultPatch, NonFungibleDeltaAction};
+use crate::account::AccountVaultPatch;
 use crate::crypto::merkle::smt::{SMT_DEPTH, Smt};
 use crate::errors::{AssetError, AssetVaultError};
 
@@ -187,43 +187,6 @@ impl AssetVault {
 
     // PUBLIC MODIFIERS
     // --------------------------------------------------------------------------------------------
-
-    /// Applies the specified delta to the asset vault.
-    ///
-    /// # Errors
-    /// Returns an error:
-    /// - If the total value of the added assets is greater than [`FungibleAsset::MAX_AMOUNT`].
-    /// - If the delta contains an addition/subtraction for a fungible asset that is not stored in
-    ///   the vault.
-    /// - If the delta contains a non-fungible asset removal that is not stored in the vault.
-    /// - If the delta contains a non-fungible asset addition that is already stored in the vault.
-    /// - The maximum number of leaves per asset is exceeded.
-    pub fn apply_delta(&mut self, delta: &AccountVaultDelta) -> Result<(), AssetVaultError> {
-        for (vault_key, &delta) in delta.fungible().iter() {
-            // SAFETY: fungible asset delta should only contain fungible faucet IDs and delta amount
-            // should be in bounds
-            let asset = FungibleAsset::new(vault_key.faucet_id(), delta.unsigned_abs())
-                .expect("fungible asset delta should be valid")
-                .with_callbacks(vault_key.callback_flag());
-            match delta >= 0 {
-                true => self.add_fungible_asset(asset),
-                false => self.remove_fungible_asset(asset),
-            }?;
-        }
-
-        for (&asset, &action) in delta.non_fungible().iter() {
-            match action {
-                NonFungibleDeltaAction::Add => {
-                    self.add_non_fungible_asset(asset)?;
-                },
-                NonFungibleDeltaAction::Remove => {
-                    self.remove_non_fungible_asset(asset)?;
-                },
-            }
-        }
-
-        Ok(())
-    }
 
     /// Applies the specified patch to the asset vault.
     ///
