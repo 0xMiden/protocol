@@ -2,8 +2,7 @@ use alloc::vec::Vec;
 
 use anyhow::Context;
 use miden_protocol::Word;
-use miden_protocol::account::AccountId;
-use miden_protocol::account::delta::AccountUpdateDetails;
+use miden_protocol::account::{AccountId, AccountUpdateDetails};
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::crypto::merkle::SparseMerklePath;

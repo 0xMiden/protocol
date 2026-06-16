@@ -3,6 +3,7 @@
 ## v0.16.0 (TBD)
 
 ### Changes
+- Simplified the Ownable2Step owner-check API: merged the owner assertion into a single `exec` `assert_sender_is_owner` and renamed `is_sender_owner_internal` to `is_sender_owner` ([#3088](https://github.com/0xMiden/protocol/pull/3088)).
 - [BREAKING] Renamed the `miden-tx-batch-prover` crate to `miden-tx-batch` ([#3035](https://github.com/0xMiden/protocol/pull/3035)).
 - Added a skeleton batch kernel ([#1122](https://github.com/0xMiden/protocol/issues/1122)) wired through `LocalBatchProver::prove` and attached to `ProvenBatch` as an `ExecutionProof`. It does not yet perform any verification.
 
@@ -12,18 +13,32 @@
 - Added a `min_burn_amount` fungible faucet burn policy that rejects burns below a configurable, owner-gated minimum burn amount ([#3021](https://github.com/0xMiden/protocol/pull/3021)).
 - Added the `active_account::has_storage_slot` MASM procedure for checking whether a storage slot exists on the active account without panicking ([#3037](https://github.com/0xMiden/protocol/pull/3037)).
 - Added `Note::has_attachments` and `NoteMetadata::has_attachments` helpers, and retained private note attachments in `MockChain` ([#3060](https://github.com/0xMiden/protocol/pull/3060)).
-- Introduced `AccountPatch` and `AccountVaultPatch` ([#3010](https://github.com/0xMiden/protocol/pull/3010)).
+- Introduced `AccountPatch` and `AccountVaultPatch` ([#3010](https://github.com/0xMiden/protocol/pull/3010), [#3071](https://github.com/0xMiden/protocol/pull/3071)).
+- Added `AccountPatch::merge` for combining patches across consecutive transactions ([#3082](https://github.com/0xMiden/protocol/pull/3082)).
+- [BREAKING] Replaced the account delta in `AccountUpdateDetails`, `TxAccountUpdate`, and the kernel-emitted account update commitment with the account patch ([#3089](https://github.com/0xMiden/protocol/pull/3089)).
 - Clarified the transaction definition and the distinction between execution and proving on the architecture overview page ([#3015](https://github.com/0xMiden/protocol/pull/3015)).
 - [BREAKING] Refactored `TransferPolicy`, `MintPolicyConfig`, and `BurnPolicyConfig` from enums into structs ([#2974](https://github.com/0xMiden/protocol/pull/2974)).
 - Added `AccountComponent::has_procedure(root)` helper ([#2974](https://github.com/0xMiden/protocol/pull/2974)).
 - Optimized protocol MASM stack-cleaning sequences, saving 1 cycle per occurrence across 9 single-element-extraction procedures ([#3041](https://github.com/0xMiden/protocol/pull/3041)).
+- [BREAKING] Removed `AuthMethod` enum, `AccountAuthComponent` / `AccountAuthScheme`, and the `AccessControl::AuthControlled` variant. Faucet and wallet factories now take concrete auth-component types so invalid configurations are rejected at compile time ([#2944](https://github.com/0xMiden/protocol/pull/2944)).
+- [BREAKING] Split `create_fungible_faucet` into `create_user_fungible_faucet(auth_component: AuthSingleSigAcl, ...)` (installs `Authority::AuthControlled` directly) and the opinionated `create_network_fungible_faucet(access_control, ...)` (always `AccountType::Public`, builds the `AuthNetworkAccount` allowlist internally from `MintNote` + `BurnNote` script roots with an empty tx-script allowlist). Other auth schemes / shapes are no longer supported through these helpers — fall back to `AccountBuilder` directly. A `user_faucet_single_sig_acl` testing helper is provided behind the `testing` feature ([#2944](https://github.com/0xMiden/protocol/pull/2944)).
+- Added `create_multisig_wallet` and `create_guarded_wallet` helpers for `BasicWallet` accounts authenticated by `AuthMultisig` and `AuthGuardedMultisig` respectively ([#2944](https://github.com/0xMiden/protocol/pull/2944)).
+- [BREAKING] `create_basic_wallet` now takes `AuthSingleSig` directly and returns `AccountError` instead of the removed `BasicWalletError` ([#2944](https://github.com/0xMiden/protocol/pull/2944)).
+- [BREAKING] Removed `AccountInterface::auth()` and `AccountComponentInterface::auth_scheme()`. Auth components are now discovered via `AccountInterface::auth_components()`, which iterates `AccountComponentInterface` variants flagged by `is_auth_component()` ([#2944](https://github.com/0xMiden/protocol/pull/2944)).
+- [BREAKING] `FungibleFaucet` no longer installs the `is_paused` storage slot itself. Faucet factories (`create_user_fungible_faucet` / `create_network_fungible_faucet`) now bundle the `Pausable` component (slot + `is_paused()` view procedure) alongside `PausableManager`. Callers using `AccountBuilder` directly must also install `Pausable` or the faucet's mint / burn / transfer / metadata-setter procedures will panic at runtime ([#2944](https://github.com/0xMiden/protocol/pull/2944)).
+- Optimized `rbac::grant_role_internal` and `rbac::revoke_role_internal` by removing the redundant membership read and rearranging the stack ([#3090](https://github.com/0xMiden/protocol/pull/3090)).
 - [BREAKING] Refactored `TokenPolicyManager` by adding `invoke_send_policy` / `invoke_receive_policy` wrappers (stored in the protocol reserved asset callback slots) that read the active policy root from the new `active_send_policy_proc_root` / `active_receive_policy_proc_root` storage slots ([#3047](https://github.com/0xMiden/protocol/pull/3047)).
+- Added regression tests ensuring a `TokenPolicyManager` with only reserved send/receive policies installs the protocol reserved asset callback slots, so `has_callbacks` is correct from creation and minted assets carry the callback flag ([#3091](https://github.com/0xMiden/protocol/pull/3091)).
 - Added a definition of the Miden operator on the architecture overview page and linked it from the note lifecycle ([#3017](https://github.com/0xMiden/protocol/pull/3017)).
+- [BREAKING] Extended `Authority::RbacControlled` to assign roles per authority-gated procedure ([#3072](https://github.com/0xMiden/protocol/pull/3072)).
 - Clarified Miden's operational roles on the architecture overview page and linked them from the note lifecycle ([#3017](https://github.com/0xMiden/protocol/pull/3017)).
 - [BREAKING] Unified the fungible and non-fungible asset vault deltas into a single asset delta, changing the on-chain account delta commitment layout ([#3038](https://github.com/0xMiden/protocol/pull/3038)).
-- [BREAKING] Replaced `AccountInterface::build_send_notes_script` with a standalone `SendNotesTransactionScript` built against `AccountCodeInterface` ([#3055](https://github.com/0xMiden/protocol/pull/3055)).
 - Added the canonical `ExpirationTransactionScript` to `miden-standards`, with a delta-independent script root that network accounts can allowlist ([#3051](https://github.com/0xMiden/protocol/pull/3051)).
 - Migrated `miden-protocol` MASM assembly to a `miden-project.toml` project ([#3094](https://github.com/0xMiden/protocol/pull/3094)).
+- [BREAKING] Replaced `AccountInterface::build_send_notes_script` with a standalone `SendNotesTransactionScript` built against `AccountCodeInterface` ([#3055](https://github.com/0xMiden/protocol/pull/3055)).
+- Added an `AccountCode::interface` helper that returns the public `AccountCodeInterface` ([#3080](https://github.com/0xMiden/protocol/pull/3080)).
+- [BREAKING] Tightened `AccountStorage::get_map_item` to take a `StorageMapKey` instead of a raw `Word` ([#3080](https://github.com/0xMiden/protocol/pull/3080)).
+- [BREAKING] Renamed the `TransactionEvent::AuthRequest` field from `pub_key_hash: Word` to `pub_key_commitment: PublicKeyCommitment` ([#3080](https://github.com/0xMiden/protocol/pull/3080)).
 
 ### Fixes
 - Fixed `update_ger` to explicitly reject duplicate GER insertions with `ERR_GER_ALREADY_REGISTERED` instead of silently accepting them ([#2983](https://github.com/0xMiden/protocol/pull/2983)).

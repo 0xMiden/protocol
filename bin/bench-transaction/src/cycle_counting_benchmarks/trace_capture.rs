@@ -29,7 +29,8 @@ pub async fn capture_measurements_and_trace_summary(
         .execute()
         .await
         .context("pre-execution (to resolve signatures) failed")?;
-    let (tx_inputs, _tx_outputs, _account_delta, measurements) = executed.into_parts();
+    let (tx_inputs, _tx_outputs, _account_delta, _account_patch, measurements) =
+        executed.into_parts();
 
     let trace_summary = build_trace_summary(tx_inputs).await?;
 
