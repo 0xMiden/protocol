@@ -1,0 +1,133 @@
+use miden::protocol::active_note
+use miden::protocol::note
+use miden::standards::faucets::non_fungible->faucet
+
+# CONSTANTS
+# =================================================================================================
+
+const MINT_NOTE_NUM_STORAGE_ITEMS_PRIVATE=9
+const MINT_NOTE_MIN_NUM_STORAGE_ITEMS_PUBLIC=16
+
+use miden::protocol::note::NOTE_TYPE_PUBLIC
+use miden::protocol::note::NOTE_TYPE_PRIVATE
+
+# Memory addresses of MINT note storage (private mode, 9 items total)
+const STORAGE_PTR = 0
+const PRIVATE_RECIPIENT_PTR = STORAGE_PTR
+const PRIVATE_COMMITMENT_PTR = STORAGE_PTR + 4
+const PRIVATE_TAG_PTR = STORAGE_PTR + 8
+
+# Memory addresses of MINT note storage (public mode, 16+ items total)
+const PUBLIC_SCRIPT_ROOT_PTR = STORAGE_PTR
+const PUBLIC_SERIAL_NUM_PTR = STORAGE_PTR + 4
+const PUBLIC_COMMITMENT_PTR = STORAGE_PTR + 8
+const PUBLIC_TAG_PTR = STORAGE_PTR + 12
+const PUBLIC_OUTPUT_NOTE_STORAGE_PTR = STORAGE_PTR + 16
+
+# ERRORS
+# =================================================================================================
+
+const ERR_NON_FUNGIBLE_MINT_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS="MINT script expects exactly 9 storage items for private or 16+ storage items for public output notes"
+
+#! Network Faucet MINT script (non-fungible): mints the NFT for the commitment stored in the
+#! note by calling the network faucet's `mint_and_send` procedure.
+#!
+#! Intended to be executed against a non-fungible faucet account.
+#!
+#! Requires that the account exposes:
+#! - miden::standards::faucets::non_fungible::mint_and_send procedure.
+#!
+#! Inputs:  [ARGS, pad(12)]
+#! Outputs: [pad(16)]
+#!
+#! Note storage supports two modes (private/public output note), distinguished by item count:
+#!
+#! Private mode (9 storage items) - creates a private output note:
+#! - RECIPIENT:   The recipient digest (4 elements, word 0)
+#! - COMMITMENT:  The asset commitment `hash(user_data, salt)` (4 elements, word 1)
+#! - tag:         Note tag for the output note (1 element)
+#!
+#! Public mode (16+ storage items) - creates a public output note with variable-length storage:
+#! - SCRIPT_ROOT: Script root of the output note (4 elements, word 0)
+#! - SERIAL_NUM:  Serial number of the output note (4 elements, word 1)
+#! - COMMITMENT:  The asset commitment (4 elements, word 2)
+#! - tag:         Note tag for the output note (1 element)
+#! - padding:     3 elements so the variable storage starts at a word boundary
+#! - [STORAGE]:   Variable-length storage for the output note
+#!
+#! Panics if:
+#! - account does not expose mint_and_send procedure.
+#! - the number of storage items is not exactly 9 for private or less than 16 for public output
+#!   notes.
+@note_script
+pub proc main
+    dropw
+    # => [pad(16)]
+    push.STORAGE_PTR exec.active_note::get_storage
+    # => [num_storage_items, pad(16)]
+
+    dup
+    # => [num_storage_items, num_storage_items, pad(16)]
+
+    u32assert2.err=ERR_NON_FUNGIBLE_MINT_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+    u32gte.MINT_NOTE_MIN_NUM_STORAGE_ITEMS_PUBLIC
+    # => [is_public_output_note, num_storage_items, pad(16)]
+
+    if.true
+        # public output note creation
+        # => [num_storage_items, pad(16)]
+
+        movdn.8
+        # => [EMPTY_WORD, EMPTY_WORD, num_storage_items, pad(8)]
+
+        mem_loadw_le.PUBLIC_SCRIPT_ROOT_PTR
+        # => [SCRIPT_ROOT, EMPTY_WORD, num_storage_items, pad(8)]
+
+        swapw mem_loadw_le.PUBLIC_SERIAL_NUM_PTR
+        # => [SERIAL_NUM, SCRIPT_ROOT, num_storage_items, pad(8)]
+
+        movup.8 sub.MINT_NOTE_MIN_NUM_STORAGE_ITEMS_PUBLIC
+        # => [num_output_note_storage, SERIAL_NUM, SCRIPT_ROOT, pad(8)]
+
+        push.PUBLIC_OUTPUT_NOTE_STORAGE_PTR
+        # => [storage_ptr, num_output_note_storage, SERIAL_NUM, SCRIPT_ROOT, pad(8)]
+
+        exec.note::compute_and_store_recipient
+        # => [RECIPIENT, pad(12)]
+
+        push.NOTE_TYPE_PUBLIC
+        # => [note_type, RECIPIENT, pad(12)]
+
+        mem_load.PUBLIC_TAG_PTR
+        # => [tag, note_type, RECIPIENT, pad(12)]
+
+        padw mem_loadw_le.PUBLIC_COMMITMENT_PTR
+        # => [COMMITMENT, tag, note_type, RECIPIENT, pad(12)]
+    else
+        # private output note creation
+
+        eq.MINT_NOTE_NUM_STORAGE_ITEMS_PRIVATE assert.err=ERR_NON_FUNGIBLE_MINT_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+        # => [pad(16)]
+
+        mem_loadw_le.PRIVATE_RECIPIENT_PTR
+        # => [RECIPIENT, pad(12)]
+
+        push.NOTE_TYPE_PRIVATE
+        # => [note_type, RECIPIENT, pad(12)]
+
+        mem_load.PRIVATE_TAG_PTR
+        # => [tag, note_type, RECIPIENT, pad(12)]
+
+        padw mem_loadw_le.PRIVATE_COMMITMENT_PTR
+        # => [COMMITMENT, tag, note_type, RECIPIENT, pad(12)]
+    end
+    # => [COMMITMENT, tag, note_type, RECIPIENT, pad(12)]
+
+    # mint_and_send consumes [ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)] and returns
+    # [note_idx, pad(15)]. ASSET_VALUE is the commitment. Drop 6 to return to pad(16).
+    call.faucet::mint_and_send
+    # => [note_idx, pad(21)]
+
+    dropw drop drop
+    # => [pad(16)]
+end

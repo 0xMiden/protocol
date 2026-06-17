@@ -6,6 +6,7 @@ use crate::account::access::Ownable2StepError;
 use crate::utils::FixedWidthStringError;
 
 mod fungible;
+mod non_fungible;
 mod token_metadata;
 
 pub use fungible::{
@@ -13,6 +14,14 @@ pub use fungible::{
     FungibleFaucetBuilder,
     create_network_fungible_faucet,
     create_user_fungible_faucet,
+};
+pub use non_fungible::{
+    NonFungibleFaucet,
+    NonFungibleFaucetBuilder,
+    authority_gated_setter_roots,
+    compute_commitment,
+    create_network_non_fungible_faucet,
+    create_user_non_fungible_faucet,
 };
 pub use token_metadata::{Description, ExternalLink, LogoURI, TokenMetadata, TokenName};
 
@@ -66,6 +75,24 @@ pub enum FungibleFaucetError {
     NotAFungibleFaucetAccount,
     #[error("failed to read ownership data from storage")]
     OwnershipError(#[source] Ownable2StepError),
+    #[error(transparent)]
+    TokenMetadata(#[from] TokenMetadataError),
+}
+
+// NON-FUNGIBLE FAUCET ERROR
+// ================================================================================================
+
+/// Non-fungible (NFT) faucet related errors.
+#[derive(Debug, Error)]
+pub enum NonFungibleFaucetError {
+    #[error("faucet metadata max supply is {actual} which exceeds max value of {max}")]
+    MaxSupplyTooLarge { actual: u64, max: u64 },
+    #[error("current supply {current_supply} exceeds max_supply {max_supply}")]
+    CurrentSupplyExceedsMaxSupply { current_supply: u64, max_supply: u64 },
+    #[error("account creation failed")]
+    AccountError(#[source] AccountError),
+    #[error("account is not a non-fungible faucet account")]
+    NotANonFungibleFaucetAccount,
     #[error(transparent)]
     TokenMetadata(#[from] TokenMetadataError),
 }

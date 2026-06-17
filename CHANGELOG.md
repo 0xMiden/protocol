@@ -3,6 +3,8 @@
 ## v0.16.0 (TBD)
 
 ### Changes
+- Added a non-fungible (NFT) faucet (`NonFungibleFaucet`): the asset value is an off-chain salted commitment `hash(user_data, salt)`, and an on-chain asset-status registry keyed by `[hash0, hash1, 0, 0]` enforces per-commitment uniqueness and permanent burn. Added `create_user_non_fungible_faucet` / `create_network_non_fungible_faucet` APIs, the `mint_nft` / `burn_nft` note scripts (`NonFungibleMintNote` / `NonFungibleBurnNote`), a `compute_commitment` helper, and reuses `TokenMetadata` (with `external_link` surfaced as `contract_uri`) and `TokenPolicyManager` for mint/burn/transfer policies ([#xxxx](https://github.com/0xMiden/protocol/pull/xxxx)).
+- [BREAKING] Refactored the mint policy interface so it is shared across fungible and non-fungible faucets: `policy_manager::execute_mint_policy` (and the mint policy `check_policy` predicates) now operate on the full `ASSET_VALUE` word instead of an `amount` ([#xxxx](https://github.com/0xMiden/protocol/pull/xxxx)).
 - Simplified the Ownable2Step owner-check API: merged the owner assertion into a single `exec` `assert_sender_is_owner` and renamed `is_sender_owner_internal` to `is_sender_owner` ([#3088](https://github.com/0xMiden/protocol/pull/3088)).
 - [BREAKING] Renamed the `miden-tx-batch-prover` crate to `miden-tx-batch` ([#3035](https://github.com/0xMiden/protocol/pull/3035)).
 - Added a skeleton batch kernel ([#1122](https://github.com/0xMiden/protocol/issues/1122)) wired through `LocalBatchProver::prove` and attached to `ProvenBatch` as an `ExecutionProof`. It does not yet perform any verification.

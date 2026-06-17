@@ -3,6 +3,7 @@ mod blocklist;
 mod expiration;
 mod faucet;
 mod fee;
+mod non_fungible_faucet;
 mod ownable2step;
 mod p2id;
 mod p2ide;

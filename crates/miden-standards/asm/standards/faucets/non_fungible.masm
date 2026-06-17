@@ -1,0 +1,380 @@
+# miden::standards::faucets::non_fungible
+#
+# Non-fungible (NFT) faucet logic: token config slot (current_supply, max_supply, reserved,
+# symbol) and its accessors, owner-gated max_supply setter, an asset-status registry keyed by
+# the asset commitment, and the `mint_and_send` / `receive_and_burn` procedures wrapping the
+# active mint/burn policies from the `TokenPolicyManager`.
+#
+# Identity model: the asset value is the off-chain commitment `hash(user_data, salt)` =
+# `[hash0, hash1, hash2, hash3]`; the protocol derives the vault key's asset id from
+# `(hash0, hash1)`. Uniqueness is enforced on-chain by the status registry keyed by
+# `[hash0, hash1, 0, 0]`: a commitment can be issued at most once and, once burned, is
+# permanently consumed.
+#
+# Shared token metadata (name, description, logo_uri, external_link) and the associated
+# mutability config word live in the parent `miden::standards::faucets` namespace.
+
+use miden::core::word
+use miden::protocol::active_account
+use miden::protocol::active_note
+use miden::protocol::asset
+use miden::protocol::faucet
+use miden::protocol::native_account
+use miden::protocol::output_note
+use miden::standards::access::authority
+use miden::standards::access::pausable
+use miden::standards::faucets::policies::policy_manager
+use miden::standards::faucets::MUTABILITY_CONFIG_SLOT
+
+# =================================================================================================
+# CONSTANTS — slot names
+# =================================================================================================
+
+pub const TOKEN_CONFIG_SLOT = word("miden::standards::faucets::non_fungible::token_config")
+pub const ASSET_STATUS_SLOT = word("miden::standards::faucets::non_fungible::asset_status")
+
+# =================================================================================================
+# CONSTANTS — status values, memory & errors
+# =================================================================================================
+
+# Asset status codes stored at word[0] of the status registry value.
+const STATUS_ISSUED = 1
+const STATUS_BURNED = 2
+
+# The local memory address holding the asset commitment across the mint flow.
+const ASSET_VALUE_LOCAL = 0
+# The local memory address holding the token config word across the mint flow.
+const CONFIG_LOCAL = 4
+# The memory address at which a note's assets are written by `active_note::get_assets`.
+const ASSET_PTR = 0
+
+const ERR_MAX_SUPPLY_NOT_MUTABLE = "max supply is not mutable"
+const ERR_NEW_MAX_SUPPLY_BELOW_CURRENT_SUPPLY = "new max supply is less than current supply"
+const ERR_NFT_MAX_SUPPLY_EXCEEDED = "current supply has reached the maximum supply"
+const ERR_NFT_ALREADY_ISSUED = "asset commitment has already been issued"
+const ERR_NFT_NOT_ISSUED = "asset is not in the issued state"
+const ERR_NFT_BURN_WRONG_NUMBER_OF_ASSETS = "burn requires exactly 1 note asset"
+
+# =================================================================================================
+# PRIVATE HELPERS — token config slot access
+# =================================================================================================
+
+#! Loads the token config word from storage.
+#!
+#! Inputs:  []
+#! Outputs: [current_supply, max_supply, reserved, symbol]
+#!
+#! Invocation: exec
+proc get_token_config_internal
+    push.TOKEN_CONFIG_SLOT[0..2]
+    exec.active_account::get_item
+end
+
+#! Extracts the is_max_supply_mutable flag from the mutability config word.
+#!
+#! Inputs:  []
+#! Outputs: [is_max_supply_mutable]
+#!
+#! Invocation: exec
+proc is_max_supply_mutable_internal
+    push.MUTABILITY_CONFIG_SLOT[0..2]
+    exec.active_account::get_item
+    # => [is_description_mutable, is_logo_uri_mutable, is_external_link_mutable, is_max_supply_mutable]
+    drop drop drop
+    # => [is_max_supply_mutable]
+end
+
+# =================================================================================================
+# PUBLIC API — TOKEN CONFIG
+# =================================================================================================
+
+#! Returns the token config (current_supply, max_supply, reserved, symbol).
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [current_supply, max_supply, reserved, symbol, pad(12)]
+#!
+#! Invocation: call
+pub proc get_token_config
+    exec.get_token_config_internal
+    swapw dropw
+end
+
+#! Returns the current (live) supply.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [current_supply, pad(15)]
+#!
+#! Invocation: call
+pub proc get_current_supply
+    exec.get_token_config_internal
+    # => [current_supply, max_supply, reserved, symbol, pad(16)]
+    movdn.4 dropw
+    # => [current_supply, pad(15)]
+end
+
+#! Returns the maximum supply (0 = unlimited).
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [max_supply, pad(15)]
+#!
+#! Invocation: call
+pub proc get_max_supply
+    exec.get_token_config_internal
+    # => [current_supply, max_supply, reserved, symbol, pad(16)]
+    swap movdn.4 dropw
+    # => [max_supply, pad(15)]
+end
+
+#! Returns the token symbol (single felt).
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [symbol, pad(15)]
+#!
+#! Invocation: call
+pub proc get_symbol
+    exec.get_token_config_internal
+    # => [current_supply, max_supply, reserved, symbol, pad(16)]
+    movup.3 movdn.4 dropw
+    # => [symbol, pad(15)]
+end
+
+#! Returns 1 if max supply is mutable, and 0 otherwise.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [is_max_supply_mutable, pad(15)]
+#!
+#! Invocation: call
+pub proc is_max_supply_mutable
+    exec.is_max_supply_mutable_internal
+    # => [is_max_supply_mutable, pad(16)]
+    swap drop
+    # => [is_max_supply_mutable, pad(15)]
+end
+
+# =================================================================================================
+# PUBLIC API — ASSET STATUS
+# =================================================================================================
+
+#! Returns the status word registered for an asset commitment.
+#!
+#! Inputs:  [hash0, hash1, pad(14)]
+#! Outputs: [STATUS_WORD, pad(12)]
+#!
+#! Where:
+#! - hash0, hash1 are the first two elements of the asset commitment (the asset id).
+#! - STATUS_WORD is `[0, 0, 0, 0]` if not issued, `[1, 0, 0, 0]` if issued, `[2, 0, 0, 0]` if
+#!   burned.
+#!
+#! Invocation: call
+pub proc get_asset_status
+    # build the status key [hash0, hash1, 0, 0]
+    push.0 push.0
+    # => [0, 0, hash0, hash1, pad(14)]
+    movup.3 movup.3
+    # => [hash0, hash1, 0, 0, pad(14)]
+    push.ASSET_STATUS_SLOT[0..2]
+    exec.active_account::get_map_item
+    # => [STATUS_WORD, pad(12)]
+end
+
+# =================================================================================================
+# SET MAX SUPPLY
+# =================================================================================================
+
+#! Updates the max supply if the max supply mutability flag is 1 and the caller satisfies the
+#! account-wide authority configuration.
+#!
+#! Inputs:  [new_max_supply, pad(15)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the max supply mutability flag is not 1.
+#! - the caller is not authorized per the installed [`Authority`].
+#! - the new max supply is less than the current supply.
+#!
+#! Invocation: call
+pub proc set_max_supply
+    exec.is_max_supply_mutable_internal
+    # => [is_max_supply_mutable, new_max_supply, pad(15)]
+    assert.err=ERR_MAX_SUPPLY_NOT_MUTABLE
+
+    exec.authority::assert_authorized
+    # => [new_max_supply, pad(15)]
+
+    exec.pausable::assert_not_paused
+    # => [new_max_supply, pad(15)]
+
+    exec.get_token_config_internal
+    # => [current_supply, max_supply, reserved, symbol, new_max_supply, pad(15)]
+
+    # assert current_supply <= new_max_supply
+    dup dup.5
+    lte assert.err=ERR_NEW_MAX_SUPPLY_BELOW_CURRENT_SUPPLY
+    # => [current_supply, max_supply, reserved, symbol, new_max_supply, pad(15)]
+
+    # replace max_supply (word[1]) with new_max_supply
+    movup.4 swap movup.2 drop
+    # => [current_supply, new_max_supply, reserved, symbol, pad(15)]
+
+    push.TOKEN_CONFIG_SLOT[0..2]
+    exec.native_account::set_item
+    dropw
+    # => [pad(16)]
+end
+
+# =================================================================================================
+# MINT AND SEND
+# =================================================================================================
+
+#! Mints a non-fungible asset for the provided commitment and sends it to the recipient.
+#!
+#! The asset value is the off-chain commitment `hash(user_data, salt)`. The active mint policy
+#! runs over the asset value and note routing, the commitment is asserted to be unissued and
+#! marked issued in the status registry, and an output note carrying the asset is created.
+#!
+#! Inputs:  [ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
+#! Outputs: [note_idx, pad(15)]
+#!
+#! Where:
+#! - ASSET_VALUE is the asset commitment `[hash0, hash1, hash2, hash3]`.
+#! - tag, note_type configure the output note.
+#! - RECIPIENT is the recipient of the asset.
+#! - note_idx is the index of the created note.
+#!
+#! Panics if:
+#! - the active mint policy validation fails.
+#! - the faucet is paused.
+#! - the current supply has reached the maximum supply.
+#! - the asset commitment has already been issued.
+#!
+#! Invocation: call
+@locals(8)
+pub proc mint_and_send
+    # stash the commitment for the status key and the asset creation
+    dupw loc_storew_le.ASSET_VALUE_LOCAL dropw
+    # => [ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
+
+    # run the active mint policy over the asset value + routing; ignore value mutation for NFTs
+    exec.policy_manager::execute_mint_policy
+    # => [ASSET_VALUE, tag, note_type, RECIPIENT, pad(6)]
+    dropw
+    # => [tag, note_type, RECIPIENT, pad(10)]
+
+    # supply check: max_supply == 0 OR current_supply < max_supply
+    push.TOKEN_CONFIG_SLOT[0..2] exec.active_account::get_item
+    # => [current_supply, max_supply, reserved, symbol, tag, note_type, RECIPIENT, pad(6)]
+    loc_storew_le.CONFIG_LOCAL
+    dup.1 eq.0
+    # => [is_unlimited, current_supply, max_supply, reserved, symbol, ...]
+    dup.1 dup.3 lt
+    # => [has_room, is_unlimited, current_supply, max_supply, reserved, symbol, ...]
+    or assert.err=ERR_NFT_MAX_SUPPLY_EXCEEDED
+    # => [current_supply, max_supply, reserved, symbol, tag, note_type, RECIPIENT, pad(6)]
+    dropw
+    # => [tag, note_type, RECIPIENT, pad(10)]
+
+    # status check-and-set: assert NOT_ISSUED, then mark ISSUED
+    push.0 push.0
+    padw loc_loadw_le.ASSET_VALUE_LOCAL
+    movup.3 drop movup.2 drop
+    # => [hash0, hash1, 0, 0, tag, note_type, RECIPIENT, pad(6)]   (STATUS_KEY)
+    dupw push.ASSET_STATUS_SLOT[0..2] exec.active_account::get_map_item
+    # => [STATUS_WORD, STATUS_KEY, tag, note_type, RECIPIENT, pad(6)]
+    exec.word::eqz assert.err=ERR_NFT_ALREADY_ISSUED
+    # => [STATUS_KEY, tag, note_type, RECIPIENT, pad(6)]
+    push.0.0.0 push.STATUS_ISSUED swapw
+    # => [STATUS_KEY, ISSUED_VALUE, tag, note_type, RECIPIENT, pad(2)]
+    push.ASSET_STATUS_SLOT[0..2] exec.native_account::set_map_item dropw
+    # => [tag, note_type, RECIPIENT, pad(10)]
+
+    # create the output note (keep a second note_idx for add_asset)
+    exec.output_note::create dup
+    # => [note_idx, note_idx, pad(14)]
+
+    # build the asset from the commitment, mint it, add it to the note
+    padw loc_loadw_le.ASSET_VALUE_LOCAL
+    # => [ASSET_VALUE, note_idx, note_idx, pad(10)]
+    exec.faucet::create_non_fungible_asset
+    # => [ASSET_KEY, ASSET_VALUE, note_idx, note_idx, pad(10)]
+    dupw.1 dupw.1
+    # => [ASSET_KEY, ASSET_VALUE, ASSET_KEY, ASSET_VALUE, note_idx, note_idx, pad(10)]
+    exec.faucet::mint
+    # => [ASSET_KEY, ASSET_VALUE, note_idx, note_idx, pad(10)]
+    exec.output_note::add_asset
+    # => [note_idx, pad(15)]
+
+    # current_supply += 1
+    padw loc_loadw_le.CONFIG_LOCAL
+    # => [current_supply, max_supply, reserved, symbol, note_idx, pad(11)]
+    add.1
+    # => [current_supply+1, max_supply, reserved, symbol, note_idx, pad(11)]
+    push.TOKEN_CONFIG_SLOT[0..2] exec.native_account::set_item dropw
+    # => [note_idx, pad(15)]
+end
+
+# =================================================================================================
+# RECEIVE AND BURN
+# =================================================================================================
+
+#! Receives a non-fungible asset from the active note and burns it.
+#!
+#! Burning removes the asset from circulation, decrements current_supply by 1, and marks the
+#! commitment BURNED in the status registry. A burned commitment is permanently consumed and can
+#! never be issued again.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the active burn policy validation fails.
+#! - the procedure is not called from a note context.
+#! - the note does not contain exactly one asset.
+#! - the asset was not issued by this faucet.
+#! - the asset is not in the issued state.
+#!
+#! Invocation: call
+@locals(4)
+pub proc receive_and_burn
+    # get the single asset from the note (fails if not called from a note context)
+    push.ASSET_PTR exec.active_note::get_assets
+    # => [num_assets, pad(16)]
+    assert.err=ERR_NFT_BURN_WRONG_NUMBER_OF_ASSETS
+    # => [pad(16)]
+
+    push.ASSET_PTR exec.asset::load
+    # => [ASSET_KEY, ASSET_VALUE, pad(8)]
+
+    # stash the asset commitment for the status update
+    dupw.1 loc_storew_le.ASSET_VALUE_LOCAL dropw
+    # => [ASSET_KEY, ASSET_VALUE, pad(8)]
+
+    # run the active burn policy, then burn (validates faucet origin)
+    dupw.1 dupw.1 exec.policy_manager::execute_burn_policy
+    # => [ASSET_KEY, ASSET_VALUE, pad(8)]
+    exec.faucet::burn
+    # => [pad(16)]
+
+    # status: assert ISSUED, then mark BURNED (permanent)
+    push.0 push.0
+    padw loc_loadw_le.ASSET_VALUE_LOCAL
+    movup.3 drop movup.2 drop
+    # => [hash0, hash1, 0, 0, pad(12)]   (STATUS_KEY)
+    dupw push.ASSET_STATUS_SLOT[0..2] exec.active_account::get_map_item
+    # => [STATUS_WORD, STATUS_KEY, pad(12)]
+    movdn.3 drop drop drop
+    # => [status, STATUS_KEY, pad(12)]
+    eq.STATUS_ISSUED assert.err=ERR_NFT_NOT_ISSUED
+    # => [STATUS_KEY, pad(12)]
+    push.0.0.0 push.STATUS_BURNED swapw
+    # => [STATUS_KEY, BURNED_VALUE, pad(8)]
+    push.ASSET_STATUS_SLOT[0..2] exec.native_account::set_map_item dropw
+    # => [pad(16)]
+
+    # current_supply -= 1
+    push.TOKEN_CONFIG_SLOT[0..2] exec.active_account::get_item
+    # => [current_supply, max_supply, reserved, symbol, pad(16)]
+    sub.1
+    # => [current_supply-1, max_supply, reserved, symbol, pad(16)]
+    push.TOKEN_CONFIG_SLOT[0..2] exec.native_account::set_item dropw
+    # => [pad(16)]
+end
