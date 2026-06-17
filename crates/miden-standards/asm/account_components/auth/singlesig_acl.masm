@@ -26,11 +26,12 @@ const EXEMPT_PROCEDURE_ROOTS_SLOT = word("miden::standards::auth::singlesig_acl:
 #! - 1 => ecdsa_k256_keccak
 #! - 2 => falcon512_poseidon2
 #!
-#! Authentication is required if a kernel-detected procedure not on the exempt list was called
-#! (other than the auth procedure at index 0). Asset movement out of the account is gated by
-#! this check transitively: removing assets from the vault requires `account_remove_asset`,
-#! which is kernel-tracked, so any procedure that exfiltrates funds shows up in the loop and
-#! forces a signature unless the author has explicitly exempted it.
+#! Authentication is required if a non-auth kernel-detected procedure not on the exempt list
+#! was called.
+#!
+#! Notice that asset removal from the account vault uses a kernel-tracked procedure, so any
+#! transaction which moves assets out of the account will be authenticated unless all the
+#! procedures required for that are explicitly added to the exempt list.
 #!
 #! If authentication is required, the configured signature is verified. Otherwise, the nonce
 #! is conditionally incremented when the account state changed or the account is new.
@@ -98,7 +99,7 @@ pub proc auth_tx_acl(auth_args: word)
         dup neq.1
         # => [should_continue, i, auth_required, pad(16)]
     end
-    # => [1, auth_required, pad(16)]
+    # => [i = 1, auth_required, pad(16)]
 
     drop
     # => [auth_required, pad(16)]

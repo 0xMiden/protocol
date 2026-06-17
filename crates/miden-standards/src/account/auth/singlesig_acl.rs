@@ -92,9 +92,7 @@ impl Default for AuthSingleSigAclConfig {
 /// Asset movement out of the account is gated by this single check transitively: removing
 /// assets from the vault requires `account_remove_asset`, which is kernel-tracked, so any
 /// procedure that exfiltrates funds shows up in the loop and forces a signature unless the
-/// author has explicitly exempted it. The kernel epilogue enforces asset conservation
-/// across the transaction (input vault = output vault), so an output note cannot carry
-/// assets that were not first taken from the account vault or an input note.
+/// author has explicitly exempted it.
 ///
 /// ## Storage Layout
 /// - [`Self::public_key_slot`]: Public key
