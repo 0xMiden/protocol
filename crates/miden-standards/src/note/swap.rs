@@ -94,6 +94,8 @@ impl SwapNote {
         let serial_num = rng.draw_word();
 
         // The payback recipient is P2ID(sender) with serial = swap_serial + 1, in both modes.
+        // `create` defaults the payback target to the sender; the storage and script support
+        // any target (see https://github.com/0xMiden/protocol/issues/2950).
         let payback_serial_num = payback_serial_from_swap(serial_num);
         let payback_recipient = P2idNoteStorage::new(sender).into_recipient(payback_serial_num);
         let payback_assets = NoteAssets::new(vec![requested_asset])?;
@@ -200,8 +202,7 @@ pub enum SwapPayback {
         recipient: Word,
     },
     Public {
-        /// Account ID of the payback receiver. Today this is the SWAP creator by convention, but
-        /// the script does not enforce it: it can be any account in a future iteration.
+        /// Account ID that will receive the payback note.
         payback_target_id: AccountId,
     },
 }

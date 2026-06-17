@@ -25,10 +25,6 @@ const SWAP_NOTE_NUM_STORAGE_ITEMS=16
 # payback target account id is embedded in plaintext and the MASM derives the recipient at
 # consume time. The payback tag is stored explicitly in both modes; the creator is responsible
 # for picking a tag that targets the payback receiver in public mode.
-#
-# The payback target id could be derived from `active_note::get_sender` since today the target
-# equals the SWAP sender, but it's stored explicitly because this slot is meant to represent an
-# arbitrary payback target (not necessarily the creator) in a future iteration.
 const STORAGE_PTR=0
 const REQUESTED_ASSET_PTR=0
 const PAYBACK_RECIPIENT_PTR=8
