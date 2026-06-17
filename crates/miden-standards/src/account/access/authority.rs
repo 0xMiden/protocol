@@ -81,11 +81,9 @@ const RBAC_CONTROLLED: u8 = 2;
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Authority {
-    /// Authority is the account's auth component; no extra check is performed by
-    /// `authority::assert_authorized`.
+    /// Authority is the account's auth component.
     AuthControlled = AUTH_CONTROLLED,
-    /// Authority is the [`Ownable2Step`][crate::account::access::Ownable2Step] owner; the call
-    /// must be sent by the registered owner.
+    /// Authority is the [`Ownable2Step`][crate::account::access::Ownable2Step] owner.
     OwnerControlled = OWNER_CONTROLLED,
     /// Authority is membership in an RBAC role, resolved per gated procedure.
     ///

@@ -24,7 +24,7 @@ pub struct AccountVaultPatch {
 
 impl AccountVaultPatch {
     /// Domain separator for assets in the account patch commitment.
-    const DOMAIN: Felt = Felt::new_unchecked(4);
+    const DOMAIN: Felt = Felt::new_unchecked(3);
 
     /// Creates a new vault patch directly from its raw key/value entries.
     ///
@@ -54,6 +54,11 @@ impl AccountVaultPatch {
         self.entries.insert(asset_vault_key, Word::empty());
     }
 
+    /// Returns the number of assets being patched.
+    pub fn num_assets(&self) -> usize {
+        self.entries.len()
+    }
+
     /// Returns a reference to the underlying map of the vault patch.
     pub fn as_map(&self) -> &BTreeMap<AssetVaultKey, Word> {
         &self.entries
@@ -75,6 +80,12 @@ impl AccountVaultPatch {
         self.entries.is_empty()
     }
 
+    /// Merges another vault patch into this one. Entries from `other` overwrite any existing
+    /// entries in `self` for the same [`AssetVaultKey`].
+    pub fn merge(&mut self, other: Self) {
+        self.entries.extend(other.entries);
+    }
+
     /// Appends the vault patch to the given `elements` from which the patch commitment will be
     /// computed.
     pub(super) fn append_patch_elements(&self, elements: &mut Vec<Felt>) {
@@ -83,11 +94,14 @@ impl AccountVaultPatch {
             elements.extend_from_slice(asset_value_or_empty_word.as_elements());
         }
 
-        let num_changed_assets = Felt::try_from(self.entries.len() as u64)
-            .expect("number of assets should not exceed max representable felt");
+        let num_changed_assets = self.entries.len();
+        if num_changed_assets != 0 {
+            let num_changed_assets = Felt::try_from(num_changed_assets as u64)
+                .expect("number of assets should not exceed max representable felt");
 
-        elements.extend_from_slice(&[Self::DOMAIN, num_changed_assets, Felt::ZERO, Felt::ZERO]);
-        elements.extend_from_slice(Word::empty().as_elements());
+            elements.extend_from_slice(&[Self::DOMAIN, num_changed_assets, Felt::ZERO, Felt::ZERO]);
+            elements.extend_from_slice(Word::empty().as_elements());
+        }
     }
 
     /// Returns an iterator over the keys of assets that were removed (i.e. whose value is

@@ -9,7 +9,6 @@ use miden_crypto::rand::test_utils::rand_value;
 use miden_processor::{ExecutionError, Word};
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::component::AccountComponentMetadata;
-use miden_protocol::account::delta::AccountUpdateDetails;
 use miden_protocol::account::{
     Account,
     AccountBuilder,
@@ -59,6 +58,7 @@ use miden_protocol::testing::account_id::{
 use miden_protocol::testing::storage::{MOCK_MAP_SLOT, MOCK_VALUE_SLOT0, MOCK_VALUE_SLOT1};
 use miden_protocol::transaction::{RawOutputNote, TransactionKernel};
 use miden_protocol::utils::sync::LazyLock;
+use miden_standards::account::access::Pausable;
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::MockAccountComponent;
@@ -852,11 +852,9 @@ async fn prove_account_creation_with_non_empty_storage() -> anyhow::Result<()> {
 
     let proven_tx = LocalTransactionProver::default().prove(tx.clone()).await?;
 
-    // The delta should be present on the proven tx.
-    let AccountUpdateDetails::Delta(delta) = proven_tx.account_update().details() else {
-        panic!("expected delta");
-    };
-    assert_eq!(delta, tx.account_delta());
+    // The patch should be present on the proven tx.
+    let patch = proven_tx.account_update().details().unwrap_public();
+    assert_eq!(patch, tx.account_patch());
 
     Ok(())
 }
@@ -1647,6 +1645,7 @@ async fn test_faucet_has_callbacks(
         .account_type(AccountType::Public)
         .with_component(faucet)
         .with_component(MockAccountComponent::with_slots(callback_slots))
+        .with_component(Pausable::unpaused())
         .with_auth_component(Auth::IncrNonce)
         .build_existing()?;
 

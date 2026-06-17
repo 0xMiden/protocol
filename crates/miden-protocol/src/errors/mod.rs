@@ -470,8 +470,29 @@ pub enum AccountPatchError {
     #[error("account code must be provided for new accounts (with nonce = 1)")]
     CodeMustBeProvidedForNewAccounts,
 
-    #[error("final nonce must be provided when account code is provided")]
-    FinalNonceRequiredWhenCodeIsProvided,
+    #[error("storage slot {0} was used as different slot types")]
+    StorageSlotUsedAsDifferentTypes(StorageSlotName),
+
+    #[error("cannot merge two full state patches")]
+    MergingFullStatePatches,
+
+    #[error(
+        "nonce in the patch being merged is {new} which is not exactly one greater than current patch nonce {current}"
+    )]
+    NonceMustIncrementByOne { current: Felt, new: Felt },
+
+    #[error(
+        "patch is for account ID {actual} but is being merged into patch for account {expected}"
+    )]
+    AccountIdMismatch { expected: AccountId, actual: AccountId },
+
+    #[error(
+        "account update of type `{left_update_type}` cannot be merged with account update of type `{right_update_type}`"
+    )]
+    IncompatibleAccountUpdates {
+        left_update_type: &'static str,
+        right_update_type: &'static str,
+    },
 }
 
 // STORAGE MAP ERROR
@@ -506,8 +527,8 @@ pub enum BatchAccountUpdateError {
         "final state commitment in account update from transaction {0} does not match initial state of current update"
     )]
     AccountUpdateInitialStateMismatch(TransactionId),
-    #[error("failed to merge account delta from transaction {0}")]
-    TransactionUpdateMergeError(TransactionId, #[source] Box<AccountDeltaError>),
+    #[error("failed to merge account patch from transaction {0}")]
+    TransactionUpdateMergeError(TransactionId, #[source] Box<AccountPatchError>),
 }
 
 // ASSET ERROR
@@ -993,8 +1014,8 @@ pub enum ProvenTransactionError {
     PrivateAccountWithDetails(AccountId),
     #[error("account {0} with public state is missing its account details")]
     PublicStateAccountMissingDetails(AccountId),
-    #[error("new account {id} with public state must be accompanied by a full state delta")]
-    NewPublicStateAccountRequiresFullStateDelta { id: AccountId, source: AccountError },
+    #[error("new account {id} with public state must be accompanied by a full state patch")]
+    NewPublicStateAccountRequiresFullStatePatch { id: AccountId, source: AccountError },
     #[error(
         "existing account {0} with public state should only provide delta updates instead of full details"
     )]
@@ -1010,8 +1031,8 @@ pub enum ProvenTransactionError {
     },
     #[error("proven transaction neither changed the account state, nor consumed any notes")]
     EmptyTransaction,
-    #[error("failed to validate account delta in transaction account update")]
-    AccountDeltaCommitmentMismatch(#[source] Box<dyn Error + Send + Sync + 'static>),
+    #[error("failed to validate account patch in transaction account update")]
+    AccountPatchCommitmentMismatch(#[source] Box<dyn Error + Send + Sync + 'static>),
     #[error("note with id {0} is both created and consumed by the transaction")]
     NoteCreatedAndConsumed(NoteId),
 }
@@ -1084,7 +1105,7 @@ pub enum ProposedBatchError {
         created_by: TransactionId,
     },
 
-    #[error("failed to merge transaction delta into account {account_id}")]
+    #[error("failed to merge transaction patch into account {account_id}")]
     AccountUpdateError {
         account_id: AccountId,
         source: BatchAccountUpdateError,
@@ -1300,10 +1321,10 @@ pub enum ProposedBlockError {
     #[error("note with nullifier {0} is already spent")]
     NullifierSpent(Nullifier),
 
-    #[error("failed to merge transaction delta into account {account_id}")]
+    #[error("failed to merge transaction patch into account {account_id}")]
     AccountUpdateError {
         account_id: AccountId,
-        source: Box<AccountDeltaError>,
+        source: Box<AccountPatchError>,
     },
 
     #[error("failed to track account witness")]
