@@ -12,9 +12,9 @@ use miden::standards::access::rbac
 # CONSTANTS
 # =================================================================================================
 
-# Value slot holding the authority configuration: [authority, target_closed, 0, 0].
+# Value slot holding the authority configuration: [authority, is_frozen, 0, 0].
 # authority is the discriminator (0 = AuthControlled, 1 = OwnerControlled, 2 = RbacControlled).
-# target_closed is the global emergency switch (0 = open, 1 = closed). While closed,
+# is_frozen is the global emergency switch (0 = not frozen, 1 = frozen). While frozen,
 # `assert_authorized` panics for every gated procedure regardless of role or owner membership.
 pub const AUTHORITY_SLOT = word("miden::standards::access::authority")
 
@@ -26,15 +26,15 @@ const AUTH_CONTROLLED = 0
 const OWNER_CONTROLLED = 1
 const RBAC_CONTROLLED = 2
 
-# Emergency-switch states for the `target_closed` flag of `AUTHORITY_SLOT`.
-const TARGET_OPENED = 0
-const TARGET_CLOSED = 1
+# Emergency-switch states for the `is_frozen` flag of `AUTHORITY_SLOT`.
+const UNFROZEN = 0
+const FROZEN = 1
 
 # ERRORS
 # =================================================================================================
 
 const ERR_UNSUPPORTED_AUTHORITY = "authority is not supported"
-const ERR_AUTHORITY_CLOSED = "authority is closed"
+const ERR_AUTHORITY_FROZEN = "authority is frozen"
 
 # PUBLIC PROCEDURES
 # =================================================================================================
@@ -67,12 +67,11 @@ const ERR_AUTHORITY_CLOSED = "authority is closed"
 #! Invocation: exec
 pub proc assert_authorized
     push.AUTHORITY_SLOT[0..2] exec.active_account::get_item
-    # => [authority, target_closed, 0, 0]
+    # => [authority, is_frozen, 0, 0]
 
-    # Emergency switch: while target_closed is set, block every gated procedure before any
-    # role/owner dispatch. set_target_opened bypasses this check, so the owner can always reopen.
-    dup.1 assertz.err=ERR_AUTHORITY_CLOSED
-    # => [authority, target_closed, 0, 0]
+    # Emergency switch: while frozen, block every gated procedure before any role/owner dispatch.
+    dup.1 assertz.err=ERR_AUTHORITY_FROZEN
+    # => [authority, is_frozen, 0, 0]
 
     dup eq.AUTH_CONTROLLED
     if.true
@@ -83,14 +82,14 @@ pub proc assert_authorized
         dup eq.OWNER_CONTROLLED
         if.true
             exec.ownable2step::assert_sender_is_owner
-            # => [authority, target_closed, 0, 0]
+            # => [authority, is_frozen, 0, 0]
 
             dropw
             # => []
         else
             eq.RBAC_CONTROLLED
             if.true
-                # => [target_closed, 0, 0]
+                # => [is_frozen, 0, 0]
 
                 drop drop drop
                 # => []
@@ -105,11 +104,11 @@ pub proc assert_authorized
     end
 end
 
-#! Closes the account's authority-gated surface as an emergency switch.
+#! Freezes the account's authority-gated surface as an emergency switch.
 #!
-#! While closed, `assert_authorized` panics for every gated procedure regardless of role or owner
+#! While frozen, `assert_authorized` panics for every gated procedure regardless of role or owner
 #! membership. Gated directly on the Ownable2Step owner check rather than `assert_authorized`, so
-#! it bypasses the closed flag itself and the owner can always toggle it. Only meaningful on
+#! it bypasses the frozen flag itself and the owner can always toggle it. Only meaningful on
 #! accounts that install Ownable2Step (OwnerControlled / RbacControlled), on AuthControlled
 #! accounts there is no owner slot and the call panics.
 #!
@@ -120,18 +119,18 @@ end
 #! - the note sender is not the owner.
 #!
 #! Invocation: call
-pub proc set_target_closed
+pub proc freeze
     exec.ownable2step::assert_sender_is_owner
     # => [pad(16)]
 
-    push.TARGET_CLOSED exec.write_target_flag
+    push.FROZEN exec.write_frozen_flag
     # => [pad(16)]
 end
 
-#! Reopens the account's authority-gated surface, clearing the emergency switch.
+#! Unfreezes the account's authority-gated surface, clearing the emergency switch.
 #!
 #! Gated directly on the Ownable2Step owner check rather than `assert_authorized`, so it bypasses
-#! the closed flag and the owner can always reopen a closed account. Only meaningful on accounts
+#! the frozen flag and the owner can always unfreeze a frozen account. Only meaningful on accounts
 #! that install Ownable2Step (OwnerControlled / RbacControlled), on AuthControlled accounts there
 #! is no owner slot and the call panics.
 #!
@@ -142,37 +141,35 @@ end
 #! - the note sender is not the owner.
 #!
 #! Invocation: call
-pub proc set_target_opened
+pub proc unfreeze
     exec.ownable2step::assert_sender_is_owner
     # => [pad(16)]
 
-    push.TARGET_OPENED exec.write_target_flag
+    push.UNFROZEN exec.write_frozen_flag
     # => [pad(16)]
 end
 
 # PRIVATE PROCEDURES
 # =================================================================================================
 
-#! Writes the target_closed flag into the authority slot, preserving the authority
-#! discriminator.
+#! Writes the is_frozen flag into the authority slot, preserving the authority discriminator.
 #!
-#! Inputs:  [target_flag]
+#! Inputs:  [frozen_flag]
 #! Outputs: []
 #!
 #! Where:
-#! - target_flag is the new emergency-switch state (0 = open, 1 = closed).
+#! - frozen_flag is the new emergency-switch state (0 = not frozen, 1 = frozen).
 #!
 #! Invocation: exec
-proc write_target_flag
-    # => [target_flag]
+proc write_frozen_flag
     push.AUTHORITY_SLOT[0..2] exec.active_account::get_item
-    # => [authority, old_target_closed, 0, 0, target_flag]
+    # => [authority, old_is_frozen, 0, 0, frozen_flag]
 
     movup.4 swap
-    # => [authority, target_flag, old_target_closed, 0, 0]
+    # => [authority, frozen_flag, old_is_frozen, 0, 0]
 
     movup.2 drop
-    # => [authority, target_flag, 0, 0]
+    # => [authority, frozen_flag, 0, 0]
 
     push.AUTHORITY_SLOT[0..2] exec.native_account::set_item
     # => [OLD_AUTHORITY_WORD]

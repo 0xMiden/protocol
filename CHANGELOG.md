@@ -3,7 +3,7 @@
 ## v0.16.0 (TBD)
 
 ### Changes
-- Added a global emergency switch to `Authority`: owner-gated `set_target_closed` / `set_target_opened` procedures toggle a `target_closed` flag that makes `assert_authorized` block every authority-gated procedure at once, regardless of role or owner membership ([#3102](https://github.com/0xMiden/protocol/pull/3102)).
+- Added a global emergency switch to `Authority`: owner-gated `freeze` / `unfreeze` procedures toggle an `is_frozen` flag that makes `assert_authorized` block every authority-gated procedure at once, regardless of role or owner membership ([#3102](https://github.com/0xMiden/protocol/pull/3102)).
 - Simplified the Ownable2Step owner-check API: merged the owner assertion into a single `exec` `assert_sender_is_owner` and renamed `is_sender_owner_internal` to `is_sender_owner` ([#3088](https://github.com/0xMiden/protocol/pull/3088)).
 - [BREAKING] Renamed the `miden-tx-batch-prover` crate to `miden-tx-batch` ([#3035](https://github.com/0xMiden/protocol/pull/3035)).
 - Added a skeleton batch kernel ([#1122](https://github.com/0xMiden/protocol/issues/1122)) wired through `LocalBatchProver::prove` and attached to `ProvenBatch` as an `ExecutionProof`. It does not yet perform any verification.

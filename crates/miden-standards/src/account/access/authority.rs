@@ -34,16 +34,16 @@ use crate::procedure_root;
 account_component_code!(AUTHORITY_CODE, "access/authority.masl");
 
 procedure_root!(
-    AUTHORITY_SET_TARGET_CLOSED,
+    AUTHORITY_FREEZE,
     Authority::NAME,
-    Authority::SET_TARGET_CLOSED_PROC_NAME,
+    Authority::FREEZE_PROC_NAME,
     Authority::code()
 );
 
 procedure_root!(
-    AUTHORITY_SET_TARGET_OPENED,
+    AUTHORITY_UNFREEZE,
     Authority::NAME,
-    Authority::SET_TARGET_OPENED_PROC_NAME,
+    Authority::UNFREEZE_PROC_NAME,
     Authority::code()
 );
 
@@ -89,20 +89,20 @@ const RBAC_CONTROLLED: u8 = 2;
 /// looks up its role. A procedure without a mapping falls back to the
 /// [`Ownable2Step`][crate::account::access::Ownable2Step] owner check.
 ///
-/// # Emergency switch (`target_closed`)
+/// # Emergency switch (`is_frozen`)
 ///
-/// `word[1]` of the value slot holds a global `target_closed` flag. While set, `assert_authorized`
-/// panics for *every* gated procedure before any role/owner dispatch, atomically freezing the
-/// account's entire management surface regardless of role membership. The flag is toggled by the
-/// owner-gated `set_target_closed` / `set_target_opened` procedures, which are gated directly on
-/// the [`Ownable2Step`][crate::account::access::Ownable2Step] owner check (not `assert_authorized`)
-/// so the owner can always reopen a closed account. Accounts are always constructed open
-/// (`target_closed = 0`). The switch is only meaningful when Ownable2Step is installed
-/// ([`Authority::OwnerControlled`] / [`Authority::RbacControlled`]); under
-/// [`Authority::AuthControlled`] there is no owner and the setters panic.
+/// The component includes an `is_frozen` flag. If it is `true`, all procedures that call
+/// `assert_authorized` would panic, effectively freezing them. Accounts are always constructed
+/// unfrozen.
+///
+/// The flag can be toggled by the configured
+/// [`Ownable2Step`][crate::account::access::Ownable2Step] owner via `freeze` / `unfreeze`.
+///
+/// This flag is only meaningful when [`Ownable2Step`][crate::account::access::Ownable2Step] is
+/// installed and has no effect under [`Authority::AuthControlled`].
 ///
 /// Storage layout:
-/// - Value slot: `[authority, target_closed, 0, 0]`.
+/// - Value slot: `[authority, is_frozen, 0, 0]`.
 /// - Map slot (only under RBAC): `procedure_root` → `[role_symbol, 0, 0, 0]`.
 #[repr(u8)]
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -127,10 +127,10 @@ impl Authority {
     /// The name of the component.
     pub const NAME: &'static str = "miden::standards::components::access::authority";
 
-    /// Name of the owner-gated procedure that closes the authority-gated surface.
-    pub const SET_TARGET_CLOSED_PROC_NAME: &'static str = "set_target_closed";
-    /// Name of the owner-gated procedure that reopens the authority-gated surface.
-    pub const SET_TARGET_OPENED_PROC_NAME: &'static str = "set_target_opened";
+    /// Name of the owner-gated procedure that freezes the authority-gated surface.
+    const FREEZE_PROC_NAME: &'static str = "freeze";
+    /// Name of the owner-gated procedure that unfreezes the authority-gated surface.
+    const UNFREEZE_PROC_NAME: &'static str = "unfreeze";
 
     /// Returns the [`AccountComponentCode`] of this component.
     pub fn code() -> &'static AccountComponentCode {
@@ -140,20 +140,20 @@ impl Authority {
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns the procedure root of the owner-gated `set_target_closed` emergency switch.
+    /// Returns the procedure root of the owner-gated `freeze` emergency switch.
     ///
     /// This procedure is always gated on the owner check directly, so unlike role-assignable
     /// procedures it must not be placed in the [`Authority::RbacControlled`] role map.
-    pub fn set_target_closed_root() -> AccountProcedureRoot {
-        *AUTHORITY_SET_TARGET_CLOSED
+    pub fn freeze_root() -> AccountProcedureRoot {
+        *AUTHORITY_FREEZE
     }
 
-    /// Returns the procedure root of the owner-gated `set_target_opened` emergency switch.
+    /// Returns the procedure root of the owner-gated `unfreeze` emergency switch.
     ///
     /// This procedure is always gated on the owner check directly, so unlike role-assignable
     /// procedures it must not be placed in the [`Authority::RbacControlled`] role map.
-    pub fn set_target_opened_root() -> AccountProcedureRoot {
-        *AUTHORITY_SET_TARGET_OPENED
+    pub fn unfreeze_root() -> AccountProcedureRoot {
+        *AUTHORITY_UNFREEZE
     }
 
     /// Returns the [`StorageSlotName`] holding the authority configuration.
@@ -188,6 +188,18 @@ impl Authority {
         }
     }
 
+    /// Reads the `is_frozen` emergency-switch flag from account storage.
+    ///
+    /// Returns `true` if the account's authority-gated surface is currently frozen (every
+    /// procedure that calls `assert_authorized` panics until it is unfrozen).
+    pub fn try_read_frozen(storage: &AccountStorage) -> Result<bool, AuthorityError> {
+        let word = storage
+            .get_item(Self::authority_slot())
+            .map_err(AuthorityError::MissingStorageSlot)?;
+
+        Ok(word[1] != Felt::ZERO)
+    }
+
     /// Returns the [`AccountComponentMetadata`] for this configuration.
     pub fn component_metadata(&self) -> AccountComponentMetadata {
         let mut slots = vec![(
@@ -196,7 +208,7 @@ impl Authority {
                 "Authority configuration",
                 [
                     FeltSchema::u8("authority"),
-                    FeltSchema::u8("target_closed"),
+                    FeltSchema::u8("is_frozen"),
                     FeltSchema::new_void(),
                     FeltSchema::new_void(),
                 ],
@@ -236,10 +248,7 @@ impl Authority {
         }
     }
 
-    /// Encodes the authority configuration value slot word: `[authority, target_closed, 0, 0]`.
-    ///
-    /// Accounts are always constructed open, so `target_closed` (`word[1]`) is initialized to
-    /// zero; the owner toggles it later via `set_target_closed` / `set_target_opened`.
+    /// Encodes the authority configuration value slot word: `[authority, is_frozen, 0, 0]`.
     fn to_word(&self) -> Word {
         Word::new([Felt::from(self.as_u8()), Felt::ZERO, Felt::ZERO, Felt::ZERO])
     }
