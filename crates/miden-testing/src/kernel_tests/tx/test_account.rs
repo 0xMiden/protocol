@@ -1467,12 +1467,15 @@ async fn transaction_executor_account_code_using_custom_library() -> anyhow::Res
     let executed_tx = tx_context.execute().await?;
 
     // Account's initial nonce of 1 should have been incremented by 1.
-    assert_eq!(executed_tx.account_delta().nonce_delta(), Felt::ONE);
+    assert_eq!(
+        executed_tx.account_patch().final_nonce(),
+        Some(native_account.nonce() + Felt::ONE)
+    );
 
     // Make sure that account storage has been updated as per the tx script call.
-    assert_eq!(executed_tx.account_delta().storage().values().count(), 1);
+    assert_eq!(executed_tx.account_patch().storage().values().count(), 1);
     assert_eq!(
-        executed_tx.account_delta().storage().get(&MOCK_VALUE_SLOT0).unwrap(),
+        executed_tx.account_patch().storage().get(&MOCK_VALUE_SLOT0).unwrap(),
         &StorageSlotPatch::Value(slot_value),
     );
     Ok(())

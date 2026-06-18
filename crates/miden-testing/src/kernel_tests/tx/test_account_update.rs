@@ -702,7 +702,7 @@ async fn proven_tx_storage_maps_matches_executed_tx_for_new_account() -> anyhow:
     // Build a public account so the proven transaction includes the account update.
     let account = AccountBuilder::new([1; 32])
         .account_type(AccountType::Public)
-        .with_auth_component(Auth::IncrNonce)
+        .with_auth_component(delta_check_auth_component())
         .with_component(MockAccountComponent::with_slots(vec![
             AccountStorage::mock_value_slot0(),
             StorageSlot::with_map(map0_slot_name.clone(), map0.clone()),
@@ -739,19 +739,26 @@ async fn proven_tx_storage_maps_matches_executed_tx_for_new_account() -> anyhow:
     let source_manager = builder.source_manager();
     let tx_script = builder.compile_tx_script(code)?;
 
-    let tx = TransactionContextBuilder::new(account.clone())
+    let tx_builder = TransactionContextBuilder::new(account.clone())
         .tx_script(tx_script)
-        .with_source_manager(source_manager)
+        .with_source_manager(source_manager);
+
+    let tx_summary = tx_builder
+        .clone()
+        .auth_args(emit_delta_args())
         .build()?
         .execute()
-        .await?;
+        .await
+        .unwrap_err()
+        .unwrap_unauthorized_err();
+    let tx = tx_builder.build()?.execute().await?;
 
     map2.insert(existing_key, value0)?;
 
     for (slot_name, expected_map) in
         [(map0_slot_name, map0), (map1_slot_name, map1), (map2_slot_name, map2)]
     {
-        let map_patch_entries = tx.account_delta().storage().get_map(&slot_name).unwrap().entries();
+        let map_patch_entries = tx.account_patch().storage().get_map(&slot_name).unwrap().entries();
         let expected: BTreeMap<_, _> = expected_map.entries().map(|(k, v)| (*k, *v)).collect();
         assert_eq!(map_patch_entries, &expected, "map delta does not match for slot {slot_name}",);
     }
@@ -762,7 +769,7 @@ async fn proven_tx_storage_maps_matches_executed_tx_for_new_account() -> anyhow:
 
     let proven_tx_account = Account::try_from(proven_tx_patch)?;
     let exec_tx_account = Account::try_from(tx.account_patch())?;
-    let exec_tx_delta_account = Account::try_from(tx.account_delta())?;
+    let exec_tx_delta_account = Account::try_from(tx_summary.account_delta())?;
 
     assert_eq!(exec_tx_delta_account, exec_tx_account);
     assert_eq!(proven_tx_account.storage(), exec_tx_account.storage());
@@ -773,6 +780,7 @@ async fn proven_tx_storage_maps_matches_executed_tx_for_new_account() -> anyhow:
 
     let proven_tx_delta_converted = AccountDelta::try_from(proven_tx_account)?;
     let exec_tx_delta_converted = AccountDelta::try_from(exec_tx_account)?;
+    assert_eq!(proven_tx_delta_converted, exec_tx_delta_converted);
 
     // Check that the deltas and patches from proven and executed tx, which were converted from
     // accounts are identical. This is essentially a roundtrip test.
@@ -780,15 +788,21 @@ async fn proven_tx_storage_maps_matches_executed_tx_for_new_account() -> anyhow:
     assert_eq!(&proven_tx_patch_converted, tx.account_patch());
     assert_eq!(&exec_tx_patch_converted, tx.account_patch());
 
-    assert_eq!(&exec_tx_delta_converted, tx.account_delta());
-    assert_eq!(&proven_tx_delta_converted, tx.account_delta());
+    assert_eq!(&exec_tx_delta_converted, tx_summary.account_delta());
+    assert_eq!(&proven_tx_delta_converted, tx_summary.account_delta());
 
     // The commitments should match as well.
     assert_eq!(exec_tx_patch_converted.to_commitment(), tx.account_patch().to_commitment());
     assert_eq!(proven_tx_patch_converted.to_commitment(), tx.account_patch().to_commitment());
 
-    assert_eq!(exec_tx_delta_converted.to_commitment(), tx.account_delta().to_commitment());
-    assert_eq!(proven_tx_delta_converted.to_commitment(), tx.account_delta().to_commitment());
+    assert_eq!(
+        exec_tx_delta_converted.to_commitment(),
+        tx_summary.account_delta().to_commitment()
+    );
+    assert_eq!(
+        proven_tx_delta_converted.to_commitment(),
+        tx_summary.account_delta().to_commitment()
+    );
 
     Ok(())
 }
@@ -1209,10 +1223,9 @@ impl AccountUpdateTest {
 
         // Delta path: emit unauthorized so the host's build_tx_summary cross-checks the delta.
         let delta_run = {
-            let auth_args = Word::from([Felt::ONE, ZERO, ZERO, ZERO]);
             let mut tx = mock_chain
                 .build_tx_context(account.id(), &input_note_ids, &[])?
-                .auth_args(auth_args);
+                .auth_args(emit_delta_args());
             if let Some(ref script) = tx_script {
                 tx = tx.tx_script(script.clone());
             }
@@ -1242,4 +1255,8 @@ impl AccountUpdateTest {
 
         Ok(())
     }
+}
+
+fn emit_delta_args() -> Word {
+    Word::from([Felt::ONE, ZERO, ZERO, ZERO])
 }
