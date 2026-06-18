@@ -532,7 +532,10 @@ async fn test_multisig_update_signers(#[case] auth_scheme: AuthScheme) -> anyhow
         .await?;
 
     // Verify the transaction executed successfully
-    assert_eq!(update_approvers_tx.account_delta().nonce_delta(), Felt::ONE);
+    assert_eq!(
+        update_approvers_tx.account_patch().final_nonce(),
+        Some(multisig_account.nonce() + Felt::ONE)
+    );
 
     mock_chain.add_pending_executed_transaction(&update_approvers_tx)?;
     mock_chain.prove_next_block()?;
@@ -672,7 +675,10 @@ async fn test_multisig_update_signers(#[case] auth_scheme: AuthScheme) -> anyhow
         .await?;
 
     // Verify the transaction executed successfully with new signers
-    assert_eq!(tx_context_execute_new.account_delta().nonce_delta(), Felt::ONE);
+    assert_eq!(
+        tx_context_execute_new.account_patch().final_nonce(),
+        Some(updated_multisig_account.nonce() + Felt::ONE)
+    );
 
     Ok(())
 }
@@ -781,7 +787,10 @@ async fn test_multisig_update_signers_remove_owner(
         .await?;
 
     // Verify transaction success
-    assert_eq!(update_approvers_tx.account_delta().nonce_delta(), Felt::ONE);
+    assert_eq!(
+        update_approvers_tx.account_patch().final_nonce(),
+        Some(multisig_account.nonce() + Felt::ONE)
+    );
 
     mock_chain.add_pending_executed_transaction(&update_approvers_tx)?;
     mock_chain.prove_next_block()?;
