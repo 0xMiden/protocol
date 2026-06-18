@@ -132,7 +132,7 @@ pub fn create_basic_wallet(
 ) -> Result<Account, AccountError> {
     let auth_component: AccountComponent = AuthSingleSig::new(approver).into();
 
-    build_wallet(init_seed, auth_component, account_type)
+    create_wallet(init_seed, auth_component, account_type)
 }
 
 /// Creates a new account with a basic wallet interface, multi-signature authentication and the
@@ -142,21 +142,12 @@ pub fn create_basic_wallet(
 /// `approver_set` approver signatures, with optional per-procedure threshold overrides in
 /// `proc_thresholds`.
 ///
-/// # Security: private accounts and state withholding
+/// # Security
 ///
-/// A private account's state lives off-chain, so whoever advances it must share the new state with
-/// the other approvers; any quorum that advances the state and withholds it permanently locks the
-/// excluded approvers out. To bound this, per-procedure overrides on a private account may only
-/// *raise* a procedure's threshold above the default, never lower it: a lower threshold (e.g. `1`
-/// for `receive_asset`) would let a sub-quorum withhold state, whereas a higher one is always safe
-/// and lets sensitive procedures be hardened. Public accounts store their state on-chain, so no
-/// check is applied there.
-///
-/// Raising thresholds does not *eliminate* withholding (any quorum below the full approver set can
-/// still exclude the rest). The only fully withholding-safe options are a public account, unanimity
-/// (`threshold == number of approvers`), or a guarded wallet ([`create_guarded_wallet`]) whose
-/// Guardian forwards state updates - prefer the latter for a private `m`-of-`n` wallet among
-/// mutually distrusting approvers.
+/// See [`AuthMultisig`] for important caveats regarding per-procedure thresholds and private
+/// account state withholding. For private accounts this constructor rejects per-procedure
+/// thresholds below the default threshold (a lower threshold would let a sub-quorum advance and
+/// withhold the private account state); public accounts allow any per-procedure threshold.
 pub fn create_multisig_wallet(
     init_seed: [u8; 32],
     approver_set: ApproverSet,
@@ -179,7 +170,7 @@ pub fn create_multisig_wallet(
     let config = AuthMultisigConfig::new(approver_set).with_proc_thresholds(proc_thresholds)?;
     let auth_component: AccountComponent = AuthMultisig::new(config)?.into();
 
-    build_wallet(init_seed, auth_component, account_type)
+    create_wallet(init_seed, auth_component, account_type)
 }
 
 /// Creates a new account with a basic wallet interface, guarded multi-signature authentication and
@@ -199,11 +190,11 @@ pub fn create_guarded_wallet(
         .with_proc_thresholds(proc_thresholds)?;
     let auth_component: AccountComponent = AuthGuardedMultisig::new(config)?.into();
 
-    build_wallet(init_seed, auth_component, account_type)
+    create_wallet(init_seed, auth_component, account_type)
 }
 
-/// Builds a basic wallet account from the given authentication component and account type.
-fn build_wallet(
+/// Creates a basic wallet account from the given authentication component and account type.
+fn create_wallet(
     init_seed: [u8; 32],
     auth_component: AccountComponent,
     account_type: AccountType,

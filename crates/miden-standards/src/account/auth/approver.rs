@@ -2,7 +2,7 @@ use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 use core::num::NonZeroU32;
 
-use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
+use miden_protocol::account::auth::{AuthScheme, PublicKey, PublicKeyCommitment};
 use miden_protocol::errors::AccountError;
 
 // APPROVER
@@ -33,9 +33,9 @@ impl Approver {
     }
 }
 
-impl From<(PublicKeyCommitment, AuthScheme)> for Approver {
-    fn from((pub_key, auth_scheme): (PublicKeyCommitment, AuthScheme)) -> Self {
-        Self::new(pub_key, auth_scheme)
+impl From<&PublicKey> for Approver {
+    fn from(pub_key: &PublicKey) -> Self {
+        Self::new(pub_key.to_commitment(), pub_key.auth_scheme())
     }
 }
 

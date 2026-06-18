@@ -117,15 +117,27 @@ impl AuthMultisigConfig {
 /// It enforces a threshold of approver signatures for every transaction, with optional
 /// per-procedure threshold overrides.
 ///
-/// For private accounts this component should be used with caution. A private account's state
-/// lives off-chain, so whoever advances it must share the new state with the other approvers; any
-/// quorum that advances the state and withholds it permanently locks the excluded approvers out.
-/// A per-procedure threshold of one makes this trivial for a single approver. Without a guardian,
-/// the only fully withholding-safe configuration is unanimity (`threshold == number of approvers`).
-/// For a private `m`-of-`n` wallet among mutually distrusting approvers, prefer
-/// [`AuthGuardedMultisig`](super::AuthGuardedMultisig), whose guardian forwards state updates. See
-/// [`create_multisig_wallet`](crate::account::wallets::create_multisig_wallet) for the full
-/// rationale.
+/// # Security: private accounts and state withholding
+///
+/// A private account's state lives off-chain; the chain only holds a commitment to it. Whoever
+/// advances the account must share the new state with the other approvers, otherwise those
+/// approvers can no longer reconstruct the state behind the on-chain commitment and are
+/// permanently locked out (and the signers retaining the state can drain its assets). This is a
+/// data-availability problem inherent to private state, not an authorization one: the threshold
+/// controls who *can* advance the state, not whether the resulting state is *shared*. A
+/// per-procedure threshold of one lets a single approver do this; more generally, any quorum
+/// smaller than the full approver set can advance the state and withhold it from the excluded
+/// approvers.
+///
+/// The only configurations that fully prevent withholding are a public account (state is on-chain,
+/// so nothing can be withheld), unanimity (`threshold == number of approvers`, so every approver
+/// signs and therefore sees every state transition), or pairing the multisig with a guardian via
+/// [`AuthGuardedMultisig`](super::AuthGuardedMultisig), whose guardian co-signs every transaction
+/// and forwards the new state. For a private `m`-of-`n` wallet among mutually distrusting
+/// approvers, prefer the guarded variant. The [`create_multisig_wallet`] helper enforces a related
+/// bound: on private accounts it rejects per-procedure thresholds below the default.
+///
+/// [`create_multisig_wallet`]: crate::account::wallets::create_multisig_wallet
 #[derive(Debug)]
 pub struct AuthMultisig {
     config: AuthMultisigConfig,
