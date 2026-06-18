@@ -297,7 +297,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     // --------------------------------------------------------------------------------------------
 
     let mut updated_bridge_account = bridge_account.clone();
-    updated_bridge_account.apply_delta(claim_executed.account_delta())?;
+    updated_bridge_account.apply_patch(claim_executed.account_patch())?;
 
     let actual_cgi_chain_hash = AggLayerBridge::cgi_chain_hash(&updated_bridge_account)?;
 
@@ -406,7 +406,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
 
     // Verify the destination account received the minted asset
     let mut destination_account = destination_account;
-    destination_account.apply_delta(consume_executed_transaction.account_delta())?;
+    destination_account.apply_patch(consume_executed_transaction.account_patch())?;
 
     let balance = destination_account.vault().get_balance(expected_asset.vault_key())?;
     assert_eq!(
@@ -1043,7 +1043,7 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
         .build()?
         .execute()
         .await?;
-    bridge_account.apply_delta(config_executed.account_delta())?;
+    bridge_account.apply_patch(config_executed.account_patch())?;
     mock_chain.add_pending_executed_transaction(&config_executed)?;
     mock_chain.prove_next_block()?;
 
@@ -1058,7 +1058,7 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
         0,
         "Lock transaction should not emit any output note"
     );
-    bridge_account.apply_delta(lock_executed.account_delta())?;
+    bridge_account.apply_patch(lock_executed.account_patch())?;
     assert_eq!(
         bridge_account.vault().get_balance(bridge_asset.vault_key())?,
         AssetAmount::new(miden_claim_amount_u64)?,
@@ -1073,7 +1073,7 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
         .build()?
         .execute()
         .await?;
-    bridge_account.apply_delta(update_ger_executed.account_delta())?;
+    bridge_account.apply_patch(update_ger_executed.account_patch())?;
     mock_chain.add_pending_executed_transaction(&update_ger_executed)?;
     mock_chain.prove_next_block()?;
 
@@ -1140,7 +1140,7 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
     );
 
     // Bridge vault is drained after the unlock.
-    bridge_account.apply_delta(claim_executed.account_delta())?;
+    bridge_account.apply_patch(claim_executed.account_patch())?;
     assert_eq!(
         bridge_account.vault().get_balance(expected_asset.vault_key())?,
         AssetAmount::ZERO,
@@ -1159,7 +1159,7 @@ async fn bridge_in_unlock_native_token() -> anyhow::Result<()> {
         .await?;
 
     let mut destination_account = destination_account;
-    destination_account.apply_delta(consume_executed.account_delta())?;
+    destination_account.apply_patch(consume_executed.account_patch())?;
     assert_eq!(
         destination_account.vault().get_balance(expected_asset.vault_key())?,
         AssetAmount::new(miden_claim_amount_u64)?,
@@ -1311,7 +1311,7 @@ async fn bridge_in_unlock_native_duplicate_rejected() -> anyhow::Result<()> {
         .build()?
         .execute()
         .await?;
-    bridge_account.apply_delta(config_executed.account_delta())?;
+    bridge_account.apply_patch(config_executed.account_patch())?;
     mock_chain.add_pending_executed_transaction(&config_executed)?;
     mock_chain.prove_next_block()?;
 
@@ -1321,7 +1321,7 @@ async fn bridge_in_unlock_native_duplicate_rejected() -> anyhow::Result<()> {
         .build()?
         .execute()
         .await?;
-    bridge_account.apply_delta(lock_executed.account_delta())?;
+    bridge_account.apply_patch(lock_executed.account_patch())?;
     assert_eq!(
         bridge_account.vault().get_balance(bridge_asset.vault_key())?,
         AssetAmount::new(miden_claim_amount_u64.saturating_mul(2))?,
@@ -1335,7 +1335,7 @@ async fn bridge_in_unlock_native_duplicate_rejected() -> anyhow::Result<()> {
         .build()?
         .execute()
         .await?;
-    bridge_account.apply_delta(update_ger_executed.account_delta())?;
+    bridge_account.apply_patch(update_ger_executed.account_patch())?;
     mock_chain.add_pending_executed_transaction(&update_ger_executed)?;
     mock_chain.prove_next_block()?;
 
@@ -1346,7 +1346,7 @@ async fn bridge_in_unlock_native_duplicate_rejected() -> anyhow::Result<()> {
         .execute()
         .await?;
     assert_eq!(claim_executed_1.output_notes().num_notes(), 1);
-    bridge_account.apply_delta(claim_executed_1.account_delta())?;
+    bridge_account.apply_patch(claim_executed_1.account_patch())?;
     assert_eq!(
         bridge_account.vault().get_balance(bridge_asset.vault_key())?,
         AssetAmount::new(miden_claim_amount_u64)?,

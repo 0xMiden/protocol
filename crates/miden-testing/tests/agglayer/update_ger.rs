@@ -97,7 +97,7 @@ async fn update_ger_note_updates_storage() -> anyhow::Result<()> {
     // VERIFY GER HASH WAS STORED IN MAP
     // --------------------------------------------------------------------------------------------
     let mut updated_bridge_account = bridge_account.clone();
-    updated_bridge_account.apply_delta(executed_transaction.account_delta())?;
+    updated_bridge_account.apply_patch(executed_transaction.account_patch())?;
 
     let is_registered = AggLayerBridge::is_ger_registered(ger, &updated_bridge_account)?;
     assert!(is_registered, "GER was not registered in the bridge account");
