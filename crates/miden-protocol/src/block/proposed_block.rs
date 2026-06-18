@@ -302,11 +302,6 @@ impl ProposedBlock {
     // ACCESSORS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns the validator key committed to by this block as the signer of the next block.
-    pub fn next_validator_key(&self) -> &PublicKey {
-        &self.next_validator_key
-    }
-
     /// Returns the block number of this proposed block.
     pub fn block_num(&self) -> BlockNumber {
         // The chain length is the length at the state of the previous block header, so we have to
@@ -355,6 +350,11 @@ impl ProposedBlock {
     /// Returns the timestamp of this block.
     pub fn timestamp(&self) -> u32 {
         self.timestamp
+    }
+
+    /// Returns the validator key committed to by this block as the signer of the next block.
+    pub fn next_validator_key(&self) -> &PublicKey {
+        &self.next_validator_key
     }
 
     // COMMITMENT COMPUTATIONS
