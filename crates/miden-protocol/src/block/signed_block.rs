@@ -1,7 +1,7 @@
 use miden_core::Word;
 use miden_crypto::dsa::ecdsa_k256_keccak::Signature;
 
-use crate::block::validation::{self, ParentValidationError};
+use crate::block::validation::ParentValidationError;
 use crate::block::{BlockBody, BlockHeader, BlockNumber};
 use crate::utils::serde::{
     ByteReader,
@@ -162,7 +162,7 @@ impl SignedBlock {
 
         // When a trusted parent is provided, authenticate the block against it.
         if let Some(parent) = parent {
-            validation::validate_against_parent(&self.header, &self.signature, parent)?;
+            self.header.validate_against_parent(&self.signature, parent)?;
         }
 
         Ok(())

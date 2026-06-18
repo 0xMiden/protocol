@@ -8,9 +8,9 @@ use crate::block::{BlockHeader, BlockNumber};
 
 /// Error returned when a block fails validation against its parent block.
 ///
-/// This is the shared, block-type-agnostic error produced by [`validate_against_parent`]. Each
-/// block type maps it into its own error enum via `From`, which preserves that type's specific
-/// error messages.
+/// This is the shared, block-type-agnostic error produced by
+/// [`BlockHeader::validate_against_parent`]. Each block type maps it into its own error enum via
+/// `From`, which preserves that type's specific error messages.
 #[derive(Debug)]
 pub(crate) enum ParentValidationError {
     InvalidSignature,
@@ -30,55 +30,58 @@ pub(crate) enum ParentValidationError {
 // PARENT VALIDATION
 // ================================================================================================
 
-/// Validates that `parent_block` precedes and authorizes the block described by `header` and
-/// `signature`: the parent's number is this block's number minus one, the parent's commitment
-/// matches this block's `prev_block_commitment`, and the signature verifies against the parent's
-/// `validator_key` (the key the parent authorized to sign this block).
-///
-/// `parent_block` MUST come from already-trusted chain state. Because `prev_block_commitment` is
-/// attacker-controlled, passing an untrusted parent would let a forged block self-authorize.
-///
-/// # Errors
-///
-/// Returns an error if the block is the genesis block (no parent), the parent's number or
-/// commitment do not match, or the signature does not verify against the parent's validator key.
-pub(crate) fn validate_against_parent(
-    header: &BlockHeader,
-    signature: &Signature,
-    parent_block: &BlockHeader,
-) -> Result<(), ParentValidationError> {
-    // Block 0 does not have a parent.
-    let Some(expected_parent_num) = header.block_num().checked_sub(1) else {
-        return Err(ParentValidationError::GenesisBlockHasNoParent {
-            parent: parent_block.block_num(),
-        });
-    };
+impl BlockHeader {
+    /// Validates that `parent` precedes and authorizes this block, whose signature is `signature`:
+    /// the parent's number is this block's number minus one, the parent's commitment matches this
+    /// block's `prev_block_commitment`, and the signature verifies against the parent's
+    /// `validator_key` (the key the parent authorized to sign this block).
+    ///
+    /// `parent` MUST come from already-trusted chain state. Because `prev_block_commitment` is
+    /// attacker-controlled, passing an untrusted parent would let a forged block self-authorize.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the block is the genesis block (no parent), the parent's number or
+    /// commitment do not match, or the signature does not verify against the parent's validator
+    /// key.
+    pub(crate) fn validate_against_parent(
+        &self,
+        signature: &Signature,
+        parent: &BlockHeader,
+    ) -> Result<(), ParentValidationError> {
+        // Block 0 does not have a parent.
+        let Some(expected_parent_num) = self.block_num().checked_sub(1) else {
+            return Err(ParentValidationError::GenesisBlockHasNoParent {
+                parent: parent.block_num(),
+            });
+        };
 
-    // Check block numbers.
-    let parent_num = parent_block.block_num();
-    if expected_parent_num != parent_num {
-        return Err(ParentValidationError::ParentNumberMismatch {
-            expected: expected_parent_num,
-            parent: parent_num,
-        });
+        // Check block numbers.
+        let parent_num = parent.block_num();
+        if expected_parent_num != parent_num {
+            return Err(ParentValidationError::ParentNumberMismatch {
+                expected: expected_parent_num,
+                parent: parent_num,
+            });
+        }
+
+        // Check commitments.
+        let expected_prev_commitment = self.prev_block_commitment();
+        let parent_commitment = parent.commitment();
+        if expected_prev_commitment != parent_commitment {
+            return Err(ParentValidationError::ParentCommitmentMismatch {
+                expected: expected_prev_commitment,
+                parent: parent_commitment,
+            });
+        }
+
+        // Verify the signature against the validator key authorized by the parent block.
+        if !signature.verify(self.commitment(), parent.validator_key()) {
+            return Err(ParentValidationError::InvalidSignature);
+        }
+
+        Ok(())
     }
-
-    // Check commitments.
-    let expected_prev_commitment = header.prev_block_commitment();
-    let parent_commitment = parent_block.commitment();
-    if expected_prev_commitment != parent_commitment {
-        return Err(ParentValidationError::ParentCommitmentMismatch {
-            expected: expected_prev_commitment,
-            parent: parent_commitment,
-        });
-    }
-
-    // Verify the signature against the validator key authorized by the parent block.
-    if !signature.verify(header.commitment(), parent_block.validator_key()) {
-        return Err(ParentValidationError::InvalidSignature);
-    }
-
-    Ok(())
 }
 
 // TEST HELPERS
@@ -138,7 +141,7 @@ mod tests {
     use super::{test_block_header as header, *};
     use crate::testing::random_secret_key::random_secret_key;
 
-    /// Expected outcome of a [`validate_against_parent`] case.
+    /// Expected outcome of a [`BlockHeader::validate_against_parent`] case.
     enum Expect {
         Ok,
         InvalidSignature,
@@ -187,7 +190,7 @@ mod tests {
 
         let child = header(child_num, prev_commitment, child_validator_key);
         let signature = signer.sign(child.commitment());
-        let result = validate_against_parent(&child, &signature, &parent);
+        let result = child.validate_against_parent(&signature, &parent);
 
         match expected {
             Expect::Ok => result.unwrap(),
