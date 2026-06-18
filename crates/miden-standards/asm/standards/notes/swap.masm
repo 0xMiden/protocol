@@ -106,7 +106,7 @@ pub proc main
         mem_load.PAYBACK_TAG_PTR
         # => [tag, note_type, s0', s1, s2, s3]
 
-        # Load payback target id (prefix then suffix) to match `p2id::new`'s signature
+        # Load prefix then suffix so suffix ends on top, as `p2id::new` expects.
         mem_load.PAYBACK_TARGET_PREFIX_PTR
         mem_load.PAYBACK_TARGET_SUFFIX_PTR
         # => [target_suffix, target_prefix, tag, note_type, s0', s1, s2, s3]
