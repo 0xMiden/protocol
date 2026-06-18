@@ -46,30 +46,28 @@ static EXEMPT_PROCEDURE_ROOTS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::n
 });
 
 /// Configuration for [`AuthSingleSigAcl`] component.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct AuthSingleSigAclConfig {
     /// Set of procedure roots that are exempt from requiring authentication when called.
     /// Any called procedure that is not in this set forces signature verification.
-    pub exempt_procedures: BTreeSet<AccountProcedureRoot>,
+    exempt_procedures: BTreeSet<AccountProcedureRoot>,
 }
 
 impl AuthSingleSigAclConfig {
-    /// Creates a new configuration with an empty exempt set. Under this default, every
-    /// account procedure call requires authentication.
-    pub fn new() -> Self {
-        Self { exempt_procedures: BTreeSet::new() }
-    }
+    /// Creates a new configuration with the set of procedure roots that are exempt from requiring
+    /// authentication.
+    ///
+    /// Returns an error if:
+    /// - more than [`AccountCode::MAX_NUM_PROCEDURES`] procedures are specified.
+    pub fn new(exempt_procedures: BTreeSet<AccountProcedureRoot>) -> Result<Self, AccountError> {
+        if exempt_procedures.len() > AccountCode::MAX_NUM_PROCEDURES {
+            return Err(AccountError::other(format!(
+                "The number of procedures in the exempt procedures set provided exceeds the maximum limit of {}",
+                AccountCode::MAX_NUM_PROCEDURES
+            )));
+        }
 
-    /// Sets the set of procedure roots that are exempt from requiring authentication.
-    pub fn with_exempt_procedures(mut self, procedures: BTreeSet<AccountProcedureRoot>) -> Self {
-        self.exempt_procedures = procedures;
-        self
-    }
-}
-
-impl Default for AuthSingleSigAclConfig {
-    fn default() -> Self {
-        Self::new()
+        Ok(Self { exempt_procedures })
     }
 }
 
@@ -128,22 +126,12 @@ impl AuthSingleSigAcl {
 
     /// Creates a new [`AuthSingleSigAcl`] component with the given `public_key` and
     /// configuration.
-    ///
-    /// Returns an error if:
-    /// - more than [`AccountCode::MAX_NUM_PROCEDURES`] procedures are specified.
     pub fn new(
         pub_key: PublicKeyCommitment,
         auth_scheme: AuthScheme,
         config: AuthSingleSigAclConfig,
-    ) -> Result<Self, AccountError> {
-        let max_procedures = AccountCode::MAX_NUM_PROCEDURES;
-        if config.exempt_procedures.len() > max_procedures {
-            return Err(AccountError::other(format!(
-                "Cannot track more than {max_procedures} procedures (account limit)"
-            )));
-        }
-
-        Ok(Self { pub_key, auth_scheme, config })
+    ) -> Self {
+        Self { pub_key, auth_scheme, config }
     }
 
     /// Returns the [`StorageSlotName`] where the public key is stored.
@@ -178,13 +166,16 @@ impl AuthSingleSigAcl {
     }
 
     /// Returns the storage slot schema for the exempt procedure roots slot.
+    ///
+    /// It is [`SchemaType::bool()`] type used for the values in the resulting exempt procedures map
+    /// since it is just a presence marker.
     pub fn exempt_procedure_roots_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
         (
             Self::exempt_procedure_roots_slot().clone(),
             StorageSlotSchema::map(
                 "Exempt procedure roots",
                 SchemaType::native_word(),
-                SchemaType::u32(),
+                SchemaType::bool(),
             ),
         )
     }
@@ -247,6 +238,7 @@ impl From<AuthSingleSigAcl> for AccountComponent {
 
 #[cfg(test)]
 mod tests {
+    use anyhow::Result;
     use miden_protocol::Word;
     use miden_protocol::account::AccountBuilder;
 
@@ -264,14 +256,13 @@ mod tests {
 
     fn build_account(
         exempt_procedures: BTreeSet<AccountProcedureRoot>,
-    ) -> (PublicKeyCommitment, miden_protocol::account::Account) {
+    ) -> Result<(PublicKeyCommitment, miden_protocol::account::Account)> {
         let public_key = PublicKeyCommitment::from(Word::empty());
         let auth_scheme = AuthScheme::Falcon512Poseidon2;
 
-        let acl_config = AuthSingleSigAclConfig::new().with_exempt_procedures(exempt_procedures);
+        let acl_config = AuthSingleSigAclConfig::new(exempt_procedures)?;
 
-        let component = AuthSingleSigAcl::new(public_key, auth_scheme, acl_config)
-            .expect("component creation failed");
+        let component = AuthSingleSigAcl::new(public_key, auth_scheme, acl_config);
 
         let account = AccountBuilder::new([0; 32])
             .with_auth_component(component)
@@ -279,14 +270,14 @@ mod tests {
             .build()
             .expect("account building failed");
 
-        (public_key, account)
+        Ok((public_key, account))
     }
 
     /// Empty exempt list: the public key is stored and the exempt map returns the empty word
     /// for every probed key.
     #[test]
-    fn test_singlesig_acl_empty_exempt_list() {
-        let (public_key, account) = build_account(BTreeSet::new());
+    fn test_singlesig_acl_empty_exempt_list() -> Result<()> {
+        let (public_key, account) = build_account(BTreeSet::new())?;
 
         let public_key_slot = account
             .storage()
@@ -300,14 +291,16 @@ mod tests {
             .get_map_item(AuthSingleSigAcl::exempt_procedure_roots_slot(), StorageMapKey::empty())
             .expect("storage map access failed");
         assert_eq!(probe, Word::empty());
+
+        Ok(())
     }
 
     /// Non-empty exempt list: each provided procedure root is stored with the presence marker
     /// `[1, 0, 0, 0]` and lookups for absent roots still return `Word::empty()`.
     #[test]
-    fn test_singlesig_acl_with_exempt_procedures() {
+    fn test_singlesig_acl_with_exempt_procedures() -> Result<()> {
         let procedures = get_basic_wallet_procedures();
-        let (_public_key, account) = build_account(procedures.clone());
+        let (_public_key, account) = build_account(procedures.clone())?;
 
         let marker = Word::from([1u32, 0, 0, 0]);
         for proc_root in &procedures {
@@ -330,22 +323,21 @@ mod tests {
             )
             .expect("storage map access failed");
         assert_eq!(probe, Word::empty());
+
+        Ok(())
     }
 
     /// More than `MAX_NUM_PROCEDURES` exempt entries must be rejected by `new`.
     #[test]
-    fn test_singlesig_acl_rejects_exempt_list_above_account_limit() {
+    fn test_singlesig_acl_rejects_exempt_list_above_account_limit() -> Result<()> {
         let too_many: BTreeSet<AccountProcedureRoot> = (0..=AccountCode::MAX_NUM_PROCEDURES as u32)
             .map(|i| AccountProcedureRoot::from_raw(Word::from([i, 0, 0, 0])))
             .collect();
 
-        let config = AuthSingleSigAclConfig::new().with_exempt_procedures(too_many);
+        let result = AuthSingleSigAclConfig::new(too_many);
 
-        let result = AuthSingleSigAcl::new(
-            PublicKeyCommitment::from(Word::empty()),
-            AuthScheme::Falcon512Poseidon2,
-            config,
-        );
         assert!(result.is_err(), "exempt list above MAX_NUM_PROCEDURES should be rejected");
+
+        Ok(())
     }
 }

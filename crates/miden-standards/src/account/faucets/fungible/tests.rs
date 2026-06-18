@@ -48,7 +48,7 @@ fn user_fungible_faucet_with_single_sig_acl() {
     let description_string = "A polygon token";
 
     let auth_component =
-        user_faucet_single_sig_acl(pub_key_word.into(), AuthScheme::Falcon512Poseidon2).unwrap();
+        user_faucet_single_sig_acl(pub_key_word.into(), AuthScheme::Falcon512Poseidon2);
 
     let faucet_account = create_user_fungible_faucet(
         init_seed,

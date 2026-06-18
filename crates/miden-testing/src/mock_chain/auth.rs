@@ -162,9 +162,10 @@ impl Auth {
                 let component = AuthSingleSigAcl::new(
                     pub_key,
                     *auth_scheme,
-                    AuthSingleSigAclConfig::new().with_exempt_procedures(exempt_procedures.clone()),
+                    AuthSingleSigAclConfig::new(exempt_procedures.clone()).expect(
+                        "AuthSingleSigAcl component creation failed: too many exempt procedures",
+                    ),
                 )
-                .expect("component creation failed")
                 .into();
                 let authenticator = BasicAuthenticator::new(&[sec_key]);
 
